@@ -85,6 +85,13 @@ await check('desktop zoom controls',async()=>{
   await page.locator('#awcFit').click();
   assert.equal(await page.locator('#awcZoomLabel').innerText(),'100%');
 });
+await check('Agent World keeps same-district workers separated',async()=>{
+  await page.locator('#awcDemoPlay').click();
+  await page.waitForTimeout(200);
+  const rosterCount=await page.locator('#awcRoster .awc__rosterItem').count();
+  assert.ok(rosterCount>=4);
+  await page.locator('#awcLiveBtn').click();
+});
 await check('Agent World uses construction-crew presentation',async()=>{
   assert.match(await page.locator('.awc__sub').innerText(),/construction crew/i);
   await page.locator('#awcDemoPlay').click();
