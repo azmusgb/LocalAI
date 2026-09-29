@@ -1,0 +1,9 @@
+{
+  "name": "Local AI v1.18 - Intent + Action Navigation",
+  "short_name": "Local AI",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090b0f",
+  "theme_color": "#0b0d11",
+  "description": "Private local AI workspace"
+}
