@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "agents": [
     {
       "id": "ux_analyst",
@@ -9,8 +9,30 @@
         "ux",
         "accessibility",
         "responsive",
-        "interaction"
+        "interaction",
+        "mobile",
+        "design"
       ],
+      "routing": {
+        "include": [
+          "ux",
+          "user experience",
+          "ui",
+          "interface",
+          "mobile",
+          "responsive",
+          "accessibility",
+          "a11y",
+          "layout",
+          "navigation",
+          "interaction",
+          "design",
+          "visual"
+        ],
+        "exclude": [
+          "documentation only"
+        ]
+      },
       "system": "Act as a rigorous UX analyst. Ground findings in supplied project context. Separate observed defects, risks, and recommendations. Prioritize by user impact and implementation effort."
     },
     {
@@ -21,20 +43,45 @@
         "documentation",
         "runbooks",
         "api",
-        "release-notes"
+        "release-notes",
+        "architecture"
       ],
+      "routing": {
+        "include": [
+          "document",
+          "documentation",
+          "docs",
+          "runbook",
+          "readme",
+          "api",
+          "release notes",
+          "architecture",
+          "specification",
+          "guide",
+          "instructions",
+          "explain"
+        ],
+        "exclude": []
+      },
       "system": "Produce precise source-grounded technical documentation. Never invent behavior. Call out missing evidence explicitly. Prefer executable runbooks and concrete contracts."
     },
     {
       "id": "model_router",
-      "name": "Model Router",
-      "description": "Inspects locally installed Ollama models and selects a deterministic best-fit model.",
+      "name": "Mission Router",
+      "description": "Dispatch infrastructure: selects specialists, dependencies, execution order and installed Ollama models.",
       "capabilities": [
         "routing",
+        "dispatch",
         "models",
-        "ollama"
+        "ollama",
+        "mission-planning"
       ],
-      "system": "Select models deterministically from actual installed inventory. Explain the routing signals briefly; never claim an unavailable model is installed."
+      "infrastructure": true,
+      "routing": {
+        "include": [],
+        "exclude": []
+      },
+      "system": "Route missions deterministically from the registered capabilities and installed model inventory."
     }
   ]
 }
