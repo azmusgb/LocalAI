@@ -24,7 +24,39 @@ module.exports=function createAgentOrchestrator(deps={}){
   return {mode,goal,workers,selectedAgentIds:ids,reason:mode==='manual'?'Manual specialist override':'Capability-driven routing from specialist registry',inventory:inventory.map(x=>x.name)};
  }
  function context(projectId,goal){if(!projectId||typeof knowledgeStore!=='function')return [];const rows=knowledgeStore().filter(x=>x.projectId===projectId);if(typeof knowledgeScore!=='function')return rows.slice(0,6);return rows.map(x=>({x,s:knowledgeScore(x,goal)})).sort((a,b)=>b.s-a.s).slice(0,6).map(y=>y.x)}
- async function specialist(agentId,goal,projectId='',assignedModel=''){const agent=specialists.find(x=>x.id===agentId);if(!agent)throw new Error('Unknown specialist: '+agentId);const runs=read(runsFile),run={id:id('spec'),agentId,agentName:agent.name,goal,projectId,status:'running',createdAt:iso(),updatedAt:iso(),plan:[{name:'Route model',state:'running'},{name:'Gather context',state:'pending'},{name:'Execute specialist',state:'pending'},{name:'Publish result',state:'pending'}]};runs.unshift(run);save(runsFile,runs.slice(0,300));try{const rt=assignedModel?{model:assignedModel}:await routeModel(goal+' '+agentId);run.model=rt.model;run.plan[0].state='complete';const ctx=context(projectId,goal);run.plan[1].state='complete';run.plan[2].state='running';const evidence=ctx.map((x,i)=>'['+(i+1)+'] '+(x.name||x.title||'Context')+'\n'+String(x.text||x.content||'').slice(0,5000)).join('\n\n');run.answer=await runLocalModel('Goal:\n'+goal+'\n\nProject context:\n'+(evidence||'(none)')+'\n\nReturn a concrete, structured result.',agent.system,180000,rt.model);run.plan[2].state='complete';run.plan[3].state='complete';run.status='complete'}catch(e){run.status='error';run.error=String(e.message||e);const active=run.plan.find(x=>x.state==='running');if(active)active.state='error'}run.updatedAt=iso();save(runsFile,runs.slice(0,300));if(recordActivity)recordActivity('agent','Specialist '+run.status,agent.name,{runId:run.id,agentId});return run}
+ const sourceFiles=[
+  ['app/agent-orchestrator.js',path.join(__dirname,'agent-orchestrator.js')],
+  ['app/specialist-agents.json',path.join(__dirname,'specialist-agents.json')],
+  ['app/server.js',path.join(__dirname,'server.js')],
+  ['app/public/index.html',path.join(__dirname,'public','index.html')],
+  ['app/public/app.js',path.join(__dirname,'public','app.js')],
+  ['app/public/agent-specialists.js',path.join(__dirname,'public','agent-specialists.js')],
+  ['app/public/agent-specialists.css',path.join(__dirname,'public','agent-specialists.css')],
+  ['app/public/agent-matrix.js',path.join(__dirname,'public','agent-matrix.js')],
+  ['app/public/agent-matrix.css',path.join(__dirname,'public','agent-matrix.css')]
+ ];
+ function goalTerms(goal){return [...new Set(String(goal||'').toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g)||[])].filter(t=>!['the','and','for','with','this','that','from','into','local','implementation','recommendations'].includes(t)).slice(0,18)}
+ function sourceExcerpt(label,file,goal,maxChars=7000){
+  try{const raw=fs.readFileSync(file,'utf8'),lines=raw.split(/\r?\n/),terms=goalTerms(goal),picked=new Set();
+   if(lines.length<=140)return {source:label,text:raw.slice(0,maxChars),truncated:raw.length>maxChars};
+   lines.forEach((line,i)=>{const low=line.toLowerCase();if(terms.some(t=>low.includes(t)))for(let n=Math.max(0,i-5);n<=Math.min(lines.length-1,i+8);n++)picked.add(n)});
+   if(!picked.size)return null;
+   const ordered=[...picked].sort((a,b)=>a-b),out=[];let last=-2;
+   for(const n of ordered){if(n>last+1)out.push('...');out.push(String(n+1).padStart(5,' ')+' | '+lines[n]);last=n;if(out.join('\n').length>=maxChars)break}
+   return {source:label,text:out.join('\n').slice(0,maxChars),truncated:out.join('\n').length>maxChars};
+  }catch{return null}
+ }
+ function projectGrounding(goal,agentId){
+  const preferred=agentId==='ux_analyst'?sourceFiles.filter(([n])=>/public\/(index|app|agent-)/.test(n)||/specialist-agents/.test(n)):sourceFiles;
+  const evidence=preferred.map(([label,file])=>sourceExcerpt(label,file,goal)).filter(Boolean);
+  return evidence.slice(0,7);
+ }
+ function evidencePacket(goal,agentId,projectId){
+  const knowledge=context(projectId,goal).map((v,i)=>({source:'project-context-'+(i+1),text:String(v.text||v.content||'').slice(0,5000)}));
+  const sources=projectGrounding(goal,agentId);
+  return {schemaVersion:1,product:{name:'Local AI Appliance',runtime:'LAN-hosted Node.js application with local Ollama models',sourceRoot:'/app'},sources:[...knowledge,...sources]};
+ }
+ async function specialist(agentId,goal,projectId='',assignedModel=''){const agent=specialists.find(x=>x.id===agentId);if(!agent)throw new Error('Unknown specialist: '+agentId);const runs=read(runsFile),run={id:id('spec'),agentId,agentName:agent.name,goal,projectId,status:'running',createdAt:iso(),updatedAt:iso(),plan:[{name:'Route model',state:'running'},{name:'Gather context',state:'pending'},{name:'Execute specialist',state:'pending'},{name:'Publish result',state:'pending'}]};runs.unshift(run);save(runsFile,runs.slice(0,300));try{const rt=assignedModel?{model:assignedModel}:await routeModel(goal+' '+agentId);run.model=rt.model;run.plan[0].state='complete';const packet=evidencePacket(goal,agentId,projectId);run.evidence=packet.sources.map(x=>x.source);run.plan[1].state='complete';run.plan[2].state='running';const evidence=packet.sources.map((x,i)=>'['+(i+1)+'] SOURCE: '+x.source+'\n'+x.text).join('\n\n');const grounding='PRODUCT IDENTITY:\n'+JSON.stringify(packet.product)+'\n\nEVIDENCE RULES:\n- Analyze Local AI Appliance only.\n- Treat supplied sources as authoritative evidence.\n- Do not invent screens, metrics, users, product features, defects, dates, or runtime behavior.\n- Every observed finding must cite one or more supplied source labels such as [app/public/index.html].\n- Clearly label recommendations as recommendations, not observations.\n- If evidence is insufficient, state exactly what is missing.\n- Use the current runtime date only if supplied; never invent a report date.\n\n';run.answer=await runLocalModel(grounding+'Goal:\n'+goal+'\n\nAuthoritative project evidence:\n'+(evidence||'(none)')+'\n\nReturn a concrete, structured, evidence-grounded result.',agent.system,180000,rt.model);run.plan[2].state='complete';run.plan[3].state='complete';run.status='complete'}catch(e){run.status='error';run.error=String(e.message||e);const active=run.plan.find(x=>x.state==='running');if(active)active.state='error'}run.updatedAt=iso();save(runsFile,runs.slice(0,300));if(recordActivity)recordActivity('agent','Specialist '+run.status,agent.name,{runId:run.id,agentId});return run}
  function missionSnapshot(m){events.emit('mission',m);return m}
  async function mission(goal,projectId='',manualAgentIds){
   const routing=await dispatch(goal,manualAgentIds),ms=read(missionsFile);
@@ -40,7 +72,7 @@ module.exports=function createAgentOrchestrator(deps={}){
    }
    m.workers.find(x=>x.id==='synthesis').state='running';missionSnapshot(m);
    const coordinatorModel=(await routeModel(goal+' synthesis')).model,joined=results.map(r=>'## '+r.agentName+'\n'+(r.answer||r.error||'')).join('\n\n');
-   m.answer=await runLocalModel('Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nSynthesize without hiding disagreements or unsupported claims.','You are the mission coordinator. Produce an actionable synthesis.',180000,coordinatorModel);m.coordinatorModel=coordinatorModel;m.workers.find(x=>x.id==='synthesis').state='complete';m.status=results.some(x=>x.status==='error')?'needs_attention':'complete';
+   m.answer=await runLocalModel('Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nSynthesize only claims grounded in the specialist evidence. Preserve source labels. Reject invented product behavior, metrics, dates, screens, users, or defects. Clearly distinguish observed evidence from recommendations and identify remaining evidence gaps.','You are the mission coordinator for the Local AI Appliance. Produce an actionable, source-grounded synthesis; never substitute a generic consumer AI product.',180000,coordinatorModel);m.coordinatorModel=coordinatorModel;m.workers.find(x=>x.id==='synthesis').state='complete';m.status=results.some(x=>x.status==='error')?'needs_attention':'complete';
   }catch(e){m.status='error';m.error=String(e.message||e)}
   m.updatedAt=iso();save(missionsFile,ms);missionSnapshot(m);return m
  }
