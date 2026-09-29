@@ -26,3 +26,14 @@ jobs:
       - name: Prevent private-key files
         run: |
           ! find app -type f \( -name '*.pem' -o -name '*.key' -o -name '*.pfx' -o -name '*.p12' -o -name '.env' \) | grep .
+      - name: Agent Operations browser acceptance
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install --no-save playwright@1.55.0 >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
+          mkdir -p /tmp/localai-data
+          DATA_DIR=/tmp/localai-data PORT=3080 node app/server.js >/tmp/localai-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          for i in {1..20}; do curl -fsS http://127.0.0.1:3080/healthz >/dev/null && break; sleep 1; done
+          node tests/agent-operations-ui.mjs
