@@ -15,7 +15,7 @@ const ROLE_COLOR={router:'#6aaeff',mission_router:'#6aaeff',ux_analyst:'#54e0f0'
 const $=(s,r=document)=>r.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[m]));
 const key=(x,y)=>x+','+y,clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 let root,canvas,ctx,current=null,sourceType='idle',liveSnapshot=null,selected=null,raf=0,last=0,events=[],agents=new Map(),roads=new Set(),artifacts=[],packets=[],cars=[];
-let view={zoom:1,panX:0,panY:0},drag=null,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+let view={zoom:1,panX:0,panY:0},drag=null,pointers=new Map(),pinch=null,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let demo={active:false,running:false,paused:false,stage:0,speed:1,lastAdvance:0,scenario:'success'};
 const DEMO_STAGES=[
  {label:'Route mission',states:{router:'running',ux_analyst:'pending',documentation:'pending',synthesis:'pending'}},
@@ -67,10 +67,10 @@ function mount(){const host=$('#agentWorldCityMount');if(!host)return;root=docum
 host.appendChild(root);canvas=$('#awcCanvas',root);ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=false;
 $('#awcFit',root).onclick=fitWorld;$('#awcCenter',root).onclick=focusActive;$('#awcZoomIn',root).onclick=()=>zoomAt(1.25);$('#awcZoomOut',root).onclick=()=>zoomAt(.8);$('#awcDemoPlay',root).onclick=toggleDemoPlay;$('#awcDemoStep',root).onclick=stepDemo;$('#awcDemoReset',root).onclick=resetDemo;$('#awcDemoSpeed',root).onclick=cycleSpeed;$('#awcLiveBtn',root).onclick=returnLive;$('#awcDemoScenario',root).onchange=e=>{demo.scenario=e.target.value;if(demo.active)applyDemo()};
 canvas.addEventListener('wheel',e=>{e.preventDefault();const p=screenToWorld(e);zoomAt(e.deltaY<0?1.12:.89,p.px,p.py)},{passive:false});
-canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);const p=screenToWorld(e);drag={id:e.pointerId,startX:p.px,startY:p.py,panX:view.panX,panY:view.panY,moved:false}});
-canvas.addEventListener('pointermove',e=>{if(!drag||drag.id!==e.pointerId)return;const r=canvas.getBoundingClientRect(),sx=W/r.width,sy=H/r.height,dx=(e.clientX-r.left)*sx-drag.startX,dy=(e.clientY-r.top)*sy-drag.startY;if(Math.abs(dx)+Math.abs(dy)>4)drag.moved=true;view.panX=drag.panX+dx;view.panY=drag.panY+dy;limitPan()});
-canvas.addEventListener('pointerup',e=>{if(!drag)return;const moved=drag.moved;drag=null;if(!moved)selectAt(e)});
-canvas.addEventListener('pointercancel',()=>drag=null);
+canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);const p=screenToWorld(e);pointers.set(e.pointerId,{x:p.px,y:p.py});if(pointers.size===1){drag={id:e.pointerId,startX:p.px,startY:p.py,panX:view.panX,panY:view.panY,moved:false};pinch=null}else if(pointers.size===2){const pts=[...pointers.values()],dx=pts[1].x-pts[0].x,dy=pts[1].y-pts[0].y;pinch={distance:Math.hypot(dx,dy),zoom:view.zoom,panX:view.panX,panY:view.panY,cx:(pts[0].x+pts[1].x)/2,cy:(pts[0].y+pts[1].y)/2};drag=null}});
+canvas.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;const r=canvas.getBoundingClientRect(),sx=W/r.width,sy=H/r.height,px=(e.clientX-r.left)*sx,py=(e.clientY-r.top)*sy;pointers.set(e.pointerId,{x:px,y:py});if(pointers.size===2&&pinch){const pts=[...pointers.values()],dx=pts[1].x-pts[0].x,dy=pts[1].y-pts[0].y,dist=Math.max(1,Math.hypot(dx,dy)),cx=(pts[0].x+pts[1].x)/2,cy=(pts[0].y+pts[1].y)/2,nz=clamp(pinch.zoom*(dist/pinch.distance),1,2.8),wx=(pinch.cx-pinch.panX)/pinch.zoom,wy=(pinch.cy-pinch.panY)/pinch.zoom;view.zoom=nz;view.panX=cx-wx*nz;view.panY=cy-wy*nz;limitPan();syncZoomLabel();return}if(!drag||drag.id!==e.pointerId)return;const dx=px-drag.startX,dy=py-drag.startY;if(Math.abs(dx)+Math.abs(dy)>4)drag.moved=true;view.panX=drag.panX+dx;view.panY=drag.panY+dy;limitPan()});
+canvas.addEventListener('pointerup',e=>{const wasSingle=pointers.size===1,moved=drag?.moved||false;pointers.delete(e.pointerId);if(wasSingle&&!moved)selectAt(e);if(pointers.size===1){const [id,p]=[...pointers.entries()][0];drag={id,startX:p.x,startY:p.y,panX:view.panX,panY:view.panY,moved:true}}else drag=null;if(pointers.size<2)pinch=null});
+canvas.addEventListener('pointercancel',e=>{pointers.delete(e.pointerId);drag=null;if(pointers.size<2)pinch=null});
 window.addEventListener('localai:agentworld-focus',e=>{const a=agents.get(e.detail?.workerId);if(a){selected={type:'agent',id:a.id};focusPoint(a.x,a.y,2);syncSelection()}});
 document.body.classList.add('agent-world-city-ready');buildRoads();seedCars();syncDemoControls();start();bootstrap()}
 function seedCars(){cars=[{x:2*T,y:14.5*T,v:28,axis:'x',dir:1,color:'#6aaeff'},{x:36*T,y:15.5*T,v:22,axis:'x',dir:-1,color:'#ffc56b'},{x:25.5*T,y:3*T,v:18,axis:'y',dir:1,color:'#c18cff'}]}
