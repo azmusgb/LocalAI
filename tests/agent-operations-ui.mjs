@@ -14,9 +14,25 @@ async function check(name,fn){
 const page=await browser.newPage({viewport:{width:1440,height:1000}});
 page.on('dialog',async d=>{dialogs++;await d.dismiss()});
 await page.goto(base,{waitUntil:'domcontentloaded'});
-await page.locator('.navbtn[data-view="agents"]').click();
+await page.waitForSelector('.ux-primary-rail');
+await page.locator('.ux-primary-item[data-domain="agents"]').click();
 await page.waitForSelector('#agents.active');
 
+await check('desktop navigation architecture',async()=>{
+  await page.locator('.ux-primary-rail').waitFor({state:'visible'});
+  await page.locator('.ux-secondary-nav').waitFor({state:'visible'});
+  assert.equal(await page.locator('.ux-primary-item').count(),5);
+  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Agents');
+  assert.ok(await page.locator('.ux-secondary-link').count()>=1);
+});
+await check('contextual navigation switches domains',async()=>{
+  await page.locator('.ux-primary-item[data-domain="projects"]').click();
+  await page.waitForSelector('#projects.active');
+  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Projects');
+  await page.locator('.ux-primary-item[data-domain="agents"]').click();
+  await page.waitForSelector('#agents.active');
+  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Agents');
+});
 await check('mission-first composer',async()=>{
   await page.locator('#agentGoal').waitFor({state:'visible'});
   await page.locator('#missionRunBtn').waitFor({state:'visible'});
@@ -74,13 +90,18 @@ await page.close();
 const mobile=await browser.newPage({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
 mobile.on('dialog',async d=>{dialogs++;await d.dismiss()});
 await mobile.goto(base,{waitUntil:'domcontentloaded'});
-const agentsNav=mobile.locator('.navbtn[data-view="agents"]');
-if(await agentsNav.isVisible())await agentsNav.click();else{
-  await mobile.evaluate(()=>document.querySelector('.navbtn[data-view="agents"]')?.click());
-}
+await mobile.evaluate(()=>window.showView?.('agents'));
 await mobile.waitForSelector('#agents.active');
 await mobile.waitForSelector('#agentWorldCityMount .awc');
 
+await check('mobile navigation is domain-first with contextual sheet',async()=>{
+  await mobile.locator('#uxMobileNav').waitFor({state:'visible'});
+  assert.equal(await mobile.locator('#uxMobileNav [data-domain]').count(),5);
+  await mobile.locator('#uxMobileNav [data-domain="agents"]').click();
+  await mobile.locator('#uxMobileSheet').waitFor({state:'visible'});
+  assert.match(await mobile.locator('#uxMobileSheetTitle').innerText(),/Agents/i);
+  await mobile.locator('#uxMobileSheetClose').click();
+});
 await check('mobile layout has no page-level horizontal overflow',async()=>{
   const dims=await mobile.evaluate(()=>({sw:document.documentElement.scrollWidth,cw:document.documentElement.clientWidth}));
   assert.ok(dims.sw<=dims.cw+2,`scrollWidth ${dims.sw} > clientWidth ${dims.cw}`);
