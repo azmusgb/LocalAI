@@ -37,7 +37,7 @@ const DEMO_STAGES=[
 ];
 
 let root,canvas,ctx,current=null,liveSnapshot=null,sourceType='idle',selected=null,hovered=null,raf=0,last=0;
-let roads=new Set(),agents=new Map(),artifacts=[],packets=[],traffic=[],sparks=[],events=[],clouds=[];
+let roads=new Set(),agents=new Map(),artifacts=[],packets=[],traffic=[],sparks=[],dust=[],events=[],clouds=[];
 let view={zoom:1,panX:0,panY:0,targetZoom:1,targetPanX:0,targetPanY:0};
 let drag=null,pointers=new Map(),pinch=null,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let display={labels:true,flows:true,night:false,crew:true,follow:false};
@@ -101,7 +101,7 @@ function applyDemo(){const next=demoMission();if(!demo.active||current?.id!==nex
 function startDemo(){demo.active=true;demo.running=true;demo.paused=false;demo.stage=0;demo.lastAdvance=now();applyDemo();fitWorld();syncDemoControls()}
 function stepDemo(){if(!demo.active)startDemo();else{demo.stage=Math.min(DEMO_STAGES.length-1,demo.stage+1);demo.lastAdvance=now();applyDemo();if(demo.stage===DEMO_STAGES.length-1)demo.running=false}syncDemoControls()}
 function resetDemo(){demo.stage=0;demo.running=false;demo.paused=false;applyDemo();syncDemoControls()}
-function returnLive(){demo.active=false;demo.running=false;demo.paused=false;agents.clear();artifacts=[];packets=[];sparks=[];if(liveSnapshot){current=liveSnapshot;sourceType='mission';current.workers.forEach(ensureAgent)}else{current=null;sourceType='idle'}syncHud();syncDemoControls();fitWorld()}
+function returnLive(){demo.active=false;demo.running=false;demo.paused=false;agents.clear();artifacts=[];packets=[];sparks=[];dust=[];if(liveSnapshot){current=liveSnapshot;sourceType='mission';current.workers.forEach(ensureAgent)}else{current=null;sourceType='idle'}syncHud();syncDemoControls();fitWorld()}
 function toggleDemoPlay(){if(!demo.active){startDemo();return}demo.running=true;demo.paused=!demo.paused;demo.lastAdvance=now();syncDemoControls()}
 function cycleSpeed(){demo.speed=demo.speed===1?2:demo.speed===2?4:1;syncDemoControls()}
 function syncDemoControls(){if(!root)return;$('#awcDemoPlay',root).textContent=demo.active&&demo.running&&!demo.paused?'Pause':'Play';$('#awcDemoSpeed',root).textContent=demo.speed+'×';$('#awcLiveBtn',root).hidden=!demo.active;$('#awcDemoScenario',root).value=demo.scenario}
@@ -195,9 +195,20 @@ function seedAmbient(){traffic=[{x:2*T,y:13.5*T,v:28,axis:'x',dir:1,color:'#6aae
 function update(dt,ts){
  if(display.follow&&!drag&&!pointers.size){const a=[...agents.values()].find(q=>q.state==='running');if(a){view.targetZoom=Math.max(view.targetZoom,1.7);view.targetPanX=W/2-a.x*view.targetZoom;view.targetPanY=H/2-a.y*view.targetZoom;limitTargetPan()}}
  view.zoom+= (view.targetZoom-view.zoom)*Math.min(1,dt*10);view.panX+=(view.targetPanX-view.panX)*Math.min(1,dt*10);view.panY+=(view.targetPanY-view.panY)*Math.min(1,dt*10);
- for(const a of agents.values()){a.bob+=dt*7;a.step+=dt*(a.state==='running'?13:10);if(!a.path?.length||a.pathI>=a.path.length)continue;const p=a.path[a.pathI],dx=p.x-a.x,dy=p.y-a.y,d=Math.hypot(dx,dy),speed=a.state==='running'?96:64;if(d<3){a.pathI++;continue}a.dir=dx<0?-1:1;a.x+=dx/d*speed*dt;a.y+=dy/d*speed*dt}
+ for(const a of agents.values()){
+  const moving=workerIsMoving(a),running=a.state==='running'&&moving;
+  a.motion=running?'running':moving?'walking':a.state==='running'?'working':'idle';
+  a.bob+=dt*(running?12:7);a.step+=dt*(running?19:10);
+  if(!moving)continue;
+  const p=a.path[a.pathI],dx=p.x-a.x,dy=p.y-a.y,d=Math.hypot(dx,dy);
+  if(d<3){a.pathI++;if(a.pathI>=a.path.length){a.motion=a.state==='running'?'working':'idle';a.arrivedAt=ts;spawnSparks(a.x,a.y,'#f5c04f',5)}continue}
+  a.dir=dx<0?-1:1;
+  const base=running?150:64,arrival=a.pathI>=a.path.length-1?clamp(d/42,.45,1):1,speed=base*arrival;
+  a.x+=dx/d*speed*dt;a.y+=dy/d*speed*dt;
+  if(running)spawnRunDust(a,ts)
+ }
  for(const p of packets){if(p.done||!p.path[p.i])continue;const t=p.path[p.i],dx=t.x-p.x,dy=t.y-p.y,d=Math.hypot(dx,dy);if(d<3){p.i++;if(p.i>=p.path.length)p.done=true;continue}p.x+=dx/d*150*dt;p.y+=dy/d*150*dt}packets=packets.filter(p=>!p.done);
- for(const s of sparks){s.x+=s.vx*dt;s.y+=s.vy*dt;s.vy+=90*dt;s.life-=dt}sparks=sparks.filter(s=>s.life>0);
+ for(const s of sparks){s.x+=s.vx*dt;s.y+=s.vy*dt;s.vy+=90*dt;s.life-=dt}sparks=sparks.filter(s=>s.life>0);for(const d of dust){d.x+=d.vx*dt;d.y+=d.vy*dt;d.r+=dt*5;d.life-=dt}dust=dust.filter(d=>d.life>0);
  for(const c of traffic){if(c.axis==='x'){c.x+=c.v*c.dir*dt;if(c.x>38*T)c.x=2*T;if(c.x<2*T)c.x=38*T}else{c.y+=c.v*c.dir*dt;if(c.y>23*T)c.y=3*T;if(c.y<3*T)c.y=23*T}}
  if(demo.active&&demo.running&&!demo.paused&&!reduced&&ts-demo.lastAdvance>3200/demo.speed){if(demo.stage<DEMO_STAGES.length-1){demo.stage++;applyDemo();demo.lastAdvance=ts}else demo.running=false;syncDemoControls()}
 }
@@ -269,6 +280,12 @@ function drawFlows(ts){
  ctx.restore()
 }
 function roleStyle(a){return a.style||ROLE_STYLE[a.id]||ROLE_STYLE.synthesis}
+function workerIsMoving(a){return !!(a.path?.length&&a.pathI<a.path.length)}
+function workerIsRunning(a){return a.state==='running'&&workerIsMoving(a)}
+function spawnRunDust(a,ts){
+ if(reduced||ts-(a.lastDust||0)<85)return;a.lastDust=ts;
+ for(let i=0;i<2;i++)dust.push({x:a.x-a.dir*(7+Math.random()*5),y:a.y+16+Math.random()*3,vx:-a.dir*(10+Math.random()*16),vy:-4-Math.random()*8,r:2+Math.random()*2,life:.42})
+}
 function drawWorkerTool(a,x,y,bob,walk){
  const s=roleStyle(a),dir=a.dir||1,handX=x+dir*9,handY=y-3+bob,tool=s.tool;
  if(tool==='tablet'){px(handX+(dir>0?0:-8),handY-2,8,6,'#14212d');px(handX+(dir>0?1:-7),handY-1,6,4,s.accent)}
@@ -295,71 +312,70 @@ function drawWorkerBubble(a,x,y,ts){
  else if(a.state==='complete'){ctx.fillStyle='rgba(5,10,16,.86)';ctx.fillRect(x-16,y-43,32,14);txt('DONE',x,y-36,'#75dfa2',7)}
  else if(['error','blocked'].includes(a.state)){ctx.fillStyle='rgba(70,18,27,.92)';ctx.fillRect(x-18,y-43,36,14);txt('!',x,y-36,'#ffd2d7',10)}
 }
+function drawRunningWorkerSprite(a,ts){
+ const s=roleStyle(a),phase=Math.sin(a.step),kick=Math.cos(a.step),dir=a.dir||1,x=a.x,y=a.y-2+Math.abs(phase)*1.4,stateColor=s.accent;
+ ctx.save();ctx.translate(x,y);ctx.rotate(dir*.07);
+ // stretched moving shadow
+ ctx.fillStyle='rgba(0,0,0,.28)';ctx.beginPath();ctx.ellipse(-dir*4,21,18,5,-dir*.08,0,Math.PI*2);ctx.fill();
+ // speed streaks
+ ctx.globalAlpha=.38;ctx.strokeStyle=s.accent;ctx.lineWidth=2;
+ for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(-dir*(20+i*6),-2+i*6);ctx.lineTo(-dir*(9+i*4),-2+i*6);ctx.stroke()}ctx.globalAlpha=1;
+ // legs: long opposing running stride
+ ctx.strokeStyle=s.pants;ctx.lineWidth=8;ctx.lineCap='round';
+ ctx.beginPath();ctx.moveTo(-4,6);ctx.lineTo(-8-dir*phase*8,13);ctx.lineTo(-13-dir*phase*12,18);ctx.stroke();
+ ctx.beginPath();ctx.moveTo(4,6);ctx.lineTo(8+dir*phase*8,12);ctx.lineTo(12+dir*phase*12,17);ctx.stroke();
+ // boots
+ ctx.strokeStyle='#2a211b';ctx.lineWidth=5;
+ ctx.beginPath();ctx.moveTo(-13-dir*phase*12,18);ctx.lineTo(-18-dir*phase*12,18);ctx.stroke();
+ ctx.beginPath();ctx.moveTo(12+dir*phase*12,17);ctx.lineTo(17+dir*phase*12,17);ctx.stroke();
+ // torso leaned into the run
+ ctx.fillStyle=s.shirt;ctx.beginPath();ctx.roundRect(-12,-10,24,20,6);ctx.fill();
+ ctx.fillStyle=s.vest||'#ff9d33';ctx.beginPath();ctx.roundRect(-10,-9,20,15,4);ctx.fill();
+ px(-2+x-x,-9+y-y,4,15,s.shirt); // local vest opening
+ ctx.fillStyle='#ffe885';ctx.fillRect(-9,-3,18,2);ctx.fillRect(-9,2,18,2);
+ ctx.fillStyle='#4d3828';ctx.fillRect(-11,6,22,4);
+ // arms pump hard opposite the legs
+ ctx.strokeStyle=s.skin;ctx.lineWidth=8;
+ ctx.beginPath();ctx.moveTo(-10,-5);ctx.lineTo(-15+dir*phase*8,-1);ctx.lineTo(-10+dir*phase*13,5);ctx.stroke();
+ ctx.beginPath();ctx.moveTo(10,-5);ctx.lineTo(15-dir*phase*8,-2);ctx.lineTo(10-dir*phase*13,-10);ctx.stroke();
+ ctx.fillStyle='#f2b23d';ctx.beginPath();ctx.arc(-10+dir*phase*13,5,4,0,Math.PI*2);ctx.arc(10-dir*phase*13,-10,4,0,Math.PI*2);ctx.fill();
+ // head and hard hat
+ ctx.fillStyle=s.skin;ctx.beginPath();ctx.roundRect(-10,-27,20,15,6);ctx.fill();
+ ctx.fillStyle=s.hair;ctx.fillRect(-7,-24,14,4);
+ ctx.fillStyle='#18222b';ctx.fillRect(-5,-20,3,3);ctx.fillRect(2,-20,3,3);
+ ctx.fillStyle=s.hat||'#f4c448';ctx.beginPath();ctx.ellipse(0,-29,10,6,0,Math.PI,Math.PI*2);ctx.fill();ctx.fillRect(-9,-29,18,5);ctx.fillRect(-6,-33,12,5);ctx.fillStyle=s.accent;ctx.fillRect(-2,-33,4,7);
+ // role patch + backpack
+ ctx.fillStyle=s.accent;ctx.beginPath();ctx.roundRect(4,-7,6,6,2);ctx.fill();ctx.fillStyle='#4a4036';ctx.fillRect(-dir*14,-5,4,11);
+ ctx.restore();
+ // tool stays readable while running
+ drawWorkerTool(a,x+dir*2,y+1,0,phase*3);
+ // running state beacon
+ ctx.save();ctx.shadowColor=stateColor;ctx.shadowBlur=14;ctx.fillStyle=stateColor;ctx.beginPath();ctx.arc(x,y-40,3+(Math.sin(ts/150)+1),0,Math.PI*2);ctx.fill();ctx.restore()
+}
 function drawWorkerSprite(a,ts){
- const s=roleStyle(a),moving=a.path?.length&&a.pathI<a.path.length,walk=moving?Math.sin(a.step)*2.4:0,idle=!moving?Math.sin(ts/680+a.activitySeed)*.7:0,bob=(a.state==='running'?Math.sin(a.bob)*1.1:idle),x=a.x,y=a.y+bob,sel=selected?.type==='agent'&&selected.id===a.id,stateColor=['error','blocked'].includes(a.state)?'#ff7383':a.state==='complete'?'#75dfa2':a.state==='pending'?'#6d7985':s.accent;
+ const s=roleStyle(a),moving=workerIsMoving(a),running=workerIsRunning(a),walk=moving?Math.sin(a.step)*2.4:0,idle=!moving?Math.sin(ts/680+a.activitySeed)*.7:0,bob=(a.state==='running'?Math.sin(a.bob)*1.1:idle),x=a.x,y=a.y+bob,sel=selected?.type==='agent'&&selected.id===a.id,stateColor=['error','blocked'].includes(a.state)?'#ff7383':a.state==='complete'?'#75dfa2':a.state==='pending'?'#6d7985':s.accent;
  if(sel){ctx.save();ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.shadowColor=stateColor;ctx.shadowBlur=14;ctx.beginPath();ctx.ellipse(x,y+18,21,10,0,0,Math.PI*2);ctx.stroke();ctx.restore()}
- // soft ground shadow
- ctx.fillStyle='rgba(0,0,0,.30)';ctx.beginPath();ctx.ellipse(x,y+20,14,6,0,0,Math.PI*2);ctx.fill();
-
- // chunky legs + boots
- ctx.fillStyle=s.pants;
- ctx.beginPath();ctx.roundRect(x-10,y+4+walk,8,14,3);ctx.fill();
- ctx.beginPath();ctx.roundRect(x+2,y+4-walk,8,14,3);ctx.fill();
- ctx.fillStyle='#2a211b';
- ctx.beginPath();ctx.roundRect(x-11,y+15+walk,10,5,2);ctx.fill();
- ctx.beginPath();ctx.roundRect(x+1,y+15-walk,10,5,2);ctx.fill();
-
- // broad torso / coveralls
- ctx.fillStyle=a.state==='pending'?'#8a7563':s.shirt;
- ctx.beginPath();ctx.roundRect(x-12,y-10,24,20,6);ctx.fill();
- // bright high-visibility vest
- ctx.fillStyle=s.vest||'#ff9d33';
- ctx.beginPath();ctx.roundRect(x-10,y-9,20,15,4);ctx.fill();
- // vest opening and reflective strips
- px(x-2,y-9,4,15,s.shirt);
- px(x-9,y-3,18,2,'#ffe885');
- px(x-9,y+2,18,2,'#ffe885');
- // tool belt
- px(x-11,y+6,22,4,'#4d3828');px(x-2,y+6,5,4,'#d59a3d');
-
- // big rounded arms, slightly swinging
- ctx.fillStyle=s.skin;
- ctx.beginPath();ctx.ellipse(x-14,y-2-walk*.25,5,9,-.15,0,Math.PI*2);ctx.fill();
- ctx.beginPath();ctx.ellipse(x+14,y-2+walk*.25,5,9,.15,0,Math.PI*2);ctx.fill();
- // gloves
- ctx.fillStyle='#f2b23d';
- ctx.beginPath();ctx.arc(x-15,y+5-walk*.25,4,0,Math.PI*2);ctx.fill();
- ctx.beginPath();ctx.arc(x+15,y+5+walk*.25,4,0,Math.PI*2);ctx.fill();
-
- // neck + oversized chibi head
- px(x-4,y-14,8,5,s.skin);
- ctx.fillStyle=s.skin;ctx.beginPath();ctx.roundRect(x-10,y-27,20,15,6);ctx.fill();
- // ears
- ctx.beginPath();ctx.arc(x-10,y-20,3,0,Math.PI*2);ctx.arc(x+10,y-20,3,0,Math.PI*2);ctx.fill();
- // eyebrows / eyes / smile
- px(x-6,y-23,5,2,s.hair);px(x+1,y-23,5,2,s.hair);
- px(x-5,y-20,3,3,'#18222b');px(x+2,y-20,3,3,'#18222b');
- px(x-2,y-16,5,2,'#965b46');
-
- drawWorkerHat(a,x,y,bob);
- drawWorkerTool(a,x,y+2,bob,walk);
-
- // role patch on vest
- ctx.fillStyle=s.accent;ctx.beginPath();ctx.roundRect(x+4,y-7,6,6,2);ctx.fill();
- ctx.fillStyle='#071019';ctx.font='900 5px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText((s.badge||a.glyph).slice(0,2),x+7,y-4);
-
- // backpack / utility pouch
- px(x+(a.dir>0?-14:10),y-5,4,11,'#4a4036');
-
- // worker state beacon
- ctx.save();ctx.shadowColor=stateColor;ctx.shadowBlur=a.state==='running'?14:6;ctx.fillStyle=stateColor;ctx.beginPath();ctx.arc(x,y-38,3+(a.state==='running'?(Math.sin(ts/180)+1):0),0,Math.PI*2);ctx.fill();ctx.restore();
-
+ if(running){drawRunningWorkerSprite(a,ts)}
+ else{
+  ctx.fillStyle='rgba(0,0,0,.30)';ctx.beginPath();ctx.ellipse(x,y+20,14,6,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=s.pants;ctx.beginPath();ctx.roundRect(x-10,y+4+walk,8,14,3);ctx.fill();ctx.beginPath();ctx.roundRect(x+2,y+4-walk,8,14,3);ctx.fill();
+  ctx.fillStyle='#2a211b';ctx.beginPath();ctx.roundRect(x-11,y+15+walk,10,5,2);ctx.fill();ctx.beginPath();ctx.roundRect(x+1,y+15-walk,10,5,2);ctx.fill();
+  ctx.fillStyle=a.state==='pending'?'#8a7563':s.shirt;ctx.beginPath();ctx.roundRect(x-12,y-10,24,20,6);ctx.fill();
+  ctx.fillStyle=s.vest||'#ff9d33';ctx.beginPath();ctx.roundRect(x-10,y-9,20,15,4);ctx.fill();px(x-2,y-9,4,15,s.shirt);px(x-9,y-3,18,2,'#ffe885');px(x-9,y+2,18,2,'#ffe885');px(x-11,y+6,22,4,'#4d3828');px(x-2,y+6,5,4,'#d59a3d');
+  ctx.fillStyle=s.skin;ctx.beginPath();ctx.ellipse(x-14,y-2-walk*.25,5,9,-.15,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(x+14,y-2+walk*.25,5,9,.15,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#f2b23d';ctx.beginPath();ctx.arc(x-15,y+5-walk*.25,4,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(x+15,y+5+walk*.25,4,0,Math.PI*2);ctx.fill();
+  px(x-4,y-14,8,5,s.skin);ctx.fillStyle=s.skin;ctx.beginPath();ctx.roundRect(x-10,y-27,20,15,6);ctx.fill();ctx.beginPath();ctx.arc(x-10,y-20,3,0,Math.PI*2);ctx.arc(x+10,y-20,3,0,Math.PI*2);ctx.fill();
+  px(x-6,y-23,5,2,s.hair);px(x+1,y-23,5,2,s.hair);px(x-5,y-20,3,3,'#18222b');px(x+2,y-20,3,3,'#18222b');px(x-2,y-16,5,2,'#965b46');
+  drawWorkerHat(a,x,y,bob);drawWorkerTool(a,x,y+2,bob,walk);
+  ctx.fillStyle=s.accent;ctx.beginPath();ctx.roundRect(x+4,y-7,6,6,2);ctx.fill();ctx.fillStyle='#071019';ctx.font='900 5px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText((s.badge||a.glyph).slice(0,2),x+7,y-4);px(x+(a.dir>0?-14:10),y-5,4,11,'#4a4036');
+  ctx.save();ctx.shadowColor=stateColor;ctx.shadowBlur=a.state==='running'?14:6;ctx.fillStyle=stateColor;ctx.beginPath();ctx.arc(x,y-38,3+(a.state==='running'?(Math.sin(ts/180)+1):0),0,Math.PI*2);ctx.fill();ctx.restore()
+ }
  const isHover=hovered?.type==='agent'&&hovered.id===a.id;
  if(display.labels&&(sel||isHover)){const labelW=Math.min(110,Math.max(58,a.name.length*6+16));ctx.fillStyle='rgba(5,10,16,.92)';ctx.fillRect(x-labelW/2,y+25,labelW,17);txt(a.name,x,y+33,'#eef6ff',8)}
  if(sel||(a.state==='running'&&view.zoom>1.55))drawWorkerBubble(a,x,y-1,ts)
 }
 function drawAgents(ts){
- for(const a of agents.values())drawWorkerSprite(a,ts);
+ for(const d of dust){ctx.globalAlpha=clamp(d.life/.42,0,1)*.5;ctx.fillStyle=display.night?'#70808c':'#c5b99a';ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1;for(const a of agents.values())drawWorkerSprite(a,ts);
  for(const p of packets){ctx.save();ctx.shadowColor=p.color;ctx.shadowBlur=12;px(p.x-3,p.y-3,6,6,p.color);px(p.x-1,p.y-1,2,2,'#fff');ctx.restore()}
  for(const a of artifacts){px(a.x-8,a.y-7,16,11,'#eef5ff');px(a.x-6,a.y-5,12,2,a.color);px(a.x-6,a.y-1,8,1,'#8093a5');px(a.x+5,a.y-2,4,6,'#c7d5e3')}
  for(const s of sparks){ctx.globalAlpha=clamp(s.life,0,1);px(s.x,s.y,s.size,s.size,s.color)}ctx.globalAlpha=1
