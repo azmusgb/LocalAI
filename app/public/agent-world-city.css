@@ -44,7 +44,11 @@ body.agent-world-city-ready .awg6{display:none!important}
 .awc__replayPanel strong{font-size:8px;color:#b9c9d9;font-weight:760}
 .awc__replayPanel input[type=range]{width:100%;height:18px;accent-color:#71b7ff;cursor:pointer}
 .awc__replayPanel input:disabled{opacity:.38;cursor:not-allowed}
-.awc__replayActions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.awc__replayPanel>small{font-size:7px;line-height:1.35;color:#708398;min-height:20px}
+.awc__replayMarkers{display:flex!important;align-items:center!important;justify-content:flex-start!important;gap:3px!important;min-height:12px;overflow:hidden}
+.awc__replayMarkers button{width:8px;height:8px;min-width:8px;padding:0;border:0;border-radius:2px;background:#647589;opacity:.7}
+.awc__replayMarkers button.done{background:#75dfa2}.awc__replayMarkers button.bad{background:#ff7383}.awc__replayMarkers button.active{background:#59e2ed}.awc__replayMarkers button.wait{background:#65778a}.awc__replayMarkers button.active{outline:1px solid #fff;outline-offset:1px;opacity:1}
+.awc__replayActions{display:grid;grid-template-columns:32px 1fr 32px 38px 1fr;gap:5px}
 .awc__replayActions button{min-height:32px;border:1px solid var(--line);background:#111d29;color:#c5d4e2;border-radius:8px;font-size:8px;font-weight:800}
 .awc__replayActions button:hover{background:#172535;color:#fff;border-color:var(--line2)}
 .awc__eventFeed{max-width:260px}

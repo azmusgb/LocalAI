@@ -127,14 +127,26 @@ await check('Living Worksite replay controls are interactive',async()=>{
   await page.locator('#awcReplayLive').click();
   await page.locator('#awcLiveBtn').click();
 });
-await check('Agent World v10 exposes durable observability semantics',async()=>{
+await check('Replay supports event stepping, speed, and historical mission timelines',async()=>{
+  await page.locator('#awcReplayPrev').waitFor({state:'visible'});
+  await page.locator('#awcReplayNext').waitFor({state:'visible'});
+  await page.locator('#awcReplaySpeed').click();
+  assert.equal(await page.locator('#awcReplaySpeed').innerText(),'2×');
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:{id:'history-test',goal:'Historical test',status:'complete',workers:[{id:'router',name:'Mission Router',state:'complete',dependsOn:[]},{id:'ux_analyst',name:'UX Analyst',state:'complete',dependsOn:['router']}],timeline:[{at:new Date(Date.now()-1000).toISOString(),type:'mission-start',detail:'Started',status:'running',workerId:'router',workers:[{id:'router',name:'Mission Router',state:'complete',dependsOn:[]},{id:'ux_analyst',name:'UX Analyst',state:'pending',dependsOn:['router']}]},{at:new Date().toISOString(),type:'mission-complete',detail:'Finished',status:'complete',workerId:'ux_analyst',workers:[{id:'router',name:'Mission Router',state:'complete',dependsOn:[]},{id:'ux_analyst',name:'UX Analyst',state:'complete',dependsOn:['router']}]}]}}})));
+  await page.waitForTimeout(100);
+  assert.equal(await page.locator('#awcReplayMarkers button').count(),2);
+  await page.locator('#awcReplayNext').click();
+  assert.match(await page.locator('#awcReplayLabel').innerText(),/Replay 2 \/ 2/i);
+  await page.locator('#awcReplayLive').click();
+});
+await check('Operational Agent World exposes durable observability semantics',async()=>{
   await page.locator('#awcStatArtifacts').waitFor({state:'visible'});
   assert.match(await page.locator('.awc__legend').innerText(),/Active dependency/i);
   await page.locator('#awcDemoPlay').click();
   await page.locator('#awcDemoStep').click();
   await page.locator('#awcDemoStep').click();
-  const stored=await page.evaluate(()=>JSON.parse(localStorage.getItem('localai.agentworld.replay.v1')||'[]').length);
-  assert.ok(stored>=2,'replay checkpoints should persist locally');
+  const stored=await page.evaluate(()=>{const v=JSON.parse(localStorage.getItem('localai.agentworld.replay.v2')||'null');return v?.frames?.length||0});
+  assert.ok(stored>=2,'replay events should persist locally');
   await page.locator('#awcLiveBtn').click();
 });
 await check('Agent World running-worker controls remain interactive',async()=>{
