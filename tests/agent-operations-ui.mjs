@@ -1,0 +1,116 @@
+import { chromium } from 'playwright';
+import assert from 'node:assert/strict';
+
+const base=process.env.LOCALAI_URL||'http://127.0.0.1:3080';
+const browser=await chromium.launch({headless:true});
+const failures=[];
+let dialogs=0;
+
+async function check(name,fn){
+  try{await fn();console.log('PASS',name)}
+  catch(e){failures.push(name+': '+e.message);console.error('FAIL',name,e.message)}
+}
+
+const page=await browser.newPage({viewport:{width:1440,height:1000}});
+page.on('dialog',async d=>{dialogs++;await d.dismiss()});
+await page.goto(base,{waitUntil:'domcontentloaded'});
+await page.locator('.navbtn[data-view="agents"]').click();
+await page.waitForSelector('#agents.active');
+
+await check('mission-first composer',async()=>{
+  await page.locator('#agentGoal').waitFor({state:'visible'});
+  await page.locator('#missionRunBtn').waitFor({state:'visible'});
+  assert.equal(await page.locator('#missionRunBtn').innerText(),'Start Mission');
+});
+await check('Agent World is mounted',async()=>{
+  await page.locator('#agentWorldCityMount .awc').waitFor({state:'visible'});
+  const box=await page.locator('#agentWorldCityMount .awc').boundingBox();
+  assert.ok(box&&box.width>700,'Agent World should be a dominant desktop surface');
+});
+await check('advanced routing collapsed by default',async()=>{
+  assert.equal(await page.locator('#agentAdvancedPanel').isVisible(),false);
+  await page.locator('#agentAdvancedToggle').click();
+  assert.equal(await page.locator('#agentAdvancedPanel').isVisible(),true);
+});
+await check('timeline + inspector replace duplicate execution views',async()=>{
+  await page.locator('#agentTimeline').waitFor({state:'visible'});
+  await page.locator('#agentInspector').waitFor({state:'visible'});
+  assert.equal(await page.locator('#missionExecution').isVisible(),false);
+});
+await check('results tabs are interactive',async()=>{
+  await page.locator('[data-agent-result-tab="evidence"]').click();
+  assert.ok((await page.locator('[data-agent-result-tab="evidence"]').getAttribute('class')||'').includes('active'));
+  await page.locator('[data-agent-result-tab="routing"]').click();
+  assert.ok((await page.locator('[data-agent-result-tab="routing"]').getAttribute('class')||'').includes('active'));
+});
+await check('mission history exists',async()=>{await page.locator('#agentMissionHistory').waitFor({state:'visible'})});
+await check('inline error replaces alert workflow',async()=>{
+  await page.locator('#agentGoal').fill('');
+  await page.locator('#missionRunBtn').click();
+  await page.locator('#agentInlineNotice').waitFor({state:'visible'});
+  assert.match(await page.locator('#agentInlineNotice').innerText(),/Enter a mission objective first/i);
+  assert.equal(dialogs,0,'No browser alert dialogs should be used');
+});
+await check('interactive demo controls',async()=>{
+  await page.locator('#awcDemoPlay').click();
+  assert.equal(await page.locator('#awcSource').innerText(),'DEMO');
+  await page.locator('#awcDemoStep').click();
+  await page.locator('#awcDemoSpeed').click();
+  assert.equal(await page.locator('#awcDemoSpeed').innerText(),'2×');
+  await page.locator('#awcDemoScenario').selectOption('failure');
+  await page.locator('#awcDemoStep').click();
+  await page.locator('#awcDemoStep').click();
+  assert.match(await page.locator('#awcStatus').innerText(),/Needs attention|Running/i);
+  await page.locator('#awcLiveBtn').click();
+});
+await check('desktop zoom controls',async()=>{
+  await page.locator('#awcZoomIn').click();
+  assert.notEqual(await page.locator('#awcZoomLabel').innerText(),'100%');
+  await page.locator('#awcFit').click();
+  assert.equal(await page.locator('#awcZoomLabel').innerText(),'100%');
+});
+await page.close();
+
+const mobile=await browser.newPage({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
+mobile.on('dialog',async d=>{dialogs++;await d.dismiss()});
+await mobile.goto(base,{waitUntil:'domcontentloaded'});
+const agentsNav=mobile.locator('.navbtn[data-view="agents"]');
+if(await agentsNav.isVisible())await agentsNav.click();else{
+  await mobile.evaluate(()=>document.querySelector('.navbtn[data-view="agents"]')?.click());
+}
+await mobile.waitForSelector('#agents.active');
+await mobile.waitForSelector('#agentWorldCityMount .awc');
+
+await check('mobile layout has no page-level horizontal overflow',async()=>{
+  const dims=await mobile.evaluate(()=>({sw:document.documentElement.scrollWidth,cw:document.documentElement.clientWidth}));
+  assert.ok(dims.sw<=dims.cw+2,`scrollWidth ${dims.sw} > clientWidth ${dims.cw}`);
+});
+await check('mobile touch targets and controls are available',async()=>{
+  for(const id of ['#awcZoomIn','#awcZoomOut','#awcFit','#awcCenter','#awcDemoPlay','#awcDemoStep']){
+    await mobile.locator(id).waitFor({state:'visible'});
+  }
+});
+await check('mobile pinch zoom changes world scale',async()=>{
+  const c=mobile.locator('#awcCanvas');
+  const b=await c.boundingBox();assert.ok(b);
+  const cx=b.x+b.width/2,cy=b.y+b.height/2;
+  await c.dispatchEvent('pointerdown',{pointerId:1,pointerType:'touch',clientX:cx-30,clientY:cy,bubbles:true});
+  await c.dispatchEvent('pointerdown',{pointerId:2,pointerType:'touch',clientX:cx+30,clientY:cy,bubbles:true});
+  await c.dispatchEvent('pointermove',{pointerId:2,pointerType:'touch',clientX:cx+100,clientY:cy,bubbles:true});
+  await c.dispatchEvent('pointerup',{pointerId:2,pointerType:'touch',clientX:cx+100,clientY:cy,bubbles:true});
+  await c.dispatchEvent('pointerup',{pointerId:1,pointerType:'touch',clientX:cx-30,clientY:cy,bubbles:true});
+  assert.notEqual(await mobile.locator('#awcZoomLabel').innerText(),'100%');
+});
+await check('mobile demo remains user-controlled',async()=>{
+  await mobile.locator('#awcDemoPlay').click();
+  await mobile.locator('#awcDemoStep').click();
+  assert.equal(await mobile.locator('#awcSource').innerText(),'DEMO');
+});
+await mobile.close();
+await browser.close();
+
+if(failures.length){
+  console.error('\nAcceptance failures:\n'+failures.map(x=>' - '+x).join('\n'));
+  process.exit(1);
+}
+console.log('\nAgent Operations v2 browser acceptance: PASS');
