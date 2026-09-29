@@ -12,121 +12,80 @@ const DISTRICTS={
 };
 const ROLE_ZONE={router:'command',mission_router:'command',ux_analyst:'ux',documentation:'docs',synthesis:'command',coordinator:'command',engineer:'engineering',validator:'validation',reviewer:'command',deployer:'engineering',operator:'validation'};
 const ROLE_COLOR={router:'#6aaeff',mission_router:'#6aaeff',ux_analyst:'#54e0f0',documentation:'#c18cff',synthesis:'#9caeff',coordinator:'#9caeff',engineer:'#ffb866',validator:'#79d9a0',reviewer:'#c18cff',deployer:'#ffb866',operator:'#79d9a0'};
-const $=(s,r=document)=>r.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-let root,canvas,ctx,current=null,sourceType='idle',selected=null,raf=0,last=0,events=[],agents=new Map(),roads=new Set();
-const key=(x,y)=>x+','+y, clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
-function tileCenter(z){const d=DISTRICTS[z]||DISTRICTS.command;return {x:(d.x+d.w/2)*T,y:(d.y+d.h+1)*T}}
+const $=(s,r=document)=>r.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[m]));
+const key=(x,y)=>x+','+y,clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+let root,canvas,ctx,current=null,sourceType='idle',liveSnapshot=null,selected=null,raf=0,last=0,events=[],agents=new Map(),roads=new Set(),artifacts=[],packets=[],cars=[];
+let view={zoom:1,panX:0,panY:0},drag=null,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+let demo={active:false,running:false,paused:false,stage:0,speed:1,lastAdvance:0,scenario:'success'};
+const DEMO_STAGES=[
+ {label:'Route mission',states:{router:'running',ux_analyst:'pending',documentation:'pending',synthesis:'pending'}},
+ {label:'Dispatch UX',states:{router:'complete',ux_analyst:'running',documentation:'pending',synthesis:'pending'}},
+ {label:'UX complete',states:{router:'complete',ux_analyst:'complete',documentation:'running',synthesis:'pending'}},
+ {label:'Document findings',states:{router:'complete',ux_analyst:'complete',documentation:'complete',synthesis:'running'}},
+ {label:'Mission complete',states:{router:'complete',ux_analyst:'complete',documentation:'complete',synthesis:'complete'}}
+];
+function tileCenter(z){const d=DISTRICTS[z]||DISTRICTS.command;return{x:(d.x+d.w/2)*T,y:(d.y+d.h+1)*T}}
 function road(x,y){roads.add(key(x,y))}
-function buildRoads(){
- roads.clear();
- for(let x=2;x<COLS-2;x++){road(x,14);road(x,15)}
- for(let y=2;y<ROWS-2;y++){road(13,y);road(14,y);road(25,y);road(26,y)}
- for(let x=3;x<37;x++){road(x,9);road(x,23)}
- for(let y=4;y<24;y++){road(4,y);road(35,y)}
-}
-function blocked(x,y){
- if(x<1||y<1||x>=COLS-1||y>=ROWS-1)return true;
- for(const d of Object.values(DISTRICTS))if(x>=d.x-1&&x<d.x+d.w+1&&y>=d.y-1&&y<d.y+d.h+1)return true;
- return !roads.has(key(x,y));
-}
-function nearestRoad(pt){let best=null,bd=1e9;for(const k of roads){const [x,y]=k.split(',').map(Number),px=(x+.5)*T,py=(y+.5)*T,d=(px-pt.x)**2+(py-pt.y)**2;if(d<bd){bd=d;best={x,y}}}return best||{x:14,y:14}}
-function astar(a,b){
- const start=nearestRoad(a),goal=nearestRoad(b),open=[start],came=new Map(),g=new Map([[key(start.x,start.y),0]]),f=new Map([[key(start.x,start.y),Math.abs(start.x-goal.x)+Math.abs(start.y-goal.y)]]);
- while(open.length){open.sort((u,v)=>(f.get(key(u.x,u.y))??1e9)-(f.get(key(v.x,v.y))??1e9));const cur=open.shift();if(cur.x===goal.x&&cur.y===goal.y){const path=[];let k=key(cur.x,cur.y),p=cur;while(p){path.unshift({x:(p.x+.5)*T,y:(p.y+.5)*T});const prev=came.get(k);p=prev;k=prev?key(prev.x,prev.y):''}return path}
- for(const n of [{x:cur.x+1,y:cur.y},{x:cur.x-1,y:cur.y},{x:cur.x,y:cur.y+1},{x:cur.x,y:cur.y-1}]){if(blocked(n.x,n.y)&&!(n.x===goal.x&&n.y===goal.y))continue;const nk=key(n.x,n.y),tent=(g.get(key(cur.x,cur.y))||0)+1;if(tent<(g.get(nk)??1e9)){came.set(nk,cur);g.set(nk,tent);f.set(nk,tent+Math.abs(n.x-goal.x)+Math.abs(n.y-goal.y));if(!open.some(o=>o.x===n.x&&o.y===n.y))open.push(n)}}}
- return [];
-}
-function zoneForWorker(w){
- if(w.state==='error'||w.state==='blocked')return 'repair';
- return ROLE_ZONE[w.id]||ROLE_ZONE[w.agentId]||(/doc/i.test(w.name||'')?'docs':/ux/i.test(w.name||'')?'ux':/model/i.test(w.name||'')?'models':'command')
-}
-function ensureAgent(w){
- const id=w.id||w.agentId||w.name;if(!id)return;
- let a=agents.get(id);const targetZone=zoneForWorker(w),target=tileCenter(targetZone);
- if(!a){const home=tileCenter('command');a={id,name:w.name||id,glyph:(w.name||id).trim()[0]?.toUpperCase()||'A',x:home.x,y:home.y,tx:home.x,ty:home.y,path:[],pathI:0,state:w.state||'pending',zone:targetZone,color:ROLE_COLOR[id]||'#8fb5e8',model:w.model||''};agents.set(id,a)}
- a.name=w.name||a.name;a.state=w.state||a.state;a.model=w.model||a.model;a.zone=targetZone;a.color=ROLE_COLOR[id]||a.color;
- if(Math.hypot(a.tx-target.x,a.ty-target.y)>2){a.tx=target.x;a.ty=target.y;a.path=astar({x:a.x,y:a.y},target);a.pathI=0}
-}
-function mount(){
- const host=$('#agentWorldCityMount');if(!host)return;
- root=document.createElement('section');root.className='awc';root.innerHTML=`
- <div class="awc__top"><div class="awc__brand"><div class="awc__mark">AW</div><div><div class="awc__title">Agent World</div><div class="awc__sub">Live multi-agent city · mission-driven simulation</div></div></div><div class="awc__badges"><span class="awc__badge live"><i class="awc__led"></i><span id="awcLiveText">LIVE</span></span><span class="awc__badge" id="awcSource">IDLE</span></div></div>
- <div class="awc__body"><div class="awc__mapWrap"><div class="awc__mapTop"><div class="awc__objective"><small>Current objective</small><strong id="awcObjective">Waiting for live mission activity</strong></div><div class="awc__mode" id="awcMode">CITY OPS</div></div><canvas width="${W}" height="${H}" id="awcCanvas" aria-label="Live Agent World city"></canvas><div class="awc__hud"><span class="awc__chip" id="awcStatus">status: idle</span><span class="awc__chip" id="awcZone">district: —</span></div></div>
- <aside class="awc__side"><div class="awc__mission"><div class="awc__eyebrow">Mission control</div><h3 id="awcMissionTitle">No active mission</h3><p id="awcMissionText">Agent World will automatically follow the newest live mission. Engineering activity is used as a fallback when no mission is active.</p><div class="awc__progress"><span id="awcProgress"></span></div></div><div class="awc__tabs"><button class="awc__tab active" data-awctab="agents">Agents</button><button class="awc__tab" data-awctab="events">Events</button><button class="awc__tab" data-awctab="inspect">Inspect</button></div><div class="awc__panel active" data-awcpanel="agents" id="awcAgents"></div><div class="awc__panel" data-awcpanel="events" id="awcEvents"></div><div class="awc__panel" data-awcpanel="inspect" id="awcInspect"></div><div class="awc__legend"><span><i style="background:#54e0f0"></i>running</span><span><i style="background:#6ce39a"></i>complete</span><span><i style="background:#ff7180"></i>attention</span></div></aside></div>`;
- host.appendChild(root);canvas=$('#awcCanvas',root);ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=false;
- root.addEventListener('click',e=>{const t=e.target.closest('[data-awctab]');if(t){$('.awc__tab.active',root)?.classList.remove('active');t.classList.add('active');root.querySelectorAll('[data-awcpanel]').forEach(p=>p.classList.toggle('active',p.dataset.awcpanel===t.dataset.awctab))}});
- canvas.addEventListener('click',e=>{const r=canvas.getBoundingClientRect(),sx=canvas.width/r.width,sy=canvas.height/r.height,x=e.offsetX*sx,y=e.offsetY*sy;selected=null;for(const [id,d] of Object.entries(DISTRICTS)){if(x>=d.x*T&&x<=(d.x+d.w)*T&&y>=d.y*T&&y<=(d.y+d.h)*T){selected={type:'district',id};break}}for(const a of agents.values()){if(Math.hypot(x-a.x,y-a.y)<16){selected={type:'agent',id:a.id};break}}renderInspect()});
- document.body.classList.add('agent-world-city-ready');buildRoads();start();bootstrap();
-}
-function addEvent(text){events.unshift({text,at:new Date()});events=events.slice(0,40);renderEvents()}
-function normalizeMission(m){
- const workers=(m.workers||[]).map(w=>({...w,id:w.id||w.agentId}));return {type:'mission',id:m.id,status:m.status,goal:m.goal||'Mission',updatedAt:m.updatedAt||m.createdAt,workers,error:m.error||'',raw:m}
-}
-function applyMission(m){
- if(!m)return;const prev=current,next=normalizeMission(m);if(!prev||prev.id!==next.id)agents.clear();current=next;sourceType='mission';current.workers.forEach(ensureAgent);
- if(!prev||prev.id!==current.id)addEvent('Mission '+current.id+' entered Agent World');else{
-  current.workers.forEach(w=>{const old=prev.workers?.find(x=>x.id===w.id);if(old&&old.state!==w.state)addEvent((w.name||w.id)+' → '+w.state)})
- }
- renderUI()
-}
-function engWorkers(run){const s=run.status||'idle';return[
- {id:'engineer',name:'Engineer',state:s==='running'?'running':s==='needs_attention'?'error':s==='applied'?'complete':'pending'},
- {id:'validator',name:'Validator',state:s==='running'?'running':s==='awaiting_approval'?'complete':'pending'},
- {id:'reviewer',name:'Reviewer',state:s==='awaiting_approval'?'running':['approved','apply_requested','applied'].includes(s)?'complete':'pending'},
- {id:'deployer',name:'Deployer',state:['approved','apply_requested'].includes(s)?'running':s==='applied'?'complete':'pending'},
- {id:'operator',name:'Operator',state:s==='applied'?'complete':'pending'}
-]}
-function applyEngineering(run){if(!run)return;current={type:'engineering',id:run.id,status:run.status,goal:run.request||'Engineering run',updatedAt:run.updatedAt,workers:engWorkers(run),error:run.error||'',raw:run};sourceType='engineering';current.workers.forEach(ensureAgent);renderUI()}
-function renderUI(){
- if(!root||!current)return;
- $('#awcSource',root).textContent=sourceType.toUpperCase();$('#awcObjective',root).textContent=current.goal;$('#awcMissionTitle',root).textContent=(current.type==='mission'?'Mission ':'Engineering ')+current.id;$('#awcMissionText',root).textContent=current.error||('Live '+current.type+' · '+current.status);
- $('#awcStatus',root).textContent='status: '+current.status;const done=current.workers.filter(w=>w.state==='complete').length,total=current.workers.length||1;$('#awcProgress',root).style.width=Math.round(done/total*100)+'%';
- const holder=$('#awcAgents',root);holder.innerHTML=current.workers.map(w=>`<button class="awc__worker ${esc(w.state)}" data-awcworker="${esc(w.id)}"><span class="awc__avatar">${esc((w.name||w.id)[0]||'A')}</span><span><strong>${esc(w.name||w.id)}</strong><small>${esc(w.model||zoneForWorker(w))}</small></span><span class="awc__state">${esc(w.state)}</span></button>`).join('')||'<div class="awc__empty">No workers.</div>';
- holder.querySelectorAll('[data-awcworker]').forEach(b=>b.onclick=()=>{selected={type:'agent',id:b.dataset.awcworker};renderInspect();root.querySelector('[data-awctab="inspect"]').click()});renderInspect()
-}
-function renderEvents(){if(!root)return;const h=$('#awcEvents',root);h.innerHTML=events.length?events.map(e=>`<div class="awc__event">${esc(e.text)}<time>${e.at.toLocaleTimeString()}</time></div>`).join(''):'<div class="awc__empty">No live events yet.</div>'}
-function renderInspect(){
- if(!root)return;const h=$('#awcInspect',root);if(!selected){h.innerHTML='<div class="awc__empty">Select a building or agent on the city map.</div>';$('#awcZone',root).textContent='district: —';return}
- if(selected.type==='district'){const d=DISTRICTS[selected.id];$('#awcZone',root).textContent='district: '+d.name;h.innerHTML=`<div class="awc__inspect"><h4>${esc(d.name)}</h4><dl><dt>District</dt><dd>${esc(selected.id)}</dd><dt>Workers</dt><dd>${[...agents.values()].filter(a=>a.zone===selected.id).map(a=>esc(a.name)).join(', ')||'None'}</dd></dl></div>`;return}
- const a=agents.get(selected.id);if(!a){h.innerHTML='<div class="awc__empty">Agent unavailable.</div>';return}$('#awcZone',root).textContent='district: '+DISTRICTS[a.zone]?.name;h.innerHTML=`<div class="awc__inspect"><h4>${esc(a.name)}</h4><dl><dt>State</dt><dd>${esc(a.state)}</dd><dt>District</dt><dd>${esc(DISTRICTS[a.zone]?.name||a.zone)}</dd><dt>Model</dt><dd>${esc(a.model||'—')}</dd><dt>Mission</dt><dd>${esc(current?.id||'—')}</dd></dl></div>`
-}
-function update(dt){
- for(const a of agents.values()){if(!a.path?.length||a.pathI>=a.path.length)continue;const p=a.path[a.pathI],dx=p.x-a.x,dy=p.y-a.y,d=Math.hypot(dx,dy),speed=(a.state==='running'?80:58);if(d<2){a.pathI++;continue}a.x+=dx/d*speed*dt;a.y+=dy/d*speed*dt}
-}
+function buildRoads(){roads.clear();for(let x=2;x<COLS-2;x++){road(x,14);road(x,15)}for(let y=2;y<ROWS-2;y++){road(13,y);road(14,y);road(25,y);road(26,y)}for(let x=3;x<37;x++){road(x,9);road(x,23)}for(let y=4;y<24;y++){road(4,y);road(35,y)}}
+function blocked(x,y){if(x<1||y<1||x>=COLS-1||y>=ROWS-1)return true;for(const d of Object.values(DISTRICTS))if(x>=d.x-1&&x<d.x+d.w+1&&y>=d.y-1&&y<d.y+d.h+1)return true;return!roads.has(key(x,y))}
+function nearestRoad(pt){let best=null,bd=1e9;for(const k of roads){const[x,y]=k.split(',').map(Number),px=(x+.5)*T,py=(y+.5)*T,d=(px-pt.x)**2+(py-pt.y)**2;if(d<bd){bd=d;best={x,y}}}return best||{x:14,y:14}}
+function astar(a,b){const start=nearestRoad(a),goal=nearestRoad(b),open=[start],came=new Map(),g=new Map([[key(start.x,start.y),0]]),f=new Map([[key(start.x,start.y),Math.abs(start.x-goal.x)+Math.abs(start.y-goal.y)]]);while(open.length){open.sort((u,v)=>(f.get(key(u.x,u.y))??1e9)-(f.get(key(v.x,v.y))??1e9));const cur=open.shift();if(cur.x===goal.x&&cur.y===goal.y){const path=[];let k=key(cur.x,cur.y),p=cur;while(p){path.unshift({x:(p.x+.5)*T,y:(p.y+.5)*T});const prev=came.get(k);p=prev;k=prev?key(prev.x,prev.y):''}return path}for(const n of[{x:cur.x+1,y:cur.y},{x:cur.x-1,y:cur.y},{x:cur.x,y:cur.y+1},{x:cur.x,y:cur.y-1}]){if(blocked(n.x,n.y)&&!(n.x===goal.x&&n.y===goal.y))continue;const nk=key(n.x,n.y),tent=(g.get(key(cur.x,cur.y))||0)+1;if(tent<(g.get(nk)??1e9)){came.set(nk,cur);g.set(nk,tent);f.set(nk,tent+Math.abs(n.x-goal.x)+Math.abs(n.y-goal.y));if(!open.some(o=>o.x===n.x&&o.y===n.y))open.push(n)}}}return[]}
+function zoneForWorker(w){if(w.state==='error'||w.state==='blocked')return'repair';return ROLE_ZONE[w.id]||ROLE_ZONE[w.agentId]||(/doc/i.test(w.name||'')?'docs':/ux/i.test(w.name||'')?'ux':/model/i.test(w.name||'')?'models':'command')}
+function ensureAgent(w){const id=w.id||w.agentId||w.name;if(!id)return;let a=agents.get(id),zone=zoneForWorker(w),target=tileCenter(zone);if(!a){const home=tileCenter('command');a={id,name:w.name||id,glyph:(w.name||id).trim()[0]?.toUpperCase()||'A',x:home.x,y:home.y,tx:home.x,ty:home.y,path:[],pathI:0,state:w.state||'pending',zone,color:ROLE_COLOR[id]||'#8fb5e8',model:w.model||'',prevState:''};agents.set(id,a)}const old=a.state;a.name=w.name||a.name;a.state=w.state||a.state;a.model=w.model||a.model;a.zone=zone;a.color=ROLE_COLOR[id]||a.color;if(Math.hypot(a.tx-target.x,a.ty-target.y)>2){a.tx=target.x;a.ty=target.y;a.path=astar({x:a.x,y:a.y},target);a.pathI=0}if(old!==a.state){if(a.state==='complete')createArtifact(a);if(a.state==='running')createPacket('models',zone,a.color);a.prevState=old}}
+function createArtifact(a){if(artifacts.some(x=>x.workerId===a.id))return;const p=tileCenter(a.zone);artifacts.push({workerId:a.id,x:p.x+18,y:p.y-8,life:1,color:a.color})}
+function createPacket(from,to,color){const a=tileCenter(from),b=tileCenter(to),path=astar(a,b);if(path.length)packets.push({path,i:0,x:path[0].x,y:path[0].y,color,done:false})}
+function normalizeMission(m){const workers=(m.workers||[]).map(w=>({...w,id:w.id||w.agentId}));return{type:'mission',id:m.id,status:m.status,goal:m.goal||'Mission',updatedAt:m.updatedAt||m.createdAt,workers,error:m.error||'',raw:m}}
+function applyMission(m){if(!m||demo.active)return;const prev=current,next=normalizeMission(m);if(!prev||prev.id!==next.id){agents.clear();artifacts=[];packets=[]}current=next;liveSnapshot=next;sourceType='mission';current.workers.forEach(ensureAgent);if(!prev||prev.id!==current.id)addEvent('Mission entered Agent World');else current.workers.forEach(w=>{const old=prev.workers?.find(x=>x.id===w.id);if(old&&old.state!==w.state)addEvent((w.name||w.id)+' → '+w.state)});syncHud()}
+function engWorkers(run){const s=run.status||'idle';return[{id:'engineer',name:'Engineer',state:s==='running'?'running':s==='needs_attention'?'error':s==='applied'?'complete':'pending'},{id:'validator',name:'Validator',state:s==='running'?'running':s==='awaiting_approval'?'complete':'pending'},{id:'reviewer',name:'Reviewer',state:s==='awaiting_approval'?'running':['approved','apply_requested','applied'].includes(s)?'complete':'pending'},{id:'deployer',name:'Deployer',state:['approved','apply_requested'].includes(s)?'running':s==='applied'?'complete':'pending'},{id:'operator',name:'Operator',state:s==='applied'?'complete':'pending'}]}
+function applyEngineering(run){if(!run||demo.active||(sourceType==='mission'&&current?.status==='running'))return;current={type:'engineering',id:run.id,status:run.status,goal:run.request||'Engineering run',updatedAt:run.updatedAt,workers:engWorkers(run),error:run.error||'',raw:run};sourceType='engineering';current.workers.forEach(ensureAgent);syncHud()}
+function demoMission(){const states=DEMO_STAGES[demo.stage].states,workers=[{id:'router',name:'Mission Router',model:'deterministic dispatcher'},{id:'ux_analyst',name:'UX Analyst',model:'qwen3:4b-instruct-32k'},{id:'documentation',name:'Documentation Agent',model:'qwen3:4b-instruct-32k'},{id:'synthesis',name:'Coordinator',model:'qwen3:4b-instruct-32k'}].map(w=>({...w,state:states[w.id]||'pending'}));if(demo.scenario==='failure'&&demo.stage>=3){workers.find(w=>w.id==='documentation').state='error';workers.find(w=>w.id==='synthesis').state='blocked'}return{type:'mission',id:'demo-city-mission',status:demo.scenario==='failure'&&demo.stage>=3?'needs_attention':demo.stage===4?'complete':'running',goal:demo.scenario==='failure'?'Demo: recover from a Documentation failure':'Demo: audit and improve the Local AI mobile experience',workers,error:demo.scenario==='failure'&&demo.stage>=3?'Documentation Agent needs attention':''}}
+function applyDemo(){const prev=current,next=demoMission();if(!demo.active||!prev||prev.id!==next.id){agents.clear();artifacts=[];packets=[]}current=next;sourceType='demo';current.workers.forEach(ensureAgent);syncHud();addEvent('Demo stage: '+DEMO_STAGES[demo.stage].label)}
+function startDemo(){demo.active=true;demo.running=true;demo.paused=false;demo.stage=0;demo.lastAdvance=performance.now();applyDemo();fitWorld();syncDemoControls()}
+function stepDemo(){if(!demo.active)startDemo();else{demo.stage=Math.min(DEMO_STAGES.length-1,demo.stage+1);demo.lastAdvance=performance.now();applyDemo();if(demo.stage===DEMO_STAGES.length-1)demo.running=false}syncDemoControls()}
+function resetDemo(){demo.stage=0;demo.running=false;demo.paused=false;applyDemo();syncDemoControls()}
+function returnLive(){demo.active=false;demo.running=false;demo.paused=false;if(liveSnapshot){current=liveSnapshot;sourceType='mission';agents.clear();artifacts=[];packets=[];current.workers.forEach(ensureAgent)}else{current=null;sourceType='idle'}syncHud();syncDemoControls();fitWorld()}
+function cycleSpeed(){demo.speed=demo.speed===1?2:demo.speed===2?4:1;syncDemoControls()}
+function syncDemoControls(){if(!root)return;$('#awcDemoPlay',root).textContent=demo.active&&demo.running&&!demo.paused?'Pause demo':'Play demo';$('#awcDemoSpeed',root).textContent=demo.speed+'×';$('#awcLiveBtn',root).hidden=!demo.active;$('#awcDemoScenario',root).value=demo.scenario}
+function toggleDemoPlay(){if(!demo.active){startDemo();return}demo.running=true;demo.paused=!demo.paused;demo.lastAdvance=performance.now();syncDemoControls()}
+function addEvent(text){events.unshift({text,at:new Date()});events=events.slice(0,50)}
+function syncHud(){if(!root)return;$('#awcSource',root).textContent=sourceType.toUpperCase();$('#awcObjective',root).textContent=current?.goal||'Waiting for live mission activity';$('#awcStatus',root).textContent=current?humanState(current.status):'Idle';const done=current?.workers?.filter(w=>w.state==='complete').length||0,total=current?.workers?.length||0;$('#awcProgress',root).style.width=(total?Math.round(done/total*100):0)+'%';$('#awcProgressText',root).textContent=total?done+'/'+total+' complete':'No mission';$('#awcAttention',root).hidden=!current?.workers?.some(w=>['error','blocked'].includes(w.state));}
+function humanState(s){return({needs_attention:'Needs attention',running:'Running',complete:'Complete',blocked:'Blocked',error:'Needs attention',pending:'Waiting'})[s]||String(s||'Idle').replaceAll('_',' ')}
+function fitWorld(){view={zoom:1,panX:0,panY:0};syncZoomLabel()}
+function focusPoint(x,y,z=1.8){view.zoom=clamp(z,1,2.8);view.panX=W/2-x*view.zoom;view.panY=H/2-y*view.zoom;limitPan();syncZoomLabel()}
+function focusActive(){const a=[...agents.values()].find(x=>x.state==='running')||[...agents.values()][0];if(a)focusPoint(a.x,a.y,2)}
+function zoomAt(factor,cx=W/2,cy=H/2){const old=view.zoom,nz=clamp(old*factor,1,2.8),wx=(cx-view.panX)/old,wy=(cy-view.panY)/old;view.zoom=nz;view.panX=cx-wx*nz;view.panY=cy-wy*nz;limitPan();syncZoomLabel()}
+function limitPan(){if(view.zoom<=1){view.panX=0;view.panY=0;return}const minX=W-W*view.zoom,minY=H-H*view.zoom;view.panX=clamp(view.panX,minX,0);view.panY=clamp(view.panY,minY,0)}
+function syncZoomLabel(){if(root)$('#awcZoomLabel',root).textContent=Math.round(view.zoom*100)+'%'}
+function screenToWorld(e){const r=canvas.getBoundingClientRect(),sx=W/r.width,sy=H/r.height,px=(e.clientX-r.left)*sx,py=(e.clientY-r.top)*sy;return{x:(px-view.panX)/view.zoom,y:(py-view.panY)/view.zoom,px,py}}
+function selectAt(e){const p=screenToWorld(e);selected=null;for(const a of agents.values())if(Math.hypot(p.x-a.x,p.y-a.y)<18){selected={type:'agent',id:a.id};window.dispatchEvent(new CustomEvent('localai:agentworld-select',{detail:{workerId:a.id}}));break}if(!selected)for(const[id,d]of Object.entries(DISTRICTS))if(p.x>=d.x*T&&p.x<=(d.x+d.w)*T&&p.y>=d.y*T&&p.y<=(d.y+d.h)*T){selected={type:'district',id};window.dispatchEvent(new CustomEvent('localai:agentworld-select',{detail:{district:id}}));break}syncSelection()}
+function syncSelection(){if(!root)return;$('#awcSelection',root).textContent=selected?selected.type==='agent'?(agents.get(selected.id)?.name||selected.id):DISTRICTS[selected.id]?.name:'Select a building or worker'}
+function mount(){const host=$('#agentWorldCityMount');if(!host)return;root=document.createElement('section');root.className='awc';root.innerHTML=`
+<div class="awc__top"><div class="awc__brand"><div class="awc__mark">AW</div><div><div class="awc__title">Agent World</div><div class="awc__sub">Live mission city · workers move where the work happens</div></div></div><div class="awc__toolbar"><span class="awc__badge live"><i class="awc__led"></i><span id="awcSource">IDLE</span></span><button class="awc__tool" id="awcFit" type="button">Fit</button><button class="awc__tool" id="awcCenter" type="button">Center active</button><button class="awc__tool" id="awcZoomOut" type="button" aria-label="Zoom out">−</button><span class="awc__zoom" id="awcZoomLabel">100%</span><button class="awc__tool" id="awcZoomIn" type="button" aria-label="Zoom in">+</button></div></div>
+<div class="awc__missionbar"><div><span class="awc__eyebrow">Current objective</span><strong id="awcObjective">Waiting for live mission activity</strong></div><div class="awc__missionstate"><span id="awcStatus">Idle</span><span id="awcProgressText">No mission</span><span class="awc__attention" id="awcAttention" hidden>Attention</span></div></div>
+<div class="awc__mapWrap"><canvas width="${W}" height="${H}" id="awcCanvas" aria-label="Interactive Agent World city"></canvas><div class="awc__hud"><span class="awc__chip" id="awcSelection">Select a building or worker</span><span class="awc__chip">Drag to pan · wheel/pinch controls available</span></div></div>
+<div class="awc__bottom"><div class="awc__progress"><span id="awcProgress"></span></div><div class="awc__legend"><span><i class="run"></i>Running</span><span><i class="done"></i>Complete</span><span><i class="wait"></i>Waiting</span><span><i class="bad"></i>Attention</span></div><div class="awc__demo"><select id="awcDemoScenario" aria-label="Demo scenario"><option value="success">Successful mission</option><option value="failure">Failure + repair</option></select><button class="awc__tool" id="awcDemoPlay" type="button">Play demo</button><button class="awc__tool" id="awcDemoStep" type="button">Step</button><button class="awc__tool" id="awcDemoReset" type="button">Reset</button><button class="awc__tool" id="awcDemoSpeed" type="button">1×</button><button class="awc__tool" id="awcLiveBtn" type="button" hidden>Return live</button></div></div>`;
+host.appendChild(root);canvas=$('#awcCanvas',root);ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=false;
+$('#awcFit',root).onclick=fitWorld;$('#awcCenter',root).onclick=focusActive;$('#awcZoomIn',root).onclick=()=>zoomAt(1.25);$('#awcZoomOut',root).onclick=()=>zoomAt(.8);$('#awcDemoPlay',root).onclick=toggleDemoPlay;$('#awcDemoStep',root).onclick=stepDemo;$('#awcDemoReset',root).onclick=resetDemo;$('#awcDemoSpeed',root).onclick=cycleSpeed;$('#awcLiveBtn',root).onclick=returnLive;$('#awcDemoScenario',root).onchange=e=>{demo.scenario=e.target.value;if(demo.active)applyDemo()};
+canvas.addEventListener('wheel',e=>{e.preventDefault();const p=screenToWorld(e);zoomAt(e.deltaY<0?1.12:.89,p.px,p.py)},{passive:false});
+canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);const p=screenToWorld(e);drag={id:e.pointerId,startX:p.px,startY:p.py,panX:view.panX,panY:view.panY,moved:false}});
+canvas.addEventListener('pointermove',e=>{if(!drag||drag.id!==e.pointerId)return;const r=canvas.getBoundingClientRect(),sx=W/r.width,sy=H/r.height,dx=(e.clientX-r.left)*sx-drag.startX,dy=(e.clientY-r.top)*sy-drag.startY;if(Math.abs(dx)+Math.abs(dy)>4)drag.moved=true;view.panX=drag.panX+dx;view.panY=drag.panY+dy;limitPan()});
+canvas.addEventListener('pointerup',e=>{if(!drag)return;const moved=drag.moved;drag=null;if(!moved)selectAt(e)});
+canvas.addEventListener('pointercancel',()=>drag=null);
+window.addEventListener('localai:agentworld-focus',e=>{const a=agents.get(e.detail?.workerId);if(a){selected={type:'agent',id:a.id};focusPoint(a.x,a.y,2);syncSelection()}});
+document.body.classList.add('agent-world-city-ready');buildRoads();seedCars();syncDemoControls();start();bootstrap()}
+function seedCars(){cars=[{x:2*T,y:14.5*T,v:28,axis:'x',dir:1,color:'#6aaeff'},{x:36*T,y:15.5*T,v:22,axis:'x',dir:-1,color:'#ffc56b'},{x:25.5*T,y:3*T,v:18,axis:'y',dir:1,color:'#c18cff'}]}
+function update(dt,ts){for(const a of agents.values()){if(!a.path?.length||a.pathI>=a.path.length)continue;const p=a.path[a.pathI],dx=p.x-a.x,dy=p.y-a.y,d=Math.hypot(dx,dy),speed=(a.state==='running'?84:56);if(d<2){a.pathI++;continue}a.x+=dx/d*speed*dt;a.y+=dy/d*speed*dt}for(const p of packets){if(p.done||!p.path[p.i])continue;const t=p.path[p.i],dx=t.x-p.x,dy=t.y-p.y,d=Math.hypot(dx,dy);if(d<2){p.i++;if(p.i>=p.path.length)p.done=true;continue}p.x+=dx/d*120*dt;p.y+=dy/d*120*dt}packets=packets.filter(p=>!p.done);for(const c of cars){if(c.axis==='x'){c.x+=c.v*c.dir*dt;if(c.x>38*T)c.x=2*T;if(c.x<2*T)c.x=38*T}else{c.y+=c.v*c.dir*dt;if(c.y>23*T)c.y=3*T;if(c.y<3*T)c.y=23*T}}if(demo.active&&demo.running&&!demo.paused&&!reduced&&ts-demo.lastAdvance>3000/demo.speed){if(demo.stage<DEMO_STAGES.length-1){demo.stage++;applyDemo();demo.lastAdvance=ts}else demo.running=false;syncDemoControls()}}
 function px(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h))}
-function text(t,x,y,c='#d9e7f4',size=9){ctx.fillStyle=c;ctx.font='800 '+size+'px ui-monospace,monospace';ctx.textAlign='center';ctx.fillText(t,x,y)}
-function drawGround(){
- px(0,0,W,H,'#0a1820');
- for(let y=0;y<H;y+=T){for(let x=0;x<W;x+=T){const n=((x/T*13+y/T*7)%11);px(x,y,T,T,n<2?'#132d25':n<5?'#153425':'#183829');if(n===0){px(x+5,y+6,3,3,'#24533b');px(x+16,y+15,2,2,'#2e6548')}}}
- roads.forEach(k=>{const [x,y]=k.split(',').map(Number);px(x*T,y*T,T,T,'#26313c');px(x*T+2,y*T+2,T-4,T-4,'#303c48')});
- for(let x=0;x<COLS;x++){if(roads.has(key(x,14)))px(x*T+7,14*T+11,10,2,'#d6a84e');if(roads.has(key(x,15)))px(x*T+7,15*T+11,10,2,'#d6a84e')}
- for(let y=0;y<ROWS;y++){if(roads.has(key(13,y)))px(13*T+11,y*T+7,2,10,'#d6a84e');if(roads.has(key(25,y)))px(25*T+11,y*T+7,2,10,'#d6a84e')}
-}
-function building(id,d){
- const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,active=current?.workers?.some(q=>zoneForWorker(q)===id&&q.state==='running'),bad=current?.workers?.some(q=>zoneForWorker(q)===id&&['error','blocked'].includes(q.state));
- px(x-4,y+8,w+8,h+4,'rgba(0,0,0,.26)');px(x,y,w,h,d.roof);px(x+6,y+7,w-12,h-13,'#1a2632');px(x+10,y+11,w-20,h-22,d.color);
- for(let yy=y+17;yy<y+h-14;yy+=13)for(let xx=x+16;xx<x+w-14;xx+=17)px(xx,yy,7,6,active?'#eafcff':'#173b50');
- px(x+Math.floor(w/2)-7,y+h-15,14,15,'#101922');text(d.name,x+w/2,y-7,active?'#f4fbff':'#a9bbcb',8);
- if(active){ctx.strokeStyle=d.color;ctx.lineWidth=3;ctx.strokeRect(x-3,y-3,w+6,h+6)}if(bad){ctx.strokeStyle='#ff7180';ctx.lineWidth=3;ctx.strokeRect(x-3,y-3,w+6,h+6)}
-}
-function drawDecor(){
- // parks / trees / utility details
- for(const [x,y] of [[2,2],[3,3],[37,3],[38,4],[2,22],[38,22],[9,2],[30,2],[9,25],[30,25]]){px(x*T+6,y*T+10,12,10,'#185b37');px(x*T+10,y*T+5,5,12,'#2d8a52')}
- // central plaza
- px(17*T,12*T,6*T,3*T,'#6b6652');for(let i=0;i<6;i++)px((18+i%3)*T+8,(12+Math.floor(i/3))*T+8,8,8,'#8c876a');
-}
-function drawAgents(ts){
- for(const a of agents.values()){const pulse=a.state==='running'?(Math.sin(ts/180)+1)*1.5:0,c=a.state==='error'||a.state==='blocked'?'#ff7180':a.state==='complete'?'#6ce39a':a.color;ctx.fillStyle='rgba(0,0,0,.35)';ctx.beginPath();ctx.ellipse(a.x,a.y+9,9,4,0,0,Math.PI*2);ctx.fill();px(a.x-6-pulse/2,a.y-8-pulse/2,12+pulse,13+pulse,c);px(a.x-3,a.y-5,2,2,'#071019');px(a.x+2,a.y-5,2,2,'#071019');text(a.glyph,a.x,a.y+17,'#eaf5ff',7)}
-}
-function draw(ts){drawGround();drawDecor();for(const [id,d] of Object.entries(DISTRICTS))building(id,d);drawAgents(ts)}
-function loop(ts){const dt=Math.min(.05,(ts-last)/1000||0);last=ts;update(dt);draw(ts);raf=requestAnimationFrame(loop)}
+function txt(t,x,y,c='#d9e7f4',size=9){ctx.fillStyle=c;ctx.font='800 '+size+'px ui-monospace,monospace';ctx.textAlign='center';ctx.fillText(t,x,y)}
+function drawGround(){px(0,0,W,H,'#0a1820');for(let y=0;y<H;y+=T)for(let x=0;x<W;x+=T){const n=((x/T*13+y/T*7)%11);px(x,y,T,T,n<2?'#132d25':n<5?'#153425':'#183829');if(n===0){px(x+5,y+6,3,3,'#24533b');px(x+16,y+15,2,2,'#2e6548')}}roads.forEach(k=>{const[x,y]=k.split(',').map(Number);px(x*T,y*T,T,T,'#26313c');px(x*T+2,y*T+2,T-4,T-4,'#303c48')});for(let x=0;x<COLS;x++){if(roads.has(key(x,14)))px(x*T+7,14*T+11,10,2,'#d6a84e');if(roads.has(key(x,15)))px(x*T+7,15*T+11,10,2,'#d6a84e')}for(let y=0;y<ROWS;y++){if(roads.has(key(13,y)))px(13*T+11,y*T+7,2,10,'#d6a84e');if(roads.has(key(25,y)))px(25*T+11,y*T+7,2,10,'#d6a84e')}}
+function building(id,d,ts){const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,workers=current?.workers?.filter(q=>zoneForWorker(q)===id)||[],active=workers.some(q=>q.state==='running'),bad=workers.some(q=>['error','blocked'].includes(q.state)),done=workers.length&&workers.every(q=>q.state==='complete'),pulse=(Math.sin(ts/260)+1)/2;px(x-4,y+8,w+8,h+4,'rgba(0,0,0,.26)');px(x,y,w,h,d.roof);px(x+6,y+7,w-12,h-13,'#1a2632');px(x+10,y+11,w-20,h-22,d.color);for(let yy=y+17;yy<y+h-14;yy+=13)for(let xx=x+16;xx<x+w-14;xx+=17)px(xx,yy,7,6,active?(pulse>.35?'#eafcff':'#7ccddd'):done?'#77d69b':'#173b50');px(x+Math.floor(w/2)-7,y+h-15,14,15,'#101922');txt(d.name,x+w/2,y-7,active?'#f4fbff':'#a9bbcb',8);if(active){ctx.strokeStyle=d.color;ctx.lineWidth=2+pulse*2;ctx.strokeRect(x-3,y-3,w+6,h+6)}if(done){px(x+w-11,y+7,5,5,'#6ce39a')}if(bad){ctx.strokeStyle='#ff7180';ctx.lineWidth=3;ctx.strokeRect(x-3,y-3,w+6,h+6);px(x+w-13,y+6,7,7,pulse>.5?'#ff7180':'#6b2630')}}
+function drawDecor(){for(const[x,y]of[[2,2],[3,3],[37,3],[38,4],[2,22],[38,22],[9,2],[30,2],[9,25],[30,25]]){px(x*T+6,y*T+10,12,10,'#185b37');px(x*T+10,y*T+5,5,12,'#2d8a52')}px(17*T,12*T,6*T,3*T,'#6b6652');for(let i=0;i<6;i++)px((18+i%3)*T+8,(12+Math.floor(i/3))*T+8,8,8,'#8c876a');for(const c of cars)px(c.x-5,c.y-3,10,6,c.color)}
+function drawAgents(ts){for(const a of agents.values()){const pulse=a.state==='running'?(Math.sin(ts/180)+1)*1.5:0,c=a.state==='error'||a.state==='blocked'?'#ff7180':a.state==='complete'?'#6ce39a':a.state==='pending'?'#6d7b8e':a.color;ctx.fillStyle='rgba(0,0,0,.35)';ctx.beginPath();ctx.ellipse(a.x,a.y+9,9,4,0,0,Math.PI*2);ctx.fill();px(a.x-6-pulse/2,a.y-8-pulse/2,12+pulse,13+pulse,c);px(a.x-3,a.y-5,2,2,'#071019');px(a.x+2,a.y-5,2,2,'#071019');txt(a.glyph,a.x,a.y+17,'#eaf5ff',7)}for(const p of packets){px(p.x-2,p.y-2,4,4,p.color)}for(const a of artifacts){px(a.x-5,a.y-4,10,8,'#e7f2ff');px(a.x-3,a.y-2,6,1,a.color)}}
+function draw(ts){ctx.save();ctx.clearRect(0,0,W,H);ctx.translate(view.panX,view.panY);ctx.scale(view.zoom,view.zoom);drawGround();drawDecor();for(const[id,d]of Object.entries(DISTRICTS))building(id,d,ts);drawAgents(ts);ctx.restore()}
+function loop(ts){const dt=Math.min(.05,(ts-last)/1000||0);last=ts;update(dt,ts);draw(ts);raf=requestAnimationFrame(loop)}
 function start(){if(!raf)raf=requestAnimationFrame(loop)}
-async function bootstrap(){
- try{const r=await fetch('/api/agents/missions'),j=await r.json(),items=j.items||j.missions||[];const active=items.find(m=>m.status==='running')||items[0];if(active){applyMission(active);connectSSE();return}}catch{}
- try{const r=await fetch('/api/engineering/runs'),j=await r.json(),runs=j.items||[];const active=runs.find(x=>x.status==='running')||runs[0];if(active)applyEngineering(active)}catch{}
- connectSSE()
-}
-function connectSSE(){try{const es=new EventSource('/api/agents/missions/events');es.onmessage=e=>{try{applyMission(JSON.parse(e.data))}catch{}};es.onerror=()=>{}}catch{}}
-document.addEventListener('localai:engineering-run',e=>{if(sourceType!=='mission'||current?.status!=='running')applyEngineering(e.detail?.run||e.detail)});
+async function bootstrap(){try{const r=await fetch('/api/agents/missions'),j=await r.json(),items=j.items||j.missions||[],active=items.find(m=>m.status==='running')||items[0];if(active){applyMission(active);connectSSE();return}}catch{}try{const r=await fetch('/api/engineering/runs'),j=await r.json(),runs=j.items||[],active=runs.find(x=>x.status==='running')||runs[0];if(active)applyEngineering(active)}catch{}connectSSE()}
+function connectSSE(){try{const es=new EventSource('/api/agents/missions/events');es.onmessage=e=>{try{const m=JSON.parse(e.data);liveSnapshot=normalizeMission(m);applyMission(m)}catch{}}}catch{}}
+document.addEventListener('localai:engineering-run',e=>applyEngineering(e.detail?.run||e.detail));
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();
 })();
