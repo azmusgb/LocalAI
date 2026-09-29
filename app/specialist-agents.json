@@ -82,6 +82,121 @@
         "exclude": []
       },
       "system": "Route missions deterministically from the registered capabilities and installed model inventory."
+    },
+    {
+      "id": "code_analyst",
+      "name": "Code Analyst",
+      "description": "Inspects implementation structure, contracts, defects and change impact.",
+      "capabilities": [
+        "code-analysis",
+        "architecture",
+        "debugging",
+        "contracts"
+      ],
+      "routing": {
+        "include": [
+          "code",
+          "debug",
+          "defect",
+          "implementation",
+          "refactor",
+          "contract"
+        ],
+        "exclude": []
+      },
+      "system": "Analyze supplied source precisely. Trace implementation behavior and change impact without inventing runtime facts."
+    },
+    {
+      "id": "test_engineer",
+      "name": "Test Engineer",
+      "description": "Designs and evaluates regression, browser, integration and acceptance coverage.",
+      "capabilities": [
+        "testing",
+        "regression",
+        "acceptance",
+        "validation"
+      ],
+      "routing": {
+        "include": [
+          "test",
+          "regression",
+          "acceptance",
+          "verify",
+          "validation",
+          "coverage"
+        ],
+        "exclude": []
+      },
+      "system": "Act as a rigorous test engineer. Ground tests in actual contracts and observable behavior."
+    },
+    {
+      "id": "research_agent",
+      "name": "Research Agent",
+      "description": "Builds evidence packets and source-grounded research for missions.",
+      "capabilities": [
+        "research",
+        "evidence",
+        "analysis",
+        "knowledge"
+      ],
+      "routing": {
+        "include": [
+          "research",
+          "evidence",
+          "investigate",
+          "compare",
+          "source"
+        ],
+        "exclude": []
+      },
+      "system": "Gather and organize supplied evidence. Separate verified facts, gaps, and recommendations."
+    },
+    {
+      "id": "security_reviewer",
+      "name": "Security Reviewer",
+      "description": "Reviews trust boundaries, secrets, permissions and deployment risk.",
+      "capabilities": [
+        "security",
+        "permissions",
+        "secrets",
+        "risk"
+      ],
+      "routing": {
+        "include": [
+          "security",
+          "secret",
+          "permission",
+          "auth",
+          "risk",
+          "vulnerability"
+        ],
+        "exclude": []
+      },
+      "system": "Review security-relevant implementation evidence conservatively. Do not invent vulnerabilities."
+    },
+    {
+      "id": "performance_analyst",
+      "name": "Performance Analyst",
+      "description": "Reviews latency, rendering, resource use and runtime bottlenecks.",
+      "capabilities": [
+        "performance",
+        "latency",
+        "rendering",
+        "resources"
+      ],
+      "routing": {
+        "include": [
+          "performance",
+          "latency",
+          "slow",
+          "memory",
+          "cpu",
+          "render",
+          "optimize"
+        ],
+        "exclude": []
+      },
+      "system": "Analyze performance from supplied evidence and distinguish measurements from hypotheses."
     }
   ]
 }
