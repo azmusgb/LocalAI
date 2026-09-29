@@ -41,7 +41,8 @@ await check('mission-first composer',async()=>{
 await check('Agent World is mounted',async()=>{
   await page.locator('#agentWorldCityMount .awc').waitFor({state:'visible'});
   const box=await page.locator('#agentWorldCityMount .awc').boundingBox();
-  assert.ok(box&&box.width>850,'Agent World should be a dominant desktop surface');
+  const grid=await page.locator('.agent-live-grid').boundingBox();
+  assert.ok(box&&grid&&box.width>=grid.width*.95,'Agent World should consume the primary live-workspace width');
 });
 await check('Agent World stage is landscape and full-width',async()=>{
   const live=await page.locator('.agent-live-grid').evaluate(el=>getComputedStyle(el).gridTemplateColumns);
