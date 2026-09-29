@@ -54,12 +54,36 @@ let replay={frames:[],active:false,index:0,playing:false,lastStep:0};
 function humanState(s){return({needs_attention:'Needs attention',running:'Running',complete:'Complete',blocked:'Blocked',error:'Needs attention',pending:'Waiting',awaiting_approval:'Awaiting approval',applied:'Applied'})[s]||String(s||'Idle').replaceAll('_',' ')}
 function zoneForWorker(w){if(['error','blocked'].includes(w.state))return'repair';return ROLE_ZONE[w.id]||ROLE_ZONE[w.agentId]||(/doc/i.test(w.name||'')?'docs':/ux/i.test(w.name||'')?'ux':/model/i.test(w.name||'')?'models':'command')}
 function districtCenter(id){const d=DISTRICTS[id]||DISTRICTS.command;return{x:(d.x+d.w/2)*T,y:(d.y+d.h+.8)*T}}
-function workerTarget(w,zone){
- const base=districtCenter(zone),workers=(current?.workers||[]).filter(q=>zoneForWorker(q)===zone),id=w.id||w.agentId||w.name,idx=Math.max(0,workers.findIndex(q=>(q.id||q.agentId||q.name)===id));
- const slots=[[-34,-2],[34,-2],[-62,22],[62,22],[0,30],[-30,48],[30,48]],slot=slots[idx%slots.length];
- return{x:base.x+slot[0],y:base.y+slot[1]}
+function districtDoor(id){
+ const d=DISTRICTS[id]||DISTRICTS.command,cx=(d.x+d.w/2)*T,front=(d.y+d.h)*T;
+ return{outside:{x:cx,y:front+T*.48},inside:{x:cx,y:front-T*.42}}
 }
-function routeToTarget(from,target){const path=astar(from,target);if(!path.length||Math.hypot(path[path.length-1].x-target.x,path[path.length-1].y-target.y)>3)path.push({x:target.x,y:target.y});return path}
+function pointInsideDistrict(p,id){
+ const d=DISTRICTS[id]||DISTRICTS.command;return p.x>d.x*T+6&&p.x<(d.x+d.w)*T-6&&p.y>d.y*T+18&&p.y<(d.y+d.h)*T-8
+}
+function workerTarget(w,zone){
+ const d=DISTRICTS[zone]||DISTRICTS.command,workers=(current?.workers||[]).filter(q=>zoneForWorker(q)===zone),id=w.id||w.agentId||w.name,idx=Math.max(0,workers.findIndex(q=>(q.id||q.agentId||q.name)===id));
+ const active=w.state==='running'||w.state==='error'||w.state==='blocked';
+ if(active){
+  const cols=Math.max(2,Math.min(3,Math.floor(d.w/2))),col=idx%cols,row=Math.floor(idx/cols)%2;
+  return{x:(d.x+1.35+col*((d.w-2.7)/Math.max(1,cols-1)))*T,y:(d.y+1.65+row*1.15)*T,inside:true}
+ }
+ const base=districtCenter(zone),slots=[[-42,0],[42,0],[-72,24],[72,24],[0,34],[-34,54],[34,54]],slot=slots[idx%slots.length];
+ return{x:base.x+slot[0],y:base.y+slot[1],inside:false}
+}
+function routeToTarget(agent,target,zone){
+ const path=[],from={x:agent.x,y:agent.y};
+ if(agent.inside&&agent.insideZone){const exit=districtDoor(agent.insideZone);path.push(exit.inside,exit.outside);from.x=exit.outside.x;from.y=exit.outside.y}
+ if(target.inside){
+  const door=districtDoor(zone),roadPath=astar(from,door.outside);path.push(...roadPath);
+  if(!path.length||Math.hypot(path.at(-1).x-door.outside.x,path.at(-1).y-door.outside.y)>3)path.push(door.outside);
+  path.push(door.inside,{x:target.x,y:target.y})
+ }else{
+  const roadPath=astar(from,target);path.push(...roadPath);
+  if(!path.length||Math.hypot(path.at(-1).x-target.x,path.at(-1).y-target.y)>3)path.push({x:target.x,y:target.y})
+ }
+ return path
+}
 function road(x,y){roads.add(key(x,y))}
 function buildRoads(){
  roads.clear();
@@ -82,13 +106,13 @@ function astar(a,b){
   for(const n of[{x:cur.x+1,y:cur.y},{x:cur.x-1,y:cur.y},{x:cur.x,y:cur.y+1},{x:cur.x,y:cur.y-1}]){if(blocked(n.x,n.y)&&!(n.x===goal.x&&n.y===goal.y))continue;const nk=key(n.x,n.y),tent=(g.get(key(cur.x,cur.y))||0)+1;if(tent<(g.get(nk)??1e9)){came.set(nk,cur);g.set(nk,tent);f.set(nk,tent+Math.abs(n.x-goal.x)+Math.abs(n.y-goal.y));if(!open.some(o=>o.x===n.x&&o.y===n.y))open.push(n)}}}
  return[]
 }
-function normalizeMission(m){return{type:'mission',id:m.id,status:m.status,goal:m.goal||'Mission',updatedAt:m.updatedAt||m.createdAt,workers:(m.workers||[]).map(w=>({...w,id:w.id||w.agentId})),error:m.error||'',raw:m}}
+function normalizeMission(m){return{type:'mission',id:m.id,status:m.status,goal:m.goal||'Mission',updatedAt:m.updatedAt||m.createdAt,workers:(m.workers||[]).map(w=>({...w,id:w.id||w.agentId})),routing:m.routing||null,timeline:m.timeline||[],results:m.results||[],error:m.error||'',raw:m}}
 function ensureAgent(w){
  const id=w.id||w.agentId||w.name;if(!id)return;
  let a=agents.get(id),zone=zoneForWorker(w),target=workerTarget(w,zone);
- if(!a){const p=districtCenter('command'),style=ROLE_STYLE[id]||ROLE_STYLE[(w.agentId||'')]||ROLE_STYLE.synthesis;a={id,name:w.name||id,glyph:(w.name||id).trim()[0]?.toUpperCase()||'A',x:p.x,y:p.y,tx:p.x,ty:p.y,path:[],pathI:0,state:'pending',zone:'command',targetZone:zone,color:ROLE_COLOR[id]||'#8fb5e8',model:w.model||'',dir:1,bob:Math.random()*Math.PI*2,step:Math.random()*Math.PI*2,style,activitySeed:Math.random()*10};agents.set(id,a)}
+ if(!a){const p=districtCenter('command'),style=ROLE_STYLE[id]||ROLE_STYLE[(w.agentId||'')]||ROLE_STYLE.synthesis;a={id,name:w.name||id,glyph:(w.name||id).trim()[0]?.toUpperCase()||'A',x:p.x,y:p.y,tx:p.x,ty:p.y,path:[],pathI:0,state:'pending',zone:'command',targetZone:zone,color:ROLE_COLOR[id]||'#8fb5e8',model:w.model||'',dir:1,bob:Math.random()*Math.PI*2,step:Math.random()*Math.PI*2,style,activitySeed:Math.random()*10,inside:false,insideZone:null,targetInside:false,transition:'idle'};agents.set(id,a)}
  const old=a.state;a.name=w.name||a.name;a.model=w.model||a.model;a.state=w.state||a.state;a.targetZone=zone;a.color=ROLE_COLOR[id]||a.color;
- if(a.zone!==zone||Math.hypot(a.tx-target.x,a.ty-target.y)>2){a.tx=target.x;a.ty=target.y;a.path=routeToTarget({x:a.x,y:a.y},target);a.pathI=0;a.zone=zone}
+ if(a.zone!==zone||Math.hypot(a.tx-target.x,a.ty-target.y)>2||a.targetInside!==target.inside){a.tx=target.x;a.ty=target.y;a.targetInside=!!target.inside;a.transition=target.inside?'entering':(a.inside?'exiting':'traveling');a.path=routeToTarget(a,target,zone);a.pathI=0;a.zone=zone}
  if(old!==a.state){
   addEvent(a.name+' → '+humanState(a.state));
   if(a.state==='running'){spawnPacket('models',zone,a.color,'MODEL');spawnSpark(target.x,target.y,a.color,18)}
