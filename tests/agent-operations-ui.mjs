@@ -85,6 +85,13 @@ await check('desktop zoom controls',async()=>{
   await page.locator('#awcFit').click();
   assert.equal(await page.locator('#awcZoomLabel').innerText(),'100%');
 });
+await check('Agent World worker identities render in roster',async()=>{
+  await page.locator('#awcDemoPlay').click();
+  await page.waitForTimeout(150);
+  assert.ok(await page.locator('#awcRoster .awc__rosterGlyph').count()>=4);
+  assert.match(await page.locator('#awcRoster').innerText(),/UX Analyst/i);
+  await page.locator('#awcLiveBtn').click();
+});
 await check('Agent World v3 HUD and simulation controls',async()=>{
   await page.locator('#awcRoster').waitFor({state:'visible'});
   await page.locator('#awcMinimap').waitFor({state:'visible'});
