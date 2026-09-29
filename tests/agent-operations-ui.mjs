@@ -114,6 +114,19 @@ await check('desktop zoom controls',async()=>{
   await page.locator('#awcFit').click();
   assert.equal(await page.locator('#awcZoomLabel').innerText(),'100%');
 });
+await check('Living Worksite replay controls are interactive',async()=>{
+  await page.locator('#awcReplayPlay').waitFor({state:'visible'});
+  await page.locator('#awcReplayRange').waitFor({state:'visible'});
+  await page.locator('#awcDemoPlay').click();
+  await page.locator('#awcDemoStep').click();
+  await page.locator('#awcDemoStep').click();
+  const max=Number(await page.locator('#awcReplayRange').getAttribute('max'));
+  assert.ok(max>=1,'demo should create replay checkpoints');
+  await page.locator('#awcReplayPlay').click();
+  assert.match(await page.locator('#awcReplayLabel').innerText(),/Replay/i);
+  await page.locator('#awcReplayLive').click();
+  await page.locator('#awcLiveBtn').click();
+});
 await check('Agent World running-worker controls remain interactive',async()=>{
   await page.locator('#awcDemoPlay').click();
   await page.waitForTimeout(250);
