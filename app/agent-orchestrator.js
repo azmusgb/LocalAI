@@ -34,7 +34,11 @@ module.exports=function createAgentOrchestrator(deps={}){
   ['app/public/agent-specialists.js',path.join(__dirname,'public','agent-specialists.js')],
   ['app/public/agent-specialists.css',path.join(__dirname,'public','agent-specialists.css')],
   ['app/public/agent-matrix.js',path.join(__dirname,'public','agent-matrix.js')],
-  ['app/public/agent-matrix.css',path.join(__dirname,'public','agent-matrix.css')]
+  ['app/public/agent-matrix.css',path.join(__dirname,'public','agent-matrix.css')],
+  ['app/public/agent-world-city.js',path.join(__dirname,'public','agent-world-city.js')],
+  ['app/public/agent-world-city.css',path.join(__dirname,'public','agent-world-city.css')],
+  ['app/public/ux-architecture-v2.js',path.join(__dirname,'public','ux-architecture-v2.js')],
+  ['app/public/ux-architecture-v2.css',path.join(__dirname,'public','ux-architecture-v2.css')]
  ];
  function goalTerms(goal){return [...new Set(String(goal||'').toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g)||[])].filter(t=>!['the','and','for','with','this','that','from','into','local','implementation','recommendations'].includes(t)).slice(0,18)}
  function sourceExcerpt(label,file,goal,maxChars=7000){
