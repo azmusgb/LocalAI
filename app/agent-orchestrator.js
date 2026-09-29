@@ -9,20 +9,45 @@ module.exports=function createAgentOrchestrator(deps={}){
  const read=(f,d=[])=>{try{return JSON.parse(fs.readFileSync(f,'utf8'))}catch{return d}},save=(f,v)=>fs.writeFileSync(f,JSON.stringify(v,null,2)),iso=()=>new Date().toISOString(),id=p=>p+'-'+Date.now().toString(36)+'-'+Math.random().toString(16).slice(2,8);
  async function models(){const r=await fetchWithTimeout(ollamaUrl+'/api/tags',{method:'GET'},15000);if(!r.ok)throw new Error('Ollama inventory unavailable: HTTP '+r.status);const j=await r.json();return (j.models||[]).map(x=>({name:x.name,size:x.size,modified_at:x.modified_at}));}
  function modelScore(name,task){let s=0,n=name.toLowerCase(),t=task.toLowerCase();if(/coder|code|debug|implement|engineering/.test(t)&&/coder|qwen/.test(n))s+=40;if(/document|summar|write|research|ux|design/.test(t)&&/qwen|gemma/.test(n))s+=25;if(/32k|16k/.test(n))s+=8;if(name===defaultModel)s+=5;return s}
- async function routeModel(task,inventory){const inv=inventory||await models();if(!inv.length)throw new Error('No installed Ollama models reported');const ranked=inv.map(m=>({...m,score:modelScore(m.name,task)})).sort((a,b)=>b.score-a.score||a.name.localeCompare(b.name));return {model:ranked[0].name,reason:'Highest deterministic fit among installed Ollama models',inventory:ranked};}
+ async function routeModel(task,inventory){const inv=inventory||await models();if(!inv.length)throw new Error('No installed Ollama models reported');const ranked=inv.map(m=>({...m,score:modelScore(m.name,task)})).sort((a,b)=>b.score-a.score||a.name.localeCompare(b.name));return {model:ranked[0].name,score:ranked[0].score,reason:'Highest deterministic fit among installed Ollama models',inventory:ranked};}
  function termHit(text,term){const t=String(term||'').toLowerCase();return t&&text.includes(t)}
- function agentScore(agent,goal){const text=goal.toLowerCase(),r=agent.routing||{},hits=(r.include||[]).filter(t=>termHit(text,t)),blocked=(r.exclude||[]).filter(t=>termHit(text,t));return {score:hits.length*10-blocked.length*25,hits,blocked}}
+ function activeWorkload(){
+  const counts={};for(const m of read(missionsFile).filter(x=>x.status==='running'))for(const w of m.workers||[])if(w.state==='running'||w.state==='pending')counts[w.id]=(counts[w.id]||0)+1;return counts
+ }
+ function agentScore(agent,goal,workload={}){
+  const text=goal.toLowerCase(),r=agent.routing||{},hits=(r.include||[]).filter(t=>termHit(text,t)),blocked=(r.exclude||[]).filter(t=>termHit(text,t)),load=workload[agent.id]||0;
+  const raw=hits.length*12-blocked.length*30-Math.min(18,load*6),capabilityScore=clampScore(raw<=0?(hits.length?30:0):45+raw);
+  return {score:raw,hits,blocked,workload:load,availability:load>=2?'busy':'available',capabilityScore}
+ }
+ function clampScore(n){return Math.max(0,Math.min(100,Math.round(n)))}
+ function fallbackFor(agent,scores,chosenIds){
+  const declared=(agent.routing&&agent.routing.fallback)||[];
+  for(const id of declared){const s=scores.find(x=>x.agent.id===id);if(s&&s.availability!=='busy')return id}
+  const own=new Set(agent.capabilities||[]),alt=scores.filter(x=>x.agent.id!==agent.id&&!chosenIds.includes(x.agent.id)&&x.availability!=='busy').map(x=>({id:x.agent.id,overlap:(x.agent.capabilities||[]).filter(c=>own.has(c)).length,score:x.score})).sort((a,b)=>b.overlap-a.overlap||b.score-a.score);
+  return alt[0]?.overlap?alt[0].id:''
+ }
+ function dependencyPlan(ids){
+  const d={};ids.forEach(x=>d[x]=[]);
+  const add=(id,...deps)=>{if(ids.includes(id))d[id]=[...new Set(deps.filter(x=>ids.includes(x)&&x!==id))]};
+  add('documentation','research_agent','ux_analyst');
+  add('test_engineer','code_analyst');
+  add('security_reviewer','code_analyst');
+  add('performance_analyst','code_analyst');
+  return d
+ }
  async function dispatch(goal,manualAgentIds){
-  const inventory=await models();
-  let chosen=[],mode='auto',scores=specialists.map(a=>({agent:a,...agentScore(a,goal)}));
+  const inventory=await models(),workload=activeWorkload();
+  let chosen=[],mode='auto',scores=specialists.map(a=>({agent:a,...agentScore(a,goal,workload)}));
   if(Array.isArray(manualAgentIds)&&manualAgentIds.length){mode='manual';chosen=specialists.filter(a=>manualAgentIds.includes(a.id))}
-  else{chosen=scores.filter(x=>x.score>0).sort((a,b)=>b.score-a.score).map(x=>x.agent);if(!chosen.length)chosen=[specialists[0]].filter(Boolean)}
-  const ids=[...new Set(chosen.map(a=>a.id))],dependencies={};
-  ids.forEach(x=>dependencies[x]=[]);
-  if(ids.includes('documentation')&&ids.length>1)dependencies.documentation=ids.filter(x=>x!=='documentation');
-  const workers=[];
-  for(const a of chosen){const rt=await routeModel(goal+' '+a.capabilities.join(' '),inventory);const sc=scores.find(x=>x.agent.id===a.id);workers.push({agentId:a.id,name:a.name,model:rt.model,dependsOn:dependencies[a.id]||[],reason:mode==='manual'?'Manual override':(sc&&sc.hits.length?'Matched: '+sc.hits.join(', '):'Fallback specialist')})}
-  return {mode,goal,workers,selectedAgentIds:ids,reason:mode==='manual'?'Manual specialist override':'Capability-driven routing from specialist registry',inventory:inventory.map(x=>x.name)};
+  else{chosen=scores.filter(x=>x.score>0&&x.availability!=='busy').sort((a,b)=>b.score-a.score||a.workload-b.workload).map(x=>x.agent);if(!chosen.length){const best=scores.slice().sort((a,b)=>b.score-a.score||a.workload-b.workload)[0];chosen=[best?.agent].filter(Boolean)}}
+  const ids=[...new Set(chosen.map(a=>a.id))],dependencies=dependencyPlan(ids),workers=[];
+  for(const a of chosen){
+   const rt=await routeModel(goal+' '+a.capabilities.join(' '),inventory),sc=scores.find(x=>x.agent.id===a.id),fallbackAgentId=fallbackFor(a,scores,ids);
+   const routingMeta={capabilityScore:sc?.capabilityScore||0,modelScore:clampScore(rt.score),workload:sc?.workload||0,availability:sc?.availability||'available',groundingRequired:true,dependencyCount:(dependencies[a.id]||[]).length,retryPolicy:{transportRetries:MODEL_RETRY_DELAYS_MS.length,fallbackAgentId:fallbackAgentId||null},matchTerms:sc?.hits||[]};
+   const reason=mode==='manual'?'Manual override':(sc?.hits?.length?'Matched '+sc.hits.join(', ')+'; capability '+routingMeta.capabilityScore+'%; model fit '+routingMeta.modelScore+'%':'Fallback specialist selected from available registry');
+   workers.push({agentId:a.id,name:a.name,model:rt.model,dependsOn:dependencies[a.id]||[],reason,routingMeta})
+  }
+  return {mode,goal,workers,selectedAgentIds:ids,reason:mode==='manual'?'Manual specialist override':'Capability, workload, dependency and model-aware routing',inventory:inventory.map(x=>x.name),scheduler:{policy:'dependency-aware parallel execution',groundingRequired:true}};
  }
  function context(projectId,goal){if(!projectId||typeof knowledgeStore!=='function')return [];const rows=knowledgeStore().filter(x=>x.projectId===projectId);if(typeof knowledgeScore!=='function')return rows.slice(0,6);return rows.map(x=>({x,s:knowledgeScore(x,goal)})).sort((a,b)=>b.s-a.s).slice(0,6).map(y=>y.x)}
  const sourceFiles=[
@@ -69,25 +94,33 @@ module.exports=function createAgentOrchestrator(deps={}){
   return {schemaVersion:1,product:{name:'Local AI Appliance',runtime:'LAN-hosted Node.js application with local Ollama models',sourceRoot:'/app'},sources:[...knowledge,...sources]};
  }
  async function specialist(agentId,goal,projectId='',assignedModel='',upstream=''){const agent=specialists.find(x=>x.id===agentId);if(!agent)throw new Error('Unknown specialist: '+agentId);const runs=read(runsFile),run={id:id('spec'),agentId,agentName:agent.name,goal,projectId,status:'running',createdAt:iso(),updatedAt:iso(),plan:[{name:'Route model',state:'running'},{name:'Gather context',state:'pending'},{name:'Execute specialist',state:'pending'},{name:'Publish result',state:'pending'}]};runs.unshift(run);save(runsFile,runs.slice(0,300));try{const rt=assignedModel?{model:assignedModel}:await routeModel(goal+' '+agentId);run.model=rt.model;run.plan[0].state='complete';const packet=evidencePacket(goal,agentId,projectId);run.evidence=packet.sources.map(x=>x.source);run.plan[1].state='complete';run.plan[2].state='running';const evidence=packet.sources.map((x,i)=>'['+(i+1)+'] SOURCE: '+x.source+'\n'+x.text).join('\n\n');const grounding='PRODUCT IDENTITY:\n'+JSON.stringify(packet.product)+'\n\n'+groundingRules();run.answer=await runModelReliable(grounding+'Goal:\n'+goal+'\n\nAuthoritative project evidence:\n'+(evidence||'(none)')+(upstream?'\n\nCompleted prerequisite specialist output:\n'+upstream:'')+'\n\nReturn a concrete, structured, evidence-grounded result. Before finalizing, verify that each observation is supported by its cited source and that the report contains no contradictory claims.',agent.system,GROUNDED_TIMEOUT_MS,rt.model);run.plan[2].state='complete';run.plan[3].state='complete';run.status='complete'}catch(e){run.status='error';const msg=String(e.message||e),timedOut=/aborted|timeout/i.test(msg);run.error=timedOut?'Grounded specialist inference exceeded '+Math.round(GROUNDED_TIMEOUT_MS/60000)+' minute timeout: '+msg:msg;run.errorCode=timedOut?'MODEL_TIMEOUT':(/fetch failed|ECONNRESET|ECONNREFUSED|socket|network|UND_ERR|terminated/i.test(msg)?'MODEL_CONNECTION_ERROR':'SPECIALIST_ERROR');const active=run.plan.find(x=>x.state==='running');if(active)active.state='error'}run.updatedAt=iso();save(runsFile,runs.slice(0,300));if(recordActivity)recordActivity('agent','Specialist '+run.status,agent.name,{runId:run.id,agentId});return run}
- function missionSnapshot(m){events.emit('mission',m);return m}
+ function missionSnapshot(m,type='state',detail='',workerId=''){
+  m.timeline=m.timeline||[];
+  const workers=(m.workers||[]).map(w=>({id:w.id,name:w.name,state:w.state,model:w.model,dependsOn:w.dependsOn||[],reason:w.reason,routingMeta:w.routingMeta||null,error:w.error||''}));
+  const sig=workers.map(w=>w.id+':'+w.state).join('|')+'|'+m.status+'|'+type;
+  if(m.timeline.at(-1)?.sig!==sig)m.timeline.push({at:iso(),type,detail,workerId,status:m.status,sig,workers});
+  m.timeline=m.timeline.slice(-160);m.updatedAt=iso();
+  const rows=read(missionsFile),ix=rows.findIndex(x=>x.id===m.id);if(ix>=0){rows[ix]=m;save(missionsFile,rows.slice(0,200))}
+  events.emit('mission',m);return m
+ }
  async function mission(goal,projectId='',manualAgentIds){
   const routing=await dispatch(goal,manualAgentIds),ms=read(missionsFile);
-  const m={id:id('mission'),goal,projectId,status:'running',routing,createdAt:iso(),updatedAt:iso(),workers:[{id:'router',name:'Mission Router',state:'complete',dependsOn:[],reason:routing.reason},...routing.workers.map(w=>({id:w.agentId,name:w.name,state:'pending',model:w.model,dependsOn:['router',...w.dependsOn],reason:w.reason})),{id:'synthesis',name:'Coordinator',state:'pending',dependsOn:routing.selectedAgentIds}],results:[]};
-  ms.unshift(m);save(missionsFile,ms.slice(0,200));missionSnapshot(m);
+  const m={id:id('mission'),goal,projectId,status:'running',routing,createdAt:iso(),updatedAt:iso(),timeline:[],workers:[{id:'router',name:'Mission Router',state:'complete',dependsOn:[],reason:routing.reason,routingMeta:{capabilityScore:100,modelScore:100,workload:0,availability:'available',groundingRequired:false,dependencyCount:0,retryPolicy:{transportRetries:0,fallbackAgentId:null},matchTerms:['mission-planning']}},...routing.workers.map(w=>({id:w.agentId,name:w.name,state:'pending',model:w.model,dependsOn:['router',...w.dependsOn],reason:w.reason,routingMeta:w.routingMeta})),{id:'synthesis',name:'Coordinator',state:'pending',dependsOn:routing.selectedAgentIds,reason:'Synthesize grounded specialist outputs',routingMeta:{capabilityScore:100,modelScore:0,workload:0,availability:'available',groundingRequired:true,dependencyCount:routing.selectedAgentIds.length,retryPolicy:{transportRetries:MODEL_RETRY_DELAYS_MS.length,fallbackAgentId:null},matchTerms:['synthesis']}}],results:[]};
+  ms.unshift(m);save(missionsFile,ms.slice(0,200));missionSnapshot(m,'mission-start','Mission accepted and routing plan created','router');
   try{
    const pending=new Set(routing.selectedAgentIds),done=new Set(),results=[];
-   while(pending.size){const blocked=routing.workers.filter(w=>pending.has(w.agentId)&&(w.dependsOn||[]).some(d=>done.has(d)&&!results.some(r=>r.agentId===d&&r.status==='complete')));blocked.forEach(w=>{pending.delete(w.agentId);done.add(w.agentId);const mw=m.workers.find(x=>x.id===w.agentId);mw.state='blocked';mw.error='Blocked because a prerequisite specialist failed';});if(blocked.length){m.results=results;m.updatedAt=iso();save(missionsFile,ms);missionSnapshot(m)}const ready=routing.workers.filter(w=>pending.has(w.agentId)&&(w.dependsOn||[]).every(d=>done.has(d)&&results.some(r=>r.agentId===d&&r.status==='complete')));if(!ready.length){if(!pending.size)break;throw new Error('Mission dependency graph cannot make progress');}
-    ready.forEach(w=>m.workers.find(x=>x.id===w.agentId).state='running');m.updatedAt=iso();save(missionsFile,ms);missionSnapshot(m);
+   while(pending.size){const blocked=routing.workers.filter(w=>pending.has(w.agentId)&&(w.dependsOn||[]).some(d=>done.has(d)&&!results.some(r=>r.agentId===d&&r.status==='complete')));blocked.forEach(w=>{pending.delete(w.agentId);done.add(w.agentId);const mw=m.workers.find(x=>x.id===w.agentId);mw.state='blocked';mw.error='Blocked because a prerequisite specialist failed';});if(blocked.length){m.results=results;m.updatedAt=iso();save(missionsFile,ms);missionSnapshot(m,'blocked','A dependency failure blocked downstream work',blocked[0]?.agentId||'')}const ready=routing.workers.filter(w=>pending.has(w.agentId)&&(w.dependsOn||[]).every(d=>done.has(d)&&results.some(r=>r.agentId===d&&r.status==='complete')));if(!ready.length){if(!pending.size)break;throw new Error('Mission dependency graph cannot make progress');}
+    ready.forEach(w=>m.workers.find(x=>x.id===w.agentId).state='running');m.updatedAt=iso();save(missionsFile,ms);missionSnapshot(m,'dispatch','Ready workers entered execution',ready.map(w=>w.agentId).join(','));
     const batch=await Promise.all(ready.map(w=>specialist(w.agentId,goal,projectId,w.model,dependencyContext(results,w.dependsOn))));results.push(...batch);
     ready.forEach(w=>{pending.delete(w.agentId);done.add(w.agentId);const r=results.find(x=>x.agentId===w.agentId),mw=m.workers.find(x=>x.id===w.agentId);mw.state=r.status});
-    m.results=results;m.updatedAt=iso();save(missionsFile,ms);missionSnapshot(m);
+    m.results=results;m.updatedAt=iso();save(missionsFile,ms);missionSnapshot(m,'worker-result','Specialist results published',ready.map(w=>w.agentId).join(','));
    }
-   const failed=results.filter(r=>r.status!=='complete'),blockedWorkers=m.workers.filter(w=>w.state==='blocked');if(failed.length||blockedWorkers.length){const sw=m.workers.find(x=>x.id==='synthesis');sw.state='blocked';sw.error='Synthesis skipped because prerequisite specialists did not complete';m.status='needs_attention';m.error='Mission stopped after specialist failure';m.updatedAt=iso();save(missionsFile,ms);missionSnapshot(m);return m}
-   m.workers.find(x=>x.id==='synthesis').state='running';missionSnapshot(m);
+   const failed=results.filter(r=>r.status!=='complete'),blockedWorkers=m.workers.filter(w=>w.state==='blocked');if(failed.length||blockedWorkers.length){const sw=m.workers.find(x=>x.id==='synthesis');sw.state='blocked';sw.error='Synthesis skipped because prerequisite specialists did not complete';m.status='needs_attention';m.error='Mission stopped after specialist failure';m.updatedAt=iso();save(missionsFile,ms);missionSnapshot(m,'mission-attention','Mission stopped after specialist failure');return m}
+   m.workers.find(x=>x.id==='synthesis').state='running';missionSnapshot(m,'synthesis','Coordinator started synthesis','synthesis');
    const coordinatorModel=(await routeModel(goal+' synthesis')).model,joined=results.map(r=>'## '+r.agentName+'\n'+(r.answer||r.error||'')).join('\n\n');
    m.answer=await runModelReliable('Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nSynthesize only claims grounded in the specialist evidence. Preserve source labels. Reject invented product behavior, metrics, dates, screens, users, or defects. Clearly distinguish observed evidence from recommendations and identify remaining evidence gaps.','You are the mission coordinator for the Local AI Appliance. Produce an actionable, source-grounded synthesis; never substitute a generic consumer AI product.',COORDINATOR_TIMEOUT_MS,coordinatorModel);m.coordinatorModel=coordinatorModel;m.workers.find(x=>x.id==='synthesis').state='complete';m.status=results.some(x=>x.status==='error')?'needs_attention':'complete';
   }catch(e){m.status='error';m.error=String(e.message||e)}
-  m.updatedAt=iso();save(missionsFile,ms);missionSnapshot(m);return m
+  m.updatedAt=iso();save(missionsFile,ms);missionSnapshot(m,m.status==='complete'?'mission-complete':'mission-error',m.status==='complete'?'Mission completed and artifacts are ready':(m.error||'Mission ended with an error'));return m
  }
  return {catalog,models,route:routeModel,dispatch,specialist,mission,runs:()=>read(runsFile),missions:()=>read(missionsFile),events};
 };
