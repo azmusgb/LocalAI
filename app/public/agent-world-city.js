@@ -140,7 +140,7 @@ function toggleDisplay(k){display[k]=!display[k];root?.querySelector('[data-awc-
 function mount(){
  const host=$('#agentWorldCityMount');if(!host)return;root=document.createElement('section');root.className='awc awc-v3';root.innerHTML=`
  <div class="awc__commandbar">
-  <div class="awc__brand"><div class="awc__mark">AW</div><div><div class="awc__title">Agent World</div><div class="awc__sub">Mission operations city</div></div></div>
+  <div class="awc__brand"><div class="awc__mark">AW</div><div><div class="awc__title">Agent World</div><div class="awc__sub">Mission construction crew</div></div></div>
   <div class="awc__topstats"><span class="awc__live"><i></i><b id="awcSource">IDLE</b></span><span>Running <b id="awcStatRun">0</b></span><span>Complete <b id="awcStatDone">0</b></span><span>Alerts <b id="awcStatAlert">0</b></span></div>
   <div class="awc__toolbar"><button id="awcFit" type="button">Fit</button><button id="awcCenter" type="button">Active</button><button id="awcZoomOut" type="button" aria-label="Zoom out">−</button><span id="awcZoomLabel">100%</span><button id="awcZoomIn" type="button" aria-label="Zoom in">+</button><button type="button" data-awc-display="labels" aria-pressed="true">Labels</button><button type="button" data-awc-display="flows" aria-pressed="true">Flows</button><button type="button" data-awc-display="night" aria-pressed="false">Night</button></div>
  </div>
