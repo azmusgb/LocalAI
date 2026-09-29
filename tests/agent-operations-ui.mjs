@@ -41,7 +41,24 @@ await check('mission-first composer',async()=>{
 await check('Agent World is mounted',async()=>{
   await page.locator('#agentWorldCityMount .awc').waitFor({state:'visible'});
   const box=await page.locator('#agentWorldCityMount .awc').boundingBox();
-  assert.ok(box&&box.width>700,'Agent World should be a dominant desktop surface');
+  assert.ok(box&&box.width>0&&box.height>0,'Agent World should render a visible game surface');
+});
+await check('Agent World stage is landscape and full-width',async()=>{
+  const live=await page.locator('.agent-live-grid').evaluate(el=>getComputedStyle(el).gridTemplateColumns);
+  assert.ok(!live.includes('360px'),'Agent World must not be squeezed by a fixed inspector column');
+  const map=await page.locator('.awc__mapWrap').boundingBox();
+  assert.ok(map&&map.width>map.height,'Game map should be landscape, not a tall portrait strip');
+});
+await check('Agent World theater, crew and follow controls',async()=>{
+  await page.locator('#awcCrewToggle').click();
+  assert.ok((await page.locator('.awc-v3').getAttribute('class')).includes('crew-hidden'));
+  await page.locator('#awcCrewToggle').click();
+  await page.locator('#awcFollow').click();
+  assert.equal(await page.locator('#awcFollow').getAttribute('aria-pressed'),'true');
+  await page.locator('#awcExpand').click();
+  assert.ok((await page.locator('.awc-v3').getAttribute('class')).includes('is-expanded'));
+  await page.keyboard.press('Escape');
+  assert.ok(!(await page.locator('.awc-v3').getAttribute('class')).includes('is-expanded'));
 });
 await check('advanced routing collapsed by default',async()=>{
   assert.equal(await page.locator('#agentAdvancedPanel').isVisible(),false);

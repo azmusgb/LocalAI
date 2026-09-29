@@ -40,7 +40,7 @@ let root,canvas,ctx,current=null,liveSnapshot=null,sourceType='idle',selected=nu
 let roads=new Set(),agents=new Map(),artifacts=[],packets=[],traffic=[],sparks=[],events=[],clouds=[];
 let view={zoom:1,panX:0,panY:0,targetZoom:1,targetPanX:0,targetPanY:0};
 let drag=null,pointers=new Map(),pinch=null,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-let display={labels:true,flows:true,night:false};
+let display={labels:true,flows:true,night:false,crew:true,follow:false};
 let demo={active:false,running:false,paused:false,stage:0,speed:1,lastAdvance:0,scenario:'success'};
 
 function humanState(s){return({needs_attention:'Needs attention',running:'Running',complete:'Complete',blocked:'Blocked',error:'Needs attention',pending:'Waiting',awaiting_approval:'Awaiting approval',applied:'Applied'})[s]||String(s||'Idle').replaceAll('_',' ')}
@@ -147,13 +147,17 @@ function updateHover(e){
  tip.style.left=clamp(e.offsetX+12,8,canvas.clientWidth-176)+'px';tip.style.top=clamp(e.offsetY-54,8,canvas.clientHeight-54)+'px'
 }
 function toggleDisplay(k){display[k]=!display[k];root?.querySelector('[data-awc-display="'+k+'"]')?.setAttribute('aria-pressed',String(display[k]));if(k==='night')root?.classList.toggle('is-night',display.night)}
+function toggleCrew(){display.crew=!display.crew;root?.classList.toggle('crew-hidden',!display.crew);$('#awcCrewToggle',root)?.setAttribute('aria-pressed',String(display.crew))}
+function toggleFollow(){display.follow=!display.follow;$('#awcFollow',root)?.setAttribute('aria-pressed',String(display.follow));if(display.follow)focusActive()}
+function toggleExpanded(){const on=!root.classList.contains('is-expanded');root.classList.toggle('is-expanded',on);document.body.classList.toggle('awc-stage-expanded',on);$('#awcExpand',root).textContent=on?'Exit theater':'Theater';setTimeout(()=>{if(on)focusActive();else fitWorld()},40)}
+function exitExpanded(){if(!root?.classList.contains('is-expanded'))return;root.classList.remove('is-expanded');document.body.classList.remove('awc-stage-expanded');$('#awcExpand',root).textContent='Theater';fitWorld()}
 
 function mount(){
  const host=$('#agentWorldCityMount');if(!host)return;root=document.createElement('section');root.className='awc awc-v3';root.innerHTML=`
  <div class="awc__commandbar">
   <div class="awc__brand"><div class="awc__mark">AW</div><div><div class="awc__title">Agent World</div><div class="awc__sub">Mission construction crew</div></div></div>
   <div class="awc__topstats"><span class="awc__live"><i></i><b id="awcSource">IDLE</b></span><span>Running <b id="awcStatRun">0</b></span><span>Complete <b id="awcStatDone">0</b></span><span>Alerts <b id="awcStatAlert">0</b></span></div>
-  <div class="awc__toolbar"><button id="awcFit" type="button">Fit</button><button id="awcCenter" type="button">Active</button><button id="awcZoomOut" type="button" aria-label="Zoom out">−</button><span id="awcZoomLabel">100%</span><button id="awcZoomIn" type="button" aria-label="Zoom in">+</button><button type="button" data-awc-display="labels" aria-pressed="true">Labels</button><button type="button" data-awc-display="flows" aria-pressed="true">Flows</button><button type="button" data-awc-display="night" aria-pressed="false">Night</button></div>
+  <div class="awc__toolbar"><button id="awcExpand" data-game-primary="true" type="button">Theater</button><button id="awcCrewToggle" type="button" aria-pressed="true">Crew</button><button id="awcFollow" type="button" aria-pressed="false">Follow</button><button id="awcFit" type="button">Fit</button><button id="awcCenter" type="button">Active</button><button id="awcZoomOut" type="button" aria-label="Zoom out">−</button><span id="awcZoomLabel">100%</span><button id="awcZoomIn" type="button" aria-label="Zoom in">+</button><button type="button" data-awc-display="labels" aria-pressed="true">Labels</button><button type="button" data-awc-display="flows" aria-pressed="true">Flows</button><button type="button" data-awc-display="night" aria-pressed="false">Night</button></div>
  </div>
  <div class="awc__missionstrip"><div class="awc__missioncopy"><span class="awc__eyebrow">Mission objective</span><strong id="awcObjective">No active mission</strong></div><div class="awc__phase"><span class="awc__phaseDot"></span><span><strong id="awcStage">Standing by</strong><small id="awcStageDetail">Waiting for mission activity</small></span></div><div class="awc__missionstate"><b id="awcStatus">Idle</b><span id="awcProgressText">No workers</span><span class="awc__attention" id="awcAttention" hidden>Attention</span></div></div>
  <div class="awc__gameShell">
@@ -176,19 +180,20 @@ function mount(){
  </div>
  <div class="awc__footer"><div class="awc__progress"><span id="awcProgress"></span></div><div class="awc__legend"><span><i class="run"></i>Running</span><span><i class="done"></i>Complete</span><span><i class="wait"></i>Waiting</span><span><i class="bad"></i>Attention</span></div><span class="awc__hint">Drag to pan · wheel or pinch to zoom · click a district or worker</span></div>`;
  host.appendChild(root);canvas=$('#awcCanvas',root);ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=false;
- $('#awcFit',root).onclick=fitWorld;$('#awcCenter',root).onclick=focusActive;$('#awcZoomIn',root).onclick=()=>zoomAt(1.2);$('#awcZoomOut',root).onclick=()=>zoomAt(.84);$('#awcDemoPlay',root).onclick=toggleDemoPlay;$('#awcDemoStep',root).onclick=stepDemo;$('#awcDemoReset',root).onclick=resetDemo;$('#awcDemoSpeed',root).onclick=cycleSpeed;$('#awcLiveBtn',root).onclick=returnLive;$('#awcDemoScenario',root).onchange=e=>{demo.scenario=e.target.value;if(demo.active)applyDemo()};
+ $('#awcExpand',root).onclick=toggleExpanded;$('#awcCrewToggle',root).onclick=toggleCrew;$('#awcFollow',root).onclick=toggleFollow;$('#awcFit',root).onclick=fitWorld;$('#awcCenter',root).onclick=focusActive;$('#awcZoomIn',root).onclick=()=>zoomAt(1.2);$('#awcZoomOut',root).onclick=()=>zoomAt(.84);$('#awcDemoPlay',root).onclick=toggleDemoPlay;$('#awcDemoStep',root).onclick=stepDemo;$('#awcDemoReset',root).onclick=resetDemo;$('#awcDemoSpeed',root).onclick=cycleSpeed;$('#awcLiveBtn',root).onclick=returnLive;$('#awcDemoScenario',root).onchange=e=>{demo.scenario=e.target.value;if(demo.active)applyDemo()};
  root.querySelectorAll('[data-awc-display]').forEach(b=>b.onclick=()=>toggleDisplay(b.dataset.awcDisplay));root.querySelectorAll('[data-awc-district]').forEach(b=>b.onclick=()=>{selected={type:'district',id:b.dataset.awcDistrict};syncSelection();const d=DISTRICTS[b.dataset.awcDistrict];focusPoint((d.x+d.w/2)*T,(d.y+d.h/2)*T,1.7)});
  canvas.addEventListener('wheel',e=>{e.preventDefault();const p=screenPoint(e);zoomAt(e.deltaY<0?1.12:.89,p.px,p.py)},{passive:false});
  canvas.addEventListener('pointerdown',e=>{try{canvas.setPointerCapture(e.pointerId)}catch{}const p=screenPoint(e);pointers.set(e.pointerId,{x:p.px,y:p.py});if(pointers.size===1){drag={id:e.pointerId,startX:p.px,startY:p.py,panX:view.targetPanX,panY:view.targetPanY,moved:false};pinch=null}else if(pointers.size===2){const ps=[...pointers.values()],dx=ps[1].x-ps[0].x,dy=ps[1].y-ps[0].y;pinch={distance:Math.max(1,Math.hypot(dx,dy)),zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,cx:(ps[0].x+ps[1].x)/2,cy:(ps[0].y+ps[1].y)/2};drag=null}});
  canvas.addEventListener('pointermove',e=>{updateHover(e);if(!pointers.has(e.pointerId))return;const r=canvas.getBoundingClientRect(),sx=W/r.width,sy=H/r.height,px=(e.clientX-r.left)*sx,py=(e.clientY-r.top)*sy;pointers.set(e.pointerId,{x:px,y:py});if(pointers.size===2&&pinch){const ps=[...pointers.values()],dx=ps[1].x-ps[0].x,dy=ps[1].y-ps[0].y,dist=Math.max(1,Math.hypot(dx,dy)),cx=(ps[0].x+ps[1].x)/2,cy=(ps[0].y+ps[1].y)/2,nz=clamp(pinch.zoom*(dist/pinch.distance),1,3),wx=(pinch.cx-pinch.panX)/pinch.zoom,wy=(pinch.cy-pinch.panY)/pinch.zoom;view.targetZoom=nz;view.targetPanX=cx-wx*nz;view.targetPanY=cy-wy*nz;limitTargetPan();syncZoomLabel();return}if(!drag||drag.id!==e.pointerId)return;const dx=px-drag.startX,dy=py-drag.startY;if(Math.abs(dx)+Math.abs(dy)>4)drag.moved=true;view.targetPanX=drag.panX+dx;view.targetPanY=drag.panY+dy;limitTargetPan()});
  canvas.addEventListener('pointerup',e=>{const wasSingle=pointers.size===1,moved=drag?.moved||false;pointers.delete(e.pointerId);if(wasSingle&&!moved)selectAt(e);if(pointers.size===1){const[id,p]=[...pointers.entries()][0];drag={id,startX:p.x,startY:p.y,panX:view.targetPanX,panY:view.targetPanY,moved:true}}else drag=null;if(pointers.size<2)pinch=null});
  canvas.addEventListener('pointercancel',e=>{pointers.delete(e.pointerId);drag=null;if(pointers.size<2)pinch=null});canvas.addEventListener('pointerleave',()=>{const t=$('#awcTooltip',root);if(t)t.hidden=true});
- canvas.addEventListener('keydown',e=>{if(e.key==='+'||e.key==='=')zoomAt(1.2);if(e.key==='-')zoomAt(.84);if(e.key==='0')fitWorld();if(e.key==='Enter'&&hovered){selected=hovered;syncSelection()}});
+ canvas.addEventListener('keydown',e=>{if(e.key==='+'||e.key==='=')zoomAt(1.2);if(e.key==='-')zoomAt(.84);if(e.key==='0')fitWorld();if(e.key==='f')toggleFollow();if(e.key==='Enter'&&hovered){selected=hovered;syncSelection()}});document.addEventListener('keydown',e=>{if(e.key==='Escape')exitExpanded()});
  window.addEventListener('localai:agentworld-focus',e=>focusWorker(e.detail?.workerId));
  document.body.classList.add('agent-world-city-ready');buildRoads();seedAmbient();syncDemoControls();syncHud();syncEventFeed();start();bootstrap()
 }
 function seedAmbient(){traffic=[{x:2*T,y:13.5*T,v:28,axis:'x',dir:1,color:'#6aaeff'},{x:36*T,y:14.5*T,v:23,axis:'x',dir:-1,color:'#ffc56b'},{x:25.5*T,y:3*T,v:20,axis:'y',dir:1,color:'#c18cff'},{x:13.5*T,y:21*T,v:18,axis:'y',dir:-1,color:'#75dfa2'}];clouds=[{x:160,y:80,s:1.1},{x:880,y:130,s:.8},{x:560,y:40,s:.6}]}
 function update(dt,ts){
+ if(display.follow&&!drag&&!pointers.size){const a=[...agents.values()].find(q=>q.state==='running');if(a){view.targetZoom=Math.max(view.targetZoom,1.7);view.targetPanX=W/2-a.x*view.targetZoom;view.targetPanY=H/2-a.y*view.targetZoom;limitTargetPan()}}
  view.zoom+= (view.targetZoom-view.zoom)*Math.min(1,dt*10);view.panX+=(view.targetPanX-view.panX)*Math.min(1,dt*10);view.panY+=(view.targetPanY-view.panY)*Math.min(1,dt*10);
  for(const a of agents.values()){a.bob+=dt*7;a.step+=dt*(a.state==='running'?13:10);if(!a.path?.length||a.pathI>=a.path.length)continue;const p=a.path[a.pathI],dx=p.x-a.x,dy=p.y-a.y,d=Math.hypot(dx,dy),speed=a.state==='running'?96:64;if(d<3){a.pathI++;continue}a.dir=dx<0?-1:1;a.x+=dx/d*speed*dt;a.y+=dy/d*speed*dt}
  for(const p of packets){if(p.done||!p.path[p.i])continue;const t=p.path[p.i],dx=t.x-p.x,dy=t.y-p.y,d=Math.hypot(dx,dy);if(d<3){p.i++;if(p.i>=p.path.length)p.done=true;continue}p.x+=dx/d*150*dt;p.y+=dy/d*150*dt}packets=packets.filter(p=>!p.done);
@@ -241,6 +246,20 @@ function drawBuilding(id,d,ts){
  if(bad){ctx.strokeStyle='#ff7383';ctx.lineWidth=4;ctx.globalAlpha=.6+.4*pulse;ctx.strokeRect(x-5,y-5,w+depth+10,h+11);ctx.globalAlpha=1;px(x+w-16,y+11,10,10,pulse>.5?'#ff7383':'#6f2632')}
  if(selectedDistrict){ctx.strokeStyle='#ffffff';ctx.lineWidth=2;ctx.setLineDash([6,4]);ctx.strokeRect(x-8,y-8,w+depth+16,h+17);ctx.setLineDash([])}
  ctx.restore()
+}
+function drawWorksite(id,d,ts){
+ const workers=districtWorkers(id),active=workers.some(w=>w.state==='running'),bad=workers.some(w=>['error','blocked'].includes(w.state));if(!active&&!bad)return;
+ const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,pulse=(Math.sin(ts/220)+1)/2;
+ // work zone tape / cones
+ for(let i=0;i<3;i++){const cx=x+16+i*18,cy=y+h+10;pathPoly([[cx,cy],[cx+5,cy-10],[cx+10,cy]],bad?'#ff7383':'#f5a623');px(cx+2,cy-5,6,2,'#fff3b0')}
+ // scaffolding
+ ctx.strokeStyle=bad?'rgba(255,115,131,.65)':'rgba(245,180,62,.58)';ctx.lineWidth=2;
+ ctx.strokeRect(x-9,y+10,9,h-18);ctx.strokeRect(x+w+4,y+10,9,h-18);
+ for(let yy=y+18;yy<y+h-12;yy+=18){ctx.beginPath();ctx.moveTo(x-9,yy);ctx.lineTo(x,yy+8);ctx.moveTo(x+w+4,yy);ctx.lineTo(x+w+13,yy+8);ctx.stroke()}
+ // tiny crane / hoist
+ const mastX=x+w+18,top=y-6,hookY=y+14+Math.sin(ts/500)*8;
+ px(mastX,top,3,44,bad?'#8f3b48':'#d79b2b');px(mastX-18,top,22,3,bad?'#8f3b48':'#e7b343');
+ ctx.strokeStyle=bad?'#ff8f9c':'#f3c65d';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(mastX-15,top+3);ctx.lineTo(mastX-15,hookY);ctx.stroke();px(mastX-18,hookY,6,4,bad?'#ff7383':(pulse>.45?'#ffd26b':'#c9952d'));
 }
 function drawTraffic(){for(const c of traffic){ctx.save();ctx.translate(c.x,c.y);px(-7,-4,14,8,c.color);px(-4,-6,8,3,'#b8dbff');px(-5,4,3,2,'#0b0e12');px(2,4,3,2,'#0b0e12');ctx.restore()}}
 function drawFlows(ts){
@@ -352,7 +371,7 @@ function drawMinimap(){
  el.innerHTML='<span></span>'+markers;
 }
 function draw(ts){
- ctx.clearRect(0,0,W,H);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(view.zoom,view.zoom);drawGround(ts);drawFlows(ts);drawTraffic();for(const[id,d]of Object.entries(DISTRICTS))drawBuilding(id,d,ts);drawAgents(ts);drawClouds(ts);if(display.night){ctx.fillStyle='rgba(3,7,14,.18)';ctx.fillRect(0,0,W,H)}ctx.restore()
+ ctx.clearRect(0,0,W,H);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(view.zoom,view.zoom);drawGround(ts);drawFlows(ts);drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawBuilding(id,d,ts);drawWorksite(id,d,ts)}drawAgents(ts);drawClouds(ts);if(display.night){ctx.fillStyle='rgba(3,7,14,.18)';ctx.fillRect(0,0,W,H)}ctx.restore()
 }
 function loop(ts){const dt=Math.min(.05,(ts-last)/1000||0);last=ts;update(dt,ts);draw(ts);raf=requestAnimationFrame(loop)}
 function start(){if(!raf)raf=requestAnimationFrame(loop)}
