@@ -15,7 +15,7 @@ function viewButton(view){return allButtons.get(view)||q('.navbtn[data-view="'+v
 function domainForView(view){return DOMAINS.find(d=>d.groups.some(g=>g.views.includes(view)))||DOMAINS[0]}
 function labelForView(view){return LABELS[view]||viewButton(view)?.textContent?.trim()||view}
 function activeView(){return q('.view.active')?.id||q('.navbtn.active')?.dataset.view||'home'}
-function navigate(view){const b=viewButton(view);if(b){b.click();requestAnimationFrame(()=>sync(view))}}
+function navigate(view){if(typeof window.showView==='function'){window.showView(view);requestAnimationFrame(()=>sync(view));return}const b=viewButton(view);if(b){b.click();requestAnimationFrame(()=>sync(view));return}const target=q('#'+view);if(target){qa('.view').forEach(v=>v.classList.toggle('active',v===target));requestAnimationFrame(()=>sync(view))}}
 
 function buildDesktopNav(){
  const aside=q('.app>aside'),nav=q('.app>aside nav');if(!aside||!nav)return;
