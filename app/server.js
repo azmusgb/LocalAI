@@ -202,8 +202,19 @@ function overallState(services) {
   const core = services.filter(x => x.required !== false);
   if (core.some(x => x.state === 'DOWN')) return 'DOWN';
   if (core.some(x => x.state === 'DEGRADED')) return 'DEGRADED';
-  if (services.some(x => x.required === false && x.state !== 'HEALTHY')) return 'DEGRADED';
   return 'HEALTHY';
+}
+
+function presentService(service) {
+  const optional = service.required === false;
+  const available = service.state === 'HEALTHY';
+  return {
+    ...service,
+    availability: available ? 'available' : 'unavailable',
+    displayState: optional && !available ? 'OPTIONAL_OFFLINE' : service.state,
+    severity: available ? 'ok' : optional ? 'info' : service.state === 'DEGRADED' ? 'warning' : 'critical',
+    impact: optional && !available ? 'Core appliance unaffected' : available ? 'Ready' : 'Core capability affected'
+  };
 }
 
 function certificationInfo() {
@@ -250,7 +261,7 @@ async function getStatusAndRecordTransition() {
     appliance: 'Local AI',
     overall,
     checkedAt: new Date().toISOString(),
-    services,
+    services: services.map(presentService),
     serviceSummary: {
       core: services.filter(x => x.required !== false).length,
       optional: services.filter(x => x.required === false).length,
