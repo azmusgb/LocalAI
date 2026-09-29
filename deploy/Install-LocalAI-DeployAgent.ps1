@@ -1,0 +1,3 @@
+param([int]$EveryMinutes=5,[switch]$Install)
+$ErrorActionPreference="Stop";$TaskName="LocalAI Safe Deploy";$Script="C:\LocalAI\repo\deploy\Deploy-LocalAI.ps1"
+if($Install){$a=New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$Script`"";$t=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes $EveryMinutes);$s=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable;Register-ScheduledTask -TaskName $TaskName -Action $a -Trigger $t -Settings $s -Description "Safe LocalAI deployment from origin/main." -Force;Write-Host "Installed $TaskName" -ForegroundColor Green}else{Write-Host "Dry run. Add -Install when ready."}
