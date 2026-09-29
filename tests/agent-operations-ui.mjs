@@ -127,6 +127,16 @@ await check('Living Worksite replay controls are interactive',async()=>{
   await page.locator('#awcReplayLive').click();
   await page.locator('#awcLiveBtn').click();
 });
+await check('Agent World v10 exposes durable observability semantics',async()=>{
+  await page.locator('#awcStatArtifacts').waitFor({state:'visible'});
+  assert.match(await page.locator('.awc__legend').innerText(),/Active dependency/i);
+  await page.locator('#awcDemoPlay').click();
+  await page.locator('#awcDemoStep').click();
+  await page.locator('#awcDemoStep').click();
+  const stored=await page.evaluate(()=>JSON.parse(localStorage.getItem('localai.agentworld.replay.v1')||'[]').length);
+  assert.ok(stored>=2,'replay checkpoints should persist locally');
+  await page.locator('#awcLiveBtn').click();
+});
 await check('Agent World running-worker controls remain interactive',async()=>{
   await page.locator('#awcDemoPlay').click();
   await page.waitForTimeout(250);
