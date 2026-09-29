@@ -48,8 +48,9 @@ let view={zoom:1,panX:0,panY:0,targetZoom:1,targetPanX:0,targetPanY:0};
 let drag=null,pointers=new Map(),pinch=null,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let display={labels:true,flows:true,night:false,crew:true,follow:false};
 let demo={active:false,running:false,paused:false,stage:0,speed:1,lastAdvance:0,scenario:'success'};
-const REPLAY_KEY='localai.agentworld.replay.v1';
-let replay={frames:[],active:false,index:0,playing:false,lastStep:0};
+const REPLAY_KEY='localai.agentworld.replay.v2';
+let replay={frames:[],active:false,index:0,playing:false,lastStep:0,speed:1,sourceMissionId:''};
+let celebrationUntil=0;
 
 function humanState(s){return({needs_attention:'Needs attention',running:'Running',complete:'Complete',blocked:'Blocked',error:'Needs attention',pending:'Waiting',awaiting_approval:'Awaiting approval',applied:'Applied'})[s]||String(s||'Idle').replaceAll('_',' ')}
 function zoneForWorker(w){if(['error','blocked'].includes(w.state))return'repair';return ROLE_ZONE[w.id]||ROLE_ZONE[w.agentId]||(/doc/i.test(w.name||'')?'docs':/ux/i.test(w.name||'')?'ux':/model/i.test(w.name||'')?'models':'command')}
@@ -127,24 +128,47 @@ function spawnArtifact(a){if(artifacts.some(x=>x.workerId===a.id))return;const p
 function spawnPacket(from,to,color,label='EVIDENCE'){const p=astar(districtCenter(from),districtCenter(to));if(p.length)packets.push({path:p,i:0,x:p[0].x,y:p[0].y,color,label,done:false,created:now()})}
 function spawnSpark(x,y,color,n=12){for(let i=0;i<n;i++)sparks.push({x,y,vx:(Math.random()-.5)*80,vy:-20-Math.random()*80,life:.7+Math.random()*.7,color,size:1+Math.random()*2})}
 function addEvent(text){events.unshift({text,at:new Date()});events=events.slice(0,12);syncEventFeed()}
-function loadReplay(){try{const saved=JSON.parse(localStorage.getItem(REPLAY_KEY)||'[]');if(Array.isArray(saved)){replay.frames=saved.slice(-80);replay.index=Math.max(0,replay.frames.length-1)}}catch{}}
-function persistReplay(){try{localStorage.setItem(REPLAY_KEY,JSON.stringify(replay.frames.slice(-80)))}catch{}}
+function loadReplay(){try{const saved=JSON.parse(localStorage.getItem(REPLAY_KEY)||'null');if(saved&&Array.isArray(saved.frames)){replay.frames=saved.frames.slice(-120);replay.index=Math.max(0,replay.frames.length-1);replay.speed=saved.speed||1;replay.sourceMissionId=saved.sourceMissionId||''}}catch{}}
+function persistReplay(){try{localStorage.setItem(REPLAY_KEY,JSON.stringify({frames:replay.frames.slice(-120),speed:replay.speed,sourceMissionId:replay.sourceMissionId}))}catch{}}
+function timelineMission(base,event){
+ const m=normalizeMission(base),states=new Map((event.workers||[]).map(w=>[w.id,w]));
+ m.status=event.status||m.status;m.updatedAt=event.at||m.updatedAt;m.workers=m.workers.map(w=>({...w,...(states.get(w.id)||{})}));
+ return m
+}
+function primeMissionReplay(m){
+ const timeline=m?.timeline||[];if(!timeline.length)return false;
+ replay.frames=timeline.map((e,i)=>({at:Date.parse(e.at)||Date.now()+i,reason:e.type||'state',detail:e.detail||'',workerId:e.workerId||'',sig:e.sig||String(i),mission:timelineMission(m,e)})).slice(-120);
+ replay.index=Math.max(0,replay.frames.length-1);replay.sourceMissionId=m.id||'';persistReplay();syncReplay();return true
+}
+function loadMissionReplay(m){if(!m)return;if(!primeMissionReplay(m)){const n=normalizeMission(m);replay.frames=[{at:Date.parse(n.updatedAt)||Date.now(),reason:'snapshot',detail:'Historical mission snapshot',workerId:'',sig:n.id,mission:n}];replay.index=0;replay.sourceMissionId=n.id||'';persistReplay();syncReplay()}addEvent('Replay loaded: '+(m.goal||m.id||'mission'))}
 function recordReplayFrame(reason){
- if(replay.active||!current)return;const sig=(current.workers||[]).map(w=>w.id+':'+w.state).join('|');const last=replay.frames.at(-1);if(last?.sig===sig)return;
- replay.frames.push({at:Date.now(),reason,sig,mission:JSON.parse(JSON.stringify(current))});replay.frames=replay.frames.slice(-80);replay.index=replay.frames.length-1;persistReplay();syncReplay()
+ if(replay.active||!current)return;const sig=(current.workers||[]).map(w=>w.id+':'+w.state).join('|')+'|'+current.status;const last=replay.frames.at(-1);if(last?.sig===sig)return;
+ replay.frames.push({at:Date.now(),reason,detail:'',workerId:'',sig,mission:JSON.parse(JSON.stringify(current))});replay.frames=replay.frames.slice(-120);replay.index=replay.frames.length-1;replay.sourceMissionId=current.id||replay.sourceMissionId;persistReplay();syncReplay()
 }
+function replayEventClass(frame){const r=String(frame?.reason||'').toLowerCase();if(/error|attention|blocked|fail/.test(r))return'bad';if(/complete|result/.test(r))return'done';if(/handoff|dispatch|synthesis/.test(r))return'active';return'wait'}
 function syncReplay(){
- if(!root)return;const range=$('#awcReplayRange',root),label=$('#awcReplayLabel',root);if(range){range.max=Math.max(0,replay.frames.length-1);range.value=replay.index;range.disabled=replay.frames.length<2}
- if(label)label.textContent=replay.active?'Replay '+(replay.index+1)+' / '+replay.frames.length:replay.frames.length+' checkpoint'+(replay.frames.length===1?'':'s');
- $('#awcReplayPlay',root).textContent=replay.playing?'Pause replay':'Replay';$('#awcReplayLive',root).hidden=!replay.active
+ if(!root)return;const range=$('#awcReplayRange',root),label=$('#awcReplayLabel',root),markers=$('#awcReplayMarkers',root),frame=replay.frames[replay.index];
+ if(range){range.max=Math.max(0,replay.frames.length-1);range.value=replay.index;range.disabled=replay.frames.length<2}
+ if(label)label.textContent=replay.frames.length?(replay.active?'Replay '+(replay.index+1)+' / '+replay.frames.length+' · '+String(frame?.reason||'state').replaceAll('-',' '):replay.frames.length+' event'+(replay.frames.length===1?'':'s')+' ready'):'0 events';
+ if(markers){markers.innerHTML=replay.frames.map((f,i)=>`<button type="button" data-replay-index="${i}" class="${replayEventClass(f)} ${i===replay.index?'active':''}" title="${esc((f.reason||'state')+(f.detail?' — '+f.detail:''))}"></button>`).join('');markers.querySelectorAll('[data-replay-index]').forEach(b=>b.onclick=()=>applyReplayFrame(Number(b.dataset.replayIndex)))}
+ $('#awcReplayPlay',root).textContent=replay.playing?'Pause':'Play';$('#awcReplaySpeed',root).textContent=replay.speed+'×';$('#awcReplayLive',root).hidden=!replay.active;
+ const detail=$('#awcReplayDetail',root);if(detail)detail.textContent=frame?(new Date(frame.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})+' · '+(frame.detail||String(frame.reason||'state').replaceAll('-',' '))):'Select a mission from history to inspect its execution.'
 }
-function applyReplayFrame(i){
- if(!replay.frames.length)return;replay.active=true;replay.playing=false;replay.index=clamp(Number(i)||0,0,replay.frames.length-1);const frame=replay.frames[replay.index];agents.clear();artifacts=[];packets=[];current=JSON.parse(JSON.stringify(frame.mission));sourceType='replay';current.workers.forEach(ensureAgent);syncHud();syncReplay()
+function applyReplayFrame(i,preservePlaying=false){
+ if(!replay.frames.length)return;const wasPlaying=replay.playing;replay.active=true;replay.playing=preservePlaying&&wasPlaying;replay.index=clamp(Number(i)||0,0,replay.frames.length-1);const frame=replay.frames[replay.index];agents.clear();artifacts=[];packets=[];sparks=[];dust=[];current=JSON.parse(JSON.stringify(frame.mission));sourceType='replay';current.workers.forEach(ensureAgent);selected=frame.workerId?{type:'agent',id:String(frame.workerId).split(',')[0]}:selected;syncHud();syncSelection();syncReplay()
 }
+function stepReplay(delta){if(!replay.frames.length)return;if(!replay.active)applyReplayFrame(replay.index);else applyReplayFrame(clamp(replay.index+delta,0,replay.frames.length-1));}
 function toggleReplay(){if(replay.frames.length<2)return;if(!replay.active)applyReplayFrame(0);replay.playing=!replay.playing;replay.lastStep=now();syncReplay()}
-function returnReplayLive(){replay.active=false;replay.playing=false;if(liveSnapshot){agents.clear();current=liveSnapshot;sourceType='mission';current.workers.forEach(ensureAgent)}syncHud();syncReplay()}
+function cycleReplaySpeed(){replay.speed=replay.speed===1?2:replay.speed===2?4:1;persistReplay();syncReplay()}
+function returnReplayLive(){replay.active=false;replay.playing=false;if(liveSnapshot){agents.clear();current=liveSnapshot;sourceType='mission';current.workers.forEach(ensureAgent)}syncHud();syncSelection();syncReplay()}
 function applyMission(m){
- if(!m||demo.active)return;const prev=current,next=normalizeMission(m);if(!prev||prev.id!==next.id){agents.clear();artifacts=[];packets=[];sparks=[]}current=next;liveSnapshot=next;sourceType='mission';current.workers.forEach(ensureAgent);if(!prev||prev.id!==current.id)addEvent('Mission entered Agent World');recordReplayFrame('mission');syncHud()
+ if(!m||demo.active)return;const prev=current,next=normalizeMission(m),wasComplete=prev?.status==='complete';
+ if(!prev||prev.id!==next.id){agents.clear();artifacts=[];packets=[];sparks=[];dust=[]}
+ current=next;liveSnapshot=next;sourceType='mission';current.workers.forEach(ensureAgent);
+ if(!prev||prev.id!==current.id)addEvent('Mission entered Agent World');
+ if(next.timeline?.length)primeMissionReplay(next);else recordReplayFrame('mission');
+ if(next.status==='complete'&&!wasComplete){const p=districtCenter('command');spawnSpark(p.x,p.y,'#75dfa2',54);celebrationUntil=now()+3600;addEvent('Mission complete · Command Center received final synthesis')}
+ syncHud()
 }
 function engWorkers(run){const s=run.status||'idle';return[{id:'engineer',name:'Engineer',state:s==='running'?'running':s==='needs_attention'?'error':s==='applied'?'complete':'pending'},{id:'validator',name:'Validator',state:s==='running'?'running':s==='awaiting_approval'?'complete':'pending'},{id:'reviewer',name:'Reviewer',state:s==='awaiting_approval'?'running':['approved','apply_requested','applied'].includes(s)?'complete':'pending'},{id:'deployer',name:'Deployer',state:['approved','apply_requested'].includes(s)?'running':s==='applied'?'complete':'pending'},{id:'operator',name:'Operator',state:s==='applied'?'complete':'pending'}]}
 function applyEngineering(run){if(!run||demo.active||(sourceType==='mission'&&current?.status==='running'))return;current={type:'engineering',id:run.id,status:run.status,goal:run.request||'Engineering run',workers:engWorkers(run),raw:run};sourceType='engineering';current.workers.forEach(ensureAgent);syncHud()}
@@ -231,13 +255,13 @@ function mount(){
    <div class="awc__opsHead"><span class="awc__eyebrow">Live roster</span><strong>Mission team</strong></div>
    <div class="awc__roster" id="awcRoster"><div class="awc__empty">No workers active.</div></div>
    <div class="awc__districtLegend">${Object.entries(DISTRICTS).map(([id,d])=>`<button type="button" data-awc-district="${id}"><i style="--district:${d.accent}"></i><span>${d.short}</span></button>`).join('')}</div>
-   <div class="awc__replayPanel"><div><span class="awc__eyebrow">Mission replay</span><strong id="awcReplayLabel">0 checkpoints</strong></div><input id="awcReplayRange" type="range" min="0" max="0" value="0" disabled aria-label="Mission replay position"><div class="awc__replayActions"><button id="awcReplayPlay" type="button">Replay</button><button id="awcReplayLive" type="button" hidden>Live</button></div></div>
+   <div class="awc__replayPanel"><div><span class="awc__eyebrow">Mission replay</span><strong id="awcReplayLabel">0 events</strong></div><div class="awc__replayMarkers" id="awcReplayMarkers"></div><input id="awcReplayRange" type="range" min="0" max="0" value="0" disabled aria-label="Mission replay position"><small id="awcReplayDetail">Select a mission from history to inspect its execution.</small><div class="awc__replayActions"><button id="awcReplayPrev" type="button" aria-label="Previous replay event">◀</button><button id="awcReplayPlay" type="button">Play</button><button id="awcReplayNext" type="button" aria-label="Next replay event">▶</button><button id="awcReplaySpeed" type="button">1×</button><button id="awcReplayLive" type="button" hidden>Live</button></div></div>
    <div class="awc__demoPanel"><span class="awc__eyebrow">Simulation lab</span><select id="awcDemoScenario" aria-label="Demo scenario"><option value="success">Successful mission</option><option value="failure">Failure + repair</option></select><div class="awc__demoActions"><button id="awcDemoPlay" type="button">Play</button><button id="awcDemoStep" type="button">Step</button><button id="awcDemoReset" type="button">Reset</button><button id="awcDemoSpeed" type="button">1×</button></div><button id="awcLiveBtn" class="awc__liveBtn" type="button" hidden>Return to live mission</button></div>
   </aside>
  </div>
  <div class="awc__footer"><div class="awc__progress"><span id="awcProgress"></span></div><div class="awc__legend"><span><i class="run"></i>Running</span><span><i class="done"></i>Complete</span><span><i class="wait"></i>Waiting</span><span><i class="bad"></i>Attention</span><span><i class="dep"></i>Active dependency</span><span><i class="artifact"></i>Artifact</span></div><span class="awc__hint">Drag to pan · wheel or pinch to zoom · click a district or worker</span></div>`;
  host.appendChild(root);loadReplay();syncReplay();canvas=$('#awcCanvas',root);ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=false;
- $('#awcReplayPlay',root).onclick=toggleReplay;$('#awcReplayLive',root).onclick=returnReplayLive;$('#awcReplayRange',root).oninput=e=>applyReplayFrame(e.target.value);$('#awcExpand',root).onclick=toggleExpanded;$('#awcCrewToggle',root).onclick=toggleCrew;$('#awcFollow',root).onclick=toggleFollow;$('#awcFit',root).onclick=fitWorld;$('#awcCenter',root).onclick=focusActive;$('#awcZoomIn',root).onclick=()=>zoomAt(1.2);$('#awcZoomOut',root).onclick=()=>zoomAt(.84);$('#awcDemoPlay',root).onclick=toggleDemoPlay;$('#awcDemoStep',root).onclick=stepDemo;$('#awcDemoReset',root).onclick=resetDemo;$('#awcDemoSpeed',root).onclick=cycleSpeed;$('#awcLiveBtn',root).onclick=returnLive;$('#awcDemoScenario',root).onchange=e=>{demo.scenario=e.target.value;if(demo.active)applyDemo()};
+ $('#awcReplayPrev',root).onclick=()=>stepReplay(-1);$('#awcReplayPlay',root).onclick=toggleReplay;$('#awcReplayNext',root).onclick=()=>stepReplay(1);$('#awcReplaySpeed',root).onclick=cycleReplaySpeed;$('#awcReplayLive',root).onclick=returnReplayLive;$('#awcReplayRange',root).oninput=e=>applyReplayFrame(e.target.value);$('#awcExpand',root).onclick=toggleExpanded;$('#awcCrewToggle',root).onclick=toggleCrew;$('#awcFollow',root).onclick=toggleFollow;$('#awcFit',root).onclick=fitWorld;$('#awcCenter',root).onclick=focusActive;$('#awcZoomIn',root).onclick=()=>zoomAt(1.2);$('#awcZoomOut',root).onclick=()=>zoomAt(.84);$('#awcDemoPlay',root).onclick=toggleDemoPlay;$('#awcDemoStep',root).onclick=stepDemo;$('#awcDemoReset',root).onclick=resetDemo;$('#awcDemoSpeed',root).onclick=cycleSpeed;$('#awcLiveBtn',root).onclick=returnLive;$('#awcDemoScenario',root).onchange=e=>{demo.scenario=e.target.value;if(demo.active)applyDemo()};
  root.querySelectorAll('[data-awc-display]').forEach(b=>b.onclick=()=>toggleDisplay(b.dataset.awcDisplay));root.querySelectorAll('[data-awc-district]').forEach(b=>b.onclick=()=>{selected={type:'district',id:b.dataset.awcDistrict};syncSelection();const d=DISTRICTS[b.dataset.awcDistrict];focusPoint((d.x+d.w/2)*T,(d.y+d.h/2)*T,1.7)});
  canvas.addEventListener('wheel',e=>{e.preventDefault();const p=screenPoint(e);zoomAt(e.deltaY<0?1.12:.89,p.px,p.py)},{passive:false});
  canvas.addEventListener('pointerdown',e=>{try{canvas.setPointerCapture(e.pointerId)}catch{}const p=screenPoint(e);pointers.set(e.pointerId,{x:p.px,y:p.py});if(pointers.size===1){drag={id:e.pointerId,startX:p.px,startY:p.py,panX:view.targetPanX,panY:view.targetPanY,moved:false};pinch=null}else if(pointers.size===2){const ps=[...pointers.values()],dx=ps[1].x-ps[0].x,dy=ps[1].y-ps[0].y;pinch={distance:Math.max(1,Math.hypot(dx,dy)),zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,cx:(ps[0].x+ps[1].x)/2,cy:(ps[0].y+ps[1].y)/2};drag=null}});
@@ -268,7 +292,7 @@ function update(dt,ts){
  for(const s of sparks){s.x+=s.vx*dt;s.y+=s.vy*dt;s.vy+=90*dt;s.life-=dt}sparks=sparks.filter(s=>s.life>0);for(const d of dust){d.x+=d.vx*dt;d.y+=d.vy*dt;d.r+=dt*5;d.life-=dt}dust=dust.filter(d=>d.life>0);
  for(const c of traffic){if(c.axis==='x'){c.x+=c.v*c.dir*dt;if(c.x>38*T)c.x=2*T;if(c.x<2*T)c.x=38*T}else{c.y+=c.v*c.dir*dt;if(c.y>23*T)c.y=3*T;if(c.y<3*T)c.y=23*T}}
  if(demo.active&&demo.running&&!demo.paused&&!reduced&&ts-demo.lastAdvance>3200/demo.speed){if(demo.stage<DEMO_STAGES.length-1){demo.stage++;applyDemo();recordReplayFrame('demo');demo.lastAdvance=ts}else demo.running=false;syncDemoControls()}
- if(replay.active&&replay.playing&&ts-replay.lastStep>1200){if(replay.index<replay.frames.length-1){replay.index++;const f=replay.frames[replay.index];agents.clear();artifacts=[];packets=[];current=JSON.parse(JSON.stringify(f.mission));sourceType='replay';current.workers.forEach(ensureAgent);syncHud();replay.lastStep=ts}else replay.playing=false;syncReplay()}
+ if(replay.active&&replay.playing&&ts-replay.lastStep>1200/replay.speed){if(replay.index<replay.frames.length-1){replay.index++;const f=replay.frames[replay.index];agents.clear();artifacts=[];packets=[];sparks=[];dust=[];current=JSON.parse(JSON.stringify(f.mission));sourceType='replay';current.workers.forEach(ensureAgent);selected=f.workerId?{type:'agent',id:String(f.workerId).split(',')[0]}:selected;syncHud();syncSelection();replay.lastStep=ts;syncReplay()}else{replay.playing=false;syncReplay()}}
 }
 function px(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h))}
 function pathPoly(points,fill){ctx.fillStyle=fill;ctx.beginPath();ctx.moveTo(points[0][0],points[0][1]);for(let i=1;i<points.length;i++)ctx.lineTo(points[i][0],points[i][1]);ctx.closePath();ctx.fill()}
@@ -516,6 +540,6 @@ function loop(ts){const dt=Math.min(.05,(ts-last)/1000||0);last=ts;update(dt,ts)
 function start(){if(!raf)raf=requestAnimationFrame(loop)}
 async function bootstrap(){try{const r=await fetch('/api/agents/missions'),j=await r.json(),items=j.items||j.missions||[],active=items.find(m=>m.status==='running')||items[0];if(active){applyMission(active);connectSSE();return}}catch{}try{const r=await fetch('/api/engineering/runs'),j=await r.json(),runs=j.items||[],active=runs.find(x=>x.status==='running')||runs[0];if(active)applyEngineering(active)}catch{}connectSSE()}
 function connectSSE(){try{const es=new EventSource('/api/agents/missions/events');es.onmessage=e=>{try{const m=JSON.parse(e.data);liveSnapshot=normalizeMission(m);applyMission(m)}catch{}}}catch{}}
-document.addEventListener('localai:engineering-run',e=>applyEngineering(e.detail?.run||e.detail));
+document.addEventListener('localai:engineering-run',e=>applyEngineering(e.detail?.run||e.detail));window.addEventListener('localai:agentworld-replay-mission',e=>{const m=e.detail?.mission;if(m){loadMissionReplay(m);if((m.timeline||[]).length>1)applyReplayFrame(0)}});
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{mount();drawMinimap()},{once:true});else{mount();drawMinimap()}
 })();
