@@ -64,7 +64,7 @@ body.agent-world-city-ready .awg6{display:none!important}
  .awc__mapWrap{min-height:390px;aspect-ratio:auto}
  .awc canvas{height:390px;aspect-ratio:auto}
  .awc__ops{display:flex;flex-direction:column;border-left:0;border-top:1px solid var(--line)}
- .awc__opsHead{position:sticky;top:0;background:#0c1621;z-index:2}
+ .awc__opsHead{position:static;background:#0c1621}
  .awc__roster{display:flex;overflow-x:auto;gap:7px;padding:9px}
  .awc__rosterItem{min-width:205px}
  .awc__districtLegend{display:flex;overflow-x:auto;flex-wrap:nowrap}
@@ -83,3 +83,5 @@ body.agent-world-city-ready .awg6{display:none!important}
  .awc-v3.is-expanded{inset:0;border-radius:0;max-height:100dvh}
  .awc-v3.is-expanded .awc__mapWrap,.awc-v3.is-expanded canvas{min-height:52dvh}
 }
+
+@media(max-width:760px){.awc__demoPanel,.awc__replayPanel{position:relative;z-index:3}.awc__demoActions button,.awc__replayActions button,.awc__liveBtn{min-height:44px}.awc__ops{padding-bottom:72px}}
