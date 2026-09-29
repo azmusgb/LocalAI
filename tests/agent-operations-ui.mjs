@@ -98,7 +98,7 @@ await mobile.waitForSelector('#agentWorldCityMount .awc');
 await check('mobile navigation is domain-first with contextual sheet',async()=>{
   await mobile.locator('#uxMobileNav').waitFor({state:'visible'});
   assert.equal(await mobile.locator('#uxMobileNav [data-domain]').count(),5);
-  await mobile.locator('#uxMobileNav [data-domain="agents"]').click();
+  await mobile.locator('#uxContextMenu').click();
   await mobile.locator('#uxMobileSheet').waitFor({state:'visible'});
   assert.match(await mobile.locator('#uxMobileSheetTitle').innerText(),/Agents/i);
   await mobile.locator('#uxMobileSheetClose').click();
