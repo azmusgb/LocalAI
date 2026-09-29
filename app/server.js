@@ -1190,6 +1190,22 @@ async function executeAgentGoal(goal,projectId=''){
   if(projectId){const hits=[];for(const d of knowledgeStore().filter(x=>x.projectId===projectId)){for(const c of d.chunks||[]){const score=knowledgeScore(goal,c);if(score>0)hits.push({score,name:d.name,text:c})}}hits.sort((a,b)=>b.score-a.score);if(hits.length)context+='\n\nPROJECT KNOWLEDGE:\n'+hits.slice(0,5).map((x,i)=>`[K${i+1}] ${x.name}\n${x.text}`).join('\n\n')}
   const modelStep=plan.find(x=>x.kind==='model'); if(modelStep)modelStep.state='running'; const answer=await runLocalModel(`${goal}${context}`,'You are an execution agent inside a private local appliance. Use available context, state uncertainties, and return a concrete result.'); if(modelStep)modelStep.state='complete'; const compose=plan.find(x=>x.kind==='compose'); if(compose)compose.state='complete'; return {plan,answer,sources};
 }
+let specialistOrchestrator=null;
+function getSpecialistOrchestrator(){
+ if(specialistOrchestrator)return specialistOrchestrator;
+ specialistOrchestrator=require('./agent-orchestrator')({
+  dataDir:DATA_DIR,ollamaUrl:OLLAMA_URL,defaultModel:MODEL,fetchWithTimeout,runLocalModel,
+  knowledgeStore,knowledgeScore,searxSearch,recordActivity
+ });
+ return specialistOrchestrator;
+}
+async function apiAgentCatalog(req,res){if(!requireFeature(res,4))return;json(res,200,{items:getSpecialistOrchestrator().catalog})}
+async function apiAgentModels(req,res){if(!requireFeature(res,4))return;try{json(res,200,{items:await getSpecialistOrchestrator().models()})}catch(e){json(res,503,{error:String(e.message||e)})}}
+async function apiSpecialistRun(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});json(res,200,{run:await getSpecialistOrchestrator().specialist(String(b.agentId||''),goal,String(b.projectId||''))})}catch(e){json(res,400,{error:String(e.message||e)})}}
+async function apiAgentMissions(req,res){if(!requireFeature(res,4))return;json(res,200,{items:getSpecialistOrchestrator().missions().slice(0,200)})}
+async function apiAgentMission(req,res,urlObj){if(!requireFeature(res,4))return;const id=String(urlObj.searchParams.get('id')||''),m=getSpecialistOrchestrator().missions().find(x=>x.id===id);if(!m)return json(res,404,{error:'Mission not found'});json(res,200,{mission:m})}
+async function apiAgentMissionStart(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const ids=Array.isArray(b.agentIds)&&b.agentIds.length?b.agentIds:['ux_analyst','documentation'];json(res,200,{mission:await getSpecialistOrchestrator().mission(goal,String(b.projectId||''),ids)})}catch(e){json(res,400,{error:String(e.message||e)})}}
+async function apiAgentMissionEvents(req,res,urlObj){if(!requireFeature(res,4))return;res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});const wanted=String(urlObj.searchParams.get('missionId')||'');const send=m=>{if(!wanted||m.id===wanted)res.write('data: '+JSON.stringify(m)+'\n\n')};const orch=getSpecialistOrchestrator();orch.events.on('mission',send);res.write(': connected\n\n');req.on('close',()=>orch.events.off('mission',send))}
 async function apiAgents(req,res){if(!requireFeature(res,4))return;json(res,200,{items:agentRunStore().slice(0,200)})}
 async function apiAgentRun(req,res){
   if(!requireFeature(res,4))return; try{const b=await readBody(req);const goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const runs=agentRunStore();const run={id:makeId('agent'),goal,projectId:String(b.projectId||''),status:'running',createdAt:nowIso(),updatedAt:nowIso(),plan:buildAgentPlan(goal)};runs.unshift(run);saveStore(RUNS_FILE,runs,300);recordActivity('agent','Agent started',goal.slice(0,180),{runId:run.id});try{const result=await executeAgentGoal(goal,run.projectId);run.status='complete';run.plan=result.plan;run.answer=result.answer;run.sources=result.sources;run.updatedAt=nowIso()}catch(e){run.status='error';run.error=String(e.message||e);run.updatedAt=nowIso()}saveStore(RUNS_FILE,runs,300);recordActivity('agent',run.status==='complete'?'Agent completed':'Agent failed',goal.slice(0,180),{runId:run.id,status:run.status});json(res,200,{run})}catch(e){json(res,400,{error:String(e.message||e)})}
@@ -2010,6 +2026,13 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/knowledge/import') return await apiKnowledgeImport(req,res);
     if (req.method === 'POST' && p === '/api/knowledge/delete') return await apiKnowledgeDelete(req,res);
     if (req.method === 'POST' && p === '/api/knowledge/search') return await apiKnowledgeSearch(req,res);
+    if (req.method === 'GET' && p === '/api/agents/catalog') return await apiAgentCatalog(req,res);
+    if (req.method === 'GET' && p === '/api/agents/models') return await apiAgentModels(req,res);
+    if (req.method === 'POST' && p === '/api/agents/specialist/run') return await apiSpecialistRun(req,res);
+    if (req.method === 'GET' && p === '/api/agents/missions') return await apiAgentMissions(req,res);
+    if (req.method === 'GET' && p === '/api/agents/mission') return await apiAgentMission(req,res,urlObj);
+    if (req.method === 'POST' && p === '/api/agents/missions/start') return await apiAgentMissionStart(req,res);
+    if (req.method === 'GET' && p === '/api/agents/missions/events') return await apiAgentMissionEvents(req,res,urlObj);
     if (req.method === 'GET' && p === '/api/agents') return await apiAgents(req,res);
     if (req.method === 'POST' && p === '/api/agents/run') return await apiAgentRun(req,res);
     if (req.method === 'GET' && p === '/api/automations') return await apiAutomations(req,res);
