@@ -21,6 +21,10 @@ if(-not(Test-Path $candidate)){
 & "$Repo\deploy\Test-LocalAI-Candidate.ps1" -CandidateRoot $candidate
 if($CheckOnly){Write-Host "PASS: candidate $($sha.Substring(0,12)) validated; production unchanged." -ForegroundColor Green;exit 0}
 $previous=$null;$state=Join-Path $StateDir "state.json";if(Test-Path $state){try{$previous=(Get-Content $state -Raw|ConvertFrom-Json).currentCommit}catch{}}
+if($previous -eq $sha){
+  Write-Host "NO CHANGE: $($sha.Substring(0,12)) is already deployed." -ForegroundColor Green
+  exit 0
+}
 $backup=Join-Path $StateDir ("live-before-"+(Get-Date -Format "yyyyMMdd-HHmmss"));Copy-Tree $Live $backup
 try{Copy-Tree (Join-Path $candidate "app") $Live;docker restart $Container|Out-Host;if(-not(Healthy)){throw "Health check failed"}
 [ordered]@{status="HEALTHY";currentCommit=$sha;previousCommit=$previous;deployedAt=(Get-Date -Format o);source=$TargetRef;rollbackSnapshot=$backup}|ConvertTo-Json|Set-Content $state
