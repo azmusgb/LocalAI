@@ -52,11 +52,83 @@ aside{display:flex;flex-direction:column;overflow:hidden}.brand{flex:0 0 auto}.a
 <!-- cumulative release views -->
 <section id="projects" class="view feature-v13"><div class="topbar"><div><h1>Projects</h1><p class="sub">Durable workspaces that group conversations, knowledge, and artifacts.</p></div><button id="newProjectBtn" class="btn primary">New project</button></div><div class="summary-grid" id="projectMetrics"></div><div class="split" style="margin-top:12px"><div class="card"><div class="section-head"><div><h2>Projects</h2><p>Choose a workspace.</p></div></div><div id="projectList" class="stack"></div></div><div class="card"><div id="projectDetail" class="empty">Select a project.</div></div></div></section>
 <section id="knowledge" class="view feature-v13"><div class="topbar"><div><h1>Knowledge</h1><p class="sub">Index local text, notes, code, JSON, CSV, and extracted document text.</p></div></div><div class="two"><div class="card"><h2>Add source</h2><div class="form-grid" style="margin-top:12px"><label>Project<select id="knowledgeProject"></select></label><label>Name<input id="knowledgeName" placeholder="architecture.md"></label><label class="wide">Content<textarea id="knowledgeContent" rows="12" placeholder="Paste or drop text here…"></textarea></label></div><div class="actions" style="margin-top:10px"><button id="knowledgeImportBtn" class="btn primary">Index source</button><input id="knowledgeFileInput" type="file" hidden multiple><button id="knowledgeFileBtn" class="btn">Import files</button></div></div><div class="card"><h2>Search knowledge</h2><div class="toolbar" style="margin-top:12px"><input id="knowledgeQuery" placeholder="Search indexed knowledge…"><button id="knowledgeSearchBtn" class="btn primary">Search</button></div><div id="knowledgeResults" class="stack"></div></div></div><div class="card" style="margin-top:12px"><div class="section-head"><div><h2>Indexed sources</h2><p>Stored in the appliance data volume.</p></div></div><div id="knowledgeList" class="stack"></div></div></section>
-<section id="agents" class="view feature-v14"><div class="topbar"><div><h1>Agent Operations</h1><p class="sub">Specialists, deterministic local model routing, missions, and observable worker execution.</p></div><span class="pill">Local-first orchestration</span></div><div id="agentWorldCityMount"></div>
-<div class="two"><div class="card"><h2>Mission objective</h2><label style="margin-top:12px">Project<select id="agentProject"></select></label><label style="margin-top:10px">Objective<textarea id="agentGoal" rows="7" placeholder="Improve the mobile experience, audit accessibility, and document the implementation plan."></textarea></label><div class="actions" style="margin-top:10px"><button id="missionRunBtn" class="btn primary">Auto-route mission</button><button id="routePreviewBtn" class="btn">Preview route</button><button id="specialistRunBtn" class="btn">Run selected specialist</button><button id="agentRunBtn" class="btn">Run general agent</button></div><div class="agent-meta"><label><input type="checkbox" id="manualRouteToggle"> Manual routing override</label><span class="muted">Default: Router selects agents, dependencies, concurrency and models.</span></div><div id="manualRouteOptions" class="agent-meta" hidden><label><input type="checkbox" data-mission-agent value="ux_analyst"> UX Analyst</label><label><input type="checkbox" data-mission-agent value="documentation"> Documentation</label></div><div id="routePreview" class="preview-pane" style="margin-top:10px"><span class="muted">Enter an objective to preview automatic dispatch.</span></div></div>
-<div class="card"><h2>Specialist registry</h2><div id="specialistRegistry" class="agent-registry" style="margin-top:12px"><div class="empty">Loading specialists…</div></div></div></div>
-<div class="two" style="margin-top:12px"><div class="card"><h2>Specialist execution</h2><div id="specialistExecution" class="flow"><div class="empty">No specialist run.</div></div></div><div class="card"><h2>Mission graph</h2><div id="missionExecution"><div class="empty">No mission active.</div></div></div></div>
-<div class="two" style="margin-top:12px"><div class="card"><h2>General agent execution</h2><div id="agentExecution" class="flow"><div class="empty">No active run.</div></div></div><div class="card"><h2>Recent runs</h2><div id="agentRuns" class="stack"></div></div></div></section>
+<section id="agents" class="view feature-v14">
+<div class="topbar"><div><h1>Agents</h1><p class="sub">Give the team an objective, let the Mission Router assemble the right specialists and models, and watch the work happen live.</p></div><span class="pill">Mission-first · Local models</span></div>
+<div class="agent-ops">
+  <div class="agent-compose">
+    <div class="agent-compose__row">
+      <label>Mission objective<textarea id="agentGoal" rows="4" placeholder="Audit and improve the Local AI mobile experience, then document a prioritized implementation plan."></textarea></label>
+      <label>Project<select id="agentProject"></select></label>
+    </div>
+    <div class="agent-compose__actions">
+      <button id="missionRunBtn" class="btn primary">Start Mission</button>
+      <button id="routePreviewBtn" class="btn">Preview plan</button>
+      <button id="agentAdvancedToggle" class="btn" type="button" aria-expanded="false">Advanced routing</button>
+    </div>
+    <div id="agentInlineNotice" class="agent-inline-notice" hidden aria-live="polite"></div>
+    <div id="routePreviewWrap" hidden><div id="routePreview" class="preview-pane" style="margin-top:10px"><span class="muted">Enter an objective to preview automatic dispatch.</span></div></div>
+    <div id="agentAdvancedPanel" class="agent-advanced" hidden style="margin-top:12px">
+      <div class="agent-advanced-grid">
+        <div>
+          <div class="agent-panel__head"><div><h2>Routing override</h2><small>Automatic routing is recommended. Use this only when you want explicit control.</small></div></div>
+          <label class="toggle"><input type="checkbox" id="manualRouteToggle"> Manually choose specialists</label>
+          <div id="manualRouteOptions" class="agent-meta" hidden>
+            <label><input type="checkbox" data-mission-agent value="ux_analyst"> UX Analyst</label>
+            <label><input type="checkbox" data-mission-agent value="documentation"> Documentation Agent</label>
+          </div>
+        </div>
+        <div>
+          <div class="agent-panel__head"><div><h2>Direct execution</h2><small>Developer tools for bypassing Mission Router orchestration.</small></div></div>
+          <div id="specialistRegistry" class="agent-registry"><div class="empty">Loading specialists…</div></div>
+          <div class="actions" style="margin-top:10px">
+            <button id="specialistRunBtn" class="btn">Run specialist</button>
+            <button id="agentRunBtn" class="btn">Run general agent</button>
+          </div>
+        </div>
+      </div>
+      <div class="agent-direct-grid">
+        <div class="agent-panel"><div class="agent-panel__head"><h2>Direct specialist execution</h2></div><div id="specialistExecution"><div class="empty">No direct specialist run.</div></div></div>
+        <div class="agent-panel"><div class="agent-panel__head"><h2>General agent execution</h2></div><div id="agentExecution" class="flow"><div class="empty">No general agent run.</div></div><div id="agentRuns" class="stack" style="margin-top:10px"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="agent-mission-strip">
+    <div><h3 id="agentMissionHeadline">No active mission</h3><small id="agentMissionMeta">Start a mission or select one from history.</small></div>
+    <div class="agent-mission-progress" aria-label="Mission progress"><span id="agentMissionProgress"></span></div>
+  </div>
+
+  <div class="agent-live-grid">
+    <div id="agentWorldCityMount"></div>
+    <div class="agent-side-stack">
+      <section class="agent-panel">
+        <div class="agent-panel__head"><div><h2>Mission timeline</h2><small>Worker order, dependencies and live state.</small></div></div>
+        <div id="agentTimeline"><div class="empty">No mission timeline yet.</div></div>
+        <div id="missionExecution" hidden></div>
+      </section>
+      <section class="agent-panel">
+        <div class="agent-panel__head"><div><h2>Inspector</h2><small>Select a worker in the timeline or city.</small></div></div>
+        <div id="agentInspector"><div class="empty">Select a mission or worker.</div></div>
+      </section>
+    </div>
+  </div>
+
+  <section class="agent-results">
+    <div class="agent-result-tabs" role="tablist" aria-label="Mission details">
+      <button type="button" class="active" data-agent-result-tab="summary">Synthesis</button>
+      <button type="button" data-agent-result-tab="workers">Worker outputs</button>
+      <button type="button" data-agent-result-tab="evidence">Evidence</button>
+      <button type="button" data-agent-result-tab="routing">Routing</button>
+    </div>
+    <div id="agentResultBody" class="agent-result-body"><div class="empty">Mission results will appear here.</div></div>
+  </section>
+
+  <section class="agent-panel">
+    <div class="agent-history-head"><div><h2>Mission history</h2><small class="muted">Review prior outcomes, attention states, worker outputs and evidence.</small></div><input id="agentHistorySearch" placeholder="Search mission history" aria-label="Search mission history"></div>
+    <div id="agentMissionHistory"><div class="empty">No mission history yet.</div></div>
+  </section>
+</div>
+</section>
 <section id="automationStudio" class="view feature-v14"><div class="topbar"><div><h1>Automation Studio</h1><p class="sub">Create appliance-native prompt, research, and health automations.</p></div><a class="btn" href="/go/n8n" target="_blank" rel="noopener">Advanced engine</a></div><div class="two"><div class="card"><h2>New automation</h2><div class="form-grid" style="margin-top:12px"><label>Name<input id="autoName"></label><label>Type<select id="autoKind"><option value="prompt">AI prompt</option><option value="research">Research</option><option value="health">System health</option></select></label><label>Schedule<select id="autoSchedule"><option value="manual">Manual</option><option value="hourly">Hourly</option><option value="daily">Daily</option></select></label><label class="wide">Instruction<textarea id="autoPrompt" rows="6"></textarea></label></div><button id="autoCreateBtn" class="btn primary" style="margin-top:10px">Create automation</button></div><div class="card"><h2>Automations</h2><div id="automationList" class="stack" style="margin-top:10px"></div></div></div><div class="card" style="margin-top:12px"><h2>Run history</h2><div id="automationRuns" class="stack" style="margin-top:10px"></div></div></section>
 <section id="workbench" class="view feature-v15"><div class="topbar"><div><h1>Engineering Workbench</h1><p class="sub">Inspect, search, diff, and safely edit explicitly mounted local workspaces.</p></div><span class="pill">Backups before write</span></div><div class="toolbar"><input id="workbenchPath" value="" placeholder="projects or repos"><button id="workbenchLoadBtn" class="btn">Load tree</button><input id="workbenchSearch" placeholder="Search files/content"><button id="workbenchSearchBtn" class="btn">Search</button></div><div class="split"><div class="card"><h2>Workspace</h2><div id="workbenchTree" class="stack" style="margin-top:10px"></div></div><div class="card"><div class="statusline"><h2 style="flex:1">Editor</h2><span id="editorPath" class="statuschip">No file</span></div><textarea id="workbenchEditor" class="editor" spellcheck="false" disabled></textarea><div class="actions" style="margin-top:10px"><button id="workbenchDiffBtn" class="btn" disabled>Preview diff</button><button id="workbenchSaveBtn" class="btn primary" disabled>Save with backup</button></div><div id="workbenchDiff" class="codebox" style="margin-top:10px;display:none"></div></div></div></section>
 <section id="actions" class="view feature-v16"><div class="topbar"><div><h1>Browser + Computer Actions</h1><p class="sub">Permissioned local actions. No unrestricted shell and no Docker socket exposure.</p></div><span class="pill">Approval required for writes</span></div><div class="two"><div class="card"><h2>Browser reader</h2><div class="toolbar" style="margin-top:12px"><input id="browserUrl" style="flex:1" placeholder="https://example.com"><button id="browserFetchBtn" class="btn primary">Fetch</button><button id="httpCheckBtn" class="btn">HTTP check</button></div><div id="browserResult" class="preview-pane"><div class="empty">Fetch an HTTP/HTTPS page.</div></div></div><div class="card"><h2>Computer action batch</h2><p class="sub">JSON operations scoped to the mounted workspace. Supported: mkdir, write, copy.</p><textarea id="computerBatch" class="editor" style="min-height:240px">[
