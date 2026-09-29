@@ -247,6 +247,20 @@ function drawBuilding(id,d,ts){
  if(selectedDistrict){ctx.strokeStyle='#ffffff';ctx.lineWidth=2;ctx.setLineDash([6,4]);ctx.strokeRect(x-8,y-8,w+depth+16,h+17);ctx.setLineDash([])}
  ctx.restore()
 }
+function drawWorksite(id,d,ts){
+ const workers=districtWorkers(id),active=workers.some(w=>w.state==='running'),bad=workers.some(w=>['error','blocked'].includes(w.state));if(!active&&!bad)return;
+ const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,pulse=(Math.sin(ts/220)+1)/2;
+ // work zone tape / cones
+ for(let i=0;i<3;i++){const cx=x+16+i*18,cy=y+h+10;pathPoly([[cx,cy],[cx+5,cy-10],[cx+10,cy]],bad?'#ff7383':'#f5a623');px(cx+2,cy-5,6,2,'#fff3b0')}
+ // scaffolding
+ ctx.strokeStyle=bad?'rgba(255,115,131,.65)':'rgba(245,180,62,.58)';ctx.lineWidth=2;
+ ctx.strokeRect(x-9,y+10,9,h-18);ctx.strokeRect(x+w+4,y+10,9,h-18);
+ for(let yy=y+18;yy<y+h-12;yy+=18){ctx.beginPath();ctx.moveTo(x-9,yy);ctx.lineTo(x,yy+8);ctx.moveTo(x+w+4,yy);ctx.lineTo(x+w+13,yy+8);ctx.stroke()}
+ // tiny crane / hoist
+ const mastX=x+w+18,top=y-6,hookY=y+14+Math.sin(ts/500)*8;
+ px(mastX,top,3,44,bad?'#8f3b48':'#d79b2b');px(mastX-18,top,22,3,bad?'#8f3b48':'#e7b343');
+ ctx.strokeStyle=bad?'#ff8f9c':'#f3c65d';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(mastX-15,top+3);ctx.lineTo(mastX-15,hookY);ctx.stroke();px(mastX-18,hookY,6,4,bad?'#ff7383':(pulse>.45?'#ffd26b':'#c9952d'));
+}
 function drawTraffic(){for(const c of traffic){ctx.save();ctx.translate(c.x,c.y);px(-7,-4,14,8,c.color);px(-4,-6,8,3,'#b8dbff');px(-5,4,3,2,'#0b0e12');px(2,4,3,2,'#0b0e12');ctx.restore()}}
 function drawFlows(ts){
  if(!display.flows||!current?.workers?.length)return;
@@ -357,7 +371,7 @@ function drawMinimap(){
  el.innerHTML='<span></span>'+markers;
 }
 function draw(ts){
- ctx.clearRect(0,0,W,H);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(view.zoom,view.zoom);drawGround(ts);drawFlows(ts);drawTraffic();for(const[id,d]of Object.entries(DISTRICTS))drawBuilding(id,d,ts);drawAgents(ts);drawClouds(ts);if(display.night){ctx.fillStyle='rgba(3,7,14,.18)';ctx.fillRect(0,0,W,H)}ctx.restore()
+ ctx.clearRect(0,0,W,H);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(view.zoom,view.zoom);drawGround(ts);drawFlows(ts);drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawBuilding(id,d,ts);drawWorksite(id,d,ts)}drawAgents(ts);drawClouds(ts);if(display.night){ctx.fillStyle='rgba(3,7,14,.18)';ctx.fillRect(0,0,W,H)}ctx.restore()
 }
 function loop(ts){const dt=Math.min(.05,(ts-last)/1000||0);last=ts;update(dt,ts);draw(ts);raf=requestAnimationFrame(loop)}
 function start(){if(!raf)raf=requestAnimationFrame(loop)}
