@@ -85,3 +85,7 @@ body.agent-world-city-ready .awg6{display:none!important}
 }
 
 @media(max-width:760px){.awc__demoPanel,.awc__replayPanel{position:relative;z-index:3}.awc__demoActions button,.awc__replayActions button,.awc__liveBtn{min-height:44px}.awc__ops{padding-bottom:72px}}
+
+.awc__legend i.dep{background:#59e2ed;box-shadow:0 0 8px rgba(89,226,237,.7)}
+.awc__legend i.artifact{background:#eef5ff;border:1px solid #8db7ff}
+.awc__topstats span:last-child b{color:#8db7ff}
