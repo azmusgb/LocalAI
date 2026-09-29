@@ -43,7 +43,7 @@ function zoneForWorker(w){
 function ensureAgent(w){
  const id=w.id||w.agentId||w.name;if(!id)return;
  let a=agents.get(id);const targetZone=zoneForWorker(w),target=tileCenter(targetZone);
- if(!a){const home=tileCenter(id==='router'?'command':targetZone);a={id,name:w.name||id,glyph:(w.name||id).trim()[0]?.toUpperCase()||'A',x:home.x,y:home.y,tx:target.x,ty:target.y,path:[],pathI:0,state:w.state||'pending',zone:targetZone,color:ROLE_COLOR[id]||'#8fb5e8',model:w.model||''};agents.set(id,a)}
+ if(!a){const home=tileCenter('command');a={id,name:w.name||id,glyph:(w.name||id).trim()[0]?.toUpperCase()||'A',x:home.x,y:home.y,tx:home.x,ty:home.y,path:[],pathI:0,state:w.state||'pending',zone:targetZone,color:ROLE_COLOR[id]||'#8fb5e8',model:w.model||''};agents.set(id,a)}
  a.name=w.name||a.name;a.state=w.state||a.state;a.model=w.model||a.model;a.zone=targetZone;a.color=ROLE_COLOR[id]||a.color;
  if(Math.hypot(a.tx-target.x,a.ty-target.y)>2){a.tx=target.x;a.ty=target.y;a.path=astar({x:a.x,y:a.y},target);a.pathI=0}
 }
@@ -63,7 +63,7 @@ function normalizeMission(m){
  const workers=(m.workers||[]).map(w=>({...w,id:w.id||w.agentId}));return {type:'mission',id:m.id,status:m.status,goal:m.goal||'Mission',updatedAt:m.updatedAt||m.createdAt,workers,error:m.error||'',raw:m}
 }
 function applyMission(m){
- if(!m)return;const prev=current;current=normalizeMission(m);sourceType='mission';current.workers.forEach(ensureAgent);
+ if(!m)return;const prev=current,next=normalizeMission(m);if(!prev||prev.id!==next.id)agents.clear();current=next;sourceType='mission';current.workers.forEach(ensureAgent);
  if(!prev||prev.id!==current.id)addEvent('Mission '+current.id+' entered Agent World');else{
   current.workers.forEach(w=>{const old=prev.workers?.find(x=>x.id===w.id);if(old&&old.state!==w.state)addEvent((w.name||w.id)+' → '+w.state)})
  }
