@@ -18,6 +18,18 @@ await page.waitForSelector('.ux-primary-rail');
 await page.locator('.ux-primary-item[data-domain="agents"]').click();
 await page.waitForSelector('#agents.active');
 
+await check('system capability health distinguishes optional companions',async()=>{
+  await page.locator('.ux-primary-item[data-domain="system"]').click();
+  await page.waitForSelector('#status.active');
+  await page.locator('#statusRetryBtn').waitFor({state:'visible'});
+  await page.locator('#statusRetryBtn').click();
+  await page.locator('#serviceList .service-card').first().waitFor({state:'visible'});
+  const optional=page.locator('#serviceList .service-card.OPTIONAL_OFFLINE');
+  if(await optional.count()) assert.match(await optional.first().innerText(),/Optional · Offline|Core Local AI remains available/i);
+  assert.match(await page.locator('#status').innerText(),/Core services determine appliance health/i);
+  await page.locator('.ux-primary-item[data-domain="agents"]').click();
+  await page.waitForSelector('#agents.active');
+});
 await check('desktop navigation architecture',async()=>{
   await page.locator('.ux-primary-rail').waitFor({state:'visible'});
   await page.locator('.ux-secondary-nav').waitFor({state:'visible'});

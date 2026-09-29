@@ -1184,21 +1184,40 @@ async function loadLibrary(){try{const r=await fetch('/api/library',{cache:'no-s
 $('librarySearch').addEventListener('input',e=>{state.librarySearch=e.target.value;state.lastLibrarySignature='';renderLibrary();});qsa('[data-kind]').forEach(b=>b.addEventListener('click',()=>{state.libraryKind=b.dataset.kind;qsa('[data-kind]').forEach(x=>x.classList.toggle('active',x===b));state.lastLibrarySignature='';renderLibrary();}));
 async function loadWorkspace(){try{const r=await fetch('/api/workspace',{cache:'no-store'}),j=await r.json();state.workspace=j;$('homeRecent').innerHTML=(j.recent||[]).slice(0,5).map(artifactRow).join('')||'<div class="empty">No saved work yet.</div>';$('homePinned').innerHTML=(j.pinned||[]).slice(0,4).map(artifactRow).join('')||'<div class="empty">Pin Library items to keep them here.</div>';}catch{}}
 
-function normalizedState(v){return ['HEALTHY','DEGRADED','DOWN'].includes(v)?v:'DEGRADED';}
-async function refreshStatus(){
-  if(document.hidden)return;
+function normalizedState(v){return ['HEALTHY','DEGRADED','DOWN','OPTIONAL_OFFLINE'].includes(v)?v:'DEGRADED';}
+function serviceDisplayState(s){return s.displayState||(s.required===false&&s.state!=='HEALTHY'?'OPTIONAL_OFFLINE':normalizedState(s.state));}
+function serviceStateLabel(s){const v=serviceDisplayState(s);return v==='OPTIONAL_OFFLINE'?'Optional · Offline':v==='HEALTHY'?'Healthy':v==='DEGRADED'?'Degraded':'Down';}
+function serviceDescription(s){
+  if(s.required===false&&s.state!=='HEALTHY')return 'Optional companion is not reachable. Core Local AI remains available.';
+  if(s.state==='HEALTHY')return s.required===false?'Optional companion is reachable.':'Core capability is ready.';
+  return s.state==='DEGRADED'?'Capability responded but needs attention.':'Core capability is unavailable.';
+}
+let statusRefreshing=false;
+async function refreshStatus(force=false){
+  if(document.hidden&&!force)return;
+  if(statusRefreshing)return;
+  statusRefreshing=true;
+  const retry=$('statusRetryBtn');if(retry){retry.disabled=true;retry.textContent='Checking…';}
   try{
     const r=await fetch('/api/status',{cache:'no-store'}),j=await r.json(),overall=normalizedState(j.overall);
     for(const id of ['homeDot','sideDot'])$(id).className=`dot ${overall}`;
     const coreBad=(j.services||[]).filter(s=>s.required!==false&&s.state!=='HEALTHY');
     const optionalBad=(j.services||[]).filter(s=>s.required===false&&s.state!=='HEALTHY');
-    const friendly=overall==='HEALTHY'?'Healthy':overall==='DEGRADED'&&coreBad.length===0?'Core ready':'Attention needed';
-    $('homeState').textContent=friendly;$('sideState').textContent=overall==='HEALTHY'?'Healthy':overall==='DEGRADED'&&coreBad.length===0?'Core ready':'Attention';
-    $('statusSummary').innerHTML=`<span class="dot ${overall}"></span> ${overall==='HEALTHY'?'Everything is ready':coreBad.length?`${coreBad.length} core capability issue${coreBad.length===1?'':'s'}`:optionalBad.length?`Core services ready · ${optionalBad.length} optional service${optionalBad.length===1?'':'s'} unavailable`:'Status unavailable'}`;
-    $('serviceList').innerHTML=(j.services||[]).map(s=>`<div class="service"><span>${esc(s.label)}${s.required===false?' <small class="meta">optional</small>':''}</span><span class="state ${normalizedState(s.state)}">${esc(s.state)}</span><span class="meta">${s.latencyMs} ms</span></div>`).join('');
-    $('technicalStatus').innerHTML=(j.services||[]).map(s=>`<div class="service"><span>${esc(s.name)} · ${s.required===false?'optional':'core'}</span><span class="state ${normalizedState(s.state)}">${esc(s.state)}</span><span class="meta">HTTP ${s.statusCode??'—'}</span></div>`).join('');
+    const friendly=overall==='HEALTHY'?'Healthy':'Attention needed';
+    $('homeState').textContent=friendly;$('sideState').textContent=overall==='HEALTHY'?'Healthy':'Attention';
+    $('statusSummary').innerHTML=`<span class="dot ${overall}"></span> ${coreBad.length?`${coreBad.length} core capability issue${coreBad.length===1?'':'s'}`:optionalBad.length?`Core ready · ${optionalBad.length} optional companion${optionalBad.length===1?'':'s'} offline`:'Everything is ready'}`;
+    const checked=$('statusCheckedAt');if(checked)checked.textContent=j.checkedAt?`Checked ${new Date(j.checkedAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'})}`:'';
+    $('serviceList').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);return `<div class="service service-card ${st}"><div class="service-copy"><strong>${esc(s.label)}</strong><small>${esc(serviceDescription(s))}</small></div><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">${Number.isFinite(s.latencyMs)?s.latencyMs+' ms':'—'}</span></div>`}).join('');
+    $('technicalStatus').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);const err=s.error?` · ${esc(s.error)}`:'';return `<div class="service"><span>${esc(s.name)} · ${s.required===false?'optional companion':'core'}<small class="service-tech-note">${esc(s.impact||'')}${err}</small></span><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">HTTP ${s.statusCode??'—'}</span></div>`}).join('');
     const c=j.certification||{};$('certBox').textContent=c.available?`System certified · ${c.result}${c.modifiedAt?` · ${new Date(c.modifiedAt).toLocaleString()}`:''}`:'Certification unavailable';
-  }catch{for(const id of ['homeDot','sideDot'])$(id).className='dot DOWN';$('homeState').textContent='Unavailable';$('sideState').textContent='Offline';}
+  }catch(e){
+    for(const id of ['homeDot','sideDot'])$(id).className='dot DOWN';$('homeState').textContent='Unavailable';$('sideState').textContent='Offline';
+    $('statusSummary').innerHTML='<span class="dot DOWN"></span> Status check unavailable';
+    if($('serviceList'))$('serviceList').innerHTML=`<div class="status-error">Could not refresh status. <button class="btn" type="button" data-status-retry>Retry</button></div>`;
+  }finally{
+    statusRefreshing=false;if(retry){retry.disabled=false;retry.textContent='Check again';}
+    document.querySelectorAll('[data-status-retry]').forEach(b=>b.onclick=()=>refreshStatus(true));
+  }
 }
 async function loadHomeCapabilities(){
   const box=$('homeCapabilities');if(!box)return;
@@ -1373,3 +1392,5 @@ async function bindEvo(){
 }
 window.addEventListener('DOMContentLoaded',()=>bindEvo().catch(e=>console.warn('evolution features',e)));
 // ===== end product evolution client ==========================================
+
+$('statusRetryBtn')?.addEventListener('click',()=>refreshStatus(true));
