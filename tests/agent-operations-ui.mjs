@@ -114,6 +114,15 @@ await check('desktop zoom controls',async()=>{
   await page.locator('#awcFit').click();
   assert.equal(await page.locator('#awcZoomLabel').innerText(),'100%');
 });
+await check('Agent World running-worker controls remain interactive',async()=>{
+  await page.locator('#awcDemoPlay').click();
+  await page.waitForTimeout(250);
+  assert.match(await page.locator('#awcStage').innerText(),/Router planning|UX analysis|Documentation|Synthesis|Complete/i);
+  await page.locator('#awcFollow').click();
+  assert.equal(await page.locator('#awcFollow').getAttribute('aria-pressed'),'true');
+  await page.locator('#awcFollow').click();
+  await page.locator('#awcLiveBtn').click();
+});
 await check('Agent World keeps same-district workers separated',async()=>{
   await page.locator('#awcDemoPlay').click();
   await page.waitForTimeout(200);
