@@ -15,6 +15,19 @@ const DISTRICTS={
 };
 const ROLE_ZONE={router:'command',mission_router:'command',ux_analyst:'ux',documentation:'docs',synthesis:'command',coordinator:'command',engineer:'engineering',validator:'validation',reviewer:'command',deployer:'engineering',operator:'validation'};
 const ROLE_COLOR={router:'#71b7ff',mission_router:'#71b7ff',ux_analyst:'#59e2ed',documentation:'#c498ff',synthesis:'#a8b5ff',coordinator:'#a8b5ff',engineer:'#ffb86a',validator:'#75dfa2',reviewer:'#c498ff',deployer:'#ffb86a',operator:'#75dfa2'};
+const ROLE_STYLE={
+ router:{skin:'#d9a77f',hair:'#1b2330',shirt:'#4c8fda',pants:'#233044',accent:'#9fe8ff',tool:'headset',hat:'cap',badge:'R'},
+ mission_router:{skin:'#d9a77f',hair:'#1b2330',shirt:'#4c8fda',pants:'#233044',accent:'#9fe8ff',tool:'headset',hat:'cap',badge:'R'},
+ ux_analyst:{skin:'#e6b98d',hair:'#713c52',shirt:'#28a6b4',pants:'#243544',accent:'#6ff4ff',tool:'tablet',hat:'none',badge:'UX'},
+ documentation:{skin:'#c99572',hair:'#2a1d20',shirt:'#8f67bd',pants:'#2f2940',accent:'#ddbfff',tool:'clipboard',hat:'none',badge:'D'},
+ synthesis:{skin:'#e1b58f',hair:'#37324c',shirt:'#6f7ed9',pants:'#292d4b',accent:'#c7d0ff',tool:'holo',hat:'none',badge:'C'},
+ coordinator:{skin:'#e1b58f',hair:'#37324c',shirt:'#6f7ed9',pants:'#292d4b',accent:'#c7d0ff',tool:'holo',hat:'none',badge:'C'},
+ engineer:{skin:'#d7a07a',hair:'#3f2c20',shirt:'#b66d28',pants:'#29333d',accent:'#ffd178',tool:'wrench',hat:'hardhat',badge:'E'},
+ validator:{skin:'#ebc09b',hair:'#302a27',shirt:'#3d9360',pants:'#243a31',accent:'#9dffc1',tool:'scanner',hat:'visor',badge:'V'},
+ reviewer:{skin:'#bd8968',hair:'#1f232b',shirt:'#73579c',pants:'#2d2e39',accent:'#d8baff',tool:'clipboard',hat:'none',badge:'RV'},
+ deployer:{skin:'#dba47e',hair:'#36261d',shirt:'#b9782f',pants:'#2d343b',accent:'#ffd58a',tool:'crate',hat:'hardhat',badge:'DP'},
+ operator:{skin:'#d0a47f',hair:'#20272f',shirt:'#3a7d61',pants:'#263a32',accent:'#91efb7',tool:'radio',hat:'cap',badge:'OP'}
+};
 const DEMO_STAGES=[
  {label:'Router planning',detail:'Matching capabilities, dependencies and models',states:{router:'running',ux_analyst:'pending',documentation:'pending',synthesis:'pending'}},
  {label:'UX analysis',detail:'UX Analyst is working in the Interface Lab',states:{router:'complete',ux_analyst:'running',documentation:'pending',synthesis:'pending'}},
@@ -59,7 +72,7 @@ function normalizeMission(m){return{type:'mission',id:m.id,status:m.status,goal:
 function ensureAgent(w){
  const id=w.id||w.agentId||w.name;if(!id)return;
  let a=agents.get(id),zone=zoneForWorker(w),target=districtCenter(zone);
- if(!a){const p=districtCenter('command');a={id,name:w.name||id,glyph:(w.name||id).trim()[0]?.toUpperCase()||'A',x:p.x,y:p.y,tx:p.x,ty:p.y,path:[],pathI:0,state:'pending',zone:'command',targetZone:zone,color:ROLE_COLOR[id]||'#8fb5e8',model:w.model||'',dir:1,bob:Math.random()*Math.PI*2};agents.set(id,a)}
+ if(!a){const p=districtCenter('command'),style=ROLE_STYLE[id]||ROLE_STYLE[(w.agentId||'')]||ROLE_STYLE.synthesis;a={id,name:w.name||id,glyph:(w.name||id).trim()[0]?.toUpperCase()||'A',x:p.x,y:p.y,tx:p.x,ty:p.y,path:[],pathI:0,state:'pending',zone:'command',targetZone:zone,color:ROLE_COLOR[id]||'#8fb5e8',model:w.model||'',dir:1,bob:Math.random()*Math.PI*2,step:Math.random()*Math.PI*2,style,activitySeed:Math.random()*10};agents.set(id,a)}
  const old=a.state;a.name=w.name||a.name;a.model=w.model||a.model;a.state=w.state||a.state;a.targetZone=zone;a.color=ROLE_COLOR[id]||a.color;
  if(a.zone!==zone||Math.hypot(a.tx-target.x,a.ty-target.y)>2){a.tx=target.x;a.ty=target.y;a.path=astar({x:a.x,y:a.y},target);a.pathI=0;a.zone=zone}
  if(old!==a.state){addEvent(a.name+' → '+humanState(a.state));if(a.state==='running'){spawnPacket('models',zone,a.color);spawnSpark(target.x,target.y,a.color,18)}if(a.state==='complete'){spawnArtifact(a);spawnSpark(target.x,target.y,'#75dfa2',26)}if(['error','blocked'].includes(a.state))spawnSpark(target.x,target.y,'#ff7383',36)}
@@ -166,7 +179,7 @@ function mount(){
 function seedAmbient(){traffic=[{x:2*T,y:13.5*T,v:28,axis:'x',dir:1,color:'#6aaeff'},{x:36*T,y:14.5*T,v:23,axis:'x',dir:-1,color:'#ffc56b'},{x:25.5*T,y:3*T,v:20,axis:'y',dir:1,color:'#c18cff'},{x:13.5*T,y:21*T,v:18,axis:'y',dir:-1,color:'#75dfa2'}];clouds=[{x:160,y:80,s:1.1},{x:880,y:130,s:.8},{x:560,y:40,s:.6}]}
 function update(dt,ts){
  view.zoom+= (view.targetZoom-view.zoom)*Math.min(1,dt*10);view.panX+=(view.targetPanX-view.panX)*Math.min(1,dt*10);view.panY+=(view.targetPanY-view.panY)*Math.min(1,dt*10);
- for(const a of agents.values()){a.bob+=dt*7;if(!a.path?.length||a.pathI>=a.path.length)continue;const p=a.path[a.pathI],dx=p.x-a.x,dy=p.y-a.y,d=Math.hypot(dx,dy),speed=a.state==='running'?96:64;if(d<3){a.pathI++;continue}a.dir=dx<0?-1:1;a.x+=dx/d*speed*dt;a.y+=dy/d*speed*dt}
+ for(const a of agents.values()){a.bob+=dt*7;a.step+=dt*(a.state==='running'?13:10);if(!a.path?.length||a.pathI>=a.path.length)continue;const p=a.path[a.pathI],dx=p.x-a.x,dy=p.y-a.y,d=Math.hypot(dx,dy),speed=a.state==='running'?96:64;if(d<3){a.pathI++;continue}a.dir=dx<0?-1:1;a.x+=dx/d*speed*dt;a.y+=dy/d*speed*dt}
  for(const p of packets){if(p.done||!p.path[p.i])continue;const t=p.path[p.i],dx=t.x-p.x,dy=t.y-p.y,d=Math.hypot(dx,dy);if(d<3){p.i++;if(p.i>=p.path.length)p.done=true;continue}p.x+=dx/d*150*dt;p.y+=dy/d*150*dt}packets=packets.filter(p=>!p.done);
  for(const s of sparks){s.x+=s.vx*dt;s.y+=s.vy*dt;s.vy+=90*dt;s.life-=dt}sparks=sparks.filter(s=>s.life>0);
  for(const c of traffic){if(c.axis==='x'){c.x+=c.v*c.dir*dt;if(c.x>38*T)c.x=2*T;if(c.x<2*T)c.x=38*T}else{c.y+=c.v*c.dir*dt;if(c.y>23*T)c.y=3*T;if(c.y<3*T)c.y=23*T}}
@@ -225,21 +238,55 @@ function drawFlows(ts){
  for(const w of current.workers){for(const dep of w.dependsOn||[]){const a=current.workers.find(x=>x.id===dep);if(!a)continue;const p1=districtCenter(zoneForWorker(a)),p2=districtCenter(zoneForWorker(w));ctx.strokeStyle='rgba(120,185,255,.38)';ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.stroke()}}
  ctx.restore()
 }
+function roleStyle(a){return a.style||ROLE_STYLE[a.id]||ROLE_STYLE.synthesis}
+function drawWorkerTool(a,x,y,bob,walk){
+ const s=roleStyle(a),dir=a.dir||1,handX=x+dir*9,handY=y-3+bob,tool=s.tool;
+ if(tool==='tablet'){px(handX+(dir>0?0:-8),handY-2,8,6,'#14212d');px(handX+(dir>0?1:-7),handY-1,6,4,s.accent)}
+ else if(tool==='clipboard'){px(handX+(dir>0?0:-7),handY-2,7,8,'#e9e3ce');px(handX+(dir>0?2:-5),handY,3,1,'#556272');px(handX+(dir>0?2:-5),handY+3,3,1,'#556272')}
+ else if(tool==='wrench'){ctx.strokeStyle='#d5dee8';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(handX,handY+5);ctx.lineTo(handX+dir*7,handY-3);ctx.stroke();ctx.beginPath();ctx.arc(handX+dir*8,handY-4,3,0,Math.PI*2);ctx.stroke()}
+ else if(tool==='scanner'){px(handX+(dir>0?0:-6),handY-1,6,7,'#172531');px(handX+(dir>0?1:-5),handY,4,2,s.accent);ctx.globalAlpha=.25;ctx.fillStyle=s.accent;ctx.beginPath();ctx.moveTo(handX+dir*5,handY+1);ctx.lineTo(handX+dir*18,handY-4);ctx.lineTo(handX+dir*18,handY+7);ctx.closePath();ctx.fill();ctx.globalAlpha=1}
+ else if(tool==='headset'){ctx.strokeStyle=s.accent;ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y-18+bob,7,Math.PI,Math.PI*2);ctx.stroke();px(x+dir*7,y-18+bob,2,6,s.accent);px(x+dir*8,y-13+bob,5,2,s.accent)}
+ else if(tool==='holo'){ctx.strokeStyle=s.accent;ctx.globalAlpha=.7;ctx.lineWidth=1;ctx.strokeRect(handX+(dir>0?0:-10),handY-6,10,8);ctx.globalAlpha=.18;ctx.fillStyle=s.accent;ctx.fillRect(handX+(dir>0?0:-10),handY-6,10,8);ctx.globalAlpha=1}
+ else if(tool==='crate'){px(handX+(dir>0?-1:-9),handY-2,10,9,'#8b643c');px(handX+(dir>0?1:-7),handY,6,1,'#d7aa61');px(handX+(dir>0?3:-5),handY-2,1,9,'#5b4028')}
+ else if(tool==='radio'){px(handX+(dir>0?0:-5),handY-3,5,8,'#16222c');px(handX+(dir>0?1:-4),handY-1,3,2,s.accent);ctx.strokeStyle='#8797a8';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(handX+dir*2,handY-3);ctx.lineTo(handX+dir*4,handY-8);ctx.stroke()}
+}
+function drawWorkerHat(a,x,y,bob){
+ const s=roleStyle(a);
+ if(s.hat==='hardhat'){px(x-7,y-25+bob,14,4,'#efb547');px(x-5,y-29+bob,10,5,'#ffc95d');px(x+4,y-26+bob,5,2,'#d3932c')}
+ else if(s.hat==='cap'){px(x-6,y-25+bob,12,5,s.shirt);px(x+(a.dir>0?3:-8),y-21+bob,7,2,s.shirt)}
+ else if(s.hat==='visor'){px(x-7,y-23+bob,14,4,'#202b35');px(x-5,y-22+bob,10,2,s.accent)}
+ else{px(x-6,y-24+bob,12,5,s.hair);px(x-7,y-21+bob,4,4,s.hair)}
+}
+function drawWorkerBubble(a,x,y,ts){
+ if(a.state==='running'){const labels={router:'ROUTE',mission_router:'ROUTE',ux_analyst:'AUDIT',documentation:'WRITE',synthesis:'MERGE',coordinator:'MERGE',engineer:'BUILD',validator:'TEST',reviewer:'REVIEW',deployer:'SHIP',operator:'WATCH'},label=labels[a.id]||'WORK',pulse=(Math.sin(ts/350+a.activitySeed)+1)/2,w=Math.max(34,label.length*6+12);ctx.fillStyle='rgba(5,10,16,.88)';ctx.fillRect(x-w/2,y-46,w,14);px(x-2,y-32,4,4,'rgba(5,10,16,.88)');txt(label,x,y-39,pulse>.35?'#ffffff':roleStyle(a).accent,7)}
+ else if(a.state==='complete'){ctx.fillStyle='rgba(5,10,16,.86)';ctx.fillRect(x-16,y-43,32,14);txt('DONE',x,y-36,'#75dfa2',7)}
+ else if(['error','blocked'].includes(a.state)){ctx.fillStyle='rgba(70,18,27,.92)';ctx.fillRect(x-18,y-43,36,14);txt('!',x,y-36,'#ffd2d7',10)}
+}
+function drawWorkerSprite(a,ts){
+ const s=roleStyle(a),moving=a.path?.length&&a.pathI<a.path.length,walk=moving?Math.sin(a.step)*3:0,idle=!moving?Math.sin(ts/650+a.activitySeed)*.8:0,bob=(a.state==='running'?Math.sin(a.bob)*1.5:idle),x=a.x,y=a.y+bob,sel=selected?.type==='agent'&&selected.id===a.id,stateColor=['error','blocked'].includes(a.state)?'#ff7383':a.state==='complete'?'#75dfa2':a.state==='pending'?'#66778a':s.accent;
+ if(sel){ctx.save();ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.shadowColor=stateColor;ctx.shadowBlur=12;ctx.beginPath();ctx.ellipse(x,y+13,17,8,0,0,Math.PI*2);ctx.stroke();ctx.restore()}
+ ctx.fillStyle='rgba(0,0,0,.36)';ctx.beginPath();ctx.ellipse(x,y+14,11,4,0,0,Math.PI*2);ctx.fill();
+ // legs + shoes
+ px(x-6,y+5+walk,5,9,s.pants);px(x+1,y+5-walk,5,9,s.pants);px(x-7,y+12+walk,6,3,'#111820');px(x+1,y+12-walk,6,3,'#111820');
+ // torso, belt, arms
+ px(x-8,y-8,16,15,a.state==='pending'?'#586574':s.shirt);px(x-8,y+2,16,3,'#202a33');px(x-11,y-5-walk*.35,4,11,s.skin);px(x+7,y-5+walk*.35,4,11,s.skin);
+ // role stripe / badge
+ px(x-7,y-7,3,13,stateColor);px(x+3,y-5,4,4,'rgba(255,255,255,.18)');
+ // neck + face
+ px(x-3,y-12,6,4,s.skin);px(x-7,y-22,14,11,s.skin);px(x-5,y-18,2,2,'#19242e');px(x+3,y-18,2,2,'#19242e');px(x-2,y-14,4,1,'#8f604d');
+ drawWorkerHat(a,x,y,bob);drawWorkerTool(a,x,y,bob,walk);
+ // backpack and role badge
+ px(x+(a.dir>0?-11:8),y-6,4,9,'#263747');
+ ctx.fillStyle='#071019';ctx.font='800 5px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText((s.badge||a.glyph).slice(0,2),x,y-2);
+ // state beacon
+ ctx.save();ctx.shadowColor=stateColor;ctx.shadowBlur=a.state==='running'?12:5;ctx.fillStyle=stateColor;ctx.beginPath();ctx.arc(x,y-30,3+(a.state==='running'?(Math.sin(ts/180)+1):0),0,Math.PI*2);ctx.fill();ctx.restore();
+ if(display.labels&&view.zoom>1.15){const labelW=Math.min(100,Math.max(54,a.name.length*6+16));ctx.fillStyle='rgba(5,10,16,.86)';ctx.fillRect(x-labelW/2,y+19,labelW,16);txt(a.name,x,y+27,'#e8f1fa',8)}
+ if(view.zoom>1.45||sel)drawWorkerBubble(a,x,y,ts)
+}
 function drawAgents(ts){
- for(const a of agents.values()){const bob=a.state==='running'?Math.sin(a.bob)*2:0,c=['error','blocked'].includes(a.state)?'#ff7383':a.state==='complete'?'#75dfa2':a.state==='pending'?'#6c7b8e':a.color,sel=selected?.type==='agent'&&selected.id===a.id;
-  if(sel){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(a.x,a.y+9,15,8,0,0,Math.PI*2);ctx.stroke()}
-  ctx.fillStyle='rgba(0,0,0,.35)';ctx.beginPath();ctx.ellipse(a.x,a.y+10,9,4,0,0,Math.PI*2);ctx.fill();
-  // legs
-  px(a.x-5,a.y+4+bob,4,7,'#0d1720');px(a.x+1,a.y+4-bob,4,7,'#0d1720');
-  // body/head
-  px(a.x-7,a.y-7+bob,14,14,c);px(a.x-5,a.y-15+bob,10,9,'#e6c7a9');px(a.x-4,a.y-13+bob,2,2,'#10202a');px(a.x+2,a.y-13+bob,2,2,'#10202a');
-  // backpack/status
-  px(a.x+(a.dir>0?-9:6),a.y-5+bob,4,8,'#263849');
-  if(a.state==='running'){ctx.fillStyle=c;ctx.beginPath();ctx.arc(a.x,a.y-22+bob,3+(Math.sin(ts/180)+1),0,Math.PI*2);ctx.fill()}
-  if(display.labels&&view.zoom>1.25){ctx.fillStyle='rgba(6,11,17,.82)';ctx.fillRect(a.x-33,a.y+17,66,14);txt(a.name,a.x,a.y+24,'#e8f1fa',8)}
- }
- for(const p of packets){ctx.save();ctx.shadowColor=p.color;ctx.shadowBlur=10;px(p.x-3,p.y-3,6,6,p.color);ctx.restore()}
- for(const a of artifacts){px(a.x-7,a.y-6,14,10,'#eef5ff');px(a.x-5,a.y-4,10,2,a.color);px(a.x-5,a.y,10,1,'#8093a5')}
+ for(const a of agents.values())drawWorkerSprite(a,ts);
+ for(const p of packets){ctx.save();ctx.shadowColor=p.color;ctx.shadowBlur=12;px(p.x-3,p.y-3,6,6,p.color);px(p.x-1,p.y-1,2,2,'#fff');ctx.restore()}
+ for(const a of artifacts){px(a.x-8,a.y-7,16,11,'#eef5ff');px(a.x-6,a.y-5,12,2,a.color);px(a.x-6,a.y-1,8,1,'#8093a5');px(a.x+5,a.y-2,4,6,'#c7d5e3')}
  for(const s of sparks){ctx.globalAlpha=clamp(s.life,0,1);px(s.x,s.y,s.size,s.size,s.color)}ctx.globalAlpha=1
 }
 function drawClouds(ts){if(display.night)return;ctx.save();ctx.globalAlpha=.08;for(const c of clouds){const x=(c.x+ts*.006*c.s)%W,y=c.y;ctx.fillStyle='#d8f0ff';ctx.beginPath();ctx.arc(x,y,26*c.s,0,Math.PI*2);ctx.arc(x+28*c.s,y+6,20*c.s,0,Math.PI*2);ctx.arc(x-25*c.s,y+8,17*c.s,0,Math.PI*2);ctx.fill()}ctx.restore()}
