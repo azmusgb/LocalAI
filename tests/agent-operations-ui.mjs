@@ -90,7 +90,8 @@ await page.close();
 const mobile=await browser.newPage({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
 mobile.on('dialog',async d=>{dialogs++;await d.dismiss()});
 await mobile.goto(base,{waitUntil:'domcontentloaded'});
-await mobile.evaluate(()=>window.showView?.('agents'));
+await mobile.waitForSelector('#uxMobileNav');
+await mobile.locator('#uxMobileNav [data-domain="agents"]').click();
 await mobile.waitForSelector('#agents.active');
 await mobile.waitForSelector('#agentWorldCityMount .awc');
 
