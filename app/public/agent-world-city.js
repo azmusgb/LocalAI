@@ -16,18 +16,18 @@ const DISTRICTS={
 const ROLE_ZONE={router:'command',mission_router:'command',ux_analyst:'ux',documentation:'docs',synthesis:'command',coordinator:'command',engineer:'engineering',validator:'validation',reviewer:'command',deployer:'engineering',operator:'validation'};
 const ROLE_COLOR={router:'#71b7ff',mission_router:'#71b7ff',ux_analyst:'#59e2ed',documentation:'#c498ff',synthesis:'#a8b5ff',coordinator:'#a8b5ff',engineer:'#ffb86a',validator:'#75dfa2',reviewer:'#c498ff',deployer:'#ffb86a',operator:'#75dfa2'};
 const ROLE_STYLE={
- router:{skin:'#d9a77f',hair:'#1b2330',shirt:'#4c8fda',pants:'#233044',accent:'#9fe8ff',tool:'headset',hat:'cap',badge:'R'},
- mission_router:{skin:'#d9a77f',hair:'#1b2330',shirt:'#4c8fda',pants:'#233044',accent:'#9fe8ff',tool:'headset',hat:'cap',badge:'R'},
- ux_analyst:{skin:'#e6b98d',hair:'#713c52',shirt:'#28a6b4',pants:'#243544',accent:'#6ff4ff',tool:'tablet',hat:'none',badge:'UX'},
- documentation:{skin:'#c99572',hair:'#2a1d20',shirt:'#8f67bd',pants:'#2f2940',accent:'#ddbfff',tool:'clipboard',hat:'none',badge:'D'},
- synthesis:{skin:'#e1b58f',hair:'#37324c',shirt:'#6f7ed9',pants:'#292d4b',accent:'#c7d0ff',tool:'holo',hat:'none',badge:'C'},
- coordinator:{skin:'#e1b58f',hair:'#37324c',shirt:'#6f7ed9',pants:'#292d4b',accent:'#c7d0ff',tool:'holo',hat:'none',badge:'C'},
- engineer:{skin:'#d7a07a',hair:'#3f2c20',shirt:'#b66d28',pants:'#29333d',accent:'#ffd178',tool:'wrench',hat:'hardhat',badge:'E'},
- validator:{skin:'#ebc09b',hair:'#302a27',shirt:'#3d9360',pants:'#243a31',accent:'#9dffc1',tool:'scanner',hat:'visor',badge:'V'},
- reviewer:{skin:'#bd8968',hair:'#1f232b',shirt:'#73579c',pants:'#2d2e39',accent:'#d8baff',tool:'clipboard',hat:'none',badge:'RV'},
- deployer:{skin:'#dba47e',hair:'#36261d',shirt:'#b9782f',pants:'#2d343b',accent:'#ffd58a',tool:'crate',hat:'hardhat',badge:'DP'},
- operator:{skin:'#d0a47f',hair:'#20272f',shirt:'#3a7d61',pants:'#263a32',accent:'#91efb7',tool:'radio',hat:'cap',badge:'OP'}
-};
+ router:{skin:'#d9a77f',hair:'#2a211e',shirt:'#d9792c',vest:'#ff9d33',pants:'#6b4a2f',accent:'#71b7ff',tool:'headset',hat:'#f2bf3e',badge:'R'},
+ mission_router:{skin:'#d9a77f',hair:'#2a211e',shirt:'#d9792c',vest:'#ff9d33',pants:'#6b4a2f',accent:'#71b7ff',tool:'headset',hat:'#f2bf3e',badge:'R'},
+ ux_analyst:{skin:'#e6b98d',hair:'#6c3f35',shirt:'#d87e30',vest:'#ffa43b',pants:'#6e4d32',accent:'#59e2ed',tool:'tablet',hat:'#f6c548',badge:'UX'},
+ documentation:{skin:'#c99572',hair:'#332522',shirt:'#c9712c',vest:'#ff9d33',pants:'#60452f',accent:'#c498ff',tool:'clipboard',hat:'#f3bd3d',badge:'D'},
+ synthesis:{skin:'#e1b58f',hair:'#3d3340',shirt:'#db7d2d',vest:'#ffa43b',pants:'#655039',accent:'#a8b5ff',tool:'holo',hat:'#f4c64a',badge:'C'},
+ coordinator:{skin:'#e1b58f',hair:'#3d3340',shirt:'#db7d2d',vest:'#ffa43b',pants:'#655039',accent:'#a8b5ff',tool:'holo',hat:'#f4c64a',badge:'C'},
+ engineer:{skin:'#d7a07a',hair:'#402d23',shirt:'#cf6e24',vest:'#ff942b',pants:'#60452e',accent:'#ffb86a',tool:'wrench',hat:'#ffc640',badge:'E'},
+ validator:{skin:'#ebc09b',hair:'#302925',shirt:'#d87b2e',vest:'#ffa43b',pants:'#66513a',accent:'#75dfa2',tool:'scanner',hat:'#f5c64b',badge:'V'},
+ reviewer:{skin:'#bd8968',hair:'#262329',shirt:'#c96f2b',vest:'#ff9b31',pants:'#594331',accent:'#c498ff',tool:'clipboard',hat:'#efb93c',badge:'RV'},
+ deployer:{skin:'#dba47e',hair:'#3a2a21',shirt:'#cf7026',vest:'#ff962c',pants:'#60472f',accent:'#ffb86a',tool:'crate',hat:'#ffc640',badge:'DP'},
+ operator:{skin:'#d0a47f',hair:'#242b2f',shirt:'#d4782a',vest:'#ffa036',pants:'#63503b',accent:'#75dfa2',tool:'radio',hat:'#f4c448',badge:'OP'}
+}
 const DEMO_STAGES=[
  {label:'Router planning',detail:'Matching capabilities, dependencies and models',states:{router:'running',ux_analyst:'pending',documentation:'pending',synthesis:'pending'}},
  {label:'UX analysis',detail:'UX Analyst is working in the Interface Lab',states:{router:'complete',ux_analyst:'running',documentation:'pending',synthesis:'pending'}},
@@ -129,7 +129,7 @@ function limitTargetPan(){if(view.targetZoom<=1){view.targetPanX=0;view.targetPa
 function syncZoomLabel(){if(root)$('#awcZoomLabel',root).textContent=Math.round(view.targetZoom*100)+'%'}
 function screenPoint(e){const r=canvas.getBoundingClientRect(),sx=W/r.width,sy=H/r.height,px=(e.clientX-r.left)*sx,py=(e.clientY-r.top)*sy;return{px,py,x:(px-view.panX)/view.zoom,y:(py-view.panY)/view.zoom}}
 function hitAt(x,y){
- for(const a of agents.values())if(Math.hypot(x-a.x,y-a.y)<20)return{type:'agent',id:a.id};
+ for(const a of agents.values())if(Math.hypot(x-a.x,y-a.y)<27)return{type:'agent',id:a.id};
  for(const[id,d]of Object.entries(DISTRICTS))if(x>=d.x*T&&x<=(d.x+d.w)*T&&y>=d.y*T&&y<=(d.y+d.h)*T)return{type:'district',id};
  return null
 }
@@ -251,11 +251,14 @@ function drawWorkerTool(a,x,y,bob,walk){
  else if(tool==='radio'){px(handX+(dir>0?0:-5),handY-3,5,8,'#16222c');px(handX+(dir>0?1:-4),handY-1,3,2,s.accent);ctx.strokeStyle='#8797a8';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(handX+dir*2,handY-3);ctx.lineTo(handX+dir*4,handY-8);ctx.stroke()}
 }
 function drawWorkerHat(a,x,y,bob){
- const s=roleStyle(a);
- if(s.hat==='hardhat'){px(x-7,y-25+bob,14,4,'#efb547');px(x-5,y-29+bob,10,5,'#ffc95d');px(x+4,y-26+bob,5,2,'#d3932c')}
- else if(s.hat==='cap'){px(x-6,y-25+bob,12,5,s.shirt);px(x+(a.dir>0?3:-8),y-21+bob,7,2,s.shirt)}
- else if(s.hat==='visor'){px(x-7,y-23+bob,14,4,'#202b35');px(x-5,y-22+bob,10,2,s.accent)}
- else{px(x-6,y-24+bob,12,5,s.hair);px(x-7,y-21+bob,4,4,s.hair)}
+ const s=roleStyle(a),helmet=s.hat||'#f4c448';
+ // oversized rounded hard hat with brim, closer to a chunky construction-game character
+ ctx.fillStyle=helmet;ctx.beginPath();ctx.ellipse(x,y-27+bob,10,6,0,Math.PI,Math.PI*2);ctx.fill();
+ px(x-9,y-27+bob,18,5,helmet);px(x-6,y-31+bob,12,5,helmet);px(x+(a.dir>0?4:-10),y-24+bob,10,3,'#d39a2d');
+ // helmet role stripe
+ px(x-2,y-31+bob,4,7,s.accent);
+ // hair showing under helmet
+ px(x-7,y-23+bob,4,4,s.hair);px(x+3,y-23+bob,4,3,s.hair)
 }
 function drawWorkerBubble(a,x,y,ts){
  if(a.state==='running'){const labels={router:'ROUTE',mission_router:'ROUTE',ux_analyst:'AUDIT',documentation:'WRITE',synthesis:'MERGE',coordinator:'MERGE',engineer:'BUILD',validator:'TEST',reviewer:'REVIEW',deployer:'SHIP',operator:'WATCH'},label=labels[a.id]||'WORK',pulse=(Math.sin(ts/350+a.activitySeed)+1)/2,w=Math.max(34,label.length*6+12);ctx.fillStyle='rgba(5,10,16,.88)';ctx.fillRect(x-w/2,y-46,w,14);px(x-2,y-32,4,4,'rgba(5,10,16,.88)');txt(label,x,y-39,pulse>.35?'#ffffff':roleStyle(a).accent,7)}
@@ -263,25 +266,66 @@ function drawWorkerBubble(a,x,y,ts){
  else if(['error','blocked'].includes(a.state)){ctx.fillStyle='rgba(70,18,27,.92)';ctx.fillRect(x-18,y-43,36,14);txt('!',x,y-36,'#ffd2d7',10)}
 }
 function drawWorkerSprite(a,ts){
- const s=roleStyle(a),moving=a.path?.length&&a.pathI<a.path.length,walk=moving?Math.sin(a.step)*3:0,idle=!moving?Math.sin(ts/650+a.activitySeed)*.8:0,bob=(a.state==='running'?Math.sin(a.bob)*1.5:idle),x=a.x,y=a.y+bob,sel=selected?.type==='agent'&&selected.id===a.id,stateColor=['error','blocked'].includes(a.state)?'#ff7383':a.state==='complete'?'#75dfa2':a.state==='pending'?'#66778a':s.accent;
- if(sel){ctx.save();ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.shadowColor=stateColor;ctx.shadowBlur=12;ctx.beginPath();ctx.ellipse(x,y+13,17,8,0,0,Math.PI*2);ctx.stroke();ctx.restore()}
- ctx.fillStyle='rgba(0,0,0,.36)';ctx.beginPath();ctx.ellipse(x,y+14,11,4,0,0,Math.PI*2);ctx.fill();
- // legs + shoes
- px(x-6,y+5+walk,5,9,s.pants);px(x+1,y+5-walk,5,9,s.pants);px(x-7,y+12+walk,6,3,'#111820');px(x+1,y+12-walk,6,3,'#111820');
- // torso, belt, arms
- px(x-8,y-8,16,15,a.state==='pending'?'#586574':s.shirt);px(x-8,y+2,16,3,'#202a33');px(x-11,y-5-walk*.35,4,11,s.skin);px(x+7,y-5+walk*.35,4,11,s.skin);
- // role stripe / badge
- px(x-7,y-7,3,13,stateColor);px(x+3,y-5,4,4,'rgba(255,255,255,.18)');
- // neck + face
- px(x-3,y-12,6,4,s.skin);px(x-7,y-22,14,11,s.skin);px(x-5,y-18,2,2,'#19242e');px(x+3,y-18,2,2,'#19242e');px(x-2,y-14,4,1,'#8f604d');
- drawWorkerHat(a,x,y,bob);drawWorkerTool(a,x,y,bob,walk);
- // backpack and role badge
- px(x+(a.dir>0?-11:8),y-6,4,9,'#263747');
- ctx.fillStyle='#071019';ctx.font='800 5px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText((s.badge||a.glyph).slice(0,2),x,y-2);
- // state beacon
- ctx.save();ctx.shadowColor=stateColor;ctx.shadowBlur=a.state==='running'?12:5;ctx.fillStyle=stateColor;ctx.beginPath();ctx.arc(x,y-30,3+(a.state==='running'?(Math.sin(ts/180)+1):0),0,Math.PI*2);ctx.fill();ctx.restore();
- if(display.labels&&view.zoom>1.15){const labelW=Math.min(100,Math.max(54,a.name.length*6+16));ctx.fillStyle='rgba(5,10,16,.86)';ctx.fillRect(x-labelW/2,y+19,labelW,16);txt(a.name,x,y+27,'#e8f1fa',8)}
- if(view.zoom>1.45||sel)drawWorkerBubble(a,x,y,ts)
+ const s=roleStyle(a),moving=a.path?.length&&a.pathI<a.path.length,walk=moving?Math.sin(a.step)*2.4:0,idle=!moving?Math.sin(ts/680+a.activitySeed)*.7:0,bob=(a.state==='running'?Math.sin(a.bob)*1.1:idle),x=a.x,y=a.y+bob,sel=selected?.type==='agent'&&selected.id===a.id,stateColor=['error','blocked'].includes(a.state)?'#ff7383':a.state==='complete'?'#75dfa2':a.state==='pending'?'#6d7985':s.accent;
+ if(sel){ctx.save();ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.shadowColor=stateColor;ctx.shadowBlur=14;ctx.beginPath();ctx.ellipse(x,y+18,21,10,0,0,Math.PI*2);ctx.stroke();ctx.restore()}
+ // soft ground shadow
+ ctx.fillStyle='rgba(0,0,0,.30)';ctx.beginPath();ctx.ellipse(x,y+20,14,6,0,0,Math.PI*2);ctx.fill();
+
+ // chunky legs + boots
+ ctx.fillStyle=s.pants;
+ ctx.beginPath();ctx.roundRect(x-10,y+4+walk,8,14,3);ctx.fill();
+ ctx.beginPath();ctx.roundRect(x+2,y+4-walk,8,14,3);ctx.fill();
+ ctx.fillStyle='#2a211b';
+ ctx.beginPath();ctx.roundRect(x-11,y+15+walk,10,5,2);ctx.fill();
+ ctx.beginPath();ctx.roundRect(x+1,y+15-walk,10,5,2);ctx.fill();
+
+ // broad torso / coveralls
+ ctx.fillStyle=a.state==='pending'?'#8a7563':s.shirt;
+ ctx.beginPath();ctx.roundRect(x-12,y-10,24,20,6);ctx.fill();
+ // bright high-visibility vest
+ ctx.fillStyle=s.vest||'#ff9d33';
+ ctx.beginPath();ctx.roundRect(x-10,y-9,20,15,4);ctx.fill();
+ // vest opening and reflective strips
+ px(x-2,y-9,4,15,s.shirt);
+ px(x-9,y-3,18,2,'#ffe885');
+ px(x-9,y+2,18,2,'#ffe885');
+ // tool belt
+ px(x-11,y+6,22,4,'#4d3828');px(x-2,y+6,5,4,'#d59a3d');
+
+ // big rounded arms, slightly swinging
+ ctx.fillStyle=s.skin;
+ ctx.beginPath();ctx.ellipse(x-14,y-2-walk*.25,5,9,-.15,0,Math.PI*2);ctx.fill();
+ ctx.beginPath();ctx.ellipse(x+14,y-2+walk*.25,5,9,.15,0,Math.PI*2);ctx.fill();
+ // gloves
+ ctx.fillStyle='#f2b23d';
+ ctx.beginPath();ctx.arc(x-15,y+5-walk*.25,4,0,Math.PI*2);ctx.fill();
+ ctx.beginPath();ctx.arc(x+15,y+5+walk*.25,4,0,Math.PI*2);ctx.fill();
+
+ // neck + oversized chibi head
+ px(x-4,y-14,8,5,s.skin);
+ ctx.fillStyle=s.skin;ctx.beginPath();ctx.roundRect(x-10,y-27,20,15,6);ctx.fill();
+ // ears
+ ctx.beginPath();ctx.arc(x-10,y-20,3,0,Math.PI*2);ctx.arc(x+10,y-20,3,0,Math.PI*2);ctx.fill();
+ // eyebrows / eyes / smile
+ px(x-6,y-23,5,2,s.hair);px(x+1,y-23,5,2,s.hair);
+ px(x-5,y-20,3,3,'#18222b');px(x+2,y-20,3,3,'#18222b');
+ px(x-2,y-16,5,2,'#965b46');
+
+ drawWorkerHat(a,x,y,bob);
+ drawWorkerTool(a,x,y+2,bob,walk);
+
+ // role patch on vest
+ ctx.fillStyle=s.accent;ctx.beginPath();ctx.roundRect(x+4,y-7,6,6,2);ctx.fill();
+ ctx.fillStyle='#071019';ctx.font='900 5px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText((s.badge||a.glyph).slice(0,2),x+7,y-4);
+
+ // backpack / utility pouch
+ px(x+(a.dir>0?-14:10),y-5,4,11,'#4a4036');
+
+ // worker state beacon
+ ctx.save();ctx.shadowColor=stateColor;ctx.shadowBlur=a.state==='running'?14:6;ctx.fillStyle=stateColor;ctx.beginPath();ctx.arc(x,y-38,3+(a.state==='running'?(Math.sin(ts/180)+1):0),0,Math.PI*2);ctx.fill();ctx.restore();
+
+ if(display.labels&&view.zoom>1.08){const labelW=Math.min(110,Math.max(58,a.name.length*6+16));ctx.fillStyle='rgba(5,10,16,.88)';ctx.fillRect(x-labelW/2,y+25,labelW,17);txt(a.name,x,y+33,'#eef6ff',8)}
+ if(view.zoom>1.4||sel)drawWorkerBubble(a,x,y-1,ts)
 }
 function drawAgents(ts){
  for(const a of agents.values())drawWorkerSprite(a,ts);
