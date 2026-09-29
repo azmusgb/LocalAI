@@ -85,6 +85,18 @@ await check('desktop zoom controls',async()=>{
   await page.locator('#awcFit').click();
   assert.equal(await page.locator('#awcZoomLabel').innerText(),'100%');
 });
+await check('Agent World v3 HUD and simulation controls',async()=>{
+  await page.locator('#awcRoster').waitFor({state:'visible'});
+  await page.locator('#awcMinimap').waitFor({state:'visible'});
+  await page.locator('[data-awc-display="night"]').click();
+  assert.equal(await page.locator('[data-awc-display="night"]').getAttribute('aria-pressed'),'true');
+  await page.locator('[data-awc-display="night"]').click();
+  await page.locator('[data-awc-district="ux"]').click();
+  assert.match(await page.locator('#awcSelection').innerText(),/UX Lab/i);
+  await page.locator('[data-awc-display="flows"]').click();
+  assert.equal(await page.locator('[data-awc-display="flows"]').getAttribute('aria-pressed'),'false');
+  await page.locator('[data-awc-display="flows"]').click();
+});
 await page.close();
 
 const mobile=await browser.newPage({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
