@@ -20,6 +20,7 @@ function navigate(view){const b=viewButton(view);if(b){b.click();requestAnimatio
 function buildDesktopNav(){
  const aside=q('.app>aside'),nav=q('.app>aside nav');if(!aside||!nav)return;
  const originals=qa('.navbtn[data-view]',nav);allButtons=new Map(originals.map(b=>[b.dataset.view,b]));
+ const registry=document.createElement('div');registry.id='uxNavRegistry';registry.hidden=true;originals.forEach(b=>registry.appendChild(b));aside.appendChild(registry);
  const shell=document.createElement('div');shell.className='ux-nav-shell';
  const rail=document.createElement('div');rail.className='ux-primary-rail';rail.setAttribute('aria-label','Primary navigation');
  const secondary=document.createElement('div');secondary.className='ux-secondary-nav';
@@ -35,7 +36,8 @@ function buildDesktopNav(){
  renderSecondary('home');
 }
 function renderSecondary(domainId){
- const d=DOMAINS.find(x=>x.id===domainId)||DOMAINS[0],holder=q('#uxSecondaryGroups');if(!holder)return;
+ const d=DOMAINS.find(x=>x.id===domainId)||DOMAINS[0],holder=q('#uxSecondaryGroups'),registry=q('#uxNavRegistry');if(!holder)return;
+ qa('.navbtn[data-view]',holder).forEach(b=>registry?.appendChild(b));
  q('#uxSecondaryTitle').textContent=d.label;q('#uxSecondaryTagline').textContent=d.tagline;
  holder.innerHTML='';
  d.groups.forEach(g=>{
