@@ -46,6 +46,12 @@ let demo={active:false,running:false,paused:false,stage:0,speed:1,lastAdvance:0,
 function humanState(s){return({needs_attention:'Needs attention',running:'Running',complete:'Complete',blocked:'Blocked',error:'Needs attention',pending:'Waiting',awaiting_approval:'Awaiting approval',applied:'Applied'})[s]||String(s||'Idle').replaceAll('_',' ')}
 function zoneForWorker(w){if(['error','blocked'].includes(w.state))return'repair';return ROLE_ZONE[w.id]||ROLE_ZONE[w.agentId]||(/doc/i.test(w.name||'')?'docs':/ux/i.test(w.name||'')?'ux':/model/i.test(w.name||'')?'models':'command')}
 function districtCenter(id){const d=DISTRICTS[id]||DISTRICTS.command;return{x:(d.x+d.w/2)*T,y:(d.y+d.h+.8)*T}}
+function workerTarget(w,zone){
+ const base=districtCenter(zone),workers=(current?.workers||[]).filter(q=>zoneForWorker(q)===zone),id=w.id||w.agentId||w.name,idx=Math.max(0,workers.findIndex(q=>(q.id||q.agentId||q.name)===id));
+ const slots=[[-34,-2],[34,-2],[-62,22],[62,22],[0,30],[-30,48],[30,48]],slot=slots[idx%slots.length];
+ return{x:base.x+slot[0],y:base.y+slot[1]}
+}
+function routeToTarget(from,target){const path=astar(from,target);if(!path.length||Math.hypot(path[path.length-1].x-target.x,path[path.length-1].y-target.y)>3)path.push({x:target.x,y:target.y});return path}
 function road(x,y){roads.add(key(x,y))}
 function buildRoads(){
  roads.clear();
@@ -71,10 +77,10 @@ function astar(a,b){
 function normalizeMission(m){return{type:'mission',id:m.id,status:m.status,goal:m.goal||'Mission',updatedAt:m.updatedAt||m.createdAt,workers:(m.workers||[]).map(w=>({...w,id:w.id||w.agentId})),error:m.error||'',raw:m}}
 function ensureAgent(w){
  const id=w.id||w.agentId||w.name;if(!id)return;
- let a=agents.get(id),zone=zoneForWorker(w),target=districtCenter(zone);
+ let a=agents.get(id),zone=zoneForWorker(w),target=workerTarget(w,zone);
  if(!a){const p=districtCenter('command'),style=ROLE_STYLE[id]||ROLE_STYLE[(w.agentId||'')]||ROLE_STYLE.synthesis;a={id,name:w.name||id,glyph:(w.name||id).trim()[0]?.toUpperCase()||'A',x:p.x,y:p.y,tx:p.x,ty:p.y,path:[],pathI:0,state:'pending',zone:'command',targetZone:zone,color:ROLE_COLOR[id]||'#8fb5e8',model:w.model||'',dir:1,bob:Math.random()*Math.PI*2,step:Math.random()*Math.PI*2,style,activitySeed:Math.random()*10};agents.set(id,a)}
  const old=a.state;a.name=w.name||a.name;a.model=w.model||a.model;a.state=w.state||a.state;a.targetZone=zone;a.color=ROLE_COLOR[id]||a.color;
- if(a.zone!==zone||Math.hypot(a.tx-target.x,a.ty-target.y)>2){a.tx=target.x;a.ty=target.y;a.path=astar({x:a.x,y:a.y},target);a.pathI=0;a.zone=zone}
+ if(a.zone!==zone||Math.hypot(a.tx-target.x,a.ty-target.y)>2){a.tx=target.x;a.ty=target.y;a.path=routeToTarget({x:a.x,y:a.y},target);a.pathI=0;a.zone=zone}
  if(old!==a.state){addEvent(a.name+' → '+humanState(a.state));if(a.state==='running'){spawnPacket('models',zone,a.color);spawnSpark(target.x,target.y,a.color,18)}if(a.state==='complete'){spawnArtifact(a);spawnSpark(target.x,target.y,'#75dfa2',26)}if(['error','blocked'].includes(a.state))spawnSpark(target.x,target.y,'#ff7383',36)}
 }
 function spawnArtifact(a){if(artifacts.some(x=>x.workerId===a.id))return;const p=districtCenter(a.zone);artifacts.push({workerId:a.id,x:p.x+26,y:p.y-14,color:a.color,created:now()})}
@@ -134,7 +140,12 @@ function hitAt(x,y){
  return null
 }
 function selectAt(e){const p=screenPoint(e);selected=hitAt(p.x,p.y);syncSelection();if(selected?.type==='district'){const d=DISTRICTS[selected.id];focusPoint((d.x+d.w/2)*T,(d.y+d.h/2)*T,1.65)}}
-function updateHover(e){if(drag||pointers.size>1)return;const p=screenPoint(e),hit=hitAt(p.x,p.y);hovered=hit;const tip=$('#awcTooltip',root);if(!tip)return;if(!hit){tip.hidden=true;return}let name='',detail='';if(hit.type==='agent'){const a=agents.get(hit.id);name=a.name;detail=humanState(a.state)+' · '+(DISTRICTS[a.zone]?.name||a.zone)}else{const d=DISTRICTS[hit.id];name=d.name;detail=[...agents.values()].filter(a=>a.zone===hit.id).length+' worker(s)'}tip.innerHTML='<strong>'+esc(name)+'</strong><span>'+esc(detail)+'</span>';tip.hidden=false;tip.style.left=clamp(e.offsetX+14,8,canvas.clientWidth-190)+'px';tip.style.top=clamp(e.offsetY+14,8,canvas.clientHeight-60)+'px'}
+function updateHover(e){
+ if(drag||pointers.size>1)return;const p=screenPoint(e),hit=hitAt(p.x,p.y);hovered=hit;const tip=$('#awcTooltip',root);if(!tip)return;
+ if(!hit||hit.type!=='agent'){tip.hidden=true;return}
+ const a=agents.get(hit.id);tip.innerHTML='<strong>'+esc(a.name)+'</strong><span>'+esc(humanState(a.state))+' · '+esc(DISTRICTS[a.zone]?.name||a.zone)+'</span>';tip.hidden=false;
+ tip.style.left=clamp(e.offsetX+12,8,canvas.clientWidth-176)+'px';tip.style.top=clamp(e.offsetY-54,8,canvas.clientHeight-54)+'px'
+}
 function toggleDisplay(k){display[k]=!display[k];root?.querySelector('[data-awc-display="'+k+'"]')?.setAttribute('aria-pressed',String(display[k]));if(k==='night')root?.classList.toggle('is-night',display.night)}
 
 function mount(){
@@ -151,7 +162,7 @@ function mount(){
    <div class="awc__scanlines"></div>
    <div class="awc__tooltip" id="awcTooltip" hidden></div>
    <div class="awc__mapHud">
-    <div class="awc__selection" id="awcSelection"><span>Select a worker or building</span><small>Inspect district state and focus the camera.</small></div>
+    <div class="awc__selection" id="awcSelection"><span>Select a worker or building</span><small>Click to inspect</small></div>
     <div class="awc__minimap" id="awcMinimap" aria-hidden="true"></div>
    </div>
    <div class="awc__eventFeed" id="awcEventFeed"></div>
@@ -324,8 +335,9 @@ function drawWorkerSprite(a,ts){
  // worker state beacon
  ctx.save();ctx.shadowColor=stateColor;ctx.shadowBlur=a.state==='running'?14:6;ctx.fillStyle=stateColor;ctx.beginPath();ctx.arc(x,y-38,3+(a.state==='running'?(Math.sin(ts/180)+1):0),0,Math.PI*2);ctx.fill();ctx.restore();
 
- if(display.labels&&view.zoom>1.08){const labelW=Math.min(110,Math.max(58,a.name.length*6+16));ctx.fillStyle='rgba(5,10,16,.88)';ctx.fillRect(x-labelW/2,y+25,labelW,17);txt(a.name,x,y+33,'#eef6ff',8)}
- if(view.zoom>1.4||sel)drawWorkerBubble(a,x,y-1,ts)
+ const isHover=hovered?.type==='agent'&&hovered.id===a.id;
+ if(display.labels&&(sel||isHover)){const labelW=Math.min(110,Math.max(58,a.name.length*6+16));ctx.fillStyle='rgba(5,10,16,.92)';ctx.fillRect(x-labelW/2,y+25,labelW,17);txt(a.name,x,y+33,'#eef6ff',8)}
+ if(sel||(a.state==='running'&&view.zoom>1.55))drawWorkerBubble(a,x,y-1,ts)
 }
 function drawAgents(ts){
  for(const a of agents.values())drawWorkerSprite(a,ts);
