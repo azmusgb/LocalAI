@@ -29,6 +29,7 @@ body.ux-v3 .card,body.ux-v3 .preview-pane,body.ux-v3 .item-card,body.ux-v3 .metr
 body.ux-v3 .card{border-radius:var(--ux-radius-lg);padding:18px}body.ux-v3 .btn{border-color:var(--ux-line);background:var(--ux-surface-2);border-radius:9px}body.ux-v3 .btn:hover{border-color:var(--ux-line-strong);background:var(--ux-surface-3)}body.ux-v3 .btn.primary{background:#eef4ff;color:#09101a}
 body.ux-v3 input,body.ux-v3 textarea,body.ux-v3 select{border-color:var(--ux-line);background:#0c121a;border-radius:9px}body.ux-v3 input:focus,body.ux-v3 textarea:focus,body.ux-v3 select:focus{border-color:rgba(121,169,255,.5);outline:2px solid rgba(121,169,255,.16)}
 body.ux-v3 .two,body.ux-v3 .workspace-grid{gap:14px}
+body.ux-v3 #agents .agent-live-grid{grid-template-columns:minmax(0,1fr) 320px}
 
 .ux-mobile-nav,.ux-mobile-sheet{display:none}
 @media(max-width:1080px) and (min-width:761px){:root{--ux-nav-width:258px}.ux-nav-shell{grid-template-columns:66px minmax(0,1fr)}.ux-primary-item{min-height:54px}.ux-link-copy small{display:none}}
