@@ -30,3 +30,56 @@ body.agent-world-city-ready .awg6{display:none!important}
 @media(max-width:900px){.awc__commandbar{grid-template-columns:1fr auto}.awc__topstats{grid-column:1/-1;grid-row:2;justify-content:flex-start;padding-top:6px;border-top:1px solid var(--line)}.awc__missionstrip{grid-template-columns:1fr auto}.awc__phase{grid-column:1/-1;grid-row:2}.awc__gameShell{min-height:0}.awc__mapWrap{min-height:420px}.awc canvas{min-height:0}.awc__ops{grid-template-columns:1fr}.awc__opsHead{border-right:0;border-bottom:1px solid var(--line)}.awc__roster{grid-template-columns:repeat(2,minmax(0,1fr));max-height:none}.awc__districtLegend,.awc__demoPanel{border-left:0;border-top:1px solid var(--line)}.awc__footer{grid-template-columns:1fr}.awc__hint{text-align:left}.awc__progress{max-width:none}}
 @media(max-width:620px){.awc-v3{border-radius:15px}.awc__commandbar{grid-template-columns:1fr;padding:10px}.awc__toolbar{justify-content:flex-start;overflow:auto;flex-wrap:nowrap;padding-bottom:2px}.awc__toolbar button{min-height:38px;flex:0 0 auto}.awc__topstats{overflow:auto;white-space:nowrap}.awc__missionstrip{grid-template-columns:1fr}.awc__missionstate{justify-content:flex-start}.awc__phase{grid-column:auto;grid-row:auto}.awc__missioncopy strong{white-space:normal}.awc__mapWrap{min-height:360px}.awc canvas{min-height:0}.awc__mapHud{align-items:flex-start}.awc__selection{max-width:72%}.awc__minimap{width:90px;height:60px}.awc__eventFeed{width:76%}.awc__roster{grid-template-columns:1fr}.awc__districtLegend{grid-template-columns:repeat(2,1fr)}.awc__demoActions{grid-template-columns:repeat(2,1fr)}.awc__demoActions button,.awc__demoPanel select,.awc__liveBtn{min-height:42px;font-size:10px}.awc__footer{gap:8px}.awc__hint{font-size:8px}}
 @media(prefers-reduced-motion:reduce){.awc__progress span{transition:none}.awc__scanlines{display:none}}
+
+/* Living Worksite v9 */
+.awc-v3{background:radial-gradient(circle at 50% -10%,rgba(89,226,237,.055),transparent 38%),#08111a}
+.awc__commandbar{backdrop-filter:blur(14px);position:relative;z-index:6}
+.awc__missionstrip{position:relative;z-index:5;box-shadow:0 8px 28px rgba(0,0,0,.14)}
+.awc__mapWrap{box-shadow:inset 0 1px rgba(255,255,255,.025)}
+.awc__ops{background:linear-gradient(180deg,#0d1823 0%,#09121a 100%)}
+.awc__rosterItem{transition:transform .15s ease,border-color .15s ease,background .15s ease}
+.awc__rosterItem:hover{transform:translateX(-2px)}
+.awc__replayPanel{display:grid;gap:9px;padding:12px;border-top:1px solid var(--line);background:linear-gradient(180deg,rgba(113,183,255,.045),rgba(8,17,26,.2))}
+.awc__replayPanel>div:first-child{display:flex;align-items:end;justify-content:space-between;gap:8px}
+.awc__replayPanel strong{font-size:8px;color:#b9c9d9;font-weight:760}
+.awc__replayPanel input[type=range]{width:100%;height:18px;accent-color:#71b7ff;cursor:pointer}
+.awc__replayPanel input:disabled{opacity:.38;cursor:not-allowed}
+.awc__replayActions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.awc__replayActions button{min-height:32px;border:1px solid var(--line);background:#111d29;color:#c5d4e2;border-radius:8px;font-size:8px;font-weight:800}
+.awc__replayActions button:hover{background:#172535;color:#fff;border-color:var(--line2)}
+.awc__eventFeed{max-width:260px}
+.awc__selection{backdrop-filter:blur(10px)}
+.awc__footer{background:linear-gradient(180deg,#0b151f,#08111a)}
+.awc-v3.is-expanded .awc__commandbar,.awc-v3.is-expanded .awc__missionstrip{position:sticky;top:0}
+@media(max-width:1180px){
+ .awc__ops{grid-template-columns:minmax(180px,.8fr) minmax(0,1.4fr) minmax(220px,.9fr)}
+ .awc__replayPanel{border-top:0;border-left:1px solid var(--line)}
+}
+@media(max-width:760px){
+ .awc__commandbar{grid-template-columns:1fr auto;padding:9px 10px}
+ .awc__topstats{grid-column:1/-1;order:3;justify-content:flex-start;overflow-x:auto;padding-bottom:2px}
+ .awc__toolbar{grid-column:1/-1;justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:3px}
+ .awc__toolbar button{min-width:max-content;min-height:38px}
+ .awc__missionstrip{grid-template-columns:1fr;gap:8px;padding:10px}
+ .awc__mapWrap{min-height:390px;aspect-ratio:auto}
+ .awc canvas{height:390px;aspect-ratio:auto}
+ .awc__ops{display:flex;flex-direction:column;border-left:0;border-top:1px solid var(--line)}
+ .awc__opsHead{position:sticky;top:0;background:#0c1621;z-index:2}
+ .awc__roster{display:flex;overflow-x:auto;gap:7px;padding:9px}
+ .awc__rosterItem{min-width:205px}
+ .awc__districtLegend{display:flex;overflow-x:auto;flex-wrap:nowrap}
+ .awc__districtLegend button{min-width:78px}
+ .awc__replayPanel{border-left:0;border-top:1px solid var(--line)}
+ .awc__eventFeed{display:none}
+ .awc__mapHud{inset:auto 7px 7px 7px}
+ .awc__selection{max-width:72%}
+ .awc__minimap{width:86px;height:52px}
+}
+@media(max-width:520px){
+ .awc__brand .awc__sub{display:none}
+ .awc__topstats{gap:8px}
+ .awc__missionstate{justify-content:space-between}
+ .awc__hint{display:none}
+ .awc-v3.is-expanded{inset:0;border-radius:0;max-height:100dvh}
+ .awc-v3.is-expanded .awc__mapWrap,.awc-v3.is-expanded canvas{min-height:52dvh}
+}
