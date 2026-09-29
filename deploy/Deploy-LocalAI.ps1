@@ -11,14 +11,14 @@ if(-not(Test-Path $candidate)){
   New-Item -ItemType Directory -Force $candidate|Out-Null
   $archive=Join-Path $StateDir ("candidate-"+$sha+".tar")
   Remove-Item $archive -Force -ErrorAction SilentlyContinue
-  git archive --format=tar -o $archive $sha app
+  git archive --format=tar -o $archive $sha app deploy
   if($LASTEXITCODE -ne 0 -or -not(Test-Path $archive)){throw "Failed to create candidate archive"}
   tar -xf $archive -C $candidate
   $tarExit=$LASTEXITCODE
   Remove-Item $archive -Force -ErrorAction SilentlyContinue
   if($tarExit -ne 0 -or -not(Test-Path (Join-Path $candidate "app\server.js"))){Remove-Item $candidate -Recurse -Force -ErrorAction SilentlyContinue;throw "Failed to extract candidate archive"}
 }
-& "$Repo\deploy\Test-LocalAI-Candidate.ps1" -CandidateRoot $candidate
+& (Join-Path $candidate "deploy\Test-LocalAI-Candidate.ps1") -CandidateRoot $candidate
 if($CheckOnly){Write-Host "PASS: candidate $($sha.Substring(0,12)) validated; production unchanged." -ForegroundColor Green;exit 0}
 $previous=$null;$state=Join-Path $StateDir "state.json";if(Test-Path $state){try{$previous=(Get-Content $state -Raw|ConvertFrom-Json).currentCommit}catch{}}
 if($previous -eq $sha){
