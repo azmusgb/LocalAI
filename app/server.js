@@ -1037,8 +1037,9 @@ async function apiKnowledgeSearch(req,res){
   if(!requireFeature(res,3)) return; try{const b=await readBody(req);const query=String(b.query||'').trim();if(!query)return json(res,400,{error:'query is required'});let docs=knowledgeStore();if(b.projectId)docs=docs.filter(x=>x.projectId===b.projectId);const hits=[];for(const d of docs){(d.chunks||[]).forEach((c,i)=>{const score=knowledgeScore(query,c);if(score>0)hits.push({documentId:d.id,name:d.name,projectId:d.projectId,chunk:i,score:Number(score.toFixed(3)),text:c})})}hits.sort((a,b)=>b.score-a.score);json(res,200,{query,hits:hits.slice(0,10)})}catch(e){json(res,400,{error:String(e.message||e)})}
 }
 
-async function runLocalModel(prompt, system='You are a concise local AI assistant.', timeoutMs=180000){
-  const r=await fetchWithTimeout(`${OLLAMA_URL}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:MODEL,messages:[{role:'system',content:system},{role:'user',content:String(prompt).slice(0,50000)}],stream:false,options:{num_ctx:32768}})},timeoutMs);
+async function runLocalModel(prompt, system='You are a concise local AI assistant.', timeoutMs=180000, model=MODEL){
+  const selectedModel=String(model||MODEL).trim()||MODEL;
+  const r=await fetchWithTimeout(`${OLLAMA_URL}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:selectedModel,messages:[{role:'system',content:system},{role:'user',content:String(prompt).slice(0,50000)}],stream:false,options:{num_ctx:32768}})},timeoutMs);
   const raw=await r.text(); if(!r.ok)throw new Error(`Intelligence service HTTP ${r.status}: ${raw.slice(0,400)}`); const j=JSON.parse(raw); return j?.message?.content||'';
 }
 async function runEngineeringPlannerModel(prompt, system, timeoutMs=ENGINEERING_MODEL_TIMEOUT_MS){
