@@ -111,8 +111,16 @@ module.exports=function createAgentOrchestrator(deps={}){
    const pending=new Set(routing.selectedAgentIds),done=new Set(),results=[];
    while(pending.size){const blocked=routing.workers.filter(w=>pending.has(w.agentId)&&(w.dependsOn||[]).some(d=>done.has(d)&&!results.some(r=>r.agentId===d&&r.status==='complete')));blocked.forEach(w=>{pending.delete(w.agentId);done.add(w.agentId);const mw=m.workers.find(x=>x.id===w.agentId);mw.state='blocked';mw.error='Blocked because a prerequisite specialist failed';});if(blocked.length){m.results=results;m.updatedAt=iso();save(missionsFile,ms);missionSnapshot(m,'blocked','A dependency failure blocked downstream work',blocked[0]?.agentId||'')}const ready=routing.workers.filter(w=>pending.has(w.agentId)&&(w.dependsOn||[]).every(d=>done.has(d)&&results.some(r=>r.agentId===d&&r.status==='complete')));if(!ready.length){if(!pending.size)break;throw new Error('Mission dependency graph cannot make progress');}
     ready.forEach(w=>m.workers.find(x=>x.id===w.agentId).state='running');m.updatedAt=iso();save(missionsFile,ms);missionSnapshot(m,'dispatch','Ready workers entered execution',ready.map(w=>w.agentId).join(','));
-    const batch=await Promise.all(ready.map(w=>specialist(w.agentId,goal,projectId,w.model,dependencyContext(results,w.dependsOn))));results.push(...batch);
-    ready.forEach(w=>{pending.delete(w.agentId);done.add(w.agentId);const r=results.find(x=>x.agentId===w.agentId),mw=m.workers.find(x=>x.id===w.agentId);mw.state=r.status});
+    const batch=await Promise.all(ready.map(async w=>{
+     let r=await specialist(w.agentId,goal,projectId,w.model,dependencyContext(results,w.dependsOn));
+     const fallbackId=w.routingMeta?.retryPolicy?.fallbackAgentId;
+     if(r.status!=='complete'&&fallbackId){
+      const fbAgent=specialists.find(a=>a.id===fallbackId);
+      if(fbAgent){missionSnapshot(m,'fallback','Primary worker failed; attempting fallback '+fbAgent.name,w.agentId);const fbRoute=await routeModel(goal+' '+fbAgent.capabilities.join(' '));const fb=await specialist(fallbackId,goal,projectId,fbRoute.model,dependencyContext(results,w.dependsOn));if(fb.status==='complete')r={...fb,agentId:w.agentId,agentName:fb.agentName+' (fallback for '+w.name+')',executedBy:fallbackId,fallbackFor:w.agentId}}
+     }
+     return r
+    }));results.push(...batch);
+    ready.forEach(w=>{pending.delete(w.agentId);done.add(w.agentId);const r=results.find(x=>x.agentId===w.agentId),mw=m.workers.find(x=>x.id===w.agentId);mw.state=r.status;if(r.fallbackFor){mw.fallbackUsed=r.executedBy;mw.reason=(mw.reason||'')+' · fallback executed by '+r.executedBy}});
     m.results=results;m.updatedAt=iso();save(missionsFile,ms);missionSnapshot(m,'worker-result','Specialist results published',ready.map(w=>w.agentId).join(','));
    }
    const failed=results.filter(r=>r.status!=='complete'),blockedWorkers=m.workers.filter(w=>w.state==='blocked');if(failed.length||blockedWorkers.length){const sw=m.workers.find(x=>x.id==='synthesis');sw.state='blocked';sw.error='Synthesis skipped because prerequisite specialists did not complete';m.status='needs_attention';m.error='Mission stopped after specialist failure';m.updatedAt=iso();save(missionsFile,ms);missionSnapshot(m,'mission-attention','Mission stopped after specialist failure');return m}
