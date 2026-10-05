@@ -78,3 +78,8 @@ Use the dedicated rollback script when a manual rollback is required:
 ```
 
 Do not delete `C:\LocalAI\.deploy` or `C:\LocalAI\releases` while diagnosing a failed deployment; they contain the state and candidate snapshots needed to explain or reverse the change.
+
+
+## SQLite rollout
+
+The Node runtime inside `local-ai-appliance` must support `node:sqlite` (Node 22.13+); the deployment script checks this before touching live code. Candidate archives now include native regression tests. The application is stopped during promotion. SQLite deployments back up data separately from application snapshots; rollback to a pre-SQLite snapshot exports current data before starting the older JSON-backed application. See [docs/STORAGE.md](docs/STORAGE.md) for migration and recovery details. Verify the first promotion and rollback manually on the host before enabling unattended deployment.

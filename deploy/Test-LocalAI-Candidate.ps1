@@ -1,7 +1,7 @@
 param([Parameter(Mandatory=$true)][string]$CandidateRoot)
 $ErrorActionPreference="Stop"
 $app=Join-Path $CandidateRoot "app"
-foreach($r in @("server.js","agent-orchestrator.js","specialist-agents.json","public\app.js","public\index.html","public\manifest.json","public\sw.js","public\agent-specialists.js","public\agent-specialists.css","public\ux-architecture-v2.js","public\ux-architecture-v2.css","public\agent-world-city.js","public\agent-world-city.css","public\integration-hub-v2.js","public\integration-hub-v2.css")){if(-not(Test-Path(Join-Path $app $r))){throw "Missing required file: $r"}}
+foreach($r in @("server.js","storage.js","storage-cli.js","agent-orchestrator.js","specialist-agents.json","public\app.js","public\index.html","public\manifest.json","public\sw.js","public\agent-specialists.js","public\agent-specialists.css","public\ux-architecture-v2.js","public\ux-architecture-v2.css","public\agent-world-city.js","public\agent-world-city.css","public\integration-hub-v2.js","public\integration-hub-v2.css")){if(-not(Test-Path(Join-Path $app $r))){throw "Missing required file: $r"}}
 Get-ChildItem $app -Recurse -File -Filter *.js|ForEach-Object{node --check $_.FullName|Out-Null;if($LASTEXITCODE -ne 0){throw "JavaScript syntax failure: $($_.FullName)"}}
 $server=Get-Content (Join-Path $app "server.js") -Raw;$frontend=Get-Content (Join-Path $app "public\app.js") -Raw;$orchestrator=Get-Content (Join-Path $app "agent-orchestrator.js") -Raw;$ux=Get-Content (Join-Path $app "public\ux-architecture-v2.js") -Raw;$uxcss=Get-Content (Join-Path $app "public\ux-architecture-v2.css") -Raw;$agentCity=Get-Content (Join-Path $app "public\agent-world-city.js") -Raw;$agentOps=Get-Content (Join-Path $app "public\agent-specialists.js") -Raw;$index=Get-Content (Join-Path $app "public\index.html") -Raw
 foreach($s in @("/healthz","/api/engineering/runs","/api/agents/catalog","/api/agents/models","/api/agents/dispatch","/api/agents/specialist/run","/api/agents/missions/start","/api/agents/missions/events")){if(-not $server.Contains($s)){throw "Server contract missing: $s"}}
@@ -16,3 +16,8 @@ foreach($s in @("agentWorldCityMount","agentTimeline","agentInspector","agentRes
 $bad=Get-ChildItem $app -Recurse -Force -File|Where-Object{$_.Name -match '(^\.env)|(\.key$)|(\.pem$)|(\.pfx$)|(\.p12$)'}
 if($bad){throw "Sensitive file type found"}
 Write-Host "PASS: required files, JS syntax, lifecycle contracts, and sensitive-file checks." -ForegroundColor Green
+
+
+# Native storage checks need no npm packages or model services.
+node --test (Join-Path $CandidateRoot "tests/storage.test.cjs") (Join-Path $CandidateRoot "tests/storage-api.test.cjs") (Join-Path $CandidateRoot "tests/agent-orchestrator.test.cjs")
+if($LASTEXITCODE -ne 0){throw "SQLite migration, concurrency, API or agent regression failed"}

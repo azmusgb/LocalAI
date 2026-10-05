@@ -7,7 +7,6 @@ const createOrchestrator = require('../app/agent-orchestrator');
 
 function fixture(t, respond = () => 'Grounded finding [app/server.js]') {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-mission-'));
-  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
   const calls = [];
   const orchestrator = createOrchestrator({
     dataDir, ollamaUrl: 'http://unused.invalid', defaultModel: 'test-model',
@@ -17,6 +16,7 @@ function fixture(t, respond = () => 'Grounded finding [app/server.js]') {
       return respond(prompt, system);
     },
   });
+  t.after(() => { orchestrator.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
   const events = [];
   orchestrator.events.on('mission', mission => events.push(structuredClone(mission)));
   return { orchestrator, calls, events };
@@ -98,3 +98,4 @@ test('concurrent missions retain both results and completed histories', async t 
   assert.equal(orchestrator.runs().length, 2);
   assert.ok(orchestrator.runs().every(run => run.status === 'complete'));
 });
+

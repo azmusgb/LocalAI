@@ -5,8 +5,9 @@ module.exports=function createAgentOrchestrator(deps={}){
  const catalog=JSON.parse(fs.readFileSync(path.join(__dirname,'specialist-agents.json'),'utf8')).agents;
  const GROUNDED_TIMEOUT_MS=600000,COORDINATOR_TIMEOUT_MS=600000,MODEL_RETRY_DELAYS_MS=[1500,4000];
  const specialists=catalog.filter(a=>!a.infrastructure);
- const runsFile=path.join(dataDir,'specialist-agent-runs.json'),missionsFile=path.join(dataDir,'agent-missions.json'),events=new EventEmitter();
- const read=(f,d=[])=>{try{return JSON.parse(fs.readFileSync(f,'utf8'))}catch{return d}},save=(f,v)=>fs.writeFileSync(f,JSON.stringify(v,null,2)),iso=()=>new Date().toISOString(),id=p=>p+'-'+Date.now().toString(36)+'-'+Math.random().toString(16).slice(2,8);
+ const storage=deps.storage||new (require('./storage').Storage)({dataDir});
+ const runsFile='specialistRuns',missionsFile='missions',events=new EventEmitter();
+ const read=f=>storage.list(f),iso=()=>new Date().toISOString(),id=p=>p+'-'+Date.now().toString(36)+'-'+Math.random().toString(16).slice(2,8);
  async function models(){const r=await fetchWithTimeout(ollamaUrl+'/api/tags',{method:'GET'},15000);if(!r.ok)throw new Error('Ollama inventory unavailable: HTTP '+r.status);const j=await r.json();return (j.models||[]).map(x=>({name:x.name,size:x.size,modified_at:x.modified_at}));}
  function modelScore(name,task){let s=0,n=name.toLowerCase(),t=task.toLowerCase();if(/coder|code|debug|implement|engineering/.test(t)&&/coder|qwen/.test(n))s+=40;if(/document|summar|write|research|ux|design/.test(t)&&/qwen|gemma/.test(n))s+=25;if(/32k|16k/.test(n))s+=8;if(name===defaultModel)s+=5;return s}
  async function routeModel(task,inventory){const inv=inventory||await models();if(!inv.length)throw new Error('No installed Ollama models reported');const ranked=inv.map(m=>({...m,score:modelScore(m.name,task)})).sort((a,b)=>b.score-a.score||a.name.localeCompare(b.name));return {model:ranked[0].name,score:ranked[0].score,reason:'Highest deterministic fit among installed Ollama models',inventory:ranked};}
@@ -94,19 +95,16 @@ module.exports=function createAgentOrchestrator(deps={}){
   return {schemaVersion:1,product:{name:'Local AI Appliance',runtime:'LAN-hosted Node.js application with local Ollama models',sourceRoot:'/app'},sources:[...knowledge,...sources]};
  }
  async function specialist(agentId,goal,projectId='',assignedModel='',upstream=''){const agent=specialists.find(x=>x.id===agentId);if(!agent)throw new Error('Unknown specialist: '+agentId);const run={id:id('spec'),agentId,agentName:agent.name,goal,projectId,status:'running',createdAt:iso(),updatedAt:iso(),plan:[{name:'Route model',state:'running'},{name:'Gather context',state:'pending'},{name:'Execute specialist',state:'pending'},{name:'Publish result',state:'pending'}]};persistRecord(runsFile,run,300);try{const rt=assignedModel?{model:assignedModel}:await routeModel(goal+' '+agentId);run.model=rt.model;run.plan[0].state='complete';const packet=evidencePacket(goal,agentId,projectId);run.evidence=packet.sources.map(x=>x.source);run.plan[1].state='complete';run.plan[2].state='running';const evidence=packet.sources.map((x,i)=>'['+(i+1)+'] SOURCE: '+x.source+'\n'+x.text).join('\n\n');const grounding='PRODUCT IDENTITY:\n'+JSON.stringify(packet.product)+'\n\n'+groundingRules();run.answer=await runModelReliable(grounding+'Goal:\n'+goal+'\n\nAuthoritative project evidence:\n'+(evidence||'(none)')+(upstream?'\n\nCompleted prerequisite specialist output:\n'+upstream:'')+'\n\nReturn a concrete, structured, evidence-grounded result. Before finalizing, verify that each observation is supported by its cited source and that the report contains no contradictory claims.',agent.system,GROUNDED_TIMEOUT_MS,rt.model);run.plan[2].state='complete';run.plan[3].state='complete';run.status='complete'}catch(e){run.status='error';const msg=String(e.message||e),timedOut=/aborted|timeout/i.test(msg);run.error=timedOut?'Grounded specialist inference exceeded '+Math.round(GROUNDED_TIMEOUT_MS/60000)+' minute timeout: '+msg:msg;run.errorCode=timedOut?'MODEL_TIMEOUT':(/fetch failed|ECONNRESET|ECONNREFUSED|socket|network|UND_ERR|terminated/i.test(msg)?'MODEL_CONNECTION_ERROR':'SPECIALIST_ERROR');const active=run.plan.find(x=>x.state==='running');if(active)active.state='error'}run.updatedAt=iso();persistRecord(runsFile,run,300);if(recordActivity)recordActivity('agent','Specialist '+run.status,agent.name,{runId:run.id,agentId});return run}
- function persistRecord(file, record, limit){
-  // Read immediately before a synchronous write: concurrent async runs hold stale snapshots.
-  const rows=read(file),index=rows.findIndex(row=>row.id===record.id);
-  if(index>=0)rows[index]=record;else rows.unshift(record);
-  save(file,rows.slice(0,limit));
+ function persistRecord(collection, record, _legacyLimit){
+  storage.upsert(collection, record);
  }
  function missionSnapshot(m,type='state',detail='',workerId=''){
   m.timeline=m.timeline||[];
   const workers=(m.workers||[]).map(w=>({id:w.id,name:w.name,state:w.state,model:w.model,dependsOn:w.dependsOn||[],reason:w.reason,routingMeta:w.routingMeta||null,error:w.error||''}));
   const sig=workers.map(w=>w.id+':'+w.state).join('|')+'|'+m.status+'|'+type;
   if(m.timeline.at(-1)?.sig!==sig)m.timeline.push({at:iso(),type,detail,workerId,status:m.status,sig,workers});
-  m.timeline=m.timeline.slice(-160);m.updatedAt=iso();
-  const rows=read(missionsFile),ix=rows.findIndex(x=>x.id===m.id);if(ix>=0){rows[ix]=m;save(missionsFile,rows.slice(0,200))}
+  m.updatedAt=iso();
+  storage.upsert(missionsFile,m);
   events.emit('mission',m);return m
  }
  async function mission(goal,projectId='',manualAgentIds){
@@ -136,5 +134,5 @@ module.exports=function createAgentOrchestrator(deps={}){
   }catch(e){m.status='error';m.error=String(e.message||e)}
   m.updatedAt=iso();persistRecord(missionsFile,m,200);missionSnapshot(m,m.status==='complete'?'mission-complete':'mission-error',m.status==='complete'?'Mission completed and artifacts are ready':(m.error||'Mission ended with an error'));return m
  }
- return {catalog,models,route:routeModel,dispatch,specialist,mission,runs:()=>read(runsFile),missions:()=>read(missionsFile),events};
+ return {close:()=>{if(!deps.storage)storage.close()},catalog,models,route:routeModel,dispatch,specialist,mission,runs:()=>read(runsFile),missions:()=>read(missionsFile),events};
 };
