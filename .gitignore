@@ -26,3 +26,5 @@ workspace/
 *.db
 *.db-wal
 *.db-shm
+
+app/release.json

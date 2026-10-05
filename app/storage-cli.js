@@ -3,7 +3,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { Storage, COLLECTIONS } = require('./storage');
+const { Storage, COLLECTIONS, inspectData, preflightData } = require('./storage');
 
 function main(argv) {
   const command = argv.shift();
@@ -13,11 +13,13 @@ function main(argv) {
     if (!['--data-dir', '--output'].includes(flag) || !value || value.startsWith('--') || options[flag]) throw new Error('Expected unique --data-dir and/or --output values');
     options[flag] = value;
   }
-  if (!['status', 'check', 'migrate', 'backup', 'export-json', 'downgrade-json'].includes(command)) {
-    throw new Error('Usage: node app/storage-cli.js <status|check|migrate|backup|export-json|downgrade-json> [--data-dir PATH] [--output PATH]');
+  if (!['status', 'check', 'preflight', 'migrate', 'backup', 'export-json', 'downgrade-json'].includes(command)) {
+    throw new Error('Usage: node app/storage-cli.js <status|check|preflight|migrate|backup|export-json|downgrade-json> [--data-dir PATH] [--output PATH]');
   }
   if (['backup', 'export-json', 'downgrade-json'].includes(command) && !options['--output']) throw new Error('--output is required');
   const dataDir = path.resolve(options['--data-dir'] || process.env.DATA_DIR || '/data');
+  if (command === 'status' || command === 'check') return inspectData(dataDir);
+  if (command === 'preflight') return preflightData(dataDir);
   const storage = new Storage({ dataDir });
   try {
     if (command === 'backup') return { ok: true, backup: storage.backup(options['--output']) };

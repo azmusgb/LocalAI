@@ -55,19 +55,22 @@ From the repository root, with the application data directory specified:
 ```powershell
 node .\app\storage-cli.js status --data-dir C:\LocalAI\data
 node .\app\storage-cli.js check --data-dir C:\LocalAI\data
+node .\app\storage-cli.js preflight --data-dir C:\LocalAI\data
 node .\app\storage-cli.js backup --data-dir C:\LocalAI\data --output C:\LocalAI\backups\localai-snapshot.db
 node .\app\storage-cli.js export-json --data-dir C:\LocalAI\data --output C:\LocalAI\backups\json-export
 ```
 
 Use the actual mounted `DATA_DIR` for your installation. Output files/directories must be new; existing backups are never overwritten. `backup` uses SQLite `VACUUM INTO`, which includes committed WAL data, followed by a file flush. Copying only `localai.db` while the application is running is not a coherent backup. `export-json` produces compatible JSON files from a single database transaction.
 
-`GET /api/storage/status` reports engine, schema, journal mode, import audit and collection counts. `/healthz` adds storage engine/schema information; it is served only after initialization succeeds.
+`status` and `check` inspect an existing database read-only and never initialize schema, import JSON or create backups. Before the first migration they validate recognized JSON files and report `migrationPending: true`. A nonexistent data directory fails rather than creating an empty installation. `preflight` copies committed SQLite state (including WAL commits), or legacy JSON, into disposable temporary storage and runs the candidate migration and integrity checks there. It removes the temporary copy on success or failure.
+
+`GET /api/storage/status` reports engine, schema, journal mode, import audit and collection counts. `/healthz` adds storage engine/schema information and `releaseCommit`; it is served only after initialization succeeds. Managed deployments generate `app/release.json` with the exact deployed SHA. Development without that file reports a null release identity; malformed identities fail startup.
 
 For database recovery, stop the application, preserve the entire current data directory, then place a verified SQLite backup at `DATA_DIR/localai.db` in a data directory without stale `localai.db-wal`/`localai.db-shm` files. Restart and inspect `/api/storage/status`. Restoring a backup deliberately reverts data to that snapshot; routine code rollback preserves current state.
 
 ## Code rollback across the JSON boundary
 
-Deployment now certifies storage behavior and checks the actual container's Node runtime before promotion. The container is stopped before application replacement. Subsequent SQLite deployments create a coherent pre-deploy data backup in `DATA_DIR/backups` through an isolated worker using the existing container image and mounts.
+Deployment certifies storage behavior and checks the actual container image's Node runtime before promotion, including when the container is stopped. Before stopping the application it runs disposable data preflight with source volumes and candidate code mounted read-only. It repeats preflight after stopping writes and before application replacement. Subsequent SQLite deployments create a coherent pre-deploy data backup in `DATA_DIR/backups` through an isolated worker using the existing immutable container image and mounts. `DATA_DIR` must be backed by a container mount outside `/app`.
 
 When rolling back to a snapshot that predates SQLite, deployment/rollback scripts run `downgrade-json` through the isolated worker **while the application is stopped**. It exports current database state, creates a SQLite backup, replaces legacy JSON with the current export, and archives the active database and its import marker. This lets the older application see current data and lets a subsequent upgrade import JSON edits made during the downgrade. A failed export stops rollback before older code starts. Keep all recovery output.
 
@@ -81,4 +84,4 @@ Deploy/rollback data workers require the existing appliance `/app` and data moun
 
 ## Validation
 
-`npm test` covers exact legacy round trips, malformed imports, schema rejection, conflicts, rollback, child cascades, full history, pagination, coherent backups, JSON downgrade/re-upgrade, separate writer processes, concurrent agent/automation HTTP execution and restart durability. Existing specialist orchestration tests run against SQLite. CI runs these on Windows and Linux with Node 22.13 and Node 24, plus the deployment validator and existing desktop/mobile browser acceptance.
+`npm test` covers exact legacy round trips, malformed imports, schema rejection, conflicts, rollback, child cascades, full history, pagination, coherent backups, JSON downgrade/re-upgrade, separate writer processes, concurrent agent/automation HTTP execution, restart durability, read-only inspection, disposable migration preflight and release identity validation. Existing specialist orchestration tests run against SQLite. CI runs these on Windows and Linux with Node 22.13 and Node 24, plus the deployment validator and existing desktop/mobile browser acceptance. Deployment contract tests run actual promotion/rollback scripts with simulated native command boundaries on PowerShell 7 and Windows PowerShell 5.1; they do not certify a real appliance rollout.
