@@ -16,6 +16,8 @@ jobs:
           node --check app/server.js
           node --check app/public/app.js
           find app/public -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
+          node --check tests/agent-operations-ui.mjs
+          node --check tests/integration-hub-ui.mjs
       - name: Required files
         run: |
           test -f app/server.js
@@ -23,17 +25,41 @@ jobs:
           test -f app/public/index.html
           test -f app/public/manifest.json
           test -f app/public/sw.js
+          test -f app/public/integration-hub-v2.js
+          test -f app/public/integration-hub-v2.css
+          test -f tests/agent-operations-ui.mjs
+          test -f tests/integration-hub-ui.mjs
       - name: Prevent private-key files
         run: |
           ! find app -type f \( -name '*.pem' -o -name '*.key' -o -name '*.pfx' -o -name '*.p12' -o -name '.env' \) | grep .
-      - name: Agent Operations browser acceptance
+      - name: Browser acceptance
         run: |
           npm init -y >/dev/null 2>&1
-          npm install --no-save playwright@1.55.0 >/dev/null
+          npm install --no-save playwright@1.63.0 >/dev/null
           npx playwright install --with-deps chromium >/dev/null
           mkdir -p /tmp/localai-data
           DATA_DIR=/tmp/localai-data PORT=3080 node app/server.js >/tmp/localai-server.log 2>&1 &
           SERVER_PID=$!
-          trap 'kill $SERVER_PID || true' EXIT
-          for i in {1..20}; do curl -fsS http://127.0.0.1:3080/healthz >/dev/null && break; sleep 1; done
+          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3080/healthz >/dev/null; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            echo '::error::Local AI server did not become ready for browser acceptance tests.'
+            echo '--- server log ---'
+            cat /tmp/localai-server.log || true
+            exit 1
+          fi
+
           node tests/agent-operations-ui.mjs
+          node tests/integration-hub-ui.mjs
