@@ -1,7 +1,36 @@
-﻿(() => {
+(() => {
   'use strict';
 
   const isPhone = () => window.matchMedia('(max-width: 760px)').matches;
+
+  function navigate(view) {
+    if (!view) return;
+    if (typeof window.showView === 'function') {
+      window.showView(view);
+      return;
+    }
+    const button = [...document.querySelectorAll('.navbtn[data-view]')]
+      .find((item) => item.dataset.view === view);
+    if (button) button.click();
+  }
+
+  function loadIntegrationEnhancement() {
+    if (!document.querySelector('link[data-localai-integration-v2]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = '/integration-hub-v2.css';
+      link.dataset.localaiIntegrationV2 = 'true';
+      document.head.appendChild(link);
+    }
+
+    if (!document.querySelector('script[data-localai-integration-v2]')) {
+      const script = document.createElement('script');
+      script.src = '/integration-hub-v2.js';
+      script.defer = true;
+      script.dataset.localaiIntegrationV2 = 'true';
+      document.head.appendChild(script);
+    }
+  }
 
   function installMobileHeader() {
     const main = document.querySelector('main');
@@ -9,11 +38,13 @@
 
     main.id = main.id || 'main-content';
 
-    const skip = document.createElement('a');
-    skip.className = 'skip-link';
-    skip.href = '#main-content';
-    skip.textContent = 'Skip to content';
-    document.body.prepend(skip);
+    if (!document.querySelector('.skip-link')) {
+      const skip = document.createElement('a');
+      skip.className = 'skip-link';
+      skip.href = '#main-content';
+      skip.textContent = 'Skip to content';
+      document.body.prepend(skip);
+    }
 
     const header = document.createElement('div');
     header.className = 'mobile-header';
@@ -27,13 +58,11 @@
       </div>
       <button class="pill mobile-health-button" type="button" aria-label="Open system status">
         <span id="mobileHeaderDot" class="dot"></span>
-        <span id="mobileHeaderState">Checkingâ€¦</span>
+        <span id="mobileHeaderState">Checking…</span>
       </button>`;
 
     main.prepend(header);
-    header.querySelector('.mobile-health-button').addEventListener('click', () => {
-      if (typeof window.showView === 'function') window.showView('status');
-    });
+    header.querySelector('.mobile-health-button')?.addEventListener('click', () => navigate('status'));
   }
 
   function mirrorHealthState() {
@@ -44,12 +73,11 @@
     if (!sourceDot || !targetDot || !targetState) return;
 
     targetDot.className = sourceDot.className;
-    targetState.textContent = sourceState?.textContent || 'Checkingâ€¦';
+    targetState.textContent = sourceState?.textContent || 'Checking…';
   }
 
   function improveViewportBehavior() {
-    const inputs = document.querySelectorAll('input, textarea');
-    inputs.forEach((input) => {
+    document.querySelectorAll('input, textarea').forEach((input) => {
       input.addEventListener('focus', () => {
         if (!isPhone()) return;
         window.setTimeout(() => input.scrollIntoView({ block: 'center', behavior: 'smooth' }), 80);
@@ -63,6 +91,7 @@
   }
 
   function init() {
+    loadIntegrationEnhancement();
     installMobileHeader();
     improveViewportBehavior();
     mirrorHealthState();
@@ -77,4 +106,3 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();
 })();
-
