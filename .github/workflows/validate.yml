@@ -18,6 +18,7 @@ jobs:
           find app/public -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
           node --check tests/agent-operations-ui.mjs
           node --check tests/integration-hub-ui.mjs
+          node --check tests/agent-orchestrator.test.cjs
       - name: Required files
         run: |
           test -f app/server.js
@@ -29,9 +30,12 @@ jobs:
           test -f app/public/integration-hub-v2.css
           test -f tests/agent-operations-ui.mjs
           test -f tests/integration-hub-ui.mjs
+          test -f tests/agent-orchestrator.test.cjs
       - name: Prevent private-key files
         run: |
           ! find app -type f \( -name '*.pem' -o -name '*.key' -o -name '*.pfx' -o -name '*.p12' -o -name '.env' \) | grep .
+      - name: Offline mission regression tests
+        run: node --test tests/agent-orchestrator.test.cjs
       - name: Browser acceptance
         run: |
           npm init -y >/dev/null 2>&1
