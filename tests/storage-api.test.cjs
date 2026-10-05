@@ -24,8 +24,10 @@ test('HTTP state remains compatible, persists across restart and retains concurr
   const mockUrl = 'http://127.0.0.1:' + mock.address().port;
   let child, base, diagnostics = '';
   const stop = async () => {
-    if (!child || child.exitCode !== null) return;
-    const done = once(child, 'exit'); child.kill('SIGTERM'); await done;
+    const running = child;
+    child = undefined;
+    if (!running || running.exitCode !== null || running.signalCode !== null) return;
+    const done = once(running, 'exit'); running.kill('SIGTERM'); await done;
   };
   t.after(async () => { await stop(); mock.closeAllConnections(); await new Promise(resolve => mock.close(resolve)); fs.rmSync(dataDir, { recursive: true, force: true }); });
   async function start() {
