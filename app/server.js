@@ -1758,7 +1758,223 @@ async function validateStagedChange(change,stageRoot){  const sourceRoot =
   return {checks,passed:checks.every(x=>x.result==='PASS')};
 }
 function repairContextForChange(change,sourceRoot,errorText){
-  const blocks=[];for(const f of change.files||[]){try{const full=ensureInside(sourceRoot,f.path);if(fs.existsSync(full)){const txt=fs.readFileSync(full,…5652 tokens truncated…ity('engineering','Engineering run started',request.slice(0,180),{runId:run.id,target});return run;
+  const blocks=[];for(const f of change.files||[]){try{const full=ensureInside(sourceRoot,f.path);if(fs.existsSync(full)){const txt=fs.readFileSync(full,'utf8');blocks.push(`CURRENT FILE: ${f.path}\n---\n${excerptForRequest(txt,errorText,12000)}\n---`)}}catch{}}
+  return `PATCH/STAGING FAILURE:\n${String(errorText||'unknown failure').slice(0,6000)}\n\nACTUAL CURRENT SOURCE:\n${blocks.join('\n\n').slice(0,36000)}`;
+}
+async function stageChangeById(changeId){
+  const items=changeStore();const i=items.findIndex(x=>x.id===changeId);if(i<0)throw new Error('Change not found');const c=items[i];if(!['planned','validation_failed','patch_failed'].includes(c.status))throw new Error(`Change cannot be staged from status ${c.status}`);const sourceRoot=c.target==='self'?SELF_APP_ROOT:safeWorkspacePath(c.root||'');const base=path.join(CHANGE_STAGE_ROOT,c.id);const stageRoot=path.join(base,c.target==='self'?'app':'workspace');fs.rmSync(base,{recursive:true,force:true});fs.mkdirSync(stageRoot,{recursive:true});if(c.target==='self')copyTree(sourceRoot,stageRoot);const diffs=[];
+  try{
+    for(const f of c.files||[]){const src=ensureInside(sourceRoot,f.path),dst=ensureInside(stageRoot,f.path);let before='';if(fs.existsSync(src)){before=fs.readFileSync(src,'utf8');if(c.target!=='self'){fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(src,dst)}}else if(!f.operations.some(x=>x.type==='create'))throw new Error(`${f.path}: source file does not exist`);const after=applyOpsToText(before,f.operations,f.path);fs.mkdirSync(path.dirname(dst),{recursive:true});fs.writeFileSync(dst,after,'utf8');diffs.push({path:f.path,diff:simpleDiff(before,after),changed:before!==after})}
+  }catch(e){c.status='patch_failed';c.updatedAt=nowIso();c.patchError=String(e.message||e);c.validation={passed:false,checks:[{name:'patch application',result:'FAIL',detail:c.patchError}]};saveChanges(items);throw e}
+  c.diffs=diffs;c.stageRoot=stageRoot;c.validation=await validateStagedChange(c,stageRoot);c.updatedAt=nowIso();
+  storage.transaction(()=>{if(c.validation.passed){c.status='awaiting_approval';const approvals=approvalStore();const approval={id:makeId('approval'),title:`Apply change ${c.id}`,detail:`${c.summary}\n\n${c.files.length} file(s) staged and validated.`,risk:c.target==='self'?'high':'medium',status:'pending',createdAt:nowIso(),updatedAt:nowIso(),meta:{changeId:c.id,target:c.target,type:'change'}};approvals.unshift(approval);saveStore(APPROVALS_STORE,approvals,500);c.approvalId=approval.id;addNotification('approval',approval.title,approval.detail,{approvalId:approval.id,changeId:c.id})}else c.status='validation_failed';saveChanges(items);recordActivity('change',c.validation.passed?'Change staged':'Change validation failed',c.summary,{changeId:c.id});});return c;
+}
+async function apiChanges(req,res,urlObj){
+  if(!requireFeature(res,13))return; const id=urlObj.searchParams.get('id'); const items=changeStore();
+  if(id){const item=items.find(x=>x.id===id);if(!item)return json(res,404,{error:'Change not found'});return json(res,200,{item:publicChange(item)})}
+  json(res,200,{items:items.map(publicChange),pending:items.filter(x=>['planned','patch_failed','validation_failed','staged','awaiting_approval','approved','apply_requested'].includes(x.status)).length});
+}
+async function apiChangeCapabilities(req,res){
+  if(!requireFeature(res,17))return;json(res,200,{patchIntelligence:true,plannerTimeoutMs:ENGINEERING_MODEL_TIMEOUT_MS,retryPatchApplicationFailures:true,operations:['replace_function','insert_after_function','insert_after_text','replace_between_markers','replace_regex','replace','create'],validation:['javascript syntax','duplicate browser functions','duplicate HTML ids','DOM reference contract','runtime boundary checks','staged server health','image model discovery']});
+}
+async function apiChangePlan(req,res){
+  if(!requireFeature(res,13))return;
+  try{const b=await readBody(req);const request=String(b.request||'').trim();if(!request)return json(res,400,{error:'request is required'});const target=b.target==='workspace'?'workspace':'self';const rootRel=String(b.root||'').trim();const targetRoot=target==='self'?SELF_APP_ROOT:safeWorkspacePath(rootRel);const plan=await generatePatchPlan(request,targetRoot);const items=changeStore();const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:plan.notes,files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[]};items.unshift(item);saveChanges(items);recordActivity('change','Change plan created',request.slice(0,180),{changeId:item.id,target});json(res,201,{item:publicChange(item)})}catch(e){storageError(res,e,500)}
+}
+async function apiChangeStage(req,res){
+  if(!requireFeature(res,13))return;
+  try{const b=await readBody(req);const c=await stageChangeById(String(b.id||''));json(res,200,{item:publicChange(c)})}catch(e){storageError(res,e,400)}
+}
+async function apiChangeApprove(req,res){
+  if(!requireFeature(res,13))return;
+  try{const b=await readBody(req);const decision=String(b.decision||'');if(!['approved','rejected'].includes(decision))return json(res,400,{error:'decision must be approved or rejected'});const items=changeStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Change not found'});const c=items[i];if(c.status!=='awaiting_approval')return json(res,409,{error:`Change is not awaiting approval (${c.status})`});storage.transaction(()=>{c.status=decision==='approved'?'approved':'rejected';c.updatedAt=nowIso();if(c.approvalId){const approvals=approvalStore();const ai=approvals.findIndex(x=>x.id===c.approvalId);if(ai>=0){approvals[ai].status=decision;approvals[ai].updatedAt=nowIso();saveStore(APPROVALS_STORE,approvals,500)}}saveChanges(items);recordActivity('change',`Change ${decision}`,c.summary,{changeId:c.id});});json(res,200,{item:publicChange(c)})}catch(e){storageError(res,e,400)}
+}
+async function apiChangeRequestApply(req,res){
+  if(!requireFeature(res,13))return;
+  try{const b=await readBody(req);const items=changeStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Change not found'});const c=items[i];if(c.status!=='approved')return json(res,409,{error:`Change must be approved before apply (${c.status})`});if(c.target==='workspace'){const sourceRoot=safeWorkspacePath(c.root||'');const stageRoot=c.stageRoot;if(!stageRoot||!fs.existsSync(stageRoot))return json(res,409,{error:'Staged change is unavailable; stage it again'});const backups=[];for(const f of c.files){const src=ensureInside(stageRoot,f.path),dst=ensureInside(sourceRoot,f.path);fs.mkdirSync(path.dirname(dst),{recursive:true});if(fs.existsSync(dst)){const backup=`${dst}.localai-${Date.now()}.bak`;fs.copyFileSync(dst,backup);backups.push(workspaceRel(backup))}fs.copyFileSync(src,dst)}c.status='applied';c.appliedAt=nowIso();c.backups=backups;recordActivity('change','Workspace change applied',c.summary,{changeId:c.id,files:c.files.length});}
+    else{c.status='apply_requested';c.applyRequestedAt=nowIso();addNotification('change','Self-update queued',`${c.summary}. The host updater will apply the validated change.`,{changeId:c.id})}c.updatedAt=nowIso();saveChanges(items);json(res,200,{item:publicChange(c),hostUpdaterRequired:c.target==='self'})}catch(e){storageError(res,e,400)}
+}
+async function apiChangeDeployResult(req,res){
+  if(!requireFeature(res,13))return;
+  try{const b=await readBody(req);const status=String(b.status||'');if(!['applied','rolled_back','deploy_failed'].includes(status))return json(res,400,{error:'invalid deployment status'});const items=changeStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Change not found'});items[i].status=status;items[i].deploymentDetail=String(b.detail||'').slice(0,4000);items[i].updatedAt=nowIso();if(status==='applied')items[i].appliedAt=nowIso();saveChanges(items);recordActivity('change',status==='applied'?'Self-update applied':'Self-update rollback/failure',items[i].summary,{changeId:items[i].id,status});json(res,200,{item:publicChange(items[i])})}catch(e){storageError(res,e,400)}
+}
+// ===== END CHANGE INTELLIGENCE =============================================
+
+
+
+// ===== QUALITY INTELLIGENCE (v1.14+) =========================================
+const QUALITY_EVENTS_STORE = 'qualityEvents';
+const QUALITY_SCANS_STORE = 'qualityScans';
+function qualityEventStore(){return objectStore(QUALITY_EVENTS_STORE)}
+function qualityScanStore(){return objectStore(QUALITY_SCANS_STORE)}
+function qualitySeverity(type,message){
+  const t=String(type||'').toLowerCase(),m=String(message||'').toLowerCase();
+  if(t==='error'||/uncaught|syntaxerror|referenceerror|typeerror|failed to load/.test(m))return 'high';
+  if(t==='rejection'||/timeout|degraded|warning/.test(m))return 'medium';
+  return 'low';
+}
+async function apiQualityClientEvent(req,res){
+  if(!requireFeature(res,14))return;
+  try{
+    const b=await readBody(req,256*1024);const message=String(b.message||'').slice(0,4000);if(!message)return json(res,400,{error:'message is required'});
+    const items=qualityEventStore();const item={id:makeId('qevt'),type:String(b.type||'error').slice(0,40),severity:qualitySeverity(b.type,message),message,source:String(b.source||'').slice(0,1000),line:Number(b.line)||null,column:Number(b.column)||null,stack:String(b.stack||'').slice(0,12000),url:String(b.url||'').slice(0,1200),createdAt:nowIso()};
+    items.unshift(item);saveStore(QUALITY_EVENTS_STORE,items,500);recordActivity('quality','Client quality event',message.slice(0,180),{qualityEventId:item.id,severity:item.severity});json(res,201,{item});
+  }catch(e){storageError(res,e,400)}
+}
+function referencedDomIds(jsText){const ids=new Set();const rx=/\$\(['"]([^'"]+)['"]\)/g;let m;while((m=rx.exec(String(jsText||''))))ids.add(m[1]);return [...ids]}
+function htmlIds(htmlText){const ids=new Set();const rx=/\bid=["']([^"']+)["']/g;let m;while((m=rx.exec(String(htmlText||''))))ids.add(m[1]);return ids}
+async function runQualityScan(){
+  const checks=[];const add=(name,result,detail='')=>{const normalized=typeof result==='string'?result:(result?'PASS':'FAIL');checks.push({name,result:['PASS','WARN','FAIL'].includes(normalized)?normalized:'FAIL',detail:String(detail||'').slice(0,3000)})};
+  const serverFile=path.join(__dirname,'server.js'),appFile=path.join(PUBLIC_DIR,'app.js'),swFile=path.join(PUBLIC_DIR,'sw.js'),htmlFile=path.join(PUBLIC_DIR,'index.html');
+  for(const [name,file] of [['server.js',serverFile],['app.js',appFile],['sw.js',swFile]]){if(fs.existsSync(file)){const r=await runProcess('node',['--check',file],__dirname);add(`syntax ${name}`,r.code===0,r.stderr||r.stdout)}else add(`syntax ${name}`,false,'file missing')}
+  if(fs.existsSync(appFile)){const app=fs.readFileSync(appFile,'utf8');const dup=duplicateTopLevelFunctions(app);add('duplicate browser functions',dup.length===0,dup.join(', '));if(fs.existsSync(htmlFile)){const html=fs.readFileSync(htmlFile,'utf8'),ids=htmlIds(html),refs=referencedDomIds(app);const missing=refs.filter(x=>!ids.has(x));add('DOM reference contract',missing.length===0,missing.length?`Missing IDs: ${missing.slice(0,40).join(', ')}`:`${refs.length} referenced IDs resolved`)}}
+  if(fs.existsSync(htmlFile)){const dup=duplicateHtmlIds(fs.readFileSync(htmlFile,'utf8'));add('duplicate HTML ids',dup.length===0,dup.join(', '))}
+  try{const st=await getStatusAndRecordTransition();const coreBad=st.services.filter(x=>x.required!==false&&x.state!=='HEALTHY'),optionalBad=st.services.filter(x=>x.required===false&&x.state!=='HEALTHY');if(coreBad.length)add('service health','FAIL',coreBad.map(x=>`${x.label}:${x.state}`).join(', '));else if(optionalBad.length)add('service health','WARN',`Optional: ${optionalBad.map(x=>`${x.label}:${x.state}`).join(', ')}`);else add('service health','PASS',st.overall)}catch(e){add('service health','FAIL',String(e.message||e))}
+  const recent=qualityEventStore().filter(x=>Date.now()-new Date(x.createdAt).getTime()<24*60*60*1000);const high=recent.filter(x=>x.severity==='high');add('browser runtime 24h',high.length===0,high.length?`${high.length} high-severity event(s)`:`${recent.length} event(s), none high severity`);
+  const scan={id:makeId('qscan'),createdAt:nowIso(),passed:checks.every(x=>x.result!=='FAIL'),checks,summary:{pass:checks.filter(x=>x.result==='PASS').length,warn:checks.filter(x=>x.result==='WARN').length,fail:checks.filter(x=>x.result==='FAIL').length,events24h:recent.length,high24h:high.length}};
+  const scans=qualityScanStore();scans.unshift(scan);saveStore(QUALITY_SCANS_STORE,scans,100);return scan;
+}
+async function apiQuality(req,res){if(!requireFeature(res,14))return;const scans=qualityScanStore(),events=qualityEventStore();json(res,200,{latest:scans[0]||null,scans:scans.slice(0,20),events:events.slice(0,80),summary:{events:events.length,high:events.filter(x=>x.severity==='high').length}})}
+async function apiQualityScan(req,res){if(!requireFeature(res,14))return;try{const scan=await runQualityScan();recordActivity('quality',scan.passed?'Quality scan passed':'Quality scan found issues',`${scan.summary.pass} pass / ${scan.summary.warn||0} warn / ${scan.summary.fail} fail`,{scanId:scan.id});json(res,200,{scan})}catch(e){storageError(res,e,500)}}
+// ===== END QUALITY INTELLIGENCE =============================================
+
+
+
+// ===== AUTONOMOUS ISSUE DETECTION (v1.15+) ==================================
+const ISSUES_STORE = 'issues';
+function issueStore(){return objectStore(ISSUES_STORE)}
+function saveIssues(items){saveStore(ISSUES_STORE,items,500)}
+function issueKey(kind,name){return `${String(kind||'issue').toLowerCase()}:${String(name||'unknown').toLowerCase().replace(/\s+/g,' ').slice(0,240)}`}
+function upsertIssue(items,spec){
+  const key=issueKey(spec.kind,spec.name);let item=items.find(x=>x.key===key&&x.status!=='ignored');
+  if(item){item.lastSeenAt=nowIso();item.occurrences=(item.occurrences||1)+1;item.detail=String(spec.detail||item.detail||'').slice(0,5000);item.severity=spec.severity||item.severity;item.updatedAt=nowIso();if(item.status==='resolved')item.status='open';return item}
+  item={id:makeId('issue'),key,kind:spec.kind||'quality',name:String(spec.name||'Issue').slice(0,500),detail:String(spec.detail||'').slice(0,5000),severity:spec.severity||'medium',status:'open',occurrences:1,createdAt:nowIso(),updatedAt:nowIso(),lastSeenAt:nowIso(),changeId:null};items.unshift(item);return item;
+}
+async function detectIssues(){
+  const scan=await runQualityScan();const items=issueStore();const seen=[];
+  for(const c of scan.checks.filter(x=>x.result==='FAIL')){const sev=/service health|syntax|duplicate|DOM/.test(c.name)?'high':'medium';const item=upsertIssue(items,{kind:'quality-check',name:c.name,detail:c.detail,severity:sev});seen.push(item.id)}
+  const recent=qualityEventStore().filter(x=>Date.now()-new Date(x.createdAt).getTime()<24*60*60*1000&&x.severity==='high').slice(0,50);
+  for(const e of recent){const item=upsertIssue(items,{kind:'browser-runtime',name:e.message.slice(0,220),detail:`${e.source||''}${e.line?`:${e.line}`:''}\n${e.stack||''}`.trim(),severity:'high'});seen.push(item.id)}
+  for(const item of items){if(item.kind==='quality-check'&&item.status==='open'&&!seen.includes(item.id)){item.status='resolved';item.autoResolvedAt=nowIso();item.updatedAt=nowIso()}}
+  saveIssues(items);return {scan,items:items.slice(0,200),detected:seen.length,open:items.filter(x=>x.status==='open').length};
+}
+async function apiIssues(req,res){if(!requireFeature(res,15))return;const items=issueStore();json(res,200,{items:items.slice(0,250),open:items.filter(x=>x.status==='open').length,high:items.filter(x=>x.status==='open'&&x.severity==='high').length})}
+async function apiIssuesScan(req,res){if(!requireFeature(res,15))return;try{const r=await detectIssues();recordActivity('issue',r.open?'Issue scan complete':'Issue scan clear',`${r.open} open issue(s)`,{detected:r.detected});if(r.open)addNotification('issue','Quality issues detected',`${r.open} issue(s) are open; ${r.items.filter(x=>x.status==='open'&&x.severity==='high').length} high severity.`,{});json(res,200,r)}catch(e){storageError(res,e,500)}}
+async function apiIssueUpdate(req,res){if(!requireFeature(res,15))return;try{const b=await readBody(req);const items=issueStore(),i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Issue not found'});if(['open','resolved','ignored'].includes(b.status))items[i].status=b.status;items[i].updatedAt=nowIso();saveIssues(items);json(res,200,{item:items[i]})}catch(e){storageError(res,e,400)}}
+async function apiIssuePrepareChange(req,res){
+  if(!requireFeature(res,15))return;
+  try{const b=await readBody(req);const issues=issueStore(),ii=issues.findIndex(x=>x.id===b.id);if(ii<0)return json(res,404,{error:'Issue not found'});const issue=issues[ii];const request=`Fix this Local AI issue while preserving existing behavior.\nIssue: ${issue.name}\nSeverity: ${issue.severity}\nDetails:\n${issue.detail}`;const plan=await generatePatchPlan(request,SELF_APP_ROOT);const changes=changeStore();const item={id:makeId('chg'),target:'self',root:'app',request,summary:plan.summary,notes:`Prepared from issue ${issue.id}. ${plan.notes||''}`.trim(),files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[],sourceIssueId:issue.id};changes.unshift(item);saveChanges(changes);issue.changeId=item.id;issue.updatedAt=nowIso();saveIssues(issues);recordActivity('issue','Issue promoted to change',issue.name,{issueId:issue.id,changeId:item.id});json(res,201,{issue,item:publicChange(item)})}catch(e){storageError(res,e,500)}
+}
+async function issueSchedulerTick(){if(!featureAtLeast(15))return;try{await detectIssues()}catch{}}
+setInterval(()=>issueSchedulerTick(),5*60*1000).unref?.();
+// ===== END AUTONOMOUS ISSUE DETECTION =======================================
+
+
+
+// ===== ENGINEERING AGENT RUNTIME (v1.16+) ===================================
+const ENGINEERING_RUNS_STORE = 'engineeringRuns';
+function engineeringRunStore(){return objectStore(ENGINEERING_RUNS_STORE)}
+function saveEngineeringRuns(items){saveStore(ENGINEERING_RUNS_STORE,items,300)}
+function engineeringStep(run,name,state='pending',detail=''){const item={name,state,detail:String(detail||'').slice(0,6000),at:nowIso()};run.steps.push(item);run.updatedAt=nowIso();return item}
+function createEngineeringChange(request,target,rootRel,runId,attempt){
+  const targetRoot=target==='self'?SELF_APP_ROOT:safeWorkspacePath(rootRel);return generatePatchPlan(request,targetRoot).then(plan=>{const changes=changeStore();const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:`Engineering run ${runId}, attempt ${attempt}. ${plan.notes||''}`.trim(),files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[],sourceEngineeringRunId:runId,engineeringAttempt:attempt};changes.unshift(item);saveChanges(changes);return item})
+}
+async function internalStageChange(changeId){return await stageChangeById(changeId)}
+function effectiveEngineeringRun(run,changesById){
+  const out={
+    ...run,
+    steps:Array.isArray(run.steps)
+      ? run.steps.map(step=>({...step}))
+      : []
+  };
+  if(!run.finalChangeId)return out;
+  const change=changesById.get(run.finalChangeId);
+  if(!change)return out;
+  const lifecycleMap={
+    awaiting_approval:'awaiting_approval',
+    approved:'approved',
+    apply_requested:'apply_requested',
+    applied:'applied',
+    rejected:'needs_attention',
+    deploy_failed:'needs_attention',
+    rolled_back:'needs_attention'
+  };
+  const effective=lifecycleMap[change.status];
+  if(!effective)return out;
+  out.status=effective;
+  out.changeStatus=change.status;
+  out.changeUpdatedAt=change.updatedAt||null;
+  const approvalStep=out.steps.find(
+    step=>step.name==='Human approval required' && step.state==='waiting'
+  );
+  if(approvalStep && effective!=='awaiting_approval'){
+    approvalStep.state='complete';
+    approvalStep.at=change.updatedAt||approvalStep.at;
+    if(effective==='approved'){
+      approvalStep.detail=`Change ${change.id} was approved.`;
+    }else if(effective==='apply_requested'){
+      approvalStep.detail=`Change ${change.id} was approved and queued for deployment.`;
+    }else if(effective==='applied'){
+      approvalStep.detail=`Change ${change.id} was approved and deployed.`;
+    }else{
+      approvalStep.detail=`Change ${change.id} ended with deployment state ${change.status}.`;
+    }
+  }
+  if(effective==='apply_requested'){
+    out.steps.push({
+      name:'Deployment',
+      state:'waiting',
+      detail:`Change ${change.id} is queued for the self-update host.`,
+      at:change.applyRequestedAt||change.updatedAt||out.updatedAt
+    });
+  }
+  if(effective==='applied'){
+    out.steps.push({
+      name:'Deployment',
+      state:'complete',
+      detail:`Change ${change.id} was applied successfully.`,
+      at:change.appliedAt||change.updatedAt||out.updatedAt
+    });
+  }
+  if(effective==='needs_attention'){
+    out.steps.push({
+      name:'Deployment',
+      state:'error',
+      detail:change.deploymentDetail ||
+        `Change ${change.id} ended with status ${change.status}.`,
+      at:change.updatedAt||out.updatedAt
+    });
+    if(!out.error){
+      out.error=change.deploymentDetail ||
+        `Linked change ${change.id} ended with status ${change.status}.`;
+    }
+  }
+  if(change.updatedAt){
+    out.updatedAt=change.updatedAt;
+  }
+  return out;
+}
+function effectiveEngineeringRuns(){
+  const changesById=new Map(
+    changeStore().map(change=>[change.id,change])
+  );
+  return engineeringRunStore().map(
+    run=>effectiveEngineeringRun(run,changesById)
+  );
+}
+async function apiEngineeringRuns(req,res){
+  if(!requireFeature(res,16))return;
+  const items=effectiveEngineeringRuns();
+  json(res,200,{
+    items:items.slice(0,200),
+    active:items.filter(x=>x.status==='running').length,
+    awaitingApproval:items.filter(x=>x.status==='awaiting_approval').length
+  });
+}
+function createEngineeringRunRecord(request,target,rootRel,maxAttempts){
+  const runs=engineeringRunStore();
+  const run={id:makeId('eng'),request,target,root:target==='self'?'app':rootRel,maxAttempts,status:'running',createdAt:nowIso(),updatedAt:nowIso(),attempt:0,steps:[],changeIds:[],finalChangeId:null,error:null};
+  runs.unshift(run);saveEngineeringRuns(runs);recordActivity('engineering','Engineering run started',request.slice(0,180),{runId:run.id,target});return run;
 }
 function refreshEngineeringRun(run){const runs=engineeringRunStore();const i=runs.findIndex(x=>x.id===run.id);if(i>=0)runs[i]=run;else runs.unshift(run);saveEngineeringRuns(runs)}
 async function executeEngineeringRun(run){
