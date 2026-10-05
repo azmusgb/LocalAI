@@ -8,6 +8,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Deployment-LocalAI.ps1')
 
 function Get-ShortSha {
     param([AllowNull()][string]$Sha)
@@ -42,18 +43,16 @@ if (Test-Path -LiteralPath $StatePath) {
     }
 }
 
-$task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-$taskInfo = if ($null -ne $task) {
-    Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction SilentlyContinue
-} else {
-    $null
-}
+$schedulerAvailable = $null -ne (Get-Command Get-ScheduledTask -ErrorAction SilentlyContinue)
+$task = if ($schedulerAvailable) { Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue } else { $null }
+$taskInfo = if ($null -ne $task) { Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction SilentlyContinue } else { $null }
 
 $healthState = 'UNREACHABLE'
 $healthDetail = $null
+$health = $null
 try {
     $health = Invoke-RestMethod -Uri $HealthUrl -TimeoutSec 5
-    $healthState = if ($null -ne $health) { 'HEALTHY' } else { 'UNKNOWN' }
+    $healthState = if (Test-LocalAI-HealthPayload -Health $health) { 'HEALTHY' } else { 'UNHEALTHY' }
     if ($health.PSObject.Properties.Name -contains 'status') {
         $healthDetail = [string]$health.status
     }
@@ -70,6 +69,11 @@ $currentCommit = if ($null -ne $state -and $state.PSObject.Properties.Name -cont
     $null
 }
 
+$recordedCommit = $currentCommit
+$runtimeCommit = if ($null -ne $health -and [string]$health.releaseCommit -match '^[a-f0-9]{40}$') { [string]$health.releaseCommit } else { $null }
+$identityMismatch = [bool]($runtimeCommit -and $recordedCommit -and $runtimeCommit -ne $recordedCommit)
+if ($runtimeCommit) { $currentCommit = $runtimeCommit }
+
 $deploymentStatus = if ($null -ne $state -and $state.PSObject.Properties.Name -contains 'status') {
     [string]$state.status
 } else {
@@ -84,6 +88,10 @@ if ($currentCommit -and $originMain) {
 $result = [ordered]@{
     health = $healthState
     healthDetail = $healthDetail
+    runtimeCommit = $runtimeCommit
+    recordedCommit = $recordedCommit
+    deploymentIdentityMismatch = $identityMismatch
+    storageEngine = if ($null -ne $health) { $health.storage.engine } else { $null }
     deploymentStatus = $deploymentStatus
     currentCommit = $currentCommit
     currentCommitShort = Get-ShortSha $currentCommit
@@ -94,6 +102,7 @@ $result = [ordered]@{
     deploymentBehindOrigin = $behindOrigin
     deployedAt = if ($null -ne $state -and $state.PSObject.Properties.Name -contains 'deployedAt') { $state.deployedAt } else { $null }
     previousCommit = if ($null -ne $state -and $state.PSObject.Properties.Name -contains 'previousCommit') { $state.previousCommit } else { $null }
+    taskSchedulerAvailable = $schedulerAvailable
     taskInstalled = $null -ne $task
     taskState = if ($null -ne $task) { [string]$task.State } else { 'NotInstalled' }
     taskLastRunTime = if ($null -ne $taskInfo) { $taskInfo.LastRunTime } else { $null }
@@ -108,3 +117,4 @@ if ($AsJson) {
 }
 
 [pscustomobject]$result | Format-List
+

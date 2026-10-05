@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { DatabaseSync } = require('node:sqlite');
-const { Storage, COLLECTIONS, StorageConflict } = require('../app/storage');
+const { Storage, COLLECTIONS, StorageConflict, inspectData, preflightData } = require('../app/storage');
 const { main: cli } = require('../app/storage-cli');
 
 function fixture(t, legacy = {}) {
@@ -163,4 +163,66 @@ test('separate writer processes commit all records without lost writes', async t
   })));
   assert.equal(results.length, 3);
   assert.equal(open().count('activity'), 90);
+});
+
+test('inspection validates legacy JSON without importing, backing up or creating a database', t => {
+  const { dataDir } = fixture(t, { 'projects.json': [{ id: 'p' }] });
+  const before = fs.readdirSync(dataDir);
+  const status = cli(['status', '--data-dir', dataDir]);
+  assert.equal(status.engine, 'json');
+  assert.equal(status.counts.projects, 1);
+  assert.equal(cli(['check', '--data-dir', dataDir]).migrationPending, true);
+  assert.deepEqual(fs.readdirSync(dataDir), before);
+  assert.throws(() => inspectData(path.join(dataDir, 'missing')), /does not exist/);
+  assert.equal(fs.existsSync(path.join(dataDir, 'missing')), false);
+  fs.writeFileSync(path.join(dataDir, 'projects.json'), '{invalid');
+  assert.throws(() => cli(['check', '--data-dir', dataDir]), /invalid JSON/);
+  assert.deepEqual(fs.readdirSync(dataDir), before);
+});
+
+test('inspection opens existing SQLite read-only and cannot modify state or migrate schemas', t => {
+  const { open, dataDir } = fixture(t), writer = open();
+  writer.upsert('projects', { id: 'p', name: 'Live' });
+  const inspector = open({ readOnly: true });
+  assert.equal(inspector.get('projects', 'p').name, 'Live');
+  assert.throws(() => inspector.upsert('projects', { id: 'new' }), /Read-only/);
+  assert.throws(() => inspector.writeSetting('status', {}), /Read-only/);
+  assert.equal(cli(['status', '--data-dir', dataDir]).counts.projects, 1);
+  inspector.close(); writer.close();
+  const db = new DatabaseSync(path.join(dataDir, 'localai.db'));
+  db.exec('PRAGMA user_version=0'); db.close();
+  assert.throws(() => inspectData(dataDir), /explicit migration/);
+  const unchanged = new DatabaseSync(path.join(dataDir, 'localai.db'), { readOnly: true });
+  assert.equal(unchanged.prepare('PRAGMA user_version').get().user_version, 0); unchanged.close();
+});
+
+test('candidate preflight tests migration in disposable storage and leaves legacy data untouched on success/failure', t => {
+  const { dataDir } = fixture(t, { 'projects.json': [{ id: 'p' }] });
+  const before = fs.readFileSync(path.join(dataDir, 'projects.json'));
+  const result = cli(['preflight', '--data-dir', dataDir]);
+  assert.equal(result.sourceEngine, 'json');
+  assert.equal(result.schemaVersion, 1);
+  assert.equal(result.counts.projects, 1);
+  assert.equal(result.migrationTested, true);
+  assert.deepEqual(fs.readdirSync(dataDir), ['projects.json']);
+  assert.deepEqual(fs.readFileSync(path.join(dataDir, 'projects.json')), before);
+  fs.writeFileSync(path.join(dataDir, 'knowledge.json'), '{invalid');
+  assert.throws(() => preflightData(dataDir), /Cannot import knowledge.json/);
+  assert.equal(fs.existsSync(path.join(dataDir, 'localai.db')), false);
+  assert.equal(fs.existsSync(path.join(dataDir, 'backups')), false);
+});
+
+test('SQLite preflight includes current WAL commits and does not use stale JSON or change the source', t => {
+  const { dataDir, open } = fixture(t), writer = open();
+  writer.upsert('projects', { id: 'p', name: 'Live WAL commit' });
+  const revision = writer.db.prepare("SELECT revision FROM projects WHERE id='p'").get().revision;
+  fs.writeFileSync(path.join(dataDir, 'projects.json'), '{stale invalid JSON');
+  const result = preflightData(dataDir);
+  assert.equal(result.sourceEngine, 'sqlite');
+  assert.equal(result.counts.projects, 1);
+  assert.equal(writer.db.prepare("SELECT revision FROM projects WHERE id='p'").get().revision, revision);
+  assert.equal(writer.get('projects', 'p').name, 'Live WAL commit');
+  assert.equal(fs.readFileSync(path.join(dataDir, 'projects.json'), 'utf8'), '{stale invalid JSON');
+  writer.upsert('projects', { id: 'after', name: 'Writer remains usable' });
+  assert.equal(writer.count('projects'), 2);
 });

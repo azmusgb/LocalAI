@@ -88,7 +88,7 @@ Run the deployment-candidate validator:
 npm run validate
 ```
 
-This invokes `deploy/Test-LocalAI-Candidate.ps1` and checks required files, JavaScript syntax, key runtime/UI contracts, sensitive-file exclusions, and native SQLite/API/agent regressions.
+This invokes `deploy/Test-LocalAI-Candidate.ps1` and checks required files, JavaScript syntax, key runtime/UI contracts, sensitive-file exclusions, native SQLite/API/agent regressions, and deployment/rollback contracts with simulated Docker boundaries.
 
 For browser acceptance, start LocalAI with a disposable development `DATA_DIR`, then run:
 
@@ -123,4 +123,3 @@ See [`README-SAFE-DEPLOY.md`](README-SAFE-DEPLOY.md) for candidate validation, p
 - `deploy/` — candidate validation, deployment, rollback, and scheduled deployment tooling.
 - `docs/` — maintained architecture and integration guidance.
 - `tests/` — offline orchestration regressions and desktop/mobile Chromium acceptance.
-

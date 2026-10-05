@@ -3,6 +3,7 @@
 // SQLite owns application state. JSON files are read only by the one-time importer.
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const { createHash, randomUUID } = require('node:crypto');
 let DatabaseSync;
 try { ({ DatabaseSync } = require('node:sqlite')); }
@@ -41,6 +42,46 @@ const IMPORT_KEY = 'legacy-json-import-v1';
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const encode = value => JSON.stringify(value);
 
+function validateRecord(collection, record) {
+  if (!isObject(record) || typeof record.id !== 'string' || !record.id.trim()) throw new TypeError(`${collection}: every record must have a nonempty string id`);
+  for (const field of Object.keys(CHILDREN[collection] || {})) {
+    if (Object.hasOwn(record, field) && !Array.isArray(record[field])) throw new TypeError(`${collection}/${record.id}: ${field} must be an array`);
+  }
+  // Round trip validates serializability and keeps the exact public JSON contract.
+  return JSON.parse(encode(record));
+}
+
+function readLegacySources(dataDir) {
+  const sources = [];
+  for (const [collection, [, filename]] of Object.entries(COLLECTIONS)) {
+    if (!filename) continue;
+    const source = path.join(dataDir, filename);
+    if (!fs.existsSync(source)) continue;
+    const raw = fs.readFileSync(source);
+    let items;
+    try { items = JSON.parse(raw.toString('utf8')); }
+    catch (cause) { throw new Error(`Cannot import ${filename}: invalid JSON; original file preserved.`, { cause }); }
+    if (!Array.isArray(items)) throw new Error(`Cannot import ${filename}: expected an array; original file preserved.`);
+    const ids = new Set();
+    for (const item of items) {
+      validateRecord(collection, item);
+      if (ids.has(item.id)) throw new Error(`Cannot import ${filename}: duplicate id ${item.id}`);
+      ids.add(item.id);
+    }
+    sources.push({ collection, filename, raw, items });
+  }
+  const statusPath = path.join(dataDir, 'status-state.json');
+  if (fs.existsSync(statusPath)) {
+    const raw = fs.readFileSync(statusPath);
+    let value;
+    try { value = JSON.parse(raw.toString('utf8')); }
+    catch (cause) { throw new Error('Cannot import status-state.json: invalid JSON; original file preserved.', { cause }); }
+    if (!isObject(value)) throw new Error('Cannot import status-state.json: expected an object');
+    sources.push({ filename: 'status-state.json', raw, value });
+  }
+  return sources;
+}
+
 class StorageConflict extends Error {
   constructor(collection, id) {
     super(`State changed while updating ${collection}/${id}; reload and retry.`);
@@ -50,7 +91,7 @@ class StorageConflict extends Error {
 }
 
 class Storage {
-  constructor({ dataDir, filename = 'localai.db', importLegacy = true } = {}) {
+  constructor({ dataDir, filename = 'localai.db', importLegacy = true, readOnly = false } = {}) {
     if (!dataDir) throw new TypeError('dataDir is required');
     this.dataDir = path.resolve(dataDir);
     this.filename = path.resolve(this.dataDir, filename);
@@ -58,15 +99,20 @@ class Storage {
     this.pendingSnapshots = new Map();
     this.depth = 0;
     this.closed = false;
-    fs.mkdirSync(path.dirname(this.filename), { recursive: true });
-    this.db = new DatabaseSync(this.filename);
+    this.readOnly = readOnly;
+    if (!readOnly) fs.mkdirSync(path.dirname(this.filename), { recursive: true });
+    this.db = new DatabaseSync(this.filename, { readOnly });
     try {
       this.db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
       const version = this.db.prepare('PRAGMA user_version').get().user_version;
       if (version > SCHEMA_VERSION) throw new Error(`Database schema ${version} is newer than this application (${SCHEMA_VERSION}); refusing to downgrade.`);
-      this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;');
-      this.migrate();
-      if (importLegacy) this.importLegacy();
+      if (readOnly) {
+        if (version !== SCHEMA_VERSION) throw new Error(`Database schema ${version} needs explicit migration before inspection`);
+      } else {
+        this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;');
+        this.migrate();
+        if (importLegacy) this.importLegacy();
+      }
       this.check();
     } catch (error) {
       this.db.close();
@@ -81,6 +127,7 @@ class Storage {
   }
 
   transaction(fn) {
+    if (this.readOnly) throw new Error('Read-only storage cannot write or migrate');
     if (fn.constructor.name === 'AsyncFunction') throw new TypeError('Storage transactions must be synchronous');
     if (this.depth) {
       const result = fn();
@@ -137,14 +184,7 @@ class Storage {
     });
   }
 
-  validateRecord(collection, record) {
-    if (!isObject(record) || typeof record.id !== 'string' || !record.id.trim()) throw new TypeError(`${collection}: every record must have a nonempty string id`);
-    for (const field of Object.keys(CHILDREN[collection] || {})) {
-      if (Object.hasOwn(record, field) && !Array.isArray(record[field])) throw new TypeError(`${collection}/${record.id}: ${field} must be an array`);
-    }
-    // Round trip validates serializability and keeps the exact public JSON contract.
-    return JSON.parse(encode(record));
-  }
+  validateRecord(collection, record) { return validateRecord(collection, record); }
 
   hydrate(collection, row) {
     const item = JSON.parse(row.payload);
@@ -251,39 +291,14 @@ class Storage {
     return row ? JSON.parse(row.payload) : fallback;
   }
   writeSetting(key, value) {
+    if (this.readOnly) throw new Error('Read-only storage cannot write settings');
     this.db.prepare('INSERT INTO settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET payload=excluded.payload').run(key, encode(value));
   }
 
   importLegacy() {
     this.transaction(() => {
       if (this.readSetting(IMPORT_KEY, null)) return;
-      const sources = [];
-      for (const [collection, [, filename]] of Object.entries(COLLECTIONS)) {
-        if (!filename) continue;
-        const source = path.join(this.dataDir, filename);
-        if (!fs.existsSync(source)) continue;
-        const raw = fs.readFileSync(source);
-        let items;
-        try { items = JSON.parse(raw.toString('utf8')); }
-        catch (cause) { throw new Error(`Cannot import ${filename}: invalid JSON; original file preserved.`, { cause }); }
-        if (!Array.isArray(items)) throw new Error(`Cannot import ${filename}: expected an array; original file preserved.`);
-        const ids = new Set();
-        for (const item of items) {
-          this.validateRecord(collection, item);
-          if (ids.has(item.id)) throw new Error(`Cannot import ${filename}: duplicate id ${item.id}`);
-          ids.add(item.id);
-        }
-        sources.push({ collection, filename, raw, items });
-      }
-      const statusPath = path.join(this.dataDir, 'status-state.json');
-      if (fs.existsSync(statusPath)) {
-        const raw = fs.readFileSync(statusPath);
-        let value;
-        try { value = JSON.parse(raw.toString('utf8')); }
-        catch (cause) { throw new Error('Cannot import status-state.json: invalid JSON; original file preserved.', { cause }); }
-        if (!isObject(value)) throw new Error('Cannot import status-state.json: expected an object');
-        sources.push({ filename: 'status-state.json', raw, value });
-      }
+      const sources = readLegacySources(this.dataDir);
       const backupPath = sources.length ? path.join(this.dataDir, 'backups', 'json-before-sqlite-' + randomUUID()) : null;
       if (backupPath) {
         fs.mkdirSync(backupPath, { recursive: true });
@@ -346,4 +361,43 @@ class Storage {
   }
 }
 
-module.exports = { Storage, StorageConflict, COLLECTIONS, SCHEMA_VERSION };
+function inspectData(dataDir) {
+  if (!fs.existsSync(dataDir) || !fs.statSync(dataDir).isDirectory()) throw new Error('DATA_DIR does not exist or is not a directory');
+  const database = path.join(dataDir, 'localai.db');
+  if (fs.existsSync(database)) {
+    const storage = new Storage({ dataDir, readOnly: true });
+    try { return { ok: true, ...storage.status() }; } finally { storage.close(); }
+  }
+  const sources = readLegacySources(dataDir);
+  const counts = Object.fromEntries(Object.keys(COLLECTIONS).map(key => [key, 0]));
+  for (const source of sources) if (source.collection) counts[source.collection] = source.items.length;
+  return { ok: true, engine: 'json', schemaVersion: null, migrationPending: true, legacyFiles: sources.length, counts };
+}
+
+function preflightData(dataDir) {
+  if (!fs.existsSync(dataDir) || !fs.statSync(dataDir).isDirectory()) throw new Error('DATA_DIR does not exist or is not a directory');
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-preflight-'));
+  const sourceDatabase = path.join(dataDir, 'localai.db');
+  const sourceEngine = fs.existsSync(sourceDatabase) ? 'sqlite' : 'json';
+  try {
+    if (sourceEngine === 'sqlite') {
+      // Open the source read-only and include WAL commits in the disposable copy.
+      const source = new DatabaseSync(sourceDatabase, { readOnly: true });
+      try { source.prepare('VACUUM INTO ?').run(path.join(temporary, 'localai.db')); }
+      finally { source.close(); }
+    }
+    for (const filename of [...Object.values(COLLECTIONS).map(([, file]) => file).filter(Boolean), 'status-state.json']) {
+      const source = path.join(dataDir, filename);
+      if (fs.existsSync(source)) fs.copyFileSync(source, path.join(temporary, filename));
+    }
+    const candidate = new Storage({ dataDir: temporary });
+    try {
+      const status = candidate.status();
+      // Do not return ephemeral backup paths as usable recovery artifacts.
+      return { ok: true, sourceEngine, engine: status.engine, schemaVersion: status.schemaVersion,
+        journalMode: status.journalMode, counts: status.counts, migrationTested: true };
+    } finally { candidate.close(); }
+  } finally { fs.rmSync(temporary, { recursive: true, force: true }); }
+}
+
+module.exports = { Storage, StorageConflict, COLLECTIONS, SCHEMA_VERSION, inspectData, preflightData };

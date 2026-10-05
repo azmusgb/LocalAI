@@ -30,6 +30,7 @@ const LIBRARY_STORE = 'library';
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 
 const { Storage } = require('./storage');
+const release = require('./release').readRelease(__dirname);
 const storage = new Storage({ dataDir: DATA_DIR });
 
 function json(res, status, value) {
@@ -2027,7 +2028,7 @@ const server = http.createServer(async (req, res) => {
   const p = urlObj.pathname;
 
   try {
-    if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, storage: { engine: 'sqlite', schemaVersion: 1 } });
+    if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 } });
     if (req.method === 'GET' && p === '/api/storage/status') return json(res, 200, storage.status());
     if (req.method === 'GET' && p === '/api/status') return await apiStatus(req, res);
     if (req.method === 'GET' && p === '/api/models') return await apiModels(req, res);

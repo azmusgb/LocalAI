@@ -9,7 +9,7 @@ Set-Location C:\LocalAI\repo
 .\deploy\Get-LocalAI-DeployStatus.ps1
 ```
 
-This reports appliance health, the deployed commit, `origin/main`, whether production is behind the remote ref, and scheduled-task state.
+This reports appliance health, the running release SHA, the recorded deployment SHA, any disagreement between them, `origin/main`, whether production is behind the remote ref, and scheduled-task state. An error JSON response is reported as unhealthy.
 
 ## 2. Manually certify the current `origin/main`
 
@@ -17,7 +17,7 @@ This reports appliance health, the deployed commit, `origin/main`, whether produ
 .\deploy\Deploy-LocalAI.ps1 -CheckOnly
 ```
 
-Fetching and candidate validation do not alter production.
+Fetching and candidate validation do not alter production. Validation includes the actual container image's Node runtime and migration of a disposable data copy with the original volumes mounted read-only.
 
 ## 3. Manually deploy
 
@@ -32,10 +32,12 @@ Deployment behavior:
 1. Fetch `origin/main`.
 2. Materialize an immutable candidate release by commit SHA.
 3. Run `deploy\Test-LocalAI-Candidate.ps1`.
-4. Snapshot the current live application.
-5. Promote the candidate and restart `local-ai-appliance`.
-6. Require `http://127.0.0.1:3080/healthz` to recover.
-7. Restore the snapshot automatically if the health check fails.
+4. Validate a disposable copy of current data, then stop the application, snapshot its code, back up existing SQLite data and repeat migration preflight.
+5. Promote the candidate, write its exact SHA to `app\release.json` and restart `local-ai-appliance`.
+6. Require `http://127.0.0.1:3080/healthz` to report `status: ok`, SQLite storage and the expected release SHA.
+7. Restore the snapshot automatically if certification fails, preserving current data when crossing the JSON boundary.
+
+A deployment is skipped only when recorded state, the live manifest and healthy runtime all agree on the target SHA. A shared lock prevents concurrent deployment/rollback, and state updates use atomic file replacement. Data must be mounted outside `/app` so application replacement cannot delete it.
 
 ## 4. Install unattended checks or deployment
 
@@ -70,6 +72,8 @@ To remove the task:
 ## Recovery
 
 The deployment state is stored under `C:\LocalAI\.deploy`. Each promotion records the deployed SHA and the pre-deploy snapshot used for rollback.
+
+Manual rollback updates the recorded current SHA to the restored release. Custom legacy snapshots without a manifest or tracked SHA report an unknown commit. If recovery fails, state becomes `RECOVERY_REQUIRED` with no claimed current SHA and retains error and backup details. Preserve those artifacts and inspect the stopped appliance before attempting further recovery.
 
 Use the dedicated rollback script when a manual rollback is required:
 
