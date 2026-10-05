@@ -147,12 +147,11 @@ jobs:
   deployment-contracts:
     runs-on: windows-latest
     timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        shell: [pwsh, powershell]
     steps:
       - uses: actions/checkout@v4
-      - name: Deployment, rollback and Docker worker contracts
-        shell: ${{ matrix.shell }}
+      - name: Deployment contracts on PowerShell 7
+        shell: pwsh
+        run: ./tests/Test-LocalAI-DeployContracts.ps1
+      - name: Deployment contracts on Windows PowerShell 5.1
+        shell: powershell
         run: ./tests/Test-LocalAI-DeployContracts.ps1
