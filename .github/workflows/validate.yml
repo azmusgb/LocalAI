@@ -26,6 +26,8 @@ jobs:
       - name: JavaScript syntax
         run: |
           node --check app/server.js
+          node --check app/storage.js
+          node --check app/storage-cli.js
           node --check app/agent-orchestrator.js
           find app/public -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
           node --check tests/agent-operations-ui.mjs
@@ -57,6 +59,9 @@ jobs:
           test -f package.json
           test -f package-lock.json
           test -f app/server.js
+          test -f app/storage.js
+          test -f app/storage-cli.js
+          test -f deploy/Storage-LocalAI.ps1
           test -f app/public/app.js
           test -f app/public/index.html
           test -f app/public/manifest.json
@@ -79,9 +84,6 @@ jobs:
 
       - name: Validate deployment candidate
         run: npm run validate
-
-      - name: Offline mission regression tests
-        run: npm test
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
@@ -121,3 +123,20 @@ jobs:
           name: localai-server-log
           path: /tmp/localai-server.log
           if-no-files-found: ignore
+
+
+  storage-compatibility:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['22.13.0', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Native SQLite, HTTP and agent regression tests
+        run: node --test tests/storage.test.cjs tests/storage-api.test.cjs tests/agent-orchestrator.test.cjs

@@ -4,7 +4,7 @@ LocalAI is a LAN-hosted Node.js appliance with a browser interface for local-mod
 
 ## Requirements
 
-- Node.js 22 or newer. CI uses Node 22.
+- Node.js 22.13.0 or newer, including inside the appliance container. CI checks Node 22.13 and 24 on Windows/Linux.
 - Ollama for model-backed features.
 - PowerShell 7 (`pwsh`) for the deployment-candidate validator.
 - Chromium installed through Playwright for browser acceptance tests.
@@ -44,7 +44,7 @@ Set configuration in the shell, service, container, or deployment environment. T
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PORT` | `3080` | LocalAI HTTP port |
-| `DATA_DIR` | `/data` | Persistent JSON stores |
+| `DATA_DIR` | `/data` | Persistent SQLite database, import backups and artifact references |
 | `SELF_APP_ROOT` | `/app` | Application source used by engineering workflows |
 | `WORKSPACE_ROOT` | `/workspace` | Mounted engineering workspace |
 | `OLLAMA_URL` | `http://host.docker.internal:11434` | Ollama endpoint |
@@ -74,13 +74,13 @@ On Linux CI, use `npx playwright install --with-deps chromium` to install requir
 
 ## Validate and test
 
-Run the offline mission regression suite:
+Run the offline storage, HTTP and mission regression suite:
 
 ```sh
 npm test
 ```
 
-It covers dependency ordering, prerequisite failures, fallback attribution, parallel specialist persistence, and concurrent mission persistence without requiring live model inference.
+It covers migration, rollback, conflict detection, separate writer processes, restart durability, API compatibility, concurrent agent/automation results and the existing specialist dependency/fallback regressions. Model inference is mocked.
 
 Run the deployment-candidate validator:
 
@@ -88,7 +88,7 @@ Run the deployment-candidate validator:
 npm run validate
 ```
 
-This invokes `deploy/Test-LocalAI-Candidate.ps1` and checks required files, JavaScript syntax, key runtime/UI contracts, and sensitive-file exclusions.
+This invokes `deploy/Test-LocalAI-Candidate.ps1` and checks required files, JavaScript syntax, key runtime/UI contracts, sensitive-file exclusions, and native SQLite/API/agent regressions.
 
 For browser acceptance, start LocalAI with a disposable development `DATA_DIR`, then run:
 
@@ -99,6 +99,10 @@ npm run test:browser
 The browser suite exercises desktop/mobile navigation, Agent Operations / Agent World, and the System → Integrations experience. Set `LOCALAI_URL` to test a non-default development endpoint.
 
 GitHub Actions performs the same locked dependency install, validator, offline regressions, server-readiness gate, and browser acceptance. Server diagnostics are uploaded when browser validation fails.
+
+## Application state
+
+`DATA_DIR/localai.db` is authoritative. First startup validates, backs up and imports existing JSON in one transaction. Original JSON is retained for recovery. See [`docs/STORAGE.md`](docs/STORAGE.md) for schema, conflict behavior, pagination, inspection, coherent backups and JSON rollback/re-upgrade.
 
 ## Integrations
 
@@ -113,8 +117,10 @@ See [`README-SAFE-DEPLOY.md`](README-SAFE-DEPLOY.md) for candidate validation, p
 ## Repository layout
 
 - `app/server.js` — HTTP server, capability APIs, and appliance integrations.
+- `app/storage.js` / `app/storage-cli.js` — SQLite repositories, migrations, backups and recovery commands.
 - `app/agent-orchestrator.js` — specialist routing, dependencies, fallback, mission execution, and persistence.
 - `app/public/` — browser application, responsive UX, Agent World, and Integration Hub.
 - `deploy/` — candidate validation, deployment, rollback, and scheduled deployment tooling.
 - `docs/` — maintained architecture and integration guidance.
 - `tests/` — offline orchestration regressions and desktop/mobile Chromium acceptance.
+

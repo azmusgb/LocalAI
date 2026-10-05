@@ -21,3 +21,8 @@ Thumbs.db
 .deploy/
 releases/
 workspace/
+
+
+*.db
+*.db-wal
+*.db-shm

@@ -24,16 +24,21 @@ let capabilityCache = { expiresAt: 0, value: null };
 const POWERSHELL_BRIDGE_TOKEN = String(process.env.POWERSHELL_BRIDGE_TOKEN || '');
 const POWERSHELL_UI_TOKEN = String(process.env.POWERSHELL_UI_TOKEN || '');
 
-const ACTIVITY_FILE = path.join(DATA_DIR, 'activity.json');
-const STATUS_FILE = path.join(DATA_DIR, 'status-state.json');
-const LIBRARY_FILE = path.join(DATA_DIR, 'library.json');
+const ACTIVITY_STORE = 'activity';
+const STATUS_STORE = 'status';
+const LIBRARY_STORE = 'library';
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
+const { Storage } = require('./storage');
+const storage = new Storage({ dataDir: DATA_DIR });
 
 function json(res, status, value) {
   res.writeHead(status, JSON_HEADERS);
   res.end(JSON.stringify(value));
+}
+
+function storageError(res, error, defaultStatus = 400) {
+  return json(res, error.statusCode || defaultStatus, { error: String(error.message || error), ...(error.code ? { code: error.code } : {}) });
 }
 
 function text(res, status, value, contentType = 'text/plain; charset=utf-8', extraHeaders = {}) {
@@ -41,15 +46,13 @@ function text(res, status, value, contentType = 'text/plain; charset=utf-8', ext
   res.end(value);
 }
 
-function readJsonFile(file, fallback) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
-  catch { return fallback; }
+function readState(collection, fallback) {
+  return collection === STATUS_STORE ? storage.readSetting('status', fallback) : storage.list(collection);
 }
 
-function writeJsonFile(file, value) {
-  const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf8');
-  fs.renameSync(tmp, file);
+function writeState(collection, value, previous = value) {
+  if (collection === STATUS_STORE) return storage.writeSetting('status', value);
+  return storage.save(collection, value, previous);
 }
 
 function readBody(req, maxBytes = 1024 * 1024) {
@@ -78,7 +81,7 @@ function readBody(req, maxBytes = 1024 * 1024) {
 }
 
 function activityStore() {
-  const value = readJsonFile(ACTIVITY_FILE, []);
+  const value = readState(ACTIVITY_STORE, []);
   return Array.isArray(value) ? value : [];
 }
 
@@ -93,12 +96,12 @@ function recordActivity(type, title, detail = '', meta = {}) {
     meta
   };
   items.unshift(item);
-  writeJsonFile(ACTIVITY_FILE, items.slice(0, 150));
+  writeState(ACTIVITY_STORE, items);
   return item;
 }
 
 function libraryStore() {
-  const value = readJsonFile(LIBRARY_FILE, []);
+  const value = readState(LIBRARY_STORE, []);
   return Array.isArray(value) ? value : [];
 }
 
@@ -121,7 +124,7 @@ function recordArtifact(kind, title, summary = '', meta = {}, data = {}) {
     data: data && typeof data === 'object' ? data : {}
   };
   items.unshift(item);
-  writeJsonFile(LIBRARY_FILE, items.slice(0, 250));
+  writeState(LIBRARY_STORE, items);
   return item;
 }
 
@@ -131,7 +134,7 @@ function updateArtifact(id, patch = {}) {
   if (index < 0) return null;
   if (typeof patch.pinned === 'boolean') items[index].pinned = patch.pinned;
   if (typeof patch.title === 'string' && patch.title.trim()) items[index].title = titleFromText(patch.title);
-  writeJsonFile(LIBRARY_FILE, items);
+  writeState(LIBRARY_STORE, items);
   return items[index];
 }
 
@@ -139,7 +142,7 @@ function deleteArtifact(id) {
   const items = libraryStore();
   const next = items.filter(x => x && x.id !== id);
   if (next.length === items.length) return false;
-  writeJsonFile(LIBRARY_FILE, next);
+  writeState(LIBRARY_STORE, next, items);
   return true;
 }
 
@@ -165,7 +168,7 @@ function migrateLegacyActivityToLibrary() {
   }
   if (changed) {
     items.sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-    writeJsonFile(LIBRARY_FILE, items.slice(0, 250));
+    writeState(LIBRARY_STORE, items);
   }
 }
 async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
@@ -246,7 +249,7 @@ async function getStatusAndRecordTransition() {
   ]);
 
   const overall = overallState(services);
-  const previous = readJsonFile(STATUS_FILE, {});
+  const previous = readState(STATUS_STORE, {});
   if (previous.overall && previous.overall !== overall) {
     if (overall === 'HEALTHY') {
       recordActivity('recovery', 'System recovered', `Health returned to normal from ${previous.overall}.`, { previous: previous.overall, current: overall });
@@ -255,7 +258,7 @@ async function getStatusAndRecordTransition() {
       recordActivity('system', 'System needs attention', affected.join(', ') || `Health changed to ${overall}.`, { previous: previous.overall, current: overall });
     }
   }
-  writeJsonFile(STATUS_FILE, { overall, checkedAt: new Date().toISOString() });
+  writeState(STATUS_STORE, { overall, checkedAt: new Date().toISOString() });
 
   return {
     appliance: 'Local AI',
@@ -355,7 +358,7 @@ async function getCapabilitiesSnapshot(force = false) {
 
 async function apiCapabilities(req, res) {
   try { json(res, 200, await getCapabilitiesSnapshot(true)); }
-  catch (e) { json(res, 500, { error: String(e.message || e) }); }
+  catch (e) { storageError(res,e,500); }
 }
 
 function systemPrompt(researchContext = '', capabilityContext = '') {
@@ -439,7 +442,7 @@ async function apiChat(req, res) {
       sources: prep.sources
     });
   } catch (e) {
-    json(res, 500, { error: String(e.message || e) });
+    storageError(res,e,500);
   }
 }
 
@@ -533,7 +536,7 @@ async function apiChatStream(req, res) {
     res.end();
   } catch (e) {
     if (!res.headersSent) {
-      json(res, 500, { error: String(e.message || e) });
+      storageError(res,e,500);
     } else {
       try {
         res.write(`event: error\ndata: ${JSON.stringify({ error: String(e.message || e) })}\n\n`);
@@ -603,7 +606,7 @@ async function apiRoute(req, res) {
     const route = routeIntent(body.text, body.mode, sanitizeMessages(body.messages));
     json(res, 200, route);
   } catch (e) {
-    json(res, 400, { error: String(e.message || e) });
+    storageError(res,e,400);
   }
 }
 
@@ -613,8 +616,9 @@ async function apiActivity(req, res) {
 }
 
 async function apiActivityClear(req, res) {
-  const kept = activityStore().filter(x => x && (x.type === 'system' || x.type === 'recovery'));
-  writeJsonFile(ACTIVITY_FILE, kept);
+  const items = activityStore();
+  const kept = items.filter(x => x && (x.type === 'system' || x.type === 'recovery'));
+  writeState(ACTIVITY_STORE, kept, items);
   recordActivity('system', 'User activity cleared', 'User-generated activity was cleared; system and recovery audit events were preserved.');
   json(res, 200, { ok: true, preserved: kept.length });
 }
@@ -638,7 +642,7 @@ async function apiLibraryUpdate(req, res) {
     if (!item) return json(res, 404, { error: 'Artifact not found' });
     json(res, 200, { ok: true, item });
   } catch (e) {
-    json(res, 400, { error: String(e.message || e) });
+    storageError(res,e,400);
   }
 }
 
@@ -652,7 +656,7 @@ async function apiLibraryDelete(req, res) {
     recordActivity('system', 'Library item removed', 'An artifact was removed from the workspace library.');
     json(res, 200, { ok: true });
   } catch (e) {
-    json(res, 400, { error: String(e.message || e) });
+    storageError(res,e,400);
   }
 }
 
@@ -861,7 +865,7 @@ async function apiGenerateImage(req, res) {
       checkpoint, family: selected.family, familyLabel: selected.familyLabel, seed, width, height, elapsedMs, imageUrl
     });
   } catch (e) {
-    json(res, 500, { error: String(e.message || e) });
+    storageError(res,e,500);
   }
 }
 
@@ -948,39 +952,54 @@ function serveStatic(req, res, pathname) {
 
 // ===== CUMULATIVE PRODUCT PLATFORM (v1.3+) ===================================
 const FEATURE_LEVEL = Number(String(APP_VERSION || '1.2').split('.')[1] || 2);
-const PROJECTS_FILE = path.join(DATA_DIR, 'projects.json');
-const CONVERSATIONS_FILE = path.join(DATA_DIR, 'conversations.json');
-const KNOWLEDGE_FILE = path.join(DATA_DIR, 'knowledge.json');
-const AUTOMATIONS_FILE = path.join(DATA_DIR, 'automations.json');
-const RUNS_FILE = path.join(DATA_DIR, 'agent-runs.json');
-const AUTOMATION_RUNS_FILE = path.join(DATA_DIR, 'automation-runs.json');
+const PROJECTS_STORE = 'projects';
+const CONVERSATIONS_STORE = 'conversations';
+const KNOWLEDGE_STORE = 'knowledge';
+const AUTOMATIONS_STORE = 'automations';
+const RUNS_STORE = 'agentRuns';
+const AUTOMATION_RUNS_STORE = 'automationRuns';
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || '/workspace';
 
 function featureAtLeast(level) { return FEATURE_LEVEL >= level; }
-function objectStore(file) { const v = readJsonFile(file, []); return Array.isArray(v) ? v : []; }
-function saveStore(file, v, max = 1000) { writeJsonFile(file, Array.isArray(v) ? v.slice(0, max) : []); }
+function objectStore(file) { const v = readState(file, []); return Array.isArray(v) ? v : []; }
+function saveStore(collection, items, _legacyMax, previous = items) { return storage.save(collection, items, previous); }
 function makeId(prefix) { return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 9)}`; }
 function nowIso() { return new Date().toISOString(); }
 function normalizeTitle(v, fallback) { return titleFromText(String(v || ''), fallback); }
 function requireFeature(res, level) { if (!featureAtLeast(level)) { json(res, 404, { error: `Requires v1.${level}+` }); return false; } return true; }
 
-function projectStore(){ return objectStore(PROJECTS_FILE); }
-function conversationStore(){ return objectStore(CONVERSATIONS_FILE); }
-function knowledgeStore(){ return objectStore(KNOWLEDGE_FILE); }
-function automationStore(){ return objectStore(AUTOMATIONS_FILE); }
-function agentRunStore(){ return objectStore(RUNS_FILE); }
-function automationRunStore(){ return objectStore(AUTOMATION_RUNS_FILE); }
+function projectStore(){ return objectStore(PROJECTS_STORE); }
+function conversationStore(){ return objectStore(CONVERSATIONS_STORE); }
+function knowledgeStore(){ return objectStore(KNOWLEDGE_STORE); }
+function automationStore(){ return objectStore(AUTOMATIONS_STORE); }
+function agentRunStore(){ return objectStore(RUNS_STORE); }
+function automationRunStore(){ return objectStore(AUTOMATION_RUNS_STORE); }
+
+function statePage(collection, urlObj, defaultLimit) {
+  const rawLimit = urlObj.searchParams.get('limit');
+  const rawOffset = urlObj.searchParams.get('offset');
+  const limit = rawLimit === null ? defaultLimit : Number(rawLimit);
+  const offset = rawOffset === null ? 0 : Number(rawOffset);
+  if ((rawLimit !== null && !/^\d+$/.test(rawLimit)) || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000 ||
+      (rawOffset !== null && !/^\d+$/.test(rawOffset)) || !Number.isSafeInteger(offset) || offset < 0) {
+    const error = new Error('limit must be 1..1000 and offset must be a nonnegative integer');
+    error.statusCode = 400; throw error;
+  }
+  const projectId = urlObj.searchParams.get('projectId') || undefined;
+  return { items: storage.list(collection,{projectId,limit,offset}), total:storage.count(collection,projectId),limit,offset };
+}
 
 function publicProject(p){
-  const conv = conversationStore().filter(x=>x.projectId===p.id).length;
-  const docs = knowledgeStore().filter(x=>x.projectId===p.id).length;
-  const artifacts = libraryStore().filter(x=>x?.meta?.projectId===p.id).length;
+  const conv = storage.count('conversations',p.id);
+  const docs = storage.count('knowledge',p.id);
+  const artifacts = storage.count('library',p.id);
   return {...p, counts:{conversations:conv, knowledge:docs, artifacts}};
 }
 
-async function apiProjects(req,res){
+async function apiProjects(req,res,urlObj){
   if(!requireFeature(res,3)) return;
-  json(res,200,{items:projectStore().map(publicProject)});
+  const page=statePage('projects',urlObj,250);
+  json(res,200,{...page,items:page.items.map(publicProject)});
 }
 async function apiProjectsCreate(req,res){
   if(!requireFeature(res,3)) return;
@@ -988,9 +1007,9 @@ async function apiProjectsCreate(req,res){
     const b=await readBody(req); const name=String(b.name||'').trim();
     if(!name) return json(res,400,{error:'name is required'});
     const items=projectStore(); const item={id:makeId('prj'),name:normalizeTitle(name,'Project'),description:String(b.description||'').slice(0,1200),createdAt:nowIso(),updatedAt:nowIso(),pinned:false};
-    items.unshift(item); saveStore(PROJECTS_FILE,items,250); recordActivity('project','Created project',item.name,{projectId:item.id});
+    items.unshift(item); saveStore(PROJECTS_STORE,items,250); recordActivity('project','Created project',item.name,{projectId:item.id});
     json(res,201,{item:publicProject(item)});
-  }catch(e){json(res,400,{error:String(e.message||e)})}
+  }catch(e){storageError(res,e,400)}
 }
 async function apiProjectsUpdate(req,res){
   if(!requireFeature(res,3)) return;
@@ -998,30 +1017,29 @@ async function apiProjectsUpdate(req,res){
     const b=await readBody(req); const items=projectStore(); const i=items.findIndex(x=>x.id===b.id); if(i<0)return json(res,404,{error:'Project not found'});
     if(typeof b.name==='string'&&b.name.trim())items[i].name=normalizeTitle(b.name,'Project');
     if(typeof b.description==='string')items[i].description=b.description.slice(0,1200);
-    if(typeof b.pinned==='boolean')items[i].pinned=b.pinned; items[i].updatedAt=nowIso(); saveStore(PROJECTS_FILE,items,250); json(res,200,{item:publicProject(items[i])});
-  }catch(e){json(res,400,{error:String(e.message||e)})}
+    if(typeof b.pinned==='boolean')items[i].pinned=b.pinned; items[i].updatedAt=nowIso(); saveStore(PROJECTS_STORE,items,250); json(res,200,{item:publicProject(items[i])});
+  }catch(e){storageError(res,e,400)}
 }
 
 async function apiConversations(req,res,urlObj){
   if(!requireFeature(res,3)) return;
-  const projectId=urlObj.searchParams.get('projectId'); let items=conversationStore(); if(projectId)items=items.filter(x=>x.projectId===projectId);
-  json(res,200,{items:items.slice(0,300)});
+  json(res,200,statePage('conversations',urlObj,300));
 }
 async function apiConversationSave(req,res){
   if(!requireFeature(res,3)) return;
   try{
-    const b=await readBody(req,2*1024*1024); const messages=sanitizeMessages(b.messages); if(!messages.length)return json(res,400,{error:'messages[] is required'});
+    const b=await readBody(req,2*1024*1024); const messages=(Array.isArray(b.messages)?b.messages:[]).filter(m=>m&&(m.role==='user'||m.role==='assistant')&&typeof m.content==='string').map(m=>({role:m.role,content:m.content})); if(!messages.length)return json(res,400,{error:'messages[] is required'});
     const items=conversationStore(); let item=items.find(x=>x.id===b.id);
     const firstUser=messages.find(x=>x.role==='user')?.content||'Conversation';
     if(!item){item={id:makeId('chat'),createdAt:nowIso(),pinned:false};items.unshift(item)}
-    item.projectId=String(b.projectId||item.projectId||''); item.title=normalizeTitle(b.title||item.title||firstUser,'Conversation'); item.updatedAt=nowIso(); item.messages=messages.slice(-40); item.webSearch=!!b.webSearch;
-    saveStore(CONVERSATIONS_FILE,items,500); recordActivity('conversation','Saved conversation',item.title,{conversationId:item.id,projectId:item.projectId});
+    item.projectId=String(b.projectId||item.projectId||''); item.title=normalizeTitle(b.title||item.title||firstUser,'Conversation'); item.updatedAt=nowIso(); item.messages=messages; item.webSearch=!!b.webSearch;
+    saveStore(CONVERSATIONS_STORE,items,500); recordActivity('conversation','Saved conversation',item.title,{conversationId:item.id,projectId:item.projectId});
     json(res,200,{item});
-  }catch(e){json(res,400,{error:String(e.message||e)})}
+  }catch(e){storageError(res,e,400)}
 }
 async function apiConversationDelete(req,res){
   if(!requireFeature(res,3)) return;
-  try{const b=await readBody(req);const items=conversationStore();const next=items.filter(x=>x.id!==b.id);if(next.length===items.length)return json(res,404,{error:'Conversation not found'});saveStore(CONVERSATIONS_FILE,next,500);json(res,200,{ok:true})}catch(e){json(res,400,{error:String(e.message||e)})}
+  try{const b=await readBody(req);const items=conversationStore();const next=items.filter(x=>x.id!==b.id);if(next.length===items.length)return json(res,404,{error:'Conversation not found'});saveStore(CONVERSATIONS_STORE,next,500,items);json(res,200,{ok:true})}catch(e){storageError(res,e,400)}
 }
 
 function chunkText(textValue, chunkSize=1800){
@@ -1033,19 +1051,19 @@ function knowledgeScore(query,textValue){
   const q=[...new Set(tokens(query))]; if(!q.length)return 0; const t=String(textValue||'').toLowerCase(); let score=0; for(const w of q){if(t.includes(w))score+=1+(t.split(w).length-2)*0.08} return score/q.length;
 }
 async function apiKnowledge(req,res,urlObj){
-  if(!requireFeature(res,3)) return; const projectId=urlObj.searchParams.get('projectId'); let items=knowledgeStore(); if(projectId)items=items.filter(x=>x.projectId===projectId); json(res,200,{items:items.map(x=>({...x,chunks:undefined,content:undefined}))});
+  if(!requireFeature(res,3)) return; const page=statePage('knowledge',urlObj,500); json(res,200,{...page,items:page.items.map(x=>({...x,chunks:undefined,content:undefined}))});
 }
 async function apiKnowledgeImport(req,res){
   if(!requireFeature(res,3)) return;
   try{
     const b=await readBody(req,6*1024*1024); const content=String(b.content||''); const name=String(b.name||'').trim(); if(!name||!content.trim())return json(res,400,{error:'name and content are required'});
     const items=knowledgeStore(); const chunks=chunkText(content); const item={id:makeId('doc'),projectId:String(b.projectId||''),name:normalizeTitle(name,'Document'),mimeType:String(b.mimeType||'text/plain'),size:Buffer.byteLength(content,'utf8'),createdAt:nowIso(),updatedAt:nowIso(),chunks,preview:content.slice(0,800)};
-    items.unshift(item);saveStore(KNOWLEDGE_FILE,items,500);recordActivity('knowledge','Indexed knowledge source',item.name,{projectId:item.projectId,chunks:chunks.length});json(res,201,{item:{...item,chunks:undefined}});
-  }catch(e){json(res,400,{error:String(e.message||e)})}
+    items.unshift(item);saveStore(KNOWLEDGE_STORE,items,500);recordActivity('knowledge','Indexed knowledge source',item.name,{projectId:item.projectId,chunks:chunks.length});json(res,201,{item:{...item,chunks:undefined}});
+  }catch(e){storageError(res,e,400)}
 }
-async function apiKnowledgeDelete(req,res){if(!requireFeature(res,3))return;try{const b=await readBody(req);const items=knowledgeStore();const next=items.filter(x=>x.id!==b.id);if(next.length===items.length)return json(res,404,{error:'Knowledge source not found'});saveStore(KNOWLEDGE_FILE,next,500);json(res,200,{ok:true})}catch(e){json(res,400,{error:String(e.message||e)})}}
+async function apiKnowledgeDelete(req,res){if(!requireFeature(res,3))return;try{const b=await readBody(req);const items=knowledgeStore();const next=items.filter(x=>x.id!==b.id);if(next.length===items.length)return json(res,404,{error:'Knowledge source not found'});saveStore(KNOWLEDGE_STORE,next,500,items);json(res,200,{ok:true})}catch(e){storageError(res,e,400)}}
 async function apiKnowledgeSearch(req,res){
-  if(!requireFeature(res,3)) return; try{const b=await readBody(req);const query=String(b.query||'').trim();if(!query)return json(res,400,{error:'query is required'});let docs=knowledgeStore();if(b.projectId)docs=docs.filter(x=>x.projectId===b.projectId);const hits=[];for(const d of docs){(d.chunks||[]).forEach((c,i)=>{const score=knowledgeScore(query,c);if(score>0)hits.push({documentId:d.id,name:d.name,projectId:d.projectId,chunk:i,score:Number(score.toFixed(3)),text:c})})}hits.sort((a,b)=>b.score-a.score);json(res,200,{query,hits:hits.slice(0,10)})}catch(e){json(res,400,{error:String(e.message||e)})}
+  if(!requireFeature(res,3)) return; try{const b=await readBody(req);const query=String(b.query||'').trim();if(!query)return json(res,400,{error:'query is required'});let docs=knowledgeStore();if(b.projectId)docs=docs.filter(x=>x.projectId===b.projectId);const hits=[];for(const d of docs){(d.chunks||[]).forEach((c,i)=>{const score=knowledgeScore(query,c);if(score>0)hits.push({documentId:d.id,name:d.name,projectId:d.projectId,chunk:i,score:Number(score.toFixed(3)),text:c})})}hits.sort((a,b)=>b.score-a.score);json(res,200,{query,hits:hits.slice(0,10)})}catch(e){storageError(res,e,400)}
 }
 
 async function runLocalModel(prompt, system='You are a concise local AI assistant.', timeoutMs=180000, model=MODEL){
@@ -1206,75 +1224,75 @@ let specialistOrchestrator=null;
 function getSpecialistOrchestrator(){
  if(specialistOrchestrator)return specialistOrchestrator;
  specialistOrchestrator=require('./agent-orchestrator')({
-  dataDir:DATA_DIR,ollamaUrl:OLLAMA_URL,defaultModel:MODEL,fetchWithTimeout,runLocalModel,
+  dataDir:DATA_DIR,storage,ollamaUrl:OLLAMA_URL,defaultModel:MODEL,fetchWithTimeout,runLocalModel,
   knowledgeStore,knowledgeScore,searxSearch,recordActivity
  });
  return specialistOrchestrator;
 }
 async function apiAgentCatalog(req,res){if(!requireFeature(res,4))return;json(res,200,{items:getSpecialistOrchestrator().catalog})}
 async function apiAgentModels(req,res){if(!requireFeature(res,4))return;try{json(res,200,{items:await getSpecialistOrchestrator().models()})}catch(e){json(res,503,{error:String(e.message||e)})}}
-async function apiSpecialistRun(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});json(res,200,{run:await getSpecialistOrchestrator().specialist(String(b.agentId||''),goal,String(b.projectId||''))})}catch(e){json(res,400,{error:String(e.message||e)})}}
-async function apiAgentDispatch(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});json(res,200,{routing:await getSpecialistOrchestrator().dispatch(goal,Array.isArray(b.agentIds)?b.agentIds:undefined)})}catch(e){json(res,400,{error:String(e.message||e)})}}
+async function apiSpecialistRun(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});json(res,200,{run:await getSpecialistOrchestrator().specialist(String(b.agentId||''),goal,String(b.projectId||''))})}catch(e){storageError(res,e,400)}}
+async function apiAgentDispatch(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});json(res,200,{routing:await getSpecialistOrchestrator().dispatch(goal,Array.isArray(b.agentIds)?b.agentIds:undefined)})}catch(e){storageError(res,e,400)}}
 async function apiAgentMissions(req,res){if(!requireFeature(res,4))return;json(res,200,{items:getSpecialistOrchestrator().missions().slice(0,200)})}
 async function apiAgentMission(req,res,urlObj){if(!requireFeature(res,4))return;const id=String(urlObj.searchParams.get('id')||''),m=getSpecialistOrchestrator().missions().find(x=>x.id===id);if(!m)return json(res,404,{error:'Mission not found'});json(res,200,{mission:m})}
-async function apiAgentMissionStart(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const ids=Array.isArray(b.agentIds)&&b.agentIds.length?b.agentIds:undefined;json(res,200,{mission:await getSpecialistOrchestrator().mission(goal,String(b.projectId||''),ids)})}catch(e){json(res,400,{error:String(e.message||e)})}}
+async function apiAgentMissionStart(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const ids=Array.isArray(b.agentIds)&&b.agentIds.length?b.agentIds:undefined;json(res,200,{mission:await getSpecialistOrchestrator().mission(goal,String(b.projectId||''),ids)})}catch(e){storageError(res,e,400)}}
 async function apiAgentMissionEvents(req,res,urlObj){if(!requireFeature(res,4))return;res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});const wanted=String(urlObj.searchParams.get('missionId')||'');const send=m=>{if(!wanted||m.id===wanted)res.write('data: '+JSON.stringify(m)+'\n\n')};const orch=getSpecialistOrchestrator();orch.events.on('mission',send);res.write(': connected\n\n');req.on('close',()=>orch.events.off('mission',send))}
 async function apiAgents(req,res){if(!requireFeature(res,4))return;json(res,200,{items:agentRunStore().slice(0,200)})}
 async function apiAgentRun(req,res){
-  if(!requireFeature(res,4))return; try{const b=await readBody(req);const goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const runs=agentRunStore();const run={id:makeId('agent'),goal,projectId:String(b.projectId||''),status:'running',createdAt:nowIso(),updatedAt:nowIso(),plan:buildAgentPlan(goal)};runs.unshift(run);saveStore(RUNS_FILE,runs,300);recordActivity('agent','Agent started',goal.slice(0,180),{runId:run.id});try{const result=await executeAgentGoal(goal,run.projectId);run.status='complete';run.plan=result.plan;run.answer=result.answer;run.sources=result.sources;run.updatedAt=nowIso()}catch(e){run.status='error';run.error=String(e.message||e);run.updatedAt=nowIso()}saveStore(RUNS_FILE,runs,300);recordActivity('agent',run.status==='complete'?'Agent completed':'Agent failed',goal.slice(0,180),{runId:run.id,status:run.status});json(res,200,{run})}catch(e){json(res,400,{error:String(e.message||e)})}
+  if(!requireFeature(res,4))return; try{const b=await readBody(req);const goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const runs=agentRunStore();const run={id:makeId('agent'),goal,projectId:String(b.projectId||''),status:'running',createdAt:nowIso(),updatedAt:nowIso(),plan:buildAgentPlan(goal)};runs.unshift(run);saveStore(RUNS_STORE,runs,300);recordActivity('agent','Agent started',goal.slice(0,180),{runId:run.id});try{const result=await executeAgentGoal(goal,run.projectId);run.status='complete';run.plan=result.plan;run.answer=result.answer;run.sources=result.sources;run.updatedAt=nowIso()}catch(e){run.status='error';run.error=String(e.message||e);run.updatedAt=nowIso()}saveStore(RUNS_STORE,runs,300);recordActivity('agent',run.status==='complete'?'Agent completed':'Agent failed',goal.slice(0,180),{runId:run.id,status:run.status});json(res,200,{run})}catch(e){storageError(res,e,400)}
 }
 
 function nextRunFor(schedule,from=new Date()){
   const d=new Date(from); if(schedule==='hourly'){d.setMinutes(0,0,0);d.setHours(d.getHours()+1);return d.toISOString()} if(schedule==='daily'){d.setSeconds(0,0);d.setDate(d.getDate()+1);return d.toISOString()} return null;
 }
 async function executeAutomation(a){
-  const runs=automationRunStore(); const run={id:makeId('autorun'),automationId:a.id,name:a.name,status:'running',startedAt:nowIso()};runs.unshift(run);saveStore(AUTOMATION_RUNS_FILE,runs,500);
-  try{if(a.kind==='health'){const s=await getStatusAndRecordTransition();run.output=`Overall: ${s.overall}. ${s.services.map(x=>`${x.label}: ${x.state}`).join('; ')}`;}else if(a.kind==='research'){const rs=await searxSearch(a.prompt);run.output=await runLocalModel(`${a.prompt}\n\n${rs.map((x,i)=>`[${i+1}] ${x.title}\n${x.content}\n${x.url}`).join('\n\n')}`,'Summarize the research with source numbers.');}else{run.output=await runLocalModel(a.prompt||a.name)}run.status='complete'}catch(e){run.status='error';run.error=String(e.message||e)}run.finishedAt=nowIso();saveStore(AUTOMATION_RUNS_FILE,runs,500);recordActivity('automation',`Automation ${run.status}`,a.name,{automationId:a.id,runId:run.id});return run;
+  const runs=automationRunStore(); const run={id:makeId('autorun'),automationId:a.id,name:a.name,status:'running',startedAt:nowIso()};runs.unshift(run);saveStore(AUTOMATION_RUNS_STORE,runs,500);
+  try{if(a.kind==='health'){const s=await getStatusAndRecordTransition();run.output=`Overall: ${s.overall}. ${s.services.map(x=>`${x.label}: ${x.state}`).join('; ')}`;}else if(a.kind==='research'){const rs=await searxSearch(a.prompt);run.output=await runLocalModel(`${a.prompt}\n\n${rs.map((x,i)=>`[${i+1}] ${x.title}\n${x.content}\n${x.url}`).join('\n\n')}`,'Summarize the research with source numbers.');}else{run.output=await runLocalModel(a.prompt||a.name)}run.status='complete'}catch(e){run.status='error';run.error=String(e.message||e)}run.finishedAt=nowIso();saveStore(AUTOMATION_RUNS_STORE,runs,500);recordActivity('automation',`Automation ${run.status}`,a.name,{automationId:a.id,runId:run.id});return run;
 }
 async function apiAutomations(req,res){if(!requireFeature(res,4))return;json(res,200,{items:automationStore(),runs:automationRunStore().slice(0,100)})}
-async function apiAutomationCreate(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req);const name=String(b.name||'').trim();if(!name)return json(res,400,{error:'name is required'});const items=automationStore();const schedule=['manual','hourly','daily'].includes(b.schedule)?b.schedule:'manual';const item={id:makeId('auto'),name:normalizeTitle(name,'Automation'),kind:['prompt','research','health'].includes(b.kind)?b.kind:'prompt',prompt:String(b.prompt||'').slice(0,10000),schedule,enabled:b.enabled!==false,createdAt:nowIso(),updatedAt:nowIso(),nextRunAt:schedule==='manual'?null:nextRunFor(schedule)};items.unshift(item);saveStore(AUTOMATIONS_FILE,items,250);json(res,201,{item})}catch(e){json(res,400,{error:String(e.message||e)})}}
-async function apiAutomationUpdate(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req);const items=automationStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Automation not found'});if(typeof b.enabled==='boolean')items[i].enabled=b.enabled;if(typeof b.name==='string'&&b.name.trim())items[i].name=normalizeTitle(b.name,'Automation');if(['manual','hourly','daily'].includes(b.schedule)){items[i].schedule=b.schedule;items[i].nextRunAt=b.schedule==='manual'?null:nextRunFor(b.schedule)}items[i].updatedAt=nowIso();saveStore(AUTOMATIONS_FILE,items,250);json(res,200,{item:items[i]})}catch(e){json(res,400,{error:String(e.message||e)})}}
-async function apiAutomationRun(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req);const a=automationStore().find(x=>x.id===b.id);if(!a)return json(res,404,{error:'Automation not found'});json(res,200,{run:await executeAutomation(a)})}catch(e){json(res,400,{error:String(e.message||e)})}}
+async function apiAutomationCreate(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req);const name=String(b.name||'').trim();if(!name)return json(res,400,{error:'name is required'});const items=automationStore();const schedule=['manual','hourly','daily'].includes(b.schedule)?b.schedule:'manual';const item={id:makeId('auto'),name:normalizeTitle(name,'Automation'),kind:['prompt','research','health'].includes(b.kind)?b.kind:'prompt',prompt:String(b.prompt||'').slice(0,10000),schedule,enabled:b.enabled!==false,createdAt:nowIso(),updatedAt:nowIso(),nextRunAt:schedule==='manual'?null:nextRunFor(schedule)};items.unshift(item);saveStore(AUTOMATIONS_STORE,items,250);json(res,201,{item})}catch(e){storageError(res,e,400)}}
+async function apiAutomationUpdate(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req);const items=automationStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Automation not found'});if(typeof b.enabled==='boolean')items[i].enabled=b.enabled;if(typeof b.name==='string'&&b.name.trim())items[i].name=normalizeTitle(b.name,'Automation');if(['manual','hourly','daily'].includes(b.schedule)){items[i].schedule=b.schedule;items[i].nextRunAt=b.schedule==='manual'?null:nextRunFor(b.schedule)}items[i].updatedAt=nowIso();saveStore(AUTOMATIONS_STORE,items,250);json(res,200,{item:items[i]})}catch(e){storageError(res,e,400)}}
+async function apiAutomationRun(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req);const a=automationStore().find(x=>x.id===b.id);if(!a)return json(res,404,{error:'Automation not found'});json(res,200,{run:await executeAutomation(a)})}catch(e){storageError(res,e,400)}}
 
 function safeWorkspacePath(rel=''){
   const clean=String(rel||'').replace(/\\/g,'/').replace(/^\/+/, ''); const root=path.resolve(WORKSPACE_ROOT); const full=path.resolve(root,clean); if(full!==root&&!full.startsWith(root+path.sep))throw new Error('Path escapes workspace'); return full;
 }
 function workspaceRel(full){return path.relative(path.resolve(WORKSPACE_ROOT),full).replace(/\\/g,'/')}
 function treeDir(full,depth=2){const out=[];if(depth<0||!fs.existsSync(full))return out;for(const e of fs.readdirSync(full,{withFileTypes:true}).slice(0,250)){if(e.name==='.git'||e.name==='node_modules')continue;const p=path.join(full,e.name);const item={name:e.name,path:workspaceRel(p),type:e.isDirectory()?'directory':'file'};if(e.isDirectory()&&depth>0)item.children=treeDir(p,depth-1);else if(e.isFile())try{item.size=fs.statSync(p).size}catch{}out.push(item)}return out}
-async function apiWorkbenchTree(req,res,urlObj){if(!requireFeature(res,5))return;try{const rel=urlObj.searchParams.get('path')||'';json(res,200,{root:WORKSPACE_ROOT,path:rel,items:treeDir(safeWorkspacePath(rel),2)})}catch(e){json(res,400,{error:String(e.message||e)})}}
-async function apiWorkbenchRead(req,res,urlObj){if(!requireFeature(res,5))return;try{const rel=urlObj.searchParams.get('path')||'';const full=safeWorkspacePath(rel);const st=fs.statSync(full);if(!st.isFile())return json(res,400,{error:'Not a file'});if(st.size>2*1024*1024)return json(res,413,{error:'File too large for editor'});json(res,200,{path:rel,content:fs.readFileSync(full,'utf8'),size:st.size,modifiedAt:st.mtime.toISOString()})}catch(e){json(res,400,{error:String(e.message||e)})}}
+async function apiWorkbenchTree(req,res,urlObj){if(!requireFeature(res,5))return;try{const rel=urlObj.searchParams.get('path')||'';json(res,200,{root:WORKSPACE_ROOT,path:rel,items:treeDir(safeWorkspacePath(rel),2)})}catch(e){storageError(res,e,400)}}
+async function apiWorkbenchRead(req,res,urlObj){if(!requireFeature(res,5))return;try{const rel=urlObj.searchParams.get('path')||'';const full=safeWorkspacePath(rel);const st=fs.statSync(full);if(!st.isFile())return json(res,400,{error:'Not a file'});if(st.size>2*1024*1024)return json(res,413,{error:'File too large for editor'});json(res,200,{path:rel,content:fs.readFileSync(full,'utf8'),size:st.size,modifiedAt:st.mtime.toISOString()})}catch(e){storageError(res,e,400)}}
 function simpleDiff(before,after){const a=String(before).split('\n'),b=String(after).split('\n');let start=0;while(start<a.length&&start<b.length&&a[start]===b[start])start++;let ae=a.length-1,be=b.length-1;while(ae>=start&&be>=start&&a[ae]===b[be]){ae--;be--}const lines=[`@@ -${start+1},${Math.max(0,ae-start+1)} +${start+1},${Math.max(0,be-start+1)} @@`];for(let i=start;i<=ae;i++)lines.push('-'+a[i]);for(let i=start;i<=be;i++)lines.push('+'+b[i]);return lines.join('\n')}
-async function apiWorkbenchDiff(req,res){if(!requireFeature(res,5))return;try{const b=await readBody(req,3*1024*1024);const full=safeWorkspacePath(b.path);const before=fs.existsSync(full)?fs.readFileSync(full,'utf8'):'';const after=String(b.content||'');json(res,200,{path:b.path,diff:simpleDiff(before,after),changed:before!==after})}catch(e){json(res,400,{error:String(e.message||e)})}}
-async function apiWorkbenchWrite(req,res){if(!requireFeature(res,5))return;try{const b=await readBody(req,3*1024*1024);if(b.approved!==true)return json(res,409,{error:'Explicit approval is required',approvalRequired:true});const full=safeWorkspacePath(b.path);fs.mkdirSync(path.dirname(full),{recursive:true});let backup=null;if(fs.existsSync(full)){backup=`${full}.localai-${Date.now()}.bak`;fs.copyFileSync(full,backup)}fs.writeFileSync(full,String(b.content||''),'utf8');recordActivity('workbench','Workspace file written',String(b.path),{backup:backup?workspaceRel(backup):null});json(res,200,{ok:true,path:b.path,backup:backup?workspaceRel(backup):null,size:Buffer.byteLength(String(b.content||''),'utf8')})}catch(e){json(res,400,{error:String(e.message||e)})}}
-async function apiWorkbenchSearch(req,res){if(!requireFeature(res,5))return;try{const b=await readBody(req);const query=String(b.query||'').toLowerCase().trim();if(!query)return json(res,400,{error:'query is required'});const root=safeWorkspacePath(b.path||'');const results=[];function walk(dir,depth){if(depth>5||results.length>=100)return;for(const e of fs.readdirSync(dir,{withFileTypes:true})){if(['.git','node_modules','.venv','bin','obj'].includes(e.name))continue;const p=path.join(dir,e.name);if(e.isDirectory())walk(p,depth+1);else if(e.isFile()){if(e.name.toLowerCase().includes(query))results.push({path:workspaceRel(p),match:'filename'});else{try{const st=fs.statSync(p);if(st.size<512000){const txt=fs.readFileSync(p,'utf8');const idx=txt.toLowerCase().indexOf(query);if(idx>=0)results.push({path:workspaceRel(p),match:'content',snippet:txt.slice(Math.max(0,idx-100),idx+query.length+160).replace(/\s+/g,' ')})}}catch{}}}if(results.length>=100)return}}walk(root,0);json(res,200,{results})}catch(e){json(res,400,{error:String(e.message||e)})}}
+async function apiWorkbenchDiff(req,res){if(!requireFeature(res,5))return;try{const b=await readBody(req,3*1024*1024);const full=safeWorkspacePath(b.path);const before=fs.existsSync(full)?fs.readFileSync(full,'utf8'):'';const after=String(b.content||'');json(res,200,{path:b.path,diff:simpleDiff(before,after),changed:before!==after})}catch(e){storageError(res,e,400)}}
+async function apiWorkbenchWrite(req,res){if(!requireFeature(res,5))return;try{const b=await readBody(req,3*1024*1024);if(b.approved!==true)return json(res,409,{error:'Explicit approval is required',approvalRequired:true});const full=safeWorkspacePath(b.path);fs.mkdirSync(path.dirname(full),{recursive:true});let backup=null;if(fs.existsSync(full)){backup=`${full}.localai-${Date.now()}.bak`;fs.copyFileSync(full,backup)}fs.writeFileSync(full,String(b.content||''),'utf8');recordActivity('workbench','Workspace file written',String(b.path),{backup:backup?workspaceRel(backup):null});json(res,200,{ok:true,path:b.path,backup:backup?workspaceRel(backup):null,size:Buffer.byteLength(String(b.content||''),'utf8')})}catch(e){storageError(res,e,400)}}
+async function apiWorkbenchSearch(req,res){if(!requireFeature(res,5))return;try{const b=await readBody(req);const query=String(b.query||'').toLowerCase().trim();if(!query)return json(res,400,{error:'query is required'});const root=safeWorkspacePath(b.path||'');const results=[];function walk(dir,depth){if(depth>5||results.length>=100)return;for(const e of fs.readdirSync(dir,{withFileTypes:true})){if(['.git','node_modules','.venv','bin','obj'].includes(e.name))continue;const p=path.join(dir,e.name);if(e.isDirectory())walk(p,depth+1);else if(e.isFile()){if(e.name.toLowerCase().includes(query))results.push({path:workspaceRel(p),match:'filename'});else{try{const st=fs.statSync(p);if(st.size<512000){const txt=fs.readFileSync(p,'utf8');const idx=txt.toLowerCase().indexOf(query);if(idx>=0)results.push({path:workspaceRel(p),match:'content',snippet:txt.slice(Math.max(0,idx-100),idx+query.length+160).replace(/\s+/g,' ')})}}catch{}}}if(results.length>=100)return}}walk(root,0);json(res,200,{results})}catch(e){storageError(res,e,400)}}
 
 function validateExternalUrl(raw){const u=new URL(String(raw||''));if(!['http:','https:'].includes(u.protocol))throw new Error('Only http/https URLs are allowed');return u}
 function stripHtml(html){return String(html||'').replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/\s+/g,' ').trim()}
-async function apiBrowserFetch(req,res){if(!requireFeature(res,6))return;try{const b=await readBody(req);const u=validateExternalUrl(b.url);const r=await fetchWithTimeout(u.toString(),{headers:{'User-Agent':'LocalAI-Appliance/1.6'}},15000);const raw=await r.text();const ct=r.headers.get('content-type')||'';const title=/<title[^>]*>([\s\S]*?)<\/title>/i.exec(raw)?.[1]?.replace(/\s+/g,' ').trim()||u.hostname;const content=ct.includes('html')?stripHtml(raw):raw;recordActivity('browser','Fetched web page',u.toString(),{status:r.status});json(res,200,{url:u.toString(),status:r.status,title,contentType:ct,text:content.slice(0,40000),truncated:content.length>40000})}catch(e){json(res,400,{error:String(e.message||e)})}}
-async function apiHttpCheck(req,res){if(!requireFeature(res,6))return;try{const b=await readBody(req);const u=validateExternalUrl(b.url);const started=Date.now();const r=await fetchWithTimeout(u.toString(),{method:String(b.method||'GET').toUpperCase()==='HEAD'?'HEAD':'GET'},10000);json(res,200,{url:u.toString(),status:r.status,ok:r.ok,latencyMs:Date.now()-started,contentType:r.headers.get('content-type')||''})}catch(e){json(res,400,{error:String(e.message||e)})}}
-async function apiComputerBatch(req,res){if(!requireFeature(res,6))return;try{const b=await readBody(req,5*1024*1024);if(b.approved!==true)return json(res,409,{error:'Explicit approval is required',approvalRequired:true});const ops=Array.isArray(b.operations)?b.operations.slice(0,30):[];const results=[];for(const op of ops){try{if(op.type==='mkdir'){fs.mkdirSync(safeWorkspacePath(op.path),{recursive:true});results.push({type:op.type,path:op.path,ok:true})}else if(op.type==='write'){const full=safeWorkspacePath(op.path);fs.mkdirSync(path.dirname(full),{recursive:true});let backup=null;if(fs.existsSync(full)){backup=`${full}.localai-${Date.now()}.bak`;fs.copyFileSync(full,backup)}fs.writeFileSync(full,String(op.content||''),'utf8');results.push({type:op.type,path:op.path,ok:true,backup:backup?workspaceRel(backup):null})}else if(op.type==='copy'){const src=safeWorkspacePath(op.from),dst=safeWorkspacePath(op.to);fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(src,dst);results.push({type:op.type,from:op.from,to:op.to,ok:true})}else{results.push({type:op.type,ok:false,error:'Unsupported operation'})}}catch(e){results.push({type:op.type,path:op.path,ok:false,error:String(e.message||e)})}}recordActivity('computer','Approved computer action batch',`${results.filter(x=>x.ok).length}/${results.length} operations completed`,{});json(res,200,{results})}catch(e){json(res,400,{error:String(e.message||e)})}}
+async function apiBrowserFetch(req,res){if(!requireFeature(res,6))return;try{const b=await readBody(req);const u=validateExternalUrl(b.url);const r=await fetchWithTimeout(u.toString(),{headers:{'User-Agent':'LocalAI-Appliance/1.6'}},15000);const raw=await r.text();const ct=r.headers.get('content-type')||'';const title=/<title[^>]*>([\s\S]*?)<\/title>/i.exec(raw)?.[1]?.replace(/\s+/g,' ').trim()||u.hostname;const content=ct.includes('html')?stripHtml(raw):raw;recordActivity('browser','Fetched web page',u.toString(),{status:r.status});json(res,200,{url:u.toString(),status:r.status,title,contentType:ct,text:content.slice(0,40000),truncated:content.length>40000})}catch(e){storageError(res,e,400)}}
+async function apiHttpCheck(req,res){if(!requireFeature(res,6))return;try{const b=await readBody(req);const u=validateExternalUrl(b.url);const started=Date.now();const r=await fetchWithTimeout(u.toString(),{method:String(b.method||'GET').toUpperCase()==='HEAD'?'HEAD':'GET'},10000);json(res,200,{url:u.toString(),status:r.status,ok:r.ok,latencyMs:Date.now()-started,contentType:r.headers.get('content-type')||''})}catch(e){storageError(res,e,400)}}
+async function apiComputerBatch(req,res){if(!requireFeature(res,6))return;try{const b=await readBody(req,5*1024*1024);if(b.approved!==true)return json(res,409,{error:'Explicit approval is required',approvalRequired:true});const ops=Array.isArray(b.operations)?b.operations.slice(0,30):[];const results=[];for(const op of ops){try{if(op.type==='mkdir'){fs.mkdirSync(safeWorkspacePath(op.path),{recursive:true});results.push({type:op.type,path:op.path,ok:true})}else if(op.type==='write'){const full=safeWorkspacePath(op.path);fs.mkdirSync(path.dirname(full),{recursive:true});let backup=null;if(fs.existsSync(full)){backup=`${full}.localai-${Date.now()}.bak`;fs.copyFileSync(full,backup)}fs.writeFileSync(full,String(op.content||''),'utf8');results.push({type:op.type,path:op.path,ok:true,backup:backup?workspaceRel(backup):null})}else if(op.type==='copy'){const src=safeWorkspacePath(op.from),dst=safeWorkspacePath(op.to);fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(src,dst);results.push({type:op.type,from:op.from,to:op.to,ok:true})}else{results.push({type:op.type,ok:false,error:'Unsupported operation'})}}catch(e){results.push({type:op.type,path:op.path,ok:false,error:String(e.message||e)})}}recordActivity('computer','Approved computer action batch',`${results.filter(x=>x.ok).length}/${results.length} operations completed`,{});json(res,200,{results})}catch(e){storageError(res,e,400)}}
 
-async function automationSchedulerTick(){if(!featureAtLeast(4))return;const items=automationStore();let changed=false;for(const a of items){if(!a.enabled||!a.nextRunAt||new Date(a.nextRunAt)>new Date())continue;await executeAutomation(a);a.nextRunAt=nextRunFor(a.schedule);a.updatedAt=nowIso();changed=true}if(changed)saveStore(AUTOMATIONS_FILE,items,250)}
+async function automationSchedulerTick(){if(!featureAtLeast(4))return;const items=automationStore();let changed=false;for(const a of items){if(!a.enabled||!a.nextRunAt||new Date(a.nextRunAt)>new Date())continue;await executeAutomation(a);a.nextRunAt=nextRunFor(a.schedule);a.updatedAt=nowIso();changed=true}if(changed)saveStore(AUTOMATIONS_STORE,items,250)}
 setInterval(()=>automationSchedulerTick().catch(()=>{}),30000).unref?.();
 // ===== END CUMULATIVE PRODUCT PLATFORM =======================================
 
 
 // ===== PRODUCT EVOLUTION PLATFORM (v1.7+) ==================================
-const NOTIFICATIONS_FILE = path.join(DATA_DIR, 'notifications.json');
-const MEMORY_FILE = path.join(DATA_DIR, 'project-memory.json');
-const APPROVALS_FILE = path.join(DATA_DIR, 'approvals.json');
-const MONITORS_FILE = path.join(DATA_DIR, 'monitors.json');
+const NOTIFICATIONS_STORE = 'notifications';
+const MEMORY_STORE = 'memory';
+const APPROVALS_STORE = 'approvals';
+const MONITORS_STORE = 'monitors';
 const { spawn } = require('child_process');
 
-function notificationStore(){ return objectStore(NOTIFICATIONS_FILE); }
-function memoryStore(){ return objectStore(MEMORY_FILE); }
-function approvalStore(){ return objectStore(APPROVALS_FILE); }
-function monitorStore(){ return objectStore(MONITORS_FILE); }
+function notificationStore(){ return objectStore(NOTIFICATIONS_STORE); }
+function memoryStore(){ return objectStore(MEMORY_STORE); }
+function approvalStore(){ return objectStore(APPROVALS_STORE); }
+function monitorStore(){ return objectStore(MONITORS_STORE); }
 
 function addNotification(kind,title,detail='',meta={}){
   const items=notificationStore();
   const item={id:makeId('note'),kind,title:normalizeTitle(title,'Notification'),detail:String(detail||'').slice(0,2000),createdAt:nowIso(),read:false,resolved:false,meta};
-  items.unshift(item); saveStore(NOTIFICATIONS_FILE,items,500); return item;
+  items.unshift(item); saveStore(NOTIFICATIONS_STORE,items,500); return item;
 }
 async function apiNotifications(req,res){
   if(!requireFeature(res,7))return;
@@ -1285,8 +1303,8 @@ async function apiNotificationUpdate(req,res){
   if(!requireFeature(res,7))return;
   try{const b=await readBody(req);const items=notificationStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Notification not found'});
     if(typeof b.read==='boolean')items[i].read=b.read;if(typeof b.resolved==='boolean')items[i].resolved=b.resolved;
-    saveStore(NOTIFICATIONS_FILE,items,500);json(res,200,{item:items[i]});
-  }catch(e){json(res,400,{error:String(e.message||e)})}
+    saveStore(NOTIFICATIONS_STORE,items,500);json(res,200,{item:items[i]});
+  }catch(e){storageError(res,e,400)}
 }
 async function apiNotificationSeed(req,res){
   if(!requireFeature(res,7))return;
@@ -1304,19 +1322,19 @@ async function apiMemoryAdd(req,res){
   if(!requireFeature(res,8))return;
   try{const b=await readBody(req);const textValue=String(b.text||'').trim();if(!textValue)return json(res,400,{error:'text is required'});
     const items=memoryStore();const item={id:makeId('mem'),projectId:String(b.projectId||''),category:String(b.category||'note'),text:textValue.slice(0,4000),pinned:!!b.pinned,createdAt:nowIso(),updatedAt:nowIso()};
-    items.unshift(item);saveStore(MEMORY_FILE,items,1000);recordActivity('memory','Saved project memory',item.text.slice(0,160),{projectId:item.projectId});json(res,201,{item});
-  }catch(e){json(res,400,{error:String(e.message||e)})}
+    items.unshift(item);saveStore(MEMORY_STORE,items,1000);recordActivity('memory','Saved project memory',item.text.slice(0,160),{projectId:item.projectId});json(res,201,{item});
+  }catch(e){storageError(res,e,400)}
 }
 async function apiMemoryUpdate(req,res){
   if(!requireFeature(res,8))return;
   try{const b=await readBody(req);const items=memoryStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Memory not found'});
     if(typeof b.text==='string'&&b.text.trim())items[i].text=b.text.slice(0,4000);if(typeof b.pinned==='boolean')items[i].pinned=b.pinned;if(typeof b.category==='string')items[i].category=b.category;
-    items[i].updatedAt=nowIso();saveStore(MEMORY_FILE,items,1000);json(res,200,{item:items[i]});
-  }catch(e){json(res,400,{error:String(e.message||e)})}
+    items[i].updatedAt=nowIso();saveStore(MEMORY_STORE,items,1000);json(res,200,{item:items[i]});
+  }catch(e){storageError(res,e,400)}
 }
 async function apiMemoryDelete(req,res){
   if(!requireFeature(res,8))return;
-  try{const b=await readBody(req);const items=memoryStore();const next=items.filter(x=>x.id!==b.id);if(next.length===items.length)return json(res,404,{error:'Memory not found'});saveStore(MEMORY_FILE,next,1000);json(res,200,{ok:true})}catch(e){json(res,400,{error:String(e.message||e)})}
+  try{const b=await readBody(req);const items=memoryStore();const next=items.filter(x=>x.id!==b.id);if(next.length===items.length)return json(res,404,{error:'Memory not found'});saveStore(MEMORY_STORE,next,1000,items);json(res,200,{ok:true})}catch(e){storageError(res,e,400)}
 }
 async function apiProjectIntelligence(req,res,urlObj){
   if(!requireFeature(res,8))return;
@@ -1334,22 +1352,22 @@ async function apiApprovals(req,res){
 }
 async function apiApprovalCreate(req,res){
   if(!requireFeature(res,9))return;
-  try{const b=await readBody(req);const items=approvalStore();const item={id:makeId('approval'),title:normalizeTitle(b.title,'Approval required'),detail:String(b.detail||'').slice(0,4000),risk:String(b.risk||'medium'),status:'pending',createdAt:nowIso(),updatedAt:nowIso(),meta:b.meta||{}};items.unshift(item);saveStore(APPROVALS_FILE,items,500);addNotification('approval',item.title,item.detail,{approvalId:item.id});json(res,201,{item})}catch(e){json(res,400,{error:String(e.message||e)})}
+  try{const b=await readBody(req);const items=approvalStore();const item={id:makeId('approval'),title:normalizeTitle(b.title,'Approval required'),detail:String(b.detail||'').slice(0,4000),risk:String(b.risk||'medium'),status:'pending',createdAt:nowIso(),updatedAt:nowIso(),meta:b.meta||{}};items.unshift(item);saveStore(APPROVALS_STORE,items,500);addNotification('approval',item.title,item.detail,{approvalId:item.id});json(res,201,{item})}catch(e){storageError(res,e,400)}
 }
 async function apiApprovalDecide(req,res){
   if(!requireFeature(res,9))return;
   try{const b=await readBody(req);const items=approvalStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Approval not found'});
     if(!['approved','rejected'].includes(b.decision))return json(res,400,{error:'decision must be approved or rejected'});
-    items[i].status=b.decision;items[i].updatedAt=nowIso();saveStore(APPROVALS_FILE,items,500);recordActivity('approval',`Approval ${b.decision}`,items[i].title,{approvalId:items[i].id});json(res,200,{item:items[i]});
-  }catch(e){json(res,400,{error:String(e.message||e)})}
+    items[i].status=b.decision;items[i].updatedAt=nowIso();saveStore(APPROVALS_STORE,items,500);recordActivity('approval',`Approval ${b.decision}`,items[i].title,{approvalId:items[i].id});json(res,200,{item:items[i]});
+  }catch(e){storageError(res,e,400)}
 }
 async function apiAgentPlan(req,res){
   if(!requireFeature(res,9))return;
   try{const b=await readBody(req);const goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const plan=buildAgentPlan(goal);
     const risky=/\b(write|modify|delete|remove|restart|execute|run command|deploy)\b/i.test(goal);
-    let approval=null;if(risky){const items=approvalStore();approval={id:makeId('approval'),title:'Agent action approval',detail:goal.slice(0,3000),risk:'medium',status:'pending',createdAt:nowIso(),updatedAt:nowIso(),meta:{goal}};items.unshift(approval);saveStore(APPROVALS_FILE,items,500);addNotification('approval',approval.title,approval.detail,{approvalId:approval.id})}
+    let approval=null;if(risky){const items=approvalStore();approval={id:makeId('approval'),title:'Agent action approval',detail:goal.slice(0,3000),risk:'medium',status:'pending',createdAt:nowIso(),updatedAt:nowIso(),meta:{goal}};items.unshift(approval);saveStore(APPROVALS_STORE,items,500);addNotification('approval',approval.title,approval.detail,{approvalId:approval.id})}
     json(res,200,{goal,plan,approval});
-  }catch(e){json(res,400,{error:String(e.message||e)})}
+  }catch(e){storageError(res,e,400)}
 }
 
 function findGitRoot(start){
@@ -1364,7 +1382,7 @@ async function apiRepoInspect(req,res,urlObj){
     let branch=head.startsWith('ref: refs/heads/')?head.slice('ref: refs/heads/'.length):'(detached)';
     let commit='';if(head.startsWith('ref:')){try{commit=fs.readFileSync(path.join(gitDir,head.slice(5)),'utf8').trim()}catch{}}else commit=head;
     json(res,200,{isRepo:true,path:workspaceRel(root),branch,commit:commit.slice(0,12)});
-  }catch(e){json(res,400,{error:String(e.message||e)})}
+  }catch(e){storageError(res,e,400)}
 }
 function allowedCommand(cmd){return ['node','npm','npx','git','python3','pytest'].includes(cmd)}
 async function apiWorkbenchCommand(req,res){
@@ -1374,7 +1392,7 @@ async function apiWorkbenchCommand(req,res){
     const args=Array.isArray(b.args)?b.args.map(x=>String(x)).slice(0,30):[];const cwd=safeWorkspacePath(b.cwd||'');
     const result=await new Promise((resolve,reject)=>{const child=spawn(cmd,args,{cwd,env:{...process.env,CI:'1'},shell:false});let stdout='',stderr='';const timer=setTimeout(()=>{child.kill('SIGKILL');reject(new Error('Command timed out'))},120000);child.stdout.on('data',d=>stdout+=d.toString());child.stderr.on('data',d=>stderr+=d.toString());child.on('error',reject);child.on('close',code=>{clearTimeout(timer);resolve({code,stdout:stdout.slice(-60000),stderr:stderr.slice(-60000)})})});
     recordActivity('workbench','Approved command executed',`${cmd} ${args.join(' ')}`.trim(),{cwd:b.cwd||'',code:result.code});json(res,200,result);
-  }catch(e){json(res,400,{error:String(e.message||e)})}
+  }catch(e){storageError(res,e,400)}
 }
 
 async function apiMonitors(req,res){
@@ -1383,7 +1401,7 @@ async function apiMonitors(req,res){
 }
 async function apiMonitorCreate(req,res){
   if(!requireFeature(res,11))return;
-  try{const b=await readBody(req);const items=monitorStore();const item={id:makeId('monitor'),name:normalizeTitle(b.name,'Monitor'),kind:String(b.kind||'health'),enabled:b.enabled!==false,createdAt:nowIso(),updatedAt:nowIso(),lastRunAt:null,lastState:'unknown'};items.unshift(item);saveStore(MONITORS_FILE,items,250);json(res,201,{item})}catch(e){json(res,400,{error:String(e.message||e)})}
+  try{const b=await readBody(req);const items=monitorStore();const item={id:makeId('monitor'),name:normalizeTitle(b.name,'Monitor'),kind:String(b.kind||'health'),enabled:b.enabled!==false,createdAt:nowIso(),updatedAt:nowIso(),lastRunAt:null,lastState:'unknown'};items.unshift(item);saveStore(MONITORS_STORE,items,250);json(res,201,{item})}catch(e){storageError(res,e,400)}
 }
 async function runHealthMonitor(item){
   const s=await getStatusAndRecordTransition();const bad=s.services.filter(x=>x.state!=='HEALTHY');
@@ -1393,7 +1411,7 @@ async function runHealthMonitor(item){
 }
 async function apiMonitorRun(req,res){
   if(!requireFeature(res,11))return;
-  try{const b=await readBody(req);const items=monitorStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Monitor not found'});const result=await runHealthMonitor(items[i]);saveStore(MONITORS_FILE,items,250);json(res,200,{item:items[i],result})}catch(e){json(res,400,{error:String(e.message||e)})}
+  try{const b=await readBody(req);const items=monitorStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Monitor not found'});const result=await runHealthMonitor(items[i]);saveStore(MONITORS_STORE,items,250);json(res,200,{item:items[i],result})}catch(e){storageError(res,e,400)}
 }
 async function apiMorningBrief(req,res){
   if(!requireFeature(res,11))return;
@@ -1404,7 +1422,7 @@ async function monitorSchedulerTick(){
   if(!featureAtLeast(11))return;
   const items=monitorStore();let changed=false;const now=Date.now();
   for(const m of items){if(!m.enabled||m.kind!=='health')continue;const last=m.lastRunAt?new Date(m.lastRunAt).getTime():0;if(now-last<15*60*1000)continue;await runHealthMonitor(m);changed=true}
-  if(changed)saveStore(MONITORS_FILE,items,250);
+  if(changed)saveStore(MONITORS_STORE,items,250);
 }
 setInterval(()=>monitorSchedulerTick().catch(()=>{}),60000).unref?.();
 // ===== END PRODUCT EVOLUTION PLATFORM ======================================
@@ -1413,11 +1431,11 @@ setInterval(()=>monitorSchedulerTick().catch(()=>{}),60000).unref?.();
 
 
 // ===== CHANGE INTELLIGENCE / SELF-DEVELOPMENT (v1.13+) ======================
-const CHANGES_FILE = path.join(DATA_DIR, 'changes.json');
+const CHANGES_STORE = 'changes';
 const CHANGE_STAGE_ROOT = path.join(DATA_DIR, 'change-staging');
 
-function changeStore(){ return objectStore(CHANGES_FILE); }
-function saveChanges(items){ saveStore(CHANGES_FILE, items, 300); }
+function changeStore(){ return objectStore(CHANGES_STORE); }
+function saveChanges(items){ saveStore(CHANGES_STORE, items, 300); }
 function publicChange(item){
   if(!item) return null;
   const copy={...item};
@@ -1748,7 +1766,7 @@ async function stageChangeById(changeId){
     for(const f of c.files||[]){const src=ensureInside(sourceRoot,f.path),dst=ensureInside(stageRoot,f.path);let before='';if(fs.existsSync(src)){before=fs.readFileSync(src,'utf8');if(c.target!=='self'){fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(src,dst)}}else if(!f.operations.some(x=>x.type==='create'))throw new Error(`${f.path}: source file does not exist`);const after=applyOpsToText(before,f.operations,f.path);fs.mkdirSync(path.dirname(dst),{recursive:true});fs.writeFileSync(dst,after,'utf8');diffs.push({path:f.path,diff:simpleDiff(before,after),changed:before!==after})}
   }catch(e){c.status='patch_failed';c.updatedAt=nowIso();c.patchError=String(e.message||e);c.validation={passed:false,checks:[{name:'patch application',result:'FAIL',detail:c.patchError}]};saveChanges(items);throw e}
   c.diffs=diffs;c.stageRoot=stageRoot;c.validation=await validateStagedChange(c,stageRoot);c.updatedAt=nowIso();
-  if(c.validation.passed){c.status='awaiting_approval';const approvals=approvalStore();const approval={id:makeId('approval'),title:`Apply change ${c.id}`,detail:`${c.summary}\n\n${c.files.length} file(s) staged and validated.`,risk:c.target==='self'?'high':'medium',status:'pending',createdAt:nowIso(),updatedAt:nowIso(),meta:{changeId:c.id,target:c.target,type:'change'}};approvals.unshift(approval);saveStore(APPROVALS_FILE,approvals,500);c.approvalId=approval.id;addNotification('approval',approval.title,approval.detail,{approvalId:approval.id,changeId:c.id})}else c.status='validation_failed';saveChanges(items);recordActivity('change',c.validation.passed?'Change staged':'Change validation failed',c.summary,{changeId:c.id});return c;
+  storage.transaction(()=>{if(c.validation.passed){c.status='awaiting_approval';const approvals=approvalStore();const approval={id:makeId('approval'),title:`Apply change ${c.id}`,detail:`${c.summary}\n\n${c.files.length} file(s) staged and validated.`,risk:c.target==='self'?'high':'medium',status:'pending',createdAt:nowIso(),updatedAt:nowIso(),meta:{changeId:c.id,target:c.target,type:'change'}};approvals.unshift(approval);saveStore(APPROVALS_STORE,approvals,500);c.approvalId=approval.id;addNotification('approval',approval.title,approval.detail,{approvalId:approval.id,changeId:c.id})}else c.status='validation_failed';saveChanges(items);recordActivity('change',c.validation.passed?'Change staged':'Change validation failed',c.summary,{changeId:c.id});});return c;
 }
 async function apiChanges(req,res,urlObj){
   if(!requireFeature(res,13))return; const id=urlObj.searchParams.get('id'); const items=changeStore();
@@ -1760,34 +1778,34 @@ async function apiChangeCapabilities(req,res){
 }
 async function apiChangePlan(req,res){
   if(!requireFeature(res,13))return;
-  try{const b=await readBody(req);const request=String(b.request||'').trim();if(!request)return json(res,400,{error:'request is required'});const target=b.target==='workspace'?'workspace':'self';const rootRel=String(b.root||'').trim();const targetRoot=target==='self'?SELF_APP_ROOT:safeWorkspacePath(rootRel);const plan=await generatePatchPlan(request,targetRoot);const items=changeStore();const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:plan.notes,files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[]};items.unshift(item);saveChanges(items);recordActivity('change','Change plan created',request.slice(0,180),{changeId:item.id,target});json(res,201,{item:publicChange(item)})}catch(e){json(res,500,{error:String(e.message||e)})}
+  try{const b=await readBody(req);const request=String(b.request||'').trim();if(!request)return json(res,400,{error:'request is required'});const target=b.target==='workspace'?'workspace':'self';const rootRel=String(b.root||'').trim();const targetRoot=target==='self'?SELF_APP_ROOT:safeWorkspacePath(rootRel);const plan=await generatePatchPlan(request,targetRoot);const items=changeStore();const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:plan.notes,files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[]};items.unshift(item);saveChanges(items);recordActivity('change','Change plan created',request.slice(0,180),{changeId:item.id,target});json(res,201,{item:publicChange(item)})}catch(e){storageError(res,e,500)}
 }
 async function apiChangeStage(req,res){
   if(!requireFeature(res,13))return;
-  try{const b=await readBody(req);const c=await stageChangeById(String(b.id||''));json(res,200,{item:publicChange(c)})}catch(e){json(res,400,{error:String(e.message||e)})}
+  try{const b=await readBody(req);const c=await stageChangeById(String(b.id||''));json(res,200,{item:publicChange(c)})}catch(e){storageError(res,e,400)}
 }
 async function apiChangeApprove(req,res){
   if(!requireFeature(res,13))return;
-  try{const b=await readBody(req);const decision=String(b.decision||'');if(!['approved','rejected'].includes(decision))return json(res,400,{error:'decision must be approved or rejected'});const items=changeStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Change not found'});const c=items[i];if(c.status!=='awaiting_approval')return json(res,409,{error:`Change is not awaiting approval (${c.status})`});c.status=decision==='approved'?'approved':'rejected';c.updatedAt=nowIso();if(c.approvalId){const approvals=approvalStore();const ai=approvals.findIndex(x=>x.id===c.approvalId);if(ai>=0){approvals[ai].status=decision;approvals[ai].updatedAt=nowIso();saveStore(APPROVALS_FILE,approvals,500)}}saveChanges(items);recordActivity('change',`Change ${decision}`,c.summary,{changeId:c.id});json(res,200,{item:publicChange(c)})}catch(e){json(res,400,{error:String(e.message||e)})}
+  try{const b=await readBody(req);const decision=String(b.decision||'');if(!['approved','rejected'].includes(decision))return json(res,400,{error:'decision must be approved or rejected'});const items=changeStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Change not found'});const c=items[i];if(c.status!=='awaiting_approval')return json(res,409,{error:`Change is not awaiting approval (${c.status})`});storage.transaction(()=>{c.status=decision==='approved'?'approved':'rejected';c.updatedAt=nowIso();if(c.approvalId){const approvals=approvalStore();const ai=approvals.findIndex(x=>x.id===c.approvalId);if(ai>=0){approvals[ai].status=decision;approvals[ai].updatedAt=nowIso();saveStore(APPROVALS_STORE,approvals,500)}}saveChanges(items);recordActivity('change',`Change ${decision}`,c.summary,{changeId:c.id});});json(res,200,{item:publicChange(c)})}catch(e){storageError(res,e,400)}
 }
 async function apiChangeRequestApply(req,res){
   if(!requireFeature(res,13))return;
   try{const b=await readBody(req);const items=changeStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Change not found'});const c=items[i];if(c.status!=='approved')return json(res,409,{error:`Change must be approved before apply (${c.status})`});if(c.target==='workspace'){const sourceRoot=safeWorkspacePath(c.root||'');const stageRoot=c.stageRoot;if(!stageRoot||!fs.existsSync(stageRoot))return json(res,409,{error:'Staged change is unavailable; stage it again'});const backups=[];for(const f of c.files){const src=ensureInside(stageRoot,f.path),dst=ensureInside(sourceRoot,f.path);fs.mkdirSync(path.dirname(dst),{recursive:true});if(fs.existsSync(dst)){const backup=`${dst}.localai-${Date.now()}.bak`;fs.copyFileSync(dst,backup);backups.push(workspaceRel(backup))}fs.copyFileSync(src,dst)}c.status='applied';c.appliedAt=nowIso();c.backups=backups;recordActivity('change','Workspace change applied',c.summary,{changeId:c.id,files:c.files.length});}
-    else{c.status='apply_requested';c.applyRequestedAt=nowIso();addNotification('change','Self-update queued',`${c.summary}. The host updater will apply the validated change.`,{changeId:c.id})}c.updatedAt=nowIso();saveChanges(items);json(res,200,{item:publicChange(c),hostUpdaterRequired:c.target==='self'})}catch(e){json(res,400,{error:String(e.message||e)})}
+    else{c.status='apply_requested';c.applyRequestedAt=nowIso();addNotification('change','Self-update queued',`${c.summary}. The host updater will apply the validated change.`,{changeId:c.id})}c.updatedAt=nowIso();saveChanges(items);json(res,200,{item:publicChange(c),hostUpdaterRequired:c.target==='self'})}catch(e){storageError(res,e,400)}
 }
 async function apiChangeDeployResult(req,res){
   if(!requireFeature(res,13))return;
-  try{const b=await readBody(req);const status=String(b.status||'');if(!['applied','rolled_back','deploy_failed'].includes(status))return json(res,400,{error:'invalid deployment status'});const items=changeStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Change not found'});items[i].status=status;items[i].deploymentDetail=String(b.detail||'').slice(0,4000);items[i].updatedAt=nowIso();if(status==='applied')items[i].appliedAt=nowIso();saveChanges(items);recordActivity('change',status==='applied'?'Self-update applied':'Self-update rollback/failure',items[i].summary,{changeId:items[i].id,status});json(res,200,{item:publicChange(items[i])})}catch(e){json(res,400,{error:String(e.message||e)})}
+  try{const b=await readBody(req);const status=String(b.status||'');if(!['applied','rolled_back','deploy_failed'].includes(status))return json(res,400,{error:'invalid deployment status'});const items=changeStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Change not found'});items[i].status=status;items[i].deploymentDetail=String(b.detail||'').slice(0,4000);items[i].updatedAt=nowIso();if(status==='applied')items[i].appliedAt=nowIso();saveChanges(items);recordActivity('change',status==='applied'?'Self-update applied':'Self-update rollback/failure',items[i].summary,{changeId:items[i].id,status});json(res,200,{item:publicChange(items[i])})}catch(e){storageError(res,e,400)}
 }
 // ===== END CHANGE INTELLIGENCE =============================================
 
 
 
 // ===== QUALITY INTELLIGENCE (v1.14+) =========================================
-const QUALITY_EVENTS_FILE = path.join(DATA_DIR, 'quality-events.json');
-const QUALITY_SCANS_FILE = path.join(DATA_DIR, 'quality-scans.json');
-function qualityEventStore(){return objectStore(QUALITY_EVENTS_FILE)}
-function qualityScanStore(){return objectStore(QUALITY_SCANS_FILE)}
+const QUALITY_EVENTS_STORE = 'qualityEvents';
+const QUALITY_SCANS_STORE = 'qualityScans';
+function qualityEventStore(){return objectStore(QUALITY_EVENTS_STORE)}
+function qualityScanStore(){return objectStore(QUALITY_SCANS_STORE)}
 function qualitySeverity(type,message){
   const t=String(type||'').toLowerCase(),m=String(message||'').toLowerCase();
   if(t==='error'||/uncaught|syntaxerror|referenceerror|typeerror|failed to load/.test(m))return 'high';
@@ -1799,8 +1817,8 @@ async function apiQualityClientEvent(req,res){
   try{
     const b=await readBody(req,256*1024);const message=String(b.message||'').slice(0,4000);if(!message)return json(res,400,{error:'message is required'});
     const items=qualityEventStore();const item={id:makeId('qevt'),type:String(b.type||'error').slice(0,40),severity:qualitySeverity(b.type,message),message,source:String(b.source||'').slice(0,1000),line:Number(b.line)||null,column:Number(b.column)||null,stack:String(b.stack||'').slice(0,12000),url:String(b.url||'').slice(0,1200),createdAt:nowIso()};
-    items.unshift(item);saveStore(QUALITY_EVENTS_FILE,items,500);recordActivity('quality','Client quality event',message.slice(0,180),{qualityEventId:item.id,severity:item.severity});json(res,201,{item});
-  }catch(e){json(res,400,{error:String(e.message||e)})}
+    items.unshift(item);saveStore(QUALITY_EVENTS_STORE,items,500);recordActivity('quality','Client quality event',message.slice(0,180),{qualityEventId:item.id,severity:item.severity});json(res,201,{item});
+  }catch(e){storageError(res,e,400)}
 }
 function referencedDomIds(jsText){const ids=new Set();const rx=/\$\(['"]([^'"]+)['"]\)/g;let m;while((m=rx.exec(String(jsText||''))))ids.add(m[1]);return [...ids]}
 function htmlIds(htmlText){const ids=new Set();const rx=/\bid=["']([^"']+)["']/g;let m;while((m=rx.exec(String(htmlText||''))))ids.add(m[1]);return ids}
@@ -1813,18 +1831,18 @@ async function runQualityScan(){
   try{const st=await getStatusAndRecordTransition();const coreBad=st.services.filter(x=>x.required!==false&&x.state!=='HEALTHY'),optionalBad=st.services.filter(x=>x.required===false&&x.state!=='HEALTHY');if(coreBad.length)add('service health','FAIL',coreBad.map(x=>`${x.label}:${x.state}`).join(', '));else if(optionalBad.length)add('service health','WARN',`Optional: ${optionalBad.map(x=>`${x.label}:${x.state}`).join(', ')}`);else add('service health','PASS',st.overall)}catch(e){add('service health','FAIL',String(e.message||e))}
   const recent=qualityEventStore().filter(x=>Date.now()-new Date(x.createdAt).getTime()<24*60*60*1000);const high=recent.filter(x=>x.severity==='high');add('browser runtime 24h',high.length===0,high.length?`${high.length} high-severity event(s)`:`${recent.length} event(s), none high severity`);
   const scan={id:makeId('qscan'),createdAt:nowIso(),passed:checks.every(x=>x.result!=='FAIL'),checks,summary:{pass:checks.filter(x=>x.result==='PASS').length,warn:checks.filter(x=>x.result==='WARN').length,fail:checks.filter(x=>x.result==='FAIL').length,events24h:recent.length,high24h:high.length}};
-  const scans=qualityScanStore();scans.unshift(scan);saveStore(QUALITY_SCANS_FILE,scans,100);return scan;
+  const scans=qualityScanStore();scans.unshift(scan);saveStore(QUALITY_SCANS_STORE,scans,100);return scan;
 }
 async function apiQuality(req,res){if(!requireFeature(res,14))return;const scans=qualityScanStore(),events=qualityEventStore();json(res,200,{latest:scans[0]||null,scans:scans.slice(0,20),events:events.slice(0,80),summary:{events:events.length,high:events.filter(x=>x.severity==='high').length}})}
-async function apiQualityScan(req,res){if(!requireFeature(res,14))return;try{const scan=await runQualityScan();recordActivity('quality',scan.passed?'Quality scan passed':'Quality scan found issues',`${scan.summary.pass} pass / ${scan.summary.warn||0} warn / ${scan.summary.fail} fail`,{scanId:scan.id});json(res,200,{scan})}catch(e){json(res,500,{error:String(e.message||e)})}}
+async function apiQualityScan(req,res){if(!requireFeature(res,14))return;try{const scan=await runQualityScan();recordActivity('quality',scan.passed?'Quality scan passed':'Quality scan found issues',`${scan.summary.pass} pass / ${scan.summary.warn||0} warn / ${scan.summary.fail} fail`,{scanId:scan.id});json(res,200,{scan})}catch(e){storageError(res,e,500)}}
 // ===== END QUALITY INTELLIGENCE =============================================
 
 
 
 // ===== AUTONOMOUS ISSUE DETECTION (v1.15+) ==================================
-const ISSUES_FILE = path.join(DATA_DIR, 'issues.json');
-function issueStore(){return objectStore(ISSUES_FILE)}
-function saveIssues(items){saveStore(ISSUES_FILE,items,500)}
+const ISSUES_STORE = 'issues';
+function issueStore(){return objectStore(ISSUES_STORE)}
+function saveIssues(items){saveStore(ISSUES_STORE,items,500)}
 function issueKey(kind,name){return `${String(kind||'issue').toLowerCase()}:${String(name||'unknown').toLowerCase().replace(/\s+/g,' ').slice(0,240)}`}
 function upsertIssue(items,spec){
   const key=issueKey(spec.kind,spec.name);let item=items.find(x=>x.key===key&&x.status!=='ignored');
@@ -1840,11 +1858,11 @@ async function detectIssues(){
   saveIssues(items);return {scan,items:items.slice(0,200),detected:seen.length,open:items.filter(x=>x.status==='open').length};
 }
 async function apiIssues(req,res){if(!requireFeature(res,15))return;const items=issueStore();json(res,200,{items:items.slice(0,250),open:items.filter(x=>x.status==='open').length,high:items.filter(x=>x.status==='open'&&x.severity==='high').length})}
-async function apiIssuesScan(req,res){if(!requireFeature(res,15))return;try{const r=await detectIssues();recordActivity('issue',r.open?'Issue scan complete':'Issue scan clear',`${r.open} open issue(s)`,{detected:r.detected});if(r.open)addNotification('issue','Quality issues detected',`${r.open} issue(s) are open; ${r.items.filter(x=>x.status==='open'&&x.severity==='high').length} high severity.`,{});json(res,200,r)}catch(e){json(res,500,{error:String(e.message||e)})}}
-async function apiIssueUpdate(req,res){if(!requireFeature(res,15))return;try{const b=await readBody(req);const items=issueStore(),i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Issue not found'});if(['open','resolved','ignored'].includes(b.status))items[i].status=b.status;items[i].updatedAt=nowIso();saveIssues(items);json(res,200,{item:items[i]})}catch(e){json(res,400,{error:String(e.message||e)})}}
+async function apiIssuesScan(req,res){if(!requireFeature(res,15))return;try{const r=await detectIssues();recordActivity('issue',r.open?'Issue scan complete':'Issue scan clear',`${r.open} open issue(s)`,{detected:r.detected});if(r.open)addNotification('issue','Quality issues detected',`${r.open} issue(s) are open; ${r.items.filter(x=>x.status==='open'&&x.severity==='high').length} high severity.`,{});json(res,200,r)}catch(e){storageError(res,e,500)}}
+async function apiIssueUpdate(req,res){if(!requireFeature(res,15))return;try{const b=await readBody(req);const items=issueStore(),i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Issue not found'});if(['open','resolved','ignored'].includes(b.status))items[i].status=b.status;items[i].updatedAt=nowIso();saveIssues(items);json(res,200,{item:items[i]})}catch(e){storageError(res,e,400)}}
 async function apiIssuePrepareChange(req,res){
   if(!requireFeature(res,15))return;
-  try{const b=await readBody(req);const issues=issueStore(),ii=issues.findIndex(x=>x.id===b.id);if(ii<0)return json(res,404,{error:'Issue not found'});const issue=issues[ii];const request=`Fix this Local AI issue while preserving existing behavior.\nIssue: ${issue.name}\nSeverity: ${issue.severity}\nDetails:\n${issue.detail}`;const plan=await generatePatchPlan(request,SELF_APP_ROOT);const changes=changeStore();const item={id:makeId('chg'),target:'self',root:'app',request,summary:plan.summary,notes:`Prepared from issue ${issue.id}. ${plan.notes||''}`.trim(),files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[],sourceIssueId:issue.id};changes.unshift(item);saveChanges(changes);issue.changeId=item.id;issue.updatedAt=nowIso();saveIssues(issues);recordActivity('issue','Issue promoted to change',issue.name,{issueId:issue.id,changeId:item.id});json(res,201,{issue,item:publicChange(item)})}catch(e){json(res,500,{error:String(e.message||e)})}
+  try{const b=await readBody(req);const issues=issueStore(),ii=issues.findIndex(x=>x.id===b.id);if(ii<0)return json(res,404,{error:'Issue not found'});const issue=issues[ii];const request=`Fix this Local AI issue while preserving existing behavior.\nIssue: ${issue.name}\nSeverity: ${issue.severity}\nDetails:\n${issue.detail}`;const plan=await generatePatchPlan(request,SELF_APP_ROOT);const changes=changeStore();const item={id:makeId('chg'),target:'self',root:'app',request,summary:plan.summary,notes:`Prepared from issue ${issue.id}. ${plan.notes||''}`.trim(),files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[],sourceIssueId:issue.id};changes.unshift(item);saveChanges(changes);issue.changeId=item.id;issue.updatedAt=nowIso();saveIssues(issues);recordActivity('issue','Issue promoted to change',issue.name,{issueId:issue.id,changeId:item.id});json(res,201,{issue,item:publicChange(item)})}catch(e){storageError(res,e,500)}
 }
 async function issueSchedulerTick(){if(!featureAtLeast(15))return;try{await detectIssues()}catch{}}
 setInterval(()=>issueSchedulerTick(),5*60*1000).unref?.();
@@ -1853,9 +1871,9 @@ setInterval(()=>issueSchedulerTick(),5*60*1000).unref?.();
 
 
 // ===== ENGINEERING AGENT RUNTIME (v1.16+) ===================================
-const ENGINEERING_RUNS_FILE = path.join(DATA_DIR, 'engineering-runs.json');
-function engineeringRunStore(){return objectStore(ENGINEERING_RUNS_FILE)}
-function saveEngineeringRuns(items){saveStore(ENGINEERING_RUNS_FILE,items,300)}
+const ENGINEERING_RUNS_STORE = 'engineeringRuns';
+function engineeringRunStore(){return objectStore(ENGINEERING_RUNS_STORE)}
+function saveEngineeringRuns(items){saveStore(ENGINEERING_RUNS_STORE,items,300)}
 function engineeringStep(run,name,state='pending',detail=''){const item={name,state,detail:String(detail||'').slice(0,6000),at:nowIso()};run.steps.push(item);run.updatedAt=nowIso();return item}
 function createEngineeringChange(request,target,rootRel,runId,attempt){
   const targetRoot=target==='self'?SELF_APP_ROOT:safeWorkspacePath(rootRel);return generatePatchPlan(request,targetRoot).then(plan=>{const changes=changeStore();const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:`Engineering run ${runId}, attempt ${attempt}. ${plan.notes||''}`.trim(),files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[],sourceEngineeringRunId:runId,engineeringAttempt:attempt};changes.unshift(item);saveChanges(changes);return item})
@@ -1976,32 +1994,32 @@ async function executeEngineeringRun(run){
 }
 async function apiEngineeringRun(req,res){
   if(!requireFeature(res,16))return;
-  try{const b=await readBody(req);const request=String(b.request||'').trim();if(!request)return json(res,400,{error:'request is required'});const target=b.target==='workspace'?'workspace':'self',rootRel=String(b.root||'repos').trim(),maxAttempts=Math.max(1,Math.min(3,Number(b.maxAttempts)||3));const run=createEngineeringRunRecord(request,target,rootRel,maxAttempts);await executeEngineeringRun(run);json(res,200,{run})}catch(e){json(res,500,{error:String(e.message||e)})}
+  try{const b=await readBody(req);const request=String(b.request||'').trim();if(!request)return json(res,400,{error:'request is required'});const target=b.target==='workspace'?'workspace':'self',rootRel=String(b.root||'repos').trim(),maxAttempts=Math.max(1,Math.min(3,Number(b.maxAttempts)||3));const run=createEngineeringRunRecord(request,target,rootRel,maxAttempts);await executeEngineeringRun(run);json(res,200,{run})}catch(e){storageError(res,e,500)}
 }
 async function apiEngineeringStart(req,res){
   if(!requireFeature(res,16))return;
-  try{const b=await readBody(req);const request=String(b.request||'').trim();if(!request)return json(res,400,{error:'request is required'});const target=b.target==='workspace'?'workspace':'self',rootRel=String(b.root||'repos').trim(),maxAttempts=Math.max(1,Math.min(3,Number(b.maxAttempts)||3));const run=createEngineeringRunRecord(request,target,rootRel,maxAttempts);json(res,202,{run});setImmediate(()=>executeEngineeringRun(run).catch(e=>{run.status='needs_attention';run.error=String(e.message||e);run.updatedAt=nowIso();engineeringStep(run,'Stopped safely','error',run.error);refreshEngineeringRun(run)}))}catch(e){json(res,500,{error:String(e.message||e)})}
+  try{const b=await readBody(req);const request=String(b.request||'').trim();if(!request)return json(res,400,{error:'request is required'});const target=b.target==='workspace'?'workspace':'self',rootRel=String(b.root||'repos').trim(),maxAttempts=Math.max(1,Math.min(3,Number(b.maxAttempts)||3));const run=createEngineeringRunRecord(request,target,rootRel,maxAttempts);json(res,202,{run});setImmediate(()=>executeEngineeringRun(run).catch(e=>{run.status='needs_attention';run.error=String(e.message||e);run.updatedAt=nowIso();engineeringStep(run,'Stopped safely','error',run.error);refreshEngineeringRun(run)}))}catch(e){storageError(res,e,500)}
 }
 // ===== END ENGINEERING AGENT RUNTIME ========================================
 
 
 
 // ===== POWERSHELL WORKBENCH / HOST BRIDGE (v1.17+) ==========================
-const POWERSHELL_JOBS_FILE = path.join(DATA_DIR, 'powershell-jobs.json');
-function powerShellJobStore(){return objectStore(POWERSHELL_JOBS_FILE)}
-function savePowerShellJobs(items){saveStore(POWERSHELL_JOBS_FILE,items,250)}
+const POWERSHELL_JOBS_STORE = 'powerShellJobs';
+function powerShellJobStore(){return objectStore(POWERSHELL_JOBS_STORE)}
+function savePowerShellJobs(items){saveStore(POWERSHELL_JOBS_STORE,items,250)}
 function localUiRequest(req){const raw=String(req.headers.host||'').toLowerCase();const host=raw.startsWith('[')?raw.slice(1,raw.indexOf(']')):raw.split(':')[0];return host==='127.0.0.1'||host==='localhost'||host==='::1'}
 function requireLocalUi(req,res){if(!localUiRequest(req)){json(res,403,{error:'PowerShell Workbench is available only from http://127.0.0.1 or localhost on the Windows host.'});return false}if(!POWERSHELL_UI_TOKEN||String(req.headers['x-localai-powershell-token']||'')!==POWERSHELL_UI_TOKEN){json(res,401,{error:'PowerShell Workbench is locked. Enter the local UI token from C:\\LocalAI\\powershell-bridge\\ui-token.txt.'});return false}return true}
 function hostBridgeAuthorized(req){if(!POWERSHELL_BRIDGE_TOKEN)return false;const auth=String(req.headers.authorization||'');return auth===`Bearer ${POWERSHELL_BRIDGE_TOKEN}`}
 function normalizeWindowsCwd(value){let v=String(value||'C:\\Projects').trim().replace(/\//g,'\\');if(/\.\.(?:\\|$)/.test(v))throw new Error('Working directory may not contain ..');const low=v.toLowerCase();const roots=['c:\\projects','c:\\repos','c:\\localai'];if(!roots.some(r=>low===r||low.startsWith(r+'\\')))throw new Error('Working directory must be under C:\\Projects, C:\\repos, or C:\\LocalAI');return v}
 function powerShellRisk(script){const s=String(script||'').toLowerCase();if(/format-volume|clear-disk|remove-item\s+[^\r\n]*-recurse|stop-computer|restart-computer|docker\s+(?:rm|system\s+prune)|remove-netfirewallrule/.test(s))return 'high';if(/set-content|add-content|copy-item|move-item|remove-item|new-item|docker\s+(?:restart|stop|start)|invoke-webrequest|invoke-restmethod/.test(s))return 'medium';return 'low'}
 async function apiPowerShellJobs(req,res){if(!requireFeature(res,17)||!requireLocalUi(req,res))return;const items=powerShellJobStore();json(res,200,{items:items.slice(0,100),bridgeConfigured:!!POWERSHELL_BRIDGE_TOKEN,localOnly:true})}
-async function apiPowerShellCreate(req,res){if(!requireFeature(res,17)||!requireLocalUi(req,res))return;try{const b=await readBody(req,512*1024);const script=String(b.script||'');if(!script.trim())return json(res,400,{error:'script is required'});if(script.length>150000)return json(res,413,{error:'script is too large'});const item={id:makeId('ps'),script,cwd:normalizeWindowsCwd(b.cwd),timeoutSec:Math.max(5,Math.min(600,Number(b.timeoutSec)||120)),risk:powerShellRisk(script),status:'pending_approval',createdAt:nowIso(),updatedAt:nowIso(),stdout:'',stderr:'',exitCode:null};const items=powerShellJobStore();items.unshift(item);savePowerShellJobs(items);recordActivity('powershell','PowerShell script prepared',`${item.risk} risk Ãƒâ€šÃ‚Â· ${item.cwd}`,{jobId:item.id});json(res,201,{item})}catch(e){json(res,400,{error:String(e.message||e)})}}
-async function apiPowerShellApprove(req,res){if(!requireFeature(res,17)||!requireLocalUi(req,res))return;try{const b=await readBody(req);const items=powerShellJobStore();const item=items.find(x=>x.id===b.id);if(!item)return json(res,404,{error:'PowerShell job not found'});if(item.status!=='pending_approval')return json(res,409,{error:`Job is not awaiting approval (${item.status})`});const decision=String(b.decision||'');if(!['approved','rejected'].includes(decision))return json(res,400,{error:'decision must be approved or rejected'});item.status=decision;item.updatedAt=nowIso();savePowerShellJobs(items);recordActivity('powershell',`PowerShell job ${decision}`,item.id,{jobId:item.id,risk:item.risk});json(res,200,{item})}catch(e){json(res,400,{error:String(e.message||e)})}}
-async function apiPowerShellRequestRun(req,res){if(!requireFeature(res,17)||!requireLocalUi(req,res))return;try{const b=await readBody(req);if(String(b.confirmation||'')!=='RUN')return json(res,409,{error:'Type RUN to queue an approved PowerShell job'});const items=powerShellJobStore();const item=items.find(x=>x.id===b.id);if(!item)return json(res,404,{error:'PowerShell job not found'});if(item.status!=='approved')return json(res,409,{error:`Job must be approved before queueing (${item.status})`});if(!POWERSHELL_BRIDGE_TOKEN)return json(res,503,{error:'PowerShell host bridge is not configured'});item.status='run_requested';item.runRequestedAt=nowIso();item.updatedAt=nowIso();savePowerShellJobs(items);recordActivity('powershell','PowerShell job queued',item.id,{jobId:item.id});json(res,200,{item})}catch(e){json(res,400,{error:String(e.message||e)})}}
-async function apiPowerShellCancel(req,res){if(!requireFeature(res,17)||!requireLocalUi(req,res))return;try{const b=await readBody(req);const items=powerShellJobStore();const item=items.find(x=>x.id===b.id);if(!item)return json(res,404,{error:'PowerShell job not found'});if(!['pending_approval','approved','run_requested'].includes(item.status))return json(res,409,{error:`Job cannot be cancelled from ${item.status}`});item.status='cancelled';item.updatedAt=nowIso();savePowerShellJobs(items);json(res,200,{item})}catch(e){json(res,400,{error:String(e.message||e)})}}
+async function apiPowerShellCreate(req,res){if(!requireFeature(res,17)||!requireLocalUi(req,res))return;try{const b=await readBody(req,512*1024);const script=String(b.script||'');if(!script.trim())return json(res,400,{error:'script is required'});if(script.length>150000)return json(res,413,{error:'script is too large'});const item={id:makeId('ps'),script,cwd:normalizeWindowsCwd(b.cwd),timeoutSec:Math.max(5,Math.min(600,Number(b.timeoutSec)||120)),risk:powerShellRisk(script),status:'pending_approval',createdAt:nowIso(),updatedAt:nowIso(),stdout:'',stderr:'',exitCode:null};const items=powerShellJobStore();items.unshift(item);savePowerShellJobs(items);recordActivity('powershell','PowerShell script prepared',`${item.risk} risk Ãƒâ€šÃ‚Â· ${item.cwd}`,{jobId:item.id});json(res,201,{item})}catch(e){storageError(res,e,400)}}
+async function apiPowerShellApprove(req,res){if(!requireFeature(res,17)||!requireLocalUi(req,res))return;try{const b=await readBody(req);const items=powerShellJobStore();const item=items.find(x=>x.id===b.id);if(!item)return json(res,404,{error:'PowerShell job not found'});if(item.status!=='pending_approval')return json(res,409,{error:`Job is not awaiting approval (${item.status})`});const decision=String(b.decision||'');if(!['approved','rejected'].includes(decision))return json(res,400,{error:'decision must be approved or rejected'});item.status=decision;item.updatedAt=nowIso();savePowerShellJobs(items);recordActivity('powershell',`PowerShell job ${decision}`,item.id,{jobId:item.id,risk:item.risk});json(res,200,{item})}catch(e){storageError(res,e,400)}}
+async function apiPowerShellRequestRun(req,res){if(!requireFeature(res,17)||!requireLocalUi(req,res))return;try{const b=await readBody(req);if(String(b.confirmation||'')!=='RUN')return json(res,409,{error:'Type RUN to queue an approved PowerShell job'});const items=powerShellJobStore();const item=items.find(x=>x.id===b.id);if(!item)return json(res,404,{error:'PowerShell job not found'});if(item.status!=='approved')return json(res,409,{error:`Job must be approved before queueing (${item.status})`});if(!POWERSHELL_BRIDGE_TOKEN)return json(res,503,{error:'PowerShell host bridge is not configured'});item.status='run_requested';item.runRequestedAt=nowIso();item.updatedAt=nowIso();savePowerShellJobs(items);recordActivity('powershell','PowerShell job queued',item.id,{jobId:item.id});json(res,200,{item})}catch(e){storageError(res,e,400)}}
+async function apiPowerShellCancel(req,res){if(!requireFeature(res,17)||!requireLocalUi(req,res))return;try{const b=await readBody(req);const items=powerShellJobStore();const item=items.find(x=>x.id===b.id);if(!item)return json(res,404,{error:'PowerShell job not found'});if(!['pending_approval','approved','run_requested'].includes(item.status))return json(res,409,{error:`Job cannot be cancelled from ${item.status}`});item.status='cancelled';item.updatedAt=nowIso();savePowerShellJobs(items);json(res,200,{item})}catch(e){storageError(res,e,400)}}
 async function apiPowerShellHostNext(req,res){if(!requireFeature(res,17))return;if(!hostBridgeAuthorized(req))return json(res,401,{error:'Unauthorized host bridge'});const items=powerShellJobStore();const item=[...items].reverse().find(x=>x.status==='run_requested');if(!item)return json(res,200,{item:null});item.status='running';item.hostStartedAt=nowIso();item.updatedAt=nowIso();savePowerShellJobs(items);json(res,200,{item:{id:item.id,script:item.script,cwd:item.cwd,timeoutSec:item.timeoutSec,risk:item.risk}})}
-async function apiPowerShellHostResult(req,res){if(!requireFeature(res,17))return;if(!hostBridgeAuthorized(req))return json(res,401,{error:'Unauthorized host bridge'});try{const b=await readBody(req,512*1024);const items=powerShellJobStore();const item=items.find(x=>x.id===b.id);if(!item)return json(res,404,{error:'PowerShell job not found'});if(item.status!=='running')return json(res,409,{error:`Job is not running (${item.status})`});item.exitCode=Number.isFinite(Number(b.exitCode))?Number(b.exitCode):-1;item.stdout=String(b.stdout||'').slice(-120000);item.stderr=String(b.stderr||'').slice(-120000);item.durationMs=Math.max(0,Number(b.durationMs)||0);item.status=item.exitCode===0?'completed':'failed';item.completedAt=nowIso();item.updatedAt=nowIso();savePowerShellJobs(items);recordActivity('powershell',item.status==='completed'?'PowerShell job completed':'PowerShell job failed',`${item.id} Ãƒâ€šÃ‚Â· exit ${item.exitCode}`,{jobId:item.id});json(res,200,{ok:true,item})}catch(e){json(res,400,{error:String(e.message||e)})}}
+async function apiPowerShellHostResult(req,res){if(!requireFeature(res,17))return;if(!hostBridgeAuthorized(req))return json(res,401,{error:'Unauthorized host bridge'});try{const b=await readBody(req,512*1024);const items=powerShellJobStore();const item=items.find(x=>x.id===b.id);if(!item)return json(res,404,{error:'PowerShell job not found'});if(item.status!=='running')return json(res,409,{error:`Job is not running (${item.status})`});item.exitCode=Number.isFinite(Number(b.exitCode))?Number(b.exitCode):-1;item.stdout=String(b.stdout||'').slice(-120000);item.stderr=String(b.stderr||'').slice(-120000);item.durationMs=Math.max(0,Number(b.durationMs)||0);item.status=item.exitCode===0?'completed':'failed';item.completedAt=nowIso();item.updatedAt=nowIso();savePowerShellJobs(items);recordActivity('powershell',item.status==='completed'?'PowerShell job completed':'PowerShell job failed',`${item.id} Ãƒâ€šÃ‚Â· exit ${item.exitCode}`,{jobId:item.id});json(res,200,{ok:true,item})}catch(e){storageError(res,e,400)}}
 // ===== END POWERSHELL WORKBENCH =============================================
 
 const server = http.createServer(async (req, res) => {
@@ -2009,7 +2027,8 @@ const server = http.createServer(async (req, res) => {
   const p = urlObj.pathname;
 
   try {
-    if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION });
+    if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, storage: { engine: 'sqlite', schemaVersion: 1 } });
+    if (req.method === 'GET' && p === '/api/storage/status') return json(res, 200, storage.status());
     if (req.method === 'GET' && p === '/api/status') return await apiStatus(req, res);
     if (req.method === 'GET' && p === '/api/models') return await apiModels(req, res);
     if (req.method === 'GET' && p === '/api/config') return apiConfig(req, res);
@@ -2029,7 +2048,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/images/view') return await apiImageView(req, res, urlObj);
 
     // cumulative release features
-    if (req.method === 'GET' && p === '/api/projects') return await apiProjects(req,res);
+    if (req.method === 'GET' && p === '/api/projects') return await apiProjects(req,res,urlObj);
     if (req.method === 'POST' && p === '/api/projects/create') return await apiProjectsCreate(req,res);
     if (req.method === 'POST' && p === '/api/projects/update') return await apiProjectsUpdate(req,res);
     if (req.method === 'GET' && p === '/api/conversations') return await apiConversations(req,res,urlObj);
@@ -2117,7 +2136,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET') return serveStatic(req, res, p);
     json(res, 404, { error: 'Not found' });
   } catch (e) {
-    json(res, 500, { error: String(e.message || e) });
+    storageError(res,e,500);
   }
 });
 
@@ -2126,4 +2145,12 @@ migrateLegacyActivityToLibrary();
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`${new Date().toISOString()} Local AI Appliance v${APP_VERSION} listening on 0.0.0.0:${PORT}`);
   recordActivity('system', 'Appliance started', 'Local AI Appliance v${APP_VERSION} is ready.');
+});
+
+
+// Finish in-flight requests before closing the authoritative data store.
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
+  server.close(() => { storage.close(); process.exit(0); });
+  server.closeIdleConnections();
+  setTimeout(() => { storage.close(); process.exit(0); }, 10000).unref();
 });
