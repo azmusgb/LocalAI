@@ -32,6 +32,26 @@ jobs:
           node --check tests/integration-hub-ui.mjs
           node --check tests/agent-orchestrator.test.cjs
 
+      - name: PowerShell syntax
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem -Path deploy -Filter '*.ps1' -File | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $failed = $true
+              Write-Host "::error file=$($_.FullName)::PowerShell parse failure"
+              $errors | ForEach-Object { Write-Host $_.Message }
+            }
+          }
+          if ($failed) { exit 1 }
+
       - name: Required files
         run: |
           test -f package.json
@@ -43,6 +63,11 @@ jobs:
           test -f app/public/sw.js
           test -f app/public/integration-hub-v2.js
           test -f app/public/integration-hub-v2.css
+          test -f deploy/Deploy-LocalAI.ps1
+          test -f deploy/Get-LocalAI-DeployStatus.ps1
+          test -f deploy/Install-LocalAI-DeployAgent.ps1
+          test -f deploy/Rollback-LocalAI.ps1
+          test -f deploy/Test-LocalAI-Candidate.ps1
           test -f docs/INTEGRATIONS.md
           test -f tests/agent-operations-ui.mjs
           test -f tests/integration-hub-ui.mjs
