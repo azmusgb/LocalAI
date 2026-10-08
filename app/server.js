@@ -178,11 +178,16 @@ function migrateLegacyActivityToLibrary() {
 }
 async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const externalSignal = options?.signal || null;
+  const abortFromExternal = () => controller.abort(externalSignal?.reason);
+  if (externalSignal?.aborted) abortFromExternal();
+  else externalSignal?.addEventListener('abort', abortFromExternal, { once: true });
+  const timer = setTimeout(() => controller.abort(new Error('Request timed out')), timeoutMs);
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } finally {
     clearTimeout(timer);
+    externalSignal?.removeEventListener('abort', abortFromExternal);
   }
 }
 
@@ -312,11 +317,11 @@ async function apiModels(req, res) {
   }
 }
 
-async function searxSearch(query) {
+async function searxSearch(query, signal = null) {
   const u = new URL(`${SEARXNG_URL}/search`);
   u.searchParams.set('q', query);
   u.searchParams.set('format', 'json');
-  const r = await fetchWithTimeout(u.toString(), {}, 8000);
+  const r = await fetchWithTimeout(u.toString(), { signal }, 8000);
   if (!r.ok) throw new Error(`Web research returned HTTP ${r.status}`);
   const j = await r.json();
   return (j.results || []).slice(0, 6).map(x => ({
@@ -424,7 +429,14 @@ function systemPrompt(researchContext = '', capabilityContext = '') {
   };
 }
 
-async function prepareChat(body) {
+async function prepareChat(body, signal = null) {
+  const throwIfAborted = () => {
+    if (!signal?.aborted) return;
+    const error = new Error('Run cancelled');
+    error.name = 'AbortError';
+    throw error;
+  };
+  throwIfAborted();
   const model = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : MODEL;
   const messages = sanitizeMessages(body.messages);
   if (!messages.length) throw new Error('messages[] is required');
@@ -434,7 +446,8 @@ async function prepareChat(body) {
   if (body.webSearch === true) {
     const lastUser = [...messages].reverse().find(m => m.role === 'user');
     if (lastUser) {
-      sources = await searxSearch(lastUser.content);
+      sources = await searxSearch(lastUser.content, signal);
+      throwIfAborted();
       researchContext = sources.map((s, i) =>
         `[${i + 1}] ${s.title}\n${s.content}\n${s.url}`
       ).join('\n\n');
@@ -442,7 +455,13 @@ async function prepareChat(body) {
   }
 
   let capabilityContext = '';
-  try { capabilityContext = capabilityPrompt(await getCapabilitiesSnapshot()); } catch {}
+  try {
+    capabilityContext = capabilityPrompt(await getCapabilitiesSnapshot());
+    throwIfAborted();
+  } catch (error) {
+    if (signal?.aborted) throw error;
+  }
+  throwIfAborted();
   return { model, messages, sources, researchContext, capabilityContext };
 }
 
@@ -513,7 +532,19 @@ async function apiChatStream(req, res) {
     const body = await readBody(req);
     execution = createChatExecution(body, true);
     runLedger.start(execution.id, body.webSearch === true ? 'Research run started' : 'Chat run started');
-    const prep = await prepareChat(body);
+    controller = new AbortController();
+    activeRunControllers.set(execution.id, controller);
+    res.on('close', () => {
+      if (!res.writableEnded) {
+        runLedger.cancel(execution.id, 'Client disconnected');
+        if (!controller.signal.aborted) controller.abort(new Error('Client disconnected'));
+      }
+    });
+
+    const prep = await prepareChat(body, controller.signal);
+    if (controller.signal.aborted || runLedger.get(execution.id)?.status === 'cancelled') {
+      throw new Error('Run cancelled');
+    }
     const started = Date.now();
 
     res.writeHead(200, {
@@ -529,15 +560,6 @@ async function apiChatStream(req, res) {
     };
 
     send('meta', { model: prep.model, sources: prep.sources, runId: execution.id });
-
-    controller = new AbortController();
-    activeRunControllers.set(execution.id, controller);
-    res.on('close', () => {
-      if (!res.writableEnded) {
-        runLedger.cancel(execution.id, 'Client disconnected');
-        controller.abort();
-      }
-    });
 
     const upstream = await fetch(`${OLLAMA_URL}/api/chat`, {
       method: 'POST',
@@ -610,12 +632,15 @@ async function apiChatStream(req, res) {
     res.end();
   } catch (e) {
     const current = execution ? runLedger.get(execution.id) : null;
-    if (execution && current?.status !== 'cancelled') runLedger.fail(execution.id, e);
+    const cancelled = current?.status === 'cancelled' || (controller?.signal.aborted && current?.status !== 'failed');
+    if (execution && !cancelled) runLedger.fail(execution.id, e);
     if (!res.headersSent) {
-      storageError(res,e,500);
+      if (!res.destroyed) {
+        if (cancelled) json(res, 409, { error: 'Run cancelled', runId: execution?.id || null });
+        else storageError(res,e,500);
+      }
     } else {
       try {
-        const cancelled = execution && runLedger.get(execution.id)?.status === 'cancelled';
         res.write(`event: ${cancelled ? 'cancelled' : 'error'}\ndata: ${JSON.stringify(cancelled ? { runId: execution.id } : { error: String(e.message || e), runId: execution?.id || null })}\n\n`);
         res.end();
       } catch {}
