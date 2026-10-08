@@ -70,3 +70,15 @@ test('retry is explicitly allowlisted and engineering remains approval-driven', 
   assert.doesNotMatch(server, /new Set\([^\n]*\/api\/engineering/);
   assert.match(server, /This run does not support retry/);
 });
+
+test('retry preserves parent lineage and increments attempts for native and legacy runs', () => {
+  const retry = functionSource('apiRunRetry');
+  assert.match(retry, /const nextAttempt = Math\.max\(1, Number\(parent\?\.attempt\) \|\| 1\) \+ 1/);
+  assert.match(retry, /runLedger\.update\(result\.runId, \{ attempt: nextAttempt, retryOf: id \}/);
+  assert.match(retry, /retry\.attempt = nextAttempt/);
+  assert.match(retry, /retry\.retryOf = id/);
+  assert.match(retry, /newRunId = 'legacy-agent:' \+ retry\.id/);
+  assert.match(retry, /newRunId = 'legacy-automation:' \+ retry\.id/);
+  assert.match(server, /attempt: Number\.isSafeInteger\(Number\(run\.attempt\)\)/);
+  assert.match(server, /retryOf: run\.retryOf \|\| null/);
+});
