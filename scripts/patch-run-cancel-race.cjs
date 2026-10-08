@@ -14,7 +14,7 @@ function findFunctionRange(text, name) {
   const match = rx.exec(text);
   if (!match) throw new Error(`function ${safe} was not found`);
   if (rx.test(text.slice(match.index + match[0].length))) throw new Error(`function ${safe} is not unique`);
-  const open = text.indexOf('{', match.index);
+  const open = match.index + match[0].lastIndexOf('{');
   let depth = 0, quote = '', escaped = false, lineComment = false, blockComment = false;
   for (let i = open; i < text.length; i++) {
     const c = text[i], n = text[i + 1];
