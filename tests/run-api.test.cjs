@@ -9,7 +9,7 @@ const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 
-test('unified run API exposes native chat plus legacy execution history', { timeout: 30000 }, async t => {
+test('unified run API exposes native chat plus legacy execution history and retry lineage', { timeout: 30000 }, async t => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-runs-'));
   const mock = http.createServer((req, res) => {
     req.resume();
@@ -90,6 +90,7 @@ test('unified run API exposes native chat plus legacy execution history', { time
   const agent = await request('/api/agents/run', { goal: 'Legacy adapter check' });
   assert.equal(agent.response.status, 200);
   assert.equal(agent.value.run.status, 'complete');
+  const legacyAgentId = `legacy-agent:${agent.value.run.id}`;
 
   const runs = await request('/api/runs?limit=20');
   assert.equal(runs.response.status, 200);
@@ -97,12 +98,35 @@ test('unified run API exposes native chat plus legacy execution history', { time
   assert.equal(native.status, 'completed');
   assert.equal(native.type, 'chat');
   assert.equal(native.output.text, 'Run API result');
-  assert.ok(runs.value.items.some(item => item.id === `legacy-agent:${agent.value.run.id}` && item.status === 'completed'));
+  assert.equal(native.attempt, 1);
+  assert.equal(native.retryOf, null);
+  assert.ok(runs.value.items.some(item => item.id === legacyAgentId && item.status === 'completed'));
 
   const detail = await request(`/api/runs?id=${encodeURIComponent(chat.value.runId)}`);
   assert.equal(detail.response.status, 200);
   assert.equal(detail.value.item.id, chat.value.runId);
   assert.ok(detail.value.item.events.some(event => event.status === 'completed'));
+
+  const nativeRetry = await request('/api/runs/retry', { id: chat.value.runId });
+  assert.equal(nativeRetry.response.status, 200);
+  assert.ok(nativeRetry.value.runId);
+  assert.equal(nativeRetry.value.replayedFrom, chat.value.runId);
+  assert.equal(nativeRetry.value.attempt, 2);
+  const nativeRetryDetail = await request(`/api/runs?id=${encodeURIComponent(nativeRetry.value.runId)}`);
+  assert.equal(nativeRetryDetail.response.status, 200);
+  assert.equal(nativeRetryDetail.value.item.attempt, 2);
+  assert.equal(nativeRetryDetail.value.item.retryOf, chat.value.runId);
+  assert.ok(nativeRetryDetail.value.item.events.some(event => /Retried from/.test(event.detail)));
+
+  const legacyRetry = await request('/api/runs/retry', { id: legacyAgentId });
+  assert.equal(legacyRetry.response.status, 200);
+  assert.match(legacyRetry.value.runId, /^legacy-agent:/);
+  assert.equal(legacyRetry.value.replayedFrom, legacyAgentId);
+  assert.equal(legacyRetry.value.attempt, 2);
+  const legacyRetryDetail = await request(`/api/runs?id=${encodeURIComponent(legacyRetry.value.runId)}`);
+  assert.equal(legacyRetryDetail.response.status, 200);
+  assert.equal(legacyRetryDetail.value.item.attempt, 2);
+  assert.equal(legacyRetryDetail.value.item.retryOf, legacyAgentId);
 
   const cancelFinished = await request('/api/runs/cancel', { id: chat.value.runId });
   assert.equal(cancelFinished.response.status, 409);
