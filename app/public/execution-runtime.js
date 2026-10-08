@@ -222,7 +222,7 @@
     const values = [
       ['Status', statusLabel(run.status)], ['Progress', `${Math.max(0, Math.min(100, Number(run.progress) || 0))}%`],
       ['Started', safeDate(run.startedAt)?.toLocaleString() || '—'], ['Finished', safeDate(run.finishedAt)?.toLocaleString() || '—'],
-      ['Attempt', String(run.attempt || 1)], ['Run ID', run.id]
+      ['Attempt', String(run.attempt || 1)], ['Retry of', run.retryOf || '—'], ['Run ID', run.id]
     ];
     values.forEach(([label, value]) => {
       const box = document.createElement('div'); box.className = 'run-detail';

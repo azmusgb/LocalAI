@@ -1097,11 +1097,86 @@ function legacyEvents(item){
   if(steps.length)return steps.map(step=>({at:step.at||item.updatedAt||item.createdAt||item.startedAt||nowIso(),status:normalizedExecutionStatus(step.state||step.status),detail:String(step.detail||step.name||step.kind||step.state||'Step').slice(0,1200)}));
   const events=[];const start=item.startedAt||item.createdAt;if(start)events.push({at:start,status:'running',detail:'Run started'});const terminal=normalizedExecutionStatus(item.status);if(['completed','failed','cancelled'].includes(terminal))events.push({at:item.finishedAt||item.updatedAt||start,status:terminal,detail:terminal==='completed'?'Run completed':terminal==='failed'?'Run failed':'Run cancelled'});return events;
 }
-function legacyUnifiedRuns(){
-  const items=[];
-  for(const run of agentRunStore().slice(0,200)){const status=normalizedExecutionStatus(run.status);items.push({id:'legacy-agent:'+run.id,type:'agent',title:titleFromText(run.goal,'Agent run'),status,progress:executionProgress(status,run.plan),createdAt:run.createdAt||null,startedAt:run.createdAt||null,updatedAt:run.updatedAt||run.createdAt||null,finishedAt:['completed','failed','cancelled'].includes(status)?(run.updatedAt||null):null,summary:String(run.answer||run.error||'').slice(0,1200),input:{goal:String(run.goal||'').slice(0,4000),projectId:run.projectId||''},output:run.answer||null,error:run.error||null,artifactIds:[],source:{kind:'agent',id:run.id},meta:{sources:Array.isArray(run.sources)?run.sources.length:0},cancellable:false,retryable:['completed','failed'].includes(status),attempt:1,retryOf:null,events:legacyEvents(run)})}
-  for(const run of automationRunStore().slice(0,200)){const status=normalizedExecutionStatus(run.status);items.push({id:'legacy-automation:'+run.id,type:'automation',title:titleFromText(run.name,'Automation run'),status,progress:executionProgress(status),createdAt:run.startedAt||null,startedAt:run.startedAt||null,updatedAt:run.finishedAt||run.startedAt||null,finishedAt:['completed','failed','cancelled'].includes(status)?(run.finishedAt||null):null,summary:String(run.output||run.error||'').slice(0,1200),input:{automationId:run.automationId||''},output:run.output||null,error:run.error||null,artifactIds:[],source:{kind:'automation',id:run.id},meta:{automationId:run.automationId||''},cancellable:false,retryable:['completed','failed'].includes(status),attempt:1,retryOf:null,events:legacyEvents(run)})}
-  for(const run of effectiveEngineeringRuns().slice(0,200)){const status=normalizedExecutionStatus(run.status);items.push({id:'legacy-engineering:'+run.id,type:'engineering',title:titleFromText(run.request,'Engineering run'),status,progress:executionProgress(status,run.steps),createdAt:run.createdAt||null,startedAt:run.createdAt||null,updatedAt:run.updatedAt||run.createdAt||null,finishedAt:['completed','failed','cancelled'].includes(status)?(run.updatedAt||null):null,summary:String(run.error||run.changeStatus||'').slice(0,1200),input:{request:String(run.request||'').slice(0,4000),target:run.target||'',root:run.root||''},output:run.finalChangeId?{changeId:run.finalChangeId,changeStatus:run.changeStatus||null}:null,error:run.error||null,artifactIds:[],source:{kind:'engineering',id:run.id},meta:{attempt:run.attempt||0,maxAttempts:run.maxAttempts||0,changeId:run.finalChangeId||null},cancellable:false,retryable:false,attempt:run.attempt||1,retryOf:null,events:legacyEvents(run)})}
+function legacyUnifiedRuns() {
+  const items = [];
+  for (const run of agentRunStore().slice(0, 200)) {
+    const status = normalizedExecutionStatus(run.status);
+    items.push({
+      id: 'legacy-agent:' + run.id,
+      type: 'agent',
+      title: titleFromText(run.goal, 'Agent run'),
+      status,
+      progress: executionProgress(status, run.plan),
+      createdAt: run.createdAt || null,
+      startedAt: run.createdAt || null,
+      updatedAt: run.updatedAt || run.createdAt || null,
+      finishedAt: ['completed','failed','cancelled'].includes(status) ? (run.updatedAt || null) : null,
+      summary: String(run.answer || run.error || '').slice(0, 1200),
+      input: { goal: String(run.goal || '').slice(0, 4000), projectId: run.projectId || '' },
+      output: run.answer || null,
+      error: run.error || null,
+      artifactIds: [],
+      source: { kind: 'agent', id: run.id },
+      meta: { sources: Array.isArray(run.sources) ? run.sources.length : 0 },
+      cancellable: false,
+      retryable: ['completed','failed'].includes(status),
+      attempt: Number.isSafeInteger(Number(run.attempt)) && Number(run.attempt) > 0 ? Number(run.attempt) : 1,
+      retryOf: run.retryOf || null,
+      events: legacyEvents(run)
+    });
+  }
+  for (const run of automationRunStore().slice(0, 200)) {
+    const status = normalizedExecutionStatus(run.status);
+    items.push({
+      id: 'legacy-automation:' + run.id,
+      type: 'automation',
+      title: titleFromText(run.name, 'Automation run'),
+      status,
+      progress: executionProgress(status),
+      createdAt: run.startedAt || null,
+      startedAt: run.startedAt || null,
+      updatedAt: run.finishedAt || run.startedAt || null,
+      finishedAt: ['completed','failed','cancelled'].includes(status) ? (run.finishedAt || null) : null,
+      summary: String(run.output || run.error || '').slice(0, 1200),
+      input: { automationId: run.automationId || '' },
+      output: run.output || null,
+      error: run.error || null,
+      artifactIds: [],
+      source: { kind: 'automation', id: run.id },
+      meta: { automationId: run.automationId || '' },
+      cancellable: false,
+      retryable: ['completed','failed'].includes(status),
+      attempt: Number.isSafeInteger(Number(run.attempt)) && Number(run.attempt) > 0 ? Number(run.attempt) : 1,
+      retryOf: run.retryOf || null,
+      events: legacyEvents(run)
+    });
+  }
+  for (const run of effectiveEngineeringRuns().slice(0, 200)) {
+    const status = normalizedExecutionStatus(run.status);
+    items.push({
+      id: 'legacy-engineering:' + run.id,
+      type: 'engineering',
+      title: titleFromText(run.request, 'Engineering run'),
+      status,
+      progress: executionProgress(status, run.steps),
+      createdAt: run.createdAt || null,
+      startedAt: run.createdAt || null,
+      updatedAt: run.updatedAt || run.createdAt || null,
+      finishedAt: ['completed','failed','cancelled'].includes(status) ? (run.updatedAt || null) : null,
+      summary: String(run.error || run.changeStatus || '').slice(0, 1200),
+      input: { request: String(run.request || '').slice(0, 4000), target: run.target || '', root: run.root || '' },
+      output: run.finalChangeId ? { changeId: run.finalChangeId, changeStatus: run.changeStatus || null } : null,
+      error: run.error || null,
+      artifactIds: [],
+      source: { kind: 'engineering', id: run.id },
+      meta: { attempt: run.attempt || 0, maxAttempts: run.maxAttempts || 0, changeId: run.finalChangeId || null },
+      cancellable: false,
+      retryable: false,
+      attempt: run.attempt || 1,
+      retryOf: run.retryOf || null,
+      events: legacyEvents(run)
+    });
+  }
   return items;
 }
 function unifiedRunItems(limit=120){
@@ -1120,8 +1195,57 @@ async function apiRuns(req,res,urlObj){
 async function apiRunCancel(req,res){
   try{const b=await readBody(req),id=String(b.id||''),run=runLedger.get(id);if(!run)return json(res,404,{error:'Run not found or is managed by a legacy executor'});if(!run.cancellable)return json(res,409,{error:'This run is not cancellable'});if(!['queued','running','streaming','awaiting_approval'].includes(run.status))return json(res,409,{error:`Run cannot be cancelled from status ${run.status}`});runLedger.cancel(id,'Cancelled by user');const controller=activeRunControllers.get(id);if(controller&&!controller.signal.aborted)controller.abort();recordActivity('run','Run cancelled',run.title,{runId:id,type:run.type});json(res,200,{item:runLedger.get(id)})}catch(e){storageError(res,e,400)}
 }
-async function apiRunRetry(req,res){
-  try{const b=await readBody(req),id=String(b.id||''),replay=retryRequestForRunId(id);if(!replay)return json(res,409,{error:'This run does not support retry'});const allowed=new Set(['/api/chat','/api/images/generate','/api/agents/run','/api/automations/run']);if(!allowed.has(replay.path))return json(res,409,{error:'Retry target is not allowed'});const response=await fetchWithTimeout(`http://127.0.0.1:${PORT}${replay.path}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(replay.body||{})},900000);const raw=await response.text();let result;try{result=raw?JSON.parse(raw):{}}catch{result={text:raw.slice(0,8000)}}if(!response.ok)throw new Error(result.error||`Retry HTTP ${response.status}`);recordActivity('run','Run retried',id,{runId:id,path:replay.path});json(res,200,{ok:true,replayedFrom:id,result})}catch(e){storageError(res,e,500)}
+async function apiRunRetry(req, res) {
+  try {
+    const b = await readBody(req);
+    const id = String(b.id || '');
+    const replay = retryRequestForRunId(id);
+    if (!replay) return json(res, 409, { error: 'This run does not support retry' });
+    const allowed = new Set(['/api/chat','/api/images/generate','/api/agents/run','/api/automations/run']);
+    if (!allowed.has(replay.path)) return json(res, 409, { error: 'Retry target is not allowed' });
+
+    const parent = unifiedRunItems(500).find(x => x.id === id) || runLedger.get(id);
+    const nextAttempt = Math.max(1, Number(parent?.attempt) || 1) + 1;
+    const response = await fetchWithTimeout(`http://127.0.0.1:${PORT}${replay.path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(replay.body || {})
+    }, 900000);
+    const raw = await response.text();
+    let result;
+    try { result = raw ? JSON.parse(raw) : {}; } catch { result = { text: raw.slice(0, 8000) }; }
+    if (!response.ok) throw new Error(result.error || `Retry HTTP ${response.status}`);
+
+    let newRunId = null;
+    if (result?.runId) {
+      const updated = runLedger.update(result.runId, { attempt: nextAttempt, retryOf: id }, `Retried from ${id}`);
+      newRunId = updated?.id || result.runId;
+    } else if (replay.path === '/api/agents/run' && result?.run?.id) {
+      const runs = agentRunStore();
+      const retry = runs.find(x => x.id === result.run.id);
+      if (retry) {
+        retry.attempt = nextAttempt;
+        retry.retryOf = id;
+        retry.updatedAt = retry.updatedAt || nowIso();
+        saveStore(RUNS_STORE, runs, 300);
+        newRunId = 'legacy-agent:' + retry.id;
+      }
+    } else if (replay.path === '/api/automations/run' && result?.run?.id) {
+      const runs = automationRunStore();
+      const retry = runs.find(x => x.id === result.run.id);
+      if (retry) {
+        retry.attempt = nextAttempt;
+        retry.retryOf = id;
+        saveStore(AUTOMATION_RUNS_STORE, runs, 500);
+        newRunId = 'legacy-automation:' + retry.id;
+      }
+    }
+
+    recordActivity('run', 'Run retried', id, { runId: id, newRunId, path: replay.path, attempt: nextAttempt });
+    json(res, 200, { ok: true, replayedFrom: id, runId: newRunId, attempt: nextAttempt, result });
+  } catch (e) {
+    storageError(res, e, 500);
+  }
 }
 function nowIso() { return new Date().toISOString(); }
 function normalizeTitle(v, fallback) { return titleFromText(String(v || ''), fallback); }
