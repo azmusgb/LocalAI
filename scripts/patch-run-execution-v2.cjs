@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const Module = require('node:module');
 
+// Compile the guarded patch generator after converting its embedded helper
+// template into a JSON string so nested server template literals remain literal.
 const original = path.join(__dirname, 'patch-run-execution.cjs');
 const text = fs.readFileSync(original, 'utf8');
 const startMarker = 'const RUN_HELPERS = String.raw`';
