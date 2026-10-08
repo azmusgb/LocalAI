@@ -70,6 +70,30 @@ test('cancel and retry contracts are explicit', () => {
   assert.deepEqual(ledger.retryRequest(retryable.id), { path: '/api/automations/run', body: { id: 'auto-1' } });
 });
 
+test('constructor fails interrupted active runs after appliance restart but preserves approval waits', () => {
+  const storage = new MemorySettings();
+  const first = new RunLedger({ storage });
+  const queued = first.create({ type: 'chat', title: 'Queued', cancellable: true });
+  const running = first.create({ type: 'chat', title: 'Running', cancellable: true });
+  first.start(running.id);
+  const streaming = first.create({ type: 'chat', title: 'Streaming', cancellable: true });
+  first.start(streaming.id);
+  first.stream(streaming.id);
+  const waiting = first.create({ type: 'engineering', title: 'Waiting for approval' });
+  first.update(waiting.id, { status: 'awaiting_approval', progress: 65 }, 'Human approval required');
+
+  const restarted = new RunLedger({ storage });
+  for (const id of [queued.id, running.id, streaming.id]) {
+    const run = restarted.get(id);
+    assert.equal(run.status, 'failed');
+    assert.match(run.error, /interrupted by appliance restart/i);
+    assert.ok(run.finishedAt);
+    assert.equal(run.cancellable, false);
+    assert.ok(run.events.some(event => event.status === 'failed' && /appliance restart/i.test(event.detail)));
+  }
+  assert.equal(restarted.get(waiting.id).status, 'awaiting_approval');
+});
+
 test('oversized durable payloads are bounded instead of growing the settings row indefinitely', () => {
   const ledger = new RunLedger({ storage: new MemorySettings() });
   const huge = 'x'.repeat(80 * 1024);
