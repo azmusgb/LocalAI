@@ -4,7 +4,8 @@ on:
   push:
     branches: [feature/unified-run-execution]
     paths:
-      - 'scripts/patch-run-execution.cjs'
+      - 'scripts/patch-run-execution-v2.cjs'
+      - '.github/workflows/run-execution-patch.yml'
 
 permissions:
   contents: write
@@ -20,7 +21,7 @@ jobs:
         with:
           node-version: '22'
       - name: Apply guarded source patch
-        run: node scripts/patch-run-execution.cjs
+        run: node scripts/patch-run-execution-v2.cjs
       - name: Validate patched JavaScript
         run: |
           node --check app/server.js
