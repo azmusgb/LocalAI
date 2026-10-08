@@ -1,0 +1,37 @@
+name: run-cancel-race-source-patch
+
+on:
+  push:
+    branches: [feature/unified-run-execution]
+    paths:
+      - 'scripts/patch-run-cancel-race.cjs'
+      - '.github/workflows/run-cancel-race-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/unified-run-execution
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply guarded cancellation fix
+        run: node scripts/patch-run-cancel-race.cjs
+      - name: Validate patched server
+        run: node --check app/server.js
+      - name: Commit patched server
+        run: |
+          if git diff --quiet -- app/server.js; then
+            echo 'Server already contains the cancellation fix.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/server.js
+          git commit -m 'Fix streaming run cancellation race'
+          git push origin HEAD:feature/unified-run-execution
