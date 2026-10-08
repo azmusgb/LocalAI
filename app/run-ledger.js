@@ -5,6 +5,7 @@ const MAX_RUNS = 250;
 const MAX_EVENTS = 120;
 const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
 const STATUSES = new Set(['queued', 'running', 'streaming', 'awaiting_approval', 'completed', 'failed', 'cancelled']);
+const INTERRUPTIBLE = new Set(['queued', 'running', 'streaming']);
 
 function nowIso() { return new Date().toISOString(); }
 function id() { return `run-${Date.now()}-${Math.random().toString(16).slice(2, 9)}`; }
@@ -45,6 +46,7 @@ class RunLedger {
     }
     this.storage = storage;
     this.maxRuns = Math.max(20, Math.min(1000, Number(maxRuns) || MAX_RUNS));
+    this.reconcileInterrupted();
   }
 
   read() {
@@ -54,6 +56,26 @@ class RunLedger {
 
   write(items) {
     this.storage.writeSetting(RUN_LEDGER_KEY, items.slice(0, this.maxRuns));
+  }
+
+  reconcileInterrupted() {
+    const items = this.read();
+    const at = nowIso();
+    let changed = false;
+    for (const run of items) {
+      if (!run || !INTERRUPTIBLE.has(run.status)) continue;
+      run.status = 'failed';
+      run.updatedAt = at;
+      run.finishedAt = at;
+      run.cancellable = false;
+      run.error = 'Run interrupted by appliance restart';
+      run.progress = Math.max(0, Math.min(99, Number(run.progress) || 0));
+      if (!Array.isArray(run.events)) run.events = [];
+      run.events.push({ at, status: 'failed', detail: 'Run interrupted by appliance restart' });
+      if (run.events.length > MAX_EVENTS) run.events = run.events.slice(-MAX_EVENTS);
+      changed = true;
+    }
+    if (changed) this.write(items);
   }
 
   create(spec = {}) {
