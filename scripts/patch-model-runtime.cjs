@@ -84,7 +84,7 @@ function replaceFunction(name, fn) {
   source = source.slice(0, range.start) + replacementSource(fn, name) + source.slice(range.end);
 }
 
-function replacementApiModels(req, res) {
+async function replacementApiModels(req, res) {
   try {
     const runtime = await loadOllamaModelRuntime({
       baseUrl: OLLAMA_URL,
@@ -198,8 +198,8 @@ replaceFunction('apiModels', replacementApiModels);
 replaceFunction('capabilityPrompt', replacementCapabilityPrompt);
 replaceFunction('getCapabilitiesSnapshot', replacementGetCapabilitiesSnapshot);
 
-if (!source.includes('`${OLLAMA_URL}/api/ps`') && !source.includes("'/api/ps'")) {
-  throw new Error('Patched server does not reference Ollama /api/ps');
+if (!source.includes("require('./model-runtime')") || !source.includes('loadOllamaModelRuntime({')) {
+  throw new Error('Patched server does not consume the Ollama model runtime module');
 }
 if (!source.includes('models: modelRuntime')) {
   throw new Error('Patched capability snapshot does not expose model runtime state');
