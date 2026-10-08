@@ -17,12 +17,14 @@ test('Runs surface and Home run center are installed', () => {
   assert.match(runtime, /Execution history/);
 });
 
-test('execution drawer exposes lifecycle, cancel, retry, output, and timeline', () => {
+test('execution drawer exposes lifecycle, cancel, retry, lineage, output, and timeline', () => {
   assert.match(runtime, /runDrawerBackdrop/);
   assert.match(runtime, /Cancel run/);
   assert.match(runtime, /Retry/);
   assert.match(runtime, /\/api\/runs\/cancel/);
   assert.match(runtime, /\/api\/runs\/retry/);
+  assert.match(runtime, /\['Attempt', String\(run\.attempt \|\| 1\)\]/);
+  assert.match(runtime, /\['Retry of', run\.retryOf \|\| '—'\]/);
   assert.match(runtime, /Timeline/);
   assert.match(runtime, /Output/);
   assert.match(runtime, /event\.key === 'Escape'/);
