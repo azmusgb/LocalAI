@@ -30,6 +30,7 @@ const LIBRARY_STORE = 'library';
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 
 const { Storage } = require('./storage');
+const { loadOllamaModelRuntime } = require('./model-runtime');
 const release = require('./release').readRelease(__dirname);
 const storage = new Storage({ dataDir: DATA_DIR });
 
@@ -282,13 +283,29 @@ async function apiStatus(req, res) {
 
 async function apiModels(req, res) {
   try {
-    const r = await fetchWithTimeout(`${OLLAMA_URL}/api/tags`, {}, 5000);
-    if (!r.ok) throw new Error(`Intelligence service returned HTTP ${r.status}`);
-    const j = await r.json();
-    const models = Array.isArray(j.models) ? j.models.map(x => x.name).filter(Boolean) : [];
-    json(res, 200, { default: MODEL, models });
+    const runtime = await loadOllamaModelRuntime({
+      baseUrl: OLLAMA_URL,
+      fetchWithTimeout,
+      defaultModel: MODEL,
+      timeoutMs: 5000
+    });
+    json(res, 200, runtime);
   } catch (e) {
-    json(res, 502, { error: String(e.message || e), default: MODEL, models: [MODEL] });
+    const error = String(e.message || e);
+    json(res, 502, {
+      error,
+      available: false,
+      default: MODEL,
+      models: [MODEL],
+      installed: [],
+      loaded: [],
+      installedCount: 0,
+      loadedCount: 0,
+      runtimeAvailable: false,
+      runtimeError: error,
+      defaultInstalled: false,
+      defaultLoaded: false
+    });
   }
 }
 
@@ -314,37 +331,65 @@ function sanitizeMessages(messages) {
 
 function capabilityPrompt(snapshot) {
   const images = snapshot?.images?.models || [];
+  const textModels = snapshot?.models || {};
+  const installedText = Array.isArray(textModels.installed) ? textModels.installed : [];
+  const loadedText = Array.isArray(textModels.loaded) ? textModels.loaded : [];
   const serviceText = (snapshot?.services || []).map(x => `${x.name}:${x.state}${x.required === false ? ':optional' : ':core'}`).join(', ');
   return [
     'RUNTIME CAPABILITY SNAPSHOT (authoritative for this response):',
     `Local AI version: ${snapshot?.version || APP_VERSION}`,
-    `Local model: ${snapshot?.model || MODEL}`,
+    `Configured local model: ${snapshot?.model || MODEL}`,
     `Appliance state: ${snapshot?.overall || 'UNKNOWN'}`,
     `Services: ${serviceText || 'unavailable'}`,
+    `Installed text models: ${installedText.length ? installedText.map(x => x.name).join(', ') : 'none verified'}`,
+    `Loaded text models: ${loadedText.length ? loadedText.map(x => `${x.name}${x.contextLength ? ` [ctx ${x.contextLength}]` : ''}`).join(', ') : 'none currently resident'}`,
+    `Model runtime detail: ${textModels.runtimeAvailable ? 'available' : 'unavailable'}`,
     `Installed image models: ${images.length ? images.map(x => `${x.checkpoint} [${x.familyLabel || x.family}]`).join(', ') : 'none discovered'}`,
     `Projects: ${snapshot?.projects?.count ?? 0}`,
     `Engineering: ${snapshot?.engineering?.active ?? 0} active; ${snapshot?.engineering?.awaitingApproval ?? 0} awaiting approval`,
     `Changes: ${snapshot?.changes?.pending ?? 0} pending`,
     `Issues: ${snapshot?.issues?.open ?? 0} open`,
     `PowerShell Workbench: ${snapshot?.powershell?.configured ? 'configured' : 'not configured'}`,
-    'Use this snapshot instead of guessing. Never claim an image model is installed unless it appears above. Never report a hard-coded appliance version. Image generation is available only when a supported discovered model is present. Local AI can prepare self-changes through Engineering -> Change Intelligence -> approval -> host self-update; never claim a change was applied unless the runtime reports it.'
+    'Use this snapshot instead of guessing. Never claim a text or image model is installed unless it appears above. A text model can be installed without being currently loaded because Ollama may unload idle models. Never report a hard-coded appliance version. Image generation is available only when a supported discovered model is present. Local AI can prepare self-changes through Engineering -> Change Intelligence -> approval -> host self-update; never claim a change was applied unless the runtime reports it.'
   ].join('\n');
 }
 
 async function getCapabilitiesSnapshot(force = false) {
   if (!force && capabilityCache.value && capabilityCache.expiresAt > Date.now()) return capabilityCache.value;
-  const [statusResult, imageResult] = await Promise.allSettled([
+  const [statusResult, imageResult, modelResult] = await Promise.allSettled([
     getStatusAndRecordTransition(),
-    getCheckpointNames().then(names => buildImageModelCatalog(names))
+    getCheckpointNames().then(names => buildImageModelCatalog(names)),
+    loadOllamaModelRuntime({
+      baseUrl: OLLAMA_URL,
+      fetchWithTimeout,
+      defaultModel: MODEL,
+      timeoutMs: 5000
+    })
   ]);
   const status = statusResult.status === 'fulfilled' ? statusResult.value : { overall: 'UNKNOWN', services: [] };
   const imageCatalog = imageResult.status === 'fulfilled' ? imageResult.value : { models: [], families: [], defaultCheckpoint: null, defaultFamily: null };
+  const modelRuntime = modelResult.status === 'fulfilled'
+    ? modelResult.value
+    : {
+        available: false,
+        default: MODEL,
+        models: [],
+        installed: [],
+        loaded: [],
+        installedCount: 0,
+        loadedCount: 0,
+        runtimeAvailable: false,
+        runtimeError: String(modelResult.reason?.message || modelResult.reason || 'Model runtime unavailable'),
+        defaultInstalled: false,
+        defaultLoaded: false
+      };
   const changes = changeStore();
   const issues = issueStore();
   const engineeringRuns = effectiveEngineeringRuns();
   const snapshot = {
     appliance: 'Local AI', version: APP_VERSION, model: MODEL,
     overall: status.overall, services: status.services || [], serviceSummary: status.serviceSummary || {},
+    models: modelRuntime,
     images: { ...imageCatalog, available: imageCatalog.models.some(x => x.supported) },
     projects: { count: projectStore().length },
     agents: { running: agentRunStore().filter(x => x.status === 'running').length },
