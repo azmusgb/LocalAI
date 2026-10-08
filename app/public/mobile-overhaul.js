@@ -45,6 +45,15 @@
     }
   }
 
+  function loadExecutionRuntime() {
+    if (document.querySelector('script[data-localai-execution-runtime]')) return;
+    const script = document.createElement('script');
+    script.src = '/execution-runtime.js';
+    script.defer = true;
+    script.dataset.localaiExecutionRuntime = 'true';
+    document.head.appendChild(script);
+  }
+
   function installMobileHeader() {
     const main = document.querySelector('main');
     if (!main || main.querySelector('.mobile-header')) return;
@@ -652,6 +661,7 @@
 
   function init() {
     loadIntegrationEnhancement();
+    loadExecutionRuntime();
     installMobileHeader();
     improveViewportBehavior();
     mirrorHealthState();
