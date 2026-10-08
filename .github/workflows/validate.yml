@@ -26,6 +26,7 @@ jobs:
       - name: JavaScript syntax
         run: |
           node --check app/server.js
+          node --check app/model-runtime.js
           node --check app/storage.js
           node --check app/release.js
           node --check app/storage-cli.js
@@ -34,6 +35,12 @@ jobs:
           node --check tests/agent-operations-ui.mjs
           node --check tests/integration-hub-ui.mjs
           node --check tests/agent-orchestrator.test.cjs
+          node --check tests/model-runtime.test.cjs
+          node --check tests/model-runtime-ui.test.cjs
+          node --check tests/model-runtime-server-contract.test.cjs
+
+      - name: Model runtime contracts
+        run: node --test tests/model-runtime.test.cjs tests/model-runtime-ui.test.cjs tests/model-runtime-server-contract.test.cjs
 
       - name: PowerShell syntax
         shell: pwsh
@@ -60,6 +67,7 @@ jobs:
           test -f package.json
           test -f package-lock.json
           test -f app/server.js
+          test -f app/model-runtime.js
           test -f app/storage.js
           test -f app/release.js
           test -f deploy/Deployment-LocalAI.ps1
@@ -80,6 +88,9 @@ jobs:
           test -f tests/agent-operations-ui.mjs
           test -f tests/integration-hub-ui.mjs
           test -f tests/agent-orchestrator.test.cjs
+          test -f tests/model-runtime.test.cjs
+          test -f tests/model-runtime-ui.test.cjs
+          test -f tests/model-runtime-server-contract.test.cjs
 
       - name: Prevent private-key files
         run: |
