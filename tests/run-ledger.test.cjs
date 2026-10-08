@@ -70,6 +70,26 @@ test('cancel and retry contracts are explicit', () => {
   assert.deepEqual(ledger.retryRequest(retryable.id), { path: '/api/automations/run', body: { id: 'auto-1' } });
 });
 
+test('oversized durable payloads are bounded instead of growing the settings row indefinitely', () => {
+  const ledger = new RunLedger({ storage: new MemorySettings() });
+  const huge = 'x'.repeat(80 * 1024);
+  const run = ledger.create({
+    type: 'chat',
+    title: 'Large run',
+    input: { prompt: huge },
+    retryRequest: { path: '/api/chat', body: { prompt: huge } },
+    meta: { detail: huge }
+  });
+  assert.deepEqual(run.input, { truncated: true });
+  assert.deepEqual(run.meta, { truncated: true });
+  assert.equal(run.retryable, false);
+
+  const completed = ledger.complete(run.id, { output: { text: huge } });
+  assert.equal(completed.output.truncated, true);
+  assert.ok(completed.output.preview.length <= 12000);
+  assert.equal(completed.retryable, false, 'oversized retry payloads are deliberately not persisted');
+});
+
 test('ledger keeps newest runs within its configured bound', () => {
   const storage = new MemorySettings();
   const ledger = new RunLedger({ storage, maxRuns: 20 });
