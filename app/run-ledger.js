@@ -1,7 +1,7 @@
 'use strict';
 
 const RUN_LEDGER_KEY = 'unified-runs-v1';
-const MAX_RUNS = 500;
+const MAX_RUNS = 250;
 const MAX_EVENTS = 120;
 const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
 const STATUSES = new Set(['queued', 'running', 'streaming', 'awaiting_approval', 'completed', 'failed', 'cancelled']);
@@ -9,6 +9,25 @@ const STATUSES = new Set(['queued', 'running', 'streaming', 'awaiting_approval',
 function nowIso() { return new Date().toISOString(); }
 function id() { return `run-${Date.now()}-${Math.random().toString(16).slice(2, 9)}`; }
 function cleanText(value, max = 4000) { return String(value ?? '').slice(0, max); }
+
+function boundedClone(value, maxBytes, fallback) {
+  try {
+    const raw = JSON.stringify(value);
+    if (Buffer.byteLength(raw, 'utf8') > maxBytes) return fallback;
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function boundedOutput(value) {
+  if (value === undefined || value === null) return null;
+  const cloned = boundedClone(value, 24 * 1024, null);
+  if (cloned !== null) return cloned;
+  let preview = '';
+  try { preview = typeof value === 'string' ? value : JSON.stringify(value); } catch { preview = String(value); }
+  return { truncated: true, preview: cleanText(preview, 12000) };
+}
 
 function publicRun(run) {
   if (!run) return null;
@@ -25,7 +44,7 @@ class RunLedger {
       throw new TypeError('storage with readSetting/writeSetting is required');
     }
     this.storage = storage;
-    this.maxRuns = Math.max(20, Math.min(2000, Number(maxRuns) || MAX_RUNS));
+    this.maxRuns = Math.max(20, Math.min(1000, Number(maxRuns) || MAX_RUNS));
   }
 
   read() {
@@ -50,14 +69,16 @@ class RunLedger {
       updatedAt: at,
       finishedAt: null,
       summary: cleanText(spec.summary || '', 1200),
-      input: spec.input && typeof spec.input === 'object' ? spec.input : {},
+      input: boundedClone(spec.input && typeof spec.input === 'object' ? spec.input : {}, 16 * 1024, { truncated: true }),
       output: null,
       error: null,
       artifactIds: [],
-      source: spec.source && typeof spec.source === 'object' ? spec.source : null,
-      meta: spec.meta && typeof spec.meta === 'object' ? spec.meta : {},
+      source: spec.source && typeof spec.source === 'object' ? boundedClone(spec.source, 4 * 1024, null) : null,
+      meta: boundedClone(spec.meta && typeof spec.meta === 'object' ? spec.meta : {}, 8 * 1024, { truncated: true }),
       cancellable: spec.cancellable === true,
-      retryRequest: spec.retryRequest && typeof spec.retryRequest === 'object' ? spec.retryRequest : null,
+      retryRequest: spec.retryRequest && typeof spec.retryRequest === 'object'
+        ? boundedClone(spec.retryRequest, 48 * 1024, null)
+        : null,
       attempt: Number.isSafeInteger(spec.attempt) && spec.attempt > 0 ? spec.attempt : 1,
       retryOf: spec.retryOf || null,
       events: [{ at, status: 'queued', detail: cleanText(spec.eventDetail || 'Run queued', 1200) }]
@@ -92,7 +113,10 @@ class RunLedger {
     const nextStatus = patch.status || run.status;
     if (!STATUSES.has(nextStatus)) throw new TypeError(`Invalid run status: ${nextStatus}`);
     const at = nowIso();
-    Object.assign(run, patch, { status: nextStatus, updatedAt: at });
+    const safePatch = { ...patch };
+    if (Object.hasOwn(safePatch, 'output')) safePatch.output = boundedOutput(safePatch.output);
+    if (Object.hasOwn(safePatch, 'meta')) safePatch.meta = boundedClone(safePatch.meta || {}, 8 * 1024, { truncated: true });
+    Object.assign(run, safePatch, { status: nextStatus, updatedAt: at });
     if ((nextStatus === 'running' || nextStatus === 'streaming') && !run.startedAt) run.startedAt = at;
     if (TERMINAL.has(nextStatus)) {
       run.finishedAt = run.finishedAt || at;
@@ -118,9 +142,9 @@ class RunLedger {
     return this.update(runId, {
       status: 'completed', progress: 100,
       summary: cleanText(summary, 1200),
-      output: output === undefined ? null : output,
+      output,
       artifactIds: Array.isArray(artifactIds) ? artifactIds.slice(0, 100) : [],
-      meta: meta && typeof meta === 'object' ? meta : {}
+      meta
     }, 'Run completed');
   }
 
@@ -138,7 +162,7 @@ class RunLedger {
   retryRequest(runId) {
     const run = this.getInternal(runId);
     if (!run || !run.retryRequest || !TERMINAL.has(run.status) || run.status === 'cancelled') return null;
-    return JSON.parse(JSON.stringify(run.retryRequest));
+    return boundedClone(run.retryRequest, 48 * 1024, null);
   }
 }
 
