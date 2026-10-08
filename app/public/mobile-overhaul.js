@@ -349,6 +349,9 @@
       renderAttention(snapshot);
       window.dispatchEvent(new CustomEvent('localai:truth-updated', { detail: snapshot }));
     } catch (error) {
+      document.querySelectorAll('[data-truth-disabled="true"]').forEach((control) => {
+        setTruthAvailability(control, true, '');
+      });
       renderAttention(null, error);
     }
   }
