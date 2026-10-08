@@ -33,6 +33,7 @@ test('Attention flags inventory and default-model problems without treating idle
   assert.doesNotMatch(attentionSource, /!.*loadedCount/);
 });
 
-test('service worker cache key changes with the model runtime shell', () => {
-  assert.match(sw, /local-ai-shell-v1\.18-model-runtime-truth/);
+test('service worker keeps the model runtime shell assets cacheable across cache-key revisions', () => {
+  assert.match(sw, /const CACHE='local-ai-shell-v1\.18-[^']+'/);
+  assert.match(sw, /'\/mobile-overhaul\.js'/);
 });

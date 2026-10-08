@@ -27,6 +27,7 @@ jobs:
         run: |
           node --check app/server.js
           node --check app/model-runtime.js
+          node --check app/run-ledger.js
           node --check app/storage.js
           node --check app/release.js
           node --check app/storage-cli.js
@@ -38,9 +39,16 @@ jobs:
           node --check tests/model-runtime.test.cjs
           node --check tests/model-runtime-ui.test.cjs
           node --check tests/model-runtime-server-contract.test.cjs
+          node --check tests/run-ledger.test.cjs
+          node --check tests/run-execution-server-contract.test.cjs
+          node --check tests/run-execution-ui.test.cjs
+          node --check tests/run-api.test.cjs
 
       - name: Model runtime contracts
         run: node --test tests/model-runtime.test.cjs tests/model-runtime-ui.test.cjs tests/model-runtime-server-contract.test.cjs
+
+      - name: Unified execution contracts
+        run: node --test tests/run-ledger.test.cjs tests/run-execution-server-contract.test.cjs tests/run-execution-ui.test.cjs tests/run-api.test.cjs
 
       - name: PowerShell syntax
         shell: pwsh
@@ -68,6 +76,7 @@ jobs:
           test -f package-lock.json
           test -f app/server.js
           test -f app/model-runtime.js
+          test -f app/run-ledger.js
           test -f app/storage.js
           test -f app/release.js
           test -f deploy/Deployment-LocalAI.ps1
@@ -77,6 +86,7 @@ jobs:
           test -f app/public/index.html
           test -f app/public/manifest.json
           test -f app/public/sw.js
+          test -f app/public/execution-runtime.js
           test -f app/public/integration-hub-v2.js
           test -f app/public/integration-hub-v2.css
           test -f deploy/Deploy-LocalAI.ps1
@@ -91,6 +101,10 @@ jobs:
           test -f tests/model-runtime.test.cjs
           test -f tests/model-runtime-ui.test.cjs
           test -f tests/model-runtime-server-contract.test.cjs
+          test -f tests/run-ledger.test.cjs
+          test -f tests/run-execution-server-contract.test.cjs
+          test -f tests/run-execution-ui.test.cjs
+          test -f tests/run-api.test.cjs
 
       - name: Prevent private-key files
         run: |
@@ -153,7 +167,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - name: Native SQLite, HTTP and agent regression tests
-        run: node --test tests/release.test.cjs tests/storage.test.cjs tests/storage-api.test.cjs tests/agent-orchestrator.test.cjs
+        run: node --test tests/release.test.cjs tests/storage.test.cjs tests/storage-api.test.cjs tests/agent-orchestrator.test.cjs tests/run-ledger.test.cjs
 
   deployment-contracts:
     runs-on: windows-latest
