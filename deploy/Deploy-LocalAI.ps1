@@ -20,7 +20,7 @@ try {
         git -C $Repo fetch --prune origin
         if ($LASTEXITCODE -ne 0) { throw 'git fetch failed' }
     }
-    $sha = [string](git -C $Repo rev-parse --verify "$TargetRef^{commit}" | Select-Object -First 1)
+    $sha = [string](git -C $Repo rev-parse --verify "$TargetRef^{commit}")
     if ($LASTEXITCODE -ne 0 -or $sha.Trim() -notmatch '^[a-f0-9]{40}$') { throw "Cannot resolve commit $TargetRef" }
     $sha = $sha.Trim()
     $candidate = Join-Path $Releases $sha
