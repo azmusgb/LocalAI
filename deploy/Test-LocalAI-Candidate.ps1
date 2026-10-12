@@ -1,4 +1,4 @@
-﻿param([Parameter(Mandatory=$true)][string]$CandidateRoot)
+param([Parameter(Mandatory=$true)][string]$CandidateRoot)
 $ErrorActionPreference="Stop"
 $app=Join-Path $CandidateRoot "app"
 foreach($r in @("server.js","release.js","storage.js","storage-cli.js","agent-orchestrator.js","specialist-agents.json","public\app.js","public\index.html","public\manifest.json","public\sw.js","public\agent-specialists.js","public\agent-specialists.css","public\ux-architecture-v2.js","public\ux-architecture-v2.css","public\agent-world-city.js","public\agent-world-city.css","public\integration-hub-v2.js","public\integration-hub-v2.css")){if(-not(Test-Path(Join-Path $app $r))){throw "Missing required file: $r"}}
