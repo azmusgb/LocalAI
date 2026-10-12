@@ -21,7 +21,7 @@ function Get-GitSha {
     param([string]$Repository, [string]$Ref)
     if (-not (Test-Path -LiteralPath $Repository)) { return $null }
     try {
-        $value = (& git -C $Repository rev-parse $Ref 2>$null | Select-Object -First 1)
+        $value = (& git -C $Repository rev-parse $Ref 2>$null)
         if ($LASTEXITCODE -ne 0) { return $null }
         return [string]$value.Trim()
     }
