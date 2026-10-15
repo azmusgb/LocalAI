@@ -14,7 +14,7 @@ self.addEventListener('fetch',event=>{
 // Web Push (app/push.js sends it). iOS requires every push to show a notification, so this always shows one.
 self.addEventListener('push',event=>{
   let data={};try{data=event.data?event.data.json():{}}catch{data={title:'Local AI',body:event.data?event.data.text():''}}
-  event.waitUntil(self.registration.showNotification(data.title||'Local AI',{body:data.body||'',tag:data.tag||undefined,data:{url:data.url||'/'}}));
+  event.waitUntil(self.registration.showNotification(data.title||'Local AI',{body:data.body||'',tag:data.tag||undefined,icon:'/icons/icon-192.png',badge:'/icons/icon-192.png',data:{url:data.url||'/'}}));
 });
 // Tapping a notification opens its item in an open Local AI window, or in a new one.
 self.addEventListener('notificationclick',event=>{

@@ -73,4 +73,11 @@ try {
 }
 $result | ConvertTo-Json -Depth 4 | Set-Content -Path $statusFile -Encoding UTF8
 if ($result.ok) { Write-Host "Backup OK: $($result.file) ($([math]::Round($result.sizeBytes/1MB,1)) MB), verified, offsite: $($result.offsite)" }
-else { throw "Backup FAILED: $($result.error)" }
+else {
+    # Tell the Inbox (and, through it, the owner's phone). UTF-8 bytes: Windows PowerShell sends strings as ISO-8859-1.
+    try {
+        $note = @{ kind = 'backup'; title = 'Nightly backup failed'; detail = "$($result.error)"; meta = @{ outcome = 'failed' } } | ConvertTo-Json -Compress
+        Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:3080/api/notifications/system' -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($note)) -TimeoutSec 10 | Out-Null
+    } catch { }
+    throw "Backup FAILED: $($result.error)"
+}

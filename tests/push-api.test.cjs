@@ -67,17 +67,22 @@ test('push API: key, subscribe, test, removal and same-origin', { timeout: 30000
 
   await t.test('test sends to the fake push service', async () => {
     const r = await (await post('/api/push/test', {})).json();
-    assert.deepEqual(r, { sent: 1, removed: 0 });
+    assert.deepEqual(r, { sent: 1, removed: 0, failed: 0, error: null });
     const hit = fake.hits.at(-1);
     assert.equal(hit.path, '/phone');
     assert.equal(hit.headers['content-encoding'], 'aes128gcm');
     assert.match(hit.headers.authorization, /^vapid t=/);
   });
 
+  await t.test('a refused send is reported as refused, with the reason', async () => {
+    fake.statusFor.set('/phone', 403);
+    assert.deepEqual(await (await post('/api/push/test', {})).json(), { sent: 0, removed: 0, failed: 1, error: 'HTTP 403' });
+  });
+
   await t.test('410 removes the device', async () => {
     fake.statusFor.set('/phone', 410);
-    assert.deepEqual(await (await post('/api/push/test', {})).json(), { sent: 0, removed: 1 });
-    assert.deepEqual(await (await post('/api/push/test', {})).json(), { sent: 0, removed: 0 });
+    assert.deepEqual(await (await post('/api/push/test', {})).json(), { sent: 0, removed: 1, failed: 0, error: null });
+    assert.deepEqual(await (await post('/api/push/test', {})).json(), { sent: 0, removed: 0, failed: 0, error: null });
   });
 
   await t.test('cross-site subscribe is refused', async () => {

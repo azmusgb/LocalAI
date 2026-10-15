@@ -223,3 +223,17 @@ test('list filters and collapses threads', () => {
   assert.equal(ledger.list({ collapseThreads: true, limit: 1 }).length, 1);
   assert.equal(ledger.list({ projectId: 'zzz' }).length, 0);
 });
+
+test('onTransition fires once per status change and never breaks update', () => {
+  const storage = new MemorySettings();
+  const seen = [];
+  const ledger = new RunLedger({ storage, onTransition: (run, previous) => seen.push([run.status, previous]) });
+  const run = ledger.create({ type: 'chat', title: 'x' });
+  ledger.start(run.id);
+  ledger.update(run.id, { progress: 50 });
+  ledger.complete(run.id, { summary: 'done' });
+  assert.deepEqual(seen, [['running', 'queued'], ['completed', 'running']]);
+  const throwing = new RunLedger({ storage: new MemorySettings(), onTransition: () => { throw new Error('boom'); } });
+  const r2 = throwing.create({ type: 'chat', title: 'y' });
+  assert.equal(throwing.start(r2.id).status, 'running');
+});

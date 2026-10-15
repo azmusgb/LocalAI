@@ -18,7 +18,7 @@ function functionSource(name, nextName = '') {
 
 test('server initializes the durable unified run ledger', () => {
   assert.match(server, /require\('\.\/run-ledger'\)/);
-  assert.match(server, /new RunLedger\(\{ storage \}\)/);
+  assert.match(server, /new RunLedger\(\{ storage[ ,]/);
   assert.match(server, /const activeRunControllers = new Map\(\)/);
 });
 
