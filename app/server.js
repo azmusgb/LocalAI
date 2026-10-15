@@ -873,12 +873,19 @@ async function apiWorkspace(req, res) {
   });
 }
 
+// ComfyUI describes a file picker as [[...names]] or, in newer nodes, ["COMBO", {options: [...names]}].
+function comfyOptions(spec) {
+  if (!Array.isArray(spec)) return [];
+  if (Array.isArray(spec[0])) return spec[0];
+  if (spec[0] === 'COMBO' && Array.isArray(spec[1]?.options)) return spec[1].options;
+  return [];
+}
+
 async function getCheckpointNames() {
   const r = await fetchWithTimeout(`${COMFY_URL}/object_info/CheckpointLoaderSimple`, {}, 7000);
   if (!r.ok) throw new Error(`Image service returned HTTP ${r.status}`);
   const j = await r.json();
-  const names = j?.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0];
-  return Array.isArray(names) ? names : [];
+  return comfyOptions(j?.CheckpointLoaderSimple?.input?.required?.ckpt_name);
 }
 
 function inferImageFamily(name) {
@@ -940,8 +947,7 @@ async function getImageModelLists() {
     try {
       const r = await fetchWithTimeout(`${COMFY_URL}/object_info/${node}`, {}, 7000);
       if (!r.ok) return [];
-      const list = (await r.json())?.[node]?.input?.required?.[input]?.[0];
-      return Array.isArray(list) ? list : [];
+      return comfyOptions((await r.json())?.[node]?.input?.required?.[input]);
     } catch { return []; }
   };
   const [checkpoints, unets, clips, vaes, upscalers] = await Promise.all([
