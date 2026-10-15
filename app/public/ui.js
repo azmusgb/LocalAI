@@ -1914,23 +1914,19 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     st.polling = true;
     const sid = st.session;
     try {
-      const r = await api(`messages?sessionId=${encodeURIComponent(sid)}&after=${st.after}`);
+      // One request. While messages are still in flight, start just before the oldest of them so the reply carries their
+      // current statuses (and any deletion shows as a gap) plus everything newer. A message queued on an offline session
+      // is skipped here: the 10 s sessions refresh notices when it comes back online.
+      const online = current()?.online;
+      const inflight = st.messages.filter((m) => m.source === 'web' && (m.status === 'delivered' || (m.status === 'queued' && online)));
+      const from = inflight.length ? Math.max(0, Math.min(...inflight.map((m) => m.seq)) - 1) : st.after;
+      const r = await api(`messages?sessionId=${encodeURIComponent(sid)}&after=${from}`);
       if (sid !== st.session) return;
-      const known = new Map(st.messages.map((m) => [m.id, m]));
-      // `after` only returns new rows, so status changes on earlier messages need a refetch of those still in flight.
-      for (const m of r.items || []) known.set(m.id, m);
-      const pending = st.messages.filter((m) => m.source === 'web' && m.status !== 'answered');
-      if (pending.length) {
-        const all = await api(`messages?sessionId=${encodeURIComponent(sid)}&after=0`);
-        if (sid !== st.session) return;
-        for (const m of all.items || []) known.set(m.id, m);
-        for (const id of [...known.keys()]) if (!(all.items || []).some((m) => m.id === id) && st.messages.some((x) => x.id === id && x.source === 'web')) known.delete(id);
-      }
+      const items = r.items || [];
+      const known = new Map(st.messages.filter((m) => m.seq <= from || items.some((x) => x.id === m.id)).map((m) => [m.id, m]));
+      for (const m of items) known.set(m.id, m);
       st.messages = [...known.values()].sort((a, b) => a.seq - b.seq);
       st.after = st.messages.reduce((n, m) => Math.max(n, m.seq), 0);
-      if (st.messages.some((m) => m.source === 'web' && m.status === 'queued') && Date.now() - st.sessionsAt > 2500) {
-        const s = await api('sessions'); st.sessionsAt = Date.now(); st.sessions = s.items || [];
-      }
       renderLog();
       renderComposer();
     } catch (e) {

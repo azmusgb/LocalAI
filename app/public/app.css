@@ -1343,6 +1343,8 @@ body.ux-v3.ux-nav-collapsed .ux-page-strip{display:flex}
   .claude-chat-log{max-height:50svh}
   .claude-chat-code{font-size:28px}
   .claude-chat-msg{max-width:100%}
+  /* Scrolling the composer into view must leave it above the floating tab bar. */
+  #claudeChatInput,#claudeChatSend,#claudeChatSession{scroll-margin-bottom:104px}
 }
 /* Long lists, all sizes: see "Long lists" in ui.js */
 .mobile-clipped{display:none!important}

@@ -129,6 +129,23 @@ try {
     assert.equal(await page.locator('#claudeChatLog img, #claudeChatLog b').count(), 0);
   });
 
+  await check('an unanswered message is polled with one small request, never a full refetch', async () => {
+    const urls = [];
+    const onReq = r => { if (/\/api\/claude\/chat\/messages\?/.test(r.url())) urls.push(r.url()); };
+    await page.fill('#claudeChatInput', 'Still thinking?');
+    await page.press('#claudeChatInput', 'Control+Enter');
+    await page.locator('#claudeChatLog .claude-chat-msg.web', { hasText: 'Still thinking?' }).waitFor({ timeout: 5000 });
+    await mac('GET', 'inbox?sessionId=sess-a&wait=0');
+    await page.waitForFunction(() => [...document.querySelectorAll('#claudeChatLog .claude-chat-msg.web')].some(m => /Still thinking/.test(m.textContent) && /delivered/.test(m.textContent)), null, { timeout: 8000 });
+    page.on('request', onReq);
+    await page.waitForTimeout(5000);
+    page.off('request', onReq);
+    assert.ok(urls.length >= 1 && urls.length <= 3, `${urls.length} message requests in 5 s: ${urls.join(' ')}`);
+    assert.ok(!urls.some(u => /after=0(&|$)/.test(u)), `full refetch: ${urls.join(' ')}`);
+    await mac('POST', 'mirror', { sessionId: 'sess-a', role: 'assistant', source: 'reply', text: 'Done thinking.' });
+    await page.waitForFunction(() => [...document.querySelectorAll('#claudeChatLog .claude-chat-msg.web')].every(m => /answered/.test(m.textContent)), null, { timeout: 8000 });
+  });
+
   await heartbeat('sess-b', 'Refactor billing');
   await check('offline session disables the composer with the claude-chat hint', async () => {
     await page.waitForFunction(() => [...document.querySelectorAll('#claudeChatSession option')].some(o => o.value === 'sess-b'), null, { timeout: 12000 });
@@ -161,19 +178,33 @@ try {
     await p.evaluate(() => window.showView('claude'));
     await p.waitForSelector('#claudeChatInput', { state: 'visible', timeout: 12000 });
     await p.waitForFunction(() => document.querySelectorAll('#claudeChatLog .claude-chat-msg').length >= 3, null, { timeout: 8000 });
-    // Scrolled all the way down, nothing of the panel may be stuck behind the floating tab bar.
-    await p.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-    await p.waitForTimeout(200);
-    const m = await p.evaluate(() => {
-      const r = id => document.getElementById(id).getBoundingClientRect();
-      const nav = document.querySelector('#uxMobileNav').getBoundingClientRect();
-      return { nav: nav.top, inputBottom: r('claudeChatInput').bottom, sendBottom: r('claudeChatSend').bottom, sendH: r('claudeChatSend').height, selH: r('claudeChatSession').height, inputH: r('claudeChatInput').height,
-        font: parseFloat(getComputedStyle(document.getElementById('claudeChatInput')).fontSize), sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth };
-    });
-    assert.ok(m.sendH >= 44 && m.selH >= 44 && m.inputH >= 44, JSON.stringify(m));
-    assert.ok(m.font >= 16, `textarea font ${m.font}`);
-    assert.ok(m.sw <= m.cw + 1, `scrollWidth ${m.sw} > ${m.cw}`);
-    assert.ok(m.inputBottom <= m.nav + 1 && m.sendBottom <= m.nav + 1, `composer under tab bar: ${JSON.stringify(m)}`);
+    // The panel is the first block under the page header, so on a phone it is what you see first.
+    const first = await p.evaluate(() => { const n = document.querySelector('#claude > .topbar').nextElementSibling; const b = n.getBoundingClientRect(); return { id: n.id, top: b.top, h: b.height }; });
+    assert.equal(first.id, 'claudeChat');
+    assert.ok(first.top < 844 && first.h > 100, JSON.stringify(first));
+    // Scroll each control to the bottom edge of the screen (what focusing it does) and make sure it is not under the tab bar.
+    const clear = async id => {
+      await p.evaluate(i => document.getElementById(i).scrollIntoView({ block: 'end' }), id);
+      await p.waitForTimeout(150);
+      return p.evaluate(i => {
+        const e = document.getElementById(i), b = e.getBoundingClientRect(), nav = document.querySelector('#uxMobileNav').getBoundingClientRect();
+        const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+        return { id: i, bottom: b.bottom, nav: nav.top, hit: !!hit && (hit === e || e.contains(hit)), h: b.height, font: parseFloat(getComputedStyle(e).fontSize),
+          sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth };
+      }, id);
+    };
+    const input = await clear('claudeChatInput');
+    const sendBtn = await clear('claudeChatSend');
+    for (const m of [input, sendBtn]) {
+      assert.ok(m.hit, `${m.id} is covered: ${JSON.stringify(m)}`);
+      assert.ok(m.bottom <= m.nav + 0.5, `${m.id} sits under the tab bar: ${JSON.stringify(m)}`);
+      assert.ok(m.h >= 44, `${m.id} height ${m.h}`);
+      assert.ok(m.sw <= m.cw + 1, `scrollWidth ${m.sw} > ${m.cw}`);
+    }
+    assert.ok(input.font >= 16, `textarea font ${input.font}`);
+    assert.ok((await p.evaluate(() => document.getElementById('claudeChatSession').getBoundingClientRect().height)) >= 44);
+    await p.evaluate(() => document.getElementById('claudeChat').scrollIntoView({ block: 'start' }));
+    await p.waitForTimeout(150);
     const dir = process.env.CLAUDE_CHAT_SHOTS;
     if (dir) {
       await p.screenshot({ path: path.join(dir, 'task-6-phone-390x844.png') });
