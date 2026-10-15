@@ -2594,7 +2594,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 (() => {
   'use strict';
 
-  const state = { runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '' };
+  const state = { runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '', projects: [] };
   const ACTIVE = new Set(['queued', 'running', 'streaming', 'awaiting_approval']);
 
   function el(id) { return document.getElementById(id); }
@@ -2629,7 +2629,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     try { return JSON.stringify(value, null, 2); } catch { return String(value); }
   }
   function drawerSignature(run) {
-    return run ? [run.id, run.status, run.updatedAt, run.progress, outputText(run.output).length, run.error || '', Array.isArray(run.events) ? run.events.length : 0].join('|') : '';
+    return run ? [run.id, run.status, run.updatedAt, run.progress, outputText(run.output).length, run.error || '', run.pinned ? 1 : 0, run.projectId || '', run.card?.approval?.id || '', Array.isArray(run.events) ? run.events.length : 0].join('|') : '';
   }
 
 
@@ -2695,35 +2695,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     }
   }
 
+  // Every run is one shared card (components.js); clicking it or its action opens the run view.
   function makeRunRow(run) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'run-row';
-    button.dataset.runId = run.id;
-    button.addEventListener('click', () => openDrawer(run.id));
-
-    const main = document.createElement('div');
-    main.className = 'run-row-main';
-    const title = document.createElement('div');
-    title.className = 'run-row-title';
-    title.textContent = run.title || 'Untitled run';
-    const meta = document.createElement('div');
-    meta.className = 'run-row-meta';
-    [run.type || 'task', relativeTime(run.updatedAt || run.createdAt), run.source?.kind ? `source: ${run.source.kind}` : ''].filter(Boolean).forEach((text) => {
-      const span = document.createElement('span'); span.textContent = text; meta.appendChild(span);
-    });
-    const progress = document.createElement('div');
-    progress.className = 'run-row-progress';
-    const fill = document.createElement('span');
-    fill.style.setProperty('--progress', `${Math.max(0, Math.min(100, Number(run.progress) || 0))}%`);
-    progress.appendChild(fill);
-    main.append(title, meta, progress);
-
-    const status = document.createElement('span');
-    status.className = `statuschip run-status ${statusTone(run.status)}`;
-    status.textContent = statusLabel(run.status);
-    button.append(main, status);
-    return button;
+    return window.LocalAIUI.runCard(run, { onOpen: (item) => openDrawer(item.id) });
   }
 
   function render() {
@@ -2781,10 +2755,27 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     sub.className = 'run-drawer-sub';
     sub.textContent = `${run.type || 'task'} · ${statusLabel(run.status)} · updated ${relativeTime(run.updatedAt)}`;
     copy.append(title, sub);
+    const kit = window.LocalAIKit, card = run.card;
     const close = document.createElement('button');
     close.type = 'button'; close.className = 'btn run-drawer-close'; close.textContent = 'Close'; close.addEventListener('click', closeDrawer);
     head.append(copy, close);
     drawer.appendChild(head);
+
+    // Run view header: status badge, where the run is filed, Pin and File… .
+    const vh = document.createElement('div'); vh.className = 'run-view-head';
+    const badge = card?.badge || kit?.statusBadge(run.status) || { label: statusLabel(run.status), tone: 'neutral' };
+    const chip = document.createElement('span'); chip.className = `badge badge--${badge.tone}`; chip.textContent = badge.label;
+    const project = document.createElement('span'); project.className = 'run-view-project';
+    project.textContent = run.projectId ? (state.projects.find((p) => p.id === run.projectId)?.name || 'A project') : 'Not filed';
+    const pin = document.createElement('button'); pin.type = 'button'; pin.className = 'btn-outline run-act';
+    pin.textContent = run.pinned ? 'Unpin' : 'Pin'; pin.setAttribute('aria-pressed', String(!!run.pinned));
+    pin.addEventListener('click', () => updateRun(run, { pinned: !run.pinned }, run.pinned ? 'Run unpinned.' : 'Run pinned.'));
+    const file = document.createElement('button'); file.type = 'button'; file.className = 'btn-outline run-act'; file.textContent = 'File…';
+    file.addEventListener('click', () => fileRun(run));
+    vh.append(chip, project, pin, file);
+    drawer.appendChild(vh);
+
+    if (card?.approval) drawer.appendChild(approvalBar(card.approval));
 
     const actions = document.createElement('div');
     actions.className = 'run-drawer-actions';
@@ -2809,12 +2800,19 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const text = document.createElement('b'); text.textContent = value;
       box.append(key, text); details.appendChild(box);
     });
-    drawer.appendChild(details);
-
     if (run.summary) appendSection(drawer, 'Summary', run.summary);
     if (run.error) appendSection(drawer, 'Error', run.error);
-    const output = outputText(run.output);
-    if (output) appendSection(drawer, 'Output', output, true);
+    // The kind body slot: a body registered for this kind owns it; otherwise the Output block.
+    const mount = window.LocalAIUI.runBodyFor(card?.kind || run.type);
+    if (mount) {
+      const slot = document.createElement('section'); slot.className = 'run-section run-body';
+      try { mount(run, slot); } catch (error) { slot.textContent = `This run's details could not be shown: ${error.message}`; }
+      drawer.appendChild(slot);
+    } else {
+      const output = outputText(run.output);
+      if (output) appendSection(drawer, 'Output', output, true);
+    }
+    drawer.appendChild(details);
 
     if (Array.isArray(run.events) && run.events.length) {
       const section = document.createElement('section'); section.className = 'run-section';
@@ -2830,6 +2828,50 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       });
       section.appendChild(timeline); drawer.appendChild(section);
     }
+  }
+
+  // Approve and Reject only record a decision, so they are plain confirms (no typed word), whatever the risk.
+  function approvalBar(approval) {
+    const bar = document.createElement('section'); bar.className = 'run-approval'; bar.setAttribute('aria-label', 'Approval needed');
+    const head = document.createElement('div'); head.className = 'run-approval__title'; head.textContent = approval.title || 'Approval needed';
+    const tone = { high: 'bad', medium: 'attention' }[approval.risk] || 'neutral';
+    const risk = document.createElement('span'); risk.className = `badge badge--${tone}`; risk.textContent = `${approval.risk ? approval.risk[0].toUpperCase() + approval.risk.slice(1) : 'Unknown'} risk`;
+    const top = document.createElement('div'); top.className = 'run-view-head'; top.style.marginTop = '0'; top.append(head, risk);
+    bar.appendChild(top);
+    if (approval.detail) { const d = document.createElement('div'); d.className = 'run-approval__detail'; d.textContent = approval.detail; bar.appendChild(d); }
+    const row = document.createElement('div'); row.className = 'run-approval__actions';
+    [['Approve', 'approved', 'btn-primary', 'This records your decision.'], ['Reject', 'rejected', 'btn-outline', 'This records your decision. The change stays unapplied.']].forEach(([label, decision, cls, effect]) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = label;
+      b.addEventListener('click', async () => {
+        const answer = await window.LocalAIUI.ask({ title: `${label} “${approval.title || 'this request'}”?`, effect, confirmLabel: label, tone: 'default' });
+        if (!answer.ok) return;
+        b.disabled = true;
+        try { await post('/api/approvals/decide', { id: approval.id, decision }); el('runLiveRegion').textContent = decision === 'approved' ? 'Approved.' : 'Rejected.'; await loadRuns(true); }
+        catch (error) { el('runLiveRegion').textContent = `Could not record the decision: ${error.message}`; b.disabled = false; }
+      });
+      row.appendChild(b);
+    });
+    bar.appendChild(row);
+    return bar;
+  }
+
+  // Pin or file a run. The server answers {item}; keep the list's card and show the change right away.
+  async function updateRun(run, patch, done) {
+    try {
+      const { item } = await post('/api/runs/update', { id: run.id, ...patch });
+      const i = state.runs.findIndex((r) => r.id === run.id);
+      if (i >= 0) state.runs[i] = { ...state.runs[i], ...item, card: state.runs[i].card };
+      el('runLiveRegion').textContent = done;
+      render(); if (state.selectedId === run.id) renderDrawer(run.id);
+    } catch (error) { el('runLiveRegion').textContent = `Could not update the run: ${error.message}`; }
+  }
+
+  async function fileRun(run) {
+    try { state.projects = (await window.LocalAIUI.fetchJson('/api/projects')).items || []; } catch (error) { el('runLiveRegion').textContent = `Could not load projects: ${error.message}`; return; }
+    const options = [{ value: '', label: 'Not filed' }, ...state.projects.map((p) => ({ value: p.id, label: p.name }))];
+    const answer = await window.LocalAIUI.ask({ title: 'File this run', effect: 'Filed runs are kept with their project.', confirmLabel: 'File', select: { label: 'Project', options, value: run.projectId || '' } });
+    if (!answer.ok) return;
+    await updateRun(run, { projectId: answer.value || null }, answer.value ? 'Run filed.' : 'Run unfiled.');
   }
 
   function appendSection(parent, headingText, content, code = false) {
@@ -2932,7 +2974,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     ensureSurface();
     loadRuns(true);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) loadRuns(true); }, { passive: true });
-    document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && el('runDrawerBackdrop')?.classList.contains('show')) closeDrawer(); });
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && el('runDrawerBackdrop')?.classList.contains('show') && !document.querySelector('dialog.ask-sheet[open]')) closeDrawer(); });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });

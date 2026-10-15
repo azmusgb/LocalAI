@@ -186,7 +186,131 @@ await check('axe: the open sheet passes color-contrast and target-size at 390x84
     await ap.keyboard.press('Escape'); await ap.waitForFunction(() => window.__r);
   }
 });
+await check('ask select returns the chosen option value (Not filed gives an empty string)', async () => {
+  await openAsk({ title: 'File this run', confirmLabel: 'File', select: { label: 'Project', options: [{ value: '', label: 'Not filed' }, { value: 'prj_a', label: 'Alpha' }, { value: 'prj_b', label: 'Beta' }] } }); await sheet.waitFor();
+  assert.equal(await sheet.locator('input').count(), 0);
+  await sheet.locator('select').selectOption('prj_b');
+  await sheet.getByRole('button', { name: 'File' }).click();
+  await ap.waitForFunction(() => window.__r);
+  assert.deepEqual(await result(), { ok: true, value: 'prj_b' });
+  await openAsk({ title: 'File this run', confirmLabel: 'File', select: { label: 'Project', options: [{ value: '', label: 'Not filed' }, { value: 'prj_a', label: 'Alpha' }] } }); await sheet.waitFor();
+  await sheet.getByRole('button', { name: 'File' }).click();
+  await ap.waitForFunction(() => window.__r);
+  assert.deepEqual(await result(), { ok: true, value: '' });
+});
 await ap.close();
+
+// ---- run card and run view (the /api/runs list is stubbed) ----
+const PIX = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#357"/></svg>');
+const now = new Date().toISOString();
+const stubRuns = () => [
+  { id: 'run_img', type: 'image', title: 'Sunset poster', status: 'completed', progress: 100, updatedAt: now, createdAt: now, summary: 'One image', output: { images: [{ imageUrl: PIX }] }, events: [{ status: 'completed', at: now, detail: 'Image saved' }], pinned: false, projectId: null,
+    card: { kind: 'image', icon: 'image', title: 'Sunset poster', summary: 'One image', badge: { label: 'Done', tone: 'good' }, preview: { type: 'image', src: PIX, count: 1 }, action: { label: 'Open' }, approval: null, view: 'create' } },
+  { id: 'run_eng', type: 'engineering', title: 'Fix the login bug', status: 'awaiting_approval', progress: 40, updatedAt: now, createdAt: now, summary: 'Two files change', output: 'planned', events: [{ status: 'awaiting_approval', at: now, detail: 'Waiting for review' }], pinned: false, projectId: null,
+    card: { kind: 'engineering', icon: 'build', title: 'Fix the login bug', summary: 'Two files change', badge: { label: 'Ready to review', tone: 'accent' }, preview: { type: 'diff', changeId: 'chg_1', files: [{ path: 'app/auth.js', added: 12, removed: 3 }, { path: 'app/login.html', added: 2, removed: 0 }] }, action: { label: 'Review' }, approval: { id: 'apr_1', title: 'Apply the login fix', detail: 'Edits 2 files', risk: 'high' }, view: 'changes' } }
+];
+const rv = { posts: [], runs: stubRuns() };
+const runPage = await newPage(async pg => {
+  await pg.route(u => u.pathname === '/api/runs', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: rv.runs, summary: {} }) }));
+  await pg.route('**/api/projects', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [{ id: 'prj_a', name: 'Alpha' }, { id: 'prj_b', name: 'Beta' }] }) }));
+  await pg.route(u => ['/api/runs/update', '/api/approvals/decide'].includes(u.pathname), r => {
+    const body = JSON.parse(r.request().postData() || '{}'); rv.posts.push([new URL(r.request().url()).pathname, body]);
+    if (new URL(r.request().url()).pathname === '/api/runs/update') { const i = rv.runs.findIndex(x => x.id === body.id); const { pinned, projectId } = body; rv.runs[i] = { ...rv.runs[i], ...(pinned !== undefined ? { pinned } : {}), ...(projectId !== undefined ? { projectId } : {}) }; return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ item: rv.runs[i] }) }); }
+    r.fulfill({ contentType: 'application/json', body: JSON.stringify({ item: { id: body.id, status: body.decision } }) });
+  });
+});
+await runPage.waitForSelector('.navbtn[data-view="runs"]', { state: 'attached' });
+await runPage.evaluate(() => document.querySelector('.navbtn[data-view="runs"]').click());
+await runPage.waitForSelector('#runList .list-row');
+const drawerOpen = () => runPage.locator('#runDrawerBackdrop.show #runDrawer');
+const openRun = async id => { await runPage.locator(`#runList .list-row[data-run-id="${id}"] button.btn-primary`).click(); await drawerOpen().waitFor(); };
+const closeRun = async () => { await runPage.keyboard.press('Escape'); await runPage.waitForSelector('#runDrawerBackdrop:not(.show)', { state: 'attached' }); };
+await check('Runs shows one card per run: thumbnail, diff stat and the Review action', async () => {
+  assert.equal(await runPage.locator('#runList .list-row').count(), 2);
+  assert.equal(await runPage.locator('#runList .list-row[data-run-id="run_img"] .list-row__icon svg use').getAttribute('href'), '#i-image');
+  assert.equal(await runPage.locator('#runList .list-row[data-run-id="run_img"] img').getAttribute('src'), PIX);
+  const eng = runPage.locator('#runList .list-row[data-run-id="run_eng"]');
+  assert.equal(await eng.locator('button.btn-primary').innerText(), 'Review');
+  assert.match(await eng.innerText(), /Fix the login bug[\s\S]*2 files[\s\S]*\+14[\s\S]*-3[\s\S]*Review[\s\S]*Ready to review/);
+  assert.equal(await eng.locator('.badge.badge--accent').count(), 1);
+});
+await check('opening a run shows header, Not filed, Pin and File, then the approval bar before Timeline', async () => {
+  await openRun('run_eng');
+  const d = drawerOpen();
+  const t = await d.innerText();
+  assert.match(t, /Fix the login bug/); assert.match(t, /Not filed/);
+  assert.equal(await d.getByRole('button', { name: 'Pin' }).count(), 1);
+  assert.equal(await d.getByRole('button', { name: 'File…' }).count(), 1);
+  assert.equal(await d.locator('.run-approval').count(), 1);
+  assert.match(await d.locator('.run-approval').innerText(), /Apply the login fix[\s\S]*High risk/);
+  assert.ok(t.indexOf('Apply the login fix') < t.indexOf('Output') && t.indexOf('Output') < t.indexOf('Timeline'));
+  assert.equal(await runPage.locator('#runList .list-row[data-run-id="run_img"]').count(), 1);
+});
+await check('axe: the open run view passes color-contrast and target-size', async () => {
+  await runPage.addScriptTag({ path: axePath });
+  for (const sel of ['#runDrawer', '#runList']) {
+    const v = await runPage.evaluate(s => window.axe.run(s, { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(v => `${v.id}: ${v.nodes.map(n => n.html).join(' | ')}`)), sel);
+    assert.deepEqual(v, [], sel);
+  }
+});
+await check('Approve is a plain confirm (no typed word) and POSTs the decision once', async () => {
+  rv.posts.length = 0;
+  await drawerOpen().getByRole('button', { name: 'Approve' }).click();
+  const dlg = runPage.locator('dialog.ask-sheet[open]'); await dlg.waitFor();
+  assert.equal(await dlg.locator('input').count(), 0);
+  await dlg.getByRole('button', { name: 'Approve' }).click();
+  await runPage.waitForFunction(() => !document.querySelector('dialog.ask-sheet'));
+  await runPage.waitForTimeout(150);
+  assert.deepEqual(rv.posts.filter(p => p[0] === '/api/approvals/decide'), [['/api/approvals/decide', { id: 'apr_1', decision: 'approved' }]]);
+  assert.equal(await drawerOpen().count(), 1, 'Escape on the sheet does not close the run view');
+});
+await check('Cancelling the Reject confirm posts nothing; Escape closes only the sheet', async () => {
+  rv.posts.length = 0;
+  await drawerOpen().getByRole('button', { name: 'Reject' }).click();
+  await runPage.locator('dialog.ask-sheet[open]').waitFor();
+  await runPage.keyboard.press('Escape');
+  await runPage.waitForFunction(() => !document.querySelector('dialog.ask-sheet'));
+  assert.deepEqual(rv.posts, []);
+  assert.equal(await drawerOpen().count(), 1);
+});
+await check('Pin POSTs /api/runs/update {pinned:true} and the button becomes Unpin', async () => {
+  rv.posts.length = 0;
+  await drawerOpen().getByRole('button', { name: 'Pin', exact: true }).click();
+  await drawerOpen().getByRole('button', { name: 'Unpin' }).waitFor();
+  assert.deepEqual(rv.posts, [['/api/runs/update', { id: 'run_eng', pinned: true }]]);
+});
+await check('File… picks a project in a select and shows its name', async () => {
+  rv.posts.length = 0;
+  await drawerOpen().getByRole('button', { name: 'File…' }).click();
+  const dlg = runPage.locator('dialog.ask-sheet[open]'); await dlg.waitFor();
+  assert.deepEqual(await dlg.locator('select option').allInnerTexts(), ['Not filed', 'Alpha', 'Beta']);
+  await dlg.locator('select').selectOption('prj_b');
+  await dlg.getByRole('button', { name: 'File', exact: true }).click();
+  await drawerOpen().getByText('Beta').waitFor();
+  assert.deepEqual(rv.posts, [['/api/runs/update', { id: 'run_eng', projectId: 'prj_b' }]]);
+  assert.doesNotMatch(await drawerOpen().innerText(), /Not filed/);
+});
+await check('a body registered for a kind mounts in place of Output', async () => {
+  await closeRun();
+  await runPage.evaluate(() => window.LocalAIUI.registerRunBody('image', (run, el) => { el.innerHTML = `<div id="imgBody">gallery for ${run.id}</div>`; }));
+  await openRun('run_img');
+  const d = drawerOpen();
+  assert.match(await d.locator('#imgBody').innerText(), /gallery for run_img/);
+  assert.doesNotMatch(await d.innerText(), /Output/);
+  await closeRun();
+  await openRun('run_eng');
+  assert.match(await drawerOpen().innerText(), /Output/);
+  await closeRun();
+});
+await check('LocalAIRuns.open still returns false for an unknown id', async () => {
+  assert.equal(await runPage.evaluate(() => window.LocalAIRuns.open('nope')), false);
+});
+await check('Home run center renders the same cards', async () => {
+  await runPage.evaluate(() => window.showView('home'));
+  await runPage.waitForSelector('#homeRunList .list-row');
+  assert.equal(await runPage.locator('#homeRunList .list-row[data-run-id="run_eng"] button.btn-primary').innerText(), 'Review');
+});
+await runPage.close();
 
 await browser.close();
 if (failures.length) { console.error(`\n${failures.length} failure(s):\n- ${failures.join('\n- ')}`); process.exit(1); }
