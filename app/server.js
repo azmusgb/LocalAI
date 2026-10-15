@@ -2415,7 +2415,7 @@ async function apiChangeApprove(req,res){
 async function apiChangeRequestApply(req,res){
   if(!requireFeature(res,13))return;
   try{const b=await readBody(req);const items=changeStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Change not found'});const c=items[i];if(c.status!=='approved')return json(res,409,{error:`Change must be approved before apply (${c.status})`});if(c.target==='workspace'){const sourceRoot=safeWorkspacePath(c.root||'');const stageRoot=c.stageRoot;if(!stageRoot||!fs.existsSync(stageRoot))return json(res,409,{error:'Staged change is unavailable; stage it again'});const backups=[];for(const f of c.files){const src=ensureInside(stageRoot,f.path),dst=ensureInside(sourceRoot,f.path);fs.mkdirSync(path.dirname(dst),{recursive:true});if(fs.existsSync(dst)){const backup=`${dst}.localai-${Date.now()}.bak`;fs.copyFileSync(dst,backup);backups.push(workspaceRel(backup))}fs.copyFileSync(src,dst)}c.status='applied';c.appliedAt=nowIso();c.backups=backups;recordActivity('change','Workspace change applied',c.summary,{changeId:c.id,files:c.files.length});}
-    else{c.status='apply_requested';c.applyRequestedAt=nowIso();addNotification('change','Self-update queued',`${c.summary}. The host updater will apply the validated change.`,{changeId:c.id})}c.updatedAt=nowIso();saveChanges(items);json(res,200,{item:publicChange(c),hostUpdaterRequired:c.target==='self'})}catch(e){storageError(res,e,400)}
+    else if(c.shipVia!=='pr'){markChangeForPr(c);}c.updatedAt=nowIso();saveChanges(items);const shipped=c.target==='self'?shipChangeAsPr(c):null;json(res,200,{item:publicChange(c),shipVia:c.target==='self'?'pr':'workspace',improveItemId:shipped?.id||null})}catch(e){storageError(res,e,400)}
 }
 async function apiChangeDeployResult(req,res){
   if(!requireFeature(res,13))return;
@@ -2700,8 +2700,32 @@ function runImproveReconcile({startup=false}={}){
 const IMPROVE_ACTIONS=['start','handToClaude','moveToTop','defer','reject','retry','backToBacklog','discard'];
 function improveRead(id){return storage.readSetting(CLAUDE_FINDING_PREFIX+claudeSlug(id,''),null)}
 function improveWrite(f){f.updatedAt=nowIso();storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);return f}
+// A validated change to Local AI itself ships the way every change does: a pull request, CI, the owner's merge and
+// Safe Deploy. There is no host updater. Approving it hands its Improve item to Claude (In progress, boosted in
+// /api/claude/priorities) with what to do; the session reports the deploy through /api/changes/deploy-result,
+// which marks the change applied and Improve moves the item to Shipped.
+function markChangeForPr(c){c.shipVia='pr';c.handedAt=nowIso();addNotification('change','Handed to Claude to ship',`${c.summary||'Change'}. A Claude session opens a pull request with the staged change; it deploys when you merge it.`,{changeId:c.id})}
+function shipChangeAsPr(c){
+  const at=nowIso();
+  const existing=claudeFindings().find(f=>f.changeId===c.id);
+  const line=String(c.request||'').split('\n').map(l=>l.trim()).find(Boolean);
+  const item=existing||{id:`idea-change-${c.id}`,sessionId:'improve',source:'idea',changeId:c.id,category:'idea',severity:'medium',status:'approved',
+    title:String(c.summary&&!['Proposed change','Change request'].includes(c.summary)?c.summary:(line||'Change request')).slice(0,120),summary:String(c.request||c.summary||'').slice(0,2000),
+    votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',pr:'',createdAt:at};
+  const fix=`Ship staged change ${c.id} as a pull request: GET /api/changes lists it with its files and diffs. After the merge deploys, POST /api/changes/deploy-result {"id":"${c.id}","status":"applied"}.`;
+  return improveWrite({...item,...(item.handedToClaude?{}:improve.handToClaude(item,at)),fix});
+}
+// Before this, approved self changes waited at apply_requested for an updater that was never built. Hand those over once.
+function shipQueuedSelfChanges(){
+  const items=changeStore();let moved=0;
+  for(const c of items)if(c.target==='self'&&c.status==='apply_requested'){c.status='approved';markChangeForPr(c);c.updatedAt=nowIso();moved++}
+  if(!moved)return 0;
+  saveChanges(items);
+  for(const c of items)if(c.shipVia==='pr'&&c.status==='approved')shipChangeAsPr(c);
+  return moved;
+}
 function improveChangeRequest(f){return [f.title,f.summary,f.fix].filter(Boolean).join('\n\n')}
-// Changes past approval are with the host updater; Improve must not retire them.
+// Changes past approval are being shipped (a pull request for self changes); Improve must not retire them.
 const IMPROVE_LOCKED_CHANGE=['approved','apply_requested'];
 // Retires a change Improve no longer wants (rejected), and its pending approval with it.
 function improveRetireChange(changeId){
@@ -3085,6 +3109,7 @@ async function apiReleases(req, res) {
 
 migrateLegacyActivityToLibrary();
 recordReleaseHistory();
+shipQueuedSelfChanges();
 runImproveReconcile({ startup: true });
 // Health is checked on its own every minute, so an outage reaches the phone (Down/Recovered) even with no page open.
 const HEALTH_TICK_MS = Math.max(200, Number(process.env.HEALTH_TICK_MS) || 60000);

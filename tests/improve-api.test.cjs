@@ -216,7 +216,10 @@ test('Discard rejects a pending approval and refuses a change that is being depl
   assert.equal(approvals.find(a => a.id === 'appr-1').status, 'rejected');
   const d = await post(base, '/api/improve/item', { id: 'idea-d', action: 'discard', then: 'backlog' });
   assert.equal(d.status, 409);
-  assert.equal((await changeById(base, 'chg-d')).status, 'apply_requested');
+  // Start-up hands changes left at apply_requested to Claude as a pull request (approved, shipVia pr); still locked.
+  const shipping = await changeById(base, 'chg-d');
+  assert.equal(shipping.status, 'approved');
+  assert.equal(shipping.shipVia, 'pr');
 });
 
 test('Start now keeps the idea and says so when planning fails', { timeout: 60000 }, async t => {
