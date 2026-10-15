@@ -13,6 +13,7 @@ const TOKEN = process.env.CLAUDE_CODE_MESSAGING_TOKEN || '';
 const INJECT_GAP = Number(process.env.LOCALAI_CHAT_INJECT_GAP_MS ?? 1000);
 const BACKOFF_START = Number(process.env.LOCALAI_CHAT_BACKOFF_MS ?? 1000);
 const BACKOFF_MAX = 30000;
+const WRITE_TIMEOUT = Number(process.env.LOCALAI_CHAT_WRITE_TIMEOUT_MS ?? 5000);
 const RETRY_GAP = Math.min(500, INJECT_GAP);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -77,19 +78,37 @@ function writeSocket(item) {
   return new Promise((resolve) => {
     let settled = false;
     const done = (err) => { if (!settled) { settled = true; clearTimeout(timer); sock.destroy(); resolve(err || null); } };
+    let connected = false;
     const sock = net.createConnection(SOCKET);
-    const timer = setTimeout(() => done(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' })), 5000);
-    sock.on('error', done);
-    sock.on('connect', () => { sock.write(`${auth}\n${user}\n`, (e) => { if (e) done(e); else sock.end(); }); });
+    const timer = setTimeout(() => done(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' })), WRITE_TIMEOUT);
+    sock.on('error', (e) => { if (!connected) noteConnect(e); done(e); });
+    sock.on('connect', () => { connected = true; noteConnect(null); sock.write(`${auth}\n${user}\n`, (e) => { if (e) done(e); else sock.end(); }); });
     sock.on('close', () => done(null));
   });
 }
 
-let connectFailures = 0;
+// Consecutive ENOENT/ECONNREFUSED connects (probes and injections alike); any successful connect resets it.
+let refusals = 0;
+function noteConnect(err) {
+  if (!err) { refusals = 0; return; }
+  if (err.code !== 'ENOENT' && err.code !== 'ECONNREFUSED') return;
+  if (++refusals >= 3) { log('socket unreachable; exiting'); quit(0); }
+}
+
+// Liveness probe: connect and immediately hang up, writing nothing.
+function probe() {
+  return new Promise((resolve) => {
+    const sock = net.createConnection(SOCKET);
+    const timer = setTimeout(() => { sock.destroy(); resolve(); }, 2000);
+    const end = () => { clearTimeout(timer); sock.destroy(); resolve(); };
+    sock.on('connect', () => { noteConnect(null); end(); });
+    sock.on('error', (e) => { noteConnect(e); end(); });
+  });
+}
+
 let lastInject = 0;
 
 async function inject(item) {
-  let refused = 0;
   for (let attempt = 1; attempt <= 3; attempt++) {
     if (!fs.existsSync(SOCKET)) { log('socket gone; exiting'); quit(0); }
     const wait = lastInject + INJECT_GAP - Date.now();
@@ -97,19 +116,14 @@ async function inject(item) {
     const err = await writeSocket(item);
     lastInject = Date.now();
     if (!err) {
-      connectFailures = 0;
       try { fs.writeFileSync(lastFile, new Date().toISOString()); } catch { /* ignore */ }
       log(`injected ${item.id}`);
       return;
     }
     log(`inject failed ${item.id} attempt ${attempt} ${err.code || err.message}`);
-    if (err.code === 'ENOENT' || err.code === 'ECONNREFUSED') refused++;
     if (attempt < 3) await sleep(RETRY_GAP);
   }
   log(`lost ${item.id}`);
-  // Exit after 3 consecutive messages whose every attempt failed to connect.
-  if (refused === 3 && ++connectFailures >= 3) { log('socket unreachable; exiting'); quit(0); }
-  if (refused < 3) connectFailures = 0;
 }
 
 async function main() {
@@ -118,6 +132,7 @@ async function main() {
   let announced = false;
   for (;;) {
     if (!fs.existsSync(SOCKET)) { log('socket gone; exiting'); quit(0); }
+    await probe();
     try {
       if (!announced) { await announce(); announced = true; log('announced'); }
       const res = await fetch(`${URL_BASE}/api/claude/chat/inbox?sessionId=${encodeURIComponent(sessionId)}&wait=25`, {

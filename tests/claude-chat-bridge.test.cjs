@@ -76,8 +76,8 @@ async function fakeInbox(t) {
   const conns = [];
   const server = net.createServer((c) => {
     const rec = { at: Date.now(), data: '', closed: false };
-    conns.push(rec);
-    c.on('data', (d) => { rec.data += d; });
+    // Liveness probes connect and hang up without data; only record connections that send something.
+    c.on('data', (d) => { if (!rec.data) { rec.at = Date.now(); conns.push(rec); } rec.data += d; });
     c.on('close', () => { rec.closed = true; });
     c.on('error', () => {});
   });
@@ -202,34 +202,58 @@ test('relay returns 500 twice, then recovers: the queued message is still inject
   assert.ok(relay.requests.filter((r) => r.url.startsWith('/api/claude/chat/inbox')).length >= 3);
 });
 
-test('an injection that fails while the socket exists is retried (3 tries), logged as lost, and the bridge keeps delivering', async (t) => {
-  const relay = await fakeRelay(t);
-  const home = makeHome(t);
+async function staleSocket(t) {
   const sock = path.join(os.tmpdir(), `cbs${process.pid}${Math.random().toString(36).slice(2, 6)}.sock`);
   t.after(() => { try { fs.unlinkSync(sock); } catch {} });
   // A stale socket file: exists, but nothing listens (ECONNREFUSED on macOS and Linux).
-  const stale = spawn('node', ['-e', `require('net').createServer().listen(process.argv[1], () => console.log('up'))`, sock], { stdio: ['ignore', 'pipe', 'ignore'] });
-  t.after(() => stale.kill('SIGKILL'));
-  await new Promise((r) => stale.stdout.once('data', r));
-  stale.kill('SIGKILL');
-  await new Promise((r) => stale.on('exit', r));
+  const dead = spawn('node', ['-e', `require('net').createServer().listen(process.argv[1], () => console.log('up'))`, sock], { stdio: ['ignore', 'pipe', 'ignore'] });
+  t.after(() => dead.kill('SIGKILL'));
+  await new Promise((r) => dead.stdout.once('data', r));
+  dead.kill('SIGKILL');
+  await new Promise((r) => dead.on('exit', r));
   assert.ok(fs.existsSync(sock));
+  return sock;
+}
 
-  relay.queue.push({ id: 77, seq: 1, text: 'doomed', deviceName: 'd' });
+test('a stale socket (listener killed, file left behind) with nothing queued: the bridge exits after 3 refused connects and removes its pidfile', async (t) => {
+  const relay = await fakeRelay(t);
+  const home = makeHome(t);
+  const sock = await staleSocket(t);
   const b = startBridge(t, { relay, sock, home });
-  await until(() => log(home).includes('lost 77'), 'lost log line');
+  assert.equal(await exitsWithin(b, 5000, 'stale socket'), 0);
+  assert.ok(!fs.existsSync(path.join(home, 'run', `${SID}.pid`)));
+  assert.ok(log(home).includes('socket unreachable'));
+});
+
+test('an injection that fails while the socket accepts connections is retried (3 tries), logged as lost, and the bridge keeps delivering', async (t) => {
+  const relay = await fakeRelay(t);
+  const home = makeHome(t);
+  const sock = path.join(os.tmpdir(), `cbl${process.pid}${Math.random().toString(36).slice(2, 6)}.sock`);
+  t.after(() => { try { fs.unlinkSync(sock); } catch {} });
+  // Accepts every connection but never reads: connect succeeds, the large write cannot complete.
+  const held = [];
+  const stuck = net.createServer((c) => { c.pause(); c.on('error', () => {}); held.push(c); });
+  await new Promise((r) => stuck.listen(sock, r));
+  let stuckClosed = false;
+  const closeStuck = () => new Promise((r) => { if (stuckClosed) return r(); stuckClosed = true; held.forEach((c) => c.destroy()); stuck.close(() => r()); });
+  t.after(closeStuck);
+
+  relay.queue.push({ id: 77, seq: 1, text: 'x'.repeat(4 * 1024 * 1024), deviceName: 'd' });
+  const b = startBridge(t, { relay, sock, home, env: { LOCALAI_CHAT_WRITE_TIMEOUT_MS: '200' } });
+  await until(() => log(home).includes('lost 77'), 'lost log line', 15000);
   const l = log(home);
   assert.equal((l.match(/inject failed 77/g) || []).length, 3);
-  assert.ok(!l.includes('doomed'));
   assert.equal(b.exited, null, 'bridge keeps running after one lost message');
 
-  // Session recovers: a live listener replaces the stale file; the next message is delivered.
-  fs.unlinkSync(sock);
-  const live = net.createServer((c) => { c.on('data', (d) => { live.got = (live.got || '') + d; }); c.on('error', () => {}); });
+  // Swap in a normal listener; the next message is delivered.
+  await closeStuck();
+  try { fs.unlinkSync(sock); } catch {}
+  let got = '';
+  const live = net.createServer((c) => { c.on('data', (d) => { got += d; }); c.on('error', () => {}); });
   await new Promise((r) => live.listen(sock, r));
   t.after(() => new Promise((r) => live.close(r)));
   relay.queue.push({ id: 78, seq: 2, text: 'next', deviceName: 'd' });
-  await until(() => (live.got || '').includes('[LocalAI web · d] next'), 'next message delivered');
+  await until(() => got.includes('[LocalAI web · d] next'), 'next message delivered');
   assert.equal(b.exited, null);
 });
 
