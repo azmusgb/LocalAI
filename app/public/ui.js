@@ -3084,7 +3084,7 @@ async function initDevTools(){
 function mountDevToolsToggle(){
  const status=q('#status');if(!status||q('.dev-tools-pref',status))return;
  const row=document.createElement('label');row.className='dev-tools-pref card';
- row.innerHTML='<input type="checkbox" data-dev-tools-toggle><span><strong>Show developer tools</strong><small>Adds Build to the menu: change requests, the Claude board, Workbench and PowerShell.</small></span>';
+ row.innerHTML='<input type="checkbox" data-dev-tools-toggle><span><strong>Show developer tools</strong><small>Adds Improve to the menu: change requests, issues, quality signals and the Claude board.</small></span>';
  status.querySelector('.topbar')?.after(row);
  row.querySelector('input').addEventListener('change',e=>{pref.set(DEV_KEY,e.target.checked?'1':'0');applyDevTools(e.target.checked,true)});
  row.querySelector('input').checked=!document.body.classList.contains('dev-tools-off');

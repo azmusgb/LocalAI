@@ -4,7 +4,7 @@
 (function(root){'use strict';
 const INTENTS={ask:{mode:'ask'},create:{mode:'create'},agents:{kind:'missions'}};
 const REG=()=>root.LocalAIViews,runHandlers=[];
-let ready=false,applying=false,runOpen=null,initial='';
+let ready=false,applying=false,runOpen=null;
 function parse(hash=location.hash){
  const raw=String(hash||'').replace(/^#\/?/,''),i=raw.indexOf('?'),path=i<0?raw:raw.slice(0,i),query=new URLSearchParams(i<0?'':raw.slice(i+1)),m=/^run\/(.+)$/.exec(path);
  if(m)return{page:'run',runId:decodeURIComponent(m[1]),query};
@@ -43,11 +43,10 @@ function shown(id){
 function start(){
  if(ready||typeof root.showView!=='function')return;
  ready=true;
- if(initial)put(initial);else put('#home');
+ if(!location.hash)put('#home'); // otherwise honour the hash as it is now: a load-time one, or a tab tapped while the app was starting
  root.addEventListener('hashchange',apply);
  apply();
 }
-initial=location.hash;
 root.LocalAIRouter={go,shown,start,intentFor,
  current:()=>parse(),
  onRun(fn){runHandlers.push(fn);if(ready&&runOpen)Promise.resolve().then(()=>fn(runOpen))}};

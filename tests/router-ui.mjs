@@ -102,6 +102,21 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
     await page.context().close();
   });
 
+  await check(`${tag}: a tab tapped while the app is still starting is kept`, async () => {
+    const ctx = await browser.newContext({ viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
+    const page = await ctx.newPage();
+    await page.route('**/api/config', async r => { await new Promise(res => setTimeout(res, 800)); await r.fallback(); });
+    await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector(viewport.width < 760 ? '#uxMobileNav' : '.ux-primary-rail', { timeout: 8000 });
+    const before = await page.evaluate(() => history.length);
+    await item(page, 'projects').click();
+    await page.waitForFunction(() => typeof window.showView === 'function' && location.hash, null, { timeout: 8000 });
+    await page.waitForSelector('#library.active', T);
+    assert.equal(await page.evaluate(() => location.hash), '#library');
+    assert.equal(await page.evaluate(() => history.length), before + 1);
+    await ctx.close();
+  });
+
   await check(`${tag}: Run paths go to the registered handler`, async () => {
     const page = await open(viewport, '');
     await page.evaluate(() => { window.__runs = []; LocalAIRouter.onRun(id => window.__runs.push(id)); LocalAIRouter.go('#run/abc'); });
