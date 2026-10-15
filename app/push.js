@@ -13,13 +13,13 @@ function rawPublicKey(jwk) {
 }
 
 // The appliance's signing key pair, made once and kept in settings (push:vapid).
-function loadOrCreateVapid({ readSetting, writeSetting }) {
-  const saved = readSetting('push:vapid', null);
+function loadOrCreateVapid(settings) {
+  const saved = settings.readSetting('push:vapid', null);
   if (saved?.publicKey && saved?.privateJwk?.d) return saved;
   const { privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const privateJwk = privateKey.export({ format: 'jwk' });
   const vapid = { publicKey: b64u(rawPublicKey(privateJwk)), privateJwk };
-  writeSetting('push:vapid', vapid);
+  settings.writeSetting('push:vapid', vapid);
   return vapid;
 }
 

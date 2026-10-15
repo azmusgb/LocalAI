@@ -49,6 +49,12 @@ const release = require('./release').readRelease(__dirname);
 const APP_VERSION = /-stage$/.test(process.env.APP_VERSION || '') ? process.env.APP_VERSION : require('./release').appVersion(__dirname, release);
 const storage = new Storage({ dataDir: DATA_DIR });
 const runLedger = new RunLedger({ storage });
+// Phone notifications (Web Push): app/push.js sends, app/notify.js decides; docs/OPERATIONS.md › Notifications.
+const pushLib = require('./push');
+const notifier = require('./notify').createNotifier({
+  storage, sendPush: pushLib.sendPush, vapid: pushLib.loadOrCreateVapid(storage),
+  subject: process.env.VAPID_SUBJECT || 'https://github.com/azmusgb/LocalAI'
+});
 const activeRunControllers = new Map();
 const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody });
 
@@ -2690,6 +2696,7 @@ const server = http.createServer(async (req, res) => {
     if (crossSiteRequest(req)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 403, { error: 'Cross-site request blocked' }); }
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 } });
     if (req.method === 'GET' && p === '/api/releases') return await apiReleases(req, res);
+    if (p.startsWith('/api/push/')) return await apiPush(req, res, p);
     if (req.method === 'GET' && p === '/api/storage/status') return json(res, 200, storage.status());
     if (req.method === 'GET' && p === '/api/status') return await apiStatus(req, res);
     if (req.method === 'GET' && p === '/api/models') return await apiModels(req, res);
@@ -2846,6 +2853,22 @@ function repairGarbledTextOnce() {
   }
   storage.writeSetting(KEY, { completedAt: nowIso(), repaired: counts });
   if (counts[LIBRARY_STORE] || counts[NOTIFICATIONS_STORE]) console.log(`${nowIso()} Repaired garbled text: ${JSON.stringify(counts)}`);
+}
+
+async function apiPush(req, res, p) {
+  try {
+    if (req.method === 'GET' && p === '/api/push/key') return json(res, 200, { publicKey: pushLib.loadOrCreateVapid(storage).publicKey });
+    if (req.method !== 'POST') return json(res, 404, { error: 'Not found' });
+    const b = await readBody(req, 16 * 1024);
+    if (p === '/api/push/subscribe') {
+      const s = b.subscription || {};
+      if (!pushLib.isAllowedEndpoint(s.endpoint) || !s.keys?.p256dh || !s.keys?.auth) return json(res, 400, { error: 'That is not a browser push subscription.' });
+      return json(res, 200, { device: notifier.subscribe(s, b.name) });
+    }
+    if (p === '/api/push/unsubscribe') return json(res, 200, { ok: notifier.unsubscribe(String(b.endpoint || '')) });
+    if (p === '/api/push/test') return json(res, 200, await notifier.test(b.id ? String(b.id) : undefined));
+    return json(res, 404, { error: 'Not found' });
+  } catch (e) { storageError(res, e, 400); }
 }
 
 // Each deployed release is recorded once (by commit) so the app can show what changed and when.
