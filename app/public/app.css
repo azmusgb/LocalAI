@@ -1420,6 +1420,27 @@ body.ux-v3.ux-nav-collapsed .ux-page-strip{display:flex}
 .model-runtime-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:13px;color:var(--ds-soft)}
 .model-runtime-actions .btn{min-height:36px;padding:4px 12px}
 .first-run-progress{margin-top:8px;max-width:420px}.first-run-progress small{display:block;color:var(--ds-muted);font-size:12px;margin-top:4px}
+
+/* Home, phone pass 2: status is one line of chips at the foot, empty cards stay hidden, recent images show thumbnails. */
+body #homeCapabilities{display:flex!important;flex-wrap:wrap;gap:8px;margin-top:16px}
+#homeCapabilities .cap-chip{min-height:36px;flex-direction:row;align-items:baseline;gap:5px;padding:7px 12px;border-radius:999px;background:var(--panel2);color:var(--text);font:inherit;cursor:pointer;min-width:0;max-width:100%}
+#homeCapabilities .cap-chip b{font-size:12px}
+#homeCapabilities .cap-chip span{font-size:12px;color:var(--muted);white-space:nowrap}
+#homeCapabilities .cap-chip:hover{border-color:var(--line2)}
+#homeCapabilities .empty{padding:0;font-size:12px}
+.home-optional-grid:not(:has(> .card:not([hidden]))){display:none}
+.activity-item--thumb{grid-template-columns:44px minmax(0,1fr) auto}
+.activity-item--thumb .activity-icon{width:44px;height:44px;overflow:hidden}
+.activity-item--thumb .activity-icon img{width:100%;height:100%;object-fit:cover;display:block}
+.mode-select{display:none}
+@media(max-width:760px){
+  /* One compact mode select instead of six buttons wrapping onto two rows. */
+  #home .modes{display:none}
+  .mode-select{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;color:var(--muted)}
+  .mode-select select{flex:1;min-width:0}
+  .activity-item--thumb{grid-template-columns:44px minmax(0,1fr)}
+  #homeCapabilities .cap-chip{min-height:44px}
+}
 /* ==== image studio ==== */
 .img-studio{display:grid;grid-template-columns:minmax(320px,440px) minmax(0,1fr);gap:14px;align-items:start}
 .img-compose{display:grid;gap:14px}
@@ -1487,6 +1508,55 @@ body.ux-v3.ux-nav-collapsed .ux-page-strip{display:flex}
 .img-batch .img-thumb.active{border-color:var(--ds-accent);box-shadow:0 0 0 2px var(--ds-accent)}
 /* Scrolling to the editor leaves its header clear of the sticky top bar. */
 .img-edit{scroll-margin-top:88px}
+
+/* Phone shell (redesign task 2): one header, underline page tabs, a flush icon tab bar. Desktop is unchanged. */
+.ux-context-bar .ux-ico{display:none}
+.ux-context-action[hidden]{display:none}
+@media(max-width:760px){
+  body{background:var(--ds-bg)}
+  /* Header: section name + page switcher on the left; page action, search and inbox on the right. */
+  body.ux-v3 .ux-context-bar{display:flex;align-items:center;justify-content:flex-start;gap:0;min-height:52px;margin:0 -13px;padding:calc(4px + env(safe-area-inset-top)) 8px 4px 16px;background:rgba(10,17,28,.94);border-bottom:0}
+  body.ux-v3 .ux-context-bar:not(.ux-context-has-strip){margin-bottom:8px}
+  body.ux-v3 .ux-context-left{order:0;min-width:0}
+  body.ux-v3 .ux-context-bar .ux-context-domain,body.ux-v3 .ux-context-bar .ux-context-view{font-size:20px!important;font-weight:650;letter-spacing:-.01em;color:var(--ds-text)}
+  body.ux-v3 .ux-context-bar:not(.ux-context-has-strip) .ux-context-domain{display:none!important}
+  body.ux-v3 .ux-context-bar:not(.ux-context-has-strip) .ux-context-view{display:inline!important}
+  body.ux-v3 .ux-context-actions{display:contents}
+  body.ux-v3 .ux-context-bar .ux-ico{display:block;width:22px;height:22px}
+  body.ux-v3 .ux-context-menu,body.ux-v3 .ux-context-search,body.ux-v3 .ux-context-inbox,body.ux-v3 .ux-context-action{display:grid!important;place-items:center;position:relative;width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;border-radius:12px;background:transparent;color:var(--ds-soft)}
+  body.ux-v3 .ux-context-action[hidden]{display:none!important}
+  body.ux-v3 .ux-context-menu{order:1;margin-right:auto;color:var(--ds-faint)}
+  body.ux-v3 .ux-context-menu .ux-ico{width:18px;height:18px}
+  body.ux-v3 .ux-context-action{order:2}
+  body.ux-v3 .ux-context-search{order:3}
+  body.ux-v3 .ux-context-inbox{order:4}
+  body.ux-v3 .ux-context-menu>span,body.ux-v3 .ux-context-search>span,body.ux-v3 .ux-context-search kbd,body.ux-v3 .ux-context-inbox>span{display:none}
+  body.ux-v3 .ux-context-inbox b{position:absolute;top:7px;right:7px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--ds-bad);color:#1a0507;font-size:11px;font-weight:700;line-height:16px}
+  body.ux-v3 .ux-context-inbox[data-empty="true"] b{display:none}
+  body.ux-v3 .ux-context-menu:active,body.ux-v3 .ux-context-search:active,body.ux-v3 .ux-context-inbox:active,body.ux-v3 .ux-context-action:active{background:var(--ds-surface)}
+
+  /* Pages in the section: underline tabs under the header; they scroll sideways when there are many. */
+  body.ux-v3 .ux-page-strip{gap:22px;height:44px;margin:0 -13px 14px;padding:0 18px;border-bottom:1px solid var(--ds-line);scroll-padding:0 18px;position:sticky;top:calc(52px + env(safe-area-inset-top));z-index:44;background:rgba(10,17,28,.94);align-items:stretch}
+  body.ux-v3 .ux-page-strip button{min-height:44px;height:44px;padding:0;border:0;border-radius:0;background:transparent;color:var(--ds-faint);font-size:15px;font-weight:500}
+  body.ux-v3 .ux-page-strip button.active{background:transparent;color:var(--ds-text);font-weight:650;box-shadow:inset 0 -2px 0 var(--ds-accent)}
+
+  /* Page headings: the header and tabs already name the page. The page's own actions stay. */
+  body.ux-v3 .view>.topbar>div:first-child:has(>h1){display:none}
+  body.ux-v3 .view>.topbar:not(:has(>:nth-child(2))){display:none}
+  body.ux-v3 #home>.topbar{display:none}
+  body.ux-v3 .view>.topbar{margin:-4px 0 4px;min-height:0;justify-content:flex-end}
+
+  /* Tab bar: flush to the bottom edge, the active icon in a pill. */
+  body.ux-v3 .ux-mobile-nav{left:0;right:0;bottom:0;border:0;border-top:1px solid var(--ds-line);border-radius:0;padding:6px 6px env(safe-area-inset-bottom);background:rgba(10,17,28,.94);box-shadow:none}
+  body.ux-v3 .ux-mobile-nav button{min-height:52px;padding:4px 0 6px;gap:3px;color:var(--ds-faint);font-size:11px;font-weight:500;align-content:start;background:transparent}
+  body.ux-v3 .ux-mobile-nav button b{display:grid;place-items:center;width:52px;height:30px;border-radius:999px}
+  body.ux-v3 .ux-mobile-nav button b .icon{width:22px;height:22px}
+  body.ux-v3 .ux-mobile-nav button[data-active="true"]{background:transparent;color:var(--ds-accent-text);font-weight:600}
+  body.ux-v3 .ux-mobile-nav button[data-active="true"] b{background:rgba(108,182,255,.16)}
+  body.ux-v3 .ux-mobile-sheet{bottom:calc(72px + env(safe-area-inset-bottom));background:var(--ds-bg-2)}
+}
+/* The icon sprite renders inline otherwise and pushes the page down a line. Kept in the tree (not display:none) so <use> resolves everywhere. */
+body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
 /* ==== secure connection ==== */
 .secure-card{margin-bottom:12px}
 .secure-head{display:flex;gap:12px;align-items:flex-start}.secure-head h2{margin-bottom:4px}.secure-head p{margin:0;color:var(--ds-soft)}

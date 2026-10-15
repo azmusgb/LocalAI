@@ -16,7 +16,7 @@ test('Models surface consumes live model runtime truth', () => {
   assert.match(ui, /models\.loaded/);
   assert.match(ui, /contextLength/);
   assert.match(ui, /sizeVramBytes/);
-  assert.match(ui, /Loaded \/ installed models/);
+  assert.match(ui, /models loaded/);
 });
 
 test('Attention flags inventory and default-model problems without treating idle unload as failure', () => {

@@ -521,3 +521,12 @@ test('pairing POSTs: cross-origin is 403, non-JSON is 415', async t => {
   assert.equal((await fetch(`${url}/api/claude/chat/pair-request`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{}' })).status, 415);
   assert.equal((await approve(url, { code: 'AAAAAA' }, { 'X-LocalAI-Mac-Key': KEY, Origin: 'http://evil.example' })).status, 403);
 });
+
+test('whoami answers 200 either way and reports whether the device cookie is paired', async t => {
+  const url = await startServer(t);
+  const who = async headers => { const r = await fetch(`${url}/api/claude/chat/whoami`, { headers }); assert.equal(r.status, 200); return r.json(); };
+  assert.deepEqual(await who({}), { paired: false });
+  assert.deepEqual(await who({ Cookie: 'localai_chat_device=dev-aaaaaaaaaaaa.forged' }), { paired: false });
+  const a = await pairDevice(url, 'Phone');
+  assert.deepEqual(await who({ Cookie: a.cookie }), { paired: true });
+});

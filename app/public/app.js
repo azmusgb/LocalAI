@@ -26,7 +26,7 @@ function cacheBust(value){
   const u=new URL(safe,location.origin); u.searchParams.set('_t',String(Date.now()));
   return u.origin===location.origin?u.pathname+u.search+u.hash:u.href;
 }
-function ago(iso){const d=Date.now()-new Date(iso).getTime();if(!Number.isFinite(d))return '';const s=Math.max(0,Math.floor(d/1000));if(s<60)return 'now';if(s<3600)return `${Math.floor(s/60)}m`;if(s<86400)return `${Math.floor(s/3600)}h`;return `${Math.floor(s/86400)}d`;}
+function ago(iso){const d=Date.now()-new Date(iso).getTime();if(!Number.isFinite(d))return '';const future=d<0,s=Math.floor(Math.abs(d)/1000);if(s<60)return future?'in under a minute':'just now';const v=s<3600?`${Math.floor(s/60)}m`:s<86400?`${Math.floor(s/3600)}h`:`${Math.floor(s/86400)}d`;return future?`in ${v}`:`${v} ago`;}
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._hide);t._hide=setTimeout(()=>t.classList.remove('show'),2200);}
 function setPhase(phase,detail=''){
   state.chatPhase=phase;
@@ -45,7 +45,9 @@ function renderAgentMap(phase = 'idle') {
   const rank = { idle: -1, routing: 0, sending: 1, searching: 1, generating: 1, streaming: 2, done: 3, error: 1 };
   const active = rank[phase] ?? -1;
   
-  // Only show full agent map when in active execution phase
+  // Only show full agent map when in active execution phase; on Home the card is hidden while idle.
+  const card = $('homeExecutionCard');
+  if (card) card.hidden = phase === 'idle';
   if (phase === 'idle') {
     $('agentMap').innerHTML = '<div class="agent-node inactive"><span class="agent-pulse"></span><div class="kicker">Idle</div><strong>Waiting for command</strong></div>';
     return;
@@ -57,7 +59,7 @@ function renderAgentMap(phase = 'idle') {
   }).join('');
 }
 function activityHtml(item){const run=item.meta?.runId?`<button class="btn activity-run" type="button" data-open-run="${esc(item.meta.runId)}">Open run</button>`:'';return `<div class="activity-item"><div class="activity-icon">${icons[item.type]||'·'}</div><div><div class="activity-title">${esc(item.title)}</div><div class="activity-detail">${esc(item.detail||'')}</div>${run}</div><div class="activity-time">${ago(item.at)}</div></div>`;}
-function artifactRow(item){return `<div class="activity-item"><div class="activity-icon">${icons[item.kind]||'□'}</div><div><div class="activity-title">${esc(item.title)}</div><div class="activity-detail">${esc(item.summary||'')}</div></div><div class="activity-time">${ago(item.createdAt)}</div></div>`;}
+function artifactRow(item){const image=item.kind==='image'?safeUrl(item.meta?.imageUrl||item.data?.imageUrl,{image:true}):'';return `<div class="activity-item${image?' activity-item--thumb':''}"><div class="activity-icon">${image?`<img src="${esc(image)}" alt="" loading="lazy">`:icons[item.kind]||'□'}</div><div><div class="activity-title">${esc(item.title)}</div><div class="activity-detail">${esc(item.summary||'')}</div></div><div class="activity-time">${ago(item.createdAt)}</div></div>`;}
 
 // Data loaders for pages whose content is fetched on open. Every route (rail, tabs, mobile sheet, ⌘K) goes through showView.
 const VIEW_LOADERS={inbox:()=>loadInbox(),approvals:()=>loadApprovals(),memory:()=>loadMemory(),operations:()=>loadMonitors(),changes:()=>Promise.all([loadChanges(),loadEngineeringRuns()]),quality:()=>loadQuality(),issues:()=>loadIssues(),powershell:()=>loadPowerShellJobs()};
@@ -354,7 +356,13 @@ async function sendChat(){
 }
 $('sendBtn').addEventListener('click',()=>{ if(state.streamController) abortStream('Response stopped'); else sendChat(); });$('chatInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}});
 
-qsa('.mode').forEach(b=>b.addEventListener('click',()=>{state.mode=b.dataset.mode;qsa('.mode').forEach(x=>x.classList.toggle('active',x===b));}));
+qsa('.mode').forEach(b=>b.addEventListener('click',()=>{state.mode=b.dataset.mode;qsa('.mode').forEach(x=>x.classList.toggle('active',x===b));syncModeSelect();}));
+// Phones get one compact select instead of six wrapped mode buttons; it mirrors the buttons (hidden and gated modes included).
+function syncModeSelect(){const sel=$('commandModeSelect');if(!sel)return;const opts=qsa('.mode').filter(b=>getComputedStyle(b).display!=='none');const html=opts.map(b=>`<option value="${esc(b.dataset.mode)}"${b.disabled?' disabled':''}>${esc(b.textContent)}</option>`).join('');if(sel.dataset.html!==html){sel.innerHTML=html;sel.dataset.html=html;}sel.value=state.mode||'auto';}
+$('commandModeSelect')?.addEventListener('change',e=>qsa('.mode').find(b=>b.dataset.mode===e.target.value)?.click());
+$('commandModeSelect')?.addEventListener('focus',syncModeSelect);
+new MutationObserver(syncModeSelect).observe(document.querySelector('.modes'),{subtree:true,attributes:true,attributeFilter:['disabled','class']});
+new MutationObserver(syncModeSelect).observe(document.body,{attributes:true,attributeFilter:['class']});
 function localRoute(text,mode='auto'){
   const t=String(text||'').toLowerCase();
   if(mode==='engineering')return {intent:'engineering',target:'self',confidence:1,reason:'explicit-mode'};
@@ -467,7 +475,7 @@ function renderLibrary(){
 }
 async function loadLibrary(){try{const r=await fetch('/api/library',{cache:'no-store'}),j=await r.json();state.library=j.items||[];renderLibrary();}catch{}}
 $('librarySearch').addEventListener('input',e=>{state.librarySearch=e.target.value;state.lastLibrarySignature='';renderLibrary();});qsa('[data-kind]').forEach(b=>b.addEventListener('click',()=>{state.libraryKind=b.dataset.kind;qsa('[data-kind]').forEach(x=>x.classList.toggle('active',x===b));state.lastLibrarySignature='';renderLibrary();}));
-async function loadWorkspace(){try{const r=await fetch('/api/workspace',{cache:'no-store'}),j=await r.json();state.workspace=j;$('homeRecent').innerHTML=(j.recent||[]).slice(0,5).map(artifactRow).join('')||'<div class="empty">No saved work yet.</div>';$('homePinned').innerHTML=(j.pinned||[]).slice(0,4).map(artifactRow).join('')||'<div class="empty">Pin Library items to keep them here.</div>';}catch{}}
+async function loadWorkspace(){try{const r=await fetch('/api/workspace',{cache:'no-store'}),j=await r.json();state.workspace=j;$('homeRecent').innerHTML=(j.recent||[]).slice(0,5).map(artifactRow).join('')||'<div class="empty">No saved work yet.</div>';const pinned=(j.pinned||[]).slice(0,4);$('homePinned').innerHTML=pinned.map(artifactRow).join('');$('homePinnedCard').hidden=!pinned.length;}catch{}}
 
 function normalizedState(v){return ['HEALTHY','DEGRADED','DOWN','OPTIONAL_OFFLINE'].includes(v)?v:'DEGRADED';}
 function serviceDisplayState(s){return s.displayState||(s.required===false&&s.state!=='HEALTHY'?'OPTIONAL_OFFLINE':normalizedState(s.state));}
@@ -504,17 +512,23 @@ async function refreshStatus(force=false){
     document.querySelectorAll('[data-status-retry]').forEach(b=>b.onclick=()=>refreshStatus(true));
   }
 }
-// mobile-overhaul.js appends #truthModelCapabilityTile to this strip; keep it across re-renders.
-function renderCapabilityStrip(box,html){const tile=$('truthModelCapabilityTile');box.innerHTML=html;if(tile)box.appendChild(tile);}
+// One line of tappable status chips at the foot of Home. Anything needing action (pending changes, open issues,
+// unconfigured bridges) is raised by the Attention card instead, so only steady-state facts appear here.
+// ui.js appends #truthModelCapabilityTile to this strip; keep it across re-renders.
+function renderCapabilityStrip(box,html){const tile=$('truthModelCapabilityTile');box.innerHTML=html;if(tile)box.appendChild(tile);qsa('#homeCapabilities [data-chip-view]').forEach(b=>b.addEventListener('click',()=>window.showView?.(b.dataset.chipView)));}
+function capChip(view,value,label,title=''){return `<button type="button" class="cap-tile cap-chip" data-chip-view="${esc(view)}"${title?` title="${esc(title)}"`:''}><b>${esc(value)}</b><span>${esc(label)}</span></button>`;}
 async function loadHomeCapabilities(){
   const box=$('homeCapabilities');if(!box)return;
-  try{const r=await fetch('/api/capabilities',{cache:'no-store'}),j=await r.json();if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);const imageNames=(j.images?.models||[]).filter(x=>x.supported).map(x=>x.familyLabel||x.family);const unique=[...new Set(imageNames)];renderCapabilityStrip(box,`<div class="cap-tile"><b>${esc(j.version||'—')}</b><span>Local AI</span></div><div class="cap-tile"><b>${esc(j.overall||'—')}</b><span>System</span></div><div class="cap-tile"><b>${unique.length?esc(unique.join(', ')):'Unavailable'}</b><span>Images</span></div><div class="cap-tile"><b>${j.engineering?.active||0}</b><span>Engineering active</span></div><div class="cap-tile"><b>${j.changes?.pending||0}</b><span>Pending changes</span></div><div class="cap-tile"><b>${j.issues?.open||0}</b><span>Open issues</span></div><div class="cap-tile"><b>${j.powershell?.configured?'Ready':'Setup'}</b><span>PowerShell</span></div>`)}catch(e){renderCapabilityStrip(box,`<div class="empty">Capability snapshot unavailable: ${esc(e.message)}</div>`)}
+  try{const r=await fetch('/api/capabilities',{cache:'no-store'}),j=await r.json();if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);const imageNames=(j.images?.models||[]).filter(x=>x.supported).map(x=>x.familyLabel||x.family);const unique=[...new Set(imageNames)];const active=Number(j.engineering?.active||0);
+    renderCapabilityStrip(box,[active?capChip('changes',active,active===1?'change running':'changes running'):'',capChip('create',unique.length?unique.join(', '):'None','images'),capChip('status',`v${j.version||'—'}`,'Local AI',`Local AI ${j.version||''}`)].join(''));}
+  catch(e){renderCapabilityStrip(box,`<div class="empty">Status summary unavailable: ${esc(e.message)}</div>`)}
 }
 function schedulePolling(){clearInterval(state.statusTimer);clearInterval(state.activityTimer);if(!document.hidden){state.statusTimer=setInterval(refreshStatus,60000);state.activityTimer=setInterval(()=>{loadActivity();loadWorkspace();},60000);}}
 document.addEventListener('visibilitychange',()=>{schedulePolling();if(!document.hidden){refreshStatus();loadActivity();loadWorkspace();}});
 
-async function detectOfflineReady(){if(!('serviceWorker' in navigator)){ $('offlineHint').textContent='Local-first shell · service worker unavailable';return;}try{await navigator.serviceWorker.register('/sw.js');$('offlineHint').textContent='Local-first shell · offline shell ready';}catch(e){$('offlineHint').textContent='Local-first shell · offline cache unavailable';console.debug('Service worker registration failed',e);}}
-async function init(){renderAgentMap();renderMessages();setPhase('idle');loadActivity();loadLibrary();loadWorkspace();refreshStatus();loadHomeCapabilities();schedulePolling();detectOfflineReady();try{const r=await fetch('/api/models',{cache:'no-store'}),j=await r.json();state.model=j.default||j.models?.[0]||null;}catch{} }
+// Only a positive result is worth showing; without a service worker (plain-HTTP LAN access) the hint stays hidden.
+async function detectOfflineReady(){const hint=$('offlineHint');if(!('serviceWorker' in navigator))return;try{await navigator.serviceWorker.register('/sw.js');hint.textContent='Works offline · the app shell is cached on this device';hint.hidden=false;}catch(e){console.debug('Service worker registration failed',e);}}
+async function init(){syncModeSelect();renderAgentMap();renderMessages();setPhase('idle');loadActivity();loadLibrary();loadWorkspace();refreshStatus();loadHomeCapabilities();schedulePolling();detectOfflineReady();try{const r=await fetch('/api/models',{cache:'no-store'}),j=await r.json();state.model=j.default||j.models?.[0]||null;}catch{} }
 init();
 
 
@@ -658,7 +672,7 @@ async function bindEvo(){
   $('memoryAddBtn')?.addEventListener('click',addMemory);$('memoryProject')?.addEventListener('change',loadMemory);
   $('repoInspectBtn')?.addEventListener('click',inspectRepo);$('commandRunBtn')?.addEventListener('click',runWorkbenchCommand);
   $('monitorCreateBtn')?.addEventListener('click',createMonitor);$('briefBtn')?.addEventListener('click',generateBrief);
-  $('changeRefreshBtn')?.addEventListener('click',()=>loadChanges());$('qualityScanBtn')?.addEventListener('click',runQualityScanClient);$('issueScanBtn')?.addEventListener('click',scanIssues);$('engineeringTarget')?.addEventListener('change',()=>{$('engineeringRoot').disabled=$('engineeringTarget').value==='self'});$('engineeringRunBtn')?.addEventListener('click',runEngineeringAgent);$('powershellUnlockBtn')?.addEventListener('click',unlockPowerShell);$('powershellCreateBtn')?.addEventListener('click',createPowerShellJob);$('powershellRefreshBtn')?.addEventListener('click',()=>loadPowerShellJobs());
+  $('changeRefreshBtn')?.addEventListener('click',()=>loadChanges());$('qualityScanBtn')?.addEventListener('click',runQualityScanClient);$('issueScanBtn')?.addEventListener('click',scanIssues);$('engineeringTarget')?.addEventListener('change',()=>{$('engineeringRoot').disabled=$('engineeringTarget').value==='self'});$('engineeringRunBtn')?.addEventListener('click',runEngineeringAgent);$('powershellUnlockForm')?.addEventListener('submit',e=>{e.preventDefault();unlockPowerShell();});$('powershellCreateBtn')?.addEventListener('click',createPowerShellJob);$('powershellRefreshBtn')?.addEventListener('click',()=>loadPowerShellJobs());
   window.showView=showView;
   if(featureLevel()>=7){loadInbox().catch(()=>{});setInterval(()=>{if(!document.hidden)loadInbox().catch(()=>{})},60000)}if(featureLevel()>=9)loadApprovals().catch(()=>{});if(featureLevel()>=13)loadChanges().catch(()=>{});if(featureLevel()>=14)loadQuality().catch(()=>{});if(featureLevel()>=15)loadIssues().catch(()=>{});if(featureLevel()>=16)loadEngineeringRuns().catch(()=>{});if(featureLevel()>=17)loadPowerShellJobs().catch(()=>{});
 }
