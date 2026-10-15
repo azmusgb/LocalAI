@@ -50,8 +50,8 @@ await check('icon sprite has every named symbol', async () => {
   assert.deepEqual(missing, []);
 });
 await check('statusBadge maps statuses', async () => {
-  const got = await foundation.evaluate(() => Object.fromEntries(['awaiting_approval','ready','needs_attention','applied','completed','answered','running','failed','queued','DOWN','HEALTHY','OPTIONAL_OFFLINE'].map(s => [s, window.LocalAIKit.statusBadge(s)])));
-  const want = { awaiting_approval: ['Ready to review','accent'], ready: ['Ready to review','accent'], needs_attention: ['Needs a look','attention'], applied: ['Done','good'], completed: ['Done','good'], answered: ['Done','good'], running: ['Running','accent'], failed: ['Failed','bad'], queued: ['Queued','neutral'], DOWN: ['Down','bad'], HEALTHY: ['Healthy','good'], OPTIONAL_OFFLINE: ['Offline','neutral'] };
+  const got = await foundation.evaluate(() => Object.fromEntries(['awaiting_approval','ready','needs_attention','applied','complete','completed','answered','running','failed','queued','DOWN','HEALTHY','OPTIONAL_OFFLINE'].map(s => [s, window.LocalAIKit.statusBadge(s)])));
+  const want = { awaiting_approval: ['Ready to review','accent'], ready: ['Ready to review','accent'], needs_attention: ['Needs a look','attention'], applied: ['Done','good'], complete: ['Done','good'], completed: ['Done','good'], answered: ['Done','good'], running: ['Running','accent'], failed: ['Failed','bad'], queued: ['Queued','neutral'], DOWN: ['Down','bad'], HEALTHY: ['Healthy','good'], OPTIONAL_OFFLINE: ['Offline','neutral'] };
   for (const [k, [label, tone]] of Object.entries(want)) assert.deepEqual(got[k], { label, tone }, k);
   assert.match(await foundation.evaluate(() => window.LocalAIKit.badgeHtml('failed')), /badge--bad[^>]*>Failed</);
   assert.match(await foundation.evaluate(() => window.LocalAIKit.icon('home')), /<use href="#i-home"/);

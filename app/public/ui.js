@@ -3,7 +3,7 @@
 
 // ==== ui-kit.js ====
 (()=>{'use strict';
-const STATUS={awaiting_approval:['Ready to review','accent'],ready:['Ready to review','accent'],needs_attention:['Needs a look','attention'],applied:['Done','good'],completed:['Done','good'],answered:['Done','good'],running:['Running','accent'],failed:['Failed','bad'],queued:['Queued','neutral'],down:['Down','bad'],healthy:['Healthy','good'],optional_offline:['Offline','neutral']};
+const STATUS={awaiting_approval:['Ready to review','accent'],ready:['Ready to review','accent'],needs_attention:['Needs a look','attention'],applied:['Done','good'],complete:['Done','good'],completed:['Done','good'],answered:['Done','good'],running:['Running','accent'],failed:['Failed','bad'],queued:['Queued','neutral'],down:['Down','bad'],healthy:['Healthy','good'],optional_offline:['Offline','neutral']};
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 function icon(name,cls){return '<svg class="icon'+(cls?' '+esc(cls):'')+'" aria-hidden="true"><use href="#i-'+esc(name)+'"/></svg>'}
 function statusBadge(status){const key=String(status??'').trim().toLowerCase();const hit=STATUS[key];if(hit)return{label:hit[0],tone:hit[1]};const raw=String(status??'').trim().replace(/[_-]+/g,' ');return{label:raw?raw.charAt(0).toUpperCase()+raw.slice(1).toLowerCase():'Unknown',tone:'neutral'}}
@@ -873,18 +873,53 @@ function buildTabs(){
    }
  }
 }
+const icon=(name,cls)=>window.LocalAIKit?.icon(name,cls)||'';
+const PHONE=window.matchMedia('(max-width:760px)');
+function openCommands(){const cmd=q('#cmdk');if(cmd){cmd.classList.add('show');cmd.setAttribute('aria-hidden','false');q('#cmdkInput')?.focus()}}
 function buildContext(){
  const main=q('main');if(!main||q('#uxContextBar'))return;
  const bar=document.createElement('header');bar.id='uxContextBar';bar.className='ux-context-bar';
- bar.innerHTML='<div class="ux-context-left"><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-inbox" type="button" id="uxInboxBtn" hidden><span>Inbox</span><b id="uxInboxCount">0</b></button><button class="ux-context-search" type="button" id="uxCommandBtn"><span>Search commands</span><kbd>⌘K</kbd></button><button class="ux-context-menu" id="uxContextMenu" type="button" aria-expanded="false">Menu</button></div>';
+ bar.innerHTML='<div class="ux-context-left"><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-inbox" type="button" id="uxInboxBtn" aria-label="Inbox" hidden>'+icon('bell')+'<span class="ux-inbox-text">Inbox</span><b id="uxInboxCount">0</b></button><button class="ux-context-search" type="button" id="uxCommandBtn"><span>Search commands</span><kbd>⌘K</kbd></button><button class="ux-context-menu" id="uxContextMenu" type="button" aria-expanded="false">Menu</button></div>';
  main.prepend(bar);
  q('[data-ux-go="home"]')?.addEventListener('click',()=>navigate('home'));
- q('#uxCommandBtn')?.addEventListener('click',()=>{const cmd=q('#cmdk');if(cmd){cmd.classList.add('show');cmd.setAttribute('aria-hidden','false');q('#cmdkInput')?.focus()}});
+ q('#uxCommandBtn')?.addEventListener('click',openCommands);
  q('#uxContextMenu')?.addEventListener('click',()=>toggleSheet());
  // Unread alerts plus approvals waiting, reported by app.js after it loads Inbox or Approvals.
  let inbox={unread:0,pending:0};
- window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');if(!b)return;b.hidden=total===0;q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',`Inbox: ${inbox.unread} unread, ${inbox.pending} approvals waiting`)});
+ window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');if(!b)return;b.hidden=total===0;b.dataset.count=String(total);q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',total?`Inbox, ${total} waiting: ${inbox.unread} unread, ${inbox.pending} approvals`:'Inbox, nothing waiting')});
  q('#uxInboxBtn')?.addEventListener('click',()=>navigate(inbox.pending&&!inbox.unread?'approvals':'inbox'));
+}
+// Phone header: the domain (or, on Home, the brand and a greeting), a page action or Search, and the Inbox bell.
+// Desktop keeps the context bar; the one Inbox button moves into whichever of the two is showing.
+function buildHeader(){
+ const bar=q('#uxContextBar');if(!bar||q('#uxHeader'))return;
+ const h=document.createElement('header');h.id='uxHeader';h.className='ux-header';
+ h.innerHTML='<div class="ux-header-lead"><div class="ux-header-brand"><span class="ux-header-mark" aria-hidden="true">L</span><span class="ux-header-names"><span class="ux-header-greeting" id="uxHeaderGreeting">Hello</span><span class="ux-header-title">Local AI</span></span></div><button type="button" class="ux-header-domain" id="uxHeaderDomain" aria-expanded="false" aria-controls="uxMobileSheet" aria-label="Home pages"><span id="uxHeaderDomainLabel">Home</span>'+icon('chevron-down')+'</button></div><div class="ux-header-actions" id="uxHeaderActions"><button type="button" class="icon-btn" id="uxHeaderAction" hidden></button><button type="button" class="icon-btn" id="uxSearchBtn" aria-label="Search">'+icon('search')+'</button></div>';
+ bar.before(h);
+ q('#uxHeaderDomain').addEventListener('click',()=>toggleSheet());
+ q('#uxSearchBtn').addEventListener('click',openCommands);
+ q('#uxHeaderAction').addEventListener('click',()=>{const a=currentAction();a?.onClick?.()});
+ const placeInbox=()=>{const b=q('#uxInboxBtn');if(!b)return;if(PHONE.matches)q('#uxHeaderActions').appendChild(b);else q('.ux-context-actions',bar)?.prepend(b)};
+ PHONE.addEventListener?.('change',placeInbox);placeInbox();
+}
+function greeting(){const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'}
+// One page action at a time, shown in place of Search while its page is open. Pages call
+// window.LocalAIShell.setAction({icon,label,onClick[,view]}); view defaults to the page open now.
+let headerAction=null;
+function currentAction(){return headerAction&&headerAction.view===pageForView(activeView())?headerAction:null}
+function setAction(a){if(!a||!a.label)return;headerAction={icon:a.icon||'plus',label:String(a.label),onClick:a.onClick,view:pageForView(REG.resolve(a.view||activeView()))};renderAction()}
+function clearAction(view){if(!headerAction)return;if(view&&pageForView(REG.resolve(view))!==headerAction.view)return;headerAction=null;renderAction()}
+function renderAction(){
+ const btn=q('#uxHeaderAction'),search=q('#uxSearchBtn');if(!btn||!search)return;
+ const a=currentAction();btn.hidden=!a;search.hidden=!!a;
+ if(a&&btn.dataset.key!==a.icon+'|'+a.label){btn.dataset.key=a.icon+'|'+a.label;btn.setAttribute('aria-label',a.label);btn.title=a.label;btn.innerHTML=icon(a.icon)}
+}
+function renderHeader(d,view){
+ const h=q('#uxHeader');if(!h)return;
+ const brand=view==='home';h.classList.toggle('ux-header--brand',brand);
+ q('#uxHeaderGreeting').textContent=greeting();
+ q('#uxHeaderDomainLabel').textContent=d.label;q('#uxHeaderDomain').setAttribute('aria-label',d.label+' pages');
+ renderAction();
 }
 function prefGet(k){try{return localStorage.getItem(k)}catch{return null}}
 function prefSet(k,v){try{localStorage.setItem(k,v)}catch{}}
@@ -893,42 +928,57 @@ function buildPageStrip(){
  const bar=q('#uxContextBar');if(!bar||q('#uxPageStrip'))return;
  const strip=document.createElement('nav');strip.id='uxPageStrip';strip.className='ux-page-strip';strip.setAttribute('aria-label','Pages in this section');
  bar.after(strip);
- strip.addEventListener('click',e=>{const b=e.target.closest('[data-strip-view]');if(b){toggleSheet(false);navigate(b.dataset.stripView)}});
+ strip.addEventListener('click',e=>{const b=e.target.closest('[data-strip-view]');if(b){e.preventDefault();toggleSheet(false);navigate(b.dataset.stripView)}});
 }
-function renderPageStrip(d,page){
+function renderPageStrip(d,page,view){
  const strip=q('#uxPageStrip');if(!strip)return;
  const views=d.groups.flatMap(g=>g.views).filter(v=>viewButton(v));
  const key=d.id+'|'+views.join(',');
- if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=views.map(v=>'<button type="button" data-strip-view="'+v+'">'+labelForView(v)+'</button>').join('');}
- strip.hidden=views.length<2;
- qa('[data-strip-view]',strip).forEach(b=>{const on=b.dataset.stripView===page;b.classList.toggle('active',on);if(on){b.setAttribute('aria-current','page');if(strip.scrollWidth>strip.clientWidth)strip.scrollLeft=Math.max(0,b.offsetLeft-strip.clientWidth/2+b.offsetWidth/2)}else b.removeAttribute('aria-current')});
+ if(strip.dataset.key!==key){strip.dataset.key=key;strip.setAttribute('aria-label',d.label+' pages');strip.innerHTML=views.map(v=>'<a href="#'+v+'" data-strip-view="'+v+'">'+labelForView(v)+'</a>').join('');}
+ // Home is the one page whose header is the brand; it has no tabs (Inbox is a tap away on the bell).
+ strip.hidden=views.length<2||(view==='home'&&PHONE.matches);
+ qa('[data-strip-view]',strip).forEach(b=>{const on=b.dataset.stripView===page;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
+ scrollStripToActive();
+}
+// Keep the current tab in view when the strip is wider than the screen (Build has eight pages).
+function scrollStripToActive(){
+ const strip=q('#uxPageStrip'),a=strip&&q('[aria-current="page"]',strip);if(!a||strip.hidden||strip.scrollWidth<=strip.clientWidth)return;
+ const s=strip.getBoundingClientRect(),b=a.getBoundingClientRect();
+ strip.scrollLeft=Math.max(0,strip.scrollLeft+(b.left-s.left)-(s.width-b.width)/2);
 }
 function buildMobile(){
  if(q('#uxMobileNav'))return;
- const nav=document.createElement('div');nav.id='uxMobileNav';nav.className='ux-mobile-nav';nav.setAttribute('role','navigation');nav.setAttribute('aria-label','Primary navigation');
- DOMAINS.forEach(d=>{const b=document.createElement('button');b.type='button';b.dataset.domain=d.id;b.innerHTML='<b>'+d.symbol+'</b><span>'+d.label+'</span>';b.addEventListener('click',()=>{toggleSheet(false);navigate(d.defaultView)});nav.appendChild(b)});
+ const nav=document.createElement('nav');nav.id='uxMobileNav';nav.className='ux-mobile-nav';nav.setAttribute('aria-label','Primary navigation');
+ DOMAINS.forEach(d=>{const b=document.createElement('button');b.type='button';b.dataset.domain=d.id;b.innerHTML='<span class="ux-mobile-nav-icon">'+icon(d.id)+'</span><span class="ux-mobile-nav-label">'+d.label+'</span>';b.addEventListener('click',()=>{toggleSheet(false);navigate(d.defaultView)});nav.appendChild(b)});
  const sheet=document.createElement('div');sheet.id='uxMobileSheet';sheet.className='ux-mobile-sheet';sheet.dataset.open='false';sheet.innerHTML='<div class="ux-mobile-sheet-handle"></div><div class="ux-mobile-sheet-head"><div><span class="ux-secondary-kicker">Navigate</span><strong id="uxMobileSheetTitle"></strong><small id="uxMobileSheetTagline"></small></div><button type="button" id="uxMobileSheetClose" aria-label="Close menu">×</button></div><div class="ux-mobile-sheet-items" id="uxMobileSheetItems"></div>';
  document.body.append(sheet,nav);q('#uxMobileSheetClose')?.addEventListener('click',()=>toggleSheet(false));
- document.addEventListener('click',e=>{if(sheetOpen&&!sheet.contains(e.target)&&!nav.contains(e.target)&&e.target.id!=='uxContextMenu')toggleSheet(false)});
+ document.addEventListener('click',e=>{if(sheetOpen&&!sheet.contains(e.target)&&!nav.contains(e.target)&&!e.target.closest?.('#uxContextMenu,#uxHeaderDomain'))toggleSheet(false)});
 }
 function renderSheet(){
  const d=DOMAINS.find(x=>x.id===currentDomain)||DOMAINS[0],holder=q('#uxMobileSheetItems');if(!holder)return;
  q('#uxMobileSheetTitle').textContent=d.label;q('#uxMobileSheetTagline').textContent=d.tagline;holder.innerHTML='';
  d.groups.forEach(g=>{const section=document.createElement('section');section.className='ux-mobile-section';section.innerHTML='<div class="ux-mobile-section-label">'+g.label+'</div>';g.views.forEach(v=>{if(!viewButton(v))return;const b=document.createElement('button');b.type='button';b.className='ux-mobile-link '+(v===pageForView(activeView())?'active':'');b.innerHTML='<span><strong>'+labelForView(v)+'</strong><small>'+DESCRIPTIONS[v]+'</small></span><span>›</span>';b.addEventListener('click',()=>{navigate(v);toggleSheet(false)});section.appendChild(b)});holder.appendChild(section)});
 }
-function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;const s=q('#uxMobileSheet');if(s)s.dataset.open=String(sheetOpen);q('#uxContextMenu')?.setAttribute('aria-expanded',String(sheetOpen));document.body.classList.toggle('ux-sheet-open',sheetOpen);if(sheetOpen)renderSheet()}
+function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;const s=q('#uxMobileSheet');if(s)s.dataset.open=String(sheetOpen);qa('#uxContextMenu,#uxHeaderDomain').forEach(b=>b.setAttribute('aria-expanded',String(sheetOpen)));document.body.classList.toggle('ux-sheet-open',sheetOpen);if(sheetOpen)renderSheet()}
 function sync(forced){
  const view=REG.resolve(forced||activeView()),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
- const page=pageForView(view),viewLabel=labelForView(page);renderPageStrip(d,page);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;q('#uxContextBar')?.classList.toggle('ux-context-same',viewLabel===d.label);
+ const page=pageForView(view),viewLabel=labelForView(page);renderHeader(d,view);renderPageStrip(d,page,view);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;q('#uxContextBar')?.classList.toggle('ux-context-same',viewLabel===d.label);
  qa('.ux-primary-item').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
- qa('#uxMobileNav [data-domain]').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
+ qa('#uxMobileNav [data-domain]').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
  if(q('#uxSecondaryTitle')?.textContent!==d.label)renderSecondary(d.id);
  qa('.ux-secondary-link').forEach(b=>b.classList.toggle('active',b.dataset.view===page));
  qa('.ux-tab').forEach(b=>{const on=b.dataset.uxTab===view;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on))});
  if(sheetOpen)renderSheet();
 }
 function observeViews(){const views=qa('.view');if(!views.length)return;const mo=new MutationObserver(()=>sync());views.forEach(v=>mo.observe(v,{attributes:true,attributeFilter:['class']}));document.addEventListener('click',e=>{const b=e.target.closest?.('.navbtn[data-view]');if(b)requestAnimationFrame(()=>sync(b.dataset.view))})}
-function init(){document.body.classList.add('ux-v3');buildIntegrationsView();buildTabs();buildDesktopNav();buildContext();buildPageStrip();buildMobile();observeViews();sync()}
+function init(){
+ document.body.classList.add('ux-v3');buildIntegrationsView();buildTabs();buildDesktopNav();buildContext();buildHeader();buildPageStrip();buildMobile();observeViews();
+ // Health's "Check again" lives in the phone header; the page's own button stays for desktop.
+ setAction({view:'status',icon:'refresh',label:'Check again',onClick:()=>q('#statusRetryBtn')?.click()});
+ PHONE.addEventListener?.('change',()=>sync());
+ sync();
+}
+window.LocalAIShell=Object.freeze({setAction,clearAction});
 if(document.readyState==='complete')init();else window.addEventListener('load',init,{once:true});
 })();
 

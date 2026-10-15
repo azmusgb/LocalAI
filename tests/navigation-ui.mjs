@@ -128,7 +128,7 @@ await check('page list collapses to the rail, shows the page strip, and remember
   await page.evaluate(() => window.showView('library'));
   await page.locator('.ux-nav-collapse').click();
   assert.equal(await page.locator('.ux-secondary-nav').isVisible(), false);
-  assert.deepEqual(await page.locator('#uxPageStrip button').allInnerTexts(), ['Chat', 'Images', 'Library', 'Projects']);
+  assert.deepEqual(await page.locator('#uxPageStrip a').allInnerTexts(), ['Chat', 'Images', 'Library', 'Projects']);
   assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Library');
   await page.locator('#uxPageStrip [data-strip-view="projects"]').click();
   await page.waitForSelector('#projects.active');
@@ -151,8 +151,10 @@ await mobile.waitForSelector('#uxMobileNav');
 await mobile.waitForFunction(() => typeof window.showView === 'function');
 
 await check('mobile sheet lists pages, not tabs', async () => {
-  await mobile.evaluate(() => document.querySelector('#uxMobileNav [data-domain="home"]')?.click());
-  await mobile.locator('#uxContextMenu').click();
+  // Home's header is the brand; the Home section's page list opens from its other page, Inbox.
+  await mobile.evaluate(() => window.showView('inbox'));
+  await mobile.waitForSelector('#inbox.active');
+  await mobile.locator('#uxHeaderDomain').click();
   await mobile.locator('#uxMobileSheet').waitFor({ state: 'visible' });
   const items = await mobile.locator('#uxMobileSheetItems .ux-mobile-link strong').allInnerTexts();
   assert.deepEqual(items, ['Home', 'Inbox']);
@@ -167,16 +169,16 @@ await check('mobile tab pages have no horizontal overflow', async () => {
     assert.ok(dims.sw <= dims.cw + 2, `${view}: scrollWidth ${dims.sw} > clientWidth ${dims.cw}`);
   }
 });
-await check('phone: the page strip switches pages in the section in one tap', async () => {
+await check('phone: the page tabs switch pages in the section in one tap', async () => {
   await mobile.locator('#uxMobileNav [data-domain="workspace"]').tap();
   await mobile.waitForSelector('#ask.active');
-  assert.equal(await mobile.locator('.ux-context-domain').innerText(), 'Workspace');
-  assert.deepEqual(await mobile.locator('#uxPageStrip button').allInnerTexts(), ['Chat', 'Images', 'Library', 'Projects']);
+  assert.equal(await mobile.locator('#uxHeaderDomain').innerText(), 'Workspace');
+  assert.deepEqual(await mobile.locator('#uxPageStrip a').allInnerTexts(), ['Chat', 'Images', 'Library', 'Projects']);
   await mobile.locator('#uxPageStrip [data-strip-view="library"]').tap();
   await mobile.waitForSelector('#library.active');
   assert.equal(await mobile.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Library');
-  const h = await mobile.locator('#uxPageStrip button').first().evaluate(b => b.getBoundingClientRect().height);
-  assert.ok(h >= 43.5 && h <= 52, `strip button height ${h}`);
+  const h = await mobile.locator('#uxPageStrip a').first().evaluate(b => b.getBoundingClientRect().height);
+  assert.ok(h >= 43.5 && h <= 44.5, `page tab height ${h}`);
 });
 await mobile.close();
 await browser.close();

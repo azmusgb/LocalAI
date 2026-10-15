@@ -114,7 +114,7 @@ await mobile.waitForSelector('#uxMobileNav');
 await check('integration hub is reachable on mobile', async () => {
   await mobile.locator('#uxMobileNav [data-domain="system"]').click();
   await mobile.waitForSelector('#status.active');
-  await mobile.locator('#uxContextMenu').click();
+  await mobile.locator('#uxHeaderDomain').click();
   const link = mobile.locator('#uxMobileSheet .ux-mobile-link', { hasText: 'Integrations' });
   await link.waitFor({ state: 'visible' });
   await link.click();
