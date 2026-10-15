@@ -1,11 +1,13 @@
 ﻿param(
     [int]$Port = 3080,
-    [int]$MaxJobs = 5
+    [int]$MaxJobs = 5,
+    # Tests point this at a scratch folder so they never touch the real token and key.
+    [string]$BridgeRoot = 'C:\LocalAI\powershell-bridge'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$bridgeRoot = 'C:\LocalAI\powershell-bridge'
+$bridgeRoot = $BridgeRoot
 $tokenFile = Join-Path $bridgeRoot 'host-token.txt'
 $approvalKeyFile = Join-Path $bridgeRoot 'approval-key.txt'
 $jobRoot = Join-Path $bridgeRoot 'jobs'
