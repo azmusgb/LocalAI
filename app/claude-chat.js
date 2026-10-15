@@ -21,6 +21,15 @@ const msgPrefix = id => `${PREFIX}msg:${id}:`;
 const pad = seq => String(seq).padStart(10, '0');
 const msgId = (sessionId, seq) => `${sessionId}:${pad(seq)}`;
 
+// Did the request reach us over HTTPS? Either a TLS socket, or X-Forwarded-Proto: https from the Caddy proxy
+// (deploy/caddy/Caddyfile; Caddy replaces any client-sent X-Forwarded-* since no trusted_proxies are configured).
+// The header is trusted from anyone: port 3080 is also reachable directly, so a LAN client can send it itself, but
+// all that buys it is a Secure cookie, which its own browser then only sends back over HTTPS. Harmless.
+function requestIsHttps(req) {
+  if (req.socket && req.socket.encrypted) return true;
+  return String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase() === 'https';
+}
+
 function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.now() }) {
   const onlineMs = Number(process.env.LOCALAI_CHAT_ONLINE_MS) > 0 ? Number(process.env.LOCALAI_CHAT_ONLINE_MS) : 45000;
   // How long a claimed (delivering) message waits for the bridge's ack before it is offered again.
@@ -274,7 +283,7 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
       const t = now();
       const device = { id: record.deviceId, name: record.deviceName, tokenSha256: sha256hex(token), pairedAt: record.approvedAt || t, lastSeenAt: t };
       storage.writeSetting(deviceKey(device.id), device);
-      return { status: 'approved', device: { id: device.id, name: device.name }, cookie: `${COOKIE}=${device.id}.${token}; HttpOnly; SameSite=Strict; Path=/api/claude/chat; Max-Age=15552000` };
+      return { status: 'approved', device: { id: device.id, name: device.name }, cookie: `${COOKIE}=${device.id}.${token}; HttpOnly; SameSite=Strict; Path=/api/claude/chat; Max-Age=15552000${requestIsHttps(req) ? '; Secure' : ''}` };
     });
     if (outcome.cookie) {
       res.setHeader('Set-Cookie', outcome.cookie);
@@ -411,4 +420,4 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
   return { handle };
 }
 
-module.exports = { createClaudeChat };
+module.exports = { createClaudeChat, requestIsHttps };

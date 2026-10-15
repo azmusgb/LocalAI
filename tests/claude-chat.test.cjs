@@ -438,6 +438,30 @@ test('pairing: request -> approve with Mac key -> status sets an HttpOnly SameSi
   assert.equal((await fetch(`${url}/api/claude/chat/pair-status?id=pair-0000000000000000`)).status === 200, true);
 });
 
+test('pairing over HTTPS (behind the proxy) marks the device cookie Secure; plain HTTP does not', async t => {
+  const url = await startServer(t);
+  const pairOnce = async (statusHeaders) => {
+    const pr = await (await pairReq(url)).json();
+    assert.equal((await approve(url, { code: pr.code })).status, 200);
+    return (await fetch(`${url}/api/claude/chat/pair-status?id=${pr.id}`, { headers: statusHeaders })).headers.get('set-cookie');
+  };
+  const viaProxy = await pairOnce({ 'X-Forwarded-Proto': 'https' });
+  assert.match(viaProxy, /^localai_chat_device=dev-[0-9a-f]{12}\.[A-Za-z0-9_-]{43}; HttpOnly; SameSite=Strict; Path=\/api\/claude\/chat; Max-Age=15552000; Secure$/);
+  const plain = await pairOnce({});
+  assert.doesNotMatch(plain, /Secure/);
+  const forwardedHttp = await pairOnce({ 'X-Forwarded-Proto': 'http' });
+  assert.doesNotMatch(forwardedHttp, /Secure/);
+});
+
+test('requestIsHttps: a TLS socket or X-Forwarded-Proto https', () => {
+  const { requestIsHttps } = require('../app/claude-chat.js');
+  assert.equal(requestIsHttps({ socket: { encrypted: true }, headers: {} }), true);
+  assert.equal(requestIsHttps({ socket: {}, headers: { 'x-forwarded-proto': 'https' } }), true);
+  assert.equal(requestIsHttps({ socket: {}, headers: { 'x-forwarded-proto': 'HTTPS, http' } }), true);
+  assert.equal(requestIsHttps({ socket: {}, headers: { 'x-forwarded-proto': 'http' } }), false);
+  assert.equal(requestIsHttps({ socket: {}, headers: {} }), false);
+});
+
 test('approve without the Mac key is 401; wrong code is 404; bad name is 400', async t => {
   const url = await startServer(t);
   const pr = await (await pairReq(url)).json();
