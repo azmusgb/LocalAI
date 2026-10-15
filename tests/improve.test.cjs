@@ -116,3 +116,24 @@ test('handToClaude approves, boosts by 30 and appends its note', () => {
   assert.deepEqual(patch, { status: 'approved', handedToClaude: true, handedAt: AT, priorityBoost: 34, decisionNote: 'x · Handed to Claude' });
   assert.equal(imp.handToClaude({}, AT).decisionNote, 'Handed to Claude');
 });
+
+test('a linked change with a generic summary is titled from its request', () => {
+  const changes = [{ id: 'c1', status: 'validation_failed', summary: 'Proposed change', request: '\nRepair the lifecycle view in public/app.js.\nMore detail' }, { id: 'c2', status: 'planned', summary: '', request: 'Make the header sticky' }];
+  const titles = imp.reconcile({ items: [], changes, signals: [], at: AT, startup: true }).upserts.map(u => u.title);
+  assert.deepEqual(titles, ['Repair the lifecycle view in public/app.js.', 'Make the header sticky']);
+});
+
+test('items already titled "Proposed change" are renamed from their request', () => {
+  const changes = [{ id: 'c1', status: 'validation_failed', summary: 'Proposed change', request: 'Repair the lifecycle view' }];
+  const items = [{ id: 'idea-change-c1', source: 'idea', status: 'approved', changeId: 'c1', title: 'Proposed change' }];
+  const { upserts } = imp.reconcile({ items, changes, signals: [], at: AT });
+  assert.deepEqual(upserts, [{ id: 'idea-change-c1', title: 'Repair the lifecycle view', updatedAt: AT }]);
+  assert.deepEqual(imp.reconcile({ items: [{ ...items[0], title: 'Repair the lifecycle view' }], changes, signals: [], at: AT }).upserts, []);
+});
+
+test('a signal that comes back after resolving on its own returns to the Backlog', () => {
+  const items = [{ id: 'signal-s1', source: 'signal', signalId: 's1', status: 'fixed', decisionNote: 'Resolved on its own' }, { id: 'signal-s2', source: 'signal', signalId: 's2', status: 'fixed', decisionNote: 'Fixed in #99' }];
+  const signals = [{ id: 's1', status: 'open', severity: 'high', occurrences: 2 }, { id: 's2', status: 'open', severity: 'high', occurrences: 2 }];
+  const { upserts } = imp.reconcile({ items, changes: [], signals, at: AT });
+  assert.deepEqual(upserts, [{ id: 'signal-s1', status: 'proposed', decisionNote: 'Came back after resolving on its own', updatedAt: AT }]);
+});

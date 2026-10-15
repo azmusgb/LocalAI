@@ -13,6 +13,15 @@ const HANDED_NOTE = 'Handed to Claude';
 
 const clip = (value, max) => String(value ?? '').slice(0, max);
 
+// The planner sometimes leaves a change's summary at its default; the request's first line says what it was.
+const GENERIC_TITLES = new Set(['', 'Proposed change', 'Change request']);
+function changeTitle(change) {
+  const summary = String(change.summary || '').trim();
+  if (!GENERIC_TITLES.has(summary)) return clip(summary, 120);
+  const line = String(change.request || '').split('\n').map(l => l.trim()).find(Boolean);
+  return clip(line || 'Change request', 120);
+}
+
 function stageOf(item, changesById = new Map()) {
   if (item.status === 'fixed') return 'shipped';
   if (item.status === 'deferred' || item.status === 'rejected') return 'setAside';
@@ -73,6 +82,8 @@ function reconcile({ items = [], changes = [], signals = [], release = null, sta
     const existing = byId.get(signalItemId(signal.id));
     if (!existing) {
       if (shouldPromote(signal)) upserts.push(promoteSignal(signal, at));
+    } else if (signal.status === 'open' && existing.status === 'fixed' && existing.decisionNote === 'Resolved on its own') {
+      upserts.push({ id: existing.id, status: 'proposed', decisionNote: 'Came back after resolving on its own', updatedAt: at });
     } else if (signal.status === 'resolved' && stageOf(existing, changesById) === 'backlog') {
       upserts.push({ id: existing.id, status: 'fixed', decisionNote: 'Resolved on its own', updatedAt: at });
     }
@@ -80,6 +91,11 @@ function reconcile({ items = [], changes = [], signals = [], release = null, sta
 
   for (const item of items) {
     const change = item.changeId ? changesById.get(item.changeId) : null;
+    // Items linked before titles came from the request keep the generic one; rename them once.
+    const title = typeof item.title === 'string' ? item.title.trim() : '';
+    if (change && title && GENERIC_TITLES.has(title) && changeTitle(change) !== title) {
+      upserts.push({ id: item.id, title: changeTitle(change), updatedAt: at });
+    }
     if (change?.status === 'applied' && item.status !== 'fixed') {
       upserts.push({ id: item.id, status: 'fixed', shipped: { pending: true, at }, updatedAt: at });
     } else if (startup && item.shipped?.pending && release) {
@@ -93,7 +109,7 @@ function reconcile({ items = [], changes = [], signals = [], release = null, sta
     if (!LIVE_CHANGE.includes(change.status) || linked.has(change.id) || change.sourceEngineeringRunId) continue;
     upserts.push({
       id: `idea-change-${change.id}`, source: 'idea', status: 'approved', changeId: change.id,
-      severity: 'medium', category: 'idea', title: clip(change.summary || change.request || 'Change request', 120),
+      severity: 'medium', category: 'idea', title: changeTitle(change),
       summary: clip(change.request || change.summary, 2000), createdAt: at, updatedAt: at
     });
   }
