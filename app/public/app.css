@@ -1812,3 +1812,5 @@ body.run-view-open{overflow:hidden}
 .work-agentworld{align-items:center;justify-content:space-between;flex-wrap:wrap;margin:10px 0}
 .work-agentworld[hidden]{display:none}
 .work-agentworld .btn-outline{min-height:44px;padding:0 14px;font-size:14px}
+/* Phone touch targets for links and buttons inside text: Integrations guidance links, Home's setup card (appended; nothing above edited). */
+@media(max-width:760px){.ux-int-research-grid a{display:inline-flex;align-items:center;min-height:44px;font-size:13px}.first-run-steps a,.first-run-steps .btn{display:inline-flex;align-items:center;min-height:44px}}
