@@ -48,13 +48,14 @@ const release = require('./release').readRelease(__dirname);
 // A staged copy (self-change smoke test) passes its own APP_VERSION; otherwise the release decides.
 const APP_VERSION = /-stage$/.test(process.env.APP_VERSION || '') ? process.env.APP_VERSION : require('./release').appVersion(__dirname, release);
 const storage = new Storage({ dataDir: DATA_DIR });
-const runLedger = new RunLedger({ storage });
 // Phone notifications (Web Push): app/push.js sends, app/notify.js decides; docs/OPERATIONS.md › Notifications.
 const pushLib = require('./push');
-const notifier = require('./notify').createNotifier({
+const notifyLib = require('./notify');
+const notifier = notifyLib.createNotifier({
   storage, sendPush: pushLib.sendPush, vapid: pushLib.loadOrCreateVapid(storage),
   subject: process.env.VAPID_SUBJECT || 'https://github.com/azmusgb/LocalAI'
 });
+const runLedger = new RunLedger({ storage, onTransition: (run, previous) => { const e = notifyLib.runEvent(run, previous); if (e) notifier.notify(e); } });
 const activeRunControllers = new Map();
 const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody });
 
@@ -310,9 +311,11 @@ async function getStatusAndRecordTransition() {
   } else if (now - new Date(previous.pendingSince) >= HEALTH_SETTLE_MS) {
     if (overall === 'HEALTHY') {
       recordActivity('recovery', 'System recovered', `Health returned to normal from ${previous.overall}.`, { previous: previous.overall, current: overall });
+      notifier.notify(notifyLib.serviceEvent(overall));
     } else {
       const affected = services.filter(x => x.required !== false && x.state !== 'HEALTHY').map(x => x.label);
       recordActivity('system', 'System needs attention', affected.join(', ') || `Health changed to ${overall}.`, { previous: previous.overall, current: overall });
+      notifier.notify(notifyLib.serviceEvent(overall, affected));
     }
     writeState(STATUS_STORE, { overall, checkedAt: now.toISOString() });
   }
@@ -1812,7 +1815,9 @@ function monitorStore(){ return objectStore(MONITORS_STORE); }
 
 function addNotification(kind,title,detail='',meta={},level='attention'){
   const item={id:makeId('note'),kind,level,title:normalizeTitle(title,'Notification'),detail:String(detail||'').slice(0,2000),createdAt:nowIso(),read:false,resolved:false,meta};
-  prependRecord(NOTIFICATIONS_STORE,item); return item;
+  prependRecord(NOTIFICATIONS_STORE,item);
+  const e=notifyLib.noticeEvent(kind,item.title,item.detail,level);if(e)notifier.notify(meta.approvalId?{...e,tag:`approval:${meta.approvalId}`}:e);
+  return item;
 }
 // Info notices (a release went live, a backup finished, a monitor recovered) stay in the Inbox but don't count
 // toward its badge; only things that need the owner do. Older deploy notices predate `level`, hence the meta check.
@@ -2643,8 +2648,10 @@ async function apiClaudeEvents(req,res){
     json(res,201,{ok:true,accepted:list.length})}catch(e){storageError(res,e,400)}
 }
 async function apiClaudeFindings(req,res){
-  try{const b=await readBody(req,1024*1024);const list=Array.isArray(b.findings)?b.findings.slice(0,300):[b];const at=nowIso();const saved=[];
-    storage.transaction(()=>{if(b.sessionId)claudeSaveSession(b,at);for(const raw of list){const id=claudeSlug(raw.id,'');const prev=id?storage.readSetting(CLAUDE_FINDING_PREFIX+id,null):null;const f=claudeNormalizeFinding({...raw,sessionId:raw.sessionId||b.sessionId},prev,at);storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);saved.push(f)}});
+  try{const b=await readBody(req,1024*1024);const list=Array.isArray(b.findings)?b.findings.slice(0,300):[b];const at=nowIso();const saved=[],fresh=[];
+    storage.transaction(()=>{if(b.sessionId)claudeSaveSession(b,at);for(const raw of list){const id=claudeSlug(raw.id,'');const prev=id?storage.readSetting(CLAUDE_FINDING_PREFIX+id,null):null;const f=claudeNormalizeFinding({...raw,sessionId:raw.sessionId||b.sessionId},prev,at);storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);saved.push(f);if(!prev&&f.status==='proposed')fresh.push(f)}});
+    // A new finding waiting for the owner's decision reaches the phone; re-posts of the same id don't.
+    for(const f of fresh)notifier.notify({kind:'needs-you',title:'Claude needs your decision',body:f.title,url:'/?open=claude',tag:`finding:${f.id}`});
     json(res,201,{ok:true,items:claudeRanked(saved)})}catch(e){storageError(res,e,400)}
 }
 function claudeUpdateFinding(res,id,mutate){
@@ -2858,6 +2865,7 @@ function repairGarbledTextOnce() {
 async function apiPush(req, res, p) {
   try {
     if (req.method === 'GET' && p === '/api/push/key') return json(res, 200, { publicKey: pushLib.loadOrCreateVapid(storage).publicKey });
+    if (req.method === 'GET' && p === '/api/push/devices') return json(res, 200, { devices: notifier.devices() });
     if (req.method !== 'POST') return json(res, 404, { error: 'Not found' });
     const b = await readBody(req, 16 * 1024);
     if (p === '/api/push/subscribe') {
@@ -2867,6 +2875,9 @@ async function apiPush(req, res, p) {
     }
     if (p === '/api/push/unsubscribe') return json(res, 200, { ok: notifier.unsubscribe(String(b.endpoint || '')) });
     if (p === '/api/push/test') return json(res, 200, await notifier.test(b.id ? String(b.id) : undefined));
+    if (p === '/api/push/presence') { notifier.presence(); return json(res, 200, { ok: true }); }
+    if (p === '/api/push/devices/update') { const d = notifier.updateDevice(String(b.id || ''), { name: b.name, kinds: b.kinds, quiet: b.quiet }); return d ? json(res, 200, { device: d }) : json(res, 404, { error: 'No such device' }); }
+    if (p === '/api/push/devices/remove') return json(res, 200, { ok: notifier.removeDevice(String(b.id || '')) });
     return json(res, 404, { error: 'Not found' });
   } catch (e) { storageError(res, e, 400); }
 }

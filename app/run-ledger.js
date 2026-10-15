@@ -55,11 +55,13 @@ function publicRun(run) {
 }
 
 class RunLedger {
-  constructor({ storage, maxRuns = MAX_RUNS } = {}) {
+  // onTransition(run, previousStatus) is called after each status change is saved (notifications use it).
+  constructor({ storage, maxRuns = MAX_RUNS, onTransition = null } = {}) {
     for (const method of ['readSetting', 'writeSetting', 'deleteSetting', 'listSettings', 'pruneSettings']) {
       if (!storage || typeof storage[method] !== 'function') throw new TypeError(`storage with ${method} is required`);
     }
     this.storage = storage;
+    this.onTransition = typeof onTransition === 'function' ? onTransition : null;
     this.maxRuns = Math.max(20, Math.min(1000, Number(maxRuns) || MAX_RUNS));
     this.migrateLegacy();
     this.reconcileInterrupted();
@@ -173,6 +175,7 @@ class RunLedger {
     if (!run) return null;
     if (TERMINAL.has(run.status) && patch.status && patch.status !== run.status) return publicRun(run);
 
+    const previousStatus = run.status;
     const nextStatus = patch.status || run.status;
     if (!STATUSES.has(nextStatus)) throw new TypeError(`Invalid run status: ${nextStatus}`);
     const at = nowIso();
@@ -195,6 +198,9 @@ class RunLedger {
       if (run.events.length > MAX_EVENTS) run.events = run.events.slice(-MAX_EVENTS);
     }
     this.write(run);
+    if (this.onTransition && previousStatus !== nextStatus) {
+      try { this.onTransition(publicRun(run), previousStatus); } catch { /* a listener must not break the ledger */ }
+    }
     return publicRun(run);
   }
 

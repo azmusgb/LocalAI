@@ -143,4 +143,27 @@ function createNotifier({ storage, sendPush, vapid, subject, now = Date.now, sch
   };
 }
 
-module.exports = { createNotifier, KINDS };
+// What each event looks like on the phone (spec: Events).
+function runEvent(run, previousStatus) {
+  if (!run || run.status === previousStatus) return null;
+  const base = { url: `/?open=run:${run.id}`, tag: `run:${run.id}` };
+  if (run.status === 'awaiting_approval') return { kind: 'needs-you', title: 'Waiting for your approval', body: run.title, ...base };
+  if (run.status === 'failed') return { kind: 'failed', title: `Failed: ${run.title}`, body: run.error, ...base };
+  if (run.status === 'completed' && run.startedAt && run.finishedAt && Date.parse(run.finishedAt) - Date.parse(run.startedAt) >= 30000) {
+    return { kind: 'finished', title: `Done: ${run.title}`, body: run.summary, ...base };
+  }
+  return null;
+}
+function serviceEvent(overall, affected = []) {
+  return overall === 'HEALTHY'
+    ? { kind: 'service', title: 'Recovered', body: 'All core services are back.', url: '/?open=status', tag: 'service' }
+    : { kind: 'service', title: `Down: ${affected.join(', ') || overall}`, body: `Local AI health changed to ${overall}`, url: '/?open=status', tag: 'service' };
+}
+// Inbox notices that should also reach the phone: approvals, and host jobs that failed.
+function noticeEvent(kind, title, detail, level) {
+  if (kind === 'approval') return { kind: 'needs-you', title: 'Approval needed', body: title, url: '/?open=approvals', tag: `approval:${title}` };
+  if (['deploy', 'backup', 'monitor'].includes(kind) && level === 'attention') return { kind: 'failed', title, body: detail, url: '/?open=inbox', tag: kind };
+  return null;
+}
+
+module.exports = { createNotifier, KINDS, runEvent, serviceEvent, noticeEvent };

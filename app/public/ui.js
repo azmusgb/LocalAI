@@ -3262,5 +3262,8 @@ function mount(){
  });
  render(card);
 }
+// While Local AI is on screen, tell the appliance, so "finished" notifications don't buzz about what you're watching.
+function heartbeat(){if(document.visibilityState==='visible')fetch('/api/push/presence',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).catch(()=>{})}
+setInterval(heartbeat,30000);document.addEventListener('visibilitychange',heartbeat);heartbeat();
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(mount,0),{once:true});else setTimeout(mount,0);
 })();
