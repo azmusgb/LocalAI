@@ -28,3 +28,5 @@ workspace/
 *.db-shm
 
 app/release.json
+__pycache__/
+.venv/
