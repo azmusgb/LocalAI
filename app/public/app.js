@@ -487,7 +487,7 @@ async function loadWorkspace(){try{const r=await fetch('/api/workspace',{cache:'
 
 function normalizedState(v){return ['HEALTHY','DEGRADED','DOWN','OPTIONAL_OFFLINE'].includes(v)?v:'DEGRADED';}
 function serviceDisplayState(s){return s.displayState||(s.required===false&&s.state!=='HEALTHY'?'OPTIONAL_OFFLINE':normalizedState(s.state));}
-function serviceStateLabel(s){const v=serviceDisplayState(s);return v==='OPTIONAL_OFFLINE'?'Optional · Offline':v==='HEALTHY'?'Healthy':v==='DEGRADED'?'Degraded':'Down';}
+function serviceStateLabel(s){const v=serviceDisplayState(s);return v==='OPTIONAL_OFFLINE'?'Offline':v==='HEALTHY'?'Healthy':v==='DEGRADED'?'Degraded':'Down';}
 function serviceDescription(s){
   if(s.required===false&&s.state!=='HEALTHY')return 'Optional companion is not reachable. Core Local AI remains available.';
   if(s.state==='HEALTHY')return s.required===false?'Optional companion is reachable.':'Core capability is ready.';
@@ -506,9 +506,14 @@ async function refreshStatus(force=false){
     const optionalBad=(j.services||[]).filter(s=>s.required===false&&s.state!=='HEALTHY');
     const friendly=overall==='HEALTHY'?'Healthy':'Attention needed';
     $('homeState').textContent=friendly;$('sideState').textContent=overall==='HEALTHY'?'Healthy':'Attention';
-    $('statusSummary').innerHTML=`<span class="dot ${overall}"></span> ${coreBad.length?`${coreBad.length} core capability issue${coreBad.length===1?'':'s'}`:optionalBad.length?`Core ready · ${optionalBad.length} optional companion${optionalBad.length===1?'':'s'} offline`:'Everything is ready'}`;
+    // One core service down is named; several are counted. The score is core services up out of all core services.
+    const core=(j.services||[]).filter(s=>s.required!==false);
+    $('statusSummary').innerHTML=`<span class="dot ${overall}"></span> ${coreBad.length===1?`${esc(coreBad[0].label||coreBad[0].name)} is ${esc(String(coreBad[0].state||'down').toLowerCase())}${core.length>1?'<small>Everything else core is working.</small>':''}`:coreBad.length?`${coreBad.length} core services are down`:optionalBad.length?`Core ready · ${optionalBad.length} optional companion${optionalBad.length===1?'':'s'} offline`:'Everything is ready'}`;
+    const score=$('statusScore');if(score&&core.length){score.textContent=`${core.length-coreBad.length}/${core.length}`;score.dataset.state=overall;score.hidden=false;}
     const checked=$('statusCheckedAt');if(checked)checked.textContent=j.checkedAt?`Checked ${new Date(j.checkedAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'})}`:'';
-    $('serviceList').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);return `<div class="service service-card ${st}"><div class="service-copy"><strong>${esc(s.label)}</strong><small>${esc(serviceDescription(s))}</small></div><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">${Number.isFinite(s.latencyMs)?s.latencyMs+' ms':'—'}</span></div>`}).join('');
+    const serviceCard=s=>{const st=serviceDisplayState(s);return `<div class="service service-card ${st}"><div class="service-copy"><strong>${esc(s.label)}</strong><small>${esc(serviceDescription(s))}</small></div><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">${Number.isFinite(s.latencyMs)?s.latencyMs+' ms':'—'}</span></div>`};
+    const optional=(j.services||[]).filter(s=>s.required===false);
+    $('serviceList').innerHTML=`<div class="service-group-label">Core services</div>${core.map(serviceCard).join('')}${optional.length?`<div class="service-group-label">Optional companions</div>${optional.map(serviceCard).join('')}`:''}`;
     $('technicalStatus').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);const err=s.error?` · ${esc(s.error)}`:'';return `<div class="service"><span>${esc(s.name)} · ${s.required===false?'optional companion':'core'}<small class="service-tech-note">${esc(s.impact||'')}${err}</small></span><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">HTTP ${s.statusCode??'—'}</span></div>`}).join('');
     const c=j.certification||{};$('certBox').textContent=c.available?`System certified · ${c.result}${c.modifiedAt?` · ${new Date(c.modifiedAt).toLocaleString()}`:''}`:'Certification unavailable';
   }catch(e){
@@ -536,6 +541,8 @@ document.addEventListener('visibilitychange',()=>{schedulePolling();if(!document
 
 // Only a positive result is worth showing; without a service worker (plain-HTTP LAN access) the hint stays hidden.
 async function detectOfflineReady(){const hint=$('offlineHint');if(!('serviceWorker' in navigator))return;try{await navigator.serviceWorker.register('/sw.js');hint.textContent='Works offline · the app shell is cached on this device';hint.hidden=false;}catch(e){console.debug('Service worker registration failed',e);}}
+// Health's refresh lives in the phone header (ui.js defines LocalAIShell after this module runs).
+window.addEventListener('load',()=>window.LocalAIShell?.setAction('status',{icon:'refresh',label:'Check again',onClick:()=>refreshStatus(true)}));
 async function init(){syncModeSelect();syncWebToggle();renderAgentMap();renderMessages();setPhase('idle');loadActivity();loadLibrary();loadWorkspace();refreshStatus();loadHomeCapabilities();schedulePolling();detectOfflineReady();try{const r=await fetch('/api/models',{cache:'no-store'}),j=await r.json();state.model=j.default||j.models?.[0]||null;const name=typeof state.model==='string'?state.model:state.model?.name;if(name){$('chatModelName').textContent=name;$('chatModelChip').title=`Chat model: ${name}`;$('chatModelChip').hidden=false;}}catch{} }
 init();
 

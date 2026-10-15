@@ -249,6 +249,9 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         </div>`;
       main.appendChild(section);
       section.querySelector('#modelRuntimeRefresh')?.addEventListener('click', refreshModelsSurface);
+      // The shell API is defined further down this file; register once everything has run.
+      const registerAction = () => window.LocalAIShell?.setAction('models', { icon: 'refresh', label: 'Refresh models', onClick: refreshModelsSurface });
+      if (window.LocalAIShell) registerAction(); else window.addEventListener('load', registerAction, { once: true });
       section.querySelector('#modelPullForm')?.addEventListener('submit', (event) => {
         event.preventDefault();
         const input = section.querySelector('#modelPullName');
@@ -2611,7 +2614,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 (() => {
   'use strict';
 
-  const state = { runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '' };
+  const state = { runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '', filter: '' };
   const ACTIVE = new Set(['queued', 'running', 'streaming', 'awaiting_approval']);
 
   function el(id) { return document.getElementById(id); }
@@ -2669,9 +2672,15 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       section.innerHTML = `
         <div class="topbar"><div><h1>Runs</h1><p class="sub">One execution history for AI, images, agents, automations, and engineering.</p></div><button id="runsRefresh" type="button" class="btn">Refresh</button></div>
         <div id="runMetrics" class="run-summary-grid"></div>
-        <div class="card" style="margin-top:12px"><div class="section-head"><div><h2>Execution history</h2><p>Open a run for lifecycle events, output, errors, cancel, or retry when supported.</p></div></div><div id="runList" class="run-list"><div class="empty">Loading runs…</div></div></div>`;
+        <div class="card" style="margin-top:12px"><div class="section-head"><div><h2>Execution history</h2><p>Open a run for lifecycle events, output, errors, cancel, or retry when supported.</p></div></div><div class="run-filters" role="group" aria-label="Show runs"><button type="button" class="filter active" data-run-filter="">All</button><button type="button" class="filter" data-run-filter="failed">Failed</button><button type="button" class="filter" data-run-filter="active">Running</button></div><div id="runList" class="run-list"><div class="empty">Loading runs…</div></div></div>`;
       main.appendChild(section);
       el('runsRefresh')?.addEventListener('click', () => loadRuns(true));
+      window.LocalAIShell?.setAction('runs', { icon: 'refresh', label: 'Refresh runs', onClick: () => loadRuns(true) });
+      section.querySelectorAll('[data-run-filter]').forEach((b) => b.addEventListener('click', () => {
+        state.filter = b.dataset.runFilter;
+        section.querySelectorAll('[data-run-filter]').forEach((x) => x.classList.toggle('active', x === b));
+        render();
+      }));
     }
 
     if (!document.querySelector('.navbtn[data-view="runs"]')) {
@@ -2737,8 +2746,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     main.append(title, meta, progress);
 
     const status = document.createElement('span');
-    status.className = `statuschip run-status ${statusTone(run.status)}`;
-    status.textContent = statusLabel(run.status);
+    const badge = window.LocalAIKit?.statusBadge(run.status);
+    status.className = badge ? `badge badge--${badge.tone} run-status ${statusTone(run.status)}` : `statuschip run-status ${statusTone(run.status)}`;
+    status.textContent = badge ? badge.label : statusLabel(run.status);
     button.append(main, status);
     return button;
   }
@@ -2759,8 +2769,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const list = el('runList');
     if (list) {
       list.replaceChildren();
+      const shown = state.filter === 'failed' ? failed : state.filter === 'active' ? activeRuns : runs;
       if (!runs.length) list.innerHTML = '<div class="empty">No execution history yet.</div>';
-      else runs.forEach((run) => list.appendChild(makeRunRow(run)));
+      else if (!shown.length) list.innerHTML = `<div class="empty">No ${state.filter === 'failed' ? 'failed' : 'running'} runs.</div>`;
+      else shown.forEach((run) => list.appendChild(makeRunRow(run)));
     }
 
     const homeList = el('homeRunList');
@@ -3031,7 +3043,7 @@ async function initDevTools(){
 function mountDevToolsToggle(){
  const status=q('#status');if(!status||q('.dev-tools-pref',status))return;
  const row=document.createElement('label');row.className='dev-tools-pref card';
- row.innerHTML='<input type="checkbox" data-dev-tools-toggle><span><strong>Show developer tools</strong><small>Adds Build to the menu: change requests, the Claude board, Workbench and PowerShell.</small></span>';
+ row.innerHTML='<input type="checkbox" id="devToolsSwitch" role="switch" data-dev-tools-toggle><span><strong>Show developer tools</strong><small>Adds Build to the menu: change requests, the Claude board, Workbench and PowerShell.</small></span>';
  status.querySelector('.topbar')?.after(row);
  row.querySelector('input').addEventListener('change',e=>{pref.set(DEV_KEY,e.target.checked?'1':'0');applyDevTools(e.target.checked,true)});
  row.querySelector('input').checked=!document.body.classList.contains('dev-tools-off');

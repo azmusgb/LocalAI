@@ -1708,3 +1708,79 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
   #changes .card:has(#changeList) .section-head>.actions{display:flex;flex-wrap:nowrap;gap:14px;margin:0}
   #changes .form-grid select{max-width:72%}
 }
+
+/* Health and the System pages (redesign task 5). */
+.status-overview{display:flex;gap:14px;align-items:center}
+.status-overview-copy{min-width:0}
+.status-score{flex:none;width:56px;height:56px;border-radius:50%;display:grid;place-items:center;font-size:17px;font-weight:700;color:var(--ds-good-text);box-shadow:inset 0 0 0 4px rgba(62,213,152,.35)}
+.status-score[hidden]{display:none}
+.status-score:not([data-state="HEALTHY"]){color:var(--ds-bad-text);box-shadow:inset 0 0 0 4px rgba(255,107,107,.35)}
+.status-summary small{display:block;font-size:14px;font-weight:400;color:var(--ds-muted);margin-top:2px}
+.service-group-label{font-size:13px;font-weight:650;color:var(--ds-muted);margin:10px 2px 2px}
+.service-group-label:first-child{margin-top:0}
+.run-filters{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+@media(max-width:760px){
+  #status.active{display:flex;flex-direction:column}
+  #status>.two{display:contents}
+  #status>.topbar{display:none}
+  #status .status-overview{order:1;margin:0;padding:16px;border-radius:20px;border-color:var(--ds-line-card)}
+  #status .status-overview .eyebrow{display:none}
+  #status .status-summary{display:block;font-size:20px;font-weight:650;line-height:1.25}
+  #status .status-summary>.dot{display:none}
+  #status .card:has(#serviceList){order:2;margin-top:20px!important;padding:0;background:transparent;border:0}
+  #status .card:has(#serviceList)>.section-head{display:none}
+  #status #serviceList{margin-top:0!important;display:block}
+  #status .service-group-label{margin:16px 2px 8px;font-size:15px}
+  #status .service-group-label:first-child{margin-top:0}
+  #status .service-card{display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:12px;align-items:center;min-height:56px;padding:0 16px;margin:0;border:1px solid var(--ds-line-card);border-width:0 1px;border-radius:0;background:var(--ds-surface)}
+  #status .service-card+.service-card{border-top:1px solid var(--ds-line)}
+  #status .service-card::before{content:'';width:10px;height:10px;border-radius:5px;background:var(--ds-good)}
+  #status .service-card.DOWN::before,#status .service-card.DEGRADED::before{background:var(--ds-bad)}
+  #status .service-card.OPTIONAL_OFFLINE::before{background:var(--ds-faint)}
+  #status .service-card .service-copy small{display:none}
+  #status .service-card .service-copy strong{font-size:16px;font-weight:600}
+  #status .service-card.HEALTHY .state,#status .service-card:not(.HEALTHY) .meta{display:none}
+  #status .service-card .state{background:transparent;border:0;padding:0;font-size:14px}
+  #status .service-card .meta{font-size:14px;color:var(--ds-muted)}
+  #status .service-group-label+.service-card{border-top-width:1px;border-radius:16px 16px 0 0}
+  #status .service-card:has(+.service-group-label),#status .service-card:last-child{border-bottom-width:1px;border-radius:0 0 16px 16px}
+  #status .service-group-label+.service-card:has(+.service-group-label),#status .service-group-label+.service-card:last-child{border-radius:16px}
+  #status .card:has(#serviceList)>details{margin-top:12px}
+  #status .dev-tools-pref{order:3;margin:20px 0 0;padding:14px 16px;border-radius:16px;align-items:center}
+  #status .dev-tools-pref>span{flex:1}
+  #status .dev-tools-pref input{order:2;appearance:none;-webkit-appearance:none;width:52px;height:32px;margin:0;border-radius:999px;background:var(--ds-line-input);position:relative;flex:none;cursor:pointer;transition:background .15s}
+  #status .dev-tools-pref input::after{content:'';position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:50%;background:var(--ds-text);transition:transform .15s}
+  #status .dev-tools-pref input:checked{background:var(--ds-accent)}
+  #status .dev-tools-pref input:checked::after{transform:translateX(20px)}
+  #status .dev-tools-pref input:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+  #status .status-cert{order:4;margin-top:12px}
+
+  #models.active{display:flex;flex-direction:column}
+  #models>.topbar .btn,#runs>.topbar .btn{border:0;background:transparent;color:var(--ds-accent-text);font-weight:500;padding:0}
+  #models .model-runtime-summary{order:1;grid-template-columns:1fr!important}
+  #models .model-runtime-metric:not(:first-child){display:none}
+  #models .model-runtime-metric:first-child{padding:16px;border-radius:20px;display:flex;flex-direction:column-reverse;gap:4px}
+  #models .model-runtime-metric:first-child span{font-size:13px;color:var(--ds-muted)}
+  #models .model-runtime-metric:first-child strong{font-size:22px;white-space:normal;overflow-wrap:anywhere}
+  #models>.card:not(.model-download){order:2}
+  #models>.model-download{order:3}
+  #models .section-head p,#runs .section-head p,#activity>.topbar .sub{display:none}
+  #models .section-head h2,#runs .section-head h2{font-size:15px;color:var(--ds-muted)}
+
+  #runs .run-summary-grid{display:none}
+  #runs>.card{background:transparent;border:0;padding:0}
+  #runs .run-filters{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  #runs #runList{gap:0;background:var(--ds-surface);border:1px solid var(--ds-line-card);border-radius:16px;overflow:hidden}
+  #runs #runList .run-row{border:0;border-radius:0;background:transparent;padding:12px 16px;min-height:56px}
+  #runs #runList .run-row+.run-row{border-top:1px solid var(--ds-line)}
+  #runs .run-row-progress{display:none}
+  #runs .run-row-title{font-size:15px;font-weight:600}
+
+  #activity>.card{background:var(--ds-surface);border-color:var(--ds-line-card);padding:0;overflow:hidden}
+  #activity #activityList .activity-item{padding:12px 16px;border-radius:0}
+  #activity #activityList .activity-item+.activity-item{border-top:1px solid var(--ds-line)}
+}
+@media(max-width:760px){
+  /* Their refresh moved to the header; the row that only held it goes. */
+  #status>.topbar,#models>.topbar,#runs>.topbar{display:none}
+}

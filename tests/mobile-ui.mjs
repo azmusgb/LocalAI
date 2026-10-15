@@ -165,7 +165,7 @@ await check('shell: a page action shows in the header only on its page', async (
   await shell.locator('#uxHeaderAction').click();
   assert.equal(await shell.locator('#uxHeaderAction').getAttribute('aria-label'), 'Check again');
   assert.equal(clicked, 1);
-  await shell.evaluate(() => window.showView('models'));
+  await shell.evaluate(() => window.showView('activity'));
   assert.equal(await shell.locator('#uxHeaderAction').isVisible(), false);
   await shell.evaluate(() => window.LocalAIShell.clearAction('status'));
 });
@@ -295,6 +295,53 @@ await check('missions: a quiet goal field and the last mission with its outcome'
   assert.equal(await cm.locator('[data-agent-result-tab="summary"]').evaluate(b => b.classList.contains('active')), true);
 });
 await cm.close();
+
+// Health and the System pages (redesign task 5): one core service down, a failed run.
+const sys = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+sys.on('pageerror', e => pageErrors.push(e.message));
+await sys.addInitScript(() => { try { localStorage.setItem('localai.devTools', '1'); } catch {} });
+const svc = (name, label, state, required = true) => ({ name, label, required, state, displayState: required || state === 'HEALTHY' ? state : 'OPTIONAL_OFFLINE', latencyMs: state === 'HEALTHY' ? 48 : null, impact: '' });
+await sys.route('**/api/status', route => route.fulfill({ json: { overall: 'DEGRADED', checkedAt: new Date().toISOString(), services: [svc('comfy', 'Image generation', 'DOWN'), svc('ollama', 'Intelligence', 'HEALTHY'), svc('n8n', 'Automation engine', 'HEALTHY'), svc('search', 'Web research', 'HEALTHY'), svc('mac', 'Mac AI home', 'DOWN', false)], certification: {} } }));
+await sys.route('**/api/runs?*', route => route.fulfill({ json: { items: [
+  { id: 'r1', title: 'Restart ComfyUI', type: 'automation', status: 'failed', createdAt: new Date(Date.now() - 6e5).toISOString(), updatedAt: new Date(Date.now() - 6e5).toISOString() },
+  { id: 'r2', title: 'Morning summary', type: 'automation', status: 'completed', createdAt: new Date(Date.now() - 36e5).toISOString(), updatedAt: new Date(Date.now() - 36e5).toISOString() }
+] } }));
+await sys.goto(base, { waitUntil: 'domcontentloaded' });
+await sys.waitForFunction(() => typeof window.showView === 'function' && window.LocalAIShell);
+
+await check('health: names the one service that is down, splits core and optional, refresh in the header', async () => {
+  await sys.evaluate(() => window.showView('status'));
+  await sys.waitForFunction(() => /Image generation is down/.test(document.getElementById('statusSummary').textContent));
+  assert.equal(await sys.locator('#statusScore').innerText(), '3/4');
+  const groups = await sys.locator('#serviceList .service-group-label').allInnerTexts();
+  assert.deepEqual(groups, ['Core services', 'Optional companions']);
+  assert.match(await sys.locator('#serviceList').innerText(), /Mac AI home[\s\S]*Offline/);
+  assert.equal(await sys.locator('#uxHeaderAction').getAttribute('aria-label'), 'Check again');
+  const refreshed = sys.waitForRequest(r => r.url().includes('/api/status'));
+  await sys.locator('#uxHeaderAction').click();
+  await refreshed;
+});
+
+await check('health: the Developer tools switch shows and hides Build', async () => {
+  const sw = sys.locator('#devToolsSwitch');
+  assert.equal(await sw.getAttribute('role'), 'switch');
+  await sw.uncheck();
+  assert.equal(await sys.locator('#uxMobileNav [data-domain="build"]').isVisible(), false);
+  await sw.check();
+  assert.equal(await sys.locator('#uxMobileNav [data-domain="build"]').isVisible(), true);
+});
+
+await check('runs: plain-language badges and a Failed filter', async () => {
+  await sys.evaluate(() => window.showView('runs'));
+  await sys.locator('#runList .run-row').first().waitFor();
+  assert.deepEqual(await sys.locator('#runList .run-status').allInnerTexts(), ['Failed', 'Done']);
+  assert.match(await sys.locator('#runList .run-status').first().getAttribute('class'), /badge--bad/);
+  await sys.locator('[data-run-filter="failed"]').click();
+  assert.deepEqual(await sys.locator('#runList .run-row-title').allInnerTexts(), ['Restart ComfyUI']);
+  await sys.locator('[data-run-filter=""]').click();
+  assert.equal(await sys.locator('#runList .run-row').count(), 2);
+});
+await sys.close();
 
 await check('no script errors on phone', async () => {
   assert.deepEqual(pageErrors, []);
