@@ -15,7 +15,7 @@ const page=await browser.newPage({viewport:{width:1440,height:1000}});
 page.on('dialog',async d=>{dialogs++;await d.dismiss()});
 await page.goto(base,{waitUntil:'domcontentloaded'});
 await page.waitForSelector('.ux-primary-rail');
-await page.locator('.ux-primary-item[data-domain="agents"]').click();
+await page.locator('.ux-primary-item[data-domain="automate"]').click();
 await page.waitForSelector('#agents.active');
 
 await check('system capability health distinguishes optional companions',async()=>{
@@ -27,23 +27,23 @@ await check('system capability health distinguishes optional companions',async()
   const optional=page.locator('#serviceList .service-card.OPTIONAL_OFFLINE');
   if(await optional.count()) assert.match(await optional.first().innerText(),/Optional · Offline|Core Local AI remains available/i);
   assert.match(await page.locator('#status').innerText(),/Core services determine appliance health/i);
-  await page.locator('.ux-primary-item[data-domain="agents"]').click();
+  await page.locator('.ux-primary-item[data-domain="automate"]').click();
   await page.waitForSelector('#agents.active');
 });
 await check('desktop navigation architecture',async()=>{
   await page.locator('.ux-primary-rail').waitFor({state:'visible'});
   await page.locator('.ux-secondary-nav').waitFor({state:'visible'});
   assert.equal(await page.locator('.ux-primary-item').count(),5);
-  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Agents');
+  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Automate');
   assert.ok(await page.locator('.ux-secondary-link').count()>=1);
 });
 await check('contextual navigation switches domains',async()=>{
-  await page.locator('.ux-primary-item[data-domain="projects"]').click();
-  await page.waitForSelector('#projects.active');
-  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Projects');
-  await page.locator('.ux-primary-item[data-domain="agents"]').click();
+  await page.locator('.ux-primary-item[data-domain="workspace"]').click();
+  await page.waitForSelector('#ask.active');
+  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Workspace');
+  await page.locator('.ux-primary-item[data-domain="automate"]').click();
   await page.waitForSelector('#agents.active');
-  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Agents');
+  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Automate');
 });
 await check('mission-first composer',async()=>{
   await page.locator('#agentGoal').waitFor({state:'visible'});
@@ -199,7 +199,7 @@ const mobile=await browser.newPage({viewport:{width:390,height:844},hasTouch:tru
 mobile.on('dialog',async d=>{dialogs++;await d.dismiss()});
 await mobile.goto(base,{waitUntil:'domcontentloaded'});
 await mobile.waitForSelector('#uxMobileNav');
-await mobile.evaluate(()=>document.querySelector('#uxMobileNav [data-domain="agents"]')?.click());
+await mobile.evaluate(()=>document.querySelector('#uxMobileNav [data-domain="automate"]')?.click());
 await mobile.waitForSelector('#agents.active');
 await mobile.waitForSelector('#agentWorldCityMount .awc');
 
@@ -208,7 +208,7 @@ await check('mobile navigation is domain-first with contextual sheet',async()=>{
   assert.equal(await mobile.locator('#uxMobileNav [data-domain]').count(),5);
   await mobile.locator('#uxContextMenu').click();
   await mobile.locator('#uxMobileSheet').waitFor({state:'visible'});
-  assert.match(await mobile.locator('#uxMobileSheetTitle').innerText(),/Agents/i);
+  assert.match(await mobile.locator('#uxMobileSheetTitle').innerText(),/Automate/i);
   await mobile.locator('#uxMobileSheetClose').click();
 });
 await check('mobile layout has no page-level horizontal overflow',async()=>{
