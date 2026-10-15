@@ -55,7 +55,8 @@ Rules:
 - After making changes, verify the result by reading relevant ranges or workbook metadata when practical.
 - If a tool call fails, read the error, correct the arguments, and retry when reasonable.
 - Never claim a workbook change succeeded unless the tool result indicates success.
-- Keep the final answer concise and state what changed.
+- Keep the final answer concise. It must contain the actual information the user asked for (names, values, counts, findings) taken from the tool results, plus what changed, if anything.
+- Never reply only that the request is complete; the user cannot see tool results, so restate them.
 """
 
 
@@ -297,7 +298,10 @@ async def run_agent_turn(
                             "Useful fact: activate a sheet with execute_command command "
                             "'sheet.activate' and params containing the sheet name. "
                             f"Tools used so far: {', '.join(tool_calls_seen) or '(none)'}. "
-                            "Only return final text when the entire original request is complete."
+                            "Once everything is complete, reply with your final answer to my original "
+                            "request: include the actual results (names, values, findings from the tool "
+                            "results) and what changed. Do not mention this check or merely say the "
+                            "request is complete."
                         ),
                     }
                 )
