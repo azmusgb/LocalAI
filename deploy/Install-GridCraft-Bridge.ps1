@@ -4,6 +4,8 @@ param(
     [string]$Workbook = "$env:USERPROFILE\Documents\GridCraft\Quarterly-Sales-Dashboard.xlsx",
     [string]$Model = 'qwen3:4b-instruct',
     [int]$Port = 8787,
+    # localhost only: the appliance reaches the bridge through host.docker.internal and browsers use /api/gridcraft.
+    [string]$BindHost = '127.0.0.1',
     [string[]]$AllowedOrigins = @(),
     [switch]$Uninstall
 )
@@ -63,6 +65,7 @@ $launcher = @(
     "`$env:GRIDCRAFT_WORKBOOK = $(Format-Quoted $Workbook)"
     "`$env:GRIDCRAFT_MODEL = $(Format-Quoted $Model)"
     "`$env:GRIDCRAFT_BRIDGE_PORT = $(Format-Quoted $Port)"
+    "`$env:GRIDCRAFT_BRIDGE_HOST = $(Format-Quoted $BindHost)"
     "`$env:GRIDCRAFT_ALLOWED_ORIGINS = $(Format-Quoted $origins)"
     "`$env:PYTHONUNBUFFERED = '1'"
     "& $(Format-Quoted $Python) $(Format-Quoted $BridgeScript) *>> $(Format-Quoted $LogPath)"
@@ -82,9 +85,8 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoi
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 
-if (-not (Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule -DisplayName $FirewallRule -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow -Profile Private,Domain | Out-Null
-}
+# Nothing on the network talks to the bridge directly any more; remove the inbound rule older installs added.
+Remove-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue
 
 Start-ScheduledTask -TaskName $TaskName
 
