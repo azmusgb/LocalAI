@@ -1,0 +1,44 @@
+name: storage
+
+# The appliance runs Node 22 on Linux in Docker, so PRs that touch storage or the run ledger test that.
+# Windows and Node 24 (forward compatibility) run weekly and on demand.
+on:
+  pull_request:
+    paths:
+      - 'app/storage*.js'
+      - 'app/release.js'
+      - 'app/run-ledger.js'
+      - 'app/agent-orchestrator.js'
+      - 'tests/release.test.cjs'
+      - 'tests/storage*.test.cjs'
+      - 'tests/agent-orchestrator.test.cjs'
+      - 'tests/run-ledger.test.cjs'
+      - 'package*.json'
+      - '.github/workflows/storage.yml'
+  schedule:
+    - cron: '23 9 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: storage-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  storage-compatibility:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","windows-latest"]') }}
+        node: ${{ github.event_name == 'pull_request' && fromJSON('["22.13.0"]') || fromJSON('["22.13.0","24"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Native SQLite, HTTP and agent regression tests
+        run: node --test tests/release.test.cjs tests/storage.test.cjs tests/storage-api.test.cjs tests/agent-orchestrator.test.cjs tests/run-ledger.test.cjs
