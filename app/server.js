@@ -40,6 +40,10 @@ const { Storage } = require('./storage');
 const { RunLedger } = require('./run-ledger');
 const { loadOllamaModelRuntime } = require('./model-runtime');
 const { createModelPulls } = require('./model-pulls');
+const imageEngines = require('./image-engines');
+// Last measured seconds per engine on this machine, shown as an estimate in the Images page.
+const IMAGE_ESTIMATES = {};
+const IMAGE_PROMPT_MODEL = process.env.IMAGE_PROMPT_MODEL || process.env.GRIDCRAFT_MODEL || 'qwen3:4b-instruct';
 const release = require('./release').readRelease(__dirname);
 const storage = new Storage({ dataDir: DATA_DIR });
 const runLedger = new RunLedger({ storage });
@@ -869,12 +873,19 @@ async function apiWorkspace(req, res) {
   });
 }
 
+// ComfyUI describes a file picker as [[...names]] or, in newer nodes, ["COMBO", {options: [...names]}].
+function comfyOptions(spec) {
+  if (!Array.isArray(spec)) return [];
+  if (Array.isArray(spec[0])) return spec[0];
+  if (spec[0] === 'COMBO' && Array.isArray(spec[1]?.options)) return spec[1].options;
+  return [];
+}
+
 async function getCheckpointNames() {
   const r = await fetchWithTimeout(`${COMFY_URL}/object_info/CheckpointLoaderSimple`, {}, 7000);
   if (!r.ok) throw new Error(`Image service returned HTTP ${r.status}`);
   const j = await r.json();
-  const names = j?.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0];
-  return Array.isArray(names) ? names : [];
+  return comfyOptions(j?.CheckpointLoaderSimple?.input?.required?.ckpt_name);
 }
 
 function inferImageFamily(name) {
@@ -929,10 +940,30 @@ function buildImageModelCatalog(names) {
   };
 }
 
+// Every model list the image engines need, from ComfyUI's object_info. A node type that isn't installed
+// (UnetLoaderGGUF before ComfyUI-GGUF) just yields an empty list.
+async function getImageModelLists() {
+  const read = async (node, input) => {
+    try {
+      const r = await fetchWithTimeout(`${COMFY_URL}/object_info/${node}`, {}, 7000);
+      if (!r.ok) return [];
+      return comfyOptions((await r.json())?.[node]?.input?.required?.[input]);
+    } catch { return []; }
+  };
+  const [checkpoints, unets, clips, vaes, upscalers] = await Promise.all([
+    getCheckpointNames(), read('UnetLoaderGGUF', 'unet_name'), read('DualCLIPLoader', 'clip_name1'), read('VAELoader', 'vae_name'), read('UpscaleModelLoader', 'model_name')
+  ]);
+  return { checkpoints, unets, clips, vaes, upscalers };
+}
+
 async function apiImageModels(req, res) {
   try {
-    const catalog = buildImageModelCatalog(await getCheckpointNames());
-    json(res, 200, catalog);
+    const lists = await getImageModelLists();
+    const found = imageEngines.discoverEngines(lists);
+    const engines = found.engines.map(({ id, label, blurb, family, base }) => ({ id, label, blurb, family, base, estimateSec: IMAGE_ESTIMATES[id] || null }));
+    const aspects = Object.entries(imageEngines.ASPECTS).map(([id, a]) => ({ id, label: a.label, sizes: { 512: a[512], 1024: a[1024] } }));
+    const styles = Object.entries(imageEngines.STYLES).map(([id, st]) => ({ id, label: st.label }));
+    json(res, 200, { ...buildImageModelCatalog(lists.checkpoints), engines, custom: found.custom, upscale: !!found.upscaler, aspects, styles, defaultEngine: found.defaultEngine });
   } catch (e) {
     json(res, 502, { error: String(e.message || e), models: [], families: [], defaultCheckpoint: null, defaultFamily: null });
   }
@@ -953,29 +984,6 @@ function clampInt(v, min, max, fallback) {
   return Math.max(min, Math.min(max, Math.round(n)));
 }
 
-function multipleOf64(v, fallback) {
-  const n = clampInt(v, 256, 1024, fallback);
-  return Math.max(256, Math.min(1024, Math.round(n / 64) * 64));
-}
-
-function comfyWorkflow({ prompt, negativePrompt, width, height, steps, cfg, seed, checkpoint }) {
-  return {
-    "1": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: checkpoint } },
-    "2": { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: ["1", 1] } },
-    "3": { class_type: "CLIPTextEncode", inputs: { text: negativePrompt, clip: ["1", 1] } },
-    "4": { class_type: "EmptyLatentImage", inputs: { width, height, batch_size: 1 } },
-    "5": {
-      class_type: "KSampler",
-      inputs: {
-        seed, steps, cfg, sampler_name: "euler", scheduler: "normal", denoise: 1,
-        model: ["1", 0], positive: ["2", 0], negative: ["3", 0], latent_image: ["4", 0]
-      }
-    },
-    "6": { class_type: "VAEDecode", inputs: { samples: ["5", 0], vae: ["1", 2] } },
-    "7": { class_type: "SaveImage", inputs: { filename_prefix: "LocalAI", images: ["6", 0] } }
-  };
-}
-
 async function pollComfyHistory(promptId, timeoutMs = 180000) {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
@@ -989,77 +997,148 @@ async function pollComfyHistory(promptId, timeoutMs = 180000) {
   throw new Error('Image generation timed out');
 }
 
+// Rewrites a short idea into a detailed image prompt with the local language model, then unloads that model
+// so the image model has the GPU to itself (they share 6 GB of VRAM).
+async function enhanceImagePrompt(prompt, engineId) {
+  const style = engineId === 'best' ? 'Write natural sentences.' : 'Write a comma-separated list of descriptive phrases.';
+  const r = await fetchWithTimeout(`${OLLAMA_URL}/api/chat`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: IMAGE_PROMPT_MODEL, stream: false, keep_alive: 0, options: { num_ctx: 2048, temperature: 0.7 },
+      messages: [
+        { role: 'system', content: `You turn a short idea into one prompt for an image generator. Keep the subject and every detail the user gave; add composition, lighting, setting, style and quality cues. ${style} Under 70 words. Reply with the prompt only, no quotes or preamble.` },
+        { role: 'user', content: prompt.slice(0, 1000) }
+      ]
+    })
+  }, 60000);
+  if (!r.ok) throw new Error(`Prompt helper HTTP ${r.status}`);
+  const text = String((await r.json())?.message?.content || '').replace(/^["'\s]+|["'\s]+$/g, '').trim();
+  return text.length >= 8 ? text.slice(0, 1200) : prompt;
+}
+
+// An image the browser sent for editing (data URL), uploaded into ComfyUI's input folder for LoadImage.
+async function uploadToComfy(dataUrl, name) {
+  const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
+  if (!m) throw Object.assign(new Error('The image to edit must be a PNG, JPEG or WebP data URL'), { status: 400 });
+  const bytes = Buffer.from(m[2], 'base64');
+  if (bytes.length > 12 * 1024 * 1024) throw Object.assign(new Error('The image to edit is larger than 12 MB'), { status: 413 });
+  const form = new FormData();
+  form.append('image', new Blob([bytes], { type: `image/${m[1]}` }), `${name}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`);
+  form.append('type', 'input');
+  form.append('overwrite', 'true');
+  const r = await fetchWithTimeout(`${COMFY_URL}/upload/image`, { method: 'POST', body: form }, 30000);
+  if (!r.ok) throw new Error(`Image service upload HTTP ${r.status}`);
+  const j = await r.json();
+  return j.subfolder ? `${j.subfolder}/${j.name}` : j.name;
+}
+
+async function runComfyGraph(workflow, timeoutMs) {
+  const queued = await fetchWithTimeout(`${COMFY_URL}/prompt`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt: workflow, client_id: 'local-ai-appliance' })
+  }, 10000);
+  const qraw = await queued.text();
+  if (!queued.ok) throw new Error(`Image queue HTTP ${queued.status}: ${qraw.slice(0, 500)}`);
+  const q = JSON.parse(qraw);
+  if (!q.prompt_id) throw new Error('Image service did not return a prompt ID');
+  const history = await pollComfyHistory(q.prompt_id, timeoutMs);
+  const failure = history.status?.status_str === 'error' ? (history.status.messages || []).find(m => m[0] === 'execution_error')?.[1] : null;
+  if (failure) throw new Error(`ComfyUI: ${failure.exception_message || failure.exception_type || 'execution error'}`.slice(0, 500));
+  const outputs = history.outputs || {};
+  const images = outputs?.['9']?.images || Object.values(outputs).flatMap(x => Array.isArray(x?.images) ? x.images : []);
+  if (!images.length) throw new Error('Image generation completed without an output image');
+  return { promptId: q.prompt_id, images };
+}
+
 async function apiGenerateImage(req, res) {
   let execution = null;
   try {
-    const body = await readBody(req);
-    const prompt = String(body.prompt || '').trim();
-    if (!prompt) return json(res, 400, { error: 'prompt is required' });
+    const body = await readBody(req, 30 * 1024 * 1024);
+    const original = String(body.prompt || '').trim();
+    if (!original) return json(res, 400, { error: 'prompt is required' });
 
-    const catalog = buildImageModelCatalog(await getCheckpointNames());
-    if (!catalog.models.length) throw new Error('No image checkpoints were found');
+    const lists = await getImageModelLists();
+    const found = imageEngines.discoverEngines(lists);
+    // Engine by id; a checkpoint picked under Advanced (or sent by older clients); else the default engine.
+    let engine = found.engines.find(e => e.id === body.engine) || null;
+    if (!engine && body.checkpoint && lists.checkpoints.includes(body.checkpoint)) engine = found.engines.find(e => e.files.checkpoint === body.checkpoint) || imageEngines.customEngine(body.checkpoint);
+    if (!engine) engine = found.engines.find(e => e.id === found.defaultEngine) || (lists.checkpoints[0] ? imageEngines.customEngine(lists.checkpoints[0]) : null);
+    if (!engine) throw new Error('No image models were found in ComfyUI');
 
-    let selected = catalog.models.find(x => x.checkpoint === body.checkpoint);
-    if (!selected && body.family) selected = catalog.models.find(x => x.family === String(body.family) && x.supported);
-    if (!selected) selected = catalog.models.find(x => x.supported) || catalog.models[0];
-    if (!selected) throw new Error('No image checkpoints were found');
-    if (!selected.supported) throw new Error(selected.reason || `The selected ${selected.familyLabel} model requires a different workflow graph.`);
-
-    const checkpoint = selected.checkpoint;
-    const negativePrompt = String(body.negativePrompt || 'blurry, low quality, distorted, text, watermark');
-    const width = multipleOf64(body.width, 512);
-    const height = multipleOf64(body.height, 512);
-    const steps = clampInt(body.steps, 1, 60, 24);
-    const cfg = Math.max(1, Math.min(20, Number(body.cfg) || 7));
+    const editing = !!body.source;
+    const checkpoint = engine.files.checkpoint || engine.files.unet;
+    // An edit keeps the source picture's own size (sent by the browser); a new image uses the shape's size.
+    const [width, height] = editing ? [clampInt(body.sourceWidth, 64, 2048, 512), clampInt(body.sourceHeight, 64, 2048, 512)]
+      : imageEngines.sizeFor(engine, body.aspect, body.aspect ? null : body.width, body.aspect ? null : body.height);
+    const steps = clampInt(body.steps, 1, 60, engine.steps);
+    const cfg = Math.max(1, Math.min(20, Number(body.cfg) || engine.cfg));
     const seed = Number.isFinite(Number(body.seed)) ? Math.floor(Number(body.seed)) : Math.floor(Math.random() * 2147483647);
+    const userNegative = body.negativePrompt === undefined || body.negativePrompt === null ? engine.negative : String(body.negativePrompt);
+    const style = imageEngines.STYLES[body.style] ? body.style : 'none';
+    const upscaler = body.upscale === true ? found.upscaler : null;
+    const count = clampInt(body.count, 1, 4, 1);
+    const strength = Math.max(0.1, Math.min(1, Number(body.strength) || 0.6));
 
     execution = runLedger.create({
       type: 'image',
-      title: titleFromText(prompt, 'Image generation'),
-      input: { prompt: prompt.slice(0, 2000), checkpoint, family: selected.family, width, height, steps, cfg },
-      retryRequest: { path: '/api/images/generate', body: { prompt, negativePrompt, width, height, steps, cfg, seed, checkpoint, family: selected.family } }
+      title: titleFromText(original, editing ? 'Image edit' : 'Image generation'),
+      input: { prompt: original.slice(0, 2000), engine: engine.id, checkpoint, family: engine.family, width, height, steps, cfg, style, count, upscale: !!upscaler, enhance: body.enhance === true, edit: editing ? { masked: !!body.mask, strength } : null },
+      // An edit's source image isn't kept with the run, so Retry repeats it as a new image.
+      retryRequest: { path: '/api/images/generate', body: { prompt: original, engine: engine.id, checkpoint: engine.id === 'custom' ? checkpoint : undefined, negativePrompt: body.negativePrompt, aspect: body.aspect, width, height, steps, cfg, style, count, upscale: !!upscaler, enhance: body.enhance === true } }
     });
-    runLedger.start(execution.id, 'Image generation started');
+    runLedger.start(execution.id, editing ? 'Image edit started' : 'Image generation started');
 
-    const workflow = comfyWorkflow({ prompt, negativePrompt, width, height, steps, cfg, seed, checkpoint });
+    let prompt = original;
+    if (body.enhance === true) {
+      try { prompt = await enhanceImagePrompt(original, engine.id); runLedger.update(execution.id, { progress: 15 }, 'Prompt improved'); }
+      catch (e) { runLedger.update(execution.id, { progress: 15 }, `Prompt helper unavailable; using your prompt (${e.message})`); }
+    }
+    const styled = imageEngines.applyStyle(prompt, userNegative, style);
+
+    let source = null;
+    if (editing) {
+      const tag = `localai-edit-${execution.id}`;
+      source = { image: await uploadToComfy(body.source, tag), mask: body.mask ? await uploadToComfy(body.mask, `${tag}-mask`) : null };
+      runLedger.update(execution.id, { progress: 25 }, body.mask ? 'Repainting the marked area' : 'Redrawing the image');
+    }
+
     const started = Date.now();
-    const queued = await fetchWithTimeout(`${COMFY_URL}/prompt`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: workflow, client_id: 'local-ai-appliance' })
-    }, 10000);
-
-    const qraw = await queued.text();
-    if (!queued.ok) throw new Error(`Image queue HTTP ${queued.status}: ${qraw.slice(0, 500)}`);
-    const q = JSON.parse(qraw);
-    if (!q.prompt_id) throw new Error('Image service did not return a prompt ID');
-
-    runLedger.update(execution.id, { progress: 35, meta: { promptId: q.prompt_id, checkpoint } }, 'Image queued in ComfyUI');
-    const history = await pollComfyHistory(q.prompt_id);
-    const outputs = history.outputs || {};
-    const image = outputs?.["7"]?.images?.[0] || Object.values(outputs).flatMap(x => Array.isArray(x?.images) ? x.images : [])[0];
-    if (!image) throw new Error('Image generation completed without an output image');
-
-    const params = new URLSearchParams({ filename: image.filename, subfolder: image.subfolder || '', type: image.type || 'output' });
-    const imageUrl = `/api/images/view?${params.toString()}`;
+    const timeoutMs = (engine.family === 'flux' ? 900000 : 420000) * count;
+    const results = [];
+    let n = 0;
+    for (const batch of imageEngines.batchesFor(engine, count)) {
+      const workflow = imageEngines.buildWorkflow(engine, { prompt: styled.prompt, negativePrompt: styled.negative, width, height, steps, cfg, seed: seed + n, upscaler, batch, source, denoise: strength });
+      const run = await runComfyGraph(workflow, timeoutMs);
+      // ComfyUI gives each image in a batch the batch seed plus its index.
+      run.images.forEach((img, i) => results.push({ img, seed: seed + n + i, promptId: run.promptId }));
+      n += batch;
+      runLedger.update(execution.id, { progress: Math.min(95, 30 + Math.round((65 * n) / count)), meta: { promptId: run.promptId, checkpoint } }, `${n} of ${count} image${count === 1 ? '' : 's'} done`);
+    }
     const elapsedMs = Date.now() - started;
+    const outW = upscaler ? width * 2 : width, outH = upscaler ? height * 2 : height;
+    const common = { engine: engine.id, engineLabel: engine.label, checkpoint, family: engine.family, style, width: outW, height: outH, steps, cfg, upscaled: !!upscaler, edited: editing, elapsedMs };
+    const images = results.map(({ img, seed: s }) => ({ imageUrl: `/api/images/view?${new URLSearchParams({ filename: img.filename, subfolder: img.subfolder || '', type: img.type || 'output' })}`, seed: s }));
 
-    recordActivity('image', 'Created an image', prompt.slice(0, 180), { imageUrl, checkpoint, family: selected.family, seed, width, height, elapsedMs, runId: execution.id });
-    const artifact = recordArtifact(
-      'image', prompt, `${width} × ${height} generated image`,
-      { imageUrl, checkpoint, family: selected.family, seed, width, height, elapsedMs, runId: execution.id },
-      { prompt, negativePrompt, imageUrl }
-    );
+    const artifactIds = [];
+    for (const im of images) {
+      const meta = { ...common, imageUrl: im.imageUrl, seed: im.seed };
+      const label = `${outW} × ${outH} · ${engine.label}${style !== 'none' ? ` · ${imageEngines.STYLES[style].label}` : ''}${editing ? ' · edited' : ''}${upscaler ? ' · upscaled' : ''}`;
+      const artifact = recordArtifact('image', original, label, { ...meta, runId: execution.id }, { prompt: original, usedPrompt: styled.prompt, negativePrompt: styled.negative, imageUrl: im.imageUrl });
+      if (artifact?.id) artifactIds.push(artifact.id);
+    }
+    recordActivity('image', editing ? 'Edited an image' : count > 1 ? `Created ${images.length} images` : 'Created an image', original.slice(0, 180), { ...common, imageUrl: images[0].imageUrl, seed: images[0].seed, runId: execution.id });
     runLedger.complete(execution.id, {
-      summary: `${width} × ${height} image created with ${checkpoint}`,
-      output: { imageUrl, checkpoint, family: selected.family, seed, width, height, elapsedMs },
-      artifactIds: artifact?.id ? [artifact.id] : [],
-      meta: { promptId: q.prompt_id, checkpoint, elapsedMs }
+      summary: `${images.length} ${outW} × ${outH} image${images.length === 1 ? '' : 's'} ${editing ? 'edited' : 'created'} with ${engine.label} (${checkpoint})`,
+      output: { ...common, images },
+      artifactIds,
+      meta: { promptId: results[0].promptId, checkpoint, elapsedMs }
     });
+    if (!upscaler && body.enhance !== true && !editing && count === 1) IMAGE_ESTIMATES[engine.id] = Math.round(elapsedMs / 1000);
 
-    json(res, 200, { promptId: q.prompt_id, checkpoint, family: selected.family, familyLabel: selected.familyLabel, seed, width, height, elapsedMs, imageUrl, runId: execution.id });
+    json(res, 200, { promptId: results[0].promptId, ...common, imageUrl: images[0].imageUrl, seed: images[0].seed, images, familyLabel: engine.label, prompt: original, usedPrompt: styled.prompt, runId: execution.id });
   } catch (e) {
     if (execution) runLedger.fail(execution.id, e);
+    if (e.status) return json(res, e.status, { error: e.message });
     storageError(res,e,500);
   }
 }
@@ -1164,12 +1243,13 @@ function serveStatic(req, res, pathname) {
       '.json': 'application/json; charset=utf-8',
       '.svg': 'image/svg+xml',
       '.png': 'image/png',
-      '.ico': 'image/x-icon'
+      '.ico': 'image/x-icon',
+      '.woff2': 'font/woff2'
     };
     // App code must update the moment a release is deployed: browsers revalidate with the ETag each load
     // and get a 304 when nothing changed. Images can be reused for a day.
     const etag = `"${crypto.createHash('sha1').update(data).digest('base64url').slice(0, 22)}"`;
-    const headers = { 'Cache-Control': ['.png', '.ico', '.svg'].includes(ext) ? 'public, max-age=86400' : 'no-cache', ETag: etag };
+    const headers = { 'Cache-Control': ['.png', '.ico', '.svg', '.woff2'].includes(ext) ? 'public, max-age=86400' : 'no-cache', ETag: etag };
     if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); return res.end(); }
     text(res, 200, data, types[ext] || 'application/octet-stream', headers);
   });

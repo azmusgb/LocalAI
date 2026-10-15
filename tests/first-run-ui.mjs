@@ -34,6 +34,9 @@ await check('a sample task fills the command and marks the step done', async () 
   if (!expectCard) return;
   await page.locator('#firstRun [data-sample="0"]').click();
   assert.equal(await page.locator('#firstRun [data-step="try"]').getAttribute('data-state'), 'done');
+  // The sample starts a real request; let it finish (it may switch pages) before the next checks navigate.
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(500);
   await page.evaluate(() => window.showView('home'));
 });
 await check('Build is hidden while Developer tools is off', async () => {
@@ -42,6 +45,7 @@ await check('Build is hidden while Developer tools is off', async () => {
 });
 await check('switching Developer tools on in Health shows Build and is remembered', async () => {
   await page.evaluate(() => window.showView('status'));
+  await page.waitForSelector('#status.active .dev-tools-pref input');
   await page.locator('.dev-tools-pref input').check();
   assert.equal(await page.locator('.ux-primary-item[data-domain="build"]').isVisible(), true);
   assert.equal(await page.evaluate(() => localStorage.getItem('localai.devTools')), '1');

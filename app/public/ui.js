@@ -1,6 +1,16 @@
 // Local AI interface scripts: one deferred file. Each section is its own scope and keeps the name of the file it
 // replaced; they run in the order the separate scripts used to run.
 
+// ==== ui-kit.js ====
+(()=>{'use strict';
+const STATUS={awaiting_approval:['Ready to review','accent'],ready:['Ready to review','accent'],needs_attention:['Needs a look','attention'],applied:['Done','good'],completed:['Done','good'],answered:['Done','good'],running:['Running','accent'],failed:['Failed','bad'],queued:['Queued','neutral'],down:['Down','bad'],healthy:['Healthy','good'],optional_offline:['Offline','neutral']};
+const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+function icon(name,cls){return '<svg class="icon'+(cls?' '+esc(cls):'')+'" aria-hidden="true"><use href="#i-'+esc(name)+'"/></svg>'}
+function statusBadge(status){const key=String(status??'').trim().toLowerCase();const hit=STATUS[key];if(hit)return{label:hit[0],tone:hit[1]};const raw=String(status??'').trim().replace(/[_-]+/g,' ');return{label:raw?raw.charAt(0).toUpperCase()+raw.slice(1).toLowerCase():'Unknown',tone:'neutral'}}
+function badgeHtml(status){const b=statusBadge(status);return '<span class="badge badge--'+b.tone+'">'+esc(b.label)+'</span>'}
+window.LocalAIKit=Object.freeze({icon,statusBadge,badgeHtml});
+})();
+
 // ==== agent-specialists.js ====
 (()=>{'use strict';
 let catalog=[],selected='ux_analyst',source=null,currentMission=null,currentRun=null,history=[],activeResultTab='summary',activeInspectorId='';
