@@ -1181,6 +1181,8 @@ kbd{font:600 11px/1 var(--ds-mono);padding:2px 6px;border-radius:6px;border:1px 
     background:rgba(10,20,32,.94);border-bottom:1px solid var(--ds-line);backdrop-filter:blur(18px)}
   body.ux-v3 .ux-context-view,body.ux-v3 .ux-context-same .ux-context-domain{display:inline;font-size:16px;font-weight:650;color:var(--ds-text)}
   body.ux-v3 .ux-context-same .ux-context-view{display:none}
+  /* The top bar now pads for the notch itself (it has to, once it sticks); drop the older spacer so the inset isn't doubled. */
+  body.ux-v3 main::before{display:none}
   .ux-context-menu,.ux-context-inbox{min-height:44px;padding:0 14px}
 
   /* Chat: keep the composer above the floating tab bar. */
