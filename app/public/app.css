@@ -1156,3 +1156,81 @@ kbd{font:600 11px/1 var(--ds-mono);padding:2px 6px;border-radius:6px;border:1px 
 .ux-mobile-section-label{font-size:11px;text-transform:none;letter-spacing:0}
 .ux-mobile-link small{font-size:11px}
 }
+
+/* File tree (all sizes) */
+.tree-dir>summary{list-style:none;cursor:pointer;display:grid;gap:2px}
+.tree-dir>summary::-webkit-details-marker{display:none}
+.tree-dir>summary strong::before{content:'▸ ';color:var(--ds-muted)}
+.tree-dir[open]>summary strong::before{content:'▾ '}
+.tree-children{padding-left:10px;margin-top:6px;display:grid;gap:6px}
+
+/* Run and change lists: requests can be whole pasted documents; show three lines (all sizes). */
+#engineeringRuns .item-card strong,#changeList .item-card strong{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+
+/* Phone layer — last, so it settles what the older mobile rules above disagree on.
+   Targets: one top bar, nothing hidden behind the tab bar, 44px touch targets, 16px form text (iOS zooms below that),
+   two-up tiles instead of one tile per screen row, and no element wider than the screen. */
+@media (max-width:760px){
+  /* overflow-x:hidden on html and body (above) made body a scroll container, so nothing sticky ever stuck on phones:
+     the top bar scrolled away and the chat composer sat under the tab bar. clip stops sideways scroll without that. */
+  html,body{overflow-x:clip}
+
+  /* The sidebar has nothing to show on a phone; the context bar is the top bar. */
+  body.ux-v3 .app>aside{display:none}
+  body.ux-v3 .ux-context-bar{position:sticky;top:0;z-index:45;height:auto;min-height:56px;margin:0 -13px 14px;padding:calc(6px + env(safe-area-inset-top)) 13px 6px;
+    background:rgba(10,20,32,.94);border-bottom:1px solid var(--ds-line);backdrop-filter:blur(18px)}
+  body.ux-v3 .ux-context-view,body.ux-v3 .ux-context-same .ux-context-domain{display:inline;font-size:16px;font-weight:650;color:var(--ds-text)}
+  body.ux-v3 .ux-context-same .ux-context-view{display:none}
+  /* The top bar now pads for the notch itself (it has to, once it sticks); drop the older spacer so the inset isn't doubled. */
+  body.ux-v3 main::before{display:none}
+  .ux-context-menu,.ux-context-inbox{min-height:44px;padding:0 14px}
+
+  /* Chat: keep the composer above the floating tab bar. */
+  .chat-shell{min-height:calc(100svh - 230px);grid-template-rows:minmax(240px,1fr) auto}
+  .composer-wrap{bottom:calc(84px + env(safe-area-inset-bottom));padding-top:16px}
+  .toggle{min-height:44px;font-size:14px}
+  .toggle input{width:22px;height:22px}
+
+  /* Forms: 16px text so iOS does not zoom on focus (!important: code editors set 12px by id); 44px tall controls. */
+  input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea{font-size:16px!important}
+  input:not([type=checkbox]):not([type=radio]):not([type=range]),select{min-height:44px}
+
+  /* Page header: status pills sit side by side, not one per row. */
+  .topbar>div:not(:first-child){display:flex;flex-wrap:wrap;gap:8px;width:auto}
+  .topbar .pill{width:auto}
+
+  /* Touch targets */
+  .mode,.filter,.ux-tab,[data-agent-result-tab]{min-height:44px;padding:0 14px;font-size:14px}
+  .modes{flex-wrap:wrap;overflow:visible}
+  .iconbtn{min-width:44px;min-height:44px;font-size:18px}
+  details>summary{min-height:44px;display:flex;align-items:center}
+
+  /* Tiles two-up: one tile per row pushed real content several screens down. */
+  body.ux-v3 .summary-grid,body.ux-v3 .capability-strip,.run-summary-grid,.ux-int-metrics,.model-runtime-summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+
+  /* Library: two-up cards; only images get a preview (text items showed a large empty box). */
+  body.ux-v3 .library-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .artifact{min-height:0}
+  .artifact:not(.artifact--image) .artifact-preview{display:none}
+  .artifact-body{padding:10px}
+  .artifact-foot .iconbtn{min-width:40px}
+
+  /* Files: deep folders stay inside the screen. */
+  #workbenchTree .item-card{min-width:0;padding:8px 10px}
+  #workbenchTree .tree-children{padding-left:4px}
+  #workbenchTree strong,#workbenchTree small{overflow-wrap:anywhere}
+
+  /* Change requests: long logs scroll inside their card instead of stretching the page. */
+  #engineeringExecution .item-card .meta{max-height:10em;overflow:auto}
+  #changeDetail.preview-pane{max-height:70vh;overflow:auto}
+
+  /* Inbox alerts can carry whole pasted documents; four lines is enough to recognise one. */
+  #inboxList .item-card>.muted{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+
+  /* Long lists: see "Show more" in ui.js */
+  .mobile-clipped{display:none!important}
+  .mobile-more{width:100%;margin-top:8px}
+}
+@media (max-width:340px){
+  body.ux-v3 .summary-grid,body.ux-v3 .capability-strip,.run-summary-grid,.ux-int-metrics,.model-runtime-summary,body.ux-v3 .library-grid{grid-template-columns:1fr!important}
+}

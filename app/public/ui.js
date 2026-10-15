@@ -2390,3 +2390,50 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();
 })();
+
+// ===== Phones: long lists =====================================================
+// On a phone, long lists show their first few items and a "Show N more" button. Without it the Change ledger,
+// Files and Library pages ran to tens of thousands of pixels. Lists re-render often (polling), so a MutationObserver
+// re-applies the limit; "Show more" is remembered per list until the page reloads.
+(() => {
+  'use strict';
+  const LIMITS = { changeList: 8, engineeringRuns: 6, inboxList: 10, approvalList: 10, activityList: 15, runList: 10, issueList: 10, libraryGrid: 12, knowledgeList: 10, qualityEvents: 10, monitorList: 10, automationList: 10 };
+  const phone = window.matchMedia('(max-width: 760px)');
+  const observers = new Map();
+
+  function apply(list) {
+    const observer = observers.get(list);
+    observer?.disconnect();
+    list.querySelector(':scope > .mobile-more')?.remove();
+    const items = [...list.children];
+    const limit = LIMITS[list.id];
+    // Clipping only one or two items saves nothing; show them.
+    const clip = phone.matches && list.dataset.showAll !== 'true' && items.length > limit + 2;
+    items.forEach((item, i) => item.classList.toggle('mobile-clipped', clip && i >= limit));
+    if (clip) {
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'btn mobile-more';
+      more.textContent = `Show ${items.length - limit} more`;
+      more.addEventListener('click', () => { list.dataset.showAll = 'true'; apply(list); });
+      list.appendChild(more);
+    }
+    observer?.observe(list, { childList: true });
+  }
+
+  function bind() {
+    for (const id of Object.keys(LIMITS)) {
+      const list = document.getElementById(id);
+      if (!list || observers.has(list)) continue;
+      observers.set(list, new MutationObserver(() => apply(list)));
+      apply(list);
+    }
+  }
+
+  // Not window 'load': that waits for every image, and a slow image service can hold it back for a long time.
+  // The retries pick up lists other scripts create after startup (Runs).
+  const start = () => { bind(); setTimeout(bind, 0); setTimeout(bind, 3000); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+  else start();
+  phone.addEventListener('change', () => observers.forEach((_, list) => apply(list)));
+})();
