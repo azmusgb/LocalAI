@@ -1778,7 +1778,28 @@ body.run-view-open{overflow:hidden}
 /* The view-in animation holds a transform, which would make the docked composer position against Home, not the screen. */
 @media(max-width:760px){body.ux-v3 #home{animation:none}}
 
-/* Work › Missions: a link to Agent World, the live mission map (appended; nothing above edited). */
-.work-agentworld{align-items:center;justify-content:space-between;flex-wrap:wrap;margin:10px 0}
-.work-agentworld[hidden]{display:none}
-.work-agentworld .btn-outline{min-height:44px;padding:0 14px;font-size:14px}
+/* Improve pages (roadmap sub-project 4): Backlog and Signals. Uses the #81 components; appended, nothing above edited. */
+.improve-list{margin-top:4px}
+.improve-row{gap:10px}
+.improve-row__open{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:6px 0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;min-height:44px}
+.improve-row .list-row__sub{display:flex;flex-wrap:wrap;align-items:center;gap:6px;white-space:normal}
+.improve-row .list-row__trail .btn-outline{min-height:44px;padding:0 12px;font-size:14px}
+.improve-votes{gap:2px}
+.improve-votes .icon-btn{font-size:13px;color:var(--ds-muted)}
+.improve-votes>span{min-width:18px;text-align:center;color:var(--ds-soft);font-variant-numeric:tabular-nums}
+.improve-sheet__body{display:flex;flex-direction:column;gap:12px}
+.improve-sheet__body h2{margin:0;font-size:20px}
+.improve-sheet__body p{margin:0}
+.improve-sheet__body textarea{width:100%;min-height:96px}
+.improve-sheet__actions{display:flex;flex-wrap:wrap;gap:8px}
+.improve-error{color:var(--ds-bad-text);font-size:14px}
+.improve-error[hidden]{display:none}
+.improve-details{margin-top:16px}
+.improve-details>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--ds-muted)}
+.improve-details h3{font-size:14px;color:var(--ds-muted);margin:12px 0 6px}
+.improve-checks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.improve-checks li{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+@media(max-width:760px){
+  /* On phones the page's one action is the header icon (LocalAIShell); the heading button would repeat it. */
+  #backlog>.topbar .btn,#signals>.topbar .btn{display:none}
+}
