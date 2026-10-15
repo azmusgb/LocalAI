@@ -17,7 +17,7 @@ What LocalAI protects, how, and where it does not. Everything here is what the c
 
 | Surface | Reachable from | Control |
 |---|---|---|
-| App and API, port 3080 | LAN | No sign-in (see gaps) |
+| App and API, port 3080 | LAN | No sign-in (see gaps); cross-site browser writes blocked ([guard](#other-controls)) |
 | HTTPS, ports 80/443 (Caddy) | LAN, private network profile only | Firewall rule `Local AI HTTPS` (`deploy/Install-LocalAI-HTTPS.ps1`) |
 | PowerShell Workbench, port 3090 | Windows host only | Published on `127.0.0.1` only (`deploy/Enable-LocalAI-HostOnlyPort.ps1`) |
 | GridCraft bridge, ComfyUI | Windows host only | Bound to `127.0.0.1` by this repo's installers (`Install-GridCraft-Bridge.ps1`, `Install-ComfyUI-Task.ps1` `-Listen` default) |
@@ -66,12 +66,26 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
   `/data/claude-chat-mac-key.sha256`, written by `host/claude-chat/install.sh` over ssh. No endpoint can set it.
 - Phones and browsers pair with a 6-character code (10 minutes, at most 5 pending) that only the Mac can
   approve. The device cookie `localai_chat_device` is HttpOnly, `SameSite=Strict`, scoped to
-  `/api/claude/chat`, valid 180 days; the appliance stores only its hash. Any paired device can revoke any device.
+  `/api/claude/chat`, valid 180 days, and `Secure` when the device paired over HTTPS (a TLS socket or
+  `X-Forwarded-Proto: https` from Caddy; `requestIsHttps`); the appliance stores only its hash. Any paired device can
+  revoke any device. The header is trusted from any client: spoofing it on port 3080 only makes that client's own
+  cookie HTTPS-only.
+- The Mac side (bridge, hooks, CLI) talks to `https://10.0.0.21` and verifies it against the LocalAI CA, which
+  `install.sh` fetches over `ssh windows-ai` (authenticated), checks with `openssl x509` and records in
+  `~/.claude/localai-chat/config.json`. Verification is never turned off; an untrusted certificate fails with a log
+  line. If HTTPS is not available at install time, the installer keeps plain HTTP and says so (see gaps).
 - POSTs to the relay reject a foreign `Origin` and require `Content-Type: application/json` (`checkPost`).
 - Web messages act with the Claude Code session's own permissions and cannot answer permission prompts.
 
 ## Other controls
 
+- **Cross-site request guard.** Before routing, every `POST`, `PUT`, `PATCH` and `DELETE` is rejected with 403
+  `Cross-site request blocked` when `Sec-Fetch-Site` is `cross-site`, or when an `Origin` header is present and its
+  host:port matches neither the `Host` header nor `X-Forwarded-Host` (`crossSiteRequest` in `app/server.js`;
+  `tests/cross-site-guard.test.cjs`). So another website open in a LAN browser can no longer drive the API, whatever
+  the content type. Requests that carry neither header (curl, scripts, hooks, the host's jobs) pass: this blocks
+  browsers being used against the appliance, it does not authenticate anyone. `GET` is not checked, so `GET` routes
+  must stay free of side effects.
 - **Child process environment.** Commands the app spawns get its environment minus any variable whose name
   matches `TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY|CREDENTIAL` (`childEnv` in `app/server.js`;
   `tests/security-contract.test.cjs`).
@@ -102,10 +116,9 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
 | No user authentication on port 3080 or 443 | Anyone on the LAN can read conversations and projects, start runs, edit files under `WORKSPACE_ROOT`, and run `node`/`npm`/`npx` there (code execution inside the container) | `app/server.js` request router |
 | Change requests are unauthenticated | Any LAN client can request a change. A `self` change copies `SELF_APP_ROOT` to `DATA_DIR/change-staging/<id>/app`, applies a model-written patch there and validates it by running `node --check` and starting the staged `server.js` inside the container. Approving it only marks it `apply_requested` for a "host updater" that does not exist in this repo, so it never reaches the live app. A `workspace` change, once approved, writes its files into `WORKSPACE_ROOT` | `stageChangeByIdUnlocked`, `validateStagedChange`, `apiChangeRequestApply` in `app/server.js` |
 | Files and Repository write under `WORKSPACE_ROOT` without auth | A LAN user can create or overwrite any file in the mounted workspace and run allow-listed commands there. What `/workspace` is mounted from is set by the container definition, which is not in this repo | `apiWorkbenchWrite`, `apiWorkbenchCommand` in `app/server.js` |
-| Most POST routes do not check `Origin` or `Content-Type` | `readBody` parses any body as JSON, so another website open in a LAN browser can send simple cross-site POSTs to the API | `readBody`, `sameOriginJson` in `app/server.js` |
 | Port 3080 stays plain HTTP | HTTPS on 443 is available, but 3080 is still open and nothing redirects it; anything using `http://<host>:3080` is unencrypted on the Wi-Fi | container port mapping; `deploy/caddy/Caddyfile` |
-| Mac bridge and hooks default to `http://10.0.0.21:3080` | The Mac key crosses the Wi-Fi in clear on every poll; whoever captures it can approve pairings and impersonate sessions. Rotate it if exposed ([steps](CLAUDE-CHAT.md#security-notes)) | `host/claude-chat/bridge.mjs`, `cli.mjs`, `hook.py` (`LOCALAI_URL`) |
-| Chat device cookie lacks `Secure` | Also sent over plain HTTP | `app/claude-chat.js` |
+| The Mac falls back to plain HTTP when HTTPS is unavailable | `install.sh` keeps `http://10.0.0.21:3080` (with a warning) if it cannot fetch a valid CA over ssh or cannot reach `https://10.0.0.21` with it, and a Mac installed before the HTTPS change stays on HTTP until `install.sh` is re-run. On HTTP the Mac key crosses the Wi-Fi in clear on every poll; whoever captures it can approve pairings and impersonate sessions. Rotate it if exposed ([steps](CLAUDE-CHAT.md#security-notes)) | `host/claude-chat/install.sh`, `~/.claude/localai-chat/config.json`, `LOCALAI_URL` |
+| Chat device cookies paired over plain HTTP lack `Secure` | A device that paired on `http://<host>:3080` (or before this change) keeps a cookie its browser also sends over plain HTTP. Re-pair it on the HTTPS address to get a `Secure` cookie | `app/claude-chat.js` |
 | Claude board endpoints are unauthenticated | Any LAN client can post events and findings, vote, and change finding status | `/api/claude/*` in `app/server.js` |
 | Host notifications endpoint is unauthenticated | Any LAN client can post `deploy`/`backup`/`monitor` notices to the Inbox | `/api/notifications/system` |
 | GridCraft bridge task runs elevated | The bridge and the agent it starts run with highest privileges | `deploy/Install-GridCraft-Bridge.ps1` (`-RunLevel Highest`) |

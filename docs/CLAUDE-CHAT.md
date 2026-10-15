@@ -9,10 +9,10 @@ It is a second window onto a session you started yourself. It is **not** a runne
 ## How it works
 
 ```text
- phone / browser --(paired-device cookie)--> LocalAI appliance (10.0.0.21:3080)
+ phone / browser --(paired-device cookie)--> LocalAI appliance (https://10.0.0.21, or :3080)
                                                chat relay: messages, sessions, devices
                                                    ^                    ^
-                     long-poll inbox (Mac key) ----+                    +---- mirror posts (Mac key)
+        long-poll inbox (Mac key, HTTPS) ----+                    +---- mirror posts (Mac key, HTTPS)
                                                    |                    |
  Mac:  claude-chat  (= LOCALAI_CHAT=1 claude ...)
          |-- SessionStart hook ---- starts --> bridge (one per session; writes to the session's inbox socket)
@@ -22,6 +22,7 @@ It is a second window onto a session you started yourself. It is **not** a runne
 - **Opt-in.** `claude-chat` is a shell function, `LOCALAI_CHAT=1 claude "$@"`. Hooks inherit the variable and do nothing without it.
 - **Hook** (`~/.claude/localai-chat/hook.py`, async, 10 s timeout, swallows every error). `SessionStart` starts the bridge. `UserPromptSubmit` posts your terminal prompt to the relay. `Stop` posts Claude's reply text: the hook input's `last_assistant_message` (the transcript is written asynchronously and can lag behind the turn's final text), or, if Claude Code does not send it, the text read from the transcript.
 - **Bridge** (`~/.claude/localai-chat/bridge.mjs`, one per session, detached). Announces the session, long-polls the relay's inbox, acknowledges what it received, and injects each acknowledged web message into the session. The inbox only reserves (leases) the messages it returns; the bridge's ack marks them delivered just before it injects them. If the inbox response or the ack never arrives (the Mac sleeps mid-poll, the connection drops), the reservation runs out after 60 s and the message is queued again for the next poll: it arrives late rather than never, and a message that was not acknowledged is never injected, so it is never injected twice. Only one bridge runs per session and per Claude Code process: it keeps a pidfile `run/<sessionId>.pid` and a per-socket lock `run/sock-<hash>.json` in `~/.claude/localai-chat/`. `/clear` starts a new session id in the same process, so the new bridge stops the old one, and the cleared conversation goes offline on the page after 45 s. It exits when the session's socket disappears.
+- **Relay connection** (`~/.claude/localai-chat/relay.mjs` for the bridge and CLI, built into `hook.py`). The URL is `LOCALAI_URL`, else `url` in `~/.claude/localai-chat/config.json` (written by the installer), else `http://10.0.0.21:3080`. For `https://` URLs the certificate is verified against the CA named by `ca` in `config.json` (Node: the `ca` option of `node:https`; Python: `ssl.create_default_context(cafile=...)`); proxies are ignored and verification is never turned off.
 - **Relay** (`app/claude-chat.js` in the appliance). Stores sessions, messages, devices and pairing requests; authenticates the Mac (key) and devices (cookie). Nothing on the Mac listens on the network; the appliance is the only rendezvous point.
 - **Panel** (Claude Code page, `claude-chat` section of `app/public/ui.js`). Pairing, session picker, conversation, composer, devices.
 
@@ -39,7 +40,7 @@ Channels were the first design. They are disabled for the Claude Team org (`chan
 
 ## Setup
 
-On the Mac, from the repo checkout (needs `ssh windows-ai` to work, Node 22+, Python 3 at `/opt/homebrew/bin/python3`):
+On the Mac, from the repo checkout (needs `ssh windows-ai` to work, Node 22+, Python 3 at `/opt/homebrew/bin/python3`, `openssl` and `curl`, both standard on macOS):
 
 ```sh
 host/claude-chat/install.sh
@@ -49,13 +50,16 @@ localai-chat status
 
 The installer is safe to re-run. It:
 
-1. Copies `bridge.mjs`, `cli.mjs`, `hook.py` and `localai-chat` to `~/.claude/localai-chat/` and symlinks `localai-chat` into `~/.local/bin` (it tells you if that directory does not exist).
+1. Copies `bridge.mjs`, `cli.mjs`, `relay.mjs`, `hook.py` and `localai-chat` to `~/.claude/localai-chat/` and symlinks `localai-chat` into `~/.local/bin` (it tells you if that directory does not exist).
 2. Creates the Mac key, 32 random bytes as hex, at `~/.claude/localai-chat/mac.key` (mode 600), unless one already exists.
 3. Pushes the key's SHA-256 to the appliance over `ssh windows-ai docker exec -i local-ai-appliance tee /data/claude-chat-mac-key.sha256`.
-4. Backs up `~/.claude/settings.json` to `settings.json.bak-localai-chat-<timestamp>` and adds `SessionStart`, `UserPromptSubmit` and `Stop` hook entries (`/opt/homebrew/bin/python3 -I ~/.claude/localai-chat/hook.py`, async, 10 s), skipping any already present.
-5. Adds a marked block to `~/.zshrc` defining `claude-chat`.
+4. Chooses the relay URL. It fetches the LocalAI CA certificate over ssh (`ssh windows-ai type C:\LocalAI\https\localai-ca.crt`, exported there by `deploy/Install-LocalAI-HTTPS.ps1`), checks it is a PEM certificate (`openssl x509`), saves it as `~/.claude/localai-chat/localai-ca.crt`, and checks `https://10.0.0.21/healthz` with it. If that works, `~/.claude/localai-chat/config.json` gets `{"url": "https://10.0.0.21", "ca": ".../localai-ca.crt"}`. If it cannot get a valid CA or reach HTTPS, it prints a warning and writes `http://10.0.0.21:3080` instead; fix the cause and re-run. (`LOCALAI_HTTPS_URL` changes the HTTPS address it tries.)
+5. Backs up `~/.claude/settings.json` to `settings.json.bak-localai-chat-<timestamp>` and adds `SessionStart`, `UserPromptSubmit` and `Stop` hook entries (`/opt/homebrew/bin/python3 -I ~/.claude/localai-chat/hook.py`, async, 10 s), skipping any already present.
+6. Adds a marked block to `~/.zshrc` defining `claude-chat`.
 
-`localai-chat status` should show the key present, the relay reachable and the key `accepted`. Until the key hash is on the appliance, the feature is inert.
+The installer ends with `Relay: https://10.0.0.21 (HTTPS, verified with the LocalAI CA)` or `Relay: http://10.0.0.21:3080 (plain HTTP)`. `localai-chat status` should show the key present, the relay reachable (with the `https://` URL and the CA path) and the key `accepted`. Until the key hash is on the appliance, the feature is inert.
+
+**Switching an existing install to HTTPS:** re-run `host/claude-chat/install.sh` (it keeps your key), check its `Relay:` line, then restart or resume your `claude-chat` sessions so new bridges read `config.json`. Running bridges keep the URL they started with. Because the key may have crossed plain HTTP before, consider [rotating it](#security-notes).
 
 ## Daily use
 
@@ -79,11 +83,11 @@ Revoking takes effect immediately; the device's next request gets 401 and its pa
 
 ## Security notes
 
-- Nothing listens on the Mac. The bridge and hooks only make outbound HTTP calls to the appliance and talk to the session's own local socket.
+- Nothing listens on the Mac. The bridge and hooks only make outbound HTTP(S) calls to the appliance and talk to the session's own local socket.
 - The Mac key lives at `~/.claude/localai-chat/mac.key` (mode 600). Only its SHA-256 is on the appliance, at `/data/claude-chat-mac-key.sha256`, and no network endpoint can set or change it; only the installer can, over ssh.
 - The device cookie `localai_chat_device` is HttpOnly, SameSite=Strict, Path=`/api/claude/chat`, 180 days. The appliance stores only its hash.
-- **HTTP and HTTPS.** Port 3080 is plain HTTP. A device that uses the app over `http://` sends its cookie across the Wi-Fi unencrypted; anyone who sniffs it can send messages until the device is revoked. Use the HTTPS address ([Deploy › HTTPS](DEPLOY.md#https-with-caddy)) on phones. The cookie has no `Secure` flag, so it is still sent if the same device later opens the `http://` address. The pairing screen shows its plain-HTTP warning on both.
-- **The Mac key crosses plain HTTP**, in the `X-LocalAI-Mac-Key` header of every bridge long-poll (up to 25 s each) and every hook call: the bridge, hook and CLI default to `http://10.0.0.21:3080`. Whoever sniffs it can do everything the Mac can: approve pairing codes (and so pair their own devices), post fake terminal prompts and replies, announce fake sessions, and read web messages from the inbox. It cannot be revoked from the page, and re-running the installer **reuses** the existing key. Pointing `LOCALAI_URL` at the HTTPS address would need Node and Python on the Mac to trust the LocalAI CA, which is untested. Until then, if the key may be exposed, rotate it:
+- **HTTP and HTTPS.** Port 3080 is plain HTTP. A device that uses the app over `http://` sends its cookie across the Wi-Fi unencrypted; anyone who sniffs it can send messages until the device is revoked. Use the HTTPS address ([Deploy › HTTPS](DEPLOY.md#https-with-caddy)) on phones. A device that pairs over HTTPS gets a `Secure` cookie, which its browser never sends to the `http://` address; one paired over `http://` (or before this change) has no `Secure` flag, so re-pair it on the HTTPS address.
+- **The Mac key** travels in the `X-LocalAI-Mac-Key` header of every bridge long-poll (up to 25 s each) and every hook call. With the installer's HTTPS config it is encrypted and only sent to a server whose certificate chains to the LocalAI CA. On the plain-HTTP fallback (installer warning, a Mac installed before HTTPS support, or `LOCALAI_URL=http://...`) it crosses the Wi-Fi in clear. Whoever has it can do everything the Mac can: approve pairing codes (and so pair their own devices), post fake terminal prompts and replies, announce fake sessions, and read web messages from the inbox. It cannot be revoked from the page, and re-running the installer **reuses** the existing key. If the key may have been exposed (for example it was used over HTTP before), rotate it:
   1. `rm ~/.claude/localai-chat/mac.key`
   2. Re-run `host/claude-chat/install.sh`. It creates a new key and pushes its hash to the appliance; the old key is rejected from then on.
   3. Restart (or resume) your `claude-chat` sessions so their bridges read the new key; running bridges keep the old one and log `mac key rejected`.
@@ -98,7 +102,8 @@ Mac side, read from the environment of the Claude Code session (hooks and bridge
 | Variable | Default | Used by |
 |---|---|---|
 | `LOCALAI_CHAT` | unset | Hook: does nothing unless `1` (set by `claude-chat`) |
-| `LOCALAI_URL` | `http://10.0.0.21:3080` | Hook, bridge, CLI |
+| `LOCALAI_URL` | `url` in `~/.claude/localai-chat/config.json`, else `http://10.0.0.21:3080` | Hook, bridge, CLI. Overrides `config.json`; an `https://` URL is still verified with the `ca` from `config.json` |
+| `LOCALAI_HTTPS_URL` | `https://10.0.0.21` | Installer: the HTTPS address it tries and writes to `config.json` |
 | `LOCALAI_CHAT_HOME` | `~/.claude/localai-chat` | Hook, bridge, CLI |
 | `LOCALAI_CHAT_BRIDGE_CMD` | `node ~/.claude/localai-chat/bridge.mjs` | Hook (tests) |
 | `LOCALAI_CHAT_INJECT_GAP_MS` | `1000` | Bridge: gap between injections |
@@ -133,6 +138,8 @@ Start with `localai-chat status`. It prints the key state, relay reachability, w
 | `lost <id>` | All tries failed; the message was acknowledged (marked delivered) but never reached Claude |
 | `socket gone; exiting` / `socket unreachable; exiting` | The session ended; the bridge stops |
 | `mac key rejected` | Relay 401; re-run the installer to push the key hash again |
+| `relay error tls <code>: the certificate of <url> is not trusted (CA: <path>)` | HTTPS certificate check failed: the CA file is not the appliance's (Caddy's CA was recreated), none is configured, or the URL's host is not in the certificate. Nothing was sent. Re-run the installer |
+| `relay error CA file unreadable: <path>` | `config.json` names a CA file that is missing or not a certificate; re-run the installer |
 | `relay error ...` / `inbox failed <status>` | Appliance unreachable or erroring; the bridge backs off and retries |
 
 Common problems:
@@ -141,6 +148,8 @@ Common problems:
 - **Message stays `sending`, or goes back to `queued`.** The bridge fetched it but its acknowledgement did not reach the appliance (Mac asleep, network drop). After 60 s it is queued again and the next poll sends it; look for `ack missing` or `ack failed` in `bridge.log`. If it keeps happening, check the appliance is reachable (`localai-chat status`).
 - **Message `delivered` but Claude does nothing.** Claude Code may be holding it behind an approval dialog in the terminal (the own-child check failed). Look at the terminal and answer the dialog.
 - **Injected lines in the log but messages stop arriving, or `lost` appears.** A Claude Code update may have changed the undocumented inbox format. This is the main maintenance risk; compare `last injection` in `status` with the Claude Code version and adjust `bridge.mjs`.
+- **Certificate errors** (`relay error tls ...` in `bridge.log`, the same line in `~/.claude/localai-chat/hook.log`, `Relay: certificate not trusted` in `localai-chat status`). The Mac does not trust the server it reached. Usually Caddy's CA changed (its `localai-caddy-data` volume was recreated) or `LOCALAI_URL` points at a name the certificate does not cover (`https://10.0.0.21` and `https://localai.home.arpa` are covered). Re-run `host/claude-chat/install.sh` to fetch the current CA, then restart the sessions. Check by hand with `curl --cacert ~/.claude/localai-chat/localai-ca.crt https://10.0.0.21/healthz`. Never work around it by disabling verification; to go back to plain HTTP temporarily, set `LOCALAI_URL=http://10.0.0.21:3080` (the key then crosses the Wi-Fi in clear).
+- **Installer says it kept plain HTTP.** `could not get a valid LocalAI CA certificate over ssh`: run `deploy/Install-LocalAI-HTTPS.ps1` on the host (it exports `C:\LocalAI\https\localai-ca.crt`) and check `ssh windows-ai type C:\LocalAI\https\localai-ca.crt` prints a certificate. `HTTPS at ... is not reachable or not trusted`: check `local-ai-https` is running on the host and port 443 is open on the private network.
 - **`mac key rejected` or key `rejected` in status.** Re-run `host/claude-chat/install.sh`; it reuses the same key and re-pushes the hash (to replace the key, see the rotation steps under Security notes). Check `ssh windows-ai` works if the push fails.
 - **Re-running the installer** is always safe: files are overwritten, hooks and the `.zshrc` block are not duplicated, a new settings backup is made.
 
@@ -148,7 +157,7 @@ Common problems:
 
 1. In `~/.claude/settings.json`, remove the three hook entries that run `hook.py` (or restore a `settings.json.bak-localai-chat-*` backup, which loses later settings changes).
 2. Delete the `# >>> localai-chat >>>` ... `# <<< localai-chat <<<` block from `~/.zshrc`.
-3. Remove `~/.claude/localai-chat` and the `~/.local/bin/localai-chat` symlink. Stop running bridges first (`pkill -f localai-chat/bridge.mjs`), or let them exit with their sessions.
+3. Remove `~/.claude/localai-chat` (key, CA copy, `config.json`, logs) and the `~/.local/bin/localai-chat` symlink. Stop running bridges first (`pkill -f localai-chat/bridge.mjs`), or let them exit with their sessions.
 4. Remove the appliance's key file, which makes the Mac side inert:
 
    ```sh

@@ -28,7 +28,8 @@ Host access, when needed: `ssh windows-ai` (the owner's ssh alias for the Window
 
 ## Report to the Claude board
 
-Base `http://10.0.0.21:3080` (the owner's appliance). JSON bodies, no auth.
+Base `http://10.0.0.21:3080` (the owner's appliance). JSON bodies, no auth. Mutating requests that carry a foreign `Origin` or
+`Sec-Fetch-Site: cross-site` get 403; curl and scripts send neither, so they are unaffected.
 
 - Before choosing work: `GET /api/claude/priorities?limit=20` (open findings in the owner's rank order, with decisions).
 - Progress: `POST /api/claude/events` `{sessionId, sessionTitle, cwd, sessionStatus:"active"|"idle"|"done"|"failed", events:[{kind:"phase"|"action"|"note"|"decision", title, detail, status:"started"|"running"|"done"|"failed"|"info", phase, tool}]}`.
