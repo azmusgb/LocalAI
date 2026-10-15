@@ -840,7 +840,8 @@ body.awc-stage-expanded{overflow:hidden}
 .claude-livechip-body{display:grid;gap:1px;min-width:0}
 .claude-livechip-body b{font-size:12px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .claude-livechip-step{display:flex;gap:6px;font-size:11px;color:var(--muted);min-width:0}
-.claude-livechip-step>span:last-child{flex:0 0 auto;white-space:nowrap}
+.claude-livechip-state,.claude-livechip-ago{flex:0 0 auto;white-space:nowrap}
+.claude-livechip-state{font-weight:650;color:var(--text)}
 .claude-livechip-text{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .claude-board-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:16px 0 10px}
 .claude-filters{display:flex;gap:6px;flex-wrap:wrap}

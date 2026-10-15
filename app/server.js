@@ -2634,8 +2634,8 @@ function claudeLive(sessions,events,now){
   for(const e of events){const t=Date.parse(e.at);if(Number.isFinite(t)&&(!latest.has(e.sessionId)||t>latest.get(e.sessionId).t))latest.set(e.sessionId,{t,title:e.title})}
   const live=[];
   for(const s of sessions){
-    const last=latest.get(s.id)||{t:Date.parse(s.updatedAt),title:s.lastEvent||''};
-    const age=now-last.t;if(!Number.isFinite(age)||age>=CLAUDE_LIVE_WINDOW_MS)continue;
+    const last=latest.get(s.id);if(!last)continue; // events only: findings also bump updatedAt
+    const age=now-last.t;if(age>=CLAUDE_LIVE_WINDOW_MS)continue;
     const stop=last.title===CLAUDE_STOP_TITLE;
     live.push({id:s.id,title:`${s.title||'Claude session'} · ${s.id.replace(/^cc-/,'')}`,state:!stop&&age<CLAUDE_LIVE_WORKING_MS?'working':'waiting',lastEvent:last.title,at:new Date(last.t).toISOString()});
   }

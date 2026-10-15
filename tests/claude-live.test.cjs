@@ -29,6 +29,8 @@ test('Claude board live sessions: working, waiting, excluded, ordered, titled wi
   seed('cc-dddd4444', 'old · Claude Code', [{ at: ago(2400), title: 'Run tests' }]);
   seed('cc-eeee5555', 'home · Claude Code', [{ at: ago(10), title: 'Read README.md' }]);
   seed('cc-ffff6666', 'stale-stop · Claude Code', [{ at: ago(2400), title: 'Finished responding' }]);
+  // A findings-only session: fresh updatedAt and a stale lastEvent, but no events at all.
+  storage.writeSetting('claude-session/cc-gggg7777', { id: 'cc-gggg7777', title: 'findings only', status: 'active', startedAt: ago(60), updatedAt: ago(5), eventCount: 0, lastEvent: 'Run tests' });
   storage.close();
 
   const reserve = http.createServer();
@@ -63,6 +65,7 @@ test('Claude board live sessions: working, waiting, excluded, ordered, titled wi
   assert.equal(by('cc-cccc3333').state, 'waiting', 'a non-Stop event 10 min old is idle, so waiting');
   assert.equal(by('cc-dddd4444'), undefined, '40 min old is excluded');
   assert.equal(by('cc-ffff6666'), undefined, 'a 40 min old Stop is excluded');
+  assert.equal(by('cc-gggg7777'), undefined, 'a session with no events is not live, whatever its updatedAt');
   assert.deepEqual(live.map(l => l.id), ['cc-eeee5555', 'cc-aaaa1111', 'cc-bbbb2222', 'cc-cccc3333'], 'working first, newest first within each group');
   assert.equal(by('cc-aaaa1111').title, 'home · Claude Code · aaaa1111', 'title carries the short id without the cc- prefix');
   assert.notEqual(by('cc-aaaa1111').title, by('cc-eeee5555').title, 'identical session titles stay distinguishable');

@@ -133,5 +133,53 @@ await check('on a phone the chips are 44px tall, scroll sideways, and pass axe c
   assert.deepEqual(v, []);
   await pg.close();
 });
+
+await check('chips stay the same elements across polls, keeping keyboard focus', async () => {
+  const pg = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  let age = 5;
+  await pg.route('**/api/claude/board*', async (route) => {
+    const res = await route.fetch();
+    const j = await res.json();
+    j.live = LIVE.map((l, i) => ({ ...l, at: iso(age + i) }));
+    j.sessions = [...j.live.map((l) => ({ id: l.id, title: l.title, updatedAt: l.at })), ...j.sessions];
+    await route.fulfill({ response: res, json: j });
+  });
+  await pg.goto(base, { waitUntil: 'networkidle' });
+  await pg.evaluate(() => window.showView('claude'));
+  await pg.waitForSelector('#claudeLiveNow button[data-claude-live]');
+  await pg.evaluate(() => { const b = document.querySelector('#claudeLiveNow button[data-claude-live]'); window.__chip = b; b.focus(); });
+  const before = await pg.locator('#claudeLiveNow button').first().innerText();
+  age = 50;
+  await pg.evaluate(() => document.getElementById('claudeRefresh').click()); // scripted poll; a real click would move focus
+  await pg.waitForFunction((t) => document.querySelector('#claudeLiveNow button').innerText !== t, before);
+  assert.equal(await pg.evaluate(() => document.activeElement === window.__chip && document.body.contains(window.__chip)), true);
+  await pg.close();
+});
+await check('each chip names its state for assistive tech, and a visible state label', async () => {
+  const pg = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await liveStubbed(pg, LIVE);
+  await pg.goto(base, { waitUntil: 'networkidle' });
+  await pg.evaluate(() => window.showView('claude'));
+  await pg.waitForSelector('#claudeLiveNow button[data-claude-live]');
+  const names = await liveChips(pg).evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+  assert.match(names[0], /live0001, working, Edit app\/server\.js, \d+s ago/);
+  assert.match(names[2], /live0003, waiting, Finished responding/);
+  assert.match(await liveChips(pg).nth(2).innerText(), /Waiting/);
+  assert.equal(await pg.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  await pg.close();
+});
+await check('live titles and steps are text, never markup', async () => {
+  const pg = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const evil = '<img src=x onerror=window.__x=1>';
+  await liveStubbed(pg, [{ id: 'cc-evil0001', title: evil, state: 'working', lastEvent: evil, at: iso(3) }]);
+  await pg.goto(base, { waitUntil: 'networkidle' });
+  await pg.evaluate(() => window.showView('claude'));
+  await pg.waitForSelector('#claudeLiveNow button[data-claude-live]');
+  await pg.waitForTimeout(300);
+  assert.equal(await pg.locator('#claudeLiveNow img').count(), 0);
+  assert.equal(await pg.evaluate(() => window.__x), undefined);
+  assert.match(await pg.locator('#claudeLiveNow button').innerText(), /<img src=x/);
+  await pg.close();
+});
 await browser.close();
 if (failed) process.exit(1);

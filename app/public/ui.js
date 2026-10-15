@@ -1786,11 +1786,27 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
 
   // "Live now": one chip per session the progress feed says is active. Tapping filters the page to it; tapping again clears.
+  // Chips are keyed by session id and updated in place, so a poll never replaces the element under a tap or keyboard focus.
   function renderLive(live) {
     const box = $('claudeLiveNow');
     box.hidden = !live.length;
-    const html = live.map((l) => `<button type="button" class="claude-livechip" data-claude-live="${esc(l.id)}" aria-pressed="${l.id === view.session}"><i class="dot ${l.state === 'working' ? 'working' : 'waiting'}" aria-hidden="true"></i><span class="claude-livechip-body"><b>${esc(l.title)}</b><span class="claude-livechip-step"><span class="claude-livechip-text">${esc(l.lastEvent)}</span><span>${esc(ago(l.at))}</span></span></span></button>`).join('');
-    if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
+    const ids = live.map((l) => l.id).join('\n');
+    if (box.dataset.ids !== ids) {
+      box.dataset.ids = ids;
+      box.innerHTML = live.map((l) => `<button type="button" class="claude-livechip" data-claude-live="${esc(l.id)}"><i class="dot" aria-hidden="true"></i><span class="claude-livechip-body"><b class="claude-livechip-title"></b><span class="claude-livechip-step"><span class="claude-livechip-state"></span><span class="claude-livechip-text"></span><span class="claude-livechip-ago"></span></span></span></button>`).join('');
+    }
+    const chips = box.children;
+    live.forEach((l, i) => {
+      const chip = chips[i], working = l.state === 'working', state = working ? 'working' : 'waiting', when = ago(l.at);
+      chip.setAttribute('aria-pressed', String(l.id === view.session));
+      chip.setAttribute('aria-label', `${l.title}, ${state}, ${l.lastEvent}, ${when}`);
+      chip.querySelector('.dot').className = `dot ${state}`;
+      const set = (sel, text) => { const el = chip.querySelector(sel); if (el.textContent !== text) el.textContent = text; };
+      set('.claude-livechip-title', l.title);
+      set('.claude-livechip-state', working ? 'Working' : 'Waiting');
+      set('.claude-livechip-text', l.lastEvent);
+      set('.claude-livechip-ago', when);
+    });
   }
 
   function renderProgress(summary, statuses) {
