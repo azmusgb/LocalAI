@@ -2355,6 +2355,86 @@ async function apiPowerShellHostNext(req,res){if(!requireFeature(res,17))return;
 async function apiPowerShellHostResult(req,res){if(!requireFeature(res,17))return;if(!hostBridgeAuthorized(req))return json(res,401,{error:'Unauthorized host bridge'});try{const b=await readBody(req,512*1024);const items=powerShellJobStore();const item=items.find(x=>x.id===b.id);if(!item)return json(res,404,{error:'PowerShell job not found'});if(item.status!=='running')return json(res,409,{error:`Job is not running (${item.status})`});item.exitCode=Number.isFinite(Number(b.exitCode))?Number(b.exitCode):-1;item.stdout=String(b.stdout||'').slice(-120000);item.stderr=String(b.stderr||'').slice(-120000);item.durationMs=Math.max(0,Number(b.durationMs)||0);item.status=item.exitCode===0?'completed':'failed';item.completedAt=nowIso();item.updatedAt=nowIso();savePowerShellJobs(items);recordActivity('powershell',item.status==='completed'?'PowerShell job completed':'PowerShell job failed',`${item.id} · exit ${item.exitCode}`,{jobId:item.id});json(res,200,{ok:true,item})}catch(e){storageError(res,e,400)}}
 // ===== END POWERSHELL WORKBENCH =============================================
 
+// ===== CLAUDE BOARD ==========================================================
+// Progress and review findings reported by Claude Code sessions, ranked by severity, operator votes and
+// decisions. Claude reads the ranking back from /api/claude/priorities. Rows live in settings under
+// per-kind key prefixes (newest key first), so no schema change is needed.
+const CLAUDE_SESSION_PREFIX='claude-session/',CLAUDE_EVENT_PREFIX='claude-event/',CLAUDE_FINDING_PREFIX='claude-finding/';
+const CLAUDE_MAX_EVENTS=3000,CLAUDE_MAX_FINDINGS=1000;
+const CLAUDE_SEVERITY_WEIGHT={high:30,medium:15,low:5};
+const CLAUDE_STATUS={proposed:{label:'Proposed',boost:0},approved:{label:'Approved',boost:20},in_progress:{label:'In progress',boost:25},deferred:{label:'Deferred',boost:-25},rejected:{label:'Rejected',boost:-100},fixed:{label:'Fixed',boost:-200}};
+const CLAUDE_EVENT_STATUS=new Set(['started','running','done','failed','info']);
+let claudeKeySeq=0,claudeKeyMs=0;
+// Keys sort by time: zero-padded milliseconds plus a per-process sequence for same-millisecond writes.
+function claudeTimeKey(){const now=Math.max(Date.now(),claudeKeyMs);claudeKeySeq=now===claudeKeyMs?claudeKeySeq+1:0;claudeKeyMs=now;return `${String(now).padStart(14,'0')}-${claudeKeySeq.toString(36).padStart(3,'0')}`}
+function claudeSlug(value,fallback){const s=String(value||'').toLowerCase().replace(/[^a-z0-9_.:-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,80);return s||fallback}
+function claudeText(value,max){return String(value??'').slice(0,max)}
+function claudeScore(f){const votes=(f.votes?.up||0)-(f.votes?.down||0);return (CLAUDE_SEVERITY_WEIGHT[f.severity]||10)+votes*6+(CLAUDE_STATUS[f.status]?.boost||0)+(Number(f.priorityBoost)||0)}
+function claudeRanked(findings){return findings.map(f=>({...f,score:claudeScore(f)})).sort((a,b)=>b.score-a.score||String(a.createdAt).localeCompare(String(b.createdAt))).map((f,i)=>({...f,rank:i+1}))}
+function claudeFindings(){return storage.listSettings(CLAUDE_FINDING_PREFIX,{limit:CLAUDE_MAX_FINDINGS})}
+function claudeSaveSession(input,at){
+  const id=claudeSlug(input.sessionId||input.id,'default');const key=CLAUDE_SESSION_PREFIX+id;const prev=storage.readSetting(key,null)||{id,startedAt:at,eventCount:0};
+  const session={...prev,id,title:claudeText(input.sessionTitle||input.title||prev.title||'Claude session',200),cwd:claudeText(input.cwd||prev.cwd||'',300),status:['active','idle','done','failed'].includes(input.sessionStatus)?input.sessionStatus:(prev.status||'active'),updatedAt:at};
+  storage.writeSetting(key,session);return session;
+}
+function claudeNormalizeEvent(e,at){
+  const status=CLAUDE_EVENT_STATUS.has(e.status)?e.status:'info';
+  return {sessionId:claudeSlug(e.sessionId,'default'),at,kind:['action','phase','note','decision'].includes(e.kind)?e.kind:'action',tool:claudeText(e.tool,60),title:claudeText(e.title||e.tool||'Action',240),detail:claudeText(e.detail,1200),status,phase:claudeText(e.phase,120)};
+}
+function claudeNormalizeFinding(f,prev,at){
+  const severity=['high','medium','low'].includes(f.severity)?f.severity:(prev?.severity||'medium');
+  const status=Object.hasOwn(CLAUDE_STATUS,f.status)?f.status:(prev?.status||'proposed');
+  return {
+    id:claudeSlug(f.id,`finding-${claudeTimeKey()}`),sessionId:claudeSlug(f.sessionId||prev?.sessionId,'default'),
+    title:claudeText(f.title||prev?.title||'Untitled finding',240),category:claudeSlug(f.category||prev?.category,'other'),severity,status,
+    area:claudeText(f.area??prev?.area??'',120),file:claudeText(f.file??prev?.file??'',300),summary:claudeText(f.summary??prev?.summary??'',2000),
+    scenario:claudeText(f.scenario??prev?.scenario??'',2000),fix:claudeText(f.fix??prev?.fix??'',2000),pr:claudeText(f.pr??prev?.pr??'',120),
+    // Operator state survives re-reports.
+    votes:prev?.votes||{up:0,down:0},priorityBoost:prev?.priorityBoost||0,decidedAt:prev?.decidedAt||null,...(prev?.decisionNote?{decisionNote:prev.decisionNote}:{}),
+    createdAt:prev?.createdAt||at,updatedAt:at
+  };
+}
+async function apiClaudeBoard(req,res,urlObj){
+  const sessionId=urlObj.searchParams.get('session')||'';const limit=Math.max(1,Math.min(500,Number(urlObj.searchParams.get('events'))||150));
+  const sessions=storage.listSettings(CLAUDE_SESSION_PREFIX).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  const events=storage.listSettings(CLAUDE_EVENT_PREFIX,{limit:sessionId?2000:limit,...(sessionId?{where:{sessionId}}:{})}).slice(0,limit);
+  const findings=claudeRanked(claudeFindings().filter(f=>!sessionId||f.sessionId===sessionId));
+  const byStatus={},byCategory={};
+  for(const f of findings){byStatus[f.status]=(byStatus[f.status]||0)+1;const c=byCategory[f.category]||(byCategory[f.category]={high:0,medium:0,low:0,open:0,total:0});c[f.severity]++;c.total++;if(!['fixed','rejected'].includes(f.status))c.open++}
+  json(res,200,{sessions,events,findings,summary:{total:findings.length,byStatus,byCategory},statuses:Object.fromEntries(Object.entries(CLAUDE_STATUS).map(([k,v])=>[k,v.label]))});
+}
+async function apiClaudeEvents(req,res){
+  try{const b=await readBody(req,512*1024);const list=Array.isArray(b.events)?b.events.slice(0,200):[b];const at=nowIso();
+    storage.transaction(()=>{const touched=new Map();for(const raw of list){const e=claudeNormalizeEvent({...raw,sessionId:raw.sessionId||b.sessionId},at);storage.writeSetting(CLAUDE_EVENT_PREFIX+claudeTimeKey(),e);touched.set(e.sessionId,(touched.get(e.sessionId)||0)+1)}
+      for(const [id,count] of touched){const s=claudeSaveSession({...b,sessionId:id},at);s.eventCount=(s.eventCount||0)+count;s.lastEvent=list.at(-1)?.title||'';storage.writeSetting(CLAUDE_SESSION_PREFIX+id,s)}
+      storage.pruneSettings(CLAUDE_EVENT_PREFIX,CLAUDE_MAX_EVENTS)});
+    json(res,201,{ok:true,accepted:list.length})}catch(e){storageError(res,e,400)}
+}
+async function apiClaudeFindings(req,res){
+  try{const b=await readBody(req,1024*1024);const list=Array.isArray(b.findings)?b.findings.slice(0,300):[b];const at=nowIso();const saved=[];
+    storage.transaction(()=>{if(b.sessionId)claudeSaveSession(b,at);for(const raw of list){const id=claudeSlug(raw.id,'');const prev=id?storage.readSetting(CLAUDE_FINDING_PREFIX+id,null):null;const f=claudeNormalizeFinding({...raw,sessionId:raw.sessionId||b.sessionId},prev,at);storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);saved.push(f)}});
+    json(res,201,{ok:true,items:claudeRanked(saved)})}catch(e){storageError(res,e,400)}
+}
+function claudeUpdateFinding(res,id,mutate){
+  const key=CLAUDE_FINDING_PREFIX+claudeSlug(id,'');const f=storage.readSetting(key,null);if(!f)return json(res,404,{error:'Finding not found'});
+  mutate(f);f.updatedAt=nowIso();storage.writeSetting(key,f);json(res,200,{item:{...f,score:claudeScore(f)}});
+}
+async function apiClaudeVote(req,res){
+  try{const b=await readBody(req);const delta=Number(b.delta);if(![1,-1].includes(delta))return json(res,400,{error:'delta must be 1 or -1'});
+    claudeUpdateFinding(res,b.id,f=>{f.votes={up:f.votes?.up||0,down:f.votes?.down||0};if(delta>0)f.votes.up++;else f.votes.down++})}catch(e){storageError(res,e,400)}
+}
+async function apiClaudeDecision(req,res){
+  try{const b=await readBody(req);if(!Object.hasOwn(CLAUDE_STATUS,b.status))return json(res,400,{error:`status must be one of ${Object.keys(CLAUDE_STATUS).join(', ')}`});
+    claudeUpdateFinding(res,b.id,f=>{f.status=b.status;f.decidedAt=nowIso();if(b.note!==undefined)f.decisionNote=claudeText(b.note,1000)});
+    recordActivity('claude',`Finding ${CLAUDE_STATUS[b.status].label.toLowerCase()}`,String(b.id||''),{findingId:b.id})}catch(e){storageError(res,e,400)}
+}
+// What Claude should work on next: open findings in rank order with the operator's decisions.
+async function apiClaudePriorities(req,res,urlObj){
+  const open=claudeRanked(claudeFindings()).filter(f=>!['fixed','rejected','deferred'].includes(f.status));
+  json(res,200,{generatedAt:nowIso(),items:open.slice(0,Math.max(1,Math.min(200,Number(urlObj.searchParams.get('limit'))||50))).map(({id,rank,score,title,category,severity,status,votes,file,fix,decisionNote})=>({id,rank,score,title,category,severity,status,votes,file,fix,decisionNote}))});
+}
+// ===== END CLAUDE BOARD ======================================================
+
 const server = http.createServer(async (req, res) => {
   const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const p = urlObj.pathname;
@@ -2465,6 +2545,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/powershell/cancel') return await apiPowerShellCancel(req,res);
     if (req.method === 'GET' && p === '/api/powershell/host/next') return await apiPowerShellHostNext(req,res);
     if (req.method === 'POST' && p === '/api/powershell/host/result') return await apiPowerShellHostResult(req,res);
+    if (req.method === 'GET' && p === '/api/claude/board') return await apiClaudeBoard(req,res,urlObj);
+    if (req.method === 'GET' && p === '/api/claude/priorities') return await apiClaudePriorities(req,res,urlObj);
+    if (req.method === 'POST' && p === '/api/claude/events') return await apiClaudeEvents(req,res);
+    if (req.method === 'POST' && p === '/api/claude/findings') return await apiClaudeFindings(req,res);
+    if (req.method === 'POST' && p === '/api/claude/findings/vote') return await apiClaudeVote(req,res);
+    if (req.method === 'POST' && p === '/api/claude/findings/decision') return await apiClaudeDecision(req,res);
 
     if (req.method === 'GET' && p.startsWith('/go/')) {
       if (redirectFor(req, res, p)) return;
