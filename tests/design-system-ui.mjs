@@ -31,6 +31,33 @@ await check('one stylesheet, nothing injected at runtime', async () => {
 });
 await page.close();
 
+const foundation = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const origin = new URL(base).origin;
+const requested = [];
+foundation.on('request', r => requested.push(r.url()));
+await foundation.goto(base, { waitUntil: 'networkidle' });
+await check('font is Figtree from /fonts and no cross-origin requests', async () => {
+  const foreign = requested.filter(u => /^https?:/.test(u) && new URL(u).origin !== origin);
+  assert.deepEqual(foreign, []);
+  assert.ok(await foundation.evaluate(async () => { await document.fonts.load('16px Figtree'); return document.fonts.check('16px Figtree') }), 'Figtree not loaded');
+  assert.ok(requested.some(u => u.includes('/fonts/figtree-latin-wght-normal.woff2')), 'font not fetched from /fonts');
+  const family = await foundation.evaluate(() => getComputedStyle(document.body).fontFamily);
+  assert.match(family, /^"?Figtree/);
+});
+await check('icon sprite has every named symbol', async () => {
+  const names = 'home workspace automate build system search bell chevron-down chevron-right send globe compose refresh image plus check x'.split(' ');
+  const missing = await foundation.evaluate(n => n.filter(x => !document.querySelector(`symbol#i-${x}[viewBox="0 0 24 24"]`)), names);
+  assert.deepEqual(missing, []);
+});
+await check('statusBadge maps statuses', async () => {
+  const got = await foundation.evaluate(() => Object.fromEntries(['awaiting_approval','ready','needs_attention','applied','completed','answered','running','failed','queued','DOWN','HEALTHY','OPTIONAL_OFFLINE'].map(s => [s, window.LocalAIKit.statusBadge(s)])));
+  const want = { awaiting_approval: ['Ready to review','accent'], ready: ['Ready to review','accent'], needs_attention: ['Needs a look','attention'], applied: ['Done','good'], completed: ['Done','good'], answered: ['Done','good'], running: ['Running','accent'], failed: ['Failed','bad'], queued: ['Queued','neutral'], DOWN: ['Down','bad'], HEALTHY: ['Healthy','good'], OPTIONAL_OFFLINE: ['Offline','neutral'] };
+  for (const [k, [label, tone]] of Object.entries(want)) assert.deepEqual(got[k], { label, tone }, k);
+  assert.match(await foundation.evaluate(() => window.LocalAIKit.badgeHtml('failed')), /badge--bad[^>]*>Failed</);
+  assert.match(await foundation.evaluate(() => window.LocalAIKit.icon('home')), /<use href="#i-home"/);
+});
+await foundation.close();
+
 const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 await phone.goto(base, { waitUntil: 'networkidle' });
 await check('phone breadcrumb shows no orphan separators', async () => {
