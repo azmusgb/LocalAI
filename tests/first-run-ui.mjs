@@ -26,9 +26,9 @@ await check('Get started appears for a new install and finishes its checks', asy
   assert.equal(states.length, 3);
   assert.ok(states.every(s => s === 'done' || s === 'todo'), states.join());
 });
-await check('a missing model shows the exact pull command', async () => {
+await check('a missing model offers a one-click download', async () => {
   if (!expectCard || models.defaultInstalled) return;
-  assert.match(await page.locator('#firstRun [data-step="model"]').innerText(), /ollama pull \S+/);
+  assert.equal(await page.locator('#firstRun [data-first-run-download]').isVisible(), true);
 });
 await check('a sample task fills the command and marks the step done', async () => {
   if (!expectCard) return;
