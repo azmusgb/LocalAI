@@ -1601,53 +1601,6 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
 .secure-setup{margin-top:12px}
 .secure-setup>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--ds-accent-text);font-weight:600}
 .secure-setup[open]>summary{margin-bottom:4px}
-
-/* Approval sheet (LocalAIUI.ask): a modal dialog, a bottom sheet on phones. */
-.ask-sheet{box-sizing:border-box;width:min(460px,calc(100vw - 32px));max-height:calc(100vh - 32px);padding:0;border:1px solid var(--ds-line-2);border-radius:var(--ds-r-lg);background:var(--ds-surface);color:var(--ds-text);font-family:var(--ds-font);box-shadow:0 24px 70px rgba(0,0,0,.5);overflow:auto}
-.ask-sheet::backdrop{background:rgba(4,8,14,.72)}
-.ask-sheet__form{display:grid;gap:14px;padding:22px 20px 20px;margin:0}
-.ask-sheet__title{margin:0;font-size:20px;line-height:1.25;font-weight:700;overflow-wrap:anywhere}
-.ask-sheet__effect{margin:0;color:var(--ds-soft);font-size:15px;line-height:1.5;white-space:pre-line;overflow-wrap:anywhere}
-.ask-sheet__field{display:grid;gap:6px;color:var(--ds-soft);font-size:14px;font-weight:600}
-.ask-sheet__field input,.ask-sheet__field select{box-sizing:border-box;min-height:48px;padding:0 14px;border-radius:12px;border:1px solid var(--ds-line-input);background:var(--ds-surface-2);color:var(--ds-text);font:500 16px/1 var(--ds-font)}
-.ask-sheet__field input:focus-visible,.ask-sheet__field select:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
-.ask-sheet__actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
-.ask-sheet__actions button{flex:1 1 140px}
-.ask-sheet__ok:disabled{opacity:.45;cursor:not-allowed}
-.ask-sheet--danger .ask-sheet__ok{background:var(--ds-bad);color:var(--ds-accent-ink)}
-.ask-sheet--host .ask-sheet__ok{background:var(--ds-attention);color:var(--ds-accent-ink)}
-.ask-sheet--host{border-color:var(--ds-attention)}
-@media (max-width:640px){.ask-sheet{width:100%;max-width:100%;margin:auto 0 0;border-radius:var(--ds-r-xl) var(--ds-r-xl) 0 0;border-bottom:0;padding-bottom:env(safe-area-inset-bottom)}}
-@media (prefers-reduced-motion:no-preference){.ask-sheet[open]{animation:ask-in .16s ease-out}@keyframes ask-in{from{opacity:0;transform:translateY(16px)}}}
-
-/* ---- run card and run view ---- */
-.run-list{gap:0}
-.run-card{align-items:flex-start;padding:14px 16px}
-.run-card__main{gap:4px}
-.run-card .list-row__sub{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-.run-card__preview{margin-top:4px;color:var(--ds-soft);font-size:13px;line-height:1.45;overflow-wrap:anywhere}
-.run-card__preview--text,.run-card__preview--mission{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.run-card__preview--image{display:flex;align-items:center;gap:8px}
-.run-card__preview--image img{width:72px;height:72px;object-fit:cover;border-radius:12px;background:var(--ds-surface-2)}
-.run-card__preview--image .icon{width:28px;height:28px}
-.run-card__count,.run-card__files{color:var(--ds-muted);font-size:13px}
-.run-card__preview--diff{display:flex;flex-direction:column;gap:2px;font-weight:600;color:var(--ds-text)}
-.run-card__preview--diff .run-card__files{font-weight:400}
-.run-card__bar{height:4px;margin-top:6px;border-radius:99px;background:var(--ds-surface-2);overflow:hidden}
-.run-card__bar>span{display:block;height:100%;width:var(--progress);background:var(--ds-accent)}
-.run-card__action{min-height:44px;padding:0 18px;margin-top:8px;align-self:flex-start;font-size:15px}
-.run-card .list-row__trail{padding-top:2px}
-.run-view-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;color:var(--ds-soft)}
-.run-view-head .run-act{min-height:44px;padding:0 16px;font-size:15px}
-.run-view-project{font-size:14px;color:var(--ds-soft)}
-.run-approval{margin-top:14px;padding:14px;border:1px solid var(--ds-attention);border-radius:var(--ds-r-lg);background:var(--ds-surface-2);display:grid;gap:8px}
-.run-approval__title{font-weight:700;font-size:16px;color:var(--ds-text)}
-.run-approval__detail{color:var(--ds-soft);font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
-.run-approval__actions{display:flex;gap:10px;flex-wrap:wrap}
-.run-approval__actions button{flex:1 1 120px}
-/* The run view is an <aside>; the phone shell's `aside{height:52px;display:flex}` rules clipped it to its header. */
-.run-drawer{display:block;height:auto;max-height:none;z-index:1}
-.run-view-error{margin-top:10px;padding:10px 12px;border:1px solid var(--ds-bad);border-radius:var(--ds-r-md);background:var(--ds-surface-2);color:var(--ds-bad-text);font-size:14px;overflow-wrap:anywhere}
 /* Claude page: a long session title made the session picker 677px wide, pushing the live chip, the picker and
    Refresh off the left edge of a phone. The picker now shrinks and truncates; the row wraps if it must. */
 .claude-head-actions{min-width:0;max-width:100%;flex-wrap:wrap}
