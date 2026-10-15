@@ -9,6 +9,8 @@ const failures = [];
 async function check(label, fn) { try { await fn(); console.log('PASS', label); } catch (e) { failures.push(`${label}: ${e.message}`); console.error('FAIL', label, e.message); } }
 
 const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+// A test server has no release history, which hides What's new; give it one so the card's position is checked.
+await page.route('**/api/releases', route => route.fulfill({ json: { current: { version: '2.0.1', commit: 'a'.repeat(40), deployedAt: new Date().toISOString() }, repoUrl: 'https://example.invalid', history: [{ version: '2.0.1', deployedAt: new Date().toISOString(), notes: [{ title: 'Test release', pr: 1 }] }] } }));
 const probes = [];
 page.on('request', r => { if (r.url().startsWith(`https://${name}/`)) probes.push(r.url()); });
 await page.goto(`http://${name}:${base.port}/`, { waitUntil: 'load' });
