@@ -73,6 +73,53 @@ for (const [parent, child, childTab, domain] of [
   });
 }
 
+await check('top bar shows one Inbox count and opens the right tab', async () => {
+  // Stub the two sources so the real loaders produce known counts.
+  const counts = { unread: 0, pending: 2 };
+  await page.route('**/api/notifications', route => route.fulfill({ json: { items: [], unread: counts.unread } }));
+  await page.route('**/api/approvals', route => route.fulfill({ json: { items: Array.from({ length: counts.pending }, (_, i) => ({ id: `a${i}`, status: 'pending', title: 'Approve change', createdAt: new Date().toISOString() })) } }));
+  const refresh = async () => {
+    for (const view of ['inbox', 'approvals']) {
+      const loaded = page.waitForResponse(r => r.url().includes(view === 'inbox' ? '/api/notifications' : '/api/approvals'));
+      await page.evaluate(v => window.showView(v), view);
+      await loaded;
+    }
+    await page.evaluate(() => window.showView('home'));
+  };
+  try {
+    await refresh();
+    await page.waitForFunction(() => document.querySelector('#uxInboxCount')?.textContent === '2');
+    await page.locator('#uxInboxBtn').click();
+    await page.waitForSelector('#approvals.active');
+    counts.unread = 3;
+    await refresh();
+    await page.waitForFunction(() => document.querySelector('#uxInboxCount')?.textContent === '5');
+    await page.locator('#uxInboxBtn').click();
+    await page.waitForSelector('#inbox.active');
+    counts.unread = 0; counts.pending = 0;
+    await refresh();
+    await page.waitForFunction(() => document.querySelector('#uxInboxBtn')?.hidden === true);
+  } finally {
+    await page.unroute('**/api/notifications');
+    await page.unroute('**/api/approvals');
+  }
+});
+
+await check('GridCraft is reachable from Integrations', async () => {
+  await page.evaluate(() => window.showView('integrations'));
+  await page.waitForSelector('#integrations[data-integration-v2="true"]');
+  const link = page.locator('#integrations a[href="/gridcraft.html"]');
+  await link.waitFor({ state: 'visible' });
+  assert.equal(await link.innerText(), 'Open GridCraft');
+  await page.locator('[data-integration-source-v2="gridcraft"]').filter({ hasNotText: 'Checking' }).waitFor({ timeout: 8000 });
+});
+
+await check('audit log links runs to Runs', async () => {
+  assert.equal(await page.evaluate(() => typeof window.LocalAIRuns.open), 'function');
+  assert.equal(await page.evaluate(() => window.LocalAIRuns.open('no-such-run')), false);
+  await page.waitForSelector('#runs.active');
+});
+
 await check('no script errors while navigating', async () => {
   assert.deepEqual(pageErrors, []);
 });

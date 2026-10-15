@@ -88,11 +88,15 @@ function buildTabs(){
 function buildContext(){
  const main=q('main');if(!main||q('#uxContextBar'))return;
  const bar=document.createElement('header');bar.id='uxContextBar';bar.className='ux-context-bar';
- bar.innerHTML='<div class="ux-context-left"><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-search" type="button" id="uxCommandBtn"><span>Search commands</span><kbd>⌘K</kbd></button><button class="ux-context-menu" id="uxContextMenu" type="button" aria-expanded="false">Menu</button></div>';
+ bar.innerHTML='<div class="ux-context-left"><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-inbox" type="button" id="uxInboxBtn" hidden><span>Inbox</span><b id="uxInboxCount">0</b></button><button class="ux-context-search" type="button" id="uxCommandBtn"><span>Search commands</span><kbd>⌘K</kbd></button><button class="ux-context-menu" id="uxContextMenu" type="button" aria-expanded="false">Menu</button></div>';
  main.prepend(bar);
  q('[data-ux-go="home"]')?.addEventListener('click',()=>navigate('home'));
  q('#uxCommandBtn')?.addEventListener('click',()=>{const cmd=q('#cmdk');if(cmd){cmd.classList.add('show');cmd.setAttribute('aria-hidden','false');q('#cmdkInput')?.focus()}});
  q('#uxContextMenu')?.addEventListener('click',()=>toggleSheet());
+ // Unread alerts plus approvals waiting, reported by app.js after it loads Inbox or Approvals.
+ let inbox={unread:0,pending:0};
+ window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');if(!b)return;b.hidden=total===0;q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',`Inbox: ${inbox.unread} unread, ${inbox.pending} approvals waiting`)});
+ q('#uxInboxBtn')?.addEventListener('click',()=>navigate(inbox.pending&&!inbox.unread?'approvals':'inbox'));
 }
 function buildMobile(){
  if(q('#uxMobileNav'))return;

@@ -36,6 +36,12 @@
       actions: [{ type: 'view', view: 'create', label: 'Open Images' }]
     },
     {
+      id: 'gridcraft', name: 'GridCraft', tier: 'bridge', decision: 'Host bridge', source: 'gridcraft',
+      summary: 'Local spreadsheet agent. Ask Local AI to inspect, edit, verify and save GridCraft workbooks on the Windows host.',
+      guidance: 'Requests go through the appliance to the host bridge, which runs one request at a time. No cloud service is involved.',
+      actions: [{ type: 'page', url: '/gridcraft.html', label: 'Open GridCraft' }]
+    },
+    {
       id: 'penpot', name: 'Penpot', tier: 'bridge', decision: 'Self-host + MCP',
       summary: 'Best design-system bridge from the reviewed tools. Penpot supports self-hosting and an MCP workflow for design inspection, asset export, design-to-code, and design updates.',
       guidance: 'Prefer a self-hosted Penpot instance. Treat an MCP key like a secret: never embed it in browser-visible configuration, source, screenshots, or logs.',
@@ -104,6 +110,9 @@
     if (action.type === 'url') {
       return `<a class="btn ux-int-action" data-external="true" href="${action.url}" target="_blank" rel="noopener noreferrer" aria-label="${action.label} for ${item.name} (opens external site)">${action.label} ↗</a>`;
     }
+    if (action.type === 'page') {
+      return `<a class="btn ux-int-action" href="${action.url}">${action.label}</a>`;
+    }
     return `<button class="btn ux-int-action" type="button" data-integration-view="${action.view}">${action.label}</button>`;
   }
 
@@ -162,8 +171,13 @@
       try {
         const results = await Promise.allSettled([
           fetch('/api/status', { cache: 'no-store' }),
-          fetch('/api/capabilities', { cache: 'no-store' })
+          fetch('/api/capabilities', { cache: 'no-store' }),
+          fetch('/api/gridcraft/health', { cache: 'no-store' })
         ]);
+        const gridcraft = results[2].status === 'fulfilled' ? await results[2].value.json().catch(() => null) : null;
+        updateService('gridcraft', gridcraft?.ok
+          ? { state: gridcraft.gridcraftConnected ? 'HEALTHY' : 'DEGRADED' }
+          : { state: 'DOWN', displayState: 'OPTIONAL_OFFLINE' });
         let status = null;
         let capabilities = null;
         if (results[0].status === 'fulfilled' && results[0].value.ok) status = await results[0].value.json();

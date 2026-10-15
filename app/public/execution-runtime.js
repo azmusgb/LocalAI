@@ -342,6 +342,17 @@
     }
   }
 
+  // Open a run from elsewhere (the Audit log links here). Accepts a ledger id or the id of the work that produced it.
+  async function openRunBySource(id) {
+    const match = () => state.runs.find((run) => run.id === id || run.source?.id === id || run.meta?.sourceId === id);
+    if (!match()) await loadRuns(true);
+    activateRunsView();
+    const run = match();
+    if (run) openDrawer(run.id);
+    return Boolean(run);
+  }
+  window.LocalAIRuns = { open: openRunBySource };
+
   function init() {
     ensureSurface();
     loadRuns(true);
