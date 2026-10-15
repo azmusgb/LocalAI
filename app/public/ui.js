@@ -3223,3 +3223,50 @@ function announce(){
 async function start(){await load();mount();announce()}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(start,50),{once:true});else setTimeout(start,50);
 })();
+
+// ==== notifications.js ====
+// Health › Notifications: turns phone notifications on for this device (Web Push; app/push.js, app/notify.js).
+// On iPhone, Apple allows push only from the Home Screen app, over HTTPS with the Local AI certificate trusted.
+(()=>{'use strict';
+const q=(s,r=document)=>r.querySelector(s);
+const isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const standalone=()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches;
+const supported=()=>'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
+const deviceName=()=>/iPad/.test(navigator.userAgent)?'iPad':isIOS?'iPhone':/Android/.test(navigator.userAgent)?'Android phone':'This browser';
+const keyBytes=b64=>Uint8Array.from(atob(b64.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((b64.length+3)%4)),c=>c.charCodeAt(0));
+async function post(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);return j}
+async function subscription(){if(!supported())return null;const reg=await navigator.serviceWorker.ready;return reg.pushManager.getSubscription()}
+function say(card,html){q('.notify-body',card).innerHTML=html}
+async function render(card){
+ if(!isSecureContext){say(card,`<p>Notifications need the secure address. Open <a href="https://${location.hostname}/">https://${location.hostname}/</a> (set up the certificate under Secure connection first).</p>`);return}
+ if(isIOS&&!standalone()){say(card,'<p><b>Add Local AI to your Home Screen.</b> In Safari tap Share › Add to Home Screen, then open Local AI from its new icon and come back here. iPhone shows notifications only for Home Screen apps.</p>');return}
+ if(!supported()){say(card,'<p>This browser can\'t receive notifications.</p>');return}
+ const sub=await subscription().catch(()=>null);
+ if(!sub){say(card,'<p>Get a notification when Local AI needs you, something fails or goes down, or a long run finishes.</p><button type="button" class="btn primary" data-notify-allow>Allow notifications</button>');return}
+ say(card,'<p>Notifications are on for this device.</p><button type="button" class="btn" data-notify-test>Send a test</button>');
+}
+async function allow(card){
+ const perm=await Notification.requestPermission();
+ if(perm!=='granted'){q('.notify-status',card).textContent='Notifications are blocked. Allow them for Local AI in Settings › Notifications, then try again.';return}
+ const {publicKey}=await (await fetch('/api/push/key',{cache:'no-store'})).json();
+ const reg=await navigator.serviceWorker.ready;
+ const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:keyBytes(publicKey)});
+ await post('/api/push/subscribe',{subscription:sub.toJSON(),name:deviceName()});
+ await render(card);
+}
+function mount(){
+ const status=q('#status');if(!status||q('.notify-card',status))return;
+ const card=document.createElement('section');card.className='card notify-card';card.id='notifications';
+ card.innerHTML='<h2>Notifications</h2><div class="notify-body"></div><p class="notify-status meta" role="status"></p>';
+ (q('.secure-card',status)||q('.topbar',status))?.after(card);
+ card.addEventListener('click',async e=>{
+  const allowBtn=e.target.closest('[data-notify-allow]'),testBtn=e.target.closest('[data-notify-test]');if(!allowBtn&&!testBtn)return;
+  const btn=allowBtn||testBtn;btn.disabled=true;q('.notify-status',card).textContent='';
+  try{if(allowBtn)await allow(card);else{const r=await post('/api/push/test',{});q('.notify-status',card).textContent=r.sent?'Sent. It should arrive in a few seconds.':'Nothing was sent: this device is no longer subscribed.'}}
+  catch(err){q('.notify-status',card).textContent=`That didn't work: ${err.message}`}
+  finally{btn.disabled=false}
+ });
+ render(card);
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(mount,0),{once:true});else setTimeout(mount,0);
+})();

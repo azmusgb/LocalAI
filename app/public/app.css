@@ -1606,3 +1606,4 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
 .claude-head-actions{min-width:0;max-width:100%;flex-wrap:wrap}
 #claude #claudeSession{min-width:0;max-width:min(100%,340px);text-overflow:ellipsis}
 @media(max-width:760px){#claude .claude-head-actions{width:100%}#claude #claudeSession{flex:1 1 0;width:0;max-width:none}}
+.notify-card{margin-bottom:12px}.notify-card h2{margin-bottom:6px}.notify-card .btn{min-height:44px;margin-top:6px}.notify-card a{color:var(--ds-accent);text-decoration:underline}
