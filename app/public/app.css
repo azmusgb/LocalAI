@@ -867,6 +867,43 @@ body.awc-stage-expanded{overflow:hidden}
   .claude-score-bar{flex:1}
 }
 
+/* Decisions: status on each card, a lifecycle tracker, one primary action, inline notes, undo toast */
+#claude .chip.tab{display:inline-flex;align-items:center;gap:6px;text-transform:none}
+#claude .chip.tab b{font-weight:700;color:var(--ds-soft,#c3d3e3);font-variant-numeric:tabular-nums}
+#claude .chip.tab.active b{color:#fff}
+.claude-finding-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+.claude-state{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:650;color:var(--muted)}
+.claude-state.st-proposed{color:#d8efff}.claude-state.st-approved{color:var(--accent)}.claude-state.st-in_progress{color:var(--warn)}
+.claude-state.st-fixed{color:var(--good)}.claude-state.st-deferred,.claude-state.st-rejected{color:var(--muted)}
+.claude-state .spin{width:9px;height:9px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:claudeSpin .9s linear infinite}
+@keyframes claudeSpin{to{transform:rotate(360deg)}}
+.claude-life{display:inline-flex;gap:4px}
+.claude-life i{width:16px;height:4px;border-radius:2px;background:var(--panel3,#182b45)}
+.claude-life i.past{background:var(--accent)}
+.claude-life i.now{background:var(--accent);box-shadow:0 0 0 2px rgba(92,184,255,.25)}
+.claude-finding.st-in_progress .claude-life i.now{background:var(--warn);box-shadow:0 0 0 2px rgba(255,178,36,.25)}
+.claude-finding.st-fixed .claude-life i{background:var(--good)}
+.claude-life.aside i{background:var(--panel3,#182b45);opacity:.6}
+.claude-finding.st-proposed{border-left-color:#d8efff}
+.claude-finding.st-approved{border-left-color:var(--accent)}
+.claude-decide{align-items:center}
+#claude .btn.small.primary{background:var(--accent);color:#06121f;border-color:transparent}
+#claude .btn.small.quiet{background:transparent;border-color:transparent;color:var(--muted)}
+#claude .btn.small.quiet:hover{color:var(--text);background:var(--panel2)}
+#claude button.link{background:none;border:0;padding:4px 2px;color:var(--accent);font-size:12px;cursor:pointer}
+#claude button.link:hover{text-decoration:underline}
+.claude-note{margin:6px 0 0;font-size:13px;color:var(--soft,#c3d3e3);font-style:italic}
+.claude-note-form{display:grid;gap:6px;width:100%}
+.claude-note-form textarea{width:100%;min-height:52px;padding:8px 10px;font:inherit;resize:vertical}
+.claude-note-form div{display:flex;gap:6px}
+.claude-toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;pointer-events:none;
+  display:flex;align-items:center;gap:12px;max-width:min(560px,calc(100vw - 32px));padding:10px 12px 10px 16px;border-radius:12px;
+  background:#13233a;border:1px solid #2d4a6d;box-shadow:0 18px 40px rgba(0,0,0,.4);color:var(--text);font-size:13px;z-index:500;transition:opacity .18s ease,transform .18s ease}
+.claude-toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.claude-toast span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:760px){.claude-toast{bottom:calc(88px + env(safe-area-inset-bottom,0px))}}
+@media(prefers-reduced-motion:reduce){.claude-state .spin{animation:none}.claude-toast{transition:none}}
+
 /* ==== integration-hub-v2.css ==== */
 /* Research-backed Local AI integration hub enhancements */
 .ux-int-v2 .ux-int-checked{display:block;min-height:16px;margin-top:5px;color:#66788d;font-size:9px}
