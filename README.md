@@ -1,127 +1,67 @@
 # LocalAI
 
-LocalAI is a LAN-hosted Node.js appliance with a browser interface for local-model chat, projects, specialist-agent missions, engineering workflows, automation, and local generative-media tooling. Ollama supplies model inference; ComfyUI, n8n, and SearXNG are integrated when configured.
+A private AI appliance for the home network. One Node.js server with a SQLite database runs in a Docker
+container on a Windows PC and serves a browser app to every device on the LAN. Models run locally
+(Ollama); images, automation, web search and spreadsheet work come from services on the same PC. Cloud
+services are explicit fallbacks only ([Integrations](docs/INTEGRATIONS.md)); the one standing exception is
+the nightly backup copy to OneDrive.
 
-## Requirements
+## What's in it
 
-- Node.js 22.13.0 or newer, including inside the appliance container. CI checks Node 22.13 and 24 on Windows/Linux.
-- Ollama for model-backed features.
-- PowerShell 7 (`pwsh`) for the deployment-candidate validator.
-- Chromium installed through Playwright for browser acceptance tests.
+| Area | Pages |
+|---|---|
+| Home | Home, Inbox (alerts and approvals) |
+| Workspace | Chat, Images, Library, Projects (with Sources and Memory) |
+| Automate | Missions (specialist agents), Automations, n8n workflows, Browser & computer, Monitors |
+| Build | Change requests, Issues and quality signals, Claude Code (progress board and chat), Files, Repository, PowerShell |
+| System | Health, Models, Integrations, Runs, Audit log |
 
-The application server itself uses Node built-ins and has no npm runtime dependencies. The committed npm dependency is development-only Playwright 1.63.0 for deterministic browser testing.
+Page names come from `app/public/view-registry.js`. GridCraft spreadsheets have their own page at `/gridcraft.html`.
 
-## Run locally
+## Where it runs
 
-From the repository root on macOS/Linux:
+| Part | Where |
+|---|---|
+| App and API | container `local-ai-appliance` on the Windows host, `http://<host>:3080` (HTTPS on 443 via Caddy) |
+| Models, images, spreadsheets | Ollama, ComfyUI and the GridCraft bridge on the host's loopback |
+| Automation, web search | n8n and SearXNG containers |
+| Deploys, backups | PowerShell scripts and scheduled tasks on the host (`deploy/`) |
+| Claude Code chat bridge | the Mac (`host/claude-chat/`) |
 
-```sh
-DATA_DIR="$PWD/data" \
-SELF_APP_ROOT="$PWD/app" \
-WORKSPACE_ROOT="$PWD/workspace" \
-OLLAMA_URL=http://127.0.0.1:11434 \
-node app/server.js
-```
+See [Architecture](docs/ARCHITECTURE.md) for the full picture.
 
-On PowerShell:
+## Quick start (development)
 
-```powershell
-$env:DATA_DIR = Join-Path $PWD 'data'
-$env:SELF_APP_ROOT = Join-Path $PWD 'app'
-$env:WORKSPACE_ROOT = Join-Path $PWD 'workspace'
-$env:OLLAMA_URL = 'http://127.0.0.1:11434'
-node app/server.js
-```
-
-Open `http://localhost:3080`.
-
-The server listens on all interfaces and is intended for a trusted LAN. `/healthz` reports LocalAI server liveness; downstream availability is reported separately by the system/capability APIs and UI.
-
-## Configuration
-
-Set configuration in the shell, service, container, or deployment environment. The server does not automatically load `.env` files.
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `PORT` | `3080` | LocalAI HTTP port |
-| `DATA_DIR` | `/data` | Persistent SQLite database, import backups and artifact references |
-| `SELF_APP_ROOT` | `/app` | Application source used by engineering workflows |
-| `WORKSPACE_ROOT` | `/workspace` | Mounted engineering workspace |
-| `OLLAMA_URL` | `http://host.docker.internal:11434` | Ollama endpoint |
-| `MODEL` | `qwen3:4b-instruct-32k` | Default local model |
-| `COMFY_URL` | `http://host.docker.internal:8188` | ComfyUI endpoint |
-| `N8N_URL` | `http://local-ai-n8n:5678` | n8n endpoint |
-| `PROXY_URL` | `http://local-ai-ollama-responses-proxy:8080` | Conversation compatibility service |
-| `SEARXNG_URL` | `http://local-ai-searxng:8080` | Web research endpoint |
-
-Additional deployment settings, including companion URLs, inference timeouts, report paths, and PowerShell bridge/UI tokens, are defined in `app/server.js`. Never commit credentials, private keys, generated data, or local workspaces.
-
-## Install development dependencies
-
-Use the committed lockfile so local and CI installs resolve the same Playwright version:
+Needs Node.js 22.13 or newer.
 
 ```sh
 npm ci
+mkdir -p data workspace
+DATA_DIR="$PWD/data" WORKSPACE_ROOT="$PWD/workspace" SELF_APP_ROOT="$PWD/app" node app/server.js
 ```
 
-Install the Chromium browser once for local browser acceptance:
+Open `http://localhost:3080`, then run the tests with `npm test`. Environment variables, browser tests and
+conventions are in [Development](docs/DEVELOPMENT.md).
 
-```sh
-npx playwright install chromium
-```
+## Changing the appliance
 
-On Linux CI, use `npx playwright install --with-deps chromium` to install required OS libraries as well.
+Branch, open a pull request, wait for CI, merge. The host deploys `main` within about five minutes and
+rolls back by itself if the new release is unhealthy. Check `GET /healthz` → `releaseCommit`.
+See [Deploy](docs/DEPLOY.md).
 
-## Validate and test
+## Documentation
 
-Run the offline storage, HTTP and mission regression suite:
-
-```sh
-npm test
-```
-
-It covers migration, rollback, conflict detection, separate writer processes, restart durability, API compatibility, concurrent agent/automation results and the existing specialist dependency/fallback regressions. Model inference is mocked.
-
-Run the deployment-candidate validator:
-
-```sh
-npm run validate
-```
-
-This invokes `deploy/Test-LocalAI-Candidate.ps1` and checks required files, JavaScript syntax, key runtime/UI contracts, sensitive-file exclusions, native SQLite/API/agent regressions, and deployment/rollback contracts with simulated Docker boundaries.
-
-For browser acceptance, start LocalAI with a disposable development `DATA_DIR`, then run:
-
-```sh
-npm run test:browser
-```
-
-The browser suite exercises desktop/mobile navigation, Agent Operations / Agent World, and the System → Integrations experience. Set `LOCALAI_URL` to test a non-default development endpoint.
-
-GitHub Actions performs the same locked dependency install, validator, offline regressions, server-readiness gate, and browser acceptance. Server diagnostics are uploaded when browser validation fails.
-
-## Application state
-
-`DATA_DIR/localai.db` is authoritative. First startup validates, backs up and imports existing JSON in one transaction. Original JSON is retained for recovery. See [`docs/STORAGE.md`](docs/STORAGE.md) for schema, conflict behavior, pagination, inspection, coherent backups and JSON rollback/re-upgrade.
-
-## Integrations
-
-LocalAI follows a local-first integration policy: one primary owner per capability, native services before cloud alternatives, and explicit trust boundaries for external tools.
-
-See [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) for the maintained integration policy, including n8n, ComfyUI, Penpot, Obsidian, Hugging Face, and external fallback guidance.
-
-See [`docs/CLAUDE-CHAT.md`](docs/CLAUDE-CHAT.md) for Claude page chat: talk to a running Claude Code session on the Mac from the Claude page (setup, pairing, security, troubleshooting).
-
-## Deployment
-
-See [`docs/DEPLOY.md`](docs/DEPLOY.md) for candidate validation, promotion, and rollback. Deployment scripts target the existing Windows LocalAI installation under `C:\LocalAI`; local development and validation do not deploy the appliance.
+[docs/README.md](docs/README.md) lists every guide: operating the appliance, deploying, storage, security,
+development, and the component guides (GridCraft, ComfyUI, PowerShell bridge, Claude chat).
 
 ## Repository layout
 
-- `app/server.js` — HTTP server, capability APIs, and appliance integrations.
-- `app/storage.js` / `app/storage-cli.js` — SQLite repositories, migrations, backups and recovery commands.
-- `app/agent-orchestrator.js` — specialist routing, dependencies, fallback, mission execution, and persistence.
-- `app/public/` — browser application, responsive UX, Agent World, and Integration Hub.
-- `deploy/` — candidate validation, deployment, rollback, and scheduled deployment tooling.
-- `docs/` — maintained architecture and integration guidance.
-- `tests/` — offline orchestration regressions and desktop/mobile Chromium acceptance.
+| Path | Contents |
+|---|---|
+| `app/` | Server (`server.js`), storage, run ledger, agent orchestrator, chat relay, image engines |
+| `app/public/` | The browser app: `index.html`, `app.css`, `app.js`, `ui.js`, `view-registry.js`, `sw.js` |
+| `deploy/` | Host scripts: deploy, rollback, auto-deploy task, backups, restore, HTTPS, host-only port, GridCraft bridge installer |
+| `host/` | Code that runs outside the container: GridCraft bridge and agent, ComfyUI tasks, PowerShell runner, Mac chat bridge |
+| `tests/` | `node:test` suites (`*.test.cjs`), Playwright scripts (`*-ui.mjs`), deploy contract tests |
+| `scripts/` | Maintenance helpers |
+| `docs/` | Guides and design records |
