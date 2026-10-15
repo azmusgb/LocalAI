@@ -110,6 +110,8 @@ LocalAI follows a local-first integration policy: one primary owner per capabili
 
 See [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) for the maintained integration policy, including n8n, ComfyUI, Penpot, Obsidian, Hugging Face, and external fallback guidance.
 
+See [`docs/CLAUDE-CHAT.md`](docs/CLAUDE-CHAT.md) for Claude page chat: talk to a running Claude Code session on the Mac from the Claude page (setup, pairing, security, troubleshooting).
+
 ## Deployment
 
 See [`README-SAFE-DEPLOY.md`](README-SAFE-DEPLOY.md) for candidate validation, promotion, and rollback. Deployment scripts target the existing Windows LocalAI installation under `C:\LocalAI`; local development and validation do not deploy the appliance.
