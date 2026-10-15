@@ -324,8 +324,9 @@ async function apiStatus(req, res) {
   json(res, 200, await getStatusAndRecordTransition());
 }
 
-// Downloads and removals from the Models page. The default model can't be removed; PROTECTED_MODELS adds more.
-const PROTECTED_MODELS = () => [MODEL, ...String(process.env.PROTECTED_MODELS || '').split(',').map(x => x.trim()).filter(Boolean)];
+// Downloads and removals from the Models page. Models Local AI itself uses can't be removed: the default chat
+// model and the GridCraft bridge's model (GRIDCRAFT_MODEL, as in host/gridcraft-bridge.py); PROTECTED_MODELS adds more.
+const PROTECTED_MODELS = () => [...new Set([MODEL, process.env.GRIDCRAFT_MODEL || 'qwen3:4b-instruct', ...String(process.env.PROTECTED_MODELS || '').split(',').map(x => x.trim()).filter(Boolean)])];
 const modelPulls = createModelPulls({
   baseUrl: OLLAMA_URL,
   protectedModels: PROTECTED_MODELS,
