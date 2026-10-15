@@ -189,12 +189,78 @@ await check('phone header: Search opens the palette; Health swaps it for its ref
   await show(phone, 'models');
   assert.equal(await phone.locator('#uxHeaderAction').isVisible(), false, 'the action belongs to Health only');
   assert.equal(await phone.locator('#uxSearchBtn').isVisible(), true);
-  // A page can set and clear its own action.
-  await phone.evaluate(() => window.LocalAIShell.setAction({ icon: 'plus', label: 'Add model', onClick: () => { window.__added = true; } }));
-  await phone.locator('#uxHeaderAction[aria-label="Add model"]').click();
-  assert.equal(await phone.evaluate(() => window.__added), true);
-  await phone.evaluate(() => window.LocalAIShell.clearAction());
-  assert.equal(await phone.locator('#uxHeaderAction').isVisible(), false);
+});
+
+await check('phone header: each page keeps its own action; a page without one shows Search', async () => {
+  await phone.evaluate(() => {
+    window.LocalAIShell.setAction('models', { icon: 'plus', label: 'Add model', onClick: () => { window.__hit = 'models'; } });
+    window.LocalAIShell.setAction('runs', { icon: 'refresh', label: 'Reload runs', onClick: () => { window.__hit = 'runs'; } });
+  });
+  const state = async view => {
+    await show(phone, view);
+    return phone.evaluate(() => {
+      const a = document.querySelector('#uxHeaderAction'), s = document.querySelector('#uxSearchBtn'), vis = e => e.getBoundingClientRect().width > 0;
+      return { action: vis(a) ? a.getAttribute('aria-label') : null, icon: vis(a) ? a.querySelector('use')?.getAttribute('href') : null, search: vis(s) };
+    });
+  };
+  assert.deepEqual(await state('models'), { action: 'Add model', icon: '#i-plus', search: false });
+  await phone.locator('#uxHeaderAction').click();
+  assert.equal(await phone.evaluate(() => window.__hit), 'models');
+  assert.deepEqual(await state('runs'), { action: 'Reload runs', icon: '#i-refresh', search: false });
+  await phone.locator('#uxHeaderAction').click();
+  assert.equal(await phone.evaluate(() => window.__hit), 'runs');
+  assert.deepEqual(await state('status'), { action: 'Check again', icon: '#i-refresh', search: false }, 'Health keeps its action after other pages register theirs');
+  assert.deepEqual(await state('activity'), { action: null, icon: null, search: true });
+  await phone.evaluate(() => window.LocalAIShell.clearAction('models'));
+  assert.deepEqual(await state('models'), { action: null, icon: null, search: true });
+  assert.deepEqual(await state('runs'), { action: 'Reload runs', icon: '#i-refresh', search: false }, 'clearing one page leaves the others');
+  await phone.evaluate(() => window.LocalAIShell.clearAction('runs'));
+});
+
+await check('phone tab bar: sized to its items, and safe-area padding stays clear of the labels', async () => {
+  await show(phone, 'library');
+  const measure = () => phone.evaluate(() => {
+    const nav = document.querySelector('#uxMobileNav'), r = nav.getBoundingClientRect(), cs = getComputedStyle(nav);
+    const labels = [...nav.querySelectorAll('[data-domain] .ux-mobile-nav-label')].filter(e => e.getBoundingClientRect().width > 0);
+    const sheet = document.querySelector('#uxMobileSheet');
+    return { h: r.height, bottom: r.bottom, top: r.top, pad: parseFloat(cs.paddingBottom), labelBottom: Math.max(...labels.map(e => e.getBoundingClientRect().bottom)),
+      item: Math.max(...[...nav.querySelectorAll('[data-domain]')].map(e => e.getBoundingClientRect().height)), ih: window.innerHeight,
+      mainPad: parseFloat(getComputedStyle(document.querySelector('main')).paddingBottom), bodyPad: parseFloat(getComputedStyle(document.body).paddingBottom),
+      sheetBottom: (() => { const o = sheet.dataset.open; sheet.style.transition = 'none'; sheet.dataset.open = 'true'; const b = sheet.getBoundingClientRect().bottom; sheet.dataset.open = o; sheet.style.transition = ''; return b; })() };
+  });
+  const flat = await measure();
+  assert.ok(flat.h <= 64, `tab bar ${flat.h}px tall at no inset (items ${flat.item}px)`);
+  assert.ok(flat.item <= 56, `tab items ${flat.item}px tall`);
+  assert.ok(Math.abs(flat.bottom - flat.ih) <= 1, `tab bar bottom ${flat.bottom}`);
+  assert.ok(flat.sheetBottom <= flat.top + 0.5, `sheet bottom ${flat.sheetBottom} slides under the tab bar at ${flat.top}`);
+  assert.ok(Math.abs(flat.mainPad - (flat.h + 16)) <= 1, `main bottom padding ${flat.mainPad}, tab bar ${flat.h}`);
+  assert.equal(flat.bodyPad, 0, 'no second bottom spacer on body');
+  // A phone with a 34px home indicator: the shell reads env(safe-area-inset-bottom) through --ux-safe-bottom.
+  await phone.evaluate(() => document.documentElement.style.setProperty('--ux-safe-bottom', '34px'));
+  const notch = await measure();
+  await phone.evaluate(() => document.documentElement.style.removeProperty('--ux-safe-bottom'));
+  assert.equal(notch.pad, 34, `tab bar bottom padding ${notch.pad}`);
+  assert.ok(notch.labelBottom <= notch.ih - 34 + 0.5, `labels end at ${notch.labelBottom}, inside the ${notch.ih - 34}+ home-indicator zone`);
+  assert.ok(Math.abs(notch.h - flat.h - 34) <= 1, `bar grows by the inset: ${flat.h} -> ${notch.h}`);
+  assert.ok(notch.sheetBottom <= notch.top + 0.5, `sheet bottom ${notch.sheetBottom} under the tab bar at ${notch.top}`);
+  assert.ok(Math.abs(notch.mainPad - (notch.h + 16)) <= 1, `main bottom padding ${notch.mainPad}, tab bar ${notch.h}`);
+});
+
+await check('phone: the image editor scrolls clear of the sticky header and tabs', async () => {
+  await show(phone, 'create');
+  const m = await phone.evaluate(() => { const e = document.querySelector('.img-edit'); return e && parseFloat(getComputedStyle(e).scrollMarginTop); });
+  assert.equal(m, 52 + 44 + 8);
+});
+
+await check('phone: the end of a long page clears the tab bar without a dead band', async () => {
+  await show(phone, 'integrations');
+  await phone.waitForTimeout(300);
+  const r = await phone.evaluate(() => {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    const sec = document.querySelector('.view.active'), nav = document.querySelector('#uxMobileNav').getBoundingClientRect();
+    return { gap: nav.top - sec.getBoundingClientRect().bottom };
+  });
+  assert.ok(r.gap >= 8 && r.gap <= 40, `last content ends ${r.gap}px above the tab bar`);
 });
 
 await check('phone header: the Inbox bell carries its count in its label', async () => {

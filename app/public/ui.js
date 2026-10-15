@@ -904,11 +904,12 @@ function buildHeader(){
 }
 function greeting(){const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'}
 // One page action at a time, shown in place of Search while its page is open. Pages call
-// window.LocalAIShell.setAction({icon,label,onClick[,view]}); view defaults to the page open now.
-let headerAction=null;
-function currentAction(){return headerAction&&headerAction.view===pageForView(activeView())?headerAction:null}
-function setAction(a){if(!a||!a.label)return;headerAction={icon:a.icon||'plus',label:String(a.label),onClick:a.onClick,view:pageForView(REG.resolve(a.view||activeView()))};renderAction()}
-function clearAction(view){if(!headerAction)return;if(view&&pageForView(REG.resolve(view))!==headerAction.view)return;headerAction=null;renderAction()}
+// Each page registers its own: window.LocalAIShell.setAction(view,{icon,label,onClick}) / clearAction(view).
+// The header shows the open view's action (or its page's, for a tab), else Search.
+const headerActions=new Map();
+function currentAction(){const v=REG.resolve(activeView());return headerActions.get(v)||headerActions.get(pageForView(v))||null}
+function setAction(view,a){if(!view||!a||!a.label)return;headerActions.set(REG.resolve(view),{icon:a.icon||'plus',label:String(a.label),onClick:a.onClick});renderAction()}
+function clearAction(view){if(view&&headerActions.delete(REG.resolve(view)))renderAction()}
 function renderAction(){
  const btn=q('#uxHeaderAction'),search=q('#uxSearchBtn');if(!btn||!search)return;
  const a=currentAction();btn.hidden=!a;search.hidden=!!a;
@@ -974,7 +975,7 @@ function observeViews(){const views=qa('.view');if(!views.length)return;const mo
 function init(){
  document.body.classList.add('ux-v3');buildIntegrationsView();buildTabs();buildDesktopNav();buildContext();buildHeader();buildPageStrip();buildMobile();observeViews();
  // Health's "Check again" lives in the phone header; the page's own button stays for desktop.
- setAction({view:'status',icon:'refresh',label:'Check again',onClick:()=>q('#statusRetryBtn')?.click()});
+ setAction('status',{icon:'refresh',label:'Check again',onClick:()=>q('#statusRetryBtn')?.click()});
  PHONE.addEventListener?.('change',()=>sync());
  sync();
 }
