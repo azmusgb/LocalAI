@@ -123,7 +123,9 @@ function startBridge(t, { relay, sock, home, env = {}, sid = SID }) {
 function makeHome(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cbh-'));
   fs.writeFileSync(path.join(dir, 'mac.key'), 'the-mac-key\n');
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  // A bridge still running at teardown may write its log while the directory is removed; never let that race throw,
+  // or node:test skips the remaining after hooks (the bridge kill, closing listeners) and the file never exits.
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }); } catch { /* best effort */ } });
   return dir;
 }
 
