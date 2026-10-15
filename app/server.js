@@ -2440,7 +2440,9 @@ async function apiQualityClientEvent(req,res){
   if(!requireFeature(res,14))return;
   try{
     const b=await readBody(req,256*1024);const message=String(b.message||'').slice(0,4000);if(!message)return json(res,400,{error:'message is required'});
-    const item={id:makeId('qevt'),type:String(b.type||'error').slice(0,40),severity:qualitySeverity(b.type,message),message,source:String(b.source||'').slice(0,1000),line:Number(b.line)||null,column:Number(b.column)||null,stack:String(b.stack||'').slice(0,12000),url:String(b.url||'').slice(0,1200),createdAt:nowIso()};
+    // Opaque cross-origin errors carry no file, line or stack and can't be acted on (older cached pages still send them).
+    if(/^Script error\.?$/.test(message.trim())&&!b.stack&&!Number(b.line))return json(res,202,{ignored:true,reason:'opaque script error'});
+    const item={id:makeId('qevt'),type:String(b.type||'error').slice(0,40),severity:qualitySeverity(b.type,message),message,source:String(b.source||'').slice(0,1000),line:Number(b.line)||null,column:Number(b.column)||null,stack:String(b.stack||'').slice(0,12000),url:String(b.url||'').slice(0,1200),userAgent:String(req.headers['user-agent']||'').slice(0,300),createdAt:nowIso()};
     prependRecord(QUALITY_EVENTS_STORE,item);recordActivity('quality','Client quality event',message.slice(0,180),{qualityEventId:item.id,severity:item.severity});json(res,201,{item});
   }catch(e){storageError(res,e,400)}
 }
