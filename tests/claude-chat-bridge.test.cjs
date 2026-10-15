@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const crypto = require('node:crypto');
 
 const BRIDGE = path.join(__dirname, '..', 'host', 'claude-chat', 'bridge.mjs');
 const SID = 'sess-abc123';
@@ -47,7 +48,10 @@ async function fakeRelay(t) {
       }
       if (req.url.startsWith('/api/claude/chat/inbox')) {
         const end = Date.now() + 150;
-        while (!state.queue.length && Date.now() < end) await sleep(10);
+        let gone = false;
+        res.on('close', () => { gone = true; });
+        while (!state.queue.length && Date.now() < end && !gone) await sleep(10);
+        if (gone) return; // like the real relay: a poller that went away leaves messages queued
         return res.end(JSON.stringify({ items: state.queue.splice(0) }));
       }
       res.end('{"ok":true}');
@@ -117,6 +121,8 @@ function makeHome(t) {
   return dir;
 }
 
+const lockPath = (home, sock) => path.join(home, 'run', `sock-${crypto.createHash('sha256').update(sock).digest('hex').slice(0, 16)}.json`);
+const readLock = (home, sock) => { try { return JSON.parse(fs.readFileSync(lockPath(home, sock), 'utf8')); } catch { return null; } };
 const log = (home) => { try { return fs.readFileSync(path.join(home, 'bridge.log'), 'utf8'); } catch { return ''; } };
 const exitsWithin = (b, ms, what) => Promise.race([b.exit, sleep(ms).then(() => { throw new Error(`bridge did not exit: ${what}`); })]);
 
@@ -173,6 +179,47 @@ test('a second bridge for the same session exits at once while the first is aliv
   assert.equal(await exitsWithin(second, 3000, 'second'), 0);
   assert.equal(first.exited, null);
   assert.equal(fs.readFileSync(pidfile, 'utf8').trim(), String(first.proc.pid));
+});
+
+test('one bridge per messaging socket: a bridge for a new session on the same socket (/clear) replaces the old one', async (t) => {
+  const relay = await fakeRelay(t);
+  const inbox = await fakeInbox(t);
+  const home = makeHome(t);
+  const a = startBridge(t, { relay, sock: inbox.sock, home, sid: 'sess-A' });
+  await until(() => readLock(home, inbox.sock)?.pid === a.proc.pid, 'lock held by A');
+  assert.deepEqual(readLock(home, inbox.sock), { pid: a.proc.pid, sessionId: 'sess-A' });
+  await until(() => relay.requests.some((r) => r.url.includes('sessionId=sess-A')), 'A polls');
+
+  const b = startBridge(t, { relay, sock: inbox.sock, home, sid: 'sess-B' });
+  assert.equal(await exitsWithin(a, 4000, 'old bridge A'), 0);
+  assert.ok(!fs.existsSync(path.join(home, 'run', 'sess-A.pid')), 'A removed its pidfile');
+  await until(() => readLock(home, inbox.sock)?.pid === b.proc.pid, 'lock held by B');
+  assert.deepEqual(readLock(home, inbox.sock), { pid: b.proc.pid, sessionId: 'sess-B' });
+  await until(() => relay.requests.some((r) => r.url === '/api/claude/chat/announce' && r.body.sessionId === 'sess-B'), 'B announces');
+  await until(() => relay.requests.some((r) => r.url.includes('sessionId=sess-B')), 'B polls');
+  assert.ok(log(home).includes('replacing bridge'));
+
+  relay.queue.push({ id: 9, seq: 1, text: 'to B', deviceName: 'd' });
+  await until(() => inbox.conns.length >= 1 && inbox.conns[0].closed, 'B injects');
+  assert.equal(inbox.lines(0)[1].message.content, '[LocalAI web · d] to B');
+
+  const b2 = startBridge(t, { relay, sock: inbox.sock, home, sid: 'sess-B' });
+  assert.equal(await exitsWithin(b2, 3000, 'second B'), 0);
+  assert.equal(b.exited, null);
+  assert.equal(readLock(home, inbox.sock).pid, b.proc.pid);
+});
+
+test('a lock left by a dead bridge is cleared and taken; the lock is removed on exit', async (t) => {
+  const relay = await fakeRelay(t);
+  const inbox = await fakeInbox(t);
+  const home = makeHome(t);
+  fs.mkdirSync(path.join(home, 'run'), { recursive: true });
+  fs.writeFileSync(lockPath(home, inbox.sock), JSON.stringify({ pid: 2147483646, sessionId: SID }));
+  const b = startBridge(t, { relay, sock: inbox.sock, home });
+  await until(() => readLock(home, inbox.sock)?.pid === b.proc.pid, 'lock taken over');
+  b.proc.kill('SIGTERM');
+  assert.equal(await exitsWithin(b, 3000, 'SIGTERM'), 0);
+  assert.ok(!fs.existsSync(lockPath(home, inbox.sock)));
 });
 
 test('exits and removes its pidfile when the socket path disappears', async (t) => {

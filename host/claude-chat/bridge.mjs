@@ -1,5 +1,6 @@
 // LocalAI Claude chat bridge: relays web messages from the LocalAI appliance
 // into a Claude Code session's messaging socket. Outbound HTTP only.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -25,11 +26,20 @@ function log(msg) {
 const runDir = path.join(HOME, 'run');
 const pidFile = path.join(runDir, `${sessionId}.pid`);
 const lastFile = path.join(runDir, `${sessionId}.last`);
+// One bridge per messaging socket: /clear starts a new session id in the same Claude process (same socket).
+const lockFile = path.join(runDir, `sock-${crypto.createHash('sha256').update(SOCKET).digest('hex').slice(0, 16)}.json`);
 
+function readLock() {
+  try {
+    const lock = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+    return lock && Number.isInteger(lock.pid) && lock.pid > 0 ? lock : { pid: 0, sessionId: '' };
+  } catch (e) { return e.code === 'ENOENT' ? null : { pid: 0, sessionId: '' }; }
+}
 function cleanup() {
   try {
     if (fs.readFileSync(pidFile, 'utf8').trim() === String(process.pid)) fs.unlinkSync(pidFile);
   } catch { /* ignore */ }
+  try { if (readLock()?.pid === process.pid) fs.unlinkSync(lockFile); } catch { /* ignore */ }
 }
 function quit(code = 0) { cleanup(); process.exit(code); }
 process.on('SIGTERM', () => { log('SIGTERM'); quit(0); });
@@ -39,8 +49,33 @@ function alive(pid) {
   try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
 }
 
+// Take the socket lock atomically ('wx'). A live holder for this session wins (we exit); a live holder for another
+// session on this socket is the bridge of a cleared conversation and is told to stop; a dead or unreadable lock is cleared.
+async function takeSocketLock() {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      fs.writeFileSync(lockFile, JSON.stringify({ pid: process.pid, sessionId }), { flag: 'wx' });
+      return;
+    } catch (e) { if (e.code !== 'EEXIST') throw e; }
+    const lock = readLock();
+    if (!lock) continue;
+    if (lock.pid && lock.pid !== process.pid && alive(lock.pid)) {
+      if (lock.sessionId === sessionId) process.exit(0);
+      log(`replacing bridge ${lock.pid} for session ${lock.sessionId} on this socket`);
+      try { process.kill(lock.pid, 'SIGTERM'); } catch { /* gone */ }
+      const end = Date.now() + 2000;
+      while (alive(lock.pid) && Date.now() < end) await sleep(50);
+      if (alive(lock.pid)) { try { process.kill(lock.pid, 'SIGKILL'); } catch { /* gone */ } }
+    }
+    // Clear the stale lock, but only if it still names the holder we examined.
+    try { if (readLock()?.pid === lock.pid) fs.unlinkSync(lockFile); } catch { /* raced; retry */ }
+  }
+  log('socket lock busy; exiting');
+  process.exit(0);
+}
+
 let macKey = '';
-function setup() {
+async function setup() {
   fs.mkdirSync(HOME, { recursive: true });
   if (!sessionId) { log('missing session id'); process.exit(1); }
   try { macKey = fs.readFileSync(path.join(HOME, 'mac.key'), 'utf8').trim(); } catch { macKey = ''; }
@@ -51,6 +86,7 @@ function setup() {
     const old = parseInt(fs.readFileSync(pidFile, 'utf8'), 10);
     if (old > 0 && old !== process.pid && alive(old)) process.exit(0);
   } catch { /* no pidfile */ }
+  await takeSocketLock();
   fs.writeFileSync(pidFile, String(process.pid));
   log(`started session ${sessionId} pid ${process.pid}`);
 }
@@ -127,7 +163,7 @@ async function inject(item) {
 }
 
 async function main() {
-  setup();
+  await setup();
   let backoff = BACKOFF_START;
   let announced = false;
   for (;;) {
