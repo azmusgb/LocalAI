@@ -52,6 +52,7 @@ const storage = new Storage({ dataDir: DATA_DIR });
 // Phone notifications (Web Push): app/push.js sends, app/notify.js decides; docs/OPERATIONS.md › Notifications.
 const pushLib = require('./push');
 const notifyLib = require('./notify');
+const glance = require('./glance');
 const notifier = notifyLib.createNotifier({
   storage, sendPush: pushLib.sendPush, vapid: pushLib.loadOrCreateVapid(storage),
   subject: process.env.VAPID_SUBJECT || 'https://github.com/azmusgb/LocalAI'
@@ -502,12 +503,35 @@ async function getCapabilitiesSnapshot(force = false) {
   return snapshot;
 }
 
+// Spoken summaries for Siri Shortcuts (docs/APPLE-WATCH.md). ?topic=health for "Is Local AI OK?", otherwise
+// "What needs me?". ?format=text returns just the sentence, which a shortcut can speak without parsing JSON.
+async function apiGlance(req, res, urlObj) {
+  try {
+    const snapshot = await getCapabilitiesSnapshot();
+    const health = glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION });
+    const dayAgo = Date.now() - 86400000;
+    const recentFailed = runLedger.list({ status: 'failed', limit: 200 }).filter(r => Date.parse(r.finishedAt || r.updatedAt) >= dayAgo);
+    const running = ['running', 'streaming'].reduce((n, status) => n + runLedger.list({ status, limit: 200 }).length, 0);
+    const needs = glance.needsYouSummary({
+      approvals: approvalStore().filter(a => a.status === 'pending').length,
+      changes: Number(snapshot.changes?.pending || 0),
+      findings: claudeFindings().filter(f => f.status === 'proposed').length,
+      failedToday: recentFailed.length,
+      running
+    }, health);
+    const topic = urlObj.searchParams.get('topic') === 'health' ? 'health' : 'needs';
+    const speech = topic === 'health' ? health.speech : needs.speech;
+    if (urlObj.searchParams.get('format') === 'text') return text(res, 200, speech, 'text/plain; charset=utf-8', { 'Cache-Control': 'no-store' });
+    json(res, 200, { topic, speech, needsYou: { count: needs.count, items: needs.items }, health: { ok: health.ok, down: health.down, total: health.total }, version: APP_VERSION });
+  } catch (e) { storageError(res, e, 500); }
+}
+
 async function apiCapabilities(req, res) {
   try { json(res, 200, await getCapabilitiesSnapshot(true)); }
   catch (e) { storageError(res,e,500); }
 }
 
-function systemPrompt(researchContext = '', capabilityContext = '') {
+function systemPrompt(researchContext = '', capabilityContext = '', brief = false) {
   return {
     role: 'system',
     content:
@@ -517,7 +541,9 @@ function systemPrompt(researchContext = '', capabilityContext = '') {
       (capabilityContext ? `\n\n${capabilityContext}` : '') +
       (researchContext
         ? `\n\nCurrent metasearch results are below. Use them when relevant and cite source numbers like [1].\n\n${researchContext}`
-        : '')
+        : '') +
+      // Siri Shortcuts on a phone or watch read the answer aloud (docs/APPLE-WATCH.md).
+      (brief ? '\n\nThis answer will be read aloud on a watch: reply in at most two short sentences of plain text, with no lists, markdown, links or source numbers.' : '')
   };
 }
 
@@ -554,7 +580,7 @@ async function prepareChat(body, signal = null) {
     if (signal?.aborted) throw error;
   }
   throwIfAborted();
-  return { model, messages, sources, researchContext, capabilityContext };
+  return { model, messages, sources, researchContext, capabilityContext, brief: body.brief === true };
 }
 
 async function apiChat(req, res) {
@@ -571,7 +597,7 @@ async function apiChat(req, res) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: prep.model,
-        messages: [systemPrompt(prep.researchContext, prep.capabilityContext), ...prep.messages],
+        messages: [systemPrompt(prep.researchContext, prep.capabilityContext, prep.brief), ...prep.messages],
         stream: false,
         options: { num_ctx: 32768 }
       })
@@ -670,7 +696,7 @@ async function apiChatStream(req, res) {
       signal: controller.signal,
       body: JSON.stringify({
         model: prep.model,
-        messages: [systemPrompt(prep.researchContext, prep.capabilityContext), ...prep.messages],
+        messages: [systemPrompt(prep.researchContext, prep.capabilityContext, prep.brief), ...prep.messages],
         stream: true,
         options: { num_ctx: 32768 }
       })
@@ -2814,6 +2840,7 @@ const server = http.createServer(async (req, res) => {
     if (crossSiteRequest(req)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 403, { error: 'Cross-site request blocked' }); }
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 } });
     if (req.method === 'GET' && p === '/api/releases') return await apiReleases(req, res);
+    if (req.method === 'GET' && p === '/api/glance') return await apiGlance(req, res, urlObj);
     if (p.startsWith('/api/push/')) return await apiPush(req, res, p);
     if (req.method === 'GET' && p === '/api/storage/status') return json(res, 200, storage.status());
     if (req.method === 'GET' && p === '/api/status') return await apiStatus(req, res);
