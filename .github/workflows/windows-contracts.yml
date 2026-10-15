@@ -26,9 +26,16 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Deployment contracts on PowerShell 7
         shell: pwsh
         run: ./tests/Test-LocalAI-DeployContracts.ps1
       - name: Deployment contracts on Windows PowerShell 5.1
         shell: powershell
         run: ./tests/Test-LocalAI-DeployContracts.ps1
+      # The real host runner against a real appliance: signed jobs run, tampered and overdue ones don't.
+      - name: PowerShell Workbench end to end (Windows PowerShell 5.1)
+        shell: powershell
+        run: ./tests/Test-LocalAI-PowerShellBridge.ps1
