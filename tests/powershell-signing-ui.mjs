@@ -26,8 +26,8 @@ async function check(name, fn) { try { await fn(); console.log('PASS', name) } c
 const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
-// The UI asks for "RUN" and then the approval key.
-page.on('dialog', d => d.accept(/RUN/.test(d.message()) ? 'RUN' : KEY));
+// The UI asks for "RUN" in an approval sheet, then the approval key in a second sheet (no native dialogs).
+page.on('dialog', d => { errors.push('native dialog: ' + d.message()); d.dismiss(); });
 await page.addInitScript(() => { localStorage.setItem('localai.firstRun.done', '1'); localStorage.setItem('localai.devTools', '1'); });
 await page.goto(base, { waitUntil: 'networkidle' });
 await page.evaluate(() => window.showView('powershell'));
@@ -43,6 +43,14 @@ await check('the browser signs exactly what the Windows host verifies', async ()
   await page.click('#powershellCreateBtn');
   await page.locator('[data-ps-approve]').click();
   await page.locator('[data-ps-run]').click();
+  const sheet = page.locator('dialog.ask-sheet[open]');
+  await sheet.waitFor();
+  await sheet.locator('input').fill('RUN');
+  await sheet.getByRole('button', { name: 'Queue' }).click();
+  await sheet.waitFor();
+  assert.equal(await sheet.locator('input').getAttribute('type'), 'password');
+  await sheet.locator('input').fill(KEY);
+  await sheet.getByRole('button', { name: 'Use key' }).click();
   await page.waitForFunction(() => /Queued/.test(document.getElementById('powershellStatus').textContent));
   // What the host receives: the job and the browser's signature.
   const next = await (await fetch(base + '/api/powershell/host/next', { headers: { Authorization: `Bearer ${BRIDGE_TOKEN}` } })).json();
