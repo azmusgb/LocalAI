@@ -526,6 +526,18 @@ async function apiGlance(req, res, urlObj) {
   } catch (e) { storageError(res, e, 500); }
 }
 
+// "Ask Local AI" from Siri: {text} in, the brief answer out as plain text to speak. A flat body keeps the shortcut
+// to one JSON field; the chat run and Library entry are the same as any other chat.
+async function apiGlanceAsk(req, res) {
+  try {
+    const b = await readBody(req);
+    const textIn = typeof b.text === 'string' ? b.text.trim().slice(0, 4000) : '';
+    if (!textIn) return json(res, 400, { error: 'text is required' });
+    const result = await chatOnce({ messages: [{ role: 'user', content: textIn }], brief: true });
+    text(res, 200, result.message.content, 'text/plain; charset=utf-8', { 'Cache-Control': 'no-store' });
+  } catch (e) { storageError(res, e, 500); }
+}
+
 async function apiCapabilities(req, res) {
   try { json(res, 200, await getCapabilitiesSnapshot(true)); }
   catch (e) { storageError(res,e,500); }
@@ -584,9 +596,14 @@ async function prepareChat(body, signal = null) {
 }
 
 async function apiChat(req, res) {
+  try { json(res, 200, await chatOnce(await readBody(req))); }
+  catch (e) { storageError(res,e,500); }
+}
+
+// One non-streaming chat turn as a run; shared by /api/chat and /api/glance/ask.
+async function chatOnce(body) {
   let execution = null;
   try {
-    const body = await readBody(req);
     execution = createChatExecution(body, false);
     runLedger.start(execution.id, body.webSearch === true ? 'Research run started' : 'Chat run started');
     const prep = await prepareChat(body);
@@ -630,16 +647,16 @@ async function apiChat(req, res) {
       meta: { model: prep.model, elapsedMs, sources: prep.sources.length }
     });
 
-    json(res, 200, {
+    return {
       message: { role: 'assistant', content },
       model: prep.model,
       elapsedMs,
       sources: prep.sources,
       runId: execution.id
-    });
+    };
   } catch (e) {
     if (execution) runLedger.fail(execution.id, e);
-    storageError(res,e,500);
+    throw e;
   }
 }
 
@@ -1318,7 +1335,7 @@ function lastUserRunMessage(body){
 function createChatExecution(body,streaming){
   const messages=sanitizeMessages(body?.messages);const prompt=[...messages].reverse().find(m=>m.role==='user')?.content||'Chat';
   const model=typeof body?.model==='string'&&body.model.trim()?body.model.trim():MODEL;
-  const retryBody={messages,model,webSearch:body?.webSearch===true,threadId:cleanRunId(body?.threadId)||undefined};
+  const retryBody={messages,model,webSearch:body?.webSearch===true,threadId:cleanRunId(body?.threadId)||undefined,brief:body?.brief===true||undefined};
   return runLedger.create({type:body?.webSearch===true?'research':'chat',title:titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true}});
 }
 function normalizedExecutionStatus(value){
@@ -2765,6 +2782,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 } });
     if (req.method === 'GET' && p === '/api/releases') return await apiReleases(req, res);
     if (req.method === 'GET' && p === '/api/glance') return await apiGlance(req, res, urlObj);
+    if (req.method === 'POST' && p === '/api/glance/ask') return await apiGlanceAsk(req, res);
     if (p.startsWith('/api/push/')) return await apiPush(req, res, p);
     if (req.method === 'GET' && p === '/api/storage/status') return json(res, 200, storage.status());
     if (req.method === 'GET' && p === '/api/status') return await apiStatus(req, res);
