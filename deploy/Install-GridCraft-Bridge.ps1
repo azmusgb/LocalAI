@@ -78,6 +78,16 @@ Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
     ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 
+# Older installs appended PowerShell's UTF-16 output to the log; the bridge now writes UTF-8 itself. Archive the old file once.
+if (Test-Path -LiteralPath $LogPath) {
+    $head = [byte[]]::new(2)
+    $stream = [System.IO.File]::OpenRead($LogPath)
+    try { [void]$stream.Read($head, 0, 2) } finally { $stream.Dispose() }
+    if ($head[0] -eq 0xFF -and $head[1] -eq 0xFE) {
+        Move-Item -LiteralPath $LogPath -Destination ([IO.Path]::ChangeExtension($LogPath, '.legacy.log')) -Force
+    }
+}
+
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$envPath`""
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
