@@ -55,16 +55,20 @@ if (-not $AllowedOrigins) {
 $origins = $AllowedOrigins -join ','
 
 $envPath = Join-Path $AgentDir 'gridcraft-bridge.env.ps1'
-@"
-`$env:GRIDCRAFT_AGENT_DIR = '$AgentDir'
-`$env:GRIDCRAFT_AGENT_SCRIPT = '$AgentScript'
-`$env:GRIDCRAFT_WORKBOOK = '$Workbook'
-`$env:GRIDCRAFT_MODEL = '$Model'
-`$env:GRIDCRAFT_BRIDGE_PORT = '$Port'
-`$env:GRIDCRAFT_ALLOWED_ORIGINS = '$origins'
-`$env:PYTHONUNBUFFERED = '1'
-& '$Python' '$BridgeScript' *>> '$LogPath'
-"@ | Set-Content -Path $envPath -Encoding UTF8
+# Values go into single-quoted strings in a generated script: double any apostrophes (C:\Users\O'Brien).
+function Format-Quoted([string]$Value) { "'" + $Value.Replace("'", "''") + "'" }
+$launcher = @(
+    "`$env:GRIDCRAFT_AGENT_DIR = $(Format-Quoted $AgentDir)"
+    "`$env:GRIDCRAFT_AGENT_SCRIPT = $(Format-Quoted $AgentScript)"
+    "`$env:GRIDCRAFT_WORKBOOK = $(Format-Quoted $Workbook)"
+    "`$env:GRIDCRAFT_MODEL = $(Format-Quoted $Model)"
+    "`$env:GRIDCRAFT_BRIDGE_PORT = $(Format-Quoted $Port)"
+    "`$env:GRIDCRAFT_ALLOWED_ORIGINS = $(Format-Quoted $origins)"
+    "`$env:PYTHONUNBUFFERED = '1'"
+    "& $(Format-Quoted $Python) $(Format-Quoted $BridgeScript) *>> $(Format-Quoted $LogPath)"
+) -join "`r`n"
+# UTF-8 with BOM so Windows PowerShell 5.1 (which runs the task) reads non-ASCII paths correctly whichever edition ran this installer.
+[System.IO.File]::WriteAllText($envPath, $launcher + "`r`n", (New-Object System.Text.UTF8Encoding($true)))
 
 # Restart cleanly if an older bridge is already holding the port.
 Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue

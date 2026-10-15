@@ -62,6 +62,40 @@ def ensure_gridcraft() -> bool:
 FINAL_MARKER = '[agent] model returned final text.'
 
 
+# Windows limits a command line to about 32K characters.
+MAX_PROMPT_CHARS = 20000
+
+
+def run_agent(prompt: str) -> subprocess.CompletedProcess:
+    # '--once=<prompt>' keeps argparse from reading a prompt that starts with '-' as an option.
+    args = [str(PYTHON), str(AGENT), '--model', MODEL, f'--once={prompt}']
+    proc = subprocess.Popen(
+        args,
+        cwd=str(PROJECT_DIR),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        env={**os.environ, 'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8'},
+        creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0),
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=RUN_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        # Kill the agent and its MCP child (gridcraft-cli); killing only the agent can leave the pipes open.
+        if os.name == 'nt':
+            subprocess.run(['taskkill', '/T', '/F', '/PID', str(proc.pid)], capture_output=True)
+        else:
+            proc.kill()
+        try:
+            proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+        raise
+    return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
+
+
 def extract_answer(stdout: str) -> str:
     # In --once mode the agent prints its progress log, this marker, then only the answer.
     idx = stdout.rfind(FINAL_MARKER)
@@ -132,24 +166,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(400, {'ok': False, 'error': f'Invalid request: {exc}'})
         if not prompt:
             return self._json(400, {'ok': False, 'error': 'prompt is required'})
+        if len(prompt) > MAX_PROMPT_CHARS:
+            return self._json(413, {'ok': False, 'error': f'prompt is longer than {MAX_PROMPT_CHARS} characters'})
         if not PYTHON.exists() or not AGENT.exists():
             return self._json(503, {'ok': False, 'error': 'GridCraft local agent is not installed'})
-        if not ensure_gridcraft():
-            return self._json(503, {'ok': False, 'error': 'GridCraft control port 7979 is unavailable'})
+        # Take the lock before possibly launching GridCraft so concurrent requests can't start two instances.
         if not run_lock.acquire(blocking=False):
             return self._json(409, {'ok': False, 'error': 'Another GridCraft request is already running'})
         try:
+            if not ensure_gridcraft():
+                return self._json(503, {'ok': False, 'error': f'GridCraft control port {CONTROL_PORT} is unavailable'})
             started = time.time()
-            proc = subprocess.run(
-                [str(PYTHON), str(AGENT), '--model', MODEL, '--once', prompt],
-                cwd=str(PROJECT_DIR),
-                capture_output=True,
-                text=True,
-                encoding='utf-8',
-                errors='replace',
-                timeout=RUN_TIMEOUT,
-                env={**os.environ, 'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8'},
-            )
+            proc = run_agent(prompt)
             elapsed = round(time.time() - started, 2)
             if proc.returncode != 0:
                 return self._json(500, {
@@ -168,6 +196,8 @@ class Handler(BaseHTTPRequestHandler):
             })
         except subprocess.TimeoutExpired:
             return self._json(504, {'ok': False, 'error': f'GridCraft request exceeded {RUN_TIMEOUT}s'})
+        except Exception as exc:
+            return self._json(500, {'ok': False, 'error': f'Bridge failed to run the agent: {type(exc).__name__}: {exc}'})
         finally:
             run_lock.release()
 

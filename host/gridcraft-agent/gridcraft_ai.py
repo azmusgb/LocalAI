@@ -384,6 +384,8 @@ async def async_main() -> int:
         base_url=args.base_url.rstrip("/"),
         api_key="ollama",
         timeout=120.0,
+        # Keep one model call (120s x 2 attempts) inside the bridge's 300s request budget.
+        max_retries=1,
     )
 
     print(f"Checking Ollama at {args.base_url} ...")
@@ -451,9 +453,14 @@ async def async_main() -> int:
             ]
 
             if args.once:
-                answer = await run_agent_turn(
-                    llm, mcp_client, openai_tools, history, args.once, args.model
-                )
+                # Report agent failures as such; the outer handler is only for MCP connection problems.
+                try:
+                    answer = await run_agent_turn(
+                        llm, mcp_client, openai_tools, history, args.once, args.model
+                    )
+                except Exception as exc:
+                    print(f"ERROR: Agent request failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+                    return 6
                 print(answer)
                 return 0
 

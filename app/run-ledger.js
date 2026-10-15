@@ -120,7 +120,7 @@ class RunLedger {
   list({ limit = 100, status = '', type = '' } = {}) {
     const safeLimit = Math.max(1, Math.min(500, Number(limit) || 100));
     return this.read()
-      .filter(item => (!status || item.status === status) && (!type || item.type === type))
+      .filter(item => item && (!status || item.status === status) && (!type || item.type === type))
       .slice(0, safeLimit)
       .map(publicRun);
   }
