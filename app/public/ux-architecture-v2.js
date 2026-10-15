@@ -7,7 +7,9 @@ const q=(s,r=document)=>r.querySelector(s),qa=(s,r=document)=>[...r.querySelecto
 let currentDomain='home',sheetOpen=false,allButtons=new Map();
 
 function viewButton(view){return allButtons.get(view)||q('.navbtn[data-view="'+view+'"]')}
-function domainForView(view){return DOMAINS.find(d=>d.groups.some(g=>g.views.includes(view)))||DOMAINS[0]}
+function domainForView(view){const id=REG.view(view)?.domain;return DOMAINS.find(d=>d.id===id)||DOMAINS[0]}
+// Tabs share their parent's nav entry and breadcrumb.
+function pageForView(view){return REG.page(view)?.id||view}
 function labelForView(view){return REG.view(view)?.label||viewButton(view)?.textContent?.trim()||view}
 function activeView(){return q('.view.active')?.id||q('.navbtn.active')?.dataset.view||'home'}
 function activateSyntheticView(view){
@@ -72,6 +74,17 @@ function renderSecondary(domainId){
    holder.appendChild(section);
  });
 }
+function buildTabs(){
+ for(const v of REG.VIEWS){
+   if(!v.parent)continue;
+   for(const t of REG.tabs(v.id)){
+     const section=q('#'+t.id);if(!section||q('.ux-tabs',section))continue;
+     const strip=document.createElement('div');strip.className='ux-tabs';strip.setAttribute('role','tablist');strip.setAttribute('aria-label',REG.label(REG.page(t.id).id)+' sections');
+     REG.tabs(t.id).forEach(x=>{const b=document.createElement('button');b.type='button';b.className='ux-tab';b.setAttribute('role','tab');b.dataset.uxTab=x.id;b.textContent=x.tab||x.label;b.addEventListener('click',()=>navigate(x.id));strip.appendChild(b)});
+     const top=q('.topbar',section);if(top)top.after(strip);else section.prepend(strip);
+   }
+ }
+}
 function buildContext(){
  const main=q('main');if(!main||q('#uxContextBar'))return;
  const bar=document.createElement('header');bar.id='uxContextBar';bar.className='ux-context-bar';
@@ -92,19 +105,20 @@ function buildMobile(){
 function renderSheet(){
  const d=DOMAINS.find(x=>x.id===currentDomain)||DOMAINS[0],holder=q('#uxMobileSheetItems');if(!holder)return;
  q('#uxMobileSheetTitle').textContent=d.label;q('#uxMobileSheetTagline').textContent=d.tagline;holder.innerHTML='';
- d.groups.forEach(g=>{const section=document.createElement('section');section.className='ux-mobile-section';section.innerHTML='<div class="ux-mobile-section-label">'+g.label+'</div>';g.views.forEach(v=>{if(!viewButton(v))return;const b=document.createElement('button');b.type='button';b.className='ux-mobile-link '+(v===activeView()?'active':'');b.innerHTML='<span><strong>'+labelForView(v)+'</strong><small>'+DESCRIPTIONS[v]+'</small></span><span>›</span>';b.addEventListener('click',()=>{navigate(v);toggleSheet(false)});section.appendChild(b)});holder.appendChild(section)});
+ d.groups.forEach(g=>{const section=document.createElement('section');section.className='ux-mobile-section';section.innerHTML='<div class="ux-mobile-section-label">'+g.label+'</div>';g.views.forEach(v=>{if(!viewButton(v))return;const b=document.createElement('button');b.type='button';b.className='ux-mobile-link '+(v===pageForView(activeView())?'active':'');b.innerHTML='<span><strong>'+labelForView(v)+'</strong><small>'+DESCRIPTIONS[v]+'</small></span><span>›</span>';b.addEventListener('click',()=>{navigate(v);toggleSheet(false)});section.appendChild(b)});holder.appendChild(section)});
 }
 function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;const s=q('#uxMobileSheet');if(s)s.dataset.open=String(sheetOpen);q('#uxContextMenu')?.setAttribute('aria-expanded',String(sheetOpen));document.body.classList.toggle('ux-sheet-open',sheetOpen);if(sheetOpen)renderSheet()}
 function sync(forced){
- const view=forced||activeView(),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
- const viewLabel=labelForView(view);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;q('#uxContextBar')?.classList.toggle('ux-context-same',viewLabel===d.label);
+ const view=REG.resolve(forced||activeView()),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
+ const page=pageForView(view),viewLabel=labelForView(page);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;q('#uxContextBar')?.classList.toggle('ux-context-same',viewLabel===d.label);
  qa('.ux-primary-item').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
  qa('#uxMobileNav [data-domain]').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
  if(q('#uxSecondaryTitle')?.textContent!==d.label)renderSecondary(d.id);
- qa('.ux-secondary-link').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
+ qa('.ux-secondary-link').forEach(b=>b.classList.toggle('active',b.dataset.view===page));
+ qa('.ux-tab').forEach(b=>{const on=b.dataset.uxTab===view;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on))});
  if(sheetOpen)renderSheet();
 }
 function observeViews(){const views=qa('.view');if(!views.length)return;const mo=new MutationObserver(()=>sync());views.forEach(v=>mo.observe(v,{attributes:true,attributeFilter:['class']}));document.addEventListener('click',e=>{const b=e.target.closest?.('.navbtn[data-view]');if(b)requestAnimationFrame(()=>sync(b.dataset.view))})}
-function init(){document.body.classList.add('ux-v3');buildIntegrationsView();buildDesktopNav();buildContext();buildMobile();observeViews();sync()}
+function init(){document.body.classList.add('ux-v3');buildIntegrationsView();buildTabs();buildDesktopNav();buildContext();buildMobile();observeViews();sync()}
 if(document.readyState==='complete')init();else window.addEventListener('load',init,{once:true});
 })();

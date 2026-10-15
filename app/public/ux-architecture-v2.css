@@ -59,3 +59,10 @@ body.ux-v3 #agents .agent-live-grid{grid-template-columns:minmax(0,1fr) 320px}
 @media(prefers-reduced-motion:reduce){body.ux-v3 .view{animation:none}.ux-mobile-sheet{transition:none}}
 /* Breadcrumb: drop the view when it repeats the domain (Local AI / Home). */
 .ux-context-same .ux-context-domain+.ux-context-sep,.ux-context-same .ux-context-view{display:none}
+/* Tab strip for pages that hold several views (Inbox, Projects, Issues). */
+.ux-tabs{display:flex;gap:4px;margin:-4px 0 14px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.ux-tabs::-webkit-scrollbar{display:none}
+.ux-tab{flex:0 0 auto;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);padding:9px 12px;font-weight:650;min-height:40px}
+.ux-tab:hover{color:var(--text)}
+.ux-tab.active{color:var(--text);border-bottom-color:var(--accent)}
+.ux-tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:6px}

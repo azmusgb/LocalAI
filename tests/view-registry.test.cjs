@@ -37,15 +37,19 @@ test('every registered view has a page, and every nav button is registered', () 
     }
   }
   const buttons = [...html.matchAll(/class="navbtn[^"]*" data-view="([^"]+)"/g)].map(m => m[1]);
-  assert.ok(buttons.length >= 20);
-  for (const id of buttons) assert.ok(registry.view(id), `nav button ${id} is not in view-registry.js`);
+  assert.ok(buttons.length >= 15);
+  for (const id of buttons) {
+    assert.ok(registry.VIEWS.some(v => v.id === id), `nav button ${id} is not in view-registry.js`);
+    assert.ok(!registry.view(id).parent, `${id} is a tab and should not have its own nav button`);
+  }
 });
 
 test('page headings and nav labels match the registry', () => {
   for (const v of registry.VIEWS) {
     if (v.id === 'home' || INJECTED[v.id]) continue;
     const m = html.match(new RegExp(`<section id="${v.id}"[^>]*>[\\s\\S]*?<h1>([^<]*)</h1>`));
-    assert.equal(m?.[1], v.label, `#${v.id} heading`);
+    assert.equal(m?.[1], registry.page(v.id).label, `#${v.id} heading`);
+    if (v.parent) continue;
     const b = html.match(new RegExp(`data-view="${v.id}"><span class="navicon">[^<]*</span>([^<]*)</button>`));
     assert.equal(b?.[1], v.label, `${v.id} nav button`);
   }
@@ -58,4 +62,41 @@ test('navigation surfaces read from the registry instead of their own lists', ()
   assert.doesNotMatch(app, /function evoNav|function groupNavigation|function addReleaseNav/);
   assert.ok(html.indexOf('/view-registry.js') < html.indexOf('/app.js'), 'registry must load before app.js');
   assert.match(sw, /'\/view-registry\.js'/);
+});
+
+test('tabs belong to a top-level page in the same domain', () => {
+  for (const v of registry.VIEWS.filter(x => x.parent)) {
+    const parent = registry.view(v.parent);
+    assert.ok(parent && !parent.parent, `${v.id} parent must be a top-level view`);
+    assert.equal(parent.domain, v.domain, `${v.id} must share its parent's domain`);
+    assert.ok(v.tab && parent.tab, `${v.id} and ${parent.id} need tab labels`);
+  }
+  assert.deepEqual(registry.tabs('quality').map(v => v.id), ['issues', 'quality']);
+  assert.deepEqual(registry.tabs('approvals').map(v => v.id), ['inbox', 'approvals']);
+  assert.deepEqual(registry.tabs('projects').map(v => v.id), ['projects', 'knowledge', 'memory']);
+  assert.deepEqual(registry.tabs('claude'), []);
+});
+
+test('retired views redirect to the page that replaced them', () => {
+  for (const [from, to] of Object.entries(registry.ALIASES)) {
+    assert.equal(registry.view(from).id, to);
+    assert.doesNotMatch(html, new RegExp(`<section id="${from}"`), `#${from} should be gone`);
+  }
+  assert.match(app, /id=window\.LocalAIViews\?\.resolve\(id\)\|\|id/, 'showView must resolve aliases');
+  assert.doesNotMatch(app, /showView\('engineering'\)|view:'engineering'/);
+});
+
+test('every page loads its data when opened, whichever control opened it', () => {
+  assert.match(app, /const VIEW_LOADERS=\{/);
+  assert.match(app, /if\(VIEW_LOADERS\[id\]\)/);
+  assert.doesNotMatch(app, /const oldShow=showView/, 'loaders must not depend on nav button click handlers');
+});
+
+test('change requests use one form for plan-only and agent runs', () => {
+  for (const id of ['engineeringRequest', 'engineeringTarget', 'engineeringAttempts', 'engineeringRunBtn', 'changeList', 'engineeringRuns']) {
+    assert.match(html, new RegExp(`id="${id}"`), `#${id}`);
+  }
+  assert.match(html, /<option value="0">Plan only/);
+  assert.doesNotMatch(html, /id="changeRequest"|id="changePlanBtn"/);
+  assert.match(app, /if\(Number\(\$\('engineeringAttempts'\)\.value\)===0\)return planChange\(\)/);
 });
