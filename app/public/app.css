@@ -1167,6 +1167,47 @@ kbd{font:600 11px/1 var(--ds-mono);padding:2px 6px;border-radius:6px;border:1px 
 /* Run and change lists: requests can be whole pasted documents; show three lines (all sizes). */
 #engineeringRuns .item-card strong,#changeList .item-card strong{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 
+/* Claude chat panel: above the board on narrow screens, beside it from 1100px up. */
+.claude-chat{margin-bottom:12px;display:flex;flex-direction:column;gap:10px}
+.claude-chat h2{font-size:15px;margin:0}
+.claude-chat-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.claude-chat-head select{flex:1 1 160px;min-width:0}
+.claude-chat-log{display:flex;flex-direction:column;gap:8px;min-height:160px;max-height:420px;overflow-y:auto;padding:2px}
+.claude-chat-msg{border:1px solid var(--ds-line);border-radius:var(--ds-r-md);padding:8px 10px;background:var(--ds-surface-2);max-width:92%;min-width:0}
+.claude-chat-msg.web{align-self:flex-end;background:var(--ds-accent-soft);border-color:var(--ds-line-2)}
+.claude-chat-msg.reply{align-self:flex-start}
+.claude-chat-msg.terminal{align-self:flex-start;background:var(--ds-surface);border-style:dashed}
+.claude-chat-meta{display:flex;gap:8px;justify-content:space-between;font-size:11px;color:var(--ds-muted);margin-bottom:2px}
+.claude-chat-who{font-weight:650;color:var(--ds-soft)}
+.claude-chat-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;color:var(--ds-text)}
+.claude-chat-foot{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:4px;font-size:11px}
+.claude-chat-status{color:var(--ds-muted)}
+.claude-chat-status.answered{color:var(--ds-good)}
+.claude-chat-status.bad{color:var(--ds-bad)}
+.claude-chat-foot .btn{padding:2px 8px;font-size:12px}
+.claude-chat-composer{display:flex;gap:8px;align-items:flex-end}
+.claude-chat-composer textarea{flex:1;min-width:0;resize:vertical;min-height:64px;border:1px solid var(--ds-line-2);border-radius:var(--ds-r-md);background:var(--ds-bg-2);color:var(--ds-text);padding:8px 10px}
+.claude-chat-composer textarea:focus{outline:0;box-shadow:var(--ds-focus)}
+.claude-chat-composer textarea:disabled{opacity:.55}
+.claude-chat-hint,.claude-chat-note{margin:0;font-size:12px;overflow-wrap:anywhere}
+.claude-chat-hint{color:var(--ds-progress)}
+.claude-chat-notice{font-size:12px;color:var(--ds-soft)}
+.claude-chat-notice.bad,.claude-chat-error{color:var(--ds-bad)}
+.claude-chat-pair{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.claude-chat-pair p{margin:0}
+.claude-chat-code{font:700 34px/1.1 var(--ds-mono);letter-spacing:.18em;padding:10px 14px;border:1px solid var(--ds-line-2);border-radius:var(--ds-r-md);background:var(--ds-bg-2);user-select:all}
+.claude-chat-cmd{display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:100%}
+.claude-chat-cmd code{font:13px var(--ds-mono);padding:8px 10px;border-radius:var(--ds-r-sm);background:var(--ds-bg-2);border:1px solid var(--ds-line);user-select:all;overflow-wrap:anywhere}
+.claude-chat-warning{font-size:12px;color:var(--ds-progress);overflow-wrap:anywhere}
+.claude-chat-devices summary{cursor:pointer;font-size:12px;color:var(--ds-muted);padding:4px 0}
+.claude-chat-device{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--ds-line);flex-wrap:wrap}
+@media (min-width:1100px){
+  #claude.active{display:grid;grid-template-columns:minmax(0,1fr) 400px;column-gap:16px;align-items:start}
+  #claude.active>*{grid-column:1}
+  #claude.active>.topbar{grid-column:1/-1}
+  #claude.active>.claude-chat{grid-column:2;grid-row:2/span 12;position:sticky;top:12px;margin-bottom:0}
+}
+
 /* Phone layer — last, so it settles what the older mobile rules above disagree on.
    Targets: one top bar, nothing hidden behind the tab bar, 44px touch targets, 16px form text (iOS zooms below that),
    two-up tiles instead of one tile per screen row, and no element wider than the screen. */
@@ -1294,6 +1335,14 @@ body.ux-v3.ux-nav-collapsed .ux-page-strip{display:flex}
   body.ux-v3 .ux-context-bar .ux-context-view,body.ux-v3 .ux-context-bar .ux-context-sep{display:none!important}
   /* The tab bar keeps equal slots when a section (Build) is hidden. */
   body.ux-v3 .ux-mobile-nav{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:1fr}
+  /* Claude chat: full-width controls, 44px targets, 16px text (the shared form rule above covers input/select/textarea). */
+  .claude-chat-composer{flex-direction:column;align-items:stretch}
+  .claude-chat-composer textarea{min-height:88px}
+  #claudeChatSend,.claude-chat-cmd .btn,.claude-chat-foot .btn,.claude-chat-device .btn,.claude-chat-pair .btn{min-height:44px;min-width:44px}
+  .claude-chat-devices summary{min-height:44px;display:flex;align-items:center}
+  .claude-chat-log{max-height:50svh}
+  .claude-chat-code{font-size:28px}
+  .claude-chat-msg{max-width:100%}
 }
 /* Long lists, all sizes: see "Long lists" in ui.js */
 .mobile-clipped{display:none!important}
