@@ -108,6 +108,8 @@ test('unified run API exposes native chat plus legacy execution history and retr
   assert.equal(native.attempt, 1);
   assert.equal(native.retryOf, null);
   assert.ok(runs.value.items.some(item => item.id === legacyAgentId && item.status === 'completed'));
+  for (const item of runs.value.items) { assert.ok(item.card.icon, item.id); assert.ok(item.card.view, item.id); }
+  assert.equal(native.card.icon, 'compose');
 
   const detail = await request(`/api/runs?id=${encodeURIComponent(chat.value.runId)}`);
   assert.equal(detail.response.status, 200);
