@@ -99,3 +99,87 @@ test('concurrent missions retain both results and completed histories', async t 
   assert.ok(orchestrator.runs().every(run => run.status === 'complete'));
 });
 
+
+test('a fallback that throws keeps sibling results and leaves no worker running', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-mission-'));
+  let inventoryCalls = 0;
+  const orchestrator = createOrchestrator({
+    dataDir, ollamaUrl: 'http://unused.invalid', defaultModel: 'test-model',
+    fetchWithTimeout: async () => {
+      if (++inventoryCalls > 1) throw new Error('fetch failed');
+      return { ok: true, json: async () => ({ models: [{ name: 'test-model' }] }) };
+    },
+    runLocalModel: async (prompt, system) => {
+      if (system.startsWith('Analyze supplied source precisely.')) throw new Error('Model rejected request');
+      return 'Research finding';
+    },
+  });
+  t.after(() => { orchestrator.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  const mission = await orchestrator.mission('Review implementation and research sources', '', ['code_analyst', 'research_agent']);
+  assert.equal(mission.status, 'needs_attention');
+  assert.equal(mission.results.find(r => r.agentId === 'research_agent').status, 'complete');
+  assert.equal(mission.workers.find(w => w.id === 'code_analyst').state, 'error');
+  assert.ok(mission.workers.every(w => !['running', 'pending'].includes(w.state)));
+  assert.ok(mission.timeline.some(e => e.type === 'fallback' && /failed/.test(e.detail)));
+});
+
+test('a coordinator failure settles every worker', async t => {
+  const { orchestrator } = fixture(t, (prompt, system) => {
+    if (system.includes('mission coordinator')) throw new Error('Model rejected request');
+    return 'Finding [app/server.js]';
+  });
+  const mission = await orchestrator.mission('Review design', '', ['ux_analyst']);
+  assert.equal(mission.status, 'error');
+  assert.equal(mission.workers.find(w => w.id === 'synthesis').state, 'error');
+  assert.ok(orchestrator.missions()[0].workers.every(w => !['running', 'pending'].includes(w.state)));
+});
+
+test('missions and runs left running by a restart are closed out and stop counting as workload', async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-mission-'));
+  const { Storage } = require('../app/storage');
+  const seed = new Storage({ dataDir });
+  for (const n of [1, 2]) {
+    seed.upsert('missions', { id: `mission-stale-${n}`, goal: 'old', status: 'running', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      workers: [{ id: 'code_analyst', state: 'running' }, { id: 'synthesis', state: 'pending' }], timeline: [] });
+  }
+  seed.upsert('specialistRuns', { id: 'spec-stale', agentId: 'code_analyst', status: 'running', plan: [{ name: 'Execute specialist', state: 'running' }] });
+  seed.close();
+  const orchestrator = createOrchestrator({
+    dataDir, ollamaUrl: 'http://unused.invalid', defaultModel: 'test-model',
+    fetchWithTimeout: async () => ({ ok: true, json: async () => ({ models: [{ name: 'test-model' }] }) }),
+    runLocalModel: async () => 'ok',
+  });
+  t.after(() => { orchestrator.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  for (const m of orchestrator.missions()) {
+    assert.equal(m.status, 'error');
+    assert.match(m.error, /restarted/);
+    assert.deepEqual(m.workers.map(w => w.state), ['error', 'blocked']);
+  }
+  assert.equal(orchestrator.runs()[0].errorCode, 'INTERRUPTED');
+  const routing = await orchestrator.dispatch('analyze code architecture and modules');
+  assert.ok(routing.selectedAgentIds.includes('code_analyst'));
+});
+
+test('manual dispatch rejects unknown or infrastructure agents', async t => {
+  const { orchestrator, calls } = fixture(t);
+  await assert.rejects(orchestrator.mission('anything', '', ['nope']), err => err.statusCode === 400 && /nope/.test(err.message));
+  await assert.rejects(orchestrator.dispatch('anything', ['model_router']), /model_router/);
+  assert.equal(calls.length, 0);
+});
+
+test('routing terms match at word starts only', async t => {
+  const { orchestrator } = fixture(t);
+  const suite = await orchestrator.dispatch('build a test suite for the ledger');
+  assert.ok(suite.selectedAgentIds.includes('test_engineer'));
+  assert.ok(!suite.selectedAgentIds.includes('ux_analyst'), 'ui must not match inside build/suite');
+  const rapid = await orchestrator.dispatch('rapid prototype tests');
+  assert.ok(!rapid.selectedAgentIds.includes('documentation'), 'api must not match inside rapid');
+  const ui = await orchestrator.dispatch('review the ui layout');
+  assert.ok(ui.selectedAgentIds.includes('ux_analyst'));
+});
+
+test('fetchWithTimeout timeouts are reported as model timeouts', async t => {
+  const { orchestrator } = fixture(t, () => { throw new Error('Request timed out'); });
+  const run = await orchestrator.specialist('research_agent', 'Research sources');
+  assert.equal(run.errorCode, 'MODEL_TIMEOUT');
+});

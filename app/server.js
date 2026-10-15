@@ -63,17 +63,22 @@ function writeState(collection, value, previous = value) {
 function readBody(req, maxBytes = 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let total = 0;
+    let tooLarge = false;
     const chunks = [];
     req.on('data', chunk => {
+      if (tooLarge) return;
       total += chunk.length;
       if (total > maxBytes) {
-        reject(new Error('Request body too large'));
-        req.destroy();
+        // Keep draining instead of destroying the socket so the handler can still answer 413.
+        tooLarge = true;
+        chunks.length = 0;
+        reject(Object.assign(new Error('Request body too large'), { statusCode: 413 }));
         return;
       }
       chunks.push(chunk);
     });
     req.on('end', () => {
+      if (tooLarge) return;
       try {
         const raw = Buffer.concat(chunks).toString('utf8');
         resolve(raw ? JSON.parse(raw) : {});
@@ -113,7 +118,7 @@ function libraryStore() {
 function titleFromText(value, fallback = 'Untitled') {
   const clean = String(value || '').replace(/\s+/g, ' ').trim();
   if (!clean) return fallback;
-  return clean.length <= 72 ? clean : `${clean.slice(0, 69).trim()}ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦`;
+  return clean.length <= 72 ? clean : `${clean.slice(0, 69).trim()}…`;
 }
 
 function recordArtifact(kind, title, summary = '', meta = {}, data = {}) {
@@ -183,12 +188,24 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
   if (externalSignal?.aborted) abortFromExternal();
   else externalSignal?.addEventListener('abort', abortFromExternal, { once: true });
   const timer = setTimeout(() => controller.abort(new Error('Request timed out')), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
+  const done = () => {
     clearTimeout(timer);
     externalSignal?.removeEventListener('abort', abortFromExternal);
+  };
+  let response;
+  try {
+    response = await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    done();
+    throw error;
   }
+  // fetch resolves at the headers; keep the deadline armed until the body has been read too.
+  if (!response.body) done();
+  else for (const method of ['text', 'json', 'arrayBuffer', 'blob', 'formData']) {
+    const read = response[method].bind(response);
+    response[method] = () => read().finally(done);
+  }
+  return response;
 }
 
 async function probe(name, label, url, goodCodes = [200], timeoutMs = 3000, required = true) {
@@ -528,6 +545,16 @@ async function apiChat(req, res) {
 async function apiChatStream(req, res) {
   let execution = null;
   let controller = null;
+  // Ollama can stall while loading a model or mid-stream; abort when no output arrives for CHAT_MODEL_TIMEOUT_MS.
+  let idleTimer = null;
+  let stalled = false;
+  const armIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      stalled = true;
+      controller?.abort(new Error(`No model output for ${Math.round(CHAT_MODEL_TIMEOUT_MS / 1000)}s`));
+    }, CHAT_MODEL_TIMEOUT_MS);
+  };
   try {
     const body = await readBody(req);
     execution = createChatExecution(body, true);
@@ -561,6 +588,7 @@ async function apiChatStream(req, res) {
 
     send('meta', { model: prep.model, sources: prep.sources, runId: execution.id });
 
+    armIdle();
     const upstream = await fetch(`${OLLAMA_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -587,6 +615,7 @@ async function apiChatStream(req, res) {
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
+      armIdle();
       buffer += decoder.decode(value, { stream: true });
 
       while (true) {
@@ -632,7 +661,7 @@ async function apiChatStream(req, res) {
     res.end();
   } catch (e) {
     const current = execution ? runLedger.get(execution.id) : null;
-    const cancelled = current?.status === 'cancelled' || (controller?.signal.aborted && current?.status !== 'failed');
+    const cancelled = !stalled && (current?.status === 'cancelled' || (controller?.signal.aborted && current?.status !== 'failed'));
     if (execution && !cancelled) runLedger.fail(execution.id, e);
     if (!res.headersSent) {
       if (!res.destroyed) {
@@ -646,6 +675,7 @@ async function apiChatStream(req, res) {
       } catch {}
     }
   } finally {
+    clearTimeout(idleTimer);
     if (execution) activeRunControllers.delete(execution.id);
   }
 }
@@ -1057,7 +1087,8 @@ function serveStatic(req, res, pathname) {
 
 
 // ===== CUMULATIVE PRODUCT PLATFORM (v1.3+) ===================================
-const FEATURE_LEVEL = Number(String(APP_VERSION || '1.2').split('.')[1] || 2);
+// parseInt so suffixed versions such as the staged smoke server's '1.18-stage' keep their level.
+const FEATURE_LEVEL = parseInt(String(APP_VERSION || '1.2').split('.')[1], 10) || 2;
 const PROJECTS_STORE = 'projects';
 const CONVERSATIONS_STORE = 'conversations';
 const KNOWLEDGE_STORE = 'knowledge';
@@ -1555,8 +1586,11 @@ async function apiBrowserFetch(req,res){if(!requireFeature(res,6))return;try{con
 async function apiHttpCheck(req,res){if(!requireFeature(res,6))return;try{const b=await readBody(req);const u=validateExternalUrl(b.url);const started=Date.now();const r=await fetchWithTimeout(u.toString(),{method:String(b.method||'GET').toUpperCase()==='HEAD'?'HEAD':'GET'},10000);json(res,200,{url:u.toString(),status:r.status,ok:r.ok,latencyMs:Date.now()-started,contentType:r.headers.get('content-type')||''})}catch(e){storageError(res,e,400)}}
 async function apiComputerBatch(req,res){if(!requireFeature(res,6))return;try{const b=await readBody(req,5*1024*1024);if(b.approved!==true)return json(res,409,{error:'Explicit approval is required',approvalRequired:true});const ops=Array.isArray(b.operations)?b.operations.slice(0,30):[];const results=[];for(const op of ops){try{if(op.type==='mkdir'){fs.mkdirSync(safeWorkspacePath(op.path),{recursive:true});results.push({type:op.type,path:op.path,ok:true})}else if(op.type==='write'){const full=safeWorkspacePath(op.path);fs.mkdirSync(path.dirname(full),{recursive:true});let backup=null;if(fs.existsSync(full)){backup=`${full}.localai-${Date.now()}.bak`;fs.copyFileSync(full,backup)}fs.writeFileSync(full,String(op.content||''),'utf8');results.push({type:op.type,path:op.path,ok:true,backup:backup?workspaceRel(backup):null})}else if(op.type==='copy'){const src=safeWorkspacePath(op.from),dst=safeWorkspacePath(op.to);fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(src,dst);results.push({type:op.type,from:op.from,to:op.to,ok:true})}else{results.push({type:op.type,ok:false,error:'Unsupported operation'})}}catch(e){results.push({type:op.type,path:op.path,ok:false,error:String(e.message||e)})}}recordActivity('computer','Approved computer action batch',`${results.filter(x=>x.ok).length}/${results.length} operations completed`,{});json(res,200,{results})}catch(e){storageError(res,e,400)}}
 
-async function automationSchedulerTick(){if(!featureAtLeast(4))return;const items=automationStore();let changed=false;for(const a of items){if(!a.enabled||!a.nextRunAt||new Date(a.nextRunAt)>new Date())continue;await executeAutomation(a);a.nextRunAt=nextRunFor(a.schedule);a.updatedAt=nowIso();changed=true}if(changed)saveStore(AUTOMATIONS_STORE,items,250)}
-setInterval(()=>automationSchedulerTick().catch(()=>{}),30000).unref?.();
+// Runs can outlast the 30s tick, so ticks never overlap and each automation's next run is claimed before it starts.
+let automationTickRunning=false;
+function automationDue(a){return a.enabled&&a.nextRunAt&&new Date(a.nextRunAt)<=new Date()}
+async function automationSchedulerTick(){if(!featureAtLeast(4)||automationTickRunning)return;automationTickRunning=true;try{for(const {id} of automationStore().filter(automationDue)){const items=automationStore();const a=items.find(x=>x.id===id);if(!a||!automationDue(a))continue;a.nextRunAt=nextRunFor(a.schedule);a.updatedAt=nowIso();saveStore(AUTOMATIONS_STORE,items,250);await executeAutomation(a)}}finally{automationTickRunning=false}}
+setInterval(()=>automationSchedulerTick().catch(e=>console.error(`${nowIso()} Automation scheduler failed:`,e)),30000).unref?.();
 // ===== END CUMULATIVE PRODUCT PLATFORM =======================================
 
 
@@ -2046,7 +2080,15 @@ function repairContextForChange(change,sourceRoot,errorText){
   const blocks=[];for(const f of change.files||[]){try{const full=ensureInside(sourceRoot,f.path);if(fs.existsSync(full)){const txt=fs.readFileSync(full,'utf8');blocks.push(`CURRENT FILE: ${f.path}\n---\n${excerptForRequest(txt,errorText,12000)}\n---`)}}catch{}}
   return `PATCH/STAGING FAILURE:\n${String(errorText||'unknown failure').slice(0,6000)}\n\nACTUAL CURRENT SOURCE:\n${blocks.join('\n\n').slice(0,36000)}`;
 }
+// Staging deletes and rebuilds the stage tree and then validates for a while; a second concurrent stage of the
+// same change would wipe the tree under the first.
+const stagingChangeIds=new Set();
 async function stageChangeById(changeId){
+  if(stagingChangeIds.has(changeId))throw Object.assign(new Error('This change is already being staged'),{statusCode:409});
+  stagingChangeIds.add(changeId);
+  try{return await stageChangeByIdUnlocked(changeId)}finally{stagingChangeIds.delete(changeId)}
+}
+async function stageChangeByIdUnlocked(changeId){
   const items=changeStore();const i=items.findIndex(x=>x.id===changeId);if(i<0)throw new Error('Change not found');const c=items[i];if(!['planned','validation_failed','patch_failed'].includes(c.status))throw new Error(`Change cannot be staged from status ${c.status}`);const sourceRoot=c.target==='self'?SELF_APP_ROOT:safeWorkspacePath(c.root||'');const base=path.join(CHANGE_STAGE_ROOT,c.id);const stageRoot=path.join(base,c.target==='self'?'app':'workspace');fs.rmSync(base,{recursive:true,force:true});fs.mkdirSync(stageRoot,{recursive:true});if(c.target==='self')copyTree(sourceRoot,stageRoot);const diffs=[];
   try{
     for(const f of c.files||[]){const src=ensureInside(sourceRoot,f.path),dst=ensureInside(stageRoot,f.path);let before='';if(fs.existsSync(src)){before=fs.readFileSync(src,'utf8');if(c.target!=='self'){fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(src,dst)}}else if(!f.operations.some(x=>x.type==='create'))throw new Error(`${f.path}: source file does not exist`);const after=applyOpsToText(before,f.operations,f.path);fs.mkdirSync(path.dirname(dst),{recursive:true});fs.writeFileSync(dst,after,'utf8');diffs.push({path:f.path,diff:simpleDiff(before,after),changed:before!==after})}
@@ -2267,7 +2309,7 @@ async function executeEngineeringRun(run){
   for(let attempt=1;attempt<=run.maxAttempts;attempt++){
     run.attempt=attempt;const planStep=engineeringStep(run,`Attempt ${attempt}: plan`,'running');refreshEngineeringRun(run);
     let change;
-    try{change=await createEngineeringChange(workingRequest,run.target,run.root==='app'?'repos':run.root,run.id,attempt)}catch(e){lastError=String(e.message||e);planStep.state='error';planStep.detail=lastError;refreshEngineeringRun(run);if(attempt<run.maxAttempts){workingRequest=`${run.request}\n\nPrevious planning attempt failed. Retry with a smaller source-aware patch. Failure:\n${lastError}`;engineeringStep(run,`Attempt ${attempt}: repair feedback`,'complete',lastError);refreshEngineeringRun(run);continue}break}
+    try{change=await createEngineeringChange(workingRequest,run.target,run.target==='self'&&run.root==='app'?'repos':run.root,run.id,attempt)}catch(e){lastError=String(e.message||e);planStep.state='error';planStep.detail=lastError;refreshEngineeringRun(run);if(attempt<run.maxAttempts){workingRequest=`${run.request}\n\nPrevious planning attempt failed. Retry with a smaller source-aware patch. Failure:\n${lastError}`;engineeringStep(run,`Attempt ${attempt}: repair feedback`,'complete',lastError);refreshEngineeringRun(run);continue}break}
     run.changeIds.push(change.id);planStep.state=change.files.length?'complete':'error';planStep.detail=change.files.length?`${change.files.length} file(s) planned`:'No patch operations produced';refreshEngineeringRun(run);
     if(!change.files.length){lastError='Patch planner produced no patch operations';if(attempt<run.maxAttempts){workingRequest=`${run.request}\n\nThe previous planner produced no usable operations. Inspect the supplied source and produce a minimal source-aware patch using replace_function/insert_after_function where possible.`;engineeringStep(run,`Attempt ${attempt}: repair feedback`,'complete',lastError);refreshEngineeringRun(run);continue}break}
     const st=engineeringStep(run,`Attempt ${attempt}: stage + validate`,'running');refreshEngineeringRun(run);let staged;
@@ -2276,7 +2318,7 @@ async function executeEngineeringRun(run){
     if(staged.validation?.passed){run.status='awaiting_approval';run.finalChangeId=change.id;run.error=null;engineeringStep(run,'Human approval required','waiting',`Validated change ${change.id} is ready for review.`);run.updatedAt=nowIso();refreshEngineeringRun(run);recordActivity('engineering','Engineering run validated',run.request.slice(0,180),{runId:run.id,changeId:change.id,attempt});return run}
     lastError=st.detail||'Validation failed';if(attempt<run.maxAttempts){const targetRoot=run.target==='self'?SELF_APP_ROOT:safeWorkspacePath(run.root);const context=repairContextForChange(change,targetRoot,lastError);workingRequest=`${run.request}\n\nPrevious patch staged but failed real validation. Produce a corrected patch, do not add fake validators, and preserve the approval boundary.\n\n${context}`;engineeringStep(run,`Attempt ${attempt}: repair feedback`,'complete',lastError);refreshEngineeringRun(run)}
   }
-  run.status='needs_attention';run.updatedAt=nowIso();run.error=lastError||`Unable to produce a validated patch within ${run.maxAttempts} attempt(s).`;engineeringStep(run,'Stopped safely','error',run.error);refreshEngineeringRun(run);addNotification('engineering','Engineering run needs attention',`${run.request.slice(0,180)} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${run.error}`,{runId:run.id});recordActivity('engineering','Engineering run stopped',run.error,{runId:run.id});return run;
+  run.status='needs_attention';run.updatedAt=nowIso();run.error=lastError||`Unable to produce a validated patch within ${run.maxAttempts} attempt(s).`;engineeringStep(run,'Stopped safely','error',run.error);refreshEngineeringRun(run);addNotification('engineering','Engineering run needs attention',`${run.request.slice(0,180)} — ${run.error}`,{runId:run.id});recordActivity('engineering','Engineering run stopped',run.error,{runId:run.id});return run;
 }
 async function apiEngineeringRun(req,res){
   if(!requireFeature(res,16))return;
@@ -2300,12 +2342,12 @@ function hostBridgeAuthorized(req){if(!POWERSHELL_BRIDGE_TOKEN)return false;cons
 function normalizeWindowsCwd(value){let v=String(value||'C:\\Projects').trim().replace(/\//g,'\\');if(/\.\.(?:\\|$)/.test(v))throw new Error('Working directory may not contain ..');const low=v.toLowerCase();const roots=['c:\\projects','c:\\repos','c:\\localai'];if(!roots.some(r=>low===r||low.startsWith(r+'\\')))throw new Error('Working directory must be under C:\\Projects, C:\\repos, or C:\\LocalAI');return v}
 function powerShellRisk(script){const s=String(script||'').toLowerCase();if(/format-volume|clear-disk|remove-item\s+[^\r\n]*-recurse|stop-computer|restart-computer|docker\s+(?:rm|system\s+prune)|remove-netfirewallrule/.test(s))return 'high';if(/set-content|add-content|copy-item|move-item|remove-item|new-item|docker\s+(?:restart|stop|start)|invoke-webrequest|invoke-restmethod/.test(s))return 'medium';return 'low'}
 async function apiPowerShellJobs(req,res){if(!requireFeature(res,17)||!requireLocalUi(req,res))return;const items=powerShellJobStore();json(res,200,{items:items.slice(0,100),bridgeConfigured:!!POWERSHELL_BRIDGE_TOKEN,localOnly:true})}
-async function apiPowerShellCreate(req,res){if(!requireFeature(res,17)||!requireLocalUi(req,res))return;try{const b=await readBody(req,512*1024);const script=String(b.script||'');if(!script.trim())return json(res,400,{error:'script is required'});if(script.length>150000)return json(res,413,{error:'script is too large'});const item={id:makeId('ps'),script,cwd:normalizeWindowsCwd(b.cwd),timeoutSec:Math.max(5,Math.min(600,Number(b.timeoutSec)||120)),risk:powerShellRisk(script),status:'pending_approval',createdAt:nowIso(),updatedAt:nowIso(),stdout:'',stderr:'',exitCode:null};const items=powerShellJobStore();items.unshift(item);savePowerShellJobs(items);recordActivity('powershell','PowerShell script prepared',`${item.risk} risk Ãƒâ€šÃ‚Â· ${item.cwd}`,{jobId:item.id});json(res,201,{item})}catch(e){storageError(res,e,400)}}
+async function apiPowerShellCreate(req,res){if(!requireFeature(res,17)||!requireLocalUi(req,res))return;try{const b=await readBody(req,512*1024);const script=String(b.script||'');if(!script.trim())return json(res,400,{error:'script is required'});if(script.length>150000)return json(res,413,{error:'script is too large'});const item={id:makeId('ps'),script,cwd:normalizeWindowsCwd(b.cwd),timeoutSec:Math.max(5,Math.min(600,Number(b.timeoutSec)||120)),risk:powerShellRisk(script),status:'pending_approval',createdAt:nowIso(),updatedAt:nowIso(),stdout:'',stderr:'',exitCode:null};const items=powerShellJobStore();items.unshift(item);savePowerShellJobs(items);recordActivity('powershell','PowerShell script prepared',`${item.risk} risk · ${item.cwd}`,{jobId:item.id});json(res,201,{item})}catch(e){storageError(res,e,400)}}
 async function apiPowerShellApprove(req,res){if(!requireFeature(res,17)||!requireLocalUi(req,res))return;try{const b=await readBody(req);const items=powerShellJobStore();const item=items.find(x=>x.id===b.id);if(!item)return json(res,404,{error:'PowerShell job not found'});if(item.status!=='pending_approval')return json(res,409,{error:`Job is not awaiting approval (${item.status})`});const decision=String(b.decision||'');if(!['approved','rejected'].includes(decision))return json(res,400,{error:'decision must be approved or rejected'});item.status=decision;item.updatedAt=nowIso();savePowerShellJobs(items);recordActivity('powershell',`PowerShell job ${decision}`,item.id,{jobId:item.id,risk:item.risk});json(res,200,{item})}catch(e){storageError(res,e,400)}}
 async function apiPowerShellRequestRun(req,res){if(!requireFeature(res,17)||!requireLocalUi(req,res))return;try{const b=await readBody(req);if(String(b.confirmation||'')!=='RUN')return json(res,409,{error:'Type RUN to queue an approved PowerShell job'});const items=powerShellJobStore();const item=items.find(x=>x.id===b.id);if(!item)return json(res,404,{error:'PowerShell job not found'});if(item.status!=='approved')return json(res,409,{error:`Job must be approved before queueing (${item.status})`});if(!POWERSHELL_BRIDGE_TOKEN)return json(res,503,{error:'PowerShell host bridge is not configured'});const signature=String(b.signature||'').toLowerCase();if(!/^[a-f0-9]{64}$/.test(signature))return json(res,400,{error:'An approval signature is required (enter the approval key from C:\\LocalAI\\powershell-bridge\\approval-key.txt)'});item.approvalSignature=signature;item.status='run_requested';item.runRequestedAt=nowIso();item.updatedAt=nowIso();savePowerShellJobs(items);recordActivity('powershell','PowerShell job queued',item.id,{jobId:item.id});json(res,200,{item})}catch(e){storageError(res,e,400)}}
 async function apiPowerShellCancel(req,res){if(!requireFeature(res,17)||!requireLocalUi(req,res))return;try{const b=await readBody(req);const items=powerShellJobStore();const item=items.find(x=>x.id===b.id);if(!item)return json(res,404,{error:'PowerShell job not found'});if(!['pending_approval','approved','run_requested'].includes(item.status))return json(res,409,{error:`Job cannot be cancelled from ${item.status}`});item.status='cancelled';item.updatedAt=nowIso();savePowerShellJobs(items);json(res,200,{item})}catch(e){storageError(res,e,400)}}
 async function apiPowerShellHostNext(req,res){if(!requireFeature(res,17))return;if(!hostBridgeAuthorized(req))return json(res,401,{error:'Unauthorized host bridge'});const items=powerShellJobStore();const item=[...items].reverse().find(x=>x.status==='run_requested');if(!item)return json(res,200,{item:null});item.status='running';item.hostStartedAt=nowIso();item.updatedAt=nowIso();savePowerShellJobs(items);json(res,200,{item:{id:item.id,script:item.script,cwd:item.cwd,timeoutSec:item.timeoutSec,risk:item.risk,signature:item.approvalSignature||''}})}
-async function apiPowerShellHostResult(req,res){if(!requireFeature(res,17))return;if(!hostBridgeAuthorized(req))return json(res,401,{error:'Unauthorized host bridge'});try{const b=await readBody(req,512*1024);const items=powerShellJobStore();const item=items.find(x=>x.id===b.id);if(!item)return json(res,404,{error:'PowerShell job not found'});if(item.status!=='running')return json(res,409,{error:`Job is not running (${item.status})`});item.exitCode=Number.isFinite(Number(b.exitCode))?Number(b.exitCode):-1;item.stdout=String(b.stdout||'').slice(-120000);item.stderr=String(b.stderr||'').slice(-120000);item.durationMs=Math.max(0,Number(b.durationMs)||0);item.status=item.exitCode===0?'completed':'failed';item.completedAt=nowIso();item.updatedAt=nowIso();savePowerShellJobs(items);recordActivity('powershell',item.status==='completed'?'PowerShell job completed':'PowerShell job failed',`${item.id} Ãƒâ€šÃ‚Â· exit ${item.exitCode}`,{jobId:item.id});json(res,200,{ok:true,item})}catch(e){storageError(res,e,400)}}
+async function apiPowerShellHostResult(req,res){if(!requireFeature(res,17))return;if(!hostBridgeAuthorized(req))return json(res,401,{error:'Unauthorized host bridge'});try{const b=await readBody(req,512*1024);const items=powerShellJobStore();const item=items.find(x=>x.id===b.id);if(!item)return json(res,404,{error:'PowerShell job not found'});if(item.status!=='running')return json(res,409,{error:`Job is not running (${item.status})`});item.exitCode=Number.isFinite(Number(b.exitCode))?Number(b.exitCode):-1;item.stdout=String(b.stdout||'').slice(-120000);item.stderr=String(b.stderr||'').slice(-120000);item.durationMs=Math.max(0,Number(b.durationMs)||0);item.status=item.exitCode===0?'completed':'failed';item.completedAt=nowIso();item.updatedAt=nowIso();savePowerShellJobs(items);recordActivity('powershell',item.status==='completed'?'PowerShell job completed':'PowerShell job failed',`${item.id} · exit ${item.exitCode}`,{jobId:item.id});json(res,200,{ok:true,item})}catch(e){storageError(res,e,400)}}
 // ===== END POWERSHELL WORKBENCH =============================================
 
 const server = http.createServer(async (req, res) => {
@@ -2425,15 +2467,20 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET') return serveStatic(req, res, p);
     json(res, 404, { error: 'Not found' });
   } catch (e) {
-    storageError(res,e,500);
+    // A streaming handler may already have sent headers; writing them again would throw out of this handler.
+    if (res.headersSent) { console.error(`${new Date().toISOString()} ${req.method} ${req.url} failed after response started:`, e); res.end(); }
+    else storageError(res,e,500);
   }
 });
+
+// Log instead of exiting when background work (schedulers, model calls) rejects unexpectedly.
+process.on('unhandledRejection', reason => console.error(`${new Date().toISOString()} Unhandled rejection:`, reason));
 
 migrateLegacyActivityToLibrary();
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`${new Date().toISOString()} Local AI Appliance v${APP_VERSION} listening on 0.0.0.0:${PORT}`);
-  recordActivity('system', 'Appliance started', 'Local AI Appliance v${APP_VERSION} is ready.');
+  recordActivity('system', 'Appliance started', `Local AI Appliance v${APP_VERSION} is ready.`);
 });
 
 

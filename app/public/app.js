@@ -684,7 +684,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 else AgentWorldGame.bootstrap();
 /* === Agent World Chromatic v6 END === */
 
-async function pollEngineeringIntent(runId,assistantIndex=null){
+async function pollEngineeringIntent(runId,msg=null){
+  if(msg&&!state.messages.includes(msg))return;
   try{
     const data=await evoApi('/api/engineering/runs');
     const run=(data.items||[]).find(x=>x.id===runId);
@@ -693,8 +694,8 @@ async function pollEngineeringIntent(runId,assistantIndex=null){
     if($('engineeringState'))$('engineeringState').textContent=run.status;
     if($('engineeringStatus'))$('engineeringStatus').textContent=engineeringRunText(run).split('\n').join(' ? ');
 
-    if(assistantIndex!==null&&state.messages[assistantIndex]){
-      const m=state.messages[assistantIndex];
+    if(msg&&state.messages.includes(msg)){
+      const m=msg;
       m.content=engineeringRunText(run);
       m.streaming=run.status==='running';
       m.action=null;
@@ -710,11 +711,11 @@ async function pollEngineeringIntent(runId,assistantIndex=null){
     try{await loadEngineeringRuns(run.id)}catch{}
 
     if(run.status==='running'){
-      setTimeout(()=>pollEngineeringIntent(runId,assistantIndex),2000);
+      setTimeout(()=>pollEngineeringIntent(runId,msg),2000);
       return;
     }
 
-    if(assistantIndex!==null)persistMessages();
+    if(msg){if(!state.messages.includes(msg))return;persistMessages();}
 
     try{
       await Promise.all([
@@ -752,7 +753,7 @@ async function pollEngineeringIntent(runId,assistantIndex=null){
     setPhase('done',labels[run.status]||'Engineering updated');
     toast(notices[run.status]||'Engineering status updated');
   }catch(e){
-    setTimeout(()=>pollEngineeringIntent(runId,assistantIndex),3000);
+    setTimeout(()=>pollEngineeringIntent(runId,msg),3000);
   }
 }
   // Map engineering run status to work zone
@@ -1017,13 +1018,13 @@ async function submitEngineeringIntent(request,{assistantIndex=null,navigate=fal
   if(navigate)showView('engineering');
   if($('engineeringRequest'))$('engineeringRequest').value=request;if($('engineeringTarget'))$('engineeringTarget').value='self';if($('engineeringRoot'))$('engineeringRoot').disabled=true;
   if($('engineeringState'))$('engineeringState').textContent='running';if($('engineeringStatus'))$('engineeringStatus').textContent='Intent routed to Engineering. Starting bounded plan → stage → validate → repair…';
-  setPhase('sending','Starting Engineering Agent…');if(assistantIndex!==null){state.messages[assistantIndex].content='Engineering request accepted. Starting the real Engineering Agent…';renderMessages()}
+  const msg=assistantIndex!==null?state.messages[assistantIndex]||null:null;setPhase('sending','Starting Engineering Agent…');if(msg){msg.content='Engineering request accepted. Starting the real Engineering Agent…';renderMessages()}
   const r=await fetch('/api/engineering/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request,target:'self',root:'app',maxAttempts:3})});const data=await r.json();if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);const run=data.run;
-  if(assistantIndex!==null&&state.messages[assistantIndex]){state.messages[assistantIndex].content=engineeringRunText(run);state.messages[assistantIndex].streaming=true;renderMessages()}
-  pollEngineeringIntent(run.id,assistantIndex);return run;
+  if(msg&&state.messages.includes(msg)){msg.content=engineeringRunText(run);msg.streaming=true;renderMessages()}
+  pollEngineeringIntent(run.id,msg);return run;
 }
 async function sendChat(){
-  if(['sending','streaming','searching'].includes(state.chatPhase)) return;
+  if(['routing','sending','streaming','searching'].includes(state.chatPhase)) return;
   const input=$('chatInput');
   const prompt=input.value.trim();
   if(!prompt) return;
@@ -1039,7 +1040,7 @@ async function sendChat(){
     state.messages.push(assistant);persistMessages();renderMessages();
     const idx=state.messages.length-1;
     try{await submitEngineeringIntent(request,{assistantIndex:idx,navigate:false});await Promise.all([loadActivity(),loadLibrary(),loadWorkspace()])}
-    catch(e){state.messages[idx].streaming=false;state.messages[idx].content=`Engineering action failed safely: ${e.message}`;persistMessages();renderMessages();setPhase('error','Engineering failed')}
+    catch(e){if(!state.messages.includes(assistant))return;assistant.streaming=false;assistant.content=`Engineering action failed safely: ${e.message}`;persistMessages();renderMessages();setPhase('error','Engineering failed')}
     return;
   }
 
@@ -1152,7 +1153,7 @@ async function runCommand(){
   else if(route.intent==='automate'){showView('automations');setPhase('done','Automation workspace');}
   else{openAsk(route.intent==='research');$('chatInput').value=text;setTimeout(sendChat,20);}
 }
-$('commandGo').addEventListener('click',runCommand);$('commandInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();runCommand();}});document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();showView('home');setTimeout(()=>$('commandInput').focus(),20);}});
+$('commandGo').addEventListener('click',runCommand);$('commandInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();runCommand();}});document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'&&!$('cmdk')){e.preventDefault();showView('home');setTimeout(()=>$('commandInput').focus(),20);}});
 
 function familyLabel(v){return ({sd15:'SD 1.5',sdxl:'SDXL',flux:'FLUX',unknown:'Unknown'})[v]||v;}
 function familySizes(f){return f==='sdxl'||f==='flux'?['1024x1024','1024x768','768x1024','512x512']:['512x512','768x512','512x768','1024x1024'];}
@@ -1377,8 +1378,8 @@ async function cancelPowerShellJob(id){try{await powerShellPost('/api/powershell
 
 function commandPalette(){
   const el=$('cmdk');if(!el)return;
-  const actions=[['Home','home'],['Ask','ask'],['Create','create'],['Projects','projects'],['Library','library'],['Knowledge','knowledge'],['Memory','memory'],['Agents','agents'],['Automations','automations'],['Studio','automationStudio'],['Actions','actions'],['Workbench','workbench'],['Repo tools','repoTools'],['Engineer','engineering'],['PowerShell','powershell'],['Changes','changes'],['Approvals','approvals'],['Quality','quality'],['Issues','issues'],['Status','status'],['Operations','operations'],['Activity','activity'],['Inbox','inbox']].filter(([,id])=>$(id));
-  const render=()=>{const q=$('cmdkInput').value.toLowerCase();$('cmdkList').innerHTML=actions.filter(x=>x[0].toLowerCase().includes(q)).map(([label,id])=>`<button class="cmdk-item" data-cmd-view="${id}">${label}</button>`).join('');qsa('[data-cmd-view]').forEach(b=>b.onclick=()=>{el.classList.remove('show');showView(b.dataset.cmdView)})};
+  const actions=[['Home','home'],['Ask','ask'],['Create','create'],['Projects','projects'],['Library','library'],['Knowledge','knowledge'],['Memory','memory'],['Agents','agents'],['Automations','automations'],['Studio','automationStudio'],['Actions','actions'],['Workbench','workbench'],['Repo tools','repoTools'],['Engineer','engineering'],['PowerShell','powershell'],['Changes','changes'],['Approvals','approvals'],['Quality','quality'],['Issues','issues'],['Status','status'],['Models','models'],['Operations','operations'],['Runs','runs'],['Activity','activity'],['Inbox','inbox']];
+  const render=()=>{const q=$('cmdkInput').value.toLowerCase();$('cmdkList').innerHTML=actions.filter(([label,id])=>$(id)&&label.toLowerCase().includes(q)).map(([label,id])=>`<button class="cmdk-item" data-cmd-view="${id}">${label}</button>`).join('');qsa('[data-cmd-view]').forEach(b=>b.onclick=()=>{el.classList.remove('show');showView(b.dataset.cmdView)})};
   document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();el.classList.add('show');$('cmdkInput').value='';render();$('cmdkInput').focus()}if(e.key==='Escape')el.classList.remove('show')});$('cmdkInput').addEventListener('input',render);el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('show')});render();
 }
 async function bindEvo(){

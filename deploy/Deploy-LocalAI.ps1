@@ -35,7 +35,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Failed to extract candidate archive' }
     } finally { Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue }
 
-    & (Join-Path $candidate 'deploy/Test-LocalAI-Candidate.ps1') -CandidateRoot $candidate
+    & (Join-Path $candidate 'deploy/Test-LocalAI-Candidate.ps1') -CandidateRoot $candidate -Container $Container
     # Run the candidate's worker contracts rather than assuming repo and target match.
     . (Join-Path $candidate 'deploy/Storage-LocalAI.ps1')
     . (Join-Path $candidate 'deploy/Deployment-LocalAI.ps1')
