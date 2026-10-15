@@ -42,6 +42,7 @@ const { runCard } = require('./run-cards');
 const { loadOllamaModelRuntime } = require('./model-runtime');
 const { createModelPulls } = require('./model-pulls');
 const imageEngines = require('./image-engines');
+const plainText = require('./plain-text');
 // Last measured seconds per engine on this machine, shown as an estimate in the Images page.
 const IMAGE_ESTIMATES = {};
 const IMAGE_PROMPT_MODEL = process.env.IMAGE_PROMPT_MODEL || process.env.GRIDCRAFT_MODEL || 'qwen3:4b-instruct';
@@ -1676,13 +1677,8 @@ async function runEngineeringPlannerModel(prompt, system, timeoutMs=ENGINEERING_
       const elapsedMs=Date.now()-started;
       const code=e?.cause?.code||e?.code||'';
       const aborted=watchdogAborted||e?.name==='AbortError';
-      finish(
-        reject,
-        new Error(
-          `Engineering planner transport: ${e?.name||'Error'}: ${e?.message||e}` +
-          `${code?`; code=${code}`:''}; elapsedMs=${elapsedMs}; watchdogAborted=${aborted}`
-        )
-      );
+      console.warn(`Engineering planner transport: ${e?.name||'Error'}: ${e?.message||e}${code?`; code=${code}`:''}; elapsedMs=${elapsedMs}; watchdogAborted=${aborted}`);
+      finish(reject,new Error(plainText.plannerError({aborted,timeoutMs,code,message:e?.message||e})));
     };
     try{
       req=transport.request({
@@ -2377,7 +2373,7 @@ async function stageChangeByIdUnlocked(changeId){
     for(const f of c.files||[]){const src=ensureInside(sourceRoot,f.path),dst=ensureInside(stageRoot,f.path);let before='';if(fs.existsSync(src)){before=fs.readFileSync(src,'utf8');if(c.target!=='self'){fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(src,dst)}}else if(!f.operations.some(x=>x.type==='create'))throw new Error(`${f.path}: source file does not exist`);const after=applyOpsToText(before,f.operations,f.path);fs.mkdirSync(path.dirname(dst),{recursive:true});fs.writeFileSync(dst,after,'utf8');diffs.push({path:f.path,diff:simpleDiff(before,after),changed:before!==after})}
   }catch(e){c.status='patch_failed';c.updatedAt=nowIso();c.patchError=String(e.message||e);c.validation={passed:false,checks:[{name:'patch application',result:'FAIL',detail:c.patchError}]};saveChanges(items);throw e}
   c.diffs=diffs;c.stageRoot=stageRoot;c.validation=await validateStagedChange(c,stageRoot);c.updatedAt=nowIso();
-  storage.transaction(()=>{if(c.validation.passed){c.status='awaiting_approval';const approvals=approvalStore();const approval={id:makeId('approval'),title:`Apply change ${c.id}`,detail:`${c.summary}\n\n${c.files.length} file(s) staged and validated.`,risk:c.target==='self'?'high':'medium',status:'pending',createdAt:nowIso(),updatedAt:nowIso(),meta:{changeId:c.id,target:c.target,type:'change'}};approvals.unshift(approval);saveStore(APPROVALS_STORE,approvals,500);c.approvalId=approval.id;addNotification('approval',approval.title,approval.detail,{approvalId:approval.id,changeId:c.id})}else c.status='validation_failed';saveChanges(items);recordActivity('change',c.validation.passed?'Change staged':'Change validation failed',c.summary,{changeId:c.id});});return c;
+  storage.transaction(()=>{if(c.validation.passed){c.status='awaiting_approval';const approvals=approvalStore();const approval={id:makeId('approval'),title:plainText.approvalTitle(c),detail:`${c.summary}\n\n${c.files.length} file(s) staged and validated.`,risk:c.target==='self'?'high':'medium',status:'pending',createdAt:nowIso(),updatedAt:nowIso(),meta:{changeId:c.id,target:c.target,type:'change'}};approvals.unshift(approval);saveStore(APPROVALS_STORE,approvals,500);c.approvalId=approval.id;addNotification('approval',approval.title,approval.detail,{approvalId:approval.id,changeId:c.id})}else c.status='validation_failed';saveChanges(items);recordActivity('change',c.validation.passed?'Change staged':'Change validation failed',c.summary,{changeId:c.id});});return c;
 }
 async function apiChanges(req,res,urlObj){
   if(!requireFeature(res,13))return; const id=urlObj.searchParams.get('id'); const items=changeStore();
@@ -2415,7 +2411,7 @@ async function apiChangeApprove(req,res){
 async function apiChangeRequestApply(req,res){
   if(!requireFeature(res,13))return;
   try{const b=await readBody(req);const items=changeStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Change not found'});const c=items[i];if(c.status!=='approved')return json(res,409,{error:`Change must be approved before apply (${c.status})`});if(c.target==='workspace'){const sourceRoot=safeWorkspacePath(c.root||'');const stageRoot=c.stageRoot;if(!stageRoot||!fs.existsSync(stageRoot))return json(res,409,{error:'Staged change is unavailable; stage it again'});const backups=[];for(const f of c.files){const src=ensureInside(stageRoot,f.path),dst=ensureInside(sourceRoot,f.path);fs.mkdirSync(path.dirname(dst),{recursive:true});if(fs.existsSync(dst)){const backup=`${dst}.localai-${Date.now()}.bak`;fs.copyFileSync(dst,backup);backups.push(workspaceRel(backup))}fs.copyFileSync(src,dst)}c.status='applied';c.appliedAt=nowIso();c.backups=backups;recordActivity('change','Workspace change applied',c.summary,{changeId:c.id,files:c.files.length});}
-    else{c.status='apply_requested';c.applyRequestedAt=nowIso();addNotification('change','Self-update queued',`${c.summary}. The host updater will apply the validated change.`,{changeId:c.id})}c.updatedAt=nowIso();saveChanges(items);json(res,200,{item:publicChange(c),hostUpdaterRequired:c.target==='self'})}catch(e){storageError(res,e,400)}
+    else if(c.shipVia!=='pr'){markChangeForPr(c);}c.updatedAt=nowIso();saveChanges(items);const shipped=c.target==='self'?shipChangeAsPr(c):null;json(res,200,{item:publicChange(c),shipVia:c.target==='self'?'pr':'workspace',improveItemId:shipped?.id||null})}catch(e){storageError(res,e,400)}
 }
 async function apiChangeDeployResult(req,res){
   if(!requireFeature(res,13))return;
@@ -2700,8 +2696,32 @@ function runImproveReconcile({startup=false}={}){
 const IMPROVE_ACTIONS=['start','handToClaude','moveToTop','defer','reject','retry','backToBacklog','discard'];
 function improveRead(id){return storage.readSetting(CLAUDE_FINDING_PREFIX+claudeSlug(id,''),null)}
 function improveWrite(f){f.updatedAt=nowIso();storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);return f}
+// A validated change to Local AI itself ships the way every change does: a pull request, CI, the owner's merge and
+// Safe Deploy. There is no host updater. Approving it hands its Improve item to Claude (In progress, boosted in
+// /api/claude/priorities) with what to do; the session reports the deploy through /api/changes/deploy-result,
+// which marks the change applied and Improve moves the item to Shipped.
+function markChangeForPr(c){c.shipVia='pr';c.handedAt=nowIso();addNotification('change','Handed to Claude to ship',`${c.summary||'Change'}. A Claude session opens a pull request with the staged change; it deploys when you merge it.`,{changeId:c.id})}
+function shipChangeAsPr(c){
+  const at=nowIso();
+  const existing=claudeFindings().find(f=>f.changeId===c.id);
+  const line=String(c.request||'').split('\n').map(l=>l.trim()).find(Boolean);
+  const item=existing||{id:`idea-change-${c.id}`,sessionId:'improve',source:'idea',changeId:c.id,category:'idea',severity:'medium',status:'approved',
+    title:String(c.summary&&!['Proposed change','Change request'].includes(c.summary)?c.summary:(line||'Change request')).slice(0,120),summary:String(c.request||c.summary||'').slice(0,2000),
+    votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',pr:'',createdAt:at};
+  const fix=`Ship staged change ${c.id} as a pull request: GET /api/changes lists it with its files and diffs. After the merge deploys, POST /api/changes/deploy-result {"id":"${c.id}","status":"applied"}.`;
+  return improveWrite({...item,...(item.handedToClaude?{}:improve.handToClaude(item,at)),fix});
+}
+// Before this, approved self changes waited at apply_requested for an updater that was never built. Hand those over once.
+function shipQueuedSelfChanges(){
+  const items=changeStore();let moved=0;
+  for(const c of items)if(c.target==='self'&&c.status==='apply_requested'){c.status='approved';markChangeForPr(c);c.updatedAt=nowIso();moved++}
+  if(!moved)return 0;
+  saveChanges(items);
+  for(const c of items)if(c.shipVia==='pr'&&c.status==='approved')shipChangeAsPr(c);
+  return moved;
+}
 function improveChangeRequest(f){return [f.title,f.summary,f.fix].filter(Boolean).join('\n\n')}
-// Changes past approval are with the host updater; Improve must not retire them.
+// Changes past approval are being shipped (a pull request for self changes); Improve must not retire them.
 const IMPROVE_LOCKED_CHANGE=['approved','apply_requested'];
 // Retires a change Improve no longer wants (rejected), and its pending approval with it.
 function improveRetireChange(changeId){
@@ -2738,7 +2758,7 @@ async function apiImproveItem(req,res){
     if(b.action==='retry'&&!(live&&['patch_failed','validation_failed'].includes(change.status)))return json(res,409,{error:'Retry needs a change that failed.'});
     if(['defer','reject','backToBacklog'].includes(b.action)&&stage==='shipped')return refuse();
     if(['defer','reject'].includes(b.action)&&change&&live){
-      if(IMPROVE_LOCKED_CHANGE.includes(change.status))return json(res,409,{error:'This change is already approved and with the host updater.'});
+      if(IMPROVE_LOCKED_CHANGE.includes(change.status))return json(res,409,{error:'This change is already approved and being shipped as a pull request.'});
       improveRetireChange(change.id);
     }
     switch(b.action){
@@ -2752,7 +2772,7 @@ async function apiImproveItem(req,res){
       case 'moveToTop':{const open=claudeFindings().filter(x=>!['fixed','rejected','deferred'].includes(x.status));return json(res,200,{item:improveWrite({...f,priorityBoost:improve.moveToTopBoost(f,open,claudeScore)})})}
       case 'defer':case 'reject':return json(res,200,{item:improveWrite({...f,status:b.action==='defer'?'deferred':'rejected',decidedAt:at})});
       case 'backToBacklog':case 'discard':{
-        if(change&&IMPROVE_LOCKED_CHANGE.includes(change.status))return json(res,409,{error:'This change is already approved and with the host updater.'});
+        if(change&&IMPROVE_LOCKED_CHANGE.includes(change.status))return json(res,409,{error:'This change is already approved and being shipped as a pull request.'});
         if(change&&live)improveRetireChange(change.id);
         if(b.action==='backToBacklog')return json(res,200,{item:improveWrite({...improveRead(f.id),status:'approved',changeId:null})});
         const aside=b.then==='aside';return json(res,200,{item:improveWrite({...improveRead(f.id),status:aside?'deferred':'approved',changeId:aside?f.changeId:null})});
@@ -2842,8 +2862,10 @@ async function apiClaudeVote(req,res){
 }
 async function apiClaudeDecision(req,res){
   try{const b=await readBody(req);if(!Object.hasOwn(CLAUDE_STATUS,b.status))return json(res,400,{error:`status must be one of ${Object.keys(CLAUDE_STATUS).join(', ')}`});
-    claudeUpdateFinding(res,b.id,f=>{f.status=b.status;f.decidedAt=nowIso();if(b.note!==undefined)f.decisionNote=claudeText(b.note,1000)});
-    recordActivity('claude',`Finding ${CLAUDE_STATUS[b.status].label.toLowerCase()}`,String(b.id||''),{findingId:b.id})}catch(e){storageError(res,e,400)}
+    let found=null;
+    claudeUpdateFinding(res,b.id,f=>{found=f;f.status=b.status;f.decidedAt=nowIso();if(b.note!==undefined)f.decisionNote=claudeText(b.note,1000)});
+    // The audit log names the finding; a decision on one that doesn't exist (404 above) isn't logged.
+    if(found)recordActivity('claude',`Finding ${CLAUDE_STATUS[b.status].label.toLowerCase()}`,String(found.title||b.id||''),{findingId:b.id})}catch(e){storageError(res,e,400)}
 }
 // What Claude should work on next: open findings in rank order with the operator's decisions.
 async function apiClaudePriorities(req,res,urlObj){
@@ -3085,6 +3107,7 @@ async function apiReleases(req, res) {
 
 migrateLegacyActivityToLibrary();
 recordReleaseHistory();
+shipQueuedSelfChanges();
 runImproveReconcile({ startup: true });
 // Health is checked on its own every minute, so an outage reaches the phone (Down/Recovered) even with no page open.
 const HEALTH_TICK_MS = Math.max(200, Number(process.env.HEALTH_TICK_MS) || 60000);

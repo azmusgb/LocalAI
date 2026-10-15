@@ -69,6 +69,9 @@ test('Claude board ingests progress and findings, ranks them, and records votes 
   await post('/api/claude/findings/decision', { id: 'perf-1', status: 'approved', note: 'do next' }, 200);
   await post('/api/claude/findings/decision', { id: 'perf-1', status: 'done' }, 400);
   await post('/api/claude/findings/decision', { id: 'missing', status: 'fixed' }, 404);
+  const activity = (await (await fetch(`${base}/api/activity`)).json()).items.filter(x => x.type === 'claude');
+  assert.deepEqual(activity.map(x => x.detail).slice(0, 2).sort(), ['Full rewrites', 'LAN to host execution'], 'the audit log names the finding, not its id');
+  assert.ok(!activity.some(x => x.detail === 'missing'), 'a decision on a missing finding is not logged');
   b = await board();
   assert.equal(b.findings.at(-1).id, 'sec-1', 'fixed findings sink');
   assert.equal(b.summary.byStatus.fixed, 1);
