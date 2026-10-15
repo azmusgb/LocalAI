@@ -1039,7 +1039,9 @@ h2{font-weight:650;letter-spacing:-.01em}
 .btn.primary{background:var(--ds-accent);border-color:transparent;color:var(--ds-accent-ink)}
 .btn.primary:hover{background:#7cc6ff}
 .btn:disabled,.btn[aria-disabled="true"]{opacity:.5;cursor:not-allowed}
-@media(max-width:760px),(pointer:coarse){.btn{min-height:44px}}
+@media(max-width:760px),(pointer:coarse){.btn{min-height:44px}
+  /* Sub-pixel layout can round an exact 44px box just under the guideline; give integration actions margin. */
+  .ux-int-action{min-height:46px}}
 
 /* The primary action: blue everywhere (the nav architecture and the home command bar had their own white variants) */
 body.ux-v3 .btn.primary,.go{background:var(--ds-accent);border-color:transparent;color:var(--ds-accent-ink)}
