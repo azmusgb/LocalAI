@@ -10,7 +10,7 @@
       summary: 'Primary workflow automation engine. Keep orchestration here instead of adding Bardeen, Coze, or another parallel automation runtime.',
       guidance: "After adding credentials, community nodes, or public webhooks, run n8n's official security audit and review any risky-node findings.",
       actions: [
-        { type: 'view', view: 'automations', label: 'Open automations' },
+        { type: 'view', view: 'automations', label: 'Open n8n workflows' },
         { type: 'url', url: 'https://docs.n8n.io/hosting/securing/security-audit/', label: 'Security audit docs' }
       ]
     },
@@ -19,7 +19,7 @@
       summary: 'Primary local generative-media backend. Image, video, and avatar workflows should extend this service rather than create another media stack.',
       guidance: 'For automated workflows, prefer custom nodes that work in ComfyUI API mode. Nodes that require direct client/server communication may not be callable from Local AI.',
       actions: [
-        { type: 'view', view: 'create', label: 'Open Create' },
+        { type: 'view', view: 'create', label: 'Open Images' },
         { type: 'url', url: 'https://docs.comfy.org/custom-nodes/overview', label: 'Custom-node guidance' }
       ]
     },
@@ -27,13 +27,13 @@
       id: 'svd', name: 'Stable Video Diffusion', tier: 'extend', decision: 'Verify before enabling',
       summary: 'Treat SVD as a ComfyUI model/workflow capability, not a standalone integration. Do not present it as installed until the runtime exposes the required model and nodes.',
       guidance: 'Capability state is intentionally “not verified” until backend discovery is added.',
-      actions: [{ type: 'view', view: 'create', label: 'Inspect Create' }]
+      actions: [{ type: 'view', view: 'create', label: 'Open Images' }]
     },
     {
       id: 'sadtalker', name: 'SadTalker', tier: 'extend', decision: 'Defer / verify first',
       summary: 'Keep talking-head generation modular and behind ComfyUI. Add it only when avatar output is a real workflow requirement and the node path is API-compatible.',
       guidance: 'Avoid installing custom nodes solely because they appear in a tool list; verify maintenance, runtime fit, and API behavior first.',
-      actions: [{ type: 'view', view: 'create', label: 'Inspect Create' }]
+      actions: [{ type: 'view', view: 'create', label: 'Open Images' }]
     },
     {
       id: 'penpot', name: 'Penpot', tier: 'bridge', decision: 'Self-host + MCP',

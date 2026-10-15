@@ -183,7 +183,7 @@ async function pollEngineeringIntent(runId,msg=null){
       if(run.status==='awaiting_approval')
         m.action={view:'changes',changeId:run.finalChangeId,label:'Review validated change'};
       else if(run.status==='needs_attention')
-        m.action={view:'engineering',runId:run.id,label:'Open Engineer'};
+        m.action={view:'engineering',runId:run.id,label:'Open Engineering agent'};
 
       renderMessages();
     }
@@ -462,8 +462,7 @@ const api=async(url,opt={})=>{const r=await fetch(url,opt);let j={};try{j=await 
 const post=(url,body)=>api(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
 function featureLevel(){return Number(String(releaseState.config?.version||'1.2').split('.')[1]||2)}
 function fillProjectSelects(){for(const id of ['knowledgeProject','agentProject']){const el=$(id);if(!el)continue;const old=el.value;el.innerHTML='<option value="">No project</option>'+releaseState.projects.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');if([...el.options].some(o=>o.value===old))el.value=old}}
-async function loadReleaseConfig(){try{releaseState.config=await api('/api/config');const brand=document.querySelector('.brand-sub');if(brand)brand.textContent=`Private Intelligence Hub · v${releaseState.config.version}`;document.querySelectorAll('[class*="feature-v"]').forEach(el=>{const m=[...el.classList].map(x=>/^feature-v1(\d+)$/.exec(x)).find(Boolean);if(m&&featureLevel()<Number(m[1]))el.classList.add('feature-hidden')});document.querySelectorAll('[data-min-version]').forEach(el=>{if(featureLevel()<Number(el.dataset.minVersion))el.classList.add('feature-hidden')})}catch(e){console.warn(e)}}
-function addReleaseNav(){const nav=document.querySelector('nav');if(!nav)return;const items=[['projects','▣','Projects',3],['knowledge','◫','Knowledge',3],['agents','◎','Agents',4],['automationStudio','⌘','Studio',4],['workbench','</>','Workbench',5],['actions','↗','Actions',6]];for(const [view,icon,label,min] of items){if(document.querySelector(`[data-view="${view}"]`))continue;const b=document.createElement('button');b.className='navbtn';b.dataset.view=view;b.dataset.minVersion=min;b.innerHTML=`<span class="navicon">${icon}</span>${label}`;b.addEventListener('click',()=>showView(view));nav.appendChild(b)}}
+async function loadReleaseConfig(){try{releaseState.config=await api('/api/config');const brand=document.querySelector('.brand-sub');if(brand)brand.textContent=`Private AI on your machine · v${releaseState.config.version}`;document.querySelectorAll('[class*="feature-v"]').forEach(el=>{const m=[...el.classList].map(x=>/^feature-v1(\d+)$/.exec(x)).find(Boolean);if(m&&featureLevel()<Number(m[1]))el.classList.add('feature-hidden')});document.querySelectorAll('[data-min-version]').forEach(el=>{if(featureLevel()<Number(el.dataset.minVersion))el.classList.add('feature-hidden')})}catch(e){console.warn(e)}}
 async function loadProjects(){if(featureLevel()<3)return;const j=await api('/api/projects');releaseState.projects=j.items||[];fillProjectSelects();const list=$('projectList');if(list)list.innerHTML=releaseState.projects.length?releaseState.projects.map(p=>`<button class="item-card" data-project="${esc(p.id)}"><strong>${esc(p.name)}</strong><small>${p.counts.conversations} conversations · ${p.counts.knowledge} sources · ${p.counts.artifacts} artifacts</small></button>`).join(''):'<div class="empty">Create your first project.</div>';const m=$('projectMetrics');if(m){const totals=releaseState.projects.reduce((a,p)=>{a.c+=p.counts.conversations;a.k+=p.counts.knowledge;a.a+=p.counts.artifacts;return a},{c:0,k:0,a:0});m.innerHTML=`<div class="metric"><b>${releaseState.projects.length}</b><span>Projects</span></div><div class="metric"><b>${totals.c}</b><span>Conversations</span></div><div class="metric"><b>${totals.k}</b><span>Knowledge sources</span></div><div class="metric"><b>${totals.a}</b><span>Artifacts</span></div>`}qsa('[data-project]').forEach(b=>b.onclick=()=>showProject(b.dataset.project))}
 async function showProject(id){releaseState.selectedProject=id;const p=releaseState.projects.find(x=>x.id===id);if(!p)return;const [c,k]=await Promise.all([api('/api/conversations?projectId='+encodeURIComponent(id)),api('/api/knowledge?projectId='+encodeURIComponent(id))]);$('projectDetail').innerHTML=`<div class="section-head"><div><h2>${esc(p.name)}</h2><p>${esc(p.description||'Project workspace')}</p></div><span class="badge">${p.pinned?'Pinned':'Workspace'}</span></div><div class="two"><div><h3>Conversations</h3><div class="stack" style="margin-top:8px">${(c.items||[]).slice(0,8).map(x=>`<div class="item-card"><strong>${esc(x.title)}</strong><small>${ago(x.updatedAt)}</small></div>`).join('')||'<div class="empty">No conversations.</div>'}</div></div><div><h3>Knowledge</h3><div class="stack" style="margin-top:8px">${(k.items||[]).slice(0,8).map(x=>`<div class="item-card"><strong>${esc(x.name)}</strong><small>${Math.round((x.size||0)/1024)} KB</small></div>`).join('')||'<div class="empty">No sources.</div>'}</div></div></div>`}
 async function newProject(){const name=prompt('Project name');if(!name)return;await post('/api/projects/create',{name});await loadProjects();toast('Project created')}
@@ -487,38 +486,13 @@ async function runComputerBatch(){let ops;try{ops=JSON.parse($('computerBatch').
 function bindReleaseEvents(){
   $('newProjectBtn')?.addEventListener('click',newProject);$('knowledgeImportBtn')?.addEventListener('click',()=>importKnowledge($('knowledgeName').value,$('knowledgeContent').value));$('knowledgeFileBtn')?.addEventListener('click',()=>$('knowledgeFileInput').click());$('knowledgeFileInput')?.addEventListener('change',async e=>{for(const f of [...e.target.files]){if(f.size>5*1024*1024){toast(`${f.name} is too large`);continue}await importKnowledge(f.name,await f.text(),f.type||'text/plain')}e.target.value=''});$('knowledgeSearchBtn')?.addEventListener('click',searchKnowledge);$('agentRunBtn')?.addEventListener('click',runAgent);$('autoCreateBtn')?.addEventListener('click',createAutomation);$('workbenchLoadBtn')?.addEventListener('click',loadWorkbench);$('workbenchDiffBtn')?.addEventListener('click',previewWorkbenchDiff);$('workbenchSaveBtn')?.addEventListener('click',saveWorkbench);$('workbenchSearchBtn')?.addEventListener('click',searchWorkbench);$('browserFetchBtn')?.addEventListener('click',browserFetch);$('httpCheckBtn')?.addEventListener('click',httpCheck);$('computerRunBtn')?.addEventListener('click',runComputerBatch);
 }
-async function initReleaseFeatures(){addReleaseNav();await loadReleaseConfig();bindReleaseEvents();if(featureLevel()>=3)await Promise.all([loadProjects(),loadKnowledge()]);if(featureLevel()>=4)await Promise.all([loadAgents(),loadAutomations()]);if(featureLevel()>=5)await loadWorkbench()}
+async function initReleaseFeatures(){await loadReleaseConfig();bindReleaseEvents();if(featureLevel()>=3)await Promise.all([loadProjects(),loadKnowledge()]);if(featureLevel()>=4)await Promise.all([loadAgents(),loadAutomations()]);if(featureLevel()>=5)await loadWorkbench()}
 window.addEventListener('DOMContentLoaded',()=>initReleaseFeatures().catch(e=>console.warn('release features',e)));
 // ===== end cumulative release client ========================================
 
 
 // ===== product evolution client (v1.7+) =====================================
 const evo={notifications:[],memory:[],approvals:[],monitors:[],changes:[],selectedChange:'',quality:null,issues:[],engineeringRuns:[],selectedEngineeringRun:'',powerShellJobs:[],selectedPowerShellJob:''};
-function groupNavigation(){
-  const nav=document.querySelector('nav');if(!nav||nav.dataset.grouped==='1')return;
-  const buttons=[...nav.querySelectorAll('.navbtn')];const byView=new Map(buttons.map(b=>[b.dataset.view,b]));
-  const groups=[
-    ['HOME',['home']],
-    ['ASSISTANT',['ask','create']],
-    ['WORKSPACE',['projects','library','knowledge','memory']],
-    ['AUTOMATION',['agents','automations','automationStudio','actions']],
-    ['ENGINEERING',['workbench','repoTools','engineering','powershell']],
-    ['OPERATIONS',['changes','approvals','quality','issues','status','operations','inbox']],
-    ['HISTORY',['activity']]
-  ];
-  nav.replaceChildren();
-  for(const [label,views] of groups){const present=views.map(v=>byView.get(v)).filter(Boolean);if(!present.length)continue;const section=document.createElement('div');section.className='nav-group';const title=document.createElement('div');title.className='nav-group-title';title.textContent=label;section.appendChild(title);present.forEach(b=>section.appendChild(b));nav.appendChild(section)}
-  const known=new Set(groups.flatMap(x=>x[1]));const extra=buttons.filter(b=>!known.has(b.dataset.view));if(extra.length){const section=document.createElement('div');section.className='nav-group';section.innerHTML='<div class="nav-group-title">MORE</div>';extra.forEach(b=>section.appendChild(b));nav.appendChild(section)}
-  nav.dataset.grouped='1';
-}
-
-function evoNav(){
-  const nav=document.querySelector('nav'); if(!nav)return;
-  const items=[
-    [7,'inbox','Inbox','!'],[8,'memory','Memory','M'],[9,'approvals','Approvals','✓'],[10,'repoTools','Repo tools','⌘'],[11,'operations','Operations','◉'],[13,'changes','Changes','Δ'],[14,'quality','Quality','Q'],[15,'issues','Issues','!'],[16,'engineering','Engineer','E'],[17,'powershell','PowerShell','PS']
-  ];
-  for(const [lvl,id,label,icon] of items){if(featureLevel()<lvl||document.querySelector(`[data-view="${id}"]`))continue;const b=document.createElement('button');b.className='navbtn';b.dataset.view=id;b.innerHTML=`<span class="navicon">${icon}</span>${label}`;b.onclick=()=>showView(id);nav.appendChild(b)}
-}
 async function evoApi(url,opts){const r=await fetch(url,opts);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);return j}
 async function evoPost(url,body){return evoApi(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
 async function loadInbox(){if(featureLevel()<7)return;const j=await evoApi('/api/notifications');evo.notifications=j.items||[];$('inboxUnread').textContent=`${j.unread||0} unread`;$('inboxList').innerHTML=evo.notifications.length?evo.notifications.map(n=>`<div class="item-card"><div class="statusline"><strong style="flex:1">${esc(n.title)}</strong><span class="statuschip">${n.resolved?'resolved':n.read?'read':'new'}</span></div><small>${esc(n.kind)} · ${ago(n.createdAt)}</small><div class="muted" style="margin-top:6px">${esc(n.detail||'')}</div><div class="actions" style="margin-top:8px">${!n.read?`<button class="btn" data-note-read="${esc(n.id)}">Mark read</button>`:''}${!n.resolved?`<button class="btn" data-note-resolve="${esc(n.id)}">Resolve</button>`:''}</div></div>`).join(''):'<div class="empty">Inbox is clear.</div>';qsa('[data-note-read]').forEach(b=>b.onclick=async()=>{await evoPost('/api/notifications/update',{id:b.dataset.noteRead,read:true});loadInbox()});qsa('[data-note-resolve]').forEach(b=>b.onclick=async()=>{await evoPost('/api/notifications/update',{id:b.dataset.noteResolve,resolved:true,read:true});loadInbox()})}
@@ -602,13 +576,14 @@ async function cancelPowerShellJob(id){try{await powerShellPost('/api/powershell
 
 function commandPalette(){
   const el=$('cmdk');if(!el)return;
-  const actions=[['Home','home'],['Ask','ask'],['Create','create'],['Projects','projects'],['Library','library'],['Knowledge','knowledge'],['Memory','memory'],['Agents','agents'],['Claude','claude'],['Automations','automations'],['Studio','automationStudio'],['Actions','actions'],['Workbench','workbench'],['Repo tools','repoTools'],['Engineer','engineering'],['PowerShell','powershell'],['Changes','changes'],['Approvals','approvals'],['Quality','quality'],['Issues','issues'],['Status','status'],['Models','models'],['Operations','operations'],['Runs','runs'],['Activity','activity'],['Inbox','inbox']];
-  const render=()=>{const q=$('cmdkInput').value.toLowerCase();$('cmdkList').innerHTML=actions.filter(([label,id])=>$(id)&&label.toLowerCase().includes(q)).map(([label,id])=>`<button class="cmdk-item" data-cmd-view="${id}">${label}</button>`).join('');qsa('[data-cmd-view]').forEach(b=>b.onclick=()=>{el.classList.remove('show');showView(b.dataset.cmdView)})};
+  // Labels and old names (aka) come from view-registry.js so renamed pages stay findable.
+  const actions=window.LocalAIViews.VIEWS.map(v=>[v.label,v.id,[v.label,...(v.aka||[])].join(' ').toLowerCase()]);
+  const render=()=>{const q=$('cmdkInput').value.toLowerCase();$('cmdkList').innerHTML=actions.filter(([label,id,terms])=>$(id)&&terms.includes(q)).map(([label,id])=>`<button class="cmdk-item" data-cmd-view="${id}">${label}</button>`).join('');qsa('[data-cmd-view]').forEach(b=>b.onclick=()=>{el.classList.remove('show');showView(b.dataset.cmdView)})};
   document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();el.classList.add('show');$('cmdkInput').value='';render();$('cmdkInput').focus()}if(e.key==='Escape')el.classList.remove('show')});$('cmdkInput').addEventListener('input',render);el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('show')});render();
 }
 async function bindEvo(){
   if(!releaseState.config) await loadReleaseConfig();
-  evoNav();groupNavigation();commandPalette();
+  commandPalette();
   $('memoryAddBtn')?.addEventListener('click',addMemory);$('memoryProject')?.addEventListener('change',loadMemory);
   $('repoInspectBtn')?.addEventListener('click',inspectRepo);$('commandRunBtn')?.addEventListener('click',runWorkbenchCommand);
   $('monitorCreateBtn')?.addEventListener('click',createMonitor);$('briefBtn')?.addEventListener('click',generateBrief);

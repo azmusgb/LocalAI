@@ -57,3 +57,5 @@ body.ux-v3 #agents .agent-live-grid{grid-template-columns:minmax(0,1fr) 320px}
 }
 @media(max-width:480px){body.ux-v3 .summary-grid,body.ux-v3 .quick-grid,body.ux-v3 .library-grid,body.ux-v3 .capability-strip{grid-template-columns:1fr}.ux-mobile-sheet{max-height:68vh}.ux-int-metrics{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){body.ux-v3 .view{animation:none}.ux-mobile-sheet{transition:none}}
+/* Breadcrumb: drop the view when it repeats the domain (Local AI / Home). */
+.ux-context-same .ux-context-domain+.ux-context-sep,.ux-context-same .ux-context-view{display:none}

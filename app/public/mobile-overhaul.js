@@ -76,7 +76,7 @@
         <span class="mobile-brand-mark" aria-hidden="true"></span>
         <span>
           <span class="mobile-brand-name">Local AI</span>
-          <span class="mobile-brand-sub">Private Intelligence Hub</span>
+          <span class="mobile-brand-sub">Private AI on your machine</span>
         </span>
       </div>
       <button class="pill mobile-health-button" type="button" aria-label="Open system status">
@@ -317,7 +317,7 @@
           severity: item.state === 'DOWN' ? 'critical' : 'warning',
           title: `${item.label || item.name || 'Core service'} is ${String(item.state || 'unavailable').toLowerCase()}`,
           detail: item.impact || 'A core capability is affected.',
-          action: 'Open status',
+          action: 'Open Health',
           view: 'status'
         });
       });
@@ -356,7 +356,7 @@
         severity: 'warning',
         title: 'No supported image model discovered',
         detail: 'Create is gated until a compatible local checkpoint is available.',
-        action: 'Open Create',
+        action: 'Open Images',
         view: 'create'
       });
     }
@@ -387,7 +387,7 @@
       items.push({
         severity: 'warning',
         title: `${count} autonomous ${count === 1 ? 'issue is' : 'issues are'} open`,
-        detail: 'Quality Intelligence has unresolved findings.',
+        detail: 'Quality scans have unresolved findings.',
         action: 'Open issues',
         view: 'issues'
       });
@@ -417,7 +417,7 @@
       const action = document.createElement('button');
       action.type = 'button';
       action.className = 'btn truth-attention-action';
-      action.textContent = 'Open status';
+      action.textContent = 'Open Health';
       action.addEventListener('click', () => navigate('status'));
       row.appendChild(action);
       list.appendChild(row);
