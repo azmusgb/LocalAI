@@ -197,15 +197,16 @@ function activeStage(){
 }
 function syncHud(){
  if(!root)return;const stage=activeStage(),workers=current?.workers||[],done=workers.filter(w=>w.state==='complete').length,running=workers.filter(w=>w.state==='running').length,bad=workers.filter(w=>['error','blocked'].includes(w.state)).length;
- $('#awcSource',root).textContent=sourceType.toUpperCase();$('#awcObjective',root).textContent=current?.goal||'No active mission';$('#awcStage',root).textContent=stage.label;$('#awcStageDetail',root).textContent=stage.detail;$('#awcStatus',root).textContent=current?humanState(current.status):'Idle';$('#awcProgressText',root).textContent=workers.length?done+'/'+workers.length+' complete':'No workers';$('#awcProgress',root).style.width=(workers.length?Math.round(done/workers.length*100):0)+'%';$('#awcStatRun',root).textContent=running;$('#awcStatDone',root).textContent=done;$('#awcStatAlert',root).textContent=bad;$('#awcStatArtifacts',root).textContent=artifacts.length;$('#awcAttention',root).hidden=!bad;syncRoster()
+ $('#awcSource',root).textContent=sourceType.toUpperCase();$('#awcObjective',root).textContent=current?.goal||'No active mission';$('#awcObjective',root).title=current?.goal||'';root.dataset.state=bad?'attention':running?'running':current?.status==='complete'?'complete':workers.length?'waiting':'idle';$('#awcStage',root).textContent=stage.label;$('#awcStageDetail',root).textContent=stage.detail;$('#awcStatus',root).textContent=current?humanState(current.status):'Idle';$('#awcProgressText',root).textContent=workers.length?done+'/'+workers.length+' complete':'No workers';$('#awcProgress',root).style.width=(workers.length?Math.round(done/workers.length*100):0)+'%';$('#awcStatRun',root).textContent=running;$('#awcStatDone',root).textContent=done;$('#awcStatAlert',root).textContent=bad;$('#awcStatArtifacts',root).textContent=artifacts.length;$('#awcAttention',root).hidden=!bad;syncRoster()
 }
 function syncRoster(){
  const h=$('#awcRoster',root);if(!h)return;const workers=current?.workers||[];h.innerHTML=workers.length?workers.map(w=>{const s=ROLE_STYLE[w.id]||ROLE_STYLE[w.agentId]||ROLE_STYLE.synthesis;return `<button class="awc__rosterItem ${esc(w.state)}" data-awc-roster="${esc(w.id)}"><span class="awc__rosterGlyph" style="--worker:${esc(s.accent)}">${esc((s.badge||w.name||w.id||'?').slice(0,2))}</span><span><strong>${esc(w.name||w.id)}</strong><small>${esc(DISTRICTS[zoneForWorker(w)]?.short||zoneForWorker(w))} · ${esc(s.tool)}</small></span><em>${esc(humanState(w.state))}</em></button>`}).join(''):'<div class="awc__empty">No workers active.</div>';h.querySelectorAll('[data-awc-roster]').forEach(b=>b.onclick=()=>focusWorker(b.dataset.awcRoster))
 }
 function syncEventFeed(){if(!root)return;const h=$('#awcEventFeed',root);if(h)h.innerHTML=events.length?events.slice(0,4).map(e=>`<div><span>${esc(e.text)}</span><time>${e.at.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</time></div>`).join(''):'<div><span>Waiting for activity</span></div>'}
+let externalFocus=false;
 function syncSelection(){
  if(!root)return;const h=$('#awcSelection',root);if(!selected){h.innerHTML='<span>Select a worker or building</span><small>Inspect district state and focus the camera.</small>';return}
- if(selected.type==='agent'){const a=agents.get(selected.id);if(!a)return;const w=(current?.workers||[]).find(q=>(q.id||q.agentId)===a.id),rm=w?.routingMeta||{};h.innerHTML=`<strong>${esc(a.name)}</strong><small>${esc(humanState(a.state))} · ${esc(DISTRICTS[a.zone]?.name||a.zone)} · ${esc(a.model||'automatic model')}</small>${rm.capabilityScore!=null?`<small>Capability ${rm.capabilityScore}% · model ${rm.modelScore??'—'}% · ${esc(rm.availability||'available')} · deps ${rm.dependencyCount??0}</small>`:''}`;window.dispatchEvent(new CustomEvent('localai:agentworld-select',{detail:{workerId:a.id}}))}
+ if(selected.type==='agent'){const a=agents.get(selected.id);if(!a)return;const w=(current?.workers||[]).find(q=>(q.id||q.agentId)===a.id),rm=w?.routingMeta||{};h.innerHTML=`<strong>${esc(a.name)}</strong><small>${esc(humanState(a.state))} · ${esc(DISTRICTS[a.zone]?.name||a.zone)} · ${esc(a.model||'automatic model')}</small>${rm.capabilityScore!=null?`<small>Capability ${rm.capabilityScore}% · model ${rm.modelScore??'—'}% · ${esc(rm.availability||'available')} · deps ${rm.dependencyCount??0}</small>`:''}`;if(!externalFocus)window.dispatchEvent(new CustomEvent('localai:agentworld-select',{detail:{workerId:a.id}}))}
  else{const d=DISTRICTS[selected.id],workers=[...agents.values()].filter(a=>a.zone===selected.id);h.innerHTML=`<strong>${esc(d.name)}</strong><small>${workers.length?workers.map(a=>esc(a.name)).join(', '):'No workers in district'}</small>`}
 }
 function fitWorld(){view.targetZoom=1;view.targetPanX=0;view.targetPanY=0;syncZoomLabel()}
@@ -231,37 +232,64 @@ function updateHover(e){
 function toggleDisplay(k){display[k]=!display[k];root?.querySelector('[data-awc-display="'+k+'"]')?.setAttribute('aria-pressed',String(display[k]));if(k==='night')root?.classList.toggle('is-night',display.night)}
 function toggleCrew(){display.crew=!display.crew;root?.classList.toggle('crew-hidden',!display.crew);$('#awcCrewToggle',root)?.setAttribute('aria-pressed',String(display.crew))}
 function toggleFollow(){display.follow=!display.follow;$('#awcFollow',root)?.setAttribute('aria-pressed',String(display.follow));if(display.follow)focusActive()}
-function toggleExpanded(){const on=!root.classList.contains('is-expanded');root.classList.toggle('is-expanded',on);document.body.classList.toggle('awc-stage-expanded',on);$('#awcExpand',root).textContent=on?'Exit theater':'Theater';setTimeout(()=>{if(on)focusActive();else fitWorld()},40)}
-function exitExpanded(){if(!root?.classList.contains('is-expanded'))return;root.classList.remove('is-expanded');document.body.classList.remove('awc-stage-expanded');$('#awcExpand',root).textContent='Theater';fitWorld()}
+// Theater moves the frame to <body>: an ancestor of the Agents page creates a containing block that traps position:fixed.
+let theaterHome=null;
+function setTheaterHost(on){if(on&&!theaterHome){theaterHome=document.createComment('agent-world');root.before(theaterHome);document.body.appendChild(root)}else if(!on&&theaterHome){theaterHome.replaceWith(root);theaterHome=null}}
+function toggleExpanded(){const on=!root.classList.contains('is-expanded');setTheaterHost(on);root.classList.toggle('is-expanded',on);document.body.classList.toggle('awc-stage-expanded',on);$('#awcExpand',root).textContent=on?'Exit theater':'Theater';setTimeout(()=>{if(on)focusActive();else fitWorld()},40)}
+function exitExpanded(){if(!root?.classList.contains('is-expanded'))return;root.classList.remove('is-expanded');setTheaterHost(false);document.body.classList.remove('awc-stage-expanded');$('#awcExpand',root).textContent='Theater';fitWorld()}
 
 function mount(){
- const host=$('#agentWorldCityMount');if(!host)return;root=document.createElement('section');root.className='awc awc-v3';root.innerHTML=`
- <div class="awc__commandbar">
-  <div class="awc__brand"><div class="awc__mark">AW</div><div><div class="awc__title">Agent World</div><div class="awc__sub">Mission construction crew</div></div></div>
-  <div class="awc__topstats"><span class="awc__live"><i></i><b id="awcSource">IDLE</b></span><span>Running <b id="awcStatRun">0</b></span><span>Complete <b id="awcStatDone">0</b></span><span>Alerts <b id="awcStatAlert">0</b></span><span>Artifacts <b id="awcStatArtifacts">0</b></span></div>
-  <div class="awc__toolbar"><button id="awcExpand" data-game-primary="true" type="button">Theater</button><button id="awcCrewToggle" type="button" aria-pressed="true">Crew</button><button id="awcFollow" type="button" aria-pressed="false">Follow</button><button id="awcFit" type="button">Fit</button><button id="awcCenter" type="button">Active</button><button id="awcZoomOut" type="button" aria-label="Zoom out">−</button><span id="awcZoomLabel">100%</span><button id="awcZoomIn" type="button" aria-label="Zoom in">+</button><button type="button" data-awc-display="labels" aria-pressed="true">Labels</button><button type="button" data-awc-display="flows" aria-pressed="true">Flows</button><button type="button" data-awc-display="night" aria-pressed="false">Night</button></div>
+ const host=$('#agentWorldCityMount');if(!host)return;root=document.createElement('section');root.className='awc awc-v3';root.dataset.state='idle';root.innerHTML=`
+ <header class="awc__commandbar">
+  <div class="awc__brand">
+   <svg class="awc__mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 22a10 10 0 0 1 20 0z" fill="currentColor"/><rect x="4" y="22" width="24" height="4" rx="2" fill="currentColor"/><path d="M14 12h4v6h-4z" fill="#0b1624" opacity=".35"/></svg>
+   <div class="awc__brandText"><div class="awc__titleRow"><h2 class="awc__title">Agent World</h2><span class="awc__live"><i></i><b id="awcSource">IDLE</b></span></div><div class="awc__sub">Mission construction crew</div></div>
+  </div>
+  <dl class="awc__topstats">
+   <div class="awc__stat is-run"><dt>Working</dt><dd id="awcStatRun">0</dd></div>
+   <div class="awc__stat is-done"><dt>Done</dt><dd id="awcStatDone">0</dd></div>
+   <div class="awc__stat is-alert"><dt>Alerts</dt><dd id="awcStatAlert">0</dd></div>
+   <div class="awc__stat is-art"><dt>Artifacts</dt><dd id="awcStatArtifacts">0</dd></div>
+  </dl>
+  <div class="awc__toolbar" role="toolbar" aria-label="Map controls">
+   <div class="awc__group"><button id="awcFit" type="button" title="Show the whole city (0)">Fit</button><button id="awcCenter" type="button" title="Jump to the active worker (A)">Active</button><button id="awcFollow" type="button" aria-pressed="false" title="Keep the camera on the active worker (F)">Follow</button></div>
+   <div class="awc__group"><button id="awcZoomOut" type="button" aria-label="Zoom out">−</button><span id="awcZoomLabel" aria-live="polite">100%</span><button id="awcZoomIn" type="button" aria-label="Zoom in">+</button></div>
+   <div class="awc__group"><button type="button" data-awc-display="labels" aria-pressed="true">Labels</button><button type="button" data-awc-display="flows" aria-pressed="true">Flows</button><button type="button" data-awc-display="night" aria-pressed="false">Night</button></div>
+   <div class="awc__group"><button id="awcCrewToggle" type="button" aria-pressed="true">Crew</button><button id="awcExpand" data-game-primary="true" type="button" title="Full-screen view (T)">Theater</button></div>
+  </div>
+ </header>
+ <div class="awc__missionstrip">
+  <div class="awc__missioncopy"><span class="awc__eyebrow">Objective</span><strong id="awcObjective">No active mission</strong></div>
+  <div class="awc__phase"><span class="awc__phaseDot"></span><span><strong id="awcStage">Standing by</strong><small id="awcStageDetail">Waiting for mission activity</small></span></div>
+  <div class="awc__missionstate">
+   <div class="awc__missionstateTop"><b id="awcStatus">Idle</b><span id="awcProgressText">No workers</span><span class="awc__attention" id="awcAttention" hidden>Attention</span></div>
+   <div class="awc__progress" aria-hidden="true"><span id="awcProgress"></span></div>
+  </div>
  </div>
- <div class="awc__missionstrip"><div class="awc__missioncopy"><span class="awc__eyebrow">Mission objective</span><strong id="awcObjective">No active mission</strong></div><div class="awc__phase"><span class="awc__phaseDot"></span><span><strong id="awcStage">Standing by</strong><small id="awcStageDetail">Waiting for mission activity</small></span></div><div class="awc__missionstate"><b id="awcStatus">Idle</b><span id="awcProgressText">No workers</span><span class="awc__attention" id="awcAttention" hidden>Attention</span></div></div>
  <div class="awc__gameShell">
   <div class="awc__mapWrap">
-   <canvas width="${W}" height="${H}" id="awcCanvas" tabindex="0" aria-label="Interactive Agent World simulation"></canvas>
+   <canvas width="${W}" height="${H}" id="awcCanvas" tabindex="0" aria-label="Interactive Agent World map. Drag to pan, scroll or pinch to zoom, click a district or worker to inspect. Keys: 0 fit, A active worker, F follow, plus and minus zoom, T theater."></canvas>
    <div class="awc__scanlines"></div>
    <div class="awc__tooltip" id="awcTooltip" hidden></div>
    <div class="awc__mapHud">
     <div class="awc__selection" id="awcSelection"><span>Select a worker or building</span><small>Click to inspect</small></div>
     <div class="awc__minimap" id="awcMinimap" aria-hidden="true"></div>
    </div>
-   <div class="awc__eventFeed" id="awcEventFeed"></div>
+   <div class="awc__eventFeed" id="awcEventFeed" aria-live="polite"></div>
+   <div class="awc__legend" aria-label="Map legend"><span><i class="run"></i>Running</span><span><i class="done"></i>Complete</span><span><i class="wait"></i>Waiting</span><span><i class="bad"></i>Attention</span><span><i class="dep"></i>Active dependency</span><span><i class="art"></i>Artifact</span></div>
   </div>
-  <aside class="awc__ops">
-   <div class="awc__opsHead"><span class="awc__eyebrow">Live roster</span><strong>Mission team</strong></div>
-   <div class="awc__roster" id="awcRoster"><div class="awc__empty">No workers active.</div></div>
-   <div class="awc__districtLegend">${Object.entries(DISTRICTS).map(([id,d])=>`<button type="button" data-awc-district="${id}"><i style="--district:${d.accent}"></i><span>${d.short}</span></button>`).join('')}</div>
-   <div class="awc__replayPanel"><div><span class="awc__eyebrow">Mission replay</span><strong id="awcReplayLabel">0 events</strong></div><div class="awc__replayMarkers" id="awcReplayMarkers"></div><input id="awcReplayRange" type="range" min="0" max="0" value="0" disabled aria-label="Mission replay position"><small id="awcReplayDetail">Select a mission from history to inspect its execution.</small><div class="awc__replayActions"><button id="awcReplayPrev" type="button" aria-label="Previous replay event">◀</button><button id="awcReplayPlay" type="button">Play</button><button id="awcReplayNext" type="button" aria-label="Next replay event">▶</button><button id="awcReplaySpeed" type="button">1×</button><button id="awcReplayLive" type="button" hidden>Live</button></div></div>
-   <div class="awc__demoPanel"><span class="awc__eyebrow">Simulation lab</span><select id="awcDemoScenario" aria-label="Demo scenario"><option value="success">Successful mission</option><option value="failure">Failure + repair</option></select><div class="awc__demoActions"><button id="awcDemoPlay" type="button">Play</button><button id="awcDemoStep" type="button">Step</button><button id="awcDemoReset" type="button">Reset</button><button id="awcDemoSpeed" type="button">1×</button></div><button id="awcLiveBtn" class="awc__liveBtn" type="button" hidden>Return to live mission</button></div>
-  </aside>
- </div>
- <div class="awc__footer"><div class="awc__progress"><span id="awcProgress"></span></div><div class="awc__legend"><span><i class="run"></i>Running</span><span><i class="done"></i>Complete</span><span><i class="wait"></i>Waiting</span><span><i class="bad"></i>Attention</span><span><i class="dep"></i>Active dependency</span><span><i class="artifact"></i>Artifact</span></div><span class="awc__hint">Drag to pan · wheel or pinch to zoom · click a district or worker</span></div>`;
+  <div class="awc__ops" role="complementary" aria-label="Mission details">
+   <div class="awc__opsScroll">
+    <section class="awc__section"><div class="awc__opsHead"><h3>Crew</h3><span class="awc__eyebrow">Live roster</span></div>
+     <div class="awc__roster" id="awcRoster"><div class="awc__empty">No workers active.</div></div></section>
+    <section class="awc__section"><div class="awc__opsHead"><h3>Districts</h3><span class="awc__eyebrow">Jump to</span></div>
+     <div class="awc__districtLegend">${Object.entries(DISTRICTS).map(([id,d])=>`<button type="button" data-awc-district="${id}"><i style="--district:${d.accent}"></i><span>${d.short}</span></button>`).join('')}</div></section>
+    <section class="awc__section awc__replayPanel"><div class="awc__opsHead"><h3>Replay</h3><strong id="awcReplayLabel">0 events</strong></div><div class="awc__replayMarkers" id="awcReplayMarkers"></div><input id="awcReplayRange" type="range" min="0" max="0" value="0" disabled aria-label="Mission replay position"><small id="awcReplayDetail">Select a mission from history to inspect its execution.</small><div class="awc__replayActions"><button id="awcReplayPrev" type="button" aria-label="Previous replay event">◀</button><button id="awcReplayPlay" type="button">Play</button><button id="awcReplayNext" type="button" aria-label="Next replay event">▶</button><button id="awcReplaySpeed" type="button">1×</button><button id="awcReplayLive" type="button" hidden>Live</button></div></section>
+    <section class="awc__section awc__demoPanel"><div class="awc__opsHead"><h3>Simulation</h3><span class="awc__eyebrow">Try the city without a real mission</span></div><select id="awcDemoScenario" aria-label="Demo scenario"><option value="success">Successful mission</option><option value="failure">Failure and repair</option></select><div class="awc__demoActions"><button id="awcDemoPlay" type="button">Play</button><button id="awcDemoStep" type="button">Step</button><button id="awcDemoReset" type="button">Reset</button><button id="awcDemoSpeed" type="button">1×</button></div><button id="awcLiveBtn" class="awc__liveBtn" type="button" hidden>Return to live mission</button></section>
+    <p class="awc__hint">Drag to pan, scroll or pinch to zoom, click a district or worker. Keys: 0 fit · A active · F follow · +/− zoom · T theater.</p>
+   </div>
+  </div>
+ </div>`;
  host.appendChild(root);loadReplay();syncReplay();canvas=$('#awcCanvas',root);ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=false;
  $('#awcReplayPrev',root).onclick=()=>stepReplay(-1);$('#awcReplayPlay',root).onclick=toggleReplay;$('#awcReplayNext',root).onclick=()=>stepReplay(1);$('#awcReplaySpeed',root).onclick=cycleReplaySpeed;$('#awcReplayLive',root).onclick=returnReplayLive;$('#awcReplayRange',root).oninput=e=>applyReplayFrame(e.target.value);$('#awcExpand',root).onclick=toggleExpanded;$('#awcCrewToggle',root).onclick=toggleCrew;$('#awcFollow',root).onclick=toggleFollow;$('#awcFit',root).onclick=fitWorld;$('#awcCenter',root).onclick=focusActive;$('#awcZoomIn',root).onclick=()=>zoomAt(1.2);$('#awcZoomOut',root).onclick=()=>zoomAt(.84);$('#awcDemoPlay',root).onclick=toggleDemoPlay;$('#awcDemoStep',root).onclick=stepDemo;$('#awcDemoReset',root).onclick=resetDemo;$('#awcDemoSpeed',root).onclick=cycleSpeed;$('#awcLiveBtn',root).onclick=returnLive;$('#awcDemoScenario',root).onchange=e=>{demo.scenario=e.target.value;if(demo.active)applyDemo()};
  root.querySelectorAll('[data-awc-display]').forEach(b=>b.onclick=()=>toggleDisplay(b.dataset.awcDisplay));root.querySelectorAll('[data-awc-district]').forEach(b=>b.onclick=()=>{selected={type:'district',id:b.dataset.awcDistrict};syncSelection();const d=DISTRICTS[b.dataset.awcDistrict];focusPoint((d.x+d.w/2)*T,(d.y+d.h/2)*T,1.7)});
@@ -270,8 +298,9 @@ function mount(){
  canvas.addEventListener('pointermove',e=>{updateHover(e);if(!pointers.has(e.pointerId))return;const r=canvas.getBoundingClientRect(),sx=W/r.width,sy=H/r.height,px=(e.clientX-r.left)*sx,py=(e.clientY-r.top)*sy;pointers.set(e.pointerId,{x:px,y:py});if(pointers.size===2&&pinch){const ps=[...pointers.values()],dx=ps[1].x-ps[0].x,dy=ps[1].y-ps[0].y,dist=Math.max(1,Math.hypot(dx,dy)),cx=(ps[0].x+ps[1].x)/2,cy=(ps[0].y+ps[1].y)/2,nz=clamp(pinch.zoom*(dist/pinch.distance),1,3),wx=(pinch.cx-pinch.panX)/pinch.zoom,wy=(pinch.cy-pinch.panY)/pinch.zoom;view.targetZoom=nz;view.targetPanX=cx-wx*nz;view.targetPanY=cy-wy*nz;limitTargetPan();syncZoomLabel();return}if(!drag||drag.id!==e.pointerId)return;const dx=px-drag.startX,dy=py-drag.startY;if(Math.abs(dx)+Math.abs(dy)>4)drag.moved=true;view.targetPanX=drag.panX+dx;view.targetPanY=drag.panY+dy;limitTargetPan()});
  canvas.addEventListener('pointerup',e=>{const wasSingle=pointers.size===1,moved=drag?.moved||false;pointers.delete(e.pointerId);if(wasSingle&&!moved)selectAt(e);if(pointers.size===1){const[id,p]=[...pointers.entries()][0];drag={id,startX:p.x,startY:p.y,panX:view.targetPanX,panY:view.targetPanY,moved:true}}else drag=null;if(pointers.size<2)pinch=null});
  canvas.addEventListener('pointercancel',e=>{pointers.delete(e.pointerId);drag=null;if(pointers.size<2)pinch=null});canvas.addEventListener('pointerleave',()=>{const t=$('#awcTooltip',root);if(t)t.hidden=true});
- canvas.addEventListener('keydown',e=>{if(e.key==='+'||e.key==='=')zoomAt(1.2);if(e.key==='-')zoomAt(.84);if(e.key==='0')fitWorld();if(e.key==='f')toggleFollow();if(e.key==='Enter'&&hovered){selected=hovered;syncSelection()}});document.addEventListener('keydown',e=>{if(e.key==='Escape')exitExpanded()});
- window.addEventListener('localai:agentworld-focus',e=>focusWorker(e.detail?.workerId));
+ canvas.addEventListener('keydown',e=>{if(e.key==='+'||e.key==='=')zoomAt(1.2);if(e.key==='-')zoomAt(.84);if(e.key==='0')fitWorld();if(e.key==='f')toggleFollow();if(e.key==='a')focusActive();if(e.key==='t')toggleExpanded();if(e.key==='Enter'&&hovered){selected=hovered;syncSelection()}});document.addEventListener('keydown',e=>{if(e.key==='Escape')exitExpanded()});
+ // The Agents panel answers our select event with a focus event; don't echo it back as another select.
+ window.addEventListener('localai:agentworld-focus',e=>{externalFocus=true;try{focusWorker(e.detail?.workerId)}finally{externalFocus=false}});
  document.body.classList.add('agent-world-city-ready');buildRoads();seedAmbient();syncDemoControls();syncHud();syncEventFeed();start();bootstrap()
 }
 function seedAmbient(){traffic=[{x:2*T,y:13.5*T,v:28,axis:'x',dir:1,color:'#6aaeff'},{x:36*T,y:14.5*T,v:23,axis:'x',dir:-1,color:'#ffc56b'},{x:25.5*T,y:3*T,v:20,axis:'y',dir:1,color:'#c18cff'},{x:13.5*T,y:21*T,v:18,axis:'y',dir:-1,color:'#75dfa2'}];clouds=[{x:160,y:80,s:1.1},{x:880,y:130,s:.8},{x:560,y:40,s:.6}]}
