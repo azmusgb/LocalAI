@@ -13,6 +13,15 @@ with `--once`. `deploy/Install-GridCraft-Bridge.ps1` creates its virtual environ
 - Ollama running on Windows
 - GridCraft installed at `C:\Program Files\GridCraft`
 
+## Desktop launcher
+
+`Start-GridCraft-AI.ps1` checks Ollama and the model, starts GridCraft with its control channel if
+needed, then opens the agent's interactive prompt. Create the desktop shortcut for it with:
+
+```powershell
+C:\LocalAI\repo\host\gridcraft-agent\Install-GridCraft-Shortcut.ps1
+```
+
 ## Run by hand
 
 ```powershell
