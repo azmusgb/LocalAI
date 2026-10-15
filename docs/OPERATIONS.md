@@ -80,3 +80,15 @@ C:\LocalAI\repo\deploy\Install-LocalAI-DeployAgent.ps1 -Uninstall
 ```
 
 Manual deploys still work; the deploy lock keeps a manual run and the task from overlapping.
+
+## Continuous integration
+
+| Workflow | Runs on | When |
+|---|---|---|
+| `validate` | Linux | every PR except docs-only changes; on demand |
+| `storage` | Linux, Node 22.13 (Windows and Node 24 weekly) | PRs touching storage, release, run ledger or orchestrator code |
+| `windows-contracts` | Windows, PowerShell 5.1 and 7 | PRs touching `deploy/`, host PowerShell or `tests/*.ps1`; weekly |
+
+Nothing runs after a merge: the auto-deploy agent certifies `main` before promoting it. A newer push to a PR cancels
+its older run. Browser suites are every `tests/*-ui.mjs` file (`npm run test:browser`, or
+`node tests/run-browser.mjs images` for one); all of them run even if one fails.
