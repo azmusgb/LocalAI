@@ -34,11 +34,21 @@
 <section id="create" class="view"><div class="topbar"><div><h1>Images</h1><p class="sub">Open-source image models running on your own GPU. Nothing leaves this computer.</p></div></div>
 <div class="img-studio">
 <div class="card img-compose">
-<label class="img-prompt-label" for="imagePrompt">Describe the image</label>
+<div id="imageEditPanel" class="img-edit" hidden>
+<div class="img-edit-head"><b>Editing an image</b><button id="imageEditCancel" class="btn" type="button">Stop editing</button></div>
+<div class="img-edit-canvas"><canvas id="imageEditCanvas" aria-label="Image being edited"></canvas><canvas id="imageMaskCanvas" aria-label="Paint over the part to change"></canvas></div>
+<div class="img-edit-tools"><label>Brush<input id="imageBrush" type="range" min="8" max="140" value="48"></label><button id="imageMaskClear" class="btn" type="button">Clear marks</button></div>
+<p id="imageEditHint" class="meta">Paint over the part to change. Leave it unmarked to redraw the whole image.</p>
+<label class="img-strength">How much to change <output id="imageStrengthOut">60%</output><input id="imageStrength" type="range" min="20" max="100" value="60"></label>
+</div>
+<label class="img-prompt-label" for="imagePrompt" id="imagePromptLabel">Describe the image</label>
 <textarea id="imagePrompt" rows="3" placeholder="A lighthouse on a cliff at dusk, soft watercolor"></textarea>
+<label class="img-upload btn" for="imageUpload">Upload an image to edit<input id="imageUpload" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
 <label class="img-toggle"><input id="imageEnhance" type="checkbox"><span><b>Improve my prompt</b><small>The local language model adds detail, lighting and style first.</small></span></label>
 <fieldset class="img-group"><legend>Engine</legend><div id="imageEngines" class="img-engines" role="radiogroup" aria-label="Engine"><div class="meta">Finding installed models…</div></div></fieldset>
-<fieldset class="img-group"><legend>Shape</legend><div id="imageAspects" class="img-aspects" role="radiogroup" aria-label="Shape"></div></fieldset>
+<fieldset class="img-group"><legend>Style</legend><div id="imageStyles" class="img-styles" role="radiogroup" aria-label="Style"></div></fieldset>
+<fieldset class="img-group" id="imageShapeGroup"><legend>Shape</legend><div id="imageAspects" class="img-aspects" role="radiogroup" aria-label="Shape"></div></fieldset>
+<fieldset class="img-group"><legend>How many</legend><div id="imageCount" class="img-count" role="radiogroup" aria-label="How many"><button type="button" role="radio" data-count="1" class="active" aria-checked="true">1</button><button type="button" role="radio" data-count="2" aria-checked="false">2</button><button type="button" role="radio" data-count="4" aria-checked="false">4</button></div></fieldset>
 <label class="img-toggle" id="imageUpscaleRow" hidden><input id="imageUpscale" type="checkbox"><span><b>Sharpen and upscale 2×</b><small>Real-ESRGAN; adds a few seconds.</small></span></label>
 <details class="img-advanced"><summary>Advanced</summary><div class="form-grid">
 <label class="wide">Model<select id="checkpoint"><option value="">Engine's model</option></select></label>
@@ -54,7 +64,8 @@
 <div id="imageStage" class="img-stage" aria-live="polite"><div class="img-placeholder">Your image appears here.</div></div>
 <div id="imageResult" class="image-result"><img id="generatedImage" alt="Generated result"></div>
 <div id="imageMeta" class="meta"></div>
-<div id="imageActions" class="actions img-result-actions" hidden><button id="imageAgain" class="btn" type="button">Another version</button><a id="imageOpen" class="btn" target="_blank" rel="noopener">Open full size</a></div>
+<div id="imageBatch" class="img-batch" hidden></div>
+<div id="imageActions" class="actions img-result-actions" hidden><button id="imageEditThis" class="btn" type="button">Edit this image</button><button id="imageAgain" class="btn" type="button">Another version</button><a id="imageOpen" class="btn" target="_blank" rel="noopener">Open full size</a></div>
 <details id="imageUsedPromptBox" class="img-used" hidden><summary>Prompt used</summary><p id="imageUsedPrompt"></p></details>
 <div class="img-recent-head"><h3>Recent</h3><button class="btn" type="button" data-view="library">Library</button></div>
 <div id="imageRecent" class="img-recent"></div>

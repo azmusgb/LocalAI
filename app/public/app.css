@@ -1422,3 +1422,27 @@ body.ux-v3.ux-nav-collapsed .ux-page-strip{display:flex}
 .img-thumb:hover{border-color:var(--ds-accent)}
 @media(max-width:900px){.img-studio{grid-template-columns:1fr}.img-placeholder,.img-working,.img-error{min-height:220px}}
 .img-recent>.meta{grid-column:1/-1}
+/* ==== image studio: styles, count, edit ==== */
+.img-styles{display:flex;flex-wrap:wrap;gap:6px}
+.img-style,.img-count button{border:1px solid var(--ds-line);background:var(--ds-surface);color:var(--ds-soft);border-radius:999px;min-height:40px;padding:0 14px;font-size:13px;font-weight:600;cursor:pointer}
+.img-style.active,.img-count button.active{border-color:var(--ds-accent);background:var(--ds-accent-soft);color:var(--ds-text)}
+.img-count{display:flex;gap:6px}.img-count button{min-width:52px}
+.img-group[hidden]{display:none}
+.img-upload{justify-self:start;min-height:40px;display:inline-flex;align-items:center;cursor:pointer;font-size:13px}
+.img-edit{display:grid;gap:10px;border:1px solid var(--ds-accent);border-radius:var(--ds-r-lg);padding:12px;background:var(--ds-accent-soft)}
+.img-edit[hidden]{display:none}
+.img-edit-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.img-edit-head .btn{min-height:36px;padding:4px 12px}
+.img-edit-canvas{position:relative;line-height:0;border-radius:var(--ds-r-md);overflow:hidden;background:var(--ds-bg)}
+.img-edit-canvas canvas{display:block;width:100%;height:auto}
+#imageMaskCanvas{position:absolute;inset:0;cursor:crosshair;touch-action:none}
+.img-edit-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.img-edit-tools label{display:flex;align-items:center;gap:8px;color:var(--ds-soft);font-size:13px}
+.img-edit-tools input[type=range]{width:140px}
+.img-edit-tools .btn{min-height:36px;padding:4px 12px}
+.img-strength{display:grid;grid-template-columns:1fr auto;gap:6px;color:var(--ds-text);font-size:13px}
+.img-strength input{grid-column:1/-1;width:100%;accent-color:var(--ds-accent)}
+.img-strength output{color:var(--ds-accent);font-weight:700}
+.img-batch{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.img-batch[hidden]{display:none}
+.img-batch .img-thumb.active{border-color:var(--ds-accent);box-shadow:0 0 0 2px var(--ds-accent)}

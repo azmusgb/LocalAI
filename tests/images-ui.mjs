@@ -8,7 +8,7 @@ let failed = 0;
 async function check(name, fn) { try { await fn(); console.log('PASS', name) } catch (e) { failed++; console.log('FAIL', name, e.message) } }
 const aspects = [['square', 'Square', [512, 512], [1024, 1024]], ['portrait', 'Portrait', [512, 768], [832, 1216]], ['landscape', 'Landscape', [768, 512], [1216, 832]], ['wide', 'Wide', [896, 512], [1344, 768]]]
   .map(([id, label, s, l]) => ({ id, label, sizes: { 512: s, 1024: l } }));
-const models = { engines: [{ id: 'fast', label: 'Fast', blurb: 'Quick drafts.', family: 'sd15', base: 512, estimateSec: 16 }, { id: 'quality', label: 'Quality', blurb: 'Detailed.', family: 'sdxl', base: 1024 }, { id: 'best', label: 'Best', blurb: 'Text and long prompts.', family: 'flux', base: 1024 }], custom: ['v1-5-pruned-emaonly.safetensors'], upscale: true, defaultEngine: 'fast', aspects };
+const models = { engines: [{ id: 'fast', label: 'Fast', blurb: 'Quick drafts.', family: 'sd15', base: 512, estimateSec: 16 }, { id: 'quality', label: 'Quality', blurb: 'Detailed.', family: 'sdxl', base: 1024 }, { id: 'best', label: 'Best', blurb: 'Text and long prompts.', family: 'flux', base: 1024 }], custom: ['v1-5-pruned-emaonly.safetensors'], upscale: true, defaultEngine: 'fast', aspects, styles: [{ id: 'none', label: 'None' }, { id: 'photo', label: 'Photo' }, { id: 'anime', label: 'Anime' }] };
 const pixel = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -19,7 +19,8 @@ await page.route('**/api/images/models', r => r.fulfill({ json: models }));
 await page.route('**/api/images/generate', async r => {
   const body = JSON.parse(r.request().postData()); sent.push(body);
   await new Promise(res => setTimeout(res, 300));
-  r.fulfill({ json: { imageUrl: '/api/images/view?filename=x.png&subfolder=&type=output', engine: body.engine, engineLabel: 'Quality', width: 1664, height: 2432, seed: 7, elapsedMs: 51000, upscaled: true, prompt: body.prompt, usedPrompt: body.enhance ? body.prompt + ', golden hour, detailed' : body.prompt } });
+  const images = Array.from({ length: body.count || 1 }, (_, i) => ({ imageUrl: `/api/images/view?filename=x${i}.png&subfolder=&type=output`, seed: 7 + i }));
+  r.fulfill({ json: { imageUrl: images[0].imageUrl, images, engine: body.engine, engineLabel: 'Quality', width: 1664, height: 2432, seed: 7, elapsedMs: 51000, upscaled: true, edited: !!body.source, prompt: body.prompt, usedPrompt: body.enhance ? body.prompt + ', golden hour, detailed' : body.prompt } });
 });
 await page.route('**/api/images/view**', r => r.fulfill({ body: Buffer.from(pixel, 'base64'), contentType: 'image/png' }));
 await page.goto(base, { waitUntil: 'networkidle' });
@@ -63,6 +64,52 @@ await check('a model picked under Advanced is sent instead of the engine', async
   await page.click('#generateBtn');
   await page.waitForFunction(() => !document.querySelector('#generateBtn').disabled);
   assert.deepEqual([sent.at(-1).engine, sent.at(-1).checkpoint], [undefined, 'v1-5-pruned-emaonly.safetensors']);
+});
+await check('style and count are sent, and several results show as a grid', async () => {
+  await page.selectOption('#checkpoint', '');
+  await page.click('[data-style="anime"]');
+  await page.click('#imageCount [data-count="4"]');
+  assert.equal(await page.locator('#generateBtn').innerText(), 'Create 4 images');
+  await page.click('#generateBtn');
+  await page.waitForSelector('#imageBatch:not([hidden])');
+  assert.deepEqual([sent.at(-1).style, sent.at(-1).count], ['anime', 4]);
+  assert.equal(await page.locator('#imageBatch .img-thumb').count(), 4);
+  await page.locator('#imageBatch [data-batch="2"]').click();
+  assert.match(await page.locator('#imageMeta').innerText(), /seed 9/);
+});
+await check('editing: paint an area, and the image, mask, size and strength are sent', async () => {
+  await page.click('#imageCount [data-count="1"]');
+  await page.click('#imageEditThis');
+  await page.waitForSelector('#imageEditPanel:not([hidden])');
+  assert.equal(await page.locator('#imageShapeGroup').isHidden(), true);
+  assert.equal(await page.locator('#generateBtn').innerText(), 'Apply edit');
+  await page.waitForTimeout(600); // the editor scrolls into view smoothly
+  await page.locator('#imageMaskCanvas').scrollIntoViewIfNeeded();
+  const box = await page.locator('#imageMaskCanvas').boundingBox();
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.5);
+  await page.mouse.down(); await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.5, { steps: 5 }); await page.mouse.up();
+  await page.locator('#imageStrength').fill('80');
+  await page.fill('#imagePrompt', 'add a red balloon');
+  await page.click('#generateBtn');
+  await page.waitForFunction(() => !document.querySelector('#generateBtn').disabled);
+  const b = sent.at(-1);
+  assert.match(b.source, /^data:image\/png;base64,/);
+  assert.match(b.mask, /^data:image\/png;base64,/);
+  assert.equal(b.strength, 0.8);
+  assert.ok(b.sourceWidth >= 8 && b.sourceWidth % 8 === 0 && b.sourceHeight % 8 === 0, `size ${b.sourceWidth}x${b.sourceHeight}`);
+  // The mask is white where painted and black elsewhere.
+  const px = await page.evaluate(async (m) => { const img = new Image(); img.src = m; await img.decode(); const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const x = c.getContext('2d'); x.drawImage(img, 0, 0); const d = x.getImageData(0, 0, img.width, img.height).data; let white = 0, black = 0; for (let i = 0; i < d.length; i += 4) d[i] > 128 ? white++ : black++; return { white, black }; }, b.mask);
+  assert.ok(px.white > 0 && px.black > px.white, JSON.stringify(px));
+});
+await check('Clear marks redraws the whole image; Stop editing returns to new images', async () => {
+  await page.click('#imageMaskClear');
+  await page.click('#generateBtn');
+  await page.waitForFunction(() => !document.querySelector('#generateBtn').disabled);
+  assert.equal(sent.at(-1).mask, undefined);
+  assert.ok(sent.at(-1).source);
+  await page.click('#imageEditCancel');
+  assert.equal(await page.locator('#imageEditPanel').isHidden(), true);
+  assert.equal(await page.locator('#imageShapeGroup').isHidden(), false);
 });
 await check('errors are shown in place', async () => {
   await page.unroute('**/api/images/generate');

@@ -58,3 +58,43 @@ test('graphs: checkpoint, FLUX GGUF, and the optional 2x upscale all end in node
   // Every reference points at a node in the graph.
   for (const g of [g1, g2, g3]) for (const n of Object.values(g)) for (const v of Object.values(n.inputs)) if (Array.isArray(v)) assert.ok(g[v[0]], `missing node ${v[0]}`);
 });
+
+test('edit graphs: whole-image redraw and masked repaint that keeps the rest', () => {
+  const [fast, , best] = e.discoverEngines(full).engines;
+  const base = { prompt: 'a red balloon', width: 768, height: 512, steps: 25, cfg: 7, seed: 3, denoise: 0.6 };
+  const whole = e.buildWorkflow(fast, { ...base, source: { image: 'src.png' } });
+  assert.equal(whole[6], undefined);
+  assert.deepEqual(whole[7].inputs.latent_image, ['21', 0]);
+  assert.equal(whole[7].inputs.denoise, 0.6);
+  assert.deepEqual(whole[9].inputs.images, ['8', 0]);
+  const masked = e.buildWorkflow(fast, { ...base, source: { image: 'src.png', mask: 'mask.png' }, batch: 2 });
+  assert.equal(masked[22].inputs.channel, 'red');
+  assert.deepEqual(masked[24].inputs.samples, ['21', 0]);
+  assert.deepEqual(masked[25].inputs.samples, ['24', 0]);
+  assert.deepEqual(masked[7].inputs.latent_image, ['25', 0]);
+  assert.deepEqual(masked[26].inputs.destination, ['20', 0]);
+  assert.deepEqual(masked[9].inputs.images, ['26', 0]);
+  const fluxEdit = e.buildWorkflow(best, { ...base, source: { image: 'src.png', mask: 'm.png' } });
+  assert.deepEqual(fluxEdit[21].inputs.vae, ['3', 0]);
+  // New images ignore denoise.
+  assert.equal(e.buildWorkflow(fast, base)[7].inputs.denoise, 1);
+  for (const g of [whole, masked, fluxEdit]) for (const n of Object.values(g)) for (const v of Object.values(n.inputs)) if (Array.isArray(v)) assert.ok(g[v[0]], `missing node ${v[0]}`);
+});
+
+test('variations: one batch for Fast, queued singles for the 1024 px engines', () => {
+  const [fast, quality] = e.discoverEngines(full).engines;
+  assert.deepEqual(e.batchesFor(fast, 4), [4]);
+  assert.deepEqual(e.batchesFor(quality, 4), [1, 1, 1, 1]);
+  assert.deepEqual(e.batchesFor(fast, 9), [4]);
+  assert.deepEqual(e.batchesFor(fast, 'x'), [1]);
+  assert.equal(e.buildWorkflow(fast, { prompt: 'x', width: 512, height: 512, steps: 1, cfg: 1, seed: 1, batch: 4 })[6].inputs.batch_size, 4);
+});
+
+test('styles add to the prompt and to what to avoid', () => {
+  assert.deepEqual(e.applyStyle('a cat', 'blurry', 'none'), { prompt: 'a cat', negative: 'blurry' });
+  const anime = e.applyStyle('a cat', 'blurry', 'anime');
+  assert.match(anime.prompt, /^a cat, anime style/);
+  assert.match(anime.negative, /^blurry, photo/);
+  assert.deepEqual(e.applyStyle('a cat', '', 'unknown'), { prompt: 'a cat', negative: '' });
+  assert.equal(e.applyStyle('a cat', '', 'photo').negative.startsWith('illustration'), true);
+});
