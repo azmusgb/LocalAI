@@ -28,7 +28,7 @@ test('truth layer gates user-visible modes from live capabilities', () => {
 test('truth layer exposes actionable attention state', () => {
   assert.match(source, /truthAttention/);
   assert.match(source, /attentionItems\(snapshot\)/);
-  assert.match(source, /Open status/);
+  assert.match(source, /Open Health/);
   assert.match(source, /Open approvals/);
   assert.match(source, /Open issues/);
 });
