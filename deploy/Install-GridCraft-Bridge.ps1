@@ -66,7 +66,9 @@ $launcher = @(
     "`$env:GRIDCRAFT_BRIDGE_PORT = $(Format-Quoted $Port)"
     "`$env:GRIDCRAFT_ALLOWED_ORIGINS = $(Format-Quoted $origins)"
     "`$env:PYTHONUNBUFFERED = '1'"
-    "& $(Format-Quoted $Python) $(Format-Quoted $BridgeScript) *>> $(Format-Quoted $LogPath)"
+    # The bridge rotates its own log (2 MB x 3). Only a startup crash or traceback lands in the side file.
+    "`$env:GRIDCRAFT_BRIDGE_LOG = $(Format-Quoted $LogPath)"
+    "& $(Format-Quoted $Python) $(Format-Quoted $BridgeScript) *>> $(Format-Quoted ([IO.Path]::ChangeExtension($LogPath, '.crash.log')))"
 ) -join "`r`n"
 # UTF-8 with BOM so Windows PowerShell 5.1 (which runs the task) reads non-ASCII paths correctly whichever edition ran this installer.
 [System.IO.File]::WriteAllText($envPath, $launcher + "`r`n", (New-Object System.Text.UTF8Encoding($true)))
