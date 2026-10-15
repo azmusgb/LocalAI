@@ -161,13 +161,14 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     if (existing) return existing;
 
     const home = document.getElementById('home');
-    const capabilities = document.getElementById('homeCapabilities');
+    const hero = home?.querySelector('.workspace-hero');
     if (!home) return null;
 
     const section = document.createElement('section');
     section.id = 'truthAttention';
     section.className = 'card truth-attention';
     section.dataset.state = 'clear';
+    section.hidden = true;
     section.setAttribute('aria-labelledby', 'truthAttentionTitle');
     section.innerHTML = `
       <div class="truth-attention-head">
@@ -179,7 +180,8 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       </div>
       <div id="truthAttentionList" class="truth-attention-list" aria-live="polite"></div>`;
 
-    if (capabilities?.parentNode === home) capabilities.insertAdjacentElement('afterend', section);
+    // Directly under the command box: the one card on Home that asks something of the user.
+    if (hero?.parentNode === home) hero.insertAdjacentElement('afterend', section);
     else home.prepend(section);
     return section;
   }
@@ -389,6 +391,17 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       });
     }
 
+    if (Number(snapshot?.changes?.pending || 0) > 0) {
+      const count = Number(snapshot.changes.pending);
+      items.push({
+        severity: 'info',
+        title: `${count} change ${count === 1 ? 'request is' : 'requests are'} unfinished`,
+        detail: 'Planned, failed or staged changes are waiting to be finished or discarded.',
+        action: 'Open change requests',
+        view: 'changes'
+      });
+    }
+
     if (Number(snapshot?.issues?.open || 0) > 0) {
       const count = Number(snapshot.issues.open);
       items.push({
@@ -414,6 +427,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     list.replaceChildren();
 
     if (loadError) {
+      surface.hidden = false;
       surface.dataset.state = 'attention';
       summary.textContent = 'Live capability state could not be verified. Existing controls remain available.';
       count.textContent = 'State unavailable';
@@ -432,6 +446,8 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     }
 
     const items = attentionItems(snapshot);
+    // Nothing to do: hide the card. The Healthy pill in the page header already says all is well.
+    surface.hidden = !items.length;
     if (!items.length) {
       surface.dataset.state = 'clear';
       summary.textContent = 'No action is required. Core capabilities currently report ready.';
@@ -485,18 +501,19 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       tile = document.createElement('button');
       tile.type = 'button';
       tile.id = 'truthModelCapabilityTile';
-      tile.className = 'cap-tile truth-model-capability';
+      tile.className = 'cap-tile cap-chip truth-model-capability';
       tile.addEventListener('click', () => navigate('models'));
       box.appendChild(tile);
     }
 
     if (models.available === false) {
-      tile.innerHTML = '<b>Unavailable</b><span>Model inventory</span>';
+      tile.innerHTML = '<b>Unknown</b><span>models</span>';
       tile.title = models.runtimeError || 'Model inventory unavailable';
       return;
     }
 
-    tile.innerHTML = `<b>${Number(models.loadedCount || 0)} / ${Number(models.installedCount || 0)}</b><span>Loaded / installed models</span>`;
+    tile.innerHTML = `<b>${Number(models.loadedCount || 0)}/${Number(models.installedCount || 0)}</b><span>models loaded</span>`;
+    tile.setAttribute('aria-label', `${Number(models.loadedCount || 0)} of ${Number(models.installedCount || 0)} installed models loaded`);
     tile.title = models.default ? `Configured default: ${models.default}` : 'Open model runtime details';
   }
 
@@ -890,7 +907,7 @@ function renderPageStrip(d,page){
  const views=d.groups.flatMap(g=>g.views).filter(v=>viewButton(v));
  const key=d.id+'|'+views.join(',');
  if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=views.map(v=>'<button type="button" data-strip-view="'+v+'">'+labelForView(v)+'</button>').join('');}
- strip.hidden=views.length<2;
+ strip.hidden=views.length<2||d.id==='home'; // Home's only other page, Inbox, already has a button in the top bar
  qa('[data-strip-view]',strip).forEach(b=>{const on=b.dataset.stripView===page;b.classList.toggle('active',on);if(on){b.setAttribute('aria-current','page');if(strip.scrollWidth>strip.clientWidth)strip.scrollLeft=Math.max(0,b.offsetLeft-strip.clientWidth/2+b.offsetWidth/2)}else b.removeAttribute('aria-current')});
 }
 function buildMobile(){
@@ -898,7 +915,7 @@ function buildMobile(){
  const nav=document.createElement('div');nav.id='uxMobileNav';nav.className='ux-mobile-nav';nav.setAttribute('role','navigation');nav.setAttribute('aria-label','Primary navigation');
  DOMAINS.forEach(d=>{const b=document.createElement('button');b.type='button';b.dataset.domain=d.id;b.innerHTML='<b>'+d.symbol+'</b><span>'+d.label+'</span>';b.addEventListener('click',()=>{toggleSheet(false);navigate(d.defaultView)});nav.appendChild(b)});
  const sheet=document.createElement('div');sheet.id='uxMobileSheet';sheet.className='ux-mobile-sheet';sheet.dataset.open='false';sheet.innerHTML='<div class="ux-mobile-sheet-handle"></div><div class="ux-mobile-sheet-head"><div><span class="ux-secondary-kicker">Navigate</span><strong id="uxMobileSheetTitle"></strong><small id="uxMobileSheetTagline"></small></div><button type="button" id="uxMobileSheetClose" aria-label="Close menu">×</button></div><div class="ux-mobile-sheet-items" id="uxMobileSheetItems"></div>';
- document.body.append(sheet,nav);q('#uxMobileSheetClose')?.addEventListener('click',()=>toggleSheet(false));
+ sheet.inert=true;sheet.setAttribute('aria-hidden','true');document.body.append(sheet,nav);q('#uxMobileSheetClose')?.addEventListener('click',()=>toggleSheet(false));
  document.addEventListener('click',e=>{if(sheetOpen&&!sheet.contains(e.target)&&!nav.contains(e.target)&&e.target.id!=='uxContextMenu')toggleSheet(false)});
 }
 function renderSheet(){
@@ -906,7 +923,7 @@ function renderSheet(){
  q('#uxMobileSheetTitle').textContent=d.label;q('#uxMobileSheetTagline').textContent=d.tagline;holder.innerHTML='';
  d.groups.forEach(g=>{const section=document.createElement('section');section.className='ux-mobile-section';section.innerHTML='<div class="ux-mobile-section-label">'+g.label+'</div>';g.views.forEach(v=>{if(!viewButton(v))return;const b=document.createElement('button');b.type='button';b.className='ux-mobile-link '+(v===pageForView(activeView())?'active':'');b.innerHTML='<span><strong>'+labelForView(v)+'</strong><small>'+DESCRIPTIONS[v]+'</small></span><span>›</span>';b.addEventListener('click',()=>{navigate(v);toggleSheet(false)});section.appendChild(b)});holder.appendChild(section)});
 }
-function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;const s=q('#uxMobileSheet');if(s)s.dataset.open=String(sheetOpen);q('#uxContextMenu')?.setAttribute('aria-expanded',String(sheetOpen));document.body.classList.toggle('ux-sheet-open',sheetOpen);if(sheetOpen)renderSheet()}
+function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;const s=q('#uxMobileSheet');if(s){s.dataset.open=String(sheetOpen);s.inert=!sheetOpen;s.setAttribute('aria-hidden',String(!sheetOpen))}q('#uxContextMenu')?.setAttribute('aria-expanded',String(sheetOpen));document.body.classList.toggle('ux-sheet-open',sheetOpen);if(sheetOpen)renderSheet()}
 function sync(forced){
  const view=REG.resolve(forced||activeView()),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
  const page=pageForView(view),viewLabel=labelForView(page);renderPageStrip(d,page);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;q('#uxContextBar')?.classList.toggle('ux-context-same',viewLabel===d.label);
@@ -2294,7 +2311,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const wake = () => { schedule(); if (isActive() && document.visibilityState === 'visible') { if (st.mode === 'init') loadSessions(); else if (st.mode === 'paired') poll(); } };
     new MutationObserver(wake).observe($('claude'), { attributes: true, attributeFilter: ['class'] });
     document.addEventListener('visibilitychange', wake);
-    loadSessions();
+    api('whoami').then((r) => { if (r.paired || isActive()) loadSessions(); }, () => loadSessions());
     schedule();
   }
 
@@ -2639,6 +2656,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         const panel = document.createElement('section');
         panel.id = 'homeRunCenter';
         panel.className = 'card home-run-center';
+        panel.hidden = true;
         panel.innerHTML = '<div class="section-head"><div><h2>Runs</h2><p id="homeRunSummary">Checking current execution state…</p></div><button id="homeRunsOpen" type="button" class="btn">View runs</button></div><div id="homeRunList" class="run-list"></div>';
         const attention = el('truthAttention');
         if (attention?.parentNode === home) attention.insertAdjacentElement('afterend', panel);
@@ -2713,12 +2731,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const homeSummary = el('homeRunSummary');
     if (homeList && homeSummary) {
       homeList.replaceChildren();
+      // Home shows only live or waiting runs; finished ones are already listed under Recent work and in System › Runs.
+      const visible = [...activeRuns, ...awaiting.filter((run) => !activeRuns.includes(run))].slice(0, 4);
+      const panel = el('homeRunCenter');
+      if (panel) panel.hidden = !visible.length;
       homeSummary.textContent = activeRuns.length
         ? `${activeRuns.length} ${activeRuns.length === 1 ? 'run is' : 'runs are'} active now.`
-        : 'Nothing is running right now. Recent executions are shown below.';
-      const visible = activeRuns.length ? activeRuns.slice(0, 4) : runs.slice(0, 3);
-      if (!visible.length) homeList.innerHTML = '<div class="empty">No runs yet.</div>';
-      else visible.forEach((run) => homeList.appendChild(makeRunRow(run)));
+        : `${awaiting.length} ${awaiting.length === 1 ? 'run is' : 'runs are'} waiting for approval.`;
+      visible.forEach((run) => homeList.appendChild(makeRunRow(run)));
     }
 
     if (state.selectedId && el('runDrawerBackdrop')?.classList.contains('show') && drawerSignature(runs.find((run) => run.id === state.selectedId)) !== state.drawerSig) renderDrawer(state.selectedId);
