@@ -3,6 +3,7 @@
 // STATUS mirrors LocalAIKit.statusBadge in public/ui.js: keep the two tables identical.
 const STATUS = Object.freeze({awaiting_approval:['Ready to review','accent'],ready:['Ready to review','accent'],needs_attention:['Needs a look','attention'],applied:['Done','good'],completed:['Done','good'],answered:['Done','good'],running:['Running','accent'],failed:['Failed','bad'],queued:['Queued','neutral'],down:['Down','bad'],healthy:['Healthy','good'],optional_offline:['Offline','neutral']});
 const KINDS = Object.freeze({chat:['compose','ask'],research:['globe','ask'],image:['image','create'],agent:['automate','agents'],automation:['refresh','automationStudio'],engineering:['build','changes']});
+const LEGACY_TYPES = Object.freeze({mission:'agent',specialist:'agent'});
 function badge(status) {
   const key = String(status ?? '').trim().toLowerCase(), hit = Object.prototype.hasOwnProperty.call(STATUS, key) ? STATUS[key] : null;
   if (hit) return { label: hit[0], tone: hit[1] };
@@ -23,7 +24,8 @@ function fileStats(change) {
 }
 function runCard(run, { approvalFor, changeFor } = {}) {
   run = run || {};
-  const kind = Object.prototype.hasOwnProperty.call(KINDS, run.type) ? run.type : 'other';
+  const type = LEGACY_TYPES[run.type] || run.type; // older mission and specialist runs are agent runs
+  const kind = Object.prototype.hasOwnProperty.call(KINDS, type) ? type : 'other';
   const [icon, view] = KINDS[kind] || ['system', 'runs'];
   const summary = String(run.summary ?? ''), out = run.output && typeof run.output === 'object' ? run.output : {}, meta = run.meta && typeof run.meta === 'object' ? run.meta : {};
   let preview = null;

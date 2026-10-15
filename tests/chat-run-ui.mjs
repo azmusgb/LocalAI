@@ -113,9 +113,22 @@ await check('a thread with 3 runs renders 3 user and 3 assistant turns in order'
 
 await check('a truncated answer shows the full text from the Library', async () => {
   const r = run(1, 'long one', '', { output: { truncated: true, preview: 'PREVIEW' }, artifactIds: ['art-1'] });
-  const page = await open(desk, '#home', { runs: [r], library: [{ id: 'other', response: 'nope' }, { id: 'art-1', response: 'FULL LIBRARY ANSWER' }] });
+  const page = await open(desk, '#home', { runs: [r], library: [{ id: 'other', data: { response: 'nope' } }, { id: 'art-1', data: { response: 'FULL LIBRARY ANSWER' } }] });
   await page.evaluate(id => window.LocalAIRuns.show(id), r.id);
   await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'FULL LIBRARY ANSWER' }).waitFor(T);
+  await page.context().close();
+});
+
+await check('a truncated answer with no Library copy never shows raw JSON', async () => {
+  const bad = run(1, 'long one', '', { output: { truncated: true, preview: '{"text":"The beginning of a very long answ' }, artifactIds: ['gone'], threadId: 't-bad' });
+  const good = run(1, 'parsable', '', { output: { truncated: true, preview: '{"text":"Parsed preview text"}' }, artifactIds: ['gone2'], threadId: 't-good' });
+  const page = await open(desk, '#home', { runs: [bad, good], library: [] });
+  await page.evaluate(id => window.LocalAIRuns.show(id), bad.id);
+  await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'This answer was too long to keep here.' }).waitFor(T);
+  assert.ok(!/truncated|\{"/.test(await page.locator('#runDrawer').innerText()));
+  await page.evaluate(id => window.LocalAIRuns.show(id), good.id);
+  await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'Parsed preview text' }).waitFor(T);
+  assert.ok(!/truncated|\{"/.test(await page.locator('#runDrawer').innerText()));
   await page.context().close();
 });
 

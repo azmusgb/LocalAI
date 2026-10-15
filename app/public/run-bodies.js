@@ -64,6 +64,8 @@
   document.addEventListener('pointerdown', e => { for (const c of threads.values()) if (e.target !== c.input) c.hadFocus = false; }, true);   // once, for every thread
   const grow = c => { c.input.style.height = 'auto'; c.input.style.height = Math.min(c.input.scrollHeight, 140) + 'px'; };
 
+  // The ledger keeps a too-long output as {truncated, preview}, where preview is the output as JSON text cut short: its text if it still parses, else nothing (never the raw JSON).
+  const previewText = p => { try { const v = JSON.parse(p); const t = typeof v === 'string' ? v : v?.text; return typeof t === 'string' ? t : ''; } catch { return ''; } };
   // Every run of the thread, oldest first, as turns: {key, prompt, answer, kind}. kind: '' | 'wait' | 'error' | 'live'.
   function turnsOf(c) {
     const runs = c.runs.some(r => r.id === c.run?.id) || !c.run ? c.runs : [...c.runs, c.run];
@@ -72,7 +74,7 @@
       const prompt = r.input?.prompt || r.title || '';
       let answer = '', kind = '';
       const o = r.output, lv = live && live.runId === r.id ? live : null;
-      if (o && o.truncated) answer = c.lib.get(r.artifactIds?.[0]) || o.preview || r.summary || '';
+      if (o && o.truncated) answer = c.lib.get(r.artifactIds?.[0]) || previewText(o.preview) || 'This answer was too long to keep here.';
       else answer = typeof o === 'string' ? o : o?.text || '';
       if (!answer && lv) answer = lv.text;
       if (r.status === 'failed' && !answer) { answer = r.error || 'This answer could not be written.'; kind = 'error'; }
@@ -135,7 +137,7 @@
       const need = c.runs.filter(r => r.output?.truncated && r.artifactIds?.[0] && !c.lib.has(r.artifactIds[0]) && !c.libTried.has(r.artifactIds[0]));
       if (need.length) {
         need.forEach(r => c.libTried.add(r.artifactIds[0]));
-        try { const lib = await RB.json('/api/library'); for (const it of lib.items || []) if (it?.id && typeof it.response === 'string') c.lib.set(it.id, it.response); } catch {}
+        try { const lib = await RB.json('/api/library'); for (const it of lib.items || []) { const text = it?.data?.response ?? it?.response; if (it?.id && typeof text === 'string') c.lib.set(it.id, text); } } catch {}
       }
       // A finished stream hands over to the ledger once the ledger has the run.
       if (c.live && !c.live.streaming && c.live.runId && c.runs.some(r => r.id === c.live.runId && r.output)) c.live = null;

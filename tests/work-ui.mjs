@@ -133,6 +133,19 @@ await check('Show more appends the next page by before= and hides when fewer tha
   await page.context().close();
 });
 
+await check('Show more is hidden while the filter matches nothing', async () => {
+  const first = Array.from({ length: 60 }, (_, i) => item('chat', `Chat ${i}`, (i + 1) * HOUR, { threadId: `t${i}` }));
+  const page = await open(desk, '#work', async () => first);
+  await page.waitForSelector('#work .run-card', T);
+  assert.equal(await page.locator('#workMore').isVisible(), true);
+  await page.locator('[data-work-kind="missions"]').click();
+  assert.equal(await rows(page).count(), 0);
+  assert.equal(await page.locator('#workMore').isVisible(), false);
+  await page.locator('[data-work-kind="all"]').click();
+  assert.equal(await page.locator('#workMore').isVisible(), true);
+  await page.context().close();
+});
+
 await check('a failed load says so with Retry, and Retry recovers', async () => {
   let fail = true;
   const page = await open(desk, '#work', async () => fail ? { status: 500 } : mixed());

@@ -87,7 +87,9 @@
     const main=document.createElement('div');main.className='list-row__main run-card__main';
     const title=document.createElement('div');title.className='list-row__title';title.textContent=c.title||'Untitled run';main.appendChild(title);
     if(c.summary){const sub=document.createElement('div');sub.className='list-row__sub';sub.textContent=c.summary;main.appendChild(sub)}
-    const pv=runPreview(c.preview);if(pv)main.appendChild(pv);
+    // The summary shows once: a preview that repeats it (or extends a truncated copy of it) is dropped.
+    const plain=t=>String(t||'').replace(/(\.\.\.|…)\s*$/,'').replace(/\s+/g,' ').trim(),pt=plain(c.preview&&c.preview.text),sm=plain(c.summary),dup=pt&&sm&&(pt===sm||pt.startsWith(sm)||sm.startsWith(pt));
+    const pv=dup?null:runPreview(c.preview);if(pv)main.appendChild(pv);
     if(ACTIVE.has(item.status)){const bar=document.createElement('div');bar.className='run-card__bar';bar.setAttribute('role','progressbar');bar.setAttribute('aria-label','Progress');bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');
       const pct=Math.max(0,Math.min(100,Number(item.progress)||0));bar.setAttribute('aria-valuenow',String(pct));const fill=document.createElement('span');fill.style.setProperty('--progress',pct+'%');bar.appendChild(fill);main.appendChild(bar)}
     const act=document.createElement('button');act.type='button';act.className='btn-primary run-card__action';act.textContent=(c.action&&c.action.label)||'Open';

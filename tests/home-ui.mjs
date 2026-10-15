@@ -113,6 +113,16 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
   });
 }
 
+await check('Recent and Needs you show a run summary once, not again as preview text', async () => {
+  const dup = (title, o) => { const r = item('chat', title, 5 * 60e3, o); r.card.preview = { type: 'text', text: 'The answer is forty-two, as computed by Deep Thought.' }; r.card.summary = 'The answer is forty-two'; return r; };
+  const a = dup('Meaning of life'), f = dup('Failed meaning', { status: 'failed' });
+  const page = await open(desk, '#home', { threads: () => [a], all: () => [a, f] });
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  await page.waitForSelector('#homeNeedsYou .run-card', T);
+  for (const sel of ['#homeRecent2', '#homeNeedsYou']) { const t = await page.locator(sel).innerText(); assert.equal(t.split('The answer is forty-two').length - 1, 1, sel + ': ' + t); }
+  await page.context().close();
+});
+
 await check('a stopped core service shows in Needs you, and the capability strip is not on Home', async () => {
   const caps = () => ({ services: [{ name: 'ollama', label: 'Intelligence', state: 'DOWN', required: true, impact: 'Chat is unavailable.' }, ...['search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true }))], models: { defaultInstalled: true }, images: { available: true } });
   const page = await open(desk, '#home', { caps, all: () => [] });

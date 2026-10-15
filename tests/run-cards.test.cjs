@@ -82,3 +82,13 @@ test('the badge table in public/ui.js matches run-cards.js', () => {
   assert.ok(m, 'ui.js defines STATUS');
   assert.deepEqual(JSON.parse(m[1].replace(/([{,])(\w+):/g, '$1"$2":').replace(/'/g, '"')), { ...require('../app/run-cards').STATUS });
 });
+
+test('legacy mission and specialist runs are agent cards', () => {
+  for (const type of ['mission', 'specialist']) {
+    const c = runCard({ id: 'legacy:' + type, type, status: 'completed', summary: 'Do a thing' }, none);
+    assert.equal(c.kind, 'agent');
+    assert.equal(c.icon, 'automate');
+    assert.equal(c.view, 'agents');
+    assert.deepEqual(c.preview, { type: 'mission', text: 'Do a thing' });
+  }
+});

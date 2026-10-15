@@ -28,13 +28,10 @@ function merge(list,{older=false,window=false}={}){
 }
 // Opening a run goes through the runs module, so Close and Back return to Work.
 const openRun=it=>window.LocalAIRuns?window.LocalAIRuns.show(it.id):window.LocalAIRouter?.go('#run/'+encodeURIComponent(it.id));
-const plain=t=>String(t||'').replace(/(\.\.\.|…)\s*$/,'').replace(/\s+/g,' ').trim();
-// One card per row: the summary once (never again as preview text), a chat thread's turn count, and the row itself opens the run.
+// One card per row: a chat thread's turn count (the card itself shows the summary once), and the row itself opens the run.
 function rowFor(it){
- let c=it.card||{},{preview,summary}=c;const n=it.turns||1;
- const pt=plain(preview?.text),sm=plain(summary);
- if(pt&&sm&&(pt===sm||pt.startsWith(sm)||sm.startsWith(pt)))preview=null;
- if(c.kind==='chat'&&n>1)c={...c,summary:`Chat · ${n} turns`,preview:preview||(sm?{type:'text',text:summary}:null)};else c={...c,preview};
+ let c=it.card||{};const n=it.turns||1;
+ if(c.kind==='chat'&&n>1)c={...c,summary:`Chat · ${n} turns`,preview:c.preview||(c.summary?{type:'text',text:c.summary}:null)};
  const row=window.LocalAIUI.runCard({...it,card:c},{onOpen:openRun,rowOpen:true});
  const act=row.querySelector('.run-card__action');
  if(act){if(/^(Review|Retry)$/i.test(act.textContent.trim()))act.className='btn-outline work-secondary';else act.remove()}
@@ -44,7 +41,7 @@ const text=it=>`${it.card?.title||''} ${it.card?.summary||''}`.toLowerCase();
 const visible=()=>{const q=st.query.trim().toLowerCase();return st.items.filter(it=>(st.kind==='all'||bucket(it)===st.kind)&&(!q||text(it).includes(q)))};
 function paint(){
  const box=$('workList'),list=visible();
- $('workMore').hidden=!st.more;
+ $('workMore').hidden=!st.more||!list.length;
  if(!st.items.length){
   box.innerHTML='<div class="state-empty empty-state"><div class="empty-state__title">Nothing yet. What should we do?</div><button type="button" class="btn-primary">Start something</button></div>';
   box.querySelector('button').addEventListener('click',()=>{window.LocalAIRouter?.go('#home');const t=Date.now(),f=()=>{const c=$('commandInput');if($('home')?.classList.contains('active')&&c)c.focus();else if(Date.now()-t<1500)setTimeout(f,40)};f()});
