@@ -33,3 +33,9 @@ $py = "$env:USERPROFILE\gridcraft-local-ai\.venv\Scripts\python.exe"
 ```
 
 Options: `--model <ollama model>`, `--base-url http://127.0.0.1:11434/v1`, `--port 7979`.
+
+Long workbooks: the bridge runs the fast `qwen3:4b-instruct` (4096-token window). When a request's prompt reaches
+3500 tokens, the agent redoes that turn on `qwen3:4b-instruct-32k` and stays on it for the rest of the request, so
+Ollama never silently drops the start of the conversation. Override with `--long-model` / `OLLAMA_LONG_MODEL`
+(empty disables) and `--long-context-at` / `OLLAMA_LONG_CONTEXT_AT`. If the 32k model isn't installed, the agent says so and
+keeps the fast one.
