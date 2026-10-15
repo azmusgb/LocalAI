@@ -4,7 +4,7 @@ GridCraft is exposed inside LocalAI as a same-appliance browser workspace at:
 
 `http://10.0.0.21:3080/gridcraft.html`
 
-The browser page remains part of LocalAI. Execution is delegated to a small Windows-host bridge on port `8787`, which calls the existing `gridcraft-local-ai` Python agent. That agent continues to own Ollama tool calling and GridCraft MCP control.
+The browser page remains part of LocalAI. Execution is delegated to a small Windows-host bridge on port `8787`, which runs the GridCraft Python agent kept in this repo at `host/gridcraft-agent/`. That agent continues to own Ollama tool calling and GridCraft MCP control.
 
 ## Architecture
 
@@ -18,7 +18,7 @@ LocalAI :3080 /gridcraft.html
 Windows GridCraft bridge :8787
     |
     v
-C:\Users\<user>\gridcraft-local-ai\gridcraft_ai.py
+C:\LocalAI\repo\host\gridcraft-agent\gridcraft_ai.py
     |
     +--> Ollama :11434
     |
@@ -35,8 +35,8 @@ The production LocalAI container does not launch or own the GridCraft GUI. The h
 Prerequisites:
 
 - LocalAI repository checked out at `C:\LocalAI\repo`.
-- Existing GridCraft local agent at `%USERPROFILE%\gridcraft-local-ai`.
-- Its Python virtual environment exists under `.venv`.
+- Windows Python 3.12 (`py -3.12`). The installer creates the agent's virtual environment in `%USERPROFILE%\gridcraft-local-ai\.venv` and installs `host/gridcraft-agent/requirements.txt`.
+- Ollama running on the host.
 - GridCraft is installed under `C:\Program Files\GridCraft`.
 
 Install and start the bridge from an **elevated** PowerShell (Run as administrator):

@@ -12,6 +12,8 @@ $ErrorActionPreference = 'Stop'
 $TaskName = 'LocalAI GridCraft Bridge'
 $FirewallRule = 'LocalAI GridCraft Bridge'
 $BridgeScript = Join-Path $RepoRoot 'host\gridcraft-bridge.py'
+$AgentScript = Join-Path $RepoRoot 'host\gridcraft-agent\gridcraft_ai.py'
+$Requirements = Join-Path $RepoRoot 'host\gridcraft-agent\requirements.txt'
 $Python = Join-Path $AgentDir '.venv\Scripts\python.exe'
 $LogPath = Join-Path $AgentDir 'gridcraft-bridge.log'
 
@@ -27,8 +29,20 @@ if ($Uninstall) {
 }
 
 if (-not (Test-Path $BridgeScript)) { throw "Bridge script not found: $BridgeScript" }
-if (-not (Test-Path $Python)) { throw "GridCraft agent Python not found: $Python" }
-if (-not (Test-Path (Join-Path $AgentDir 'gridcraft_ai.py'))) { throw "GridCraft agent not found in $AgentDir" }
+if (-not (Test-Path $AgentScript)) { throw "GridCraft agent not found: $AgentScript" }
+
+# The agent source lives in the repo; $AgentDir only holds its virtual environment, settings and log.
+New-Item -ItemType Directory -Force -Path $AgentDir | Out-Null
+# Native tools write progress and warnings to stderr; judge them by exit code, not by stderr.
+$ErrorActionPreference = 'Continue'
+if (-not (Test-Path $Python)) {
+    Write-Host "Creating Python virtual environment in $AgentDir\.venv ..."
+    & py -3.12 -m venv (Join-Path $AgentDir '.venv')
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $Python)) { throw "Could not create the agent virtual environment (requires 'py -3.12')." }
+}
+& $Python -m pip install --disable-pip-version-check -q -r $Requirements
+if ($LASTEXITCODE -ne 0) { throw "Installing GridCraft agent dependencies failed: $Requirements" }
+$ErrorActionPreference = 'Stop'
 
 # Browsers may reach LocalAI by LAN IP, localhost or the machine name; allow each of them by default.
 if (-not $AllowedOrigins) {
@@ -43,6 +57,7 @@ $origins = $AllowedOrigins -join ','
 $envPath = Join-Path $AgentDir 'gridcraft-bridge.env.ps1'
 @"
 `$env:GRIDCRAFT_AGENT_DIR = '$AgentDir'
+`$env:GRIDCRAFT_AGENT_SCRIPT = '$AgentScript'
 `$env:GRIDCRAFT_WORKBOOK = '$Workbook'
 `$env:GRIDCRAFT_MODEL = '$Model'
 `$env:GRIDCRAFT_BRIDGE_PORT = '$Port'
