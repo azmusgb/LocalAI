@@ -50,6 +50,9 @@ await check('unverified media extensions do not pretend to be installed', async 
 });
 
 await check('research-backed safeguards are visible and actionable', async () => {
+  // Policy, safeguards and the roadmap sit behind one disclosure; open it the way a person would.
+  const about = page.locator('.ux-int-about');
+  if (await about.getAttribute('open') === null) await about.locator('summary').click();
   const research = page.locator('.ux-int-research');
   const body = await research.innerText();
   assert.match(body, /n8n security audit/i);
