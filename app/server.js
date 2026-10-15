@@ -2334,9 +2334,22 @@ async function apiChanges(req,res,urlObj){
 async function apiChangeCapabilities(req,res){
   if(!requireFeature(res,17))return;json(res,200,{patchIntelligence:true,plannerTimeoutMs:ENGINEERING_MODEL_TIMEOUT_MS,retryPatchApplicationFailures:true,operations:['replace_function','insert_after_function','insert_after_text','replace_between_markers','replace_regex','replace','create'],validation:['javascript syntax','duplicate browser functions','duplicate HTML ids','DOM reference contract','runtime boundary checks','staged server health','image model discovery']});
 }
+// Plans a change request. With itemId, links that Improve item in the same transaction, before the save runs
+// reconcile, so the new change is never mistaken for an unlinked one.
+async function planChange({request,target:rawTarget,root},{itemId}={}){
+  const target=rawTarget==='workspace'?'workspace':'self';const rootRel=String(root||'').trim();const targetRoot=target==='self'?SELF_APP_ROOT:safeWorkspacePath(rootRel);
+  const plan=await generatePatchPlan(request,targetRoot);
+  const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:plan.notes,files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[]};
+  storage.transaction(()=>{
+    if(itemId){const key=CLAUDE_FINDING_PREFIX+itemId,f=storage.readSetting(key,null);if(f)storage.writeSetting(key,{...f,changeId:item.id,status:'in_progress',updatedAt:nowIso()})}
+    const items=changeStore();items.unshift(item);saveChanges(items);
+  });
+  recordActivity('change','Change plan created',request.slice(0,180),{changeId:item.id,target});
+  return item;
+}
 async function apiChangePlan(req,res){
   if(!requireFeature(res,13))return;
-  try{const b=await readBody(req);const request=String(b.request||'').trim();if(!request)return json(res,400,{error:'request is required'});const target=b.target==='workspace'?'workspace':'self';const rootRel=String(b.root||'').trim();const targetRoot=target==='self'?SELF_APP_ROOT:safeWorkspacePath(rootRel);const plan=await generatePatchPlan(request,targetRoot);const items=changeStore();const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:plan.notes,files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[]};items.unshift(item);saveChanges(items);recordActivity('change','Change plan created',request.slice(0,180),{changeId:item.id,target});json(res,201,{item:publicChange(item)})}catch(e){storageError(res,e,500)}
+  try{const b=await readBody(req);const request=String(b.request||'').trim();if(!request)return json(res,400,{error:'request is required'});const item=await planChange({request,target:b.target,root:b.root});json(res,201,{item:publicChange(item)})}catch(e){storageError(res,e,500)}
 }
 async function apiChangeStage(req,res){
   if(!requireFeature(res,13))return;
@@ -2627,6 +2640,54 @@ function runImproveReconcile({startup=false}={}){
   });
   return written;
 }
+const IMPROVE_ACTIONS=['start','handToClaude','moveToTop','defer','reject','retry','backToBacklog','discard'];
+function improveRead(id){return storage.readSetting(CLAUDE_FINDING_PREFIX+claudeSlug(id,''),null)}
+function improveWrite(f){f.updatedAt=nowIso();storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);return f}
+function improveChangeRequest(f){return [f.title,f.summary,f.fix].filter(Boolean).join('\n\n')}
+async function apiImproveItems(req,res){
+  try{runImproveReconcile();const changes=changeStore(),byId=new Map(changes.map(c=>[c.id,c]));
+    const ranked=claudeRanked(claudeFindings().map(f=>({...f,source:f.source||'claude'})));
+    const order={backlog:0,inProgress:1,shipped:2,setAside:3};
+    const items=ranked.map(f=>{const c=f.changeId?byId.get(f.changeId):null;return {...f,stage:improve.stageOf(f,byId),change:c?{id:c.id,status:c.status,summary:c.summary||''}:null}})
+      .sort((a,b)=>order[a.stage]-order[b.stage]||(a.stage==='shipped'?String(b.updatedAt).localeCompare(String(a.updatedAt)):a.rank-b.rank));
+    json(res,200,{items,signals:issueStore().slice(0,250)})}catch(e){storageError(res,e,500)}
+}
+async function apiImproveIdea(req,res){
+  try{const b=await readBody(req,64*1024);const item=improve.ideaItem(b.text,nowIso());if(!item)return json(res,400,{error:'Describe the change first.'});
+    storage.writeSetting(CLAUDE_FINDING_PREFIX+item.id,{sessionId:'owner',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...item});
+    if(b.start!==true)return json(res,201,{item});
+    const change=await planChange({request:improveChangeRequest(item),target:'self'},{itemId:item.id});
+    json(res,201,{item:improveRead(item.id),change:publicChange(change)})}catch(e){storageError(res,e,500)}
+}
+async function apiImproveItem(req,res){
+  try{const b=await readBody(req);if(!IMPROVE_ACTIONS.includes(b.action))return json(res,400,{error:`action must be one of ${IMPROVE_ACTIONS.join(', ')}`});
+    const f=improveRead(b.id);if(!f)return json(res,404,{error:'Item not found'});
+    const changes=changeStore(),change=f.changeId?changes.find(c=>c.id===f.changeId):null,live=!!change&&improve.LIVE_CHANGE.includes(change.status);
+    const at=nowIso();
+    switch(b.action){
+      case 'start':case 'retry':{
+        if(live&&!(b.action==='retry'&&['patch_failed','validation_failed'].includes(change.status)))return json(res,409,{error:'A change for this item is already running.'});
+        await planChange({request:improveChangeRequest(f),target:'self'},{itemId:f.id});return json(res,200,{item:improveRead(f.id)});
+      }
+      case 'handToClaude':return json(res,200,{item:improveWrite({...f,...improve.handToClaude(f,at)})});
+      case 'moveToTop':{const open=claudeFindings().filter(x=>!['fixed','rejected','deferred'].includes(x.status));return json(res,200,{item:improveWrite({...f,priorityBoost:improve.moveToTopBoost(f,open,claudeScore)})})}
+      case 'defer':case 'reject':return json(res,200,{item:improveWrite({...f,status:b.action==='defer'?'deferred':'rejected',decidedAt:at})});
+      case 'backToBacklog':return json(res,200,{item:improveWrite({...f,status:'approved',changeId:null})});
+      case 'discard':{
+        if(change&&live)storage.transaction(()=>{const items=changeStore(),i=items.findIndex(c=>c.id===change.id);if(i>=0){items[i].status='rejected';items[i].updatedAt=at;saveChanges(items)}});
+        const aside=b.then==='aside';return json(res,200,{item:improveWrite({...improveRead(f.id),status:aside?'deferred':'approved',changeId:aside?f.changeId:null})});
+      }
+    }
+  }catch(e){storageError(res,e,500)}
+}
+async function apiImproveSignal(req,res){
+  try{const b=await readBody(req);if(!['promote','dismiss'].includes(b.action))return json(res,400,{error:'action must be promote or dismiss'});
+    const issues=issueStore(),i=issues.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Signal not found'});
+    if(b.action==='dismiss'){issues[i].status='ignored';issues[i].updatedAt=nowIso();saveIssues(issues);return json(res,200,{signal:issues[i]})}
+    const id=improve.signalItemId(issues[i].id);const existing=improveRead(id);if(existing)return json(res,200,{item:existing});
+    const item=improve.promoteSignal(issues[i],nowIso());storage.writeSetting(CLAUDE_FINDING_PREFIX+id,{sessionId:'improve',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...item});
+    json(res,200,{item})}catch(e){storageError(res,e,500)}
+}
 function claudeSaveSession(input,at){
   const id=claudeSlug(input.sessionId||input.id,'default');const key=CLAUDE_SESSION_PREFIX+id;const prev=storage.readSetting(key,null)||{id,startedAt:at,eventCount:0};
   const session={...prev,id,title:claudeText(input.sessionTitle||input.title||prev.title||'Claude session',200),cwd:claudeText(input.cwd||prev.cwd||'',300),status:['active','idle','done','failed'].includes(input.sessionStatus)?input.sessionStatus:(prev.status||'active'),updatedAt:at};
@@ -2852,6 +2913,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/powershell/host/next') return await apiPowerShellHostNext(req,res);
     if (req.method === 'POST' && p === '/api/powershell/host/result') return await apiPowerShellHostResult(req,res);
     if (p.startsWith('/api/claude/chat/') && await claudeChat.handle(req, res, urlObj, p)) return;
+    if (req.method === 'GET' && p === '/api/improve/items') return await apiImproveItems(req,res);
+    if (req.method === 'POST' && p === '/api/improve/idea') return await apiImproveIdea(req,res);
+    if (req.method === 'POST' && p === '/api/improve/item') return await apiImproveItem(req,res);
+    if (req.method === 'POST' && p === '/api/improve/signal') return await apiImproveSignal(req,res);
     if (req.method === 'GET' && p === '/api/claude/board') return await apiClaudeBoard(req,res,urlObj);
     if (req.method === 'GET' && p === '/api/claude/priorities') return await apiClaudePriorities(req,res,urlObj);
     if (req.method === 'POST' && p === '/api/claude/events') return await apiClaudeEvents(req,res);
