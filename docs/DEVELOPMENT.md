@@ -86,9 +86,10 @@ PowerShell Workbench needs 1.17). Leave it unset unless you mean to turn feature
 Browser tests against a disposable server on a spare port:
 
 ```sh
-d=$(mktemp -d); DATA_DIR=$d WORKSPACE_ROOT=$d PORT=3180 node app/server.js > "$d/server.log" 2>&1 &
+d=$(mktemp -d); DATA_DIR=$d WORKSPACE_ROOT=$d PORT=3180 node app/server.js > "$d/server.log" 2>&1 & pid=$!
+until curl -fs http://127.0.0.1:3180/healthz >/dev/null; do sleep 1; done
 LOCALAI_URL=http://127.0.0.1:3180 npm run test:browser
-kill %1
+kill $pid
 ```
 
 Use a fresh `DATA_DIR`: the scripts write data (for example Claude board findings and paired chat devices). `tests/claude-chat-ui.mjs`
@@ -146,6 +147,6 @@ Use `--ds-*` tokens for new styles and the `LocalAIKit` helpers (`ui-kit` sectio
   rather than strings in `Invoke-RestMethod` bodies, set `[Console]::OutputEncoding` to UTF-8 before reading
   git output, and do not wrap native commands such as `git` in `$ErrorActionPreference = 'Stop'` (their stderr
   becomes a terminating error).
-- **Workflow:** branch, pull request, CI green, merge. The host deploys `main` within about five minutes;
-  confirm with `/healthz` `releaseCommit` ([Deploy](DEPLOY.md#the-normal-path-merge-and-wait)).
+- **Workflow:** branch, pull request, CI green, merge; then follow
+  [Deploy › The normal path](DEPLOY.md#the-normal-path-merge-and-wait).
 - Design specs and plans for larger changes go in `docs/superpowers/specs/` and `docs/superpowers/plans/`.

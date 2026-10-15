@@ -6,9 +6,11 @@ container `local-ai-appliance` on a Windows host, UI on port 3080. Docs index: `
 ## Test
 
 - `npm test`: all `tests/*.test.cjs` (`node --test`). Needs nothing running. Run it before every PR.
-- Browser tests need a server. Use a throwaway one on a spare port:
-  `d=$(mktemp -d); DATA_DIR=$d WORKSPACE_ROOT=$d PORT=3180 node app/server.js &` then
-  `LOCALAI_URL=http://127.0.0.1:3180 npm run test:browser` (or `node tests/<name>-ui.mjs`).
+- Browser tests need a server. Use a throwaway one on a spare port, wait for it, test, stop it:
+  `d=$(mktemp -d); DATA_DIR=$d WORKSPACE_ROOT=$d PORT=3180 node app/server.js > "$d/log" 2>&1 & pid=$!`,
+  `until curl -fs http://127.0.0.1:3180/healthz >/dev/null; do sleep 1; done`,
+  `LOCALAI_URL=http://127.0.0.1:3180 npm run test:browser` (or `node tests/<name>-ui.mjs`), then `kill $pid`.
+  More in `docs/DEVELOPMENT.md`.
 - Deploy validator off the host: `pwsh -NoProfile -File deploy/Test-LocalAI-Candidate.ps1 -CandidateRoot . -LocalNode`.
   `npm run validate` needs the appliance's Docker image and only works on the host.
 
@@ -16,15 +18,15 @@ container `local-ai-appliance` on a Windows host, UI on port 3080. Docs index: `
 
 1. Branch, commit, open a PR. CI (`.github/workflows/validate.yml`) must be green.
 2. Merge. The host's `LocalAI Safe Deploy` task deploys `main` within about 5 minutes and rolls back by itself.
-3. Confirm: `curl -s http://10.0.0.21:3080/healthz` → `releaseCommit` equals the merge SHA. Deploy output
+3. Confirm: `curl -s http://10.0.0.21:3080/healthz` (10.0.0.21 is the owner's appliance on their LAN) → `releaseCommit` equals the merge SHA. Deploy output
    contains fake `DEPLOYED: aaaa…` lines from contract tests; trust only `/healthz`.
 
-Host access, when needed: `ssh windows-ai` (PowerShell 5.1). Run deploy scripts as a child process
+Host access, when needed: `ssh windows-ai` (the owner's ssh alias for the Windows host; PowerShell 5.1). Run deploy scripts as a child process
 (`powershell -NoProfile -File ...`), not inline. Details: `docs/DEPLOY.md`.
 
 ## Report to the Claude board
 
-Base `http://10.0.0.21:3080`. JSON bodies, no auth.
+Base `http://10.0.0.21:3080` (the owner's appliance). JSON bodies, no auth.
 
 - Before choosing work: `GET /api/claude/priorities?limit=20` (open findings in the owner's rank order, with decisions).
 - Progress: `POST /api/claude/events` `{sessionId, sessionTitle, cwd, sessionStatus:"active"|"idle"|"done"|"failed", events:[{kind:"phase"|"action"|"note"|"decision", title, detail, status:"started"|"running"|"done"|"failed"|"info", phase, tool}]}`.
@@ -44,7 +46,7 @@ Base `http://10.0.0.21:3080`. JSON bodies, no auth.
   `index.html`; retired ids go in `ALIASES`. Use the registry's labels in docs and UI text.
 - New browser test: add it to `test:browser` in `package.json` and to the lists in `validate.yml`.
 - **Never put secrets in the container, repo or logs.** The PowerShell `approval-key.txt` must never reach the
-  container. Spawned processes get the environment minus names matching TOKEN, SECRET, PASSWORD, API_KEY, PRIVATE_KEY or CREDENTIAL (`childEnv`).
+  container. Spawned processes get a filtered environment; see `docs/SECURITY.md` (Other controls, `childEnv`).
 - **Host scripts run under Windows PowerShell 5.1**: send UTF-8 bytes in `Invoke-RestMethod` bodies, set
   `[Console]::OutputEncoding` to UTF-8 before reading git output, and do not run `git` under
   `$ErrorActionPreference = 'Stop'` (stderr becomes a terminating error).

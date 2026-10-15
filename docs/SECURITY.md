@@ -5,7 +5,8 @@ What LocalAI protects, how, and where it does not. Everything here is what the c
 
 ## Threat model
 
-- **Trusted:** the owner, the Windows host's logged-on user, the Mac running Claude Code.
+- **Trusted:** the owner, the Windows host's logged-on user, the Mac running Claude Code, and anyone who can
+  push to `main` on GitHub (the host deploys whatever is there).
 - **Semi-trusted:** any device on the home LAN. It can use the app. It must not be able to run code on the
   Windows host, read host secrets, or impersonate the Mac.
 - **Untrusted:** the internet, and other websites open in a LAN browser.
@@ -19,10 +20,19 @@ What LocalAI protects, how, and where it does not. Everything here is what the c
 | App and API, port 3080 | LAN | No sign-in (see gaps) |
 | HTTPS, ports 80/443 (Caddy) | LAN, private network profile only | Firewall rule `Local AI HTTPS` (`deploy/Install-LocalAI-HTTPS.ps1`) |
 | PowerShell Workbench, port 3090 | Windows host only | Published on `127.0.0.1` only (`deploy/Enable-LocalAI-HostOnlyPort.ps1`) |
-| Ollama, ComfyUI, GridCraft bridge, n8n | Windows host only | Bound to `127.0.0.1`; the container reaches them via `host.docker.internal` |
+| GridCraft bridge, ComfyUI | Windows host only | Bound to `127.0.0.1` by this repo's installers (`Install-GridCraft-Bridge.ps1`, `Install-ComfyUI-Task.ps1` `-Listen` default) |
+| Ollama, n8n | Windows host only, **if configured so** | Expected host configuration, not enforced by this repo: Ollama via the user env var `OLLAMA_HOST=127.0.0.1:11434`, n8n via `-p 127.0.0.1:5678:5678` on a container defined outside the repo. Verify below |
 | Mac | nothing | The chat bridge and hooks only make outbound calls |
 
 Nothing should be port-forwarded from the router.
+
+Verify the loopback bindings on the host (every `LocalAddress` should be `127.0.0.1`, and n8n's port
+mapping should read `127.0.0.1:5678->5678/tcp`):
+
+```powershell
+Get-NetTCPConnection -State Listen | ? LocalPort -in 11434,5678,8188,8787 | Select LocalAddress, LocalPort, OwningProcess
+docker ps --format '{{.Names}} {{.Ports}}'
+```
 
 ## PowerShell Workbench
 
@@ -75,14 +85,20 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
 - **No secrets in the image or repo.** `.gitignore` excludes keys and `.env`; CI and the candidate test
   fail on `.env`, `.key`, `.pem`, `.pfx` or `.p12` files under `app/`. Tokens reach the container only as
   environment variables; `Enable-LocalAI-HostOnlyPort.ps1` passes them through a user-only temp file that it deletes.
-- **Deploys** are pulled by the host from GitHub; nothing on the network can push code to the appliance.
+- **Deploys** are pulled: the host fetches `origin/main` every five minutes and runs whatever is there,
+  including that commit's own candidate tests and deploy scripts. Nothing on the LAN can push code to the
+  appliance, but anyone who can push to `main` can run code on the host (see gaps).
 - **HTTPS.** Caddy with a local CA (`deploy/caddy/Caddyfile`); each device trusts the CA once.
 
 ## Known gaps
 
 | Gap | Effect | Where |
 |---|---|---|
+| GitHub access to this repo means code on the host | The auto-deploy runs `origin/main` and that commit's scripts as the host user. Enable branch protection on `main` with required CI and reviews, and protect the GitHub account. Whether branch protection is on cannot be checked from the repo | `deploy/Run-LocalAI-AutoDeploy.ps1`, `deploy/Deploy-LocalAI.ps1` |
+| Ollama and n8n loopback binding is host configuration | If `OLLAMA_HOST` is unset or n8n is published on all interfaces, the model API or the n8n editor is open to the LAN without auth | [Network exposure](#network-exposure) |
 | No user authentication on port 3080 or 443 | Anyone on the LAN can read conversations and projects, start runs, edit files under `WORKSPACE_ROOT`, and run `node`/`npm`/`npx` there (code execution inside the container) | `app/server.js` request router |
+| Change requests are unauthenticated | Any LAN client can request a change. A `self` change copies `SELF_APP_ROOT` to `DATA_DIR/change-staging/<id>/app`, applies a model-written patch there and validates it by running `node --check` and starting the staged `server.js` inside the container. Approving it only marks it `apply_requested` for a "host updater" that does not exist in this repo, so it never reaches the live app. A `workspace` change, once approved, writes its files into `WORKSPACE_ROOT` | `stageChangeByIdUnlocked`, `validateStagedChange`, `apiChangeRequestApply` in `app/server.js` |
+| Files and Repository write under `WORKSPACE_ROOT` without auth | A LAN user can create or overwrite any file in the mounted workspace and run allow-listed commands there. What `/workspace` is mounted from is set by the container definition, which is not in this repo | `apiWorkbenchWrite`, `apiWorkbenchCommand` in `app/server.js` |
 | Most POST routes do not check `Origin` or `Content-Type` | `readBody` parses any body as JSON, so another website open in a LAN browser can send simple cross-site POSTs to the API | `readBody`, `sameOriginJson` in `app/server.js` |
 | Port 3080 stays plain HTTP | HTTPS is optional; anything using `http://<host>:3080` is unencrypted on the Wi-Fi | `deploy/Install-LocalAI-HTTPS.ps1` |
 | Mac bridge and hooks default to `http://10.0.0.21:3080` | The Mac key crosses the Wi-Fi in clear on every poll; whoever captures it can approve pairings and impersonate sessions. Rotate it if exposed ([steps](CLAUDE-CHAT.md#security-notes)) | `host/claude-chat/bridge.mjs`, `cli.mjs`, `hook.py` (`LOCALAI_URL`) |

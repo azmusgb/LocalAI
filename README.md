@@ -45,9 +45,8 @@ conventions are in [Development](docs/DEVELOPMENT.md).
 
 ## Changing the appliance
 
-Branch, open a pull request, wait for CI, merge. The host deploys `main` within about five minutes and
-rolls back by itself if the new release is unhealthy. Check `GET /healthz` → `releaseCommit`.
-See [Deploy](docs/DEPLOY.md).
+Branch, open a pull request, wait for CI, merge. The host deploys `main` by itself; how to confirm a release
+went live is in [Deploy › The normal path](docs/DEPLOY.md#the-normal-path-merge-and-wait).
 
 ## Documentation
 

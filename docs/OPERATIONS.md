@@ -13,6 +13,7 @@ in [Architecture](ARCHITECTURE.md).
 | Database | `GET /api/storage/status` | `engine: sqlite`, `journalMode: wal`, collection counts |
 | Deploys | `.\deploy\Get-LocalAI-DeployStatus.ps1` | Running SHA = recorded SHA = `origin/main`, task `Ready` |
 | Last backup | `Get-Content C:\LocalAI\backups\last-backup.json` | `ok: true`, `at` within the last day |
+| Host services stay on loopback | see [below](#check-loopback-bindings) | every address `127.0.0.1` |
 
 `/healthz` only says the LocalAI server is up. The Health page probes each dependency:
 
@@ -28,6 +29,18 @@ in [Architecture](ARCHITECTURE.md).
 
 A change in overall health is recorded in the Audit log and Inbox only after it has held for two minutes
 (`HEALTH_SETTLE_MS`), so a single slow probe does not raise an alert.
+
+## Check loopback bindings
+
+Ollama and n8n are kept off the LAN by host configuration, not by this repo ([Security](SECURITY.md#network-exposure)).
+After changing either, or after a Windows or Docker update, check:
+
+```powershell
+Get-NetTCPConnection -State Listen | ? LocalPort -in 11434,5678,8188,8787 | Select LocalAddress, LocalPort, OwningProcess
+docker ps --format '{{.Names}} {{.Ports}}'
+```
+
+Every `LocalAddress` should be `127.0.0.1`, and n8n's mapping should read `127.0.0.1:5678->5678/tcp`.
 
 ## Scheduled tasks and containers
 
@@ -101,17 +114,23 @@ n8n listens on `127.0.0.1:5678` on the host, so its editor (and the **n8n workfl
 to port 5678 on the same host name) only opens on the Windows host itself (`http://localhost:5678`). The
 appliance reaches it as `local-ai-n8n:5678` on the shared Docker network.
 
-To recreate the n8n container with the same data volume, environment and network:
+To recreate the n8n container with the same data volume, environment and network, read them from the
+existing container first and check what the snippet prints before running the rest:
 
 ```powershell
 $j = (docker inspect local-ai-n8n | ConvertFrom-Json)[0]
+$volume = ($j.Mounts | Where-Object Destination -eq '/home/node/.n8n').Name
+$network = @($j.NetworkSettings.Networks.PSObject.Properties.Name)[0]
+$image = $j.Config.Image          # the tag it was created from; $j.Image is the image id
+"volume=$volume network=$network image=$image"
 $envFile = "$env:TEMP\n8n.env"; [IO.File]::WriteAllLines($envFile, [string[]]$j.Config.Env)
 docker rename local-ai-n8n local-ai-n8n-old; docker stop local-ai-n8n-old
-docker run -d --name local-ai-n8n --restart unless-stopped -p 127.0.0.1:5678:5678 -v n8n_data:/home/node/.n8n --env-file $envFile --network local-ai-sandbox-net $j.Image
+docker run -d --name local-ai-n8n --restart unless-stopped -p 127.0.0.1:5678:5678 -v "${volume}:/home/node/.n8n" --env-file $envFile --network $network $image
 Remove-Item $envFile
 ```
 
-Check the volume and network names against `docker inspect local-ai-n8n-old` before removing the old container.
+Using `$j.Config.Image` (the tag) picks up a newer pulled image under that tag; `$j.Image` would pin the exact
+image id the old container ran. Remove `local-ai-n8n-old` only once the new one works.
 
 ## Troubleshooting
 

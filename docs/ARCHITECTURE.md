@@ -90,6 +90,11 @@ forwards it. Nothing on the Mac listens for the appliance.
   from `/api/powershell/host/next` and verified before they run.
 - **Runs** (chat, images, missions, automations, engineering) are recorded in one ledger, shown in **System › Runs**.
 - **Deploys** come from the host pulling `origin/main`, never from the app.
+- **Change requests** plan a patch with a local model. A `self` change is staged in a copy of `SELF_APP_ROOT`
+  under `DATA_DIR/change-staging/<id>/app` and validated there (syntax, DOM ids, a smoke run of the staged
+  server). Approving it marks it `apply_requested` for a host updater that is not in this repo, so self changes
+  never reach the running app; real changes ship through pull requests. A `workspace` change, once approved,
+  is copied into `WORKSPACE_ROOT` with backups of the files it replaces.
 - **Claude Code** sessions post progress and findings to the board and read back the ranked list from
   `GET /api/claude/priorities`. The Claude Code page can also chat with a live session through the relay.
 
@@ -99,7 +104,7 @@ forwards it. Nothing on the Mac listens for the appliance.
 |---|---|---|
 | `/app` | bind of `C:\LocalAI\appliance\app` | replaced by each deploy |
 | `/data` (`DATA_DIR`) | Docker volume (`local-ai-appliance-data` on the current host) | persists across deploys |
-| `/workspace` (`WORKSPACE_ROOT`) | mounted workspace for **Files** and **Repository** | container definition |
+| `/workspace` (`WORKSPACE_ROOT`) | a host folder or volume chosen in the container definition (not in this repo); **Files**, **Repository** and `workspace` change requests read and write it | container definition |
 | `/reports/LocalAI-Certification-latest.txt` (`REPORT_PATH`) | optional certification report | container definition |
 
 ## Security boundaries
