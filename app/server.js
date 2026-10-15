@@ -9,7 +9,7 @@ const PORT = Number(process.env.PORT || 3080);
 const LOCAL_UI_PORT = Number(process.env.LOCAL_UI_PORT || 0);
 const MODEL = process.env.MODEL || 'qwen3:4b-instruct-32k';
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://host.docker.internal:11434';
-const { TEXT_NUM_CTX, TEXT_KEEP_ALIVE, ANSWER_RESERVE, fitMessages, warmTextModel, unloadTextModel } = require('./text-context');
+const { TEXT_NUM_CTX, TEXT_NUM_CTX_LARGE, LARGE_ANSWER_RESERVE, TEXT_KEEP_ALIVE, ANSWER_RESERVE, fitMessages, warmTextModel, unloadTextModel } = require('./text-context');
 const COMFY_URL = process.env.COMFY_URL || 'http://host.docker.internal:8188';
 const N8N_URL = process.env.N8N_URL || 'http://local-ai-n8n:5678';
 const PROXY_URL = process.env.PROXY_URL || 'http://local-ai-ollama-responses-proxy:8080';
@@ -1675,13 +1675,14 @@ async function runEngineeringPlannerModel(prompt, system, timeoutMs=ENGINEERING_
   let watchdogAborted=false;
   const payload=Buffer.from(JSON.stringify({
     model:MODEL,
+    // The planner is rare and code-heavy, so it gets the large context; the reload cost when switching is accepted.
     messages:fitMessages([
       {role:'system',content:system},
       {role:'user',content:String(prompt).slice(0,50000)}
-    ]),
+    ],{numCtx:TEXT_NUM_CTX_LARGE,reserve:LARGE_ANSWER_RESERVE}),
     stream:true,
     keep_alive:TEXT_KEEP_ALIVE,
-    options:{num_ctx:TEXT_NUM_CTX}
+    options:{num_ctx:TEXT_NUM_CTX_LARGE}
   }),'utf8');
   const endpoint=new URL(`${OLLAMA_URL}/api/chat`);
   const transport=endpoint.protocol==='https:'

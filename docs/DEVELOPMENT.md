@@ -50,7 +50,8 @@ All read at startup in `app/server.js` unless noted.
 | `APP_VERSION` | unset | Fallback version when there's no `release.json` and `package.json` is `0.0.0` (below) |
 | `MODEL` | `qwen3:4b-instruct-32k` | Default chat model, protected from deletion |
 | `OLLAMA_URL` | `http://host.docker.internal:11434` | Ollama |
-| `LOCALAI_NUM_CTX` | `8192` | Context for every chat-model call (fits the 6 GB GPU; the prompt is trimmed to it) |
+| `LOCALAI_NUM_CTX` | `8192` | Integer 2048-131072; context for every chat-model call (fits the 6 GB GPU; the prompt is trimmed to it) |
+| `LOCALAI_NUM_CTX_LARGE` | `32768` | Context for the patch planner only (rare, code-heavy; a reload is accepted) |
 | `LOCALAI_KEEP_ALIVE` | `30m` | How long Ollama keeps the chat model loaded after a call |
 | `COMFY_URL` | `http://host.docker.internal:8188` | ComfyUI |
 | `GRIDCRAFT_URL` | `http://host.docker.internal:8787` | GridCraft bridge |

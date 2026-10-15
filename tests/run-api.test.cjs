@@ -332,28 +332,40 @@ test('text-model calls use one 8192 context, stay warm, and take turns with imag
   const chat = await request('/api/chat', { messages: big });
   assert.equal(chat.response.status, 200);
   const chatCall = ollamaCalls.find(c => c.url === '/api/chat').body;
-  assert.equal(chatCall.options.num_ctx, 8192);
-  assert.equal(chatCall.keep_alive, '30m');
   assert.equal(chatCall.messages.at(-1).content, 'final question');
   assert.ok(chatCall.messages.map(m => m.content).join('').length / 3.5 <= 8192 - 1024);
 
-  const stream = await fetch(`${base}/api/chat/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }) });
+  const stream = await fetch(`${base}/api/chat/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: 'hi stream' }] }) });
   await stream.text();
+  const raw = (url, body) => fetch(base + url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.text());
+  await raw('/api/glance/ask', { text: 'what is up glance' });
+  await raw('/api/agents/run', { goal: 'agent goal here' });
+  await raw('/api/changes/plan', { request: 'Change request for planner', target: 'self' }); // the mock's reply is not a patch plan; only the request matters
 
-  // An image request unloads the text model first, then warms it again afterwards.
-  ollamaCalls.length = 0;
-  const ollamaOrder = () => ollamaCalls.filter(c => c.url === '/api/generate');
+  // Every text-model request, on every path, shares the one context and keep-alive (the planner alone gets the large one).
+  const chats = ollamaCalls.filter(c => c.url === '/api/chat').map(c => c.body);
+  const has = text => chats.find(b => b.messages.some(m => String(m.content).includes(text)));
+  assert.equal(chats.length, 5, 'chat, stream, glance, agent, planner');
+  for (const [name, text, ctx] of [['chat', 'final question', 8192], ['stream', 'hi stream', 8192], ['glance', 'what is up glance', 8192], ['agent', 'agent goal here', 8192], ['planner', 'CHANGE REQUEST', 32768]]) {
+    const b = has(text);
+    assert.ok(b, `${name} request captured`);
+    assert.equal(b.options.num_ctx, ctx, name);
+    assert.equal(b.keep_alive, '30m', name);
+  }
+  const planner = has('CHANGE REQUEST');
+  assert.ok(planner.messages.map(m => m.content).join('').length / 3.5 <= 32768 - 4096);
+
   const origPush = ollamaCalls.push.bind(ollamaCalls);
   ollamaCalls.push = (...a) => { if (a[0].url === '/api/generate') order.push(a[0].body.keep_alive === 0 ? 'unload' : 'warm'); return origPush(...a); };
+  // An image request unloads the text model first, then warms it again afterwards.
+  const generates = () => ollamaCalls.filter(c => c.url === '/api/generate');
+  const before = generates().length;
   const img = await request('/api/images/generate', { prompt: 'a cat' });
   assert.equal(img.response.status, 200, JSON.stringify(img.value));
-  await waitFor(() => order.includes('warm'));
+  await waitFor(() => generates().length >= before + 2);
+  const after = generates().slice(before);
+  assert.equal(after.length, 2);
+  assert.equal(after[0].body.keep_alive, 0);
+  assert.equal(after[1].body.keep_alive, '30m');
   assert.deepEqual(order, ['unload', 'comfy', 'warm']);
-  assert.equal(ollamaOrder().length, 2);
-
-  // Every captured text-model chat request used the shared options.
-  for (const c of ollamaCalls.filter(c => c.url === '/api/chat')) {
-    assert.equal(c.body.options.num_ctx, 8192);
-    assert.equal(c.body.keep_alive, '30m');
-  }
 });

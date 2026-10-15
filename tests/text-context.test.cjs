@@ -2,7 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fitMessages, estimateTokens, warmTextModel, unloadTextModel, CHARS_PER_TOKEN } = require('../app/text-context');
+const { fitMessages, estimateTokens, warmTextModel, unloadTextModel, CHARS_PER_TOKEN, parseNumCtx, parseKeepAlive } = require('../app/text-context');
 
 const sys = { role: 'system', content: 'You are helpful.' };
 const chars = ms => ms.reduce((n, m) => n + m.content.length, 0);
@@ -61,7 +61,7 @@ test('sources are dropped entirely when they cannot help', () => {
 test('warm and unload send the right bodies and never throw', async () => {
   const calls = [];
   const fetch = async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return { ok: true }; };
-  await warmTextModel({ fetch, url: 'http://o', model: 'm' });
+  await warmTextModel({ fetch, url: 'http://o', model: 'm', numCtx: 8192, keepAlive: '30m' });
   await unloadTextModel({ fetch, url: 'http://o', model: 'm' });
   assert.equal(calls[0].url, 'http://o/api/generate');
   assert.equal(calls[0].body.model, 'm');
@@ -77,6 +77,40 @@ test('warm and unload send the right bodies and never throw', async () => {
 test('unload waits at most about 2 seconds', async () => {
   const hang = () => new Promise(() => {});
   const t0 = Date.now();
-  await unloadTextModel({ fetch: hang, url: 'http://o', model: 'm' });
-  assert.ok(Date.now() - t0 < 3000);
+  await unloadTextModel({ fetch: hang, url: 'http://o', model: 'm', waitMs: 50 });
+  assert.ok(Date.now() - t0 < 1000);
+});
+
+test('a huge message keeps its head and its tail, the middle is cut', () => {
+  const body = 'INSTRUCTIONS: do it.' + 'm'.repeat(50000) + 'QUESTION?';
+  const out = fitMessages([sys, { role: 'user', content: body }], opts);
+  const c = out[1].content;
+  assert.ok(c.startsWith('INSTRUCTIONS:'));
+  assert.ok(c.endsWith('QUESTION?'));
+  assert.ok(c.includes('\n…\n'));
+  assert.ok(estimateTokens(out.map(m => m.content).join('')) <= 1000);
+  const head = c.indexOf('\n…\n');
+  assert.ok(head > (c.length - 3) * 0.55 && head < (c.length - 3) * 0.65, 'head gets about 60%');
+});
+
+test('LOCALAI_NUM_CTX parser: integers 2048..131072 only', () => {
+  const warn = () => { warn.n++; }; warn.n = 0;
+  assert.equal(parseNumCtx(undefined, 8192, 'X', warn), 8192);
+  assert.equal(parseNumCtx('4096', 8192, 'X', warn), 4096);
+  assert.equal(parseNumCtx('2048', 8192, 'X', warn), 2048);
+  assert.equal(parseNumCtx('131072', 8192, 'X', warn), 131072);
+  assert.equal(warn.n, 0);
+  for (const bad of ['2047', '131073', 'abc', 'Infinity', '8192.5', '-1', '0', '']) assert.equal(parseNumCtx(bad, 8192, 'X', warn), 8192, bad);
+  assert.equal(warn.n, 7, 'warns for each bad value except empty');
+});
+
+test('LOCALAI_KEEP_ALIVE parser: durations, -1 and 0 only', () => {
+  const warn = () => { warn.n++; }; warn.n = 0;
+  assert.equal(parseKeepAlive(undefined, warn), '30m');
+  for (const ok of ['30m', '1h', '90s', '1.5h', '5m']) assert.equal(parseKeepAlive(ok, warn), ok);
+  assert.equal(parseKeepAlive('-1', warn), -1);
+  assert.equal(parseKeepAlive('0', warn), 0);
+  assert.equal(warn.n, 0);
+  for (const bad of ['forever', '30', '5 m', '-5m', '1d', 'm']) assert.equal(parseKeepAlive(bad, warn), '30m', bad);
+  assert.equal(warn.n, 6);
 });
