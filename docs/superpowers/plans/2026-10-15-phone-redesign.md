@@ -8,6 +8,11 @@
 
 **Tech Stack:** Vanilla HTML/CSS/JS (no build step), Playwright browser tests, axe-core 4.10.2 for accessibility checks in tests.
 
+> **Scope change (2026-10-15):** this plan now ends after **Task 2**. The LocalAI evolution roadmap
+> (`docs/superpowers/specs/2026-10-15-localai-evolution-design.md`) merges or replaces the pages Tasks 3–6 would restyle,
+> and its sub-projects adopt the components on desktop as each new page lands (Task 7). Tasks 3–7 are kept below for
+> reference only — do not execute them.
+
 **Spec:** `docs/superpowers/specs/2026-10-15-phone-redesign-design.md` · Mockups: https://claude.ai/artifact/2uczmEkCU2pB5sWVknT7zp (the Design canvas; each screen is a `.dc.html` file — readable with the Artifact `read` action, `path: "project/<Name>.dc.html"`, names Main/Chat/Changes/Missions/Health).
 
 ## Global Constraints
@@ -58,14 +63,15 @@
 **Interfaces:**
 - Consumes: Task 1 sprite + `.icon-btn`.
 - Produces: `#uxHeader` (phone header; on desktop the existing context bar stays), `#uxHeaderDomain` (button: domain name + chevron, opens the existing sheet via `toggleSheet()`), `#uxHeaderAction` (page action slot; pages call `window.LocalAIShell.setAction({icon, label, onClick})` / `clearAction()`), `#uxSearchBtn`, existing `#uxInboxBtn` (now icon + count), `#uxPageStrip` (underline tabs; links with `aria-current="page"`), `#uxMobileNav` (flush tab bar, sprite icons). Home shows the brand mark + greeting instead of the domain button.
+- Produces in `app/public/view-registry.js`: an `icon` field on each `DOMAINS` entry naming its sprite symbol (`home`, `workspace`, `automate`, `build`, `system`). The tab bar and header read the label and icon only from `DOMAINS` (no hard-coded names), so the roadmap's sub-project 2 relabels the tab bar by editing the registry.
 
-- [ ] **Step 1: Failing tests** in `tests/mobile-ui.mjs` at 390×844 for every view: header height ≤ 56; `#uxPageStrip` height ≤ 44 and its links have no pill background; first visible content element of the active view starts ≤ 120 px from the top; `#uxMobileNav` bottom == viewport height (± 1) and it has 5 items with `svg use` icons; no visible `.view.active .topbar h1`; Inbox bell has `aria-label` containing the count. Review Focus 1: at 320×640 on Build the strip scrolls, the active tab is fully visible, no page overflow. Review Focus 2: toggling Developer tools off leaves 4 tab-bar items of equal width.
+- [ ] **Step 1: Failing tests** in `tests/mobile-ui.mjs` at 390×844 for every view: header height ≤ 56; `#uxPageStrip` height ≤ 44 and its links have no pill background; first visible content element of the active view starts ≤ 120 px from the top; `#uxMobileNav` bottom == viewport height (± 1) and it has 5 items with `svg use` icons; no visible `.view.active .topbar h1`; each tab-bar item's `use` href equals `#i-` + its domain's `icon` from `LocalAIViews.DOMAINS`; Inbox bell has `aria-label` containing the count. Review Focus 1: at 320×640 on Build the strip scrolls, the active tab is fully visible, no page overflow. Review Focus 2: toggling Developer tools off leaves 4 tab-bar items of equal width.
 - [ ] **Step 2: Run** — FAIL.
 - [ ] **Step 3: Implement**; Health registers its refresh via `LocalAIShell.setAction` (the old "Check again" stays in DOM for desktop).
 - [ ] **Step 4: Run** all browser suites + `npm test` — PASS; phone screenshots of 5 pages compared against the mockups' header/tabs/tab bar.
 - [ ] **Step 5: Commit + PR** "Phone shell: one header, underline tabs, flush tab bar".
 
-### Task 3: Home and Chat
+### Task 3: Home and Chat — superseded (see scope change)
 
 **Files:** `app/public/index.html` (`#home`, `#ask` markup additions), `app/public/app.js` (only where the chat empty state / phase text / web toggle are rendered), `app/public/ui.js` (Home "Needs you" + "Recent" phone sections), `app/public/app.css`; Test: `tests/mobile-ui.mjs`, `tests/navigation-ui.mjs`.
 
@@ -75,7 +81,7 @@
 - [ ] **Step 2–4:** fail → implement to the mockups (Main, Chat) → pass all suites.
 - [ ] **Step 5: Commit + PR** "Home and Chat: phone redesign".
 
-### Task 4: Change requests and Missions
+### Task 4: Change requests and Missions — superseded (see scope change)
 
 **Files:** `app/public/index.html` (`#changes`, `#agents` form markup), `app/public/app.js` (ledger/runs rendering → list rows + `badgeHtml`), `app/public/ui.js` (mission "Last mission" card in the agent-specialists/agent-world sections), `app/public/app.css`; Test: `tests/mobile-ui.mjs`, `tests/agent-operations-ui.mjs`.
 
@@ -85,7 +91,7 @@
 - [ ] **Step 2–4:** fail → implement to the mockups (Changes, Missions) → pass all suites.
 - [ ] **Step 5: Commit + PR** "Change requests and Missions: phone redesign".
 
-### Task 5: Health and the System pages
+### Task 5: Health and the System pages — superseded (see scope change)
 
 **Files:** `app/public/index.html` (`#status`), `app/public/app.js` (`serviceList` rendering), `app/public/ui.js` (Developer tools switch in first-run section; Models, Integrations, Runs list rows; Audit log rows), `app/public/app.css`; Test: `tests/mobile-ui.mjs`, `tests/first-run-ui.mjs`, `tests/models-ui.mjs`, `tests/integration-hub-ui.mjs`.
 
@@ -95,7 +101,7 @@
 - [ ] **Step 2–4:** fail → implement (Health mockup; patterns for Models/Integrations/Runs/Audit log) → pass.
 - [ ] **Step 5: Commit + PR** "Health and System pages: phone redesign".
 
-### Task 6: Remaining pages
+### Task 6: Remaining pages — superseded (see scope change)
 
 **Files:** `app/public/index.html`, `app/public/app.js`, `app/public/ui.js`, `app/public/app.css` for Images, Library, Projects/Sources/Memory, Inbox/Approvals, Automations, n8n, Browser & computer, Monitors, Issues/Quality, Claude Code, Files, Repository, PowerShell; Test: `tests/mobile-ui.mjs` + the page suites.
 
@@ -103,7 +109,7 @@
 - [ ] **Step 2–4:** fail → implement with the shared components → pass all suites; screenshot pass of all 26 pages.
 - [ ] **Step 5: Commit + PR** "Remaining pages: phone redesign".
 
-### Task 7: Desktop adoption
+### Task 7: Desktop adoption — superseded (see scope change)
 
 **Files:** `app/public/app.css`, `app/public/ui.js` (rail + section list icons from the sprite); Test: `tests/navigation-ui.mjs`, `tests/design-system-ui.mjs`.
 
