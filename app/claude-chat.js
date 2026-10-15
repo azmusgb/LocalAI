@@ -391,6 +391,8 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
       if (route.startsWith('GET')) devicesList(req, res, device); else await devicesRevoke(req, res);
       return true;
     }
+    // Lets the page ask whether it is paired without provoking a 401 (and a console error) on every load.
+    if (route === 'GET /api/claude/chat/whoami') { json(res, 200, { paired: !!deviceFor(req) }); return true; }
     const deviceRoutes = {
       'GET /api/claude/chat/sessions': () => sessions(req, res),
       'GET /api/claude/chat/messages': () => messagesHandler(req, res, urlObj),

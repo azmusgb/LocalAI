@@ -1380,3 +1380,24 @@ body.ux-v3.ux-nav-collapsed .ux-page-strip{display:flex}
 .model-runtime-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:13px;color:var(--ds-soft)}
 .model-runtime-actions .btn{min-height:36px;padding:4px 12px}
 .first-run-progress{margin-top:8px;max-width:420px}.first-run-progress small{display:block;color:var(--ds-muted);font-size:12px;margin-top:4px}
+
+/* Home, phone pass 2: status is one line of chips at the foot, empty cards stay hidden, recent images show thumbnails. */
+body #homeCapabilities{display:flex!important;flex-wrap:wrap;gap:8px;margin-top:16px}
+#homeCapabilities .cap-chip{min-height:36px;flex-direction:row;align-items:baseline;gap:5px;padding:7px 12px;border-radius:999px;background:var(--panel2);color:var(--text);font:inherit;cursor:pointer;min-width:0;max-width:100%}
+#homeCapabilities .cap-chip b{font-size:12px}
+#homeCapabilities .cap-chip span{font-size:12px;color:var(--muted);white-space:nowrap}
+#homeCapabilities .cap-chip:hover{border-color:var(--line2)}
+#homeCapabilities .empty{padding:0;font-size:12px}
+.home-optional-grid:not(:has(> .card:not([hidden]))){display:none}
+.activity-item--thumb{grid-template-columns:44px minmax(0,1fr) auto}
+.activity-item--thumb .activity-icon{width:44px;height:44px;overflow:hidden}
+.activity-item--thumb .activity-icon img{width:100%;height:100%;object-fit:cover;display:block}
+.mode-select{display:none}
+@media(max-width:760px){
+  /* One compact mode select instead of six buttons wrapping onto two rows. */
+  #home .modes{display:none}
+  .mode-select{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;color:var(--muted)}
+  .mode-select select{flex:1;min-width:0}
+  .activity-item--thumb{grid-template-columns:44px minmax(0,1fr)}
+  #homeCapabilities .cap-chip{min-height:44px}
+}
