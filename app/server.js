@@ -37,6 +37,7 @@ const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 const crypto = require('crypto');
 const { Storage } = require('./storage');
 const { RunLedger, cleanId: cleanRunId } = require('./run-ledger');
+const improve = require('./improve');
 const { runCard } = require('./run-cards');
 const { loadOllamaModelRuntime } = require('./model-runtime');
 const { createModelPulls } = require('./model-pulls');
@@ -51,6 +52,7 @@ const storage = new Storage({ dataDir: DATA_DIR });
 // Phone notifications (Web Push): app/push.js sends, app/notify.js decides; docs/OPERATIONS.md › Notifications.
 const pushLib = require('./push');
 const notifyLib = require('./notify');
+const glance = require('./glance');
 const notifier = notifyLib.createNotifier({
   storage, sendPush: pushLib.sendPush, vapid: pushLib.loadOrCreateVapid(storage),
   subject: process.env.VAPID_SUBJECT || 'https://github.com/azmusgb/LocalAI'
@@ -501,12 +503,47 @@ async function getCapabilitiesSnapshot(force = false) {
   return snapshot;
 }
 
+// Spoken summaries for Siri Shortcuts (docs/APPLE-WATCH.md). ?topic=health for "Is Local AI OK?", otherwise
+// "What needs me?". ?format=text returns just the sentence, which a shortcut can speak without parsing JSON.
+async function apiGlance(req, res, urlObj) {
+  try {
+    const snapshot = await getCapabilitiesSnapshot();
+    const health = glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION });
+    const dayAgo = Date.now() - 86400000;
+    const recentFailed = runLedger.list({ status: 'failed', limit: 200 }).filter(r => Date.parse(r.finishedAt || r.updatedAt) >= dayAgo);
+    const running = ['running', 'streaming'].reduce((n, status) => n + runLedger.list({ status, limit: 200 }).length, 0);
+    const needs = glance.needsYouSummary({
+      approvals: approvalStore().filter(a => a.status === 'pending').length,
+      changes: Number(snapshot.changes?.pending || 0),
+      findings: claudeFindings().filter(f => f.status === 'proposed').length,
+      failedToday: recentFailed.length,
+      running
+    }, health);
+    const topic = urlObj.searchParams.get('topic') === 'health' ? 'health' : 'needs';
+    const speech = topic === 'health' ? health.speech : needs.speech;
+    if (urlObj.searchParams.get('format') === 'text') return text(res, 200, speech, 'text/plain; charset=utf-8', { 'Cache-Control': 'no-store' });
+    json(res, 200, { topic, speech, needsYou: { count: needs.count, items: needs.items }, health: { ok: health.ok, down: health.down, total: health.total }, version: APP_VERSION });
+  } catch (e) { storageError(res, e, 500); }
+}
+
+// "Ask Local AI" from Siri: {text} in, the brief answer out as plain text to speak. A flat body keeps the shortcut
+// to one JSON field; the chat run and Library entry are the same as any other chat.
+async function apiGlanceAsk(req, res) {
+  try {
+    const b = await readBody(req);
+    const textIn = typeof b.text === 'string' ? b.text.trim().slice(0, 4000) : '';
+    if (!textIn) return json(res, 400, { error: 'text is required' });
+    const result = await chatOnce({ messages: [{ role: 'user', content: textIn }], brief: true });
+    text(res, 200, result.message.content, 'text/plain; charset=utf-8', { 'Cache-Control': 'no-store' });
+  } catch (e) { storageError(res, e, 500); }
+}
+
 async function apiCapabilities(req, res) {
   try { json(res, 200, await getCapabilitiesSnapshot(true)); }
   catch (e) { storageError(res,e,500); }
 }
 
-function systemPrompt(researchContext = '', capabilityContext = '') {
+function systemPrompt(researchContext = '', capabilityContext = '', brief = false) {
   return {
     role: 'system',
     content:
@@ -516,7 +553,9 @@ function systemPrompt(researchContext = '', capabilityContext = '') {
       (capabilityContext ? `\n\n${capabilityContext}` : '') +
       (researchContext
         ? `\n\nCurrent metasearch results are below. Use them when relevant and cite source numbers like [1].\n\n${researchContext}`
-        : '')
+        : '') +
+      // Siri Shortcuts on a phone or watch read the answer aloud (docs/APPLE-WATCH.md).
+      (brief ? '\n\nThis answer will be read aloud on a watch: reply in at most two short sentences of plain text, with no lists, markdown, links or source numbers.' : '')
   };
 }
 
@@ -553,13 +592,18 @@ async function prepareChat(body, signal = null) {
     if (signal?.aborted) throw error;
   }
   throwIfAborted();
-  return { model, messages, sources, researchContext, capabilityContext };
+  return { model, messages, sources, researchContext, capabilityContext, brief: body.brief === true };
 }
 
 async function apiChat(req, res) {
+  try { json(res, 200, await chatOnce(await readBody(req))); }
+  catch (e) { storageError(res,e,500); }
+}
+
+// One non-streaming chat turn as a run; shared by /api/chat and /api/glance/ask.
+async function chatOnce(body) {
   let execution = null;
   try {
-    const body = await readBody(req);
     execution = createChatExecution(body, false);
     runLedger.start(execution.id, body.webSearch === true ? 'Research run started' : 'Chat run started');
     const prep = await prepareChat(body);
@@ -570,7 +614,7 @@ async function apiChat(req, res) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: prep.model,
-        messages: [systemPrompt(prep.researchContext, prep.capabilityContext), ...prep.messages],
+        messages: [systemPrompt(prep.researchContext, prep.capabilityContext, prep.brief), ...prep.messages],
         stream: false,
         options: { num_ctx: 32768 }
       })
@@ -603,16 +647,16 @@ async function apiChat(req, res) {
       meta: { model: prep.model, elapsedMs, sources: prep.sources.length }
     });
 
-    json(res, 200, {
+    return {
       message: { role: 'assistant', content },
       model: prep.model,
       elapsedMs,
       sources: prep.sources,
       runId: execution.id
-    });
+    };
   } catch (e) {
     if (execution) runLedger.fail(execution.id, e);
-    storageError(res,e,500);
+    throw e;
   }
 }
 
@@ -669,7 +713,7 @@ async function apiChatStream(req, res) {
       signal: controller.signal,
       body: JSON.stringify({
         model: prep.model,
-        messages: [systemPrompt(prep.researchContext, prep.capabilityContext), ...prep.messages],
+        messages: [systemPrompt(prep.researchContext, prep.capabilityContext, prep.brief), ...prep.messages],
         stream: true,
         options: { num_ctx: 32768 }
       })
@@ -1140,7 +1184,7 @@ async function apiGenerateImage(req, res) {
     }
     recordActivity('image', editing ? 'Edited an image' : count > 1 ? `Created ${images.length} images` : 'Created an image', original.slice(0, 180), { ...common, imageUrl: images[0].imageUrl, seed: images[0].seed, runId: execution.id });
     runLedger.complete(execution.id, {
-      summary: `${images.length} ${outW} × ${outH} image${images.length === 1 ? '' : 's'} ${editing ? 'edited' : 'created'} with ${engine.label} (${checkpoint})`,
+      summary: imageEngines.runSummary({ count: images.length, width: outW, height: outH, engine: engine.label, editing }),
       output: { ...common, images },
       artifactIds,
       meta: { promptId: results[0].promptId, checkpoint, elapsedMs }
@@ -1291,7 +1335,7 @@ function lastUserRunMessage(body){
 function createChatExecution(body,streaming){
   const messages=sanitizeMessages(body?.messages);const prompt=[...messages].reverse().find(m=>m.role==='user')?.content||'Chat';
   const model=typeof body?.model==='string'&&body.model.trim()?body.model.trim():MODEL;
-  const retryBody={messages,model,webSearch:body?.webSearch===true,threadId:cleanRunId(body?.threadId)||undefined};
+  const retryBody={messages,model,webSearch:body?.webSearch===true,threadId:cleanRunId(body?.threadId)||undefined,brief:body?.brief===true||undefined};
   return runLedger.create({type:body?.webSearch===true?'research':'chat',title:titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true}});
 }
 function normalizedExecutionStatus(value){
@@ -1982,7 +2026,7 @@ const CHANGES_STORE = 'changes';
 const CHANGE_STAGE_ROOT = path.join(DATA_DIR, 'change-staging');
 
 function changeStore(){ return objectStore(CHANGES_STORE); }
-function saveChanges(items){ saveStore(CHANGES_STORE, items, 300); }
+function saveChanges(items){ saveStore(CHANGES_STORE, items, 300); if (typeof runImproveReconcile === 'function') runImproveReconcile(); }
 function publicChange(item){
   if(!item) return null;
   const copy={...item};
@@ -2336,9 +2380,22 @@ async function apiChanges(req,res,urlObj){
 async function apiChangeCapabilities(req,res){
   if(!requireFeature(res,17))return;json(res,200,{patchIntelligence:true,plannerTimeoutMs:ENGINEERING_MODEL_TIMEOUT_MS,retryPatchApplicationFailures:true,operations:['replace_function','insert_after_function','insert_after_text','replace_between_markers','replace_regex','replace','create'],validation:['javascript syntax','duplicate browser functions','duplicate HTML ids','DOM reference contract','runtime boundary checks','staged server health','image model discovery']});
 }
+// Plans a change request. With itemId, links that Improve item in the same transaction, before the save runs
+// reconcile, so the new change is never mistaken for an unlinked one.
+async function planChange({request,target:rawTarget,root},{itemId}={}){
+  const target=rawTarget==='workspace'?'workspace':'self';const rootRel=String(root||'').trim();const targetRoot=target==='self'?SELF_APP_ROOT:safeWorkspacePath(rootRel);
+  const plan=await generatePatchPlan(request,targetRoot);
+  const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:plan.notes,files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[]};
+  storage.transaction(()=>{
+    if(itemId){const key=CLAUDE_FINDING_PREFIX+itemId,f=storage.readSetting(key,null);if(f)storage.writeSetting(key,{...f,changeId:item.id,status:'approved',updatedAt:nowIso()})}
+    const items=changeStore();items.unshift(item);saveChanges(items);
+  });
+  recordActivity('change','Change plan created',request.slice(0,180),{changeId:item.id,target});
+  return item;
+}
 async function apiChangePlan(req,res){
   if(!requireFeature(res,13))return;
-  try{const b=await readBody(req);const request=String(b.request||'').trim();if(!request)return json(res,400,{error:'request is required'});const target=b.target==='workspace'?'workspace':'self';const rootRel=String(b.root||'').trim();const targetRoot=target==='self'?SELF_APP_ROOT:safeWorkspacePath(rootRel);const plan=await generatePatchPlan(request,targetRoot);const items=changeStore();const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:plan.notes,files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[]};items.unshift(item);saveChanges(items);recordActivity('change','Change plan created',request.slice(0,180),{changeId:item.id,target});json(res,201,{item:publicChange(item)})}catch(e){storageError(res,e,500)}
+  try{const b=await readBody(req);const request=String(b.request||'').trim();if(!request)return json(res,400,{error:'request is required'});const item=await planChange({request,target:b.target,root:b.root});json(res,201,{item:publicChange(item)})}catch(e){storageError(res,e,500)}
 }
 async function apiChangeStage(req,res){
   if(!requireFeature(res,13))return;
@@ -2430,7 +2487,7 @@ async function detectIssues(){
   // Oldest first, so each event is compared with the ones counted before it.
   for(const e of [...recent].reverse()){const item=upsertIssue(items,{kind:'browser-runtime',name:e.message.slice(0,220),detail:`${e.source||''}${e.line?`:${e.line}`:''}\n${e.stack||''}`.trim(),severity:'high',seenAt:e.createdAt});if(item)seen.push(item.id)}
   for(const item of items){if(item.kind==='quality-check'&&item.status==='open'&&!seen.includes(item.id)){item.status='resolved';item.autoResolvedAt=nowIso();item.updatedAt=nowIso()}}
-  saveIssues(items);return {scan,items:items.slice(0,200),detected:seen.length,open:items.filter(x=>x.status==='open').length};
+  saveIssues(items);runImproveReconcile();return {scan,items:items.slice(0,200),detected:seen.length,open:items.filter(x=>x.status==='open').length};
 }
 async function apiIssues(req,res){if(!requireFeature(res,15))return;const items=issueStore();json(res,200,{items:items.slice(0,250),open:items.filter(x=>x.status==='open').length,high:items.filter(x=>x.status==='open'&&x.severity==='high').length})}
 async function apiIssuesScan(req,res){if(!requireFeature(res,15))return;try{const r=await detectIssues();recordActivity('issue',r.open?'Issue scan complete':'Issue scan clear',`${r.open} open issue(s)`,{detected:r.detected});if(r.open)addNotification('issue','Quality issues detected',`${r.open} issue(s) are open; ${r.items.filter(x=>x.status==='open'&&x.severity==='high').length} high severity.`,{});json(res,200,r)}catch(e){storageError(res,e,500)}}
@@ -2616,6 +2673,82 @@ function claudeText(value,max){return String(value??'').slice(0,max)}
 function claudeScore(f){const votes=(f.votes?.up||0)-(f.votes?.down||0);return (CLAUDE_SEVERITY_WEIGHT[f.severity]||10)+votes*6+(CLAUDE_STATUS[f.status]?.boost||0)+(Number(f.priorityBoost)||0)}
 function claudeRanked(findings){return findings.map(f=>({...f,score:claudeScore(f)})).sort((a,b)=>b.score-a.score||String(a.createdAt).localeCompare(String(b.createdAt))).map((f,i)=>({...f,rank:i+1}))}
 function claudeFindings(){return storage.listSettings(CLAUDE_FINDING_PREFIX,{limit:CLAUDE_MAX_FINDINGS})}
+// ===== IMPROVE (roadmap sub-project 4): the board's findings are the backlog; see app/improve.js =====
+const IMPROVE_FIELDS=['source','signalId','changeId','handedToClaude','handedAt','shipped'];
+// Everything automatic (promote signals, resolve, ship applied changes, stamp the release, link old changes) in one
+// idempotent pass. Called at start-up, after a scan saves, and whenever a change request is saved.
+function runImproveReconcile({startup=false}={}){
+  const at=nowIso();let written=0;
+  storage.transaction(()=>{
+    const {upserts}=improve.reconcile({items:claudeFindings(),changes:changeStore(),signals:issueStore(),release:release?{version:release.version||APP_VERSION,commit:release.commit}:null,startup,at});
+    for(const u of upserts){const key=CLAUDE_FINDING_PREFIX+u.id,prev=storage.readSetting(key,null);
+      // A whole new item (it has createdAt) never replaces a stored one: reconcile sees only the newest findings.
+      if(prev&&u.createdAt)continue;
+      storage.writeSetting(key,prev?{...prev,...u}:{sessionId:'improve',category:'other',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...u});written++}
+  });
+  return written;
+}
+const IMPROVE_ACTIONS=['start','handToClaude','moveToTop','defer','reject','retry','backToBacklog','discard'];
+function improveRead(id){return storage.readSetting(CLAUDE_FINDING_PREFIX+claudeSlug(id,''),null)}
+function improveWrite(f){f.updatedAt=nowIso();storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);return f}
+function improveChangeRequest(f){return [f.title,f.summary,f.fix].filter(Boolean).join('\n\n')}
+// Changes past approval are with the host updater; Improve must not retire them.
+const IMPROVE_LOCKED_CHANGE=['approved','apply_requested'];
+// Retires a change Improve no longer wants (rejected), and its pending approval with it.
+function improveRetireChange(changeId){
+  storage.transaction(()=>{const items=changeStore(),i=items.findIndex(c=>c.id===changeId);if(i<0)return;const c=items[i];
+    c.status='rejected';c.updatedAt=nowIso();
+    if(c.approvalId){const approvals=approvalStore(),ai=approvals.findIndex(a=>a.id===c.approvalId&&a.status==='pending');if(ai>=0){approvals[ai].status='rejected';approvals[ai].updatedAt=nowIso();saveStore(APPROVALS_STORE,approvals,500)}}
+    saveChanges(items)});
+}
+async function apiImproveItems(req,res){
+  try{runImproveReconcile();const changes=changeStore(),byId=new Map(changes.map(c=>[c.id,c]));
+    const ranked=claudeRanked(claudeFindings().map(f=>({...f,source:f.source||'claude'})));
+    const order={backlog:0,inProgress:1,shipped:2,setAside:3};
+    const items=ranked.map(f=>{const c=f.changeId?byId.get(f.changeId):null;return {...f,stage:improve.stageOf(f,byId),change:c?{id:c.id,status:c.status,summary:c.summary||''}:null}})
+      .sort((a,b)=>order[a.stage]-order[b.stage]||(a.stage==='shipped'?String(b.updatedAt).localeCompare(String(a.updatedAt)):a.rank-b.rank));
+    json(res,200,{items,signals:issueStore().slice(0,250)})}catch(e){storageError(res,e,500)}
+}
+async function apiImproveIdea(req,res){
+  try{const b=await readBody(req,64*1024);const item=improve.ideaItem(b.text,nowIso());if(!item)return json(res,400,{error:'Describe the change first.'});
+    storage.writeSetting(CLAUDE_FINDING_PREFIX+item.id,{sessionId:'owner',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...item});
+    if(b.start!==true)return json(res,201,{item});
+    // The idea is saved either way; if planning fails, say so and let the owner retry from the Backlog.
+    try{const change=await planChange({request:improveChangeRequest(item),target:'self'},{itemId:item.id});json(res,201,{item:improveRead(item.id),change:publicChange(change)})}
+    catch(e){json(res,201,{item:improveRead(item.id),error:`Saved to your backlog, but planning failed: ${e.message}`})}}catch(e){storageError(res,e,500)}
+}
+async function apiImproveItem(req,res){
+  try{const b=await readBody(req);if(!IMPROVE_ACTIONS.includes(b.action))return json(res,400,{error:`action must be one of ${IMPROVE_ACTIONS.join(', ')}`});
+    const f=improveRead(b.id);if(!f)return json(res,404,{error:'Item not found'});
+    const changes=changeStore(),change=f.changeId?changes.find(c=>c.id===f.changeId):null,live=!!change&&improve.LIVE_CHANGE.includes(change.status);
+    const at=nowIso();
+    switch(b.action){
+      case 'start':case 'retry':{
+        const failed=live&&['patch_failed','validation_failed'].includes(change.status);
+        if(live&&!(b.action==='retry'&&failed))return json(res,409,{error:'A change for this item is already running.'});
+        if(failed)improveRetireChange(change.id);
+        await planChange({request:improveChangeRequest(f),target:'self'},{itemId:f.id});return json(res,200,{item:improveRead(f.id)});
+      }
+      case 'handToClaude':return json(res,200,{item:improveWrite({...f,...improve.handToClaude(f,at)})});
+      case 'moveToTop':{const open=claudeFindings().filter(x=>!['fixed','rejected','deferred'].includes(x.status));return json(res,200,{item:improveWrite({...f,priorityBoost:improve.moveToTopBoost(f,open,claudeScore)})})}
+      case 'defer':case 'reject':return json(res,200,{item:improveWrite({...f,status:b.action==='defer'?'deferred':'rejected',decidedAt:at})});
+      case 'backToBacklog':case 'discard':{
+        if(change&&IMPROVE_LOCKED_CHANGE.includes(change.status))return json(res,409,{error:'This change is already approved and with the host updater.'});
+        if(change&&live)improveRetireChange(change.id);
+        if(b.action==='backToBacklog')return json(res,200,{item:improveWrite({...improveRead(f.id),status:'approved',changeId:null})});
+        const aside=b.then==='aside';return json(res,200,{item:improveWrite({...improveRead(f.id),status:aside?'deferred':'approved',changeId:aside?f.changeId:null})});
+      }
+    }
+  }catch(e){storageError(res,e,500)}
+}
+async function apiImproveSignal(req,res){
+  try{const b=await readBody(req);if(!['promote','dismiss'].includes(b.action))return json(res,400,{error:'action must be promote or dismiss'});
+    const issues=issueStore(),i=issues.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Signal not found'});
+    if(b.action==='dismiss'){issues[i].status='ignored';issues[i].updatedAt=nowIso();saveIssues(issues);return json(res,200,{signal:issues[i]})}
+    const id=improve.signalItemId(issues[i].id);const existing=improveRead(id);if(existing)return json(res,200,{item:existing});
+    const item=improve.promoteSignal(issues[i],nowIso());storage.writeSetting(CLAUDE_FINDING_PREFIX+id,{sessionId:'improve',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...item});
+    json(res,200,{item})}catch(e){storageError(res,e,500)}
+}
 function claudeSaveSession(input,at){
   const id=claudeSlug(input.sessionId||input.id,'default');const key=CLAUDE_SESSION_PREFIX+id;const prev=storage.readSetting(key,null)||{id,startedAt:at,eventCount:0};
   const session={...prev,id,title:claudeText(input.sessionTitle||input.title||prev.title||'Claude session',200),cwd:claudeText(input.cwd||prev.cwd||'',300),status:['active','idle','done','failed'].includes(input.sessionStatus)?input.sessionStatus:(prev.status||'active'),updatedAt:at};
@@ -2635,6 +2768,8 @@ function claudeNormalizeFinding(f,prev,at){
     scenario:claudeText(f.scenario??prev?.scenario??'',2000),fix:claudeText(f.fix??prev?.fix??'',2000),pr:claudeText(f.pr??prev?.pr??'',120),
     // Operator state survives re-reports.
     votes:prev?.votes||{up:0,down:0},priorityBoost:prev?.priorityBoost||0,decidedAt:prev?.decidedAt||null,...(prev?.decisionNote?{decisionNote:prev.decisionNote}:{}),
+    // Improve's backlog fields are set only by the server, so they come from the stored item, never the request.
+    ...Object.fromEntries(IMPROVE_FIELDS.filter(k=>prev&&prev[k]!==undefined).map(k=>[k,prev[k]])),
     createdAt:prev?.createdAt||at,updatedAt:at
   };
 }
@@ -2725,6 +2860,8 @@ const server = http.createServer(async (req, res) => {
     if (crossSiteRequest(req)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 403, { error: 'Cross-site request blocked' }); }
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 } });
     if (req.method === 'GET' && p === '/api/releases') return await apiReleases(req, res);
+    if (req.method === 'GET' && p === '/api/glance') return await apiGlance(req, res, urlObj);
+    if (req.method === 'POST' && p === '/api/glance/ask') return await apiGlanceAsk(req, res);
     if (p.startsWith('/api/push/')) return await apiPush(req, res, p);
     if (req.method === 'GET' && p === '/api/storage/status') return json(res, 200, storage.status());
     if (req.method === 'GET' && p === '/api/status') return await apiStatus(req, res);
@@ -2839,6 +2976,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/powershell/host/next') return await apiPowerShellHostNext(req,res);
     if (req.method === 'POST' && p === '/api/powershell/host/result') return await apiPowerShellHostResult(req,res);
     if (p.startsWith('/api/claude/chat/') && await claudeChat.handle(req, res, urlObj, p)) return;
+    if (req.method === 'GET' && p === '/api/improve/items') return await apiImproveItems(req,res);
+    if (req.method === 'POST' && p === '/api/improve/idea') return await apiImproveIdea(req,res);
+    if (req.method === 'POST' && p === '/api/improve/item') return await apiImproveItem(req,res);
+    if (req.method === 'POST' && p === '/api/improve/signal') return await apiImproveSignal(req,res);
     if (req.method === 'GET' && p === '/api/claude/board') return await apiClaudeBoard(req,res,urlObj);
     if (req.method === 'GET' && p === '/api/claude/priorities') return await apiClaudePriorities(req,res,urlObj);
     if (req.method === 'POST' && p === '/api/claude/events') return await apiClaudeEvents(req,res);
@@ -2923,6 +3064,7 @@ async function apiReleases(req, res) {
 
 migrateLegacyActivityToLibrary();
 recordReleaseHistory();
+runImproveReconcile({ startup: true });
 // Health is checked on its own every minute, so an outage reaches the phone (Down/Recovered) even with no page open.
 const HEALTH_TICK_MS = Math.max(200, Number(process.env.HEALTH_TICK_MS) || 60000);
 setInterval(() => { getStatusAndRecordTransition().catch(() => {}); }, HEALTH_TICK_MS).unref();
