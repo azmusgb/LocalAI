@@ -37,6 +37,7 @@ const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 const crypto = require('crypto');
 const { Storage } = require('./storage');
 const { RunLedger, cleanId: cleanRunId } = require('./run-ledger');
+const improve = require('./improve');
 const { runCard } = require('./run-cards');
 const { loadOllamaModelRuntime } = require('./model-runtime');
 const { createModelPulls } = require('./model-pulls');
@@ -2005,7 +2006,7 @@ const CHANGES_STORE = 'changes';
 const CHANGE_STAGE_ROOT = path.join(DATA_DIR, 'change-staging');
 
 function changeStore(){ return objectStore(CHANGES_STORE); }
-function saveChanges(items){ saveStore(CHANGES_STORE, items, 300); }
+function saveChanges(items){ saveStore(CHANGES_STORE, items, 300); if (typeof runImproveReconcile === 'function') runImproveReconcile(); }
 function publicChange(item){
   if(!item) return null;
   const copy={...item};
@@ -2453,7 +2454,7 @@ async function detectIssues(){
   // Oldest first, so each event is compared with the ones counted before it.
   for(const e of [...recent].reverse()){const item=upsertIssue(items,{kind:'browser-runtime',name:e.message.slice(0,220),detail:`${e.source||''}${e.line?`:${e.line}`:''}\n${e.stack||''}`.trim(),severity:'high',seenAt:e.createdAt});if(item)seen.push(item.id)}
   for(const item of items){if(item.kind==='quality-check'&&item.status==='open'&&!seen.includes(item.id)){item.status='resolved';item.autoResolvedAt=nowIso();item.updatedAt=nowIso()}}
-  saveIssues(items);return {scan,items:items.slice(0,200),detected:seen.length,open:items.filter(x=>x.status==='open').length};
+  saveIssues(items);runImproveReconcile();return {scan,items:items.slice(0,200),detected:seen.length,open:items.filter(x=>x.status==='open').length};
 }
 async function apiIssues(req,res){if(!requireFeature(res,15))return;const items=issueStore();json(res,200,{items:items.slice(0,250),open:items.filter(x=>x.status==='open').length,high:items.filter(x=>x.status==='open'&&x.severity==='high').length})}
 async function apiIssuesScan(req,res){if(!requireFeature(res,15))return;try{const r=await detectIssues();recordActivity('issue',r.open?'Issue scan complete':'Issue scan clear',`${r.open} open issue(s)`,{detected:r.detected});if(r.open)addNotification('issue','Quality issues detected',`${r.open} issue(s) are open; ${r.items.filter(x=>x.status==='open'&&x.severity==='high').length} high severity.`,{});json(res,200,r)}catch(e){storageError(res,e,500)}}
@@ -2639,6 +2640,19 @@ function claudeText(value,max){return String(value??'').slice(0,max)}
 function claudeScore(f){const votes=(f.votes?.up||0)-(f.votes?.down||0);return (CLAUDE_SEVERITY_WEIGHT[f.severity]||10)+votes*6+(CLAUDE_STATUS[f.status]?.boost||0)+(Number(f.priorityBoost)||0)}
 function claudeRanked(findings){return findings.map(f=>({...f,score:claudeScore(f)})).sort((a,b)=>b.score-a.score||String(a.createdAt).localeCompare(String(b.createdAt))).map((f,i)=>({...f,rank:i+1}))}
 function claudeFindings(){return storage.listSettings(CLAUDE_FINDING_PREFIX,{limit:CLAUDE_MAX_FINDINGS})}
+// ===== IMPROVE (roadmap sub-project 4): the board's findings are the backlog; see app/improve.js =====
+const IMPROVE_FIELDS=['source','signalId','changeId','handedToClaude','handedAt','shipped'];
+// Everything automatic (promote signals, resolve, ship applied changes, stamp the release, link old changes) in one
+// idempotent pass. Called at start-up, after a scan saves, and whenever a change request is saved.
+function runImproveReconcile({startup=false}={}){
+  const at=nowIso();let written=0;
+  storage.transaction(()=>{
+    const {upserts}=improve.reconcile({items:claudeFindings(),changes:changeStore(),signals:issueStore(),release:release?{version:release.version||APP_VERSION,commit:release.commit}:null,startup,at});
+    for(const u of upserts){const key=CLAUDE_FINDING_PREFIX+u.id,prev=storage.readSetting(key,null);
+      storage.writeSetting(key,prev?{...prev,...u}:{sessionId:'improve',category:'other',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...u});written++}
+  });
+  return written;
+}
 function claudeSaveSession(input,at){
   const id=claudeSlug(input.sessionId||input.id,'default');const key=CLAUDE_SESSION_PREFIX+id;const prev=storage.readSetting(key,null)||{id,startedAt:at,eventCount:0};
   const session={...prev,id,title:claudeText(input.sessionTitle||input.title||prev.title||'Claude session',200),cwd:claudeText(input.cwd||prev.cwd||'',300),status:['active','idle','done','failed'].includes(input.sessionStatus)?input.sessionStatus:(prev.status||'active'),updatedAt:at};
@@ -2658,6 +2672,8 @@ function claudeNormalizeFinding(f,prev,at){
     scenario:claudeText(f.scenario??prev?.scenario??'',2000),fix:claudeText(f.fix??prev?.fix??'',2000),pr:claudeText(f.pr??prev?.pr??'',120),
     // Operator state survives re-reports.
     votes:prev?.votes||{up:0,down:0},priorityBoost:prev?.priorityBoost||0,decidedAt:prev?.decidedAt||null,...(prev?.decisionNote?{decisionNote:prev.decisionNote}:{}),
+    // Improve's backlog fields are set only by the server, so they come from the stored item, never the request.
+    ...Object.fromEntries(IMPROVE_FIELDS.filter(k=>prev&&prev[k]!==undefined).map(k=>[k,prev[k]])),
     createdAt:prev?.createdAt||at,updatedAt:at
   };
 }
@@ -2947,6 +2963,7 @@ async function apiReleases(req, res) {
 
 migrateLegacyActivityToLibrary();
 recordReleaseHistory();
+runImproveReconcile({ startup: true });
 // Health is checked on its own every minute, so an outage reaches the phone (Down/Recovered) even with no page open.
 const HEALTH_TICK_MS = Math.max(200, Number(process.env.HEALTH_TICK_MS) || 60000);
 setInterval(() => { getStatusAndRecordTransition().catch(() => {}); }, HEALTH_TICK_MS).unref();
