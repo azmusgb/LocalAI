@@ -23,6 +23,14 @@ try {
     $sha = [string](git -C $Repo rev-parse --verify "$TargetRef^{commit}")
     if ($LASTEXITCODE -ne 0 -or $sha.Trim() -notmatch '^[a-f0-9]{40}$') { throw "Cannot resolve commit $TargetRef" }
     $sha = $sha.Trim()
+    $statePath = Join-Path $StateDir 'state.json'
+    $state = Read-LocalAI-DeployState $statePath
+    $liveCommit = Read-LocalAI-ReleaseCommit $Live
+    # The scheduled poll runs every few minutes; skip extraction and certification when nothing changed.
+    if (-not $CheckOnly -and $state.currentCommit -eq $sha -and $liveCommit -eq $sha -and (Wait-LocalAI-Health -HealthUrl $HealthUrl -ExpectedCommit $sha -RequireSqlite -Attempts 1)) {
+        Write-Host "NO CHANGE: $($sha.Substring(0,12)) is running and healthy." -ForegroundColor Green
+        return
+    }
     $candidate = Join-Path $Releases $sha
     # Re-extract this exact revision instead of trusting an old/incomplete cache.
     if (Test-Path -LiteralPath $candidate) { Remove-Item -LiteralPath $candidate -Recurse -Force }
@@ -43,13 +51,6 @@ try {
     Test-LocalAI-StorageCandidate -Container $Container -CandidateApp (Join-Path $candidate 'app')
     if ($CheckOnly) { Write-Host "PASS: candidate $($sha.Substring(0,12)), image runtime and disposable data migration validated." -ForegroundColor Green; return }
 
-    $statePath = Join-Path $StateDir 'state.json'
-    $state = Read-LocalAI-DeployState $statePath
-    $liveCommit = Read-LocalAI-ReleaseCommit $Live
-    if ($state.currentCommit -eq $sha -and $liveCommit -eq $sha -and (Wait-LocalAI-Health -HealthUrl $HealthUrl -ExpectedCommit $sha -RequireSqlite -Attempts 1)) {
-        Write-Host "NO CHANGE: $($sha.Substring(0,12)) is running and healthy." -ForegroundColor Green
-        return
-    }
     $previous = if ($liveCommit) { $liveCommit } else { $state.currentCommit }
     $backup = Join-Path $StateDir ('live-before-' + [Guid]::NewGuid().ToString('N'))
     $dataBackupName = $null

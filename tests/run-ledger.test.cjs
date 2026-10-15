@@ -8,6 +8,13 @@ class MemorySettings {
   constructor() { this.values = new Map(); }
   readSetting(key, fallback) { return this.values.has(key) ? JSON.parse(JSON.stringify(this.values.get(key))) : fallback; }
   writeSetting(key, value) { this.values.set(key, JSON.parse(JSON.stringify(value))); }
+  deleteSetting(key) { this.values.delete(key); }
+  prefixed(prefix) { return [...this.values.keys()].filter(k => k.startsWith(prefix)).sort().reverse(); }
+  listSettings(prefix, { limit, where = {} } = {}) {
+    return this.prefixed(prefix).map(k => this.readSetting(k))
+      .filter(v => Object.entries(where).every(([f, x]) => String(v[f]) === String(x))).slice(0, limit ?? Infinity);
+  }
+  pruneSettings(prefix, keep) { const drop = this.prefixed(prefix).slice(keep); drop.forEach(k => this.values.delete(k)); return drop.length; }
 }
 
 test('run lifecycle is durable and normalized', () => {
@@ -121,4 +128,33 @@ test('ledger keeps newest runs within its configured bound', () => {
   const runs = ledger.list({ limit: 100 });
   assert.equal(runs.length, 20);
   assert.equal(runs[0].title, 'Task 24');
+});
+
+test('runs live in one settings row each and the legacy single-row ledger is migrated once', () => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const { Storage } = require('../app/storage');
+  const { RUN_LEDGER_KEY, RUN_KEY_PREFIX } = require('../app/run-ledger');
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-ledger-'));
+  const storage = new Storage({ dataDir });
+  try {
+    const legacy = [
+      { id: 'run-1700000000002-bbbbbbb', type: 'chat', title: 'newer', status: 'streaming', events: [] },
+      { id: 'run-1700000000001-aaaaaaa', type: 'image', title: 'older', status: 'completed', events: [] }
+    ];
+    storage.writeSetting(RUN_LEDGER_KEY, legacy);
+    const ledger = new RunLedger({ storage, maxRuns: 20 });
+    assert.equal(storage.readSetting(RUN_LEDGER_KEY, null), null, 'legacy row removed after migration');
+    assert.deepEqual(ledger.list().map(r => r.title), ['newer', 'older']);
+    assert.equal(ledger.get('run-1700000000002-bbbbbbb').status, 'failed', 'interrupted legacy run reconciled');
+    assert.deepEqual(ledger.list({ type: 'image' }).map(r => r.title), ['older']);
+    const fresh = ledger.create({ type: 'chat', title: 'fresh' });
+    assert.equal(ledger.list({ limit: 1 })[0].id, fresh.id, 'new runs sort first');
+    assert.equal(ledger.list({ status: 'queued' })[0].id, fresh.id);
+    for (let i = 0; i < 25; i++) ledger.create({ type: 'chat', title: `bulk ${i}` });
+    assert.equal(storage.listSettings(RUN_KEY_PREFIX).length, 20, 'pruned to maxRuns');
+    ledger.update(ledger.list({ limit: 1 })[0].id, { status: 'running' });
+    assert.equal(storage.readSetting('status', 'untouched'), 'untouched', 'other settings unaffected');
+    new RunLedger({ storage, maxRuns: 20 });
+    assert.equal(storage.listSettings(RUN_KEY_PREFIX, { where: { status: 'running' } }).length, 0, 'restart reconciles per-row runs');
+  } finally { storage.close(); fs.rmSync(dataDir, { recursive: true, force: true }); }
 });
