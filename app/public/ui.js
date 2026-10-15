@@ -311,6 +311,16 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     gateMode('automate', automateReady, 'automation engine is not healthy');
     gateMode('engineering', intelligenceReady, 'local intelligence service is not healthy');
 
+    // Images page: say why Create is unavailable, above the form.
+    const offline = document.getElementById('imageOffline');
+    if (offline) {
+      offline.hidden = createReady;
+      document.getElementById('imageOfflineTitle').textContent = healthy(snapshot, 'comfy') ? 'No image model is ready' : 'Image generation is offline';
+      document.getElementById('imageOfflineDetail').textContent = healthy(snapshot, 'comfy')
+        ? 'ComfyUI is running, but no supported model is installed yet.'
+        : 'ComfyUI isn\'t responding on the host.';
+    }
+
     const webSearch = document.getElementById('webSearch');
     if (webSearch) setTruthAvailability(webSearch, healthy(snapshot, 'search'), 'Unavailable: web research service is not healthy');
   }
@@ -530,7 +540,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     const runtimeLabel = models?.runtimeAvailable === false ? 'Unavailable' : 'Live';
 
     summary.innerHTML = `
-      <div class="model-runtime-metric"><strong title="${esc(configured)}">${esc(configured)}</strong><span>Configured default</span></div>
+      <div class="model-runtime-metric"><strong title="${esc(configured)}">${esc(configured)}</strong><span>Default for chat</span></div>
       <div class="model-runtime-metric"><strong>${Number(models?.installedCount ?? installed.length)}</strong><span>Installed</span></div>
       <div class="model-runtime-metric"><strong>${Number(models?.loadedCount ?? loaded.length)}</strong><span>Loaded now</span></div>
       <div class="model-runtime-metric"><strong>${runtimeLabel}</strong><span>Runtime detail</span></div>`;
@@ -734,6 +744,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
   }
   window.LocalAIModels = { startPull: startModelPull, pollPulls: pollModelPulls };
 
+  document.getElementById('imageOfflineRetry')?.addEventListener('click', () => refreshTruthLayer());
   async function refreshTruthLayer() {
     try {
       const response = await fetch('/api/capabilities', {
@@ -895,14 +906,14 @@ function buildTabs(){
 function buildContext(){
  const main=q('main');if(!main||q('#uxContextBar'))return;
  const bar=document.createElement('header');bar.id='uxContextBar';bar.className='ux-context-bar';
- bar.innerHTML='<div class="ux-context-left"><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-inbox" type="button" id="uxInboxBtn" data-empty="true" aria-label="Inbox">'+svg(ICONS.bell)+'<span>Inbox</span><b id="uxInboxCount">0</b></button><button class="ux-context-search" type="button" id="uxCommandBtn" aria-label="Search commands">'+svg(ICONS.search)+'<span>Search commands</span><kbd>⌘K</kbd></button><button class="ux-context-menu" id="uxContextMenu" type="button" aria-expanded="false" aria-label="Pages in this section"><span>Menu</span>'+svg(ICONS.chevron,2)+'</button></div>';
+ bar.innerHTML='<div class="ux-context-left"><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-inbox" type="button" id="uxInboxBtn" data-empty="true" hidden aria-label="Inbox">'+svg(ICONS.bell)+'<span>Inbox</span><b id="uxInboxCount">0</b></button><button class="ux-context-search" type="button" id="uxCommandBtn" aria-label="Search commands">'+svg(ICONS.search)+'<span>Search commands</span><kbd>⌘K</kbd></button><button class="ux-context-menu" id="uxContextMenu" type="button" aria-expanded="false" aria-label="Pages in this section"><span>Menu</span>'+svg(ICONS.chevron,2)+'</button></div>';
  main.prepend(bar);
  q('[data-ux-go="home"]')?.addEventListener('click',()=>navigate('home'));
  q('#uxCommandBtn')?.addEventListener('click',()=>{const cmd=q('#cmdk');if(cmd){cmd.classList.add('show');cmd.setAttribute('aria-hidden','false');q('#cmdkInput')?.focus()}});
  q('#uxContextMenu')?.addEventListener('click',()=>toggleSheet());
  // Unread alerts plus approvals waiting, reported by app.js after it loads Inbox or Approvals.
  let inbox={unread:0,pending:0};
- window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');if(!b)return;b.dataset.empty=String(total===0);q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',total?`Inbox: ${inbox.unread} unread, ${inbox.pending} approvals waiting`:'Inbox')});
+ window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');if(!b)return;b.hidden=total===0;b.dataset.empty=String(total===0);q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',total?`Inbox: ${inbox.unread} unread, ${inbox.pending} approvals waiting`:'Inbox')});
  q('#uxInboxBtn')?.addEventListener('click',()=>navigate(inbox.pending&&!inbox.unread?'approvals':'inbox'));
 }
 function prefGet(k){try{return localStorage.getItem(k)}catch{return null}}
@@ -928,7 +939,7 @@ function buildMobile(){
  DOMAINS.forEach(d=>{const b=document.createElement('button');b.type='button';b.dataset.domain=d.id;b.innerHTML='<b>'+(ICONS[d.id]?svg(ICONS[d.id]):d.symbol)+'</b><span>'+d.label+'</span>';b.addEventListener('click',()=>{toggleSheet(false);navigate(d.defaultView)});nav.appendChild(b)});
  const sheet=document.createElement('div');sheet.id='uxMobileSheet';sheet.className='ux-mobile-sheet';sheet.dataset.open='false';sheet.innerHTML='<div class="ux-mobile-sheet-handle"></div><div class="ux-mobile-sheet-head"><div><span class="ux-secondary-kicker">Navigate</span><strong id="uxMobileSheetTitle"></strong><small id="uxMobileSheetTagline"></small></div><button type="button" id="uxMobileSheetClose" aria-label="Close menu">×</button></div><div class="ux-mobile-sheet-items" id="uxMobileSheetItems"></div>';
  sheet.inert=true;sheet.setAttribute('aria-hidden','true');document.body.append(sheet,nav);q('#uxMobileSheetClose')?.addEventListener('click',()=>toggleSheet(false));
- document.addEventListener('click',e=>{if(sheetOpen&&!sheet.contains(e.target)&&!nav.contains(e.target)&&e.target.id!=='uxContextMenu')toggleSheet(false)});
+ document.addEventListener('click',e=>{if(sheetOpen&&!sheet.contains(e.target)&&!nav.contains(e.target)&&!e.target.closest?.('#uxContextMenu'))toggleSheet(false)});
 }
 function renderSheet(){
  const d=DOMAINS.find(x=>x.id===currentDomain)||DOMAINS[0],holder=q('#uxMobileSheetItems');if(!holder)return;
