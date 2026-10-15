@@ -2341,7 +2341,7 @@ async function planChange({request,target:rawTarget,root},{itemId}={}){
   const plan=await generatePatchPlan(request,targetRoot);
   const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:plan.notes,files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[]};
   storage.transaction(()=>{
-    if(itemId){const key=CLAUDE_FINDING_PREFIX+itemId,f=storage.readSetting(key,null);if(f)storage.writeSetting(key,{...f,changeId:item.id,status:'in_progress',updatedAt:nowIso()})}
+    if(itemId){const key=CLAUDE_FINDING_PREFIX+itemId,f=storage.readSetting(key,null);if(f)storage.writeSetting(key,{...f,changeId:item.id,status:'approved',updatedAt:nowIso()})}
     const items=changeStore();items.unshift(item);saveChanges(items);
   });
   recordActivity('change','Change plan created',request.slice(0,180),{changeId:item.id,target});
@@ -2636,6 +2636,8 @@ function runImproveReconcile({startup=false}={}){
   storage.transaction(()=>{
     const {upserts}=improve.reconcile({items:claudeFindings(),changes:changeStore(),signals:issueStore(),release:release?{version:release.version||APP_VERSION,commit:release.commit}:null,startup,at});
     for(const u of upserts){const key=CLAUDE_FINDING_PREFIX+u.id,prev=storage.readSetting(key,null);
+      // A whole new item (it has createdAt) never replaces a stored one: reconcile sees only the newest findings.
+      if(prev&&u.createdAt)continue;
       storage.writeSetting(key,prev?{...prev,...u}:{sessionId:'improve',category:'other',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...u});written++}
   });
   return written;
@@ -2644,6 +2646,15 @@ const IMPROVE_ACTIONS=['start','handToClaude','moveToTop','defer','reject','retr
 function improveRead(id){return storage.readSetting(CLAUDE_FINDING_PREFIX+claudeSlug(id,''),null)}
 function improveWrite(f){f.updatedAt=nowIso();storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);return f}
 function improveChangeRequest(f){return [f.title,f.summary,f.fix].filter(Boolean).join('\n\n')}
+// Changes past approval are with the host updater; Improve must not retire them.
+const IMPROVE_LOCKED_CHANGE=['approved','apply_requested'];
+// Retires a change Improve no longer wants (rejected), and its pending approval with it.
+function improveRetireChange(changeId){
+  storage.transaction(()=>{const items=changeStore(),i=items.findIndex(c=>c.id===changeId);if(i<0)return;const c=items[i];
+    c.status='rejected';c.updatedAt=nowIso();
+    if(c.approvalId){const approvals=approvalStore(),ai=approvals.findIndex(a=>a.id===c.approvalId&&a.status==='pending');if(ai>=0){approvals[ai].status='rejected';approvals[ai].updatedAt=nowIso();saveStore(APPROVALS_STORE,approvals,500)}}
+    saveChanges(items)});
+}
 async function apiImproveItems(req,res){
   try{runImproveReconcile();const changes=changeStore(),byId=new Map(changes.map(c=>[c.id,c]));
     const ranked=claudeRanked(claudeFindings().map(f=>({...f,source:f.source||'claude'})));
@@ -2656,8 +2667,9 @@ async function apiImproveIdea(req,res){
   try{const b=await readBody(req,64*1024);const item=improve.ideaItem(b.text,nowIso());if(!item)return json(res,400,{error:'Describe the change first.'});
     storage.writeSetting(CLAUDE_FINDING_PREFIX+item.id,{sessionId:'owner',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...item});
     if(b.start!==true)return json(res,201,{item});
-    const change=await planChange({request:improveChangeRequest(item),target:'self'},{itemId:item.id});
-    json(res,201,{item:improveRead(item.id),change:publicChange(change)})}catch(e){storageError(res,e,500)}
+    // The idea is saved either way; if planning fails, say so and let the owner retry from the Backlog.
+    try{const change=await planChange({request:improveChangeRequest(item),target:'self'},{itemId:item.id});json(res,201,{item:improveRead(item.id),change:publicChange(change)})}
+    catch(e){json(res,201,{item:improveRead(item.id),error:`Saved to your backlog, but planning failed: ${e.message}`})}}catch(e){storageError(res,e,500)}
 }
 async function apiImproveItem(req,res){
   try{const b=await readBody(req);if(!IMPROVE_ACTIONS.includes(b.action))return json(res,400,{error:`action must be one of ${IMPROVE_ACTIONS.join(', ')}`});
@@ -2666,15 +2678,18 @@ async function apiImproveItem(req,res){
     const at=nowIso();
     switch(b.action){
       case 'start':case 'retry':{
-        if(live&&!(b.action==='retry'&&['patch_failed','validation_failed'].includes(change.status)))return json(res,409,{error:'A change for this item is already running.'});
+        const failed=live&&['patch_failed','validation_failed'].includes(change.status);
+        if(live&&!(b.action==='retry'&&failed))return json(res,409,{error:'A change for this item is already running.'});
+        if(failed)improveRetireChange(change.id);
         await planChange({request:improveChangeRequest(f),target:'self'},{itemId:f.id});return json(res,200,{item:improveRead(f.id)});
       }
       case 'handToClaude':return json(res,200,{item:improveWrite({...f,...improve.handToClaude(f,at)})});
       case 'moveToTop':{const open=claudeFindings().filter(x=>!['fixed','rejected','deferred'].includes(x.status));return json(res,200,{item:improveWrite({...f,priorityBoost:improve.moveToTopBoost(f,open,claudeScore)})})}
       case 'defer':case 'reject':return json(res,200,{item:improveWrite({...f,status:b.action==='defer'?'deferred':'rejected',decidedAt:at})});
-      case 'backToBacklog':return json(res,200,{item:improveWrite({...f,status:'approved',changeId:null})});
-      case 'discard':{
-        if(change&&live)storage.transaction(()=>{const items=changeStore(),i=items.findIndex(c=>c.id===change.id);if(i>=0){items[i].status='rejected';items[i].updatedAt=at;saveChanges(items)}});
+      case 'backToBacklog':case 'discard':{
+        if(change&&IMPROVE_LOCKED_CHANGE.includes(change.status))return json(res,409,{error:'This change is already approved and with the host updater.'});
+        if(change&&live)improveRetireChange(change.id);
+        if(b.action==='backToBacklog')return json(res,200,{item:improveWrite({...improveRead(f.id),status:'approved',changeId:null})});
         const aside=b.then==='aside';return json(res,200,{item:improveWrite({...improveRead(f.id),status:aside?'deferred':'approved',changeId:aside?f.changeId:null})});
       }
     }

@@ -83,12 +83,25 @@ test('an applied change ships its item, and start-up stamps the release', () => 
   assert.deepEqual(stamped[0].shipped, { version: '2.0.300', commit: 'abc', at: AT, pending: false });
 });
 
-test('an unfinished change with no item gets one, once', () => {
+test('at start-up, an unfinished change with no item gets one, once', () => {
   const changes = [{ id: 'c7', status: 'validation_failed', summary: 'Fix the selector' }, { id: 'c8', status: 'applied', summary: 'Done already' }];
-  const first = imp.reconcile({ items: [], changes, signals: [], at: AT }).upserts;
+  const first = imp.reconcile({ items: [], changes, signals: [], at: AT, startup: true }).upserts;
   assert.equal(first.length, 1);
-  assert.deepEqual([first[0].source, first[0].status, first[0].changeId, first[0].title], ['idea', 'in_progress', 'c7', 'Fix the selector']);
-  assert.deepEqual(imp.reconcile({ items: apply([], first), changes, signals: [], at: AT }).upserts, []);
+  // Stored as approved: the live change is what puts it In progress, so it drops back when the change dies.
+  assert.deepEqual([first[0].source, first[0].status, first[0].changeId, first[0].title], ['idea', 'approved', 'c7', 'Fix the selector']);
+  assert.equal(imp.stageOf(first[0], byId(changes)), 'inProgress');
+  assert.deepEqual(imp.reconcile({ items: apply([], first), changes, signals: [], at: AT, startup: true }).upserts, []);
+});
+
+test('linking old changes happens only at start-up, and never for engineering attempts', () => {
+  const changes = [{ id: 'c1', status: 'planned', summary: 'Runtime plan' }, { id: 'c2', status: 'planned', summary: 'Attempt 2', sourceEngineeringRunId: 'eng-1' }];
+  assert.deepEqual(imp.reconcile({ items: [], changes, signals: [], at: AT }).upserts, []);
+  assert.deepEqual(imp.reconcile({ items: [], changes, signals: [], at: AT, startup: true }).upserts.map(u => u.changeId), ['c1']);
+});
+
+test('an item whose change died falls back to Backlog', () => {
+  const changes = byId([{ id: 'c1', status: 'rejected' }, { id: 'c2', status: 'needs_context' }, { id: 'c3', status: 'rolled_back' }]);
+  for (const changeId of ['c1', 'c2', 'c3', 'gone']) assert.equal(imp.stageOf({ status: 'approved', changeId }, changes), 'backlog', changeId);
 });
 
 test('moveToTopBoost puts the item one above the highest open score', () => {
