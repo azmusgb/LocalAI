@@ -1593,3 +1593,6 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
   body.ux-v3 .ux-context-has-action .ux-context-search{display:none!important}
   body.ux-v3 #status>.topbar{display:none}
 }
+.secure-setup{margin-top:12px}
+.secure-setup>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--ds-accent-text);font-weight:600}
+.secure-setup[open]>summary{margin-bottom:4px}

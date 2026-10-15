@@ -1,11 +1,13 @@
-// LocalAI chat CLI: pair devices, list/revoke them, and check the Mac side. Outbound HTTP only.
+// LocalAI chat CLI: pair devices, list/revoke them, and check the Mac side. Outbound HTTP(S) only (see relay.mjs).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { describeError, isTlsError, loadConfig, request } from './relay.mjs';
 
 const HOME = process.env.LOCALAI_CHAT_HOME || path.join(os.homedir(), '.claude', 'localai-chat');
-const BASE = (process.env.LOCALAI_URL || 'http://10.0.0.21:3080').replace(/\/+$/, '');
-const API = `${BASE}/api/claude/chat`;
+const RELAY = loadConfig(HOME);
+const BASE = RELAY.base;
+const API = '/api/claude/chat';
 const INSTALL_HINT = 'run host/claude-chat/install.sh from the LocalAI repo';
 
 function die(msg) { console.error(`localai-chat: ${msg}`); process.exit(1); }
@@ -22,14 +24,16 @@ function needKey() {
 async function call(method, route, key, body) {
   let res;
   try {
-    res = await fetch(`${API}${route}`, {
-      method,
+    res = await request(RELAY, method, `${API}${route}`, {
       headers: { 'X-LocalAI-Mac-Key': key, ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(10000)
     });
-  } catch (e) { die(`cannot reach ${BASE} (${e.cause?.code || e.message})`); }
-  const data = await res.json().catch(() => null);
+  } catch (e) {
+    if (isTlsError(e) || e.code === 'LOCALAI_CA_UNREADABLE' || e.code === 'LOCALAI_CONFIG_UNREADABLE') die(describeError(RELAY, e));
+    die(`cannot reach ${BASE} (${e.code || e.cause?.code || e.message})`);
+  }
+  let data = null;
+  try { data = res.json(); } catch { /* not JSON */ }
   return { status: res.status, data };
 }
 function fail(r, what) {
@@ -71,13 +75,17 @@ function alive(pid) {
 async function status() {
   const key = readKey();
   console.log(`Mac key:   ${key ? 'present' : `missing (${INSTALL_HINT})`}`);
-  let reachable = false, accepted = null;
+  if (BASE.startsWith('https:')) console.log(`CA:        ${RELAY.caPath || 'none configured (system roots)'}`);
+  let reachable = false, accepted = null, problem = '';
   try {
-    const res = await fetch(`${API}/devices`, { headers: key ? { 'X-LocalAI-Mac-Key': key } : {}, signal: AbortSignal.timeout(5000) });
+    const res = await request(RELAY, 'GET', `${API}/devices`, { headers: key ? { 'X-LocalAI-Mac-Key': key } : {}, timeoutMs: 5000 });
     reachable = true;
     if (key) accepted = res.status === 200;
-  } catch { /* unreachable */ }
-  console.log(`Relay:     ${reachable ? `reachable (${BASE})` : `unreachable (${BASE})`}`);
+  } catch (e) {
+    if (isTlsError(e)) problem = `certificate not trusted (${describeError(RELAY, e)})`;
+    else if (e.code === 'LOCALAI_CA_UNREADABLE' || e.code === 'LOCALAI_CONFIG_UNREADABLE') problem = e.message;
+  }
+  console.log(`Relay:     ${reachable ? `reachable (${BASE})` : problem || `unreachable (${BASE})`}`);
   console.log(`Key:       ${accepted === null ? (key ? 'unknown (relay unreachable)' : 'n/a') : accepted ? 'accepted' : 'rejected (re-run the installer)'}`);
   const runDir = path.join(HOME, 'run');
   const bridges = [];

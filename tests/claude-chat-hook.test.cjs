@@ -2,17 +2,19 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const https = require('node:https');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { makeTlsFixture, OPENSSL_MISSING } = require('./tls-fixture.cjs');
 
 const HOOK = path.join(__dirname, '..', 'host', 'claude-chat', 'hook.py');
 const SID = '0123456789abcdef-session';
 
-async function relay(t) {
+async function relay(t, { tls = null } = {}) {
   const requests = [];
-  const server = http.createServer((req, res) => {
+  const listener = (req, res) => {
     let body = '';
     req.on('data', (c) => { body += c; });
     req.on('end', () => {
@@ -20,9 +22,10 @@ async function relay(t) {
       res.setHeader('Content-Type', 'application/json');
       res.end('{"ok":true}');
     });
-  });
+  };
+  const server = tls ? https.createServer({ key: tls.key, cert: tls.cert }, listener) : http.createServer(listener);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  const handle = { requests, url: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => { server.close(r); server.closeAllConnections?.(); }) };
+  const handle = { requests, url: `${tls ? 'https' : 'http'}://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => { server.close(r); server.closeAllConnections?.(); }) };
   if (t) t.after(() => handle.close());
   return handle;
 }
@@ -194,4 +197,62 @@ test('runHook fails fast (no hang) when the hook cannot run', async () => {
   const res = await runHook({ hook_event_name: 'Stop' }, {}, '/nonexistent/hook.py');
   assert.notEqual(res.code, 0);
   assert.ok(res.ms < 5000);
+});
+
+// ---- HTTPS: config.json url + the LocalAI CA -------------------------------------------------------------------------
+const tlsFixture = makeTlsFixture();
+const tlsSkip = tlsFixture ? false : OPENSSL_MISSING;
+test.after(() => tlsFixture?.cleanup());
+const hookLog = (s) => { try { return fs.readFileSync(path.join(s.home, 'hook.log'), 'utf8'); } catch { return ''; } };
+const prompt = { hook_event_name: 'UserPromptSubmit', session_id: SID, cwd: '/a', prompt: 'over tls' };
+// No LOCALAI_URL: the URL comes from config.json, as after install.sh.
+const configEnv = (s) => ({ LOCALAI_CHAT: '1', LOCALAI_CHAT_HOME: s.home, LOCALAI_CHAT_BRIDGE_CMD: s.bridge });
+
+test('HTTPS: config.json url + CA -> the hook verifies the relay with that CA and posts', { skip: tlsSkip }, async (t) => {
+  const r = await relay(t, { tls: tlsFixture }); const s = setup();
+  fs.writeFileSync(path.join(s.home, 'config.json'), JSON.stringify({ url: r.url, ca: tlsFixture.caPath }));
+  assert.equal((await runHook(prompt, configEnv(s))).code, 0);
+  assert.equal(r.requests.length, 1);
+  assert.equal(r.requests[0].url, '/api/claude/chat/mirror');
+  assert.equal(r.requests[0].headers['x-localai-mac-key'], 'secret-key');
+  assert.equal(r.requests[0].body.text, 'over tls');
+  assert.equal(hookLog(s), '');
+});
+
+test('HTTPS: no CA or a different CA -> nothing is posted, exit 0, and hook.log says why', { skip: tlsSkip }, async (t) => {
+  const r = await relay(t, { tls: tlsFixture });
+  for (const ca of [undefined, tlsFixture.otherCaPath]) {
+    const s = setup();
+    fs.writeFileSync(path.join(s.home, 'config.json'), JSON.stringify({ url: r.url, ...(ca ? { ca } : {}) }));
+    assert.equal((await runHook(prompt, configEnv(s))).code, 0);
+    assert.match(hookLog(s), new RegExp(`tls .*: the certificate of https://127\\.0\\.0\\.1:\\d+ is not trusted \\(CA: ${ca ? ca.replace(/[.]/g, '\\.') : 'none configured'}\\); re-run host/claude-chat/install\\.sh`));
+  }
+  assert.equal(r.requests.length, 0, 'the Mac key never left over an unverified connection');
+});
+
+test('HTTPS: a configured CA file that is missing is reported, never silently replaced by system roots', { skip: tlsSkip }, async (t) => {
+  const r = await relay(t, { tls: tlsFixture }); const s = setup();
+  const missing = path.join(s.dir, 'nope.crt');
+  fs.writeFileSync(path.join(s.home, 'config.json'), JSON.stringify({ url: r.url, ca: missing }));
+  assert.equal((await runHook(prompt, configEnv(s))).code, 0);
+  assert.match(hookLog(s), new RegExp(`CA file unreadable: ${missing.replace(/[.]/g, '\\.')}`));
+  assert.equal(r.requests.length, 0);
+});
+
+test('LOCALAI_URL overrides config.json in the hook', async (t) => {
+  const r = await relay(t); const s = setup();
+  fs.writeFileSync(path.join(s.home, 'config.json'), JSON.stringify({ url: 'https://127.0.0.1:9', ca: '/nope.crt' }));
+  assert.equal((await runHook(prompt, envFor(s, r))).code, 0);
+  assert.equal(r.requests.length, 1);
+});
+
+test('an unreadable config.json: nothing is posted and hook.log says why', async (t) => {
+  const r = await relay(t);
+  for (const bad of ['{"url": ', '[1, 2]']) {
+    const s = setup();
+    fs.writeFileSync(path.join(s.home, 'config.json'), bad);
+    assert.equal((await runHook(prompt, envFor(s, r))).code, 0);
+    assert.match(hookLog(s), /config\.json unreadable/, bad);
+  }
+  assert.equal(r.requests.length, 0);
 });
