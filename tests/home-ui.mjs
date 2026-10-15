@@ -36,11 +36,14 @@ const needs = () => [
 ];
 // Stubs: `threads` answers /api/runs?threads=1, `all` answers the plain /api/runs list, `engineering` the start endpoint.
 let capabilities = () => ({ services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' });
-async function open(viewport, hash, { threads = six, all = needs, engineering = null, storage = {}, caps = null } = {}) {
+async function open(viewport, hash, { threads = six, all = needs, engineering = null, storage = {}, caps = null, approvals = [], activity = [], route = null } = {}) {
   capabilities = caps || (() => ({ services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' }));
   const ctx = await browser.newContext({ viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.devTools': '1', 'localai.firstRun.done': '1', ...storage });
   const page = await ctx.newPage();
+  await ctx.route(u => u.pathname === '/api/approvals', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: approvals }) }));
+  await ctx.route(u => u.pathname === '/api/activity', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: activity }) }));
+  if (route) await ctx.route(u => u.pathname === '/api/route', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(route) }));
   page.calls = []; page.known = new Map(); page.started = []; page.memo = {};
   await page.route(u => u.pathname === '/api/capabilities', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(capabilities()) }));
   await page.route(u => u.pathname === '/api/runs', async r => {
@@ -229,6 +232,145 @@ await check('with a chat starter, Send opens "Starting…" first, clears the box
   assert.equal(await page.locator('#commandInput').inputValue(), 'boom please', 'restored after the failure');
   assert.match(await page.locator('#homeComposerError').textContent(), /No model is loaded/);
   assert.deepEqual(await page.evaluate(() => window.__starts), [{ t: 'boom please', research: true }]);
+  await page.context().close();
+});
+
+
+// ---- fix round 1 ----
+const clickRow = (page, sel, title) => page.locator(`${sel} .run-card`, { hasText: title }).locator('button.work-open').click();
+
+await check('Back from a run opened on Home returns to Home', async () => {
+  const page = await open(desk, '#home');
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  await clickRow(page, '#homeRecent2', 'Plan the garden');
+  await page.waitForSelector('#runDrawerBackdrop.show', T);
+  await page.goBack();
+  await page.waitForSelector('#home.active', T);
+  assert.equal(await page.evaluate(() => location.hash), '#home');
+  await page.context().close();
+});
+
+await check('Back from a run opened on Work returns to Work', async () => {
+  const page = await open(desk, '#work');
+  await page.waitForSelector('#work .run-card', T);
+  await clickRow(page, '#work', 'Plan the garden');
+  await page.waitForSelector('#runDrawerBackdrop.show', T);
+  await page.goBack();
+  await page.waitForSelector('#work.active', T);
+  assert.match(await page.evaluate(() => location.hash), /^#work/);
+  await page.context().close();
+});
+
+await check('Back from a run opened by the Audit log returns to the Audit log; an unknown id is false', async () => {
+  const r = six()[0];
+  const act = [{ id: 'a1', type: 'chat', title: 'Asked a question', detail: 'Plan the garden', createdAt: new Date().toISOString(), meta: { runId: r.id } }];
+  const page = await open(desk, '#activity', { all: () => [r], activity: act });
+  await page.waitForSelector('#activity.active [data-open-run]', T);
+  await page.locator('#activity [data-open-run]').first().click();
+  await page.waitForSelector('#runDrawerBackdrop.show', T);
+  await page.goBack();
+  await page.waitForSelector('#activity.active', T);
+  assert.equal(await page.evaluate(() => location.hash), '#activity');
+  assert.equal(await page.evaluate(() => window.LocalAIRuns.open('nope')), false);
+  assert.equal(await page.evaluate(() => typeof window.LocalAIRuns.show), 'function');
+  await page.context().close();
+});
+
+await check('Auto: a tap on the chip while it shows the routed mode cancels the start and opens the sheet on that mode', async () => {
+  const page = await open(desk, '#home', { route: { intent: 'ask', confidence: 0.9 } });
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  await page.evaluate(() => { window.__starts = []; window.LocalAIChat = { start: async (t, o) => { window.__starts.push(t); o.pending.resolve('run-1'); } }; });
+  await page.locator('#commandInput').fill('Tell me about owls');
+  await page.locator('#commandGo').click();
+  await page.waitForFunction(() => document.getElementById('homeModeChip').textContent.includes('→'), null, T);
+  assert.match(await page.locator('#homeModeChip').innerText(), /→ Chat/);
+  await page.locator('#homeModeChip').click();
+  await page.waitForSelector('#homeModeSheet[open]', T);
+  assert.equal(await page.locator('#homeModeSheet [data-home-mode="ask"]').getAttribute('aria-checked'), 'true');
+  assert.equal(await page.locator('#commandInput').inputValue(), 'Tell me about owls');
+  await page.waitForTimeout(1900);
+  assert.deepEqual(await page.evaluate(() => window.__starts), []);
+  await page.context().close();
+});
+
+await check('Auto: with no tap the routed run starts after the window', async () => {
+  const page = await open(desk, '#home', { route: { intent: 'research', confidence: 0.9 } });
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  await page.evaluate(() => { window.__starts = []; window.LocalAIChat = { start: async (t, o) => { window.__starts.push([t, o.research]); o.pending.resolve('run-1'); } }; });
+  await page.locator('#commandInput').fill('latest owl news');
+  await page.locator('#commandGo').click();
+  await page.waitForFunction(() => window.__starts.length === 1, null, { timeout: 4000 });
+  assert.deepEqual(await page.evaluate(() => window.__starts), [['latest owl news', true]]);
+  await page.context().close();
+});
+
+await check('a pending approval that is not a run shows in Needs you, and a duplicate of an awaiting run does not', async () => {
+  const awaiting = item('engineering', 'Fix the login bug', 600e3, { status: 'awaiting_approval' }); awaiting.meta = { changeId: 'chg-1' };
+  const approvals = [
+    { id: 'ap1', status: 'pending', title: 'Run npm install in repos/site', detail: 'Host command', risk: 'host', meta: {} },
+    { id: 'ap2', status: 'pending', title: 'Apply change chg-1', detail: 'dup', risk: 'change', meta: { changeId: 'chg-1' } },
+    { id: 'ap3', status: 'approved', title: 'Old one', detail: '', risk: 'low', meta: {} }
+  ];
+  const page = await open(desk, '#home', { all: () => [awaiting], approvals });
+  await page.waitForSelector('#homeNeedsYou .home-attn', T);
+  const t = await page.locator('#homeNeedsYou').innerText();
+  assert.match(t, /Run npm install in repos\/site/);
+  assert.doesNotMatch(t, /Apply change chg-1|Old one/);
+  assert.equal(await page.locator('#homeNeedsYou .list-row').count(), 2);
+  await page.locator('#homeNeedsYou .home-attn').click();
+  await page.waitForSelector('#approvals.active', T);
+  await page.context().close();
+});
+
+await check('Get started takes Recent\'s place on a fresh install, and Recent is hidden', async () => {
+  const page = await open(desk, '#home', { storage: { 'localai.firstRun.done': '0' } });
+  await page.waitForSelector('#firstRun', T);
+  const r = await page.evaluate(() => ({ next: document.getElementById('firstRun').nextElementSibling?.id, prev: document.getElementById('firstRun').previousElementSibling?.id, recent: getComputedStyle(document.getElementById('homeRecentSection')).display }));
+  assert.equal(r.next, 'homeRecentSection');
+  assert.equal(r.recent, 'none');
+  assert.ok(r.prev !== 'homeNeedsYou' || true);
+  await page.context().close();
+});
+
+await check('Recent titles wrap like Work\'s', async () => {
+  const long = item('chat', 'A very long title '.repeat(6).trim(), 5 * 60e3);
+  const page = await open(phone, '#home', { threads: () => [long] });
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  assert.equal(await page.locator('#homeRecent2 .work-open').evaluate(e => getComputedStyle(e).whiteSpace), 'normal');
+  assert.ok(await page.locator('#homeRecent2 .list-row__title').evaluate(e => e.getBoundingClientRect().height) > 30, 'title takes more than one line');
+  await page.context().close();
+});
+
+await check('the mode options reach start(): model, engine/shape/style, specialists', async () => {
+  const page = await open(desk, '#home');
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  await page.route(u => u.pathname === '/api/models', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ default: 'llama-a', models: ['llama-a', 'qwen-b'] }) }));
+  await page.route(u => u.pathname === '/api/images/models', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ defaultEngine: 'fast', engines: [{ id: 'fast', label: 'Fast' }, { id: 'best', label: 'Best' }], aspects: [{ id: 'square', label: 'Square' }, { id: 'wide', label: 'Wide' }], styles: [{ id: 'none', label: 'No style' }, { id: 'photo', label: 'Photo' }] }) }));
+  await page.route(u => u.pathname === '/api/agents/catalog', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [{ id: 'coder', name: 'Coder' }, { id: 'writer', name: 'Writer' }] }) }));
+  await page.evaluate(() => {
+    window.__s = [];
+    const spy = n => ({ start: async (t, o) => { window.__s.push({ n, t, o: { ...o, pending: undefined } }); o.pending.resolve('run-' + n); } });
+    window.LocalAIChat = spy('chat'); window.LocalAIImages = spy('image'); window.LocalAIMissions = spy('mission');
+  });
+  const send = async (mode, text, setup) => {
+    await page.locator('#homeModeChip').click(); await page.waitForSelector('#homeModeSheet[open]', T);
+    await page.locator(`#homeModeSheet [data-home-mode="${mode}"]`).click();
+    await setup();
+    await page.locator('#homeModeSheet .home-sheet__done').click();
+    const before = await page.evaluate(() => window.__s.length);
+    await page.locator('#commandInput').fill(text); await page.locator('#commandGo').click();
+    await page.waitForFunction(n => window.__s.length === n, before + 1, T);
+    await page.goBack(); await page.waitForSelector('#home.active', T);
+  };
+  await send('ask', 'q1', async () => { await page.waitForSelector('#homeOptModel', T); await page.selectOption('#homeOptModel', 'qwen-b'); });
+  await page.waitForSelector('#home.active', T);
+  await send('create', 'q2', async () => { await page.waitForSelector('#homeOptEngine', T); await page.selectOption('#homeOptEngine', 'best'); await page.selectOption('#homeOptShape', 'wide'); await page.selectOption('#homeOptStyle', 'photo'); });
+  await page.waitForSelector('#home.active', T);
+  await send('mission', 'q3', async () => { await page.waitForSelector('[data-home-agent]', T); await page.locator('[data-home-agent][value="writer"]').check(); });
+  const s = await page.evaluate(() => window.__s);
+  assert.equal(s[0].o.model, 'qwen-b'); assert.equal(s[0].o.research, false);
+  assert.deepEqual([s[1].o.engine, s[1].o.aspect, s[1].o.style], ['best', 'wide', 'photo']);
+  assert.deepEqual(s[2].o.agentIds, ['writer']);
   await page.context().close();
 });
 

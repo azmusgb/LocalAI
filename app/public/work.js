@@ -26,12 +26,8 @@ function merge(list,{older=false,window=false}={}){
  for(const it of list){if(!older||!st.threads.has(key(it)))st.threads.set(key(it),it)}
  st.items=[...st.threads.values()].sort(newest);
 }
-// Work stays the page behind the run view: push the entry as the app does for in-app opens (so Close goes Back, not Home), then let the router show it.
-function openRun(it){
- const h='#run/'+encodeURIComponent(it.id);
- try{history.pushState({localaiRun:true},'',location.pathname+location.search+h)}catch{}
- window.LocalAIRouter?.go(h);
-}
+// Opening a run goes through the runs module, so Close and Back return to Work.
+const openRun=it=>window.LocalAIRuns?window.LocalAIRuns.show(it.id):window.LocalAIRouter?.go('#run/'+encodeURIComponent(it.id));
 const plain=t=>String(t||'').replace(/(\.\.\.|…)\s*$/,'').replace(/\s+/g,' ').trim();
 // One card per row: the summary once (never again as preview text), a chat thread's turn count, and the row itself opens the run.
 function rowFor(it){
@@ -39,10 +35,7 @@ function rowFor(it){
  const pt=plain(preview?.text),sm=plain(summary);
  if(pt&&sm&&(pt===sm||pt.startsWith(sm)||sm.startsWith(pt)))preview=null;
  if(c.kind==='chat'&&n>1)c={...c,summary:`Chat · ${n} turns`,preview:preview||(sm?{type:'text',text:summary}:null)};else c={...c,preview};
- const row=window.LocalAIUI.runCard({...it,card:c},{onOpen:openRun});
- const title=row.querySelector('.list-row__title'),open=document.createElement('button');
- open.type='button';open.className='work-open';open.textContent=title.textContent;title.textContent='';title.appendChild(open);
- open.addEventListener('click',e=>{e.stopPropagation();openRun(it)});
+ const row=window.LocalAIUI.runCard({...it,card:c},{onOpen:openRun,rowOpen:true});
  const act=row.querySelector('.run-card__action');
  if(act){if(/^(Review|Retry)$/i.test(act.textContent.trim()))act.className='btn-outline work-secondary';else act.remove()}
  return row;

@@ -50,7 +50,7 @@ async function paintOptions(){
    const j=await once('agents','/api/agents/catalog');if(mode!==m)return;
    const list=(j.items||[]).filter(a=>!a.infrastructure),chosen=new Set(options.agentIds||[]);
    box.innerHTML=list.length?`<fieldset class="home-sheet__group"><legend>Specialists</legend><p class="home-sheet__note">Leave all unchecked and the team is picked for you.</p>${list.map((a,i)=>`<label class="home-check" for="homeAgent${i}"><input type="checkbox" id="homeAgent${i}" data-home-agent value="${esc(a.id)}"${chosen.has(a.id)?' checked':''}><span>${esc(a.name||a.id)}</span></label>`).join('')}</fieldset>`:'<p class="home-sheet__note">No specialists are listed yet.</p>';
-   box.addEventListener('change',()=>{options.agentIds=[...box.querySelectorAll('[data-home-agent]:checked')].map(x=>x.value);saveOptions()},{once:false});
+   box.onchange=()=>{options.agentIds=[...box.querySelectorAll('[data-home-agent]:checked')].map(x=>x.value);saveOptions()};
   }
  }catch(e){if(mode===m)box.innerHTML=`<p class="home-sheet__note">Couldn't load the options (${esc(e.message)}). The usual choices are used.</p>`}
 }
@@ -76,12 +76,8 @@ function paintModes(){
 function openSheet(){const d=sheet();paintModes();paintOptions();if(!d.open)d.showModal()}
 
 // ---- Needs you and Recent ----
-function openRun(it){
- // Push the entry the way the app does for in-app opens, so Back returns to Home, not to the page behind the run view.
- const h='#run/'+encodeURIComponent(it.id);
- try{history.pushState({localaiRun:true},'',location.pathname+location.search+h)}catch{}
- root.LocalAIRouter?.go(h);
-}
+// The runs module opens the run on top of Home, so Back returns here.
+const openRun=it=>root.LocalAIRuns?root.LocalAIRuns.show(it.id):root.LocalAIRouter?.go('#run/'+encodeURIComponent(it.id));
 function needsRuns(all){
  const now=Date.now(),latest=new Map();
  for(const r of all){const k=r.threadId||r.id,t=Date.parse(r.updatedAt||r.createdAt)||0,p=latest.get(k);if(!p||t>p.t)latest.set(k,{r,t})}
@@ -89,28 +85,28 @@ function needsRuns(all){
  const rank=r=>r.status==='awaiting_approval'?0:1;
  return mine.sort((a,b)=>rank(a.r)-rank(b.r)||b.t-a.t).map(x=>x.r);
 }
-function attentionRow(a){
+function infoRow(title,sub,label,tone,go){
  const kit=root.LocalAIKit,row=document.createElement('button');
  row.type='button';row.className='list-row home-attn';
- row.innerHTML=`<span class="list-row__icon">${kit?kit.icon('system'):''}</span><span class="list-row__main"><span class="list-row__title">${esc(a.title)}</span><span class="list-row__sub">${esc(a.detail)}</span></span><span class="list-row__trail"><span class="badge badge--bad">Fix</span></span>`;
- row.addEventListener('click',()=>root.showView?.(a.view||'status'));
+ row.innerHTML=`<span class="list-row__icon">${kit?kit.icon('system'):''}</span><span class="list-row__main"><span class="list-row__title">${esc(title)}</span><span class="list-row__sub">${esc(sub)}</span></span><span class="list-row__trail"><span class="badge badge--${tone}">${esc(label)}</span></span>`;
+ row.addEventListener('click',go);
  return row;
 }
-let needs=[];
+const attentionRow=a=>infoRow(a.title,a.detail,'Fix','bad',()=>root.showView?.(a.view||'status'));
+// A pending approval that is not itself a run: open its run when one exists, else Improve's approvals.
+const approvalRow=(a,run)=>infoRow(a.title||'Approval needed',a.detail||'Waiting for your decision','Review','attention',()=>run?openRun(run):root.showView?.('approvals'));
+let needs=[],approvals=[];
 function paintNeeds(){
  const box=$('homeNeedsList'),sec=$('homeNeedsYou');if(!box||!sec)return;
- const rows=[...needs.map(recentRow),...attention.map(attentionRow)];
+ const rows=[...needs.map(recentRow),...approvals.map(x=>approvalRow(x.a,x.run)),...attention.map(attentionRow)];
  box.replaceChildren(...rows);
  $('homeNeedsCount').textContent=rows.length?'· '+rows.length:'';
  sec.hidden=!rows.length;
 }
 function recentRow(it){
- const row=root.LocalAIUI.runCard(it,{onOpen:openRun}),act=row.querySelector('.run-card__action');
+ const row=root.LocalAIUI.runCard(it,{onOpen:openRun,rowOpen:true}),act=row.querySelector('.run-card__action');
  if(act)act.remove(); // the row itself opens the run
  if(it.status==='awaiting_approval')row.querySelector('.run-card__bar')?.remove(); // waiting on you is not progress
- const title=row.querySelector('.list-row__title'),open=document.createElement('button');
- open.type='button';open.className='work-open';open.textContent=title.textContent;title.textContent='';title.appendChild(open);
- open.addEventListener('click',e=>{e.stopPropagation();openRun(it)});
  return row;
 }
 function paintRecent(box,data){
@@ -120,7 +116,17 @@ function paintRecent(box,data){
  return true;
 }
 const recentUrl='/api/runs?threads=1&limit=6';
-async function loadNeeds(){try{const d=await root.LocalAIUI.fetchJson('/api/runs?limit=120',{cache:'no-store'});needs=needsRuns(d.items||[])}catch{/* keep what is shown */}paintNeeds()}
+async function loadNeeds(){
+ const [d,p]=await Promise.allSettled([root.LocalAIUI.fetchJson('/api/runs?limit=120',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/approvals',{cache:'no-store'})]);
+ const runs=d.status==='fulfilled'?d.value.items||[]:null;
+ if(runs)needs=needsRuns(runs);
+ if(p.status==='fulfilled'){
+  const waiting=new Set(needs.filter(r=>r.status==='awaiting_approval').map(r=>r.meta?.changeId).filter(Boolean));
+  approvals=(p.value.items||[]).filter(a=>a.status==='pending'&&!(a.meta?.changeId&&waiting.has(a.meta.changeId)))
+   .map(a=>({a,run:a.meta?.changeId&&(runs||[]).find(r=>r.meta?.changeId===a.meta.changeId)||null}));
+ }
+ paintNeeds();
+}
 let inflight=null;
 function refresh(){
  if(inflight)return inflight;
@@ -162,15 +168,15 @@ async function dispatch(intent,text,route){
   const request=L.engineeringRequest(text,route);
   const r=await fetch('/api/engineering/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request,target:'self',root:'app',maxAttempts:3})});
   const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);
+  if(!data.run?.id)throw new Error('The change did not start. Try again.');
   openRun({id:'legacy-engineering:'+data.run.id});clearInput();
  }else if(intent==='ask'||intent==='research')await viaStarter('LocalAIChat',intent,text,{research:intent==='research',model:options.model});
  else if(intent==='create')await viaStarter('LocalAIImages','create',text,{engine:options.engine,aspect:options.aspect,style:options.style});
- else if(intent==='mission'){
-  if(root.LocalAIMissions?.start)await viaStarter('LocalAIMissions','mission',text,{agentIds:options.agentIds?.length?options.agentIds:undefined});
-  else{L.open('mission',text);clearInput()}
- }else if(intent==='automate'){L.open('automate',text);clearInput()}
+ else if(intent==='mission')await viaStarter('LocalAIMissions','mission',text,{agentIds:options.agentIds?.length?options.agentIds:undefined});else if(intent==='automate'){L.open('automate',text);clearInput()}
  else throw new Error('Choose a mode and try again.');
 }
+let autoWait=null;
+function waitAuto(ms){return new Promise(res=>{const t=setTimeout(()=>{autoWait=null;res(true)},ms);autoWait={cancel:()=>{clearTimeout(t);autoWait=null;res(false)}}})}
 async function send(text,m=mode){
  text=String(text??'').trim();
  if(!text||sending)return;
@@ -180,6 +186,8 @@ async function send(text,m=mode){
   if(m==='auto'){
    route=await root.LocalAILegacy.resolveIntentRequest(text,'auto');intent=route.intent||'ask';
    paintChip('→ '+(LABEL[intent]||intent));clearTimeout(flash);flash=setTimeout(()=>paintChip(),1500);
+   // A tap on the chip within the window changes the mode instead: nothing starts and the text stays.
+   if(!await waitAuto(1500)){setMode(LABEL[intent]?intent:'ask');openSheet();return}
   }
   await dispatch(intent,text,route);
  }catch(e){
@@ -189,7 +197,7 @@ async function send(text,m=mode){
 }
 
 // ---- wiring ----
-function fromHash(){const q=root.LocalAIRouter?.current().query,m=q&&q.get('mode');if(m&&LABEL[m])setMode(m)}
+function fromHash(){const R=root.LocalAIRouter;if(!R)return;const cur=R.current(),m=cur.query.get('mode')||R.intentFor(cur.page).mode;if(m&&LABEL[m])setMode(m)}
 function onHomeHash(){const p=root.LocalAIRouter?.current().page;return !p||p==='home'||root.LocalAIViews?.resolve(p)==='home'}
 function activate(){fromHash();greet();if(root.LocalAIUI)refresh().then(schedule)}
 function dockToNav(){
@@ -203,13 +211,13 @@ function dockToNav(){
 function init(){
  if(!$('homeComposer'))return;
  paintChip();greet();
- $('homeModeChip').addEventListener('click',openSheet);
+ $('homeModeChip').addEventListener('click',()=>autoWait?autoWait.cancel():openSheet());
  $('commandGo').addEventListener('click',()=>send($('commandInput').value));
  $('commandInput').addEventListener('input',()=>{grow();dockToNav()});
  $('homeSeeAll').addEventListener('click',()=>root.LocalAIRouter?.go('#work'));
  document.addEventListener('click',e=>{const b=e.target.closest?.('.mode[data-mode]');if(b&&!syncing)setMode(b.dataset.mode)});
  addEventListener('resize',dockToNav,{passive:true});
- if(root.ResizeObserver){const n=$('uxMobileNav');const ro=new ResizeObserver(dockToNav);ro.observe($('homeComposer'));if(n)ro.observe(n)}
+ if(root.ResizeObserver)new ResizeObserver(dockToNav).observe($('homeComposer'));
  // The tab bar is built after this script; look again once it exists.
  let tries=0;(function wait(){if($('uxMobileNav')){dockToNav();if(root.ResizeObserver)new ResizeObserver(dockToNav).observe($('uxMobileNav'))}else if(tries++<40)setTimeout(wait,100)})();
  new MutationObserver(()=>{if(active())activate()}).observe($('home'),{attributes:true,attributeFilter:['class']});
