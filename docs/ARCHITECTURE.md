@@ -61,6 +61,8 @@ Navigation is defined once in `app/public/view-registry.js`: five domains, each 
 | Build | Change requests, Issues (Issues, Quality signals), Claude Code, Files, Repository, PowerShell |
 | System | Health, Models, Integrations, Runs, Audit log |
 
+The page structure is being reorganized per the [evolution roadmap](superpowers/specs/2026-10-15-localai-evolution-design.md); this table is the current map.
+
 GridCraft has its own page at `/gridcraft.html`. New installs hide the Build tools until they are used
 (`developerHistory` in `GET /api/config`).
 
@@ -76,6 +78,10 @@ GridCraft has its own page at `/gridcraft.html`. New installs hide the Build too
 | 8787 | `127.0.0.1` | GridCraft bridge (`/health`, `/run`) |
 | 7979 | `127.0.0.1` | GridCraft control (MCP) |
 | 5678 | `127.0.0.1` | n8n editor and API |
+
+HTTPS is in place (Caddy, `deploy/Install-LocalAI-HTTPS.ps1`): browsers should use `https://<host IP>` or
+`https://localai.home.arpa` once the device trusts the LocalAI CA; **System › Health › Secure connection** says
+whether it does. Port 3080 stays open over plain HTTP for scripts, the deploy health checks and the Mac tools.
 
 `host.docker.internal` is how the container reaches services bound to the host's loopback; Docker Desktop
 forwards it. Nothing on the Mac listens for the appliance.

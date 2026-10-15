@@ -9,14 +9,16 @@ container `local-ai-appliance` on a Windows host, UI on port 3080. Docs index: `
 - Browser tests need a server. Use a throwaway one on a spare port, wait for it, test, stop it:
   `d=$(mktemp -d); DATA_DIR=$d WORKSPACE_ROOT=$d PORT=3180 node app/server.js > "$d/log" 2>&1 & pid=$!`,
   `until curl -fs http://127.0.0.1:3180/healthz >/dev/null; do sleep 1; done`,
-  `LOCALAI_URL=http://127.0.0.1:3180 npm run test:browser` (or `node tests/<name>-ui.mjs`), then `kill $pid`.
+  `LOCALAI_URL=http://127.0.0.1:3180 npm run test:browser` (all `tests/*-ui.mjs`; `node tests/run-browser.mjs <name>`
+  for some), then `kill $pid`.
   More in `docs/DEVELOPMENT.md`.
 - Deploy validator off the host: `pwsh -NoProfile -File deploy/Test-LocalAI-Candidate.ps1 -CandidateRoot . -LocalNode`.
   `npm run validate` needs the appliance's Docker image and only works on the host.
 
 ## Ship
 
-1. Branch, commit, open a PR. CI (`.github/workflows/validate.yml`) must be green.
+1. Branch, commit, open a PR. CI runs on PRs only, path-filtered (`.github/workflows/`); what runs must be green.
+   Docs-only PRs run no CI.
 2. Merge. The host's `LocalAI Safe Deploy` task deploys `main` within about 5 minutes and rolls back by itself.
 3. Confirm: `curl -s http://10.0.0.21:3080/healthz` (10.0.0.21 is the owner's appliance on their LAN) → `releaseCommit` equals the merge SHA. Deploy output
    contains fake `DEPLOYED: aaaa…` lines from contract tests; trust only `/healthz`.
@@ -44,7 +46,7 @@ Base `http://10.0.0.21:3080` (the owner's appliance). JSON bodies, no auth.
   design-system section maps old tokens onto `--ds-*`. Use `--ds-*` tokens.
 - **Navigation lives in `app/public/view-registry.js`.** New page = registry entry + `<section id>` in
   `index.html`; retired ids go in `ALIASES`. Use the registry's labels in docs and UI text.
-- New browser test: add it to `test:browser` in `package.json` and to the lists in `validate.yml`.
+- New `tests/*.test.cjs` and `tests/*-ui.mjs` files are picked up automatically; no lists to update.
 - **Never put secrets in the container, repo or logs.** The PowerShell `approval-key.txt` must never reach the
   container. Spawned processes get a filtered environment; see `docs/SECURITY.md` (Other controls, `childEnv`).
 - **Host scripts run under Windows PowerShell 5.1**: send UTF-8 bytes in `Invoke-RestMethod` bodies, set

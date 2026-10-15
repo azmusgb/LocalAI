@@ -192,7 +192,8 @@ The first line should show `/data` as a `volume`.
 `npm test` covers legacy round trips, malformed imports, schema rejection, conflicts, rollback, child cascades,
 full history, pagination, backups, JSON downgrade and re-upgrade, separate writer processes, concurrent
 agent and automation HTTP execution, restart durability, read-only inspection, disposable preflight and
-release identity. CI runs the whole suite on Linux with Node 22, and the storage, release, storage API,
-orchestrator and run ledger tests on Linux and Windows with Node 22.13.0 and 24. The deploy contract tests
-run the real promotion and rollback scripts against simulated Docker on PowerShell 7 and Windows
-PowerShell 5.1; they do not certify a real rollout on the host.
+release identity. CI runs the whole suite on Linux with Node 22 for every code PR. PRs that touch storage,
+release, run ledger or orchestrator code also run those suites on Node 22.13.0; a weekly run adds Windows and
+Node 24 (`.github/workflows/storage.yml`). The deploy contract tests run the real promotion and rollback scripts
+against simulated Docker on PowerShell 7 and Windows PowerShell 5.1, for PRs touching `deploy/` or host
+PowerShell and weekly; they do not certify a real rollout on the host. See [Development › CI](DEVELOPMENT.md#ci).

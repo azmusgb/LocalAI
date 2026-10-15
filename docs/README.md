@@ -29,5 +29,6 @@ Start with the [project README](../README.md) for what LocalAI is.
 Specs and implementation plans written before a change was built. They record intent at the time and are not
 kept up to date; the guides above describe what exists now.
 
+- [LocalAI evolution roadmap](superpowers/specs/2026-10-15-localai-evolution-design.md): one composer, one timeline; the page map will change
 - [Claude chat design](superpowers/specs/2026-10-15-claude-chat-design.md) and [plan](superpowers/plans/2026-10-15-claude-chat.md)
 - [Phone redesign design](superpowers/specs/2026-10-15-phone-redesign-design.md) and [plan](superpowers/plans/2026-10-15-phone-redesign.md)

@@ -23,7 +23,8 @@ Data must stay on a mount outside `/app`; promotion replaces `/app` wholesale.
 
 ## The normal path: merge and wait
 
-1. Open a pull request. CI (`.github/workflows/validate.yml`) must pass.
+1. Open a pull request. The CI workflows that apply must pass ([Development › CI](DEVELOPMENT.md#ci));
+   docs-only PRs run none.
 2. Merge to `main`.
 3. Within about five minutes the `LocalAI Safe Deploy` task picks the commit up, certifies it and promotes it.
 4. Confirm the running release:

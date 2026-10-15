@@ -88,19 +88,22 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
 - **Deploys** are pulled: the host fetches `origin/main` every five minutes and runs whatever is there,
   including that commit's own candidate tests and deploy scripts. Nothing on the LAN can push code to the
   appliance, but anyone who can push to `main` can run code on the host (see gaps).
-- **HTTPS.** Caddy with a local CA (`deploy/caddy/Caddyfile`); each device trusts the CA once.
+- **HTTPS.** Shipped: Caddy (`local-ai-https`) terminates TLS on 443 with its own local CA
+  (`deploy/caddy/Caddyfile`, `deploy/Install-LocalAI-HTTPS.ps1`), redirects port 80 to HTTPS, and serves the CA
+  certificate at `http://<host>/localai-ca.crt`. Each device trusts the CA once; **Health › Secure connection**
+  tells a device whether it is on HTTPS and whether it already trusts the CA. Setup: [Deploy › HTTPS](DEPLOY.md#https-with-caddy).
 
 ## Known gaps
 
 | Gap | Effect | Where |
 |---|---|---|
-| GitHub access to this repo means code on the host | The auto-deploy runs `origin/main` and that commit's scripts as the host user. Enable branch protection on `main` with required CI and reviews, and protect the GitHub account. Whether branch protection is on cannot be checked from the repo | `deploy/Run-LocalAI-AutoDeploy.ps1`, `deploy/Deploy-LocalAI.ps1` |
+| GitHub access to this repo means code on the host | The auto-deploy runs `origin/main` and that commit's scripts as the host user. Enable branch protection on `main` with required CI and reviews, and protect the GitHub account. CI is path-filtered and docs-only PRs run none, so a required check that did not run will block those PRs. Whether branch protection is on cannot be checked from the repo | `deploy/Run-LocalAI-AutoDeploy.ps1`, `deploy/Deploy-LocalAI.ps1` |
 | Ollama and n8n loopback binding is host configuration | If `OLLAMA_HOST` is unset or n8n is published on all interfaces, the model API or the n8n editor is open to the LAN without auth | [Network exposure](#network-exposure) |
 | No user authentication on port 3080 or 443 | Anyone on the LAN can read conversations and projects, start runs, edit files under `WORKSPACE_ROOT`, and run `node`/`npm`/`npx` there (code execution inside the container) | `app/server.js` request router |
 | Change requests are unauthenticated | Any LAN client can request a change. A `self` change copies `SELF_APP_ROOT` to `DATA_DIR/change-staging/<id>/app`, applies a model-written patch there and validates it by running `node --check` and starting the staged `server.js` inside the container. Approving it only marks it `apply_requested` for a "host updater" that does not exist in this repo, so it never reaches the live app. A `workspace` change, once approved, writes its files into `WORKSPACE_ROOT` | `stageChangeByIdUnlocked`, `validateStagedChange`, `apiChangeRequestApply` in `app/server.js` |
 | Files and Repository write under `WORKSPACE_ROOT` without auth | A LAN user can create or overwrite any file in the mounted workspace and run allow-listed commands there. What `/workspace` is mounted from is set by the container definition, which is not in this repo | `apiWorkbenchWrite`, `apiWorkbenchCommand` in `app/server.js` |
 | Most POST routes do not check `Origin` or `Content-Type` | `readBody` parses any body as JSON, so another website open in a LAN browser can send simple cross-site POSTs to the API | `readBody`, `sameOriginJson` in `app/server.js` |
-| Port 3080 stays plain HTTP | HTTPS is optional; anything using `http://<host>:3080` is unencrypted on the Wi-Fi | `deploy/Install-LocalAI-HTTPS.ps1` |
+| Port 3080 stays plain HTTP | HTTPS on 443 is available, but 3080 is still open and nothing redirects it; anything using `http://<host>:3080` is unencrypted on the Wi-Fi | container port mapping; `deploy/caddy/Caddyfile` |
 | Mac bridge and hooks default to `http://10.0.0.21:3080` | The Mac key crosses the Wi-Fi in clear on every poll; whoever captures it can approve pairings and impersonate sessions. Rotate it if exposed ([steps](CLAUDE-CHAT.md#security-notes)) | `host/claude-chat/bridge.mjs`, `cli.mjs`, `hook.py` (`LOCALAI_URL`) |
 | Chat device cookie lacks `Secure` | Also sent over plain HTTP | `app/claude-chat.js` |
 | Claude board endpoints are unauthenticated | Any LAN client can post events and findings, vote, and change finding status | `/api/claude/*` in `app/server.js` |

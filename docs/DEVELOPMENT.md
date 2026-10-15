@@ -79,7 +79,7 @@ PowerShell Workbench needs 1.17). Leave it unset unless you mean to turn feature
 | Command | What runs | Needs |
 |---|---|---|
 | `npm test` | Every `tests/*.test.cjs` with `node --test`: storage, API, runs, orchestrator, chat relay, Mac bridge/hook/CLI/installer, security and front-end contracts | Node only; tests start their own servers on free ports |
-| `npm run test:browser` | Ten Playwright scripts (`tests/*-ui.mjs`, listed in `package.json`) | A running server at `LOCALAI_URL` (default `http://127.0.0.1:3080`) |
+| `npm run test:browser` | `tests/run-browser.mjs`: every `tests/*-ui.mjs` Playwright suite in turn, reporting all failures at the end | A running server at `LOCALAI_URL` (default `http://127.0.0.1:3080`) |
 | `pwsh -NoProfile -File deploy/Test-LocalAI-Candidate.ps1 -CandidateRoot . -LocalNode` | The deploy validator, as CI runs it | `pwsh` |
 | `pwsh -NoProfile -File tests/Test-LocalAI-DeployContracts.ps1` | Deploy and rollback scripts against mocked Docker, git and robocopy | `pwsh`; CI runs it on Windows only |
 
@@ -93,24 +93,27 @@ kill $pid
 ```
 
 Use a fresh `DATA_DIR`: the scripts write data (for example Claude board findings and paired chat devices). `tests/claude-chat-ui.mjs`
-ignores `LOCALAI_URL` and starts its own server. Run one script on its own with `node tests/<name>-ui.mjs`.
+ignores `LOCALAI_URL` and starts its own server. Run some suites with `node tests/run-browser.mjs images claude` (names are matched as substrings), or one
+with `node tests/<name>-ui.mjs`.
 
 `npm run validate` runs the validator **without** `-LocalNode`, which runs the native tests inside the
 `local-ai-appliance` Docker image; it only works on the appliance host. Use the `-LocalNode` form above elsewhere.
 
-A new `tests/*.test.cjs` file is picked up by `npm test` (and CI) automatically. A new browser script must be
-added to `test:browser` in `package.json`, and to the syntax and required-file lists in
-`.github/workflows/validate.yml`.
+New `tests/*.test.cjs` and `tests/*-ui.mjs` files are picked up automatically by `npm test`,
+`npm run test:browser` and CI; there are no hand-kept file lists.
 
 ## CI
 
-`.github/workflows/validate.yml` runs on every pull request and on pushes to `main`:
+CI runs on pull requests only (plus schedules and manual runs); nothing runs after a merge, because the
+auto-deploy certifies `main` itself before promoting it. A newer push to a PR cancels its older run.
 
-| Job | Runs on | Steps |
-|---|---|---|
-| `validate` | Ubuntu, Node 22 | `npm ci`; `node --check` on server, front-end and test files; `npm test`; Python and PowerShell syntax; required files; no private keys under `app/`; `Test-LocalAI-Candidate.ps1 -LocalNode`; Chromium; start the server (`DATA_DIR=/tmp/localai-data PORT=3080`) and `npm run test:browser`. The server log is uploaded on failure |
-| `storage-compatibility` | Ubuntu and Windows × Node 22.13.0 and 24 | `release`, `storage`, `storage-api`, `agent-orchestrator` and `run-ledger` tests |
-| `deployment-contracts` | Windows | `tests/Test-LocalAI-DeployContracts.ps1` on PowerShell 7 and Windows PowerShell 5.1 |
+| Workflow (job) | Runs when | Runs on | Steps |
+|---|---|---|---|
+| `validate.yml` (`validate`) | every PR except ones that only change `**/*.md` or `docs/**`; on demand | Ubuntu, Node 22 | `npm ci`; `node --check` on every `app/*.js`, `app/public/*.js`, `tests/*.mjs`, `tests/*.cjs`; `npm test`; Python and PowerShell syntax; no private keys under `app/`; `Test-LocalAI-Candidate.ps1 -LocalNode`; Chromium; start the server (`DATA_DIR=/tmp/localai-data PORT=3080`) and `npm run test:browser`. The server log is uploaded on failure |
+| `storage.yml` (`storage-compatibility`) | PRs touching `app/storage*.js`, `app/release.js`, `app/run-ledger.js`, `app/agent-orchestrator.js`, their tests or `package*.json`; weekly; on demand | PRs: Ubuntu, Node 22.13.0. Weekly and on demand: Ubuntu and Windows × Node 22.13.0 and 24 | `release`, `storage`, `storage-api`, `agent-orchestrator` and `run-ledger` tests |
+| `windows-contracts.yml` (`deployment-contracts`) | PRs touching `deploy/**`, `host/**/*.ps1` or `tests/*.ps1`; weekly; on demand | Windows | `tests/Test-LocalAI-DeployContracts.ps1` on PowerShell 7 and Windows PowerShell 5.1 |
+
+A docs-only PR runs no checks.
 
 ## Front-end structure
 
@@ -141,12 +144,12 @@ Use `--ds-*` tokens for new styles and the `LocalAIKit` helpers (`ui-kit` sectio
   `index.html`, and its loader. Retiring an id means adding it to `ALIASES`.
 - **`ui.js` is edited in place.** There is no source tree to rebuild it from. Keep each section's scope
   closed, and put new code in the section it belongs to.
-- **Required files** are listed in both `deploy/Test-LocalAI-Candidate.ps1` and `.github/workflows/validate.yml`.
+- **Required files** for a deploy are listed in `deploy/Test-LocalAI-Candidate.ps1`.
 - **No secrets in the repo or the container image.** See [Security](SECURITY.md).
 - **Host scripts must run on Windows PowerShell 5.1**, which is what scheduled tasks start: send UTF-8 bytes
   rather than strings in `Invoke-RestMethod` bodies, set `[Console]::OutputEncoding` to UTF-8 before reading
   git output, and do not wrap native commands such as `git` in `$ErrorActionPreference = 'Stop'` (their stderr
   becomes a terminating error).
-- **Workflow:** branch, pull request, CI green, merge; then follow
+- **Workflow:** branch, pull request, CI green (the workflows that apply), merge; then follow
   [Deploy › The normal path](DEPLOY.md#the-normal-path-merge-and-wait).
 - Design specs and plans for larger changes go in `docs/superpowers/specs/` and `docs/superpowers/plans/`.

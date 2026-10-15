@@ -16,7 +16,8 @@ the nightly backup copy to OneDrive.
 | Build | Change requests, Issues and quality signals, Claude Code (progress board and chat), Files, Repository, PowerShell |
 | System | Health, Models, Integrations, Runs, Audit log |
 
-Page names come from `app/public/view-registry.js`. GridCraft spreadsheets have their own page at `/gridcraft.html`.
+Page names come from `app/public/view-registry.js`. The page structure is being reorganized per the
+[evolution roadmap](docs/superpowers/specs/2026-10-15-localai-evolution-design.md). GridCraft spreadsheets have their own page at `/gridcraft.html`.
 
 ## Where it runs
 
