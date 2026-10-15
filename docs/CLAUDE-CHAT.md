@@ -19,7 +19,7 @@ It is a second window onto a session you started yourself. It is **not** a runne
 
 - **Opt-in.** `claude-chat` is a shell function, `LOCALAI_CHAT=1 claude "$@"`. Hooks inherit the variable and do nothing without it.
 - **Hook** (`~/.claude/localai-chat/hook.py`, async, 10 s timeout, swallows every error). `SessionStart` starts the bridge. `UserPromptSubmit` posts your terminal prompt to the relay. `Stop` posts Claude's reply text from the transcript.
-- **Bridge** (`~/.claude/localai-chat/bridge.mjs`, one per session, detached). Announces the session, long-polls the relay's inbox, and injects each web message into the session. Only one bridge runs per session (pidfile in `~/.claude/localai-chat/run/`). It exits when the session's socket disappears.
+- **Bridge** (`~/.claude/localai-chat/bridge.mjs`, one per session, detached). Announces the session, long-polls the relay's inbox, and injects each web message into the session. Only one bridge runs per session and per Claude Code process: it keeps a pidfile `run/<sessionId>.pid` and a per-socket lock `run/sock-<hash>.json` in `~/.claude/localai-chat/`. `/clear` starts a new session id in the same process, so the new bridge stops the old one, and the cleared conversation goes offline on the page after 45 s. It exits when the session's socket disappears.
 - **Relay** (`app/claude-chat.js` in the appliance). Stores sessions, messages, devices and pairing requests; authenticates the Mac (key) and devices (cookie). Nothing on the Mac listens on the network; the appliance is the only rendezvous point.
 - **Panel** (Claude page). Pairing, session picker, conversation, composer, devices.
 
@@ -58,15 +58,15 @@ The installer is safe to re-run. It:
 ## Daily use
 
 - Start or resume a session with chat on: `claude-chat` or `claude-chat --resume <id>`. It then appears on the Claude page. Start the session with plain `claude` and it stays invisible.
-- **Pair a phone** (once per device): open the Claude page, choose **Pair this device**, note the 6-character code (valid 10 minutes), then on the Mac run `localai-chat pair <code> "My iPhone"`. The page picks it up and stays paired for 180 days.
+- **Pair a phone** (once per device): open the Claude page; an unpaired device shows a 6-character code (valid 10 minutes) and the command to run. Then, on the Mac, run `localai-chat pair <code> "My iPhone"`. The page picks it up and stays paired for 180 days.
 - **Send**: pick a session, type, press Send (Cmd/Ctrl+Enter also sends; Enter is a newline). The reply appears when Claude finishes its turn; there is no partial streaming. Replies are shown as plain text.
-- **Statuses** under a web message: `queued` (relay has it, bridge has not fetched it), `delivered` (injected into the session), `answered` (Claude replied). A queued message on a session that has gone offline shows `not delivered` and can be deleted.
+- **Statuses** under a web message: `queued` (relay has it, bridge has not fetched it), `delivered` (injected into the session), `answered` (Claude replied after it; one reply answers every earlier delivered message). A message still `delivered` after 10 minutes is no longer polled for; it keeps that status until a later reply. A queued message on a session that has gone offline shows `not delivered` and can be deleted.
 - **Offline**: a session is online while its bridge has polled in the last 45 s. When offline the composer is disabled ("Start or resume it on your Mac with `claude-chat`"); history stays readable and messages are never accepted for later.
 - **The terminal keeps working** as normal. Typing there is mirrored to the page, and both sides' turns appear in the conversation. If the appliance is unreachable, hooks drop silently and the bridge retries with backoff (1 s up to 30 s); the terminal is unaffected.
 
 ## Managing devices
 
-From the page, open **Devices** to see each paired device with last-seen and **Revoke** (any paired device may revoke any device, including itself). From the Mac:
+On the page, expand **Paired devices** (below the composer) to see each paired device with last-seen and **Revoke** (any paired device may revoke any device, including itself). From the Mac:
 
 ```sh
 localai-chat devices
@@ -81,6 +81,11 @@ Revoking takes effect immediately; the device's next request gets 401 and its pa
 - The Mac key lives at `~/.claude/localai-chat/mac.key` (mode 600). Only its SHA-256 is on the appliance, at `/data/claude-chat-mac-key.sha256`, and no network endpoint can set or change it; only the installer can, over ssh.
 - The device cookie `localai_chat_device` is HttpOnly, SameSite=Strict, Path=`/api/claude/chat`, 180 days. The appliance stores only its hash.
 - **Plain HTTP.** The appliance serves HTTP, so the cookie crosses the Wi-Fi unencrypted; anyone who sniffs it can send messages until the device is revoked. The pairing screen says so. The board item `prod-https` closes this.
+- **The Mac key also crosses plain HTTP**, in the `X-LocalAI-Mac-Key` header of every bridge long-poll (about every 25 s) and every hook call. Whoever sniffs it can do everything the Mac can: approve pairing codes (and so pair their own devices), post fake terminal prompts and replies, announce fake sessions, and read web messages from the inbox. It cannot be revoked from the page, and re-running the installer **reuses** the existing key. `prod-https` is the fix; until then, if the key may be exposed, rotate it:
+  1. `rm ~/.claude/localai-chat/mac.key`
+  2. Re-run `host/claude-chat/install.sh`. It creates a new key and pushes its hash to the appliance; the old key is rejected from then on.
+  3. Restart (or resume) your `claude-chat` sessions so their bridges read the new key; running bridges keep the old one and log `mac key rejected`.
+  4. Review **Paired devices** (or `localai-chat devices`) and revoke any device you do not recognise.
 - Web messages act with **the session's own permissions**. A session in bypass-permissions mode will act on a web message without prompts. They cannot change settings or approve a permission prompt.
 - Known limitation: anyone on the LAN can request pairing codes and hold the (up to 5) pending slots, delaying your own pairing. They cannot approve one without the Mac key.
 
@@ -93,6 +98,13 @@ Start with `localai-chat status`. It prints the key state, relay reachability, w
 | Line | Meaning |
 |---|---|
 | `started session <id>` / `announced` | Bridge is up and the relay knows the session |
+| `announce failed <status>` | The relay refused the announce (not 401); the bridge backs off and retries |
+| `mac key missing; exiting` | No `~/.claude/localai-chat/mac.key`; run the installer |
+| `messaging socket/token missing; exiting` | The session did not export `CLAUDE_CODE_MESSAGING_SOCKET`/`_TOKEN` (Claude Code too old, or the hook ran outside a session) |
+| `missing session id` | The hook started the bridge without a session id (should not happen; check the hook entries) |
+| `replacing bridge <pid> for session <id> on this socket` | `/clear` (or a resume) started a new session in the same Claude Code process; the old bridge is stopped |
+| `SIGTERM` | This bridge was stopped, normally by the bridge that replaced it |
+| `socket lock busy; exiting` | Could not take the per-socket lock after repeated tries; restart the session |
 | `received <n>` | Inbox call returned n web messages |
 | `injected <id>` | Message written to the session's socket |
 | `inject failed <id> attempt <n> ...` | A write failed; it retries up to 3 times |
@@ -103,10 +115,10 @@ Start with `localai-chat status`. It prints the key state, relay reachability, w
 
 Common problems:
 
-- **Session not listed.** It must be started or resumed with `claude-chat` (not `claude`). The bridge starts on `SessionStart` and announces itself; check `localai-chat status` for a bridge and `bridge.log` for `announced`. Resuming or restarting the session retries the announce.
+- **Session not listed.** It must be started or resumed with `claude-chat` (not `claude`). The bridge starts on `SessionStart` and announces itself; check `localai-chat status` for a bridge and `bridge.log` for `announced`. `mac key missing; exiting` means the installer has not run (or the key was removed); `messaging socket/token missing; exiting` means this Claude Code session does not expose the inbox socket. Resuming or restarting the session retries the announce.
 - **Message `delivered` but Claude does nothing.** Claude Code may be holding it behind an approval dialog in the terminal (the own-child check failed). Look at the terminal and answer the dialog.
 - **Injected lines in the log but messages stop arriving, or `lost` appears.** A Claude Code update may have changed the undocumented inbox format. This is the main maintenance risk; compare `last injection` in `status` with the Claude Code version and adjust `bridge.mjs`.
-- **`mac key rejected` or key `rejected` in status.** Re-run `host/claude-chat/install.sh`; it reuses the same key and re-pushes the hash. Check `ssh windows-ai` works if the push fails.
+- **`mac key rejected` or key `rejected` in status.** Re-run `host/claude-chat/install.sh`; it reuses the same key and re-pushes the hash (to replace the key, see the rotation steps under Security notes). Check `ssh windows-ai` works if the push fails.
 - **Re-running the installer** is always safe: files are overwritten, hooks and the `.zshrc` block are not duplicated, a new settings backup is made.
 
 ## Uninstall

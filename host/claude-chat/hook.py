@@ -13,6 +13,8 @@ import urllib.request
 
 WEB_PREFIX = '[LocalAI web · '
 MAX_TEXT = 50000
+# Ignore HTTP(S)_PROXY and system proxy settings: the Mac key must only ever go to the appliance itself.
+OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def chat_home():
@@ -36,7 +38,7 @@ def post(session_id, role, source, text):
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(), method='POST',
         headers={'Content-Type': 'application/json', 'X-LocalAI-Mac-Key': key})
-    urllib.request.urlopen(req, timeout=3).read()
+    OPENER.open(req, timeout=3).read()
 
 
 def start_bridge(session_id, cwd):
