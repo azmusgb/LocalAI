@@ -75,10 +75,13 @@ await check('chips, filters and tabs are at least 44px tall', async () => {
   assert.deepEqual(short, []);
 });
 
-await check('home shows one name in the top bar', async () => {
+await check('home shows the brand and a greeting in the top bar, not a section name', async () => {
   await page.evaluate(() => window.showView('home'));
   await page.waitForTimeout(150);
-  assert.equal((await page.locator('.ux-context-left').innerText()).trim(), 'Home');
+  assert.match((await page.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').trim(), /^Good (morning|afternoon|evening) Local AI$/);
+  assert.equal(await page.locator('#uxContextMenu').isVisible(), false, 'no section menu on Home');
+  const search = await page.locator('#uxCommandBtn').boundingBox();
+  assert.ok(search.x > 360 / 2, `Search sits at the right with the bell, not beside the brand (x=${search.x})`);
 });
 
 await check('long lists show the first items and a Show more button', async () => {
@@ -152,6 +155,7 @@ await check('shell: the inbox bell names its count', async () => {
   await shell.evaluate(() => window.dispatchEvent(new CustomEvent('localai:inbox-count', { detail: { unread: 3, pending: 1 } })));
   assert.match(await shell.locator('#uxInboxBtn').getAttribute('aria-label'), /3 unread, 1 approval/);
   assert.equal(await shell.locator('#uxInboxCount').innerText(), '4');
+  assert.match(await shell.locator('#uxInboxBtn').getAttribute('aria-label'), /^Inbox, 4 waiting/);
   await shell.evaluate(() => window.dispatchEvent(new CustomEvent('localai:inbox-count', { detail: { unread: 0, pending: 0 } })));
   assert.equal(await shell.locator('#uxInboxBtn').isVisible(), true, 'the bell stays on phones at zero');
   assert.equal(await shell.locator('#uxInboxCount').isVisible(), false, 'no badge at zero');
@@ -160,14 +164,14 @@ await check('shell: the inbox bell names its count', async () => {
 await check('shell: a page action shows in the header only on its page', async () => {
   let clicked = 0;
   await shell.exposeFunction('__shellActionClicked', () => { clicked++; });
-  await shell.evaluate(() => window.LocalAIShell.setAction('status', { icon: 'refresh', label: 'Check again', onClick: () => window.__shellActionClicked() }));
-  await shell.evaluate(() => window.showView('status'));
+  await shell.evaluate(() => window.LocalAIShell.setAction('activity', { icon: 'refresh', label: 'Reload', onClick: () => window.__shellActionClicked() }));
+  await shell.evaluate(() => window.showView('activity'));
   await shell.locator('#uxHeaderAction').click();
-  assert.equal(await shell.locator('#uxHeaderAction').getAttribute('aria-label'), 'Check again');
+  assert.equal(await shell.locator('#uxHeaderAction').getAttribute('aria-label'), 'Reload');
   assert.equal(clicked, 1);
   await shell.evaluate(() => window.showView('models'));
   assert.equal(await shell.locator('#uxHeaderAction').isVisible(), false);
-  await shell.evaluate(() => window.LocalAIShell.clearAction('status'));
+  await shell.evaluate(() => window.LocalAIShell.clearAction('activity'));
 });
 
 await check('shell: many page tabs scroll on a 320px phone and the active one is in view', async () => {
@@ -193,6 +197,33 @@ await check('shell: with Developer tools off the tab bar has four equal items', 
   assert.ok(Math.max(...widths) - Math.min(...widths) < 1, `unequal widths ${widths}`);
   await shell.locator('.dev-tools-pref input').check();
   assert.equal(await shell.evaluate(() => [...document.querySelectorAll('#uxMobileNav [data-domain]')].filter(b => b.getBoundingClientRect().width > 0).length), 5);
+});
+await check('shell: tab-bar icons come from the registry', async () => {
+  const items = await shell.evaluate(() => {
+    const icons = Object.fromEntries(window.LocalAIViews.DOMAINS.map(d => [d.id, d.icon]));
+    return [...document.querySelectorAll('#uxMobileNav [data-domain]')].map(b => ({ want: icons[b.dataset.domain], got: b.querySelector('svg use')?.getAttribute('href') }));
+  });
+  assert.equal(items.length, 5);
+  for (const i of items) {
+    assert.ok(i.want, 'every domain names its icon');
+    assert.equal(i.got, '#i-' + i.want);
+  }
+});
+
+await check('shell: Health puts Check again in the header in place of Search', async () => {
+  await shell.evaluate(() => window.showView('status'));
+  await shell.waitForTimeout(150);
+  const action = shell.locator('#uxHeaderAction');
+  await action.waitFor({ state: 'visible' });
+  assert.equal(await action.getAttribute('aria-label'), 'Check again');
+  assert.equal(await shell.locator('#uxCommandBtn').isVisible(), false, 'Search gives its place to the page action');
+  assert.equal(await shell.locator('#statusRetryBtn').isVisible(), false, 'no second Check again on the page');
+  const checked = shell.waitForRequest(r => r.url().includes('/api/status'));
+  await action.click();
+  await checked;
+  await shell.evaluate(() => window.showView('models'));
+  await shell.waitForTimeout(150);
+  assert.equal(await shell.locator('#uxCommandBtn').isVisible(), true, 'Search is back on pages without an action');
 });
 await shell.close();
 
