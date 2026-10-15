@@ -1638,3 +1638,73 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
   #ask #sendBtn[data-state="stop"]::before{content:'';width:14px;height:14px;border-radius:3px;background:currentColor}
   #ask .msg{border-radius:18px}
 }
+
+/* Change requests and Missions (redesign task 4). */
+.changes-banner{width:100%;align-items:center;margin-bottom:12px;font:inherit;text-align:left;cursor:pointer;min-height:60px}
+.changes-banner[hidden],.mission-last[hidden]{display:none}
+.changes-banner>b{min-width:30px;text-align:center;font-size:26px;font-weight:700;color:var(--ds-attention-text)}
+.changes-banner>span:nth-child(2){flex:1;display:grid;gap:1px}
+.changes-banner strong{font-size:16px;font-weight:600}
+.changes-banner small{font-size:13px;color:#c7b48c}
+.changes-banner-cta{flex:none;height:36px;padding:0 14px;border-radius:999px;background:var(--ds-attention);color:#1e1402;font-size:14px;font-weight:650;display:grid;place-items:center}
+.mission-last{display:none}
+@media(max-width:760px){
+  #changes.active{display:flex;flex-direction:column}
+  #changes>.two{display:contents}
+  #changes>.topbar{display:none}
+  #changes .card:has(#engineeringRequest){order:2}
+  #changes .card:has(#changeList){order:3;margin-top:4px}
+  #changes .card:has(#changeDetail){order:4}
+  #changes .card:has(#engineeringRuns){order:5}
+  #changes>.two>.card{margin-top:12px}
+  #changes .card:has(#changeDetail>.empty){display:none}
+  #changes .card:has(#engineeringRequest){padding:0;overflow:hidden;border-radius:18px;border-color:var(--ds-line-card)}
+  #changes .card:has(#engineeringRequest)>h2{margin:0;padding:14px 16px 0;font-size:17px}
+  #changes .card:has(#engineeringRequest) .form-grid{display:flex;flex-direction:column;gap:0;margin-top:6px!important}
+  #changes .form-grid>label{display:flex;align-items:center;gap:12px;min-height:56px;padding:0 16px;border-top:1px solid var(--ds-line);color:var(--ds-text);font-size:16px}
+  #changes .form-grid>label:has(#engineeringRequest){order:-1;display:block;border-top:0;padding:0 16px 6px;font-size:0}
+  #changes .form-grid>label:has(input:disabled){display:none}
+  #changes .form-grid select{flex:1;min-width:0;max-width:65%;margin-left:auto;border:0;background-color:transparent;color:var(--ds-muted);text-align:right;text-align-last:right;padding-right:24px;box-shadow:none}
+  #changes #engineeringRequest{width:100%;height:auto;field-sizing:content;min-height:72px;max-height:240px;padding:0;border:0;background:transparent;box-shadow:none;resize:none;line-height:1.45}
+  #changes #engineeringRunBtn{display:flex;width:calc(100% - 32px);margin:10px 16px 0!important;min-height:48px;font-size:16px;border-radius:14px}
+  #changes #engineeringStatus{margin:8px 16px 14px!important;text-align:center;font-size:13px}
+  #changes .card:has(#changeList){background:transparent;border:0;padding:0}
+  #changes .card:has(#changeList) .section-head{align-items:center}
+  #changes .card:has(#changeList) .section-head p{display:none}
+  #changes .card:has(#changeList) h2{font-size:15px;color:var(--ds-muted)}
+  #changes .card:has(#changeList) .section-head .btn{min-height:44px;padding:0 4px;border:0;background:transparent;color:var(--ds-accent-text);font-weight:500}
+  #changes #changeList{gap:0;background:var(--ds-surface);border:1px solid var(--ds-line-card);border-radius:16px;overflow:hidden}
+  #changes #changeList .item-card{border:0;border-radius:0;background:transparent;padding:12px 16px}
+  #changes #changeList .item-card+.item-card{border-top:1px solid var(--ds-line)}
+  #changes #changeList .statusline{align-items:center;gap:10px}
+  #changes #changeList .statusline strong{font-size:15px;font-weight:600;-webkit-line-clamp:2}
+  #changes #changeList small{font-size:13px;color:var(--ds-muted)}
+
+  #agents>.topbar{display:none}
+  #agents [hidden]{display:none!important}
+  #agents .agent-compose{background:var(--ds-surface);border-color:var(--ds-line-card);border-radius:20px;padding:14px 16px}
+  #agents .agent-compose label{font-size:16px;font-weight:600;color:var(--ds-text)}
+  #agents #agentGoal{margin-top:6px;border:0;background:transparent;padding:0;box-shadow:none;min-height:72px;font-weight:400;font-size:16px;resize:none}
+  #agents #agentGoal::placeholder{font-weight:400}
+  #agents .agent-compose__row>label:has(#agentProject){display:flex;align-items:center;gap:12px;min-height:56px;margin:6px -16px 0;padding:0 16px;border-top:1px solid var(--ds-line);border-bottom:1px solid var(--ds-line)}
+  #agents #agentProject{flex:1;min-width:0;border:0;background-color:transparent;color:var(--ds-muted);text-align:right;text-align-last:right;box-shadow:none;font-weight:400}
+  #agents .agent-compose__actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  #agents #routePreviewBtn{order:1}
+  #agents #missionRunBtn{order:2}
+  #agents #agentAdvancedToggle{order:3;grid-column:1/-1;min-height:44px;border:0;background:transparent;color:var(--ds-accent-text);font-weight:500}
+  #agents .mission-last{display:block;margin-top:20px;background:transparent;border:0;padding:0}
+  #agents .mission-last[hidden]{display:none}
+  #agents .mission-last-head h2{margin:0 0 8px;font-size:15px;font-weight:650;color:var(--ds-muted)}
+  #agents .mission-last-title,#agents .mission-last-meta,#agents .mission-last-actions{background:var(--ds-surface);border-left:1px solid var(--ds-line-card);border-right:1px solid var(--ds-line-card);padding:0 16px;margin:0}
+  #agents .mission-last-title{display:flex;align-items:flex-start;gap:10px;padding-top:14px;border-top:1px solid var(--ds-line-card);border-radius:16px 16px 0 0}
+  #agents .mission-last-title h3{flex:1;margin:0;font-size:16px;font-weight:600;line-height:1.3}
+  #agents .mission-last-meta{padding-top:6px;font-size:13px;color:var(--ds-muted)}
+  #agents .mission-last-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px 16px 14px;border-bottom:1px solid var(--ds-line-card);border-radius:0 0 16px 16px}
+  #agents .mission-last-actions .btn-outline{min-height:44px;font-size:15px}
+}
+#changeFilterAll[hidden]{display:none!important}
+@media(max-width:760px){
+  #changes .card:has(#changeList) .section-head{display:flex;flex-wrap:nowrap;justify-content:space-between}
+  #changes .card:has(#changeList) .section-head>.actions{display:flex;flex-wrap:nowrap;gap:14px;margin:0}
+  #changes .form-grid select{max-width:72%}
+}

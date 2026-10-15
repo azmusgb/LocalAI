@@ -252,6 +252,50 @@ await check('chat: with the keyboard open the composer stays on screen', async (
 });
 await hc.close();
 
+// Change requests and Missions (redesign task 4), with stubbed changes and missions.
+const cm = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+cm.on('pageerror', e => pageErrors.push(e.message));
+await cm.addInitScript(() => { try { localStorage.setItem('localai.devTools', '1'); } catch {} });
+const now = Date.now(), iso = ms => new Date(now - ms).toISOString();
+const stubChanges = [
+  { id: 'chg-1', summary: 'Remember the last image size', target: 'self', status: 'awaiting_approval', files: [{}, {}], createdAt: iso(3 * 3600e3), updatedAt: iso(3 * 3600e3) },
+  { id: 'chg-2', summary: 'Fix the Create page model selector', target: 'self', status: 'validation_failed', files: [], createdAt: iso(16 * 86400e3), updatedAt: iso(16 * 86400e3) },
+  { id: 'chg-3', summary: 'Tidy the audit log', target: 'self', status: 'applied', files: [{}], createdAt: iso(20 * 86400e3), updatedAt: iso(20 * 86400e3) }
+];
+await cm.route('**/api/changes', route => route.fulfill({ json: { items: stubChanges, pending: 11 } }));
+await cm.route('**/api/agents/missions', route => route.fulfill({ json: { items: [{ id: 'm-1', goal: 'Identify one mission completion behavior and cite the source file', status: 'complete', createdAt: iso(200e3), updatedAt: iso(20e3), workers: [{ id: 'router', name: 'Router', state: 'complete' }, { id: 'research_agent', name: 'Research', state: 'complete' }, { id: 'coordinator', name: 'Coordinator', state: 'complete' }], results: [] }] } }));
+await cm.goto(base, { waitUntil: 'domcontentloaded' });
+await cm.waitForFunction(() => typeof window.showView === 'function' && window.LocalAIKit);
+
+await check('changes: banner, readable picker values, plain-language badges, banner filters to what is left to do', async () => {
+  await cm.evaluate(() => window.showView('changes'));
+  await cm.locator('#changesBanner').waitFor({ state: 'visible' });
+  assert.equal(await cm.locator('#changesBannerCount').innerText(), '11');
+  const target = await cm.evaluate(() => { const s = document.getElementById('engineeringTarget'), r = s.getBoundingClientRect(), c = getComputedStyle(s); return { text: s.selectedOptions[0]?.textContent.trim(), w: r.width, color: c.color, op: c.opacity }; });
+  assert.ok(target.text && target.w >= 80 && target.color !== 'rgba(0, 0, 0, 0)' && target.op !== '0', `target picker hides its value: ${JSON.stringify(target)}`);
+  const list = await cm.locator('#changeList').innerText();
+  assert.match(list, /Ready to review/); assert.match(list, /Needs a look/); assert.match(list, /Done/);
+  assert.doesNotMatch(await cm.locator('#changes').innerText(), /awaiting_approval|validation_failed|needs_attention/);
+  await cm.locator('#changesBanner').click();
+  assert.equal(await cm.locator('#changeList [data-change-id]').count(), 2, 'applied changes are filtered out');
+  await cm.locator('#changeFilterAll').click();
+  assert.equal(await cm.locator('#changeList [data-change-id]').count(), 3);
+});
+
+await check('missions: a quiet goal field and the last mission with its outcome', async () => {
+  await cm.evaluate(() => window.showView('agents'));
+  const goal = await cm.evaluate(() => { const c = getComputedStyle(document.getElementById('agentGoal'), '::placeholder'); const t = getComputedStyle(document.getElementById('agentGoal')); return { weight: Number(t.fontWeight), pweight: Number(c.fontWeight), size: parseFloat(t.fontSize) }; });
+  assert.ok(goal.weight <= 400 && goal.pweight <= 400 && goal.size <= 17, `goal text ${JSON.stringify(goal)}`);
+  const card = cm.locator('#missionLastCard');
+  await card.waitFor({ state: 'visible' });
+  assert.match(await card.innerText(), /Identify one mission completion behavior/);
+  assert.match(await card.locator('.badge').innerText(), /Done/);
+  assert.match(await card.innerText(), /Router, Research, Coordinator · 3 min/);
+  await card.locator('[data-last-read]').click();
+  assert.equal(await cm.locator('[data-agent-result-tab="summary"]').evaluate(b => b.classList.contains('active')), true);
+});
+await cm.close();
+
 await check('no script errors on phone', async () => {
   assert.deepEqual(pageErrors, []);
 });
