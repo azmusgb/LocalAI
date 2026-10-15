@@ -441,6 +441,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     list.replaceChildren();
 
     if (loadError) {
+      window.LocalAIHome?.setAttention([{ severity: 'critical', title: 'Capability registry unavailable', detail: 'Local AI could not verify the current runtime state.', action: 'Open Health', view: 'status' }]);
       surface.hidden = false;
       surface.dataset.state = 'attention';
       summary.textContent = 'Live capability state could not be verified. Existing controls remain available.';
@@ -460,6 +461,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     }
 
     const items = attentionItems(snapshot);
+    window.LocalAIHome?.setAttention(items);   // Home's Needs you lists the critical ones
     // Nothing to do: hide the card. The Healthy pill in the page header already says all is well.
     surface.hidden = !items.length;
     if (!items.length) {
@@ -3277,7 +3279,7 @@ function runSample(s){
 }
 async function mountFirstRun(){
  if(pref.get(DONE_KEY)==='1')return;
- const home=q('#home'),hero=q('#home .workspace-hero');if(!home||!hero||q('#firstRun'))return;
+ const home=q('#home'),hero=q('#home .home-head');if(!home||!hero||q('#firstRun'))return;
  const [models,library]=await Promise.all([getJson('/api/models').catch(()=>null),getJson('/api/library').catch(()=>null)]);
  if(models?.defaultInstalled&&(library?.items||[]).length)return;
  await loadConfig();

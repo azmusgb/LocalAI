@@ -59,7 +59,6 @@ function renderAgentMap(phase = 'idle') {
   }).join('');
 }
 function activityHtml(item){const run=item.meta?.runId?`<button class="btn activity-run" type="button" data-open-run="${esc(item.meta.runId)}">Open run</button>`:'';return `<div class="activity-item"><div class="activity-icon">${icons[item.type]||'·'}</div><div><div class="activity-title">${esc(item.title)}</div><div class="activity-detail">${esc(item.detail||'')}</div>${run}</div><div class="activity-time">${ago(item.at)}</div></div>`;}
-function artifactRow(item){const image=item.kind==='image'?safeUrl(item.meta?.imageUrl||item.data?.imageUrl,{image:true}):'';return `<div class="activity-item${image?' activity-item--thumb':''}"><div class="activity-icon">${image?`<img src="${esc(image)}" alt="" loading="lazy">`:icons[item.kind]||'□'}</div><div><div class="activity-title">${esc(item.title)}</div><div class="activity-detail">${esc(item.summary||'')}</div></div><div class="activity-time">${ago(item.createdAt)}</div></div>`;}
 
 // Data loaders for pages whose content is fetched on open. Every route (rail, tabs, mobile sheet, ⌘K) goes through showView.
 const VIEW_LOADERS={inbox:()=>loadInbox(),approvals:()=>loadApprovals(),memory:()=>loadMemory(),operations:()=>loadMonitors(),changes:()=>Promise.all([loadChanges(),loadEngineeringRuns()]),quality:()=>loadQuality(),issues:()=>loadIssues(),powershell:()=>loadPowerShellJobs()};
@@ -72,6 +71,7 @@ function showView(id){
   state.view=id;qsa('.view').forEach(x=>x.classList.toggle('active',x.id===id));qsa('.navbtn').forEach(x=>x.classList.toggle('active',x.dataset.view===id));
   if(id==='library')loadLibrary(); if(id==='activity')loadActivity(); if(id==='create')loadCheckpoints();
   window.scrollTo({top:0,behavior:'instant'});
+  if(id==='home')window.LocalAIHome?.activate();
 
   if(id==='projects') loadProjects?.().catch(()=>{});
   if(id==='knowledge') loadKnowledge?.().catch(()=>{});
@@ -387,16 +387,16 @@ function localRoute(text,mode='auto'){
   if(/\b(latest|today|current|news|search the web|web search|research online|look up)\b/.test(t))return {intent:'research',confidence:.86,reason:'fresh-information-language'};
   return {intent:'ask',confidence:.7,reason:'default'};
 }
-async function runCommand(){
-  const input=$('commandInput'),text=input.value.trim();if(!text)return;setPhase('routing','Understanding intent…');const route=await resolveIntentRequest(text,state.mode);toast(`Routed to ${route.intent}`);input.value='';
-  if(route.intent==='engineering'){
-    const request=engineeringRequestWithContext(text,route);showView('changes');$('engineeringRequest').value=request;$('engineeringTarget').value='self';$('engineeringRoot').disabled=true;
-    try{await submitEngineeringIntent(request,{navigate:true})}catch(e){$('engineeringStatus').textContent=`Error: ${e.message}`;setPhase('error','Engineering failed');toast(e.message)}
-  }else if(route.intent==='create'){openCreate();$('imagePrompt').value=text;setPhase('idle');}
-  else if(route.intent==='automate'){showView('automations');setPhase('done','Automation workspace');}
-  else{openAsk(route.intent==='research');$('chatInput').value=text;setTimeout(sendChat,20);}
+// Home's composer lives in home.js; these hand it the old pages it still falls back to until Chat, Images and Missions start runs themselves.
+function legacyOpen(intent,text){
+  if(intent==='create'){openCreate();$('imagePrompt').value=text;setPhase('idle');}
+  else if(intent==='mission'){showView('agents');if($('agentGoal'))$('agentGoal').value=text;}
+  else if(intent==='automate'){showView('automationStudio');if($('autoPrompt'))$('autoPrompt').value=text;setPhase('done','Automation workspace');}
+  else{openAsk(intent==='research');$('chatInput').value=text;setTimeout(sendChat,20);}
 }
-$('commandGo').addEventListener('click',runCommand);$('commandInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();runCommand();}});document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'&&!$('cmdk')){e.preventDefault();showView('home');setTimeout(()=>$('commandInput').focus(),20);}});
+window.LocalAILegacy={resolveIntentRequest,engineeringRequest:engineeringRequestWithContext,open:legacyOpen};
+function runCommand(){window.LocalAIHome.send($('commandInput').value)}
+$('commandInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();runCommand();}});document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'&&!$('cmdk')){e.preventDefault();showView('home');setTimeout(()=>$('commandInput').focus(),20);}});
 
 // ---- Images: engines (Fast / Quality / Best), shape, prompt help, upscale ----
 const imageUi={threadId:null,editThread:null,engine:null,aspect:'square',style:'none',count:1,lastBody:null,timer:null,edit:null,last:null};
@@ -469,7 +469,7 @@ $('imageEditThis').addEventListener('click',()=>{if(imageUi.last?.imageUrl){imag
 $('imageUpload').addEventListener('change',()=>{const f=$('imageUpload').files?.[0];if(!f)return;if(f.size>20*1024*1024){$('imageModelInfo').textContent='Choose an image under 20 MB.';return}const rd=new FileReader();rd.onload=()=>{imageUi.editThread=null;startImageEdit(rd.result)};rd.readAsDataURL(f)});
 $('clearImageBtn').addEventListener('click',()=>{stopImageEdit();showBatch(null);$('imagePrompt').value='';$('imageMeta').textContent='';$('imageResult').style.display='none';$('imageActions').hidden=true;$('imageUsedPromptBox').hidden=true;$('imageStage').innerHTML='<div class="img-placeholder">Your image appears here.</div>';setPhase('idle')});
 
-function renderActivity(){const user=state.activity;$('activityList').innerHTML=user.length?user.map(activityHtml).join(''):'<div class="empty">No activity yet.</div>';$('homeActivity').innerHTML=user.slice(0,5).map(activityHtml).join('')||'<div class="empty">No recent activity.</div>';qsa('[data-open-run]').forEach(b=>b.onclick=async()=>{if(!await window.LocalAIRuns?.open(b.dataset.openRun))toast('That run is no longer in the execution history')});}
+function renderActivity(){const user=state.activity;$('activityList').innerHTML=user.length?user.map(activityHtml).join(''):'<div class="empty">No activity yet.</div>';qsa('[data-open-run]').forEach(b=>b.onclick=async()=>{if(!await window.LocalAIRuns?.open(b.dataset.openRun))toast('That run is no longer in the execution history')});}
 async function loadActivity(){try{await LocalAIUI.loadInto($('activityList'),()=>LocalAIUI.fetchJson('/api/activity',{cache:'no-store'}),{what:'activity',empty:'No activity yet.',render:(c,j)=>{state.activity=j.items||[];renderActivity();return true}})}catch{/* the list shows the error and a Retry */}}
 $('clearUserActivityBtn').addEventListener('click',async()=>{if(!(await LocalAIUI.ask({title:'Clear your activity?',effect:'System and recovery audit events are kept.',confirmLabel:'Clear activity',tone:'danger'})).ok)return;await fetch('/api/activity/clear',{method:'POST'});await Promise.all([loadActivity(),loadWorkspace()]);toast('User activity cleared');});
 
@@ -485,7 +485,7 @@ function renderLibrary(){
 }
 async function loadLibrary(){try{await LocalAIUI.loadInto($('libraryGrid'),()=>LocalAIUI.fetchJson('/api/library',{cache:'no-store'}),{what:'your library',empty:'Nothing saved yet.',render:(c,j)=>{state.library=j.items||[];if(c.querySelector(':scope > .state-error,:scope > .state-loading')){c.innerHTML='';state.lastLibrarySignature=''}renderLibrary();return true}})}catch{/* the grid shows the error and a Retry */}}
 $('librarySearch').addEventListener('input',e=>{state.librarySearch=e.target.value;state.lastLibrarySignature='';renderLibrary();});qsa('[data-kind]').forEach(b=>b.addEventListener('click',()=>{state.libraryKind=b.dataset.kind;qsa('[data-kind]').forEach(x=>x.classList.toggle('active',x===b));state.lastLibrarySignature='';renderLibrary();}));
-async function loadWorkspace(){try{await LocalAIUI.loadInto($('homeRecent'),()=>LocalAIUI.fetchJson('/api/workspace',{cache:'no-store'}),{what:'your recent work',empty:'No saved work yet.',render:(c,j)=>{state.workspace=j;$('homeRecent').innerHTML=(j.recent||[]).slice(0,5).map(artifactRow).join('')||'<div class="empty">No saved work yet.</div>';const pinned=(j.pinned||[]).slice(0,4);$('homePinned').innerHTML=pinned.map(artifactRow).join('');$('homePinnedCard').hidden=!pinned.length;return true}})}catch{/* the list shows the error and a Retry */}}
+async function loadWorkspace(){window.LocalAIHome?.refresh()}
 
 function normalizedState(v){return ['HEALTHY','DEGRADED','DOWN','OPTIONAL_OFFLINE'].includes(v)?v:'DEGRADED';}
 function serviceDisplayState(s){return s.displayState||(s.required===false&&s.state!=='HEALTHY'?'OPTIONAL_OFFLINE':normalizedState(s.state));}

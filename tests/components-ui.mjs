@@ -506,7 +506,7 @@ await check('Forward onto a run keeps Back working: Close goes back, not Home', 
 });
 await check('Home run center renders the same cards', async () => {
   await runPage.evaluate(() => window.showView('home'));
-  await runPage.waitForSelector('#homeRunList .list-row');
+  await runPage.waitForSelector('#homeRunList .list-row', { state: 'attached' }); // Home no longer shows this panel; its cards still render for the run view
   assert.equal(await runPage.locator('#homeRunList .list-row[data-run-id="run_eng"] button.btn-primary').innerText(), 'Review');
 });
 await runPage.close();
