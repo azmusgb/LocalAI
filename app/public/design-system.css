@@ -110,7 +110,6 @@ kbd{font:600 11px/1 var(--ds-mono);padding:2px 6px;border-radius:6px;border:1px 
 .badge{font-size:11px}
 .statuschip{font-size:11px}
 .badge{font-size:11px}
-.nav-group-title{font-size:11px}
 .cap-tile span{font-size:11px}
 /* from mobile-overhaul.css */
 @media (max-width: 760px){
