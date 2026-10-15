@@ -1443,3 +1443,114 @@ body #homeCapabilities{display:flex!important;flex-wrap:wrap;gap:8px;margin-top:
   .activity-item--thumb{grid-template-columns:44px minmax(0,1fr)}
   #homeCapabilities .cap-chip{min-height:44px}
 }
+
+/* ==== Phone redesign: one header, content first (canvas "Local AI phone redesign") ====
+   Desktop keeps its look; everything visual below is scoped to phones. */
+@font-face{font-family:'Figtree';font-style:normal;font-weight:400 700;font-display:swap;src:url(/fonts/figtree-latin.woff2) format('woff2')}
+.ux-context-bar .ux-ico{display:none}
+.ux-context-inbox[data-empty="true"]{display:none}
+@media(max-width:760px){
+  :root{
+    --ds-bg:#0a111c;--ds-bg-2:#0d1522;--ds-surface:#121b2b;--ds-surface-2:#172238;--ds-surface-3:#1c2a44;
+    --ds-line:#1f2c42;--ds-line-2:#263552;
+    --ds-text:#eaf0f8;--ds-soft:#c9d6e6;--ds-muted:#93a4bc;--ds-faint:#8698b1;
+    --ds-accent:#6cb6ff;--ds-accent-ink:#04111f;--ds-accent-soft:rgba(108,182,255,.16);
+    --ds-font:'Figtree',system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  body{background:var(--ds-bg)}
+  a{color:#7cc0ff}
+
+  /* Header: section name + switcher on the left, search and inbox on the right. */
+  body.ux-v3 .ux-context-bar{display:flex;align-items:center;justify-content:flex-start;gap:0;min-height:56px;margin:0 -13px;padding:calc(6px + env(safe-area-inset-top)) 8px 6px 16px;background:rgba(10,17,28,.94);border-bottom:0}
+  body.ux-v3 .ux-context-bar:not(.ux-context-has-strip){margin-bottom:8px}
+  body.ux-v3 .ux-context-left{order:0;min-width:0}
+  body.ux-v3 .ux-context-bar .ux-context-domain,body.ux-v3 .ux-context-bar .ux-context-view{font-size:20px!important;font-weight:650;letter-spacing:-.01em;color:var(--ds-text)}
+  body.ux-v3 .ux-context-bar:not(.ux-context-has-strip) .ux-context-domain{display:none!important}
+  body.ux-v3 .ux-context-bar:not(.ux-context-has-strip) .ux-context-view{display:inline!important}
+  body.ux-v3 .ux-context-actions{display:contents}
+  body.ux-v3 .ux-context-bar .ux-ico{display:block}
+  body.ux-v3 .ux-context-menu,body.ux-v3 .ux-context-search,body.ux-v3 .ux-context-inbox{display:grid!important;place-items:center;position:relative;width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;border-radius:12px;background:transparent;color:#c9d6e6}
+  body.ux-v3 .ux-context-menu{order:1;margin-right:auto;width:36px;min-width:36px;color:var(--ds-faint)}
+  body.ux-v3 .ux-context-menu .ux-ico{width:18px;height:18px}
+  body.ux-v3 .ux-context-search{order:2}
+  body.ux-v3 .ux-context-inbox{order:3}
+  body.ux-v3 .ux-context-menu>span,body.ux-v3 .ux-context-search>span,body.ux-v3 .ux-context-search kbd,body.ux-v3 .ux-context-inbox>span{display:none}
+  body.ux-v3 .ux-context-inbox b{position:absolute;top:7px;right:7px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#ff6b6b;color:#1a0507;font-size:11px;font-weight:700;line-height:16px}
+  body.ux-v3 .ux-context-inbox[data-empty="true"] b{display:none}
+  body.ux-v3 .ux-context-menu:active,body.ux-v3 .ux-context-search:active,body.ux-v3 .ux-context-inbox:active{background:var(--ds-surface)}
+
+  /* Pages in the section: underline tabs under the header. */
+  body.ux-v3 .ux-page-strip{gap:22px;margin:0 -13px 14px;padding:0 18px;border-bottom:1px solid #1b2740;scroll-padding:0 18px;position:sticky;top:calc(56px + env(safe-area-inset-top));z-index:44;background:rgba(10,17,28,.94)}
+  body.ux-v3 .ux-page-strip button{min-height:44px;padding:0;border:0;border-radius:0;background:transparent;color:var(--ds-faint);font-size:15px;font-weight:500}
+  body.ux-v3 .ux-page-strip button.active{background:transparent;color:var(--ds-text);font-weight:650;box-shadow:inset 0 -2px 0 var(--ds-accent)}
+
+  /* Page headings: the header and tabs already name the page. Keep the page's own actions. */
+  body.ux-v3 .view>.topbar>div:first-child:has(>h1){display:none}
+  body.ux-v3 .view>.topbar:not(:has(>:nth-child(2))){display:none}
+  body.ux-v3 #home>.topbar{display:none}
+  body.ux-v3 .view>.topbar{margin-bottom:12px;justify-content:flex-end}
+
+  /* Tab bar: flush to the bottom edge, icon in a pill when active. */
+  body.ux-v3 .ux-mobile-nav{left:0;right:0;bottom:0;border:0;border-top:1px solid #1b2740;border-radius:0;padding:6px 6px calc(8px + env(safe-area-inset-bottom));background:rgba(10,17,28,.94);box-shadow:none}
+  body.ux-v3 .ux-mobile-nav button{min-height:48px;padding:4px 0 0;gap:3px;color:var(--ds-faint);font-size:11px;font-weight:500;align-content:start;background:transparent}
+  body.ux-v3 .ux-mobile-nav button b{display:grid;place-items:center;width:52px;height:30px;border-radius:999px}
+  body.ux-v3 .ux-mobile-nav button[data-active="true"]{background:transparent;color:#7cc0ff;font-weight:600}
+  body.ux-v3 .ux-mobile-nav button[data-active="true"] b{background:rgba(108,182,255,.16)}
+  body.ux-v3 .ux-mobile-sheet{bottom:calc(72px + env(safe-area-inset-bottom));background:#0d1522}
+
+  /* Surfaces: rounder, quieter cards. */
+  body.ux-v3 .card{border-radius:18px;border-color:var(--ds-line)}
+  body.ux-v3 .btn{border-radius:12px}
+  body.ux-v3 .btn.primary{border-radius:14px}
+}
+.home-quick{display:none}
+@media(max-width:760px){
+  /* Home: one ask card, quick starts, what needs you, recent work. */
+  #home .workspace-hero{margin:0;padding:14px 14px 10px;background:var(--ds-surface);border:1px solid var(--ds-line);border-radius:20px}
+  #home .workspace-hero h1{font-size:22px!important;font-weight:650;letter-spacing:-.01em;margin:0 0 4px}
+  #home .workspace-hero>.sub{display:none}
+  #home .command-shell{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"input input" "mode go";gap:8px 10px;align-items:center;padding:0;margin:0;background:transparent;border:0;box-shadow:none}
+  #home .command-row{display:contents}
+  #home .command{grid-area:input;border:0!important;background:transparent!important;box-shadow:none!important;padding:4px 0!important;font-size:17px!important;min-height:48px}
+  #home .go{grid-area:go;width:40px;height:40px;min-height:40px;padding:0;border-radius:999px;font-size:0;display:grid;place-items:center}
+  #home .go::before{content:'';width:20px;height:20px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 19V5'/%3E%3Cpath d='m5 12 7-7 7 7'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 19V5'/%3E%3Cpath d='m5 12 7-7 7 7'/%3E%3C/svg%3E") center/contain no-repeat}
+  #home .mode-select{grid-area:mode;margin:0;justify-self:start}
+  #home .mode-select>span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  #home .mode-select select{flex:none;width:auto;field-sizing:content;max-width:62vw;min-height:40px!important;height:40px;padding:0 34px 0 14px;border-radius:999px;border:1px solid var(--ds-line-2);background-color:var(--ds-surface-2);color:var(--ds-soft);font-size:16px!important}
+  #home .home-quick{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:12px -13px 0;padding:0 13px 2px}
+  #home .home-quick::-webkit-scrollbar{display:none}
+  .home-quick-btn{flex:none;min-height:44px;padding:0 14px;border-radius:999px;border:1px solid #22304a;background:transparent;color:var(--ds-soft);font:inherit;font-size:14px;cursor:pointer}
+
+  /* Section heads: small muted title, a text link on the right, no description. */
+  #home .section-head p,#home .truth-attention-head p,#home .truth-attention-count{display:none}
+  #home .section-head h2,#home .truth-attention-head h2{font-size:15px;font-weight:650;color:var(--ds-muted);margin:0}
+  #home .section-head .btn{min-height:44px;padding:0;border:0;background:transparent;color:#7cc0ff;font-weight:500;font-size:14px}
+  #home .section-head{align-items:center;margin-bottom:6px}
+
+  /* Needs you: a list of tappable rows. The row's action button covers the row, so one tap opens it. */
+  #home #truthAttention,#home #homeRecentCard,#home #homeRunCenter{background:transparent;border:0;padding:0;margin-top:20px}
+  #home #homeActivityCard{display:none}
+  #home .truth-attention-list{gap:0;margin-top:8px;background:var(--ds-surface);border-radius:16px;overflow:hidden}
+  #home .truth-attention-item{position:relative;grid-template-columns:32px minmax(0,1fr) 18px;gap:12px;min-height:56px;padding:12px 14px;border:0;border-bottom:1px solid #1b2740;border-radius:0;background:transparent}
+  #home .truth-attention-item:last-child{border-bottom:0}
+  #home .truth-attention-marker{width:32px;height:32px;border-radius:10px;background:rgba(108,182,255,.14)!important;display:grid;place-items:center}
+  #home .truth-attention-marker::after{content:'';width:8px;height:8px;border-radius:4px;background:var(--ds-accent)}
+  #home .truth-attention-item[data-severity="critical"] .truth-attention-marker{background:rgba(255,107,107,.14)!important}
+  #home .truth-attention-item[data-severity="critical"] .truth-attention-marker::after{background:#ff8a8a}
+  #home .truth-attention-item[data-severity="warning"] .truth-attention-marker{background:rgba(255,178,36,.14)!important}
+  #home .truth-attention-item[data-severity="warning"] .truth-attention-marker::after{background:#ffb224}
+  #home .truth-attention-copy strong{font-size:16px;font-weight:600}
+  #home .truth-attention-copy span{font-size:13px;color:var(--ds-muted)}
+  #home .truth-attention-item::after{content:'';grid-column:3;width:18px;height:18px;border-right:2px solid #5e718c;border-bottom:2px solid #5e718c;transform:scale(.45) rotate(-45deg)}
+  #home .truth-attention-action{position:absolute;inset:0;width:100%;height:100%;min-height:0;margin:0;opacity:0;border-radius:0}
+  #home .truth-attention-action:focus-visible{opacity:1;background:transparent;color:transparent;outline:2px solid var(--ds-accent);outline-offset:-2px}
+
+  /* Recent: three-up tiles; images fill theirs. */
+  #home #homeRecent{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  #home #homeRecent>.activity-item{aspect-ratio:1;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;padding:10px;border-radius:14px;background:var(--ds-surface);overflow:hidden;position:relative;min-width:0}
+  #home #homeRecent>.activity-item .activity-icon{display:none}
+  #home #homeRecent>.activity-item--thumb .activity-icon{display:block;position:absolute;inset:0;width:auto;height:auto;border-radius:0}
+  #home #homeRecent>.activity-item--thumb>div:not(.activity-icon),#home #homeRecent .activity-time,#home #homeRecent .activity-detail{display:none}
+  #home #homeRecent .activity-title{font-size:14px;font-weight:600;line-height:1.25;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  #home #homeRecent>.empty{grid-column:1/-1}
+}

@@ -1201,12 +1201,13 @@ function serveStatic(req, res, pathname) {
       '.json': 'application/json; charset=utf-8',
       '.svg': 'image/svg+xml',
       '.png': 'image/png',
-      '.ico': 'image/x-icon'
+      '.ico': 'image/x-icon',
+      '.woff2': 'font/woff2'
     };
     // App code must update the moment a release is deployed: browsers revalidate with the ETag each load
     // and get a 304 when nothing changed. Images can be reused for a day.
     const etag = `"${crypto.createHash('sha1').update(data).digest('base64url').slice(0, 22)}"`;
-    const headers = { 'Cache-Control': ['.png', '.ico', '.svg'].includes(ext) ? 'public, max-age=86400' : 'no-cache', ETag: etag };
+    const headers = { 'Cache-Control': ['.png', '.ico', '.svg', '.woff2'].includes(ext) ? 'public, max-age=86400' : 'no-cache', ETag: etag };
     if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); return res.end(); }
     text(res, 200, data, types[ext] || 'application/octet-stream', headers);
   });

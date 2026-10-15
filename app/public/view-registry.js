@@ -23,10 +23,10 @@ const VIEWS=[
  {id:'memory',domain:'workspace',section:'Keep',parent:'projects',tab:'Memory',icon:'M',label:'Memory',description:'Facts the assistant keeps about each project.',aka:['project memory']},
  {id:'agents',domain:'automate',section:'Agents',icon:'◎',label:'Missions',description:'Give a goal; specialist agents work it live.',aka:['agents','agent operations']},
  {id:'automationStudio',domain:'automate',section:'Automations',icon:'⌘',label:'Automations',description:'Scheduled prompts, research and health checks.',aka:['studio','automation studio']},
- {id:'automations',domain:'automate',section:'Automations',icon:'↗',label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
- {id:'actions',domain:'automate',section:'Automations',icon:'↗',label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
+ {id:'automations',short:'n8n',domain:'automate',section:'Automations',icon:'↗',label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
+ {id:'actions',short:'Browser',domain:'automate',section:'Automations',icon:'↗',label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
  {id:'operations',domain:'automate',section:'Automations',icon:'◉',label:'Monitors',description:'Recurring health checks and the morning brief.',aka:['operations','morning brief']},
- {id:'changes',domain:'build',section:'Changes',icon:'Δ',label:'Change requests',description:"Describe a change; it's planned, tested and held for approval.",aka:['changes','change intelligence','engineer','engineering agent']},
+ {id:'changes',short:'Changes',domain:'build',section:'Changes',icon:'Δ',label:'Change requests',description:"Describe a change; it's planned, tested and held for approval.",aka:['changes','change intelligence','engineer','engineering agent']},
  {id:'issues',domain:'build',section:'Changes',icon:'!',label:'Issues',tab:'Issues',description:'Problems found in Local AI, deduplicated.'},
  {id:'quality',domain:'build',section:'Changes',parent:'issues',tab:'Quality signals',icon:'Q',label:'Quality signals',description:'Static checks, browser errors and regressions.',aka:['quality','quality intelligence']},
  {id:'claude',domain:'build',section:'Changes',icon:'✳',label:'Claude Code',description:'Live sessions and ranked recommendations.',aka:['claude']},
@@ -37,7 +37,7 @@ const VIEWS=[
  {id:'models',domain:'system',section:'Health',icon:'M',label:'Models',description:"Installed models and what's loaded now."},
  {id:'integrations',domain:'system',section:'Health',icon:'↔',label:'Integrations',description:'Local tools, host bridges and cloud fallbacks.'},
  {id:'runs',domain:'system',section:'History',icon:'▶',label:'Runs',description:'Every execution, live, with cancel and retry.'},
- {id:'activity',domain:'system',section:'History',icon:'◷',label:'Audit log',description:'What happened on the appliance, and when.',aka:['activity']}
+ {id:'activity',short:'Audit log',domain:'system',section:'History',icon:'◷',label:'Audit log',description:'What happened on the appliance, and when.',aka:['activity']}
 ];
 // Retired view ids and the page that replaced them.
 const ALIASES={engineering:'changes'};

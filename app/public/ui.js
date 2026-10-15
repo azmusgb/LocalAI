@@ -161,7 +161,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     if (existing) return existing;
 
     const home = document.getElementById('home');
-    const hero = home?.querySelector('.workspace-hero');
+    const hero = home?.querySelector('.home-quick') || home?.querySelector('.workspace-hero');
     if (!home) return null;
 
     const section = document.createElement('section');
@@ -173,7 +173,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     section.innerHTML = `
       <div class="truth-attention-head">
         <div>
-          <h2 id="truthAttentionTitle">Attention</h2>
+          <h2 id="truthAttentionTitle">Needs you</h2>
           <p id="truthAttentionSummary">Checking live capability state…</p>
         </div>
         <span id="truthAttentionCount" class="pill truth-attention-count">Checking</span>
@@ -797,6 +797,18 @@ const DOMAINS=REG.DOMAINS.map(d=>({...d,groups:REG.sections(d.id)}));
 const DESCRIPTIONS=Object.fromEntries(REG.VIEWS.map(v=>[v.id,v.description]));
 const q=(s,r=document)=>r.querySelector(s),qa=(s,r=document)=>[...r.querySelectorAll(s)];
 let currentDomain='home',sheetOpen=false,allButtons=new Map();
+// Stroke icons for the phone shell (tab bar, header buttons). Decorative: every button that carries one also has a text label.
+const svg=(d,w=1.8)=>'<svg class="ux-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="'+w+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';
+const ICONS={
+ home:'<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
+ workspace:'<path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"/><path d="M19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8z"/>',
+ automate:'<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+ build:'<path d="m8 9-4 3 4 3"/><path d="m16 9 4 3-4 3"/><path d="m13.5 5-3 14"/>',
+ system:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+ search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+ bell:'<path d="M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
+ chevron:'<path d="m6 9 6 6 6-6"/>'
+};
 
 function viewButton(view){return allButtons.get(view)||q('.navbtn[data-view="'+view+'"]')}
 function domainForView(view){const id=REG.view(view)?.domain;return DOMAINS.find(d=>d.id===id)||DOMAINS[0]}
@@ -883,14 +895,14 @@ function buildTabs(){
 function buildContext(){
  const main=q('main');if(!main||q('#uxContextBar'))return;
  const bar=document.createElement('header');bar.id='uxContextBar';bar.className='ux-context-bar';
- bar.innerHTML='<div class="ux-context-left"><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-inbox" type="button" id="uxInboxBtn" hidden><span>Inbox</span><b id="uxInboxCount">0</b></button><button class="ux-context-search" type="button" id="uxCommandBtn"><span>Search commands</span><kbd>⌘K</kbd></button><button class="ux-context-menu" id="uxContextMenu" type="button" aria-expanded="false">Menu</button></div>';
+ bar.innerHTML='<div class="ux-context-left"><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-inbox" type="button" id="uxInboxBtn" data-empty="true" aria-label="Inbox">'+svg(ICONS.bell)+'<span>Inbox</span><b id="uxInboxCount">0</b></button><button class="ux-context-search" type="button" id="uxCommandBtn" aria-label="Search commands">'+svg(ICONS.search)+'<span>Search commands</span><kbd>⌘K</kbd></button><button class="ux-context-menu" id="uxContextMenu" type="button" aria-expanded="false" aria-label="Pages in this section"><span>Menu</span>'+svg(ICONS.chevron,2)+'</button></div>';
  main.prepend(bar);
  q('[data-ux-go="home"]')?.addEventListener('click',()=>navigate('home'));
  q('#uxCommandBtn')?.addEventListener('click',()=>{const cmd=q('#cmdk');if(cmd){cmd.classList.add('show');cmd.setAttribute('aria-hidden','false');q('#cmdkInput')?.focus()}});
  q('#uxContextMenu')?.addEventListener('click',()=>toggleSheet());
  // Unread alerts plus approvals waiting, reported by app.js after it loads Inbox or Approvals.
  let inbox={unread:0,pending:0};
- window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');if(!b)return;b.hidden=total===0;q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',`Inbox: ${inbox.unread} unread, ${inbox.pending} approvals waiting`)});
+ window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');if(!b)return;b.dataset.empty=String(total===0);q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',total?`Inbox: ${inbox.unread} unread, ${inbox.pending} approvals waiting`:'Inbox')});
  q('#uxInboxBtn')?.addEventListener('click',()=>navigate(inbox.pending&&!inbox.unread?'approvals':'inbox'));
 }
 function prefGet(k){try{return localStorage.getItem(k)}catch{return null}}
@@ -906,14 +918,14 @@ function renderPageStrip(d,page){
  const strip=q('#uxPageStrip');if(!strip)return;
  const views=d.groups.flatMap(g=>g.views).filter(v=>viewButton(v));
  const key=d.id+'|'+views.join(',');
- if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=views.map(v=>'<button type="button" data-strip-view="'+v+'">'+labelForView(v)+'</button>').join('');}
+ if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=views.map(v=>'<button type="button" data-strip-view="'+v+'">'+(REG.view(v)?.short||labelForView(v))+'</button>').join('');}
  strip.hidden=views.length<2||d.id==='home'; // Home's only other page, Inbox, already has a button in the top bar
  qa('[data-strip-view]',strip).forEach(b=>{const on=b.dataset.stripView===page;b.classList.toggle('active',on);if(on){b.setAttribute('aria-current','page');if(strip.scrollWidth>strip.clientWidth)strip.scrollLeft=Math.max(0,b.offsetLeft-strip.clientWidth/2+b.offsetWidth/2)}else b.removeAttribute('aria-current')});
 }
 function buildMobile(){
  if(q('#uxMobileNav'))return;
  const nav=document.createElement('div');nav.id='uxMobileNav';nav.className='ux-mobile-nav';nav.setAttribute('role','navigation');nav.setAttribute('aria-label','Primary navigation');
- DOMAINS.forEach(d=>{const b=document.createElement('button');b.type='button';b.dataset.domain=d.id;b.innerHTML='<b>'+d.symbol+'</b><span>'+d.label+'</span>';b.addEventListener('click',()=>{toggleSheet(false);navigate(d.defaultView)});nav.appendChild(b)});
+ DOMAINS.forEach(d=>{const b=document.createElement('button');b.type='button';b.dataset.domain=d.id;b.innerHTML='<b>'+(ICONS[d.id]?svg(ICONS[d.id]):d.symbol)+'</b><span>'+d.label+'</span>';b.addEventListener('click',()=>{toggleSheet(false);navigate(d.defaultView)});nav.appendChild(b)});
  const sheet=document.createElement('div');sheet.id='uxMobileSheet';sheet.className='ux-mobile-sheet';sheet.dataset.open='false';sheet.innerHTML='<div class="ux-mobile-sheet-handle"></div><div class="ux-mobile-sheet-head"><div><span class="ux-secondary-kicker">Navigate</span><strong id="uxMobileSheetTitle"></strong><small id="uxMobileSheetTagline"></small></div><button type="button" id="uxMobileSheetClose" aria-label="Close menu">×</button></div><div class="ux-mobile-sheet-items" id="uxMobileSheetItems"></div>';
  sheet.inert=true;sheet.setAttribute('aria-hidden','true');document.body.append(sheet,nav);q('#uxMobileSheetClose')?.addEventListener('click',()=>toggleSheet(false));
  document.addEventListener('click',e=>{if(sheetOpen&&!sheet.contains(e.target)&&!nav.contains(e.target)&&e.target.id!=='uxContextMenu')toggleSheet(false)});
@@ -926,7 +938,7 @@ function renderSheet(){
 function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;const s=q('#uxMobileSheet');if(s){s.dataset.open=String(sheetOpen);s.inert=!sheetOpen;s.setAttribute('aria-hidden',String(!sheetOpen))}q('#uxContextMenu')?.setAttribute('aria-expanded',String(sheetOpen));document.body.classList.toggle('ux-sheet-open',sheetOpen);if(sheetOpen)renderSheet()}
 function sync(forced){
  const view=REG.resolve(forced||activeView()),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
- const page=pageForView(view),viewLabel=labelForView(page);renderPageStrip(d,page);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;q('#uxContextBar')?.classList.toggle('ux-context-same',viewLabel===d.label);
+ const page=pageForView(view),viewLabel=labelForView(page);renderPageStrip(d,page);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;q('#uxContextBar')?.classList.toggle('ux-context-same',viewLabel===d.label);q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);q('#uxContextMenu')?.setAttribute('aria-label',d.label+' pages');
  qa('.ux-primary-item').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
  qa('#uxMobileNav [data-domain]').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
  if(q('#uxSecondaryTitle')?.textContent!==d.label)renderSecondary(d.id);

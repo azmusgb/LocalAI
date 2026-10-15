@@ -361,6 +361,8 @@ qsa('.mode').forEach(b=>b.addEventListener('click',()=>{state.mode=b.dataset.mod
 function syncModeSelect(){const sel=$('commandModeSelect');if(!sel)return;const opts=qsa('.mode').filter(b=>getComputedStyle(b).display!=='none');const html=opts.map(b=>`<option value="${esc(b.dataset.mode)}"${b.disabled?' disabled':''}>${esc(b.textContent)}</option>`).join('');if(sel.dataset.html!==html){sel.innerHTML=html;sel.dataset.html=html;}sel.value=state.mode||'auto';}
 $('commandModeSelect')?.addEventListener('change',e=>qsa('.mode').find(b=>b.dataset.mode===e.target.value)?.click());
 $('commandModeSelect')?.addEventListener('focus',syncModeSelect);
+// Home quick starts (phones): pick the mode and put the cursor in the command box.
+qsa('[data-quick-mode]').forEach(b=>b.addEventListener('click',()=>{const m=qsa('.mode').find(x=>x.dataset.mode===b.dataset.quickMode);if(m&&!m.disabled)m.click();$('commandInput').focus();}));
 new MutationObserver(syncModeSelect).observe(document.querySelector('.modes'),{subtree:true,attributes:true,attributeFilter:['disabled','class']});
 new MutationObserver(syncModeSelect).observe(document.body,{attributes:true,attributeFilter:['class']});
 function localRoute(text,mode='auto'){
@@ -445,7 +447,7 @@ function renderLibrary(){
 }
 async function loadLibrary(){try{const r=await fetch('/api/library',{cache:'no-store'}),j=await r.json();state.library=j.items||[];renderLibrary();}catch{}}
 $('librarySearch').addEventListener('input',e=>{state.librarySearch=e.target.value;state.lastLibrarySignature='';renderLibrary();});qsa('[data-kind]').forEach(b=>b.addEventListener('click',()=>{state.libraryKind=b.dataset.kind;qsa('[data-kind]').forEach(x=>x.classList.toggle('active',x===b));state.lastLibrarySignature='';renderLibrary();}));
-async function loadWorkspace(){try{const r=await fetch('/api/workspace',{cache:'no-store'}),j=await r.json();state.workspace=j;$('homeRecent').innerHTML=(j.recent||[]).slice(0,5).map(artifactRow).join('')||'<div class="empty">No saved work yet.</div>';const pinned=(j.pinned||[]).slice(0,4);$('homePinned').innerHTML=pinned.map(artifactRow).join('');$('homePinnedCard').hidden=!pinned.length;}catch{}}
+async function loadWorkspace(){try{const r=await fetch('/api/workspace',{cache:'no-store'}),j=await r.json();state.workspace=j;$('homeRecent').innerHTML=(j.recent||[]).slice(0,6).map(artifactRow).join('')||'<div class="empty">No saved work yet.</div>';const pinned=(j.pinned||[]).slice(0,4);$('homePinned').innerHTML=pinned.map(artifactRow).join('');$('homePinnedCard').hidden=!pinned.length;}catch{}}
 
 function normalizedState(v){return ['HEALTHY','DEGRADED','DOWN','OPTIONAL_OFFLINE'].includes(v)?v:'DEGRADED';}
 function serviceDisplayState(s){return s.displayState||(s.required===false&&s.state!=='HEALTHY'?'OPTIONAL_OFFLINE':normalizedState(s.state));}
