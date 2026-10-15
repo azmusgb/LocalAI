@@ -2762,7 +2762,7 @@ async function apiImproveItem(req,res){
     if(b.action==='retry'&&!(live&&['patch_failed','validation_failed'].includes(change.status)))return json(res,409,{error:'Retry needs a change that failed.'});
     if(['defer','reject','backToBacklog'].includes(b.action)&&stage==='shipped')return refuse();
     if(['defer','reject'].includes(b.action)&&change&&live){
-      if(IMPROVE_LOCKED_CHANGE.includes(change.status))return json(res,409,{error:'This change is already approved and with the host updater.'});
+      if(IMPROVE_LOCKED_CHANGE.includes(change.status))return json(res,409,{error:'This change is already approved and being shipped as a pull request.'});
       improveRetireChange(change.id);
     }
     switch(b.action){
@@ -2776,7 +2776,7 @@ async function apiImproveItem(req,res){
       case 'moveToTop':{const open=claudeFindings().filter(x=>!['fixed','rejected','deferred'].includes(x.status));return json(res,200,{item:improveWrite({...f,priorityBoost:improve.moveToTopBoost(f,open,claudeScore)})})}
       case 'defer':case 'reject':return json(res,200,{item:improveWrite({...f,status:b.action==='defer'?'deferred':'rejected',decidedAt:at})});
       case 'backToBacklog':case 'discard':{
-        if(change&&IMPROVE_LOCKED_CHANGE.includes(change.status))return json(res,409,{error:'This change is already approved and with the host updater.'});
+        if(change&&IMPROVE_LOCKED_CHANGE.includes(change.status))return json(res,409,{error:'This change is already approved and being shipped as a pull request.'});
         if(change&&live)improveRetireChange(change.id);
         if(b.action==='backToBacklog')return json(res,200,{item:improveWrite({...improveRead(f.id),status:'approved',changeId:null})});
         const aside=b.then==='aside';return json(res,200,{item:improveWrite({...improveRead(f.id),status:aside?'deferred':'approved',changeId:aside?f.changeId:null})});
