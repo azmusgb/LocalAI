@@ -114,7 +114,7 @@ See [`docs/CLAUDE-CHAT.md`](docs/CLAUDE-CHAT.md) for Claude page chat: talk to a
 
 ## Deployment
 
-See [`README-SAFE-DEPLOY.md`](README-SAFE-DEPLOY.md) for candidate validation, promotion, and rollback. Deployment scripts target the existing Windows LocalAI installation under `C:\LocalAI`; local development and validation do not deploy the appliance.
+See [`docs/DEPLOY.md`](docs/DEPLOY.md) for candidate validation, promotion, and rollback. Deployment scripts target the existing Windows LocalAI installation under `C:\LocalAI`; local development and validation do not deploy the appliance.
 
 ## Repository layout
 
