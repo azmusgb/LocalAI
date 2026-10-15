@@ -29,11 +29,17 @@ the split (`prod-modularize`) stays separate. `run-cards.js` is a new module rat
 - Element ids, routes and the strings asserted in `tests/run-execution-ui.test.cjs` are contracts: keep
   `runDrawerBackdrop`, "Cancel run", "Retry", `['Attempt', String(run.attempt || 1)]`, `['Retry of', run.retryOf || '—']`,
   "Timeline", "Output", `event.key === 'Escape'`, `/api/runs?limit=120`, `window.LocalAIRuns.open`.
-- Every new UI surface gets an axe `color-contrast` + `target-size` check (vendor `tests/vendor/axe.min.js` from the
-  closed #94's branch `phone-remaining`, with `tests/vendor/axe-LICENSE.txt`).
+- Every new UI surface gets an axe `color-contrast` + `target-size` check. Vendor `axe.min.js` from the npm tarball
+  `https://registry.npmjs.org/axe-core/-/axe-core-4.10.2.tgz` (integrity
+  `sha512-RE3mdQ7P3FRSe7eqCWoeQ/Z9QXrtniSjp1wUjt5nRC3WIpz5rSCve6o3fsZ2aCpJtrZjSZgjwXAoTO5k4tEI0w==`) into
+  `tests/vendor/axe.min.js`, with its `LICENSE` as `tests/vendor/axe-LICENSE.txt` and a `tests/vendor/README.md` naming the
+  source URL, version and the file's sha256. It's a test fixture, not a dependency.
 - Adding `components.js` to the page means adding it to `SHELL` in `app/public/sw.js` and bumping `CACHE`.
 - Main stays fully usable after each task (each task is its own PR: CI green → owner merges → Safe Deploy).
 - Copy: plain sentences, no internal status names on screen (use `LocalAIKit.statusBadge`).
+- Typed confirmation only where the confirmed action itself acts on the host (run, deploy, queue a script).
+  `/api/approvals/decide` only records a decision, so Approve/Reject is a plain confirm; one user action never asks
+  for two typed words.
 
 ## Review Focus
 
@@ -53,7 +59,8 @@ the split (`prod-modularize`) stays separate. `run-cards.js` is a new module rat
 ### Task 1: Ledger: projectId, threadId, pinned, keep-aware pruning
 
 **Files:**
-- Modify: `app/run-ledger.js`, `app/storage.js` (`pruneSettings`)
+- Modify: `app/run-ledger.js`, `app/storage.js` (`pruneSettings`), `docs/STORAGE.md` (one paragraph: kept runs, meaning
+  pinned, filed or with artifacts, are never pruned and grow without a ceiling; unpin or unfile to let them age out)
 - Test: `tests/run-ledger.test.cjs`, `tests/storage.test.cjs`
 
 **Interfaces:**
@@ -100,7 +107,9 @@ the split (`prod-modularize`) stays separate. `run-cards.js` is a new module rat
   → `{item}`; 400 bad id format, 404 unknown run or unknown project (checked against the projects store), 409 for
   `legacy-*` ids with `{error:'This run is managed by its own page and cannot be filed yet'}`.
   `/api/chat` and `/api/images/generate` accept `threadId` (Task 1 id rule) and pass it to `runLedger.create`.
-  Client: `state.threadId` starts as `crypto.randomUUID()` and resets in `newChat()`; chat requests send it.
+  Client: `state.threadId` starts as `newThreadId()` and resets in `newChat()`; chat requests send it.
+  `newThreadId() → string` (in `app.js`) builds `t-` + 16 random bytes in hex from `crypto.getRandomValues`, **not**
+  `crypto.randomUUID()`, which exists only in secure contexts and is undefined on `http://10.0.0.21:3080`.
   "Another version" and edits send the source image run's `threadId`.
 
 - [ ] **Step 1: Failing tests** in `tests/run-api.test.cjs` (reuse its spawned-server harness):
@@ -110,6 +119,9 @@ the split (`prod-modularize`) stays separate. `run-cards.js` is a new module rat
     `id:'../../x'` → 400; an existing `legacy-agent:` id from the list → 409 with the message above.
   - `chat turns share a thread`: two `/api/chat` calls with `threadId:'th-1'` → `GET /api/runs?threadId=th-1` has 2;
     `?threads=1` lists that thread once; a chat with `threadId:'bad id!'` gets its own run id as threadId.
+  - In `tests/mobile-ui.mjs` (or a new check in `tests/navigation-ui.mjs`): with an init script that deletes
+    `crypto.randomUUID`, open Chat and send a message (stub `/api/chat`); no page error, and the request body carries a
+    `threadId` matching the id rule (`/^t-[0-9a-f]{32}$/`).
 - [ ] **Step 2: Run** `node --test tests/run-api.test.cjs`: FAIL.
 - [ ] **Step 3: Implement** the route, filters and client changes above.
 - [ ] **Step 4: Run** `npm test`: PASS. **Commit:** `Runs API: filter by project and thread, pin and file runs`.
@@ -205,8 +217,10 @@ the split (`prod-modularize`) stays separate. `run-cards.js` is a new module rat
   `{ok:false}` on Cancel, Escape and a backdrop click; with `typed:'RUN'` Confirm stays disabled until `RUN` is
   typed; `input` returns the typed value; Review Focus 4: a double click on Confirm resolves once and the `onConfirm`
   spy fires once, and after closing `document.activeElement` is the opener; axe clean with the sheet open at 390×844.
-  `tests/security-contract.test.cjs`: `app/public/app.js` and `ui.js` contain no `confirm(` or `prompt(` call
-  (regex `/(^|[^.\w])(window\.)?(confirm|prompt)\(/m`).
+  `tests/security-contract.test.cjs`: no file in `app/public/*.js` contains a `confirm(` or `prompt(` call
+  (regex `/(^|[^.\w])(window\.)?(confirm|prompt)\(/m`), so a new file can't bring them back. Today all 10 calls are in
+  `app.js` (lines 113, 456, 466, 532, 546, 550, 575, 593, 644 ×2); the table's 11 rows count `applyChange`'s two
+  branches separately.
 - [ ] **Step 2: Run**: FAIL.
 - [ ] **Step 3: Implement** `ask` and convert the 11 sites with the copy above (each `if(!confirm(...))return` becomes
   `if(!(await LocalAIUI.ask({...})).ok)return`).
@@ -227,7 +241,7 @@ the split (`prod-modularize`) stays separate. `run-cards.js` is a new module rat
   one primary action button labelled `card.action.label`); `LocalAIUI.registerRunBody(kind, mount(run, el) → void)`;
   the run view is the existing drawer (`#runDrawerBackdrop`, `#runDrawer`) with, in order: a header (title, badge,
   project name or "Not filed", Pin and File… actions), the approval bar when `card.approval` is set (Approve /
-  Reject through `ask`, `tone:'host'` and typed `APPROVE` when `risk==='high'`, POST `/api/approvals/decide`), the
+  Reject through `ask` with `tone:'default'` and no typed word, POST `/api/approvals/decide`), the
   kind body slot (`registerRunBody`; default: the existing Output block), then Timeline. File… uses `ask` with
   `input` replaced by a project `<select>` (add `select: {label, options:[{value,label}]}` to `ask`'s options).
 
@@ -236,8 +250,8 @@ the split (`prod-modularize`) stays separate. `run-cards.js` is a new module rat
     `registerRunBody`, and the run view mentions `Not filed`, `Pin` and `/api/runs/update`.
   - `tests/components-ui.mjs`, with `/api/runs` stubbed (one image run with a card preview, one engineering run
     awaiting approval with `approval.risk:'high'`): Runs shows two `.list-row` cards with the image thumbnail and
-    the Review action; opening the engineering run shows the approval bar; Approve asks for `APPROVE` and then POSTs
-    `/api/approvals/decide` with `{id, decision:'approved'}`; Pin POSTs `/api/runs/update {pinned:true}`; a body
+    the Review action; opening the engineering run shows the approval bar; Approve confirms once (no typed word) and
+    POSTs `/api/approvals/decide` with `{id, decision:'approved'}`; Pin POSTs `/api/runs/update {pinned:true}`; a body
     registered for `image` mounts in place of Output; axe clean on the open run view.
 - [ ] **Step 2: Run**: FAIL.
 - [ ] **Step 3: Implement.** Home run center and Runs both render `runCard`; `window.LocalAIRuns.open` keeps its
