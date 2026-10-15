@@ -1812,3 +1812,8 @@ body.run-view-open{overflow:hidden}
 .work-agentworld{align-items:center;justify-content:space-between;flex-wrap:wrap;margin:10px 0}
 .work-agentworld[hidden]{display:none}
 .work-agentworld .btn-outline{min-height:44px;padding:0 14px;font-size:14px}
+/* Improve rows: long titles wrap inside the screen instead of stretching the row (appended; nothing above edited). */
+.improve-row .list-row__main{flex:1;min-width:0}
+.improve-row .list-row__title{max-width:100%;white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.improve-row .list-row__trail{flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:480px){.improve-row{flex-wrap:wrap}.improve-row .list-row__trail{width:100%;padding-left:48px;justify-content:flex-start}.improve-votes{width:auto!important;padding-left:0!important}}
