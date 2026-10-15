@@ -1,6 +1,8 @@
-# Claude page chat
+# Claude chat
 
-The **Claude** page of LocalAI can talk to a Claude Code session that is already running in a terminal on your Mac, from a phone or any browser on the LAN, and shows that session's whole conversation (terminal prompts, web messages, replies).
+The **Claude Code** page of LocalAI (Build › Changes) can talk to a Claude Code session that is already running in a terminal on your Mac, from a phone or any browser on the LAN, and shows that session's whole conversation (terminal prompts, web messages, replies).
+
+Related: [Security](SECURITY.md), [Architecture](ARCHITECTURE.md), and the [design record](superpowers/specs/2026-10-15-claude-chat-design.md).
 
 It is a second window onto a session you started yourself. It is **not** a runner: nothing on the appliance starts, resumes or stops Claude Code, and the session keeps its own permission mode. Sessions started with plain `claude` are never visible to it; the existing progress board is unchanged.
 
@@ -21,7 +23,7 @@ It is a second window onto a session you started yourself. It is **not** a runne
 - **Hook** (`~/.claude/localai-chat/hook.py`, async, 10 s timeout, swallows every error). `SessionStart` starts the bridge. `UserPromptSubmit` posts your terminal prompt to the relay. `Stop` posts Claude's reply text: the hook input's `last_assistant_message` (the transcript is written asynchronously and can lag behind the turn's final text), or, if Claude Code does not send it, the text read from the transcript.
 - **Bridge** (`~/.claude/localai-chat/bridge.mjs`, one per session, detached). Announces the session, long-polls the relay's inbox, acknowledges what it received, and injects each acknowledged web message into the session. The inbox only reserves (leases) the messages it returns; the bridge's ack marks them delivered just before it injects them. If the inbox response or the ack never arrives (the Mac sleeps mid-poll, the connection drops), the reservation runs out after 60 s and the message is queued again for the next poll: it arrives late rather than never, and a message that was not acknowledged is never injected, so it is never injected twice. Only one bridge runs per session and per Claude Code process: it keeps a pidfile `run/<sessionId>.pid` and a per-socket lock `run/sock-<hash>.json` in `~/.claude/localai-chat/`. `/clear` starts a new session id in the same process, so the new bridge stops the old one, and the cleared conversation goes offline on the page after 45 s. It exits when the session's socket disappears.
 - **Relay** (`app/claude-chat.js` in the appliance). Stores sessions, messages, devices and pairing requests; authenticates the Mac (key) and devices (cookie). Nothing on the Mac listens on the network; the appliance is the only rendezvous point.
-- **Panel** (Claude page). Pairing, session picker, conversation, composer, devices.
+- **Panel** (Claude Code page, `claude-chat` section of `app/public/ui.js`). Pairing, session picker, conversation, composer, devices.
 
 ### Injection: spike findings (Claude Code 2.1.300, macOS)
 
@@ -57,8 +59,8 @@ The installer is safe to re-run. It:
 
 ## Daily use
 
-- Start or resume a session with chat on: `claude-chat` or `claude-chat --resume <id>`. It then appears on the Claude page. Start the session with plain `claude` and it stays invisible.
-- **Pair a phone** (once per device): open the Claude page; an unpaired device shows a 6-character code (valid 10 minutes) and the command to run. Then, on the Mac, run `localai-chat pair <code> "My iPhone"`. The page picks it up and stays paired for 180 days.
+- Start or resume a session with chat on: `claude-chat` or `claude-chat --resume <id>`. It then appears on the Claude Code page. Start the session with plain `claude` and it stays invisible.
+- **Pair a phone** (once per device): open the Claude Code page; an unpaired device shows a 6-character code (valid 10 minutes) and the command to run. Then, on the Mac, run `localai-chat pair <code> "My iPhone"`. The page picks it up and stays paired for 180 days.
 - **Send**: pick a session, type, press Send (Cmd/Ctrl+Enter also sends; Enter is a newline). The reply appears when Claude finishes its turn; there is no partial streaming. Replies are shown as plain text.
 - **Statuses** under a web message: `queued` (relay has it, bridge has not fetched it), `sending` (the bridge fetched it and is acknowledging it; normally a second or two), `delivered` (acknowledged and injected into the session), `answered` (Claude replied after it; one reply answers every earlier delivered message). A message reserved by a bridge that vanished before acknowledging it returns to `queued` after 60 s and is sent again. A queued or `sending` message on a session that has gone offline shows `not delivered` with a Delete button; a `sending` one can be deleted once its 60 s reservation has run out (until then the page says to try again in a moment). A message still `delivered` after 10 minutes is no longer polled for; it keeps that status until a later reply.
 - **Offline**: a session is online while its bridge has polled in the last 45 s. When offline the composer is disabled ("Start or resume it on your Mac with `claude-chat`"); history stays readable and messages are never accepted for later.
@@ -80,14 +82,31 @@ Revoking takes effect immediately; the device's next request gets 401 and its pa
 - Nothing listens on the Mac. The bridge and hooks only make outbound HTTP calls to the appliance and talk to the session's own local socket.
 - The Mac key lives at `~/.claude/localai-chat/mac.key` (mode 600). Only its SHA-256 is on the appliance, at `/data/claude-chat-mac-key.sha256`, and no network endpoint can set or change it; only the installer can, over ssh.
 - The device cookie `localai_chat_device` is HttpOnly, SameSite=Strict, Path=`/api/claude/chat`, 180 days. The appliance stores only its hash.
-- **Plain HTTP.** The appliance serves HTTP, so the cookie crosses the Wi-Fi unencrypted; anyone who sniffs it can send messages until the device is revoked. The pairing screen says so. The board item `prod-https` closes this.
-- **The Mac key also crosses plain HTTP**, in the `X-LocalAI-Mac-Key` header of every bridge long-poll (about every 25 s) and every hook call. Whoever sniffs it can do everything the Mac can: approve pairing codes (and so pair their own devices), post fake terminal prompts and replies, announce fake sessions, and read web messages from the inbox. It cannot be revoked from the page, and re-running the installer **reuses** the existing key. `prod-https` is the fix; until then, if the key may be exposed, rotate it:
+- **HTTP and HTTPS.** Port 3080 is plain HTTP. A device that uses the app over `http://` sends its cookie across the Wi-Fi unencrypted; anyone who sniffs it can send messages until the device is revoked. Use the HTTPS address ([Deploy › HTTPS](DEPLOY.md#https-with-caddy)) on phones. The cookie has no `Secure` flag, so it is still sent if the same device later opens the `http://` address. The pairing screen shows its plain-HTTP warning on both.
+- **The Mac key crosses plain HTTP**, in the `X-LocalAI-Mac-Key` header of every bridge long-poll (up to 25 s each) and every hook call: the bridge, hook and CLI default to `http://10.0.0.21:3080`. Whoever sniffs it can do everything the Mac can: approve pairing codes (and so pair their own devices), post fake terminal prompts and replies, announce fake sessions, and read web messages from the inbox. It cannot be revoked from the page, and re-running the installer **reuses** the existing key. Pointing `LOCALAI_URL` at the HTTPS address would need Node and Python on the Mac to trust the LocalAI CA, which is untested. Until then, if the key may be exposed, rotate it:
   1. `rm ~/.claude/localai-chat/mac.key`
   2. Re-run `host/claude-chat/install.sh`. It creates a new key and pushes its hash to the appliance; the old key is rejected from then on.
   3. Restart (or resume) your `claude-chat` sessions so their bridges read the new key; running bridges keep the old one and log `mac key rejected`.
   4. Review **Paired devices** (or `localai-chat devices`) and revoke any device you do not recognise.
 - Web messages act with **the session's own permissions**. A session in bypass-permissions mode will act on a web message without prompts. They cannot change settings or approve a permission prompt.
 - Known limitation: anyone on the LAN can request pairing codes and hold the (up to 5) pending slots, delaying your own pairing. They cannot approve one without the Mac key.
+
+## Configuration
+
+Mac side, read from the environment of the Claude Code session (hooks and bridge) or your shell (CLI):
+
+| Variable | Default | Used by |
+|---|---|---|
+| `LOCALAI_CHAT` | unset | Hook: does nothing unless `1` (set by `claude-chat`) |
+| `LOCALAI_URL` | `http://10.0.0.21:3080` | Hook, bridge, CLI |
+| `LOCALAI_CHAT_HOME` | `~/.claude/localai-chat` | Hook, bridge, CLI |
+| `LOCALAI_CHAT_BRIDGE_CMD` | `node ~/.claude/localai-chat/bridge.mjs` | Hook (tests) |
+| `LOCALAI_CHAT_INJECT_GAP_MS` | `1000` | Bridge: gap between injections |
+| `LOCALAI_CHAT_BACKOFF_MS` | `1000` | Bridge: first retry delay (doubles to 30 s) |
+| `LOCALAI_CHAT_WRITE_TIMEOUT_MS` | `5000` | Bridge: socket write timeout |
+
+Appliance side (`app/claude-chat.js`): `LOCALAI_CHAT_ONLINE_MS` (45 s), `LOCALAI_CHAT_LEASE_MS` (60 s) and
+`LOCALAI_CHAT_PAIR_TTL_MS` (10 minutes).
 
 ## Troubleshooting
 

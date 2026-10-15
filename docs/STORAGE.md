@@ -1,87 +1,199 @@
 # SQLite state and migration
 
-LocalAI now stores application state in `DATA_DIR/localai.db`. Node.js **22.13.0 or newer** is required on both the development host and the appliance container. Storage uses `node:sqlite`; there are no npm runtime dependencies or native modules to compile. Keep `DATA_DIR` on a local disk or local Docker volume. Access the appliance through HTTP rather than sharing the database file over SMB/NFS.
+LocalAI keeps its state in one SQLite database, `DATA_DIR/localai.db`, through Node's built-in `node:sqlite`.
+Node.js 22.13.0 or newer is required on the development machine and in the appliance image; there are no npm
+runtime dependencies or native modules. Keep `DATA_DIR` on a local disk or a local Docker volume, and reach
+the data through the HTTP API rather than sharing the database file over SMB or NFS.
 
 ## Ownership and schema
 
-`app/storage.js` owns versioned schema migrations, transactions, state repositories, legacy import, backup and export. The server and specialist orchestrator share one connection. Standalone orchestrators own their connection and expose `close()`.
+`app/storage.js` owns schema migrations, transactions, repositories, legacy import, backup and export. The
+server and the specialist orchestrator share one connection; a standalone orchestrator owns its own and
+exposes `close()`.
 
-| Existing state | SQLite tables |
+| State | SQLite tables |
 | --- | --- |
 | Projects | `projects` |
 | Conversations | `conversations`, `messages` |
 | Knowledge | `knowledge_sources`, `knowledge_chunks` |
-| Artifact library | `artifacts` |
+| Library (artifacts) | `artifacts` |
 | Specialist missions | `missions`, `mission_steps`, `mission_events` |
-| General and specialist agents | `agent_runs`, `specialist_agent_runs` |
-| Automation definitions and executions | `automations`, `automation_runs` |
-| Activity, notifications, approvals, changes | `activities`, `notifications`, `approvals`, `changes` |
+| General and specialist agent runs | `agent_runs`, `specialist_agent_runs` |
+| Automations and their runs | `automations`, `automation_runs` |
+| Audit log, Inbox, approvals, changes | `activities`, `notifications`, `approvals`, `changes` |
 | Project memory, monitors | `project_memory`, `monitors` |
-| Quality events/scans and issues | `quality_events`, `quality_scans`, `issues` |
-| Engineering and PowerShell executions | `engineering_runs`, `powershell_jobs` |
-| Service transition state | `settings` |
+| Quality events and scans, issues | `quality_events`, `quality_scans`, `issues` |
+| Engineering and PowerShell runs | `engineering_runs`, `powershell_jobs` |
+| Deployment records (provisioned, unused) | `deployments` |
+| Key-value rows (see below) | `settings` |
 | Schema and legacy import audit | `schema_migrations`, `legacy_imports` |
 
-`deployments` is provisioned for application deployment records. Windows deployment control state in `C:\LocalAI\.deploy\state.json` remains owned by the host deployment scripts; this phase does not invent a second host deployment controller.
+`settings` holds keyed JSON rows that need no table of their own:
 
-Records have indexed project references, status and stable ordering, plus JSON metadata that preserves existing fields and API responses. Messages, chunks, mission workers and mission timeline entries have one authoritative child-table representation with cascading deletion. Known project references have foreign keys. Historical references to missing projects remain in the payload and indexed `project_ref`; they are queryable and attach to the foreign key when the project is created later. Generated files/media remain with their existing disk/service owner; artifact metadata and references live in SQLite. Upload, hashing and file ingestion remain the separate Files + Knowledge phase.
+| Key prefix | Contents | Written by |
+|---|---|---|
+| `status` | Last health state and pending transitions | `app/server.js` |
+| `unified-run/` | The run ledger behind **System › Runs** | `app/run-ledger.js` |
+| `claude-session/`, `claude-event/`, `claude-finding/` | Claude board sessions, progress events (newest 3,000), findings (1,000) | `app/server.js` |
+| `claudeChat:` | Chat relay sessions, messages, paired devices, pairing requests | `app/claude-chat.js` |
+| `repair:garbled-text-v1`, `legacy-json-import-v1` | One-time migration markers | `app/server.js`, `app/storage.js` |
+
+Records keep indexed project references, status and stable ordering, plus JSON metadata that preserves the
+existing API fields. Messages, chunks, mission workers and mission timeline entries live only in their child
+tables and are deleted with their parent. Known project references have foreign keys; a reference to a
+project that does not exist yet stays in the payload and the indexed `project_ref`, and attaches when the
+project is created. Generated files and media stay with the service that made them; SQLite holds their
+metadata. Windows deploy state (`C:\LocalAI\.deploy\state.json`) belongs to the host scripts, not to SQLite.
 
 ## First start
 
 1. Create schema version 1 in a transaction.
-2. Parse and validate every recognized legacy JSON file. Malformed JSON, invalid records or duplicate IDs stop startup with the source filename; no partial data import is committed.
-3. Copy the exact original bytes to `DATA_DIR/backups/json-before-sqlite-<unique-id>/`.
-4. Import all collections and status in one transaction, recording SHA-256 hashes, counts and backup paths.
-5. Commit a durable import marker and verify SQLite integrity and foreign keys before the HTTP server starts.
+2. Parse and validate every recognized legacy JSON file. Malformed JSON, invalid records or duplicate IDs stop
+   startup and name the file; nothing is partially imported.
+3. Copy the original bytes to `DATA_DIR/backups/json-before-sqlite-<uuid>/`.
+4. Import every collection in one transaction, recording SHA-256 hashes, counts and backup paths.
+5. Commit an import marker and check SQLite integrity and foreign keys before the HTTP server starts.
 
-Original JSON files are preserved and never rewritten during normal operation. Once import succeeds, SQLite is authoritative. Editing old JSON files does not change live data, and leaving those files in place cannot resurrect deleted records. Empty installations also receive an import marker. Correct malformed input and restart to retry an uncommitted import.
+After a successful import SQLite is authoritative. The original JSON files are kept but never read again:
+editing them changes nothing, and leaving them in place cannot bring deleted records back. An empty
+installation also gets an import marker. To retry an import that failed, fix the input and restart.
 
-WAL mode, a five-second busy timeout and `synchronous=FULL` protect committed state. The application does not silently fall back to JSON when SQLite fails. A database with a newer schema version is rejected rather than downgraded.
+The database runs in WAL mode with `synchronous=FULL`, a five-second busy timeout and foreign keys on. If
+SQLite fails the server does not fall back to JSON, and a database with a newer schema version is refused
+rather than downgraded.
 
 ## Writes and history
 
-`storage.upsert(collection, record)` writes a single runtime-owned record in a transaction. `storage.list(collection)` returns a full snapshot that can be passed to `storage.save(collection, items, originalSnapshot)`. Save compares only changed/deleted records to their original values, preserves records inserted or updated by other requests, and rejects conflicting changes with `STORAGE_CONFLICT`. HTTP handlers return 409 for these conflicts. Callers must reload and retry; there is no automatic overwrite.
+`storage.upsert(collection, record)` writes one record in a transaction. `storage.list(collection)` returns a
+snapshot that can be passed back to `storage.save(collection, items, originalSnapshot)`. Save compares only
+the records that changed or were deleted against their original values, keeps records other requests added
+or changed in the meantime, and rejects a conflicting change with `STORAGE_CONFLICT` (HTTP 409). Callers
+reload and retry; nothing is overwritten automatically.
 
-Filtered or paginated lists cannot be saved as whole collections. Use the record API for those operations. `storage.transaction()` supports synchronous, multi-collection work; no model/network await belongs inside a database transaction. Approval/change transitions use this boundary so their records commit together.
+Filtered or paginated lists cannot be saved as whole collections; use the record API. `storage.transaction()`
+is synchronous and rejects async callbacks: do model or network calls before opening a transaction, never
+inside one.
 
-Persistence no longer truncates collections at the old 150/250/500 record limits. Conversation saves retain all valid user/assistant messages within the existing request-size limit; inference still uses bounded context. Mission timelines are retained in full. UI display limits remain independent of persisted history.
+Conversations, messages and mission timelines are kept in full. Log-like collections are pruned to their
+newest records on write (`RETENTION` in `app/server.js`):
 
-`GET /api/projects`, `/api/conversations` and `/api/knowledge` accept optional `limit` (1–1000), `offset` (nonnegative) and `projectId`. Responses retain `items` and add `total`, `limit` and `offset`. Default page sizes are 250, 300 and 500 respectively. Storage repositories also support indexed status filtering and literal title search. Knowledge search retains its existing scoring and response contract.
+| Collection | Kept |
+|---|---|
+| `activity` (Audit log) | 2,000 |
+| `notifications`, `automationRuns`, `qualityEvents` | 500 each |
+| `agentRuns`, `engineeringRuns` | 300 each |
+| `powerShellJobs` | 250 |
+| `qualityScans` | 100 |
+
+`GET /api/projects`, `/api/conversations` and `/api/knowledge` accept optional `limit` (1–1000), `offset`
+(0 or more) and `projectId`. Responses keep `items` and add `total`, `limit` and `offset`. Default page
+sizes are 250, 300 and 500.
 
 ## Inspect, back up and export
 
-From the repository root, with the application data directory specified:
+`app/storage-cli.js` takes a command and `--data-dir` (default: `DATA_DIR`, else `/data`); `backup`,
+`export-json` and `downgrade-json` also need `--output`. On the host, run it inside the container:
 
 ```powershell
-node .\app\storage-cli.js status --data-dir C:\LocalAI\data
-node .\app\storage-cli.js check --data-dir C:\LocalAI\data
-node .\app\storage-cli.js preflight --data-dir C:\LocalAI\data
-node .\app\storage-cli.js backup --data-dir C:\LocalAI\data --output C:\LocalAI\backups\localai-snapshot.db
-node .\app\storage-cli.js export-json --data-dir C:\LocalAI\data --output C:\LocalAI\backups\json-export
+docker exec local-ai-appliance node /app/storage-cli.js status --data-dir /data
+docker exec local-ai-appliance node /app/storage-cli.js check --data-dir /data
+docker exec local-ai-appliance node /app/storage-cli.js preflight --data-dir /data
+docker exec local-ai-appliance node /app/storage-cli.js backup --data-dir /data --output /data/backups/manual-snapshot.db
+docker exec local-ai-appliance node /app/storage-cli.js export-json --data-dir /data --output /data/backups/json-export
 ```
 
-Use the actual mounted `DATA_DIR` for your installation. Output files/directories must be new; existing backups are never overwritten. `backup` uses SQLite `VACUUM INTO`, which includes committed WAL data, followed by a file flush. Copying only `localai.db` while the application is running is not a coherent backup. `export-json` produces compatible JSON files from a single database transaction.
+On a development machine: `node app/storage-cli.js status --data-dir ./data`.
 
-`status` and `check` inspect an existing database read-only and never initialize schema, import JSON or create backups. Before the first migration they validate recognized JSON files and report `migrationPending: true`. A nonexistent data directory fails rather than creating an empty installation. `preflight` copies committed SQLite state (including WAL commits), or legacy JSON, into disposable temporary storage and runs the candidate migration and integrity checks there. It removes the temporary copy on success or failure.
+| Command | What it does |
+|---|---|
+| `status`, `check` | Read-only inspection; never creates schema, imports or backs up. Before the first migration they validate the JSON and report `migrationPending: true`. A missing data directory is an error |
+| `preflight` | Copies committed state (or legacy JSON) to a temporary directory, runs the migration and integrity checks there, and removes the copy |
+| `migrate` | Opens the database (running any pending migration) and reports status |
+| `backup` | `VACUUM INTO` a new file, which includes committed WAL data |
+| `export-json` | Writes compatible JSON files from one transaction |
+| `downgrade-json` | See [Code rollback across the JSON boundary](#code-rollback-across-the-json-boundary) |
 
-`GET /api/storage/status` reports engine, schema, journal mode, import audit and collection counts. `/healthz` adds storage engine/schema information and `releaseCommit`; it is served only after initialization succeeds. Managed deployments generate `app/release.json` with the exact deployed SHA. Development without that file reports a null release identity; malformed identities fail startup.
+Output paths must be new; existing backups are never overwritten. Copying `localai.db` while the app is
+running is not a coherent backup. Nightly backups use `backup`; see [Operations › Backups](OPERATIONS.md#backups).
 
-For database recovery, stop the application, preserve the entire current data directory, then place a verified SQLite backup at `DATA_DIR/localai.db` in a data directory without stale `localai.db-wal`/`localai.db-shm` files. Restart and inspect `/api/storage/status`. Restoring a backup deliberately reverts data to that snapshot; routine code rollback preserves current state.
+`GET /api/storage/status` reports the engine, schema, journal mode, import audit and collection counts.
+`/healthz` reports `storage` and `releaseCommit` and is served only after storage initialized. Deploys write
+`app/release.json` with the exact SHA; without that file (development) `releaseCommit` is `null`, and a
+malformed file stops startup.
+
+### Recovering the database by hand
+
+Prefer `deploy\Restore-LocalAI-Data.ps1` ([Operations › Restore](OPERATIONS.md#restore)). By hand: stop the
+application, keep a copy of the whole data directory, put a verified backup at `DATA_DIR/localai.db` with no
+stale `localai.db-wal`/`localai.db-shm` beside it, start, and check `/api/storage/status`. Restoring a backup
+reverts data to that point; a code rollback keeps current data.
 
 ## Code rollback across the JSON boundary
 
-Deployment certifies storage behavior and checks the actual container image's Node runtime before promotion, including when the container is stopped. Before stopping the application it runs disposable data preflight with source volumes and candidate code mounted read-only. It repeats preflight after stopping writes and before application replacement. Subsequent SQLite deployments create a coherent pre-deploy data backup in `DATA_DIR/backups` through an isolated worker using the existing immutable container image and mounts. `DATA_DIR` must be backed by a container mount outside `/app`.
+Deploys check the image's Node runtime before promotion, even when the container is stopped, and run the
+disposable preflight with the data and candidate code mounted read-only, before stopping the app and again
+after. Each SQLite deploy backs up the database to `DATA_DIR/backups` through a throwaway worker that uses the
+existing image and mounts with `--network none`. `DATA_DIR` must be a container mount outside `/app`
+(`Get-LocalAI-DataDirectory` in `deploy/Storage-LocalAI.ps1` refuses anything else).
 
-When rolling back to a snapshot that predates SQLite, deployment/rollback scripts run `downgrade-json` through the isolated worker **while the application is stopped**. It exports current database state, creates a SQLite backup, replaces legacy JSON with the current export, and archives the active database and its import marker. This lets the older application see current data and lets a subsequent upgrade import JSON edits made during the downgrade. A failed export stops rollback before older code starts. Keep all recovery output.
+Rolling back to code that predates SQLite runs `downgrade-json` while the application is stopped. It exports
+the current state, writes a SQLite backup, replaces the legacy JSON with the export, and archives the active
+database and its import marker, so the older application sees current data and a later upgrade re-imports
+JSON edits made in between. If the export fails the rollback stops before the older code starts.
 
-For a manual equivalent after stopping every application process using the database:
+Manual equivalent, with every process using the database stopped:
 
 ```powershell
 node .\app\storage-cli.js downgrade-json --data-dir C:\LocalAI\data --output C:\LocalAI\backups\before-json-rollback
 ```
 
-Deploy/rollback data workers require the existing appliance `/app` and data mounts; they use `--network none` and do not launch model services. Actual Windows/Docker promotion, storage mounts and recovery must still be verified on the appliance host.
+## Troubleshooting
 
-## Validation
+### Preflight fails only when the container is stopped
 
-`npm test` covers exact legacy round trips, malformed imports, schema rejection, conflicts, rollback, child cascades, full history, pagination, coherent backups, JSON downgrade/re-upgrade, separate writer processes, concurrent agent/automation HTTP execution, restart durability, read-only inspection, disposable migration preflight and release identity validation. Existing specialist orchestration tests run against SQLite. CI runs these on Windows and Linux with Node 22.13 and Node 24, plus the deployment validator and existing desktop/mobile browser acceptance. Deployment contract tests run actual promotion/rollback scripts with simulated native command boundaries on PowerShell 7 and Windows PowerShell 5.1; they do not certify a real appliance rollout.
+Symptom, on Docker Desktop for Windows: storage preflight works while `local-ai-appliance` runs, but with it
+stopped fails with `LocalAI storage: unable to open database file`. The cause was `--volumes-from` against a
+stopped container.
+
+`deploy/Storage-LocalAI.ps1` now resolves the Docker mount behind `DATA_DIR` (a named volume,
+`local-ai-appliance-data` on the current host) and the `/app` bind, and mounts them explicitly into storage
+workers (`Get-LocalAI-ExplicitMountArgument`). Candidate preflight mounts `/data` read-only and copies
+`localai.db` with its `-wal`/`-shm` files to a writable `/tmp` before opening it, because SQLite cannot open a
+WAL database from a read-only mount there; maintenance
+mounts `/data` read-write and the deployed `/app` read-only so the deployed `storage-cli.js` is used.
+`--volumes-from` remains only as a fallback when the mount metadata is incomplete (simulated fixtures).
+
+The deploy contract tests mock Docker, so check this case by hand on the host after changing
+`Storage-LocalAI.ps1`:
+
+```powershell
+docker inspect local-ai-appliance --format '{{range .Mounts}}{{.Type}} {{.Name}} -> {{.Destination}}{{println}}{{end}}'
+docker stop --timeout 15 local-ai-appliance
+. .\deploy\Storage-LocalAI.ps1
+Test-LocalAI-StorageCandidate -Container 'local-ai-appliance' -CandidateApp '.\app'   # expect success
+docker start local-ai-appliance
+Invoke-RestMethod http://127.0.0.1:3080/healthz
+.\deploy\Deploy-LocalAI.ps1 -CheckOnly
+```
+
+The first line should show `/data` as a `volume`.
+
+### Other storage errors
+
+| Error | Meaning |
+|---|---|
+| `STORAGE_CONFLICT` (HTTP 409) | Another request changed the same record; reload and retry |
+| `DATA_DIR does not exist or is not a directory` | `storage-cli.js` was pointed at the wrong path |
+| `Storage maintenance requires the application container to be stopped.` | `Invoke-LocalAI-StorageMaintenance` was run against a running container |
+| `DATA_DIR ... is not backed by a container mount` | The container's `/data` is not a volume or bind; workers refuse to guess |
+
+## Tests
+
+`npm test` covers legacy round trips, malformed imports, schema rejection, conflicts, rollback, child cascades,
+full history, pagination, backups, JSON downgrade and re-upgrade, separate writer processes, concurrent
+agent and automation HTTP execution, restart durability, read-only inspection, disposable preflight and
+release identity. CI runs the whole suite on Linux with Node 22 for every code PR. PRs that touch storage,
+release, run ledger or orchestrator code also run those suites on Node 22.13.0; a weekly run adds Windows and
+Node 24 (`.github/workflows/storage.yml`). The deploy contract tests run the real promotion and rollback scripts
+against simulated Docker on PowerShell 7 and Windows PowerShell 5.1, for PRs touching `deploy/` or host
+PowerShell and weekly; they do not certify a real rollout on the host. See [Development › CI](DEVELOPMENT.md#ci).

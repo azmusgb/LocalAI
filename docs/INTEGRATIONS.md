@@ -1,6 +1,6 @@
-# Local AI integration policy
+# Integration policy
 
-Local AI is intentionally **local-first and capability-owned**. Integrations should extend an existing capability owner instead of adding parallel chat, automation, or media stacks.
+Local AI is intentionally **local-first and capability-owned**. How these services are wired in is in [Architecture](ARCHITECTURE.md). Integrations should extend an existing capability owner instead of adding parallel chat, automation, or media stacks.
 
 ## Capability owners
 
@@ -39,7 +39,7 @@ MCP guide: <https://help.penpot.app/mcp/>
 
 ## Implementation order
 
-1. **Shipped:** Live n8n and ComfyUI health on System → Integrations.
+1. **Shipped:** Live n8n and ComfyUI health on **System › Integrations**; ComfyUI image engines on **Images** ([ComfyUI](../host/comfyui/README.md)).
 2. **Next:** ComfyUI runtime capability discovery for video/avatar nodes and models.
 3. **Next:** Read-only Obsidian vault mounting/ingestion into Project Knowledge with source provenance.
 4. **Opt-in:** Server-side Penpot MCP connector for self-hosted design workspaces.
