@@ -8,11 +8,16 @@ param(
 # deploy (certify, promote, health-check, roll back), logs it, and tells the Inbox when something happened:
 # a new release went live, or a deploy failed (once per failing commit, not on every retry). No change = silent.
 $ErrorActionPreference = 'Continue'
+# git prints UTF-8; without this Windows PowerShell decodes it with the console code page (IBM437), so a commit
+# subject with an em dash reached the Inbox as mojibake.
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $log = Join-Path $StateDir 'auto-deploy.log'
 $failState = Join-Path $StateDir 'auto-deploy-last-failure.txt'
 New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
 function Notify([string]$title, [string]$detail, [hashtable]$meta) {
-    try { Invoke-RestMethod -Method Post -Uri $NotifyUrl -ContentType 'application/json' -TimeoutSec 10 -Body (@{ kind = 'deploy'; title = $title; detail = $detail; meta = $meta } | ConvertTo-Json -Compress) | Out-Null } catch { }
+    # Send UTF-8 bytes: Windows PowerShell sends a string body as ISO-8859-1, turning an em dash into '-' and arrows into '?'.
+    $body = [System.Text.Encoding]::UTF8.GetBytes((@{ kind = 'deploy'; title = $title; detail = $detail; meta = $meta } | ConvertTo-Json -Compress))
+    try { Invoke-RestMethod -Method Post -Uri $NotifyUrl -ContentType 'application/json; charset=utf-8' -TimeoutSec 10 -Body $body | Out-Null } catch { }
 }
 
 # The deploy scripts themselves come from this checkout, so fast-forward it when it tracks main and is clean.

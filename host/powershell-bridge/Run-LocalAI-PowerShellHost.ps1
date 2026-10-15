@@ -39,7 +39,9 @@ $base = "http://127.0.0.1:$Port"
 
 function Invoke-BridgePost {
     param([string]$Path, [hashtable]$Body)
-    Invoke-RestMethod -Method Post -Uri ($base + $Path) -Headers $headers -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 12) -TimeoutSec 30
+    # UTF-8 bytes: a string body goes out as ISO-8859-1 in Windows PowerShell and loses any non-Latin-1 output.
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes(($Body | ConvertTo-Json -Depth 12))
+    Invoke-RestMethod -Method Post -Uri ($base + $Path) -Headers $headers -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 30
 }
 
 function Test-AllowedWorkingDirectory {
@@ -80,7 +82,8 @@ for ($n = 0; $n -lt $MaxJobs; $n++) {
         $cwd = Test-AllowedWorkingDirectory ([string]$job.cwd)
         if (-not (Test-Path $cwd)) { throw "Working directory does not exist: $cwd" }
 
-        Set-Content -Path $scriptFile -Value ([string]$job.script) -Encoding UTF8
+        # The job writes its output as UTF-8 (not the console code page), and it is read back as UTF-8 below.
+        Set-Content -Path $scriptFile -Value ("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; `$OutputEncoding = [System.Text.Encoding]::UTF8`r`n" + [string]$job.script) -Encoding UTF8
         Remove-Item $outFile,$errFile -Force -ErrorAction SilentlyContinue
 
         $argLine = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$scriptFile`""
@@ -95,9 +98,9 @@ for ($n = 0; $n -lt $MaxJobs; $n++) {
             $exitCode = $proc.ExitCode
         }
 
-        if (Test-Path $outFile) { $stdout = Get-Content $outFile -Raw -ErrorAction SilentlyContinue }
+        if (Test-Path $outFile) { $stdout = Get-Content $outFile -Raw -Encoding UTF8 -ErrorAction SilentlyContinue }
         if (Test-Path $errFile) {
-            $captured = Get-Content $errFile -Raw -ErrorAction SilentlyContinue
+            $captured = Get-Content $errFile -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
             if ($captured) { $stderr = (($stderr + "`r`n" + $captured).Trim()) }
         }
     }

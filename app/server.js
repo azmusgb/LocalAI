@@ -2644,7 +2644,31 @@ const server = http.createServer(async (req, res) => {
 // Log instead of exiting when background work (schedulers, model calls) rejects unexpectedly.
 process.on('unhandledRejection', reason => console.error(`${new Date().toISOString()} Unhandled rejection:`, reason));
 
+// One time: Library titles/summaries and Inbox notices saved before the encoding fixes show text that Windows
+// PowerShell decoded as Windows-1252 ("512 ÃƒÆ’… 512"). Repair them; change requests keep what was pasted.
+function repairGarbledTextOnce() {
+  const KEY = 'repair:garbled-text-v1';
+  if (storage.readSetting(KEY, null)) return;
+  const { repairText } = require('./text-repair.js');
+  const counts = {};
+  for (const [collection, fields] of [[LIBRARY_STORE, ['title', 'summary']], [NOTIFICATIONS_STORE, ['title', 'detail']]]) {
+    const items = objectStore(collection);
+    let changed = 0;
+    for (const item of items) {
+      if (!item) continue;
+      let touched = false;
+      for (const f of fields) { const fixed = repairText(item[f]); if (fixed !== item[f]) { item[f] = fixed; touched = true; } }
+      if (touched) changed++;
+    }
+    if (changed) writeState(collection, items);
+    counts[collection] = changed;
+  }
+  storage.writeSetting(KEY, { completedAt: nowIso(), repaired: counts });
+  if (counts[LIBRARY_STORE] || counts[NOTIFICATIONS_STORE]) console.log(`${nowIso()} Repaired garbled text: ${JSON.stringify(counts)}`);
+}
+
 migrateLegacyActivityToLibrary();
+repairGarbledTextOnce();
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`${new Date().toISOString()} Local AI Appliance v${APP_VERSION} listening on 0.0.0.0:${PORT}`);
