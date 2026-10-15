@@ -30,7 +30,7 @@ before(async () => {
   base = `http://127.0.0.1:${port}`;
   const off = 'http://127.0.0.1:9';
   child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], {
-    env: { ...process.env, DATA_DIR: dataDir, PORT: String(port), WORKSPACE_ROOT: dataDir, LOCALAI_CHAT_ONLINE_MS: '3000', OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
+    env: { ...process.env, DATA_DIR: dataDir, PORT: String(port), WORKSPACE_ROOT: dataDir, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
   });
   child.stdout.on('data', c => diagnostics += c);
   child.stderr.on('data', c => diagnostics += c);
@@ -107,7 +107,7 @@ test('mac-side POSTs follow the cross-origin and content-type rules; session ids
   assert.equal((await mirror('abc-1', 'user', 'web', 'x')).status, 400);
 });
 
-// The main server keeps a generous online window so slow CI steps never flip a session offline.
+// The main server uses the default online window so slow CI steps never flip a session offline.
 // Offline behaviour is tested on a dedicated short-window server (see shortWindow).
 async function shortWindow(t) {
   const url = await startServer(t, { LOCALAI_CHAT_ONLINE_MS: '300' });
@@ -121,7 +121,7 @@ async function shortWindow(t) {
   return { call, id };
 }
 
-test('announce makes a session online (generous window on the main server)', async () => {
+test('announce makes a session online (default window on the main server)', async () => {
   const id = await session();
   const item = (await get('/api/claude/chat/sessions')).body.items.find(s => s.sessionId === id);
   assert.equal(item.online, true);
