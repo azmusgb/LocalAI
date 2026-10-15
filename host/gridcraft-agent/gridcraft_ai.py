@@ -14,6 +14,10 @@ from openai import AsyncOpenAI
 
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"
 DEFAULT_MODEL = "qwen3:4b-instruct-32k"
+# The bridge runs the fast 4k-context model and switches a request to this one only when the prompt nears
+# the 4k window, where Ollama would otherwise drop the start of the conversation without saying so.
+DEFAULT_LONG_MODEL = "qwen3:4b-instruct-32k"
+DEFAULT_LONG_CONTEXT_AT = 3500
 DEFAULT_GRIDCRAFT_CLI = r"C:\Program Files\GridCraft\gridcraft-cli.exe"
 DEFAULT_GRIDCRAFT_PORT = 7979
 MAX_TOOL_ROUNDS = 12
@@ -73,6 +77,17 @@ def parse_args() -> argparse.Namespace:
         "--model",
         default=os.environ.get("OLLAMA_MODEL", DEFAULT_MODEL),
         help=f"Ollama model name (default: {DEFAULT_MODEL})",
+    )
+    parser.add_argument(
+        "--long-model",
+        default=os.environ.get("OLLAMA_LONG_MODEL", DEFAULT_LONG_MODEL),
+        help="Model to switch to when the prompt nears the main model's context window (empty to disable)",
+    )
+    parser.add_argument(
+        "--long-context-at",
+        type=int,
+        default=int(os.environ.get("OLLAMA_LONG_CONTEXT_AT", DEFAULT_LONG_CONTEXT_AT)),
+        help=f"Prompt tokens at which to switch to --long-model (default: {DEFAULT_LONG_CONTEXT_AT})",
     )
     parser.add_argument(
         "--gridcraft-cli",
@@ -220,7 +235,7 @@ def assistant_message_dict(message: Any) -> dict[str, Any]:
     return data
 
 
-async def verify_ollama(client: AsyncOpenAI, model: str) -> None:
+async def verify_ollama(client: AsyncOpenAI, model: str) -> set[str]:
     try:
         models = await client.models.list()
     except Exception as exc:
@@ -236,6 +251,7 @@ async def verify_ollama(client: AsyncOpenAI, model: str) -> None:
             f"Model '{model}' is not available in Ollama.\n"
             f"Available models: {available_text}"
         )
+    return available
 
 
 async def list_all_tools(mcp_client: Client) -> list[Any]:
@@ -256,7 +272,7 @@ async def run_agent_turn(
     openai_tools: list[dict[str, Any]],
     history: list[dict[str, Any]],
     user_text: str,
-    model: str,
+    models: dict[str, Any],
 ) -> str:
     history.append({"role": "user", "content": user_text})
     action_request = looks_like_action_request(user_text)
@@ -266,7 +282,7 @@ async def run_agent_turn(
     for round_index in range(1, MAX_TOOL_ROUNDS + 1):
         print(f"[agent] model turn {round_index} ...", flush=True)
         response = await llm.chat.completions.create(
-            model=model,
+            model=models["current"],
             messages=history,
             tools=openai_tools,
             tool_choice="auto",
@@ -275,6 +291,22 @@ async def run_agent_turn(
 
         if not response.choices:
             raise RuntimeError("Ollama returned no completion choices.")
+
+        # Near the window the prompt may already be truncated: redo this turn on the long-context model.
+        prompt_tokens = getattr(getattr(response, "usage", None), "prompt_tokens", 0) or 0
+        long_model = models.get("long")
+        if long_model and models["current"] != long_model and prompt_tokens >= models["long_at"]:
+            print(f"[agent] prompt is {prompt_tokens} tokens; switching to {long_model}.", flush=True)
+            models["current"] = long_model
+            response = await llm.chat.completions.create(
+                model=long_model,
+                messages=history,
+                tools=openai_tools,
+                tool_choice="auto",
+                temperature=0.1,
+            )
+            if not response.choices:
+                raise RuntimeError("Ollama returned no completion choices.")
 
         message = response.choices[0].message
         history.append(assistant_message_dict(message))
@@ -390,10 +422,16 @@ async def async_main() -> int:
 
     print(f"Checking Ollama at {args.base_url} ...")
     try:
-        await verify_ollama(llm, args.model)
+        available = await verify_ollama(llm, args.model)
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 3
+    long_model = args.long_model if args.long_model and args.long_model != args.model else None
+    if long_model and long_model not in available:
+        print(f"Note: long-context model '{long_model}' is not installed; long workbooks may be truncated.")
+        long_model = None
+    # Shared across turns: once a conversation needs the long model it keeps using it.
+    models = {"current": args.model, "long": long_model, "long_at": args.long_context_at}
 
     mcp_args = ["mcp"]
     if args.headless:
@@ -456,7 +494,7 @@ async def async_main() -> int:
                 # Report agent failures as such; the outer handler is only for MCP connection problems.
                 try:
                     answer = await run_agent_turn(
-                        llm, mcp_client, openai_tools, history, args.once, args.model
+                        llm, mcp_client, openai_tools, history, args.once, models
                     )
                 except Exception as exc:
                     print(f"ERROR: Agent request failed: {type(exc).__name__}: {exc}", file=sys.stderr)
@@ -489,7 +527,7 @@ async def async_main() -> int:
                         openai_tools,
                         history,
                         user_text,
-                        args.model,
+                        models,
                     )
                     print(f"\nai> {answer}\n")
                 except Exception as exc:
