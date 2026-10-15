@@ -45,5 +45,15 @@ await check('notes for Claude are saved inline', async () => {
   const saved = await (await fetch(`${base}/api/claude/board?session=ui-test`)).json();
   assert.equal(saved.findings.find(f => f.id === 'ui-test-a').decisionNote, 'Check with the HTTPS work first');
 });
+await check('on a phone, a long session title keeps the live chip, picker and Refresh on screen', async () => {
+  await fetch(`${base}/api/claude/events`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: 'ui-test-long', sessionTitle: 'Sub-project 1: all 6 tasks done and reviewed; final whole-branch review running now', events: [{ kind: 'note', title: 'x' }] }) });
+  const phone = await browser.newPage({ viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
+  await phone.goto(base, { waitUntil: 'networkidle' });
+  await phone.evaluate(() => window.showView('claude'));
+  await phone.waitForSelector('#claudeSession option:nth-child(2)', { state: 'attached' });
+  const boxes = await phone.evaluate(() => ['claudeLive', 'claudeSession', 'claudeRefresh'].map(id => { const r = document.getElementById(id).getBoundingClientRect(); return [id, Math.round(r.left), Math.round(r.right), Math.round(r.width)]; }));
+  for (const [id, left, right, width] of boxes) assert.ok(left >= 0 && right <= 360 && width >= 40, `${id}: ${left}-${right}`);
+  await phone.close();
+});
 await browser.close();
 if (failed) process.exit(1);
