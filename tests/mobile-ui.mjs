@@ -81,7 +81,11 @@ await check('home shows one name in the top bar', async () => {
 });
 
 await check('long lists show the first items and a Show more button', async () => {
+  // Opening Audit log fetches the real list; let that render first so it can't replace the test items.
+  const loaded = page.waitForResponse(r => r.url().includes('/api/activity'));
   await page.evaluate(() => window.showView('activity'));
+  await loaded;
+  await page.waitForTimeout(100);
   await page.evaluate(() => {
     const list = document.getElementById('activityList');
     list.innerHTML = Array.from({ length: 30 }, (_, i) => `<div class="activity-item">Event ${i + 1}</div>`).join('');

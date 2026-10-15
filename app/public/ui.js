@@ -2430,6 +2430,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     }
   }
 
-  window.addEventListener('load', () => { bind(); setTimeout(bind, 3000); }, { once: true });
+  // Not window 'load': that waits for every image, and a slow image service can hold it back for a long time.
+  // The retries pick up lists other scripts create after startup (Runs).
+  const start = () => { bind(); setTimeout(bind, 0); setTimeout(bind, 3000); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+  else start();
   phone.addEventListener('change', () => observers.forEach((_, list) => apply(list)));
 })();
