@@ -171,7 +171,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     if (existing) return existing;
 
     const home = document.getElementById('home');
-    const hero = home?.querySelector('.workspace-hero');
+    const hero = home?.querySelector('.home-quick') || home?.querySelector('.workspace-hero');
     if (!home) return null;
 
     const section = document.createElement('section');
@@ -183,7 +183,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     section.innerHTML = `
       <div class="truth-attention-head">
         <div>
-          <h2 id="truthAttentionTitle">Attention</h2>
+          <h2 id="truthAttentionTitle">Needs you</h2>
           <p id="truthAttentionSummary">Checking live capability state…</p>
         </div>
         <span id="truthAttentionCount" class="pill truth-attention-count">Checking</span>
@@ -329,8 +329,18 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     const items = [];
     const services = Array.isArray(snapshot?.services) ? snapshot.services : [];
 
-    services
-      .filter((item) => item?.required !== false && item?.state !== 'HEALTHY')
+    // More than two core services down reads as one problem (usually the host), not a screenful of rows.
+    const coreBad = services.filter((item) => item?.required !== false && item?.state !== 'HEALTHY');
+    if (coreBad.length > 2) {
+      items.push({
+        severity: 'critical',
+        title: `${coreBad.length} core services are down`,
+        detail: coreBad.map((item) => item.label || item.name).join(', '),
+        action: 'Open Health',
+        view: 'status'
+      });
+    }
+    (coreBad.length > 2 ? [] : coreBad)
       .forEach((item) => {
         items.push({
           severity: item.state === 'DOWN' ? 'critical' : 'warning',

@@ -196,6 +196,62 @@ await check('shell: with Developer tools off the tab bar has four equal items', 
 });
 await shell.close();
 
+// Home and Chat (redesign task 3). Capabilities are stubbed with 11 unfinished change requests.
+const hc = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+hc.on('pageerror', e => pageErrors.push(e.message));
+await hc.route('**/api/capabilities', async route => {
+  const res = await route.fetch(); const json = await res.json();
+  await route.fulfill({ response: res, json: { ...json, changes: { ...(json.changes || {}), pending: 11 } } });
+});
+await hc.goto(base, { waitUntil: 'domcontentloaded' });
+await hc.waitForFunction(() => typeof window.showView === 'function');
+await hc.evaluate(() => { document.getElementById('firstRun')?.remove(); window.showView('home'); });
+
+await check('home: one ask card, one row of quick starts, no status tiles or execution map', async () => {
+  assert.equal((await hc.locator('#home .workspace-hero h1').innerText()).trim(), 'What should we do?');
+  const tops = await hc.locator('#home .home-quick .suggestion-chip').evaluateAll(els => els.map(e => Math.round(e.getBoundingClientRect().top)));
+  assert.ok(tops.length === 3 && new Set(tops).size === 1, `quick starts on ${new Set(tops).size} rows`);
+  for (const id of ['#homeCapabilities', '#homeExecutionCard', '#homeActivityCard']) assert.equal(await hc.locator(id).isVisible(), false, `${id} is visible`);
+});
+
+await check('home: Needs you lists unfinished change requests and opens them', async () => {
+  const row = hc.locator('#truthAttention .truth-attention-item', { hasText: '11 change requests are unfinished' });
+  await row.waitFor({ state: 'visible' });
+  assert.equal((await hc.locator('#truthAttentionTitle').innerText()).trim(), 'Needs you');
+  await row.locator('.truth-attention-action').click();
+  await hc.waitForSelector('#changes.active');
+});
+
+await check('chat: empty state, a globe that drives web research, no idle text, composer clear of the empty state', async () => {
+  await hc.evaluate(() => window.showView('ask'));
+  await hc.locator('#chatEmpty').waitFor({ state: 'visible' });
+  const r = await hc.evaluate(() => { const a = document.querySelector('#chatEmpty').getBoundingClientRect(), b = document.querySelector('.composer-wrap').getBoundingClientRect(); return a.bottom <= b.top + 1; });
+  assert.ok(r, 'the empty state overlaps the composer');
+  assert.equal(await hc.locator('#chatState').isVisible(), false, 'Idle is shown');
+  await hc.locator('#chatEmpty [data-chat-suggest]').first().click();
+  assert.equal(await hc.locator('#chatInput').inputValue(), 'Explain this error message to me');
+  await hc.evaluate(() => { const c = document.getElementById('webSearch'); c.disabled = false; c.checked = false; });
+  const toggle = hc.locator('#chatWebToggle');
+  await hc.waitForFunction(() => !document.getElementById('chatWebToggle').disabled);
+  await toggle.click();
+  assert.equal(await hc.evaluate(() => document.getElementById('webSearch').checked), true);
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+  await toggle.click();
+  assert.equal(await hc.evaluate(() => document.getElementById('webSearch').checked), false);
+  await hc.evaluate(() => { document.getElementById('webSearch').disabled = true; });
+  await hc.waitForFunction(() => document.getElementById('chatWebToggle').disabled);
+});
+
+await check('chat: with the keyboard open the composer stays on screen', async () => {
+  await hc.setViewportSize({ width: 390, height: 544 });
+  await hc.evaluate(() => { window.showView('ask'); document.getElementById('chatInput').focus(); });
+  await hc.waitForTimeout(200);
+  const r = await hc.evaluate(() => ({ input: document.getElementById('chatInput').getBoundingClientRect().bottom, send: document.getElementById('sendBtn').getBoundingClientRect().bottom, h: window.innerHeight }));
+  assert.ok(r.input <= r.h && r.send <= r.h, `composer at ${r.input}/${r.send}, viewport ${r.h}`);
+  await hc.setViewportSize({ width: 390, height: 844 });
+});
+await hc.close();
+
 await check('no script errors on phone', async () => {
   assert.deepEqual(pageErrors, []);
 });

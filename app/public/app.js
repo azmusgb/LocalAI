@@ -30,7 +30,7 @@ function ago(iso){const d=Date.now()-new Date(iso).getTime();if(!Number.isFinite
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._hide);t._hide=setTimeout(()=>t.classList.remove('show'),2200);}
 function setPhase(phase,detail=''){
   state.chatPhase=phase;
-  if($('chatState')) $('chatState').textContent=detail||phaseLabels[phase]||phase;
+  if($('chatState')){$('chatState').textContent=detail||phaseLabels[phase]||phase;$('chatState').dataset.phase=phase;}
   if($('executionLabel')) $('executionLabel').textContent=detail||phaseLabels[phase]||phase;
   renderAgentMap(phase);
 }
@@ -83,9 +83,10 @@ function showView(id){
 }
 qsa('[data-view]').forEach(el=>el.addEventListener('click',()=>showView(el.dataset.view)));
 
+const CHAT_SUGGESTIONS=['Explain this error message to me','Draft a reply to a tricky email','Summarize a long document'];
 function renderMessages(follow=true){
   const box=$('messages');
-  if(!state.messages.length){box.innerHTML='<div class="empty">Start a private conversation. Requests to change Local AI become change requests that wait for your approval.</div>';return;}
+  if(!state.messages.length){box.innerHTML=`<div id="chatEmpty" class="empty-state chat-empty"><div class="chat-empty-mark" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-workspace"/></svg></div><div class="empty-state__title">Private chat</div><p>Runs on your own hardware. Nothing you type leaves this network unless you turn on web research. Requests to change Local AI become change requests that wait for your approval.</p><div class="chat-suggest">${CHAT_SUGGESTIONS.map(t=>`<button type="button" class="chat-suggest-btn" data-chat-suggest>${esc(t)}</button>`).join('')}</div></div>`;qsa('[data-chat-suggest]').forEach(b=>b.onclick=()=>{const i=$('chatInput');i.value=b.textContent;i.focus();});return;}
   box.innerHTML=state.messages.map((m,i)=>{
     const action=m.action?.view?`<div class="actions" style="margin-top:9px"><button class="btn" data-msg-action="${i}">${esc(m.action.label||'Open')}</button></div>`:'';
     return `<div class="msg ${m.role} ${m.streaming?'streaming':''}" data-msg="${i}">${esc(m.content||'')}${action}</div>`;
@@ -115,8 +116,13 @@ function newChat(){
   if(state.messages.length && !window.confirm('Start a new conversation? The current completed turns remain available in Library, but this browser draft will be cleared.'))return;
   abortStream('');state.messages=[];localStorage.removeItem('localAiMessages');renderMessages();$('chatMeta').textContent='';setPhase('idle');toast('New conversation');
 }
-$('newChatBtn').addEventListener('click',newChat);
-function openAsk(web=false){$('webSearch').checked=web;showView('ask');setTimeout(()=>$('chatInput').focus(),20);}
+$('newChatBtn').addEventListener('click',newChat);$('chatModelChip').addEventListener('click',()=>showView('models'));
+// Phone composer: a globe button drives the web research checkbox and mirrors whether it is on or unavailable.
+function syncWebToggle(){const c=$('webSearch'),b=$('chatWebToggle');if(!c||!b)return;b.setAttribute('aria-pressed',String(c.checked));b.disabled=c.disabled;b.title=c.title||'Web research';}
+$('chatWebToggle')?.addEventListener('click',()=>{const c=$('webSearch');if(c.disabled)return;c.checked=!c.checked;c.dispatchEvent(new Event('change',{bubbles:true}));syncWebToggle();});
+$('webSearch')?.addEventListener('change',syncWebToggle);
+new MutationObserver(syncWebToggle).observe($('webSearch'),{attributes:true,attributeFilter:['disabled','title']});
+function openAsk(web=false){$('webSearch').checked=web;syncWebToggle();showView('ask');setTimeout(()=>$('chatInput').focus(),20);}
 function openCreate(){showView('create');setTimeout(()=>$('imagePrompt').focus(),20);}
 
 function renderSources(meta,sources=[]){
@@ -286,7 +292,7 @@ async function sendChat(){
   const controller=new AbortController();
   state.streamController=controller;
   $('sendBtn').disabled=false;
-  $('sendBtn').textContent='Stop';
+  $('sendLabel').textContent='Stop';$('sendBtn').dataset.state='stop';
   let sources=[];
 
   try{
@@ -350,7 +356,7 @@ async function sendChat(){
   }finally{
     state.streamController=null;
     $('sendBtn').disabled=false;
-    $('sendBtn').textContent='Send';
+    $('sendLabel').textContent='Send';delete $('sendBtn').dataset.state;
     if(state.chatPhase!=='error'&&state.chatPhase!=='done') setPhase('idle');
   }
 }
@@ -361,6 +367,8 @@ qsa('.mode').forEach(b=>b.addEventListener('click',()=>{state.mode=b.dataset.mod
 function syncModeSelect(){const sel=$('commandModeSelect');if(!sel)return;const opts=qsa('.mode').filter(b=>getComputedStyle(b).display!=='none');const html=opts.map(b=>`<option value="${esc(b.dataset.mode)}"${b.disabled?' disabled':''}>${esc(b.textContent)}</option>`).join('');if(sel.dataset.html!==html){sel.innerHTML=html;sel.dataset.html=html;}sel.value=state.mode||'auto';}
 $('commandModeSelect')?.addEventListener('change',e=>qsa('.mode').find(b=>b.dataset.mode===e.target.value)?.click());
 $('commandModeSelect')?.addEventListener('focus',syncModeSelect);
+// Home quick starts (phones): pick the mode and put the cursor in the command box.
+qsa('[data-quick-mode]').forEach(b=>b.addEventListener('click',()=>{const m=qsa('.mode').find(x=>x.dataset.mode===b.dataset.quickMode);if(m&&!m.disabled)m.click();$('commandInput').focus();}));
 new MutationObserver(syncModeSelect).observe(document.querySelector('.modes'),{subtree:true,attributes:true,attributeFilter:['disabled','class']});
 new MutationObserver(syncModeSelect).observe(document.body,{attributes:true,attributeFilter:['class']});
 function localRoute(text,mode='auto'){
@@ -475,7 +483,7 @@ function renderLibrary(){
 }
 async function loadLibrary(){try{const r=await fetch('/api/library',{cache:'no-store'}),j=await r.json();state.library=j.items||[];renderLibrary();}catch{}}
 $('librarySearch').addEventListener('input',e=>{state.librarySearch=e.target.value;state.lastLibrarySignature='';renderLibrary();});qsa('[data-kind]').forEach(b=>b.addEventListener('click',()=>{state.libraryKind=b.dataset.kind;qsa('[data-kind]').forEach(x=>x.classList.toggle('active',x===b));state.lastLibrarySignature='';renderLibrary();}));
-async function loadWorkspace(){try{const r=await fetch('/api/workspace',{cache:'no-store'}),j=await r.json();state.workspace=j;$('homeRecent').innerHTML=(j.recent||[]).slice(0,5).map(artifactRow).join('')||'<div class="empty">No saved work yet.</div>';const pinned=(j.pinned||[]).slice(0,4);$('homePinned').innerHTML=pinned.map(artifactRow).join('');$('homePinnedCard').hidden=!pinned.length;}catch{}}
+async function loadWorkspace(){try{const r=await fetch('/api/workspace',{cache:'no-store'}),j=await r.json();state.workspace=j;$('homeRecent').innerHTML=(j.recent||[]).slice(0,6).map(artifactRow).join('')||'<div class="empty">No saved work yet.</div>';const pinned=(j.pinned||[]).slice(0,4);$('homePinned').innerHTML=pinned.map(artifactRow).join('');$('homePinnedCard').hidden=!pinned.length;}catch{}}
 
 function normalizedState(v){return ['HEALTHY','DEGRADED','DOWN','OPTIONAL_OFFLINE'].includes(v)?v:'DEGRADED';}
 function serviceDisplayState(s){return s.displayState||(s.required===false&&s.state!=='HEALTHY'?'OPTIONAL_OFFLINE':normalizedState(s.state));}
@@ -528,7 +536,7 @@ document.addEventListener('visibilitychange',()=>{schedulePolling();if(!document
 
 // Only a positive result is worth showing; without a service worker (plain-HTTP LAN access) the hint stays hidden.
 async function detectOfflineReady(){const hint=$('offlineHint');if(!('serviceWorker' in navigator))return;try{await navigator.serviceWorker.register('/sw.js');hint.textContent='Works offline · the app shell is cached on this device';hint.hidden=false;}catch(e){console.debug('Service worker registration failed',e);}}
-async function init(){syncModeSelect();renderAgentMap();renderMessages();setPhase('idle');loadActivity();loadLibrary();loadWorkspace();refreshStatus();loadHomeCapabilities();schedulePolling();detectOfflineReady();try{const r=await fetch('/api/models',{cache:'no-store'}),j=await r.json();state.model=j.default||j.models?.[0]||null;}catch{} }
+async function init(){syncModeSelect();syncWebToggle();renderAgentMap();renderMessages();setPhase('idle');loadActivity();loadLibrary();loadWorkspace();refreshStatus();loadHomeCapabilities();schedulePolling();detectOfflineReady();try{const r=await fetch('/api/models',{cache:'no-store'}),j=await r.json();state.model=j.default||j.models?.[0]||null;const name=typeof state.model==='string'?state.model:state.model?.name;if(name){$('chatModelName').textContent=name;$('chatModelChip').title=`Chat model: ${name}`;$('chatModelChip').hidden=false;}}catch{} }
 init();
 
 
