@@ -105,6 +105,93 @@ await check('long lists show the first items and a Show more button', async () =
   assert.equal(await page.locator('#activityList > .activity-item:visible').count(), 30);
 });
 
+// Phone shell (redesign task 2), on a 390×844 phone.
+const shell = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+shell.on('pageerror', e => pageErrors.push(e.message));
+await shell.addInitScript(() => { try { localStorage.setItem('localai.devTools', '1'); } catch {} });
+await shell.goto(base, { waitUntil: 'domcontentloaded' });
+await shell.waitForSelector('#uxMobileNav');
+await shell.waitForFunction(() => typeof window.showView === 'function' && window.LocalAIShell);
+
+await check('shell: one compact header, underline tabs, flush tab bar with icons, no repeated page title', async () => {
+  const problems = [];
+  for (const view of views) {
+    await shell.evaluate(v => { window.showView(v); window.scrollTo(0, 0); }, view);
+    await shell.waitForTimeout(120);
+    const r = await shell.evaluate(() => {
+      const box = s => document.querySelector(s)?.getBoundingClientRect();
+      const strip = document.querySelector('#uxPageStrip');
+      const stripShown = strip && !strip.hidden && strip.getBoundingClientRect().height > 0;
+      const nav = document.querySelector('#uxMobileNav');
+      const items = [...nav.querySelectorAll('[data-domain]')].filter(b => b.getBoundingClientRect().width > 0);
+      const title = document.querySelector('.view.active .topbar h1');
+      return {
+        header: box('#uxContextBar').height,
+        strip: stripShown ? strip.getBoundingClientRect().height : 0,
+        pill: stripShown ? [...strip.querySelectorAll('button')].some(b => { const c = getComputedStyle(b).backgroundColor; return c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent'; }) : false,
+        navBottom: nav.getBoundingClientRect().bottom, vh: window.innerHeight,
+        icons: items.filter(b => b.querySelector('svg use')).length, items: items.length,
+        title: !!(title && title.getBoundingClientRect().height > 0)
+      };
+    });
+    if (r.header > 56) problems.push(`${view}: header ${Math.round(r.header)}px`);
+    if (r.strip > 44.5) problems.push(`${view}: page tabs ${Math.round(r.strip)}px`);
+    if (r.pill) problems.push(`${view}: page tab has a pill background`);
+    if (Math.abs(r.navBottom - r.vh) > 1) problems.push(`${view}: tab bar ends at ${r.navBottom}, viewport ${r.vh}`);
+    if (r.items !== 5 || r.icons !== 5) problems.push(`${view}: tab bar ${r.items} items, ${r.icons} with icons`);
+    if (r.title) problems.push(`${view}: page heading still visible`);
+  }
+  assert.deepEqual(problems, []);
+});
+
+await check('shell: the inbox bell names its count', async () => {
+  await shell.evaluate(() => window.dispatchEvent(new CustomEvent('localai:inbox-count', { detail: { unread: 3, pending: 1 } })));
+  assert.match(await shell.locator('#uxInboxBtn').getAttribute('aria-label'), /3 unread, 1 approval/);
+  assert.equal(await shell.locator('#uxInboxCount').innerText(), '4');
+  await shell.evaluate(() => window.dispatchEvent(new CustomEvent('localai:inbox-count', { detail: { unread: 0, pending: 0 } })));
+  assert.equal(await shell.locator('#uxInboxBtn').isVisible(), true, 'the bell stays on phones at zero');
+  assert.equal(await shell.locator('#uxInboxCount').isVisible(), false, 'no badge at zero');
+});
+
+await check('shell: a page action shows in the header only on its page', async () => {
+  let clicked = 0;
+  await shell.exposeFunction('__shellActionClicked', () => { clicked++; });
+  await shell.evaluate(() => window.LocalAIShell.setAction('status', { icon: 'refresh', label: 'Check again', onClick: () => window.__shellActionClicked() }));
+  await shell.evaluate(() => window.showView('status'));
+  await shell.locator('#uxHeaderAction').click();
+  assert.equal(await shell.locator('#uxHeaderAction').getAttribute('aria-label'), 'Check again');
+  assert.equal(clicked, 1);
+  await shell.evaluate(() => window.showView('models'));
+  assert.equal(await shell.locator('#uxHeaderAction').isVisible(), false);
+  await shell.evaluate(() => window.LocalAIShell.clearAction('status'));
+});
+
+await check('shell: many page tabs scroll on a 320px phone and the active one is in view', async () => {
+  await shell.setViewportSize({ width: 320, height: 640 });
+  await shell.evaluate(() => window.showView('powershell'));
+  await shell.waitForTimeout(200);
+  const r = await shell.evaluate(() => {
+    const strip = document.querySelector('#uxPageStrip'), s = strip.getBoundingClientRect(), a = strip.querySelector('[aria-current="page"]').getBoundingClientRect();
+    return { scrolls: strip.scrollWidth > strip.clientWidth, inView: a.left >= s.left - 1 && a.right <= s.right + 1, sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, wraps: s.height > 45 };
+  });
+  assert.ok(r.scrolls, 'Build has more tabs than fit, so the strip scrolls');
+  assert.ok(r.inView, 'the active tab is scrolled into view');
+  assert.ok(!r.wraps, 'tabs stay on one line');
+  assert.ok(r.sw <= r.cw + 1, `page scrolls sideways: ${r.sw} > ${r.cw}`);
+  await shell.setViewportSize({ width: 390, height: 844 });
+});
+
+await check('shell: with Developer tools off the tab bar has four equal items', async () => {
+  await shell.evaluate(() => window.showView('status'));
+  await shell.locator('.dev-tools-pref input').uncheck();
+  const widths = await shell.evaluate(() => [...document.querySelectorAll('#uxMobileNav [data-domain]')].map(b => b.getBoundingClientRect().width).filter(w => w > 0));
+  assert.equal(widths.length, 4);
+  assert.ok(Math.max(...widths) - Math.min(...widths) < 1, `unequal widths ${widths}`);
+  await shell.locator('.dev-tools-pref input').check();
+  assert.equal(await shell.evaluate(() => [...document.querySelectorAll('#uxMobileNav [data-domain]')].filter(b => b.getBoundingClientRect().width > 0).length), 5);
+});
+await shell.close();
+
 await check('no script errors on phone', async () => {
   assert.deepEqual(pageErrors, []);
 });
