@@ -1812,3 +1812,10 @@ body.run-view-open{overflow:hidden}
 .work-agentworld{align-items:center;justify-content:space-between;flex-wrap:wrap;margin:10px 0}
 .work-agentworld[hidden]{display:none}
 .work-agentworld .btn-outline{min-height:44px;padding:0 14px;font-size:14px}
+/* Approvals: resolved items folded below the waiting ones; Audit log: Clear sits under the list (appended; nothing above edited). */
+.approval-resolved{grid-column:1/-1;margin-top:8px}.approval-resolved>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--ds-muted)}
+.approval-resolved>.approval-card{margin-top:8px}
+.activity-foot{display:flex;justify-content:flex-end;margin-top:12px}.activity-foot .btn{min-height:44px}
+/* Projects with none yet: one empty state instead of zero tiles and an empty detail pane (appended; nothing above edited). */
+#projects.projects-empty #projectMetrics,#projects.projects-empty .split>.card:has(#projectDetail){display:none}
+#projects.projects-empty .split{grid-template-columns:minmax(0,1fr)}
