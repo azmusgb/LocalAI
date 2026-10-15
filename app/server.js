@@ -2430,11 +2430,8 @@ const QUALITY_EVENTS_STORE = 'qualityEvents';
 const QUALITY_SCANS_STORE = 'qualityScans';
 function qualityEventStore(){return objectStore(QUALITY_EVENTS_STORE)}
 function qualityScanStore(){return objectStore(QUALITY_SCANS_STORE)}
-function qualitySeverity(type,message,{line,stack}={}){
+function qualitySeverity(type,message){
   const t=String(type||'').toLowerCase(),m=String(message||'').toLowerCase();
-  // Browsers hide errors from other origins (extensions, injected scripts) as a bare "Script error." with no line
-  // or stack. Local AI loads no cross-origin scripts, so there is nothing to act on.
-  if(m.trim()==='script error.'&&!Number(line)&&!String(stack||'').trim())return 'low';
   if(t==='error'||/uncaught|syntaxerror|referenceerror|typeerror|failed to load/.test(m))return 'high';
   if(t==='rejection'||/timeout|degraded|warning/.test(m))return 'medium';
   return 'low';

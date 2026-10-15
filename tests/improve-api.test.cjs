@@ -277,10 +277,12 @@ test('a long idea in multibyte text is clipped, not refused', { timeout: 30000 }
   assert.ok(r.body.item.summary.length <= 2000);
 });
 
-test('a masked cross-origin "Script error." is low severity and never becomes a signal', { timeout: 60000 }, async t => {
+test('a masked cross-origin "Script error." never becomes a signal; a real error does', { timeout: 60000 }, async t => {
   const base = await startServer(t);
+  // #139 drops opaque errors at the door (202 ignored); either way they must never reach Signals.
   const masked = await post(base, '/api/quality/client-event', { type: 'error', message: 'Script error.', source: '/', line: 0 });
-  assert.equal(masked.body.item.severity, 'low');
+  assert.equal(masked.status, 202);
+  assert.equal(masked.body.ignored, true);
   const real = await post(base, '/api/quality/client-event', { type: 'error', message: 'TypeError: x is undefined', source: '/app.js', line: 12, stack: 'at f (/app.js:12)' });
   assert.equal(real.body.item.severity, 'high');
   await post(base, '/api/issues/scan', {});
