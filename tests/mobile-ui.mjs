@@ -144,6 +144,10 @@ await check('shell: one compact header, underline tabs, flush tab bar with icons
   assert.deepEqual(problems, []);
 });
 
+await check('shell: the icon sprite takes no space above the app', async () => {
+  assert.equal(await shell.evaluate(() => Math.round(document.querySelector('.app').getBoundingClientRect().top + window.scrollY)), 0);
+});
+
 await check('shell: the inbox bell names its count', async () => {
   await shell.evaluate(() => window.dispatchEvent(new CustomEvent('localai:inbox-count', { detail: { unread: 3, pending: 1 } })));
   assert.match(await shell.locator('#uxInboxBtn').getAttribute('aria-label'), /3 unread, 1 approval/);

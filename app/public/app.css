@@ -1555,3 +1555,5 @@ body #homeCapabilities{display:flex!important;flex-wrap:wrap;gap:8px;margin-top:
   body.ux-v3 .ux-mobile-nav button[data-active="true"] b{background:rgba(108,182,255,.16)}
   body.ux-v3 .ux-mobile-sheet{bottom:calc(72px + env(safe-area-inset-bottom));background:var(--ds-bg-2)}
 }
+/* The icon sprite renders inline otherwise and pushes the page down a line. Kept in the tree (not display:none) so <use> resolves everywhere. */
+body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
