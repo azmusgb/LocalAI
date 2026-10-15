@@ -2988,7 +2988,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (state.closing) return;
     if (!window.LocalAIRouter) { hideView(); return; }
     state.closing = true;
-    if (state.inApp) history.back(); else window.LocalAIRouter.go('#home', { replace: true });
+    if (state.inApp || history.state?.localaiRun) history.back(); else window.LocalAIRouter.go('#home', { replace: true });
   }
   function showView() {
     const backdrop = el('runDrawerBackdrop');
@@ -3032,7 +3032,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     state.closing = false;
     if (state.selectedId !== id) { state.viewError = ''; state.gap = ''; state.fetched = null; }
     state.selectedId = id;
-    if (id === 'pending') { showView(); return; }
+    if (state.inApp) { try { history.replaceState({ localaiRun: true }, '', location.href); } catch {} }   // marks this entry as opened in-app, so Back and Forward keep working
+    if (id === 'pending') {
+      if (state.pending) { showView(); return; }
+      state.selectedId = null; window.LocalAIRouter?.go('#home', { replace: true }); return;   // nothing to resume (reload, or Forward after a failed start)
+    }
     if (lookup(id)) { if (state.pending?.resolved === id) state.pending = null; showView(); projectName(id); return; }
     state.gap = '';
     showView();

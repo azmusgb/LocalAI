@@ -468,6 +468,41 @@ await check('openPending shows Starting…, resolve swaps the hash without a new
   await drawerOpen().getByRole('button', { name: 'Close' }).click();
   await runPage.waitForSelector('#runDrawerBackdrop:not(.show)', { state: 'attached' });
 });
+await check('#run/pending with nothing pending goes Home: on load, and after fail, Close and Forward', async () => {
+  const errors = [];
+  const pp = await newPage(stubSetup, '/#run/pending'); pp.on('pageerror', e => errors.push(e.message));
+  await pp.waitForFunction(() => location.hash === '#home');
+  await pp.waitForSelector('#home.active');
+  assert.equal(await pp.locator('#runDrawerBackdrop.show').count(), 0);
+  assert.deepEqual(errors, []); await pp.close();
+  await runPage.evaluate(() => window.showView('home'));
+  await runPage.evaluate(() => { window.__h = window.LocalAIRuns.openPending({ kind: 'chat', title: 'Q' }); });
+  await runPage.evaluate(() => window.__h.fail('x'));
+  await drawerOpen().getByRole('button', { name: 'Close' }).click();
+  await runPage.waitForSelector('#runDrawerBackdrop:not(.show)', { state: 'attached' });
+  await runPage.evaluate(() => history.forward());
+  await runPage.waitForFunction(() => location.hash === '#home');
+  assert.equal(await runPage.locator('#runDrawerBackdrop.show').count(), 0);
+  assert.equal(await runPage.locator('.run-spinner:visible').count(), 0);
+});
+await check('Forward onto a run keeps Back working: Close goes back, not Home', async () => {
+  await runPage.evaluate(() => window.showView('home'));
+  await runPage.evaluate(() => { location.hash = '#work'; });
+  await runPage.waitForFunction(() => location.hash === '#work');
+  await openRun('run_img');
+  await runPage.evaluate(() => history.back());
+  await runPage.waitForFunction(() => location.hash === '#work');
+  await runPage.evaluate(() => history.forward());
+  await runPage.waitForSelector('#runDrawerBackdrop.show');
+  assert.equal(await runPage.evaluate(() => location.hash), '#run/run_img');
+  const len = await runPage.evaluate(() => history.length);
+  await drawerOpen().getByRole('button', { name: 'Back' }).click();
+  await runPage.waitForFunction(() => location.hash === '#work');
+  assert.equal(await runPage.evaluate(() => history.length), len, 'Close goes back, it does not push or replace Home');
+  await runPage.evaluate(() => history.forward());
+  await runPage.waitForSelector('#runDrawerBackdrop.show'); // the run entry is still ahead, so Close went back
+  await closeRun();
+});
 await check('Home run center renders the same cards', async () => {
   await runPage.evaluate(() => window.showView('home'));
   await runPage.waitForSelector('#homeRunList .list-row');
