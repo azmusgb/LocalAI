@@ -11,7 +11,7 @@ async function check(name, fn) {
   try { await fn(); console.log('PASS', name); } catch (error) { failures.push(`${name}: ${error.message}`); console.error('FAIL', name, error.message); }
 }
 const newPage = async (setup, path = '') => {
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const page = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 } });
   if (setup) await setup(page);
   await page.goto(base + path, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.LocalAIUI && typeof window.showView === 'function');

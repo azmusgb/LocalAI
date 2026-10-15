@@ -28,7 +28,7 @@ const three = () => [run(3, 'third question', 'third answer'), run(1, 'first que
 // db.runs: every ledger run the stub knows (a test can push into it); db.library: Library items.
 async function open(viewport, hash, { runs = [], library = [], storage = {}, stream = 'live' } = {}) {
   const db = { runs, library };
-  const ctx = await browser.newContext({ viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.devTools': '1', 'localai.firstRun.done': '1', ...storage });
   // /api/chat/stream is a controllable SSE stream: __reqs records each request body, __streams[i].push(event, data) / .close(), and an abort errors it.
   await ctx.addInitScript(() => { window.__pd = 0; const add = document.addEventListener.bind(document); document.addEventListener = (t, ...a) => { if (t === 'pointerdown') window.__pd++; return add(t, ...a); }; });
@@ -47,7 +47,7 @@ async function open(viewport, hash, { runs = [], library = [], storage = {}, str
       return Promise.resolve(new Response(rs, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }));
     };
   }, stream);
-  const page = await ctx.newPage();
+  const page = await ctx.newPage({ serviceWorkers: 'block' });
   page.db = db; page.errors = [];
   page.on('pageerror', e => page.errors.push(e.message));
   const json = (r, body, status = 200) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });

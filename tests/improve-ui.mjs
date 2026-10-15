@@ -27,7 +27,7 @@ const SIGNALS = [
   { id: 'issue-3', name: 'Old resolved one', severity: 'low', status: 'resolved', occurrences: 2, lastSeenAt: at }
 ];
 
-const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+const page = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 const errors = []; page.on('pageerror', e => errors.push(e.message));
 await page.addInitScript(() => { try { localStorage.setItem('localai.devTools', '1'); } catch {} });
 let failItems = false;

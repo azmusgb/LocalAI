@@ -34,9 +34,9 @@ const mixed = () => [
 ];
 // Stub state: `list(url)` answers each /api/runs request; `calls` records the URLs.
 async function open(viewport, hash, list, { storage = {}, center = true } = {}) {
-  const ctx = await browser.newContext({ viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.devTools': '1', ...storage });
-  const page = await ctx.newPage();
+  const page = await ctx.newPage({ serviceWorkers: 'block' });
   page.calls = []; page.known = new Map();
   await page.route(u => u.pathname === '/api/runs', async r => {
     const url = new URL(r.request().url());

@@ -62,8 +62,8 @@ async function finish() {
 }
 
 try {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  const page = await context.newPage();
+  const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage({ serviceWorkers: 'block' });
   const pageErrors = [];
   page.on('pageerror', e => pageErrors.push(e.message));
   await page.goto(base, { waitUntil: 'domcontentloaded' });
@@ -226,10 +226,10 @@ try {
 
   await check('phone: composer and Send clear the tab bar; no sideways scroll; touch targets and text are large enough', async () => {
     await page.selectOption('#claudeChatSession', 'sess-a');
-    const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const phone = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
     const cookies = await context.cookies();
     await phone.addCookies(cookies);
-    const p = await phone.newPage();
+    const p = await phone.newPage({ serviceWorkers: 'block' });
     await p.addInitScript(() => localStorage.setItem('localai.claudeChat.session', 'sess-a'));
     await p.goto(base, { waitUntil: 'domcontentloaded' });
     await p.waitForSelector('#uxMobileNav');

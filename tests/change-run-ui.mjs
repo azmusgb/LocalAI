@@ -21,7 +21,7 @@ const change = (o = {}) => ({ id: 'c1', status: 'awaiting_approval', summary: 'R
 async function open(viewport, db) {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(() => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); localStorage.setItem('localai.firstRun.done', '1'); } } catch {} });
-  const page = await ctx.newPage();
+  const page = await ctx.newPage({ serviceWorkers: 'block' });
   page.errors = []; page.posts = [];
   page.on('pageerror', e => page.errors.push(e.message));
   const json = (r, body, status = 200) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });

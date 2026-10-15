@@ -23,9 +23,9 @@ const runs = [
 const SIZES = [['phone', { width: 390, height: 844 }, true], ['desktop', { width: 1440, height: 900 }, false]];
 async function open(size) {
   const [, viewport, isMobile] = size;
-  const context = await browser.newContext({ viewport, isMobile, hasTouch: isMobile });
+  const context = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile, hasTouch: isMobile });
   await context.addInitScript(() => { localStorage.setItem('localai.firstRun.done', '1'); localStorage.setItem('localai.devTools', '1'); });
-  const page = await context.newPage();
+  const page = await context.newPage({ serviceWorkers: 'block' });
   await page.route(u => u.pathname === '/api/runs', r => r.fulfill({ json: { items: runs, summary: {} } }));
   await page.goto(base + '/#home', { waitUntil: 'networkidle' });
   return { page, context };

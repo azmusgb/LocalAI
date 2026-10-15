@@ -24,7 +24,7 @@ async function open(viewport, { runs = [], hash = '#home', mode = 'create' } = {
   const db = { runs, sent: [], delay: 400 };
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(m => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); localStorage.setItem('localai.firstRun.done', '1'); if (m) localStorage.setItem('localai.home.mode', m); } } catch {} }, mode);
-  const page = await ctx.newPage();
+  const page = await ctx.newPage({ serviceWorkers: 'block' });
   page.db = db; page.errors = [];
   page.on('pageerror', e => page.errors.push(e.message));
   const json = (r, body, status = 200) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });

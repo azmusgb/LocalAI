@@ -15,7 +15,7 @@ async function check(name, fn) {
   }
 }
 
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+const page = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
 // These checks cover the Build domain, which a fresh install hides until Developer tools is switched on.
 await page.addInitScript(() => localStorage.setItem('localai.devTools', '1'));
 const pageErrors = [];
@@ -147,7 +147,7 @@ await check('no script errors while navigating', async () => {
 });
 await page.close();
 
-const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+const mobile = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 await mobile.addInitScript(() => localStorage.setItem('localai.devTools', '1'));
 await mobile.goto(base, { waitUntil: 'domcontentloaded' });
 await mobile.waitForSelector('#uxMobileNav');
@@ -183,8 +183,8 @@ await check('phone: the page strip switches pages in the section in one tap', as
   assert.ok(h >= 43.5 && h <= 52, `strip button height ${h}`);
 });
 await check('chat sends a valid threadId where crypto.randomUUID does not exist (plain http)', async () => {
-  const ctx = await browser.newContext({ viewport: { width: 1000, height: 800 } });
-  const pg = await ctx.newPage();
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1000, height: 800 } });
+  const pg = await ctx.newPage({ serviceWorkers: 'block' });
   const errs = [];
   pg.on('pageerror', e => errs.push(e.message));
   await pg.addInitScript(() => { delete crypto.randomUUID; });
@@ -205,8 +205,8 @@ await check('chat sends a valid threadId where crypto.randomUUID does not exist 
   await ctx.close();
 });
 await check('chat threadId survives a reload and changes after New conversation', async () => {
-  const ctx = await browser.newContext({ viewport: { width: 1000, height: 800 } });
-  const pg = await ctx.newPage();
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1000, height: 800 } });
+  const pg = await ctx.newPage({ serviceWorkers: 'block' });
   const ids = [];
   await pg.route('**/api/chat**', route => {
     ids.push(JSON.parse(route.request().postData() || '{}').threadId);

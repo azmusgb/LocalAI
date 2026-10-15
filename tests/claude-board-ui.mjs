@@ -16,7 +16,7 @@ await post('/api/claude/findings', { sessionId: 'ui-test', findings: [
 const browser = await chromium.launch();
 let failed = 0;
 async function check(name, fn) { try { await fn(); console.log('PASS', name) } catch (e) { failed++; console.log('FAIL', name, e.message) } }
-const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+const page = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
 await page.goto(base, { waitUntil: 'networkidle' });
 await page.evaluate(() => window.showView('claude'));
 await page.waitForSelector('.claude-finding[data-id="ui-test-a"]');
@@ -51,7 +51,7 @@ await check('notes for Claude are saved inline', async () => {
 });
 await check('on a phone, a long session title keeps the live chip, picker and Refresh on screen', async () => {
   await fetch(`${base}/api/claude/events`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: 'ui-test-long', sessionTitle: 'Sub-project 1: all 6 tasks done and reviewed; final whole-branch review running now', events: [{ kind: 'note', title: 'x' }] }) });
-  const phone = await browser.newPage({ viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
+  const phone = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
   await phone.goto(base, { waitUntil: 'networkidle' });
   await phone.evaluate(() => window.showView('claude'));
   await phone.waitForSelector('#claudeSession option:nth-child(2)', { state: 'attached' });
@@ -77,7 +77,7 @@ async function liveStubbed(pg, live) {
   });
 }
 const liveChips = (pg) => pg.locator('#claudeLiveNow button[data-claude-live]');
-const liveDesktop = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+const liveDesktop = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
 await liveStubbed(liveDesktop, LIVE);
 await liveDesktop.goto(base, { waitUntil: 'networkidle' });
 await liveDesktop.evaluate(() => window.showView('claude'));
@@ -107,7 +107,7 @@ await check('tapping a chip sets the session filter, tapping it again clears it'
 await liveDesktop.close();
 
 await check('with no live sessions the row is hidden and the tab label is plain', async () => {
-  const pg = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const pg = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
   await liveStubbed(pg, []);
   await pg.goto(base, { waitUntil: 'networkidle' });
   await pg.evaluate(() => window.showView('claude'));
@@ -117,7 +117,7 @@ await check('with no live sessions the row is hidden and the tab label is plain'
   await pg.close();
 });
 await check('on a phone the chips are 44px tall, scroll sideways, and pass axe color-contrast and target-size', async () => {
-  const pg = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const pg = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   await liveStubbed(pg, LIVE);
   await pg.goto(base, { waitUntil: 'networkidle' });
   await pg.evaluate(() => window.showView('claude'));
@@ -135,7 +135,7 @@ await check('on a phone the chips are 44px tall, scroll sideways, and pass axe c
 });
 
 await check('chips stay the same elements across polls, keeping keyboard focus', async () => {
-  const pg = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const pg = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
   let age = 5;
   await pg.route('**/api/claude/board*', async (route) => {
     const res = await route.fetch();
@@ -156,7 +156,7 @@ await check('chips stay the same elements across polls, keeping keyboard focus',
   await pg.close();
 });
 await check('each chip names its state for assistive tech, and a visible state label', async () => {
-  const pg = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const pg = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   await liveStubbed(pg, LIVE);
   await pg.goto(base, { waitUntil: 'networkidle' });
   await pg.evaluate(() => window.showView('claude'));
@@ -169,7 +169,7 @@ await check('each chip names its state for assistive tech, and a visible state l
   await pg.close();
 });
 await check('live titles and steps are text, never markup', async () => {
-  const pg = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const pg = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
   const evil = '<img src=x onerror=window.__x=1>';
   await liveStubbed(pg, [{ id: 'cc-evil0001', title: evil, state: 'working', lastEvent: evil, at: iso(3) }]);
   await pg.goto(base, { waitUntil: 'networkidle' });

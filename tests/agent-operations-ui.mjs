@@ -11,7 +11,7 @@ async function check(name,fn){
   catch(e){failures.push(name+': '+e.message);console.error('FAIL',name,e.message)}
 }
 
-const page=await browser.newPage({viewport:{width:1440,height:1000}});
+const page=await browser.newPage({ serviceWorkers: 'block',viewport:{width:1440,height:1000}});
 page.on('dialog',async d=>{dialogs++;await d.dismiss()});
 await page.goto(base,{waitUntil:'domcontentloaded'});
 await page.waitForSelector('.ux-primary-rail');
@@ -211,7 +211,7 @@ await check('Agent World v3 HUD and simulation controls',async()=>{
 });
 await page.close();
 
-const mobile=await browser.newPage({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
+const mobile=await browser.newPage({ serviceWorkers: 'block',viewport:{width:390,height:844},hasTouch:true,isMobile:true});
 mobile.on('dialog',async d=>{dialogs++;await d.dismiss()});
 await mobile.goto(base,{waitUntil:'domcontentloaded'});
 await mobile.waitForSelector('#uxMobileNav');
@@ -259,7 +259,7 @@ await check('the mission strip and Agent World show the same mission while the s
   const goal='Strip and Agent World agree on this mission';
   const mission={id:'mission-strip-sync',goal,status:'complete',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
     workers:[{id:'research',name:'Research Agent',state:'complete'},{id:'synthesis',name:'Synthesis',state:'complete'}],results:[]};
-  const pg=await browser.newPage({viewport:{width:1440,height:1000}});
+  const pg=await browser.newPage({ serviceWorkers: 'block',viewport:{width:1440,height:1000}});
   let releaseCatalog;const catalogHeld=new Promise(r=>releaseCatalog=r);
   await pg.route(u=>u.pathname==='/api/agents/missions',r=>r.fulfill({contentType:'application/json',body:JSON.stringify({items:[mission]})}));
   await pg.route(u=>u.pathname==='/api/agents/catalog',async r=>{await catalogHeld;await r.fallback()});
@@ -279,7 +279,7 @@ await check('navigation reaches Missions through Work',async()=>{
   const mk=(id,kind,title)=>({id,type:kind,status:'completed',progress:100,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),card:{kind,icon:'system',title,summary:'',badge:{label:'Done',tone:'good'},preview:null,action:{label:'Open'},approval:null}});
   const items=[mk('run-1-a','chat','A chat'),mk('legacy-agent:one','agent','A mission run'),mk('run-2-b','image','An image')];
   const visit=async(hash,viewport)=>{
-    const pg=await browser.newPage({viewport});
+    const pg=await browser.newPage({ serviceWorkers: 'block',viewport});
     await pg.route(u=>u.pathname==='/api/runs',r=>r.fulfill({contentType:'application/json',body:JSON.stringify({items,summary:{}})}));
     await pg.goto(base+'/'+hash,{waitUntil:'domcontentloaded'});
     await pg.waitForFunction(()=>typeof window.showView==='function'&&window.LocalAIRouter&&location.hash);

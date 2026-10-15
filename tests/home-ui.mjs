@@ -38,9 +38,9 @@ const needs = () => [
 let capabilities = () => ({ services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' });
 async function open(viewport, hash, { threads = six, all = needs, engineering = null, storage = {}, caps = null, approvals = [], activity = [], route = null } = {}) {
   capabilities = caps || (() => ({ services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' }));
-  const ctx = await browser.newContext({ viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.devTools': '1', 'localai.firstRun.done': '1', ...storage });
-  const page = await ctx.newPage();
+  const page = await ctx.newPage({ serviceWorkers: 'block' });
   await ctx.route(u => u.pathname === '/api/approvals', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: approvals }) }));
   await ctx.route(u => u.pathname === '/api/activity', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: activity }) }));
   if (route) await ctx.route(u => u.pathname === '/api/route', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(route) }));

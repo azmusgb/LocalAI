@@ -9,11 +9,11 @@ async function check(name, fn) { try { await fn(); console.log('PASS', name) } c
 const releases = (version) => ({ current: { version, commit: 'cd9c7e4e466f4b5d674ed17abefb080efb358918', deployedAt: '2026-10-15T14:47:23Z' }, repoUrl: 'https://github.com/example/LocalAI',
   history: [{ version, commit: 'cd9c7e4e466f4b5d674ed17abefb080efb358918', deployedAt: '2026-10-15T14:47:23Z', notes: [{ title: 'Inbox: quieter badge', pr: 92 }, { title: 'No PR here' }] },
     { version: '2.0.190', commit: 'a'.repeat(40), deployedAt: '2026-10-14T10:00:00Z', notes: [] }] });
-const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
 let version = '2.0.204';
 await context.route('**/api/releases', r => r.fulfill({ json: releases(version) }));
 await context.addInitScript(() => localStorage.setItem('localai.firstRun.done', '1'));
-const page = await context.newPage();
+const page = await context.newPage({ serviceWorkers: 'block' });
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 

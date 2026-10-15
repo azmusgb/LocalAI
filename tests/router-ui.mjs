@@ -19,9 +19,9 @@ async function check(name, fn) {
 const DEFAULTS = { home: 'home', work: 'work', projects: 'library', improve: 'backlog', system: 'status' };
 
 async function open(viewport, hash, { devTools = '1' } = {}) {
-  const ctx = await browser.newContext({ viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(v => { try { localStorage.setItem('localai.devTools', v); } catch {} }, devTools);
-  const page = await ctx.newPage();
+  const page = await ctx.newPage({ serviceWorkers: 'block' });
   page.errors = [];
   page.on('pageerror', e => page.errors.push(e.message));
   await page.goto(base + '/' + hash, { waitUntil: 'domcontentloaded' });
@@ -103,8 +103,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
   });
 
   await check(`${tag}: a tab tapped while the app is still starting is kept`, async () => {
-    const ctx = await browser.newContext({ viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
-    const page = await ctx.newPage();
+    const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
+    const page = await ctx.newPage({ serviceWorkers: 'block' });
     await page.route('**/api/config', async r => { await new Promise(res => setTimeout(res, 800)); await r.fallback(); });
     await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector(viewport.width < 760 ? '#uxMobileNav' : '.ux-primary-rail', { timeout: 8000 });
