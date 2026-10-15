@@ -1384,9 +1384,13 @@ function legacyUnifiedRuns() {
   }
   return items;
 }
-function unifiedRunItems(limit=120){
-  const native=runLedger.list({limit:500});const legacy=legacyUnifiedRuns();
-  return [...native,...legacy].sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))).slice(0,Math.max(1,Math.min(500,Number(limit)||120)));
+function unifiedRunItems(limit=120,filter=null){
+  const native=runLedger.list({limit:500,projectId:filter?.projectId,threadId:filter?.threadId});const legacy=legacyUnifiedRuns();
+  let all=[...native,...legacy];
+  if(filter?.projectId)all=all.filter(x=>x.projectId===filter.projectId);
+  if(filter?.threadId)all=all.filter(x=>(x.threadId||x.id)===filter.threadId);
+  if(filter?.threads){const seen=new Set();all=all.sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))).filter(x=>{const k=x.threadId||x.id;return seen.has(k)?false:(seen.add(k),true)})}
+  return all.sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))).slice(0,Math.max(1,Math.min(500,Number(limit)||120)));
 }
 function retryRequestForRunId(id){
   const native=runLedger.retryRequest(id);if(native)return native;
@@ -1395,7 +1399,7 @@ function retryRequestForRunId(id){
   return null;
 }
 async function apiRuns(req,res,urlObj){
-  try{const id=String(urlObj.searchParams.get('id')||'');let items=unifiedRunItems(urlObj.searchParams.get('limit')||120);const pid=String(urlObj.searchParams.get('projectId')||''),tid=String(urlObj.searchParams.get('threadId')||'');if(id){const item=items.find(x=>x.id===id)||runLedger.get(id);if(!item)return json(res,404,{error:'Run not found'});return json(res,200,{item})}const status=String(urlObj.searchParams.get('status')||''),type=String(urlObj.searchParams.get('type')||'');if(status)items=items.filter(x=>x.status===status);if(type)items=items.filter(x=>x.type===type);if(pid)items=items.filter(x=>x.projectId===pid);if(tid)items=items.filter(x=>(x.threadId||x.id)===tid);if(urlObj.searchParams.get('threads')==='1'){const seen=new Set();items=items.filter(x=>{const k=x.threadId||x.id;return seen.has(k)?false:(seen.add(k),true)})}json(res,200,{items,summary:{total:items.length,active:items.filter(x=>['queued','running','streaming','awaiting_approval'].includes(x.status)).length,failed:items.filter(x=>x.status==='failed').length,awaitingApproval:items.filter(x=>x.status==='awaiting_approval').length}})}catch(e){storageError(res,e,500)}
+  try{const id=String(urlObj.searchParams.get('id')||'');const pid=String(urlObj.searchParams.get('projectId')||''),tid=String(urlObj.searchParams.get('threadId')||''),threads=urlObj.searchParams.get('threads')==='1';let items=unifiedRunItems(urlObj.searchParams.get('limit')||120,{projectId:pid,threadId:tid,threads});if(id){const item=items.find(x=>x.id===id)||runLedger.get(id);if(!item)return json(res,404,{error:'Run not found'});return json(res,200,{item})}const status=String(urlObj.searchParams.get('status')||''),type=String(urlObj.searchParams.get('type')||'');if(status)items=items.filter(x=>x.status===status);if(type)items=items.filter(x=>x.type===type);json(res,200,{items,summary:{total:items.length,active:items.filter(x=>['queued','running','streaming','awaiting_approval'].includes(x.status)).length,failed:items.filter(x=>x.status==='failed').length,awaitingApproval:items.filter(x=>x.status==='awaiting_approval').length}})}catch(e){storageError(res,e,500)}
 }
 async function apiRunCancel(req,res){
   try{const b=await readBody(req),id=String(b.id||''),run=runLedger.get(id);if(!run)return json(res,404,{error:'Run not found or is managed by a legacy executor'});if(!run.cancellable)return json(res,409,{error:'This run is not cancellable'});if(!['queued','running','streaming','awaiting_approval'].includes(run.status))return json(res,409,{error:`Run cannot be cancelled from status ${run.status}`});runLedger.cancel(id,'Cancelled by user');const controller=activeRunControllers.get(id);if(controller&&!controller.signal.aborted)controller.abort();recordActivity('run','Run cancelled',run.title,{runId:id,type:run.type});json(res,200,{item:runLedger.get(id)})}catch(e){storageError(res,e,400)}

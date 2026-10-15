@@ -9,7 +9,7 @@ const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 
-async function startServer(t) {
+async function startServer(t, extraEnv = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-runs-'));
   const mock = http.createServer((req, res) => {
     req.resume();
@@ -45,7 +45,8 @@ async function startServer(t) {
       PROXY_URL: 'http://127.0.0.1:9',
       SEARXNG_URL: 'http://127.0.0.1:9',
       MAC_AI_HOME_URL: 'http://127.0.0.1:9',
-      MAC_DSH_URL: 'http://127.0.0.1:9'
+      MAC_DSH_URL: 'http://127.0.0.1:9',
+      ...extraEnv
     }
   });
   child.stdout.on('data', chunk => diagnostics += chunk);
@@ -185,4 +186,42 @@ test('chat turns share a thread', { timeout: 30000 }, async t => {
   assert.equal(collapsed.value.items.filter(x => x.threadId === 'th-1').length, 1);
   const own = await request(`/api/runs?id=${encodeURIComponent(bad.value.runId)}`);
   assert.equal(own.value.item.threadId, bad.value.runId);
+});
+
+test('filters apply before the limit', { timeout: 60000 }, async t => {
+  const { request } = await startServer(t);
+  const project = await request('/api/projects/create', { name: 'Old' });
+  const pid = project.value.item.id;
+  const msg = [{ role: 'user', content: 'hi' }];
+  const first = await request('/api/chat', { messages: msg });
+  for (let i = 0; i < 7; i++) await request('/api/chat', { messages: msg });
+  await request('/api/runs/update', { id: first.value.runId, projectId: pid });
+  const limited = await request(`/api/runs?projectId=${encodeURIComponent(pid)}&limit=5`);
+  assert.deepEqual(limited.value.items.map(x => x.id), [first.value.runId]);
+  assert.equal((await request('/api/runs?limit=5')).value.items.length, 5);
+});
+
+test('image runs share a thread', { timeout: 60000 }, async t => {
+  const comfy = http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (req.url.startsWith('/object_info/CheckpointLoaderSimple')) return res.end(JSON.stringify({ CheckpointLoaderSimple: { input: { required: { ckpt_name: [['sd15.safetensors']] } } } }));
+      if (req.url === '/prompt') return res.end(JSON.stringify({ prompt_id: 'p1' }));
+      if (req.url.startsWith('/history/')) return res.end(JSON.stringify({ p1: { status: { status_str: 'success' }, outputs: { 9: { images: [{ filename: 'a.png', subfolder: '', type: 'output' }] } } } }));
+      res.end('{}');
+    });
+  });
+  comfy.listen(0, '127.0.0.1');
+  await once(comfy, 'listening');
+  t.after(async () => { comfy.closeAllConnections(); await new Promise(resolve => comfy.close(resolve)); });
+  const { request } = await startServer(t, { COMFY_URL: `http://127.0.0.1:${comfy.address().port}` });
+  const a = await request('/api/images/generate', { prompt: 'a cat', threadId: 'img-th' });
+  assert.equal(a.response.status, 200, JSON.stringify(a.value));
+  assert.equal(a.value.threadId, 'img-th');
+  const b = await request('/api/images/generate', { prompt: 'a cat again', threadId: 'img-th' });
+  assert.equal(b.response.status, 200);
+  const imgs = await request('/api/runs?threadId=img-th&type=image');
+  assert.equal(imgs.value.items.length, 2);
+  assert.equal((await request('/api/runs?threads=1&type=image')).value.items.length, 1);
 });
