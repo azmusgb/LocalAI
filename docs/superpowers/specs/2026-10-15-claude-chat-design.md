@@ -188,6 +188,7 @@ The relay never returns the Mac key or device tokens, and `/api/claude/board` an
 |---|---|
 | Session offline (no inbox poll for 45 s) | Composer disabled with “Start or resume it with `claude-chat`”; history still readable |
 | Message queued, session goes offline before pickup | Stays `queued`; shown as “not delivered”; the sender can delete it |
+| Message leased (`delivering`), bridge vanishes before its ack | Lease expiry is also checked when the panel reads messages and on delete, so after 60 s it is `queued` again; on an offline session it shows “not delivered” with Delete (a delete before expiry gets 409 and the page says to try again in a moment), so it never runs unexpectedly hours later |
 | Claude busy when a message arrives | Claude reads it between tool calls; page shows `delivered` |
 | Session holds the message (own-child check failed) | Claude Code shows an approval dialog in the terminal; page shows `delivered`; documented in troubleshooting |
 | Relay unreachable from the Mac | Bridge backs off and retries; hooks drop silently; terminal unaffected |

@@ -1969,12 +1969,15 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
 
   async function remove(id) {
+    const leased = st.messages.find((m) => m.id === id)?.status === 'delivering';
     try {
       await api('messages/delete', { id });
       st.messages = st.messages.filter((m) => m.id !== id);
       renderLog();
     } catch (e) {
-      setNote(e.status === 409 ? 'That message was already picked up, so it cannot be deleted.' : `Could not delete: ${e.message}`, true);
+      // A message still sending is held by the bridge's lease (up to 60 s); once that runs out it is queued and deletable.
+      const busy = leased ? 'Still being delivered — try again in a moment.' : 'That message was already picked up, so it cannot be deleted.';
+      setNote(e.status === 409 ? busy : `Could not delete: ${e.message}`, true);
       poll();
     }
   }
@@ -2088,9 +2091,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (m.truncated) row.append(el('div', 'meta', 'Truncated: the message was longer than 50,000 characters.'));
     if (m.source === 'web') {
       const foot = el('div', 'claude-chat-foot');
-      const offline = m.status === 'queued' && current() && !current().online;
+      // Queued, or still sending (its bridge may have vanished mid-delivery), on an offline session: it will not arrive
+      // until the session is resumed, so offer to delete it rather than let it run unexpectedly later.
+      const offline = (m.status === 'queued' || m.status === 'delivering') && current() && !current().online;
       foot.append(el('span', `claude-chat-status ${offline ? 'bad' : m.status}`, offline ? 'not delivered' : STATUS_LABEL[m.status] || m.status));
-      if (m.status === 'queued') {
+      if (m.status === 'queued' || offline) {
         const del = el('button', 'btn quiet', 'Delete'); del.type = 'button'; del.dataset.chatAction = 'delete'; del.dataset.id = m.id;
         foot.append(del);
       }

@@ -326,7 +326,11 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
     const sessionId = urlObj.searchParams.get('sessionId') || '';
     if (!SESSION_ID_RE.test(sessionId)) return json(res, 400, { error: 'Invalid sessionId' });
     const after = Number(urlObj.searchParams.get('after')) || 0;
-    const items = storage.listSettings(msgPrefix(sessionId), { limit: MAX_MESSAGES }).filter(m => m.seq > after).reverse();
+    // Expire stale leases first, so a message whose bridge vanished (session offline) shows as queued, not sending forever.
+    const items = storage.transaction(() => {
+      requeueExpired(sessionId);
+      return storage.listSettings(msgPrefix(sessionId), { limit: MAX_MESSAGES }).filter(m => m.seq > after).reverse();
+    });
     json(res, 200, { items: items.map(publicMessage) });
   }
 
@@ -348,6 +352,7 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
     if (!m) return json(res, 409, { error: 'Message cannot be deleted' });
     const key = `${msgPrefix(m[1])}${m[2]}`;
     const result = storage.transaction(() => {
+      requeueExpired(m[1]); // an expired lease is queued again, so it can be deleted
       const message = storage.readSetting(key, null);
       if (!message || message.source !== 'web' || message.status !== 'queued') return 409;
       if (message.deviceId !== device.id) return 403;

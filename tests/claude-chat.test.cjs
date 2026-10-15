@@ -156,7 +156,7 @@ test('ack validates its input: session id, an array of at most 50 string ids of 
 });
 
 test('a lease that is never acknowledged expires: the message is requeued and the next inbox returns it again; a late ack is refused', async t => {
-  const url = await startServer(t, { LOCALAI_CHAT_LEASE_MS: '300' });
+  const url = await startServer(t, { LOCALAI_CHAT_LEASE_MS: '1000' });
   const cookie = (await pairDevice(url, 'Lease device')).cookie;
   const call = async (method, p, b, headers) => {
     const r = await fetch(url + p, { method, headers: { ...JSONH, ...headers }, body: b ? JSON.stringify(b) : undefined });
@@ -169,12 +169,12 @@ test('a lease that is never acknowledged expires: the message is requeued and th
   const first = (await lease()).body.items;
   assert.equal(first.length, 1);
   assert.equal((await lease()).body.items.length, 0, 'leased, not handed out twice within the lease');
-  await new Promise(r => setTimeout(r, 450));
+  await new Promise(r => setTimeout(r, 1150));
   // The response was "lost": no ack. After the lease the message is offered again.
   const again = (await lease()).body.items;
   assert.deepEqual(again.map(m => [m.id, m.text]), [[first[0].id, 'survive me']]);
   // This lease expires too; a late ack is refused because the expired lease is requeued first.
-  await new Promise(r => setTimeout(r, 450));
+  await new Promise(r => setTimeout(r, 1150));
   assert.deepEqual((await call('POST', '/api/claude/chat/inbox/ack', { sessionId: id, ids: [first[0].id] }, mac())).body, { acked: [] });
   const msgs = (await call('GET', `/api/claude/chat/messages?sessionId=${id}&after=0`, null, { Cookie: cookie })).body.items;
   assert.equal(msgs[0].status, 'queued');
@@ -183,6 +183,34 @@ test('a lease that is never acknowledged expires: the message is requeued and th
   assert.equal(third.length, 1);
   assert.deepEqual((await call('POST', '/api/claude/chat/inbox/ack', { sessionId: id, ids: [third[0].id] }, mac())).body, { acked: [third[0].id] });
   assert.equal((await call('GET', `/api/claude/chat/messages?sessionId=${id}&after=0`, null, { Cookie: cookie })).body.items[0].status, 'delivered');
+});
+
+test('an expired lease is shown as queued by GET messages and can then be deleted; before expiry delete is 409', async t => {
+  const url = await startServer(t, { LOCALAI_CHAT_LEASE_MS: '1000' });
+  const cookie = (await pairDevice(url, 'Lease device')).cookie;
+  const call = async (method, p, b, headers) => {
+    const r = await fetch(url + p, { method, headers: { ...JSONH, ...headers }, body: b ? JSON.stringify(b) : undefined });
+    return { status: r.status, body: await r.json().catch(() => null) };
+  };
+  const id = 'lease-session-2';
+  assert.equal((await call('POST', '/api/claude/chat/announce', { sessionId: id, title: 'L', cwd: '/' }, mac())).status, 200);
+  const sent = (await call('POST', '/api/claude/chat/send', { sessionId: id, text: 'stranded' }, { Cookie: cookie })).body.item;
+  assert.equal((await call('GET', `/api/claude/chat/inbox?sessionId=${id}&wait=0`, null, mac())).body.items.length, 1);
+  const list = async () => (await call('GET', `/api/claude/chat/messages?sessionId=${id}&after=0`, null, { Cookie: cookie })).body.items;
+  assert.equal((await list())[0].status, 'delivering');
+  assert.equal((await call('POST', '/api/claude/chat/messages/delete', { id: sent.id }, { Cookie: cookie })).status, 409, 'lease still running');
+  // The bridge never polls again (session went offline): the lease runs out with nobody claiming or acking.
+  await new Promise(r => setTimeout(r, 1150));
+  const after = await list();
+  assert.equal(after[0].status, 'queued');
+  assert.equal(JSON.stringify(after).includes('leaseUntil'), false);
+  // Deletion requeues the expired lease itself too, without a messages poll in between.
+  const other = (await call('POST', '/api/claude/chat/send', { sessionId: id, text: 'second' }, { Cookie: cookie })).body.item;
+  await call('GET', `/api/claude/chat/inbox?sessionId=${id}&wait=0`, null, mac());
+  await new Promise(r => setTimeout(r, 1150));
+  assert.equal((await call('POST', '/api/claude/chat/messages/delete', { id: other.id }, { Cookie: cookie })).status, 200);
+  assert.equal((await call('POST', '/api/claude/chat/messages/delete', { id: sent.id }, { Cookie: cookie })).status, 200);
+  assert.deepEqual(await list(), []);
 });
 
 test('two concurrent inbox polls never share a message', async () => {

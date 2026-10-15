@@ -22,7 +22,7 @@ await new Promise(r => probe.close(r));
 const base = `http://127.0.0.1:${port}`;
 const off = 'http://127.0.0.1:9';
 const server = spawn(process.execPath, [path.resolve(here, '../app/server.js')], {
-  env: { ...process.env, DATA_DIR: dataDir, PORT: String(port), WORKSPACE_ROOT: dataDir, LOCALAI_CHAT_ONLINE_MS: '4000', OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
+  env: { ...process.env, DATA_DIR: dataDir, PORT: String(port), WORKSPACE_ROOT: dataDir, LOCALAI_CHAT_ONLINE_MS: '4000', LOCALAI_CHAT_LEASE_MS: '25000', OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
 });
 let diagnostics = '';
 server.stdout.on('data', c => diagnostics += c);
@@ -197,6 +197,31 @@ try {
     assert.match(await msg.locator('.claude-chat-status').innerText(), /not delivered/);
     await msg.getByRole('button', { name: 'Delete' }).click();
     await page.waitForFunction(() => !/Please look at invoices/.test(document.getElementById('claudeChatLog').innerText), null, { timeout: 6000 });
+  });
+
+  await heartbeat('sess-c', 'Stranded lease');
+  await check('a message still sending when its session goes offline shows "not delivered"; Delete says to wait until the lease runs out, then removes it', async () => {
+    await page.waitForFunction(() => [...document.querySelectorAll('#claudeChatSession option')].some(o => o.value === 'sess-c'), null, { timeout: 12000 });
+    await page.selectOption('#claudeChatSession', 'sess-c');
+    await page.waitForFunction(() => !document.getElementById('claudeChatInput').disabled, null, { timeout: 12000 });
+    await page.fill('#claudeChatInput', 'Picked up, never acked');
+    await page.press('#claudeChatInput', 'Control+Enter');
+    const msg = page.locator('#claudeChatLog .claude-chat-msg.web', { hasText: 'Picked up, never acked' });
+    await msg.waitFor({ timeout: 5000 });
+    const leasedAt = Date.now();
+    assert.equal((await mac('GET', 'inbox?sessionId=sess-c&wait=0')).body.items.length, 1); // the bridge then vanishes: no ack
+    await page.waitForFunction(() => /^sending$/.test(document.querySelector('#claudeChatLog .claude-chat-msg.web .claude-chat-status')?.textContent || ''), null, { timeout: 8000 });
+    stopBeat('sess-c');
+    await page.waitForFunction(() => document.getElementById('claudeChatInput').disabled, null, { timeout: 25000 });
+    await page.waitForFunction(() => /^not delivered$/.test(document.querySelector('#claudeChatLog .claude-chat-msg.web .claude-chat-status')?.textContent || ''), null, { timeout: 5000 });
+    assert.ok(Date.now() - leasedAt < 23000, 'offline was noticed before the 25 s lease ran out');
+    await msg.getByRole('button', { name: 'Delete' }).click();
+    await page.waitForFunction(() => /still being delivered — try again in a moment/i.test(document.getElementById('claudeChatNotice')?.textContent || ''), null, { timeout: 5000 });
+    assert.equal(await msg.count(), 1);
+    // Once the lease has run out the relay requeues it and Delete removes it.
+    await page.waitForTimeout(Math.max(0, leasedAt + 26000 - Date.now()));
+    await msg.getByRole('button', { name: 'Delete' }).click();
+    await page.waitForFunction(() => !/Picked up, never acked/.test(document.getElementById('claudeChatLog').innerText), null, { timeout: 6000 });
   });
 
   await check('phone: composer and Send clear the tab bar; no sideways scroll; touch targets and text are large enough', async () => {
