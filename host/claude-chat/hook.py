@@ -87,7 +87,7 @@ def main():
     data = json.load(sys.stdin)
     event = data.get('hook_event_name', '')
     session_id = str(data.get('session_id') or '')
-    if not session_id:
+    if not session_id or not read_key():
         return
     if event == 'SessionStart':
         start_bridge(session_id, str(data.get('cwd') or ''))
