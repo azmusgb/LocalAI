@@ -85,6 +85,10 @@ newest records on write (`RETENTION` in `app/server.js`):
 | `powerShellJobs` | 250 |
 | `qualityScans` | 100 |
 
+Runs (`unified-run/` settings rows) are pruned to the newest 250 except kept runs: a run that is pinned, filed
+under a project or has artifacts is never pruned, so kept runs grow without a ceiling. Unpin or unfile a run to
+let it age out.
+
 `GET /api/projects`, `/api/conversations` and `/api/knowledge` accept optional `limit` (1–1000), `offset`
 (0 or more) and `projectId`. Responses keep `items` and add `total`, `limit` and `offset`. Default page
 sizes are 250, 300 and 500.
