@@ -3,13 +3,14 @@
 // `aka` keeps old names searchable in the command palette after a rename.
 // A view with `parent` is a tab of that page: it has no nav entry of its own and shows the parent's heading.
 // `tab` is the label a page uses in its parent's tab strip (the parent's own tab included).
+// A domain's `icon` names its symbol in the index.html sprite; the phone tab bar reads it from here.
 (function(root){'use strict';
 const DOMAINS=[
- {id:'home',label:'Home',symbol:'⌂',tagline:'What needs you',defaultView:'home'},
- {id:'workspace',label:'Workspace',symbol:'✦',tagline:'Make and keep things',defaultView:'ask'},
- {id:'automate',label:'Automate',symbol:'◎',tagline:'Work that runs without you',defaultView:'agents'},
- {id:'build',label:'Build',symbol:'Δ',tagline:'Change Local AI itself',defaultView:'changes'},
- {id:'system',label:'System',symbol:'◉',tagline:'Health and history',defaultView:'status'}
+ {id:'home',label:'Home',symbol:'⌂',icon:'home',tagline:'What needs you',defaultView:'home'},
+ {id:'workspace',label:'Workspace',symbol:'✦',icon:'workspace',tagline:'Make and keep things',defaultView:'ask'},
+ {id:'automate',label:'Automate',symbol:'◎',icon:'automate',tagline:'Work that runs without you',defaultView:'agents'},
+ {id:'build',label:'Build',symbol:'Δ',icon:'build',tagline:'Change Local AI itself',defaultView:'changes'},
+ {id:'system',label:'System',symbol:'◉',icon:'system',tagline:'Health and history',defaultView:'status'}
 ];
 const VIEWS=[
  {id:'home',domain:'home',section:'Overview',icon:'⌂',label:'Home',description:'Start something, or pick up where you left off.',aka:['overview']},

@@ -1511,6 +1511,7 @@ body #homeCapabilities{display:flex!important;flex-wrap:wrap;gap:8px;margin-top:
 
 /* Phone shell (redesign task 2): one header, underline page tabs, a flush icon tab bar. Desktop is unchanged. */
 .ux-context-bar .ux-ico{display:none}
+.ux-context-brand{display:none}
 .ux-context-action[hidden]{display:none}
 @media(max-width:760px){
   body{background:var(--ds-bg)}
@@ -1580,3 +1581,15 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
 .toast.whatsnew-toast{pointer-events:auto;display:flex;align-items:center;gap:10px}
 .whatsnew-open{border:0;background:transparent;color:var(--ds-accent);font-weight:650;cursor:pointer;padding:6px 4px;min-height:36px}
 .whatsnew-card{scroll-margin-top:88px}
+/* Phone shell follow-ups: after the shell block so they settle ties with it. */
+@media(max-width:760px){
+  /* Home: the brand and a greeting stand in for the section name and page menu. */
+  body.ux-v3[data-view="home"] .ux-context-brand{display:flex;align-items:center;gap:10px}
+  body.ux-v3[data-view="home"] .ux-context-left{margin-right:auto}
+  body.ux-v3[data-view="home"] .ux-context-bar .ux-context-domain,body.ux-v3[data-view="home"] .ux-context-bar .ux-context-view,body.ux-v3[data-view="home"] .ux-context-menu{display:none!important}
+  .ux-context-mark{width:30px;height:30px;border-radius:10px;box-shadow:none}.ux-context-mark svg{width:17px;height:17px}
+  .ux-context-brand-names{display:grid;line-height:1.15}.ux-context-brand-names small{font-size:13px;color:var(--ds-muted)}.ux-context-brand-names strong{font-size:17px;font-weight:650;color:var(--ds-text)}
+  /* A page's own action takes Search's place in the header. */
+  body.ux-v3 .ux-context-has-action .ux-context-search{display:none!important}
+  body.ux-v3 #status>.topbar{display:none}
+}
