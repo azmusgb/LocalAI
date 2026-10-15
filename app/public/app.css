@@ -1819,3 +1819,38 @@ body.run-view-open{overflow:hidden}
 .run-body-change__detail .actions .btn{min-height:44px}
 .run-body-change__detail pre{max-width:100%;overflow-x:auto}
 .run-body-change__wait{margin:0;color:var(--ds-text-muted,inherit)}
+
+/* Improve pages (roadmap sub-project 4): Backlog and Signals. Uses the #81 components; appended, nothing above edited. */
+.improve-list{margin-top:4px}
+.improve-row{gap:10px}
+.improve-row__open{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:6px 0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;min-height:44px}
+.improve-row .list-row__sub{display:flex;flex-wrap:wrap;align-items:center;gap:6px;white-space:normal}
+.improve-row .list-row__trail .btn-outline{min-height:44px;padding:0 12px;font-size:14px}
+.improve-votes{gap:2px}
+.improve-votes .icon-btn{font-size:13px;color:var(--ds-muted)}
+.improve-votes>span{min-width:18px;text-align:center;color:var(--ds-soft);font-variant-numeric:tabular-nums}
+.improve-sheet__body{display:flex;flex-direction:column;gap:12px}
+.improve-sheet__body h2{margin:0;font-size:20px}
+.improve-sheet__body p{margin:0}
+.improve-sheet__body textarea{width:100%;min-height:96px}
+.improve-sheet__actions{display:flex;flex-wrap:wrap;gap:8px}
+.improve-error{color:var(--ds-bad-text);font-size:14px}
+.improve-error[hidden]{display:none}
+.improve-details{margin-top:16px}
+.improve-details>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--ds-muted)}
+.improve-details h3{font-size:14px;color:var(--ds-muted);margin:12px 0 6px}
+.improve-checks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.improve-checks li{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+@media(max-width:760px){
+  /* On phones the page's one action is the header icon (LocalAIShell); the heading button would repeat it. */
+  #backlog>.topbar .btn,#signals>.topbar .btn{display:none}
+}
+/* Improve's own sheets: styled like the shared approval sheet, but a class of their own so code and tests that look
+   for .ask-sheet only ever find the approval sheet. */
+.improve-sheet{box-sizing:border-box;width:min(460px,calc(100vw - 32px));max-height:calc(100vh - 32px);padding:22px 20px 20px;border:1px solid var(--ds-line-2);border-radius:var(--ds-r-lg);background:var(--ds-surface);color:var(--ds-text);font-family:var(--ds-font);box-shadow:0 24px 70px rgba(0,0,0,.5);overflow:auto}
+.improve-sheet::backdrop{background:rgba(4,8,14,.72)}
+@media (max-width:640px){.improve-sheet{width:100%;max-width:100%;margin:auto 0 0;border-radius:var(--ds-r-xl) var(--ds-r-xl) 0 0;border-bottom:0;padding-bottom:calc(20px + env(safe-area-inset-bottom))}}
+/* Work › Missions: a link to Agent World, the live mission map (appended; nothing above edited). */
+.work-agentworld{align-items:center;justify-content:space-between;flex-wrap:wrap;margin:10px 0}
+.work-agentworld[hidden]{display:none}
+.work-agentworld .btn-outline{min-height:44px;padding:0 14px;font-size:14px}

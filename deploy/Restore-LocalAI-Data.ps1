@@ -17,7 +17,10 @@ Run { docker cp $Backup "${Container}:/data/backups/restore-$stamp.db" } 'Copy b
 Run { docker stop $Container } 'Stop appliance'
 # The data volume is reachable only through a container; use the stopped appliance's volume via a helper.
 $image = (docker inspect $Container --format '{{.Config.Image}}')
-$volume = (docker inspect $Container --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}')
+# {{json}} rather than a template with "/data" in it: Windows PowerShell 5.1 strips quotes from native arguments.
+# Assigned first: in 5.1 ConvertFrom-Json emits the whole array as one pipeline item; a variable enumerates it.
+$mounts = (docker inspect $Container --format '{{json .Mounts}}') | ConvertFrom-Json
+$volume = ($mounts | Where-Object { $_.Destination -eq '/data' } | Select-Object -First 1).Name
 Run { docker run --rm -v "${volume}:/data" --entrypoint sh $image -c "cd /data && rm -f localai.db-wal localai.db-shm && cp backups/restore-$stamp.db localai.db" } 'Swap database'
 Run { docker start $Container } 'Start appliance'
 for ($i = 0; $i -lt 60; $i++) { Start-Sleep 2; try { if ((Invoke-RestMethod $HealthUrl -TimeoutSec 3).status -eq 'ok') { Write-Host "Restored $Backup. Previous data kept as /data/backups/pre-restore-$stamp.db"; exit 0 } } catch { } }

@@ -507,32 +507,6 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     });
   }
 
-  function renderHomeModelTruth(snapshot) {
-    const box = document.getElementById('homeCapabilities');
-    const models = snapshot?.models;
-    if (!box || !models) return;
-
-    let tile = document.getElementById('truthModelCapabilityTile');
-    if (!tile) {
-      tile = document.createElement('button');
-      tile.type = 'button';
-      tile.id = 'truthModelCapabilityTile';
-      tile.className = 'cap-tile cap-chip truth-model-capability';
-      tile.addEventListener('click', () => navigate('models'));
-      box.appendChild(tile);
-    }
-
-    if (models.available === false) {
-      tile.innerHTML = '<b>Unknown</b><span>models</span>';
-      tile.title = models.runtimeError || 'Model inventory unavailable';
-      return;
-    }
-
-    tile.innerHTML = `<b>${Number(models.loadedCount || 0)}/${Number(models.installedCount || 0)}</b><span>models loaded</span>`;
-    tile.setAttribute('aria-label', `${Number(models.loadedCount || 0)} of ${Number(models.installedCount || 0)} installed models loaded`);
-    tile.title = models.default ? `Configured default: ${models.default}` : 'Open model runtime details';
-  }
-
   function renderModelsSurface(models) {
     ensureModelsSurface();
     const summary = document.getElementById('modelRuntimeSummary');
@@ -648,7 +622,6 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       renderModelsSurface(models);
       if (lastTruthSnapshot) {
         lastTruthSnapshot = { ...lastTruthSnapshot, models };
-        renderHomeModelTruth(lastTruthSnapshot);
         renderAttention(lastTruthSnapshot);
       }
     } catch (error) {
@@ -761,7 +734,6 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       const snapshot = await response.json();
       lastTruthSnapshot = snapshot;
       applyCapabilityGates(snapshot);
-      renderHomeModelTruth(snapshot);
       renderModelsSurface(snapshot.models || {});
       renderAttention(snapshot);
       window.dispatchEvent(new CustomEvent('localai:truth-updated', { detail: snapshot }));

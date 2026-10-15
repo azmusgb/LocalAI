@@ -19,7 +19,7 @@ const PENDING = new Set(['work']);
 
 test('registry has five domains and every view belongs to one', () => {
   assert.deepEqual(registry.DOMAINS.map(d => d.id), ['home', 'work', 'projects', 'improve', 'system']);
-  assert.deepEqual(registry.DOMAINS.map(d => d.defaultView), ['home', 'work', 'library', 'changes', 'status']);
+  assert.deepEqual(registry.DOMAINS.map(d => d.defaultView), ['home', 'work', 'library', 'backlog', 'status']);
   const domains = new Set([...registry.DOMAINS.map(d => d.id), 'hidden']);
   const ids = registry.VIEWS.map(v => v.id);
   assert.equal(new Set(ids).size, ids.length, 'view ids must be unique');
