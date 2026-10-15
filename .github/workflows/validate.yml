@@ -35,6 +35,7 @@ jobs:
           find app/public -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
           node --check tests/agent-operations-ui.mjs
           node --check tests/integration-hub-ui.mjs
+          node --check tests/navigation-ui.mjs
           node --check tests/agent-orchestrator.test.cjs
           node --check tests/model-runtime.test.cjs
           node --check tests/model-runtime-ui.test.cjs
@@ -99,6 +100,7 @@ jobs:
           test -f docs/INTEGRATIONS.md
           test -f tests/agent-operations-ui.mjs
           test -f tests/integration-hub-ui.mjs
+          test -f tests/navigation-ui.mjs
           test -f tests/agent-orchestrator.test.cjs
           test -f tests/model-runtime.test.cjs
           test -f tests/model-runtime-ui.test.cjs
