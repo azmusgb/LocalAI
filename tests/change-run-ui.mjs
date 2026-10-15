@@ -56,6 +56,16 @@ await check('a run with a change shows the change detail with Approve in the run
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });
+await check('a hosted change is fetched fresh, not read from the startup cache', async () => {
+  const db = { changes: [change({ status: 'planned' })], runs: [engRun('e1', 'c1')], eng: [] };
+  const page = await open({ width: 1280, height: 860 }, db);
+  await page.waitForTimeout(500);
+  db.changes[0].status = 'awaiting_approval';
+  await page.evaluate(() => window.LocalAIRuns.show('legacy-engineering:e1'));
+  await page.locator('#runDrawer [data-change-approve="c1"]').waitFor(T);
+  assert.equal(await page.locator('#runDrawer [data-change-stage]').count(), 0);
+  await page.context().close();
+});
 await check('a run with no change yet shows its steps, then the change once it exists', async () => {
   const db = { changes: [], runs: [engRun('e2', null, { status: 'running' })], eng: [{ id: 'e2', status: 'running', request: 'x', steps: [{ name: 'Plan the patch', state: 'running', detail: 'working' }], finalChangeId: null }] };
   const page = await open({ width: 1280, height: 860 }, db);

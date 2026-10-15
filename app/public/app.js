@@ -647,7 +647,9 @@ let changeHost=null;
 function refreshChangeHost(){if(!changeHost)return;if(!changeHost.el.isConnected){changeHost=null;return}selectChange(changeHost.id,changeHost.el);window.LocalAIRuns?.refresh?.()}
 async function showChange(id,el){
   changeHost={id,el};
-  try{if(!evo.changes.some(x=>x.id===id))evo.changes=(await evoApi('/api/changes')).items||[]}catch(e){el.textContent=`The change could not be loaded: ${e.message}`;return}
+  // always fresh: the cache may be older than the agent's last step
+  if(!el.firstChild)el.textContent='Loading…';
+  try{evo.changes=(await evoApi('/api/changes')).items||[]}catch(e){el.textContent=`The change could not be loaded: ${e.message}`;return}
   if(changeHost?.el!==el)return;
   if(evo.changes.some(x=>x.id===id))selectChange(id,el);else el.textContent='This change is no longer available.';
 }

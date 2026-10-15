@@ -247,7 +247,7 @@
       const b = h('button', 'run-body-image__thumb'); b.type = 'button'; b.dataset.runId = r.id;
       b.setAttribute('aria-label', `Version ${i + 1} of ${runs.length}`); if (r.id === run.id) b.setAttribute('aria-current', 'true');
       const src = r.output?.images?.[0]?.imageUrl; if (src) { const im = h('img'); im.alt = ''; im.loading = 'lazy'; im.src = src; b.appendChild(im); }
-      b.addEventListener('click', () => { strip.querySelectorAll('button').forEach(x => x.removeAttribute('aria-current')); b.setAttribute('aria-current', 'true'); pick(r); });
+      b.addEventListener('click', () => { if (r.id !== run.id) pick(r); });
       strip.appendChild(b);
     });
   }
@@ -267,7 +267,8 @@
       ctx.onCleanup(() => { I.ui.hosted = false; if (I.ui.onControls === sync) I.ui.onControls = null; });
       // The nodes are in the page only once the run view attaches this slot, so paint a moment later.
       queueMicrotask(() => { if (ctx.alive()) { I.adopt(run); sync(); } });
-      loadVersions(run, strip, ctx, r => I.adopt(r, { force: true }));
+      // A thumbnail routes (replace: no new history entry) to that version's run, so URL, title and rebuilds all agree.
+      loadVersions(run, strip, ctx, r => window.LocalAIRouter?.go(`#run/${encodeURIComponent(r.id)}`, { replace: true }));
     });
   }
   if (window.LocalAIUI?.registerRunBody) window.LocalAIUI.registerRunBody('image', mountImage);

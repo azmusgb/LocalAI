@@ -21,7 +21,7 @@ const imgRun = (n, o = {}) => ({
   card: { kind: 'image', icon: 'image', title: 'a cat ' + n, summary: '', badge: { label: 'Done', tone: 'good' }, preview: null, action: { label: 'Open' }, approval: null }
 });
 async function open(viewport, { runs = [], hash = '#home', mode = 'create' } = {}) {
-  const db = { runs, sent: [] };
+  const db = { runs, sent: [], delay: 400 };
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(m => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); localStorage.setItem('localai.firstRun.done', '1'); if (m) localStorage.setItem('localai.home.mode', m); } } catch {} }, mode);
   const page = await ctx.newPage();
@@ -36,7 +36,7 @@ async function open(viewport, { runs = [], hash = '#home', mode = 'create' } = {
   await page.route(u => /^\/x\d*\.png$/.test(u.pathname), r => { const n = Number(/x(\d*)\.png/.exec(new URL(r.request().url()).pathname)[1] || 0); r.fulfill({ body: `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" fill="hsl(${n * 70 + 200},60%,45%)"/><circle cx="256" cy="256" r="${60 + n * 30}" fill="hsl(${n * 70 + 20},80%,70%)"/></svg>`, contentType: 'image/svg+xml' }); });
   await page.route(u => u.pathname === '/api/images/generate', async r => {
     const body = JSON.parse(r.request().postData()); db.sent.push(body);
-    await new Promise(res => setTimeout(res, 400));
+    await new Promise(res => setTimeout(res, db.delay));
     const run = imgRun(db.runs.length + 1, { threadId: body.threadId || 't1' }); db.runs.push(run);
     json(r, { ...run.output, imageUrl: run.output.images[0].imageUrl, seed: run.output.images[0].seed, images: run.output.images, prompt: body.prompt, usedPrompt: body.prompt, runId: run.id, threadId: run.threadId, edited: !!body.source });
   });
@@ -54,10 +54,13 @@ const home = async (page, text) => { await page.locator('#commandInput').fill(te
 const phone = { width: 390, height: 844 };
 
 const page = await open({ width: 1280, height: 860 });
-await check('Image mode Send shows Starting… for the whole generation, then opens the run with the image', async () => {
+await check('Image mode Send shows Creating your image… with a counter that advances, then opens the run with the image', async () => {
+  page.db.delay = 2500;
   await home(page, 'a cat');
   await page.locator('#runDrawer .run-view-state__text').waitFor(T);
-  assert.match(await page.locator('#runDrawer .run-view-state__text').innerText(), /Starting/);
+  assert.match(await page.locator('#runDrawer .run-view-state__text').innerText(), /^Creating your image… \d+ s$/);
+  await page.waitForFunction(() => /^Creating your image… [1-9]\d* s$/.test(document.querySelector('#runDrawer .run-view-state__text')?.textContent || ''), null, T);
+  page.db.delay = 400;
   await page.waitForFunction(() => location.hash === '#run/run-i1', null, T);
   await page.locator('#runDrawer #generatedImage').waitFor(T);
   assert.match(await page.locator('#generatedImage').getAttribute('src'), /x1\.png/);
@@ -72,9 +75,17 @@ await check('Another version posts the thread and moves to the new version, with
   assert.equal(await page.locator('#runDrawer .run-body-image__strip button').count(), 2);
   assert.match(await page.locator('#generatedImage').getAttribute('src'), /x2\.png/);
 });
-await check('a strip thumbnail makes that version the large one', async () => {
+await check('a strip thumbnail routes to that version (no new history) and survives a rebuild', async () => {
+  const len = await page.evaluate(() => history.length);
   await page.locator('#runDrawer .run-body-image__strip button').nth(0).click();
-  await page.waitForFunction(() => /x1\.png/.test(document.querySelector('#generatedImage').src), null, T);
+  await page.waitForFunction(() => location.hash === '#run/run-i1' && /x1\.png/.test(document.querySelector('#generatedImage').src), null, T);
+  assert.equal(await page.evaluate(() => history.length), len, 'no new history entry');
+  // A rebuild of the run view (the run changed) keeps the second... the clicked version.
+  page.db.runs[0].title = 'a cat renamed'; page.db.runs[0].updatedAt = new Date().toISOString();
+  await page.evaluate(() => window.LocalAIRuns.refresh());
+  await page.waitForFunction(() => /renamed/.test(document.querySelector('#runDrawer').innerText), null, T);
+  assert.match(await page.locator('#generatedImage').getAttribute('src'), /x1\.png/);
+  assert.equal(await page.evaluate(() => location.hash), '#run/run-i1');
   assert.equal(await page.locator('#runDrawer .run-body-image__strip button[aria-current="true"]').count(), 1);
 });
 await check('Edit opens the editor inside the run view; Apply edit posts the thread and the source', async () => {
