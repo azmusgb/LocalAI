@@ -330,6 +330,15 @@ test('approve without the Mac key is 401; wrong code is 404; bad name is 400', a
   assert.equal(status.device.name, 'Device');
 });
 
+test('an empty or whitespace-only name defaults to "Device"', async t => {
+  const url = await startServer(t);
+  for (const name of ['', '   ']) {
+    const pr = await (await pairReq(url)).json();
+    assert.equal((await approve(url, { code: pr.code, name })).status, 200);
+    assert.equal((await (await fetch(`${url}/api/claude/chat/pair-status?id=${pr.id}`)).json()).device.name, 'Device');
+  }
+});
+
 test('a code older than the pairing window is expired and cannot be approved', async t => {
   const url = await startServer(t, { LOCALAI_CHAT_PAIR_TTL_MS: '200' });
   const pr = await (await pairReq(url)).json();

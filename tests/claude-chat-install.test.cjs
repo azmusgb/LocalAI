@@ -61,3 +61,34 @@ test('install.sh installs files, key, hash push, hooks and shell function, idemp
     assert.match(zshrc, /claude-chat\(\) \{ LOCALAI_CHAT=1 claude "\$@"; \}/);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+test('install.sh reports a failed hash push, keeps the key, leaves settings alone, and a re-run completes', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-install-fail-'));
+  try {
+    const home = path.join(tmp, 'home'), stubs = path.join(tmp, 'stubs');
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.mkdirSync(stubs);
+    const settingsPath = path.join(home, '.claude', 'settings.json');
+    const before = JSON.stringify({ hooks: {} }, null, 2);
+    fs.writeFileSync(settingsPath, before);
+    const log = path.join(tmp, 'ssh.log');
+    const stub = path.join(stubs, 'ssh');
+    fs.writeFileSync(stub, '#!/bin/sh\ncat > /dev/null\nexit 255\n', { mode: 0o755 });
+    const run = () => spawnSync('bash', [INSTALL], { env: { ...process.env, HOME: home, PATH: `${stubs}:${process.env.PATH}` }, encoding: 'utf8' });
+    const keyPath = path.join(home, '.claude', 'localai-chat', 'mac.key');
+
+    const failed = run();
+    assert.notEqual(failed.status, 0);
+    assert.match(failed.stderr, /install\.sh: created .*mac\.key but could not push its hash to the appliance \(ssh windows-ai failed\)\. Fix ssh access and re-run install\.sh/);
+    const key = fs.readFileSync(keyPath, 'utf8');
+    assert.match(key, /^[0-9a-f]{64}$/);
+    assert.equal(fs.readFileSync(settingsPath, 'utf8'), before);
+
+    fs.writeFileSync(stub, `#!/bin/sh\nprintf '%s\\n' "$*" >> "${log}"\ncat > "${log}.stdin"\n`, { mode: 0o755 });
+    const ok = run();
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.equal(fs.readFileSync(keyPath, 'utf8'), key);
+    assert.equal(fs.readFileSync(`${log}.stdin`, 'utf8'), crypto.createHash('sha256').update(key).digest('hex'));
+    assert.ok(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks.Stop);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});

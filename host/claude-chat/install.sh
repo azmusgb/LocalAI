@@ -31,7 +31,10 @@ chmod 600 "$KEY"
 
 # 3. push the key hash to the appliance (hash of the trimmed key, as the relay hashes the header value)
 hash="$(tr -d '\r\n' < "$KEY" | shasum -a 256 | cut -d' ' -f1)"
-printf '%s' "$hash" | ssh windows-ai docker exec -i local-ai-appliance tee /data/claude-chat-mac-key.sha256 >/dev/null
+if ! printf '%s' "$hash" | ssh windows-ai docker exec -i local-ai-appliance tee /data/claude-chat-mac-key.sha256 >/dev/null; then
+  echo "install.sh: created $KEY but could not push its hash to the appliance (ssh windows-ai failed). Fix ssh access and re-run install.sh — it reuses the same key." >&2
+  exit 1
+fi
 
 # 4. hooks in ~/.claude/settings.json
 mkdir -p "$HOME/.claude"

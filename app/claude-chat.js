@@ -241,8 +241,8 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
   }
   async function pairApprove(req, res) {
     const b = await body(req, res); if (!b) return;
-    const name = b.name === undefined || b.name === null ? 'Device' : String(b.name).trim();
-    if (name.length < 1 || name.length > 60) return json(res, 400, { error: 'name must be 1-60 characters' });
+    const name = (b.name === undefined || b.name === null ? '' : String(b.name).trim()) || 'Device';
+    if (name.length > 60) return json(res, 400, { error: 'name must be at most 60 characters' });
     const code = String(b.code || '').trim().toUpperCase();
     const result = storage.transaction(() => {
       const record = livePairings().find(r => r.status === 'pending' && r.code === code);
