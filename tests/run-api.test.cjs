@@ -9,7 +9,7 @@ const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 
-test('unified run API exposes native chat plus legacy execution history and retry lineage', { timeout: 30000 }, async t => {
+async function startServer(t, extraEnv = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-runs-'));
   const mock = http.createServer((req, res) => {
     req.resume();
@@ -45,7 +45,8 @@ test('unified run API exposes native chat plus legacy execution history and retr
       PROXY_URL: 'http://127.0.0.1:9',
       SEARXNG_URL: 'http://127.0.0.1:9',
       MAC_AI_HOME_URL: 'http://127.0.0.1:9',
-      MAC_DSH_URL: 'http://127.0.0.1:9'
+      MAC_DSH_URL: 'http://127.0.0.1:9',
+      ...extraEnv
     }
   });
   child.stdout.on('data', chunk => diagnostics += chunk);
@@ -78,6 +79,12 @@ test('unified run API exposes native chat plus legacy execution history and retr
     const value = await response.json();
     return { response, value };
   };
+
+  return { request, base };
+}
+
+test('unified run API exposes native chat plus legacy execution history and retry lineage', { timeout: 30000 }, async t => {
+  const { request } = await startServer(t);
 
   const empty = await request('/api/runs?limit=20');
   assert.equal(empty.response.status, 200);
@@ -133,4 +140,88 @@ test('unified run API exposes native chat plus legacy execution history and retr
 
   const missingRetry = await request('/api/runs/retry', { id: 'missing-run' });
   assert.equal(missingRetry.response.status, 409);
+});
+
+test('runs can be pinned and filed', { timeout: 30000 }, async t => {
+  const { request } = await startServer(t);
+  const project = await request('/api/projects/create', { name: 'Filing' });
+  assert.equal(project.response.status, 201);
+  const pid = project.value.item.id;
+  const a = await request('/api/chat', { messages: [{ role: 'user', content: 'one' }] });
+  await request('/api/chat', { messages: [{ role: 'user', content: 'two' }] });
+  const upd = await request('/api/runs/update', { id: a.value.runId, pinned: true, projectId: pid });
+  assert.equal(upd.response.status, 200);
+  assert.equal(upd.value.item.pinned, true);
+  assert.equal(upd.value.item.projectId, pid);
+  const filed = await request(`/api/runs?projectId=${encodeURIComponent(pid)}`);
+  assert.deepEqual(filed.value.items.map(x => x.id), [a.value.runId]);
+  const unfiled = await request('/api/runs/update', { id: a.value.runId, projectId: null });
+  assert.equal(unfiled.value.item.projectId, null);
+  assert.equal(unfiled.value.item.pinned, true);
+  assert.equal((await request(`/api/runs?projectId=${encodeURIComponent(pid)}`)).value.items.length, 0);
+});
+
+test('update rejects unknown project, bad ids and legacy runs', { timeout: 30000 }, async t => {
+  const { request } = await startServer(t);
+  const a = await request('/api/chat', { messages: [{ role: 'user', content: 'one' }] });
+  assert.equal((await request('/api/runs/update', { id: a.value.runId, projectId: 'prj-missing' })).response.status, 404);
+  assert.equal((await request('/api/runs/update', { id: a.value.runId, projectId: 'bad id!' })).response.status, 400);
+  assert.equal((await request('/api/runs/update', { id: '../../x', pinned: true })).response.status, 400);
+  assert.equal((await request('/api/runs/update', { id: 'run-nope', pinned: true })).response.status, 404);
+  const agent = await request('/api/agents/run', { goal: 'Legacy' });
+  const legacy = await request('/api/runs/update', { id: `legacy-agent:${agent.value.run.id}`, pinned: true });
+  assert.equal(legacy.response.status, 409);
+  assert.equal(legacy.value.error, 'This run is managed by its own page and cannot be filed yet');
+});
+
+test('chat turns share a thread', { timeout: 30000 }, async t => {
+  const { request } = await startServer(t);
+  const msg = [{ role: 'user', content: 'hi' }];
+  await request('/api/chat', { messages: msg, threadId: 'th-1' });
+  await request('/api/chat', { messages: msg, threadId: 'th-1' });
+  const bad = await request('/api/chat', { messages: msg, threadId: 'bad id!' });
+  const all = await request('/api/runs?threadId=th-1');
+  assert.equal(all.value.items.length, 2);
+  const collapsed = await request('/api/runs?threads=1');
+  assert.equal(collapsed.value.items.filter(x => x.threadId === 'th-1').length, 1);
+  const own = await request(`/api/runs?id=${encodeURIComponent(bad.value.runId)}`);
+  assert.equal(own.value.item.threadId, bad.value.runId);
+});
+
+test('filters apply before the limit', { timeout: 60000 }, async t => {
+  const { request } = await startServer(t);
+  const project = await request('/api/projects/create', { name: 'Old' });
+  const pid = project.value.item.id;
+  const msg = [{ role: 'user', content: 'hi' }];
+  const first = await request('/api/chat', { messages: msg });
+  for (let i = 0; i < 7; i++) await request('/api/chat', { messages: msg });
+  await request('/api/runs/update', { id: first.value.runId, projectId: pid });
+  const limited = await request(`/api/runs?projectId=${encodeURIComponent(pid)}&limit=5`);
+  assert.deepEqual(limited.value.items.map(x => x.id), [first.value.runId]);
+  assert.equal((await request('/api/runs?limit=5')).value.items.length, 5);
+});
+
+test('image runs share a thread', { timeout: 60000 }, async t => {
+  const comfy = http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (req.url.startsWith('/object_info/CheckpointLoaderSimple')) return res.end(JSON.stringify({ CheckpointLoaderSimple: { input: { required: { ckpt_name: [['sd15.safetensors']] } } } }));
+      if (req.url === '/prompt') return res.end(JSON.stringify({ prompt_id: 'p1' }));
+      if (req.url.startsWith('/history/')) return res.end(JSON.stringify({ p1: { status: { status_str: 'success' }, outputs: { 9: { images: [{ filename: 'a.png', subfolder: '', type: 'output' }] } } } }));
+      res.end('{}');
+    });
+  });
+  comfy.listen(0, '127.0.0.1');
+  await once(comfy, 'listening');
+  t.after(async () => { comfy.closeAllConnections(); await new Promise(resolve => comfy.close(resolve)); });
+  const { request } = await startServer(t, { COMFY_URL: `http://127.0.0.1:${comfy.address().port}` });
+  const a = await request('/api/images/generate', { prompt: 'a cat', threadId: 'img-th' });
+  assert.equal(a.response.status, 200, JSON.stringify(a.value));
+  assert.equal(a.value.threadId, 'img-th');
+  const b = await request('/api/images/generate', { prompt: 'a cat again', threadId: 'img-th' });
+  assert.equal(b.response.status, 200);
+  const imgs = await request('/api/runs?threadId=img-th&type=image');
+  assert.equal(imgs.value.items.length, 2);
+  assert.equal((await request('/api/runs?threads=1&type=image')).value.items.length, 1);
 });

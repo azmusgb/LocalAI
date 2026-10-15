@@ -179,6 +179,28 @@ await check('phone: the page strip switches pages in the section in one tap', as
   const h = await mobile.locator('#uxPageStrip button').first().evaluate(b => b.getBoundingClientRect().height);
   assert.ok(h >= 43.5 && h <= 52, `strip button height ${h}`);
 });
+await check('chat sends a valid threadId where crypto.randomUUID does not exist (plain http)', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1000, height: 800 } });
+  const pg = await ctx.newPage();
+  const errs = [];
+  pg.on('pageerror', e => errs.push(e.message));
+  await pg.addInitScript(() => { delete crypto.randomUUID; });
+  let body = null;
+  await pg.route('**/api/chat**', route => {
+    body = JSON.parse(route.request().postData() || '{}');
+    route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: meta\ndata: {"model":"m","sources":[],"runId":"r1"}\n\nevent: done\ndata: {"elapsedMs":1,"model":"m","sources":[],"runId":"r1"}\n\n' });
+  });
+  await pg.goto(base, { waitUntil: 'domcontentloaded' });
+  await pg.waitForFunction(() => typeof window.showView === 'function');
+  await pg.evaluate(() => window.showView('ask'));
+  await pg.fill('#chatInput', 'hello there');
+  await pg.click('#sendBtn');
+  for (let i = 0; i < 50 && !body; i++) await pg.waitForTimeout(100);
+  assert.ok(body, 'chat request was sent');
+  assert.match(body.threadId, /^t-[0-9a-f]{32}$/);
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});
 await mobile.close();
 await browser.close();
 

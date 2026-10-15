@@ -5,7 +5,7 @@ const state = {
   messages: JSON.parse(localStorage.getItem('localAiMessages') || '[]'),
   activity: [], library: [], workspace: { recent: [], pinned: [], activity: [], totals: {} },
   libraryKind: 'all', librarySearch: '', chatPhase: 'idle', streamController: null,
-  statusTimer: null, activityTimer: null, checkpointsLoaded: false, imageModels: null, lastLibrarySignature: ''
+  threadId: null, statusTimer: null, activityTimer: null, checkpointsLoaded: false, imageModels: null, lastLibrarySignature: ''
 };
 const icons = {chat:'✦',research:'⌕',image:'◇',system:'●',recovery:'↻',conversation:'✦',artifact:'□'};
 const phaseLabels = {idle:'Idle',routing:'Routing',sending:'Preparing',streaming:'Responding',searching:'Researching',generating:'Generating',done:'Complete',error:'Needs attention'};
@@ -111,9 +111,11 @@ function abortStream(reason='Cancelled'){
   if(state.streamController){state.streamController.abort();state.streamController=null;}
   state.messages.forEach(m=>m.streaming=false);renderMessages();setPhase('idle');if(reason)toast(reason);
 }
+function newThreadId(){const b=new Uint8Array(16);crypto.getRandomValues(b);return 't-'+[...b].map(x=>x.toString(16).padStart(2,'0')).join('')}
+state.threadId=newThreadId();
 function newChat(){
   if(state.messages.length && !window.confirm('Start a new conversation? The current completed turns remain available in Library, but this browser draft will be cleared.'))return;
-  abortStream('');state.messages=[];localStorage.removeItem('localAiMessages');renderMessages();$('chatMeta').textContent='';setPhase('idle');toast('New conversation');
+  abortStream('');state.threadId=newThreadId();state.messages=[];localStorage.removeItem('localAiMessages');renderMessages();$('chatMeta').textContent='';setPhase('idle');toast('New conversation');
 }
 $('newChatBtn').addEventListener('click',newChat);
 function openAsk(web=false){$('webSearch').checked=web;showView('ask');setTimeout(()=>$('chatInput').focus(),20);}
@@ -293,7 +295,8 @@ async function sendChat(){
     const payload={
       messages:state.messages.slice(0,-1).slice(-16).map(({role,content})=>({role,content})),
       webSearch:web,
-      model:state.model
+      model:state.model,
+      threadId:state.threadId
     };
     const r=await fetch('/api/chat/stream',{
       method:'POST',
@@ -391,7 +394,7 @@ async function runCommand(){
 $('commandGo').addEventListener('click',runCommand);$('commandInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();runCommand();}});document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'&&!$('cmdk')){e.preventDefault();showView('home');setTimeout(()=>$('commandInput').focus(),20);}});
 
 // ---- Images: engines (Fast / Quality / Best), shape, prompt help, upscale ----
-const imageUi={engine:null,aspect:'square',style:'none',count:1,lastBody:null,timer:null,edit:null,last:null};
+const imageUi={threadId:null,editThread:null,engine:null,aspect:'square',style:'none',count:1,lastBody:null,timer:null,edit:null,last:null};
 function imageEngineList(){return state.imageModels?.engines||[]}
 function fmtSec(s){return s>=90?`${Math.round(s/60)} min`:`${Math.round(s)} s`}
 function renderImageControls(){
@@ -413,22 +416,24 @@ const IMAGE_TYPICAL={fast:'About 15 s',quality:'About 1 min',best:'About 3 min'}
 async function loadCheckpoints(force){if(state.checkpointsLoaded&&!force)return;try{const r=await fetch('/api/images/models',{cache:'no-store'}),j=await r.json();if(!r.ok)throw new Error(j.error||'Unable to load image models');state.imageModels=j;state.checkpointsLoaded=true;renderImageControls();renderImageRecent()}catch(e){$('imageEngines').innerHTML=`<div class="meta">${esc(e.message)}</div>`;$('generateBtn').disabled=true}}
 function renderImageRecent(){const items=(state.library||[]).filter(x=>x.kind==='image'&&x.meta?.imageUrl).slice(0,8);$('imageRecent').innerHTML=items.length?items.map(x=>`<button type="button" class="img-thumb" data-recent="${esc(x.id)}" title="${esc(x.title||'')}"><img loading="lazy" alt="${esc(x.title||'Image')}" src="${esc(cacheBust(x.meta.imageUrl)||'')}"></button>`).join(''):'<div class="meta">Images you make are kept here and in the Library.</div>'}
 function showBatch(images){const box=$('imageBatch');if(!images||images.length<2){box.hidden=true;box.innerHTML='';return}box.hidden=false;box.innerHTML=images.map((im,i)=>`<button type="button" class="img-thumb${i===0?' active':''}" data-batch="${i}" aria-label="Image ${i+1} of ${images.length}, seed ${im.seed}"><img alt="" src="${esc(cacheBust(im.imageUrl)||'')}"></button>`).join('');box.onclick=e=>{const b=e.target.closest('[data-batch]');if(!b)return;const im=images[Number(b.dataset.batch)];qsa('#imageBatch .img-thumb').forEach(x=>x.classList.toggle('active',x===b));const src=cacheBust(im.imageUrl);$('generatedImage').src=src;$('imageOpen').href=src;imageUi.last={...imageUi.last,imageUrl:im.imageUrl,seed:im.seed};$('imageMeta').textContent=$('imageMeta').textContent.replace(/seed \d+/,`seed ${im.seed}`)}}
-function showImage(url,metaText,usedPrompt,original){imageUi.last={imageUrl:url};const src=cacheBust(url);if(!src)return;$('imageStage').innerHTML='';$('generatedImage').src=src;$('imageResult').style.display='block';$('imageMeta').textContent=metaText||'';$('imageOpen').href=src;$('imageActions').hidden=false;const showUsed=usedPrompt&&usedPrompt!==original;$('imageUsedPromptBox').hidden=!showUsed;$('imageUsedPrompt').textContent=showUsed?usedPrompt:''}
+function showImage(url,metaText,usedPrompt,original,threadId){imageUi.last={imageUrl:url};imageUi.threadId=threadId||null;const src=cacheBust(url);if(!src)return;$('imageStage').innerHTML='';$('generatedImage').src=src;$('imageResult').style.display='block';$('imageMeta').textContent=metaText||'';$('imageOpen').href=src;$('imageActions').hidden=false;const showUsed=usedPrompt&&usedPrompt!==original;$('imageUsedPromptBox').hidden=!showUsed;$('imageUsedPrompt').textContent=showUsed?usedPrompt:''}
 function imageRequestBody(){const engine=imageUi.engine,ckpt=$('checkpoint').value,num=id=>{const v=$(id).value.trim();return v===''?undefined:Number(v)};const edit=imageEditPayload();return {...edit,style:imageUi.style,count:imageUi.count,prompt:$('imagePrompt').value.trim(),engine:ckpt?undefined:engine,checkpoint:ckpt||undefined,aspect:imageUi.aspect,upscale:!$('imageUpscaleRow').hidden&&$('imageUpscale').checked,enhance:$('imageEnhance').checked,steps:num('steps'),cfg:num('cfg'),seed:num('imageSeed'),negativePrompt:$('negativePrompt').value.trim()||undefined}}
 async function generateImage(bodyOverride){
   const body=bodyOverride||imageRequestBody();if(!body.prompt){$('imagePrompt').focus();return}
+  // Another version and edits continue the source image's thread; a fresh prompt starts its own.
+  if(bodyOverride?body.threadId=imageUi.threadId||undefined:imageUi.edit?body.threadId=imageUi.editThread||undefined:delete body.threadId);
   imageUi.lastBody={...body,seed:undefined};$('generateBtn').disabled=true;$('imageAgain').disabled=true;setPhase('generating','Generating image…');$('imageResult').style.display='none';$('imageActions').hidden=true;$('imageMeta').textContent='';
   const eng=imageEngineList().find(e=>e.id===body.engine),started=Date.now(),est=eng?.estimateSec?eng.estimateSec*(body.count||1):null;showBatch(null);
   const tick=()=>{const s=(Date.now()-started)/1000;$('imageStage').innerHTML=`<div class="img-working"><div class="img-spinner" aria-hidden="true"></div><b>${body.enhance&&s<8?'Improving your prompt…':body.source?'Editing…':body.count>1?`Drawing ${body.count} images…`:'Drawing…'}</b><span>${fmtSec(s)}${est?` of about ${fmtSec(est)}`:''}</span></div>`};
   tick();clearInterval(imageUi.timer);imageUi.timer=setInterval(tick,1000);
   try{const r=await fetch('/api/images/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);
-    showImage(j.imageUrl,`${j.engineLabel||'Image'}${j.edited?' edit':''} · ${j.width}×${j.height} · ${fmtSec(j.elapsedMs/1000)}${(j.images||[]).length>1?` for ${j.images.length}`:''} · seed ${j.seed}${j.upscaled?' · upscaled':''}`,j.usedPrompt,j.prompt);showBatch(j.images);
+    showImage(j.imageUrl,`${j.engineLabel||'Image'}${j.edited?' edit':''} · ${j.width}×${j.height} · ${fmtSec(j.elapsedMs/1000)}${(j.images||[]).length>1?` for ${j.images.length}`:''} · seed ${j.seed}${j.upscaled?' · upscaled':''}`,j.usedPrompt,j.prompt,j.threadId);showBatch(j.images);
     setPhase('done','Image ready');await Promise.all([loadActivity(),loadLibrary(),loadWorkspace()]);renderImageRecent();loadCheckpoints(true);
   }catch(e){$('imageStage').innerHTML=`<div class="img-error"><b>That didn't work</b><span>${esc(e.message)}</span></div>`;setPhase('error','Image failed')}
   finally{clearInterval(imageUi.timer);$('generateBtn').disabled=false;$('imageAgain').disabled=false}}
 $('imageEngines').addEventListener('click',e=>{const b=e.target.closest('[data-engine]');if(b){imageUi.engine=b.dataset.engine;$('checkpoint').value='';renderImageControls()}});
 $('imageAspects').addEventListener('click',e=>{const b=e.target.closest('[data-aspect]');if(b){imageUi.aspect=b.dataset.aspect;renderImageControls()}});
-$('imageRecent').addEventListener('click',e=>{const b=e.target.closest('[data-recent]');const x=b&&(state.library||[]).find(i=>i.id===b.dataset.recent);if(x)showImage(x.meta.imageUrl,`${x.summary||''}${x.meta.seed!=null?` · seed ${x.meta.seed}`:''}`,x.data?.usedPrompt,x.data?.prompt)});
+$('imageRecent').addEventListener('click',e=>{const b=e.target.closest('[data-recent]');const x=b&&(state.library||[]).find(i=>i.id===b.dataset.recent);if(x)showImage(x.meta.imageUrl,`${x.summary||''}${x.meta.seed!=null?` · seed ${x.meta.seed}`:''}`,x.data?.usedPrompt,x.data?.prompt);if(x&&x.meta.runId){const u=x.meta.imageUrl;fetch('/api/runs?id='+encodeURIComponent(x.meta.runId)).then(r=>r.ok?r.json():null).then(j=>{if(j?.item&&imageUi.last?.imageUrl===u)imageUi.threadId=j.item.threadId||j.item.id}).catch(()=>{})}});
 $('generateBtn').addEventListener('click',()=>generateImage());$('imageAgain').addEventListener('click',()=>imageUi.lastBody&&generateImage(imageUi.lastBody));
 $('imagePrompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();generateImage()}});
 $('imageStyles').addEventListener('click',e=>{const b=e.target.closest('[data-style]');if(b){imageUi.style=b.dataset.style;renderImageControls()}});
@@ -455,8 +460,8 @@ function imageEditPayload(){if(!imageUi.edit)return {};const {w,h,marked}=imageU
 $('imageMaskClear').addEventListener('click',()=>{const c=$('imageMaskCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);if(imageUi.edit)imageUi.edit.marked=false;$('imageEditHint').textContent='Paint over the part to change. Leave it unmarked to redraw the whole image.'});
 $('imageStrength').addEventListener('input',()=>{$('imageStrengthOut').textContent=`${$('imageStrength').value}%`});
 $('imageEditCancel').addEventListener('click',stopImageEdit);
-$('imageEditThis').addEventListener('click',()=>{if(imageUi.last?.imageUrl)startImageEdit(cacheBust(imageUi.last.imageUrl))});
-$('imageUpload').addEventListener('change',()=>{const f=$('imageUpload').files?.[0];if(!f)return;if(f.size>20*1024*1024){$('imageModelInfo').textContent='Choose an image under 20 MB.';return}const rd=new FileReader();rd.onload=()=>startImageEdit(rd.result);rd.readAsDataURL(f)});
+$('imageEditThis').addEventListener('click',()=>{if(imageUi.last?.imageUrl){imageUi.editThread=imageUi.threadId;startImageEdit(cacheBust(imageUi.last.imageUrl))}});
+$('imageUpload').addEventListener('change',()=>{const f=$('imageUpload').files?.[0];if(!f)return;if(f.size>20*1024*1024){$('imageModelInfo').textContent='Choose an image under 20 MB.';return}const rd=new FileReader();rd.onload=()=>{imageUi.editThread=null;startImageEdit(rd.result)};rd.readAsDataURL(f)});
 $('clearImageBtn').addEventListener('click',()=>{stopImageEdit();showBatch(null);$('imagePrompt').value='';$('imageMeta').textContent='';$('imageResult').style.display='none';$('imageActions').hidden=true;$('imageUsedPromptBox').hidden=true;$('imageStage').innerHTML='<div class="img-placeholder">Your image appears here.</div>';setPhase('idle')});
 
 function renderActivity(){const user=state.activity;$('activityList').innerHTML=user.length?user.map(activityHtml).join(''):'<div class="empty">No activity yet.</div>';$('homeActivity').innerHTML=user.slice(0,5).map(activityHtml).join('')||'<div class="empty">No recent activity.</div>';qsa('[data-open-run]').forEach(b=>b.onclick=async()=>{if(!await window.LocalAIRuns?.open(b.dataset.openRun))toast('That run is no longer in the execution history')});}

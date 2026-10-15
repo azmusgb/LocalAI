@@ -36,7 +36,7 @@ const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 
 const crypto = require('crypto');
 const { Storage } = require('./storage');
-const { RunLedger } = require('./run-ledger');
+const { RunLedger, cleanId: cleanRunId } = require('./run-ledger');
 const { loadOllamaModelRuntime } = require('./model-runtime');
 const { createModelPulls } = require('./model-pulls');
 const imageEngines = require('./image-engines');
@@ -1082,10 +1082,11 @@ async function apiGenerateImage(req, res) {
 
     execution = runLedger.create({
       type: 'image',
+      threadId: body.threadId,
       title: titleFromText(original, editing ? 'Image edit' : 'Image generation'),
       input: { prompt: original.slice(0, 2000), engine: engine.id, checkpoint, family: engine.family, width, height, steps, cfg, style, count, upscale: !!upscaler, enhance: body.enhance === true, edit: editing ? { masked: !!body.mask, strength } : null },
       // An edit's source image isn't kept with the run, so Retry repeats it as a new image.
-      retryRequest: { path: '/api/images/generate', body: { prompt: original, engine: engine.id, checkpoint: engine.id === 'custom' ? checkpoint : undefined, negativePrompt: body.negativePrompt, aspect: body.aspect, width, height, steps, cfg, style, count, upscale: !!upscaler, enhance: body.enhance === true } }
+      retryRequest: { path: '/api/images/generate', body: { prompt: original, engine: engine.id, checkpoint: engine.id === 'custom' ? checkpoint : undefined, negativePrompt: body.negativePrompt, aspect: body.aspect, width, height, steps, cfg, style, count, upscale: !!upscaler, enhance: body.enhance === true, threadId: cleanRunId(body.threadId) || undefined } }
     });
     runLedger.start(execution.id, editing ? 'Image edit started' : 'Image generation started');
 
@@ -1136,7 +1137,7 @@ async function apiGenerateImage(req, res) {
     });
     if (!upscaler && body.enhance !== true && !editing && count === 1) IMAGE_ESTIMATES[engine.id] = Math.round(elapsedMs / 1000);
 
-    json(res, 200, { promptId: results[0].promptId, ...common, imageUrl: images[0].imageUrl, seed: images[0].seed, images, familyLabel: engine.label, prompt: original, usedPrompt: styled.prompt, runId: execution.id });
+    json(res, 200, { promptId: results[0].promptId, ...common, imageUrl: images[0].imageUrl, seed: images[0].seed, images, familyLabel: engine.label, prompt: original, usedPrompt: styled.prompt, runId: execution.id, threadId: execution.threadId });
   } catch (e) {
     if (execution) runLedger.fail(execution.id, e);
     if (e.status) return json(res, e.status, { error: e.message });
@@ -1280,8 +1281,8 @@ function lastUserRunMessage(body){
 function createChatExecution(body,streaming){
   const messages=sanitizeMessages(body?.messages);const prompt=[...messages].reverse().find(m=>m.role==='user')?.content||'Chat';
   const model=typeof body?.model==='string'&&body.model.trim()?body.model.trim():MODEL;
-  const retryBody={messages,model,webSearch:body?.webSearch===true};
-  return runLedger.create({type:body?.webSearch===true?'research':'chat',title:titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true}});
+  const retryBody={messages,model,webSearch:body?.webSearch===true,threadId:cleanRunId(body?.threadId)||undefined};
+  return runLedger.create({type:body?.webSearch===true?'research':'chat',title:titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true}});
 }
 function normalizedExecutionStatus(value){
   const s=String(value||'').toLowerCase();
@@ -1383,9 +1384,13 @@ function legacyUnifiedRuns() {
   }
   return items;
 }
-function unifiedRunItems(limit=120){
-  const native=runLedger.list({limit:500});const legacy=legacyUnifiedRuns();
-  return [...native,...legacy].sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))).slice(0,Math.max(1,Math.min(500,Number(limit)||120)));
+function unifiedRunItems(limit=120,filter=null){
+  const native=runLedger.list({limit:500,projectId:filter?.projectId,threadId:filter?.threadId});const legacy=legacyUnifiedRuns();
+  let all=[...native,...legacy];
+  if(filter?.projectId)all=all.filter(x=>x.projectId===filter.projectId);
+  if(filter?.threadId)all=all.filter(x=>(x.threadId||x.id)===filter.threadId);
+  if(filter?.threads){const seen=new Set();all=all.sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))).filter(x=>{const k=x.threadId||x.id;return seen.has(k)?false:(seen.add(k),true)})}
+  return all.sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))).slice(0,Math.max(1,Math.min(500,Number(limit)||120)));
 }
 function retryRequestForRunId(id){
   const native=runLedger.retryRequest(id);if(native)return native;
@@ -1394,10 +1399,29 @@ function retryRequestForRunId(id){
   return null;
 }
 async function apiRuns(req,res,urlObj){
-  try{const id=String(urlObj.searchParams.get('id')||'');let items=unifiedRunItems(urlObj.searchParams.get('limit')||120);if(id){const item=items.find(x=>x.id===id)||runLedger.get(id);if(!item)return json(res,404,{error:'Run not found'});return json(res,200,{item})}const status=String(urlObj.searchParams.get('status')||''),type=String(urlObj.searchParams.get('type')||'');if(status)items=items.filter(x=>x.status===status);if(type)items=items.filter(x=>x.type===type);json(res,200,{items,summary:{total:items.length,active:items.filter(x=>['queued','running','streaming','awaiting_approval'].includes(x.status)).length,failed:items.filter(x=>x.status==='failed').length,awaitingApproval:items.filter(x=>x.status==='awaiting_approval').length}})}catch(e){storageError(res,e,500)}
+  try{const id=String(urlObj.searchParams.get('id')||'');const pid=String(urlObj.searchParams.get('projectId')||''),tid=String(urlObj.searchParams.get('threadId')||''),threads=urlObj.searchParams.get('threads')==='1';let items=unifiedRunItems(urlObj.searchParams.get('limit')||120,{projectId:pid,threadId:tid,threads});if(id){const item=items.find(x=>x.id===id)||runLedger.get(id);if(!item)return json(res,404,{error:'Run not found'});return json(res,200,{item})}const status=String(urlObj.searchParams.get('status')||''),type=String(urlObj.searchParams.get('type')||'');if(status)items=items.filter(x=>x.status===status);if(type)items=items.filter(x=>x.type===type);json(res,200,{items,summary:{total:items.length,active:items.filter(x=>['queued','running','streaming','awaiting_approval'].includes(x.status)).length,failed:items.filter(x=>x.status==='failed').length,awaitingApproval:items.filter(x=>x.status==='awaiting_approval').length}})}catch(e){storageError(res,e,500)}
 }
 async function apiRunCancel(req,res){
   try{const b=await readBody(req),id=String(b.id||''),run=runLedger.get(id);if(!run)return json(res,404,{error:'Run not found or is managed by a legacy executor'});if(!run.cancellable)return json(res,409,{error:'This run is not cancellable'});if(!['queued','running','streaming','awaiting_approval'].includes(run.status))return json(res,409,{error:`Run cannot be cancelled from status ${run.status}`});runLedger.cancel(id,'Cancelled by user');const controller=activeRunControllers.get(id);if(controller&&!controller.signal.aborted)controller.abort();recordActivity('run','Run cancelled',run.title,{runId:id,type:run.type});json(res,200,{item:runLedger.get(id)})}catch(e){storageError(res,e,400)}
+}
+async function apiRunUpdate(req, res) {
+  try {
+    const b = await readBody(req), id = String(b.id || '');
+    if (!cleanRunId(id) && !id.startsWith('legacy-')) return json(res, 400, { error: 'Invalid run id' });
+    if (id.startsWith('legacy-')) return json(res, 409, { error: 'This run is managed by its own page and cannot be filed yet' });
+    const patch = {};
+    if (b.pinned !== undefined) { if (typeof b.pinned !== 'boolean') return json(res, 400, { error: 'pinned must be true or false' }); patch.pinned = b.pinned; }
+    if (b.projectId !== undefined) {
+      if (b.projectId !== null) {
+        if (!cleanRunId(b.projectId)) return json(res, 400, { error: 'Invalid project id' });
+        if (!projectStore().some(p => p.id === b.projectId)) return json(res, 404, { error: 'Project not found' });
+      }
+      patch.projectId = b.projectId;
+    }
+    const item = runLedger.get(id) && runLedger.file(id, patch);
+    if (!item) return json(res, 404, { error: 'Run not found' });
+    json(res, 200, { item });
+  } catch (e) { storageError(res, e, 400); }
 }
 async function apiRunRetry(req, res) {
   try {
@@ -2747,6 +2771,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/brief') return await apiMorningBrief(req,res);
     if (req.method === 'GET' && p === '/api/runs') return await apiRuns(req,res,urlObj);
     if (req.method === 'POST' && p === '/api/runs/cancel') return await apiRunCancel(req,res);
+    if (req.method === 'POST' && p === '/api/runs/update') return await apiRunUpdate(req,res);
     if (req.method === 'POST' && p === '/api/runs/retry') return await apiRunRetry(req,res);
     if (req.method === 'GET' && p === '/api/engineering/runs') return await apiEngineeringRuns(req,res);
     if (req.method === 'POST' && p === '/api/engineering/run') return await apiEngineeringRun(req,res);

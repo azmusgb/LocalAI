@@ -229,4 +229,4 @@ class RunLedger {
   }
 }
 
-module.exports = { RunLedger, RUN_LEDGER_KEY, RUN_KEY_PREFIX, TERMINAL, STATUSES, publicRun, isKept };
+module.exports = { RunLedger, RUN_LEDGER_KEY, RUN_KEY_PREFIX, TERMINAL, STATUSES, publicRun, isKept, cleanId };
