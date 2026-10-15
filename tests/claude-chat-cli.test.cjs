@@ -6,15 +6,17 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
+const https = require('node:https');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
+const { makeTlsFixture, OPENSSL_MISSING } = require('./tls-fixture.cjs');
 
 const CLI = path.resolve(__dirname, '../host/claude-chat/localai-chat');
-let server, base, home, calls = [];
+let server, base, home, handler, calls = [];
 
 before(async () => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-cli-'));
-  server = http.createServer((req, res) => {
+  handler = (req, res) => {
     let raw = '';
     req.on('data', c => raw += c);
     req.on('end', () => {
@@ -26,7 +28,8 @@ before(async () => {
       if (req.url === '/api/claude/chat/devices/revoke') return send(JSON.parse(raw).id === 'dev-abcdef012345' ? 200 : 404, { ok: true });
       send(404, {});
     });
-  });
+  };
+  server = http.createServer(handler);
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   base = `http://127.0.0.1:${server.address().port}`;
@@ -82,4 +85,37 @@ test('status reports reachability, key acceptance, and only live bridges; never 
   assert.match(s.out, /Key:\s+rejected/);
   s = await run(['status'], { LOCALAI_URL: 'http://127.0.0.1:9' });
   assert.match(s.out, /Relay:\s+unreachable/);
+});
+
+test('HTTPS from config.json: works with the configured CA, and says clearly when the certificate is not trusted', async (t) => {
+  const tls = makeTlsFixture();
+  if (!tls) return t.skip(OPENSSL_MISSING);
+  const secure = https.createServer({ key: tls.key, cert: tls.cert }, handler);
+  secure.listen(0, '127.0.0.1');
+  await once(secure, 'listening');
+  const url = `https://127.0.0.1:${secure.address().port}`;
+  const config = path.join(home, 'config.json');
+  t.after(() => { secure.close(); fs.rmSync(config, { force: true }); tls.cleanup(); });
+  writeKey('k1');
+  const noEnv = { LOCALAI_URL: '', NODE_EXTRA_CA_CERTS: '' };
+
+  fs.writeFileSync(config, JSON.stringify({ url, ca: tls.caPath }));
+  let s = await run(['status'], noEnv);
+  assert.match(s.out, new RegExp(`Relay:\\s+reachable \\(${url.replace(/[.]/g, '\\.')}\\)`));
+  assert.match(s.out, /Key:\s+accepted/);
+  assert.match(s.out, new RegExp(`CA:\\s+${tls.caPath.replace(/[.]/g, '\\.')}`));
+  calls = [];
+  const p = await run(['pair', 'GOOD22'], noEnv);
+  assert.equal(p.code, 0, p.err);
+  assert.equal(calls[0].url, '/api/claude/chat/pair/approve');
+
+  fs.writeFileSync(config, JSON.stringify({ url, ca: tls.otherCaPath }));
+  calls = [];
+  s = await run(['status'], noEnv);
+  assert.match(s.out, /Relay:\s+certificate not trusted/);
+  assert.match(s.out, /install\.sh/);
+  const bad = await run(['devices'], noEnv);
+  assert.notEqual(bad.code, 0);
+  assert.match(bad.err, /tls \S+: the certificate of https:\/\/127\.0\.0\.1:\d+ is not trusted \(CA: .*other\.crt\)/);
+  assert.equal(calls.length, 0, 'the key was never sent');
 });

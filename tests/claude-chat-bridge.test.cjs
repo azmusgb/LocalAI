@@ -2,12 +2,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const https = require('node:https');
 const net = require('node:net');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const crypto = require('node:crypto');
+const { makeTlsFixture, OPENSSL_MISSING } = require('./tls-fixture.cjs');
 
 const BRIDGE = path.join(__dirname, '..', 'host', 'claude-chat', 'bridge.mjs');
 const SID = 'sess-abc123';
@@ -24,7 +26,7 @@ async function until(fn, what, ms = 8000) {
   }
 }
 
-async function fakeRelay(t) {
+async function fakeRelay(t, { tls = null } = {}) {
   // ackStatus: HTTP status for ack calls; ackOmit: ids the fake leaves out of `acked` (as if their lease had expired).
   const state = { requests: [], queue: [], failures: 0, announceFailures: 0, inbox401: false, ackStatus: 200, ackOmit: new Set() };
   const handler = (req, res) => {
@@ -65,10 +67,12 @@ async function fakeRelay(t) {
   };
   let server = null;
   state.start = async (port = 0) => {
-    server = http.createServer(handler);
+    server = tls ? https.createServer({ key: tls.key, cert: tls.cert }, handler) : http.createServer(handler);
+    state.tlsFailures = 0;
+    server.on('tlsClientError', () => { state.tlsFailures++; });
     await new Promise((r) => server.listen(port, '127.0.0.1', r));
     state.port = server.address().port;
-    state.url = `http://127.0.0.1:${state.port}`;
+    state.url = `${tls ? 'https' : 'http'}://127.0.0.1:${state.port}`;
   };
   state.stop = async () => {
     if (!server) return;
@@ -408,4 +412,66 @@ test('an id missing from "acked" is not injected; the acked ones are', async (t)
   assert.ok(log(home).includes('acked 2/3'));
   assert.ok(log(home).includes('ack missing sess:2'));
   assert.ok(!log(home).includes('ack missing sess:1'));
+});
+
+// ---- HTTPS: the relay behind Caddy, trusted through the CA the installer fetched -------------------------------------
+const tlsFixture = makeTlsFixture();
+const tlsSkip = tlsFixture ? false : OPENSSL_MISSING;
+test.after(() => tlsFixture?.cleanup());
+const writeConfig = (home, config) => fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(config));
+
+test('HTTPS: config.json url + CA -> the bridge verifies the relay with that CA and works', { skip: tlsSkip }, async (t) => {
+  const relay = await fakeRelay(t, { tls: tlsFixture });
+  const inbox = await fakeInbox(t);
+  const home = makeHome(t);
+  writeConfig(home, { url: relay.url, ca: tlsFixture.caPath });
+  relay.queue.push({ id: 21, seq: 1, text: 'over tls', deviceName: 'Phone' });
+  // No LOCALAI_URL: the URL comes from config.json.
+  startBridge(t, { relay, sock: inbox.sock, home, env: { LOCALAI_URL: undefined, NODE_EXTRA_CA_CERTS: undefined } });
+  await until(() => inbox.conns.length >= 1 && inbox.conns[0].closed, 'injection over https');
+  assert.equal(inbox.lines(0)[1].message.content, '[LocalAI web · Phone] over tls');
+  const announce = relay.requests.find((r) => r.url === '/api/claude/chat/announce');
+  assert.equal(announce.headers['x-localai-mac-key'], 'the-mac-key');
+  assert.equal(relay.tlsFailures, 0);
+});
+
+test('HTTPS: no CA configured -> the handshake fails, nothing is sent, and the log says why', { skip: tlsSkip }, async (t) => {
+  const relay = await fakeRelay(t, { tls: tlsFixture });
+  const inbox = await fakeInbox(t);
+  const home = makeHome(t);
+  writeConfig(home, { url: relay.url });
+  startBridge(t, { relay, sock: inbox.sock, home, env: { LOCALAI_URL: undefined, NODE_EXTRA_CA_CERTS: undefined } });
+  await until(() => /relay error tls \S+: the certificate of https:\/\/127\.0\.0\.1:\d+ is not trusted \(CA: none configured\)/.test(log(home)), 'tls error logged');
+  assert.equal(relay.requests.length, 0, 'the Mac key never left over an unverified connection');
+  assert.match(log(home), /install\.sh/);
+});
+
+test('HTTPS: a different CA is refused (mismatched certificate)', { skip: tlsSkip }, async (t) => {
+  const relay = await fakeRelay(t, { tls: tlsFixture });
+  const inbox = await fakeInbox(t);
+  const home = makeHome(t);
+  writeConfig(home, { url: relay.url, ca: tlsFixture.otherCaPath });
+  startBridge(t, { relay, sock: inbox.sock, home, env: { LOCALAI_URL: undefined } });
+  await until(() => log(home).includes(`is not trusted (CA: ${tlsFixture.otherCaPath})`), 'tls error logged');
+  assert.equal(relay.requests.length, 0);
+});
+
+test('HTTPS: a configured CA file that is missing fails clearly instead of falling back to system roots', { skip: tlsSkip }, async (t) => {
+  const relay = await fakeRelay(t, { tls: tlsFixture });
+  const inbox = await fakeInbox(t);
+  const home = makeHome(t);
+  const missing = path.join(home, 'nope.crt');
+  writeConfig(home, { url: relay.url, ca: missing });
+  startBridge(t, { relay, sock: inbox.sock, home, env: { LOCALAI_URL: undefined } });
+  await until(() => log(home).includes(`relay error CA file unreadable: ${missing}`), 'ca error logged');
+  assert.equal(relay.requests.length, 0);
+});
+
+test('LOCALAI_URL overrides config.json', async (t) => {
+  const relay = await fakeRelay(t);
+  const inbox = await fakeInbox(t);
+  const home = makeHome(t);
+  writeConfig(home, { url: 'https://127.0.0.1:9', ca: path.join(home, 'nope.crt') });
+  startBridge(t, { relay, sock: inbox.sock, home });
+  await until(() => relay.requests.some((r) => r.url === '/api/claude/chat/announce'), 'announce via the env URL');
 });

@@ -7,10 +7,14 @@ DEST="$HOME/.claude/localai-chat"
 KEY="$DEST/mac.key"
 SETTINGS="$HOME/.claude/settings.json"
 HOOK_CMD='/opt/homebrew/bin/python3 -I ~/.claude/localai-chat/hook.py'
+CA="$DEST/localai-ca.crt"
+CONFIG="$DEST/config.json"
+HTTP_URL='http://10.0.0.21:3080'
+HTTPS_URL="${LOCALAI_HTTPS_URL:-https://10.0.0.21}"
 
 # 1. files
 mkdir -p "$DEST/run"
-for f in bridge.mjs cli.mjs hook.py localai-chat; do cp "$SRC/$f" "$DEST/$f"; done
+for f in bridge.mjs cli.mjs relay.mjs hook.py localai-chat; do cp "$SRC/$f" "$DEST/$f"; done
 chmod +x "$DEST/localai-chat"
 if [ -d "$HOME/.local/bin" ]; then
   ln -sf "$DEST/localai-chat" "$HOME/.local/bin/localai-chat"
@@ -36,7 +40,39 @@ if ! printf '%s' "$hash" | ssh windows-ai docker exec -i local-ai-appliance tee 
   exit 1
 fi
 
-# 4. hooks in ~/.claude/settings.json
+# 4. relay URL: HTTPS, verified with the LocalAI CA, when that works. The CA comes over ssh (authenticated), never
+# over plain HTTP; Windows `type` prints it with CRLF line endings. LOCALAI_URL in the environment still overrides
+# config.json at run time.
+url="$HTTP_URL"
+ca_ok=0
+ca_tmp="$(mktemp "$DEST/localai-ca.XXXXXX")"
+if ssh windows-ai type 'C:\LocalAI\https\localai-ca.crt' </dev/null 2>/dev/null | tr -d '\r' > "$ca_tmp" \
+   && grep -q -- '-----BEGIN CERTIFICATE-----' "$ca_tmp" \
+   && openssl x509 -noout -in "$ca_tmp" >/dev/null 2>&1; then
+  chmod 644 "$ca_tmp"
+  mv "$ca_tmp" "$CA"
+  ca_ok=1
+  if curl -fsS --max-time 5 --noproxy '*' --cacert "$CA" -o /dev/null "$HTTPS_URL/healthz" 2>/dev/null; then
+    url="$HTTPS_URL"
+  else
+    echo "install.sh: warning: HTTPS at $HTTPS_URL is not reachable or not trusted with the LocalAI CA; using plain HTTP ($HTTP_URL), so the Mac key crosses the network unencrypted. Check the appliance's HTTPS (Caddy) and re-run install.sh." >&2
+  fi
+else
+  rm -f "$ca_tmp" "$CA"
+  echo "install.sh: warning: could not get a valid LocalAI CA certificate over ssh (C:\\LocalAI\\https\\localai-ca.crt on the host); using plain HTTP ($HTTP_URL), so the Mac key crosses the network unencrypted. Run deploy/Install-LocalAI-HTTPS.ps1 on the host, then re-run install.sh." >&2
+fi
+CONFIG="$CONFIG" URL="$url" CA="$CA" CA_OK="$ca_ok" python3 -I - <<'PY'
+import json, os
+config = {'url': os.environ['URL']}
+if os.environ['CA_OK'] == '1':
+    config['ca'] = os.environ['CA']
+tmp = os.environ['CONFIG'] + '.tmp'
+with open(tmp, 'w', encoding='utf-8') as f:
+    f.write(json.dumps(config, indent=2) + '\n')
+os.replace(tmp, os.environ['CONFIG'])
+PY
+
+# 5. hooks in ~/.claude/settings.json
 mkdir -p "$HOME/.claude"
 [ -f "$SETTINGS" ] || printf '{}\n' > "$SETTINGS"
 backup="$SETTINGS.bak-localai-chat-$(date +%Y%m%d-%H%M%S)"
@@ -61,17 +97,19 @@ open(tmp, 'w', encoding='utf-8').write(out)
 PY
 mv "$tmp" "$SETTINGS"
 
-# 5. shell function
+# 6. shell function
 ZSHRC="$HOME/.zshrc"
 touch "$ZSHRC"
 if ! grep -qF '# >>> localai-chat >>>' "$ZSHRC"; then
   printf '\n# >>> localai-chat >>>\nclaude-chat() { LOCALAI_CHAT=1 claude "$@"; }\n# <<< localai-chat <<<\n' >> "$ZSHRC"
 fi
 
-# 6. next steps
+# 7. next steps
+if [ "$url" = "$HTTP_URL" ]; then relay_note=" (plain HTTP)"; else relay_note=" (HTTPS, verified with the LocalAI CA)"; fi
 cat <<MSG
 
 LocalAI Claude chat installed.
+Relay: $url$relay_note
 Next steps:
   source ~/.zshrc
   localai-chat status

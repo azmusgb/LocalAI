@@ -3,22 +3,67 @@
 
 Does nothing unless LOCALAI_CHAT=1. SessionStart starts the bridge; UserPromptSubmit and Stop mirror
 the conversation to the LocalAI relay (Stop uses last_assistant_message, else the transcript). Never fails the hook: every error is swallowed.
+The relay URL is LOCALAI_URL, else config.json "url" (written by install.sh), else plain HTTP on 3080. HTTPS is verified
+against config.json "ca" (the LocalAI CA); verification is never turned off, and certificate problems go to hook.log.
 """
 import json
 import os
 import shlex
+import ssl
 import subprocess
 import sys
+import time
 import urllib.request
 
 WEB_PREFIX = '[LocalAI web · '
 MAX_TEXT = 50000
-# Ignore HTTP(S)_PROXY and system proxy settings: the Mac key must only ever go to the appliance itself.
-OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+DEFAULT_URL = 'http://10.0.0.21:3080'
+INSTALL_HINT = 're-run host/claude-chat/install.sh'
+
+
+class CAUnreadable(Exception):
+    pass
 
 
 def chat_home():
     return os.environ.get('LOCALAI_CHAT_HOME') or os.path.expanduser('~/.claude/localai-chat')
+
+
+def log(msg):
+    try:
+        with open(os.path.join(chat_home(), 'hook.log'), 'a', encoding='utf-8') as f:
+            f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {msg}\n")
+    except OSError:
+        pass
+
+
+def load_config():
+    """(base URL, CA path or '') from LOCALAI_URL / config.json."""
+    try:
+        with open(os.path.join(chat_home(), 'config.json'), encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    base = str(os.environ.get('LOCALAI_URL') or data.get('url') or DEFAULT_URL).rstrip('/')
+    ca = data.get('ca') if isinstance(data.get('ca'), str) else ''
+    return base, (os.path.join(chat_home(), os.path.expanduser(ca)) if ca else '')
+
+
+def opener_for(base, ca):
+    # Ignore HTTP(S)_PROXY and system proxy settings: the Mac key must only ever go to the appliance itself.
+    handlers = [urllib.request.ProxyHandler({})]
+    if base.startswith('https:'):
+        if ca:
+            try:
+                context = ssl.create_default_context(cafile=ca)
+            except (OSError, ssl.SSLError) as e:
+                raise CAUnreadable(f'CA file unreadable: {ca} ({e}); {INSTALL_HINT}')
+        else:
+            context = ssl.create_default_context()
+        handlers.append(urllib.request.HTTPSHandler(context=context))
+    return urllib.request.build_opener(*handlers)
 
 
 def read_key():
@@ -33,12 +78,23 @@ def post(session_id, role, source, text):
     key = read_key()
     if not key or not text:
         return
-    url = os.environ.get('LOCALAI_URL', 'http://10.0.0.21:3080').rstrip('/') + '/api/claude/chat/mirror'
+    base, ca = load_config()
     body = {'sessionId': session_id, 'role': role, 'source': source, 'text': text[:MAX_TEXT]}
     req = urllib.request.Request(
-        url, data=json.dumps(body).encode(), method='POST',
+        base + '/api/claude/chat/mirror', data=json.dumps(body).encode(), method='POST',
         headers={'Content-Type': 'application/json', 'X-LocalAI-Mac-Key': key})
-    OPENER.open(req, timeout=3).read()
+    try:
+        opener_for(base, ca).open(req, timeout=3).read()
+    except CAUnreadable as e:
+        log(str(e))
+    except Exception as e:
+        reason = getattr(e, 'reason', e)
+        if not isinstance(reason, ssl.SSLError):
+            raise
+        code = getattr(reason, 'reason', None) or type(reason).__name__
+        detail = getattr(reason, 'verify_message', None)
+        log(f"tls {code}{f' ({detail})' if detail else ''}: the certificate of {base} is not trusted "
+            f"(CA: {ca or 'none configured'}); {INSTALL_HINT}")
 
 
 def start_bridge(session_id, cwd):
