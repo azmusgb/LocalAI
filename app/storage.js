@@ -38,9 +38,16 @@ const CHILDREN = Object.freeze({
   missions: { workers: 'mission_steps', timeline: 'mission_events' }
 });
 const SCHEMA_VERSION = 1;
+// The run ledger (app/run-ledger.js) keeps one settings row per run under this prefix; JSON exports carry
+// them in RUNS_FILENAME and an import restores them as the legacy single-row ledger, which it migrates.
+const RUN_KEY_PREFIX = 'unified-run/';
+const RUN_LEDGER_KEY = 'unified-runs-v1';
+const RUNS_FILENAME = 'unified-runs.json';
 const IMPORT_KEY = 'legacy-json-import-v1';
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const encode = value => JSON.stringify(value);
+// Smallest string greater than every string starting with `prefix` (for index range scans).
+const prefixEnd = prefix => prefix.slice(0, -1) + String.fromCharCode(prefix.charCodeAt(prefix.length - 1) + 1);
 
 function validateRecord(collection, record) {
   if (!isObject(record) || typeof record.id !== 'string' || !record.id.trim()) throw new TypeError(`${collection}: every record must have a nonempty string id`);
@@ -69,6 +76,15 @@ function readLegacySources(dataDir) {
       ids.add(item.id);
     }
     sources.push({ collection, filename, raw, items });
+  }
+  const runsPath = path.join(dataDir, RUNS_FILENAME);
+  if (fs.existsSync(runsPath)) {
+    const raw = fs.readFileSync(runsPath);
+    let value;
+    try { value = JSON.parse(raw.toString('utf8')); }
+    catch (cause) { throw new Error(`Cannot import ${RUNS_FILENAME}: invalid JSON; original file preserved.`, { cause }); }
+    if (!Array.isArray(value)) throw new Error(`Cannot import ${RUNS_FILENAME}: expected an array`);
+    sources.push({ filename: RUNS_FILENAME, raw, value, setting: RUN_LEDGER_KEY });
   }
   const statusPath = path.join(dataDir, 'status-state.json');
   if (fs.existsSync(statusPath)) {
@@ -124,6 +140,15 @@ class Storage {
   table(collection) {
     if (!Object.hasOwn(COLLECTIONS, collection)) throw new TypeError(`Unknown state collection: ${collection}`);
     return COLLECTIONS[collection][0];
+  }
+
+  readTransaction(fn) {
+    if (this.depth) return fn();
+    this.db.exec('BEGIN');
+    this.depth++;
+    try { const result = fn(); this.db.exec('COMMIT'); return result; }
+    catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    finally { this.depth--; }
   }
 
   transaction(fn) {
@@ -249,12 +274,29 @@ class Storage {
     }
     // Link previously imported orphans when their project is created later.
     if (collection === 'projects') for (const [other, [otherTable]] of Object.entries(COLLECTIONS)) {
-      if (other !== 'projects') this.db.prepare(`UPDATE ${otherTable} SET project_id=? WHERE project_id IS NULL AND COALESCE(json_extract(payload,'$.projectId'),json_extract(payload,'$.meta.projectId'))=?`).run(value.id, value.id);
+      // project_ref holds the same projectId/meta.projectId put() computed, and is indexed.
+      if (other !== 'projects') this.db.prepare(`UPDATE ${otherTable} SET project_id=? WHERE project_ref=? AND project_id IS NULL`).run(value.id, value.id);
     }
     return value;
   }
 
   upsert(collection, record) { return this.transaction(() => this.put(collection, record)); }
+
+  // Add a new record at the front without reading or rewriting the rest of the collection.
+  prepend(collection, record, keep) {
+    return this.transaction(() => {
+      const value = this.put(collection, record);
+      if (keep) this.prune(collection, keep);
+      return value;
+    });
+  }
+
+  // Keep the newest `keep` records (front of the ordering); child rows go with their parents.
+  prune(collection, keep) {
+    if (!Number.isSafeInteger(keep) || keep < 1) throw new TypeError('keep must be a positive integer');
+    const table = this.table(collection);
+    return this.transaction(() => this.db.prepare(`DELETE FROM ${table} WHERE id IN (SELECT id FROM ${table} ORDER BY position,id LIMIT -1 OFFSET ?)`).run(keep).changes);
+  }
 
   save(collection, items, previous = items) {
     const snapshot = this.pendingSnapshots.get(previous) || this.snapshots.get(previous);
@@ -294,6 +336,29 @@ class Storage {
     if (this.readOnly) throw new Error('Read-only storage cannot write settings');
     this.db.prepare('INSERT INTO settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET payload=excluded.payload').run(key, encode(value));
   }
+  deleteSetting(key) {
+    if (this.readOnly) throw new Error('Read-only storage cannot write settings');
+    this.db.prepare('DELETE FROM settings WHERE key=?').run(key);
+  }
+
+  // Settings whose keys share `prefix`, newest key first, through the primary-key index.
+  // `where` filters on top-level JSON fields, e.g. { status: 'running' }.
+  listSettings(prefix, { limit, where = {} } = {}) {
+    const conditions = ['key >= ?', 'key < ?'], params = [prefix, prefixEnd(prefix)];
+    for (const [field, value] of Object.entries(where)) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(field)) throw new TypeError(`Invalid setting field: ${field}`);
+      conditions.push(`json_extract(payload,'$.${field}')=?`); params.push(String(value));
+    }
+    return this.db.prepare(`SELECT payload FROM settings WHERE ${conditions.join(' AND ')} ORDER BY key DESC LIMIT ?`)
+      .all(...params, limit ?? -1).map(row => JSON.parse(row.payload));
+  }
+
+  // Keep the `keep` highest keys under `prefix`.
+  pruneSettings(prefix, keep) {
+    if (this.readOnly) throw new Error('Read-only storage cannot write settings');
+    return this.db.prepare(`DELETE FROM settings WHERE key >= ? AND key < ? AND key NOT IN
+      (SELECT key FROM settings WHERE key >= ? AND key < ? ORDER BY key DESC LIMIT ?)`).run(prefix, prefixEnd(prefix), prefix, prefixEnd(prefix), keep).changes;
+  }
 
   importLegacy() {
     this.transaction(() => {
@@ -309,7 +374,7 @@ class Storage {
           if (this.get(source.collection, item.id)) throw new Error(`Import would overwrite existing ${source.collection}/${item.id}`);
           this.put(source.collection, item, index);
         });
-        else this.writeSetting('status', source.value);
+        else this.writeSetting(source.setting || 'status', source.value);
         this.db.prepare('INSERT INTO legacy_imports VALUES (?,?,?,?,?)').run(source.filename,
           createHash('sha256').update(source.raw).digest('hex'), source.items?.length ?? 1,
           new Date().toISOString(), backupPath);
@@ -347,11 +412,13 @@ class Storage {
     const target = path.resolve(destination);
     if (target === this.dataDir || fs.existsSync(target)) throw new Error('Export destination must be a new directory outside the active data root');
     fs.mkdirSync(target, { recursive: true });
-    this.transaction(() => {
+    // A deferred read transaction gives one consistent snapshot without blocking the app's writers.
+    this.readTransaction(() => {
       for (const [collection, [, filename]] of Object.entries(COLLECTIONS)) if (filename) {
         fs.writeFileSync(path.join(target, filename), JSON.stringify(this.list(collection), null, 2), { flag: 'wx' });
       }
       fs.writeFileSync(path.join(target, 'status-state.json'), JSON.stringify(this.readSetting('status'), null, 2), { flag: 'wx' });
+      fs.writeFileSync(path.join(target, RUNS_FILENAME), JSON.stringify(this.listSettings(RUN_KEY_PREFIX), null, 2), { flag: 'wx' });
     });
     return target;
   }

@@ -226,3 +226,19 @@ test('SQLite preflight includes current WAL commits and does not use stale JSON 
   writer.upsert('projects', { id: 'after', name: 'Writer remains usable' });
   assert.equal(writer.count('projects'), 2);
 });
+
+test('JSON export carries the run ledger and an import restores it', t => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const { Storage } = require('../app/storage');
+  const { RunLedger } = require('../app/run-ledger');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-runs-export-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const source = new Storage({ dataDir: path.join(root, 'source') });
+  const created = new RunLedger({ storage: source }).create({ type: 'chat', title: 'Keep me' });
+  const exported = source.exportLegacy(path.join(root, 'export'));
+  source.close();
+  const restored = new Storage({ dataDir: exported });
+  try {
+    assert.equal(new RunLedger({ storage: restored }).get(created.id).title, 'Keep me');
+  } finally { restored.close(); }
+});

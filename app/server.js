@@ -55,6 +55,11 @@ function readState(collection, fallback) {
   return collection === STATUS_STORE ? storage.readSetting('status', fallback) : storage.list(collection);
 }
 
+// History and log collections are capped; user-owned data (projects, conversations, knowledge, memory,
+// approvals, library, …) is never pruned.
+const RETENTION = Object.freeze({ activity: 2000, notifications: 500, automationRuns: 500, qualityEvents: 500, qualityScans: 100, agentRuns: 300, engineeringRuns: 300, powerShellJobs: 250 });
+function prependRecord(collection, item) { return storage.prepend(collection, item, RETENTION[collection]); }
+
 function writeState(collection, value, previous = value) {
   if (collection === STATUS_STORE) return storage.writeSetting('status', value);
   return storage.save(collection, value, previous);
@@ -96,7 +101,6 @@ function activityStore() {
 }
 
 function recordActivity(type, title, detail = '', meta = {}) {
-  const items = activityStore();
   const item = {
     id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
     type,
@@ -105,8 +109,7 @@ function recordActivity(type, title, detail = '', meta = {}) {
     at: new Date().toISOString(),
     meta
   };
-  items.unshift(item);
-  writeState(ACTIVITY_STORE, items);
+  prependRecord(ACTIVITY_STORE, item);
   return item;
 }
 
@@ -122,7 +125,6 @@ function titleFromText(value, fallback = 'Untitled') {
 }
 
 function recordArtifact(kind, title, summary = '', meta = {}, data = {}) {
-  const items = libraryStore();
   const item = {
     id: `${Date.now()}-${Math.random().toString(16).slice(2, 9)}`,
     kind: String(kind || 'artifact'),
@@ -133,8 +135,7 @@ function recordArtifact(kind, title, summary = '', meta = {}, data = {}) {
     meta: meta && typeof meta === 'object' ? meta : {},
     data: data && typeof data === 'object' ? data : {}
   };
-  items.unshift(item);
-  writeState(LIBRARY_STORE, items);
+  prependRecord(LIBRARY_STORE, item);
   return item;
 }
 
@@ -1099,7 +1100,7 @@ const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || '/workspace';
 
 function featureAtLeast(level) { return FEATURE_LEVEL >= level; }
 function objectStore(file) { const v = readState(file, []); return Array.isArray(v) ? v : []; }
-function saveStore(collection, items, _legacyMax, previous = items) { return storage.save(collection, items, previous); }
+function saveStore(collection, items, _legacyMax, previous = items) { const saved = storage.save(collection, items, previous); if (RETENTION[collection]) storage.prune(collection, RETENTION[collection]); return saved; }
 function makeId(prefix) { return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 9)}`; }
 function lastUserRunMessage(body){
   const messages=sanitizeMessages(body?.messages);return [...messages].reverse().find(m=>m.role==='user')?.content||'';
@@ -1547,8 +1548,8 @@ async function apiAgentCatalog(req,res){if(!requireFeature(res,4))return;json(re
 async function apiAgentModels(req,res){if(!requireFeature(res,4))return;try{json(res,200,{items:await getSpecialistOrchestrator().models()})}catch(e){json(res,503,{error:String(e.message||e)})}}
 async function apiSpecialistRun(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});json(res,200,{run:await getSpecialistOrchestrator().specialist(String(b.agentId||''),goal,String(b.projectId||''))})}catch(e){storageError(res,e,400)}}
 async function apiAgentDispatch(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});json(res,200,{routing:await getSpecialistOrchestrator().dispatch(goal,Array.isArray(b.agentIds)?b.agentIds:undefined)})}catch(e){storageError(res,e,400)}}
-async function apiAgentMissions(req,res){if(!requireFeature(res,4))return;json(res,200,{items:getSpecialistOrchestrator().missions().slice(0,200)})}
-async function apiAgentMission(req,res,urlObj){if(!requireFeature(res,4))return;const id=String(urlObj.searchParams.get('id')||''),m=getSpecialistOrchestrator().missions().find(x=>x.id===id);if(!m)return json(res,404,{error:'Mission not found'});json(res,200,{mission:m})}
+async function apiAgentMissions(req,res){if(!requireFeature(res,4))return;json(res,200,{items:getSpecialistOrchestrator().missions(200)})}
+async function apiAgentMission(req,res,urlObj){if(!requireFeature(res,4))return;const id=String(urlObj.searchParams.get('id')||''),m=getSpecialistOrchestrator().getMission(id);if(!m)return json(res,404,{error:'Mission not found'});json(res,200,{mission:m})}
 async function apiAgentMissionStart(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const ids=Array.isArray(b.agentIds)&&b.agentIds.length?b.agentIds:undefined;json(res,200,{mission:await getSpecialistOrchestrator().mission(goal,String(b.projectId||''),ids)})}catch(e){storageError(res,e,400)}}
 async function apiAgentMissionEvents(req,res,urlObj){if(!requireFeature(res,4))return;res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});const wanted=String(urlObj.searchParams.get('missionId')||'');const send=m=>{if(!wanted||m.id===wanted)res.write('data: '+JSON.stringify(m)+'\n\n')};const orch=getSpecialistOrchestrator();orch.events.on('mission',send);res.write(': connected\n\n');req.on('close',()=>orch.events.off('mission',send))}
 async function apiAgents(req,res){if(!requireFeature(res,4))return;json(res,200,{items:agentRunStore().slice(0,200)})}
@@ -1578,7 +1579,7 @@ async function apiWorkbenchRead(req,res,urlObj){if(!requireFeature(res,5))return
 function simpleDiff(before,after){const a=String(before).split('\n'),b=String(after).split('\n');let start=0;while(start<a.length&&start<b.length&&a[start]===b[start])start++;let ae=a.length-1,be=b.length-1;while(ae>=start&&be>=start&&a[ae]===b[be]){ae--;be--}const lines=[`@@ -${start+1},${Math.max(0,ae-start+1)} +${start+1},${Math.max(0,be-start+1)} @@`];for(let i=start;i<=ae;i++)lines.push('-'+a[i]);for(let i=start;i<=be;i++)lines.push('+'+b[i]);return lines.join('\n')}
 async function apiWorkbenchDiff(req,res){if(!requireFeature(res,5))return;try{const b=await readBody(req,3*1024*1024);const full=safeWorkspacePath(b.path);const before=fs.existsSync(full)?fs.readFileSync(full,'utf8'):'';const after=String(b.content||'');json(res,200,{path:b.path,diff:simpleDiff(before,after),changed:before!==after})}catch(e){storageError(res,e,400)}}
 async function apiWorkbenchWrite(req,res){if(!requireFeature(res,5))return;try{const b=await readBody(req,3*1024*1024);if(b.approved!==true)return json(res,409,{error:'Explicit approval is required',approvalRequired:true});const full=safeWorkspacePath(b.path);fs.mkdirSync(path.dirname(full),{recursive:true});let backup=null;if(fs.existsSync(full)){backup=`${full}.localai-${Date.now()}.bak`;fs.copyFileSync(full,backup)}fs.writeFileSync(full,String(b.content||''),'utf8');recordActivity('workbench','Workspace file written',String(b.path),{backup:backup?workspaceRel(backup):null});json(res,200,{ok:true,path:b.path,backup:backup?workspaceRel(backup):null,size:Buffer.byteLength(String(b.content||''),'utf8')})}catch(e){storageError(res,e,400)}}
-async function apiWorkbenchSearch(req,res){if(!requireFeature(res,5))return;try{const b=await readBody(req);const query=String(b.query||'').toLowerCase().trim();if(!query)return json(res,400,{error:'query is required'});const root=safeWorkspacePath(b.path||'');const results=[];function walk(dir,depth){if(depth>5||results.length>=100)return;for(const e of fs.readdirSync(dir,{withFileTypes:true})){if(['.git','node_modules','.venv','bin','obj'].includes(e.name))continue;const p=path.join(dir,e.name);if(e.isDirectory())walk(p,depth+1);else if(e.isFile()){if(e.name.toLowerCase().includes(query))results.push({path:workspaceRel(p),match:'filename'});else{try{const st=fs.statSync(p);if(st.size<512000){const txt=fs.readFileSync(p,'utf8');const idx=txt.toLowerCase().indexOf(query);if(idx>=0)results.push({path:workspaceRel(p),match:'content',snippet:txt.slice(Math.max(0,idx-100),idx+query.length+160).replace(/\s+/g,' ')})}}catch{}}}if(results.length>=100)return}}walk(root,0);json(res,200,{results})}catch(e){storageError(res,e,400)}}
+async function apiWorkbenchSearch(req,res){if(!requireFeature(res,5))return;try{const b=await readBody(req);const query=String(b.query||'').toLowerCase().trim();if(!query)return json(res,400,{error:'query is required'});const root=safeWorkspacePath(b.path||'');const results=[];let scannedBytes=0;const limited=()=>results.length>=100||scannedBytes>=64*1024*1024;function walk(dir,depth){if(depth>5||limited())return;for(const e of fs.readdirSync(dir,{withFileTypes:true})){if(limited())return;if(['.git','node_modules','.venv','bin','obj'].includes(e.name))continue;const p=path.join(dir,e.name);if(e.isDirectory())walk(p,depth+1);else if(e.isFile()){if(e.name.toLowerCase().includes(query))results.push({path:workspaceRel(p),match:'filename'});else{try{const st=fs.statSync(p);if(st.size<512000){scannedBytes+=st.size;const txt=fs.readFileSync(p,'utf8');const idx=txt.toLowerCase().indexOf(query);if(idx>=0)results.push({path:workspaceRel(p),match:'content',snippet:txt.slice(Math.max(0,idx-100),idx+query.length+160).replace(/\s+/g,' ')})}}catch{}}}if(results.length>=100)return}}walk(root,0);json(res,200,{results,truncated:limited()})}catch(e){storageError(res,e,400)}}
 
 function validateExternalUrl(raw){const u=new URL(String(raw||''));if(!['http:','https:'].includes(u.protocol))throw new Error('Only http/https URLs are allowed');return u}
 function stripHtml(html){return String(html||'').replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/\s+/g,' ').trim()}
@@ -1607,9 +1608,8 @@ function approvalStore(){ return objectStore(APPROVALS_STORE); }
 function monitorStore(){ return objectStore(MONITORS_STORE); }
 
 function addNotification(kind,title,detail='',meta={}){
-  const items=notificationStore();
   const item={id:makeId('note'),kind,title:normalizeTitle(title,'Notification'),detail:String(detail||'').slice(0,2000),createdAt:nowIso(),read:false,resolved:false,meta};
-  items.unshift(item); saveStore(NOTIFICATIONS_STORE,items,500); return item;
+  prependRecord(NOTIFICATIONS_STORE,item); return item;
 }
 async function apiNotifications(req,res){
   if(!requireFeature(res,7))return;
@@ -1784,24 +1784,29 @@ function copyTree(src,dst){
 function candidateTextFiles(rootDir,request){
   const words=[...new Set(String(request||'').toLowerCase().match(/[a-z0-9_.-]{3,}/g)||[])].slice(0,24);
   const exts=new Set(['.js','.mjs','.cjs','.html','.css','.json','.md','.txt','.ps1','.cs','.csproj','.py','.ts','.tsx','.jsx','.yml','.yaml']);
-  const found=[];
+  // Score at most 600 files / 40 MB without keeping their text; only the top 10 are read again for context.
+  const found=[];let scannedBytes=0;
+  const full=()=>found.length>=600||scannedBytes>=40*1024*1024;
   function walk(dir,depth){
-    if(depth>5 || found.length>600) return;
+    if(depth>5 || full()) return;
     let entries=[]; try{entries=fs.readdirSync(dir,{withFileTypes:true})}catch{return}
     for(const e of entries){
+      if(full()) return;
       if(['node_modules','.git','.venv','bin','obj','dist','build','.next'].includes(e.name)) continue;
-      const full=path.join(dir,e.name);
-      if(e.isDirectory()){walk(full,depth+1);continue}
+      const file=path.join(dir,e.name);
+      if(e.isDirectory()){walk(file,depth+1);continue}
       if(!e.isFile() || !exts.has(path.extname(e.name).toLowerCase())) continue;
-      let st; try{st=fs.statSync(full)}catch{continue}; if(st.size>900000) continue;
-      let txt=''; try{txt=fs.readFileSync(full,'utf8')}catch{continue}
+      let st; try{st=fs.statSync(file)}catch{continue}; if(st.size>900000) continue;
+      let txt=''; try{txt=fs.readFileSync(file,'utf8')}catch{continue}
+      scannedBytes+=st.size;
       const low=txt.toLowerCase(), name=e.name.toLowerCase(); let score=0;
       for(const w of words){if(name.includes(w))score+=8;const idx=low.indexOf(w);if(idx>=0)score+=2}
       if(/server\.js|app\.js|index\.html|readme|package\.json/i.test(e.name)) score+=2;
-      found.push({full,rel:path.relative(rootDir,full).replace(/\\/g,'/'),txt,score,size:st.size});
+      found.push({full:file,rel:path.relative(rootDir,file).replace(/\\/g,'/'),score,size:st.size});
     }
   }
-  walk(rootDir,0); found.sort((a,b)=>b.score-a.score||a.size-b.size); return found.slice(0,10);
+  walk(rootDir,0); found.sort((a,b)=>b.score-a.score||a.size-b.size);
+  return found.slice(0,10).flatMap(f=>{try{return [{...f,txt:fs.readFileSync(f.full,'utf8')}]}catch{return []}});
 }
 function excerptForRequest(txt,request,max=9000){
   const words=[...new Set(String(request||'').toLowerCase().match(/[a-z0-9_.-]{3,}/g)||[])]; const low=txt.toLowerCase();
@@ -2144,8 +2149,8 @@ async function apiQualityClientEvent(req,res){
   if(!requireFeature(res,14))return;
   try{
     const b=await readBody(req,256*1024);const message=String(b.message||'').slice(0,4000);if(!message)return json(res,400,{error:'message is required'});
-    const items=qualityEventStore();const item={id:makeId('qevt'),type:String(b.type||'error').slice(0,40),severity:qualitySeverity(b.type,message),message,source:String(b.source||'').slice(0,1000),line:Number(b.line)||null,column:Number(b.column)||null,stack:String(b.stack||'').slice(0,12000),url:String(b.url||'').slice(0,1200),createdAt:nowIso()};
-    items.unshift(item);saveStore(QUALITY_EVENTS_STORE,items,500);recordActivity('quality','Client quality event',message.slice(0,180),{qualityEventId:item.id,severity:item.severity});json(res,201,{item});
+    const item={id:makeId('qevt'),type:String(b.type||'error').slice(0,40),severity:qualitySeverity(b.type,message),message,source:String(b.source||'').slice(0,1000),line:Number(b.line)||null,column:Number(b.column)||null,stack:String(b.stack||'').slice(0,12000),url:String(b.url||'').slice(0,1200),createdAt:nowIso()};
+    prependRecord(QUALITY_EVENTS_STORE,item);recordActivity('quality','Client quality event',message.slice(0,180),{qualityEventId:item.id,severity:item.severity});json(res,201,{item});
   }catch(e){storageError(res,e,400)}
 }
 function referencedDomIds(jsText){const ids=new Set();const rx=/\$\(['"]([^'"]+)['"]\)/g;let m;while((m=rx.exec(String(jsText||''))))ids.add(m[1]);return [...ids]}
@@ -2159,7 +2164,7 @@ async function runQualityScan(){
   try{const st=await getStatusAndRecordTransition();const coreBad=st.services.filter(x=>x.required!==false&&x.state!=='HEALTHY'),optionalBad=st.services.filter(x=>x.required===false&&x.state!=='HEALTHY');if(coreBad.length)add('service health','FAIL',coreBad.map(x=>`${x.label}:${x.state}`).join(', '));else if(optionalBad.length)add('service health','WARN',`Optional: ${optionalBad.map(x=>`${x.label}:${x.state}`).join(', ')}`);else add('service health','PASS',st.overall)}catch(e){add('service health','FAIL',String(e.message||e))}
   const recent=qualityEventStore().filter(x=>Date.now()-new Date(x.createdAt).getTime()<24*60*60*1000);const high=recent.filter(x=>x.severity==='high');add('browser runtime 24h',high.length===0,high.length?`${high.length} high-severity event(s)`:`${recent.length} event(s), none high severity`);
   const scan={id:makeId('qscan'),createdAt:nowIso(),passed:checks.every(x=>x.result!=='FAIL'),checks,summary:{pass:checks.filter(x=>x.result==='PASS').length,warn:checks.filter(x=>x.result==='WARN').length,fail:checks.filter(x=>x.result==='FAIL').length,events24h:recent.length,high24h:high.length}};
-  const scans=qualityScanStore();scans.unshift(scan);saveStore(QUALITY_SCANS_STORE,scans,100);return scan;
+  prependRecord(QUALITY_SCANS_STORE,scan);return scan;
 }
 async function apiQuality(req,res){if(!requireFeature(res,14))return;const scans=qualityScanStore(),events=qualityEventStore();json(res,200,{latest:scans[0]||null,scans:scans.slice(0,20),events:events.slice(0,80),summary:{events:events.length,high:events.filter(x=>x.severity==='high').length}})}
 async function apiQualityScan(req,res){if(!requireFeature(res,14))return;try{const scan=await runQualityScan();recordActivity('quality',scan.passed?'Quality scan passed':'Quality scan found issues',`${scan.summary.pass} pass / ${scan.summary.warn||0} warn / ${scan.summary.fail} fail`,{scanId:scan.id});json(res,200,{scan})}catch(e){storageError(res,e,500)}}

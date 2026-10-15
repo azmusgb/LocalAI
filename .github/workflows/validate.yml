@@ -45,14 +45,9 @@ jobs:
           node --check tests/run-api.test.cjs
           node --check tests/security-contract.test.cjs
 
-      - name: Model runtime contracts
-        run: node --test tests/model-runtime.test.cjs tests/model-runtime-ui.test.cjs tests/model-runtime-server-contract.test.cjs
-
-      - name: Unified execution contracts
-        run: node --test tests/run-ledger.test.cjs tests/run-execution-server-contract.test.cjs tests/run-execution-ui.test.cjs tests/run-api.test.cjs
-
-      - name: Security contracts
-        run: node --test tests/security-contract.test.cjs
+      # Every tests/*.test.cjs file, so new suites can't be silently left out of CI.
+      - name: Unit and contract tests
+        run: npm test
 
       - name: Python syntax
         run: python3 -m py_compile host/gridcraft-bridge.py host/gridcraft-agent/gridcraft_ai.py
@@ -119,6 +114,12 @@ jobs:
 
       - name: Validate deployment candidate
         run: pwsh -NoProfile -File deploy/Test-LocalAI-Candidate.ps1 -CandidateRoot . -LocalNode
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium

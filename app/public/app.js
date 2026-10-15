@@ -76,7 +76,7 @@ function showView(id){
 qsa('[data-view]').forEach(el=>el.addEventListener('click',()=>showView(el.dataset.view)));
 qsa('[data-quick]').forEach(el=>el.addEventListener('click',()=>{const k=el.dataset.quick;if(k==='ask'||k==='research'){openAsk(k==='research')}else if(k==='create')openCreate();else if(k==='engineering'){showView('engineering');if($('engineeringRequest')&&!$('engineeringRequest').value.trim())$('engineeringRequest').value='Improve Local AI based on the current user experience. Preserve existing behavior, validate all changes, and stop for approval.';setTimeout(()=>$('engineeringRequest')?.focus(),20)}else showView('automations');}));
 
-function renderMessages(){
+function renderMessages(follow=true){
   const box=$('messages');
   if(!state.messages.length){box.innerHTML='<div class="empty">Start a private conversation. Clear self-modification requests can route directly to the Engineering Agent.</div>';return;}
   box.innerHTML=state.messages.map((m,i)=>{
@@ -84,7 +84,20 @@ function renderMessages(){
     return `<div class="msg ${m.role} ${m.streaming?'streaming':''}" data-msg="${i}">${esc(m.content||'')}${action}</div>`;
   }).join('');
   qsa('[data-msg-action]').forEach(b=>b.onclick=()=>{const m=state.messages[Number(b.dataset.msgAction)];if(!m?.action?.view)return;showView(m.action.view);if(m.action.changeId)loadChanges?.(m.action.changeId);if(m.action.runId)loadEngineeringRuns?.(m.action.runId)});
-  box.scrollTop=box.scrollHeight;
+  if(follow)box.scrollTop=box.scrollHeight;
+}
+function chatNearBottom(box=$('messages')){return !box||box.scrollHeight-box.scrollTop-box.clientHeight<80;}
+// While streaming, repaint only the streaming bubble (text only, so output stays escaped) once per frame.
+let streamPaintFrame=0;
+function paintStreamingMessage(idx){
+  if(streamPaintFrame)return;
+  streamPaintFrame=requestAnimationFrame(()=>{
+    streamPaintFrame=0;
+    const m=state.messages[idx],box=$('messages');if(!m?.streaming||!box)return;
+    const el=box.querySelector(`[data-msg="${idx}"]`);
+    if(!el||m.action){renderMessages(chatNearBottom(box));return;}
+    const follow=chatNearBottom(box);el.textContent=m.content||'';if(follow)box.scrollTop=box.scrollHeight;
+  });
 }
 function persistMessages(){localStorage.setItem('localAiMessages',JSON.stringify(state.messages.slice(-20).map(({role,content})=>({role,content}))));}
 function abortStream(reason='Cancelled'){
@@ -670,8 +683,16 @@ const AgentWorldGame = (() => {
     ctx.fillStyle='rgba(5,10,17,.88)';roundRect(ctx,x-27,y+16,54,14,6,true,false);ctx.fillStyle='#EEF4FF';ctx.font='750 7px system-ui';ctx.fillText(a.name,x,y+26)
   }
 
-  function loop(ts){if(!lastTs)lastTs=ts;const dt=Math.min(.05,(ts-lastTs)/1000);lastTs=ts;update(dt,ts);draw();raf=requestAnimationFrame(loop)}
-  function startLoop(){if(!raf)raf=requestAnimationFrame(loop)}
+  // Only animate while the canvas is on screen and the tab is visible; one rAF chain at most.
+  let io=null,observed=null,onScreen=!('IntersectionObserver' in window);
+  function canAnimate(){return !!(canvas&&canvas.isConnected&&onScreen&&!document.hidden)}
+  function stopLoop(){if(raf){cancelAnimationFrame(raf);raf=null}lastTs=0}
+  function loop(ts){raf=null;if(!canAnimate()){lastTs=0;return}if(!lastTs)lastTs=ts;const dt=Math.min(.05,(ts-lastTs)/1000);lastTs=ts;update(dt,ts);draw();raf=requestAnimationFrame(loop)}
+  function startLoop(){
+    if(canvas&&observed!==canvas&&'IntersectionObserver' in window){io?.disconnect();onScreen=false;observed=canvas;io=new IntersectionObserver(entries=>{onScreen=entries[entries.length-1].isIntersecting;onScreen?startLoop():stopLoop()});io.observe(canvas)}
+    if(!raf&&canAnimate())raf=requestAnimationFrame(loop)
+  }
+  document.addEventListener('visibilitychange',()=>document.hidden?stopLoop():startLoop());
 
   async function bootstrap(){
     ensureRoot();try{const data=await evoApi('/api/engineering/runs');const items=Array.isArray(data?.items)?[...data.items]:[];items.sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0));lastLiveRun=items[0]||null;if(lastLiveRun)renderLive(lastLiveRun);else renderLive(null)}catch(_){renderLive(null)}
@@ -756,264 +777,6 @@ async function pollEngineeringIntent(runId,msg=null){
     setTimeout(()=>pollEngineeringIntent(runId,msg),3000);
   }
 }
-  // Map engineering run status to work zone
-  function getWorkZone(run) {
-    if (run.status === 'running' && run.steps?.[0]?.name === 'plan') return 'Planning';
-    if (run.status === 'running' && (run.steps?.[0]?.name === 'stage' || run.steps?.[0]?.name === 'patch work')) return 'Engineering';
-    if (run.status === 'running' && run.steps?.[0]?.name === 'validate') return 'Validation';
-    if (run.status === 'awaiting_approval') return 'Approvals';
-    if (run.status === 'approved' || run.status === 'apply_requested') return 'Deployment';
-    if (run.status === 'applied') return 'Operations';
-    if (run.status === 'needs_attention' || run.status === 'failed') return 'Operations';
-    return 'Command Center';
-  }
-
-  // Create world zone tiles
-  function createWorkZoneTiles() {
-    const zones = [
-      { name: 'Command Center', id: 'command-center', x: 0, y: 0 },
-      { name: 'Planning', id: 'planning', x: 1, y: 0 },
-      { name: 'Engineering', id: 'engineering', x: 2, y: 0 },
-      { name: 'Validation', id: 'validation', x: 3, y: 0 },
-      { name: 'Approvals', id: 'approvals', x: 0, y: 1 },
-      { name: 'Deployment', id: 'deployment', x: 1, y: 1 },
-      { name: 'Operations', id: 'operations', x: 2, y: 1 }
-    ];
-    return zones;
-  }
-
-  // Create agent sprite DOM
-  function createAgentSprite(run, zone) {
-    const sprite = document.createElement('div');
-    sprite.className = 'agent-sprite';
-    sprite.style.position = 'absolute';
-    sprite.style.width = '32px';
-    sprite.style.height = '32px';
-    sprite.style.backgroundColor = '#536a98';
-    sprite.style.borderRadius = '50%';
-    sprite.style.display = 'flex';
-    sprite.style.justifyContent = 'center';
-    sprite.style.alignItems = 'center';
-    sprite.style.boxShadow = '0 0 8px rgba(83, 106, 152, 0.3)';
-    sprite.innerHTML = '<div style="font-size:12px;color:#fff;">E</div>';
-    
-    // Add click handler for inspector
-    sprite.addEventListener('click', () => {
-      const runId = run.id;
-      const inspector = document.createElement('div');
-      inspector.className = 'agent-inspector';
-      inspector.style.position = 'absolute';
-      inspector.style.top = '10px';
-      inspector.style.left = '10px';
-      inspector.style.backgroundColor = 'rgba(255,255,255,0.95)';
-      inspector.style.padding = '12px';
-      inspector.style.borderRadius = '12px';
-      inspector.style.boxShadow = '0 4px 16px rgba(0,0,0,0.3)';
-      inspector.style.maxWidth = '300px';
-      inspector.style.zIndex = '1000';
-      
-      const content = [
-        `Run ID: ${run.id}`,
-        `Status: ${run.status}`,
-        `Attempt: ${run.attempt}/${run.maxAttempts}`,
-        `Current Step: ${run.steps?.[0]?.name || 'N/A'}`,
-        `Detail: ${run.steps?.[0]?.detail || 'No detail'}`,
-        `Change ID: ${run.finalChangeId}`,
-        `Elapsed Time: ${run.steps?.[0]?.elapsed || '0 seconds'}`
-      ].join('\n');
-      
-      inspector.innerHTML = `<div><strong>Engineering Run Details</strong></div><div>${content}</div><div><button class='btn' data-action='open-engineer'>Open Engineer</button></div>`;
-      
-      // Add open engineer action
-      inspector.querySelector('button').addEventListener('click', () => {
-        const runId = run.id;
-        const changeId = run.finalChangeId;
-        // Trigger open engineer action
-        const engineerRequest = { 
-          runId, 
-          changeId, 
-          action: 'open_engineer' 
-        };
-        window.dispatchEvent(new CustomEvent('engineer-action', { detail: engineerRequest }));
-      });
-      
-      document.body.appendChild(inspector);
-      
-      // Auto-remove after 5 seconds
-      setTimeout(() => {
-        if (inspector.parentNode) inspector.remove();
-      }, 5000);
-    });
-    
-    return sprite;
-  }
-
-  // Animate agent between zones
-  function animateAgent(fromZone, toZone, agentSprite) {
-    const fromX = fromZone.x;
-    const fromY = fromZone.y;
-    const toX = toZone.x;
-    const toY = toZone.y;
-    
-    const dx = toX - fromX;
-    const dy = toY - fromY;
-    
-    if (dx === 0 && dy === 0) return;
-    
-    // Simple deterministic waypoint movement
-    const waypoints = [];
-    const steps = 8;
-    
-    for (let i = 0; i < steps; i++) {
-      const t = i / (steps - 1);
-      const x = fromX + dx * t;
-      const y = fromY + dy * t;
-      waypoints.push({ x: Math.floor(x), y: Math.floor(y) });
-    }
-    
-    // Move agent through waypoints
-    const interval = setInterval(() => {
-      if (waypoints.length === 0) {
-        clearInterval(interval);
-        return;
-      }
-      
-      const current = waypoints.shift();
-      if (!current) {
-        clearInterval(interval);
-        return;
-      }
-      
-      const sprite = agentSprite;
-      sprite.style.left = `${current.x * 92}px`;
-      sprite.style.top = `${current.y * 92}px`;
-    }, 500);
-    
-    // Final position
-    setTimeout(() => {
-      clearInterval(interval);
-      const sprite = agentSprite;
-      sprite.style.left = `${toX * 92}px`;
-      sprite.style.top = `${toY * 92}px`;
-    }, 4000);
-  }
-
-  // Initialize world panel
-  function initializeWorldPanel() {
-    const worldPanel = document.createElement('div');
-    worldPanel.className = 'agent-world-panel';
-    worldPanel.style.position = 'relative';
-    worldPanel.style.width = '100%';
-    worldPanel.style.height = '400px';
-    worldPanel.style.overflow = 'hidden';
-    worldPanel.style.marginTop = '24px';
-    
-    // Create grid
-    const zones = createWorkZoneTiles();
-    zones.forEach(zone => {
-      const zoneEl = document.createElement('div');
-      zoneEl.className = `work-zone ${zone.id}`;
-      zoneEl.style.position = 'absolute';
-      zoneEl.style.left = `${zone.x * 92}px`;
-      zoneEl.style.top = `${zone.y * 92}px`;
-      zoneEl.style.width = '92px';
-      zoneEl.style.height = '92px';
-      zoneEl.style.backgroundColor = '#11161d';
-      zoneEl.style.border = '1px solid #3a4658';
-      zoneEl.style.display = 'flex';
-      zoneEl.style.justifyContent = 'center';
-      zoneEl.style.alignItems = 'center';
-      zoneEl.style.color = '#fff';
-      zoneEl.style.fontWeight = 'bold';
-      zoneEl.style.fontSize = '12px';
-      zoneEl.style.textTransform = 'uppercase';
-      zoneEl.style.boxShadow = '0 0 8px rgba(0,0,0,0.3)';
-      
-      // Add zone label
-      zoneEl.innerHTML = zone.name;
-      worldPanel.appendChild(zoneEl);
-    });
-    
-    // Add agent sprite container
-    const agentContainer = document.createElement('div');
-    agentContainer.className = 'agent-container';
-    agentContainer.style.position = 'absolute';
-    agentContainer.style.left = '0';
-    agentContainer.style.top = '0';
-    worldPanel.appendChild(agentContainer);
-    
-    return worldPanel;
-  }
-
-  // Update agent world based on current run
-  function updateAgentWorld(run) {
-    const worldPanel = document.querySelector('.agent-world-panel');
-    if (!worldPanel) return;
-    
-    const zones = createWorkZoneTiles();
-    const currentZone = getWorkZone(run);
-    
-    // Find current zone
-    const zone = zones.find(z => z.name === currentZone);
-    if (!zone) return;
-    
-    // Remove existing agent
-    const existingAgent = worldPanel.querySelector('.agent-sprite');
-    if (existingAgent) existingAgent.remove();
-    
-    // Create new agent
-    const agentSprite = createAgentSprite(run, zone);
-    
-    // Add to container
-    worldPanel.querySelector('.agent-container').appendChild(agentSprite);
-    
-    // Animate to zone
-    const fromZone = zones.find(z => z.name === 'Command Center');
-    animateAgent(fromZone, zone, agentSprite);
-  }
-
-  // Initialize world panel
-  function initAgentWorld() {
-    const worldPanel = initializeWorldPanel();
-    document.body.appendChild(worldPanel);
-    
-    // Set up initial state
-    const initialRun = window.engineeringRunStore?.();
-    if (initialRun) {
-      updateAgentWorld(initialRun);
-    }
-  }
-
-  // Poll engineering runs and update world
-  async function pollEngineeringRuns() {
-    try {
-      const data = await evoApi('/api/engineering/runs');
-      const runs = data.items || [];
-      
-      // Find current active run
-      const currentRun = runs.find(r => r.status === 'running');
-      
-      if (currentRun) {
-        updateAgentWorld(currentRun);
-      } else {
-        // No active run → Command Center
-        const worldPanel = document.querySelector('.agent-world-panel');
-        if (worldPanel) {
-          const agentSprite = worldPanel.querySelector('.agent-sprite');
-          if (agentSprite) agentSprite.remove();
-        }
-      }
-    } catch (e) {
-      console.error('Error polling engineering runs:', e);
-    }
-  }
-
-  // Start polling
-  function startPolling() {
-    pollEngineeringRuns();
-    setInterval(pollEngineeringRuns, 2000);
-  }
-
 async function submitEngineeringIntent(request,{assistantIndex=null,navigate=false}={}){
   if(navigate)showView('engineering');
   if($('engineeringRequest'))$('engineeringRequest').value=request;if($('engineeringTarget'))$('engineeringTarget').value='self';if($('engineeringRoot'))$('engineeringRoot').disabled=true;
@@ -1095,7 +858,7 @@ async function sendChat(){
         const event=eventMatch?.[1];
         if(event==='token'){
           state.messages[idx].content+=data.text||'';
-          renderMessages();
+          paintStreamingMessage(idx);
         }else if(event==='meta'){
           sources=data.sources||[];
         }else if(event==='done'){
@@ -1109,7 +872,7 @@ async function sendChat(){
     }
     state.messages[idx].streaming=false;
     persistMessages();
-    renderMessages();
+    renderMessages(chatNearBottom());
     await Promise.all([loadActivity(),loadLibrary(),loadWorkspace()]);
   }catch(e){
     if(e.name!=='AbortError'){
@@ -1220,9 +983,11 @@ async function refreshStatus(force=false){
     document.querySelectorAll('[data-status-retry]').forEach(b=>b.onclick=()=>refreshStatus(true));
   }
 }
+// mobile-overhaul.js appends #truthModelCapabilityTile to this strip; keep it across re-renders.
+function renderCapabilityStrip(box,html){const tile=$('truthModelCapabilityTile');box.innerHTML=html;if(tile)box.appendChild(tile);}
 async function loadHomeCapabilities(){
   const box=$('homeCapabilities');if(!box)return;
-  try{const r=await fetch('/api/capabilities',{cache:'no-store'}),j=await r.json();if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);const imageNames=(j.images?.models||[]).filter(x=>x.supported).map(x=>x.familyLabel||x.family);const unique=[...new Set(imageNames)];box.innerHTML=`<div class="cap-tile"><b>${esc(j.version||'—')}</b><span>Local AI</span></div><div class="cap-tile"><b>${esc(j.overall||'—')}</b><span>System</span></div><div class="cap-tile"><b>${unique.length?esc(unique.join(', ')):'Unavailable'}</b><span>Images</span></div><div class="cap-tile"><b>${j.engineering?.active||0}</b><span>Engineering active</span></div><div class="cap-tile"><b>${j.changes?.pending||0}</b><span>Pending changes</span></div><div class="cap-tile"><b>${j.issues?.open||0}</b><span>Open issues</span></div><div class="cap-tile"><b>${j.powershell?.configured?'Ready':'Setup'}</b><span>PowerShell</span></div>`}catch(e){box.innerHTML=`<div class="empty">Capability snapshot unavailable: ${esc(e.message)}</div>`}
+  try{const r=await fetch('/api/capabilities',{cache:'no-store'}),j=await r.json();if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);const imageNames=(j.images?.models||[]).filter(x=>x.supported).map(x=>x.familyLabel||x.family);const unique=[...new Set(imageNames)];renderCapabilityStrip(box,`<div class="cap-tile"><b>${esc(j.version||'—')}</b><span>Local AI</span></div><div class="cap-tile"><b>${esc(j.overall||'—')}</b><span>System</span></div><div class="cap-tile"><b>${unique.length?esc(unique.join(', ')):'Unavailable'}</b><span>Images</span></div><div class="cap-tile"><b>${j.engineering?.active||0}</b><span>Engineering active</span></div><div class="cap-tile"><b>${j.changes?.pending||0}</b><span>Pending changes</span></div><div class="cap-tile"><b>${j.issues?.open||0}</b><span>Open issues</span></div><div class="cap-tile"><b>${j.powershell?.configured?'Ready':'Setup'}</b><span>PowerShell</span></div>`)}catch(e){renderCapabilityStrip(box,`<div class="empty">Capability snapshot unavailable: ${esc(e.message)}</div>`)}
 }
 function schedulePolling(){clearInterval(state.statusTimer);clearInterval(state.activityTimer);if(!document.hidden){state.statusTimer=setInterval(refreshStatus,60000);state.activityTimer=setInterval(()=>{loadActivity();loadWorkspace();},60000);}}
 document.addEventListener('visibilitychange',()=>{schedulePolling();if(!document.hidden){refreshStatus();loadActivity();loadWorkspace();}});

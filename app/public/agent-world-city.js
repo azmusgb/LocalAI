@@ -2,6 +2,8 @@
 const W=1280,H=760,T=32,COLS=Math.floor(W/T),ROWS=Math.floor(H/T);
 const $=(s,r=document)=>r.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n)),key=(x,y)=>x+','+y,now=()=>performance.now();
+// One shared mission EventSource per tab (agent-specialists.js and agent-world-city.js both subscribe; whichever loads first creates it).
+const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=(()=>{const subs=new Set();let es=null;function open(){if(es)return;const s=new EventSource('/api/agents/missions/events');es=s;s.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}for(const x of[...subs])try{x.onMessage?.(m)}catch{}};s.onerror=e=>{for(const x of[...subs])try{x.onError?.(e)}catch{}}}return{subscribe(onMessage,onError){const sub={onMessage,onError};subs.add(sub);try{open()}catch(e){subs.delete(sub);throw e}return()=>subs.delete(sub)}}})());
 
 const DISTRICTS={
  command:{name:'Command Center',short:'Command',x:17,y:9,w:6,h:5,accent:'#71b7ff',roof:'#315f94',icon:'⌂',kind:'hq'},
@@ -542,10 +544,19 @@ function drawMinimap(){
 function draw(ts){
  ctx.clearRect(0,0,W,H);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(view.zoom,view.zoom);drawGround(ts);drawFlows(ts);drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,ts);drawBuilding(id,d,ts);drawInterior(id,d,ts);drawWorksite(id,d,ts)}drawAgents(ts);drawCommandCelebration(ts);drawClouds(ts);if(display.night){ctx.fillStyle='rgba(3,7,14,.18)';ctx.fillRect(0,0,W,H)}ctx.restore()
 }
-function loop(ts){const dt=Math.min(.05,(ts-last)/1000||0);last=ts;update(dt,ts);draw(ts);raf=requestAnimationFrame(loop)}
-function start(){if(!raf)raf=requestAnimationFrame(loop)}
+// Animate only while the city canvas is on screen and the tab is visible; at most one rAF chain.
+let io=null,observed=null,onScreen=!('IntersectionObserver' in window);
+function canAnimate(){return !!(canvas&&canvas.isConnected&&onScreen&&!document.hidden)}
+function stop(){if(raf){cancelAnimationFrame(raf);raf=0}last=0}
+function loop(ts){raf=0;if(!canAnimate()){last=0;return}const dt=last?Math.min(.05,(ts-last)/1000||0):0;last=ts;update(dt,ts);draw(ts);raf=requestAnimationFrame(loop)}
+function start(){
+ if(canvas&&observed!==canvas&&'IntersectionObserver' in window){io?.disconnect();onScreen=false;observed=canvas;io=new IntersectionObserver(entries=>{onScreen=entries[entries.length-1].isIntersecting;onScreen?start():stop()});io.observe(canvas)}
+ if(!raf&&canAnimate())raf=requestAnimationFrame(loop)
+}
+document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
 async function bootstrap(){try{const r=await fetch('/api/agents/missions'),j=await r.json(),items=j.items||j.missions||[],active=items.find(m=>m.status==='running')||items[0];if(active){applyMission(active);connectSSE();return}}catch{}try{const r=await fetch('/api/engineering/runs'),j=await r.json(),runs=j.items||[],active=runs.find(x=>x.status==='running')||runs[0];if(active)applyEngineering(active)}catch{}connectSSE()}
-function connectSSE(){try{const es=new EventSource('/api/agents/missions/events');es.onmessage=e=>{try{const m=JSON.parse(e.data);liveSnapshot=normalizeMission(m);applyMission(m)}catch{}}}catch{}}
+let unsubscribeSSE=null;
+function connectSSE(){if(unsubscribeSSE)return;try{unsubscribeSSE=missionStream.subscribe(m=>{liveSnapshot=normalizeMission(m);applyMission(m)})}catch{}}
 document.addEventListener('localai:engineering-run',e=>applyEngineering(e.detail?.run||e.detail));window.addEventListener('localai:agentworld-replay-mission',e=>{const m=e.detail?.mission;if(m){loadMissionReplay(m);if((m.timeline||[]).length>1)applyReplayFrame(0)}});
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{mount();drawMinimap()},{once:true});else{mount();drawMinimap()}
 })();
