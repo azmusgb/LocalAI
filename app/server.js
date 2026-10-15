@@ -29,6 +29,7 @@ const STATUS_STORE = 'status';
 const LIBRARY_STORE = 'library';
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 
+const crypto = require('crypto');
 const { Storage } = require('./storage');
 const { RunLedger } = require('./run-ledger');
 const { loadOllamaModelRuntime } = require('./model-runtime');
@@ -1080,9 +1081,12 @@ function serveStatic(req, res, pathname) {
       '.png': 'image/png',
       '.ico': 'image/x-icon'
     };
-    text(res, 200, data, types[ext] || 'application/octet-stream', {
-      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=300'
-    });
+    // App code must update the moment a release is deployed: browsers revalidate with the ETag each load
+    // and get a 304 when nothing changed. Images can be reused for a day.
+    const etag = `"${crypto.createHash('sha1').update(data).digest('base64url').slice(0, 22)}"`;
+    const headers = { 'Cache-Control': ['.png', '.ico', '.svg'].includes(ext) ? 'public, max-age=86400' : 'no-cache', ETag: etag };
+    if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); return res.end(); }
+    text(res, 200, data, types[ext] || 'application/octet-stream', headers);
   });
 }
 
