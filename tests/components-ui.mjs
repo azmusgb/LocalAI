@@ -10,10 +10,10 @@ const failures = [];
 async function check(name, fn) {
   try { await fn(); console.log('PASS', name); } catch (error) { failures.push(`${name}: ${error.message}`); console.error('FAIL', name, error.message); }
 }
-const newPage = async (setup) => {
+const newPage = async (setup, path = '') => {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   if (setup) await setup(page);
-  await page.goto(base, { waitUntil: 'domcontentloaded' });
+  await page.goto(base + path, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.LocalAIUI && typeof window.showView === 'function');
   return page;
 };
@@ -232,8 +232,15 @@ const stubRuns = () => [
     card: { kind: 'engineering', icon: 'build', title: 'Fix the login bug', summary: 'Two files change', badge: { label: 'Ready to review', tone: 'accent' }, preview: { type: 'diff', changeId: 'chg_1', files: [{ path: 'app/auth.js', added: 12, removed: 3 }, { path: 'app/login.html', added: 2, removed: 0 }] }, action: { label: 'Review' }, approval: { id: 'apr_1', title: 'Apply the login fix', detail: 'Edits 2 files', risk: 'high' }, view: 'changes' } }
 ];
 const rv = { posts: [], runs: stubRuns(), fail: null };
-const runPage = await newPage(async pg => {
-  await pg.route(u => u.pathname === '/api/runs', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: rv.runs, summary: {} }) }));
+const live = { id: 'run_live', type: 'image', title: 'Moonrise render', status: 'running', progress: 45, updatedAt: now, createdAt: now, summary: '', output: null, events: [], pinned: false, projectId: null, cancellable: true,
+  card: { kind: 'image', icon: 'image', title: 'Moonrise render', summary: '', badge: { label: 'Running', tone: 'accent' }, preview: null, action: { label: 'Open' }, approval: null, view: 'create' } };
+const stubSetup = async pg => {
+  await pg.route(u => u.pathname === '/api/runs', r => {
+    const id = new URL(r.request().url()).searchParams.get('id');
+    if (!id) return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: rv.runs, summary: {} }) });
+    const item = [...rv.runs, live].find(x => x.id === id);
+    r.fulfill({ status: item ? 200 : 404, contentType: 'application/json', body: JSON.stringify(item ? { item } : { error: 'Run not found' }) });
+  });
   await pg.route('**/api/projects', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [{ id: 'prj_a', name: 'Alpha' }, { id: 'prj_b', name: 'Beta' }] }) }));
   await pg.route(u => ['/api/runs/update', '/api/approvals/decide'].includes(u.pathname), r => {
     const body = JSON.parse(r.request().postData() || '{}'); rv.posts.push([new URL(r.request().url()).pathname, body]);
@@ -241,13 +248,16 @@ const runPage = await newPage(async pg => {
     if (new URL(r.request().url()).pathname === '/api/runs/update') { const i = rv.runs.findIndex(x => x.id === body.id); const { pinned, projectId } = body; rv.runs[i] = { ...rv.runs[i], ...(pinned !== undefined ? { pinned } : {}), ...(projectId !== undefined ? { projectId } : {}) }; return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ item: rv.runs[i] }) }); }
     r.fulfill({ contentType: 'application/json', body: JSON.stringify({ item: { id: body.id, status: body.decision } }) });
   });
-});
+};
+const runPage = await newPage(stubSetup);
 await runPage.waitForSelector('.navbtn[data-view="runs"]', { state: 'attached' });
 await runPage.evaluate(() => document.querySelector('.navbtn[data-view="runs"]').click());
 await runPage.waitForSelector('#runList .list-row');
 const drawerOpen = () => runPage.locator('#runDrawerBackdrop.show #runDrawer');
 const openRun = async id => { await runPage.locator(`#runList .list-row[data-run-id="${id}"] button.btn-primary`).click(); await drawerOpen().waitFor(); };
-const closeRun = async () => { await runPage.keyboard.press('Escape'); await runPage.waitForSelector('#runDrawerBackdrop:not(.show)', { state: 'attached' }); };
+const dsheet = () => runPage.locator('#runDetailsSheet');
+const openSheet = async () => { await drawerOpen().getByRole('button', { name: 'Details' }).click(); await runPage.waitForSelector('#runDetailsSheet[open]'); };
+const closeRun = async () => { if (await runPage.locator('#runDetailsSheet[open]').count()) await runPage.keyboard.press('Escape'); await runPage.keyboard.press('Escape'); await runPage.waitForSelector('#runDrawerBackdrop:not(.show)', { state: 'attached' }); };
 await check('Runs shows one card per run: thumbnail, diff stat and the Review action', async () => {
   assert.equal(await runPage.locator('#runList .list-row').count(), 2);
   assert.equal(await runPage.locator('#runList .list-row[data-run-id="run_img"] .list-row__icon svg use').getAttribute('href'), '#i-image');
@@ -261,20 +271,28 @@ await check('opening a run shows header, Not filed, Pin and File, then the appro
   await openRun('run_eng');
   const d = drawerOpen();
   const t = await d.innerText();
-  assert.match(t, /Fix the login bug/); assert.match(t, /Not filed/);
-  assert.equal(await d.getByRole('button', { name: 'Pin' }).count(), 1);
-  assert.equal(await d.getByRole('button', { name: 'File…' }).count(), 1);
+  assert.match(t, /Fix the login bug/); assert.match(t, /Engineering · Not filed/);
+  assert.equal(await d.getByRole('button', { name: 'Pin' }).count(), 0, 'Pin lives in the details sheet');
   assert.equal(await d.locator('.run-approval').count(), 1);
   assert.match(await d.locator('.run-approval').innerText(), /Apply the login fix[\s\S]*High risk/);
-  assert.ok(t.indexOf('Apply the login fix') < t.indexOf('Output') && t.indexOf('Output') < t.indexOf('Timeline'));
+  assert.ok(t.indexOf('Apply the login fix') < t.indexOf('Output'));
+  assert.doesNotMatch(t, /Timeline/);
+  await openSheet();
+  const sh = dsheet();
+  assert.equal(await sh.getByRole('button', { name: 'Pin' }).count(), 1);
+  assert.equal(await sh.getByRole('button', { name: 'File…' }).count(), 1);
+  assert.match(await sh.innerText(), /Timeline/);
+  await runPage.keyboard.press('Escape'); await runPage.waitForSelector('#runDetailsSheet:not([open])', { state: 'attached' });
   assert.equal(await runPage.locator('#runList .list-row[data-run-id="run_img"]').count(), 1);
 });
 await check('axe: the open run view passes color-contrast and target-size', async () => {
   await runPage.addScriptTag({ path: axePath });
-  for (const sel of ['#runDrawer', '#runList']) {
+  await openSheet();
+  for (const sel of ['#runDrawer', '#runDetailsSheet', '#runList']) {
     const v = await runPage.evaluate(s => window.axe.run(s, { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(v => `${v.id}: ${v.nodes.map(n => n.html).join(' | ')}`)), sel);
     assert.deepEqual(v, [], sel);
   }
+  await runPage.keyboard.press('Escape'); await runPage.waitForSelector('#runDetailsSheet:not([open])', { state: 'attached' });
 });
 await check('Approve is a plain confirm (no typed word) and POSTs the decision once', async () => {
   rv.posts.length = 0;
@@ -298,13 +316,14 @@ await check('Cancelling the Reject confirm posts nothing; Escape closes only the
 });
 await check('Pin POSTs /api/runs/update {pinned:true} and the button becomes Unpin', async () => {
   rv.posts.length = 0;
-  await drawerOpen().getByRole('button', { name: 'Pin', exact: true }).click();
-  await drawerOpen().getByRole('button', { name: 'Unpin' }).waitFor();
+  await openSheet();
+  await dsheet().getByRole('button', { name: 'Pin', exact: true }).click();
+  await dsheet().getByRole('button', { name: 'Unpin' }).waitFor();
   assert.deepEqual(rv.posts, [['/api/runs/update', { id: 'run_eng', pinned: true }]]);
 });
 await check('File… picks a project in a select and shows its name', async () => {
   rv.posts.length = 0;
-  await drawerOpen().getByRole('button', { name: 'File…' }).click();
+  await dsheet().getByRole('button', { name: 'File…' }).click();
   const dlg = runPage.locator('dialog.ask-sheet[open]'); await dlg.waitFor();
   assert.deepEqual(await dlg.locator('select option').allInnerTexts(), ['Not filed', 'Alpha', 'Beta']);
   await dlg.locator('select').selectOption('prj_b');
@@ -331,9 +350,9 @@ await check('LocalAIRuns.open still returns false for an unknown id', async () =
 const refreshRuns = async () => { await runPage.evaluate(() => document.getElementById('runsRefresh').click()); await runPage.waitForTimeout(300); };
 await check('a failed Pin shows its message visibly in the run view', async () => {
   rv.fail = { status: 409, error: 'This run is managed by its own page and cannot be filed yet' };
-  await openRun('run_img');
-  await drawerOpen().getByRole('button', { name: 'Pin', exact: true }).click();
-  const msg = drawerOpen().locator('.run-view-error');
+  await openRun('run_img'); await openSheet();
+  await dsheet().getByRole('button', { name: 'Pin', exact: true }).click();
+  const msg = dsheet().locator('.run-view-error');
   await msg.waitFor();
   assert.match(await msg.innerText(), /managed by its own page/);
   assert.equal(await msg.isVisible(), true);
@@ -341,8 +360,8 @@ await check('a failed Pin shows its message visibly in the run view', async () =
 });
 await check('a legacy run offers no Pin or File… and says it is managed elsewhere', async () => {
   rv.runs.push({ ...rv.runs[0], id: 'legacy-agent:1', title: 'Old agent run' }); await refreshRuns();
-  await openRun('legacy-agent:1');
-  const d = drawerOpen();
+  await openRun('legacy-agent:1'); await openSheet();
+  const d = dsheet();
   assert.equal(await d.getByRole('button', { name: /^(Pin|Unpin)$/ }).count(), 0);
   assert.equal(await d.getByRole('button', { name: 'File…' }).count(), 0);
   assert.match(await d.innerText(), /Managed on its own page/);
@@ -359,11 +378,95 @@ await check('a filed run shows its project name, and Project removed when it is 
   await closeRun();
 });
 await check('a run with no start or finish time shows dashes, never 1969', async () => {
-  await openRun('run_eng');
-  const t = await drawerOpen().innerText();
+  await openRun('run_eng'); await openSheet();
+  const t = await dsheet().innerText();
   assert.doesNotMatch(t, /1969|1970/);
-  assert.match(await drawerOpen().locator('.run-detail', { hasText: 'Started' }).innerText(), /—/);
+  assert.match(await dsheet().locator('.run-detail', { hasText: 'Started' }).innerText(), /—/);
   await closeRun();
+});
+await check('opening a run is routing: the hash is #run/<id>', async () => {
+  await openRun('run_img');
+  assert.equal(await runPage.evaluate(() => location.hash), '#run/run_img');
+});
+await check('phone: the run view fills the viewport and covers the tab bar', async () => {
+  const box = await runPage.locator('#runDrawer').boundingBox();
+  assert.deepEqual([box.x, box.y, box.width, box.height], [0, 0, 390, 844]);
+  assert.equal(await runPage.evaluate(() => { const n = document.getElementById('uxMobileNav'); if (!n) return 'no nav'; const r = n.getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return !!hit.closest('#runDrawer'); }), true);
+});
+await check('desktop: the run view is a right-side panel, at most 820 wide', async () => {
+  await runPage.setViewportSize({ width: 1280, height: 860 });
+  const box = await runPage.locator('#runDrawer').boundingBox();
+  assert.ok(box.width <= 820 && box.width >= 700, `width ${box.width}`);
+  assert.equal(Math.round(box.x + box.width), 1280);
+  await runPage.setViewportSize({ width: 390, height: 844 });
+});
+await check('details grid and Timeline are hidden until the info button is pressed, then sit in the sheet', async () => {
+  assert.equal(await runPage.locator('#runDrawer .run-detail-grid').count(), 0);
+  assert.equal(await runPage.locator('.run-detail-grid').first().isVisible(), false);
+  assert.equal(await runPage.getByText('Timeline', { exact: true }).first().isVisible(), false);
+  await openSheet();
+  assert.equal(await runPage.locator('#runDetailsSheet .run-detail-grid').isVisible(), true);
+  assert.equal(await runPage.locator('#runDetailsSheet').getByText('Timeline', { exact: true }).isVisible(), true);
+  assert.equal(await dsheet().getByRole('button', { name: 'Pin' }).isVisible(), true);
+  assert.equal(await dsheet().getByRole('button', { name: 'File…' }).isVisible(), true);
+});
+await check('Escape closes the sheet first, then the run view', async () => {
+  await runPage.keyboard.press('Escape'); await runPage.waitForSelector('#runDetailsSheet:not([open])', { state: 'attached' });
+  assert.equal(await drawerOpen().count(), 1);
+  await runPage.keyboard.press('Escape'); await runPage.waitForSelector('#runDrawerBackdrop:not(.show)', { state: 'attached' });
+  assert.doesNotMatch(await runPage.evaluate(() => location.hash), /run\//);
+});
+await check('history.back() closes the run view, and the back button does the same', async () => {
+  await openRun('run_img');
+  await runPage.evaluate(() => history.back());
+  await runPage.waitForSelector('#runDrawerBackdrop:not(.show)', { state: 'attached' });
+  await openRun('run_img');
+  await drawerOpen().getByRole('button', { name: 'Back' }).click();
+  await runPage.waitForSelector('#runDrawerBackdrop:not(.show)', { state: 'attached' });
+});
+await check('the More menu holds Cancel run and Retry', async () => {
+  await openRun('run_img');
+  await drawerOpen().getByRole('button', { name: 'More' }).click();
+  assert.equal(await runPage.getByRole('menuitem', { name: 'Cancel run' }).count(), 1);
+  assert.equal(await runPage.getByRole('menuitem', { name: 'Retry' }).count(), 1);
+  await runPage.keyboard.press('Escape'); await closeRun();
+});
+await check('reloading on #run/<running image run> reopens it with its progress bar', async () => {
+  await runPage.goto(base + '/#run/run_live'); await runPage.reload();
+  await runPage.waitForSelector('#runDrawerBackdrop.show #runDrawer [role="progressbar"]');
+  assert.match(await drawerOpen().innerText(), /Moonrise render/);
+  await drawerOpen().getByRole('button', { name: 'Back' }).click();
+  await runPage.waitForFunction(() => location.hash === '#home');
+  assert.equal(await drawerOpen().count(), 0);
+});
+await check('a missing run says so and offers Open Work; no page error', async () => {
+  const errors = [];
+  const mp = await newPage(stubSetup, '/#run/run-missing'); mp.on('pageerror', e => errors.push(e.message));
+  await mp.waitForSelector('#runDrawerBackdrop.show');
+  await mp.getByText('This run is no longer available').waitFor();
+  await mp.locator('#runDrawer .btn-outline', { hasText: 'Open Work' }).click();
+  await mp.waitForFunction(() => location.hash === '#work');
+  assert.deepEqual(errors, []);
+  await mp.close();
+});
+await check('openPending shows Starting…, resolve swaps the hash without a new history entry, fail offers Close', async () => {
+  await runPage.evaluate(() => { window.__h = window.LocalAIRuns.openPending({ kind: 'image', title: 'Sunset poster' }); });
+  await runPage.waitForSelector('#runDrawerBackdrop.show');
+  const t = await drawerOpen().innerText();
+  assert.match(t, /Starting…/); assert.match(t, /Sunset poster/);
+  assert.equal(await runPage.evaluate(() => location.hash), '#run/pending');
+  const len = await runPage.evaluate(() => history.length);
+  await runPage.evaluate(() => window.__h.resolve('run_live'));
+  await runPage.waitForFunction(() => location.hash === '#run/run_live');
+  await drawerOpen().getByText('Moonrise render').waitFor();
+  assert.equal(await runPage.evaluate(() => history.length), len);
+  await closeRun();
+  await runPage.evaluate(() => { window.__h = window.LocalAIRuns.openPending({ kind: 'chat', title: 'Question' }); });
+  await runPage.waitForSelector('#runDrawerBackdrop.show');
+  await runPage.evaluate(() => window.__h.fail('The model is not running.'));
+  await drawerOpen().getByText('The model is not running.').waitFor();
+  await drawerOpen().getByRole('button', { name: 'Close' }).click();
+  await runPage.waitForSelector('#runDrawerBackdrop:not(.show)', { state: 'attached' });
 });
 await check('Home run center renders the same cards', async () => {
   await runPage.evaluate(() => window.showView('home'));

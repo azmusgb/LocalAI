@@ -114,6 +114,8 @@ test('unified run API exposes native chat plus legacy execution history and retr
   const detail = await request(`/api/runs?id=${encodeURIComponent(chat.value.runId)}`);
   assert.equal(detail.response.status, 200);
   assert.equal(detail.value.item.id, chat.value.runId);
+  assert.equal(detail.value.item.card.kind, 'chat');
+  assert.equal(detail.value.item.card.icon, 'compose');
   assert.ok(detail.value.item.events.some(event => event.status === 'completed'));
 
   const nativeRetry = await request('/api/runs/retry', { id: chat.value.runId });
