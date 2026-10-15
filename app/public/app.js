@@ -219,8 +219,7 @@ async function pollEngineeringIntent(runId,msg=null){
         loadApprovals(),
         loadInbox(),
         loadActivity(),
-        loadWorkspace(),
-        loadHomeCapabilities()
+        loadWorkspace()
       ]);
     }catch{}
 
@@ -524,23 +523,12 @@ async function refreshStatus(force=false){
     document.querySelectorAll('[data-status-retry]').forEach(b=>b.onclick=()=>refreshStatus(true));
   }
 }
-// One line of tappable status chips at the foot of Home. Anything needing action (pending changes, open issues,
-// unconfigured bridges) is raised by the Attention card instead, so only steady-state facts appear here.
-// ui.js appends #truthModelCapabilityTile to this strip; keep it across re-renders.
-function renderCapabilityStrip(box,html){const tile=$('truthModelCapabilityTile');box.innerHTML=html;if(tile)box.appendChild(tile);qsa('#homeCapabilities [data-chip-view]').forEach(b=>b.addEventListener('click',()=>window.showView?.(b.dataset.chipView)));}
-function capChip(view,value,label,title=''){return `<button type="button" class="cap-tile cap-chip" data-chip-view="${esc(view)}"${title?` title="${esc(title)}"`:''}><b>${esc(value)}</b><span>${esc(label)}</span></button>`;}
-async function loadHomeCapabilities(){
-  const box=$('homeCapabilities');if(!box)return;
-  try{const r=await fetch('/api/capabilities',{cache:'no-store'}),j=await r.json();if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);const imageNames=(j.images?.models||[]).filter(x=>x.supported).map(x=>x.familyLabel||x.family);const unique=[...new Set(imageNames)];const active=Number(j.engineering?.active||0);
-    renderCapabilityStrip(box,[active?capChip('changes',active,active===1?'change running':'changes running'):'',capChip('create',unique.length?unique.join(', '):'None','images'),capChip('status',`v${j.version||'—'}`,'Local AI',`Local AI ${j.version||''}`)].join(''));}
-  catch(e){renderCapabilityStrip(box,`<div class="empty">Status summary unavailable: ${esc(e.message)}</div>`)}
-}
 function schedulePolling(){clearInterval(state.statusTimer);clearInterval(state.activityTimer);if(!document.hidden){state.statusTimer=setInterval(refreshStatus,60000);state.activityTimer=setInterval(()=>{loadActivity();loadWorkspace();},60000);}}
 document.addEventListener('visibilitychange',()=>{schedulePolling();if(!document.hidden){refreshStatus();loadActivity();loadWorkspace();}});
 
 // Only a positive result is worth showing; without a service worker (plain-HTTP LAN access) the hint stays hidden.
 async function detectOfflineReady(){const hint=$('offlineHint');if(!('serviceWorker' in navigator))return;try{await navigator.serviceWorker.register('/sw.js');hint.textContent='Works offline · the app shell is cached on this device';hint.hidden=false;}catch(e){console.debug('Service worker registration failed',e);}}
-async function init(){syncModeSelect();renderAgentMap();renderMessages();setPhase('idle');loadActivity();loadLibrary();loadWorkspace();refreshStatus();loadHomeCapabilities();schedulePolling();detectOfflineReady();try{const r=await fetch('/api/models',{cache:'no-store'}),j=await r.json();state.model=j.default||j.models?.[0]||null;}catch{} }
+async function init(){syncModeSelect();renderAgentMap();renderMessages();setPhase('idle');loadActivity();loadLibrary();loadWorkspace();refreshStatus();schedulePolling();detectOfflineReady();try{const r=await fetch('/api/models',{cache:'no-store'}),j=await r.json();state.model=j.default||j.models?.[0]||null;}catch{} }
 init();
 
 
