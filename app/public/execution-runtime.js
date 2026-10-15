@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const state = { runs: [], selectedId: null, timer: 0, loading: false };
+  const state = { runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '' };
   const ACTIVE = new Set(['queued', 'running', 'streaming', 'awaiting_approval']);
 
   function el(id) { return document.getElementById(id); }
@@ -34,6 +34,9 @@
     if (value === null || value === undefined || value === '') return '';
     if (typeof value === 'string') return value;
     try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+  }
+  function drawerSignature(run) {
+    return run ? [run.id, run.status, run.updatedAt, run.progress, outputText(run.output).length, run.error || '', Array.isArray(run.events) ? run.events.length : 0].join('|') : '';
   }
 
   function installStyles() {
@@ -182,13 +185,14 @@
       else visible.forEach((run) => homeList.appendChild(makeRunRow(run)));
     }
 
-    if (state.selectedId && el('runDrawerBackdrop')?.classList.contains('show')) renderDrawer(state.selectedId);
+    if (state.selectedId && el('runDrawerBackdrop')?.classList.contains('show') && drawerSignature(runs.find((run) => run.id === state.selectedId)) !== state.drawerSig) renderDrawer(state.selectedId);
   }
 
   function renderDrawer(runId) {
     const run = state.runs.find((item) => item.id === runId);
     const drawer = el('runDrawer');
     if (!run || !drawer) return;
+    state.drawerSig = drawerSignature(run);
     drawer.replaceChildren();
 
     const head = document.createElement('div');
@@ -279,6 +283,7 @@
     backdrop.classList.remove('show');
     backdrop.setAttribute('aria-hidden', 'true');
     state.selectedId = null;
+    state.drawerSig = '';
   }
 
   async function post(path, body) {

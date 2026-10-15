@@ -5,6 +5,7 @@
   const TRUTH_REFRESH_MS = 30000;
   let truthRefreshTimer = 0;
   let lastTruthSnapshot = null;
+  const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
 
   function activateView(view) {
     const target = document.getElementById(view);
@@ -505,13 +506,13 @@
     const runtimeLabel = models?.runtimeAvailable === false ? 'Unavailable' : 'Live';
 
     summary.innerHTML = `
-      <div class="model-runtime-metric"><strong title="${configured}">${configured}</strong><span>Configured default</span></div>
+      <div class="model-runtime-metric"><strong title="${esc(configured)}">${esc(configured)}</strong><span>Configured default</span></div>
       <div class="model-runtime-metric"><strong>${Number(models?.installedCount ?? installed.length)}</strong><span>Installed</span></div>
       <div class="model-runtime-metric"><strong>${Number(models?.loadedCount ?? loaded.length)}</strong><span>Loaded now</span></div>
       <div class="model-runtime-metric"><strong>${runtimeLabel}</strong><span>Runtime detail</span></div>`;
 
     if (models?.available === false) {
-      list.innerHTML = `<div class="model-runtime-note model-runtime-error"><strong>Model inventory unavailable</strong><div style="margin-top:4px">${models.runtimeError || 'Ollama model inventory could not be read.'}</div></div>`;
+      list.innerHTML = `<div class="model-runtime-note model-runtime-error"><strong>Model inventory unavailable</strong><div style="margin-top:4px">${esc(models.runtimeError || 'Ollama model inventory could not be read.')}</div></div>`;
       note.textContent = 'The application will not infer installed model state while inventory is unavailable.';
       return;
     }
