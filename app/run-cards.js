@@ -9,6 +9,18 @@ function badge(status) {
   const raw = String(status ?? '').trim().replace(/[_-]+/g, ' ');
   return { label: raw ? raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase() : 'Unknown', tone: 'neutral' };
 }
+// Diff stat per file, never the patch: count +/- lines of the staged diff, else estimate from the planned operations.
+const nl = t => typeof t === 'string' && t ? t.split('\n').length : 0;
+function fileStats(change) {
+  const diffs = Array.isArray(change.diffs) ? change.diffs : [];
+  return (Array.isArray(change.files) ? change.files : []).map(f => {
+    const d = diffs.find(x => x && x.path === f.path);
+    if (d && typeof d.diff === 'string') { let added = 0, removed = 0; for (const l of d.diff.split('\n')) { if (l.startsWith('+') && !l.startsWith('+++')) added++; else if (l.startsWith('-') && !l.startsWith('---')) removed++ } return { path: f.path, added, removed } }
+    let added = 0, removed = 0;
+    for (const o of Array.isArray(f.operations) ? f.operations : []) { added += nl(o.content ?? o.replace ?? o.replacement); removed += nl(o.find) }
+    return { path: f.path, added, removed };
+  });
+}
 function runCard(run, { approvalFor, changeFor } = {}) {
   run = run || {};
   const kind = Object.prototype.hasOwnProperty.call(KINDS, run.type) ? run.type : 'other';
@@ -18,7 +30,7 @@ function runCard(run, { approvalFor, changeFor } = {}) {
   if (kind === 'chat' || kind === 'research') preview = { type: 'text', text: String(out.text || summary).slice(0, 240) };
   else if (kind === 'image') { const imgs = Array.isArray(out.images) ? out.images : []; preview = { type: 'image', src: imgs[0]?.imageUrl || '', count: imgs.length } }
   else if (kind === 'agent') preview = { type: 'mission', text: summary };
-  else if (kind === 'engineering') { const ch = meta.changeId && changeFor ? changeFor(meta.changeId) : null; preview = { type: 'diff', changeId: meta.changeId || null, files: ch && Array.isArray(ch.files) ? ch.files : null } }
+  else if (kind === 'engineering') { const ch = meta.changeId && changeFor ? changeFor(meta.changeId) : null; preview = { type: 'diff', changeId: meta.changeId || null, files: ch && Array.isArray(ch.files) ? fileStats(ch) : null } }
   const action = { label: run.status === 'awaiting_approval' ? 'Review' : run.status === 'failed' && run.retryable ? 'Retry' : 'Open' };
   let approval = null;
   if (approvalFor) { const a = approvalFor(run); if (a) approval = { id: a.id, title: a.title, detail: a.detail, risk: a.risk } }

@@ -42,12 +42,12 @@ test('agent and automation runs', () => {
 test('engineering run awaiting approval carries its approval', () => {
   const run = { id: 'e1', type: 'engineering', status: 'awaiting_approval', meta: { changeId: 'chg-1' } };
   const approval = { id: 'ap1', title: 'Apply change chg-1', detail: 'd', risk: 'high' };
-  const c = runCard(run, { approvalFor: r => r.meta.changeId === 'chg-1' ? approval : null, changeFor: () => ({ files: [{ path: 'a.js' }] }) });
+  const c = runCard(run, { approvalFor: r => r.meta.changeId === 'chg-1' ? approval : null, changeFor: () => ({ files: [{ path: 'a.js', operations: [{ type: 'append', content: 'x\ny' }] }] }) });
   assert.equal(c.icon, 'build');
   assert.equal(c.view, 'changes');
   assert.equal(c.approval.risk, 'high');
   assert.equal(c.action.label, 'Review');
-  assert.deepEqual(c.preview, { type: 'diff', changeId: 'chg-1', files: [{ path: 'a.js' }] });
+  assert.deepEqual(c.preview, { type: 'diff', changeId: 'chg-1', files: [{ path: 'a.js', added: 2, removed: 0 }] });
   assert.equal(runCard(run, none).preview.files, null);
   assert.equal(runCard(run, none).approval, null);
 });
@@ -60,4 +60,18 @@ test('unknown type and missing output fall back', () => {
   const t = runCard({ id: 'y', type: 'chat', status: 'queued', summary: 'from summary' }, none);
   assert.deepEqual(t.preview, { type: 'text', text: 'from summary' });
   assert.ok(runCard({}, {}).icon);
+});
+
+test('engineering preview is a diff stat, never the patch', () => {
+  const secret = 'SECRET_PATCH_BODY';
+  const run = { id: 'e2', type: 'engineering', status: 'completed', meta: { changeId: 'c2' } };
+  const change = { files: [{ path: 'a.js', operations: [{ type: 'replace', find: 'old1\nold2', replace: secret + '\n'.repeat(40) + 'z' }] }, { path: 'b.js', operations: [{ type: 'create', content: secret }] }] };
+  const planned = runCard(run, { changeFor: () => change }).preview.files;
+  assert.deepEqual(planned.map(f => Object.keys(f)), [['path', 'added', 'removed'], ['path', 'added', 'removed']]);
+  assert.deepEqual(planned, [{ path: 'a.js', added: 41, removed: 2 }, { path: 'b.js', added: 1, removed: 0 }]);
+  const staged = { ...change, diffs: [{ path: 'a.js', diff: '@@ -1,2 +1,1 @@\n-old1\n-old2\n+' + secret + '\n context', changed: true }] };
+  const card = runCard(run, { changeFor: () => staged });
+  assert.deepEqual(card.preview.files[0], { path: 'a.js', added: 1, removed: 2 });
+  assert.equal(JSON.stringify(card).includes(secret), false);
+  assert.equal(JSON.stringify(runCard(run, { changeFor: () => change })).includes(secret), false);
 });
