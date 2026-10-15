@@ -293,3 +293,17 @@ test('a masked cross-origin "Script error." never becomes a signal; a real error
   assert.equal(signals.some(s => s.name === 'Script error.'), false);
   assert.equal(signals.some(s => s.name.startsWith('TypeError: x is undefined')), true);
 });
+
+test('dismissing a promoted signal closes its backlog item; Back to backlog clears the hand-off', { timeout: 60000 }, async t => {
+  const base = await startServer(t, { seed: s => {
+    s.put('issues', { id: 'i-d', key: 'browser-runtime:d', kind: 'browser-runtime', name: 'D', detail: '', severity: 'medium', status: 'open', occurrences: 1, createdAt: '2026-10-15T00:00:00Z', updatedAt: '2026-10-15T00:00:00Z', lastSeenAt: '2026-10-15T00:00:00Z', lastEventAt: '2026-10-15T00:00:00Z', changeId: null }, 0);
+    seedItem(s, 'idea-h', { handedToClaude: true, priorityBoost: 30, decisionNote: 'Handed to Claude' });
+  } });
+  await post(base, '/api/improve/signal', { id: 'i-d', action: 'promote' });
+  await post(base, '/api/improve/signal', { id: 'i-d', action: 'dismiss' });
+  const promoted = await itemById(base, 'signal-i-d');
+  assert.deepEqual([promoted.status, promoted.stage], ['rejected', 'setAside']);
+  assert.equal((await post(base, '/api/improve/item', { id: 'idea-h', action: 'backToBacklog' })).status, 200);
+  const h = await itemById(base, 'idea-h');
+  assert.deepEqual([h.handedToClaude, h.priorityBoost], [false, 0]);
+});

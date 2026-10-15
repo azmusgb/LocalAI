@@ -31,7 +31,11 @@ function stageOf(item, changesById = new Map()) {
   return 'backlog';
 }
 
+// Service-health checks fail while a companion is down and pass when it's back; Health already reports and notifies
+// that, so promoting them only churned the Backlog (promoted, resolved on its own, reopened).
+const isServiceHealth = s => s?.kind === 'quality-check' && /^service health/i.test(String(s.name || ''));
 function shouldPromote(signal) {
+  if (isServiceHealth(signal)) return false;
   return signal?.status === 'open' && (signal.severity === 'high' || Number(signal.occurrences) >= 3);
 }
 
@@ -60,7 +64,8 @@ function moveToTopBoost(item, openItems, scoreOf) {
   const others = openItems.filter(o => o.id !== item.id);
   const top = others.length ? Math.max(...others.map(scoreOf)) : scoreOf(item);
   const base = scoreOf({ ...item, priorityBoost: 0 });
-  return top + 1 - base;
+  // Already on top: keep its boost rather than lowering it to "top + 1".
+  return Math.max(Number(item.priorityBoost) || 0, top + 1 - base);
 }
 
 function handToClaude(item, at) {

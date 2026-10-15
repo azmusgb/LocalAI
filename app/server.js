@@ -2774,8 +2774,10 @@ async function apiImproveItem(req,res){
       case 'backToBacklog':case 'discard':{
         if(change&&IMPROVE_LOCKED_CHANGE.includes(change.status))return json(res,409,{error:'This change is already approved and being shipped as a pull request.'});
         if(change&&live)improveRetireChange(change.id);
-        if(b.action==='backToBacklog')return json(res,200,{item:improveWrite({...improveRead(f.id),status:'approved',changeId:null})});
-        const aside=b.then==='aside';return json(res,200,{item:improveWrite({...improveRead(f.id),status:aside?'deferred':'approved',changeId:aside?f.changeId:null})});
+        // Back in the Backlog means you're reconsidering it, so a hand-off to Claude is withdrawn too.
+        const unhand=x=>x.handedToClaude?{handedToClaude:false,priorityBoost:Math.max(0,(Number(x.priorityBoost)||0)-30)}:{};
+        if(b.action==='backToBacklog'){const cur=improveRead(f.id);return json(res,200,{item:improveWrite({...cur,...unhand(cur),status:'approved',changeId:null})})}
+        const aside=b.then==='aside',cur=improveRead(f.id);return json(res,200,{item:improveWrite({...cur,...unhand(cur),status:aside?'deferred':'approved',changeId:aside?f.changeId:null})});
       }
     }
   }catch(e){storageError(res,e,500)}
@@ -2783,7 +2785,11 @@ async function apiImproveItem(req,res){
 async function apiImproveSignal(req,res){
   try{const b=await readBody(req);if(!['promote','dismiss'].includes(b.action))return json(res,400,{error:'action must be promote or dismiss'});
     const issues=issueStore(),i=issues.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Signal not found'});
-    if(b.action==='dismiss'){issues[i].status='ignored';issues[i].updatedAt=nowIso();saveIssues(issues);return json(res,200,{signal:issues[i]})}
+    if(b.action==='dismiss'){issues[i].status='ignored';issues[i].updatedAt=nowIso();saveIssues(issues);
+      // Its backlog item, if it was promoted and not yet started, is closed with it.
+      const promoted=improveRead(improve.signalItemId(issues[i].id));
+      if(promoted&&improve.stageOf(promoted,new Map(changeStore().map(c=>[c.id,c])))==='backlog')improveWrite({...promoted,status:'rejected',decisionNote:'Signal dismissed',decidedAt:nowIso()});
+      return json(res,200,{signal:issues[i]})}
     const id=improve.signalItemId(issues[i].id);const existing=improveRead(id);if(existing)return json(res,200,{item:existing});
     const item=improve.promoteSignal(issues[i],nowIso());storage.writeSetting(CLAUDE_FINDING_PREFIX+id,{sessionId:'improve',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...item});
     json(res,200,{item})}catch(e){storageError(res,e,500)}
@@ -3108,7 +3114,8 @@ async function apiReleases(req, res) {
 migrateLegacyActivityToLibrary();
 recordReleaseHistory();
 shipQueuedSelfChanges();
-runImproveReconcile({ startup: true });
+// One bad record must not stop the appliance starting; Improve catches up on the next scan or save.
+try { runImproveReconcile({ startup: true }); } catch (e) { console.error(`${nowIso()} Improve start-up reconcile failed:`, e); }
 // Health is checked on its own every minute, so an outage reaches the phone (Down/Recovered) even with no page open.
 const HEALTH_TICK_MS = Math.max(200, Number(process.env.HEALTH_TICK_MS) || 60000);
 setInterval(() => { getStatusAndRecordTransition().catch(() => {}); }, HEALTH_TICK_MS).unref();
