@@ -229,3 +229,19 @@ test('image runs share a thread', { timeout: 60000 }, async t => {
   assert.equal(imgs.value.items.length, 2);
   assert.equal((await request('/api/runs?threads=1&type=image')).value.items.length, 1);
 });
+
+test('before pages the timeline by creation time', { timeout: 120000 }, async t => {
+  const { request } = await startServer(t);
+  const ids = [];
+  for (let i = 0; i < 70; i++) ids.push((await request('/api/chat', { messages: [{ role: 'user', content: `q${i}` }], threadId: `th-${i}` })).value.runId);
+  const first = await request('/api/runs?threads=1&limit=60');
+  assert.equal(first.value.items.length, 60);
+  const last = first.value.items[59].id;
+  const rest = await request(`/api/runs?threads=1&before=${encodeURIComponent(last)}&limit=60`);
+  assert.equal(rest.response.status, 200);
+  assert.equal(rest.value.items.length, 10);
+  const newest = new Set(first.value.items.map(x => x.id));
+  assert.ok(rest.value.items.every(x => !newest.has(x.id)));
+  assert.equal((await request('/api/runs?before=../x')).response.status, 400);
+  assert.equal((await request('/api/runs?before=run-0-none')).response.status, 404);
+});

@@ -1669,3 +1669,17 @@ body.run-view-open{overflow:hidden}
 .notify-devices li{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--ds-line);border-radius:var(--ds-r-md);padding:8px 10px}
 .notify-devices .btn{min-height:36px;padding:4px 12px;margin:0}
 .notify-device-actions{display:flex;gap:6px;align-items:center}.notify-rename{width:9em;min-height:36px}
+/* Work — one timeline, grouped by day */
+.work-tools{display:grid;gap:10px;margin-bottom:16px}
+.work-chips{display:flex;flex-wrap:wrap;gap:8px}
+.work-chip{cursor:pointer}
+.work-chip[aria-pressed="true"]{background:var(--ds-accent);color:var(--ds-accent-ink)}
+.work-search{width:100%;min-height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--ds-line-input);background:var(--ds-surface);color:var(--ds-text);font:16px/1.2 var(--ds-font)}
+@media(min-width:761px){.work-tools{grid-template-columns:1fr minmax(240px,320px);align-items:center}}
+.work-group+.work-group{margin-top:20px}
+.work-day{margin:0 4px 8px;font-size:13px;font-weight:650;color:var(--ds-muted);letter-spacing:0;text-transform:none}
+.work-more{display:flex;justify-content:center;margin-top:16px}
+.work-more[hidden],.work-more button[hidden]{display:none}
+@media(max-width:760px){.work-chip{min-height:44px}}
+/* The whole row opens the run; its button is the keyboard path, so it stays small and quiet. */
+.work-list .run-card__action{align-self:flex-start;min-height:44px;margin-top:6px;padding:0 16px;border-radius:12px;background:transparent;color:var(--ds-accent-text);border:1px solid var(--ds-line-input);font-size:14px}
