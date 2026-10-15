@@ -51,8 +51,9 @@ if ($DryRun) { Invoke-Compose --dry-run up -d; return }
 # 3. Containers that exist but belong to no compose project (or another one) are in the way.
 $names = (& docker compose --env-file $EnvFile -f $compose config --format json | ConvertFrom-Json).services.PSObject.Properties.Value.container_name
 $foreign = @(foreach ($n in $names) {
-    $project = & docker inspect $n --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>$null
-    if ($LASTEXITCODE -eq 0 -and $project -ne 'local-ai') { $n }
+    # {{json}} rather than {{index ... "com.docker..."}}: Windows PowerShell 5.1 strips quotes from native arguments.
+    $labels = & docker inspect $n --format '{{json .Config.Labels}}' 2>$null
+    if ($LASTEXITCODE -eq 0) { $project = ($labels | ConvertFrom-Json).'com.docker.compose.project'; if ($project -ne 'local-ai') { $n } }
 })
 $renamed = @()
 if ($foreign) {
