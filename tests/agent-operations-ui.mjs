@@ -274,6 +274,33 @@ await check('the mission strip and Agent World show the same mission while the s
   await pg.close();
 });
 
+// A navigation click reaches Missions: the #agents URL, and the Work tab then the Missions chip, both land on Work with only mission rows.
+await check('navigation reaches Missions through Work',async()=>{
+  const mk=(id,kind,title)=>({id,type:kind,status:'completed',progress:100,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),card:{kind,icon:'system',title,summary:'',badge:{label:'Done',tone:'good'},preview:null,action:{label:'Open'},approval:null}});
+  const items=[mk('run-1-a','chat','A chat'),mk('legacy-agent:one','agent','A mission run'),mk('run-2-b','image','An image')];
+  const visit=async(hash,viewport)=>{
+    const pg=await browser.newPage({viewport});
+    await pg.route(u=>u.pathname==='/api/runs',r=>r.fulfill({contentType:'application/json',body:JSON.stringify({items,summary:{}})}));
+    await pg.goto(base+'/'+hash,{waitUntil:'domcontentloaded'});
+    await pg.waitForFunction(()=>typeof window.showView==='function'&&window.LocalAIRouter&&location.hash);
+    return pg;
+  };
+  const onlyMissions=async pg=>{
+    await pg.waitForSelector('#work.active .run-card');
+    assert.equal(await pg.locator('[data-work-kind="missions"]').getAttribute('aria-pressed'),'true');
+    assert.deepEqual(await pg.locator('#work .run-card').evaluateAll(r=>r.map(x=>x.dataset.kind)),['agent']);
+  };
+  const deep=await visit('#agents',{width:1280,height:860});await onlyMissions(deep);await deep.close();
+  for(const viewport of [{width:1280,height:860},{width:390,height:844}]){
+    const pg=await visit('',viewport);
+    await pg.locator(viewport.width<760?'#uxMobileNav [data-domain="work"]':'.ux-primary-item[data-domain="work"]').click();
+    await pg.waitForSelector('#work.active .run-card');
+    assert.equal(await pg.locator('#work .run-card').count(),3);
+    await pg.locator('[data-work-kind="missions"]').click();
+    await onlyMissions(pg);await pg.close();
+  }
+});
+
 await browser.close();
 
 if(failures.length){

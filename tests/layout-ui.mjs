@@ -49,7 +49,7 @@ for (const size of SIZES) {
 
   await check(`${size[0]}: run rows stay inside the run list`, async () => {
     const { page, context } = await open(size);
-    await page.evaluate(() => { location.hash = '#work' });
+    await page.evaluate(() => window.showView('runs')); // the Runs page (reachable by id); #work is the Work timeline
     await page.waitForSelector('#runList .run-card');
     const out = await page.evaluate(() => [...document.querySelectorAll('#runList .run-card')].map(c => {
       const list = c.closest('.run-list').getBoundingClientRect(), r = c.getBoundingClientRect();
@@ -60,6 +60,21 @@ for (const size of SIZES) {
     assert.ok(img <= 96, `image preview is a thumbnail (got ${img}px)`);
     const btn = await page.$eval('#runList .run-card__action', b => b.getBoundingClientRect().width);
     assert.ok(btn < 200, `Open is a button, not a bar (got ${btn}px)`);
+    await context.close();
+  });
+
+  await check(`${size[0]}: Work rows stay inside their list, with a thumbnail and no per-row Open bar`, async () => {
+    const { page, context } = await open(size);
+    await page.evaluate(() => { location.hash = '#work' });
+    await page.waitForSelector('#workList .run-card');
+    const out = await page.evaluate(() => [...document.querySelectorAll('#workList .run-card')].map(c => {
+      const list = c.closest('.list-group').getBoundingClientRect(), r = c.getBoundingClientRect();
+      return r.right - list.right;
+    }).filter(d => d > 1));
+    assert.deepEqual(out, [], 'rows wider than their list');
+    const img = await page.$eval('#workList .run-card__preview--image img', i => i.getBoundingClientRect().width);
+    assert.ok(img <= 96, `image preview is a thumbnail (got ${img}px)`);
+    assert.equal(await page.locator('#workList .run-card__action').filter({ hasText: /^Open$/ }).count(), 0);
     await context.close();
   });
 

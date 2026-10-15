@@ -155,13 +155,14 @@ class RunLedger {
     return publicRun(run);
   }
 
-  list({ limit = 100, status = '', type = '', projectId = '', threadId = '', collapseThreads = false } = {}) {
+  list({ limit = 100, status = '', type = '', projectId = '', threadId = '', collapseThreads = false, all = false } = {}) {
     const safeLimit = Math.max(1, Math.min(500, Number(limit) || 100));
     const where = {};
     if (status) where.status = status;
     if (type) where.type = type;
     if (projectId) where.projectId = projectId;
     if (threadId) where.threadId = threadId;
+    if (all && !collapseThreads) return this.storage.listSettings(RUN_KEY_PREFIX, { where }).map(publicRun); // every run, for paging
     if (!collapseThreads) return this.storage.listSettings(RUN_KEY_PREFIX, { limit: safeLimit, where }).map(publicRun);
     const seen = new Set();
     return this.storage.listSettings(RUN_KEY_PREFIX, { where }).filter(r => {

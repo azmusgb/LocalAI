@@ -1685,3 +1685,24 @@ body.run-view-open{overflow:hidden}
 .notify-devices li{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--ds-line);border-radius:var(--ds-r-md);padding:8px 10px}
 .notify-devices .btn{min-height:36px;padding:4px 12px;margin:0}
 .notify-device-actions{display:flex;gap:6px;align-items:center}.notify-rename{width:9em;min-height:36px}
+/* Work — one timeline, grouped by day */
+.work-tools{display:grid;gap:10px;margin-bottom:16px}
+.work-chips{display:flex;flex-wrap:wrap;gap:8px}
+.work-chip{cursor:pointer}
+.work-chip[aria-pressed="true"]{background:var(--ds-accent);color:var(--ds-accent-ink)}
+.work-search{width:100%;min-height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--ds-line-input);background:var(--ds-surface);color:var(--ds-text);font:16px/1.2 var(--ds-font)}
+@media(min-width:761px){.work-tools{grid-template-columns:1fr minmax(240px,320px);align-items:center}}
+.work-group+.work-group{margin-top:20px}
+.work-day{margin:0 4px 8px;font-size:13px;font-weight:650;color:var(--ds-muted);letter-spacing:0;text-transform:none}
+.work-more{display:flex;justify-content:center;margin-top:16px}
+.work-more[hidden],.work-more button[hidden]{display:none}
+@media(max-width:760px){.work-chip{min-height:44px}}
+/* The whole row is the tap target: the title is a button whose hit area stretches over the row. Review and Retry stay small buttons above it. */
+.work-list .run-card{position:relative}
+.work-open{display:block;min-height:24px;max-width:100%;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;white-space:normal;overflow-wrap:anywhere}
+.work-open::after{content:"";position:absolute;inset:0}
+.work-open:focus-visible{outline:none}
+.work-open:focus-visible::after{outline:2px solid var(--ds-accent);outline-offset:-2px;border-radius:12px}
+.work-list .list-row__title{white-space:normal;overflow:visible}
+.work-secondary{position:relative;z-index:1;align-self:flex-start;min-height:36px;margin-top:6px;padding:0 14px;font-size:14px;border-radius:12px}
+@media(max-width:760px){.work-secondary{min-height:44px}#work{padding-inline:3px}}

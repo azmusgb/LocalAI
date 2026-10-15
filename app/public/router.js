@@ -11,7 +11,7 @@ function parse(hash=location.hash){
  return{page:path||'home',runId:null,query};
 }
 const intentFor=id=>({...(INTENTS[id]||{})});
-const put=h=>{if(location.hash!==h)history.replaceState(null,'',location.pathname+location.search+h)};
+const put=(h,state=null)=>{if(location.hash!==h)history.replaceState(state,'',location.pathname+location.search+h)};
 function notifyRun(id){if(id===runOpen)return;runOpen=id;runHandlers.forEach(fn=>{try{fn(id)}catch(e){console.error(e)}})}
 // Show whatever the hash names.
 function apply(){
@@ -20,14 +20,14 @@ function apply(){
  notifyRun(null);
  const V=REG();if(!V||typeof root.showView!=='function')return;
  if(!V.view(cur.page)){put('#home');cur.page='home'}
+ // A hidden page (Runs, Missions…) that showView put in history keeps its own page when Back returns to it; a typed #runs still means Work.
+ if(history.state?.localaiPage===cur.page&&V.view(cur.page).domain==='hidden'&&document.getElementById(cur.page)){applying=true;try{root.showView(cur.page)}finally{applying=false}return}
  const target=V.resolve(cur.page),intent=INTENTS[cur.page];
  if(target!==cur.page||intent){ // an old id: rewrite the hash to the page that owns it, keeping what it meant
   const q=new URLSearchParams(cur.query);for(const [k,v] of Object.entries(intent||{}))if(!q.has(k))q.set(k,v);
   put('#'+target+(q.toString()?'?'+q:''));
  }
- // Until the Work page exists, Work shows the run list.
- const id=target==='work'&&!document.getElementById('work')?'runs':target;
- applying=true;try{root.showView(id)}finally{applying=false}
+ applying=true;try{root.showView(target)}finally{applying=false}
 }
 function go(path,{replace=false}={}){
  const h=String(path).startsWith('#')?String(path):'#'+path;
@@ -37,7 +37,7 @@ function go(path,{replace=false}={}){
 function shown(id){
  if(!ready||applying)return;
  const V=REG(),p=parse().page,hidden=V?.view(id)?.domain==='hidden';
- if(hidden?p!==id:p!==id&&V?.resolve(p)!==V?.resolve(id))put('#'+id);
+ if(hidden?p!==id:p!==id&&V?.resolve(p)!==V?.resolve(id))put('#'+id,hidden?{localaiPage:id}:null);
 }
 // app.js calls start() right after it publishes window.showView (which waits on the release config).
 function start(){

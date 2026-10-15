@@ -229,3 +229,68 @@ test('image runs share a thread', { timeout: 60000 }, async t => {
   assert.equal(imgs.value.items.length, 2);
   assert.equal((await request('/api/runs?threads=1&type=image')).value.items.length, 1);
 });
+
+test('before pages the timeline by creation time', { timeout: 120000 }, async t => {
+  const { request } = await startServer(t);
+  const ids = [];
+  for (let i = 0; i < 70; i++) ids.push((await request('/api/chat', { messages: [{ role: 'user', content: `q${i}` }], threadId: `th-${i}` })).value.runId);
+  const first = await request('/api/runs?threads=1&limit=60');
+  assert.equal(first.value.items.length, 60);
+  const last = first.value.items[59].id;
+  const rest = await request(`/api/runs?threads=1&before=${encodeURIComponent(last)}&limit=60`);
+  assert.equal(rest.response.status, 200);
+  assert.equal(rest.value.items.length, 10);
+  const newest = new Set(first.value.items.map(x => x.id));
+  assert.ok(rest.value.items.every(x => !newest.has(x.id)));
+  assert.equal((await request('/api/runs?before=../x')).response.status, 400);
+  assert.equal((await request('/api/runs?before=run-0-none')).response.status, 404);
+});
+
+// Show more must neither lose nor repeat a thread: threads page by their latest run's (createdAt, id), newest first.
+test('threads page once each by creation, even when an old run was updated late; turns counts the thread', { timeout: 120000 }, async t => {
+  const { request } = await startServer(t);
+  const msg = [{ role: 'user', content: 'hi' }];
+  const made = [];
+  for (let i = 0; i < 62; i++) made.push((await request('/api/chat', { messages: msg, threadId: i % 20 === 5 ? 'multi' : `th-${i}` })).value.runId);
+  // the 60th thread by creation was updated last: by updatedAt it would jump to the top of page 1 and come back on page 2
+  const boundary = made[3];
+  await request('/api/runs/update', { id: boundary, pinned: true });
+  const seen = [];
+  let before = '';
+  for (let page = 0; page < 5; page++) {
+    const r = await request(`/api/runs?threads=1&limit=30${before ? `&before=${encodeURIComponent(before)}` : ''}`);
+    assert.equal(r.response.status, 200);
+    if (!r.value.items.length) break;
+    seen.push(...r.value.items);
+    before = r.value.items.at(-1).id;
+  }
+  const threads = seen.map(x => x.threadId || x.id);
+  assert.equal(new Set(threads).size, threads.length, 'no thread on two pages');
+  assert.equal(new Set(seen.map(x => x.id)).size, seen.length);
+  const expected = new Set(made.map((_, i) => (i % 20 === 5 ? 'multi' : `th-${i}`)));
+  assert.equal(threads.length, expected.size, 'every thread appears exactly once');
+  const ordered = seen.map(x => x.createdAt + x.id);
+  assert.deepEqual(ordered, [...ordered].sort().reverse(), 'newest created first');
+  const multi = seen.find(x => x.threadId === 'multi');
+  assert.equal(multi.turns, 3);
+  assert.equal(multi.id, made[45]);
+  assert.equal(seen.find(x => x.threadId === 'th-0').turns, 1);
+});
+
+test('before pages past the 500-run window to the oldest run', { timeout: 180000 }, async t => {
+  const { request } = await startServer(t);
+  const msg = [{ role: 'user', content: 'hi' }];
+  const ids = [];
+  // the ledger prunes unkept runs at 250, so pin each run: kept runs are never pruned
+  for (let i = 0; i < 520; i++) { const id = (await request('/api/chat', { messages: msg, threadId: `w-${i}` })).value.runId; await request('/api/runs/update', { id, pinned: true }); ids.push(id); }
+  const seen = [];
+  let before = '';
+  for (let page = 0; page < 12; page++) {
+    const r = await request(`/api/runs?threads=1&limit=60${before ? `&before=${encodeURIComponent(before)}` : ''}`);
+    if (!r.value.items.length) break;
+    seen.push(...r.value.items.map(x => x.id));
+    before = r.value.items.at(-1).id;
+  }
+  assert.equal(seen.length, 520);
+  assert.ok(seen.includes(ids[0]), 'the oldest run is reachable');
+});
