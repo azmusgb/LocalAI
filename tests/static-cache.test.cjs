@@ -33,7 +33,7 @@ test('app code revalidates with ETags so a deploy shows up on the next load', { 
     if (attempt === 79) throw new Error(`Server did not start: ${diagnostics}`);
     await new Promise(r => setTimeout(r, 100));
   }
-  for (const file of ['/ui.js', '/app.css', '/index.html', '/sw.js']) {
+  for (const file of ['/ui.js', '/components.js', '/app.css', '/index.html', '/sw.js']) {
     const first = await fetch(base + file);
     assert.equal(first.status, 200, file);
     assert.equal(first.headers.get('cache-control'), 'no-cache', `${file} must revalidate`);
