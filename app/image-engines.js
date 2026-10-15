@@ -34,6 +34,28 @@ const ASPECTS = {
   wide: { label: 'Wide', 512: [896, 512], 1024: [1344, 768] }
 };
 
+// Style presets: words added to the prompt (and things to avoid) that steer every engine the same way.
+const STYLES = {
+  none: { label: 'None', add: '', avoid: '' },
+  photo: { label: 'Photo', add: 'professional photograph, natural light, sharp focus, 50mm lens, realistic detail', avoid: 'illustration, painting, cartoon, 3d render' },
+  cinematic: { label: 'Cinematic', add: 'cinematic film still, dramatic lighting, shallow depth of field, color graded, anamorphic', avoid: 'cartoon, flat lighting' },
+  illustration: { label: 'Illustration', add: 'digital illustration, clean lines, vibrant colors, detailed artwork', avoid: 'photo, photorealistic' },
+  anime: { label: 'Anime', add: 'anime style, cel shading, expressive characters, studio quality key visual', avoid: 'photo, photorealistic, 3d render' },
+  watercolor: { label: 'Watercolor', add: 'watercolor painting, soft washes, paper texture, delicate brushwork', avoid: 'photo, 3d render, harsh lines' },
+  oil: { label: 'Oil painting', add: 'oil painting on canvas, visible brushstrokes, rich colors, classical composition', avoid: 'photo, 3d render' },
+  render3d: { label: '3D render', add: '3d render, octane render, soft global illumination, highly detailed, studio lighting', avoid: 'painting, sketch, flat' },
+  pixel: { label: 'Pixel art', add: 'pixel art, 16-bit, crisp pixels, limited palette', avoid: 'blurry, photo, smooth gradients' },
+  sketch: { label: 'Sketch', add: 'pencil sketch, graphite, cross-hatching, monochrome line art on paper', avoid: 'color, photo, 3d render' }
+};
+
+function applyStyle(prompt, negative, styleId) {
+  const style = STYLES[styleId] || STYLES.none;
+  return {
+    prompt: style.add ? `${prompt}, ${style.add}` : prompt,
+    negative: [negative, style.avoid].filter(Boolean).join(', ')
+  };
+}
+
 const lower = (s) => String(s || '').toLowerCase();
 
 function inferCheckpointFamily(name) {
@@ -84,11 +106,16 @@ function sizeFor(engine, aspect, width, height) {
   return a[engine.base >= 1024 ? 1024 : 512];
 }
 
-// The ComfyUI graph for one image. Node "9" is always the final image, so the caller can read its output.
-function buildWorkflow(engine, { prompt, negativePrompt, width, height, steps, cfg, seed, upscaler }) {
-  const sampler = { seed, steps, cfg, sampler_name: engine.sampler, scheduler: engine.scheduler, denoise: 1 };
-  let graph;
-  if (engine.family === 'flux') {
+// The ComfyUI graph for one run. Node "9" is always the final image(s), so the caller can read its output.
+//   batch   images drawn at once (one sampler pass; seeds differ per image)
+//   source  { image, mask? }: names of files already uploaded to ComfyUI's input folder. Without a mask the
+//           whole picture is redrawn at strength `denoise`; with one, only the white area is, and everything
+//           outside it is copied back from the original pixel for pixel.
+function buildWorkflow(engine, { prompt, negativePrompt, width, height, steps, cfg, seed, upscaler, batch = 1, source = null, denoise = 1 }) {
+  const sampler = { seed, steps, cfg, sampler_name: engine.sampler, scheduler: engine.scheduler, denoise: source ? denoise : 1 };
+  const flux = engine.family === 'flux';
+  let graph, vae;
+  if (flux) {
     graph = {
       1: { class_type: 'UnetLoaderGGUF', inputs: { unet_name: engine.files.unet } },
       2: { class_type: 'DualCLIPLoader', inputs: { clip_name1: engine.files.t5, clip_name2: engine.files.clipL, type: 'flux' } },
@@ -96,21 +123,41 @@ function buildWorkflow(engine, { prompt, negativePrompt, width, height, steps, c
       4: { class_type: 'CLIPTextEncode', inputs: { text: prompt, clip: ['2', 0] } },
       // FLUX schnell ignores the negative prompt (cfg 1); an empty conditioning keeps KSampler happy.
       5: { class_type: 'ConditioningZeroOut', inputs: { conditioning: ['4', 0] } },
-      6: { class_type: 'EmptySD3LatentImage', inputs: { width, height, batch_size: 1 } },
-      7: { class_type: 'KSampler', inputs: { ...sampler, model: ['1', 0], positive: ['4', 0], negative: ['5', 0], latent_image: ['6', 0] } },
-      8: { class_type: 'VAEDecode', inputs: { samples: ['7', 0], vae: ['3', 0] } }
+      6: { class_type: 'EmptySD3LatentImage', inputs: { width, height, batch_size: batch } }
     };
+    vae = ['3', 0];
   } else {
     graph = {
       1: { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: engine.files.checkpoint } },
       4: { class_type: 'CLIPTextEncode', inputs: { text: prompt, clip: ['1', 1] } },
       5: { class_type: 'CLIPTextEncode', inputs: { text: negativePrompt ?? engine.negative, clip: ['1', 1] } },
-      6: { class_type: 'EmptyLatentImage', inputs: { width, height, batch_size: 1 } },
-      7: { class_type: 'KSampler', inputs: { ...sampler, model: ['1', 0], positive: ['4', 0], negative: ['5', 0], latent_image: ['6', 0] } },
-      8: { class_type: 'VAEDecode', inputs: { samples: ['7', 0], vae: ['1', 2] } }
+      6: { class_type: 'EmptyLatentImage', inputs: { width, height, batch_size: batch } }
     };
+    vae = ['1', 2];
   }
+  let latent = ['6', 0], mask = null;
+  if (source) {
+    delete graph[6];
+    graph[20] = { class_type: 'LoadImage', inputs: { image: source.image } };
+    graph[21] = { class_type: 'VAEEncode', inputs: { pixels: ['20', 0], vae } };
+    latent = ['21', 0];
+    if (source.mask) {
+      graph[22] = { class_type: 'LoadImageMask', inputs: { image: source.mask, channel: 'red' } };
+      // A slightly larger, soft-edged mask blends the new area into its surroundings.
+      graph[23] = { class_type: 'GrowMask', inputs: { mask: ['22', 0], expand: 6, tapered_corners: true } };
+      graph[24] = { class_type: 'SetLatentNoiseMask', inputs: { samples: latent, mask: ['23', 0] } };
+      latent = ['24', 0];
+      mask = ['23', 0];
+    }
+    if (batch > 1) { graph[25] = { class_type: 'RepeatLatentBatch', inputs: { samples: latent, amount: batch } }; latent = ['25', 0]; }
+  }
+  graph[7] = { class_type: 'KSampler', inputs: { ...sampler, model: ['1', 0], positive: ['4', 0], negative: ['5', 0], latent_image: latent } };
+  graph[8] = { class_type: 'VAEDecode', inputs: { samples: ['7', 0], vae } };
   let last = ['8', 0];
+  if (mask) {
+    graph[26] = { class_type: 'ImageCompositeMasked', inputs: { destination: ['20', 0], source: last, x: 0, y: 0, resize_source: false, mask } };
+    last = ['26', 0];
+  }
   if (upscaler) {
     // Real-ESRGAN works at 4x; scaling back by half gives a sharp 2x image.
     graph[10] = { class_type: 'UpscaleModelLoader', inputs: { model_name: upscaler } };
@@ -122,4 +169,11 @@ function buildWorkflow(engine, { prompt, negativePrompt, width, height, steps, c
   return graph;
 }
 
-module.exports = { ENGINES, ASPECTS, inferCheckpointFamily, discoverEngines, customEngine, sizeFor, buildWorkflow };
+// Fast (SD 1.5, 512 px) draws several images in one pass; the 1024 px engines would run out of the 6 GB, so
+// their variations are queued one after another.
+function batchesFor(engine, count) {
+  const n = Math.max(1, Math.min(4, Math.round(Number(count) || 1)));
+  return engine.base >= 1024 ? Array.from({ length: n }, () => 1) : [n];
+}
+
+module.exports = { ENGINES, ASPECTS, STYLES, applyStyle, batchesFor, inferCheckpointFamily, discoverEngines, customEngine, sizeFor, buildWorkflow };
