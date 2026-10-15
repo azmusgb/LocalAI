@@ -1813,6 +1813,379 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   else init();
 })();
 
+// ==== claude-chat.js ====
+(() => {
+  'use strict';
+
+  // Claude chat: talk to a Claude Code session on the Mac from this page. Everything goes through the appliance relay
+  // (/api/claude/chat/); this device proves itself with an HttpOnly cookie it gets by pairing with a code approved on the Mac.
+  // Message text is only ever written with textContent, never as HTML.
+  const API = '/api/claude/chat/';
+  const FAST_MS = 2000, SLOW_MS = 15000, SESSIONS_MS = 10000, PAIR_MS = 2000;
+  const INFLIGHT_MS = 10 * 60 * 1000; // a sending/delivered message older than this is left as it is (no reply is coming)
+  const STATUS_LABEL = { delivering: 'sending' }; // the relay's "delivering" is transient: the bridge holds it until it acks
+  const NOTE = "Web messages reach Claude as messages from another session: it acts within this session's permissions, but won't change its settings or approve prompts because of them.";
+  const OFFLINE = 'This session is offline. Start or resume it on your Mac with `claude-chat`.';
+  const HTTP_WARNING = 'This page is served over plain HTTP, so the pairing cookie crosses your Wi-Fi unencrypted until HTTPS is set up. Revoke a device if it may be exposed.';
+  const STORE_KEY = 'localai.claudeChat.session';
+  const $ = (id) => document.getElementById(id);
+  const st = { mode: 'init', sessions: [], session: '', messages: [], after: 0, sending: false, pair: null, pairError: '', pairTimer: 0,
+    pollTimer: 0, sessionsAt: 0, polling: false, devices: [], devicesOpen: false, draft: '', built: '' };
+
+  const store = {
+    get() { try { return localStorage.getItem(STORE_KEY) || ''; } catch { return ''; } },
+    set(v) { try { localStorage.setItem(STORE_KEY, v); } catch {} }
+  };
+
+  class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
+  async function api(route, body) {
+    const r = await fetch(API + route, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { cache: 'no-store' });
+    let j = {};
+    try { j = await r.json(); } catch {}
+    if (!r.ok) throw new HttpError(r.status, j.error || `HTTP ${r.status}`);
+    return j;
+  }
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  const isActive = () => !!document.querySelector('#claude.active');
+  const current = () => st.sessions.find((s) => s.sessionId === st.session);
+  const when = (ms) => {
+    const s = Math.max(0, (Date.now() - Number(ms)) / 1000);
+    if (!Number.isFinite(s)) return '';
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.round(s / 60)}m ago`;
+    if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+    return `${Math.round(s / 86400)}d ago`;
+  };
+
+  // ---- Pairing ----
+  function stopPairTimer() { if (st.pairTimer) { clearInterval(st.pairTimer); st.pairTimer = 0; } }
+
+  async function startPairing() {
+    stopPairTimer();
+    st.mode = 'pair';
+    st.pair = null;
+    st.pairError = '';
+    render();
+    try {
+      st.pair = await api('pair-request', {});
+      render();
+      st.pairTimer = setInterval(checkPair, PAIR_MS);
+    } catch (e) {
+      st.pairError = e.status === 429 ? 'Too many pending pairing requests — try again in a few minutes.' : `Could not start pairing: ${e.message}`;
+      render();
+    }
+  }
+
+  async function checkPair() {
+    if (!st.pair || !isActive() || document.visibilityState !== 'visible') return;
+    try {
+      const r = await api(`pair-status?id=${encodeURIComponent(st.pair.id)}`);
+      if (r.status === 'approved') { stopPairTimer(); st.pair = null; await loadSessions(true); }
+      else if (r.status === 'expired') { stopPairTimer(); st.pair = { expired: true }; render(); }
+    } catch { /* keep waiting; the next tick tries again */ }
+  }
+
+  // ---- Sessions and messages ----
+  async function loadSessions(force) {
+    try {
+      const r = await api('sessions');
+      st.sessionsAt = Date.now();
+      st.sessions = r.items || [];
+      if (st.mode !== 'paired') { st.mode = 'paired'; st.messages = []; st.after = 0; }
+      if (!st.sessions.some((s) => s.sessionId === st.session)) {
+        const saved = store.get();
+        st.session = st.sessions.some((s) => s.sessionId === saved) ? saved : (st.sessions.find((s) => s.online) || st.sessions[0] || {}).sessionId || '';
+        st.messages = []; st.after = 0;
+      }
+      render();
+      if (force || st.mode === 'paired') poll();
+    } catch (e) {
+      if (e.status === 401) { if (st.mode !== 'pair' && isActive()) startPairing(); else if (st.mode === 'paired') st.mode = 'init'; }
+      else if (st.mode === 'init') { st.mode = 'error'; st.pairError = `Chat is unavailable: ${e.message}`; render(); }
+    }
+  }
+
+  async function poll() {
+    if (st.polling || st.mode !== 'paired' || !st.session) return;
+    st.polling = true;
+    const sid = st.session;
+    try {
+      // One request. While messages are still in flight, start just before the oldest of them so the reply carries their
+      // current statuses (and any deletion shows as a gap) plus everything newer. A message queued on an offline session
+      // is skipped here: the 10 s sessions refresh notices when it comes back online. A sending (delivering) or delivered
+      // message counts only for 10 minutes after it was sent, so one that never gets a reply cannot keep the window open forever.
+      const online = current()?.online;
+      const recent = (m) => Date.now() - (m.at || 0) < INFLIGHT_MS;
+      const inflight = st.messages.filter((m) => m.source === 'web' && (((m.status === 'delivered' || m.status === 'delivering') && recent(m)) || (m.status === 'queued' && online)));
+      const from = inflight.length ? Math.max(0, Math.min(...inflight.map((m) => m.seq)) - 1) : st.after;
+      const r = await api(`messages?sessionId=${encodeURIComponent(sid)}&after=${from}`);
+      if (sid !== st.session) return;
+      const items = r.items || [];
+      const known = new Map(st.messages.filter((m) => m.seq <= from || items.some((x) => x.id === m.id)).map((m) => [m.id, m]));
+      for (const m of items) known.set(m.id, m);
+      st.messages = [...known.values()].sort((a, b) => a.seq - b.seq);
+      st.after = st.messages.reduce((n, m) => Math.max(n, m.seq), 0);
+      renderLog();
+      renderComposer();
+    } catch (e) {
+      if (e.status === 401) startPairing();
+    } finally { st.polling = false; }
+  }
+
+  function schedule() {
+    clearTimeout(st.pollTimer);
+    const fast = isActive() && document.visibilityState === 'visible';
+    st.pollTimer = setTimeout(async () => {
+      if (st.mode === 'paired') {
+        if (fast && Date.now() - st.sessionsAt >= SESSIONS_MS) await loadSessions(); else await poll();
+      } else if (st.mode === 'init' && fast) await loadSessions();
+      schedule();
+    }, fast ? FAST_MS : SLOW_MS);
+  }
+
+  async function send() {
+    const input = $('claudeChatInput');
+    const text = input.value.trim();
+    const s = current();
+    if (!text || st.sending || !s || !s.online) return;
+    st.sending = true;
+    renderComposer();
+    try {
+      const r = await api('send', { sessionId: st.session, text });
+      input.value = '';
+      st.draft = '';
+      if (!st.messages.some((m) => m.id === r.item.id)) { st.messages.push(r.item); st.messages.sort((a, b) => a.seq - b.seq); st.after = Math.max(st.after, r.item.seq); }
+      renderLog(true);
+    } catch (e) {
+      setNote(e.status === 409 ? OFFLINE : `Could not send: ${e.message}`, true);
+      if (e.status === 409) loadSessions();
+    } finally { st.sending = false; renderComposer(); }
+  }
+
+  async function remove(id) {
+    const leased = st.messages.find((m) => m.id === id)?.status === 'delivering';
+    try {
+      await api('messages/delete', { id });
+      st.messages = st.messages.filter((m) => m.id !== id);
+      renderLog();
+    } catch (e) {
+      // A message still sending is held by the bridge's lease (up to 60 s); once that runs out it is queued and deletable.
+      const busy = leased ? 'Still being delivered — try again in a moment.' : 'That message was already picked up, so it cannot be deleted.';
+      setNote(e.status === 409 ? busy : `Could not delete: ${e.message}`, true);
+      poll();
+    }
+  }
+
+  // ---- Devices ----
+  async function loadDevices() {
+    try { st.devices = (await api('devices')).items || []; } catch (e) { if (e.status === 401) { startPairing(); return; } st.devices = []; }
+    renderDevices();
+  }
+  async function revoke(id) {
+    try { await api('devices/revoke', { id }); } catch (e) { setNote(`Could not revoke: ${e.message}`, true); return; }
+    const was = st.devices.find((d) => d.id === id);
+    if (was?.current) { st.mode = 'pair'; st.sessions = []; st.session = ''; st.messages = []; st.after = 0; startPairing(); }
+    else loadDevices();
+  }
+
+  // ---- Rendering ----
+  function setNote(text, bad) {
+    const n = $('claudeChatNotice');
+    if (!n) return;
+    n.textContent = text || '';
+    n.hidden = !text;
+    n.classList.toggle('bad', !!bad);
+  }
+
+  function renderPair() {
+    const root = $('claudeChat');
+    root.replaceChildren();
+    root.dataset.mode = 'pair';
+    const box = el('div', 'claude-chat-pair');
+    box.id = 'claudeChatPair';
+    box.append(el('h2', null, 'Chat with Claude Code'), el('p', 'meta', 'Pair this device once to message your Mac sessions from here.'));
+    if (st.pairError) {
+      box.append(el('p', 'claude-chat-error', st.pairError));
+      const retry = el('button', 'btn', 'Try again'); retry.type = 'button'; retry.dataset.chatAction = 'pair';
+      box.append(retry);
+    } else if (st.pair?.expired) {
+      box.append(el('p', 'claude-chat-error', 'That code expired.'));
+      const again = el('button', 'btn primary', 'Get a new code'); again.type = 'button'; again.dataset.chatAction = 'pair';
+      box.append(again);
+    } else {
+      const code = el('div', 'claude-chat-code', st.pair ? st.pair.code : '…');
+      code.id = 'claudeChatCode';
+      box.append(el('p', 'meta', 'Your pairing code'), code, el('p', 'meta', 'On your Mac, run:'));
+      const cmd = el('div', 'claude-chat-cmd');
+      cmd.append(el('code', null, st.pair ? `localai-chat pair ${st.pair.code}` : '…'));
+      const copy = el('button', 'btn', 'Copy'); copy.type = 'button'; copy.dataset.chatAction = 'copy';
+      cmd.append(copy);
+      box.append(cmd, el('p', 'meta claude-chat-wait', st.pair ? 'Waiting for approval… this page switches over by itself.' : 'Requesting a code…'));
+    }
+    box.append(el('p', 'claude-chat-warning', HTTP_WARNING));
+    root.append(box);
+    st.built = 'pair';
+  }
+
+  function buildPaired() {
+    const root = $('claudeChat');
+    root.replaceChildren();
+    root.dataset.mode = 'paired';
+    const head = el('div', 'claude-chat-head');
+    head.append(el('h2', null, 'Chat'));
+    const sel = el('select'); sel.id = 'claudeChatSession'; sel.setAttribute('aria-label', 'Claude Code session');
+    head.append(sel);
+    const state = el('span', 'pill'); state.id = 'claudeChatState';
+    head.append(state);
+    const log = el('div', 'claude-chat-log'); log.id = 'claudeChatLog'; log.setAttribute('aria-live', 'polite');
+    const notice = el('div', 'claude-chat-notice'); notice.id = 'claudeChatNotice'; notice.hidden = true; notice.setAttribute('role', 'status');
+    const composer = el('div', 'claude-chat-composer');
+    const input = el('textarea'); input.id = 'claudeChatInput'; input.rows = 3; input.setAttribute('aria-label', 'Message to Claude');
+    input.placeholder = 'Message Claude (Cmd/Ctrl+Enter to send)';
+    const sendBtn = el('button', 'btn primary', 'Send'); sendBtn.id = 'claudeChatSend'; sendBtn.type = 'button';
+    composer.append(input, sendBtn);
+    const hint = el('p', 'meta claude-chat-hint'); hint.id = 'claudeChatHint';
+    const note = el('p', 'meta claude-chat-note', NOTE);
+    const dev = el('details', 'claude-chat-devices'); dev.id = 'claudeChatDevices';
+    dev.append(el('summary', null, 'Paired devices'), el('div', 'claude-chat-devlist'));
+    root.append(head, log, notice, composer, hint, note, dev);
+    input.addEventListener('input', () => { st.draft = input.value; renderComposer(); });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } });
+    sendBtn.addEventListener('click', send);
+    sel.addEventListener('change', () => {
+      st.session = sel.value; store.set(st.session); st.messages = []; st.after = 0; renderLog(true); renderComposer(); poll();
+    });
+    dev.addEventListener('toggle', () => { st.devicesOpen = dev.open; if (dev.open) loadDevices(); });
+    st.built = 'paired';
+  }
+
+  function renderSessions() {
+    const sel = $('claudeChatSession');
+    if (!sel) return;
+    const want = st.sessions.map((s) => `${s.sessionId}|${s.title}|${s.online}`).join('\n') + `#${st.session}`;
+    if (sel.dataset.sig === want) return;
+    sel.dataset.sig = want;
+    sel.replaceChildren();
+    if (!st.sessions.length) { const o = el('option', null, 'No sessions yet'); o.value = ''; sel.append(o); }
+    for (const s of st.sessions) {
+      const o = el('option', null, `${s.online ? '● ' : '○ '}${s.title || s.sessionId}${s.cwd ? ' — ' + String(s.cwd).split('/').filter(Boolean).pop() : ''}`);
+      o.value = s.sessionId;
+      sel.append(o);
+    }
+    sel.value = st.session;
+  }
+
+  function renderMessage(m) {
+    const row = el('div', `claude-chat-msg ${m.source === 'reply' ? 'reply' : m.source === 'web' ? 'web' : 'terminal'}`);
+    row.dataset.id = m.id;
+    const who = m.source === 'reply' ? 'Claude' : m.source === 'web' ? `Web · ${m.deviceName || 'this device'}` : 'Terminal';
+    const meta = el('div', 'claude-chat-meta');
+    meta.append(el('span', 'claude-chat-who', who), el('span', 'claude-chat-at', m.at ? when(new Date(m.at).getTime()) : ''));
+    row.append(meta, el('div', 'claude-chat-text', m.text));
+    if (m.truncated) row.append(el('div', 'meta', 'Truncated: the message was longer than 50,000 characters.'));
+    if (m.source === 'web') {
+      const foot = el('div', 'claude-chat-foot');
+      // Queued, or still sending (its bridge may have vanished mid-delivery), on an offline session: it will not arrive
+      // until the session is resumed, so offer to delete it rather than let it run unexpectedly later.
+      const offline = (m.status === 'queued' || m.status === 'delivering') && current() && !current().online;
+      foot.append(el('span', `claude-chat-status ${offline ? 'bad' : m.status}`, offline ? 'not delivered' : STATUS_LABEL[m.status] || m.status));
+      if (m.status === 'queued' || offline) {
+        const del = el('button', 'btn quiet', 'Delete'); del.type = 'button'; del.dataset.chatAction = 'delete'; del.dataset.id = m.id;
+        foot.append(del);
+      }
+      row.append(foot);
+    }
+    return row;
+  }
+
+  function renderLog(forceBottom) {
+    const log = $('claudeChatLog');
+    if (!log) return;
+    const near = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+    const sig = st.messages.map((m) => `${m.id}:${m.status}`).join(',') + `|${current()?.online}`;
+    if (log.dataset.sig !== sig) {
+      log.dataset.sig = sig;
+      log.replaceChildren();
+      if (!st.session) log.append(el('div', 'empty', 'No sessions yet. Start one on your Mac with `claude-chat`.'));
+      else if (!st.messages.length) log.append(el('div', 'empty', 'No messages yet.'));
+      for (const m of st.messages) log.append(renderMessage(m));
+    }
+    if (forceBottom || near) log.scrollTop = log.scrollHeight;
+  }
+
+  function renderComposer() {
+    const input = $('claudeChatInput'), btn = $('claudeChatSend');
+    if (!input) return;
+    const s = current(), online = !!s?.online;
+    input.disabled = !online;
+    btn.disabled = st.sending || !online || !input.value.trim();
+    $('claudeChatHint').textContent = s && !online ? OFFLINE : '';
+    $('claudeChatHint').hidden = !(s && !online);
+    const state = $('claudeChatState');
+    state.textContent = !s ? 'no session' : online ? 'online' : 'offline';
+    state.classList.toggle('ok', online);
+  }
+
+  function renderDevices() {
+    const list = document.querySelector('#claudeChatDevices .claude-chat-devlist');
+    if (!list) return;
+    list.replaceChildren();
+    if (!st.devices.length) list.append(el('div', 'empty', 'No paired devices.'));
+    for (const d of st.devices) {
+      const row = el('div', 'claude-chat-device');
+      const info = el('div');
+      info.append(el('strong', null, d.name || 'Unnamed device'), el('span', 'meta', `${d.current ? ' · this device' : ''} · seen ${d.lastSeenAt ? when(d.lastSeenAt) : 'never'}`));
+      const b = el('button', 'btn quiet', d.current ? 'Revoke this device' : 'Revoke'); b.type = 'button'; b.dataset.chatAction = 'revoke'; b.dataset.id = d.id;
+      row.append(info, b);
+      list.append(row);
+    }
+  }
+
+  function render() {
+    if (!$('claudeChat')) return;
+    if (st.mode === 'pair' || st.mode === 'error') { renderPair(); return; }
+    if (st.mode !== 'paired') return;
+    if (st.built !== 'paired') buildPaired();
+    renderSessions();
+    renderLog();
+    renderComposer();
+    if ($('claudeChatInput').value !== st.draft) $('claudeChatInput').value = st.draft;
+  }
+
+  function init() {
+    const root = $('claudeChat');
+    if (!root) return;
+    root.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-chat-action]');
+      if (!b) return;
+      const a = b.dataset.chatAction;
+      if (a === 'pair') { st.mode = 'init'; startPairing(); }
+      if (a === 'delete') remove(b.dataset.id);
+      if (a === 'revoke') revoke(b.dataset.id);
+      if (a === 'copy') {
+        const text = root.querySelector('.claude-chat-cmd code')?.textContent || '';
+        (navigator.clipboard?.writeText(text) || Promise.reject()).then(() => { b.textContent = 'Copied'; }, () => {
+          const r = document.createRange(); r.selectNodeContents(root.querySelector('.claude-chat-cmd code')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+        });
+      }
+    });
+    const wake = () => { schedule(); if (isActive() && document.visibilityState === 'visible') { if (st.mode === 'init') loadSessions(); else if (st.mode === 'paired') poll(); } };
+    new MutationObserver(wake).observe($('claude'), { attributes: true, attributeFilter: ['class'] });
+    document.addEventListener('visibilitychange', wake);
+    loadSessions();
+    schedule();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+
 // ==== integration-hub-v2.js (was loaded at runtime) ====
 (() => {
   'use strict';

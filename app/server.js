@@ -43,6 +43,7 @@ const release = require('./release').readRelease(__dirname);
 const storage = new Storage({ dataDir: DATA_DIR });
 const runLedger = new RunLedger({ storage });
 const activeRunControllers = new Map();
+const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody });
 
 function json(res, status, value) {
   res.writeHead(status, JSON_HEADERS);
@@ -2620,6 +2621,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/powershell/cancel') return await apiPowerShellCancel(req,res);
     if (req.method === 'GET' && p === '/api/powershell/host/next') return await apiPowerShellHostNext(req,res);
     if (req.method === 'POST' && p === '/api/powershell/host/result') return await apiPowerShellHostResult(req,res);
+    if (p.startsWith('/api/claude/chat/') && await claudeChat.handle(req, res, urlObj, p)) return;
     if (req.method === 'GET' && p === '/api/claude/board') return await apiClaudeBoard(req,res,urlObj);
     if (req.method === 'GET' && p === '/api/claude/priorities') return await apiClaudePriorities(req,res,urlObj);
     if (req.method === 'POST' && p === '/api/claude/events') return await apiClaudeEvents(req,res);
