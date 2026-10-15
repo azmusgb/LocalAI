@@ -1580,3 +1580,6 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
 .toast.whatsnew-toast{pointer-events:auto;display:flex;align-items:center;gap:10px}
 .whatsnew-open{border:0;background:transparent;color:var(--ds-accent);font-weight:650;cursor:pointer;padding:6px 4px;min-height:36px}
 .whatsnew-card{scroll-margin-top:88px}
+.secure-setup{margin-top:12px}
+.secure-setup>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--ds-accent-text);font-weight:600}
+.secure-setup[open]>summary{margin-bottom:4px}

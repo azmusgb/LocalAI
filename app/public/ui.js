@@ -3084,8 +3084,16 @@ const q=(s,r=document)=>r.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const host=location.hostname,isLocal=/^(localhost|127\.0\.0\.1|::1)$/.test(host);
 const httpsUrl=`https://${host}/`,caUrl=`http://${host}/localai-ca.crt`;
-// A no-cors request succeeds only if TLS succeeds, i.e. this device trusts the certificate.
-async function trusted(){try{await fetch(`${httpsUrl}healthz`,{mode:'no-cors',cache:'no-store',signal:AbortSignal.timeout(4000)});return true}catch{return false}}
+// A no-cors request succeeds only if TLS succeeds, i.e. this device trusts the certificate. An untrusted certificate
+// is logged by the browser as a console error that a page can't suppress, so probe only when Health is opened, and
+// remember the answer for this tab's session.
+const TRUST_KEY='localai.httpsTrusted';
+async function trusted(){
+ try{const seen=sessionStorage.getItem(TRUST_KEY);if(seen)return seen==='1'}catch{}
+ let ok;try{await fetch(`${httpsUrl}healthz`,{mode:'no-cors',cache:'no-store',signal:AbortSignal.timeout(4000)});ok=true}catch{ok=false}
+ try{sessionStorage.setItem(TRUST_KEY,ok?'1':'0')}catch{}
+ return ok;
+}
 const STEPS=[
  ['Mac','Open the downloaded file. Keychain Access opens: add it to System, double-click “Caddy Local Authority”, open Trust and choose Always Trust.'],
  ['iPhone or iPad','Open the download link in Safari and allow it. Then Settings › General › VPN &amp; Device Management › install the profile, and Settings › General › About › Certificate Trust Settings › turn it on.'],
@@ -3100,10 +3108,13 @@ async function render(card){
  else{const ok=await trusted();state=ok?'ready':'todo';detail=ok?`This device already trusts Local AI's certificate. Switch to <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>.`:'This page uses plain HTTP, so other devices on the network could read what you send, and some features (copy to clipboard, installing as an app, signing PowerShell jobs) are unavailable.'}
  card.dataset.state=state;
  card.innerHTML=`<div class="secure-head"><span class="secure-dot" aria-hidden="true"></span><div><h2>Secure connection</h2><p>${detail}</p></div></div>
- ${state==='todo'?`<ol class="secure-steps"><li><a class="btn primary" href="${esc(caUrl)}" download>Download the certificate</a> <span class="meta">Local AI's own certificate authority. Its private key never leaves the Local AI computer, which uses it only to sign Local AI's certificate.</span></li><li>Trust it on this device:<dl>${STEPS.map(([d,t])=>`<dt>${d}</dt><dd>${t}</dd>`).join('')}</dl></li><li>Open <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>. To use the name <b>localai.home.arpa</b>, add it for ${esc(host)} in your router's DNS settings.</li></ol>`:''}`;
+ ${state==='todo'?`<details class="secure-setup"><summary>Set up HTTPS on this device</summary><ol class="secure-steps"><li><a class="btn primary" href="${esc(caUrl)}" download>Download the certificate</a> <span class="meta">Local AI's own certificate authority. Its private key never leaves the Local AI computer, which uses it only to sign Local AI's certificate.</span></li><li>Trust it on this device:<dl>${STEPS.map(([d,t])=>`<dt>${d}</dt><dd>${t}</dd>`).join('')}</dl></li><li>Open <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>. To use the name <b>localai.home.arpa</b>, add it for ${esc(host)} in your router's DNS settings.</li></ol></details>`:''}`;
 }
-function mount(){const status=q('#status');if(!status||q('.secure-card',status))return;const card=document.createElement('section');card.className='card secure-card';(q('.dev-tools-pref',status)||q('.topbar',status))?.after(card);render(card)}
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(mount,0),{once:true});else setTimeout(mount,0);
+// Below the service list: what's running comes first; this is setup advice.
+function mount(){const status=q('#status');if(!status)return;let card=q('.secure-card',status);if(!card){card=document.createElement('section');card.className='card secure-card';const services=q('#serviceList',status)?.closest('.card');(services||q('.dev-tools-pref',status)||q('.topbar',status))?.after(card)}if(card.dataset.rendered)return;card.dataset.rendered='1';render(card)}
+// Render (and so probe) only once Health is on screen.
+function watch(){const status=q('#status');if(!status)return;const go=()=>{if(status.classList.contains('active'))mount()};go();new MutationObserver(go).observe(status,{attributes:true,attributeFilter:['class']})}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(watch,0),{once:true});else setTimeout(watch,0);
 })();
 
 // ==== whats-new.js ====
