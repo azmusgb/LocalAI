@@ -320,6 +320,7 @@ function update(dt,ts){
   if(running)spawnRunDust(a,ts)
  }
  for(const p of packets){if(p.done||!p.path[p.i])continue;const t=p.path[p.i],dx=t.x-p.x,dy=t.y-p.y,d=Math.hypot(dx,dy);if(d<3){p.i++;if(p.i>=p.path.length){p.done=true;spawnSpark(p.x,p.y,p.color,8);if(p.label==='HANDOFF')addEvent('Handoff received')}continue}p.x+=dx/d*150*dt;p.y+=dy/d*150*dt}packets=packets.filter(p=>!p.done);
+ updateConstruction(dt,ts);
  for(const s of sparks){s.x+=s.vx*dt;s.y+=s.vy*dt;s.vy+=90*dt;s.life-=dt}sparks=sparks.filter(s=>s.life>0);for(const d of dust){d.x+=d.vx*dt;d.y+=d.vy*dt;d.r+=dt*5;d.life-=dt}dust=dust.filter(d=>d.life>0);
  for(const c of traffic){if(c.axis==='x'){c.x+=c.v*c.dir*dt;if(c.x>38*T)c.x=2*T;if(c.x<2*T)c.x=38*T}else{c.y+=c.v*c.dir*dt;if(c.y>23*T)c.y=3*T;if(c.y<3*T)c.y=23*T}}
  if(demo.active&&demo.running&&!demo.paused&&!reduced&&ts-demo.lastAdvance>3200/demo.speed){if(demo.stage<DEMO_STAGES.length-1){demo.stage++;applyDemo();recordReplayFrame('demo');demo.lastAdvance=ts}else demo.running=false;syncDemoControls()}
@@ -377,7 +378,7 @@ function drawDistrictScene(id,d,ts){
 function drawInterior(id,d,ts){
  const workers=[...agents.values()].filter(a=>a.inside&&a.insideZone===id),active=workers.length>0;if(!active)return;
  const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,pulse=(Math.sin(ts/220)+1)/2;
- ctx.save();ctx.globalAlpha=.96;px(x+8,y+24,w-16,h-36,display.night?'#0c1720':'#15232b');ctx.globalAlpha=1;
+ ctx.save();const lvl=buildLevel(id);if(lvl<.995){ctx.beginPath();ctx.rect(x-20,y+h-h*lvl,w+40,h);ctx.clip()}ctx.globalAlpha=.96;px(x+8,y+24,w-16,h-36,display.night?'#0c1720':'#15232b');ctx.globalAlpha=1;
  // floor grid and role stations
  ctx.strokeStyle='rgba(255,255,255,.055)';ctx.lineWidth=1;for(let xx=x+16;xx<x+w-14;xx+=22){ctx.beginPath();ctx.moveTo(xx,y+28);ctx.lineTo(xx,y+h-16);ctx.stroke()}
  for(let yy=y+34;yy<y+h-18;yy+=20){ctx.beginPath();ctx.moveTo(x+12,yy);ctx.lineTo(x+w-12,yy);ctx.stroke()}
@@ -387,10 +388,89 @@ function drawInterior(id,d,ts){
 }
 
 function districtWorkers(id){return current?.workers?.filter(q=>zoneForWorker(q)===id)||[]}
+// ---- Construction: buildings rise with their district's progress ---------------------------------------
+// Each district with crew has a build level (0 = foundation, 1 = finished). It eases toward the real progress
+// and creeps upward while a worker is running, so you can watch floors go up. Districts without crew are
+// finished buildings. Failed or blocked districts show damage and a repair crew instead.
+const build={};let buildMission='';
+function buildState(id){return build[id]||(build[id]={level:.12,topped:0,placed:-1,lastSpark:0})}
+function districtFlags(id){const w=districtWorkers(id);return{workers:w,active:w.some(q=>q.state==='running'),bad:w.some(q=>['error','blocked'].includes(q.state)),done:w.length>0&&w.every(q=>q.state==='complete')}}
+function buildLevel(id){const f=districtFlags(id);return f.workers.length?buildState(id).level:1}
+function updateConstruction(dt,ts){
+ const key=current?.id||current?.goal||'';if(key!==buildMission){buildMission=key;for(const k of Object.keys(build))delete build[k]}
+ for(const[id,d]of Object.entries(DISTRICTS)){
+  const f=districtFlags(id);if(!f.workers.length)continue;const b=buildState(id);
+  let target=f.done?1:.12+.83*districtProgress(id);
+  if(f.active)target=Math.max(target,Math.min(.95,b.level+.035));
+  b.level+=(target-b.level)*Math.min(1,dt*(f.done?1.4:.9));
+  const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,top=y+h-h*b.level;
+  if(f.active&&b.level<.995&&ts-b.lastSpark>140){b.lastSpark=ts;spawnSpark(x+10+Math.random()*(w-20),top,Math.random()<.5?'#ffd36b':'#ffffff',3)}
+  if(f.done&&!b.topped&&b.level>.97){b.topped=ts;spawnSpark(x+w/2,y+4,'#3ed598',18);spawnSpark(x+w/2,y+4,'#ffb224',12);addEvent(d.name+' topped out')}
+  if(!f.done)b.topped=0
+ }
+}
+// Steel frame above the finished floors, plus the glowing line where new floors are being added.
+function drawSkeleton(d,x,y,w,h,top,bad,ts){
+ const steel=bad?'rgba(160,172,186,.55)':'rgba(255,178,36,.78)',depth=14;
+ ctx.save();ctx.strokeStyle=steel;ctx.lineWidth=2;
+ for(let xx=x+2;xx<=x+w;xx+=22){ctx.beginPath();ctx.moveTo(xx,top);ctx.lineTo(xx,y+8);ctx.stroke()}
+ ctx.beginPath();ctx.moveTo(x+w,top);ctx.lineTo(x+w,y+8);ctx.lineTo(x+w+depth,y);ctx.lineTo(x+w+depth,Math.min(y+h-depth,top-8));ctx.stroke();
+ ctx.lineWidth=1.5;for(let yy=top-18;yy>y+4;yy-=18){ctx.beginPath();ctx.moveTo(x,yy);ctx.lineTo(x+w,yy);ctx.lineTo(x+w+depth,yy-8);ctx.stroke()}
+ ctx.beginPath();ctx.moveTo(x,y+8);ctx.lineTo(x+w,y+8);ctx.lineTo(x+w+depth,y);ctx.stroke();
+ ctx.globalAlpha=.35;for(let xx=x+2;xx<x+w-20;xx+=44){ctx.beginPath();ctx.moveTo(xx,top);ctx.lineTo(xx+22,Math.max(y+8,top-18));ctx.stroke()}
+ ctx.restore();
+ const glow=.55+.45*Math.sin(ts/180);ctx.save();ctx.shadowColor=bad?'#ff6b6b':'#ffb224';ctx.shadowBlur=10*glow;px(x-2,top-2,w+4,3,bad?'#ff9b9b':'#ffd27a');ctx.restore()
+}
+// Tower crane that lifts steel beams from the pallet to the top of the frame.
+function drawCrane(id,d,x,y,w,h,top,active,bad,ts){
+ const mastX=x+w+24,base=y+h+4,jibY=y-38,jibL=x+4,jibR=mastX+30,steel=bad?'#7b5560':'#e3a22a',dark=bad?'#4d2b33':'#7a5414';
+ ctx.save();
+ // mast lattice
+ px(mastX-4,jibY,3,base-jibY,steel);px(mastX+5,jibY,3,base-jibY,steel);ctx.strokeStyle=steel;ctx.lineWidth=1;ctx.beginPath();for(let yy=jibY;yy<base-8;yy+=10){ctx.moveTo(mastX-3,yy);ctx.lineTo(mastX+6,yy+10);ctx.moveTo(mastX+6,yy);ctx.lineTo(mastX-3,yy+10)}ctx.stroke();
+ px(mastX-10,base-4,24,6,'#3b4a58');
+ // jib, counter-jib, counterweight, cab, tie lines
+ px(jibL,jibY-2,jibR-jibL,4,steel);px(mastX+14,jibY-1,18,9,'#55606b');px(mastX-6,jibY+3,14,10,'#203448');px(mastX-4,jibY+5,7,5,bad?'#ff6b6b':'#9fd8ff');
+ ctx.strokeStyle=dark;ctx.beginPath();ctx.moveTo(mastX+1,jibY-16);ctx.lineTo(jibL+20,jibY-2);ctx.moveTo(mastX+1,jibY-16);ctx.lineTo(jibR,jibY-2);ctx.stroke();px(mastX,jibY-18,3,16,steel);
+ const blink=Math.floor(ts/500)%2===0;px(mastX,jibY-22,3,3,bad?(blink?'#ff6b6b':'#4d1d22'):(blink?'#ff4d4d':'#5a1616'));
+ // load cycle
+ const pickX=x+w+8,P=4600,t=ts+(id.length*977),cycle=Math.floor(t/P),p=(t%P)/P,b=buildState(id);
+ const targetX=x+16+((cycle*37)%Math.max(24,w-40));let tx=pickX,hy=base-10,load=false;
+ if(active&&!bad){
+  if(p<.2){tx=pickX;hy=jibY+12+(base-10-jibY-12)*(p/.2);load=p>.12}
+  else if(p<.45){const k=(p-.2)/.25;tx=pickX+(targetX-pickX)*k;hy=base-10-(base-10-(jibY+16))*Math.min(1,k*1.6);load=true}
+  else if(p<.65){const k=(p-.45)/.2;tx=targetX;hy=jibY+16+(top-6-(jibY+16))*k;load=true}
+  else{const k=(p-.65)/.35;tx=targetX+(pickX-targetX)*k;hy=top-6-(top-6-(jibY+12))*Math.min(1,k*2);load=false;if(b.placed!==cycle){b.placed=cycle;spawnSpark(targetX,top-4,'#ffd36b',10);for(let i=0;i<5;i++)dust.push({x:targetX+(Math.random()-.5)*20,y:top,vx:(Math.random()-.5)*20,vy:-8,r:2,life:.5})}}
+ }else{tx=mastX-26;hy=jibY+18}
+ px(tx-5,jibY+1,10,4,'#2a3a49');ctx.strokeStyle='#c8d3dd';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(tx,jibY+5);ctx.lineTo(tx,hy);ctx.stroke();px(tx-3,hy,6,4,'#f0c24a');
+ if(load){px(tx-13,hy+4,26,5,steel);px(tx-13,hy+4,3,5,dark);px(tx+10,hy+4,3,5,dark);ctx.strokeStyle='rgba(200,211,221,.7)';ctx.beginPath();ctx.moveTo(tx,hy+4);ctx.lineTo(tx-10,hy+4);ctx.moveTo(tx,hy+4);ctx.lineTo(tx+10,hy+4);ctx.stroke()}
+ ctx.restore()
+}
+// Pallets, rebar, a cement mixer and a hazard barrier beside a building under construction.
+function drawMaterials(x,y,w,h,active,ts){
+ const gy=y+h+4;
+ for(let r=0;r<3;r++)for(let c=0;c<3-r;c++)px(x+w+4+c*5+r*2,gy-4-r*4,5,4,r%2?'#b4593f':'#c96a4a');px(x+w+2,gy,18,3,'#6b5434');
+ for(let i=0;i<4;i++)px(x-34+i*2,gy-2-i,22,2,'#7d8893');
+ const mx=x-24,my=gy-16,rot=active?ts/260:0;px(mx-12,my+12,26,4,'#2f3a44');ctx.save();ctx.translate(mx,my+4);ctx.rotate(-.35);ctx.fillStyle='#d9dde2';ctx.beginPath();ctx.ellipse(0,0,11,8,0,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#e3a22a';ctx.lineWidth=2;for(let i=0;i<3;i++){const a=rot+i*2.1;ctx.beginPath();ctx.moveTo(Math.cos(a)*10,Math.sin(a)*6);ctx.lineTo(Math.cos(a+1)*10,Math.sin(a+1)*6);ctx.stroke()}ctx.restore();px(mx-10,my+14,4,4,'#222');px(mx+6,my+14,4,4,'#222');
+ for(let i=0;i<w;i+=10)px(x+i,y+h+1,5,3,i%20?'#1b1b1b':'#ffb224');
+}
+// Damage on a failed district: cracked panels, smoke and sparks from the repair crew.
+function drawDamage(x,y,w,h,repairing,ts){
+ ctx.save();ctx.strokeStyle='rgba(10,14,20,.85)';ctx.lineWidth=2;
+ for(const[cx,cy]of[[.28,.38],[.66,.55],[.45,.78]]){const ox=x+w*cx,oy=y+h*cy;ctx.beginPath();ctx.moveTo(ox-10,oy-6);ctx.lineTo(ox-3,oy);ctx.lineTo(ox-6,oy+5);ctx.lineTo(ox+4,oy+9);ctx.lineTo(ox+10,oy+4);ctx.stroke();px(ox-4,oy-1,7,6,'rgba(255,107,107,.25)')}
+ for(let i=0;i<5;i++){const k=((ts/1700)+i/5)%1;ctx.globalAlpha=(1-k)*.35;ctx.fillStyle='#9aa4ae';ctx.beginPath();ctx.arc(x+w*.3+Math.sin(k*6+i)*6,y+14-k*46,4+k*9,0,Math.PI*2);ctx.fill()}
+ ctx.restore();
+ if(repairing&&Math.random()<.35)spawnSpark(x+w*.66,y+h*.55,Math.random()<.5?'#9fd8ff':'#ffffff',2)
+}
+// Green pennant on the roof once a district's work is complete.
+function drawTopping(x,y,w,ts){const fx=x+w-14,fy=y-14,wave=Math.sin(ts/200)*2;px(fx,fy,2,20,'#cfd8e0');pathPoly([[fx+2,fy],[fx+16,fy+4+wave],[fx+2,fy+9]],'#3ed598')}
 function drawBuilding(id,d,ts){
  const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,depth=14,workers=districtWorkers(id),active=workers.some(q=>q.state==='running'),bad=workers.some(q=>['error','blocked'].includes(q.state)),done=workers.length&&workers.every(q=>q.state==='complete'),selectedDistrict=selected?.type==='district'&&selected.id===id,pulse=(Math.sin(ts/240)+1)/2;
+ const level=buildLevel(id),under=level<.995,top=y+h-h*level;
  ctx.save();
  ctx.shadowColor='rgba(0,0,0,.35)';ctx.shadowBlur=18;px(x+8,y+12,w-2,h-2,'rgba(0,0,0,.28)');ctx.shadowBlur=0;
+ px(x-4,y+h-6,w+depth+8,8,display.night?'#2a333b':'#59616a');
+ // Only the finished floors are solid; the rest is drawn as a steel frame below.
+ ctx.save();if(under){ctx.beginPath();ctx.rect(x-40,top,w+depth+80,h+80);ctx.clip()}
  // side face
  pathPoly([[x+w,y+8],[x+w+depth,y],[x+w+depth,y+h-depth],[x+w,y+h]],display.night?'#152332':'#233749');
  // front
@@ -404,7 +484,12 @@ function drawBuilding(id,d,ts){
  // door + signage
  px(x+w/2-9,y+h-22,18,22,'#0d1720');px(x+w/2-5,y+h-17,4,4,d.accent);
  px(x+10,y+10,28,18,'rgba(6,12,18,.72)');txt(d.icon,x+24,y+19,d.accent,d.icon.length>1?9:13);
- if(display.labels){ctx.fillStyle='rgba(6,11,17,.88)';ctx.fillRect(x+4,y-21,Math.min(w-8,d.name.length*7+18),17);txt(d.name,x+10,y-12,active?'#fff':'#c6d4e1',9,'left')}
+ ctx.restore();
+ if(under)drawSkeleton(d,x,y,w,h,top,bad,ts);
+ // Damage sits on whatever has been built so far.
+ if(bad){const by=Math.max(y,top);drawDamage(x,by,w,y+h-by,workers.some(q=>q.state==='running'),ts)}
+ if(done&&!under)drawTopping(x,y,w,ts);
+ if(display.labels){const tag=workers.length&&(under||bad)?d.name+'  '+(bad?'repair ':'')+Math.round(level*100)+'%':d.name;ctx.fillStyle='rgba(6,11,17,.88)';ctx.fillRect(x+4,y-21,Math.min(w+depth,tag.length*7+18),17);txt(tag,x+10,y-12,bad?'#ffb0b0':active?'#fff':'#c6d4e1',9,'left')}
  if(active){ctx.strokeStyle=d.accent;ctx.globalAlpha=.55+.35*pulse;ctx.lineWidth=3;ctx.strokeRect(x-4,y-4,w+depth+8,h+10);ctx.globalAlpha=1}
  if(done){ctx.fillStyle='#75dfa2';ctx.beginPath();ctx.arc(x+w-8,y+18,5,0,Math.PI*2);ctx.fill()}
  if(bad){ctx.strokeStyle='#ff7383';ctx.lineWidth=4;ctx.globalAlpha=.6+.4*pulse;ctx.strokeRect(x-5,y-5,w+depth+10,h+11);ctx.globalAlpha=1;px(x+w-16,y+11,10,10,pulse>.5?'#ff7383':'#6f2632')}
@@ -415,15 +500,17 @@ function districtProgress(id){
  const w=districtWorkers(id);if(!w.length)return 0;return w.reduce((n,q)=>n+(q.state==='complete'?1:q.state==='running'?.55:q.state==='blocked'?.2:0),0)/w.length
 }
 function drawWorksite(id,d,ts){
- const workers=districtWorkers(id),active=workers.some(w=>w.state==='running'),bad=workers.some(w=>['error','blocked'].includes(w.state)),progress=districtProgress(id);if(!active&&!bad&&!progress)return;
- const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,pulse=(Math.sin(ts/220)+1)/2;
- if(active||bad){
-  for(let i=0;i<3;i++){const cx=x+16+i*18,cy=y+h+10;pathPoly([[cx,cy],[cx+5,cy-10],[cx+10,cy]],bad?'#ff7383':'#f5a623');px(cx+2,cy-5,6,2,'#fff3b0')}
-  ctx.strokeStyle=bad?'rgba(255,115,131,.65)':'rgba(245,180,62,.58)';ctx.lineWidth=2;ctx.strokeRect(x-9,y+10,9,h-18);ctx.strokeRect(x+w+4,y+10,9,h-18);
-  for(let yy=y+18;yy<y+h-12;yy+=18){ctx.beginPath();ctx.moveTo(x-9,yy);ctx.lineTo(x,yy+8);ctx.moveTo(x+w+4,yy);ctx.lineTo(x+w+13,yy+8);ctx.stroke()}
-  const mastX=x+w+18,top=y-6,hookY=y+14+Math.sin(ts/500)*8;px(mastX,top,3,44,bad?'#8f3b48':'#d79b2b');px(mastX-18,top,22,3,bad?'#8f3b48':'#e7b343');ctx.strokeStyle=bad?'#ff8f9c':'#f3c65d';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(mastX-15,top+3);ctx.lineTo(mastX-15,hookY);ctx.stroke();px(mastX-18,hookY,6,4,bad?'#ff7383':(pulse>.45?'#ffd26b':'#c9952d'))
+ const workers=districtWorkers(id),active=workers.some(w=>w.state==='running'),bad=workers.some(w=>['error','blocked'].includes(w.state)),progress=districtProgress(id);if(!workers.length)return;
+ const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,level=buildLevel(id),under=level<.995,top=y+h-h*level;
+ if(under||active||bad){
+  for(let i=0;i<3;i++){const cx=x+16+i*18,cy=y+h+12;pathPoly([[cx,cy],[cx+5,cy-10],[cx+10,cy]],bad?'#ff7383':'#f5a623');px(cx+2,cy-5,6,2,'#fff3b0')}
+  // scaffolding up to the working height
+  ctx.strokeStyle=bad?'rgba(255,115,131,.55)':'rgba(205,215,225,.5)';ctx.lineWidth=1.5;const sTop=Math.min(y+h-8,top-6);
+  for(const sx of[x-10,x+w+2]){ctx.strokeRect(sx,sTop,8,y+h-sTop);for(let yy=sTop;yy<y+h-6;yy+=14){ctx.beginPath();ctx.moveTo(sx,yy);ctx.lineTo(sx+8,yy+14);ctx.stroke();px(sx-1,yy,10,2,'#8b6a3c')}}
  }
- if(workers.length){px(x,y+h+17,w,5,'rgba(5,10,16,.7)');px(x,y+h+17,w*progress,5,bad?'#ff7383':d.accent);txt(Math.round(progress*100)+'%',x+w/2,y+h+20,'#eaf5ff',7)}
+ if(under)drawMaterials(x,y,w,h,active,ts);
+ if(under||active)drawCrane(id,d,x,y,w,h,top,active,bad,ts);
+ px(x,y+h+19,w,5,'rgba(5,10,16,.7)');px(x,y+h+19,w*(under?level:progress||1),5,bad?'#ff7383':level>=.995?'#3ed598':'#ffb224')
 }
 function drawWorkingAction(a,ts){
  if(a.state!=='running'||workerIsMoving(a))return;const s=roleStyle(a),phase=Math.sin(ts/120+a.activitySeed),x=a.x,y=a.y;
