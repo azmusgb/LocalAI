@@ -505,6 +505,10 @@ async def async_main() -> int:
 
 
 def main() -> None:
+    # Windows pipes default to the ANSI code page; workbook text and model output are often outside it.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     try:
         raise SystemExit(asyncio.run(async_main()))
     except KeyboardInterrupt:

@@ -7,6 +7,7 @@ $ErrorActionPreference = 'Stop'
 
 $bridgeRoot = 'C:\LocalAI\powershell-bridge'
 $tokenFile = Join-Path $bridgeRoot 'host-token.txt'
+$approvalKeyFile = Join-Path $bridgeRoot 'approval-key.txt'
 $jobRoot = Join-Path $bridgeRoot 'jobs'
 
 if (-not (Test-Path $tokenFile)) { throw "PowerShell bridge token not found: $tokenFile" }
@@ -15,6 +16,25 @@ New-Item -ItemType Directory -Path $jobRoot -Force | Out-Null
 $token = (Get-Content $tokenFile -Raw).Trim()
 if (-not $token) { throw 'PowerShell bridge token is empty.' }
 $headers = @{ Authorization = "Bearer $token" }
+
+# Jobs are signed in the browser with this key, which never leaves the host and the operator's browser.
+# The appliance container can be fully compromised without being able to produce a runnable job.
+if (-not (Test-Path $approvalKeyFile)) { throw "PowerShell approval key not found: $approvalKeyFile (run Enable-LocalAI-PowerShellHost.ps1)" }
+$approvalKey = (Get-Content $approvalKeyFile -Raw).Trim()
+if ($approvalKey.Length -lt 32) { throw 'PowerShell approval key is missing or too short.' }
+
+function Test-JobSignature {
+    param($Job)
+    $message = "localai-ps-v1`n$([string]$Job.id)`n$([string]$Job.cwd)`n$([string]$Job.timeoutSec)`n$([string]$Job.script)"
+    $hmac = New-Object System.Security.Cryptography.HMACSHA256 (,[System.Text.Encoding]::UTF8.GetBytes($approvalKey))
+    try { $expected = ($hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($message)) | ForEach-Object { $_.ToString('x2') }) -join '' }
+    finally { $hmac.Dispose() }
+    $actual = ([string]$Job.signature).ToLowerInvariant()
+    if ($actual.Length -ne $expected.Length) { return $false }
+    $diff = 0
+    for ($i = 0; $i -lt $expected.Length; $i++) { $diff = $diff -bor ([int][char]$expected[$i] -bxor [int][char]$actual[$i]) }
+    return $diff -eq 0
+}
 $base = "http://127.0.0.1:$Port"
 
 function Invoke-BridgePost {
@@ -56,6 +76,7 @@ for ($n = 0; $n -lt $MaxJobs; $n++) {
     $errFile = Join-Path $jobRoot ("{0}.stderr.txt" -f $job.id)
 
     try {
+        if (-not (Test-JobSignature $job)) { throw 'Rejected: the approval signature does not match this job. Re-queue it from the Workbench with the key in approval-key.txt.' }
         $cwd = Test-AllowedWorkingDirectory ([string]$job.cwd)
         if (-not (Test-Path $cwd)) { throw "Working directory does not exist: $cwd" }
 

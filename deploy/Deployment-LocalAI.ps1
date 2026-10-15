@@ -28,9 +28,28 @@ function Write-LocalAI-DeployState([string]$Path, [object]$State) {
     }
 }
 
+# A lock whose writer is gone (killed by a reboot, the task time limit or a hung command, so its
+# finally block never ran) would otherwise block every later deploy.
+function Test-LocalAI-DeployLockStale([string]$LockPath) {
+    try { $content = [System.IO.File]::ReadAllText($LockPath).Trim() } catch { return $false }
+    $parts = $content -split ' ', 2
+    $ownerPid = 0
+    if ($parts.Count -lt 2 -or -not [int]::TryParse($parts[0], [ref]$ownerPid)) { return $true }
+    $taken = [DateTime]::MinValue
+    if (-not [DateTime]::TryParse($parts[1], [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$taken)) { return $true }
+    $owner = Get-Process -Id $ownerPid -ErrorAction SilentlyContinue
+    if (-not $owner) { return $true }
+    # The PID was reused by a process started after the lock was taken.
+    try { return $owner.StartTime.ToUniversalTime() -gt $taken.ToUniversalTime().AddSeconds(1) } catch { return $false }
+}
+
 function Enter-LocalAI-DeployLock([string]$StateDir) {
     [System.IO.Directory]::CreateDirectory($StateDir) | Out-Null
     $lockPath = Join-Path $StateDir 'deploy.lock'
+    if ((Test-Path -LiteralPath $lockPath) -and (Test-LocalAI-DeployLockStale $lockPath)) {
+        Write-Warning "Removing stale deploy lock: $([System.IO.File]::ReadAllText($lockPath).Trim())"
+        Remove-Item -LiteralPath $lockPath -Force
+    }
     $stream = [System.IO.File]::Open($lockPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
     try {
         $bytes = [System.Text.Encoding]::UTF8.GetBytes("$PID $(Get-Date -Format o)")

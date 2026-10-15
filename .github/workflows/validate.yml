@@ -43,6 +43,7 @@ jobs:
           node --check tests/run-execution-server-contract.test.cjs
           node --check tests/run-execution-ui.test.cjs
           node --check tests/run-api.test.cjs
+          node --check tests/security-contract.test.cjs
 
       - name: Model runtime contracts
         run: node --test tests/model-runtime.test.cjs tests/model-runtime-ui.test.cjs tests/model-runtime-server-contract.test.cjs
@@ -50,11 +51,17 @@ jobs:
       - name: Unified execution contracts
         run: node --test tests/run-ledger.test.cjs tests/run-execution-server-contract.test.cjs tests/run-execution-ui.test.cjs tests/run-api.test.cjs
 
+      - name: Security contracts
+        run: node --test tests/security-contract.test.cjs
+
+      - name: Python syntax
+        run: python3 -m py_compile host/gridcraft-bridge.py host/gridcraft-agent/gridcraft_ai.py
+
       - name: PowerShell syntax
         shell: pwsh
         run: |
           $failed = $false
-          Get-ChildItem -Path deploy,tests -Filter '*.ps1' -File | ForEach-Object {
+          Get-ChildItem -Path deploy,tests,host -Filter '*.ps1' -File -Recurse | ForEach-Object {
             $tokens = $null
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(

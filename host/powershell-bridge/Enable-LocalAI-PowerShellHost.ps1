@@ -11,6 +11,14 @@ if($Disable){
 }
 if(-not(Test-Path $helper)){throw "PowerShell host helper not found: $helper"}
 
+# Approval key: signs Workbench jobs in the browser and is checked here on the host. It must never be given to the container.
+$approvalKeyFile='C:\LocalAI\powershell-bridge\approval-key.txt'
+if(-not(Test-Path $approvalKeyFile)){
+    $bytes=New-Object byte[] 32;[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    [System.IO.File]::WriteAllText($approvalKeyFile,(($bytes|ForEach-Object{$_.ToString('x2')})-join''))
+    Write-Host "Created approval key: $approvalKeyFile (enter it in the Workbench when queueing a job)"
+}
+
 $actionArgs='-NoProfile -ExecutionPolicy Bypass -File "{0}" -Port {1}' -f $helper,$Port
 $action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $actionArgs
 $trigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(20) -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration (New-TimeSpan -Days 3650)

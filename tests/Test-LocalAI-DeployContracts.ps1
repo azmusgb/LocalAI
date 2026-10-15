@@ -108,6 +108,16 @@ try {
         $lock = Enter-LocalAI-DeployLock $f.StateDir
         Assert-Throws { Enter-LocalAI-DeployLock $f.StateDir } 'exist|used|another|already'
         Remove-Item -LiteralPath $lock
+        # A lock left by a process that no longer exists is reclaimed; a live owner's lock is not.
+        $dead = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList '-NoProfile','-Command','exit' -PassThru
+        $dead.WaitForExit()
+        [System.IO.File]::WriteAllText((Join-Path $f.StateDir 'deploy.lock'), "$($dead.Id) $((Get-Date).AddMinutes(-40).ToString('o'))")
+        $lock = Enter-LocalAI-DeployLock $f.StateDir
+        Assert-True ((Get-Content -LiteralPath $lock -Raw) -like "$PID *") 'Stale lock was not reclaimed'
+        Remove-Item -LiteralPath $lock
+        [System.IO.File]::WriteAllText((Join-Path $f.StateDir 'deploy.lock'), 'garbage')
+        $lock = Enter-LocalAI-DeployLock $f.StateDir
+        Remove-Item -LiteralPath $lock
         Set-Content -LiteralPath $path -Value '[]'
         Assert-Throws { Read-LocalAI-DeployState $path } 'Expected a JSON object'
     }

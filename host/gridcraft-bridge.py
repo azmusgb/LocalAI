@@ -117,6 +117,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path != '/run':
             return self._json(404, {'ok': False, 'error': 'Not found'})
+        # CORS only hides responses; it does not stop a page on another site from firing a simple POST.
+        # Require an allowed Origin when a browser sends one, and a JSON content type (which forces a preflight).
+        origin = self._origin()
+        if origin and origin not in ALLOWED_ORIGINS:
+            return self._json(403, {'ok': False, 'error': 'Origin not allowed'})
+        if self.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
+            return self._json(415, {'ok': False, 'error': 'Content-Type must be application/json'})
         try:
             length = min(int(self.headers.get('Content-Length', '0')), 1024 * 1024)
             payload = json.loads(self.rfile.read(length) or b'{}')
@@ -138,8 +145,10 @@ class Handler(BaseHTTPRequestHandler):
                 cwd=str(PROJECT_DIR),
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 timeout=RUN_TIMEOUT,
-                env=os.environ.copy(),
+                env={**os.environ, 'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8'},
             )
             elapsed = round(time.time() - started, 2)
             if proc.returncode != 0:
