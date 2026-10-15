@@ -516,6 +516,7 @@ body.ux-v3 .card{border-radius:var(--ux-radius-lg);padding:18px}body.ux-v3 .btn{
 body.ux-v3 input,body.ux-v3 textarea,body.ux-v3 select{border-color:var(--ux-line);background:#0c121a;border-radius:9px}body.ux-v3 input:focus,body.ux-v3 textarea:focus,body.ux-v3 select:focus{border-color:rgba(121,169,255,.5);outline:2px solid rgba(121,169,255,.16)}
 body.ux-v3 .two,body.ux-v3 .workspace-grid{gap:14px}
 body.ux-v3 #agents .agent-live-grid{grid-template-columns:minmax(0,1fr) 320px}
+body.ux-v3 #agents .agent-side-stack{grid-template-columns:minmax(0,1fr)}
 
 /* Local-first integration hub */
 .ux-int-hero{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(340px,.75fr);gap:18px;align-items:center;margin:0 0 24px;padding:22px;border:1px solid var(--ux-line);border-radius:22px;background:radial-gradient(circle at 0 0,rgba(121,169,255,.13),transparent 32%),linear-gradient(180deg,#111925,#0d141e)}
