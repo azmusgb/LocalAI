@@ -1,14 +1,15 @@
 // LocalAI Claude chat bridge: relays web messages from the LocalAI appliance
-// into a Claude Code session's messaging socket. Outbound HTTP only.
+// into a Claude Code session's messaging socket. Outbound HTTP(S) only (see relay.mjs).
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { describeError, loadConfig, request } from './relay.mjs';
 
 const [sessionId, title = '', cwd = ''] = process.argv.slice(2);
 const HOME = process.env.LOCALAI_CHAT_HOME || path.join(os.homedir(), '.claude', 'localai-chat');
-const URL_BASE = (process.env.LOCALAI_URL || 'http://10.0.0.21:3080').replace(/\/+$/, '');
+const RELAY = loadConfig(HOME);
 const SOCKET = process.env.CLAUDE_CODE_MESSAGING_SOCKET || '';
 const TOKEN = process.env.CLAUDE_CODE_MESSAGING_TOKEN || '';
 const INJECT_GAP = Number(process.env.LOCALAI_CHAT_INJECT_GAP_MS ?? 1000);
@@ -94,13 +95,10 @@ async function setup() {
 const headers = (extra = {}) => ({ 'X-LocalAI-Mac-Key': macKey, ...extra });
 
 async function announce() {
-  const res = await fetch(`${URL_BASE}/api/claude/chat/announce`, {
-    method: 'POST',
+  const res = await request(RELAY, 'POST', '/api/claude/chat/announce', {
     headers: headers({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ sessionId, title, cwd }),
-    signal: AbortSignal.timeout(10000),
   });
-  await res.arrayBuffer().catch(() => {});
   if (!res.ok) {
     log(res.status === 401 ? 'mac key rejected' : `announce failed ${res.status}`);
     throw new Error(`announce ${res.status}`);
@@ -169,21 +167,18 @@ async function ack(items) {
   const ids = items.map((i) => i.id);
   let acked = new Set();
   try {
-    const res = await fetch(`${URL_BASE}/api/claude/chat/inbox/ack`, {
-      method: 'POST',
+    const res = await request(RELAY, 'POST', '/api/claude/chat/inbox/ack', {
       headers: headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ sessionId, ids }),
-      signal: AbortSignal.timeout(10000),
     });
     if (res.ok) {
-      const data = await res.json();
+      const data = res.json();
       if (Array.isArray(data.acked)) acked = new Set(data.acked);
     } else {
-      await res.arrayBuffer().catch(() => {});
       log(res.status === 401 ? 'mac key rejected' : `ack failed ${res.status}`);
     }
   } catch (e) {
-    log(`ack error ${e.name || ''} ${e.code || e.cause?.code || ''}`.trim());
+    log(`ack error ${describeError(RELAY, e)}`.trim());
   }
   const ok = ids.filter((id) => acked.has(id));
   log(`acked ${ok.length}/${ids.length}`);
@@ -200,19 +195,18 @@ async function main() {
     await probe();
     try {
       if (!announced) { await announce(); announced = true; log('announced'); }
-      const res = await fetch(`${URL_BASE}/api/claude/chat/inbox?sessionId=${encodeURIComponent(sessionId)}&wait=25`, {
+      const res = await request(RELAY, 'GET', `/api/claude/chat/inbox?sessionId=${encodeURIComponent(sessionId)}&wait=25`, {
         headers: headers(),
-        signal: AbortSignal.timeout(35000),
+        timeoutMs: 35000,
       });
       if (!res.ok) {
-        await res.arrayBuffer().catch(() => {});
         log(res.status === 401 ? 'mac key rejected' : `inbox failed ${res.status}`);
         announced = false;
         await sleep(backoff);
         backoff = Math.min(backoff * 2, BACKOFF_MAX);
         continue;
       }
-      const data = await res.json();
+      const data = res.json();
       backoff = BACKOFF_START;
       const items = Array.isArray(data.items) ? data.items : [];
       if (items.length) log(`received ${items.length}`);
@@ -220,7 +214,7 @@ async function main() {
       const acked = await ack(items);
       for (const item of items) if (acked.has(item.id)) await inject(item);
     } catch (e) {
-      log(`relay error ${e.name || ''} ${e.code || e.cause?.code || ''}`.trim());
+      log(`relay error ${describeError(RELAY, e)}`.trim());
       announced = false;
       await sleep(backoff);
       backoff = Math.min(backoff * 2, BACKOFF_MAX);
