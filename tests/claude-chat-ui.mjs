@@ -146,6 +146,34 @@ try {
     await page.waitForFunction(() => [...document.querySelectorAll('#claudeChatLog .claude-chat-msg.web')].every(m => /answered/.test(m.textContent)), null, { timeout: 8000 });
   });
 
+  await check('a delivered message older than 10 minutes no longer widens the poll window', async () => {
+    await page.fill('#claudeChatInput', 'Never answered');
+    await page.press('#claudeChatInput', 'Control+Enter');
+    await page.locator('#claudeChatLog .claude-chat-msg.web', { hasText: 'Never answered' }).waitFor({ timeout: 5000 });
+    const picked = await mac('GET', 'inbox?sessionId=sess-a&wait=0');
+    const latest = picked.body.items[0].seq;
+    await mac('POST', 'mirror', { sessionId: 'sess-a', role: 'user', source: 'terminal', text: 'later terminal line' });
+    await page.locator('#claudeChatLog .claude-chat-msg.terminal', { hasText: 'later terminal line' }).waitFor({ timeout: 8000 });
+    // Move the page clock 11 minutes ahead: the delivered message is now stale.
+    await page.evaluate(() => { window.__realNow = Date.now; const skew = 11 * 60 * 1000; Date.now = () => window.__realNow() + skew; });
+    const urls = [];
+    const onReq = r => { if (/\/api\/claude\/chat\/messages\?/.test(r.url())) urls.push(r.url()); };
+    await page.waitForTimeout(2500);
+    page.on('request', onReq);
+    await page.waitForTimeout(5000);
+    page.off('request', onReq);
+    // Reload so no timestamp taken under the shifted clock lingers in the panel state.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => typeof window.showView === 'function');
+    await page.evaluate(() => window.showView('claude'));
+    await page.waitForSelector('#claudeChatInput', { state: 'visible', timeout: 12000 });
+    assert.ok(urls.length >= 1, 'no message polls');
+    const afters = urls.map(u => Number(new URL(u).searchParams.get('after')));
+    assert.ok(afters.every(a => a === latest + 1), `poll window widened by a stale delivered message: after=${afters.join(',')} (latest seq ${latest + 1})`);
+    await mac('POST', 'mirror', { sessionId: 'sess-a', role: 'assistant', source: 'reply', text: 'Finally.' });
+    await page.waitForFunction(() => [...document.querySelectorAll('#claudeChatLog .claude-chat-msg.web')].every(m => /answered/.test(m.textContent)), null, { timeout: 8000 });
+  });
+
   await heartbeat('sess-b', 'Refactor billing');
   await check('offline session disables the composer with the claude-chat hint', async () => {
     await page.waitForFunction(() => [...document.querySelectorAll('#claudeChatSession option')].some(o => o.value === 'sess-b'), null, { timeout: 12000 });

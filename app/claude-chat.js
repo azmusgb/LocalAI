@@ -175,12 +175,16 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
     if (!['terminal', 'reply'].includes(b.source)) return json(res, 400, { error: 'source must be terminal or reply' });
     if (typeof b.text !== 'string' || !b.text.trim()) return json(res, 400, { error: 'text is required' });
     const { text, truncated } = capText(b.text);
+    // A reply answers every delivered web message before it (several may share a turn, or an earlier turn
+    // may have produced no reply); all of them carry a lower seq than the reply appended here.
     const message = storage.transaction(() => {
+      const reply = appendMessage(b.sessionId, { role: b.role, source: b.source, text, ...(truncated ? { truncated: true } : {}), status: 'delivered' });
       if (b.source === 'reply') {
-        const [newest] = storage.listSettings(msgPrefix(b.sessionId), { where: { status: 'delivered', source: 'web' }, limit: 1 });
-        if (newest) storage.writeSetting(`${msgPrefix(b.sessionId)}${pad(newest.seq)}`, { ...newest, status: 'answered' });
+        for (const m of storage.listSettings(msgPrefix(b.sessionId), { where: { status: 'delivered', source: 'web' } })) {
+          if (m.seq < reply.seq) storage.writeSetting(`${msgPrefix(b.sessionId)}${pad(m.seq)}`, { ...m, status: 'answered' });
+        }
       }
-      return appendMessage(b.sessionId, { role: b.role, source: b.source, text, ...(truncated ? { truncated: true } : {}), status: 'delivered' });
+      return reply;
     });
     json(res, 200, { ok: true, seq: message.seq });
   }

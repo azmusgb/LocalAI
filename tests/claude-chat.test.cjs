@@ -153,7 +153,7 @@ test('long-poll wakes on send', async () => {
   assert.equal(r.body.items[0].text, 'wake');
 });
 
-test('mirror reply marks the newest delivered web message answered; terminal mirror appears', async () => {
+test('mirror reply marks every earlier delivered web message answered; terminal mirror appears', async () => {
   const id = await session();
   await send(id, 'one'); await send(id, 'two');
   await inbox(id);
@@ -162,14 +162,23 @@ test('mirror reply marks the newest delivered web message answered; terminal mir
   assert.ok(m.body.seq > 0);
   let msgs = (await messages(id)).body.items;
   const webs = msgs.filter(x => x.source === 'web');
-  assert.equal(webs[0].status, 'delivered');
-  assert.equal(webs[1].status, 'answered');
+  assert.deepEqual(webs.map(x => x.status), ['answered', 'answered']);
   assert.equal(msgs.at(-1).text, 'the answer');
   await mirror(id, 'user', 'terminal', 'typed in terminal');
   msgs = (await messages(id)).body.items;
   const t = msgs.at(-1);
   assert.equal(t.source, 'terminal');
   assert.equal(t.role, 'user');
+});
+
+test('a reply answers older delivered web messages left over from earlier turns, but not queued ones', async () => {
+  const id = await session();
+  await send(id, 'lost'); await inbox(id);          // delivered, never answered (e.g. a no-text turn)
+  await send(id, 'next'); await inbox(id);
+  await send(id, 'later');                           // still queued when the reply lands
+  await mirror(id, 'assistant', 'reply', 'reply');
+  const webs = (await messages(id)).body.items.filter(x => x.source === 'web');
+  assert.deepEqual(webs.map(x => [x.text, x.status]), [['lost', 'answered'], ['next', 'answered'], ['later', 'queued']]);
 });
 
 test('send to an offline session is refused with 409', async () => {
