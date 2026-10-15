@@ -42,6 +42,18 @@ for (const size of SIZES) {
       await page.waitForTimeout(250);
       const by = await overflow(page);
       if (by > 1) wide.push(`${id} (+${by}px)`);
+      // The page clips sideways overflow, so also look for anything drawn past the edge that isn't in a scroller.
+      const past = await page.evaluate(() => {
+        const W = document.documentElement.clientWidth, out = [];
+        for (const el of document.querySelectorAll('.view.active *')) {
+          const r = el.getBoundingClientRect(); if (!r.width || r.right <= W + 1) continue;
+          let a = el.parentElement, clipped = false;
+          for (; a && a !== document.body; a = a.parentElement) { const o = getComputedStyle(a).overflowX; if (o !== 'visible' && o !== 'clip' && a.getBoundingClientRect().right <= W + 1) { clipped = true; break; } }
+          if (!clipped) out.push((el.id ? '#' + el.id : el.className?.baseVal ?? el.className ?? el.tagName).toString().slice(0, 40) + ` (+${Math.round(r.right - W)}px)`);
+        }
+        return out.slice(0, 3);
+      });
+      if (past.length) wide.push(`${id}: ${past.join(', ')}`);
     }
     assert.deepEqual(wide, []);
     await context.close();
@@ -100,6 +112,62 @@ await check('desktop: every menu entry draws a sprite icon, not a letter', async
       .filter(e => !e.querySelector('svg use[href^="#i-"]') || e.textContent.trim()).map(e => (e.closest('[data-view],[data-domain]')?.dataset.view || e.closest('[data-domain]')?.dataset.domain) + ':' + e.textContent.trim())));
   }
   assert.deepEqual([...new Set(bad)], []);
+  await context.close();
+});
+
+await check('every project picker says what it will use, even with no projects yet', async () => {
+  const { page, context } = await open(SIZES[0]);
+  const blank = [];
+  for (const [view, id] of [['knowledge', 'knowledgeProject'], ['memory', 'memoryProject']]) {
+    await page.evaluate(h => { location.hash = h }, '#' + view);
+    await page.waitForFunction(i => document.getElementById(i)?.options.length > 0, id, { timeout: 5000 }).catch(() => {});
+    const label = await page.evaluate(i => { const el = document.getElementById(i); return el?.selectedOptions[0]?.textContent.trim() || ''; }, id);
+    if (!label) blank.push(id);
+  }
+  assert.deepEqual(blank, []);
+  await context.close();
+});
+
+for (const size of SIZES) await check(`${size[0]}: the Files tree is a compact list: one line per entry, the path only on hover`, async () => {
+  const { page, context } = await open(size);
+  const tree = [{ type: 'directory', name: 'projects', path: 'projects', children: [
+    { type: 'directory', name: 'ImageOCR', path: 'projects/ImageOCR', children: [{ type: 'file', name: 'main.py', path: 'projects/ImageOCR/main.py' }] },
+    { type: 'file', name: 'notes.md', path: 'projects/notes.md' },
+    { type: 'file', name: 'torch-2.14.0+cu126-cp312-cp312-win_amd64-with-a-very-long-unbroken-name.whl', path: 'projects/torch.whl' }] }];
+  await page.route(u => u.pathname === '/api/workbench/tree', r => r.fulfill({ json: { items: tree } }));
+  await page.evaluate(() => { location.hash = '#workbench' });
+  await page.evaluate(() => window.loadWorkbench?.() ?? document.getElementById('workbenchTreeBtn')?.click());
+  await page.waitForSelector('#workbenchTree [data-file-path="projects/notes.md"]');
+  const rows = await page.$$eval('#workbenchTree .tree-row', els => els.map(e => { const i = e.querySelector('svg').getBoundingClientRect(), t = e.querySelector('span').getBoundingClientRect(); return { h: e.getBoundingClientRect().height, oneLine: Math.abs((i.top + i.bottom) / 2 - (t.top + t.bottom) / 2) < 4, text: e.textContent.trim(), title: e.getAttribute('title') }; }));
+  assert.ok(rows.length >= 3, `rows: ${rows.length}`);
+  for (const r of rows) {
+    assert.ok(r.h <= 40, `${r.text} is ${r.h}px tall`);
+    assert.ok(r.oneLine, `${r.text}: icon and name are on different lines`);
+    assert.ok(!r.text.includes('/projects') && !/projects\/.+\//.test(r.text), `path repeated in "${r.text}"`);
+    assert.match(r.title || '', /^projects/);
+  }
+  const edge = await page.evaluate(() => { const W = document.documentElement.clientWidth; return ['#workbenchTree', '#workbench .card'].map(q => Math.round(document.querySelector(q).getBoundingClientRect().right - W)); });
+  assert.ok(edge.every(d => d <= 0), `Files runs past the screen edge by ${edge.join('/')}px`);
+  await context.close();
+});
+
+await check('phone: under each page title, status sits on the left and the page action on the right', async () => {
+  const { page, context } = await open(SIZES[0]);
+  const wrong = [];
+  for (const id of ['issues', 'changes', 'workbench', 'repoTools', 'operations']) {
+    await page.evaluate(h => { location.hash = h }, '#' + id);
+    await page.waitForTimeout(200);
+    const r = await page.evaluate(i => {
+      const bar = document.querySelector(`#${i}.active > .topbar`); if (!bar || getComputedStyle(bar).display === 'none') return null;
+      const box = bar.getBoundingClientRect(), vis = k => k.getBoundingClientRect().width > 0;
+      const pill = [...bar.querySelectorAll('.pill, .statuschip, .badge')].find(vis), btns = [...bar.querySelectorAll('button, .btn')].filter(vis), btn = btns.at(-1);
+      return { pillLeft: pill ? pill.getBoundingClientRect().left - box.left : null, btnRight: btn ? box.right - btn.getBoundingClientRect().right : null };
+    }, id);
+    if (!r) continue;
+    if (r.pillLeft !== null && r.pillLeft > 2) wrong.push(`${id}: status ${Math.round(r.pillLeft)}px from the left`);
+    if (r.btnRight !== null && r.btnRight > 2) wrong.push(`${id}: action ${Math.round(r.btnRight)}px from the right`);
+  }
+  assert.deepEqual(wrong, []);
   await context.close();
 });
 
