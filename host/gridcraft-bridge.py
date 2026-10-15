@@ -9,7 +9,9 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-HOST = os.environ.get('GRIDCRAFT_BRIDGE_HOST', '0.0.0.0')
+# Loopback only: the appliance container reaches it through host.docker.internal (Docker Desktop forwards that to the
+# host's loopback), and browsers go through the appliance's /api/gridcraft routes. Nothing else needs the port.
+HOST = os.environ.get('GRIDCRAFT_BRIDGE_HOST', '127.0.0.1')
 PORT = int(os.environ.get('GRIDCRAFT_BRIDGE_PORT', '8787'))
 CONTROL_PORT = int(os.environ.get('GRIDCRAFT_CONTROL_PORT', '7979'))
 MODEL = os.environ.get('GRIDCRAFT_MODEL', 'qwen3:4b-instruct')

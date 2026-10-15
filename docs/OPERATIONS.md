@@ -10,7 +10,7 @@ the host's 127.0.0.1) or the Docker network.
 |---|---|---|---|
 | Ollama | `127.0.0.1:11434` | `host.docker.internal:11434` | user env `OLLAMA_HOST=127.0.0.1:11434`, then restart the Ollama app |
 | ComfyUI (images) | `127.0.0.1:8188` | `host.docker.internal:8188` | `host/comfyui/Install-ComfyUI-Task.ps1` |
-| GridCraft bridge | `127.0.0.1:8787` | `host.docker.internal:8787`; browsers use `/api/gridcraft` | `deploy/Install-GridCraft-Bridge.ps1` (`-BindHost`) |
+| GridCraft bridge | `127.0.0.1:8787` | `host.docker.internal:8787`; browsers use `/api/gridcraft` | `deploy/Install-GridCraft-Bridge.ps1` (binds 127.0.0.1) |
 | n8n | `127.0.0.1:5678` | `local-ai-n8n:5678` on `local-ai-sandbox-net` | container published with `-p 127.0.0.1:5678:5678` |
 
 The n8n editor therefore opens only on the Windows host (`http://localhost:5678`) until sign-in can expose it through

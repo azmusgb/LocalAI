@@ -4,8 +4,6 @@ param(
     [string]$Workbook = "$env:USERPROFILE\Documents\GridCraft\Quarterly-Sales-Dashboard.xlsx",
     [string]$Model = 'qwen3:4b-instruct',
     [int]$Port = 8787,
-    # localhost only: the appliance reaches the bridge through host.docker.internal and browsers use /api/gridcraft.
-    [string]$BindHost = '127.0.0.1',
     [string[]]$AllowedOrigins = @(),
     [switch]$Uninstall
 )
@@ -20,13 +18,13 @@ $Python = Join-Path $AgentDir '.venv\Scripts\python.exe'
 $LogPath = Join-Path $AgentDir 'gridcraft-bridge.log'
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) { throw 'Run this script from an elevated PowerShell (Run as administrator); it registers a scheduled task and a firewall rule.' }
+if (-not $isAdmin) { throw 'Run this script from an elevated PowerShell (Run as administrator); it registers a scheduled task that runs elevated.' }
 
 if ($Uninstall) {
     Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
     Remove-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue
-    Write-Host "Removed scheduled task and firewall rule: $TaskName"
+    Write-Host "Removed scheduled task: $TaskName"
     exit 0
 }
 
@@ -64,8 +62,8 @@ $launcher = @(
     "`$env:GRIDCRAFT_AGENT_SCRIPT = $(Format-Quoted $AgentScript)"
     "`$env:GRIDCRAFT_WORKBOOK = $(Format-Quoted $Workbook)"
     "`$env:GRIDCRAFT_MODEL = $(Format-Quoted $Model)"
+    "`$env:GRIDCRAFT_BRIDGE_HOST = '127.0.0.1'"
     "`$env:GRIDCRAFT_BRIDGE_PORT = $(Format-Quoted $Port)"
-    "`$env:GRIDCRAFT_BRIDGE_HOST = $(Format-Quoted $BindHost)"
     "`$env:GRIDCRAFT_ALLOWED_ORIGINS = $(Format-Quoted $origins)"
     "`$env:PYTHONUNBUFFERED = '1'"
     "& $(Format-Quoted $Python) $(Format-Quoted $BridgeScript) *>> $(Format-Quoted $LogPath)"
@@ -85,7 +83,8 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoi
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 
-# Nothing on the network talks to the bridge directly any more; remove the inbound rule older installs added.
+# The bridge listens on loopback only and is reached through the appliance, so it needs no inbound rule.
+# Remove the rule older installs created.
 Remove-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue
 
 Start-ScheduledTask -TaskName $TaskName
