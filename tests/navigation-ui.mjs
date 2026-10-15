@@ -151,7 +151,8 @@ await mobile.waitForSelector('#uxMobileNav');
 await mobile.waitForFunction(() => typeof window.showView === 'function');
 
 await check('mobile sheet lists pages, not tabs', async () => {
-  await mobile.evaluate(() => document.querySelector('#uxMobileNav [data-domain="home"]')?.click());
+  // Home itself shows the brand instead of the section menu, so open it from Inbox (same section).
+  await mobile.evaluate(() => window.showView('inbox'));
   await mobile.locator('#uxContextMenu').click();
   await mobile.locator('#uxMobileSheet').waitFor({ state: 'visible' });
   const items = await mobile.locator('#uxMobileSheetItems .ux-mobile-link strong').allInnerTexts();
