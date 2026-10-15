@@ -16,6 +16,8 @@ async function check(name, fn) {
 }
 
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+// These checks cover the Build domain, which a fresh install hides until Developer tools is switched on.
+await page.addInitScript(() => localStorage.setItem('localai.devTools', '1'));
 const pageErrors = [];
 page.on('pageerror', e => pageErrors.push(e.message));
 await page.goto(base, { waitUntil: 'domcontentloaded' });
@@ -128,6 +130,7 @@ await check('no script errors while navigating', async () => {
 await page.close();
 
 const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+await mobile.addInitScript(() => localStorage.setItem('localai.devTools', '1'));
 await mobile.goto(base, { waitUntil: 'domcontentloaded' });
 await mobile.waitForSelector('#uxMobileNav');
 await mobile.waitForFunction(() => typeof window.showView === 'function');

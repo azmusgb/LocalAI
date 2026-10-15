@@ -1063,6 +1063,8 @@ function apiConfig(req, res) {
     version: APP_VERSION,
     model: MODEL,
     localUiPort: LOCAL_UI_PORT || PORT,
+    // An install that has used the Build tools keeps them in the menu by default; a new one starts without them.
+    developerHistory: changeStore().length > 0 || engineeringRunStore().length > 0 || claudeFindings().length > 0,
     chatTimeoutMs: CHAT_MODEL_TIMEOUT_MS,
     engineeringTimeoutMs: ENGINEERING_MODEL_TIMEOUT_MS,
     capabilityCacheMs: CAPABILITY_CACHE_MS,
