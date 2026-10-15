@@ -80,3 +80,20 @@ test('brief chat asks the model for a short spoken answer; normal chat does not'
   assert.match(systems[0], /read aloud on a watch/);
   assert.doesNotMatch(systems[1], /read aloud on a watch/);
 });
+
+test('ask takes one text field and answers in plain text with the brief instruction', { timeout: 30000 }, async t => {
+  const { base, chats } = await startServer(t);
+  const ask = body => fetch(`${base}/api/glance/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await ask({ text: '  Weather?  ' });
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-type'), /^text\/plain/);
+  assert.equal(await r.text(), 'It is sunny.');
+  const sent = chats.at(-1);
+  assert.match(sent.messages.find(m => m.role === 'system').content, /read aloud on a watch/);
+  assert.equal(sent.messages.at(-1).content, 'Weather?');
+  assert.equal((await ask({ text: '' })).status, 400);
+  assert.equal((await ask({})).status, 400);
+  const runs = await (await fetch(`${base}/api/runs?limit=5`)).json();
+  const run = runs.items.find(x => x.type === 'chat');
+  assert.ok(run, 'the question is an ordinary chat run');
+});

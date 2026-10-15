@@ -87,10 +87,12 @@ function reconcile({ items = [], changes = [], signals = [], release = null, sta
     }
   }
 
-  for (const change of changes) {
-    if (!LIVE_CHANGE.includes(change.status) || linked.has(change.id)) continue;
+  // Only at start-up: changes that were already open before Improve existed get an item, once. Changes planned
+  // later come from Improve (already linked) or from the engineering agent's own attempts (never linked).
+  for (const change of startup ? changes : []) {
+    if (!LIVE_CHANGE.includes(change.status) || linked.has(change.id) || change.sourceEngineeringRunId) continue;
     upserts.push({
-      id: `idea-change-${change.id}`, source: 'idea', status: 'in_progress', changeId: change.id,
+      id: `idea-change-${change.id}`, source: 'idea', status: 'approved', changeId: change.id,
       severity: 'medium', category: 'idea', title: clip(change.summary || change.request || 'Change request', 120),
       summary: clip(change.request || change.summary, 2000), createdAt: at, updatedAt: at
     });
