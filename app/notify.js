@@ -131,7 +131,9 @@ function createNotifier({ storage, sendPush, vapid, subject, now = Date.now, sch
     const targets = all().filter((d) => !id || d.id === id);
     const payload = { title: 'Test from Local AI', body: 'Notifications work on this device.', url: '/?open=status', tag: 'test' };
     const results = await Promise.all(targets.map((d) => deliver(d, payload, 'high')));
-    return { sent: results.filter((r) => r === 'sent').length, removed: results.filter((r) => r === 'removed').length };
+    const failedIds = targets.filter((d, i) => results[i] === 'failed').map((d) => d.id);
+    const error = failedIds.length ? storage.readSetting(DEVICE_PREFIX + failedIds[0], null)?.lastError || 'unknown error' : null;
+    return { sent: results.filter((r) => r === 'sent').length, removed: results.filter((r) => r === 'removed').length, failed: failedIds.length, error };
   }
 
   return {
@@ -148,9 +150,10 @@ function runEvent(run, previousStatus) {
   if (!run || run.status === previousStatus) return null;
   const base = { url: `/?open=run:${run.id}`, tag: `run:${run.id}` };
   if (run.status === 'awaiting_approval') return { kind: 'needs-you', title: 'Waiting for your approval', body: run.title, ...base };
-  if (run.status === 'failed') return { kind: 'failed', title: `Failed: ${run.title}`, body: run.error, ...base };
+  // Only the run's title reaches the lock screen, never its output or error text (spec: Privacy).
+  if (run.status === 'failed') return { kind: 'failed', title: 'Failed', body: run.title, ...base };
   if (run.status === 'completed' && run.startedAt && run.finishedAt && Date.parse(run.finishedAt) - Date.parse(run.startedAt) >= 30000) {
-    return { kind: 'finished', title: `Done: ${run.title}`, body: run.summary, ...base };
+    return { kind: 'finished', title: 'Done', body: run.title, ...base };
   }
   return null;
 }
@@ -159,10 +162,12 @@ function serviceEvent(overall, affected = []) {
     ? { kind: 'service', title: 'Recovered', body: 'All core services are back.', url: '/?open=status', tag: 'service' }
     : { kind: 'service', title: `Down: ${affected.join(', ') || overall}`, body: `Local AI health changed to ${overall}`, url: '/?open=status', tag: 'service' };
 }
-// Inbox notices that should also reach the phone: approvals, and host jobs that failed.
-function noticeEvent(kind, title, detail, level) {
+// Inbox notices that should also reach the phone: approvals, and host jobs (meta.source 'host') that failed. The
+// app's own health monitor also files 'monitor' notices, every 15 minutes while an optional companion is off;
+// those stay in the Inbox, since Down/recovered already covers real outages.
+function noticeEvent(kind, title, detail, level, meta = {}) {
   if (kind === 'approval') return { kind: 'needs-you', title: 'Approval needed', body: title, url: '/?open=approvals', tag: `approval:${title}` };
-  if (['deploy', 'backup', 'monitor'].includes(kind) && level === 'attention') return { kind: 'failed', title, body: detail, url: '/?open=inbox', tag: kind };
+  if (['deploy', 'backup', 'monitor'].includes(kind) && level === 'attention' && meta?.source === 'host') return { kind: 'failed', title, body: detail, url: '/?open=inbox', tag: kind };
   return null;
 }
 

@@ -11,13 +11,13 @@ const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleW
 
 // A fake push stack: standalone or not, already subscribed or not.
 function fakePush({ standalone, subscribed }) {
-  return ({ standalone, subscribed }) => {
+  return ({ standalone, subscribed, noWorker }) => {
     let sub = subscribed ? { endpoint: 'https://web.push.apple.com/known' } : null;
     const make = (endpoint) => ({ endpoint, toJSON: () => ({ endpoint, keys: { p256dh: 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4', auth: 'BTBZMqHH6r4Tts7J_aSIgg' } }), unsubscribe: async () => { sub = null; return true; } });
     if (sub) sub = make(sub.endpoint);
     const reg = { pushManager: { getSubscription: async () => sub, subscribe: async () => (sub = make('https://web.push.apple.com/new-' + Date.now())) } };
     Object.defineProperty(navigator, 'standalone', { get: () => standalone });
-    Object.defineProperty(navigator, 'serviceWorker', { get: () => ({ ready: Promise.resolve(reg), register: async () => reg, addEventListener() {}, controller: null }) });
+    Object.defineProperty(navigator, 'serviceWorker', { get: () => ({ ready: noWorker ? new Promise(() => {}) : Promise.resolve(reg), register: async () => reg, addEventListener() {}, controller: null }) });
     window.PushManager = function PushManager() {};
     window.Notification = { permission: 'default', requestPermission: async () => 'granted' };
     localStorage.setItem('localai.firstRun.done', '1');
@@ -79,6 +79,25 @@ await check('Home Screen app: Allow subscribes as iPhone and shows the settings'
   assert.ok(calls.some((c) => c.path === '/api/push/test'));
   assert.match(await page.locator('#notifications .notify-devices').innerText(), /iPhone/);
   assert.deepEqual(errors, []);
+  await context.close();
+});
+
+await check('if the background service never starts, the card says what to do', async () => {
+  const { page, context } = await openHealth({ standalone: true, subscribed: false, noWorker: true });
+  await page.waitForFunction(() => /didn't start/.test(document.querySelector('#notifications').textContent), null, { timeout: 10000 });
+  assert.match(await page.locator('#notifications').innerText(), /Reload Local AI/);
+  await context.close();
+});
+
+await check('a refused test says so, with the reason', async () => {
+  const devices = [{ id: 'd1', name: 'iPhone', endpoint: 'https://web.push.apple.com/known', kinds: ['needs-you', 'failed', 'service', 'finished'], quiet: { on: true, start: '22:00', end: '07:00' }, lastOkAt: null, lastError: null }];
+  const { page, context } = await openHealth({ standalone: true, subscribed: true }, devices);
+  await page.route('**/api/push/test', (route) => route.fulfill({ json: { sent: 0, removed: 0, failed: 1, error: 'HTTP 403' } }));
+  await page.locator('[data-notify-test]').click();
+  await page.waitForFunction(() => /refused/.test(document.querySelector('#notifications .notify-status').textContent));
+  const text = await page.locator('#notifications .notify-status').innerText();
+  assert.match(text, /HTTP 403/);
+  assert.doesNotMatch(text, /no longer subscribed/);
   await context.close();
 });
 

@@ -1816,7 +1816,7 @@ function monitorStore(){ return objectStore(MONITORS_STORE); }
 function addNotification(kind,title,detail='',meta={},level='attention'){
   const item={id:makeId('note'),kind,level,title:normalizeTitle(title,'Notification'),detail:String(detail||'').slice(0,2000),createdAt:nowIso(),read:false,resolved:false,meta};
   prependRecord(NOTIFICATIONS_STORE,item);
-  const e=notifyLib.noticeEvent(kind,item.title,item.detail,level);if(e)notifier.notify(meta.approvalId?{...e,tag:`approval:${meta.approvalId}`}:e);
+  const e=notifyLib.noticeEvent(kind,item.title,item.detail,level,meta);if(e)notifier.notify(meta.approvalId?{...e,tag:`approval:${meta.approvalId}`}:e);
   return item;
 }
 // Info notices (a release went live, a backup finished, a monitor recovered) stay in the Inbox but don't count
@@ -2901,6 +2901,9 @@ async function apiReleases(req, res) {
 
 migrateLegacyActivityToLibrary();
 recordReleaseHistory();
+// Health is checked on its own every minute, so an outage reaches the phone (Down/Recovered) even with no page open.
+const HEALTH_TICK_MS = Math.max(200, Number(process.env.HEALTH_TICK_MS) || 60000);
+setInterval(() => { getStatusAndRecordTransition().catch(() => {}); }, HEALTH_TICK_MS).unref();
 repairGarbledTextOnce();
 
 server.listen(PORT, '0.0.0.0', () => {

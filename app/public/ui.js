@@ -3233,7 +3233,9 @@ const keyBytes=b64=>Uint8Array.from(atob(b64.replace(/-/g,'+').replace(/_/g,'/')
 const KINDS=[['needs-you','Needs you','Approvals, and Claude findings waiting for your decision'],['failed','Failed','Runs, automatic updates and backups that failed'],['service','Down and recovered','A core service down for 2 minutes, and back again'],['finished','Finished','Runs of 30 seconds or more, when Local AI isn\'t open']];
 const when=iso=>iso?new Date(iso).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'never';
 async function post(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);return j}
-async function subscription(){if(!supported())return null;const reg=await navigator.serviceWorker.ready;return reg.pushManager.getSubscription()}
+// navigator.serviceWorker.ready never settles if the worker failed to register, so give it 5 s.
+const workerReady=()=>Promise.race([navigator.serviceWorker.ready,new Promise((_,no)=>setTimeout(()=>no(new Error('worker')),5000))]);
+async function subscription(){if(!supported())return null;const reg=await workerReady();return reg.pushManager.getSubscription()}
 const say=(card,html)=>{q('.notify-body',card).innerHTML=html};
 const status=(card,text)=>{q('.notify-status',card).textContent=text};
 
@@ -3254,7 +3256,9 @@ async function render(card){
  if(!isSecureContext){say(card,`<p>Notifications need the secure address. Open <a href="https://${location.hostname}/">https://${location.hostname}/</a> (set up the certificate under Secure connection first).</p>`);return}
  if(isIOS&&!standalone()){say(card,'<p><b>Add Local AI to your Home Screen.</b> In Safari tap Share › Add to Home Screen, then open Local AI from its new icon and come back here. iPhone shows notifications only for Home Screen apps.</p>');return}
  if(!supported()){say(card,'<p>This browser can\'t receive notifications.</p>');return}
- const [sub,{devices=[]}]=await Promise.all([subscription().catch(()=>null),fetch('/api/push/devices',{cache:'no-store'}).then(r=>r.json()).catch(()=>({}))]);
+ let sub;
+ try{sub=await subscription()}catch{say(card,'<p><b>Local AI\'s background service didn\'t start</b>, so this device can\'t receive notifications yet. Reload Local AI and try again.</p>');return}
+ const {devices=[]}=await fetch('/api/push/devices',{cache:'no-store'}).then(r=>r.json()).catch(()=>({}));
  me=sub&&devices.find(d=>d.endpoint===sub.endpoint);
  if(sub&&!me){say(card,'<p><b>Notifications stopped on this device.</b> Local AI no longer has this device on its list, for example after it was removed.</p><button type="button" class="btn primary" data-notify-allow>Turn them on again</button>');return}
  if(!sub){say(card,'<p>Get a notification when Local AI needs you, something fails or goes down, or a long run finishes.</p><button type="button" class="btn primary" data-notify-allow>Allow notifications</button>');return}
@@ -3263,7 +3267,7 @@ async function render(card){
 async function allow(card){
  const perm=await Notification.requestPermission();
  if(perm!=='granted'){status(card,'Notifications are blocked. Allow them for Local AI in Settings › Notifications, then try again.');return}
- const reg=await navigator.serviceWorker.ready;
+ const reg=await workerReady();
  const old=await reg.pushManager.getSubscription();if(old)await old.unsubscribe().catch(()=>{});
  const {publicKey}=await (await fetch('/api/push/key',{cache:'no-store'})).json();
  const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:keyBytes(publicKey)});
@@ -3283,7 +3287,14 @@ function mount(){
   btn.disabled=true;status(card,'');
   try{
    if(btn.matches('[data-notify-allow]'))await allow(card);
-   else if(btn.matches('[data-notify-test]')){const r=await post('/api/push/test',me?{id:me.id}:{});status(card,r.sent?'Sent. It should arrive in a few seconds.':'Nothing was sent: this device is no longer subscribed.')}
+   else if(btn.matches('[data-notify-test]')){
+    const r=await post('/api/push/test',me?{id:me.id}:{});
+    status(card,r.sent?'Sent. It should arrive in a few seconds.'
+     :r.failed?`The push service refused it (${r.error}). Try again in a minute; if it keeps happening, turn notifications off and on again.`
+     :r.removed?'This device is no longer subscribed. Turn notifications on again.'
+     :'No device is set up for notifications yet.');
+    await render(card);
+   }
    else if(btn.matches('[data-notify-off]')){const sub=await subscription();if(sub){await post('/api/push/unsubscribe',{endpoint:sub.endpoint});await sub.unsubscribe().catch(()=>{})}await render(card)}
    else if(btn.matches('[data-notify-rename-save]')){await post('/api/push/devices/update',{id:btn.dataset.notifyRenameSave,name:q('.notify-rename',btn.closest('li')).value});await render(card)}
    else{await post('/api/push/devices/remove',{id:btn.dataset.notifyRemove});await render(card)}

@@ -41,7 +41,7 @@ test('events reach the phone: failed run, approval, new Claude finding, host fai
 
   await t.test('a failed chat run', async () => {
     await post('/api/chat', { messages: [{ role: 'user', content: 'hi' }] });
-    const p = await waitFor(x => x.title?.startsWith('Failed:'));
+    const p = await waitFor(x => x.title === 'Failed');
     assert.ok(p, JSON.stringify(pushes));
     assert.match(p.tag, /^run:/);
   });
