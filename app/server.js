@@ -2430,8 +2430,11 @@ const QUALITY_EVENTS_STORE = 'qualityEvents';
 const QUALITY_SCANS_STORE = 'qualityScans';
 function qualityEventStore(){return objectStore(QUALITY_EVENTS_STORE)}
 function qualityScanStore(){return objectStore(QUALITY_SCANS_STORE)}
-function qualitySeverity(type,message){
+function qualitySeverity(type,message,{line,stack}={}){
   const t=String(type||'').toLowerCase(),m=String(message||'').toLowerCase();
+  // Browsers hide errors from other origins (extensions, injected scripts) as a bare "Script error." with no line
+  // or stack. Local AI loads no cross-origin scripts, so there is nothing to act on.
+  if(m.trim()==='script error.'&&!Number(line)&&!String(stack||'').trim())return 'low';
   if(t==='error'||/uncaught|syntaxerror|referenceerror|typeerror|failed to load/.test(m))return 'high';
   if(t==='rejection'||/timeout|degraded|warning/.test(m))return 'medium';
   return 'low';
@@ -2440,7 +2443,7 @@ async function apiQualityClientEvent(req,res){
   if(!requireFeature(res,14))return;
   try{
     const b=await readBody(req,256*1024);const message=String(b.message||'').slice(0,4000);if(!message)return json(res,400,{error:'message is required'});
-    const item={id:makeId('qevt'),type:String(b.type||'error').slice(0,40),severity:qualitySeverity(b.type,message),message,source:String(b.source||'').slice(0,1000),line:Number(b.line)||null,column:Number(b.column)||null,stack:String(b.stack||'').slice(0,12000),url:String(b.url||'').slice(0,1200),createdAt:nowIso()};
+    const item={id:makeId('qevt'),type:String(b.type||'error').slice(0,40),severity:qualitySeverity(b.type,message,{line:b.line,stack:b.stack}),message,source:String(b.source||'').slice(0,1000),line:Number(b.line)||null,column:Number(b.column)||null,stack:String(b.stack||'').slice(0,12000),url:String(b.url||'').slice(0,1200),createdAt:nowIso()};
     prependRecord(QUALITY_EVENTS_STORE,item);recordActivity('quality','Client quality event',message.slice(0,180),{qualityEventId:item.id,severity:item.severity});json(res,201,{item});
   }catch(e){storageError(res,e,400)}
 }
