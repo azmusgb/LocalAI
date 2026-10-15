@@ -66,3 +66,11 @@ body.ux-v3 #agents .agent-live-grid{grid-template-columns:minmax(0,1fr) 320px}
 .ux-tab:hover{color:var(--text)}
 .ux-tab.active{color:var(--text);border-bottom-color:var(--accent)}
 .ux-tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:6px}
+/* Inbox count in the top bar: hidden when nothing is waiting. */
+.ux-context-inbox{height:34px;display:inline-flex;align-items:center;gap:7px;border:1px solid var(--ux-line);background:rgba(255,255,255,.02);color:var(--text);border-radius:9px;padding:0 10px;font-size:11px;font-weight:650}
+.ux-context-inbox[hidden]{display:none}
+.ux-context-inbox b{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--bad);color:#16090b;font-size:10px;display:grid;place-items:center}
+.ux-context-inbox:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ux-context-actions{display:flex;align-items:center;gap:8px}
+/* Audit log entries that came from a run link to it in Runs. */
+.activity-run{margin-top:6px;padding:3px 10px;font-size:11px;min-height:0}

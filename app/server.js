@@ -13,6 +13,9 @@ const PROXY_URL = process.env.PROXY_URL || 'http://local-ai-ollama-responses-pro
 const SEARXNG_URL = process.env.SEARXNG_URL || 'http://local-ai-searxng:8080';
 const MAC_AI_HOME_URL = process.env.MAC_AI_HOME_URL || 'http://10.0.0.16:3083';
 const MAC_DSH_URL = process.env.MAC_DSH_URL || 'http://10.0.0.16:3084';
+// GridCraft host bridge. The browser reaches it only through /api/gridcraft/*, so the bridge can stay off the LAN.
+const GRIDCRAFT_URL = process.env.GRIDCRAFT_URL || 'http://host.docker.internal:8787';
+const GRIDCRAFT_RUN_TIMEOUT_MS = 330000;
 const REPORT_PATH = process.env.REPORT_PATH || '/reports/LocalAI-Certification-latest.txt';
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -1007,6 +1010,31 @@ async function apiGenerateImage(req, res) {
   }
 }
 
+async function apiGridcraftHealth(req, res) {
+  try {
+    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/health`, { cache: 'no-store' }, 4000);
+    const data = await r.json().catch(() => ({}));
+    // Only what the UI shows: the bridge also reports host file paths.
+    json(res, r.ok ? 200 : 502, { ok: r.ok && data.ok === true, gridcraftConnected: data.gridcraftConnected === true, ...(data.model ? { model: String(data.model) } : {}) });
+  } catch (e) {
+    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+  }
+}
+async function apiGridcraftRun(req, res) {
+  // Same rules the bridge applies to browsers: same-origin only, JSON only.
+  const origin = req.headers.origin;
+  if (origin && origin !== `http://${req.headers.host}` && origin !== `https://${req.headers.host}`) return json(res, 403, { ok: false, error: 'Origin not allowed' });
+  if (String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase() !== 'application/json') return json(res, 415, { ok: false, error: 'Content-Type must be application/json' });
+  try {
+    const b = await readBody(req, 64 * 1024);
+    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: String(b.prompt || '') }) }, GRIDCRAFT_RUN_TIMEOUT_MS);
+    const data = await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` }));
+    if (r.ok) recordActivity('gridcraft', 'GridCraft request', String(b.prompt || '').slice(0, 180), { durationSec: data.durationSec });
+    json(res, r.status, data);
+  } catch (e) {
+    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+  }
+}
 async function apiImageView(req, res, urlObj) {
   try {
     const u = new URL(`${COMFY_URL}/view`);
@@ -2463,6 +2491,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/images/checkpoints') return await apiCheckpoints(req, res);
     if (req.method === 'POST' && p === '/api/images/generate') return await apiGenerateImage(req, res);
     if (req.method === 'GET' && p === '/api/images/view') return await apiImageView(req, res, urlObj);
+    if (req.method === 'GET' && p === '/api/gridcraft/health') return await apiGridcraftHealth(req, res);
+    if (req.method === 'POST' && p === '/api/gridcraft/run') return await apiGridcraftRun(req, res);
 
     // cumulative release features
     if (req.method === 'GET' && p === '/api/projects') return await apiProjects(req,res,urlObj);

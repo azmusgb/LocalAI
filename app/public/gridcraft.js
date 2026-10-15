@@ -1,8 +1,8 @@
 (() => {
   'use strict';
 
-  const host = location.hostname || '127.0.0.1';
-  const BRIDGE = `http://${host}:8787`;
+  // The appliance proxies the host bridge, so the bridge port never has to be open to the network.
+  const BRIDGE = '/api/gridcraft';
   const $ = id => document.getElementById(id);
   const status = $('status');
   const prompt = $('prompt');
