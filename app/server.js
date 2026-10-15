@@ -2592,6 +2592,7 @@ async function apiPowerShellHostResult(req,res){if(!requireFeature(res,17))retur
 // decisions. Claude reads the ranking back from /api/claude/priorities. Rows live in settings under
 // per-kind key prefixes (newest key first), so no schema change is needed.
 const CLAUDE_SESSION_PREFIX='claude-session/',CLAUDE_EVENT_PREFIX='claude-event/',CLAUDE_FINDING_PREFIX='claude-finding/';
+const CLAUDE_LIVE_WORKING_MS=2*60*1000,CLAUDE_LIVE_WINDOW_MS=30*60*1000,CLAUDE_LIVE_SCAN_EVENTS=500,CLAUDE_STOP_TITLE='Finished responding';
 const CLAUDE_MAX_EVENTS=3000,CLAUDE_MAX_FINDINGS=1000;
 const CLAUDE_SEVERITY_WEIGHT={high:30,medium:15,low:5};
 const CLAUDE_STATUS={proposed:{label:'Proposed',boost:0},approved:{label:'Approved',boost:20},in_progress:{label:'In progress',boost:25},deferred:{label:'Deferred',boost:-25},rejected:{label:'Rejected',boost:-100},fixed:{label:'Fixed',boost:-200}};
@@ -2626,6 +2627,20 @@ function claudeNormalizeFinding(f,prev,at){
     createdAt:prev?.createdAt||at,updatedAt:at
   };
 }
+// Live sessions from each session's newest event: working while it is under 2 minutes old and not a Stop, otherwise
+// waiting (idle) until 30 minutes pass, then gone. Pure: pass the clock in.
+function claudeLive(sessions,events,now){
+  const latest=new Map();
+  for(const e of events){const t=Date.parse(e.at);if(Number.isFinite(t)&&(!latest.has(e.sessionId)||t>latest.get(e.sessionId).t))latest.set(e.sessionId,{t,title:e.title})}
+  const live=[];
+  for(const s of sessions){
+    const last=latest.get(s.id)||{t:Date.parse(s.updatedAt),title:s.lastEvent||''};
+    const age=now-last.t;if(!Number.isFinite(age)||age>=CLAUDE_LIVE_WINDOW_MS)continue;
+    const stop=last.title===CLAUDE_STOP_TITLE;
+    live.push({id:s.id,title:`${s.title||'Claude session'} · ${s.id.replace(/^cc-/,'')}`,state:!stop&&age<CLAUDE_LIVE_WORKING_MS?'working':'waiting',lastEvent:last.title,at:new Date(last.t).toISOString()});
+  }
+  return live.sort((a,b)=>(a.state==='working'?0:1)-(b.state==='working'?0:1)||b.at.localeCompare(a.at));
+}
 async function apiClaudeBoard(req,res,urlObj){
   const sessionId=urlObj.searchParams.get('session')||'';const limit=Math.max(1,Math.min(500,Number(urlObj.searchParams.get('events'))||150));
   const sessions=storage.listSettings(CLAUDE_SESSION_PREFIX).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
@@ -2633,7 +2648,8 @@ async function apiClaudeBoard(req,res,urlObj){
   const findings=claudeRanked(claudeFindings().filter(f=>!sessionId||f.sessionId===sessionId));
   const byStatus={},byCategory={};
   for(const f of findings){byStatus[f.status]=(byStatus[f.status]||0)+1;const c=byCategory[f.category]||(byCategory[f.category]={high:0,medium:0,low:0,open:0,total:0});c[f.severity]++;c.total++;if(!['fixed','rejected'].includes(f.status))c.open++}
-  json(res,200,{sessions,events,findings,summary:{total:findings.length,byStatus,byCategory},statuses:Object.fromEntries(Object.entries(CLAUDE_STATUS).map(([k,v])=>[k,v.label]))});
+  const live=claudeLive(sessions,storage.listSettings(CLAUDE_EVENT_PREFIX,{limit:CLAUDE_LIVE_SCAN_EVENTS}),Date.now());
+  json(res,200,{sessions,events,live,findings,summary:{total:findings.length,byStatus,byCategory},statuses:Object.fromEntries(Object.entries(CLAUDE_STATUS).map(([k,v])=>[k,v.label]))});
 }
 async function apiClaudeEvents(req,res){
   try{const b=await readBody(req,512*1024);const list=Array.isArray(b.events)?b.events.slice(0,200):[b];const at=nowIso();
