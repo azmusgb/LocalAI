@@ -76,7 +76,7 @@ function showView(id){
 qsa('[data-view]').forEach(el=>el.addEventListener('click',()=>showView(el.dataset.view)));
 qsa('[data-quick]').forEach(el=>el.addEventListener('click',()=>{const k=el.dataset.quick;if(k==='ask'||k==='research'){openAsk(k==='research')}else if(k==='create')openCreate();else if(k==='engineering'){showView('engineering');if($('engineeringRequest')&&!$('engineeringRequest').value.trim())$('engineeringRequest').value='Improve Local AI based on the current user experience. Preserve existing behavior, validate all changes, and stop for approval.';setTimeout(()=>$('engineeringRequest')?.focus(),20)}else showView('automations');}));
 
-function renderMessages(){
+function renderMessages(follow=true){
   const box=$('messages');
   if(!state.messages.length){box.innerHTML='<div class="empty">Start a private conversation. Clear self-modification requests can route directly to the Engineering Agent.</div>';return;}
   box.innerHTML=state.messages.map((m,i)=>{
@@ -84,7 +84,20 @@ function renderMessages(){
     return `<div class="msg ${m.role} ${m.streaming?'streaming':''}" data-msg="${i}">${esc(m.content||'')}${action}</div>`;
   }).join('');
   qsa('[data-msg-action]').forEach(b=>b.onclick=()=>{const m=state.messages[Number(b.dataset.msgAction)];if(!m?.action?.view)return;showView(m.action.view);if(m.action.changeId)loadChanges?.(m.action.changeId);if(m.action.runId)loadEngineeringRuns?.(m.action.runId)});
-  box.scrollTop=box.scrollHeight;
+  if(follow)box.scrollTop=box.scrollHeight;
+}
+function chatNearBottom(box=$('messages')){return !box||box.scrollHeight-box.scrollTop-box.clientHeight<80;}
+// While streaming, repaint only the streaming bubble (text only, so output stays escaped) once per frame.
+let streamPaintFrame=0;
+function paintStreamingMessage(idx){
+  if(streamPaintFrame)return;
+  streamPaintFrame=requestAnimationFrame(()=>{
+    streamPaintFrame=0;
+    const m=state.messages[idx],box=$('messages');if(!m?.streaming||!box)return;
+    const el=box.querySelector(`[data-msg="${idx}"]`);
+    if(!el||m.action){renderMessages(chatNearBottom(box));return;}
+    const follow=chatNearBottom(box);el.textContent=m.content||'';if(follow)box.scrollTop=box.scrollHeight;
+  });
 }
 function persistMessages(){localStorage.setItem('localAiMessages',JSON.stringify(state.messages.slice(-20).map(({role,content})=>({role,content}))));}
 function abortStream(reason='Cancelled'){
@@ -845,7 +858,7 @@ async function sendChat(){
         const event=eventMatch?.[1];
         if(event==='token'){
           state.messages[idx].content+=data.text||'';
-          renderMessages();
+          paintStreamingMessage(idx);
         }else if(event==='meta'){
           sources=data.sources||[];
         }else if(event==='done'){
@@ -859,7 +872,7 @@ async function sendChat(){
     }
     state.messages[idx].streaming=false;
     persistMessages();
-    renderMessages();
+    renderMessages(chatNearBottom());
     await Promise.all([loadActivity(),loadLibrary(),loadWorkspace()]);
   }catch(e){
     if(e.name!=='AbortError'){
