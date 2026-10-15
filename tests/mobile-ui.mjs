@@ -250,6 +250,7 @@ await check('chat: with the keyboard open the composer stays on screen', async (
   assert.ok(r.input <= r.h && r.send <= r.h, `composer at ${r.input}/${r.send}, viewport ${r.h}`);
   await hc.setViewportSize({ width: 390, height: 844 });
 });
+await hc.unrouteAll({ behavior: 'ignoreErrors' });
 await hc.close();
 
 // Change requests and Missions (redesign task 4), with stubbed changes and missions.
