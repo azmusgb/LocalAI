@@ -104,9 +104,10 @@ module.exports=function createAgentOrchestrator(deps={}){
   persistRecord(missionsFile,m,200);
   events.emit('mission',m);return m
  }
- async function mission(goal,projectId='',manualAgentIds){
+ async function mission(goal,projectId='',manualAgentIds,opts={}){
   const routing=await dispatch(goal,manualAgentIds);
   const m={id:id('mission'),goal,projectId,status:'running',routing,createdAt:iso(),updatedAt:iso(),timeline:[],workers:[{id:'router',name:'Mission Router',state:'complete',dependsOn:[],reason:routing.reason,routingMeta:{capabilityScore:100,modelScore:100,workload:0,availability:'available',groundingRequired:false,dependencyCount:0,retryPolicy:{transportRetries:0,fallbackAgentId:null},matchTerms:['mission-planning']}},...routing.workers.map(w=>({id:w.agentId,name:w.name,state:'pending',model:w.model,dependsOn:['router',...w.dependsOn],reason:w.reason,routingMeta:w.routingMeta})),{id:'synthesis',name:'Coordinator',state:'pending',dependsOn:routing.selectedAgentIds,reason:'Synthesize grounded specialist outputs',routingMeta:{capabilityScore:100,modelScore:0,workload:0,availability:'available',groundingRequired:true,dependencyCount:routing.selectedAgentIds.length,retryPolicy:{transportRetries:MODEL_RETRY_DELAYS_MS.length,fallbackAgentId:null},matchTerms:['synthesis']}}],results:[]};
+  try{opts.onCreated?.(m)}catch{}
   missionSnapshot(m,'mission-start','Mission accepted and routing plan created','router');
   try{
    const pending=new Set(routing.selectedAgentIds),done=new Set(),results=[];

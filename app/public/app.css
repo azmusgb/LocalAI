@@ -1854,3 +1854,10 @@ body.run-view-open{overflow:hidden}
 .work-agentworld{align-items:center;justify-content:space-between;flex-wrap:wrap;margin:10px 0}
 .work-agentworld[hidden]{display:none}
 .work-agentworld .btn-outline{min-height:44px;padding:0 14px;font-size:14px}
+/* Run view › mission body: Agent World, the headline and the timeline, borrowed from the Missions page. */
+.run-body-mission{display:grid;gap:12px;min-width:0}
+.run-body-mission__world,.run-body-mission__strip,.run-body-mission__timeline{min-width:0}
+.run-body-mission__world #agentWorldCityMount{width:100%}
+.run-body-mission__strip .agent-mission-strip{grid-template-columns:minmax(0,1fr)}
+.run-body-mission__strip .agent-mission-progress{width:100%}
+.run-body-mission__timeline #agentTimeline{max-height:min(46vh,360px);overflow:auto}

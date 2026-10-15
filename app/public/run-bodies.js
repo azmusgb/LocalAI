@@ -304,4 +304,29 @@
     });
   }
   if (window.LocalAIUI?.registerRunBody) window.LocalAIUI.registerRunBody('engineering', mountEngineering);
+
+  // ---- missions ----
+  // The Missions page owns Agent World, the headline and the timeline; a mission run borrows them and gives them back.
+  // Without a mission id (the first instant, or an older run) the run's output is shown as plain text.
+  function mountMission(run, slot) {
+    const id = run.meta?.missionId || run.output?.missionId, M = window.LocalAIMissions;
+    const world = $('agentWorldCityMount');
+    if (!id || !M || !world) {
+      const text = run.output ? (typeof run.output === 'string' ? run.output : JSON.stringify(run.output, null, 2)) : '';
+      RB.release(); slot.append(h('h3', '', 'Output'));
+      if (text) slot.append(h('pre', 'run-output', text)); else slot.append(h('div', 'muted', run.status === 'running' || run.status === 'queued' ? 'The mission is getting started…' : 'No output.'));
+      return;
+    }
+    RB.mount(slot, ctx => {
+      slot.classList.add('run-body-mission');
+      const top = h('div', 'run-body-mission__world'), strip = h('div', 'run-body-mission__strip'), line = h('div', 'run-body-mission__timeline');
+      slot.append(top, strip, line);
+      RB.borrow(ctx, $('agentWorldCityMount'), top);
+      RB.borrow(ctx, $('agentMissionHeadline')?.closest('.agent-mission-strip'), strip);
+      RB.borrow(ctx, $('agentTimeline'), line);
+      // The nodes are in the page only once the run view attaches this slot, so select a moment later.
+      queueMicrotask(() => { if (ctx.alive()) M.show(id); });
+    });
+  }
+  if (window.LocalAIUI?.registerRunBody) window.LocalAIUI.registerRunBody('agent', mountMission);
 })();
