@@ -30,7 +30,7 @@ before(async () => {
   base = `http://127.0.0.1:${port}`;
   const off = 'http://127.0.0.1:9';
   child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], {
-    env: { ...process.env, DATA_DIR: dataDir, PORT: String(port), WORKSPACE_ROOT: dataDir, LOCALAI_CHAT_ONLINE_MS: '300', OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
+    env: { ...process.env, DATA_DIR: dataDir, PORT: String(port), WORKSPACE_ROOT: dataDir, LOCALAI_CHAT_ONLINE_MS: '3000', OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
   });
   child.stdout.on('data', c => diagnostics += c);
   child.stderr.on('data', c => diagnostics += c);
@@ -107,14 +107,33 @@ test('mac-side POSTs follow the cross-origin and content-type rules; session ids
   assert.equal((await mirror('abc-1', 'user', 'web', 'x')).status, 400);
 });
 
-test('announce makes a session online, then offline once the window passes', async () => {
+// The main server keeps a generous online window so slow CI steps never flip a session offline.
+// Offline behaviour is tested on a dedicated short-window server (see shortWindow).
+async function shortWindow(t) {
+  const url = await startServer(t, { LOCALAI_CHAT_ONLINE_MS: '300' });
+  const { cookie } = await pairDevice(url, 'Short device');
+  const call = async (p, body, headers = {}) => {
+    const r = await fetch(url + p, { method: body === undefined ? 'GET' : 'POST', headers: { ...JSONH, Cookie: cookie, ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
+    return { status: r.status, body: await r.json().catch(() => null) };
+  };
+  const id = '00000000-0000-4000-8000-0000000000aa';
+  assert.equal((await call('/api/claude/chat/announce', { sessionId: id, title: 'T', cwd: '/x' }, mac())).status, 200);
+  return { call, id };
+}
+
+test('announce makes a session online (generous window on the main server)', async () => {
   const id = await session();
-  let list = (await get('/api/claude/chat/sessions')).body.items.find(s => s.sessionId === id);
-  assert.equal(list.online, true);
-  assert.equal(list.title, 'T');
+  const item = (await get('/api/claude/chat/sessions')).body.items.find(s => s.sessionId === id);
+  assert.equal(item.online, true);
+  assert.equal(item.title, 'T');
+});
+
+test('announce makes a session online, then offline once the window passes', async t => {
+  const { call, id } = await shortWindow(t);
+  const find = async () => (await call('/api/claude/chat/sessions')).body.items.find(s => s.sessionId === id);
+  assert.equal((await find()).title, 'T');
   await new Promise(r => setTimeout(r, 400));
-  list = (await get('/api/claude/chat/sessions')).body.items.find(s => s.sessionId === id);
-  assert.equal(list.online, false);
+  assert.equal((await find()).online, false);
 });
 
 test('send to an online session queues it; inbox leases it (delivering) once; ack marks it delivered', async () => {
@@ -272,12 +291,12 @@ test('a reply answers older delivered web messages left over from earlier turns,
   assert.deepEqual(webs.map(x => [x.text, x.status]), [['lost', 'answered'], ['next', 'answered'], ['leased', 'delivering'], ['later', 'queued']]);
 });
 
-test('send to an offline session is refused with 409', async () => {
-  const id = await session();
+test('send to an offline session is refused with 409', async t => {
+  const { call, id } = await shortWindow(t);
   await new Promise(r => setTimeout(r, 400));
-  assert.equal((await send(id, 'x')).status, 409);
-  assert.equal((await send('never-announced', 'x')).status, 409);
-  assert.equal((await send('bad/id', 'x')).status, 400);
+  assert.equal((await call('/api/claude/chat/send', { sessionId: id, text: 'x' })).status, 409);
+  assert.equal((await call('/api/claude/chat/send', { sessionId: 'never-announced', text: 'x' })).status, 409);
+  assert.equal((await call('/api/claude/chat/send', { sessionId: 'bad/id', text: 'x' })).status, 400);
 });
 
 test('a queued message can be deleted by its sender; a delivered one cannot (409)', async () => {
