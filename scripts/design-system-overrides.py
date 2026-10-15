@@ -1,5 +1,5 @@
-"""Usage: python3 scripts/design-system-overrides.py app/public > /tmp/overrides.css, then replace the generated section
-at the end of app/public/design-system.css with the output.
+"""Usage: python3 scripts/design-system-overrides.py app/public > /tmp/overrides.css, then replace the generated block
+at the end of app/public/app.css (the last part of its design-system section) with the output.
 
 Generate design-system overrides: raise sub-11px text to 11px and turn all-caps labels into sentence case,
 re-declaring each selector inside the same @media context so later-loaded rules win without changing other breakpoints."""
@@ -22,13 +22,9 @@ def walk(css, media=None):
         elif head.startswith('@'): pass
         elif head: yield media, head, body
         i = k
-sources = {'index.html (inline)': re.findall(r'<style[^>]*>(.*?)</style>', open(f'{root}/index.html', encoding='utf-8').read(), re.S)[0]}
-for f in ['mobile-overhaul.css', 'ux-architecture-v2.css', 'agent-specialists.css', 'integration-hub-v2.css', 'claude-board.css', 'agent-world-city.css']:
-    sources[f] = open(f'{root}/{f}', encoding='utf-8').read()
-for f in ['mobile-overhaul.js', 'execution-runtime.js']:
-    js = open(f'{root}/{f}', encoding='utf-8').read()
-    for k, block in enumerate(re.findall(r'style\.textContent\s*=\s*`(.*?)`', js, re.S)):
-        sources[f'{f} (injected #{k + 1})'] = block
+# Everything in app.css above the design-system section; the generated rules belong at the end of that section.
+css = open(f'{root}/app.css', encoding='utf-8').read()
+sources = {'app.css (before the design system)': css[:css.index('/* ==== design-system.css ==== */')]}
 out = []
 for name, css in sources.items():
     groups = {}

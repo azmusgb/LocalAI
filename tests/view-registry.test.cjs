@@ -8,12 +8,12 @@ const path = require('node:path');
 const pub = path.resolve(__dirname, '../app/public');
 const registry = require(path.join(pub, 'view-registry.js'));
 const html = fs.readFileSync(path.join(pub, 'index.html'), 'utf8');
-const ux = fs.readFileSync(path.join(pub, 'ux-architecture-v2.js'), 'utf8');
+const ux = fs.readFileSync(path.join(pub, 'ui.js'), 'utf8');
 const app = fs.readFileSync(path.join(pub, 'app.js'), 'utf8');
 const sw = fs.readFileSync(path.join(pub, 'sw.js'), 'utf8');
 
 // Views whose section and nav button are created at runtime by another script.
-const INJECTED = { models: 'mobile-overhaul.js', runs: 'execution-runtime.js', integrations: 'ux-architecture-v2.js' };
+const INJECTED = { models: 'ui.js', runs: 'ui.js', integrations: 'ui.js' };
 
 test('registry has five domains and every view belongs to one', () => {
   assert.equal(registry.DOMAINS.length, 5);

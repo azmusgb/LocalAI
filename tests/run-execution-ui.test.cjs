@@ -6,8 +6,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
-const runtime = fs.readFileSync(path.join(root, 'app/public/execution-runtime.js'), 'utf8');
-const mobile = fs.readFileSync(path.join(root, 'app/public/mobile-overhaul.js'), 'utf8');
+const runtime = fs.readFileSync(path.join(root, 'app/public/ui.js'), 'utf8');
+const mobile = fs.readFileSync(path.join(root, 'app/public/ui.js'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'app/public/sw.js'), 'utf8');
 
 test('Runs surface and Home run center are installed', () => {
@@ -38,8 +38,7 @@ test('run polling is more frequent while work is active', () => {
 });
 
 test('mobile shell loads execution runtime and offline shell caches it', () => {
-  assert.match(mobile, /script\.src = '\/execution-runtime\.js'/);
-  assert.match(mobile, /loadExecutionRuntime\(\)/);
+  assert.match(mobile, /\/\/ ==== execution-runtime\.js/, 'execution runtime ships in the ui.js bundle');
   assert.match(sw, /local-ai-shell-v1\.18-unified-runs/);
-  assert.match(sw, /'\/execution-runtime\.js'/);
+  assert.match(sw, /'\/ui\.js'/);
 });

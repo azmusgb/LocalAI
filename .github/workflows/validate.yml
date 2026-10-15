@@ -89,9 +89,8 @@ jobs:
           test -f app/public/index.html
           test -f app/public/manifest.json
           test -f app/public/sw.js
-          test -f app/public/execution-runtime.js
-          test -f app/public/integration-hub-v2.js
-          test -f app/public/integration-hub-v2.css
+          test -f app/public/ui.js
+          test -f app/public/app.css
           test -f deploy/Deploy-LocalAI.ps1
           test -f deploy/Get-LocalAI-DeployStatus.ps1
           test -f deploy/Install-LocalAI-DeployAgent.ps1

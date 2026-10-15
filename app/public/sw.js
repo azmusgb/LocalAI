@@ -1,5 +1,5 @@
-const CACHE='local-ai-shell-v1.18-unified-runs-sw7-ds1';
-const SHELL=['/','/index.html','/app.js','/manifest.json','/mobile-overhaul.css','/mobile-overhaul.js','/execution-runtime.js','/agent-specialists.css','/agent-specialists.js','/ux-architecture-v2.css','/view-registry.js','/ux-architecture-v2.js','/integration-hub-v2.css','/integration-hub-v2.js','/agent-world-city.css','/agent-world-city.js','/claude-board.css','/claude-board.js','/design-system.css'];
+const CACHE='local-ai-shell-v1.18-unified-runs-bundle1';
+const SHELL=['/','/index.html','/app.js','/manifest.json','/view-registry.js','/app.css','/ui.js'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL.map(u=>new Request(u,{cache:'reload'})))).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{

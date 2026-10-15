@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
-const ui = fs.readFileSync(path.join(root, 'app/public/mobile-overhaul.js'), 'utf8');
+const ui = fs.readFileSync(path.join(root, 'app/public/ui.js'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'app/public/sw.js'), 'utf8');
 
 test('Models surface consumes live model runtime truth', () => {
@@ -35,5 +35,5 @@ test('Attention flags inventory and default-model problems without treating idle
 
 test('service worker keeps the model runtime shell assets cacheable across cache-key revisions', () => {
   assert.match(sw, /const CACHE='local-ai-shell-v1\.18-[^']+'/);
-  assert.match(sw, /'\/mobile-overhaul\.js'/);
+  assert.match(sw, /'\/ui\.js'/);
 });

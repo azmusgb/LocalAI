@@ -86,7 +86,7 @@ test('the GridCraft page and Integrations card use the appliance route', () => {
   const page = fs.readFileSync(path.join(pub, 'gridcraft.js'), 'utf8');
   assert.match(page, /const BRIDGE = '\/api\/gridcraft'/);
   assert.doesNotMatch(page, /8787/);
-  const hub = fs.readFileSync(path.join(pub, 'integration-hub-v2.js'), 'utf8');
+  const hub = fs.readFileSync(path.join(pub, 'ui.js'), 'utf8');
   assert.match(hub, /fetch\('\/api\/gridcraft\/health'/);
   assert.match(hub, /url: '\/gridcraft\.html'/);
 });
