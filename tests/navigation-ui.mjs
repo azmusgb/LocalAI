@@ -20,6 +20,8 @@ const pageErrors = [];
 page.on('pageerror', e => pageErrors.push(e.message));
 await page.goto(base, { waitUntil: 'domcontentloaded' });
 await page.waitForSelector('.ux-primary-rail');
+// window.showView is published once app.js finishes binding, which can land after the rail renders.
+await page.waitForFunction(() => typeof window.showView === 'function');
 
 const secondaryLabels = () => page.locator('#uxSecondaryGroups .ux-link-copy strong').allInnerTexts();
 const crumb = async () => (await page.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').trim();
@@ -128,6 +130,7 @@ await page.close();
 const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 await mobile.goto(base, { waitUntil: 'domcontentloaded' });
 await mobile.waitForSelector('#uxMobileNav');
+await mobile.waitForFunction(() => typeof window.showView === 'function');
 
 await check('mobile sheet lists pages, not tabs', async () => {
   await mobile.evaluate(() => document.querySelector('#uxMobileNav [data-domain="home"]')?.click());
