@@ -98,8 +98,9 @@ forwards it. Nothing on the Mac listens for the appliance.
 - **Deploys** come from the host pulling `origin/main`, never from the app.
 - **Change requests** plan a patch with a local model. A `self` change is staged in a copy of `SELF_APP_ROOT`
   under `DATA_DIR/change-staging/<id>/app` and validated there (syntax, DOM ids, a smoke run of the staged
-  server). Approving it marks it `apply_requested` for a host updater that is not in this repo, so self changes
-  never reach the running app; real changes ship through pull requests. A `workspace` change, once approved,
+  server). Shipping it ("Ship as a pull request") hands its Improve item to Claude: a session opens a PR with the staged
+  files, the owner merges, Safe Deploy installs it, and the session reports `POST /api/changes/deploy-result`
+  `{id, status:"applied"}` so Improve shows it as Shipped. Nothing in the app writes to the running code. A `workspace` change, once approved,
   is copied into `WORKSPACE_ROOT` with backups of the files it replaces.
 - **Claude Code** sessions post progress and findings to the board and read back the ranked list from
   `GET /api/claude/priorities`. The Claude Code page can also chat with a live session through the relay.

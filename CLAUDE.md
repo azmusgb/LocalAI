@@ -37,6 +37,9 @@ Base `http://10.0.0.21:3080` (the owner's appliance). JSON bodies, no auth. Muta
   Re-posting the same `id` updates it and keeps the owner's votes and notes. A `status` you send replaces the
   owner's decision, so omit it unless you are marking your own work (`in_progress`, `fixed`). Values:
   `proposed`, `approved`, `in_progress`, `deferred`, `rejected`, `fixed`.
+- **Handed-over change requests:** an item with `handedToClaude` and a `fix` naming a staged change (`chg-…`) is the
+  owner asking for that change as a PR. Take its files and diffs from `GET /api/changes`, open the PR, and after the
+  merge deploys report `POST /api/changes/deploy-result {"id":"chg-…","status":"applied"}`; Improve then marks it shipped.
 
 ## Conventions and pitfalls
 
