@@ -19,6 +19,11 @@ function id() {
   lastIdMs = now;
   return `run-${now}-${idSeq.toString(36).padStart(3, '0')}${Math.random().toString(16).slice(2, 6)}`;
 }
+const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/;
+function cleanId(value) { return typeof value === 'string' && ID_RE.test(value) ? value : null; }
+// Kept runs (pinned, filed under a project, or holding artifacts) are never pruned.
+const KEPT_EXEMPT = { truthy: ['$.pinned', '$.projectId'], nonEmptyArray: ['$.artifactIds'] };
+function isKept(run) { return !!run && (!!run.pinned || !!run.projectId || (Array.isArray(run.artifactIds) && run.artifactIds.length > 0)); }
 function cleanText(value, max = 4000) { return String(value ?? '').slice(0, max); }
 
 function boundedClone(value, maxBytes, fallback) {
@@ -98,6 +103,9 @@ class RunLedger {
     const at = nowIso();
     const run = {
       id: id(),
+      projectId: cleanId(spec.projectId),
+      threadId: null,
+      pinned: false,
       type: cleanText(spec.type || 'task', 80),
       title: cleanText(spec.title || 'Untitled run', 240),
       status: 'queued',
@@ -121,8 +129,9 @@ class RunLedger {
       retryOf: spec.retryOf || null,
       events: [{ at, status: 'queued', detail: cleanText(spec.eventDetail || 'Run queued', 1200) }]
     };
+    run.threadId = cleanId(spec.threadId) || run.id;
     this.write(run);
-    this.storage.pruneSettings(RUN_KEY_PREFIX, this.maxRuns);
+    this.storage.pruneSettings(RUN_KEY_PREFIX, this.maxRuns, { exempt: KEPT_EXEMPT });
     return publicRun(run);
   }
 
@@ -132,12 +141,31 @@ class RunLedger {
 
   get(runId) { return publicRun(this.getInternal(runId)); }
 
-  list({ limit = 100, status = '', type = '' } = {}) {
+  // Pin and/or file a run. `projectId: null` unfiles; an invalid id is ignored.
+  file(runId, { projectId, pinned } = {}) {
+    const run = this.getInternal(runId);
+    if (!run) return null;
+    if (projectId === null) run.projectId = null;
+    else if (cleanId(projectId)) run.projectId = projectId;
+    if (typeof pinned === 'boolean') run.pinned = pinned;
+    run.updatedAt = nowIso();
+    this.write(run);
+    return publicRun(run);
+  }
+
+  list({ limit = 100, status = '', type = '', projectId = '', threadId = '', collapseThreads = false } = {}) {
     const safeLimit = Math.max(1, Math.min(500, Number(limit) || 100));
     const where = {};
     if (status) where.status = status;
     if (type) where.type = type;
-    return this.storage.listSettings(RUN_KEY_PREFIX, { limit: safeLimit, where }).map(publicRun);
+    if (projectId) where.projectId = projectId;
+    if (threadId) where.threadId = threadId;
+    if (!collapseThreads) return this.storage.listSettings(RUN_KEY_PREFIX, { limit: safeLimit, where }).map(publicRun);
+    const seen = new Set();
+    return this.storage.listSettings(RUN_KEY_PREFIX, { where }).filter(r => {
+      const t = r.threadId || r.id;
+      return seen.has(t) ? false : (seen.add(t), true);
+    }).slice(0, safeLimit).map(publicRun);
   }
 
   update(runId, patch = {}, eventDetail = '') {
@@ -201,4 +229,4 @@ class RunLedger {
   }
 }
 
-module.exports = { RunLedger, RUN_LEDGER_KEY, RUN_KEY_PREFIX, TERMINAL, STATUSES, publicRun };
+module.exports = { RunLedger, RUN_LEDGER_KEY, RUN_KEY_PREFIX, TERMINAL, STATUSES, publicRun, isKept };

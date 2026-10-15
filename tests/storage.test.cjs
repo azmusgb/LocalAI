@@ -242,3 +242,15 @@ test('JSON export carries the run ledger and an import restores it', t => {
     assert.equal(new RunLedger({ storage: restored }).get(created.id).title, 'Keep me');
   } finally { restored.close(); }
 });
+
+test('pruneSettings keeps exempt rows', t => {
+  const store = fixture(t).open();
+  for (let i = 0; i < 6; i++) store.writeSetting('x/' + i, i < 2 ? { pinned: true } : i === 2 ? { artifactIds: ['a'] } : { pinned: false, artifactIds: [] });
+  const exempt = { truthy: ['$.pinned', '$.projectId'], nonEmptyArray: ['$.artifactIds'] };
+  assert.equal(store.pruneSettings('x/', 2, { exempt }), 1);
+  assert.deepEqual(store.listSettings('x/').length, 5);
+  for (const k of ['x/0', 'x/1', 'x/2', 'x/4', 'x/5']) assert.ok(store.readSetting(k, null), k);
+  assert.equal(store.readSetting('x/3', null), null);
+  assert.throws(() => store.pruneSettings('x/', 2, { exempt: { truthy: ["$.a') OR 1=1 --"] } }), TypeError);
+  assert.throws(() => store.pruneSettings('x/', 2, { exempt: { nonEmptyArray: ['$.a.b'] } }), TypeError);
+});

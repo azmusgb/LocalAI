@@ -14,7 +14,12 @@ class MemorySettings {
     return this.prefixed(prefix).map(k => this.readSetting(k))
       .filter(v => Object.entries(where).every(([f, x]) => String(v[f]) === String(x))).slice(0, limit ?? Infinity);
   }
-  pruneSettings(prefix, keep) { const drop = this.prefixed(prefix).slice(keep); drop.forEach(k => this.values.delete(k)); return drop.length; }
+  pruneSettings(prefix, keep, { exempt = {} } = {}) {
+    const isExempt = v => (exempt.truthy || []).some(p => { const x = v[p.slice(2)]; return x != null && x !== '' && x !== 0 && x !== false && x !== 'false'; })
+      || (exempt.nonEmptyArray || []).some(p => Array.isArray(v[p.slice(2)]) && v[p.slice(2)].length > 0);
+    const drop = this.prefixed(prefix).filter(k => !isExempt(this.values.get(k))).slice(keep);
+    drop.forEach(k => this.values.delete(k)); return drop.length;
+  }
 }
 
 test('run lifecycle is durable and normalized', () => {
@@ -157,4 +162,55 @@ test('runs live in one settings row each and the legacy single-row ledger is mig
     new RunLedger({ storage, maxRuns: 20 });
     assert.equal(storage.listSettings(RUN_KEY_PREFIX, { where: { status: 'running' } }).length, 0, 'restart reconciles per-row runs');
   } finally { storage.close(); fs.rmSync(dataDir, { recursive: true, force: true }); }
+});
+
+test('run carries projectId, threadId and pinned', () => {
+  const ledger = new RunLedger({ storage: new MemorySettings() });
+  const a = ledger.create({ projectId: 'proj-1', threadId: 't-1' });
+  assert.equal(a.projectId, 'proj-1'); assert.equal(a.threadId, 't-1'); assert.equal(a.pinned, false);
+  const b = ledger.create({});
+  assert.equal(b.projectId, null); assert.equal(b.threadId, b.id); assert.equal(b.pinned, false);
+});
+
+test('bad ids are not stored', () => {
+  const ledger = new RunLedger({ storage: new MemorySettings() });
+  assert.equal(ledger.create({ projectId: '../x' }).projectId, null);
+  const long = ledger.create({ threadId: 'a'.repeat(200) });
+  assert.equal(long.threadId, long.id);
+  const obj = ledger.create({ threadId: {} });
+  assert.equal(obj.threadId, obj.id);
+});
+
+test('file() pins and files; null unfiles', () => {
+  const ledger = new RunLedger({ storage: new MemorySettings() });
+  const run = ledger.create({});
+  assert.equal(ledger.file(run.id, { pinned: true }).pinned, true);
+  const filed = ledger.file(run.id, { projectId: 'p' });
+  assert.equal(filed.projectId, 'p'); assert.equal(filed.pinned, true);
+  assert.equal(ledger.file(run.id, { projectId: null }).projectId, null);
+  assert.equal(ledger.file('nope', { pinned: true }), null);
+});
+
+test('kept runs survive pruning', () => {
+  const ledger = new RunLedger({ storage: new MemorySettings(), maxRuns: 20 });
+  const kept = Array.from({ length: 5 }, () => ledger.create({}));
+  ledger.file(kept[0].id, { pinned: true }); ledger.file(kept[1].id, { pinned: true });
+  ledger.file(kept[2].id, { projectId: 'p' }); ledger.file(kept[3].id, { projectId: 'p' });
+  ledger.complete(kept[4].id, { artifactIds: ['a1'] });
+  for (let i = 0; i < 30; i++) ledger.create({});
+  for (const r of kept) assert.ok(ledger.get(r.id), 'kept run ' + r.id);
+  const keptIds = new Set(kept.map(r => r.id));
+  assert.equal(ledger.list({ limit: 500 }).filter(r => !keptIds.has(r.id)).length, 20);
+});
+
+test('list filters and collapses threads', () => {
+  const ledger = new RunLedger({ storage: new MemorySettings() });
+  ledger.create({ threadId: 't' }); ledger.create({ threadId: 't' });
+  const t3 = ledger.create({ threadId: 't' }); const u = ledger.create({ threadId: 'u' });
+  assert.equal(ledger.list({ threadId: 't' }).length, 3);
+  const collapsed = ledger.list({ collapseThreads: true });
+  assert.equal(collapsed.length, 2);
+  assert.deepEqual(collapsed.map(r => r.id), [u.id, t3.id]);
+  assert.equal(ledger.list({ collapseThreads: true, limit: 1 }).length, 1);
+  assert.equal(ledger.list({ projectId: 'zzz' }).length, 0);
 });
