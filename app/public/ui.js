@@ -202,6 +202,22 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
           <button id="modelRuntimeRefresh" class="btn" type="button">Refresh</button>
         </div>
         <div id="modelRuntimeSummary" class="model-runtime-summary" aria-live="polite"></div>
+        <div class="card model-download" style="margin-top:12px">
+          <div class="section-head"><div><h2>Download a model</h2><p>From the Ollama library, stored on the Windows host. A 4B model is about 2.5 GB.</p></div></div>
+          <form id="modelPullForm" class="model-pull-form">
+            <input id="modelPullName" list="modelPullSuggestions" placeholder="Model name, for example gemma3:4b" aria-label="Model name" autocomplete="off" autocapitalize="off" spellcheck="false">
+            <button class="btn primary" type="submit">Download</button>
+          </form>
+          <datalist id="modelPullSuggestions">
+            <option value="qwen3:4b-instruct">Fast general model, 2.5 GB</option>
+            <option value="qwen3:4b-instruct-32k">The default: same model with a 32k context window</option>
+            <option value="gemma3:4b">Google Gemma 3, reads images, 3.3 GB</option>
+            <option value="llama3.2:3b">Meta Llama 3.2, 2.0 GB</option>
+            <option value="qwen2.5-coder:7b">Code model, 4.7 GB</option>
+          </datalist>
+          <p id="modelPullError" class="model-pull-error" role="alert" hidden></p>
+          <div id="modelPullList" class="model-pull-list" aria-live="polite"></div>
+        </div>
         <div class="card" style="margin-top:12px">
           <div class="section-head">
             <div><h2>Installed models</h2><p>Runtime residency is read from Ollama /api/ps. Idle models can unload normally.</p></div>
@@ -211,6 +227,17 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         </div>`;
       main.appendChild(section);
       section.querySelector('#modelRuntimeRefresh')?.addEventListener('click', refreshModelsSurface);
+      section.querySelector('#modelPullForm')?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const input = section.querySelector('#modelPullName');
+        startModelPull(input.value).then((ok) => { if (ok) input.value = ''; });
+      });
+      section.querySelector('#modelPullList')?.addEventListener('click', (event) => {
+        const cancel = event.target.closest('[data-pull-cancel]');
+        if (cancel) modelPost('/api/models/pull/cancel', { name: cancel.dataset.pullCancel }).finally(pollModelPulls);
+      });
+      section.querySelector('#modelRuntimeList')?.addEventListener('click', onModelRemoveClick);
+      pollModelPulls();
     }
 
     if (!document.querySelector('.navbtn[data-view="models"]')) {
@@ -498,7 +525,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     }
 
     if (!installed.length) {
-      list.innerHTML = '<div class="empty">No models installed yet. On the Windows host, run <code>ollama pull qwen3:4b-instruct-32k</code> in PowerShell, then reload this page.</div>';
+      list.innerHTML = '<div class="empty">No models installed yet. Download one above; start with the default, qwen3:4b-instruct-32k.</div>';
     } else {
       list.replaceChildren();
       installed.forEach((item) => {
@@ -548,6 +575,15 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         });
 
         card.append(head, meta, details);
+        // Remove, with an inline confirmation. The model Local AI uses by default can't be removed.
+        const actions = document.createElement('div');
+        actions.className = 'model-runtime-actions';
+        if ((models?.protectedModels || [models?.default]).includes(item.name)) {
+          actions.innerHTML = '<span class="meta">Used by Local AI by default</span>';
+        } else {
+          actions.innerHTML = `<button type="button" class="btn" data-model-remove="${esc(item.name)}">Remove</button>`;
+        }
+        card.appendChild(actions);
         list.appendChild(card);
       });
     }
@@ -600,6 +636,86 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       }
     }
   }
+
+  // ---- Model downloads and removal -------------------------------------------------------------------
+  let pullTimer = null;
+  let lastPulls = [];
+  async function modelPost(url, body) {
+    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    return data;
+  }
+  function showPullError(message) {
+    const el = document.getElementById('modelPullError');
+    if (!el) return;
+    el.textContent = message || '';
+    el.hidden = !message;
+  }
+  async function startModelPull(name) {
+    showPullError('');
+    try {
+      await modelPost('/api/models/pull', { name: String(name || '').trim() });
+      pollModelPulls();
+      return true;
+    } catch (error) {
+      showPullError(error.message);
+      return false;
+    }
+  }
+  function pullPercent(p) { return p.total ? Math.min(100, Math.round((p.completed / p.total) * 100)) : 0; }
+  function renderModelPulls(items) {
+    const list = document.getElementById('modelPullList');
+    if (!list) return;
+    const visible = items.filter((p) => p.state === 'running' || Date.now() - new Date(p.finishedAt || 0).getTime() < 10 * 60 * 1000);
+    list.innerHTML = visible.map((p) => {
+      const pct = pullPercent(p);
+      const label = p.state === 'running'
+        ? (p.total ? `${pct}% · ${formatBytes(p.completed)} of ${formatBytes(p.total)}` : esc(p.status || 'Starting'))
+        : p.state === 'done' ? 'Downloaded' : p.state === 'cancelled' ? 'Cancelled' : `Failed: ${esc(p.error || 'unknown error')}`;
+      return `<div class="model-pull is-${esc(p.state)}">
+        <div class="model-pull-head"><strong>${esc(p.name)}</strong><span>${label}</span>${p.state === 'running' ? `<button type="button" class="btn" data-pull-cancel="${esc(p.name)}">Cancel</button>` : ''}</div>
+        <div class="model-pull-bar" role="progressbar" aria-label="${esc(p.name)} download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.state === 'done' ? 100 : pct}"><i style="width:${p.state === 'done' ? 100 : pct}%"></i></div>
+        ${p.state === 'running' && p.total ? `<small>${esc(p.status || '')}</small>` : ''}
+      </div>`;
+    }).join('');
+  }
+  async function pollModelPulls() {
+    clearTimeout(pullTimer);
+    let items = [];
+    try { items = (await (await fetch('/api/models/pulls', { cache: 'no-store' })).json()).items || []; } catch {}
+    const finishedNow = items.some((p) => p.state === 'done' && !lastPulls.some((q) => q.name === p.name && q.state === 'done'));
+    lastPulls = items;
+    renderModelPulls(items);
+    window.dispatchEvent(new CustomEvent('localai:model-pulls', { detail: { items } }));
+    if (finishedNow) refreshModelsSurface();
+    if (items.some((p) => p.state === 'running')) pullTimer = setTimeout(pollModelPulls, 1500);
+  }
+  async function onModelRemoveClick(event) {
+    const button = event.target.closest('[data-model-remove],[data-model-remove-confirm],[data-model-remove-cancel]');
+    if (!button) return;
+    const actions = button.closest('.model-runtime-actions');
+    if (button.dataset.modelRemove) {
+      const name = button.dataset.modelRemove;
+      actions.innerHTML = `<span>Remove ${esc(name)} from the Windows host? You can download it again later.</span>
+        <button type="button" class="btn danger" data-model-remove-confirm="${esc(name)}">Remove</button>
+        <button type="button" class="btn" data-model-remove-cancel="${esc(name)}">Keep</button>`;
+      actions.querySelector('[data-model-remove-cancel]')?.focus();
+    } else if (button.dataset.modelRemoveCancel) {
+      actions.innerHTML = `<button type="button" class="btn" data-model-remove="${esc(button.dataset.modelRemoveCancel)}">Remove</button>`;
+    } else {
+      const name = button.dataset.modelRemoveConfirm;
+      button.disabled = true;
+      button.textContent = 'Removing…';
+      try {
+        await modelPost('/api/models/delete', { name });
+        refreshModelsSurface();
+      } catch (error) {
+        actions.innerHTML = `<span class="model-pull-error">${esc(error.message)}</span><button type="button" class="btn" data-model-remove="${esc(name)}">Remove</button>`;
+      }
+    }
+  }
+  window.LocalAIModels = { startPull: startModelPull, pollPulls: pollModelPulls };
 
   async function refreshTruthLayer() {
     try {
@@ -2881,7 +2997,7 @@ async function checkSteps(card){
  else setStep(card,'service','done','Running on this computer. Nothing you type leaves it unless you turn on web research.');
  const model=models?.default||config?.model||'the default model';
  if(models?.defaultInstalled)setStep(card,'model','done',`<code>${esc(model)}</code> is installed and ready.`);
- else setStep(card,'model','todo',`Not installed yet. On the Windows host, open PowerShell and run <code class="first-run-cmd">ollama pull ${esc(model)}</code> <button type="button" class="btn" data-first-run-copy>Copy</button> <button type="button" class="btn" data-first-run-recheck>Check again</button>`);
+ else setStep(card,'model','todo',`<code>${esc(model)}</code> isn't installed yet. It's about 2.5 GB. <button type="button" class="btn primary" data-first-run-download="${esc(model)}">Download it now</button> <button type="button" class="btn" data-first-run-recheck>Check again</button><div class="first-run-progress" aria-live="polite"></div>`);
  return !!models?.defaultInstalled;
 }
 function runSample(s){
@@ -2889,11 +3005,6 @@ function runSample(s){
  const input=q('#commandInput');if(!input)return;input.value=s.text;input.dispatchEvent(new Event('input',{bubbles:true}));
  q('#commandGo')?.click();
  pref.set(DONE_KEY+'.tried','1');
-}
-async function copyCommand(btn){
- const code=q('.first-run-cmd');if(!code)return;
- try{await navigator.clipboard.writeText(code.textContent);btn.textContent='Copied'}
- catch{const r=document.createRange();r.selectNodeContents(code);const sel=getSelection();sel.removeAllRanges();sel.addRange(r);btn.textContent='Selected, press Ctrl+C'}
 }
 async function mountFirstRun(){
  if(pref.get(DONE_KEY)==='1')return;
@@ -2906,11 +3017,19 @@ async function mountFirstRun(){
  <ol class="first-run-steps">${stepHtml('service','Local AI is running')}${stepHtml('model','A language model is installed')}<li data-step="try" data-state="todo"><span class="first-run-mark" aria-hidden="true"></span><div><strong>Try a first task</strong><div class="first-run-detail">Pick one. It runs right here, and the result is saved to your Library.</div><div class="first-run-samples">${SAMPLES.map((s,i)=>`<button type="button" class="btn" data-sample="${i}"><span>${esc(s.label)}</span><small>${esc(s.text)}</small></button>`).join('')}</div></div></li></ol>
  <div class="first-run-foot"><span class="meta">Developer tools are ${document.body.classList.contains('dev-tools-off')?'hidden':'shown'}. Change this in <a href="#" data-goto="status">Health</a>.</span><button type="button" class="btn primary" data-first-run-dismiss>I'm set up, hide this</button></div>`;
  hero.after(card);
+ window.addEventListener('localai:model-pulls',e=>{
+  const step=q('[data-step="model"]',card);if(!step||step.dataset.state==='done')return;
+  const p=(e.detail.items||[]).find(x=>x.name===(config?.model||''));const box=q('.first-run-progress',step);if(!p||!box)return;
+  const pct=p.total?Math.round(p.completed/p.total*100):0;
+  box.innerHTML=p.state==='failed'?`<span class="model-pull-error">Download failed: ${esc(p.error)}</span>`:`<div class="model-pull-bar" role="progressbar" aria-label="Model download" aria-valuenow="${p.state==='done'?100:pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${p.state==='done'?100:pct}%"></i></div><small>${p.state==='done'?'Downloaded.':esc(p.status||'Starting')+(p.total?` · ${pct}%`:'')}</small>`;
+  const btn=q('[data-first-run-download]',step);if(btn){btn.disabled=p.state==='running';btn.textContent=p.state==='running'?'Downloading…':'Download it now'}
+  if(p.state==='done')checkSteps(card);
+ });
  card.addEventListener('click',e=>{
   const t=e.target.closest('button,a');if(!t)return;
   if(t.matches('[data-first-run-dismiss]')){pref.set(DONE_KEY,'1');card.remove()}
   else if(t.matches('[data-first-run-recheck]'))checkSteps(card);
-  else if(t.matches('[data-first-run-copy]'))copyCommand(t);
+  else if(t.dataset.firstRunDownload){t.disabled=true;t.textContent='Starting…';window.LocalAIModels?.startPull(t.dataset.firstRunDownload).then(ok=>{if(!ok){t.disabled=false;t.textContent='Download it now'}})}
   else if(t.dataset.sample!==undefined){runSample(SAMPLES[Number(t.dataset.sample)]);const li=q('[data-step="try"]',card);li.dataset.state='done'}
   else if(t.dataset.goto){e.preventDefault();window.showView?.(t.dataset.goto)}
  });

@@ -39,6 +39,7 @@ const crypto = require('crypto');
 const { Storage } = require('./storage');
 const { RunLedger } = require('./run-ledger');
 const { loadOllamaModelRuntime } = require('./model-runtime');
+const { createModelPulls } = require('./model-pulls');
 const release = require('./release').readRelease(__dirname);
 const storage = new Storage({ dataDir: DATA_DIR });
 const runLedger = new RunLedger({ storage });
@@ -323,6 +324,46 @@ async function apiStatus(req, res) {
   json(res, 200, await getStatusAndRecordTransition());
 }
 
+// Downloads and removals from the Models page. The default model can't be removed; PROTECTED_MODELS adds more.
+const PROTECTED_MODELS = () => [MODEL, ...String(process.env.PROTECTED_MODELS || '').split(',').map(x => x.trim()).filter(Boolean)];
+const modelPulls = createModelPulls({
+  baseUrl: OLLAMA_URL,
+  protectedModels: PROTECTED_MODELS,
+  onFinish: p => {
+    capabilityCache = { expiresAt: 0, value: null };
+    if (p.state === 'done') recordActivity('model', 'Model downloaded', p.name);
+    else if (p.state === 'failed') recordActivity('model', 'Model download failed', `${p.name}: ${p.error}`);
+  }
+});
+// Another site open in the browser could otherwise post here (a text/plain form needs no preflight).
+function sameOriginJson(req, res) {
+  const origin = req.headers.origin;
+  if (origin && origin !== `http://${req.headers.host}` && origin !== `https://${req.headers.host}`) { json(res, 403, { error: 'Origin not allowed' }); return false; }
+  if (String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase() !== 'application/json') { json(res, 415, { error: 'Content-Type must be application/json' }); return false; }
+  return true;
+}
+async function apiModelPulls(req, res) { json(res, 200, { items: modelPulls.list() }); }
+async function apiModelPull(req, res) {
+  if (!sameOriginJson(req, res)) return;
+  try { const b = await readBody(req); json(res, 202, { item: modelPulls.start(b.name) }); }
+  catch (e) { json(res, e.status || 400, { error: e.message }); }
+}
+async function apiModelPullCancel(req, res) {
+  if (!sameOriginJson(req, res)) return;
+  try { const b = await readBody(req); json(res, 200, { item: modelPulls.cancel(b.name) }); }
+  catch (e) { json(res, e.status || 400, { error: e.message }); }
+}
+async function apiModelDelete(req, res) {
+  if (!sameOriginJson(req, res)) return;
+  try {
+    const b = await readBody(req);
+    const result = await modelPulls.remove(b.name);
+    capabilityCache = { expiresAt: 0, value: null };
+    recordActivity('model', 'Model removed', result.name);
+    json(res, 200, result);
+  } catch (e) { json(res, e.status || 502, { error: e.message }); }
+}
+
 async function apiModels(req, res) {
   try {
     const runtime = await loadOllamaModelRuntime({
@@ -331,7 +372,7 @@ async function apiModels(req, res) {
       defaultModel: MODEL,
       timeoutMs: 5000
     });
-    json(res, 200, runtime);
+    json(res, 200, { ...runtime, protectedModels: PROTECTED_MODELS() });
   } catch (e) {
     const error = String(e.message || e);
     json(res, 502, {
@@ -2517,6 +2558,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/storage/status') return json(res, 200, storage.status());
     if (req.method === 'GET' && p === '/api/status') return await apiStatus(req, res);
     if (req.method === 'GET' && p === '/api/models') return await apiModels(req, res);
+    if (req.method === 'GET' && p === '/api/models/pulls') return await apiModelPulls(req, res);
+    if (req.method === 'POST' && p === '/api/models/pull') return await apiModelPull(req, res);
+    if (req.method === 'POST' && p === '/api/models/pull/cancel') return await apiModelPullCancel(req, res);
+    if (req.method === 'POST' && p === '/api/models/delete') return await apiModelDelete(req, res);
     if (req.method === 'GET' && p === '/api/config') return apiConfig(req, res);
     if (req.method === 'GET' && p === '/api/capabilities') return await apiCapabilities(req, res);
     if (req.method === 'GET' && p === '/api/activity') return await apiActivity(req, res);

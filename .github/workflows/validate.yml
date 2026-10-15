@@ -38,6 +38,7 @@ jobs:
           node --check tests/navigation-ui.mjs
           node --check tests/mobile-ui.mjs
           node --check tests/first-run-ui.mjs
+          node --check tests/models-ui.mjs
           node --check tests/claude-chat-ui.mjs
           node --check tests/agent-orchestrator.test.cjs
           node --check tests/model-runtime.test.cjs
@@ -105,6 +106,7 @@ jobs:
           test -f tests/navigation-ui.mjs
           test -f tests/mobile-ui.mjs
           test -f tests/first-run-ui.mjs
+          test -f tests/models-ui.mjs
           test -f tests/claude-chat-ui.mjs
           test -f tests/agent-orchestrator.test.cjs
           test -f tests/model-runtime.test.cjs
