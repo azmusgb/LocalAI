@@ -9,7 +9,7 @@
     "start": "node app/server.js",
     "validate": "pwsh -NoProfile -File deploy/Test-LocalAI-Candidate.ps1 -CandidateRoot .",
     "test": "node --test tests/*.test.cjs",
-    "test:browser": "node tests/agent-operations-ui.mjs && node tests/integration-hub-ui.mjs && node tests/navigation-ui.mjs && node tests/design-system-ui.mjs && node tests/first-run-ui.mjs && node tests/models-ui.mjs && node tests/images-ui.mjs && node tests/claude-board-ui.mjs && node tests/mobile-ui.mjs && node tests/claude-chat-ui.mjs"
+    "test:browser": "node tests/run-browser.mjs"
   },
   "devDependencies": {
     "playwright": "1.63.0"

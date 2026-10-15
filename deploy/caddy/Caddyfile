@@ -1,0 +1,38 @@
+# HTTPS in front of the appliance. Certificates come from Caddy's own local certificate authority, so no public
+# domain or internet access is needed; each device trusts that authority once (download: /localai-ca.crt).
+# LOCALAI_NAME and LOCALAI_HOST_IP are set by deploy/Install-LocalAI-HTTPS.ps1.
+{
+	local_certs
+	skip_install_trust
+	# Browsers send no server name when connecting by IP address; answer with the IP's certificate.
+	default_sni {$LOCALAI_HOST_IP}
+}
+
+(ca_download) {
+	handle /localai-ca.crt {
+		root * /data/caddy/pki/authorities/local
+		rewrite * /root.crt
+		header Content-Type application/x-x509-ca-cert
+		header Content-Disposition "attachment; filename=localai-ca.crt"
+		file_server
+	}
+}
+
+https://{$LOCALAI_NAME}, https://{$LOCALAI_HOST_IP}, https://localhost {
+	tls internal
+	import ca_download
+	handle {
+		# Streams (chat replies) pass straight through; long image runs have no proxy timeout.
+		reverse_proxy local-ai-appliance:3080 {
+			flush_interval -1
+		}
+	}
+}
+
+# Plain HTTP: hand out the CA certificate (so a device can trust it before its first HTTPS visit), else redirect.
+http://{$LOCALAI_NAME}, http://{$LOCALAI_HOST_IP}, http://localhost {
+	import ca_download
+	handle {
+		redir https://{host}{uri} 308
+	}
+}

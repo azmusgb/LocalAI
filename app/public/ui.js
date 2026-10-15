@@ -3075,3 +3075,33 @@ function init(){initDevTools().then(mountDevToolsToggle);mountFirstRun()}
 window.LocalAIFirstRun={applyDevTools,DEV_KEY,DONE_KEY};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
+
+// ==== secure-connection.js ====
+// Health page: whether this page is on HTTPS, whether this device trusts Local AI's certificate authority, and
+// how to set that up. HTTPS is served by Caddy on ports 443/80 (deploy/Install-LocalAI-HTTPS.ps1).
+(()=>{'use strict';
+const q=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const host=location.hostname,isLocal=/^(localhost|127\.0\.0\.1|::1)$/.test(host);
+const httpsUrl=`https://${host}/`,caUrl=`http://${host}/localai-ca.crt`;
+// A no-cors request succeeds only if TLS succeeds, i.e. this device trusts the certificate.
+async function trusted(){try{await fetch(`${httpsUrl}healthz`,{mode:'no-cors',cache:'no-store',signal:AbortSignal.timeout(4000)});return true}catch{return false}}
+const STEPS=[
+ ['Mac','Open the downloaded file. Keychain Access opens: add it to System, double-click “Caddy Local Authority”, open Trust and choose Always Trust.'],
+ ['iPhone or iPad','Open the download link in Safari and allow it. Then Settings › General › VPN &amp; Device Management › install the profile, and Settings › General › About › Certificate Trust Settings › turn it on.'],
+ ['Android','Settings › Security › Encryption &amp; credentials › Install a certificate › CA certificate, then pick the downloaded file.'],
+ ['Windows','Double-click the file › Install Certificate › Local Machine › Trusted Root Certification Authorities. (The Local AI computer itself is already set up.)']
+];
+async function render(card){
+ const secure=location.protocol==='https:';
+ let state,detail;
+ if(secure){state='good';detail='This page is on a secure connection.'}
+ else if(isLocal){state='good';detail='You are on the Local AI computer itself, which browsers already treat as secure.'}
+ else{const ok=await trusted();state=ok?'ready':'todo';detail=ok?`This device already trusts Local AI's certificate. Switch to <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>.`:'This page uses plain HTTP, so other devices on the network could read what you send, and some features (copy to clipboard, installing as an app, signing PowerShell jobs) are unavailable.'}
+ card.dataset.state=state;
+ card.innerHTML=`<div class="secure-head"><span class="secure-dot" aria-hidden="true"></span><div><h2>Secure connection</h2><p>${detail}</p></div></div>
+ ${state==='todo'?`<ol class="secure-steps"><li><a class="btn primary" href="${esc(caUrl)}" download>Download the certificate</a> <span class="meta">Local AI's own certificate authority. Its private key never leaves the Local AI computer, which uses it only to sign Local AI's certificate.</span></li><li>Trust it on this device:<dl>${STEPS.map(([d,t])=>`<dt>${d}</dt><dd>${t}</dd>`).join('')}</dl></li><li>Open <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>. To use the name <b>localai.home.arpa</b>, add it for ${esc(host)} in your router's DNS settings.</li></ol>`:''}`;
+}
+function mount(){const status=q('#status');if(!status||q('.secure-card',status))return;const card=document.createElement('section');card.className='card secure-card';(q('.dev-tools-pref',status)||q('.topbar',status))?.after(card);render(card)}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(mount,0),{once:true});else setTimeout(mount,0);
+})();
