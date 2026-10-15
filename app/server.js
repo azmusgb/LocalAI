@@ -1655,6 +1655,14 @@ async function apiNotificationUpdate(req,res){
     saveStore(NOTIFICATIONS_STORE,items,500);json(res,200,{item:items[i]});
   }catch(e){storageError(res,e,400)}
 }
+// Host-side jobs (auto-deploy, backups, monitors) report to the Inbox. Same LAN trust model as the rest of the API.
+const HOST_NOTIFICATION_KINDS=new Set(['deploy','backup','monitor']);
+async function apiNotificationSystem(req,res){
+  try{const b=await readBody(req,64*1024);const kind=String(b.kind||'');if(!HOST_NOTIFICATION_KINDS.has(kind))return json(res,400,{error:`kind must be one of ${[...HOST_NOTIFICATION_KINDS].join(', ')}`});
+    const title=String(b.title||'').trim().slice(0,200);if(!title)return json(res,400,{error:'title is required'});
+    const meta=b.meta&&typeof b.meta==='object'&&!Array.isArray(b.meta)?Object.fromEntries(Object.entries(b.meta).slice(0,12).map(([k,v])=>[String(k).slice(0,40),String(v).slice(0,300)])):{};
+    json(res,201,{item:addNotification(kind,title,String(b.detail||'').slice(0,2000),{source:'host',...meta})})}catch(e){storageError(res,e,400)}
+}
 async function apiNotificationSeed(req,res){
   if(!requireFeature(res,7))return;
   const item=addNotification('system','Notification center ready','Local AI v1.7 notification state is active.');
@@ -2533,6 +2541,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/notifications') return await apiNotifications(req,res);
     if (req.method === 'POST' && p === '/api/notifications/update') return await apiNotificationUpdate(req,res);
     if (req.method === 'POST' && p === '/api/notifications/seed') return await apiNotificationSeed(req,res);
+    if (req.method === 'POST' && p === '/api/notifications/system') return await apiNotificationSystem(req,res);
     if (req.method === 'GET' && p === '/api/memory') return await apiMemory(req,res,urlObj);
     if (req.method === 'POST' && p === '/api/memory/add') return await apiMemoryAdd(req,res);
     if (req.method === 'POST' && p === '/api/memory/update') return await apiMemoryUpdate(req,res);
