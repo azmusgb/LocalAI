@@ -60,7 +60,7 @@ function Test-LocalAI-StorageCandidate([string]$Container, [string]$CandidateApp
     # updating shared-memory state, yielding "unable to open database file" when the
     # source appliance is stopped. Snapshot the database, WAL, SHM, and legacy JSON
     # into writable /tmp first, then let the candidate preflight operate only there.
-    $arguments = @('run','--rm','--network','none')
+    $arguments = @('run','--rm','--network','none','--label','preflight')
     if ($dataMountArgument) { $arguments += @('--mount',$dataMountArgument) }
     else { $arguments += @('--volumes-from',"${Container}:ro") }
     $arguments += @(
