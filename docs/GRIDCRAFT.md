@@ -1,10 +1,10 @@
 # GridCraft integration
 
-GridCraft is exposed inside LocalAI as a same-appliance browser workspace at:
+GridCraft is a Windows spreadsheet app. LocalAI exposes it as its own page at
+`http://<host>:3080/gridcraft.html` (`app/public/gridcraft.html`), where you type a request and a local model
+works on the open workbook.
 
-`http://10.0.0.21:3080/gridcraft.html`
-
-The browser page remains part of LocalAI. The page calls the appliance (`/api/gridcraft/health`, `/api/gridcraft/run`), and the appliance forwards to a small Windows-host bridge on `127.0.0.1:8787`, which runs the GridCraft Python agent kept in this repo at `host/gridcraft-agent/`. That agent continues to own Ollama tool calling and GridCraft MCP control.
+The page is part of LocalAI. The page calls the appliance (`/api/gridcraft/health`, `/api/gridcraft/run`), and the appliance forwards to a small Windows-host bridge on `127.0.0.1:8787`, which runs the GridCraft Python agent kept in this repo at `host/gridcraft-agent/`. That agent continues to own Ollama tool calling and GridCraft MCP control.
 
 ## Architecture
 
@@ -39,7 +39,7 @@ Prerequisites:
 - Ollama running on the host.
 - GridCraft is installed under `C:\Program Files\GridCraft`.
 
-Install and start the bridge from an **elevated** PowerShell (Run as administrator):
+Install and start the bridge from an **elevated** PowerShell (Run as administrator); the installer refuses to run otherwise:
 
 ```powershell
 Set-Location C:\LocalAI\repo
@@ -52,46 +52,68 @@ Verify:
 Invoke-RestMethod http://127.0.0.1:8787/health
 ```
 
-Then open:
-
-`http://10.0.0.21:3080/gridcraft.html`
+Then open `http://<host>:3080/gridcraft.html`.
 
 ## Bridge configuration
 
-The installer writes `%USERPROFILE%\gridcraft-local-ai\gridcraft-bridge.env.ps1`, installs the scheduled task `LocalAI GridCraft Bridge` at user logon, binds the bridge to `127.0.0.1` (and removes the inbound `8787` firewall rule older installs created), waits for `/health`, and logs bridge output to `%USERPROFILE%\gridcraft-local-ai\gridcraft-bridge.log`.
+`deploy\Install-GridCraft-Bridge.ps1` parameters: `-RepoRoot` (`C:\LocalAI\repo`), `-AgentDir`
+(`%USERPROFILE%\gridcraft-local-ai`), `-Workbook` (`%USERPROFILE%\Documents\GridCraft\Quarterly-Sales-Dashboard.xlsx`),
+`-Model` (`qwen3:4b-instruct`), `-Port` (`8787`), `-AllowedOrigins`, `-Uninstall`.
 
-Browsers never call the bridge directly any more; the appliance does, without an `Origin` header. CORS origins still apply to anything that does call it from a browser, and default to port `3080` on localhost, the machine name and every local IPv4 address. Override with `-AllowedOrigins 'http://10.0.0.21:3080','http://myhost:3080'`.
+It:
 
-Supported environment variables:
+1. creates the virtual environment `%USERPROFILE%\gridcraft-local-ai\.venv` with `py -3.12` if missing and
+   installs `host/gridcraft-agent/requirements.txt`;
+2. writes `%USERPROFILE%\gridcraft-local-ai\gridcraft-bridge.env.ps1`, which sets the variables below and
+   starts `host/gridcraft-bridge.py`;
+3. registers the scheduled task `LocalAI GridCraft Bridge` (at logon, highest privileges, restarts up to 3 times);
+4. removes the inbound `8787` firewall rule older installs created;
+5. starts the task and waits for `/health`.
 
-- `GRIDCRAFT_AGENT_DIR`
-- `GRIDCRAFT_AGENT_PYTHON`
-- `GRIDCRAFT_AGENT_SCRIPT`
-- `GRIDCRAFT_WORKBOOK`
-- `GRIDCRAFT_MODEL`
-- `GRIDCRAFT_BRIDGE_HOST`
-- `GRIDCRAFT_BRIDGE_PORT`
-- `GRIDCRAFT_CONTROL_PORT`
-- `GRIDCRAFT_RUN_TIMEOUT`
-- `GRIDCRAFT_ALLOWED_ORIGINS`
+Browsers never call the bridge directly; the appliance does, without an `Origin` header. CORS still applies
+to anything that calls it from a browser. The installer allows port 3080 on `127.0.0.1`, `localhost`, the
+machine name and every local IPv4 address; override with
+`-AllowedOrigins 'http://10.0.0.21:3080','http://myhost:3080'`.
 
-The default model is `qwen3:4b-instruct`, bridge port is `8787`, and GridCraft control port is `7979`.
+Bridge environment (`host/gridcraft-bridge.py`):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `GRIDCRAFT_BRIDGE_HOST` | `127.0.0.1` | Listen address |
+| `GRIDCRAFT_BRIDGE_PORT` | `8787` | Listen port |
+| `GRIDCRAFT_CONTROL_PORT` | `7979` | GridCraft control port the bridge checks and launches GridCraft with |
+| `GRIDCRAFT_MODEL` | `qwen3:4b-instruct` | Model passed to the agent |
+| `GRIDCRAFT_AGENT_DIR` | `%USERPROFILE%\gridcraft-local-ai` | Virtual environment and settings |
+| `GRIDCRAFT_AGENT_PYTHON` | `<agent dir>\.venv\Scripts\python.exe` | Python that runs the agent |
+| `GRIDCRAFT_AGENT_SCRIPT` | `host/gridcraft-agent/gridcraft_ai.py` next to the bridge | The agent |
+| `GRIDCRAFT_EXE` | `C:\Program Files\GridCraft\gridcraft.exe` | GridCraft executable launched when not running |
+| `GRIDCRAFT_WORKBOOK` | `%USERPROFILE%\Documents\GridCraft\Quarterly-Sales-Dashboard.xlsx` | Workbook opened at launch |
+| `GRIDCRAFT_RUN_TIMEOUT` | `300` (seconds) | Per-request limit; the appliance waits 330 s |
+| `GRIDCRAFT_ALLOWED_ORIGINS` | `http://10.0.0.21:3080,http://127.0.0.1:3080,http://localhost:3080` | CORS allow-list |
+| `GRIDCRAFT_BRIDGE_LOG` | unset (stdout) | Log file, rotated at 2 MB × 3; the installer sets `gridcraft-bridge.log` |
+
+Startup crashes land in `gridcraft-bridge.crash.log` next to the log.
 
 ## Runtime behavior
 
-`GET /health` reports bridge readiness and whether GridCraft control port `7979` is already reachable.
+`GET /health` reports bridge readiness and whether GridCraft's control port is already reachable. The
+appliance proxies it as `GET /api/gridcraft/health`.
 
-`POST /run` accepts:
+`POST /run` (appliance: `POST /api/gridcraft/run`) takes JSON:
 
 ```json
 {"prompt":"Inspect the workbook and summarize each sheet."}
 ```
 
-Only one workbook request is executed at a time. If GridCraft is not listening, the bridge attempts to launch it with `WGPU_BACKEND=vulkan` and the configured workbook. The request then runs through the existing local agent with `--once`.
+Prompts are limited to 20,000 characters. One request runs at a time; a second gets HTTP 409. If GridCraft is
+not listening, the bridge launches it with `WGPU_BACKEND=vulkan` and the configured workbook (or GridCraft's
+`sales` sample if the workbook does not exist), then runs the
+agent once with `--once`. The agent's model choice, including the switch to the 32k-context model for long
+requests, is described in the [agent README](../host/gridcraft-agent/README.md).
 
 ## Security boundary
 
-This is intended for the same trusted LAN/VPN boundary as LocalAI itself. Browser CORS is restricted to the configured LocalAI origins. The bridge should not be port-forwarded to the public Internet.
+The bridge listens on the host's loopback only, so the LAN reaches it only through the appliance. Browser CORS is restricted to the configured LocalAI origins. The scheduled task runs with highest privileges, and so does the agent it starts (see [Security › Known gaps](SECURITY.md#known-gaps)).
 
 ## Remove
 
