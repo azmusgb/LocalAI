@@ -1531,9 +1531,30 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const POLL_MS = 4000;
   const SEVERITIES = ['high', 'medium', 'low'];
   const OPEN = new Set(['proposed', 'approved', 'in_progress']);
-  const DECISIONS = [['approved', 'Approve'], ['in_progress', 'Start'], ['deferred', 'Defer'], ['rejected', 'Reject'], ['fixed', 'Mark fixed']];
+  // Lifecycle: you decide (proposed -> approved / later / won't do); Claude moves approved work to in progress and done.
+  const STATUS = {
+    proposed: { label: 'Needs your decision', short: 'Proposed', step: 0 },
+    approved: { label: 'Queued for Claude', short: 'Queued', step: 1 },
+    in_progress: { label: 'Claude is working', short: 'Working', step: 2 },
+    fixed: { label: 'Done', short: 'Done', step: 3 },
+    deferred: { label: 'Later', short: 'Later', step: -1 },
+    rejected: { label: "Won't do", short: "Won't do", step: -1 }
+  };
+  // [status to set, button label, style, past-tense toast]
+  const ACTIONS = {
+    proposed: [['approved', 'Approve', 'primary', 'Approved'], ['deferred', 'Later', '', 'Moved to later'], ['rejected', "Won't do", 'quiet', "Marked won't do"]],
+    approved: [['proposed', 'Undo approval', '', 'Approval undone'], ['deferred', 'Later', 'quiet', 'Moved to later']],
+    in_progress: [['approved', 'Pause', '', 'Paused; back in the queue']],
+    fixed: [['proposed', 'Reopen', 'quiet', 'Reopened']],
+    deferred: [['proposed', 'Reopen', '', 'Reopened'], ['approved', 'Approve', 'primary', 'Approved']],
+    rejected: [['proposed', 'Reopen', 'quiet', 'Reopened']]
+  };
+  const TABS = [['decide', 'Needs your decision', (f) => f.status === 'proposed'], ['queued', 'Queued for Claude', (f) => f.status === 'approved'],
+    ['working', 'Claude is working', (f) => f.status === 'in_progress'], ['done', 'Done', (f) => f.status === 'fixed'],
+    ['aside', 'Set aside', (f) => f.status === 'deferred' || f.status === 'rejected'], ['all', 'All', () => true]];
+  const catLabel = (c) => ({ ux: 'UX', api: 'API', ci: 'CI' })[c] || c;
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
-  const view = { data: null, session: '', statusFilter: 'open', category: '', severity: '', timer: 0, busy: false, openIds: new Set() };
+  const view = { data: null, session: '', statusFilter: '', noteId: '', toastTimer: 0, category: '', severity: '', timer: 0, busy: false, openIds: new Set() };
   const $ = (id) => document.getElementById(id);
 
   function ago(iso) {
@@ -1574,7 +1595,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     renderProgress(d.summary, d.statuses);
     renderTimeline(d.events);
     renderMatrix(d.summary.byCategory);
-    renderFindings(d.findings, d.statuses);
+    // Don't redraw the list under someone typing a note; the next refresh after they finish catches up.
+    if (!(view.noteId && document.activeElement?.closest?.('[data-claude-note-form]'))) renderFindings(d.findings);
   }
 
   function renderSessions(sessions) {
@@ -1589,14 +1611,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const order = ['fixed', 'in_progress', 'approved', 'proposed', 'deferred', 'rejected'];
     const bar = total ? order.map((k) => {
       const n = summary.byStatus[k] || 0;
-      return n ? `<span class="seg st-${k}" style="flex:${n}" title="${esc(statuses[k])}: ${n}"></span>` : '';
+      return n ? `<span class="seg st-${k}" style="flex:${n}" title="${esc(STATUS[k].label)}: ${n}"></span>` : '';
     }).join('') : '<span class="seg empty-seg" style="flex:1"></span>';
     const fixed = summary.byStatus.fixed || 0;
     const open = order.filter((k) => OPEN.has(k)).reduce((n, k) => n + (summary.byStatus[k] || 0), 0);
     $('claudeProgress').innerHTML = `
-      <div class="claude-progress-head"><strong>${fixed} of ${total} findings fixed</strong><span>${open} open · ${summary.byStatus.deferred || 0} deferred · ${summary.byStatus.rejected || 0} rejected</span></div>
+      <div class="claude-progress-head"><strong>${fixed} of ${total} findings done</strong><span>${summary.byStatus.proposed || 0} need your decision · ${(summary.byStatus.approved || 0) + (summary.byStatus.in_progress || 0)} with Claude</span></div>
       <div class="claude-bar">${bar}</div>
-      <div class="claude-legend">${order.map((k) => `<span><i class="dot st-${k}"></i>${esc(statuses[k])} ${summary.byStatus[k] || 0}</span>`).join('')}</div>`;
+      <div class="claude-legend">${order.map((k) => `<span><i class="dot st-${k}"></i>${esc(STATUS[k].short)} ${summary.byStatus[k] || 0}</span>`).join('')}</div>`;
   }
 
   function renderTimeline(events) {
@@ -1619,48 +1641,96 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (!cats.length) { $('claudeMatrix').innerHTML = '<div class="empty">No findings yet.</div>'; return; }
     $('claudeMatrix').innerHTML = `<table class="claude-matrix"><thead><tr><th>Category</th>${SEVERITIES.map((s) => `<th>${s}</th>`).join('')}<th>Open</th></tr></thead><tbody>${cats.map(([cat, c]) => `
       <tr class="${view.category === cat ? 'selected' : ''}">
-        <th><button type="button" data-claude-cat="${esc(cat)}">${esc(cat)}</button></th>
+        <th><button type="button" data-claude-cat="${esc(cat)}">${esc(catLabel(cat))}</button></th>
         ${SEVERITIES.map((s) => `<td><button type="button" class="heat sev-${s}${view.category === cat && view.severity === s ? ' selected' : ''}" style="--heat:${c[s] / max}" data-claude-cat="${esc(cat)}" data-claude-sev="${s}" ${c[s] ? '' : 'disabled'}>${c[s] || ''}</button></td>`).join('')}
         <td class="open-count">${c.open}</td>
       </tr>`).join('')}</tbody></table>`;
   }
 
   function visible(findings) {
-    return findings.filter((f) => (view.statusFilter === 'all' || (view.statusFilter === 'open' ? OPEN.has(f.status) : f.status === view.statusFilter))
+    const tab = TABS.find(([k]) => k === view.statusFilter) || TABS[0];
+    return findings.filter((f) => tab[2](f)
       && (!view.category || f.category === view.category) && (!view.severity || f.severity === view.severity));
   }
 
-  function renderFindings(findings, statuses) {
-    const filters = [['open', 'Open'], ['all', 'All'], ...Object.entries(statuses)];
-    $('claudeFilters').innerHTML = filters.map(([k, label]) => `<button type="button" class="chip${view.statusFilter === k ? ' active' : ''}" data-claude-status="${esc(k)}">${esc(label)}</button>`).join('')
-      + (view.category ? `<button type="button" class="chip clear" data-claude-clear>${esc(view.category)}${view.severity ? ` · ${esc(view.severity)}` : ''} ✕</button>` : '');
+  function lifecycle(status) {
+    const step = STATUS[status]?.step ?? 0;
+    if (step < 0) return `<span class="claude-life aside" aria-hidden="true"><i></i><i></i><i></i><i></i></span>`;
+    return `<span class="claude-life" aria-hidden="true">${[0, 1, 2, 3].map((i) => `<i class="${i < step ? 'past' : i === step ? 'now' : ''}"></i>`).join('')}</span>`;
+  }
+
+  function renderFindings(findings) {
+    if (!view.statusFilter) view.statusFilter = findings.some((f) => f.status === 'proposed') ? 'decide' : 'queued';
+    $('claudeFilters').innerHTML = TABS.map(([k, label, test]) => {
+      const n = findings.filter(test).length;
+      return `<button type="button" class="chip tab${view.statusFilter === k ? ' active' : ''}" data-claude-status="${k}" aria-pressed="${view.statusFilter === k}">${esc(label)} <b>${n}</b></button>`;
+    }).join('') + (view.category ? `<button type="button" class="chip clear" data-claude-clear>${esc(view.category)}${view.severity ? ` · ${esc(view.severity)}` : ''} ✕</button>` : '');
     const list = visible(findings);
     const top = Math.max(1, ...findings.map((f) => f.score));
     $('claudeFindingCount').textContent = `${list.length} shown`;
-    if (!list.length) { $('claudeFindings').innerHTML = '<div class="empty">Nothing matches these filters.</div>'; return; }
-    $('claudeFindings').innerHTML = list.map((f) => `
+    if (!list.length) {
+      const empty = { decide: 'Nothing is waiting for your decision.', queued: 'Nothing is queued. Approve a finding to send it to Claude.', working: 'Claude is not working on anything right now.', done: 'Nothing is done yet.', aside: 'Nothing has been set aside.' }[view.statusFilter] || 'Nothing matches these filters.';
+      $('claudeFindings').innerHTML = `<div class="empty">${esc(empty)}</div>`;
+      return;
+    }
+    $('claudeFindings').innerHTML = list.map((f) => {
+      const st = STATUS[f.status] || STATUS.proposed;
+      const actions = (ACTIONS[f.status] || []).map(([to, label, style]) => `<button type="button" class="btn small ${style}" data-claude-decision="${to}">${esc(label)}</button>`).join('');
+      const note = view.noteId === f.id
+        ? `<form class="claude-note-form" data-claude-note-form><textarea rows="2" maxlength="1000" placeholder="Context or instructions for Claude">${esc(f.decisionNote || '')}</textarea><div><button type="submit" class="btn small primary">Save note</button><button type="button" class="btn small quiet" data-claude-note-cancel>Cancel</button></div></form>`
+        : `<button type="button" class="link" data-claude-note>${f.decisionNote ? 'Edit note' : 'Add a note for Claude'}</button>`;
+      return `
       <article class="claude-finding st-${esc(f.status)}" data-id="${esc(f.id)}">
-        <div class="claude-rank"><b>#${f.rank}</b><span class="claude-score" title="Score: severity + 6×net votes + decision">${f.score}</span>
+        <div class="claude-rank"><b>#${f.rank}</b><span class="claude-score" title="Priority score: severity + 6 × net votes + decision">${f.score}</span>
           <span class="claude-score-bar"><i style="width:${Math.max(4, Math.round(Math.max(0, f.score) / top * 100))}%"></i></span></div>
         <div class="claude-finding-main">
+          <div class="claude-finding-head"><span class="claude-state st-${esc(f.status)}">${f.status === 'in_progress' ? '<i class="spin"></i>' : ''}${esc(st.label)}</span>${lifecycle(f.status)}</div>
           <div class="claude-finding-title">${esc(f.title)}</div>
           <div class="claude-chips">
-            <span class="chip sev-${esc(f.severity)}">${esc(f.severity)}</span><span class="chip">${esc(f.category)}</span>
-            <span class="chip status st-${esc(f.status)}">${esc(statuses[f.status] || f.status)}</span>
-            ${f.pr ? `<span class="chip">${esc(f.pr)}</span>` : ''}${f.file ? `<span class="chip file">${esc(f.file)}</span>` : ''}
+            <span class="chip sev-${esc(f.severity)}">${esc(f.severity)}</span><span class="chip">${esc(catLabel(f.category))}</span>
+            ${f.pr ? `<span class="chip pr">${esc(f.pr)}</span>` : ''}${f.file ? `<span class="chip file">${esc(f.file)}</span>` : ''}
           </div>
+          ${f.decisionNote && view.noteId !== f.id ? `<p class="claude-note">“${esc(f.decisionNote)}”</p>` : ''}
           <details${view.openIds.has(f.id) ? ' open' : ''} data-claude-details="${esc(f.id)}"><summary>Details</summary>
             ${f.summary ? `<p>${esc(f.summary)}</p>` : ''}${f.scenario ? `<p><b>Failure scenario</b> ${esc(f.scenario)}</p>` : ''}${f.fix ? `<p><b>Fix</b> ${esc(f.fix)}</p>` : ''}
-            ${f.decisionNote ? `<p><b>Your note</b> ${esc(f.decisionNote)}</p>` : ''}
           </details>
         </div>
-        <div class="claude-vote">
-          <button type="button" class="btn" data-claude-vote="1" aria-label="Raise priority">▲</button>
+        <div class="claude-vote" role="group" aria-label="Priority">
+          <button type="button" class="btn" data-claude-vote="1" aria-label="Raise priority" title="Raise priority">▲</button>
           <span title="${f.votes.up} up · ${f.votes.down} down">${f.votes.up - f.votes.down}</span>
-          <button type="button" class="btn" data-claude-vote="-1" aria-label="Lower priority">▼</button>
+          <button type="button" class="btn" data-claude-vote="-1" aria-label="Lower priority" title="Lower priority">▼</button>
         </div>
-        <div class="claude-decide">${DECISIONS.filter(([k]) => k !== f.status).map(([k, label]) => `<button type="button" class="btn small" data-claude-decision="${k}">${label}</button>`).join('')}</div>
-      </article>`).join('');
+        <div class="claude-decide">${actions}${note}</div>
+      </article>`;
+    }).join('');
+  }
+
+  // Decisions update the card immediately, then sync; a toast offers Undo for six seconds.
+  function toast(message, undo) {
+    let el = $('claudeToast');
+    if (!el) { el = document.createElement('div'); el.id = 'claudeToast'; el.className = 'claude-toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+    el.innerHTML = `<span>${esc(message)}</span>${undo ? '<button type="button" class="btn small">Undo</button>' : ''}`;
+    el.classList.add('show');
+    if (undo) el.querySelector('button').onclick = () => { el.classList.remove('show'); undo(); };
+    clearTimeout(view.toastTimer);
+    view.toastTimer = setTimeout(() => el.classList.remove('show'), 6000);
+  }
+  async function decide(id, status, { note, quiet } = {}) {
+    const f = view.data?.findings.find((x) => x.id === id);
+    if (!f) return;
+    const before = { status: f.status, note: f.decisionNote };
+    const action = (ACTIONS[f.status] || []).find(([to]) => to === status);
+    f.status = status;
+    if (note !== undefined) f.decisionNote = note;
+    render();
+    try {
+      await api('/api/claude/findings/decision', { id, status, ...(note !== undefined ? { note } : {}) });
+      if (!quiet) toast(`${action ? action[3] : 'Saved'}: ${f.title}`, () => decide(id, before.status, { note: before.note ?? '', quiet: true }));
+    } catch (e) {
+      f.status = before.status; f.decisionNote = before.note; render();
+      toast(`Couldn't save: ${e.message}`);
+    }
+    load();
   }
 
   async function act(fn) {
@@ -1674,10 +1744,20 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const id = e.target.dataset?.claudeDetails;
       if (id) e.target.open ? view.openIds.add(id) : view.openIds.delete(id);
     }, true);
+    $('claude').addEventListener('submit', (e) => {
+      const form = e.target.closest('[data-claude-note-form]');
+      if (!form) return;
+      e.preventDefault();
+      const id = form.closest('.claude-finding')?.dataset.id, f = view.data?.findings.find((x) => x.id === id);
+      view.noteId = '';
+      if (f) decide(id, f.status, { note: form.querySelector('textarea').value.trim(), quiet: true }).then(() => toast('Note saved for Claude'));
+    });
     $('claude').addEventListener('click', (e) => {
       const t = e.target.closest('button');
       if (!t) return;
       if (t.dataset.claudeStatus) { view.statusFilter = t.dataset.claudeStatus; render(); return; }
+      if (t.hasAttribute('data-claude-note')) { view.noteId = t.closest('.claude-finding')?.dataset.id || ''; render(); $('claude').querySelector('[data-claude-note-form] textarea')?.focus(); return; }
+      if (t.hasAttribute('data-claude-note-cancel')) { view.noteId = ''; render(); return; }
       if (t.hasAttribute('data-claude-clear')) { view.category = ''; view.severity = ''; render(); return; }
       if (t.dataset.claudeCat) {
         const same = view.category === t.dataset.claudeCat && view.severity === (t.dataset.claudeSev || '');
@@ -1689,7 +1769,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const id = t.closest('.claude-finding')?.dataset.id;
       if (!id) return;
       if (t.dataset.claudeVote) act(() => api('/api/claude/findings/vote', { id, delta: Number(t.dataset.claudeVote) }));
-      if (t.dataset.claudeDecision) act(() => api('/api/claude/findings/decision', { id, status: t.dataset.claudeDecision }));
+      if (t.dataset.claudeDecision) decide(id, t.dataset.claudeDecision);
     });
   }
 
