@@ -490,7 +490,7 @@ await check('Forward onto a run keeps Back working: Close goes back, not Home', 
   await runPage.evaluate(() => { location.hash = '#work'; });
   await runPage.waitForFunction(() => location.hash === '#work');
   await runPage.waitForSelector('#work.active [data-run-id="run_img"]');   // Work lists the runs; its row opens the run view
-  await runPage.locator('#work [data-run-id="run_img"] button.run-card__action').click(); await drawerOpen().waitFor();
+  await runPage.locator('#work [data-run-id="run_img"] button.work-open').click(); await drawerOpen().waitFor();
   await runPage.evaluate(() => history.back());
   await runPage.waitForFunction(() => location.hash === '#work');
   await runPage.evaluate(() => history.forward());

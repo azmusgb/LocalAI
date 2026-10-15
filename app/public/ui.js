@@ -3144,9 +3144,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
 
   // Open a run from elsewhere (the Audit log links here). Accepts a ledger id or the id of the work that produced it.
-  // {stay:true}: the caller (Work) already lists this run and stays the page behind the run view; the view loads it by id if it is not in the newest 120.
-  async function openRunBySource(id, { stay = false } = {}) {
-    if (stay) { openRun(id); return true; }
+  async function openRunBySource(id) {
     const match = () => state.runs.find((run) => run.id === id || run.source?.id === id || run.meta?.sourceId === id);
     if (!match()) await loadRuns(true);
     if (!state.selectedId) activateRunsView();   // the Runs page stays behind the run view (the Audit log links here)

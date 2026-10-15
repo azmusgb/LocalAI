@@ -5,30 +5,47 @@ const $=id=>document.getElementById(id),PAGE=60,KEY='localai.work.kind',KINDS=['
 const BUCKET={chat:'chats',research:'chats',image:'images',agent:'missions',engineering:'changes'}; // everything else (automation too) is "other"
 const GROUPS=['Today','Yesterday','Earlier this week','Older'],LIVE=new Set(['queued','running','streaming']);
 const bucket=it=>BUCKET[it.card?.kind]||'other',key=it=>it.threadId||it.id;
-const newest=(a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))||String(b.id).localeCompare(String(a.id));
+// Threads sort and page by their latest run's (createdAt, id), newest first, the same key the server's `before` uses.
+const newest=(a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))||String(b.id).localeCompare(String(a.id));
 const store={get:()=>{try{return localStorage.getItem(KEY)}catch{return null}},set:v=>{try{localStorage.setItem(KEY,v)}catch{}}};
-const st={threads:new Map(),turns:new Map(),items:[],more:false,loaded:false,kind:'all',query:'',shown:'',rows:new Map(),timer:0};
+const st={threads:new Map(),items:[],more:false,loaded:false,kind:'all',query:'',shown:'',rows:new Map(),timer:0};
 function groupOf(it){
  const t=new Date(it.createdAt),d=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime();
  if(isNaN(t))return 3;
  const n=Math.round((d(new Date())-d(t))/864e5);
  return n<=0?0:n===1?1:n<7?2:3;
 }
-const sig=it=>[it.id,it.status,it.progress,it.updatedAt,st.turns.get(key(it))?.size,it.card?.title,it.card?.summary,it.card?.badge?.label].join('|');
-// threads=1 sends the newest run of each thread; an older page can repeat a thread, so merge by thread and count its runs.
-function merge(list,older){
- for(const it of list){
-  const k=key(it),ids=st.turns.get(k)||new Set();ids.add(it.id);st.turns.set(k,ids);
-  const had=st.threads.get(k);
-  if(!had||(!older&&(had.id===it.id||newest(it,had)<0)))st.threads.set(k,it);
+const sig=it=>[it.id,it.status,it.progress,it.updatedAt,it.turns,it.card?.title,it.card?.summary,it.card?.badge?.label].join('|');
+// The server sends one row per thread (its latest run, with `turns`), so each thread lives on exactly one page.
+// `window` (a refresh of the newest page) also drops what that page no longer holds: runs deleted or filed away.
+function merge(list,{older=false,window=false}={}){
+ if(window){
+  const last=list.length>=PAGE?list[list.length-1]:null,have=new Set(list.map(key));
+  for(const [k,it] of st.threads)if(!have.has(k)&&(!last||newest(it,last)<0))st.threads.delete(k);
  }
+ for(const it of list){if(!older||!st.threads.has(key(it)))st.threads.set(key(it),it)}
  st.items=[...st.threads.values()].sort(newest);
 }
-// Work stays the page behind the run view, so Close and Back return here.
-const openRun=it=>{const R=window.LocalAIRuns;if(R)R.open(it.id,{stay:true});else window.LocalAIRouter?.go('#run/'+encodeURIComponent(it.id))};
+// Work stays the page behind the run view: push the entry as the app does for in-app opens (so Close goes Back, not Home), then let the router show it.
+function openRun(it){
+ const h='#run/'+encodeURIComponent(it.id);
+ try{history.pushState({localaiRun:true},'',location.pathname+location.search+h)}catch{}
+ window.LocalAIRouter?.go(h);
+}
+const plain=t=>String(t||'').replace(/(\.\.\.|…)\s*$/,'').replace(/\s+/g,' ').trim();
+// One card per row: the summary once (never again as preview text), a chat thread's turn count, and the row itself opens the run.
 function rowFor(it){
- const n=st.turns.get(key(it))?.size||1,card=it.card?.kind==='chat'&&n>1?{...it.card,summary:`Chat · ${n} turns`}:it.card;
- return window.LocalAIUI.runCard({...it,card},{onOpen:openRun});
+ let c=it.card||{},{preview,summary}=c;const n=it.turns||1;
+ const pt=plain(preview?.text),sm=plain(summary);
+ if(pt&&sm&&(pt===sm||pt.startsWith(sm)||sm.startsWith(pt)))preview=null;
+ if(c.kind==='chat'&&n>1)c={...c,summary:`Chat · ${n} turns`,preview:preview||(sm?{type:'text',text:summary}:null)};else c={...c,preview};
+ const row=window.LocalAIUI.runCard({...it,card:c},{onOpen:openRun});
+ const title=row.querySelector('.list-row__title'),open=document.createElement('button');
+ open.type='button';open.className='work-open';open.textContent=title.textContent;title.textContent='';title.appendChild(open);
+ open.addEventListener('click',e=>{e.stopPropagation();openRun(it)});
+ const act=row.querySelector('.run-card__action');
+ if(act){if(/^(Review|Retry)$/i.test(act.textContent.trim()))act.className='btn-outline work-secondary';else act.remove()}
+ return row;
 }
 const text=it=>`${it.card?.title||''} ${it.card?.summary||''}`.toLowerCase();
 const visible=()=>{const q=st.query.trim().toLowerCase();return st.items.filter(it=>(st.kind==='all'||bucket(it)===st.kind)&&(!q||text(it).includes(q)))};
@@ -59,19 +76,19 @@ function paint(){
 }
 const url=before=>`/api/runs?threads=1&limit=${PAGE}${before?'&before='+encodeURIComponent(before):''}`;
 function render(box,data){
- st.threads.clear();st.turns.clear();st.rows.clear();st.shown='';
- merge(data.items||[],false);st.more=(data.items||[]).length>=PAGE;st.loaded=true;paint();schedule();
+ st.threads.clear();st.rows.clear();st.shown='';
+ merge(data.items||[]);st.more=(data.items||[]).length>=PAGE;st.loaded=true;paint();schedule();
 }
 const load=()=>window.LocalAIUI.fetchJson(url());
 const first=()=>window.LocalAIUI.loadInto($('workList'),load,{render,what:'your work'}).catch(()=>{});
 // A quiet refresh of the newest page: updates rows in place, adds new threads, keeps what Show more loaded.
 async function refresh(){
- try{const d=await window.LocalAIUI.fetchJson(url());merge(d.items||[],false);paint()}catch{}
+ try{const d=await window.LocalAIUI.fetchJson(url());merge(d.items||[],{window:true});paint()}catch{}
 }
 async function more(){
  const b=$('workMore'),last=st.items[st.items.length-1];if(!last)return;
  b.disabled=true;
- try{const d=await window.LocalAIUI.fetchJson(url(last.id));merge(d.items||[],true);st.more=(d.items||[]).length>=PAGE;b.textContent='Show more';paint();schedule()}
+ try{const d=await window.LocalAIUI.fetchJson(url(last.id));merge(d.items||[],{older:true});st.more=(d.items||[]).length>=PAGE;b.textContent='Show more';paint();schedule()}
  catch{b.textContent="Couldn't load more. Try again"}
  b.disabled=false;
 }
@@ -94,7 +111,8 @@ function schedule(){
  const live=st.items.some(it=>LIVE.has(it.status));
  st.timer=setTimeout(tick,live?5000:60000);
 }
-function tick(){if(active()&&!document.hidden&&st.loaded)refresh().then(schedule);else schedule()}
+// Polling runs only while Work is the open page; activate() starts it again.
+function tick(){if(!active())return;if(!document.hidden&&st.loaded)refresh().then(schedule);else schedule()}
 function activate(){
  const k=fromHash();
  setKind(k||(KINDS.includes(store.get())?store.get():'all'),{remember:!!k});

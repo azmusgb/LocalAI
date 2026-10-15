@@ -162,13 +162,81 @@ await check('a running row updates in place within 6 s and the scroll position s
   await page.context().close();
 });
 
-await check('a chat thread with several runs says how many turns', async () => {
-  const a = item('chat', 'Budget talk', 1 * HOUR, { threadId: 'tb' }), b = item('chat', 'Budget talk', 2 * HOUR, { threadId: 'tb', summary: 'older turn' }), c = item('chat', 'Lone chat', 3 * HOUR, { threadId: 'tl' });
-  const page = await open(desk, '#work', async () => [a, b, c]);
+await check('a chat thread says how many turns (from the server) and keeps its latest summary', async () => {
+  const a = { ...item('chat', 'Budget talk', 1 * HOUR, { threadId: 'tb', summary: 'Latest answer about the budget' }), turns: 3 };
+  const c = { ...item('chat', 'Lone chat', 3 * HOUR, { threadId: 'tl', summary: 'Just one turn' }), turns: 1 };
+  const page = await open(desk, '#work', async () => [a, c]);
   await page.waitForSelector('#work .run-card', T);
-  assert.equal(await rows(page).count(), 2);
-  assert.equal(await page.locator(`#work [data-run-id="${a.id}"] .list-row__sub`).innerText(), 'Chat · 2 turns');
-  assert.equal(await page.locator(`#work [data-run-id="${c.id}"] .list-row__sub`).count(), 0);
+  assert.equal(await page.locator(`#work [data-run-id="${a.id}"] .list-row__sub`).innerText(), 'Chat · 3 turns');
+  assert.match(await page.locator(`#work [data-run-id="${a.id}"]`).innerText(), /Latest answer about the budget/);
+  assert.equal(await page.locator(`#work [data-run-id="${c.id}"] .list-row__sub`).innerText(), 'Just one turn');
+  await page.context().close();
+});
+
+await check('a text run shows its answer once, not as summary and again as preview', async () => {
+  const r = item('chat', 'Meaning of life', HOUR, { threadId: 'ml', summary: 'The answer is forty-two' });
+  r.card.preview = { type: 'text', text: 'The answer is forty-two, as computed by Deep Thought.' };
+  const other = item('research', 'Quotes', 2 * HOUR, { summary: 'Short summary' });
+  other.card.preview = { type: 'text', text: 'A different full text that adds more' };
+  const page = await open(desk, '#work', async () => [r, other]);
+  await page.waitForSelector('#work .run-card', T);
+  const t = await page.locator(`#work [data-run-id="${r.id}"]`).innerText();
+  assert.equal(t.split('The answer is forty-two').length - 1, 1, t);
+  assert.match(await page.locator(`#work [data-run-id="${other.id}"]`).innerText(), /Short summary[\s\S]*A different full text/);
+  await page.context().close();
+});
+
+await check('the whole row opens the run: no per-row Open button, Review and Retry stay small buttons', async () => {
+  const rev = item('engineering', 'Fix the login bug', HOUR, { status: 'awaiting_approval' }); rev.card.action = { label: 'Review' };
+  const retry = item('agent', 'Failed mission', 2 * HOUR, { status: 'failed' }); retry.card.action = { label: 'Retry' };
+  const plain = item('chat', 'Plain chat', 3 * HOUR, { threadId: 'pc' });
+  const page = await open(desk, '#work', async () => [rev, retry, plain]);
+  await page.waitForSelector('#work .run-card', T);
+  assert.equal(await page.locator('#work .run-card__action').filter({ hasText: /^Open$/ }).count(), 0);
+  assert.deepEqual(await page.locator('#work .work-secondary').allInnerTexts(), ['Review', 'Retry']);
+  const name = page.getByRole('button', { name: 'Plain chat' });
+  assert.equal(await name.count(), 1, 'the row has one button named by its title');
+  const row = page.locator(`#work [data-run-id="${plain.id}"]`), box = await row.boundingBox();
+  await page.mouse.click(box.x + box.width - 140, box.y + box.height / 2); // empty space inside the row, away from the title text
+  await page.waitForFunction(h => location.hash === h, '#run/' + plain.id, T);
+  await page.evaluate(() => history.back());
+  await page.waitForSelector('#work.active', T);
+  await page.locator(`#work [data-run-id="${rev.id}"] .work-secondary`).click();
+  await page.waitForFunction(h => location.hash === h, '#run/' + rev.id, T);
+  await page.context().close();
+});
+
+await check('Work says Work everywhere and its page list has a link', async () => {
+  const page = await open(desk, '#work', async () => mixed());
+  await page.waitForSelector('#work .run-card', T);
+  assert.equal(await page.locator('#work h1').innerText(), 'Work');
+  const chrome = await page.evaluate(() => [document.getElementById('uxContextBar')?.innerText, document.getElementById('uxSecondaryTitle')?.innerText].join(' | '));
+  assert.match(chrome, /Work/); assert.doesNotMatch(chrome, /Runs/);
+  assert.doesNotMatch(await page.locator('#work').innerText(), /\bRuns\b/);
+  assert.equal(await page.locator('.ux-secondary-nav .ux-secondary-link').count(), 1);
+  assert.match(await page.locator('.ux-secondary-nav .ux-secondary-link').innerText(), /Work/);
+  await page.context().close();
+});
+
+await check('390px: a 40-character title is shown whole, not cut at ~20 characters', async () => {
+  const long = 'Summarise the quarterly sales report now';
+  assert.equal(long.length, 40);
+  const r = item('agent', long, HOUR, { status: 'running' });
+  const page = await open(phone, '#work', async () => [r, ...mixed()]);
+  await page.waitForSelector('#work .run-card', T);
+  const t = page.locator(`#work [data-run-id="${r.id}"] .list-row__title`);
+  const m = await t.evaluate(e => ({ clipped: e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1, ellipsis: getComputedStyle(e).textOverflow, overflow: getComputedStyle(e).overflow }));
+  assert.equal(m.clipped, false, JSON.stringify(m));
+  const row = await page.locator(`#work [data-run-id="${r.id}"]`).boundingBox();
+  assert.ok(row.x <= 18 && row.width >= 390 - 2 * 18, `the list is flush to a 16px gutter: ${JSON.stringify(row)}`);
+  await page.context().close();
+});
+
+await check('a run that disappears is dropped on the next refresh', async () => {
+  const live = item('agent', 'Still working', 60e3, { status: 'running' }), gone = item('chat', 'About to vanish', HOUR, { threadId: 'gone' });
+  const page = await open(desk, '#work', async (_u, n) => n === 1 ? [live, gone] : [live]);
+  await page.waitForSelector(`#work [data-run-id="${gone.id}"]`, T);
+  await page.waitForFunction(id => !document.querySelector(`#work [data-run-id="${id}"]`), gone.id, T);
   await page.context().close();
 });
 

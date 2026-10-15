@@ -1439,15 +1439,22 @@ function legacyUnifiedRuns() {
   return items;
 }
 function unifiedRunItems(limit=120,filter=null){
-  const native=runLedger.list({limit:500,projectId:filter?.projectId,threadId:filter?.threadId});const legacy=legacyUnifiedRuns();
+  const paged=!!filter?.threads; // a threads timeline pages through everything, so it reads the whole ledger, not its newest 500
+  const native=runLedger.list({limit:500,all:paged,projectId:filter?.projectId,threadId:filter?.threadId});const legacy=legacyUnifiedRuns();
   let all=[...native,...legacy];
   if(filter?.projectId)all=all.filter(x=>x.projectId===filter.projectId);
   if(filter?.threadId)all=all.filter(x=>(x.threadId||x.id)===filter.threadId);
-  // before: only runs created earlier than that one (same millisecond: smaller id), whatever the paging order is
-  if(filter?.before)all=all.filter(x=>{const c=String(x.createdAt||'');return c<filter.before.createdAt||(c===filter.before.createdAt&&String(x.id)<filter.before.id)});
-  const newest=(a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))||String(b.id).localeCompare(String(a.id));
-  if(filter?.threads){const seen=new Set();all=all.sort(newest).filter(x=>{const k=x.threadId||x.id;return seen.has(k)?false:(seen.add(k),true)})}
-  return all.sort(newest).slice(0,Math.max(1,Math.min(500,Number(limit)||120)));
+  const byUpdate=(a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))||String(b.id).localeCompare(String(a.id));
+  const byCreate=(a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))||String(b.id).localeCompare(String(a.id));
+  if(filter?.threads){
+    // One row per thread: its latest run by (createdAt, id), with `turns` = runs in the thread. Dedupe first, then page by that same key.
+    const by=new Map();
+    for(const x of all){const k=x.threadId||x.id,e=by.get(k);if(!e)by.set(k,{run:x,turns:1});else{e.turns++;if(byCreate(x,e.run)<0)e.run=x}}
+    all=[...by.values()].map(e=>({...e.run,turns:e.turns}));
+    if(filter.before)all=all.filter(x=>byCreate(x,filter.before)>0);
+    return all.sort(byCreate).slice(0,Math.max(1,Math.min(500,Number(limit)||120)));
+  }
+  return all.sort(byUpdate).slice(0,Math.max(1,Math.min(500,Number(limit)||120)));
 }
 function retryRequestForRunId(id){
   const native=runLedger.retryRequest(id);if(native)return native;
@@ -1456,7 +1463,7 @@ function retryRequestForRunId(id){
   return null;
 }
 async function apiRuns(req,res,urlObj){
-  try{const id=String(urlObj.searchParams.get('id')||'');const pid=String(urlObj.searchParams.get('projectId')||''),tid=String(urlObj.searchParams.get('threadId')||''),threads=urlObj.searchParams.get('threads')==='1';const beforeId=String(urlObj.searchParams.get('before')||'');let before=null;if(beforeId){if(!cleanRunId(beforeId))return json(res,400,{error:'Invalid run id'});const ref=unifiedRunItems(500).find(x=>x.id===beforeId)||runLedger.get(beforeId);if(!ref)return json(res,404,{error:'Run not found'});before={createdAt:String(ref.createdAt||''),id:ref.id}}let items=unifiedRunItems(urlObj.searchParams.get('limit')||120,{projectId:pid,threadId:tid,threads,before});const pending=approvalStore().filter(a=>a.status==='pending'),changes=changeStore();const cardOpts={approvalFor:r=>r.meta?.changeId&&pending.find(a=>a.meta?.changeId===r.meta.changeId)||null,changeFor:cid=>changes.find(c=>c.id===cid)||null};if(id){const item=items.find(x=>x.id===id)||runLedger.get(id);if(!item)return json(res,404,{error:'Run not found'});return json(res,200,{item:{...item,card:runCard(item,cardOpts)}})}const status=String(urlObj.searchParams.get('status')||''),type=String(urlObj.searchParams.get('type')||'');if(status)items=items.filter(x=>x.status===status);if(type)items=items.filter(x=>x.type===type);items=items.map(x=>({...x,card:runCard(x,cardOpts)}));json(res,200,{items,summary:{total:items.length,active:items.filter(x=>['queued','running','streaming','awaiting_approval'].includes(x.status)).length,failed:items.filter(x=>x.status==='failed').length,awaitingApproval:items.filter(x=>x.status==='awaiting_approval').length}})}catch(e){storageError(res,e,500)}
+  try{const id=String(urlObj.searchParams.get('id')||'');const pid=String(urlObj.searchParams.get('projectId')||''),tid=String(urlObj.searchParams.get('threadId')||''),threads=urlObj.searchParams.get('threads')==='1';const beforeId=String(urlObj.searchParams.get('before')||'');let before=null;if(beforeId){if(!cleanRunId(beforeId))return json(res,400,{error:'Invalid run id'});const ref=runLedger.get(beforeId)||legacyUnifiedRuns().find(x=>x.id===beforeId);if(!ref)return json(res,404,{error:'Run not found'});before={createdAt:ref.createdAt,id:ref.id}}let items=unifiedRunItems(urlObj.searchParams.get('limit')||120,{projectId:pid,threadId:tid,threads,before});const pending=approvalStore().filter(a=>a.status==='pending'),changes=changeStore();const cardOpts={approvalFor:r=>r.meta?.changeId&&pending.find(a=>a.meta?.changeId===r.meta.changeId)||null,changeFor:cid=>changes.find(c=>c.id===cid)||null};if(id){const item=items.find(x=>x.id===id)||runLedger.get(id);if(!item)return json(res,404,{error:'Run not found'});return json(res,200,{item:{...item,card:runCard(item,cardOpts)}})}const status=String(urlObj.searchParams.get('status')||''),type=String(urlObj.searchParams.get('type')||'');if(status)items=items.filter(x=>x.status===status);if(type)items=items.filter(x=>x.type===type);items=items.map(x=>({...x,card:runCard(x,cardOpts)}));json(res,200,{items,summary:{total:items.length,active:items.filter(x=>['queued','running','streaming','awaiting_approval'].includes(x.status)).length,failed:items.filter(x=>x.status==='failed').length,awaitingApproval:items.filter(x=>x.status==='awaiting_approval').length}})}catch(e){storageError(res,e,500)}
 }
 async function apiRunCancel(req,res){
   try{const b=await readBody(req),id=String(b.id||''),run=runLedger.get(id);if(!run)return json(res,404,{error:'Run not found or is managed by a legacy executor'});if(!run.cancellable)return json(res,409,{error:'This run is not cancellable'});if(!['queued','running','streaming','awaiting_approval'].includes(run.status))return json(res,409,{error:`Run cannot be cancelled from status ${run.status}`});runLedger.cancel(id,'Cancelled by user');const controller=activeRunControllers.get(id);if(controller&&!controller.signal.aborted)controller.abort();recordActivity('run','Run cancelled',run.title,{runId:id,type:run.type});json(res,200,{item:runLedger.get(id)})}catch(e){storageError(res,e,400)}
