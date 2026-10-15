@@ -1596,3 +1596,8 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
 .secure-setup{margin-top:12px}
 .secure-setup>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--ds-accent-text);font-weight:600}
 .secure-setup[open]>summary{margin-bottom:4px}
+/* Claude page: a long session title made the session picker 677px wide, pushing the live chip, the picker and
+   Refresh off the left edge of a phone. The picker now shrinks and truncates; the row wraps if it must. */
+.claude-head-actions{min-width:0;max-width:100%;flex-wrap:wrap}
+#claude #claudeSession{min-width:0;max-width:min(100%,340px);text-overflow:ellipsis}
+@media(max-width:760px){#claude .claude-head-actions{width:100%}#claude #claudeSession{flex:1 1 0;width:0;max-width:none}}
