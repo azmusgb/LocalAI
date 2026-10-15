@@ -295,6 +295,7 @@ await check('missions: a quiet goal field and the last mission with its outcome'
   await card.locator('[data-last-read]').click();
   assert.equal(await cm.locator('[data-agent-result-tab="summary"]').evaluate(b => b.classList.contains('active')), true);
 });
+await cm.unrouteAll({ behavior: 'ignoreErrors' });
 await cm.close();
 
 // Health and the System pages (redesign task 5): one core service down, a failed run.
@@ -342,6 +343,7 @@ await check('runs: plain-language badges and a Failed filter', async () => {
   await sys.locator('[data-run-filter=""]').click();
   assert.equal(await sys.locator('#runList .run-row').count(), 2);
 });
+await sys.unrouteAll({ behavior: 'ignoreErrors' });
 await sys.close();
 
 // Remaining pages (redesign task 6) and accessibility on every page.
@@ -423,6 +425,7 @@ await check('every page: no colour-contrast or touch-target problems (axe)', asy
   }
   assert.deepEqual(problems, []);
 });
+await rest.unrouteAll({ behavior: 'ignoreErrors' });
 await rest.close();
 
 await check('no script errors on phone', async () => {
