@@ -1,7 +1,7 @@
 'use strict';
 
 // Claude chat relay: the appliance side of the LocalAI web <-> Claude Code session chat.
-// Mac-side calls (announce, inbox, mirror) carry X-LocalAI-Mac-Key; device-side calls use deviceFor() (cookie auth).
+// Mac-side calls (announce, inbox, inbox/ack, mirror) carry X-LocalAI-Mac-Key; device-side calls use deviceFor() (cookie auth).
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -13,6 +13,7 @@ const MAX_TEXT = 50000;
 const MAX_MESSAGES = 1000;
 const IDLE_PRUNE_MS = 30 * 24 * 3600 * 1000;
 const MAX_WAIT_S = 25;
+const MAX_ACK_IDS = 50;
 
 const sessionKey = id => `${PREFIX}session:${id}`;
 const seqKey = id => `${PREFIX}seq:${id}`;
@@ -22,6 +23,8 @@ const msgId = (sessionId, seq) => `${sessionId}:${pad(seq)}`;
 
 function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.now() }) {
   const onlineMs = Number(process.env.LOCALAI_CHAT_ONLINE_MS) > 0 ? Number(process.env.LOCALAI_CHAT_ONLINE_MS) : 45000;
+  // How long a claimed (delivering) message waits for the bridge's ack before it is offered again.
+  const leaseMs = Number(process.env.LOCALAI_CHAT_LEASE_MS) > 0 ? Number(process.env.LOCALAI_CHAT_LEASE_MS) : 60000;
   const wakeups = new EventEmitter();
   wakeups.setMaxListeners(0);
 
@@ -124,10 +127,23 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
     if (s) storage.writeSetting(sessionKey(sessionId), { ...s, lastSeenAt: now() });
     return s;
   }
+  const msgKey = m => `${msgPrefix(m.sessionId)}${pad(m.seq)}`;
+  // A delivering message whose lease ran out (the inbox response or the ack never arrived) goes back to queued.
+  // Callers run this inside their transaction.
+  function requeueExpired(sessionId) {
+    const t = now();
+    for (const m of storage.listSettings(msgPrefix(sessionId), { where: { status: 'delivering', source: 'web' } })) {
+      if ((m.leaseUntil || 0) <= t) { const { leaseUntil, ...rest } = m; storage.writeSetting(msgKey(m), { ...rest, status: 'queued' }); }
+    }
+  }
+  // Claim queued web messages for the bridge: they are leased (delivering) until it acks them, never marked delivered here,
+  // so a response lost on the way to the Mac delays a message instead of losing it.
   function claimQueued(sessionId) {
     return storage.transaction(() => {
+      requeueExpired(sessionId);
       const queued = storage.listSettings(msgPrefix(sessionId), { where: { status: 'queued', source: 'web' } }).reverse();
-      for (const m of queued) storage.writeSetting(`${msgPrefix(sessionId)}${pad(m.seq)}`, { ...m, status: 'delivered' });
+      const leaseUntil = now() + leaseMs;
+      for (const m of queued) storage.writeSetting(msgKey(m), { ...m, status: 'delivering', leaseUntil });
       return queued;
     });
   }
@@ -166,6 +182,30 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
       items = claimQueued(sessionId);
     }
     json(res, 200, { items: items.map(m => ({ id: m.id, seq: m.seq, text: m.text, deviceName: m.deviceName || '' })) });
+  }
+
+  async function ackHandler(req, res) {
+    const b = await body(req, res); if (!b) return;
+    const sessionId = String(b.sessionId || '');
+    if (!SESSION_ID_RE.test(sessionId)) return json(res, 400, { error: 'Invalid sessionId' });
+    const idRe = new RegExp(`^${sessionId}:\\d{10}$`); // sessionId is [A-Za-z0-9-] only, safe in a pattern
+    if (!Array.isArray(b.ids) || b.ids.length > MAX_ACK_IDS || !b.ids.every(id => typeof id === 'string' && idRe.test(id))) {
+      return json(res, 400, { error: `ids must be an array of at most ${MAX_ACK_IDS} message ids of this session` });
+    }
+    const acked = storage.transaction(() => {
+      requeueExpired(sessionId);
+      const done = [];
+      for (const id of new Set(b.ids)) {
+        const key = `${msgPrefix(sessionId)}${id.slice(sessionId.length + 1)}`;
+        const m = storage.readSetting(key, null);
+        if (!m || m.source !== 'web' || m.status !== 'delivering') continue; // unknown, already delivered/answered, or requeued
+        const { leaseUntil, ...rest } = m;
+        storage.writeSetting(key, { ...rest, status: 'delivered' });
+        done.push(id);
+      }
+      return done;
+    });
+    json(res, 200, { acked });
   }
 
   async function mirror(req, res) {
@@ -324,6 +364,7 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
     const macRoutes = {
       'POST /api/claude/chat/announce': () => announce(req, res),
       'GET /api/claude/chat/inbox': () => inboxHandler(req, res, urlObj),
+      'POST /api/claude/chat/inbox/ack': () => ackHandler(req, res),
       'POST /api/claude/chat/mirror': () => mirror(req, res)
     };
     if (macRoutes[route]) {

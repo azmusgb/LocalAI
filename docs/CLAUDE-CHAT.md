@@ -19,7 +19,7 @@ It is a second window onto a session you started yourself. It is **not** a runne
 
 - **Opt-in.** `claude-chat` is a shell function, `LOCALAI_CHAT=1 claude "$@"`. Hooks inherit the variable and do nothing without it.
 - **Hook** (`~/.claude/localai-chat/hook.py`, async, 10 s timeout, swallows every error). `SessionStart` starts the bridge. `UserPromptSubmit` posts your terminal prompt to the relay. `Stop` posts Claude's reply text from the transcript.
-- **Bridge** (`~/.claude/localai-chat/bridge.mjs`, one per session, detached). Announces the session, long-polls the relay's inbox, and injects each web message into the session. Only one bridge runs per session and per Claude Code process: it keeps a pidfile `run/<sessionId>.pid` and a per-socket lock `run/sock-<hash>.json` in `~/.claude/localai-chat/`. `/clear` starts a new session id in the same process, so the new bridge stops the old one, and the cleared conversation goes offline on the page after 45 s. It exits when the session's socket disappears.
+- **Bridge** (`~/.claude/localai-chat/bridge.mjs`, one per session, detached). Announces the session, long-polls the relay's inbox, acknowledges what it received, and injects each acknowledged web message into the session. The inbox only reserves (leases) the messages it returns; the bridge's ack marks them delivered just before it injects them. If the inbox response or the ack never arrives (the Mac sleeps mid-poll, the connection drops), the reservation runs out after 60 s and the message is queued again for the next poll: it arrives late rather than never, and a message that was not acknowledged is never injected, so it is never injected twice. Only one bridge runs per session and per Claude Code process: it keeps a pidfile `run/<sessionId>.pid` and a per-socket lock `run/sock-<hash>.json` in `~/.claude/localai-chat/`. `/clear` starts a new session id in the same process, so the new bridge stops the old one, and the cleared conversation goes offline on the page after 45 s. It exits when the session's socket disappears.
 - **Relay** (`app/claude-chat.js` in the appliance). Stores sessions, messages, devices and pairing requests; authenticates the Mac (key) and devices (cookie). Nothing on the Mac listens on the network; the appliance is the only rendezvous point.
 - **Panel** (Claude page). Pairing, session picker, conversation, composer, devices.
 
@@ -60,7 +60,7 @@ The installer is safe to re-run. It:
 - Start or resume a session with chat on: `claude-chat` or `claude-chat --resume <id>`. It then appears on the Claude page. Start the session with plain `claude` and it stays invisible.
 - **Pair a phone** (once per device): open the Claude page; an unpaired device shows a 6-character code (valid 10 minutes) and the command to run. Then, on the Mac, run `localai-chat pair <code> "My iPhone"`. The page picks it up and stays paired for 180 days.
 - **Send**: pick a session, type, press Send (Cmd/Ctrl+Enter also sends; Enter is a newline). The reply appears when Claude finishes its turn; there is no partial streaming. Replies are shown as plain text.
-- **Statuses** under a web message: `queued` (relay has it, bridge has not fetched it), `delivered` (injected into the session), `answered` (Claude replied after it; one reply answers every earlier delivered message). A message still `delivered` after 10 minutes is no longer polled for; it keeps that status until a later reply. A queued message on a session that has gone offline shows `not delivered` and can be deleted.
+- **Statuses** under a web message: `queued` (relay has it, bridge has not fetched it), `sending` (the bridge fetched it and is acknowledging it; normally a second or two), `delivered` (acknowledged and injected into the session), `answered` (Claude replied after it; one reply answers every earlier delivered message). A message reserved by a bridge that vanished before acknowledging it returns to `queued` after 60 s and is sent again. A message still `sending` or `delivered` after 10 minutes is no longer polled for; it keeps that status until a later reply. A queued message on a session that has gone offline shows `not delivered` and can be deleted.
 - **Offline**: a session is online while its bridge has polled in the last 45 s. When offline the composer is disabled ("Start or resume it on your Mac with `claude-chat`"); history stays readable and messages are never accepted for later.
 - **The terminal keeps working** as normal. Typing there is mirrored to the page, and both sides' turns appear in the conversation. If the appliance is unreachable, hooks drop silently and the bridge retries with backoff (1 s up to 30 s); the terminal is unaffected.
 
@@ -106,9 +106,12 @@ Start with `localai-chat status`. It prints the key state, relay reachability, w
 | `SIGTERM` | This bridge was stopped, normally by the bridge that replaced it |
 | `socket lock busy; exiting` | Could not take the per-socket lock after repeated tries; restart the session |
 | `received <n>` | Inbox call returned n web messages |
+| `acked <n>/<m>` | The relay confirmed n of the m received messages; only those are injected |
+| `ack missing <id>` | The relay did not confirm this message (ack failed, or its 60 s reservation had already run out); it is not injected now and is sent again on a later poll |
+| `ack failed <status>` / `ack error ...` | The ack call failed; every message from that poll is skipped and re-sent after 60 s |
 | `injected <id>` | Message written to the session's socket |
 | `inject failed <id> attempt <n> ...` | A write failed; it retries up to 3 times |
-| `lost <id>` | All tries failed; the message was marked delivered but never reached Claude |
+| `lost <id>` | All tries failed; the message was acknowledged (marked delivered) but never reached Claude |
 | `socket gone; exiting` / `socket unreachable; exiting` | The session ended; the bridge stops |
 | `mac key rejected` | Relay 401; re-run the installer to push the key hash again |
 | `relay error ...` / `inbox failed <status>` | Appliance unreachable or erroring; the bridge backs off and retries |
@@ -116,6 +119,7 @@ Start with `localai-chat status`. It prints the key state, relay reachability, w
 Common problems:
 
 - **Session not listed.** It must be started or resumed with `claude-chat` (not `claude`). The bridge starts on `SessionStart` and announces itself; check `localai-chat status` for a bridge and `bridge.log` for `announced`. `mac key missing; exiting` means the installer has not run (or the key was removed); `messaging socket/token missing; exiting` means this Claude Code session does not expose the inbox socket. Resuming or restarting the session retries the announce.
+- **Message stays `sending`, or goes back to `queued`.** The bridge fetched it but its acknowledgement did not reach the appliance (Mac asleep, network drop). After 60 s it is queued again and the next poll sends it; look for `ack missing` or `ack failed` in `bridge.log`. If it keeps happening, check the appliance is reachable (`localai-chat status`).
 - **Message `delivered` but Claude does nothing.** Claude Code may be holding it behind an approval dialog in the terminal (the own-child check failed). Look at the terminal and answer the dialog.
 - **Injected lines in the log but messages stop arriving, or `lost` appears.** A Claude Code update may have changed the undocumented inbox format. This is the main maintenance risk; compare `last injection` in `status` with the Claude Code version and adjust `bridge.mjs`.
 - **`mac key rejected` or key `rejected` in status.** Re-run `host/claude-chat/install.sh`; it reuses the same key and re-pushes the hash (to replace the key, see the rotation steps under Security notes). Check `ssh windows-ai` works if the push fails.

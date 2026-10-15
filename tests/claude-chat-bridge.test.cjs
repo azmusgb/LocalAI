@@ -25,12 +25,13 @@ async function until(fn, what, ms = 8000) {
 }
 
 async function fakeRelay(t) {
-  const state = { requests: [], queue: [], failures: 0, announceFailures: 0, inbox401: false };
+  // ackStatus: HTTP status for ack calls; ackOmit: ids the fake leaves out of `acked` (as if their lease had expired).
+  const state = { requests: [], queue: [], failures: 0, announceFailures: 0, inbox401: false, ackStatus: 200, ackOmit: new Set() };
   const handler = (req, res) => {
     let body = '';
     req.on('data', (c) => { body += c; });
     req.on('end', async () => {
-      state.requests.push({ method: req.method, url: req.url, headers: req.headers, body: body ? JSON.parse(body) : null });
+      state.requests.push({ method: req.method, url: req.url, headers: req.headers, body: body ? JSON.parse(body) : null, at: Date.now() });
       res.setHeader('Content-Type', 'application/json');
       if (req.url.startsWith('/api/claude/chat/announce') && state.announceFailures > 0) {
         state.announceFailures--;
@@ -45,6 +46,11 @@ async function fakeRelay(t) {
         state.failures--;
         res.statusCode = 500;
         return res.end('{"error":"boom"}');
+      }
+      if (req.url === '/api/claude/chat/inbox/ack') {
+        if (state.ackStatus !== 200) { res.statusCode = state.ackStatus; return res.end('{"error":"boom"}'); }
+        const ids = JSON.parse(body).ids;
+        return res.end(JSON.stringify({ acked: ids.filter((id) => !state.ackOmit.has(id)) }));
       }
       if (req.url.startsWith('/api/claude/chat/inbox')) {
         const end = Date.now() + 150;
@@ -143,6 +149,14 @@ test('announces the session, then injects each queued message as auth line + use
   assert.equal(poll.method, 'GET');
   assert.equal(poll.url, `/api/claude/chat/inbox?sessionId=${SID}&wait=25`);
   assert.equal(poll.headers['x-localai-mac-key'], 'the-mac-key');
+  const acks = relay.requests.filter((r) => r.url === '/api/claude/chat/inbox/ack');
+  assert.equal(acks.length, 1);
+  assert.equal(acks[0].method, 'POST');
+  assert.deepEqual(acks[0].body, { sessionId: SID, ids: [11, 12] });
+  assert.equal(acks[0].headers['x-localai-mac-key'], 'the-mac-key');
+  assert.equal(acks[0].headers['content-type'], 'application/json');
+  assert.ok(acks[0].at <= inbox.conns[0].at, 'ack is sent before the first injection');
+  assert.ok(log(home).includes('acked 2/2'));
 
   assert.deepEqual(inbox.lines(0), [
     { type: 'auth', token: TOKEN },
@@ -343,4 +357,53 @@ test('a 401 on the inbox logs "mac key rejected", backs off, and neither exits n
   assert.equal(b.exited, null);
   const polls = relay.requests.filter((r) => r.url.startsWith('/api/claude/chat/inbox')).length;
   assert.ok(polls >= 2 && polls <= 6, `expected backed-off polling, got ${polls}`);
+});
+
+test('normal path: each message is acknowledged and injected exactly once', async (t) => {
+  const relay = await fakeRelay(t);
+  const inbox = await fakeInbox(t);
+  const home = makeHome(t);
+  relay.queue.push({ id: 'sess:1', seq: 1, text: 'one', deviceName: 'd' }, { id: 'sess:2', seq: 2, text: 'two', deviceName: 'd' });
+  startBridge(t, { relay, sock: inbox.sock, home });
+  await until(() => inbox.conns.length >= 2 && inbox.conns[1].closed, 'two injections');
+  await sleep(500);
+  assert.deepEqual(inbox.conns.map((c, i) => inbox.lines(i)[1].message.content), ['[LocalAI web · d] one', '[LocalAI web · d] two']);
+  assert.equal(relay.requests.filter((r) => r.url === '/api/claude/chat/inbox/ack').length, 1);
+  assert.ok(!log(home).includes('ack missing'));
+});
+
+test('an ack that fails (500) injects nothing and logs "ack missing"; the bridge keeps polling', async (t) => {
+  const relay = await fakeRelay(t);
+  const inbox = await fakeInbox(t);
+  const home = makeHome(t);
+  relay.ackStatus = 500;
+  relay.queue.push({ id: 'sess:7', seq: 7, text: 'not yet', deviceName: 'd' });
+  const b = startBridge(t, { relay, sock: inbox.sock, home });
+  await until(() => log(home).includes('ack missing sess:7'), 'ack missing logged');
+  assert.ok(log(home).includes('acked 0/1'));
+  await sleep(400);
+  assert.equal(inbox.conns.length, 0, 'an unacknowledged message is not injected');
+  assert.equal(b.exited, null);
+  // The relay requeues it after the lease and offers it again; this time the ack succeeds.
+  relay.ackStatus = 200;
+  relay.queue.push({ id: 'sess:7', seq: 7, text: 'not yet', deviceName: 'd' });
+  await until(() => inbox.conns.length >= 1 && inbox.conns[0].closed, 'injection after a good ack');
+  await sleep(300);
+  assert.equal(inbox.conns.length, 1);
+  assert.equal(inbox.lines(0)[1].message.content, '[LocalAI web · d] not yet');
+});
+
+test('an id missing from "acked" is not injected; the acked ones are', async (t) => {
+  const relay = await fakeRelay(t);
+  const inbox = await fakeInbox(t);
+  const home = makeHome(t);
+  relay.ackOmit.add('sess:2');
+  relay.queue.push({ id: 'sess:1', seq: 1, text: 'kept', deviceName: 'd' }, { id: 'sess:2', seq: 2, text: 'expired', deviceName: 'd' }, { id: 'sess:3', seq: 3, text: 'also kept', deviceName: 'd' });
+  startBridge(t, { relay, sock: inbox.sock, home });
+  await until(() => inbox.conns.length >= 2 && inbox.conns[1].closed, 'two injections');
+  await sleep(400);
+  assert.deepEqual(inbox.conns.map((c, i) => inbox.lines(i)[1].message.content), ['[LocalAI web · d] kept', '[LocalAI web · d] also kept']);
+  assert.ok(log(home).includes('acked 2/3'));
+  assert.ok(log(home).includes('ack missing sess:2'));
+  assert.ok(!log(home).includes('ack missing sess:1'));
 });

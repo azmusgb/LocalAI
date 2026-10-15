@@ -103,7 +103,7 @@ pairing screen.
 | Key | Value |
 |---|---|
 | `claudeChat:session:<sessionId>` | `{sessionId, title, cwd, announcedAt, lastSeenAt}`; online when `lastSeenAt` < 45 s ago (the bridge's long-poll refreshes it) |
-| `claudeChat:msg:<sessionId>:<seq>` | `{id, sessionId, seq, role: user\|assistant, source: web\|terminal\|reply, text, at, deviceId?, deviceName?, status: queued\|delivered\|answered}`; `seq` zero-padded to 10 digits |
+| `claudeChat:msg:<sessionId>:<seq>` | `{id, sessionId, seq, role: user\|assistant, source: web\|terminal\|reply, text, at, deviceId?, deviceName?, status: queued\|delivering\|delivered\|answered, leaseUntil?}`; `seq` zero-padded to 10 digits; `leaseUntil` only while `delivering` |
 | `claudeChat:seq:<sessionId>` | per-session counter |
 | `claudeChat:device:<id>` | `{id, name, tokenSha256, pairedAt, lastSeenAt}` |
 | `claudeChat:pair:<id>` | `{id, code, createdAt, approvedAt?, deviceId?}`; deleted on approval or expiry |
@@ -118,8 +118,9 @@ Mac side (header `X-LocalAI-Mac-Key`):
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/api/claude/chat/announce` | `{sessionId, title, cwd}`: mark the session chat-enabled and online |
-| GET | `/api/claude/chat/inbox?sessionId=&wait=25` | Long-poll: return queued web messages and mark them `delivered`; refreshes `lastSeenAt` |
-| POST | `/api/claude/chat/mirror` | `{sessionId, role, source, text}` from the hook; a `reply` marks the newest `delivered` web message `answered` |
+| GET | `/api/claude/chat/inbox?sessionId=&wait=25` | Long-poll: return queued web messages and lease them (`delivering`, `leaseUntil` = now + 60 s); first requeues any `delivering` message whose lease expired; refreshes `lastSeenAt` |
+| POST | `/api/claude/chat/inbox/ack` | `{sessionId, ids}` (≤ 50 ids of that session): each still-`delivering` message becomes `delivered`; returns `{acked: [ids flipped]}`. Unknown, already delivered/answered, or expired-and-requeued ids are left out, not errors |
+| POST | `/api/claude/chat/mirror` | `{sessionId, role, source, text}` from the hook; a `reply` marks every earlier `delivered` web message `answered` (not `delivering` ones) |
 | POST | `/api/claude/chat/pair/approve` | `{code, name}` |
 | GET / POST | `/api/claude/chat/devices`, `/api/claude/chat/devices/revoke` | Device list and revoke for the Mac CLI |
 
@@ -142,13 +143,16 @@ The relay never returns the Mac key or device tokens, and `/api/claude/board` an
   inheriting `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN`. `SessionStart` also fires on resume, clear
   and compact, so the bridge keeps a pidfile `~/.claude/localai-chat/run/<sessionId>.pid` and a second start exits at once
   while the first is alive.
-- Loop: `announce`, then `GET inbox?wait=25`; for each message, open the socket, write the auth line and
+- Loop: `announce`, then `GET inbox?wait=25`, then `POST inbox/ack` for the returned ids; for each id in `acked` (and
+  only those), open the socket, write the auth line and
   `{"type":"user","message":{"role":"user","content":"[LocalAI web · <deviceName>] <text>"}}`, close. One message per
   connection, at most one per second, so the session's burst limit is never hit.
 - Exits when the session is gone: the socket path no longer exists, or a connect fails with `ENOENT`/`ECONNREFUSED`
   three times in a row. Removes its pidfile on exit.
-- Relay errors back off (1 s doubling to 30 s) and are logged to `~/.claude/localai-chat/bridge.log`; a message is only
-  marked `delivered` by the relay when the inbox call returns it, and the bridge retries an injection that fails while
+- Relay errors back off (1 s doubling to 30 s) and are logged to `~/.claude/localai-chat/bridge.log`; the inbox call only
+  leases a message (`delivering`); it becomes `delivered` when the bridge acks it, just before injecting. If the inbox
+  response or the ack is lost, the lease expires after 60 s and the message is queued again, so a dropped connection
+  delays a message instead of losing it, and an unacknowledged message is never injected (at most once). The bridge retries an injection that fails while
   the socket still exists (3 tries) before logging it as lost.
 
 ## Hook behavior
@@ -168,7 +172,7 @@ The relay never returns the Mac key or device tokens, and `/api/claude/board` an
   - Session picker: opted-in sessions, newest first, each with an online/offline dot and title.
   - Conversation: one message per bubble. Terminal prompts and web messages are labeled differently; replies are
     plain text with preserved line breaks (no HTML/markdown rendering in v1, so no injection surface).
-  - Status under each web message: queued, delivered, answered.
+  - Status under each web message: queued, sending (`delivering`), delivered, answered.
   - Composer: textarea (16 px, Enter = newline, a Send button; Cmd/Ctrl+Enter sends). Disabled with a reason when the
     session is offline: messages to an offline session are not accepted, so nothing runs unexpectedly hours later.
   - Polls `messages?after=` every 2 s while the panel is visible, every 15 s when hidden.
@@ -193,8 +197,8 @@ The relay never returns the Mac key or device tokens, and `/api/claude/board` an
 ## Testing
 
 - **Relay** (`tests/claude-chat.test.cjs`, node:test against a spawned server): pairing (expiry, rate limit, approve
-  needs Mac key), device cookie checks, revoke, cross-origin and non-JSON rejection, inbox long-poll delivers once and
-  marks delivered, mirror reply marks answered, offline sessions refuse `send`, caps and pruning.
+  needs Mac key), device cookie checks, revoke, cross-origin and non-JSON rejection, inbox long-poll leases once,
+  ack marks delivered, an unacknowledged lease expires and the message is offered again, mirror reply marks answered, offline sessions refuse `send`, caps and pruning.
 - **Bridge** (`tests/claude-chat-bridge.test.cjs`): run `bridge.mjs` against a fake relay and a fake Unix-socket inbox;
   check the auth line and the exact user-message line with the `[LocalAI web · <device>]` prefix, one message per
   connection, single instance per session, exit when the socket disappears, recovery after relay errors.

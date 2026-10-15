@@ -72,6 +72,13 @@ const send = (id, text) => post('/api/claude/chat/send', { sessionId: id, text }
 const inbox = (id, wait = 0) => get(`/api/claude/chat/inbox?sessionId=${id}&wait=${wait}`, mac());
 const messages = (id, after = 0) => get(`/api/claude/chat/messages?sessionId=${id}&after=${after}`);
 const mirror = (id, role, source, text) => post('/api/claude/chat/mirror', { sessionId: id, role, source, text }, mac());
+const ack = (id, ids, headers = mac()) => post('/api/claude/chat/inbox/ack', { sessionId: id, ids }, headers);
+// What a bridge does: claim (inbox), then acknowledge every claimed id.
+async function pickup(id) {
+  const items = (await inbox(id)).body.items;
+  if (items.length) assert.deepEqual((await ack(id, items.map(m => m.id))).body.acked, items.map(m => m.id));
+  return items;
+}
 async function session() {
   const id = `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}`;
   assert.equal((await announce(id)).status, 200);
@@ -85,6 +92,8 @@ test('mac-side calls need the key', async () => {
   assert.equal((await post('/api/claude/chat/announce', body, mac())).status, 200);
   assert.equal((await get('/api/claude/chat/inbox?sessionId=abc-1&wait=0')).status, 401);
   assert.equal((await post('/api/claude/chat/mirror', { sessionId: 'abc-1', role: 'user', source: 'terminal', text: 'x' })).status, 401);
+  assert.equal((await ack('abc-1', [], {})).status, 401);
+  assert.equal((await ack('abc-1', [], { 'X-LocalAI-Mac-Key': 'wrong' })).status, 401);
 });
 
 test('mac-side POSTs follow the cross-origin and content-type rules; session ids are validated', async () => {
@@ -108,7 +117,7 @@ test('announce makes a session online, then offline once the window passes', asy
   assert.equal(list.online, false);
 });
 
-test('send to an online session queues it; inbox delivers it once', async () => {
+test('send to an online session queues it; inbox leases it (delivering) once; ack marks it delivered', async () => {
   const id = await session();
   const sent = await send(id, 'hello');
   assert.equal(sent.status, 201);
@@ -119,8 +128,61 @@ test('send to an online session queues it; inbox delivers it once', async () => 
   assert.equal(first.body.items[0].text, 'hello');
   assert.ok(first.body.items[0].id && first.body.items[0].seq);
   assert.equal((await inbox(id)).body.items.length, 0);
-  const msgs = (await messages(id)).body.items;
-  assert.equal(msgs[0].status, 'delivered');
+  assert.equal((await messages(id)).body.items[0].status, 'delivering');
+  const acked = await ack(id, [first.body.items[0].id]);
+  assert.equal(acked.status, 200);
+  assert.deepEqual(acked.body, { acked: [first.body.items[0].id] });
+  assert.equal((await messages(id)).body.items[0].status, 'delivered');
+  assert.equal(JSON.stringify((await messages(id)).body).includes('leaseUntil'), false);
+  // Acking again, or an unknown id of the session, is ignored rather than an error.
+  assert.deepEqual((await ack(id, [first.body.items[0].id, `${id}:0000009999`])).body, { acked: [] });
+  assert.equal((await inbox(id)).body.items.length, 0);
+});
+
+test('ack validates its input: session id, an array of at most 50 string ids of that session; JSON and origin rules apply', async () => {
+  const id = await session();
+  assert.equal((await ack('../x', [])).status, 400);
+  assert.equal((await post('/api/claude/chat/inbox/ack', { sessionId: id }, mac())).status, 400);
+  assert.equal((await ack(id, 'x')).status, 400);
+  assert.equal((await ack(id, [1])).status, 400);
+  assert.equal((await ack(id, Array.from({ length: 51 }, (_, i) => `${id}:${String(i + 1).padStart(10, '0')}`))).status, 400);
+  assert.equal((await ack(id, ['other-session:0000000001'])).status, 400);
+  assert.equal((await ack(id, [`${id}:1`])).status, 400);
+  assert.deepEqual((await ack(id, [])).body, { acked: [] });
+  const bad = await fetch(`${base}/api/claude/chat/inbox/ack`, { method: 'POST', headers: { ...JSONH, ...mac(), Origin: 'http://evil.example' }, body: JSON.stringify({ sessionId: id, ids: [] }) });
+  assert.equal(bad.status, 403);
+  const form = await fetch(`${base}/api/claude/chat/inbox/ack`, { method: 'POST', headers: { 'Content-Type': 'text/plain', ...mac() }, body: '{}' });
+  assert.equal(form.status, 415);
+});
+
+test('a lease that is never acknowledged expires: the message is requeued and the next inbox returns it again; a late ack is refused', async t => {
+  const url = await startServer(t, { LOCALAI_CHAT_LEASE_MS: '300' });
+  const cookie = (await pairDevice(url, 'Lease device')).cookie;
+  const call = async (method, p, b, headers) => {
+    const r = await fetch(url + p, { method, headers: { ...JSONH, ...headers }, body: b ? JSON.stringify(b) : undefined });
+    return { status: r.status, body: await r.json().catch(() => null) };
+  };
+  const id = 'lease-session-1';
+  assert.equal((await call('POST', '/api/claude/chat/announce', { sessionId: id, title: 'L', cwd: '/' }, mac())).status, 200);
+  assert.equal((await call('POST', '/api/claude/chat/send', { sessionId: id, text: 'survive me' }, { Cookie: cookie })).status, 201);
+  const lease = () => call('GET', `/api/claude/chat/inbox?sessionId=${id}&wait=0`, null, mac());
+  const first = (await lease()).body.items;
+  assert.equal(first.length, 1);
+  assert.equal((await lease()).body.items.length, 0, 'leased, not handed out twice within the lease');
+  await new Promise(r => setTimeout(r, 450));
+  // The response was "lost": no ack. After the lease the message is offered again.
+  const again = (await lease()).body.items;
+  assert.deepEqual(again.map(m => [m.id, m.text]), [[first[0].id, 'survive me']]);
+  // This lease expires too; a late ack is refused because the expired lease is requeued first.
+  await new Promise(r => setTimeout(r, 450));
+  assert.deepEqual((await call('POST', '/api/claude/chat/inbox/ack', { sessionId: id, ids: [first[0].id] }, mac())).body, { acked: [] });
+  const msgs = (await call('GET', `/api/claude/chat/messages?sessionId=${id}&after=0`, null, { Cookie: cookie })).body.items;
+  assert.equal(msgs[0].status, 'queued');
+  // A fresh lease acked in time is delivered.
+  const third = (await lease()).body.items;
+  assert.equal(third.length, 1);
+  assert.deepEqual((await call('POST', '/api/claude/chat/inbox/ack', { sessionId: id, ids: [third[0].id] }, mac())).body, { acked: [third[0].id] });
+  assert.equal((await call('GET', `/api/claude/chat/messages?sessionId=${id}&after=0`, null, { Cookie: cookie })).body.items[0].status, 'delivered');
 });
 
 test('two concurrent inbox polls never share a message', async () => {
@@ -156,7 +218,7 @@ test('long-poll wakes on send', async () => {
 test('mirror reply marks every earlier delivered web message answered; terminal mirror appears', async () => {
   const id = await session();
   await send(id, 'one'); await send(id, 'two');
-  await inbox(id);
+  await pickup(id);
   const m = await mirror(id, 'assistant', 'reply', 'the answer');
   assert.equal(m.status, 200);
   assert.ok(m.body.seq > 0);
@@ -173,12 +235,13 @@ test('mirror reply marks every earlier delivered web message answered; terminal 
 
 test('a reply answers older delivered web messages left over from earlier turns, but not queued ones', async () => {
   const id = await session();
-  await send(id, 'lost'); await inbox(id);          // delivered, never answered (e.g. a no-text turn)
-  await send(id, 'next'); await inbox(id);
+  await send(id, 'lost'); await pickup(id);         // delivered, never answered (e.g. a no-text turn)
+  await send(id, 'next'); await pickup(id);
+  await send(id, 'leased'); await inbox(id);         // leased but not yet acknowledged when the reply lands
   await send(id, 'later');                           // still queued when the reply lands
   await mirror(id, 'assistant', 'reply', 'reply');
   const webs = (await messages(id)).body.items.filter(x => x.source === 'web');
-  assert.deepEqual(webs.map(x => [x.text, x.status]), [['lost', 'answered'], ['next', 'answered'], ['later', 'queued']]);
+  assert.deepEqual(webs.map(x => [x.text, x.status]), [['lost', 'answered'], ['next', 'answered'], ['leased', 'delivering'], ['later', 'queued']]);
 });
 
 test('send to an offline session is refused with 409', async () => {
@@ -197,7 +260,9 @@ test('a queued message can be deleted by its sender; a delivered one cannot (409
   assert.equal((await inbox(id)).body.items.length, 0);
   const b = (await send(id, 'b')).body.item;
   await inbox(id);
-  assert.equal((await post('/api/claude/chat/messages/delete', { id: b.id })).status, 409);
+  assert.equal((await post('/api/claude/chat/messages/delete', { id: b.id })).status, 409, 'delivering');
+  await ack(id, [b.id]);
+  assert.equal((await post('/api/claude/chat/messages/delete', { id: b.id })).status, 409, 'delivered');
   assert.equal((await post('/api/claude/chat/messages/delete', { id: 'nope' })).status, 409);
 });
 

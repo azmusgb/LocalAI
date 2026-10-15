@@ -1822,7 +1822,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   // Message text is only ever written with textContent, never as HTML.
   const API = '/api/claude/chat/';
   const FAST_MS = 2000, SLOW_MS = 15000, SESSIONS_MS = 10000, PAIR_MS = 2000;
-  const INFLIGHT_MS = 10 * 60 * 1000; // a delivered message older than this is left as it is (no reply is coming)
+  const INFLIGHT_MS = 10 * 60 * 1000; // a sending/delivered message older than this is left as it is (no reply is coming)
+  const STATUS_LABEL = { delivering: 'sending' }; // the relay's "delivering" is transient: the bridge holds it until it acks
   const NOTE = "Web messages reach Claude as messages from another session: it acts within this session's permissions, but won't change its settings or approve prompts because of them.";
   const OFFLINE = 'This session is offline. Start or resume it on your Mac with `claude-chat`.';
   const HTTP_WARNING = 'This page is served over plain HTTP, so the pairing cookie crosses your Wi-Fi unencrypted until HTTPS is set up. Revoke a device if it may be exposed.';
@@ -1917,11 +1918,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     try {
       // One request. While messages are still in flight, start just before the oldest of them so the reply carries their
       // current statuses (and any deletion shows as a gap) plus everything newer. A message queued on an offline session
-      // is skipped here: the 10 s sessions refresh notices when it comes back online. A delivered message counts only
-      // for 10 minutes after it was sent, so one that never gets a reply cannot keep the window open forever.
+      // is skipped here: the 10 s sessions refresh notices when it comes back online. A sending (delivering) or delivered
+      // message counts only for 10 minutes after it was sent, so one that never gets a reply cannot keep the window open forever.
       const online = current()?.online;
       const recent = (m) => Date.now() - (m.at || 0) < INFLIGHT_MS;
-      const inflight = st.messages.filter((m) => m.source === 'web' && ((m.status === 'delivered' && recent(m)) || (m.status === 'queued' && online)));
+      const inflight = st.messages.filter((m) => m.source === 'web' && (((m.status === 'delivered' || m.status === 'delivering') && recent(m)) || (m.status === 'queued' && online)));
       const from = inflight.length ? Math.max(0, Math.min(...inflight.map((m) => m.seq)) - 1) : st.after;
       const r = await api(`messages?sessionId=${encodeURIComponent(sid)}&after=${from}`);
       if (sid !== st.session) return;
@@ -2088,7 +2089,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (m.source === 'web') {
       const foot = el('div', 'claude-chat-foot');
       const offline = m.status === 'queued' && current() && !current().online;
-      foot.append(el('span', `claude-chat-status ${offline ? 'bad' : m.status}`, offline ? 'not delivered' : m.status));
+      foot.append(el('span', `claude-chat-status ${offline ? 'bad' : m.status}`, offline ? 'not delivered' : STATUS_LABEL[m.status] || m.status));
       if (m.status === 'queued') {
         const del = el('button', 'btn quiet', 'Delete'); del.type = 'button'; del.dataset.chatAction = 'delete'; del.dataset.id = m.id;
         foot.append(del);

@@ -162,6 +162,35 @@ async function inject(item) {
   log(`lost ${item.id}`);
 }
 
+// The inbox leases the messages it returns; acknowledging them marks them delivered. Only acked ids are injected, so a
+// message whose ack failed (or whose lease already ran out) is left for the relay to offer again instead of being
+// injected twice. Returns the set of acked ids (empty on any failure).
+async function ack(items) {
+  const ids = items.map((i) => i.id);
+  let acked = new Set();
+  try {
+    const res = await fetch(`${URL_BASE}/api/claude/chat/inbox/ack`, {
+      method: 'POST',
+      headers: headers({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ sessionId, ids }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.acked)) acked = new Set(data.acked);
+    } else {
+      await res.arrayBuffer().catch(() => {});
+      log(res.status === 401 ? 'mac key rejected' : `ack failed ${res.status}`);
+    }
+  } catch (e) {
+    log(`ack error ${e.name || ''} ${e.code || e.cause?.code || ''}`.trim());
+  }
+  const ok = ids.filter((id) => acked.has(id));
+  log(`acked ${ok.length}/${ids.length}`);
+  for (const id of ids) if (!acked.has(id)) log(`ack missing ${id}`);
+  return acked;
+}
+
 async function main() {
   await setup();
   let backoff = BACKOFF_START;
@@ -187,7 +216,9 @@ async function main() {
       backoff = BACKOFF_START;
       const items = Array.isArray(data.items) ? data.items : [];
       if (items.length) log(`received ${items.length}`);
-      for (const item of items) await inject(item);
+      if (!items.length) continue;
+      const acked = await ack(items);
+      for (const item of items) if (acked.has(item.id)) await inject(item);
     } catch (e) {
       log(`relay error ${e.name || ''} ${e.code || e.cause?.code || ''}`.trim());
       announced = false;

@@ -43,6 +43,9 @@ const beats = new Map();
 const announce = (id, title) => mac('POST', 'announce', { sessionId: id, title, cwd: '/Users/me/project' });
 const heartbeat = async (id, title) => { await announce(id, title); beats.set(id, setInterval(() => announce(id, title), 1000)); };
 const stopBeat = id => { clearInterval(beats.get(id)); beats.delete(id); };
+// What the bridge does: claim (the relay leases the messages as "delivering"), then acknowledge them ("delivered").
+const ack = (id, items) => mac('POST', 'inbox/ack', { sessionId: id, ids: items.map(m => m.id) });
+const pickup = async id => { const r = await mac('GET', `inbox?sessionId=${id}&wait=0`); await ack(id, r.body.items); return r; };
 
 const browser = await chromium.launch({ headless: true });
 const failures = [];
@@ -95,7 +98,7 @@ try {
     assert.match(await page.locator('#claudeChat').innerText(), /Web messages reach Claude as messages from another session: it acts within this session's permissions, but won't change its settings or approve prompts because of them\./);
   });
 
-  await check('send shows queued, then delivered after an inbox pickup, then the mirrored reply with answered', async () => {
+  await check('send shows queued, then sending while the bridge holds the lease, delivered after its ack, then the mirrored reply with answered', async () => {
     assert.equal(await page.locator('#claudeChatSend').isDisabled(), true, 'empty composer disables Send');
     await page.fill('#claudeChatInput', 'Run the tests');
     await page.press('#claudeChatInput', 'Control+Enter');
@@ -105,6 +108,9 @@ try {
     assert.equal(await page.inputValue('#claudeChatInput'), '', 'composer is cleared after sending');
     const inbox = await mac('GET', 'inbox?sessionId=sess-a&wait=0');
     assert.equal(inbox.body.items.length, 1);
+    await page.waitForFunction(() => /^sending$/.test(document.querySelector('#claudeChatLog .claude-chat-msg.web .claude-chat-status')?.textContent || ''), null, { timeout: 8000 });
+    assert.equal(await page.locator('#claudeChatLog .claude-chat-msg.web').getByRole('button', { name: 'Delete' }).count(), 0, 'a message being sent cannot be deleted');
+    assert.deepEqual((await ack('sess-a', inbox.body.items)).body.acked, [inbox.body.items[0].id]);
     await page.waitForFunction(() => /delivered/.test(document.querySelector('#claudeChatLog .claude-chat-msg.web .claude-chat-status')?.textContent || ''), null, { timeout: 8000 });
     await mac('POST', 'mirror', { sessionId: 'sess-a', role: 'assistant', source: 'reply', text: 'All 12 tests pass.' });
     await page.locator('#claudeChatLog .claude-chat-msg.reply', { hasText: 'All 12 tests pass.' }).waitFor({ timeout: 8000 });
@@ -135,7 +141,7 @@ try {
     await page.fill('#claudeChatInput', 'Still thinking?');
     await page.press('#claudeChatInput', 'Control+Enter');
     await page.locator('#claudeChatLog .claude-chat-msg.web', { hasText: 'Still thinking?' }).waitFor({ timeout: 5000 });
-    await mac('GET', 'inbox?sessionId=sess-a&wait=0');
+    await pickup('sess-a');
     await page.waitForFunction(() => [...document.querySelectorAll('#claudeChatLog .claude-chat-msg.web')].some(m => /Still thinking/.test(m.textContent) && /delivered/.test(m.textContent)), null, { timeout: 8000 });
     page.on('request', onReq);
     await page.waitForTimeout(5000);
@@ -150,7 +156,7 @@ try {
     await page.fill('#claudeChatInput', 'Never answered');
     await page.press('#claudeChatInput', 'Control+Enter');
     await page.locator('#claudeChatLog .claude-chat-msg.web', { hasText: 'Never answered' }).waitFor({ timeout: 5000 });
-    const picked = await mac('GET', 'inbox?sessionId=sess-a&wait=0');
+    const picked = await pickup('sess-a');
     const latest = picked.body.items[0].seq;
     await mac('POST', 'mirror', { sessionId: 'sess-a', role: 'user', source: 'terminal', text: 'later terminal line' });
     await page.locator('#claudeChatLog .claude-chat-msg.terminal', { hasText: 'later terminal line' }).waitFor({ timeout: 8000 });
