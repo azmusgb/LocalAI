@@ -161,8 +161,9 @@ The relay never returns the Mac key or device tokens, and `/api/claude/board` an
 - `SessionStart`: start the bridge (see above).
 - `UserPromptSubmit`: post `{role: user, source: terminal, text: prompt}` unless the prompt starts with `[LocalAI web · `
   (that is a web message the relay already has).
-- `Stop`: read `transcript_path`, take the assistant text blocks after the last user entry, and post
-  `{role: assistant, source: reply, text}`. Skip if empty.
+- `Stop`: post `{role: assistant, source: reply, text}` with the hook input's `last_assistant_message` when it is a
+  non-empty string (the transcript is written asynchronously and may lag the turn's final text). Otherwise read
+  `transcript_path` and take the assistant text blocks after the last user entry. Skip if empty.
 
 ## Chat panel (Claude page)
 

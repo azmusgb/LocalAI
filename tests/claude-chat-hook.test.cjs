@@ -136,6 +136,24 @@ test('Stop posts the assistant text after the last user entry', async (t) => {
   assert.deepEqual(r.requests[0].body, { sessionId: SID, role: 'assistant', source: 'reply', text: 'Part one\n\nPart two' });
 });
 
+test('Stop prefers last_assistant_message over a transcript that has not caught up', async (t) => {
+  const r = await relay(t); const s = setup();
+  const lagging = writeTranscript(s.dir, [user('go'), asst([{ type: 'text', text: 'Working on it' }])]);
+  const res = await runHook({ hook_event_name: 'Stop', session_id: SID, cwd: '/a', transcript_path: lagging, last_assistant_message: 'The final answer.' }, envFor(s, r));
+  assert.equal(res.code, 0);
+  assert.equal(r.requests.length, 1);
+  assert.deepEqual(r.requests[0].body, { sessionId: SID, role: 'assistant', source: 'reply', text: 'The final answer.' });
+});
+
+test('Stop with an empty or non-string last_assistant_message falls back to the transcript', async (t) => {
+  const r = await relay(t); const s = setup();
+  const tr = writeTranscript(s.dir, [user('go'), asst([{ type: 'text', text: 'from transcript' }])]);
+  for (const value of ['', '   ', null, 42]) {
+    assert.equal((await runHook({ hook_event_name: 'Stop', session_id: SID, cwd: '/a', transcript_path: tr, last_assistant_message: value }, envFor(s, r))).code, 0);
+  }
+  assert.deepEqual(r.requests.map((q) => q.body.text), ['from transcript', 'from transcript', 'from transcript', 'from transcript']);
+});
+
 test('Stop with a tool-only turn or a malformed transcript line posts nothing and exits 0', async (t) => {
   const r = await relay(t); const s = setup();
   const toolOnly = writeTranscript(s.dir, [user('go'), asst([{ type: 'tool_use', id: 't', name: 'Bash', input: {} }])]);

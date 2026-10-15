@@ -2,7 +2,7 @@
 """Claude Code hook for the LocalAI Claude page chat (SessionStart, UserPromptSubmit, Stop).
 
 Does nothing unless LOCALAI_CHAT=1. SessionStart starts the bridge; UserPromptSubmit and Stop mirror
-the conversation to the LocalAI relay. Never fails the hook: every error is swallowed.
+the conversation to the LocalAI relay (Stop uses last_assistant_message, else the transcript). Never fails the hook: every error is swallowed.
 """
 import json
 import os
@@ -98,6 +98,12 @@ def main():
         if isinstance(prompt, str) and prompt.strip() and not prompt.startswith(WEB_PREFIX):
             post(session_id, 'user', 'terminal', prompt)
     elif event == 'Stop':
+        # The transcript is written asynchronously and may not hold the turn's final text yet; Claude Code passes that
+        # text as last_assistant_message. The transcript is only the fallback for versions that do not send it.
+        final = data.get('last_assistant_message')
+        if isinstance(final, str) and final.strip():
+            post(session_id, 'assistant', 'reply', final)
+            return
         path = data.get('transcript_path')
         if path:
             post(session_id, 'assistant', 'reply', last_reply(path))
