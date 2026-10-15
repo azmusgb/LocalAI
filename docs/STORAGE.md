@@ -85,10 +85,9 @@ newest records on write (`RETENTION` in `app/server.js`):
 | `powerShellJobs` | 250 |
 | `qualityScans` | 100 |
 
-Runs (`unified-run/` settings rows) are pruned to the newest 250 except kept runs: a run that is pinned, filed
-under a project or has artifacts is never pruned, so kept runs grow without a ceiling. Successful chat, research
-and image runs save a Library artifact, so they count as kept and are never pruned; deleting the Library item
-does not free the run. Unpin or unfile a run to let it age out only if it has no artifacts.
+Runs (`unified-run/` settings rows): a run that is pinned or filed under a project is kept and never pruned, so
+kept runs grow without a ceiling. Every other run, including successful chats and images, ages out after the
+newest 250. Library items are not deleted when their run ages out. Unpin or unfile a run to let it age out.
 
 `GET /api/projects`, `/api/conversations` and `/api/knowledge` accept optional `limit` (1–1000), `offset`
 (0 or more) and `projectId`. Responses keep `items` and add `total`, `limit` and `offset`. Default page
