@@ -59,6 +59,48 @@ function Enter-LocalAI-DeployLock([string]$StateDir) {
     return $lockPath
 }
 
+# What release.json records about a release: its commit, a version (major.minor from package.json at that commit,
+# then the number of commits on main, e.g. 2.0.431), when it went live, and the merged PR titles since the previous
+# live release. Only the commit is required; if git can't answer, the rest is left out rather than failing a deploy.
+function New-LocalAI-ReleaseInfo([string]$Repo, [string]$Sha, [string]$Previous) {
+    $info = [ordered]@{ commit = $Sha; deployedAt = (Get-Date).ToUniversalTime().ToString('o') }
+    $encoding = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        $package = (git -C $Repo show "${Sha}:package.json" 2>$null) -join "`n"
+        $count = [string](git -C $Repo rev-list --count $Sha 2>$null)
+        if ($package -and $count -match '^\d+$') {
+            $parts = ([string]($package | ConvertFrom-Json).version).Split('.')
+            if ($parts.Count -ge 2 -and $parts[0] -match '^\d+$' -and $parts[1] -match '^\d+$') { $info.version = "$($parts[0]).$($parts[1]).$($count.Trim())" }
+        }
+        $range = $Sha
+        if ($Previous -and $Previous -ne $Sha) {
+            git -C $Repo merge-base --is-ancestor $Previous $Sha 2>$null
+            if ($LASTEXITCODE -eq 0) { $range = "$Previous..$Sha" }
+        }
+        # One record per commit on main: subject, unit separator, body, record separator.
+        $log = (git -C $Repo log --first-parent "--format=%s%x1f%b%x1e" -n $(if ($range -eq $Sha) { 1 } else { 50 }) $range 2>$null) -join "`n"
+        $notes = foreach ($record in ($log -split [char]0x1e)) {
+            $subject, $body = $record.Trim("`n", "`r", ' ') -split [char]0x1f, 2
+            if (-not $subject) { continue }
+            if ($subject -match '^Merge pull request #(\d+) from ') {
+                # A merge commit's subject names the branch; the PR title is the first line of its body.
+                $title = (([string]$body) -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
+                [ordered]@{ title = $(if ($title) { $title.Trim() } else { $subject }); pr = [int]$Matches[1] }
+            }
+            elseif ($subject -match '^(.*?)\s*\(#(\d+)\)\s*$') { [ordered]@{ title = $Matches[1]; pr = [int]$Matches[2] } }  # squash merge
+            else { [ordered]@{ title = [string]$subject } }
+        }
+        if ($notes) { $info.notes = @($notes) }
+    } catch {
+        # A release without notes is still a release.
+    } finally {
+        [Console]::OutputEncoding = $encoding
+        $global:LASTEXITCODE = 0
+    }
+    return $info
+}
+
 function Read-LocalAI-ReleaseCommit([string]$AppRoot) {
     $file = Join-Path $AppRoot 'release.json'
     if (-not (Test-Path -LiteralPath $file)) { return $null }

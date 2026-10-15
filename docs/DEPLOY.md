@@ -53,8 +53,8 @@ The Inbox gets a notice when a release goes live or a deploy fails.
 7. Stops `local-ai-appliance`, snapshots the live code to `C:\LocalAI\.deploy\live-before-<guid>`, backs up
    the database to `/data/backups/before-deploy-<guid>.db`, and repeats the migration preflight with
    writes stopped.
-8. Copies the candidate `app` over `C:\LocalAI\appliance\app`, writes `app\release.json` with the SHA,
-   and starts the container.
+8. Copies the candidate `app` over `C:\LocalAI\appliance\app`, writes `app\release.json` (SHA, version, time,
+   release notes; see [Versions and release notes](#versions-and-release-notes)), and starts the container.
 9. Waits for `/healthz` to report `status: ok`, SQLite storage and the expected `releaseCommit`
    (12 tries, 2 s apart).
 10. On success writes `state.json` with `status: HEALTHY`. On failure restores the snapshot, restarts, and
@@ -85,6 +85,22 @@ Install, change or remove the task:
 The task is hidden, runs `C:\LocalAI\repo\deploy\Run-LocalAI-AutoDeploy.ps1` (path fixed in the installer),
 skips a run while the previous one is still going, and is stopped after 30 minutes. Validate-only mode
 sends no Inbox notices. On a new host, prove a manual deploy and a manual rollback before enabling deploy mode.
+
+## Versions and release notes
+
+Each deploy writes `app\release.json` (`New-LocalAI-ReleaseInfo` in `deploy\Deployment-LocalAI.ps1`):
+
+- **version**: major.minor from `package.json` at that commit, then the number of commits on `main`
+  (`git rev-list --count`), e.g. `2.0.431`. It rises with every release; bump major.minor in `package.json` by hand
+  for a notable change.
+- **notes**: one entry per merged PR since the previous live release (`git log --first-parent`): the PR title and
+  number, from squash merges (`Title (#92)`) and merge commits (`Merge pull request #93 …`, title from the body).
+- **deployedAt**.
+
+Only the commit is required. If git can't answer, the release ships with just the commit. The app records each new
+release once at startup (`release:history:*` settings, last 50) and serves them at `GET /api/releases`. Health ›
+What's new lists them, and the first page load after an update says "Updated to …". The Inbox notice names the
+version and the changes.
 
 ## Manual deploys
 

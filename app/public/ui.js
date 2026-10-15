@@ -3079,3 +3079,35 @@ async function render(card){
 function mount(){const status=q('#status');if(!status||q('.secure-card',status))return;const card=document.createElement('section');card.className='card secure-card';(q('.dev-tools-pref',status)||q('.topbar',status))?.after(card);render(card)}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(mount,0),{once:true});else setTimeout(mount,0);
 })();
+
+// ==== whats-new.js ====
+// Health › What's new: the running version and the merged changes in each recent release (from /api/releases),
+// plus a one-time notice after an update. The deploy records release notes (deploy/Deployment-LocalAI.ps1).
+(()=>{'use strict';
+const q=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const SEEN_KEY='localai.seenVersion';
+const pref={get(){try{return localStorage.getItem(SEEN_KEY)}catch{return null}},set(v){try{localStorage.setItem(SEEN_KEY,v)}catch{}}};
+const when=iso=>{const d=new Date(iso);return Number.isNaN(d.getTime())?'':d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})};
+let data=null;
+async function load(){try{const r=await fetch('/api/releases',{cache:'no-store'});if(r.ok)data=await r.json()}catch{}return data}
+function render(card){
+ if(!data){card.hidden=true;return}
+ const {current,history,repoUrl}=data,list=(history||[]).slice(0,8);
+ const note=n=>`<li>${esc(n.title)}${n.pr?` <a href="${esc(repoUrl)}/pull/${n.pr}" target="_blank" rel="noopener">#${n.pr}</a>`:''}</li>`;
+ card.innerHTML=`<div class="section-head"><div><h2>What's new</h2><p>Version <b>${esc(current.version)}</b>${current.deployedAt?` · updated ${esc(when(current.deployedAt))}`:''}${current.commit?` · <code>${esc(current.commit.slice(0,10))}</code>`:''}</p></div></div>
+ ${list.length?`<div class="whatsnew-list">${list.map((r,i)=>`<details class="whatsnew-release"${i===0?' open':''}><summary><b>${esc(r.version)}</b><span>${esc(when(r.deployedAt))} · ${r.notes?.length||0} change${r.notes?.length===1?'':'s'}</span></summary>${r.notes?.length?`<ul>${r.notes.map(note).join('')}</ul>`:'<p class="meta">No change list was recorded for this release.</p>'}</details>`).join('')}</div>`:'<p class="meta">Release notes appear here after the next update.</p>'}`;
+}
+function mount(){const status=q('#status');if(!status||q('.whatsnew-card',status))return;const card=document.createElement('section');card.className='card whatsnew-card';card.id='whatsNew';(q('.secure-card',status)||q('.dev-tools-pref',status)||q('.topbar',status))?.after(card);render(card)}
+// After an update, say so once, and let the notice open What's new.
+function announce(){
+ const v=data?.current?.version,seen=pref.get();if(!v)return;pref.set(v);
+ if(!seen||seen===v)return;
+ const t=document.getElementById('toast');if(!t)return;
+ t.innerHTML=`Updated to ${esc(v)}. <button type="button" class="whatsnew-open">See what's new</button>`;t.classList.add('show','whatsnew-toast');
+ t.querySelector('.whatsnew-open').onclick=()=>{t.classList.remove('show');window.showView?.('status');setTimeout(()=>q('#whatsNew')?.scrollIntoView({block:'start'}),100)};
+ clearTimeout(t._hide);t._hide=setTimeout(()=>t.classList.remove('show','whatsnew-toast'),10000);
+}
+async function start(){await load();mount();announce()}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(start,50),{once:true});else setTimeout(start,50);
+})();

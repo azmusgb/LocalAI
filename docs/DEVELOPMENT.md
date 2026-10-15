@@ -47,7 +47,7 @@ All read at startup in `app/server.js` unless noted.
 | `DATA_DIR` | `/data` | SQLite database and backups |
 | `WORKSPACE_ROOT` | `/workspace` | Root for **Files** and **Repository** |
 | `SELF_APP_ROOT` | `/app` | Application source that change requests target |
-| `APP_VERSION` | `1.18` | Reported version; also gates features (below) |
+| `APP_VERSION` | unset | Fallback version when there's no `release.json` and `package.json` is `0.0.0` (below) |
 | `MODEL` | `qwen3:4b-instruct-32k` | Default chat model, protected from deletion |
 | `OLLAMA_URL` | `http://host.docker.internal:11434` | Ollama |
 | `COMFY_URL` | `http://host.docker.internal:8188` | ComfyUI |
@@ -71,8 +71,10 @@ All read at startup in `app/server.js` unless noted.
 | `LOCALAI_CHAT_LEASE_MS` | `60000` | Inbox message reservation (`app/claude-chat.js`) |
 | `LOCALAI_CHAT_PAIR_TTL_MS` | `600000` | Pairing code lifetime (`app/claude-chat.js`) |
 
-Features are gated by the minor version in `APP_VERSION` (`requireFeature` in `app/server.js`; the
-PowerShell Workbench needs 1.17). Leave it unset unless you mean to turn features off; a 2.x version enables all.
+The reported version is the deployed release's (`app/release.json`, written by the deploy), else `package.json`'s
+in a checkout, else `APP_VERSION` (`appVersion` in `app/release.js`). Features are gated by version
+(`requireFeature` in `app/server.js`): 1.x by its minor number, 2.x and later enable everything. See
+[Versions and release notes](DEPLOY.md#versions-and-release-notes).
 
 ## Tests
 

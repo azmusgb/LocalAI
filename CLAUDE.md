@@ -53,4 +53,6 @@ Base `http://10.0.0.21:3080` (the owner's appliance). JSON bodies, no auth.
   `[Console]::OutputEncoding` to UTF-8 before reading git output, and do not run `git` under
   `$ErrorActionPreference = 'Stop'` (stderr becomes a terminating error).
 - `storage.transaction()` is synchronous; never await model or network calls inside it.
-- Don't change `APP_VERSION` casually; it gates features.
+- Versions: `package.json` holds major.minor (bump by hand for a notable change); the deploy appends the commit
+  count on `main` (`2.0.431`) and records the merged PR titles as release notes. PR titles are the release notes,
+  so write them for the owner. See `docs/DEPLOY.md` (Versions and release notes).

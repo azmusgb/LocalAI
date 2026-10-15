@@ -2,6 +2,7 @@ param(
     [string]$TargetRef = 'origin/main',
     [string]$Repo = 'C:\LocalAI\repo',
     [string]$StateDir = 'C:\LocalAI\.deploy',
+    [string]$Live = 'C:\LocalAI\appliance\app',
     [string]$NotifyUrl = 'http://127.0.0.1:3080/api/notifications/system'
 )
 # What the 'LocalAI Safe Deploy' task runs every few minutes. Keeps the host checkout current, runs the safe
@@ -24,7 +25,7 @@ function Notify([string]$title, [string]$detail, [hashtable]$meta) {
 if ($TargetRef -eq 'origin/main' -and -not (git -C $Repo status --porcelain 2>$null)) { git -C $Repo pull -q --ff-only origin main 2>&1 | Out-Null }
 
 $started = Get-Date
-$output = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $Repo 'deploy\Deploy-LocalAI.ps1') -TargetRef $TargetRef -Repo $Repo -StateDir $StateDir 2>&1 | ForEach-Object { "$_" }
+$output = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $Repo 'deploy\Deploy-LocalAI.ps1') -TargetRef $TargetRef -Repo $Repo -Live $Live -StateDir $StateDir 2>&1 | ForEach-Object { "$_" }
 $code = $LASTEXITCODE
 $last = ($output | Where-Object { $_ -match '^(DEPLOYED|NO CHANGE):' } | Select-Object -Last 1)
 $sha = [string](git -C $Repo rev-parse --verify "$TargetRef^{commit}" 2>$null)
@@ -36,8 +37,14 @@ $history = @(if (Test-Path $log) { Get-Content $log | Where-Object { $_ -match '
 Set-Content -Path $log -Value (@($history) + $summary + '--- last run ---' + $output) -Encoding UTF8
 
 if ($code -eq 0 -and $last -like 'DEPLOYED:*') {
-    $subject = [string](git -C $Repo log -1 --format=%s $sha 2>$null)
-    Notify "Local AI updated to $short" $subject @{ commit = $sha.Trim(); outcome = 'deployed' }
+    # The release the deploy recorded: its version and the merged changes since the previous one.
+    $release = try { Get-Content (Join-Path $Live 'release.json') -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $null }
+    $notes = @($release.notes | Where-Object { $_.title } | ForEach-Object { $_.title })
+    $name = if ($release.version) { $release.version } else { $short }
+    $detail = if ($notes.Count -gt 1) { "$($notes.Count) changes, including: " + (($notes | Select-Object -First 3) -join '; ') + ". See Health › What's new." }
+              elseif ($notes.Count -eq 1) { $notes[0] }
+              else { [string](git -C $Repo log -1 --format=%s $sha 2>$null) }
+    Notify "Local AI updated to $name" $detail @{ commit = $sha.Trim(); version = "$($release.version)"; outcome = 'deployed' }
     Remove-Item $failState -ErrorAction SilentlyContinue
 } elseif ($code -ne 0) {
     $previous = if (Test-Path $failState) { (Get-Content $failState -Raw).Trim() } else { '' }
