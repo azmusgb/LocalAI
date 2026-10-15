@@ -38,6 +38,8 @@ await check('home has one command surface and a short breadcrumb', async () => {
 
 await check('change requests and the engineering agent are one page', async () => {
   await page.locator('.ux-primary-item[data-domain="improve"]').click();
+  await page.waitForSelector('#backlog.active'); // Improve opens on its Backlog (sub-project 4)
+  await page.evaluate(() => window.showView('changes'));
   await page.waitForSelector('#changes.active');
   const labels = await secondaryLabels();
   assert.ok(labels.includes('Change requests'));
