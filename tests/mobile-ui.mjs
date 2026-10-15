@@ -152,6 +152,18 @@ await check('phone shell: compact header, underline tabs and content near the to
   assert.deepEqual(problems, []);
 });
 
+await check('phone tab bar and header read labels and icons from the view registry', async () => {
+  await show(phone, 'library');
+  const r = await phone.evaluate(() => ({
+    domains: window.LocalAIViews.DOMAINS.map(d => ({ id: d.id, label: d.label, icon: d.icon })),
+    items: [...document.querySelectorAll('#uxMobileNav [data-domain]')].map(b => ({ id: b.dataset.domain, label: b.querySelector('.ux-mobile-nav-label')?.textContent.trim(), href: b.querySelector('svg use')?.getAttribute('href') })),
+    header: document.querySelector('#uxHeaderDomain').innerText.trim(),
+  }));
+  for (const d of r.domains) assert.ok(typeof d.icon === 'string' && d.icon, `${d.id} has no icon in the registry`);
+  assert.deepEqual(r.items, r.domains.map(d => ({ id: d.id, label: d.label, href: '#i-' + d.icon })));
+  assert.equal(r.header, r.domains.find(d => d.id === 'workspace').label);
+});
+
 await check('phone header: brand on Home, domain button elsewhere that opens the page sheet', async () => {
   await show(phone, 'home');
   assert.equal(await phone.locator('#uxHeaderDomain').isVisible(), false, 'Home shows the brand, not the domain button');

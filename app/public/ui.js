@@ -894,7 +894,7 @@ function buildContext(){
 function buildHeader(){
  const bar=q('#uxContextBar');if(!bar||q('#uxHeader'))return;
  const h=document.createElement('header');h.id='uxHeader';h.className='ux-header';
- h.innerHTML='<div class="ux-header-lead"><div class="ux-header-brand"><span class="ux-header-mark" aria-hidden="true">L</span><span class="ux-header-names"><span class="ux-header-greeting" id="uxHeaderGreeting">Hello</span><span class="ux-header-title">Local AI</span></span></div><button type="button" class="ux-header-domain" id="uxHeaderDomain" aria-expanded="false" aria-controls="uxMobileSheet" aria-label="Home pages"><span id="uxHeaderDomainLabel">Home</span>'+icon('chevron-down')+'</button></div><div class="ux-header-actions" id="uxHeaderActions"><button type="button" class="icon-btn" id="uxHeaderAction" hidden></button><button type="button" class="icon-btn" id="uxSearchBtn" aria-label="Search">'+icon('search')+'</button></div>';
+ h.innerHTML='<div class="ux-header-lead"><div class="ux-header-brand"><span class="ux-header-mark" aria-hidden="true">L</span><span class="ux-header-names"><span class="ux-header-greeting" id="uxHeaderGreeting">Hello</span><span class="ux-header-title">Local AI</span></span></div><button type="button" class="ux-header-domain" id="uxHeaderDomain" aria-expanded="false" aria-controls="uxMobileSheet" aria-label="'+DOMAINS[0].label+' pages"><span id="uxHeaderDomainLabel">'+DOMAINS[0].label+'</span>'+icon('chevron-down')+'</button></div><div class="ux-header-actions" id="uxHeaderActions"><button type="button" class="icon-btn" id="uxHeaderAction" hidden></button><button type="button" class="icon-btn" id="uxSearchBtn" aria-label="Search">'+icon('search')+'</button></div>';
  bar.before(h);
  q('#uxHeaderDomain').addEventListener('click',()=>toggleSheet());
  q('#uxSearchBtn').addEventListener('click',openCommands);
@@ -950,7 +950,7 @@ function scrollStripToActive(){
 function buildMobile(){
  if(q('#uxMobileNav'))return;
  const nav=document.createElement('nav');nav.id='uxMobileNav';nav.className='ux-mobile-nav';nav.setAttribute('aria-label','Primary navigation');
- DOMAINS.forEach(d=>{const b=document.createElement('button');b.type='button';b.dataset.domain=d.id;b.innerHTML='<span class="ux-mobile-nav-icon">'+icon(d.id)+'</span><span class="ux-mobile-nav-label">'+d.label+'</span>';b.addEventListener('click',()=>{toggleSheet(false);navigate(d.defaultView)});nav.appendChild(b)});
+ DOMAINS.forEach(d=>{const b=document.createElement('button');b.type='button';b.dataset.domain=d.id;b.innerHTML='<span class="ux-mobile-nav-icon">'+icon(d.icon)+'</span><span class="ux-mobile-nav-label">'+d.label+'</span>';b.addEventListener('click',()=>{toggleSheet(false);navigate(d.defaultView)});nav.appendChild(b)});
  const sheet=document.createElement('div');sheet.id='uxMobileSheet';sheet.className='ux-mobile-sheet';sheet.dataset.open='false';sheet.innerHTML='<div class="ux-mobile-sheet-handle"></div><div class="ux-mobile-sheet-head"><div><span class="ux-secondary-kicker">Navigate</span><strong id="uxMobileSheetTitle"></strong><small id="uxMobileSheetTagline"></small></div><button type="button" id="uxMobileSheetClose" aria-label="Close menu">×</button></div><div class="ux-mobile-sheet-items" id="uxMobileSheetItems"></div>';
  document.body.append(sheet,nav);q('#uxMobileSheetClose')?.addEventListener('click',()=>toggleSheet(false));
  document.addEventListener('click',e=>{if(sheetOpen&&!sheet.contains(e.target)&&!nav.contains(e.target)&&!e.target.closest?.('#uxContextMenu,#uxHeaderDomain'))toggleSheet(false)});
