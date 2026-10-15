@@ -272,6 +272,7 @@ function certificationInfo() {
   }
 }
 
+const HEALTH_SETTLE_MS = Number(process.env.HEALTH_SETTLE_MS || 120000);
 async function getStatusAndRecordTransition() {
   const services = await Promise.all([
     probe('ollama', 'Intelligence', `${OLLAMA_URL}/api/tags`, [200]),
@@ -285,15 +286,22 @@ async function getStatusAndRecordTransition() {
 
   const overall = overallState(services);
   const previous = readState(STATUS_STORE, {});
-  if (previous.overall && previous.overall !== overall) {
+  const now = new Date();
+  // A slow probe can flip health for one check. Record a change only once the new state has held for
+  // HEALTH_SETTLE_MS, so the Audit log and Inbox show real outages instead of a flicker every minute.
+  if (!previous.overall || previous.overall === overall) {
+    writeState(STATUS_STORE, { overall, checkedAt: now.toISOString() });
+  } else if (previous.pending !== overall) {
+    writeState(STATUS_STORE, { ...previous, pending: overall, pendingSince: now.toISOString(), checkedAt: now.toISOString() });
+  } else if (now - new Date(previous.pendingSince) >= HEALTH_SETTLE_MS) {
     if (overall === 'HEALTHY') {
       recordActivity('recovery', 'System recovered', `Health returned to normal from ${previous.overall}.`, { previous: previous.overall, current: overall });
     } else {
-      const affected = services.filter(x => x.state !== 'HEALTHY').map(x => x.label);
+      const affected = services.filter(x => x.required !== false && x.state !== 'HEALTHY').map(x => x.label);
       recordActivity('system', 'System needs attention', affected.join(', ') || `Health changed to ${overall}.`, { previous: previous.overall, current: overall });
     }
+    writeState(STATUS_STORE, { overall, checkedAt: now.toISOString() });
   }
-  writeState(STATUS_STORE, { overall, checkedAt: new Date().toISOString() });
 
   return {
     appliance: 'Local AI',

@@ -710,7 +710,7 @@ function buildDesktopNav(){
  const shell=document.createElement('div');shell.className='ux-nav-shell';
  const rail=document.createElement('div');rail.className='ux-primary-rail';rail.setAttribute('aria-label','Primary navigation');
  const secondary=document.createElement('div');secondary.className='ux-secondary-nav';
- const secondaryHead=document.createElement('div');secondaryHead.className='ux-secondary-head';secondaryHead.innerHTML='<div><span class="ux-secondary-kicker">Navigate</span><strong id="uxSecondaryTitle">Home</strong><small id="uxSecondaryTagline"></small></div>';
+ const secondaryHead=document.createElement('div');secondaryHead.className='ux-secondary-head';secondaryHead.innerHTML='<div><strong id="uxSecondaryTitle">Home</strong><small id="uxSecondaryTagline"></small></div><button type="button" class="ux-nav-collapse" data-nav-collapse="true" aria-label="Hide page list" title="Hide page list">‹</button>';
  const groups=document.createElement('div');groups.className='ux-secondary-groups';groups.id='uxSecondaryGroups';
  secondary.append(secondaryHead,groups);
  DOMAINS.forEach(d=>{
@@ -718,7 +718,10 @@ function buildDesktopNav(){
    b.addEventListener('click',()=>navigate(d.defaultView));
    rail.appendChild(b);
  });
+ const expand=document.createElement('button');expand.type='button';expand.className='ux-nav-expand';expand.dataset.navCollapse='false';expand.setAttribute('aria-label','Show page list');expand.title='Show page list';expand.textContent='›';rail.appendChild(expand);
  shell.append(rail,secondary);nav.replaceWith(shell);
+ shell.addEventListener('click',e=>{const t=e.target.closest('[data-nav-collapse]');if(t)setCollapsed(t.dataset.navCollapse==='true',true)});
+ setCollapsed(prefGet('localai.navCollapsed')==='1');
  renderSecondary('home');
 }
 function renderSecondary(domainId){
@@ -729,7 +732,7 @@ function renderSecondary(domainId){
  d.groups.forEach(g=>{
    const section=document.createElement('section');section.className='ux-secondary-section';
    const h=document.createElement('div');h.className='ux-secondary-label';h.textContent=g.label;section.appendChild(h);
-   g.views.forEach(v=>{const src=viewButton(v);if(!src)return;const b=src;b.classList.add('ux-secondary-link');b.innerHTML='<span class="ux-link-copy"><strong>'+labelForView(v)+'</strong><small>'+DESCRIPTIONS[v]+'</small></span><span class="ux-link-arrow">›</span>';section.appendChild(b)});
+   g.views.forEach(v=>{const src=viewButton(v);if(!src)return;const b=src;b.classList.add('ux-secondary-link');b.title=DESCRIPTIONS[v]||'';b.setAttribute('aria-description',DESCRIPTIONS[v]||'');b.innerHTML='<span class="ux-link-icon" aria-hidden="true">'+(REG.view(v)?.icon||'')+'</span><span class="ux-link-label">'+labelForView(v)+'</span>';section.appendChild(b)});
    holder.appendChild(section);
  });
 }
@@ -757,6 +760,23 @@ function buildContext(){
  window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');if(!b)return;b.hidden=total===0;q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',`Inbox: ${inbox.unread} unread, ${inbox.pending} approvals waiting`)});
  q('#uxInboxBtn')?.addEventListener('click',()=>navigate(inbox.pending&&!inbox.unread?'approvals':'inbox'));
 }
+function prefGet(k){try{return localStorage.getItem(k)}catch{return null}}
+function prefSet(k,v){try{localStorage.setItem(k,v)}catch{}}
+function setCollapsed(on,fromUser){document.body.classList.toggle('ux-nav-collapsed',on);if(fromUser){prefSet('localai.navCollapsed',on?'1':'0');q(on?'.ux-nav-expand':'.ux-nav-collapse')?.focus()}}
+function buildPageStrip(){
+ const bar=q('#uxContextBar');if(!bar||q('#uxPageStrip'))return;
+ const strip=document.createElement('nav');strip.id='uxPageStrip';strip.className='ux-page-strip';strip.setAttribute('aria-label','Pages in this section');
+ bar.after(strip);
+ strip.addEventListener('click',e=>{const b=e.target.closest('[data-strip-view]');if(b){toggleSheet(false);navigate(b.dataset.stripView)}});
+}
+function renderPageStrip(d,page){
+ const strip=q('#uxPageStrip');if(!strip)return;
+ const views=d.groups.flatMap(g=>g.views).filter(v=>viewButton(v));
+ const key=d.id+'|'+views.join(',');
+ if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=views.map(v=>'<button type="button" data-strip-view="'+v+'">'+labelForView(v)+'</button>').join('');}
+ strip.hidden=views.length<2;
+ qa('[data-strip-view]',strip).forEach(b=>{const on=b.dataset.stripView===page;b.classList.toggle('active',on);if(on){b.setAttribute('aria-current','page');if(strip.scrollWidth>strip.clientWidth)strip.scrollLeft=Math.max(0,b.offsetLeft-strip.clientWidth/2+b.offsetWidth/2)}else b.removeAttribute('aria-current')});
+}
 function buildMobile(){
  if(q('#uxMobileNav'))return;
  const nav=document.createElement('div');nav.id='uxMobileNav';nav.className='ux-mobile-nav';nav.setAttribute('role','navigation');nav.setAttribute('aria-label','Primary navigation');
@@ -773,7 +793,7 @@ function renderSheet(){
 function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;const s=q('#uxMobileSheet');if(s)s.dataset.open=String(sheetOpen);q('#uxContextMenu')?.setAttribute('aria-expanded',String(sheetOpen));document.body.classList.toggle('ux-sheet-open',sheetOpen);if(sheetOpen)renderSheet()}
 function sync(forced){
  const view=REG.resolve(forced||activeView()),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
- const page=pageForView(view),viewLabel=labelForView(page);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;q('#uxContextBar')?.classList.toggle('ux-context-same',viewLabel===d.label);
+ const page=pageForView(view),viewLabel=labelForView(page);renderPageStrip(d,page);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;q('#uxContextBar')?.classList.toggle('ux-context-same',viewLabel===d.label);
  qa('.ux-primary-item').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
  qa('#uxMobileNav [data-domain]').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
  if(q('#uxSecondaryTitle')?.textContent!==d.label)renderSecondary(d.id);
@@ -782,7 +802,7 @@ function sync(forced){
  if(sheetOpen)renderSheet();
 }
 function observeViews(){const views=qa('.view');if(!views.length)return;const mo=new MutationObserver(()=>sync());views.forEach(v=>mo.observe(v,{attributes:true,attributeFilter:['class']}));document.addEventListener('click',e=>{const b=e.target.closest?.('.navbtn[data-view]');if(b)requestAnimationFrame(()=>sync(b.dataset.view))})}
-function init(){document.body.classList.add('ux-v3');buildIntegrationsView();buildTabs();buildDesktopNav();buildContext();buildMobile();observeViews();sync()}
+function init(){document.body.classList.add('ux-v3');buildIntegrationsView();buildTabs();buildDesktopNav();buildContext();buildPageStrip();buildMobile();observeViews();sync()}
 if(document.readyState==='complete')init();else window.addEventListener('load',init,{once:true});
 })();
 
@@ -2391,8 +2411,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   else init();
 })();
 
-// ===== Phones: long lists =====================================================
-// On a phone, long lists show their first few items and a "Show N more" button. Without it the Change ledger,
+// ===== Long lists ============================================================
+// Long lists show their first items and a "Show N more" button: a few on a phone, three times as many on a
+// larger screen. Without it the Change ledger,
 // Files and Library pages ran to tens of thousands of pixels. Lists re-render often (polling), so a MutationObserver
 // re-applies the limit; "Show more" is remembered per list until the page reloads.
 (() => {
@@ -2406,9 +2427,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     observer?.disconnect();
     list.querySelector(':scope > .mobile-more')?.remove();
     const items = [...list.children];
-    const limit = LIMITS[list.id];
+    const limit = LIMITS[list.id] * (phone.matches ? 1 : 3);
     // Clipping only one or two items saves nothing; show them.
-    const clip = phone.matches && list.dataset.showAll !== 'true' && items.length > limit + 2;
+    const clip = list.dataset.showAll !== 'true' && items.length > limit + 2;
     items.forEach((item, i) => item.classList.toggle('mobile-clipped', clip && i >= limit));
     if (clip) {
       const more = document.createElement('button');
