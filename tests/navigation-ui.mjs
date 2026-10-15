@@ -16,6 +16,8 @@ async function check(name, fn) {
 }
 
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+// These checks cover the Build domain, which a fresh install hides until Developer tools is switched on.
+await page.addInitScript(() => localStorage.setItem('localai.devTools', '1'));
 const pageErrors = [];
 page.on('pageerror', e => pageErrors.push(e.message));
 await page.goto(base, { waitUntil: 'domcontentloaded' });
@@ -23,7 +25,7 @@ await page.waitForSelector('.ux-primary-rail');
 // window.showView is published once app.js finishes binding, which can land after the rail renders.
 await page.waitForFunction(() => typeof window.showView === 'function');
 
-const secondaryLabels = () => page.locator('#uxSecondaryGroups .ux-link-copy strong').allInnerTexts();
+const secondaryLabels = () => page.locator('#uxSecondaryGroups .ux-link-label').allInnerTexts();
 const crumb = async () => (await page.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').trim();
 
 await check('home has one command surface and a short breadcrumb', async () => {
@@ -122,12 +124,28 @@ await check('audit log links runs to Runs', async () => {
   await page.waitForSelector('#runs.active');
 });
 
+await check('page list collapses to the rail, shows the page strip, and remembers it', async () => {
+  await page.evaluate(() => window.showView('library'));
+  await page.locator('.ux-nav-collapse').click();
+  assert.equal(await page.locator('.ux-secondary-nav').isVisible(), false);
+  assert.deepEqual(await page.locator('#uxPageStrip button').allInnerTexts(), ['Chat', 'Images', 'Library', 'Projects']);
+  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Library');
+  await page.locator('#uxPageStrip [data-strip-view="projects"]').click();
+  await page.waitForSelector('#projects.active');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.body.classList.contains('ux-nav-collapsed'));
+  await page.locator('.ux-nav-expand').click();
+  assert.equal(await page.locator('.ux-secondary-nav').isVisible(), true);
+  assert.equal(await page.locator('#uxPageStrip').isVisible(), false);
+});
+
 await check('no script errors while navigating', async () => {
   assert.deepEqual(pageErrors, []);
 });
 await page.close();
 
 const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+await mobile.addInitScript(() => localStorage.setItem('localai.devTools', '1'));
 await mobile.goto(base, { waitUntil: 'domcontentloaded' });
 await mobile.waitForSelector('#uxMobileNav');
 await mobile.waitForFunction(() => typeof window.showView === 'function');
@@ -148,6 +166,17 @@ await check('mobile tab pages have no horizontal overflow', async () => {
     const dims = await mobile.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
     assert.ok(dims.sw <= dims.cw + 2, `${view}: scrollWidth ${dims.sw} > clientWidth ${dims.cw}`);
   }
+});
+await check('phone: the page strip switches pages in the section in one tap', async () => {
+  await mobile.locator('#uxMobileNav [data-domain="workspace"]').tap();
+  await mobile.waitForSelector('#ask.active');
+  assert.equal(await mobile.locator('.ux-context-domain').innerText(), 'Workspace');
+  assert.deepEqual(await mobile.locator('#uxPageStrip button').allInnerTexts(), ['Chat', 'Images', 'Library', 'Projects']);
+  await mobile.locator('#uxPageStrip [data-strip-view="library"]').tap();
+  await mobile.waitForSelector('#library.active');
+  assert.equal(await mobile.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Library');
+  const h = await mobile.locator('#uxPageStrip button').first().evaluate(b => b.getBoundingClientRect().height);
+  assert.ok(h >= 43.5 && h <= 52, `strip button height ${h}`);
 });
 await mobile.close();
 await browser.close();

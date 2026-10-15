@@ -1227,10 +1227,81 @@ kbd{font:600 11px/1 var(--ds-mono);padding:2px 6px;border-radius:6px;border:1px 
   /* Inbox alerts can carry whole pasted documents; four lines is enough to recognise one. */
   #inboxList .item-card>.muted{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 
-  /* Long lists: see "Show more" in ui.js */
-  .mobile-clipped{display:none!important}
-  .mobile-more{width:100%;margin-top:8px}
 }
 @media (max-width:340px){
   body.ux-v3 .summary-grid,body.ux-v3 .capability-strip,.run-summary-grid,.ux-int-metrics,.model-runtime-summary,body.ux-v3 .library-grid{grid-template-columns:1fr!important}
 }
+/* ==== first-run ==== */
+.dev-tools-off [data-domain="build"],.dev-tools-off .mode[data-mode="engineering"]{display:none!important}
+.dev-tools-pref{display:flex;gap:12px;align-items:flex-start;margin-bottom:12px;cursor:pointer}
+.dev-tools-pref input{width:20px;height:20px;margin-top:2px;accent-color:var(--ds-accent);flex:none}
+.dev-tools-pref span{display:grid;gap:3px;color:var(--ds-text);font-size:14px}.dev-tools-pref small{color:var(--ds-muted);font-size:12px}
+.first-run{margin:6px 0 16px;padding:20px 22px;border-color:var(--ds-line-2);background:linear-gradient(180deg,var(--ds-surface-2),var(--ds-surface))}
+.first-run-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.first-run-head h2{font-size:20px;margin-bottom:4px}.first-run-head p{color:var(--ds-muted);margin:0}
+.first-run-head .iconbtn{min-width:44px;min-height:44px;font-size:20px}
+.first-run-steps{list-style:none;margin:16px 0 4px;padding:0;display:grid;gap:4px;counter-reset:step}
+.first-run-steps>li{display:grid;grid-template-columns:32px minmax(0,1fr);gap:12px;padding:12px 0;border-top:1px solid var(--ds-line);counter-increment:step}
+.first-run-steps>li:first-child{border-top:0}
+.first-run-mark{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;border:2px solid var(--ds-line-2);color:var(--ds-muted);font-size:13px;font-weight:700}
+.first-run-mark::before{content:counter(step)}
+[data-state="done"]>.first-run-mark{background:var(--ds-good);border-color:var(--ds-good);color:#05170e}[data-state="done"]>.first-run-mark::before{content:'✓'}
+[data-state="todo"]>.first-run-mark{border-color:var(--ds-progress);color:var(--ds-progress)}
+[data-state="checking"]>.first-run-mark{border-top-color:var(--ds-accent);animation:first-run-spin 1s linear infinite}[data-state="checking"]>.first-run-mark::before{content:''}
+@keyframes first-run-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){[data-state="checking"]>.first-run-mark{animation:none}}
+.first-run-steps strong{font-size:15px}.first-run-detail{color:var(--ds-soft);font-size:13px;margin-top:3px;line-height:1.55}
+.first-run-detail code{font-family:var(--ds-mono);background:var(--ds-bg);border:1px solid var(--ds-line);border-radius:6px;padding:2px 6px;font-size:12px;overflow-wrap:anywhere}
+.first-run-detail .btn{min-height:36px;padding:4px 12px;margin:6px 6px 0 0}
+.first-run-detail a,.first-run-foot a{color:var(--ds-accent);text-decoration:underline}
+.first-run-samples{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+.first-run-samples .btn{display:grid;gap:4px;justify-content:start;align-content:start;justify-items:start;text-align:left;padding:12px;min-height:44px}.first-run-samples .btn span{font-weight:650}.first-run-samples .btn small{color:var(--ds-muted);font-size:12px;line-height:1.4}
+.first-run-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:8px;padding-top:12px;border-top:1px solid var(--ds-line)}
+.first-run-foot .btn{min-height:44px}
+@media(max-width:760px){.first-run{padding:16px}.first-run-samples{grid-template-columns:1fr}.first-run-foot .btn{width:100%}}
+/* ==== nav v4: compact page list, collapsible, page strip ==== */
+:root{--ux-nav-width:248px}
+body.ux-v3 .ux-nav-shell{grid-template-columns:76px minmax(0,1fr)}
+.ux-secondary-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;padding:16px 10px 10px 14px}
+.ux-secondary-head small{font-size:12px;color:var(--ds-muted)}
+.ux-nav-collapse,.ux-nav-expand{border:1px solid transparent;background:transparent;color:var(--ds-muted);border-radius:var(--ds-r-sm);min-width:32px;min-height:32px;font-size:18px;line-height:1;cursor:pointer}
+.ux-nav-collapse:hover,.ux-nav-expand:hover{background:var(--ds-surface-2);color:var(--ds-text);border-color:var(--ds-line)}
+.ux-nav-expand{display:none;margin-top:auto;align-self:center}
+body.ux-v3 .ux-secondary-label{font-size:11px;font-weight:650;color:var(--ds-faint);padding:12px 10px 4px;letter-spacing:0;text-transform:none}
+body.ux-v3 .navbtn.ux-secondary-link{grid-template-columns:22px minmax(0,1fr);min-height:38px;padding:6px 10px;gap:10px;color:var(--ds-muted);font-size:14px}
+body.ux-v3 .navbtn.ux-secondary-link .ux-link-icon{width:22px;text-align:center;font-size:13px;color:var(--ds-faint)}
+body.ux-v3 .navbtn.ux-secondary-link .ux-link-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:560}
+body.ux-v3 .navbtn.ux-secondary-link.active{color:var(--ds-text);background:var(--ds-accent-soft);border-color:transparent;box-shadow:inset 3px 0 0 var(--ds-accent)}
+body.ux-v3 .navbtn.ux-secondary-link.active .ux-link-icon{color:var(--ds-accent)}
+/* Collapsed: only the section rail stays; pages switch from the strip above the content. */
+body.ux-v3.ux-nav-collapsed{--ux-nav-width:76px}
+body.ux-v3.ux-nav-collapsed .ux-nav-shell{grid-template-columns:76px 0}
+body.ux-v3.ux-nav-collapsed .ux-secondary-nav{display:none}
+body.ux-v3.ux-nav-collapsed .ux-nav-expand{display:block}
+body.ux-v3.ux-nav-collapsed .brand-title,body.ux-v3.ux-nav-collapsed .brand-sub,body.ux-v3.ux-nav-collapsed .side-bottom{display:none}
+/* Page strip */
+.ux-page-strip{display:none;align-items:center;height:auto;min-height:0;gap:6px;overflow-x:auto;scrollbar-width:none;margin:-8px 0 16px;padding:2px}
+.ux-page-strip::-webkit-scrollbar{display:none}
+.ux-page-strip[hidden]{display:none!important}
+.ux-page-strip button{flex:none;border:1px solid var(--ds-line);background:var(--ds-surface);color:var(--ds-muted);border-radius:999px;min-height:40px;padding:0 16px;font-size:14px;font-weight:560;white-space:nowrap;cursor:pointer}
+.ux-page-strip button:hover{color:var(--ds-text);border-color:var(--ds-line-2)}
+.ux-page-strip button.active{background:var(--ds-accent-soft);border-color:var(--ds-accent);color:var(--ds-text)}
+body.ux-v3.ux-nav-collapsed .ux-page-strip{display:flex}
+@media(max-width:760px){
+  .ux-page-strip{display:flex;margin:-4px -13px 14px;padding:2px 13px;scroll-padding:0 13px}
+  .ux-page-strip button{min-height:44px}
+  /* The top bar names the section; the strip and the page heading name the page, so it isn't said twice. */
+  body.ux-v3 .ux-context-bar .ux-context-domain{display:inline!important;font-size:16px;font-weight:650;color:var(--ds-text)}
+  body.ux-v3 .ux-context-bar .ux-context-view,body.ux-v3 .ux-context-bar .ux-context-sep{display:none!important}
+  /* The tab bar keeps equal slots when a section (Build) is hidden. */
+  body.ux-v3 .ux-mobile-nav{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:1fr}
+}
+/* Long lists, all sizes: see "Long lists" in ui.js */
+.mobile-clipped{display:none!important}
+.mobile-more{width:100%;margin-top:8px;grid-column:1/-1}
+/* Detail panes and captured stack traces stay readable instead of running down the page. */
+#changeDetail.preview-pane{max-height:70vh;overflow:auto}
+#issueList .item-card pre,#issueList .item-card .muted,#qualityEvents .item-card pre{max-height:9em;overflow:auto;overflow-wrap:anywhere}
+.library-grid>.empty{grid-column:1/-1}
+.inbox-resolved{border-top:1px solid var(--ds-line);margin-top:12px;padding-top:4px}
+.inbox-resolved>summary{min-height:44px;display:flex;align-items:center;color:var(--ds-soft);font-weight:600}
+.inbox-resolved .item-card{opacity:.82}

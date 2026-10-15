@@ -33,7 +33,7 @@ function renderResults(){const el=$('agentResultBody');if(!el)return;const m=cur
  if(activeResultTab==='evidence'){const rows=[];(m.results||[]).forEach(r=>(r.evidence||[]).forEach(e=>rows.push([r.agentName||r.agentId,e])));el.innerHTML=rows.length?`<div class="evidence-table">${rows.map(([a,e])=>`<div><strong>${esc(a)}</strong><code>${esc(e)}</code></div>`).join('')}</div>`:'<div class="empty">No evidence recorded yet.</div>'}
  if(activeResultTab==='routing'){el.innerHTML=m.routing?`<pre class="agent-result-pre">${esc(JSON.stringify(m.routing,null,2))}</pre>`:'<div class="empty">No routing decision available.</div>'}
 }
-function renderHistory(){const el=$('agentMissionHistory');if(!el)return;el.innerHTML=history.length?history.slice(0,20).map(m=>{const s=missionSummary(m);return `<button class="history-row ${m.id===currentMission?.id?'active':''}" data-mission-id="${esc(m.id)}"><span class="history-state ${esc(m.status)}"></span><span><strong>${esc(m.goal||m.id)}</strong><small>${humanState(m.status)} · ${s.done}/${s.total} workers · ${new Date(m.updatedAt||m.createdAt).toLocaleString()}</small></span><span>›</span></button>`}).join(''):'<div class="empty">No mission history yet.</div>';el.querySelectorAll('[data-mission-id]').forEach(b=>b.onclick=()=>{const m=history.find(x=>x.id===b.dataset.missionId);if(m){renderMission(m);window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:m}}))}});applyHistoryFilter()}
+function renderHistory(){const el=$('agentMissionHistory');if(!el)return;el.innerHTML=history.length?history.slice(0,20).map(m=>{const s=missionSummary(m);return `<button class="history-row ${m.id===currentMission?.id?'active':''}" data-mission-id="${esc(m.id)}"><span class="history-state ${esc(m.status)}"></span><span><strong>${esc(m.goal||m.id)}</strong><small>${humanState(m.status)} · ${s.done}/${s.total} workers · ${new Date(m.updatedAt||m.createdAt).toLocaleString()}</small></span><span>›</span></button>`}).join(''):'<div class="empty">No missions yet. Describe a goal above to run your first one.</div>';el.querySelectorAll('[data-mission-id]').forEach(b=>b.onclick=()=>{const m=history.find(x=>x.id===b.dataset.missionId);if(m){renderMission(m);window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:m}}))}});applyHistoryFilter()}
 function renderHistorySelection(){renderHistory()}
 async function loadHistory(){try{const j=await req('/api/agents/missions');history=j.items||j.missions||[];renderHistory();if(!currentMission&&history[0])renderMission(history.find(m=>m.status==='running')||history[0])}catch(e){notice('error','Could not load mission history: '+e.message)}}
 async function startMission(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter a mission objective first.');return}const body={goal,projectId:$('agentProject')?.value||''},ids=manualIds();if(ids?.length)body.agentIds=ids;const b=$('missionRunBtn');if(b){b.disabled=true;b.textContent='Starting…'}clearNotice();try{await preview();notice('info','Mission accepted. Agent World will update live as workers execute.');req('/api/agents/missions/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}).then(j=>{if(j.mission)renderMission(j.mission);loadHistory()}).catch(e=>{notice('error',e.message,'<button type="button" class="btn" id="agentRetryBtn">Retry</button>');setTimeout(()=>{const r=$('agentRetryBtn');if(r)r.onclick=startMission},0)})}catch(e){notice('error',e.message)}finally{if(b){b.disabled=false;b.textContent='Start Mission'}}}
@@ -498,7 +498,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     }
 
     if (!installed.length) {
-      list.innerHTML = '<div class="empty">No installed Ollama models were reported.</div>';
+      list.innerHTML = '<div class="empty">No models installed yet. On the Windows host, run <code>ollama pull qwen3:4b-instruct-32k</code> in PowerShell, then reload this page.</div>';
     } else {
       list.replaceChildren();
       installed.forEach((item) => {
@@ -710,7 +710,7 @@ function buildDesktopNav(){
  const shell=document.createElement('div');shell.className='ux-nav-shell';
  const rail=document.createElement('div');rail.className='ux-primary-rail';rail.setAttribute('aria-label','Primary navigation');
  const secondary=document.createElement('div');secondary.className='ux-secondary-nav';
- const secondaryHead=document.createElement('div');secondaryHead.className='ux-secondary-head';secondaryHead.innerHTML='<div><span class="ux-secondary-kicker">Navigate</span><strong id="uxSecondaryTitle">Home</strong><small id="uxSecondaryTagline"></small></div>';
+ const secondaryHead=document.createElement('div');secondaryHead.className='ux-secondary-head';secondaryHead.innerHTML='<div><strong id="uxSecondaryTitle">Home</strong><small id="uxSecondaryTagline"></small></div><button type="button" class="ux-nav-collapse" data-nav-collapse="true" aria-label="Hide page list" title="Hide page list">‹</button>';
  const groups=document.createElement('div');groups.className='ux-secondary-groups';groups.id='uxSecondaryGroups';
  secondary.append(secondaryHead,groups);
  DOMAINS.forEach(d=>{
@@ -718,7 +718,10 @@ function buildDesktopNav(){
    b.addEventListener('click',()=>navigate(d.defaultView));
    rail.appendChild(b);
  });
+ const expand=document.createElement('button');expand.type='button';expand.className='ux-nav-expand';expand.dataset.navCollapse='false';expand.setAttribute('aria-label','Show page list');expand.title='Show page list';expand.textContent='›';rail.appendChild(expand);
  shell.append(rail,secondary);nav.replaceWith(shell);
+ shell.addEventListener('click',e=>{const t=e.target.closest('[data-nav-collapse]');if(t)setCollapsed(t.dataset.navCollapse==='true',true)});
+ setCollapsed(prefGet('localai.navCollapsed')==='1');
  renderSecondary('home');
 }
 function renderSecondary(domainId){
@@ -729,7 +732,7 @@ function renderSecondary(domainId){
  d.groups.forEach(g=>{
    const section=document.createElement('section');section.className='ux-secondary-section';
    const h=document.createElement('div');h.className='ux-secondary-label';h.textContent=g.label;section.appendChild(h);
-   g.views.forEach(v=>{const src=viewButton(v);if(!src)return;const b=src;b.classList.add('ux-secondary-link');b.innerHTML='<span class="ux-link-copy"><strong>'+labelForView(v)+'</strong><small>'+DESCRIPTIONS[v]+'</small></span><span class="ux-link-arrow">›</span>';section.appendChild(b)});
+   g.views.forEach(v=>{const src=viewButton(v);if(!src)return;const b=src;b.classList.add('ux-secondary-link');b.title=DESCRIPTIONS[v]||'';b.setAttribute('aria-description',DESCRIPTIONS[v]||'');b.innerHTML='<span class="ux-link-icon" aria-hidden="true">'+(REG.view(v)?.icon||'')+'</span><span class="ux-link-label">'+labelForView(v)+'</span>';section.appendChild(b)});
    holder.appendChild(section);
  });
 }
@@ -757,6 +760,23 @@ function buildContext(){
  window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');if(!b)return;b.hidden=total===0;q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',`Inbox: ${inbox.unread} unread, ${inbox.pending} approvals waiting`)});
  q('#uxInboxBtn')?.addEventListener('click',()=>navigate(inbox.pending&&!inbox.unread?'approvals':'inbox'));
 }
+function prefGet(k){try{return localStorage.getItem(k)}catch{return null}}
+function prefSet(k,v){try{localStorage.setItem(k,v)}catch{}}
+function setCollapsed(on,fromUser){document.body.classList.toggle('ux-nav-collapsed',on);if(fromUser){prefSet('localai.navCollapsed',on?'1':'0');q(on?'.ux-nav-expand':'.ux-nav-collapse')?.focus()}}
+function buildPageStrip(){
+ const bar=q('#uxContextBar');if(!bar||q('#uxPageStrip'))return;
+ const strip=document.createElement('nav');strip.id='uxPageStrip';strip.className='ux-page-strip';strip.setAttribute('aria-label','Pages in this section');
+ bar.after(strip);
+ strip.addEventListener('click',e=>{const b=e.target.closest('[data-strip-view]');if(b){toggleSheet(false);navigate(b.dataset.stripView)}});
+}
+function renderPageStrip(d,page){
+ const strip=q('#uxPageStrip');if(!strip)return;
+ const views=d.groups.flatMap(g=>g.views).filter(v=>viewButton(v));
+ const key=d.id+'|'+views.join(',');
+ if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=views.map(v=>'<button type="button" data-strip-view="'+v+'">'+labelForView(v)+'</button>').join('');}
+ strip.hidden=views.length<2;
+ qa('[data-strip-view]',strip).forEach(b=>{const on=b.dataset.stripView===page;b.classList.toggle('active',on);if(on){b.setAttribute('aria-current','page');if(strip.scrollWidth>strip.clientWidth)strip.scrollLeft=Math.max(0,b.offsetLeft-strip.clientWidth/2+b.offsetWidth/2)}else b.removeAttribute('aria-current')});
+}
 function buildMobile(){
  if(q('#uxMobileNav'))return;
  const nav=document.createElement('div');nav.id='uxMobileNav';nav.className='ux-mobile-nav';nav.setAttribute('role','navigation');nav.setAttribute('aria-label','Primary navigation');
@@ -773,7 +793,7 @@ function renderSheet(){
 function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;const s=q('#uxMobileSheet');if(s)s.dataset.open=String(sheetOpen);q('#uxContextMenu')?.setAttribute('aria-expanded',String(sheetOpen));document.body.classList.toggle('ux-sheet-open',sheetOpen);if(sheetOpen)renderSheet()}
 function sync(forced){
  const view=REG.resolve(forced||activeView()),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
- const page=pageForView(view),viewLabel=labelForView(page);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;q('#uxContextBar')?.classList.toggle('ux-context-same',viewLabel===d.label);
+ const page=pageForView(view),viewLabel=labelForView(page);renderPageStrip(d,page);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;q('#uxContextBar')?.classList.toggle('ux-context-same',viewLabel===d.label);
  qa('.ux-primary-item').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
  qa('#uxMobileNav [data-domain]').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
  if(q('#uxSecondaryTitle')?.textContent!==d.label)renderSecondary(d.id);
@@ -782,7 +802,7 @@ function sync(forced){
  if(sheetOpen)renderSheet();
 }
 function observeViews(){const views=qa('.view');if(!views.length)return;const mo=new MutationObserver(()=>sync());views.forEach(v=>mo.observe(v,{attributes:true,attributeFilter:['class']}));document.addEventListener('click',e=>{const b=e.target.closest?.('.navbtn[data-view]');if(b)requestAnimationFrame(()=>sync(b.dataset.view))})}
-function init(){document.body.classList.add('ux-v3');buildIntegrationsView();buildTabs();buildDesktopNav();buildContext();buildMobile();observeViews();sync()}
+function init(){document.body.classList.add('ux-v3');buildIntegrationsView();buildTabs();buildDesktopNav();buildContext();buildPageStrip();buildMobile();observeViews();sync()}
 if(document.readyState==='complete')init();else window.addEventListener('load',init,{once:true});
 })();
 
@@ -2391,8 +2411,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   else init();
 })();
 
-// ===== Phones: long lists =====================================================
-// On a phone, long lists show their first few items and a "Show N more" button. Without it the Change ledger,
+// ===== Long lists ============================================================
+// Long lists show their first items and a "Show N more" button: a few on a phone, three times as many on a
+// larger screen. Without it the Change ledger,
 // Files and Library pages ran to tens of thousands of pixels. Lists re-render often (polling), so a MutationObserver
 // re-applies the limit; "Show more" is remembered per list until the page reloads.
 (() => {
@@ -2406,9 +2427,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     observer?.disconnect();
     list.querySelector(':scope > .mobile-more')?.remove();
     const items = [...list.children];
-    const limit = LIMITS[list.id];
+    const limit = LIMITS[list.id] * (phone.matches ? 1 : 3);
     // Clipping only one or two items saves nothing; show them.
-    const clip = phone.matches && list.dataset.showAll !== 'true' && items.length > limit + 2;
+    const clip = list.dataset.showAll !== 'true' && items.length > limit + 2;
     items.forEach((item, i) => item.classList.toggle('mobile-clipped', clip && i >= limit));
     if (clip) {
       const more = document.createElement('button');
@@ -2436,4 +2457,93 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
   else start();
   phone.addEventListener('change', () => observers.forEach((_, list) => apply(list)));
+})();
+
+// ==== first-run.js ====
+// "Get started" on Home for a new install, and the Developer tools preference that hides the Build domain.
+(()=>{'use strict';
+const q=(s,r=document)=>r.querySelector(s),qa=(s,r=document)=>[...r.querySelectorAll(s)];
+const DEV_KEY='localai.devTools',DONE_KEY='localai.firstRun.done';
+const pref={get(k){try{return localStorage.getItem(k)}catch{return null}},set(k,v){try{localStorage.setItem(k,v)}catch{}}};
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function getJson(url){const r=await fetch(url,{cache:'no-store'});return r.json()}
+let config=null;
+async function loadConfig(){if(!config)config=await getJson('/api/config').catch(()=>({}));return config}
+
+// Developer tools: change requests, the Claude board, Workbench and PowerShell. An install that has used them
+// starts with them shown; a new one starts with them hidden. The choice is remembered per browser.
+function applyDevTools(on,fromToggle=false){
+ document.body.classList.toggle('dev-tools-off',!on);
+ qa('[data-dev-tools-toggle]').forEach(i=>{i.checked=on});
+ const active=q('.view.active')?.id;
+ if(fromToggle&&!on&&window.LocalAIViews?.view(active)?.domain==='build'&&typeof window.showView==='function')window.showView('home');
+}
+async function initDevTools(){
+ const saved=pref.get(DEV_KEY);
+ if(saved!==null)return applyDevTools(saved==='1');
+ applyDevTools(!!(await loadConfig()).developerHistory);
+}
+function mountDevToolsToggle(){
+ const status=q('#status');if(!status||q('.dev-tools-pref',status))return;
+ const row=document.createElement('label');row.className='dev-tools-pref card';
+ row.innerHTML='<input type="checkbox" data-dev-tools-toggle><span><strong>Show developer tools</strong><small>Adds Build to the menu: change requests, the Claude board, Workbench and PowerShell.</small></span>';
+ status.querySelector('.topbar')?.after(row);
+ row.querySelector('input').addEventListener('change',e=>{pref.set(DEV_KEY,e.target.checked?'1':'0');applyDevTools(e.target.checked,true)});
+ row.querySelector('input').checked=!document.body.classList.contains('dev-tools-off');
+}
+
+// Get started: shown until dismissed, and only while something is missing (no model yet, or nothing made yet).
+const SAMPLES=[
+ {mode:'ask',label:'Ask a question',text:'In three sentences, what can a private AI on my own computer help me with?'},
+ {mode:'research',label:'Research the web',text:'What are the most useful free tools for organising family photos?'},
+ {mode:'create',label:'Make an image',text:'A lighthouse at dusk, soft watercolor'}
+];
+function stepHtml(id,title){return `<li data-step="${id}" data-state="checking"><span class="first-run-mark" aria-hidden="true"></span><div><strong>${title}</strong><div class="first-run-detail">Checking…</div></div></li>`}
+function setStep(card,id,state,html){const li=q(`[data-step="${id}"]`,card);if(!li)return;li.dataset.state=state;q('.first-run-detail',li).innerHTML=html}
+async function checkSteps(card){
+ const [status,models]=await Promise.all([getJson('/api/status').catch(()=>null),getJson('/api/models').catch(()=>null)]);
+ const coreDown=(status?.services||[]).filter(s=>s.required!==false&&s.state==='DOWN');
+ if(!status)setStep(card,'service','todo','Local AI did not answer. Check that Docker Desktop is running on the Windows host, then reload this page.');
+ else if(coreDown.length)setStep(card,'service','todo',`Running, but ${esc(coreDown.map(s=>s.label||s.name).join(', '))} ${coreDown.length===1?'is':'are'} not answering. <a href="#" data-goto="status">See Health</a>`);
+ else setStep(card,'service','done','Running on this computer. Nothing you type leaves it unless you turn on web research.');
+ const model=models?.default||config?.model||'the default model';
+ if(models?.defaultInstalled)setStep(card,'model','done',`<code>${esc(model)}</code> is installed and ready.`);
+ else setStep(card,'model','todo',`Not installed yet. On the Windows host, open PowerShell and run <code class="first-run-cmd">ollama pull ${esc(model)}</code> <button type="button" class="btn" data-first-run-copy>Copy</button> <button type="button" class="btn" data-first-run-recheck>Check again</button>`);
+ return !!models?.defaultInstalled;
+}
+function runSample(s){
+ q(`.mode[data-mode="${s.mode}"]`)?.click();
+ const input=q('#commandInput');if(!input)return;input.value=s.text;input.dispatchEvent(new Event('input',{bubbles:true}));
+ q('#commandGo')?.click();
+ pref.set(DONE_KEY+'.tried','1');
+}
+async function copyCommand(btn){
+ const code=q('.first-run-cmd');if(!code)return;
+ try{await navigator.clipboard.writeText(code.textContent);btn.textContent='Copied'}
+ catch{const r=document.createRange();r.selectNodeContents(code);const sel=getSelection();sel.removeAllRanges();sel.addRange(r);btn.textContent='Selected, press Ctrl+C'}
+}
+async function mountFirstRun(){
+ if(pref.get(DONE_KEY)==='1')return;
+ const home=q('#home'),hero=q('#home .workspace-hero');if(!home||!hero||q('#firstRun'))return;
+ const [models,library]=await Promise.all([getJson('/api/models').catch(()=>null),getJson('/api/library').catch(()=>null)]);
+ if(models?.defaultInstalled&&(library?.items||[]).length)return;
+ await loadConfig();
+ const card=document.createElement('section');card.id='firstRun';card.className='first-run card';card.setAttribute('aria-labelledby','firstRunTitle');
+ card.innerHTML=`<div class="first-run-head"><div><h2 id="firstRunTitle">Get started</h2><p>Two checks, then try a first task. Everything runs on this computer.</p></div><button type="button" class="iconbtn" data-first-run-dismiss aria-label="Hide Get started">×</button></div>
+ <ol class="first-run-steps">${stepHtml('service','Local AI is running')}${stepHtml('model','A language model is installed')}<li data-step="try" data-state="todo"><span class="first-run-mark" aria-hidden="true"></span><div><strong>Try a first task</strong><div class="first-run-detail">Pick one. It runs right here, and the result is saved to your Library.</div><div class="first-run-samples">${SAMPLES.map((s,i)=>`<button type="button" class="btn" data-sample="${i}"><span>${esc(s.label)}</span><small>${esc(s.text)}</small></button>`).join('')}</div></div></li></ol>
+ <div class="first-run-foot"><span class="meta">Developer tools are ${document.body.classList.contains('dev-tools-off')?'hidden':'shown'}. Change this in <a href="#" data-goto="status">Health</a>.</span><button type="button" class="btn primary" data-first-run-dismiss>I'm set up, hide this</button></div>`;
+ hero.after(card);
+ card.addEventListener('click',e=>{
+  const t=e.target.closest('button,a');if(!t)return;
+  if(t.matches('[data-first-run-dismiss]')){pref.set(DONE_KEY,'1');card.remove()}
+  else if(t.matches('[data-first-run-recheck]'))checkSteps(card);
+  else if(t.matches('[data-first-run-copy]'))copyCommand(t);
+  else if(t.dataset.sample!==undefined){runSample(SAMPLES[Number(t.dataset.sample)]);const li=q('[data-step="try"]',card);li.dataset.state='done'}
+  else if(t.dataset.goto){e.preventDefault();window.showView?.(t.dataset.goto)}
+ });
+ checkSteps(card);
+}
+function init(){initDevTools().then(mountDevToolsToggle);mountFirstRun()}
+window.LocalAIFirstRun={applyDevTools,DEV_KEY,DONE_KEY};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
