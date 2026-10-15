@@ -16,7 +16,7 @@ window.LocalAIKit=Object.freeze({icon,statusBadge,badgeHtml});
 let catalog=[],selected='ux_analyst',source=null,currentMission=null,currentRun=null,history=[],activeResultTab='summary',activeInspectorId='';
 const $=id=>document.getElementById(id);
 // One shared mission EventSource per tab (agent-specialists.js and agent-world-city.js both subscribe; whichever loads first creates it).
-const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=(()=>{const subs=new Set();let es=null;function open(){if(es)return;const s=new EventSource('/api/agents/missions/events');es=s;s.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}for(const x of[...subs])try{x.onMessage?.(m)}catch{}};s.onerror=e=>{for(const x of[...subs])try{x.onError?.(e)}catch{}}}return{subscribe(onMessage,onError){const sub={onMessage,onError};subs.add(sub);try{open()}catch(e){subs.delete(sub);throw e}return()=>subs.delete(sub)}}})());
+const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=(()=>{const subs=new Set();let es=null;function open(){if(es)return;const s=new EventSource('/api/agents/missions/events');es=s;s.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}for(const x of[...subs])try{x.onMessage?.(m)}catch{}};s.onopen=()=>{for(const x of[...subs])try{x.onOpen?.()}catch{}};s.onerror=e=>{for(const x of[...subs])try{x.onError?.(e)}catch{}}}return{subscribe(onMessage,onError,onOpen){const sub={onMessage,onError,onOpen};subs.add(sub);try{open()}catch(e){subs.delete(sub);throw e}return()=>subs.delete(sub)}}})());
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 async function req(u,o){const r=await fetch(u,o),j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.error||('HTTP '+r.status));return j}
 function notice(kind,text,actions=''){const el=$('agentInlineNotice');if(!el)return;el.dataset.kind=kind||'info';el.innerHTML='<div><strong>'+esc(kind==='error'?'Needs attention':kind==='success'?'Complete':'Status')+'</strong><span>'+esc(text)+'</span></div>'+actions;el.hidden=false}
@@ -52,7 +52,7 @@ function setupTabs(){document.querySelectorAll('[data-agent-result-tab]').forEac
 function setupAdvanced(){const toggle=$('agentAdvancedToggle'),panel=$('agentAdvancedPanel');if(toggle&&panel)toggle.onclick=()=>{const open=panel.hidden;panel.hidden=!open;toggle.setAttribute('aria-expanded',String(open));toggle.textContent=open?'Hide advanced routing':'Advanced routing'};$('manualRouteToggle')?.addEventListener('change',e=>{$('manualRouteOptions').hidden=!e.target.checked})}
 function applyHistoryFilter(){const term=($('agentHistorySearch')?.value||'').toLowerCase();document.querySelectorAll('.history-row').forEach(r=>r.hidden=!r.textContent.toLowerCase().includes(term))}
 function setupHistoryFilter(){const q=$('agentHistorySearch');if(q)q.addEventListener('input',applyHistoryFilter)}
-async function init(){if(!$('specialistRegistry'))return;const historyLoaded=loadHistory();try{const j=await req('/api/agents/catalog');catalog=j.items||[];cards();updateDirectActionLabel()}catch(e){notice('error','Could not load specialist catalog: '+e.message)}setupTabs();setupAdvanced();setupHistoryFilter();$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m);else renderHistory()},()=>notice('info','Live mission stream reconnecting…'))}catch{notice('info','Live mission stream unavailable; history remains accessible.')}}
+async function init(){if(!$('specialistRegistry'))return;const historyLoaded=loadHistory();try{const j=await req('/api/agents/catalog');catalog=j.items||[];cards();updateDirectActionLabel()}catch(e){notice('error','Could not load specialist catalog: '+e.message)}setupTabs();setupAdvanced();setupHistoryFilter();$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m);else renderHistory()},()=>notice('info','Live mission stream reconnecting…'),()=>{const n=$('agentInlineNotice');if(n&&/reconnecting/.test(n.textContent))clearNotice()})}catch{notice('info','Live mission stream unavailable; history remains accessible.')}}
 window.addEventListener('localai:agentworld-select',e=>{if(e.detail?.workerId)selectWorker(e.detail.workerId)});
 window.LocalAISpecialists={init,preview,renderMission};
 document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',e.message)));
@@ -970,7 +970,7 @@ const W=1280,H=760,T=32,COLS=Math.floor(W/T),ROWS=Math.floor(H/T);
 const $=(s,r=document)=>r.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n)),key=(x,y)=>x+','+y,now=()=>performance.now();
 // One shared mission EventSource per tab (agent-specialists.js and agent-world-city.js both subscribe; whichever loads first creates it).
-const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=(()=>{const subs=new Set();let es=null;function open(){if(es)return;const s=new EventSource('/api/agents/missions/events');es=s;s.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}for(const x of[...subs])try{x.onMessage?.(m)}catch{}};s.onerror=e=>{for(const x of[...subs])try{x.onError?.(e)}catch{}}}return{subscribe(onMessage,onError){const sub={onMessage,onError};subs.add(sub);try{open()}catch(e){subs.delete(sub);throw e}return()=>subs.delete(sub)}}})());
+const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=(()=>{const subs=new Set();let es=null;function open(){if(es)return;const s=new EventSource('/api/agents/missions/events');es=s;s.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}for(const x of[...subs])try{x.onMessage?.(m)}catch{}};s.onopen=()=>{for(const x of[...subs])try{x.onOpen?.()}catch{}};s.onerror=e=>{for(const x of[...subs])try{x.onError?.(e)}catch{}}}return{subscribe(onMessage,onError,onOpen){const sub={onMessage,onError,onOpen};subs.add(sub);try{open()}catch(e){subs.delete(sub);throw e}return()=>subs.delete(sub)}}})());
 
 const DISTRICTS={
  command:{name:'Command Center',short:'Command',x:17,y:9,w:6,h:5,accent:'#71b7ff',roof:'#315f94',icon:'⌂',kind:'hq'},
@@ -1770,6 +1770,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   function render() {
     const d = view.data;
     renderSessions(d.sessions);
+    renderLive(d.live || []);
     renderProgress(d.summary, d.statuses);
     renderTimeline(d.events);
     renderMatrix(d.summary.byCategory);
@@ -1782,6 +1783,30 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const opts = ['<option value="">All sessions</option>', ...sessions.map((s) => `<option value="${esc(s.id)}"${s.id === view.session ? ' selected' : ''}>${esc(s.title)} · ${esc(ago(s.updatedAt))}</option>`)];
     const html = opts.join('');
     if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; }
+  }
+
+  // "Live now": one chip per session the progress feed says is active. Tapping filters the page to it; tapping again clears.
+  // Chips are keyed by session id and updated in place, so a poll never replaces the element under a tap or keyboard focus.
+  function renderLive(live) {
+    const box = $('claudeLiveNow');
+    box.hidden = !live.length;
+    const ids = live.map((l) => l.id).join('\n');
+    if (box.dataset.ids !== ids) {
+      box.dataset.ids = ids;
+      box.innerHTML = live.map((l) => `<button type="button" class="claude-livechip" data-claude-live="${esc(l.id)}"><i class="dot" aria-hidden="true"></i><span class="claude-livechip-body"><b class="claude-livechip-title"></b><span class="claude-livechip-step"><span class="claude-livechip-state"></span><span class="claude-livechip-text"></span><span class="claude-livechip-ago"></span></span></span></button>`).join('');
+    }
+    const chips = box.children;
+    live.forEach((l, i) => {
+      const chip = chips[i], working = l.state === 'working', state = working ? 'working' : 'waiting', when = ago(l.at);
+      chip.setAttribute('aria-pressed', String(l.id === view.session));
+      chip.setAttribute('aria-label', `${l.title}, ${state}, ${l.lastEvent}, ${when}`);
+      chip.querySelector('.dot').className = `dot ${state}`;
+      const set = (sel, text) => { const el = chip.querySelector(sel); if (el.textContent !== text) el.textContent = text; };
+      set('.claude-livechip-title', l.title);
+      set('.claude-livechip-state', working ? 'Working' : 'Waiting');
+      set('.claude-livechip-text', l.lastEvent);
+      set('.claude-livechip-ago', when);
+    });
   }
 
   function renderProgress(summary, statuses) {
@@ -1839,9 +1864,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
   function renderFindings(findings) {
     if (!view.statusFilter) view.statusFilter = findings.some((f) => f.status === 'proposed') ? 'decide' : 'queued';
+    const liveWorking = (view.data?.live || []).filter((l) => l.state === 'working').length;
     $('claudeFilters').innerHTML = TABS.map(([k, label, test]) => {
       const n = findings.filter(test).length;
-      return `<button type="button" class="chip tab${view.statusFilter === k ? ' active' : ''}" data-claude-status="${k}" aria-pressed="${view.statusFilter === k}">${esc(label)} <b>${n}</b></button>`;
+      const text = k === 'working' && liveWorking ? `${label} · ${liveWorking} live` : label;
+      return `<button type="button" class="chip tab${view.statusFilter === k ? ' active' : ''}" data-claude-status="${k}" aria-pressed="${view.statusFilter === k}">${esc(text)} <b>${n}</b></button>`;
     }).join('') + (view.category ? `<button type="button" class="chip clear" data-claude-clear>${esc(view.category)}${view.severity ? ` · ${esc(view.severity)}` : ''} ✕</button>` : '');
     const list = visible(findings);
     const top = Math.max(1, ...findings.map((f) => f.score));
@@ -1933,6 +1960,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     $('claude').addEventListener('click', (e) => {
       const t = e.target.closest('button');
       if (!t) return;
+      if (t.dataset.claudeLive) {
+        view.session = view.session === t.dataset.claudeLive ? '' : t.dataset.claudeLive;
+        render();
+        $('claudeSession').value = view.session;
+        load();
+        return;
+      }
       if (t.dataset.claudeStatus) { view.statusFilter = t.dataset.claudeStatus; render(); return; }
       if (t.hasAttribute('data-claude-note')) { view.noteId = t.closest('.claude-finding')?.dataset.id || ''; render(); $('claude').querySelector('[data-claude-note-form] textarea')?.focus(); return; }
       if (t.hasAttribute('data-claude-note-cancel')) { view.noteId = ''; render(); return; }
@@ -3351,48 +3385,98 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 // ==== notifications.js ====
-// Health › Notifications: turns phone notifications on for this device (Web Push; app/push.js, app/notify.js).
-// On iPhone, Apple allows push only from the Home Screen app, over HTTPS with the Local AI certificate trusted.
+// Health › Notifications: turns phone notifications on for this device and sets what it gets (Web Push;
+// app/push.js sends, app/notify.js decides). On iPhone, Apple allows push only from the Home Screen app, over HTTPS
+// with the Local AI certificate trusted.
 (()=>{'use strict';
 const q=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 const standalone=()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches;
 const supported=()=>'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
 const deviceName=()=>/iPad/.test(navigator.userAgent)?'iPad':isIOS?'iPhone':/Android/.test(navigator.userAgent)?'Android phone':'This browser';
 const keyBytes=b64=>Uint8Array.from(atob(b64.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((b64.length+3)%4)),c=>c.charCodeAt(0));
+const KINDS=[['needs-you','Needs you','Approvals, and Claude findings waiting for your decision'],['failed','Failed','Runs, automatic updates and backups that failed'],['service','Down and recovered','A core service down for 2 minutes, and back again'],['finished','Finished','Runs of 30 seconds or more, when Local AI isn\'t open']];
+const when=iso=>iso?new Date(iso).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'never';
 async function post(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);return j}
-async function subscription(){if(!supported())return null;const reg=await navigator.serviceWorker.ready;return reg.pushManager.getSubscription()}
-function say(card,html){q('.notify-body',card).innerHTML=html}
+// navigator.serviceWorker.ready never settles if the worker failed to register, so give it 5 s.
+const workerReady=()=>Promise.race([navigator.serviceWorker.ready,new Promise((_,no)=>setTimeout(()=>no(new Error('worker')),5000))]);
+async function subscription(){if(!supported())return null;const reg=await workerReady();return reg.pushManager.getSubscription()}
+const say=(card,html)=>{q('.notify-body',card).innerHTML=html};
+const status=(card,text)=>{q('.notify-status',card).textContent=text};
+
+function settingsHtml(me,devices){
+ const kinds=KINDS.map(([id,label,hint])=>`<label class="notify-kind"><input type="checkbox" data-notify-kind="${id}"${me.kinds.includes(id)?' checked':''}><span><b>${label}</b><small>${hint}</small></span></label>`).join('');
+ const list=devices.map(d=>`<li data-device="${esc(d.id)}"><span><b>${esc(d.name)}</b>${d.id===me.id?' (this device)':''}<small>Last delivered ${esc(when(d.lastOkAt))}${d.lastError?` · last error: ${esc(d.lastError)}`:''}</small></span><span class="notify-device-actions"><button type="button" class="btn" data-notify-rename="${esc(d.id)}">Rename</button><button type="button" class="btn" data-notify-remove="${esc(d.id)}">Remove</button></span></li>`).join('');
+ return `<p>Notifications are on for this device.</p>
+ <div class="notify-actions"><button type="button" class="btn" data-notify-test>Send a test</button><button type="button" class="btn" data-notify-off>Turn off on this device</button></div>
+ <fieldset class="notify-group"><legend>What notifies this device</legend>${kinds}</fieldset>
+ <fieldset class="notify-group"><legend>Quiet hours</legend><label class="notify-kind"><input type="checkbox" data-notify-quiet-on${me.quiet.on?' checked':''}><span><b>Only failures and outages</b><small>Everything else waits in the Inbox.</small></span></label>
+ <div class="notify-times"><label>From <input type="time" data-notify-quiet-start value="${esc(me.quiet.start)}"></label><label>to <input type="time" data-notify-quiet-end value="${esc(me.quiet.end)}"></label></div></fieldset>
+ <fieldset class="notify-group"><legend>Your devices</legend><ul class="notify-devices">${list}</ul></fieldset>`;
+}
+
+let me=null;
 async function render(card){
+ me=null;
  if(!isSecureContext){say(card,`<p>Notifications need the secure address. Open <a href="https://${location.hostname}/">https://${location.hostname}/</a> (set up the certificate under Secure connection first).</p>`);return}
  if(isIOS&&!standalone()){say(card,'<p><b>Add Local AI to your Home Screen.</b> In Safari tap Share › Add to Home Screen, then open Local AI from its new icon and come back here. iPhone shows notifications only for Home Screen apps.</p>');return}
  if(!supported()){say(card,'<p>This browser can\'t receive notifications.</p>');return}
- const sub=await subscription().catch(()=>null);
+ let sub;
+ try{sub=await subscription()}catch{say(card,'<p><b>Local AI\'s background service didn\'t start</b>, so this device can\'t receive notifications yet. Reload Local AI and try again.</p>');return}
+ const {devices=[]}=await fetch('/api/push/devices',{cache:'no-store'}).then(r=>r.json()).catch(()=>({}));
+ me=sub&&devices.find(d=>d.endpoint===sub.endpoint);
+ if(sub&&!me){say(card,'<p><b>Notifications stopped on this device.</b> Local AI no longer has this device on its list, for example after it was removed.</p><button type="button" class="btn primary" data-notify-allow>Turn them on again</button>');return}
  if(!sub){say(card,'<p>Get a notification when Local AI needs you, something fails or goes down, or a long run finishes.</p><button type="button" class="btn primary" data-notify-allow>Allow notifications</button>');return}
- say(card,'<p>Notifications are on for this device.</p><button type="button" class="btn" data-notify-test>Send a test</button>');
+ say(card,settingsHtml(me,devices));
 }
 async function allow(card){
  const perm=await Notification.requestPermission();
- if(perm!=='granted'){q('.notify-status',card).textContent='Notifications are blocked. Allow them for Local AI in Settings › Notifications, then try again.';return}
+ if(perm!=='granted'){status(card,'Notifications are blocked. Allow them for Local AI in Settings › Notifications, then try again.');return}
+ const reg=await workerReady();
+ const old=await reg.pushManager.getSubscription();if(old)await old.unsubscribe().catch(()=>{});
  const {publicKey}=await (await fetch('/api/push/key',{cache:'no-store'})).json();
- const reg=await navigator.serviceWorker.ready;
  const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:keyBytes(publicKey)});
  await post('/api/push/subscribe',{subscription:sub.toJSON(),name:deviceName()});
  await render(card);
 }
+async function save(card,patch){if(!me)return;const {device}=await post('/api/push/devices/update',{id:me.id,...patch});me=device;status(card,'Saved.')}
 function mount(){
- const status=q('#status');if(!status||q('.notify-card',status))return;
+ const host=q('#status');if(!host||q('.notify-card',host))return;
  const card=document.createElement('section');card.className='card notify-card';card.id='notifications';
  card.innerHTML='<h2>Notifications</h2><div class="notify-body"></div><p class="notify-status meta" role="status"></p>';
- (q('.secure-card',status)||q('.topbar',status))?.after(card);
+ (q('.secure-card',host)||q('.topbar',host))?.after(card);
  card.addEventListener('click',async e=>{
-  const allowBtn=e.target.closest('[data-notify-allow]'),testBtn=e.target.closest('[data-notify-test]');if(!allowBtn&&!testBtn)return;
-  const btn=allowBtn||testBtn;btn.disabled=true;q('.notify-status',card).textContent='';
-  try{if(allowBtn)await allow(card);else{const r=await post('/api/push/test',{});q('.notify-status',card).textContent=r.sent?'Sent. It should arrive in a few seconds.':'Nothing was sent: this device is no longer subscribed.'}}
-  catch(err){q('.notify-status',card).textContent=`That didn't work: ${err.message}`}
-  finally{btn.disabled=false}
+  const rename=e.target.closest('[data-notify-rename]');
+  if(rename){const li=rename.closest('li'),b=q('b',li);li.querySelector('.notify-device-actions').innerHTML=`<input class="notify-rename" maxlength="40" value="${esc(b.textContent)}" aria-label="Device name"><button type="button" class="btn primary" data-notify-rename-save="${esc(rename.dataset.notifyRename)}">Save</button>`;q('.notify-rename',li).focus();return}
+  const btn=e.target.closest('[data-notify-allow],[data-notify-test],[data-notify-off],[data-notify-remove],[data-notify-rename-save]');if(!btn)return;
+  btn.disabled=true;status(card,'');
+  try{
+   if(btn.matches('[data-notify-allow]'))await allow(card);
+   else if(btn.matches('[data-notify-test]')){
+    const r=await post('/api/push/test',me?{id:me.id}:{});
+    status(card,r.sent?'Sent. It should arrive in a few seconds.'
+     :r.failed?`The push service refused it (${r.error}). Try again in a minute; if it keeps happening, turn notifications off and on again.`
+     :r.removed?'This device is no longer subscribed. Turn notifications on again.'
+     :'No device is set up for notifications yet.');
+    await render(card);
+   }
+   else if(btn.matches('[data-notify-off]')){const sub=await subscription();if(sub){await post('/api/push/unsubscribe',{endpoint:sub.endpoint});await sub.unsubscribe().catch(()=>{})}await render(card)}
+   else if(btn.matches('[data-notify-rename-save]')){await post('/api/push/devices/update',{id:btn.dataset.notifyRenameSave,name:q('.notify-rename',btn.closest('li')).value});await render(card)}
+   else{await post('/api/push/devices/remove',{id:btn.dataset.notifyRemove});await render(card)}
+  }catch(err){status(card,`That didn't work: ${err.message}`)}
+  finally{if(btn.isConnected)btn.disabled=false}
+ });
+ card.addEventListener('change',e=>{
+  const t=e.target;if(!me)return;
+  const done=p=>p.catch(err=>status(card,`That didn't work: ${err.message}`));
+  if(t.matches('[data-notify-kind]'))done(save(card,{kinds:[...card.querySelectorAll('[data-notify-kind]:checked')].map(x=>x.dataset.notifyKind)}));
+  if(t.matches('[data-notify-quiet-on],[data-notify-quiet-start],[data-notify-quiet-end]'))done(save(card,{quiet:{on:q('[data-notify-quiet-on]',card).checked,start:q('[data-notify-quiet-start]',card).value,end:q('[data-notify-quiet-end]',card).value}}));
  });
  render(card);
 }
+// While Local AI is on screen, tell the appliance, so "finished" notifications don't buzz about what you're watching.
+function heartbeat(){if(document.visibilityState==='visible')fetch('/api/push/presence',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).catch(()=>{})}
+setInterval(heartbeat,30000);document.addEventListener('visibilitychange',heartbeat);heartbeat();
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(mount,0),{once:true});else setTimeout(mount,0);
 })();

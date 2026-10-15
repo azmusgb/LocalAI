@@ -1,4 +1,4 @@
-const CACHE='local-ai-shell-v1.18-unified-runs-bundle2-figtree-states-ask-runcard-thread-push-router-runview';
+const CACHE='local-ai-shell-v1.18-unified-runs-bundle2-figtree-states-ask-runcard-thread-push-router-live2-runview';
 const SHELL=['/','/index.html','/app.js','/manifest.json','/view-registry.js','/router.js','/app.css','/ui.js','/components.js','/fonts/figtree-latin-wght-normal.woff2'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL.map(u=>new Request(u,{cache:'reload'})))).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
@@ -14,7 +14,7 @@ self.addEventListener('fetch',event=>{
 // Web Push (app/push.js sends it). iOS requires every push to show a notification, so this always shows one.
 self.addEventListener('push',event=>{
   let data={};try{data=event.data?event.data.json():{}}catch{data={title:'Local AI',body:event.data?event.data.text():''}}
-  event.waitUntil(self.registration.showNotification(data.title||'Local AI',{body:data.body||'',tag:data.tag||undefined,data:{url:data.url||'/'}}));
+  event.waitUntil(self.registration.showNotification(data.title||'Local AI',{body:data.body||'',tag:data.tag||undefined,icon:'/icons/icon-192.png',badge:'/icons/icon-192.png',data:{url:data.url||'/'}}));
 });
 // Tapping a notification opens its item in an open Local AI window, or in a new one.
 self.addEventListener('notificationclick',event=>{

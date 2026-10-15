@@ -48,13 +48,14 @@ const release = require('./release').readRelease(__dirname);
 // A staged copy (self-change smoke test) passes its own APP_VERSION; otherwise the release decides.
 const APP_VERSION = /-stage$/.test(process.env.APP_VERSION || '') ? process.env.APP_VERSION : require('./release').appVersion(__dirname, release);
 const storage = new Storage({ dataDir: DATA_DIR });
-const runLedger = new RunLedger({ storage });
 // Phone notifications (Web Push): app/push.js sends, app/notify.js decides; docs/OPERATIONS.md › Notifications.
 const pushLib = require('./push');
-const notifier = require('./notify').createNotifier({
+const notifyLib = require('./notify');
+const notifier = notifyLib.createNotifier({
   storage, sendPush: pushLib.sendPush, vapid: pushLib.loadOrCreateVapid(storage),
   subject: process.env.VAPID_SUBJECT || 'https://github.com/azmusgb/LocalAI'
 });
+const runLedger = new RunLedger({ storage, onTransition: (run, previous) => { const e = notifyLib.runEvent(run, previous); if (e) notifier.notify(e); } });
 const activeRunControllers = new Map();
 const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody });
 
@@ -310,9 +311,11 @@ async function getStatusAndRecordTransition() {
   } else if (now - new Date(previous.pendingSince) >= HEALTH_SETTLE_MS) {
     if (overall === 'HEALTHY') {
       recordActivity('recovery', 'System recovered', `Health returned to normal from ${previous.overall}.`, { previous: previous.overall, current: overall });
+      notifier.notify(notifyLib.serviceEvent(overall));
     } else {
       const affected = services.filter(x => x.required !== false && x.state !== 'HEALTHY').map(x => x.label);
       recordActivity('system', 'System needs attention', affected.join(', ') || `Health changed to ${overall}.`, { previous: previous.overall, current: overall });
+      notifier.notify(notifyLib.serviceEvent(overall, affected));
     }
     writeState(STATUS_STORE, { overall, checkedAt: now.toISOString() });
   }
@@ -1754,7 +1757,10 @@ async function apiAgentDispatch(req,res){if(!requireFeature(res,4))return;try{co
 async function apiAgentMissions(req,res){if(!requireFeature(res,4))return;json(res,200,{items:getSpecialistOrchestrator().missions(200)})}
 async function apiAgentMission(req,res,urlObj){if(!requireFeature(res,4))return;const id=String(urlObj.searchParams.get('id')||''),m=getSpecialistOrchestrator().getMission(id);if(!m)return json(res,404,{error:'Mission not found'});json(res,200,{mission:m})}
 async function apiAgentMissionStart(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const ids=Array.isArray(b.agentIds)&&b.agentIds.length?b.agentIds:undefined;json(res,200,{mission:await getSpecialistOrchestrator().mission(goal,String(b.projectId||''),ids)})}catch(e){storageError(res,e,400)}}
-async function apiAgentMissionEvents(req,res,urlObj){if(!requireFeature(res,4))return;res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});const wanted=String(urlObj.searchParams.get('missionId')||'');const send=m=>{if(!wanted||m.id===wanted)res.write('data: '+JSON.stringify(m)+'\n\n')};const orch=getSpecialistOrchestrator();orch.events.on('mission',send);res.write(': connected\n\n');req.on('close',()=>orch.events.off('mission',send))}
+const SSE_KEEPALIVE_MS=Math.max(1000,Number(process.env.SSE_KEEPALIVE_MS)||25000);
+async function apiAgentMissionEvents(req,res,urlObj){if(!requireFeature(res,4))return;res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});const wanted=String(urlObj.searchParams.get('missionId')||'');const send=m=>{if(!wanted||m.id===wanted)res.write('data: '+JSON.stringify(m)+'\n\n')};const orch=getSpecialistOrchestrator();orch.events.on('mission',send);res.write(': connected\n\n');
+  // A comment every 25 s keeps phones and proxies from dropping a quiet stream.
+  const keepAlive=setInterval(()=>res.write(': keepalive\n\n'),SSE_KEEPALIVE_MS);req.on('close',()=>{clearInterval(keepAlive);orch.events.off('mission',send)})}
 async function apiAgents(req,res){if(!requireFeature(res,4))return;json(res,200,{items:agentRunStore().slice(0,200)})}
 async function apiAgentRun(req,res){
   if(!requireFeature(res,4))return; try{const b=await readBody(req);const goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const runs=agentRunStore();const run={id:makeId('agent'),goal,projectId:String(b.projectId||''),status:'running',createdAt:nowIso(),updatedAt:nowIso(),plan:buildAgentPlan(goal)};runs.unshift(run);saveStore(RUNS_STORE,runs,300);recordActivity('agent','Agent started',goal.slice(0,180),{runId:run.id});try{const result=await executeAgentGoal(goal,run.projectId);run.status='complete';run.plan=result.plan;run.answer=result.answer;run.sources=result.sources;run.updatedAt=nowIso()}catch(e){run.status='error';run.error=String(e.message||e);run.updatedAt=nowIso()}saveStore(RUNS_STORE,runs,300);recordActivity('agent',run.status==='complete'?'Agent completed':'Agent failed',goal.slice(0,180),{runId:run.id,status:run.status});json(res,200,{run})}catch(e){storageError(res,e,400)}
@@ -1812,7 +1818,9 @@ function monitorStore(){ return objectStore(MONITORS_STORE); }
 
 function addNotification(kind,title,detail='',meta={},level='attention'){
   const item={id:makeId('note'),kind,level,title:normalizeTitle(title,'Notification'),detail:String(detail||'').slice(0,2000),createdAt:nowIso(),read:false,resolved:false,meta};
-  prependRecord(NOTIFICATIONS_STORE,item); return item;
+  prependRecord(NOTIFICATIONS_STORE,item);
+  const e=notifyLib.noticeEvent(kind,item.title,item.detail,level,meta);if(e)notifier.notify(meta.approvalId?{...e,tag:`approval:${meta.approvalId}`}:e);
+  return item;
 }
 // Info notices (a release went live, a backup finished, a monitor recovered) stay in the Inbox but don't count
 // toward its badge; only things that need the owner do. Older deploy notices predate `level`, hence the meta check.
@@ -2592,6 +2600,7 @@ async function apiPowerShellHostResult(req,res){if(!requireFeature(res,17))retur
 // decisions. Claude reads the ranking back from /api/claude/priorities. Rows live in settings under
 // per-kind key prefixes (newest key first), so no schema change is needed.
 const CLAUDE_SESSION_PREFIX='claude-session/',CLAUDE_EVENT_PREFIX='claude-event/',CLAUDE_FINDING_PREFIX='claude-finding/';
+const CLAUDE_LIVE_WORKING_MS=2*60*1000,CLAUDE_LIVE_WINDOW_MS=30*60*1000,CLAUDE_LIVE_SCAN_EVENTS=500,CLAUDE_STOP_TITLE='Finished responding';
 const CLAUDE_MAX_EVENTS=3000,CLAUDE_MAX_FINDINGS=1000;
 const CLAUDE_SEVERITY_WEIGHT={high:30,medium:15,low:5};
 const CLAUDE_STATUS={proposed:{label:'Proposed',boost:0},approved:{label:'Approved',boost:20},in_progress:{label:'In progress',boost:25},deferred:{label:'Deferred',boost:-25},rejected:{label:'Rejected',boost:-100},fixed:{label:'Fixed',boost:-200}};
@@ -2626,6 +2635,20 @@ function claudeNormalizeFinding(f,prev,at){
     createdAt:prev?.createdAt||at,updatedAt:at
   };
 }
+// Live sessions from each session's newest event: working while it is under 2 minutes old and not a Stop, otherwise
+// waiting (idle) until 30 minutes pass, then gone. Pure: pass the clock in.
+function claudeLive(sessions,events,now){
+  const latest=new Map();
+  for(const e of events){const t=Date.parse(e.at);if(Number.isFinite(t)&&(!latest.has(e.sessionId)||t>latest.get(e.sessionId).t))latest.set(e.sessionId,{t,title:e.title})}
+  const live=[];
+  for(const s of sessions){
+    const last=latest.get(s.id);if(!last)continue; // events only: findings also bump updatedAt
+    const age=now-last.t;if(age>=CLAUDE_LIVE_WINDOW_MS)continue;
+    const stop=last.title===CLAUDE_STOP_TITLE;
+    live.push({id:s.id,title:`${s.title||'Claude session'} · ${s.id.replace(/^cc-/,'')}`,state:!stop&&age<CLAUDE_LIVE_WORKING_MS?'working':'waiting',lastEvent:last.title,at:new Date(last.t).toISOString()});
+  }
+  return live.sort((a,b)=>(a.state==='working'?0:1)-(b.state==='working'?0:1)||b.at.localeCompare(a.at));
+}
 async function apiClaudeBoard(req,res,urlObj){
   const sessionId=urlObj.searchParams.get('session')||'';const limit=Math.max(1,Math.min(500,Number(urlObj.searchParams.get('events'))||150));
   const sessions=storage.listSettings(CLAUDE_SESSION_PREFIX).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
@@ -2633,7 +2656,8 @@ async function apiClaudeBoard(req,res,urlObj){
   const findings=claudeRanked(claudeFindings().filter(f=>!sessionId||f.sessionId===sessionId));
   const byStatus={},byCategory={};
   for(const f of findings){byStatus[f.status]=(byStatus[f.status]||0)+1;const c=byCategory[f.category]||(byCategory[f.category]={high:0,medium:0,low:0,open:0,total:0});c[f.severity]++;c.total++;if(!['fixed','rejected'].includes(f.status))c.open++}
-  json(res,200,{sessions,events,findings,summary:{total:findings.length,byStatus,byCategory},statuses:Object.fromEntries(Object.entries(CLAUDE_STATUS).map(([k,v])=>[k,v.label]))});
+  const live=claudeLive(sessions,storage.listSettings(CLAUDE_EVENT_PREFIX,{limit:CLAUDE_LIVE_SCAN_EVENTS}),Date.now());
+  json(res,200,{sessions,events,live,findings,summary:{total:findings.length,byStatus,byCategory},statuses:Object.fromEntries(Object.entries(CLAUDE_STATUS).map(([k,v])=>[k,v.label]))});
 }
 async function apiClaudeEvents(req,res){
   try{const b=await readBody(req,512*1024);const list=Array.isArray(b.events)?b.events.slice(0,200):[b];const at=nowIso();
@@ -2643,8 +2667,10 @@ async function apiClaudeEvents(req,res){
     json(res,201,{ok:true,accepted:list.length})}catch(e){storageError(res,e,400)}
 }
 async function apiClaudeFindings(req,res){
-  try{const b=await readBody(req,1024*1024);const list=Array.isArray(b.findings)?b.findings.slice(0,300):[b];const at=nowIso();const saved=[];
-    storage.transaction(()=>{if(b.sessionId)claudeSaveSession(b,at);for(const raw of list){const id=claudeSlug(raw.id,'');const prev=id?storage.readSetting(CLAUDE_FINDING_PREFIX+id,null):null;const f=claudeNormalizeFinding({...raw,sessionId:raw.sessionId||b.sessionId},prev,at);storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);saved.push(f)}});
+  try{const b=await readBody(req,1024*1024);const list=Array.isArray(b.findings)?b.findings.slice(0,300):[b];const at=nowIso();const saved=[],fresh=[];
+    storage.transaction(()=>{if(b.sessionId)claudeSaveSession(b,at);for(const raw of list){const id=claudeSlug(raw.id,'');const prev=id?storage.readSetting(CLAUDE_FINDING_PREFIX+id,null):null;const f=claudeNormalizeFinding({...raw,sessionId:raw.sessionId||b.sessionId},prev,at);storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);saved.push(f);if(!prev&&f.status==='proposed')fresh.push(f)}});
+    // A new finding waiting for the owner's decision reaches the phone; re-posts of the same id don't.
+    for(const f of fresh)notifier.notify({kind:'needs-you',title:'Claude needs your decision',body:f.title,url:'/?open=claude',tag:`finding:${f.id}`});
     json(res,201,{ok:true,items:claudeRanked(saved)})}catch(e){storageError(res,e,400)}
 }
 function claudeUpdateFinding(res,id,mutate){
@@ -2858,6 +2884,7 @@ function repairGarbledTextOnce() {
 async function apiPush(req, res, p) {
   try {
     if (req.method === 'GET' && p === '/api/push/key') return json(res, 200, { publicKey: pushLib.loadOrCreateVapid(storage).publicKey });
+    if (req.method === 'GET' && p === '/api/push/devices') return json(res, 200, { devices: notifier.devices() });
     if (req.method !== 'POST') return json(res, 404, { error: 'Not found' });
     const b = await readBody(req, 16 * 1024);
     if (p === '/api/push/subscribe') {
@@ -2867,6 +2894,9 @@ async function apiPush(req, res, p) {
     }
     if (p === '/api/push/unsubscribe') return json(res, 200, { ok: notifier.unsubscribe(String(b.endpoint || '')) });
     if (p === '/api/push/test') return json(res, 200, await notifier.test(b.id ? String(b.id) : undefined));
+    if (p === '/api/push/presence') { notifier.presence(); return json(res, 200, { ok: true }); }
+    if (p === '/api/push/devices/update') { const d = notifier.updateDevice(String(b.id || ''), { name: b.name, kinds: b.kinds, quiet: b.quiet }); return d ? json(res, 200, { device: d }) : json(res, 404, { error: 'No such device' }); }
+    if (p === '/api/push/devices/remove') return json(res, 200, { ok: notifier.removeDevice(String(b.id || '')) });
     return json(res, 404, { error: 'Not found' });
   } catch (e) { storageError(res, e, 400); }
 }
@@ -2890,6 +2920,9 @@ async function apiReleases(req, res) {
 
 migrateLegacyActivityToLibrary();
 recordReleaseHistory();
+// Health is checked on its own every minute, so an outage reaches the phone (Down/Recovered) even with no page open.
+const HEALTH_TICK_MS = Math.max(200, Number(process.env.HEALTH_TICK_MS) || 60000);
+setInterval(() => { getStatusAndRecordTransition().catch(() => {}); }, HEALTH_TICK_MS).unref();
 repairGarbledTextOnce();
 
 server.listen(PORT, '0.0.0.0', () => {

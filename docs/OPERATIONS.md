@@ -148,3 +148,29 @@ image id the old container ran. Remove `local-ai-n8n-old` only once the new one 
 | PowerShell Workbench says it is only available from localhost | Open `http://localhost:3090` on the host; [PowerShell bridge](../host/powershell-bridge/README.md) |
 | Claude Code page shows no sessions, or chat messages stuck | [Claude chat › Troubleshooting](CLAUDE-CHAT.md#troubleshooting) |
 | Browser says the HTTPS connection is not private | Trust the CA: **Health › Secure connection**; [Deploy › HTTPS](DEPLOY.md#https-with-caddy) |
+
+## Notifications
+
+Local AI sends phone notifications with Web Push, built in (`app/push.js` signs and encrypts, `app/notify.js`
+decides; design: `docs/superpowers/specs/2026-10-15-notifications-design.md`). Messages are end-to-end encrypted to
+the device; the appliance contacts only Apple, Google and Mozilla push services.
+
+**Turn on, iPhone:** trust the Local AI certificate (Health › Secure connection), open `https://<host>` in Safari,
+Share › Add to Home Screen, open Local AI from the Home Screen, then Health › Notifications › Allow notifications,
+and Send a test. iPhone delivers web push only to Home Screen apps.
+
+| Kind | When |
+|---|---|
+| Needs you | An approval is created, a run waits for approval, a Claude session posts a new finding |
+| Failed | A run fails, an automatic update rolls back, a nightly backup fails |
+| Down and recovered | Core health changes and holds for 2 minutes |
+| Finished | A run of 30 s or more completes while no Local AI page is open on any device |
+
+Each device chooses its kinds and quiet hours (default 22:00–07:00 in the appliance's `TZ`; only Failed and Down get
+through). At most 10 per device per 10 minutes, then one "N more updates" summary. Everything is also in the Inbox.
+
+- Devices are settings `push:device:<id>`; the signing key is `push:vapid` (losing it means each device turns
+  notifications on again; the card notices). `VAPID_SUBJECT` (default the repo URL) is the contact sent to push
+  services.
+- A device the push service no longer knows (404/410) is removed; other failures are retried once after 30 s and
+  shown as the device's last error in the card.

@@ -15,6 +15,7 @@ const page=await browser.newPage({viewport:{width:1440,height:1000}});
 page.on('dialog',async d=>{dialogs++;await d.dismiss()});
 await page.goto(base,{waitUntil:'domcontentloaded'});
 await page.waitForSelector('.ux-primary-rail');
+await page.waitForFunction(()=>typeof window.showView==='function');
 await page.evaluate(()=>window.showView('agents'));
 await page.waitForSelector('#agents.active');
 
@@ -214,6 +215,8 @@ const mobile=await browser.newPage({viewport:{width:390,height:844},hasTouch:tru
 mobile.on('dialog',async d=>{dialogs++;await d.dismiss()});
 await mobile.goto(base,{waitUntil:'domcontentloaded'});
 await mobile.waitForSelector('#uxMobileNav');
+// The tab bar can render before app.js has defined showView.
+await mobile.waitForFunction(()=>typeof window.showView==='function');
 await mobile.evaluate(()=>window.showView('agents'));
 await mobile.waitForSelector('#agents.active');
 await mobile.waitForSelector('#agentWorldCityMount .awc');
@@ -262,6 +265,7 @@ await check('the mission strip and Agent World show the same mission while the s
   await pg.route(u=>u.pathname==='/api/agents/catalog',async r=>{await catalogHeld;await r.fallback()});
   await pg.goto(base,{waitUntil:'domcontentloaded'});
   await pg.waitForSelector('.ux-primary-rail');
+  await pg.waitForFunction(()=>typeof window.showView==='function');
   await pg.evaluate(()=>window.showView('agents'));
   await pg.waitForSelector('#agents.active');
   await pg.waitForFunction(g=>document.getElementById('awcObjective')?.textContent===g,goal,{timeout:10000});
