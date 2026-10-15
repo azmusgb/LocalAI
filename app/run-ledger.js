@@ -22,8 +22,8 @@ function id() {
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/;
 function cleanId(value) { return typeof value === 'string' && ID_RE.test(value) ? value : null; }
 // Kept runs (pinned, filed under a project, or holding artifacts) are never pruned.
-const KEPT_EXEMPT = { truthy: ['$.pinned', '$.projectId'], nonEmptyArray: ['$.artifactIds'] };
-function isKept(run) { return !!run && (!!run.pinned || !!run.projectId || (Array.isArray(run.artifactIds) && run.artifactIds.length > 0)); }
+const KEPT_EXEMPT = { truthy: ['$.pinned', '$.projectId'] };
+function isKept(run) { return !!run && (!!run.pinned || !!run.projectId); }
 function cleanText(value, max = 4000) { return String(value ?? '').slice(0, max); }
 
 function boundedClone(value, maxBytes, fallback) {

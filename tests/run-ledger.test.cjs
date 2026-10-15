@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { RunLedger } = require('../app/run-ledger');
+const { RunLedger, isKept } = require('../app/run-ledger');
 
 class MemorySettings {
   constructor() { this.values = new Map(); }
@@ -191,16 +191,25 @@ test('file() pins and files; null unfiles', () => {
   assert.equal(ledger.file('nope', { pinned: true }), null);
 });
 
-test('kept runs survive pruning', () => {
+test('pinned and filed runs survive pruning; an artifact-only run does not', () => {
   const ledger = new RunLedger({ storage: new MemorySettings(), maxRuns: 20 });
-  const kept = Array.from({ length: 5 }, () => ledger.create({}));
+  const kept = Array.from({ length: 4 }, () => ledger.create({}));
+  const withArtifact = ledger.create({});
   ledger.file(kept[0].id, { pinned: true }); ledger.file(kept[1].id, { pinned: true });
   ledger.file(kept[2].id, { projectId: 'p' }); ledger.file(kept[3].id, { projectId: 'p' });
-  ledger.complete(kept[4].id, { artifactIds: ['a1'] });
+  ledger.complete(withArtifact.id, { artifactIds: ['a1'] });
   for (let i = 0; i < 30; i++) ledger.create({});
   for (const r of kept) assert.ok(ledger.get(r.id), 'kept run ' + r.id);
+  assert.equal(ledger.get(withArtifact.id), null, 'artifact-only run aged out');
   const keptIds = new Set(kept.map(r => r.id));
   assert.equal(ledger.list({ limit: 500 }).filter(r => !keptIds.has(r.id)).length, 20);
+});
+
+test('isKept is pinned or filed only', () => {
+  assert.equal(isKept({ artifactIds: ['a'] }), false);
+  assert.equal(isKept({ pinned: true }), true);
+  assert.equal(isKept({ projectId: 'p' }), true);
+  assert.equal(isKept(null), false);
 });
 
 test('list filters and collapses threads', () => {

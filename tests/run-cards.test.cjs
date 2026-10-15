@@ -75,3 +75,10 @@ test('engineering preview is a diff stat, never the patch', () => {
   assert.equal(JSON.stringify(card).includes(secret), false);
   assert.equal(JSON.stringify(runCard(run, { changeFor: () => change })).includes(secret), false);
 });
+
+test('the badge table in public/ui.js matches run-cards.js', () => {
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '../app/public/ui.js'), 'utf8');
+  const m = src.match(/const STATUS=(\{[^}]*\});/);
+  assert.ok(m, 'ui.js defines STATUS');
+  assert.deepEqual(JSON.parse(m[1].replace(/([{,])(\w+):/g, '$1"$2":').replace(/'/g, '"')), { ...require('../app/run-cards').STATUS });
+});

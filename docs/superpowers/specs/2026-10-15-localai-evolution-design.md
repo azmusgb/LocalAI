@@ -58,8 +58,9 @@ Additions to the run ledger (all additive):
 1. **`projectId`** — a run can be filed into a project; unfiled runs appear under "Everything".
 2. **`threadId`** — follow-up runs (chat turns, "now make it blue") share a thread; the timeline shows a thread once,
    with its latest state.
-3. **Kept runs are never pruned.** Today the ledger keeps the newest 250 runs. Runs that are pinned, filed in a project,
-   or have artifacts are exempt; only unfiled, unpinned runs without artifacts age out.
+3. **Kept runs are never pruned.** Today the ledger keeps the newest 250 runs. Runs that are pinned or filed in a
+   project are exempt; every other run, including ones with artifacts, ages out (Library items are kept separately).
+   Decided 2026-10-15 after the final review of sub-project 1.
 4. **Card contract per run kind:** one-line summary, result preview (text snippet, thumbnail, mission outcome, diff
    stat), approval prompt when `awaiting_approval`, and which run view opens it.
 

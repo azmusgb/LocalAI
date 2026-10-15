@@ -30,6 +30,15 @@ test('execution drawer exposes lifecycle, cancel, retry, lineage, output, and ti
   assert.match(runtime, /event\.key === 'Escape'/);
 });
 
+test('runs render as shared cards and the run view files, pins and shows the approval bar', () => {
+  assert.match(runtime, /LocalAIUI\.runCard/);
+  assert.match(runtime, /registerRunBody|runBodyFor/);
+  assert.match(runtime, /Not filed/);
+  assert.match(runtime, /'Pin'/);
+  assert.match(runtime, /\/api\/runs\/update/);
+  assert.match(runtime, /\/api\/approvals\/decide/);
+});
+
 test('run polling is more frequent while work is active', () => {
   assert.match(runtime, /state\.runs\.some\(active\) \? 3000 : 15000/);
   assert.match(runtime, /\/api\/runs\?limit=120/);
