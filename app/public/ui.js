@@ -579,7 +579,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         const actions = document.createElement('div');
         actions.className = 'model-runtime-actions';
         if ((models?.protectedModels || [models?.default]).includes(item.name)) {
-          actions.innerHTML = '<span class="meta">Used by Local AI by default</span>';
+          actions.innerHTML = `<span class="meta">${item.name === models?.default ? 'Used by Local AI by default' : 'Used by Local AI (GridCraft)'}</span>`;
         } else {
           actions.innerHTML = `<button type="button" class="btn" data-model-remove="${esc(item.name)}">Remove</button>`;
         }

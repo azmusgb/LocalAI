@@ -110,7 +110,7 @@ function createModelPulls({ baseUrl, fetchImpl = globalThis.fetch, protectedMode
     async remove(rawName) {
       const name = validModelName(rawName);
       if (!name) throw httpError(400, 'Enter a model name.');
-      if (protectedModels().includes(name)) throw httpError(409, `${name} is the model Local AI uses by default, so it can't be removed here.`);
+      if (protectedModels().includes(name)) throw httpError(409, `${name} is used by Local AI (the default chat model or GridCraft), so it can't be removed here.`);
       if (pulls.get(name)?.state === 'running') throw httpError(409, `${name} is still downloading. Cancel the download first.`);
       const response = await fetchImpl(`${baseUrl}/api/delete`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: name, name }) });
       if (response.status === 404) throw httpError(404, `${name} is not installed.`);
