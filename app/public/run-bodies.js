@@ -325,8 +325,17 @@
       RB.borrow(ctx, $('agentMissionHeadline')?.closest('.agent-mission-strip'), strip);
       RB.borrow(ctx, $('agentTimeline'), line);
       // The nodes are in the page only once the run view attaches this slot, so select a moment later.
-      queueMicrotask(() => { if (ctx.alive()) M.show(id); });
+      slot.dataset.missionId = id; slot.dataset.status = run.status;
+      queueMicrotask(() => { if (ctx.alive()) M.show(id, { alive: ctx.alive }); });
     });
   }
-  if (window.LocalAIUI?.registerRunBody) window.LocalAIUI.registerRunBody('agent', mountMission);
+  // The same mission run, changed: Agent World stays mounted. The mission page's own live stream keeps headline and timeline current;
+  // only when the run has just ended is the headline/progress synced once (no replay, so the live map isn't disturbed).
+  function updateMission(run, slot) {
+    const id = run.meta?.missionId || run.output?.missionId;
+    if (!id || slot.dataset.missionId !== id) return false;
+    if (slot.dataset.status !== run.status) { slot.dataset.status = run.status; window.LocalAIMissions?.show(id, { replay: false, alive: () => slot.isConnected }); }
+    return true;
+  }
+  if (window.LocalAIUI?.registerRunBody) window.LocalAIUI.registerRunBody('agent', mountMission, { update: updateMission });
 })();

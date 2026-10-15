@@ -32,6 +32,7 @@ async function open(viewport, { hash = '#home', runs = [] } = {}) {
   await ctx.route(u => u.pathname === '/api/activity', r => json(r, { items: [] }));
   await page.route(u => u.pathname === '/api/capabilities', r => json(r, { services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' }));
   await page.route(u => u.pathname === '/api/agents/missions', r => json(r, { items: [mission] }));
+  await page.route(u => u.pathname === '/api/agents/mission', r => { db.missionGets = (db.missionGets || 0) + 1; const id = new URL(r.request().url()).searchParams.get('id'); id === mission.id ? json(r, { mission }) : json(r, { error: 'Mission not found' }, 404); });
   await page.route(u => u.pathname === '/api/agents/missions/start', r => { db.sent.push(JSON.parse(r.request().postData())); db.runs.push(missionRun()); json(r, { runId: 'run-m1', threadId: 'run-m1' }, 202); });
   await page.route(u => u.pathname === '/api/runs', r => {
     const q = new URL(r.request().url()).searchParams;
@@ -74,6 +75,48 @@ await check('Work lists the mission run under the Missions chip', async () => {
 });
 await check('no script errors', async () => assert.deepEqual(page.errors, []));
 await page.context().close();
+
+await check('a mission transition updates the run view in place: same Agent World node, same scroll, same focus; a different run re-mounts', async () => {
+  const other = missionRun({ id: 'run-m3', title: 'Other', meta: { missionId: 'mission-1' } });
+  const p = await open({ width: 1280, height: 520 }, { runs: [missionRun(), other] });
+  const gets = () => p.db.missionGets || 0;
+  await p.evaluate(() => window.LocalAIRuns.show('run-m1'));
+  await p.locator('#runDrawer .awc').waitFor({ state: 'visible', timeout: 6000 });
+  await p.waitForFunction(() => document.querySelectorAll('#agentTimeline .mission-line').length >= 3, null, T);
+  const before = await p.evaluate(() => { const d = document.getElementById('runDrawer'); d.scrollTop = 150; const b = document.querySelector('#agentTimeline .mission-line'); b.focus(); document.querySelector('#runDrawer .awc').__tag = 'same'; document.querySelector('#runDrawer .run-body').__tag = 'slot'; return { top: d.scrollTop, focus: document.activeElement === b }; });
+  assert.ok(before.top > 0 && before.focus, 'set up scrolled and focused: ' + JSON.stringify(before));
+  const g0 = gets();
+  p.db.runs[0] = missionRun({ progress: 66, updatedAt: new Date(Date.now() + 5000).toISOString(), events: [{ at: new Date().toISOString(), status: 'running', detail: 'Mission progress: 2 of 3 steps' }] });
+  await p.evaluate(() => window.LocalAIRuns.refresh());
+  await p.waitForFunction(() => document.querySelector('#runDrawer [role="progressbar"]')?.getAttribute('aria-valuenow') === '66', null, T);
+  const after = await p.evaluate(() => { const d = document.getElementById('runDrawer'); return { same: document.querySelector('#runDrawer .awc')?.__tag === 'same', slot: document.querySelector('#runDrawer .run-body')?.__tag === 'slot', top: d.scrollTop, focus: document.activeElement === document.querySelector('#agentTimeline .mission-line'), inside: !!document.querySelector('#runDrawer #agentWorldCityMount') }; });
+  assert.deepEqual(after, { same: true, slot: true, top: before.top, focus: true, inside: true });
+  assert.equal(gets(), g0, 'no mission refetch for a progress change');
+  await p.evaluate(() => window.LocalAIRuns.show('run-m3'));
+  await p.waitForFunction(() => document.querySelector('#runDrawerTitle')?.textContent.includes('Other'), null, T);
+  assert.equal(await p.evaluate(() => document.querySelector('#runDrawer .run-body')?.__tag), undefined, 'another run mounts a fresh body');
+  assert.equal(await p.locator('#runDrawer #agentWorldCityMount').count(), 1);
+  await p.context().close();
+});
+await check('the pending view settles once: a second fail does not replace the first message', async () => {
+  const p = await open({ width: 1280, height: 860 });
+  await p.evaluate(() => { const h = window.LocalAIRuns.openPending({ kind: 'mission', title: 'x' }); h.fail('First problem'); h.fail('Second problem'); });
+  await p.locator('#runDrawer [role="alert"]').waitFor(T);
+  assert.match(await p.locator('#runDrawer').innerText(), /First problem/);
+  assert.doesNotMatch(await p.locator('#runDrawer').innerText(), /Second problem/);
+  await p.context().close();
+});
+await check('a mission run view asks for the one mission, not the whole list', async () => {
+  const p = await open({ width: 1280, height: 860 }, { runs: [missionRun()] });
+  let list = 0; p.on('request', q => { if (new URL(q.url()).pathname === '/api/agents/missions') list++; });
+  const before = list;
+  await p.evaluate(() => window.LocalAIRuns.show('run-m1'));
+  await p.locator('#runDrawer .awc').waitFor({ state: 'visible', timeout: 6000 });
+  await p.waitForFunction(() => document.querySelectorAll('#agentTimeline .mission-line').length >= 3, null, T);
+  assert.ok((p.db.missionGets || 0) >= 1);
+  assert.equal(list, before);
+  await p.context().close();
+});
 
 await check('a mission run without a mission id shows the plain Output block', async () => {
   const p = await open({ width: 1280, height: 860 }, { runs: [missionRun({ id: 'run-m2', meta: {}, status: 'completed', output: { note: 'plain' } })] });

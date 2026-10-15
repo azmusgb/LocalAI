@@ -7,6 +7,8 @@ module.exports=function createAgentOrchestrator(deps={}){
  const specialists=catalog.filter(a=>!a.infrastructure);
  const storage=deps.storage||new (require('./storage').Storage)({dataDir});
  const runsFile='specialistRuns',missionsFile='missions',events=new EventEmitter();
+ // One 'mission' listener per open SSE client and per in-flight async mission run (each removed when its mission ends): more than 10 is normal.
+ events.setMaxListeners(0);
  const read=f=>storage.list(f),iso=()=>new Date().toISOString(),id=p=>p+'-'+Date.now().toString(36)+'-'+Math.random().toString(16).slice(2,8);
  async function models(){const r=await fetchWithTimeout(ollamaUrl+'/api/tags',{method:'GET'},15000);if(!r.ok)throw new Error('Ollama inventory unavailable: HTTP '+r.status);const j=await r.json();return (j.models||[]).map(x=>({name:x.name,size:x.size,modified_at:x.modified_at}));}
  function modelScore(name,task){let s=0,n=name.toLowerCase(),t=task.toLowerCase();if(/coder|code|debug|implement|engineering/.test(t)&&/coder|qwen/.test(n))s+=40;if(/document|summar|write|research|ux|design/.test(t)&&/qwen|gemma/.test(n))s+=25;if(/32k|16k/.test(n))s+=8;if(name===defaultModel)s+=5;return s}
