@@ -39,3 +39,22 @@ Restore (stops the appliance briefly; the current data is snapshotted first so a
 ```powershell
 C:\LocalAI\repo\deploy\Restore-LocalAI-Data.ps1 -Backup C:\LocalAI\backups\data\localai-YYYYMMDD-HHMMSS.db -Force
 ```
+
+## Automatic updates
+
+The `LocalAI Safe Deploy` task runs `deploy/Run-LocalAI-AutoDeploy.ps1` every 5 minutes for the logged-on user:
+
+1. fast-forwards `C:\LocalAI\repo` (when it tracks `origin/main` and has no local edits), so the deploy scripts stay current;
+2. runs `Deploy-LocalAI.ps1`: an idle poll returns *NO CHANGE* in about a second; a new commit is certified, promoted,
+   health-checked, and rolled back automatically if it is unhealthy;
+3. posts to the Inbox (`POST /api/notifications/system`) when a release goes live or a deploy fails (once per failing
+   commit), and stays silent otherwise;
+4. keeps `C:\LocalAI\.deploy\auto-deploy.log`: a one-line history plus the last run's full output.
+
+```powershell
+C:\LocalAI\repo\deploy\Install-LocalAI-DeployAgent.ps1 -Install -StartNow                 # track main
+C:\LocalAI\repo\deploy\Install-LocalAI-DeployAgent.ps1 -Install -TargetRef <release ref>  # a release channel
+C:\LocalAI\repo\deploy\Install-LocalAI-DeployAgent.ps1 -Uninstall
+```
+
+Manual deploys still work; the deploy lock keeps a manual run and the task from overlapping.

@@ -5,13 +5,15 @@ param(
     [switch]$Install,
     [switch]$Uninstall,
     [switch]$ValidateOnly,
-    [switch]$StartNow
+    [switch]$StartNow,
+    # What to deploy: origin/main today; a release ref once releases are tagged.
+    [string]$TargetRef = 'origin/main'
 )
 
 $ErrorActionPreference = 'Stop'
 
 $TaskName = 'LocalAI Safe Deploy'
-$Script = 'C:\LocalAI\repo\deploy\Deploy-LocalAI.ps1'
+$Script = 'C:\LocalAI\repo\deploy\Run-LocalAI-AutoDeploy.ps1'
 $PowerShellExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 
 if ($Install -and $Uninstall) {
@@ -46,8 +48,12 @@ $arguments = @(
     '-ExecutionPolicy Bypass'
     '-File'
     ('"{0}"' -f $Script)
+    '-TargetRef'
+    $TargetRef
 )
 if ($ValidateOnly) {
+    # Certification only: run the deploy script directly without promotion or notifications.
+    $arguments = $arguments -replace 'Run-LocalAI-AutoDeploy\.ps1', 'Deploy-LocalAI.ps1'
     $arguments += '-CheckOnly'
 }
 $argumentLine = $arguments -join ' '
