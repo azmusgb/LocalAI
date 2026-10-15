@@ -1,0 +1,217 @@
+# Every container Local AI runs on the Windows host, in one place. This reproduces the stack that was built by
+# hand and from three compose files in C:\LocalAI\n8n (same names, ports, mounts, networks and settings), so a new
+# or rebuilt host can be provisioned with deploy\stack\Install-LocalAI-Stack.ps1.
+#
+# Secrets and host-specific values come from C:\LocalAI\stack\stack.env (never in the repo; see stack.env.example):
+#   docker compose --env-file C:\LocalAI\stack\stack.env -f deploy\stack\compose.yml up -d
+# On the current host everything already runs; deploy\stack\Test-LocalAI-Stack.ps1 checks it still matches this file.
+name: local-ai
+
+x-host-gateway: &host-gateway
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+services:
+  appliance:
+    image: node:22-alpine
+    container_name: local-ai-appliance
+    restart: unless-stopped
+    command: ["node", "/app/server.js"]
+    <<: *host-gateway
+    ports:
+      - "3080:3080"
+      # Host-only tools (PowerShell Workbench); published on the host's loopback only.
+      - "127.0.0.1:3090:3090"
+    environment:
+      PORT: "3080"
+      LOCAL_UI_PORT: "3090"
+      DATA_DIR: /data
+      WORKSPACE_ROOT: /workspace
+      MODEL: qwen3:4b-instruct-32k
+      OLLAMA_URL: http://host.docker.internal:11434
+      COMFY_URL: http://host.docker.internal:8188
+      N8N_URL: http://local-ai-n8n:5678
+      PROXY_URL: http://local-ai-ollama-responses-proxy:8080
+      SEARXNG_URL: http://local-ai-searxng:8080
+      REPORT_PATH: /reports/LocalAI-Certification-latest.txt
+      CAPABILITY_CACHE_MS: "30000"
+      CHAT_MODEL_TIMEOUT_MS: "180000"
+      ENGINEERING_MODEL_TIMEOUT_MS: "600000"
+      MAC_AI_HOME_URL: ${MAC_AI_HOME_URL:-}
+      MAC_DSH_URL: ${MAC_DSH_URL:-}
+      POWERSHELL_UI_TOKEN: ${POWERSHELL_UI_TOKEN:?set in stack.env}
+      POWERSHELL_BRIDGE_TOKEN: ${POWERSHELL_BRIDGE_TOKEN:?set in stack.env}
+    volumes:
+      # The deploy (deploy\Deploy-LocalAI.ps1) replaces this folder; the container only reads it.
+      - ${LOCALAI_ROOT:-C:/LocalAI}/appliance/app:/app:ro
+      - appliance-data:/data
+      - ${LOCALAI_ROOT:-C:/LocalAI}/reports:/reports:ro
+      - C:/Projects:/workspace/projects
+      - C:/repos:/workspace/repos
+    networks: [local-ai]
+
+  https:
+    image: caddy:2.10-alpine
+    container_name: local-ai-https
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      LOCALAI_NAME: ${LOCALAI_NAME:-localai.home.arpa}
+      LOCALAI_HOST_IP: ${LOCALAI_HOST_IP:?set in stack.env}
+    volumes:
+      - caddy-data:/data
+      - ${LOCALAI_ROOT:-C:/LocalAI}/repo/deploy/caddy:/etc/caddy:ro
+    networks: [local-ai]
+
+  n8n:
+    # n8n 2.40.7, pinned to the image that has been running.
+    image: docker.n8n.io/n8nio/n8n@sha256:ffeb52485f78b1b06c9a832205853cf75da72a07a514c9a27724df85979d6c34
+    container_name: local-ai-n8n
+    restart: unless-stopped
+    ports: ["127.0.0.1:5678:5678"]
+    environment:
+      N8N_EDITOR_BASE_URL: http://${LOCALAI_HOST_IP}:5678/
+      WEBHOOK_URL: http://${LOCALAI_HOST_IP}:5678/
+      # Encrypts the credentials stored in n8n: losing it makes them unreadable.
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?set in stack.env}
+      GENERIC_TIMEZONE: ${TZ:-America/New_York}
+      TZ: ${TZ:-America/New_York}
+      N8N_SECURE_COOKIE: "false"
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_RUNNERS_ENABLED: "true"
+    volumes: [n8n-data:/home/node/.n8n]
+    networks: [local-ai]
+
+  ollama-responses-proxy:
+    image: node:22-alpine
+    container_name: local-ai-ollama-responses-proxy
+    restart: unless-stopped
+    command: ["node", "/app/server.js"]
+    <<: *host-gateway
+    environment:
+      LISTEN_HOST: 0.0.0.0
+      LISTEN_PORT: "8080"
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      CACHE_FILE: /data/cache.json
+      CACHE_MAX_RESPONSES: "250"
+      LOG_LEVEL: info
+    volumes:
+      - ${LOCALAI_ROOT:-C:/LocalAI}/repo/deploy/stack/ollama-responses-proxy/server.js:/app/server.js:ro
+      - proxy-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks:
+      local-ai:
+        aliases: [ollama-responses-proxy]
+
+  searxng:
+    image: ghcr.io/searxng/searxng@sha256:5286edb35782454ab8a102c5eff6b54bff745853191b46aeead95f225aa6dfb6
+    container_name: local-ai-searxng
+    restart: unless-stopped
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?set in stack.env}
+    volumes:
+      - ${LOCALAI_ROOT:-C:/LocalAI}/repo/deploy/stack/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    networks:
+      local-ai:
+        aliases: [searxng]
+
+  # n8n's code sandbox: a one-shot job makes the mutual-TLS certificates, then an API and one Docker-in-Docker runner.
+  sandbox-certs:
+    image: n8nio/n8n-sandbox-service-api:${N8N_SANDBOX_VERSION:-1.5.0}
+    container_name: local-ai-sandbox-certs
+    user: "0:0"
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        bootstrap-mtls.sh --out-dir /tls --api-san sandbox-api
+        --control-san-prefix sandbox-runner --world-readable &&
+        chown -R sandbox-api:sandbox-api /tls/api &&
+        chmod -R a+rX /tls
+    environment:
+      NUM_RUNNERS: "1"
+    volumes: [sandbox-tls:/tls]
+    networks: [local-ai]
+
+  sandbox-api:
+    image: n8nio/n8n-sandbox-service-api:${N8N_SANDBOX_VERSION:-1.5.0}
+    container_name: local-ai-sandbox-api
+    restart: unless-stopped
+    depends_on:
+      sandbox-certs:
+        condition: service_completed_successfully
+    environment:
+      SANDBOX_API_KEYS: ${SANDBOX_API_KEYS:?set in stack.env}
+      SANDBOX_API_RUNNER_REGISTRATION_TOKEN: ${SANDBOX_API_RUNNER_REGISTRATION_TOKEN:?set in stack.env}
+      SANDBOX_API_RUNNER_API_KEY: ${SANDBOX_API_RUNNER_API_KEY:?set in stack.env}
+      SANDBOX_API_GRPC_TLS_CERT_FILE: /tls/api/grpc-server.crt
+      SANDBOX_API_GRPC_TLS_KEY_FILE: /tls/api/grpc-server.key
+      SANDBOX_API_GRPC_TLS_CLIENT_CA_FILE: /tls/api/ca.crt
+      SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_CA_FILE: /tls/api/ca.crt
+      SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_CERT_FILE: /tls/api/control-grpc-api-client.crt
+      SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_KEY_FILE: /tls/api/control-grpc-api-client.key
+      SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_SERVER_NAME: sandbox-runner-1
+    volumes: [sandbox-tls:/tls:ro]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    networks:
+      local-ai:
+        aliases: [sandbox-api]
+
+  sandbox-runner-1:
+    image: n8nio/n8n-sandbox-service-runner-dind:${N8N_SANDBOX_VERSION:-1.5.0}
+    container_name: local-ai-sandbox-runner-1
+    privileged: true
+    restart: unless-stopped
+    depends_on:
+      sandbox-api:
+        condition: service_healthy
+    environment:
+      SANDBOX_RUNNER_API_KEYS: ${SANDBOX_API_RUNNER_API_KEY:?set in stack.env}
+      SANDBOX_RUNNER_REGISTRATION_TOKEN: ${SANDBOX_API_RUNNER_REGISTRATION_TOKEN:?set in stack.env}
+      SANDBOX_RUNNER_API_GRPC_ADDR: sandbox-api:9090
+      SANDBOX_RUNNER_HTTP_BASE_URL: https://sandbox-runner-1:8080
+      SANDBOX_RUNNER_CONTROL_GRPC_LISTEN_ADDR: ":9091"
+      SANDBOX_RUNNER_CONTROL_GRPC_ADVERTISE_ADDR: sandbox-runner-1:9091
+      SANDBOX_RUNNER_ID: runner-1
+      SANDBOX_RUNNER_DOCKER_SANDBOX_IMAGE: n8nio/n8n-sandbox-service-sandbox:${N8N_SANDBOX_VERSION:-1.5.0}
+      SANDBOX_RUNNER_REGISTRATION_GRPC_CA_FILE: /tls/runner/ca.crt
+      SANDBOX_RUNNER_REGISTRATION_GRPC_CERT_FILE: /tls/runner/grpc-client.crt
+      SANDBOX_RUNNER_REGISTRATION_GRPC_KEY_FILE: /tls/runner/grpc-client.key
+      SANDBOX_RUNNER_REGISTRATION_GRPC_SERVER_NAME: sandbox-api
+      SANDBOX_RUNNER_CONTROL_GRPC_TLS_CERT_FILE: /tls/runner/control-grpc-server.crt
+      SANDBOX_RUNNER_CONTROL_GRPC_TLS_KEY_FILE: /tls/runner/control-grpc-server.key
+      SANDBOX_RUNNER_CONTROL_GRPC_TLS_CLIENT_CA_FILE: /tls/runner/ca.crt
+      SANDBOX_RUNNER_DEFAULT_MEMORY_MB: "512"
+      SANDBOX_RUNNER_DEFAULT_CPU_PERCENT: "100"
+      SANDBOX_RUNNER_DEFAULT_PIDS_MAX: "256"
+    volumes: [sandbox-tls:/tls:ro]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "--no-check-certificate", "https://localhost:8080/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+    networks:
+      local-ai:
+        aliases: [sandbox-runner-1]
+
+# Names match the existing volumes and network, so data carries over.
+volumes:
+  appliance-data: { name: local-ai-appliance-data }
+  caddy-data: { name: localai-caddy-data }
+  n8n-data: { name: n8n_data }
+  proxy-data: { name: local-ai-ollama-responses-proxy-data }
+  sandbox-tls: { name: local-ai-sandbox-tls }
+
+networks:
+  local-ai:
+    name: local-ai-sandbox-net

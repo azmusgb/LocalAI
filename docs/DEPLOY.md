@@ -86,6 +86,35 @@ The task is hidden, runs `C:\LocalAI\repo\deploy\Run-LocalAI-AutoDeploy.ps1` (pa
 skips a run while the previous one is still going, and is stopped after 30 minutes. Validate-only mode
 sends no Inbox notices. On a new host, prove a manual deploy and a manual rollback before enabling deploy mode.
 
+## Provisioning the containers
+
+`deploy\stack\compose.yml` describes every container Local AI runs:
+
+- the appliance and the HTTPS proxy (Caddy);
+- n8n, the Ollama responses proxy and SearXNG;
+- n8n's code sandbox (a certificate job, its API and a Docker-in-Docker runner).
+
+They share the `local-ai-sandbox-net` network, and the existing volumes keep their names. Secrets and host values
+live only in `C:\LocalAI\stack\stack.env`, which is readable by your account and SYSTEM only; the names are in
+`deploy\stack\stack.env.example`. The proxy's code and SearXNG's settings now live in `deploy\stack\`.
+
+| Script | Does |
+|---|---|
+| `deploy\stack\Install-LocalAI-Stack.ps1` | New host: creates `stack.env` with new secrets (reusing the PowerShell bridge tokens if present), the mounted folders and a first copy of the app; starts the stack, waits for `/healthz`, opens the firewall and trusts the HTTPS CA. `-DryRun` plans only. `-Adopt` recreates containers that were made by hand, keeping volumes and the old containers (`*-pre-compose`) for rollback. |
+| `deploy\stack\Export-LocalAI-StackEnv.ps1` | Writes the running stack's secrets to `stack.env` so a rebuild keeps the same keys (above all `N8N_ENCRYPTION_KEY`, without which n8n's saved credentials can't be read). Back the file up. |
+| `deploy\stack\Test-LocalAI-Stack.ps1` | Compares every running container with `compose.yml` (image, restart, ports, mounts, network, command, environment values) without changing anything or printing values. |
+
+Run them from a normal Windows session, not SSH: Docker's credential helper can't pull images over SSH.
+
+On the current host the containers were made by hand and from compose files in `C:\LocalAI\n8n`. They match
+`compose.yml` except where the repo is now the source: the proxy and SearXNG still read their (identical) config
+from `C:\LocalAI\n8n`, and the appliance still sets `APP_VERSION`, which no longer matters (the release
+sets the version). `Install-LocalAI-Stack.ps1 -Adopt` brings them under compose.
+
+**Rotating the sandbox key.** Put a new random value in `SANDBOX_API_KEYS` in `stack.env`, then run
+`docker compose --env-file C:\LocalAI\stack\stack.env -f deploy\stack\compose.yml up -d sandbox-api` (after adopting). Finally, give
+n8n's assistant the new key in its sandbox connection settings.
+
 ## Versions and release notes
 
 Each deploy writes `app\release.json` (`New-LocalAI-ReleaseInfo` in `deploy\Deployment-LocalAI.ps1`):

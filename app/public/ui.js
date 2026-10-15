@@ -3138,7 +3138,9 @@ function render(card){
  card.innerHTML=`<div class="section-head"><div><h2>What's new</h2><p>Version <b>${esc(current.version)}</b>${current.deployedAt?` · updated ${esc(when(current.deployedAt))}`:''}${current.commit?` · <code>${esc(current.commit.slice(0,10))}</code>`:''}</p></div></div>
  ${list.length?`<div class="whatsnew-list">${list.map((r,i)=>`<details class="whatsnew-release"${i===0?' open':''}><summary><b>${esc(r.version)}</b><span>${esc(when(r.deployedAt))} · ${r.notes?.length||0} change${r.notes?.length===1?'':'s'}</span></summary>${r.notes?.length?`<ul>${r.notes.map(note).join('')}</ul>`:'<p class="meta">No change list was recorded for this release.</p>'}</details>`).join('')}</div>`:'<p class="meta">Release notes appear here after the next update.</p>'}`;
 }
-function mount(){const status=q('#status');if(!status||q('.whatsnew-card',status))return;const card=document.createElement('section');card.className='card whatsnew-card';card.id='whatsNew';(q('.secure-card',status)||q('.dev-tools-pref',status)||q('.topbar',status))?.after(card);render(card)}
+function mount(){const status=q('#status');if(!status||q('.whatsnew-card',status))return;const card=document.createElement('section');card.className='card whatsnew-card';card.id='whatsNew';
+ // After the health results (the services card), like the Secure connection card: what's running comes first.
+ (q('#serviceList',status)?.closest('.card')||q('.dev-tools-pref',status)||q('.topbar',status))?.after(card);render(card)}
 // After an update, say so once, and let the notice open What's new.
 function announce(){
  const v=data?.current?.version,seen=pref.get();if(!v)return;pref.set(v);
