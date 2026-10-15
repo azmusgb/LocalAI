@@ -1647,3 +1647,4 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
 .run-approval__actions button{flex:1 1 120px}
 /* The run view is an <aside>; the phone shell's `aside{height:52px;display:flex}` rules clipped it to its header. */
 .run-drawer{display:block;height:auto;max-height:none;z-index:1}
+.run-view-error{margin-top:10px;padding:10px 12px;border:1px solid var(--ds-bad);border-radius:var(--ds-r-md);background:var(--ds-surface-2);color:var(--ds-bad-text);font-size:14px;overflow-wrap:anywhere}

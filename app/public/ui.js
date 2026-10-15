@@ -2594,7 +2594,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 (() => {
   'use strict';
 
-  const state = { runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '', projects: [] };
+  const state = { runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '', projects: null, viewError: '' };
   const ACTIVE = new Set(['queued', 'running', 'streaming', 'awaiting_approval']);
 
   function el(id) { return document.getElementById(id); }
@@ -2623,6 +2623,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (status === 'awaiting_approval') return 'waiting';
     return active({ status }) ? 'running' : '';
   }
+  // A time the run view shows: a missing or invalid one is a dash, never the 1969 epoch.
+  function shownDate(value) { return value ? (safeDate(value)?.toLocaleString() || '—') : '—'; }
   function outputText(value) {
     if (value === null || value === undefined || value === '') return '';
     if (typeof value === 'string') return value;
@@ -2766,14 +2768,20 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const badge = card?.badge || kit?.statusBadge(run.status) || { label: statusLabel(run.status), tone: 'neutral' };
     const chip = document.createElement('span'); chip.className = `badge badge--${badge.tone}`; chip.textContent = badge.label;
     const project = document.createElement('span'); project.className = 'run-view-project';
-    project.textContent = run.projectId ? (state.projects.find((p) => p.id === run.projectId)?.name || 'A project') : 'Not filed';
-    const pin = document.createElement('button'); pin.type = 'button'; pin.className = 'btn-outline run-act';
-    pin.textContent = run.pinned ? 'Unpin' : 'Pin'; pin.setAttribute('aria-pressed', String(!!run.pinned));
-    pin.addEventListener('click', () => updateRun(run, { pinned: !run.pinned }, run.pinned ? 'Run unpinned.' : 'Run pinned.'));
-    const file = document.createElement('button'); file.type = 'button'; file.className = 'btn-outline run-act'; file.textContent = 'File…';
-    file.addEventListener('click', () => fileRun(run));
-    vh.append(chip, project, pin, file);
+    project.textContent = !run.projectId ? 'Not filed' : !state.projects ? 'Filed' : (state.projects.find((p) => p.id === run.projectId)?.name || 'Project removed');
+    vh.append(chip, project);
+    if (String(run.id).startsWith('legacy-')) {
+      const note = document.createElement('span'); note.className = 'run-view-project'; note.textContent = 'Managed on its own page'; vh.appendChild(note);
+    } else {
+      const pin = document.createElement('button'); pin.type = 'button'; pin.className = 'btn-outline run-act';
+      pin.textContent = run.pinned ? 'Unpin' : 'Pin'; pin.setAttribute('aria-pressed', String(!!run.pinned));
+      pin.addEventListener('click', () => updateRun(run, { pinned: !run.pinned }, run.pinned ? 'Run unpinned.' : 'Run pinned.'));
+      const file = document.createElement('button'); file.type = 'button'; file.className = 'btn-outline run-act'; file.textContent = 'File…';
+      file.addEventListener('click', () => fileRun(run));
+      vh.append(pin, file);
+    }
     drawer.appendChild(vh);
+    if (state.viewError) { const err = document.createElement('div'); err.className = 'run-view-error'; err.setAttribute('role', 'alert'); err.textContent = state.viewError; drawer.appendChild(err); }
 
     if (card?.approval) drawer.appendChild(approvalBar(card.approval));
 
@@ -2791,7 +2799,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     details.className = 'run-detail-grid';
     const values = [
       ['Status', statusLabel(run.status)], ['Progress', `${Math.max(0, Math.min(100, Number(run.progress) || 0))}%`],
-      ['Started', safeDate(run.startedAt)?.toLocaleString() || '—'], ['Finished', safeDate(run.finishedAt)?.toLocaleString() || '—'],
+      ['Started', shownDate(run.startedAt)], ['Finished', shownDate(run.finishedAt)],
       ['Attempt', String(run.attempt || 1)], ['Retry of', run.retryOf || '—'], ['Run ID', run.id]
     ];
     values.forEach(([label, value]) => {
@@ -2823,7 +2831,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         const marker = document.createElement('span'); marker.className = 'run-event-marker';
         const text = document.createElement('div');
         const detail = document.createElement('div'); detail.className = 'run-event-detail'; detail.textContent = event.detail || statusLabel(event.status);
-        const time = document.createElement('div'); time.className = 'run-event-time'; time.textContent = safeDate(event.at)?.toLocaleString() || '—';
+        const time = document.createElement('div'); time.className = 'run-event-time'; time.textContent = shownDate(event.at);
         text.append(detail, time); row.append(marker, text); timeline.appendChild(row);
       });
       section.appendChild(timeline); drawer.appendChild(section);
@@ -2847,12 +2855,22 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         if (!answer.ok) return;
         b.disabled = true;
         try { await post('/api/approvals/decide', { id: approval.id, decision }); el('runLiveRegion').textContent = decision === 'approved' ? 'Approved.' : 'Rejected.'; await loadRuns(true); }
-        catch (error) { el('runLiveRegion').textContent = `Could not record the decision: ${error.message}`; b.disabled = false; }
+        catch (error) { viewFail(`Could not record the decision: ${error.message}`); b.disabled = false; }
       });
       row.appendChild(b);
     });
     bar.appendChild(row);
     return bar;
+  }
+
+  // Errors show in the run view (and are announced); the next successful action or opening a run clears them.
+  function viewFail(message) {
+    state.viewError = message; el('runLiveRegion').textContent = message;
+    if (state.selectedId) renderDrawer(state.selectedId);
+  }
+  // The projects list is fetched when a run view opens and again before filing, so a filed run shows its project's name.
+  async function loadProjects() {
+    try { state.projects = (await window.LocalAIUI.fetchJson('/api/projects')).items || []; return true; } catch { return false; }
   }
 
   // Pin or file a run. The server answers {item}; keep the list's card and show the change right away.
@@ -2861,13 +2879,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const { item } = await post('/api/runs/update', { id: run.id, ...patch });
       const i = state.runs.findIndex((r) => r.id === run.id);
       if (i >= 0) state.runs[i] = { ...state.runs[i], ...item, card: state.runs[i].card };
-      el('runLiveRegion').textContent = done;
+      state.viewError = ''; el('runLiveRegion').textContent = done;
       render(); if (state.selectedId === run.id) renderDrawer(run.id);
-    } catch (error) { el('runLiveRegion').textContent = `Could not update the run: ${error.message}`; }
+    } catch (error) { viewFail(`Could not update the run: ${error.message}`); }
   }
 
   async function fileRun(run) {
-    try { state.projects = (await window.LocalAIUI.fetchJson('/api/projects')).items || []; } catch (error) { el('runLiveRegion').textContent = `Could not load projects: ${error.message}`; return; }
+    if (!(await loadProjects())) { viewFail('Could not load projects.'); return; }
     const options = [{ value: '', label: 'Not filed' }, ...state.projects.map((p) => ({ value: p.id, label: p.name }))];
     const answer = await window.LocalAIUI.ask({ title: 'File this run', effect: 'Filed runs are kept with their project.', confirmLabel: 'File', select: { label: 'Project', options, value: run.projectId || '' } });
     if (!answer.ok) return;
@@ -2885,10 +2903,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
 
   function openDrawer(runId) {
-    state.selectedId = runId;
+    state.selectedId = runId; state.viewError = '';
     const backdrop = el('runDrawerBackdrop');
     if (!backdrop) return;
     renderDrawer(runId);
+    loadProjects().then((ok) => {   // update just the name, so focus in the run view is not lost
+      const run = state.runs.find((item) => item.id === runId), span = el('runDrawer')?.querySelector('.run-view-project');
+      if (ok && run?.projectId && span && state.selectedId === runId) span.textContent = state.projects.find((p) => p.id === run.projectId)?.name || 'Project removed';
+    });
     backdrop.classList.add('show');
     backdrop.setAttribute('aria-hidden', 'false');
     el('runDrawer')?.querySelector('button')?.focus();

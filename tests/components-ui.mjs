@@ -209,12 +209,13 @@ const stubRuns = () => [
   { id: 'run_eng', type: 'engineering', title: 'Fix the login bug', status: 'awaiting_approval', progress: 40, updatedAt: now, createdAt: now, summary: 'Two files change', output: 'planned', events: [{ status: 'awaiting_approval', at: now, detail: 'Waiting for review' }], pinned: false, projectId: null,
     card: { kind: 'engineering', icon: 'build', title: 'Fix the login bug', summary: 'Two files change', badge: { label: 'Ready to review', tone: 'accent' }, preview: { type: 'diff', changeId: 'chg_1', files: [{ path: 'app/auth.js', added: 12, removed: 3 }, { path: 'app/login.html', added: 2, removed: 0 }] }, action: { label: 'Review' }, approval: { id: 'apr_1', title: 'Apply the login fix', detail: 'Edits 2 files', risk: 'high' }, view: 'changes' } }
 ];
-const rv = { posts: [], runs: stubRuns() };
+const rv = { posts: [], runs: stubRuns(), fail: null };
 const runPage = await newPage(async pg => {
   await pg.route(u => u.pathname === '/api/runs', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: rv.runs, summary: {} }) }));
   await pg.route('**/api/projects', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [{ id: 'prj_a', name: 'Alpha' }, { id: 'prj_b', name: 'Beta' }] }) }));
   await pg.route(u => ['/api/runs/update', '/api/approvals/decide'].includes(u.pathname), r => {
     const body = JSON.parse(r.request().postData() || '{}'); rv.posts.push([new URL(r.request().url()).pathname, body]);
+    if (rv.fail && new URL(r.request().url()).pathname === '/api/runs/update') return r.fulfill({ status: rv.fail.status, contentType: 'application/json', body: JSON.stringify({ error: rv.fail.error }) });
     if (new URL(r.request().url()).pathname === '/api/runs/update') { const i = rv.runs.findIndex(x => x.id === body.id); const { pinned, projectId } = body; rv.runs[i] = { ...rv.runs[i], ...(pinned !== undefined ? { pinned } : {}), ...(projectId !== undefined ? { projectId } : {}) }; return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ item: rv.runs[i] }) }); }
     r.fulfill({ contentType: 'application/json', body: JSON.stringify({ item: { id: body.id, status: body.decision } }) });
   });
@@ -304,6 +305,43 @@ await check('a body registered for a kind mounts in place of Output', async () =
 });
 await check('LocalAIRuns.open still returns false for an unknown id', async () => {
   assert.equal(await runPage.evaluate(() => window.LocalAIRuns.open('nope')), false);
+});
+const refreshRuns = async () => { await runPage.evaluate(() => document.getElementById('runsRefresh').click()); await runPage.waitForTimeout(300); };
+await check('a failed Pin shows its message visibly in the run view', async () => {
+  rv.fail = { status: 409, error: 'This run is managed by its own page and cannot be filed yet' };
+  await openRun('run_img');
+  await drawerOpen().getByRole('button', { name: 'Pin', exact: true }).click();
+  const msg = drawerOpen().locator('.run-view-error');
+  await msg.waitFor();
+  assert.match(await msg.innerText(), /managed by its own page/);
+  assert.equal(await msg.isVisible(), true);
+  rv.fail = null; await closeRun();
+});
+await check('a legacy run offers no Pin or File… and says it is managed elsewhere', async () => {
+  rv.runs.push({ ...rv.runs[0], id: 'legacy-agent:1', title: 'Old agent run' }); await refreshRuns();
+  await openRun('legacy-agent:1');
+  const d = drawerOpen();
+  assert.equal(await d.getByRole('button', { name: /^(Pin|Unpin)$/ }).count(), 0);
+  assert.equal(await d.getByRole('button', { name: 'File…' }).count(), 0);
+  assert.match(await d.innerText(), /Managed on its own page/);
+  await closeRun();
+});
+await check('a filed run shows its project name, and Project removed when it is gone', async () => {
+  rv.runs.find(x => x.id === 'run_img').projectId = 'prj_a'; await refreshRuns();
+  await openRun('run_img');
+  await drawerOpen().locator('.run-view-project', { hasText: 'Alpha' }).waitFor();
+  await closeRun();
+  rv.runs.find(x => x.id === 'run_img').projectId = 'prj_gone'; await refreshRuns();
+  await openRun('run_img');
+  await drawerOpen().locator('.run-view-project', { hasText: 'Project removed' }).waitFor();
+  await closeRun();
+});
+await check('a run with no start or finish time shows dashes, never 1969', async () => {
+  await openRun('run_eng');
+  const t = await drawerOpen().innerText();
+  assert.doesNotMatch(t, /1969|1970/);
+  assert.match(await drawerOpen().locator('.run-detail', { hasText: 'Started' }).innerText(), /—/);
+  await closeRun();
 });
 await check('Home run center renders the same cards', async () => {
   await runPage.evaluate(() => window.showView('home'));
