@@ -118,10 +118,11 @@ await check('GridCraft is reachable from Integrations', async () => {
   await page.locator('[data-integration-source-v2="gridcraft"]').filter({ hasNotText: 'Checking' }).waitFor({ timeout: 8000 });
 });
 
-await check('audit log links runs to Runs', async () => {
+await check('opening a run keeps you on your page (open is false for an unknown id and moves nothing)', async () => {
+  const before = await page.evaluate(() => location.hash);
   assert.equal(await page.evaluate(() => typeof window.LocalAIRuns.open), 'function');
   assert.equal(await page.evaluate(() => window.LocalAIRuns.open('no-such-run')), false);
-  await page.waitForSelector('#runs.active');
+  assert.equal(await page.evaluate(() => location.hash), before);
 });
 
 await check('page list collapses to the rail, shows the page strip, and remembers it', async () => {

@@ -1,0 +1,232 @@
+// Home: what needs you, your latest threads, and a composer. Send opens the work where you are (a run view).
+// app.js lends the old pages through window.LocalAILegacy until Chat, Images and Missions start runs themselves.
+(function(root){'use strict';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const MODES=[['auto','Auto','Picks for you'],['ask','Chat','Ask a question'],['research','Research','Search the web first'],['create','Image','Make pictures'],['mission','Mission','Give the team a goal'],['automate','Automate','Set up a task'],['engineering','Change Local AI','Always asks you first']];
+const LABEL=Object.fromEntries(MODES.map(m=>[m[0],m[1]]));
+const MODE_KEY='localai.home.mode',OPT_KEY='localai.home.options',DAY=864e5;
+const store={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}}};
+let mode=LABEL[store.get(MODE_KEY)]?store.get(MODE_KEY):'auto',options={},sending=false,flash=0,attention=[],timer=0,loaded=false;
+try{options=JSON.parse(store.get(OPT_KEY)||'{}')||{}}catch{}
+const active=()=>$('home')?.classList.contains('active');
+
+// ---- the mode chip and its sheet ----
+function paintChip(text){const c=$('homeModeChip');if(!c)return;const t=text||LABEL[mode]+' ▾';c.textContent=t;c.setAttribute('aria-label',`Mode: ${LABEL[mode]}. Change mode`)}
+let syncing=false;
+function setMode(m,{persist=true}={}){
+ if(!LABEL[m])return;
+ mode=m;if(persist)store.set(MODE_KEY,m);
+ clearTimeout(flash);paintChip();
+ if(syncing)return;syncing=true; // keep the hidden buttons (state.mode, the gate, first-run samples) in step
+ try{const b=document.querySelector(`.mode[data-mode="${m}"]`);if(b&&!b.classList.contains('active'))b.click()}finally{syncing=false}
+}
+function saveOptions(){store.set(OPT_KEY,JSON.stringify(options))}
+const cache={};
+async function once(key,url){if(!cache[key])cache[key]=root.LocalAIUI.fetchJson(url,{cache:'no-store'}).catch(e=>{delete cache[key];throw e});return cache[key]}
+const field=(id,label,opts,value)=>`<label class="ask-sheet__field" for="${id}"><span>${esc(label)}</span><select id="${id}">${opts.map(o=>`<option value="${esc(o.value)}"${o.value===value?' selected':''}>${esc(o.label)}</option>`).join('')}</select></label>`;
+async function paintOptions(){
+ const box=$('homeModeOptions');if(!box)return;const m=mode;
+ box.innerHTML='';box.hidden=!['ask','research','create','mission'].includes(m);if(box.hidden)return;
+ box.innerHTML='<p class="home-sheet__note" role="status">Loading options…</p>';
+ try{
+  if(m==='ask'||m==='research'){
+   const j=await once('models','/api/models');if(mode!==m)return;
+   const list=(j.models||[]).map(x=>typeof x==='string'?x:x.name||x.id).filter(Boolean),cur=options.model&&list.includes(options.model)?options.model:j.default||list[0]||'';
+   box.innerHTML=list.length?field('homeOptModel','Model',list.map(v=>({value:v,label:v})),cur):'<p class="home-sheet__note">No models are installed yet.</p>';
+   $('homeOptModel')?.addEventListener('change',e=>{options.model=e.target.value;saveOptions()});
+  }else if(m==='create'){
+   const j=await once('images','/api/images/models');if(mode!==m)return;
+   // Mirror what the Images page has selected right now; its buttons are the source of truth once that page has drawn.
+   const pick=(sel,attr)=>document.querySelector(`${sel} .active[${attr}]`)?.getAttribute(attr);
+   const engines=(j.engines||[]).map(e=>({value:e.id,label:e.label})),shapes=(j.aspects||[]).map(a=>({value:a.id,label:a.label})),styles=(j.styles||[]).map(s=>({value:s.id,label:s.label}));
+   const val=(k,list,live,def)=>{const v=live||options[k]||def;return list.some(o=>o.value===v)?v:list[0]?.value};
+   const cur={engine:val('engine',engines,pick('#imageEngines','data-engine'),j.defaultEngine),aspect:val('aspect',shapes,pick('#imageAspects','data-aspect'),'square'),style:val('style',styles,pick('#imageStyles','data-style'),'none')};
+   box.innerHTML=(engines.length?field('homeOptEngine','Engine',engines,cur.engine):'<p class="home-sheet__note">No image models found. Check Health.</p>')+(shapes.length?field('homeOptShape','Shape',shapes,cur.aspect):'')+(styles.length?field('homeOptStyle','Style',styles,cur.style):'');
+   for(const [id,key,sel,attr] of [['homeOptEngine','engine','#imageEngines','data-engine'],['homeOptShape','aspect','#imageAspects','data-aspect'],['homeOptStyle','style','#imageStyles','data-style']])
+    $(id)?.addEventListener('change',e=>{options[key]=e.target.value;saveOptions();document.querySelector(`${sel} [${attr}="${CSS.escape(e.target.value)}"]`)?.click()});
+   Object.assign(options,Object.fromEntries(Object.entries(cur).filter(([,v])=>v)));
+  }else if(m==='mission'){
+   const j=await once('agents','/api/agents/catalog');if(mode!==m)return;
+   const list=(j.items||[]).filter(a=>!a.infrastructure),chosen=new Set(options.agentIds||[]);
+   box.innerHTML=list.length?`<fieldset class="home-sheet__group"><legend>Specialists</legend><p class="home-sheet__note">Leave all unchecked and the team is picked for you.</p>${list.map((a,i)=>`<label class="home-check" for="homeAgent${i}"><input type="checkbox" id="homeAgent${i}" data-home-agent value="${esc(a.id)}"${chosen.has(a.id)?' checked':''}><span>${esc(a.name||a.id)}</span></label>`).join('')}</fieldset>`:'<p class="home-sheet__note">No specialists are listed yet.</p>';
+   box.onchange=()=>{options.agentIds=[...box.querySelectorAll('[data-home-agent]:checked')].map(x=>x.value);saveOptions()};
+  }
+ }catch(e){if(mode===m)box.innerHTML=`<p class="home-sheet__note">Couldn't load the options (${esc(e.message)}). The usual choices are used.</p>`}
+}
+function sheet(){
+ let d=$('homeModeSheet');if(d)return d;
+ d=document.createElement('dialog');d.id='homeModeSheet';d.className='ask-sheet home-sheet';d.setAttribute('aria-labelledby','homeModeTitle');
+ d.innerHTML='<form method="dialog" class="ask-sheet__form"><h2 class="ask-sheet__title" id="homeModeTitle">What kind of work?</h2><div class="home-modes" role="radiogroup" aria-labelledby="homeModeTitle"></div><div id="homeModeOptions" class="home-sheet__options" hidden></div><div class="ask-sheet__actions"><button type="submit" class="btn-primary home-sheet__done">Done</button></div></form>';
+ d.addEventListener('click',e=>{if(e.target===d)d.close()});
+ d.addEventListener('close',()=>{const c=$('homeModeChip');if(c&&c.isConnected)c.focus()});
+ d.querySelector('.home-modes').addEventListener('click',e=>{
+  const b=e.target.closest('[data-home-mode]');if(!b||b.disabled)return;e.preventDefault();
+  setMode(b.dataset.homeMode);paintModes();paintOptions();
+  if(!['ask','research','create','mission'].includes(mode))d.close();
+ });
+ document.body.appendChild(d);return d;
+}
+function paintModes(){
+ const box=sheet().querySelector('.home-modes');
+ box.innerHTML=MODES.map(([id,label,hint])=>{
+  const gate=document.querySelector(`.mode[data-mode="${id}"]`),off=!!gate?.disabled,why=off?String(gate.title||'').replace(/^Unavailable:\s*/,''):'';
+  return `<button type="button" role="radio" class="home-mode" data-home-mode="${id}" aria-checked="${id===mode}"${off?' disabled':''}><b>${esc(label)}</b><span>${esc(off&&why?'Not available: '+why:hint)}</span></button>`}).join('');
+}
+function openSheet(){const d=sheet();paintModes();paintOptions();if(!d.open)d.showModal()}
+
+// ---- Needs you and Recent ----
+// The runs module opens the run on top of Home, so Back returns here.
+const openRun=it=>root.LocalAIRuns?root.LocalAIRuns.show(it.id):root.LocalAIRouter?.go('#run/'+encodeURIComponent(it.id));
+function needsRuns(all){
+ const now=Date.now(),latest=new Map();
+ for(const r of all){const k=r.threadId||r.id,t=Date.parse(r.updatedAt||r.createdAt)||0,p=latest.get(k);if(!p||t>p.t)latest.set(k,{r,t})}
+ const mine=[...latest.values()].filter(({r,t})=>r.status==='awaiting_approval'||(r.status==='failed'&&now-t<DAY));
+ const rank=r=>r.status==='awaiting_approval'?0:1;
+ return mine.sort((a,b)=>rank(a.r)-rank(b.r)||b.t-a.t).map(x=>x.r);
+}
+function infoRow(title,sub,label,tone,go){
+ const kit=root.LocalAIKit,row=document.createElement('button');
+ row.type='button';row.className='list-row home-attn';
+ row.innerHTML=`<span class="list-row__icon">${kit?kit.icon('system'):''}</span><span class="list-row__main"><span class="list-row__title">${esc(title)}</span><span class="list-row__sub">${esc(sub)}</span></span><span class="list-row__trail"><span class="badge badge--${tone}">${esc(label)}</span></span>`;
+ row.addEventListener('click',go);
+ return row;
+}
+const attentionRow=a=>infoRow(a.title,a.detail,'Fix','bad',()=>root.showView?.(a.view||'status'));
+// A pending approval that is not itself a run: open its run when one exists, else Improve's approvals.
+const approvalRow=(a,run)=>infoRow(a.title||'Approval needed',a.detail||'Waiting for your decision','Review','attention',()=>run?openRun(run):root.showView?.('approvals'));
+let needs=[],approvals=[];
+function paintNeeds(){
+ const box=$('homeNeedsList'),sec=$('homeNeedsYou');if(!box||!sec)return;
+ const rows=[...needs.map(recentRow),...approvals.map(x=>approvalRow(x.a,x.run)),...attention.map(attentionRow)];
+ box.replaceChildren(...rows);
+ $('homeNeedsCount').textContent=rows.length?'· '+rows.length:'';
+ sec.hidden=!rows.length;
+}
+function recentRow(it){
+ const row=root.LocalAIUI.runCard(it,{onOpen:openRun,rowOpen:true}),act=row.querySelector('.run-card__action');
+ if(act)act.remove(); // the row itself opens the run
+ if(it.status==='awaiting_approval')row.querySelector('.run-card__bar')?.remove(); // waiting on you is not progress
+ return row;
+}
+function paintRecent(box,data){
+ const items=(data.items||[]).slice(0,6);
+ if(!items.length)return false;
+ box.replaceChildren(...items.map(recentRow));
+ return true;
+}
+const recentUrl='/api/runs?threads=1&limit=6';
+async function loadNeeds(){
+ const [d,p]=await Promise.allSettled([root.LocalAIUI.fetchJson('/api/runs?limit=120',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/approvals',{cache:'no-store'})]);
+ const runs=d.status==='fulfilled'?d.value.items||[]:null;
+ if(runs)needs=needsRuns(runs);
+ if(p.status==='fulfilled'){
+  const waiting=new Set(needs.filter(r=>r.status==='awaiting_approval').map(r=>r.meta?.changeId).filter(Boolean));
+  approvals=(p.value.items||[]).filter(a=>a.status==='pending'&&!(a.meta?.changeId&&waiting.has(a.meta.changeId)))
+   .map(a=>({a,run:a.meta?.changeId&&(runs||[]).find(r=>r.meta?.changeId===a.meta.changeId)||null}));
+ }
+ paintNeeds();
+}
+let inflight=null;
+function refresh(){
+ if(inflight)return inflight;
+ if(!active()||!onHomeHash())return Promise.resolve();
+ const box=$('homeRecent2');if(!box)return Promise.resolve();
+ const first=!loaded;
+ const recent=first?root.LocalAIUI.loadInto(box,()=>root.LocalAIUI.fetchJson(recentUrl,{cache:'no-store'}),{what:'your recent work',empty:'Nothing yet. Ask a question or make an image below.',render:paintRecent}).then(()=>{loaded=true},()=>{})
+  :root.LocalAIUI.fetchJson(recentUrl,{cache:'no-store'}).then(d=>{if(!paintRecent(box,d))box.innerHTML='<div class="state-empty empty-state">Nothing yet. Ask a question or make an image below.</div>'}).catch(()=>{});
+ return inflight=Promise.all([recent,loadNeeds()]).finally(()=>{inflight=null});
+}
+function schedule(){clearTimeout(timer);timer=setTimeout(()=>{if(active()&&!document.hidden)refresh().then(schedule);else schedule()},30000)}
+
+// ---- greeting ----
+function greet(){const h=new Date().getHours(),g=$('homeGreeting');if(g)g.textContent=h<5?'Still up?':h<12?'Good morning':h<18?'Good afternoon':'Good evening'}
+
+// ---- send ----
+function setError(msg){const e=$('homeComposerError');if(!e)return;e.textContent=msg||'';e.hidden=!msg}
+function busy(on){sending=on;const b=$('commandGo');if(b)b.disabled=on}
+const grow=()=>{const t=$('commandInput');if(!t)return;t.style.height='auto';t.style.height=Math.min(t.scrollHeight,140)+'px'};
+function clearInput(){const t=$('commandInput');if(t){t.value='';grow()}}
+function gateCheck(intent){
+ const b=document.querySelector(`.mode[data-mode="${intent}"]`);
+ if(b?.disabled)throw new Error(String(b.title||'').replace(/^Unavailable:\s*/,'')||'That is not available right now.');
+}
+const titleOf=t=>String(t).replace(/\s+/g,' ').trim().slice(0,80);
+// Start a run through the page that owns it. The run view opens first ("Starting…"), then the starter fills it in.
+async function viaStarter(name,intent,text,extra){
+ const S=root[name];
+ const L=root.LocalAILegacy;
+ if(!S||typeof S.start!=='function'){L.open(intent,text);clearInput();return}
+ const pending=root.LocalAIRuns.openPending({kind:intent,title:titleOf(text)});
+ clearInput();
+ try{await S.start(text,{...extra,pending})}catch(e){pending.fail(e.message);throw e}
+}
+async function dispatch(intent,text,route){
+ gateCheck(intent);
+ const L=root.LocalAILegacy;
+ if(intent==='engineering'){
+  const request=L.engineeringRequest(text,route);
+  const r=await fetch('/api/engineering/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request,target:'self',root:'app',maxAttempts:3})});
+  const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);
+  if(!data.run?.id)throw new Error('The change did not start. Try again.');
+  openRun({id:'legacy-engineering:'+data.run.id});clearInput();
+ }else if(intent==='ask'||intent==='research')await viaStarter('LocalAIChat',intent,text,{research:intent==='research',model:options.model});
+ else if(intent==='create')await viaStarter('LocalAIImages','create',text,{engine:options.engine,aspect:options.aspect,style:options.style});
+ else if(intent==='mission')await viaStarter('LocalAIMissions','mission',text,{agentIds:options.agentIds?.length?options.agentIds:undefined});else if(intent==='automate'){L.open('automate',text);clearInput()}
+ else throw new Error('Choose a mode and try again.');
+}
+let autoWait=null;
+function waitAuto(ms){return new Promise(res=>{const t=setTimeout(()=>{autoWait=null;res(true)},ms);autoWait={cancel:()=>{clearTimeout(t);autoWait=null;res(false)}}})}
+async function send(text,m=mode){
+ text=String(text??'').trim();
+ if(!text||sending)return;
+ const input=$('commandInput');busy(true);setError('');
+ try{
+  let intent=m,route=null;
+  if(m==='auto'){
+   route=await root.LocalAILegacy.resolveIntentRequest(text,'auto');intent=route.intent||'ask';
+   paintChip('→ '+(LABEL[intent]||intent));clearTimeout(flash);flash=setTimeout(()=>paintChip(),1500);
+   // A tap on the chip within the window changes the mode instead: nothing starts and the text stays.
+   if(!await waitAuto(1500)){setMode(LABEL[intent]?intent:'ask');openSheet();return}
+  }
+  await dispatch(intent,text,route);
+ }catch(e){
+  if(input&&!input.value){input.value=text;grow()} // the text stays so nothing is lost
+  setError(e.message||'Something went wrong. Try again.');
+ }finally{busy(false)}
+}
+
+// ---- wiring ----
+function fromHash(){const R=root.LocalAIRouter;if(!R)return;const cur=R.current(),m=cur.query.get('mode')||R.intentFor(cur.page).mode;if(m&&LABEL[m])setMode(m)}
+function onHomeHash(){const p=root.LocalAIRouter?.current().page;return !p||p==='home'||root.LocalAIViews?.resolve(p)==='home'}
+function activate(){fromHash();greet();if(root.LocalAIUI)refresh().then(schedule)}
+function dockToNav(){
+ // On phones the composer sits exactly on the tab bar, whatever its height is.
+ const c=$('homeComposer'),n=$('uxMobileNav');if(!c)return;
+ const phone=matchMedia('(max-width:760px)').matches&&n&&getComputedStyle(n).display!=='none';
+ if(!phone){c.style.removeProperty('--home-dock');document.documentElement.style.removeProperty('--home-pad');return}
+ c.style.setProperty('--home-dock',Math.round(innerHeight-n.getBoundingClientRect().top)+'px');
+ document.documentElement.style.setProperty('--home-pad',Math.ceil(c.getBoundingClientRect().height)+'px');
+}
+function init(){
+ if(!$('homeComposer'))return;
+ paintChip();greet();
+ $('homeModeChip').addEventListener('click',()=>autoWait?autoWait.cancel():openSheet());
+ $('commandGo').addEventListener('click',()=>send($('commandInput').value));
+ $('commandInput').addEventListener('input',()=>{grow();dockToNav()});
+ $('homeSeeAll').addEventListener('click',()=>root.LocalAIRouter?.go('#work'));
+ document.addEventListener('click',e=>{const b=e.target.closest?.('.mode[data-mode]');if(b&&!syncing)setMode(b.dataset.mode)});
+ addEventListener('resize',dockToNav,{passive:true});
+ if(root.ResizeObserver)new ResizeObserver(dockToNav).observe($('homeComposer'));
+ // The tab bar is built after this script; look again once it exists.
+ let tries=0;(function wait(){if($('uxMobileNav')){dockToNav();if(root.ResizeObserver)new ResizeObserver(dockToNav).observe($('uxMobileNav'))}else if(tries++<40)setTimeout(wait,100)})();
+ new MutationObserver(()=>{if(active())activate()}).observe($('home'),{attributes:true,attributeFilter:['class']});
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&active())refresh().then(schedule)});
+ // Home is on screen before the router has read the hash; a link to another page should not make Home load.
+ if(active()&&onHomeHash())setTimeout(activate,0);
+}
+root.LocalAIHome={send,activate,refresh,mode:()=>mode,setMode,
+ // ui.js hands over the critical items of the capability check (a stopped service, an unreachable registry).
+ setAttention(items){attention=(items||[]).filter(a=>a&&a.severity==='critical');paintNeeds()}};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})(window);

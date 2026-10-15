@@ -441,6 +441,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     list.replaceChildren();
 
     if (loadError) {
+      window.LocalAIHome?.setAttention([{ severity: 'critical', title: 'Capability registry unavailable', detail: 'Local AI could not verify the current runtime state.', action: 'Open Health', view: 'status' }]);
       surface.hidden = false;
       surface.dataset.state = 'attention';
       summary.textContent = 'Live capability state could not be verified. Existing controls remain available.';
@@ -460,6 +461,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     }
 
     const items = attentionItems(snapshot);
+    window.LocalAIHome?.setAttention(items);   // Home's Needs you lists the critical ones
     // Nothing to do: hide the card. The Healthy pill in the page header already says all is well.
     surface.hidden = !items.length;
     if (!items.length) {
@@ -3148,12 +3150,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   async function openRunBySource(id) {
     const match = () => state.runs.find((run) => run.id === id || run.source?.id === id || run.meta?.sourceId === id);
     if (!match()) await loadRuns(true);
-    if (!state.selectedId) activateRunsView();   // the Runs page stays behind the run view (the Audit log links here)
     const run = match();
-    if (run) openRun(run.id);
+    if (run) openRun(run.id);   // on top of the page you are on, so Back and Close return to it
     return Boolean(run);
   }
-  window.LocalAIRuns = { open: openRunBySource, openPending };
+  // The one way for a page to open a run view: pushes a history entry marked as in-app, so Close and Back return to the page you were on.
+  function show(id) { openRun(String(id)); }
+  window.LocalAIRuns = { open: openRunBySource, openPending, show };
 
   function init() {
     ensureSurface();
@@ -3278,7 +3281,7 @@ function runSample(s){
 }
 async function mountFirstRun(){
  if(pref.get(DONE_KEY)==='1')return;
- const home=q('#home'),hero=q('#home .workspace-hero');if(!home||!hero||q('#firstRun'))return;
+ const home=q('#home'),hero=q('#homeRecentSection');if(!home||!hero||q('#firstRun'))return;
  const [models,library]=await Promise.all([getJson('/api/models').catch(()=>null),getJson('/api/library').catch(()=>null)]);
  if(models?.defaultInstalled&&(library?.items||[]).length)return;
  await loadConfig();
@@ -3286,7 +3289,7 @@ async function mountFirstRun(){
  card.innerHTML=`<div class="first-run-head"><div><h2 id="firstRunTitle">Get started</h2><p>Two checks, then try a first task. Everything runs on this computer.</p></div><button type="button" class="iconbtn" data-first-run-dismiss aria-label="Hide Get started">×</button></div>
  <ol class="first-run-steps">${stepHtml('service','Local AI is running')}${stepHtml('model','A language model is installed')}<li data-step="try" data-state="todo"><span class="first-run-mark" aria-hidden="true"></span><div><strong>Try a first task</strong><div class="first-run-detail">Pick one. It runs right here, and the result is saved to your Library.</div><div class="first-run-samples">${SAMPLES.map((s,i)=>`<button type="button" class="btn" data-sample="${i}"><span>${esc(s.label)}</span><small>${esc(s.text)}</small></button>`).join('')}</div></div></li></ol>
  <div class="first-run-foot"><span class="meta">Developer tools are ${document.body.classList.contains('dev-tools-off')?'hidden':'shown'}. Change this in <a href="#" data-goto="status">Health</a>.</span><button type="button" class="btn primary" data-first-run-dismiss>I'm set up, hide this</button></div>`;
- hero.after(card);
+ hero.before(card) // Get started takes Recent's place while it shows;
  window.addEventListener('localai:model-pulls',e=>{
   const step=q('[data-step="model"]',card);if(!step||step.dataset.state==='done')return;
   const p=(e.detail.items||[]).find(x=>x.name===(config?.model||''));const box=q('.first-run-progress',step);if(!p||!box)return;

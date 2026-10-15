@@ -77,7 +77,7 @@
     }else if(p.text)box.textContent=p.text;else return null;
     return box;
   }
-  function runCard(item,{onOpen}={}){
+  function runCard(item,{onOpen,rowOpen=false}={}){
     item=item||{};
     const kit=window.LocalAIKit,c=item.card||{kind:'other',icon:'system',title:item.title||'Untitled run',summary:item.summary||'',badge:kit?kit.statusBadge(item.status):{label:'',tone:'neutral'},preview:null,action:{label:'Open'},approval:null};
     const row=document.createElement('div');row.className='list-row run-card';row.dataset.runId=item.id||'';row.dataset.kind=c.kind||'';
@@ -95,6 +95,8 @@
     const trail=document.createElement('div');trail.className='list-row__trail';
     const b=document.createElement('span');b.className='badge badge--'+((c.badge&&c.badge.tone)||'neutral');b.textContent=(c.badge&&c.badge.label)||'';trail.appendChild(b);
     row.append(ico,main,trail);
+    // rowOpen: the whole row is the tap target, and the title is the one keyboard stop (a button whose ::after covers the row).
+    if(rowOpen){const btn=document.createElement('button');btn.type='button';btn.className='work-open';btn.textContent=title.textContent;title.textContent='';title.appendChild(btn);btn.addEventListener('click',e=>{e.stopPropagation();open()})}
     return row;
   }
   // Each run kind can own the body of its run view: mount(run, el) fills el. Kinds with none show the Output block.
