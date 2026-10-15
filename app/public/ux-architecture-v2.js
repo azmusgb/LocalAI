@@ -110,7 +110,6 @@ function sync(forced){
  if(sheetOpen)renderSheet();
 }
 function observeViews(){const views=qa('.view');if(!views.length)return;const mo=new MutationObserver(()=>sync());views.forEach(v=>mo.observe(v,{attributes:true,attributeFilter:['class']}));document.addEventListener('click',e=>{const b=e.target.closest?.('.navbtn[data-view]');if(b)requestAnimationFrame(()=>sync(b.dataset.view))})}
-function polishAgentWorld(){const apply=()=>{const root=q('#agentWorldGameV6');if(!root)return false;const sub=q('.awg6__sub',root);if(sub)sub.textContent='Live agent execution and engineering operations';return true};if(apply())return;const mo=new MutationObserver(()=>{if(apply())mo.disconnect()});mo.observe(document.body,{childList:true,subtree:true})}
-function init(){document.body.classList.add('ux-v3');buildIntegrationsView();buildDesktopNav();buildContext();buildMobile();observeViews();polishAgentWorld();sync()}
+function init(){document.body.classList.add('ux-v3');buildIntegrationsView();buildDesktopNav();buildContext();buildMobile();observeViews();sync()}
 if(document.readyState==='complete')init();else window.addEventListener('load',init,{once:true});
 })();
