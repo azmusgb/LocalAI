@@ -68,7 +68,8 @@ await check('chips, filters and tabs are at least 44px tall', async () => {
     await page.evaluate(v => { window.showView(v); window.scrollTo(0, 0); }, view);
     await page.waitForTimeout(150);
     short.push(...await page.evaluate(() => [...document.querySelectorAll('.view.active :is(.mode,.filter,.ux-tab)')]
-      .filter(e => e.getBoundingClientRect().height > 0 && e.getBoundingClientRect().height < 44)
+      // 43.5: subpixel layout can report a 44px min-height as 43.99.
+      .filter(e => e.getBoundingClientRect().height > 0 && e.getBoundingClientRect().height < 43.5)
       .map(e => `${e.textContent.trim()} ${Math.round(e.getBoundingClientRect().height)}px`)));
   }
   assert.deepEqual(short, []);

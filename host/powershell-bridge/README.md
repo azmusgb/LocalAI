@@ -25,5 +25,6 @@ Copy-Item C:\LocalAI\repo\host\powershell-bridge\*.ps1, C:\LocalAI\repo\host\pow
 C:\LocalAI\powershell-bridge\Enable-LocalAI-PowerShellHost.ps1   # creates approval-key.txt if missing, registers the task
 ```
 
-The Workbench has to be opened at `http://localhost:3080` (or `127.0.0.1`), which browsers treat as a secure
+The Workbench has to be opened on the Windows host at `http://localhost:3090` (the host-only port set up by
+`deploy/Enable-LocalAI-HostOnlyPort.ps1`; before that, `http://localhost:3080`). Browsers treat localhost as a secure
 context; signing uses WebCrypto, which is unavailable on plain-HTTP LAN addresses.

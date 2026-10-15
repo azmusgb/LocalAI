@@ -12,6 +12,12 @@ the host's 127.0.0.1) or the Docker network.
 | ComfyUI (images) | `127.0.0.1:8188` | `host.docker.internal:8188` | `host/comfyui/Install-ComfyUI-Task.ps1` |
 | GridCraft bridge | `127.0.0.1:8787` | `host.docker.internal:8787`; browsers use `/api/gridcraft` | `deploy/Install-GridCraft-Bridge.ps1` (binds 127.0.0.1) |
 | n8n | `127.0.0.1:5678` | `local-ai-n8n:5678` on `local-ai-sandbox-net` | container published with `-p 127.0.0.1:5678:5678` |
+| PowerShell Workbench | `127.0.0.1:3090` | same container, second listener (`LOCAL_UI_PORT=3090`) | `deploy/Enable-LocalAI-HostOnlyPort.ps1` (one time) |
+
+The Workbench API answers only on port 3090 and only with a `localhost`/`127.0.0.1` Host header. Docker publishes 3090
+on the host's loopback, so a LAN client cannot reach it even by faking the Host header. Open it on the Windows host at
+`http://localhost:3090`. `Enable-LocalAI-HostOnlyPort.ps1` recreates the container with the same image, environment,
+mounts and network, keeps the old one stopped as `local-ai-appliance-pre-hostport`, and rolls back if the new one is unhealthy.
 
 The n8n editor therefore opens only on the Windows host (`http://localhost:5678`) until sign-in can expose it through
 the appliance. To recreate the n8n container the same way (keeps its data volume, environment and network):

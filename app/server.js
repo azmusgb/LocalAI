@@ -4,6 +4,9 @@ const path = require('path');
 const { URL } = require('url');
 
 const PORT = Number(process.env.PORT || 3080);
+// Second listener for host-only tools (PowerShell Workbench). Docker publishes it on 127.0.0.1 only, so a request
+// that arrives on this port came from the Windows host itself; unlike the Host header, a LAN client cannot fake that.
+const LOCAL_UI_PORT = Number(process.env.LOCAL_UI_PORT || 0);
 const APP_VERSION = process.env.APP_VERSION || '1.18';
 const MODEL = process.env.MODEL || 'qwen3:4b-instruct-32k';
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://host.docker.internal:11434';
@@ -426,7 +429,7 @@ async function getCapabilitiesSnapshot(force = false) {
     changes: { pending: changes.filter(x => ['planned','patch_failed','validation_failed','staged','awaiting_approval','approved','apply_requested'].includes(x.status)).length },
     issues: { open: issues.filter(x => x.status === 'open').length },
     engineering: { active: engineeringRuns.filter(x => x.status === 'running').length, awaitingApproval: engineeringRuns.filter(x => x.status === 'awaiting_approval').length },
-    powershell: { configured: !!POWERSHELL_BRIDGE_TOKEN, localOnly: true }
+    powershell: { configured: !!POWERSHELL_BRIDGE_TOKEN, localOnly: true, localPort: LOCAL_UI_PORT || PORT }
   };
   capabilityCache = { value: snapshot, expiresAt: Date.now() + CAPABILITY_CACHE_MS };
   return snapshot;
@@ -1059,6 +1062,7 @@ function apiConfig(req, res) {
     subtitle: 'Private Intelligence Hub',
     version: APP_VERSION,
     model: MODEL,
+    localUiPort: LOCAL_UI_PORT || PORT,
     chatTimeoutMs: CHAT_MODEL_TIMEOUT_MS,
     engineeringTimeoutMs: ENGINEERING_MODEL_TIMEOUT_MS,
     capabilityCacheMs: CAPABILITY_CACHE_MS,
@@ -2116,7 +2120,7 @@ async function validateStagedChange(change,stageRoot){  const sourceRoot =
     const html=path.join(stageRoot,'public','index.html');if(fs.existsSync(html)){const dup=duplicateHtmlIds(fs.readFileSync(html,'utf8'));add('core duplicate HTML ids',dup.length===0,dup.join(', '))}
     const dom=domReferenceFailures(stageRoot);add('DOM reference contract',dom.length===0,dom.length?`Missing IDs: ${dom.join(', ')}`:'all referenced IDs resolved');
     const smokePort=3200+Math.floor(Math.random()*300); const stageData=path.join(CHANGE_STAGE_ROOT,change.id,'smoke-data');fs.rmSync(stageData,{recursive:true,force:true});fs.mkdirSync(stageData,{recursive:true});
-    const child=spawn('node',[path.join(stageRoot,'server.js')],{cwd:stageRoot,env:childEnv({PORT:String(smokePort),APP_VERSION:`${APP_VERSION}-stage`,DATA_DIR:stageData}),shell:false}); let stderr='';child.stderr?.on('data',d=>stderr+=d.toString());
+    const child=spawn('node',[path.join(stageRoot,'server.js')],{cwd:stageRoot,env:childEnv({PORT:String(smokePort),LOCAL_UI_PORT:'',APP_VERSION:`${APP_VERSION}-stage`,DATA_DIR:stageData}),shell:false}); let stderr='';child.stderr?.on('data',d=>stderr+=d.toString());
     let healthy=false,imageModelsOk=false,imageDetail=''; try{for(let i=0;i<40;i++){await new Promise(r=>setTimeout(r,250));try{const r=await fetch(`http://127.0.0.1:${smokePort}/healthz`);if(r.ok){const j=await r.json();if(j.status==='ok'){healthy=true;break}}}catch{}}if(healthy){try{const r=await fetchWithTimeout(`http://127.0.0.1:${smokePort}/api/images/models`,{},10000);imageModelsOk=r.ok;if(r.ok){const j=await r.json();imageDetail=`${Array.isArray(j.models)?j.models.length:0} model(s) discovered`}else imageDetail=`HTTP ${r.status}`}catch(e){imageDetail=String(e.message||e)}}}finally{child.kill('SIGTERM')}
     add('staged server smoke test',healthy,healthy?'health endpoint responded':stderr.slice(-1800));
     add('staged image model discovery',imageModelsOk,imageDetail||'image model API unavailable');
@@ -2383,8 +2387,9 @@ async function apiEngineeringStart(req,res){
 const POWERSHELL_JOBS_STORE = 'powerShellJobs';
 function powerShellJobStore(){return objectStore(POWERSHELL_JOBS_STORE)}
 function savePowerShellJobs(items){saveStore(POWERSHELL_JOBS_STORE,items,250)}
-function localUiRequest(req){const raw=String(req.headers.host||'').toLowerCase();const host=raw.startsWith('[')?raw.slice(1,raw.indexOf(']')):raw.split(':')[0];return host==='127.0.0.1'||host==='localhost'||host==='::1'}
-function requireLocalUi(req,res){if(!localUiRequest(req)){json(res,403,{error:'PowerShell Workbench is available only from http://127.0.0.1 or localhost on the Windows host.'});return false}if(!POWERSHELL_UI_TOKEN||String(req.headers['x-localai-powershell-token']||'')!==POWERSHELL_UI_TOKEN){json(res,401,{error:'PowerShell Workbench is locked. Enter the local UI token from C:\\LocalAI\\powershell-bridge\\ui-token.txt.'});return false}return true}
+// The port proves the request came from the host (see LOCAL_UI_PORT); the Host check still blocks DNS-rebinding pages.
+function localUiRequest(req){if(LOCAL_UI_PORT&&req.socket?.localPort!==LOCAL_UI_PORT)return false;const raw=String(req.headers.host||'').toLowerCase();const host=raw.startsWith('[')?raw.slice(1,raw.indexOf(']')):raw.split(':')[0];return host==='127.0.0.1'||host==='localhost'||host==='::1'}
+function requireLocalUi(req,res){if(!localUiRequest(req)){json(res,403,{error:`PowerShell Workbench is available only from http://localhost:${LOCAL_UI_PORT||PORT} on the Windows host.`});return false}if(!POWERSHELL_UI_TOKEN||String(req.headers['x-localai-powershell-token']||'')!==POWERSHELL_UI_TOKEN){json(res,401,{error:'PowerShell Workbench is locked. Enter the local UI token from C:\\LocalAI\\powershell-bridge\\ui-token.txt.'});return false}return true}
 function hostBridgeAuthorized(req){if(!POWERSHELL_BRIDGE_TOKEN)return false;const auth=String(req.headers.authorization||'');return auth===`Bearer ${POWERSHELL_BRIDGE_TOKEN}`}
 function normalizeWindowsCwd(value){let v=String(value||'C:\\Projects').trim().replace(/\//g,'\\');if(/\.\.(?:\\|$)/.test(v))throw new Error('Working directory may not contain ..');const low=v.toLowerCase();const roots=['c:\\projects','c:\\repos','c:\\localai'];if(!roots.some(r=>low===r||low.startsWith(r+'\\')))throw new Error('Working directory must be under C:\\Projects, C:\\repos, or C:\\LocalAI');return v}
 function powerShellRisk(script){const s=String(script||'').toLowerCase();if(/format-volume|clear-disk|remove-item\s+[^\r\n]*-recurse|stop-computer|restart-computer|docker\s+(?:rm|system\s+prune)|remove-netfirewallrule/.test(s))return 'high';if(/set-content|add-content|copy-item|move-item|remove-item|new-item|docker\s+(?:restart|stop|start)|invoke-webrequest|invoke-restmethod/.test(s))return 'medium';return 'low'}
@@ -2618,10 +2623,13 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`${new Date().toISOString()} Local AI Appliance v${APP_VERSION} listening on 0.0.0.0:${PORT}`);
   recordActivity('system', 'Appliance started', `Local AI Appliance v${APP_VERSION} is ready.`);
 });
+const localUiServer = LOCAL_UI_PORT && LOCAL_UI_PORT !== PORT ? http.createServer((req, res) => server.emit('request', req, res)) : null;
+localUiServer?.listen(LOCAL_UI_PORT, '0.0.0.0', () => console.log(`${new Date().toISOString()} Host-only tools listening on 0.0.0.0:${LOCAL_UI_PORT}`));
 
 
 // Finish in-flight requests before closing the authoritative data store.
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
+  localUiServer?.close();
   server.close(() => { storage.close(); process.exit(0); });
   server.closeIdleConnections();
   setTimeout(() => { storage.close(); process.exit(0); }, 10000).unref();
