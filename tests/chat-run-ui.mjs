@@ -31,11 +31,14 @@ async function open(viewport, hash, { runs = [], library = [], storage = {}, str
   const ctx = await browser.newContext({ viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.devTools': '1', 'localai.firstRun.done': '1', ...storage });
   // /api/chat/stream is a controllable SSE stream: __reqs records each request body, __streams[i].push(event, data) / .close(), and an abort errors it.
+  await ctx.addInitScript(() => { window.__pd = 0; const add = document.addEventListener.bind(document); document.addEventListener = (t, ...a) => { if (t === 'pointerdown') window.__pd++; return add(t, ...a); }; });
   await ctx.addInitScript(mode => {
     const real = window.fetch.bind(window); window.__reqs = []; window.__streams = []; window.__aborted = 0;
     window.fetch = (url, opts = {}) => {
       if (!String(url).includes('/api/chat/stream')) return real(url, opts);
       window.__reqs.push(JSON.parse(opts.body));
+      if (mode === 'nometa') return Promise.resolve(new Response('event: token\ndata: {"text":"hi"}\n\nevent: done\ndata: {"elapsedMs":1}\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } }));
+      if (mode === 'holdfail') return new Promise(res => { window.__failReq = () => res(new Response(JSON.stringify({ error: 'No model is loaded' }), { status: 503, headers: { 'Content-Type': 'application/json' } })); });
       if (mode === 'fail') return Promise.resolve(new Response(JSON.stringify({ error: 'No model is loaded' }), { status: 503, headers: { 'Content-Type': 'application/json' } }));
       let ctl; const enc = new TextEncoder();
       const rs = new ReadableStream({ start(c) { ctl = c; } });
@@ -227,6 +230,66 @@ for (const [tag, vp] of [['390x844', phone], ['1280x860', desk]]) {
     await page.context().close();
   });
 }
+
+await check('the scroll position survives a run view rebuild', async () => {
+  const runs = long(); runs[0].status = 'running';
+  const page = await open(phone, '#home', { runs });
+  await page.evaluate(id => window.LocalAIRuns.show(id), runs[0].id);
+  await page.locator('#runReply').waitFor(T);
+  await page.waitForTimeout(500);
+  await page.evaluate(() => { document.getElementById('runDrawer').scrollTop = 150; });
+  await page.waitForTimeout(300);
+  runs[0].updatedAt = new Date(NOW + 99000).toISOString(); runs[0].progress = 42;
+  await page.waitForTimeout(4500);
+  const top = await page.evaluate(() => document.getElementById('runDrawer').scrollTop);
+  assert.ok(Math.abs(top - 150) <= 2, `scrollTop ${top}, expected 150`);
+  await page.context().close();
+});
+
+await check('a stream that ends with no run id fails the pending view and Home keeps the text', async () => {
+  const page = await open(desk, '#home', { storage: { 'localai.home.mode': 'ask' }, stream: 'nometa' });
+  await page.locator('#commandInput').fill('no meta here');
+  await page.locator('#commandGo').click();
+  await page.waitForSelector('#homeComposerError:not([hidden])', T);
+  assert.match(await page.locator('#homeComposerError').textContent(), /could not be started/);
+  assert.equal(await page.locator('#commandInput').inputValue(), 'no meta here');
+  await page.locator('#runDrawer .status-error', { hasText: 'could not be started' }).waitFor(T);
+  await page.context().close();
+});
+
+await check('a failed reply keeps the draft typed meanwhile and offers Retry with the failed text', async () => {
+  const page = await open(desk, '#home', { runs: three(), stream: 'holdfail' });
+  await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);
+  await page.locator('#runReply').fill('first try'); await page.locator('#runReply').press('Enter');
+  await page.waitForFunction(() => window.__reqs.length === 1, null, T);
+  await page.locator('#runReply').fill('a new draft');
+  await page.evaluate(() => window.__failReq());
+  await page.locator('#runDrawer .chat-body__error', { hasText: 'No model is loaded' }).waitFor(T);
+  assert.equal(await page.locator('#runReply').inputValue(), 'a new draft');
+  await page.locator('#runDrawer .chat-body__retry').click();
+  await page.waitForFunction(() => window.__reqs.length === 2, null, T);
+  assert.equal((await reqs(page))[1].messages.at(-1).content, 'first try');
+  await page.context().close();
+});
+
+await check('a failed reply with an empty box puts the text back', async () => {
+  const page = await open(desk, '#home', { runs: three(), stream: 'holdfail' });
+  await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);
+  await page.locator('#runReply').fill('first try'); await page.locator('#runReply').press('Enter');
+  await page.waitForFunction(() => window.__reqs.length === 1, null, T);
+  await page.evaluate(() => window.__failReq());
+  await page.locator('#runDrawer .chat-body__error').waitFor(T);
+  assert.equal(await page.locator('#runReply').inputValue(), 'first try');
+  await page.context().close();
+});
+
+await check('opening three chat runs registers one pointerdown listener, not three', async () => {
+  const rs = [0, 1, 2].map(i => run(i + 1, `q${i}`, `a${i}`, { threadId: 't-' + String(i).repeat(32) }));
+  const page = await open(desk, '#home', { runs: rs });
+  for (const r of rs) { await page.evaluate(id => window.LocalAIRuns.show(id), r.id); await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'a' + rs.indexOf(r) }).waitFor(T); await page.keyboard.press('Escape'); await page.waitForTimeout(150); }
+  assert.ok(await page.evaluate(() => window.__pd) <= 1);
+  await page.context().close();
+});
 
 await browser.close();
 if (failures.length) { console.error('\n' + failures.length + ' failed:\n- ' + failures.join('\n- ')); process.exit(1); }

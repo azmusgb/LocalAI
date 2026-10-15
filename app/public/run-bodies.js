@@ -50,10 +50,10 @@
     // clearly move it (a tap elsewhere, or Tab), and put back on the new box.
     c.input.addEventListener('focus', () => { c.hadFocus = true; });
     c.input.addEventListener('keydown', e => { if (e.key === 'Tab') c.hadFocus = false; });
-    document.addEventListener('pointerdown', e => { if (e.target !== c.input) c.hadFocus = false; }, true);
     threads.set(threadId, c);
     return c;
   }
+  document.addEventListener('pointerdown', e => { for (const c of threads.values()) if (e.target !== c.input) c.hadFocus = false; }, true);   // once, for every thread
   const grow = c => { c.input.style.height = 'auto'; c.input.style.height = Math.min(c.input.scrollHeight, 140) + 'px'; };
 
   // Every run of the thread, oldest first, as turns: {key, prompt, answer, kind}. kind: '' | 'wait' | 'error' | 'live'.
@@ -134,14 +134,18 @@
     } catch {} finally { c.loading = false; schedule(c); }
   }
 
-  function showError(c, message) { c.err.textContent = message || ''; c.err.hidden = !message; }
+  function showError(c, message, retryText) {
+    c.err.replaceChildren(document.createTextNode(message || ''));
+    if (message && retryText) { const b = h('button', 'btn-outline chat-body__retry', 'Retry'); b.type = 'button'; b.addEventListener('click', () => sendReply(c, retryText)); c.err.appendChild(b); }
+    c.err.hidden = !message;
+  }
   function stop(c) { c.live?.controller.abort(); }
-  async function sendReply(c) {
+  async function sendReply(c, again) {
     if (c.live?.streaming) return;
-    const text = c.input.value.trim(); if (!text) return;
+    const text = (again || c.input.value).trim(); if (!text) return;
     const messages = [...history(c), { role: 'user', content: text }].slice(-16);
     const live = c.live = { prompt: text, text: '', runId: '', streaming: true, err: '', controller: new AbortController() };
-    c.input.value = ''; grow(c); showError(c, ''); paint(c);
+    if (!again) { c.input.value = ''; grow(c); } showError(c, ''); paint(c);
     const sc = scroller(c); if (sc) sc.scrollTop = sc.scrollHeight;
     try {
       await core().streamChat({
@@ -150,7 +154,14 @@
         onToken: t => { live.text += t; schedule(c); }
       });
     } catch (e) {
-      if (e.name !== 'AbortError') { live.err = e.message || 'The reply could not be sent.'; showError(c, live.err); if (!live.text && !live.runId) { c.input.value = text; c.live = null; } }
+      if (e.name !== 'AbortError') {
+        live.err = e.message || 'The reply could not be sent.';
+        const unsent = !live.text && !live.runId;
+        // A reply that never started goes back to the box, unless the person has typed something new meanwhile: then Retry offers it.
+        if (unsent && !c.input.value.trim()) { c.input.value = text; grow(c); showError(c, `The reply could not be sent: ${live.err}`); }
+        else showError(c, `The reply could not be sent: ${live.err}`, unsent ? text : '');
+        if (unsent) c.live = null;
+      }
     } finally {
       live.streaming = false; paint(c);
       if (c.live === live && !live.text && !live.runId) c.live = null;
@@ -169,12 +180,15 @@
       slot.classList.add('chat-body-slot');
       slot.appendChild(c.root);
       paint(c);
-      const sc = scroller(c);
       // The view is rebuilt on each change: put the scroll back where the person had it (the end, for a new view).
       const place = () => { const d = scroller(c); if (!d) return; d.scrollTop = c.scroll.near || !sameRun ? d.scrollHeight : c.scroll.top; };
       const refocus = c.hadFocus;
-      requestAnimationFrame(() => { place(); c.settled = true; if (refocus && c.root.isConnected) c.input.focus({ preventScroll: true }); });
-      if (sc && !sc.dataset.chatScroll) { sc.dataset.chatScroll = '1'; sc.addEventListener('scroll', () => { const cur = [...threads.values()].find(x => x.root.isConnected); if (cur?.settled) cur.scroll = { top: sc.scrollTop, near: sc.scrollHeight - sc.scrollTop - sc.clientHeight < 120 }; }, { passive: true }); }
+      // The slot is attached to the drawer only after mount() returns, so the scroller is found a frame later.
+      requestAnimationFrame(() => {
+        const d = scroller(c);
+        if (d && !d.dataset.chatScroll) { d.dataset.chatScroll = '1'; d.addEventListener('scroll', () => { const cur = [...threads.values()].find(x => x.root.isConnected); if (cur?.settled) cur.scroll = { top: d.scrollTop, near: d.scrollHeight - d.scrollTop - d.clientHeight < 120 }; }, { passive: true }); }
+        place(); c.settled = true; if (refocus && c.root.isConnected) c.input.focus({ preventScroll: true });
+      });
       c.settled = false;
       if (!sameRun) c.scroll = { top: 0, near: true };
       ctx.onCleanup(() => { if (c.frame) { cancelAnimationFrame(c.frame); c.frame = 0; } });
@@ -197,6 +211,7 @@
           onMeta: d => resolve(d.runId), onToken: t => { live.text += t; schedule(c); }
         });
         resolve(r.runId);
+        if (!resolved) throw new Error('The answer could not be started.');
       } catch (e) {
         live.streaming = false;
         if (!resolved) { threads.delete(threadId); pending?.fail(e.message || 'Something went wrong.'); throw e; }
