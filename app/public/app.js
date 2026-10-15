@@ -30,7 +30,7 @@ function ago(iso){const d=Date.now()-new Date(iso).getTime();if(!Number.isFinite
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._hide);t._hide=setTimeout(()=>t.classList.remove('show'),2200);}
 function setPhase(phase,detail=''){
   state.chatPhase=phase;
-  if($('chatState')) $('chatState').textContent=detail||phaseLabels[phase]||phase;
+  if($('chatState')){$('chatState').textContent=detail||phaseLabels[phase]||phase;$('chatState').dataset.phase=phase;}
   if($('executionLabel')) $('executionLabel').textContent=detail||phaseLabels[phase]||phase;
   renderAgentMap(phase);
 }
@@ -83,9 +83,10 @@ function showView(id){
 }
 qsa('[data-view]').forEach(el=>el.addEventListener('click',()=>showView(el.dataset.view)));
 
+const CHAT_SUGGESTIONS=['Explain this error message to me','Draft a reply to a tricky email','Summarize a long document'];
 function renderMessages(follow=true){
   const box=$('messages');
-  if(!state.messages.length){box.innerHTML='<div class="empty">Start a private conversation. Requests to change Local AI become change requests that wait for your approval.</div>';return;}
+  if(!state.messages.length){box.innerHTML=`<div class="chat-empty"><div class="chat-empty-mark" aria-hidden="true">✦</div><h2>Private chat</h2><p>Runs on your own hardware. Nothing you type leaves this network unless you turn on web research. Requests to change Local AI become change requests that wait for your approval.</p><div class="chat-suggest">${CHAT_SUGGESTIONS.map(t=>`<button type="button" class="chat-suggest-btn" data-chat-suggest>${esc(t)}</button>`).join('')}</div></div>`;qsa('[data-chat-suggest]').forEach(b=>b.onclick=()=>{const i=$('chatInput');i.value=b.textContent;i.focus();});return;}
   box.innerHTML=state.messages.map((m,i)=>{
     const action=m.action?.view?`<div class="actions" style="margin-top:9px"><button class="btn" data-msg-action="${i}">${esc(m.action.label||'Open')}</button></div>`:'';
     return `<div class="msg ${m.role} ${m.streaming?'streaming':''}" data-msg="${i}">${esc(m.content||'')}${action}</div>`;
@@ -115,7 +116,7 @@ function newChat(){
   if(state.messages.length && !window.confirm('Start a new conversation? The current completed turns remain available in Library, but this browser draft will be cleared.'))return;
   abortStream('');state.messages=[];localStorage.removeItem('localAiMessages');renderMessages();$('chatMeta').textContent='';setPhase('idle');toast('New conversation');
 }
-$('newChatBtn').addEventListener('click',newChat);
+$('newChatBtn').addEventListener('click',newChat);$('chatModelChip').addEventListener('click',()=>showView('models'));
 function openAsk(web=false){$('webSearch').checked=web;showView('ask');setTimeout(()=>$('chatInput').focus(),20);}
 function openCreate(){showView('create');setTimeout(()=>$('imagePrompt').focus(),20);}
 
@@ -286,7 +287,7 @@ async function sendChat(){
   const controller=new AbortController();
   state.streamController=controller;
   $('sendBtn').disabled=false;
-  $('sendBtn').textContent='Stop';
+  $('sendBtn').textContent='Stop';$('sendBtn').dataset.state='stop';
   let sources=[];
 
   try{
@@ -350,7 +351,7 @@ async function sendChat(){
   }finally{
     state.streamController=null;
     $('sendBtn').disabled=false;
-    $('sendBtn').textContent='Send';
+    $('sendBtn').textContent='Send';delete $('sendBtn').dataset.state;
     if(state.chatPhase!=='error'&&state.chatPhase!=='done') setPhase('idle');
   }
 }
@@ -500,7 +501,7 @@ document.addEventListener('visibilitychange',()=>{schedulePolling();if(!document
 
 // Only a positive result is worth showing; without a service worker (plain-HTTP LAN access) the hint stays hidden.
 async function detectOfflineReady(){const hint=$('offlineHint');if(!('serviceWorker' in navigator))return;try{await navigator.serviceWorker.register('/sw.js');hint.textContent='Works offline · the app shell is cached on this device';hint.hidden=false;}catch(e){console.debug('Service worker registration failed',e);}}
-async function init(){syncModeSelect();renderAgentMap();renderMessages();setPhase('idle');loadActivity();loadLibrary();loadWorkspace();refreshStatus();loadHomeCapabilities();schedulePolling();detectOfflineReady();try{const r=await fetch('/api/models',{cache:'no-store'}),j=await r.json();state.model=j.default||j.models?.[0]||null;}catch{} }
+async function init(){syncModeSelect();renderAgentMap();renderMessages();setPhase('idle');loadActivity();loadLibrary();loadWorkspace();refreshStatus();loadHomeCapabilities();schedulePolling();detectOfflineReady();try{const r=await fetch('/api/models',{cache:'no-store'}),j=await r.json();state.model=j.default||j.models?.[0]||null;const name=typeof state.model==='string'?state.model:state.model?.name;if(name){$('chatModelName').textContent=name;$('chatModelChip').title=`Chat model: ${name}`;$('chatModelChip').hidden=false;}}catch{} }
 init();
 
 
@@ -562,9 +563,14 @@ async function runWorkbenchCommand(){const cmd=$('commandName').value,args=$('co
 async function loadMonitors(){if(featureLevel()<11)return;const j=await evoApi('/api/monitors');evo.monitors=j.items||[];$('monitorList').innerHTML=evo.monitors.length?evo.monitors.map(m=>`<div class="monitor-card"><div class="statusline"><strong style="flex:1">${esc(m.name)}</strong><span class="statuschip">${esc(m.lastState||'unknown')}</span></div><small>${m.lastRunAt?'last '+ago(m.lastRunAt):'never run'}</small><div class="actions" style="margin-top:8px"><button class="btn" data-monitor-run="${esc(m.id)}">Run now</button></div></div>`).join(''):'<div class="empty">No monitors configured.</div>';qsa('[data-monitor-run]').forEach(b=>b.onclick=async()=>{await evoPost('/api/monitors/run',{id:b.dataset.monitorRun});await Promise.all([loadMonitors(),loadInbox()])})}
 async function createMonitor(){const name=$('monitorName').value.trim()||'Local AI health';await evoPost('/api/monitors/create',{name,kind:'health'});$('monitorName').value='';loadMonitors()}
 async function generateBrief(){const j=await evoApi('/api/brief');$('briefBox').innerHTML=`<div class="metric"><b>${esc(j.health)}</b><span>system health</span></div><h3 style="margin-top:14px">Needs attention</h3>${j.notifications.length?j.notifications.map(n=>`<div class="item-card"><strong>${esc(n.title)}</strong><small>${esc(n.detail||'')}</small></div>`).join(''):'<div class="muted">Nothing unresolved.</div>'}<h3 style="margin-top:14px">Recent activity</h3>${j.activity.slice(0,5).map(a=>`<div class="item-card"><strong>${esc(a.title)}</strong><small>${ago(a.at)}</small></div>`).join('')}`}
+// Change states in plain words; tone: review = blue (your move), warn = amber (stopped), done = green.
+const CHANGE_STATUS={planned:'Planned',patch_failed:'Needs a look',validation_failed:'Needs a look',staged:'Staged',awaiting_approval:'Ready to review',approved:'Approved',apply_requested:'Applying',applied:'Applied',rejected:'Rejected',rolled_back:'Rolled back'};
+const CHANGE_TONE={awaiting_approval:'review',staged:'review',patch_failed:'warn',validation_failed:'warn',applied:'done',approved:'done'};
+$('changeBanner')?.addEventListener('click',()=>$('changeList')?.closest('.card')?.scrollIntoView({behavior:'smooth',block:'start'}));
 async function loadChanges(selectId=''){
   if(featureLevel()<13)return;const j=await evoApi('/api/changes');evo.changes=j.items||[];$('changePending').textContent=`${j.pending||0} pending`;
-  $('changeList').innerHTML=evo.changes.length?evo.changes.map(c=>`<button class="item-card" data-change-id="${esc(c.id)}"><div class="statusline"><strong style="flex:1">${esc(c.summary||c.request)}</strong><span class="statuschip">${esc(c.status)}</span></div><small>${esc(c.target)} · ${ago(c.updatedAt||c.createdAt)} · ${(c.files||[]).length} file(s)</small></button>`).join(''):'<div class="empty">No change requests yet.</div>';
+  const pending=Number(j.pending||0),banner=$('changeBanner');if(banner){banner.hidden=!pending;$('changeBannerCount').textContent=String(pending);$('changeBannerTitle').textContent=pending===1?'unfinished change':'unfinished changes';}
+  $('changeList').innerHTML=evo.changes.length?evo.changes.map(c=>`<button class="item-card" data-change-id="${esc(c.id)}"><div class="statusline"><strong style="flex:1">${esc(c.summary||c.request)}</strong><span class="statuschip change-status" data-tone="${CHANGE_TONE[c.status]||''}">${esc(CHANGE_STATUS[c.status]||c.status)}</span></div><small>${esc(c.target)} · ${ago(c.updatedAt||c.createdAt)} · ${(c.files||[]).length} file(s)</small></button>`).join(''):'<div class="empty">No change requests yet.</div>';
   qsa('[data-change-id]').forEach(b=>b.onclick=()=>selectChange(b.dataset.changeId));
   const id=selectId||evo.selectedChange;if(id&&evo.changes.some(x=>x.id===id))selectChange(id);else if(evo.changes.length&&!evo.selectedChange)selectChange(evo.changes[0].id);
 }
