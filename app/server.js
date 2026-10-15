@@ -1121,7 +1121,9 @@ function serveStatic(req, res, pathname) {
 
 // ===== CUMULATIVE PRODUCT PLATFORM (v1.3+) ===================================
 // parseInt so suffixed versions such as the staged smoke server's '1.18-stage' keep their level.
-const FEATURE_LEVEL = parseInt(String(APP_VERSION || '1.2').split('.')[1], 10) || 2;
+// Features are gated by the 1.x minor version. A 2.x (or later) release includes every 1.x feature.
+function featureLevelFor(version) { const [major, minor] = String(version || '1.2').split('.'); return Number(major) >= 2 ? 99 : (parseInt(minor, 10) || 2); }
+const FEATURE_LEVEL = featureLevelFor(APP_VERSION);
 const PROJECTS_STORE = 'projects';
 const CONVERSATIONS_STORE = 'conversations';
 const KNOWLEDGE_STORE = 'knowledge';

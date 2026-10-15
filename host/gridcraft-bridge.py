@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import logging.handlers
 import os
 import socket
 import subprocess
@@ -30,6 +32,14 @@ ALLOWED_ORIGINS = {
 }
 
 run_lock = threading.Lock()
+
+# Bridge log: rotated by size when GRIDCRAFT_BRIDGE_LOG is set (the installer sets it), otherwise stdout.
+log = logging.getLogger('gridcraft-bridge')
+log.setLevel(logging.INFO)
+_log_path = os.environ.get('GRIDCRAFT_BRIDGE_LOG')
+_handler = logging.handlers.RotatingFileHandler(_log_path, maxBytes=2 * 1024 * 1024, backupCount=3, encoding='utf-8') if _log_path else logging.StreamHandler()
+_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+log.addHandler(_handler)
 
 
 def tcp_open(port: int) -> bool:
@@ -204,11 +214,13 @@ class Handler(BaseHTTPRequestHandler):
             run_lock.release()
 
     def log_message(self, fmt, *args):
-        print(f'{self.client_address[0]} - {fmt % args}', flush=True)
+        log.info('%s - %s', self.client_address[0], fmt % args)
 
 
 if __name__ == '__main__':
-    print(f'GridCraft bridge listening on {HOST}:{PORT}', flush=True)
-    print(f'Agent: {AGENT}', flush=True)
-    print(f'Workbook: {WORKBOOK}', flush=True)
-    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+    log.info('GridCraft bridge listening on %s:%s', HOST, PORT)
+    log.info('Agent: %s', AGENT)
+    log.info('Workbook: %s', WORKBOOK)
+    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    server.handle_error = lambda request, client_address: log.exception('Request from %s failed', client_address[0])
+    server.serve_forever()
