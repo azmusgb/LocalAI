@@ -1770,6 +1770,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   function render() {
     const d = view.data;
     renderSessions(d.sessions);
+    renderLive(d.live || []);
     renderProgress(d.summary, d.statuses);
     renderTimeline(d.events);
     renderMatrix(d.summary.byCategory);
@@ -1782,6 +1783,30 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const opts = ['<option value="">All sessions</option>', ...sessions.map((s) => `<option value="${esc(s.id)}"${s.id === view.session ? ' selected' : ''}>${esc(s.title)} · ${esc(ago(s.updatedAt))}</option>`)];
     const html = opts.join('');
     if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; }
+  }
+
+  // "Live now": one chip per session the progress feed says is active. Tapping filters the page to it; tapping again clears.
+  // Chips are keyed by session id and updated in place, so a poll never replaces the element under a tap or keyboard focus.
+  function renderLive(live) {
+    const box = $('claudeLiveNow');
+    box.hidden = !live.length;
+    const ids = live.map((l) => l.id).join('\n');
+    if (box.dataset.ids !== ids) {
+      box.dataset.ids = ids;
+      box.innerHTML = live.map((l) => `<button type="button" class="claude-livechip" data-claude-live="${esc(l.id)}"><i class="dot" aria-hidden="true"></i><span class="claude-livechip-body"><b class="claude-livechip-title"></b><span class="claude-livechip-step"><span class="claude-livechip-state"></span><span class="claude-livechip-text"></span><span class="claude-livechip-ago"></span></span></span></button>`).join('');
+    }
+    const chips = box.children;
+    live.forEach((l, i) => {
+      const chip = chips[i], working = l.state === 'working', state = working ? 'working' : 'waiting', when = ago(l.at);
+      chip.setAttribute('aria-pressed', String(l.id === view.session));
+      chip.setAttribute('aria-label', `${l.title}, ${state}, ${l.lastEvent}, ${when}`);
+      chip.querySelector('.dot').className = `dot ${state}`;
+      const set = (sel, text) => { const el = chip.querySelector(sel); if (el.textContent !== text) el.textContent = text; };
+      set('.claude-livechip-title', l.title);
+      set('.claude-livechip-state', working ? 'Working' : 'Waiting');
+      set('.claude-livechip-text', l.lastEvent);
+      set('.claude-livechip-ago', when);
+    });
   }
 
   function renderProgress(summary, statuses) {
@@ -1839,9 +1864,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
   function renderFindings(findings) {
     if (!view.statusFilter) view.statusFilter = findings.some((f) => f.status === 'proposed') ? 'decide' : 'queued';
+    const liveWorking = (view.data?.live || []).filter((l) => l.state === 'working').length;
     $('claudeFilters').innerHTML = TABS.map(([k, label, test]) => {
       const n = findings.filter(test).length;
-      return `<button type="button" class="chip tab${view.statusFilter === k ? ' active' : ''}" data-claude-status="${k}" aria-pressed="${view.statusFilter === k}">${esc(label)} <b>${n}</b></button>`;
+      const text = k === 'working' && liveWorking ? `${label} · ${liveWorking} live` : label;
+      return `<button type="button" class="chip tab${view.statusFilter === k ? ' active' : ''}" data-claude-status="${k}" aria-pressed="${view.statusFilter === k}">${esc(text)} <b>${n}</b></button>`;
     }).join('') + (view.category ? `<button type="button" class="chip clear" data-claude-clear>${esc(view.category)}${view.severity ? ` · ${esc(view.severity)}` : ''} ✕</button>` : '');
     const list = visible(findings);
     const top = Math.max(1, ...findings.map((f) => f.score));
@@ -1933,6 +1960,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     $('claude').addEventListener('click', (e) => {
       const t = e.target.closest('button');
       if (!t) return;
+      if (t.dataset.claudeLive) {
+        view.session = view.session === t.dataset.claudeLive ? '' : t.dataset.claudeLive;
+        render();
+        $('claudeSession').value = view.session;
+        load();
+        return;
+      }
       if (t.dataset.claudeStatus) { view.statusFilter = t.dataset.claudeStatus; render(); return; }
       if (t.hasAttribute('data-claude-note')) { view.noteId = t.closest('.claude-finding')?.dataset.id || ''; render(); $('claude').querySelector('[data-claude-note-form] textarea')?.focus(); return; }
       if (t.hasAttribute('data-claude-note-cancel')) { view.noteId = ''; render(); return; }
