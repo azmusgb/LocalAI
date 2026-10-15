@@ -89,6 +89,8 @@ function setKind(k,{mirror=true,remember=true}={}){
  if(!KINDS.includes(k))k='all';
  st.kind=k;
  document.querySelectorAll('[data-work-kind]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.workKind===k)));
+ // Agent World (the live mission map) has no menu entry since Missions became a Work filter; link to it from there.
+ const aw=$('workAgentWorld');if(aw)aw.hidden=k!=='missions';
  if(remember)store.set(k);
  if(mirror){const h='#work'+(k==='all'?'':'?kind='+k);if(location.hash!==h)history.replaceState(null,'',location.pathname+location.search+h)}
  if(st.loaded)paint();
@@ -117,6 +119,7 @@ function init(){
  sec.querySelectorAll('[data-work-kind]').forEach(b=>b.addEventListener('click',()=>setKind(b.dataset.workKind)));
  $('workSearch').addEventListener('input',e=>{st.query=e.target.value;if(st.loaded)paint()});
  $('workMore').addEventListener('click',more);
+ $('workOpenAgentWorld')?.addEventListener('click',()=>window.showView?.('agents'));
  setKind(KINDS.includes(store.get())?store.get():'all',{mirror:false,remember:false});
  let was=active();
  new MutationObserver(()=>{const now=active();if(now&&!was)activate();was=now}).observe(sec,{attributes:true,attributeFilter:['class']});
