@@ -9,7 +9,7 @@ const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 
-test('unified run API exposes native chat plus legacy execution history and retry lineage', { timeout: 30000 }, async t => {
+async function startServer(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-runs-'));
   const mock = http.createServer((req, res) => {
     req.resume();
@@ -79,6 +79,12 @@ test('unified run API exposes native chat plus legacy execution history and retr
     return { response, value };
   };
 
+  return { request, base };
+}
+
+test('unified run API exposes native chat plus legacy execution history and retry lineage', { timeout: 30000 }, async t => {
+  const { request } = await startServer(t);
+
   const empty = await request('/api/runs?limit=20');
   assert.equal(empty.response.status, 200);
   assert.deepEqual(empty.value.items, []);
@@ -133,4 +139,50 @@ test('unified run API exposes native chat plus legacy execution history and retr
 
   const missingRetry = await request('/api/runs/retry', { id: 'missing-run' });
   assert.equal(missingRetry.response.status, 409);
+});
+
+test('runs can be pinned and filed', { timeout: 30000 }, async t => {
+  const { request } = await startServer(t);
+  const project = await request('/api/projects/create', { name: 'Filing' });
+  assert.equal(project.response.status, 201);
+  const pid = project.value.item.id;
+  const a = await request('/api/chat', { messages: [{ role: 'user', content: 'one' }] });
+  await request('/api/chat', { messages: [{ role: 'user', content: 'two' }] });
+  const upd = await request('/api/runs/update', { id: a.value.runId, pinned: true, projectId: pid });
+  assert.equal(upd.response.status, 200);
+  assert.equal(upd.value.item.pinned, true);
+  assert.equal(upd.value.item.projectId, pid);
+  const filed = await request(`/api/runs?projectId=${encodeURIComponent(pid)}`);
+  assert.deepEqual(filed.value.items.map(x => x.id), [a.value.runId]);
+  const unfiled = await request('/api/runs/update', { id: a.value.runId, projectId: null });
+  assert.equal(unfiled.value.item.projectId, null);
+  assert.equal(unfiled.value.item.pinned, true);
+  assert.equal((await request(`/api/runs?projectId=${encodeURIComponent(pid)}`)).value.items.length, 0);
+});
+
+test('update rejects unknown project, bad ids and legacy runs', { timeout: 30000 }, async t => {
+  const { request } = await startServer(t);
+  const a = await request('/api/chat', { messages: [{ role: 'user', content: 'one' }] });
+  assert.equal((await request('/api/runs/update', { id: a.value.runId, projectId: 'prj-missing' })).response.status, 404);
+  assert.equal((await request('/api/runs/update', { id: a.value.runId, projectId: 'bad id!' })).response.status, 400);
+  assert.equal((await request('/api/runs/update', { id: '../../x', pinned: true })).response.status, 400);
+  assert.equal((await request('/api/runs/update', { id: 'run-nope', pinned: true })).response.status, 404);
+  const agent = await request('/api/agents/run', { goal: 'Legacy' });
+  const legacy = await request('/api/runs/update', { id: `legacy-agent:${agent.value.run.id}`, pinned: true });
+  assert.equal(legacy.response.status, 409);
+  assert.equal(legacy.value.error, 'This run is managed by its own page and cannot be filed yet');
+});
+
+test('chat turns share a thread', { timeout: 30000 }, async t => {
+  const { request } = await startServer(t);
+  const msg = [{ role: 'user', content: 'hi' }];
+  await request('/api/chat', { messages: msg, threadId: 'th-1' });
+  await request('/api/chat', { messages: msg, threadId: 'th-1' });
+  const bad = await request('/api/chat', { messages: msg, threadId: 'bad id!' });
+  const all = await request('/api/runs?threadId=th-1');
+  assert.equal(all.value.items.length, 2);
+  const collapsed = await request('/api/runs?threads=1');
+  assert.equal(collapsed.value.items.filter(x => x.threadId === 'th-1').length, 1);
+  const own = await request(`/api/runs?id=${encodeURIComponent(bad.value.runId)}`);
+  assert.equal(own.value.item.threadId, bad.value.runId);
 });
