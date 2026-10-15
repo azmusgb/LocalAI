@@ -1648,3 +1648,8 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
 /* The run view is an <aside>; the phone shell's `aside{height:52px;display:flex}` rules clipped it to its header. */
 .run-drawer{display:block;height:auto;max-height:none;z-index:1}
 .run-view-error{margin-top:10px;padding:10px 12px;border:1px solid var(--ds-bad);border-radius:var(--ds-r-md);background:var(--ds-surface-2);color:var(--ds-bad-text);font-size:14px;overflow-wrap:anywhere}
+/* Claude page: a long session title made the session picker 677px wide, pushing the live chip, the picker and
+   Refresh off the left edge of a phone. The picker now shrinks and truncates; the row wraps if it must. */
+.claude-head-actions{min-width:0;max-width:100%;flex-wrap:wrap}
+#claude #claudeSession{min-width:0;max-width:min(100%,340px);text-overflow:ellipsis}
+@media(max-width:760px){#claude .claude-head-actions{width:100%}#claude #claudeSession{flex:1 1 0;width:0;max-width:none}}
