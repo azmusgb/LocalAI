@@ -214,6 +214,7 @@ await check('Chat falls back to the Chat page with the text until the chat start
   const page = await open(desk, '#home', { storage: { 'localai.home.mode': 'ask' } });
   await page.waitForSelector('#homeRecent2 .run-card', T);
   await page.route(u => u.pathname === '/api/chat/stream', r => r.abort());
+  await page.evaluate(() => { delete window.LocalAIChat; }); // the chat starter (run-bodies.js) is gone, as before it existed
   await page.locator('#commandInput').fill('What is a mutex');
   await page.locator('#commandGo').click();
   await page.waitForSelector('#ask.active', T);
