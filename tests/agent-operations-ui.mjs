@@ -61,6 +61,21 @@ await check('Agent World stage is landscape and full-width',async()=>{
   const map=await page.locator('.awc__mapWrap').boundingBox();
   assert.ok(map&&map.width>map.height,'Game map should be landscape, not a tall portrait strip');
 });
+await check('Mission timeline and Inspector are readable and do not overlap at desktop widths',async()=>{
+  const hit=(a,b)=>a.x<b.x+b.width-1&&b.x<a.x+a.width-1&&a.y<b.y+b.height-1&&b.y<a.y+a.height-1;
+  for(const width of [1440,1280,1100]){
+    await page.setViewportSize({width,height:900});
+    const t=await page.locator('#agentTimeline').boundingBox();
+    const i=await page.locator('#agentInspector').boundingBox();
+    const m=await page.locator('.awc__mapWrap').boundingBox();
+    assert.ok(t&&i&&m,`panels render at ${width}`);
+    assert.ok(t.width>=280,`timeline ${Math.round(t.width)}px wide at ${width}`);
+    assert.ok(i.width>=280,`inspector ${Math.round(i.width)}px wide at ${width}`);
+    assert.ok(!hit(t,i),`timeline overlaps inspector at ${width}`);
+    assert.ok(!hit(t,m)&&!hit(i,m),`panels overlap map at ${width}`);
+  }
+  await page.setViewportSize({width:1440,height:1000});
+});
 await check('Agent World theater, crew and follow controls',async()=>{
   await page.locator('#awcCrewToggle').click();
   assert.ok((await page.locator('.awc-v3').getAttribute('class')).includes('crew-hidden'));
