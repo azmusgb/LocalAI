@@ -130,3 +130,10 @@ test('items already titled "Proposed change" are renamed from their request', ()
   assert.deepEqual(upserts, [{ id: 'idea-change-c1', title: 'Repair the lifecycle view', updatedAt: AT }]);
   assert.deepEqual(imp.reconcile({ items: [{ ...items[0], title: 'Repair the lifecycle view' }], changes, signals: [], at: AT }).upserts, []);
 });
+
+test('a signal that comes back after resolving on its own returns to the Backlog', () => {
+  const items = [{ id: 'signal-s1', source: 'signal', signalId: 's1', status: 'fixed', decisionNote: 'Resolved on its own' }, { id: 'signal-s2', source: 'signal', signalId: 's2', status: 'fixed', decisionNote: 'Fixed in #99' }];
+  const signals = [{ id: 's1', status: 'open', severity: 'high', occurrences: 2 }, { id: 's2', status: 'open', severity: 'high', occurrences: 2 }];
+  const { upserts } = imp.reconcile({ items, changes: [], signals, at: AT });
+  assert.deepEqual(upserts, [{ id: 'signal-s1', status: 'proposed', decisionNote: 'Came back after resolving on its own', updatedAt: AT }]);
+});

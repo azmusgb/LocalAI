@@ -82,6 +82,8 @@ function reconcile({ items = [], changes = [], signals = [], release = null, sta
     const existing = byId.get(signalItemId(signal.id));
     if (!existing) {
       if (shouldPromote(signal)) upserts.push(promoteSignal(signal, at));
+    } else if (signal.status === 'open' && existing.status === 'fixed' && existing.decisionNote === 'Resolved on its own') {
+      upserts.push({ id: existing.id, status: 'proposed', decisionNote: 'Came back after resolving on its own', updatedAt: at });
     } else if (signal.status === 'resolved' && stageOf(existing, changesById) === 'backlog') {
       upserts.push({ id: existing.id, status: 'fixed', decisionNote: 'Resolved on its own', updatedAt: at });
     }
