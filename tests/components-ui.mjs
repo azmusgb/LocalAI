@@ -113,6 +113,81 @@ await check('library Retry recovers once the API works', async () => {
   await p.close();
 });
 
+// ---- ask(): the approval sheet ----
+const ap = await newPage();
+await ap.evaluate(() => { const b = document.createElement('button'); b.id = 'opener'; b.textContent = 'open'; document.body.prepend(b); });
+const openAsk = (opts) => ap.evaluate(o => { document.getElementById('opener').focus(); window.__r = undefined; window.__confirms = 0; window.LocalAIUI.ask(o).then(r => { window.__r = r; }); }, opts);
+const result = () => ap.evaluate(() => window.__r);
+const sheet = ap.locator('dialog.ask-sheet[open]');
+const base1 = { title: 'Save a.txt?', effect: 'A backup is made first.', confirmLabel: 'Save' };
+await check('ask resolves {ok:true} on Confirm and restores focus to the opener', async () => {
+  await openAsk(base1);
+  await sheet.waitFor();
+  assert.equal(await sheet.getAttribute('aria-labelledby') !== null && await sheet.getAttribute('aria-describedby') !== null, true);
+  assert.match(await sheet.innerText(), /Save a\.txt\?[\s\S]*A backup is made first\./);
+  await sheet.getByRole('button', { name: 'Save' }).click();
+  await ap.waitForFunction(() => window.__r);
+  assert.deepEqual(await result(), { ok: true });
+  assert.equal(await ap.evaluate(() => document.activeElement.id), 'opener');
+  assert.equal(await ap.locator('dialog.ask-sheet').count(), 0);
+});
+await check('ask resolves {ok:false} on Cancel, Escape and a backdrop click', async () => {
+  await openAsk(base1); await sheet.waitFor();
+  assert.equal(await ap.evaluate(() => document.activeElement.textContent), 'Cancel');
+  await sheet.getByRole('button', { name: 'Cancel' }).click();
+  await ap.waitForFunction(() => window.__r); assert.deepEqual(await result(), { ok: false });
+  await openAsk(base1); await sheet.waitFor(); await ap.keyboard.press('Escape');
+  await ap.waitForFunction(() => window.__r); assert.deepEqual(await result(), { ok: false });
+  assert.equal(await ap.evaluate(() => document.activeElement.id), 'opener');
+  await openAsk(base1); await sheet.waitFor();
+  await ap.mouse.click(5, 5);
+  await ap.waitForFunction(() => window.__r); assert.deepEqual(await result(), { ok: false });
+});
+await check('typed:RUN keeps Confirm disabled until RUN is typed', async () => {
+  await openAsk({ ...base1, confirmLabel: 'Run', tone: 'host', typed: 'RUN' }); await sheet.waitFor();
+  const btn = sheet.getByRole('button', { name: 'Run' });
+  assert.equal(await btn.isDisabled(), true);
+  const field = sheet.locator('input');
+  assert.equal(await ap.evaluate(() => document.activeElement.tagName), 'INPUT');
+  await field.fill('run'); assert.equal(await btn.isDisabled(), true);
+  await field.fill('RUN'); assert.equal(await btn.isDisabled(), false);
+  await btn.click(); await ap.waitForFunction(() => window.__r);
+  assert.deepEqual(await result(), { ok: true });
+});
+await check('input returns the typed value (password type is honoured)', async () => {
+  await openAsk({ title: 'Approval key', confirmLabel: 'Use key', input: { label: 'Key', type: 'password', placeholder: 'paste' } }); await sheet.waitFor();
+  assert.equal(await sheet.locator('input').getAttribute('type'), 'password');
+  await sheet.locator('input').fill('s3cret');
+  await sheet.locator('input').press('Enter');
+  await ap.waitForFunction(() => window.__r);
+  assert.deepEqual(await result(), { ok: true, value: 's3cret' });
+});
+await check('a double click on Confirm resolves once and fires one confirm', async () => {
+  const n = await ap.evaluate(async () => {
+    document.getElementById('opener').focus();
+    let resolved = 0; const p = window.LocalAIUI.ask({ title: 'Twice?', confirmLabel: 'Go' }).then(r => { resolved++; return r; });
+    const btn = [...document.querySelectorAll('dialog.ask-sheet button')].find(b => b.textContent === 'Go');
+    let clicks = 0; document.querySelector('dialog.ask-sheet').addEventListener('close', () => clicks++);
+    btn.click(); btn.click();
+    const r = await p; await new Promise(x => setTimeout(x, 50));
+    return { resolved, clicks, ok: r.ok };
+  });
+  assert.deepEqual(n, { resolved: 1, clicks: 1, ok: true });
+});
+await check('axe: the open sheet passes color-contrast and target-size at 390x844', async () => {
+  await ap.addScriptTag({ path: axePath });
+  for (const o of [{ ...base1 }, { title: 'Run it?', effect: 'line one\nline two', confirmLabel: 'Run', tone: 'host', typed: 'RUN' }, { title: 'Delete "x"?', confirmLabel: 'Delete', tone: 'danger' }, { title: 'Name', confirmLabel: 'Create', input: { label: 'Project name', type: 'text' } }]) {
+    await openAsk(o); await sheet.waitFor();
+    const v = await ap.evaluate(() => window.axe.run('dialog.ask-sheet', { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(v => `${v.id}: ${v.nodes.map(n => n.html).join(' | ')}`)));
+    assert.deepEqual(v, [], o.title);
+    await ap.waitForTimeout(300);
+    const box = await sheet.boundingBox();
+    assert.ok(box.width <= 390 && box.y + box.height <= 844 + 1, 'fits the phone viewport');
+    await ap.keyboard.press('Escape'); await ap.waitForFunction(() => window.__r);
+  }
+});
+await ap.close();
+
 await browser.close();
 if (failures.length) { console.error(`\n${failures.length} failure(s):\n- ${failures.join('\n- ')}`); process.exit(1); }
 console.log('components UI checks passed');

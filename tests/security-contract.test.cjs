@@ -37,3 +37,13 @@ test('GridCraft bridge rejects cross-site and non-JSON posts and runs the agent 
   assert.match(bridge, /Content-Type must be application\/json/);
   assert.match(bridge, /'PYTHONUTF8': '1'/);
 });
+
+test('the browser app never calls native confirm() or prompt()', () => {
+  const dir = path.join(root, 'app', 'public');
+  const re = /(^|[^.\w])(window\.)?(confirm|prompt)\(/m;
+  const files = fs.readdirSync(dir).filter(f => f.endsWith('.js'));
+  assert.ok(files.includes('app.js'));
+  for (const f of files) assert.doesNotMatch(fs.readFileSync(path.join(dir, f), 'utf8'), re, `${f} uses a native dialog; use LocalAIUI.ask`);
+  assert.ok(re.test('if(!confirm(x))'), 'regex catches confirm(');
+  assert.ok(!re.test('await LocalAIUI.ask({})') && !re.test('x.confirm(1)') && !re.test('onConfirm(1)'), 'regex ignores ask( and methods');
+});
