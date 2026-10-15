@@ -261,6 +261,36 @@ async function submitEngineeringIntent(request,{assistantIndex=null,navigate=fal
   if(msg&&state.messages.includes(msg)){msg.content=engineeringRunText(run);msg.streaming=true;renderMessages()}
   pollEngineeringIntent(run.id,msg);return run;
 }
+// One streamed chat turn against /api/chat/stream, for any page that shows a chat (the #ask host and the run view).
+// Resolves {runId, content} when the stream ends; rejects on an HTTP or stream error (AbortError when `signal` aborts).
+async function streamChat({messages,webSearch=false,model,threadId,onOpen,onToken,onMeta,onDone,signal}){
+  const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,webSearch,model,threadId}),signal});
+  if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||`HTTP ${r.status}`);}
+  onOpen?.();
+  const reader=r.body.getReader(),decoder=new TextDecoder();
+  let buf='',runId='',content='';
+  while(true){
+    const packet=await reader.read();
+    if(packet.done) break;
+    buf+=decoder.decode(packet.value,{stream:true});
+    while(true){
+      const sep=buf.indexOf('\n\n');
+      if(sep<0) break;
+      const block=buf.slice(0,sep);
+      buf=buf.slice(sep+2);
+      const event=/^event:\s*(.+)$/m.exec(block)?.[1],dataMatch=/^data:\s*(.+)$/m.exec(block);
+      if(!dataMatch) continue;
+      let data;
+      try{ data=JSON.parse(dataMatch[1]); }catch{ continue; }
+      if(event==='token'){content+=data.text||'';onToken?.(data.text||'',content);}
+      else if(event==='meta'){runId=data.runId||runId;onMeta?.(data);}
+      else if(event==='done'){runId=data.runId||runId;onDone?.(data);}
+      else if(event==='error') throw new Error(data.error||'Streaming failed');
+    }
+  }
+  return {runId,content};
+}
+window.LocalAIChatCore={streamChat,newThreadId};
 async function sendChat(){
   if(['routing','sending','streaming','searching'].includes(state.chatPhase)) return;
   const input=$('chatInput');
@@ -299,53 +329,18 @@ async function sendChat(){
   let sources=[];
 
   try{
-    const payload={
+    await streamChat({
       messages:state.messages.slice(0,-1).slice(-16).map(({role,content})=>({role,content})),
-      webSearch:web,
-      model:state.model,
-      threadId:state.threadId
-    };
-    const r=await fetch('/api/chat/stream',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload),
-      signal:controller.signal
-    });
-    if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    setPhase('streaming','Responding…');
-    const reader=r.body.getReader();
-    const decoder=new TextDecoder();
-    let buf='';
-
-    while(true){
-      const packet=await reader.read();
-      if(packet.done) break;
-      buf+=decoder.decode(packet.value,{stream:true});
-      while(true){
-        const sep=buf.indexOf('\n\n');
-        if(sep<0) break;
-        const block=buf.slice(0,sep);
-        buf=buf.slice(sep+2);
-        const eventMatch=/^event:\s*(.+)$/m.exec(block);
-        const dataMatch=/^data:\s*(.+)$/m.exec(block);
-        if(!dataMatch) continue;
-        let data;
-        try{ data=JSON.parse(dataMatch[1]); }catch{ continue; }
-        const event=eventMatch?.[1];
-        if(event==='token'){
-          state.messages[idx].content+=data.text||'';
-          paintStreamingMessage(idx);
-        }else if(event==='meta'){
-          sources=data.sources||[];
-        }else if(event==='done'){
-          $('chatMeta').textContent=`${data.model} · ${data.elapsedMs} ms${sources.length?` · ${sources.length} sources`:''}`;
-          renderSources($('chatMeta'),sources);
-          setPhase('done','Complete');
-        }else if(event==='error'){
-          throw new Error(data.error||'Streaming failed');
-        }
+      webSearch:web,model:state.model,threadId:state.threadId,signal:controller.signal,
+      onOpen:()=>setPhase('streaming','Responding…'),
+      onToken:t=>{state.messages[idx].content+=t;paintStreamingMessage(idx);},
+      onMeta:d=>{sources=d.sources||[];},
+      onDone:d=>{
+        $('chatMeta').textContent=`${d.model} · ${d.elapsedMs} ms${sources.length?` · ${sources.length} sources`:''}`;
+        renderSources($('chatMeta'),sources);
+        setPhase('done','Complete');
       }
-    }
+    });
     state.messages[idx].streaming=false;
     persistMessages();
     renderMessages(chatNearBottom());

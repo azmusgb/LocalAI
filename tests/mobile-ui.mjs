@@ -62,6 +62,17 @@ await check('chat composer and Send sit above the tab bar', async () => {
   assert.ok(r.send <= r.nav, `Send bottom ${r.send} is under the tab bar at ${r.nav}`);
 });
 
+await check('the run view\'s chat reply box and Send sit inside the screen (the tab bar is covered by the run view)', async () => {
+  const run = { id: 'run-mobile-1', type: 'chat', status: 'completed', progress: 100, threadId: 't-' + 'b2'.repeat(16), title: 'Hello', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), input: { prompt: 'Hello' }, output: { text: 'Hi there' }, card: { kind: 'chat', title: 'Hello', summary: 'Hi there', badge: { label: 'Done', tone: 'good' }, action: { label: 'Open' }, approval: null } };
+  await page.route(u => u.pathname === '/api/runs', r => { const q = new URL(r.request().url()).searchParams; r.fulfill({ contentType: 'application/json', body: JSON.stringify(q.get('id') ? { item: run } : { items: [run], summary: {} }) }); });
+  await page.evaluate(() => window.LocalAIRuns.show('run-mobile-1'));
+  await page.locator('#runReplySend').waitFor({ timeout: 6000 });
+  const r = await page.evaluate(() => ({ send: document.querySelector('#runReplySend').getBoundingClientRect().bottom, reply: document.querySelector('#runReply').getBoundingClientRect().bottom, h: innerHeight }));
+  assert.ok(r.send <= r.h && r.reply <= r.h, `reply box (${r.reply}) / Send (${r.send}) must be inside the ${r.h}px screen`);
+  await page.unroute(u => u.pathname === '/api/runs');
+  await page.evaluate(() => window.history.back());
+});
+
 await check('chips, filters and tabs are at least 44px tall', async () => {
   const short = [];
   for (const view of ['home', 'library', 'issues', 'inbox', 'projects']) {

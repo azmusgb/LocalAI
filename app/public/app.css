@@ -1759,3 +1759,25 @@ body.run-view-open{overflow:hidden}
 .home-check input{width:20px;height:20px;flex:none}
 /* The view-in animation holds a transform, which would make the docked composer position against Home, not the screen. */
 @media(max-width:760px){body.ux-v3 #home{animation:none}}
+/* Chat and research body of the run view (run-bodies.js): the thread's turns, with the reply box docked at the bottom.
+   The backdrop follows the visual viewport (--run-vvh/--run-vvt, set from visualViewport) so the on-screen keyboard never covers the reply box. */
+.run-drawer-backdrop:has(.chat-body){bottom:auto;top:var(--run-vvt,0px);height:var(--run-vvh,100dvh)}
+.run-drawer:has(.chat-body){display:flex;flex-direction:column;padding-bottom:0}
+.run-drawer:has(.chat-body)>.run-view-head,.run-drawer:has(.chat-body)>.run-view-bar,.run-drawer:has(.chat-body)>.run-section:not(.run-body){display:none}
+.chat-body-slot{flex:1;display:flex;flex-direction:column;margin:0}
+.chat-body{flex:1;display:flex;flex-direction:column}
+.chat-body__turns{flex:1;display:flex;flex-direction:column;gap:10px;padding:16px 0 12px}
+.chat-turn{max-width:min(82%,560px);padding:10px 14px;border-radius:18px;font-size:15px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ds-text)}
+.chat-turn--user{align-self:flex-end;background:var(--ds-surface-3)}
+.chat-turn--assistant{align-self:flex-start;max-width:min(94%,680px);background:var(--ds-surface-2);border:1px solid var(--ds-line-2)}
+.chat-turn--wait{color:var(--ds-soft)}
+.chat-turn--error{border-color:var(--ds-bad);color:var(--ds-bad-text)}
+.chat-turn__sources{list-style:none;margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--ds-line-2);display:grid;gap:2px;font-size:14px;white-space:normal}
+.chat-turn__sources li{min-height:24px}
+.chat-turn__sources a{color:var(--ds-accent);text-decoration:underline}
+.chat-body__error{margin:0 0 8px;padding:10px 12px;border:1px solid var(--ds-bad);border-radius:var(--ds-r-md);background:var(--ds-surface-2);color:var(--ds-bad-text);font-size:14px;overflow-wrap:anywhere}
+.chat-body__error[hidden]{display:none}
+.chat-body__reply{position:sticky;bottom:0;z-index:2;display:flex;align-items:flex-end;gap:8px;padding:10px 0 calc(12px + env(safe-area-inset-bottom));background:var(--ds-bg);border-top:1px solid var(--ds-line)}
+.chat-body__reply textarea{flex:1;min-width:0;min-height:44px;max-height:140px;padding:11px 16px;border:1px solid var(--ds-line-input);border-radius:22px;background:var(--ds-surface);color:var(--ds-text);font:16px/1.35 var(--ds-font);resize:none}
+.chat-body__send{min-height:44px;min-width:72px;padding:0 18px;border-radius:22px}
+@media(max-width:760px){.chat-turn{max-width:88%}.chat-turn--assistant{max-width:94%}.chat-body__reply{padding-inline:0}}
