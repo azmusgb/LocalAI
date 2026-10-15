@@ -1167,7 +1167,7 @@ async function apiGenerateImage(req, res) {
     }
     recordActivity('image', editing ? 'Edited an image' : count > 1 ? `Created ${images.length} images` : 'Created an image', original.slice(0, 180), { ...common, imageUrl: images[0].imageUrl, seed: images[0].seed, runId: execution.id });
     runLedger.complete(execution.id, {
-      summary: `${images.length} ${outW} × ${outH} image${images.length === 1 ? '' : 's'} ${editing ? 'edited' : 'created'} with ${engine.label} (${checkpoint})`,
+      summary: imageEngines.runSummary({ count: images.length, width: outW, height: outH, engine: engine.label, editing }),
       output: { ...common, images },
       artifactIds,
       meta: { promptId: results[0].promptId, checkpoint, elapsedMs }

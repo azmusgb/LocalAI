@@ -176,4 +176,10 @@ function batchesFor(engine, count) {
   return engine.base >= 1024 ? Array.from({ length: n }, () => 1) : [n];
 }
 
-module.exports = { ENGINES, ASPECTS, STYLES, applyStyle, batchesFor, inferCheckpointFamily, discoverEngines, customEngine, sizeFor, buildWorkflow };
+// The one-line summary a finished image run shows in Work.
+function runSummary({ count, width, height, engine, editing }) {
+  const what = count > 1 ? `${count} images` : 'Image';
+  return `${what} ${editing ? 'edited' : 'made'} with ${engine} · ${width} × ${height}`;
+}
+
+module.exports = { runSummary, ENGINES, ASPECTS, STYLES, applyStyle, batchesFor, inferCheckpointFamily, discoverEngines, customEngine, sizeFor, buildWorkflow };

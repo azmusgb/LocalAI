@@ -98,3 +98,8 @@ test('styles add to the prompt and to what to avoid', () => {
   assert.deepEqual(e.applyStyle('a cat', '', 'unknown'), { prompt: 'a cat', negative: '' });
   assert.equal(e.applyStyle('a cat', '', 'photo').negative.startsWith('illustration'), true);
 });
+
+test('a run summary reads as a sentence: count only when several, no model file name', () => {
+  assert.equal(e.runSummary({ count: 1, width: 704, height: 1024, engine: 'Quality', editing: true }), 'Image edited with Quality · 704 × 1024');
+  assert.equal(e.runSummary({ count: 4, width: 1024, height: 1024, engine: 'Fast', editing: false }), '4 images made with Fast · 1024 × 1024');
+});
