@@ -239,3 +239,40 @@ test('a rejected signal item stays rejected on a large board', { timeout: 60000 
   assert.equal(store.readSetting('claude-finding/signal-i-r', null).status, 'rejected');
 });
 
+
+test('actions that make no sense for an item\'s stage are refused', { timeout: 60000 }, async t => {
+  const base = await startServer(t, { ollama: await mockPlanner(t), seed: s => {
+    seedItem(s, 'idea-done', { status: 'fixed' });
+    seedItem(s, 'idea-aside', { status: 'deferred' });
+    seedChange(s, 'chg-run', 'planned'); seedItem(s, 'idea-run', { changeId: 'chg-run' });
+    seedItem(s, 'idea-plain', {});
+  } });
+  for (const action of ['handToClaude', 'start', 'moveToTop', 'retry', 'defer', 'reject']) {
+    assert.equal((await post(base, '/api/improve/item', { id: 'idea-done', action })).status, 409, `shipped: ${action}`);
+  }
+  for (const action of ['handToClaude', 'start', 'moveToTop']) {
+    assert.equal((await post(base, '/api/improve/item', { id: 'idea-aside', action })).status, 409, `set aside: ${action}`);
+  }
+  assert.equal((await post(base, '/api/improve/item', { id: 'idea-plain', action: 'retry' })).status, 409, 'retry needs a failed change');
+  assert.equal((await post(base, '/api/improve/item', { id: 'idea-aside', action: 'backToBacklog' })).status, 200, 'set-aside items can come back');
+  // Deferring an item with a running change stops that change.
+  assert.equal((await post(base, '/api/improve/item', { id: 'idea-run', action: 'defer' })).status, 200);
+  assert.equal((await changeById(base, 'chg-run')).status, 'rejected');
+});
+
+test('Improve\'s own ids cannot be created through the board API, but Claude can update them', { timeout: 30000 }, async t => {
+  const base = await startServer(t, { seed: s => seedItem(s, 'idea-mine', {}) });
+  const r = await post(base, '/api/claude/findings', { sessionId: 's', findings: [{ id: 'signal-issue-x', title: 'Squatter' }, { id: 'idea-change-y', title: 'Squatter 2' }, { id: 'idea-mine', title: 'Item idea-mine', status: 'in_progress' }] });
+  assert.equal(r.status, 201);
+  assert.equal(await itemById(base, 'signal-issue-x'), undefined);
+  assert.equal(await itemById(base, 'idea-change-y'), undefined);
+  const mine = await itemById(base, 'idea-mine');
+  assert.deepEqual([mine.status, mine.source], ['in_progress', 'idea']);
+});
+
+test('a long idea in multibyte text is clipped, not refused', { timeout: 30000 }, async t => {
+  const base = await startServer(t);
+  const r = await post(base, '/api/improve/idea', { text: '🙂'.repeat(20000) });
+  assert.equal(r.status, 201);
+  assert.ok(r.body.item.summary.length <= 2000);
+});
