@@ -122,4 +122,4 @@ function reconcile({ items = [], changes = [], signals = [], release = null, sta
   return { upserts };
 }
 
-module.exports = { LIVE_CHANGE, stageOf, shouldPromote, signalItemId, promoteSignal, ideaItem, moveToTopBoost, handToClaude, reconcile };
+module.exports = { LIVE_CHANGE, changeTitle, stageOf, shouldPromote, signalItemId, promoteSignal, ideaItem, moveToTopBoost, handToClaude, reconcile };

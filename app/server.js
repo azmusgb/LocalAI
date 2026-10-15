@@ -42,6 +42,7 @@ const { runCard } = require('./run-cards');
 const { loadOllamaModelRuntime } = require('./model-runtime');
 const { createModelPulls } = require('./model-pulls');
 const imageEngines = require('./image-engines');
+const plainText = require('./plain-text');
 // Last measured seconds per engine on this machine, shown as an estimate in the Images page.
 const IMAGE_ESTIMATES = {};
 const IMAGE_PROMPT_MODEL = process.env.IMAGE_PROMPT_MODEL || process.env.GRIDCRAFT_MODEL || 'qwen3:4b-instruct';
@@ -1676,13 +1677,8 @@ async function runEngineeringPlannerModel(prompt, system, timeoutMs=ENGINEERING_
       const elapsedMs=Date.now()-started;
       const code=e?.cause?.code||e?.code||'';
       const aborted=watchdogAborted||e?.name==='AbortError';
-      finish(
-        reject,
-        new Error(
-          `Engineering planner transport: ${e?.name||'Error'}: ${e?.message||e}` +
-          `${code?`; code=${code}`:''}; elapsedMs=${elapsedMs}; watchdogAborted=${aborted}`
-        )
-      );
+      console.warn(`Engineering planner transport: ${e?.name||'Error'}: ${e?.message||e}${code?`; code=${code}`:''}; elapsedMs=${elapsedMs}; watchdogAborted=${aborted}`);
+      finish(reject,new Error(plainText.plannerError({aborted,timeoutMs,code,message:e?.message||e})));
     };
     try{
       req=transport.request({
@@ -2377,7 +2373,7 @@ async function stageChangeByIdUnlocked(changeId){
     for(const f of c.files||[]){const src=ensureInside(sourceRoot,f.path),dst=ensureInside(stageRoot,f.path);let before='';if(fs.existsSync(src)){before=fs.readFileSync(src,'utf8');if(c.target!=='self'){fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(src,dst)}}else if(!f.operations.some(x=>x.type==='create'))throw new Error(`${f.path}: source file does not exist`);const after=applyOpsToText(before,f.operations,f.path);fs.mkdirSync(path.dirname(dst),{recursive:true});fs.writeFileSync(dst,after,'utf8');diffs.push({path:f.path,diff:simpleDiff(before,after),changed:before!==after})}
   }catch(e){c.status='patch_failed';c.updatedAt=nowIso();c.patchError=String(e.message||e);c.validation={passed:false,checks:[{name:'patch application',result:'FAIL',detail:c.patchError}]};saveChanges(items);throw e}
   c.diffs=diffs;c.stageRoot=stageRoot;c.validation=await validateStagedChange(c,stageRoot);c.updatedAt=nowIso();
-  storage.transaction(()=>{if(c.validation.passed){c.status='awaiting_approval';const approvals=approvalStore();const approval={id:makeId('approval'),title:`Apply change ${c.id}`,detail:`${c.summary}\n\n${c.files.length} file(s) staged and validated.`,risk:c.target==='self'?'high':'medium',status:'pending',createdAt:nowIso(),updatedAt:nowIso(),meta:{changeId:c.id,target:c.target,type:'change'}};approvals.unshift(approval);saveStore(APPROVALS_STORE,approvals,500);c.approvalId=approval.id;addNotification('approval',approval.title,approval.detail,{approvalId:approval.id,changeId:c.id})}else c.status='validation_failed';saveChanges(items);recordActivity('change',c.validation.passed?'Change staged':'Change validation failed',c.summary,{changeId:c.id});});return c;
+  storage.transaction(()=>{if(c.validation.passed){c.status='awaiting_approval';const approvals=approvalStore();const approval={id:makeId('approval'),title:plainText.approvalTitle(c),detail:`${c.summary}\n\n${c.files.length} file(s) staged and validated.`,risk:c.target==='self'?'high':'medium',status:'pending',createdAt:nowIso(),updatedAt:nowIso(),meta:{changeId:c.id,target:c.target,type:'change'}};approvals.unshift(approval);saveStore(APPROVALS_STORE,approvals,500);c.approvalId=approval.id;addNotification('approval',approval.title,approval.detail,{approvalId:approval.id,changeId:c.id})}else c.status='validation_failed';saveChanges(items);recordActivity('change',c.validation.passed?'Change staged':'Change validation failed',c.summary,{changeId:c.id});});return c;
 }
 async function apiChanges(req,res,urlObj){
   if(!requireFeature(res,13))return; const id=urlObj.searchParams.get('id'); const items=changeStore();
@@ -2866,8 +2862,10 @@ async function apiClaudeVote(req,res){
 }
 async function apiClaudeDecision(req,res){
   try{const b=await readBody(req);if(!Object.hasOwn(CLAUDE_STATUS,b.status))return json(res,400,{error:`status must be one of ${Object.keys(CLAUDE_STATUS).join(', ')}`});
-    claudeUpdateFinding(res,b.id,f=>{f.status=b.status;f.decidedAt=nowIso();if(b.note!==undefined)f.decisionNote=claudeText(b.note,1000)});
-    recordActivity('claude',`Finding ${CLAUDE_STATUS[b.status].label.toLowerCase()}`,String(b.id||''),{findingId:b.id})}catch(e){storageError(res,e,400)}
+    let found=null;
+    claudeUpdateFinding(res,b.id,f=>{found=f;f.status=b.status;f.decidedAt=nowIso();if(b.note!==undefined)f.decisionNote=claudeText(b.note,1000)});
+    // The audit log names the finding; a decision on one that doesn't exist (404 above) isn't logged.
+    if(found)recordActivity('claude',`Finding ${CLAUDE_STATUS[b.status].label.toLowerCase()}`,String(found.title||b.id||''),{findingId:b.id})}catch(e){storageError(res,e,400)}
 }
 // What Claude should work on next: open findings in rank order with the operator's decisions.
 async function apiClaudePriorities(req,res,urlObj){
