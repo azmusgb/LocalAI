@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 
-const sourcePath = path.resolve(__dirname, '../app/public/mobile-overhaul.js');
+const sourcePath = path.resolve(__dirname, '../app/public/ui.js');
 const source = fs.readFileSync(sourcePath, 'utf8');
 
 test('truth layer browser bundle parses as JavaScript', () => {

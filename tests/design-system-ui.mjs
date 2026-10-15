@@ -25,9 +25,9 @@ await check('primary actions use the accent, not white', async () => {
   assert.ok(colors.length > 0);
   for (const c of colors) assert.notEqual(c, 'rgb(238, 244, 255)', 'white primary button');
 });
-await check('design system stylesheet stays last', async () => {
-  const last = await page.evaluate(() => [...document.head.querySelectorAll('link[rel=stylesheet],style')].pop()?.id);
-  assert.equal(last, 'designSystemCss');
+await check('one stylesheet, nothing injected at runtime', async () => {
+  const sheets = await page.evaluate(() => [...document.querySelectorAll('link[rel=stylesheet],style')].map(e => e.getAttribute('href') || 'inline <style>'));
+  assert.deepEqual(sheets, ['/app.css']);
 });
 await page.close();
 
