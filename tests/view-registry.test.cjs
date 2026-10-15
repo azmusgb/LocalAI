@@ -121,3 +121,10 @@ test('change requests use one form for plan-only and agent runs', () => {
   assert.doesNotMatch(html, /id="changeRequest"|id="changePlanBtn"/);
   assert.match(app, /if\(Number\(\$\('engineeringAttempts'\)\.value\)===0\)return planChange\(\)/);
 });
+
+// Menus draw every page's icon from the sprite; letters and loose symbols (M, W, R, PS, ↗) looked like three designs.
+test('every domain and page names an icon the sprite has', () => {
+  const symbols = new Set([...html.matchAll(/<symbol id="i-([\w-]+)"/g)].map(m => m[1]));
+  const missing = [...registry.DOMAINS.map(d => [d.id, d.icon]), ...registry.VIEWS.map(v => [v.id, v.svg])].filter(([, s]) => !symbols.has(s));
+  assert.deepEqual(missing, [], 'views without a sprite icon');
+});

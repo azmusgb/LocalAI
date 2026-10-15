@@ -236,7 +236,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         </div>
         <div class="card" style="margin-top:12px">
           <div class="section-head">
-            <div><h2>Installed models</h2><p>Runtime residency is read from Ollama /api/ps. Idle models can unload normally.</p></div>
+            <div><h2>Installed models</h2><p>Loaded now shows what is in memory. Idle models unload on their own.</p></div>
           </div>
           <div id="modelRuntimeList" class="model-runtime-list"><div class="empty">Loading model runtime…</div></div>
           <div id="modelRuntimeNote" class="model-runtime-note">Model residency is runtime state, not an availability requirement.</div>
@@ -867,7 +867,7 @@ function buildDesktopNav(){
  const groups=document.createElement('div');groups.className='ux-secondary-groups';groups.id='uxSecondaryGroups';
  secondary.append(secondaryHead,groups);
  DOMAINS.forEach(d=>{
-   const b=document.createElement('button');b.type='button';b.className='ux-primary-item';b.dataset.domain=d.id;b.title=d.label;b.innerHTML='<span class="ux-primary-symbol">'+d.symbol+'</span><span>'+d.label+'</span>';
+   const b=document.createElement('button');b.type='button';b.className='ux-primary-item';b.dataset.domain=d.id;b.title=d.label;b.innerHTML='<span class="ux-primary-symbol" aria-hidden="true">'+(icon(d.icon)||d.symbol)+'</span><span>'+d.label+'</span>';
    b.addEventListener('click',()=>navigate(d.defaultView));
    rail.appendChild(b);
  });
@@ -885,7 +885,7 @@ function renderSecondary(domainId){
  d.groups.forEach(g=>{
    const section=document.createElement('section');section.className='ux-secondary-section';
    const h=document.createElement('div');h.className='ux-secondary-label';h.textContent=g.label;section.appendChild(h);
-   g.views.forEach(v=>{const src=viewButton(v);if(!src)return;const b=src;b.classList.add('ux-secondary-link');b.title=DESCRIPTIONS[v]||'';b.setAttribute('aria-description',DESCRIPTIONS[v]||'');b.innerHTML='<span class="ux-link-icon" aria-hidden="true">'+(REG.view(v)?.icon||'')+'</span><span class="ux-link-label">'+labelForView(v)+'</span>';section.appendChild(b)});
+   g.views.forEach(v=>{const src=viewButton(v);if(!src)return;const b=src;b.classList.add('ux-secondary-link');b.title=DESCRIPTIONS[v]||'';b.setAttribute('aria-description',DESCRIPTIONS[v]||'');b.innerHTML='<span class="ux-link-icon" aria-hidden="true">'+(icon(REG.view(v)?.svg)||REG.view(v)?.icon||'')+'</span><span class="ux-link-label">'+labelForView(v)+'</span>';section.appendChild(b)});
    holder.appendChild(section);
  });
 }
@@ -2222,7 +2222,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       cmd.append(copy);
       box.append(cmd, el('p', 'meta claude-chat-wait', st.pair ? 'Waiting for approval… this page switches over by itself.' : 'Requesting a code…'));
     }
-    box.append(el('p', 'claude-chat-warning', HTTP_WARNING));
+    box.append(el('p', 'banner banner--attention claude-chat-warning', HTTP_WARNING));
     root.append(box);
     st.built = 'pair';
   }
@@ -2409,7 +2409,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     {
       id: 'svd', name: 'Stable Video Diffusion', tier: 'extend', decision: 'Verify before enabling',
       summary: 'Treat SVD as a ComfyUI model/workflow capability, not a standalone integration. Do not present it as installed until the runtime exposes the required model and nodes.',
-      guidance: 'Capability state is intentionally “not verified” until backend discovery is added.',
+      guidance: 'Shows as not verified until Local AI can check for the models and nodes it needs.',
       actions: [{ type: 'view', view: 'create', label: 'Open Images' }]
     },
     {
@@ -2600,12 +2600,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (!section || section.dataset.integrationV2 === 'true') return Boolean(section);
     section.dataset.integrationV2 = 'true';
     section.innerHTML = `
-      <div class="topbar"><div><h1>Integrations</h1><p class="sub">A local-first integration policy grounded in the reviewed tools and the current appliance architecture. Native services stay authoritative; bridges are explicit; cloud fallbacks remain opt-in.</p></div><button class="btn" type="button" id="uxIntegrationRefreshV2" aria-busy="false">Refresh status</button></div>
-      <div class="ux-int-hero ux-int-v2"><div><span class="eyebrow">Recommended architecture</span><h2>Extend the capabilities Local AI already owns instead of collecting parallel AI apps.</h2><p id="uxIntegrationStatusSummaryV2" role="status" aria-live="polite">Checking local services…</p><span id="uxIntegrationLastCheckedV2" class="ux-int-checked"></span></div><div class="ux-int-metrics"><div><b id="uxIntegrationNativeCountV2">—</b><span>native services healthy</span></div><div><b id="uxIntegrationMediaStateV2">—</b><span>local media capability</span></div><div><b>Explicit</b><span>external trust crossings</span></div></div></div>
-      <div class="section-head ux-int-section-head"><div><h2>Implement / keep</h2><p>Recommended components and the guardrails that keep them from fragmenting Local AI.</p></div></div><div id="uxIntegrationCardsV2" class="ux-int-grid"></div>
-      <div class="card ux-int-policy"><div><div class="eyebrow">Integration rules</div><h2>What gets into the core</h2></div><div class="ux-int-policy-grid"><div><strong>1. Native before cloud</strong><span>Ollama, n8n and ComfyUI remain the default execution path.</span></div><div><strong>2. One owner per capability</strong><span>Do not add another primary chat, automation, or media surface that fragments state.</span></div><div><strong>3. Bridges must create durable value</strong><span>Penpot and Obsidian should exchange inspectable artifacts or source context, not merely open another tab.</span></div><div><strong>4. Cloud is an explicit fallback</strong><span>Credentials and uploads require deliberate user action after a measured local capability gap is documented.</span></div></div></div>
-      <div class="card ux-int-research"><div><div class="eyebrow">Research-backed safeguards</div><h2>Operational requirements</h2></div><div class="ux-int-research-grid"><div><strong>n8n security audit</strong><span>Use the official audit after adding credentials, community nodes, or public webhooks; it checks credential, database, filesystem, node, and instance risks.</span><a data-external="true" href="https://docs.n8n.io/hosting/securing/security-audit/" target="_blank" rel="noopener noreferrer" aria-label="n8n security audit official guidance (opens external site)">Official guidance ↗</a></div><div><strong>ComfyUI API compatibility</strong><span>Custom nodes that require direct client/server communication may not be usable through API-mode automation. Verify this before making a node part of a Local AI workflow.</span><a data-external="true" href="https://docs.comfy.org/custom-nodes/overview" target="_blank" rel="noopener noreferrer" aria-label="ComfyUI custom-node model guidance (opens external site)">Custom-node model ↗</a></div><div><strong>Penpot self-host + MCP</strong><span>Penpot can run on your own server and exposes an MCP workflow for design-to-code/design-to-design work. MCP keys are secrets and stay out of client code.</span><a data-external="true" href="https://help.penpot.app/mcp/" target="_blank" rel="noopener noreferrer" aria-label="Penpot MCP guidance (opens external site)">Penpot MCP ↗</a></div></div></div>
-      <div class="card ux-int-next"><div><div class="eyebrow">Implementation order</div><h2>Next technical steps</h2></div><div class="ux-int-next-grid"><div><b>Shipped</b><strong>Live n8n / ComfyUI health</strong><span>Uses the appliance status and capability endpoints already present.</span></div><div><b>Next</b><strong>ComfyUI capability discovery</strong><span>Detect video/avatar model and node readiness before SVD or SadTalker can show as available.</span></div><div><b>Next</b><strong>Obsidian vault ingestion</strong><span>Mount/select a local vault and ingest supported source files into Project Knowledge with source provenance.</span></div><div><b>Opt-in</b><strong>Penpot MCP bridge</strong><span>Connect a self-hosted Penpot design workspace without exposing MCP credentials to the browser.</span></div></div></div>
+      <div class="topbar"><div><h1>Integrations</h1><p class="sub">The services Local AI runs on, how each one is doing, and the tools it can connect to.</p></div><button class="btn" type="button" id="uxIntegrationRefreshV2" aria-busy="false">Refresh status</button></div>
+      <div class="card ux-int-hero ux-int-v2"><div><h2>Connected services</h2><p id="uxIntegrationStatusSummaryV2" role="status" aria-live="polite">Checking local services…</p><span id="uxIntegrationLastCheckedV2" class="ux-int-checked"></span></div><div class="ux-int-metrics"><div><b id="uxIntegrationNativeCountV2">—</b><span>core services healthy</span></div><div><b id="uxIntegrationMediaStateV2">—</b><span>image and media</span></div><div><b>Opt-in</b><span>cloud and outside tools</span></div></div></div>
+      <div class="section-head ux-int-section-head"><div><h2>Services and tools</h2><p>What each one does here, and whether it is ready.</p></div></div><div id="uxIntegrationCardsV2" class="ux-int-grid"></div>
+      <details class="ux-int-about"><summary>How integrations are chosen</summary><div class="card ux-int-policy"><div><h2>What gets into the core</h2></div><div class="ux-int-policy-grid"><div><strong>1. Native before cloud</strong><span>Ollama, n8n and ComfyUI remain the default execution path.</span></div><div><strong>2. One owner per capability</strong><span>Do not add another primary chat, automation, or media surface that fragments state.</span></div><div><strong>3. Bridges must create durable value</strong><span>Penpot and Obsidian should exchange inspectable artifacts or source context, not merely open another tab.</span></div><div><strong>4. Cloud is an explicit fallback</strong><span>Credentials and uploads require deliberate user action after a measured local capability gap is documented.</span></div></div></div>
+      <div class="card ux-int-research"><div><h2>Safeguards</h2></div><div class="ux-int-research-grid"><div><strong>n8n security audit</strong><span>Use the official audit after adding credentials, community nodes, or public webhooks; it checks credential, database, filesystem, node, and instance risks.</span><a data-external="true" href="https://docs.n8n.io/hosting/securing/security-audit/" target="_blank" rel="noopener noreferrer" aria-label="n8n security audit official guidance (opens external site)">Official guidance ↗</a></div><div><strong>ComfyUI API compatibility</strong><span>Custom nodes that require direct client/server communication may not be usable through API-mode automation. Verify this before making a node part of a Local AI workflow.</span><a data-external="true" href="https://docs.comfy.org/custom-nodes/overview" target="_blank" rel="noopener noreferrer" aria-label="ComfyUI custom-node model guidance (opens external site)">Custom-node model ↗</a></div><div><strong>Penpot self-host + MCP</strong><span>Penpot can run on your own server and exposes an MCP workflow for design-to-code/design-to-design work. MCP keys are secrets and stay out of client code.</span><a data-external="true" href="https://help.penpot.app/mcp/" target="_blank" rel="noopener noreferrer" aria-label="Penpot MCP guidance (opens external site)">Penpot MCP ↗</a></div></div></div>
+      <div class="card ux-int-next"><div><h2>Planned next</h2></div><div class="ux-int-next-grid"><div><b>Shipped</b><strong>Live n8n / ComfyUI health</strong><span>Uses the appliance status and capability endpoints already present.</span></div><div><b>Next</b><strong>ComfyUI capability discovery</strong><span>Detect video/avatar model and node readiness before SVD or SadTalker can show as available.</span></div><div><b>Next</b><strong>Obsidian vault ingestion</strong><span>Mount/select a local vault and ingest supported source files into Project Knowledge with source provenance.</span></div><div><b>Opt-in</b><strong>Penpot MCP bridge</strong><span>Connect a self-hosted Penpot design workspace without exposing MCP credentials to the browser.</span></div></div></div>
+      </details>
       <details class="ux-int-reviewed"><summary>Reviewed alternatives <span>${ALTERNATIVES.length} tools/groups intentionally kept out of the core</span></summary><div class="section-head ux-int-section-head"><div><h2>Reviewed, not integrated</h2><p>Useful independently in some cases, but not justified as Local AI runtime dependencies today.</p></div></div><div id="uxIntegrationAlternativesV2" class="ux-int-table"></div></details>`;
 
     renderCards();

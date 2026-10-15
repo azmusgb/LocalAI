@@ -82,6 +82,8 @@ function reconcile({ items = [], changes = [], signals = [], release = null, sta
     const existing = byId.get(signalItemId(signal.id));
     if (!existing) {
       if (shouldPromote(signal)) upserts.push(promoteSignal(signal, at));
+    } else if (signal.status === 'open' && existing.status === 'fixed' && existing.decisionNote === 'Resolved on its own') {
+      upserts.push({ id: existing.id, status: 'proposed', decisionNote: 'Came back after resolving on its own', updatedAt: at });
     } else if (signal.status === 'resolved' && stageOf(existing, changesById) === 'backlog') {
       upserts.push({ id: existing.id, status: 'fixed', decisionNote: 'Resolved on its own', updatedAt: at });
     }
@@ -89,6 +91,11 @@ function reconcile({ items = [], changes = [], signals = [], release = null, sta
 
   for (const item of items) {
     const change = item.changeId ? changesById.get(item.changeId) : null;
+    // The first release linked old change requests as in_progress, which told Claude sessions someone was on them.
+    // Linked items are approved; the live change is what puts them In progress. Fix those once.
+    if (item.id.startsWith('idea-change-') && item.status === 'in_progress' && !item.handedToClaude) {
+      upserts.push({ id: item.id, status: 'approved', updatedAt: at });
+    }
     // Items linked before titles came from the request keep the generic one; rename them once.
     const title = typeof item.title === 'string' ? item.title.trim() : '';
     if (change && title && GENERIC_TITLES.has(title) && changeTitle(change) !== title) {

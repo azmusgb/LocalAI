@@ -90,5 +90,18 @@ for (const size of SIZES) {
   });
 }
 
+await check('desktop: every menu entry draws a sprite icon, not a letter', async () => {
+  const { page, context } = await open(SIZES[1]);
+  const bad = [];
+  for (const d of ['home', 'projects', 'improve', 'system']) {
+    await page.click(`.ux-primary-item[data-domain="${d}"]`);
+    await page.waitForTimeout(150);
+    bad.push(...await page.evaluate(() => [...document.querySelectorAll('.ux-primary-symbol, .ux-secondary-link .ux-link-icon')]
+      .filter(e => !e.querySelector('svg use[href^="#i-"]') || e.textContent.trim()).map(e => (e.closest('[data-view],[data-domain]')?.dataset.view || e.closest('[data-domain]')?.dataset.domain) + ':' + e.textContent.trim())));
+  }
+  assert.deepEqual([...new Set(bad)], []);
+  await context.close();
+});
+
 await browser.close();
 if (failed) { console.log(`${failed} layout check(s) failed`); process.exit(1) }

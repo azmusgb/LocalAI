@@ -2440,7 +2440,9 @@ async function apiQualityClientEvent(req,res){
   if(!requireFeature(res,14))return;
   try{
     const b=await readBody(req,256*1024);const message=String(b.message||'').slice(0,4000);if(!message)return json(res,400,{error:'message is required'});
-    const item={id:makeId('qevt'),type:String(b.type||'error').slice(0,40),severity:qualitySeverity(b.type,message),message,source:String(b.source||'').slice(0,1000),line:Number(b.line)||null,column:Number(b.column)||null,stack:String(b.stack||'').slice(0,12000),url:String(b.url||'').slice(0,1200),createdAt:nowIso()};
+    // Opaque cross-origin errors carry no file, line or stack and can't be acted on (older cached pages still send them).
+    if(/^Script error\.?$/.test(message.trim())&&!b.stack&&!Number(b.line))return json(res,202,{ignored:true,reason:'opaque script error'});
+    const item={id:makeId('qevt'),type:String(b.type||'error').slice(0,40),severity:qualitySeverity(b.type,message),message,source:String(b.source||'').slice(0,1000),line:Number(b.line)||null,column:Number(b.column)||null,stack:String(b.stack||'').slice(0,12000),url:String(b.url||'').slice(0,1200),userAgent:String(req.headers['user-agent']||'').slice(0,300),createdAt:nowIso()};
     prependRecord(QUALITY_EVENTS_STORE,item);recordActivity('quality','Client quality event',message.slice(0,180),{qualityEventId:item.id,severity:item.severity});json(res,201,{item});
   }catch(e){storageError(res,e,400)}
 }
@@ -2717,7 +2719,7 @@ async function apiImproveItems(req,res){
     json(res,200,{items,signals:issueStore().slice(0,250)})}catch(e){storageError(res,e,500)}
 }
 async function apiImproveIdea(req,res){
-  try{const b=await readBody(req,64*1024);const item=improve.ideaItem(b.text,nowIso());if(!item)return json(res,400,{error:'Describe the change first.'});
+  try{const b=await readBody(req,512*1024);const item=improve.ideaItem(b.text,nowIso());if(!item)return json(res,400,{error:'Describe the change first.'});
     storage.writeSetting(CLAUDE_FINDING_PREFIX+item.id,{sessionId:'owner',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...item});
     if(b.start!==true)return json(res,201,{item});
     // The idea is saved either way; if planning fails, say so and let the owner retry from the Backlog.
@@ -2728,7 +2730,17 @@ async function apiImproveItem(req,res){
   try{const b=await readBody(req);if(!IMPROVE_ACTIONS.includes(b.action))return json(res,400,{error:`action must be one of ${IMPROVE_ACTIONS.join(', ')}`});
     const f=improveRead(b.id);if(!f)return json(res,404,{error:'Item not found'});
     const changes=changeStore(),change=f.changeId?changes.find(c=>c.id===f.changeId):null,live=!!change&&improve.LIVE_CHANGE.includes(change.status);
-    const at=nowIso();
+    const at=nowIso(),stage=improve.stageOf(f,new Map(changes.map(c=>[c.id,c])));
+    // Each action belongs to a stage; anything else is refused rather than quietly moving the item.
+    const where={backlog:'in the Backlog',inProgress:'in progress',shipped:'shipped',setAside:'set aside'}[stage];
+    const refuse=()=>json(res,409,{error:`That isn't available for an item that is ${where}.`});
+    if(['handToClaude','moveToTop','start'].includes(b.action)&&stage!=='backlog')return refuse();
+    if(b.action==='retry'&&!(live&&['patch_failed','validation_failed'].includes(change.status)))return json(res,409,{error:'Retry needs a change that failed.'});
+    if(['defer','reject','backToBacklog'].includes(b.action)&&stage==='shipped')return refuse();
+    if(['defer','reject'].includes(b.action)&&change&&live){
+      if(IMPROVE_LOCKED_CHANGE.includes(change.status))return json(res,409,{error:'This change is already approved and with the host updater.'});
+      improveRetireChange(change.id);
+    }
     switch(b.action){
       case 'start':case 'retry':{
         const failed=live&&['patch_failed','validation_failed'].includes(change.status);
@@ -2813,7 +2825,9 @@ async function apiClaudeEvents(req,res){
 }
 async function apiClaudeFindings(req,res){
   try{const b=await readBody(req,1024*1024);const list=Array.isArray(b.findings)?b.findings.slice(0,300):[b];const at=nowIso();const saved=[],fresh=[];
-    storage.transaction(()=>{if(b.sessionId)claudeSaveSession(b,at);for(const raw of list){const id=claudeSlug(raw.id,'');const prev=id?storage.readSetting(CLAUDE_FINDING_PREFIX+id,null):null;const f=claudeNormalizeFinding({...raw,sessionId:raw.sessionId||b.sessionId},prev,at);storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);saved.push(f);if(!prev&&f.status==='proposed')fresh.push(f)}});
+    storage.transaction(()=>{if(b.sessionId)claudeSaveSession(b,at);for(const raw of list){const id=claudeSlug(raw.id,'');const prev=id?storage.readSetting(CLAUDE_FINDING_PREFIX+id,null):null;
+      // signal-* and idea-* ids are Improve's: Claude may update those items, never create them.
+      if(/^(signal|idea)-/.test(id)&&!prev)continue;const f=claudeNormalizeFinding({...raw,sessionId:raw.sessionId||b.sessionId},prev,at);storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);saved.push(f);if(!prev&&f.status==='proposed')fresh.push(f)}});
     // A new finding waiting for the owner's decision reaches the phone; re-posts of the same id don't.
     for(const f of fresh)notifier.notify({kind:'needs-you',title:'Claude needs your decision',body:f.title,url:'/?open=claude',tag:`finding:${f.id}`});
     json(res,201,{ok:true,items:claudeRanked(saved)})}catch(e){storageError(res,e,400)}
