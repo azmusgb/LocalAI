@@ -2634,7 +2634,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 (() => {
   'use strict';
 
-  const state = { runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '', projects: null, viewError: '' };
+  const state = { runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '', projects: null, viewError: '', fetched: null, gap: '', pending: null, inApp: false, closing: false };
+  const KINDS = { chat: ['Chat', 'compose'], research: ['Research', 'globe'], image: ['Image', 'image'], agent: ['Agent', 'automate'], automation: ['Automation', 'refresh'], engineering: ['Engineering', 'build'] };
+  const kindLabel = (kind) => (KINDS[kind] || ['Run'])[0];
+  const lookup = (id) => state.runs.find((item) => item.id === id) || (state.fetched?.id === id ? state.fetched : null);
   const ACTIVE = new Set(['queued', 'running', 'streaming', 'awaiting_approval']);
 
   function el(id) { return document.getElementById(id); }
@@ -2678,6 +2681,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   function activateRunsView() {
     const view = el('runs');
     if (!view) return;
+    if (typeof window.showView === 'function') { window.showView('runs'); window.scrollTo({ top: 0, behavior: 'auto' }); return; }   // the router keeps the hash on this page
     document.querySelectorAll('.view').forEach((item) => item.classList.toggle('active', item === view));
     document.querySelectorAll('.navbtn[data-view]').forEach((item) => item.classList.toggle('active', item.dataset.view === 'runs'));
     window.scrollTo({ top: 0, behavior: 'auto' });
@@ -2731,15 +2735,19 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       backdrop.id = 'runDrawerBackdrop';
       backdrop.className = 'run-drawer-backdrop';
       backdrop.setAttribute('aria-hidden', 'true');
-      backdrop.innerHTML = '<aside id="runDrawer" class="run-drawer" role="dialog" aria-modal="true" aria-labelledby="runDrawerTitle"></aside><div id="runLiveRegion" class="run-live-region" aria-live="polite"></div>';
+      backdrop.innerHTML = '<aside id="runDrawer" class="run-drawer" role="dialog" aria-modal="true" aria-labelledby="runDrawerTitle"></aside><dialog id="runDetailsSheet" class="run-details-sheet" aria-labelledby="runDetailsTitle"></dialog><div id="runLiveRegion" class="run-live-region" aria-live="polite"></div>';
       document.body.appendChild(backdrop);
-      backdrop.addEventListener('click', (event) => { if (event.target === backdrop) closeDrawer(); });
+      backdrop.addEventListener('click', (event) => { if (event.target === backdrop) closeRunView(); });
+      const dlg = el('runDetailsSheet');
+      dlg.addEventListener('click', (event) => { if (event.target === dlg) dlg.close(); });   // the dimmed area outside the sheet
+      dlg.addEventListener('close', () => { if (state.selectedId) el('runDetailsBtn')?.focus(); });
+      document.addEventListener('click', (event) => { if (!event.target.closest?.('.run-menu, #runMoreBtn')) closeMenu(); });
     }
   }
 
   // Every run is one shared card (components.js); clicking it or its action opens the run view.
   function makeRunRow(run) {
-    return window.LocalAIUI.runCard(run, { onOpen: (item) => openDrawer(item.id) });
+    return window.LocalAIUI.runCard(run, { onOpen: (item) => openRun(item.id) });
   }
 
   function render() {
@@ -2776,78 +2784,71 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       visible.forEach((run) => homeList.appendChild(makeRunRow(run)));
     }
 
-    if (state.selectedId && el('runDrawerBackdrop')?.classList.contains('show') && drawerSignature(runs.find((run) => run.id === state.selectedId)) !== state.drawerSig) renderDrawer(state.selectedId);
+    if (state.fetched && state.fetched.id === state.selectedId) {   // a run older than the list: keep it fresh on its own
+      if (runs.some((run) => run.id === state.fetched.id)) state.fetched = null;
+      else if (active(state.fetched)) fetchRun(state.selectedId, true);
+    }
+    if (state.selectedId && el('runDrawerBackdrop')?.classList.contains('show') && !state.gap && !state.pending && drawerSignature(lookup(state.selectedId)) !== state.drawerSig) renderDrawer(state.selectedId);
   }
 
-  function renderDrawer(runId) {
-    const run = state.runs.find((item) => item.id === runId);
+  function iconBtn(name, label, id) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'icon-btn'; b.setAttribute('aria-label', label); if (id) b.id = id;
+    b.innerHTML = window.LocalAIKit?.icon(name) || ''; return b;
+  }
+  // Header: Back, title, subtitle, and (for a loaded run) Details and More.
+  function viewHead(title, sub, run) {
+    const head = document.createElement('div'); head.className = 'run-drawer-head';
+    const back = iconBtn('chevron-left', 'Back'); back.addEventListener('click', closeRunView);
+    const copy = document.createElement('div'); copy.className = 'run-drawer-copy';
+    const t = document.createElement('div'); t.id = 'runDrawerTitle'; t.className = 'run-drawer-title'; t.textContent = title;
+    const s = document.createElement('div'); s.className = 'run-drawer-sub'; if (typeof sub === 'string') s.textContent = sub; else s.append(...sub);
+    copy.append(t, s); head.append(back, copy);
+    if (run) {
+      const info = iconBtn('info', 'Details', 'runDetailsBtn'); info.addEventListener('click', openDetails);
+      const more = iconBtn('more', 'More', 'runMoreBtn'); more.setAttribute('aria-haspopup', 'menu'); more.setAttribute('aria-expanded', 'false');
+      const menu = document.createElement('div'); menu.className = 'run-menu'; menu.setAttribute('role', 'menu'); menu.hidden = true;
+      const item = (label, ok, fn) => { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'menuitem'); b.textContent = label; b.disabled = !ok; b.addEventListener('click', () => { closeMenu(); fn(b); }); return b; };
+      menu.append(item('Cancel run', !!run.cancellable && active(run), (b) => cancelRun(run.id, b)), item('Retry', !!run.retryable, (b) => retryRun(run.id, b)));
+      more.addEventListener('click', () => { const open = menu.hidden; closeMenu(); if (open) { menu.hidden = false; more.setAttribute('aria-expanded', 'true'); menu.querySelector('button:not(:disabled)')?.focus(); } });
+      head.append(info, more, menu);
+    }
+    return head;
+  }
+  function closeMenu() { const m = document.querySelector('.run-menu'); if (m && !m.hidden) { m.hidden = true; el('runMoreBtn')?.setAttribute('aria-expanded', 'false'); return true; } return false; }
+  function stateBlock(kind, lines) {   // a centred message: Starting…, Loading…, not available
+    const box = document.createElement('div'); box.className = 'run-view-state';
+    const ico = document.createElement('span'); ico.className = 'run-view-state__icon'; ico.innerHTML = window.LocalAIKit?.icon(kind) || ''; box.appendChild(ico);
+    lines.forEach((node) => box.appendChild(node)); return box;
+  }
+  const textNode = (cls, text) => { const d = document.createElement('div'); d.className = cls; d.textContent = text; return d; };
+
+  function renderDrawer(runId = state.selectedId) {
     const drawer = el('runDrawer');
-    if (!run || !drawer) return;
-    state.drawerSig = drawerSignature(run);
+    if (!drawer) return;
+    const run = lookup(runId);
     drawer.replaceChildren();
+    el('runDetailsSheet').replaceChildren();
+    state.drawerSig = drawerSignature(run);
+    if (!run) { renderGap(drawer); return; }
+    const card = run.card, kit = window.LocalAIKit;
+    const project = document.createElement('span'); project.className = 'run-view-project';
+    project.textContent = !run.projectId ? 'Not filed' : !state.projects ? 'Filed' : (state.projects.find((p) => p.id === run.projectId)?.name || 'Project removed');
+    drawer.appendChild(viewHead(run.title || 'Untitled run', [`${kindLabel(card?.kind || run.type)} · `, project], run));
 
-    const head = document.createElement('div');
-    head.className = 'run-drawer-head';
-    const copy = document.createElement('div');
-    const title = document.createElement('div');
-    title.id = 'runDrawerTitle';
-    title.className = 'run-drawer-title';
-    title.textContent = run.title || 'Untitled run';
-    const sub = document.createElement('div');
-    sub.className = 'run-drawer-sub';
-    sub.textContent = `${run.type || 'task'} · ${statusLabel(run.status)} · updated ${relativeTime(run.updatedAt)}`;
-    copy.append(title, sub);
-    const kit = window.LocalAIKit, card = run.card;
-    const close = document.createElement('button');
-    close.type = 'button'; close.className = 'btn run-drawer-close'; close.textContent = 'Close'; close.addEventListener('click', closeDrawer);
-    head.append(copy, close);
-    drawer.appendChild(head);
-
-    // Run view header: status badge, where the run is filed, Pin and File… .
+    // Status badge, then a progress bar while the run is live.
     const vh = document.createElement('div'); vh.className = 'run-view-head';
     const badge = card?.badge || kit?.statusBadge(run.status) || { label: statusLabel(run.status), tone: 'neutral' };
     const chip = document.createElement('span'); chip.className = `badge badge--${badge.tone}`; chip.textContent = badge.label;
-    const project = document.createElement('span'); project.className = 'run-view-project';
-    project.textContent = !run.projectId ? 'Not filed' : !state.projects ? 'Filed' : (state.projects.find((p) => p.id === run.projectId)?.name || 'Project removed');
-    vh.append(chip, project);
-    if (String(run.id).startsWith('legacy-')) {
-      const note = document.createElement('span'); note.className = 'run-view-project'; note.textContent = 'Managed on its own page'; vh.appendChild(note);
-    } else {
-      const pin = document.createElement('button'); pin.type = 'button'; pin.className = 'btn-outline run-act';
-      pin.textContent = run.pinned ? 'Unpin' : 'Pin'; pin.setAttribute('aria-pressed', String(!!run.pinned));
-      pin.addEventListener('click', () => updateRun(run, { pinned: !run.pinned }, run.pinned ? 'Run unpinned.' : 'Run pinned.'));
-      const file = document.createElement('button'); file.type = 'button'; file.className = 'btn-outline run-act'; file.textContent = 'File…';
-      file.addEventListener('click', () => fileRun(run));
-      vh.append(pin, file);
+    vh.appendChild(chip); drawer.appendChild(vh);
+    if (active(run)) {
+      const pct = Math.max(0, Math.min(100, Number(run.progress) || 0));
+      const bar = document.createElement('div'); bar.className = 'run-card__bar run-view-bar'; bar.setAttribute('role', 'progressbar'); bar.setAttribute('aria-label', 'Progress');
+      bar.setAttribute('aria-valuemin', '0'); bar.setAttribute('aria-valuemax', '100'); bar.setAttribute('aria-valuenow', String(pct));
+      const fill = document.createElement('span'); fill.style.setProperty('--progress', `${pct}%`); bar.appendChild(fill); drawer.appendChild(bar);
     }
-    drawer.appendChild(vh);
-    if (state.viewError) { const err = document.createElement('div'); err.className = 'run-view-error'; err.setAttribute('role', 'alert'); err.textContent = state.viewError; drawer.appendChild(err); }
-
+    if (state.viewError) drawer.appendChild(errorBox());
     if (card?.approval) drawer.appendChild(approvalBar(card.approval));
 
-    const actions = document.createElement('div');
-    actions.className = 'run-drawer-actions';
-    if (run.cancellable && active(run)) {
-      const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'btn danger'; cancel.textContent = 'Cancel run'; cancel.addEventListener('click', () => cancelRun(run.id, cancel)); actions.appendChild(cancel);
-    }
-    if (run.retryable) {
-      const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'btn primary'; retry.textContent = 'Retry'; retry.addEventListener('click', () => retryRun(run.id, retry)); actions.appendChild(retry);
-    }
-    if (actions.childElementCount) drawer.appendChild(actions);
-
-    const details = document.createElement('div');
-    details.className = 'run-detail-grid';
-    const values = [
-      ['Status', statusLabel(run.status)], ['Progress', `${Math.max(0, Math.min(100, Number(run.progress) || 0))}%`],
-      ['Started', shownDate(run.startedAt)], ['Finished', shownDate(run.finishedAt)],
-      ['Attempt', String(run.attempt || 1)], ['Retry of', run.retryOf || '—'], ['Run ID', run.id]
-    ];
-    values.forEach(([label, value]) => {
-      const box = document.createElement('div'); box.className = 'run-detail';
-      const key = document.createElement('span'); key.textContent = label;
-      const text = document.createElement('b'); text.textContent = value;
-      box.append(key, text); details.appendChild(box);
-    });
     if (run.summary) appendSection(drawer, 'Summary', run.summary);
     if (run.error) appendSection(drawer, 'Error', run.error);
     // The kind body slot: a body registered for this kind owns it; otherwise the Output block.
@@ -2860,7 +2861,74 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const output = outputText(run.output);
       if (output) appendSection(drawer, 'Output', output, true);
     }
-    drawer.appendChild(details);
+    fillDetails(run);
+  }
+  function errorBox() { const err = document.createElement('div'); err.className = 'run-view-error'; err.setAttribute('role', 'alert'); err.textContent = state.viewError; return err; }
+
+  // Not a loaded run: Starting… (a run being created), Loading…, or why there is nothing to show.
+  function renderGap(drawer) {
+    const p = state.pending;
+    if (p && !state.gap) {
+      drawer.appendChild(viewHead(p.title || 'New run', kindLabel(p.kind)));
+      if (p.error) {
+        const msg = textNode('status-error', p.error); msg.setAttribute('role', 'alert');
+        const close = document.createElement('button'); close.type = 'button'; close.className = 'btn-outline'; close.textContent = 'Close'; close.addEventListener('click', closeRunView);
+        drawer.appendChild(stateBlock((KINDS[p.kind] || [0, 'system'])[1], [msg, close]));
+      } else {
+        const spin = document.createElement('span'); spin.className = 'run-spinner'; spin.setAttribute('aria-hidden', 'true');
+        const text = textNode('run-view-state__text', 'Starting…'); text.setAttribute('role', 'status');
+        drawer.appendChild(stateBlock((KINDS[p.kind] || [0, 'system'])[1], [spin, text]));
+      }
+      return;
+    }
+    drawer.appendChild(viewHead('Run', ''));
+    if (state.gap === 'missing') {
+      const open = document.createElement('button'); open.type = 'button'; open.className = 'btn-outline'; open.textContent = 'Open Work'; open.addEventListener('click', () => window.LocalAIRouter?.go('#work'));
+      drawer.appendChild(stateBlock('work', [textNode('run-view-state__text', 'This run is no longer available'), open]));
+    } else if (state.gap === 'error') {
+      const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'btn-outline'; retry.textContent = 'Try again'; retry.addEventListener('click', () => routeRun(state.selectedId));
+      drawer.appendChild(stateBlock('work', [textNode('run-view-state__text', 'This run could not be loaded.'), retry]));
+    } else {
+      const spin = document.createElement('span'); spin.className = 'run-spinner'; spin.setAttribute('aria-hidden', 'true');
+      const text = textNode('run-view-state__text', 'Loading…'); text.setAttribute('role', 'status');
+      drawer.appendChild(stateBlock('work', [spin, text]));
+    }
+  }
+
+  // The ⓘ sheet: Pin, File…, the details grid and the Timeline.
+  function fillDetails(run) {
+    const sheet = el('runDetailsSheet'), box = document.createElement('div'); box.className = 'run-details-sheet__body';
+    const head = document.createElement('div'); head.className = 'run-details-sheet__head';
+    const h = document.createElement('h2'); h.id = 'runDetailsTitle'; h.textContent = 'Details';
+    const x = iconBtn('x', 'Close details'); x.addEventListener('click', () => sheet.close());
+    head.append(h, x); box.appendChild(head);
+    if (state.viewError) box.appendChild(errorBox());
+    const acts = document.createElement('div'); acts.className = 'run-view-head';
+    if (String(run.id).startsWith('legacy-')) {
+      const note = document.createElement('span'); note.className = 'run-view-project'; note.textContent = 'Managed on its own page'; acts.appendChild(note);
+    } else {
+      const pin = document.createElement('button'); pin.type = 'button'; pin.className = 'btn-outline run-act';
+      pin.textContent = run.pinned ? 'Unpin' : 'Pin'; pin.setAttribute('aria-pressed', String(!!run.pinned));
+      pin.addEventListener('click', () => updateRun(run, { pinned: !run.pinned }, run.pinned ? 'Run unpinned.' : 'Run pinned.'));
+      const file = document.createElement('button'); file.type = 'button'; file.className = 'btn-outline run-act'; file.textContent = 'File…';
+      file.addEventListener('click', () => fileRun(run));
+      acts.append(pin, file);
+    }
+    box.appendChild(acts);
+    const details = document.createElement('div');
+    details.className = 'run-detail-grid';
+    const values = [
+      ['Status', statusLabel(run.status)], ['Progress', `${Math.max(0, Math.min(100, Number(run.progress) || 0))}%`],
+      ['Started', shownDate(run.startedAt)], ['Finished', shownDate(run.finishedAt)],
+      ['Attempt', String(run.attempt || 1)], ['Retry of', run.retryOf || '—'], ['Run ID', run.id]
+    ];
+    values.forEach(([label, value]) => {
+      const cell = document.createElement('div'); cell.className = 'run-detail';
+      const key = document.createElement('span'); key.textContent = label;
+      const text = document.createElement('b'); text.textContent = value;
+      cell.append(key, text); details.appendChild(cell);
+    });
+    box.appendChild(details);
 
     if (Array.isArray(run.events) && run.events.length) {
       const section = document.createElement('section'); section.className = 'run-section';
@@ -2874,9 +2942,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         const time = document.createElement('div'); time.className = 'run-event-time'; time.textContent = shownDate(event.at);
         text.append(detail, time); row.append(marker, text); timeline.appendChild(row);
       });
-      section.appendChild(timeline); drawer.appendChild(section);
+      section.appendChild(timeline); box.appendChild(section);
     }
+    sheet.appendChild(box);
   }
+  function openDetails() { const sheet = el('runDetailsSheet'); if (sheet && !sheet.open && sheet.childElementCount) { sheet.showModal(); sheet.querySelector('button')?.focus(); } }
 
   // Approve and Reject only record a decision, so they are plain confirms (no typed word), whatever the risk.
   function approvalBar(approval) {
@@ -2906,7 +2976,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   // Errors show in the run view (and are announced); the next successful action or opening a run clears them.
   function viewFail(message) {
     state.viewError = message; el('runLiveRegion').textContent = message;
-    if (state.selectedId) renderDrawer(state.selectedId);
+    if (state.selectedId && lookup(state.selectedId)) renderDrawer(state.selectedId);
   }
   // The projects list is fetched when a run view opens and again before filing, so a filed run shows its project's name.
   async function loadProjects() {
@@ -2942,27 +3012,79 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     section.append(heading, body); parent.appendChild(section);
   }
 
-  function openDrawer(runId) {
-    state.selectedId = runId; state.viewError = '';
-    const backdrop = el('runDrawerBackdrop');
-    if (!backdrop) return;
-    renderDrawer(runId);
-    loadProjects().then((ok) => {   // update just the name, so focus in the run view is not lost
-      const run = state.runs.find((item) => item.id === runId), span = el('runDrawer')?.querySelector('.run-view-project');
-      if (ok && run?.projectId && span && state.selectedId === runId) span.textContent = state.projects.find((p) => p.id === run.projectId)?.name || 'Project removed';
-    });
-    backdrop.classList.add('show');
-    backdrop.setAttribute('aria-hidden', 'false');
-    el('runDrawer')?.querySelector('button')?.focus();
+  // Opening a run is routing: #run/<id>. The router calls routeRun(id) (and routeRun(null) when the hash leaves a run).
+  function openRun(id) {
+    state.inApp = true;
+    if (window.LocalAIRouter) window.LocalAIRouter.go(`#run/${encodeURIComponent(id)}`); else routeRun(id);
   }
-
-  function closeDrawer() {
+  // Closing goes back when the run view was opened by in-app navigation, else (deep link, reload) to Home.
+  function closeRunView() {
+    if (state.closing) return;
+    if (!window.LocalAIRouter) { hideView(); return; }
+    state.closing = true;
+    if (state.inApp || history.state?.localaiRun) history.back(); else window.LocalAIRouter.go('#home', { replace: true });
+  }
+  function showView() {
     const backdrop = el('runDrawerBackdrop');
     if (!backdrop) return;
-    backdrop.classList.remove('show');
-    backdrop.setAttribute('aria-hidden', 'true');
-    state.selectedId = null;
-    state.drawerSig = '';
+    const was = backdrop.classList.contains('show');
+    backdrop.classList.add('show'); backdrop.setAttribute('aria-hidden', 'false'); document.body.classList.add('run-view-open');
+    renderDrawer(state.selectedId);
+    if (!was) el('runDrawer')?.querySelector('button')?.focus();
+  }
+  function hideView() {
+    const backdrop = el('runDrawerBackdrop');
+    if (backdrop) { backdrop.classList.remove('show'); backdrop.setAttribute('aria-hidden', 'true'); }
+    const sheet = el('runDetailsSheet'); if (sheet?.open) { state.selectedId = null; sheet.close(); }
+    document.body.classList.remove('run-view-open');
+    Object.assign(state, { selectedId: null, drawerSig: '', fetched: null, gap: '', pending: null, inApp: false, closing: false, viewError: '' });
+  }
+  async function fetchRun(id, quiet) {
+    try {
+      const response = await fetch(`/api/runs?id=${encodeURIComponent(id)}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
+      const data = await response.json().catch(() => ({}));
+      if (state.selectedId !== id) return;
+      if (response.ok && data.item) { state.fetched = data.item; state.gap = ''; if (state.pending?.resolved === id) state.pending = null; }
+      else if (quiet) return;
+      else { state.gap = response.status === 404 ? 'missing' : 'error'; if (state.pending?.resolved === id) state.pending = null; }
+    } catch { if (quiet || state.selectedId !== id) return; state.gap = 'error'; }
+    if (el('runDrawerBackdrop')?.classList.contains('show')) {
+      renderDrawer(id);
+      if (lookup(id)) projectName(id);
+    }
+  }
+  // The projects list is fetched when a run view opens so a filed run shows its project's name; only the name is updated.
+  function projectName(id) {
+    loadProjects().then((ok) => {
+      const run = lookup(id), span = el('runDrawer')?.querySelector('.run-view-project');
+      if (ok && run?.projectId && span && state.selectedId === id) span.textContent = state.projects.find((p) => p.id === run.projectId)?.name || 'Project removed';
+    });
+  }
+  // Router handler: show the run named by #run/<id>, or close the view when id is null.
+  function routeRun(id) {
+    if (id === null || id === undefined) { hideView(); return; }
+    state.closing = false;
+    if (state.selectedId !== id) { state.viewError = ''; state.gap = ''; state.fetched = null; }
+    state.selectedId = id;
+    if (state.inApp) { try { history.replaceState({ localaiRun: true }, '', location.href); } catch {} }   // marks this entry as opened in-app, so Back and Forward keep working
+    if (id === 'pending') {
+      if (state.pending) { showView(); return; }
+      state.selectedId = null; window.LocalAIRouter?.go('#home', { replace: true }); return;   // nothing to resume (reload, or Forward after a failed start)
+    }
+    if (lookup(id)) { if (state.pending?.resolved === id) state.pending = null; showView(); projectName(id); return; }
+    state.gap = '';
+    showView();
+    fetchRun(id, false);
+  }
+  function openPending({ kind, title } = {}) {
+    const token = { kind: String(kind || ''), title: String(title || ''), error: '', resolved: '' };
+    state.pending = token; state.selectedId = 'pending'; state.gap = ''; state.fetched = null; state.inApp = true; state.closing = false;
+    showView();
+    if (window.LocalAIRouter) window.LocalAIRouter.go('#run/pending');
+    return {
+      resolve(runId) { if (state.pending !== token || token.resolved) return; token.resolved = String(runId); if (window.LocalAIRouter) window.LocalAIRouter.go(`#run/${encodeURIComponent(runId)}`, { replace: true }); else routeRun(token.resolved); },
+      fail(message) { if (state.pending !== token || token.resolved) return; token.error = String(message || 'Something went wrong.'); el('runLiveRegion').textContent = token.error; renderDrawer('pending'); }
+    };
   }
 
   async function post(path, body) {
@@ -2989,7 +3111,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     try {
       await post('/api/runs/retry', { id: runId });
       el('runLiveRegion').textContent = 'Retry started.';
-      closeDrawer();
+      closeRunView();
       await loadRuns(true);
     } catch (error) {
       el('runLiveRegion').textContent = `Retry failed: ${error.message}`;
@@ -3025,18 +3147,22 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   async function openRunBySource(id) {
     const match = () => state.runs.find((run) => run.id === id || run.source?.id === id || run.meta?.sourceId === id);
     if (!match()) await loadRuns(true);
-    activateRunsView();
+    if (!state.selectedId) activateRunsView();   // the Runs page stays behind the run view (the Audit log links here)
     const run = match();
-    if (run) openDrawer(run.id);
+    if (run) openRun(run.id);
     return Boolean(run);
   }
-  window.LocalAIRuns = { open: openRunBySource };
+  window.LocalAIRuns = { open: openRunBySource, openPending };
 
   function init() {
     ensureSurface();
     loadRuns(true);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) loadRuns(true); }, { passive: true });
-    document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && el('runDrawerBackdrop')?.classList.contains('show') && !document.querySelector('dialog.ask-sheet[open]')) closeDrawer(); });
+    // Escape closes the top layer only: a confirm, else the ⓘ sheet (the browser closes it), else the menu, else the run view.
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && el('runDrawerBackdrop')?.classList.contains('show') && !document.querySelector('dialog.ask-sheet[open]') && !el('runDetailsSheet')?.open && !closeMenu()) closeRunView();
+    });
+    window.LocalAIRouter?.onRun(routeRun);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
