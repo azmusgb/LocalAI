@@ -252,6 +252,24 @@ await check('mobile demo remains user-controlled',async()=>{
   assert.equal(await mobile.locator('#awcSource').innerText(),'DEMO');
 });
 await mobile.close();
+await check('the mission strip and Agent World show the same mission while the specialist catalog is slow',async()=>{
+  const goal='Strip and Agent World agree on this mission';
+  const mission={id:'mission-strip-sync',goal,status:'complete',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
+    workers:[{id:'research',name:'Research Agent',state:'complete'},{id:'synthesis',name:'Synthesis',state:'complete'}],results:[]};
+  const pg=await browser.newPage({viewport:{width:1440,height:1000}});
+  let releaseCatalog;const catalogHeld=new Promise(r=>releaseCatalog=r);
+  await pg.route(u=>u.pathname==='/api/agents/missions',r=>r.fulfill({contentType:'application/json',body:JSON.stringify({items:[mission]})}));
+  await pg.route(u=>u.pathname==='/api/agents/catalog',async r=>{await catalogHeld;await r.fallback()});
+  await pg.goto(base,{waitUntil:'domcontentloaded'});
+  await pg.waitForSelector('.ux-primary-rail');
+  await pg.locator('.ux-primary-item[data-domain="automate"]').click();
+  await pg.waitForSelector('#agents.active');
+  await pg.waitForFunction(g=>document.getElementById('awcObjective')?.textContent===g,goal,{timeout:10000});
+  await pg.waitForFunction(g=>document.getElementById('agentMissionHeadline')?.textContent===g,goal,{timeout:3000});
+  releaseCatalog();
+  await pg.close();
+});
+
 await browser.close();
 
 if(failures.length){
