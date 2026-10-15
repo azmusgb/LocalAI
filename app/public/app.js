@@ -670,8 +670,16 @@ const AgentWorldGame = (() => {
     ctx.fillStyle='rgba(5,10,17,.88)';roundRect(ctx,x-27,y+16,54,14,6,true,false);ctx.fillStyle='#EEF4FF';ctx.font='750 7px system-ui';ctx.fillText(a.name,x,y+26)
   }
 
-  function loop(ts){if(!lastTs)lastTs=ts;const dt=Math.min(.05,(ts-lastTs)/1000);lastTs=ts;update(dt,ts);draw();raf=requestAnimationFrame(loop)}
-  function startLoop(){if(!raf)raf=requestAnimationFrame(loop)}
+  // Only animate while the canvas is on screen and the tab is visible; one rAF chain at most.
+  let io=null,observed=null,onScreen=!('IntersectionObserver' in window);
+  function canAnimate(){return !!(canvas&&canvas.isConnected&&onScreen&&!document.hidden)}
+  function stopLoop(){if(raf){cancelAnimationFrame(raf);raf=null}lastTs=0}
+  function loop(ts){raf=null;if(!canAnimate()){lastTs=0;return}if(!lastTs)lastTs=ts;const dt=Math.min(.05,(ts-lastTs)/1000);lastTs=ts;update(dt,ts);draw();raf=requestAnimationFrame(loop)}
+  function startLoop(){
+    if(canvas&&observed!==canvas&&'IntersectionObserver' in window){io?.disconnect();onScreen=false;observed=canvas;io=new IntersectionObserver(entries=>{onScreen=entries[entries.length-1].isIntersecting;onScreen?startLoop():stopLoop()});io.observe(canvas)}
+    if(!raf&&canAnimate())raf=requestAnimationFrame(loop)
+  }
+  document.addEventListener('visibilitychange',()=>document.hidden?stopLoop():startLoop());
 
   async function bootstrap(){
     ensureRoot();try{const data=await evoApi('/api/engineering/runs');const items=Array.isArray(data?.items)?[...data.items]:[];items.sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0));lastLiveRun=items[0]||null;if(lastLiveRun)renderLive(lastLiveRun);else renderLive(null)}catch(_){renderLive(null)}
