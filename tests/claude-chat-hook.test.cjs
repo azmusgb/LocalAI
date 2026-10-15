@@ -245,3 +245,14 @@ test('LOCALAI_URL overrides config.json in the hook', async (t) => {
   assert.equal((await runHook(prompt, envFor(s, r))).code, 0);
   assert.equal(r.requests.length, 1);
 });
+
+test('an unreadable config.json: nothing is posted and hook.log says why', async (t) => {
+  const r = await relay(t);
+  for (const bad of ['{"url": ', '[1, 2]']) {
+    const s = setup();
+    fs.writeFileSync(path.join(s.home, 'config.json'), bad);
+    assert.equal((await runHook(prompt, envFor(s, r))).code, 0);
+    assert.match(hookLog(s), /config\.json unreadable/, bad);
+  }
+  assert.equal(r.requests.length, 0);
+});

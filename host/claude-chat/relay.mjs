@@ -12,13 +12,19 @@ export const DEFAULT_URL = 'http://10.0.0.21:3080';
 const INSTALL_HINT = 're-run host/claude-chat/install.sh';
 
 export function loadConfig(home, env = process.env) {
+  // A config.json that exists but cannot be used stops all sending: falling back to the HTTP default would quietly
+  // undo an HTTPS setup. A missing file is a pre-HTTPS install and uses the defaults.
   let file = {};
-  let configError = '';
+  let configError = null;
+  const configPath = path.join(home, 'config.json');
   try {
-    const parsed = JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));
-    if (parsed && typeof parsed === 'object') file = parsed;
+    const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not a JSON object');
+    file = parsed;
   } catch (e) {
-    if (e.code !== 'ENOENT') configError = `config.json unreadable (${e.message})`;
+    if (e.code !== 'ENOENT') {
+      configError = Object.assign(new Error(`config.json unreadable: ${configPath} (${e.message}); nothing is sent until it is fixed; ${INSTALL_HINT}`), { code: 'LOCALAI_CONFIG_UNREADABLE' });
+    }
   }
   const base = String(env.LOCALAI_URL || file.url || DEFAULT_URL).replace(/\/+$/, '');
   const caPath = typeof file.ca === 'string' && file.ca ? path.resolve(home, file.ca) : '';
@@ -38,7 +44,7 @@ export const isTlsError = (e) => TLS_CODE.test(String(e?.code || e?.cause?.code 
 // One line for logs and CLI errors. Certificate failures name the URL and the CA so the fix is obvious.
 export function describeError(cfg, e) {
   const code = String(e?.code || e?.cause?.code || '');
-  if (code === 'LOCALAI_CA_UNREADABLE') return e.message;
+  if (code === 'LOCALAI_CA_UNREADABLE' || code === 'LOCALAI_CONFIG_UNREADABLE') return e.message;
   if (isTlsError(e)) {
     return `tls ${code}: the certificate of ${cfg.base} is not trusted (CA: ${cfg.caPath || 'none configured'}); ${INSTALL_HINT}`;
   }
@@ -48,6 +54,7 @@ export function describeError(cfg, e) {
 // A small fetch stand-in: resolves { status, ok, text, json() } once the whole body has arrived.
 export function request(cfg, method, route, { headers = {}, body, timeoutMs = 10000 } = {}) {
   return new Promise((resolve, reject) => {
+    if (cfg.configError) { reject(cfg.configError); return; }
     if (cfg.caError) { reject(cfg.caError); return; }
     let url;
     try { url = new URL(cfg.base + route); } catch (e) { reject(e); return; }

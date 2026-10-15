@@ -90,7 +90,6 @@ async function setup() {
   await takeSocketLock();
   fs.writeFileSync(pidFile, String(process.pid));
   log(`started session ${sessionId} pid ${process.pid}`);
-  if (RELAY.configError) log(RELAY.configError);
 }
 
 const headers = (extra = {}) => ({ 'X-LocalAI-Mac-Key': macKey, ...extra });

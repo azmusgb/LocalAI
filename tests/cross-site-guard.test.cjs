@@ -47,10 +47,10 @@ after(async () => {
 // node:http (not fetch) so the Host, Origin and Sec-Fetch-* headers are exactly what a browser or proxy would send.
 function request(method, route, headers = {}, body) {
   return new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port, agent: false, method, path: route, headers: { Host: `127.0.0.1:${port}`, ...headers } }, res => {
+    const req = http.request({ host: '127.0.0.1', port, agent: false, method, path: route, headers: { Host: `127.0.0.1:${port}`, Connection: 'keep-alive', ...headers } }, res => {
       let text = '';
       res.on('data', c => text += c);
-      res.on('end', () => { let json = null; try { json = JSON.parse(text); } catch {} resolve({ status: res.statusCode, json }); });
+      res.on('end', () => { let json = null; try { json = JSON.parse(text); } catch {} resolve({ status: res.statusCode, json, connection: res.headers.connection }); });
     });
     req.on('error', reject);
     req.end(body);
@@ -63,7 +63,7 @@ const ROUTES = [
   ['POST', '/api/library/update', JSON.stringify({ id: 'none', title: 'x' })],
   ['POST', '/api/conversations/delete', JSON.stringify({ id: 'none' })],
 ];
-const blocked = r => r.status === 403 && r.json?.error === 'Cross-site request blocked';
+const blocked = r => r.status === 403 && r.json?.error === 'Cross-site request blocked' && r.connection === 'close';
 
 test('a cross-site Origin is rejected on mutating routes', async () => {
   for (const [method, route, body] of ROUTES) {

@@ -2662,7 +2662,7 @@ const server = http.createServer(async (req, res) => {
   const p = urlObj.pathname;
 
   try {
-    if (crossSiteRequest(req)) { req.resume(); return json(res, 403, { error: 'Cross-site request blocked' }); }
+    if (crossSiteRequest(req)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 403, { error: 'Cross-site request blocked' }); }
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 } });
     if (req.method === 'GET' && p === '/api/releases') return await apiReleases(req, res);
     if (req.method === 'GET' && p === '/api/storage/status') return json(res, 200, storage.status());

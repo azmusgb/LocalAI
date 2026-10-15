@@ -25,6 +25,10 @@ class CAUnreadable(Exception):
     pass
 
 
+class ConfigUnreadable(Exception):
+    pass
+
+
 def chat_home():
     return os.environ.get('LOCALAI_CHAT_HOME') or os.path.expanduser('~/.claude/localai-chat')
 
@@ -38,14 +42,20 @@ def log(msg):
 
 
 def load_config():
-    """(base URL, CA path or '') from LOCALAI_URL / config.json."""
+    """(base URL, CA path or '') from LOCALAI_URL / config.json.
+
+    A config.json that exists but cannot be used raises ConfigUnreadable: falling back to the HTTP default would quietly
+    undo an HTTPS setup. A missing file is a pre-HTTPS install and uses the defaults."""
+    path = os.path.join(chat_home(), 'config.json')
     try:
-        with open(os.path.join(chat_home(), 'config.json'), encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             data = json.load(f)
-    except (OSError, ValueError):
+    except FileNotFoundError:
         data = {}
+    except (OSError, ValueError) as e:
+        raise ConfigUnreadable(f'config.json unreadable: {path} ({e}); nothing is sent until it is fixed; {INSTALL_HINT}')
     if not isinstance(data, dict):
-        data = {}
+        raise ConfigUnreadable(f'config.json unreadable: {path} (not a JSON object); nothing is sent until it is fixed; {INSTALL_HINT}')
     base = str(os.environ.get('LOCALAI_URL') or data.get('url') or DEFAULT_URL).rstrip('/')
     ca = data.get('ca') if isinstance(data.get('ca'), str) else ''
     return base, (os.path.join(chat_home(), os.path.expanduser(ca)) if ca else '')
@@ -78,7 +88,11 @@ def post(session_id, role, source, text):
     key = read_key()
     if not key or not text:
         return
-    base, ca = load_config()
+    try:
+        base, ca = load_config()
+    except ConfigUnreadable as e:
+        log(str(e))
+        return
     body = {'sessionId': session_id, 'role': role, 'source': source, 'text': text[:MAX_TEXT]}
     req = urllib.request.Request(
         base + '/api/claude/chat/mirror', data=json.dumps(body).encode(), method='POST',

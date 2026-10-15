@@ -29,7 +29,7 @@ async function call(method, route, key, body) {
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (e) {
-    if (isTlsError(e) || e.code === 'LOCALAI_CA_UNREADABLE') die(describeError(RELAY, e));
+    if (isTlsError(e) || e.code === 'LOCALAI_CA_UNREADABLE' || e.code === 'LOCALAI_CONFIG_UNREADABLE') die(describeError(RELAY, e));
     die(`cannot reach ${BASE} (${e.code || e.cause?.code || e.message})`);
   }
   let data = null;
@@ -75,7 +75,6 @@ function alive(pid) {
 async function status() {
   const key = readKey();
   console.log(`Mac key:   ${key ? 'present' : `missing (${INSTALL_HINT})`}`);
-  if (RELAY.configError) console.log(`Config:    ${RELAY.configError}`);
   if (BASE.startsWith('https:')) console.log(`CA:        ${RELAY.caPath || 'none configured (system roots)'}`);
   let reachable = false, accepted = null, problem = '';
   try {
@@ -84,7 +83,7 @@ async function status() {
     if (key) accepted = res.status === 200;
   } catch (e) {
     if (isTlsError(e)) problem = `certificate not trusted (${describeError(RELAY, e)})`;
-    else if (e.code === 'LOCALAI_CA_UNREADABLE') problem = e.message;
+    else if (e.code === 'LOCALAI_CA_UNREADABLE' || e.code === 'LOCALAI_CONFIG_UNREADABLE') problem = e.message;
   }
   console.log(`Relay:     ${reachable ? `reachable (${BASE})` : problem || `unreachable (${BASE})`}`);
   console.log(`Key:       ${accepted === null ? (key ? 'unknown (relay unreachable)' : 'n/a') : accepted ? 'accepted' : 'rejected (re-run the installer)'}`);

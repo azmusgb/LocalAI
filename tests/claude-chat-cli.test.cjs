@@ -119,3 +119,17 @@ test('HTTPS from config.json: works with the configured CA, and says clearly whe
   assert.match(bad.err, /tls \S+: the certificate of https:\/\/127\.0\.0\.1:\d+ is not trusted \(CA: .*other\.crt\)/);
   assert.equal(calls.length, 0, 'the key was never sent');
 });
+
+test('an unreadable config.json makes the CLI refuse instead of falling back to HTTP', async (t) => {
+  const config = path.join(home, 'config.json');
+  t.after(() => fs.rmSync(config, { force: true }));
+  writeKey('k1');
+  fs.writeFileSync(config, 'not json');
+  calls = [];
+  const d = await run(['devices']);
+  assert.notEqual(d.code, 0);
+  assert.match(d.err, /config\.json unreadable/);
+  const s = await run(['status']);
+  assert.match(s.out, /Relay:\s+config\.json unreadable/);
+  assert.equal(calls.length, 0);
+});

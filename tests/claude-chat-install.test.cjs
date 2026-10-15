@@ -24,14 +24,15 @@ function writeSshStub(stub, log, caFile) {
   fs.writeFileSync(stub, `#!/bin/sh
 printf '%s\\n' "$*" >> "${log}"
 case "$*" in
-  *" type "*) if [ -f "${caFile}" ]; then cat "${caFile}"; else echo "The system cannot find the file specified." >&2; exit 1; fi ;;
+  *" type "*) echo "** WARNING: connection is not using a post-quantum key exchange algorithm." >&2
+    if [ -f "${caFile}" ]; then echo "junk before the certificate"; cat "${caFile}"; echo "junk after"; else echo "The system cannot find the file specified." >&2; exit 1; fi ;;
   *) cat > "${log}.stdin" ;;
 esac
 `, { mode: 0o755 });
 }
-function runInstall(home, stubs, env = {}) {
+function runInstall(home, stubs, env = {}, args = []) {
   return new Promise((resolve) => {
-    const c = spawn('bash', [INSTALL], { env: { ...process.env, HOME: home, PATH: `${stubs}:${process.env.PATH}`, LOCALAI_HTTPS_URL: NO_HTTPS, ...env } });
+    const c = spawn('bash', [INSTALL, ...args], { env: { ...process.env, HOME: home, PATH: `${stubs}:${process.env.PATH}`, LOCALAI_HTTPS_URL: NO_HTTPS, ...env } });
     let stdout = '', stderr = '';
     c.stdout.on('data', (d) => { stdout += d; }); c.stderr.on('data', (d) => { stderr += d; });
     c.on('close', (status) => resolve({ status, stdout, stderr }));
@@ -155,8 +156,10 @@ test('install.sh fetches the CA over ssh, verifies HTTPS with it, and writes con
   assert.equal(r.status, 0, r.stderr);
   assert.ok(fs.readFileSync(s.log, 'utf8').split('\n').includes(CA_FETCH), 'the CA comes over ssh');
   const caPath = path.join(s.dest, 'localai-ca.crt');
+  assert.ok(fs.readFileSync(caPath, 'utf8').startsWith('-----BEGIN CERTIFICATE-----'), 'ssh banner and junk lines are dropped');
   assert.equal(fs.readFileSync(caPath, 'utf8'), tls.caPem);
   assert.deepEqual(readConfig(s.home), { url, ca: caPath });
+  assert.deepEqual(fs.readdirSync(s.dest).filter((n) => n.startsWith('localai-ca.') && n !== 'localai-ca.crt'), [], 'no temp CA left behind');
   assert.doesNotMatch(r.stderr, /warning/i);
   assert.match(r.stdout, new RegExp(`Relay: ${url.replace(/[.]/g, '\\.')} \\(HTTPS, verified with the LocalAI CA\\)`));
 });
@@ -198,4 +201,40 @@ test('install.sh re-run replaces a stale CA and switches an http config to HTTPS
   const r = await runInstall(s.home, s.stubs, { LOCALAI_HTTPS_URL: url });
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(readConfig(s.home), { url, ca: path.join(s.dest, 'localai-ca.crt') });
+});
+
+test('install.sh never quietly downgrades a working HTTPS config; --allow-http does', { skip: tlsSkip }, async (t) => {
+  const url = await httpsRelay(t, tls);
+  const failures = [
+    ['CA fetch fails', (s) => fs.rmSync(s.caOut, { force: true }), { LOCALAI_HTTPS_URL: url }],
+    ['HTTPS unreachable', () => {}, {}],
+    ['CA does not verify HTTPS', (s) => fs.writeFileSync(s.caOut, fs.readFileSync(tls.otherCaPath, 'utf8')), { LOCALAI_HTTPS_URL: url }],
+  ];
+  for (const [name, breakIt, env] of failures) {
+    const s = sandbox(t);
+    fs.writeFileSync(s.caOut, tls.caPem);
+    assert.equal((await runInstall(s.home, s.stubs, { LOCALAI_HTTPS_URL: url })).status, 0, name);
+    const configPath = path.join(s.dest, 'config.json'), caPath = path.join(s.dest, 'localai-ca.crt');
+    const config = fs.readFileSync(configPath, 'utf8'), ca = fs.readFileSync(caPath, 'utf8');
+    assert.equal(JSON.parse(config).url, url);
+    breakIt(s);
+
+    const refused = await runInstall(s.home, s.stubs, env);
+    assert.notEqual(refused.status, 0, name);
+    assert.match(refused.stderr, /install\.sh: error: .*config\.json uses HTTPS.*--allow-http/, name);
+    assert.equal(fs.readFileSync(configPath, 'utf8'), config, `${name}: config untouched`);
+    assert.equal(fs.readFileSync(caPath, 'utf8'), ca, `${name}: CA untouched`);
+    assert.deepEqual(fs.readdirSync(s.dest).filter((n) => n.startsWith('localai-ca.') && n !== 'localai-ca.crt'), [], `${name}: temp CA removed`);
+
+    const downgraded = await runInstall(s.home, s.stubs, env, ['--allow-http']);
+    assert.equal(downgraded.status, 0, `${name}: ${downgraded.stderr}`);
+    assert.match(downgraded.stderr, /warning: .*using plain HTTP/, name);
+    assert.equal(readConfig(s.home).url, 'http://10.0.0.21:3080', name);
+  }
+});
+
+test('install.sh rejects unknown arguments', () => {
+  const r = spawnSync('bash', [INSTALL, '--bogus'], { env: { ...process.env, HOME: '/nonexistent-home' }, encoding: 'utf8' });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /usage: install\.sh \[--allow-http\]/);
 });

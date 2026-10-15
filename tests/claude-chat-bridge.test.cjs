@@ -475,3 +475,14 @@ test('LOCALAI_URL overrides config.json', async (t) => {
   startBridge(t, { relay, sock: inbox.sock, home });
   await until(() => relay.requests.some((r) => r.url === '/api/claude/chat/announce'), 'announce via the env URL');
 });
+
+test('an unreadable config.json stops the bridge from sending anything (no fallback to the HTTP default)', async (t) => {
+  const relay = await fakeRelay(t);
+  const inbox = await fakeInbox(t);
+  const home = makeHome(t);
+  fs.writeFileSync(path.join(home, 'config.json'), '{"url": "https://10.0.0.21", ');
+  startBridge(t, { relay, sock: inbox.sock, home }); // even with LOCALAI_URL set
+  await until(() => /relay error config\.json unreadable/.test(log(home)), 'config error logged');
+  await sleep(200);
+  assert.equal(relay.requests.length, 0);
+});

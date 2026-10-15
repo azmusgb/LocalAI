@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # Installs the LocalAI Claude chat Mac side. Safe to re-run.
+# --allow-http: allow switching an existing HTTPS config back to plain HTTP when HTTPS cannot be set up.
 set -euo pipefail
+
+ALLOW_HTTP=0
+for arg in "$@"; do
+  case "$arg" in
+    --allow-http) ALLOW_HTTP=1 ;;
+    *) echo "usage: install.sh [--allow-http]" >&2; exit 2 ;;
+  esac
+done
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEST="$HOME/.claude/localai-chat"
@@ -41,25 +50,50 @@ if ! printf '%s' "$hash" | ssh windows-ai docker exec -i local-ai-appliance tee 
 fi
 
 # 4. relay URL: HTTPS, verified with the LocalAI CA, when that works. The CA comes over ssh (authenticated), never
-# over plain HTTP; Windows `type` prints it with CRLF line endings. LOCALAI_URL in the environment still overrides
-# config.json at run time.
+# over plain HTTP; only the PEM block is kept (ssh may print banners; Windows `type` uses CRLF). A config that already
+# uses HTTPS is never downgraded without --allow-http. LOCALAI_URL in the environment still overrides config.json.
+prev_url="$(CONFIG="$CONFIG" python3 -I -c 'import json, os
+try:
+    u = json.load(open(os.environ["CONFIG"], encoding="utf-8")).get("url")
+    print(u if isinstance(u, str) else "")
+except Exception:
+    print("")' 2>/dev/null || true)"
 url="$HTTP_URL"
 ca_ok=0
+why=''
+hint=''
 ca_tmp="$(mktemp "$DEST/localai-ca.XXXXXX")"
-if ssh windows-ai type 'C:\LocalAI\https\localai-ca.crt' </dev/null 2>/dev/null | tr -d '\r' > "$ca_tmp" \
-   && grep -q -- '-----BEGIN CERTIFICATE-----' "$ca_tmp" \
+trap 'rm -f "$ca_tmp"' EXIT
+if ssh windows-ai type 'C:\LocalAI\https\localai-ca.crt' </dev/null 2>/dev/null | tr -d '\r' \
+     | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' > "$ca_tmp" \
+   && [ -s "$ca_tmp" ] \
    && openssl x509 -noout -in "$ca_tmp" >/dev/null 2>&1; then
-  chmod 644 "$ca_tmp"
-  mv "$ca_tmp" "$CA"
   ca_ok=1
-  if curl -fsS --max-time 5 --noproxy '*' --cacert "$CA" -o /dev/null "$HTTPS_URL/healthz" 2>/dev/null; then
+  if curl -fsS --max-time 5 --noproxy '*' --cacert "$ca_tmp" -o /dev/null "$HTTPS_URL/healthz" 2>/dev/null; then
     url="$HTTPS_URL"
   else
-    echo "install.sh: warning: HTTPS at $HTTPS_URL is not reachable or not trusted with the LocalAI CA; using plain HTTP ($HTTP_URL), so the Mac key crosses the network unencrypted. Check the appliance's HTTPS (Caddy) and re-run install.sh." >&2
+    why="HTTPS at $HTTPS_URL is not reachable or not trusted with the LocalAI CA"
+    hint="Check the appliance's HTTPS (Caddy) and re-run install.sh."
   fi
 else
-  rm -f "$ca_tmp" "$CA"
-  echo "install.sh: warning: could not get a valid LocalAI CA certificate over ssh (C:\\LocalAI\\https\\localai-ca.crt on the host); using plain HTTP ($HTTP_URL), so the Mac key crosses the network unencrypted. Run deploy/Install-LocalAI-HTTPS.ps1 on the host, then re-run install.sh." >&2
+  why="could not get a valid LocalAI CA certificate over ssh (C:\\LocalAI\\https\\localai-ca.crt on the host)"
+  hint="Run deploy/Install-LocalAI-HTTPS.ps1 on the host, then re-run install.sh."
+fi
+if [ "$url" = "$HTTP_URL" ]; then
+  case "$prev_url" in
+    https:*)
+      if [ "$ALLOW_HTTP" != 1 ]; then
+        echo "install.sh: error: $why. $CONFIG uses HTTPS ($prev_url); it and $CA are left unchanged. $hint To switch to plain HTTP instead, re-run with --allow-http." >&2
+        exit 1
+      fi ;;
+  esac
+  echo "install.sh: warning: $why; using plain HTTP ($HTTP_URL), so the Mac key crosses the network unencrypted. $hint" >&2
+fi
+if [ "$ca_ok" = 1 ]; then
+  chmod 644 "$ca_tmp"
+  mv "$ca_tmp" "$CA"
+else
+  rm -f "$CA"
 fi
 CONFIG="$CONFIG" URL="$url" CA="$CA" CA_OK="$ca_ok" python3 -I - <<'PY'
 import json, os
