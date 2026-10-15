@@ -18,13 +18,13 @@ $Python = Join-Path $AgentDir '.venv\Scripts\python.exe'
 $LogPath = Join-Path $AgentDir 'gridcraft-bridge.log'
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) { throw 'Run this script from an elevated PowerShell (Run as administrator); it registers a scheduled task and a firewall rule.' }
+if (-not $isAdmin) { throw 'Run this script from an elevated PowerShell (Run as administrator); it registers a scheduled task that runs elevated.' }
 
 if ($Uninstall) {
     Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
     Remove-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue
-    Write-Host "Removed scheduled task and firewall rule: $TaskName"
+    Write-Host "Removed scheduled task: $TaskName"
     exit 0
 }
 
@@ -62,6 +62,7 @@ $launcher = @(
     "`$env:GRIDCRAFT_AGENT_SCRIPT = $(Format-Quoted $AgentScript)"
     "`$env:GRIDCRAFT_WORKBOOK = $(Format-Quoted $Workbook)"
     "`$env:GRIDCRAFT_MODEL = $(Format-Quoted $Model)"
+    "`$env:GRIDCRAFT_BRIDGE_HOST = '127.0.0.1'"
     "`$env:GRIDCRAFT_BRIDGE_PORT = $(Format-Quoted $Port)"
     "`$env:GRIDCRAFT_ALLOWED_ORIGINS = $(Format-Quoted $origins)"
     "`$env:PYTHONUNBUFFERED = '1'"
@@ -82,9 +83,9 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoi
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 
-if (-not (Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule -DisplayName $FirewallRule -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow -Profile Private,Domain | Out-Null
-}
+# The bridge listens on loopback only and is reached through the appliance, so it needs no inbound rule.
+# Remove the rule older installs created.
+Remove-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue
 
 Start-ScheduledTask -TaskName $TaskName
 

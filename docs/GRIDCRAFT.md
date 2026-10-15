@@ -4,7 +4,7 @@ GridCraft is exposed inside LocalAI as a same-appliance browser workspace at:
 
 `http://10.0.0.21:3080/gridcraft.html`
 
-The browser page remains part of LocalAI. Execution is delegated to a small Windows-host bridge on port `8787`, which runs the GridCraft Python agent kept in this repo at `host/gridcraft-agent/`. That agent continues to own Ollama tool calling and GridCraft MCP control.
+The browser page remains part of LocalAI. The page calls the appliance (`/api/gridcraft/health`, `/api/gridcraft/run`), and the appliance forwards to a small Windows-host bridge on `127.0.0.1:8787`, which runs the GridCraft Python agent kept in this repo at `host/gridcraft-agent/`. That agent continues to own Ollama tool calling and GridCraft MCP control.
 
 ## Architecture
 
@@ -12,10 +12,10 @@ The browser page remains part of LocalAI. Execution is delegated to a small Wind
 Browser / VPN client
     |
     v
-LocalAI :3080 /gridcraft.html
+LocalAI :3080 /gridcraft.html  ->  /api/gridcraft/*
     |
-    v
-Windows GridCraft bridge :8787
+    v  (host.docker.internal, which Docker Desktop forwards to the host's loopback)
+Windows GridCraft bridge 127.0.0.1:8787  (not reachable from the LAN)
     |
     v
 C:\LocalAI\repo\host\gridcraft-agent\gridcraft_ai.py
@@ -58,9 +58,9 @@ Then open:
 
 ## Bridge configuration
 
-The installer writes `%USERPROFILE%\gridcraft-local-ai\gridcraft-bridge.env.ps1`, installs the scheduled task `LocalAI GridCraft Bridge` at user logon, opens inbound TCP `8787` on Private/Domain firewall profiles, waits for `/health`, and logs bridge output to `%USERPROFILE%\gridcraft-local-ai\gridcraft-bridge.log`.
+The installer writes `%USERPROFILE%\gridcraft-local-ai\gridcraft-bridge.env.ps1`, installs the scheduled task `LocalAI GridCraft Bridge` at user logon, binds the bridge to `127.0.0.1` (and removes the inbound `8787` firewall rule older installs created), waits for `/health`, and logs bridge output to `%USERPROFILE%\gridcraft-local-ai\gridcraft-bridge.log`.
 
-CORS origins default to port `3080` on localhost, the machine name and every local IPv4 address. Override with `-AllowedOrigins 'http://10.0.0.21:3080','http://myhost:3080'`.
+Browsers never call the bridge directly any more; the appliance does, without an `Origin` header. CORS origins still apply to anything that does call it from a browser, and default to port `3080` on localhost, the machine name and every local IPv4 address. Override with `-AllowedOrigins 'http://10.0.0.21:3080','http://myhost:3080'`.
 
 Supported environment variables:
 
