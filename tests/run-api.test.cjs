@@ -11,9 +11,12 @@ const { once } = require('node:events');
 
 async function startServer(t, extraEnv = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-runs-'));
+  const ollamaCalls = []; // every /api/chat and /api/generate body Ollama received, in order
   const mock = http.createServer((req, res) => {
-    req.resume();
+    let raw = '';
+    req.on('data', c => raw += c);
     req.on('end', () => {
+      if (req.url === '/api/chat' || req.url === '/api/generate') { try { ollamaCalls.push({ url: req.url, body: JSON.parse(raw) }); } catch {} }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       if (req.url === '/api/tags') return res.end(JSON.stringify({ models: [{ name: 'test-model' }] }));
       if (req.url === '/api/ps') return res.end(JSON.stringify({ models: [] }));
@@ -80,7 +83,7 @@ async function startServer(t, extraEnv = {}) {
     return { response, value };
   };
 
-  return { request, base };
+  return { request, base, ollamaCalls };
 }
 
 test('unified run API exposes native chat plus legacy execution history and retry lineage', { timeout: 30000 }, async t => {
@@ -293,4 +296,64 @@ test('before pages past the 500-run window to the oldest run', { timeout: 180000
   }
   assert.equal(seen.length, 520);
   assert.ok(seen.includes(ids[0]), 'the oldest run is reachable');
+});
+
+test('text-model calls use one 8192 context, stay warm, and take turns with images', { timeout: 60000 }, async t => {
+  const order = [];
+  const comfy = http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (req.url.startsWith('/object_info/CheckpointLoaderSimple')) return res.end(JSON.stringify({ CheckpointLoaderSimple: { input: { required: { ckpt_name: [['sd15.safetensors']] } } } }));
+      if (req.url === '/prompt') { order.push('comfy'); return res.end(JSON.stringify({ prompt_id: 'p1' })); }
+      if (req.url.startsWith('/history/')) return res.end(JSON.stringify({ p1: { status: { status_str: 'success' }, outputs: { 9: { images: [{ filename: 'a.png', subfolder: '', type: 'output' }] } } } }));
+      res.end('{}');
+    });
+  });
+  comfy.listen(0, '127.0.0.1');
+  await once(comfy, 'listening');
+  t.after(async () => { comfy.closeAllConnections(); await new Promise(resolve => comfy.close(resolve)); });
+  const { request, base, ollamaCalls } = await startServer(t, { COMFY_URL: `http://127.0.0.1:${comfy.address().port}` });
+  const waitFor = async (fn) => { for (let i = 0; i < 100 && !fn(); i++) await new Promise(r => setTimeout(r, 50)); };
+
+  // Startup: exactly one background warm-up.
+  await waitFor(() => ollamaCalls.some(c => c.url === '/api/generate'));
+  assert.equal(ollamaCalls.filter(c => c.url === '/api/generate').length, 1);
+  const warm = ollamaCalls.find(c => c.url === '/api/generate').body;
+  assert.equal(warm.model, 'test-model');
+  assert.equal(warm.keep_alive, '30m');
+  assert.equal(warm.options.num_ctx, 8192);
+  assert.equal(warm.options.num_predict, 1);
+  ollamaCalls.length = 0;
+
+  // A long conversation is trimmed to fit and uses the one context.
+  const big = Array.from({ length: 12 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `m${i} ` + 'w'.repeat(9000) }));
+  big.push({ role: 'user', content: 'final question' });
+  const chat = await request('/api/chat', { messages: big });
+  assert.equal(chat.response.status, 200);
+  const chatCall = ollamaCalls.find(c => c.url === '/api/chat').body;
+  assert.equal(chatCall.options.num_ctx, 8192);
+  assert.equal(chatCall.keep_alive, '30m');
+  assert.equal(chatCall.messages.at(-1).content, 'final question');
+  assert.ok(chatCall.messages.map(m => m.content).join('').length / 3.5 <= 8192 - 1024);
+
+  const stream = await fetch(`${base}/api/chat/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }) });
+  await stream.text();
+
+  // An image request unloads the text model first, then warms it again afterwards.
+  ollamaCalls.length = 0;
+  const ollamaOrder = () => ollamaCalls.filter(c => c.url === '/api/generate');
+  const origPush = ollamaCalls.push.bind(ollamaCalls);
+  ollamaCalls.push = (...a) => { if (a[0].url === '/api/generate') order.push(a[0].body.keep_alive === 0 ? 'unload' : 'warm'); return origPush(...a); };
+  const img = await request('/api/images/generate', { prompt: 'a cat' });
+  assert.equal(img.response.status, 200, JSON.stringify(img.value));
+  await waitFor(() => order.includes('warm'));
+  assert.deepEqual(order, ['unload', 'comfy', 'warm']);
+  assert.equal(ollamaOrder().length, 2);
+
+  // Every captured text-model chat request used the shared options.
+  for (const c of ollamaCalls.filter(c => c.url === '/api/chat')) {
+    assert.equal(c.body.options.num_ctx, 8192);
+    assert.equal(c.body.keep_alive, '30m');
+  }
 });
