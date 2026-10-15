@@ -52,6 +52,11 @@ await check('switching Developer tools on in Health shows Build and is remembere
   await page.reload({ waitUntil: 'networkidle' });
   assert.equal(await page.locator('.ux-primary-item[data-domain="build"]').isVisible(), true);
 });
+await check('Health shows the secure-connection card (the host itself counts as secure)', async () => {
+  await page.evaluate(() => window.showView('status'));
+  await page.waitForSelector('#status.active .secure-card[data-state]');
+  assert.equal(await page.locator('.secure-card').getAttribute('data-state'), 'good');
+});
 await check('switching it off while on a Build page returns to Home', async () => {
   await page.evaluate(() => window.showView('status'));
   await page.evaluate(() => window.showView('changes'));
