@@ -1248,6 +1248,11 @@ kbd{font:600 11px/1 var(--ds-mono);padding:2px 6px;border-radius:6px;border:1px 
 .icon-btn:active{background:var(--ds-surface-2)}
 .suggestion-chip{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 14px;border-radius:999px;background:var(--ds-surface-2);border:1px solid transparent;color:var(--ds-text);font:500 14px/1 var(--ds-font);white-space:nowrap}
 
+.state-loading,.state-error,.state-empty{min-height:0}
+.state-loading{color:var(--ds-muted)}
+.state-error .empty-state__title{font-size:18px}
+.state-error .btn-outline{margin-top:4px}
+
 /* Phone layer — last, so it settles what the older mobile rules above disagree on.
    Targets: one top bar, nothing hidden behind the tab bar, 44px touch targets, 16px form text (iOS zooms below that),
    two-up tiles instead of one tile per screen row, and no element wider than the screen. */
