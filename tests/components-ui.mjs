@@ -143,6 +143,26 @@ await check('ask resolves {ok:false} on Cancel, Escape and a backdrop click', as
   await ap.mouse.click(5, 5);
   await ap.waitForFunction(() => window.__r); assert.deepEqual(await result(), { ok: false });
 });
+const closeSheets = () => ap.evaluate(() => document.querySelectorAll('dialog.ask-sheet').forEach(d => d.close()));
+await check('aria-describedby is set only when the sheet has effect text', async () => {
+  await openAsk({ title: 'No detail?', confirmLabel: 'Go' }); await sheet.waitFor();
+  assert.equal(await sheet.getAttribute('aria-describedby'), null);
+  await sheet.getByRole('button', { name: 'Cancel' }).click(); await ap.waitForFunction(() => window.__r);
+  await openAsk(base1); await sheet.waitFor();
+  const id = await sheet.getAttribute('aria-describedby');
+  assert.ok(id, 'has aria-describedby');
+  assert.equal(await ap.locator('#' + id).isVisible(), true);
+  await sheet.getByRole('button', { name: 'Cancel' }).click(); await ap.waitForFunction(() => window.__r);
+});
+await closeSheets();
+await check('computer batch confirmation says how many operations are not listed', async () => {
+  await ap.evaluate(() => { document.getElementById('computerBatch').value = JSON.stringify([1,2,3,4,5].map(i => ({ op: 'mkdir', path: 'd' + i }))); document.getElementById('computerRunBtn').click(); });
+  await sheet.waitFor();
+  const t = await sheet.locator('.ask-sheet__effect').innerText();
+  assert.match(t, /d3/); assert.doesNotMatch(t, /d4/); assert.match(t, /\+2 more/);
+  await closeSheets();
+});
+await closeSheets();
 await check('typed:RUN keeps Confirm disabled until RUN is typed', async () => {
   await openAsk({ ...base1, confirmLabel: 'Run', tone: 'host', typed: 'RUN' }); await sheet.waitFor();
   const btn = sheet.getByRole('button', { name: 'Run' });

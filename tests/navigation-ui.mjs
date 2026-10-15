@@ -201,6 +201,35 @@ await check('chat sends a valid threadId where crypto.randomUUID does not exist 
   assert.deepEqual(errs, []);
   await ctx.close();
 });
+await check('chat threadId survives a reload and changes after New conversation', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1000, height: 800 } });
+  const pg = await ctx.newPage();
+  const ids = [];
+  await pg.route('**/api/chat**', route => {
+    ids.push(JSON.parse(route.request().postData() || '{}').threadId);
+    route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: meta\ndata: {"model":"m","sources":[],"runId":"r1"}\n\nevent: done\ndata: {"elapsedMs":1,"model":"m","sources":[],"runId":"r1"}\n\n' });
+  });
+  const turn = async (n, text) => {
+    await pg.evaluate(() => window.showView('ask'));
+    await pg.fill('#chatInput', text); await pg.click('#sendBtn');
+    for (let i = 0; i < 50 && ids.length < n; i++) await pg.waitForTimeout(100);
+    assert.equal(ids.length, n, 'chat request ' + n + ' was sent');
+    await pg.waitForTimeout(300);
+  };
+  await pg.goto(base, { waitUntil: 'domcontentloaded' });
+  await pg.waitForFunction(() => typeof window.showView === 'function');
+  await turn(1, 'first');
+  await pg.reload({ waitUntil: 'domcontentloaded' });
+  await pg.waitForFunction(() => typeof window.showView === 'function');
+  await turn(2, 'second');
+  assert.match(ids[0], /^t-[0-9a-f]{32}$/);
+  assert.equal(ids[1], ids[0], 'same thread after reload');
+  await pg.evaluate(() => { window.LocalAIUI.ask = async () => ({ ok: true }); });
+  await pg.click('#newChatBtn'); await pg.waitForTimeout(300);
+  await turn(3, 'third');
+  assert.notEqual(ids[2], ids[0], 'new conversation starts a new thread');
+  await ctx.close();
+});
 await mobile.close();
 await browser.close();
 

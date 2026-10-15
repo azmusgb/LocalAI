@@ -360,7 +360,7 @@ class Storage {
     const path = p => { if (typeof p !== 'string' || !/^\$\.[A-Za-z_][A-Za-z0-9_]*$/.test(p)) throw new TypeError(`Invalid exempt path: ${p}`); return p; };
     const preds = [
       ...(exempt.truthy || []).map(p => { const x = `json_extract(payload,'${path(p)}')`; return `(${x} IS NOT NULL AND ${x} != '' AND ${x} != 0 AND ${x} != 'false')`; }),
-      ...(exempt.nonEmptyArray || []).map(p => `(json_type(payload,'${path(p)}')='array' AND json_array_length(payload,'${p}') > 0)`)
+      ...(exempt.nonEmptyArray || []).map(p => `(json_type(payload,'${path(p)}')='array' AND json_array_length(payload,'${path(p)}') > 0)`)
     ];
     // COALESCE: a missing field yields NULL, and NOT(NULL) would drop the row from both queries.
     const skip = preds.length ? ` AND NOT COALESCE(${preds.join(' OR ')}, 0)` : '';

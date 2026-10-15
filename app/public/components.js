@@ -32,7 +32,7 @@
   function ask(o={}){
     const opener=document.activeElement,id='askSheet'+(++askSeq);
     const d=document.createElement('dialog');d.className='ask-sheet ask-sheet--'+(o.tone||'default');
-    d.setAttribute('aria-labelledby',id+'t');d.setAttribute('aria-describedby',id+'d');
+    d.setAttribute('aria-labelledby',id+'t');if(o.effect)d.setAttribute('aria-describedby',id+'d');
     // Each field is one entry here so a later option (a select, say) is one more case, not a rewrite.
     const fields=[];
     if(o.select)fields.push({name:'value',label:o.select.label||'',select:o.select.options||[],initial:o.select.value||'',required:false});
