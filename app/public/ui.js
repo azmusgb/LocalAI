@@ -2829,6 +2829,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const drawer = el('runDrawer');
     if (!drawer) return;
     const run = lookup(runId);
+    window.LocalAIRunBodies?.release?.();   // a body that borrowed page elements gives them back before the view is rebuilt
     drawer.replaceChildren();
     el('runDetailsSheet').replaceChildren();
     state.drawerSig = drawerSignature(run);
@@ -3036,6 +3037,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (!was) el('runDrawer')?.querySelector('button')?.focus();
   }
   function hideView() {
+    window.LocalAIRunBodies?.release?.();
     const backdrop = el('runDrawerBackdrop');
     if (backdrop) { backdrop.classList.remove('show'); backdrop.setAttribute('aria-hidden', 'true'); }
     const sheet = el('runDetailsSheet'); if (sheet?.open) { state.selectedId = null; sheet.close(); }
@@ -3156,7 +3158,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
   // The one way for a page to open a run view: pushes a history entry marked as in-app, so Close and Back return to the page you were on.
   function show(id) { openRun(String(id)); }
-  window.LocalAIRuns = { open: openRunBySource, openPending, show };
+  window.LocalAIRuns = { open: openRunBySource, openPending, show, refresh: () => loadRuns(true) };
 
   function init() {
     ensureSurface();
