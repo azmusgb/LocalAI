@@ -64,7 +64,9 @@ function artifactRow(item){const image=item.kind==='image'?safeUrl(item.meta?.im
 // Data loaders for pages whose content is fetched on open. Every route (rail, tabs, mobile sheet, ⌘K) goes through showView.
 const VIEW_LOADERS={inbox:()=>loadInbox(),approvals:()=>loadApprovals(),memory:()=>loadMemory(),operations:()=>loadMonitors(),changes:()=>Promise.all([loadChanges(),loadEngineeringRuns()]),quality:()=>loadQuality(),issues:()=>loadIssues(),powershell:()=>loadPowerShellJobs()};
 function showView(id){
+  const raw=id;
   id=window.LocalAIViews?.resolve(id)||id;
+  if(window.LocalAIViews?.view(raw)?.domain==='hidden'&&$(raw))id=raw; // ask, create, agents and runs keep their own pages
   if(!$(id))return;
   if(state.view==='ask' && id!=='ask' && state.chatPhase==='streaming') abortStream('Stream stopped when leaving Ask');
   state.view=id;qsa('.view').forEach(x=>x.classList.toggle('active',x.id===id));qsa('.navbtn').forEach(x=>x.classList.toggle('active',x.dataset.view===id));
@@ -79,6 +81,7 @@ function showView(id){
   // Sources and Memory are tabs of Projects: open them on the project you were looking at.
   if(releaseState.selectedProject)for(const [view,sel] of [['knowledge','knowledgeProject'],['memory','memoryProject']])if(id===view&&$(sel))$(sel).value=releaseState.selectedProject;
   if(VIEW_LOADERS[id])Promise.resolve().then(VIEW_LOADERS[id]).catch(()=>{});
+  window.LocalAIRouter?.shown(id);
 
 }
 qsa('[data-view]').forEach(el=>el.addEventListener('click',()=>showView(el.dataset.view)));
@@ -681,7 +684,7 @@ async function bindEvo(){
   $('repoInspectBtn')?.addEventListener('click',inspectRepo);$('commandRunBtn')?.addEventListener('click',runWorkbenchCommand);
   $('monitorCreateBtn')?.addEventListener('click',createMonitor);$('briefBtn')?.addEventListener('click',generateBrief);
   $('changeRefreshBtn')?.addEventListener('click',()=>loadChanges());$('qualityScanBtn')?.addEventListener('click',runQualityScanClient);$('issueScanBtn')?.addEventListener('click',scanIssues);$('engineeringTarget')?.addEventListener('change',()=>{$('engineeringRoot').disabled=$('engineeringTarget').value==='self'});$('engineeringRunBtn')?.addEventListener('click',runEngineeringAgent);$('powershellUnlockForm')?.addEventListener('submit',e=>{e.preventDefault();unlockPowerShell();});$('powershellCreateBtn')?.addEventListener('click',createPowerShellJob);$('powershellRefreshBtn')?.addEventListener('click',()=>loadPowerShellJobs());
-  window.showView=showView;
+  window.showView=showView;window.LocalAIRouter?.start();
   if(featureLevel()>=7){loadInbox().catch(()=>{});setInterval(()=>{if(!document.hidden)loadInbox().catch(()=>{})},60000)}if(featureLevel()>=9)loadApprovals().catch(()=>{});if(featureLevel()>=13)loadChanges().catch(()=>{});if(featureLevel()>=14)loadQuality().catch(()=>{});if(featureLevel()>=15)loadIssues().catch(()=>{});if(featureLevel()>=16)loadEngineeringRuns().catch(()=>{});if(featureLevel()>=17)loadPowerShellJobs().catch(()=>{});
 }
 window.addEventListener('DOMContentLoaded',()=>bindEvo().catch(e=>console.warn('evolution features',e)));

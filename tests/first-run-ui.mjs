@@ -40,17 +40,17 @@ await check('a sample task fills the command and marks the step done', async () 
   await page.evaluate(() => window.showView('home'));
 });
 await check('Build is hidden while Developer tools is off', async () => {
-  assert.equal(await page.locator('.ux-primary-item[data-domain="build"]').isVisible(), false);
+  assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), false);
   assert.equal(await page.locator('.mode[data-mode="engineering"]').isVisible(), false);
 });
 await check('switching Developer tools on in Health shows Build and is remembered', async () => {
   await page.evaluate(() => window.showView('status'));
   await page.waitForSelector('#status.active .dev-tools-pref input');
   await page.locator('.dev-tools-pref input').check();
-  assert.equal(await page.locator('.ux-primary-item[data-domain="build"]').isVisible(), true);
+  assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), true);
   assert.equal(await page.evaluate(() => localStorage.getItem('localai.devTools')), '1');
   await page.reload({ waitUntil: 'networkidle' });
-  assert.equal(await page.locator('.ux-primary-item[data-domain="build"]').isVisible(), true);
+  assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), true);
 });
 await check('Health shows the secure-connection card (the host itself counts as secure)', async () => {
   await page.evaluate(() => window.showView('status'));
@@ -62,7 +62,7 @@ await check('switching it off while on a Build page returns to Home', async () =
   await page.evaluate(() => window.showView('changes'));
   await page.evaluate(() => window.showView('status'));
   await page.locator('.dev-tools-pref input').uncheck();
-  assert.equal(await page.locator('.ux-primary-item[data-domain="build"]').isVisible(), false);
+  assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), false);
 });
 await check('dismissing Get started keeps it hidden after reload', async () => {
   if (!expectCard) return;

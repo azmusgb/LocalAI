@@ -14,10 +14,13 @@ const sw = fs.readFileSync(path.join(pub, 'sw.js'), 'utf8');
 
 // Views whose section and nav button are created at runtime by another script.
 const INJECTED = { models: 'ui.js', runs: 'ui.js', integrations: 'ui.js' };
+// Registered ahead of its section: Task 3 of the navigation plan creates #work.
+const PENDING = new Set(['work']);
 
 test('registry has five domains and every view belongs to one', () => {
-  assert.equal(registry.DOMAINS.length, 5);
-  const domains = new Set(registry.DOMAINS.map(d => d.id));
+  assert.deepEqual(registry.DOMAINS.map(d => d.id), ['home', 'work', 'projects', 'improve', 'system']);
+  assert.deepEqual(registry.DOMAINS.map(d => d.defaultView), ['home', 'work', 'library', 'changes', 'status']);
+  const domains = new Set([...registry.DOMAINS.map(d => d.id), 'hidden']);
   const ids = registry.VIEWS.map(v => v.id);
   assert.equal(new Set(ids).size, ids.length, 'view ids must be unique');
   for (const v of registry.VIEWS) {
@@ -25,10 +28,26 @@ test('registry has five domains and every view belongs to one', () => {
     assert.ok(v.label && v.description && v.section && v.icon, `${v.id} is missing label, description, section or icon`);
   }
   for (const d of registry.DOMAINS) assert.equal(registry.view(d.defaultView)?.domain, d.id, `${d.id} default view must be in that domain`);
+  for (const id of ['ask', 'create', 'agents', 'runs']) assert.equal(registry.view(id).domain, 'hidden', `${id} has no nav entry`);
+  assert.equal(registry.resolve('runs'), 'work');
+  assert.equal(registry.resolve('agents'), 'work');
+  assert.equal(registry.resolve('ask'), 'home');
+  assert.equal(registry.resolve('create'), 'home');
+  assert.equal(registry.resolve('engineering'), 'changes');
+});
+
+test('every domain icon has a sprite symbol', () => {
+  for (const d of registry.DOMAINS) assert.match(html, new RegExp(`<symbol id="i-${d.icon}"`), `i-${d.icon}`);
+});
+
+test('the router is a shell script that loads before app.js', () => {
+  assert.ok(html.includes('<script src="/router.js">') && html.indexOf('/router.js') < html.indexOf('/app.js'));
+  assert.match(sw, /'\/router\.js'/);
 });
 
 test('every registered view has a page, and every nav button is registered', () => {
   for (const v of registry.VIEWS) {
+    if (PENDING.has(v.id)) continue;
     if (INJECTED[v.id]) {
       const src = fs.readFileSync(path.join(pub, INJECTED[v.id]), 'utf8');
       assert.ok(src.includes(`'${v.id}'`), `${INJECTED[v.id]} should create the ${v.id} view`);
@@ -46,7 +65,7 @@ test('every registered view has a page, and every nav button is registered', () 
 
 test('page headings and nav labels match the registry', () => {
   for (const v of registry.VIEWS) {
-    if (v.id === 'home' || INJECTED[v.id]) continue;
+    if (v.id === 'home' || INJECTED[v.id] || PENDING.has(v.id)) continue;
     const m = html.match(new RegExp(`<section id="${v.id}"[^>]*>[\\s\\S]*?<h1>([^<]*)</h1>`));
     assert.equal(m?.[1], registry.page(v.id).label, `#${v.id} heading`);
     if (v.parent) continue;
@@ -79,8 +98,10 @@ test('tabs belong to a top-level page in the same domain', () => {
 
 test('retired views redirect to the page that replaced them', () => {
   for (const [from, to] of Object.entries(registry.ALIASES)) {
-    assert.equal(registry.view(from).id, to);
-    assert.doesNotMatch(html, new RegExp(`<section id="${from}"`), `#${from} should be gone`);
+    assert.equal(registry.resolve(from), to);
+    // A hidden view keeps its own page and stays reachable by id; every other alias is a retired page.
+    if (registry.view(from).domain === 'hidden') assert.match(html + ux, new RegExp(`id="${from}"|id = '${from}'`), `#${from} stays routable`);
+    else assert.doesNotMatch(html, new RegExp(`<section id="${from}"`), `#${from} should be gone`);
   }
   assert.match(app, /id=window\.LocalAIViews\?\.resolve\(id\)\|\|id/, 'showView must resolve aliases');
   assert.doesNotMatch(app, /showView\('engineering'\)|view:'engineering'/);

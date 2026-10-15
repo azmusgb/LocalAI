@@ -1,5 +1,5 @@
-const CACHE='local-ai-shell-v1.18-unified-runs-bundle2-figtree-states-ask-runcard-thread';
-const SHELL=['/','/index.html','/app.js','/manifest.json','/view-registry.js','/app.css','/ui.js','/components.js','/fonts/figtree-latin-wght-normal.woff2'];
+const CACHE='local-ai-shell-v1.18-unified-runs-bundle2-figtree-states-ask-runcard-thread-router';
+const SHELL=['/','/index.html','/app.js','/manifest.json','/view-registry.js','/router.js','/app.css','/ui.js','/components.js','/fonts/figtree-latin-wght-normal.woff2'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL.map(u=>new Request(u,{cache:'reload'})))).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{
