@@ -1777,3 +1777,8 @@ body.run-view-open{overflow:hidden}
 .home-check input{width:20px;height:20px;flex:none}
 /* The view-in animation holds a transform, which would make the docked composer position against Home, not the screen. */
 @media(max-width:760px){body.ux-v3 #home{animation:none}}
+
+/* Work › Missions: a link to Agent World, the live mission map (appended; nothing above edited). */
+.work-agentworld{align-items:center;justify-content:space-between;flex-wrap:wrap;margin:10px 0}
+.work-agentworld[hidden]{display:none}
+.work-agentworld .btn-outline{min-height:44px;padding:0 14px;font-size:14px}
