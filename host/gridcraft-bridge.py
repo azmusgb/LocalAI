@@ -59,7 +59,14 @@ def ensure_gridcraft() -> bool:
     return False
 
 
+FINAL_MARKER = '[agent] model returned final text.'
+
+
 def extract_answer(stdout: str) -> str:
+    # In --once mode the agent prints its progress log, this marker, then only the answer.
+    idx = stdout.rfind(FINAL_MARKER)
+    if idx >= 0:
+        return stdout[idx + len(FINAL_MARKER):].strip()
     marker = 'ai> '
     idx = stdout.rfind(marker)
     if idx >= 0:
