@@ -28,7 +28,8 @@ aside{display:flex;flex-direction:column;overflow:hidden}.brand{flex:0 0 auto}.a
 <link rel="stylesheet" href="/agent-specialists.css">
 <link rel="stylesheet" href="/ux-architecture-v2.css">
 <link rel="stylesheet" href="/agent-world-city.css">
-<link rel="stylesheet" href="/claude-board.css"></head><body>
+<link rel="stylesheet" href="/claude-board.css">
+<link rel="stylesheet" href="/design-system.css" id="designSystemCss"><script>(()=>{/* Keep the design system last: later scripts append their own stylesheets. */const ds=document.getElementById("designSystemCss");new MutationObserver(()=>{const last=[...document.head.querySelectorAll("link[rel=stylesheet],style")].pop();if(last&&last!==ds)document.head.appendChild(ds)}).observe(document.head,{childList:true})})()</script></head><body>
 <div class="app"><aside><div class="brand"><div class="brandmark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12c2.6-5.6 11.4-5.6 14 0-2.6 5.6-11.4 5.6-14 0Z" stroke="#0b0d11" stroke-width="2"/><circle cx="12" cy="12" r="2.2" fill="#0b0d11"/></svg></div><div><div class="brand-title">Local AI</div><div class="brand-sub">Private Intelligence Hub · v1.18</div></div></div><nav>
 <div class="nav-group"><div class="nav-group-title">HOME</div><button class="navbtn active" data-view="home"><span class="navicon">⌂</span>Home</button></div>
 <div class="nav-group"><div class="nav-group-title">ASSISTANT</div><button class="navbtn" data-view="ask"><span class="navicon">✦</span>Ask</button><button class="navbtn" data-view="create"><span class="navicon">◇</span>Create</button></div>
