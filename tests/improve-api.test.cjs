@@ -216,7 +216,10 @@ test('Discard rejects a pending approval and refuses a change that is being depl
   assert.equal(approvals.find(a => a.id === 'appr-1').status, 'rejected');
   const d = await post(base, '/api/improve/item', { id: 'idea-d', action: 'discard', then: 'backlog' });
   assert.equal(d.status, 409);
-  assert.equal((await changeById(base, 'chg-d')).status, 'apply_requested');
+  // Start-up hands changes left at apply_requested to Claude as a pull request (approved, shipVia pr); still locked.
+  const shipping = await changeById(base, 'chg-d');
+  assert.equal(shipping.status, 'approved');
+  assert.equal(shipping.shipVia, 'pr');
 });
 
 test('Start now keeps the idea and says so when planning fails', { timeout: 60000 }, async t => {
@@ -275,4 +278,18 @@ test('a long idea in multibyte text is clipped, not refused', { timeout: 30000 }
   const r = await post(base, '/api/improve/idea', { text: '🙂'.repeat(20000) });
   assert.equal(r.status, 201);
   assert.ok(r.body.item.summary.length <= 2000);
+});
+
+test('a masked cross-origin "Script error." never becomes a signal; a real error does', { timeout: 60000 }, async t => {
+  const base = await startServer(t);
+  // #139 drops opaque errors at the door (202 ignored); either way they must never reach Signals.
+  const masked = await post(base, '/api/quality/client-event', { type: 'error', message: 'Script error.', source: '/', line: 0 });
+  assert.equal(masked.status, 202);
+  assert.equal(masked.body.ignored, true);
+  const real = await post(base, '/api/quality/client-event', { type: 'error', message: 'TypeError: x is undefined', source: '/app.js', line: 12, stack: 'at f (/app.js:12)' });
+  assert.equal(real.body.item.severity, 'high');
+  await post(base, '/api/issues/scan', {});
+  const signals = (await (await fetch(base + '/api/improve/items')).json()).signals;
+  assert.equal(signals.some(s => s.name === 'Script error.'), false);
+  assert.equal(signals.some(s => s.name.startsWith('TypeError: x is undefined')), true);
 });
