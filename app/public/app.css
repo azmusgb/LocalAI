@@ -1446,3 +1446,5 @@ body.ux-v3.ux-nav-collapsed .ux-page-strip{display:flex}
 .img-batch{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .img-batch[hidden]{display:none}
 .img-batch .img-thumb.active{border-color:var(--ds-accent);box-shadow:0 0 0 2px var(--ds-accent)}
+/* Scrolling to the editor leaves its header clear of the sticky top bar. */
+.img-edit{scroll-margin-top:88px}
