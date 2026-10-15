@@ -1498,3 +1498,15 @@ body.ux-v3.ux-nav-collapsed .ux-page-strip{display:flex}
 .secure-steps dl{margin:8px 0 0;display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;font-size:13px}
 .secure-steps dt{font-weight:650}.secure-steps dd{margin:0;color:var(--ds-soft)}
 @media(max-width:760px){.secure-steps dl{grid-template-columns:1fr}.secure-steps dd{margin-bottom:6px}}
+/* ==== what's new ==== */
+.whatsnew-card{margin-bottom:12px}.whatsnew-card[hidden]{display:none}
+.whatsnew-card code{font-family:var(--ds-mono);font-size:12px;color:var(--ds-muted)}
+.whatsnew-list{display:grid;gap:6px}
+.whatsnew-release{border:1px solid var(--ds-line);border-radius:var(--ds-r-md);padding:0 12px;margin:0;background:var(--ds-surface)}
+.whatsnew-release summary{min-height:44px;display:flex;align-items:center;gap:12px;cursor:pointer}
+.whatsnew-release summary span{color:var(--ds-muted);font-size:13px}
+.whatsnew-release ul{margin:0 0 12px;padding-left:20px;display:grid;gap:4px;color:var(--ds-soft);font-size:14px}
+.whatsnew-release a{color:var(--ds-accent)}
+.toast.whatsnew-toast{pointer-events:auto;display:flex;align-items:center;gap:10px}
+.whatsnew-open{border:0;background:transparent;color:var(--ds-accent);font-weight:650;cursor:pointer;padding:6px 4px;min-height:36px}
+.whatsnew-card{scroll-margin-top:88px}

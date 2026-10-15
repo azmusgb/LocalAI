@@ -67,7 +67,7 @@ try {
         Test-LocalAI-StorageCandidate -Container $Container -CandidateApp (Join-Path $candidate 'app')
         $codeReplacementStarted = $true
         Copy-LocalAI-AppTree -From (Join-Path $candidate 'app') -To $Live -Replace
-        Write-LocalAI-DeployState -Path (Join-Path $Live 'release.json') -State ([ordered]@{ commit = $sha })
+        Write-LocalAI-DeployState -Path (Join-Path $Live 'release.json') -State (New-LocalAI-ReleaseInfo -Repo $Repo -Sha $sha -Previous $previous)
         $newContainerStarted = $true
         Start-LocalAI-Container $Container
         if (-not (Wait-LocalAI-Health -HealthUrl $HealthUrl -ExpectedCommit $sha -RequireSqlite)) { throw 'Candidate health/storage/release identity check failed' }

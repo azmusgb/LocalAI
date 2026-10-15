@@ -7,7 +7,6 @@ const PORT = Number(process.env.PORT || 3080);
 // Second listener for host-only tools (PowerShell Workbench). Docker publishes it on 127.0.0.1 only, so a request
 // that arrives on this port came from the Windows host itself; unlike the Host header, a LAN client cannot fake that.
 const LOCAL_UI_PORT = Number(process.env.LOCAL_UI_PORT || 0);
-const APP_VERSION = process.env.APP_VERSION || '1.18';
 const MODEL = process.env.MODEL || 'qwen3:4b-instruct-32k';
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://host.docker.internal:11434';
 const COMFY_URL = process.env.COMFY_URL || 'http://host.docker.internal:8188';
@@ -45,6 +44,8 @@ const imageEngines = require('./image-engines');
 const IMAGE_ESTIMATES = {};
 const IMAGE_PROMPT_MODEL = process.env.IMAGE_PROMPT_MODEL || process.env.GRIDCRAFT_MODEL || 'qwen3:4b-instruct';
 const release = require('./release').readRelease(__dirname);
+// A staged copy (self-change smoke test) passes its own APP_VERSION; otherwise the release decides.
+const APP_VERSION = /-stage$/.test(process.env.APP_VERSION || '') ? process.env.APP_VERSION : require('./release').appVersion(__dirname, release);
 const storage = new Storage({ dataDir: DATA_DIR });
 const runLedger = new RunLedger({ storage });
 const activeRunControllers = new Map();
@@ -2641,6 +2642,7 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 } });
+    if (req.method === 'GET' && p === '/api/releases') return await apiReleases(req, res);
     if (req.method === 'GET' && p === '/api/storage/status') return json(res, 200, storage.status());
     if (req.method === 'GET' && p === '/api/status') return await apiStatus(req, res);
     if (req.method === 'GET' && p === '/api/models') return await apiModels(req, res);
@@ -2798,7 +2800,25 @@ function repairGarbledTextOnce() {
   if (counts[LIBRARY_STORE] || counts[NOTIFICATIONS_STORE]) console.log(`${nowIso()} Repaired garbled text: ${JSON.stringify(counts)}`);
 }
 
+// Each deployed release is recorded once (by commit) so the app can show what changed and when.
+const REPO_URL = process.env.LOCALAI_REPO_URL || 'https://github.com/azmusgb/LocalAI';
+function recordReleaseHistory() {
+  if (!release?.commit || storage.readSetting('release:last', null)?.commit === release.commit) return;
+  const entry = { commit: release.commit, version: APP_VERSION, deployedAt: release.deployedAt || nowIso(), notes: release.notes || [] };
+  storage.writeSetting(`release:history:${entry.deployedAt}`, entry);
+  storage.writeSetting('release:last', { commit: release.commit });
+  storage.pruneSettings('release:history:', 50);
+}
+async function apiReleases(req, res) {
+  json(res, 200, {
+    current: { version: APP_VERSION, commit: release?.commit || null, deployedAt: release?.deployedAt || null },
+    repoUrl: REPO_URL,
+    history: storage.listSettings('release:history:', { limit: 20 })
+  });
+}
+
 migrateLegacyActivityToLibrary();
+recordReleaseHistory();
 repairGarbledTextOnce();
 
 server.listen(PORT, '0.0.0.0', () => {
