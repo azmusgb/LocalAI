@@ -16,7 +16,7 @@ async function check(name, fn) {
   }
 }
 
-const DEFAULTS = { home: 'home', work: 'work', projects: 'library', improve: 'changes', system: 'status' };
+const DEFAULTS = { home: 'home', work: 'work', projects: 'library', improve: 'backlog', system: 'status' };
 
 async function open(viewport, hash, { devTools = '1' } = {}) {
   const ctx = await browser.newContext({ viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
