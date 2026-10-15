@@ -661,10 +661,40 @@ async function cancelPowerShellJob(id){try{await powerShellPost('/api/powershell
 
 function commandPalette(){
   const el=$('cmdk');if(!el)return;
-  // Labels and old names (aka) come from view-registry.js so renamed pages stay findable.
-  const actions=window.LocalAIViews.VIEWS.map(v=>[v.label,v.id,[v.label,...(v.aka||[])].join(' ').toLowerCase()]);
-  const render=()=>{const q=$('cmdkInput').value.toLowerCase();$('cmdkList').innerHTML=actions.filter(([label,id,terms])=>$(id)&&terms.includes(q)).map(([label,id])=>`<button class="cmdk-item" data-cmd-view="${id}">${label}</button>`).join('');qsa('[data-cmd-view]').forEach(b=>b.onclick=()=>{el.classList.remove('show');showView(b.dataset.cmdView)})};
-  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();el.classList.add('show');$('cmdkInput').value='';render();$('cmdkInput').focus()}if(e.key==='Escape')el.classList.remove('show')});$('cmdkInput').addEventListener('input',render);el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('show')});render();
+  const input=$('cmdkInput'),list=$('cmdkList'),R=window.LocalAIViews;
+  // Labels and old names (aka) come from view-registry.js so renamed pages stay findable. A hidden page whose
+  // address now opens another page (Runs → Work) would only be a duplicate, so it isn't offered.
+  const actions=window.LocalAIViews.VIEWS.filter(v=>!(v.id==='runs'&&v.domain==='hidden'&&R.ALIASES[v.id]==='work'))
+    .map(v=>({label:v.label,id:v.id,terms:[v.label,...(v.aka||[])].join(' ').toLowerCase()}));
+  let shown=[],active=0,opener=null;
+  input.setAttribute('role','combobox');input.setAttribute('aria-controls','cmdkList');input.setAttribute('aria-expanded','false');
+  list.setAttribute('role','listbox');
+  function select(i){active=Math.max(0,Math.min(shown.length-1,i));list.querySelectorAll('[role=option]').forEach((b,n)=>{b.setAttribute('aria-selected',String(n===active));b.classList.toggle('active',n===active)});const b=list.querySelectorAll('[role=option]')[active];if(b){input.setAttribute('aria-activedescendant',b.id);b.scrollIntoView({block:'nearest'})}}
+  function render(){
+    const q=input.value.trim().toLowerCase();shown=actions.filter(a=>$(a.id)&&a.terms.includes(q));
+    list.innerHTML=shown.length?shown.map((a,n)=>`<button type="button" id="cmdk-opt-${n}" role="option" class="cmdk-item" data-cmd-view="${esc(a.id)}">${esc(a.label)}</button>`).join('')
+      :`<div class="cmdk-empty"><p>No pages match “${esc(input.value.trim())}”.</p><button type="button" class="btn-outline" data-cmd-work>Search your work for “${esc(input.value.trim())}”</button></div>`;
+    list.querySelectorAll('[data-cmd-view]').forEach(b=>b.onclick=()=>go(b.dataset.cmdView));
+    list.querySelector('[data-cmd-work]')?.addEventListener('click',searchWork);
+    select(0);
+  }
+  function go(id){close(false);showView(id)}
+  // No page matched: look through the owner's own work instead (Work's search box filters the loaded runs).
+  function searchWork(){const q=input.value.trim();close(false);showView('work');
+    // Work sets itself up when it becomes the open page; fill its search box after that, not before.
+    let tries=0;const fill=()=>{const w=$('workSearch'),sec=$('work');if(w&&sec?.classList.contains('active')&&tries>2){w.value=q;w.dispatchEvent(new Event('input',{bubbles:true}));return}if(++tries<40)setTimeout(fill,50)};fill()}
+  function open(){opener=document.activeElement;el.classList.add('show');el.setAttribute('aria-hidden','false');input.setAttribute('aria-expanded','true');input.value='';render();input.focus()}
+  function close(restore=true){if(!el.classList.contains('show'))return;el.classList.remove('show');el.setAttribute('aria-hidden','true');input.setAttribute('aria-expanded','false');if(restore&&opener?.focus)opener.focus()}
+  input.addEventListener('input',render);
+  input.addEventListener('keydown',e=>{
+    if(e.key==='ArrowDown'){e.preventDefault();select(active+1)}
+    else if(e.key==='ArrowUp'){e.preventDefault();select(active-1)}
+    else if(e.key==='Enter'&&!e.isComposing){e.preventDefault();if(shown[active])go(shown[active].id);else if(input.value.trim())searchWork()}
+  });
+  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();open()}else if(e.key==='Escape'&&el.classList.contains('show')){e.preventDefault();close()}});
+  el.addEventListener('click',e=>{if(e.target===el)close()});
+  window.LocalAICommand={open,close};
+  render();
 }
 async function bindEvo(){
   if(!releaseState.config) await loadReleaseConfig();
