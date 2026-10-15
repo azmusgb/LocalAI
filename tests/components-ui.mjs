@@ -104,12 +104,14 @@ for (const [api, sel, view, hint] of [['/api/library', '#libraryGrid', 'library'
 }
 await check('library Retry recovers once the API works', async () => {
   let fail = true;
-  const p = await newPage(pg => pg.route('**/api/library', r => fail ? r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"x"}' }) : r.fallback()));
+  // Once it works, serve an empty Library so the result doesn't depend on what other suites saved on the shared server.
+  const p = await newPage(pg => pg.route('**/api/library', r => fail ? r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"x"}' }) : r.fulfill({ json: { items: [] } })));
   await p.waitForSelector('#libraryGrid .state-error', { state: 'attached' });
   fail = false;
   await p.locator('#libraryGrid .state-error button').evaluate(b => b.click());
-  await p.waitForFunction(() => !document.querySelector('#libraryGrid .state-error'));
-  assert.match(await p.locator('#libraryGrid').innerText(), /Nothing saved yet/);
+  // Wait for the re-rendered list, not just for the error to go: on a slow runner the grid is briefly empty.
+  await p.waitForFunction(() => /Nothing saved yet/.test(document.querySelector('#libraryGrid')?.innerText || ''), null, { timeout: 10000 });
+  assert.equal(await p.locator('#libraryGrid .state-error').count(), 0);
   await p.close();
 });
 
