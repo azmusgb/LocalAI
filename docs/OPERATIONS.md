@@ -29,6 +29,22 @@ docker run -d --name local-ai-n8n --restart unless-stopped -p 127.0.0.1:5678:567
 Remove-Item $env
 ```
 
+## HTTPS
+
+`deploy/Install-LocalAI-HTTPS.ps1` runs Caddy (`local-ai-https`, image `caddy:2.10-alpine`) on the appliance's Docker
+network, serving `https://<host IP>` and `https://localai.home.arpa` on 443 and redirecting port 80 to HTTPS.
+Port 3080 keeps working for scripts and the auto-deploy. Certificates come from Caddy's own local certificate
+authority (root valid 10 years, server certificates renewed automatically). Its data is in the `localai-caddy-data` volume.
+
+- The root certificate is exported to `C:\LocalAI\https\localai-ca.crt` and trusted on the Windows host itself.
+- Other devices download it from `http://<host IP>/localai-ca.crt` and trust it once; Health › Secure connection
+  shows the steps for Mac, iPhone/iPad, Android and Windows, and whether the current device already trusts it.
+- `localai.home.arpa` needs a DNS entry pointing at the host: add it in the router's DNS (or a device's hosts file).
+- Inbound 80/443 are allowed on private networks only (firewall rule "Local AI HTTPS").
+- After changing `deploy/caddy/Caddyfile`: `docker exec local-ai-https caddy reload --config /etc/caddy/Caddyfile`.
+- Pull the image from a normal Windows session; over SSH, Docker's credential helper fails (`A specified logon
+  session does not exist`).
+
 ## Backups
 
 `deploy/Backup-LocalAI-Data.ps1` runs nightly at 02:30 (`deploy/Install-LocalAI-Backup.ps1` schedules it; a missed night

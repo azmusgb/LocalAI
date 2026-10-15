@@ -1487,3 +1487,14 @@ body.ux-v3.ux-nav-collapsed .ux-page-strip{display:flex}
 .img-batch .img-thumb.active{border-color:var(--ds-accent);box-shadow:0 0 0 2px var(--ds-accent)}
 /* Scrolling to the editor leaves its header clear of the sticky top bar. */
 .img-edit{scroll-margin-top:88px}
+/* ==== secure connection ==== */
+.secure-card{margin-bottom:12px}
+.secure-head{display:flex;gap:12px;align-items:flex-start}.secure-head h2{margin-bottom:4px}.secure-head p{margin:0;color:var(--ds-soft)}
+.secure-head a,.secure-steps a:not(.btn){color:var(--ds-accent);text-decoration:underline}
+.secure-dot{width:12px;height:12px;border-radius:50%;margin-top:7px;flex:none;background:var(--ds-progress)}
+.secure-card[data-state="good"] .secure-dot,.secure-card[data-state="ready"] .secure-dot{background:var(--ds-good)}
+.secure-steps{margin:14px 0 0;padding-left:20px;display:grid;gap:12px;color:var(--ds-text)}
+.secure-steps .btn{min-height:44px;display:inline-flex;align-items:center;margin-right:8px}
+.secure-steps dl{margin:8px 0 0;display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;font-size:13px}
+.secure-steps dt{font-weight:650}.secure-steps dd{margin:0;color:var(--ds-soft)}
+@media(max-width:760px){.secure-steps dl{grid-template-columns:1fr}.secure-steps dd{margin-bottom:6px}}
