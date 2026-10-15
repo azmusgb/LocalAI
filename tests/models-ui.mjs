@@ -20,13 +20,17 @@ await check('an invalid name is refused with a message', async () => {
   assert.match(await page.locator('#modelPullError').innerText(), /model name/i);
 });
 await check('a download shows its progress row and reports the outcome', async () => {
-  await page.fill('#modelPullName', 'ci-test-model:1b');
+  // A fresh name each run: the server keeps finished pulls, so a fixed name matched the previous run's row at once.
+  const model = `ci-test-model-${Date.now().toString(36)}:1b`;
+  await page.fill('#modelPullName', model);
+  const started = page.waitForResponse(r => r.url().endsWith('/api/models/pull') && r.request().method() === 'POST');
   await page.click('#modelPullForm button[type="submit"]');
-  await page.waitForSelector('.model-pull:has-text("ci-test-model:1b")');
+  await started;
+  await page.waitForSelector(`.model-pull:has-text("${model}")`);
   assert.equal(await page.locator('#modelPullError').isHidden(), true);
   assert.equal(await page.inputValue('#modelPullName'), '');
   // Without Ollama the download fails; with one it may run. Either way the row reaches a clear state or keeps running.
-  await page.waitForFunction(() => /Failed|Downloaded|%|pulling|Starting/i.test(document.querySelector('.model-pull')?.textContent || ''));
+  await page.waitForFunction(m => /Failed|Downloaded|%|pulling|Starting/i.test([...document.querySelectorAll('.model-pull')].find(e => e.textContent.includes(m))?.textContent || ''), model);
 });
 await check('the API refuses cross-site and non-JSON requests', async () => {
   const cross = await fetch(base + '/api/models/delete', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://evil.example' }, body: '{"name":"x:1"}' });
