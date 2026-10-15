@@ -24,13 +24,22 @@ async function until(fn, what, ms = 8000) {
 }
 
 async function fakeRelay(t) {
-  const state = { requests: [], queue: [], failures: 0 };
-  const server = http.createServer((req, res) => {
+  const state = { requests: [], queue: [], failures: 0, announceFailures: 0, inbox401: false };
+  const handler = (req, res) => {
     let body = '';
     req.on('data', (c) => { body += c; });
     req.on('end', async () => {
       state.requests.push({ method: req.method, url: req.url, headers: req.headers, body: body ? JSON.parse(body) : null });
       res.setHeader('Content-Type', 'application/json');
+      if (req.url.startsWith('/api/claude/chat/announce') && state.announceFailures > 0) {
+        state.announceFailures--;
+        res.statusCode = 500;
+        return res.end('{"error":"boom"}');
+      }
+      if (req.url.startsWith('/api/claude/chat/inbox') && state.inbox401) {
+        res.statusCode = 401;
+        return res.end('{"error":"nope"}');
+      }
       if (req.url.startsWith('/api/claude/chat/inbox') && state.failures > 0) {
         state.failures--;
         res.statusCode = 500;
@@ -43,10 +52,22 @@ async function fakeRelay(t) {
       }
       res.end('{"ok":true}');
     });
-  });
-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  state.url = `http://127.0.0.1:${server.address().port}`;
-  t.after(() => new Promise((r) => { server.close(r); server.closeAllConnections?.(); }));
+  };
+  let server = null;
+  state.start = async (port = 0) => {
+    server = http.createServer(handler);
+    await new Promise((r) => server.listen(port, '127.0.0.1', r));
+    state.port = server.address().port;
+    state.url = `http://127.0.0.1:${state.port}`;
+  };
+  state.stop = async () => {
+    if (!server) return;
+    const s = server;
+    server = null;
+    await new Promise((r) => { s.close(r); s.closeAllConnections?.(); });
+  };
+  await state.start();
+  t.after(() => state.stop());
   return state;
 }
 
@@ -181,17 +202,74 @@ test('relay returns 500 twice, then recovers: the queued message is still inject
   assert.ok(relay.requests.filter((r) => r.url.startsWith('/api/claude/chat/inbox')).length >= 3);
 });
 
-test('an injection that fails while the socket exists is retried (3 tries) and then logged as lost', async (t) => {
+test('an injection that fails while the socket exists is retried (3 tries), logged as lost, and the bridge keeps delivering', async (t) => {
   const relay = await fakeRelay(t);
   const home = makeHome(t);
-  // A regular file at the socket path: it exists, but connecting always fails.
-  const sock = path.join(os.tmpdir(), `cbf${process.pid}${Math.random().toString(36).slice(2, 6)}.sock`);
-  fs.writeFileSync(sock, '');
+  const sock = path.join(os.tmpdir(), `cbs${process.pid}${Math.random().toString(36).slice(2, 6)}.sock`);
   t.after(() => { try { fs.unlinkSync(sock); } catch {} });
+  // A stale socket file: exists, but nothing listens (ECONNREFUSED on macOS and Linux).
+  const stale = spawn('node', ['-e', `require('net').createServer().listen(process.argv[1], () => console.log('up'))`, sock], { stdio: ['ignore', 'pipe', 'ignore'] });
+  t.after(() => stale.kill('SIGKILL'));
+  await new Promise((r) => stale.stdout.once('data', r));
+  stale.kill('SIGKILL');
+  await new Promise((r) => stale.on('exit', r));
+  assert.ok(fs.existsSync(sock));
+
   relay.queue.push({ id: 77, seq: 1, text: 'doomed', deviceName: 'd' });
-  startBridge(t, { relay, sock, home });
+  const b = startBridge(t, { relay, sock, home });
   await until(() => log(home).includes('lost 77'), 'lost log line');
   const l = log(home);
   assert.equal((l.match(/inject failed 77/g) || []).length, 3);
   assert.ok(!l.includes('doomed'));
+  assert.equal(b.exited, null, 'bridge keeps running after one lost message');
+
+  // Session recovers: a live listener replaces the stale file; the next message is delivered.
+  fs.unlinkSync(sock);
+  const live = net.createServer((c) => { c.on('data', (d) => { live.got = (live.got || '') + d; }); c.on('error', () => {}); });
+  await new Promise((r) => live.listen(sock, r));
+  t.after(() => new Promise((r) => live.close(r)));
+  relay.queue.push({ id: 78, seq: 2, text: 'next', deviceName: 'd' });
+  await until(() => (live.got || '').includes('[LocalAI web · d] next'), 'next message delivered');
+  assert.equal(b.exited, null);
+});
+
+test('announce failing (500) is retried with backoff; the session is announced later and messages are injected', async (t) => {
+  const relay = await fakeRelay(t);
+  const inbox = await fakeInbox(t);
+  const home = makeHome(t);
+  relay.announceFailures = 1;
+  relay.queue.push({ id: 31, seq: 1, text: 'after announce', deviceName: 'd' });
+  startBridge(t, { relay, sock: inbox.sock, home });
+  await until(() => relay.requests.filter((r) => r.url === '/api/claude/chat/announce').length >= 2, 'second announce');
+  await until(() => inbox.conns.length >= 1 && inbox.conns[0].closed, 'injection');
+  assert.equal(inbox.lines(0)[1].message.content, '[LocalAI web · d] after announce');
+});
+
+test('relay unreachable (fetch throws): the bridge backs off, re-announces on recovery and injects the queued message', async (t) => {
+  const relay = await fakeRelay(t);
+  const inbox = await fakeInbox(t);
+  const home = makeHome(t);
+  const port = relay.port;
+  await relay.stop();
+  const b = startBridge(t, { relay, sock: inbox.sock, home });
+  await until(() => log(home).includes('relay error'), 'relay error logged');
+  assert.equal(b.exited, null);
+  relay.queue.push({ id: 41, seq: 1, text: 'back', deviceName: 'd' });
+  await relay.start(port);
+  await until(() => inbox.conns.length >= 1 && inbox.conns[0].closed, 'injection after relay returns');
+  assert.equal(inbox.lines(0)[1].message.content, '[LocalAI web · d] back');
+  assert.ok(relay.requests.some((r) => r.url === '/api/claude/chat/announce'));
+});
+
+test('a 401 on the inbox logs "mac key rejected", backs off, and neither exits nor spins', async (t) => {
+  const relay = await fakeRelay(t);
+  const inbox = await fakeInbox(t);
+  const home = makeHome(t);
+  relay.inbox401 = true;
+  const b = startBridge(t, { relay, sock: inbox.sock, home, env: { LOCALAI_CHAT_BACKOFF_MS: '200' } });
+  await until(() => log(home).includes('mac key rejected'), 'rejection logged');
+  await sleep(1000);
+  assert.equal(b.exited, null);
+  const polls = relay.requests.filter((r) => r.url.startsWith('/api/claude/chat/inbox')).length;
+  assert.ok(polls >= 2 && polls <= 6, `expected backed-off polling, got ${polls}`);
 });

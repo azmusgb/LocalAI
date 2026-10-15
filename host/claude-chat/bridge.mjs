@@ -63,9 +63,11 @@ async function announce() {
     body: JSON.stringify({ sessionId, title, cwd }),
     signal: AbortSignal.timeout(10000),
   });
-  if (res.status === 401) log('mac key rejected');
-  else if (!res.ok) log(`announce failed ${res.status}`);
   await res.arrayBuffer().catch(() => {});
+  if (!res.ok) {
+    log(res.status === 401 ? 'mac key rejected' : `announce failed ${res.status}`);
+    throw new Error(`announce ${res.status}`);
+  }
 }
 
 function writeSocket(item) {
@@ -87,6 +89,7 @@ let connectFailures = 0;
 let lastInject = 0;
 
 async function inject(item) {
+  let refused = 0;
   for (let attempt = 1; attempt <= 3; attempt++) {
     if (!fs.existsSync(SOCKET)) { log('socket gone; exiting'); quit(0); }
     const wait = lastInject + INJECT_GAP - Date.now();
@@ -100,16 +103,13 @@ async function inject(item) {
       return;
     }
     log(`inject failed ${item.id} attempt ${attempt} ${err.code || err.message}`);
-    if (err.code === 'ENOENT' || err.code === 'ECONNREFUSED') {
-      if (++connectFailures >= 3) {
-        log(`lost ${item.id}`);
-        log('socket unreachable; exiting');
-        quit(0);
-      }
-    }
+    if (err.code === 'ENOENT' || err.code === 'ECONNREFUSED') refused++;
     if (attempt < 3) await sleep(RETRY_GAP);
   }
   log(`lost ${item.id}`);
+  // Exit after 3 consecutive messages whose every attempt failed to connect.
+  if (refused === 3 && ++connectFailures >= 3) { log('socket unreachable; exiting'); quit(0); }
+  if (refused < 3) connectFailures = 0;
 }
 
 async function main() {
@@ -119,7 +119,7 @@ async function main() {
   for (;;) {
     if (!fs.existsSync(SOCKET)) { log('socket gone; exiting'); quit(0); }
     try {
-      if (!announced) { await announce(); announced = true; }
+      if (!announced) { await announce(); announced = true; log('announced'); }
       const res = await fetch(`${URL_BASE}/api/claude/chat/inbox?sessionId=${encodeURIComponent(sessionId)}&wait=25`, {
         headers: headers(),
         signal: AbortSignal.timeout(35000),
@@ -127,6 +127,7 @@ async function main() {
       if (!res.ok) {
         await res.arrayBuffer().catch(() => {});
         log(res.status === 401 ? 'mac key rejected' : `inbox failed ${res.status}`);
+        announced = false;
         await sleep(backoff);
         backoff = Math.min(backoff * 2, BACKOFF_MAX);
         continue;
@@ -138,6 +139,7 @@ async function main() {
       for (const item of items) await inject(item);
     } catch (e) {
       log(`relay error ${e.name || ''} ${e.code || e.cause?.code || ''}`.trim());
+      announced = false;
       await sleep(backoff);
       backoff = Math.min(backoff * 2, BACKOFF_MAX);
     }
