@@ -62,6 +62,25 @@ await check('chat composer and Send sit above the tab bar', async () => {
   assert.ok(r.send <= r.nav, `Send bottom ${r.send} is under the tab bar at ${r.nav}`);
 });
 
+await check('chat composer sits on the tab bar with no gap for a long thread to show through', async () => {
+  await page.evaluate(() => window.showView('ask'));
+  await page.waitForTimeout(200);
+  const r = await page.evaluate(() => {
+    const log = document.querySelector('#messages'), saved = log.innerHTML;
+    log.innerHTML = Array.from({ length: 30 }, (_, i) => `<div class="msg ${i % 2 ? 'assistant' : 'user'}">Message ${i + 1}: a line of conversation long enough to wrap onto a second line on a phone.</div>`).join('');
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    const composer = document.querySelector('.composer-wrap').getBoundingClientRect(), nav = document.querySelector('#uxMobileNav').getBoundingClientRect();
+    const inGap = [...log.querySelectorAll('.msg')].filter(m => { const b = m.getBoundingClientRect(); return b.bottom > composer.bottom + 0.5 && b.top < nav.top - 0.5; }).length;
+    const out = { composerBottom: composer.bottom, navTop: nav.top, inGap, bg: getComputedStyle(document.querySelector('.composer-wrap')).backgroundImage };
+    log.innerHTML = saved;
+    window.scrollTo(0, 0);
+    return out;
+  });
+  assert.ok(r.navTop - r.composerBottom <= 1 && r.navTop - r.composerBottom >= -0.5, `composer ends at ${r.composerBottom}, tab bar starts at ${r.navTop}`);
+  assert.equal(r.inGap, 0, 'messages show between the composer and the tab bar');
+  assert.notEqual(r.bg, 'none', 'the composer has a backdrop so messages do not show through it');
+});
+
 await check('chips, filters and tabs are at least 44px tall', async () => {
   const short = [];
   for (const view of ['home', 'library', 'issues', 'inbox', 'projects']) {
@@ -122,6 +141,7 @@ const shellMetrics = () => {
     header: shown(header) ? box(header).height : 0, headerBottom: shown(header) ? box(header).bottom : 0,
     strip: shown(strip) ? box(strip).height : null, stripBottom: shown(strip) ? box(strip).bottom : 0,
     stripLinks: shown(strip) ? strip.querySelectorAll('a[data-strip-view]').length : 0, pills,
+    narrowTabs: shown(strip) ? [...strip.querySelectorAll('a')].filter(a => a.getBoundingClientRect().width < 43.5).map(a => `${a.textContent} ${Math.round(a.getBoundingClientRect().width)}px`) : [],
     first: first ? { top: Math.round(box(first).top), what: first.tagName + '#' + first.id + '.' + first.className } : null,
     navBottom: box(nav).bottom, innerHeight: window.innerHeight,
     navItems: [...nav.querySelectorAll('[data-domain]')].filter(shown).length,
@@ -140,6 +160,7 @@ await check('phone shell: compact header, underline tabs and content near the to
     if (m.strip !== null && m.strip > 44) problems.push(`${view}: page tabs ${m.strip}px tall`);
     if (m.strip !== null && !m.stripLinks) problems.push(`${view}: page tabs are not links`);
     if (m.pills.length) problems.push(`${view}: tabs drawn as pills (${m.pills.join(', ')})`);
+    if (m.narrowTabs.length) problems.push(`${view}: page tabs under 44px wide (${m.narrowTabs.join(', ')})`);
     if (!m.first) problems.push(`${view}: nothing visible`);
     else {
       if (m.first.top > 120) problems.push(`${view}: first content at ${m.first.top}px (${m.first.what})`);
@@ -289,6 +310,13 @@ await check('phone header: the Inbox bell carries its count in its label', async
   await phone.waitForSelector('#inbox.active');
 });
 
+await check('phone header: with nothing waiting the bell stays, without its badge, and is not marked hidden', async () => {
+  await show(phone, 'ask');
+  await phone.evaluate(() => window.dispatchEvent(new CustomEvent('localai:inbox-count', { detail: { unread: 0, pending: 0 } })));
+  const r = await phone.evaluate(() => { const b = document.querySelector('#uxHeader #uxInboxBtn'), c = document.querySelector('#uxInboxCount'); return { visible: !!b && b.getBoundingClientRect().width >= 44, hidden: b?.hasAttribute('hidden'), badge: c.getBoundingClientRect().width > 0, label: b?.getAttribute('aria-label') }; });
+  assert.deepEqual(r, { visible: true, hidden: false, badge: false, label: 'Inbox, nothing waiting' });
+});
+
 await check('phone tab bar: Developer tools off leaves four equal items, on restores five', async () => {
   await show(phone, 'home');
   const widths = () => phone.evaluate(() => [...document.querySelectorAll('#uxMobileNav [data-domain]')].filter(b => b.getBoundingClientRect().width > 0).map(b => Math.round(b.getBoundingClientRect().width)));
@@ -315,12 +343,13 @@ await check('320px phone: Build page tabs scroll and keep the active tab in view
       const strip = document.querySelector('#uxPageStrip'), a = strip.querySelector('[aria-current="page"]');
       const s = strip.getBoundingClientRect(), b = a.getBoundingClientRect();
       return { scrolls: strip.scrollWidth > strip.clientWidth, overflowX: getComputedStyle(strip).overflowX, wraps: strip.getBoundingClientRect().height > 46,
-        inView: b.left >= s.left - 1 && b.right <= s.right + 1, sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, label: a.textContent };
+        inView: b.left >= s.left - 1 && b.right <= s.right + 1, narrow: [...strip.querySelectorAll('a')].filter(x => x.getBoundingClientRect().width < 43.5).map(x => `${x.textContent} ${Math.round(x.getBoundingClientRect().width)}px`), sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, label: a.textContent };
     });
     assert.ok(r.overflowX === 'auto' || r.overflowX === 'scroll', `${view}: strip overflow-x ${r.overflowX}`);
     if (view !== 'activity') assert.ok(r.scrolls, `${view}: Build tabs should scroll at 320px`);
     assert.ok(!r.wraps, `${view}: tabs wrap`);
     assert.ok(r.inView, `${view}: active tab ${r.label} is not fully visible`);
+    assert.deepEqual(r.narrow, [], `${view}: page tabs narrower than 44px`);
     assert.ok(r.sw <= r.cw + 1, `${view}: page scrolls sideways ${r.sw} > ${r.cw}`);
   }
   await small.close();

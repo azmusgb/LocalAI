@@ -992,7 +992,7 @@ body.awc-stage-expanded{overflow:hidden}
   --ds-r-sm:8px;--ds-r-md:12px;--ds-r-lg:16px;--ds-r-xl:20px;
   --ds-font:Figtree,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --ds-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-  --ds-focus:0 0 0 3px rgba(92,184,255,.28);
+  --ds-focus:0 0 0 3px color-mix(in srgb,var(--ds-accent) 28%,transparent);
 
   /* legacy shell tokens */
   --bg:var(--ds-bg);--shell:var(--ds-bg-2);--panel:var(--ds-surface);--panel2:var(--ds-surface-2);--panel3:var(--ds-surface-3);
@@ -1230,11 +1230,11 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
 .settings-row select{min-height:44px;max-width:60%;font-size:16px;background:transparent;border:0;color:var(--ds-muted);text-align:right}
 .settings-row .icon{width:16px;height:16px;color:var(--ds-faint)}
 .badge[class*="badge--"]{display:inline-flex;align-items:center;gap:4px;height:24px;min-width:0;padding:0 10px;border-radius:999px;border:0;font-size:12px;font-weight:600;line-height:1;white-space:nowrap;pointer-events:none;background:var(--ds-surface-2);color:var(--ds-muted)}
-.badge--accent{background:rgba(108,182,255,.16)!important;color:var(--ds-accent-text)!important}
-.badge--attention{background:rgba(255,178,36,.16)!important;color:var(--ds-attention-text)!important}
-.badge--good{background:rgba(62,213,152,.16)!important;color:var(--ds-good-text)!important}
-.badge--bad{background:rgba(255,107,107,.16)!important;color:var(--ds-bad-text)!important}
-.badge--neutral{background:var(--ds-surface-2)!important;color:var(--ds-muted)!important}
+.badge.badge--accent{background:rgba(108,182,255,.16);color:var(--ds-accent-text)}
+.badge.badge--attention{background:rgba(255,178,36,.16);color:var(--ds-attention-text)}
+.badge.badge--good{background:rgba(62,213,152,.16);color:var(--ds-good-text)}
+.badge.badge--bad{background:rgba(255,107,107,.16);color:var(--ds-bad-text)}
+.badge.badge--neutral{background:var(--ds-surface-2);color:var(--ds-muted)}
 .banner{display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-radius:16px;background:var(--ds-surface);border:1px solid var(--ds-line-card);color:var(--ds-text);font-size:15px;line-height:1.4}
 .banner--attention{background:rgba(255,178,36,.1);border-color:rgba(255,178,36,.35)}
 .banner--attention .icon{color:var(--ds-attention-text)}
@@ -1263,7 +1263,7 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
 
   /* Chat: keep the composer above the floating tab bar. */
   .chat-shell{min-height:calc(100svh - 230px);grid-template-rows:minmax(240px,1fr) auto}
-  .composer-wrap{bottom:calc(84px + env(safe-area-inset-bottom));padding-top:16px}
+  .composer-wrap{padding-top:16px}
   .toggle{min-height:44px;font-size:14px}
   .toggle input{width:22px;height:22px}
 
@@ -1531,20 +1531,22 @@ body.ux-v3.ux-nav-collapsed .ux-page-strip{display:flex}
   .ux-header-domain:active{background:var(--ds-surface-2)}
   .ux-header-domain:focus-visible,.ux-header .icon-btn:focus-visible,.ux-header #uxInboxBtn:focus-visible{outline:2px solid var(--ds-accent);outline-offset:-2px}
   /* The bell is always there on a phone; the count badge only when something is waiting. */
-  .ux-header #uxInboxBtn,.ux-header #uxInboxBtn[hidden]{position:relative;display:inline-grid;place-items:center;width:44px;height:44px;min-height:44px;padding:0;border:0;border-radius:12px;background:transparent;color:var(--ds-soft)}
+  .ux-header #uxInboxBtn{position:relative;display:inline-grid;place-items:center;width:44px;height:44px;min-height:44px;padding:0;border:0;border-radius:12px;background:transparent;color:var(--ds-soft)}
   .ux-header #uxInboxBtn:active{background:var(--ds-surface-2)}
   .ux-header #uxInboxBtn .icon{display:block;width:22px;height:22px}
   .ux-header .ux-inbox-text{display:none}
   .ux-header #uxInboxCount{position:absolute;top:7px;right:7px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--ds-bad);color:#1a0507;font-size:11px;font-weight:700;line-height:1;display:grid;place-items:center}
-  .ux-header #uxInboxBtn:not([data-count]) #uxInboxCount,.ux-header #uxInboxBtn[data-count="0"] #uxInboxCount{display:none}
+  .ux-header #uxInboxBtn:not(.has-count) #uxInboxCount{display:none}
 
   /* Page tabs: underlined, never pills; they scroll sideways when a domain has many pages. */
-  .ux-page-strip{position:sticky;top:calc(52px + env(safe-area-inset-top));z-index:45;display:flex;align-items:stretch;gap:22px;height:44px;min-height:0;
-    margin:0 -16px;padding:0 18px;overflow-x:auto;overflow-y:hidden;white-space:nowrap;scroll-padding:0 18px;overscroll-behavior-x:contain;
+  .ux-page-strip{position:sticky;top:calc(52px + env(safe-area-inset-top));z-index:45;display:flex;align-items:stretch;gap:0;height:44px;min-height:0;
+    margin:0 -16px;padding:0 7px;overflow-x:auto;overflow-y:hidden;white-space:nowrap;scroll-padding:0 7px;overscroll-behavior-x:contain;
     background:var(--ds-bg);box-shadow:inset 0 -1px 0 var(--ds-line)}
-  .ux-page-strip a{display:flex;align-items:center;flex:none;min-height:0;padding:0;border:0;border-radius:0;background:transparent;color:var(--ds-faint);font-size:15px;font-weight:500}
+  /* 11px each side: a 44px-plus tap area per tab, and the same 22px between labels as the mockup's gap. */
+  .ux-page-strip a{position:relative;display:flex;align-items:center;justify-content:center;flex:none;min-width:44px;min-height:0;padding:0 11px;border:0;border-radius:0;background:transparent;color:var(--ds-faint);font-size:15px;font-weight:500}
   .ux-page-strip a:hover{color:var(--ds-text);border-color:transparent}
-  .ux-page-strip a.active{background:transparent;color:var(--ds-text);font-weight:650;box-shadow:inset 0 -2px 0 var(--ds-accent)}
+  .ux-page-strip a.active{background:transparent;color:var(--ds-text);font-weight:650}
+  .ux-page-strip a.active::after{content:"";position:absolute;left:11px;right:11px;bottom:0;height:2px;background:var(--ds-accent)}
   .ux-page-strip a:focus-visible{outline:2px solid var(--ds-accent);outline-offset:-4px}
 
   /* No page title block: the header and tabs name the page. Titles stay for screen readers. */
@@ -1569,4 +1571,8 @@ body.ux-v3.ux-nav-collapsed .ux-page-strip{display:flex}
   .ux-mobile-nav button[data-active="true"] .icon{stroke-width:1.9}
   .ux-mobile-nav button:focus-visible{outline:2px solid var(--ds-accent);outline-offset:-2px}
   .ux-mobile-sheet{bottom:calc(var(--ux-tabbar-h) + var(--ux-safe-bottom) + 8px)}
+  /* Chat's composer sits on the tab bar; its backdrop fades in over the thread and is solid where it meets the bar. */
+  .composer-wrap{bottom:calc(var(--ux-tabbar-h) + var(--ux-safe-bottom));background:linear-gradient(180deg,transparent,var(--ds-bg) 16px)}
+  /* Scrolled to the end, sticky can't move the composer below where it sits in the page, so Chat drops the 16px gap. */
+  body.ux-v3[data-view="ask"] main{padding-bottom:calc(var(--ux-tabbar-h) + var(--ux-safe-bottom))}
 }

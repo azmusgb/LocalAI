@@ -876,6 +876,9 @@ function buildTabs(){
 const icon=(name,cls)=>window.LocalAIKit?.icon(name,cls)||'';
 const PHONE=window.matchMedia('(max-width:760px)');
 function openCommands(){const cmd=q('#cmdk');if(cmd){cmd.classList.add('show');cmd.setAttribute('aria-hidden','false');q('#cmdkInput')?.focus()}}
+// Desktop hides the Inbox button when nothing is waiting; the phone header always shows the bell (badge only with a count).
+let inboxTotal=0;
+function syncInboxHidden(){const b=q('#uxInboxBtn');if(b)b.hidden=inboxTotal===0&&!PHONE.matches}
 function buildContext(){
  const main=q('main');if(!main||q('#uxContextBar'))return;
  const bar=document.createElement('header');bar.id='uxContextBar';bar.className='ux-context-bar';
@@ -886,7 +889,7 @@ function buildContext(){
  q('#uxContextMenu')?.addEventListener('click',()=>toggleSheet());
  // Unread alerts plus approvals waiting, reported by app.js after it loads Inbox or Approvals.
  let inbox={unread:0,pending:0};
- window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');if(!b)return;b.hidden=total===0;b.dataset.count=String(total);q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',total?`Inbox, ${total} waiting: ${inbox.unread} unread, ${inbox.pending} approvals`:'Inbox, nothing waiting')});
+ window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');if(!b)return;inboxTotal=total;b.dataset.count=String(total);b.classList.toggle('has-count',total>0);syncInboxHidden();q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',total?`Inbox, ${total} waiting: ${inbox.unread} unread, ${inbox.pending} approvals`:'Inbox, nothing waiting')});
  q('#uxInboxBtn')?.addEventListener('click',()=>navigate(inbox.pending&&!inbox.unread?'approvals':'inbox'));
 }
 // Phone header: the domain (or, on Home, the brand and a greeting), a page action or Search, and the Inbox bell.
@@ -899,13 +902,12 @@ function buildHeader(){
  q('#uxHeaderDomain').addEventListener('click',()=>toggleSheet());
  q('#uxSearchBtn').addEventListener('click',openCommands);
  q('#uxHeaderAction').addEventListener('click',()=>{const a=currentAction();a?.onClick?.()});
- const placeInbox=()=>{const b=q('#uxInboxBtn');if(!b)return;if(PHONE.matches)q('#uxHeaderActions').appendChild(b);else q('.ux-context-actions',bar)?.prepend(b)};
+ const placeInbox=()=>{const b=q('#uxInboxBtn');if(!b)return;if(PHONE.matches)q('#uxHeaderActions').appendChild(b);else q('.ux-context-actions',bar)?.prepend(b);syncInboxHidden()};
  PHONE.addEventListener?.('change',placeInbox);placeInbox();
 }
 function greeting(){const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'}
-// One page action at a time, shown in place of Search while its page is open. Pages call
-// Each page registers its own: window.LocalAIShell.setAction(view,{icon,label,onClick}) / clearAction(view).
-// The header shows the open view's action (or its page's, for a tab), else Search.
+// Header actions, one per page: window.LocalAIShell.setAction(view,{icon,label,onClick}) and clearAction(view); the
+// header shows the open view's action (or its page's, for a tab) in place of Search.
 const headerActions=new Map();
 function currentAction(){const v=REG.resolve(activeView());return headerActions.get(v)||headerActions.get(pageForView(v))||null}
 function setAction(view,a){if(!view||!a||!a.label)return;headerActions.set(REG.resolve(view),{icon:a.icon||'plus',label:String(a.label),onClick:a.onClick});renderAction()}
