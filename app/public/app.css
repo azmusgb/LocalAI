@@ -1318,7 +1318,7 @@ kbd{font:600 11px/1 var(--ds-mono);padding:2px 6px;border-radius:6px;border:1px 
   body.ux-v3 .summary-grid,body.ux-v3 .capability-strip,.run-summary-grid,.ux-int-metrics,.model-runtime-summary,body.ux-v3 .library-grid{grid-template-columns:1fr!important}
 }
 /* ==== first-run ==== */
-.dev-tools-off [data-domain="build"],.dev-tools-off .mode[data-mode="engineering"]{display:none!important}
+.dev-tools-off [data-domain="improve"],.dev-tools-off .mode[data-mode="engineering"]{display:none!important}
 .dev-tools-pref{display:flex;gap:12px;align-items:flex-start;margin-bottom:12px;cursor:pointer}
 .dev-tools-pref input{width:20px;height:20px;margin-top:2px;accent-color:var(--ds-accent);flex:none}
 .dev-tools-pref span{display:grid;gap:3px;color:var(--ds-text);font-size:14px}.dev-tools-pref small{color:var(--ds-muted);font-size:12px}

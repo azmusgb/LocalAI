@@ -15,7 +15,7 @@ const page=await browser.newPage({viewport:{width:1440,height:1000}});
 page.on('dialog',async d=>{dialogs++;await d.dismiss()});
 await page.goto(base,{waitUntil:'domcontentloaded'});
 await page.waitForSelector('.ux-primary-rail');
-await page.locator('.ux-primary-item[data-domain="automate"]').click();
+await page.evaluate(()=>window.showView('agents'));
 await page.waitForSelector('#agents.active');
 
 await check('system capability health distinguishes optional companions',async()=>{
@@ -27,23 +27,23 @@ await check('system capability health distinguishes optional companions',async()
   const optional=page.locator('#serviceList .service-card.OPTIONAL_OFFLINE');
   if(await optional.count()) assert.match(await optional.first().innerText(),/Optional · Offline|Core Local AI remains available/i);
   assert.match(await page.locator('#status').innerText(),/Core services determine appliance health/i);
-  await page.locator('.ux-primary-item[data-domain="automate"]').click();
+  await page.evaluate(()=>window.showView('agents'));
   await page.waitForSelector('#agents.active');
 });
 await check('desktop navigation architecture',async()=>{
   await page.locator('.ux-primary-rail').waitFor({state:'visible'});
   await page.locator('.ux-secondary-nav').waitFor({state:'visible'});
   assert.equal(await page.locator('.ux-primary-item').count(),5);
-  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Automate');
-  assert.ok(await page.locator('.ux-secondary-link').count()>=1);
+  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Work');
 });
 await check('contextual navigation switches domains',async()=>{
-  await page.locator('.ux-primary-item[data-domain="workspace"]').click();
-  await page.waitForSelector('#ask.active');
-  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Workspace');
-  await page.locator('.ux-primary-item[data-domain="automate"]').click();
+  await page.locator('.ux-primary-item[data-domain="projects"]').click();
+  await page.waitForSelector('#library.active');
+  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Projects');
+  assert.ok(await page.locator('.ux-secondary-link').count()>=1);
+  await page.evaluate(()=>window.showView('agents'));
   await page.waitForSelector('#agents.active');
-  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Automate');
+  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Work');
 });
 await check('mission-first composer',async()=>{
   await page.locator('#agentGoal').waitFor({state:'visible'});
@@ -214,7 +214,7 @@ const mobile=await browser.newPage({viewport:{width:390,height:844},hasTouch:tru
 mobile.on('dialog',async d=>{dialogs++;await d.dismiss()});
 await mobile.goto(base,{waitUntil:'domcontentloaded'});
 await mobile.waitForSelector('#uxMobileNav');
-await mobile.evaluate(()=>document.querySelector('#uxMobileNav [data-domain="automate"]')?.click());
+await mobile.evaluate(()=>window.showView('agents'));
 await mobile.waitForSelector('#agents.active');
 await mobile.waitForSelector('#agentWorldCityMount .awc');
 
@@ -223,7 +223,7 @@ await check('mobile navigation is domain-first with contextual sheet',async()=>{
   assert.equal(await mobile.locator('#uxMobileNav [data-domain]').count(),5);
   await mobile.locator('#uxContextMenu').click();
   await mobile.locator('#uxMobileSheet').waitFor({state:'visible'});
-  assert.match(await mobile.locator('#uxMobileSheetTitle').innerText(),/Automate/i);
+  assert.match(await mobile.locator('#uxMobileSheetTitle').innerText(),/Work/i);
   await mobile.locator('#uxMobileSheetClose').click();
 });
 await check('mobile layout has no page-level horizontal overflow',async()=>{
@@ -262,7 +262,7 @@ await check('the mission strip and Agent World show the same mission while the s
   await pg.route(u=>u.pathname==='/api/agents/catalog',async r=>{await catalogHeld;await r.fallback()});
   await pg.goto(base,{waitUntil:'domcontentloaded'});
   await pg.waitForSelector('.ux-primary-rail');
-  await pg.locator('.ux-primary-item[data-domain="automate"]').click();
+  await pg.evaluate(()=>window.showView('agents'));
   await pg.waitForSelector('#agents.active');
   await pg.waitForFunction(g=>document.getElementById('awcObjective')?.textContent===g,goal,{timeout:10000});
   await pg.waitForFunction(g=>document.getElementById('agentMissionHeadline')?.textContent===g,goal,{timeout:3000});

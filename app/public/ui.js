@@ -77,9 +77,13 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     return true;
   }
 
+  // A page opened by tapping goes through the router, so Back follows it; hidden pages keep their own page.
+  const routed = (view) => !!window.LocalAIRouter && window.LocalAIViews?.view(view)?.domain !== 'hidden' && (window.LocalAIRouter.go('#' + view), true);
+
   function navigate(view) {
     if (!view) return;
-    if (view === 'models' && activateView(view)) return;
+    if (view === 'models' && activateView(view)) { window.LocalAIRouter?.go('#models'); return; }
+    if (routed(view)) return;
     if (typeof window.showView === 'function') {
       window.showView(view);
       return;
@@ -811,7 +815,8 @@ let currentDomain='home',sheetOpen=false,allButtons=new Map();
 const icon=(name,cls)=>window.LocalAIKit?.icon(name,cls)||'';
 
 function viewButton(view){return allButtons.get(view)||q('.navbtn[data-view="'+view+'"]')}
-function domainForView(view){const id=REG.view(view)?.domain;return DOMAINS.find(d=>d.id===id)||DOMAINS[0]}
+// A hidden page (chat, images, missions, runs) lights up the page that owns it.
+function domainForView(view){let id=REG.view(view)?.domain;if(id==='hidden')id=REG.view(REG.resolve(view))?.domain;return DOMAINS.find(d=>d.id===id)||DOMAINS[0]}
 // Tabs share their parent's nav entry and breadcrumb.
 function pageForView(view){return REG.page(view)?.id||view}
 function labelForView(view){return REG.view(view)?.label||viewButton(view)?.textContent?.trim()||view}
@@ -826,7 +831,8 @@ function activateSyntheticView(view){
 }
 function navigate(view){
  const synthetic=viewButton(view)?.dataset.uxSynthetic==='true';
- if(synthetic&&activateSyntheticView(view))return;
+ if(synthetic&&activateSyntheticView(view)){window.LocalAIRouter?.go('#'+view);return}
+ if(window.LocalAIRouter&&REG.view(view)?.domain!=='hidden'){window.LocalAIRouter.go('#'+view);requestAnimationFrame(()=>sync(view));return}
  if(typeof window.showView==='function'){window.showView(view);requestAnimationFrame(()=>sync(view));return}
  const b=viewButton(view);if(b){b.click();requestAnimationFrame(()=>sync(view));return}
  if(activateSyntheticView(view))return;
@@ -907,7 +913,7 @@ function buildContext(){
 }
 // A page's single action (Health: Check again) shows as an icon in the phone header while that page is open.
 const headerActions=new Map();
-function syncHeaderAction(view){const b=q('#uxHeaderAction');if(!b)return;const a=headerActions.get(REG.resolve(view||activeView()));b.hidden=!a;q('#uxContextBar')?.classList.toggle('ux-context-has-action',!!a);if(!a){b.onclick=null;return}b.innerHTML=icon(a.icon,'ux-ico');b.setAttribute('aria-label',a.label);b.onclick=a.onClick}
+function syncHeaderAction(view){const b=q('#uxHeaderAction');if(!b)return;const a=headerActions.get(REG.view(view||activeView())?.id||view||activeView());b.hidden=!a;q('#uxContextBar')?.classList.toggle('ux-context-has-action',!!a);if(!a){b.onclick=null;return}b.innerHTML=icon(a.icon,'ux-ico');b.setAttribute('aria-label',a.label);b.onclick=a.onClick}
 window.LocalAIShell={setAction(view,action){headerActions.set(view,action);syncHeaderAction()},clearAction(view){headerActions.delete(view);syncHeaderAction()}};
 // Health's refresh lives in the header on phones; the page's own button stays for desktop.
 window.LocalAIShell.setAction('status',{icon:'refresh',label:'Check again',onClick:()=>q('#statusRetryBtn')?.click()});
@@ -944,7 +950,7 @@ function renderSheet(){
 }
 function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;const s=q('#uxMobileSheet');if(s){s.dataset.open=String(sheetOpen);s.inert=!sheetOpen;s.setAttribute('aria-hidden',String(!sheetOpen))}q('#uxContextMenu')?.setAttribute('aria-expanded',String(sheetOpen));document.body.classList.toggle('ux-sheet-open',sheetOpen);if(sheetOpen)renderSheet()}
 function sync(forced){
- const view=REG.resolve(forced||activeView()),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
+ const view=REG.view(forced||activeView())?.id||forced||activeView(),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
  const page=pageForView(view),viewLabel=labelForView(page);renderPageStrip(d,page);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;q('#uxContextBar')?.classList.toggle('ux-context-same',viewLabel===d.label);q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);q('#uxContextMenu')?.setAttribute('aria-label',d.label+' pages');syncHeaderAction(view);{const g=q('#uxContextGreeting');if(g)g.textContent=greeting()};
  qa('.ux-primary-item').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
  qa('#uxMobileNav [data-domain]').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
@@ -3068,7 +3074,7 @@ function applyDevTools(on,fromToggle=false){
  document.body.classList.toggle('dev-tools-off',!on);
  qa('[data-dev-tools-toggle]').forEach(i=>{i.checked=on});
  const active=q('.view.active')?.id;
- if(fromToggle&&!on&&window.LocalAIViews?.view(active)?.domain==='build'&&typeof window.showView==='function')window.showView('home');
+ if(fromToggle&&!on&&window.LocalAIViews?.view(active)?.domain==='improve'&&typeof window.showView==='function')window.showView('home');
 }
 async function initDevTools(){
  const saved=pref.get(DEV_KEY);
@@ -3078,7 +3084,7 @@ async function initDevTools(){
 function mountDevToolsToggle(){
  const status=q('#status');if(!status||q('.dev-tools-pref',status))return;
  const row=document.createElement('label');row.className='dev-tools-pref card';
- row.innerHTML='<input type="checkbox" data-dev-tools-toggle><span><strong>Show developer tools</strong><small>Adds Build to the menu: change requests, the Claude board, Workbench and PowerShell.</small></span>';
+ row.innerHTML='<input type="checkbox" data-dev-tools-toggle><span><strong>Show developer tools</strong><small>Adds Improve to the menu: change requests, issues, quality signals and the Claude board.</small></span>';
  status.querySelector('.topbar')?.after(row);
  row.querySelector('input').addEventListener('change',e=>{pref.set(DEV_KEY,e.target.checked?'1':'0');applyDevTools(e.target.checked,true)});
  row.querySelector('input').checked=!document.body.classList.contains('dev-tools-off');
