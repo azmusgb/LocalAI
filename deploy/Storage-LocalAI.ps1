@@ -54,15 +54,21 @@ function Test-LocalAI-StorageCandidate([string]$Container, [string]$CandidateApp
     $dataMountArgument = Get-LocalAI-ExplicitMountArgument $dataMount -ReadOnly
     $source = (Resolve-Path -LiteralPath $CandidateApp).Path
     if ($source.Contains(',')) { throw 'Candidate app path cannot contain a comma in a Docker bind mount.' }
-    # Mount the actual DATA_DIR backing store directly. On Docker Desktop, --volumes-from
-    # a stopped container can expose the named volume in a state where SQLite cannot open
-    # the database. Directly mounting the resolved volume/bind is stable whether the
-    # appliance container is running or stopped. Legacy fixtures without mount metadata
-    # retain the previous --volumes-from behavior.
+
+    # Never open a WAL-mode SQLite database directly from the read-only live mount.
+    # Docker Desktop can expose localai.db while preventing SQLite from creating or
+    # updating shared-memory state, yielding "unable to open database file" when the
+    # source appliance is stopped. Snapshot the database, WAL, SHM, and legacy JSON
+    # into writable /tmp first, then let the candidate preflight operate only there.
     $arguments = @('run','--rm','--network','none')
     if ($dataMountArgument) { $arguments += @('--mount',$dataMountArgument) }
     else { $arguments += @('--volumes-from',"${Container}:ro") }
-    $arguments += @('--mount',"type=bind,source=$source,target=/candidate,readonly",'--env',"DATA_DIR=$dataDir",'--entrypoint','node',$configuration.Image,'/candidate/storage-cli.js','preflight')
+    $arguments += @(
+        '--mount',"type=bind,source=$source,target=/candidate,readonly",
+        '--env',"SOURCE_DATA_DIR=$dataDir",
+        '--entrypoint','sh',$configuration.Image,
+        '-c', 'set -eu; tmp=/tmp/localai-source; mkdir -p "$tmp"; for f in localai.db localai.db-wal localai.db-shm; do if [ -f "$SOURCE_DATA_DIR/$f" ]; then cp "$SOURCE_DATA_DIR/$f" "$tmp/$f"; fi; done; for f in "$SOURCE_DATA_DIR"/*.json; do if [ -f "$f" ]; then cp "$f" "$tmp/"; fi; done; DATA_DIR="$tmp" node /candidate/storage-cli.js preflight'
+    )
     docker @arguments | Out-Host
     if ($LASTEXITCODE -ne 0) { throw 'Candidate migration/data preflight failed; the live application and data were not replaced.' }
 }
