@@ -2636,11 +2636,33 @@ async function apiClaudePriorities(req,res,urlObj){
 }
 // ===== END CLAUDE BOARD ======================================================
 
+// Cross-site request guard for every mutating route. Another website open in a LAN browser can send simple
+// (no-preflight) POSTs here, so a browser request must come from this origin: Sec-Fetch-Site must not be
+// cross-site, and an Origin header, when present, must name the host:port the request was sent to (Host, or
+// X-Forwarded-Host from the HTTPS proxy). Requests without either header (scripts, hooks, curl, host jobs) pass:
+// browsers always send Origin on these methods, other clients are not the threat this guards against.
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+function sameHost(protocol, origin, host) {
+  if (!host) return false;
+  try { return new URL(`${protocol}//${host}`).host === origin; } catch { return false; }
+}
+function crossSiteRequest(req) {
+  if (!MUTATING_METHODS.has(req.method)) return false;
+  if (String(req.headers['sec-fetch-site'] || '').trim().toLowerCase() === 'cross-site') return true;
+  const origin = req.headers.origin;
+  if (origin === undefined) return false;
+  let parsed;
+  try { parsed = new URL(String(origin)); } catch { return true; } // "null" (sandboxed frame, file://) or garbage
+  if (parsed.origin === 'null') return true;
+  const forwarded = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
+  return !sameHost(parsed.protocol, parsed.host, req.headers.host) && !sameHost(parsed.protocol, parsed.host, forwarded);
+}
 const server = http.createServer(async (req, res) => {
   const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const p = urlObj.pathname;
 
   try {
+    if (crossSiteRequest(req)) { req.resume(); return json(res, 403, { error: 'Cross-site request blocked' }); }
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 } });
     if (req.method === 'GET' && p === '/api/releases') return await apiReleases(req, res);
     if (req.method === 'GET' && p === '/api/storage/status') return json(res, 200, storage.status());
