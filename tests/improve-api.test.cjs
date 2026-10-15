@@ -276,3 +276,15 @@ test('a long idea in multibyte text is clipped, not refused', { timeout: 30000 }
   assert.equal(r.status, 201);
   assert.ok(r.body.item.summary.length <= 2000);
 });
+
+test('a masked cross-origin "Script error." is low severity and never becomes a signal', { timeout: 60000 }, async t => {
+  const base = await startServer(t);
+  const masked = await post(base, '/api/quality/client-event', { type: 'error', message: 'Script error.', source: '/', line: 0 });
+  assert.equal(masked.body.item.severity, 'low');
+  const real = await post(base, '/api/quality/client-event', { type: 'error', message: 'TypeError: x is undefined', source: '/app.js', line: 12, stack: 'at f (/app.js:12)' });
+  assert.equal(real.body.item.severity, 'high');
+  await post(base, '/api/issues/scan', {});
+  const signals = (await (await fetch(base + '/api/improve/items')).json()).signals;
+  assert.equal(signals.some(s => s.name === 'Script error.'), false);
+  assert.equal(signals.some(s => s.name.startsWith('TypeError: x is undefined')), true);
+});
