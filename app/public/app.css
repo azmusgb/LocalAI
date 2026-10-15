@@ -1784,3 +1784,71 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
   /* Their refresh moved to the header; the row that only held it goes. */
   #status>.topbar,#models>.topbar,#runs>.topbar{display:none}
 }
+
+/* Remaining pages (redesign task 6): shared phone patterns, then page specifics. */
+.banner--bad{background:rgba(255,107,107,.1);border-color:rgba(255,107,107,.3)}
+.img-offline{align-items:center;margin-bottom:12px}
+.img-offline[hidden]{display:none}
+.img-offline-dot{width:10px;height:10px;border-radius:5px;background:var(--ds-bad);flex:none}
+.img-offline>span:nth-child(2){flex:1;display:grid;gap:1px}
+.img-offline strong{font-size:15px;font-weight:600}
+.img-offline small{font-size:13px;color:#d1a3a3}
+.img-offline .btn-outline{min-height:44px;padding:0 14px;border-radius:999px;font-size:14px;border-color:rgba(255,138,138,.4);color:#ffb3b3}
+.auto-switch{width:52px;height:32px;min-height:32px;padding:0;border:0;border-radius:999px;background:var(--ds-line-input);position:relative;cursor:pointer;flex:none;transition:background .15s}
+.auto-switch span{position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:50%;background:var(--ds-text);transition:transform .15s}
+.auto-switch[aria-checked="true"]{background:var(--ds-accent)}
+.auto-switch[aria-checked="true"] span{transform:translateX(20px)}
+.auto-switch:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+@media(max-width:760px){
+  /* A field with a picker reads as one row: its label on the left, the picker's value on the right. */
+  body.ux-v3 .view.active .card label:has(>select):not(.mode-select){display:flex;align-items:center;gap:12px;min-height:56px;padding:0;color:var(--ds-text);font-size:16px}
+  body.ux-v3 .view.active .card label:has(>select):not(.mode-select)>select{flex:1;min-width:0;max-width:65%;margin:0 0 0 auto;border:0;background-color:transparent;color:var(--ds-muted);text-align:right;text-align-last:right;box-shadow:none}
+  /* Lists of cards read as one grouped list. */
+  body.ux-v3 .view.active .stack:has(>.item-card){gap:0!important;background:var(--ds-surface);border:1px solid var(--ds-line-card);border-radius:16px;overflow:hidden}
+  body.ux-v3 .view.active .stack>.item-card{margin:0;border:0;border-radius:0;background:transparent;padding:12px 16px}
+  body.ux-v3 .view.active .stack>.item-card+.item-card,body.ux-v3 .view.active .stack>*+.item-card{border-top:1px solid var(--ds-line)}
+  body.ux-v3 .view.active .stack>.item-card strong{font-size:15px;font-weight:600}
+  body.ux-v3 .view.active .stack>.item-card small{color:var(--ds-muted);font-size:13px}
+  body.ux-v3 .view.active .stack>.item-card .actions .btn{min-height:44px;padding:0 6px;border:0;background:transparent;color:var(--ds-accent-text);font-weight:500}
+  /* Status pills in page headings repeat what the page shows; the PowerShell lock state stays. */
+  body.ux-v3 .view>.topbar .pill:not(#powershellBridge){display:none}
+  /* Their action is in the header now. */
+  #newProjectBtn,#issueScanBtn,#qualityScanBtn,#claudeRefresh,#briefBtn{display:none!important}
+  #automationStudio>.topbar .btn{border:0;background:transparent;color:var(--ds-accent-text);font-weight:500;padding:0}
+
+  #create .img-compose{padding:14px 16px;border-radius:20px;border-color:var(--ds-line-card)}
+  #create .img-prompt-label{font-size:17px;font-weight:650}
+  #create #imagePrompt{border:0;background:transparent;padding:0;box-shadow:none;height:auto;field-sizing:content;min-height:56px;max-height:200px;resize:none}
+  #create .img-actions{display:grid;grid-template-columns:1fr;gap:4px}
+  #create #generateBtn{min-height:48px;font-size:16px;border-radius:14px}
+  #create #clearImageBtn{border:0;background:transparent;color:var(--ds-accent-text);font-weight:500}
+  #create .img-output{padding:0;background:transparent;border:0}
+  #create .img-stage:has(>.img-placeholder){display:none}
+  #create .img-recent-head h3{font-size:15px;color:var(--ds-muted)}
+  #create .img-recent-head .btn{border:0;background:transparent;color:var(--ds-accent-text);font-weight:500;padding:0}
+
+  #automationStudio .card:has(#autoCreateBtn){padding:0;overflow:hidden;border-radius:20px;border-color:var(--ds-line-card)}
+  #automationStudio .card:has(#autoCreateBtn)>h2{margin:0;padding:14px 16px 0;font-size:17px}
+  #automationStudio .card:has(#autoCreateBtn) .form-grid{display:flex;flex-direction:column;gap:0;margin-top:6px!important}
+  #automationStudio .form-grid>label{display:flex;align-items:center;gap:12px;min-height:56px;padding:0 16px!important;border-top:1px solid var(--ds-line);color:var(--ds-text);font-size:16px}
+  #automationStudio .form-grid>label:has(#autoPrompt){order:-1;display:block;border-top:0;padding:0 16px 6px!important;font-size:0}
+  #automationStudio #autoPrompt{width:100%;min-height:72px;height:auto;field-sizing:content;max-height:220px;padding:0;border:0;background:transparent;box-shadow:none;resize:none}
+  #automationStudio #autoName{flex:1;min-width:0;border:0;background:transparent;color:var(--ds-muted);text-align:right;box-shadow:none}
+  #automationStudio #autoCreateBtn{display:flex;width:calc(100% - 32px);margin:10px 16px 14px!important;min-height:48px;font-size:16px;border-radius:14px}
+  #automationStudio .card:has(#automationList),#automationStudio .card:has(#automationRuns){background:transparent;border:0;padding:0}
+  #automationStudio .card:has(#automationList) h2,#automationStudio .card:has(#automationRuns) h2{font-size:15px;color:var(--ds-muted)}
+  #automationStudio .card:has(#automationList) .section-head{align-items:center;margin-bottom:8px}
+  #automationStudio #automationList .item-card{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:12px}
+  #automationStudio #automationList .statusline{grid-column:1}
+  #automationStudio #automationList .statusline .statuschip{display:none}
+  #automationStudio #automationList small{grid-column:1}
+  #automationStudio #automationList .actions{grid-column:2;grid-row:1/span 2;margin:0!important;flex-direction:row-reverse;gap:8px;align-items:center}
+
+  #inbox>.card,#approvals>.card{background:transparent;border:0;padding:0}
+  #inbox #inboxList .statuschip{background:transparent;border:0;padding:0;color:var(--ds-accent-text)}
+}
+@media(max-width:760px){
+  #projects #projectMetrics{display:none}
+  #projects .card:has(>#projectDetail.empty){display:none}
+  body.ux-v3 .view.active .preview-pane:has(>.empty:only-child){min-height:0;padding:14px}
+}

@@ -343,6 +343,87 @@ await check('runs: plain-language badges and a Failed filter', async () => {
 });
 await sys.close();
 
+// Remaining pages (redesign task 6) and accessibility on every page.
+const rest = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+rest.on('pageerror', e => pageErrors.push(e.message));
+await rest.addInitScript(() => { try { localStorage.setItem('localai.devTools', '1'); } catch {} });
+await rest.route('**/api/capabilities', async route => {
+  const res = await route.fetch(); const json = await res.json();
+  const services = (json.services || []).map(s => s.name === 'comfy' ? { ...s, state: 'DOWN' } : s);
+  await route.fulfill({ response: res, json: { ...json, services } });
+});
+await rest.route('**/api/automations', route => route.fulfill({ json: { items: [
+  { id: 'a1', name: 'Morning summary', kind: 'prompt', schedule: 'daily', enabled: true },
+  { id: 'a2', name: 'Back up the Library', kind: 'prompt', schedule: 'manual', enabled: false }
+], runs: [] } }));
+await rest.goto(base, { waitUntil: 'domcontentloaded' });
+await rest.waitForFunction(() => typeof window.showView === 'function' && window.LocalAIShell);
+const remaining = ['create', 'library', 'projects', 'knowledge', 'memory', 'inbox', 'approvals', 'automationStudio', 'automations', 'actions', 'operations', 'issues', 'quality', 'claude', 'workbench', 'repoTools', 'powershell'];
+
+await check('remaining pages: pickers sit beside their label, card lists are one group', async () => {
+  const problems = [];
+  for (const view of remaining) {
+    await rest.evaluate(v => { window.showView(v); window.scrollTo(0, 0); }, view);
+    await rest.waitForTimeout(150);
+    problems.push(...await rest.evaluate(v => {
+      const out = [], vis = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+      for (const sel of document.querySelectorAll('.view.active .card select')) {
+        const label = sel.closest('label'); if (!label || !vis(sel)) continue;
+        if (sel.getBoundingClientRect().top - label.getBoundingClientRect().top > 12) out.push(`${v}: #${sel.id} sits under its label`);
+      }
+      for (const list of document.querySelectorAll('.view.active .stack')) {
+        if (!vis(list) || !list.querySelector(':scope>.item-card')) continue;
+        const c = getComputedStyle(list);
+        if (parseFloat(c.rowGap) > 0 || parseFloat(c.borderTopLeftRadius) < 12) out.push(`${v}: #${list.id} is not one grouped list`);
+      }
+      return out;
+    }, view));
+  }
+  assert.deepEqual(problems, []);
+});
+
+await check('remaining pages: a page heading with one action shows it in the header instead', async () => {
+  const expected = { projects: 'New project', issues: 'Scan now', quality: 'Run quality scan', claude: 'Refresh', operations: 'Generate brief' };
+  for (const [view, label] of Object.entries(expected)) {
+    await rest.evaluate(v => window.showView(v), view);
+    await rest.waitForTimeout(150);
+    assert.equal(await rest.locator('#uxHeaderAction').getAttribute('aria-label'), label, view);
+    assert.equal(await rest.locator('.view.active .topbar .btn:visible').count(), 0, `${view} still shows its heading button`);
+  }
+  const created = rest.waitForEvent('dialog').then(d => d.dismiss()).catch(() => {});
+  await rest.evaluate(() => window.showView('projects'));
+  await rest.locator('#uxHeaderAction').click();
+  await Promise.race([created, rest.waitForTimeout(500)]);
+});
+
+await check('images: says why Create is unavailable', async () => {
+  await rest.evaluate(() => window.showView('create'));
+  await rest.locator('#imageOffline').waitFor({ state: 'visible' });
+  assert.match(await rest.locator('#imageOffline').innerText(), /Image generation is offline/);
+});
+
+await check('automations: on/off switches and a count of what is on', async () => {
+  await rest.evaluate(() => window.showView('automationStudio'));
+  await rest.locator('#automationList [role="switch"]').first().waitFor();
+  assert.equal(await rest.locator('#automationCount').innerText(), '1 of 2 on');
+  assert.deepEqual(await rest.locator('#automationList [role="switch"]').evaluateAll(b => b.map(x => x.getAttribute('aria-checked'))), ['true', 'false']);
+  assert.match(await rest.locator('#automationList [role="switch"]').first().getAttribute('aria-label'), /Morning summary: on/);
+});
+
+await check('every page: no colour-contrast or touch-target problems (axe)', async () => {
+  await rest.addScriptTag({ path: new URL('./vendor/axe.min.js', import.meta.url).pathname });
+  const problems = [];
+  for (const view of views) {
+    await rest.evaluate(v => { window.showView(v); window.scrollTo(0, 0); }, view);
+    await rest.waitForTimeout(250);
+    const found = await rest.evaluate(async () => (await window.axe.run(document.querySelector('.view.active'), { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }))
+      .violations.map(v => `${v.id} ×${v.nodes.length}: ${v.nodes.slice(0, 3).map(n => n.target.join(' ')).join(', ')}`));
+    problems.push(...found.map(f => `${view}: ${f}`));
+  }
+  assert.deepEqual(problems, []);
+});
+await rest.close();
+
 await check('no script errors on phone', async () => {
   assert.deepEqual(pageErrors, []);
 });

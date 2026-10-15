@@ -334,6 +334,16 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     gateMode('automate', automateReady, 'automation engine is not healthy');
     gateMode('engineering', intelligenceReady, 'local intelligence service is not healthy');
 
+    // Images page: say why Create is unavailable, above the form.
+    const offline = document.getElementById('imageOffline');
+    if (offline) {
+      offline.hidden = createReady;
+      document.getElementById('imageOfflineTitle').textContent = healthy(snapshot, 'comfy') ? 'No image model is ready' : 'Image generation is offline';
+      document.getElementById('imageOfflineDetail').textContent = healthy(snapshot, 'comfy')
+        ? 'ComfyUI is running, but no supported model is installed yet.'
+        : 'ComfyUI isn\'t responding on the host.';
+    }
+
     const webSearch = document.getElementById('webSearch');
     if (webSearch) setTruthAvailability(webSearch, healthy(snapshot, 'search'), 'Unavailable: web research service is not healthy');
   }
@@ -767,6 +777,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
   }
   window.LocalAIModels = { startPull: startModelPull, pollPulls: pollModelPulls };
 
+  document.getElementById('imageOfflineRetry')?.addEventListener('click', () => refreshTruthLayer());
   async function refreshTruthLayer() {
     try {
       const response = await fetch('/api/capabilities', {
@@ -932,6 +943,9 @@ function buildContext(){
 const headerActions=new Map();
 function syncHeaderAction(view){const b=q('#uxHeaderAction');if(!b)return;const a=headerActions.get(REG.resolve(view||activeView()));b.hidden=!a;if(!a){b.onclick=null;return}b.innerHTML=icon(a.icon,'ux-ico');b.setAttribute('aria-label',a.label);b.onclick=a.onClick}
 window.LocalAIShell={setAction(view,action){headerActions.set(view,action);syncHeaderAction()},clearAction(view){headerActions.delete(view);syncHeaderAction()}};
+// One-button page headings: on phones the button's job moves to the header (the button itself stays for desktop).
+[['projects','plus','New project','#newProjectBtn'],['issues','refresh','Scan now','#issueScanBtn'],['quality','refresh','Run quality scan','#qualityScanBtn'],['claude','refresh','Refresh','#claudeRefresh'],['operations','refresh','Generate brief','#briefBtn']]
+ .forEach(([view,name,label,sel])=>{if(!headerActions.has(view))headerActions.set(view,{icon:name,label,onClick:()=>q(sel)?.click()})});
 function prefGet(k){try{return localStorage.getItem(k)}catch{return null}}
 function prefSet(k,v){try{localStorage.setItem(k,v)}catch{}}
 function setCollapsed(on,fromUser){document.body.classList.toggle('ux-nav-collapsed',on);if(fromUser){prefSet('localai.navCollapsed',on?'1':'0');q(on?'.ux-nav-expand':'.ux-nav-collapse')?.focus()}}
