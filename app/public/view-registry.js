@@ -9,7 +9,7 @@ const DOMAINS=[
  {id:'home',label:'Home',symbol:'⌂',icon:'home',tagline:'What needs you',defaultView:'home'},
  {id:'work',label:'Work',symbol:'≡',icon:'work',tagline:'Everything running and done',defaultView:'work'},
  {id:'projects',label:'Projects',symbol:'▣',icon:'projects',tagline:'Make and keep things',defaultView:'library'},
- {id:'improve',label:'Improve',symbol:'Δ',icon:'improve',tagline:'Change Local AI itself',defaultView:'changes'},
+ {id:'improve',label:'Improve',symbol:'Δ',icon:'improve',tagline:'Change Local AI itself',defaultView:'backlog'},
  {id:'system',label:'System',symbol:'◉',icon:'system',tagline:'Health and history',defaultView:'status'}
 ];
 const VIEWS=[
@@ -31,6 +31,8 @@ const VIEWS=[
  {id:'automations',svg:'flow',short:'n8n',domain:'system',section:'Automations',icon:'↗',label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
  {id:'actions',svg:'globe',short:'Browser',domain:'system',section:'Automations',icon:'↗',label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
  {id:'operations',svg:'eye',domain:'system',section:'Automations',icon:'◉',label:'Monitors',description:'Recurring health checks and the morning brief.',aka:['operations','morning brief']},
+ {id:'backlog',svg:'improve',domain:'improve',section:'Pipeline',icon:'Δ',label:'Backlog',description:'One ranked list of what could change in Local AI.',aka:['improve','ideas','priorities']},
+ {id:'signals',svg:'alert',domain:'improve',section:'Pipeline',icon:'!',label:'Signals',description:'Problems Local AI noticed; serious ones join the Backlog.',aka:['detections']},
  {id:'changes',svg:'build',short:'Changes',domain:'improve',section:'Changes',icon:'Δ',label:'Change requests',description:"Describe a change; it's planned, tested and held for approval.",aka:['changes','change intelligence','engineer','engineering agent']},
  {id:'issues',svg:'alert',domain:'improve',section:'Changes',icon:'!',label:'Issues',tab:'Issues',description:'Problems found in Local AI, deduplicated.'},
  {id:'quality',svg:'gauge',domain:'improve',section:'Changes',parent:'issues',tab:'Quality signals',icon:'Q',label:'Quality signals',description:'Static checks, browser errors and regressions.',aka:['quality','quality intelligence']},
