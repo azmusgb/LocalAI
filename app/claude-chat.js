@@ -60,8 +60,11 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
   }
   async function body(req, res) {
     if (!checkPost(req, res)) return null;
-    try { return await readBody(req, 512 * 1024); }
+    let parsed;
+    try { parsed = await readBody(req, 512 * 1024); }
     catch (e) { json(res, e.statusCode || 400, { error: String(e.message || e) }); return null; }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) { json(res, 400, { error: 'JSON object body required' }); return null; }
+    return parsed;
   }
 
   // ---- data helpers --------------------------------------------------------------------------

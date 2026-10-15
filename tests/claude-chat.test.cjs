@@ -207,7 +207,43 @@ test('messages?after= returns only newer messages; only the latest 1,000 are kep
   assert.equal(kept.at(-1).seq, 1050);
 });
 
-test('a Mac key does not grant device-side access', async () => {
-  const r = await get('/api/claude/chat/inbox?sessionId=abc-1&wait=0');
-  assert.equal(r.status, 401);
+test('non-object JSON bodies get a 400, not a hang', async () => {
+  for (const raw of ['null', '[]', 'false', '0']) {
+    const r = await fetch(`${base}/api/claude/chat/announce`, { method: 'POST', headers: { ...JSONH, ...mac() }, body: raw, signal: AbortSignal.timeout(3000) });
+    assert.equal(r.status, 400, raw);
+    assert.match((await r.json()).error, /object/);
+  }
+});
+
+test('device routes are closed (401) when LOCALAI_CHAT_TEST_OPEN is unset, even with a Mac key', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-chat-closed-'));
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const off = 'http://127.0.0.1:9';
+  const env = { ...process.env, DATA_DIR: dir, PORT: String(port), WORKSPACE_ROOT: dir, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off };
+  delete env.LOCALAI_CHAT_TEST_OPEN;
+  fs.writeFileSync(path.join(dir, 'claude-chat-mac-key.sha256'), crypto.createHash('sha256').update(KEY).digest('hex'));
+  const c = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], { env });
+  let diag = '';
+  c.stdout.on('data', d => diag += d); c.stderr.on('data', d => diag += d);
+  t.after(async () => {
+    if (c.exitCode === null && c.signalCode === null) { const done = once(c, 'exit'); c.kill('SIGTERM'); await done; }
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  for (let a = 0; a < 80; a++) {
+    if (c.exitCode !== null) throw new Error(diag);
+    try { if ((await fetch(`${url}/healthz`)).ok) break; } catch {}
+    if (a === 79) throw new Error(`Server did not start: ${diag}`);
+    await new Promise(r => setTimeout(r, 100));
+  }
+  for (const headers of [{}, mac()]) {
+    const h = { ...JSONH, ...headers };
+    const calls = [
+      fetch(`${url}/api/claude/chat/sessions`, { headers: h }),
+      fetch(`${url}/api/claude/chat/messages?sessionId=abc-1&after=0`, { headers: h }),
+      fetch(`${url}/api/claude/chat/send`, { method: 'POST', headers: h, body: JSON.stringify({ sessionId: 'abc-1', text: 'x' }) }),
+      fetch(`${url}/api/claude/chat/messages/delete`, { method: 'POST', headers: h, body: JSON.stringify({ id: 'abc-1:0000000001' }) })
+    ];
+    for (const r of await Promise.all(calls)) assert.equal(r.status, 401);
+  }
 });
