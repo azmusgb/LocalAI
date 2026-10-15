@@ -111,7 +111,7 @@ jobs:
           ! find app -type f \( -name '*.pem' -o -name '*.key' -o -name '*.pfx' -o -name '*.p12' -o -name '.env' \) | grep .
 
       - name: Validate deployment candidate
-        run: npm run validate
+        run: pwsh -NoProfile -File deploy/Test-LocalAI-Candidate.ps1 -CandidateRoot . -LocalNode
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium

@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$CandidateRoot)
+param([Parameter(Mandatory=$true)][string]$CandidateRoot,[switch]$LocalNode)
 $ErrorActionPreference="Stop"
 $app=Join-Path $CandidateRoot "app"
 foreach($r in @("server.js","release.js","storage.js","storage-cli.js","agent-orchestrator.js","specialist-agents.json","public\app.js","public\index.html","public\manifest.json","public\sw.js","public\agent-specialists.js","public\agent-specialists.css","public\ux-architecture-v2.js","public\ux-architecture-v2.css","public\agent-world-city.js","public\agent-world-city.css","public\integration-hub-v2.js","public\integration-hub-v2.css")){if(-not(Test-Path(Join-Path $app $r))){throw "Missing required file: $r"}}
@@ -19,10 +19,16 @@ Write-Host "PASS: required files, JS syntax, lifecycle contracts, and sensitive-
 
 
 # Native storage checks need no npm packages or model services.
+# The host runs them in the appliance image (its Node has node:sqlite); CI passes -LocalNode because it has no appliance container.
+$nativeTests = @("tests/release.test.cjs","tests/storage.test.cjs","tests/storage-api.test.cjs","tests/agent-orchestrator.test.cjs")
+if($LocalNode){
+node --test ($nativeTests | ForEach-Object { Join-Path $CandidateRoot $_ })
+}else{
 $containerCandidate = "/candidate"
 $image = docker inspect local-ai-appliance --format '{{.Config.Image}}'
 if($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($image)){throw "Cannot determine appliance Docker image"}
-docker run --rm -v "${CandidateRoot}:${containerCandidate}:ro" --entrypoint node $image --test "$containerCandidate/tests/release.test.cjs" "$containerCandidate/tests/storage.test.cjs" "$containerCandidate/tests/storage-api.test.cjs" "$containerCandidate/tests/agent-orchestrator.test.cjs"
+docker run --rm -v "${CandidateRoot}:${containerCandidate}:ro" --entrypoint node $image --test ($nativeTests | ForEach-Object { "$containerCandidate/$_" })
+}
 if($LASTEXITCODE -ne 0){throw "SQLite migration, concurrency, API or agent regression failed"}
 
 & (Join-Path $CandidateRoot 'tests/Test-LocalAI-DeployContracts.ps1')
