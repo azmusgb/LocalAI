@@ -688,3 +688,17 @@ window.addEventListener('DOMContentLoaded',()=>bindEvo().catch(e=>console.warn('
 // ===== end product evolution client ==========================================
 
 $('statusRetryBtn')?.addEventListener('click',()=>refreshStatus(true));
+
+// Notification links (a tapped notification): /?open=<view> or /?open=run:<id>. Then the address bar goes back to /.
+window.LocalAIOpen=function(url){
+  try{const target=new URL(url,location.origin).searchParams.get('open')||'';
+    if(target.startsWith('run:'))window.LocalAIRuns?.open(target.slice(4));
+    else if(window.LocalAIViews?.view(target))window.showView(target);
+  }catch(e){console.debug('Could not open',url,e)}
+};
+(()=>{
+  const open=new URLSearchParams(location.search).get('open');
+  // The page wires up showView during start-up, so wait for it (up to 5 s).
+  if(open){history.replaceState(null,'','/');let tries=0;const go=()=>{if(typeof window.showView==='function'&&(!open.startsWith('run:')||window.LocalAIRuns))window.LocalAIOpen('/?open='+encodeURIComponent(open));else if(tries++<50)setTimeout(go,100)};go()}
+  navigator.serviceWorker?.addEventListener?.('message',e=>{if(e.data?.type==='localai-open')window.LocalAIOpen(e.data.url)});
+})();

@@ -3219,46 +3219,82 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 // ==== notifications.js ====
-// Health › Notifications: turns phone notifications on for this device (Web Push; app/push.js, app/notify.js).
-// On iPhone, Apple allows push only from the Home Screen app, over HTTPS with the Local AI certificate trusted.
+// Health › Notifications: turns phone notifications on for this device and sets what it gets (Web Push;
+// app/push.js sends, app/notify.js decides). On iPhone, Apple allows push only from the Home Screen app, over HTTPS
+// with the Local AI certificate trusted.
 (()=>{'use strict';
 const q=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 const standalone=()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches;
 const supported=()=>'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
 const deviceName=()=>/iPad/.test(navigator.userAgent)?'iPad':isIOS?'iPhone':/Android/.test(navigator.userAgent)?'Android phone':'This browser';
 const keyBytes=b64=>Uint8Array.from(atob(b64.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((b64.length+3)%4)),c=>c.charCodeAt(0));
+const KINDS=[['needs-you','Needs you','Approvals, and Claude findings waiting for your decision'],['failed','Failed','Runs, automatic updates and backups that failed'],['service','Down and recovered','A core service down for 2 minutes, and back again'],['finished','Finished','Runs of 30 seconds or more, when Local AI isn\'t open']];
+const when=iso=>iso?new Date(iso).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'never';
 async function post(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);return j}
 async function subscription(){if(!supported())return null;const reg=await navigator.serviceWorker.ready;return reg.pushManager.getSubscription()}
-function say(card,html){q('.notify-body',card).innerHTML=html}
+const say=(card,html)=>{q('.notify-body',card).innerHTML=html};
+const status=(card,text)=>{q('.notify-status',card).textContent=text};
+
+function settingsHtml(me,devices){
+ const kinds=KINDS.map(([id,label,hint])=>`<label class="notify-kind"><input type="checkbox" data-notify-kind="${id}"${me.kinds.includes(id)?' checked':''}><span><b>${label}</b><small>${hint}</small></span></label>`).join('');
+ const list=devices.map(d=>`<li data-device="${esc(d.id)}"><span><b>${esc(d.name)}</b>${d.id===me.id?' (this device)':''}<small>Last delivered ${esc(when(d.lastOkAt))}${d.lastError?` · last error: ${esc(d.lastError)}`:''}</small></span><span class="notify-device-actions"><button type="button" class="btn" data-notify-rename="${esc(d.id)}">Rename</button><button type="button" class="btn" data-notify-remove="${esc(d.id)}">Remove</button></span></li>`).join('');
+ return `<p>Notifications are on for this device.</p>
+ <div class="notify-actions"><button type="button" class="btn" data-notify-test>Send a test</button><button type="button" class="btn" data-notify-off>Turn off on this device</button></div>
+ <fieldset class="notify-group"><legend>What notifies this device</legend>${kinds}</fieldset>
+ <fieldset class="notify-group"><legend>Quiet hours</legend><label class="notify-kind"><input type="checkbox" data-notify-quiet-on${me.quiet.on?' checked':''}><span><b>Only failures and outages</b><small>Everything else waits in the Inbox.</small></span></label>
+ <div class="notify-times"><label>From <input type="time" data-notify-quiet-start value="${esc(me.quiet.start)}"></label><label>to <input type="time" data-notify-quiet-end value="${esc(me.quiet.end)}"></label></div></fieldset>
+ <fieldset class="notify-group"><legend>Your devices</legend><ul class="notify-devices">${list}</ul></fieldset>`;
+}
+
+let me=null;
 async function render(card){
+ me=null;
  if(!isSecureContext){say(card,`<p>Notifications need the secure address. Open <a href="https://${location.hostname}/">https://${location.hostname}/</a> (set up the certificate under Secure connection first).</p>`);return}
  if(isIOS&&!standalone()){say(card,'<p><b>Add Local AI to your Home Screen.</b> In Safari tap Share › Add to Home Screen, then open Local AI from its new icon and come back here. iPhone shows notifications only for Home Screen apps.</p>');return}
  if(!supported()){say(card,'<p>This browser can\'t receive notifications.</p>');return}
- const sub=await subscription().catch(()=>null);
+ const [sub,{devices=[]}]=await Promise.all([subscription().catch(()=>null),fetch('/api/push/devices',{cache:'no-store'}).then(r=>r.json()).catch(()=>({}))]);
+ me=sub&&devices.find(d=>d.endpoint===sub.endpoint);
+ if(sub&&!me){say(card,'<p><b>Notifications stopped on this device.</b> Local AI no longer has this device on its list, for example after it was removed.</p><button type="button" class="btn primary" data-notify-allow>Turn them on again</button>');return}
  if(!sub){say(card,'<p>Get a notification when Local AI needs you, something fails or goes down, or a long run finishes.</p><button type="button" class="btn primary" data-notify-allow>Allow notifications</button>');return}
- say(card,'<p>Notifications are on for this device.</p><button type="button" class="btn" data-notify-test>Send a test</button>');
+ say(card,settingsHtml(me,devices));
 }
 async function allow(card){
  const perm=await Notification.requestPermission();
- if(perm!=='granted'){q('.notify-status',card).textContent='Notifications are blocked. Allow them for Local AI in Settings › Notifications, then try again.';return}
- const {publicKey}=await (await fetch('/api/push/key',{cache:'no-store'})).json();
+ if(perm!=='granted'){status(card,'Notifications are blocked. Allow them for Local AI in Settings › Notifications, then try again.');return}
  const reg=await navigator.serviceWorker.ready;
+ const old=await reg.pushManager.getSubscription();if(old)await old.unsubscribe().catch(()=>{});
+ const {publicKey}=await (await fetch('/api/push/key',{cache:'no-store'})).json();
  const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:keyBytes(publicKey)});
  await post('/api/push/subscribe',{subscription:sub.toJSON(),name:deviceName()});
  await render(card);
 }
+async function save(card,patch){if(!me)return;const {device}=await post('/api/push/devices/update',{id:me.id,...patch});me=device;status(card,'Saved.')}
 function mount(){
- const status=q('#status');if(!status||q('.notify-card',status))return;
+ const host=q('#status');if(!host||q('.notify-card',host))return;
  const card=document.createElement('section');card.className='card notify-card';card.id='notifications';
  card.innerHTML='<h2>Notifications</h2><div class="notify-body"></div><p class="notify-status meta" role="status"></p>';
- (q('.secure-card',status)||q('.topbar',status))?.after(card);
+ (q('.secure-card',host)||q('.topbar',host))?.after(card);
  card.addEventListener('click',async e=>{
-  const allowBtn=e.target.closest('[data-notify-allow]'),testBtn=e.target.closest('[data-notify-test]');if(!allowBtn&&!testBtn)return;
-  const btn=allowBtn||testBtn;btn.disabled=true;q('.notify-status',card).textContent='';
-  try{if(allowBtn)await allow(card);else{const r=await post('/api/push/test',{});q('.notify-status',card).textContent=r.sent?'Sent. It should arrive in a few seconds.':'Nothing was sent: this device is no longer subscribed.'}}
-  catch(err){q('.notify-status',card).textContent=`That didn't work: ${err.message}`}
-  finally{btn.disabled=false}
+  const rename=e.target.closest('[data-notify-rename]');
+  if(rename){const li=rename.closest('li'),b=q('b',li);li.querySelector('.notify-device-actions').innerHTML=`<input class="notify-rename" maxlength="40" value="${esc(b.textContent)}" aria-label="Device name"><button type="button" class="btn primary" data-notify-rename-save="${esc(rename.dataset.notifyRename)}">Save</button>`;q('.notify-rename',li).focus();return}
+  const btn=e.target.closest('[data-notify-allow],[data-notify-test],[data-notify-off],[data-notify-remove],[data-notify-rename-save]');if(!btn)return;
+  btn.disabled=true;status(card,'');
+  try{
+   if(btn.matches('[data-notify-allow]'))await allow(card);
+   else if(btn.matches('[data-notify-test]')){const r=await post('/api/push/test',me?{id:me.id}:{});status(card,r.sent?'Sent. It should arrive in a few seconds.':'Nothing was sent: this device is no longer subscribed.')}
+   else if(btn.matches('[data-notify-off]')){const sub=await subscription();if(sub){await post('/api/push/unsubscribe',{endpoint:sub.endpoint});await sub.unsubscribe().catch(()=>{})}await render(card)}
+   else if(btn.matches('[data-notify-rename-save]')){await post('/api/push/devices/update',{id:btn.dataset.notifyRenameSave,name:q('.notify-rename',btn.closest('li')).value});await render(card)}
+   else{await post('/api/push/devices/remove',{id:btn.dataset.notifyRemove});await render(card)}
+  }catch(err){status(card,`That didn't work: ${err.message}`)}
+  finally{if(btn.isConnected)btn.disabled=false}
+ });
+ card.addEventListener('change',e=>{
+  const t=e.target;if(!me)return;
+  const done=p=>p.catch(err=>status(card,`That didn't work: ${err.message}`));
+  if(t.matches('[data-notify-kind]'))done(save(card,{kinds:[...card.querySelectorAll('[data-notify-kind]:checked')].map(x=>x.dataset.notifyKind)}));
+  if(t.matches('[data-notify-quiet-on],[data-notify-quiet-start],[data-notify-quiet-end]'))done(save(card,{quiet:{on:q('[data-notify-quiet-on]',card).checked,start:q('[data-notify-quiet-start]',card).value,end:q('[data-notify-quiet-end]',card).value}}));
  });
  render(card);
 }
