@@ -80,5 +80,23 @@ await check('⌘K is a modal dialog: focus stays inside, arrows and Enter choose
   await context.close();
 });
 
+await check('closing the run view does not pull focus to the page heading', async () => {
+  const { page, context } = await open();
+  const now = new Date().toISOString();
+  const run = { id: 'r1', type: 'chat', title: 'Hello', status: 'completed', progress: 100, updatedAt: now, createdAt: now, summary: 'x', output: 'x', events: [], pinned: false, projectId: null,
+    card: { kind: 'chat', icon: 'compose', title: 'Hello', summary: 'x', badge: { label: 'Done', tone: 'good' }, preview: { type: 'text', text: 'x' }, action: { label: 'Open' }, approval: null } };
+  await page.route(u => u.pathname === '/api/runs', r => { const id = new URL(r.request().url()).searchParams.get('id'); r.fulfill({ json: id ? { item: run } : { items: [run], summary: {} } }) });
+  await page.evaluate(() => { location.hash = '#work' });
+  const row = page.locator('.view.active .run-card').first(); await row.waitFor();
+  await row.click();
+  await page.waitForFunction(() => location.hash === '#run/r1', null, { timeout: 5000 });
+  await page.locator('#runDrawer button').first().focus(); // as a user tabbing into it would
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => location.hash === '#work', null, { timeout: 5000 }).catch(async () => { throw new Error('Escape did not close: ' + await page.evaluate(() => location.hash)) });
+  await page.waitForTimeout(300);
+  assert.notEqual(await page.evaluate(() => document.activeElement?.tagName), 'H1');
+  await context.close();
+});
+
 await browser.close();
 if (failed) { console.log(`${failed} navigation accessibility check(s) failed`); process.exit(1) }

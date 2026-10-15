@@ -74,6 +74,8 @@ function announcePage(id,first,from){
   const force=window.LocalAIFocusNext;window.LocalAIFocusNext=false;
   if(first&&!force)return;
   const sec=$(id);if(!sec)return;
+  // Leaving the run view: it hands focus back to what opened it, so don't move it here.
+  if(!force&&from?.closest?.('#runDrawerBackdrop,#runDetailsSheet'))return;
   // `from` is what had focus before the old page was hidden (hiding it drops focus to the body).
   const strip=!force&&from?.closest?.('.ux-tabs,.ux-page-strip,[role="tablist"]');
   // A tab switch: each page has its own copy of the tab strip, so keep focus on the same tab in the new copy.
