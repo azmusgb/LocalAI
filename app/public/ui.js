@@ -1996,7 +1996,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const STORE_KEY = 'localai.claudeChat.session';
   const $ = (id) => document.getElementById(id);
   const st = { mode: 'init', sessions: [], session: '', messages: [], after: 0, sending: false, pair: null, pairError: '', pairTimer: 0,
-    pollTimer: 0, sessionsAt: 0, polling: false, devices: [], devicesOpen: false, draft: '', built: '' };
+    pollTimer: 0, sessionsAt: 0, polling: false, devices: [], devicesOpen: false, draft: '', built: '', paired: null, who: null };
 
   const store = {
     get() { try { return localStorage.getItem(STORE_KEY) || ''; } catch { return ''; } },
@@ -2059,8 +2059,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
   // ---- Sessions and messages ----
   async function loadSessions(force) {
+    // Ask whoami before the first sessions request, so an unpaired device goes straight to pairing without a 401.
+    if (!force) {
+      await st.who;
+      if (st.paired === false) { if (st.mode !== 'pair' && isActive()) startPairing(); return; }
+    }
     try {
       const r = await api('sessions');
+      st.paired = true;
       st.sessionsAt = Date.now();
       st.sessions = r.items || [];
       if (st.mode !== 'paired') { st.mode = 'paired'; st.messages = []; st.after = 0; }
@@ -2072,7 +2078,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       render();
       if (force || st.mode === 'paired') poll();
     } catch (e) {
-      if (e.status === 401) { if (st.mode !== 'pair' && isActive()) startPairing(); else if (st.mode === 'paired') st.mode = 'init'; }
+      if (e.status === 401) { st.paired = false; if (st.mode !== 'pair' && isActive()) startPairing(); else if (st.mode === 'paired') st.mode = 'init'; }
       else if (st.mode === 'init') { st.mode = 'error'; st.pairError = `Chat is unavailable: ${e.message}`; render(); }
     }
   }
@@ -2100,7 +2106,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       renderLog();
       renderComposer();
     } catch (e) {
-      if (e.status === 401) startPairing();
+      if (e.status === 401) { st.paired = false; startPairing(); }
     } finally { st.polling = false; }
   }
 
@@ -2156,7 +2162,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   async function revoke(id) {
     try { await api('devices/revoke', { id }); } catch (e) { setNote(`Could not revoke: ${e.message}`, true); return; }
     const was = st.devices.find((d) => d.id === id);
-    if (was?.current) { st.mode = 'pair'; st.sessions = []; st.session = ''; st.messages = []; st.after = 0; startPairing(); }
+    if (was?.current) { st.mode = 'pair'; st.paired = false; st.sessions = []; st.session = ''; st.messages = []; st.after = 0; startPairing(); }
     else loadDevices();
   }
 
@@ -2194,7 +2200,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       cmd.append(copy);
       box.append(cmd, el('p', 'meta claude-chat-wait', st.pair ? 'Waiting for approval… this page switches over by itself.' : 'Requesting a code…'));
     }
-    box.append(el('p', 'banner banner--attention claude-chat-warning', HTTP_WARNING));
+    if (location.protocol === 'http:') box.append(el('p', 'banner banner--attention claude-chat-warning', HTTP_WARNING));
     root.append(box);
     st.built = 'pair';
   }
@@ -2344,7 +2350,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const wake = () => { schedule(); if (isActive() && document.visibilityState === 'visible') { if (st.mode === 'init') loadSessions(); else if (st.mode === 'paired') poll(); } };
     new MutationObserver(wake).observe($('claude'), { attributes: true, attributeFilter: ['class'] });
     document.addEventListener('visibilitychange', wake);
-    api('whoami').then((r) => { if (r.paired || isActive()) loadSessions(); }, () => loadSessions());
+    st.who = api('whoami').then((r) => { st.paired = !!r.paired; }, () => {});
+    st.who.then(() => { if (st.paired || isActive()) loadSessions(); });
     schedule();
   }
 
