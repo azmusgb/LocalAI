@@ -1,7 +1,7 @@
 'use strict';
 
 // Claude chat relay: the appliance side of the LocalAI web <-> Claude Code session chat.
-// Mac-side calls (announce, inbox, mirror) carry X-LocalAI-Mac-Key; device-side calls use deviceFor().
+// Mac-side calls (announce, inbox, mirror) carry X-LocalAI-Mac-Key; device-side calls use deviceFor() (cookie auth).
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -45,11 +45,31 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
     const actual = crypto.createHash('sha256').update(header).digest();
     return crypto.timingSafeEqual(actual, expected);
   }
-  // The single device check. Task 5 replaces this with cookie auth; until then nothing is open
-  // unless the test env says so. Returns {id, name} or null.
+  // ---- device cookie auth --------------------------------------------------------------------
+  const COOKIE = 'localai_chat_device';
+  const deviceKey = id => `${PREFIX}device:${id}`;
+  const pairKey = id => `${PREFIX}pair:${id}`;
+  const sha256hex = v => crypto.createHash('sha256').update(v).digest('hex');
+  const LASTSEEN_MS = 60000;
+  function parseCookies(header) {
+    const out = {};
+    for (const part of String(header || '').split(';')) {
+      const i = part.indexOf('=');
+      if (i > 0) { const k = part.slice(0, i).trim(); if (!(k in out)) out[k] = part.slice(i + 1).trim(); }
+    }
+    return out;
+  }
+  // The single device check: valid cookie -> {id, name}, else null.
   function deviceFor(req) {
-    if (process.env.LOCALAI_CHAT_TEST_OPEN === '1') return { id: 'test-device', name: 'Test device' };
-    return null;
+    const value = parseCookies(req.headers.cookie)[COOKIE];
+    const m = /^(dev-[0-9a-f]{12})\.([A-Za-z0-9_-]{1,100})$/.exec(value || '');
+    if (!m) return null;
+    const device = storage.readSetting(deviceKey(m[1]), null);
+    if (!device || typeof device.tokenSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(device.tokenSha256)) return null;
+    const actual = crypto.createHash('sha256').update(m[2]).digest();
+    if (!crypto.timingSafeEqual(actual, Buffer.from(device.tokenSha256, 'hex'))) return null;
+    if (now() - (device.lastSeenAt || 0) >= LASTSEEN_MS) storage.writeSetting(deviceKey(device.id), { ...device, lastSeenAt: now() });
+    return { id: device.id, name: device.name };
   }
 
   function checkPost(req, res) {
@@ -165,6 +185,92 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
     json(res, 200, { ok: true, seq: message.seq });
   }
 
+  // ---- pairing and devices -------------------------------------------------------------------
+  const PAIR_TTL_MS = Number(process.env.LOCALAI_CHAT_PAIR_TTL_MS) > 0 ? Number(process.env.LOCALAI_CHAT_PAIR_TTL_MS) : 10 * 60 * 1000;
+  const MAX_PENDING = 5;
+  const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  function livePairings() {
+    const t = now();
+    const live = [];
+    for (const r of storage.listSettings(`${PREFIX}pair:`)) {
+      if (r.expiresAt <= t) storage.deleteSetting(pairKey(r.id));
+      else live.push(r);
+    }
+    return live;
+  }
+  function newCode(taken) {
+    for (;;) {
+      let code = '';
+      for (let i = 0; i < 6; i++) code += CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)];
+      if (!taken.has(code)) return code;
+    }
+  }
+  async function pairRequest(req, res) {
+    if (!checkPost(req, res)) return;
+    try { await readBody(req, 4096); } catch { /* body is ignored */ }
+    const result = storage.transaction(() => {
+      const pending = livePairings().filter(r => r.status === 'pending');
+      if (pending.length >= MAX_PENDING) return null;
+      const record = { id: `pair-${crypto.randomBytes(8).toString('hex')}`, code: newCode(new Set(pending.map(r => r.code))), status: 'pending', createdAt: now(), expiresAt: now() + PAIR_TTL_MS };
+      storage.writeSetting(pairKey(record.id), record);
+      return record;
+    });
+    if (!result) return json(res, 429, { error: 'Too many pending pairing requests' });
+    json(res, 201, { id: result.id, code: result.code, expiresAt: result.expiresAt });
+  }
+  function pairStatus(req, res, urlObj) {
+    const id = urlObj.searchParams.get('id') || '';
+    const outcome = storage.transaction(() => {
+      livePairings();
+      const record = /^pair-[0-9a-f]{16}$/.test(id) ? storage.readSetting(pairKey(id), null) : null;
+      if (!record) return { status: 'expired' };
+      if (record.status === 'pending') return { status: 'pending' };
+      storage.deleteSetting(pairKey(id));
+      const token = crypto.randomBytes(32).toString('base64url');
+      const t = now();
+      const device = { id: record.deviceId, name: record.deviceName, tokenSha256: sha256hex(token), pairedAt: record.approvedAt || t, lastSeenAt: t };
+      storage.writeSetting(deviceKey(device.id), device);
+      return { status: 'approved', device: { id: device.id, name: device.name }, cookie: `${COOKIE}=${device.id}.${token}; HttpOnly; SameSite=Strict; Path=/api/claude/chat; Max-Age=15552000` };
+    });
+    if (outcome.cookie) {
+      res.setHeader('Set-Cookie', outcome.cookie);
+      res.setHeader('Cache-Control', 'no-store');
+      delete outcome.cookie;
+    }
+    json(res, 200, outcome);
+  }
+  async function pairApprove(req, res) {
+    const b = await body(req, res); if (!b) return;
+    const name = b.name === undefined || b.name === null ? 'Device' : String(b.name).trim();
+    if (name.length < 1 || name.length > 60) return json(res, 400, { error: 'name must be 1-60 characters' });
+    const code = String(b.code || '').trim().toUpperCase();
+    const result = storage.transaction(() => {
+      const record = livePairings().find(r => r.status === 'pending' && r.code === code);
+      if (!record) return null;
+      const deviceId = `dev-${crypto.randomBytes(6).toString('hex')}`;
+      storage.writeSetting(pairKey(record.id), { ...record, status: 'approved', deviceId, deviceName: name, approvedAt: now() });
+      return deviceId;
+    });
+    if (!result) return json(res, 404, { error: 'Unknown or expired code' });
+    json(res, 200, { deviceId: result });
+  }
+  function devicesList(req, res, current) {
+    const items = storage.listSettings(`${PREFIX}device:`).map(d => ({ id: d.id, name: d.name, pairedAt: d.pairedAt, lastSeenAt: d.lastSeenAt, current: !!current && d.id === current.id }));
+    items.sort((a, c) => (a.pairedAt || 0) - (c.pairedAt || 0));
+    json(res, 200, { items });
+  }
+  async function devicesRevoke(req, res) {
+    const b = await body(req, res); if (!b) return;
+    const id = String(b.id || '');
+    const found = /^dev-[0-9a-f]{12}$/.test(id) && storage.transaction(() => {
+      if (!storage.readSetting(deviceKey(id), null)) return false;
+      storage.deleteSetting(deviceKey(id));
+      return true;
+    });
+    if (!found) return json(res, 404, { error: 'Unknown device' });
+    json(res, 200, { ok: true });
+  }
+
   // ---- device-side handlers ------------------------------------------------------------------
   function sessions(req, res) {
     const items = storage.listSettings(`${PREFIX}session:`).map(s => ({ sessionId: s.sessionId, title: s.title, cwd: s.cwd, online: isOnline(s), lastSeenAt: s.lastSeenAt }));
@@ -219,6 +325,20 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
     if (macRoutes[route]) {
       if (!macAuthorized(req)) { json(res, 401, { error: 'Unauthorized' }); return true; }
       await macRoutes[route]();
+      return true;
+    }
+    if (route === 'POST /api/claude/chat/pair-request') { await pairRequest(req, res); return true; }
+    if (route === 'GET /api/claude/chat/pair-status') { pairStatus(req, res, urlObj); return true; }
+    if (route === 'POST /api/claude/chat/pair/approve') {
+      if (!macAuthorized(req)) { json(res, 401, { error: 'Unauthorized' }); return true; }
+      await pairApprove(req, res);
+      return true;
+    }
+    // Either the Mac key or a device cookie.
+    if (route === 'GET /api/claude/chat/devices' || route === 'POST /api/claude/chat/devices/revoke') {
+      const device = deviceFor(req);
+      if (!device && !macAuthorized(req)) { json(res, 401, { error: 'Unauthorized' }); return true; }
+      if (route.startsWith('GET')) devicesList(req, res, device); else await devicesRevoke(req, res);
       return true;
     }
     const deviceRoutes = {

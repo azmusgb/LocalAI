@@ -11,7 +11,7 @@ const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 
 const KEY = 'test-mac-key-0123456789abcdef';
-let child, dataDir, base, diagnostics = '';
+let child, dataDir, base, diagnostics = '', deviceCookie = '', deviceId = '';
 let counter = 0;
 
 async function freePort() {
@@ -30,7 +30,7 @@ before(async () => {
   base = `http://127.0.0.1:${port}`;
   const off = 'http://127.0.0.1:9';
   child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], {
-    env: { ...process.env, DATA_DIR: dataDir, PORT: String(port), WORKSPACE_ROOT: dataDir, LOCALAI_CHAT_ONLINE_MS: '300', LOCALAI_CHAT_TEST_OPEN: '1', OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
+    env: { ...process.env, DATA_DIR: dataDir, PORT: String(port), WORKSPACE_ROOT: dataDir, LOCALAI_CHAT_ONLINE_MS: '300', OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
   });
   child.stdout.on('data', c => diagnostics += c);
   child.stderr.on('data', c => diagnostics += c);
@@ -40,6 +40,8 @@ before(async () => {
     if (attempt === 79) throw new Error(`Server did not start: ${diagnostics}`);
     await new Promise(r => setTimeout(r, 100));
   }
+  const paired = await pairDevice(base, 'Test device');
+  deviceCookie = paired.cookie; deviceId = paired.deviceId;
 });
 
 after(async () => {
@@ -49,12 +51,20 @@ after(async () => {
 
 const mac = (extra = {}) => ({ 'X-LocalAI-Mac-Key': KEY, ...extra });
 const JSONH = { 'Content-Type': 'application/json' };
+async function pairDevice(url, name) {
+  const pr = await (await fetch(`${url}/api/claude/chat/pair-request`, { method: 'POST', headers: JSONH, body: '{}' })).json();
+  const ar = await fetch(`${url}/api/claude/chat/pair/approve`, { method: 'POST', headers: { ...JSONH, 'X-LocalAI-Mac-Key': KEY }, body: JSON.stringify({ code: pr.code, name }) });
+  const approved = await ar.json();
+  const sr = await fetch(`${url}/api/claude/chat/pair-status?id=${pr.id}`);
+  const raw = sr.headers.get('set-cookie') || '';
+  return { cookie: raw.split(';')[0], raw, deviceId: approved.deviceId, id: pr.id, code: pr.code, status: await sr.json() };
+}
 async function post(p, body, headers = {}) {
-  const r = await fetch(base + p, { method: 'POST', headers: { ...JSONH, ...headers }, body: JSON.stringify(body) });
+  const r = await fetch(base + p, { method: 'POST', headers: { ...JSONH, Cookie: deviceCookie, ...headers }, body: JSON.stringify(body) });
   return { status: r.status, body: await r.json().catch(() => null) };
 }
 async function get(p, headers = {}) {
-  const r = await fetch(base + p, { headers });
+  const r = await fetch(base + p, { headers: { Cookie: deviceCookie, ...headers } });
   return { status: r.status, body: await r.json().catch(() => null) };
 }
 const announce = (id, extra = {}) => post('/api/claude/chat/announce', { sessionId: id, title: 'T', cwd: '/x', ...extra }, mac());
@@ -215,13 +225,12 @@ test('non-object JSON bodies get a 400, not a hang', async () => {
   }
 });
 
-test('device routes are closed (401) when LOCALAI_CHAT_TEST_OPEN is unset, even with a Mac key', async t => {
+test('device routes are closed (401) without a valid device cookie, even with a Mac key or a forged cookie', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-chat-closed-'));
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
   const off = 'http://127.0.0.1:9';
   const env = { ...process.env, DATA_DIR: dir, PORT: String(port), WORKSPACE_ROOT: dir, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off };
-  delete env.LOCALAI_CHAT_TEST_OPEN;
   fs.writeFileSync(path.join(dir, 'claude-chat-mac-key.sha256'), crypto.createHash('sha256').update(KEY).digest('hex'));
   const c = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], { env });
   let diag = '';
@@ -236,7 +245,7 @@ test('device routes are closed (401) when LOCALAI_CHAT_TEST_OPEN is unset, even 
     if (a === 79) throw new Error(`Server did not start: ${diag}`);
     await new Promise(r => setTimeout(r, 100));
   }
-  for (const headers of [{}, mac()]) {
+  for (const headers of [{}, mac(), { Cookie: 'localai_chat_device=dev-aaaaaaaaaaaa.forged' }, { Cookie: 'localai_chat_device=garbage' }]) {
     const h = { ...JSONH, ...headers };
     const calls = [
       fetch(`${url}/api/claude/chat/sessions`, { headers: h }),
@@ -244,6 +253,141 @@ test('device routes are closed (401) when LOCALAI_CHAT_TEST_OPEN is unset, even 
       fetch(`${url}/api/claude/chat/send`, { method: 'POST', headers: h, body: JSON.stringify({ sessionId: 'abc-1', text: 'x' }) }),
       fetch(`${url}/api/claude/chat/messages/delete`, { method: 'POST', headers: h, body: JSON.stringify({ id: 'abc-1:0000000001' }) })
     ];
+    if (!headers['X-LocalAI-Mac-Key']) calls.push(fetch(`${url}/api/claude/chat/devices`, { headers: h }), fetch(`${url}/api/claude/chat/devices/revoke`, { method: 'POST', headers: h, body: JSON.stringify({ id: 'dev-aaaaaaaaaaaa' }) }));
     for (const r of await Promise.all(calls)) assert.equal(r.status, 401);
   }
+});
+
+// ---- pairing and devices ---------------------------------------------------------------------
+async function startServer(t, extraEnv = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-chat-pair-'));
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const off = 'http://127.0.0.1:9';
+  fs.writeFileSync(path.join(dir, 'claude-chat-mac-key.sha256'), crypto.createHash('sha256').update(KEY).digest('hex'));
+  const c = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], { env: { ...process.env, DATA_DIR: dir, PORT: String(port), WORKSPACE_ROOT: dir, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off, ...extraEnv } });
+  let diag = '';
+  c.stdout.on('data', d => diag += d); c.stderr.on('data', d => diag += d);
+  t.after(async () => {
+    if (c.exitCode === null && c.signalCode === null) { const done = once(c, 'exit'); c.kill('SIGTERM'); await done; }
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  for (let a = 0; a < 80; a++) {
+    if (c.exitCode !== null) throw new Error(diag);
+    try { if ((await fetch(`${url}/healthz`)).ok) break; } catch {}
+    if (a === 79) throw new Error(`Server did not start: ${diag}`);
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return url;
+}
+const pairReq = url => fetch(`${url}/api/claude/chat/pair-request`, { method: 'POST', headers: JSONH, body: '{}' });
+const approve = (url, body, headers = { 'X-LocalAI-Mac-Key': KEY }) => fetch(`${url}/api/claude/chat/pair/approve`, { method: 'POST', headers: { ...JSONH, ...headers }, body: JSON.stringify(body) });
+
+test('device endpoints return 401 without a cookie', async () => {
+  const none = { headers: {} };
+  for (const p of ['sessions', 'messages?sessionId=abc-1', 'devices']) assert.equal((await fetch(`${base}/api/claude/chat/${p}`, none)).status, 401, p);
+  assert.equal((await post('/api/claude/chat/send', { sessionId: 'abc-1', text: 'x' }, { Cookie: '' })).status, 401);
+  assert.equal((await post('/api/claude/chat/devices/revoke', { id: deviceId }, { Cookie: '' })).status, 401);
+});
+
+test('pairing: request -> approve with Mac key -> status sets an HttpOnly SameSite=Strict cookie once', async t => {
+  const url = await startServer(t);
+  const r = await pairReq(url);
+  assert.equal(r.status, 201);
+  const pr = await r.json();
+  assert.match(pr.code, /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/);
+  assert.match(pr.id, /^pair-[0-9a-f]{16}$/);
+  assert.ok(pr.expiresAt > Date.now());
+  const pending = await fetch(`${url}/api/claude/chat/pair-status?id=${pr.id}`);
+  assert.deepEqual(await pending.json(), { status: 'pending' });
+  assert.equal(pending.headers.get('set-cookie'), null);
+  const ar = await approve(url, { code: pr.code.toLowerCase(), name: '  Phone  ' });
+  assert.equal(ar.status, 200);
+  const { deviceId: id } = await ar.json();
+  assert.match(id, /^dev-[0-9a-f]{12}$/);
+  const s1 = await fetch(`${url}/api/claude/chat/pair-status?id=${pr.id}`);
+  assert.deepEqual(await s1.json(), { status: 'approved', device: { id, name: 'Phone' } });
+  const cookie = s1.headers.get('set-cookie');
+  assert.match(cookie, new RegExp(`^localai_chat_device=${id}\\.[A-Za-z0-9_-]{43}; HttpOnly; SameSite=Strict; Path=/api/claude/chat; Max-Age=15552000$`));
+  const s2 = await fetch(`${url}/api/claude/chat/pair-status?id=${pr.id}`);
+  assert.deepEqual(await s2.json(), { status: 'expired' });
+  assert.equal(s2.headers.get('set-cookie'), null);
+  const ok = await fetch(`${url}/api/claude/chat/sessions`, { headers: { Cookie: cookie.split(';')[0] } });
+  assert.equal(ok.status, 200);
+  assert.equal((await fetch(`${url}/api/claude/chat/pair-status?id=pair-0000000000000000`)).status === 200, true);
+});
+
+test('approve without the Mac key is 401; wrong code is 404; bad name is 400', async t => {
+  const url = await startServer(t);
+  const pr = await (await pairReq(url)).json();
+  assert.equal((await approve(url, { code: pr.code, name: 'x' }, {})).status, 401);
+  assert.equal((await approve(url, { code: pr.code, name: 'x' }, { 'X-LocalAI-Mac-Key': 'nope' })).status, 401);
+  assert.equal((await approve(url, { code: 'AAAAAA', name: 'x' })).status, 404);
+  assert.equal((await approve(url, { code: pr.code, name: 'x'.repeat(61) })).status, 400);
+  const def = await approve(url, { code: pr.code });
+  assert.equal(def.status, 200);
+  const status = await (await fetch(`${url}/api/claude/chat/pair-status?id=${pr.id}`)).json();
+  assert.equal(status.device.name, 'Device');
+});
+
+test('a code older than the pairing window is expired and cannot be approved', async t => {
+  const url = await startServer(t, { LOCALAI_CHAT_PAIR_TTL_MS: '200' });
+  const pr = await (await pairReq(url)).json();
+  await new Promise(r => setTimeout(r, 400));
+  assert.equal((await approve(url, { code: pr.code, name: 'x' })).status, 404);
+  assert.deepEqual(await (await fetch(`${url}/api/claude/chat/pair-status?id=${pr.id}`)).json(), { status: 'expired' });
+});
+
+test('a sixth pending pairing request is 429', async t => {
+  const url = await startServer(t);
+  for (let i = 0; i < 5; i++) assert.equal((await pairReq(url)).status, 201);
+  assert.equal((await pairReq(url)).status, 429);
+});
+
+test('codes use only the allowed alphabet and are unique among pending requests', async t => {
+  const url = await startServer(t, { LOCALAI_CHAT_PAIR_TTL_MS: '150' });
+  const seen = new Set();
+  for (let batch = 0; batch < 20; batch++) {
+    const codes = [];
+    for (let i = 0; i < 5; i++) { const pr = await (await pairReq(url)).json(); assert.match(pr.code, /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/); codes.push(pr.code); seen.add(pr.code); }
+    assert.equal(new Set(codes).size, 5);
+    await new Promise(r => setTimeout(r, 250));
+  }
+  assert.ok(seen.size > 90);
+});
+
+test('devices list marks the current device; revoke stops the cookie immediately', async t => {
+  const url = await startServer(t);
+  const a = await pairDevice(url, 'Phone');
+  const b = await pairDevice(url, 'Laptop');
+  const list = await (await fetch(`${url}/api/claude/chat/devices`, { headers: { Cookie: a.cookie } })).json();
+  assert.equal(list.items.length, 2);
+  const cur = list.items.find(d => d.current);
+  assert.equal(cur.id, a.deviceId); assert.equal(cur.name, 'Phone');
+  assert.ok(cur.pairedAt && cur.lastSeenAt);
+  assert.equal(JSON.stringify(list).includes('tokenSha256'), false);
+  const viaMac = await (await fetch(`${url}/api/claude/chat/devices`, { headers: { 'X-LocalAI-Mac-Key': KEY } })).json();
+  assert.equal(viaMac.items.length, 2); assert.ok(viaMac.items.every(d => d.current === false));
+  const rv = { method: 'POST', headers: { ...JSONH, Cookie: b.cookie }, body: JSON.stringify({ id: a.deviceId }) };
+  assert.equal((await fetch(`${url}/api/claude/chat/devices/revoke`, { method: 'POST', headers: { ...JSONH, Cookie: b.cookie }, body: JSON.stringify({ id: 'dev-000000000000' }) })).status, 404);
+  assert.deepEqual(await (await fetch(`${url}/api/claude/chat/devices/revoke`, rv)).json(), { ok: true });
+  assert.equal((await fetch(`${url}/api/claude/chat/sessions`, { headers: { Cookie: a.cookie } })).status, 401);
+  assert.equal((await fetch(`${url}/api/claude/chat/sessions`, { headers: { Cookie: b.cookie } })).status, 200);
+  const viaKey = await fetch(`${url}/api/claude/chat/devices/revoke`, { method: 'POST', headers: { ...JSONH, 'X-LocalAI-Mac-Key': KEY }, body: JSON.stringify({ id: b.deviceId }) });
+  assert.equal(viaKey.status, 200);
+  assert.equal((await fetch(`${url}/api/claude/chat/sessions`, { headers: { Cookie: b.cookie } })).status, 401);
+});
+
+test('a cookie with the right id but wrong token is rejected', async t => {
+  const url = await startServer(t);
+  const a = await pairDevice(url, 'Phone');
+  const forged = `localai_chat_device=${a.deviceId}.${'A'.repeat(43)}`;
+  assert.equal((await fetch(`${url}/api/claude/chat/sessions`, { headers: { Cookie: forged } })).status, 401);
+});
+
+test('pairing POSTs: cross-origin is 403, non-JSON is 415', async t => {
+  const url = await startServer(t);
+  assert.equal((await fetch(`${url}/api/claude/chat/pair-request`, { method: 'POST', headers: { ...JSONH, Origin: 'http://evil.example' }, body: '{}' })).status, 403);
+  assert.equal((await fetch(`${url}/api/claude/chat/pair-request`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{}' })).status, 415);
+  assert.equal((await approve(url, { code: 'AAAAAA' }, { 'X-LocalAI-Mac-Key': KEY, Origin: 'http://evil.example' })).status, 403);
 });
