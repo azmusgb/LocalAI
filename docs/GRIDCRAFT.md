@@ -39,7 +39,7 @@ Prerequisites:
 - Its Python virtual environment exists under `.venv`.
 - GridCraft is installed under `C:\Program Files\GridCraft`.
 
-Install and start the bridge:
+Install and start the bridge from an **elevated** PowerShell (Run as administrator):
 
 ```powershell
 Set-Location C:\LocalAI\repo
@@ -58,7 +58,9 @@ Then open:
 
 ## Bridge configuration
 
-The installer writes `%USERPROFILE%\gridcraft-local-ai\gridcraft-bridge.env.ps1` and installs the scheduled task `LocalAI GridCraft Bridge` at user logon.
+The installer writes `%USERPROFILE%\gridcraft-local-ai\gridcraft-bridge.env.ps1`, installs the scheduled task `LocalAI GridCraft Bridge` at user logon, opens inbound TCP `8787` on Private/Domain firewall profiles, waits for `/health`, and logs bridge output to `%USERPROFILE%\gridcraft-local-ai\gridcraft-bridge.log`.
+
+CORS origins default to port `3080` on localhost, the machine name and every local IPv4 address. Override with `-AllowedOrigins 'http://10.0.0.21:3080','http://myhost:3080'`.
 
 Supported environment variables:
 
