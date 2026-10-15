@@ -1778,14 +1778,17 @@ function memoryStore(){ return objectStore(MEMORY_STORE); }
 function approvalStore(){ return objectStore(APPROVALS_STORE); }
 function monitorStore(){ return objectStore(MONITORS_STORE); }
 
-function addNotification(kind,title,detail='',meta={}){
-  const item={id:makeId('note'),kind,title:normalizeTitle(title,'Notification'),detail:String(detail||'').slice(0,2000),createdAt:nowIso(),read:false,resolved:false,meta};
+function addNotification(kind,title,detail='',meta={},level='attention'){
+  const item={id:makeId('note'),kind,level,title:normalizeTitle(title,'Notification'),detail:String(detail||'').slice(0,2000),createdAt:nowIso(),read:false,resolved:false,meta};
   prependRecord(NOTIFICATIONS_STORE,item); return item;
 }
+// Info notices (a release went live, a backup finished, a monitor recovered) stay in the Inbox but don't count
+// toward its badge; only things that need the owner do. Older deploy notices predate `level`, hence the meta check.
+const isInfoNotice=x=>x.level==='info'||(x.kind==='deploy'&&x.meta?.outcome==='deployed');
 async function apiNotifications(req,res){
   if(!requireFeature(res,7))return;
-  const items=notificationStore();
-  json(res,200,{items,unread:items.filter(x=>!x.read&&!x.resolved).length});
+  const items=notificationStore().map(x=>isInfoNotice(x)&&!x.level?{...x,level:'info'}:x);
+  json(res,200,{items,unread:items.filter(x=>!x.read&&!x.resolved&&!isInfoNotice(x)).length});
 }
 async function apiNotificationUpdate(req,res){
   if(!requireFeature(res,7))return;
@@ -1800,7 +1803,9 @@ async function apiNotificationSystem(req,res){
   try{const b=await readBody(req,64*1024);const kind=String(b.kind||'');if(!HOST_NOTIFICATION_KINDS.has(kind))return json(res,400,{error:`kind must be one of ${[...HOST_NOTIFICATION_KINDS].join(', ')}`});
     const title=String(b.title||'').trim().slice(0,200);if(!title)return json(res,400,{error:'title is required'});
     const meta=b.meta&&typeof b.meta==='object'&&!Array.isArray(b.meta)?Object.fromEntries(Object.entries(b.meta).slice(0,12).map(([k,v])=>[String(k).slice(0,40),String(v).slice(0,300)])):{};
-    json(res,201,{item:addNotification(kind,title,String(b.detail||'').slice(0,2000),{source:'host',...meta})})}catch(e){storageError(res,e,400)}
+    // Only a known success is information; anything else (failures, alerts without an outcome) needs the owner.
+    const level=/^(deployed|ok|success|succeeded|recovered|done)$/i.test(meta.outcome||'')?'info':'attention';
+    json(res,201,{item:addNotification(kind,title,String(b.detail||'').slice(0,2000),{source:'host',...meta},level)})}catch(e){storageError(res,e,400)}
 }
 async function apiNotificationSeed(req,res){
   if(!requireFeature(res,7))return;
