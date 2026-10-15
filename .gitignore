@@ -30,3 +30,6 @@ workspace/
 app/release.json
 __pycache__/
 .venv/
+
+# Brainstorming companion scratch (mockups are copied into docs when chosen)
+.superpowers/

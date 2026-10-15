@@ -1,0 +1,64 @@
+<style>
+.ph{width:300px;height:600px;background:#0A111C;border-radius:28px;border:1px solid #1F2C42;color:#EAF0F8;font:14px/1.4 Figtree,system-ui,sans-serif;position:relative;overflow:hidden;margin:0 auto}
+.ph *{box-sizing:border-box}
+.hd{height:52px;display:flex;align-items:center;gap:10px;padding:0 14px}
+.mk{width:28px;height:28px;border-radius:9px;background:linear-gradient(145deg,#a9c4ff,#7f89ff)}
+.hd small{display:block;color:#93A4BC;font-size:11px}.hd b{font-size:15px}
+.ic{margin-left:auto;display:flex;gap:14px;color:#8698B1;font-size:16px}
+.pad{padding:0 14px}
+.comp{background:#121B2B;border:1px solid #1F2C42;border-radius:20px;padding:12px}
+.comp .in{color:#8698B1;font-size:15px;padding:4px 2px 12px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{background:#172238;border-radius:999px;padding:5px 10px;font-size:12px;color:#c3d3e3}
+.chip.on{background:rgba(108,182,255,.18);color:#7CC0FF}
+.send{margin-left:auto;width:32px;height:32px;border-radius:50%;background:#6CB6FF;display:grid;place-items:center;color:#04111F;font-weight:700}
+.lbl{font-size:12px;color:#93A4BC;margin:16px 0 6px;font-weight:600;letter-spacing:.02em}
+.grp{background:#121B2B;border:1px solid #1F2C42;border-radius:16px}
+.row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-top:1px solid #1B2740}
+.row:first-child{border-top:0}
+.ti{width:28px;height:28px;border-radius:8px;background:#172238;display:grid;place-items:center;font-size:13px}
+.row b{font-size:13px;display:block}.row span{font-size:11px;color:#93A4BC}
+.bd{margin-left:auto;font-size:10px;border-radius:999px;padding:3px 8px;font-weight:600}
+.att{background:rgba(255,178,36,.16);color:#FFC352}.gd{background:rgba(62,213,152,.14);color:#5BE0A8}.bad{background:rgba(255,107,107,.14);color:#FF8A8A}
+.tab{position:absolute;bottom:0;left:0;right:0;height:58px;border-top:1px solid #1B2740;display:flex;justify-content:space-around;align-items:center;font-size:10px;color:#8698B1;background:#0A111C}
+.tab div{text-align:center}.tab .on{color:#7CC0FF}
+.thumb{width:40px;height:40px;border-radius:8px;background:linear-gradient(135deg,#355,#a7c)}
+.feed{position:absolute;top:52px;bottom:130px;left:0;right:0;padding:0 14px;overflow:hidden}
+.dock{position:absolute;left:10px;right:10px;bottom:66px}
+</style>
+<h2>Home: where should the composer sit?</h2>
+<p class="subtitle">Both are 390-wide phone layouts, scaled down. Same content: composer, <b>Needs you</b>, <b>Recent</b>. Click the one that feels right.</p>
+<div class="cards">
+ <div class="card" data-choice="a" onclick="toggleSelect(this)">
+  <div class="card-image" style="padding:16px;background:#060b13">
+   <div class="ph">
+    <div class="hd"><div class="mk"></div><div><small>Good afternoon</small><b>Local AI</b></div><div class="ic">⌕ 🔔</div></div>
+    <div class="pad">
+     <div class="comp"><div class="in">What should we do?</div><div class="chips" style="align-items:center"><span class="chip on">Auto ▾</span><span class="chip">Chat</span><span class="chip">Image</span><span class="send">↑</span></div></div>
+     <div class="lbl">NEEDS YOU · 2</div>
+     <div class="grp"><div class="row"><div class="ti">Δ</div><div><b>Fix the login bug</b><span>Change · 2 files</span></div><span class="bd att">Review</span></div><div class="row"><div class="ti">◎</div><div><b>Weekly report mission</b><span>Failed at step 3</span></div><span class="bd bad">Failed</span></div></div>
+     <div class="lbl">RECENT</div>
+     <div class="grp"><div class="row"><div class="thumb"></div><div><b>Desert at dusk</b><span>Image · 4 versions</span></div><span class="bd gd">Done</span></div><div class="row"><div class="ti">✦</div><div><b>Compare SQLite WAL modes</b><span>Chat · 6 turns</span></div></div></div>
+    </div>
+    <div class="tab"><div class="on">⌂<br>Home</div><div>▤<br>Work</div><div>▣<br>Projects</div><div>Δ<br>Improve</div><div>◉<br>System</div></div>
+   </div>
+  </div>
+  <div class="card-body"><h3>A · Composer on top</h3><p>Start-first. The ask is the first thing you see; what needs you and recent work sit below. Matches the approved phone mockups.</p></div>
+ </div>
+ <div class="card" data-choice="b" onclick="toggleSelect(this)">
+  <div class="card-image" style="padding:16px;background:#060b13">
+   <div class="ph">
+    <div class="hd"><div class="mk"></div><div><small>Good afternoon</small><b>Local AI</b></div><div class="ic">⌕ 🔔</div></div>
+    <div class="feed">
+     <div class="lbl" style="margin-top:4px">NEEDS YOU · 2</div>
+     <div class="grp"><div class="row"><div class="ti">Δ</div><div><b>Fix the login bug</b><span>Change · 2 files</span></div><span class="bd att">Review</span></div><div class="row"><div class="ti">◎</div><div><b>Weekly report mission</b><span>Failed at step 3</span></div><span class="bd bad">Failed</span></div></div>
+     <div class="lbl">RECENT</div>
+     <div class="grp"><div class="row"><div class="thumb"></div><div><b>Desert at dusk</b><span>Image · 4 versions</span></div><span class="bd gd">Done</span></div><div class="row"><div class="ti">✦</div><div><b>Compare SQLite WAL modes</b><span>Chat · 6 turns</span></div></div></div>
+    </div>
+    <div class="dock"><div class="comp" style="padding:8px 10px"><div class="chips" style="align-items:center"><span class="chip on">Auto ▾</span><span style="color:#8698B1;font-size:14px">What should we do?</span><span class="send">↑</span></div></div></div>
+    <div class="tab"><div class="on">⌂<br>Home</div><div>▤<br>Work</div><div>▣<br>Projects</div><div>Δ<br>Improve</div><div>◉<br>System</div></div>
+   </div>
+  </div>
+  <div class="card-body"><h3>B · Composer docked at the bottom</h3><p>Messaging-style. The composer sits above the tab bar within thumb reach, like a chat app; Needs you and Recent scroll above it.</p></div>
+ </div>
+</div>
