@@ -2124,7 +2124,8 @@ function addNotification(kind,title,detail='',meta={},level='attention'){
 const isInfoNotice=x=>x.level==='info'||(x.kind==='deploy'&&x.meta?.outcome==='deployed');
 async function apiNotifications(req,res){
   if(!requireFeature(res,7))return;
-  const items=notificationStore().map(x=>isInfoNotice(x)&&!x.level?{...x,level:'info'}:x);
+  // Host notices stored before hostDetail() existed still carry PowerShell's filler lines; clean them on the way out.
+  const items=notificationStore().map(x=>isInfoNotice(x)&&!x.level?{...x,level:'info'}:x).map(x=>x.meta?.source==='host'&&/RemoteException/.test(x.detail||'')?{...x,detail:hostDetail(x.detail)}:x);
   json(res,200,{items,unread:items.filter(x=>!x.read&&!x.resolved&&!isInfoNotice(x)).length});
 }
 async function apiNotificationUpdate(req,res){
@@ -2134,6 +2135,17 @@ async function apiNotificationUpdate(req,res){
     saveStore(NOTIFICATIONS_STORE,items,500);json(res,200,{item:items[i]});
   }catch(e){storageError(res,e,400)}
 }
+// Windows PowerShell 5.1 turns a blank stderr line from a native command into the text
+// "System.Management.Automation.RemoteException"; it says nothing, so it never reaches the Inbox.
+function hostDetail(detail){
+  return String(detail||'').split('\n').map(l=>l.replace(/(?:\s*System\.Management\.Automation\.RemoteException)+\s*$/g,'').trimEnd()).filter(l=>l.trim()).join('\n').slice(0,2000);
+}
+// A failed update is over once a later one goes live: resolve it, so it stops counting on the Inbox and the bell.
+function resolveDeployFailures(by){
+  let n=0;
+  storage.transaction(()=>{const items=notificationStore();for(const x of items){if(x.kind==='deploy'&&!x.resolved&&x.meta?.outcome==='failed'){x.resolved=true;x.read=true;x.meta={...x.meta,resolvedBy:`Resolved by ${by}`};n++}}if(n)saveStore(NOTIFICATIONS_STORE,items,500)});
+  return n;
+}
 // Host-side jobs (auto-deploy, backups, monitors) report to the Inbox. Same LAN trust model as the rest of the API.
 const HOST_NOTIFICATION_KINDS=new Set(['deploy','backup','monitor']);
 async function apiNotificationSystem(req,res){
@@ -2142,7 +2154,9 @@ async function apiNotificationSystem(req,res){
     const meta=b.meta&&typeof b.meta==='object'&&!Array.isArray(b.meta)?Object.fromEntries(Object.entries(b.meta).slice(0,12).map(([k,v])=>[String(k).slice(0,40),String(v).slice(0,300)])):{};
     // Only a known success is information; anything else (failures, alerts without an outcome) needs the owner.
     const level=/^(deployed|ok|success|succeeded|recovered|done)$/i.test(meta.outcome||'')?'info':'attention';
-    json(res,201,{item:addNotification(kind,title,String(b.detail||'').slice(0,2000),{source:'host',...meta},level)})}catch(e){storageError(res,e,400)}
+    const item=addNotification(kind,title,hostDetail(b.detail),{source:'host',...meta},level);
+    if(kind==='deploy'&&meta.outcome==='deployed')resolveDeployFailures(title.replace(/^Local AI updated to\s*/i,'')||'a later update');
+    json(res,201,{item})}catch(e){storageError(res,e,400)}
 }
 async function apiNotificationSeed(req,res){
   if(!requireFeature(res,7))return;
@@ -3374,6 +3388,7 @@ function recordReleaseHistory() {
   const entry = { commit: release.commit, version: APP_VERSION, deployedAt: release.deployedAt || nowIso(), notes: release.notes || [] };
   storage.writeSetting(`release:history:${entry.deployedAt}`, entry);
   storage.writeSetting('release:last', { commit: release.commit });
+  try { resolveDeployFailures(APP_VERSION); } catch (e) { console.error(`${nowIso()} Resolving old update failures failed:`, e); }
   storage.pruneSettings('release:history:', 50);
 }
 // Addresses a phone can be pointed at (Health › Secure connection). LOCALAI_REMOTE_NAME is the host's Tailscale name;
