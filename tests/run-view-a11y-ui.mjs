@@ -13,7 +13,7 @@ async function check(name, fn) {
   try { await fn(); console.log('PASS', name); } catch (error) { failures.push(`${name}: ${error.message}`); console.error('FAIL', name, error.message); }
 }
 
-const HOUR = 3600e3, NOW = Date.now();
+const NOW = Date.now();
 let seq = 0;
 // A /api/runs list item the way the server sends it: the run plus `card`.
 const item = (kind, title, ageMs, o = {}) => {
@@ -24,15 +24,6 @@ const item = (kind, title, ageMs, o = {}) => {
     card: { kind, icon: 'system', title, summary: o.summary || '', badge: { label: status === 'running' ? 'Working' : 'Done', tone: status === 'running' ? 'accent' : 'good' }, preview: null, action: { label: 'Open' }, approval: null }
   };
 };
-const mixed = () => [
-  item('chat', 'Plan the garden', 5 * 60e3, { summary: 'Raised beds and tomatoes' }),
-  item('image', 'A red fox at dusk', 2 * HOUR),
-  item('chat', 'Why is sqlite so fast', 26 * HOUR, { summary: 'WAL mode explained' }),
-  item('agent', 'Summarise the inbox', 3 * 24 * HOUR),
-  item('engineering', 'Add a dark mode toggle', 3 * 24 * HOUR + HOUR),
-  item('research', 'Heat pump prices', 30 * 24 * HOUR),
-  item('automation', 'Nightly backup', 31 * 24 * HOUR)
-];
 // Stub state: `list(url)` answers each /api/runs request; `calls` records the URLs.
 async function open(viewport, hash, list, { storage = {}, center = true } = {}) {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
@@ -54,8 +45,6 @@ async function open(viewport, hash, list, { storage = {}, center = true } = {}) 
   await page.waitForFunction(() => typeof window.showView === 'function' && window.LocalAIRouter && location.hash, null, { timeout: 8000 });
   return page;
 }
-const rows = page => page.locator('#work .run-card');
-const kinds = async page => [...new Set(await rows(page).evaluateAll(r => r.map(x => x.dataset.kind)))].sort();
 const desk = { width: 1280, height: 860 }, phone = { width: 390, height: 844 };
 
 

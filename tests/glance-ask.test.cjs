@@ -319,7 +319,7 @@ test('two failed handoffs close together each send their own notification', { ti
   const { ask } = await startServer(t, { env: { LOCALAI_VOICE_BUDGET_MS: '200', LOCALAI_NOTIFY_LOG: log }, onChat: (n, res) => { setTimeout(() => { res.writeHead(500); res.end('down'); }, 400); return true; } });
   assert.equal((await ask('first question')).body, HANDOFF);
   assert.equal((await ask('second question')).body, HANDOFF);
-  const got = await waitFor(() => { const l = readLog(log); return l.length >= 2 ? l : null; });
+  await waitFor(() => { const l = readLog(log); return l.length >= 2 ? l : null; });
   await new Promise(r => setTimeout(r, 300));
   const all = readLog(log);
   assert.equal(all.length, 2, JSON.stringify(all));

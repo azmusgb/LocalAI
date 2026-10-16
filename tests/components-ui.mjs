@@ -106,7 +106,7 @@ await check('axe waits for a running fade to finish, and ignores endless animati
 });
 await page.close();
 
-for (const [api, sel, view, hint] of [['/api/library', '#libraryGrid', 'library', 'your library'], ['/api/activity', '#activityList', 'activity', 'activity']]) {
+for (const [api, sel, , hint] of [['/api/library', '#libraryGrid', 'library', 'your library'], ['/api/activity', '#activityList', 'activity', 'activity']]) {
   await check(`${api} failing shows an error in ${sel}, not an empty list`, async () => {
     const p = await newPage(pg => pg.route('**' + api, r => r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"disk on fire"}' })));
     await p.waitForSelector(`${sel} .state-error`, { state: 'attached' });
