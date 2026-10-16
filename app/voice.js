@@ -120,4 +120,13 @@ function createVoiceThreads({ now = Date.now, windowMs = 300000, maxTurns = 6 } 
   };
 }
 
-module.exports = { classify, speakable, stripReset, createVoiceThreads };
+// Race a promise against a time budget. Settles in time -> {done:true, value} (or rejects); otherwise
+// {done:false, later} where later is the same promise, still running, so the caller can finish the job.
+function withBudget(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { promise.catch(() => {}); resolve({ done: false, later: promise }); }, ms);
+    promise.then(value => { clearTimeout(timer); resolve({ done: true, value }); }, error => { clearTimeout(timer); reject(error); });
+  });
+}
+
+module.exports = { withBudget, classify, speakable, stripReset, createVoiceThreads };

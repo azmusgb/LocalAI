@@ -3447,7 +3447,7 @@ const standalone=()=>navigator.standalone===true||matchMedia('(display-mode: sta
 const supported=()=>'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
 const deviceName=()=>/iPad/.test(navigator.userAgent)?'iPad':isIOS?'iPhone':/Android/.test(navigator.userAgent)?'Android phone':'This browser';
 const keyBytes=b64=>Uint8Array.from(atob(b64.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((b64.length+3)%4)),c=>c.charCodeAt(0));
-const KINDS=[['needs-you','Needs you','Approvals, and Claude findings waiting for your decision'],['failed','Failed','Runs, automatic updates and backups that failed'],['service','Down and recovered','A core service down for 2 minutes, and back again'],['finished','Finished','Runs of 30 seconds or more, when Local AI isn\'t open']];
+const KINDS=[['needs-you','Needs you','Approvals, and Claude findings waiting for your decision'],['failed','Failed','Runs, automatic updates and backups that failed'],['service','Down and recovered','A core service down for 2 minutes, and back again'],['finished','Finished','Runs of 30 seconds or more, when Local AI isn\'t open'],['answer','Answers','A spoken question that took too long, answered here instead']];
 const when=iso=>iso?new Date(iso).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'never';
 async function post(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);return j}
 // navigator.serviceWorker.ready never settles if the worker failed to register, so give it 5 s.

@@ -246,3 +246,68 @@ test('the five-minute window runs from the previous ask, not its answer', { time
   await ask('third question');
   assert.equal(chats[2].messages.filter(m => m.role !== 'system').length, 3);
 });
+
+const HANDOFF = "Still working on that \u2014 I'll send it to your phone.";
+const readLog = f => { try { return fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { return []; } };
+const waitFor = async (fn, ms = 5000) => { const end = Date.now() + ms; for (;;) { const v = fn(); if (v) return v; if (Date.now() > end) throw new Error('timed out'); await new Promise(r => setTimeout(r, 25)); } };
+const delayed = ms => (n, res) => { setTimeout(() => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ message: { content: 'The slow answer. Second sentence.' } })); }, ms); return true; };
+
+test('a slow answer is handed off to the phone and sent as one notification', { timeout: 30000 }, async t => {
+  const log = path.join(os.tmpdir(), `localai-notify-${process.pid}-${Date.now()}`);
+  t.after(() => fs.rmSync(log, { force: true }));
+  const { ask } = await startServer(t, { env: { LOCALAI_VOICE_BUDGET_MS: '200', LOCALAI_NOTIFY_LOG: log }, onChat: delayed(700) });
+  const started = Date.now();
+  const r = await ask('tell me something interesting');
+  assert.equal(r.status, 200);
+  assert.equal(r.body, HANDOFF);
+  assert.ok(Date.now() - started < 450, `took ${Date.now() - started}ms`);
+  assert.deepEqual(readLog(log), []);
+  const [n] = await waitFor(() => { const l = readLog(log); return l.length ? l : null; });
+  await new Promise(r => setTimeout(r, 300));
+  const all = readLog(log);
+  assert.equal(all.length, 1);
+  assert.equal(n.kind, 'answer');
+  assert.equal(n.title, 'Local AI answered');
+  assert.equal(n.body, 'The slow answer. Second sentence.');
+  assert.match(n.url, /^#run\/.+/);
+  assert.equal(n.tag, 'answer:' + n.url.slice(5));
+});
+
+test('a slow answer is still recorded in the voice thread', { timeout: 30000 }, async t => {
+  const { ask, chats } = await startServer(t, { env: { LOCALAI_VOICE_BUDGET_MS: '200' }, onChat: (n, res) => n === 1 ? delayed(500)(n, res) : false });
+  assert.equal((await ask('first question')).body, HANDOFF);
+  const r = await ask('and the second');
+  assert.equal(r.status, 200);
+  await waitFor(() => chats.length > 1);
+  assert.deepEqual(chats[1].messages.filter(m => m.role !== 'system').map(m => m.content), ['first question', 'The slow answer. Second sentence.', 'and the second']);
+});
+
+test('a slow answer that fails sends a "couldn\'t answer" notification', { timeout: 30000 }, async t => {
+  const log = path.join(os.tmpdir(), `localai-notify-${process.pid}-${Date.now()}-f`);
+  t.after(() => fs.rmSync(log, { force: true }));
+  const { ask } = await startServer(t, { env: { LOCALAI_VOICE_BUDGET_MS: '200', LOCALAI_NOTIFY_LOG: log }, onChat: (n, res) => { setTimeout(() => { res.writeHead(500); res.end('down'); }, 500); return true; } });
+  assert.equal((await ask('tell me something')).body, HANDOFF);
+  // The run ledger also raises its own 'failed' notification for the failed run; the handoff adds the 'answer' one.
+  const [n] = await waitFor(() => { const l = readLog(log).filter(e => e.kind === 'answer'); return l.length ? l : null; });
+  assert.equal(n.title, "Local AI couldn't answer");
+  assert.match(n.body, /HTTP 500/);
+});
+
+test('a fast answer sends no notification', { timeout: 30000 }, async t => {
+  const log = path.join(os.tmpdir(), `localai-notify-${process.pid}-${Date.now()}-q`);
+  t.after(() => fs.rmSync(log, { force: true }));
+  const { ask } = await startServer(t, { reply: 'Quick one.', env: { LOCALAI_VOICE_BUDGET_MS: '2000', LOCALAI_NOTIFY_LOG: log } });
+  assert.equal((await ask('tell me something')).body, 'Quick one.');
+  await new Promise(r => setTimeout(r, 300));
+  assert.deepEqual(readLog(log), []);
+});
+
+test('the budget includes time spent waiting behind an earlier ask', { timeout: 30000 }, async t => {
+  const { ask } = await startServer(t, { env: { LOCALAI_VOICE_BUDGET_MS: '300', LOCALAI_VOICE_QUEUE_WAIT_MS: '5000' }, onChat: (n, res) => n === 1 ? delayed(1500)(n, res) : false });
+  ask('first question');
+  await new Promise(r => setTimeout(r, 100));
+  const started = Date.now();
+  const r = await ask('second question');
+  assert.equal(r.body, HANDOFF);
+  assert.ok(Date.now() - started < 600);
+});

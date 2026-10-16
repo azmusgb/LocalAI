@@ -61,6 +61,11 @@ const notifier = notifyLib.createNotifier({
   storage, sendPush: pushLib.sendPush, vapid: pushLib.loadOrCreateVapid(storage),
   subject: process.env.VAPID_SUBJECT || 'https://github.com/azmusgb/LocalAI'
 });
+// LOCALAI_NOTIFY_LOG (tests only): also append each notify() call as a JSON line to this file.
+if (process.env.LOCALAI_NOTIFY_LOG) {
+  const realNotify = notifier.notify;
+  notifier.notify = event => { try { fs.appendFileSync(process.env.LOCALAI_NOTIFY_LOG, JSON.stringify(event) + '\n'); } catch {} return realNotify(event); };
+}
 const runLedger = new RunLedger({ storage, onTransition: (run, previous) => { const e = notifyLib.runEvent(run, previous); if (e) notifier.notify(e); } });
 const activeRunControllers = new Map();
 const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody });
@@ -538,6 +543,8 @@ const voiceThreads = voice.createVoiceThreads({
   now: () => { const f = process.env.LOCALAI_TEST_NOW_FILE; if (f) { try { return Number(fs.readFileSync(f, 'utf8')) || Date.now(); } catch {} } return Date.now(); },
   windowMs: 300000
 });
+const VOICE_BUDGET_MS = Number(process.env.LOCALAI_VOICE_BUDGET_MS) || 8000;
+const VOICE_HANDOFF = "Still working on that \u2014 I'll send it to your phone.";
 const VOICE_QUEUE_WAIT_MS = Number(process.env.LOCALAI_VOICE_QUEUE_WAIT_MS) || 6000;
 const VOICE_DOWN = "Local AI can't answer right now. Try again in a minute.";
 const voiceTimeZone = () => process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -576,7 +583,8 @@ async function apiGlanceAsk(req, res, urlObj) {
       voiceThreads.record(threadId, question, answer);
       return answer;
     };
-    const answer = await voiceThreads.run(threadId, () => {
+    let runId = null;
+    const asked = voiceThreads.run(threadId, () => {
       if (route.intent === 'time') return turn(async () => voice.speakable(voiceFacts({ now: new Date(), timeZone: voiceTimeZone() })));
       if (route.intent === 'needs') return turn(async () => voice.speakable(await voiceNeedsSentence()));
       if (route.intent === 'health') {
@@ -589,10 +597,18 @@ async function apiGlanceAsk(req, res, urlObj) {
       return turn(async () => {
         const messages = [...voiceThreads.history(threadId), { role: 'user', content: question }];
         const result = await chatOnce({ messages, brief: true, voice: true, threadId });
+        runId = result.runId;
         return voice.speakable(result.message.content) || "I didn't catch that.";
       });
     }, { waitMs: VOICE_QUEUE_WAIT_MS });
-    say(200, answer);
+    // The budget covers the whole ask, queue wait included. Past it the run carries on and the answer is pushed.
+    const outcome = await voice.withBudget(asked, VOICE_BUDGET_MS);
+    if (outcome.done) return say(200, outcome.value);
+    outcome.later.then(
+      late => notifier.notify({ kind: 'answer', title: 'Local AI answered', body: String(late).slice(0, 180), url: runId ? `#run/${runId}` : '/', tag: `answer:${runId || 'voice'}` }),
+      err => notifier.notify({ kind: 'answer', title: "Local AI couldn't answer", body: String(err?.message || err).slice(0, 180), url: runId ? `#run/${runId}` : '/', tag: `answer:${runId || 'voice'}` })
+    );
+    say(200, VOICE_HANDOFF);
   } catch (e) { say(e.statusCode === 413 ? 413 : 503, e.statusCode === 413 ? 'That was too long for me.' : VOICE_DOWN); }
 }
 

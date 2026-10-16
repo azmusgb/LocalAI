@@ -55,7 +55,7 @@ test('push API: key, subscribe, test, removal and same-origin', { timeout: 30000
     const two = await (await post('/api/push/subscribe', { subscription: phone, name: 'iPhone' })).json();
     assert.equal(one.device.id, two.device.id);
     assert.equal(one.device.name, 'iPhone');
-    assert.deepEqual(one.device.kinds, ['needs-you', 'failed', 'service', 'finished']);
+    assert.deepEqual(one.device.kinds, ['needs-you', 'failed', 'service', 'finished', 'answer']);
     assert.deepEqual(one.device.quiet, { on: true, start: '22:00', end: '07:00' });
     assert.equal(one.device.keys, undefined);
   });

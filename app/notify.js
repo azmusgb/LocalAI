@@ -4,10 +4,10 @@
 
 const crypto = require('node:crypto');
 
-const KINDS = ['needs-you', 'failed', 'service', 'finished'];
+const KINDS = ['needs-you', 'failed', 'service', 'finished', 'answer'];
 // Inside quiet hours only these still notify.
 const ALWAYS = new Set(['failed', 'service']);
-const URGENCY = { 'needs-you': 'high', failed: 'high', service: 'high', finished: 'normal' };
+const URGENCY = { 'needs-you': 'high', failed: 'high', service: 'high', finished: 'normal', answer: 'normal' };
 const REPEAT_MS = 2 * 60 * 1000, BURST_MS = 10 * 60 * 1000, BURST_MAX = 10, SUMMARY_DELAY_MS = 60 * 1000, RETRY_MS = 30 * 1000, PRESENCE_MS = 60 * 1000;
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const cut = (text, max) => { const chars = [...String(text ?? '')]; return chars.length > max ? chars.slice(0, max - 1).join('') + '…' : chars.join(''); };
@@ -93,7 +93,7 @@ function createNotifier({ storage, sendPush, vapid, subject, now = Date.now, sch
     try {
       if (!event || !KINDS.includes(event.kind)) return;
       const t = now();
-      const payload = { title: cut(event.title || 'Local AI', 60), body: cut(event.body, 80), url: String(event.url || '/'), tag: String(event.tag || event.kind) };
+      const payload = { title: cut(event.title || 'Local AI', 60), body: cut(event.body, event.kind === 'answer' ? 180 : 80), url: String(event.url || '/'), tag: String(event.tag || event.kind) };
       const presenceAt = storage.readSetting('push:presence', null)?.at || 0;
       if (event.kind === 'finished' && t - presenceAt < PRESENCE_MS) return;
       if (repeats.size > 500) for (const [k, v] of repeats) if (t - v >= REPEAT_MS) repeats.delete(k);
