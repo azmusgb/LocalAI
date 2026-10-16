@@ -26,6 +26,8 @@ const ITEMS = [
   finding('claude-held', { title: 'Claude is on it', rank: 8, score: 20, status: 'in_progress', stage: 'inProgress', sessionId: 'sess-1' }),
   finding('signal-gone', { title: 'Went away', rank: 9, score: 0, source: 'signal', status: 'fixed', stage: 'shipped', decisionNote: 'Resolved on its own', shipped: { version: '2.0.310', at: '2026-10-15T10:00:00.000Z' } }),
   finding('claude-old', { title: 'Fixed before releases were stamped', rank: 11, score: 0, status: 'fixed', stage: 'shipped', updatedAt: '2026-10-01T10:00:00.000Z' }),
+  finding('claude-unstamped', { title: 'Closed on the board, no release stamp', rank: 12, score: 0, status: 'fixed', stage: 'shipped', decidedAt: '2026-10-14T12:00:00.000Z', updatedAt: '2026-10-14T12:00:00.000Z' }),
+  finding('claude-fresh', { title: 'Closed after the latest release', rank: 13, score: 0, status: 'fixed', stage: 'shipped', decidedAt: '2026-10-16T12:00:00.000Z', updatedAt: '2026-10-16T12:00:00.000Z' }),
   finding('claude-new', { title: 'Newest release fix', rank: 10, score: 0, status: 'fixed', stage: 'shipped', pr: 'https://github.com/azmusgb/LocalAI/pull/150', shipped: { version: '2.0.310', at: '2026-10-15T11:00:00.000Z' } })
 ];
 const SIGNALS = [
@@ -42,6 +44,9 @@ const posts = [];
 await page.route('**/api/improve/items', r => failItems ? r.fulfill({ status: 500, json: { error: 'Database is busy' } }) : r.fulfill({ json: { items: ITEMS, signals: SIGNALS } }));
 await page.route('**/api/improve/{item,idea,signal}', async r => { posts.push({ url: new URL(r.request().url()).pathname, body: r.request().postDataJSON() }); await r.fulfill({ status: 200, json: { item: ITEMS[0] } }); });
 await page.route('**/api/claude/board', r => r.fulfill({ json: { sessions: [{ id: 'sess-1', title: 'Fix login', status: 'active', lastEvent: 'Running the tests', updatedAt: new Date(Date.now() - 120e3).toISOString() }] } }));
+// Releases as the appliance records them (newest first): an unstamped item belongs to the first release after it closed.
+await page.route('**/api/releases', r => r.fulfill({ json: { current: { version: '2.0.310' }, history: [
+  { version: '2.0.310', deployedAt: '2026-10-15T09:00:00.000Z' }, { version: '2.0.305', deployedAt: '2026-10-14T20:00:00.000Z' }, { version: '2.0.300', deployedAt: '2026-10-14T09:00:00.000Z' }] } }));
 await page.route('**/api/quality', r => r.fulfill({ json: { latest: { checks: [{ name: 'syntax app.js', result: 'PASS', detail: '' }] }, events: [], scans: [], summary: {} } }));
 await page.goto(base + '/#backlog', { waitUntil: 'domcontentloaded' });
 await page.waitForSelector('#backlog.active #backlogList .improve-row');
@@ -191,7 +196,14 @@ await check('Shipped groups items by release, newest first, with the PR link or 
   await page.evaluate(() => window.showView('shipped'));
   await page.waitForSelector('#shipped.active #shippedList .improve-row');
   const groups = await page.locator('#shippedList .improve-release').evaluateAll(gs => gs.map(g => [g.querySelector('h3').textContent, [...g.querySelectorAll('.improve-row')].map(r => r.dataset.itemId)]));
-  assert.deepEqual(groups, [['Version 2.0.310', ['claude-new', 'signal-gone']], ['Version 2.0.300', ['claude-done']], ['Earlier', ['claude-old']]]);
+  assert.deepEqual(groups, [
+    ['Next release', ['claude-fresh']],
+    ['Version 2.0.310', ['claude-new', 'signal-gone']],
+    ['Version 2.0.305', ['claude-unstamped']],
+    ['Version 2.0.300', ['claude-done']],
+    ['Earlier', ['claude-old']]
+  ]);
+  assert.deepEqual([...new Set(await page.locator('#shippedList .improve-row .list-row__icon use').evaluateAll(us => us.map(u => u.getAttribute('href'))))], ['#i-check'], 'shipped rows show a check, not a spinner-like sparkle');
   assert.equal(await page.locator('#shippedList [data-item-id="claude-new"] a').getAttribute('href'), 'https://github.com/azmusgb/LocalAI/pull/150');
   assert.match(await page.locator('#shippedList [data-item-id="signal-gone"]').innerText(), /Resolved on its own/);
 });
