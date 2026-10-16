@@ -33,9 +33,9 @@ await check('system capability health distinguishes optional companions',async()
 });
 await check('desktop navigation architecture',async()=>{
   await page.locator('.ux-primary-rail').waitFor({state:'visible'});
-  await page.locator('.ux-secondary-nav').waitFor({state:'visible'});
+  await page.locator('.ux-secondary-nav').waitFor({state:'hidden'}); // Work has one page, so no page list beside the rail
   assert.equal(await page.locator('.ux-primary-item').count(),5);
-  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Work');
+  assert.equal(await page.locator('#uxSecondaryTitle').textContent(),'Work');
 });
 await check('contextual navigation switches domains',async()=>{
   await page.locator('.ux-primary-item[data-domain="projects"]').click();
@@ -44,7 +44,7 @@ await check('contextual navigation switches domains',async()=>{
   assert.ok(await page.locator('.ux-secondary-link').count()>=1);
   await page.evaluate(()=>window.showView('agents'));
   await page.waitForSelector('#agents.active');
-  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Work');
+  assert.equal(await page.locator('#uxSecondaryTitle').textContent(),'Work');
 });
 await check('mission-first composer',async()=>{
   await page.locator('#agentGoal').waitFor({state:'visible'});
