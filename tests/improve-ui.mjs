@@ -25,6 +25,7 @@ const ITEMS = [
   finding('idea-failed', { title: 'Patch did not apply', rank: 7, score: 25, source: 'idea', stage: 'inProgress', change: { id: 'chg-3', status: 'patch_failed', summary: 'z' } }),
   finding('claude-held', { title: 'Claude is on it', rank: 8, score: 20, status: 'in_progress', stage: 'inProgress', sessionId: 'sess-1' }),
   finding('signal-gone', { title: 'Went away', rank: 9, score: 0, source: 'signal', status: 'fixed', stage: 'shipped', decisionNote: 'Resolved on its own', shipped: { version: '2.0.310', at: '2026-10-15T10:00:00.000Z' } }),
+  finding('claude-old', { title: 'Fixed before releases were stamped', rank: 11, score: 0, status: 'fixed', stage: 'shipped', updatedAt: '2026-10-01T10:00:00.000Z' }),
   finding('claude-new', { title: 'Newest release fix', rank: 10, score: 0, status: 'fixed', stage: 'shipped', pr: 'https://github.com/azmusgb/LocalAI/pull/150', shipped: { version: '2.0.310', at: '2026-10-15T11:00:00.000Z' } })
 ];
 const SIGNALS = [
@@ -40,7 +41,7 @@ let failItems = false;
 const posts = [];
 await page.route('**/api/improve/items', r => failItems ? r.fulfill({ status: 500, json: { error: 'Database is busy' } }) : r.fulfill({ json: { items: ITEMS, signals: SIGNALS } }));
 await page.route('**/api/improve/{item,idea,signal}', async r => { posts.push({ url: new URL(r.request().url()).pathname, body: r.request().postDataJSON() }); await r.fulfill({ status: 200, json: { item: ITEMS[0] } }); });
-await page.route('**/api/claude/board', r => r.fulfill({ json: { sessions: [{ id: 'sess-1', title: 'Fix login', status: 'active', lastEvent: 'Running the tests' }] } }));
+await page.route('**/api/claude/board', r => r.fulfill({ json: { sessions: [{ id: 'sess-1', title: 'Fix login', status: 'active', lastEvent: 'Running the tests', updatedAt: new Date(Date.now() - 120e3).toISOString() }] } }));
 await page.route('**/api/quality', r => r.fulfill({ json: { latest: { checks: [{ name: 'syntax app.js', result: 'PASS', detail: '' }] }, events: [], scans: [], summary: {} } }));
 await page.goto(base + '/#backlog', { waitUntil: 'domcontentloaded' });
 await page.waitForSelector('#backlog.active #backlogList .improve-row');
@@ -129,7 +130,9 @@ await check('In progress lists running changes with their state, and a Claude-he
   assert.deepEqual(rows.map(r => r[0]), ['idea-running', 'idea-waiting', 'idea-failed', 'claude-held']);
   assert.match(rows[1][1], /Waiting for your OK/);
   assert.match(rows[2][1], /Needs a look/);
-  assert.match(rows[3][1], /Claude · Running the tests/);
+  // The session's state, not its latest step: one session holds many items, so its step would repeat on each of them.
+  assert.match(rows[3][1], /Claude's session is active · 2m ago/);
+  assert.doesNotMatch(rows[3][1], /Running the tests/);
 });
 
 await check('a failed change offers Retry, Back to backlog and Discard; Discard asks Back to backlog or Set aside', async () => {
@@ -166,7 +169,7 @@ await check('Shipped groups items by release, newest first, with the PR link or 
   await page.evaluate(() => window.showView('shipped'));
   await page.waitForSelector('#shipped.active #shippedList .improve-row');
   const groups = await page.locator('#shippedList .improve-release').evaluateAll(gs => gs.map(g => [g.querySelector('h3').textContent, [...g.querySelectorAll('.improve-row')].map(r => r.dataset.itemId)]));
-  assert.deepEqual(groups, [['Version 2.0.310', ['claude-new', 'signal-gone']], ['Version 2.0.300', ['claude-done']]]);
+  assert.deepEqual(groups, [['Version 2.0.310', ['claude-new', 'signal-gone']], ['Version 2.0.300', ['claude-done']], ['Earlier', ['claude-old']]]);
   assert.equal(await page.locator('#shippedList [data-item-id="claude-new"] a').getAttribute('href'), 'https://github.com/azmusgb/LocalAI/pull/150');
   assert.match(await page.locator('#shippedList [data-item-id="signal-gone"]').innerText(), /Resolved on its own/);
 });
