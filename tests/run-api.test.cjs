@@ -300,6 +300,15 @@ test('before pages past the 500-run window to the oldest run', { timeout: 180000
   assert.ok(seen.includes(ids[0]), 'the oldest run is reachable');
 });
 
+test('/api/access reports the Tailscale name only when it is a real host name', { timeout: 60000 }, async t => {
+  for (const [value, want] of [['LocalAI-PC.tail1234.ts.net.', 'localai-pc.tail1234.ts.net'], ['localai.remote.invalid', ''], ['not a name', ''], ['', '']]) {
+    const { request } = await startServer(t, { LOCALAI_REMOTE_NAME: value });
+    const r = await request('/api/access');
+    assert.equal(r.response.status, 200);
+    assert.deepEqual(r.value, { remoteName: want }, value);
+  }
+});
+
 // Task 7: a mission started with async:true is a run from the first moment.
 async function waitRun(request, id, done) {
   for (let i = 0; i < 400; i++) {

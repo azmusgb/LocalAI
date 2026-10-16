@@ -82,6 +82,7 @@ await phoneCtx.close();
 // A computer opened by the network address shows codes a phone can scan: the certificate, then the secure page.
 const desk = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
 await desk.goto(`http://${name}:${base.port}/#status`, { waitUntil: 'load' });
+
 await check('computer: Set up a phone shows scannable codes for the certificate and the secure address', async () => {
   await desk.waitForSelector('#status.active .secure-card[data-state]', { timeout: 8000 });
   await desk.locator('.secure-phone > summary').click();
@@ -92,8 +93,23 @@ await check('computer: Set up a phone shows scannable codes for the certificate 
   assert.deepEqual(await codes.evaluateAll(list => list.map(x => x.querySelector('path').getAttribute('d'))), expected);
   const box = await codes.first().boundingBox();
   assert.ok(box.width >= 150 && box.height >= 150, 'big enough to scan');
+  assert.equal(await desk.locator('.secure-phone__away').count(), 0, 'no away-from-home code without Tailscale');
 });
 await desk.close();
+
+// With Tailscale set up on the host, a third code opens the Tailscale address.
+const away = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
+await away.route(u => u.pathname === '/api/access', r => r.fulfill({ json: { remoteName: 'localai-pc.tail1234.ts.net' } }));
+await away.goto(`http://${name}:${base.port}/#status`, { waitUntil: 'load' });
+await check('computer with Tailscale: an away-from-home code opens the Tailscale address', async () => {
+  await away.waitForSelector('#status.active .secure-card[data-state]', { timeout: 8000 });
+  await away.locator('.secure-phone > summary').click();
+  assert.equal(await away.locator('.secure-phone svg.qr').count(), 3);
+  assert.match(await away.locator('.secure-phone__away').innerText(), /Tailscale app.*https:\/\/localai-pc\.tail1234\.ts\.net\//s);
+  const expected = await away.evaluate(() => /d="([^"]+)"/.exec(window.LocalAIQR.svg('https://localai-pc.tail1234.ts.net/'))[1]);
+  assert.equal(await away.locator('.secure-phone__away path').getAttribute('d'), expected);
+});
+await away.close();
 
 const local = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
 await local.goto(`${base.origin}/#home`, { waitUntil: 'load' });

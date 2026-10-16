@@ -3470,24 +3470,27 @@ const nudgeOff=()=>{try{return localStorage.getItem(NUDGE_KEY)==='1'}catch{retur
 // A phone can't easily type an address: from a computer, show scannable codes for the certificate and the secure page.
 // Only where a camera-holding device would be pointed at this screen (a mouse or trackpad), and only when this page
 // was opened by the computer's network address, which is the one a phone can reach.
-function phoneHtml(){
+// remote: this computer's Tailscale name, when set up (deploy/Install-LocalAI-HTTPS.ps1), for use away from home.
+async function remoteName(){try{const r=await fetch('/api/access',{cache:'no-store'});return r.ok?String((await r.json()).remoteName||''):''}catch{return ''}}
+function phoneHtml(remote){
  if(!(matchMedia('(pointer: fine)').matches&&root.LocalAIQR))return '';
- if(isLocal)return `<details class="secure-phone"><summary>Set up a phone or tablet</summary><p class="meta">Open this page using the computer's network address (for example <b>http://&lt;its IP address&gt;:3080</b>) and the codes to scan appear here.</p></details>`;
  const qr=(url,label)=>{try{return root.LocalAIQR.svg(url,label)}catch{return ''}};
+ const away=remote?`<li class="secure-phone__away"><p><b>Away from home.</b> With the Tailscale app installed and signed in on the phone, scan to open <b>${esc(`https://${remote}/`)}</b>. It uses the same certificate, so do steps 1 and 2 first.</p>${qr(`https://${remote}/`,'QR code: open Local AI away from home')}</li>`:'';
+ if(isLocal)return `<details class="secure-phone"><summary>Set up a phone or tablet</summary><p class="meta">Open this page using the computer's network address (for example <b>http://&lt;its IP address&gt;:3080</b>) and the codes to scan appear here.</p>${away?`<ol class="secure-phone__steps">${away}</ol>`:''}</details>`;
  return `<details class="secure-phone"><summary>Set up a phone or tablet</summary><ol class="secure-phone__steps">
  <li><p><b>1.</b> Scan with the phone's camera to download the certificate.</p>${qr(caUrl,'QR code: download the certificate')}</li>
  <li><p><b>2.</b> Trust it on the phone (see <b>iPhone or iPad</b> or <b>Android</b> under Set up HTTPS on this device).</p></li>
- <li><p><b>3.</b> Scan to open <b>${esc(httpsUrl)}</b>, then add it to the Home Screen from there.</p>${qr(httpsUrl,'QR code: open Local AI securely')}</li></ol></details>`;
+ <li><p><b>3.</b> Scan to open <b>${esc(httpsUrl)}</b>, then add it to the Home Screen from there.</p>${qr(httpsUrl,'QR code: open Local AI securely')}</li>${away}</ol></details>`;
 }
 async function render(card){
- const secure=location.protocol==='https:';
+ const secure=location.protocol==='https:',remote=await remoteName();
  let state,detail;
  if(secure){state='good';detail='This page is on a secure connection.'}
  else if(isLocal){state='good';detail='You are on the Local AI computer itself, which browsers already treat as secure.'}
  else{const ok=await trusted();state=ok?'ready':'todo';detail=ok?`This device already trusts Local AI's certificate. Switch to <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>.`:'This page uses plain HTTP, so other devices on the network could read what you send, and some features (copy to clipboard, installing as an app, signing PowerShell jobs) are unavailable.'}
  card.dataset.state=state;
  card.innerHTML=`<div class="secure-head"><span class="secure-dot" aria-hidden="true"></span><div><h2>Secure connection</h2><p>${detail}</p></div></div>
- ${state==='todo'?`<details class="secure-setup"><summary>Set up HTTPS on this device</summary><ol class="secure-steps"><li><a class="btn primary" href="${esc(caUrl)}" download>Download the certificate</a> <span class="meta">Local AI's own certificate authority. Its private key never leaves the Local AI computer, which uses it only to sign Local AI's certificate.</span></li><li>Trust it on this device:<dl>${stepsHtml()}</dl></li><li>Open <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>. To use the name <b>localai.home.arpa</b>, add it for ${esc(host)} in your router's DNS settings.</li></ol>${nudgeOff()?'':'<button type="button" class="btn secure-nudge-off">Don\'t remind me on Home</button>'}</details>`:''}${phoneHtml()}`;
+ ${state==='todo'?`<details class="secure-setup"><summary>Set up HTTPS on this device</summary><ol class="secure-steps"><li><a class="btn primary" href="${esc(caUrl)}" download>Download the certificate</a> <span class="meta">Local AI's own certificate authority. Its private key never leaves the Local AI computer, which uses it only to sign Local AI's certificate.</span></li><li>Trust it on this device:<dl>${stepsHtml()}</dl></li><li>Open <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>. To use the name <b>localai.home.arpa</b>, add it for ${esc(host)} in your router's DNS settings.</li></ol>${nudgeOff()?'':'<button type="button" class="btn secure-nudge-off">Don\'t remind me on Home</button>'}</details>`:''}${phoneHtml(remote)}`;
  card.querySelector('.secure-nudge-off')?.addEventListener('click',e=>{try{localStorage.setItem(NUDGE_KEY,'1')}catch{}e.currentTarget.replaceWith(Object.assign(document.createElement('p'),{className:'meta',textContent:'Home won\'t remind you on this device.'}))});
  focusSetup(card);
 }

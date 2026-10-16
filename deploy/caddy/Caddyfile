@@ -1,6 +1,8 @@
 # HTTPS in front of the appliance. Certificates come from Caddy's own local certificate authority, so no public
 # domain or internet access is needed; each device trusts that authority once (download: /localai-ca.crt).
-# LOCALAI_NAME and LOCALAI_HOST_IP are set by deploy/Install-LocalAI-HTTPS.ps1.
+# LOCALAI_NAME and LOCALAI_HOST_IP are set by deploy/Install-LocalAI-HTTPS.ps1. LOCALAI_REMOTE_NAME is this computer's
+# Tailscale name (for example localai-pc.tail1234.ts.net), for reaching Local AI away from home; without Tailscale it is
+# a placeholder that nothing resolves. Never pass it empty: an empty site address makes Caddy drop every host match.
 {
 	local_certs
 	skip_install_trust
@@ -18,7 +20,7 @@
 	}
 }
 
-https://{$LOCALAI_NAME}, https://{$LOCALAI_HOST_IP}, https://localhost {
+https://{$LOCALAI_NAME}, https://{$LOCALAI_HOST_IP}, https://{$LOCALAI_REMOTE_NAME:localai.remote.invalid}, https://localhost {
 	tls internal
 	import ca_download
 	handle {
@@ -30,7 +32,7 @@ https://{$LOCALAI_NAME}, https://{$LOCALAI_HOST_IP}, https://localhost {
 }
 
 # Plain HTTP: hand out the CA certificate (so a device can trust it before its first HTTPS visit), else redirect.
-http://{$LOCALAI_NAME}, http://{$LOCALAI_HOST_IP}, http://localhost {
+http://{$LOCALAI_NAME}, http://{$LOCALAI_HOST_IP}, http://{$LOCALAI_REMOTE_NAME:localai.remote.invalid}, http://localhost {
 	import ca_download
 	handle {
 		redir https://{host}{uri} 308
