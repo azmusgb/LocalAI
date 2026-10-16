@@ -35,7 +35,7 @@ function resultForWorker(id){return currentMission?.results?.find(r=>r.agentId==
 function selectWorker(id){activeInspectorId=id;renderInspector();window.dispatchEvent(new CustomEvent('localai:agentworld-focus',{detail:{workerId:id}}))}
 function renderInspector(){const el=$('agentInspector');if(!el)return;const m=currentMission;if(!m){el.innerHTML='<div class="empty">Select a mission or start new work.</div>';return}const w=(m.workers||[]).find(x=>x.id===activeInspectorId)||(m.workers||[]).find(x=>x.state==='running')||(m.workers||[])[0];if(!w){el.innerHTML='<div class="empty">No worker selected.</div>';return}activeInspectorId=w.id;const r=resultForWorker(w.id),evidence=r?.evidence||[],rm=w.routingMeta||{};el.innerHTML=`<div class="inspector-head"><span class="agent-avatar-lg">${esc(workerIcon(w))}</span><div><span class="eyebrow">Worker inspector</span><h3>${esc(w.name||w.id)}</h3></div><span class="statuschip ${esc(w.state)}">${humanState(w.state)}</span></div><dl class="inspector-grid"><dt>Model</dt><dd>${esc(w.model||r?.model||'Automatic')}</dd><dt>Capability fit</dt><dd>${rm.capabilityScore??'—'}%</dd><dt>Model fit</dt><dd>${rm.modelScore??'—'}%</dd><dt>Availability</dt><dd>${esc(rm.availability||'available')} · load ${rm.workload??0}</dd><dt>Dependencies</dt><dd>${esc((w.dependsOn||[]).join(', ')||'None')}</dd><dt>Grounding</dt><dd>${rm.groundingRequired===false?'Not required':'Required'}</dd><dt>Fallback</dt><dd>${esc(rm.retryPolicy?.fallbackAgentId||'None')}</dd><dt>Evidence</dt><dd>${evidence.length}</dd><dt>Run</dt><dd>${esc(r?.id||m.id)}</dd></dl>${w.reason?`<div class="routing-rationale"><strong>Assignment rationale</strong><span>${esc(w.reason)}</span></div>`:''}${r?.plan?.length?`<div class="mini-plan">${planState(r.plan)}</div>`:''}${evidence.length?`<details class="inspector-details"><summary>Evidence sources</summary><div class="evidence-list">${evidence.map(x=>`<code>${esc(x)}</code>`).join('')}</div></details>`:''}${r?.answer?`<details class="inspector-details" open><summary>Worker output</summary><pre class="agent-result-pre">${esc(r.answer)}</pre></details>`:r?.error?`<div class="inline-error">${esc(r.error)}</div>`:''}`}
 function missionSummary(m){const done=(m.workers||[]).filter(w=>w.state==='complete').length,total=(m.workers||[]).length;return {done,total,percent:total?Math.round(done/total*100):0}}
-function renderMission(m){if(!m)return;currentMission=m;if(m.routing)renderRoute(m.routing);const s=missionSummary(m),headline=$('agentMissionHeadline'),meta=$('agentMissionMeta'),progress=$('agentMissionProgress');if(headline)headline.textContent=m.goal||'Mission';if(meta)meta.textContent=humanState(m.status)+' · '+s.done+'/'+s.total+' workers complete';if(progress)progress.style.width=s.percent+'%';renderTimeline(m);renderInspector();renderResults();renderHistorySelection();if(m.status==='needs_attention'||m.status==='error')notice('error',m.error||'Mission needs attention.','<button type="button" class="btn" id="agentRetryBtn">Retry mission</button>');else if(m.status==='complete')notice('success','Mission completed successfully.');else clearNotice();setTimeout(()=>{const b=$('agentRetryBtn');if(b)b.onclick=retryMission},0)}
+function renderMission(m){if(!m)return;currentMission=m;if(m.routing)renderRoute(m.routing);const s=missionSummary(m),headline=$('agentMissionHeadline'),meta=$('agentMissionMeta'),progress=$('agentMissionProgress');if(headline)headline.textContent=m.goal||'Mission';if(meta)meta.textContent=humanState(m.status)+' · '+s.done+'/'+s.total+' workers complete';if(progress)progress.style.width=s.percent+'%';progress.parentElement?.setAttribute('aria-valuenow',String(s.percent));renderTimeline(m);renderInspector();renderResults();renderHistorySelection();if(m.status==='needs_attention'||m.status==='error')notice('error',m.error||'Mission needs attention.','<button type="button" class="btn" id="agentRetryBtn">Retry mission</button>');else if(m.status==='complete')notice('success','Mission completed successfully.');else clearNotice();setTimeout(()=>{const b=$('agentRetryBtn');if(b)b.onclick=retryMission},0)}
 function retryMission(){if(!currentMission?.goal)return;const g=$('agentGoal');if(g)g.value=currentMission.goal;startMission()}
 function renderResults(){const el=$('agentResultBody');if(!el)return;const m=currentMission;if(!m){el.innerHTML='<div class="empty">Mission results will appear here.</div>';return}
  if(activeResultTab==='summary'){el.innerHTML=m.answer?`<pre class="agent-result-pre">${esc(m.answer)}</pre>`:`<div class="empty">${m.status==='running'?'Final synthesis will appear when all workers complete.':'No final synthesis available.'}</div>`}
@@ -48,7 +48,14 @@ function renderHistorySelection(){renderHistory()}
 async function loadHistory(){try{const j=await req('/api/agents/missions');history=j.items||j.missions||[];renderHistory();if(!currentMission&&history[0])renderMission(history.find(m=>m.status==='running')||history[0])}catch(e){notice('error','Could not load mission history: '+e.message)}}
 async function startMission(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter a mission objective first.');return}const body={goal,projectId:$('agentProject')?.value||''},ids=manualIds();if(ids?.length)body.agentIds=ids;const b=$('missionRunBtn');if(b){b.disabled=true;b.textContent='Starting…'}clearNotice();try{await preview();notice('info','Mission accepted. Agent World will update live as workers execute.');req('/api/agents/missions/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}).then(j=>{if(j.mission)renderMission(j.mission);loadHistory()}).catch(e=>{notice('error',e.message,'<button type="button" class="btn" id="agentRetryBtn">Retry</button>');setTimeout(()=>{const r=$('agentRetryBtn');if(r)r.onclick=startMission},0)})}catch(e){notice('error',e.message)}finally{if(b){b.disabled=false;b.textContent='Start Mission'}}}
 async function runSpecialist(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter an objective first.');return}const b=$('specialistRunBtn');if(b)b.disabled=true;try{const j=await req('/api/agents/specialist/run',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({agentId:selected,goal,projectId:$('agentProject')?.value||''})});renderRun(j.run)}catch(e){notice('error',e.message)}finally{if(b)b.disabled=false}}
-function setupTabs(){document.querySelectorAll('[data-agent-result-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-agent-result-tab]').forEach(x=>x.classList.toggle('active',x===b));activeResultTab=b.dataset.agentResultTab;renderResults()})}
+function setupTabs(){
+ const tabs=[...document.querySelectorAll('[data-agent-result-tab]')],body=$('agentResultBody');
+ const pick=(b,focus)=>{tabs.forEach(x=>{const on=x===b;x.classList.toggle('active',on);x.setAttribute('aria-selected',String(on));x.tabIndex=on?0:-1});if(focus)b.focus();if(body)body.setAttribute('aria-labelledby',b.id);activeResultTab=b.dataset.agentResultTab;renderResults()};
+ tabs.forEach((b,i)=>{b.setAttribute('role','tab');b.id=b.id||'agentResultTab-'+b.dataset.agentResultTab;b.setAttribute('aria-controls','agentResultBody');const on=b.classList.contains('active');b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;
+  b.onclick=()=>pick(b);
+  b.onkeydown=e=>{const n=e.key==='ArrowRight'?i+1:e.key==='ArrowLeft'?i-1:e.key==='Home'?0:e.key==='End'?tabs.length-1:null;if(n===null)return;e.preventDefault();pick(tabs[(n+tabs.length)%tabs.length],true)}});
+ if(body){body.setAttribute('role','tabpanel');body.tabIndex=0;const a=tabs.find(x=>x.classList.contains('active'));if(a)body.setAttribute('aria-labelledby',a.id)}
+}
 function setupAdvanced(){const toggle=$('agentAdvancedToggle'),panel=$('agentAdvancedPanel');if(toggle&&panel)toggle.onclick=()=>{const open=panel.hidden;panel.hidden=!open;toggle.setAttribute('aria-expanded',String(open));toggle.textContent=open?'Hide advanced routing':'Advanced routing'};$('manualRouteToggle')?.addEventListener('change',e=>{$('manualRouteOptions').hidden=!e.target.checked})}
 function applyHistoryFilter(){const term=($('agentHistorySearch')?.value||'').toLowerCase();document.querySelectorAll('.history-row').forEach(r=>r.hidden=!r.textContent.toLowerCase().includes(term))}
 function setupHistoryFilter(){const q=$('agentHistorySearch');if(q)q.addEventListener('input',applyHistoryFilter)}
@@ -1830,7 +1837,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     $('claudeMatrix').innerHTML = `<table class="claude-matrix"><thead><tr><th>Category</th>${SEVERITIES.map((s) => `<th>${s}</th>`).join('')}<th>Open</th></tr></thead><tbody>${cats.map(([cat, c]) => `
       <tr class="${view.category === cat ? 'selected' : ''}">
         <th><button type="button" data-claude-cat="${esc(cat)}">${esc(catLabel(cat))}</button></th>
-        ${SEVERITIES.map((s) => `<td><button type="button" class="heat sev-${s}${view.category === cat && view.severity === s ? ' selected' : ''}" style="--heat:${c[s] / max}" data-claude-cat="${esc(cat)}" data-claude-sev="${s}" ${c[s] ? '' : 'disabled'}>${c[s] || ''}</button></td>`).join('')}
+        ${SEVERITIES.map((s) => `<td><button type="button" class="heat sev-${s}${view.category === cat && view.severity === s ? ' selected' : ''}" style="--heat:${c[s] / max}" data-claude-cat="${esc(cat)}" data-claude-sev="${s}" aria-label="${esc(catLabel(cat))}, ${s}: ${c[s] || 'none'}" ${c[s] ? '' : 'disabled'}>${c[s] || ''}</button></td>`).join('')}
         <td class="open-count">${c.open}</td>
       </tr>`).join('')}</tbody></table>`;
   }
@@ -2004,9 +2011,26 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const NOTE = "Web messages reach Claude as messages from another session: it acts within this session's permissions, but won't change its settings or approve prompts because of them.";
   const OFFLINE = 'This session is offline. Start or resume it on your Mac with `claude-chat`.';
   const HTTP_WARNING = 'This page is served over plain HTTP, so the pairing cookie crosses your Wi-Fi unencrypted until HTTPS is set up. Revoke a device if it may be exposed.';
+  const UNREACHABLE = "Can't reach Local AI right now (it may be restarting). Trying again…";
   const STORE_KEY = 'localai.claudeChat.session';
+  // The pending pairing, so a reload shows the same code instead of asking for another (5 can be pending at once).
+  const PAIR_KEY = 'localai.claudeChat.pair';
+  const pairStore = {
+    get() { try { return sessionStorage.getItem(PAIR_KEY) || ''; } catch { return ''; } },
+    set(id) { try { if (id) sessionStorage.setItem(PAIR_KEY, id); else sessionStorage.removeItem(PAIR_KEY); } catch {} }
+  };
+  const NOT_KEPT = "Your Mac approved the code, but this browser didn't keep the pairing (it may block cookies here). Try again, or use the secure address if it's set up.";
+  // Over plain HTTP, the secure address may already work on this device (and may already be paired there). Same probe
+  // and per-tab cache as Health › Secure connection: a no-cors fetch succeeds only if this device trusts the certificate.
+  const SECURE_URL = `https://${location.hostname}/`;
+  async function secureWorks() {
+    try { const seen = sessionStorage.getItem('localai.httpsTrusted'); if (seen) return seen === '1'; } catch {}
+    let ok; try { await fetch(`${SECURE_URL}healthz`, { mode: 'no-cors', cache: 'no-store', signal: AbortSignal.timeout(4000) }); ok = true; } catch { ok = false; }
+    try { sessionStorage.setItem('localai.httpsTrusted', ok ? '1' : '0'); } catch {}
+    return ok;
+  }
   const $ = (id) => document.getElementById(id);
-  const st = { mode: 'init', sessions: [], session: '', messages: [], after: 0, sending: false, pair: null, pairError: '', pairTimer: 0,
+  const st = { mode: 'init', sessions: [], session: '', messages: [], after: 0, sending: false, pair: null, pairError: '', pairTimer: 0, whoFailed: false,
     pollTimer: 0, sessionsAt: 0, polling: false, devices: [], devicesOpen: false, draft: '', built: '', paired: null, who: null };
 
   const store = {
@@ -2050,10 +2074,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     st.pairError = '';
     render();
     try {
-      st.pair = await api('pair-request', {});
+      st.pair = await api('pair-request', { resume: pairStore.get() || undefined });
+      pairStore.set(st.pair.id);
       render();
+      if (location.protocol === 'http:' && st.secureOk === undefined) { st.secureOk = null; secureWorks().then((ok) => { st.secureOk = ok; if (st.mode === 'pair') render(); }); }
       st.pairTimer = setInterval(checkPair, PAIR_MS);
     } catch (e) {
+      if (!e.status || e.status >= 500) { st.mode = 'error'; st.pairError = UNREACHABLE; render(); return; } // schedule() retries
       st.pairError = e.status === 429 ? 'Too many pending pairing requests — try again in a few minutes.' : `Could not start pairing: ${e.message}`;
       render();
     }
@@ -2063,15 +2090,22 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (!st.pair || !isActive() || document.visibilityState !== 'visible') return;
     try {
       const r = await api(`pair-status?id=${encodeURIComponent(st.pair.id)}`);
-      if (r.status === 'approved') { stopPairTimer(); st.pair = null; await loadSessions(true); }
-      else if (r.status === 'expired') { stopPairTimer(); st.pair = { expired: true }; render(); }
+      if (r.status === 'approved') {
+        stopPairTimer(); st.pair = null; pairStore.set('');
+        await loadSessions(true);
+        // Approved, yet the sessions call is still unauthorized: the browser refused the cookie. Say so; don't keep waiting.
+        if (st.paired === false && st.mode === 'pair') { st.pairError = NOT_KEPT; render(); }
+      }
+      else if (r.status === 'expired') { stopPairTimer(); pairStore.set(''); st.pair = { expired: true }; render(); }
     } catch { /* keep waiting; the next tick tries again */ }
   }
 
   // ---- Sessions and messages ----
+  const askWho = () => api('whoami').then((r) => { st.paired = !!r.paired; }, () => { st.whoFailed = true; });
   async function loadSessions(force) {
     // Ask whoami before the first sessions request, so an unpaired device goes straight to pairing without a 401.
     if (!force) {
+      if (st.whoFailed) { st.whoFailed = false; st.who = askWho(); }
       await st.who;
       if (st.paired === false) { if (st.mode !== 'pair' && isActive()) startPairing(); return; }
     }
@@ -2090,7 +2124,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       if (force || st.mode === 'paired') poll();
     } catch (e) {
       if (e.status === 401) { st.paired = false; if (st.mode !== 'pair' && isActive()) startPairing(); else if (st.mode === 'paired') st.mode = 'init'; }
-      else if (st.mode === 'init') { st.mode = 'error'; st.pairError = `Chat is unavailable: ${e.message}`; render(); }
+      // Not reached, or a server error (a deploy restarts the appliance): say so; schedule() keeps retrying.
+      else if (st.mode === 'init' || st.mode === 'error') { st.mode = 'error'; st.pairError = !e.status || e.status >= 500 ? UNREACHABLE : `Chat is unavailable: ${e.message}`; render(); }
     }
   }
 
@@ -2127,7 +2162,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     st.pollTimer = setTimeout(async () => {
       if (st.mode === 'paired') {
         if (fast && Date.now() - st.sessionsAt >= SESSIONS_MS) await loadSessions(); else await poll();
-      } else if (st.mode === 'init' && fast) await loadSessions();
+      } else if ((st.mode === 'init' || st.mode === 'error') && fast) await loadSessions();
       schedule();
     }, fast ? FAST_MS : SLOW_MS);
   }
@@ -2211,7 +2246,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       cmd.append(copy);
       box.append(cmd, el('p', 'meta claude-chat-wait', st.pair ? 'Waiting for approval… this page switches over by itself.' : 'Requesting a code…'));
     }
-    if (location.protocol === 'http:') box.append(el('p', 'banner banner--attention claude-chat-warning', HTTP_WARNING));
+    if (location.protocol === 'http:') {
+      if (st.secureOk) {
+        const go = el('a', 'btn primary claude-chat-secure', 'Open the secure address');
+        go.href = `${SECURE_URL}#claude`;
+        box.append(el('p', 'meta', 'This device trusts the secure address. If it was paired there, chat works there right away.'), go);
+      }
+      box.append(el('p', 'banner banner--attention claude-chat-warning', HTTP_WARNING));
+    }
     root.append(box);
     st.built = 'pair';
   }
@@ -2361,7 +2403,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const wake = () => { schedule(); if (isActive() && document.visibilityState === 'visible') { if (st.mode === 'init') loadSessions(); else if (st.mode === 'paired') poll(); } };
     new MutationObserver(wake).observe($('claude'), { attributes: true, attributeFilter: ['class'] });
     document.addEventListener('visibilitychange', wake);
-    st.who = api('whoami').then((r) => { st.paired = !!r.paired; }, () => {});
+    st.who = askWho();
     st.who.then(() => { if (st.paired || isActive()) loadSessions(); });
     schedule();
   }
@@ -3370,7 +3412,27 @@ async function mountFirstRun(){
  });
  checkSteps(card);
 }
-function init(){initDevTools().then(mountDevToolsToggle);mountFirstRun()}
+// Home location: where "what's the weather" is answered when Siri sends no location (Shortcuts asks on the phone).
+async function mountHomeLocation(){
+ const status=q('#status');if(!status||q('.voice-home-pref',status))return;
+ const row=document.createElement('div');row.className='voice-home-pref card';
+ row.innerHTML='<span><strong data-voice-home-label>Home location</strong><small data-voice-home-note>Used for spoken weather when your phone does not share where it is.</small></span><button type="button" class="btn">Change…</button>';
+ (q('.dev-tools-pref',status)||status).after(row);
+ const label=q('[data-voice-home-label]',row),note=q('[data-voice-home-note]',row);
+ const show=h=>{label.textContent='Home location: '+(h&&h.place?h.place:'Not set')};
+ show(await getJson('/api/voice/home').catch(()=>({})));
+ q('button',row).addEventListener('click',async()=>{
+  const a=await window.LocalAIUI.ask({title:'Home location',effect:'A city, like Phoenix, AZ.',confirmLabel:'Save',input:{label:'City',type:'text'}});
+  if(!a.ok||!String(a.value||'').trim())return;
+  try{
+   const r=await fetch('/api/voice/home',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({place:String(a.value).trim()})});
+   const j=await r.json().catch(()=>({}));
+   if(!r.ok)throw new Error(j.error||"Couldn't save that.");
+   show(j);note.textContent='Used for spoken weather when your phone does not share where it is.';
+  }catch(e){note.textContent=e.message}
+ });
+}
+function init(){initDevTools().then(()=>{mountDevToolsToggle();mountHomeLocation()});mountFirstRun()}
 window.LocalAIFirstRun={applyDevTools,DEV_KEY,DONE_KEY};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();

@@ -57,6 +57,7 @@ const notifyLib = require('./notify');
 const glance = require('./glance');
 const voice = require('./voice');
 const { voiceFacts } = require('./voice-context');
+const weather = require('./weather');
 const notifier = notifyLib.createNotifier({
   storage, sendPush: pushLib.sendPush, vapid: pushLib.loadOrCreateVapid(storage),
   subject: process.env.VAPID_SUBJECT || 'https://github.com/azmusgb/LocalAI'
@@ -538,8 +539,63 @@ async function apiGlance(req, res, urlObj) {
 // "Ask Local AI" from Siri (GET ?q= or POST {text}): a rules-only router picks the answer, the model only
 // handles open questions, and every reply is plain text that is safe to read aloud. Siri speaks the body
 // whatever the status, so errors are sentences, never JSON.
+const voiceThreads = voice.createVoiceThreads({
+  // LOCALAI_TEST_NOW_FILE (tests only): a file holding the clock in ms, so tests can move time.
+  now: () => { const f = process.env.LOCALAI_TEST_NOW_FILE; if (f) { try { return Number(fs.readFileSync(f, 'utf8')) || Date.now(); } catch {} } return Date.now(); },
+  windowMs: 300000
+});
+const VOICE_BUDGET_MS = Number(process.env.LOCALAI_VOICE_BUDGET_MS) || 8000;
+const VOICE_HANDOFF = "Still working on that \u2014 I'll send it to your phone.";
+const VOICE_QUEUE_WAIT_MS = Number(process.env.LOCALAI_VOICE_QUEUE_WAIT_MS) || 6000;
 const VOICE_DOWN = "Local AI can't answer right now. Try again in a minute.";
+const VOICE_REFUSAL = "That needs your phone \u2014 I've put it in Needs you.";
 const voiceTimeZone = () => process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+const VOICE_FACT_MS = 3000;
+
+// searxSearch, but gives up (and cancels the request) after ms.
+async function searxWithin(query, ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try { return await searxSearch(query, controller.signal); } finally { clearTimeout(timer); }
+}
+
+let lastWeather = null; // { threadId, loc: {lat, lon, place, timeZone} }
+
+function voiceHome() { return storage.readSetting('voice-home', null) || {}; }
+
+async function voiceWeather(question, here, threadId) {
+  const q = question.toLowerCase();
+  const when = /\btomorrow\b/.test(q) ? 'tomorrow' : /\btonight\b/.test(q) ? 'tonight' : /\btoday\b/.test(q) ? 'today' : 'now';
+  let lat = Number(here.lat), lon = Number(here.lon), place = null, timeZone = null;
+  if (here.lat != null && here.lat !== '' && here.lon != null && here.lon !== '' && Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+    place = undefined; // looked up below, alongside the forecast
+  } else if (lastWeather?.threadId === threadId && voice.timeOnly(question)) {
+    ({ lat, lon, place, timeZone } = lastWeather.loc);
+  } else {
+    const home = voiceHome();
+    if (!Number.isFinite(home.lat) || !Number.isFinite(home.lon)) return "Set your home location on Local AI's Health page.";
+    ({ lat, lon, place, timeZone } = home);
+  }
+  try {
+    const [f, name] = await Promise.all([weather.forecast(lat, lon, { timeZone }), place === undefined ? weather.reverse(lat, lon) : place]);
+    lastWeather = { threadId, loc: { lat, lon, place: name, timeZone } };
+    const sentence = weather.weatherSentence(f, { when, place: name });
+    return sentence ? voice.speakable(sentence) : "I couldn't get the weather right now.";
+  } catch { return "I couldn't get the weather right now."; }
+}
+
+async function apiVoiceHome(req, res) {
+  if (req.method === 'GET') return json(res, 200, voiceHome());
+  const body = await readBody(req).catch(() => ({}));
+  let found;
+  try { found = await weather.geocode(typeof body?.place === 'string' ? body.place : ''); }
+  catch { return json(res, 503, { error: "Couldn't reach the place lookup. Try again in a minute." }); }
+  if (!found) return json(res, 400, { error: "Couldn't find that place." });
+  const home = { place: found.name, lat: found.lat, lon: found.lon, timeZone: found.timeZone };
+  storage.writeSetting('voice-home', home);
+  json(res, 200, home);
+}
 
 async function voiceNeedsSentence() {
   const snapshot = await getCapabilitiesSnapshot();
@@ -554,24 +610,109 @@ async function voiceNeedsSentence() {
   }));
 }
 
+// A notification for a spoken ask or the job it started. The tag is the run's, else a fresh one, so the repeat
+// filter never drops one.
+function voiceNotify(title, body, runId) {
+  notifier.notify({ kind: 'answer', title, body, url: runId ? `#run/${runId}` : '/', tag: runId ? `answer:${runId}` : `answer:voice:${require('node:crypto').randomBytes(6).toString('hex')}` });
+}
+
+// "Make an image of…", "start a mission to…", "research…": start the job, reply as soon as it has started, and
+// never wait for it to finish. Images and research report back by notification; missions use the run's own.
+async function voiceAction({ action, subject }) {
+  if (action === 'image') {
+    if (!subject) return 'What should the image show?';
+    // Through the server's own route, so the image is made exactly as one asked for in the app.
+    fetchWithTimeout(`http://127.0.0.1:${PORT}/api/images/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: subject, voice: true }) }, 900000)
+      .then(async r => {
+        const j = await r.json().catch(() => ({}));
+        if (r.ok) voiceNotify('Your image is ready', subject, j.runId);
+        else voiceNotify("Couldn't make the image", 'Tap to see what went wrong.', j.runId);
+      }, () => voiceNotify("Couldn't make the image", 'Tap to see what went wrong.'));
+    return `Started an image of ${subject}. I'll notify you when it's ready.`;
+  }
+  if (action === 'mission') {
+    if (!subject) return 'What should the mission do?';
+    if (!featureAtLeast(4)) return "Missions aren't available on this Local AI.";
+    startMissionRun(subject, '', undefined);
+    return `Started a mission: ${subject}.`;
+  }
+  // research: a full answer for the app, not a spoken one; the notification carries its start.
+  chatOnce({ messages: [{ role: 'user', content: subject }], webSearch: true, voiceRun: true }).then(
+    result => voiceNotify('Research ready', voice.speakable(result.message.content) || 'Tap to read it.', result.runId),
+    err => voiceNotify("Couldn't finish the research", 'Tap to see what went wrong.', err?.runId)
+  );
+  return `Researching ${subject}. I'll send you the answer.`;
+}
+
 async function apiGlanceAsk(req, res, urlObj) {
   const say = (status, value) => text(res, status, value, 'text/plain; charset=utf-8', { 'Cache-Control': 'no-store' });
   try {
     let textIn = '';
+    let here = { lat: urlObj.searchParams.get('lat'), lon: urlObj.searchParams.get('lon') };
     if (req.method === 'GET') textIn = String(urlObj.searchParams.get('q') || '');
-    else { const b = await readBody(req).catch(e => { if (e.statusCode === 413) throw e; return {}; }); textIn = typeof b?.text === 'string' ? b.text : ''; }
+    else { const b = await readBody(req).catch(e => { if (e.statusCode === 413) throw e; return {}; }); textIn = typeof b?.text === 'string' ? b.text : ''; if (b?.lat != null && b?.lon != null) here = { lat: b.lat, lon: b.lon }; }
     textIn = textIn.trim().slice(0, 4000);
-    const route = voice.classify(textIn);
-    if (route.intent === 'empty') return say(200, "I didn't catch that.");
-    if (route.intent === 'time') return say(200, voice.speakable(voiceFacts({ now: new Date(), timeZone: voiceTimeZone() })));
-    if (route.intent === 'needs') return say(200, voice.speakable(await voiceNeedsSentence()));
-    if (route.intent === 'health') {
-      const snapshot = await getCapabilitiesSnapshot();
-      return say(200, voice.speakable(glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION }).speech));
+    const reset = voice.stripReset(textIn);
+    const route = voice.classify(reset.text);
+    if (route.intent === 'empty') {
+      if (reset.fresh) { voiceThreads.take(textIn); return say(200, 'Okay. What is your question?'); }
+      return say(200, "I didn't catch that.");
     }
-    // weather, current, action and refuse fall back to the model until they have their own answers.
-    const result = await chatOnce({ messages: [{ role: 'user', content: textIn }], brief: true, voice: true });
-    say(200, voice.speakable(result.message.content) || "I didn't catch that.");
+    const question = reset.text;
+    const { threadId } = voiceThreads.take(textIn);
+    // Every answer is a turn in the thread; only chat asks hand the earlier turns to the model.
+    const turn = async build => {
+      const answer = await build();
+      voiceThreads.record(threadId, question, answer);
+      return answer;
+    };
+    // "and tomorrow?" right after a weather answer on this thread is weather for the same place.
+    const followUpWeather = lastWeather?.threadId === threadId && ['chat', 'current'].includes(route.intent) && voice.timeOnly(question);
+    let runId = null;
+    const asked = voiceThreads.run(threadId, () => {
+      if (route.intent === 'time') return turn(async () => voice.speakable(voiceFacts({ now: new Date(), timeZone: voiceTimeZone() })));
+      if (route.intent === 'needs') return turn(async () => voice.speakable(await voiceNeedsSentence()));
+      if (route.intent === 'health') {
+        return turn(async () => {
+          const snapshot = await getCapabilitiesSnapshot();
+          return voice.speakable(glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION }).speech);
+        });
+      }
+      if (route.intent === 'weather' || followUpWeather) return turn(() => voiceWeather(question, here, threadId));
+      if (route.intent === 'current') {
+        return turn(async () => {
+          let sources;
+          try { sources = (await searxWithin(question, VOICE_FACT_MS)).slice(0, 3); } catch { return "I couldn't look that up right now."; }
+          if (!sources.length) return "I couldn't find anything on that.";
+          const messages = [...voiceThreads.history(threadId), { role: 'user', content: question }];
+          const result = await chatOnce({ messages, brief: true, voice: true, threadId, presetSources: sources, sourceHost: voice.siteName(sources[0].url) });
+          runId = result.runId;
+          const host = voice.siteName(sources[0].url);
+          let said = String(result.message.content || '').trim();
+          // The model is asked to cite; make sure the spoken answer names the site either way.
+          if (said && host && !said.toLowerCase().includes(host.toLowerCase())) said = `According to ${host}, ${/^[A-Z][a-z]/.test(said) ? said[0].toLowerCase() + said.slice(1) : said}`;
+          return voice.speakable(said) || "I didn't catch that.";
+        });
+      }
+      // Approving, applying, deploying, deleting and PowerShell never happen by voice; nothing is called.
+      if (route.intent === 'refuse') return turn(async () => VOICE_REFUSAL);
+      if (route.intent === 'action') return turn(() => voiceAction(route));
+      return turn(async () => {
+        const messages = [...voiceThreads.history(threadId), { role: 'user', content: question }];
+        const result = await chatOnce({ messages, brief: true, voice: true, threadId });
+        runId = result.runId;
+        return voice.speakable(result.message.content) || "I didn't catch that.";
+      });
+    }, { waitMs: VOICE_QUEUE_WAIT_MS });
+    // The budget covers the whole ask, queue wait included. Past it the run carries on and the answer is pushed.
+    const outcome = await voice.withBudget(asked, VOICE_BUDGET_MS);
+    if (outcome.done) return say(200, outcome.value);
+    const handoff = (title, body, id) => voiceNotify(title, body, id || runId);
+    outcome.later.then(
+      late => handoff('Local AI answered', String(late)),
+      err => handoff("Local AI couldn't answer", "Tap to see what went wrong.", err?.runId)
+    );
+    say(200, VOICE_HANDOFF);
   } catch (e) { say(e.statusCode === 413 ? 413 : 503, e.statusCode === 413 ? 'That was too long for me.' : VOICE_DOWN); }
 }
 
@@ -580,7 +721,7 @@ async function apiCapabilities(req, res) {
   catch (e) { storageError(res,e,500); }
 }
 
-function systemPrompt(researchContext = '', capabilityContext = '', brief = false, facts = '') {
+function systemPrompt(researchContext = '', capabilityContext = '', brief = false, facts = '', sourceHost = '') {
   return {
     role: 'system',
     content:
@@ -593,13 +734,14 @@ function systemPrompt(researchContext = '', capabilityContext = '', brief = fals
         ? `\n\nCurrent metasearch results are below. Use them when relevant and cite source numbers like [1].\n\n${researchContext}`
         : '') +
       // Siri Shortcuts on a phone or watch read the answer aloud (docs/APPLE-WATCH.md).
-      (brief ? '\n\nThis answer will be read aloud on a watch: reply in at most two short sentences of plain text, with no lists, markdown, links or source numbers.' : '')
+      (brief ? '\n\nThis answer will be read aloud on a watch: reply in at most two short sentences of plain text, with no lists, markdown, links or source numbers.' : '') +
+      (brief && sourceHost ? ` Start the answer with "According to ${sourceHost},".` : '')
   };
 }
 
 // The messages for the text model: system prompt, research sources (trimmed first), then the conversation, fitted to the shared context.
 function chatMessages(prep) {
-  const system = systemPrompt('', prep.capabilityContext, prep.brief, prep.voice ? voiceFacts({ now: new Date(), timeZone: voiceTimeZone(), includeZone: true }) : '');
+  const system = systemPrompt('', prep.capabilityContext, prep.brief, prep.voice ? voiceFacts({ now: new Date(), timeZone: voiceTimeZone(), includeZone: true }) : '', prep.sourceHost);
   const sources = prep.researchContext
     ? [{ role: 'system', kind: 'sources', content: `Current metasearch results are below. Use them when relevant and cite source numbers like [1].\n\n${prep.researchContext}` }]
     : [];
@@ -620,7 +762,11 @@ async function prepareChat(body, signal = null) {
 
   let sources = [];
   let researchContext = '';
-  if (body.webSearch === true) {
+  if (Array.isArray(body.presetSources) && body.presetSources.length) {
+    // Voice "current facts": the sources were already fetched (and timed) by the caller.
+    sources = body.presetSources.map(x => ({ title: String(x.title || ''), url: String(x.url || ''), content: String(x.content || '') }));
+    researchContext = sources.map((x, i) => `[${i + 1}] ${x.title}\n${x.content}\n${x.url}`).join('\n\n');
+  } else if (body.webSearch === true) {
     const lastUser = [...messages].reverse().find(m => m.role === 'user');
     if (lastUser) {
       sources = await searxSearch(lastUser.content, signal);
@@ -639,7 +785,7 @@ async function prepareChat(body, signal = null) {
     if (signal?.aborted) throw error;
   }
   throwIfAborted();
-  return { model, messages, sources, researchContext, capabilityContext, brief: body.brief === true, voice: body.voice === true };
+  return { model, messages, sources, researchContext, capabilityContext, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
 }
 
 async function apiChat(req, res) {
@@ -692,7 +838,7 @@ async function chatOnce(body) {
       summary: content.slice(0, 420),
       output: { text: content.slice(0, 40000), model: prep.model, elapsedMs, sources: prep.sources },
       artifactIds: artifact?.id ? [artifact.id] : [],
-      meta: { model: prep.model, elapsedMs, sources: prep.sources.length, ...(body.voice === true ? { voice: true } : {}) }
+      meta: { model: prep.model, elapsedMs, sources: prep.sources.length, ...(body.voice === true || body.voiceRun === true ? { voice: true } : {}) }
     });
 
     return {
@@ -1194,6 +1340,8 @@ async function apiGenerateImage(req, res) {
       threadId: body.threadId,
       title: titleFromText(original, editing ? 'Image edit' : 'Image generation'),
       input: { prompt: original.slice(0, 2000), engine: engine.id, checkpoint, family: engine.family, width, height, steps, cfg, style, count, upscale: !!upscaler, enhance: body.enhance === true, edit: editing ? { masked: !!body.mask, strength } : null },
+      // Started by voice: the ask sends its own "ready" or "couldn't" notification, so the generic ones stay quiet.
+      meta: body.voice === true ? { voice: true } : {},
       // An edit's source image isn't kept with the run, so Retry repeats it as a new image.
       retryRequest: { path: '/api/images/generate', body: { prompt: original, engine: engine.id, checkpoint: engine.id === 'custom' ? checkpoint : undefined, negativePrompt: body.negativePrompt, aspect: body.aspect, width, height, steps, cfg, style, count, upscale: !!upscaler, enhance: body.enhance === true, threadId: cleanRunId(body.threadId) || undefined } }
     });
@@ -1251,8 +1399,9 @@ async function apiGenerateImage(req, res) {
     json(res, 200, { promptId: results[0].promptId, ...common, imageUrl: images[0].imageUrl, seed: images[0].seed, images, familyLabel: engine.label, prompt: original, usedPrompt: styled.prompt, runId: execution.id, threadId: execution.threadId });
   } catch (e) {
     if (execution) runLedger.fail(execution.id, e);
-    if (e.status) return json(res, e.status, { error: e.message });
-    storageError(res,e,500);
+    const run = execution ? { runId: execution.id } : {};
+    if (e.status) return json(res, e.status, { error: e.message, ...run });
+    json(res, e.statusCode || 500, { error: String(e.message || e), ...(e.code ? { code: e.code } : {}), ...run });
   }
   finally {
     if (tookGpu && --imageJobsActive === 0) warmText();
@@ -1396,7 +1545,7 @@ function createChatExecution(body,streaming){
   const messages=sanitizeMessages(body?.messages);const prompt=[...messages].reverse().find(m=>m.role==='user')?.content||'Chat';
   const model=typeof body?.model==='string'&&body.model.trim()?body.model.trim():MODEL;
   const retryBody={messages,model,webSearch:body?.webSearch===true,threadId:cleanRunId(body?.threadId)||undefined,brief:body?.brief===true||undefined};
-  return runLedger.create({type:body?.webSearch===true?'research':'chat',title:titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true,...(body?.voice===true?{voice:true}:{})}});
+  return runLedger.create({type:body?.webSearch===true?'research':'chat',title:titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true,...(body?.voice===true||body?.voiceRun===true?{voice:true}:{})}});
 }
 function normalizedExecutionStatus(value){
   const s=String(value||'').toLowerCase();
@@ -3000,6 +3149,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 } });
     if (req.method === 'GET' && p === '/api/releases') return await apiReleases(req, res);
     if (req.method === 'GET' && p === '/api/glance') return await apiGlance(req, res, urlObj);
+    if ((req.method === 'GET' || req.method === 'POST') && p === '/api/voice/home') return await apiVoiceHome(req, res);
     if ((req.method === 'GET' || req.method === 'POST') && p === '/api/glance/ask') return await apiGlanceAsk(req, res, urlObj);
     if (p.startsWith('/api/push/')) return await apiPush(req, res, p);
     if (req.method === 'GET' && p === '/api/storage/status') return json(res, 200, storage.status());

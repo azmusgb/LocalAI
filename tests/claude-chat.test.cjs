@@ -429,7 +429,7 @@ test('pairing: request -> approve with Mac key -> status sets an HttpOnly SameSi
   const s1 = await fetch(`${url}/api/claude/chat/pair-status?id=${pr.id}`);
   assert.deepEqual(await s1.json(), { status: 'approved', device: { id, name: 'Phone' } });
   const cookie = s1.headers.get('set-cookie');
-  assert.match(cookie, new RegExp(`^localai_chat_device=${id}\\.[A-Za-z0-9_-]{43}; HttpOnly; SameSite=Strict; Path=/api/claude/chat; Max-Age=15552000$`));
+  assert.match(cookie, new RegExp(`^localai_chat_device_http=${id}\\.[A-Za-z0-9_-]{43}; HttpOnly; SameSite=Strict; Path=/api/claude/chat; Max-Age=15552000$`));
   const s2 = await fetch(`${url}/api/claude/chat/pair-status?id=${pr.id}`);
   assert.deepEqual(await s2.json(), { status: 'expired' });
   assert.equal(s2.headers.get('set-cookie'), null);
@@ -438,7 +438,7 @@ test('pairing: request -> approve with Mac key -> status sets an HttpOnly SameSi
   assert.equal((await fetch(`${url}/api/claude/chat/pair-status?id=pair-0000000000000000`)).status === 200, true);
 });
 
-test('pairing over HTTPS (behind the proxy) marks the device cookie Secure; plain HTTP does not', async t => {
+test('pairing over HTTPS (behind the proxy) sets the Secure cookie; plain HTTP sets its own cookie, so neither blocks the other', async t => {
   const url = await startServer(t);
   const pairOnce = async (statusHeaders) => {
     const pr = await (await pairReq(url)).json();
@@ -449,8 +449,17 @@ test('pairing over HTTPS (behind the proxy) marks the device cookie Secure; plai
   assert.match(viaProxy, /^localai_chat_device=dev-[0-9a-f]{12}\.[A-Za-z0-9_-]{43}; HttpOnly; SameSite=Strict; Path=\/api\/claude\/chat; Max-Age=15552000; Secure$/);
   const plain = await pairOnce({});
   assert.doesNotMatch(plain, /Secure/);
+  // A browser keeps a Secure cookie and refuses a plain-HTTP cookie of the same name (RFC 6265bis), so a phone paired
+  // over HTTPS could never pair over HTTP while they shared one name.
+  assert.match(plain, /^localai_chat_device_http=/);
   const forwardedHttp = await pairOnce({ 'X-Forwarded-Proto': 'http' });
   assert.doesNotMatch(forwardedHttp, /Secure/);
+  assert.match(forwardedHttp, /^localai_chat_device_http=/);
+  // Either cookie signs the device in; both together (HTTPS sends both) work too.
+  const a = viaProxy.split(';')[0], b = plain.split(';')[0];
+  for (const Cookie of [a, b, `${a}; ${b}`, `${b}; ${a}`]) assert.equal((await fetch(`${url}/api/claude/chat/sessions`, { headers: { Cookie } })).status, 200, Cookie);
+  // A forged value in one cookie does not hide a valid other one.
+  assert.equal((await fetch(`${url}/api/claude/chat/sessions`, { headers: { Cookie: `localai_chat_device=dev-000000000000.x; ${b}` } })).status, 200);
 });
 
 test('requestIsHttps: a TLS socket or X-Forwarded-Proto https', () => {
@@ -492,10 +501,31 @@ test('a code older than the pairing window is expired and cannot be approved', a
   assert.deepEqual(await (await fetch(`${url}/api/claude/chat/pair-status?id=${pr.id}`)).json(), { status: 'expired' });
 });
 
-test('a sixth pending pairing request is 429', async t => {
+test('a sixth pending pairing request replaces the oldest, never a dead end', async t => {
   const url = await startServer(t);
-  for (let i = 0; i < 5; i++) assert.equal((await pairReq(url)).status, 201);
-  assert.equal((await pairReq(url)).status, 429);
+  const first = [];
+  for (let i = 0; i < 5; i++) { const r = await pairReq(url); assert.equal(r.status, 201); first.push(await r.json()); }
+  const sixth = await pairReq(url);
+  assert.equal(sixth.status, 201);
+  const pr = await sixth.json();
+  assert.deepEqual(await (await fetch(`${url}/api/claude/chat/pair-status?id=${first[0].id}`)).json(), { status: 'expired' });
+  assert.deepEqual(await (await fetch(`${url}/api/claude/chat/pair-status?id=${first[1].id}`)).json(), { status: 'pending' });
+  assert.equal((await approve(url, { code: pr.code })).status, 200);
+});
+
+test('a reload resumes its pending code instead of taking a new one', async t => {
+  const url = await startServer(t);
+  const pr = await (await pairReq(url)).json();
+  const again = await fetch(`${url}/api/claude/chat/pair-request`, { method: 'POST', headers: JSONH, body: JSON.stringify({ resume: pr.id }) });
+  assert.equal(again.status, 200);
+  assert.deepEqual(await again.json(), pr);
+  // Approved, expired or unknown ids get a fresh code.
+  assert.equal((await approve(url, { code: pr.code })).status, 200);
+  const fresh = await fetch(`${url}/api/claude/chat/pair-request`, { method: 'POST', headers: JSONH, body: JSON.stringify({ resume: pr.id }) });
+  assert.equal(fresh.status, 201);
+  assert.notEqual((await fresh.json()).id, pr.id);
+  const unknown = await fetch(`${url}/api/claude/chat/pair-request`, { method: 'POST', headers: JSONH, body: JSON.stringify({ resume: 'pair-0000000000000000' }) });
+  assert.equal(unknown.status, 201);
 });
 
 test('codes use only the allowed alphabet and are unique among pending requests', async t => {

@@ -289,6 +289,75 @@ try {
     assert.equal(await page.locator('#claudeChatSession').isVisible(), false);
   });
 
+  await check('the appliance restarting while the page loads: it says it is retrying and recovers by itself', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const p2 = await ctx.newPage();
+    let down = true;
+    await p2.route('**/api/claude/chat/**', r => down ? r.abort('connectionrefused') : r.continue());
+    await p2.goto(base + '/#claude', { waitUntil: 'domcontentloaded' });
+    await p2.waitForFunction(() => typeof window.showView === 'function');
+    await p2.evaluate(() => window.showView('claude'));
+    await p2.waitForFunction(() => /Trying again/.test(document.getElementById('claudeChat')?.textContent || ''), null, { timeout: 8000 });
+    down = false;
+    await p2.waitForFunction(() => /^[A-Z0-9]{6}$/.test(document.getElementById('claudeChatCode')?.textContent.trim() || ''), null, { timeout: 10000 });
+    await ctx.close();
+  });
+
+  // A fresh unpaired phone-sized page on #claude, waiting for its code.
+  const freshPair = async (setup) => {
+    const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const p = await ctx.newPage();
+    if (setup) await setup(p);
+    await p.goto(base + '/#claude', { waitUntil: 'domcontentloaded' });
+    await p.waitForFunction(() => typeof window.showView === 'function');
+    await p.evaluate(() => window.showView('claude'));
+    await p.waitForFunction(() => /^[A-Z0-9]{6}$/.test(document.getElementById('claudeChatCode')?.textContent.trim() || ''), null, { timeout: 10000 });
+    return { ctx, p, code: (await p.locator('#claudeChatCode').innerText()).trim() };
+  };
+
+  await check('a reload while pairing shows the same code, not a new one', async () => {
+    const { ctx, p, code: first } = await freshPair();
+    for (let i = 0; i < 6; i++) {
+      await p.reload({ waitUntil: 'domcontentloaded' });
+      await p.waitForFunction(() => typeof window.showView === 'function');
+      await p.evaluate(() => window.showView('claude'));
+      await p.waitForFunction(() => /^[A-Z0-9]{6}$/.test(document.getElementById('claudeChatCode')?.textContent.trim() || ''), null, { timeout: 10000 });
+      assert.equal((await p.locator('#claudeChatCode').innerText()).trim(), first, `reload ${i + 1}`);
+    }
+    await ctx.close();
+  });
+
+  await check('approved but the browser did not keep the pairing: it says so and offers Try again, never "Waiting" forever', async () => {
+    // What a browser does when it refuses the cookie: pair-status says approved, but no cookie comes back.
+    let approved = false;
+    const { ctx, p, code: c } = await freshPair(p => p.route('**/api/claude/chat/pair-status*', r => approved
+      ? r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'approved', device: { id: 'dev-000000000000', name: 'Refused cookie' } }) })
+      : r.continue()));
+    assert.equal((await mac('POST', 'pair/approve', { code: c, name: 'Refused cookie' })).status, 200);
+    approved = true;
+    await p.waitForFunction(() => /didn.t keep the pairing/.test(document.getElementById("claudeChatPair")?.textContent || ""), null, { timeout: 10000 }).catch(async e => { throw new Error(e.message + " PAGE: " + (await p.locator("#claudeChat").innerText()) + " MODE: " + (await p.locator("#claudeChat").getAttribute("data-mode"))); });
+    assert.doesNotMatch(await p.locator('#claudeChatPair').innerText(), /Waiting for approval/);
+    assert.equal(await p.getByRole('button', { name: 'Try again' }).count(), 1);
+    await ctx.close();
+  });
+
+  await check('on plain HTTP, when this device trusts the secure address, pairing offers it', async () => {
+    const secure = `https://${new URL(base).hostname}/`;
+    const { ctx, p } = await freshPair(p => p.route(`${secure}healthz`, r => r.fulfill({ status: 200, body: 'ok' })));
+    const link = p.locator('#claudeChatPair a.claude-chat-secure');
+    await link.waitFor({ timeout: 6000 });
+    assert.equal(await link.getAttribute('href'), `${secure}#claude`);
+    assert.match(await link.innerText(), /secure address/i);
+    await ctx.close();
+  });
+
+  await check('on plain HTTP, when the secure address is not trusted, no link is offered', async () => {
+    const { ctx, p } = await freshPair(p => p.route(/\/healthz$/, r => new URL(r.request().url()).protocol === 'https:' ? r.abort('connectionrefused') : r.continue()));
+    await p.waitForTimeout(1500);
+    assert.equal(await p.locator('#claudeChatPair a.claude-chat-secure').count(), 0);
+    await ctx.close();
+  });
+
   assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join('; ')}`);
 } catch (error) {
   failures.push(error.message);
