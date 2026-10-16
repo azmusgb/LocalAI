@@ -1869,3 +1869,5 @@ body.run-view-open{overflow:hidden}
 /* Projects with none yet: one empty state instead of zero tiles and an empty detail pane (appended; nothing above edited). */
 #projects.projects-empty #projectMetrics,#projects.projects-empty .split>.card:has(#projectDetail){display:none}
 #projects.projects-empty .split{grid-template-columns:minmax(0,1fr)}
+/* Library on a phone: one column so titles have room, wrapping to two lines (appended; nothing above edited). */
+@media(max-width:560px){body.ux-v3 .library-grid{grid-template-columns:minmax(0,1fr)}.library-grid .artifact-title{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}}
