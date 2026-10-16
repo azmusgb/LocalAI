@@ -37,7 +37,7 @@ async function status(state, description) {
 function run(name, cmd, cmdArgs, { env = {}, cwd = dir } = {}) {
   return new Promise(resolve => {
     say(`\n=== ${name}`);
-    const child = spawn(cmd, cmdArgs, { cwd, env: { ...process.env, ...env }, shell: false });
+    const child = track(spawn(cmd, cmdArgs, { cwd, env: { ...process.env, ...env }, shell: false, detached: true }));
     let tail = '';
     const take = d => { const s = d.toString(); log.write(s); tail = (tail + s).slice(-4000); };
     child.stdout.on('data', take); child.stderr.on('data', take);
@@ -45,13 +45,47 @@ function run(name, cmd, cmdArgs, { env = {}, cwd = dir } = {}) {
   });
 }
 
+// Children run in their own process groups so a stopped run can take its whole tree (npm, node --test, browsers) with it.
+const children = new Set();
+function track(child) { children.add(child); child.on('exit', () => children.delete(child)); return child; }
+function killChildren() { for (const c of children) { try { process.kill(-c.pid, 'SIGTERM'); } catch {} } }
+
+// One run at a time on this machine: two full runs at once slow each other into timeouts. The lock is a directory
+// (mkdir is atomic) holding the owner's pid; a lock whose owner is gone is taken over.
+const LOCK = path.join(os.tmpdir(), 'localai-ci.lock');
+let haveLock = false;
+const lockOwner = () => { try { return JSON.parse(fs.readFileSync(path.join(LOCK, 'owner.json'), 'utf8')); } catch { return null; } };
+const alive = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
+async function queue() {
+  let told = 0;
+  for (;;) {
+    try {
+      fs.mkdirSync(LOCK);
+      fs.writeFileSync(path.join(LOCK, 'owner.json'), JSON.stringify({ pid: process.pid, pr: pr || null, since: new Date().toISOString() }));
+      haveLock = true;
+      return;
+    } catch (e) { if (e.code !== 'EEXIST') throw e; }
+    const owner = lockOwner();
+    if (owner && !alive(owner.pid)) { fs.rmSync(LOCK, { recursive: true, force: true }); continue; }
+    if (!owner) { await new Promise(r => setTimeout(r, 1000)); if (!lockOwner()) fs.rmSync(LOCK, { recursive: true, force: true }); continue; }
+    if (Date.now() - told > 60000) {
+      const who = owner.pr ? `PR #${owner.pr}` : 'a local run';
+      say(`Waiting for the local CI run on ${who} (pid ${owner.pid}) to finish…`);
+      await status('pending', `Queued behind ${who}`);
+      told = Date.now();
+    }
+    await new Promise(r => setTimeout(r, 5000));
+  }
+}
+function releaseLock() { if (haveLock && lockOwner()?.pid === process.pid) fs.rmSync(LOCK, { recursive: true, force: true }); haveLock = false; }
+
 const freePort = () => new Promise(r => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
 
 async function browserSuites() {
   const data = fs.mkdtempSync(path.join(work, 'data-'));
   const port = await freePort();
   say(`\n=== Browser acceptance (fresh server on port ${port})`);
-  const server = spawn(process.execPath, ['app/server.js'], { cwd: dir, env: { ...process.env, DATA_DIR: data, WORKSPACE_ROOT: data, PORT: String(port) } });
+  const server = track(spawn(process.execPath, ['app/server.js'], { cwd: dir, env: { ...process.env, DATA_DIR: data, WORKSPACE_ROOT: data, PORT: String(port) }, detached: true }));
   const serverLog = fs.createWriteStream(path.join(work, 'server.log'));
   server.stdout.pipe(serverLog); server.stderr.pipe(serverLog);
   try {
@@ -78,11 +112,13 @@ async function main() {
     dir = worktree;
     fs.symlinkSync(path.join(repoRoot, 'node_modules'), path.join(dir, 'node_modules'));
     say(`Local CI for PR #${pr} (${head.headRefName} @ ${sha.slice(0, 7)}) merged with origin/${head.baseRefName}`);
+    await queue();
     await status('pending', 'Running on ' + os.hostname());
     try { execFileSync('git', ['merge', '-q', '--no-edit', `origin/${head.baseRefName}`], { cwd: dir, stdio: 'pipe' }); }
     catch { say(`--- Merge with ${head.baseRefName}: FAILED (conflicts; merge main into the branch first)`); await status('failure', `Conflicts with ${head.baseRefName}`); return false; }
   } else {
     say(`Local CI for the current checkout (${git('rev-parse', '--short', 'HEAD')}); nothing is posted`);
+    await queue();
   }
 
   const results = [];
@@ -109,9 +145,22 @@ async function main() {
 }
 
 let ok = false;
+// Stopped (Ctrl-C, kill): stop the tests, say so on the PR, and clean up like a normal end.
+let stopping = false;
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, async () => {
+  if (stopping) return; stopping = true;
+  say(`\nStopped (${sig}).`);
+  killChildren();
+  if (sha) await status('error', 'Stopped before it finished');
+  if (worktree) { try { git('worktree', 'remove', '--force', worktree); } catch {} }
+  releaseLock();
+  process.exit(130);
+});
 try { ok = await main(); }
 catch (e) { say(`Local CI couldn't run: ${e.message}`); if (sha) await status('error', `Couldn't run: ${e.message}`); }
 finally {
+  killChildren();
+  releaseLock();
   if (worktree) { try { git('worktree', 'remove', '--force', worktree); } catch {} }
   say(`Log: ${logFile}`);
   log.end();
