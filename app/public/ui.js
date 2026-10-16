@@ -2613,7 +2613,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 (() => {
   'use strict';
 
-  const state = { runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '', projects: null, viewError: '', fetched: null, gap: '', pending: null, inApp: false, closing: false };
+  const state = { inerted: [], opener: null, runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '', projects: null, viewError: '', fetched: null, gap: '', pending: null, inApp: false, closing: false };
   const KINDS = { chat: ['Chat', 'compose'], research: ['Research', 'globe'], image: ['Image', 'image'], agent: ['Agent', 'automate'], automation: ['Automation', 'refresh'], engineering: ['Engineering', 'build'] };
   const kindLabel = (kind) => (KINDS[kind] || ['Run'])[0];
   const lookup = (id) => state.runs.find((item) => item.id === id) || (state.fetched?.id === id ? state.fetched : null);
@@ -2809,6 +2809,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const kind = run ? (run.card?.kind || run.type) : '', prev = state.body, upd = window.LocalAIUI.runBodyUpdateFor?.(kind);
     const keep = !!(run && prev && prev.runId === run.id && prev.kind === kind && upd && prev.slot.isConnected && drawer.contains(prev.slot));
     const keepTop = drawer.scrollTop, focused = keep && prev.slot.contains(document.activeElement) ? document.activeElement : null;
+    const lost = focusSpot();   // the header and sections are rebuilt: remember what had focus so its equivalent gets it back
     if (keep) prev.slot.remove(); else { window.LocalAIRunBodies?.release?.(); state.body = null; }   // a body that borrowed page elements gives them back before the view is rebuilt
     drawer.replaceChildren();
     el('runDetailsSheet').replaceChildren();
@@ -2852,6 +2853,48 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     }
     fillDetails(run);
     if (keep) drawer.scrollTop = keepTop;
+    if (lost) refocus(lost);
+  }
+  // Focus that survives a rebuild: describe the focused control inside the run view or its sheet, then find its equivalent (id, label, text) in the new content.
+  function focusSpot() {
+    const a = document.activeElement, box = a && (a.closest('#runDetailsSheet') || a.closest('#runDrawer'));
+    if (!box || a === box) return null;
+    return { sheet: box.id === 'runDetailsSheet', id: a.id, label: a.getAttribute('aria-label') || '', text: a.textContent.trim(), tag: a.tagName };
+  }
+  function refocus(spot) {
+    if (document.activeElement?.closest?.('#runDrawer, #runDetailsSheet')) return;
+    const box = el(spot.sheet && el('runDetailsSheet').open ? 'runDetailsSheet' : 'runDrawer'), all = [...box.querySelectorAll('button, a[href], input, select, textarea, [tabindex]')];
+    const to = (spot.id && all.find((n) => n.id === spot.id)) || (spot.label && all.find((n) => n.getAttribute('aria-label') === spot.label)) || (spot.text && all.find((n) => n.tagName === spot.tag && n.textContent.trim() === spot.text)) || all.find((n) => !n.disabled && !n.hidden) || box;
+    if (to === box) box.tabIndex = -1;
+    to.focus({ preventScroll: true });
+  }
+  // The page behind a run view is inert (out of the Tab order and hidden from screen readers) while it is open.
+  function setInert(on) {
+    if (on) { state.inerted = [...document.body.children].filter((n) => !n.inert && n.id !== 'runDrawerBackdrop' && !/^(SCRIPT|STYLE|LINK|SVG|DIALOG|TEMPLATE)$/i.test(n.tagName) && !n.matches('[aria-live], [role="status"], [role="alert"]')); state.inerted.forEach((n) => { n.inert = true; }); }
+    else { (state.inerted || []).forEach((n) => { n.inert = false; }); state.inerted = []; }
+  }
+  // Tab and Shift+Tab cycle inside the top layer: an ask sheet, else the ⓘ sheet, else the run view.
+  function trapTab(event) {
+    if (event.key !== 'Tab' || !el('runDrawerBackdrop')?.classList.contains('show')) return;
+    const box = document.querySelector('dialog.ask-sheet[open]') || (el('runDetailsSheet')?.open ? el('runDetailsSheet') : el('runDrawer'));
+    const items = [...box.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((n) => !n.disabled && !n.closest('[hidden], [inert]') && n.getClientRects().length);
+    const a = document.activeElement;
+    if (!items.length) { event.preventDefault(); return; }
+    if (!box.contains(a)) { event.preventDefault(); items[event.shiftKey ? items.length - 1 : 0].focus(); }
+    else if (event.shiftKey && a === items[0]) { event.preventDefault(); items[items.length - 1].focus(); }
+    else if (!event.shiftKey && a === items[items.length - 1]) { event.preventDefault(); items[0].focus(); }
+  }
+  // Closing returns focus to what opened the run (or that run's row, or the page heading) once the page behind has settled.
+  function restoreFocus(opener) {
+    const ok = () => document.activeElement && document.activeElement !== document.body && !document.activeElement.closest('#runDrawerBackdrop');
+    if (ok()) return;   // page-change code already placed focus
+    const shown = (n) => n && n.isConnected && n.getClientRects().length;
+    const row = opener.runId && [...document.querySelectorAll('[data-run-id]')].filter((n) => !n.closest('#runDrawerBackdrop') && shown(n)).find((n) => n.dataset.runId === opener.runId);
+    const to = shown(opener.el) ? opener.el : row && (row.querySelector('button') || row);
+    if (to) { if (!to.matches('button, [href], input, select, textarea, [tabindex]')) to.tabIndex = -1; to.focus(); }
+    if (ok()) return;
+    const h = [...document.querySelectorAll('h1')].find(shown) || document.querySelector('main, [role="main"]');
+    if (h) { h.tabIndex = -1; h.focus(); }
   }
   function errorBox() { const err = document.createElement('div'); err.className = 'run-view-error'; err.setAttribute('role', 'alert'); err.textContent = state.viewError; return err; }
 
@@ -3020,16 +3063,20 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const backdrop = el('runDrawerBackdrop');
     if (!backdrop) return;
     const was = backdrop.classList.contains('show');
+    if (!was) { const a = document.activeElement; state.opener = a && a !== document.body && !a.closest('#runDrawerBackdrop') ? { el: a, runId: a.closest('[data-run-id]')?.dataset.runId || (state.selectedId !== 'pending' ? state.selectedId : '') } : null; }
     backdrop.classList.add('show'); backdrop.setAttribute('aria-hidden', 'false'); document.body.classList.add('run-view-open');
+    if (!was) setInert(true);
     renderDrawer(state.selectedId);
     if (!was) el('runDrawer')?.querySelector('button')?.focus();
   }
   function hideView() {
     window.LocalAIRunBodies?.release?.(); state.body = null;
-    const backdrop = el('runDrawerBackdrop');
+    const backdrop = el('runDrawerBackdrop'), wasOpen = backdrop?.classList.contains('show'), opener = state.opener || { el: null, runId: state.selectedId };
     if (backdrop) { backdrop.classList.remove('show'); backdrop.setAttribute('aria-hidden', 'true'); }
     const sheet = el('runDetailsSheet'); if (sheet?.open) { state.selectedId = null; sheet.close(); }
     document.body.classList.remove('run-view-open');
+    setInert(false); state.opener = null;
+    if (wasOpen) queueMicrotask(() => restoreFocus(opener));
     Object.assign(state, { selectedId: null, drawerSig: '', fetched: null, gap: '', pending: null, inApp: false, closing: false, viewError: '' });
   }
   async function fetchRun(id, quiet) {
@@ -3154,6 +3201,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     loadRuns(true);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) loadRuns(true); }, { passive: true });
     // Escape closes the top layer only: a confirm, else the ⓘ sheet (the browser closes it), else the menu, else the run view.
+    document.addEventListener('keydown', trapTab, true);
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && el('runDrawerBackdrop')?.classList.contains('show') && !document.querySelector('dialog.ask-sheet[open]') && !el('runDetailsSheet')?.open && !closeMenu()) closeRunView();
     });
