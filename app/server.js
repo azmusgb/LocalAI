@@ -603,7 +603,8 @@ async function voiceNeedsSentence() {
   const pendingChange = new Set(['planned', 'patch_failed', 'validation_failed', 'staged', 'awaiting_approval', 'approved', 'apply_requested']);
   return glance.needsYouSentence(glance.needsYouItems({
     approvals: approvalStore().filter(a => a.status === 'pending'),
-    changes: changeStore().filter(c => pendingChange.has(c.status)).map(c => ({ title: c.summary || c.request })),
+    // A change's Improve item has the short title (from its request); the change's own summary is the model's prose.
+    changes: (() => { const titles = new Map(claudeFindings().filter(f => f.changeId).map(f => [f.changeId, f.title])); return changeStore().filter(c => pendingChange.has(c.status)).map(c => ({ title: titles.get(c.id) || c.summary || c.request })); })(),
     findings: claudeFindings().filter(f => f.status === 'proposed'),
     failedRuns: runLedger.list({ status: 'failed', limit: 200 }).filter(r => Date.parse(r.finishedAt || r.updatedAt) >= dayAgo),
     downServices: (snapshot.services || []).filter(s => s && s.required !== false && s.state !== 'HEALTHY')
@@ -3110,8 +3111,20 @@ async function apiClaudeDecision(req,res){
     let found=null;
     claudeUpdateFinding(res,b.id,f=>{found=f;f.status=b.status;f.decidedAt=nowIso();if(b.note!==undefined)f.decisionNote=claudeText(b.note,1000)});
     // The audit log names the finding; a decision on one that doesn't exist (404 above) isn't logged.
-    if(found)recordActivity('claude',`Finding ${CLAUDE_STATUS[b.status].label.toLowerCase()}`,String(found.title||b.id||''),{findingId:b.id})}catch(e){storageError(res,e,400)}
+    if(found)recordActivity('claude',`Finding ${CLAUDE_STATUS[b.status].label.toLowerCase()}`,String(found.title||b.id||''),{findingId:b.id});
+    if(found)retireChangeOfClosedItem({...found,status:b.status})}catch(e){storageError(res,e,400)}
 }
+// Closing an Improve item (fixed, rejected, set aside) ends its unfinished change too; otherwise the change keeps
+// counting as unfinished on Home and in "What needs me". Changes being shipped (approved) are left alone.
+const IMPROVE_CLOSED=['fixed','rejected','deferred'];
+function retireChangeOfClosedItem(item){
+  if(!item?.changeId||!IMPROVE_CLOSED.includes(item.status))return false;
+  const c=changeStore().find(x=>x.id===item.changeId);
+  if(!c||!improve.LIVE_CHANGE.includes(c.status)||IMPROVE_LOCKED_CHANGE.includes(c.status))return false;
+  improveRetireChange(c.id);return true;
+}
+// Items closed before the rule above left their changes open; end those once at start-up.
+function retireChangesOfClosedItems(){let n=0;for(const f of claudeFindings())if(retireChangeOfClosedItem(f))n++;return n}
 // What Claude should work on next: open findings in rank order with the operator's decisions.
 async function apiClaudePriorities(req,res,urlObj){
   const open=claudeRanked(claudeFindings()).filter(f=>!['fixed','rejected','deferred'].includes(f.status));
@@ -3354,6 +3367,7 @@ async function apiReleases(req, res) {
 migrateLegacyActivityToLibrary();
 recordReleaseHistory();
 shipQueuedSelfChanges();
+retireChangesOfClosedItems();
 // One bad record must not stop the appliance starting; Improve catches up on the next scan or save.
 try { runImproveReconcile({ startup: true }); } catch (e) { console.error(`${nowIso()} Improve start-up reconcile failed:`, e); }
 // Health is checked on its own every minute, so an outage reaches the phone (Down/Recovered) even with no page open.

@@ -90,3 +90,27 @@ test('changes left waiting for the old host updater are handed over at start-up'
   assert.equal(c.shipVia, 'pr');
   assert.equal((await findingFor(base, 'chg-q')).handedToClaude, true);
 });
+
+// Closing an Improve item ends its unfinished change, so it stops counting on Home and in "What needs me".
+const seedItemFor = (s, id, changeId, status) => s.writeSetting('claude-finding/' + id, { id, sessionId: 'owner', title: 'Item ' + id, category: 'idea', severity: 'medium', status, source: 'idea', changeId, votes: { up: 0, down: 0 }, priorityBoost: 0, createdAt: '2026-10-15T00:00:00.000Z' });
+
+test('deciding an item fixed retires its planned change; a change being shipped is left alone', { timeout: 30000 }, async t => {
+  const base = await startServer(t, { seed: s => {
+    s.put('changes', change('chg-p', 'planned'), 0); seedItemFor(s, 'idea-p', 'chg-p', 'approved');
+    s.put('changes', change('chg-s', 'approved', { shipVia: 'pr' }), 1); seedItemFor(s, 'idea-s', 'chg-s', 'approved');
+  } });
+  assert.equal((await post(base, '/api/claude/findings/decision', { id: 'idea-p', status: 'fixed', note: 'Done elsewhere' })).status, 200);
+  assert.equal((await getChange(base, 'chg-p')).status, 'rejected');
+  assert.equal((await post(base, '/api/claude/findings/decision', { id: 'idea-s', status: 'fixed' })).status, 200);
+  assert.equal((await getChange(base, 'chg-s')).status, 'approved');
+  assert.equal((await (await fetch(base + '/api/capabilities')).json()).changes.pending, 1);
+});
+
+test('changes whose items were closed before are retired at start-up', { timeout: 30000 }, async t => {
+  const base = await startServer(t, { seed: s => {
+    s.put('changes', change('chg-o', 'planned'), 0); seedItemFor(s, 'idea-o', 'chg-o', 'fixed');
+    s.put('changes', change('chg-k', 'planned'), 1); seedItemFor(s, 'idea-k', 'chg-k', 'approved');
+  } });
+  assert.equal((await getChange(base, 'chg-o')).status, 'rejected');
+  assert.equal((await getChange(base, 'chg-k')).status, 'planned', 'an open item keeps its change');
+});

@@ -47,16 +47,34 @@ const NUMBER_WORDS = ['No', 'One', 'Two', 'Three'];
 
 // data: { approvals, changes, findings, failedRuns, downServices } as arrays of { title } (or { label } for services).
 // Returns the things that need the owner, by name, in the order they are spoken.
+// Titles are often whole requests or model summaries; read aloud, the first sentence and at most ten words is enough.
+function spokenTitle(text) {
+  const first = String(text || '').split('\n').map(l => l.trim()).find(Boolean) || '';
+  const sentence = first.split(/(?<=[.!?])\s+/)[0].replace(/[.!?]+$/, '').trim();
+  const words = sentence.split(/\s+/).filter(Boolean);
+  const kept = words.length > 10 ? words.slice(0, 10) : words;
+  // A cut title shouldn't end on "the", "to", "of"…
+  if (words.length > 10) while (kept.length > 1 && /^(the|a|an|to|of|and|or|by|for|with|in|on|at|from|that)$/i.test(kept[kept.length - 1])) kept.pop();
+  return kept.join(' ').replace(/[,;:]+$/, '');
+}
+// A failed chat, research question or image is named by what it was, not by its prompt.
+const FAILED_KIND = { chat: 'a chat question', research: 'a research question', image: 'an image' };
+
 function needsYouItems({ approvals = [], changes = [], findings = [], failedRuns = [], downServices = [] } = {}) {
-  const name = x => String(x?.title || x?.label || x?.name || '').trim();
+  const name = x => spokenTitle(x?.title || x?.label || x?.name || '');
   const out = [];
   const add = (kind, rows) => { for (const r of rows) { const title = name(r); if (title) out.push({ kind, title }); } };
-  add('approval', approvals); add('change', changes); add('finding', findings); add('failed', failedRuns); add('down', downServices);
+  add('approval', approvals); add('change', changes); add('finding', findings);
+  for (const r of failedRuns) {
+    if (FAILED_KIND[r?.type]) out.push({ kind: 'failed', title: FAILED_KIND[r.type], generic: true });
+    else { const title = name(r); if (title) out.push({ kind: 'failed', title }); }
+  }
+  add('down', downServices);
   return out;
 }
 
 function itemPhrase(item) {
-  if (item.kind === 'failed') return `the ${item.title} failed`;
+  if (item.kind === 'failed') return item.generic ? `${item.title} failed` : `the ${item.title} failed`;
   if (item.kind === 'down') return `${item.title} is down`;
   return item.title;
 }
