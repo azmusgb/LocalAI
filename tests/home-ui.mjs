@@ -236,36 +236,59 @@ await check('#ask and #create land on Home with the chip showing Chat and Image'
   await a.context().close(); await c.context().close();
 });
 
-await check('Engineering send opens its run, Back returns to an empty Home composer', async () => {
-  const eng = item('engineering', 'Change from Home', 1000, { id: 'legacy-engineering:e1' });
-  const page = await open(desk, '#home', {
-    storage: { 'localai.home.mode': 'engineering' },
-    engineering: async p => { p.known.set(eng.id, eng); return { body: { run: { id: 'e1' } } }; },
-    all: () => [eng]
-  });
+// Change Local AI asks every time: Add to backlog (saved, nothing starts) or Start now (planned, follow it in In progress).
+async function ideaStub(page, reply) {
+  page.ideas = [];
+  await page.route(u => u.pathname === '/api/improve/idea', async r => { page.ideas.push(r.request().postDataJSON()); const res = await reply(); r.fulfill({ status: res.status || 201, contentType: 'application/json', body: JSON.stringify(res.body) }); });
+  await page.route(u => u.pathname === '/api/improve/items', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [], signals: [] }) }));
+}
+await check('Change Local AI: Send asks Add to backlog or Start now; Add to backlog saves it and Home stays as it was', async () => {
+  const page = await open(desk, '#home', { storage: { 'localai.home.mode': 'engineering' }, engineering: async () => ({ body: { run: { id: 'e1' } } }) });
+  await ideaStub(page, async () => ({ body: { item: { id: 'idea-1' } } }));
   await page.waitForSelector('#homeRecent2 .run-card', T);
   await page.locator('#commandInput').fill('Make the buttons rounder');
   await page.locator('#commandGo').click();
-  await page.waitForFunction(() => location.hash === '#run/legacy-engineering%3Ae1' || location.hash === '#run/legacy-engineering:e1', null, T);
-  assert.equal(page.started[0].request, 'Make the buttons rounder');
-  assert.equal(page.started[0].target, 'self');
-  await page.waitForSelector('#runDrawerBackdrop.show', T);
-  await page.goBack();
-  await page.waitForSelector('#home.active', T);
+  const sheet = page.locator('#improveIdeaSheet');
+  await sheet.waitFor({ state: 'visible', ...T });
+  assert.equal(await page.locator('#improveIdeaText').inputValue(), 'Make the buttons rounder');
+  await sheet.getByRole('button', { name: 'Add to backlog' }).click();
+  await page.waitForFunction(() => !document.getElementById('improveIdeaSheet').open, null, T);
+  assert.deepEqual(page.ideas, [{ text: 'Make the buttons rounder', start: false }]);
+  assert.deepEqual(page.started, []);
   assert.equal(await page.evaluate(() => location.hash), '#home');
+  assert.equal(await page.locator('#runDrawerBackdrop.show').count(), 0);
   assert.equal(await page.locator('#commandInput').inputValue(), '');
   await page.context().close();
 });
 
-await check('a failed start keeps the text and says why', async () => {
-  const page = await open(desk, '#home', { storage: { 'localai.home.mode': 'engineering' }, engineering: async () => ({ status: 500, body: { error: 'The change engine is offline' } }) });
+await check('Change Local AI: Start now plans it and opens In progress; Cancel keeps the text on Home', async () => {
+  const page = await open(desk, '#home', { storage: { 'localai.home.mode': 'engineering' } });
+  await ideaStub(page, async () => ({ body: { item: { id: 'idea-2' }, change: { id: 'chg-9' } } }));
   await page.waitForSelector('#homeRecent2 .run-card', T);
   await page.locator('#commandInput').fill('Fix the footer');
   await page.locator('#commandGo').click();
-  await page.waitForSelector('#homeComposerError:not([hidden])', T);
-  assert.match(await page.locator('#homeComposerError').innerText(), /change engine is offline/);
+  await page.locator('#improveIdeaSheet').getByRole('button', { name: 'Cancel' }).click();
   assert.equal(await page.locator('#commandInput').inputValue(), 'Fix the footer');
-  assert.equal(await page.evaluate(() => location.hash), '#home');
+  assert.deepEqual(page.ideas, []);
+  await page.locator('#commandGo').click();
+  await page.locator('#improveIdeaSheet').getByRole('button', { name: 'Start now' }).click();
+  await page.waitForFunction(() => location.hash === '#inProgress', null, T);
+  assert.deepEqual(page.ideas, [{ text: 'Fix the footer', start: true }]);
+  assert.equal(await page.locator('#commandInput').inputValue(), '');
+  await page.context().close();
+});
+
+await check('Needs you: new serious Signals in the Backlog show as one row that opens the Backlog; no unfinished-change row', async () => {
+  const fresh = new Date(NOW - HOUR).toISOString(), old = new Date(NOW - 3 * 24 * HOUR).toISOString();
+  const sig = (id, createdAt, o = {}) => ({ id, source: 'signal', status: 'proposed', stage: 'backlog', title: id, createdAt, ...o });
+  const ctxItems = [sig('signal-a', fresh), sig('signal-b', fresh), sig('signal-old', old), sig('signal-taken', fresh, { stage: 'inProgress' }), { id: 'idea-x', source: 'idea', status: 'approved', stage: 'backlog', createdAt: fresh }];
+  const page = await open(desk, '#home', { all: () => [] });
+  await page.route(u => u.pathname === '/api/improve/items', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: ctxItems, signals: [] }) }));
+  await page.evaluate(() => window.LocalAIHome.refresh?.());
+  await page.waitForFunction(() => /2 new signals in your backlog/.test(document.getElementById('homeNeedsList')?.textContent || ''), null, T);
+  assert.doesNotMatch(await page.locator('#homeNeedsYou').innerText(), /unfinished/);
+  await page.locator('#homeNeedsList .home-attn', { hasText: 'new signals' }).click();
+  await page.waitForFunction(() => location.hash === '#backlog', null, T);
   await page.context().close();
 });
 

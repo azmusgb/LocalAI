@@ -126,12 +126,17 @@ async function itemAction(id,action,btn,then){
  try{await post('/api/improve/item',then?{id,action,then}:{id,action});$('improveItemSheet').close();await refresh()}
  catch(e){err.textContent=e.message;err.hidden=false;btn.disabled=false}
 }
-function openIdea(){const d=$('improveIdeaSheet');if(!d)return;$('improveIdeaText').value='';$('improveIdeaError').hidden=true;d.showModal();$('improveIdeaText').focus()}
+// Opens the idea sheet, optionally with text (Home's Change Local AI mode). Resolves {start, error?} once saved, or null if closed unsaved.
+function openIdea(text){
+ const d=$('improveIdeaSheet');if(!d)return Promise.resolve(null);
+ $('improveIdeaText').value=typeof text==='string'?text:'';$('improveIdeaError').hidden=true;d.showModal();$('improveIdeaText').focus();
+ return new Promise(res=>{st.ideaDone=res;d.addEventListener('close',()=>{if(st.ideaDone===res){st.ideaDone=null;res(null)}},{once:true})});
+}
 async function submitIdea(start,btn){
  const text=$('improveIdeaText').value,err=$('improveIdeaError');
  if(!text.trim()){err.textContent='Describe the change first.';err.hidden=false;return}
  btn.disabled=true;
- try{const r=await post('/api/improve/idea',{text,start});await refresh();if(r.error){err.textContent=r.error;err.hidden=false}else $('improveIdeaSheet').close()}
+ try{const r=await post('/api/improve/idea',{text,start});const done=st.ideaDone;st.ideaDone=null;await refresh();if(r.error){err.textContent=r.error;err.hidden=false;done?.({start,error:r.error})}else{done?.({start});$('improveIdeaSheet').close()}}
  catch(e){err.textContent=e.message;err.hidden=false}
  finally{btn.disabled=false}
 }
@@ -163,6 +168,6 @@ function init(){
   new MutationObserver(()=>{const now=sec.classList.contains('active');if(now&&!was){refresh();if(id==='signals')loadDetails()}was=now}).observe(sec,{attributes:true,attributeFilter:['class']});
   if(was){refresh();if(id==='signals')loadDetails()}}
 }
-root.LocalAIImprove={refresh,openItem};
+root.LocalAIImprove={refresh,openItem,openIdea};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })(window);
