@@ -15,7 +15,9 @@ async function check(name, fn) {
   try { await fn(); console.log('PASS', name); } catch (error) { failures.push(`${name}: ${error.message}`); console.error('FAIL', name, error.message); }
 }
 
-const HOUR = 3600e3, NOW = Date.now();
+// Noon today, on the page's clock too: Work groups by calendar day, so ages measured from the real time put "2 hours
+// ago" on Yesterday between midnight and 2 AM and the day-group check failed every night.
+const HOUR = 3600e3, NOW = new Date(new Date().setHours(12, 0, 0, 0)).getTime();
 let seq = 0;
 // A /api/runs list item the way the server sends it: the run plus `card`.
 const item = (kind, title, ageMs, o = {}) => {
@@ -40,6 +42,7 @@ async function open(viewport, hash, list, { storage = {}, center = true } = {}) 
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.devTools': '1', ...storage });
   const page = await ctx.newPage({ serviceWorkers: 'block' });
+  await page.clock.install({ time: NOW });
   page.calls = []; page.known = new Map();
   await page.route(u => u.pathname === '/api/runs', async r => {
     const url = new URL(r.request().url());
