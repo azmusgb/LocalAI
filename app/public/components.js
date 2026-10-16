@@ -87,7 +87,9 @@
     const main=document.createElement('div');main.className='list-row__main run-card__main';
     const title=document.createElement('div');title.className='list-row__title';title.textContent=c.title||'Untitled run';main.appendChild(title);
     if(c.summary){const sub=document.createElement('div');sub.className='list-row__sub';sub.textContent=c.summary;main.appendChild(sub)}
-    const pv=runPreview(c.preview);if(pv)main.appendChild(pv);
+    // The summary shows once: a preview that repeats it (or extends a truncated copy of it) is dropped.
+    const plain=t=>String(t||'').replace(/(\.\.\.|…)\s*$/,'').replace(/\s+/g,' ').trim(),pt=plain(c.preview&&c.preview.text),sm=plain(c.summary),dup=pt&&sm&&(pt===sm||pt.startsWith(sm)||sm.startsWith(pt));
+    const pv=dup?null:runPreview(c.preview);if(pv)main.appendChild(pv);
     if(ACTIVE.has(item.status)){const bar=document.createElement('div');bar.className='run-card__bar';bar.setAttribute('role','progressbar');bar.setAttribute('aria-label','Progress');bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');
       const pct=Math.max(0,Math.min(100,Number(item.progress)||0));bar.setAttribute('aria-valuenow',String(pct));const fill=document.createElement('span');fill.style.setProperty('--progress',pct+'%');bar.appendChild(fill);main.appendChild(bar)}
     const act=document.createElement('button');act.type='button';act.className='btn-primary run-card__action';act.textContent=(c.action&&c.action.label)||'Open';
@@ -99,6 +101,31 @@
     if(rowOpen){const btn=document.createElement('button');btn.type='button';btn.className='work-open';btn.textContent=title.textContent;title.textContent='';title.appendChild(btn);btn.addEventListener('click',e=>{e.stopPropagation();open()})}
     return row;
   }
+  // A sheet that Back should close. sheetHistory(el, onClose) -> release(), where `el` is the sheet element.
+  // Call it as the sheet opens: it pushes a history entry, so Back (popstate) calls onClose(el) and the person stays on the page.
+  // Call release() when the sheet closes any other way: it pops that entry again (no page change, hashchange never fires), and does
+  // nothing if the entry is no longer on top (the router replaces it when a link inside the sheet navigates). release() is idempotent,
+  // so onClose may call it, or the sheet's own close handler may.
+  // afterSheetPop(fn) runs fn once a release()'s history.back() has landed (at once if none is pending), so a second history move never overlaps it.
+  // Only a live sheet's entry counts (sheetLive): one that outlived its sheet (a reload, or Forward onto it) is stale. It sits on an entry with
+  // the same URL, so dropStaleSheet() steps back past it (and afterSheetPop waits for that too). Ids carry a per-load prefix, so a stale
+  // 'sheet1' from before a reload never matches a new sheet's id.
+  let sheetSeq=0,popPending=false,popTimer=0,popWaiters=[];
+  const sheetLoad=Date.now().toString(36),liveSheets=new Set();
+  const popSettled=()=>{if(!popPending)return;popPending=false;clearTimeout(popTimer);popTimer=0;popWaiters.splice(0).forEach(fn=>fn())};
+  const popBack=()=>{popPending=true;clearTimeout(popTimer);popTimer=setTimeout(popSettled,500);history.back()}; // the fallback timer belongs to this pop only
+  window.addEventListener('popstate',()=>setTimeout(popSettled,0));
+  const afterSheetPop=fn=>{if(popPending)popWaiters.push(fn);else fn()};
+  const sheetLive=id=>!!id&&liveSheets.has(id);
+  const dropStaleSheet=()=>{const s=history.state&&history.state.localaiSheet;if(!s||sheetLive(s)||popPending)return false;popBack();return true};
+  function sheetHistory(el,onClose){
+    const id='sheet'+sheetLoad+'-'+(++sheetSeq),here=()=>history.state&&history.state.localaiSheet===id;let live=true;
+    liveSheets.add(id);
+    try{history.pushState({...(history.state&&typeof history.state==='object'?history.state:{}),localaiSheet:id},'',location.href)}catch{}
+    const onPop=()=>{if(!live||here())return;live=false;liveSheets.delete(id);window.removeEventListener('popstate',onPop);try{if(typeof onClose==='function')onClose(el)}catch(e){console.error(e)}};
+    window.addEventListener('popstate',onPop);
+    return function release(){if(!live)return;live=false;liveSheets.delete(id);window.removeEventListener('popstate',onPop);if(here())popBack()};
+  }
   // Each run kind can own the body of its run view: mount(run, el) fills el. Kinds with none show the Output block.
   const runBodies=new Map();
   // opts.update(run, slot) -> boolean: the same run re-rendered keeps its slot (no release, no re-mount) and is updated in place; false asks for a re-mount.
@@ -106,5 +133,5 @@
   function registerRunBody(kind,mount,opts){if(typeof mount==='function'){runBodies.set(String(kind),mount);runBodyOpts.set(String(kind),opts&&typeof opts.update==='function'?opts:null)}}
   const runBodyFor=kind=>runBodies.get(String(kind))||null;
   const runBodyUpdateFor=kind=>runBodyOpts.get(String(kind))?.update||null;
-  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{fetchJson,loadInto,ask,runCard,registerRunBody,runBodyFor,runBodyUpdateFor});
+  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{fetchJson,loadInto,ask,runCard,sheetHistory,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
 })();

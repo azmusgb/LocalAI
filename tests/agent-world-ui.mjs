@@ -8,7 +8,7 @@ const failures = [];
 async function check(name, fn) { try { await fn(); console.log('PASS', name); } catch (e) { failures.push(`${name}: ${e.message}`); console.error('FAIL', name, e.message); } }
 
 for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
-  const page = await browser.newPage({ viewport, isMobile: viewport.width < 500, hasTouch: viewport.width < 500 });
+  const page = await browser.newPage({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 500, hasTouch: viewport.width < 500 });
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.goto(base + '/#work', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#work.active');
@@ -19,9 +19,13 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
     await page.locator('#workAgentWorld').waitFor({ state: 'visible' });
   });
   await check(`${viewport.width}px: Open Agent World opens the Missions page with the world`, async () => {
+    const before = await page.evaluate(() => history.length);
     await page.locator('#workOpenAgentWorld').click();
     await page.waitForSelector('#agents.active');
     await page.waitForSelector('#agentWorldCityMount .awc');
+    assert.equal(await page.evaluate(() => history.length), before + 1); // pushed: Back returns to Work
+    await page.evaluate(() => history.back());
+    await page.waitForSelector('#work.active');
   });
   await check(`${viewport.width}px: no script errors`, async () => assert.deepEqual(errors, []));
   await page.close();

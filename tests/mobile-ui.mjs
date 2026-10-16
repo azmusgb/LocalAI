@@ -16,7 +16,7 @@ async function check(name, fn) {
 }
 
 // A small Android phone: the narrowest common width.
-const page = await browser.newPage({ viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
+const page = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
 const pageErrors = [];
 page.on('pageerror', e => pageErrors.push(e.message));
 await page.goto(base, { waitUntil: 'domcontentloaded' });
@@ -120,7 +120,7 @@ await check('long lists show the first items and a Show more button', async () =
 });
 
 // Phone shell (redesign task 2), on a 390×844 phone.
-const shell = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+const shell = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 shell.on('pageerror', e => pageErrors.push(e.message));
 await shell.addInitScript(() => { try { localStorage.setItem('localai.devTools', '1'); } catch {} });
 await shell.goto(base, { waitUntil: 'domcontentloaded' });

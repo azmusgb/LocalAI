@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 // substitute for errors in scripts they consider foreign (extensions and the like).
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage();
+const page = await browser.newPage({ serviceWorkers: 'block' });
 const reports = [];
 await page.route('**/api/quality/client-event', async route => { reports.push(JSON.parse(route.request().postData() || '{}')); await route.fulfill({ status: 201, json: { item: {} } }); });
 await page.goto(base, { waitUntil: 'load' });

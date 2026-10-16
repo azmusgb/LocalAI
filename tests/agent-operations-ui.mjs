@@ -1,5 +1,7 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+const { workKind } = createRequire(import.meta.url)('../app/run-cards.js'); // the server's Work chip mapping
 
 const base=process.env.LOCALAI_URL||'http://127.0.0.1:3080';
 const browser=await chromium.launch({headless:true});
@@ -11,7 +13,7 @@ async function check(name,fn){
   catch(e){failures.push(name+': '+e.message);console.error('FAIL',name,e.message)}
 }
 
-const page=await browser.newPage({viewport:{width:1440,height:1000}});
+const page=await browser.newPage({ serviceWorkers: 'block',viewport:{width:1440,height:1000}});
 page.on('dialog',async d=>{dialogs++;await d.dismiss()});
 await page.goto(base,{waitUntil:'domcontentloaded'});
 await page.waitForSelector('.ux-primary-rail');
@@ -33,9 +35,9 @@ await check('system capability health distinguishes optional companions',async()
 });
 await check('desktop navigation architecture',async()=>{
   await page.locator('.ux-primary-rail').waitFor({state:'visible'});
-  await page.locator('.ux-secondary-nav').waitFor({state:'visible'});
+  await page.locator('.ux-secondary-nav').waitFor({state:'hidden'}); // Work has one page, so no page list beside the rail
   assert.equal(await page.locator('.ux-primary-item').count(),5);
-  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Work');
+  assert.equal(await page.locator('#uxSecondaryTitle').textContent(),'Work');
 });
 await check('contextual navigation switches domains',async()=>{
   await page.locator('.ux-primary-item[data-domain="projects"]').click();
@@ -44,7 +46,7 @@ await check('contextual navigation switches domains',async()=>{
   assert.ok(await page.locator('.ux-secondary-link').count()>=1);
   await page.evaluate(()=>window.showView('agents'));
   await page.waitForSelector('#agents.active');
-  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Work');
+  assert.equal(await page.locator('#uxSecondaryTitle').textContent(),'Work');
 });
 await check('mission-first composer',async()=>{
   await page.locator('#agentGoal').waitFor({state:'visible'});
@@ -211,7 +213,7 @@ await check('Agent World v3 HUD and simulation controls',async()=>{
 });
 await page.close();
 
-const mobile=await browser.newPage({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
+const mobile=await browser.newPage({ serviceWorkers: 'block',viewport:{width:390,height:844},hasTouch:true,isMobile:true});
 mobile.on('dialog',async d=>{dialogs++;await d.dismiss()});
 await mobile.goto(base,{waitUntil:'domcontentloaded'});
 await mobile.waitForSelector('#uxMobileNav');
@@ -259,7 +261,7 @@ await check('the mission strip and Agent World show the same mission while the s
   const goal='Strip and Agent World agree on this mission';
   const mission={id:'mission-strip-sync',goal,status:'complete',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
     workers:[{id:'research',name:'Research Agent',state:'complete'},{id:'synthesis',name:'Synthesis',state:'complete'}],results:[]};
-  const pg=await browser.newPage({viewport:{width:1440,height:1000}});
+  const pg=await browser.newPage({ serviceWorkers: 'block',viewport:{width:1440,height:1000}});
   let releaseCatalog;const catalogHeld=new Promise(r=>releaseCatalog=r);
   await pg.route(u=>u.pathname==='/api/agents/missions',r=>r.fulfill({contentType:'application/json',body:JSON.stringify({items:[mission]})}));
   await pg.route(u=>u.pathname==='/api/agents/catalog',async r=>{await catalogHeld;await r.fallback()});
@@ -279,8 +281,8 @@ await check('navigation reaches Missions through Work',async()=>{
   const mk=(id,kind,title)=>({id,type:kind,status:'completed',progress:100,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),card:{kind,icon:'system',title,summary:'',badge:{label:'Done',tone:'good'},preview:null,action:{label:'Open'},approval:null}});
   const items=[mk('run-1-a','chat','A chat'),mk('legacy-agent:one','agent','A mission run'),mk('run-2-b','image','An image')];
   const visit=async(hash,viewport)=>{
-    const pg=await browser.newPage({viewport});
-    await pg.route(u=>u.pathname==='/api/runs',r=>r.fulfill({contentType:'application/json',body:JSON.stringify({items,summary:{}})}));
+    const pg=await browser.newPage({ serviceWorkers: 'block',viewport});
+    await pg.route(u=>u.pathname==='/api/runs',r=>{const k=new URL(r.request().url()).searchParams.get('kind');r.fulfill({contentType:'application/json',body:JSON.stringify({items:items.filter(x=>!k||workKind(x)===k),summary:{}})})}); // the server filters by Work's chip
     await pg.goto(base+'/'+hash,{waitUntil:'domcontentloaded'});
     await pg.waitForFunction(()=>typeof window.showView==='function'&&window.LocalAIRouter&&location.hash);
     return pg;
@@ -297,6 +299,7 @@ await check('navigation reaches Missions through Work',async()=>{
     await pg.waitForSelector('#work.active .run-card');
     assert.equal(await pg.locator('#work .run-card').count(),3);
     await pg.locator('[data-work-kind="missions"]').click();
+    await pg.waitForSelector('#workList:not([aria-busy="true"])');
     await onlyMissions(pg);await pg.close();
   }
 });
