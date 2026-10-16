@@ -1858,3 +1858,4 @@ input::placeholder,textarea::placeholder{color:var(--ds-faint);font-weight:400}
 .first-run-detail a,.meta a[data-goto],#integrations a[data-external]{display:inline-flex;align-items:center;min-height:44px}
 #ask .toggle{min-height:44px;align-items:center}
 #library .filter{min-height:44px;min-width:44px}
+#library .artifact-foot .iconbtn{min-width:44px;min-height:44px}
