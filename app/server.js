@@ -9,6 +9,7 @@ const PORT = Number(process.env.PORT || 3080);
 const LOCAL_UI_PORT = Number(process.env.LOCAL_UI_PORT || 0);
 const MODEL = process.env.MODEL || 'qwen3:4b-instruct-32k';
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://host.docker.internal:11434';
+const { TEXT_NUM_CTX, TEXT_NUM_CTX_LARGE, LARGE_ANSWER_RESERVE, TEXT_KEEP_ALIVE, ANSWER_RESERVE, fitMessages, warmTextModel, unloadTextModel } = require('./text-context');
 const COMFY_URL = process.env.COMFY_URL || 'http://host.docker.internal:8188';
 const N8N_URL = process.env.N8N_URL || 'http://local-ai-n8n:5678';
 const PROXY_URL = process.env.PROXY_URL || 'http://local-ai-ollama-responses-proxy:8080';
@@ -560,6 +561,15 @@ function systemPrompt(researchContext = '', capabilityContext = '', brief = fals
   };
 }
 
+// The messages for the text model: system prompt, research sources (trimmed first), then the conversation, fitted to the shared context.
+function chatMessages(prep) {
+  const system = systemPrompt('', prep.capabilityContext, prep.brief);
+  const sources = prep.researchContext
+    ? [{ role: 'system', kind: 'sources', content: `Current metasearch results are below. Use them when relevant and cite source numbers like [1].\n\n${prep.researchContext}` }]
+    : [];
+  return fitMessages([system, ...sources, ...prep.messages], { numCtx: TEXT_NUM_CTX, reserve: ANSWER_RESERVE });
+}
+
 async function prepareChat(body, signal = null) {
   const throwIfAborted = () => {
     if (!signal?.aborted) return;
@@ -615,9 +625,10 @@ async function chatOnce(body) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: prep.model,
-        messages: [systemPrompt(prep.researchContext, prep.capabilityContext, prep.brief), ...prep.messages],
+        messages: chatMessages(prep),
         stream: false,
-        options: { num_ctx: 32768 }
+        keep_alive: TEXT_KEEP_ALIVE,
+        options: { num_ctx: TEXT_NUM_CTX }
       })
     }, CHAT_MODEL_TIMEOUT_MS);
 
@@ -714,9 +725,10 @@ async function apiChatStream(req, res) {
       signal: controller.signal,
       body: JSON.stringify({
         model: prep.model,
-        messages: [systemPrompt(prep.researchContext, prep.capabilityContext, prep.brief), ...prep.messages],
+        messages: chatMessages(prep),
         stream: true,
-        options: { num_ctx: 32768 }
+        keep_alive: TEXT_KEEP_ALIVE,
+        options: { num_ctx: TEXT_NUM_CTX }
       })
     });
 
@@ -1106,8 +1118,14 @@ async function runComfyGraph(workflow, timeoutMs) {
   return { promptId: q.prompt_id, images };
 }
 
+// Fire-and-forget: loads the chat model into the GPU. Failures are ignored.
+function warmText() { warmTextModel({ url: OLLAMA_URL, model: MODEL }); }
+// Images and text take turns on the 6 GB GPU: the chat model unloads while ComfyUI works and reloads after the last image job.
+let imageJobsActive = 0;
+
 async function apiGenerateImage(req, res) {
   let execution = null;
+  let tookGpu = false;
   try {
     const body = await readBody(req, 30 * 1024 * 1024);
     const original = String(body.prompt || '').trim();
@@ -1144,6 +1162,8 @@ async function apiGenerateImage(req, res) {
       retryRequest: { path: '/api/images/generate', body: { prompt: original, engine: engine.id, checkpoint: engine.id === 'custom' ? checkpoint : undefined, negativePrompt: body.negativePrompt, aspect: body.aspect, width, height, steps, cfg, style, count, upscale: !!upscaler, enhance: body.enhance === true, threadId: cleanRunId(body.threadId) || undefined } }
     });
     runLedger.start(execution.id, editing ? 'Image edit started' : 'Image generation started');
+    imageJobsActive++; tookGpu = true;
+    await unloadTextModel({ url: OLLAMA_URL, model: MODEL });
 
     let prompt = original;
     if (body.enhance === true) {
@@ -1197,6 +1217,9 @@ async function apiGenerateImage(req, res) {
     if (execution) runLedger.fail(execution.id, e);
     if (e.status) return json(res, e.status, { error: e.message });
     storageError(res,e,500);
+  }
+  finally {
+    if (tookGpu && --imageJobsActive === 0) warmText();
   }
 }
 
@@ -1644,7 +1667,7 @@ async function apiKnowledgeSearch(req,res){
 
 async function runLocalModel(prompt, system='You are a concise local AI assistant.', timeoutMs=180000, model=MODEL){
   const selectedModel=String(model||MODEL).trim()||MODEL;
-  const r=await fetchWithTimeout(`${OLLAMA_URL}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:selectedModel,messages:[{role:'system',content:system},{role:'user',content:String(prompt).slice(0,50000)}],stream:false,options:{num_ctx:32768}})},timeoutMs);
+  const r=await fetchWithTimeout(`${OLLAMA_URL}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:selectedModel,messages:fitMessages([{role:'system',content:system},{role:'user',content:String(prompt).slice(0,50000)}]),stream:false,keep_alive:TEXT_KEEP_ALIVE,options:{num_ctx:TEXT_NUM_CTX}})},timeoutMs);
   const raw=await r.text(); if(!r.ok)throw new Error(`Intelligence service HTTP ${r.status}: ${raw.slice(0,400)}`); const j=JSON.parse(raw); return j?.message?.content||'';
 }
 async function runEngineeringPlannerModel(prompt, system, timeoutMs=ENGINEERING_MODEL_TIMEOUT_MS){
@@ -1652,12 +1675,14 @@ async function runEngineeringPlannerModel(prompt, system, timeoutMs=ENGINEERING_
   let watchdogAborted=false;
   const payload=Buffer.from(JSON.stringify({
     model:MODEL,
-    messages:[
+    // The planner is rare and code-heavy, so it gets the large context; the reload cost when switching is accepted.
+    messages:fitMessages([
       {role:'system',content:system},
       {role:'user',content:String(prompt).slice(0,50000)}
-    ],
+    ],{numCtx:TEXT_NUM_CTX_LARGE,reserve:LARGE_ANSWER_RESERVE}),
     stream:true,
-    options:{num_ctx:32768}
+    keep_alive:TEXT_KEEP_ALIVE,
+    options:{num_ctx:TEXT_NUM_CTX_LARGE}
   }),'utf8');
   const endpoint=new URL(`${OLLAMA_URL}/api/chat`);
   const transport=endpoint.protocol==='https:'
@@ -3150,6 +3175,7 @@ setInterval(() => { getStatusAndRecordTransition().catch(() => {}); }, HEALTH_TI
 repairGarbledTextOnce();
 
 server.listen(PORT, '0.0.0.0', () => {
+  warmText();
   console.log(`${new Date().toISOString()} Local AI Appliance v${APP_VERSION} listening on 0.0.0.0:${PORT}`);
   recordActivity('system', 'Appliance started', `Local AI Appliance v${APP_VERSION} is ready.`);
 });
