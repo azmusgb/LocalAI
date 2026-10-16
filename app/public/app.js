@@ -64,13 +64,34 @@ function activityHtml(item){const run=item.meta?.runId?`<button class="btn activ
 
 // Data loaders for pages whose content is fetched on open. Every route (rail, tabs, mobile sheet, ⌘K) goes through showView.
 const VIEW_LOADERS={inbox:()=>loadInbox(),approvals:()=>loadApprovals(),memory:()=>loadMemory(),operations:()=>loadMonitors(),changes:()=>Promise.all([loadChanges(),loadEngineeringRuns()]),quality:()=>loadQuality(),issues:()=>loadIssues(),powershell:()=>loadPowerShellJobs()};
+// After a navigation, focus goes to the new page (its heading, else the page itself) so keyboard and screen-reader
+// users land where the page changed. Not on first load, and not when switching tabs inside a page.
+// The element that last had focus: hiding a page drops focus to the body before showView can look.
+let lastFocused=null,lastFocusAt=0;document.addEventListener('focusin',e=>{lastFocused=e.target;lastFocusAt=Date.now()});
+window.addEventListener('pointerdown',e=>{lastFocused=e.target.closest?.('button,a,[tabindex],input,select,textarea')||null;lastFocusAt=Date.now()},true);
+function announcePage(id,first,from){
+  if((!from||from===document.body)&&Date.now()-lastFocusAt<1000)from=lastFocused;
+  const force=window.LocalAIFocusNext;window.LocalAIFocusNext=false;
+  if(first&&!force)return;
+  const sec=$(id);if(!sec)return;
+  // Leaving the run view: it hands focus back to what opened it, so don't move it here.
+  if(!force&&from?.closest?.('#runDrawerBackdrop,#runDetailsSheet'))return;
+  // `from` is what had focus before the old page was hidden (hiding it drops focus to the body).
+  const strip=!force&&from?.closest?.('.ux-tabs,.ux-page-strip,[role="tablist"]');
+  // A tab switch: each page has its own copy of the tab strip, so keep focus on the same tab in the new copy.
+  if(strip){if(!strip.closest('.view')||strip.closest('.view')===sec)return;requestAnimationFrame(()=>{const t=sec.querySelector('.ux-tabs .ux-tab.active,.ux-tabs [aria-selected="true"]');if(t)t.focus({preventScroll:true})});return}
+  requestAnimationFrame(()=>{const h=[...sec.querySelectorAll('h1')].find(x=>x.offsetParent!==null),t=h||sec;if(!t.hasAttribute('tabindex'))t.setAttribute('tabindex','-1');t.focus({preventScroll:true})});
+}
 function showView(id){
   const raw=id;
   id=window.LocalAIViews?.resolve(id)||id;
   if(window.LocalAIViews?.view(raw)?.domain==='hidden'&&$(raw))id=raw; // ask, create, agents and runs keep their own pages
   if(!$(id))return;
   if(state.view==='ask' && id!=='ask' && state.chatPhase==='streaming') abortStream('Stream stopped when leaving Ask');
-  state.view=id;qsa('.view').forEach(x=>x.classList.toggle('active',x.id===id));qsa('.navbtn').forEach(x=>x.classList.toggle('active',x.dataset.view===id));
+  const first=!state.viewShown,from=document.activeElement;state.viewShown=true;
+  state.view=id;qsa('.view').forEach(x=>x.classList.toggle('active',x.id===id));
+  document.title=id==='home'?'Local AI':`${window.LocalAIViews?.label(id)||id} · Local AI`;
+  announcePage(id,first,from);qsa('.navbtn').forEach(x=>x.classList.toggle('active',x.dataset.view===id));
   if(id==='library')loadLibrary(); if(id==='activity')loadActivity(); if(id==='create')loadCheckpoints();
   window.scrollTo({top:0,behavior:'instant'});
   if(id==='home')window.LocalAIHome?.activate();
@@ -704,12 +725,27 @@ async function signPowerShellJob(job){if(!window.crypto?.subtle)throw new Error(
 async function queuePowerShellJob(id){if(!(await LocalAIUI.ask({title:'Queue this script on the Windows host?',effect:"It runs with the host bridge's permissions.",confirmLabel:'Queue',tone:'host',typed:'RUN'})).ok)return;const confirmation='RUN';try{const job=(evo.powerShellJobs||[]).find(x=>x.id===id);if(!job)throw new Error('PowerShell job not found; refresh and try again');const signature=await signPowerShellJob(job);await powerShellPost('/api/powershell/request-run',{id,confirmation,signature});await loadPowerShellJobs(id);$('powershellStatus').textContent='Queued. The local Windows host bridge normally claims the job within one minute.';toast('PowerShell job queued')}catch(e){toast(e.message)}}
 async function cancelPowerShellJob(id){try{await powerShellPost('/api/powershell/cancel',{id});await loadPowerShellJobs(id);toast('PowerShell job cancelled')}catch(e){toast(e.message)}}
 
+// ⌘K / Ctrl+K: a native modal <dialog>, so focus stays inside, Escape closes and the page behind is inert.
+// Arrows move through the matches, Enter opens the first (or the focused) one, and focus returns to the opener.
 function commandPalette(){
-  const el=$('cmdk');if(!el)return;
+  const el=$('cmdk'),input=$('cmdkInput'),list=$('cmdkList');if(!el||typeof el.showModal!=='function')return;
   // Labels and old names (aka) come from view-registry.js so renamed pages stay findable.
   const actions=window.LocalAIViews.VIEWS.map(v=>[v.label,v.id,[v.label,...(v.aka||[])].join(' ').toLowerCase()]);
-  const render=()=>{const q=$('cmdkInput').value.toLowerCase();$('cmdkList').innerHTML=actions.filter(([label,id,terms])=>$(id)&&terms.includes(q)).map(([label,id])=>`<button class="cmdk-item" data-cmd-view="${id}">${label}</button>`).join('');qsa('[data-cmd-view]').forEach(b=>b.onclick=()=>{el.classList.remove('show');showView(b.dataset.cmdView)})};
-  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();el.classList.add('show');$('cmdkInput').value='';render();$('cmdkInput').focus()}if(e.key==='Escape')el.classList.remove('show')});$('cmdkInput').addEventListener('input',render);el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('show')});render();
+  let opener=null,chosen=null;
+  const items=()=>qsa('[data-cmd-view]',list);
+  const render=()=>{const q=input.value.toLowerCase().trim();list.innerHTML=actions.filter(([label,id,terms])=>$(id)&&terms.includes(q)).map(([label,id])=>`<button type="button" class="cmdk-item" data-cmd-view="${id}">${esc(label)}</button>`).join('')||'<p class="cmdk-empty">No page matches.</p>'};
+  const choose=id=>{chosen=id;el.close()};
+  const open=()=>{if(el.open)return;opener=document.activeElement;chosen=null;input.value='';render();el.showModal();input.focus()};
+  el.addEventListener('close',()=>{if(chosen){window.LocalAIFocusNext=true;showView(chosen)}else if(opener?.isConnected)opener.focus()});
+  el.addEventListener('click',e=>{const b=e.target.closest('[data-cmd-view]');if(b)choose(b.dataset.cmdView);else if(e.target===el)el.close()});
+  el.addEventListener('keydown',e=>{
+    const all=items(),at=all.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!all.length)return;const n=e.key==='ArrowDown'?(at+1)%all.length:(at<=0?all.length-1:at-1);all[n].focus()}
+    else if(e.key==='Enter'&&document.activeElement===input){e.preventDefault();if(all[0])choose(all[0].dataset.cmdView)}
+  });
+  input.addEventListener('input',render);
+  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='k'){e.preventDefault();el.open?el.close():open()}});
+  window.LocalAIPalette={open};
 }
 async function bindEvo(){
   if(!releaseState.config) await loadReleaseConfig();
