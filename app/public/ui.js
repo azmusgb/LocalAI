@@ -3496,7 +3496,8 @@ function mount(){
  const host=q('#status');if(!host||q('.notify-card',host))return;
  const card=document.createElement('section');card.className='card notify-card';card.id='notifications';
  card.innerHTML='<h2>Notifications</h2><div class="notify-body"></div><p class="notify-status meta" role="status"></p>';
- (q('.secure-card',host)||q('.topbar',host))?.after(card);
+ // Below the Appliance summary, so health comes first and the notifications offer second.
+ (q(':scope > .two',host)||q('.secure-card',host)||q('.topbar',host))?.after(card);
  card.addEventListener('click',async e=>{
   const rename=e.target.closest('[data-notify-rename]');
   if(rename){const li=rename.closest('li'),b=q('b',li);li.querySelector('.notify-device-actions').innerHTML=`<input class="notify-rename" maxlength="40" value="${esc(b.textContent)}" aria-label="Device name"><button type="button" class="btn primary" data-notify-rename-save="${esc(rename.dataset.notifyRename)}">Save</button>`;q('.notify-rename',li).focus();return}
