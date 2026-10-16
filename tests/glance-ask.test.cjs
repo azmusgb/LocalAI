@@ -460,3 +460,116 @@ test('I1/I2 end to end: a clear night says clear, and tonight is the overnight w
   const { ask } = await startServer(t, { env: w.env });
   assert.equal((await ask('weather tonight', '&lat=33.4&lon=-111.9')).body, 'Tonight in Tempe: clear, low of 59, no rain expected.');
 });
+
+// Voice actions: start work and reply at once; approvals, applies and deploys stay on the phone.
+const REFUSAL = "That needs your phone — I've put it in Needs you.";
+
+// A ComfyUI that lists one checkpoint and records what reaches /prompt (then fails it, so nothing waits on a GPU).
+async function startComfy(t, { promptStatus = 500 } = {}) {
+  const prompts = [];
+  const srv = http.createServer((req, res) => {
+    let body = ''; req.on('data', c => body += c);
+    req.on('end', () => {
+      const send = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(value)); };
+      if (req.url === '/object_info/CheckpointLoaderSimple') return send(200, { CheckpointLoaderSimple: { input: { required: { ckpt_name: [['sdxl-test.safetensors']] } } } });
+      if (req.url === '/prompt') { prompts.push(body); return send(promptStatus, { error: 'test comfy' }); }
+      send(404, {});
+    });
+  });
+  srv.listen(0, '127.0.0.1'); await once(srv, 'listening');
+  t.after(async () => { srv.closeAllConnections(); await new Promise(r => srv.close(r)); });
+  return { prompts, url: `http://127.0.0.1:${srv.address().port}` };
+}
+
+test('"make an image of a red fox" starts the image and replies at once', { timeout: 30000 }, async t => {
+  const comfy = await startComfy(t);
+  const log = path.join(os.tmpdir(), `localai-notify-${process.pid}-${Date.now()}-img`);
+  t.after(() => fs.rmSync(log, { force: true }));
+  const { ask, base } = await startServer(t, { env: { COMFY_URL: comfy.url, LOCALAI_NOTIFY_LOG: log } });
+  const started = Date.now();
+  const r = await ask('make an image of a red fox');
+  assert.ok(Date.now() - started < 1000, `took ${Date.now() - started}ms`);
+  assert.equal(r.status, 200);
+  assert.equal(r.body, "Started an image of a red fox. I'll notify you when it's ready.");
+  await waitFor(() => comfy.prompts.some(p => p.includes('a red fox')));
+  const runs = await runsFor(base);
+  const image = runs.find(x => x.type === 'image');
+  assert.ok(image, JSON.stringify(runs.map(x => x.type)));
+  assert.equal(image.input.prompt, 'a red fox');
+  // The image failed in the mock: one notification from the voice ask, not the generic "Failed" too.
+  const [n] = await waitFor(() => { const l = readLog(log); return l.length ? l : null; });
+  await new Promise(r => setTimeout(r, 300));
+  assert.equal(readLog(log).length, 1, JSON.stringify(readLog(log)));
+  assert.equal(n.title, "Couldn't make the image");
+  assert.match(n.url, /^#run\/.+/);
+});
+
+test('an image with no subject asks what to draw, and starts nothing', { timeout: 30000 }, async t => {
+  const comfy = await startComfy(t);
+  const { ask, base } = await startServer(t, { env: { COMFY_URL: comfy.url } });
+  const r = await ask('make an image');
+  assert.equal(r.body, 'What should the image show?');
+  await new Promise(r => setTimeout(r, 300));
+  assert.equal((await runsFor(base)).filter(x => x.type === 'image').length, 0);
+});
+
+test('"start a mission to compare NAS drives" starts a mission run with that goal', { timeout: 30000 }, async t => {
+  const { ask, base } = await startServer(t);
+  const started = Date.now();
+  const r = await ask('start a mission to compare NAS drives');
+  assert.ok(Date.now() - started < 1000, `took ${Date.now() - started}ms`);
+  assert.equal(r.status, 200);
+  assert.equal(r.body, 'Started a mission: compare NAS drives.');
+  const runs = await runsFor(base);
+  const mission = runs.find(x => x.type === 'agent');
+  assert.ok(mission, JSON.stringify(runs.map(x => x.type)));
+  assert.equal(mission.input.goal, 'compare NAS drives');
+});
+
+test('"research the best NAS for Plex" replies at once and sends the answer as one notification', { timeout: 30000 }, async t => {
+  const log = path.join(os.tmpdir(), `localai-notify-${process.pid}-${Date.now()}-res`);
+  t.after(() => fs.rmSync(log, { force: true }));
+  const w = await startWorld(t);
+  const { ask, chats } = await startServer(t, { env: { ...w.env, LOCALAI_NOTIFY_LOG: log }, onChat: delayed(600) });
+  const started = Date.now();
+  const r = await ask('research the best NAS for Plex');
+  assert.ok(Date.now() - started < 1000, `took ${Date.now() - started}ms`);
+  assert.equal(r.body, "Researching the best NAS for Plex. I'll send you the answer.");
+  assert.deepEqual(readLog(log), []);
+  const [n] = await waitFor(() => { const l = readLog(log); return l.length ? l : null; });
+  await new Promise(r => setTimeout(r, 300));
+  assert.equal(readLog(log).length, 1, JSON.stringify(readLog(log)));
+  assert.equal(n.kind, 'answer');
+  assert.equal(n.title, 'Research ready');
+  assert.equal(n.body, 'The slow answer. Second sentence.');
+  assert.match(n.url, /^#run\/.+/);
+  const asked = chats.at(-1).messages.filter(m => m.role === 'user').map(m => m.content);
+  assert.deepEqual(asked, ['the best NAS for Plex']);
+  assert.ok(w.seen.some(u => u.startsWith('/search') && /NAS/.test(decodeURIComponent(u))), JSON.stringify(w.seen));
+});
+
+test('research that cannot search sends a "couldn\'t finish" notification', { timeout: 30000 }, async t => {
+  const log = path.join(os.tmpdir(), `localai-notify-${process.pid}-${Date.now()}-resf`);
+  t.after(() => fs.rmSync(log, { force: true }));
+  const { ask } = await startServer(t, { env: { LOCALAI_NOTIFY_LOG: log } });
+  assert.equal((await ask('research solar panels')).body, "Researching solar panels. I'll send you the answer.");
+  const [n] = await waitFor(() => { const l = readLog(log); return l.length ? l : null; });
+  await new Promise(r => setTimeout(r, 300));
+  assert.equal(readLog(log).length, 1, JSON.stringify(readLog(log)));
+  assert.equal(n.title, "Couldn't finish the research");
+  assert.equal(n.body, 'Tap to see what went wrong.');
+});
+
+test('Review Focus 5: approvals, applies, deploys and PowerShell are refused and nothing is called', { timeout: 30000 }, async t => {
+  const stamp = '2026-10-15T00:00:00Z';
+  const { ask, base, chats } = await startServer(t, { seed: s => s.put('approvals', { id: 'appr-1', title: 'Fix the login bug', detail: '', risk: 'high', status: 'pending', createdAt: stamp, updatedAt: stamp, meta: {} }, 0) });
+  for (const q of ['approve the login fix', 'deploy it', 'apply the change', 'run powershell get-process', 'please delete the old runs']) {
+    const r = await ask(q);
+    assert.equal(r.status, 200, q);
+    assert.equal(r.body, REFUSAL, q);
+  }
+  assert.equal(chats.length, 0);
+  const approvals = (await (await fetch(`${base}/api/approvals`)).json()).items;
+  assert.equal(approvals.find(a => a.id === 'appr-1').status, 'pending');
+  assert.deepEqual((await runsFor(base)).map(x => x.type), []);
+});

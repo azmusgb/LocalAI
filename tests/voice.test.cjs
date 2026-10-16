@@ -24,6 +24,13 @@ test('classify routes spoken questions by rules', () => {
   assert.equal(classify('research the best NAS for Plex').action, 'research');
 });
 
+test('action subjects keep the words as dictated, minus the closing punctuation', () => {
+  assert.equal(classify('Research the best NAS for Plex.').subject, 'the best NAS for Plex');
+  assert.equal(classify('Start a mission to compare NAS drives').subject, 'compare NAS drives');
+  assert.equal(classify('Make a picture of the Eiffel Tower at night!').subject, 'the Eiffel Tower at night');
+  assert.equal(classify('make an image').subject, '');
+});
+
 test('speakable strips markdown, links, emoji and keeps two sentences', () => {
   const out = speakable('**Yes** — see https://x.y 🙂\n- a\n- b. Third. Fourth.');
   assert.doesNotMatch(out, /\*|http|[-•]\s|\p{Extended_Pictographic}/u);
