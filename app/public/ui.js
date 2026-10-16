@@ -2373,7 +2373,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
   const INTEGRATIONS = [
     {
-      id: 'n8n', name: 'n8n', tier: 'native', decision: 'Native owner', source: 'n8n',
+      id: 'n8n', name: 'n8n', tier: 'native', decision: 'Built in', source: 'n8n',
       summary: 'Primary workflow automation engine. Keep orchestration here instead of adding Bardeen, Coze, or another parallel automation runtime.',
       guidance: "After adding credentials, community nodes, or public webhooks, run n8n's official security audit and review any risky-node findings.",
       actions: [
@@ -2382,7 +2382,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       ]
     },
     {
-      id: 'comfyui', name: 'ComfyUI', tier: 'native', decision: 'Native media owner', source: 'comfy',
+      id: 'comfyui', name: 'ComfyUI', tier: 'native', decision: 'Built in · images', source: 'comfy',
       summary: 'Primary local generative-media backend. Image, video, and avatar workflows should extend this service rather than create another media stack.',
       guidance: 'For automated workflows, prefer custom nodes that work in ComfyUI API mode. Nodes that require direct client/server communication may not be callable from Local AI.',
       actions: [
