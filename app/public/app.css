@@ -524,14 +524,14 @@ body.ux-v3 #agents .agent-side-stack{grid-template-columns:minmax(0,1fr)}
 .awc__toolbar{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
 .awc__group{display:flex;align-items:center;border:1px solid var(--aw-line);border-radius:10px;background:#0b1726;overflow:hidden}
 .awc__group>*+*{border-left:1px solid var(--aw-line)}
-.awc__group button{min-height:32px;padding:0 11px;border:0;background:transparent;color:#c3d3e3;font-size:12px;font-weight:600}
+.awc__group button{min-height:32px;padding:0 11px;border:0;background:transparent;color:var(--ds-soft);font-size:12px;font-weight:600}
 .awc__group button:hover{background:#15273d;color:#fff}
 .awc__group button[aria-pressed="true"]{background:#173352;color:#e6f3ff}
 .awc__group button[data-game-primary="true"]{color:var(--aw-amber)}
 #awcZoomLabel{min-width:46px;text-align:center;font-size:12px;color:var(--aw-muted)}
 
 /* Mission strip */
-.awc__missionstrip{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(200px,.8fr) minmax(220px,.8fr);gap:20px;align-items:center;padding:12px 16px;background:#0c1828;border-bottom:1px solid var(--aw-line)}
+.awc__missionstrip{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(200px,.8fr) minmax(220px,.8fr);gap:20px;align-items:center;padding:12px 16px;background:var(--ds-bg-2);border-bottom:1px solid var(--aw-line)}
 .awc__eyebrow{font-size:11px;color:var(--aw-faint)}
 .awc__missioncopy{display:grid;gap:2px;min-width:0}
 .awc__missioncopy strong{font-size:14px;font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -590,7 +590,7 @@ body.ux-v3 #agents .agent-side-stack{grid-template-columns:minmax(0,1fr)}
 
 /* Side panel */
 .awc__ops{position:relative;min-width:0;border-left:1px solid var(--aw-line);background:var(--aw-panel)}
-.awc__opsScroll{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#2d4a6d transparent}
+.awc__opsScroll{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--ds-line-2) transparent}
 .awc__section{padding:14px;border-bottom:1px solid var(--aw-line)}
 .awc__opsHead{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:10px}
 .awc__opsHead h3{margin:0;font-size:13px;font-weight:700}
@@ -613,7 +613,7 @@ body.ux-v3 #agents .agent-side-stack{grid-template-columns:minmax(0,1fr)}
 .awc__empty{padding:14px 8px;text-align:center;color:var(--aw-faint);font-size:12px}
 
 .awc__districtLegend{display:flex;flex-wrap:wrap;gap:6px}
-.awc__districtLegend button{display:inline-flex;align-items:center;gap:7px;min-height:30px;padding:0 11px;border:1px solid var(--aw-line);border-radius:999px;background:#0b1726;color:#c3d3e3;font-size:12px}
+.awc__districtLegend button{display:inline-flex;align-items:center;gap:7px;min-height:30px;padding:0 11px;border:1px solid var(--aw-line);border-radius:999px;background:#0b1726;color:var(--ds-soft);font-size:12px}
 .awc__districtLegend button:hover{border-color:color-mix(in srgb,var(--district,#5cc8ff) 60%,transparent);color:#fff}
 .awc__districtLegend i{width:8px;height:8px;border-radius:2px;background:var(--district)}
 
@@ -802,7 +802,7 @@ body.awc-stage-expanded{overflow:hidden}
 
 /* Decisions: status on each card, a lifecycle tracker, one primary action, inline notes, undo toast */
 #claude .chip.tab{display:inline-flex;align-items:center;gap:6px;text-transform:none}
-#claude .chip.tab b{font-weight:700;color:var(--ds-soft,#c3d3e3);font-variant-numeric:tabular-nums}
+#claude .chip.tab b{font-weight:700;color:var(--ds-soft,var(--ds-soft));font-variant-numeric:tabular-nums}
 #claude .chip.tab.active b{color:#fff}
 .claude-finding-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
 .claude-state{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:650;color:var(--muted)}
@@ -811,12 +811,12 @@ body.awc-stage-expanded{overflow:hidden}
 .claude-state .spin{width:9px;height:9px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:claudeSpin .9s linear infinite}
 @keyframes claudeSpin{to{transform:rotate(360deg)}}
 .claude-life{display:inline-flex;gap:4px}
-.claude-life i{width:16px;height:4px;border-radius:2px;background:var(--panel3,#182b45)}
+.claude-life i{width:16px;height:4px;border-radius:2px;background:var(--panel3,var(--ds-surface-3))}
 .claude-life i.past{background:var(--accent)}
 .claude-life i.now{background:var(--accent);box-shadow:0 0 0 2px rgba(92,184,255,.25)}
 .claude-finding.st-in_progress .claude-life i.now{background:var(--warn);box-shadow:0 0 0 2px rgba(255,178,36,.25)}
 .claude-finding.st-fixed .claude-life i{background:var(--good)}
-.claude-life.aside i{background:var(--panel3,#182b45);opacity:.6}
+.claude-life.aside i{background:var(--panel3,var(--ds-surface-3));opacity:.6}
 .claude-finding.st-proposed{border-left-color:#d8efff}
 .claude-finding.st-approved{border-left-color:var(--accent)}
 .claude-decide{align-items:center}
@@ -825,13 +825,13 @@ body.awc-stage-expanded{overflow:hidden}
 #claude .btn.small.quiet:hover{color:var(--text);background:var(--panel2)}
 #claude button.link{background:none;border:0;padding:4px 2px;color:var(--accent);font-size:12px;cursor:pointer}
 #claude button.link:hover{text-decoration:underline}
-.claude-note{margin:6px 0 0;font-size:13px;color:var(--soft,#c3d3e3);font-style:italic}
+.claude-note{margin:6px 0 0;font-size:13px;color:var(--soft,var(--ds-soft));font-style:italic}
 .claude-note-form{display:grid;gap:6px;width:100%}
 .claude-note-form textarea{width:100%;min-height:52px;padding:8px 10px;font:inherit;resize:vertical}
 .claude-note-form div{display:flex;gap:6px}
 .claude-toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;pointer-events:none;
   display:flex;align-items:center;gap:12px;max-width:min(560px,calc(100vw - 32px));padding:10px 12px 10px 16px;border-radius:12px;
-  background:#13233a;border:1px solid #2d4a6d;box-shadow:0 18px 40px rgba(0,0,0,.4);color:var(--text);font-size:13px;z-index:500;transition:opacity .18s ease,transform .18s ease}
+  background:#13233a;border:1px solid var(--ds-line-2);box-shadow:0 18px 40px rgba(0,0,0,.4);color:var(--text);font-size:13px;z-index:500;transition:opacity .18s ease,transform .18s ease}
 .claude-toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
 .claude-toast span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:760px){.claude-toast{bottom:calc(88px + env(safe-area-inset-bottom,0px))}}
