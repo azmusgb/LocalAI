@@ -271,7 +271,7 @@ async function pollEngineeringIntent(runId,msg=null){
 
     setPhase('done',labels[run.status]||'Engineering updated');
     toast(notices[run.status]||'Engineering status updated');
-  }catch(e){
+  }catch{
     setTimeout(()=>pollEngineeringIntent(runId,msg),3000);
   }
 }
@@ -565,7 +565,7 @@ async function refreshStatus(force=false){
     $('serviceList').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);return `<div class="service service-card ${st}"><div class="service-copy"><strong>${esc(s.label)}</strong><small>${esc(serviceDescription(s))}</small></div><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">${Number.isFinite(s.latencyMs)?s.latencyMs+' ms':'—'}</span></div>`}).join('');
     $('technicalStatus').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);const err=s.error?` · ${esc(s.error)}`:'';return `<div class="service"><span>${esc(s.name)} · ${s.required===false?'optional companion':'core'}<small class="service-tech-note">${esc(s.impact||'')}${err}</small></span><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">HTTP ${s.statusCode??'—'}</span></div>`}).join('');
     const c=j.certification||{};const res=String(c.result||'').toUpperCase(),word={PASS:'Passed',WARN:'Passed with warnings',FAIL:'Failed'}[res]||human(c.result||'Unknown'),tone={PASS:'HEALTHY',WARN:'DEGRADED',FAIL:'DOWN'}[res]||'DEGRADED';$('certBox').innerHTML=c.available?`<span class="dot ${tone}"></span> ${esc(word)}${c.modifiedAt?` · ${esc(new Date(c.modifiedAt).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}`:''}`:'<span class="dot DEGRADED"></span> No check on record';
-  }catch(e){
+  }catch{
     for(const id of ['homeDot','sideDot'])$(id).className='dot DOWN';$('homeState').textContent='Unavailable';$('sideState').textContent='Offline';
     $('statusSummary').innerHTML='<span class="dot DOWN"></span> Status check unavailable';
     if($('serviceList'))$('serviceList').innerHTML=`<div class="status-error">Could not refresh status. <button class="btn" type="button" data-status-retry>Retry</button></div>`;

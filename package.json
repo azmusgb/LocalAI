@@ -10,9 +10,14 @@
     "validate": "pwsh -NoProfile -File deploy/Test-LocalAI-Candidate.ps1 -CandidateRoot .",
     "test": "node --test tests/*.test.cjs",
     "test:browser": "node tests/run-browser.mjs",
+    "ci": "node scripts/local-ci.mjs",
+    "lint": "eslint .",
     "lint:css": "stylelint \"app/public/**/*.css\""
   },
   "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "eslint": "9.39.5",
+    "globals": "17.12.0",
     "playwright": "1.63.0",
     "stylelint": "17.15.0"
   }
