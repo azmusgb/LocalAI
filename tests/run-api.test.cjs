@@ -344,6 +344,45 @@ test('mission start without async still answers with the mission', { timeout: 60
   assert.equal(a.value.runId, undefined);
 });
 
+test('mission runs investigate with tools and can be cancelled', { timeout: 60000 }, async t => {
+  const chats = [];
+  const slow = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', c => raw += c);
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (req.url === '/api/tags') return res.end(JSON.stringify({ models: [{ name: 'test-model' }] }));
+      if (req.url !== '/api/chat') return res.end('{}');
+      chats.push(JSON.parse(raw));
+      const timer = setTimeout(() => res.end(JSON.stringify({ message: { role: 'assistant', content: 'Slow answer' } })), 20000);
+      res.on('close', () => clearTimeout(timer));
+    });
+  });
+  slow.listen(0, '127.0.0.1');
+  await once(slow, 'listening');
+  t.after(async () => { slow.closeAllConnections(); await new Promise(resolve => slow.close(resolve)); });
+  const { request } = await startServer(t, { OLLAMA_URL: `http://127.0.0.1:${slow.address().port}` });
+  const a = await request('/api/agents/missions/start', { goal: 'Review the code', agentIds: ['code_analyst'], async: true });
+  assert.equal(a.response.status, 202, JSON.stringify(a.value));
+  for (let i = 0; i < 100 && !chats.some(c => Array.isArray(c.tools)); i++) await new Promise(r => setTimeout(r, 50));
+  const turn = chats.find(c => Array.isArray(c.tools));
+  assert.ok(turn, 'the specialist turn reached the model with tools');
+  assert.ok(turn.tools.some(x => x.function.name === 'read_project_file'));
+  assert.ok(!turn.tools.some(x => x.function.name === 'search_web'), 'web search stays off unless asked for');
+  assert.equal(turn.options.num_ctx, 32768);
+  assert.equal((await request('/api/runs?id=' + a.value.runId)).value.item.cancellable, true);
+  const cancel = await request('/api/runs/cancel', { id: a.value.runId });
+  assert.equal(cancel.response.status, 200, JSON.stringify(cancel.value));
+  const run = await waitRun(request, a.value.runId, r => r.status === 'cancelled');
+  const missionId = run.meta.missionId;
+  for (let i = 0; i < 100; i++) {
+    const m = (await request('/api/agents/mission?id=' + missionId)).value?.mission;
+    if (m && m.status !== 'running') { assert.equal(m.status, 'error'); return; }
+    await new Promise(r => setTimeout(r, 50));
+  }
+  assert.fail('the mission kept running after its run was cancelled');
+});
+
 test('text-model calls use one 8192 context, stay warm, and take turns with images', { timeout: 60000 }, async t => {
   const order = [];
   const comfy = http.createServer((req, res) => {

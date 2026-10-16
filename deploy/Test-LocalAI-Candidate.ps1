@@ -1,7 +1,7 @@
 param([Parameter(Mandatory=$true)][string]$CandidateRoot,[switch]$LocalNode,[string]$Container="local-ai-appliance")
 $ErrorActionPreference="Stop"
 $app=Join-Path $CandidateRoot "app"
-foreach($r in @("server.js","release.js","storage.js","storage-cli.js","agent-orchestrator.js","specialist-agents.json","public\app.js","public\ui.js","public\app.css","public\index.html","public\manifest.json","public\sw.js","public\view-registry.js")){if(-not(Test-Path(Join-Path $app $r))){throw "Missing required file: $r"}}
+foreach($r in @("server.js","release.js","storage.js","storage-cli.js","agent-orchestrator.js","agent-runtime.js","agent-tools.js","specialist-agents.json","public\app.js","public\ui.js","public\app.css","public\index.html","public\manifest.json","public\sw.js","public\view-registry.js")){if(-not(Test-Path(Join-Path $app $r))){throw "Missing required file: $r"}}
 Get-ChildItem $app -Recurse -File -Filter *.js|ForEach-Object{node --check $_.FullName|Out-Null;if($LASTEXITCODE -ne 0){throw "JavaScript syntax failure: $($_.FullName)"}}
 $server=Get-Content (Join-Path $app "server.js") -Raw;$frontend=Get-Content (Join-Path $app "public\app.js") -Raw;$orchestrator=Get-Content (Join-Path $app "agent-orchestrator.js") -Raw;$ux=Get-Content (Join-Path $app "public\ui.js") -Raw;$uxcss=Get-Content (Join-Path $app "public\app.css") -Raw;$agentCity=Get-Content (Join-Path $app "public\ui.js") -Raw;$agentOps=Get-Content (Join-Path $app "public\ui.js") -Raw;$index=Get-Content (Join-Path $app "public\index.html") -Raw
 foreach($s in @("/healthz","/api/engineering/runs","/api/agents/catalog","/api/agents/models","/api/agents/dispatch","/api/agents/specialist/run","/api/agents/missions/start","/api/agents/missions/events")){if(-not $server.Contains($s)){throw "Server contract missing: $s"}}
@@ -20,7 +20,7 @@ Write-Host "PASS: required files, JS syntax, lifecycle contracts, and sensitive-
 
 # Native storage checks need no npm packages or model services.
 # The host runs them in the appliance image (its Node has node:sqlite); CI passes -LocalNode because it has no appliance container.
-$nativeTests = @("tests/release.test.cjs","tests/storage.test.cjs","tests/storage-api.test.cjs","tests/agent-orchestrator.test.cjs")
+$nativeTests = @("tests/release.test.cjs","tests/storage.test.cjs","tests/storage-api.test.cjs","tests/agent-orchestrator.test.cjs","tests/agent-runtime.test.cjs")
 if($LocalNode){
 node --test ($nativeTests | ForEach-Object { Join-Path $CandidateRoot $_ })
 }else{
