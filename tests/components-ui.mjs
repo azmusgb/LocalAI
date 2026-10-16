@@ -62,7 +62,8 @@ await check('a slow load shows the loading state only after 300 ms', async () =>
   await fixture(page);
   await page.evaluate(() => { window.__p = window.LocalAIUI.loadInto(document.getElementById('fx'), () => new Promise(r => setTimeout(() => r(['s']), 900)), { render: (c, t) => { c.innerHTML = '<p class="row">s</p>'; return true; }, empty: 'e', what: 'runs' }); });
   assert.equal(await page.locator('#fx .state-loading').count(), 0, 'not before 300 ms');
-  await page.waitForSelector('#fx .state-loading', { timeout: 700 });
+  // Polled on a timer: waitForSelector's frame-based polling can miss the 300–900 ms window while the page is busy.
+  await page.waitForFunction(() => !!document.querySelector('#fx .state-loading'), null, { polling: 50, timeout: 700 });
   await page.waitForSelector('#fx .row');
   assert.equal(await page.locator('#fx .state-loading').count(), 0);
 });
