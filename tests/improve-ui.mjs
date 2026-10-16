@@ -86,6 +86,28 @@ await check('+ New idea: Add to backlog and Start now post the text and the choi
   }
 });
 
+await check('Back closes an open item or idea sheet and stays on Backlog; a sheet closed another way leaves no extra history', async () => {
+  for (const [open, id] of [
+    [() => page.locator('#backlogList [data-item-id="claude-top"] .improve-row__open').click(), 'improveItemSheet'],
+    [() => page.locator('#uxHeaderAction').click(), 'improveIdeaSheet']
+  ]) {
+    const before = await page.evaluate(() => history.length);
+    await open();
+    await page.locator('#' + id).waitFor({ state: 'visible' });
+    await page.goBack();
+    await page.waitForFunction(id => !document.getElementById(id).open, id);
+    assert.equal(await page.evaluate(() => location.hash), '#backlog');
+    assert.ok(await page.locator('#backlog.active').count(), 'still on Backlog');
+    // Closed with Escape: the entry the sheet pushed is popped again, so the page's history is as before.
+    await open();
+    await page.locator('#' + id).waitFor({ state: 'visible' });
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(id => !document.getElementById(id).open, id);
+    await page.waitForFunction(n => history.state?.localaiSheet == null && history.length >= n, before);
+    assert.equal(await page.evaluate(() => history.state?.localaiSheet ?? null), null, 'no sheet entry left on top');
+  }
+});
+
 await check('Signals: open ones listed with Promote and Dismiss; a promoted one says so', async () => {
   await page.evaluate(() => window.showView('signals'));
   await page.waitForSelector('#signals.active #signalsList .improve-row');
