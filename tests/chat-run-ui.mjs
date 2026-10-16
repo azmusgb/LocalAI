@@ -133,6 +133,19 @@ await check('a truncated answer with no Library copy never shows raw JSON', asyn
   await page.context().close();
 });
 
+await check('a reply never sends the "too long to keep" placeholder to the model as an answer', async () => {
+  const bad = run(1, 'long one', '', { output: { truncated: true, preview: '{"text":"The beginning of a very long answ' }, artifactIds: ['gone'], threadId: 't-bad' });
+  const page = await open(desk, '#home', { runs: [bad], library: [] });
+  await page.evaluate(id => window.LocalAIRuns.show(id), bad.id);
+  await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'This answer was too long to keep here.' }).waitFor(T);
+  await page.locator('#runReply').fill('and then?'); await page.locator('#runReply').press('Enter');
+  await page.waitForFunction(() => window.__reqs.length === 1, null, T);
+  const msgs = (await reqs(page))[0].messages;
+  assert.ok(!JSON.stringify(msgs).includes('too long to keep'), JSON.stringify(msgs));
+  assert.deepEqual(msgs.filter(m => m.role === 'user').map(m => m.content), ['long one', 'and then?']);
+  await page.context().close();
+});
+
 for (const [tag, vp] of [['390x844', phone], ['1280x860', desk]]) await check(`${tag}: a failed chat run is not a dead end: the reply box works and More offers Retry`, async () => {
   const f = run(1, 'why is the sky blue', '', { status: 'failed', output: null }); f.error = 'The model stopped answering'; f.retryable = true;
   const page = await open(vp, '#home', { runs: [f] });
