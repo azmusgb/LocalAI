@@ -53,7 +53,9 @@ async function startServer(t, { reply = 'Fine.', seed, env = {}, onChat } = {}) 
     await new Promise(r => setTimeout(r, 50));
   }
   const ask = async (q, extra = '') => { const r = await fetch(`${base}/api/glance/ask?q=${encodeURIComponent(q)}${extra}`); return { status: r.status, type: r.headers.get('content-type'), body: await r.text() }; };
-  return { base, chats, ask };
+  // The Ask Local AI shortcut: POST {text}, no Origin header.
+  const post = async (q, headers = {}) => { const r = await fetch(`${base}/api/glance/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ text: q }) }); return { status: r.status, type: r.headers.get('content-type'), body: await r.text() }; };
+  return { base, chats, ask, post };
 }
 
 test('time questions are answered from the clock without the model', { timeout: 30000 }, async t => {
@@ -464,7 +466,8 @@ test('I1/I2 end to end: a clear night says clear, and tonight is the overnight w
 // Voice actions: start work and reply at once; approvals, applies and deploys stay on the phone.
 const REFUSAL = "That needs your phone — I've put it in Needs you.";
 
-// A ComfyUI that lists one checkpoint and records what reaches /prompt (then fails it, so nothing waits on a GPU).
+// A ComfyUI that lists one checkpoint and records what reaches /prompt: it fails the prompt (so nothing waits on a
+// GPU), or with promptStatus 200 queues it and reports one finished image.
 async function startComfy(t, { promptStatus = 500 } = {}) {
   const prompts = [];
   const srv = http.createServer((req, res) => {
@@ -472,7 +475,10 @@ async function startComfy(t, { promptStatus = 500 } = {}) {
     req.on('end', () => {
       const send = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(value)); };
       if (req.url === '/object_info/CheckpointLoaderSimple') return send(200, { CheckpointLoaderSimple: { input: { required: { ckpt_name: [['sdxl-test.safetensors']] } } } });
-      if (req.url === '/prompt') { prompts.push(body); return send(promptStatus, { error: 'test comfy' }); }
+      if (req.url === '/prompt') { prompts.push(body); return promptStatus === 200 ? send(200, { prompt_id: `p${prompts.length}` }) : send(promptStatus, { error: 'test comfy' }); }
+      // A queued prompt finishes at once with one image.
+      const done = req.url.match(/^\/history\/(p\d+)$/);
+      if (done) return send(200, { [done[1]]: { status: { status_str: 'success' }, outputs: { 9: { images: [{ filename: `${done[1]}.png`, subfolder: '', type: 'output' }] } } } });
       send(404, {});
     });
   });
@@ -485,7 +491,7 @@ test('"make an image of a red fox" starts the image and replies at once', { time
   const comfy = await startComfy(t);
   const log = path.join(os.tmpdir(), `localai-notify-${process.pid}-${Date.now()}-img`);
   t.after(() => fs.rmSync(log, { force: true }));
-  const { ask, base } = await startServer(t, { env: { COMFY_URL: comfy.url, LOCALAI_NOTIFY_LOG: log } });
+  const { post: ask, base } = await startServer(t, { env: { COMFY_URL: comfy.url, LOCALAI_NOTIFY_LOG: log } });
   const started = Date.now();
   const r = await ask('make an image of a red fox');
   assert.ok(Date.now() - started < 1000, `took ${Date.now() - started}ms`);
@@ -506,7 +512,7 @@ test('"make an image of a red fox" starts the image and replies at once', { time
 
 test('an image with no subject asks what to draw, and starts nothing', { timeout: 30000 }, async t => {
   const comfy = await startComfy(t);
-  const { ask, base } = await startServer(t, { env: { COMFY_URL: comfy.url } });
+  const { post: ask, base } = await startServer(t, { env: { COMFY_URL: comfy.url } });
   const r = await ask('make an image');
   assert.equal(r.body, 'What should the image show?');
   await new Promise(r => setTimeout(r, 300));
@@ -514,7 +520,7 @@ test('an image with no subject asks what to draw, and starts nothing', { timeout
 });
 
 test('"start a mission to compare NAS drives" starts a mission run with that goal', { timeout: 30000 }, async t => {
-  const { ask, base } = await startServer(t);
+  const { post: ask, base } = await startServer(t);
   const started = Date.now();
   const r = await ask('start a mission to compare NAS drives');
   assert.ok(Date.now() - started < 1000, `took ${Date.now() - started}ms`);
@@ -530,7 +536,7 @@ test('"research the best NAS for Plex" replies at once and sends the answer as o
   const log = path.join(os.tmpdir(), `localai-notify-${process.pid}-${Date.now()}-res`);
   t.after(() => fs.rmSync(log, { force: true }));
   const w = await startWorld(t);
-  const { ask, chats } = await startServer(t, { env: { ...w.env, LOCALAI_NOTIFY_LOG: log }, onChat: delayed(600) });
+  const { post: ask, chats } = await startServer(t, { env: { ...w.env, LOCALAI_NOTIFY_LOG: log }, onChat: delayed(600) });
   const started = Date.now();
   const r = await ask('research the best NAS for Plex');
   assert.ok(Date.now() - started < 1000, `took ${Date.now() - started}ms`);
@@ -551,13 +557,68 @@ test('"research the best NAS for Plex" replies at once and sends the answer as o
 test('research that cannot search sends a "couldn\'t finish" notification', { timeout: 30000 }, async t => {
   const log = path.join(os.tmpdir(), `localai-notify-${process.pid}-${Date.now()}-resf`);
   t.after(() => fs.rmSync(log, { force: true }));
-  const { ask } = await startServer(t, { env: { LOCALAI_NOTIFY_LOG: log } });
+  const { post: ask } = await startServer(t, { env: { LOCALAI_NOTIFY_LOG: log } });
   assert.equal((await ask('research solar panels')).body, "Researching solar panels. I'll send you the answer.");
   const [n] = await waitFor(() => { const l = readLog(log); return l.length ? l : null; });
   await new Promise(r => setTimeout(r, 300));
   assert.equal(readLog(log).length, 1, JSON.stringify(readLog(log)));
   assert.equal(n.title, "Couldn't finish the research");
   assert.equal(n.body, 'Tap to see what went wrong.');
+});
+
+const GET_ACTION = 'Use the Ask Local AI shortcut to start that.';
+
+// Any web page can make the owner's browser load a GET, and the cross-site guard only covers POST and the other
+// mutating methods, so a GET never starts work.
+test('a GET cannot start an image, a mission or research, and says to use the shortcut', { timeout: 30000 }, async t => {
+  const comfy = await startComfy(t);
+  const log = path.join(os.tmpdir(), `localai-notify-${process.pid}-${Date.now()}-get`);
+  t.after(() => fs.rmSync(log, { force: true }));
+  const { ask, base, chats } = await startServer(t, { env: { COMFY_URL: comfy.url, LOCALAI_NOTIFY_LOG: log } });
+  for (const q of ['make an image of a fox', 'start a mission to compare NAS drives', 'research the best NAS for Plex']) {
+    const r = await ask(q);
+    assert.equal(r.status, 200, q);
+    assert.match(r.type, /^text\/plain/, q);
+    assert.equal(r.body, GET_ACTION, q);
+  }
+  await new Promise(r => setTimeout(r, 500));
+  assert.deepEqual(comfy.prompts, []);
+  assert.equal(chats.length, 0);
+  assert.deepEqual((await runsFor(base)).map(x => x.type), []);
+  assert.deepEqual(readLog(log), []);
+});
+
+test('a cross-site POST to the ask is refused, and the shortcut\'s POST with no Origin starts work', { timeout: 30000 }, async t => {
+  const { post, base } = await startServer(t);
+  for (const headers of [{ Origin: 'https://evil.example' }, { 'Sec-Fetch-Site': 'cross-site' }, { Origin: 'null' }]) {
+    const r = await post('start a mission to compare NAS drives', headers);
+    assert.equal(r.status, 403, JSON.stringify(headers));
+  }
+  assert.deepEqual((await runsFor(base)).map(x => x.type), []);
+  const ok = await post('start a mission to compare NAS drives');
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body, 'Started a mission: compare NAS drives.');
+  assert.ok((await runsFor(base)).some(x => x.type === 'agent'));
+});
+
+test('a voice image that finishes sends one "Your image is ready" and its run stays a voice run', { timeout: 30000 }, async t => {
+  const comfy = await startComfy(t, { promptStatus: 200 });
+  const log = path.join(os.tmpdir(), `localai-notify-${process.pid}-${Date.now()}-imgok`);
+  t.after(() => fs.rmSync(log, { force: true }));
+  const { post, base } = await startServer(t, { env: { COMFY_URL: comfy.url, LOCALAI_NOTIFY_LOG: log } });
+  assert.equal((await post('make an image of a fox')).body, "Started an image of a fox. I'll notify you when it's ready.");
+  const [n] = await waitFor(() => { const l = readLog(log); return l.length ? l : null; }, 10000);
+  await new Promise(r => setTimeout(r, 300));
+  const all = readLog(log);
+  assert.equal(all.length, 1, JSON.stringify(all));
+  assert.equal(n.title, 'Your image is ready');
+  assert.equal(n.body, 'a fox');
+  const image = (await runsFor(base)).find(x => x.type === 'image');
+  assert.equal(image.status, 'completed');
+  assert.ok(image.events.some(e => /1 of 1 image done/.test(e.detail)), JSON.stringify(image.events));
+  // The generic Done/Failed stay quiet only while meta.voice survives progress and completion (app/notify.js runEvent).
+  assert.equal(image.meta.voice, true, JSON.stringify(image.meta));
+  assert.equal(image.meta.checkpoint, 'sdxl-test.safetensors');
 });
 
 test('Review Focus 5: approvals, applies, deploys and PowerShell are refused and nothing is called', { timeout: 30000 }, async t => {

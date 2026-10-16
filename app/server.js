@@ -549,6 +549,7 @@ const VOICE_HANDOFF = "Still working on that \u2014 I'll send it to your phone."
 const VOICE_QUEUE_WAIT_MS = Number(process.env.LOCALAI_VOICE_QUEUE_WAIT_MS) || 6000;
 const VOICE_DOWN = "Local AI can't answer right now. Try again in a minute.";
 const VOICE_REFUSAL = "That needs your phone \u2014 I've put it in Needs you.";
+const VOICE_POST_ONLY = 'Use the Ask Local AI shortcut to start that.';
 const voiceTimeZone = () => process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
 const VOICE_FACT_MS = 3000;
@@ -660,6 +661,9 @@ async function apiGlanceAsk(req, res, urlObj) {
       if (reset.fresh) { voiceThreads.take(textIn); return say(200, 'Okay. What is your question?'); }
       return say(200, "I didn't catch that.");
     }
+    // Images, missions and research start only from the shortcut's POST, which the cross-site guard covers. Any web
+    // page can make the owner's browser load a GET, so a GET that asks to start work starts nothing.
+    if (route.intent === 'action' && req.method !== 'POST') return say(200, VOICE_POST_ONLY);
     const question = reset.text;
     const { threadId } = voiceThreads.take(textIn);
     // Every answer is a turn in the thread; only chat asks hand the earlier turns to the model.
