@@ -533,6 +533,7 @@ async function apiGlance(req, res, urlObj) {
 // "Ask Local AI" from Siri (GET ?q= or POST {text}): a rules-only router picks the answer, the model only
 // handles open questions, and every reply is plain text that is safe to read aloud. Siri speaks the body
 // whatever the status, so errors are sentences, never JSON.
+const voiceThreads = voice.createVoiceThreads({ now: () => Date.now(), windowMs: 300000 });
 const VOICE_DOWN = "Local AI can't answer right now. Try again in a minute.";
 const voiceTimeZone = () => process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
@@ -556,17 +557,34 @@ async function apiGlanceAsk(req, res, urlObj) {
     if (req.method === 'GET') textIn = String(urlObj.searchParams.get('q') || '');
     else { const b = await readBody(req).catch(e => { if (e.statusCode === 413) throw e; return {}; }); textIn = typeof b?.text === 'string' ? b.text : ''; }
     textIn = textIn.trim().slice(0, 4000);
-    const route = voice.classify(textIn);
-    if (route.intent === 'empty') return say(200, "I didn't catch that.");
-    if (route.intent === 'time') return say(200, voice.speakable(voiceFacts({ now: new Date(), timeZone: voiceTimeZone() })));
-    if (route.intent === 'needs') return say(200, voice.speakable(await voiceNeedsSentence()));
-    if (route.intent === 'health') {
-      const snapshot = await getCapabilitiesSnapshot();
-      return say(200, voice.speakable(glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION }).speech));
-    }
-    // weather, current, action and refuse fall back to the model until they have their own answers.
-    const result = await chatOnce({ messages: [{ role: 'user', content: textIn }], brief: true, voice: true });
-    say(200, voice.speakable(result.message.content) || "I didn't catch that.");
+    const reset = voice.stripReset(textIn);
+    const route = voice.classify(reset.text);
+    if (route.intent === 'empty') return say(200, reset.fresh && textIn ? 'Okay. What is your question?' : "I didn't catch that.");
+    const question = reset.text;
+    const { threadId } = voiceThreads.take(textIn);
+    // Every answer is a turn in the thread; only chat asks hand the earlier turns to the model.
+    const turn = async build => {
+      const answer = await build();
+      voiceThreads.record(threadId, question, answer);
+      return answer;
+    };
+    const answer = await voiceThreads.run(threadId, () => {
+      if (route.intent === 'time') return turn(async () => voice.speakable(voiceFacts({ now: new Date(), timeZone: voiceTimeZone() })));
+      if (route.intent === 'needs') return turn(async () => voice.speakable(await voiceNeedsSentence()));
+      if (route.intent === 'health') {
+        return turn(async () => {
+          const snapshot = await getCapabilitiesSnapshot();
+          return voice.speakable(glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION }).speech);
+        });
+      }
+      // weather, current, action and refuse fall back to the model until they have their own answers.
+      return turn(async () => {
+        const messages = [...voiceThreads.history(threadId), { role: 'user', content: question }];
+        const result = await chatOnce({ messages, brief: true, voice: true, threadId });
+        return voice.speakable(result.message.content) || "I didn't catch that.";
+      });
+    });
+    say(200, answer);
   } catch (e) { say(e.statusCode === 413 ? 413 : 503, e.statusCode === 413 ? 'That was too long for me.' : VOICE_DOWN); }
 }
 

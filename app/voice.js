@@ -73,4 +73,45 @@ function firstSentences(s, count) {
   return out.join(' ');
 }
 
-module.exports = { classify, speakable };
+// "New question" / "start over" at the front of an ask forces a fresh thread; the rest is the question.
+const RESET = /^\s*(?:ok(?:ay)?[,.]?\s+)?(?:new\s+question|start\s+over|new\s+conversation)\b[\s,.:;!-]*/i;
+function stripReset(input) {
+  const s = String(input || '');
+  return RESET.test(s) ? { fresh: true, text: s.replace(RESET, '').trim() } : { fresh: false, text: s.trim() };
+}
+
+// Follow-up threads for Siri: an ask within windowMs of the last one continues the same conversation, so
+// "and tomorrow?" works with no state in the shortcut. One instance per server. Turns on a thread run one at a
+// time (run), so overlapping asks answer in order and the history stays consistent.
+function createVoiceThreads({ now = Date.now, windowMs = 300000, maxTurns = 6 } = {}) {
+  let current = null; // { id, turns: [{user, answer}], last, tail }
+  const history = id => current && current.id === id
+    ? current.turns.slice(-maxTurns).flatMap(t => [{ role: 'user', content: t.user }, { role: 'assistant', content: t.answer }])
+    : [];
+  return {
+    take(text) {
+      const t = now();
+      if (!current || stripReset(text).fresh || t - current.last > windowMs) {
+        current = { id: 't-' + require('node:crypto').randomBytes(16).toString('hex'), turns: [], last: t, tail: Promise.resolve() };
+      }
+      current.last = t;
+      return { threadId: current.id, history: history(current.id) };
+    },
+    history,
+    record(threadId, userText, answer) {
+      if (!current || current.id !== threadId) return;
+      current.turns.push({ user: String(userText), answer: String(answer) });
+      current.turns = current.turns.slice(-maxTurns);
+      current.last = now();
+    },
+    // Run fn after every earlier turn on this thread has finished; a failed turn does not block the next.
+    run(threadId, fn) {
+      const th = current && current.id === threadId ? current : { tail: Promise.resolve() };
+      const result = th.tail.then(fn);
+      th.tail = result.catch(() => {});
+      return result;
+    }
+  };
+}
+
+module.exports = { classify, speakable, stripReset, createVoiceThreads };

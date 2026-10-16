@@ -130,3 +130,73 @@ test('an oversized POST body is a plain-text 413', { timeout: 30000 }, async t =
   assert.equal(await r.text(), 'That was too long for me.');
   assert.equal(chats.length, 0);
 });
+
+// Follow-up threads: an ask within five minutes continues the same conversation.
+const runsFor = async base => (await (await fetch(`${base}/api/runs?limit=50`)).json()).items;
+
+test('a follow-up within the window shares the thread and sends the earlier turn to the model', { timeout: 30000 }, async t => {
+  const { ask, chats, base } = await startServer(t, { reply: 'Sunny and warm.' });
+  await ask('explain WAL mode');
+  await ask('and why is that useful');
+  assert.equal(chats.length, 2);
+  const second = chats[1].messages.filter(m => m.role !== 'system').map(m => `${m.role}:${m.content}`);
+  assert.deepEqual(second, ['user:explain WAL mode', 'assistant:Sunny and warm.', 'user:and why is that useful']);
+  const chatRuns = (await runsFor(base)).filter(r => r.type === 'chat');
+  assert.equal(chatRuns.length, 2);
+  assert.equal(chatRuns[0].threadId, chatRuns[1].threadId);
+  assert.match(chatRuns[0].threadId, /^t-[0-9a-f]{32}$/);
+});
+
+test('a time answer is a turn in the thread, so a follow-up has context', { timeout: 30000 }, async t => {
+  const { ask, chats } = await startServer(t, { reply: 'Cooler.' });
+  const time = await ask('what time is it');
+  await ask('and what about tomorrow');
+  const msgs = chats[0].messages.filter(m => m.role !== 'system');
+  assert.equal(msgs[0].content, 'what time is it');
+  assert.equal(msgs[1].content, time.body);
+  assert.equal(msgs[2].content, 'and what about tomorrow');
+});
+
+test('"start over" begins a new thread without the old history', { timeout: 30000 }, async t => {
+  const { ask, chats, base } = await startServer(t, { reply: 'Okay then.' });
+  await ask('explain WAL mode');
+  await ask('start over, explain journaling');
+  const msgs = chats[1].messages.filter(m => m.role !== 'system');
+  assert.deepEqual(msgs.map(m => m.content), ['explain journaling']);
+  const ids = new Set((await runsFor(base)).filter(r => r.type === 'chat').map(r => r.threadId));
+  assert.equal(ids.size, 2);
+});
+
+test('overlapping asks both answer and the thread records both turns in order', { timeout: 30000 }, async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-ask-'));
+  const chats = [];
+  const mock = http.createServer((req, res) => {
+    let body = ''; req.on('data', c => body += c);
+    req.on('end', () => {
+      if (req.url === '/api/tags') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ models: [{ name: 'test-model' }] })); }
+      if (req.url === '/api/ps') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ models: [] })); }
+      if (req.url !== '/api/chat') { res.writeHead(404); return res.end(); }
+      const parsed = JSON.parse(body), last = parsed.messages.at(-1).content; chats.push(parsed);
+      setTimeout(() => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ message: { content: `Answer to ${last}.` } })); }, last === 'first question' ? 500 : 0);
+    });
+  });
+  mock.listen(0, '127.0.0.1'); await once(mock, 'listening');
+  const port = await freePort(), base = `http://127.0.0.1:${port}`;
+  let log = '';
+  const child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], { env: { ...process.env, DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, PORT: String(port), OLLAMA_URL: `http://127.0.0.1:${mock.address().port}`, MODEL: 'test-model', SELF_APP_ROOT: path.resolve(__dirname, '../app'), COMFY_URL: 'http://127.0.0.1:9', N8N_URL: 'http://127.0.0.1:9', PROXY_URL: 'http://127.0.0.1:9', SEARXNG_URL: 'http://127.0.0.1:9', MAC_AI_HOME_URL: 'http://127.0.0.1:9', MAC_DSH_URL: 'http://127.0.0.1:9' } });
+  child.stdout.on('data', c => log += c); child.stderr.on('data', c => log += c);
+  t.after(async () => { if (child.exitCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; } mock.closeAllConnections(); await new Promise(r => mock.close(r)); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  for (let i = 0; i < 80; i++) { try { if ((await fetch(`${base}/healthz`)).ok) break; } catch {} if (i === 79) throw new Error(log); await new Promise(r => setTimeout(r, 50)); }
+  const get = q => fetch(`${base}/api/glance/ask?q=${encodeURIComponent(q)}`).then(async r => ({ status: r.status, body: await r.text() }));
+  const p1 = get('first question');
+  await new Promise(r => setTimeout(r, 100));
+  const p2 = get('second question');
+  const [a, b] = await Promise.all([p1, p2]);
+  assert.deepEqual([a.status, a.body], [200, 'Answer to first question.']);
+  assert.deepEqual([b.status, b.body], [200, 'Answer to second question.']);
+  const msgs = chats[1].messages.filter(m => m.role !== 'system').map(m => m.content);
+  assert.deepEqual(msgs, ['first question', 'Answer to first question.', 'second question']);
+  const runs = (await runsFor(base)).filter(r => r.type === 'chat');
+  assert.equal(runs.length, 2);
+  assert.equal(runs[0].threadId, runs[1].threadId);
+});

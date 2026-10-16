@@ -63,3 +63,22 @@ test('needsYouItems names things and the sentence speaks up to three', () => {
   assert.equal(needsYouSentence([]), 'Nothing needs you right now.');
   assert.match(needsYouSentence([1, 2, 3, 4, 5].map(i => ({ kind: 'approval', title: 'T' + i }))), /^5 things need you, including T1, T2, and T3\.$/);
 });
+
+const { createVoiceThreads } = require('../app/voice');
+test('createVoiceThreads: continues inside the window, restarts after it, keeps the last 6 turns', () => {
+  let clock = 0;
+  const th = createVoiceThreads({ now: () => clock });
+  const a = th.take('hello');
+  assert.match(a.threadId, /^t-[0-9a-f]{32}$/);
+  assert.deepEqual(a.history, []);
+  for (let i = 0; i < 8; i++) { clock += 1000; th.record(a.threadId, `q${i}`, `a${i}`); }
+  const b = th.take('more');
+  assert.equal(b.threadId, a.threadId);
+  assert.equal(b.history.length, 12);
+  assert.deepEqual(b.history.slice(0, 2), [{ role: 'user', content: 'q2' }, { role: 'assistant', content: 'a2' }]);
+  clock += 300001;
+  const c = th.take('later');
+  assert.notEqual(c.threadId, a.threadId);
+  assert.deepEqual(c.history, []);
+  assert.notEqual(th.take('start over, again').threadId, c.threadId);
+});
