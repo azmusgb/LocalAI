@@ -1904,3 +1904,10 @@ input::placeholder,textarea::placeholder{font-weight:400}
 .improve-diff pre{margin:0;padding:10px;max-height:40vh;overflow:auto;white-space:pre;font-size:12px;border:1px solid var(--ds-line);border-radius:var(--ds-r-md,8px);background:var(--ds-surface)}
 .improve-note{display:block;margin-top:12px;font-weight:600}#improveItemNote{width:100%;margin:6px 0 8px}#improveItemNoteSave{min-height:44px}
 #claude [hidden]{display:none!important}
+
+/* Tap targets: every control is at least 44px to touch (appended; nothing above edited). */
+.awc__group>button{min-width:44px;min-height:44px}
+.awc__districtLegend button,.agent-result-tabs button{min-height:44px}
+.first-run-detail a,.meta a[data-goto],#integrations a[data-external]{display:inline-flex;align-items:center;min-height:44px}
+#ask .toggle{min-height:44px;align-items:center}
+#library .filter{min-height:44px;min-width:44px}
