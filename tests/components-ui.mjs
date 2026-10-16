@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { addAxe } from './axe-helper.mjs';
 
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const axePath = join(dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min.js');
@@ -11,7 +12,7 @@ async function check(name, fn) {
   try { await fn(); console.log('PASS', name); } catch (error) { failures.push(`${name}: ${error.message}`); console.error('FAIL', name, error.message); }
 }
 const newPage = async (setup, path = '') => {
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const page = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 } });
   if (setup) await setup(page);
   await page.goto(base + path, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.LocalAIUI && typeof window.showView === 'function');
@@ -81,7 +82,7 @@ await check('fetchJson rejects on non-2xx with the server error and on non-JSON'
 await check('axe: the error and loading states pass color-contrast and target-size', async () => {
   await fixture(page);
   await run('async()=>{throw new Error("boom")}');
-  await page.addScriptTag({ path: axePath });
+  await addAxe(page, axePath);
   const err = await page.evaluate(() => window.axe.run('#fx', { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(v => `${v.id}: ${v.nodes.map(n => n.html).join(' | ')}`)));
   assert.deepEqual(err, []);
   await fixture(page);
@@ -89,6 +90,19 @@ await check('axe: the error and loading states pass color-contrast and target-si
   await page.waitForSelector('#fx .state-loading');
   const load = await page.evaluate(() => window.axe.run('#fx', { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(v => v.id)));
   assert.deepEqual(load, []);
+});
+await check('axe waits for a running fade to finish, and ignores endless animations', async () => {
+  await fixture(page);
+  await addAxe(page, axePath);
+  const waited = await page.evaluate(async () => {
+    const fx = document.getElementById('fx');
+    fx.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 500 });
+    fx.animate([{ transform: 'rotate(0)' }, { transform: 'rotate(360deg)' }], { duration: 800, iterations: Infinity });
+    const t = performance.now();
+    await window.axe.run('#fx', { runOnly: { type: 'rule', values: ['color-contrast'] } });
+    return performance.now() - t;
+  });
+  assert.ok(waited >= 350 && waited < 2500, `axe.run took ${Math.round(waited)} ms`);
 });
 await page.close();
 
@@ -197,7 +211,7 @@ await check('a double click on Confirm resolves once and fires one confirm', asy
   assert.deepEqual(n, { resolved: 1, clicks: 1, ok: true });
 });
 await check('axe: the open sheet passes color-contrast and target-size at 390x844', async () => {
-  await ap.addScriptTag({ path: axePath });
+  await addAxe(ap, axePath);
   for (const o of [{ ...base1 }, { title: 'Run it?', effect: 'line one\nline two', confirmLabel: 'Run', tone: 'host', typed: 'RUN' }, { title: 'Delete "x"?', confirmLabel: 'Delete', tone: 'danger' }, { title: 'Name', confirmLabel: 'Create', input: { label: 'Project name', type: 'text' } }]) {
     await openAsk(o); await sheet.waitFor();
     const v = await ap.evaluate(() => window.axe.run('dialog.ask-sheet', { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(v => `${v.id}: ${v.nodes.map(n => n.html).join(' | ')}`)));
@@ -286,7 +300,7 @@ await check('opening a run shows header, Not filed, Pin and File, then the appro
   assert.equal(await runPage.locator('#runList .list-row[data-run-id="run_img"]').count(), 1);
 });
 await check('axe: the open run view passes color-contrast and target-size', async () => {
-  await runPage.addScriptTag({ path: axePath });
+  await addAxe(runPage, axePath);
   await openSheet();
   for (const sel of ['#runDrawer', '#runDetailsSheet', '#runList']) {
     const v = await runPage.evaluate(s => window.axe.run(s, { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(v => `${v.id}: ${v.nodes.map(n => n.html).join(' | ')}`)), sel);

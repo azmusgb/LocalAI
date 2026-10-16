@@ -1,14 +1,14 @@
-// Work: one timeline of every run you started, grouped by day. Filters and search work on the loaded rows;
-// Show more pages by `before`; the list refreshes itself while something runs and a row updates in place.
+// Work: one timeline of every run you started, grouped by day. A chip asks the server for its kind (`kind=`, mapped in
+// run-cards.js), so an older mission is reachable however many chats came since; search works on the loaded rows.
+// Show more pages by `before` within the kind; the list refreshes itself while something runs and a row updates in place.
 (function(root){'use strict';
 const $=id=>document.getElementById(id),PAGE=60,KEY='localai.work.kind',KINDS=['all','chats','images','missions','changes','other'];
-const BUCKET={chat:'chats',research:'chats',image:'images',agent:'missions',engineering:'changes'}; // everything else (automation too) is "other"
 const GROUPS=['Today','Yesterday','Earlier this week','Older'],LIVE=new Set(['queued','running','streaming']);
-const bucket=it=>BUCKET[it.card?.kind]||'other',key=it=>it.threadId||it.id;
+const key=it=>it.threadId||it.id,NONE={chats:'No chats yet.',images:'No images yet.',missions:'No missions yet.',changes:'No changes yet.',other:'Nothing else yet.'};
 // Threads sort and page by their latest run's (createdAt, id), newest first, the same key the server's `before` uses.
 const newest=(a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))||String(b.id).localeCompare(String(a.id));
 const store={get:()=>{try{return localStorage.getItem(KEY)}catch{return null}},set:v=>{try{localStorage.setItem(KEY,v)}catch{}}};
-const st={threads:new Map(),items:[],more:false,loaded:false,kind:'all',query:'',shown:'',rows:new Map(),timer:0};
+const st={threads:new Map(),items:[],more:false,loaded:false,started:false,kind:'all',gen:0,query:'',shown:'',rows:new Map(),timer:0}; // gen: bumps when the chip changes, so a late page of the old kind is dropped
 function groupOf(it){
  const t=new Date(it.createdAt),d=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime();
  if(isNaN(t))return 3;
@@ -28,23 +28,21 @@ function merge(list,{older=false,window=false}={}){
 }
 // Opening a run goes through the runs module, so Close and Back return to Work.
 const openRun=it=>window.LocalAIRuns?window.LocalAIRuns.show(it.id):window.LocalAIRouter?.go('#run/'+encodeURIComponent(it.id));
-const plain=t=>String(t||'').replace(/(\.\.\.|…)\s*$/,'').replace(/\s+/g,' ').trim();
-// One card per row: the summary once (never again as preview text), a chat thread's turn count, and the row itself opens the run.
+// One card per row: a chat thread's turn count (the card itself shows the summary once), and the row itself opens the run.
 function rowFor(it){
- let c=it.card||{},{preview,summary}=c;const n=it.turns||1;
- const pt=plain(preview?.text),sm=plain(summary);
- if(pt&&sm&&(pt===sm||pt.startsWith(sm)||sm.startsWith(pt)))preview=null;
- if(c.kind==='chat'&&n>1)c={...c,summary:`Chat · ${n} turns`,preview:preview||(sm?{type:'text',text:summary}:null)};else c={...c,preview};
+ let c=it.card||{};const n=it.turns||1;
+ if(c.kind==='chat'&&n>1)c={...c,summary:`Chat · ${n} turns`,preview:c.preview||(c.summary?{type:'text',text:c.summary}:null)};
  const row=window.LocalAIUI.runCard({...it,card:c},{onOpen:openRun,rowOpen:true});
  const act=row.querySelector('.run-card__action');
  if(act){if(/^(Review|Retry)$/i.test(act.textContent.trim()))act.className='btn-outline work-secondary';else act.remove()}
  return row;
 }
 const text=it=>`${it.card?.title||''} ${it.card?.summary||''}`.toLowerCase();
-const visible=()=>{const q=st.query.trim().toLowerCase();return st.items.filter(it=>(st.kind==='all'||bucket(it)===st.kind)&&(!q||text(it).includes(q)))};
+const visible=()=>{const q=st.query.trim().toLowerCase();return st.items.filter(it=>!q||text(it).includes(q))};
 function paint(){
  const box=$('workList'),list=visible();
- $('workMore').hidden=!st.more;
+ $('workMore').hidden=!st.more; // the server filtered by kind: an empty first page means there are none, and st.more is false then
+ if(!st.items.length&&st.kind!=='all'){box.innerHTML=`<div class="state-empty empty-state"><div class="empty-state__title">${NONE[st.kind]}</div><div>Try another filter.</div></div>`;st.shown='';st.rows.clear();return}
  if(!st.items.length){
   box.innerHTML='<div class="state-empty empty-state"><div class="empty-state__title">Nothing yet. What should we do?</div><button type="button" class="btn-primary">Start something</button></div>';
   box.querySelector('button').addEventListener('click',()=>{window.LocalAIRouter?.go('#home');const t=Date.now(),f=()=>{const c=$('commandInput');if($('home')?.classList.contains('active')&&c)c.focus();else if(Date.now()-t<1500)setTimeout(f,40)};f()});
@@ -67,33 +65,40 @@ function paint(){
  });
  st.shown=layout;window.scrollTo(0,y);
 }
-const url=before=>`/api/runs?threads=1&limit=${PAGE}${before?'&before='+encodeURIComponent(before):''}`;
+const url=before=>`/api/runs?threads=1&limit=${PAGE}${st.kind!=='all'?'&kind='+st.kind:''}${before?'&before='+encodeURIComponent(before):''}`;
 function render(box,data){
- st.threads.clear();st.rows.clear();st.shown='';
+ if(data.gen!==st.gen)return; // the chip changed while this page loaded
+ box.removeAttribute('aria-busy');st.threads.clear();st.rows.clear();st.shown='';
  merge(data.items||[]);st.more=(data.items||[]).length>=PAGE;st.loaded=true;paint();schedule();
 }
-const load=()=>window.LocalAIUI.fetchJson(url());
-const first=()=>window.LocalAIUI.loadInto($('workList'),load,{render,what:'your work'}).catch(()=>{});
+const load=()=>{const gen=st.gen;return window.LocalAIUI.fetchJson(url()).then(d=>({...d,gen}))};
+const first=()=>{const box=$('workList'),gen=st.gen;st.started=true;box.setAttribute('aria-busy','true');return window.LocalAIUI.loadInto(box,load,{render,what:'your work'}).catch(()=>{}).finally(()=>{if(gen===st.gen)box.removeAttribute('aria-busy')})};
 // A quiet refresh of the newest page: updates rows in place, adds new threads, keeps what Show more loaded.
 async function refresh(){
- try{const d=await window.LocalAIUI.fetchJson(url());merge(d.items||[],{window:true});paint()}catch{}
+ const gen=st.gen;try{const d=await window.LocalAIUI.fetchJson(url());if(gen!==st.gen)return;merge(d.items||[],{window:true});paint()}catch{}
 }
 async function more(){
  const b=$('workMore'),last=st.items[st.items.length-1];if(!last)return;
- b.disabled=true;
- try{const d=await window.LocalAIUI.fetchJson(url(last.id));merge(d.items||[],{older:true});st.more=(d.items||[]).length>=PAGE;b.textContent='Show more';paint();schedule()}
+ b.disabled=true;const gen=st.gen;
+ try{const d=await window.LocalAIUI.fetchJson(url(last.id));if(gen!==st.gen)return;merge(d.items||[],{older:true});st.more=(d.items||[]).length>=PAGE;b.textContent='Show more';paint();schedule()}
  catch{b.textContent="Couldn't load more. Try again"}
  b.disabled=false;
 }
-function setKind(k,{mirror=true,remember=true}={}){
+// A new chip starts its own list from the server (once Work has loaded at all); returns whether the kind changed.
+function setKind(k,{mirror=true,remember=true,fetch=true}={}){
  if(!KINDS.includes(k))k='all';
+ const changed=k!==st.kind;
  st.kind=k;
  document.querySelectorAll('[data-work-kind]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.workKind===k)));
  // Agent World (the live mission map) has no menu entry since Missions became a Work filter; link to it from there.
  const aw=$('workAgentWorld');if(aw)aw.hidden=k!=='missions';
  if(remember)store.set(k);
  if(mirror){const h='#work'+(k==='all'?'':'?kind='+k);if(location.hash!==h)history.replaceState(null,'',location.pathname+location.search+h)}
- if(st.loaded)paint();
+ if(changed){ // the rows on screen are another kind's: clear them and load this one (activate() loads on its own)
+  st.gen++;st.threads.clear();st.items=[];st.more=false;st.loaded=false;st.shown='';st.rows.clear();
+  const box=$('workList');if(box&&st.started){box.textContent='';$('workMore').hidden=true;if(fetch)first()}
+ }else if(st.loaded)paint();
+ return changed;
 }
 // The hash wins; otherwise what was remembered.
 function fromHash(){
@@ -110,7 +115,7 @@ function schedule(){
 function tick(){if(!active())return;if(!document.hidden&&st.loaded)refresh().then(schedule);else schedule()}
 function activate(){
  const k=fromHash();
- setKind(k||(KINDS.includes(store.get())?store.get():'all'),{remember:!!k});
+ setKind(k||(KINDS.includes(store.get())?store.get():'all'),{remember:!!k,fetch:false});
  if(st.loaded)refresh();else first();
  schedule();
 }
@@ -119,7 +124,7 @@ function init(){
  sec.querySelectorAll('[data-work-kind]').forEach(b=>b.addEventListener('click',()=>setKind(b.dataset.workKind)));
  $('workSearch').addEventListener('input',e=>{st.query=e.target.value;if(st.loaded)paint()});
  $('workMore').addEventListener('click',more);
- $('workOpenAgentWorld')?.addEventListener('click',()=>window.showView?.('agents'));
+ $('workOpenAgentWorld')?.addEventListener('click',()=>window.LocalAIRouter?.open('agents'));
  setKind(KINDS.includes(store.get())?store.get():'all',{mirror:false,remember:false});
  let was=active();
  new MutationObserver(()=>{const now=active();if(now&&!was)activate();was=now}).observe(sec,{attributes:true,attributeFilter:['class']});
