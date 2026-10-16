@@ -21,7 +21,8 @@ container `local-ai-appliance` on a Windows host, UI on port 3080. Docs index: `
    Docs-only PRs run no CI.
    **GitHub Actions can't start (billing), so run local CI before merging:** `npm run ci -- <PR number>`. It tests
    the PR merged with `main` in a throwaway worktree (all of `validate.yml`, browser suites included, ~15 min) and
-   posts a `local-ci` check to the PR. Merge only on a green `local-ci`.
+   posts a `local-ci` check to the PR. Merge only on a green `local-ci`. Runs on one machine queue (the PR shows
+   "Queued behind PR #N"), so start yours and let it wait; never kill another session's run.
 2. Merge. The host's `LocalAI Safe Deploy` task deploys `main` within about 5 minutes and rolls back by itself.
 3. Confirm: `curl -s http://10.0.0.21:3080/healthz` (10.0.0.21 is the owner's appliance on their LAN) → `releaseCommit` equals the merge SHA. Deploy output
    contains fake `DEPLOYED: aaaa…` lines from contract tests; trust only `/healthz`.
