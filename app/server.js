@@ -55,6 +55,8 @@ const storage = new Storage({ dataDir: DATA_DIR });
 const pushLib = require('./push');
 const notifyLib = require('./notify');
 const glance = require('./glance');
+const voice = require('./voice');
+const { voiceFacts } = require('./voice-context');
 const notifier = notifyLib.createNotifier({
   storage, sendPush: pushLib.sendPush, vapid: pushLib.loadOrCreateVapid(storage),
   subject: process.env.VAPID_SUBJECT || 'https://github.com/azmusgb/LocalAI'
@@ -528,16 +530,44 @@ async function apiGlance(req, res, urlObj) {
   } catch (e) { storageError(res, e, 500); }
 }
 
-// "Ask Local AI" from Siri: {text} in, the brief answer out as plain text to speak. A flat body keeps the shortcut
-// to one JSON field; the chat run and Library entry are the same as any other chat.
-async function apiGlanceAsk(req, res) {
+// "Ask Local AI" from Siri (GET ?q= or POST {text}): a rules-only router picks the answer, the model only
+// handles open questions, and every reply is plain text that is safe to read aloud. Siri speaks the body
+// whatever the status, so errors are sentences, never JSON.
+const VOICE_DOWN = "Local AI can't answer right now. Try again in a minute.";
+const voiceTimeZone = () => process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+async function voiceNeedsSentence() {
+  const snapshot = await getCapabilitiesSnapshot();
+  const dayAgo = Date.now() - 86400000;
+  const pendingChange = new Set(['planned', 'patch_failed', 'validation_failed', 'staged', 'awaiting_approval', 'approved', 'apply_requested']);
+  return glance.needsYouSentence(glance.needsYouItems({
+    approvals: approvalStore().filter(a => a.status === 'pending'),
+    changes: changeStore().filter(c => pendingChange.has(c.status)).map(c => ({ title: c.summary || c.request })),
+    findings: claudeFindings().filter(f => f.status === 'proposed'),
+    failedRuns: runLedger.list({ status: 'failed', limit: 200 }).filter(r => Date.parse(r.finishedAt || r.updatedAt) >= dayAgo),
+    downServices: (snapshot.services || []).filter(s => s && s.required !== false && s.state !== 'HEALTHY')
+  }));
+}
+
+async function apiGlanceAsk(req, res, urlObj) {
+  const say = (status, value) => text(res, status, value, 'text/plain; charset=utf-8', { 'Cache-Control': 'no-store' });
   try {
-    const b = await readBody(req);
-    const textIn = typeof b.text === 'string' ? b.text.trim().slice(0, 4000) : '';
-    if (!textIn) return json(res, 400, { error: 'text is required' });
-    const result = await chatOnce({ messages: [{ role: 'user', content: textIn }], brief: true });
-    text(res, 200, result.message.content, 'text/plain; charset=utf-8', { 'Cache-Control': 'no-store' });
-  } catch (e) { storageError(res, e, 500); }
+    let textIn = '';
+    if (req.method === 'GET') textIn = String(urlObj.searchParams.get('q') || '');
+    else { const b = await readBody(req).catch(e => { if (e.statusCode === 413) throw e; return {}; }); textIn = typeof b?.text === 'string' ? b.text : ''; }
+    textIn = textIn.trim().slice(0, 4000);
+    const route = voice.classify(textIn);
+    if (route.intent === 'empty') return say(200, "I didn't catch that.");
+    if (route.intent === 'time') return say(200, voice.speakable(voiceFacts({ now: new Date(), timeZone: voiceTimeZone() })));
+    if (route.intent === 'needs') return say(200, voice.speakable(await voiceNeedsSentence()));
+    if (route.intent === 'health') {
+      const snapshot = await getCapabilitiesSnapshot();
+      return say(200, voice.speakable(glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION }).speech));
+    }
+    // weather, current, action and refuse fall back to the model until they have their own answers.
+    const result = await chatOnce({ messages: [{ role: 'user', content: textIn }], brief: true, voice: true });
+    say(200, voice.speakable(result.message.content) || "I didn't catch that.");
+  } catch (e) { say(e.statusCode === 413 ? 413 : 503, e.statusCode === 413 ? 'That was too long for me.' : VOICE_DOWN); }
 }
 
 async function apiCapabilities(req, res) {
@@ -545,7 +575,7 @@ async function apiCapabilities(req, res) {
   catch (e) { storageError(res,e,500); }
 }
 
-function systemPrompt(researchContext = '', capabilityContext = '', brief = false) {
+function systemPrompt(researchContext = '', capabilityContext = '', brief = false, facts = '') {
   return {
     role: 'system',
     content:
@@ -553,6 +583,7 @@ function systemPrompt(researchContext = '', capabilityContext = '', brief = fals
       'Do not expose infrastructure implementation details unless the user asks. Do not claim an action was executed unless it actually was. ' +
       'When discussing this appliance, use the supplied runtime capability snapshot as authoritative and do not invent installed models, versions, services, or completed actions.' +
       (capabilityContext ? `\n\n${capabilityContext}` : '') +
+      (facts ? `\n\n${facts}` : '') +
       (researchContext
         ? `\n\nCurrent metasearch results are below. Use them when relevant and cite source numbers like [1].\n\n${researchContext}`
         : '') +
@@ -563,7 +594,7 @@ function systemPrompt(researchContext = '', capabilityContext = '', brief = fals
 
 // The messages for the text model: system prompt, research sources (trimmed first), then the conversation, fitted to the shared context.
 function chatMessages(prep) {
-  const system = systemPrompt('', prep.capabilityContext, prep.brief);
+  const system = systemPrompt('', prep.capabilityContext, prep.brief, prep.voice ? voiceFacts({ now: new Date(), timeZone: voiceTimeZone(), includeZone: true }) : '');
   const sources = prep.researchContext
     ? [{ role: 'system', kind: 'sources', content: `Current metasearch results are below. Use them when relevant and cite source numbers like [1].\n\n${prep.researchContext}` }]
     : [];
@@ -603,7 +634,7 @@ async function prepareChat(body, signal = null) {
     if (signal?.aborted) throw error;
   }
   throwIfAborted();
-  return { model, messages, sources, researchContext, capabilityContext, brief: body.brief === true };
+  return { model, messages, sources, researchContext, capabilityContext, brief: body.brief === true, voice: body.voice === true };
 }
 
 async function apiChat(req, res) {
@@ -2964,7 +2995,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 } });
     if (req.method === 'GET' && p === '/api/releases') return await apiReleases(req, res);
     if (req.method === 'GET' && p === '/api/glance') return await apiGlance(req, res, urlObj);
-    if (req.method === 'POST' && p === '/api/glance/ask') return await apiGlanceAsk(req, res);
+    if ((req.method === 'GET' || req.method === 'POST') && p === '/api/glance/ask') return await apiGlanceAsk(req, res, urlObj);
     if (p.startsWith('/api/push/')) return await apiPush(req, res, p);
     if (req.method === 'GET' && p === '/api/storage/status') return json(res, 200, storage.status());
     if (req.method === 'GET' && p === '/api/status') return await apiStatus(req, res);

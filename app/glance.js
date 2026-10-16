@@ -43,4 +43,34 @@ function needsYouSummary({ approvals = 0, changes = 0, findings = 0, failedToday
   return { count: items.reduce((n, i) => n + i.count, 0), items, speech: sentences.join(' ') };
 }
 
-module.exports = { healthSummary, needsYouSummary };
+const NUMBER_WORDS = ['No', 'One', 'Two', 'Three'];
+
+// data: { approvals, changes, findings, failedRuns, downServices } as arrays of { title } (or { label } for services).
+// Returns the things that need the owner, by name, in the order they are spoken.
+function needsYouItems({ approvals = [], changes = [], findings = [], failedRuns = [], downServices = [] } = {}) {
+  const name = x => String(x?.title || x?.label || x?.name || '').trim();
+  const out = [];
+  const add = (kind, rows) => { for (const r of rows) { const title = name(r); if (title) out.push({ kind, title }); } };
+  add('approval', approvals); add('change', changes); add('finding', findings); add('failed', failedRuns); add('down', downServices);
+  return out;
+}
+
+function itemPhrase(item) {
+  if (item.kind === 'failed') return `the ${item.title} failed`;
+  if (item.kind === 'down') return `${item.title} is down`;
+  return item.title;
+}
+
+// "Two things need you: Fix the login bug, and the Weekly report mission failed." Names up to three.
+function needsYouSentence(items = []) {
+  if (!items.length) return 'Nothing needs you right now.';
+  const shown = items.slice(0, 3).map(itemPhrase);
+  const joined = shown.length === 1 ? shown[0]
+    : shown.length === 2 ? `${shown[0]} and ${shown[1]}`
+    : `${shown.slice(0, -1).join(', ')}, and ${shown[shown.length - 1]}`;
+  if (items.length > 3) return `${items.length} things need you, including ${joined}.`;
+  const lead = items.length === 1 ? 'One thing needs you' : `${NUMBER_WORDS[items.length]} things need you`;
+  return `${lead}: ${joined}.`;
+}
+
+module.exports = { healthSummary, needsYouSummary, needsYouItems, needsYouSentence };

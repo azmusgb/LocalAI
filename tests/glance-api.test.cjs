@@ -91,8 +91,11 @@ test('ask takes one text field and answers in plain text with the brief instruct
   const sent = chats.at(-1);
   assert.match(sent.messages.find(m => m.role === 'system').content, /read aloud on a watch/);
   assert.equal(sent.messages.at(-1).content, 'Weather?');
-  assert.equal((await ask({ text: '' })).status, 400);
-  assert.equal((await ask({})).status, 400);
+  // Siri speaks whatever comes back, so nothing-heard is a spoken prompt, not an error page.
+  const none = await ask({ text: '' });
+  assert.equal(none.status, 200);
+  assert.equal(await none.text(), "I didn't catch that.");
+  assert.equal((await ask({})).status, 200);
   const runs = await (await fetch(`${base}/api/runs?limit=5`)).json();
   const run = runs.items.find(x => x.type === 'chat');
   assert.ok(run, 'the question is an ordinary chat run');
