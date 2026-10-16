@@ -186,8 +186,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
   });
 
   await check(`${tag}: Developer tools off hides Improve but its pages still open`, async () => {
-    const page = await open(viewport, '#changes', { devTools: '0' });
-    await page.waitForSelector('#changes.active', T);
+    const page = await open(viewport, '#inProgress', { devTools: '0' });
+    await page.waitForSelector('#inProgress.active', T);
     assert.equal(await item(page, 'improve').isVisible(), false);
     const boxes = await nav(page).locator('[data-domain]:visible').evaluateAll(els => els.map(e => Math.round(e.getBoundingClientRect().width)));
     assert.equal(boxes.length, 4);

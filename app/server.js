@@ -2945,7 +2945,7 @@ async function apiClaudeFindings(req,res){
       // signal-* and idea-* ids are Improve's: Claude may update those items, never create them.
       if(/^(signal|idea)-/.test(id)&&!prev)continue;const f=claudeNormalizeFinding({...raw,sessionId:raw.sessionId||b.sessionId},prev,at);storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);saved.push(f);if(!prev&&f.status==='proposed')fresh.push(f)}});
     // A new finding waiting for the owner's decision reaches the phone; re-posts of the same id don't.
-    for(const f of fresh)notifier.notify({kind:'needs-you',title:'Claude needs your decision',body:f.title,url:'/?open=claude',tag:`finding:${f.id}`});
+    for(const f of fresh)notifier.notify({kind:'needs-you',title:'Claude needs your decision',body:f.title,url:'/?open=backlog',tag:`finding:${f.id}`});
     json(res,201,{ok:true,items:claudeRanked(saved)})}catch(e){storageError(res,e,400)}
 }
 function claudeUpdateFinding(res,id,mutate){
