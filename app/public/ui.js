@@ -2006,6 +2006,22 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const HTTP_WARNING = 'This page is served over plain HTTP, so the pairing cookie crosses your Wi-Fi unencrypted until HTTPS is set up. Revoke a device if it may be exposed.';
   const UNREACHABLE = "Can't reach Local AI right now (it may be restarting). Trying again…";
   const STORE_KEY = 'localai.claudeChat.session';
+  // The pending pairing, so a reload shows the same code instead of asking for another (5 can be pending at once).
+  const PAIR_KEY = 'localai.claudeChat.pair';
+  const pairStore = {
+    get() { try { return sessionStorage.getItem(PAIR_KEY) || ''; } catch { return ''; } },
+    set(id) { try { if (id) sessionStorage.setItem(PAIR_KEY, id); else sessionStorage.removeItem(PAIR_KEY); } catch {} }
+  };
+  const NOT_KEPT = "Your Mac approved the code, but this browser didn't keep the pairing (it may block cookies here). Try again, or use the secure address if it's set up.";
+  // Over plain HTTP, the secure address may already work on this device (and may already be paired there). Same probe
+  // and per-tab cache as Health › Secure connection: a no-cors fetch succeeds only if this device trusts the certificate.
+  const SECURE_URL = `https://${location.hostname}/`;
+  async function secureWorks() {
+    try { const seen = sessionStorage.getItem('localai.httpsTrusted'); if (seen) return seen === '1'; } catch {}
+    let ok; try { await fetch(`${SECURE_URL}healthz`, { mode: 'no-cors', cache: 'no-store', signal: AbortSignal.timeout(4000) }); ok = true; } catch { ok = false; }
+    try { sessionStorage.setItem('localai.httpsTrusted', ok ? '1' : '0'); } catch {}
+    return ok;
+  }
   const $ = (id) => document.getElementById(id);
   const st = { mode: 'init', sessions: [], session: '', messages: [], after: 0, sending: false, pair: null, pairError: '', pairTimer: 0, whoFailed: false,
     pollTimer: 0, sessionsAt: 0, polling: false, devices: [], devicesOpen: false, draft: '', built: '', paired: null, who: null };
@@ -2051,8 +2067,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     st.pairError = '';
     render();
     try {
-      st.pair = await api('pair-request', {});
+      st.pair = await api('pair-request', { resume: pairStore.get() || undefined });
+      pairStore.set(st.pair.id);
       render();
+      if (location.protocol === 'http:' && st.secureOk === undefined) { st.secureOk = null; secureWorks().then((ok) => { st.secureOk = ok; if (st.mode === 'pair') render(); }); }
       st.pairTimer = setInterval(checkPair, PAIR_MS);
     } catch (e) {
       if (!e.status || e.status >= 500) { st.mode = 'error'; st.pairError = UNREACHABLE; render(); return; } // schedule() retries
@@ -2065,8 +2083,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (!st.pair || !isActive() || document.visibilityState !== 'visible') return;
     try {
       const r = await api(`pair-status?id=${encodeURIComponent(st.pair.id)}`);
-      if (r.status === 'approved') { stopPairTimer(); st.pair = null; await loadSessions(true); }
-      else if (r.status === 'expired') { stopPairTimer(); st.pair = { expired: true }; render(); }
+      if (r.status === 'approved') {
+        stopPairTimer(); st.pair = null; pairStore.set('');
+        await loadSessions(true);
+        // Approved, yet the sessions call is still unauthorized: the browser refused the cookie. Say so; don't keep waiting.
+        if (st.paired === false && st.mode === 'pair') { st.pairError = NOT_KEPT; render(); }
+      }
+      else if (r.status === 'expired') { stopPairTimer(); pairStore.set(''); st.pair = { expired: true }; render(); }
     } catch { /* keep waiting; the next tick tries again */ }
   }
 
@@ -2216,7 +2239,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       cmd.append(copy);
       box.append(cmd, el('p', 'meta claude-chat-wait', st.pair ? 'Waiting for approval… this page switches over by itself.' : 'Requesting a code…'));
     }
-    if (location.protocol === 'http:') box.append(el('p', 'banner banner--attention claude-chat-warning', HTTP_WARNING));
+    if (location.protocol === 'http:') {
+      if (st.secureOk) {
+        const go = el('a', 'btn primary claude-chat-secure', 'Open the secure address');
+        go.href = `${SECURE_URL}#claude`;
+        box.append(el('p', 'meta', 'This device trusts the secure address. If it was paired there, chat works there right away.'), go);
+      }
+      box.append(el('p', 'banner banner--attention claude-chat-warning', HTTP_WARNING));
+    }
     root.append(box);
     st.built = 'pair';
   }

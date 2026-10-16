@@ -58,7 +58,11 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
     return crypto.timingSafeEqual(actual, expected);
   }
   // ---- device cookie auth --------------------------------------------------------------------
+  // Two names: a browser keeps a Secure cookie set over HTTPS and refuses a plain-HTTP cookie of the same name and path
+  // (RFC 6265bis), so a phone paired at https:// could never pair at http://…:3080 while both used one name. Over
+  // HTTPS the browser sends both; either one that checks out signs the device in.
   const COOKIE = 'localai_chat_device';
+  const COOKIE_HTTP = 'localai_chat_device_http';
   const deviceKey = id => `${PREFIX}device:${id}`;
   const pairKey = id => `${PREFIX}pair:${id}`;
   const sha256hex = v => crypto.createHash('sha256').update(v).digest('hex');
@@ -73,7 +77,10 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
   }
   // The single device check: valid cookie -> {id, name}, else null.
   function deviceFor(req) {
-    const value = parseCookies(req.headers.cookie)[COOKIE];
+    const cookies = parseCookies(req.headers.cookie);
+    return deviceForCookie(cookies[COOKIE]) || deviceForCookie(cookies[COOKIE_HTTP]);
+  }
+  function deviceForCookie(value) {
     const m = /^(dev-[0-9a-f]{12})\.([A-Za-z0-9_-]{1,100})$/.exec(value || '');
     if (!m) return null;
     const device = storage.readSetting(deviceKey(m[1]), null);
@@ -260,16 +267,22 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
   }
   async function pairRequest(req, res) {
     if (!checkPost(req, res)) return;
-    try { await readBody(req, 4096); } catch { /* body is ignored */ }
+    let resume = '';
+    try { const b = await readBody(req, 4096); if (b && typeof b.resume === 'string') resume = b.resume; } catch { /* no body is fine */ }
     const result = storage.transaction(() => {
       const pending = livePairings().filter(r => r.status === 'pending');
-      if (pending.length >= MAX_PENDING) return null;
+      // A reload of the pairing page keeps showing the code it already has, rather than using up another slot.
+      const kept = /^pair-[0-9a-f]{16}$/.test(resume) && pending.find(r => r.id === resume);
+      if (kept) return { record: kept, resumed: true };
+      // Full: the oldest code gives way. Codes only pair with the Mac's approval, so dropping one costs a retype at most.
+      pending.sort((a, b) => a.createdAt - b.createdAt);
+      while (pending.length >= MAX_PENDING) storage.deleteSetting(pairKey(pending.shift().id));
       const record = { id: `pair-${crypto.randomBytes(8).toString('hex')}`, code: newCode(new Set(pending.map(r => r.code))), status: 'pending', createdAt: now(), expiresAt: now() + PAIR_TTL_MS };
       storage.writeSetting(pairKey(record.id), record);
-      return record;
+      return { record, resumed: false };
     });
-    if (!result) return json(res, 429, { error: 'Too many pending pairing requests' });
-    json(res, 201, { id: result.id, code: result.code, expiresAt: result.expiresAt });
+    const { record } = result;
+    json(res, result.resumed ? 200 : 201, { id: record.id, code: record.code, expiresAt: record.expiresAt });
   }
   function pairStatus(req, res, urlObj) {
     const id = urlObj.searchParams.get('id') || '';
@@ -283,7 +296,9 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
       const t = now();
       const device = { id: record.deviceId, name: record.deviceName, tokenSha256: sha256hex(token), pairedAt: record.approvedAt || t, lastSeenAt: t };
       storage.writeSetting(deviceKey(device.id), device);
-      return { status: 'approved', device: { id: device.id, name: device.name }, cookie: `${COOKIE}=${device.id}.${token}; HttpOnly; SameSite=Strict; Path=/api/claude/chat; Max-Age=15552000${requestIsHttps(req) ? '; Secure' : ''}` };
+      return { status: 'approved', device: { id: device.id, name: device.name }, cookie: requestIsHttps(req)
+        ? `${COOKIE}=${device.id}.${token}; HttpOnly; SameSite=Strict; Path=/api/claude/chat; Max-Age=15552000; Secure`
+        : `${COOKIE_HTTP}=${device.id}.${token}; HttpOnly; SameSite=Strict; Path=/api/claude/chat; Max-Age=15552000` };
     });
     if (outcome.cookie) {
       res.setHeader('Set-Cookie', outcome.cookie);
