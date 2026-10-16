@@ -49,8 +49,10 @@ if ($code -eq 0 -and $last -like 'DEPLOYED:*') {
 } elseif ($code -ne 0) {
     $previous = if (Test-Path $failState) { (Get-Content $failState -Raw).Trim() } else { '' }
     if ($previous -ne $short) {
-        $cause = ($output | Where-Object { $_ -match 'failed|Exception|Cannot|rolled|restored' } | Select-Object -Last 3) -join "`n"
-        Notify "Automatic update to $short failed" ("The previous release is still running. " + $cause) @{ commit = "$sha".Trim(); outcome = 'failed'; log = $log }
+        # A blank stderr line from a native command reads 'System.Management.Automation.RemoteException' here; it says nothing.
+        $cause = ($output | Where-Object { $_ -match 'failed|Exception|Cannot|rolled|restored' -and $_ -notmatch '^\s*System\.Management\.Automation\.RemoteException\s*$' } | Select-Object -Last 3) -join "`n"
+        if (-not $cause) { $cause = "The deploy log on the host has the details: $log" }
+        Notify 'An automatic update failed' ("The previous release is still running. Commit $short.`n" + $cause) @{ commit = "$sha".Trim(); outcome = 'failed'; log = $log }
         Set-Content -Path $failState -Value $short
     }
 }
