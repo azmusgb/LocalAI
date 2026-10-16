@@ -237,3 +237,38 @@ test('onTransition fires once per status change and never breaks update', () => 
   const r2 = throwing.create({ type: 'chat', title: 'y' });
   assert.equal(throwing.start(r2.id).status, 'running');
 });
+
+test('an update with meta keeps the meta keys already on the run', () => {
+  const ledger = new RunLedger({ storage: new MemorySettings() });
+  const run = ledger.create({ type: 'image', title: 'A fox', meta: { voice: true, streaming: false } });
+  ledger.start(run.id);
+  let updated = ledger.update(run.id, { progress: 60, meta: { promptId: 'p1', checkpoint: 'sdxl' } }, '1 of 1 image done');
+  assert.deepEqual(updated.meta, { voice: true, streaming: false, promptId: 'p1', checkpoint: 'sdxl' });
+  updated = ledger.complete(run.id, { summary: 'done', meta: { promptId: 'p1', elapsedMs: 42 } });
+  assert.deepEqual(updated.meta, { voice: true, streaming: false, promptId: 'p1', checkpoint: 'sdxl', elapsedMs: 42 });
+  // A key sent again takes the new value; an update without meta leaves it alone.
+  assert.equal(ledger.update(run.id, { meta: { checkpoint: 'flux' } }).meta.checkpoint, 'flux');
+  assert.equal(ledger.update(run.id, { summary: 'x' }).meta.voice, true);
+});
+
+// A real image takes 30 s or more and reports progress on the way; the voice ask sends its own notification, so
+// the ledger's generic Done/Failed must stay quiet for the whole run.
+for (const end of ['completed', 'failed']) {
+  test(`a voice run with progress updates sends no generic notification when it ${end === 'completed' ? 'completes' : 'fails'}`, t => {
+    const { runEvent } = require('../app/notify');
+    t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-16T12:00:00Z') });
+    const sent = [];
+    const ledger = new RunLedger({ storage: new MemorySettings(), onTransition: (r, prev) => { const e = runEvent(r, prev); if (e) sent.push(e); } });
+    const run = ledger.create({ type: 'image', title: 'A fox', meta: { voice: true } });
+    ledger.start(run.id, 'Image generation started');
+    t.mock.timers.tick(20000);
+    ledger.update(run.id, { progress: 15 }, 'Prompt improved');
+    t.mock.timers.tick(20000);
+    ledger.update(run.id, { progress: 95, meta: { promptId: 'p1', checkpoint: 'sdxl' } }, '1 of 1 image done');
+    t.mock.timers.tick(1000);
+    if (end === 'completed') ledger.complete(run.id, { summary: 'An image', meta: { promptId: 'p1', checkpoint: 'sdxl', elapsedMs: 41000 } });
+    else ledger.fail(run.id, new Error('ComfyUI: out of memory'));
+    assert.equal(ledger.get(run.id).status, end);
+    assert.deepEqual(sent, []);
+  });
+}

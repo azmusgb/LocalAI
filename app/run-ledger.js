@@ -182,7 +182,15 @@ class RunLedger {
     const at = nowIso();
     const safePatch = { ...patch };
     if (Object.hasOwn(safePatch, 'output')) safePatch.output = boundedOutput(safePatch.output);
-    if (Object.hasOwn(safePatch, 'meta')) safePatch.meta = boundedClone(safePatch.meta || {}, 8 * 1024, { truncated: true });
+    // meta merges into the run's meta: progress and completion updates add keys and never drop ones set earlier
+    // (meta.voice keeps the generic Done/Failed notifications quiet for the whole run). Past the bound, the
+    // earlier keys stay and the new ones are dropped.
+    if (Object.hasOwn(safePatch, 'meta')) {
+      const isObject = v => !!v && typeof v === 'object' && !Array.isArray(v);
+      const current = isObject(run.meta) ? run.meta : {};
+      const merged = { ...current, ...(isObject(safePatch.meta) ? safePatch.meta : {}) };
+      safePatch.meta = boundedClone(merged, 8 * 1024, null) || { ...current, truncated: true };
+    }
     Object.assign(run, safePatch, { status: nextStatus, updatedAt: at });
     if ((nextStatus === 'running' || nextStatus === 'streaming') && !run.startedAt) run.startedAt = at;
     if (TERMINAL.has(nextStatus)) {
