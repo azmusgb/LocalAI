@@ -150,3 +150,15 @@ test('change requests linked as "in progress" by the first release are set back 
   assert.equal(imp.stageOf({ ...items[0], status: 'approved' }, byId(changes)), 'inProgress');
   assert.deepEqual(imp.reconcile({ items: [{ ...items[0], status: 'approved' }, items[1], items[2]], changes, signals: [], at: AT }).upserts, []);
 });
+
+test('service-health checks are not promoted: outages are Health\'s job and come and go', () => {
+  assert.equal(imp.shouldPromote({ status: 'open', severity: 'high', occurrences: 9, kind: 'quality-check', name: 'service health: comfy' }), false);
+  assert.equal(imp.shouldPromote({ status: 'open', severity: 'high', occurrences: 1, kind: 'quality-check', name: 'syntax app.js' }), true);
+  assert.equal(imp.shouldPromote({ status: 'open', severity: 'high', occurrences: 1, kind: 'browser-runtime', name: 'TypeError: x' }), true);
+});
+
+test('Move to top never lowers an item that is already on top', () => {
+  const scoreOf = i => (i.base || 0) + (i.priorityBoost || 0);
+  const top = { id: 'a', base: 50, priorityBoost: 20 }, open = [top, { id: 'b', base: 30 }];
+  assert.equal(imp.moveToTopBoost(top, open, scoreOf), 20);
+});
