@@ -130,3 +130,18 @@ test('a bad record does not stop the appliance starting', { timeout: 30000 }, as
   } });
   assert.equal((await fetch(base + '/healthz')).status, 200);
 });
+
+// Work's old runs: garbled encoding and markdown bold are cleaned once at start-up; the run keeps its place in time.
+test('old runs with garbled text or markdown bold are cleaned at start-up, keeping their dates', { timeout: 30000 }, async t => {
+  const { RunLedger } = require('../app/run-ledger');
+  let id, createdAt;
+  const base = await startServer(t, { seed: s => {
+    const ledger = new RunLedger({ storage: s });
+    const r = ledger.create({ type: 'agent', title: '**Dev Design & Specification**', summary: 'An idÃƒÂ©e' });
+    ledger.complete(r.id, { summary: 'An idÃƒÂ©e' }); id = r.id; createdAt = ledger.get(r.id).createdAt;
+  } });
+  const run = (await (await fetch(`${base}/api/runs?id=${id}`)).json()).item;
+  assert.equal(run.title, 'Dev Design & Specification');
+  assert.equal(run.summary, 'An idée');
+  assert.equal(run.createdAt, createdAt);
+});

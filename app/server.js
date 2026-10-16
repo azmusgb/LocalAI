@@ -3361,6 +3361,18 @@ function repairGarbledTextOnce() {
   if (counts[LIBRARY_STORE] || counts[NOTIFICATIONS_STORE]) console.log(`${nowIso()} Repaired garbled text: ${JSON.stringify(counts)}`);
 }
 
+// One time: runs saved before the encoding fixes have the same garbled text in Work ("ideÃƒÂ¢…"), and some model
+// titles carry markdown bold ("**Dev Design**") that Work shows as asterisks. Times and status are left alone.
+function repairRunTextOnce() {
+  const KEY = 'repair:run-text-v1';
+  if (storage.readSetting(KEY, null)) return;
+  const { repairText } = require('./text-repair.js');
+  const fix = t => repairText(t).replace(/\*\*([^*\n]+)\*\*/g, '$1').replace(/__([^_\n]+)__/g, '$1');
+  const repaired = runLedger.rewriteText(fix);
+  storage.writeSetting(KEY, { completedAt: nowIso(), repaired });
+  if (repaired) console.log(`${nowIso()} Repaired run text: ${repaired}`);
+}
+
 async function apiPush(req, res, p) {
   try {
     if (req.method === 'GET' && p === '/api/push/key') return json(res, 200, { publicKey: pushLib.loadOrCreateVapid(storage).publicKey });
@@ -3420,6 +3432,7 @@ try { runImproveReconcile({ startup: true }); } catch (e) { console.error(`${now
 const HEALTH_TICK_MS = Math.max(200, Number(process.env.HEALTH_TICK_MS) || 60000);
 setInterval(() => { getStatusAndRecordTransition().catch(() => {}); }, HEALTH_TICK_MS).unref();
 repairGarbledTextOnce();
+try { repairRunTextOnce(); } catch (e) { console.error(`${nowIso()} Run text repair failed:`, e); }
 
 server.listen(PORT, '0.0.0.0', () => {
   warmText();

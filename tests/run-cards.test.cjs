@@ -100,3 +100,12 @@ test('workKind maps a run to its Work chip, older mission and specialist runs to
     ['chats', 'chats', 'images', 'missions', 'missions', 'missions', 'changes', 'other', 'other', 'other']);
   assert.deepEqual([...WORK_CHIPS], ['chats', 'images', 'missions', 'changes', 'other']);
 });
+
+test('a finished engineering run with no files has no preview line; only a running one is "being prepared"', () => {
+  for (const status of ['failed', 'cancelled', 'completed']) {
+    assert.equal(runCard({ id: 'e3', type: 'engineering', status, meta: { changeId: 'chg-x' } }, { changeFor: () => null }).preview, null, status);
+  }
+  for (const status of ['running', 'queued']) {
+    assert.deepEqual(runCard({ id: 'e4', type: 'engineering', status, meta: {} }).preview, { type: 'diff', changeId: null, files: null }, status);
+  }
+});
