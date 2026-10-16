@@ -103,11 +103,15 @@ const attentionRow=a=>infoRow(a.title,a.detail,'Fix','bad',()=>root.LocalAIRoute
 // A pending approval that is not itself a run: open its run when one exists, else Improve's approvals.
 const approvalRow=(a,run)=>infoRow(a.title||'Approval needed',a.detail||'Waiting for your decision','Review','attention',()=>run?openRun(run):root.LocalAIRouter.open('approvals'));
 let needs=[],approvals=[],newSignals=0;
+// Another device on plain HTTP can't use voice, notifications or Add to Home Screen; point it at the setup until it opts out there.
+const onPlainHttp=()=>location.protocol==='http:'&&!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+const secureNudge=()=>{if(!onPlainHttp())return false;try{return localStorage.getItem('localai.secureNudge.off')!=='1'}catch{return true}};
+const secureRow=()=>infoRow('Use the secure address on this device','Voice, notifications and adding Local AI to your Home Screen need it. Setup takes about a minute.','Set up','attention',()=>root.LocalAIRouter.open('status?secure=1'));
 // Serious Signals promoted into the Backlog in the last day, waiting for a decision.
 const signalsRow=n=>infoRow(`${n} new signal${n===1?'':'s'} in your backlog`,'Problems Local AI noticed. Start, defer or reject them.','Review','attention',()=>root.LocalAIRouter.open('backlog'));
 function paintNeeds(){
  const box=$('homeNeedsList'),sec=$('homeNeedsYou');if(!box||!sec)return;
- const rows=[...needs.map(recentRow),...approvals.map(x=>approvalRow(x.a,x.run)),...(newSignals?[signalsRow(newSignals)]:[]),...attention.map(attentionRow)];
+ const rows=[...needs.map(recentRow),...approvals.map(x=>approvalRow(x.a,x.run)),...(newSignals?[signalsRow(newSignals)]:[]),...attention.map(attentionRow),...(secureNudge()?[secureRow()]:[])];
  box.replaceChildren(...rows);
  $('homeNeedsCount').textContent=rows.length?'· '+rows.length:'';
  sec.hidden=!rows.length;
