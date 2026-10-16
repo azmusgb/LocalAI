@@ -18,6 +18,7 @@ the nightly backup copy to OneDrive.
 
 Page names come from `app/public/view-registry.js`. The page structure is being reorganized per the
 [evolution roadmap](docs/superpowers/specs/2026-10-15-localai-evolution-design.md). GridCraft spreadsheets have their own page at `/gridcraft.html`.
+On an iPhone or Apple Watch, one Siri Shortcut asks Local AI anything by voice ([Apple Watch and Siri](docs/APPLE-WATCH.md)).
 
 ## Where it runs
 

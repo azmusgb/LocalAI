@@ -1,16 +1,12 @@
 # Apple Watch and Siri
 
-Three Siri Shortcuts that work on an iPhone and on an Apple Watch. LocalAI has no watch app; the shortcuts call two
-endpoints and speak the answer.
+One Siri Shortcut, **Ask Local AI**, that works on an iPhone and on an Apple Watch. Ask it anything: what needs you,
+whether Local AI is OK, the time, the weather where you are, the latest news, or to start an image, a mission or some
+research. It answers in one or two short sentences within 8 seconds, or tells you the answer is on its way to your
+phone. LocalAI has no watch app; the shortcut calls one endpoint and speaks what comes back.
 
-| Say | Calls | You hear |
-|---|---|---|
-| "What needs me" | `GET /api/glance?format=text` | "Needs you: 1 approval and 11 unfinished change requests. 1 run failed today." |
-| "Is Local AI OK" | `GET /api/glance?topic=health&format=text` | "Local AI 2.0.258 is running and all 5 core services are up." or "Image generation is down. Everything else is up." |
-| "Ask Local AI" | `POST /api/glance/ask` `{"text": …}` | A one- or two-sentence answer from the local model |
-
-Notifications (finished, failed, waiting for approval) reach the watch on their own: once they are on in Health ›
-Notifications on the iPhone, iOS mirrors them to the watch while the phone is locked.
+Notifications (finished, failed, waiting for approval, and answers handed off from Siri) reach the watch on their own:
+once they are on in Health › Notifications on the iPhone, iOS mirrors them to the watch while the phone is locked.
 
 ## Address to use
 
@@ -21,39 +17,92 @@ Notifications on the iPhone, iOS mirrors them to the watch while the phone is lo
 
 Below, `BASE` stands for that address.
 
-## Build the shortcuts (Shortcuts app on the iPhone)
+## Build the shortcut (Shortcuts app on the iPhone)
 
-**What needs me**
-1. New shortcut, named **What needs me**.
-2. Add **Get Contents of URL**: `BASE/api/glance?format=text` (method GET).
-3. Add **Speak Text** with the input *Contents of URL*. (Optional: **Show Result** as well, for reading on the watch.)
-
-**Is Local AI OK**: the same, with `BASE/api/glance?topic=health&format=text`.
-
-**Ask Local AI**
 1. New shortcut, named **Ask Local AI**.
 2. Add **Dictate Text**.
-3. Add **Get Contents of URL**: `BASE/api/glance/ask`, method **POST**, Request Body **JSON**, one Text field:
-   `text` = *Dictated Text*.
-4. Add **Speak Text** with the input *Contents of URL*.
+3. Add **URL Encode** with the input *Dictated Text* (so apostrophes, `&` and `#` in what you say survive).
+4. Optional, for weather where you are: add **Get Current Location**.
+5. Add **Get Contents of URL** with the URL
+   `BASE/api/glance/ask?q=`*URL Encoded Text*`&lat=`*Latitude*`&lon=`*Longitude* (method GET). For *Latitude* and
+   *Longitude*, insert *Current Location* and tap it to pick that property. Without step 4, the URL ends at
+   *URL Encoded Text*.
+6. Add **Speak Text** with the input *Contents of URL*. (Optional: **Show Result** as well, for reading on the watch.)
 
-For each shortcut, open its details (ⓘ) and turn on **Show on Apple Watch**. Then raise your wrist and say
-"Hey Siri, what needs me", or run it from the Shortcuts app or a Smart Stack widget on the watch.
+Open the shortcut's details (ⓘ) and turn on **Show on Apple Watch**. Then raise your wrist and say "Hey Siri, Ask Local
+AI", or run it from the Shortcuts app or a Smart Stack widget on the watch. The first time it uses your location,
+Shortcuts asks for permission on the phone.
 
-The first question after the model has been idle can take a few seconds longer while Ollama loads it.
+The first question after the model has been idle can take a few seconds longer while Ollama loads it; if that passes
+8 seconds, the answer arrives as a notification instead (below).
+
+## What you can say
+
+| Intent | You say | The answer comes from |
+|---|---|---|
+| `needs` | "Anything need me?", "What's waiting for me?" | Local AI's own lists, by name: approvals, change requests, Claude's questions, runs that failed today, services that are down. No model. |
+| `health` | "Is Local AI OK?", "Health check" | The Health page's summary sentence. No model. |
+| `time` | "What time is it?", "What's the date?" | The appliance's clock, in its time zone. No model. |
+| `weather` | "What's the weather?", "Will it rain tomorrow?", "How cold is it tonight?" | Open-Meteo, for where your phone is (or your home location). |
+| `current` | "Who won the game last night?", "Latest news on SpaceX" | A web search (SearXNG, at most 3 seconds); the model answers from the top three results and names the site. |
+| `action` `image` | "Make an image of a red fox", "Draw a picture of a lighthouse at dusk" | Starts the image and says so; a notification follows when it's ready. |
+| `action` `mission` | "Start a mission to compare NAS drives" | Starts the mission and says so; it appears in Work, and its own notification arrives when it finishes. |
+| `action` `research` | "Research the best NAS for Plex" | Starts a web-search research run and says so; the answer arrives as a notification. |
+| `refuse` | "Approve the login fix", "Deploy it", "Delete the old runs" | Nothing is done. You hear "That needs your phone — I've put it in Needs you." |
+| `chat` | "Explain WAL mode", "How many ounces in a cup?" | The local model, told the date, the time and to answer in two short spoken sentences. |
+
+Whatever the answer, it is cleaned before Siri reads it: no markdown, links, lists or emoji, and at most two sentences.
+If Siri hears nothing or only "um", you hear "I didn't catch that."
+
+### Follow-ups
+
+A question within 5 minutes of the previous one continues the same conversation, with the last six exchanges as
+context, so "And tomorrow?" after a weather answer gives tomorrow's weather for the same place, and "Why?" follows the
+last answer. Start with "New question" or "Start over" to drop the earlier context. The conversation lives on the
+appliance, not in the shortcut, so it is shared by every device that asks within those 5 minutes.
+
+### The 8-second limit
+
+Siri gives up on a shortcut that takes too long, so Local AI always replies within 8 seconds. If the answer isn't
+ready, you hear "Still working on that — I'll send it to your phone." and the answer arrives as a notification titled
+**Local AI answered** (or **Local AI couldn't answer**) a little later; tap it to open the run. Image and research
+actions report the same way, as **Your image is ready** and **Research ready**. These notifications go to every device
+with notifications on, even during quiet hours, unless you turned answers off for that device in Health ›
+Notifications.
+
+### Home location
+
+When the shortcut sends no location, weather is for your home location. Set it on Health: **Home location: Not set**
+› **Change…**, then type a place such as "Phoenix, AZ". Until it is set, weather without a location answers "Set your
+home location on Local AI's Health page." Only the coordinates or the place name leave the appliance (to Open-Meteo,
+which needs no account).
+
+### Never by voice
+
+Approving or rejecting, applying or deploying changes, PowerShell, restarts and deleting anything are refused, and
+nothing is called. These stay on the phone, where the item is already waiting in Needs you.
+
+## Older shortcuts
+
+Earlier versions of this guide built three shortcuts. They keep working:
+
+- **What needs me**: `GET BASE/api/glance?format=text`, then **Speak Text**. The new shortcut answers the same
+  question with names instead of counts.
+- **Is Local AI OK**: `GET BASE/api/glance?topic=health&format=text`.
+- **Ask Local AI** with `POST BASE/api/glance/ask` and a JSON body `{"text": Dictated Text}`. It gets everything
+  above; add `lat` and `lon` number fields to the body for weather where you are.
 
 ## The endpoints
 
+`GET /api/glance/ask?q=<text>[&lat=<n>&lon=<n>]` and `POST /api/glance/ask` `{"text": "…", "lat"?: n, "lon"?: n}`
+return the answer as plain text, always with status 200 except "That was too long for me." (413) and "Local AI can't
+answer right now. Try again in a minute." (503); Siri speaks the body either way. The router is `app/voice.js` (rules
+only, no model); the handler is `apiGlanceAsk` in `app/server.js`. Model answers are ordinary chat runs, so they show
+in Work and the Library. `GET /api/voice/home` and `POST /api/voice/home {"place": "…"}` read and set the home
+location.
+
 `GET /api/glance` returns JSON: `{topic, speech, needsYou:{count, items:[{kind, count, text}]}, health:{ok, down, total},
 version}`. `?topic=health` switches `speech` to the health sentence; `?format=text` returns only `speech` as plain text.
-"Needs you" counts pending approvals, unfinished change requests and Claude findings still marked Proposed; it also
-mentions runs that failed in the last 24 hours, runs in progress, and any core service that is down. The sentences are
-built in `app/glance.js`.
+The sentences are built in `app/glance.js`.
 
-`POST /api/glance/ask` takes `{"text": "…"}` and returns the answer as plain text. It is an ordinary chat run with
-`brief: true`. `POST /api/chat` also accepts `brief: true`, which adds one instruction to the system prompt: answer in at most two short
-sentences of plain text, for reading aloud. Everything else about the chat run (Library, run history) is unchanged.
-
-Both are read-only or create an ordinary chat run, and like the rest of the API they have no password on the LAN (see
-[Security](SECURITY.md)). Approving changes from the watch is deliberately not offered until approvals have their own
-confirmation step.
+Like the rest of the API, these have no password on the LAN (see [Security](SECURITY.md)).
