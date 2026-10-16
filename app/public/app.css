@@ -748,6 +748,11 @@ body.awc-stage-expanded{overflow:hidden}
 .claude-matrix .heat.selected{outline:2px solid var(--accent);outline-offset:1px}
 .heat.sev-high{--sev:var(--bad)}.heat.sev-medium{--sev:var(--warn)}.heat.sev-low{--sev:var(--accent2)}
 .claude-matrix .open-count{color:var(--muted);font-variant-numeric:tabular-nums}
+/* On desktop the matrix shares a narrow card beside Activity (about 210px of table at 1280px), and its Open column
+   ended up past the edge, reachable only by a sideways scroll nobody could see. With a mouse the severity cells don't
+   need the 44px touch size, so tighter cells, gaps and category names let all five columns fit; the wrap still
+   scrolls sideways on a narrower window. */
+@media (min-width:761px) and (pointer:fine){.claude-matrix{border-spacing:2px}.claude-matrix th,.claude-matrix td{padding:0}.claude-matrix .heat{min-width:26px;padding:0}.claude-matrix tbody th button{font-size:12px}}
 
 .claude-livenow{display:flex;flex-wrap:nowrap;gap:8px;overflow-x:auto;margin:16px 0 0;padding-bottom:4px;scroll-snap-type:x proximity;-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 32px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 32px),transparent)}.claude-livenow>*{scroll-snap-align:start}.claude-livenow>:last-child{margin-right:32px}
 .claude-livenow[hidden]{display:none}
