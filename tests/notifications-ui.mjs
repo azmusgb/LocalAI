@@ -32,7 +32,7 @@ async function fakeApi(page, devices) {
     const p = url.pathname;
     if (p === '/api/push/key') return route.fulfill({ json: { publicKey: 'BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8' } });
     if (p === '/api/push/devices') return route.fulfill({ json: { devices } });
-    if (p === '/api/push/subscribe') { const d = { id: 'd1', name: body.name, endpoint: body.subscription.endpoint, kinds: ['needs-you', 'failed', 'service', 'finished'], quiet: { on: true, start: '22:00', end: '07:00' }, lastOkAt: null, lastError: null }; devices.splice(0, devices.length, d); return route.fulfill({ json: { device: d } }); }
+    if (p === '/api/push/subscribe') { const d = { id: 'd1', name: body.name, endpoint: body.subscription.endpoint, kinds: ['needs-you', 'failed', 'service', 'finished', 'answer'], quiet: { on: true, start: '22:00', end: '07:00' }, lastOkAt: null, lastError: null }; devices.splice(0, devices.length, d); return route.fulfill({ json: { device: d } }); }
     if (p === '/api/push/devices/update') { const d = devices.find((x) => x.id === body.id); Object.assign(d, Object.fromEntries(Object.entries(body).filter(([k, v]) => k !== 'id' && v !== undefined))); return route.fulfill({ json: { device: d } }); }
     if (p === '/api/push/test') return route.fulfill({ json: { sent: 1, removed: 0 } });
     return route.fulfill({ json: { ok: true } });
@@ -64,7 +64,7 @@ await check('Home Screen app: Allow subscribes as iPhone and shows the settings'
   await page.locator('[data-notify-allow]').click();
   await page.waitForSelector('[data-notify-kind="finished"]');
   assert.equal(calls.find((c) => c.path === '/api/push/subscribe').body.name, 'iPhone');
-  for (const k of ['needs-you', 'failed', 'service', 'finished']) assert.equal(await page.locator(`[data-notify-kind="${k}"]`).isChecked(), true, k);
+  for (const k of ['needs-you', 'failed', 'service', 'finished', 'answer']) assert.equal(await page.locator(`[data-notify-kind="${k}"]`).isChecked(), true, k);
   assert.equal(await page.locator('[data-notify-quiet-on]').isChecked(), true);
   assert.equal(await page.inputValue('[data-notify-quiet-start]'), '22:00');
   assert.equal(await page.inputValue('[data-notify-quiet-end]'), '07:00');
@@ -72,7 +72,7 @@ await check('Home Screen app: Allow subscribes as iPhone and shows the settings'
   await page.locator('[data-notify-kind="finished"]').uncheck();
   for (let i = 0; i < 50 && !calls.some((c) => c.path === '/api/push/devices/update'); i++) await page.waitForTimeout(100);
   const update = calls.filter((c) => c.path === '/api/push/devices/update').at(-1);
-  assert.deepEqual(update.body.kinds, ['needs-you', 'failed', 'service']);
+  assert.deepEqual(update.body.kinds, ['needs-you', 'failed', 'service', 'answer']);
 
   await page.locator('[data-notify-test]').click();
   await page.waitForFunction(() => /Sent/.test(document.querySelector('#notifications .notify-status').textContent));
@@ -90,7 +90,7 @@ await check('if the background service never starts, the card says what to do', 
 });
 
 await check('a refused test says so, with the reason', async () => {
-  const devices = [{ id: 'd1', name: 'iPhone', endpoint: 'https://web.push.apple.com/known', kinds: ['needs-you', 'failed', 'service', 'finished'], quiet: { on: true, start: '22:00', end: '07:00' }, lastOkAt: null, lastError: null }];
+  const devices = [{ id: 'd1', name: 'iPhone', endpoint: 'https://web.push.apple.com/known', kinds: ['needs-you', 'failed', 'service', 'finished', 'answer'], quiet: { on: true, start: '22:00', end: '07:00' }, lastOkAt: null, lastError: null }];
   const { page, context } = await openHealth({ standalone: true, subscribed: true }, devices);
   await page.route('**/api/push/test', (route) => route.fulfill({ json: { sent: 0, removed: 0, failed: 1, error: 'HTTP 403' } }));
   await page.locator('[data-notify-test]').click();
@@ -121,6 +121,10 @@ await check('notification links open their page', async () => {
   // What the service worker's message from a tapped notification calls.
   await page.evaluate(() => window.LocalAIOpen('/?open=claude'));
   await page.waitForSelector('#claude.active');
+  // An answer notification's link is #run/<id>: tapping it with the app already open must open that run.
+  await page.evaluate(() => { window.__went = []; const go = window.LocalAIRouter.go.bind(window.LocalAIRouter); window.LocalAIRouter.go = (...a) => { window.__went.push(a[0]); return go(...a); }; });
+  await page.evaluate(origin => window.LocalAIOpen(origin + '/#run/run_abc'), base);
+  assert.deepEqual(await page.evaluate(() => window.__went), ['#run/run_abc']);
   await context.close();
 });
 

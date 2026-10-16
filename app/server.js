@@ -61,6 +61,11 @@ const notifier = notifyLib.createNotifier({
   storage, sendPush: pushLib.sendPush, vapid: pushLib.loadOrCreateVapid(storage),
   subject: process.env.VAPID_SUBJECT || 'https://github.com/azmusgb/LocalAI'
 });
+// LOCALAI_NOTIFY_LOG (tests only): also append each notify() call as a JSON line to this file.
+if (process.env.LOCALAI_NOTIFY_LOG) {
+  const realNotify = notifier.notify;
+  notifier.notify = event => { try { fs.appendFileSync(process.env.LOCALAI_NOTIFY_LOG, JSON.stringify(event) + '\n'); } catch {} return realNotify(event); };
+}
 const runLedger = new RunLedger({ storage, onTransition: (run, previous) => { const e = notifyLib.runEvent(run, previous); if (e) notifier.notify(e); } });
 const activeRunControllers = new Map();
 const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody });
@@ -687,7 +692,7 @@ async function chatOnce(body) {
       summary: content.slice(0, 420),
       output: { text: content.slice(0, 40000), model: prep.model, elapsedMs, sources: prep.sources },
       artifactIds: artifact?.id ? [artifact.id] : [],
-      meta: { model: prep.model, elapsedMs, sources: prep.sources.length }
+      meta: { model: prep.model, elapsedMs, sources: prep.sources.length, ...(body.voice === true ? { voice: true } : {}) }
     });
 
     return {
@@ -698,7 +703,7 @@ async function chatOnce(body) {
       runId: execution.id
     };
   } catch (e) {
-    if (execution) runLedger.fail(execution.id, e);
+    if (execution) { runLedger.fail(execution.id, e); try { e.runId = execution.id; } catch {} }
     throw e;
   }
 }
@@ -1391,7 +1396,7 @@ function createChatExecution(body,streaming){
   const messages=sanitizeMessages(body?.messages);const prompt=[...messages].reverse().find(m=>m.role==='user')?.content||'Chat';
   const model=typeof body?.model==='string'&&body.model.trim()?body.model.trim():MODEL;
   const retryBody={messages,model,webSearch:body?.webSearch===true,threadId:cleanRunId(body?.threadId)||undefined,brief:body?.brief===true||undefined};
-  return runLedger.create({type:body?.webSearch===true?'research':'chat',title:titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true}});
+  return runLedger.create({type:body?.webSearch===true?'research':'chat',title:titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true,...(body?.voice===true?{voice:true}:{})}});
 }
 function normalizedExecutionStatus(value){
   const s=String(value||'').toLowerCase();

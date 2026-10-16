@@ -4,10 +4,10 @@
 
 const crypto = require('node:crypto');
 
-const KINDS = ['needs-you', 'failed', 'service', 'finished'];
+const KINDS = ['needs-you', 'failed', 'service', 'finished', 'answer'];
 // Inside quiet hours only these still notify.
-const ALWAYS = new Set(['failed', 'service']);
-const URGENCY = { 'needs-you': 'high', failed: 'high', service: 'high', finished: 'normal' };
+const ALWAYS = new Set(['failed', 'service', 'answer']);
+const URGENCY = { 'needs-you': 'high', failed: 'high', service: 'high', finished: 'normal', answer: 'normal' };
 const REPEAT_MS = 2 * 60 * 1000, BURST_MS = 10 * 60 * 1000, BURST_MAX = 10, SUMMARY_DELAY_MS = 60 * 1000, RETRY_MS = 30 * 1000, PRESENCE_MS = 60 * 1000;
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const cut = (text, max) => { const chars = [...String(text ?? '')]; return chars.length > max ? chars.slice(0, max - 1).join('') + '…' : chars.join(''); };
@@ -16,7 +16,10 @@ function inQuiet(quiet, hhmm) {
   return quiet.start < quiet.end ? hhmm >= quiet.start && hhmm < quiet.end : hhmm >= quiet.start || hhmm < quiet.end;
 }
 const DEVICE_PREFIX = 'push:device:';
-const publicDevice = ({ keys, ...device }) => device;
+// A device saved before 'answer' existed has never been asked about it, so it counts as on; once its kinds are
+// edited (answerSet) the list is the owner's choice.
+const wants = (device, kind) => !!device.kinds?.includes(kind) || (kind === 'answer' && !device.answerSet);
+const publicDevice = ({ keys, answerSet, ...device }) => ({ ...device, kinds: KINDS.filter((k) => wants({ ...device, answerSet }, k)) });
 
 function createNotifier({ storage, sendPush, vapid, subject, now = Date.now, schedule = setTimeout, timeZone = process.env.TZ || 'America/New_York' }) {
   const all = () => storage.listSettings(DEVICE_PREFIX);
@@ -93,13 +96,13 @@ function createNotifier({ storage, sendPush, vapid, subject, now = Date.now, sch
     try {
       if (!event || !KINDS.includes(event.kind)) return;
       const t = now();
-      const payload = { title: cut(event.title || 'Local AI', 60), body: cut(event.body, 80), url: String(event.url || '/'), tag: String(event.tag || event.kind) };
+      const payload = { title: cut(event.title || 'Local AI', 60), body: cut(event.body, event.kind === 'answer' ? 180 : 80), url: String(event.url || '/'), tag: String(event.tag || event.kind) };
       const presenceAt = storage.readSetting('push:presence', null)?.at || 0;
       if (event.kind === 'finished' && t - presenceAt < PRESENCE_MS) return;
       if (repeats.size > 500) for (const [k, v] of repeats) if (t - v >= REPEAT_MS) repeats.delete(k);
       const hhmm = localTime(t);
       for (const device of all()) {
-        if (!device.kinds?.includes(event.kind)) continue;
+        if (!wants(device, event.kind)) continue;
         if (!ALWAYS.has(event.kind) && inQuiet(device.quiet, hhmm)) continue;
         const key = `${device.id}|${event.kind}|${payload.tag}|${payload.title}`;
         if (t - (repeats.get(key) || -Infinity) < REPEAT_MS) continue;
@@ -116,7 +119,7 @@ function createNotifier({ storage, sendPush, vapid, subject, now = Date.now, sch
     const device = storage.readSetting(DEVICE_PREFIX + id, null);
     if (!device) return null;
     if (patch.name !== undefined) device.name = String(patch.name).trim().slice(0, 40) || device.name;
-    if (Array.isArray(patch.kinds)) device.kinds = KINDS.filter((k) => patch.kinds.includes(k));
+    if (Array.isArray(patch.kinds)) { device.kinds = KINDS.filter((k) => patch.kinds.includes(k)); device.answerSet = true; }
     if (patch.quiet) {
       const { on, start, end } = { ...device.quiet, ...patch.quiet };
       if (!HHMM.test(start) || !HHMM.test(end)) throw Object.assign(new Error('Quiet hours use HH:MM, e.g. 22:00.'), { status: 400 });
@@ -148,6 +151,8 @@ function createNotifier({ storage, sendPush, vapid, subject, now = Date.now, sch
 // What each event looks like on the phone (spec: Events).
 function runEvent(run, previousStatus) {
   if (!run || run.status === previousStatus) return null;
+  // A spoken ask owns its notification (the handoff in app/server.js), so the generic ones stay quiet.
+  if (run.meta?.voice) return null;
   const base = { url: `/?open=run:${run.id}`, tag: `run:${run.id}` };
   if (run.status === 'awaiting_approval') return { kind: 'needs-you', title: 'Waiting for your approval', body: run.title, ...base };
   // Only the run's title reaches the lock screen, never its output or error text (spec: Privacy).
