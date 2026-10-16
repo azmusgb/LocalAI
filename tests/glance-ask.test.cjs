@@ -17,7 +17,7 @@ async function freePort() {
 }
 
 // reply: the mock model's answer text, or a number for an HTTP error status.
-async function startServer(t, { reply = 'Fine.', seed } = {}) {
+async function startServer(t, { reply = 'Fine.', seed, env = {}, onChat } = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-ask-'));
   if (seed) { const storage = new Storage({ dataDir }); seed(storage); storage.close?.(); }
   const chats = [];
@@ -26,7 +26,7 @@ async function startServer(t, { reply = 'Fine.', seed } = {}) {
     req.on('end', () => {
       if (req.url === '/api/tags') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ models: [{ name: 'test-model' }] })); }
       if (req.url === '/api/ps') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ models: [] })); }
-      if (req.url === '/api/chat') { try { chats.push(JSON.parse(body)); } catch {} }
+      if (req.url === '/api/chat') { try { chats.push(JSON.parse(body)); } catch {} if (onChat && onChat(chats.length, res)) return; }
       if (typeof reply === 'number') { res.writeHead(reply); return res.end('model down'); }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ message: { content: reply } }));
@@ -38,7 +38,7 @@ async function startServer(t, { reply = 'Fine.', seed } = {}) {
   const child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], {
     env: { ...process.env, DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, PORT: String(port), OLLAMA_URL: `http://127.0.0.1:${mock.address().port}`, MODEL: 'test-model',
       SELF_APP_ROOT: path.resolve(__dirname, '../app'),
-      COMFY_URL: 'http://127.0.0.1:9', N8N_URL: 'http://127.0.0.1:9', PROXY_URL: 'http://127.0.0.1:9', SEARXNG_URL: 'http://127.0.0.1:9', MAC_AI_HOME_URL: 'http://127.0.0.1:9', MAC_DSH_URL: 'http://127.0.0.1:9' }
+      COMFY_URL: 'http://127.0.0.1:9', N8N_URL: 'http://127.0.0.1:9', PROXY_URL: 'http://127.0.0.1:9', SEARXNG_URL: 'http://127.0.0.1:9', MAC_AI_HOME_URL: 'http://127.0.0.1:9', MAC_DSH_URL: 'http://127.0.0.1:9', ...env }
   });
   child.stdout.on('data', c => log += c); child.stderr.on('data', c => log += c);
   t.after(async () => {
@@ -199,4 +199,50 @@ test('overlapping asks both answer and the thread records both turns in order', 
   const runs = (await runsFor(base)).filter(r => r.type === 'chat');
   assert.equal(runs.length, 2);
   assert.equal(runs[0].threadId, runs[1].threadId);
+});
+
+test('"start over" on its own resets the thread for the next ask', { timeout: 30000 }, async t => {
+  const { ask, chats, base } = await startServer(t, { reply: 'Okay then.' });
+  await ask('explain WAL mode');
+  const r = await ask('start over');
+  assert.equal(r.body, 'Okay. What is your question?');
+  await ask('explain journaling');
+  assert.deepEqual(chats[1].messages.filter(m => m.role !== 'system').map(m => m.content), ['explain journaling']);
+  const ids = new Set((await runsFor(base)).filter(x => x.type === 'chat').map(x => x.threadId));
+  assert.equal(ids.size, 2);
+});
+
+test('a stuck answer does not block the next ask past the queue wait', { timeout: 30000 }, async t => {
+  const { ask, chats } = await startServer(t, { reply: 'Fine.', env: { LOCALAI_VOICE_QUEUE_WAIT_MS: '200' }, onChat: n => n === 1 });
+  ask('first question').catch(() => {});
+  await new Promise(r => setTimeout(r, 100));
+  const started = Date.now();
+  const r = await ask('second question');
+  assert.equal(r.status, 200);
+  assert.equal(r.body, 'Fine.');
+  assert.ok(Date.now() - started < 3000);
+  assert.deepEqual(chats[1].messages.filter(m => m.role !== 'system').map(m => m.content), ['second question']);
+});
+
+test('a failed ask leaves the thread intact for the next one', { timeout: 30000 }, async t => {
+  const { ask, chats } = await startServer(t, { reply: 'Fine.', onChat: (n, res) => { if (n === 2) { res.writeHead(500); res.end('down'); return true; } } });
+  await ask('first question');
+  assert.equal((await ask('second question')).status, 503);
+  assert.equal((await ask('third question')).status, 200);
+  assert.deepEqual(chats[2].messages.filter(m => m.role !== 'system').map(m => m.content), ['first question', 'Fine.', 'third question']);
+});
+
+test('the five-minute window runs from the previous ask, not its answer', { timeout: 30000 }, async t => {
+  const clock = path.join(os.tmpdir(), `localai-clock-${process.pid}-${Date.now()}`);
+  const min = 60000, t0 = Date.now();
+  fs.writeFileSync(clock, String(t0));
+  t.after(() => fs.rmSync(clock, { force: true }));
+  const { ask, chats } = await startServer(t, { reply: 'Fine.', env: { LOCALAI_TEST_NOW_FILE: clock }, onChat: n => { if (n === 1) fs.writeFileSync(clock, String(t0 + 4 * min)); } });
+  await ask('first question');
+  fs.writeFileSync(clock, String(t0 + 5.5 * min));
+  await ask('second question');
+  assert.deepEqual(chats[1].messages.filter(m => m.role !== 'system').map(m => m.content), ['second question']);
+  fs.writeFileSync(clock, String(t0 + 6 * min));
+  await ask('third question');
+  assert.equal(chats[2].messages.filter(m => m.role !== 'system').length, 3);
 });

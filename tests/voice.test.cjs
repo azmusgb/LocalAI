@@ -70,15 +70,15 @@ test('createVoiceThreads: continues inside the window, restarts after it, keeps 
   const th = createVoiceThreads({ now: () => clock });
   const a = th.take('hello');
   assert.match(a.threadId, /^t-[0-9a-f]{32}$/);
-  assert.deepEqual(a.history, []);
+  assert.deepEqual(th.history(a.threadId), []);
   for (let i = 0; i < 8; i++) { clock += 1000; th.record(a.threadId, `q${i}`, `a${i}`); }
-  const b = th.take('more');
+  const b = th.take('more'); const bh = th.history(b.threadId);
   assert.equal(b.threadId, a.threadId);
-  assert.equal(b.history.length, 12);
-  assert.deepEqual(b.history.slice(0, 2), [{ role: 'user', content: 'q2' }, { role: 'assistant', content: 'a2' }]);
+  assert.equal(bh.length, 12);
+  assert.deepEqual(bh.slice(0, 2), [{ role: 'user', content: 'q2' }, { role: 'assistant', content: 'a2' }]);
   clock += 300001;
   const c = th.take('later');
   assert.notEqual(c.threadId, a.threadId);
-  assert.deepEqual(c.history, []);
+  assert.deepEqual(th.history(c.threadId), []);
   assert.notEqual(th.take('start over, again').threadId, c.threadId);
 });

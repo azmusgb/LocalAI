@@ -81,7 +81,7 @@ function stripReset(input) {
 }
 
 // Follow-up threads for Siri: an ask within windowMs of the last one continues the same conversation, so
-// "and tomorrow?" works with no state in the shortcut. One instance per server. Turns on a thread run one at a
+// "and tomorrow?" works with no state in the shortcut. One instance per server: the thread is global, so two devices asking within the window share it. The window runs from the previous ask, not from its answer. Turns on a thread run one at a
 // time (run), so overlapping asks answer in order and the history stays consistent.
 function createVoiceThreads({ now = Date.now, windowMs = 300000, maxTurns = 6 } = {}) {
   let current = null; // { id, turns: [{user, answer}], last, tail }
@@ -95,19 +95,25 @@ function createVoiceThreads({ now = Date.now, windowMs = 300000, maxTurns = 6 } 
         current = { id: 't-' + require('node:crypto').randomBytes(16).toString('hex'), turns: [], last: t, tail: Promise.resolve() };
       }
       current.last = t;
-      return { threadId: current.id, history: history(current.id) };
+      return { threadId: current.id };
     },
     history,
     record(threadId, userText, answer) {
       if (!current || current.id !== threadId) return;
       current.turns.push({ user: String(userText), answer: String(answer) });
       current.turns = current.turns.slice(-maxTurns);
-      current.last = now();
     },
-    // Run fn after every earlier turn on this thread has finished; a failed turn does not block the next.
-    run(threadId, fn) {
+    // Run fn after the earlier turns on this thread have finished, waiting at most waitMs for them: a stuck
+    // turn must not block later asks (they go ahead with the history recorded so far, and the late turn still
+    // records when it finishes). A failed turn does not block the next.
+    run(threadId, fn, { waitMs = 6000 } = {}) {
       const th = current && current.id === threadId ? current : { tail: Promise.resolve() };
-      const result = th.tail.then(fn);
+      const before = th.tail;
+      const gate = new Promise(resolve => {
+        const timer = setTimeout(resolve, waitMs);
+        before.then(() => { clearTimeout(timer); resolve(); });
+      });
+      const result = gate.then(fn);
       th.tail = result.catch(() => {});
       return result;
     }

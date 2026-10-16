@@ -533,7 +533,12 @@ async function apiGlance(req, res, urlObj) {
 // "Ask Local AI" from Siri (GET ?q= or POST {text}): a rules-only router picks the answer, the model only
 // handles open questions, and every reply is plain text that is safe to read aloud. Siri speaks the body
 // whatever the status, so errors are sentences, never JSON.
-const voiceThreads = voice.createVoiceThreads({ now: () => Date.now(), windowMs: 300000 });
+const voiceThreads = voice.createVoiceThreads({
+  // LOCALAI_TEST_NOW_FILE (tests only): a file holding the clock in ms, so tests can move time.
+  now: () => { const f = process.env.LOCALAI_TEST_NOW_FILE; if (f) { try { return Number(fs.readFileSync(f, 'utf8')) || Date.now(); } catch {} } return Date.now(); },
+  windowMs: 300000
+});
+const VOICE_QUEUE_WAIT_MS = Number(process.env.LOCALAI_VOICE_QUEUE_WAIT_MS) || 6000;
 const VOICE_DOWN = "Local AI can't answer right now. Try again in a minute.";
 const voiceTimeZone = () => process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
@@ -559,7 +564,10 @@ async function apiGlanceAsk(req, res, urlObj) {
     textIn = textIn.trim().slice(0, 4000);
     const reset = voice.stripReset(textIn);
     const route = voice.classify(reset.text);
-    if (route.intent === 'empty') return say(200, reset.fresh && textIn ? 'Okay. What is your question?' : "I didn't catch that.");
+    if (route.intent === 'empty') {
+      if (reset.fresh) { voiceThreads.take(textIn); return say(200, 'Okay. What is your question?'); }
+      return say(200, "I didn't catch that.");
+    }
     const question = reset.text;
     const { threadId } = voiceThreads.take(textIn);
     // Every answer is a turn in the thread; only chat asks hand the earlier turns to the model.
@@ -583,7 +591,7 @@ async function apiGlanceAsk(req, res, urlObj) {
         const result = await chatOnce({ messages, brief: true, voice: true, threadId });
         return voice.speakable(result.message.content) || "I didn't catch that.";
       });
-    });
+    }, { waitMs: VOICE_QUEUE_WAIT_MS });
     say(200, answer);
   } catch (e) { say(e.statusCode === 413 ? 413 : 503, e.statusCode === 413 ? 'That was too long for me.' : VOICE_DOWN); }
 }
