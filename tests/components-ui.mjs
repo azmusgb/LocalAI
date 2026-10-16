@@ -275,7 +275,7 @@ await check('opening a run shows header, Not filed, Pin and File, then the appro
   assert.equal(await d.getByRole('button', { name: 'Pin' }).count(), 0, 'Pin lives in the details sheet');
   assert.equal(await d.locator('.run-approval').count(), 1);
   assert.match(await d.locator('.run-approval').innerText(), /Apply the login fix[\s\S]*High risk/);
-  assert.ok(t.indexOf('Apply the login fix') < t.indexOf('Output'));
+  assert.ok(await d.evaluate(el => !!(el.querySelector('.run-approval').compareDocumentPosition(el.querySelector('.run-body')) & Node.DOCUMENT_POSITION_FOLLOWING)), 'the approval bar comes before the body');   // engineering owns a body (the change) since Task 6
   assert.doesNotMatch(t, /Timeline/);
   await openSheet();
   const sh = dsheet();
@@ -341,7 +341,8 @@ await check('a body registered for a kind mounts in place of Output', async () =
   assert.doesNotMatch(await d.innerText(), /Output/);
   await closeRun();
   await openRun('run_eng');
-  assert.match(await drawerOpen().innerText(), /Output/);
+  assert.equal(await drawerOpen().locator('.run-body-change').count(), 1, 'engineering has its own body, not the Output block');
+  assert.doesNotMatch(await drawerOpen().innerText(), /Output/);
   await closeRun();
 });
 await check('LocalAIRuns.open still returns false for an unknown id', async () => {
