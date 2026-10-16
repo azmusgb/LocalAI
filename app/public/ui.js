@@ -3487,6 +3487,9 @@ function phoneHtml(remote){
 async function render(card){
  const secure=location.protocol==='https:',remote=await remoteName();
  let state,detail;
+ // Without an answer from Local AI nothing here can be confirmed (the page may be a saved copy): say so, neutrally.
+ const reach=root.LocalAIConnection?.reachable;
+ if(reach&&!(await reach())){card.dataset.state='unknown';card.innerHTML=`<div class="secure-head"><span class="secure-dot" aria-hidden="true"></span><div><h2>Secure connection</h2><p>Can't check: Local AI isn't reachable.</p></div></div>`;delete card.dataset.rendered;return}
  if(secure){state='good';detail='This page is on a secure connection.'}
  else if(isLocal){state='good';detail='You are on the Local AI computer itself, which browsers already treat as secure.'}
  else{const ok=await trusted();state=ok?'ready':'todo';detail=ok?`This device already trusts Local AI's certificate. Switch to <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>.`:'This page uses plain HTTP, so other devices on the network could read what you send, and some features (copy to clipboard, installing as an app, signing PowerShell jobs) are unavailable.'}
