@@ -2801,6 +2801,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const drawer = el('runDrawer');
     if (!drawer) return;
     const run = lookup(runId);
+    window.LocalAIRunBodies?.release?.();   // a body that borrowed page elements gives them back before the view is rebuilt
     drawer.replaceChildren();
     el('runDetailsSheet').replaceChildren();
     state.drawerSig = drawerSignature(run);
@@ -2841,6 +2842,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   function errorBox() { const err = document.createElement('div'); err.className = 'run-view-error'; err.setAttribute('role', 'alert'); err.textContent = state.viewError; return err; }
 
   // Not a loaded run: Starting… (a run being created), Loading…, or why there is nothing to show.
+  const pendingText = (p) => `Creating your image… ${Math.floor((Date.now() - p.startedAt) / 1000)} s`;
   function renderGap(drawer) {
     const p = state.pending;
     if (p && !state.gap) {
@@ -2851,7 +2853,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         drawer.appendChild(stateBlock((KINDS[p.kind] || [0, 'system'])[1], [msg, close]));
       } else {
         const spin = document.createElement('span'); spin.className = 'run-spinner'; spin.setAttribute('aria-hidden', 'true');
-        const text = textNode('run-view-state__text', 'Starting…'); text.setAttribute('role', 'status');
+        // An image is drawn before its run is reported, so its wait is shown honestly: a label and the seconds so far.
+        const text = textNode('run-view-state__text', p.kind === 'create' ? pendingText(p) : 'Starting…'); text.setAttribute('role', 'status');
         drawer.appendChild(stateBlock((KINDS[p.kind] || [0, 'system'])[1], [spin, text]));
       }
       return;
@@ -3008,6 +3011,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (!was) el('runDrawer')?.querySelector('button')?.focus();
   }
   function hideView() {
+    window.LocalAIRunBodies?.release?.();
     const backdrop = el('runDrawerBackdrop');
     if (backdrop) { backdrop.classList.remove('show'); backdrop.setAttribute('aria-hidden', 'true'); }
     const sheet = el('runDetailsSheet'); if (sheet?.open) { state.selectedId = null; sheet.close(); }
@@ -3052,8 +3056,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     fetchRun(id, false);
   }
   function openPending({ kind, title } = {}) {
-    const token = { kind: String(kind || ''), title: String(title || ''), error: '', resolved: '' };
-    state.pending = token; state.selectedId = 'pending'; state.gap = ''; state.fetched = null; state.inApp = true; state.closing = false;
+    const token = { kind: String(kind || ''), title: String(title || ''), error: '', resolved: '', startedAt: Date.now() };
+    state.pending = token;
+    if (token.kind === 'create') { const t = setInterval(() => { const n = el('runDrawer')?.querySelector('.run-view-state__text'); if (state.pending !== token || token.resolved || token.error || !n) { if (state.pending !== token || token.resolved || token.error) clearInterval(t); return; } n.textContent = pendingText(token); }, 1000); } state.selectedId = 'pending'; state.gap = ''; state.fetched = null; state.inApp = true; state.closing = false;
     showView();
     if (window.LocalAIRouter) window.LocalAIRouter.go('#run/pending');
     return {
@@ -3128,7 +3133,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
   // The one way for a page to open a run view: pushes a history entry marked as in-app, so Close and Back return to the page you were on.
   function show(id) { openRun(String(id)); }
-  window.LocalAIRuns = { open: openRunBySource, openPending, show };
+  window.LocalAIRuns = { open: openRunBySource, openPending, show, refresh: () => loadRuns(true) };
 
   function init() {
     ensureSurface();
