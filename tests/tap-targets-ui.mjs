@@ -27,6 +27,9 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
         // and Next step through the same points with full-size buttons).
         if (e.tagName === 'A' && [...e.parentElement.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) return [];
         if (e.closest('.awc__replayMarkers')) return [];
+        // A run row's title button carries an ::after that covers the whole row: the row is the tap target.
+        const after = getComputedStyle(e, '::after');
+        if (after.content !== 'none' && after.position === 'absolute' && e.closest('.list-row')?.getBoundingClientRect().height >= 43.5) return [];
         const row = e.closest('label')?.getBoundingClientRect().height || 0;
         const ok = b.height >= 43.5 || (b.width >= 43.5 && b.height >= 32) || row >= 40;
         return ok ? [] : [`${document.querySelector('section.view.active').id}: ${e.id || e.textContent.trim().slice(0, 20) || e.tagName} ${Math.round(b.width)}x${Math.round(b.height)}`];

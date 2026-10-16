@@ -1912,5 +1912,3 @@ input::placeholder,textarea::placeholder{font-weight:400}
 #ask .toggle{min-height:44px;align-items:center}
 #library .filter{min-height:44px;min-width:44px}
 #library .artifact-foot .iconbtn{min-width:44px;min-height:44px}
-/* Run titles: a 44px tap area without moving the row (the padding is taken back by the margin). */
-.list-row__title .work-open{min-height:44px;padding-block:10px;margin-block:-10px}
