@@ -101,10 +101,12 @@ function infoRow(title,sub,label,tone,go){
 const attentionRow=a=>infoRow(a.title,a.detail,'Fix','bad',()=>root.LocalAIRouter.open(a.view||'status'));
 // A pending approval that is not itself a run: open its run when one exists, else Improve's approvals.
 const approvalRow=(a,run)=>infoRow(a.title||'Approval needed',a.detail||'Waiting for your decision','Review','attention',()=>run?openRun(run):root.LocalAIRouter.open('approvals'));
-let needs=[],approvals=[];
+let needs=[],approvals=[],newSignals=0;
+// Serious Signals promoted into the Backlog in the last day, waiting for a decision.
+const signalsRow=n=>infoRow(`${n} new signal${n===1?'':'s'} in your backlog`,'Problems Local AI noticed. Start, defer or reject them.','Review','attention',()=>root.LocalAIRouter.open('backlog'));
 function paintNeeds(){
  const box=$('homeNeedsList'),sec=$('homeNeedsYou');if(!box||!sec)return;
- const rows=[...needs.map(recentRow),...approvals.map(x=>approvalRow(x.a,x.run)),...attention.map(attentionRow)];
+ const rows=[...needs.map(recentRow),...approvals.map(x=>approvalRow(x.a,x.run)),...(newSignals?[signalsRow(newSignals)]:[]),...attention.map(attentionRow)];
  box.replaceChildren(...rows);
  $('homeNeedsCount').textContent=rows.length?'· '+rows.length:'';
  sec.hidden=!rows.length;
@@ -123,7 +125,8 @@ function paintRecent(box,data){
 }
 const recentUrl='/api/runs?threads=1&limit=6';
 async function loadNeeds(){
- const [d,p]=await Promise.allSettled([root.LocalAIUI.fetchJson('/api/runs?limit=120',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/approvals',{cache:'no-store'})]);
+ const [d,p,imp]=await Promise.allSettled([root.LocalAIUI.fetchJson('/api/runs?limit=120',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/approvals',{cache:'no-store'}),devOn()?root.LocalAIUI.fetchJson('/api/improve/items',{cache:'no-store'}):Promise.resolve({items:[]})]);
+ if(imp.status==='fulfilled'){const day=Date.now()-864e5;newSignals=(imp.value.items||[]).filter(i=>i.source==='signal'&&i.status==='proposed'&&i.stage==='backlog'&&Date.parse(i.createdAt)>day).length}
  const runs=d.status==='fulfilled'?d.value.items||[]:null;
  if(runs)needs=needsRuns(runs);
  if(p.status==='fulfilled'){
@@ -170,7 +173,11 @@ async function viaStarter(name,intent,text,extra){
 async function dispatch(intent,text,route){
  gateCheck(intent);
  const L=root.LocalAILegacy;
- if(intent==='engineering'){
+ if(intent==='engineering'&&root.LocalAIImprove?.openIdea){
+  // Change Local AI asks each time: Add to backlog, or Start now and follow it in In progress. Closing the sheet keeps the text.
+  const r=await root.LocalAIImprove.openIdea(text);if(!r)return;
+  clearInput();if(r.start&&!r.error)root.LocalAIRouter.open('inProgress');
+ }else if(intent==='engineering'){
   const request=L.engineeringRequest(text,route);
   const r=await fetch('/api/engineering/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request,target:'self',root:'app',maxAttempts:3})});
   const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);
