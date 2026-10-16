@@ -71,7 +71,9 @@ async function stubData(page) {
   await page.route(u => u.pathname === '/api/runs', route => { const id = new URL(route.request().url()).searchParams.get('id'); return id ? json(route, { item: RUNS.find(r => r.id === id) }) : json(route, { items: RUNS, summary: {} }); });
   await page.route(u => u.pathname === '/api/library', route => json(route, { items: LIBRARY }));
   await page.route('**/api/claude/board*', async route => {
-    const j = await (await route.fetch()).json();
+    // The page can move on mid-request (connection reset); drop that request instead of crashing the suite.
+    const res = await route.fetch().catch(() => null); if (!res) return route.abort().catch(() => {});
+    const j = await res.json();
     const byCategory = {}, byStatus = {};
     for (const f of FINDINGS) { byStatus[f.status] = (byStatus[f.status] || 0) + 1; const c = byCategory[f.category] || (byCategory[f.category] = { high: 0, medium: 0, low: 0, open: 0, total: 0 }); c[f.severity]++; c.total++; if (!['fixed', 'rejected'].includes(f.status)) c.open++; }
     await json(route, { ...j, sessions: [{ id: 'cc-visual', title: 'LocalAI · Claude Code · visual', updatedAt: ago(60) }], events: EVENTS, findings: FINDINGS, summary: { ...j.summary, total: FINDINGS.length, byStatus, byCategory } });

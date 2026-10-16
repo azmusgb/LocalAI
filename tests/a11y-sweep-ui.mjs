@@ -41,7 +41,8 @@ async function stubbed(viewport) {
   const page = await ctx.newPage();
   const json = (route, body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
   await page.route('**/api/claude/board*', async route => {
-    const res = await route.fetch(); const j = await res.json();
+    // The page can move on mid-request (connection reset); drop that request instead of crashing the suite.
+    const res = await route.fetch().catch(() => null); if (!res) return route.abort().catch(() => {}); const j = await res.json();
     const byCategory = {};
     for (const f of FINDINGS) { const c = byCategory[f.category] || (byCategory[f.category] = { high: 0, medium: 0, low: 0, open: 0, total: 0 }); c[f.severity]++; c.total++; if (f.status !== 'fixed') c.open++; }
     await json(route, { ...j, events: EVENTS, findings: FINDINGS, summary: { ...j.summary, total: FINDINGS.length, byCategory } });

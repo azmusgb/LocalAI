@@ -45,11 +45,13 @@ const LIVE = [
 ];
 async function liveStubbed(pg, live) {
   await pg.route('**/api/claude/board*', async (route) => {
-    const res = await route.fetch();
+    // The page can move on mid-request (connection reset); drop that request instead of crashing the suite.
+    const res = await route.fetch().catch(() => null);
+    if (!res) return route.abort().catch(() => {});
     const j = await res.json();
     j.live = live;
     j.sessions = [...live.map((l) => ({ id: l.id, title: l.title, updatedAt: l.at })), ...j.sessions];
-    await route.fulfill({ response: res, json: j });
+    await route.fulfill({ response: res, json: j }).catch(() => {});
   });
 }
 const liveChips = (pg) => pg.locator('#claudeLiveNow button[data-claude-live]');
@@ -110,11 +112,13 @@ await check('chips stay the same elements across polls, keeping keyboard focus',
   const pg = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
   let age = 5;
   await pg.route('**/api/claude/board*', async (route) => {
-    const res = await route.fetch();
+    // The page can move on mid-request (connection reset); drop that request instead of crashing the suite.
+    const res = await route.fetch().catch(() => null);
+    if (!res) return route.abort().catch(() => {});
     const j = await res.json();
     j.live = LIVE.map((l, i) => ({ ...l, at: iso(age + i) }));
     j.sessions = [...j.live.map((l) => ({ id: l.id, title: l.title, updatedAt: l.at })), ...j.sessions];
-    await route.fulfill({ response: res, json: j });
+    await route.fulfill({ response: res, json: j }).catch(() => {});
   });
   await pg.goto(base, { waitUntil: 'networkidle' });
   await pg.evaluate(() => window.showView('claude'));
