@@ -3150,8 +3150,10 @@ function sameHost(protocol, origin, host) {
   if (!host) return false;
   try { return new URL(`${protocol}//${host}`).host === origin; } catch { return false; }
 }
+// The voice ask also answers GET, and an answer costs model time and may push a notification, so it is guarded too.
+const GUARDED_GET = /^\/api\/glance\/ask(?:\?|$)/;
 function crossSiteRequest(req) {
-  if (!MUTATING_METHODS.has(req.method)) return false;
+  if (!MUTATING_METHODS.has(req.method) && !(req.method === 'GET' && GUARDED_GET.test(req.url || ''))) return false;
   if (String(req.headers['sec-fetch-site'] || '').trim().toLowerCase() === 'cross-site') return true;
   const origin = req.headers.origin;
   if (origin === undefined) return false;
