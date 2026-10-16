@@ -2,7 +2,9 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { createRequire } from 'node:module';
 import { addAxe } from './axe-helper.mjs';
+const { workKind } = createRequire(import.meta.url)('../app/run-cards.js'); // the server's own chip mapping
 
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const axePath = join(dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min.js');
@@ -45,7 +47,9 @@ async function open(viewport, hash, list, { storage = {}, center = true } = {}) 
     if (url.searchParams.get('id')) { const it = page.known.get(url.searchParams.get('id')); return it ? json({ item: it }) : r.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"Run not found"}' }); }
     if (!url.searchParams.get('threads')) return json({ items: center ? [...page.known.values()] : [], summary: {} }); // the run center's own poll (newest 120)
     page.calls.push(url);
-    const out = await list(url, page.calls.length);
+    let out = await list(url, page.calls.length);
+    const kind = url.searchParams.get('kind'); // the server filters by Work's chip
+    if (kind && Array.isArray(out)) out = out.filter(it => workKind(it) === kind);
     for (const it of Array.isArray(out) ? out : []) page.known.set(it.id, it);
     if (out && out.status) return r.fulfill({ status: out.status, contentType: 'application/json', body: JSON.stringify({ error: 'Server blew up' }) });
     r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: out, summary: {} }) });
@@ -55,6 +59,12 @@ async function open(viewport, hash, list, { storage = {}, center = true } = {}) 
   return page;
 }
 const rows = page => page.locator('#work .run-card');
+// A chip asks the server for its kind; the list is busy until that page arrives.
+const pick = async (page, k) => { await page.locator(`[data-work-kind="${k}"]`).click(); await page.waitForSelector('#workList:not([aria-busy="true"])', T); };
+// Pages like the server: `kind` first, then newest first by (createdAt, id), `before` and `limit`.
+const newestFirst = (a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id);
+const paged = all => url => { const k = url.searchParams.get('kind'); let l = [...all].filter(it => !k || workKind(it) === k).sort(newestFirst); const b = url.searchParams.get('before'); if (b) { const ref = l.find(x => x.id === b); l = l.filter(x => newestFirst(x, ref) > 0); } return l.slice(0, Number(url.searchParams.get('limit')) || 120); };
+const chatsAndOldMission = () => [...Array.from({ length: 70 }, (_, i) => item('chat', `Chat ${i}`, (i + 1) * HOUR, { threadId: `t${i}` })), item('agent', 'The old mission', 200 * HOUR, { id: 'old-mission' })];
 const kinds = async page => [...new Set(await rows(page).evaluateAll(r => r.map(x => x.dataset.kind)))].sort();
 const desk = { width: 1280, height: 860 }, phone = { width: 390, height: 844 };
 
@@ -72,22 +82,23 @@ await check('chips filter by kind, the hash mirrors the chip, and a reload keeps
   const page = await open(desk, '#work', async () => mixed());
   await page.waitForSelector('#work .run-card', T);
   assert.deepEqual(await page.locator('#work [data-work-kind]').evaluateAll(b => b.map(x => x.dataset.workKind)), ['all', 'chats', 'images', 'missions', 'changes', 'other']);
-  await page.locator('[data-work-kind="images"]').click();
+  await pick(page, 'images');
   assert.deepEqual(await kinds(page), ['image']);
+  assert.equal(page.calls.at(-1).searchParams.get('kind'), 'images', 'the chip asks the server');
   assert.equal(await page.evaluate(() => location.hash), '#work?kind=images');
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#work.active .run-card', T);
   assert.deepEqual(await kinds(page), ['image']);
   assert.equal(await page.locator('[data-work-kind="images"]').getAttribute('aria-pressed'), 'true');
-  await page.locator('[data-work-kind="chats"]').click();
+  await pick(page, 'chats');
   assert.deepEqual(await kinds(page), ['chat', 'research']);
-  await page.locator('[data-work-kind="missions"]').click();
+  await pick(page, 'missions');
   assert.deepEqual(await kinds(page), ['agent']);
-  await page.locator('[data-work-kind="changes"]').click();
+  await pick(page, 'changes');
   assert.deepEqual(await kinds(page), ['engineering']);
-  await page.locator('[data-work-kind="other"]').click();
+  await pick(page, 'other');
   assert.deepEqual(await kinds(page), ['automation']);
-  await page.locator('[data-work-kind="all"]').click();
+  await pick(page, 'all');
   assert.equal(await rows(page).count(), 7);
   await page.context().close();
 });
@@ -134,15 +145,38 @@ await check('Show more appends the next page by before= and hides when fewer tha
   await page.context().close();
 });
 
-await check('Show more is hidden while the filter matches nothing', async () => {
+// The chips filter on the server, so an older mission behind a page of chats is one tap away. An empty first page then
+// means there are none, and Show more stays hidden.
+await check('a chip asks the server for its kind: an old mission behind 70 chats shows; Show more pages within the kind', async () => {
+  const page = await open(desk, '#work', paged(chatsAndOldMission()));
+  await page.waitForSelector('#work .run-card', T);
+  assert.equal(await rows(page).count(), 60);
+  assert.equal(await page.locator('#workMore').isVisible(), true);
+  await pick(page, 'missions');
+  assert.deepEqual(await rows(page).locator('.list-row__title').allInnerTexts(), ['The old mission']);
+  assert.equal(page.calls.at(-1).searchParams.get('kind'), 'missions');
+  assert.equal(await page.locator('#workMore').isVisible(), false, 'one mission: nothing more to show');
+  await pick(page, 'chats');
+  assert.equal(await rows(page).count(), 60);
+  await page.locator('#workMore').click();
+  await page.waitForFunction(() => document.querySelectorAll('#work .run-card').length === 70, null, T);
+  assert.equal(page.calls.at(-1).searchParams.get('kind'), 'chats');
+  assert.ok(page.calls.at(-1).searchParams.get('before'));
+  assert.deepEqual(await kinds(page), ['chat']);
+  assert.equal(await page.locator('#workMore').isVisible(), false);
+  await page.context().close();
+});
+
+await check('a kind with none says so, and Show more stays hidden', async () => {
   const first = Array.from({ length: 60 }, (_, i) => item('chat', `Chat ${i}`, (i + 1) * HOUR, { threadId: `t${i}` }));
   const page = await open(desk, '#work', async () => first);
   await page.waitForSelector('#work .run-card', T);
   assert.equal(await page.locator('#workMore').isVisible(), true);
-  await page.locator('[data-work-kind="missions"]').click();
+  await pick(page, 'missions');
   assert.equal(await rows(page).count(), 0);
+  assert.match(await page.locator('#work').innerText(), /No missions yet/);
   assert.equal(await page.locator('#workMore').isVisible(), false);
-  await page.locator('[data-work-kind="all"]').click();
+  await pick(page, 'all');
   assert.equal(await page.locator('#workMore').isVisible(), true);
   await page.context().close();
 });
@@ -286,6 +320,14 @@ await check('nothing yet: the empty state starts something on Home', async () =>
   await page.context().close();
 });
 
+await check('/#agents lands on the old mission behind 70 chats', async () => {
+  const page = await open(desk, '#agents', paged(chatsAndOldMission()));
+  await page.waitForSelector('#work.active .run-card', T);
+  assert.equal(await page.evaluate(() => location.hash), '#work?kind=missions');
+  assert.deepEqual(await rows(page).locator('.list-row__title').allInnerTexts(), ['The old mission']);
+  await page.context().close();
+});
+
 for (const viewport of [phone, desk]) {
   await check(`${viewport.width}px: /#agents lands on Work with the Missions chip, only mission rows`, async () => {
     const page = await open(viewport, '#agents', async () => mixed());
@@ -304,7 +346,7 @@ await check('axe: Work passes color-contrast and target-size at 390x844', async 
   await addAxe(page, axePath);
   const v = await page.evaluate(() => window.axe.run('#work', { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(x => `${x.id}: ${x.nodes.map(n => n.html).join(' | ')}`)));
   assert.deepEqual(v, []);
-  await page.locator('[data-work-kind="images"]').click();
+  await pick(page, 'images');
   const v2 = await page.evaluate(() => window.axe.run('#work', { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(x => x.id)));
   assert.deepEqual(v2, []);
   await page.context().close();

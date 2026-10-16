@@ -92,3 +92,11 @@ test('legacy mission and specialist runs are agent cards', () => {
     assert.deepEqual(c.preview, { type: 'mission', text: 'Do a thing' });
   }
 });
+
+test('workKind maps a run to its Work chip, older mission and specialist runs to missions', () => {
+  const { workKind, WORK_CHIPS } = require('../app/run-cards');
+  const k = type => workKind({ type });
+  assert.deepEqual(['chat', 'research', 'image', 'agent', 'mission', 'specialist', 'engineering', 'automation', 'odd', undefined].map(k),
+    ['chats', 'chats', 'images', 'missions', 'missions', 'missions', 'changes', 'other', 'other', 'other']);
+  assert.deepEqual([...WORK_CHIPS], ['chats', 'images', 'missions', 'changes', 'other']);
+});
