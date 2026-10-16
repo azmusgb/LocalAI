@@ -559,14 +559,18 @@ async function searxWithin(query, ms) {
   try { return await searxSearch(query, controller.signal); } finally { clearTimeout(timer); }
 }
 
+let lastWeather = null; // { threadId, loc: {lat, lon, place, timeZone} }
+
 function voiceHome() { return storage.readSetting('voice-home', null) || {}; }
 
-async function voiceWeather(question, here) {
+async function voiceWeather(question, here, threadId) {
   const q = question.toLowerCase();
   const when = /\btomorrow\b/.test(q) ? 'tomorrow' : /\btonight\b/.test(q) ? 'tonight' : /\btoday\b/.test(q) ? 'today' : 'now';
   let lat = Number(here.lat), lon = Number(here.lon), place = null, timeZone = null;
   if (here.lat != null && here.lat !== '' && here.lon != null && here.lon !== '' && Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
     place = undefined; // looked up below, alongside the forecast
+  } else if (lastWeather?.threadId === threadId && voice.timeOnly(question)) {
+    ({ lat, lon, place, timeZone } = lastWeather.loc);
   } else {
     const home = voiceHome();
     if (!Number.isFinite(home.lat) || !Number.isFinite(home.lon)) return "Set your home location on Local AI's Health page.";
@@ -574,6 +578,7 @@ async function voiceWeather(question, here) {
   }
   try {
     const [f, name] = await Promise.all([weather.forecast(lat, lon, { timeZone }), place === undefined ? weather.reverse(lat, lon) : place]);
+    lastWeather = { threadId, loc: { lat, lon, place: name, timeZone } };
     return voice.speakable(weather.weatherSentence(f, { when, place: name }));
   } catch { return "I couldn't get the weather right now."; }
 }
@@ -623,6 +628,8 @@ async function apiGlanceAsk(req, res, urlObj) {
       voiceThreads.record(threadId, question, answer);
       return answer;
     };
+    // "and tomorrow?" right after a weather answer on this thread is weather for the same place.
+    const followUpWeather = lastWeather?.threadId === threadId && ['chat', 'current'].includes(route.intent) && voice.timeOnly(question);
     let runId = null;
     const asked = voiceThreads.run(threadId, () => {
       if (route.intent === 'time') return turn(async () => voice.speakable(voiceFacts({ now: new Date(), timeZone: voiceTimeZone() })));
@@ -633,7 +640,7 @@ async function apiGlanceAsk(req, res, urlObj) {
           return voice.speakable(glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION }).speech);
         });
       }
-      if (route.intent === 'weather') return turn(() => voiceWeather(question, here));
+      if (route.intent === 'weather' || followUpWeather) return turn(() => voiceWeather(question, here, threadId));
       if (route.intent === 'current') {
         return turn(async () => {
           let sources;

@@ -134,4 +134,10 @@ function siteName(url) {
   try { return new URL(String(url)).hostname.replace(/^www\./i, ''); } catch { return ''; }
 }
 
-module.exports = { siteName, withBudget, classify, speakable, stripReset, createVoiceThreads };
+// "and tomorrow?", "what about tonight?", "today?": a question that names only a time.
+const TIME_ONLY = /^(?:(?:and|what about|how about|ok(?:ay)?)\s+)*(?:for\s+)?(?:right\s+now|now|today|tomorrow|tonight)(?:\s+then)?\s*[?.!]*$/;
+function timeOnly(input) {
+  return TIME_ONLY.test(String(input || '').toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim());
+}
+
+module.exports = { timeOnly, siteName, withBudget, classify, speakable, stripReset, createVoiceThreads };

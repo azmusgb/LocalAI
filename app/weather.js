@@ -14,17 +14,24 @@ async function getJson(url, { fetch: f = globalThis.fetch, headers, timeoutMs = 
   return r.json();
 }
 
+const US_STATES = { AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California', CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware', DC: 'District of Columbia', FL: 'Florida', GA: 'Georgia', HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa', KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland', MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi', MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada', NH: 'New Hampshire', NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York', NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma', OR: 'Oregon', PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina', SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont', VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming' };
+
 async function geocode(place, opts = {}) {
-  const name = String(place || '').trim();
-  if (!name) return null;
-  // Open-Meteo matches place names, not "City, ST": search on the part before the first comma.
+  const text = String(place || '').trim();
+  if (!text) return null;
+  // "Springfield, IL": search the name, then prefer the match for the qualifier (state, abbreviation or country).
+  const [name, ...rest] = text.split(',');
+  const qualifier = rest.join(',').trim().toLowerCase();
   const u = new URL('/v1/search', geoUrl());
-  u.searchParams.set('name', name.split(',')[0].trim());
-  u.searchParams.set('count', '1');
+  u.searchParams.set('name', name.trim());
+  u.searchParams.set('count', '10');
   u.searchParams.set('language', 'en');
   try {
-    const hit = (await getJson(u, opts)).results?.[0];
-    if (!hit || typeof hit.latitude !== 'number' || typeof hit.longitude !== 'number') return null;
+    const hits = ((await getJson(u, opts)).results || []).filter(h => h && typeof h.latitude === 'number' && typeof h.longitude === 'number');
+    if (!hits.length) return null;
+    const wanted = new Set([qualifier, (US_STATES[qualifier.toUpperCase()] || '').toLowerCase()].filter(Boolean));
+    const lc = v => String(v || '').toLowerCase();
+    const hit = (wanted.size && hits.find(h => wanted.has(lc(h.admin1)) || wanted.has(lc(h.country)) || wanted.has(lc(h.country_code)))) || hits[0];
     return { name: hit.name, lat: hit.latitude, lon: hit.longitude, timeZone: hit.timezone || null };
   } catch { return null; }
 }
@@ -61,14 +68,14 @@ const WORDS = [
 const describe = code => (WORDS.find(([codes]) => codes.includes(code)) || [0, 'mixed'])[1];
 
 function weatherSentence(f, { when = 'now', place, units = 'F' } = {}) {
+  const where = place ? `in ${place}` : 'here';
   const deg = c => Math.round(units === 'C' ? c : c * 1.8 + 32);
-  const where = place || 'Here';
-  if (when === 'now') return `Right now in ${where}: ${deg(f.now.tempC)} degrees and ${describe(f.now.code)}.`;
+  if (when === 'now') return `Right now ${where}: ${deg(f.now.tempC)} degrees and ${describe(f.now.code)}.`;
   const day = when === 'tomorrow' ? f.tomorrow : f.today;
   const rain = day.rainChance >= 20 ? `${Math.round(day.rainChance)} percent chance of rain` : 'no rain expected';
   const label = { tomorrow: 'Tomorrow', tonight: 'Tonight', today: 'Today' }[when] || 'Today';
-  if (when === 'tonight') return `Tonight in ${where}: ${describe(day.code)}, low of ${deg(day.minC)}, ${rain}.`;
-  return `${label} in ${where}: ${describe(day.code)}, high of ${deg(day.maxC)}, low of ${deg(day.minC)}, ${rain}.`;
+  if (when === 'tonight') return `Tonight ${where}: ${describe(day.code)}, low of ${deg(day.minC)}, ${rain}.`;
+  return `${label} ${where}: ${describe(day.code)}, high of ${deg(day.maxC)}, low of ${deg(day.minC)}, ${rain}.`;
 }
 
 module.exports = { geocode, reverse, forecast, weatherSentence };

@@ -59,6 +59,33 @@ test('weatherSentence: tomorrow in F and C, spoken numbers only', () => {
   assert.equal(weather.weatherSentence(f, { when: 'tomorrow', place: 'Phoenix', units: 'C' }), 'Tomorrow in Phoenix: sunny, high of 29, low of 16, no rain expected.');
   assert.equal(weather.weatherSentence(f, { when: 'tomorrow', place: 'Phoenix' }), 'Tomorrow in Phoenix: sunny, high of 84, low of 61, no rain expected.');
   assert.equal(weather.weatherSentence(f, { when: 'now', place: 'Phoenix', units: 'F' }), 'Right now in Phoenix: 74 degrees and mostly sunny.');
-  assert.equal(weather.weatherSentence(f, { when: 'today', place: null }), 'Today in Here: overcast, high of 88, low of 65, 60 percent chance of rain.');
+  assert.equal(weather.weatherSentence(f, { when: 'today', place: null }), 'Today here: overcast, high of 88, low of 65, 60 percent chance of rain.');
   assert.match(weather.weatherSentence(f, { when: 'tonight', place: 'Phoenix' }), /^Tonight in Phoenix: .*low of 65/);
+});
+
+test('weatherSentence without a place says "here" for every time', () => {
+  const f = { now: { tempC: 23.6, code: 1 }, today: { maxC: 31.2, minC: 18.4, rainChance: 60, code: 3 }, tomorrow: { maxC: 28.9, minC: 16.1, rainChance: 0, code: 0 } };
+  assert.match(weather.weatherSentence(f, { when: 'tomorrow' }), /^Tomorrow here: /);
+  assert.match(weather.weatherSentence(f, { when: 'tonight' }), /^Tonight here: /);
+  assert.match(weather.weatherSentence(f, { when: 'now' }), /^Right now here: /);
+  assert.match(weather.weatherSentence(f, { when: 'today', place: null }), /^Today here: /);
+});
+
+test('geocode uses the qualifier after the comma: state names, abbreviations, countries; else the first match', async () => {
+  const results = [
+    { name: 'Springfield', latitude: 37.2, longitude: -93.3, timezone: 'America/Chicago', admin1: 'Missouri', country: 'United States', country_code: 'US' },
+    { name: 'Springfield', latitude: 39.8, longitude: -89.6, timezone: 'America/Chicago', admin1: 'Illinois', country: 'United States', country_code: 'US' },
+    { name: 'Springfield', latitude: 51.7, longitude: 0.5, timezone: 'Europe/London', admin1: 'England', country: 'United Kingdom', country_code: 'GB' }
+  ];
+  const f = recorder({ results });
+  assert.equal((await weather.geocode('Springfield, IL', { fetch: f })).lat, 39.8);
+  assert.match(f.calls[0].url, /count=10/);
+  assert.match(f.calls[0].url, /name=Springfield(&|$)/);
+  assert.equal((await weather.geocode('Springfield, Illinois', { fetch: f })).lat, 39.8);
+  assert.equal((await weather.geocode('springfield, il', { fetch: f })).lat, 39.8);
+  assert.equal((await weather.geocode('Springfield, UK', { fetch: f })).lat, 37.2);
+  assert.equal((await weather.geocode('Springfield, GB', { fetch: f })).lat, 51.7);
+  assert.equal((await weather.geocode('Springfield, United Kingdom', { fetch: f })).lat, 51.7);
+  assert.equal((await weather.geocode('Springfield, ZZ', { fetch: f })).lat, 37.2);
+  assert.equal((await weather.geocode('Springfield', { fetch: f })).lat, 37.2);
 });

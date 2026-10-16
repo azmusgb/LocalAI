@@ -363,7 +363,7 @@ test('weather says "here" when the place name cannot be found, and still answers
   const w = await startWorld(t, { reverseStatus: 500 });
   const { ask } = await startServer(t, { env: w.env });
   const r = await ask("what's the weather tomorrow", '&lat=33.4&lon=-111.9');
-  assert.equal(r.body, 'Tomorrow in Here: sunny, high of 84, low of 61, no rain expected.');
+  assert.equal(r.body, 'Tomorrow here: sunny, high of 84, low of 61, no rain expected.');
 });
 
 test('weather with no location and no home asks to set the home location', { timeout: 30000 }, async t => {
@@ -419,4 +419,23 @@ test('a slow SearXNG is cut off at 3 seconds with a spoken sentence', { timeout:
   assert.equal(r.status, 200);
   assert.equal(r.body, "I couldn't look that up right now.");
   assert.equal(chats.length, 0);
+});
+
+test('"and tomorrow?" after a weather answer reuses that location', { timeout: 30000 }, async t => {
+  const w = await startWorld(t);
+  const { ask, chats } = await startServer(t, { env: w.env });
+  assert.equal((await ask("what's the weather", '&lat=33.4&lon=-111.9')).body, 'Right now in Tempe: 86 degrees and sunny.');
+  assert.equal((await ask('and tomorrow?')).body, 'Tomorrow in Tempe: sunny, high of 84, low of 61, no rain expected.');
+  assert.match((await ask('what about tonight?')).body, /^Tonight in Tempe: /);
+  assert.match((await ask('today?')).body, /^Today in Tempe: /);
+  assert.equal(chats.length, 0);
+  assert.equal(w.seen.filter(u => u.startsWith('/reverse')).length, 1);
+});
+
+test('"and tomorrow?" with no earlier weather answer goes to the model', { timeout: 30000 }, async t => {
+  const w = await startWorld(t);
+  const { ask, chats } = await startServer(t, { env: w.env, reply: 'Hm.' });
+  await ask('explain WAL mode');
+  assert.equal((await ask('and tomorrow?')).body, 'Hm.');
+  assert.equal(chats.length, 2);
 });
