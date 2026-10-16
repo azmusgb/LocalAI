@@ -9,8 +9,8 @@ const { needsYouItems, needsYouSentence } = require('../app/glance');
 test('classify routes spoken questions by rules', () => {
   const rows = [
     ['anything need me', 'needs'], ["what's waiting for me", 'needs'],
-    ['is local ai ok', 'health'],
-    ["what's the date", 'time'], ['what time is it', 'time'],
+    ['is local ai ok', 'health'], ['is localai ok', 'health'],
+    ["what's the date", 'time'], ['whats the date', 'time'], ['tell me the date', 'time'], ['tell me the time', 'time'], ['what time is it', 'time'],
     ["what's the weather tomorrow", 'weather'],
     ['who won the world series last year', 'current'], ['latest news on SpaceX', 'current'],
     ['approve the login fix', 'refuse'], ['deploy it', 'refuse'], ['delete the library', 'refuse'],
@@ -31,9 +31,19 @@ test('speakable strips markdown, links, emoji and keeps two sentences', () => {
   assert.equal(speakable('See [the docs](https://a.b/c) now. `code` ok. More.'), 'See the docs now. code ok.');
 });
 
+test('speakable keeps decimals and abbreviations inside a sentence', () => {
+  assert.equal(speakable('It is 3.5 degrees out. Bring a coat. Third.'), 'It is 3.5 degrees out. Bring a coat.');
+  assert.equal(speakable('Use e.g. curl. Or wget. Or ftp.'), 'Use e.g. curl. Or wget.');
+  assert.equal(speakable('Meet at 5 p.m. today. Then dinner. Then bed.'), 'Meet at 5 p.m. today. Then dinner.');
+});
+
 test('voiceFacts states the day and the local time', () => {
   assert.equal(
     voiceFacts({ now: new Date('2026-10-16T04:42:00Z'), timeZone: 'America/Phoenix' }),
+    'Today is Thursday, October 15, 2026. It is 9:42 in the evening.'
+  );
+  assert.equal(
+    voiceFacts({ now: new Date('2026-10-16T04:42:00Z'), timeZone: 'America/Phoenix', includeZone: true }),
     'Today is Thursday, October 15, 2026. It is 9:42 in the evening in America/Phoenix.'
   );
 });
@@ -44,7 +54,7 @@ test('needsYouItems names things and the sentence speaks up to three', () => {
     failedRuns: [{ title: 'Weekly report mission' }], downServices: []
   });
   assert.deepEqual(items, [{ kind: 'approval', title: 'Fix the login bug' }, { kind: 'failed', title: 'Weekly report mission' }]);
-  assert.equal(needsYouSentence(items), 'Two things need you: Fix the login bug, and the Weekly report mission failed.');
+  assert.equal(needsYouSentence(items), 'Two things need you: Fix the login bug and the Weekly report mission failed.');
   assert.equal(needsYouSentence([]), 'Nothing needs you right now.');
   assert.match(needsYouSentence([1, 2, 3, 4, 5].map(i => ({ kind: 'approval', title: 'T' + i }))), /^5 things need you, including T1, T2, and T3\.$/);
 });

@@ -65,7 +65,9 @@ function itemPhrase(item) {
 function needsYouSentence(items = []) {
   if (!items.length) return 'Nothing needs you right now.';
   const shown = items.slice(0, 3).map(itemPhrase);
-  const joined = shown.length === 1 ? shown[0] : `${shown.slice(0, -1).join(', ')}, and ${shown[shown.length - 1]}`;
+  const joined = shown.length === 1 ? shown[0]
+    : shown.length === 2 ? `${shown[0]} and ${shown[1]}`
+    : `${shown.slice(0, -1).join(', ')}, and ${shown[shown.length - 1]}`;
   if (items.length > 3) return `${items.length} things need you, including ${joined}.`;
   const lead = items.length === 1 ? 'One thing needs you' : `${NUMBER_WORDS[items.length]} things need you`;
   return `${lead}: ${joined}.`;

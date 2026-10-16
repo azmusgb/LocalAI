@@ -10,8 +10,8 @@ const IMAGE = /^(?:(?:please|can you|could you)\s+)*(?:make|create|generate|draw
 const MISSION = /^(?:(?:please|can you|could you)\s+)*(?:start|begin|launch|kick off|run)\s+(?:a\s+|the\s+)?mission\b\s*(?:(?:to|for|that|about|on)\s+)?(.*)$/;
 const RESEARCH = /^(?:(?:please|can you|could you)\s+)*(?:research|investigate|dig into|look into)\s+(.+)$/;
 const NEEDS = /\b(?:need(?:s)?\s+me|need(?:s)?\s+my\s+attention|waiting\s+for\s+me|anything\s+for\s+me|what\s+needs\s+me|what\s+do\s+i\s+need\s+to)\b/;
-const HEALTH = /\b(?:local ai|appliance)\b.*\b(?:ok|okay|up|down|healthy|running|working|fine|status)\b|\b(?:health|status)\s+check\b/;
-const TIME = /\bwhat(?:'s|\s+is)\s+(?:the\s+)?(?:current\s+)?(?:time|date|day)\b|\bwhat\s+time\s+is\s+it\b|\bwhat\s+day\s+is\s+(?:it|today)\b|\btoday's\s+date\b/;
+const HEALTH = /\b(?:local\s?ai|appliance)\b.*\b(?:ok|okay|up|down|healthy|running|working|fine|status)\b|\b(?:health|status)\s+check\b/;
+const TIME = /\bwhat(?:'s|s|\s+is)\s+(?:the\s+)?(?:current\s+)?(?:time|date|day)\b|\btell\s+me\s+(?:the\s+)?(?:time|date|day)\b|\bwhat\s+time\s+is\s+it\b|\bwhat\s+day\s+is\s+(?:it|today)\b|\btoday's\s+date\b/;
 const WEATHER = /\b(?:weather|forecast|temperature|rain(?:ing)?|snow(?:ing)?|how\s+(?:hot|cold|warm))\b/;
 const CURRENT = /\b(?:latest|news|current(?:ly)?|recent(?:ly)?|right\s+now|who\s+won|score\s+of|stock\s+price|price\s+of|last\s+(?:year|week|night)|this\s+(?:year|week)|yesterday|tonight)\b/;
 
@@ -45,8 +45,32 @@ function speakable(input) {
   s = s.replace(/^[ \t]*>+[ \t]?/gm, '').replace(/^[ \t]*#+[ \t]*/gm, '');
   s = s.replace(/\b_+([^_\n]+?)_+\b/g, '$1').replace(/[*`~]/g, '').replace(/(^|\s)#+(?=\s|$)/g, ' ');
   s = s.replace(/\s+/g, ' ').trim();
-  const sentences = s.match(/[^.!?]+(?:[.!?]+(?=\s|$)|$)/g) || [];
-  return sentences.slice(0, 2).map(x => x.trim()).filter(Boolean).join(' ');
+  return firstSentences(s, 2);
+}
+
+// Titles and shorthand that end in a full stop without ending the sentence. "etc." and the clock times can end
+// a sentence, so they only count as shorthand when a lower-case word follows.
+const ALWAYS_ABBR = /^(?:e\.g\.|i\.e\.|mr\.|mrs\.|ms\.|dr\.|st\.|vs\.|no\.|u\.s\.)$/i;
+const SOMETIMES_ABBR = /^(?:etc\.|a\.m\.|p\.m\.)$/i;
+
+// A sentence ends at . ! or ? followed by whitespace; decimals (3.5) never qualify, abbreviations are skipped.
+function firstSentences(s, count) {
+  const out = [];
+  let start = 0;
+  const re = /[.!?]+(?=\s|$)/g;
+  let m;
+  while ((m = re.exec(s))) {
+    const end = m.index + m[0].length;
+    const word = s.slice(0, end).split(/\s/).pop();
+    const next = s.slice(end).trimStart().charAt(0);
+    if (ALWAYS_ABBR.test(word) || (SOMETIMES_ABBR.test(word) && /[a-z]/.test(next))) continue;
+    out.push(s.slice(start, end).trim());
+    start = end;
+    if (out.length === count) return out.join(' ');
+  }
+  const rest = s.slice(start).trim();
+  if (rest) out.push(rest);
+  return out.join(' ');
 }
 
 module.exports = { classify, speakable };

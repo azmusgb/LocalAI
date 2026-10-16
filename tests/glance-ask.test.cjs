@@ -61,7 +61,7 @@ test('time questions are answered from the clock without the model', { timeout: 
   const r = await ask('what time is it');
   assert.equal(r.status, 200);
   assert.match(r.type, /^text\/plain/);
-  assert.match(r.body, /^Today is \w+, \w+ \d+, \d{4}\. It is \d{1,2}:\d{2} in the (morning|afternoon|evening|night)/);
+  assert.match(r.body, /^Today is \w+, \w+ \d+, \d{4}\. It is \d{1,2}:\d{2} in the (morning|afternoon|evening|night)\.$/);
   assert.equal(chats.length, 0);
 });
 
@@ -112,4 +112,12 @@ test('a down model is a plain-text 503 sentence, never JSON', { timeout: 30000 }
   assert.equal(r.status, 503);
   assert.match(r.type, /^text\/plain/);
   assert.equal(r.body, "Local AI can't answer right now. Try again in a minute.");
+});
+
+test('a malformed POST body is "didn\'t catch that", not a server failure', { timeout: 30000 }, async t => {
+  const { base, chats } = await startServer(t);
+  const r = await fetch(`${base}/api/glance/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{not json' });
+  assert.equal(r.status, 200);
+  assert.equal(await r.text(), "I didn't catch that.");
+  assert.equal(chats.length, 0);
 });

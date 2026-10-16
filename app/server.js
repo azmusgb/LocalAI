@@ -554,7 +554,7 @@ async function apiGlanceAsk(req, res, urlObj) {
   try {
     let textIn = '';
     if (req.method === 'GET') textIn = String(urlObj.searchParams.get('q') || '');
-    else { const b = await readBody(req); textIn = typeof b.text === 'string' ? b.text : ''; }
+    else { const b = await readBody(req).catch(() => ({})); textIn = typeof b?.text === 'string' ? b.text : ''; }
     textIn = textIn.trim().slice(0, 4000);
     const route = voice.classify(textIn);
     if (route.intent === 'empty') return say(200, "I didn't catch that.");
@@ -594,7 +594,7 @@ function systemPrompt(researchContext = '', capabilityContext = '', brief = fals
 
 // The messages for the text model: system prompt, research sources (trimmed first), then the conversation, fitted to the shared context.
 function chatMessages(prep) {
-  const system = systemPrompt('', prep.capabilityContext, prep.brief, prep.voice ? voiceFacts({ now: new Date(), timeZone: voiceTimeZone() }) : '');
+  const system = systemPrompt('', prep.capabilityContext, prep.brief, prep.voice ? voiceFacts({ now: new Date(), timeZone: voiceTimeZone(), includeZone: true }) : '');
   const sources = prep.researchContext
     ? [{ role: 'system', kind: 'sources', content: `Current metasearch results are below. Use them when relevant and cite source numbers like [1].\n\n${prep.researchContext}` }]
     : [];

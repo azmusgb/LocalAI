@@ -8,13 +8,14 @@ function partsOf(date, timeZone, options) {
   return out;
 }
 
-function voiceFacts({ now = new Date(), timeZone = 'UTC', place = '' } = {}) {
+// The zone is for the model's context only (includeZone); it is not read aloud.
+function voiceFacts({ now = new Date(), timeZone = 'UTC', place = '', includeZone = false } = {}) {
   const d = partsOf(now, timeZone, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const h = partsOf(now, timeZone, { hour: 'numeric', minute: '2-digit', hourCycle: 'h23' });
   const hour24 = Number(h.hour) % 24;
   const hour12 = hour24 % 12 || 12;
   const period = hour24 >= 5 && hour24 < 12 ? 'morning' : hour24 >= 12 && hour24 < 17 ? 'afternoon' : hour24 >= 17 && hour24 < 22 ? 'evening' : 'night';
-  return `Today is ${d.weekday}, ${d.month} ${d.day}, ${d.year}. It is ${hour12}:${h.minute} in the ${period} in ${timeZone}.` +
+  return `Today is ${d.weekday}, ${d.month} ${d.day}, ${d.year}. It is ${hour12}:${h.minute} in the ${period}${includeZone ? ` in ${timeZone}` : ''}.` +
     (place ? ` The owner is in ${place}.` : '');
 }
 
