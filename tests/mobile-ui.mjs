@@ -145,7 +145,8 @@ await check('shell: one compact header, underline tabs, flush tab bar with icons
         pill: stripShown ? [...strip.querySelectorAll('button')].some(b => { const c = getComputedStyle(b).backgroundColor; return c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent'; }) : false,
         navBottom: nav.getBoundingClientRect().bottom, vh: window.innerHeight,
         icons: items.filter(b => b.querySelector('svg use')).length, items: items.length,
-        title: !!(title && title.getBoundingClientRect().height > 0)
+        // Shown on screen, not just present: the h1 stays for screen readers inside a 1px clipped (visually hidden) box.
+        title: !!(title && title.getBoundingClientRect().height > 0 && !(() => { for (let e = title; e && !e.classList.contains('view'); e = e.parentElement) { const r = e.getBoundingClientRect(); if (r.width <= 1 || r.height <= 1) return true; } return false; })())
       };
     });
     if (r.header > 56) problems.push(`${view}: header ${Math.round(r.header)}px`);
