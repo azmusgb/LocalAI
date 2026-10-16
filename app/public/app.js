@@ -520,7 +520,15 @@ $('imageEditThis').addEventListener('click',()=>{if(imageUi.last?.imageUrl){imag
 $('imageUpload').addEventListener('change',()=>{const f=$('imageUpload').files?.[0];if(!f)return;if(f.size>20*1024*1024){$('imageModelInfo').textContent='Choose an image under 20 MB.';return}const rd=new FileReader();rd.onload=()=>{imageUi.editThread=null;startImageEdit(rd.result)};rd.readAsDataURL(f)});
 $('clearImageBtn').addEventListener('click',()=>{stopImageEdit();showBatch(null);$('imagePrompt').value='';$('imageMeta').textContent='';$('imageResult').style.display='none';$('imageActions').hidden=true;$('imageUsedPromptBox').hidden=true;$('imageStage').innerHTML='<div class="img-placeholder">Your image appears here.</div>';setPhase('idle')});
 
-function renderActivity(){const user=state.activity;$('activityList').innerHTML=user.length?user.map(activityHtml).join(''):'<div class="empty">No activity yet.</div>';qsa('[data-open-run]').forEach(b=>b.onclick=async()=>{if(!await window.LocalAIRuns?.open(b.dataset.openRun))toast('That run is no longer in the execution history')});}
+// Each update restarts the appliance, so a busy day is a wall of "Appliance started". A run of two or more becomes one
+// line naming the versions it went through; the events around it stay visible.
+function foldRestarts(items){const out=[];for(let i=0;i<items.length;){const x=items[i];if(x.title!=='Appliance started'){out.push(x);i++;continue}
+  let j=i;while(j<items.length&&items[j].title==='Appliance started')j++;const run=items.slice(i,j);i=j;
+  if(run.length<2){out.push(x);continue}
+  const v=r=>(/v(\d+\.\d+\.\d+)/.exec(r.detail||'')||[])[1];const newest=v(run[0]),oldest=v(run[run.length-1]);
+  out.push({...run[0],id:run[0].id+'-folded',title:`Appliance updated ${run.length} times`,detail:newest&&oldest?`v${oldest} → v${newest}`:`${run.length} restarts`,meta:{}})}
+ return out}
+function renderActivity(){const user=foldRestarts(state.activity);$('activityList').innerHTML=user.length?user.map(activityHtml).join(''):'<div class="empty">No activity yet.</div>';qsa('[data-open-run]').forEach(b=>b.onclick=async()=>{if(!await window.LocalAIRuns?.open(b.dataset.openRun))toast('That run is no longer in the execution history')});}
 async function loadActivity(){try{await LocalAIUI.loadInto($('activityList'),()=>LocalAIUI.fetchJson('/api/activity',{cache:'no-store'}),{what:'activity',empty:'No activity yet.',render:(c,j)=>{state.activity=j.items||[];renderActivity();return true}})}catch{/* the list shows the error and a Retry */}}
 $('clearUserActivityBtn').addEventListener('click',async()=>{if(!(await LocalAIUI.ask({title:'Clear your activity?',effect:'System and recovery audit events are kept.',confirmLabel:'Clear activity',tone:'danger'})).ok)return;await fetch('/api/activity/clear',{method:'POST'});await Promise.all([loadActivity(),loadWorkspace()]);toast('User activity cleared');});
 

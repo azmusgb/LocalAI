@@ -2441,8 +2441,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const INTEGRATIONS = [
     {
       id: 'n8n', name: 'n8n', tier: 'native', decision: 'Built in', source: 'n8n',
-      summary: 'Primary workflow automation engine. Keep orchestration here instead of adding Bardeen, Coze, or another parallel automation runtime.',
-      guidance: "After adding credentials, community nodes, or public webhooks, run n8n's official security audit and review any risky-node findings.",
+      summary: 'Runs your automations: scheduled tasks, multi-step workflows and connections to other apps.',
+      guidance: "After you connect an account or add a public webhook, run n8n's security check (Security audit docs below).",
       actions: [
         { type: 'view', view: 'automations', label: 'Open n8n workflows' },
         { type: 'url', url: 'https://docs.n8n.io/hosting/securing/security-audit/', label: 'Security audit docs' }
@@ -2450,62 +2450,62 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     },
     {
       id: 'comfyui', name: 'ComfyUI', tier: 'native', decision: 'Built in · images', source: 'comfy',
-      summary: 'Primary local generative-media backend. Image, video, and avatar workflows should extend this service rather than create another media stack.',
-      guidance: 'For automated workflows, prefer custom nodes that work in ComfyUI API mode. Nodes that require direct client/server communication may not be callable from Local AI.',
+      summary: 'Makes the pictures you ask for, on this computer. Nothing is sent to an outside service.',
+      guidance: 'Add-ons for ComfyUI only work from Local AI if they support its API mode; check before installing one.',
       actions: [
         { type: 'view', view: 'create', label: 'Open Images' },
         { type: 'url', url: 'https://docs.comfy.org/custom-nodes/overview', label: 'Custom-node guidance' }
       ]
     },
     {
-      id: 'svd', name: 'Stable Video Diffusion', tier: 'extend', decision: 'Verify before enabling',
-      summary: 'Treat SVD as a ComfyUI model/workflow capability, not a standalone integration. Do not present it as installed until the runtime exposes the required model and nodes.',
-      guidance: 'Shows as not verified until Local AI can check for the models and nodes it needs.',
+      id: 'svd', name: 'Stable Video Diffusion', tier: 'extend', decision: 'Not set up',
+      summary: 'Would turn a still image into a short video clip. It runs inside ComfyUI once its model is installed.',
+      guidance: 'Shows as ready once Local AI finds the model and add-ons it needs in ComfyUI.',
       actions: [{ type: 'view', view: 'create', label: 'Open Images' }]
     },
     {
-      id: 'sadtalker', name: 'SadTalker', tier: 'extend', decision: 'Defer / verify first',
-      summary: 'Keep talking-head generation modular and behind ComfyUI. Add it only when avatar output is a real workflow requirement and the node path is API-compatible.',
-      guidance: 'Avoid installing custom nodes solely because they appear in a tool list; verify maintenance, runtime fit, and API behavior first.',
+      id: 'sadtalker', name: 'SadTalker', tier: 'extend', decision: 'Not set up',
+      summary: 'Would make a still portrait talk, from a photo and a voice clip. It would run inside ComfyUI.',
+      guidance: 'Only worth adding if you need talking portraits; check the add-on is maintained before installing it.',
       actions: [{ type: 'view', view: 'create', label: 'Open Images' }]
     },
     {
       id: 'gridcraft', name: 'GridCraft', tier: 'bridge', decision: 'Host bridge', source: 'gridcraft',
-      summary: 'Local spreadsheet agent. Ask Local AI to inspect, edit, verify and save GridCraft workbooks on the Windows host.',
-      guidance: 'Requests go through the appliance to the host bridge, which runs one request at a time. No cloud service is involved.',
+      summary: 'Lets Local AI open, check, edit and save spreadsheets on the Windows computer.',
+      guidance: 'Works on one request at a time. Nothing leaves your network.',
       actions: [{ type: 'page', url: '/gridcraft.html', label: 'Open GridCraft' }]
     },
     {
-      id: 'penpot', name: 'Penpot', tier: 'bridge', decision: 'Self-host + MCP',
-      summary: 'Best design-system bridge from the reviewed tools. Penpot supports self-hosting and an MCP workflow for design inspection, asset export, design-to-code, and design updates.',
-      guidance: 'Prefer a self-hosted Penpot instance. Treat an MCP key like a secret: never embed it in browser-visible configuration, source, screenshots, or logs.',
+      id: 'penpot', name: 'Penpot', tier: 'bridge', decision: 'Not set up',
+      summary: 'A design tool Local AI could read and update designs in, if you run your own copy.',
+      guidance: 'Its access key is a password: keep it out of screenshots, notes and shared files.',
       actions: [
         { type: 'url', url: 'https://help.penpot.app/technical-guide/getting-started/', label: 'Self-host guide' },
         { type: 'url', url: 'https://help.penpot.app/mcp/', label: 'MCP guide' }
       ]
     },
     {
-      id: 'obsidian', name: 'Obsidian', tier: 'bridge', decision: 'Local vault bridge',
-      summary: 'Use Obsidian as a local Markdown source for Projects and Knowledge, not as a replacement for Local AI memory or project state.',
-      guidance: 'The eventual bridge should mount or select a vault folder, ingest supported files, record source paths, and remain read-only by default.',
+      id: 'obsidian', name: 'Obsidian', tier: 'bridge', decision: 'Not set up',
+      summary: 'Would let Local AI read your Obsidian notes as Sources for a project.',
+      guidance: 'It would only read the vault folder you choose, never change it.',
       actions: [{ type: 'view', view: 'projects', label: 'Open Projects' }]
     },
     {
-      id: 'huggingface', name: 'Hugging Face', tier: 'bridge', decision: 'Model registry only',
-      summary: 'Use Hugging Face for model discovery and acquisition. Keep Local AI as the chat/orchestration surface so history, routing, privacy, and capability state stay coherent.',
-      guidance: 'Do not auto-install a model merely because it appears in search; compatibility, license, size, and local resource fit should be explicit gates.',
+      id: 'huggingface', name: 'Hugging Face', tier: 'bridge', decision: 'For finding models',
+      summary: 'Where new AI models come from. You chat in Local AI as usual; Hugging Face is only for finding and downloading models.',
+      guidance: 'Before downloading a model, check its licence and that it fits this computer (size and memory).',
       actions: [{ type: 'url', url: 'https://huggingface.co/models', label: 'Browse models' }]
     },
     {
-      id: 'photopea', name: 'Photopea', tier: 'utility', decision: 'Manual external editor',
-      summary: 'Useful for occasional browser-based touch-up after local generation, but it should remain outside the appliance runtime and persistence model.',
-      guidance: 'Opening Photopea crosses the local appliance boundary; do not silently upload Local AI artifacts.',
+      id: 'photopea', name: 'Photopea', tier: 'utility', decision: 'Outside website',
+      summary: 'A free photo editor website, handy for touching up an image you made here.',
+      guidance: 'It is a website on the internet: an image you open there leaves your network.',
       actions: [{ type: 'url', url: 'https://www.photopea.com/', label: 'Open Photopea' }]
     },
     {
-      id: 'languagetool', name: 'LanguageTool', tier: 'utility', decision: 'Optional deterministic QA',
-      summary: 'Useful when you need a deterministic grammar/style pass. Ordinary writing remains with local models, so LanguageTool should be opt-in rather than a default dependency.',
-      guidance: 'Prefer a local/self-hosted service if this becomes part of an automated workflow.',
+      id: 'languagetool', name: 'LanguageTool', tier: 'utility', decision: 'Optional',
+      summary: 'A grammar and style checker, for when you want a second opinion on writing.',
+      guidance: 'If you use it in automations, run your own copy so your text stays private.',
       actions: [{ type: 'url', url: 'https://languagetool.org/', label: 'LanguageTool' }]
     }
   ];
@@ -2603,10 +2603,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       if (checked) checked.textContent = '';
       setBusy(true);
       try {
+        // Each check gives up after 8 s, so one slow bridge (GridCraft on the host) can't leave the page on "Checking…".
+        const timed = () => (typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined);
         const results = await Promise.allSettled([
-          fetch('/api/status', { cache: 'no-store' }),
-          fetch('/api/capabilities', { cache: 'no-store' }),
-          fetch('/api/gridcraft/health', { cache: 'no-store' })
+          fetch('/api/status', { cache: 'no-store', signal: timed() }),
+          fetch('/api/capabilities', { cache: 'no-store', signal: timed() }),
+          fetch('/api/gridcraft/health', { cache: 'no-store', signal: timed() })
         ]);
         const gridcraft = results[2].status === 'fulfilled' ? await results[2].value.json().catch(() => null) : null;
         updateService('gridcraft', gridcraft?.ok

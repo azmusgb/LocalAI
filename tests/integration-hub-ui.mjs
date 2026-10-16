@@ -43,9 +43,9 @@ await check('native Local AI integrations remain first-class', async () => {
 await check('unverified media extensions do not pretend to be installed', async () => {
   const svd = page.locator('.ux-int-card', { hasText: 'Stable Video Diffusion' });
   const sad = page.locator('.ux-int-card', { hasText: 'SadTalker' });
-  assert.match(await svd.innerText(), /Verify before enabling/i);
+  assert.match(await svd.innerText(), /Not set up/i);
   assert.match(await svd.innerText(), /Not verified/i);
-  assert.match(await sad.innerText(), /Defer \/ verify first/i);
+  assert.match(await sad.innerText(), /Not set up/i);
   assert.match(await sad.innerText(), /Not verified/i);
 });
 
@@ -64,8 +64,8 @@ await check('research-backed safeguards are visible and actionable', async () =>
 await check('Penpot bridge favors self-hosting and MCP', async () => {
   const card = page.locator('.ux-int-card', { hasText: 'Penpot' });
   const body = await card.innerText();
-  assert.match(body, /Self-host \+ MCP/i);
-  assert.match(body, /MCP key/i);
+  assert.match(body, /if you run your own copy/i);
+  assert.match(body, /access key is a password/i);
   const hrefs = await card.locator('a').evaluateAll(nodes => nodes.map(node => node.href));
   assert.ok(hrefs.some(href => href.includes('help.penpot.app/technical-guide/getting-started')));
   assert.ok(hrefs.some(href => href.includes('help.penpot.app/mcp')));
@@ -74,8 +74,8 @@ await check('Penpot bridge favors self-hosting and MCP', async () => {
 await check('Obsidian is modeled as a local vault bridge', async () => {
   const card = page.locator('.ux-int-card', { hasText: 'Obsidian' });
   const body = await card.innerText();
-  assert.match(body, /Local vault bridge/i);
-  assert.match(body, /read-only by default/i);
+  assert.match(body, /Obsidian notes as Sources/i);
+  assert.match(body, /only read the vault folder/i);
   assert.equal(await card.locator('[data-integration-view="projects"]').count(), 1);
 });
 
