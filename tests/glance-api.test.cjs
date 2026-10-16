@@ -84,13 +84,13 @@ test('brief chat asks the model for a short spoken answer; normal chat does not'
 test('ask takes one text field and answers in plain text with the brief instruction', { timeout: 30000 }, async t => {
   const { base, chats } = await startServer(t);
   const ask = body => fetch(`${base}/api/glance/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  const r = await ask({ text: '  Weather?  ' });
+  const r = await ask({ text: '  Tell me a joke?  ' });
   assert.equal(r.status, 200);
   assert.match(r.headers.get('content-type'), /^text\/plain/);
   assert.equal(await r.text(), 'It is sunny.');
   const sent = chats.at(-1);
   assert.match(sent.messages.find(m => m.role === 'system').content, /read aloud on a watch/);
-  assert.equal(sent.messages.at(-1).content, 'Weather?');
+  assert.equal(sent.messages.at(-1).content, 'Tell me a joke?');
   // Siri speaks whatever comes back, so nothing-heard is a spoken prompt, not an error page.
   const none = await ask({ text: '' });
   assert.equal(none.status, 200);

@@ -2,7 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { classify, speakable } = require('../app/voice');
+const { classify, speakable, withBudget } = require('../app/voice');
 const { voiceFacts } = require('../app/voice-context');
 const { needsYouItems, needsYouSentence } = require('../app/glance');
 
@@ -62,4 +62,49 @@ test('needsYouItems names things and the sentence speaks up to three', () => {
   assert.equal(needsYouSentence(items), 'Two things need you: Fix the login bug and the Weekly report mission failed.');
   assert.equal(needsYouSentence([]), 'Nothing needs you right now.');
   assert.match(needsYouSentence([1, 2, 3, 4, 5].map(i => ({ kind: 'approval', title: 'T' + i }))), /^5 things need you, including T1, T2, and T3\.$/);
+});
+
+const { createVoiceThreads } = require('../app/voice');
+test('createVoiceThreads: continues inside the window, restarts after it, keeps the last 6 turns', () => {
+  let clock = 0;
+  const th = createVoiceThreads({ now: () => clock });
+  const a = th.take('hello');
+  assert.match(a.threadId, /^t-[0-9a-f]{32}$/);
+  assert.deepEqual(th.history(a.threadId), []);
+  for (let i = 0; i < 8; i++) { clock += 1000; th.record(a.threadId, `q${i}`, `a${i}`); }
+  const b = th.take('more'); const bh = th.history(b.threadId);
+  assert.equal(b.threadId, a.threadId);
+  assert.equal(bh.length, 12);
+  assert.deepEqual(bh.slice(0, 2), [{ role: 'user', content: 'q2' }, { role: 'assistant', content: 'a2' }]);
+  clock += 300001;
+  const c = th.take('later');
+  assert.notEqual(c.threadId, a.threadId);
+  assert.deepEqual(th.history(c.threadId), []);
+  assert.notEqual(th.take('start over, again').threadId, c.threadId);
+});
+
+test('withBudget: done when the promise settles in time, later when it does not', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const fast = withBudget(Promise.resolve('quick'), 8000);
+  assert.deepEqual(await fast, { done: true, value: 'quick' });
+  let finish;
+  const slow = new Promise(r => { finish = r; });
+  const pending = withBudget(slow, 8000);
+  t.mock.timers.tick(8000);
+  const r = await pending;
+  assert.equal(r.done, false);
+  finish('slow answer');
+  assert.equal(await r.later, 'slow answer');
+});
+
+test('withBudget: a rejection before the budget rejects, after it rejects later', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  await assert.rejects(withBudget(Promise.reject(new Error('boom')), 8000), /boom/);
+  let fail;
+  const pending = withBudget(new Promise((_, no) => { fail = no; }), 8000);
+  t.mock.timers.tick(8000);
+  const r = await pending;
+  assert.equal(r.done, false);
+  fail(new Error('late boom'));
+  await assert.rejects(r.later, /late boom/);
 });

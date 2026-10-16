@@ -73,4 +73,71 @@ function firstSentences(s, count) {
   return out.join(' ');
 }
 
-module.exports = { classify, speakable };
+// "New question" / "start over" at the front of an ask forces a fresh thread; the rest is the question.
+const RESET = /^\s*(?:ok(?:ay)?[,.]?\s+)?(?:new\s+question|start\s+over|new\s+conversation)\b[\s,.:;!-]*/i;
+function stripReset(input) {
+  const s = String(input || '');
+  return RESET.test(s) ? { fresh: true, text: s.replace(RESET, '').trim() } : { fresh: false, text: s.trim() };
+}
+
+// Follow-up threads for Siri: an ask within windowMs of the last one continues the same conversation, so
+// "and tomorrow?" works with no state in the shortcut. One instance per server: the thread is global, so two devices asking within the window share it. The window runs from the previous ask, not from its answer. Turns on a thread run one at a
+// time (run), so overlapping asks answer in order and the history stays consistent.
+function createVoiceThreads({ now = Date.now, windowMs = 300000, maxTurns = 6 } = {}) {
+  let current = null; // { id, turns: [{user, answer}], last, tail }
+  const history = id => current && current.id === id
+    ? current.turns.slice(-maxTurns).flatMap(t => [{ role: 'user', content: t.user }, { role: 'assistant', content: t.answer }])
+    : [];
+  return {
+    take(text) {
+      const t = now();
+      if (!current || stripReset(text).fresh || t - current.last > windowMs) {
+        current = { id: 't-' + require('node:crypto').randomBytes(16).toString('hex'), turns: [], last: t, tail: Promise.resolve() };
+      }
+      current.last = t;
+      return { threadId: current.id };
+    },
+    history,
+    record(threadId, userText, answer) {
+      if (!current || current.id !== threadId) return;
+      current.turns.push({ user: String(userText), answer: String(answer) });
+      current.turns = current.turns.slice(-maxTurns);
+    },
+    // Run fn after the earlier turns on this thread have finished, waiting at most waitMs for them: a stuck
+    // turn must not block later asks (they go ahead with the history recorded so far, and the late turn still
+    // records when it finishes). A failed turn does not block the next.
+    run(threadId, fn, { waitMs = 6000 } = {}) {
+      const th = current && current.id === threadId ? current : { tail: Promise.resolve() };
+      const before = th.tail;
+      const gate = new Promise(resolve => {
+        const timer = setTimeout(resolve, waitMs);
+        before.then(() => { clearTimeout(timer); resolve(); });
+      });
+      const result = gate.then(fn);
+      th.tail = result.catch(() => {});
+      return result;
+    }
+  };
+}
+
+// Race a promise against a time budget. Settles in time -> {done:true, value} (or rejects); otherwise
+// {done:false, later} where later is the same promise, still running, so the caller can finish the job.
+function withBudget(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { promise.catch(() => {}); resolve({ done: false, later: promise }); }, ms);
+    promise.then(value => { clearTimeout(timer); resolve({ done: true, value }); }, error => { clearTimeout(timer); reject(error); });
+  });
+}
+
+// A source named for the ear: the bare host, no "www.".
+function siteName(url) {
+  try { return new URL(String(url)).hostname.replace(/^www\./i, ''); } catch { return ''; }
+}
+
+// "and tomorrow?", "what about tonight?", "today?": a question that names only a time.
+const TIME_ONLY = /^(?:(?:and|what about|how about|ok(?:ay)?)\s+)*(?:for\s+)?(?:right\s+now|now|today|tomorrow|tonight)(?:\s+then)?\s*[?.!]*$/;
+function timeOnly(input) {
+  return TIME_ONLY.test(String(input || '').toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim());
+}
+
+module.exports = { timeOnly, siteName, withBudget, classify, speakable, stripReset, createVoiceThreads };
