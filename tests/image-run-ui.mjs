@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { addAxe } from './axe-helper.mjs';
 
 // Task 6: images started from Home open as a run view; the image editor moves in, and goes back to #create on close.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
@@ -140,7 +141,7 @@ await check('axe: the image run view with a strip passes color-contrast and targ
   await p.evaluate(() => window.LocalAIRuns.show('run-i3'));
   await p.locator('#runDrawer .run-body-image__strip button').nth(2).waitFor(T);
   await p.waitForFunction(() => document.querySelector('#generatedImage')?.complete, null, T);
-  await p.addScriptTag({ path: axePath });
+  await addAxe(p, axePath);
   const v = await p.evaluate(() => window.axe.run('#runDrawer', { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(x => `${x.id}: ${x.nodes.map(n => n.html.slice(0, 120)).join(' | ')}`)));
   assert.deepEqual(v, []);
   if (process.env.SHOT) await p.screenshot({ path: process.env.SHOT });

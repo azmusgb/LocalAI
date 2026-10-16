@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { addAxe } from './axe-helper.mjs';
 
 // Task 6: an engineering run opens as a run view that holds the change detail (or the run's steps until a change exists).
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
@@ -88,7 +89,7 @@ await check('axe: the change run view passes color-contrast and target-size at 3
   const page = await open({ width: 390, height: 844 }, db);
   await page.evaluate(() => window.LocalAIRuns.show('legacy-engineering:e1'));
   await page.locator('#runDrawer [data-change-approve="c1"]').waitFor(T);
-  await page.addScriptTag({ path: axePath });
+  await addAxe(page, axePath);
   const v = await page.evaluate(() => window.axe.run('#runDrawer', { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(x => `${x.id}: ${x.nodes.map(n => n.html.slice(0, 120)).join(' | ')}`)));
   assert.deepEqual(v, []);
   if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT });

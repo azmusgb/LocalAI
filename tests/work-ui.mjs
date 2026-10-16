@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { addAxe } from './axe-helper.mjs';
 
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const axePath = join(dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min.js');
@@ -300,7 +301,7 @@ for (const viewport of [phone, desk]) {
 await check('axe: Work passes color-contrast and target-size at 390x844', async () => {
   const page = await open(phone, '#work', async () => [...mixed(), item('agent', 'Sorting the archive', 60e3, { status: 'running' })]);
   await page.waitForSelector('#work .run-card', T);
-  await page.addScriptTag({ path: axePath });
+  await addAxe(page, axePath);
   const v = await page.evaluate(() => window.axe.run('#work', { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(x => `${x.id}: ${x.nodes.map(n => n.html).join(' | ')}`)));
   assert.deepEqual(v, []);
   await page.locator('[data-work-kind="images"]').click();

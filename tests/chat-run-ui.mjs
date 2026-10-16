@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { addAxe } from './axe-helper.mjs';
 
 // Task 5: a chat started from Home opens as a run view; the whole thread's conversation lives there and you reply in place.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
@@ -256,7 +257,7 @@ for (const [tag, vp] of [['390x844', phone], ['1280x860', desk]]) {
     const page = await open(vp, '#home', { runs: three() });
     await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);
     await page.locator('#runDrawer .chat-turn--assistant').nth(2).waitFor(T);
-    await page.addScriptTag({ path: axePath });
+    await addAxe(page, axePath);
     const v = await page.evaluate(() => window.axe.run('#runDrawer', { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(x => `${x.id}: ${x.nodes.map(n => n.html.slice(0, 120)).join(' | ')}`)));
     assert.deepEqual(v, []);
     await page.context().close();

@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { addAxe } from './axe-helper.mjs';
 
 // Improve › Backlog and Signals (sub-project 4, task 4), with /api/improve/* stubbed.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
@@ -101,7 +102,7 @@ await check('a failed load shows the error state with Retry, and Retry recovers'
 });
 
 await check('no colour-contrast or touch-target problems on Backlog and Signals (axe)', async () => {
-  await page.addScriptTag({ path: axePath });
+  await addAxe(page, axePath);
   const problems = [];
   for (const view of ['backlog', 'signals']) {
     await page.evaluate(v => window.showView(v), view);

@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { addAxe } from './axe-helper.mjs';
 
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const axePath = join(dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min.js');
@@ -172,7 +173,7 @@ await check('axe: the open run view passes color-contrast and target-size on pho
     const page = await open(vp, '#work', async () => runs());
     await page.waitForSelector('#work .run-card', T);
     await openRow(page, 'run-a');
-    await page.addScriptTag({ path: axePath });
+    await addAxe(page, axePath);
     const v = await page.evaluate(() => window.axe.run('#runDrawerBackdrop', { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(x => `${x.id}: ${x.nodes.map(n => n.html).join(' | ')}`)));
     assert.deepEqual(v, []);
     await page.context().close();

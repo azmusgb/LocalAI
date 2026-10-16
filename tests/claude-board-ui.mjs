@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { addAxe } from './axe-helper.mjs';
 
 const axePath = join(dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min.js');
 
@@ -128,7 +129,7 @@ await check('on a phone the chips are 44px tall, scroll sideways, and pass axe c
   const row = await pg.evaluate(() => { const r = document.getElementById('claudeLiveNow'); return { wide: r.scrollWidth > r.clientWidth, wrap: getComputedStyle(r).flexWrap, ox: getComputedStyle(r).overflowX }; });
   assert.equal(row.wrap, 'nowrap');
   assert.ok(['auto', 'scroll'].includes(row.ox));
-  await pg.addScriptTag({ path: axePath });
+  await addAxe(pg, axePath);
   const v = await pg.evaluate(() => window.axe.run('#claudeLiveNow', { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then((r) => r.violations.map((x) => `${x.id}: ${x.nodes.map((n) => n.html).join(' | ')}`)));
   assert.deepEqual(v, []);
   await pg.close();

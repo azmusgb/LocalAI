@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { addAxe } from './axe-helper.mjs';
 
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const axePath = join(dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min.js');
@@ -489,7 +490,7 @@ for (const [tag, vp] of [['390x844', phone], ['1280x860', desk]]) {
   await check(`axe: Home and the mode sheet pass color-contrast and target-size at ${tag}`, async () => {
     const page = await open(vp, '#home');
     await page.waitForSelector('#homeRecent2 .run-card', T);
-    await page.addScriptTag({ path: axePath });
+    await addAxe(page, axePath);
     const run = sel => page.evaluate(s => window.axe.run(s, { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(x => `${x.id}: ${x.nodes.map(n => n.html.slice(0, 120)).join(' | ')}`)), sel);
     assert.deepEqual(await run('#home'), []);
     await page.locator('#homeModeChip').click();

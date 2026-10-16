@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { addAxe } from './axe-helper.mjs';
 
 // Task 7: a mission started from Home is a run: its view opens at once, Agent World moves in, and Work lists it.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
@@ -145,7 +146,7 @@ await check('390x844: the mission run view fits, passes axe color-contrast and t
   await p.waitForTimeout(600);
   assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1 && document.querySelector('#runDrawer').scrollWidth <= document.querySelector('#runDrawer').clientWidth + 1), true, 'no sideways scroll');
   if (shotDir) await p.screenshot({ path: join(shotDir, 'task-7-mission-run-390.png') });
-  await p.addScriptTag({ path: axePath });
+  await addAxe(p, axePath);
   const v = await p.evaluate(() => window.axe.run('#runDrawer', { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(x => `${x.id}: ${x.nodes.map(n => n.html.slice(0, 120)).join(' | ')}`)));
   assert.deepEqual(v, []);
   await p.context().close();
