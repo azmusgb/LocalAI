@@ -57,6 +57,7 @@ const notifyLib = require('./notify');
 const glance = require('./glance');
 const voice = require('./voice');
 const { voiceFacts } = require('./voice-context');
+const weather = require('./weather');
 const notifier = notifyLib.createNotifier({
   storage, sendPush: pushLib.sendPush, vapid: pushLib.loadOrCreateVapid(storage),
   subject: process.env.VAPID_SUBJECT || 'https://github.com/azmusgb/LocalAI'
@@ -549,6 +550,44 @@ const VOICE_QUEUE_WAIT_MS = Number(process.env.LOCALAI_VOICE_QUEUE_WAIT_MS) || 6
 const VOICE_DOWN = "Local AI can't answer right now. Try again in a minute.";
 const voiceTimeZone = () => process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
+const VOICE_FACT_MS = 3000;
+
+// searxSearch, but gives up (and cancels the request) after ms.
+async function searxWithin(query, ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try { return await searxSearch(query, controller.signal); } finally { clearTimeout(timer); }
+}
+
+function voiceHome() { return storage.readSetting('voice-home', null) || {}; }
+
+async function voiceWeather(question, here) {
+  const q = question.toLowerCase();
+  const when = /\btomorrow\b/.test(q) ? 'tomorrow' : /\btonight\b/.test(q) ? 'tonight' : /\btoday\b/.test(q) ? 'today' : 'now';
+  let lat = Number(here.lat), lon = Number(here.lon), place = null, timeZone = null;
+  if (here.lat != null && here.lat !== '' && here.lon != null && here.lon !== '' && Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+    place = undefined; // looked up below, alongside the forecast
+  } else {
+    const home = voiceHome();
+    if (!Number.isFinite(home.lat) || !Number.isFinite(home.lon)) return "Set your home location on Local AI's Health page.";
+    ({ lat, lon, place, timeZone } = home);
+  }
+  try {
+    const [f, name] = await Promise.all([weather.forecast(lat, lon, { timeZone }), place === undefined ? weather.reverse(lat, lon) : place]);
+    return voice.speakable(weather.weatherSentence(f, { when, place: name }));
+  } catch { return "I couldn't get the weather right now."; }
+}
+
+async function apiVoiceHome(req, res) {
+  if (req.method === 'GET') return json(res, 200, voiceHome());
+  const body = await readBody(req).catch(() => ({}));
+  const found = await weather.geocode(typeof body?.place === 'string' ? body.place : '');
+  if (!found) return json(res, 400, { error: "Couldn't find that place." });
+  const home = { place: found.name, lat: found.lat, lon: found.lon, timeZone: found.timeZone };
+  storage.writeSetting('voice-home', home);
+  json(res, 200, home);
+}
+
 async function voiceNeedsSentence() {
   const snapshot = await getCapabilitiesSnapshot();
   const dayAgo = Date.now() - 86400000;
@@ -566,8 +605,9 @@ async function apiGlanceAsk(req, res, urlObj) {
   const say = (status, value) => text(res, status, value, 'text/plain; charset=utf-8', { 'Cache-Control': 'no-store' });
   try {
     let textIn = '';
+    let here = { lat: urlObj.searchParams.get('lat'), lon: urlObj.searchParams.get('lon') };
     if (req.method === 'GET') textIn = String(urlObj.searchParams.get('q') || '');
-    else { const b = await readBody(req).catch(e => { if (e.statusCode === 413) throw e; return {}; }); textIn = typeof b?.text === 'string' ? b.text : ''; }
+    else { const b = await readBody(req).catch(e => { if (e.statusCode === 413) throw e; return {}; }); textIn = typeof b?.text === 'string' ? b.text : ''; if (b?.lat != null && b?.lon != null) here = { lat: b.lat, lon: b.lon }; }
     textIn = textIn.trim().slice(0, 4000);
     const reset = voice.stripReset(textIn);
     const route = voice.classify(reset.text);
@@ -593,7 +633,23 @@ async function apiGlanceAsk(req, res, urlObj) {
           return voice.speakable(glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION }).speech);
         });
       }
-      // weather, current, action and refuse fall back to the model until they have their own answers.
+      if (route.intent === 'weather') return turn(() => voiceWeather(question, here));
+      if (route.intent === 'current') {
+        return turn(async () => {
+          let sources;
+          try { sources = (await searxWithin(question, VOICE_FACT_MS)).slice(0, 3); } catch { return "I couldn't look that up right now."; }
+          if (!sources.length) return "I couldn't find anything on that.";
+          const messages = [...voiceThreads.history(threadId), { role: 'user', content: question }];
+          const result = await chatOnce({ messages, brief: true, voice: true, threadId, presetSources: sources, sourceHost: voice.siteName(sources[0].url) });
+          runId = result.runId;
+          const host = voice.siteName(sources[0].url);
+          let said = String(result.message.content || '').trim();
+          // The model is asked to cite; make sure the spoken answer names the site either way.
+          if (said && host && !said.toLowerCase().includes(host.toLowerCase())) said = `According to ${host}, ${/^[A-Z][a-z]/.test(said) ? said[0].toLowerCase() + said.slice(1) : said}`;
+          return voice.speakable(said) || "I didn't catch that.";
+        });
+      }
+      // action and refuse fall back to the model until they have their own answers.
       return turn(async () => {
         const messages = [...voiceThreads.history(threadId), { role: 'user', content: question }];
         const result = await chatOnce({ messages, brief: true, voice: true, threadId });
@@ -622,7 +678,7 @@ async function apiCapabilities(req, res) {
   catch (e) { storageError(res,e,500); }
 }
 
-function systemPrompt(researchContext = '', capabilityContext = '', brief = false, facts = '') {
+function systemPrompt(researchContext = '', capabilityContext = '', brief = false, facts = '', sourceHost = '') {
   return {
     role: 'system',
     content:
@@ -635,13 +691,14 @@ function systemPrompt(researchContext = '', capabilityContext = '', brief = fals
         ? `\n\nCurrent metasearch results are below. Use them when relevant and cite source numbers like [1].\n\n${researchContext}`
         : '') +
       // Siri Shortcuts on a phone or watch read the answer aloud (docs/APPLE-WATCH.md).
-      (brief ? '\n\nThis answer will be read aloud on a watch: reply in at most two short sentences of plain text, with no lists, markdown, links or source numbers.' : '')
+      (brief ? '\n\nThis answer will be read aloud on a watch: reply in at most two short sentences of plain text, with no lists, markdown, links or source numbers.' : '') +
+      (brief && sourceHost ? ` Start the answer with "According to ${sourceHost},".` : '')
   };
 }
 
 // The messages for the text model: system prompt, research sources (trimmed first), then the conversation, fitted to the shared context.
 function chatMessages(prep) {
-  const system = systemPrompt('', prep.capabilityContext, prep.brief, prep.voice ? voiceFacts({ now: new Date(), timeZone: voiceTimeZone(), includeZone: true }) : '');
+  const system = systemPrompt('', prep.capabilityContext, prep.brief, prep.voice ? voiceFacts({ now: new Date(), timeZone: voiceTimeZone(), includeZone: true }) : '', prep.sourceHost);
   const sources = prep.researchContext
     ? [{ role: 'system', kind: 'sources', content: `Current metasearch results are below. Use them when relevant and cite source numbers like [1].\n\n${prep.researchContext}` }]
     : [];
@@ -662,7 +719,11 @@ async function prepareChat(body, signal = null) {
 
   let sources = [];
   let researchContext = '';
-  if (body.webSearch === true) {
+  if (Array.isArray(body.presetSources) && body.presetSources.length) {
+    // Voice "current facts": the sources were already fetched (and timed) by the caller.
+    sources = body.presetSources.map(x => ({ title: String(x.title || ''), url: String(x.url || ''), content: String(x.content || '') }));
+    researchContext = sources.map((x, i) => `[${i + 1}] ${x.title}\n${x.content}\n${x.url}`).join('\n\n');
+  } else if (body.webSearch === true) {
     const lastUser = [...messages].reverse().find(m => m.role === 'user');
     if (lastUser) {
       sources = await searxSearch(lastUser.content, signal);
@@ -681,7 +742,7 @@ async function prepareChat(body, signal = null) {
     if (signal?.aborted) throw error;
   }
   throwIfAborted();
-  return { model, messages, sources, researchContext, capabilityContext, brief: body.brief === true, voice: body.voice === true };
+  return { model, messages, sources, researchContext, capabilityContext, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
 }
 
 async function apiChat(req, res) {
@@ -3041,6 +3102,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 } });
     if (req.method === 'GET' && p === '/api/releases') return await apiReleases(req, res);
     if (req.method === 'GET' && p === '/api/glance') return await apiGlance(req, res, urlObj);
+    if ((req.method === 'GET' || req.method === 'POST') && p === '/api/voice/home') return await apiVoiceHome(req, res);
     if ((req.method === 'GET' || req.method === 'POST') && p === '/api/glance/ask') return await apiGlanceAsk(req, res, urlObj);
     if (p.startsWith('/api/push/')) return await apiPush(req, res, p);
     if (req.method === 'GET' && p === '/api/storage/status') return json(res, 200, storage.status());

@@ -129,4 +129,9 @@ function withBudget(promise, ms) {
   });
 }
 
-module.exports = { withBudget, classify, speakable, stripReset, createVoiceThreads };
+// A source named for the ear: the bare host, no "www.".
+function siteName(url) {
+  try { return new URL(String(url)).hostname.replace(/^www\./i, ''); } catch { return ''; }
+}
+
+module.exports = { siteName, withBudget, classify, speakable, stripReset, createVoiceThreads };

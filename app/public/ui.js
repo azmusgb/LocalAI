@@ -3355,7 +3355,27 @@ async function mountFirstRun(){
  });
  checkSteps(card);
 }
-function init(){initDevTools().then(mountDevToolsToggle);mountFirstRun()}
+// Home location: where "what's the weather" is answered when Siri sends no location (Shortcuts asks on the phone).
+async function mountHomeLocation(){
+ const status=q('#status');if(!status||q('.voice-home-pref',status))return;
+ const row=document.createElement('div');row.className='voice-home-pref card';
+ row.innerHTML='<span><strong data-voice-home-label>Home location</strong><small data-voice-home-note>Used for spoken weather when your phone does not share where it is.</small></span><button type="button" class="btn">Change…</button>';
+ (q('.dev-tools-pref',status)||status).after(row);
+ const label=q('[data-voice-home-label]',row),note=q('[data-voice-home-note]',row);
+ const show=h=>{label.textContent='Home location: '+(h&&h.place?h.place:'Not set')};
+ show(await getJson('/api/voice/home').catch(()=>({})));
+ q('button',row).addEventListener('click',async()=>{
+  const a=await window.LocalAIUI.ask({title:'Home location',effect:'A city, like Phoenix, AZ.',confirmLabel:'Save',input:{label:'City',type:'text'}});
+  if(!a.ok||!String(a.value||'').trim())return;
+  try{
+   const r=await fetch('/api/voice/home',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({place:String(a.value).trim()})});
+   const j=await r.json().catch(()=>({}));
+   if(!r.ok)throw new Error(j.error||"Couldn't save that.");
+   show(j);note.textContent='Used for spoken weather when your phone does not share where it is.';
+  }catch(e){note.textContent=e.message}
+ });
+}
+function init(){initDevTools().then(()=>{mountDevToolsToggle();mountHomeLocation()});mountFirstRun()}
 window.LocalAIFirstRun={applyDevTools,DEV_KEY,DONE_KEY};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();

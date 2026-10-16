@@ -52,7 +52,7 @@ async function startServer(t, { reply = 'Fine.', seed, env = {}, onChat } = {}) 
     if (i === 79) throw new Error(`Server did not start: ${log}`);
     await new Promise(r => setTimeout(r, 50));
   }
-  const ask = async q => { const r = await fetch(`${base}/api/glance/ask?q=${encodeURIComponent(q)}`); return { status: r.status, type: r.headers.get('content-type'), body: await r.text() }; };
+  const ask = async (q, extra = '') => { const r = await fetch(`${base}/api/glance/ask?q=${encodeURIComponent(q)}${extra}`); return { status: r.status, type: r.headers.get('content-type'), body: await r.text() }; };
   return { base, chats, ask };
 }
 
@@ -324,4 +324,99 @@ test('two failed handoffs close together each send their own notification', { ti
   const all = readLog(log);
   assert.equal(all.length, 2, JSON.stringify(all));
   assert.notEqual(all[0].tag, all[1].tag);
+});
+
+// ---- weather and current facts (Task 4) ----
+const FORECAST = {
+  current: { temperature_2m: 30, weather_code: 0 },
+  daily: { weather_code: [0, 0], temperature_2m_max: [34, 28.9], temperature_2m_min: [20, 16.1], precipitation_probability_max: [0, 0] }
+};
+// One mock for Open-Meteo (forecast + geocoding), Nominatim (reverse) and SearXNG (search).
+async function startWorld(t, { forecastStatus = 200, searxDelay = 0, reverseStatus = 200 } = {}) {
+  const seen = [];
+  const results = [1, 2, 3, 4, 5].map(i => ({ title: `Result ${i}`, url: `https://www.espn.com/story/${i}`, content: `snippet-${i}` }));
+  const srv = http.createServer((req, res) => {
+    seen.push(req.url);
+    const send = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+    if (req.url.startsWith('/v1/forecast')) return forecastStatus === 200 ? send(200, FORECAST) : send(forecastStatus, {});
+    if (req.url.startsWith('/v1/search')) return send(200, /nowhere/i.test(req.url) ? {} : { results: [{ name: 'Phoenix', latitude: 33.45, longitude: -112.07, timezone: 'America/Phoenix' }] });
+    if (req.url.startsWith('/reverse')) return reverseStatus === 200 ? send(200, { address: { city: 'Tempe' } }) : send(reverseStatus, {});
+    if (req.url.startsWith('/search')) return setTimeout(() => send(200, { results }), searxDelay);
+    send(404, {});
+  });
+  srv.listen(0, '127.0.0.1'); await once(srv, 'listening');
+  t.after(async () => { srv.closeAllConnections(); await new Promise(r => srv.close(r)); });
+  const u = `http://127.0.0.1:${srv.address().port}`;
+  return { seen, env: { OPEN_METEO_URL: u, OPEN_METEO_GEO_URL: u, REVERSE_GEO_URL: u, SEARXNG_URL: u } };
+}
+
+test('weather with lat/lon names the reverse-geocoded place', { timeout: 30000 }, async t => {
+  const w = await startWorld(t);
+  const { ask, chats } = await startServer(t, { env: w.env });
+  const r = await ask("what's the weather tomorrow", '&lat=33.4&lon=-111.9');
+  assert.equal(r.status, 200);
+  assert.equal(r.body, 'Tomorrow in Tempe: sunny, high of 84, low of 61, no rain expected.');
+  assert.equal(chats.length, 0);
+});
+
+test('weather says "here" when the place name cannot be found, and still answers', { timeout: 30000 }, async t => {
+  const w = await startWorld(t, { reverseStatus: 500 });
+  const { ask } = await startServer(t, { env: w.env });
+  const r = await ask("what's the weather tomorrow", '&lat=33.4&lon=-111.9');
+  assert.equal(r.body, 'Tomorrow in Here: sunny, high of 84, low of 61, no rain expected.');
+});
+
+test('weather with no location and no home asks to set the home location', { timeout: 30000 }, async t => {
+  const w = await startWorld(t);
+  const { ask } = await startServer(t, { env: w.env });
+  const r = await ask("what's the weather");
+  assert.equal(r.status, 200);
+  assert.equal(r.body, "Set your home location on Local AI's Health page.");
+});
+
+test('the home location is geocoded, stored, and used for weather', { timeout: 30000 }, async t => {
+  const w = await startWorld(t);
+  const { ask, base } = await startServer(t, { env: w.env });
+  assert.deepEqual(await (await fetch(`${base}/api/voice/home`)).json(), {});
+  const bad = await fetch(`${base}/api/voice/home`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ place: 'nowhere' }) });
+  assert.equal(bad.status, 400);
+  assert.equal((await bad.json()).error, "Couldn't find that place.");
+  const ok = await fetch(`${base}/api/voice/home`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ place: 'Phoenix, AZ' }) });
+  assert.equal(ok.status, 200);
+  assert.deepEqual(await ok.json(), { place: 'Phoenix', lat: 33.45, lon: -112.07, timeZone: 'America/Phoenix' });
+  assert.deepEqual(await (await fetch(`${base}/api/voice/home`)).json(), { place: 'Phoenix', lat: 33.45, lon: -112.07, timeZone: 'America/Phoenix' });
+  const r = await ask("what's the weather like right now");
+  assert.equal(r.body, 'Right now in Phoenix: 86 degrees and sunny.');
+  assert.ok(w.seen.some(u => /timezone=America%2FPhoenix/.test(u)));
+});
+
+test('Open-Meteo failing is a spoken sentence', { timeout: 30000 }, async t => {
+  const w = await startWorld(t, { forecastStatus: 500 });
+  const { ask } = await startServer(t, { env: w.env });
+  const r = await ask("what's the weather tomorrow", '&lat=33.4&lon=-111.9');
+  assert.equal(r.status, 200);
+  assert.equal(r.body, "I couldn't get the weather right now.");
+});
+
+test('current facts pass three snippets to the model and the answer names the source', { timeout: 30000 }, async t => {
+  const w = await startWorld(t);
+  const { ask, chats } = await startServer(t, { env: w.env, reply: 'The Suns won 112 to 104.' });
+  const r = await ask('who won the game last night');
+  assert.equal(r.status, 200);
+  assert.match(r.body, /^According to espn\.com, /);
+  assert.doesNotMatch(r.body, /www\.|https?:/);
+  const system = chats.at(-1).messages.filter(m => m.role === 'system').map(m => m.content).join('\n');
+  for (const i of [1, 2, 3]) assert.ok(system.includes(`snippet-${i}`), `snippet ${i}`);
+  assert.ok(!system.includes('snippet-4'));
+});
+
+test('a slow SearXNG is cut off at 3 seconds with a spoken sentence', { timeout: 30000 }, async t => {
+  const w = await startWorld(t, { searxDelay: 5000 });
+  const { ask, chats } = await startServer(t, { env: w.env });
+  const started = Date.now();
+  const r = await ask('who won the game last night');
+  assert.ok(Date.now() - started < 3500, `took ${Date.now() - started}ms`);
+  assert.equal(r.status, 200);
+  assert.equal(r.body, "I couldn't look that up right now.");
+  assert.equal(chats.length, 0);
 });
