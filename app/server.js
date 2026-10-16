@@ -604,9 +604,14 @@ async function apiGlanceAsk(req, res, urlObj) {
     // The budget covers the whole ask, queue wait included. Past it the run carries on and the answer is pushed.
     const outcome = await voice.withBudget(asked, VOICE_BUDGET_MS);
     if (outcome.done) return say(200, outcome.value);
+    // Each handoff has its own tag (a failed run's id, else a fresh one) so the repeat filter never drops one.
+    const handoff = (title, body, id) => {
+      id = id || runId;
+      notifier.notify({ kind: 'answer', title, body, url: id ? `#run/${id}` : '/', tag: id ? `answer:${id}` : `answer:voice:${require('node:crypto').randomBytes(6).toString('hex')}` });
+    };
     outcome.later.then(
-      late => notifier.notify({ kind: 'answer', title: 'Local AI answered', body: String(late).slice(0, 180), url: runId ? `#run/${runId}` : '/', tag: `answer:${runId || 'voice'}` }),
-      err => notifier.notify({ kind: 'answer', title: "Local AI couldn't answer", body: String(err?.message || err).slice(0, 180), url: runId ? `#run/${runId}` : '/', tag: `answer:${runId || 'voice'}` })
+      late => handoff('Local AI answered', String(late)),
+      err => handoff("Local AI couldn't answer", String(err?.message || err), err?.runId)
     );
     say(200, VOICE_HANDOFF);
   } catch (e) { say(e.statusCode === 413 ? 413 : 503, e.statusCode === 413 ? 'That was too long for me.' : VOICE_DOWN); }
@@ -740,7 +745,7 @@ async function chatOnce(body) {
       runId: execution.id
     };
   } catch (e) {
-    if (execution) runLedger.fail(execution.id, e);
+    if (execution) { runLedger.fail(execution.id, e); try { e.runId = execution.id; } catch {} }
     throw e;
   }
 }

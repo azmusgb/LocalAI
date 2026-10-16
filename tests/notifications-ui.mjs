@@ -121,6 +121,10 @@ await check('notification links open their page', async () => {
   // What the service worker's message from a tapped notification calls.
   await page.evaluate(() => window.LocalAIOpen('/?open=claude'));
   await page.waitForSelector('#claude.active');
+  // An answer notification's link is #run/<id>: tapping it with the app already open must open that run.
+  await page.evaluate(() => { window.__went = []; const go = window.LocalAIRouter.go.bind(window.LocalAIRouter); window.LocalAIRouter.go = (...a) => { window.__went.push(a[0]); return go(...a); }; });
+  await page.evaluate(origin => window.LocalAIOpen(origin + '/#run/run_abc'), base);
+  assert.deepEqual(await page.evaluate(() => window.__went), ['#run/run_abc']);
   await context.close();
 });
 

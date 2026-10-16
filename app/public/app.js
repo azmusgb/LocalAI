@@ -787,8 +787,9 @@ $('statusRetryBtn')?.addEventListener('click',()=>refreshStatus(true));
 
 // Notification links (a tapped notification): /?open=<view> or /?open=run:<id>. Then the address bar goes back to /.
 window.LocalAIOpen=function(url){
-  try{const target=new URL(url,location.origin).searchParams.get('open')||'';
-    if(target.startsWith('run:'))window.LocalAIRuns?.open(target.slice(4));
+  try{const u=new URL(url,location.origin),target=u.searchParams.get('open')||'';
+    if(u.hash.startsWith('#run/'))window.LocalAIRouter?.go(u.hash); // answer notifications link to #run/<id>
+    else if(target.startsWith('run:'))window.LocalAIRuns?.open(target.slice(4));
     else if(window.LocalAIViews?.view(target))window.showView(target);
   }catch(e){console.debug('Could not open',url,e)}
 };

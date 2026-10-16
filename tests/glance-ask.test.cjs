@@ -312,3 +312,16 @@ test('the budget includes time spent waiting behind an earlier ask', { timeout: 
   assert.equal(r.body, HANDOFF);
   assert.ok(Date.now() - started < 600);
 });
+
+test('two failed handoffs close together each send their own notification', { timeout: 30000 }, async t => {
+  const log = path.join(os.tmpdir(), `localai-notify-${process.pid}-${Date.now()}-two`);
+  t.after(() => fs.rmSync(log, { force: true }));
+  const { ask } = await startServer(t, { env: { LOCALAI_VOICE_BUDGET_MS: '200', LOCALAI_NOTIFY_LOG: log }, onChat: (n, res) => { setTimeout(() => { res.writeHead(500); res.end('down'); }, 400); return true; } });
+  assert.equal((await ask('first question')).body, HANDOFF);
+  assert.equal((await ask('second question')).body, HANDOFF);
+  const got = await waitFor(() => { const l = readLog(log); return l.length >= 2 ? l : null; });
+  await new Promise(r => setTimeout(r, 300));
+  const all = readLog(log);
+  assert.equal(all.length, 2, JSON.stringify(all));
+  assert.notEqual(all[0].tag, all[1].tag);
+});
