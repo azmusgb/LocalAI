@@ -68,7 +68,7 @@ const VIEW_LOADERS={inbox:()=>loadInbox(),approvals:()=>loadApprovals(),memory:(
 // users land where the page changed. Not on first load, and not when switching tabs inside a page.
 // The element that last had focus: hiding a page drops focus to the body before showView can look.
 let lastFocused=null,lastFocusAt=0;document.addEventListener('focusin',e=>{lastFocused=e.target;lastFocusAt=Date.now()});
-document.addEventListener('pointerdown',e=>{lastFocused=e.target.closest?.('button,a,[tabindex],input,select,textarea')||null;lastFocusAt=Date.now()},true);
+window.addEventListener('pointerdown',e=>{lastFocused=e.target.closest?.('button,a,[tabindex],input,select,textarea')||null;lastFocusAt=Date.now()},true);
 function announcePage(id,first,from){
   if((!from||from===document.body)&&Date.now()-lastFocusAt<1000)from=lastFocused;
   const force=window.LocalAIFocusNext;window.LocalAIFocusNext=false;
