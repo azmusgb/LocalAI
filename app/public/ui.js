@@ -2810,7 +2810,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const keep = !!(run && prev && prev.runId === run.id && prev.kind === kind && upd && prev.slot.isConnected && drawer.contains(prev.slot));
     const keepTop = drawer.scrollTop, focused = keep && prev.slot.contains(document.activeElement) ? document.activeElement : null;
     if (keep) prev.slot.remove(); else { window.LocalAIRunBodies?.release?.(); state.body = null; }   // a body that borrowed page elements gives them back before the view is rebuilt
-    window.LocalAIRunBodies?.release?.();   // a body that borrowed page elements gives them back before the view is rebuilt
     drawer.replaceChildren();
     el('runDetailsSheet').replaceChildren();
     state.drawerSig = drawerSignature(run);
@@ -3027,7 +3026,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
   function hideView() {
     window.LocalAIRunBodies?.release?.(); state.body = null;
-    window.LocalAIRunBodies?.release?.();
     const backdrop = el('runDrawerBackdrop');
     if (backdrop) { backdrop.classList.remove('show'); backdrop.setAttribute('aria-hidden', 'true'); }
     const sheet = el('runDetailsSheet'); if (sheet?.open) { state.selectedId = null; sheet.close(); }
