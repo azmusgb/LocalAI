@@ -222,9 +222,10 @@ docker pull caddy:2.10-alpine                       # once, from a normal (not S
 - Away from home (Tailscale): install Tailscale on the host and the phone and sign both in to the same account,
   then re-run `Install-LocalAI-HTTPS.ps1` (elevated). It reads the host's Tailscale name (`-RemoteName` to set it,
   `-NoRemote` to leave it out), serves HTTPS for it with the same certificate, and adds the firewall rule
-  `Local AI HTTPS (Tailscale)`: ports 80/443 from `100.64.0.0/10` only. Nothing is opened to the internet. For the
-  phone QR code in Health, put `LOCALAI_REMOTE_NAME=<name>` in `C:\LocalAI\stack\stack.env` and recreate the
-  appliance (`docker compose --env-file C:\LocalAI\stack\stack.env -f deploy\stack\compose.yml up -d appliance`).
+  `Local AI HTTPS (Tailscale)`: ports 80/443 from `100.64.0.0/10` only. Nothing is opened to the internet. When the
+  containers come from `deploy\stack\compose.yml` (the current host), it writes the values into
+  `C:\LocalAI\stack\stack.env` and runs `docker compose ... up -d https appliance`, so Health's phone QR code picks
+  up the name too. Otherwise it runs Caddy directly, and the appliance needs `LOCALAI_REMOTE_NAME` set by hand.
   Use the name, not the `100.x` address: browsers send no server name for an IP, so Caddy would answer with the LAN
   IP's certificate.
 - The firewall rule `Local AI HTTPS` opens 80 and 443 on private networks only.

@@ -28,3 +28,13 @@ test('the Tailscale firewall rule admits only Tailscale addresses', () => {
   assert.match(rule, /-RemoteAddress 100\.64\.0\.0\/10/);
   assert.match(rule, /-LocalPort 80,443/);
 });
+
+test('on a compose host the installer updates stack.env and lets compose recreate Caddy and the appliance', () => {
+  const installer = read('deploy/Install-LocalAI-HTTPS.ps1');
+  assert.match(installer, /\$labels\.'com\.docker\.compose\.project' -eq 'local-ai'/);
+  assert.match(installer, /Set-StackEnv \$stackEnv @\{ LOCALAI_HOST_IP = \$HostIp; LOCALAI_NAME = \$Name; LOCALAI_REMOTE_NAME = \$RemoteName \}/);
+  assert.match(installer, /Invoke-Docker compose --env-file \$stackEnv -f \$compose up -d https appliance/);
+  // A fresh Tailscale install is not on PATH yet, and only a signed-in node's name is usable.
+  assert.match(installer, /\$env:ProgramFiles\\Tailscale\\tailscale\.exe/);
+  assert.match(installer, /BackendState -eq 'Running'/);
+});
