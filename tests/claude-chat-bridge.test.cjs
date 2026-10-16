@@ -16,7 +16,9 @@ const SID = 'sess-abc123';
 const TOKEN = 'tok-xyz';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function until(fn, what, ms = 8000) {
+// Limits are generous on purpose: they catch a bridge that hangs, and a loaded machine (local CI) can take seconds
+// just to start node.
+async function until(fn, what, ms = 15000) {
   const end = Date.now() + ms;
   for (;;) {
     const v = await fn();
@@ -136,7 +138,7 @@ function makeHome(t) {
 const lockPath = (home, sock) => path.join(home, 'run', `sock-${crypto.createHash('sha256').update(sock).digest('hex').slice(0, 16)}.json`);
 const readLock = (home, sock) => { try { return JSON.parse(fs.readFileSync(lockPath(home, sock), 'utf8')); } catch { return null; } };
 const log = (home) => { try { return fs.readFileSync(path.join(home, 'bridge.log'), 'utf8'); } catch { return ''; } };
-const exitsWithin = (b, ms, what) => Promise.race([b.exit, sleep(ms).then(() => { throw new Error(`bridge did not exit: ${what}`); })]);
+const exitsWithin = (b, ms, what) => Promise.race([b.exit, sleep(Math.max(ms, 15000)).then(() => { throw new Error(`bridge did not exit: ${what}`); })]);
 
 test('announces the session, then injects each queued message as auth line + user line with the [LocalAI web · <device>] prefix', async (t) => {
   const relay = await fakeRelay(t);

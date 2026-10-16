@@ -21,13 +21,16 @@ Below, `BASE` stands for that address.
 
 1. New shortcut, named **Ask Local AI**.
 2. Add **Dictate Text**.
-3. Add **URL Encode** with the input *Dictated Text* (so apostrophes, `&` and `#` in what you say survive).
-4. Optional, for weather where you are: add **Get Current Location**.
-5. Add **Get Contents of URL** with the URL
-   `BASE/api/glance/ask?q=`*URL Encoded Text*`&lat=`*Latitude*`&lon=`*Longitude* (method GET). For *Latitude* and
-   *Longitude*, insert *Current Location* and tap it to pick that property. Without step 4, the URL ends at
-   *URL Encoded Text*.
-6. Add **Speak Text** with the input *Contents of URL*. (Optional: **Show Result** as well, for reading on the watch.)
+3. Optional, for weather where you are: add **Get Current Location**.
+4. Add **Get Contents of URL** with the URL `BASE/api/glance/ask`. Tap **Show More**: set **Method** to **POST** and
+   **Request Body** to **JSON**, then add a **Text** field `text` with the value *Dictated Text*. With step 3, also add
+   two **Number** fields, `lat` and `lon`: insert *Current Location* in each and tap it to pick *Latitude* or
+   *Longitude*.
+5. Add **Speak Text** with the input *Contents of URL*. (Optional: **Show Result** as well, for reading on the watch.)
+
+The shortcut must use POST: making an image, starting a mission and research only start from a POST, because any
+web page can make a browser load a GET address. An older shortcut that asks with GET still gets every other answer,
+and for those three hears "Use the Ask Local AI shortcut to start that."
 
 Open the shortcut's details (ⓘ) and turn on **Show on Apple Watch**. Then raise your wrist and say "Hey Siri, Ask Local
 AI", or run it from the Shortcuts app or a Smart Stack widget on the watch. The first time it uses your location,
@@ -94,9 +97,11 @@ Earlier versions of this guide built three shortcuts. They keep working:
 
 ## The endpoints
 
-`GET /api/glance/ask?q=<text>[&lat=<n>&lon=<n>]` and `POST /api/glance/ask` `{"text": "…", "lat"?: n, "lon"?: n}`
+`POST /api/glance/ask` `{"text": "…", "lat"?: n, "lon"?: n}` and `GET /api/glance/ask?q=<text>[&lat=<n>&lon=<n>]`
 return the answer as plain text, always with status 200 except "That was too long for me." (413) and "Local AI can't
-answer right now. Try again in a minute." (503); Siri speaks the body either way. The router is `app/voice.js` (rules
+answer right now. Try again in a minute." (503); Siri speaks the body either way. A GET never starts an image, a
+mission or research (it answers "Use the Ask Local AI shortcut to start that."), and a POST with a foreign `Origin` or
+`Sec-Fetch-Site: cross-site` gets 403 like every other mutating request. The router is `app/voice.js` (rules
 only, no model); the handler is `apiGlanceAsk` in `app/server.js`. Model answers are ordinary chat runs, so they show
 in Work and the Library. `GET /api/voice/home` and `POST /api/voice/home {"place": "…"}` read and set the home
 location.

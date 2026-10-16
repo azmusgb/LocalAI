@@ -51,3 +51,12 @@ test('the service worker marks a saved copy and the page loads the module that r
   assert.match(sw, /'\/offline-copy\.js'/);
   assert.match(sw, /const CACHE='local-ai-shell-v1\.18-unified-runs[^']*-offline1'/);
 });
+
+test('only Local AI\'s own health payload counts as reachable (not a proxy 502 or a captive portal)', () => {
+  const { isLocalAIHealth } = require('../app/public/offline-copy.js');
+  assert.equal(isLocalAIHealth({ status: 'ok', appliance: 'Local AI', version: '2.0.400', releaseCommit: 'abc' }), true);
+  assert.equal(isLocalAIHealth({ status: 'degraded', appliance: 'Local AI', version: '2.0.400' }), true, 'Local AI answering 503 is still reachable');
+  assert.equal(isLocalAIHealth(null), false, 'no JSON (Caddy 502 page)');
+  assert.equal(isLocalAIHealth({ ok: true }), false, 'some other JSON (captive portal)');
+  assert.equal(isLocalAIHealth({ appliance: 'Local AI', version: '' }), false);
+});

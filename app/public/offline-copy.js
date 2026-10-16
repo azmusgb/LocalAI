@@ -18,7 +18,10 @@ function buildDiffers(page,health){
  return String(health.version)!==String(page.version)||String(health.releaseCommit||'')!==String(page.releaseCommit||'');
 }
 const buildKey=b=>`${b&&b.version||''}@${b&&b.releaseCommit||''}`;
-const api={relativeTime,buildDiffers,buildKey};
+// Only Local AI's own health payload means Local AI answered. Caddy keeps answering while the appliance restarts
+// (502), and a captive portal answers anything; neither is Local AI. A 503 from Local AI itself still is.
+const isLocalAIHealth=d=>!!d&&typeof d==='object'&&d.appliance==='Local AI'&&typeof d.version==='string'&&d.version!=='';
+const api={relativeTime,buildDiffers,buildKey,isLocalAIHealth};
 if(typeof module==='object'&&module.exports){module.exports=api;return}
 if(typeof document==='undefined')return;
 
@@ -27,13 +30,13 @@ const meta=name=>document.querySelector(`meta[name="${name}"]`);
 const page={version:meta('localai-version')?.content||'',releaseCommit:meta('localai-release')?.content||''};
 const mark=meta('localai-offline-copy');
 const copy={active:!!mark,savedAt:mark?mark.content:''};
-// One /healthz request at a time, reused for a moment so Health's cards share it. null: no answer at all.
+// One /healthz request at a time, reused for a moment so Health's cards share it. null: Local AI didn't answer.
 let pending=null,pendingAt=0;
 function healthz(){
  if(pending&&Date.now()-pendingAt<3000)return pending;
  pendingAt=Date.now();
  const signal=typeof AbortSignal!=='undefined'&&typeof AbortSignal.timeout==='function'?AbortSignal.timeout(6000):undefined;
- pending=fetch('/healthz',{cache:'no-store',signal}).then(async r=>{let data=null;try{data=await r.json()}catch{}return {status:r.status,data}}).catch(()=>null);
+ pending=fetch('/healthz',{cache:'no-store',signal}).then(async r=>{let data=null;try{data=await r.json()}catch{}return isLocalAIHealth(data)?{status:r.status,data}:null}).catch(()=>null);
  return pending;
 }
 async function reachable(){return !!(await healthz())}
@@ -48,9 +51,10 @@ function reloadForBuild(health){
  try{if(sessionStorage.getItem(BUILD_KEY)===key)return false;sessionStorage.setItem(BUILD_KEY,key)}catch{return false}
  freshReload();return true;
 }
+// false: reloaded under 30 s ago (connectivity flapping); the caller keeps the warning and tries again on a later check.
 function reloadForReconnect(){
- try{const last=Number(sessionStorage.getItem(RECONNECT_KEY)||0);if(Date.now()-last<30000)return;sessionStorage.setItem(RECONNECT_KEY,String(Date.now()))}catch{}
- freshReload();
+ try{const last=Number(sessionStorage.getItem(RECONNECT_KEY)||0);if(Date.now()-last<30000)return false;sessionStorage.setItem(RECONNECT_KEY,String(Date.now()))}catch{}
+ freshReload();return true;
 }
 function bannerText(){return `Can't reach Local AI. You're looking at a saved copy from ${relativeTime(copy.savedAt)}.`}
 function showBanner(){
@@ -68,8 +72,8 @@ async function check(){
  const h=await healthz();
  if(copy.active){
   if(!h){showBanner();return}
-  clearInterval(timer);timer=0;document.getElementById('offlineBanner')?.remove();
-  reloadForReconnect();return;
+  if(!reloadForReconnect()){showBanner();if(!timer)timer=setInterval(check,RECHECK_MS);return}
+  clearInterval(timer);timer=0;document.getElementById('offlineBanner')?.remove();return;
  }
  if(h&&h.data&&buildDiffers(page,h.data))reloadForBuild(h.data);
 }
