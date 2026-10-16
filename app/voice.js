@@ -50,7 +50,7 @@ function speakable(input) {
 
 // Titles and shorthand that end in a full stop without ending the sentence. "etc." and the clock times can end
 // a sentence, so they only count as shorthand when a lower-case word follows.
-const ALWAYS_ABBR = /^(?:e\.g\.|i\.e\.|mr\.|mrs\.|ms\.|dr\.|st\.|vs\.|no\.|u\.s\.)$/i;
+const ALWAYS_ABBR = /^(?:e\.g\.|i\.e\.|mr\.|mrs\.|ms\.|dr\.|st\.|vs\.|u\.s\.)$/i;
 const SOMETIMES_ABBR = /^(?:etc\.|a\.m\.|p\.m\.)$/i;
 
 // A sentence ends at . ! or ? followed by whitespace; decimals (3.5) never qualify, abbreviations are skipped.
@@ -63,7 +63,7 @@ function firstSentences(s, count) {
     const end = m.index + m[0].length;
     const word = s.slice(0, end).split(/\s/).pop();
     const next = s.slice(end).trimStart().charAt(0);
-    if (ALWAYS_ABBR.test(word) || (SOMETIMES_ABBR.test(word) && /[a-z]/.test(next))) continue;
+    if (ALWAYS_ABBR.test(word) || (/^no\.$/i.test(word) && /\d/.test(next)) || (SOMETIMES_ABBR.test(word) && /[a-z]/.test(next))) continue;
     out.push(s.slice(start, end).trim());
     start = end;
     if (out.length === count) return out.join(' ');

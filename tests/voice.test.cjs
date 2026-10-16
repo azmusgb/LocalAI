@@ -37,6 +37,11 @@ test('speakable keeps decimals and abbreviations inside a sentence', () => {
   assert.equal(speakable('Meet at 5 p.m. today. Then dinner. Then bed.'), 'Meet at 5 p.m. today. Then dinner.');
 });
 
+test('"No." ends a sentence unless a number follows', () => {
+  assert.equal(speakable('Answer: no. Then wait. Then stop.'), 'Answer: no. Then wait.');
+  assert.equal(speakable('Ticket No. 5 is open. Check it. Later.'), 'Ticket No. 5 is open. Check it.');
+});
+
 test('voiceFacts states the day and the local time', () => {
   assert.equal(
     voiceFacts({ now: new Date('2026-10-16T04:42:00Z'), timeZone: 'America/Phoenix' }),

@@ -121,3 +121,12 @@ test('a malformed POST body is "didn\'t catch that", not a server failure', { ti
   assert.equal(await r.text(), "I didn't catch that.");
   assert.equal(chats.length, 0);
 });
+
+test('an oversized POST body is a plain-text 413', { timeout: 30000 }, async t => {
+  const { base, chats } = await startServer(t);
+  const r = await fetch(`${base}/api/glance/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'a'.repeat(1100000) }) });
+  assert.equal(r.status, 413);
+  assert.match(r.headers.get('content-type'), /^text\/plain/);
+  assert.equal(await r.text(), 'That was too long for me.');
+  assert.equal(chats.length, 0);
+});

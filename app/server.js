@@ -554,7 +554,7 @@ async function apiGlanceAsk(req, res, urlObj) {
   try {
     let textIn = '';
     if (req.method === 'GET') textIn = String(urlObj.searchParams.get('q') || '');
-    else { const b = await readBody(req).catch(() => ({})); textIn = typeof b?.text === 'string' ? b.text : ''; }
+    else { const b = await readBody(req).catch(e => { if (e.statusCode === 413) throw e; return {}; }); textIn = typeof b?.text === 'string' ? b.text : ''; }
     textIn = textIn.trim().slice(0, 4000);
     const route = voice.classify(textIn);
     if (route.intent === 'empty') return say(200, "I didn't catch that.");
@@ -567,7 +567,7 @@ async function apiGlanceAsk(req, res, urlObj) {
     // weather, current, action and refuse fall back to the model until they have their own answers.
     const result = await chatOnce({ messages: [{ role: 'user', content: textIn }], brief: true, voice: true });
     say(200, voice.speakable(result.message.content) || "I didn't catch that.");
-  } catch (e) { say(503, VOICE_DOWN); }
+  } catch (e) { say(e.statusCode === 413 ? 413 : 503, e.statusCode === 413 ? 'That was too long for me.' : VOICE_DOWN); }
 }
 
 async function apiCapabilities(req, res) {
