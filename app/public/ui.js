@@ -55,6 +55,10 @@ function setupHistoryFilter(){const q=$('agentHistorySearch');if(q)q.addEventLis
 async function init(){if(!$('specialistRegistry'))return;const historyLoaded=loadHistory();try{const j=await req('/api/agents/catalog');catalog=j.items||[];cards();updateDirectActionLabel()}catch(e){notice('error','Could not load specialist catalog: '+e.message)}setupTabs();setupAdvanced();setupHistoryFilter();$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m);else renderHistory()},()=>notice('info','Live mission stream reconnecting…'),()=>{const n=$('agentInlineNotice');if(n&&/reconnecting/.test(n.textContent))clearNotice()})}catch{notice('info','Live mission stream unavailable; history remains accessible.')}}
 window.addEventListener('localai:agentworld-select',e=>{if(e.detail?.workerId)selectWorker(e.detail.workerId)});
 window.LocalAISpecialists={init,preview,renderMission};
+// Home starts a mission here: 202 {runId} comes back at once and the run view follows the mission. A failure fails the pending view and throws.
+window.LocalAIMissions={async start(goal,{pending,agentIds,projectId}={}){let j;try{j=await req('/api/agents/missions/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({goal,projectId:projectId||'',agentIds:agentIds?.length?agentIds:undefined,async:true})});if(!j.runId)throw Error('The mission did not start. Try again.')}catch(e){pending?.fail(e.message||'Something went wrong.');throw e}pending?.resolve(j.runId)},
+ // The run view's body shows a mission this way: select it (live while it runs, replayed once it ended), and make Agent World re-measure.
+ async show(missionId,{replay=true,alive}={}){let m=null;try{m=(await req('/api/agents/mission?id='+encodeURIComponent(missionId))).mission}catch{}if(!m||(alive&&!alive()))return false;renderMission(m);if(replay&&m.status!=='running')window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:m}}));requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')));return true}};
 document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',e.message)));
 })();
 
@@ -2801,6 +2805,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const drawer = el('runDrawer');
     if (!drawer) return;
     const run = lookup(runId);
+    // A body that can update in place keeps its slot while the same run is re-rendered; scroll and focus stay where they were.
+    const kind = run ? (run.card?.kind || run.type) : '', prev = state.body, upd = window.LocalAIUI.runBodyUpdateFor?.(kind);
+    const keep = !!(run && prev && prev.runId === run.id && prev.kind === kind && upd && prev.slot.isConnected && drawer.contains(prev.slot));
+    const keepTop = drawer.scrollTop, focused = keep && prev.slot.contains(document.activeElement) ? document.activeElement : null;
+    if (keep) prev.slot.remove(); else { window.LocalAIRunBodies?.release?.(); state.body = null; }   // a body that borrowed page elements gives them back before the view is rebuilt
     window.LocalAIRunBodies?.release?.();   // a body that borrowed page elements gives them back before the view is rebuilt
     drawer.replaceChildren();
     el('runDetailsSheet').replaceChildren();
@@ -2828,16 +2837,22 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (run.summary) appendSection(drawer, 'Summary', run.summary);
     if (run.error) appendSection(drawer, 'Error', run.error);
     // The kind body slot: a body registered for this kind owns it; otherwise the Output block.
-    const mount = window.LocalAIUI.runBodyFor(card?.kind || run.type);
+    const mount = window.LocalAIUI.runBodyFor(kind);
     if (mount) {
-      const slot = document.createElement('section'); slot.className = 'run-section run-body';
-      try { mount(run, slot); } catch (error) { slot.textContent = `This run's details could not be shown: ${error.message}`; }
-      drawer.appendChild(slot);
+      let slot = null;
+      if (keep) { let ok = false; try { ok = upd(run, prev.slot) !== false; } catch {} if (ok) { slot = prev.slot; drawer.appendChild(slot); if (focused?.isConnected) focused.focus({ preventScroll: true }); } else { window.LocalAIRunBodies?.release?.(); state.body = null; } }
+      if (!slot) {
+        slot = document.createElement('section'); slot.className = 'run-section run-body';
+        try { mount(run, slot); } catch (error) { slot.textContent = `This run's details could not be shown: ${error.message}`; }
+        drawer.appendChild(slot);
+      }
+      state.body = { runId: run.id, kind, slot };
     } else {
       const output = outputText(run.output);
       if (output) appendSection(drawer, 'Output', output, true);
     }
     fillDetails(run);
+    if (keep) drawer.scrollTop = keepTop;
   }
   function errorBox() { const err = document.createElement('div'); err.className = 'run-view-error'; err.setAttribute('role', 'alert'); err.textContent = state.viewError; return err; }
 
@@ -3011,6 +3026,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (!was) el('runDrawer')?.querySelector('button')?.focus();
   }
   function hideView() {
+    window.LocalAIRunBodies?.release?.(); state.body = null;
     window.LocalAIRunBodies?.release?.();
     const backdrop = el('runDrawerBackdrop');
     if (backdrop) { backdrop.classList.remove('show'); backdrop.setAttribute('aria-hidden', 'true'); }
@@ -3063,7 +3079,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (window.LocalAIRouter) window.LocalAIRouter.go('#run/pending');
     return {
       resolve(runId) { if (state.pending !== token || token.resolved) return; token.resolved = String(runId); if (window.LocalAIRouter) window.LocalAIRouter.go(`#run/${encodeURIComponent(runId)}`, { replace: true }); else routeRun(token.resolved); },
-      fail(message) { if (state.pending !== token || token.resolved) return; token.error = String(message || 'Something went wrong.'); el('runLiveRegion').textContent = token.error; renderDrawer('pending'); }
+      fail(message) { if (state.pending !== token || token.resolved || token.error) return; token.error = String(message || 'Something went wrong.'); el('runLiveRegion').textContent = token.error; renderDrawer('pending'); }
     };
   }
 
