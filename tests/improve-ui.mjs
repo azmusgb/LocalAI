@@ -20,7 +20,12 @@ const ITEMS = [
   finding('idea-sticky', { title: 'Make the header sticky', rank: 2, score: 55, source: 'idea', handedToClaude: true, decisionNote: 'Handed to Claude' }),
   finding('signal-issue-1', { title: 'TypeError in app.js', rank: 3, score: 40, source: 'signal', signalId: 'issue-1', status: 'proposed' }),
   finding('idea-running', { title: 'Already running', rank: 4, score: 35, source: 'idea', stage: 'inProgress', change: { id: 'chg-1', status: 'planned', summary: 'x' } }),
-  finding('claude-done', { title: 'Shipped one', rank: 5, score: 0, status: 'fixed', stage: 'shipped' })
+  finding('claude-done', { title: 'Shipped one', rank: 5, score: 0, status: 'fixed', stage: 'shipped', pr: 'https://github.com/azmusgb/LocalAI/pull/140', shipped: { version: '2.0.300', at: '2026-10-14T10:00:00.000Z' } }),
+  finding('idea-waiting', { title: 'Waiting for my OK', rank: 6, score: 30, source: 'idea', stage: 'inProgress', change: { id: 'chg-2', status: 'awaiting_approval', summary: 'y' } }),
+  finding('idea-failed', { title: 'Patch did not apply', rank: 7, score: 25, source: 'idea', stage: 'inProgress', change: { id: 'chg-3', status: 'patch_failed', summary: 'z' } }),
+  finding('claude-held', { title: 'Claude is on it', rank: 8, score: 20, status: 'in_progress', stage: 'inProgress', sessionId: 'sess-1' }),
+  finding('signal-gone', { title: 'Went away', rank: 9, score: 0, source: 'signal', status: 'fixed', stage: 'shipped', decisionNote: 'Resolved on its own', shipped: { version: '2.0.310', at: '2026-10-15T10:00:00.000Z' } }),
+  finding('claude-new', { title: 'Newest release fix', rank: 10, score: 0, status: 'fixed', stage: 'shipped', pr: 'https://github.com/azmusgb/LocalAI/pull/150', shipped: { version: '2.0.310', at: '2026-10-15T11:00:00.000Z' } })
 ];
 const SIGNALS = [
   { id: 'issue-1', name: 'TypeError in app.js', severity: 'high', status: 'open', occurrences: 4, lastSeenAt: at },
@@ -35,6 +40,7 @@ let failItems = false;
 const posts = [];
 await page.route('**/api/improve/items', r => failItems ? r.fulfill({ status: 500, json: { error: 'Database is busy' } }) : r.fulfill({ json: { items: ITEMS, signals: SIGNALS } }));
 await page.route('**/api/improve/{item,idea,signal}', async r => { posts.push({ url: new URL(r.request().url()).pathname, body: r.request().postDataJSON() }); await r.fulfill({ status: 200, json: { item: ITEMS[0] } }); });
+await page.route('**/api/claude/board', r => r.fulfill({ json: { sessions: [{ id: 'sess-1', title: 'Fix login', status: 'active', lastEvent: 'Running the tests' }] } }));
 await page.route('**/api/quality', r => r.fulfill({ json: { latest: { checks: [{ name: 'syntax app.js', result: 'PASS', detail: '' }] }, events: [], scans: [], summary: {} } }));
 await page.goto(base + '/#backlog', { waitUntil: 'domcontentloaded' });
 await page.waitForSelector('#backlog.active #backlogList .improve-row');
@@ -116,10 +122,59 @@ await check('long titles stay inside the screen on a phone (Backlog and Signals)
   assert.deepEqual(problems, []);
 });
 
-await check('no colour-contrast or touch-target problems on Backlog and Signals (axe)', async () => {
+await check('In progress lists running changes with their state, and a Claude-held item with its live status', async () => {
+  await page.evaluate(() => window.showView('inProgress'));
+  await page.waitForSelector('#inProgress.active #inProgressList .improve-row');
+  const rows = await page.locator('#inProgressList .improve-row').evaluateAll(rs => rs.map(r => [r.dataset.itemId, r.querySelector('.list-row__sub').textContent]));
+  assert.deepEqual(rows.map(r => r[0]), ['idea-running', 'idea-waiting', 'idea-failed', 'claude-held']);
+  assert.match(rows[1][1], /Waiting for your OK/);
+  assert.match(rows[2][1], /Needs a look/);
+  assert.match(rows[3][1], /Claude · Running the tests/);
+});
+
+await check('a failed change offers Retry, Back to backlog and Discard; Discard asks Back to backlog or Set aside', async () => {
+  await page.locator('#inProgressList [data-item-id="idea-failed"] .improve-row__open').click();
+  const sheet = page.locator('#improveItemSheet');
+  await sheet.waitFor({ state: 'visible' });
+  assert.deepEqual(await sheet.locator('#improveItemActions button').allInnerTexts(), ['Retry', 'Back to backlog', 'Discard']);
+  await sheet.getByRole('button', { name: 'Discard' }).click();
+  assert.deepEqual(await sheet.locator('#improveItemActions button').allInnerTexts(), ['Back to backlog', 'Set aside']);
+  await sheet.getByRole('button', { name: 'Set aside' }).click();
+  await page.waitForFunction(() => !document.getElementById('improveItemSheet').open);
+  assert.deepEqual(lastPost(), { url: '/api/improve/item', body: { id: 'idea-failed', action: 'discard', then: 'aside' } });
+});
+
+await check('a planned change offers Test the change; one waiting for you offers Approve, after a confirmation', async () => {
+  const changePosts = [];
+  await page.route('**/api/changes/{stage,approve}', async r => { changePosts.push({ url: new URL(r.request().url()).pathname, body: r.request().postDataJSON() }); await r.fulfill({ json: { item: {} } }); });
+  const sheet = page.locator('#improveItemSheet');
+  await page.locator('#inProgressList [data-item-id="idea-running"] .improve-row__open').click();
+  await sheet.waitFor({ state: 'visible' });
+  assert.deepEqual(await sheet.locator('#improveItemActions button').allInnerTexts(), ['Test the change', 'See the changes', 'Back to backlog', 'Discard']);
+  await sheet.getByRole('button', { name: 'Test the change' }).click();
+  await page.waitForFunction(() => !document.getElementById('improveItemSheet').open);
+  await page.locator('#inProgressList [data-item-id="idea-waiting"] .improve-row__open').click();
+  await sheet.waitFor({ state: 'visible' });
+  assert.deepEqual(await sheet.locator('#improveItemActions button').allInnerTexts(), ['Approve', 'See the changes', 'Back to backlog', 'Discard']);
+  await sheet.getByRole('button', { name: 'Approve' }).click();
+  await page.locator('.ask-sheet').getByRole('button', { name: 'Approve' }).click();
+  await page.waitForFunction(() => !document.getElementById('improveItemSheet').open);
+  assert.deepEqual(changePosts, [{ url: '/api/changes/stage', body: { id: 'chg-1' } }, { url: '/api/changes/approve', body: { id: 'chg-2', decision: 'approved' } }]);
+});
+
+await check('Shipped groups items by release, newest first, with the PR link or Resolved on its own', async () => {
+  await page.evaluate(() => window.showView('shipped'));
+  await page.waitForSelector('#shipped.active #shippedList .improve-row');
+  const groups = await page.locator('#shippedList .improve-release').evaluateAll(gs => gs.map(g => [g.querySelector('h3').textContent, [...g.querySelectorAll('.improve-row')].map(r => r.dataset.itemId)]));
+  assert.deepEqual(groups, [['Version 2.0.310', ['claude-new', 'signal-gone']], ['Version 2.0.300', ['claude-done']]]);
+  assert.equal(await page.locator('#shippedList [data-item-id="claude-new"] a').getAttribute('href'), 'https://github.com/azmusgb/LocalAI/pull/150');
+  assert.match(await page.locator('#shippedList [data-item-id="signal-gone"]').innerText(), /Resolved on its own/);
+});
+
+await check('no colour-contrast or touch-target problems on Backlog, Signals, In progress and Shipped (axe)', async () => {
   await addAxe(page, axePath);
   const problems = [];
-  for (const view of ['backlog', 'signals']) {
+  for (const view of ['backlog', 'signals', 'inProgress', 'shipped']) {
     await page.evaluate(v => window.showView(v), view);
     await page.waitForSelector(`#${view}.active .improve-row`);
     // Pages fade in; measuring contrast mid-fade reads the text as dimmer than it is.
