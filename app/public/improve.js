@@ -106,7 +106,7 @@ function openItem(id){
   :it.stage==='backlog'?[['start','Start','btn-primary'],...(it.handedToClaude?[]:[['handToClaude','Hand to Claude','btn-outline']]),['moveToTop','Move to top','btn-outline'],['defer','Defer','btn-outline'],['reject','Reject','btn-outline']]:[];
  showActs(it.id,acts);
  const save=$('improveItemNoteSave');if(save)save.onclick=()=>saveNote(it,save);
- $('improveItemError').hidden=true;if(!d.open)d.showModal();
+ $('improveItemError').hidden=true;showSheet(d);
 }
 function showActs(id,acts){
  const box=$('improveItemActions');box.innerHTML=acts.map(([a,l,c,then])=>`<button type="button" class="${c}" data-item-act="${a}"${then?` data-then="${then}"`:''}>${l}</button>`).join('');
@@ -146,10 +146,16 @@ async function itemAction(id,action,btn,then){
  try{await post('/api/improve/item',then?{id,action,then}:{id,action});$('improveItemSheet').close();await refresh()}
  catch(e){err.textContent=e.message;err.hidden=false;btn.disabled=false}
 }
+// Shows a sheet that Back closes (LocalAIUI.sheetHistory); closing it any other way pops that history entry again.
+function showSheet(d){
+ if(d.open)return;d.showModal();
+ const release=root.LocalAIUI.sheetHistory?.(d,()=>d.close());
+ if(release)d.addEventListener('close',release,{once:true});
+}
 // Opens the idea sheet, optionally with text (Home's Change Local AI mode). Resolves {start, error?} once saved, or null if closed unsaved.
 function openIdea(text){
  const d=$('improveIdeaSheet');if(!d)return Promise.resolve(null);
- $('improveIdeaText').value=typeof text==='string'?text:'';$('improveIdeaError').hidden=true;d.showModal();$('improveIdeaText').focus();
+ $('improveIdeaText').value=typeof text==='string'?text:'';$('improveIdeaError').hidden=true;showSheet(d);$('improveIdeaText').focus();
  return new Promise(res=>{st.ideaDone=res;d.addEventListener('close',()=>{if(st.ideaDone===res){st.ideaDone=null;res(null)}},{once:true})});
 }
 async function submitIdea(start,btn){
