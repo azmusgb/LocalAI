@@ -215,12 +215,16 @@ test('"start over" on its own resets the thread for the next ask', { timeout: 30
 test('a stuck answer does not block the next ask past the queue wait', { timeout: 30000 }, async t => {
   const { ask, chats } = await startServer(t, { reply: 'Fine.', env: { LOCALAI_VOICE_QUEUE_WAIT_MS: '200' }, onChat: n => n === 1 });
   ask('first question').catch(() => {});
-  await new Promise(r => setTimeout(r, 100));
+  // Wait for the first question to reach the model (and get stuck there) rather than a fixed time: on a busy machine
+  // the second could otherwise arrive first and be the stuck one.
+  for (let i = 0; i < 200 && chats.length < 1; i++) await new Promise(r => setTimeout(r, 25));
+  assert.equal(chats.length, 1);
   const started = Date.now();
   const r = await ask('second question');
   assert.equal(r.status, 200);
   assert.equal(r.body, 'Fine.');
-  assert.ok(Date.now() - started < 3000);
+  // Past the 200 ms queue wait, well inside the 8 s budget (which would hand off instead of answering).
+  assert.ok(Date.now() - started < 7000);
   assert.deepEqual(chats[1].messages.filter(m => m.role !== 'system').map(m => m.content), ['second question']);
 });
 
