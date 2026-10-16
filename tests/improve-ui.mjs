@@ -171,6 +171,49 @@ await check('Shipped groups items by release, newest first, with the PR link or 
   assert.match(await page.locator('#shippedList [data-item-id="signal-gone"]').innerText(), /Resolved on its own/);
 });
 
+await check('See the changes shows the diff inside the item sheet, without leaving In progress', async () => {
+  await page.route('**/api/changes?id=*', r => r.fulfill({ json: { item: { id: 'chg-2', status: 'awaiting_approval', notes: 'Rounds the buttons.', files: [{ path: 'app/public/app.css' }], diffs: [{ path: 'app/public/app.css', diff: '-.btn{border-radius:4px}\n+.btn{border-radius:12px}' }] } } }));
+  await page.evaluate(() => window.showView('inProgress'));
+  await page.locator('#inProgressList [data-item-id="idea-waiting"] .improve-row__open').click();
+  const sheet = page.locator('#improveItemSheet');
+  await sheet.waitFor({ state: 'visible' });
+  await sheet.getByRole('button', { name: 'See the changes' }).click();
+  await sheet.locator('.improve-diff').waitFor();
+  assert.match(await sheet.locator('.improve-diff').innerText(), /app\/public\/app\.css[\s\S]*border-radius:12px/);
+  assert.equal(await page.evaluate(() => location.hash), '#inProgress');
+  await sheet.getByRole('button', { name: 'Close' }).click();
+});
+
+await check('a note for Claude is saved from a Backlog item', async () => {
+  const decided = page.waitForRequest(r => r.url().includes('/api/claude/findings/decision'), { timeout: 8000 }).catch(() => null); // never an unhandled rejection
+  await page.route('**/api/claude/findings/decision', r => r.fulfill({ json: { item: ITEMS[0] } }));
+  await page.evaluate(() => window.showView('backlog'));
+  await page.locator('#backlogList [data-item-id="claude-top"] .improve-row__open').click();
+  const sheet = page.locator('#improveItemSheet');
+  await sheet.waitFor({ state: 'visible' });
+  await sheet.locator('#improveItemNote').fill('Check with the HTTPS work first');
+  await sheet.getByRole('button', { name: 'Save note' }).click();
+  const req = await decided; assert.ok(req, 'no decision request');
+  assert.deepEqual(req.postDataJSON(), { id: 'claude-top', status: 'approved', note: 'Check with the HTTPS work first' });
+  await page.waitForFunction(() => !document.getElementById('improveItemSheet').open);
+});
+
+await check('the old pages land in Improve: #changes and #engineering on In progress, #issues and #quality on Signals', async () => {
+  for (const [from, to] of [['changes', 'inProgress'], ['engineering', 'inProgress'], ['issues', 'signals'], ['quality', 'signals']]) {
+    await page.evaluate(h => { location.hash = h; }, '#' + from);
+    await page.waitForFunction(t => location.hash === '#' + t && document.querySelector('.view.active')?.id === t, to);
+  }
+});
+
+await check('Improve has four tabs; the Claude Code page is under System and shows no second priorities list', async () => {
+  assert.deepEqual(await page.evaluate(() => window.LocalAIViews.sections('improve').flatMap(s => s.views)), ['backlog', 'inProgress', 'shipped', 'signals']);
+  assert.equal(await page.evaluate(() => window.LocalAIViews.view('claude').domain), 'system');
+  await page.evaluate(() => window.showView('claude'));
+  await page.waitForSelector('#claude.active');
+  assert.equal(await page.locator('#claudeFindings').isVisible(), false);
+  assert.equal(await page.locator('#claudeChat').isVisible(), true);
+});
+
 await check('no colour-contrast or touch-target problems on Backlog, Signals, In progress and Shipped (axe)', async () => {
   await addAxe(page, axePath);
   const problems = [];

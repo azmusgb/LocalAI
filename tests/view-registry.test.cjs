@@ -33,7 +33,9 @@ test('registry has five domains and every view belongs to one', () => {
   assert.equal(registry.resolve('agents'), 'work');
   assert.equal(registry.resolve('ask'), 'home');
   assert.equal(registry.resolve('create'), 'home');
-  assert.equal(registry.resolve('engineering'), 'changes');
+  // Improve's stages replaced Change requests, Issues and Quality signals.
+  for (const [from, to] of [['engineering', 'inProgress'], ['changes', 'inProgress'], ['issues', 'signals'], ['quality', 'signals']]) assert.equal(registry.resolve(from), to, from);
+  for (const id of ['changes', 'issues', 'quality']) assert.equal(registry.view(id).domain, 'hidden', `${id} has no nav entry`);
 });
 
 test('every domain icon has a sprite symbol', () => {

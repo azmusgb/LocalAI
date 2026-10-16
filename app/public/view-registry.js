@@ -35,20 +35,22 @@ const VIEWS=[
  {id:'inProgress',svg:'build',domain:'improve',section:'Pipeline',icon:'▶',label:'In progress',description:'Changes being planned, tested or waiting for your OK.',aka:['running changes']},
  {id:'shipped',svg:'check',domain:'improve',section:'Pipeline',icon:'✓',label:'Shipped',description:'What changed, release by release.',aka:['done','released']},
  {id:'signals',svg:'alert',domain:'improve',section:'Pipeline',icon:'!',label:'Signals',description:'Problems Local AI noticed; serious ones join the Backlog.',aka:['detections']},
- {id:'changes',svg:'build',short:'Changes',domain:'improve',section:'Changes',icon:'Δ',label:'Change requests',description:"Describe a change; it's planned, tested and held for approval.",aka:['changes','change intelligence','engineer','engineering agent']},
+ {id:'changes',svg:'build',short:'Changes',domain:'hidden',section:'Changes',icon:'Δ',label:'Change requests',description:"Describe a change; it's planned, tested and held for approval.",aka:['changes','change intelligence','engineer','engineering agent']},
  {id:'issues',svg:'alert',domain:'hidden',section:'Changes',icon:'!',label:'Issues',tab:'Issues',description:'Problems found in Local AI, deduplicated.'},
  {id:'quality',svg:'gauge',domain:'hidden',section:'Changes',parent:'issues',tab:'Quality signals',icon:'Q',label:'Quality signals',description:'Static checks, browser errors and regressions.',aka:['quality','quality intelligence']},
- {id:'claude',svg:'sparkle',domain:'improve',section:'Changes',icon:'✳',label:'Claude Code',description:'Live sessions and ranked recommendations.',aka:['claude']},
+ {id:'claude',svg:'sparkle',domain:'system',section:'Tools',icon:'✳',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
  {id:'workbench',svg:'folder',domain:'system',section:'Tools',icon:'W',label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
  {id:'repoTools',svg:'branch',domain:'system',section:'Tools',icon:'R',label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},
  {id:'powershell',svg:'terminal',domain:'system',section:'Tools',icon:'PS',label:'PowerShell',description:'Approval-gated scripts on the Windows host.',aka:['powershell workbench']},
  {id:'activity',svg:'history',domain:'system',section:'History',icon:'◷',label:'Audit log',description:'What happened on the appliance, and when.',aka:['activity']},
  {id:'runs',svg:'work',domain:'hidden',section:'History',icon:'▶',label:'Runs',description:'Every execution, live, with cancel and retry.'}
 ];
-// Issues and Quality signals are hidden while Signals (Improve) shows the same detections; Improve task 5 retires them.
+// Issues, Quality signals and Change requests are hidden: Improve's stages show the same things (see ALIASES).
 // Retired view ids and the page that replaced them.
 // `runs`, `agents`, `ask` and `create` keep their own hidden pages for code and ⌘K; a URL resolves them to the page that now owns them.
-const ALIASES={engineering:'changes',runs:'work',agents:'work',ask:'home',create:'home'};
+// Improve's four stages replaced Change requests, Issues and Quality signals: old links land on the stage that shows them.
+// The pages stay (hidden) so in-app links and their element ids keep working.
+const ALIASES={engineering:'inProgress',changes:'inProgress',issues:'signals',quality:'signals',runs:'work',agents:'work',ask:'home',create:'home'};
 const byId=new Map(VIEWS.map(v=>[v.id,v]));
 function resolve(id){return ALIASES[id]||id}
 // A view that still has its own page (hidden ones) wins over its alias.

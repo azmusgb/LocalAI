@@ -42,13 +42,15 @@ await check('change requests and the engineering agent are one page', async () =
   await page.evaluate(() => window.showView('changes'));
   await page.waitForSelector('#changes.active');
   const labels = await secondaryLabels();
-  assert.ok(labels.includes('Change requests'));
+  // Change requests opens from inside the app but has no menu entry: Improve › In progress shows the same changes.
+  assert.ok(!labels.includes('Change requests'));
+  assert.ok(labels.includes('In progress'));
   assert.ok(!labels.includes('Engineering agent'), 'Engineering agent should not have its own nav entry');
   assert.equal(await page.locator('#engineering').count(), 0);
   const options = await page.locator('#engineeringAttempts option').allInnerTexts();
   assert.ok(options.some(o => /^Plan only/.test(o)));
   await page.evaluate(() => window.showView('engineering'));
-  await page.waitForSelector('#changes.active');
+  await page.waitForSelector('#inProgress.active'); // the old engineering id means Improve › In progress now
 });
 
 await check('opening a page loads its data even without a nav button click', async () => {

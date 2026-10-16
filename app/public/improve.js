@@ -94,13 +94,14 @@ function openItem(id){
  const it=(st.data?.items||[]).find(i=>i.id===id);const d=$('improveItemSheet');if(!it||!d)return;st.openId=id;
  $('improveItemTitle').textContent=it.title;
  $('improveItemBody').innerHTML=`<p class="list-row__sub">${sev(it.severity)} ${SOURCE[it.source]||''}${it.handedToClaude?' · Handed to Claude':''}</p>`+
-  (it.summary?`<p>${esc(it.summary)}</p>`:'')+(it.fix?`<p><strong>Suggested fix:</strong> ${esc(it.fix)}</p>`:'')+(it.file?`<p><code>${esc(it.file)}</code></p>`:'')+(it.decisionNote?`<p class="list-row__sub">${esc(it.decisionNote)}</p>`:'')+(it.stage==='inProgress'&&it.change?`<p>${badge(CHANGE_STATE[it.change.status]||['Working','neutral'])}${['approved','apply_requested'].includes(it.change.status)?' Claude ships it as a pull request.':''}</p>`:'');
+  (it.summary?`<p>${esc(it.summary)}</p>`:'')+(it.fix?`<p><strong>Suggested fix:</strong> ${esc(it.fix)}</p>`:'')+(it.file?`<p><code>${esc(it.file)}</code></p>`:'')+(it.stage==='backlog'?`<label class="improve-note" for="improveItemNote">Note for Claude</label><textarea id="improveItemNote" rows="2" maxlength="1000">${esc(it.decisionNote||'')}</textarea><button type="button" class="btn-outline" id="improveItemNoteSave">Save note</button>`:it.decisionNote?`<p class="list-row__sub">${esc(it.decisionNote)}</p>`:'')+(it.stage==='inProgress'&&it.change?`<p>${badge(CHANGE_STATE[it.change.status]||['Working','neutral'])}${['approved','apply_requested'].includes(it.change.status)?' Claude ships it as a pull request.':''}</p>`:'');
  // In progress offers the change's next step: test it, approve it, or retry it. Once approved it is Claude's to ship.
  const c=it.change,locked=['approved','apply_requested'].includes(c?.status);
  const next=!c?[]:failed(it)?[['retry','Retry','btn-primary']]:c.status==='planned'?[['stage','Test the change','btn-primary']]:c.status==='awaiting_approval'?[['approve','Approve','btn-primary']]:[];
  const acts=it.stage==='inProgress'?[...next,...(c&&!failed(it)?[['diff','See the changes','btn-outline']]:[]),...(locked?[]:[['backToBacklog','Back to backlog','btn-outline'],...(c?[['discard','Discard','btn-outline']]:[])])]
   :it.stage==='backlog'?[['start','Start','btn-primary'],...(it.handedToClaude?[]:[['handToClaude','Hand to Claude','btn-outline']]),['moveToTop','Move to top','btn-outline'],['defer','Defer','btn-outline'],['reject','Reject','btn-outline']]:[];
  showActs(it.id,acts);
+ const save=$('improveItemNoteSave');if(save)save.onclick=()=>saveNote(it,save);
  $('improveItemError').hidden=true;if(!d.open)d.showModal();
 }
 function showActs(id,acts){
@@ -111,14 +112,29 @@ function showActs(id,acts){
   :CHANGE_ACTS[b.dataset.itemAct]?changeAction(id,b.dataset.itemAct,b)
   :itemAction(id,b.dataset.itemAct,b,b.dataset.then));
 }
+// The change's diff, inside the sheet. Before it is tested there is no diff yet, only the files it plans to touch.
+function showDiff(c){
+ const body=$('improveItemBody');body.querySelector('.improve-diff')?.remove();
+ const box=document.createElement('div');box.className='improve-diff';
+ const diffs=c?.diffs||[],files=c?.files||[];
+ box.innerHTML=(c?.notes?`<p>${esc(c.notes)}</p>`:'')+(diffs.length?diffs.map(d=>`<details open><summary>${esc(d.path)}</summary><pre>${esc(d.diff)}</pre></details>`).join('')
+  :`<p class="list-row__sub">${files.length?`Changes ${files.map(f=>esc(f.path)).join(', ')}. Test the change to see the exact diff.`:'No files planned yet.'}</p>`);
+ body.append(box);box.scrollIntoView?.({block:'nearest'});
+}
 // The change itself: test (stage) it, approve it after a confirmation, or read its diff on Change requests.
 const CHANGE_ACTS={stage:1,approve:1,diff:1};
 async function changeAction(id,action,btn){
  const it=(st.data?.items||[]).find(i=>i.id===id),cid=it?.change?.id,err=$('improveItemError');if(!cid)return;
- if(action==='diff'){$('improveItemSheet').close();root.showView?.('changes');root.loadChanges?.(cid);return}
+ if(action==='diff'){btn.disabled=true;try{showDiff((await root.LocalAIUI.fetchJson('/api/changes?id='+encodeURIComponent(cid),{cache:'no-store'})).item)}catch(e){err.textContent=e.message;err.hidden=false}finally{btn.disabled=false}return}
  if(action==='approve'&&!(await root.LocalAIUI.ask({title:'Approve this change?',effect:'Claude ships it to Local AI as a pull request.',confirmLabel:'Approve'})).ok)return;
  btn.disabled=true;
  try{await post(action==='stage'?'/api/changes/stage':'/api/changes/approve',action==='stage'?{id:cid}:{id:cid,decision:'approved'});$('improveItemSheet').close();await refresh()}
+ catch(e){err.textContent=e.message;err.hidden=false;btn.disabled=false}
+}
+// A note travels with the item to Claude (the board's decisionNote); the item's status stays as it is.
+async function saveNote(it,btn){
+ const err=$('improveItemError');btn.disabled=true;
+ try{await post('/api/claude/findings/decision',{id:it.id,status:it.status,note:$('improveItemNote').value.trim()});$('improveItemSheet').close();await refresh()}
  catch(e){err.textContent=e.message;err.hidden=false;btn.disabled=false}
 }
 async function itemAction(id,action,btn,then){

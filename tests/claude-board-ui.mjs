@@ -1,4 +1,4 @@
-// Claude page decisions: one primary action per state, no manual "Start", instant update with Undo, inline notes.
+// Claude Code page (System › Tools): chat and live sessions. Its findings are Improve's Backlog (tests/improve-ui.mjs).
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { dirname, join } from 'node:path';
@@ -9,10 +9,7 @@ const axePath = join(dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min
 
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const post = (path, body) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-await post('/api/claude/findings', { sessionId: 'ui-test', findings: [
-  { id: 'ui-test-a', title: 'UI test finding A', category: 'ux', severity: 'high' },
-  { id: 'ui-test-b', title: 'UI test finding B', category: 'bug', severity: 'low' }
-] });
+await post('/api/claude/events', { sessionId: 'ui-test', sessionTitle: 'UI test session', sessionStatus: 'idle', events: [{ kind: 'note', title: 'UI test', status: 'info' }] });
 
 const browser = await chromium.launch();
 let failed = 0;
@@ -20,36 +17,14 @@ async function check(name, fn) { try { await fn(); console.log('PASS', name) } c
 const page = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
 await page.goto(base, { waitUntil: 'networkidle' });
 await page.evaluate(() => window.showView('claude'));
-await page.waitForSelector('.claude-finding[data-id="ui-test-a"]');
-const card = () => page.locator('.claude-finding[data-id="ui-test-a"]');
-const count = async (tab) => Number(await page.locator(`[data-claude-status="${tab}"] b`).innerText());
+await page.waitForSelector('#claude.active #claudeChat');
 
-await check('proposed cards offer Approve, Later and Won\'t do, never Start', async () => {
-  assert.deepEqual(await card().locator('[data-claude-decision]').allInnerTexts(), ['Approve', 'Later', "Won't do"]);
-  assert.equal(await page.locator('[data-claude-decision="in_progress"]').count(), 0);
-  assert.match(await card().locator('.claude-state').innerText(), /Needs your decision/);
+await check('the page has no second priorities list: findings are in Improve › Backlog', async () => {
+  assert.equal(await page.locator('#claudeFindings').isVisible(), false);
+  assert.equal(await page.locator('#claudeFilters').isVisible(), false);
+  assert.match(await page.locator('#claude .sub').innerText(), /Improve › Backlog/);
 });
-await check('approving moves the card to the queue at once and offers Undo', async () => {
-  const decide = await count('decide'), queued = await count('queued');
-  await card().locator('[data-claude-decision="approved"]').click();
-  await page.waitForSelector('#claudeToast.show');
-  assert.match(await page.locator('#claudeToast').innerText(), /Approved: UI test finding A/);
-  assert.equal(await count('decide'), decide - 1);
-  assert.equal(await count('queued'), queued + 1);
-  await page.locator('#claudeToast button').click();
-  await page.waitForTimeout(500);
-  assert.equal(await count('decide'), decide);
-  assert.match(await card().locator('.claude-state').innerText(), /Needs your decision/);
-});
-await check('notes for Claude are saved inline', async () => {
-  await card().locator('[data-claude-note]').click();
-  await page.locator('[data-claude-note-form] textarea').fill('Check with the HTTPS work first');
-  await page.locator('[data-claude-note-form] button[type=submit]').click();
-  await page.waitForTimeout(500);
-  assert.match(await card().locator('.claude-note').innerText(), /Check with the HTTPS work first/);
-  const saved = await (await fetch(`${base}/api/claude/board?session=ui-test`)).json();
-  assert.equal(saved.findings.find(f => f.id === 'ui-test-a').decisionNote, 'Check with the HTTPS work first');
-});
+
 await check('on a phone, a long session title keeps the live chip, picker and Refresh on screen', async () => {
   await fetch(`${base}/api/claude/events`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: 'ui-test-long', sessionTitle: 'Sub-project 1: all 6 tasks done and reviewed; final whole-branch review running now', events: [{ kind: 'note', title: 'x' }] }) });
   const phone = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
@@ -91,10 +66,6 @@ await check('live row shows one chip per session with working and waiting dots',
   assert.match(first, /Edit app\/server\.js/);
   assert.match(first, /\d+s ago/);
 });
-await check('the working tab label carries the live count', async () => {
-  assert.match(await liveDesktop.locator('[data-claude-status="working"]').innerText(), /^Claude is working · 2 live/);
-  assert.doesNotMatch(await liveDesktop.locator('[data-claude-status="queued"]').innerText(), /live/);
-});
 await check('tapping a chip sets the session filter, tapping it again clears it', async () => {
   const chip = liveChips(liveDesktop).nth(1);
   await chip.click();
@@ -107,14 +78,14 @@ await check('tapping a chip sets the session filter, tapping it again clears it'
 });
 await liveDesktop.close();
 
-await check('with no live sessions the row is hidden and the tab label is plain', async () => {
+await check('with no live sessions the row is hidden', async () => {
   const pg = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
   await liveStubbed(pg, []);
   await pg.goto(base, { waitUntil: 'networkidle' });
   await pg.evaluate(() => window.showView('claude'));
-  await pg.waitForSelector('[data-claude-status="working"]');
+  await pg.waitForSelector('#claude.active #claudeChat');
+  await pg.waitForTimeout(1500); // the live row is filled by the first poll
   assert.equal(await pg.locator('#claudeLiveNow').isVisible(), false);
-  assert.match(await pg.locator('[data-claude-status="working"]').innerText(), /^Claude is working\s+\d+$/);
   await pg.close();
 });
 await check('on a phone the chips are 44px tall, scroll sideways, and pass axe color-contrast and target-size', async () => {
