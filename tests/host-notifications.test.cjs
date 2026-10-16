@@ -9,8 +9,9 @@ const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 
-async function startServer(t) {
+async function startServer(t, seed) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-hostnote-'));
+  if (seed) { const { Storage } = require('../app/storage'); const storage = new Storage({ dataDir }); seed(storage); storage.close?.(); }
   const reserve = http.createServer();
   reserve.listen(0, '127.0.0.1');
   await once(reserve, 'listening');
@@ -73,4 +74,10 @@ test('a successful update resolves earlier failed-update alerts, so the Inbox st
   assert.match(failed.meta.resolvedBy || '', /2\.0\.390/);
   assert.equal(inbox.items.find(n => n.title === 'Backup failed').resolved, false, 'other kinds are left alone');
   assert.equal(inbox.unread, 1);
+});
+
+test('a host notice stored before the clean-up is cleaned when the Inbox lists it', { timeout: 30000 }, async t => {
+  const base = await startServer(t, s => s.put('notifications', { id: 'note-old', kind: 'deploy', level: 'attention', title: 'Automatic update to f8e1bf048432 failed', detail: 'The previous release is still running. System.Management.Automation.RemoteException System.Management.Automation.RemoteException', createdAt: '2026-10-15T21:00:00.000Z', read: false, resolved: false, meta: { source: 'host', outcome: 'failed' } }, 0));
+  const inbox = await (await fetch(`${base}/api/notifications`)).json();
+  assert.equal(inbox.items.find(n => n.id === 'note-old').detail, 'The previous release is still running.');
 });

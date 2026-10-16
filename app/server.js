@@ -2124,7 +2124,8 @@ function addNotification(kind,title,detail='',meta={},level='attention'){
 const isInfoNotice=x=>x.level==='info'||(x.kind==='deploy'&&x.meta?.outcome==='deployed');
 async function apiNotifications(req,res){
   if(!requireFeature(res,7))return;
-  const items=notificationStore().map(x=>isInfoNotice(x)&&!x.level?{...x,level:'info'}:x);
+  // Host notices stored before hostDetail() existed still carry PowerShell's filler lines; clean them on the way out.
+  const items=notificationStore().map(x=>isInfoNotice(x)&&!x.level?{...x,level:'info'}:x).map(x=>x.meta?.source==='host'&&/RemoteException/.test(x.detail||'')?{...x,detail:hostDetail(x.detail)}:x);
   json(res,200,{items,unread:items.filter(x=>!x.read&&!x.resolved&&!isInfoNotice(x)).length});
 }
 async function apiNotificationUpdate(req,res){
