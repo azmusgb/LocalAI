@@ -277,7 +277,9 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
       // Full: the oldest code gives way. Codes only pair with the Mac's approval, so dropping one costs a retype at most.
       pending.sort((a, b) => a.createdAt - b.createdAt);
       while (pending.length >= MAX_PENDING) storage.deleteSetting(pairKey(pending.shift().id));
-      const record = { id: `pair-${crypto.randomBytes(8).toString('hex')}`, code: newCode(new Set(pending.map(r => r.code))), status: 'pending', createdAt: now(), expiresAt: now() + PAIR_TTL_MS };
+      // Strictly increasing, so two requests in the same millisecond still have an order and "oldest" is never a coin toss.
+      const createdAt = Math.max(now(), ...pending.map(r => r.createdAt + 1));
+      const record = { id: `pair-${crypto.randomBytes(8).toString('hex')}`, code: newCode(new Set(pending.map(r => r.code))), status: 'pending', createdAt, expiresAt: createdAt + PAIR_TTL_MS };
       storage.writeSetting(pairKey(record.id), record);
       return { record, resumed: false };
     });
