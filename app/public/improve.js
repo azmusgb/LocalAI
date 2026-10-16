@@ -39,7 +39,8 @@ function renderBacklog(box,data){
 function inProgressRow(it){
  const row=document.createElement('div');row.className='list-row improve-row';row.dataset.itemId=it.id;
  const s=sessionOf(it),state=it.change?badge(CHANGE_STATE[it.change.status]||['Working','neutral']):badge(['Claude','accent']);
- const claude=!it.change?` <span>Claude · ${esc(s?(s.lastEvent||s.status||''):'not reporting')}</span>`:'';
+ // The session's state, not its latest step: one session holds many items, so its step would repeat on each of them.
+ const claude=!it.change?` <span>${s?`Claude's session is ${s.status==='active'?'active':'idle'}${s.updatedAt?' · '+esc(ago(s.updatedAt)):''}`:"Claude's session isn't reporting"}</span>`:'';
  row.innerHTML=`<span class="list-row__icon">${icon(ICON[it.source]||'sparkle')}</span>`+
   `<button type="button" class="improve-row__open list-row__main"><span class="list-row__title">${esc(it.title)}</span><span class="list-row__sub">${state}${claude}</span></button>`;
  row.querySelector('.improve-row__open').onclick=()=>openItem(it.id);
@@ -61,10 +62,13 @@ function shippedRow(it){
 function renderShipped(box,data){
  const at=it=>String(it.shipped?.at||it.updatedAt||'');
  const items=(data.items||[]).filter(i=>i.stage==='shipped').sort((a,b)=>at(b).localeCompare(at(a)));
- // Releases in order of their newest item; items without a release stamp yet wait under "Next release".
- const groups=new Map();for(const it of items){const v=it.shipped?.version||'';if(!groups.has(v))groups.set(v,[]);groups.get(v).push(it)}
- box.replaceChildren(...[...groups].map(([v,list])=>{const g=document.createElement('section');g.className='improve-release';
-  const h=document.createElement('h3');h.textContent=v?`Version ${v}`:'Next release';g.append(h,...list.map(shippedRow));return g}));
+ // Releases in order of their newest item. Waiting for its release stamp: "Next release", first. Shipped before releases
+ // were stamped: "Earlier", last.
+ const key=it=>it.shipped?.version?'v:'+it.shipped.version:it.shipped?.pending?'next':'earlier';
+ const groups=new Map();for(const it of items){const k=key(it);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(it)}
+ const rank=k=>k==='next'?0:k==='earlier'?2:1;
+ box.replaceChildren(...[...groups].sort((a,b)=>rank(a[0])-rank(b[0])).map(([k,list])=>{const g=document.createElement('section');g.className='improve-release';
+  const h=document.createElement('h3');h.textContent=k==='next'?'Next release':k==='earlier'?'Earlier':`Version ${k.slice(2)}`;g.append(h,...list.map(shippedRow));return g}));
  return items.length>0;
 }
 function signalRow(s,inBacklog){
@@ -94,13 +98,14 @@ function openItem(id){
  const it=(st.data?.items||[]).find(i=>i.id===id);const d=$('improveItemSheet');if(!it||!d)return;st.openId=id;
  $('improveItemTitle').textContent=it.title;
  $('improveItemBody').innerHTML=`<p class="list-row__sub">${sev(it.severity)} ${SOURCE[it.source]||''}${it.handedToClaude?' · Handed to Claude':''}</p>`+
-  (it.summary?`<p>${esc(it.summary)}</p>`:'')+(it.fix?`<p><strong>Suggested fix:</strong> ${esc(it.fix)}</p>`:'')+(it.file?`<p><code>${esc(it.file)}</code></p>`:'')+(it.decisionNote?`<p class="list-row__sub">${esc(it.decisionNote)}</p>`:'')+(it.stage==='inProgress'&&it.change?`<p>${badge(CHANGE_STATE[it.change.status]||['Working','neutral'])}${['approved','apply_requested'].includes(it.change.status)?' Claude ships it as a pull request.':''}</p>`:'');
+  (it.summary?`<p>${esc(it.summary)}</p>`:'')+(it.fix?`<p><strong>Suggested fix:</strong> ${esc(it.fix)}</p>`:'')+(it.file?`<p><code>${esc(it.file)}</code></p>`:'')+(it.stage==='backlog'?`<label class="improve-note" for="improveItemNote">Note for Claude</label><textarea id="improveItemNote" rows="2" maxlength="1000">${esc(it.decisionNote||'')}</textarea><button type="button" class="btn-outline" id="improveItemNoteSave">Save note</button>`:it.decisionNote?`<p class="list-row__sub">${esc(it.decisionNote)}</p>`:'')+(it.stage==='inProgress'&&it.change?`<p>${badge(CHANGE_STATE[it.change.status]||['Working','neutral'])}${['approved','apply_requested'].includes(it.change.status)?' Claude ships it as a pull request.':''}</p>`:'');
  // In progress offers the change's next step: test it, approve it, or retry it. Once approved it is Claude's to ship.
  const c=it.change,locked=['approved','apply_requested'].includes(c?.status);
  const next=!c?[]:failed(it)?[['retry','Retry','btn-primary']]:c.status==='planned'?[['stage','Test the change','btn-primary']]:c.status==='awaiting_approval'?[['approve','Approve','btn-primary']]:[];
  const acts=it.stage==='inProgress'?[...next,...(c&&!failed(it)?[['diff','See the changes','btn-outline']]:[]),...(locked?[]:[['backToBacklog','Back to backlog','btn-outline'],...(c?[['discard','Discard','btn-outline']]:[])])]
   :it.stage==='backlog'?[['start','Start','btn-primary'],...(it.handedToClaude?[]:[['handToClaude','Hand to Claude','btn-outline']]),['moveToTop','Move to top','btn-outline'],['defer','Defer','btn-outline'],['reject','Reject','btn-outline']]:[];
  showActs(it.id,acts);
+ const save=$('improveItemNoteSave');if(save)save.onclick=()=>saveNote(it,save);
  $('improveItemError').hidden=true;if(!d.open)d.showModal();
 }
 function showActs(id,acts){
@@ -111,14 +116,29 @@ function showActs(id,acts){
   :CHANGE_ACTS[b.dataset.itemAct]?changeAction(id,b.dataset.itemAct,b)
   :itemAction(id,b.dataset.itemAct,b,b.dataset.then));
 }
+// The change's diff, inside the sheet. Before it is tested there is no diff yet, only the files it plans to touch.
+function showDiff(c){
+ const body=$('improveItemBody');body.querySelector('.improve-diff')?.remove();
+ const box=document.createElement('div');box.className='improve-diff';
+ const diffs=c?.diffs||[],files=c?.files||[];
+ box.innerHTML=(c?.notes?`<p>${esc(c.notes)}</p>`:'')+(diffs.length?diffs.map(d=>`<details open><summary>${esc(d.path)}</summary><pre>${esc(d.diff)}</pre></details>`).join('')
+  :`<p class="list-row__sub">${files.length?`Changes ${files.map(f=>esc(f.path)).join(', ')}. Test the change to see the exact diff.`:'No files planned yet.'}</p>`);
+ body.append(box);box.scrollIntoView?.({block:'nearest'});
+}
 // The change itself: test (stage) it, approve it after a confirmation, or read its diff on Change requests.
 const CHANGE_ACTS={stage:1,approve:1,diff:1};
 async function changeAction(id,action,btn){
  const it=(st.data?.items||[]).find(i=>i.id===id),cid=it?.change?.id,err=$('improveItemError');if(!cid)return;
- if(action==='diff'){$('improveItemSheet').close();root.showView?.('changes');root.loadChanges?.(cid);return}
+ if(action==='diff'){btn.disabled=true;try{showDiff((await root.LocalAIUI.fetchJson('/api/changes?id='+encodeURIComponent(cid),{cache:'no-store'})).item)}catch(e){err.textContent=e.message;err.hidden=false}finally{btn.disabled=false}return}
  if(action==='approve'&&!(await root.LocalAIUI.ask({title:'Approve this change?',effect:'Claude ships it to Local AI as a pull request.',confirmLabel:'Approve'})).ok)return;
  btn.disabled=true;
  try{await post(action==='stage'?'/api/changes/stage':'/api/changes/approve',action==='stage'?{id:cid}:{id:cid,decision:'approved'});$('improveItemSheet').close();await refresh()}
+ catch(e){err.textContent=e.message;err.hidden=false;btn.disabled=false}
+}
+// A note travels with the item to Claude (the board's decisionNote); the item's status stays as it is.
+async function saveNote(it,btn){
+ const err=$('improveItemError');btn.disabled=true;
+ try{await post('/api/claude/findings/decision',{id:it.id,status:it.status,note:$('improveItemNote').value.trim()});$('improveItemSheet').close();await refresh()}
  catch(e){err.textContent=e.message;err.hidden=false;btn.disabled=false}
 }
 async function itemAction(id,action,btn,then){

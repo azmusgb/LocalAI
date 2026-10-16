@@ -25,6 +25,7 @@ const ITEMS = [
   finding('idea-failed', { title: 'Patch did not apply', rank: 7, score: 25, source: 'idea', stage: 'inProgress', change: { id: 'chg-3', status: 'patch_failed', summary: 'z' } }),
   finding('claude-held', { title: 'Claude is on it', rank: 8, score: 20, status: 'in_progress', stage: 'inProgress', sessionId: 'sess-1' }),
   finding('signal-gone', { title: 'Went away', rank: 9, score: 0, source: 'signal', status: 'fixed', stage: 'shipped', decisionNote: 'Resolved on its own', shipped: { version: '2.0.310', at: '2026-10-15T10:00:00.000Z' } }),
+  finding('claude-old', { title: 'Fixed before releases were stamped', rank: 11, score: 0, status: 'fixed', stage: 'shipped', updatedAt: '2026-10-01T10:00:00.000Z' }),
   finding('claude-new', { title: 'Newest release fix', rank: 10, score: 0, status: 'fixed', stage: 'shipped', pr: 'https://github.com/azmusgb/LocalAI/pull/150', shipped: { version: '2.0.310', at: '2026-10-15T11:00:00.000Z' } })
 ];
 const SIGNALS = [
@@ -40,7 +41,7 @@ let failItems = false;
 const posts = [];
 await page.route('**/api/improve/items', r => failItems ? r.fulfill({ status: 500, json: { error: 'Database is busy' } }) : r.fulfill({ json: { items: ITEMS, signals: SIGNALS } }));
 await page.route('**/api/improve/{item,idea,signal}', async r => { posts.push({ url: new URL(r.request().url()).pathname, body: r.request().postDataJSON() }); await r.fulfill({ status: 200, json: { item: ITEMS[0] } }); });
-await page.route('**/api/claude/board', r => r.fulfill({ json: { sessions: [{ id: 'sess-1', title: 'Fix login', status: 'active', lastEvent: 'Running the tests' }] } }));
+await page.route('**/api/claude/board', r => r.fulfill({ json: { sessions: [{ id: 'sess-1', title: 'Fix login', status: 'active', lastEvent: 'Running the tests', updatedAt: new Date(Date.now() - 120e3).toISOString() }] } }));
 await page.route('**/api/quality', r => r.fulfill({ json: { latest: { checks: [{ name: 'syntax app.js', result: 'PASS', detail: '' }] }, events: [], scans: [], summary: {} } }));
 await page.goto(base + '/#backlog', { waitUntil: 'domcontentloaded' });
 await page.waitForSelector('#backlog.active #backlogList .improve-row');
@@ -129,7 +130,9 @@ await check('In progress lists running changes with their state, and a Claude-he
   assert.deepEqual(rows.map(r => r[0]), ['idea-running', 'idea-waiting', 'idea-failed', 'claude-held']);
   assert.match(rows[1][1], /Waiting for your OK/);
   assert.match(rows[2][1], /Needs a look/);
-  assert.match(rows[3][1], /Claude · Running the tests/);
+  // The session's state, not its latest step: one session holds many items, so its step would repeat on each of them.
+  assert.match(rows[3][1], /Claude's session is active · 2m ago/);
+  assert.doesNotMatch(rows[3][1], /Running the tests/);
 });
 
 await check('a failed change offers Retry, Back to backlog and Discard; Discard asks Back to backlog or Set aside', async () => {
@@ -166,9 +169,52 @@ await check('Shipped groups items by release, newest first, with the PR link or 
   await page.evaluate(() => window.showView('shipped'));
   await page.waitForSelector('#shipped.active #shippedList .improve-row');
   const groups = await page.locator('#shippedList .improve-release').evaluateAll(gs => gs.map(g => [g.querySelector('h3').textContent, [...g.querySelectorAll('.improve-row')].map(r => r.dataset.itemId)]));
-  assert.deepEqual(groups, [['Version 2.0.310', ['claude-new', 'signal-gone']], ['Version 2.0.300', ['claude-done']]]);
+  assert.deepEqual(groups, [['Version 2.0.310', ['claude-new', 'signal-gone']], ['Version 2.0.300', ['claude-done']], ['Earlier', ['claude-old']]]);
   assert.equal(await page.locator('#shippedList [data-item-id="claude-new"] a').getAttribute('href'), 'https://github.com/azmusgb/LocalAI/pull/150');
   assert.match(await page.locator('#shippedList [data-item-id="signal-gone"]').innerText(), /Resolved on its own/);
+});
+
+await check('See the changes shows the diff inside the item sheet, without leaving In progress', async () => {
+  await page.route('**/api/changes?id=*', r => r.fulfill({ json: { item: { id: 'chg-2', status: 'awaiting_approval', notes: 'Rounds the buttons.', files: [{ path: 'app/public/app.css' }], diffs: [{ path: 'app/public/app.css', diff: '-.btn{border-radius:4px}\n+.btn{border-radius:12px}' }] } } }));
+  await page.evaluate(() => window.showView('inProgress'));
+  await page.locator('#inProgressList [data-item-id="idea-waiting"] .improve-row__open').click();
+  const sheet = page.locator('#improveItemSheet');
+  await sheet.waitFor({ state: 'visible' });
+  await sheet.getByRole('button', { name: 'See the changes' }).click();
+  await sheet.locator('.improve-diff').waitFor();
+  assert.match(await sheet.locator('.improve-diff').innerText(), /app\/public\/app\.css[\s\S]*border-radius:12px/);
+  assert.equal(await page.evaluate(() => location.hash), '#inProgress');
+  await sheet.getByRole('button', { name: 'Close' }).click();
+});
+
+await check('a note for Claude is saved from a Backlog item', async () => {
+  const decided = page.waitForRequest(r => r.url().includes('/api/claude/findings/decision'), { timeout: 8000 }).catch(() => null); // never an unhandled rejection
+  await page.route('**/api/claude/findings/decision', r => r.fulfill({ json: { item: ITEMS[0] } }));
+  await page.evaluate(() => window.showView('backlog'));
+  await page.locator('#backlogList [data-item-id="claude-top"] .improve-row__open').click();
+  const sheet = page.locator('#improveItemSheet');
+  await sheet.waitFor({ state: 'visible' });
+  await sheet.locator('#improveItemNote').fill('Check with the HTTPS work first');
+  await sheet.getByRole('button', { name: 'Save note' }).click();
+  const req = await decided; assert.ok(req, 'no decision request');
+  assert.deepEqual(req.postDataJSON(), { id: 'claude-top', status: 'approved', note: 'Check with the HTTPS work first' });
+  await page.waitForFunction(() => !document.getElementById('improveItemSheet').open);
+});
+
+await check('the old pages land in Improve: #changes and #engineering on In progress, #issues and #quality on Signals', async () => {
+  for (const [from, to] of [['changes', 'inProgress'], ['engineering', 'inProgress'], ['issues', 'signals'], ['quality', 'signals']]) {
+    await page.evaluate(h => { location.hash = h; }, '#' + from);
+    await page.waitForFunction(t => location.hash === '#' + t && document.querySelector('.view.active')?.id === t, to);
+  }
+});
+
+await check('Improve has four tabs; the Claude Code page is under System and shows no second priorities list', async () => {
+  assert.deepEqual(await page.evaluate(() => window.LocalAIViews.sections('improve').flatMap(s => s.views)), ['backlog', 'inProgress', 'shipped', 'signals']);
+  assert.equal(await page.evaluate(() => window.LocalAIViews.view('claude').domain), 'system');
+  await page.evaluate(() => window.showView('claude'));
+  await page.waitForSelector('#claude.active');
+  assert.equal(await page.locator('#claudeFindings').isVisible(), false);
+  assert.equal(await page.locator('#claudeChat').isVisible(), true);
 });
 
 await check('no colour-contrast or touch-target problems on Backlog, Signals, In progress and Shipped (axe)', async () => {
