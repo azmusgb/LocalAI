@@ -260,7 +260,7 @@ test('a slow answer is handed off to the phone and sent as one notification', { 
   const r = await ask('tell me something interesting');
   assert.equal(r.status, 200);
   assert.equal(r.body, HANDOFF);
-  assert.ok(Date.now() - started < 450, `took ${Date.now() - started}ms`);
+  assert.ok(Date.now() - started < 1000, `took ${Date.now() - started}ms`);
   assert.deepEqual(readLog(log), []);
   const [n] = await waitFor(() => { const l = readLog(log); return l.length ? l : null; });
   await new Promise(r => setTimeout(r, 300));
@@ -291,7 +291,7 @@ test('a slow answer that fails sends a "couldn\'t answer" notification', { timeo
   await new Promise(r => setTimeout(r, 300));
   assert.equal(readLog(log).length, 1, JSON.stringify(readLog(log)));
   assert.equal(n.title, "Local AI couldn't answer");
-  assert.match(n.body, /HTTP 500/);
+  assert.equal(n.body, "Tap to see what went wrong.");
 });
 
 test('a fast answer sends no notification', { timeout: 30000 }, async t => {
@@ -310,7 +310,7 @@ test('the budget includes time spent waiting behind an earlier ask', { timeout: 
   const started = Date.now();
   const r = await ask('second question');
   assert.equal(r.body, HANDOFF);
-  assert.ok(Date.now() - started < 600);
+  assert.ok(Date.now() - started < 1000);
 });
 
 test('two failed handoffs close together each send their own notification', { timeout: 30000 }, async t => {

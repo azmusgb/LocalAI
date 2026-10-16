@@ -611,7 +611,7 @@ async function apiGlanceAsk(req, res, urlObj) {
     };
     outcome.later.then(
       late => handoff('Local AI answered', String(late)),
-      err => handoff("Local AI couldn't answer", String(err?.message || err), err?.runId)
+      err => handoff("Local AI couldn't answer", "Tap to see what went wrong.", err?.runId)
     );
     say(200, VOICE_HANDOFF);
   } catch (e) { say(e.statusCode === 413 ? 413 : 503, e.statusCode === 413 ? 'That was too long for me.' : VOICE_DOWN); }
