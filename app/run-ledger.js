@@ -213,6 +213,20 @@ class RunLedger {
     return publicRun(run);
   }
 
+  // A one-off text repair (e.g. garbled encoding in old titles): rewrites title and summary only, keeping times,
+  // status and events, so a repaired run stays where it was in Work. Returns how many runs changed.
+  rewriteText(fix) {
+    let changed = 0;
+    for (const listed of this.list({ all: true, limit: 1e6 })) {
+      const run = this.getInternal(listed.id);
+      if (!run) continue;
+      let touched = false;
+      for (const f of ['title', 'summary']) { if (typeof run[f] !== 'string') continue; const v = fix(run[f]); if (typeof v === 'string' && v !== run[f]) { run[f] = v; touched = true; } }
+      if (touched) { this.write(run); changed++; }
+    }
+    return changed;
+  }
+
   start(runId, detail = 'Run started') { return this.update(runId, { status: 'running', progress: 5 }, detail); }
   stream(runId, detail = 'Streaming output') { return this.update(runId, { status: 'streaming', progress: 35 }, detail); }
 

@@ -272,3 +272,18 @@ for (const end of ['completed', 'failed']) {
     assert.deepEqual(sent, []);
   });
 }
+
+test('rewriteText fixes a run\'s title and summary without touching its times, status or events', () => {
+  const ledger = new RunLedger({ storage: new MemorySettings() });
+  const run = ledger.create({ type: 'chat', title: 'idÃ©e', summary: 'fine' });
+  ledger.complete(run.id, { summary: 'cafÃ©' });
+  const before = ledger.get(run.id);
+  const n = ledger.rewriteText(t => String(t).replace(/Ã©/g, 'é'));
+  const after = ledger.get(run.id);
+  assert.equal(n, 1);
+  assert.equal(after.title, 'idée');
+  assert.equal(after.summary, 'café');
+  for (const k of ['status', 'updatedAt', 'finishedAt', 'createdAt']) assert.equal(after[k], before[k], k);
+  assert.equal(after.events.length, before.events.length);
+  assert.equal(ledger.rewriteText(t => t), 0, 'nothing to change, nothing written');
+});

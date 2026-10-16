@@ -36,7 +36,10 @@ function runCard(run, { approvalFor, changeFor } = {}) {
   if (kind === 'chat' || kind === 'research') preview = { type: 'text', text: String(out.text || summary).slice(0, 240) };
   else if (kind === 'image') { const imgs = Array.isArray(out.images) ? out.images : []; preview = { type: 'image', src: imgs[0]?.imageUrl || '', count: imgs.length } }
   else if (kind === 'agent') preview = { type: 'mission', text: summary };
-  else if (kind === 'engineering') { const ch = meta.changeId && changeFor ? changeFor(meta.changeId) : null; preview = { type: 'diff', changeId: meta.changeId || null, files: ch && Array.isArray(ch.files) ? fileStats(ch) : null } }
+  else if (kind === 'engineering') {
+    const ch = meta.changeId && changeFor ? changeFor(meta.changeId) : null, files = ch && Array.isArray(ch.files) ? fileStats(ch) : null;
+    // No file list: still being prepared while it runs or waits for approval; once finished (failed, cancelled, done) there's nothing to show.
+    preview = files || ['running', 'queued', 'awaiting_approval'].includes(run.status) ? { type: 'diff', changeId: meta.changeId || null, files } : null; }
   const action = { label: run.status === 'awaiting_approval' ? 'Review' : run.status === 'failed' && run.retryable ? 'Retry' : 'Open' };
   let approval = null;
   if (approvalFor) { const a = approvalFor(run); if (a) approval = { id: a.id, title: a.title, detail: a.detail, risk: a.risk } }
