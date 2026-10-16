@@ -13,7 +13,7 @@ window.LocalAIKit=Object.freeze({icon,statusBadge,badgeHtml});
 
 // ==== agent-specialists.js ====
 (()=>{'use strict';
-let catalog=[],selected='ux_analyst',source=null,currentMission=null,currentRun=null,history=[],activeResultTab='summary',activeInspectorId='';
+let catalog=[],selected='ux_analyst',source=null,currentMission=null,history=[],activeResultTab='summary',activeInspectorId='';
 const $=id=>document.getElementById(id);
 // One shared mission EventSource per tab (agent-specialists.js and agent-world-city.js both subscribe; whichever loads first creates it).
 const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=(()=>{
@@ -39,7 +39,7 @@ function manualIds(){return $('manualRouteToggle')?.checked?[...document.querySe
 function renderRoute(r){const el=$('routePreview');if(!el||!r)return;el.innerHTML=`<div class="route-head"><div><strong>${esc(r.mode==='auto'?'Automatic mission plan':'Manual mission plan')}</strong><small>${esc(r.reason||'')}</small></div><span class="statuschip">${r.workers?.length||0} specialists</span></div><div class="route-flow">${(r.workers||[]).map((w,i)=>{const m=w.routingMeta||{};return `<div class="route-step"><span class="route-step__n">${i+1}</span><span><strong>${esc(w.name)}</strong><small>${esc(w.model||'Auto model')}</small><div class="route-scorebar"><i style="width:${Math.max(0,Math.min(100,m.capabilityScore||0))}%"></i></div><small>Capability ${m.capabilityScore??'—'}% · model fit ${m.modelScore??'—'}% · ${esc(m.availability||'available')}</small><small>${esc(w.reason||'')}</small>${w.dependsOn?.length?`<small>After: ${esc(w.dependsOn.join(', '))}</small>`:''}${m.retryPolicy?.fallbackAgentId?`<small>Fallback: ${esc(m.retryPolicy.fallbackAgentId)}</small>`:''}</span></div>`}).join('')}</div>`}
 async function preview(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter a mission objective first.');return}clearNotice();const body={goal};const ids=manualIds();if(ids?.length)body.agentIds=ids;const j=await req('/api/agents/dispatch',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});renderRoute(j.routing);$('routePreviewWrap')?.removeAttribute('hidden');return j.routing}
 function planState(plan){return (plan||[]).map((s,i)=>`<div class="timeline-step ${esc(s.state)}"><span class="timeline-dot"></span><span><strong>${esc(s.name)}</strong><small>${humanState(s.state)}</small></span></div>`).join('')}
-function renderRun(r){currentRun=r;const el=$('specialistExecution');if(!el)return;el.innerHTML=`<div class="detail-head"><div><span class="eyebrow">Direct specialist</span><h3>${esc(r.agentName)}</h3></div><span class="statuschip ${esc(r.status)}">${humanState(r.status)}</span></div><div class="timeline-vertical">${planState(r.plan)}</div><div class="execution-output">${esc(r.answer||r.error||'Waiting for output…')}</div>`;if(r.error)notice('error',r.error)}
+function renderRun(r){const el=$('specialistExecution');if(!el)return;el.innerHTML=`<div class="detail-head"><div><span class="eyebrow">Direct specialist</span><h3>${esc(r.agentName)}</h3></div><span class="statuschip ${esc(r.status)}">${humanState(r.status)}</span></div><div class="timeline-vertical">${planState(r.plan)}</div><div class="execution-output">${esc(r.answer||r.error||'Waiting for output…')}</div>`;if(r.error)notice('error',r.error)}
 function workerIcon(w){return (w.name||w.id||'?').trim()[0]?.toUpperCase()||'?'}
 function renderTimeline(m){const el=$('agentTimeline');if(!el)return;const workers=m?.workers||[];el.innerHTML=workers.length?workers.map((w,i)=>`<button class="mission-line ${esc(w.state)}" data-worker-id="${esc(w.id)}"><span class="mission-line__rail"><i></i>${i<workers.length-1?'<b></b>':''}</span><span class="mission-line__icon">${esc(workerIcon(w))}</span><span class="mission-line__copy"><strong>${esc(w.name||w.id)}</strong><small>${esc(w.model||w.reason||'')}</small></span><span class="mission-line__state">${humanState(w.state)}</span></button>`).join(''):'<div class="empty">No mission timeline yet.</div>';el.querySelectorAll('[data-worker-id]').forEach(b=>b.onclick=()=>selectWorker(b.dataset.workerId))}
 function resultForWorker(id){return currentMission?.results?.find(r=>r.agentId===id)||null}
@@ -1042,9 +1042,6 @@ function districtDoor(id){
  const d=DISTRICTS[id]||DISTRICTS.command,cx=(d.x+d.w/2)*T,front=(d.y+d.h)*T;
  return{outside:{x:cx,y:front+T*.48},inside:{x:cx,y:front-T*.42}}
 }
-function pointInsideDistrict(p,id){
- const d=DISTRICTS[id]||DISTRICTS.command;return p.x>d.x*T+6&&p.x<(d.x+d.w)*T-6&&p.y>d.y*T+18&&p.y<(d.y+d.h)*T-8
-}
 function workerTarget(w,zone){
  const d=DISTRICTS[zone]||DISTRICTS.command,workers=(current?.workers||[]).filter(q=>zoneForWorker(q)===zone),id=w.id||w.agentId||w.name,idx=Math.max(0,workers.findIndex(q=>(q.id||q.agentId||q.name)===id));
  const active=w.state==='running'||w.state==='error'||w.state==='blocked';
@@ -1609,7 +1606,7 @@ function drawWorkerBubble(a,x,y,ts){
  else if(['error','blocked'].includes(a.state)){ctx.fillStyle='rgba(70,18,27,.92)';ctx.fillRect(x-18,y-43,36,14);txt('!',x,y-36,'#ffd2d7',10)}
 }
 function drawRunningWorkerSprite(a,ts){
- const s=roleStyle(a),phase=Math.sin(a.step),kick=Math.cos(a.step),dir=a.dir||1,x=a.x,y=a.y-2+Math.abs(phase)*1.4,stateColor=s.accent;
+ const s=roleStyle(a),phase=Math.sin(a.step),dir=a.dir||1,x=a.x,y=a.y-2+Math.abs(phase)*1.4,stateColor=s.accent;
  ctx.save();ctx.translate(x,y);ctx.rotate(dir*.07);
  // stretched moving shadow
  ctx.fillStyle='rgba(0,0,0,.28)';ctx.beginPath();ctx.ellipse(-dir*4,21,18,5,-dir*.08,0,Math.PI*2);ctx.fill();
@@ -1724,7 +1721,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   // Claude board: live progress of Claude Code sessions plus a ranked, votable board of the findings they report.
   const POLL_MS = 4000;
   const SEVERITIES = ['high', 'medium', 'low'];
-  const OPEN = new Set(['proposed', 'approved', 'in_progress']);
   // Lifecycle: you decide (proposed -> approved / later / won't do); Claude moves approved work to in progress and done.
   const STATUS = {
     proposed: { label: 'Needs your decision', short: 'Proposed', step: 0 },
@@ -1833,7 +1829,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       return n ? `<span class="seg st-${k}" style="flex:${n}" title="${esc(STATUS[k].label)}: ${n}"></span>` : '';
     }).join('') : '<span class="seg empty-seg" style="flex:1"></span>';
     const fixed = summary.byStatus.fixed || 0;
-    const open = order.filter((k) => OPEN.has(k)).reduce((n, k) => n + (summary.byStatus[k] || 0), 0);
     $('claudeProgress').innerHTML = `
       <div class="claude-progress-head"><strong>${fixed} of ${total} findings done</strong><span>${summary.byStatus.proposed || 0} need your decision · ${(summary.byStatus.approved || 0) + (summary.byStatus.in_progress || 0)} with Claude</span></div>
       <div class="claude-bar">${bar}</div>
@@ -2705,25 +2700,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const date = new Date(value || 0);
     return Number.isFinite(date.getTime()) ? date : null;
   }
-  function relativeTime(value) {
-    const date = safeDate(value);
-    if (!date) return '—';
-    const seconds = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
-    if (seconds < 60) return `${seconds}s ago`;
-    const minutes = Math.round(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.round(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    return date.toLocaleDateString();
-  }
   function statusLabel(status) {
     return ({ queued: 'Queued', running: 'Running', streaming: 'Streaming', awaiting_approval: 'Awaiting approval', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled' })[status] || status || 'Unknown';
-  }
-  function statusTone(status) {
-    if (status === 'completed') return 'complete';
-    if (status === 'failed' || status === 'cancelled') return 'error';
-    if (status === 'awaiting_approval') return 'waiting';
-    return active({ status }) ? 'running' : '';
   }
   // A time the run view shows: a missing or invalid one is a dash, never the 1969 epoch.
   function shownDate(value) { return value ? (safeDate(value)?.toLocaleString() || '—') : '—'; }

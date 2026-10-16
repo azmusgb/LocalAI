@@ -40,8 +40,6 @@ async function startServer(t, { seed, release, ollama } = {}) {
   throw new Error('server did not start');
 }
 const post = (base, p, body) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(async r => ({ status: r.status, body: await r.json() }));
-const board = async base => (await (await fetch(base + '/api/claude/board')).json());
-const finding = async (base, id) => (await board(base)).findings?.find(f => f.id === id) || (await board(base)).items?.find(f => f.id === id);
 
 const change = (id, status, extra = {}) => ({ id, target: 'self', root: 'app', request: `Make ${id} better\nmore`, summary: 'Proposed change', files: [{ path: 'public/x.js' }], status, createdAt: '2026-10-15T00:00:00.000Z', updatedAt: '2026-10-15T00:00:00.000Z', ...extra });
 const getChange = async (base, id) => (await (await fetch(base + '/api/changes')).json()).items.find(c => c.id === id);
