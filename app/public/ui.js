@@ -3072,7 +3072,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (!window.LocalAIRouter) { hideView(); return; }
     state.closing = true;
     { const r = state.detailsRelease; state.detailsRelease = null; r?.(); }   // a ⓘ sheet that just closed has not reported it yet: pop its entry first
-    window.LocalAIUI.afterSheetPop(() => { if (state.inApp || history.state?.localaiRun) history.back(); else window.LocalAIRouter.go('#home', { replace: true }); });   // after a closing details sheet has popped its own entry
+    window.LocalAIUI.dropStaleSheet?.();   // a sheet entry left by a reload or Forward has this run's hash too: step past it first
+    window.LocalAIUI.afterSheetPop(() => {   // after a closing details sheet has popped its own entry
+      if (!state.closing) return;   // the pop already closed the view
+      if (!(state.inApp || history.state?.localaiRun)) { window.LocalAIRouter.go('#home', { replace: true }); return; }
+      history.back();
+      // Back that lands on this same hash never fires hashchange; never stay stuck: go Home instead.
+      clearTimeout(state.closeTimer); state.closeTimer = setTimeout(() => { state.closeTimer = 0; if (state.closing) { state.closing = false; window.LocalAIRouter.go('#home', { replace: true }); } }, 400);
+    });
   }
   function showView() {
     const backdrop = el('runDrawerBackdrop');
@@ -3092,6 +3099,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     document.body.classList.remove('run-view-open');
     setInert(false); state.opener = null;
     if (wasOpen) queueMicrotask(() => restoreFocus(opener));
+    clearTimeout(state.closeTimer); state.closeTimer = 0;
     Object.assign(state, { selectedId: null, drawerSig: '', fetched: null, gap: '', pending: null, inApp: false, closing: false, viewError: '' });
   }
   async function fetchRun(id, quiet) {

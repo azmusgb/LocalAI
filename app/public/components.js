@@ -107,16 +107,24 @@
   // nothing if the entry is no longer on top (the router replaces it when a link inside the sheet navigates). release() is idempotent,
   // so onClose may call it, or the sheet's own close handler may.
   // afterSheetPop(fn) runs fn once a release()'s history.back() has landed (at once if none is pending), so a second history move never overlaps it.
-  let sheetSeq=0,popPending=false,popWaiters=[];
-  const popSettled=()=>{if(!popPending)return;popPending=false;popWaiters.splice(0).forEach(fn=>fn())};
+  // Only a live sheet's entry counts (sheetLive): one that outlived its sheet (a reload, or Forward onto it) is stale. It sits on an entry with
+  // the same URL, so dropStaleSheet() steps back past it (and afterSheetPop waits for that too). Ids carry a per-load prefix, so a stale
+  // 'sheet1' from before a reload never matches a new sheet's id.
+  let sheetSeq=0,popPending=false,popTimer=0,popWaiters=[];
+  const sheetLoad=Date.now().toString(36),liveSheets=new Set();
+  const popSettled=()=>{if(!popPending)return;popPending=false;clearTimeout(popTimer);popTimer=0;popWaiters.splice(0).forEach(fn=>fn())};
+  const popBack=()=>{popPending=true;clearTimeout(popTimer);popTimer=setTimeout(popSettled,500);history.back()}; // the fallback timer belongs to this pop only
   window.addEventListener('popstate',()=>setTimeout(popSettled,0));
   const afterSheetPop=fn=>{if(popPending)popWaiters.push(fn);else fn()};
+  const sheetLive=id=>!!id&&liveSheets.has(id);
+  const dropStaleSheet=()=>{const s=history.state&&history.state.localaiSheet;if(!s||sheetLive(s)||popPending)return false;popBack();return true};
   function sheetHistory(el,onClose){
-    const id='sheet'+(++sheetSeq),here=()=>history.state&&history.state.localaiSheet===id;let live=true;
+    const id='sheet'+sheetLoad+'-'+(++sheetSeq),here=()=>history.state&&history.state.localaiSheet===id;let live=true;
+    liveSheets.add(id);
     try{history.pushState({...(history.state&&typeof history.state==='object'?history.state:{}),localaiSheet:id},'',location.href)}catch{}
-    const onPop=()=>{if(!live||here())return;live=false;window.removeEventListener('popstate',onPop);try{if(typeof onClose==='function')onClose(el)}catch(e){console.error(e)}};
+    const onPop=()=>{if(!live||here())return;live=false;liveSheets.delete(id);window.removeEventListener('popstate',onPop);try{if(typeof onClose==='function')onClose(el)}catch(e){console.error(e)}};
     window.addEventListener('popstate',onPop);
-    return function release(){if(!live)return;live=false;window.removeEventListener('popstate',onPop);if(here()){popPending=true;setTimeout(popSettled,500);history.back()}};
+    return function release(){if(!live)return;live=false;liveSheets.delete(id);window.removeEventListener('popstate',onPop);if(here())popBack()};
   }
   // Each run kind can own the body of its run view: mount(run, el) fills el. Kinds with none show the Output block.
   const runBodies=new Map();
@@ -125,5 +133,5 @@
   function registerRunBody(kind,mount,opts){if(typeof mount==='function'){runBodies.set(String(kind),mount);runBodyOpts.set(String(kind),opts&&typeof opts.update==='function'?opts:null)}}
   const runBodyFor=kind=>runBodies.get(String(kind))||null;
   const runBodyUpdateFor=kind=>runBodyOpts.get(String(kind))?.update||null;
-  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{fetchJson,loadInto,ask,runCard,sheetHistory,afterSheetPop,registerRunBody,runBodyFor,runBodyUpdateFor});
+  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{fetchJson,loadInto,ask,runCard,sheetHistory,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
 })();

@@ -12,7 +12,8 @@ function parse(hash=location.hash){
  return{page:path||'home',runId:null,query};
 }
 const intentFor=id=>({...(INTENTS[id]||{})});
-const put=(h,state=null)=>{if(location.hash!==h)history.replaceState(state,'',location.pathname+location.search+h)};
+// Replacing one run with another (Another version, a version tap) keeps the entry's in-app mark, so Close still goes Back.
+const put=(h,state=null)=>{if(location.hash===h)return;if(state===null&&history.state?.localaiRun&&parse().runId&&parse(h).runId)state={localaiRun:true};history.replaceState(state,'',location.pathname+location.search+h)};
 function notifyRun(id){if(id===runOpen)return;runOpen=id;runHandlers.forEach(fn=>{try{fn(id)}catch(e){console.error(e)}})}
 // Show whatever the hash names.
 function apply(){
@@ -31,7 +32,8 @@ function apply(){
  applying=true;try{root.showView(target)}finally{applying=false}
 }
 // A sheet (LocalAIUI.sheetHistory) has an entry on top of the page's: a link tapped inside it takes that entry over instead of stacking on it.
-const sheetOnTop=()=>!!(history.state&&history.state.localaiSheet);
+// Only a live sheet's entry counts: one left over from before a reload (or reached by Forward) belongs to no sheet.
+const sheetOnTop=()=>{const s=history.state&&history.state.localaiSheet;return !!s&&!!root.LocalAIUI?.sheetLive?.(s)};
 function go(path,{replace=false}={}){
  const h=String(path).startsWith('#')?String(path):'#'+path;
  if(replace||sheetOnTop()){put(h);apply()}else if(h===location.hash)apply();else location.hash=h; // hashchange then applies it
