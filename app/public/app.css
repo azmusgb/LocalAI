@@ -426,7 +426,7 @@ summary:focus-visible {
 /* Agent Operations v2 — mission-first control surface */
 .agent-ops{display:grid;gap:14px}
 .agent-compose{border:1px solid var(--ux-line,var(--line));background:linear-gradient(180deg,#111925,#0d141d);border-radius:18px;padding:16px}
-.agent-compose__row{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:10px;align-items:end}.agent-compose textarea{min-height:96px;font-size:15px;line-height:1.45;resize:vertical}.agent-compose label{font-size:12px;text-transform:uppercase;letter-spacing:.08em;font-weight:760}.agent-compose__actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.agent-compose__actions .btn.primary{min-width:132px}
+.agent-compose__row{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:10px;align-items:end}.agent-compose textarea{min-height:96px;font-size:15px;line-height:1.45;resize:vertical}.agent-compose label{font-size:12px;text-transform:uppercase;letter-spacing:.08em;font-weight:760}.agent-compose__actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.agent-compose label.agent-compose__check{display:flex;align-items:center;gap:8px;min-height:44px;margin-top:6px;text-transform:none;letter-spacing:0;font-weight:500;font-size:14px}.agent-compose__check input{width:20px;height:20px;margin:0}.agent-compose__check .sub{font-size:13px}.agent-compose__actions .btn.primary{min-width:132px}
 .agent-inline-notice{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--ux-line,var(--line));border-radius:12px;padding:10px 12px;background:#0d151f}.agent-inline-notice>div{display:grid;gap:2px}.agent-inline-notice strong{font-size:12px;text-transform:uppercase;letter-spacing:.08em}.agent-inline-notice span{font-size:12px;color:var(--muted)}.agent-inline-notice[data-kind="error"]{border-color:rgba(255,113,128,.35);background:rgba(255,113,128,.05)}.agent-inline-notice[data-kind="success"]{border-color:rgba(98,222,160,.3);background:rgba(98,222,160,.05)}
 .agent-mission-strip{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--ux-line,var(--line));border-radius:12px;background:rgba(255,255,255,.018)}.agent-mission-strip :is(h2,h3){font-size:13px;margin:0 0 2px;letter-spacing:0}.agent-mission-strip small{color:var(--muted)}.agent-mission-progress{width:170px;height:6px;border-radius:99px;background:#172230;overflow:hidden}.agent-mission-progress span{display:block;height:100%;width:0;background:linear-gradient(90deg,#65a9ff,#55dff1,#6ce39a);transition:width .25s ease}
 .agent-live-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start}.agent-side-stack{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;min-width:0}.agent-panel{border:1px solid var(--ux-line,var(--line));background:var(--ux-surface,#101620);border-radius:16px;padding:14px;min-width:0}.agent-panel__head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.agent-panel__head h2{margin:0;font-size:14px}.agent-panel__head small{color:var(--muted)}
@@ -1830,8 +1830,8 @@ body.run-view-open{overflow:hidden}
 .improve-details{margin-top:16px}
 .improve-details>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--ds-muted)}
 .improve-details h3{font-size:14px;color:var(--ds-muted);margin:12px 0 6px}
-.improve-checks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
-.improve-checks li{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.improve-checks{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+.improve-checks li{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0;overflow-wrap:anywhere}
 @media(max-width:760px){
   /* On phones the page's one action is the header icon (LocalAIShell); the heading button would repeat it. */
   #backlog>.topbar .btn,#signals>.topbar .btn{display:none}

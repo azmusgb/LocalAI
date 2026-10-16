@@ -27,6 +27,8 @@ async function open(size) {
   await context.addInitScript(() => { localStorage.setItem('localai.firstRun.done', '1'); localStorage.setItem('localai.devTools', '1'); });
   const page = await context.newPage({ serviceWorkers: 'block' });
   await page.route(u => u.pathname === '/api/runs', r => r.fulfill({ json: { items: runs, summary: {} } }));
+  // Long unbroken check details and browser errors must wrap inside the Signals lists.
+  await page.route(u => u.pathname === '/api/quality', r => r.fulfill({ json: { latest: { checks: [{ name: 'service health', result: 'FAIL', detail: LONG }] }, events: [{ message: LONG, source: LONG, createdAt: now }] } }));
   await page.goto(base + '/#home', { waitUntil: 'networkidle' });
   return { page, context };
 }
