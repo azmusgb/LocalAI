@@ -1,5 +1,5 @@
-// Improve › Backlog and Signals (roadmap sub-project 4). Items and signals come from /api/improve/items; every action
-// posts to /api/improve/* and then reloads. In progress and Shipped arrive with task 5. Spec:
+// Improve › Backlog, In progress, Shipped and Signals (roadmap sub-project 4). Items and signals come from
+// /api/improve/items; every action posts to /api/improve/* and then reloads. Spec:
 // docs/superpowers/specs/2026-10-15-improve-design.md.
 (function(root){'use strict';
 const $=id=>document.getElementById(id);
@@ -8,7 +8,13 @@ const ICON={claude:'sparkle',signal:'alert',idea:'compose'};
 const SOURCE={claude:'From Claude',signal:'Signal',idea:'Your idea'};
 const TONE={high:'bad',medium:'attention',low:'neutral'};
 const LABEL={high:'High',medium:'Medium',low:'Low'};
-const st={data:null,openId:''};
+const st={data:null,openId:'',sessions:[]};
+// A running change's state, in words: [label, badge tone].
+const CHANGE_STATE={planned:['Planning','neutral'],staged:['Testing','neutral'],awaiting_approval:['Waiting for your OK','attention'],patch_failed:['Needs a look','bad'],validation_failed:['Needs a look','bad'],approved:['Shipping','accent'],apply_requested:['Shipping','accent']};
+const failed=it=>['patch_failed','validation_failed'].includes(it.change?.status);
+const badge=([label,tone])=>`<span class="badge badge--${tone}">${esc(label)}</span>`;
+// Board sessions are cc-<first 8 of the Claude session id>; findings carry the full id.
+const sessionOf=it=>it.sessionId?st.sessions.find(s=>s.id===it.sessionId||s.id==='cc-'+String(it.sessionId).slice(0,8)):null;
 const icon=n=>root.LocalAIKit?.icon(n)||'';
 const ago=iso=>{const s=(Date.now()-new Date(iso))/1000;if(!isFinite(s))return '';if(s<3600)return Math.max(1,Math.round(s/60))+'m ago';if(s<86400)return Math.round(s/3600)+'h ago';return Math.round(s/86400)+'d ago'};
 const sev=x=>`<span class="badge badge--${TONE[x]||'neutral'}">${LABEL[x]||'Medium'}</span>`;
@@ -29,6 +35,37 @@ function backlogRow(it){
 function renderBacklog(box,data){
  const items=(data.items||[]).filter(i=>i.stage==='backlog');
  box.replaceChildren(...items.map(backlogRow));return items.length>0;
+}
+function inProgressRow(it){
+ const row=document.createElement('div');row.className='list-row improve-row';row.dataset.itemId=it.id;
+ const s=sessionOf(it),state=it.change?badge(CHANGE_STATE[it.change.status]||['Working','neutral']):badge(['Claude','accent']);
+ const claude=!it.change?` <span>Claude · ${esc(s?(s.lastEvent||s.status||''):'not reporting')}</span>`:'';
+ row.innerHTML=`<span class="list-row__icon">${icon(ICON[it.source]||'sparkle')}</span>`+
+  `<button type="button" class="improve-row__open list-row__main"><span class="list-row__title">${esc(it.title)}</span><span class="list-row__sub">${state}${claude}</span></button>`;
+ row.querySelector('.improve-row__open').onclick=()=>openItem(it.id);
+ return row;
+}
+function renderInProgress(box,data){
+ const items=(data.items||[]).filter(i=>i.stage==='inProgress');
+ box.replaceChildren(...items.map(inProgressRow));return items.length>0;
+}
+const day=iso=>{const d=new Date(iso);return isFinite(d)?d.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}):''};
+function shippedRow(it){
+ const row=document.createElement('div');row.className='list-row improve-row';row.dataset.itemId=it.id;
+ const pr=/^https:\/\/github\.com\/[^\s"]+\/pull\/(\d+)/.exec(it.pr||'');
+ const how=pr?`<a href="${esc(it.pr)}" target="_blank" rel="noopener">Pull request #${pr[1]}</a>`:esc(it.decisionNote==='Resolved on its own'?'Resolved on its own':'');
+ row.innerHTML=`<span class="list-row__icon">${icon(ICON[it.source]||'sparkle')}</span><span class="list-row__main"><span class="list-row__title">${esc(it.title)}</span>`+
+  `<span class="list-row__sub">${esc(day(it.shipped?.at||it.updatedAt))}${how?' · '+how:''}</span></span>`;
+ return row;
+}
+function renderShipped(box,data){
+ const at=it=>String(it.shipped?.at||it.updatedAt||'');
+ const items=(data.items||[]).filter(i=>i.stage==='shipped').sort((a,b)=>at(b).localeCompare(at(a)));
+ // Releases in order of their newest item; items without a release stamp yet wait under "Next release".
+ const groups=new Map();for(const it of items){const v=it.shipped?.version||'';if(!groups.has(v))groups.set(v,[]);groups.get(v).push(it)}
+ box.replaceChildren(...[...groups].map(([v,list])=>{const g=document.createElement('section');g.className='improve-release';
+  const h=document.createElement('h3');h.textContent=v?`Version ${v}`:'Next release';g.append(h,...list.map(shippedRow));return g}));
+ return items.length>0;
 }
 function signalRow(s,inBacklog){
  const row=document.createElement('div');row.className='list-row improve-row';row.dataset.signalId=s.id;
@@ -57,15 +94,36 @@ function openItem(id){
  const it=(st.data?.items||[]).find(i=>i.id===id);const d=$('improveItemSheet');if(!it||!d)return;st.openId=id;
  $('improveItemTitle').textContent=it.title;
  $('improveItemBody').innerHTML=`<p class="list-row__sub">${sev(it.severity)} ${SOURCE[it.source]||''}${it.handedToClaude?' · Handed to Claude':''}</p>`+
-  (it.summary?`<p>${esc(it.summary)}</p>`:'')+(it.fix?`<p><strong>Suggested fix:</strong> ${esc(it.fix)}</p>`:'')+(it.file?`<p><code>${esc(it.file)}</code></p>`:'')+(it.decisionNote?`<p class="list-row__sub">${esc(it.decisionNote)}</p>`:'');
- const acts=[['start','Start','btn-primary'],...(it.handedToClaude?[]:[['handToClaude','Hand to Claude','btn-outline']]),['moveToTop','Move to top','btn-outline'],['defer','Defer','btn-outline'],['reject','Reject','btn-outline']];
- const box=$('improveItemActions');box.innerHTML=acts.map(([a,l,c])=>`<button type="button" class="${c}" data-item-act="${a}">${l}</button>`).join('');
- box.querySelectorAll('[data-item-act]').forEach(b=>b.onclick=()=>itemAction(it.id,b.dataset.itemAct,b));
+  (it.summary?`<p>${esc(it.summary)}</p>`:'')+(it.fix?`<p><strong>Suggested fix:</strong> ${esc(it.fix)}</p>`:'')+(it.file?`<p><code>${esc(it.file)}</code></p>`:'')+(it.decisionNote?`<p class="list-row__sub">${esc(it.decisionNote)}</p>`:'')+(it.stage==='inProgress'&&it.change?`<p>${badge(CHANGE_STATE[it.change.status]||['Working','neutral'])}${['approved','apply_requested'].includes(it.change.status)?' Claude ships it as a pull request.':''}</p>`:'');
+ // In progress offers the change's next step: test it, approve it, or retry it. Once approved it is Claude's to ship.
+ const c=it.change,locked=['approved','apply_requested'].includes(c?.status);
+ const next=!c?[]:failed(it)?[['retry','Retry','btn-primary']]:c.status==='planned'?[['stage','Test the change','btn-primary']]:c.status==='awaiting_approval'?[['approve','Approve','btn-primary']]:[];
+ const acts=it.stage==='inProgress'?[...next,...(c&&!failed(it)?[['diff','See the changes','btn-outline']]:[]),...(locked?[]:[['backToBacklog','Back to backlog','btn-outline'],...(c?[['discard','Discard','btn-outline']]:[])])]
+  :it.stage==='backlog'?[['start','Start','btn-primary'],...(it.handedToClaude?[]:[['handToClaude','Hand to Claude','btn-outline']]),['moveToTop','Move to top','btn-outline'],['defer','Defer','btn-outline'],['reject','Reject','btn-outline']]:[];
+ showActs(it.id,acts);
  $('improveItemError').hidden=true;if(!d.open)d.showModal();
 }
-async function itemAction(id,action,btn){
+function showActs(id,acts){
+ const box=$('improveItemActions');box.innerHTML=acts.map(([a,l,c,then])=>`<button type="button" class="${c}" data-item-act="${a}"${then?` data-then="${then}"`:''}>${l}</button>`).join('');
+ box.querySelectorAll('[data-item-act]').forEach(b=>b.onclick=()=>b.dataset.itemAct==='discard'&&!b.dataset.then
+  // Discard asks what happens to the item: back in the Backlog, or set aside.
+  ?showActs(id,[['discard','Back to backlog','btn-outline','backlog'],['discard','Set aside','btn-outline','aside']])
+  :CHANGE_ACTS[b.dataset.itemAct]?changeAction(id,b.dataset.itemAct,b)
+  :itemAction(id,b.dataset.itemAct,b,b.dataset.then));
+}
+// The change itself: test (stage) it, approve it after a confirmation, or read its diff on Change requests.
+const CHANGE_ACTS={stage:1,approve:1,diff:1};
+async function changeAction(id,action,btn){
+ const it=(st.data?.items||[]).find(i=>i.id===id),cid=it?.change?.id,err=$('improveItemError');if(!cid)return;
+ if(action==='diff'){$('improveItemSheet').close();root.showView?.('changes');root.loadChanges?.(cid);return}
+ if(action==='approve'&&!(await root.LocalAIUI.ask({title:'Approve this change?',effect:'Claude ships it to Local AI as a pull request.',confirmLabel:'Approve'})).ok)return;
+ btn.disabled=true;
+ try{await post(action==='stage'?'/api/changes/stage':'/api/changes/approve',action==='stage'?{id:cid}:{id:cid,decision:'approved'});$('improveItemSheet').close();await refresh()}
+ catch(e){err.textContent=e.message;err.hidden=false;btn.disabled=false}
+}
+async function itemAction(id,action,btn,then){
  const err=$('improveItemError');btn.disabled=true;
- try{await post('/api/improve/item',{id,action});$('improveItemSheet').close();await refresh()}
+ try{await post('/api/improve/item',then?{id,action,then}:{id,action});$('improveItemSheet').close();await refresh()}
  catch(e){err.textContent=e.message;err.hidden=false;btn.disabled=false}
 }
 function openIdea(){const d=$('improveIdeaSheet');if(!d)return;$('improveIdeaText').value='';$('improveIdeaError').hidden=true;d.showModal();$('improveIdeaText').focus()}
@@ -80,7 +138,9 @@ async function submitIdea(start,btn){
 async function runChecks(btn){if(btn)btn.disabled=true;try{await post('/api/issues/scan',{});await refresh();loadDetails()}catch(e){showToast(e.message)}finally{if(btn)btn.disabled=false}}
 function showToast(m){const t=$('toast');if(!t)return;t.textContent=m;t.classList.add('show');clearTimeout(t._hide);t._hide=setTimeout(()=>t.classList.remove('show'),3000)}
 
-// One request feeds both lists; each list shows its own error state if it fails.
+// Claude sessions' live status, for items Claude is working on; the list still shows without it.
+async function sessions(){try{st.sessions=(await root.LocalAIUI.fetchJson('/api/claude/board',{cache:'no-store'})).sessions||[]}catch{st.sessions=[]}}
+// One request feeds every list; each list shows its own error state if it fails.
 async function refresh(){
  const p=load();
  // The first call shares this refresh's request; a Retry from the error state fetches again.
@@ -88,7 +148,9 @@ async function refresh(){
  const opts=(render,what,empty)=>({render,what,empty});
  await Promise.all([
   $('backlogList')&&root.LocalAIUI.loadInto($('backlogList'),once(),opts(renderBacklog,'the backlog','Nothing in the Backlog. Add an idea, or promote a Signal.')),
-  $('signalsList')&&root.LocalAIUI.loadInto($('signalsList'),once(),opts(renderSignals,'the signals','No open Signals. Local AI looks healthy.'))
+  $('signalsList')&&root.LocalAIUI.loadInto($('signalsList'),once(),opts(renderSignals,'the signals','No open Signals. Local AI looks healthy.')),
+  $('inProgressList')&&root.LocalAIUI.loadInto($('inProgressList'),()=>Promise.all([once()(),sessions()]).then(([d])=>d),opts(renderInProgress,'what is in progress','Nothing in progress. Start an item from the Backlog.')),
+  $('shippedList')&&root.LocalAIUI.loadInto($('shippedList'),once(),opts(renderShipped,'what has shipped','Nothing shipped yet.'))
  ]).catch(()=>{});
 }
 function init(){
@@ -97,7 +159,7 @@ function init(){
  document.querySelectorAll('[data-idea-start]').forEach(b=>b.onclick=()=>submitIdea(b.dataset.ideaStart==='true',b));
  const register=()=>{root.LocalAIShell?.setAction('backlog',{icon:'plus',label:'New idea',onClick:openIdea});root.LocalAIShell?.setAction('signals',{icon:'refresh',label:'Run checks now',onClick:()=>runChecks()})};
  if(root.LocalAIShell)register();else root.addEventListener('load',register,{once:true});
- for(const id of ['backlog','signals']){const sec=$(id);let was=sec.classList.contains('active');
+ for(const id of ['backlog','inProgress','shipped','signals']){const sec=$(id);if(!sec)continue;let was=sec.classList.contains('active');
   new MutationObserver(()=>{const now=sec.classList.contains('active');if(now&&!was){refresh();if(id==='signals')loadDetails()}was=now}).observe(sec,{attributes:true,attributeFilter:['class']});
   if(was){refresh();if(id==='signals')loadDetails()}}
 }

@@ -1895,3 +1895,7 @@ input::placeholder,textarea::placeholder{font-weight:400}
 @media(max-width:560px){body.ux-v3 .library-grid{grid-template-columns:minmax(0,1fr)}.library-grid .artifact-title{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}}
 .voice-home-pref{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-top:12px}
 .voice-home-pref small{display:block}
+/* Improve › Shipped: one group per release (appended; nothing above edited). */
+.improve-release+.improve-release{margin-top:18px}
+.improve-release>h3{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--ds-muted)}
+.improve-release .list-row__sub a{display:inline-flex;align-items:center;min-height:44px}
