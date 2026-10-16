@@ -2,7 +2,8 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 
 // Every control on every page is at least 44px to touch, on phones and desktop. A small checkbox counts when its
-// label row is 44px. Visible controls only.
+// label row is 44px. Visible controls only. Run it against real data too (LOCALAI_URL=http://10.0.0.21:3080): lists
+// with items show controls an empty server never renders.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch({ headless: true });
 const failures = [];
@@ -22,6 +23,10 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
       small.push(...await page.evaluate(() => [...document.querySelectorAll('section.view.active :is(a,button,summary,input[type=checkbox])')].flatMap(e => {
         const b = e.getBoundingClientRect();
         if (!b.width || !b.height || getComputedStyle(e).visibility === 'hidden') return [];
+        // Exempt, as WCAG 2.5.8 allows: a link inside a sentence, and the replay timeline's packed markers (Previous
+        // and Next step through the same points with full-size buttons).
+        if (e.tagName === 'A' && [...e.parentElement.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) return [];
+        if (e.closest('.awc__replayMarkers')) return [];
         const row = e.closest('label')?.getBoundingClientRect().height || 0;
         const ok = b.height >= 43.5 || (b.width >= 43.5 && b.height >= 32) || row >= 40;
         return ok ? [] : [`${document.querySelector('section.view.active').id}: ${e.id || e.textContent.trim().slice(0, 20) || e.tagName} ${Math.round(b.width)}x${Math.round(b.height)}`];
