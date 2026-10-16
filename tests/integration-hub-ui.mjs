@@ -34,8 +34,8 @@ await check('native Local AI integrations remain first-class', async () => {
   const body = await page.locator('#integrations').innerText();
   assert.match(body, /n8n/i);
   assert.match(body, /ComfyUI/i);
-  assert.match(body, /Native owner/i);
-  assert.match(body, /Native media owner/i);
+  assert.match(body, /Built in/i);
+  assert.match(body, /Built in · images/i);
   assert.equal(await page.locator('[data-integration-source-v2="n8n"]').count(), 1);
   assert.equal(await page.locator('[data-integration-source-v2="comfy"]').count(), 1);
 });
