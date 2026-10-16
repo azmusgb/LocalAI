@@ -343,7 +343,7 @@ async function getStatusAndRecordTransition() {
       coreUnhealthy: services.filter(x => x.required !== false && x.state !== 'HEALTHY').length,
       optionalUnhealthy: services.filter(x => x.required === false && x.state !== 'HEALTHY').length
     },
-    certification: certificationInfo()
+    certification: require('./release').deployCheck(certificationInfo(), release)
   };
 }
 

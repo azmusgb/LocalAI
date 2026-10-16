@@ -38,3 +38,18 @@ test('release version, time and notes are read when present and sanitised', t =>
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version: '0.0.0' }));
   assert.equal(appVersion(app, null, {}), '1.18');
 });
+
+const { deployCheck } = require('../app/release');
+test('deployCheck: a release deployed after the report is the latest passed check', () => {
+  const report = { available: true, result: 'PASS', summary: '3 PASS / 0 WARN / 0 FAIL', modifiedAt: '2026-09-28T04:34:37.758Z' };
+  const release = { commit: 'b'.repeat(40), version: '2.0.386', deployedAt: '2026-10-16T21:52:52.586Z' };
+  assert.deepEqual(deployCheck(report, release), { available: true, result: 'PASS', summary: '2.0.386 passed its deploy checks', modifiedAt: '2026-10-16T21:52:52.586Z', source: 'release' });
+  // No report file at all: the release still says when the last check passed.
+  assert.equal(deployCheck({ available: false, result: 'UNKNOWN', summary: null, modifiedAt: null }, release).modifiedAt, '2026-10-16T21:52:52.586Z');
+  // A report newer than the release (a later manual certification run) wins, failures included.
+  const newer = { available: true, result: 'FAIL', summary: '2 PASS / 0 WARN / 1 FAIL', modifiedAt: '2026-10-17T08:00:00.000Z' };
+  assert.equal(deployCheck(newer, release), newer);
+  // In a checkout (no release.json) the report stands as it is.
+  assert.equal(deployCheck(report, null), report);
+  assert.equal(deployCheck(report, { commit: 'c'.repeat(40) }), report, 'a release without a deploy time');
+});
