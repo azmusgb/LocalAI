@@ -34,8 +34,8 @@ const VIEWS=[
  {id:'backlog',svg:'improve',domain:'improve',section:'Pipeline',icon:'Δ',label:'Backlog',description:'One ranked list of what could change in Local AI.',aka:['improve','ideas','priorities']},
  {id:'signals',svg:'alert',domain:'improve',section:'Pipeline',icon:'!',label:'Signals',description:'Problems Local AI noticed; serious ones join the Backlog.',aka:['detections']},
  {id:'changes',svg:'build',short:'Changes',domain:'improve',section:'Changes',icon:'Δ',label:'Change requests',description:"Describe a change; it's planned, tested and held for approval.",aka:['changes','change intelligence','engineer','engineering agent']},
- {id:'issues',svg:'alert',domain:'improve',section:'Changes',icon:'!',label:'Issues',tab:'Issues',description:'Problems found in Local AI, deduplicated.'},
- {id:'quality',svg:'gauge',domain:'improve',section:'Changes',parent:'issues',tab:'Quality signals',icon:'Q',label:'Quality signals',description:'Static checks, browser errors and regressions.',aka:['quality','quality intelligence']},
+ {id:'issues',svg:'alert',domain:'hidden',section:'Changes',icon:'!',label:'Issues',tab:'Issues',description:'Problems found in Local AI, deduplicated.'},
+ {id:'quality',svg:'gauge',domain:'hidden',section:'Changes',parent:'issues',tab:'Quality signals',icon:'Q',label:'Quality signals',description:'Static checks, browser errors and regressions.',aka:['quality','quality intelligence']},
  {id:'claude',svg:'sparkle',domain:'improve',section:'Changes',icon:'✳',label:'Claude Code',description:'Live sessions and ranked recommendations.',aka:['claude']},
  {id:'workbench',svg:'folder',domain:'system',section:'Tools',icon:'W',label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
  {id:'repoTools',svg:'branch',domain:'system',section:'Tools',icon:'R',label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},
@@ -43,6 +43,7 @@ const VIEWS=[
  {id:'activity',svg:'history',domain:'system',section:'History',icon:'◷',label:'Audit log',description:'What happened on the appliance, and when.',aka:['activity']},
  {id:'runs',svg:'work',domain:'hidden',section:'History',icon:'▶',label:'Runs',description:'Every execution, live, with cancel and retry.'}
 ];
+// Issues and Quality signals are hidden while Signals (Improve) shows the same detections; Improve task 5 retires them.
 // Retired view ids and the page that replaced them.
 // `runs`, `agents`, `ask` and `create` keep their own hidden pages for code and ⌘K; a URL resolves them to the page that now owns them.
 const ALIASES={engineering:'changes',runs:'work',agents:'work',ask:'home',create:'home'};
