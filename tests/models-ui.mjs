@@ -6,7 +6,7 @@ const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch();
 let failed = 0;
 async function check(name, fn) { try { await fn(); console.log('PASS', name) } catch (e) { failed++; console.log('FAIL', name, e.message) } }
-const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+const page = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 await page.goto(base, { waitUntil: 'networkidle' });

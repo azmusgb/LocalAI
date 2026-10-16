@@ -19,9 +19,9 @@ async function check(name, fn) {
 const DEFAULTS = { home: 'home', work: 'work', projects: 'library', improve: 'backlog', system: 'status' };
 
 async function open(viewport, hash, { devTools = '1' } = {}) {
-  const ctx = await browser.newContext({ viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(v => { try { localStorage.setItem('localai.devTools', v); } catch {} }, devTools);
-  const page = await ctx.newPage();
+  const page = await ctx.newPage({ serviceWorkers: 'block' });
   page.errors = [];
   page.on('pageerror', e => page.errors.push(e.message));
   await page.goto(base + '/' + hash, { waitUntil: 'domcontentloaded' });
@@ -102,9 +102,69 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
     await page.context().close();
   });
 
+  await check(`${tag}: a domain id in the hash opens that domain's first page`, async () => {
+    for (const [id, view] of [['improve', 'backlog'], ['system', 'status'], ['work', 'work'], ['home', 'home'], ['projects', 'projects']]) {
+      const page = await open(viewport, '#' + id);
+      await page.waitForSelector('#' + view + '.active', T);
+      assert.equal(await page.evaluate(() => location.hash), '#' + view, id);
+      await page.context().close();
+    }
+  });
+
+  await check(`${tag}: opening a hidden page from the app pushes it, and Back returns`, async () => {
+    const page = await open(viewport, '#work');
+    await page.waitForSelector('#work.active', T);
+    const before = await page.evaluate(() => history.length);
+    await page.evaluate(() => LocalAIRouter.open('agents'));
+    await page.waitForSelector('#agents.active', T);
+    assert.equal(await page.evaluate(() => location.hash), '#agents');
+    assert.equal(await page.evaluate(() => history.length), before + 1);
+    await page.evaluate(() => history.back());
+    await page.waitForSelector('#work.active', T);
+    await page.evaluate(() => history.forward());
+    await page.waitForSelector('#agents.active', T);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#agents.active', T); // the entry's own state survives a reload
+    await page.context().close();
+  });
+
+  await check(`${tag}: a page opened while a run is open shows the page and Back leaves it`, async () => {
+    const page = await open(viewport, '#home');
+    await page.evaluate(() => LocalAIRouter.go('#run/missing-run'));
+    await page.waitForSelector('#runDrawerBackdrop.show', T);
+    await page.evaluate(() => window.LocalAIOpen('/?open=status'));
+    await page.waitForSelector('#status.active', T);
+    assert.equal(await page.locator('#runDrawerBackdrop.show').count(), 0);
+    assert.equal(await page.evaluate(() => location.hash), '#status');
+    await page.evaluate(() => history.back());
+    await page.waitForFunction(() => location.hash !== '#status', null, T);
+    await page.context().close();
+  });
+
+  if (viewport.width >= 760) {
+    await check(`${tag}: secondary links, Models and Integrations push history and set the hash`, async () => {
+      const page = await open(viewport, '#status');
+      await page.waitForSelector('#status.active', T);
+      for (const view of ['activity', 'models', 'integrations', 'status']) {
+        const before = await page.evaluate(() => history.length);
+        await page.locator(`.ux-secondary-link[data-view="${view}"]`).click();
+        await page.waitForSelector(`#${view}.active`, T);
+        assert.equal(await page.evaluate(() => location.hash), '#' + view);
+        assert.equal(await page.evaluate(() => history.length), before + 1, view);
+      }
+      await page.locator('.ux-secondary-link[data-view="models"]').click();
+      await page.waitForSelector('#models.active', T);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('#models.active', T);
+      await page.evaluate(() => history.back());
+      await page.waitForSelector('#status.active', T);
+      await page.context().close();
+    });
+  }
+
   await check(`${tag}: a tab tapped while the app is still starting is kept`, async () => {
-    const ctx = await browser.newContext({ viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
-    const page = await ctx.newPage();
+    const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
+    const page = await ctx.newPage({ serviceWorkers: 'block' });
     await page.route('**/api/config', async r => { await new Promise(res => setTimeout(res, 800)); await r.fallback(); });
     await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector(viewport.width < 760 ? '#uxMobileNav' : '.ux-primary-rail', { timeout: 8000 });

@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { addAxe } from './axe-helper.mjs';
 
 // Improve › Backlog and Signals (sub-project 4, task 4), with /api/improve/* stubbed.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
@@ -27,7 +28,7 @@ const SIGNALS = [
   { id: 'issue-3', name: 'Old resolved one', severity: 'low', status: 'resolved', occurrences: 2, lastSeenAt: at }
 ];
 
-const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+const page = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 const errors = []; page.on('pageerror', e => errors.push(e.message));
 await page.addInitScript(() => { try { localStorage.setItem('localai.devTools', '1'); } catch {} });
 let failItems = false;
@@ -116,7 +117,7 @@ await check('long titles stay inside the screen on a phone (Backlog and Signals)
 });
 
 await check('no colour-contrast or touch-target problems on Backlog and Signals (axe)', async () => {
-  await page.addScriptTag({ path: axePath });
+  await addAxe(page, axePath);
   const problems = [];
   for (const view of ['backlog', 'signals']) {
     await page.evaluate(v => window.showView(v), view);

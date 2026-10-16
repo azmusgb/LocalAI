@@ -23,7 +23,7 @@ for (let i = 0; i < 100; i++) { try { if ((await fetch(base + '/healthz')).ok) b
 const browser = await chromium.launch();
 let failed = 0;
 async function check(name, fn) { try { await fn(); console.log('PASS', name) } catch (e) { failed++; console.log('FAIL', name, e.message) } }
-const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
+const page = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 1000 } });
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 // The UI asks for "RUN" in an approval sheet, then the approval key in a second sheet (no native dialogs).

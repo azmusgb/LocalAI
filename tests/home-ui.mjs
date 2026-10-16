@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { addAxe } from './axe-helper.mjs';
 
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const axePath = join(dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min.js');
@@ -38,9 +39,9 @@ const needs = () => [
 let capabilities = () => ({ services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' });
 async function open(viewport, hash, { threads = six, all = needs, engineering = null, storage = {}, caps = null, approvals = [], activity = [], route = null } = {}) {
   capabilities = caps || (() => ({ services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' }));
-  const ctx = await browser.newContext({ viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.devTools': '1', 'localai.firstRun.done': '1', ...storage });
-  const page = await ctx.newPage();
+  const page = await ctx.newPage({ serviceWorkers: 'block' });
   await ctx.route(u => u.pathname === '/api/approvals', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: approvals }) }));
   await ctx.route(u => u.pathname === '/api/activity', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: activity }) }));
   if (route) await ctx.route(u => u.pathname === '/api/route', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(route) }));
@@ -113,6 +114,63 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
   });
 }
 
+await check('Needs you drops a failed run once a newer run in the same thread succeeded', async () => {
+  // The failed turn finished failing after the retry had already succeeded (updatedAt is later), but the retry is the newer turn.
+  const failed = item('chat', 'Question one', 3 * HOUR, { threadId: 't-same', status: 'failed' });
+  failed.updatedAt = new Date(NOW - 5 * 60e3).toISOString();
+  const retry = item('chat', 'Question one again', HOUR, { threadId: 't-same' });
+  const other = item('chat', 'Different thread failed', 2 * HOUR, { threadId: 't-other', status: 'failed' });
+  const page = await open(desk, '#home', { all: () => [failed, retry, other] });
+  await page.waitForSelector('#homeNeedsYou .run-card', T);
+  assert.deepEqual(await titles(page, '#homeNeedsYou'), ['Different thread failed']);
+  await page.context().close();
+});
+
+await check('Recent and Needs you show a run summary once, not again as preview text', async () => {
+  const dup = (title, o) => { const r = item('chat', title, 5 * 60e3, o); r.card.preview = { type: 'text', text: 'The answer is forty-two, as computed by Deep Thought.' }; r.card.summary = 'The answer is forty-two'; return r; };
+  const a = dup('Meaning of life'), f = dup('Failed meaning', { status: 'failed' });
+  const page = await open(desk, '#home', { threads: () => [a], all: () => [a, f] });
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  await page.waitForSelector('#homeNeedsYou .run-card', T);
+  for (const sel of ['#homeRecent2', '#homeNeedsYou']) { const t = await page.locator(sel).innerText(); assert.equal(t.split('The answer is forty-two').length - 1, 1, sel + ': ' + t); }
+  await page.context().close();
+});
+
+await check('Needs you rows that open another page push it, so Back returns to Home', async () => {
+  const caps = () => ({ services: [{ name: 'ollama', label: 'Intelligence', state: 'DOWN', required: true, impact: 'Chat is unavailable.' }, ...['search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true }))], models: { defaultInstalled: true }, images: { available: true } });
+  const page = await open(desk, '#home', { caps, all: () => [], approvals: [{ id: 'apr_x', status: 'pending', title: 'Run the thing', detail: 'Needs a yes' }] });
+  await page.waitForSelector('#homeNeedsYou .home-attn', T);
+  for (const [text, id] of [['Intelligence is down', 'status'], ['Run the thing', 'approvals']]) {
+    await page.locator('#homeNeedsYou .home-attn', { hasText: text }).click();
+    await page.waitForSelector(`#${id}.active`, T);
+    assert.equal(await page.evaluate(() => location.hash), '#' + id);
+    await page.evaluate(() => history.back());
+    await page.waitForSelector('#home.active', T);
+  }
+  await page.context().close();
+});
+
+await check('Back closes the mode sheet and stays on Home; closing the sheet itself leaves no extra entry', async () => {
+  const page = await open(desk, '#home');
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  const len = () => page.evaluate(() => history.length);
+  const base = await len();
+  await page.locator('#homeModeChip').click();
+  await page.waitForSelector('#homeModeSheet[open]', T);
+  assert.equal(await len(), base + 1);
+  await page.evaluate(() => history.back());
+  await page.waitForSelector('#homeModeSheet[open]', { state: 'detached', timeout: 3000 });
+  assert.equal(await page.evaluate(() => location.hash), '#home');
+  assert.equal(await page.locator('#home.active').count(), 1);
+  await page.locator('#homeModeChip').click();
+  await page.waitForSelector('#homeModeSheet[open]', T);
+  await page.locator('#homeModeSheet .home-sheet__done').click();
+  await page.waitForSelector('#homeModeSheet[open]', { state: 'detached', timeout: 3000 });
+  await page.waitForFunction(() => !history.state || !history.state.localaiSheet, null, T); // the sheet's entry was popped
+  assert.equal(await page.evaluate(() => location.hash), '#home');
+  await page.context().close();
+});
+
 await check('a stopped core service shows in Needs you, and the capability strip is not on Home', async () => {
   const caps = () => ({ services: [{ name: 'ollama', label: 'Intelligence', state: 'DOWN', required: true, impact: 'Chat is unavailable.' }, ...['search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true }))], models: { defaultInstalled: true }, images: { available: true } });
   const page = await open(desk, '#home', { caps, all: () => [] });
@@ -159,6 +217,7 @@ await check('the mode chip opens a sheet with seven modes, and Image persists ac
   await page.locator('#homeModeSheet [data-home-mode="create"]').click();
   await page.waitForSelector('#homeModeSheet[open]', { state: 'detached', timeout: 1500 }).catch(() => {});
   if (await page.locator('#homeModeSheet[open]').count()) await page.locator('#homeModeSheet .home-sheet__done').click();
+  await page.waitForFunction(() => !history.state || !history.state.localaiSheet, null, T); // the sheet's history entry is popped
   assert.equal((await chip.innerText()).trim(), 'Image ▾');
   assert.equal(await page.evaluate(() => localStorage.getItem('localai.home.mode')), 'create');
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -375,6 +434,44 @@ await check('the mode options reach start(): model, engine/shape/style, speciali
   await page.context().close();
 });
 
+await check('Mission mode sends the chosen specialists to the server', async () => {
+  const page = await open(desk, '#home');
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  await page.route(u => u.pathname === '/api/agents/catalog', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [{ id: 'coder', name: 'Coder' }, { id: 'writer', name: 'Writer' }] }) }));
+  const bodies = [];
+  await page.route(u => u.pathname === '/api/agents/missions/start', r => { bodies.push(r.request().postDataJSON()); r.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ runId: 'run-m1' }) }); });
+  await page.locator('#homeModeChip').click(); await page.waitForSelector('#homeModeSheet[open]', T);
+  await page.locator('#homeModeSheet [data-home-mode="mission"]').click();
+  await page.locator('[data-home-agent][value="writer"]').check();
+  await page.locator('#homeModeSheet .home-sheet__done').click();
+  await page.locator('#commandInput').fill('Plan the launch'); await page.locator('#commandGo').click();
+  await page.waitForFunction(() => location.hash.startsWith('#run/'), null, T);
+  assert.equal(bodies.length, 1);
+  assert.deepEqual(bodies[0].agentIds, ['writer']);
+  assert.equal(bodies[0].async, true);
+  await page.context().close();
+});
+
+await check('Developer tools off: no Change Local AI mode, and Auto never routes to engineering', async () => {
+  const page = await open(desk, '#home', { storage: { 'localai.devTools': '0' }, route: { intent: 'engineering', confidence: 0.95 }, engineering: async () => ({ body: { run: { id: 'e1' } } }) });
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  await page.evaluate(() => { window.__starts = []; window.LocalAIChat = { start: async (t, o) => { window.__starts.push(t); o.pending.resolve('run-1'); } }; });
+  await page.locator('#homeModeChip').click(); await page.waitForSelector('#homeModeSheet[open]', T);
+  assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').evaluateAll(b => b.map(x => x.dataset.homeMode)), ['auto', 'ask', 'research', 'create', 'mission', 'automate']);
+  await page.locator('#homeModeSheet .home-sheet__done').click();
+  await page.locator('#commandInput').fill('Change the login page'); await page.locator('#commandGo').click();
+  await page.waitForFunction(() => window.__starts.length === 1, null, T);
+  assert.deepEqual(page.started, []);
+  await page.context().close();
+});
+
+await check('Developer tools off: a remembered Change Local AI mode falls back to Auto', async () => {
+  const page = await open(desk, '#home', { storage: { 'localai.devTools': '0', 'localai.home.mode': 'engineering' } });
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  assert.equal((await page.locator('#homeModeChip').innerText()).trim(), 'Auto ▾');
+  await page.context().close();
+});
+
 await check('the hidden mode buttons and the select the gate and first-run code use are still there', async () => {
   const page = await open(desk, '#home');
   const modes = await page.locator('.mode[data-mode]').evaluateAll(b => b.map(x => x.dataset.mode));
@@ -393,7 +490,7 @@ for (const [tag, vp] of [['390x844', phone], ['1280x860', desk]]) {
   await check(`axe: Home and the mode sheet pass color-contrast and target-size at ${tag}`, async () => {
     const page = await open(vp, '#home');
     await page.waitForSelector('#homeRecent2 .run-card', T);
-    await page.addScriptTag({ path: axePath });
+    await addAxe(page, axePath);
     const run = sel => page.evaluate(s => window.axe.run(s, { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(x => `${x.id}: ${x.nodes.map(n => n.html.slice(0, 120)).join(' | ')}`)), sel);
     assert.deepEqual(await run('#home'), []);
     await page.locator('#homeModeChip').click();

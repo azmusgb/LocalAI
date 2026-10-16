@@ -39,7 +39,7 @@ const crypto = require('crypto');
 const { Storage } = require('./storage');
 const { RunLedger, cleanId: cleanRunId } = require('./run-ledger');
 const improve = require('./improve');
-const { runCard } = require('./run-cards');
+const { runCard, workKind, WORK_CHIPS } = require('./run-cards');
 const { loadOllamaModelRuntime } = require('./model-runtime');
 const { createModelPulls } = require('./model-pulls');
 const imageEngines = require('./image-engines');
@@ -538,14 +538,6 @@ async function apiGlance(req, res, urlObj) {
 // "Ask Local AI" from Siri (GET ?q= or POST {text}): a rules-only router picks the answer, the model only
 // handles open questions, and every reply is plain text that is safe to read aloud. Siri speaks the body
 // whatever the status, so errors are sentences, never JSON.
-const voiceThreads = voice.createVoiceThreads({
-  // LOCALAI_TEST_NOW_FILE (tests only): a file holding the clock in ms, so tests can move time.
-  now: () => { const f = process.env.LOCALAI_TEST_NOW_FILE; if (f) { try { return Number(fs.readFileSync(f, 'utf8')) || Date.now(); } catch {} } return Date.now(); },
-  windowMs: 300000
-});
-const VOICE_BUDGET_MS = Number(process.env.LOCALAI_VOICE_BUDGET_MS) || 8000;
-const VOICE_HANDOFF = "Still working on that \u2014 I'll send it to your phone.";
-const VOICE_QUEUE_WAIT_MS = Number(process.env.LOCALAI_VOICE_QUEUE_WAIT_MS) || 6000;
 const VOICE_DOWN = "Local AI can't answer right now. Try again in a minute.";
 const voiceTimeZone = () => process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
@@ -569,51 +561,17 @@ async function apiGlanceAsk(req, res, urlObj) {
     if (req.method === 'GET') textIn = String(urlObj.searchParams.get('q') || '');
     else { const b = await readBody(req).catch(e => { if (e.statusCode === 413) throw e; return {}; }); textIn = typeof b?.text === 'string' ? b.text : ''; }
     textIn = textIn.trim().slice(0, 4000);
-    const reset = voice.stripReset(textIn);
-    const route = voice.classify(reset.text);
-    if (route.intent === 'empty') {
-      if (reset.fresh) { voiceThreads.take(textIn); return say(200, 'Okay. What is your question?'); }
-      return say(200, "I didn't catch that.");
+    const route = voice.classify(textIn);
+    if (route.intent === 'empty') return say(200, "I didn't catch that.");
+    if (route.intent === 'time') return say(200, voice.speakable(voiceFacts({ now: new Date(), timeZone: voiceTimeZone() })));
+    if (route.intent === 'needs') return say(200, voice.speakable(await voiceNeedsSentence()));
+    if (route.intent === 'health') {
+      const snapshot = await getCapabilitiesSnapshot();
+      return say(200, voice.speakable(glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION }).speech));
     }
-    const question = reset.text;
-    const { threadId } = voiceThreads.take(textIn);
-    // Every answer is a turn in the thread; only chat asks hand the earlier turns to the model.
-    const turn = async build => {
-      const answer = await build();
-      voiceThreads.record(threadId, question, answer);
-      return answer;
-    };
-    let runId = null;
-    const asked = voiceThreads.run(threadId, () => {
-      if (route.intent === 'time') return turn(async () => voice.speakable(voiceFacts({ now: new Date(), timeZone: voiceTimeZone() })));
-      if (route.intent === 'needs') return turn(async () => voice.speakable(await voiceNeedsSentence()));
-      if (route.intent === 'health') {
-        return turn(async () => {
-          const snapshot = await getCapabilitiesSnapshot();
-          return voice.speakable(glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION }).speech);
-        });
-      }
-      // weather, current, action and refuse fall back to the model until they have their own answers.
-      return turn(async () => {
-        const messages = [...voiceThreads.history(threadId), { role: 'user', content: question }];
-        const result = await chatOnce({ messages, brief: true, voice: true, threadId });
-        runId = result.runId;
-        return voice.speakable(result.message.content) || "I didn't catch that.";
-      });
-    }, { waitMs: VOICE_QUEUE_WAIT_MS });
-    // The budget covers the whole ask, queue wait included. Past it the run carries on and the answer is pushed.
-    const outcome = await voice.withBudget(asked, VOICE_BUDGET_MS);
-    if (outcome.done) return say(200, outcome.value);
-    // Each handoff has its own tag (a failed run's id, else a fresh one) so the repeat filter never drops one.
-    const handoff = (title, body, id) => {
-      id = id || runId;
-      notifier.notify({ kind: 'answer', title, body, url: id ? `#run/${id}` : '/', tag: id ? `answer:${id}` : `answer:voice:${require('node:crypto').randomBytes(6).toString('hex')}` });
-    };
-    outcome.later.then(
-      late => handoff('Local AI answered', String(late)),
-      err => handoff("Local AI couldn't answer", "Tap to see what went wrong.", err?.runId)
-    );
-    say(200, VOICE_HANDOFF);
+    // weather, current, action and refuse fall back to the model until they have their own answers.
+    const result = await chatOnce({ messages: [{ role: 'user', content: textIn }], brief: true, voice: true });
+    say(200, voice.speakable(result.message.content) || "I didn't catch that.");
   } catch (e) { say(e.statusCode === 413 ? 413 : 503, e.statusCode === 413 ? 'That was too long for me.' : VOICE_DOWN); }
 }
 
@@ -1553,6 +1511,7 @@ function unifiedRunItems(limit=120,filter=null){
     const by=new Map();
     for(const x of all){const k=x.threadId||x.id,e=by.get(k);if(!e)by.set(k,{run:x,turns:1});else{e.turns++;if(byCreate(x,e.run)<0)e.run=x}}
     all=[...by.values()].map(e=>({...e.run,turns:e.turns}));
+    if(filter.kind)all=all.filter(x=>workKind(x)===filter.kind); // Work's chip: the thread's row (its latest run) decides, as on screen
     if(filter.before)all=all.filter(x=>byCreate(x,filter.before)>0);
     return all.sort(byCreate).slice(0,Math.max(1,Math.min(500,Number(limit)||120)));
   }
@@ -1565,7 +1524,7 @@ function retryRequestForRunId(id){
   return null;
 }
 async function apiRuns(req,res,urlObj){
-  try{const id=String(urlObj.searchParams.get('id')||'');const pid=String(urlObj.searchParams.get('projectId')||''),tid=String(urlObj.searchParams.get('threadId')||''),threads=urlObj.searchParams.get('threads')==='1';const beforeId=String(urlObj.searchParams.get('before')||'');let before=null;if(beforeId){if(!cleanRunId(beforeId))return json(res,400,{error:'Invalid run id'});const ref=runLedger.get(beforeId)||legacyUnifiedRuns().find(x=>x.id===beforeId);if(!ref)return json(res,404,{error:'Run not found'});before={createdAt:ref.createdAt,id:ref.id}}let items=unifiedRunItems(urlObj.searchParams.get('limit')||120,{projectId:pid,threadId:tid,threads,before});const pending=approvalStore().filter(a=>a.status==='pending'),changes=changeStore();const cardOpts={approvalFor:r=>r.meta?.changeId&&pending.find(a=>a.meta?.changeId===r.meta.changeId)||null,changeFor:cid=>changes.find(c=>c.id===cid)||null};if(id){const item=items.find(x=>x.id===id)||runLedger.get(id);if(!item)return json(res,404,{error:'Run not found'});return json(res,200,{item:{...item,card:runCard(item,cardOpts)}})}const status=String(urlObj.searchParams.get('status')||''),type=String(urlObj.searchParams.get('type')||'');if(status)items=items.filter(x=>x.status===status);if(type)items=items.filter(x=>x.type===type);items=items.map(x=>({...x,card:runCard(x,cardOpts)}));json(res,200,{items,summary:{total:items.length,active:items.filter(x=>['queued','running','streaming','awaiting_approval'].includes(x.status)).length,failed:items.filter(x=>x.status==='failed').length,awaitingApproval:items.filter(x=>x.status==='awaiting_approval').length}})}catch(e){storageError(res,e,500)}
+  try{const id=String(urlObj.searchParams.get('id')||'');const pid=String(urlObj.searchParams.get('projectId')||''),tid=String(urlObj.searchParams.get('threadId')||''),threads=urlObj.searchParams.get('threads')==='1';const kind=String(urlObj.searchParams.get('kind')||'');if(kind&&kind!=='all'&&!WORK_CHIPS.includes(kind))return json(res,400,{error:'Unknown kind'});const beforeId=String(urlObj.searchParams.get('before')||'');let before=null;if(beforeId){if(!cleanRunId(beforeId))return json(res,400,{error:'Invalid run id'});const ref=runLedger.get(beforeId)||legacyUnifiedRuns().find(x=>x.id===beforeId);if(!ref)return json(res,404,{error:'Run not found'});before={createdAt:ref.createdAt,id:ref.id}}let items=unifiedRunItems(urlObj.searchParams.get('limit')||120,{projectId:pid,threadId:tid,threads,before,kind:threads&&kind!=='all'?kind:''});const pending=approvalStore().filter(a=>a.status==='pending'),changes=changeStore();const cardOpts={approvalFor:r=>r.meta?.changeId&&pending.find(a=>a.meta?.changeId===r.meta.changeId)||null,changeFor:cid=>changes.find(c=>c.id===cid)||null};if(id){const item=items.find(x=>x.id===id)||runLedger.get(id)||(id.startsWith('legacy-')?legacyUnifiedRuns().find(x=>x.id===id):null);if(!item)return json(res,404,{error:'Run not found'});return json(res,200,{item:{...item,card:runCard(item,cardOpts)}})}const status=String(urlObj.searchParams.get('status')||''),type=String(urlObj.searchParams.get('type')||'');if(status)items=items.filter(x=>x.status===status);if(type)items=items.filter(x=>x.type===type);items=items.map(x=>({...x,card:runCard(x,cardOpts)}));json(res,200,{items,summary:{total:items.length,active:items.filter(x=>['queued','running','streaming','awaiting_approval'].includes(x.status)).length,failed:items.filter(x=>x.status==='failed').length,awaitingApproval:items.filter(x=>x.status==='awaiting_approval').length}})}catch(e){storageError(res,e,500)}
 }
 async function apiRunCancel(req,res){
   try{const b=await readBody(req),id=String(b.id||''),run=runLedger.get(id);if(!run)return json(res,404,{error:'Run not found or is managed by a legacy executor'});if(!run.cancellable)return json(res,409,{error:'This run is not cancellable'});if(!['queued','running','streaming','awaiting_approval'].includes(run.status))return json(res,409,{error:`Run cannot be cancelled from status ${run.status}`});runLedger.cancel(id,'Cancelled by user');const controller=activeRunControllers.get(id);if(controller&&!controller.signal.aborted)controller.abort();recordActivity('run','Run cancelled',run.title,{runId:id,type:run.type});json(res,200,{item:runLedger.get(id)})}catch(e){storageError(res,e,400)}
