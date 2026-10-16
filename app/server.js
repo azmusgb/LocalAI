@@ -3168,6 +3168,7 @@ const server = http.createServer(async (req, res) => {
     if (crossSiteRequest(req)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 403, { error: 'Cross-site request blocked' }); }
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 } });
     if (req.method === 'GET' && p === '/api/releases') return await apiReleases(req, res);
+    if (req.method === 'GET' && p === '/api/access') return await apiAccess(req, res);
     if (req.method === 'GET' && p === '/api/glance') return await apiGlance(req, res, urlObj);
     if ((req.method === 'GET' || req.method === 'POST') && p === '/api/voice/home') return await apiVoiceHome(req, res);
     if ((req.method === 'GET' || req.method === 'POST') && p === '/api/glance/ask') return await apiGlanceAsk(req, res, urlObj);
@@ -3362,6 +3363,15 @@ function recordReleaseHistory() {
   storage.writeSetting(`release:history:${entry.deployedAt}`, entry);
   storage.writeSetting('release:last', { commit: release.commit });
   storage.pruneSettings('release:history:', 50);
+}
+// Addresses a phone can be pointed at (Health › Secure connection). LOCALAI_REMOTE_NAME is the host's Tailscale name;
+// the Caddy placeholder (*.invalid) and anything that isn't a plain host name count as not set.
+function remoteAccessName(raw = process.env.LOCALAI_REMOTE_NAME) {
+  const name = String(raw || '').trim().toLowerCase().replace(/\.$/, '');
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(name) && !name.endsWith('.invalid') ? name : '';
+}
+async function apiAccess(req, res) {
+  json(res, 200, { remoteName: remoteAccessName() });
 }
 async function apiReleases(req, res) {
   json(res, 200, {

@@ -39,6 +39,8 @@ services:
       ENGINEERING_MODEL_TIMEOUT_MS: "600000"
       MAC_AI_HOME_URL: ${MAC_AI_HOME_URL:-}
       MAC_DSH_URL: ${MAC_DSH_URL:-}
+      # Shown as a phone QR code in Health › Secure connection when set.
+      LOCALAI_REMOTE_NAME: ${LOCALAI_REMOTE_NAME:-}
       POWERSHELL_UI_TOKEN: ${POWERSHELL_UI_TOKEN:?set in stack.env}
       POWERSHELL_BRIDGE_TOKEN: ${POWERSHELL_BRIDGE_TOKEN:?set in stack.env}
     volumes:
@@ -58,6 +60,8 @@ services:
     environment:
       LOCALAI_NAME: ${LOCALAI_NAME:-localai.home.arpa}
       LOCALAI_HOST_IP: ${LOCALAI_HOST_IP:?set in stack.env}
+      # Tailscale name for access away from home; never empty (see deploy/caddy/Caddyfile).
+      LOCALAI_REMOTE_NAME: ${LOCALAI_REMOTE_NAME:-localai.remote.invalid}
     volumes:
       - caddy-data:/data
       - ${LOCALAI_ROOT:-C:/LocalAI}/repo/deploy/caddy:/etc/caddy:ro

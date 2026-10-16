@@ -219,6 +219,14 @@ docker pull caddy:2.10-alpine                       # once, from a normal (not S
   `https://<host IP>/`. A phone that opens the plain-HTTP address gets a **Use the secure address on this device**
   item in Home's Needs you until it switches, or until **Don't remind me on Home** is pressed in the setup.
 - `localai.home.arpa` needs a DNS entry pointing at the host, in the router or a device's hosts file.
+- Away from home (Tailscale): install Tailscale on the host and the phone and sign both in to the same account,
+  then re-run `Install-LocalAI-HTTPS.ps1` (elevated). It reads the host's Tailscale name (`-RemoteName` to set it,
+  `-NoRemote` to leave it out), serves HTTPS for it with the same certificate, and adds the firewall rule
+  `Local AI HTTPS (Tailscale)`: ports 80/443 from `100.64.0.0/10` only. Nothing is opened to the internet. For the
+  phone QR code in Health, put `LOCALAI_REMOTE_NAME=<name>` in `C:\LocalAI\stack\stack.env` and recreate the
+  appliance (`docker compose --env-file C:\LocalAI\stack\stack.env -f deploy\stack\compose.yml up -d appliance`).
+  Use the name, not the `100.x` address: browsers send no server name for an IP, so Caddy would answer with the LAN
+  IP's certificate.
 - The firewall rule `Local AI HTTPS` opens 80 and 443 on private networks only.
 - After editing `deploy\caddy\Caddyfile`: `docker exec local-ai-https caddy reload --config /etc/caddy/Caddyfile`,
   or re-run the installer.
