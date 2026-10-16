@@ -218,7 +218,8 @@ await check('chat sends a valid threadId where crypto.randomUUID does not exist 
   pg.on('pageerror', e => errs.push(e.message));
   await pg.addInitScript(() => { delete crypto.randomUUID; });
   let body = null;
-  await pg.route('**/api/chat**', route => {
+  // A glob like '**/api/chat**' no longer matches /api/chat/stream in current Playwright; match the path.
+  await pg.route(u => u.pathname.startsWith('/api/chat'), route => {
     body = JSON.parse(route.request().postData() || '{}');
     route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: meta\ndata: {"model":"m","sources":[],"runId":"r1"}\n\nevent: done\ndata: {"elapsedMs":1,"model":"m","sources":[],"runId":"r1"}\n\n' });
   });
@@ -237,7 +238,8 @@ await check('chat threadId survives a reload and changes after New conversation'
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1000, height: 800 } });
   const pg = await ctx.newPage({ serviceWorkers: 'block' });
   const ids = [];
-  await pg.route('**/api/chat**', route => {
+  // A glob like '**/api/chat**' no longer matches /api/chat/stream in current Playwright; match the path.
+  await pg.route(u => u.pathname.startsWith('/api/chat'), route => {
     ids.push(JSON.parse(route.request().postData() || '{}').threadId);
     route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: meta\ndata: {"model":"m","sources":[],"runId":"r1"}\n\nevent: done\ndata: {"elapsedMs":1,"model":"m","sources":[],"runId":"r1"}\n\n' });
   });

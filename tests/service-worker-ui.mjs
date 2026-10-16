@@ -1,5 +1,7 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
+// Requests a service worker makes are reported only with this set (read at browser launch).
+process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS = '1';
 
 // Smoke test for app/public/sw.js, the one script no other suite runs (they all block service workers): it installs
 // with every SHELL file, activates, takes the page over, and serves / from the network (so a deploy shows on the next load).
