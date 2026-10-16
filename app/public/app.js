@@ -86,7 +86,9 @@ function showView(id){
   window.LocalAIRouter?.shown(id);
 
 }
-qsa('[data-view]').forEach(el=>el.addEventListener('click',()=>showView(el.dataset.view)));
+// A person's navigation goes through the router (push, hash, Back); showView is what the router and code call.
+function goTo(id){const R=window.LocalAIRouter;if(R&&R.open)R.open(id);else showView(id)}
+qsa('[data-view]').forEach(el=>el.addEventListener('click',()=>goTo(el.dataset.view)));
 
 function renderMessages(follow=true){
   const box=$('messages');
@@ -95,7 +97,7 @@ function renderMessages(follow=true){
     const action=m.action?.view?`<div class="actions" style="margin-top:9px"><button class="btn" data-msg-action="${i}">${esc(m.action.label||'Open')}</button></div>`:'';
     return `<div class="msg ${m.role} ${m.streaming?'streaming':''}" data-msg="${i}">${esc(m.content||'')}${action}</div>`;
   }).join('');
-  qsa('[data-msg-action]').forEach(b=>b.onclick=()=>{const m=state.messages[Number(b.dataset.msgAction)];if(!m?.action?.view)return;showView(m.action.view);if(m.action.changeId)loadChanges?.(m.action.changeId);if(m.action.runId)loadEngineeringRuns?.(m.action.runId)});
+  qsa('[data-msg-action]').forEach(b=>b.onclick=()=>{const m=state.messages[Number(b.dataset.msgAction)];if(!m?.action?.view)return;goTo(m.action.view);if(m.action.changeId)loadChanges?.(m.action.changeId);if(m.action.runId)loadEngineeringRuns?.(m.action.runId)});
   if(follow)box.scrollTop=box.scrollHeight;
 }
 function chatNearBottom(box=$('messages')){return !box||box.scrollHeight-box.scrollTop-box.clientHeight<80;}
@@ -125,8 +127,8 @@ async function newChat(){
   abortStream('');try{localStorage.removeItem('localAiThreadId')}catch{}setThreadId(newThreadId());state.messages=[];localStorage.removeItem('localAiMessages');renderMessages();$('chatMeta').textContent='';setPhase('idle');toast('New conversation');
 }
 $('newChatBtn').addEventListener('click',newChat);
-function openAsk(web=false){$('webSearch').checked=web;showView('ask');setTimeout(()=>$('chatInput').focus(),20);}
-function openCreate(){showView('create');setTimeout(()=>$('imagePrompt').focus(),20);}
+function openAsk(web=false){$('webSearch').checked=web;goTo('ask');setTimeout(()=>$('chatInput').focus(),20);}
+function openCreate(){goTo('create');setTimeout(()=>$('imagePrompt').focus(),20);}
 
 function renderSources(meta,sources=[]){
   meta.replaceChildren();
@@ -252,7 +254,7 @@ async function pollEngineeringIntent(runId,msg=null){
   }
 }
 async function submitEngineeringIntent(request,{assistantIndex=null,navigate=false}={}){
-  if(navigate)showView('changes');
+  if(navigate)goTo('changes');
   if($('engineeringRequest'))$('engineeringRequest').value=request;if($('engineeringTarget'))$('engineeringTarget').value='self';if($('engineeringRoot'))$('engineeringRoot').disabled=true;
   if($('engineeringState'))$('engineeringState').textContent='running';if($('engineeringStatus'))$('engineeringStatus').textContent='Intent routed to Engineering. Starting bounded plan → stage → validate → repair…';
   const msg=assistantIndex!==null?state.messages[assistantIndex]||null:null;setPhase('sending','Starting Engineering Agent…');if(msg){msg.content='Engineering request accepted. Starting the real Engineering Agent…';renderMessages()}
@@ -386,13 +388,13 @@ function localRoute(text,mode='auto'){
 // Home's composer lives in home.js; these hand it the old pages it still falls back to until Chat, Images and Missions start runs themselves.
 function legacyOpen(intent,text){
   if(intent==='create'){openCreate();$('imagePrompt').value=text;setPhase('idle');}
-  else if(intent==='mission'){showView('agents');if($('agentGoal'))$('agentGoal').value=text;}
-  else if(intent==='automate'){showView('automationStudio');if($('autoPrompt'))$('autoPrompt').value=text;setPhase('done','Automation workspace');}
+  else if(intent==='mission'){goTo('agents');if($('agentGoal'))$('agentGoal').value=text;}
+  else if(intent==='automate'){goTo('automationStudio');if($('autoPrompt'))$('autoPrompt').value=text;setPhase('done','Automation workspace');}
   else{openAsk(intent==='research');$('chatInput').value=text;setTimeout(sendChat,20);}
 }
 window.LocalAILegacy={resolveIntentRequest,engineeringRequest:engineeringRequestWithContext,open:legacyOpen};
 function runCommand(){window.LocalAIHome.send($('commandInput').value)}
-$('commandInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();runCommand();}});document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'&&!$('cmdk')){e.preventDefault();showView('home');setTimeout(()=>$('commandInput').focus(),20);}});
+$('commandInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();runCommand();}});document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'&&!$('cmdk')){e.preventDefault();goTo('home');setTimeout(()=>$('commandInput').focus(),20);}});
 
 // ---- Images: engines (Fast / Quality / Best), shape, prompt help, upscale ----
 const imageUi={threadId:null,editThread:null,engine:null,aspect:'square',style:'none',count:1,lastBody:null,timer:null,edit:null,last:null};
@@ -658,13 +660,13 @@ window.addEventListener('error',e=>{if(opaqueScriptError(e))return;reportQuality
 window.addEventListener('unhandledrejection',e=>reportQualityEvent({type:'rejection',message:String(e.reason?.message||e.reason||'Unhandled promise rejection'),source:location.pathname,stack:e.reason?.stack||'',url:location.href}));
 
 
-async function loadIssues(){if(featureLevel()<15)return;return LocalAIUI.loadInto($('issueList'),()=>evoApi('/api/issues'),{what:'issues',empty:'',render:(c,j)=>{evo.issues=j.items||[];$('issueOpen').textContent=`${j.open||0} open`;$('issueList').innerHTML=evo.issues.length?evo.issues.map(x=>`<div class="item-card"><div class="statusline"><strong style="flex:1">${esc(x.name)}</strong><span class="statuschip">${esc(human(x.severity))} · ${esc(human(x.status))}</span></div><small>${esc(x.kind)} · seen ${ago(x.lastSeenAt||x.updatedAt)} · ${x.occurrences||1} occurrence(s)</small><div class="muted" style="margin-top:6px;white-space:pre-wrap">${esc(x.detail||'')}</div><div class="actions" style="margin-top:8px">${x.status==='open'?`<button class="btn primary" data-issue-fix="${esc(x.id)}">Prepare fix</button><button class="btn" data-issue-resolve="${esc(x.id)}">Resolve</button><button class="btn danger" data-issue-ignore="${esc(x.id)}">Ignore</button>`:''}${x.changeId?`<button class="btn" data-issue-change="${esc(x.changeId)}">Open change</button>`:''}</div></div>`).join(''):'<div class="empty">No issues detected.</div>';qsa('[data-issue-fix]').forEach(b=>b.onclick=()=>prepareIssueFix(b.dataset.issueFix));qsa('[data-issue-resolve]').forEach(b=>b.onclick=()=>updateIssue(b.dataset.issueResolve,'resolved'));qsa('[data-issue-ignore]').forEach(b=>b.onclick=()=>updateIssue(b.dataset.issueIgnore,'ignored'));qsa('[data-issue-change]').forEach(b=>b.onclick=async()=>{showView('changes');await loadChanges(b.dataset.issueChange)});return true}})}
+async function loadIssues(){if(featureLevel()<15)return;return LocalAIUI.loadInto($('issueList'),()=>evoApi('/api/issues'),{what:'issues',empty:'',render:(c,j)=>{evo.issues=j.items||[];$('issueOpen').textContent=`${j.open||0} open`;$('issueList').innerHTML=evo.issues.length?evo.issues.map(x=>`<div class="item-card"><div class="statusline"><strong style="flex:1">${esc(x.name)}</strong><span class="statuschip">${esc(human(x.severity))} · ${esc(human(x.status))}</span></div><small>${esc(x.kind)} · seen ${ago(x.lastSeenAt||x.updatedAt)} · ${x.occurrences||1} occurrence(s)</small><div class="muted" style="margin-top:6px;white-space:pre-wrap">${esc(x.detail||'')}</div><div class="actions" style="margin-top:8px">${x.status==='open'?`<button class="btn primary" data-issue-fix="${esc(x.id)}">Prepare fix</button><button class="btn" data-issue-resolve="${esc(x.id)}">Resolve</button><button class="btn danger" data-issue-ignore="${esc(x.id)}">Ignore</button>`:''}${x.changeId?`<button class="btn" data-issue-change="${esc(x.changeId)}">Open change</button>`:''}</div></div>`).join(''):'<div class="empty">No issues detected.</div>';qsa('[data-issue-fix]').forEach(b=>b.onclick=()=>prepareIssueFix(b.dataset.issueFix));qsa('[data-issue-resolve]').forEach(b=>b.onclick=()=>updateIssue(b.dataset.issueResolve,'resolved'));qsa('[data-issue-ignore]').forEach(b=>b.onclick=()=>updateIssue(b.dataset.issueIgnore,'ignored'));qsa('[data-issue-change]').forEach(b=>b.onclick=async()=>{goTo('changes');await loadChanges(b.dataset.issueChange)});return true}})}
 async function scanIssues(){const b=$('issueScanBtn');if(b)b.disabled=true;try{await evoPost('/api/issues/scan',{});await Promise.all([loadIssues(),loadQuality(),loadInbox()]);toast('Issue scan complete')}catch(e){toast(e.message)}finally{if(b)b.disabled=false}}
 async function updateIssue(id,status){await evoPost('/api/issues/update',{id,status});await loadIssues();toast(`Issue ${status}`)}
-async function prepareIssueFix(id){try{const j=await evoPost('/api/issues/prepare-change',{id});await Promise.all([loadIssues(),loadChanges(j.item.id)]);showView('changes');toast(j.item.files?.length?'Fix plan prepared':'Fix needs more context')}catch(e){toast(e.message)}}
+async function prepareIssueFix(id){try{const j=await evoPost('/api/issues/prepare-change',{id});await Promise.all([loadIssues(),loadChanges(j.item.id)]);goTo('changes');toast(j.item.files?.length?'Fix plan prepared':'Fix needs more context')}catch(e){toast(e.message)}}
 
 
-function renderEngineeringRun(run,target){const own=!target;target=target||$('engineeringExecution');if(!run){target.innerHTML='<div class="empty">No run selected.</div>';return}if(own)$('engineeringState').textContent=human(run.status);target.innerHTML=(run.steps||[]).map(x=>`<div class="item-card"><div class="statusline"><strong style="flex:1">${esc(x.name)}</strong><span class="statuschip">${esc(human(x.state))}</span></div>${x.detail?`<div class="meta" style="margin-top:6px;white-space:pre-wrap">${esc(x.detail)}</div>`:''}</div>`).join('')||'<div class="empty">No steps recorded.</div>';if(run.finalChangeId&&own)target.innerHTML+=`<div class="actions" style="margin-top:10px"><button class="btn primary" data-eng-change="${esc(run.finalChangeId)}">Review validated change</button></div>`;[...target.querySelectorAll('[data-eng-change]')].forEach(b=>b.onclick=async()=>{showView('changes');await loadChanges(b.dataset.engChange)})}
+function renderEngineeringRun(run,target){const own=!target;target=target||$('engineeringExecution');if(!run){target.innerHTML='<div class="empty">No run selected.</div>';return}if(own)$('engineeringState').textContent=human(run.status);target.innerHTML=(run.steps||[]).map(x=>`<div class="item-card"><div class="statusline"><strong style="flex:1">${esc(x.name)}</strong><span class="statuschip">${esc(human(x.state))}</span></div>${x.detail?`<div class="meta" style="margin-top:6px;white-space:pre-wrap">${esc(x.detail)}</div>`:''}</div>`).join('')||'<div class="empty">No steps recorded.</div>';if(run.finalChangeId&&own)target.innerHTML+=`<div class="actions" style="margin-top:10px"><button class="btn primary" data-eng-change="${esc(run.finalChangeId)}">Review validated change</button></div>`;[...target.querySelectorAll('[data-eng-change]')].forEach(b=>b.onclick=async()=>{goTo('changes');await loadChanges(b.dataset.engChange)})}
 async function loadEngineeringRuns(selectId=''){if(featureLevel()<16)return;return LocalAIUI.loadInto($('engineeringRuns'),()=>evoApi('/api/engineering/runs'),{what:'engineering runs',empty:'',render:(c,j)=>{evo.engineeringRuns=j.items||[];$('engineeringRuns').innerHTML=evo.engineeringRuns.length?evo.engineeringRuns.map(r=>`<button class="item-card" data-eng-run="${esc(r.id)}"><div class="statusline"><strong style="flex:1">${esc(r.request)}</strong><span class="statuschip">${esc(human(r.status))}</span></div><small>${esc(r.target)} · attempt ${r.attempt||0}/${r.maxAttempts||0} · ${ago(r.updatedAt||r.createdAt)}</small></button>`).join(''):'<div class="empty">No engineering runs yet.</div>';qsa('[data-eng-run]').forEach(b=>b.onclick=()=>{evo.selectedEngineeringRun=b.dataset.engRun;renderEngineeringRun(evo.engineeringRuns.find(x=>x.id===b.dataset.engRun))});const id=selectId||evo.selectedEngineeringRun;if(id)renderEngineeringRun(evo.engineeringRuns.find(x=>x.id===id));else if(evo.engineeringRuns[0])renderEngineeringRun(evo.engineeringRuns[0]);return true}})}
 async function runEngineeringAgent(){const request=$('engineeringRequest').value.trim();if(!request)return;if(Number($('engineeringAttempts').value)===0)return planChange();const btn=$('engineeringRunBtn');btn.disabled=true;$('engineeringState').textContent='running';$('engineeringStatus').textContent='Planning, staging, validating, and repairing within the configured bound…';try{const j=await evoPost('/api/engineering/run',{request,target:$('engineeringTarget').value,root:$('engineeringRoot').value.trim(),maxAttempts:Number($('engineeringAttempts').value)});$('engineeringStatus').textContent=j.run.status==='awaiting_approval'?`Validated after ${j.run.attempt} attempt(s). Human approval required.`:j.run.error||j.run.status;await Promise.all([loadEngineeringRuns(j.run.id),loadChanges(j.run.finalChangeId||''),loadApprovals(),loadInbox()]);toast(j.run.status==='awaiting_approval'?'Engineering patch ready for approval':'Engineering run needs attention')}catch(e){$('engineeringStatus').textContent=`Error: ${e.message}`;toast(e.message)}finally{btn.disabled=false}}
 
@@ -708,7 +710,7 @@ function commandPalette(){
   const el=$('cmdk');if(!el)return;
   // Labels and old names (aka) come from view-registry.js so renamed pages stay findable.
   const actions=window.LocalAIViews.VIEWS.map(v=>[v.label,v.id,[v.label,...(v.aka||[])].join(' ').toLowerCase()]);
-  const render=()=>{const q=$('cmdkInput').value.toLowerCase();$('cmdkList').innerHTML=actions.filter(([label,id,terms])=>$(id)&&terms.includes(q)).map(([label,id])=>`<button class="cmdk-item" data-cmd-view="${id}">${label}</button>`).join('');qsa('[data-cmd-view]').forEach(b=>b.onclick=()=>{el.classList.remove('show');showView(b.dataset.cmdView)})};
+  const render=()=>{const q=$('cmdkInput').value.toLowerCase();$('cmdkList').innerHTML=actions.filter(([label,id,terms])=>$(id)&&terms.includes(q)).map(([label,id])=>`<button class="cmdk-item" data-cmd-view="${id}">${label}</button>`).join('');qsa('[data-cmd-view]').forEach(b=>b.onclick=()=>{el.classList.remove('show');goTo(b.dataset.cmdView)})};
   document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();el.classList.add('show');$('cmdkInput').value='';render();$('cmdkInput').focus()}if(e.key==='Escape')el.classList.remove('show')});$('cmdkInput').addEventListener('input',render);el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('show')});render();
 }
 async function bindEvo(){
@@ -730,7 +732,7 @@ $('statusRetryBtn')?.addEventListener('click',()=>refreshStatus(true));
 window.LocalAIOpen=function(url){
   try{const target=new URL(url,location.origin).searchParams.get('open')||'';
     if(target.startsWith('run:'))window.LocalAIRuns?.open(target.slice(4));
-    else if(window.LocalAIViews?.view(target))window.showView(target);
+    else if(window.LocalAIViews?.view(target))goTo(target);
   }catch(e){console.debug('Could not open',url,e)}
 };
 (()=>{

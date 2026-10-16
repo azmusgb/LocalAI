@@ -163,6 +163,33 @@ await check('mobile sheet lists pages, not tabs', async () => {
   await mobile.locator('#uxMobileSheetClose').click();
 });
 
+await check('Back closes the phone section sheet without leaving the page', async () => {
+  await mobile.evaluate(() => window.showView('inbox'));
+  await mobile.waitForSelector('#inbox.active');
+  const before = await mobile.evaluate(() => ({ h: location.hash }));
+  await mobile.locator('#uxContextMenu').click();
+  await mobile.locator('#uxMobileSheet').waitFor({ state: 'visible' });
+  assert.ok(await mobile.evaluate(() => !!history.state?.localaiSheet), 'the open sheet has a history entry');
+  await mobile.evaluate(() => history.back());
+  await mobile.waitForFunction(() => document.getElementById('uxMobileSheet').dataset.open === 'false');
+  assert.equal(await mobile.evaluate(() => location.hash), before.h);
+  assert.equal(await mobile.locator('#inbox.active').count(), 1);
+  // Closing with the sheet's own button pops the entry; a link inside the sheet replaces it (one Back returns to where you were).
+  await mobile.locator('#uxContextMenu').click();
+  await mobile.locator('#uxMobileSheet').waitFor({ state: 'visible' });
+  await mobile.locator('#uxMobileSheetClose').click();
+  await mobile.waitForFunction(() => document.getElementById('uxMobileSheet').dataset.open === 'false');
+  await mobile.waitForFunction(() => !history.state || !history.state.localaiSheet);
+  assert.equal(await mobile.locator('#inbox.active').count(), 1);
+  await mobile.locator('#uxContextMenu').click();
+  await mobile.locator('#uxMobileSheet').waitFor({ state: 'visible' });
+  await mobile.locator('#uxMobileSheetItems .ux-mobile-link', { hasText: 'Home' }).click();
+  await mobile.waitForSelector('#home.active');
+  assert.equal(await mobile.evaluate(() => location.hash), '#home');
+  await mobile.evaluate(() => history.back());
+  await mobile.waitForSelector('#inbox.active');
+});
+
 await check('mobile tab pages have no horizontal overflow', async () => {
   for (const view of ['issues', 'inbox', 'projects', 'changes']) {
     await mobile.evaluate(v => window.showView(v), view);

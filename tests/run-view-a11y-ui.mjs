@@ -129,6 +129,28 @@ await check('if the opener was re-rendered away, focus goes to the same run row'
   await page.context().close();
 });
 
+await check('Back closes the details sheet and keeps the run view open', async () => {
+  const page = await open(desk, '#work', async () => runs());
+  await page.waitForSelector('#work .run-card', T);
+  await openRow(page, 'run-a');
+  const hash = await page.evaluate(() => location.hash);
+  await page.click('#runDetailsBtn');
+  await page.waitForFunction(() => document.getElementById('runDetailsSheet').open, null, T);
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => !document.getElementById('runDetailsSheet').open, null, T);
+  assert.equal(await page.evaluate(() => location.hash), hash);
+  assert.ok(await page.evaluate(() => document.getElementById('runDrawerBackdrop').classList.contains('show')));
+  await page.click('#runDetailsBtn'); // and closing it with Escape pops its entry: the next Back closes the run view
+  await page.waitForFunction(() => document.getElementById('runDetailsSheet').open, null, T);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.getElementById('runDetailsSheet').open, null, T);
+  await page.waitForTimeout(200);
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => !document.getElementById('runDrawerBackdrop').classList.contains('show'), null, T);
+  assert.equal(await page.locator('#work.active').count(), 1);
+  await page.context().close();
+});
+
 await check('with the details sheet open, Tab stays inside the sheet; Escape closes the sheet first', async () => {
   const page = await open(desk, '#work', async () => runs());
   await page.waitForSelector('#work .run-card', T);

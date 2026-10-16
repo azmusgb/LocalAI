@@ -101,6 +101,23 @@
     if(rowOpen){const btn=document.createElement('button');btn.type='button';btn.className='work-open';btn.textContent=title.textContent;title.textContent='';title.appendChild(btn);btn.addEventListener('click',e=>{e.stopPropagation();open()})}
     return row;
   }
+  // A sheet that Back should close. sheetHistory(el, onClose) -> release(), where `el` is the sheet element.
+  // Call it as the sheet opens: it pushes a history entry, so Back (popstate) calls onClose(el) and the person stays on the page.
+  // Call release() when the sheet closes any other way: it pops that entry again (no page change, hashchange never fires), and does
+  // nothing if the entry is no longer on top (the router replaces it when a link inside the sheet navigates). release() is idempotent,
+  // so onClose may call it, or the sheet's own close handler may.
+  // afterSheetPop(fn) runs fn once a release()'s history.back() has landed (at once if none is pending), so a second history move never overlaps it.
+  let sheetSeq=0,popPending=false,popWaiters=[];
+  const popSettled=()=>{if(!popPending)return;popPending=false;popWaiters.splice(0).forEach(fn=>fn())};
+  window.addEventListener('popstate',()=>setTimeout(popSettled,0));
+  const afterSheetPop=fn=>{if(popPending)popWaiters.push(fn);else fn()};
+  function sheetHistory(el,onClose){
+    const id='sheet'+(++sheetSeq),here=()=>history.state&&history.state.localaiSheet===id;let live=true;
+    try{history.pushState({...(history.state&&typeof history.state==='object'?history.state:{}),localaiSheet:id},'',location.href)}catch{}
+    const onPop=()=>{if(!live||here())return;live=false;window.removeEventListener('popstate',onPop);try{if(typeof onClose==='function')onClose(el)}catch(e){console.error(e)}};
+    window.addEventListener('popstate',onPop);
+    return function release(){if(!live)return;live=false;window.removeEventListener('popstate',onPop);if(here()){popPending=true;setTimeout(popSettled,500);history.back()}};
+  }
   // Each run kind can own the body of its run view: mount(run, el) fills el. Kinds with none show the Output block.
   const runBodies=new Map();
   // opts.update(run, slot) -> boolean: the same run re-rendered keeps its slot (no release, no re-mount) and is updated in place; false asks for a re-mount.
@@ -108,5 +125,5 @@
   function registerRunBody(kind,mount,opts){if(typeof mount==='function'){runBodies.set(String(kind),mount);runBodyOpts.set(String(kind),opts&&typeof opts.update==='function'?opts:null)}}
   const runBodyFor=kind=>runBodies.get(String(kind))||null;
   const runBodyUpdateFor=kind=>runBodyOpts.get(String(kind))?.update||null;
-  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{fetchJson,loadInto,ask,runCard,registerRunBody,runBodyFor,runBodyUpdateFor});
+  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{fetchJson,loadInto,ask,runCard,sheetHistory,afterSheetPop,registerRunBody,runBodyFor,runBodyUpdateFor});
 })();

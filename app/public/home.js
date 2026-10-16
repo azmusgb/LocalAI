@@ -54,12 +54,13 @@ async function paintOptions(){
   }
  }catch(e){if(mode===m)box.innerHTML=`<p class="home-sheet__note">Couldn't load the options (${esc(e.message)}). The usual choices are used.</p>`}
 }
+let release=null; // Back closes the sheet (LocalAIUI.sheetHistory)
 function sheet(){
  let d=$('homeModeSheet');if(d)return d;
  d=document.createElement('dialog');d.id='homeModeSheet';d.className='ask-sheet home-sheet';d.setAttribute('aria-labelledby','homeModeTitle');
  d.innerHTML='<form method="dialog" class="ask-sheet__form"><h2 class="ask-sheet__title" id="homeModeTitle">What kind of work?</h2><div class="home-modes" role="radiogroup" aria-labelledby="homeModeTitle"></div><div id="homeModeOptions" class="home-sheet__options" hidden></div><div class="ask-sheet__actions"><button type="submit" class="btn-primary home-sheet__done">Done</button></div></form>';
  d.addEventListener('click',e=>{if(e.target===d)d.close()});
- d.addEventListener('close',()=>{const c=$('homeModeChip');if(c&&c.isConnected)c.focus()});
+ d.addEventListener('close',()=>{const r=release;release=null;r?.();const c=$('homeModeChip');if(c&&c.isConnected)c.focus()});
  d.querySelector('.home-modes').addEventListener('click',e=>{
   const b=e.target.closest('[data-home-mode]');if(!b||b.disabled)return;e.preventDefault();
   setMode(b.dataset.homeMode);paintModes();paintOptions();
@@ -73,7 +74,7 @@ function paintModes(){
   const gate=document.querySelector(`.mode[data-mode="${id}"]`),off=!!gate?.disabled,why=off?String(gate.title||'').replace(/^Unavailable:\s*/,''):'';
   return `<button type="button" role="radio" class="home-mode" data-home-mode="${id}" aria-checked="${id===mode}"${off?' disabled':''}><b>${esc(label)}</b><span>${esc(off&&why?'Not available: '+why:hint)}</span></button>`}).join('');
 }
-function openSheet(){const d=sheet();paintModes();paintOptions();if(!d.open)d.showModal()}
+function openSheet(){const d=sheet();paintModes();paintOptions();if(!d.open){d.showModal();release=root.LocalAIUI.sheetHistory(d,()=>d.close())}}
 
 // ---- Needs you and Recent ----
 // The runs module opens the run on top of Home, so Back returns here.
@@ -92,9 +93,9 @@ function infoRow(title,sub,label,tone,go){
  row.addEventListener('click',go);
  return row;
 }
-const attentionRow=a=>infoRow(a.title,a.detail,'Fix','bad',()=>root.showView?.(a.view||'status'));
+const attentionRow=a=>infoRow(a.title,a.detail,'Fix','bad',()=>root.LocalAIRouter.open(a.view||'status'));
 // A pending approval that is not itself a run: open its run when one exists, else Improve's approvals.
-const approvalRow=(a,run)=>infoRow(a.title||'Approval needed',a.detail||'Waiting for your decision','Review','attention',()=>run?openRun(run):root.showView?.('approvals'));
+const approvalRow=(a,run)=>infoRow(a.title||'Approval needed',a.detail||'Waiting for your decision','Review','attention',()=>run?openRun(run):root.LocalAIRouter.open('approvals'));
 let needs=[],approvals=[];
 function paintNeeds(){
  const box=$('homeNeedsList'),sec=$('homeNeedsYou');if(!box||!sec)return;

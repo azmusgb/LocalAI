@@ -1,6 +1,7 @@
 // Hash router: #<page>[?query] opens a page, #run/<id> opens a run (handler registered with onRun).
 // The router drives window.showView; showView calls from other code update the hash with replace semantics
-// (replaceState fires no hashchange, so the two cannot loop and Back only follows go() navigation).
+// (replaceState fires no hashchange, so the two cannot loop and Back only follows go() / open() navigation).
+// Anything the person does (a link, a button, a row) navigates with open(id) so Back returns; showView is for code.
 (function(root){'use strict';
 const INTENTS={ask:{mode:'ask'},create:{mode:'create'},agents:{kind:'missions'}};
 const REG=()=>root.LocalAIViews,runHandlers=[];
@@ -19,7 +20,7 @@ function apply(){
  if(cur.runId){notifyRun(cur.runId);return}
  notifyRun(null);
  const V=REG();if(!V||typeof root.showView!=='function')return;
- if(!V.view(cur.page)){put('#home');cur.page='home'}
+ if(!V.view(cur.page)){const d=V.DOMAINS.find(x=>x.id===cur.page),t=d?d.defaultView:'home';put('#'+t);cur.page=t} // a domain id (#improve, #system) opens its first page
  // A hidden page (Runs, Missions…) that showView put in history keeps its own page when Back returns to it; a typed #runs still means Work.
  if(history.state?.localaiPage===cur.page&&V.view(cur.page).domain==='hidden'&&document.getElementById(cur.page)){applying=true;try{root.showView(cur.page)}finally{applying=false}return}
  const target=V.resolve(cur.page),intent=INTENTS[cur.page];
@@ -29,9 +30,20 @@ function apply(){
  }
  applying=true;try{root.showView(target)}finally{applying=false}
 }
+// A sheet (LocalAIUI.sheetHistory) has an entry on top of the page's: a link tapped inside it takes that entry over instead of stacking on it.
+const sheetOnTop=()=>!!(history.state&&history.state.localaiSheet);
 function go(path,{replace=false}={}){
  const h=String(path).startsWith('#')?String(path):'#'+path;
- if(replace){put(h);apply()}else if(h===location.hash)apply();else location.hash=h; // hashchange then applies it
+ if(replace||sheetOnTop()){put(h);apply()}else if(h===location.hash)apply();else location.hash=h; // hashchange then applies it
+}
+// A person opened page `id` (a link, a row, ⌘K): push it so Back returns. A hidden page (Agent World, Chat…) is pushed with its own
+// state, which is how apply() tells it from the alias a typed URL means. Opening one while a run is open closes the run first (apply does).
+function open(id){
+ const V=REG(),h='#'+id;
+ if(V?.view(id)?.domain==='hidden'&&document.getElementById(id)){
+  if(location.hash!==h||history.state?.localaiPage!==id)history[sheetOnTop()?'replaceState':'pushState']({localaiPage:id},'',location.pathname+location.search+h);
+  apply();
+ }else go(h);
 }
 // Called by showView after it shows a page: keep the hash honest without adding history entries.
 function shown(id){
@@ -47,7 +59,7 @@ function start(){
  root.addEventListener('hashchange',apply);
  apply();
 }
-root.LocalAIRouter={go,shown,start,intentFor,
+root.LocalAIRouter={go,open,shown,start,intentFor,
  current:()=>parse(),
  onRun(fn){runHandlers.push(fn);if(ready&&runOpen)Promise.resolve().then(()=>fn(runOpen))}};
 })(window);

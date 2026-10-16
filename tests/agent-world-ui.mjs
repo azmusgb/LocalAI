@@ -19,9 +19,13 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
     await page.locator('#workAgentWorld').waitFor({ state: 'visible' });
   });
   await check(`${viewport.width}px: Open Agent World opens the Missions page with the world`, async () => {
+    const before = await page.evaluate(() => history.length);
     await page.locator('#workOpenAgentWorld').click();
     await page.waitForSelector('#agents.active');
     await page.waitForSelector('#agentWorldCityMount .awc');
+    assert.equal(await page.evaluate(() => history.length), before + 1); // pushed: Back returns to Work
+    await page.evaluate(() => history.back());
+    await page.waitForSelector('#work.active');
   });
   await check(`${viewport.width}px: no script errors`, async () => assert.deepEqual(errors, []));
   await page.close();

@@ -123,6 +123,41 @@ await check('Recent and Needs you show a run summary once, not again as preview 
   await page.context().close();
 });
 
+await check('Needs you rows that open another page push it, so Back returns to Home', async () => {
+  const caps = () => ({ services: [{ name: 'ollama', label: 'Intelligence', state: 'DOWN', required: true, impact: 'Chat is unavailable.' }, ...['search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true }))], models: { defaultInstalled: true }, images: { available: true } });
+  const page = await open(desk, '#home', { caps, all: () => [], approvals: [{ id: 'apr_x', status: 'pending', title: 'Run the thing', detail: 'Needs a yes' }] });
+  await page.waitForSelector('#homeNeedsYou .home-attn', T);
+  for (const [text, id] of [['Intelligence is down', 'status'], ['Run the thing', 'approvals']]) {
+    await page.locator('#homeNeedsYou .home-attn', { hasText: text }).click();
+    await page.waitForSelector(`#${id}.active`, T);
+    assert.equal(await page.evaluate(() => location.hash), '#' + id);
+    await page.evaluate(() => history.back());
+    await page.waitForSelector('#home.active', T);
+  }
+  await page.context().close();
+});
+
+await check('Back closes the mode sheet and stays on Home; closing the sheet itself leaves no extra entry', async () => {
+  const page = await open(desk, '#home');
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  const len = () => page.evaluate(() => history.length);
+  const base = await len();
+  await page.locator('#homeModeChip').click();
+  await page.waitForSelector('#homeModeSheet[open]', T);
+  assert.equal(await len(), base + 1);
+  await page.evaluate(() => history.back());
+  await page.waitForSelector('#homeModeSheet[open]', { state: 'detached', timeout: 3000 });
+  assert.equal(await page.evaluate(() => location.hash), '#home');
+  assert.equal(await page.locator('#home.active').count(), 1);
+  await page.locator('#homeModeChip').click();
+  await page.waitForSelector('#homeModeSheet[open]', T);
+  await page.locator('#homeModeSheet .home-sheet__done').click();
+  await page.waitForSelector('#homeModeSheet[open]', { state: 'detached', timeout: 3000 });
+  await page.waitForFunction(() => !history.state || !history.state.localaiSheet, null, T); // the sheet's entry was popped
+  assert.equal(await page.evaluate(() => location.hash), '#home');
+  await page.context().close();
+});
+
 await check('a stopped core service shows in Needs you, and the capability strip is not on Home', async () => {
   const caps = () => ({ services: [{ name: 'ollama', label: 'Intelligence', state: 'DOWN', required: true, impact: 'Chat is unavailable.' }, ...['search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true }))], models: { defaultInstalled: true }, images: { available: true } });
   const page = await open(desk, '#home', { caps, all: () => [] });
@@ -169,6 +204,7 @@ await check('the mode chip opens a sheet with seven modes, and Image persists ac
   await page.locator('#homeModeSheet [data-home-mode="create"]').click();
   await page.waitForSelector('#homeModeSheet[open]', { state: 'detached', timeout: 1500 }).catch(() => {});
   if (await page.locator('#homeModeSheet[open]').count()) await page.locator('#homeModeSheet .home-sheet__done').click();
+  await page.waitForFunction(() => !history.state || !history.state.localaiSheet, null, T); // the sheet's history entry is popped
   assert.equal((await chip.innerText()).trim(), 'Image ▾');
   assert.equal(await page.evaluate(() => localStorage.getItem('localai.home.mode')), 'create');
   await page.reload({ waitUntil: 'domcontentloaded' });

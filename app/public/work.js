@@ -116,7 +116,7 @@ function init(){
  sec.querySelectorAll('[data-work-kind]').forEach(b=>b.addEventListener('click',()=>setKind(b.dataset.workKind)));
  $('workSearch').addEventListener('input',e=>{st.query=e.target.value;if(st.loaded)paint()});
  $('workMore').addEventListener('click',more);
- $('workOpenAgentWorld')?.addEventListener('click',()=>window.showView?.('agents'));
+ $('workOpenAgentWorld')?.addEventListener('click',()=>window.LocalAIRouter?.open('agents'));
  setKind(KINDS.includes(store.get())?store.get():'all',{mirror:false,remember:false});
  let was=active();
  new MutationObserver(()=>{const now=active();if(now&&!was)activate();was=now}).observe(sec,{attributes:true,attributeFilter:['class']});
