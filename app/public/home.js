@@ -53,8 +53,9 @@ async function paintOptions(){
   }else if(m==='mission'){
    const j=await once('agents','/api/agents/catalog');if(mode!==m)return;
    const list=(j.items||[]).filter(a=>!a.infrastructure),chosen=new Set(options.agentIds||[]);
-   box.innerHTML=list.length?`<fieldset class="home-sheet__group"><legend>Specialists</legend><p class="home-sheet__note">Leave all unchecked and the team is picked for you.</p>${list.map((a,i)=>`<label class="home-check" for="homeAgent${i}"><input type="checkbox" id="homeAgent${i}" data-home-agent value="${esc(a.id)}"${chosen.has(a.id)?' checked':''}><span>${esc(a.name||a.id)}</span></label>`).join('')}</fieldset>`:'<p class="home-sheet__note">No specialists are listed yet.</p>';
-   box.onchange=()=>{options.agentIds=[...box.querySelectorAll('[data-home-agent]:checked')].map(x=>x.value);saveOptions()};
+   const web=`<label class="home-check" for="homeMissionWeb"><input type="checkbox" id="homeMissionWeb" data-home-web${options.missionWeb?' checked':''}><span>Let specialists search the web</span></label><p class="home-sheet__note">Searches leave this machine. Off by default.</p>`;
+   box.innerHTML=(list.length?`<fieldset class="home-sheet__group"><legend>Specialists</legend><p class="home-sheet__note">Leave all unchecked and the team is picked for you.</p>${list.map((a,i)=>`<label class="home-check" for="homeAgent${i}"><input type="checkbox" id="homeAgent${i}" data-home-agent value="${esc(a.id)}"${chosen.has(a.id)?' checked':''}><span>${esc(a.name||a.id)}</span></label>`).join('')}</fieldset>`:'<p class="home-sheet__note">No specialists are listed yet.</p>')+web;
+   box.onchange=()=>{options.agentIds=[...box.querySelectorAll('[data-home-agent]:checked')].map(x=>x.value);options.missionWeb=!!box.querySelector('[data-home-web]')?.checked;saveOptions()};
   }
  }catch(e){if(mode===m)box.innerHTML=`<p class="home-sheet__note">Couldn't load the options (${esc(e.message)}). The usual choices are used.</p>`}
 }
@@ -185,7 +186,7 @@ async function dispatch(intent,text,route){
   openRun({id:'legacy-engineering:'+data.run.id});clearInput();
  }else if(intent==='ask'||intent==='research')await viaStarter('LocalAIChat',intent,text,{research:intent==='research',model:options.model});
  else if(intent==='create')await viaStarter('LocalAIImages','create',text,{engine:options.engine,aspect:options.aspect,style:options.style});
- else if(intent==='mission')await viaStarter('LocalAIMissions','mission',text,{agentIds:options.agentIds?.length?options.agentIds:undefined});else if(intent==='automate'){L.open('automate',text);clearInput()}
+ else if(intent==='mission')await viaStarter('LocalAIMissions','mission',text,{agentIds:options.agentIds?.length?options.agentIds:undefined,webSearch:options.missionWeb===true});else if(intent==='automate'){L.open('automate',text);clearInput()}
  else throw new Error('Choose a mode and try again.');
 }
 let autoWait=null;
