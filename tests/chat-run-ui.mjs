@@ -132,6 +132,25 @@ await check('a truncated answer with no Library copy never shows raw JSON', asyn
   await page.context().close();
 });
 
+for (const [tag, vp] of [['390x844', phone], ['1280x860', desk]]) await check(`${tag}: a failed chat run is not a dead end: the reply box works and More offers Retry`, async () => {
+  const f = run(1, 'why is the sky blue', '', { status: 'failed', output: null }); f.error = 'The model stopped answering'; f.retryable = true;
+  const page = await open(vp, '#home', { runs: [f] });
+  await page.evaluate(id => window.LocalAIRuns.show(id), f.id);
+  await page.locator('#runDrawer .chat-turn--error', { hasText: 'The model stopped answering' }).waitFor(T);
+  assert.equal(await page.locator('#runReply').isVisible(), true);
+  assert.equal(await page.locator('#runReply').isEnabled(), true);
+  await page.locator('#runMoreBtn').click();
+  assert.equal(await page.locator('.run-menu button', { hasText: 'Retry' }).isEnabled(), true);
+  await page.keyboard.press('Escape');
+  await page.locator('#runReply').fill('try again please'); await page.locator('#runReply').press('Enter');
+  await page.waitForFunction(() => window.__reqs.length === 1, null, T);
+  const b = (await reqs(page))[0];
+  assert.equal(b.threadId, THREAD);
+  assert.equal(b.messages.at(-1).content, 'try again please');
+  assert.ok(!b.messages.some(m => m.content === 'The model stopped answering'), 'the failure text is not sent as an answer');
+  await page.context().close();
+});
+
 await check('a reply sends the thread id and the previous turns, and the answer streams in place', async () => {
   const page = await open(desk, '#home', { runs: three() });
   await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);

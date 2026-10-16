@@ -10,12 +10,16 @@ const store={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:
 let mode=LABEL[store.get(MODE_KEY)]?store.get(MODE_KEY):'auto',options={},sending=false,flash=0,attention=[],timer=0,loaded=false;
 try{options=JSON.parse(store.get(OPT_KEY)||'{}')||{}}catch{}
 const active=()=>$('home')?.classList.contains('active');
+// With developer tools off, changing Local AI is not offered: a remembered or routed 'engineering' means Auto / Chat.
+const devOn=()=>!document.body.classList.contains('dev-tools-off');
+const allowed=m=>m!=='engineering'||devOn();
 
 // ---- the mode chip and its sheet ----
-function paintChip(text){const c=$('homeModeChip');if(!c)return;const t=text||LABEL[mode]+' ▾';c.textContent=t;c.setAttribute('aria-label',`Mode: ${LABEL[mode]}. Change mode`)}
+const cur=()=>allowed(mode)?mode:'auto';
+function paintChip(text){const c=$('homeModeChip');if(!c)return;const t=text||LABEL[cur()]+' ▾';c.textContent=t;c.setAttribute('aria-label',`Mode: ${LABEL[cur()]}. Change mode`)}
 let syncing=false;
 function setMode(m,{persist=true}={}){
- if(!LABEL[m])return;
+ if(!LABEL[m]||!allowed(m))return;
  mode=m;if(persist)store.set(MODE_KEY,m);
  clearTimeout(flash);paintChip();
  if(syncing)return;syncing=true; // keep the hidden buttons (state.mode, the gate, first-run samples) in step
@@ -70,9 +74,9 @@ function sheet(){
 }
 function paintModes(){
  const box=sheet().querySelector('.home-modes');
- box.innerHTML=MODES.map(([id,label,hint])=>{
+ box.innerHTML=MODES.filter(m=>allowed(m[0])).map(([id,label,hint])=>{
   const gate=document.querySelector(`.mode[data-mode="${id}"]`),off=!!gate?.disabled,why=off?String(gate.title||'').replace(/^Unavailable:\s*/,''):'';
-  return `<button type="button" role="radio" class="home-mode" data-home-mode="${id}" aria-checked="${id===mode}"${off?' disabled':''}><b>${esc(label)}</b><span>${esc(off&&why?'Not available: '+why:hint)}</span></button>`}).join('');
+  return `<button type="button" role="radio" class="home-mode" data-home-mode="${id}" aria-checked="${id===cur()}"${off?' disabled':''}><b>${esc(label)}</b><span>${esc(off&&why?'Not available: '+why:hint)}</span></button>`}).join('');
 }
 function openSheet(){const d=sheet();paintModes();paintOptions();if(!d.open){d.showModal();release=root.LocalAIUI.sheetHistory(d,()=>d.close())}}
 
@@ -80,8 +84,9 @@ function openSheet(){const d=sheet();paintModes();paintOptions();if(!d.open){d.s
 // The runs module opens the run on top of Home, so Back returns here.
 const openRun=it=>root.LocalAIRuns?root.LocalAIRuns.show(it.id):root.LocalAIRouter?.go('#run/'+encodeURIComponent(it.id));
 function needsRuns(all){
- const now=Date.now(),latest=new Map();
- for(const r of all){const k=r.threadId||r.id,t=Date.parse(r.updatedAt||r.createdAt)||0,p=latest.get(k);if(!p||t>p.t)latest.set(k,{r,t})}
+ // A thread's latest turn is its newest by when it started (createdAt, then id), not by when it last changed: a retry that succeeded settles an older failure.
+ const now=Date.now(),latest=new Map(),started=r=>Date.parse(r.createdAt||r.updatedAt)||0;
+ for(const r of all){const k=r.threadId||r.id,p=latest.get(k);if(!p||started(r)>started(p.r)||(started(r)===started(p.r)&&String(r.id)>String(p.r.id)))latest.set(k,{r,t:Date.parse(r.updatedAt||r.createdAt)||0})}
  const mine=[...latest.values()].filter(({r,t})=>r.status==='awaiting_approval'||(r.status==='failed'&&now-t<DAY));
  const rank=r=>r.status==='awaiting_approval'?0:1;
  return mine.sort((a,b)=>rank(a.r)-rank(b.r)||b.t-a.t).map(x=>x.r);
@@ -178,14 +183,14 @@ async function dispatch(intent,text,route){
 }
 let autoWait=null;
 function waitAuto(ms){return new Promise(res=>{const t=setTimeout(()=>{autoWait=null;res(true)},ms);autoWait={cancel:()=>{clearTimeout(t);autoWait=null;res(false)}}})}
-async function send(text,m=mode){
+async function send(text,m=cur()){
  text=String(text??'').trim();
  if(!text||sending)return;
  const input=$('commandInput');busy(true);setError('');
  try{
   let intent=m,route=null;
   if(m==='auto'){
-   route=await root.LocalAILegacy.resolveIntentRequest(text,'auto');intent=route.intent||'ask';
+   route=await root.LocalAILegacy.resolveIntentRequest(text,'auto');intent=route.intent||'ask';if(!allowed(intent))intent='ask'; // Auto never starts a change with developer tools off: Chat answers instead
    paintChip('→ '+(LABEL[intent]||intent));clearTimeout(flash);flash=setTimeout(()=>paintChip(),1500);
    // A tap on the chip within the window changes the mode instead: nothing starts and the text stays.
    if(!await waitAuto(1500)){setMode(LABEL[intent]?intent:'ask');openSheet();return}
@@ -212,6 +217,7 @@ function dockToNav(){
 function init(){
  if(!$('homeComposer'))return;
  paintChip();greet();
+ new MutationObserver(()=>paintChip()).observe(document.body,{attributes:true,attributeFilter:['class']}); // developer tools toggled
  $('homeModeChip').addEventListener('click',()=>autoWait?autoWait.cancel():openSheet());
  $('commandGo').addEventListener('click',()=>send($('commandInput').value));
  $('commandInput').addEventListener('input',()=>{grow();dockToNav()});
@@ -226,7 +232,7 @@ function init(){
  // Home is on screen before the router has read the hash; a link to another page should not make Home load.
  if(active()&&onHomeHash())setTimeout(activate,0);
 }
-root.LocalAIHome={send,activate,refresh,mode:()=>mode,setMode,
+root.LocalAIHome={send,activate,refresh,mode:()=>cur(),setMode,
  // ui.js hands over the critical items of the capability check (a stopped service, an unreachable registry).
  setAttention(items){attention=(items||[]).filter(a=>a&&a.severity==='critical');paintNeeds()}};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();

@@ -113,6 +113,18 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
   });
 }
 
+await check('Needs you drops a failed run once a newer run in the same thread succeeded', async () => {
+  // The failed turn finished failing after the retry had already succeeded (updatedAt is later), but the retry is the newer turn.
+  const failed = item('chat', 'Question one', 3 * HOUR, { threadId: 't-same', status: 'failed' });
+  failed.updatedAt = new Date(NOW - 5 * 60e3).toISOString();
+  const retry = item('chat', 'Question one again', HOUR, { threadId: 't-same' });
+  const other = item('chat', 'Different thread failed', 2 * HOUR, { threadId: 't-other', status: 'failed' });
+  const page = await open(desk, '#home', { all: () => [failed, retry, other] });
+  await page.waitForSelector('#homeNeedsYou .run-card', T);
+  assert.deepEqual(await titles(page, '#homeNeedsYou'), ['Different thread failed']);
+  await page.context().close();
+});
+
 await check('Recent and Needs you show a run summary once, not again as preview text', async () => {
   const dup = (title, o) => { const r = item('chat', title, 5 * 60e3, o); r.card.preview = { type: 'text', text: 'The answer is forty-two, as computed by Deep Thought.' }; r.card.summary = 'The answer is forty-two'; return r; };
   const a = dup('Meaning of life'), f = dup('Failed meaning', { status: 'failed' });
@@ -418,6 +430,44 @@ await check('the mode options reach start(): model, engine/shape/style, speciali
   assert.equal(s[0].o.model, 'qwen-b'); assert.equal(s[0].o.research, false);
   assert.deepEqual([s[1].o.engine, s[1].o.aspect, s[1].o.style], ['best', 'wide', 'photo']);
   assert.deepEqual(s[2].o.agentIds, ['writer']);
+  await page.context().close();
+});
+
+await check('Mission mode sends the chosen specialists to the server', async () => {
+  const page = await open(desk, '#home');
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  await page.route(u => u.pathname === '/api/agents/catalog', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [{ id: 'coder', name: 'Coder' }, { id: 'writer', name: 'Writer' }] }) }));
+  const bodies = [];
+  await page.route(u => u.pathname === '/api/agents/missions/start', r => { bodies.push(r.request().postDataJSON()); r.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ runId: 'run-m1' }) }); });
+  await page.locator('#homeModeChip').click(); await page.waitForSelector('#homeModeSheet[open]', T);
+  await page.locator('#homeModeSheet [data-home-mode="mission"]').click();
+  await page.locator('[data-home-agent][value="writer"]').check();
+  await page.locator('#homeModeSheet .home-sheet__done').click();
+  await page.locator('#commandInput').fill('Plan the launch'); await page.locator('#commandGo').click();
+  await page.waitForFunction(() => location.hash.startsWith('#run/'), null, T);
+  assert.equal(bodies.length, 1);
+  assert.deepEqual(bodies[0].agentIds, ['writer']);
+  assert.equal(bodies[0].async, true);
+  await page.context().close();
+});
+
+await check('Developer tools off: no Change Local AI mode, and Auto never routes to engineering', async () => {
+  const page = await open(desk, '#home', { storage: { 'localai.devTools': '0' }, route: { intent: 'engineering', confidence: 0.95 }, engineering: async () => ({ body: { run: { id: 'e1' } } }) });
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  await page.evaluate(() => { window.__starts = []; window.LocalAIChat = { start: async (t, o) => { window.__starts.push(t); o.pending.resolve('run-1'); } }; });
+  await page.locator('#homeModeChip').click(); await page.waitForSelector('#homeModeSheet[open]', T);
+  assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').evaluateAll(b => b.map(x => x.dataset.homeMode)), ['auto', 'ask', 'research', 'create', 'mission', 'automate']);
+  await page.locator('#homeModeSheet .home-sheet__done').click();
+  await page.locator('#commandInput').fill('Change the login page'); await page.locator('#commandGo').click();
+  await page.waitForFunction(() => window.__starts.length === 1, null, T);
+  assert.deepEqual(page.started, []);
+  await page.context().close();
+});
+
+await check('Developer tools off: a remembered Change Local AI mode falls back to Auto', async () => {
+  const page = await open(desk, '#home', { storage: { 'localai.devTools': '0', 'localai.home.mode': 'engineering' } });
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  assert.equal((await page.locator('#homeModeChip').innerText()).trim(), 'Auto ▾');
   await page.context().close();
 });
 
