@@ -327,19 +327,25 @@ test('two failed handoffs close together each send their own notification', { ti
 });
 
 // ---- weather and current facts (Task 4) ----
+const hourly = (() => {
+  const time = [];
+  for (const day of ['2026-10-15', '2026-10-16']) for (let h = 0; h < 24; h++) time.push(`${day}T${String(h).padStart(2, '0')}:00`);
+  return { time, temperature_2m: time.map(() => 15), weather_code: time.map(() => 0), precipitation_probability: time.map(() => 0) };
+})();
 const FORECAST = {
-  current: { temperature_2m: 30, weather_code: 0 },
-  daily: { weather_code: [0, 0], temperature_2m_max: [34, 28.9], temperature_2m_min: [20, 16.1], precipitation_probability_max: [0, 0] }
+  current: { time: '2026-10-15T20:00', temperature_2m: 30, weather_code: 0, is_day: 1 },
+  daily: { weather_code: [0, 0], temperature_2m_max: [34, 28.9], temperature_2m_min: [20, 16.1], precipitation_probability_max: [0, 0] },
+  hourly
 };
 // One mock for Open-Meteo (forecast + geocoding), Nominatim (reverse) and SearXNG (search).
-async function startWorld(t, { forecastStatus = 200, searxDelay = 0, reverseStatus = 200 } = {}) {
+async function startWorld(t, { forecastStatus = 200, searxDelay = 0, reverseStatus = 200, geoStatus = 200 } = {}) {
   const seen = [];
   const results = [1, 2, 3, 4, 5].map(i => ({ title: `Result ${i}`, url: `https://www.espn.com/story/${i}`, content: `snippet-${i}` }));
   const srv = http.createServer((req, res) => {
     seen.push(req.url);
     const send = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
     if (req.url.startsWith('/v1/forecast')) return forecastStatus === 200 ? send(200, FORECAST) : send(forecastStatus, {});
-    if (req.url.startsWith('/v1/search')) return send(200, /nowhere/i.test(req.url) ? {} : { results: [{ name: 'Phoenix', latitude: 33.45, longitude: -112.07, timezone: 'America/Phoenix' }] });
+    if (req.url.startsWith('/v1/search')) return geoStatus !== 200 ? send(geoStatus, {}) : send(200, /nowhere/i.test(req.url) ? {} : { results: [{ name: 'Phoenix', latitude: 33.45, longitude: -112.07, timezone: 'America/Phoenix' }] });
     if (req.url.startsWith('/reverse')) return reverseStatus === 200 ? send(200, { address: { city: 'Tempe' } }) : send(reverseStatus, {});
     if (req.url.startsWith('/search')) return setTimeout(() => send(200, { results }), searxDelay);
     send(404, {});
@@ -426,7 +432,7 @@ test('"and tomorrow?" after a weather answer reuses that location', { timeout: 3
   const { ask, chats } = await startServer(t, { env: w.env });
   assert.equal((await ask("what's the weather", '&lat=33.4&lon=-111.9')).body, 'Right now in Tempe: 86 degrees and sunny.');
   assert.equal((await ask('and tomorrow?')).body, 'Tomorrow in Tempe: sunny, high of 84, low of 61, no rain expected.');
-  assert.match((await ask('what about tonight?')).body, /^Tonight in Tempe: /);
+  assert.equal((await ask('what about tonight?')).body, 'Tonight in Tempe: clear, low of 59, no rain expected.');
   assert.match((await ask('today?')).body, /^Today in Tempe: /);
   assert.equal(chats.length, 0);
   assert.equal(w.seen.filter(u => u.startsWith('/reverse')).length, 1);
@@ -438,4 +444,19 @@ test('"and tomorrow?" with no earlier weather answer goes to the model', { timeo
   await ask('explain WAL mode');
   assert.equal((await ask('and tomorrow?')).body, 'Hm.');
   assert.equal(chats.length, 2);
+});
+
+test('M5: a place-lookup outage is a 503 with its own message, not "couldn\'t find"', { timeout: 30000 }, async t => {
+  const w = await startWorld(t, { geoStatus: 500 });
+  const { base } = await startServer(t, { env: w.env });
+  const r = await fetch(`${base}/api/voice/home`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ place: 'Phoenix' }) });
+  assert.equal(r.status, 503);
+  assert.equal((await r.json()).error, "Couldn't reach the place lookup. Try again in a minute.");
+  assert.deepEqual(await (await fetch(`${base}/api/voice/home`)).json(), {});
+});
+
+test('I1/I2 end to end: a clear night says clear, and tonight is the overnight window', { timeout: 30000 }, async t => {
+  const w = await startWorld(t);
+  const { ask } = await startServer(t, { env: w.env });
+  assert.equal((await ask('weather tonight', '&lat=33.4&lon=-111.9')).body, 'Tonight in Tempe: clear, low of 59, no rain expected.');
 });

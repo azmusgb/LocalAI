@@ -579,14 +579,17 @@ async function voiceWeather(question, here, threadId) {
   try {
     const [f, name] = await Promise.all([weather.forecast(lat, lon, { timeZone }), place === undefined ? weather.reverse(lat, lon) : place]);
     lastWeather = { threadId, loc: { lat, lon, place: name, timeZone } };
-    return voice.speakable(weather.weatherSentence(f, { when, place: name }));
+    const sentence = weather.weatherSentence(f, { when, place: name });
+    return sentence ? voice.speakable(sentence) : "I couldn't get the weather right now.";
   } catch { return "I couldn't get the weather right now."; }
 }
 
 async function apiVoiceHome(req, res) {
   if (req.method === 'GET') return json(res, 200, voiceHome());
   const body = await readBody(req).catch(() => ({}));
-  const found = await weather.geocode(typeof body?.place === 'string' ? body.place : '');
+  let found;
+  try { found = await weather.geocode(typeof body?.place === 'string' ? body.place : ''); }
+  catch { return json(res, 503, { error: "Couldn't reach the place lookup. Try again in a minute." }); }
   if (!found) return json(res, 400, { error: "Couldn't find that place." });
   const home = { place: found.name, lat: found.lat, lon: found.lon, timeZone: found.timeZone };
   storage.writeSetting('voice-home', home);
