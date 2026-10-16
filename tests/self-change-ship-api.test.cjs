@@ -90,3 +90,45 @@ test('changes left waiting for the old host updater are handed over at start-up'
   assert.equal(c.shipVia, 'pr');
   assert.equal((await findingFor(base, 'chg-q')).handedToClaude, true);
 });
+
+// Closing an Improve item ends its unfinished change, so it stops counting on Home and in "What needs me".
+const seedItemFor = (s, id, changeId, status) => s.writeSetting('claude-finding/' + id, { id, sessionId: 'owner', title: 'Item ' + id, category: 'idea', severity: 'medium', status, source: 'idea', changeId, votes: { up: 0, down: 0 }, priorityBoost: 0, createdAt: '2026-10-15T00:00:00.000Z' });
+
+test('deciding an item fixed retires its planned change; a change being shipped is left alone', { timeout: 30000 }, async t => {
+  const base = await startServer(t, { seed: s => {
+    s.put('changes', change('chg-p', 'planned'), 0); seedItemFor(s, 'idea-p', 'chg-p', 'approved');
+    s.put('changes', change('chg-s', 'approved', { shipVia: 'pr' }), 1); seedItemFor(s, 'idea-s', 'chg-s', 'approved');
+  } });
+  assert.equal((await post(base, '/api/claude/findings/decision', { id: 'idea-p', status: 'fixed', note: 'Done elsewhere' })).status, 200);
+  assert.equal((await getChange(base, 'chg-p')).status, 'rejected');
+  assert.equal((await post(base, '/api/claude/findings/decision', { id: 'idea-s', status: 'fixed' })).status, 200);
+  assert.equal((await getChange(base, 'chg-s')).status, 'approved');
+  assert.equal((await (await fetch(base + '/api/capabilities')).json()).changes.pending, 1);
+});
+
+test('changes whose items were closed before are retired at start-up', { timeout: 30000 }, async t => {
+  const base = await startServer(t, { seed: s => {
+    s.put('changes', change('chg-o', 'planned'), 0); seedItemFor(s, 'idea-o', 'chg-o', 'fixed');
+    s.put('changes', change('chg-k', 'planned'), 1); seedItemFor(s, 'idea-k', 'chg-k', 'approved');
+  } });
+  assert.equal((await getChange(base, 'chg-o')).status, 'rejected');
+  assert.equal((await getChange(base, 'chg-k')).status, 'planned', 'an open item keeps its change');
+});
+
+test('what needs me leaves out a change that is being shipped as a pull request', { timeout: 30000 }, async t => {
+  const base = await startServer(t, { seed: s => {
+    s.put('changes', change('chg-ship', 'approved', { shipVia: 'pr' }), 0); seedItemFor(s, 'idea-ship', 'chg-ship', 'approved');
+    s.put('changes', change('chg-fail', 'patch_failed'), 1); seedItemFor(s, 'idea-fail', 'chg-fail', 'approved');
+  } });
+  const spoken = await (await fetch(base + '/api/glance/ask?q=' + encodeURIComponent('what needs me'))).text();
+  assert.match(spoken, /Item idea-fail/);
+  assert.doesNotMatch(spoken, /Item idea-ship/);
+});
+
+test('a bad record does not stop the appliance starting', { timeout: 30000 }, async t => {
+  const base = await startServer(t, { seed: s => {
+    s.put('changes', { id: 'chg-bad', target: 'self', status: 'apply_requested' }, 0);
+    s.writeSetting('claude-finding/idea-bad', { id: 'idea-bad', status: 'fixed', changeId: 'chg-bad' });
+  } });
+  assert.equal((await fetch(base + '/healthz')).status, 200);
+});

@@ -115,3 +115,22 @@ test('withBudget: a rejection before the budget rejects, after it rejects later'
   fail(new Error('late boom'));
   await assert.rejects(r.later, /late boom/);
 });
+
+test('needs sentence: long titles are cut to a few words, and failed chats are named by kind, not by prompt', () => {
+  const items = needsYouItems({
+    changes: [{ title: "Fixed the missing 'homeCapabilities' DOM reference issue by adding the required capability data to the home view initialization in public/app.js, ensuring the home page has access." }],
+    failedRuns: [{ type: 'chat', title: 'Give me a quick tip for sleeping better.' }, { type: 'image', title: 'A red bird in snow' }, { type: 'automation', title: 'Morning summary' }]
+  });
+  // Named failures come first; failures named by kind follow.
+  assert.deepEqual(items.map(i => i.title), ["Fixed the missing 'homeCapabilities' DOM reference issue by adding", 'Morning summary', 'a chat question', 'an image']);
+  assert.equal(needsYouSentence(items.slice(0, 3)), "Three things need you: Fixed the missing 'homeCapabilities' DOM reference issue by adding, the Morning summary failed, and a chat question failed.");
+  assert.equal(needsYouSentence(items.slice(3)), 'One thing needs you: an image failed.');
+  // A first sentence or line ends the title.
+  assert.equal(needsYouItems({ approvals: [{ title: 'Apply change. It has 3 files' }] })[0].title, 'Apply change');
+});
+
+test('needs sentence: several failures of one kind are counted, not repeated', () => {
+  const items = needsYouItems({ failedRuns: [{ type: 'chat', title: 'a' }, { type: 'chat', title: 'b' }, { type: 'chat', title: 'c' }, { type: 'image', title: 'd' }] });
+  assert.deepEqual(items, [{ kind: 'failed', title: '3 chat questions', generic: true }, { kind: 'failed', title: 'an image', generic: true }]);
+  assert.equal(needsYouSentence(items), 'Two things need you: 3 chat questions failed and an image failed.');
+});
