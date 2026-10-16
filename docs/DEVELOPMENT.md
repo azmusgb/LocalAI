@@ -101,6 +101,21 @@ Use a fresh `DATA_DIR`: the scripts write data (for example Claude board finding
 ignores `LOCALAI_URL` and starts its own server. Run some suites with `node tests/run-browser.mjs images claude` (names are matched as substrings), or one
 with `node tests/<name>-ui.mjs`.
 
+### Screenshots and budgets
+
+- **`tests/visual-ui.mjs`** (part of `npm run test:browser`) starts its own server and compares screenshots of Home,
+  Work, Library, Projects, Backlog, Claude Code, Health and Models at 390 and 1280 px with the baselines in
+  `tests/visual/<platform>/` (`darwin` is committed; fonts differ per OS, so another OS writes its own baselines on the
+  first run and passes). The lists get fixed data, the clock is fixed and the version and pairing code are masked. A
+  failure writes `<page>.actual.png` and `<page>.diff.png` (changed pixels in red) to `tests/visual/<platform>/__results__/`.
+  After an **intended** visual change, run `LOCALAI_VISUAL_UPDATE=1 node tests/visual-ui.mjs`, look at the new PNGs,
+  and commit them with the change.
+- **`tests/budgets.test.cjs`** (part of `npm test`) keeps the app shell (index.html plus the scripts and stylesheet it
+  loads) within a gzipped size budget, in total and per file. Going over means trimming, or raising the number and
+  saying why in the PR.
+- **`tests/perf-ui.mjs`** plays the Agent World demo with the CPU slowed 4x and fails if the p95 frame time goes over
+  34 ms (30 fps) or any animation frame takes over 200 ms.
+
 `npm run validate` runs the validator **without** `-LocalNode`, which runs the native tests inside the
 `local-ai-appliance` Docker image; it only works on the appliance host. Use the `-LocalNode` form above elsewhere.
 
