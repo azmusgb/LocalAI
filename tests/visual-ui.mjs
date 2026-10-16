@@ -78,8 +78,9 @@ async function stubData(page) {
   });
 }
 
-// What differs between runs by design: the version, response times, and a fresh pairing code.
-const masks = page => [page.getByText(/^\s*(Local AI |Version |v)?\d+\.\d+\.\d+\s*$/), page.getByText(/^\s*\d+\s*ms\s*$/), page.locator('#claudeChatCode, .claude-chat-cmd code')];
+// What differs between runs by design: the version, response times, a fresh pairing code, and when the server last
+// checked its services (the server's clock, not the page's).
+const masks = page => [page.getByText(/^\s*(Local AI |Version |v)?\d+\.\d+\.\d+\s*$/), page.getByText(/^\s*\d+\s*ms\s*$/), page.locator('#claudeChatCode, .claude-chat-cmd code, #statusCheckedAt')];
 
 async function shoot(viewport, view) {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.mobile, hasTouch: viewport.mobile, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: 'dark', locale: 'en-US', timezoneId: 'America/New_York' });
