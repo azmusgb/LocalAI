@@ -725,27 +725,46 @@ async function signPowerShellJob(job){if(!window.crypto?.subtle)throw new Error(
 async function queuePowerShellJob(id){if(!(await LocalAIUI.ask({title:'Queue this script on the Windows host?',effect:"It runs with the host bridge's permissions.",confirmLabel:'Queue',tone:'host',typed:'RUN'})).ok)return;const confirmation='RUN';try{const job=(evo.powerShellJobs||[]).find(x=>x.id===id);if(!job)throw new Error('PowerShell job not found; refresh and try again');const signature=await signPowerShellJob(job);await powerShellPost('/api/powershell/request-run',{id,confirmation,signature});await loadPowerShellJobs(id);$('powershellStatus').textContent='Queued. The local Windows host bridge normally claims the job within one minute.';toast('PowerShell job queued')}catch(e){toast(e.message)}}
 async function cancelPowerShellJob(id){try{await powerShellPost('/api/powershell/cancel',{id});await loadPowerShellJobs(id);toast('PowerShell job cancelled')}catch(e){toast(e.message)}}
 
-// ⌘K / Ctrl+K: a native modal <dialog>, so focus stays inside, Escape closes and the page behind is inert.
-// Arrows move through the matches, Enter opens the first (or the focused) one, and focus returns to the opener.
+// ⌘K / Ctrl+K: a combobox over the pages (arrows move the highlight, Enter opens it; no match searches your work),
+// in a native modal <dialog> so focus stays inside, the page behind is inert and focus returns to the opener.
 function commandPalette(){
-  const el=$('cmdk'),input=$('cmdkInput'),list=$('cmdkList');if(!el||typeof el.showModal!=='function')return;
-  // Labels and old names (aka) come from view-registry.js so renamed pages stay findable.
-  const actions=window.LocalAIViews.VIEWS.map(v=>[v.label,v.id,[v.label,...(v.aka||[])].join(' ').toLowerCase()]);
-  let opener=null,chosen=null;
-  const items=()=>qsa('[data-cmd-view]',list);
-  const render=()=>{const q=input.value.toLowerCase().trim();list.innerHTML=actions.filter(([label,id,terms])=>$(id)&&terms.includes(q)).map(([label,id])=>`<button type="button" class="cmdk-item" data-cmd-view="${id}">${esc(label)}</button>`).join('')||'<p class="cmdk-empty">No page matches.</p>'};
-  const choose=id=>{chosen=id;el.close()};
-  const open=()=>{if(el.open)return;opener=document.activeElement;chosen=null;input.value='';render();el.showModal();input.focus()};
-  el.addEventListener('close',()=>{if(chosen){window.LocalAIFocusNext=true;showView(chosen)}else if(opener?.isConnected)opener.focus()});
-  el.addEventListener('click',e=>{const b=e.target.closest('[data-cmd-view]');if(b)choose(b.dataset.cmdView);else if(e.target===el)el.close()});
-  el.addEventListener('keydown',e=>{
-    const all=items(),at=all.indexOf(document.activeElement);
-    if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!all.length)return;const n=e.key==='ArrowDown'?(at+1)%all.length:(at<=0?all.length-1:at-1);all[n].focus()}
-    else if(e.key==='Enter'&&document.activeElement===input){e.preventDefault();if(all[0])choose(all[0].dataset.cmdView)}
-  });
+  const el=$('cmdk');if(!el)return;
+  const input=$('cmdkInput'),list=$('cmdkList'),R=window.LocalAIViews;
+  // Labels and old names (aka) come from view-registry.js so renamed pages stay findable. A hidden page whose
+  // address now opens another page (Runs → Work) would only be a duplicate, so it isn't offered.
+  const actions=window.LocalAIViews.VIEWS.filter(v=>!(v.id==='runs'&&v.domain==='hidden'&&R.ALIASES[v.id]==='work'))
+    .map(v=>({label:v.label,id:v.id,terms:[v.label,...(v.aka||[])].join(' ').toLowerCase()}));
+  let shown=[],active=0,opener=null;
+  input.setAttribute('role','combobox');input.setAttribute('aria-controls','cmdkList');input.setAttribute('aria-expanded','false');
+  list.setAttribute('role','listbox');
+  function select(i){active=Math.max(0,Math.min(shown.length-1,i));list.querySelectorAll('[role=option]').forEach((b,n)=>{b.setAttribute('aria-selected',String(n===active));b.classList.toggle('active',n===active)});const b=list.querySelectorAll('[role=option]')[active];if(b){input.setAttribute('aria-activedescendant',b.id);b.scrollIntoView({block:'nearest'})}}
+  function render(){
+    const q=input.value.trim().toLowerCase();shown=actions.filter(a=>$(a.id)&&a.terms.includes(q));
+    list.innerHTML=shown.length?shown.map((a,n)=>`<button type="button" id="cmdk-opt-${n}" role="option" class="cmdk-item" data-cmd-view="${esc(a.id)}">${esc(a.label)}</button>`).join('')
+      :`<div class="cmdk-empty"><p>No pages match “${esc(input.value.trim())}”.</p><button type="button" class="btn-outline" data-cmd-work>Search your work for “${esc(input.value.trim())}”</button></div>`;
+    list.querySelectorAll('[data-cmd-view]').forEach(b=>b.onclick=()=>go(b.dataset.cmdView));
+    list.querySelector('[data-cmd-work]')?.addEventListener('click',searchWork);
+    select(0);
+  }
+  function go(id){close(false);showView(id)}
+  // No page matched: look through the owner's own work instead (Work's search box filters the loaded runs).
+  function searchWork(){const q=input.value.trim();close(false);showView('work');
+    // Work sets itself up when it becomes the open page; fill its search box after that, not before.
+    let tries=0;const fill=()=>{const w=$('workSearch'),sec=$('work');if(w&&sec?.classList.contains('active')&&tries>2){w.value=q;w.dispatchEvent(new Event('input',{bubbles:true}));return}if(++tries<40)setTimeout(fill,50)};fill()}
+  function open(){if(el.classList.contains('show'))return;opener=document.activeElement;el.classList.add('show');el.setAttribute('aria-hidden','false');input.setAttribute('aria-expanded','true');input.value='';render();if(typeof el.showModal==='function'&&!el.open)el.showModal();input.focus()}
+  function close(restore=true){if(!el.classList.contains('show'))return;el.classList.remove('show');el.setAttribute('aria-hidden','true');input.setAttribute('aria-expanded','false');if(el.open)el.close();if(restore&&opener?.isConnected&&opener.focus)opener.focus()}
   input.addEventListener('input',render);
-  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='k'){e.preventDefault();el.open?el.close():open()}});
-  window.LocalAIPalette={open};
+  input.addEventListener('keydown',e=>{
+    if(e.key==='ArrowDown'){e.preventDefault();select(active+1)}
+    else if(e.key==='ArrowUp'){e.preventDefault();select(active-1)}
+    else if(e.key==='Enter'&&!e.isComposing){e.preventDefault();if(shown[active])go(shown[active].id);else if(input.value.trim())searchWork()}
+  });
+  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='k'){e.preventDefault();el.classList.contains('show')?close():open()}else if(e.key==='Escape'&&el.classList.contains('show')){e.preventDefault();close()}});
+  el.addEventListener('click',e=>{if(e.target===el)close()});
+  // A native modal <dialog>: focus stays inside and the page behind is inert; its own Escape (cancel) closes through close().
+  el.addEventListener('cancel',e=>{e.preventDefault();close()});
+  window.LocalAICommand={open,close};window.LocalAIPalette=window.LocalAICommand;
+  render();
 }
 async function bindEvo(){
   if(!releaseState.config) await loadReleaseConfig();

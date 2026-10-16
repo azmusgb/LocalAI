@@ -49,7 +49,7 @@ await check('switching tabs inside a page keeps focus on the tab', async () => {
   await context.close();
 });
 
-await check('⌘K is a modal dialog: focus stays inside, arrows and Enter choose, Escape returns focus', async () => {
+await check('⌘K is a modal dialog: focus stays inside, the highlighted page opens on Enter, Escape returns focus', async () => {
   const { page, context } = await open();
   await page.focus('#uxCommandBtn');
   await page.keyboard.press('Meta+k');
@@ -64,8 +64,9 @@ await check('⌘K is a modal dialog: focus stays inside, arrows and Enter choose
   await page.click('#uxCommandBtn');
   await page.waitForFunction(() => document.getElementById('cmdk')?.open === true);
   await page.keyboard.type('model');
-  await page.keyboard.press('ArrowDown');
-  assert.match(await page.evaluate(() => document.activeElement?.textContent || ''), /Models/);
+  // A combobox: focus stays in the search box and the highlighted option is aria-activedescendant.
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'cmdkInput');
+  assert.match(await page.evaluate(() => document.getElementById(document.getElementById('cmdkInput').getAttribute('aria-activedescendant'))?.textContent || ''), /Models/);
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => document.title === 'Models · Local AI');
   assert.equal(await page.evaluate(() => document.getElementById('cmdk').open), false);

@@ -1854,3 +1854,9 @@ body.run-view-open{overflow:hidden}
 .improve-row .list-row__title{max-width:100%;white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .improve-row .list-row__trail{flex-wrap:wrap;justify-content:flex-end}
 @media(max-width:480px){.improve-row{flex-wrap:wrap}.improve-row .list-row__trail{width:100%;padding-left:48px;justify-content:flex-start}.improve-votes{width:auto!important;padding-left:0!important}}
+/* Search: keyboard selection, 44px rows and an empty state (appended; nothing above edited). */
+.cmdk-item{min-height:44px;width:100%}
+.cmdk-item.active,.cmdk-item[aria-selected="true"]{background:var(--ds-accent-soft);border-color:var(--ds-line-2)}
+.cmdk-empty{display:grid;gap:10px;padding:14px 10px;color:var(--ds-muted)}
+.cmdk-empty p{margin:0}
+.cmdk-empty .btn-outline{min-height:44px;justify-self:start;font-size:15px}
