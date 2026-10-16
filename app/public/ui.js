@@ -16,7 +16,18 @@ window.LocalAIKit=Object.freeze({icon,statusBadge,badgeHtml});
 let catalog=[],selected='ux_analyst',source=null,currentMission=null,currentRun=null,history=[],activeResultTab='summary',activeInspectorId='';
 const $=id=>document.getElementById(id);
 // One shared mission EventSource per tab (agent-specialists.js and agent-world-city.js both subscribe; whichever loads first creates it).
-const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=(()=>{const subs=new Set();let es=null;function open(){if(es)return;const s=new EventSource('/api/agents/missions/events');es=s;s.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}for(const x of[...subs])try{x.onMessage?.(m)}catch{}};s.onopen=()=>{for(const x of[...subs])try{x.onOpen?.()}catch{}};s.onerror=e=>{for(const x of[...subs])try{x.onError?.(e)}catch{}}}return{subscribe(onMessage,onError,onOpen){const sub={onMessage,onError,onOpen};subs.add(sub);try{open()}catch(e){subs.delete(sub);throw e}return()=>subs.delete(sub)}}})());
+const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=(()=>{
+ // Open only while Missions is on screen and the tab is visible: nothing else shows live mission state, and a stream
+ // held open on every page keeps phones' connections awake and the page from ever going network-idle. Each (re)open
+ // calls subscribers' onOpen, so they refetch what happened while it was closed.
+ const subs=new Set();let es=null;
+ const wanted=()=>document.visibilityState==='visible'&&!!document.querySelector('#agents.active');
+ function open(){if(es)return;const s=new EventSource('/api/agents/missions/events');es=s;s.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}for(const x of[...subs])try{x.onMessage?.(m)}catch{}};s.onopen=()=>{for(const x of[...subs])try{x.onOpen?.()}catch{}};s.onerror=e=>{for(const x of[...subs])try{x.onError?.(e)}catch{}}}
+ function close(){if(!es)return;es.close();es=null}
+ function sync(){if(subs.size&&wanted())open();else close()}
+ function watch(){const v=document.getElementById('agents');if(v)new MutationObserver(sync).observe(v,{attributes:true,attributeFilter:['class']});document.addEventListener('visibilitychange',sync);sync()}
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',watch,{once:true});else watch();
+ return{subscribe(onMessage,onError,onOpen){const sub={onMessage,onError,onOpen};subs.add(sub);try{sync()}catch(e){subs.delete(sub);throw e}return()=>{subs.delete(sub);sync()}},isOpen:()=>!!es}})());
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 async function req(u,o){const r=await fetch(u,o),j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.error||('HTTP '+r.status));return j}
 function notice(kind,text,actions=''){const el=$('agentInlineNotice');if(!el)return;el.dataset.kind=kind||'info';el.innerHTML='<div><strong>'+esc(kind==='error'?'Needs attention':kind==='success'?'Complete':'Status')+'</strong><span>'+esc(text)+'</span></div>'+actions;el.hidden=false}
@@ -59,7 +70,7 @@ function setupTabs(){
 function setupAdvanced(){const toggle=$('agentAdvancedToggle'),panel=$('agentAdvancedPanel');if(toggle&&panel)toggle.onclick=()=>{const open=panel.hidden;panel.hidden=!open;toggle.setAttribute('aria-expanded',String(open));toggle.textContent=open?'Hide advanced routing':'Advanced routing'};$('manualRouteToggle')?.addEventListener('change',e=>{$('manualRouteOptions').hidden=!e.target.checked})}
 function applyHistoryFilter(){const term=($('agentHistorySearch')?.value||'').toLowerCase();document.querySelectorAll('.history-row').forEach(r=>r.hidden=!r.textContent.toLowerCase().includes(term))}
 function setupHistoryFilter(){const q=$('agentHistorySearch');if(q)q.addEventListener('input',applyHistoryFilter)}
-async function init(){if(!$('specialistRegistry'))return;const historyLoaded=loadHistory();try{const j=await req('/api/agents/catalog');catalog=j.items||[];cards();updateDirectActionLabel()}catch(e){notice('error','Could not load specialist catalog: '+e.message)}setupTabs();setupAdvanced();setupHistoryFilter();$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m);else renderHistory()},()=>notice('info','Live mission stream reconnecting…'),()=>{const n=$('agentInlineNotice');if(n&&/reconnecting/.test(n.textContent))clearNotice()})}catch{notice('info','Live mission stream unavailable; history remains accessible.')}}
+async function init(){if(!$('specialistRegistry'))return;const historyLoaded=loadHistory();try{const j=await req('/api/agents/catalog');catalog=j.items||[];cards();updateDirectActionLabel()}catch(e){notice('error','Could not load specialist catalog: '+e.message)}setupTabs();setupAdvanced();setupHistoryFilter();$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m);else renderHistory()},()=>notice('info','Live mission stream reconnecting…'),()=>{const n=$('agentInlineNotice');if(n&&/reconnecting/.test(n.textContent))clearNotice();loadHistory()})}catch{notice('info','Live mission stream unavailable; history remains accessible.')}}
 window.addEventListener('localai:agentworld-select',e=>{if(e.detail?.workerId)selectWorker(e.detail.workerId)});
 window.LocalAISpecialists={init,preview,renderMission};
 // Home starts a mission here: 202 {runId} comes back at once and the run view follows the mission. A failure fails the pending view and throws.
@@ -962,7 +973,18 @@ const W=1280,H=760,T=32,COLS=Math.floor(W/T),ROWS=Math.floor(H/T);
 const $=(s,r=document)=>r.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n)),key=(x,y)=>x+','+y,now=()=>performance.now();
 // One shared mission EventSource per tab (agent-specialists.js and agent-world-city.js both subscribe; whichever loads first creates it).
-const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=(()=>{const subs=new Set();let es=null;function open(){if(es)return;const s=new EventSource('/api/agents/missions/events');es=s;s.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}for(const x of[...subs])try{x.onMessage?.(m)}catch{}};s.onopen=()=>{for(const x of[...subs])try{x.onOpen?.()}catch{}};s.onerror=e=>{for(const x of[...subs])try{x.onError?.(e)}catch{}}}return{subscribe(onMessage,onError,onOpen){const sub={onMessage,onError,onOpen};subs.add(sub);try{open()}catch(e){subs.delete(sub);throw e}return()=>subs.delete(sub)}}})());
+const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=(()=>{
+ // Open only while Missions is on screen and the tab is visible: nothing else shows live mission state, and a stream
+ // held open on every page keeps phones' connections awake and the page from ever going network-idle. Each (re)open
+ // calls subscribers' onOpen, so they refetch what happened while it was closed.
+ const subs=new Set();let es=null;
+ const wanted=()=>document.visibilityState==='visible'&&!!document.querySelector('#agents.active');
+ function open(){if(es)return;const s=new EventSource('/api/agents/missions/events');es=s;s.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}for(const x of[...subs])try{x.onMessage?.(m)}catch{}};s.onopen=()=>{for(const x of[...subs])try{x.onOpen?.()}catch{}};s.onerror=e=>{for(const x of[...subs])try{x.onError?.(e)}catch{}}}
+ function close(){if(!es)return;es.close();es=null}
+ function sync(){if(subs.size&&wanted())open();else close()}
+ function watch(){const v=document.getElementById('agents');if(v)new MutationObserver(sync).observe(v,{attributes:true,attributeFilter:['class']});document.addEventListener('visibilitychange',sync);sync()}
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',watch,{once:true});else watch();
+ return{subscribe(onMessage,onError,onOpen){const sub={onMessage,onError,onOpen};subs.add(sub);try{sync()}catch(e){subs.delete(sub);throw e}return()=>{subs.delete(sub);sync()}},isOpen:()=>!!es}})());
 
 const DISTRICTS={
  command:{name:'Command Center',short:'Command',x:17,y:9,w:6,h:5,accent:'#71b7ff',roof:'#315f94',icon:'⌂',kind:'hq'},
@@ -1688,7 +1710,9 @@ function start(){
 document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
 async function bootstrap(){try{const r=await fetch('/api/agents/missions'),j=await r.json(),items=j.items||j.missions||[],active=items.find(m=>m.status==='running')||items[0];if(active){applyMission(active);connectSSE();return}}catch{}try{const r=await fetch('/api/engineering/runs'),j=await r.json(),runs=j.items||[],active=runs.find(x=>x.status==='running')||runs[0];if(active)applyEngineering(active)}catch{}connectSSE()}
 let unsubscribeSSE=null;
-function connectSSE(){if(unsubscribeSSE)return;try{unsubscribeSSE=missionStream.subscribe(m=>{liveSnapshot=normalizeMission(m);applyMission(m)})}catch{}}
+// On every (re)open, catch up on the mission that ran while Missions was off screen.
+async function refreshLiveMission(){try{const r=await fetch('/api/agents/missions'),j=await r.json(),items=j.items||j.missions||[],m=items.find(x=>x.status==='running')||items[0];if(m)applyMission(m)}catch{}}
+function connectSSE(){if(unsubscribeSSE)return;try{unsubscribeSSE=missionStream.subscribe(m=>{liveSnapshot=normalizeMission(m);applyMission(m)},null,refreshLiveMission)}catch{}}
 document.addEventListener('localai:engineering-run',e=>applyEngineering(e.detail?.run||e.detail));window.addEventListener('localai:agentworld-replay-mission',e=>{const m=e.detail?.mission;if(m){loadMissionReplay(m);if((m.timeline||[]).length>1)applyReplayFrame(0)}});
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{mount();drawMinimap()},{once:true});else{mount();drawMinimap()}
 })();
