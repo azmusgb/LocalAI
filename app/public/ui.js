@@ -3443,7 +3443,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 (()=>{'use strict';
 const q=(s,r=document)=>r.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const host=location.hostname,isLocal=/^(localhost|127\.0\.0\.1|::1)$/.test(host);
+const root=window,host=location.hostname,isLocal=/^(localhost|127\.0\.0\.1|::1|\[::1\])$/.test(host);
 const httpsUrl=`https://${host}/`,caUrl=`http://${host}/localai-ca.crt`;
 // A no-cors request succeeds only if TLS succeeds, i.e. this device trusts the certificate. An untrusted certificate
 // is logged by the browser as a console error that a page can't suppress, so probe only when Health is opened, and
@@ -3461,6 +3461,24 @@ const STEPS=[
  ['Android','Settings › Security › Encryption &amp; credentials › Install a certificate › CA certificate, then pick the downloaded file.'],
  ['Windows','Double-click the file › Install Certificate › Local Machine › Trusted Root Certification Authorities. (The Local AI computer itself is already set up.)']
 ];
+// The device's own steps come first; the others stay for setting up a different device from here.
+function platform(){const ua=navigator.userAgent||'';if(/iPhone|iPad|iPod/.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1))return 'iPhone or iPad';if(/Android/.test(ua))return 'Android';if(/Macintosh/.test(ua))return 'Mac';if(/Windows/.test(ua))return 'Windows';return ''}
+function stepsHtml(){const mine=platform(),order=[...STEPS].sort((a,b)=>(b[0]===mine)-(a[0]===mine));return order.map(([d,t])=>`<dt>${d}${d===mine?' <span class="badge badge--good">This device</span>':''}</dt><dd>${t}</dd>`).join('')}
+// Home shows a "use the secure address" item on plain HTTP until this device opts out here.
+const NUDGE_KEY='localai.secureNudge.off';
+const nudgeOff=()=>{try{return localStorage.getItem(NUDGE_KEY)==='1'}catch{return false}};
+// A phone can't easily type an address: from a computer, show scannable codes for the certificate and the secure page.
+// Only where a camera-holding device would be pointed at this screen (a mouse or trackpad), and only when this page
+// was opened by the computer's network address, which is the one a phone can reach.
+function phoneHtml(){
+ if(!(matchMedia('(pointer: fine)').matches&&root.LocalAIQR))return '';
+ if(isLocal)return `<details class="secure-phone"><summary>Set up a phone or tablet</summary><p class="meta">Open this page using the computer's network address (for example <b>http://&lt;its IP address&gt;:3080</b>) and the codes to scan appear here.</p></details>`;
+ const qr=(url,label)=>{try{return root.LocalAIQR.svg(url,label)}catch{return ''}};
+ return `<details class="secure-phone"><summary>Set up a phone or tablet</summary><ol class="secure-phone__steps">
+ <li><p><b>1.</b> Scan with the phone's camera to download the certificate.</p>${qr(caUrl,'QR code: download the certificate')}</li>
+ <li><p><b>2.</b> Trust it on the phone (see <b>iPhone or iPad</b> or <b>Android</b> under Set up HTTPS on this device).</p></li>
+ <li><p><b>3.</b> Scan to open <b>${esc(httpsUrl)}</b>, then add it to the Home Screen from there.</p>${qr(httpsUrl,'QR code: open Local AI securely')}</li></ol></details>`;
+}
 async function render(card){
  const secure=location.protocol==='https:';
  let state,detail;
@@ -3469,10 +3487,18 @@ async function render(card){
  else{const ok=await trusted();state=ok?'ready':'todo';detail=ok?`This device already trusts Local AI's certificate. Switch to <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>.`:'This page uses plain HTTP, so other devices on the network could read what you send, and some features (copy to clipboard, installing as an app, signing PowerShell jobs) are unavailable.'}
  card.dataset.state=state;
  card.innerHTML=`<div class="secure-head"><span class="secure-dot" aria-hidden="true"></span><div><h2>Secure connection</h2><p>${detail}</p></div></div>
- ${state==='todo'?`<details class="secure-setup"><summary>Set up HTTPS on this device</summary><ol class="secure-steps"><li><a class="btn primary" href="${esc(caUrl)}" download>Download the certificate</a> <span class="meta">Local AI's own certificate authority. Its private key never leaves the Local AI computer, which uses it only to sign Local AI's certificate.</span></li><li>Trust it on this device:<dl>${STEPS.map(([d,t])=>`<dt>${d}</dt><dd>${t}</dd>`).join('')}</dl></li><li>Open <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>. To use the name <b>localai.home.arpa</b>, add it for ${esc(host)} in your router's DNS settings.</li></ol></details>`:''}`;
+ ${state==='todo'?`<details class="secure-setup"><summary>Set up HTTPS on this device</summary><ol class="secure-steps"><li><a class="btn primary" href="${esc(caUrl)}" download>Download the certificate</a> <span class="meta">Local AI's own certificate authority. Its private key never leaves the Local AI computer, which uses it only to sign Local AI's certificate.</span></li><li>Trust it on this device:<dl>${stepsHtml()}</dl></li><li>Open <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>. To use the name <b>localai.home.arpa</b>, add it for ${esc(host)} in your router's DNS settings.</li></ol>${nudgeOff()?'':'<button type="button" class="btn secure-nudge-off">Don\'t remind me on Home</button>'}</details>`:''}${phoneHtml()}`;
+ card.querySelector('.secure-nudge-off')?.addEventListener('click',e=>{try{localStorage.setItem(NUDGE_KEY,'1')}catch{}e.currentTarget.replaceWith(Object.assign(document.createElement('p'),{className:'meta',textContent:'Home won\'t remind you on this device.'}))});
+ focusSetup(card);
+}
+// Arriving from Home's reminder (#status?secure=1): open the setup and bring it into view.
+function focusSetup(card){
+ if(new URLSearchParams(location.hash.split('?')[1]||'').get('secure')!=='1')return;
+ const d=card.querySelector('.secure-setup')||card.querySelector('.secure-phone');if(!d)return;
+ d.open=true;card.scrollIntoView({block:'start',behavior:'smooth'});
 }
 // Below the service list: what's running comes first; this is setup advice.
-function mount(){const status=q('#status');if(!status)return;let card=q('.secure-card',status);if(!card){card=document.createElement('section');card.className='card secure-card';const services=q('#serviceList',status)?.closest('.card');(services||q('.dev-tools-pref',status)||q('.topbar',status))?.after(card)}if(card.dataset.rendered)return;card.dataset.rendered='1';render(card)}
+function mount(){const status=q('#status');if(!status)return;let card=q('.secure-card',status);if(!card){card=document.createElement('section');card.className='card secure-card';const services=q('#serviceList',status)?.closest('.card');(services||q('.dev-tools-pref',status)||q('.topbar',status))?.after(card)}if(card.dataset.rendered){focusSetup(card);return}card.dataset.rendered='1';render(card)}
 // Render (and so probe) only once Health is on screen.
 function watch(){const status=q('#status');if(!status)return;const go=()=>{if(status.classList.contains('active'))mount()};go();new MutationObserver(go).observe(status,{attributes:true,attributeFilter:['class']})}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(watch,0),{once:true});else setTimeout(watch,0);

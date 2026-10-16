@@ -1,4 +1,4 @@
-import { chromium } from 'playwright';
+import { chromium, devices } from 'playwright';
 import assert from 'node:assert/strict';
 
 // The page must look like another device on the LAN (not localhost), so map a test name to the server.
@@ -45,6 +45,64 @@ await check('the setup steps are folded and the card sits below the service list
   await page.locator('.secure-setup > summary').click();
   assert.equal(await page.locator('.secure-steps').isVisible(), true);
 });
+
+await page.close();
+
+// An iPhone on plain HTTP: Home points at the setup, which opens with the iPhone's own steps first.
+const phoneCtx = await browser.newContext({ ...devices['iPhone 13'], serviceWorkers: 'block' });
+await phoneCtx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+const phone = await phoneCtx.newPage();
+await phone.goto(`http://${name}:${base.port}/#home`, { waitUntil: 'load' });
+await phone.waitForFunction(() => typeof window.showView === 'function');
+const nudge = phone.locator('#homeNeedsList .home-attn', { hasText: 'Use the secure address on this device' });
+
+await check('phone on plain HTTP: Home asks to use the secure address', async () => {
+  await nudge.waitFor({ state: 'visible', timeout: 8000 });
+});
+
+await check('phone: Set up opens Health with the setup unfolded and the iPhone steps first', async () => {
+  await nudge.click();
+  await phone.waitForFunction(() => location.hash === '#status?secure=1', null, { timeout: 6000 });
+  await phone.waitForSelector('#status.active .secure-card[data-state="todo"]', { timeout: 8000 });
+  await phone.waitForFunction(() => document.querySelector('.secure-setup')?.open === true, null, { timeout: 6000 });
+  assert.match(await phone.locator('.secure-steps dt').first().innerText(), /iPhone or iPad\s*This device/);
+  assert.equal(await phone.locator('.secure-phone').count(), 0, 'a phone gets no codes to scan with itself');
+});
+
+await check('phone: "Don\'t remind me" removes the Home item on this device', async () => {
+  await phone.locator('.secure-nudge-off').click();
+  await phone.locator('.secure-setup', { hasText: "Home won't remind you" }).waitFor({ timeout: 4000 });
+  await phone.evaluate(() => window.LocalAIRouter.open('home'));
+  await phone.waitForSelector('#home.active');
+  await phone.waitForTimeout(800);
+  assert.equal(await nudge.count(), 0);
+});
+await phoneCtx.close();
+
+// A computer opened by the network address shows codes a phone can scan: the certificate, then the secure page.
+const desk = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
+await desk.goto(`http://${name}:${base.port}/#status`, { waitUntil: 'load' });
+await check('computer: Set up a phone shows scannable codes for the certificate and the secure address', async () => {
+  await desk.waitForSelector('#status.active .secure-card[data-state]', { timeout: 8000 });
+  await desk.locator('.secure-phone > summary').click();
+  const codes = desk.locator('.secure-phone svg.qr');
+  assert.equal(await codes.count(), 2);
+  // The drawn modules must be exactly the codes for these two addresses (qr.test.cjs proves the encoder reads back).
+  const expected = await desk.evaluate(n => [`http://${n}/localai-ca.crt`, `https://${n}/`].map(u => /d="([^"]+)"/.exec(window.LocalAIQR.svg(u))[1]), name);
+  assert.deepEqual(await codes.evaluateAll(list => list.map(x => x.querySelector('path').getAttribute('d'))), expected);
+  const box = await codes.first().boundingBox();
+  assert.ok(box.width >= 150 && box.height >= 150, 'big enough to scan');
+});
+await desk.close();
+
+const local = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
+await local.goto(`${base.origin}/#home`, { waitUntil: 'load' });
+await check('the computer itself (localhost) gets no Home reminder', async () => {
+  await local.waitForFunction(() => typeof window.showView === 'function');
+  await local.waitForTimeout(1200);
+  assert.equal(await local.locator('#homeNeedsList .home-attn', { hasText: 'secure address' }).count(), 0);
+});
+await local.close();
 
 await browser.close();
 if (failures.length) { console.error('\nSecure connection failures:\n' + failures.map(x => ' - ' + x).join('\n')); process.exit(1); }

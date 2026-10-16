@@ -213,7 +213,11 @@ docker pull caddy:2.10-alpine                       # once, from a normal (not S
 - The root certificate is exported to `C:\LocalAI\https\localai-ca.crt` and imported into the host's
   `LocalMachine\Root` store (skip with `-SkipTrustOnHost`).
 - Other devices download it from `http://<host IP>/localai-ca.crt` and trust it once. **Health › Secure
-  connection** shows the steps for each platform and whether the current device already trusts it.
+  connection** shows the steps for each platform (the current device's first) and whether it already trusts it.
+- Setting up a phone: open Health on a computer **by the host's network address** (`http://<host IP>:3080`, not
+  `localhost`) and unfold **Set up a phone or tablet**. It shows two QR codes, one for the certificate and one for
+  `https://<host IP>/`. A phone that opens the plain-HTTP address gets a **Use the secure address on this device**
+  item in Home's Needs you until it switches, or until **Don't remind me on Home** is pressed in the setup.
 - `localai.home.arpa` needs a DNS entry pointing at the host, in the router or a device's hosts file.
 - The firewall rule `Local AI HTTPS` opens 80 and 443 on private networks only.
 - After editing `deploy\caddy\Caddyfile`: `docker exec local-ai-https caddy reload --config /etc/caddy/Caddyfile`,
