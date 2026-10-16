@@ -294,3 +294,47 @@ test('before pages past the 500-run window to the oldest run', { timeout: 180000
   assert.equal(seen.length, 520);
   assert.ok(seen.includes(ids[0]), 'the oldest run is reachable');
 });
+
+// Task 7: a mission started with async:true is a run from the first moment.
+async function waitRun(request, id, done) {
+  for (let i = 0; i < 400; i++) {
+    const r = (await request('/api/runs?id=' + encodeURIComponent(id))).value.item;
+    if (r && done(r)) return r;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error('run never reached the expected state');
+}
+test('async mission start returns 202 with a run, records the mission id and completes the run', { timeout: 60000 }, async t => {
+  const { request } = await startServer(t);
+  const a = await request('/api/agents/missions/start', { goal: 'Review the product quality', agentIds: ['code_analyst'], async: true });
+  assert.equal(a.response.status, 202, JSON.stringify(a.value));
+  assert.match(a.value.runId, /^run-/);
+  assert.ok(a.value.threadId);
+  const first = (await request('/api/runs?id=' + a.value.runId)).value.item;
+  assert.equal(first.type, 'agent');
+  assert.equal(first.title, 'Review the product quality');
+  assert.equal(first.input.goal, 'Review the product quality');
+  const run = await waitRun(request, a.value.runId, r => r.status === 'completed' || r.status === 'failed');
+  assert.equal(run.status, 'completed', JSON.stringify(run));
+  assert.match(run.meta.missionId, /^mission-/);
+  assert.equal(run.output.missionId, run.meta.missionId);
+  assert.equal(run.output.outcome, 'complete');
+  assert.ok(run.summary);
+  const list = (await request('/api/runs?type=agent')).value.items.find(x => x.id === run.id);
+  assert.equal(list.card.preview.type, 'mission');
+});
+test('a mission that cannot run ends its run failed with an error', { timeout: 120000 }, async t => {
+  const { request } = await startServer(t, { OLLAMA_URL: 'http://127.0.0.1:9' });
+  const a = await request('/api/agents/missions/start', { goal: 'Review the code', agentIds: ['code_analyst'], async: true });
+  assert.equal(a.response.status, 202, JSON.stringify(a.value));
+  const run = await waitRun(request, a.value.runId, r => r.status === 'completed' || r.status === 'failed');
+  assert.equal(run.status, 'failed', JSON.stringify(run));
+  assert.ok(run.error);
+});
+test('mission start without async still answers with the mission', { timeout: 60000 }, async t => {
+  const { request } = await startServer(t);
+  const a = await request('/api/agents/missions/start', { goal: 'Review the product quality', agentIds: ['code_analyst'] });
+  assert.equal(a.response.status, 200);
+  assert.equal(a.value.mission.status, 'complete');
+  assert.equal(a.value.runId, undefined);
+});

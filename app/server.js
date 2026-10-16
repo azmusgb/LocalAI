@@ -1806,7 +1806,26 @@ async function apiSpecialistRun(req,res){if(!requireFeature(res,4))return;try{co
 async function apiAgentDispatch(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});json(res,200,{routing:await getSpecialistOrchestrator().dispatch(goal,Array.isArray(b.agentIds)?b.agentIds:undefined)})}catch(e){storageError(res,e,400)}}
 async function apiAgentMissions(req,res){if(!requireFeature(res,4))return;json(res,200,{items:getSpecialistOrchestrator().missions(200)})}
 async function apiAgentMission(req,res,urlObj){if(!requireFeature(res,4))return;const id=String(urlObj.searchParams.get('id')||''),m=getSpecialistOrchestrator().getMission(id);if(!m)return json(res,404,{error:'Mission not found'});json(res,200,{mission:m})}
-async function apiAgentMissionStart(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const ids=Array.isArray(b.agentIds)&&b.agentIds.length?b.agentIds:undefined;json(res,200,{mission:await getSpecialistOrchestrator().mission(goal,String(b.projectId||''),ids)})}catch(e){storageError(res,e,400)}}
+// A mission started with async:true is a ledger run from the first moment: 202 now, the run follows the mission's own events.
+// Mission statuses: running | complete | needs_attention | error (the last two end the run failed).
+function startMissionRun(goal,projectId,ids){
+  const orch=getSpecialistOrchestrator();
+  const run=runLedger.create({type:'agent',title:titleFromText(goal,'Mission'),input:{goal:goal.slice(0,4000),projectId,agentIds:ids||[]},projectId,meta:{}});
+  runLedger.start(run.id,'Mission started');
+  let missionId='',off=()=>{},ended=false,last='';
+  const apply=m=>{
+    if(ended||m.id!==missionId)return;
+    const ws=m.workers||[],done=ws.filter(w=>w.state==='complete').length,pct=ws.length?Math.max(5,Math.min(95,Math.round(done/ws.length*100))):5;
+    if(m.status==='running'){const sig=pct+':'+done;if(sig===last)return;last=sig;runLedger.update(run.id,{status:'running',progress:pct},'Mission progress: '+done+' of '+ws.length+' steps');return}
+    ended=true;off();
+    if(m.status==='complete')runLedger.complete(run.id,{summary:String(m.answer||'Mission complete').replace(/\s+/g,' ').trim().slice(0,600),output:{missionId:m.id,outcome:m.status},meta:{missionId:m.id}});
+    else runLedger.update(run.id,{status:'failed',error:String(m.error||'The mission needs attention.').slice(0,8000),output:{missionId:m.id,outcome:m.status},meta:{missionId:m.id}},'Mission '+m.status);
+  };
+  orch.mission(goal,projectId,ids,{onCreated:m=>{missionId=m.id;orch.events.on('mission',apply);off=()=>orch.events.off('mission',apply);runLedger.update(run.id,{meta:{missionId:m.id}},'Mission created')}})
+    .then(m=>apply(m),e=>{if(ended)return;ended=true;off();runLedger.fail(run.id,e)});
+  return run;
+}
+async function apiAgentMissionStart(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const ids=Array.isArray(b.agentIds)&&b.agentIds.length?b.agentIds:undefined;if(b.async===true){const run=startMissionRun(goal,String(b.projectId||''),ids);return json(res,202,{runId:run.id,threadId:run.threadId})}json(res,200,{mission:await getSpecialistOrchestrator().mission(goal,String(b.projectId||''),ids)})}catch(e){storageError(res,e,400)}}
 const SSE_KEEPALIVE_MS=Math.max(1000,Number(process.env.SSE_KEEPALIVE_MS)||25000);
 async function apiAgentMissionEvents(req,res,urlObj){if(!requireFeature(res,4))return;res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});const wanted=String(urlObj.searchParams.get('missionId')||'');const send=m=>{if(!wanted||m.id===wanted)res.write('data: '+JSON.stringify(m)+'\n\n')};const orch=getSpecialistOrchestrator();orch.events.on('mission',send);res.write(': connected\n\n');
   // A comment every 25 s keeps phones and proxies from dropping a quiet stream.
@@ -1949,6 +1968,10 @@ async function apiApprovalDecide(req,res){
   if(!requireFeature(res,9))return;
   try{const b=await readBody(req);const items=approvalStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Approval not found'});
     if(!['approved','rejected'].includes(b.decision))return json(res,400,{error:'decision must be approved or rejected'});
+    // An approval for a change decides the change as well; otherwise approving it here left the change waiting forever.
+    const changeId=items[i].meta?.changeId;
+    if(changeId&&items[i].status==='pending'){const changes=changeStore(),c=changes.find(x=>x.id===changeId);
+      if(c&&c.status==='awaiting_approval'){decideChange(changes,c,b.decision);recordActivity('approval',`Approval ${b.decision}`,items[i].title,{approvalId:items[i].id,changeId});return json(res,200,{item:approvalStore().find(x=>x.id===b.id)||items[i]})}}
     items[i].status=b.decision;items[i].updatedAt=nowIso();saveStore(APPROVALS_STORE,items,500);recordActivity('approval',`Approval ${b.decision}`,items[i].title,{approvalId:items[i].id});json(res,200,{item:items[i]});
   }catch(e){storageError(res,e,400)}
 }
@@ -2406,7 +2429,12 @@ async function apiChangeStage(req,res){
 }
 async function apiChangeApprove(req,res){
   if(!requireFeature(res,13))return;
-  try{const b=await readBody(req);const decision=String(b.decision||'');if(!['approved','rejected'].includes(decision))return json(res,400,{error:'decision must be approved or rejected'});const items=changeStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Change not found'});const c=items[i];if(c.status!=='awaiting_approval')return json(res,409,{error:`Change is not awaiting approval (${c.status})`});storage.transaction(()=>{c.status=decision==='approved'?'approved':'rejected';c.updatedAt=nowIso();if(c.approvalId){const approvals=approvalStore();const ai=approvals.findIndex(x=>x.id===c.approvalId);if(ai>=0){approvals[ai].status=decision;approvals[ai].updatedAt=nowIso();saveStore(APPROVALS_STORE,approvals,500)}}saveChanges(items);recordActivity('change',`Change ${decision}`,c.summary,{changeId:c.id});});json(res,200,{item:publicChange(c)})}catch(e){storageError(res,e,400)}
+  try{const b=await readBody(req);const decision=String(b.decision||'');if(!['approved','rejected'].includes(decision))return json(res,400,{error:'decision must be approved or rejected'});const items=changeStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Change not found'});const c=items[i];if(c.status!=='awaiting_approval')return json(res,409,{error:`Change is not awaiting approval (${c.status})`});decideChange(items,c,decision);json(res,200,{item:publicChange(c)})}catch(e){storageError(res,e,400)}
+}
+// Approving or rejecting a change, from Change requests or from its approval (Approvals page, run view, a notification):
+// the change and its approval move together.
+function decideChange(items,c,decision){
+  storage.transaction(()=>{c.status=decision==='approved'?'approved':'rejected';c.updatedAt=nowIso();if(c.approvalId){const approvals=approvalStore();const ai=approvals.findIndex(x=>x.id===c.approvalId);if(ai>=0){approvals[ai].status=decision;approvals[ai].updatedAt=nowIso();saveStore(APPROVALS_STORE,approvals,500)}}saveChanges(items);recordActivity('change',`Change ${decision}`,c.summary,{changeId:c.id});});
 }
 async function apiChangeRequestApply(req,res){
   if(!requireFeature(res,13))return;
@@ -2774,8 +2802,10 @@ async function apiImproveItem(req,res){
       case 'backToBacklog':case 'discard':{
         if(change&&IMPROVE_LOCKED_CHANGE.includes(change.status))return json(res,409,{error:'This change is already approved and being shipped as a pull request.'});
         if(change&&live)improveRetireChange(change.id);
-        if(b.action==='backToBacklog')return json(res,200,{item:improveWrite({...improveRead(f.id),status:'approved',changeId:null})});
-        const aside=b.then==='aside';return json(res,200,{item:improveWrite({...improveRead(f.id),status:aside?'deferred':'approved',changeId:aside?f.changeId:null})});
+        // Back in the Backlog means you're reconsidering it, so a hand-off to Claude is withdrawn too.
+        const unhand=x=>x.handedToClaude?{handedToClaude:false,priorityBoost:Math.max(0,(Number(x.priorityBoost)||0)-30)}:{};
+        if(b.action==='backToBacklog'){const cur=improveRead(f.id);return json(res,200,{item:improveWrite({...cur,...unhand(cur),status:'approved',changeId:null})})}
+        const aside=b.then==='aside',cur=improveRead(f.id);return json(res,200,{item:improveWrite({...cur,...unhand(cur),status:aside?'deferred':'approved',changeId:aside?f.changeId:null})});
       }
     }
   }catch(e){storageError(res,e,500)}
@@ -2783,7 +2813,11 @@ async function apiImproveItem(req,res){
 async function apiImproveSignal(req,res){
   try{const b=await readBody(req);if(!['promote','dismiss'].includes(b.action))return json(res,400,{error:'action must be promote or dismiss'});
     const issues=issueStore(),i=issues.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Signal not found'});
-    if(b.action==='dismiss'){issues[i].status='ignored';issues[i].updatedAt=nowIso();saveIssues(issues);return json(res,200,{signal:issues[i]})}
+    if(b.action==='dismiss'){issues[i].status='ignored';issues[i].updatedAt=nowIso();saveIssues(issues);
+      // Its backlog item, if it was promoted and not yet started, is closed with it.
+      const promoted=improveRead(improve.signalItemId(issues[i].id));
+      if(promoted&&improve.stageOf(promoted,new Map(changeStore().map(c=>[c.id,c])))==='backlog')improveWrite({...promoted,status:'rejected',decisionNote:'Signal dismissed',decidedAt:nowIso()});
+      return json(res,200,{signal:issues[i]})}
     const id=improve.signalItemId(issues[i].id);const existing=improveRead(id);if(existing)return json(res,200,{item:existing});
     const item=improve.promoteSignal(issues[i],nowIso());storage.writeSetting(CLAUDE_FINDING_PREFIX+id,{sessionId:'improve',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...item});
     json(res,200,{item})}catch(e){storageError(res,e,500)}
@@ -3108,7 +3142,8 @@ async function apiReleases(req, res) {
 migrateLegacyActivityToLibrary();
 recordReleaseHistory();
 shipQueuedSelfChanges();
-runImproveReconcile({ startup: true });
+// One bad record must not stop the appliance starting; Improve catches up on the next scan or save.
+try { runImproveReconcile({ startup: true }); } catch (e) { console.error(`${nowIso()} Improve start-up reconcile failed:`, e); }
 // Health is checked on its own every minute, so an outage reaches the phone (Down/Recovered) even with no page open.
 const HEALTH_TICK_MS = Math.max(200, Number(process.env.HEALTH_TICK_MS) || 60000);
 setInterval(() => { getStatusAndRecordTransition().catch(() => {}); }, HEALTH_TICK_MS).unref();
