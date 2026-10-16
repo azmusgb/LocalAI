@@ -457,7 +457,7 @@ await check('the mode options reach start(): model, engine/shape/style, speciali
   await page.context().close();
 });
 
-await check('Mission mode sends the chosen specialists to the server', async () => {
+await check('Mission mode sends the chosen specialists and the web-search choice to the server', async () => {
   const page = await open(desk, '#home');
   await page.waitForSelector('#homeRecent2 .run-card', T);
   await page.route(u => u.pathname === '/api/agents/catalog', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [{ id: 'coder', name: 'Coder' }, { id: 'writer', name: 'Writer' }] }) }));
@@ -472,7 +472,21 @@ await check('Mission mode sends the chosen specialists to the server', async () 
   assert.equal(bodies.length, 1);
   assert.deepEqual(bodies[0].agentIds, ['writer']);
   assert.equal(bodies[0].async, true);
+  assert.equal(bodies[0].webSearch, undefined, 'web search is off unless chosen');
   await page.context().close();
+  const web = await open(desk, '#home');
+  await web.waitForSelector('#homeRecent2 .run-card', T);
+  await web.route(u => u.pathname === '/api/agents/catalog', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [{ id: 'writer', name: 'Writer' }] }) }));
+  await web.route(u => u.pathname === '/api/agents/missions/start', r => { bodies.push(r.request().postDataJSON()); r.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ runId: 'run-m2' }) }); });
+  await web.locator('#homeModeChip').click(); await web.waitForSelector('#homeModeSheet[open]', T);
+  await web.locator('#homeModeSheet [data-home-mode="mission"]').click();
+  await web.locator('#homeMissionWeb').check();
+  await web.locator('#homeModeSheet .home-sheet__done').click();
+  await web.locator('#commandInput').fill('Research the launch'); await web.locator('#commandGo').click();
+  await web.waitForFunction(() => location.hash.startsWith('#run/'), null, T);
+  assert.equal(bodies.length, 2);
+  assert.equal(bodies[1].webSearch, true);
+  await web.context().close();
 });
 
 await check('Developer tools off: no Change Local AI mode, and Auto never routes to engineering', async () => {

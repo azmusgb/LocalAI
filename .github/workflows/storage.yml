@@ -9,9 +9,12 @@ on:
       - 'app/release.js'
       - 'app/run-ledger.js'
       - 'app/agent-orchestrator.js'
+      - 'app/agent-runtime.js'
+      - 'app/agent-tools.js'
       - 'tests/release.test.cjs'
       - 'tests/storage*.test.cjs'
       - 'tests/agent-orchestrator.test.cjs'
+      - 'tests/agent-runtime.test.cjs'
       - 'tests/run-ledger.test.cjs'
       - 'package*.json'
       - '.github/workflows/storage.yml'
@@ -41,4 +44,4 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - name: Native SQLite, HTTP and agent regression tests
-        run: node --test tests/release.test.cjs tests/storage.test.cjs tests/storage-api.test.cjs tests/agent-orchestrator.test.cjs tests/run-ledger.test.cjs
+        run: node --test tests/release.test.cjs tests/storage.test.cjs tests/storage-api.test.cjs tests/agent-orchestrator.test.cjs tests/agent-runtime.test.cjs tests/run-ledger.test.cjs

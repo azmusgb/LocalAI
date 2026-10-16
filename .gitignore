@@ -34,3 +34,5 @@ __pycache__/
 # Brainstorming companion scratch (mockups are copied into docs when chosen)
 .superpowers/
 tests/visual/*/__results__/
+# Local Gemini CLI settings
+.gemini/settings.json

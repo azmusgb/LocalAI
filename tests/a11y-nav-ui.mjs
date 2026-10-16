@@ -38,13 +38,14 @@ await check('choosing a page from the menu titles the tab and moves focus to tha
 
 await check('switching tabs inside a page keeps focus on the tab', async () => {
   const { page, context } = await open();
-  await page.evaluate(() => { location.hash = '#issues' });
-  await page.waitForSelector('#issues.active .ux-tab');
-  const tab = page.locator('#issues .ux-tab', { hasText: 'Quality signals' });
+  // #issues now resolves to Improve's Signals stage, so this uses Projects, which still has tabs.
+  await page.evaluate(() => { location.hash = '#projects' });
+  await page.waitForSelector('#projects.active .ux-tab');
+  const tab = page.locator('#projects .ux-tab', { hasText: 'Sources' });
   await tab.focus(); await tab.press('Enter');
-  await page.waitForFunction(() => document.title === 'Quality signals · Local AI');
-  await page.waitForFunction(() => !!document.activeElement?.closest('#quality .ux-tabs'), null, { timeout: 2000 }).catch(() => {});
-  assert.match(await page.evaluate(() => document.activeElement?.textContent || ''), /Quality signals/);
+  await page.waitForFunction(() => document.title === 'Sources · Local AI');
+  await page.waitForFunction(() => !!document.activeElement?.closest('#knowledge .ux-tabs'), null, { timeout: 2000 }).catch(() => {});
+  assert.match(await page.evaluate(() => document.activeElement?.textContent || ''), /Sources/);
   assert.equal(await page.evaluate(() => !!document.activeElement?.closest('.ux-tabs')), true);
   await context.close();
 });

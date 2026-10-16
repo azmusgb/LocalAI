@@ -114,6 +114,23 @@ await check('inline error replaces alert workflow',async()=>{
   assert.match(await page.locator('#agentInlineNotice').innerText(),/Enter a mission objective first/i);
   assert.equal(dialogs,0,'No browser alert dialogs should be used');
 });
+await check('the web-search choice reaches the mission request',async()=>{
+  const bodies=[],isDispatch=u=>u.pathname==='/api/agents/dispatch',isStart=u=>u.pathname==='/api/agents/missions/start';
+  await page.route(isDispatch,r=>r.fulfill({contentType:'application/json',body:JSON.stringify({routing:{mode:'auto',workers:[],selectedAgentIds:[],inventory:[]}})}));
+  await page.route(isStart,r=>{bodies.push(r.request().postDataJSON());r.fulfill({status:500,contentType:'application/json',body:JSON.stringify({error:'stubbed'})})});
+  const sent=async n=>{for(let i=0;i<60&&bodies.length<n;i++)await page.waitForTimeout(100);assert.equal(bodies.length,n)};
+  try{
+   await page.locator('#agentGoal').fill('Check release notes');
+   await page.locator('#agentWebSearch').check();
+   await page.locator('#missionRunBtn').click();
+   await sent(1);
+   assert.equal(bodies[0].webSearch,true);
+   await page.locator('#agentWebSearch').uncheck();
+   await page.locator('#missionRunBtn').click();
+   await sent(2);
+   assert.equal(bodies[1].webSearch,undefined);
+  }finally{await page.unroute(isDispatch);await page.unroute(isStart);await page.locator('#agentGoal').fill('')}
+});
 await check('interactive demo controls',async()=>{
   await page.locator('#awcDemoPlay').click();
   assert.equal(await page.locator('#awcSource').innerText(),'DEMO');
