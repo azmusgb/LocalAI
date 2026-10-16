@@ -45,4 +45,11 @@ test('app code revalidates with ETags so a deploy shows up on the next load', { 
     const stale = await fetch(base + file, { headers: { 'If-None-Match': '"stale-release-etag-000"' } });
     assert.equal(stale.status, 200, `${file} changed should be sent in full`);
   }
+  // The shell carries the build it came from, so a saved copy knows its release and a stale page can replace itself.
+  const health = await (await fetch(base + '/healthz')).json();
+  for (const file of ['/', '/index.html']) {
+    const html = await (await fetch(base + file)).text();
+    assert.match(html, new RegExp(`<meta name="localai-version" content="${health.version.replace(/\./g, '\\.')}">`), file);
+    assert.match(html, new RegExp(`<meta name="localai-release" content="${health.releaseCommit || ''}">`), file);
+  }
 });

@@ -1489,6 +1489,14 @@ function redirectFor(req, res, pathname) {
   return true;
 }
 
+// index.html carries the build it came from, so a copy the service worker saved knows its release and a page from an
+// older build can see that /healthz now reports another one (app/public/offline-copy.js).
+function withBuildMeta(html) {
+  const attr = v => String(v ?? '').replace(/[&"<>]/g, c => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' }[c]));
+  const meta = `<meta name="localai-version" content="${attr(APP_VERSION)}"><meta name="localai-release" content="${attr(release?.commit || '')}">`;
+  return Buffer.from(String(html).replace('<head>', `<head>\n${meta}`));
+}
+
 function serveStatic(req, res, pathname) {
   const requested = pathname === '/' ? '/index.html' : pathname;
   const normalized = path.normalize(requested).replace(/^(\.\.[/\\])+/, '');
@@ -1500,13 +1508,14 @@ function serveStatic(req, res, pathname) {
       if (pathname !== '/' && !pathname.includes('.')) {
         fs.readFile(path.join(PUBLIC_DIR, 'index.html'), (e2, d2) => {
           if (e2) return text(res, 404, 'Not found');
-          text(res, 200, d2, 'text/html; charset=utf-8');
+          text(res, 200, withBuildMeta(d2), 'text/html; charset=utf-8');
         });
         return;
       }
       return text(res, 404, 'Not found');
     }
     const ext = path.extname(file).toLowerCase();
+    if (file === path.join(PUBLIC_DIR, 'index.html')) data = withBuildMeta(data);
     const types = {
       '.html': 'text/html; charset=utf-8',
       '.css': 'text/css; charset=utf-8',
