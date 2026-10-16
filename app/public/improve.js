@@ -89,7 +89,7 @@ async function loadDetails(){
   const checks=[...(q.latest?.checks||[])].sort((a,b)=>(a.result==='FAIL'?0:1)-(b.result==='FAIL'?0:1));
   const events=(q.events||[]).slice(0,10);
   if(!checks.length&&!events.length)return false;
-  el.innerHTML=`${checks.length?`<h3>Latest checks</h3><ul class="improve-checks">${checks.map(c=>`<li><span class="badge badge--${c.result==='FAIL'?'bad':'good'}">${c.result==='FAIL'?'Failed':'Passed'}</span> ${esc(c.name)}${c.detail?` <span class="list-row__sub">${esc(c.detail)}</span>`:''}</li>`).join('')}</ul>`:''}`+
+  el.innerHTML=`${checks.length?`<ul class="improve-checks">${checks.map(c=>`<li><span class="badge badge--${c.result==='FAIL'?'bad':'good'}">${c.result==='FAIL'?'Failed':'Passed'}</span> ${esc(c.name)}${c.detail?` <span class="list-row__sub">${esc(c.detail)}</span>`:''}</li>`).join('')}</ul>`:''}`+
    `${events.length?`<h3>Recent browser errors</h3><ul class="improve-checks">${events.map(e=>`<li>${esc(e.message)} <span class="list-row__sub">${esc(e.source||'')} · ${esc(ago(e.createdAt))}</span></li>`).join('')}</ul>`:''}`;
   return true}});
 }

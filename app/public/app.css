@@ -1865,3 +1865,19 @@ input::placeholder,textarea::placeholder{color:var(--ds-faint);font-weight:400}
 .offline-banner__text{flex:1;min-width:0;margin:0}
 .offline-banner__retry.btn-outline{min-height:44px;padding:0 14px;font-size:15px;flex:none}
 #library .artifact-foot .iconbtn{min-width:44px;min-height:44px}
+
+/* Desktop polish (appended; nothing above edited). */
+/* A heading focused for screen readers after navigation is not a control: no box around it. */
+h1[tabindex="-1"]:focus,h1[tabindex="-1"]:focus-visible{outline:none}
+/* Claude Code: Activity takes the full width while its neighbour card is hidden. */
+.claude-grid:has(> .card[hidden]){grid-template-columns:minmax(0,1fr)}
+/* Health: the Notifications card keeps the same gap as the cards around it. */
+.notify-card{margin:12px 0}
+/* Library: only images get a preview box; other items start with their title. */
+.artifact-preview:not(:has(img,video,canvas)){display:none}
+/* Signals: the checks disclosure looks openable (summary is flex, which drops the native marker). */
+.improve-details>summary{cursor:pointer;min-height:44px;align-items:center;gap:8px;color:var(--ds-text)}
+.improve-details>summary::after{content:"";width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);margin-top:-4px;transition:transform .15s}
+.improve-details[open]>summary::after{transform:rotate(225deg);margin-top:4px}
+/* Work and Home: a very long run title stops at three lines. */
+.list-row__title .work-open{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
