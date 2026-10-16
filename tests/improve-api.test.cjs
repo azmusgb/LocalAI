@@ -307,3 +307,20 @@ test('dismissing a promoted signal closes its backlog item; Back to backlog clea
   const h = await itemById(base, 'idea-h');
   assert.deepEqual([h.handedToClaude, h.priorityBoost], [false, 0]);
 });
+
+test('deciding a change\'s approval from Approvals or the run view decides the change too', { timeout: 60000 }, async t => {
+  const approval = (id, changeId) => ({ id, title: 'Apply change ' + changeId, detail: '', risk: 'high', status: 'pending', createdAt: '2026-10-15T00:00:00Z', updatedAt: '2026-10-15T00:00:00Z', meta: { changeId, type: 'change', target: 'self' } });
+  const base = await startServer(t, { seed: s => {
+    s.put('approvals', approval('appr-a', 'chg-a'), 0); seedChange(s, 'chg-a', 'awaiting_approval', { approvalId: 'appr-a' });
+    s.put('approvals', approval('appr-r', 'chg-r'), 1); seedChange(s, 'chg-r', 'awaiting_approval', { approvalId: 'appr-r' });
+    s.put('approvals', { id: 'appr-x', title: 'Agent action', detail: '', risk: 'medium', status: 'pending', createdAt: '2026-10-15T00:00:00Z', updatedAt: '2026-10-15T00:00:00Z', meta: { type: 'agent' } }, 2);
+  } });
+  const a = await post(base, '/api/approvals/decide', { id: 'appr-a', decision: 'approved' });
+  assert.equal(a.status, 200);
+  assert.equal(a.body.item.status, 'approved');
+  assert.equal((await changeById(base, 'chg-a')).status, 'approved');
+  await post(base, '/api/approvals/decide', { id: 'appr-r', decision: 'rejected' });
+  assert.equal((await changeById(base, 'chg-r')).status, 'rejected');
+  // Approvals that aren't for a change behave as before.
+  assert.equal((await post(base, '/api/approvals/decide', { id: 'appr-x', decision: 'approved' })).body.item.status, 'approved');
+});
