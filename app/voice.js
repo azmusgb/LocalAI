@@ -43,7 +43,7 @@ function speakable(input) {
   s = s.replace(/```[a-z0-9]*\n?/gi, ' ');
   s = s.replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1');
   s = s.replace(/\b(?:https?:\/\/|www\.)\S+/gi, ' ');
-  s = s.replace(/[\p{Extended_Pictographic}️‍⃣]/gu, ' ');
+  s = s.replace(/\p{Extended_Pictographic}|\u{FE0F}|\u{200D}|\u{20E3}/gu, ' '); // emoji, variation selector, joiner, keycap
   s = s.replace(/^[ \t]*(?:[-*+•]|\d+[.)])[ \t]+/gm, '');
   s = s.replace(/^[ \t]*>+[ \t]?/gm, '').replace(/^[ \t]*#+[ \t]*/gm, '');
   s = s.replace(/\b_+([^_\n]+?)_+\b/g, '$1').replace(/[*`~]/g, '').replace(/(^|\s)#+(?=\s|$)/g, ' ');

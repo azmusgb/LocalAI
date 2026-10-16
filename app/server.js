@@ -1540,9 +1540,6 @@ function featureAtLeast(level) { return FEATURE_LEVEL >= level; }
 function objectStore(file) { const v = readState(file, []); return Array.isArray(v) ? v : []; }
 function saveStore(collection, items, _legacyMax, previous = items) { const saved = storage.save(collection, items, previous); if (RETENTION[collection]) storage.prune(collection, RETENTION[collection]); return saved; }
 function makeId(prefix) { return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 9)}`; }
-function lastUserRunMessage(body){
-  const messages=sanitizeMessages(body?.messages);return [...messages].reverse().find(m=>m.role==='user')?.content||'';
-}
 function createChatExecution(body,streaming){
   const messages=sanitizeMessages(body?.messages);const prompt=[...messages].reverse().find(m=>m.role==='user')?.content||'Chat';
   const model=typeof body?.model==='string'&&body.model.trim()?body.model.trim():MODEL;
@@ -2289,7 +2286,7 @@ function ensureInside(base,rel){
   return full;
 }
 function copyTree(src,dst){
-  const st=fs.statSync(src); fs.mkdirSync(dst,{recursive:true});
+  fs.statSync(src); fs.mkdirSync(dst,{recursive:true}); // statSync: a missing src throws before dst is created
   for(const e of fs.readdirSync(src,{withFileTypes:true})){
     if(['node_modules','.git','.venv','bin','obj'].includes(e.name)) continue;
     const a=path.join(src,e.name), b=path.join(dst,e.name);
