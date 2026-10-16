@@ -20,8 +20,7 @@
 	}
 }
 
-https://{$LOCALAI_NAME}, https://{$LOCALAI_HOST_IP}, https://{$LOCALAI_REMOTE_NAME:localai.remote.invalid}, https://localhost {
-	tls internal
+(appliance) {
 	import ca_download
 	handle {
 		# Streams (chat replies) pass straight through; long image runs have no proxy timeout.
@@ -29,6 +28,24 @@ https://{$LOCALAI_NAME}, https://{$LOCALAI_HOST_IP}, https://{$LOCALAI_REMOTE_NA
 			flush_interval -1
 		}
 	}
+}
+
+https://{$LOCALAI_NAME}, https://{$LOCALAI_HOST_IP}, https://localhost {
+	tls internal
+	import appliance
+}
+
+# The Tailscale name gets its own site: Caddy hands *.ts.net names to the Tailscale daemon for certificates unless an
+# automation policy names them explicitly, and from inside Docker it can't reach that daemon, so every handshake would
+# fail. Spelling out the internal issuer here (lifetime is its default) gives the name its own policy, so it keeps the
+# same local certificate authority every device already trusts.
+https://{$LOCALAI_REMOTE_NAME:localai.remote.invalid} {
+	tls {
+		issuer internal {
+			lifetime 12h
+		}
+	}
+	import appliance
 }
 
 # Plain HTTP: hand out the CA certificate (so a device can trust it before its first HTTPS visit), else redirect.
