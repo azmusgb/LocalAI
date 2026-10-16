@@ -19,7 +19,12 @@ const icon=n=>root.LocalAIKit?.icon(n)||'';
 const ago=iso=>{const s=(Date.now()-new Date(iso))/1000;if(!isFinite(s))return '';if(s<3600)return Math.max(1,Math.round(s/60))+'m ago';if(s<86400)return Math.round(s/3600)+'h ago';return Math.round(s/86400)+'d ago'};
 const sev=x=>`<span class="badge badge--${TONE[x]||'neutral'}">${LABEL[x]||'Medium'}</span>`;
 async function post(path,body){return root.LocalAIUI.fetchJson(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
-async function load(){st.data=await root.LocalAIUI.fetchJson('/api/improve/items',{cache:'no-store'});return st.data}
+async function load(){
+ // Release history places items closed on the board (no release stamp) in the release that followed them.
+ const [data,rel]=await Promise.all([root.LocalAIUI.fetchJson('/api/improve/items',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/releases',{cache:'no-store'}).catch(()=>null)]);
+ st.data=data;st.releases=(rel?.history||[]).filter(r=>r&&r.version&&Date.parse(r.deployedAt)).sort((a,b)=>Date.parse(a.deployedAt)-Date.parse(b.deployedAt));
+ return st.data;
+}
 
 function backlogRow(it){
  const row=document.createElement('div');row.className='list-row improve-row';row.dataset.itemId=it.id;
@@ -40,7 +45,8 @@ function inProgressRow(it){
  const row=document.createElement('div');row.className='list-row improve-row';row.dataset.itemId=it.id;
  const s=sessionOf(it),state=it.change?badge(CHANGE_STATE[it.change.status]||['Working','neutral']):badge(['Claude','accent']);
  // The session's state, not its latest step: one session holds many items, so its step would repeat on each of them.
- const claude=!it.change?` <span>${s?`Claude's session is ${s.status==='active'?'active':'idle'}${s.updatedAt?' · '+esc(ago(s.updatedAt)):''}`:"Claude's session isn't reporting"}</span>`:'';
+ const quiet=s&&s.status!=='active'&&Date.now()-Date.parse(s.updatedAt||'')>6*36e5;
+ const claude=!it.change?` <span>${!s?"Claude's session isn't reporting":quiet?`Paused: Claude last worked on this ${esc(ago(s.updatedAt))}`:`Claude's session is ${s.status==='active'?'active':'idle'}${s.updatedAt?' · '+esc(ago(s.updatedAt)):''}`}</span>`:'';
  row.innerHTML=`<span class="list-row__icon">${icon(ICON[it.source]||'sparkle')}</span>`+
   `<button type="button" class="improve-row__open list-row__main"><span class="list-row__title">${esc(it.title)}</span><span class="list-row__sub">${state}${claude}</span></button>`;
  row.querySelector('.improve-row__open').onclick=()=>openItem(it.id);
@@ -55,20 +61,33 @@ function shippedRow(it){
  const row=document.createElement('div');row.className='list-row improve-row';row.dataset.itemId=it.id;
  const pr=/^https:\/\/github\.com\/[^\s"]+\/pull\/(\d+)/.exec(it.pr||'');
  const how=pr?`<a href="${esc(it.pr)}" target="_blank" rel="noopener">Pull request #${pr[1]}</a>`:esc(it.decisionNote==='Resolved on its own'?'Resolved on its own':'');
- row.innerHTML=`<span class="list-row__icon">${icon(ICON[it.source]||'sparkle')}</span><span class="list-row__main"><span class="list-row__title">${esc(it.title)}</span>`+
+ row.innerHTML=`<span class="list-row__icon">${icon('check')}</span><span class="list-row__main"><span class="list-row__title">${esc(it.title)}</span>`+
   `<span class="list-row__sub">${esc(day(it.shipped?.at||it.updatedAt))}${how?' · '+how:''}</span></span>`;
  return row;
 }
+const SHOWN_RELEASES=6;
 function renderShipped(box,data){
- const at=it=>String(it.shipped?.at||it.updatedAt||'');
+ const at=it=>String(it.shipped?.at||it.decidedAt||it.updatedAt||'');
  const items=(data.items||[]).filter(i=>i.stage==='shipped').sort((a,b)=>at(b).localeCompare(at(a)));
- // Releases in order of their newest item. Waiting for its release stamp: "Next release", first. Shipped before releases
- // were stamped: "Earlier", last.
- const key=it=>it.shipped?.version?'v:'+it.shipped.version:it.shipped?.pending?'next':'earlier';
+ const rel=st.releases||[],relAt=new Map(rel.map(r=>[r.version,Date.parse(r.deployedAt)]));
+ // Stamped items keep their release. Others go to the first release deployed after they closed: "Next release" when
+ // none has yet, "Earlier" when they closed before the oldest release on record (or there is no history).
+ const key=it=>{
+  if(it.shipped?.version)return 'v:'+it.shipped.version;
+  if(it.shipped?.pending)return 'next';
+  const t=Date.parse(at(it));if(!t||!rel.length||t<Date.parse(rel[0].deployedAt))return 'earlier';
+  const r=rel.find(r=>Date.parse(r.deployedAt)>=t);return r?'v:'+r.version:'next';
+ };
  const groups=new Map();for(const it of items){const k=key(it);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(it)}
- const rank=k=>k==='next'?0:k==='earlier'?2:1;
- box.replaceChildren(...[...groups].sort((a,b)=>rank(a[0])-rank(b[0])).map(([k,list])=>{const g=document.createElement('section');g.className='improve-release';
-  const h=document.createElement('h3');h.textContent=k==='next'?'Next release':k==='earlier'?'Earlier':`Version ${k.slice(2)}`;g.append(h,...list.map(shippedRow));return g}));
+ // Next release first, then releases newest first (by deploy time, else by their newest item), Earlier last.
+ const when=([k,list])=>k==='next'?Infinity:k==='earlier'?-Infinity:relAt.get(k.slice(2))||Date.parse(at(list[0]))||0;
+ const section=([k,list])=>{const g=document.createElement('section');g.className='improve-release';
+  const h=document.createElement('h3');h.textContent=k==='next'?'Next release':k==='earlier'?'Earlier':`Version ${k.slice(2)}`;g.append(h,...list.map(shippedRow));return g};
+ const ordered=[...groups].sort((a,b)=>when(b)-when(a)).map(section);
+ // A long history stays short: older releases fold away.
+ if(ordered.length>SHOWN_RELEASES){const d=document.createElement('details');d.className='improve-details';const n=ordered.slice(SHOWN_RELEASES).reduce((c,g)=>c+g.querySelectorAll('.improve-row').length,0);
+  d.innerHTML=`<summary>Older releases (${n} change${n===1?'':'s'})</summary>`;d.append(...ordered.slice(SHOWN_RELEASES));box.replaceChildren(...ordered.slice(0,SHOWN_RELEASES),d)}
+ else box.replaceChildren(...ordered);
  return items.length>0;
 }
 function signalRow(s,inBacklog){
