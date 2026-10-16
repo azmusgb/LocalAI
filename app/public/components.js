@@ -101,7 +101,10 @@
   }
   // Each run kind can own the body of its run view: mount(run, el) fills el. Kinds with none show the Output block.
   const runBodies=new Map();
-  function registerRunBody(kind,mount){if(typeof mount==='function')runBodies.set(String(kind),mount)}
+  // opts.update(run, slot) -> boolean: the same run re-rendered keeps its slot (no release, no re-mount) and is updated in place; false asks for a re-mount.
+  const runBodyOpts=new Map();
+  function registerRunBody(kind,mount,opts){if(typeof mount==='function'){runBodies.set(String(kind),mount);runBodyOpts.set(String(kind),opts&&typeof opts.update==='function'?opts:null)}}
   const runBodyFor=kind=>runBodies.get(String(kind))||null;
-  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{fetchJson,loadInto,ask,runCard,registerRunBody,runBodyFor});
+  const runBodyUpdateFor=kind=>runBodyOpts.get(String(kind))?.update||null;
+  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{fetchJson,loadInto,ask,runCard,registerRunBody,runBodyFor,runBodyUpdateFor});
 })();
