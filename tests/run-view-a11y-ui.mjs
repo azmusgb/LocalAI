@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { addAxe } from './axe-helper.mjs';
 
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const axePath = join(dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min.js');
@@ -34,9 +35,9 @@ const mixed = () => [
 ];
 // Stub state: `list(url)` answers each /api/runs request; `calls` records the URLs.
 async function open(viewport, hash, list, { storage = {}, center = true } = {}) {
-  const ctx = await browser.newContext({ viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.devTools': '1', ...storage });
-  const page = await ctx.newPage();
+  const page = await ctx.newPage({ serviceWorkers: 'block' });
   page.calls = []; page.known = new Map();
   await page.route(u => u.pathname === '/api/runs', async r => {
     const url = new URL(r.request().url());
@@ -129,6 +130,28 @@ await check('if the opener was re-rendered away, focus goes to the same run row'
   await page.context().close();
 });
 
+await check('Back closes the details sheet and keeps the run view open', async () => {
+  const page = await open(desk, '#work', async () => runs());
+  await page.waitForSelector('#work .run-card', T);
+  await openRow(page, 'run-a');
+  const hash = await page.evaluate(() => location.hash);
+  await page.click('#runDetailsBtn');
+  await page.waitForFunction(() => document.getElementById('runDetailsSheet').open, null, T);
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => !document.getElementById('runDetailsSheet').open, null, T);
+  assert.equal(await page.evaluate(() => location.hash), hash);
+  assert.ok(await page.evaluate(() => document.getElementById('runDrawerBackdrop').classList.contains('show')));
+  await page.click('#runDetailsBtn'); // and closing it with Escape pops its entry: the next Back closes the run view
+  await page.waitForFunction(() => document.getElementById('runDetailsSheet').open, null, T);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.getElementById('runDetailsSheet').open, null, T);
+  await page.waitForTimeout(200);
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => !document.getElementById('runDrawerBackdrop').classList.contains('show'), null, T);
+  assert.equal(await page.locator('#work.active').count(), 1);
+  await page.context().close();
+});
+
 await check('with the details sheet open, Tab stays inside the sheet; Escape closes the sheet first', async () => {
   const page = await open(desk, '#work', async () => runs());
   await page.waitForSelector('#work .run-card', T);
@@ -145,12 +168,84 @@ await check('with the details sheet open, Tab stays inside the sheet; Escape clo
   await page.context().close();
 });
 
+// A sheet entry that outlived its sheet (a reload, or Forward onto it) sits on an entry with the same hash. Close and Escape
+// must still close the run view, and the page behind must not stay inert.
+const closed = async page => {
+  await page.waitForFunction(() => !document.getElementById('runDrawerBackdrop').classList.contains('show'), null, T);
+  assert.equal(await page.evaluate(() => document.querySelector('.app').inert), false);
+  assert.ok(!/^#run\//.test(await page.evaluate(() => location.hash)), 'the hash left the run');
+};
+const withDetails = async () => {
+  const page = await open(desk, '#work', async () => runs());
+  await page.waitForSelector('#work .run-card', T);
+  await openRow(page, 'run-a');
+  await page.click('#runDetailsBtn');
+  await page.waitForFunction(() => document.getElementById('runDetailsSheet').open, null, T);
+  return page;
+};
+for (const how of ['Close', 'Escape']) {
+  await check(`reload with the details sheet open, then ${how} closes the run view`, async () => {
+    const page = await withDetails();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#runDrawerBackdrop.show #runDetailsBtn', T);
+    if (how === 'Close') await page.locator('#runDrawer [aria-label="Back"]').click(); else await page.keyboard.press('Escape');
+    await closed(page);
+    await page.context().close();
+  });
+  await check(`details open, Back, Forward, then ${how} closes the run view`, async () => {
+    const page = await withDetails();
+    await page.evaluate(() => history.back());
+    await page.waitForFunction(() => !document.getElementById('runDetailsSheet').open, null, T);
+    await page.waitForTimeout(100);
+    await page.evaluate(() => history.forward());
+    await page.waitForFunction(() => history.state?.localaiSheet, null, T);
+    await page.waitForTimeout(100);
+    if (how === 'Close') await page.locator('#runDrawer [aria-label="Back"]').click(); else { await page.focus('#runDetailsBtn'); await page.keyboard.press('Escape'); }
+    await closed(page);
+    assert.equal(await page.locator('#work.active').count(), 1, 'back on Work');
+    await page.context().close();
+  });
+}
+
+await check('Close never wedges: when Back lands on the same run hash, it goes Home and Close works again', async () => {
+  const page = await open(desk, '#work', async () => runs());
+  await page.waitForSelector('#work .run-card', T);
+  await openRow(page, 'run-a');
+  await page.evaluate(() => history.pushState({ localaiRun: true }, '', location.href)); // an entry no code owns, with the same hash
+  await page.locator('#runDrawer [aria-label="Back"]').click();
+  await closed(page);
+  assert.equal(await page.evaluate(() => location.hash), '#home');
+  await page.evaluate(() => window.LocalAIRuns.show('run-a')); // Close works again on the next run
+  await page.waitForSelector('#runDrawerBackdrop.show #runDetailsBtn', T);
+  await page.keyboard.press('Escape');
+  await closed(page);
+  await page.context().close();
+});
+
+// "Another version" and a version-strip tap replace #run/<a> with #run/<b>: after a reload the entry is still the one Work opened,
+// so Close goes back to Work, not Home.
+await check('reload on a run, a replace to another run, then Close returns to Work', async () => {
+  const page = await open(desk, '#work', async () => runs());
+  await page.waitForSelector('#work .run-card', T);
+  await openRow(page, 'run-a');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#runDrawerBackdrop.show #runDetailsBtn', T);
+  await page.evaluate(() => window.LocalAIRouter.go('#run/run-b', { replace: true }));
+  await page.waitForFunction(() => location.hash === '#run/run-b', null, T);
+  assert.equal(await page.evaluate(() => history.state?.localaiRun), true, 'the replaced entry keeps its in-app mark');
+  await page.locator('#runDrawer [aria-label="Back"]').click();
+  await closed(page);
+  await page.waitForSelector('#work.active', T);
+  assert.equal(await page.evaluate(() => location.hash), '#work');
+  await page.context().close();
+});
+
 await check('axe: the open run view passes color-contrast and target-size on phone and desktop', async () => {
   for (const vp of [phone, desk]) {
     const page = await open(vp, '#work', async () => runs());
     await page.waitForSelector('#work .run-card', T);
     await openRow(page, 'run-a');
-    await page.addScriptTag({ path: axePath });
+    await addAxe(page, axePath);
     const v = await page.evaluate(() => window.axe.run('#runDrawerBackdrop', { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(x => `${x.id}: ${x.nodes.map(n => n.html).join(' | ')}`)));
     assert.deepEqual(v, []);
     await page.context().close();

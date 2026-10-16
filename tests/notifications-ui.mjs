@@ -40,9 +40,9 @@ async function fakeApi(page, devices) {
   return calls;
 }
 async function openHealth(opts, devices = []) {
-  const context = await browser.newContext({ userAgent: IPHONE_UA, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const context = await browser.newContext({ serviceWorkers: 'block', userAgent: IPHONE_UA, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   await context.addInitScript(fakePush(opts), opts);
-  const page = await context.newPage();
+  const page = await context.newPage({ serviceWorkers: 'block' });
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
   const calls = await fakeApi(page, devices);
   await page.goto(base, { waitUntil: 'networkidle' });
@@ -112,9 +112,9 @@ await check('a subscription the appliance no longer knows says notifications sto
 });
 
 await check('notification links open their page', async () => {
-  const context = await browser.newContext();
+  const context = await browser.newContext({ serviceWorkers: 'block' });
   await context.addInitScript(() => localStorage.setItem('localai.firstRun.done', '1'));
-  const page = await context.newPage();
+  const page = await context.newPage({ serviceWorkers: 'block' });
   await page.goto(base + '/?open=status', { waitUntil: 'networkidle' });
   await page.waitForSelector('#status.active');
   assert.equal(new URL(page.url()).search, '');

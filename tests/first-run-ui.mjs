@@ -7,10 +7,10 @@ const browser = await chromium.launch();
 let failed = 0;
 async function check(name, fn) { try { await fn(); console.log('PASS', name) } catch (e) { failed++; console.log('FAIL', name, e.message) } }
 
-const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
 // Start as a new user: no saved choices, Developer tools off.
 await context.addInitScript(() => { if (!sessionStorage.getItem('seeded')) { localStorage.clear(); localStorage.setItem('localai.devTools', '0'); sessionStorage.setItem('seeded', '1') } });
-const page = await context.newPage();
+const page = await context.newPage({ serviceWorkers: 'block' });
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 await page.goto(base, { waitUntil: 'networkidle' });
