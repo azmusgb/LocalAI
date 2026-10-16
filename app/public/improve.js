@@ -39,7 +39,8 @@ function renderBacklog(box,data){
 function inProgressRow(it){
  const row=document.createElement('div');row.className='list-row improve-row';row.dataset.itemId=it.id;
  const s=sessionOf(it),state=it.change?badge(CHANGE_STATE[it.change.status]||['Working','neutral']):badge(['Claude','accent']);
- const claude=!it.change?` <span>Claude · ${esc(s?(s.lastEvent||s.status||''):'not reporting')}</span>`:'';
+ // The session's state, not its latest step: one session holds many items, so its step would repeat on each of them.
+ const claude=!it.change?` <span>${s?`Claude's session is ${s.status==='active'?'active':'idle'}${s.updatedAt?' · '+esc(ago(s.updatedAt)):''}`:"Claude's session isn't reporting"}</span>`:'';
  row.innerHTML=`<span class="list-row__icon">${icon(ICON[it.source]||'sparkle')}</span>`+
   `<button type="button" class="improve-row__open list-row__main"><span class="list-row__title">${esc(it.title)}</span><span class="list-row__sub">${state}${claude}</span></button>`;
  row.querySelector('.improve-row__open').onclick=()=>openItem(it.id);
@@ -61,10 +62,13 @@ function shippedRow(it){
 function renderShipped(box,data){
  const at=it=>String(it.shipped?.at||it.updatedAt||'');
  const items=(data.items||[]).filter(i=>i.stage==='shipped').sort((a,b)=>at(b).localeCompare(at(a)));
- // Releases in order of their newest item; items without a release stamp yet wait under "Next release".
- const groups=new Map();for(const it of items){const v=it.shipped?.version||'';if(!groups.has(v))groups.set(v,[]);groups.get(v).push(it)}
- box.replaceChildren(...[...groups].map(([v,list])=>{const g=document.createElement('section');g.className='improve-release';
-  const h=document.createElement('h3');h.textContent=v?`Version ${v}`:'Next release';g.append(h,...list.map(shippedRow));return g}));
+ // Releases in order of their newest item. Waiting for its release stamp: "Next release", first. Shipped before releases
+ // were stamped: "Earlier", last.
+ const key=it=>it.shipped?.version?'v:'+it.shipped.version:it.shipped?.pending?'next':'earlier';
+ const groups=new Map();for(const it of items){const k=key(it);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(it)}
+ const rank=k=>k==='next'?0:k==='earlier'?2:1;
+ box.replaceChildren(...[...groups].sort((a,b)=>rank(a[0])-rank(b[0])).map(([k,list])=>{const g=document.createElement('section');g.className='improve-release';
+  const h=document.createElement('h3');h.textContent=k==='next'?'Next release':k==='earlier'?'Earlier':`Version ${k.slice(2)}`;g.append(h,...list.map(shippedRow));return g}));
  return items.length>0;
 }
 function signalRow(s,inBacklog){
