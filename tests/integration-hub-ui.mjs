@@ -15,7 +15,7 @@ async function check(name, fn) {
   }
 }
 
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+const page = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
 await page.goto(base, { waitUntil: 'domcontentloaded' });
 await page.waitForSelector('.ux-primary-rail');
 
@@ -110,7 +110,7 @@ await check('integration status refresh is resilient and remains in-page', async
 
 await page.close();
 
-const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+const mobile = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 await mobile.goto(base, { waitUntil: 'domcontentloaded' });
 await mobile.waitForSelector('#uxMobileNav');
 
