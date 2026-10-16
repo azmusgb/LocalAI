@@ -55,6 +55,10 @@ function setupHistoryFilter(){const q=$('agentHistorySearch');if(q)q.addEventLis
 async function init(){if(!$('specialistRegistry'))return;const historyLoaded=loadHistory();try{const j=await req('/api/agents/catalog');catalog=j.items||[];cards();updateDirectActionLabel()}catch(e){notice('error','Could not load specialist catalog: '+e.message)}setupTabs();setupAdvanced();setupHistoryFilter();$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m);else renderHistory()},()=>notice('info','Live mission stream reconnecting…'),()=>{const n=$('agentInlineNotice');if(n&&/reconnecting/.test(n.textContent))clearNotice()})}catch{notice('info','Live mission stream unavailable; history remains accessible.')}}
 window.addEventListener('localai:agentworld-select',e=>{if(e.detail?.workerId)selectWorker(e.detail.workerId)});
 window.LocalAISpecialists={init,preview,renderMission};
+// Home starts a mission here: 202 {runId} comes back at once and the run view follows the mission. A failure fails the pending view and throws.
+window.LocalAIMissions={async start(goal,{pending,agentIds,projectId}={}){let j;try{j=await req('/api/agents/missions/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({goal,projectId:projectId||'',agentIds:agentIds?.length?agentIds:undefined,async:true})});if(!j.runId)throw Error('The mission did not start. Try again.')}catch(e){pending?.fail(e.message||'Something went wrong.');throw e}pending?.resolve(j.runId)},
+ // The run view's body shows a mission this way: select it (live while it runs, replayed once it ended), and make Agent World re-measure.
+ async show(missionId,{replay=true,alive}={}){let m=null;try{m=(await req('/api/agents/mission?id='+encodeURIComponent(missionId))).mission}catch{}if(!m||(alive&&!alive()))return false;renderMission(m);if(replay&&m.status!=='running')window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:m}}));requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')));return true}};
 document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',e.message)));
 })();
 
@@ -2610,7 +2614,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 (() => {
   'use strict';
 
-  const state = { runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '', projects: null, viewError: '', fetched: null, gap: '', pending: null, inApp: false, closing: false };
+  const state = { inerted: [], opener: null, runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '', projects: null, viewError: '', fetched: null, gap: '', pending: null, inApp: false, closing: false };
   const KINDS = { chat: ['Chat', 'compose'], research: ['Research', 'globe'], image: ['Image', 'image'], agent: ['Agent', 'automate'], automation: ['Automation', 'refresh'], engineering: ['Engineering', 'build'] };
   const kindLabel = (kind) => (KINDS[kind] || ['Run'])[0];
   const lookup = (id) => state.runs.find((item) => item.id === id) || (state.fetched?.id === id ? state.fetched : null);
@@ -2802,6 +2806,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const drawer = el('runDrawer');
     if (!drawer) return;
     const run = lookup(runId);
+    // A body that can update in place keeps its slot while the same run is re-rendered; scroll and focus stay where they were.
+    const kind = run ? (run.card?.kind || run.type) : '', prev = state.body, upd = window.LocalAIUI.runBodyUpdateFor?.(kind);
+    const keep = !!(run && prev && prev.runId === run.id && prev.kind === kind && upd && prev.slot.isConnected && drawer.contains(prev.slot));
+    const keepTop = drawer.scrollTop, focused = keep && prev.slot.contains(document.activeElement) ? document.activeElement : null;
+    const lost = focusSpot();   // the header and sections are rebuilt: remember what had focus so its equivalent gets it back
+    if (keep) prev.slot.remove(); else { window.LocalAIRunBodies?.release?.(); state.body = null; }   // a body that borrowed page elements gives them back before the view is rebuilt
     drawer.replaceChildren();
     el('runDetailsSheet').replaceChildren();
     state.drawerSig = drawerSignature(run);
@@ -2828,20 +2838,69 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (run.summary) appendSection(drawer, 'Summary', run.summary);
     if (run.error) appendSection(drawer, 'Error', run.error);
     // The kind body slot: a body registered for this kind owns it; otherwise the Output block.
-    const mount = window.LocalAIUI.runBodyFor(card?.kind || run.type);
+    const mount = window.LocalAIUI.runBodyFor(kind);
     if (mount) {
-      const slot = document.createElement('section'); slot.className = 'run-section run-body';
-      try { mount(run, slot); } catch (error) { slot.textContent = `This run's details could not be shown: ${error.message}`; }
-      drawer.appendChild(slot);
+      let slot = null;
+      if (keep) { let ok = false; try { ok = upd(run, prev.slot) !== false; } catch {} if (ok) { slot = prev.slot; drawer.appendChild(slot); if (focused?.isConnected) focused.focus({ preventScroll: true }); } else { window.LocalAIRunBodies?.release?.(); state.body = null; } }
+      if (!slot) {
+        slot = document.createElement('section'); slot.className = 'run-section run-body';
+        try { mount(run, slot); } catch (error) { slot.textContent = `This run's details could not be shown: ${error.message}`; }
+        drawer.appendChild(slot);
+      }
+      state.body = { runId: run.id, kind, slot };
     } else {
       const output = outputText(run.output);
       if (output) appendSection(drawer, 'Output', output, true);
     }
     fillDetails(run);
+    if (keep) drawer.scrollTop = keepTop;
+    if (lost) refocus(lost);
+  }
+  // Focus that survives a rebuild: describe the focused control inside the run view or its sheet, then find its equivalent (id, label, text) in the new content.
+  function focusSpot() {
+    const a = document.activeElement, box = a && (a.closest('#runDetailsSheet') || a.closest('#runDrawer'));
+    if (!box || a === box) return null;
+    return { sheet: box.id === 'runDetailsSheet', id: a.id, label: a.getAttribute('aria-label') || '', text: a.textContent.trim(), tag: a.tagName };
+  }
+  function refocus(spot) {
+    if (document.activeElement?.closest?.('#runDrawer, #runDetailsSheet')) return;
+    const box = el(spot.sheet && el('runDetailsSheet').open ? 'runDetailsSheet' : 'runDrawer'), all = [...box.querySelectorAll('button, a[href], input, select, textarea, [tabindex]')];
+    const to = (spot.id && all.find((n) => n.id === spot.id)) || (spot.label && all.find((n) => n.getAttribute('aria-label') === spot.label)) || (spot.text && all.find((n) => n.tagName === spot.tag && n.textContent.trim() === spot.text)) || all.find((n) => !n.disabled && !n.hidden) || box;
+    if (to === box) box.tabIndex = -1;
+    to.focus({ preventScroll: true });
+  }
+  // The page behind a run view is inert (out of the Tab order and hidden from screen readers) while it is open.
+  function setInert(on) {
+    if (on) { state.inerted = [...document.body.children].filter((n) => !n.inert && n.id !== 'runDrawerBackdrop' && !/^(SCRIPT|STYLE|LINK|SVG|DIALOG|TEMPLATE)$/i.test(n.tagName) && !n.matches('[aria-live], [role="status"], [role="alert"]')); state.inerted.forEach((n) => { n.inert = true; }); }
+    else { (state.inerted || []).forEach((n) => { n.inert = false; }); state.inerted = []; }
+  }
+  // Tab and Shift+Tab cycle inside the top layer: an ask sheet, else the ⓘ sheet, else the run view.
+  function trapTab(event) {
+    if (event.key !== 'Tab' || !el('runDrawerBackdrop')?.classList.contains('show')) return;
+    const box = document.querySelector('dialog.ask-sheet[open]') || (el('runDetailsSheet')?.open ? el('runDetailsSheet') : el('runDrawer'));
+    const items = [...box.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((n) => !n.disabled && !n.closest('[hidden], [inert]') && n.getClientRects().length);
+    const a = document.activeElement;
+    if (!items.length) { event.preventDefault(); return; }
+    if (!box.contains(a)) { event.preventDefault(); items[event.shiftKey ? items.length - 1 : 0].focus(); }
+    else if (event.shiftKey && a === items[0]) { event.preventDefault(); items[items.length - 1].focus(); }
+    else if (!event.shiftKey && a === items[items.length - 1]) { event.preventDefault(); items[0].focus(); }
+  }
+  // Closing returns focus to what opened the run (or that run's row, or the page heading) once the page behind has settled.
+  function restoreFocus(opener) {
+    const ok = () => document.activeElement && document.activeElement !== document.body && !document.activeElement.closest('#runDrawerBackdrop');
+    if (ok()) return;   // page-change code already placed focus
+    const shown = (n) => n && n.isConnected && n.getClientRects().length;
+    const row = opener.runId && [...document.querySelectorAll('[data-run-id]')].filter((n) => !n.closest('#runDrawerBackdrop') && shown(n)).find((n) => n.dataset.runId === opener.runId);
+    const to = shown(opener.el) ? opener.el : row && (row.querySelector('button') || row);
+    if (to) { if (!to.matches('button, [href], input, select, textarea, [tabindex]')) to.tabIndex = -1; to.focus(); }
+    if (ok()) return;
+    const h = [...document.querySelectorAll('h1')].find(shown) || document.querySelector('main, [role="main"]');
+    if (h) { h.tabIndex = -1; h.focus(); }
   }
   function errorBox() { const err = document.createElement('div'); err.className = 'run-view-error'; err.setAttribute('role', 'alert'); err.textContent = state.viewError; return err; }
 
   // Not a loaded run: Starting… (a run being created), Loading…, or why there is nothing to show.
+  const pendingText = (p) => `Creating your image… ${Math.floor((Date.now() - p.startedAt) / 1000)} s`;
   function renderGap(drawer) {
     const p = state.pending;
     if (p && !state.gap) {
@@ -2852,7 +2911,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         drawer.appendChild(stateBlock((KINDS[p.kind] || [0, 'system'])[1], [msg, close]));
       } else {
         const spin = document.createElement('span'); spin.className = 'run-spinner'; spin.setAttribute('aria-hidden', 'true');
-        const text = textNode('run-view-state__text', 'Starting…'); text.setAttribute('role', 'status');
+        // An image is drawn before its run is reported, so its wait is shown honestly: a label and the seconds so far.
+        const text = textNode('run-view-state__text', p.kind === 'create' ? pendingText(p) : 'Starting…'); text.setAttribute('role', 'status');
         drawer.appendChild(stateBlock((KINDS[p.kind] || [0, 'system'])[1], [spin, text]));
       }
       return;
@@ -3004,15 +3064,20 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const backdrop = el('runDrawerBackdrop');
     if (!backdrop) return;
     const was = backdrop.classList.contains('show');
+    if (!was) { const a = document.activeElement; state.opener = a && a !== document.body && !a.closest('#runDrawerBackdrop') ? { el: a, runId: a.closest('[data-run-id]')?.dataset.runId || (state.selectedId !== 'pending' ? state.selectedId : '') } : null; }
     backdrop.classList.add('show'); backdrop.setAttribute('aria-hidden', 'false'); document.body.classList.add('run-view-open');
+    if (!was) setInert(true);
     renderDrawer(state.selectedId);
     if (!was) el('runDrawer')?.querySelector('button')?.focus();
   }
   function hideView() {
-    const backdrop = el('runDrawerBackdrop');
+    window.LocalAIRunBodies?.release?.(); state.body = null;
+    const backdrop = el('runDrawerBackdrop'), wasOpen = backdrop?.classList.contains('show'), opener = state.opener || { el: null, runId: state.selectedId };
     if (backdrop) { backdrop.classList.remove('show'); backdrop.setAttribute('aria-hidden', 'true'); }
     const sheet = el('runDetailsSheet'); if (sheet?.open) { state.selectedId = null; sheet.close(); }
     document.body.classList.remove('run-view-open');
+    setInert(false); state.opener = null;
+    if (wasOpen) queueMicrotask(() => restoreFocus(opener));
     Object.assign(state, { selectedId: null, drawerSig: '', fetched: null, gap: '', pending: null, inApp: false, closing: false, viewError: '' });
   }
   async function fetchRun(id, quiet) {
@@ -3053,13 +3118,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     fetchRun(id, false);
   }
   function openPending({ kind, title } = {}) {
-    const token = { kind: String(kind || ''), title: String(title || ''), error: '', resolved: '' };
-    state.pending = token; state.selectedId = 'pending'; state.gap = ''; state.fetched = null; state.inApp = true; state.closing = false;
+    const token = { kind: String(kind || ''), title: String(title || ''), error: '', resolved: '', startedAt: Date.now() };
+    state.pending = token;
+    if (token.kind === 'create') { const t = setInterval(() => { const n = el('runDrawer')?.querySelector('.run-view-state__text'); if (state.pending !== token || token.resolved || token.error || !n) { if (state.pending !== token || token.resolved || token.error) clearInterval(t); return; } n.textContent = pendingText(token); }, 1000); } state.selectedId = 'pending'; state.gap = ''; state.fetched = null; state.inApp = true; state.closing = false;
     showView();
     if (window.LocalAIRouter) window.LocalAIRouter.go('#run/pending');
     return {
       resolve(runId) { if (state.pending !== token || token.resolved) return; token.resolved = String(runId); if (window.LocalAIRouter) window.LocalAIRouter.go(`#run/${encodeURIComponent(runId)}`, { replace: true }); else routeRun(token.resolved); },
-      fail(message) { if (state.pending !== token || token.resolved) return; token.error = String(message || 'Something went wrong.'); el('runLiveRegion').textContent = token.error; renderDrawer('pending'); }
+      fail(message) { if (state.pending !== token || token.resolved || token.error) return; token.error = String(message || 'Something went wrong.'); el('runLiveRegion').textContent = token.error; renderDrawer('pending'); }
     };
   }
 
@@ -3129,13 +3195,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
   // The one way for a page to open a run view: pushes a history entry marked as in-app, so Close and Back return to the page you were on.
   function show(id) { openRun(String(id)); }
-  window.LocalAIRuns = { open: openRunBySource, openPending, show };
+  window.LocalAIRuns = { open: openRunBySource, openPending, show, refresh: () => loadRuns(true) };
 
   function init() {
     ensureSurface();
     loadRuns(true);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) loadRuns(true); }, { passive: true });
     // Escape closes the top layer only: a confirm, else the ⓘ sheet (the browser closes it), else the menu, else the run view.
+    document.addEventListener('keydown', trapTab, true);
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && el('runDrawerBackdrop')?.classList.contains('show') && !document.querySelector('dialog.ask-sheet[open]') && !el('runDetailsSheet')?.open && !closeMenu()) closeRunView();
     });
