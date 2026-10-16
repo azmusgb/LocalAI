@@ -601,6 +601,20 @@ test('a cross-site POST to the ask is refused, and the shortcut\'s POST with no 
   assert.ok((await runsFor(base)).some(x => x.type === 'agent'));
 });
 
+// A web page can still make the owner's browser GET a plain question; that would use the model and could push a
+// notification, so a GET the browser marks cross-site is refused too. Shortcuts send no Sec-Fetch-Site.
+test('a cross-site GET to the ask is refused before anything runs; a plain GET still answers', { timeout: 30000 }, async t => {
+  const { base, chats } = await startServer(t);
+  for (const headers of [{ 'Sec-Fetch-Site': 'cross-site' }, { Origin: 'https://evil.example' }]) {
+    const r = await fetch(`${base}/api/glance/ask?q=${encodeURIComponent('why is the sky blue?')}`, { headers });
+    assert.equal(r.status, 403, JSON.stringify(headers));
+  }
+  assert.equal(chats.length, 0);
+  assert.deepEqual((await runsFor(base)).map(x => x.type), []);
+  const ok = await fetch(`${base}/api/glance/ask?q=${encodeURIComponent('what time is it?')}`);
+  assert.equal(ok.status, 200);
+});
+
 test('a voice image that finishes sends one "Your image is ready" and its run stays a voice run', { timeout: 30000 }, async t => {
   const comfy = await startComfy(t, { promptStatus: 200 });
   const log = path.join(os.tmpdir(), `localai-notify-${process.pid}-${Date.now()}-imgok`);
