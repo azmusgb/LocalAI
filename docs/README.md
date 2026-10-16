@@ -2,6 +2,13 @@
 
 Start with the [project README](../README.md) for what LocalAI is.
 
+## Guides
+
+- [User guide](USER-GUIDE.md): everyday use on a phone or computer: Home, Work, Projects, Improve, approvals,
+  notifications, voice.
+- [Admin guide](ADMIN-GUIDE.md): how do I… check health, update, run local CI, back up, set up a phone, reach it
+  from away, pair a device. Each answer links to the detailed guide below.
+
 ## Operate
 
 - [Operations](OPERATIONS.md): health checks, scheduled tasks, backups and restore, logs, troubleshooting index.

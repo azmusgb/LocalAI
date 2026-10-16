@@ -125,6 +125,15 @@ New `tests/*.test.cjs` and `tests/*-ui.mjs` files are picked up automatically by
 
 ## CI
 
+**While GitHub Actions can't start (account billing), the three workflows below are disabled and PRs are checked
+locally:** `npm run ci -- <PR number>` (`scripts/local-ci.mjs`) runs every `validate.yml` step on the PR merged with
+`main`, in a throwaway worktree, against a fresh server on a free port, and posts a `local-ci` commit status (pending,
+then success or failure) to the PR. `--no-post` skips posting; with no PR number it tests the current checkout and
+never posts. Runs queue one at a time per machine (a lock in the temp folder; a dead owner's lock is taken over), and
+a stopped run (Ctrl-C, SIGTERM) kills its test processes, marks the PR "Stopped before it finished", removes its
+worktree and releases the lock. The log path is printed at the end. Re-enable Actions with
+`gh workflow enable <name> -R azmusgb/LocalAI`.
+
 CI runs on pull requests only (plus schedules and manual runs); nothing runs after a merge, because the
 auto-deploy certifies `main` itself before promoting it. A newer push to a PR cancels its older run.
 
