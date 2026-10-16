@@ -66,6 +66,8 @@ try {
   const page = await context.newPage({ serviceWorkers: 'block' });
   const pageErrors = [];
   page.on('pageerror', e => pageErrors.push(e.message));
+  const unauthorized = [];
+  page.on('response', r => { if (r.status() === 401) unauthorized.push(new URL(r.url()).pathname); });
   await page.goto(base, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.ux-primary-rail');
   await page.waitForFunction(() => typeof window.showView === 'function');
@@ -81,6 +83,10 @@ try {
     assert.equal(await page.locator('#claudeChatPair code').filter({ hasText: `localai-chat pair ${code}` }).count(), 1);
     assert.match(await page.locator('#claudeChatPair').innerText(), /served over plain HTTP, so the pairing cookie crosses your Wi-Fi unencrypted until HTTPS is set up/);
     assert.equal(await page.locator('#claudeChatSession').isVisible(), false);
+  });
+
+  await check('unpaired: the page asks whoami first and never gets a 401 (no console error)', async () => {
+    assert.deepEqual(unauthorized, []);
   });
 
   await check('approval switches the panel to the session picker without a reload', async () => {

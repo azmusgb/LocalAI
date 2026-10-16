@@ -11,9 +11,12 @@ const { once } = require('node:events');
 
 async function startServer(t, extraEnv = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-runs-'));
+  const ollamaCalls = []; // every /api/chat and /api/generate body Ollama received, in order
   const mock = http.createServer((req, res) => {
-    req.resume();
+    let raw = '';
+    req.on('data', c => raw += c);
     req.on('end', () => {
+      if (req.url === '/api/chat' || req.url === '/api/generate') { try { ollamaCalls.push({ url: req.url, body: JSON.parse(raw) }); } catch {} }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       if (req.url === '/api/tags') return res.end(JSON.stringify({ models: [{ name: 'test-model' }] }));
       if (req.url === '/api/ps') return res.end(JSON.stringify({ models: [] }));
@@ -80,7 +83,7 @@ async function startServer(t, extraEnv = {}) {
     return { response, value };
   };
 
-  return { request, base };
+  return { request, base, ollamaCalls };
 }
 
 test('unified run API exposes native chat plus legacy execution history and retry lineage', { timeout: 30000 }, async t => {
@@ -337,4 +340,76 @@ test('mission start without async still answers with the mission', { timeout: 60
   assert.equal(a.response.status, 200);
   assert.equal(a.value.mission.status, 'complete');
   assert.equal(a.value.runId, undefined);
+});
+
+test('text-model calls use one 8192 context, stay warm, and take turns with images', { timeout: 60000 }, async t => {
+  const order = [];
+  const comfy = http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (req.url.startsWith('/object_info/CheckpointLoaderSimple')) return res.end(JSON.stringify({ CheckpointLoaderSimple: { input: { required: { ckpt_name: [['sd15.safetensors']] } } } }));
+      if (req.url === '/prompt') { order.push('comfy'); return res.end(JSON.stringify({ prompt_id: 'p1' })); }
+      if (req.url.startsWith('/history/')) return res.end(JSON.stringify({ p1: { status: { status_str: 'success' }, outputs: { 9: { images: [{ filename: 'a.png', subfolder: '', type: 'output' }] } } } }));
+      res.end('{}');
+    });
+  });
+  comfy.listen(0, '127.0.0.1');
+  await once(comfy, 'listening');
+  t.after(async () => { comfy.closeAllConnections(); await new Promise(resolve => comfy.close(resolve)); });
+  const { request, base, ollamaCalls } = await startServer(t, { COMFY_URL: `http://127.0.0.1:${comfy.address().port}` });
+  const waitFor = async (fn) => { for (let i = 0; i < 100 && !fn(); i++) await new Promise(r => setTimeout(r, 50)); };
+
+  // Startup: exactly one background warm-up.
+  await waitFor(() => ollamaCalls.some(c => c.url === '/api/generate'));
+  assert.equal(ollamaCalls.filter(c => c.url === '/api/generate').length, 1);
+  const warm = ollamaCalls.find(c => c.url === '/api/generate').body;
+  assert.equal(warm.model, 'test-model');
+  assert.equal(warm.keep_alive, '30m');
+  assert.equal(warm.options.num_ctx, 8192);
+  assert.equal(warm.options.num_predict, 1);
+  ollamaCalls.length = 0;
+
+  // A long conversation is trimmed to fit and uses the one context.
+  const big = Array.from({ length: 12 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `m${i} ` + 'w'.repeat(9000) }));
+  big.push({ role: 'user', content: 'final question' });
+  const chat = await request('/api/chat', { messages: big });
+  assert.equal(chat.response.status, 200);
+  const chatCall = ollamaCalls.find(c => c.url === '/api/chat').body;
+  assert.equal(chatCall.messages.at(-1).content, 'final question');
+  assert.ok(chatCall.messages.map(m => m.content).join('').length / 3.5 <= 8192 - 1024);
+
+  const stream = await fetch(`${base}/api/chat/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: 'hi stream' }] }) });
+  await stream.text();
+  const raw = (url, body) => fetch(base + url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.text());
+  await raw('/api/glance/ask', { text: 'what is up glance' });
+  await raw('/api/agents/run', { goal: 'agent goal here' });
+  await raw('/api/changes/plan', { request: 'Change request for planner', target: 'self' }); // the mock's reply is not a patch plan; only the request matters
+
+  // Every text-model request, on every path, shares the one context and keep-alive (the planner alone gets the large one).
+  const chats = ollamaCalls.filter(c => c.url === '/api/chat').map(c => c.body);
+  const has = text => chats.find(b => b.messages.some(m => String(m.content).includes(text)));
+  assert.equal(chats.length, 5, 'chat, stream, glance, agent, planner');
+  for (const [name, text, ctx] of [['chat', 'final question', 8192], ['stream', 'hi stream', 8192], ['glance', 'what is up glance', 8192], ['agent', 'agent goal here', 8192], ['planner', 'CHANGE REQUEST', 32768]]) {
+    const b = has(text);
+    assert.ok(b, `${name} request captured`);
+    assert.equal(b.options.num_ctx, ctx, name);
+    assert.equal(b.keep_alive, '30m', name);
+  }
+  const planner = has('CHANGE REQUEST');
+  assert.ok(planner.messages.map(m => m.content).join('').length / 3.5 <= 32768 - 4096);
+
+  const origPush = ollamaCalls.push.bind(ollamaCalls);
+  ollamaCalls.push = (...a) => { if (a[0].url === '/api/generate') order.push(a[0].body.keep_alive === 0 ? 'unload' : 'warm'); return origPush(...a); };
+  // An image request unloads the text model first, then warms it again afterwards.
+  const generates = () => ollamaCalls.filter(c => c.url === '/api/generate');
+  const before = generates().length;
+  const img = await request('/api/images/generate', { prompt: 'a cat' });
+  assert.equal(img.response.status, 200, JSON.stringify(img.value));
+  await waitFor(() => generates().length >= before + 2);
+  const after = generates().slice(before);
+  assert.equal(after.length, 2);
+  assert.equal(after[0].body.keep_alive, 0);
+  assert.equal(after[1].body.keep_alive, '30m');
+  assert.deepEqual(order, ['unload', 'comfy', 'warm']);
 });

@@ -171,5 +171,16 @@ await check('phone: under each page title, status sits on the left and the page 
   await context.close();
 });
 
+await check('phone: the top bar and page tabs are solid, so scrolled content never shows through them', async () => {
+  const { page, context } = await open(SIZES[0]);
+  await page.evaluate(() => { location.hash = '#claude' });
+  await page.waitForTimeout(300);
+  const seeThrough = await page.evaluate(() => ['.ux-context-bar', '.ux-page-strip'].map(q => [...document.querySelectorAll(q)])
+    .flat().filter(e => e.getBoundingClientRect().height > 0 && ['sticky', 'fixed'].includes(getComputedStyle(e).position))
+    .map(e => [e.className, getComputedStyle(e).backgroundColor]).filter(([, bg]) => { const m = bg.match(/rgba?\(([^)]+)\)/); const a = m ? (m[1].split(',')[3] ?? '1') : '0'; return parseFloat(a) < 1; }));
+  assert.deepEqual(seeThrough, []);
+  await context.close();
+});
+
 await browser.close();
 if (failed) { console.log(`${failed} layout check(s) failed`); process.exit(1) }

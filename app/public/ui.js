@@ -267,8 +267,8 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       button.dataset.view = 'models';
       button.innerHTML = '<span class="navicon">M</span>Models';
       button.addEventListener('click', () => {
-        activateView('models');
-        window.LocalAIRouter?.go('#models');
+        // Through the router like every other page, so the address, the tab title, Back and focus follow.
+        if (window.LocalAIRouter) window.LocalAIRouter.go('#models'); else activateView('models');
         if (lastTruthSnapshot?.models) renderModelsSurface(lastTruthSnapshot.models);
         else refreshModelsSurface();
       });
@@ -883,7 +883,7 @@ function buildContext(){
  bar.innerHTML='<div class="ux-context-left"><span class="ux-context-brand"><span class="brandmark ux-context-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12c2.6-5.6 11.4-5.6 14 0-2.6 5.6-11.4 5.6-14 0Z" stroke="#0b0d11" stroke-width="2"/><circle cx="12" cy="12" r="2.2" fill="#0b0d11"/></svg></span><span class="ux-context-brand-names"><small id="uxContextGreeting"></small><strong>Local AI</strong></span></span><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-action icon-btn" type="button" id="uxHeaderAction" hidden></button><button class="ux-context-inbox" type="button" id="uxInboxBtn" data-empty="true" aria-label="Inbox" hidden>'+icon('bell','ux-ico')+'<span>Inbox</span><b id="uxInboxCount">0</b></button><button class="ux-context-search" type="button" id="uxCommandBtn" aria-label="Search commands">'+icon('search','ux-ico')+'<span>Search commands</span><kbd>⌘K</kbd></button><button class="ux-context-menu" id="uxContextMenu" type="button" aria-expanded="false" aria-label="Pages in this section"><span>Menu</span>'+icon('chevron-down','ux-ico')+'</button></div>';
  main.prepend(bar);
  q('[data-ux-go="home"]')?.addEventListener('click',()=>navigate('home'));
- q('#uxCommandBtn')?.addEventListener('click',()=>{const cmd=q('#cmdk');if(cmd){cmd.classList.add('show');cmd.setAttribute('aria-hidden','false');q('#cmdkInput')?.focus()}});
+ q('#uxCommandBtn')?.addEventListener('click',()=>{if(window.LocalAICommand)return window.LocalAICommand.open();const cmd=q('#cmdk');if(cmd){cmd.classList.add('show');cmd.setAttribute('aria-hidden','false');q('#cmdkInput')?.focus()}});
  q('#uxContextMenu')?.addEventListener('click',()=>toggleSheet());
  // Unread alerts plus approvals waiting, reported by app.js after it loads Inbox or Approvals.
  let inbox={unread:0,pending:0};
@@ -2007,7 +2007,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const STORE_KEY = 'localai.claudeChat.session';
   const $ = (id) => document.getElementById(id);
   const st = { mode: 'init', sessions: [], session: '', messages: [], after: 0, sending: false, pair: null, pairError: '', pairTimer: 0,
-    pollTimer: 0, sessionsAt: 0, polling: false, devices: [], devicesOpen: false, draft: '', built: '' };
+    pollTimer: 0, sessionsAt: 0, polling: false, devices: [], devicesOpen: false, draft: '', built: '', paired: null, who: null };
 
   const store = {
     get() { try { return localStorage.getItem(STORE_KEY) || ''; } catch { return ''; } },
@@ -2070,8 +2070,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
   // ---- Sessions and messages ----
   async function loadSessions(force) {
+    // Ask whoami before the first sessions request, so an unpaired device goes straight to pairing without a 401.
+    if (!force) {
+      await st.who;
+      if (st.paired === false) { if (st.mode !== 'pair' && isActive()) startPairing(); return; }
+    }
     try {
       const r = await api('sessions');
+      st.paired = true;
       st.sessionsAt = Date.now();
       st.sessions = r.items || [];
       if (st.mode !== 'paired') { st.mode = 'paired'; st.messages = []; st.after = 0; }
@@ -2083,7 +2089,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       render();
       if (force || st.mode === 'paired') poll();
     } catch (e) {
-      if (e.status === 401) { if (st.mode !== 'pair' && isActive()) startPairing(); else if (st.mode === 'paired') st.mode = 'init'; }
+      if (e.status === 401) { st.paired = false; if (st.mode !== 'pair' && isActive()) startPairing(); else if (st.mode === 'paired') st.mode = 'init'; }
       else if (st.mode === 'init') { st.mode = 'error'; st.pairError = `Chat is unavailable: ${e.message}`; render(); }
     }
   }
@@ -2111,7 +2117,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       renderLog();
       renderComposer();
     } catch (e) {
-      if (e.status === 401) startPairing();
+      if (e.status === 401) { st.paired = false; startPairing(); }
     } finally { st.polling = false; }
   }
 
@@ -2167,7 +2173,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   async function revoke(id) {
     try { await api('devices/revoke', { id }); } catch (e) { setNote(`Could not revoke: ${e.message}`, true); return; }
     const was = st.devices.find((d) => d.id === id);
-    if (was?.current) { st.mode = 'pair'; st.sessions = []; st.session = ''; st.messages = []; st.after = 0; startPairing(); }
+    if (was?.current) { st.mode = 'pair'; st.paired = false; st.sessions = []; st.session = ''; st.messages = []; st.after = 0; startPairing(); }
     else loadDevices();
   }
 
@@ -2205,7 +2211,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       cmd.append(copy);
       box.append(cmd, el('p', 'meta claude-chat-wait', st.pair ? 'Waiting for approval… this page switches over by itself.' : 'Requesting a code…'));
     }
-    box.append(el('p', 'banner banner--attention claude-chat-warning', HTTP_WARNING));
+    if (location.protocol === 'http:') box.append(el('p', 'banner banner--attention claude-chat-warning', HTTP_WARNING));
     root.append(box);
     st.built = 'pair';
   }
@@ -2355,7 +2361,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const wake = () => { schedule(); if (isActive() && document.visibilityState === 'visible') { if (st.mode === 'init') loadSessions(); else if (st.mode === 'paired') poll(); } };
     new MutationObserver(wake).observe($('claude'), { attributes: true, attributeFilter: ['class'] });
     document.addEventListener('visibilitychange', wake);
-    api('whoami').then((r) => { if (r.paired || isActive()) loadSessions(); }, () => loadSessions());
+    st.who = api('whoami').then((r) => { st.paired = !!r.paired; }, () => {});
+    st.who.then(() => { if (st.paired || isActive()) loadSessions(); });
     schedule();
   }
 
@@ -2372,7 +2379,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
   const INTEGRATIONS = [
     {
-      id: 'n8n', name: 'n8n', tier: 'native', decision: 'Native owner', source: 'n8n',
+      id: 'n8n', name: 'n8n', tier: 'native', decision: 'Built in', source: 'n8n',
       summary: 'Primary workflow automation engine. Keep orchestration here instead of adding Bardeen, Coze, or another parallel automation runtime.',
       guidance: "After adding credentials, community nodes, or public webhooks, run n8n's official security audit and review any risky-node findings.",
       actions: [
@@ -2381,7 +2388,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       ]
     },
     {
-      id: 'comfyui', name: 'ComfyUI', tier: 'native', decision: 'Native media owner', source: 'comfy',
+      id: 'comfyui', name: 'ComfyUI', tier: 'native', decision: 'Built in · images', source: 'comfy',
       summary: 'Primary local generative-media backend. Image, video, and avatar workflows should extend this service rather than create another media stack.',
       guidance: 'For automated workflows, prefer custom nodes that work in ComfyUI API mode. Nodes that require direct client/server communication may not be callable from Local AI.',
       actions: [
@@ -3496,7 +3503,8 @@ function mount(){
  const host=q('#status');if(!host||q('.notify-card',host))return;
  const card=document.createElement('section');card.className='card notify-card';card.id='notifications';
  card.innerHTML='<h2>Notifications</h2><div class="notify-body"></div><p class="notify-status meta" role="status"></p>';
- (q('.secure-card',host)||q('.topbar',host))?.after(card);
+ // Below the Appliance summary, so health comes first and the notifications offer second.
+ (q(':scope > .two',host)||q('.secure-card',host)||q('.topbar',host))?.after(card);
  card.addEventListener('click',async e=>{
   const rename=e.target.closest('[data-notify-rename]');
   if(rename){const li=rename.closest('li'),b=q('b',li);li.querySelector('.notify-device-actions').innerHTML=`<input class="notify-rename" maxlength="40" value="${esc(b.textContent)}" aria-label="Device name"><button type="button" class="btn primary" data-notify-rename-save="${esc(rename.dataset.notifyRename)}">Save</button>`;q('.notify-rename',li).focus();return}

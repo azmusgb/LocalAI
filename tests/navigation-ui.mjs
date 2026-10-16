@@ -58,7 +58,7 @@ await check('opening a page loads its data even without a nav button click', asy
 });
 
 for (const [parent, child, childTab, domain] of [
-  ['issues', 'quality', 'Quality signals', 'improve'],
+  // Issues / Quality signals are hidden while Signals (Improve) shows the same detections.
   ['inbox', 'approvals', 'Approvals', 'home'],
   ['projects', 'knowledge', 'Sources', 'projects'],
 ]) {

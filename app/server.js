@@ -9,6 +9,7 @@ const PORT = Number(process.env.PORT || 3080);
 const LOCAL_UI_PORT = Number(process.env.LOCAL_UI_PORT || 0);
 const MODEL = process.env.MODEL || 'qwen3:4b-instruct-32k';
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://host.docker.internal:11434';
+const { TEXT_NUM_CTX, TEXT_NUM_CTX_LARGE, LARGE_ANSWER_RESERVE, TEXT_KEEP_ALIVE, ANSWER_RESERVE, fitMessages, warmTextModel, unloadTextModel } = require('./text-context');
 const COMFY_URL = process.env.COMFY_URL || 'http://host.docker.internal:8188';
 const N8N_URL = process.env.N8N_URL || 'http://local-ai-n8n:5678';
 const PROXY_URL = process.env.PROXY_URL || 'http://local-ai-ollama-responses-proxy:8080';
@@ -560,6 +561,15 @@ function systemPrompt(researchContext = '', capabilityContext = '', brief = fals
   };
 }
 
+// The messages for the text model: system prompt, research sources (trimmed first), then the conversation, fitted to the shared context.
+function chatMessages(prep) {
+  const system = systemPrompt('', prep.capabilityContext, prep.brief);
+  const sources = prep.researchContext
+    ? [{ role: 'system', kind: 'sources', content: `Current metasearch results are below. Use them when relevant and cite source numbers like [1].\n\n${prep.researchContext}` }]
+    : [];
+  return fitMessages([system, ...sources, ...prep.messages], { numCtx: TEXT_NUM_CTX, reserve: ANSWER_RESERVE });
+}
+
 async function prepareChat(body, signal = null) {
   const throwIfAborted = () => {
     if (!signal?.aborted) return;
@@ -615,9 +625,10 @@ async function chatOnce(body) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: prep.model,
-        messages: [systemPrompt(prep.researchContext, prep.capabilityContext, prep.brief), ...prep.messages],
+        messages: chatMessages(prep),
         stream: false,
-        options: { num_ctx: 32768 }
+        keep_alive: TEXT_KEEP_ALIVE,
+        options: { num_ctx: TEXT_NUM_CTX }
       })
     }, CHAT_MODEL_TIMEOUT_MS);
 
@@ -714,9 +725,10 @@ async function apiChatStream(req, res) {
       signal: controller.signal,
       body: JSON.stringify({
         model: prep.model,
-        messages: [systemPrompt(prep.researchContext, prep.capabilityContext, prep.brief), ...prep.messages],
+        messages: chatMessages(prep),
         stream: true,
-        options: { num_ctx: 32768 }
+        keep_alive: TEXT_KEEP_ALIVE,
+        options: { num_ctx: TEXT_NUM_CTX }
       })
     });
 
@@ -1106,8 +1118,14 @@ async function runComfyGraph(workflow, timeoutMs) {
   return { promptId: q.prompt_id, images };
 }
 
+// Fire-and-forget: loads the chat model into the GPU. Failures are ignored.
+function warmText() { warmTextModel({ url: OLLAMA_URL, model: MODEL }); }
+// Images and text take turns on the 6 GB GPU: the chat model unloads while ComfyUI works and reloads after the last image job.
+let imageJobsActive = 0;
+
 async function apiGenerateImage(req, res) {
   let execution = null;
+  let tookGpu = false;
   try {
     const body = await readBody(req, 30 * 1024 * 1024);
     const original = String(body.prompt || '').trim();
@@ -1144,6 +1162,8 @@ async function apiGenerateImage(req, res) {
       retryRequest: { path: '/api/images/generate', body: { prompt: original, engine: engine.id, checkpoint: engine.id === 'custom' ? checkpoint : undefined, negativePrompt: body.negativePrompt, aspect: body.aspect, width, height, steps, cfg, style, count, upscale: !!upscaler, enhance: body.enhance === true, threadId: cleanRunId(body.threadId) || undefined } }
     });
     runLedger.start(execution.id, editing ? 'Image edit started' : 'Image generation started');
+    imageJobsActive++; tookGpu = true;
+    await unloadTextModel({ url: OLLAMA_URL, model: MODEL });
 
     let prompt = original;
     if (body.enhance === true) {
@@ -1197,6 +1217,9 @@ async function apiGenerateImage(req, res) {
     if (execution) runLedger.fail(execution.id, e);
     if (e.status) return json(res, e.status, { error: e.message });
     storageError(res,e,500);
+  }
+  finally {
+    if (tookGpu && --imageJobsActive === 0) warmText();
   }
 }
 
@@ -1644,7 +1667,7 @@ async function apiKnowledgeSearch(req,res){
 
 async function runLocalModel(prompt, system='You are a concise local AI assistant.', timeoutMs=180000, model=MODEL){
   const selectedModel=String(model||MODEL).trim()||MODEL;
-  const r=await fetchWithTimeout(`${OLLAMA_URL}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:selectedModel,messages:[{role:'system',content:system},{role:'user',content:String(prompt).slice(0,50000)}],stream:false,options:{num_ctx:32768}})},timeoutMs);
+  const r=await fetchWithTimeout(`${OLLAMA_URL}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:selectedModel,messages:fitMessages([{role:'system',content:system},{role:'user',content:String(prompt).slice(0,50000)}]),stream:false,keep_alive:TEXT_KEEP_ALIVE,options:{num_ctx:TEXT_NUM_CTX}})},timeoutMs);
   const raw=await r.text(); if(!r.ok)throw new Error(`Intelligence service HTTP ${r.status}: ${raw.slice(0,400)}`); const j=JSON.parse(raw); return j?.message?.content||'';
 }
 async function runEngineeringPlannerModel(prompt, system, timeoutMs=ENGINEERING_MODEL_TIMEOUT_MS){
@@ -1652,12 +1675,14 @@ async function runEngineeringPlannerModel(prompt, system, timeoutMs=ENGINEERING_
   let watchdogAborted=false;
   const payload=Buffer.from(JSON.stringify({
     model:MODEL,
-    messages:[
+    // The planner is rare and code-heavy, so it gets the large context; the reload cost when switching is accepted.
+    messages:fitMessages([
       {role:'system',content:system},
       {role:'user',content:String(prompt).slice(0,50000)}
-    ],
+    ],{numCtx:TEXT_NUM_CTX_LARGE,reserve:LARGE_ANSWER_RESERVE}),
     stream:true,
-    options:{num_ctx:32768}
+    keep_alive:TEXT_KEEP_ALIVE,
+    options:{num_ctx:TEXT_NUM_CTX_LARGE}
   }),'utf8');
   const endpoint=new URL(`${OLLAMA_URL}/api/chat`);
   const transport=endpoint.protocol==='https:'
@@ -1968,6 +1993,10 @@ async function apiApprovalDecide(req,res){
   if(!requireFeature(res,9))return;
   try{const b=await readBody(req);const items=approvalStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Approval not found'});
     if(!['approved','rejected'].includes(b.decision))return json(res,400,{error:'decision must be approved or rejected'});
+    // An approval for a change decides the change as well; otherwise approving it here left the change waiting forever.
+    const changeId=items[i].meta?.changeId;
+    if(changeId&&items[i].status==='pending'){const changes=changeStore(),c=changes.find(x=>x.id===changeId);
+      if(c&&c.status==='awaiting_approval'){decideChange(changes,c,b.decision);recordActivity('approval',`Approval ${b.decision}`,items[i].title,{approvalId:items[i].id,changeId});return json(res,200,{item:approvalStore().find(x=>x.id===b.id)||items[i]})}}
     items[i].status=b.decision;items[i].updatedAt=nowIso();saveStore(APPROVALS_STORE,items,500);recordActivity('approval',`Approval ${b.decision}`,items[i].title,{approvalId:items[i].id});json(res,200,{item:items[i]});
   }catch(e){storageError(res,e,400)}
 }
@@ -2425,7 +2454,12 @@ async function apiChangeStage(req,res){
 }
 async function apiChangeApprove(req,res){
   if(!requireFeature(res,13))return;
-  try{const b=await readBody(req);const decision=String(b.decision||'');if(!['approved','rejected'].includes(decision))return json(res,400,{error:'decision must be approved or rejected'});const items=changeStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Change not found'});const c=items[i];if(c.status!=='awaiting_approval')return json(res,409,{error:`Change is not awaiting approval (${c.status})`});storage.transaction(()=>{c.status=decision==='approved'?'approved':'rejected';c.updatedAt=nowIso();if(c.approvalId){const approvals=approvalStore();const ai=approvals.findIndex(x=>x.id===c.approvalId);if(ai>=0){approvals[ai].status=decision;approvals[ai].updatedAt=nowIso();saveStore(APPROVALS_STORE,approvals,500)}}saveChanges(items);recordActivity('change',`Change ${decision}`,c.summary,{changeId:c.id});});json(res,200,{item:publicChange(c)})}catch(e){storageError(res,e,400)}
+  try{const b=await readBody(req);const decision=String(b.decision||'');if(!['approved','rejected'].includes(decision))return json(res,400,{error:'decision must be approved or rejected'});const items=changeStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Change not found'});const c=items[i];if(c.status!=='awaiting_approval')return json(res,409,{error:`Change is not awaiting approval (${c.status})`});decideChange(items,c,decision);json(res,200,{item:publicChange(c)})}catch(e){storageError(res,e,400)}
+}
+// Approving or rejecting a change, from Change requests or from its approval (Approvals page, run view, a notification):
+// the change and its approval move together.
+function decideChange(items,c,decision){
+  storage.transaction(()=>{c.status=decision==='approved'?'approved':'rejected';c.updatedAt=nowIso();if(c.approvalId){const approvals=approvalStore();const ai=approvals.findIndex(x=>x.id===c.approvalId);if(ai>=0){approvals[ai].status=decision;approvals[ai].updatedAt=nowIso();saveStore(APPROVALS_STORE,approvals,500)}}saveChanges(items);recordActivity('change',`Change ${decision}`,c.summary,{changeId:c.id});});
 }
 async function apiChangeRequestApply(req,res){
   if(!requireFeature(res,13))return;
@@ -2793,8 +2827,10 @@ async function apiImproveItem(req,res){
       case 'backToBacklog':case 'discard':{
         if(change&&IMPROVE_LOCKED_CHANGE.includes(change.status))return json(res,409,{error:'This change is already approved and being shipped as a pull request.'});
         if(change&&live)improveRetireChange(change.id);
-        if(b.action==='backToBacklog')return json(res,200,{item:improveWrite({...improveRead(f.id),status:'approved',changeId:null})});
-        const aside=b.then==='aside';return json(res,200,{item:improveWrite({...improveRead(f.id),status:aside?'deferred':'approved',changeId:aside?f.changeId:null})});
+        // Back in the Backlog means you're reconsidering it, so a hand-off to Claude is withdrawn too.
+        const unhand=x=>x.handedToClaude?{handedToClaude:false,priorityBoost:Math.max(0,(Number(x.priorityBoost)||0)-30)}:{};
+        if(b.action==='backToBacklog'){const cur=improveRead(f.id);return json(res,200,{item:improveWrite({...cur,...unhand(cur),status:'approved',changeId:null})})}
+        const aside=b.then==='aside',cur=improveRead(f.id);return json(res,200,{item:improveWrite({...cur,...unhand(cur),status:aside?'deferred':'approved',changeId:aside?f.changeId:null})});
       }
     }
   }catch(e){storageError(res,e,500)}
@@ -2802,7 +2838,11 @@ async function apiImproveItem(req,res){
 async function apiImproveSignal(req,res){
   try{const b=await readBody(req);if(!['promote','dismiss'].includes(b.action))return json(res,400,{error:'action must be promote or dismiss'});
     const issues=issueStore(),i=issues.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Signal not found'});
-    if(b.action==='dismiss'){issues[i].status='ignored';issues[i].updatedAt=nowIso();saveIssues(issues);return json(res,200,{signal:issues[i]})}
+    if(b.action==='dismiss'){issues[i].status='ignored';issues[i].updatedAt=nowIso();saveIssues(issues);
+      // Its backlog item, if it was promoted and not yet started, is closed with it.
+      const promoted=improveRead(improve.signalItemId(issues[i].id));
+      if(promoted&&improve.stageOf(promoted,new Map(changeStore().map(c=>[c.id,c])))==='backlog')improveWrite({...promoted,status:'rejected',decisionNote:'Signal dismissed',decidedAt:nowIso()});
+      return json(res,200,{signal:issues[i]})}
     const id=improve.signalItemId(issues[i].id);const existing=improveRead(id);if(existing)return json(res,200,{item:existing});
     const item=improve.promoteSignal(issues[i],nowIso());storage.writeSetting(CLAUDE_FINDING_PREFIX+id,{sessionId:'improve',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...item});
     json(res,200,{item})}catch(e){storageError(res,e,500)}
@@ -3127,13 +3167,15 @@ async function apiReleases(req, res) {
 migrateLegacyActivityToLibrary();
 recordReleaseHistory();
 shipQueuedSelfChanges();
-runImproveReconcile({ startup: true });
+// One bad record must not stop the appliance starting; Improve catches up on the next scan or save.
+try { runImproveReconcile({ startup: true }); } catch (e) { console.error(`${nowIso()} Improve start-up reconcile failed:`, e); }
 // Health is checked on its own every minute, so an outage reaches the phone (Down/Recovered) even with no page open.
 const HEALTH_TICK_MS = Math.max(200, Number(process.env.HEALTH_TICK_MS) || 60000);
 setInterval(() => { getStatusAndRecordTransition().catch(() => {}); }, HEALTH_TICK_MS).unref();
 repairGarbledTextOnce();
 
 server.listen(PORT, '0.0.0.0', () => {
+  warmText();
   console.log(`${new Date().toISOString()} Local AI Appliance v${APP_VERSION} listening on 0.0.0.0:${PORT}`);
   recordActivity('system', 'Appliance started', `Local AI Appliance v${APP_VERSION} is ready.`);
 });

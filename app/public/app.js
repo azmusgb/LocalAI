@@ -64,13 +64,34 @@ function activityHtml(item){const run=item.meta?.runId?`<button class="btn activ
 
 // Data loaders for pages whose content is fetched on open. Every route (rail, tabs, mobile sheet, ⌘K) goes through showView.
 const VIEW_LOADERS={inbox:()=>loadInbox(),approvals:()=>loadApprovals(),memory:()=>loadMemory(),operations:()=>loadMonitors(),changes:()=>Promise.all([loadChanges(),loadEngineeringRuns()]),quality:()=>loadQuality(),issues:()=>loadIssues(),powershell:()=>loadPowerShellJobs()};
+// After a navigation, focus goes to the new page (its heading, else the page itself) so keyboard and screen-reader
+// users land where the page changed. Not on first load, and not when switching tabs inside a page.
+// The element that last had focus: hiding a page drops focus to the body before showView can look.
+let lastFocused=null,lastFocusAt=0;document.addEventListener('focusin',e=>{lastFocused=e.target;lastFocusAt=Date.now()});
+window.addEventListener('pointerdown',e=>{lastFocused=e.target.closest?.('button,a,[tabindex],input,select,textarea')||null;lastFocusAt=Date.now()},true);
+function announcePage(id,first,from){
+  if((!from||from===document.body)&&Date.now()-lastFocusAt<1000)from=lastFocused;
+  const force=window.LocalAIFocusNext;window.LocalAIFocusNext=false;
+  if(first&&!force)return;
+  const sec=$(id);if(!sec)return;
+  // Leaving the run view: it hands focus back to what opened it, so don't move it here.
+  if(!force&&from?.closest?.('#runDrawerBackdrop,#runDetailsSheet'))return;
+  // `from` is what had focus before the old page was hidden (hiding it drops focus to the body).
+  const strip=!force&&from?.closest?.('.ux-tabs,.ux-page-strip,[role="tablist"]');
+  // A tab switch: each page has its own copy of the tab strip, so keep focus on the same tab in the new copy.
+  if(strip){if(!strip.closest('.view')||strip.closest('.view')===sec)return;requestAnimationFrame(()=>{const t=sec.querySelector('.ux-tabs .ux-tab.active,.ux-tabs [aria-selected="true"]');if(t)t.focus({preventScroll:true})});return}
+  requestAnimationFrame(()=>{const h=[...sec.querySelectorAll('h1')].find(x=>x.offsetParent!==null),t=h||sec;if(!t.hasAttribute('tabindex'))t.setAttribute('tabindex','-1');t.focus({preventScroll:true})});
+}
 function showView(id){
   const raw=id;
   id=window.LocalAIViews?.resolve(id)||id;
   if(window.LocalAIViews?.view(raw)?.domain==='hidden'&&$(raw))id=raw; // ask, create, agents and runs keep their own pages
   if(!$(id))return;
   if(state.view==='ask' && id!=='ask' && state.chatPhase==='streaming') abortStream('Stream stopped when leaving Ask');
-  state.view=id;qsa('.view').forEach(x=>x.classList.toggle('active',x.id===id));qsa('.navbtn').forEach(x=>x.classList.toggle('active',x.dataset.view===id));
+  const first=!state.viewShown,from=document.activeElement;state.viewShown=true;
+  state.view=id;qsa('.view').forEach(x=>x.classList.toggle('active',x.id===id));
+  document.title=id==='home'?'Local AI':`${window.LocalAIViews?.label(id)||id} · Local AI`;
+  announcePage(id,first,from);qsa('.navbtn').forEach(x=>x.classList.toggle('active',x.dataset.view===id));
   if(id==='library')loadLibrary(); if(id==='activity')loadActivity(); if(id==='create')loadCheckpoints();
   window.scrollTo({top:0,behavior:'instant'});
   if(id==='home')window.LocalAIHome?.activate();
@@ -502,9 +523,10 @@ function renderActivity(){const user=state.activity;$('activityList').innerHTML=
 async function loadActivity(){try{await LocalAIUI.loadInto($('activityList'),()=>LocalAIUI.fetchJson('/api/activity',{cache:'no-store'}),{what:'activity',empty:'No activity yet.',render:(c,j)=>{state.activity=j.items||[];renderActivity();return true}})}catch{/* the list shows the error and a Retry */}}
 $('clearUserActivityBtn').addEventListener('click',async()=>{if(!(await LocalAIUI.ask({title:'Clear your activity?',effect:'System and recovery audit events are kept.',confirmLabel:'Clear activity',tone:'danger'})).ok)return;await fetch('/api/activity/clear',{method:'POST'});await Promise.all([loadActivity(),loadWorkspace()]);toast('User activity cleared');});
 
+const KIND_LABEL={chat:'Conversation',research:'Research',image:'Image'};
 function artifactCard(item){
   const image=item.kind==='image'?safeUrl(item.meta?.imageUrl||item.data?.imageUrl,{image:true}):'';const symbol=icons[item.kind]||'□';
-  return `<article class="artifact${image?' artifact--image':''}" data-artifact="${esc(item.id)}"><div class="artifact-preview">${image?`<img src="${esc(image)}" alt="">`:symbol}</div><div class="artifact-body"><div class="artifact-kind">${esc(item.kind||'artifact')}</div><div class="artifact-title" title="${esc(item.title)}">${esc(item.title)}</div><div class="artifact-summary">${esc(item.summary||'')}</div><div class="artifact-foot"><span class="meta">${ago(item.createdAt)}</span><span><button class="iconbtn pin-artifact" title="${item.pinned?'Unpin':'Pin'}" aria-label="${item.pinned?'Unpin':'Pin'} ${esc(item.title)}">${item.pinned?'★':'☆'}</button><button class="iconbtn delete-artifact" title="Delete" aria-label="Delete ${esc(item.title)}">×</button></span></div></div></article>`;
+  return `<article class="artifact${image?' artifact--image':''}" data-artifact="${esc(item.id)}"><div class="artifact-preview">${image?`<img src="${esc(image)}" alt="">`:symbol}</div><div class="artifact-body"><div class="artifact-kind">${esc(KIND_LABEL[item.kind]||String(item.kind||'Item').replace(/^./,c=>c.toUpperCase()))}</div><div class="artifact-title" title="${esc(item.title)}">${esc(item.title)}</div><div class="artifact-summary">${esc(item.summary||'')}</div><div class="artifact-foot"><span class="meta">${ago(item.createdAt)}</span><span><button class="iconbtn pin-artifact" title="${item.pinned?'Unpin':'Pin'}" aria-label="${item.pinned?'Unpin':'Pin'} ${esc(item.title)}">${item.pinned?'★':'☆'}</button><button class="iconbtn delete-artifact" title="Delete" aria-label="Delete ${esc(item.title)}">×</button></span></div></div></article>`;
 }
 function renderLibrary(){
   let items=state.library;const query=state.librarySearch.toLowerCase();if(state.libraryKind==='pinned')items=items.filter(x=>x.pinned);else if(state.libraryKind!=='all')items=items.filter(x=>x.kind===state.libraryKind);if(query)items=items.filter(x=>`${x.title} ${x.summary} ${x.kind}`.toLowerCase().includes(query));
@@ -569,7 +591,7 @@ function featureLevelFor(version){const [major,minor]=String(version||'1.2').spl
 function featureLevel(){return featureLevelFor(releaseState.config?.version)}
 function fillProjectSelects(){for(const id of ['knowledgeProject','agentProject']){const el=$(id);if(!el)continue;const old=el.value;el.innerHTML='<option value="">No project</option>'+releaseState.projects.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');if([...el.options].some(o=>o.value===old))el.value=old}}
 async function loadReleaseConfig(){try{releaseState.config=await api('/api/config');const brand=document.querySelector('.brand-sub');if(brand)brand.textContent=`Private AI on your machine · v${releaseState.config.version}`;document.querySelectorAll('[class*="feature-v"]').forEach(el=>{const m=[...el.classList].map(x=>/^feature-v1(\d+)$/.exec(x)).find(Boolean);if(m&&featureLevel()<Number(m[1]))el.classList.add('feature-hidden')});document.querySelectorAll('[data-min-version]').forEach(el=>{if(featureLevel()<Number(el.dataset.minVersion))el.classList.add('feature-hidden')})}catch(e){console.warn(e)}}
-async function loadProjects(){if(featureLevel()<3)return;return LocalAIUI.loadInto($('projectList')||document.createElement('div'),()=>api('/api/projects'),{what:'projects',empty:'',render:(c,j)=>{releaseState.projects=j.items||[];fillProjectSelects();const list=$('projectList');if(list)list.innerHTML=releaseState.projects.length?releaseState.projects.map(p=>`<button class="item-card" data-project="${esc(p.id)}"><strong>${esc(p.name)}</strong><small>${p.counts.conversations} conversations · ${p.counts.knowledge} sources · ${p.counts.artifacts} artifacts</small></button>`).join(''):'<div class="empty">Create your first project.</div>';const m=$('projectMetrics');if(m){const totals=releaseState.projects.reduce((a,p)=>{a.c+=p.counts.conversations;a.k+=p.counts.knowledge;a.a+=p.counts.artifacts;return a},{c:0,k:0,a:0});m.innerHTML=`<div class="metric"><b>${releaseState.projects.length}</b><span>Projects</span></div><div class="metric"><b>${totals.c}</b><span>Conversations</span></div><div class="metric"><b>${totals.k}</b><span>Knowledge sources</span></div><div class="metric"><b>${totals.a}</b><span>Artifacts</span></div>`}qsa('[data-project]').forEach(b=>b.onclick=()=>showProject(b.dataset.project));return true}})}
+async function loadProjects(){if(featureLevel()<3)return;return LocalAIUI.loadInto($('projectList')||document.createElement('div'),()=>api('/api/projects'),{what:'projects',empty:'',render:(c,j)=>{releaseState.projects=j.items||[];fillProjectSelects();$('projects')?.classList.toggle('projects-empty',!releaseState.projects.length);const list=$('projectList');if(list)list.innerHTML=releaseState.projects.length?releaseState.projects.map(p=>`<button class="item-card" data-project="${esc(p.id)}"><strong>${esc(p.name)}</strong><small>${p.counts.conversations} conversations · ${p.counts.knowledge} sources · ${p.counts.artifacts} artifacts</small></button>`).join(''):'<div class="empty">Create your first project.</div>';const m=$('projectMetrics');if(m){const totals=releaseState.projects.reduce((a,p)=>{a.c+=p.counts.conversations;a.k+=p.counts.knowledge;a.a+=p.counts.artifacts;return a},{c:0,k:0,a:0});m.innerHTML=`<div class="metric"><b>${releaseState.projects.length}</b><span>Projects</span></div><div class="metric"><b>${totals.c}</b><span>Conversations</span></div><div class="metric"><b>${totals.k}</b><span>Knowledge sources</span></div><div class="metric"><b>${totals.a}</b><span>Artifacts</span></div>`}qsa('[data-project]').forEach(b=>b.onclick=()=>showProject(b.dataset.project));return true}})}
 async function showProject(id){releaseState.selectedProject=id;const p=releaseState.projects.find(x=>x.id===id);if(!p)return;const [c,k]=await Promise.all([api('/api/conversations?projectId='+encodeURIComponent(id)),api('/api/knowledge?projectId='+encodeURIComponent(id))]);$('projectDetail').innerHTML=`<div class="section-head"><div><h2>${esc(p.name)}</h2><p>${esc(p.description||'Project workspace')}</p></div><span class="badge">${p.pinned?'Pinned':'Workspace'}</span></div><div class="two"><div><h3>Conversations</h3><div class="stack" style="margin-top:8px">${(c.items||[]).slice(0,8).map(x=>`<div class="item-card"><strong>${esc(x.title)}</strong><small>${ago(x.updatedAt)}</small></div>`).join('')||'<div class="empty">No conversations.</div>'}</div></div><div><h3>Knowledge</h3><div class="stack" style="margin-top:8px">${(k.items||[]).slice(0,8).map(x=>`<div class="item-card"><strong>${esc(x.name)}</strong><small>${Math.round((x.size||0)/1024)} KB</small></div>`).join('')||'<div class="empty">No sources.</div>'}</div></div></div>`}
 async function newProject(){const q=await LocalAIUI.ask({title:'New project',confirmLabel:'Create',input:{label:'Project name',type:'text'}});if(!q.ok||!q.value)return;const name=q.value;await post('/api/projects/create',{name});await loadProjects();toast('Project created')}
 async function loadKnowledge(){if(featureLevel()<3)return;return LocalAIUI.loadInto($('knowledgeList')||document.createElement('div'),()=>api('/api/knowledge'),{what:'knowledge',empty:'',render:(c,j)=>{releaseState.knowledge=j.items||[];const el=$('knowledgeList');if(el)el.innerHTML=releaseState.knowledge.length?releaseState.knowledge.map(x=>`<div class="item-card"><strong>${esc(x.name)}</strong><small>${esc(releaseState.projects.find(p=>p.id===x.projectId)?.name||'Unassigned')} · ${Math.round((x.size||0)/1024)} KB</small></div>`).join(''):'<div class="empty">Nothing indexed yet. Add a source above, and Chat can answer from it.</div>';return true}})}
@@ -612,7 +634,10 @@ async function loadMemory(){if(featureLevel()<8)return;return LocalAIUI.loadInto
 async function addMemory(){const text=$('memoryText').value.trim();if(!text)return;await evoPost('/api/memory/add',{projectId:$('memoryProject').value,category:$('memoryCategory').value,text});$('memoryText').value='';await loadMemory();toast('Memory saved')}
 // The top bar shows one Inbox count: unread alerts plus approvals waiting on you.
 function announceInboxCount(){window.dispatchEvent(new CustomEvent('localai:inbox-count',{detail:{unread:evo.unread||0,pending:evo.pendingApprovals||0}}))}
-async function loadApprovals(){if(featureLevel()<9)return;return LocalAIUI.loadInto($('approvalList'),()=>evoApi('/api/approvals'),{what:'approvals',empty:'',render:(c,j)=>{evo.approvals=j.items||[];const pending=evo.approvals.filter(x=>x.status==='pending').length;evo.pendingApprovals=pending;announceInboxCount();$('approvalCount').textContent=`${pending} pending`;$('approvalList').innerHTML=evo.approvals.length?evo.approvals.map(a=>`<div class="approval-card ${esc(a.status)}"><div class="statusline"><strong style="flex:1">${esc(String(a.title||'').replace(/\s+chg-\d+-[0-9a-f]+$/,''))}</strong><span class="statuschip">${esc(human(a.risk))} risk · ${esc(human(a.status))}</span></div><div class="muted" style="margin-top:6px">${esc(a.detail)}</div>${a.status==='pending'?`<div class="actions" style="margin-top:8px"><button class="btn primary" data-app-ok="${esc(a.id)}">Approve</button><button class="btn danger" data-app-no="${esc(a.id)}">Reject</button></div>`:''}</div>`).join(''):'<div class="empty">No approvals.</div>';qsa('[data-app-ok]').forEach(b=>b.onclick=()=>decideApproval(b.dataset.appOk,'approved'));qsa('[data-app-no]').forEach(b=>b.onclick=()=>decideApproval(b.dataset.appNo,'rejected'));return true}})}
+async function loadApprovals(){if(featureLevel()<9)return;return LocalAIUI.loadInto($('approvalList'),()=>evoApi('/api/approvals'),{what:'approvals',empty:'',render:(c,j)=>{evo.approvals=j.items||[];const pending=evo.approvals.filter(x=>x.status==='pending').length;evo.pendingApprovals=pending;announceInboxCount();$('approvalCount').textContent=`${pending} pending`;const card=a=>`<div class="approval-card ${esc(a.status)}"><div class="statusline"><strong style="flex:1">${esc(String(a.title||'').replace(/\s+chg-\d+-[0-9a-f]+$/,''))}</strong><span class="statuschip">${esc(human(a.risk))} risk · ${esc(human(a.status))}</span></div><div class="muted" style="margin-top:6px">${esc(a.detail)}</div>${a.status==='pending'?`<div class="actions" style="margin-top:8px"><button class="btn primary" data-app-ok="${esc(a.id)}">Approve</button><button class="btn danger" data-app-no="${esc(a.id)}">Reject</button></div>`:''}</div>`;
+ // Waiting items first; resolved ones are folded into a closed section so they don't bury what needs a decision.
+ const waiting=evo.approvals.filter(x=>x.status==='pending'),done=evo.approvals.filter(x=>x.status!=='pending');
+ $('approvalList').innerHTML=(waiting.length?waiting.map(card).join(''):'<div class="empty">Nothing is waiting for you.</div>')+(done.length?`<details class="approval-resolved"><summary>Resolved (${done.length})</summary>${done.map(card).join('')}</details>`:'');qsa('[data-app-ok]').forEach(b=>b.onclick=()=>decideApproval(b.dataset.appOk,'approved'));qsa('[data-app-no]').forEach(b=>b.onclick=()=>decideApproval(b.dataset.appNo,'rejected'));return true}})}
 async function decideApproval(id,decision){await evoPost('/api/approvals/decide',{id,decision});await Promise.all([loadApprovals(),loadInbox()]);toast(`Approval ${decision}`)}
 async function inspectRepo(){try{const j=await evoApi('/api/repo/inspect?path='+encodeURIComponent($('repoPath').value));$('repoInfo').innerHTML=j.isRepo?`<div class="metric"><b>${esc(j.branch)}</b><span>branch</span></div><div class="muted" style="margin-top:8px">${esc(j.path)} · ${esc(j.commit||'unknown commit')}</div>`:'<div class="empty">No .git repository found from that path.</div>'}catch(e){toast(e.message)}}
 async function runWorkbenchCommand(){const cmd=$('commandName').value,args=$('commandArgs').value.trim().split(/\s+/).filter(Boolean),cwd=$('commandCwd').value;if(!(await LocalAIUI.ask({title:`Run "${cmd} ${args.join(' ')}"?`,effect:`In ${cwd}. Allow-listed command.`,confirmLabel:'Run',tone:'host',typed:'RUN'})).ok)return;$('commandOutput').textContent='Running…';try{const j=await evoPost('/api/workbench/command',{command:cmd,args,cwd,approved:true});$('commandOutput').textContent=`exit ${j.code}\n\n${j.stdout||''}${j.stderr?'\nSTDERR:\n'+j.stderr:''}`}catch(e){$('commandOutput').textContent=e.message}}
@@ -706,12 +731,46 @@ async function signPowerShellJob(job){if(!window.crypto?.subtle)throw new Error(
 async function queuePowerShellJob(id){if(!(await LocalAIUI.ask({title:'Queue this script on the Windows host?',effect:"It runs with the host bridge's permissions.",confirmLabel:'Queue',tone:'host',typed:'RUN'})).ok)return;const confirmation='RUN';try{const job=(evo.powerShellJobs||[]).find(x=>x.id===id);if(!job)throw new Error('PowerShell job not found; refresh and try again');const signature=await signPowerShellJob(job);await powerShellPost('/api/powershell/request-run',{id,confirmation,signature});await loadPowerShellJobs(id);$('powershellStatus').textContent='Queued. The local Windows host bridge normally claims the job within one minute.';toast('PowerShell job queued')}catch(e){toast(e.message)}}
 async function cancelPowerShellJob(id){try{await powerShellPost('/api/powershell/cancel',{id});await loadPowerShellJobs(id);toast('PowerShell job cancelled')}catch(e){toast(e.message)}}
 
+// ⌘K / Ctrl+K: a combobox over the pages (arrows move the highlight, Enter opens it; no match searches your work),
+// in a native modal <dialog> so focus stays inside, the page behind is inert and focus returns to the opener.
 function commandPalette(){
   const el=$('cmdk');if(!el)return;
-  // Labels and old names (aka) come from view-registry.js so renamed pages stay findable.
-  const actions=window.LocalAIViews.VIEWS.map(v=>[v.label,v.id,[v.label,...(v.aka||[])].join(' ').toLowerCase()]);
-  const render=()=>{const q=$('cmdkInput').value.toLowerCase();$('cmdkList').innerHTML=actions.filter(([label,id,terms])=>$(id)&&terms.includes(q)).map(([label,id])=>`<button class="cmdk-item" data-cmd-view="${id}">${label}</button>`).join('');qsa('[data-cmd-view]').forEach(b=>b.onclick=()=>{el.classList.remove('show');goTo(b.dataset.cmdView)})};
-  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();el.classList.add('show');$('cmdkInput').value='';render();$('cmdkInput').focus()}if(e.key==='Escape')el.classList.remove('show')});$('cmdkInput').addEventListener('input',render);el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('show')});render();
+  const input=$('cmdkInput'),list=$('cmdkList'),R=window.LocalAIViews;
+  // Labels and old names (aka) come from view-registry.js so renamed pages stay findable. A hidden page whose
+  // address now opens another page (Runs → Work) would only be a duplicate, so it isn't offered.
+  const actions=window.LocalAIViews.VIEWS.filter(v=>!(v.id==='runs'&&v.domain==='hidden'&&R.ALIASES[v.id]==='work'))
+    .map(v=>({label:v.label,id:v.id,terms:[v.label,...(v.aka||[])].join(' ').toLowerCase()}));
+  let shown=[],active=0,opener=null;
+  input.setAttribute('role','combobox');input.setAttribute('aria-controls','cmdkList');input.setAttribute('aria-expanded','false');
+  list.setAttribute('role','listbox');
+  function select(i){active=Math.max(0,Math.min(shown.length-1,i));list.querySelectorAll('[role=option]').forEach((b,n)=>{b.setAttribute('aria-selected',String(n===active));b.classList.toggle('active',n===active)});const b=list.querySelectorAll('[role=option]')[active];if(b){input.setAttribute('aria-activedescendant',b.id);b.scrollIntoView({block:'nearest'})}}
+  function render(){
+    const q=input.value.trim().toLowerCase();shown=actions.filter(a=>$(a.id)&&a.terms.includes(q));
+    list.innerHTML=shown.length?shown.map((a,n)=>`<button type="button" id="cmdk-opt-${n}" role="option" class="cmdk-item" data-cmd-view="${esc(a.id)}">${esc(a.label)}</button>`).join('')
+      :`<div class="cmdk-empty"><p>No pages match “${esc(input.value.trim())}”.</p><button type="button" class="btn-outline" data-cmd-work>Search your work for “${esc(input.value.trim())}”</button></div>`;
+    list.querySelectorAll('[data-cmd-view]').forEach(b=>b.onclick=()=>go(b.dataset.cmdView));
+    list.querySelector('[data-cmd-work]')?.addEventListener('click',searchWork);
+    select(0);
+  }
+  function go(id){close(false);goTo(id)}
+  // No page matched: look through the owner's own work instead (Work's search box filters the loaded runs).
+  function searchWork(){const q=input.value.trim();close(false);goTo('work');
+    // Work sets itself up when it becomes the open page; fill its search box after that, not before.
+    let tries=0;const fill=()=>{const w=$('workSearch'),sec=$('work');if(w&&sec?.classList.contains('active')&&tries>2){w.value=q;w.dispatchEvent(new Event('input',{bubbles:true}));return}if(++tries<40)setTimeout(fill,50)};fill()}
+  function open(){if(el.classList.contains('show'))return;opener=document.activeElement;el.classList.add('show');el.setAttribute('aria-hidden','false');input.setAttribute('aria-expanded','true');input.value='';render();if(typeof el.showModal==='function'&&!el.open)el.showModal();input.focus()}
+  function close(restore=true){if(!el.classList.contains('show'))return;el.classList.remove('show');el.setAttribute('aria-hidden','true');input.setAttribute('aria-expanded','false');if(el.open)el.close();if(restore&&opener?.isConnected&&opener.focus)opener.focus()}
+  input.addEventListener('input',render);
+  input.addEventListener('keydown',e=>{
+    if(e.key==='ArrowDown'){e.preventDefault();select(active+1)}
+    else if(e.key==='ArrowUp'){e.preventDefault();select(active-1)}
+    else if(e.key==='Enter'&&!e.isComposing){e.preventDefault();if(shown[active])go(shown[active].id);else if(input.value.trim())searchWork()}
+  });
+  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='k'){e.preventDefault();el.classList.contains('show')?close():open()}else if(e.key==='Escape'&&el.classList.contains('show')){e.preventDefault();close()}});
+  el.addEventListener('click',e=>{if(e.target===el)close()});
+  // A native modal <dialog>: focus stays inside and the page behind is inert; its own Escape (cancel) closes through close().
+  el.addEventListener('cancel',e=>{e.preventDefault();close()});
+  window.LocalAICommand={open,close};window.LocalAIPalette=window.LocalAICommand;
+  render();
 }
 async function bindEvo(){
   if(!releaseState.config) await loadReleaseConfig();

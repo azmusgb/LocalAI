@@ -16,7 +16,7 @@ async function check(name, fn) {
 const at = '2026-10-15T20:00:00.000Z';
 const finding = (id, o) => ({ id, title: id, severity: 'medium', status: 'approved', source: 'claude', votes: { up: 0, down: 0 }, priorityBoost: 0, createdAt: at, updatedAt: at, stage: 'backlog', change: null, ...o });
 const ITEMS = [
-  finding('claude-top', { title: 'Fix the run drawer focus', rank: 1, score: 60, severity: 'high', summary: 'Focus is lost when the drawer closes.', fix: 'Return focus to the opener.', file: 'app/public/ui.js' }),
+  finding('claude-top', { title: 'Fix the run drawer focus so that keyboard users land back on the row they opened, every time', rank: 1, score: 60, severity: 'high', summary: 'Focus is lost when the drawer closes.', fix: 'Return focus to the opener.', file: 'app/public/ui.js' }),
   finding('idea-sticky', { title: 'Make the header sticky', rank: 2, score: 55, source: 'idea', handedToClaude: true, decisionNote: 'Handed to Claude' }),
   finding('signal-issue-1', { title: 'TypeError in app.js', rank: 3, score: 40, source: 'signal', signalId: 'issue-1', status: 'proposed' }),
   finding('idea-running', { title: 'Already running', rank: 4, score: 35, source: 'idea', stage: 'inProgress', change: { id: 'chg-1', status: 'planned', summary: 'x' } }),
@@ -24,7 +24,7 @@ const ITEMS = [
 ];
 const SIGNALS = [
   { id: 'issue-1', name: 'TypeError in app.js', severity: 'high', status: 'open', occurrences: 4, lastSeenAt: at },
-  { id: 'issue-2', name: 'Slow health check', severity: 'medium', status: 'open', occurrences: 1, lastSeenAt: at },
+  { id: 'issue-2', name: 'Slow health check on the image generation service when the GPU is busy rendering a batch', severity: 'medium', status: 'open', occurrences: 1, lastSeenAt: at },
   { id: 'issue-3', name: 'Old resolved one', severity: 'low', status: 'resolved', occurrences: 2, lastSeenAt: at }
 ];
 
@@ -99,6 +99,21 @@ await check('a failed load shows the error state with Retry, and Retry recovers'
   failItems = false;
   await page.locator('#backlogList .state-error button').click();
   await page.waitForSelector('#backlogList .improve-row');
+});
+
+await check('long titles stay inside the screen on a phone (Backlog and Signals)', async () => {
+  const problems = [];
+  for (const view of ['backlog', 'signals']) {
+    await page.evaluate(v => window.showView(v), view);
+    await page.waitForSelector(`#${view}.active .improve-row`);
+    problems.push(...await page.evaluate(v => {
+      const out = [], sw = document.documentElement.scrollWidth, cw = document.documentElement.clientWidth;
+      if (sw > cw + 1) out.push(`${v}: page ${sw}px wide in ${cw}px`);
+      for (const e of document.querySelectorAll(`#${v} .improve-row *`)) { const r = e.getBoundingClientRect(); if (r.width && r.right > innerWidth + 1) { out.push(`${v}: ${e.className || e.tagName} ends at ${Math.round(r.right)}`); break; } }
+      return out;
+    }, view));
+  }
+  assert.deepEqual(problems, []);
 });
 
 await check('no colour-contrast or touch-target problems on Backlog and Signals (axe)', async () => {
