@@ -1806,7 +1806,26 @@ async function apiSpecialistRun(req,res){if(!requireFeature(res,4))return;try{co
 async function apiAgentDispatch(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});json(res,200,{routing:await getSpecialistOrchestrator().dispatch(goal,Array.isArray(b.agentIds)?b.agentIds:undefined)})}catch(e){storageError(res,e,400)}}
 async function apiAgentMissions(req,res){if(!requireFeature(res,4))return;json(res,200,{items:getSpecialistOrchestrator().missions(200)})}
 async function apiAgentMission(req,res,urlObj){if(!requireFeature(res,4))return;const id=String(urlObj.searchParams.get('id')||''),m=getSpecialistOrchestrator().getMission(id);if(!m)return json(res,404,{error:'Mission not found'});json(res,200,{mission:m})}
-async function apiAgentMissionStart(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const ids=Array.isArray(b.agentIds)&&b.agentIds.length?b.agentIds:undefined;json(res,200,{mission:await getSpecialistOrchestrator().mission(goal,String(b.projectId||''),ids)})}catch(e){storageError(res,e,400)}}
+// A mission started with async:true is a ledger run from the first moment: 202 now, the run follows the mission's own events.
+// Mission statuses: running | complete | needs_attention | error (the last two end the run failed).
+function startMissionRun(goal,projectId,ids){
+  const orch=getSpecialistOrchestrator();
+  const run=runLedger.create({type:'agent',title:titleFromText(goal,'Mission'),input:{goal:goal.slice(0,4000),projectId,agentIds:ids||[]},projectId,meta:{}});
+  runLedger.start(run.id,'Mission started');
+  let missionId='',off=()=>{},ended=false,last='';
+  const apply=m=>{
+    if(ended||m.id!==missionId)return;
+    const ws=m.workers||[],done=ws.filter(w=>w.state==='complete').length,pct=ws.length?Math.max(5,Math.min(95,Math.round(done/ws.length*100))):5;
+    if(m.status==='running'){const sig=pct+':'+done;if(sig===last)return;last=sig;runLedger.update(run.id,{status:'running',progress:pct},'Mission progress: '+done+' of '+ws.length+' steps');return}
+    ended=true;off();
+    if(m.status==='complete')runLedger.complete(run.id,{summary:String(m.answer||'Mission complete').replace(/\s+/g,' ').trim().slice(0,600),output:{missionId:m.id,outcome:m.status},meta:{missionId:m.id}});
+    else runLedger.update(run.id,{status:'failed',error:String(m.error||'The mission needs attention.').slice(0,8000),output:{missionId:m.id,outcome:m.status},meta:{missionId:m.id}},'Mission '+m.status);
+  };
+  orch.mission(goal,projectId,ids,{onCreated:m=>{missionId=m.id;orch.events.on('mission',apply);off=()=>orch.events.off('mission',apply);runLedger.update(run.id,{meta:{missionId:m.id}},'Mission created')}})
+    .then(m=>apply(m),e=>{if(ended)return;ended=true;off();runLedger.fail(run.id,e)});
+  return run;
+}
+async function apiAgentMissionStart(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const ids=Array.isArray(b.agentIds)&&b.agentIds.length?b.agentIds:undefined;if(b.async===true){const run=startMissionRun(goal,String(b.projectId||''),ids);return json(res,202,{runId:run.id,threadId:run.threadId})}json(res,200,{mission:await getSpecialistOrchestrator().mission(goal,String(b.projectId||''),ids)})}catch(e){storageError(res,e,400)}}
 const SSE_KEEPALIVE_MS=Math.max(1000,Number(process.env.SSE_KEEPALIVE_MS)||25000);
 async function apiAgentMissionEvents(req,res,urlObj){if(!requireFeature(res,4))return;res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});const wanted=String(urlObj.searchParams.get('missionId')||'');const send=m=>{if(!wanted||m.id===wanted)res.write('data: '+JSON.stringify(m)+'\n\n')};const orch=getSpecialistOrchestrator();orch.events.on('mission',send);res.write(': connected\n\n');
   // A comment every 25 s keeps phones and proxies from dropping a quiet stream.
