@@ -64,28 +64,30 @@
   document.addEventListener('pointerdown', e => { for (const c of threads.values()) if (e.target !== c.input) c.hadFocus = false; }, true);   // once, for every thread
   const grow = c => { c.input.style.height = 'auto'; c.input.style.height = Math.min(c.input.scrollHeight, 140) + 'px'; };
 
+  // The ledger keeps a too-long output as {truncated, preview}, where preview is the output as JSON text cut short: its text if it still parses, else nothing (never the raw JSON).
+  const previewText = p => { try { const v = JSON.parse(p); const t = typeof v === 'string' ? v : v?.text; return typeof t === 'string' ? t : ''; } catch { return ''; } };
   // Every run of the thread, oldest first, as turns: {key, prompt, answer, kind}. kind: '' | 'wait' | 'error' | 'live'.
   function turnsOf(c) {
     const runs = c.runs.some(r => r.id === c.run?.id) || !c.run ? c.runs : [...c.runs, c.run];
     const out = [], live = c.live;
     for (const r of sortRuns(runs)) {
       const prompt = r.input?.prompt || r.title || '';
-      let answer = '', kind = '';
+      let answer = '', kind = '', lost = false;
       const o = r.output, lv = live && live.runId === r.id ? live : null;
-      if (o && o.truncated) answer = c.lib.get(r.artifactIds?.[0]) || o.preview || r.summary || '';
+      if (o && o.truncated) { answer = c.lib.get(r.artifactIds?.[0]) || previewText(o.preview); if (!answer) { answer = 'This answer was too long to keep here.'; lost = true; } }
       else answer = typeof o === 'string' ? o : o?.text || '';
       if (!answer && lv) answer = lv.text;
       if (r.status === 'failed' && !answer) { answer = r.error || 'This answer could not be written.'; kind = 'error'; }
       else if (r.status === 'cancelled' && !answer) { answer = 'Stopped.'; kind = 'error'; }
       else if (!answer) { answer = 'Thinking…'; kind = 'wait'; }
       else if (lv?.streaming) kind = 'live';
-      out.push({ key: r.id, prompt, answer, kind, sources: Array.isArray(o?.sources) ? o.sources : [] });
+      out.push({ key: r.id, prompt, answer, kind, lost, sources: Array.isArray(o?.sources) ? o.sources : [] });
     }
     if (live && !(live.runId && runs.some(r => r.id === live.runId))) out.push({ key: 'live', prompt: live.prompt, answer: live.text || (live.err ? '' : 'Thinking…'), kind: live.err ? 'error' : live.text ? 'live' : 'wait', sources: [] });
     return out;
   }
-  // The conversation so far as chat messages (answers that exist only), for a reply.
-  const history = c => turnsOf(c).flatMap(t => [{ role: 'user', content: t.prompt }, ...(t.kind === '' || t.kind === 'live' ? [{ role: 'assistant', content: t.answer }] : [])]).filter(m => m.content);
+  // The conversation so far as chat messages (answers that exist only), for a reply. A lost answer (the placeholder) is not the model's words: leave it out.
+  const history = c => turnsOf(c).flatMap(t => [{ role: 'user', content: t.prompt }, ...((t.kind === '' || t.kind === 'live') && !t.lost ? [{ role: 'assistant', content: t.answer }] : [])]).filter(m => m.content);
 
   const sourceLinks = sources => {
     const ul = h('ul', 'chat-turn__sources');
@@ -135,7 +137,7 @@
       const need = c.runs.filter(r => r.output?.truncated && r.artifactIds?.[0] && !c.lib.has(r.artifactIds[0]) && !c.libTried.has(r.artifactIds[0]));
       if (need.length) {
         need.forEach(r => c.libTried.add(r.artifactIds[0]));
-        try { const lib = await RB.json('/api/library'); for (const it of lib.items || []) if (it?.id && typeof it.response === 'string') c.lib.set(it.id, it.response); } catch {}
+        try { const lib = await RB.json('/api/library'); for (const it of lib.items || []) { const text = it?.data?.response ?? it?.response; if (it?.id && typeof text === 'string') c.lib.set(it.id, text); } } catch {}
       }
       // A finished stream hands over to the ledger once the ledger has the run.
       if (c.live && !c.live.streaming && c.live.runId && c.runs.some(r => r.id === c.live.runId && r.output)) c.live = null;

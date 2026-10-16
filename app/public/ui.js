@@ -828,7 +828,7 @@ function buildIntegrationsView(){
  }
  if(!q('.navbtn[data-view="integrations"]',nav)){
    const b=document.createElement('button');b.type='button';b.className='navbtn';b.dataset.view='integrations';b.dataset.uxSynthetic='true';b.innerHTML='<span class="navicon">'+REG.view('integrations').icon+'</span>'+REG.label('integrations');
-   b.addEventListener('click',e=>{e.preventDefault();activateSyntheticView('integrations')});
+   b.addEventListener('click',e=>{e.preventDefault();activateSyntheticView('integrations');window.LocalAIRouter?.go('#integrations')});
    nav.appendChild(b);
  }
 }
@@ -904,7 +904,8 @@ function buildPageStrip(){
  const bar=q('#uxContextBar');if(!bar||q('#uxPageStrip'))return;
  const strip=document.createElement('nav');strip.id='uxPageStrip';strip.className='ux-page-strip';strip.setAttribute('aria-label','Pages in this section');
  bar.after(strip);
- strip.addEventListener('click',e=>{const b=e.target.closest('[data-strip-view]');if(b){toggleSheet(false);navigate(b.dataset.stripView)}});
+ strip.addEventListener('scroll',()=>fadeStrip(strip),{passive:true});window.addEventListener('resize',()=>fadeStrip(strip),{passive:true});
+ strip.addEventListener('click',e=>{const b=e.target.closest('[data-strip-view]');if(b){navigate(b.dataset.stripView);toggleSheet(false)}});
 }
 function renderPageStrip(d,page){
  const strip=q('#uxPageStrip');if(!strip)return;
@@ -913,11 +914,14 @@ function renderPageStrip(d,page){
  if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=views.map(v=>'<button type="button" data-strip-view="'+v+'">'+(REG.view(v)?.short||labelForView(v))+'</button>').join('');}
  strip.hidden=views.length<2||d.id==='home'; // Home's only other page, Inbox, already has a button in the top bar
  qa('[data-strip-view]',strip).forEach(b=>{const on=b.dataset.stripView===page;b.classList.toggle('active',on);if(on){b.setAttribute('aria-current','page');if(strip.scrollWidth>strip.clientWidth)strip.scrollLeft=Math.max(0,b.offsetLeft-strip.clientWidth/2+b.offsetWidth/2)}else b.removeAttribute('aria-current')});
+ fadeStrip(strip);
 }
+// A strip that overflows fades at the edge that has more tabs (CSS reads data-fade-start / data-fade-end).
+function fadeStrip(strip){const max=strip.scrollWidth-strip.clientWidth,x=strip.scrollLeft;strip.dataset.fadeStart=String(x>2);strip.dataset.fadeEnd=String(max-x>2)}
 function buildMobile(){
  if(q('#uxMobileNav'))return;
  const nav=document.createElement('div');nav.id='uxMobileNav';nav.className='ux-mobile-nav';nav.setAttribute('role','navigation');nav.setAttribute('aria-label','Primary navigation');
- DOMAINS.forEach(d=>{const b=document.createElement('button');b.type='button';b.dataset.domain=d.id;b.innerHTML='<b>'+(icon(d.icon)||d.symbol)+'</b><span>'+d.label+'</span>';b.addEventListener('click',()=>{toggleSheet(false);navigate(d.defaultView)});nav.appendChild(b)});
+ DOMAINS.forEach(d=>{const b=document.createElement('button');b.type='button';b.dataset.domain=d.id;b.innerHTML='<b>'+(icon(d.icon)||d.symbol)+'</b><span>'+d.label+'</span>';b.addEventListener('click',()=>{navigate(d.defaultView);toggleSheet(false)});nav.appendChild(b)});
  const sheet=document.createElement('div');sheet.id='uxMobileSheet';sheet.className='ux-mobile-sheet';sheet.dataset.open='false';sheet.innerHTML='<div class="ux-mobile-sheet-handle"></div><div class="ux-mobile-sheet-head"><div><span class="ux-secondary-kicker">Navigate</span><strong id="uxMobileSheetTitle"></strong><small id="uxMobileSheetTagline"></small></div><button type="button" id="uxMobileSheetClose" aria-label="Close menu">×</button></div><div class="ux-mobile-sheet-items" id="uxMobileSheetItems"></div>';
  sheet.inert=true;sheet.setAttribute('aria-hidden','true');document.body.append(sheet,nav);q('#uxMobileSheetClose')?.addEventListener('click',()=>toggleSheet(false));
  document.addEventListener('click',e=>{if(sheetOpen&&!sheet.contains(e.target)&&!nav.contains(e.target)&&!e.target.closest?.('#uxContextMenu'))toggleSheet(false)});
@@ -927,10 +931,12 @@ function renderSheet(){
  q('#uxMobileSheetTitle').textContent=d.label;q('#uxMobileSheetTagline').textContent=d.tagline;holder.innerHTML='';
  d.groups.forEach(g=>{const section=document.createElement('section');section.className='ux-mobile-section';section.innerHTML='<div class="ux-mobile-section-label">'+g.label+'</div>';g.views.forEach(v=>{if(!viewButton(v))return;const b=document.createElement('button');b.type='button';b.className='ux-mobile-link '+(v===pageForView(activeView())?'active':'');b.innerHTML='<span><strong>'+labelForView(v)+'</strong><small>'+DESCRIPTIONS[v]+'</small></span><span>›</span>';b.addEventListener('click',()=>{navigate(v);toggleSheet(false)});section.appendChild(b)});holder.appendChild(section)});
 }
-function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;const s=q('#uxMobileSheet');if(s){s.dataset.open=String(sheetOpen);s.inert=!sheetOpen;s.setAttribute('aria-hidden',String(!sheetOpen))}q('#uxContextMenu')?.setAttribute('aria-expanded',String(sheetOpen));document.body.classList.toggle('ux-sheet-open',sheetOpen);if(sheetOpen)renderSheet()}
+let sheetRelease=null; // Back closes the sheet (LocalAIUI.sheetHistory)
+function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;const s=q('#uxMobileSheet');if(s&&sheetOpen&&!sheetRelease&&window.LocalAIUI?.sheetHistory)sheetRelease=window.LocalAIUI.sheetHistory(s,()=>{sheetRelease=null;toggleSheet(false)});else if(!sheetOpen&&sheetRelease){const r=sheetRelease;sheetRelease=null;r()}if(s){s.dataset.open=String(sheetOpen);s.inert=!sheetOpen;s.setAttribute('aria-hidden',String(!sheetOpen))}q('#uxContextMenu')?.setAttribute('aria-expanded',String(sheetOpen));document.body.classList.toggle('ux-sheet-open',sheetOpen);if(sheetOpen)renderSheet()}
 function sync(forced){
  const view=REG.view(forced||activeView())?.id||forced||activeView(),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
- const page=pageForView(view),viewLabel=labelForView(page);renderPageStrip(d,page);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;q('#uxContextBar')?.classList.toggle('ux-context-same',viewLabel===d.label);q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);q('#uxContextMenu')?.setAttribute('aria-label',d.label+' pages');syncHeaderAction(view);{const g=q('#uxContextGreeting');if(g)g.textContent=greeting()};
+ const page=pageForView(view),viewLabel=labelForView(page);renderPageStrip(d,page);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=d.groups.flatMap(g=>g.views).filter(v=>viewButton(v)).length<2;document.body.classList.toggle('ux-single-page',single);q('#uxContextBar')?.classList.toggle('ux-context-same',single||viewLabel===d.label)} // "Local AI / Domain" for a domain with one page, "Local AI / Domain / Page" otherwise
+ q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);q('#uxContextMenu')?.setAttribute('aria-label',d.label+' pages');syncHeaderAction(view);{const g=q('#uxContextGreeting');if(g)g.textContent=greeting()};
  qa('.ux-primary-item').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
  qa('#uxMobileNav [data-domain]').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
  if(q('#uxSecondaryTitle')?.textContent!==d.label)renderSecondary(d.id);
@@ -2668,7 +2674,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   function activateRunsView() {
     const view = el('runs');
     if (!view) return;
-    if (typeof window.showView === 'function') { window.showView('runs'); window.scrollTo({ top: 0, behavior: 'auto' }); return; }   // the router keeps the hash on this page
+    if (window.LocalAIRouter?.open) { window.LocalAIRouter.open('runs'); window.scrollTo({ top: 0, behavior: 'auto' }); return; }   // a person opened it: Back returns
     document.querySelectorAll('.view').forEach((item) => item.classList.toggle('active', item === view));
     document.querySelectorAll('.navbtn[data-view]').forEach((item) => item.classList.toggle('active', item.dataset.view === 'runs'));
     window.scrollTo({ top: 0, behavior: 'auto' });
@@ -2727,7 +2733,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       backdrop.addEventListener('click', (event) => { if (event.target === backdrop) closeRunView(); });
       const dlg = el('runDetailsSheet');
       dlg.addEventListener('click', (event) => { if (event.target === dlg) dlg.close(); });   // the dimmed area outside the sheet
-      dlg.addEventListener('close', () => { if (state.selectedId) el('runDetailsBtn')?.focus(); });
+      dlg.addEventListener('close', () => { const r = state.detailsRelease; state.detailsRelease = null; r?.(); if (state.selectedId) el('runDetailsBtn')?.focus(); });
       document.addEventListener('click', (event) => { if (!event.target.closest?.('.run-menu, #runMoreBtn')) closeMenu(); });
     }
   }
@@ -2787,7 +2793,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const head = document.createElement('div'); head.className = 'run-drawer-head';
     const back = iconBtn('chevron-left', 'Back'); back.addEventListener('click', closeRunView);
     const copy = document.createElement('div'); copy.className = 'run-drawer-copy';
-    const t = document.createElement('div'); t.id = 'runDrawerTitle'; t.className = 'run-drawer-title'; t.textContent = title;
+    const t = document.createElement('div'); t.id = 'runDrawerTitle'; t.className = 'run-drawer-title'; t.textContent = title; t.title = title;   // phones clamp it to two lines; the full text is on hover
     const s = document.createElement('div'); s.className = 'run-drawer-sub'; if (typeof sub === 'string') s.textContent = sub; else s.append(...sub);
     copy.append(t, s); head.append(back, copy);
     if (run) {
@@ -2989,7 +2995,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     }
     sheet.appendChild(box);
   }
-  function openDetails() { const sheet = el('runDetailsSheet'); if (sheet && !sheet.open && sheet.childElementCount) { sheet.showModal(); sheet.querySelector('button')?.focus(); } }
+  function openDetails() { const sheet = el('runDetailsSheet'); if (sheet && !sheet.open && sheet.childElementCount) { sheet.showModal(); state.detailsRelease = window.LocalAIUI?.sheetHistory?.(sheet, () => sheet.close()); sheet.querySelector('button')?.focus(); } }
 
   // Approve and Reject only record a decision, so they are plain confirms (no typed word), whatever the risk.
   function approvalBar(approval) {
@@ -3065,7 +3071,15 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (state.closing) return;
     if (!window.LocalAIRouter) { hideView(); return; }
     state.closing = true;
-    if (state.inApp || history.state?.localaiRun) history.back(); else window.LocalAIRouter.go('#home', { replace: true });
+    { const r = state.detailsRelease; state.detailsRelease = null; r?.(); }   // a ⓘ sheet that just closed has not reported it yet: pop its entry first
+    window.LocalAIUI.dropStaleSheet?.();   // a sheet entry left by a reload or Forward has this run's hash too: step past it first
+    window.LocalAIUI.afterSheetPop(() => {   // after a closing details sheet has popped its own entry
+      if (!state.closing) return;   // the pop already closed the view
+      if (!(state.inApp || history.state?.localaiRun)) { window.LocalAIRouter.go('#home', { replace: true }); return; }
+      history.back();
+      // Back that lands on this same hash never fires hashchange; never stay stuck: go Home instead.
+      clearTimeout(state.closeTimer); state.closeTimer = setTimeout(() => { state.closeTimer = 0; if (state.closing) { state.closing = false; window.LocalAIRouter.go('#home', { replace: true }); } }, 400);
+    });
   }
   function showView() {
     const backdrop = el('runDrawerBackdrop');
@@ -3085,6 +3099,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     document.body.classList.remove('run-view-open');
     setInert(false); state.opener = null;
     if (wasOpen) queueMicrotask(() => restoreFocus(opener));
+    clearTimeout(state.closeTimer); state.closeTimer = 0;
     Object.assign(state, { selectedId: null, drawerSig: '', fetched: null, gap: '', pending: null, inApp: false, closing: false, viewError: '' });
   }
   async function fetchRun(id, quiet) {
@@ -3351,7 +3366,7 @@ async function mountFirstRun(){
   else if(t.matches('[data-first-run-recheck]'))checkSteps(card);
   else if(t.dataset.firstRunDownload){t.disabled=true;t.textContent='Starting…';window.LocalAIModels?.startPull(t.dataset.firstRunDownload).then(ok=>{if(!ok){t.disabled=false;t.textContent='Download it now'}})}
   else if(t.dataset.sample!==undefined){runSample(SAMPLES[Number(t.dataset.sample)]);const li=q('[data-step="try"]',card);li.dataset.state='done'}
-  else if(t.dataset.goto){e.preventDefault();window.showView?.(t.dataset.goto)}
+  else if(t.dataset.goto){e.preventDefault();window.LocalAIRouter?.open(t.dataset.goto)}
  });
  checkSteps(card);
 }
@@ -3428,7 +3443,7 @@ function announce(){
  if(!seen||seen===v)return;
  const t=document.getElementById('toast');if(!t)return;
  t.innerHTML=`Updated to ${esc(v)}. <button type="button" class="whatsnew-open">See what's new</button>`;t.classList.add('show','whatsnew-toast');
- t.querySelector('.whatsnew-open').onclick=()=>{t.classList.remove('show');window.showView?.('status');setTimeout(()=>q('#whatsNew')?.scrollIntoView({block:'start'}),100)};
+ t.querySelector('.whatsnew-open').onclick=()=>{t.classList.remove('show');window.LocalAIRouter?.open('status');setTimeout(()=>q('#whatsNew')?.scrollIntoView({block:'start'}),100)};
  clearTimeout(t._hide);t._hide=setTimeout(()=>t.classList.remove('show','whatsnew-toast'),10000);
 }
 async function start(){await load();mount();announce()}

@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { addAxe } from './axe-helper.mjs';
 
 // Task 5: a chat started from Home opens as a run view; the whole thread's conversation lives there and you reply in place.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
@@ -28,7 +29,7 @@ const three = () => [run(3, 'third question', 'third answer'), run(1, 'first que
 // db.runs: every ledger run the stub knows (a test can push into it); db.library: Library items.
 async function open(viewport, hash, { runs = [], library = [], storage = {}, stream = 'live' } = {}) {
   const db = { runs, library };
-  const ctx = await browser.newContext({ viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.devTools': '1', 'localai.firstRun.done': '1', ...storage });
   // /api/chat/stream is a controllable SSE stream: __reqs records each request body, __streams[i].push(event, data) / .close(), and an abort errors it.
   await ctx.addInitScript(() => { window.__pd = 0; const add = document.addEventListener.bind(document); document.addEventListener = (t, ...a) => { if (t === 'pointerdown') window.__pd++; return add(t, ...a); }; });
@@ -47,7 +48,7 @@ async function open(viewport, hash, { runs = [], library = [], storage = {}, str
       return Promise.resolve(new Response(rs, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }));
     };
   }, stream);
-  const page = await ctx.newPage();
+  const page = await ctx.newPage({ serviceWorkers: 'block' });
   page.db = db; page.errors = [];
   page.on('pageerror', e => page.errors.push(e.message));
   const json = (r, body, status = 200) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -113,9 +114,54 @@ await check('a thread with 3 runs renders 3 user and 3 assistant turns in order'
 
 await check('a truncated answer shows the full text from the Library', async () => {
   const r = run(1, 'long one', '', { output: { truncated: true, preview: 'PREVIEW' }, artifactIds: ['art-1'] });
-  const page = await open(desk, '#home', { runs: [r], library: [{ id: 'other', response: 'nope' }, { id: 'art-1', response: 'FULL LIBRARY ANSWER' }] });
+  const page = await open(desk, '#home', { runs: [r], library: [{ id: 'other', data: { response: 'nope' } }, { id: 'art-1', data: { response: 'FULL LIBRARY ANSWER' } }] });
   await page.evaluate(id => window.LocalAIRuns.show(id), r.id);
   await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'FULL LIBRARY ANSWER' }).waitFor(T);
+  await page.context().close();
+});
+
+await check('a truncated answer with no Library copy never shows raw JSON', async () => {
+  const bad = run(1, 'long one', '', { output: { truncated: true, preview: '{"text":"The beginning of a very long answ' }, artifactIds: ['gone'], threadId: 't-bad' });
+  const good = run(1, 'parsable', '', { output: { truncated: true, preview: '{"text":"Parsed preview text"}' }, artifactIds: ['gone2'], threadId: 't-good' });
+  const page = await open(desk, '#home', { runs: [bad, good], library: [] });
+  await page.evaluate(id => window.LocalAIRuns.show(id), bad.id);
+  await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'This answer was too long to keep here.' }).waitFor(T);
+  assert.ok(!/truncated|\{"/.test(await page.locator('#runDrawer').innerText()));
+  await page.evaluate(id => window.LocalAIRuns.show(id), good.id);
+  await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'Parsed preview text' }).waitFor(T);
+  assert.ok(!/truncated|\{"/.test(await page.locator('#runDrawer').innerText()));
+  await page.context().close();
+});
+
+await check('a reply never sends the "too long to keep" placeholder to the model as an answer', async () => {
+  const bad = run(1, 'long one', '', { output: { truncated: true, preview: '{"text":"The beginning of a very long answ' }, artifactIds: ['gone'], threadId: 't-bad' });
+  const page = await open(desk, '#home', { runs: [bad], library: [] });
+  await page.evaluate(id => window.LocalAIRuns.show(id), bad.id);
+  await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'This answer was too long to keep here.' }).waitFor(T);
+  await page.locator('#runReply').fill('and then?'); await page.locator('#runReply').press('Enter');
+  await page.waitForFunction(() => window.__reqs.length === 1, null, T);
+  const msgs = (await reqs(page))[0].messages;
+  assert.ok(!JSON.stringify(msgs).includes('too long to keep'), JSON.stringify(msgs));
+  assert.deepEqual(msgs.filter(m => m.role === 'user').map(m => m.content), ['long one', 'and then?']);
+  await page.context().close();
+});
+
+for (const [tag, vp] of [['390x844', phone], ['1280x860', desk]]) await check(`${tag}: a failed chat run is not a dead end: the reply box works and More offers Retry`, async () => {
+  const f = run(1, 'why is the sky blue', '', { status: 'failed', output: null }); f.error = 'The model stopped answering'; f.retryable = true;
+  const page = await open(vp, '#home', { runs: [f] });
+  await page.evaluate(id => window.LocalAIRuns.show(id), f.id);
+  await page.locator('#runDrawer .chat-turn--error', { hasText: 'The model stopped answering' }).waitFor(T);
+  assert.equal(await page.locator('#runReply').isVisible(), true);
+  assert.equal(await page.locator('#runReply').isEnabled(), true);
+  await page.locator('#runMoreBtn').click();
+  assert.equal(await page.locator('.run-menu button', { hasText: 'Retry' }).isEnabled(), true);
+  await page.keyboard.press('Escape');
+  await page.locator('#runReply').fill('try again please'); await page.locator('#runReply').press('Enter');
+  await page.waitForFunction(() => window.__reqs.length === 1, null, T);
+  const b = (await reqs(page))[0];
+  assert.equal(b.threadId, THREAD);
+  assert.equal(b.messages.at(-1).content, 'try again please');
+  assert.ok(!b.messages.some(m => m.content === 'The model stopped answering'), 'the failure text is not sent as an answer');
   await page.context().close();
 });
 
@@ -224,7 +270,7 @@ for (const [tag, vp] of [['390x844', phone], ['1280x860', desk]]) {
     const page = await open(vp, '#home', { runs: three() });
     await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);
     await page.locator('#runDrawer .chat-turn--assistant').nth(2).waitFor(T);
-    await page.addScriptTag({ path: axePath });
+    await addAxe(page, axePath);
     const v = await page.evaluate(() => window.axe.run('#runDrawer', { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(x => `${x.id}: ${x.nodes.map(n => n.html.slice(0, 120)).join(' | ')}`)));
     assert.deepEqual(v, []);
     await page.context().close();

@@ -11,7 +11,7 @@ const aspects = [['square', 'Square', [512, 512], [1024, 1024]], ['portrait', 'P
 const models = { engines: [{ id: 'fast', label: 'Fast', blurb: 'Quick drafts.', family: 'sd15', base: 512, estimateSec: 16 }, { id: 'quality', label: 'Quality', blurb: 'Detailed.', family: 'sdxl', base: 1024 }, { id: 'best', label: 'Best', blurb: 'Text and long prompts.', family: 'flux', base: 1024 }], custom: ['v1-5-pruned-emaonly.safetensors'], upscale: true, defaultEngine: 'fast', aspects, styles: [{ id: 'none', label: 'None' }, { id: 'photo', label: 'Photo' }, { id: 'anime', label: 'Anime' }] };
 const pixel = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
-const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+const page = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
 const errors = [], sent = [];
 page.on('pageerror', e => errors.push(e.message));
 await page.addInitScript(() => localStorage.setItem('localai.firstRun.done', '1'));

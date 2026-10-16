@@ -9,8 +9,10 @@ const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 
-async function startServer(t, extraEnv = {}) {
+// seed(storage) writes records (older legacy runs, say) before the server starts.
+async function startServer(t, extraEnv = {}, seed = null) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-runs-'));
+  if (seed) { const { Storage } = require('../app/storage'); const storage = new Storage({ dataDir }); seed(storage); storage.close?.(); }
   const ollamaCalls = []; // every /api/chat and /api/generate body Ollama received, in order
   const mock = http.createServer((req, res) => {
     let raw = '';
@@ -412,4 +414,46 @@ test('text-model calls use one 8192 context, stay warm, and take turns with imag
   assert.equal(after[0].body.keep_alive, 0);
   assert.equal(after[1].body.keep_alive, '30m');
   assert.deepEqual(order, ['unload', 'comfy', 'warm']);
+});
+
+// Legacy runs (old missions, Change Local AI requests) live in their own stores, never in the ledger.
+const OLD = '2020-01-01T00:00:00.000Z', OLDER = '2019-12-31T00:00:00.000Z';
+const seedLegacy = s => {
+  s.put('engineeringRuns', { id: 'eng-old', request: 'Add a dark mode toggle', target: 'self', status: 'completed', createdAt: OLD, updatedAt: OLD, steps: [] });
+  s.put('agentRuns', { id: 'mission-old', goal: 'Summarise the inbox', status: 'complete', createdAt: OLDER, updatedAt: OLDER, plan: [] });
+};
+
+test('a legacy run older than the newest 120 still opens by id', { timeout: 120000 }, async t => {
+  const { request } = await startServer(t, {}, seedLegacy);
+  for (let i = 0; i < 130; i++) await request('/api/chat', { messages: [{ role: 'user', content: `q${i}` }], threadId: `th-${i}` });
+  assert.ok(!(await request('/api/runs')).value.items.some(x => x.id === 'legacy-engineering:eng-old'), 'outside the newest 120');
+  const r = await request('/api/runs?id=' + encodeURIComponent('legacy-engineering:eng-old'));
+  assert.equal(r.response.status, 200, JSON.stringify(r.value));
+  assert.equal(r.value.item.id, 'legacy-engineering:eng-old');
+  assert.equal(r.value.item.card.kind, 'engineering');
+  assert.equal((await request('/api/runs?id=' + encodeURIComponent('legacy-engineering:none'))).response.status, 404);
+});
+
+// Work's chips ask the server for one kind, so a kind the newest page holds none of is still reachable.
+test('kind filters the threads timeline before before and limit', { timeout: 120000 }, async t => {
+  const { request } = await startServer(t, {}, seedLegacy);
+  const chats = [];
+  for (let i = 0; i < 70; i++) chats.push((await request('/api/chat', { messages: [{ role: 'user', content: `q${i}` }], threadId: `th-${i}` })).value.runId);
+  const missions = await request('/api/runs?threads=1&kind=missions&limit=60');
+  assert.equal(missions.response.status, 200);
+  assert.deepEqual(missions.value.items.map(x => x.id), ['legacy-agent:mission-old']);
+  assert.deepEqual((await request('/api/runs?threads=1&kind=changes&limit=60')).value.items.map(x => x.id), ['legacy-engineering:eng-old']);
+  assert.deepEqual((await request('/api/runs?threads=1&kind=images&limit=60')).value.items, []);
+  const first = await request('/api/runs?threads=1&kind=chats&limit=60');
+  assert.equal(first.value.items.length, 60);
+  assert.ok(first.value.items.every(x => x.type === 'chat'));
+  const rest = await request(`/api/runs?threads=1&kind=chats&limit=60&before=${encodeURIComponent(first.value.items[59].id)}`);
+  assert.equal(rest.value.items.length, 10, 'the 10 older chats, not the mission or the change');
+  assert.ok(rest.value.items.every(x => x.type === 'chat'));
+  // before a chat, in Missions: the older mission
+  const older = await request(`/api/runs?threads=1&kind=missions&limit=60&before=${encodeURIComponent(chats[0])}`);
+  assert.deepEqual(older.value.items.map(x => x.id), ['legacy-agent:mission-old']);
+  assert.deepEqual((await request(`/api/runs?threads=1&kind=missions&before=${encodeURIComponent('legacy-agent:mission-old')}`)).value.items, []);
+  assert.equal((await request('/api/runs?threads=1&kind=all')).value.items.length, 72, 'all means no filter');
+  assert.equal((await request('/api/runs?threads=1&kind=nonsense')).response.status, 400);
 });

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 // A dropped mission stream shows "reconnecting…"; once the browser reconnects, the notice goes away.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+const page = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 let calls = 0;
 await page.route('**/api/agents/missions/events*', route => (++calls === 1 ? route.abort('connectionreset') : route.continue()));
 await page.goto(base, { waitUntil: 'domcontentloaded' });
