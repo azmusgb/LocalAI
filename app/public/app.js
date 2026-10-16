@@ -550,11 +550,16 @@ async function loadWorkspace(){window.LocalAIHome?.refresh()}
 function normalizedState(v){return ['HEALTHY','DEGRADED','DOWN','OPTIONAL_OFFLINE'].includes(v)?v:'DEGRADED';}
 function serviceDisplayState(s){return s.displayState||(s.required===false&&s.state!=='HEALTHY'?'OPTIONAL_OFFLINE':normalizedState(s.state));}
 function serviceStateLabel(s){const v=serviceDisplayState(s);return v==='OPTIONAL_OFFLINE'?'Optional · Offline':v==='HEALTHY'?'Healthy':v==='DEGRADED'?'Degraded':'Down';}
+// What each service does for you; the row's badge already says whether it's up.
+const SERVICE_PURPOSE={ollama:'Answers your questions, using the models on this computer.',comfy:'Makes the pictures you ask for.',n8n:'Runs your automations.',proxy:'Lets other apps talk to Local AI as if it were a cloud AI.',search:'Searches the web for Research.',home:'The companion app on your Mac.',dsh:'Developer helper on your Mac.'};
 function serviceDescription(s){
-  if(s.required===false&&s.state!=='HEALTHY')return 'Optional companion is not reachable. Core Local AI remains available.';
-  if(s.state==='HEALTHY')return s.required===false?'Optional companion is reachable.':'Core capability is ready.';
-  return s.state==='DEGRADED'?'Capability responded but needs attention.':'Core capability is unavailable.';
+  const what=SERVICE_PURPOSE[s.name]||'';
+  if(s.state==='HEALTHY')return what||(s.required===false?'Optional companion is reachable.':'Ready.');
+  if(s.required===false)return `${what} Optional: Local AI works without it.`.trim();
+  return `${what} ${s.state==='DEGRADED'?'Answering slowly or with errors.':'Not answering right now.'}`.trim();
 }
+// Response time is shown only when it's slow enough to notice.
+const slowNote=ms=>Number.isFinite(ms)&&ms>=2000?`Slow · ${(ms/1000).toFixed(1)} s`:'';
 let statusRefreshing=false;
 async function refreshStatus(force=false){
   if(document.hidden&&!force)return;
@@ -571,7 +576,7 @@ async function refreshStatus(force=false){
     $('homeState').textContent=friendly;$('sideState').textContent=overall==='HEALTHY'?'Healthy':'Attention';
     $('statusSummary').innerHTML=`<span class="dot ${overall}"></span> ${coreBad.length?`${coreBad.length} core capability issue${coreBad.length===1?'':'s'}`:optionalBad.length?`Core ready · ${optionalBad.length} optional companion${optionalBad.length===1?'':'s'} offline`:'Everything is ready'}`;
     const checked=$('statusCheckedAt');if(checked)checked.textContent=j.checkedAt?`Checked ${new Date(j.checkedAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'})}`:'';
-    $('serviceList').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);return `<div class="service service-card ${st}"><div class="service-copy"><strong>${esc(s.label)}</strong><small>${esc(serviceDescription(s))}</small></div><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">${Number.isFinite(s.latencyMs)?s.latencyMs+' ms':'—'}</span></div>`}).join('');
+    $('serviceList').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);return `<div class="service service-card ${st}"><div class="service-copy"><strong>${esc(s.label)}</strong><small>${esc(serviceDescription(s))}</small></div><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">${esc(slowNote(s.latencyMs))}</span></div>`}).join('');
     $('technicalStatus').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);const err=s.error?` · ${esc(s.error)}`:'';return `<div class="service"><span>${esc(s.name)} · ${s.required===false?'optional companion':'core'}<small class="service-tech-note">${esc(s.impact||'')}${err}</small></span><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">HTTP ${s.statusCode??'—'}</span></div>`}).join('');
     const c=j.certification||{};const res=String(c.result||'').toUpperCase(),word={PASS:'Passed',WARN:'Passed with warnings',FAIL:'Failed'}[res]||human(c.result||'Unknown'),tone={PASS:'HEALTHY',WARN:'DEGRADED',FAIL:'DOWN'}[res]||'DEGRADED';$('certBox').innerHTML=c.available?`<span class="dot ${tone}"></span> ${esc(word)}${c.modifiedAt?` · ${esc(new Date(c.modifiedAt).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}`:''}`:'<span class="dot DEGRADED"></span> No check on record';
   }catch(e){
@@ -717,7 +722,10 @@ async function unlockPowerShell(){const token=$('powershellToken').value.trim();
 async function loadPowerShellJobs(selectId=''){
   if(featureLevel()<17)return;
   try{
-    if(!powerShellUiToken()){$('powershellBridge').textContent='locked';$('powershellStatus').textContent='Enter the local PowerShell UI token to unlock this console.';return}await LocalAIUI.loadInto($('powershellJobs'),()=>powerShellApi('/api/powershell/jobs'),{what:'PowerShell jobs',empty:'',render:(c,j)=>{evo.powerShellJobs=j.items||[];
+    // Locked: the editor and Create stay disabled until the token is entered, so nothing looks usable that isn't.
+    const lock=on=>['powershellCwd','powershellTimeout','powershellScript','powershellCreateBtn','powershellRefreshBtn'].forEach(id=>{const el=$(id);if(el)el.disabled=on});
+    lock(!powerShellUiToken());
+    if(!powerShellUiToken()){$('powershellBridge').textContent='Locked';$('powershellStatus').textContent='Enter the local PowerShell UI token to unlock this console.';return}await LocalAIUI.loadInto($('powershellJobs'),()=>powerShellApi('/api/powershell/jobs'),{what:'PowerShell jobs',empty:'',render:(c,j)=>{evo.powerShellJobs=j.items||[];
     $('powershellBridge').textContent=j.bridgeConfigured?'host bridge ready':'host bridge not configured';
     $('powershellJobs').innerHTML=evo.powerShellJobs.length?evo.powerShellJobs.map(x=>`<button class="item-card" data-ps-job="${esc(x.id)}"><div class="statusline"><strong style="flex:1">${esc((x.script||'').split(/\r?\n/)[0]||'PowerShell script')}</strong><span class="statuschip">${esc(human(x.status))}</span></div><small>${esc(x.cwd)} · ${esc(x.risk)} risk · ${ago(x.updatedAt||x.createdAt)}</small></button>`).join(''):'<div class="empty">No PowerShell jobs yet.</div>';
     qsa('[data-ps-job]').forEach(b=>b.onclick=()=>renderPowerShellJob(evo.powerShellJobs.find(x=>x.id===b.dataset.psJob)));
