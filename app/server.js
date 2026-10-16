@@ -600,7 +600,8 @@ async function apiVoiceHome(req, res) {
 async function voiceNeedsSentence() {
   const snapshot = await getCapabilitiesSnapshot();
   const dayAgo = Date.now() - 86400000;
-  const pendingChange = new Set(['planned', 'patch_failed', 'validation_failed', 'staged', 'awaiting_approval', 'approved', 'apply_requested']);
+  // Approved changes are with Claude or waiting for a PR merge (they ship as pull requests); they don't need you.
+  const pendingChange = new Set(['planned', 'patch_failed', 'validation_failed', 'staged', 'awaiting_approval']);
   return glance.needsYouSentence(glance.needsYouItems({
     approvals: approvalStore().filter(a => a.status === 'pending'),
     // A change's Improve item has the short title (from its request); the change's own summary is the model's prose.
@@ -3123,7 +3124,8 @@ function retireChangeOfClosedItem(item){
   if(!c||!improve.LIVE_CHANGE.includes(c.status)||IMPROVE_LOCKED_CHANGE.includes(c.status))return false;
   improveRetireChange(c.id);return true;
 }
-// Items closed before the rule above left their changes open; end those once at start-up.
+// Items closed before the rule above left their changes open; end those once at start-up. Reopening an item later
+// doesn't revive its retired change (as with Discard): Start plans a new one.
 function retireChangesOfClosedItems(){let n=0;for(const f of claudeFindings())if(retireChangeOfClosedItem(f))n++;return n}
 // What Claude should work on next: open findings in rank order with the operator's decisions.
 async function apiClaudePriorities(req,res,urlObj){
@@ -3366,8 +3368,10 @@ async function apiReleases(req, res) {
 
 migrateLegacyActivityToLibrary();
 recordReleaseHistory();
-shipQueuedSelfChanges();
-retireChangesOfClosedItems();
+// Each start-up pass is on its own: one bad record must not stop the appliance starting.
+for (const [name, pass] of [['ship queued self changes', shipQueuedSelfChanges], ['retire changes of closed items', retireChangesOfClosedItems]]) {
+  try { pass(); } catch (e) { console.error(`${nowIso()} Start-up pass "${name}" failed:`, e); }
+}
 // One bad record must not stop the appliance starting; Improve catches up on the next scan or save.
 try { runImproveReconcile({ startup: true }); } catch (e) { console.error(`${nowIso()} Improve start-up reconcile failed:`, e); }
 // Health is checked on its own every minute, so an outage reaches the phone (Down/Recovered) even with no page open.

@@ -58,17 +58,20 @@ function spokenTitle(text) {
   return kept.join(' ').replace(/[,;:]+$/, '');
 }
 // A failed chat, research question or image is named by what it was, not by its prompt.
-const FAILED_KIND = { chat: 'a chat question', research: 'a research question', image: 'an image' };
+// Several of one kind are counted ("3 chat questions failed"), not repeated.
+const FAILED_KIND = { chat: ['a chat question', 'chat questions'], research: ['a research question', 'research questions'], image: ['an image', 'images'] };
 
 function needsYouItems({ approvals = [], changes = [], findings = [], failedRuns = [], downServices = [] } = {}) {
   const name = x => spokenTitle(x?.title || x?.label || x?.name || '');
   const out = [];
   const add = (kind, rows) => { for (const r of rows) { const title = name(r); if (title) out.push({ kind, title }); } };
   add('approval', approvals); add('change', changes); add('finding', findings);
+  const generic = new Map();
   for (const r of failedRuns) {
-    if (FAILED_KIND[r?.type]) out.push({ kind: 'failed', title: FAILED_KIND[r.type], generic: true });
+    if (FAILED_KIND[r?.type]) generic.set(r.type, (generic.get(r.type) || 0) + 1);
     else { const title = name(r); if (title) out.push({ kind: 'failed', title }); }
   }
+  for (const [type, n] of generic) out.push({ kind: 'failed', title: n === 1 ? FAILED_KIND[type][0] : `${n} ${FAILED_KIND[type][1]}`, generic: true });
   add('down', downServices);
   return out;
 }
