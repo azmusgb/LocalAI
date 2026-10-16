@@ -548,6 +548,7 @@ const VOICE_BUDGET_MS = Number(process.env.LOCALAI_VOICE_BUDGET_MS) || 8000;
 const VOICE_HANDOFF = "Still working on that \u2014 I'll send it to your phone.";
 const VOICE_QUEUE_WAIT_MS = Number(process.env.LOCALAI_VOICE_QUEUE_WAIT_MS) || 6000;
 const VOICE_DOWN = "Local AI can't answer right now. Try again in a minute.";
+const VOICE_REFUSAL = "That needs your phone \u2014 I've put it in Needs you.";
 const voiceTimeZone = () => process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
 const VOICE_FACT_MS = 3000;
@@ -609,6 +610,40 @@ async function voiceNeedsSentence() {
   }));
 }
 
+// A notification for a spoken ask or the job it started. The tag is the run's, else a fresh one, so the repeat
+// filter never drops one.
+function voiceNotify(title, body, runId) {
+  notifier.notify({ kind: 'answer', title, body, url: runId ? `#run/${runId}` : '/', tag: runId ? `answer:${runId}` : `answer:voice:${require('node:crypto').randomBytes(6).toString('hex')}` });
+}
+
+// "Make an image of…", "start a mission to…", "research…": start the job, reply as soon as it has started, and
+// never wait for it to finish. Images and research report back by notification; missions use the run's own.
+async function voiceAction({ action, subject }) {
+  if (action === 'image') {
+    if (!subject) return 'What should the image show?';
+    // Through the server's own route, so the image is made exactly as one asked for in the app.
+    fetchWithTimeout(`http://127.0.0.1:${PORT}/api/images/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: subject, voice: true }) }, 900000)
+      .then(async r => {
+        const j = await r.json().catch(() => ({}));
+        if (r.ok) voiceNotify('Your image is ready', subject, j.runId);
+        else voiceNotify("Couldn't make the image", 'Tap to see what went wrong.', j.runId);
+      }, () => voiceNotify("Couldn't make the image", 'Tap to see what went wrong.'));
+    return `Started an image of ${subject}. I'll notify you when it's ready.`;
+  }
+  if (action === 'mission') {
+    if (!subject) return 'What should the mission do?';
+    if (!featureAtLeast(4)) return "Missions aren't available on this Local AI.";
+    startMissionRun(subject, '', undefined);
+    return `Started a mission: ${subject}.`;
+  }
+  // research: a full answer for the app, not a spoken one; the notification carries its start.
+  chatOnce({ messages: [{ role: 'user', content: subject }], webSearch: true, voiceRun: true }).then(
+    result => voiceNotify('Research ready', voice.speakable(result.message.content) || 'Tap to read it.', result.runId),
+    err => voiceNotify("Couldn't finish the research", 'Tap to see what went wrong.', err?.runId)
+  );
+  return `Researching ${subject}. I'll send you the answer.`;
+}
+
 async function apiGlanceAsk(req, res, urlObj) {
   const say = (status, value) => text(res, status, value, 'text/plain; charset=utf-8', { 'Cache-Control': 'no-store' });
   try {
@@ -659,7 +694,9 @@ async function apiGlanceAsk(req, res, urlObj) {
           return voice.speakable(said) || "I didn't catch that.";
         });
       }
-      // action and refuse fall back to the model until they have their own answers.
+      // Approving, applying, deploying, deleting and PowerShell never happen by voice; nothing is called.
+      if (route.intent === 'refuse') return turn(async () => VOICE_REFUSAL);
+      if (route.intent === 'action') return turn(() => voiceAction(route));
       return turn(async () => {
         const messages = [...voiceThreads.history(threadId), { role: 'user', content: question }];
         const result = await chatOnce({ messages, brief: true, voice: true, threadId });
@@ -670,11 +707,7 @@ async function apiGlanceAsk(req, res, urlObj) {
     // The budget covers the whole ask, queue wait included. Past it the run carries on and the answer is pushed.
     const outcome = await voice.withBudget(asked, VOICE_BUDGET_MS);
     if (outcome.done) return say(200, outcome.value);
-    // Each handoff has its own tag (a failed run's id, else a fresh one) so the repeat filter never drops one.
-    const handoff = (title, body, id) => {
-      id = id || runId;
-      notifier.notify({ kind: 'answer', title, body, url: id ? `#run/${id}` : '/', tag: id ? `answer:${id}` : `answer:voice:${require('node:crypto').randomBytes(6).toString('hex')}` });
-    };
+    const handoff = (title, body, id) => voiceNotify(title, body, id || runId);
     outcome.later.then(
       late => handoff('Local AI answered', String(late)),
       err => handoff("Local AI couldn't answer", "Tap to see what went wrong.", err?.runId)
@@ -805,7 +838,7 @@ async function chatOnce(body) {
       summary: content.slice(0, 420),
       output: { text: content.slice(0, 40000), model: prep.model, elapsedMs, sources: prep.sources },
       artifactIds: artifact?.id ? [artifact.id] : [],
-      meta: { model: prep.model, elapsedMs, sources: prep.sources.length, ...(body.voice === true ? { voice: true } : {}) }
+      meta: { model: prep.model, elapsedMs, sources: prep.sources.length, ...(body.voice === true || body.voiceRun === true ? { voice: true } : {}) }
     });
 
     return {
@@ -1307,6 +1340,8 @@ async function apiGenerateImage(req, res) {
       threadId: body.threadId,
       title: titleFromText(original, editing ? 'Image edit' : 'Image generation'),
       input: { prompt: original.slice(0, 2000), engine: engine.id, checkpoint, family: engine.family, width, height, steps, cfg, style, count, upscale: !!upscaler, enhance: body.enhance === true, edit: editing ? { masked: !!body.mask, strength } : null },
+      // Started by voice: the ask sends its own "ready" or "couldn't" notification, so the generic ones stay quiet.
+      meta: body.voice === true ? { voice: true } : {},
       // An edit's source image isn't kept with the run, so Retry repeats it as a new image.
       retryRequest: { path: '/api/images/generate', body: { prompt: original, engine: engine.id, checkpoint: engine.id === 'custom' ? checkpoint : undefined, negativePrompt: body.negativePrompt, aspect: body.aspect, width, height, steps, cfg, style, count, upscale: !!upscaler, enhance: body.enhance === true, threadId: cleanRunId(body.threadId) || undefined } }
     });
@@ -1364,8 +1399,9 @@ async function apiGenerateImage(req, res) {
     json(res, 200, { promptId: results[0].promptId, ...common, imageUrl: images[0].imageUrl, seed: images[0].seed, images, familyLabel: engine.label, prompt: original, usedPrompt: styled.prompt, runId: execution.id, threadId: execution.threadId });
   } catch (e) {
     if (execution) runLedger.fail(execution.id, e);
-    if (e.status) return json(res, e.status, { error: e.message });
-    storageError(res,e,500);
+    const run = execution ? { runId: execution.id } : {};
+    if (e.status) return json(res, e.status, { error: e.message, ...run });
+    json(res, e.statusCode || 500, { error: String(e.message || e), ...(e.code ? { code: e.code } : {}), ...run });
   }
   finally {
     if (tookGpu && --imageJobsActive === 0) warmText();
@@ -1509,7 +1545,7 @@ function createChatExecution(body,streaming){
   const messages=sanitizeMessages(body?.messages);const prompt=[...messages].reverse().find(m=>m.role==='user')?.content||'Chat';
   const model=typeof body?.model==='string'&&body.model.trim()?body.model.trim():MODEL;
   const retryBody={messages,model,webSearch:body?.webSearch===true,threadId:cleanRunId(body?.threadId)||undefined,brief:body?.brief===true||undefined};
-  return runLedger.create({type:body?.webSearch===true?'research':'chat',title:titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true,...(body?.voice===true?{voice:true}:{})}});
+  return runLedger.create({type:body?.webSearch===true?'research':'chat',title:titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true,...(body?.voice===true||body?.voiceRun===true?{voice:true}:{})}});
 }
 function normalizedExecutionStatus(value){
   const s=String(value||'').toLowerCase();

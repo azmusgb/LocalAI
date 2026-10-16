@@ -16,15 +16,18 @@ const WEATHER = /\b(?:weather|forecast|temperature|rain(?:ing)?|snow(?:ing)?|how
 const CURRENT = /\b(?:latest|news|current(?:ly)?|recent(?:ly)?|right\s+now|who\s+won|score\s+of|stock\s+price|price\s+of|last\s+(?:year|week|night)|this\s+(?:year|week)|yesterday|tonight)\b/;
 
 function classify(input) {
-  const t = String(input || '').toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim();
+  const said = String(input || '').replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim();
+  const t = said.toLowerCase();
   if (!t || NOISE.test(t)) return { intent: 'empty' };
   if (REFUSE.test(t)) return { intent: 'refuse' };
+  // The subject keeps the words as dictated ("NAS", "Plex"); the patterns only match lower case.
+  const subject = m => (said.length === t.length ? said.slice(t.length - m[1].length) : m[1]).replace(/[.!?]+$/, '').trim();
   let m = t.match(IMAGE);
-  if (m) return { intent: 'action', action: 'image', subject: m[1].replace(/[.!?]+$/, '').trim() };
+  if (m) return { intent: 'action', action: 'image', subject: subject(m) };
   m = t.match(MISSION);
-  if (m) return { intent: 'action', action: 'mission', subject: m[1].replace(/[.!?]+$/, '').trim() };
+  if (m) return { intent: 'action', action: 'mission', subject: subject(m) };
   m = t.match(RESEARCH);
-  if (m) return { intent: 'action', action: 'research', subject: m[1].replace(/[.!?]+$/, '').trim() };
+  if (m) return { intent: 'action', action: 'research', subject: subject(m) };
   if (NEEDS.test(t)) return { intent: 'needs' };
   if (HEALTH.test(t)) return { intent: 'health' };
   if (TIME.test(t) && !/\bin\s+[a-z]/.test(t)) return { intent: 'time' };
