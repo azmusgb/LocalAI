@@ -84,6 +84,7 @@ in a checkout, else `APP_VERSION` (`appVersion` in `app/release.js`). Features a
 | Command | What runs | Needs |
 |---|---|---|
 | `npm test` | Every `tests/*.test.cjs` with `node --test`: storage, API, runs, orchestrator, chat relay, Mac bridge/hook/CLI/installer, security and front-end contracts | Node only; tests start their own servers on free ports |
+| `npm run lint` | ESLint over the repo (`eslint.config.mjs`): correctness rules only (undefined and unused names, duplicate keys, unreachable code, fallthrough), no formatting rules. `tests/lint.test.cjs` runs the same check inside `npm test` | `npm ci` (eslint is a devDependency; without it the `npm test` check skips) |
 | `npm run test:browser` | `tests/run-browser.mjs`: every `tests/*-ui.mjs` Playwright suite in turn, reporting all failures at the end | A running server at `LOCALAI_URL` (default `http://127.0.0.1:3080`) |
 | `pwsh -NoProfile -File deploy/Test-LocalAI-Candidate.ps1 -CandidateRoot . -LocalNode` | The deploy validator, as CI runs it | `pwsh` |
 | `pwsh -NoProfile -File tests/Test-LocalAI-DeployContracts.ps1` | Deploy and rollback scripts against mocked Docker, git and robocopy | `pwsh`; CI runs it on Windows only |
