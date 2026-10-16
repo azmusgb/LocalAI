@@ -265,7 +265,7 @@ test('a slow answer is handed off to the phone and sent as one notification', { 
   const [n] = await waitFor(() => { const l = readLog(log); return l.length ? l : null; });
   await new Promise(r => setTimeout(r, 300));
   const all = readLog(log);
-  assert.equal(all.length, 1);
+  assert.equal(all.length, 1, JSON.stringify(all));
   assert.equal(n.kind, 'answer');
   assert.equal(n.title, 'Local AI answered');
   assert.equal(n.body, 'The slow answer. Second sentence.');
@@ -287,8 +287,9 @@ test('a slow answer that fails sends a "couldn\'t answer" notification', { timeo
   t.after(() => fs.rmSync(log, { force: true }));
   const { ask } = await startServer(t, { env: { LOCALAI_VOICE_BUDGET_MS: '200', LOCALAI_NOTIFY_LOG: log }, onChat: (n, res) => { setTimeout(() => { res.writeHead(500); res.end('down'); }, 500); return true; } });
   assert.equal((await ask('tell me something')).body, HANDOFF);
-  // The run ledger also raises its own 'failed' notification for the failed run; the handoff adds the 'answer' one.
-  const [n] = await waitFor(() => { const l = readLog(log).filter(e => e.kind === 'answer'); return l.length ? l : null; });
+  const [n] = await waitFor(() => { const l = readLog(log); return l.length ? l : null; });
+  await new Promise(r => setTimeout(r, 300));
+  assert.equal(readLog(log).length, 1, JSON.stringify(readLog(log)));
   assert.equal(n.title, "Local AI couldn't answer");
   assert.match(n.body, /HTTP 500/);
 });

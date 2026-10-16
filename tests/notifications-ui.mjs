@@ -72,7 +72,7 @@ await check('Home Screen app: Allow subscribes as iPhone and shows the settings'
   await page.locator('[data-notify-kind="finished"]').uncheck();
   for (let i = 0; i < 50 && !calls.some((c) => c.path === '/api/push/devices/update'); i++) await page.waitForTimeout(100);
   const update = calls.filter((c) => c.path === '/api/push/devices/update').at(-1);
-  assert.deepEqual(update.body.kinds, ['needs-you', 'failed', 'service']);
+  assert.deepEqual(update.body.kinds, ['needs-you', 'failed', 'service', 'answer']);
 
   await page.locator('[data-notify-test]').click();
   await page.waitForFunction(() => /Sent/.test(document.querySelector('#notifications .notify-status').textContent));

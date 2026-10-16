@@ -729,7 +729,7 @@ async function chatOnce(body) {
       summary: content.slice(0, 420),
       output: { text: content.slice(0, 40000), model: prep.model, elapsedMs, sources: prep.sources },
       artifactIds: artifact?.id ? [artifact.id] : [],
-      meta: { model: prep.model, elapsedMs, sources: prep.sources.length }
+      meta: { model: prep.model, elapsedMs, sources: prep.sources.length, ...(body.voice === true ? { voice: true } : {}) }
     });
 
     return {
@@ -1433,7 +1433,7 @@ function createChatExecution(body,streaming){
   const messages=sanitizeMessages(body?.messages);const prompt=[...messages].reverse().find(m=>m.role==='user')?.content||'Chat';
   const model=typeof body?.model==='string'&&body.model.trim()?body.model.trim():MODEL;
   const retryBody={messages,model,webSearch:body?.webSearch===true,threadId:cleanRunId(body?.threadId)||undefined,brief:body?.brief===true||undefined};
-  return runLedger.create({type:body?.webSearch===true?'research':'chat',title:titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true}});
+  return runLedger.create({type:body?.webSearch===true?'research':'chat',title:titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true,...(body?.voice===true?{voice:true}:{})}});
 }
 function normalizedExecutionStatus(value){
   const s=String(value||'').toLowerCase();

@@ -144,3 +144,23 @@ test('updateDevice validates and removeDevice removes', () => {
   assert.equal(h.n.removeDevice(d.id), true);
   assert.equal(h.n.devices().length, 0);
 });
+
+test('answer: a device from before the kind existed gets it; one that turned Answers off does not', async () => {
+  const h = harness();
+  const old = h.device('old');
+  const stored = h.settings.get(`push:device:${old.id}`);
+  h.settings.set(`push:device:${old.id}`, { ...stored, kinds: ['needs-you', 'failed', 'service', 'finished'] });
+  h.device('off', { kinds: ['failed'] });
+  h.n.notify(ev('answer')); await flush();
+  assert.deepEqual(h.sent.map((s) => s.device), [old.id]);
+  assert.ok(h.n.devices().find((d) => d.id === old.id).kinds.includes('answer'));
+});
+
+test('answer: inside quiet hours an answer is sent while finished is held', async () => {
+  const h = harness({ startAt: at('2026-10-16T03:30:00Z') }); // 23:30 local
+  h.device('phone');
+  h.n.notify(ev('finished')); await flush();
+  assert.equal(h.sent.length, 0);
+  h.n.notify(ev('answer')); await flush();
+  assert.equal(h.sent.length, 1);
+});
