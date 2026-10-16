@@ -1,5 +1,7 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+const { workKind } = createRequire(import.meta.url)('../app/run-cards.js'); // the server's Work chip mapping
 
 const base=process.env.LOCALAI_URL||'http://127.0.0.1:3080';
 const browser=await chromium.launch({headless:true});
@@ -280,7 +282,7 @@ await check('navigation reaches Missions through Work',async()=>{
   const items=[mk('run-1-a','chat','A chat'),mk('legacy-agent:one','agent','A mission run'),mk('run-2-b','image','An image')];
   const visit=async(hash,viewport)=>{
     const pg=await browser.newPage({ serviceWorkers: 'block',viewport});
-    await pg.route(u=>u.pathname==='/api/runs',r=>r.fulfill({contentType:'application/json',body:JSON.stringify({items,summary:{}})}));
+    await pg.route(u=>u.pathname==='/api/runs',r=>{const k=new URL(r.request().url()).searchParams.get('kind');r.fulfill({contentType:'application/json',body:JSON.stringify({items:items.filter(x=>!k||workKind(x)===k),summary:{}})})}); // the server filters by Work's chip
     await pg.goto(base+'/'+hash,{waitUntil:'domcontentloaded'});
     await pg.waitForFunction(()=>typeof window.showView==='function'&&window.LocalAIRouter&&location.hash);
     return pg;
@@ -297,6 +299,7 @@ await check('navigation reaches Missions through Work',async()=>{
     await pg.waitForSelector('#work.active .run-card');
     assert.equal(await pg.locator('#work .run-card').count(),3);
     await pg.locator('[data-work-kind="missions"]').click();
+    await pg.waitForSelector('#workList:not([aria-busy="true"])');
     await onlyMissions(pg);await pg.close();
   }
 });
