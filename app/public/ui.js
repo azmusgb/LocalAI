@@ -2004,9 +2004,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const NOTE = "Web messages reach Claude as messages from another session: it acts within this session's permissions, but won't change its settings or approve prompts because of them.";
   const OFFLINE = 'This session is offline. Start or resume it on your Mac with `claude-chat`.';
   const HTTP_WARNING = 'This page is served over plain HTTP, so the pairing cookie crosses your Wi-Fi unencrypted until HTTPS is set up. Revoke a device if it may be exposed.';
+  const UNREACHABLE = "Can't reach Local AI right now (it may be restarting). Trying again…";
   const STORE_KEY = 'localai.claudeChat.session';
   const $ = (id) => document.getElementById(id);
-  const st = { mode: 'init', sessions: [], session: '', messages: [], after: 0, sending: false, pair: null, pairError: '', pairTimer: 0,
+  const st = { mode: 'init', sessions: [], session: '', messages: [], after: 0, sending: false, pair: null, pairError: '', pairTimer: 0, whoFailed: false,
     pollTimer: 0, sessionsAt: 0, polling: false, devices: [], devicesOpen: false, draft: '', built: '', paired: null, who: null };
 
   const store = {
@@ -2054,6 +2055,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       render();
       st.pairTimer = setInterval(checkPair, PAIR_MS);
     } catch (e) {
+      if (!e.status || e.status >= 500) { st.mode = 'error'; st.pairError = UNREACHABLE; render(); return; } // schedule() retries
       st.pairError = e.status === 429 ? 'Too many pending pairing requests — try again in a few minutes.' : `Could not start pairing: ${e.message}`;
       render();
     }
@@ -2069,9 +2071,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
 
   // ---- Sessions and messages ----
+  const askWho = () => api('whoami').then((r) => { st.paired = !!r.paired; }, () => { st.whoFailed = true; });
   async function loadSessions(force) {
     // Ask whoami before the first sessions request, so an unpaired device goes straight to pairing without a 401.
     if (!force) {
+      if (st.whoFailed) { st.whoFailed = false; st.who = askWho(); }
       await st.who;
       if (st.paired === false) { if (st.mode !== 'pair' && isActive()) startPairing(); return; }
     }
@@ -2090,7 +2094,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       if (force || st.mode === 'paired') poll();
     } catch (e) {
       if (e.status === 401) { st.paired = false; if (st.mode !== 'pair' && isActive()) startPairing(); else if (st.mode === 'paired') st.mode = 'init'; }
-      else if (st.mode === 'init') { st.mode = 'error'; st.pairError = `Chat is unavailable: ${e.message}`; render(); }
+      // Not reached, or a server error (a deploy restarts the appliance): say so; schedule() keeps retrying.
+      else if (st.mode === 'init' || st.mode === 'error') { st.mode = 'error'; st.pairError = !e.status || e.status >= 500 ? UNREACHABLE : `Chat is unavailable: ${e.message}`; render(); }
     }
   }
 
@@ -2127,7 +2132,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     st.pollTimer = setTimeout(async () => {
       if (st.mode === 'paired') {
         if (fast && Date.now() - st.sessionsAt >= SESSIONS_MS) await loadSessions(); else await poll();
-      } else if (st.mode === 'init' && fast) await loadSessions();
+      } else if ((st.mode === 'init' || st.mode === 'error') && fast) await loadSessions();
       schedule();
     }, fast ? FAST_MS : SLOW_MS);
   }
@@ -2361,7 +2366,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const wake = () => { schedule(); if (isActive() && document.visibilityState === 'visible') { if (st.mode === 'init') loadSessions(); else if (st.mode === 'paired') poll(); } };
     new MutationObserver(wake).observe($('claude'), { attributes: true, attributeFilter: ['class'] });
     document.addEventListener('visibilitychange', wake);
-    st.who = api('whoami').then((r) => { st.paired = !!r.paired; }, () => {});
+    st.who = askWho();
     st.who.then(() => { if (st.paired || isActive()) loadSessions(); });
     schedule();
   }

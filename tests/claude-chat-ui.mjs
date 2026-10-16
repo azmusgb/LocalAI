@@ -289,6 +289,20 @@ try {
     assert.equal(await page.locator('#claudeChatSession').isVisible(), false);
   });
 
+  await check('the appliance restarting while the page loads: it says it is retrying and recovers by itself', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const p2 = await ctx.newPage();
+    let down = true;
+    await p2.route('**/api/claude/chat/**', r => down ? r.abort('connectionrefused') : r.continue());
+    await p2.goto(base + '/#claude', { waitUntil: 'domcontentloaded' });
+    await p2.waitForFunction(() => typeof window.showView === 'function');
+    await p2.evaluate(() => window.showView('claude'));
+    await p2.waitForFunction(() => /Trying again/.test(document.getElementById('claudeChat')?.textContent || ''), null, { timeout: 8000 });
+    down = false;
+    await p2.waitForFunction(() => /^[A-Z0-9]{6}$/.test(document.getElementById('claudeChatCode')?.textContent.trim() || ''), null, { timeout: 10000 });
+    await ctx.close();
+  });
+
   assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join('; ')}`);
 } catch (error) {
   failures.push(error.message);
