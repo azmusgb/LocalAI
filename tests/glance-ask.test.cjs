@@ -573,3 +573,30 @@ test('Review Focus 5: approvals, applies, deploys and PowerShell are refused and
   assert.equal(approvals.find(a => a.id === 'appr-1').status, 'pending');
   assert.deepEqual((await runsFor(base)).map(x => x.type), []);
 });
+
+// docs/APPLE-WATCH.md "What you can say": every example classifies to the intent its row names, so the doc and the
+// router can't drift apart.
+test('every example in the Apple Watch doc classifies to its listed intent', () => {
+  const { classify } = require('../app/voice');
+  const doc = fs.readFileSync(path.resolve(__dirname, '../docs/APPLE-WATCH.md'), 'utf8');
+  const section = doc.split(/^## What you can say\s*$/m)[1];
+  assert.ok(section, 'the doc has a "What you can say" section');
+  const rows = section.split(/^## /m)[0].split('\n').filter(l => /^\|\s*`/.test(l));
+  const intents = new Set();
+  let examples = 0;
+  for (const row of rows) {
+    const [intentCell, exampleCell] = row.split('|').slice(1).map(c => c.trim());
+    const [intent, action] = intentCell.match(/`([a-z]+)`/g).map(s => s.slice(1, -1));
+    intents.add(intent);
+    const said = [...exampleCell.matchAll(/"([^"]+)"/g)].map(m => m[1]);
+    assert.ok(said.length, `row ${intent} has examples`);
+    for (const s of said) {
+      const r = classify(s);
+      assert.equal(r.intent, intent, s);
+      if (action) assert.equal(r.action, action, s);
+      examples++;
+    }
+  }
+  for (const i of ['needs', 'health', 'time', 'weather', 'current', 'action', 'refuse', 'chat']) assert.ok(intents.has(i), `the table covers ${i}`);
+  assert.ok(examples >= 16, `${examples} examples`);
+});

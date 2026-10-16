@@ -18,7 +18,7 @@ Start with the [project README](../README.md) for what LocalAI is.
 ## Components
 
 - [Claude chat](CLAUDE-CHAT.md): chat with a running Claude Code session on the Mac from the Claude Code page.
-- [Apple Watch and Siri](APPLE-WATCH.md): Siri Shortcuts for "What needs me", "Is Local AI OK" and "Ask Local AI" on an iPhone or watch.
+- [Apple Watch and Siri](APPLE-WATCH.md): the "Ask Local AI" Siri Shortcut for an iPhone or watch: what needs you, health, time, weather, news, and starting work by voice.
 - [GridCraft](GRIDCRAFT.md): the GridCraft page, its Windows bridge and agent.
 - [GridCraft agent](../host/gridcraft-agent/README.md): running the agent by hand, desktop launcher, long-context switch.
 - [ComfyUI](../host/comfyui/README.md): image generation service and engines.
