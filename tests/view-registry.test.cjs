@@ -85,11 +85,16 @@ test('every registered view has a page, and every nav button is registered', () 
   }
 });
 
+// Agent World (agents) titles itself with the mission's goal (design 2026-10-17-agent-world); its nav label still matches.
+const GOAL_HEADING = new Set(['agents']);
 test('page headings and nav labels match the registry', () => {
   for (const v of registry.VIEWS) {
     if (v.id === 'home' || INJECTED[v.id] || PENDING.has(v.id)) continue;
-    const m = html.match(new RegExp(`<section id="${v.id}"[^>]*>[\\s\\S]*?<h1>([^<]*)</h1>`));
-    assert.equal(m?.[1], registry.page(v.id).label, `#${v.id} heading`);
+    if (GOAL_HEADING.has(v.id)) assert.match(html, new RegExp(`<section id="${v.id}"[^>]*>[\\s\\S]*?<h1 id=`), `#${v.id} has a heading`);
+    else {
+      const m = html.match(new RegExp(`<section id="${v.id}"[^>]*>[\\s\\S]*?<h1>([^<]*)</h1>`));
+      assert.equal(m?.[1], registry.page(v.id).label, `#${v.id} heading`);
+    }
     if (v.parent) continue;
     const b = html.match(new RegExp(`data-view="${v.id}"><span class="navicon">[^<]*</span>([^<]*)</button>`));
     assert.equal(b?.[1], v.label, `${v.id} nav button`);

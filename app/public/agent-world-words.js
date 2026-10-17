@@ -1,6 +1,6 @@
 // What Agent World says about a mission and its workers, in the owner's words: worker names and roles, what each is
 // doing now, the one status sentence under the title, and errors without codes. Pure functions of the mission JSON
-// (/api/agents/missions), shared by the Agent World page (window.LocalAIAgentWords) and tests/agent-world-words.test.cjs.
+// (/api/agents/missions): also the story feed. Shared by the Agent World page (window.LocalAIAgentWords) and tests/agent-world-words.test.cjs.
 (function(root){'use strict';
 const ROUTERS=new Set(['router','model_router','mission_router']);
 const COORDS=new Set(['synthesis','coordinator']);
@@ -84,7 +84,44 @@ function statusSentence(m){
  const who=running.length===1?workerName(running[0])+' is '+activity(running[0]):names(running.map(workerName))+' are working';
  return{tone:'working',label:'Working',text:'Working · '+count+' · '+who};
 }
-const api={workerName,workerRole,workerStep,stateBadge,statusSentence,errorWords,duration};
+// The story: the mission's timeline as sentences, newest first. Each server event carries every worker's state, so a
+// sentence is a worker whose state changed since the event before (heartbeats and progress ticks change nothing).
+// Without a timeline (older missions) each worker says where it is now.
+function storyEvents(m){
+ if(!m)return[];const out=[],say=(at,workerId,text,tone)=>out.push({at:at||'',workerId:workerId||'',text,tone});
+ const team=ws=>names(ws.filter(w=>key(w)!=='router').map(workerName)),idOf=w=>w.id||w.agentId;
+ const tl=(m.timeline||[]).filter(e=>e&&Array.isArray(e.workers));
+ if(!tl.length){
+  const all=m.workers||[];if(!all.length)return[];say(m.createdAt,'router','The team lead picked the team: '+team(all),'done');
+  for(const w of all){if(key(w)==='router')continue;const n=workerName(w),step=workerStep(w,m);
+   say(m.updatedAt,idOf(w),w.state==='complete'?n+' finished':w.state==='error'||w.state==='blocked'?n+' '+step.charAt(0).toLowerCase()+step.slice(1):n+' is '+step.charAt(0).toLowerCase()+step.slice(1),TONE[w.state]||'wait')}
+  return out.reverse();
+ }
+ let prev=null;const waited=new Set();
+ for(const e of tl){
+  const ws=e.workers,snap={...m,workers:ws},before=id=>prev?.find(x=>idOf(x)===id)?.state||'pending';
+  if(!prev)say(e.at,'router','The team lead picked the team: '+team(ws),'done');
+  for(const w of ws){
+   if(key(w)==='router')continue;const id=idOf(w),n=workerName(w),was=before(id);
+   if(w.state!==was){
+    if(w.state==='running')say(e.at,id,n+' started '+activity(w),'working');
+    else if(w.state==='complete')say(e.at,id,n+' finished','done');
+    else if(w.state==='error')say(e.at,id,n+' stopped: '+workerError(w,snap),'bad');
+    else if(w.state==='blocked')say(e.at,id,n+' '+workerStep(w,snap).replace(/^C/,'c'),'bad');
+   }
+   if(w.state==='pending'&&!waited.has(id)){const deps=(w.dependsOn||[]).map(d=>ws.find(x=>idOf(x)===d)).filter(Boolean);
+    if(deps.some(d=>d.state==='running')){waited.add(id);say(e.at,id,n+' is waiting for '+names(deps.filter(d=>d.state!=='complete').map(workerName)),'wait')}}
+  }
+  if(e.type==='mission-complete')say(e.at,'','Done: the summary is ready','done');
+  if(e.type==='mission-attention')say(e.at,'','The mission stopped and needs you','bad');
+  prev=ws;
+ }
+ return out.reverse();
+}
+const TONE={running:'working',complete:'done',error:'bad',blocked:'bad',pending:'wait'};
+// Consecutive sentences about one worker read as one group under that worker.
+function groupStory(list){const g=[];for(const e of list||[]){const last=g[g.length-1];if(last&&e.workerId&&last.workerId===e.workerId)last.items.push(e);else g.push({workerId:e.workerId||'',items:[e]})}return g}
+const api={workerName,workerRole,workerStep,stateBadge,statusSentence,storyEvents,groupStory,errorWords,duration};
 root.LocalAIAgentWords=api;
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

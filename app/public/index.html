@@ -86,14 +86,27 @@
 <section id="projects" class="view feature-v13"><div class="topbar"><div><h1>Projects</h1><p class="sub">Group related conversations, sources and memory.</p></div><button id="newProjectBtn" class="btn primary">New project</button></div><div class="summary-grid" id="projectMetrics"></div><div class="split" style="margin-top:12px"><div class="card"><div class="section-head"><div><h2>Projects</h2><p>Pick one to see its conversations, sources and memory.</p></div></div><div id="projectList" class="stack"></div></div><div class="card"><div id="projectDetail" class="empty">A project's conversations, sources and memory appear here. Pick a project to see them.</div></div></div></section>
 <section id="knowledge" class="view feature-v13"><div class="topbar"><div><h1>Projects</h1><p class="sub">Notes, documents and files the assistant can look things up in when it answers.</p></div></div><div class="two"><div class="card"><h2>Add source</h2><div class="form-grid" style="margin-top:12px"><label>Project<select id="knowledgeProject"></select></label><label>Name<input id="knowledgeName" placeholder="architecture.md"></label><label class="wide">Content<textarea id="knowledgeContent" rows="12" placeholder="Paste or drop text here…"></textarea></label></div><div class="actions" style="margin-top:10px"><button id="knowledgeImportBtn" class="btn primary">Add source</button><input id="knowledgeFileInput" type="file" hidden multiple><button id="knowledgeFileBtn" class="btn">Import files</button></div></div><div class="card"><h2>Search your sources</h2><div class="toolbar" style="margin-top:12px"><input id="knowledgeQuery" placeholder="Search your sources…" aria-label="Search your sources"><button id="knowledgeSearchBtn" class="btn primary">Search</button></div><div id="knowledgeResults" class="stack"></div></div></div><div class="card" style="margin-top:12px"><div class="section-head"><div><h2>Your sources</h2><p>Kept on Local AI, never sent anywhere.</p></div></div><div id="knowledgeList" class="stack"></div></div></section>
 <section id="agents" class="view feature-v14 aw-page">
-<div class="topbar"><div><h1>Missions</h1><p class="sub">Give the team an objective, let the Mission Router assemble the right specialists and models, and watch the work happen live.</p></div><span class="pill">Mission-first · Local models</span></div>
+<div class="topbar aw-head">
+  <div class="aw-head__text"><h1 id="awTitle">Agent World</h1><p id="awStatus" class="aw-head__status">Give your team a goal</p></div>
+  <div class="aw-head__actions">
+    <button type="button" id="awPrimary" class="btn-primary" data-action="start">Start a mission</button>
+    <button type="button" id="awMoreBtn" class="btn-outline aw-head__more" aria-haspopup="true" aria-expanded="false" aria-controls="awMenu" aria-label="More"><svg class="icon" aria-hidden="true"><use href="#i-more"/></svg></button>
+  </div>
+</div>
+<div id="awMenu" class="aw-menu" role="menu" aria-label="Mission" hidden>
+  <button type="button" role="menuitem" data-aw-menu="new">Start a new mission</button>
+  <button type="button" role="menuitem" data-aw-menu="replay">Watch the replay</button>
+  <button type="button" role="menuitem" data-aw-menu="work">Open in Work</button>
+  <button type="button" role="menuitem" data-aw-menu="copy">Copy result</button>
+  <button type="button" role="menuitem" data-aw-menu="all">All missions</button>
+</div>
 <!-- Agent World: the city is the page. Desktop: a rail beside it; phone: a bottom sheet over it (peek, half, full). -->
 <div class="aw-stage">
   <div class="aw-city"><div id="agentWorldCityMount"></div></div>
   <section id="awSheet" class="aw-sheet" data-snap="peek" aria-label="Mission details">
     <div class="aw-sheet__top">
       <button type="button" id="awSheetHandle" class="aw-sheet__handle" aria-expanded="false" aria-controls="awSheetBody" aria-label="Show mission details"><span class="aw-sheet__grip" aria-hidden="true"></span></button>
-      <div class="aw-sheet__peek"><p id="awSheetStatus" class="aw-sheet__status">Give your team a goal</p><div id="awSheetAvatars" class="aw-sheet__avatars" aria-hidden="true"></div></div>
+      <div class="aw-sheet__peek"><p id="awSheetStatus" class="aw-sheet__status">Give your team a goal</p><div id="awSheetAvatars" class="aw-sheet__avatars" aria-hidden="true"></div><button type="button" id="awPeekAction" class="btn-primary aw-sheet__action" data-action="start">Start a mission</button></div>
     </div>
     <div id="awSheetBody" class="aw-sheet__body">
       <div class="agent-mission-strip">
@@ -101,6 +114,8 @@
         <div class="agent-mission-progress" role="progressbar" aria-label="Mission progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="agentMissionProgress"></span></div>
       </div>
       <section class="aw-crew" aria-labelledby="awCrewTitle"><h2 id="awCrewTitle" class="aw-h">Crew</h2><div id="awcRoster" class="aw-crew__rows"><div class="awc__empty">No workers yet.</div></div></section>
+      <section id="agentInspector" class="aw-worker" aria-labelledby="awWorkerName" hidden></section>
+      <section class="aw-story-box" aria-labelledby="awStoryTitle"><h2 id="awStoryTitle" class="aw-h">Story</h2><ol id="agentTimeline" class="aw-story"><li class="aw-story__empty">What the team does will be told here.</li></ol></section>
       <div class="agent-ops">
         <div class="agent-compose">
           <div class="agent-compose__row">
@@ -140,15 +155,6 @@
             </div>
           </div>
         </div>
-        <section class="agent-panel">
-          <div class="agent-panel__head"><div><h2>Mission timeline</h2><small>Worker order, dependencies and live state.</small></div></div>
-          <div id="agentTimeline"><div class="empty">No mission timeline yet.</div></div>
-          <div id="missionExecution" hidden></div>
-        </section>
-        <section class="agent-panel">
-          <div class="agent-panel__head"><div><h2>Inspector</h2><small>Select a worker in the timeline or city.</small></div></div>
-          <div id="agentInspector"><div class="empty">Select a mission or worker.</div></div>
-        </section>
         <section class="agent-results">
           <div class="agent-result-tabs" role="tablist" aria-label="Mission details">
             <button type="button" class="active" role="tab" id="agentResultTab-summary" aria-controls="agentResultBody" aria-selected="true" tabindex="0" data-agent-result-tab="summary">Synthesis</button>
@@ -158,10 +164,7 @@
           </div>
           <div id="agentResultBody" class="agent-result-body" role="tabpanel" tabindex="0" aria-labelledby="agentResultTab-summary"><div class="empty">Mission results will appear here.</div></div>
         </section>
-        <section class="agent-panel">
-          <div class="agent-history-head"><div><h2>Mission history</h2><small class="muted">Review prior outcomes, attention states, worker outputs and evidence.</small></div><input id="agentHistorySearch" placeholder="Search mission history" aria-label="Search mission history"></div>
-          <div id="agentMissionHistory"><div class="empty">No missions yet. Describe a goal above to run your first one.</div></div>
-        </section>
+        <p id="agentMissionHistory" class="aw-all-wrap"><a class="aw-all" href="#work?kind=missions">All missions</a></p>
         <div id="awCityExtras" class="aw-extras"></div>
       </div>
     </div>

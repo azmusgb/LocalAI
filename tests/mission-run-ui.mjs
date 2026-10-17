@@ -58,7 +58,7 @@ await check('Mission mode Send posts async, opens #run/<runId> with Agent World,
   assert.equal(await page.locator(awc).count(), 1);
   await page.locator('#runDrawer .awc').waitFor({ state: 'visible', timeout: 6000 });
   assert.equal(await page.locator('#agentMissionHeadline').innerText(), GOAL);
-  assert.ok(await page.locator('#agentTimeline .mission-line').count() >= 3, 'the mission is selected: its workers are listed');
+  assert.ok(await page.locator('#awcRoster .awc__rosterItem').count() >= 3, 'the mission is selected: its workers are listed');
   const box = await page.locator('#runDrawer .awc').boundingBox();
   assert.ok(box && box.width > 200 && box.height > 100, 'Agent World has a size inside the run view');
 });
@@ -83,14 +83,14 @@ await check('a mission transition updates the run view in place: same Agent Worl
   const gets = () => p.db.missionGets || 0;
   await p.evaluate(() => window.LocalAIRuns.show('run-m1'));
   await p.locator('#runDrawer .awc').waitFor({ state: 'visible', timeout: 6000 });
-  await p.waitForFunction(() => document.querySelectorAll('#agentTimeline .mission-line').length >= 3, null, T);
-  const before = await p.evaluate(() => { const d = document.getElementById('runDrawer'); d.scrollTop = 150; const b = document.querySelector('#agentTimeline .mission-line'); b.focus(); document.querySelector('#runDrawer .awc').__tag = 'same'; document.querySelector('#runDrawer .run-body').__tag = 'slot'; return { top: d.scrollTop, focus: document.activeElement === b }; });
+  await p.waitForFunction(() => document.querySelectorAll('#awcRoster .awc__rosterItem').length >= 3, null, T);
+  const before = await p.evaluate(() => { const d = document.getElementById('runDrawer'); d.scrollTop = 150; const b = document.querySelector('#awcRoster .awc__rosterItem'); b.focus(); document.querySelector('#runDrawer .awc').__tag = 'same'; document.querySelector('#runDrawer .run-body').__tag = 'slot'; return { top: d.scrollTop, focus: document.activeElement === b }; });
   assert.ok(before.top > 0 && before.focus, 'set up scrolled and focused: ' + JSON.stringify(before));
   const g0 = gets();
   p.db.runs[0] = missionRun({ progress: 66, updatedAt: new Date(Date.now() + 5000).toISOString(), events: [{ at: new Date().toISOString(), status: 'running', detail: 'Mission progress: 2 of 3 steps' }] });
   await p.evaluate(() => window.LocalAIRuns.refresh());
   await p.waitForFunction(() => document.querySelector('#runDrawer [role="progressbar"]')?.getAttribute('aria-valuenow') === '66', null, T);
-  const after = await p.evaluate(() => { const d = document.getElementById('runDrawer'); return { same: document.querySelector('#runDrawer .awc')?.__tag === 'same', slot: document.querySelector('#runDrawer .run-body')?.__tag === 'slot', top: d.scrollTop, focus: document.activeElement === document.querySelector('#agentTimeline .mission-line'), inside: !!document.querySelector('#runDrawer #agentWorldCityMount') }; });
+  const after = await p.evaluate(() => { const d = document.getElementById('runDrawer'); return { same: document.querySelector('#runDrawer .awc')?.__tag === 'same', slot: document.querySelector('#runDrawer .run-body')?.__tag === 'slot', top: d.scrollTop, focus: document.activeElement === document.querySelector('#awcRoster .awc__rosterItem'), inside: !!document.querySelector('#runDrawer #agentWorldCityMount') }; });
   assert.deepEqual(after, { same: true, slot: true, top: before.top, focus: true, inside: true });
   assert.equal(gets(), g0, 'no mission refetch for a progress change');
   await p.evaluate(() => window.LocalAIRuns.show('run-m3'));
@@ -113,7 +113,7 @@ await check('a mission run view asks for the one mission, not the whole list', a
   const before = list;
   await p.evaluate(() => window.LocalAIRuns.show('run-m1'));
   await p.locator('#runDrawer .awc').waitFor({ state: 'visible', timeout: 6000 });
-  await p.waitForFunction(() => document.querySelectorAll('#agentTimeline .mission-line').length >= 3, null, T);
+  await p.waitForFunction(() => document.querySelectorAll('#awcRoster .awc__rosterItem').length >= 3, null, T);
   assert.ok((p.db.missionGets || 0) >= 1);
   assert.equal(list, before);
   await p.context().close();
