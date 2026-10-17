@@ -2065,6 +2065,9 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .sheets-book__name{display:grid;gap:2px;min-width:0}
 .sheets-book__name h2{margin:0;font-size:17px;overflow-wrap:anywhere}
 .sheets-book__name .meta{font-size:12px}
+.sheets-book__title{display:flex;gap:6px 10px;align-items:center;flex-wrap:wrap;min-width:0}
+.sheets-books{width:auto;max-width:100%;min-width:0;min-height:44px;padding:0 10px;font-size:13px;text-overflow:ellipsis}
+.sheets-books[hidden]{display:none}
 .sheets-book__tools{display:flex;gap:10px;align-items:center}
 #sheetsFormulas[aria-pressed="true"]{border-color:var(--ds-accent);background:var(--ds-accent-soft)}
 .sheets-tabs{margin:0}
