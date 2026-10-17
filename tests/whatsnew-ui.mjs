@@ -42,6 +42,25 @@ await check('after an update: one notice that opens What\'s new, not repeated', 
   await page.waitForTimeout(400);
   assert.equal(await page.locator('#toast.whatsnew-toast.show').count(), 0);
 });
+await check('the update notice stays until dismissed, and Dismiss leaves no button behind', async () => {
+  version = '2.0.220';
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('#toast.whatsnew-toast.show');
+  await page.waitForTimeout(11000); // it used to fade after 10 s with its button still in the Tab order
+  assert.equal(await page.locator('#toast.whatsnew-toast.show').count(), 1, 'not timed');
+  await page.getByRole('button', { name: 'Dismiss' }).click();
+  await page.waitForFunction(() => !document.getElementById('toast').classList.contains('show'));
+  assert.equal(await page.locator('#toast button').count(), 0, 'no hidden Tab stop is left');
+  assert.equal(await page.locator('#toast').innerText(), '');
+});
+await check('opening What\'s new from the notice also clears it', async () => {
+  version = '2.0.221';
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('#toast.whatsnew-toast.show');
+  await page.click('.whatsnew-open');
+  await page.waitForSelector('#status.active');
+  assert.equal(await page.locator('#toast button').count(), 0);
+});
 await check('no script errors', async () => assert.deepEqual(errors, []));
 await browser.close();
 if (failed) { console.log(`${failed} what's-new check(s) failed`); process.exit(1) }

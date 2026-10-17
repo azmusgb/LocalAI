@@ -82,6 +82,28 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
   await check(`${w}px: no script errors`, async () => assert.deepEqual(errors, []));
   await page.close();
 }
+// Developer tools off: ⌘K offers the owner's pages only; the switch brings the developer pages back.
+await check('developer tools off: ⌘K does not offer Files or Claude Code; on, it does', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const errors = []; page.on('pageerror', e => errors.push(e.message));
+  await page.addInitScript(() => { try { localStorage.setItem('localai.devTools', '0'); localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  await page.goto(base + '/#home', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => typeof window.showView === 'function' && document.querySelector('#uxCommandBtn') && document.body.classList.contains('dev-tools-off'));
+  await open(page);
+  const offered = await items(page);
+  for (const label of ['Files', 'Repository', 'PowerShell', 'Browser & computer', 'Claude Code', 'n8n workflows']) assert.ok(!offered.includes(label), `${label} offered with developer tools off: ${offered}`);
+  assert.ok(offered.includes('Health') && offered.includes('Models'), `owner pages offered: ${offered}`);
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.showView('status'));
+  await page.locator('.dev-tools-pref input').check();
+  await page.waitForFunction(() => !document.body.classList.contains('dev-tools-off'));
+  await open(page);
+  await page.locator('#cmdkInput').fill('files');
+  assert.ok((await items(page)).includes('Files'), `Files offered with developer tools on: ${await items(page)}`);
+  await page.keyboard.press('Escape');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
 await browser.close();
 if (failures.length) { console.error('\nSearch failures:\n' + failures.map(x => ' - ' + x).join('\n')); process.exit(1); }
 console.log('\nAll search checks passed.');

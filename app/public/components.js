@@ -133,5 +133,20 @@
   function registerRunBody(kind,mount,opts){if(typeof mount==='function'){runBodies.set(String(kind),mount);runBodyOpts.set(String(kind),opts&&typeof opts.update==='function'?opts:null)}}
   const runBodyFor=kind=>runBodies.get(String(kind))||null;
   const runBodyUpdateFor=kind=>runBodyOpts.get(String(kind))?.update||null;
-  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{fetchJson,loadInto,ask,runCard,sheetHistory,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
+  // The one status toast (#toast, role=status): a sentence after an action, long enough to read (6 s), paused while the
+  // pointer or focus is on it, and emptied when it hides so nothing invisible stays in the Tab order. Errors belong in the page.
+  const TOAST_MS=6000;let toastBound=false;
+  function hideToast(t){clearTimeout(t._hide);t._hide=0;t.classList.remove('show','whatsnew-toast');t.replaceChildren()}
+  function toastTimer(t,ms){clearTimeout(t._hide);t._hide=ms>0?setTimeout(()=>{if(!t.matches(':hover')&&!t.contains(document.activeElement))hideToast(t)},ms):0}
+  function toast(message,{ms=TOAST_MS}={}){
+    const t=document.getElementById('toast');if(!t)return null;
+    if(!toastBound){toastBound=true;
+      const pause=()=>{clearTimeout(t._hide);t._hide=0},resume=()=>{if(t.classList.contains('show')&&t._ms>0)toastTimer(t,t._ms)};
+      t.addEventListener('mouseenter',pause);t.addEventListener('focusin',pause);
+      t.addEventListener('mouseleave',resume);t.addEventListener('focusout',e=>{if(!t.contains(e.relatedTarget))resume()})}
+    t.classList.remove('whatsnew-toast');
+    if(typeof message==='string')t.textContent=message;else t.replaceChildren(message);
+    t._ms=ms;t.classList.add('show');toastTimer(t,ms);return t;
+  }
+  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{toast,hideToast:()=>{const t=document.getElementById('toast');if(t)hideToast(t)},fetchJson,loadInto,ask,runCard,sheetHistory,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
 })();

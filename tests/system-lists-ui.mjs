@@ -107,6 +107,17 @@ await check('Projects: with no projects there is one empty state, not zero tiles
   assert.equal(await page.locator('#projectDetail').isVisible(), false);
 });
 
+// Health's technical detail (probe names, HTTP results) is for a developer: it shows only with developer tools on.
+await check('Health: Advanced service details shows only with developer tools on', async () => {
+  await page.evaluate(() => window.showView('status'));
+  await page.waitForSelector('#status.active #technicalStatus', { state: 'attached' });
+  const details = page.locator('#status details:has(#technicalStatus)');
+  await page.evaluate(() => document.body.classList.add('dev-tools-off'));
+  assert.equal(await details.isVisible(), false, 'hidden with developer tools off');
+  await page.evaluate(() => document.body.classList.remove('dev-tools-off'));
+  assert.equal(await details.isVisible(), true, 'shown with developer tools on');
+});
+
 await check('no script errors', async () => assert.deepEqual(errors, []));
 await browser.close();
 if (failures.length) { console.error('\nSystem list failures:\n' + failures.map(x => ' - ' + x).join('\n')); process.exit(1); }

@@ -26,7 +26,8 @@ await page.waitForSelector('.ux-primary-rail');
 await page.waitForFunction(() => typeof window.showView === 'function');
 
 const secondaryLabels = () => page.locator('#uxSecondaryGroups .ux-link-label').allInnerTexts();
-const crumb = async () => (await page.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').trim();
+const crumbOf = async pg => (await pg.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').trim();
+const crumb = () => crumbOf(page);
 
 await check('home has one command surface and a short breadcrumb', async () => {
   await page.locator('.ux-primary-item[data-domain="home"]').click();
@@ -287,6 +288,59 @@ await check('chat threadId survives a reload and changes after New conversation'
   await ctx.close();
 });
 await mobile.close();
+
+// Developer tools off (a new install): System's menu, the page strip and the phone sheet hold the owner's pages only.
+// The developer pages still open by address, and the switch brings them back.
+const OWNER_SYSTEM = ['Health', 'Models', 'Integrations', 'Automations', 'Monitors', 'Audit log'];
+const DEV_SYSTEM = ['Claude Code', 'Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows'];
+await check('developer tools off: System lists the owner pages only; a developer page still opens by address', async () => {
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
+  await ctx.addInitScript(() => { localStorage.setItem('localai.devTools', '0'); localStorage.setItem('localai.firstRun.done', '1'); });
+  const pg = await ctx.newPage();
+  const errs = []; pg.on('pageerror', e => errs.push(e.message));
+  await pg.goto(base + '/#status', { waitUntil: 'domcontentloaded' });
+  await pg.waitForFunction(() => typeof window.showView === 'function' && document.body.classList.contains('dev-tools-off'));
+  await pg.waitForSelector('#status.active');
+  assert.deepEqual(await pg.locator('#uxSecondaryGroups .ux-link-label').allInnerTexts(), OWNER_SYSTEM);
+  assert.deepEqual(await pg.locator('#uxSecondaryGroups .ux-secondary-label').allInnerTexts(), ['Health', 'Automations', 'History'], 'an empty Tools group is not shown');
+  await pg.locator('.ux-nav-collapse').click();
+  assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), OWNER_SYSTEM);
+  await pg.locator('.ux-nav-expand').click();
+  // Deep links keep working, as Improve's do.
+  await pg.evaluate(() => { location.hash = '#powershell'; });
+  await pg.waitForSelector('#powershell.active');
+  assert.equal(await crumbOf(pg), 'Local AI / System / PowerShell');
+  assert.deepEqual(await pg.locator('#uxSecondaryGroups .ux-link-label').allInnerTexts(), OWNER_SYSTEM, 'the open developer page does not add itself to the menu');
+  // The switch brings every developer page back, in place.
+  await pg.evaluate(() => window.showView('status'));
+  await pg.locator('.dev-tools-pref input').check();
+  await pg.waitForFunction(() => !document.body.classList.contains('dev-tools-off'));
+  const all = await pg.locator('#uxSecondaryGroups .ux-link-label').allInnerTexts();
+  for (const label of [...OWNER_SYSTEM, ...DEV_SYSTEM]) assert.ok(all.includes(label), `${label} is listed with the switch on: ${all}`);
+  await pg.locator('.ux-nav-collapse').click();
+  assert.equal((await pg.locator('#uxPageStrip button').allInnerTexts()).length, OWNER_SYSTEM.length + DEV_SYSTEM.length);
+  await pg.locator('.ux-nav-expand').click();
+  // Switching it off while on a developer page returns to Home, as it does for Improve.
+  await pg.evaluate(() => window.showView('workbench'));
+  await pg.waitForSelector('#workbench.active');
+  await pg.evaluate(() => document.querySelector('.dev-tools-pref input').click());
+  await pg.waitForSelector('#home.active');
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});
+await check('phone, developer tools off: the section sheet and page strip list the owner pages only', async () => {
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await ctx.addInitScript(() => { localStorage.setItem('localai.devTools', '0'); localStorage.setItem('localai.firstRun.done', '1'); });
+  const pg = await ctx.newPage();
+  await pg.goto(base + '/#status', { waitUntil: 'domcontentloaded' });
+  await pg.waitForFunction(() => typeof window.showView === 'function' && document.body.classList.contains('dev-tools-off'));
+  await pg.waitForSelector('#status.active');
+  assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), OWNER_SYSTEM);
+  await pg.locator('#uxContextMenu').click();
+  await pg.locator('#uxMobileSheet').waitFor({ state: 'visible' });
+  assert.deepEqual(await pg.locator('#uxMobileSheetItems .ux-mobile-link strong').allInnerTexts(), OWNER_SYSTEM);
+  await ctx.close();
+});
 await browser.close();
 
 if (failures.length) {
