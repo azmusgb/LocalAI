@@ -132,7 +132,7 @@ then success or failure) to the PR. `--no-post` skips posting; with no PR number
 never posts. Runs queue one at a time per machine (a lock in the temp folder; a dead owner's lock is taken over), and
 a stopped run (Ctrl-C, SIGTERM) kills its test processes, marks the PR "Stopped before it finished", removes its
 worktree and releases the lock. The log path is printed at the end. Re-enable Actions with
-`gh workflow enable <name> -R azmusgb/LocalAI`.
+`gh workflow enable <name> -R azmusgb/LocalAI`. The tree under test gets its own locked dependencies (devDependencies included), installed once per `package-lock.json` into `~/.cache/localai-ci/` and reused, so the eslint and stylelint tests run instead of skipping.
 
 A red run also leaves one PR comment naming the failed steps, the failing unit tests (first ten, parsed from the
 `✖` lines) and any browser suite that failed twice. A browser suite that fails is rerun once on its own
