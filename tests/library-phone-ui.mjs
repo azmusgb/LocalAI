@@ -1,7 +1,8 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 
-// Library on a phone: one column so titles have room, and the type label in words people use.
+// Library (Projects › Everything you kept): text items are list rows, images are cards; on a phone one column
+// so titles have room, and the type label in words people use.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch({ headless: true });
 const failures = [];
@@ -31,6 +32,27 @@ await check('one column on a phone, and long titles are not cut to one line', as
 
 await check('type labels read Conversation, Research, Image', async () => {
   assert.deepEqual(await page.locator('#libraryGrid .artifact-kind').allInnerTexts(), ['Conversation', 'Research', 'Image']);
+});
+
+await check('text items are list rows; images are cards', async () => {
+  assert.equal(await page.locator('#libraryGrid .artifact--row').count(), 2);
+  assert.equal(await page.locator('[data-artifact="c1"].artifact--row .artifact-preview').count(), 0);
+  assert.equal(await page.locator('[data-artifact="i1"].artifact:not(.artifact--row)').count(), 1);
+  assert.equal(await page.locator('[data-artifact="i1"].artifact--row').count(), 0);
+});
+
+await check('desktop: rows span the page, one under another; image cards sit side by side', async () => {
+  const many = [...items, { id: 'i2', kind: 'image', title: 'A fox', summary: '', createdAt: at }];
+  const desk = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await desk.route('**/api/library', r => r.fulfill({ json: { items: many } }));
+  await desk.goto(base + '/#library', { waitUntil: 'domcontentloaded' });
+  await desk.waitForSelector('#library.active #libraryGrid .artifact--row');
+  const box = id => desk.locator(`[data-artifact="${id}"]`).evaluate(e => { const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
+  const [c1, r1, i1, i2, grid] = [await box('c1'), await box('r1'), await box('i1'), await box('i2'), await desk.locator('#libraryGrid').evaluate(e => e.getBoundingClientRect().width)];
+  assert.ok(c1.w > grid * 0.9 && r1.w > grid * 0.9, `rows ${c1.w}/${r1.w} of ${grid}`);
+  assert.ok(r1.y > c1.y && c1.h < 120, `row height ${c1.h}`);
+  assert.ok(Math.abs(i1.y - i2.y) < 2 && i2.x > i1.x, 'image cards share a row');
+  await desk.close();
 });
 
 await check('no script errors', async () => assert.deepEqual(errors, []));

@@ -211,5 +211,56 @@
       d.querySelector('h2').setAttribute('tabindex','-1');d.querySelector('h2').focus();
     });
   }
+  // A container whose children are all run cards (Work's groups, Home's Recent, Runs) is a list of them; one that also
+  // holds other rows (Home's Needs you) or none is left alone, so a listitem never sits outside a list.
+  function markRunList(box){if(!box||box.nodeType!==1)return;const kids=[...box.children],all=kids.length>0&&kids.every(k=>k.classList.contains('run-card'));
+    if(all){box.setAttribute('role','list');box.dataset.runList='1';kids.forEach(k=>k.setAttribute('role','listitem'))}
+    else if(box.dataset.runList){box.removeAttribute('role');delete box.dataset.runList;kids.forEach(k=>{if(k.getAttribute('role')==='listitem')k.removeAttribute('role')})}}
+  // Lists are often built off the page and attached whole (Work's day groups), so added subtrees are searched too.
+  new MutationObserver(ms=>{const boxes=new Set();for(const m of ms){if(m.type!=='childList')continue;
+    if(m.target.dataset?.runList||[...m.removedNodes].some(n=>n.classList?.contains('run-card')))boxes.add(m.target);
+    for(const n of m.addedNodes){if(n.nodeType!==1)continue;if(n.classList.contains('run-card'))boxes.add(m.target);else n.querySelectorAll('.run-card').forEach(c=>boxes.add(c.parentElement))}}
+    boxes.forEach(markRunList)}).observe(document.documentElement,{subtree:true,childList:true});
   window.LocalAIUI=Object.assign(window.LocalAIUI||{},{approvalSheet,toast,hideToast:()=>{const t=document.getElementById('toast');if(t)hideToast(t)},fetchJson,loadInto,ask,runCard,sheetHistory,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
+})();
+// Pull to refresh (touch only): on a list page that registered a refresh, a finger pulling down from the very top by
+// more than 64px refreshes the page once; a small status line says "Updating…", then "Updated just now".
+// pullToRefresh(viewId, fn): fn() refreshes that page and returns a promise.
+(function(){'use strict';
+  const PULL=64,pages=new Map();let start=null,busy=false,hideTimer=0;
+  const coarse=()=>!!window.matchMedia&&matchMedia('(pointer:coarse)').matches;
+  function line(){
+    let el=document.getElementById('pullRefresh');
+    if(!el){el=document.createElement('div');el.id='pullRefresh';el.className='pull-refresh';el.setAttribute('role','status');el.hidden=true;document.body.appendChild(el)}
+    const bar=document.getElementById('uxContextBar');el.style.setProperty('--pull-top',Math.max(0,Math.round(bar?bar.getBoundingClientRect().bottom:0))+'px');
+    return el;
+  }
+  function show(text,{dy=0,ready=false}={}){clearTimeout(hideTimer);const el=line();el.hidden=false;if(el.textContent!==text)el.textContent=text;el.classList.toggle('is-ready',ready);el.style.setProperty('--pull',Math.round(Math.min(dy,PULL*1.5))+'px')}
+  function hide(ms){clearTimeout(hideTimer);hideTimer=setTimeout(()=>{const el=document.getElementById('pullRefresh');if(el){el.hidden=true;el.textContent=''}},ms)}
+  const current=()=>{const v=document.querySelector('.view.active');return v&&pages.has(v.id)?v:null};
+  // Not from a text field, and not while a sheet or dialog is open: only from the page's own content at the very top.
+  const blocked=t=>!t||!t.closest||!!t.closest('dialog,input,textarea,select,[contenteditable="true"]')||!!document.querySelector('dialog[open]')||document.body.classList.contains('ux-sheet-open');
+  document.addEventListener('touchstart',e=>{
+    start=null;if(busy||e.touches.length!==1||!coarse()||window.scrollY>0)return;
+    const v=current();if(!v||!v.contains(e.target)||blocked(e.target))return;
+    start={x:e.touches[0].clientX,y:e.touches[0].clientY,view:v.id,dy:0};
+  },{passive:true});
+  document.addEventListener('touchmove',e=>{
+    if(!start)return;const t=e.touches[0];if(!t)return;
+    const dy=t.clientY-start.y,dx=Math.abs(t.clientX-start.x);
+    if(window.scrollY>0||dy<0||dx>Math.abs(dy)){start=null;hide(0);return} // a scroll or a sideways swipe
+    start.dy=dy;if(dy>12)show(dy>PULL?'Release to refresh':'Pull to refresh',{dy,ready:dy>PULL});
+  },{passive:true});
+  document.addEventListener('touchcancel',()=>{start=null;hide(0)},{passive:true});
+  document.addEventListener('touchend',async()=>{
+    const s=start;start=null;if(!s)return;
+    if(s.dy<=PULL){hide(0);return}
+    const fn=pages.get(s.view);if(!fn||busy)return;
+    busy=true;show('Updating…');
+    try{await fn();show('Updated just now');hide(2500)}
+    catch{show("Couldn't update. Pull down to try again.");hide(5000)}
+    finally{busy=false}
+  },{passive:true});
+  function pullToRefresh(view,fn){if(typeof fn==='function')pages.set(String(view),fn)}
+  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{pullToRefresh});
 })();

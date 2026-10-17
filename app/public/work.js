@@ -131,6 +131,7 @@ function init(){
  // #agents while Work is already open, or Back to another #work?kind=…: the router has settled the hash by the next turn.
  window.addEventListener('hashchange',()=>setTimeout(()=>{const k=active()&&fromHash();if(k&&k!==st.kind)setKind(k,{mirror:false})},0));
  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&active()&&st.loaded)refresh().then(schedule)});
+ window.LocalAIUI.pullToRefresh?.('work',()=>st.loaded?refresh():first()); // a pull down from the top (components.js)
  if(was)activate();
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();

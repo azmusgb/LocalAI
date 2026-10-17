@@ -19,7 +19,7 @@ const PENDING = new Set(['work']);
 
 test('registry has five domains and every view belongs to one', () => {
   assert.deepEqual(registry.DOMAINS.map(d => d.id), ['home', 'work', 'projects', 'improve', 'system']);
-  assert.deepEqual(registry.DOMAINS.map(d => d.defaultView), ['home', 'work', 'library', 'backlog', 'status']);
+  assert.deepEqual(registry.DOMAINS.map(d => d.defaultView), ['home', 'work', 'projects', 'backlog', 'status']);
   const domains = new Set([...registry.DOMAINS.map(d => d.id), 'hidden']);
   const ids = registry.VIEWS.map(v => v.id);
   assert.equal(new Set(ids).size, ids.length, 'view ids must be unique');
@@ -40,6 +40,15 @@ test('registry has five domains and every view belongs to one', () => {
     assert.ok(!registry.VIEWS.some(v => v.id === id), `${id} is not a view`);
     assert.doesNotMatch(html, new RegExp(`<section id="${id}"|data-view="${id}"`), `#${id} is gone`);
   }
+});
+
+test('Library is a tab of Projects named "Everything you kept" (D7)', () => {
+  const lib = registry.view('library');
+  assert.equal(lib.parent, 'projects');
+  assert.equal(lib.tab, 'Everything you kept');
+  assert.equal(registry.page('library').id, 'projects');
+  assert.ok(registry.tabs('projects').some(v => v.id === 'library'));
+  assert.deepEqual(registry.sections('projects').flatMap(s => s.views), ['projects'], 'Projects is the only page in its domain');
 });
 
 test('every domain icon has a sprite symbol', () => {
@@ -109,7 +118,7 @@ test('tabs belong to a top-level page in the same domain', () => {
   assert.equal(registry.resolve('approvals'), 'inbox');
   assert.equal(registry.view('approvals').id, 'inbox');
   assert.notEqual(registry.view('inbox').tab, 'Alerts');
-  assert.deepEqual(registry.tabs('projects').map(v => v.id), ['projects', 'knowledge', 'memory']);
+  assert.deepEqual(registry.tabs('projects').map(v => v.id), ['projects', 'knowledge', 'memory', 'library']);
   assert.deepEqual(registry.tabs('claude'), []);
 });
 

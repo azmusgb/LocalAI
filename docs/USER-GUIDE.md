@@ -26,7 +26,7 @@ Improve appears only with developer tools on (see the end of this guide).
 |---|---|
 | **Home** | Start something, see what needs you, pick up where you left off |
 | **Work** | Everything that is running or done: chats, images, missions, changes |
-| **Projects** | What you keep: the Library, Projects, Sources and Memory |
+| **Projects** | What you keep: your projects with their Sources and Memory, and everything you kept |
 | **Improve** | Changing Local AI itself: ideas, problems it noticed, changes in progress, what shipped |
 | **System** | Health, models, integrations, automations, the audit log and tools |
 
@@ -65,11 +65,14 @@ watch it live and cancel it; a failed run offers **Retry**.
 
 ## Projects: what you keep
 
-- **Library:** everything you've made: conversations, research and images. Filter by kind, or show only what you
-  **pinned**. ☆ pins an item; × deletes it.
+The Projects tab opens on your projects. Its tabs:
+
 - **Projects:** group related work, each with its own sources and memory.
 - **Sources:** files and notes the assistant can search when it answers.
 - **Memory:** facts the assistant keeps about each project.
+- **Everything you kept** (once called Library): your conversations and research as a list, newest first, and your
+  images as pictures after them. Filter by kind, or show only what you **pinned**. ☆ pins an item; × deletes it.
+  Work is everything you did; this is what you kept. Old Library links open this tab.
 
 ## Improve: change Local AI itself
 

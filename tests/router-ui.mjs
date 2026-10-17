@@ -16,7 +16,7 @@ async function check(name, fn) {
   }
 }
 
-const DEFAULTS = { home: 'home', work: 'work', projects: 'library', improve: 'backlog', system: 'status' };
+const DEFAULTS = { home: 'home', work: 'work', projects: 'projects', improve: 'backlog', system: 'status' };
 
 async function open(viewport, hash, { devTools = '1' } = {}) {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
@@ -60,11 +60,11 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
   await check(`${tag}: Back follows real navigation`, async () => {
     const page = await open(viewport, '');
     await item(page, 'projects').click();
-    await page.waitForSelector('#library.active', T);
+    await page.waitForSelector('#projects.active', T);
     await item(page, 'system').click();
     await page.waitForSelector('#status.active', T);
     await page.evaluate(() => history.back());
-    await page.waitForSelector('#library.active', T);
+    await page.waitForSelector('#projects.active', T);
     await page.evaluate(() => history.back());
     await page.waitForSelector('#home.active', T);
     assert.equal(await page.evaluate(() => location.hash), '#home');
@@ -171,8 +171,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
     const before = await page.evaluate(() => history.length);
     await item(page, 'projects').click();
     await page.waitForFunction(() => typeof window.showView === 'function' && location.hash, null, { timeout: 8000 });
-    await page.waitForSelector('#library.active', T);
-    assert.equal(await page.evaluate(() => location.hash), '#library');
+    await page.waitForSelector('#projects.active', T);
+    assert.equal(await page.evaluate(() => location.hash), '#projects');
     assert.equal(await page.evaluate(() => history.length), before + 1);
     await ctx.close();
   });

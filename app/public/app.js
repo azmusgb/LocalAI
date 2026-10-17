@@ -106,8 +106,12 @@ function showView(id){
   if(releaseState.selectedProject)for(const [view,sel] of [['knowledge','knowledgeProject'],['memory','memoryProject']])if(id===view&&$(sel))$(sel).value=releaseState.selectedProject;
   if(VIEW_LOADERS[id])Promise.resolve().then(VIEW_LOADERS[id]).catch(()=>{});
   window.LocalAIRouter?.shown(id);
-
+  rememberPage(id);
 }
+// The pages opened lately, newest first: ⌘K on a phone offers them before anything else.
+const RECENT_KEY='localai.recentPages';
+function recentPages(){try{const a=JSON.parse(localStorage.getItem(RECENT_KEY)||'[]');return Array.isArray(a)?a.filter(x=>typeof x==='string'):[]}catch{return []}}
+function rememberPage(id){if(window.LocalAIViews?.view(id)?.domain==='hidden')return;try{localStorage.setItem(RECENT_KEY,JSON.stringify([id,...recentPages().filter(x=>x!==id)].slice(0,12)))}catch{}}
 // A person's navigation goes through the router (push, hash, Back); showView is what the router and code call.
 function goTo(id){const R=window.LocalAIRouter;if(R&&R.open)R.open(id);else showView(id)}
 qsa('[data-view]').forEach(el=>el.addEventListener('click',()=>goTo(el.dataset.view)));
@@ -533,9 +537,15 @@ function artifactCard(item){
   const image=item.kind==='image'?safeUrl(item.meta?.imageUrl||item.data?.imageUrl,{image:true}):'';const symbol=icons[item.kind]||'□';
   return `<article class="artifact${image?' artifact--image':''}" data-artifact="${esc(item.id)}"><div class="artifact-preview">${image?`<img src="${esc(image)}" alt="">`:symbol}</div><div class="artifact-body"><div class="artifact-kind">${esc(KIND_LABEL[item.kind]||String(item.kind||'Item').replace(/^./,c=>c.toUpperCase()))}</div><div class="artifact-title" title="${esc(item.title)}">${esc(item.title)}</div><div class="artifact-summary">${esc(item.summary||'')}</div><div class="artifact-foot"><span class="meta">${ago(item.createdAt)}</span><span><button class="iconbtn pin-artifact" title="${item.pinned?'Unpin':'Pin'}" aria-label="${item.pinned?'Unpin':'Pin'} ${esc(item.title)}">${item.pinned?'★':'☆'}</button><button class="iconbtn delete-artifact" title="Delete" aria-label="Delete ${esc(item.title)}">×</button></span></div></div></article>`;
 }
+// Everything you kept (Projects › Library): text reads best as a list, so conversations and research are rows that span the
+// page, newest first; images keep their picture cards after them. One flat list, so "Show more" clips both alike.
+function artifactRow(item){
+  const kind=KIND_LABEL[item.kind]||String(item.kind||'Item').replace(/^./,c=>c.toUpperCase());
+  return `<article class="artifact artifact--row" data-artifact="${esc(item.id)}"><div class="artifact-body"><div class="artifact-kind">${esc(kind)}</div><div class="artifact-text"><div class="artifact-title" title="${esc(item.title)}">${esc(item.title)}</div>${item.summary?`<div class="artifact-summary">${esc(item.summary)}</div>`:''}</div><div class="artifact-foot"><span class="meta">${ago(item.createdAt)}</span><span><button class="iconbtn pin-artifact" title="${item.pinned?'Unpin':'Pin'}" aria-label="${item.pinned?'Unpin':'Pin'} ${esc(item.title)}">${item.pinned?'★':'☆'}</button><button class="iconbtn delete-artifact" title="Delete" aria-label="Delete ${esc(item.title)}">×</button></span></div></div></article>`;
+}
 function renderLibrary(){
   let items=state.library;const query=state.librarySearch.toLowerCase();if(state.libraryKind==='pinned')items=items.filter(x=>x.pinned);else if(state.libraryKind!=='all')items=items.filter(x=>x.kind===state.libraryKind);if(query)items=items.filter(x=>`${x.title} ${x.summary} ${x.kind}`.toLowerCase().includes(query));
-  $('libraryCount').textContent=`${items.length} item${items.length===1?'':'s'}`;const sig=items.map(x=>`${x.id}:${x.pinned}`).join('|');if(sig===state.lastLibrarySignature&&$('libraryGrid').children.length)return;state.lastLibrarySignature=sig;$('libraryGrid').innerHTML=items.length?items.map(artifactCard).join(''):`<div class="empty">${state.library.length?'Nothing matches that search or filter.':'Nothing saved yet. Chats, research and images you make are saved here.'}</div>`;
+  $('libraryCount').textContent=`${items.length} item${items.length===1?'':'s'}`;const sig=items.map(x=>`${x.id}:${x.pinned}`).join('|');if(sig===state.lastLibrarySignature&&$('libraryGrid').children.length)return;state.lastLibrarySignature=sig;$('libraryGrid').innerHTML=items.length?[...items.filter(x=>x.kind!=='image').map(artifactRow),...items.filter(x=>x.kind==='image').map(artifactCard)].join(''):`<div class="empty">${state.library.length?'Nothing matches that search or filter.':'Nothing saved yet. Chats, research and images you make are saved here.'}</div>`;
   qsa('.pin-artifact').forEach(b=>b.addEventListener('click',async e=>{const card=e.target.closest('[data-artifact]'),item=state.library.find(x=>x.id===card.dataset.artifact);if(!item)return;await fetch('/api/library/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:item.id,pinned:!item.pinned})});state.lastLibrarySignature='';await Promise.all([loadLibrary(),loadWorkspace()]);}));
   qsa('.delete-artifact').forEach(b=>b.addEventListener('click',async e=>{const id=e.target.closest('[data-artifact]').dataset.artifact,it=state.library.find(x=>x.id===id);if(!(await LocalAIUI.ask({title:`Delete "${it?.title||'this item'}"?`,effect:"It's removed from Library for good.",confirmLabel:'Delete',tone:'danger'})).ok)return;await fetch('/api/library/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});state.lastLibrarySignature='';await Promise.all([loadLibrary(),loadWorkspace(),loadActivity()]);}));
 }
@@ -785,18 +795,40 @@ function commandPalette(){
     // A developer page (registry `dev`) is offered only while Developer tools (Health) is on, like the menus.
     const devOff=document.body.classList.contains('dev-tools-off');
     const q=input.value.trim().toLowerCase();shown=actions.filter(a=>$(a.id)&&a.terms.includes(q)&&!(devOff&&R.view(a.id)?.dev));
-    list.innerHTML=shown.length?shown.map((a,n)=>`<button type="button" id="cmdk-opt-${n}" role="option" class="cmdk-item" data-cmd-view="${esc(a.id)}">${esc(a.label)}</button>`).join('')
+    const groups=!q&&phone()?likely(shown):null;if(groups)shown=groups.flatMap(g=>g.items);
+    const opt=(a,n)=>`<button type="button" id="cmdk-opt-${n}" role="option" class="cmdk-item" data-cmd-view="${esc(a.id)}">${esc(a.label)}</button>`;
+    let n=0;
+    list.innerHTML=groups?groups.map((g,i)=>`<div class="cmdk-group" role="group" aria-labelledby="cmdk-group-${i}"><div class="cmdk-group__label" id="cmdk-group-${i}">${esc(g.label)}</div>${g.items.map(a=>opt(a,n++)).join('')}</div>`).join('')
+      :shown.length?shown.map(opt).join('')
       :`<div class="cmdk-empty"><p>No pages match “${esc(input.value.trim())}”.</p><button type="button" class="btn-outline" data-cmd-work>Search your work for “${esc(input.value.trim())}”</button></div>`;
+    {const n=shown.length,c=$('cmdkCount');if(c)c.textContent=n?`${n} page${n===1?'':'s'}`:'No pages match'} // a screen reader hears the count
     list.querySelectorAll('[data-cmd-view]').forEach(b=>b.onclick=()=>go(b.dataset.cmdView));
     list.querySelector('[data-cmd-work]')?.addEventListener('click',searchWork);
     select(0);
   }
+  // On a phone, an empty search offers the 8 likeliest pages instead of all of them: the ones opened lately, then the
+  // other pages of the section you are in, then each section's first page. Typing still searches every page.
+  const phone=()=>matchMedia('(max-width:760px)').matches;
+  function likely(offered){
+    const by=new Map(offered.map(a=>[a.id,a])),here=new Set([state.view,R.page(state.view)?.id]),taken=new Set(),out=[];let room=8;
+    const take=(label,ids,max=room)=>{const items=[];for(const id of ids){if(items.length>=Math.min(max,room))break;const a=by.get(id);if(a&&!here.has(id)&&!taken.has(id)){taken.add(id);items.push(a)}}room-=items.length;if(items.length)out.push({label,items})};
+    const dom=R.DOMAINS.find(d=>d.id===R.page(state.view)?.domain);
+    take('Recent',recentPages(),5);
+    if(dom)take(dom.label,R.sections(dom.id).flatMap(s=>s.views));
+    take('Go to',R.DOMAINS.map(d=>d.defaultView));
+    take('More',offered.map(a=>a.id));
+    return out;
+  }
+  // The sheet sits on the keyboard: iOS keeps innerHeight and shrinks only the visual viewport.
+  const vv=window.visualViewport;
+  function dock(){if(!el.classList.contains('show'))return;const kb=vv?Math.max(0,Math.round(innerHeight-vv.height-vv.offsetTop)):0;el.style.setProperty('--cmdk-kb',kb+'px');el.style.setProperty('--cmdk-vh',Math.round(vv?vv.height:innerHeight)+'px')}
+  if(vv){vv.addEventListener('resize',dock,{passive:true});vv.addEventListener('scroll',dock,{passive:true})}
   function go(id){close(false);goTo(id)}
   // No page matched: look through the owner's own work instead (Work's search box filters the loaded runs).
   function searchWork(){const q=input.value.trim();close(false);goTo('work');
     // Work sets itself up when it becomes the open page; fill its search box after that, not before.
     let tries=0;const fill=()=>{const w=$('workSearch'),sec=$('work');if(w&&sec?.classList.contains('active')&&tries>2){w.value=q;w.dispatchEvent(new Event('input',{bubbles:true}));return}if(++tries<40)setTimeout(fill,50)};fill()}
-  function open(){if(el.classList.contains('show'))return;opener=document.activeElement;el.classList.add('show');el.setAttribute('aria-hidden','false');input.setAttribute('aria-expanded','true');input.value='';render();if(typeof el.showModal==='function'&&!el.open)el.showModal();input.focus()}
+  function open(){if(el.classList.contains('show'))return;opener=document.activeElement;el.classList.add('show');el.setAttribute('aria-hidden','false');input.setAttribute('aria-expanded','true');input.value='';render();if(typeof el.showModal==='function'&&!el.open)el.showModal();dock();input.focus()}
   function close(restore=true){if(!el.classList.contains('show'))return;el.classList.remove('show');el.setAttribute('aria-hidden','true');input.setAttribute('aria-expanded','false');if(el.open)el.close();if(restore&&opener?.isConnected&&opener.focus)opener.focus()}
   input.addEventListener('input',render);
   input.addEventListener('keydown',e=>{
@@ -814,6 +846,8 @@ function commandPalette(){
 async function bindEvo(){
   if(!releaseState.config) await loadReleaseConfig();
   commandPalette();
+  // A pull down from the top refreshes these lists on a touch screen (components.js pullToRefresh).
+  for(const [v,fn] of [['inbox',loadInbox],['approvals',loadApprovals],['library',loadLibrary],['projects',loadProjects]])LocalAIUI.pullToRefresh?.(v,fn);
   $('memoryAddBtn')?.addEventListener('click',addMemory);$('memoryProject')?.addEventListener('change',loadMemory);
   $('repoInspectBtn')?.addEventListener('click',inspectRepo);$('commandRunBtn')?.addEventListener('click',runWorkbenchCommand);
   $('monitorCreateBtn')?.addEventListener('click',createMonitor);$('briefBtn')?.addEventListener('click',generateBrief);
