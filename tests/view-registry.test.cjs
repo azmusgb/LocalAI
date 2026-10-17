@@ -113,7 +113,11 @@ test('tabs belong to a top-level page in the same domain', () => {
     assert.equal(parent.domain, v.domain, `${v.id} must share its parent's domain`);
     assert.ok(v.tab && parent.tab, `${v.id} and ${parent.id} need tab labels`);
   }
-  assert.deepEqual(registry.tabs('approvals').map(v => v.id), ['inbox', 'approvals']);
+  // One queue (D8): Approvals is no longer a tab; the Inbox is one page named Inbox, and old #approvals links open it.
+  assert.deepEqual(registry.tabs('inbox'), []);
+  assert.equal(registry.resolve('approvals'), 'inbox');
+  assert.equal(registry.view('approvals').id, 'inbox');
+  assert.notEqual(registry.view('inbox').tab, 'Alerts');
   assert.deepEqual(registry.tabs('projects').map(v => v.id), ['projects', 'knowledge', 'memory', 'library']);
   assert.deepEqual(registry.tabs('claude'), []);
 });

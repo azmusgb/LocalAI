@@ -84,7 +84,6 @@ await check('opening a page loads its data even without a nav button click', asy
 
 for (const [parent, child, childTab, domain] of [
   // Issues / Quality signals are hidden while Signals (Improve) shows the same detections.
-  ['inbox', 'approvals', 'Approvals', 'home'],
   ['projects', 'knowledge', 'Sources', 'projects'],
   ['projects', 'library', 'Everything you kept', 'projects'],
 ]) {
@@ -108,24 +107,22 @@ for (const [parent, child, childTab, domain] of [
   });
 }
 
-await check('top bar shows one Inbox count and opens the right tab', async () => {
+await check('top bar shows one Inbox count and opens the Inbox', async () => {
   // Stub the two sources so the real loaders produce known counts.
   const counts = { unread: 0, pending: 2 };
   await page.route('**/api/notifications', route => route.fulfill({ json: { items: [], unread: counts.unread } }));
   await page.route('**/api/approvals', route => route.fulfill({ json: { items: Array.from({ length: counts.pending }, (_, i) => ({ id: `a${i}`, status: 'pending', title: 'Approve change', createdAt: new Date().toISOString() })) } }));
   const refresh = async () => {
-    for (const view of ['inbox', 'approvals']) {
-      const loaded = page.waitForResponse(r => r.url().includes(view === 'inbox' ? '/api/notifications' : '/api/approvals'));
-      await page.evaluate(v => window.showView(v), view);
-      await loaded;
-    }
+    const loaded = Promise.all(['/api/notifications', '/api/approvals'].map(u => page.waitForResponse(r => r.url().includes(u))));
+    await page.evaluate(() => window.showView('inbox'));
+    await loaded;
     await page.evaluate(() => window.showView('home'));
   };
   try {
     await refresh();
     await page.waitForFunction(() => document.querySelector('#uxInboxCount')?.textContent === '2');
     await page.locator('#uxInboxBtn').click();
-    await page.waitForSelector('#approvals.active');
+    await page.waitForSelector('#inbox.active');
     counts.unread = 3;
     await refresh();
     await page.waitForFunction(() => document.querySelector('#uxInboxCount')?.textContent === '5');

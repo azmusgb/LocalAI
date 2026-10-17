@@ -16,8 +16,8 @@ const DOMAINS=[
 ];
 const VIEWS=[
  {id:'home',svg:'home',domain:'home',section:'Overview',icon:'⌂',label:'Home',description:'Start something, or pick up where you left off.',aka:['overview']},
- {id:'inbox',svg:'inbox',domain:'home',section:'Overview',icon:'!',label:'Inbox',tab:'Alerts',description:'Alerts and anything waiting on you.',aka:['notifications','alerts']},
- {id:'approvals',svg:'approve',domain:'home',section:'Overview',parent:'inbox',tab:'Approvals',icon:'✓',label:'Approvals',description:'Actions held until you approve them.'},
+ // One queue (D8): you decide approvals in Home › Needs you; the Inbox is the history (alerts and decisions). Old #approvals links open it.
+ {id:'inbox',svg:'inbox',domain:'home',section:'Overview',icon:'!',label:'Inbox',description:'Alerts, approvals and what was decided.',aka:['notifications','alerts','approvals']},
  {id:'work',svg:'work',domain:'work',section:'Work',icon:'≡',label:'Work',description:'Everything running and done, in one place.',aka:['runs','missions','agents']},
  {id:'ask',svg:'compose',domain:'hidden',section:'Make',icon:'✦',label:'Chat',description:'Private conversation with your local models.',aka:['ask','ask ai']},
  {id:'create',svg:'image',domain:'hidden',section:'Make',icon:'◇',label:'Images',description:'Generate images with your local models.',aka:['create','create image']},
@@ -49,7 +49,7 @@ const VIEWS=[
 // Retired view ids and the page that replaced them.
 // `runs`, `agents`, `ask` and `create` keep their own hidden pages for code and ⌘K; a URL resolves them to the page that now owns them.
 // Improve's four stages replaced Change requests, Issues and Quality signals: old links land on the stage that shows them.
-const ALIASES={engineering:'inProgress',changes:'inProgress',issues:'signals',quality:'signals',runs:'work',agents:'work',ask:'home',create:'home'};
+const ALIASES={approvals:'inbox',engineering:'inProgress',changes:'inProgress',issues:'signals',quality:'signals',runs:'work',agents:'work',ask:'home',create:'home'};
 const byId=new Map(VIEWS.map(v=>[v.id,v]));
 function resolve(id){return ALIASES[id]||id}
 // A view that still has its own page (hidden ones) wins over its alias.

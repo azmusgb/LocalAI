@@ -52,7 +52,8 @@ Type in the box at the bottom of Home and send. The chip next to it picks what k
 What you send opens where you are and keeps running if you leave; it is always in **Work**.
 
 **Needs you**, near the top of Home, lists what is waiting for you: approvals, runs that failed in the last day,
-services that are down, and new Signals. Tap one to deal with it.
+services that are down, and new Signals. Tap one to deal with it. An approval opens in a sheet over Home with
+everything it will do, and **Approve** or **Reject** right there; you stay on Home.
 
 ## Work: everything running and done
 
@@ -90,8 +91,12 @@ findings from Claude Code sessions. It is shown when **Show developer tools** is
 ## Approvals and alerts
 
 Some actions wait for your OK before they change anything: scripts on the Windows computer, file edits, applying a
-change. They appear in **Needs you** on Home and under **Inbox › Approvals**. **Inbox › Alerts** keeps every alert,
-including ones you missed while notifications were quiet.
+change. You decide them in **Needs you** on Home: tap one, read what it will do, then **Approve** or **Reject**.
+
+The **Inbox** (the bell at the top) is the history. Approvals still waiting are listed first, and **Review** opens the same
+sheet. After them come open alerts, then **History**: resolved alerts and what you approved or rejected, newest first.
+It keeps alerts you missed while notifications were quiet. The bell shows one number: unread alerts plus approvals
+waiting. Old Approvals links open the Inbox.
 
 ## Notifications
 

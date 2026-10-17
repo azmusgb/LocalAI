@@ -153,13 +153,61 @@ await check('Needs you rows that open another page push it, so Back returns to H
   const caps = () => ({ services: [{ name: 'ollama', label: 'Intelligence', state: 'DOWN', required: true, impact: 'Chat is unavailable.' }, ...['search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true }))], models: { defaultInstalled: true }, images: { available: true } });
   const page = await open(desk, '#home', { caps, all: () => [], approvals: [{ id: 'apr_x', status: 'pending', title: 'Run the thing', detail: 'Needs a yes' }] });
   await page.waitForSelector('#homeNeedsYou .home-attn', T);
-  for (const [text, id] of [['Intelligence is down', 'status'], ['Run the thing', 'approvals']]) {
+  for (const [text, id] of [['Intelligence is down', 'status']]) {
     await page.locator('#homeNeedsYou .home-attn', { hasText: text }).click();
     await page.waitForSelector(`#${id}.active`, T);
     assert.equal(await page.evaluate(() => location.hash), '#' + id);
     await page.evaluate(() => history.back());
     await page.waitForSelector('#home.active', T);
   }
+  await page.context().close();
+});
+
+// One queue (D8): an approval is decided from Needs you in a sheet with its full detail, without leaving Home.
+await check('an approval opens in a sheet on Home with its full detail; Approve decides it there and focus moves on', async () => {
+  const LONG = 'Runs npm install in the repository.\nIt downloads packages from the internet and writes node_modules.\n' + 'More detail. '.repeat(30);
+  const approvals = [
+    { id: 'apr_1', status: 'pending', title: 'Run npm install', detail: LONG, risk: 'high', createdAt: new Date(NOW - HOUR).toISOString() },
+    { id: 'apr_2', status: 'pending', title: 'Apply change', detail: 'Writes one file', risk: 'medium', createdAt: new Date(NOW - 2 * HOUR).toISOString() }
+  ];
+  const page = await open(desk, '#home', { all: () => [], approvals });
+  const decided = [];
+  await page.context().route(u => u.pathname === '/api/approvals/decide', r => { const b = r.request().postDataJSON(); decided.push(b); approvals.find(a => a.id === b.id).status = b.decision; r.fulfill({ contentType: 'application/json', body: JSON.stringify({ item: approvals.find(a => a.id === b.id) }) }); });
+  const errors = []; page.on('pageerror', e => errors.push(e.message));
+  await page.waitForSelector('#homeNeedsYou .home-attn', T);
+  await page.locator('#homeNeedsYou .home-attn', { hasText: 'Run npm install' }).click();
+  const sheet = page.locator('#approvalSheet[open]');
+  await sheet.waitFor(T);
+  assert.equal(await page.evaluate(() => location.hash), '#home');
+  assert.equal(await page.locator('#home.active').count(), 1);
+  assert.equal(await sheet.locator('h2').innerText(), 'Run npm install');
+  const text = await sheet.innerText();
+  assert.match(text, /writes node_modules/);
+  assert.ok(text.includes('More detail. '.repeat(30).trim()), 'the whole detail is in the sheet, not a clipped preview');
+  assert.match(text, /High risk/);
+  // Escape closes it without deciding, and focus returns to the row.
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('#approvalSheet[open]', { state: 'detached', timeout: 4000 }).catch(() => {});
+  assert.equal(await page.locator('#approvalSheet[open]').count(), 0);
+  assert.match(await page.evaluate(() => document.activeElement?.textContent || ''), /Run npm install/);
+  assert.deepEqual(decided, []);
+  // Open again and approve.
+  await page.locator('#homeNeedsYou .home-attn', { hasText: 'Run npm install' }).click();
+  await sheet.waitFor(T);
+  await page.getByRole('button', { name: 'Approve: Run npm install' }).click();
+  await page.waitForFunction(() => /^Approved/.test(document.getElementById('toast')?.textContent || ''), null, T);
+  assert.deepEqual(decided, [{ id: 'apr_1', decision: 'approved' }]);
+  assert.equal(await page.locator('#approvalSheet[open]').count(), 0);
+  await page.waitForFunction(() => !/Run npm install/.test(document.getElementById('homeNeedsList').textContent), null, T);
+  await page.waitForFunction(() => /Apply change/.test(document.activeElement?.textContent || ''), null, T);
+  assert.equal(await page.evaluate(() => location.hash), '#home');
+  // Reject the last one: Needs you empties and focus lands on something on Home, not the page body.
+  await page.locator('#homeNeedsYou .home-attn', { hasText: 'Apply change' }).click();
+  await sheet.waitFor(T);
+  await page.getByRole('button', { name: 'Reject: Apply change' }).click();
+  await page.waitForFunction(() => /^Rejected/.test(document.getElementById('toast')?.textContent || ''), null, T);
+  await page.waitForFunction(() => document.getElementById('homeNeedsYou').hidden && document.activeElement && document.activeElement !== document.body && document.getElementById('home').contains(document.activeElement), null, T);
+  assert.deepEqual(errors, []);
   await page.context().close();
 });
 
@@ -435,7 +483,8 @@ await check('a pending approval that is not a run shows in Needs you, and a dupl
   assert.doesNotMatch(t, /Apply change chg-1|Old one/);
   assert.equal(await page.locator('#homeNeedsYou .list-row').count(), 2);
   await page.locator('#homeNeedsYou .home-attn').click();
-  await page.waitForSelector('#approvals.active', T);
+  await page.waitForSelector('#approvalSheet[open]', T); // decided here, in the sheet (D8)
+  assert.equal(await page.evaluate(() => location.hash), '#home');
   await page.context().close();
 });
 
