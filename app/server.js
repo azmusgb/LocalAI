@@ -18,7 +18,7 @@ const MAC_AI_HOME_URL = process.env.MAC_AI_HOME_URL || 'http://10.0.0.16:3083';
 const MAC_DSH_URL = process.env.MAC_DSH_URL || 'http://10.0.0.16:3084';
 // GridCraft host bridge. The browser reaches it only through /api/gridcraft/*, so the bridge can stay off the LAN.
 const GRIDCRAFT_URL = process.env.GRIDCRAFT_URL || 'http://host.docker.internal:8787';
-const GRIDCRAFT_RUN_TIMEOUT_MS = 330000;
+const GRIDCRAFT_RUN_TIMEOUT_MS = 360000; // the bridge allows 300 s, after waiting up to 30 s for a workbook read to finish
 const REPORT_PATH = process.env.REPORT_PATH || '/reports/LocalAI-Certification-latest.txt';
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -45,7 +45,8 @@ const { loadOllamaModelRuntime } = require('./model-runtime');
 const { createModelPulls } = require('./model-pulls');
 const imageEngines = require('./image-engines');
 const plainText = require('./plain-text');
-// Last measured seconds per engine on this machine, shown as an estimate in the Images page.
+// Last measured seconds per engine on this machine, shown as an estimate in the Images page. Keyed by id and
+// family, so "best" switching from FLUX to Z-Image doesn't show FLUX's time.
 const IMAGE_ESTIMATES = {};
 const IMAGE_PROMPT_MODEL = process.env.IMAGE_PROMPT_MODEL || process.env.GRIDCRAFT_MODEL || 'qwen3:4b-instruct';
 const release = require('./release').readRelease(__dirname);
@@ -455,6 +456,7 @@ function sanitizeMessages(messages) {
 
 function capabilityPrompt(snapshot) {
   const images = snapshot?.images?.models || [];
+  const imageEngineList = snapshot?.images?.engines || [];
   const textModels = snapshot?.models || {};
   const installedText = Array.isArray(textModels.installed) ? textModels.installed : [];
   const loadedText = Array.isArray(textModels.loaded) ? textModels.loaded : [];
@@ -468,13 +470,14 @@ function capabilityPrompt(snapshot) {
     `Installed text models: ${installedText.length ? installedText.map(x => x.name).join(', ') : 'none verified'}`,
     `Loaded text models: ${loadedText.length ? loadedText.map(x => `${x.name}${x.contextLength ? ` [ctx ${x.contextLength}]` : ''}`).join(', ') : 'none currently resident'}`,
     `Model runtime detail: ${textModels.runtimeAvailable ? 'available' : 'unavailable'}`,
-    `Installed image models: ${images.length ? images.map(x => `${x.checkpoint} [${x.familyLabel || x.family}]`).join(', ') : 'none discovered'}`,
+    `Image engines (Images page): ${imageEngineList.length ? imageEngineList.map(x => `${x.label} = ${x.model} (${x.files.join(', ')})`).join('; ') : 'none discovered'}`,
+    `Installed image checkpoints: ${images.length ? images.map(x => `${x.checkpoint} [${x.familyLabel || x.family}]`).join(', ') : 'none discovered'}`,
     `Projects: ${snapshot?.projects?.count ?? 0}`,
     `Engineering: ${snapshot?.engineering?.active ?? 0} active; ${snapshot?.engineering?.awaitingApproval ?? 0} awaiting approval`,
     `Changes: ${snapshot?.changes?.pending ?? 0} pending`,
     `Issues: ${snapshot?.issues?.open ?? 0} open`,
     `PowerShell Workbench: ${snapshot?.powershell?.configured ? 'configured' : 'not configured'}`,
-    'Use this snapshot instead of guessing. Never claim a text or image model is installed unless it appears above. A text model can be installed without being currently loaded because Ollama may unload idle models. Never report a hard-coded appliance version. Image generation is available only when a supported discovered model is present. Local AI can prepare self-changes through Engineering -> Change Intelligence -> approval -> host self-update; never claim a change was applied unless the runtime reports it.'
+    'Use this snapshot instead of guessing. Never claim a text or image model is installed unless it appears above. A text model can be installed without being currently loaded because Ollama may unload idle models. Never report a hard-coded appliance version. Image models are not Ollama models: they are files in ComfyUI on the Windows computer (its models folders: checkpoints, diffusion_models, text_encoders, vae), so never suggest installing one with Ollama. Image generation is available only when a discovered image engine or supported checkpoint is present. Local AI can prepare self-changes through Engineering -> Change Intelligence -> approval -> host self-update; never claim a change was applied unless the runtime reports it.'
   ].join('\n');
 }
 
@@ -482,7 +485,10 @@ async function getCapabilitiesSnapshot(force = false) {
   if (!force && capabilityCache.value && capabilityCache.expiresAt > Date.now()) return capabilityCache.value;
   const [statusResult, imageResult, modelResult] = await Promise.allSettled([
     getStatusAndRecordTransition(),
-    getCheckpointNames().then(names => buildImageModelCatalog(names)),
+    getImageModelLists().then(lists => ({
+      ...buildImageModelCatalog(lists.checkpoints),
+      engines: imageEngines.discoverEngines(lists).engines.map(e => ({ id: e.id, label: e.label, model: e.model, files: Object.values(e.files) }))
+    })),
     loadOllamaModelRuntime({
       baseUrl: OLLAMA_URL,
       fetchWithTimeout,
@@ -491,7 +497,7 @@ async function getCapabilitiesSnapshot(force = false) {
     })
   ]);
   const status = statusResult.status === 'fulfilled' ? statusResult.value : { overall: 'UNKNOWN', services: [] };
-  const imageCatalog = imageResult.status === 'fulfilled' ? imageResult.value : { models: [], families: [], defaultCheckpoint: null, defaultFamily: null };
+  const imageCatalog = imageResult.status === 'fulfilled' ? imageResult.value : { models: [], families: [], engines: [], defaultCheckpoint: null, defaultFamily: null };
   const modelRuntime = modelResult.status === 'fulfilled'
     ? modelResult.value
     : {
@@ -514,7 +520,7 @@ async function getCapabilitiesSnapshot(force = false) {
     appliance: 'Local AI', version: APP_VERSION, model: MODEL,
     overall: status.overall, services: status.services || [], serviceSummary: status.serviceSummary || {},
     models: modelRuntime,
-    images: { ...imageCatalog, available: imageCatalog.models.some(x => x.supported) },
+    images: { ...imageCatalog, available: imageCatalog.models.some(x => x.supported) || imageCatalog.engines.length > 0 },
     projects: { count: projectStore().length },
     agents: { running: agentRunStore().filter(x => x.status === 'running').length },
     changes: { pending: changes.filter(x => ['planned','patch_failed','validation_failed','staged','awaiting_approval','approved','apply_requested'].includes(x.status)).length },
@@ -1212,7 +1218,8 @@ function buildImageModelCatalog(names) {
 }
 
 // Every model list the image engines need, from ComfyUI's object_info. A node type that isn't installed
-// (UnetLoaderGGUF before ComfyUI-GGUF) just yields an empty list.
+// (UnetLoaderGGUF before ComfyUI-GGUF) just yields an empty list. UNETLoader lists models/diffusion_models and
+// CLIPLoader lists models/text_encoders (plus models/clip), which Z-Image Turbo needs.
 async function getImageModelLists() {
   const read = async (node, input) => {
     try {
@@ -1221,17 +1228,18 @@ async function getImageModelLists() {
       return comfyOptions((await r.json())?.[node]?.input?.required?.[input]);
     } catch { return []; }
   };
-  const [checkpoints, unets, clips, vaes, upscalers] = await Promise.all([
-    getCheckpointNames(), read('UnetLoaderGGUF', 'unet_name'), read('DualCLIPLoader', 'clip_name1'), read('VAELoader', 'vae_name'), read('UpscaleModelLoader', 'model_name')
+  const [checkpoints, unets, clips, vaes, upscalers, diffusionModels, textEncoders] = await Promise.all([
+    getCheckpointNames(), read('UnetLoaderGGUF', 'unet_name'), read('DualCLIPLoader', 'clip_name1'), read('VAELoader', 'vae_name'), read('UpscaleModelLoader', 'model_name'),
+    read('UNETLoader', 'unet_name'), read('CLIPLoader', 'clip_name')
   ]);
-  return { checkpoints, unets, clips, vaes, upscalers };
+  return { checkpoints, unets, clips, vaes, upscalers, diffusionModels, textEncoders };
 }
 
 async function apiImageModels(req, res) {
   try {
     const lists = await getImageModelLists();
     const found = imageEngines.discoverEngines(lists);
-    const engines = found.engines.map(({ id, label, blurb, family, base }) => ({ id, label, blurb, family, base, estimateSec: IMAGE_ESTIMATES[id] || null }));
+    const engines = found.engines.map(({ id, label, blurb, family, base, model }) => ({ id, label, blurb, family, base, model, estimateSec: IMAGE_ESTIMATES[`${id}:${family}`] || null }));
     const aspects = Object.entries(imageEngines.ASPECTS).map(([id, a]) => ({ id, label: a.label, sizes: { 512: a[512], 1024: a[1024] } }));
     const styles = Object.entries(imageEngines.STYLES).map(([id, st]) => ({ id, label: st.label }));
     json(res, 200, { ...buildImageModelCatalog(lists.checkpoints), engines, custom: found.custom, upscale: !!found.upscaler, aspects, styles, defaultEngine: found.defaultEngine });
@@ -1375,7 +1383,7 @@ async function apiGenerateImage(req, res) {
       try { prompt = await enhanceImagePrompt(original, engine.id); runLedger.update(execution.id, { progress: 15 }, 'Prompt improved'); }
       catch (e) { runLedger.update(execution.id, { progress: 15 }, `Prompt helper unavailable; using your prompt (${e.message})`); }
     }
-    const styled = imageEngines.applyStyle(prompt, userNegative, style);
+    const styled = imageEngines.applyStyle(prompt, userNegative, style, engine);
 
     let source = null;
     if (editing) {
@@ -1385,7 +1393,7 @@ async function apiGenerateImage(req, res) {
     }
 
     const started = Date.now();
-    const timeoutMs = (engine.family === 'flux' ? 900000 : 420000) * count;
+    const timeoutMs = (engine.family === 'flux' || engine.family === 'zimage' ? 900000 : 420000) * count;
     const results = [];
     let n = 0;
     for (const batch of imageEngines.batchesFor(engine, count)) {
@@ -1415,7 +1423,7 @@ async function apiGenerateImage(req, res) {
       artifactIds,
       meta: { promptId: results[0].promptId, checkpoint, elapsedMs }
     });
-    if (!upscaler && body.enhance !== true && !editing && count === 1) IMAGE_ESTIMATES[engine.id] = Math.round(elapsedMs / 1000);
+    if (!upscaler && body.enhance !== true && !editing && count === 1) IMAGE_ESTIMATES[`${engine.id}:${engine.family}`] = Math.round(elapsedMs / 1000);
 
     json(res, 200, { promptId: results[0].promptId, ...common, imageUrl: images[0].imageUrl, seed: images[0].seed, images, familyLabel: engine.label, prompt: original, usedPrompt: styled.prompt, runId: execution.id, threadId: execution.threadId });
   } catch (e) {
@@ -1439,20 +1447,80 @@ async function apiGridcraftHealth(req, res) {
     json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
   }
 }
+// A request's record: what was asked, in which mode, and what it changed (the agent's journal), so the page can show the
+// changes and the owner can keep or discard a Review request later, also from another device.
+const GRIDCRAFT_RUN_PREFIX = 'gridcraft:run:';
+const GRIDCRAFT_MODES = new Set(['read', 'review', 'apply']);
+const GRIDCRAFT_KEEP_RUNS = 50;
+function gridcraftRunStatus(ok, mode, journal) {
+  const changed = !!journal && ((journal.edits || []).length > 0 || (journal.changes || []).length > 0 || journal.undoSteps > 0);
+  if (mode === 'review' && changed) return 'review'; // also after a failure: whatever it changed can still be discarded
+  if (!ok) return 'failed';
+  return mode === 'apply' && changed ? 'applied' : 'done';
+}
+function gridcraftRuns(limit = 30) { return storage.listSettings(GRIDCRAFT_RUN_PREFIX, { limit }); }
+function saveGridcraftRun(run) { storage.writeSetting(GRIDCRAFT_RUN_PREFIX + run.id, run); }
 async function apiGridcraftRun(req, res) {
   // Same rules the bridge applies to browsers: same-origin only, JSON only.
-  const origin = req.headers.origin;
-  if (origin && origin !== `http://${req.headers.host}` && origin !== `https://${req.headers.host}`) return json(res, 403, { ok: false, error: 'Origin not allowed' });
-  if (String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase() !== 'application/json') return json(res, 415, { ok: false, error: 'Content-Type must be application/json' });
+  if (!sameOriginJson(req, res)) return;
+  let b;
+  try { b = await readBody(req, 64 * 1024); } catch (e) { return json(res, 400, { ok: false, error: e.message }); }
+  const prompt = String(b.prompt || ''), mode = b.mode === undefined ? 'review' : String(b.mode);
+  if (!GRIDCRAFT_MODES.has(mode)) return json(res, 400, { ok: false, error: 'mode must be read, review or apply' });
   try {
-    const b = await readBody(req, 64 * 1024);
-    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: String(b.prompt || '') }) }, GRIDCRAFT_RUN_TIMEOUT_MS);
+    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, mode }) }, GRIDCRAFT_RUN_TIMEOUT_MS);
     const data = await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` }));
-    if (r.ok) recordActivity('gridcraft', 'GridCraft request', String(b.prompt || '').slice(0, 180), { durationSec: data.durationSec });
-    json(res, r.status, data);
+    const ok = r.ok && data.ok === true, journal = data.journal && typeof data.journal === 'object' ? data.journal : null;
+    // A request the bridge refused before running (busy, bad prompt) changed nothing and isn't worth a record.
+    if (!ok && !journal && r.status !== 500 && r.status !== 504) return json(res, r.status, { ok: false, error: data.error, reason: data.reason });
+    const now = new Date().toISOString();
+    const run = {
+      id: makeId('gc'), prompt: prompt.slice(0, 2000), mode, status: gridcraftRunStatus(ok, mode, journal),
+      answer: ok ? String(data.answer || '') : '', error: ok ? '' : [data.error, data.reason].filter(Boolean).join(': '),
+      edits: journal?.edits || [], changes: journal?.changes || [], undoSteps: Number(journal?.undoSteps) || 0,
+      undoTop: Array.isArray(journal?.undoTop) ? journal.undoTop : [], saved: journal?.saved === true,
+      durationSec: data.durationSec, createdAt: now, updatedAt: now
+    };
+    saveGridcraftRun(run);
+    storage.pruneSettings(GRIDCRAFT_RUN_PREFIX, GRIDCRAFT_KEEP_RUNS);
+    if (ok) recordActivity('gridcraft', 'GridCraft request', prompt.slice(0, 180), { durationSec: data.durationSec, mode });
+    json(res, r.status, { ok, answer: run.answer, ...(ok ? {} : { error: data.error, reason: data.reason }), durationSec: data.durationSec, run });
   } catch (e) {
     json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
   }
+}
+async function apiGridcraftRuns(req, res) { json(res, 200, { items: gridcraftRuns() }); }
+async function apiGridcraftWorkbook(req, res, urlObj) {
+  const q = new URLSearchParams();
+  for (const k of ['sheet', 'range']) { const v = urlObj.searchParams.get(k); if (v) q.set(k, v.slice(0, 200)); }
+  try {
+    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/workbook${q.size ? `?${q}` : ''}`, { cache: 'no-store' }, 65000);
+    json(res, r.status, await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` })));
+  } catch (e) {
+    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+  }
+}
+async function apiGridcraftDecide(req, res, id, action) {
+  if (!sameOriginJson(req, res)) return;
+  const run = storage.readSetting(GRIDCRAFT_RUN_PREFIX + id, null);
+  if (!run) return json(res, 404, { ok: false, error: 'No such request' });
+  if (run.status !== 'review') return json(res, 409, { ok: false, error: 'This request is not waiting for review' });
+  // GridCraft's undo is one line: only the newest request's changes are on top of it.
+  if (action === 'discard' && gridcraftRuns(1)[0]?.id !== id) return json(res, 409, { ok: false, error: 'Only the latest request can be undone' });
+  let r = { ok: true }, data = { ok: true };
+  try {
+    if (action === 'keep' || run.undoSteps > 0) {
+      r = await fetchWithTimeout(`${GRIDCRAFT_URL}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action === 'discard' ? { steps: run.undoSteps, undoTop: run.undoTop } : {}) }, 65000);
+      data = await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` }));
+    }
+  } catch (e) { return json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` }); }
+  if (!r.ok || data.ok !== true) return json(res, r.ok ? 502 : r.status, { ok: false, error: data.error || 'GridCraft did not do it' });
+  const now = new Date().toISOString();
+  // Saving saves every change in the workbook, so every request waiting for review is kept.
+  const decided = action === 'keep' ? gridcraftRuns(GRIDCRAFT_KEEP_RUNS).filter(x => x.status === 'review') : [run];
+  for (const x of decided) saveGridcraftRun({ ...x, status: action === 'keep' ? 'kept' : 'discarded', updatedAt: now });
+  recordActivity('gridcraft', action === 'keep' ? 'GridCraft changes kept' : 'GridCraft changes discarded', run.prompt.slice(0, 180));
+  json(res, 200, { ok: true, dirty: data.dirty, runs: decided.map(x => x.id) });
 }
 async function apiImageView(req, res, urlObj) {
   try {
@@ -3242,6 +3310,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/images/view') return await apiImageView(req, res, urlObj);
     if (req.method === 'GET' && p === '/api/gridcraft/health') return await apiGridcraftHealth(req, res);
     if (req.method === 'POST' && p === '/api/gridcraft/run') return await apiGridcraftRun(req, res);
+    if (req.method === 'GET' && p === '/api/gridcraft/runs') return await apiGridcraftRuns(req, res);
+    if (req.method === 'GET' && p === '/api/gridcraft/workbook') return await apiGridcraftWorkbook(req, res, urlObj);
+    { const m = req.method === 'POST' && p.match(/^\/api\/gridcraft\/runs\/(gc-[\w-]+)\/(keep|discard)$/); if (m) return await apiGridcraftDecide(req, res, m[1], m[2]); }
 
     // cumulative release features
     if (req.method === 'GET' && p === '/api/projects') return await apiProjects(req,res,urlObj);

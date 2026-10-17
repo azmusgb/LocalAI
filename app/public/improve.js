@@ -4,9 +4,9 @@
 (function(root){'use strict';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const ICON={claude:'sparkle',signal:'alert',idea:'compose'};
+// One icon per meaning (E7): sparkle is Claude, alert is a Signal, improve is a change you asked for.
+const ICON={claude:'sparkle',signal:'alert',idea:'improve'};
 const SOURCE={claude:'From Claude',signal:'Signal',idea:'Your idea'};
-const TONE={high:'bad',medium:'attention',low:'neutral'};
 const LABEL={high:'High',medium:'Medium',low:'Low'};
 const st={data:null,openId:'',sessions:[]};
 // A running change's state, in words: [label, badge tone].
@@ -17,7 +17,7 @@ const badge=([label,tone])=>`<span class="badge badge--${tone}">${esc(label)}</s
 const sessionOf=it=>it.sessionId?st.sessions.find(s=>s.id===it.sessionId||s.id==='cc-'+String(it.sessionId).slice(0,8)):null;
 const icon=n=>root.LocalAIKit?.icon(n)||'';
 const ago=iso=>{const s=(Date.now()-new Date(iso))/1000;if(!isFinite(s))return '';if(s<3600)return Math.max(1,Math.round(s/60))+'m ago';if(s<86400)return Math.round(s/3600)+'h ago';return Math.round(s/86400)+'d ago'};
-const sev=x=>`<span class="badge badge--${TONE[x]||'neutral'}">${LABEL[x]||'Medium'}</span>`;
+const sev=x=>`<span class="badge badge--neutral badge--severity">${LABEL[x]||'Medium'}</span>`;   // severity is neutral; colour is for status (E7)
 async function post(path,body){return root.LocalAIUI.fetchJson(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
 async function load(){
  // Release history places items closed on the board (no release stamp) in the release that followed them.
@@ -29,9 +29,9 @@ async function load(){
 function backlogRow(it){
  const row=document.createElement('div');row.className='list-row improve-row';row.dataset.itemId=it.id;
  const net=(it.votes?.up||0)-(it.votes?.down||0);
- row.innerHTML=`<span class="list-row__icon" title="${SOURCE[it.source]||''}">${icon(ICON[it.source]||'sparkle')}</span>`+
+ row.innerHTML=`<span class="list-row__icon" title="${SOURCE[it.source]||''}">${icon(ICON[it.source]||'improve')}</span>`+
   `<button type="button" class="improve-row__open list-row__main"><span class="list-row__title">${esc(it.title)}</span>`+
-  `<span class="list-row__sub">${sev(it.severity)} <span>${SOURCE[it.source]||''}</span>${it.handedToClaude?' <span class="badge badge--accent">Handed to Claude</span>':''}</span></button>`+
+  `<span class="list-row__sub">${sev(it.severity)} <span>${SOURCE[it.source]||''}</span>${it.handedToClaude?' <span class="badge badge--neutral">Handed to Claude</span>':''}</span></button>`+
   `<span class="list-row__trail improve-votes"><button type="button" class="icon-btn" data-vote="1" aria-label="Vote up: ${esc(it.title)}">▲</button><span aria-label="Net votes">${net}</span><button type="button" class="icon-btn" data-vote="-1" aria-label="Vote down: ${esc(it.title)}">▼</button></span>`;
  row.querySelector('.improve-row__open').onclick=()=>openItem(it.id);
  row.querySelectorAll('[data-vote]').forEach(b=>b.onclick=async()=>{b.disabled=true;rowError(row,'');try{await post('/api/claude/findings/vote',{id:it.id,delta:Number(b.dataset.vote)});await refresh()}catch(e){b.disabled=false;rowError(row,`Couldn't save your vote: ${e.message}`)}});
@@ -47,7 +47,7 @@ function inProgressRow(it){
  // The session's state, not its latest step: one session holds many items, so its step would repeat on each of them.
  const quiet=s&&s.status!=='active'&&Date.now()-Date.parse(s.updatedAt||'')>6*36e5;
  const claude=!it.change?` <span>${!s?"Claude's session isn't reporting":quiet?`Paused: Claude last worked on this ${esc(ago(s.updatedAt))}`:`Claude's session is ${s.status==='active'?'active':'idle'}${s.updatedAt?' · '+esc(ago(s.updatedAt)):''}`}</span>`:'';
- row.innerHTML=`<span class="list-row__icon">${icon(ICON[it.source]||'sparkle')}</span>`+
+ row.innerHTML=`<span class="list-row__icon">${icon(ICON[it.source]||'improve')}</span>`+
   `<button type="button" class="improve-row__open list-row__main"><span class="list-row__title">${esc(it.title)}</span><span class="list-row__sub">${state}${claude}</span></button>`;
  row.querySelector('.improve-row__open').onclick=()=>openItem(it.id);
  return row;

@@ -25,7 +25,7 @@ test('registry has five domains and every view belongs to one', () => {
   assert.equal(new Set(ids).size, ids.length, 'view ids must be unique');
   for (const v of registry.VIEWS) {
     assert.ok(domains.has(v.domain), `${v.id} has unknown domain ${v.domain}`);
-    assert.ok(v.label && v.description && v.section && v.icon, `${v.id} is missing label, description, section or icon`);
+    assert.ok(v.label && v.description && v.section && v.svg, `${v.id} is missing label, description, section or icon`);
   }
   for (const d of registry.DOMAINS) assert.equal(registry.view(d.defaultView)?.domain, d.id, `${d.id} default view must be in that domain`);
   for (const id of ['ask', 'create', 'agents', 'runs']) assert.equal(registry.view(id).domain, 'hidden', `${id} has no nav entry`);
@@ -96,7 +96,7 @@ test('page headings and nav labels match the registry', () => {
       assert.equal(m?.[1], registry.page(v.id).label, `#${v.id} heading`);
     }
     if (v.parent) continue;
-    const b = html.match(new RegExp(`data-view="${v.id}"><span class="navicon">[^<]*</span>([^<]*)</button>`));
+    const b = html.match(new RegExp(`data-view="${v.id}">([^<]*)</button>`));
     assert.equal(b?.[1], v.label, `${v.id} nav button`);
   }
 });

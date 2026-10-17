@@ -347,7 +347,7 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await context.close();
 }
 {
-  const { context, page, errors, sent } = await emptyPage({ viewport: { width: 1440, height: 900 } });
+  const { context, page, errors } = await emptyPage({ viewport: { width: 1440, height: 900 } });
   await check('1440px: a started mission flies the camera to Command Center', async () => {
     await page.unroute(u => u.pathname === '/api/agents/missions/start');
     const m = { id: 'mission-started', goal: 'Fly test', status: 'running', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), workers: [{ id: 'router', name: 'Mission Router', state: 'complete', dependsOn: [] }, { id: 'ux_analyst', name: 'UX Analyst', state: 'running', dependsOn: ['router'] }], results: [], timeline: [] };

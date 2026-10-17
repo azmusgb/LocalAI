@@ -33,6 +33,7 @@ $py = "$env:USERPROFILE\gridcraft-local-ai\.venv\Scripts\python.exe"
 & $py C:\LocalAI\repo\host\gridcraft-agent\gridcraft_ai.py --list-tools
 & $py C:\LocalAI\repo\host\gridcraft-agent\gridcraft_ai.py --once "Inspect the current workbook and summarize what is in it."
 & $py C:\LocalAI\repo\host\gridcraft-agent\gridcraft_ai.py --headless --sample sales
+& $py C:\LocalAI\repo\host\gridcraft-agent\gridcraft_ai.py --mode review --once "Add a Total row"  # read | review | apply (default)
 ```
 
 | Option | Environment variable | Default | Purpose |

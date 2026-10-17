@@ -11,6 +11,8 @@ from typing import Any
 from mcp import Client, StdioServerParameters
 from openai import AsyncOpenAI
 
+from gridcraft_journal import MODES, Journal, ToolRefused, allowed_tools
+
 
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"
 DEFAULT_MODEL = "qwen3:4b-instruct-32k"
@@ -62,6 +64,14 @@ Rules:
 - Keep the final answer concise. It must contain the actual information the user asked for (names, values, counts, findings) taken from the tool results, plus what changed, if anything.
 - Never reply only that the request is complete; the user cannot see tool results, so restate them.
 """
+
+MODE_PROMPTS = {
+    "read": "This request is READ ONLY: you cannot change the workbook. If the user asks for a change, describe "
+            "exactly what you would change and say they can run the request again in Review or Apply mode.",
+    "review": "Changes you make are shown to the user for review before they are kept. Do not save the workbook; "
+              "the user saves it when they keep your changes. Say clearly which cells you changed.",
+    "apply": "",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -116,6 +126,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--once",
         help="Run one request and exit instead of opening an interactive prompt.",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=MODES,
+        default=os.environ.get("GRIDCRAFT_MODE", "apply"),
+        help="read: no changes; review: changes but never saves (the owner keeps or discards them); apply: changes and saves.",
     )
     parser.add_argument(
         "--list-tools",
@@ -268,14 +284,15 @@ async def list_all_tools(mcp_client: Client) -> list[Any]:
 
 async def run_agent_turn(
     llm: AsyncOpenAI,
-    mcp_client: Client,
+    journal: Journal,
     openai_tools: list[dict[str, Any]],
     history: list[dict[str, Any]],
     user_text: str,
     models: dict[str, Any],
 ) -> str:
     history.append({"role": "user", "content": user_text})
-    action_request = looks_like_action_request(user_text)
+    # In Read only mode a change request is answered with what would change; there is nothing to complete.
+    action_request = journal.mode != "read" and looks_like_action_request(user_text)
     completion_gate_used = False
     tool_calls_seen: list[str] = []
 
@@ -325,8 +342,11 @@ async def run_agent_turn(
                             "Do not summarize yet. Confirm internally that EVERY requested "
                             "change has actually been executed and the result verified. "
                             "If anything remains, call the required GridCraft tools NOW. "
-                            "For workbook-changing requests, after verification call save_workbook "
-                            "when the workbook has a writable path and that tool is available. "
+                            + (
+                                "For workbook-changing requests, after verification call save_workbook "
+                                "when the workbook has a writable path and that tool is available. "
+                                if journal.mode == "apply" else "Do not save the workbook. "
+                            ) +
                             "Useful fact: activate a sheet with execute_command command "
                             "'sheet.activate' and params containing the sheet name. "
                             f"Tools used so far: {', '.join(tool_calls_seen) or '(none)'}. "
@@ -370,8 +390,13 @@ async def run_agent_turn(
                 )
             else:
                 try:
-                    result = await mcp_client.call_tool(tool_name, arguments)
+                    result = await journal.call(tool_name, arguments)
                     result_text = tool_result_to_text(result)
+                except ToolRefused as exc:
+                    result_text = json.dumps(
+                        {"is_error": True, "content": [{"type": "text", "text": str(exc)}]},
+                        ensure_ascii=False,
+                    )
                 except Exception as exc:
                     result_text = json.dumps(
                         {
@@ -468,6 +493,11 @@ async def async_main() -> int:
             else:
                 tools = [tool for tool in all_tools if tool.name in CORE_TOOL_NAMES]
                 tool_profile = "core"
+            # Read only mode takes every read tool GridCraft has (evaluate_formula is not in the core set).
+            pool = all_tools if args.mode == "read" else tools
+            allowed = allowed_tools(args.mode, {tool.name for tool in pool})
+            tools = [tool for tool in pool if tool.name in allowed]
+            tool_profile += f", {args.mode}"
 
             if not tools:
                 print("ERROR: No GridCraft tools matched the selected tool profile.", file=sys.stderr)
@@ -487,18 +517,23 @@ async def async_main() -> int:
 
             openai_tools = [mcp_tool_to_openai(tool) for tool in tools]
             history: list[dict[str, Any]] = [
-                {"role": "system", "content": SYSTEM_PROMPT}
+                {"role": "system", "content": SYSTEM_PROMPT + MODE_PROMPTS[args.mode]}
             ]
+            journal = Journal(args.mode, mcp_client.call_tool, allowed)
 
             if args.once:
                 # Report agent failures as such; the outer handler is only for MCP connection problems.
                 try:
                     answer = await run_agent_turn(
-                        llm, mcp_client, openai_tools, history, args.once, models
+                        llm, journal, openai_tools, history, args.once, models
                     )
                 except Exception as exc:
                     print(f"ERROR: Agent request failed: {type(exc).__name__}: {exc}", file=sys.stderr)
                     return 6
+                finally:
+                    # What the request changed, for the bridge: also after a failure, which may have changed cells.
+                    print("[journal] " + json.dumps(await journal.finish(), ensure_ascii=False, default=str),
+                          file=sys.stderr, flush=True)
                 print(answer)
                 return 0
 
@@ -523,7 +558,7 @@ async def async_main() -> int:
                 try:
                     answer = await run_agent_turn(
                         llm,
-                        mcp_client,
+                        journal,
                         openai_tools,
                         history,
                         user_text,

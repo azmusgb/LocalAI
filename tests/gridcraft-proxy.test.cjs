@@ -28,7 +28,18 @@ test('GridCraft is reached through the appliance, not directly from the browser'
       seen.push({ method: req.method, url: req.url, origin: req.headers.origin, type: req.headers['content-type'], body });
       res.setHeader('Content-Type', 'application/json');
       if (req.url === '/health') return res.end(JSON.stringify({ ok: true, gridcraftConnected: true, model: 'qwen3:4b-instruct', workbook: 'C:\\Users\\someone\\Book.xlsx' }));
-      if (req.url === '/run') return res.end(JSON.stringify({ ok: true, answer: 'done', durationSec: 0.1 }));
+      if (req.url === '/run') {
+        const { mode } = JSON.parse(body);
+        const journal = { mode, edits: mode === 'read' ? [] : [{ tool: 'set_cell', sheet: 'Sales', range: 'B2', before: [[1]], after: [[2]], afterValues: [[2]] }], changes: [], undoSteps: mode === 'read' ? 0 : 1, undoTop: ['Enter Cell'], saved: false };
+        if (JSON.parse(body).prompt === 'fail') { res.statusCode = 500; return res.end(JSON.stringify({ ok: false, error: 'GridCraft agent failed', reason: 'boom', journal })); }
+        return res.end(JSON.stringify({ ok: true, answer: 'done', durationSec: 0.1, journal, stdout: 'log' }));
+      }
+      if (req.url.startsWith('/workbook')) return res.end(JSON.stringify({ ok: true, file: 'Q.xlsx', sheet: new URL(req.url, 'http://x').searchParams.get('sheet') }));
+      if (req.url === '/keep') return res.end(JSON.stringify({ ok: true, dirty: false }));
+      if (req.url === '/discard') {
+        if (JSON.parse(body).undoTop?.[0] !== 'Enter Cell') { res.statusCode = 409; return res.end(JSON.stringify({ ok: false, error: 'The workbook changed in GridCraft after this request' })); }
+        return res.end(JSON.stringify({ ok: true, dirty: false }));
+      }
       res.statusCode = 404; res.end('{}');
     });
   });
@@ -63,16 +74,49 @@ test('GridCraft is reached through the appliance, not directly from the browser'
 
   const run = await fetch(`${base}/api/gridcraft/run`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base }, body: JSON.stringify({ prompt: 'sum column B', extra: 'dropped' }) });
   assert.equal(run.status, 200);
-  assert.equal((await run.json()).answer, 'done');
+  const first = await run.json();
+  assert.equal(first.answer, 'done');
+  assert.equal(first.run.status, 'review', 'a Review request that changed cells waits for the owner');
+  assert.deepEqual(first.run.edits[0].after, [[2]]);
+  assert.equal('stdout' in first, false, 'the agent log stays on the bridge');
   const forwarded = seen.find(x => x.url === '/run');
-  assert.deepEqual(JSON.parse(forwarded.body), { prompt: 'sum column B' }, 'only the prompt is forwarded');
+  assert.deepEqual(JSON.parse(forwarded.body), { prompt: 'sum column B', mode: 'review' }, 'only the prompt and mode are forwarded; Review is the default');
   assert.equal(forwarded.type, 'application/json');
 
   const crossSite = await fetch(`${base}/api/gridcraft/run`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://evil.example' }, body: '{"prompt":"x"}' });
   assert.equal(crossSite.status, 403);
   const formPost = await fetch(`${base}/api/gridcraft/run`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{"prompt":"x"}' });
   assert.equal(formPost.status, 415);
+  const badMode = await fetch(`${base}/api/gridcraft/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"prompt":"x","mode":"root"}' });
+  assert.equal(badMode.status, 400);
   assert.equal(seen.filter(x => x.url === '/run').length, 1, 'rejected requests never reach the bridge');
+
+  const post = (p, body = {}) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const read = await (await post('/api/gridcraft/run', { prompt: 'what is in B2', mode: 'read' })).json();
+  assert.equal(read.run.status, 'done');
+  const failed = await (await post('/api/gridcraft/run', { prompt: 'fail', mode: 'review' })).json();
+  assert.equal(failed.ok, false);
+  assert.equal(failed.run.status, 'review', 'a failed Review request that changed cells can still be discarded');
+  assert.equal(failed.run.error, 'GridCraft agent failed: boom');
+
+  const runs = (await (await fetch(`${base}/api/gridcraft/runs`)).json()).items;
+  assert.deepEqual(runs.map(x => x.status), ['review', 'done', 'review'], 'newest first');
+  const older = await post(`/api/gridcraft/runs/${first.run.id}/discard`);
+  assert.equal(older.status, 409);
+  assert.match((await older.json()).error, /Only the latest request/);
+  const discard = await post(`/api/gridcraft/runs/${failed.run.id}/discard`);
+  assert.equal(discard.status, 200);
+  assert.deepEqual(JSON.parse(seen.find(x => x.url === '/discard').body), { steps: 1, undoTop: ['Enter Cell'] });
+  assert.equal((await post(`/api/gridcraft/runs/${failed.run.id}/discard`)).status, 409, 'not twice');
+  const keep = await (await post(`/api/gridcraft/runs/${first.run.id}/keep`)).json();
+  assert.deepEqual(keep.runs, [first.run.id]);
+  assert.deepEqual((await (await fetch(`${base}/api/gridcraft/runs`)).json()).items.map(x => x.status), ['discarded', 'done', 'kept']);
+  assert.equal((await fetch(`${base}/api/gridcraft/runs/${first.run.id}/keep`, { method: 'POST', headers: { 'Content-Type': 'text/plain' } })).status, 415);
+  assert.equal((await post('/api/gridcraft/runs/gc-nope/keep')).status, 404);
+
+  const wb = await (await fetch(`${base}/api/gridcraft/workbook?sheet=Sales&other=1`)).json();
+  assert.deepEqual(wb, { ok: true, file: 'Q.xlsx', sheet: 'Sales' });
+  assert.equal(seen.find(x => x.url.startsWith('/workbook')).url, '/workbook?sheet=Sales', 'only sheet and range are forwarded');
 
   bridge.close();
   await new Promise(r => setTimeout(r, 50));

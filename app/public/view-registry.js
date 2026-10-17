@@ -8,43 +8,43 @@
 // Its address still opens it, as Improve's pages do.
 (function(root){'use strict';
 const DOMAINS=[
- {id:'home',label:'Home',symbol:'⌂',icon:'home',tagline:'What needs you',defaultView:'home'},
- {id:'work',label:'Work',symbol:'≡',icon:'work',tagline:'Everything running and done',defaultView:'work'},
- {id:'projects',label:'Projects',symbol:'▣',icon:'projects',tagline:'Make and keep things',defaultView:'projects'},
- {id:'improve',label:'Improve',symbol:'Δ',icon:'improve',tagline:'Change Local AI itself',defaultView:'backlog'},
- {id:'system',label:'System',symbol:'◉',icon:'system',tagline:'Health and history',defaultView:'status'}
+ {id:'home',label:'Home',icon:'home',tagline:'What needs you',defaultView:'home'},
+ {id:'work',label:'Work',icon:'work',tagline:'Everything running and done',defaultView:'work'},
+ {id:'projects',label:'Projects',icon:'projects',tagline:'Make and keep things',defaultView:'projects'},
+ {id:'improve',label:'Improve',icon:'improve',tagline:'Change Local AI itself',defaultView:'backlog'},
+ {id:'system',label:'System',icon:'system',tagline:'Health and history',defaultView:'status'}
 ];
 const VIEWS=[
- {id:'home',svg:'home',domain:'home',section:'Overview',icon:'⌂',label:'Home',description:'Start something, or pick up where you left off.',aka:['overview']},
+ {id:'home',svg:'home',domain:'home',section:'Overview',label:'Home',description:'Start something, or pick up where you left off.',aka:['overview']},
  // One queue (D8): you decide approvals in Home › Needs you; the Inbox is the history (alerts and decisions). Old #approvals links open it.
- {id:'inbox',svg:'inbox',domain:'home',section:'Overview',icon:'!',label:'Inbox',description:'Alerts, approvals and what was decided.',aka:['notifications','alerts','approvals']},
- {id:'work',svg:'work',domain:'work',section:'Work',icon:'≡',label:'Work',description:'Everything running and done, in one place.',aka:['runs','missions','agents']},
- {id:'ask',svg:'compose',domain:'hidden',section:'Make',icon:'✦',label:'Chat',description:'Private conversation with your local models.',aka:['ask','ask ai']},
- {id:'create',svg:'image',domain:'hidden',section:'Make',icon:'◇',label:'Images',description:'Generate images with your local models.',aka:['create','create image']},
- {id:'projects',svg:'projects',domain:'projects',section:'Keep',icon:'▣',label:'Projects',tab:'Projects',description:'Group related work with its own sources and memory.'},
- {id:'knowledge',svg:'sources',domain:'projects',section:'Keep',parent:'projects',tab:'Sources',icon:'◫',label:'Sources',description:'Files and notes the assistant can search.',aka:['knowledge']},
- {id:'memory',svg:'memory',domain:'projects',section:'Keep',parent:'projects',tab:'Memory',icon:'M',label:'Memory',description:'Facts the assistant keeps about each project.',aka:['project memory']},
+ {id:'inbox',svg:'inbox',domain:'home',section:'Overview',label:'Inbox',description:'Alerts, approvals and what was decided.',aka:['notifications','alerts','approvals']},
+ {id:'work',svg:'work',domain:'work',section:'Work',label:'Work',description:'Everything running and done, in one place.',aka:['runs','missions','agents']},
+ {id:'ask',svg:'compose',domain:'hidden',section:'Make',label:'Chat',description:'Private conversation with your local models.',aka:['ask','ask ai']},
+ {id:'create',svg:'image',domain:'hidden',section:'Make',label:'Images',description:'Generate images with your local models.',aka:['create','create image']},
+ {id:'projects',svg:'projects',domain:'projects',section:'Keep',label:'Projects',tab:'Projects',description:'Group related work with its own sources and memory.'},
+ {id:'knowledge',svg:'sources',domain:'projects',section:'Keep',parent:'projects',tab:'Sources',label:'Sources',description:'Files and notes the assistant can search.',aka:['knowledge']},
+ {id:'memory',svg:'memory',domain:'projects',section:'Keep',parent:'projects',tab:'Memory',label:'Memory',description:'Facts the assistant keeps about each project.',aka:['project memory']},
  // Library is the last tab of Projects: what you kept, as opposed to Work (everything you did). Old #library links open it.
- {id:'library',svg:'library',domain:'projects',section:'Keep',parent:'projects',tab:'Everything you kept',icon:'▦',label:'Library',description:'Everything you kept: chats, research and images.',aka:['everything you kept','kept']},
- {id:'agents',svg:'target',domain:'hidden',section:'Agents',icon:'◎',label:'Missions',description:'Give a goal; specialist agents work it live.',aka:['agents','agent operations']},
- {id:'status',svg:'health',domain:'system',section:'Health',icon:'●',label:'Health',description:'Whether Local AI is working, and which optional services are up.',aka:['status','system status']},
- {id:'models',svg:'model',domain:'system',section:'Health',icon:'M',label:'Models',description:"Installed models and what's loaded now."},
- {id:'integrations',svg:'plug',domain:'system',section:'Health',icon:'↔',label:'Services',description:'What Local AI connects to, and whether each one is ready.',aka:['integrations','bridges','tools']},
- {id:'automationStudio',svg:'clock',domain:'system',section:'Automations',icon:'⌘',label:'Automations',description:'Scheduled prompts and research, health checks and the morning brief.',aka:['studio','automation studio','monitors','morning brief','health check']},
- {id:'automations',svg:'flow',short:'n8n',domain:'system',section:'Automations',dev:true,icon:'↗',label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
- {id:'actions',svg:'globe',short:'Browser',domain:'system',section:'Automations',dev:true,icon:'↗',label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
- {id:'backlog',svg:'improve',domain:'improve',section:'Pipeline',icon:'Δ',label:'Backlog',description:'One ranked list of what could change in Local AI.',aka:['improve','ideas','priorities']},
- {id:'inProgress',svg:'build',domain:'improve',section:'Pipeline',icon:'▶',label:'In progress',description:'Changes being planned, tested or waiting for your OK.',aka:['running changes','change requests','changes','engineer']},
- {id:'shipped',svg:'check',domain:'improve',section:'Pipeline',icon:'✓',label:'Shipped',description:'What changed, release by release.',aka:['done','released']},
- {id:'signals',svg:'alert',domain:'improve',section:'Pipeline',icon:'!',label:'Signals',description:'Problems Local AI noticed; serious ones join the Backlog.',aka:['detections','issues','quality signals']},
+ {id:'library',svg:'library',domain:'projects',section:'Keep',parent:'projects',tab:'Everything you kept',label:'Library',description:'Everything you kept: chats, research and images.',aka:['everything you kept','kept']},
+ {id:'agents',svg:'target',domain:'hidden',section:'Agents',label:'Missions',description:'Give a goal; specialist agents work it live.',aka:['agents','agent operations']},
+ {id:'status',svg:'health',domain:'system',section:'Health',label:'Health',description:'Whether Local AI is working, and which optional services are up.',aka:['status','system status']},
+ {id:'models',svg:'model',domain:'system',section:'Health',label:'Models',description:"Installed models and what's loaded now."},
+ {id:'integrations',svg:'plug',domain:'system',section:'Health',label:'Services',description:'What Local AI connects to, and whether each one is ready.',aka:['integrations','bridges','tools']},
+ {id:'automationStudio',svg:'clock',domain:'system',section:'Automations',label:'Automations',description:'Scheduled prompts and research, health checks and the morning brief.',aka:['studio','automation studio','monitors','morning brief','health check']},
+ {id:'automations',svg:'flow',short:'n8n',domain:'system',section:'Automations',dev:true,label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
+ {id:'actions',svg:'globe',short:'Browser',domain:'system',section:'Automations',dev:true,label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
+ {id:'backlog',svg:'improve',domain:'improve',section:'Pipeline',label:'Backlog',description:'One ranked list of what could change in Local AI.',aka:['improve','ideas','priorities']},
+ {id:'inProgress',svg:'build',domain:'improve',section:'Pipeline',label:'In progress',description:'Changes being planned, tested or waiting for your OK.',aka:['running changes','change requests','changes','engineer']},
+ {id:'shipped',svg:'check',domain:'improve',section:'Pipeline',label:'Shipped',description:'What changed, release by release.',aka:['done','released']},
+ {id:'signals',svg:'alert',domain:'improve',section:'Pipeline',label:'Signals',description:'Problems Local AI noticed; serious ones join the Backlog.',aka:['detections','issues','quality signals']},
  // GridCraft on the Windows computer, through the appliance (spreadsheets.js). The old /gridcraft.html page sends you here.
- {id:'spreadsheets',svg:'library',domain:'system',section:'Tools',icon:'▦',label:'Spreadsheets',description:'Ask for a spreadsheet on the Windows computer to be checked or changed.',aka:['gridcraft','excel','workbook']},
- {id:'claude',svg:'sparkle',domain:'system',section:'Tools',dev:true,icon:'✳',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
- {id:'workbench',svg:'folder',domain:'system',section:'Tools',dev:true,icon:'W',label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
- {id:'repoTools',svg:'branch',domain:'system',section:'Tools',dev:true,icon:'R',label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},
- {id:'powershell',svg:'terminal',domain:'system',section:'Tools',dev:true,icon:'PS',label:'PowerShell',description:'Approval-gated scripts on the Windows host.',aka:['powershell workbench']},
- {id:'activity',svg:'history',domain:'system',section:'History',icon:'◷',label:'Audit log',description:'What happened on the appliance, and when.',aka:['activity']},
- {id:'runs',svg:'work',domain:'hidden',section:'History',icon:'▶',label:'Runs',description:'Every run, live, with cancel and retry.'}
+ {id:'spreadsheets',svg:'file',domain:'system',section:'Tools',label:'Spreadsheets',description:'Ask for a spreadsheet on the Windows computer to be checked or changed.',aka:['gridcraft','excel','workbook']},
+ {id:'claude',svg:'sparkle',domain:'system',section:'Tools',dev:true,label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
+ {id:'workbench',svg:'folder',domain:'system',section:'Tools',dev:true,label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
+ {id:'repoTools',svg:'branch',domain:'system',section:'Tools',dev:true,label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},
+ {id:'powershell',svg:'terminal',domain:'system',section:'Tools',dev:true,label:'PowerShell',description:'Approval-gated scripts on the Windows host.',aka:['powershell workbench']},
+ {id:'activity',svg:'history',domain:'system',section:'History',label:'Audit log',description:'What happened on the appliance, and when.',aka:['activity']},
+ {id:'runs',svg:'work',domain:'hidden',section:'History',label:'Runs',description:'Every run, live, with cancel and retry.'}
 ];
 // Change requests, Issues and Quality signals are retired: Improve's stages show the same things (see ALIASES).
 // Retired view ids and the page that replaced them.

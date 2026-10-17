@@ -3,7 +3,7 @@
 
 // ==== ui-kit.js ====
 (()=>{'use strict';
-const STATUS={awaiting_approval:['Ready to review','accent'],ready:['Ready to review','accent'],needs_attention:['Needs a look','attention'],applied:['Done','good'],completed:['Done','good'],answered:['Done','good'],running:['Running','accent'],failed:['Failed','bad'],queued:['Queued','neutral'],down:['Down','bad'],healthy:['Healthy','good'],optional_offline:['Offline','neutral']};
+const STATUS={awaiting_approval:['Ready to review','accent'],ready:['Ready to review','accent'],needs_attention:['Needs a look','attention'],applied:['Done','good'],completed:['Done','good'],answered:['Done','good'],running:['Running','accent'],failed:['Failed','bad'],error:['Failed','bad'],validation_failed:['Needs a look','bad'],patch_failed:['Needs a look','bad'],rejected:['Rejected','neutral'],cancelled:['Cancelled','neutral'],queued:['Queued','neutral'],down:['Down','bad'],healthy:['Healthy','good'],optional_offline:['Offline','neutral']};
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 function icon(name,cls){return '<svg class="icon'+(cls?' '+esc(cls):'')+'" aria-hidden="true"><use href="#i-'+esc(name)+'"/></svg>'}
 function statusBadge(status){const key=String(status??'').trim().toLowerCase();const hit=STATUS[key];if(hit)return{label:hit[0],tone:hit[1]};const raw=String(status??'').trim().replace(/[_-]+/g,' ');return{label:raw?raw.charAt(0).toUpperCase()+raw.slice(1).toLowerCase():'Unknown',tone:'neutral'}}
@@ -280,7 +280,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
           <h2 id="truthAttentionTitle">Attention</h2>
           <p id="truthAttentionSummary">Checking what Local AI can do right now…</p>
         </div>
-        <span id="truthAttentionCount" class="pill truth-attention-count">Checking</span>
+        <span id="truthAttentionCount" class="pill truth-attention-count" hidden></span>
       </div>
       <div id="truthAttentionList" class="truth-attention-list" aria-live="polite"></div>`;
 
@@ -328,7 +328,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
           <div class="section-head">
             <div><h2>Installed models</h2><p>Loaded now shows what is in memory. Idle models unload on their own.</p></div>
           </div>
-          <div id="modelRuntimeList" class="model-runtime-list"><div class="empty">Loading model runtime…</div></div>
+          <div id="modelRuntimeList" class="model-runtime-list"><div class="empty-state">Loading model runtime…</div></div>
           <div id="modelRuntimeNote" class="model-runtime-note">Model residency is runtime state, not an availability requirement.</div>
         </div>`;
       main.appendChild(section);
@@ -351,7 +351,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       button.type = 'button';
       button.className = 'navbtn';
       button.dataset.view = 'models';
-      button.innerHTML = '<span class="navicon">M</span>Models';
+      button.textContent = 'Models';
       button.addEventListener('click', () => {
         // Through the router like every other page, so the address, the tab title, Back and focus follow.
         if (window.LocalAIRouter) window.LocalAIRouter.go('#models'); else activateView('models');
@@ -537,7 +537,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       surface.hidden = false;
       surface.dataset.state = 'attention';
       summary.textContent = 'Local AI could not check what is working right now. Everything else still works.';
-      count.textContent = 'State unavailable';
+      count.hidden = true;   // a pill is a count (E5); the summary says the check failed
       const row = document.createElement('div');
       row.className = 'truth-attention-item';
       row.dataset.severity = 'critical';
@@ -559,7 +559,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     if (!items.length) {
       surface.dataset.state = 'clear';
       summary.textContent = 'Nothing needs you. Everything reports ready.';
-      count.textContent = 'Clear';
+      count.hidden = true;
       return;
     }
 
@@ -569,7 +569,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     summary.textContent = critical
       ? `${critical} critical ${critical === 1 ? 'item requires' : 'items require'} attention.`
       : `${warnings || items.length} ${warnings === 1 ? 'item needs' : 'items need'} review.`;
-    count.textContent = `${items.length} ${items.length === 1 ? 'item' : 'items'}`;
+    count.hidden = false; count.textContent = String(items.length);
 
     items.slice(0, 6).forEach((item) => {
       const row = document.createElement('div');
@@ -624,7 +624,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     }
 
     if (!installed.length) {
-      list.innerHTML = '<div class="empty">No models installed yet. Download one above; start with the default, qwen3:4b-instruct-32k.</div>';
+      list.innerHTML = '<div class="empty-state">No models installed yet. Download one above; start with the default, qwen3:4b-instruct-32k.</div>';
     } else {
       list.replaceChildren();
       installed.forEach((item) => {
@@ -921,7 +921,7 @@ function buildIntegrationsView(){
    main.appendChild(section);
  }
  if(!q('.navbtn[data-view="integrations"]',nav)){
-   const b=document.createElement('button');b.type='button';b.className='navbtn';b.dataset.view='integrations';b.dataset.uxSynthetic='true';b.innerHTML='<span class="navicon">'+REG.view('integrations').icon+'</span>'+REG.label('integrations');
+   const b=document.createElement('button');b.type='button';b.className='navbtn';b.dataset.view='integrations';b.dataset.uxSynthetic='true';b.textContent=REG.label('integrations');
    b.addEventListener('click',e=>{e.preventDefault();activateSyntheticView('integrations');window.LocalAIRouter?.go('#integrations')});
    nav.appendChild(b);
  }
@@ -956,7 +956,7 @@ function renderSecondary(domainId){
  listedGroups(d).forEach(g=>{
    const section=document.createElement('section');section.className='ux-secondary-section';
    const h=document.createElement('div');h.className='ux-secondary-label';h.textContent=g.label;section.appendChild(h);
-   g.views.forEach(v=>{const src=viewButton(v);if(!src)return;const b=src;b.classList.add('ux-secondary-link');b.title=DESCRIPTIONS[v]||'';b.setAttribute('aria-description',DESCRIPTIONS[v]||'');b.innerHTML='<span class="ux-link-icon" aria-hidden="true">'+(icon(REG.view(v)?.svg)||REG.view(v)?.icon||'')+'</span><span class="ux-link-label">'+labelForView(v)+'</span>';section.appendChild(b)});
+   g.views.forEach(v=>{const src=viewButton(v);if(!src)return;const b=src;b.classList.add('ux-secondary-link');b.title=DESCRIPTIONS[v]||'';b.setAttribute('aria-description',DESCRIPTIONS[v]||'');b.innerHTML='<span class="ux-link-icon" aria-hidden="true">'+icon(REG.view(v)?.svg)+'</span><span class="ux-link-label">'+labelForView(v)+'</span>';section.appendChild(b)});
    holder.appendChild(section);
  });
 }
@@ -964,7 +964,7 @@ function buildTabs(){
  for(const v of REG.VIEWS){
    if(!v.parent)continue;
    for(const t of REG.tabs(v.id)){
-     const section=q('#'+t.id);if(!section||q('.ux-tabs',section))continue;
+     const section=q('#'+t.id);if(!section||q('.ux-tabs[role="tablist"]',section))continue;
      const strip=document.createElement('div');strip.className='ux-tabs';strip.setAttribute('role','tablist');strip.setAttribute('aria-label',REG.label(REG.page(t.id).id)+' sections');
      REG.tabs(t.id).forEach(x=>{const b=document.createElement('button');b.type='button';b.className='ux-tab';b.setAttribute('role','tab');b.setAttribute('aria-controls',x.id);b.tabIndex=-1;b.dataset.uxTab=x.id;b.textContent=x.tab||x.label;b.addEventListener('click',()=>navigate(x.id));strip.appendChild(b)});
      // One tab stop per strip (sync() gives the selected tab tabindex 0); arrows, Home and End open the next page, and
@@ -1019,7 +1019,7 @@ function fadeStrip(strip){const max=strip.scrollWidth-strip.clientWidth,x=strip.
 function buildMobile(){
  if(q('#uxMobileNav'))return;
  const nav=document.createElement('div');nav.id='uxMobileNav';nav.className='ux-mobile-nav';nav.setAttribute('role','navigation');nav.setAttribute('aria-label','Primary navigation');
- DOMAINS.forEach(d=>{const b=document.createElement('button');b.type='button';b.dataset.domain=d.id;b.innerHTML='<b>'+(icon(d.icon)||d.symbol)+'</b><span>'+d.label+'</span>';b.addEventListener('click',()=>{navigate(d.defaultView);toggleSheet(false)});nav.appendChild(b)});
+ DOMAINS.forEach(d=>{const b=document.createElement('button');b.type='button';b.dataset.domain=d.id;b.innerHTML='<b>'+icon(d.icon)+'</b><span>'+d.label+'</span>';b.addEventListener('click',()=>{navigate(d.defaultView);toggleSheet(false)});nav.appendChild(b)});
  const sheet=document.createElement('div');sheet.id='uxMobileSheet';sheet.className='ux-mobile-sheet';sheet.dataset.open='false';sheet.innerHTML='<div class="ux-mobile-sheet-handle"></div><div class="ux-mobile-sheet-head"><div><span class="ux-secondary-kicker">Navigate</span><strong id="uxMobileSheetTitle"></strong><small id="uxMobileSheetTagline"></small></div><button type="button" id="uxMobileSheetClose" aria-label="Close menu">×</button></div><div class="ux-mobile-sheet-items" id="uxMobileSheetItems"></div>';
  sheet.inert=true;sheet.setAttribute('aria-hidden','true');document.body.append(sheet,nav);q('#uxMobileSheetClose')?.addEventListener('click',()=>toggleSheet(false));
  document.addEventListener('click',e=>{if(sheetOpen&&!sheet.contains(e.target)&&!nav.contains(e.target)&&!e.target.closest?.('#uxContextMenu'))toggleSheet(false)});
@@ -1040,7 +1040,7 @@ function sync(forced){
  qa('#uxMobileNav [data-domain]').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
  if(q('#uxSecondaryTitle')?.textContent!==d.label||q('#uxSecondaryGroups')?.dataset.dev!==String(!devOff()))renderSecondary(d.id);
  qa('.ux-secondary-link').forEach(b=>{const on=b.dataset.view===navPage;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
- qa('.ux-tab').forEach(b=>{const on=b.dataset.uxTab===view;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1});
+ qa('.ux-tab[data-ux-tab]').forEach(b=>{const on=b.dataset.uxTab===view;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1});
  if(sheetOpen)renderSheet();
 }
 function observeViews(){const views=qa('.view');if(!views.length)return;const mo=new MutationObserver(()=>sync());views.forEach(v=>mo.observe(v,{attributes:true,attributeFilter:['class']}));
@@ -1290,7 +1290,7 @@ function toggleDemoPlay(){if(!demo.active){startDemo();return}demo.running=true;
 function cycleSpeed(){demo.speed=demo.speed===1?2:demo.speed===2?4:1;syncDemoControls()}
 function syncDemoControls(){const l=$('#awcLiveBtn');if(l)l.hidden=!demo.active}
 function syncHud(){
- if(!root)return;const workers=current?.workers||[],done=workers.filter(w=>w.state==='complete').length,running=workers.filter(w=>w.state==='running').length,bad=workers.filter(w=>['error','blocked'].includes(w.state)).length;
+ if(!root)return;const workers=current?.workers||[],running=workers.filter(w=>w.state==='running').length,bad=workers.filter(w=>['error','blocked'].includes(w.state)).length;
  root.dataset.source=sourceType;root.dataset.state=bad?'attention':running?'running':current?.status==='complete'?'complete':workers.length?'waiting':'idle';syncRoster();syncReplay();paint()
 }
 // Crew rows, the accessible equivalent of the city: portrait, name, role in words, state, and what they are doing now.
@@ -1351,7 +1351,6 @@ function updateHover(e){
  tip.style.left=clamp(e.offsetX+12,8,canvas.clientWidth-176)+'px';tip.style.top=clamp(e.offsetY-54,8,canvas.clientHeight-54)+'px'
 }
 function toggleDisplay(k){display[k]=!display[k];document.querySelector('[data-aw-view="'+k+'"]')?.setAttribute('aria-checked',String(display[k]));if(k==='night')root?.classList.toggle('is-night',display.night)}
-function toggleCrew(){display.crew=!display.crew;root?.classList.toggle('crew-hidden',!display.crew);document.querySelector('.aw-page')?.classList.toggle('crew-hidden',!display.crew);$('#awcCrewToggle')?.setAttribute('aria-pressed',String(display.crew))}
 function toggleFollow(on=!display.follow){display.follow=!!on;$('#awcFollow')?.setAttribute('aria-pressed',String(display.follow));if(display.follow){const a=agents.get(focusId)||[...agents.values()].find(x=>x.state==='running');if(a)focusPoint(a.x,a.y,Math.max(1.7,view.targetZoom))}window.dispatchEvent(new Event('localai:agentworld-follow'))}
 // Theater moves the frame to <body>: an ancestor of the Agents page creates a containing block that traps position:fixed.
 let theaterHome=null;
@@ -1904,7 +1903,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     } catch (e) {
       $('claudeLive').className = 'claude-live off';
       $('claudeLive').textContent = 'offline';
-      $('claudeFindings').innerHTML = `<div class="empty">Claude board unavailable: ${esc(e.message)}</div>`;
+      $('claudeFindings').innerHTML = `<div class="empty-state">Claude board unavailable: ${esc(e.message)}</div>`;
     } finally { view.busy = false; }
   }
 
@@ -1966,7 +1965,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
   function renderTimeline(events) {
     const box = $('claudeTimeline');
-    if (!events.length) { box.innerHTML = '<div class="empty">No Claude activity reported yet.</div>'; return; }
+    if (!events.length) { box.innerHTML = '<div class="empty-state">No Claude activity reported yet.</div>'; return; }
     box.innerHTML = events.slice(0, 80).map((e) => `
       <div class="claude-event ev-${esc(e.status)} kind-${esc(e.kind)}">
         <i class="dot"></i>
@@ -1981,7 +1980,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   function renderMatrix(byCategory) {
     const cats = Object.entries(byCategory).sort((a, b) => b[1].open - a[1].open || b[1].total - a[1].total);
     const max = Math.max(1, ...cats.flatMap(([, c]) => SEVERITIES.map((s) => c[s])));
-    if (!cats.length) { $('claudeMatrix').innerHTML = '<div class="empty">No findings yet.</div>'; return; }
+    if (!cats.length) { $('claudeMatrix').innerHTML = '<div class="empty-state">No findings yet.</div>'; return; }
     $('claudeMatrix').innerHTML = `<table class="claude-matrix"><thead><tr><th>Category</th>${SEVERITIES.map((s) => `<th>${s}</th>`).join('')}<th>Open</th></tr></thead><tbody>${cats.map(([cat, c]) => `
       <tr class="${view.category === cat ? 'selected' : ''}">
         <th><button type="button" data-claude-cat="${esc(cat)}">${esc(catLabel(cat))}</button></th>
@@ -2015,7 +2014,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     $('claudeFindingCount').textContent = `${list.length} shown`;
     if (!list.length) {
       const empty = { decide: 'Nothing is waiting for your decision.', queued: 'Nothing is queued. Approve a finding to send it to Claude.', working: 'Claude is not working on anything right now.', done: 'Nothing is done yet.', aside: 'Nothing has been set aside.' }[view.statusFilter] || 'Nothing matches these filters.';
-      $('claudeFindings').innerHTML = `<div class="empty">${esc(empty)}</div>`;
+      $('claudeFindings').innerHTML = `<div class="empty-state">${esc(empty)}</div>`;
       return;
     }
     $('claudeFindings').innerHTML = list.map((f) => {
@@ -2878,7 +2877,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       section.innerHTML = `
         <div class="topbar"><div><h1>Runs</h1><p class="sub">Every run: chats, images, missions, automations and changes.</p></div><button id="runsRefresh" type="button" class="btn-outline">Refresh</button></div>
         <div id="runMetrics" class="run-summary-grid"></div>
-        <div class="card" style="margin-top:12px"><div class="section-head"><div><h2>All runs</h2><p>Open a run to see what happened, its result, and to cancel or retry it.</p></div></div><div id="runList" class="run-list"><div class="empty">Loading runs…</div></div></div>`;
+        <div class="card" style="margin-top:12px"><div class="section-head"><div><h2>All runs</h2><p>Open a run to see what happened, its result, and to cancel or retry it.</p></div></div><div id="runList" class="run-list"><div class="empty-state">Loading runs…</div></div></div>`;
       main.appendChild(section);
       el('runsRefresh')?.addEventListener('click', () => loadRuns(true));
     }
@@ -2888,7 +2887,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       button.type = 'button';
       button.className = 'navbtn';
       button.dataset.view = 'runs';
-      button.innerHTML = '<span class="navicon">▶</span>Runs';
+      button.textContent = 'Runs';
       button.addEventListener('click', () => { activateRunsView(); loadRuns(true); });
       const activityButton = document.querySelector('.navbtn[data-view="activity"]');
       if (activityButton?.parentElement) activityButton.parentElement.insertBefore(button, activityButton);
@@ -2946,7 +2945,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const list = el('runList');
     if (list) {
       list.replaceChildren();
-      if (!runs.length) list.innerHTML = '<div class="empty">No runs yet.</div>';
+      if (!runs.length) list.innerHTML = '<div class="empty-state">No runs yet.</div>';
       else runs.forEach((run) => list.appendChild(makeRunRow(run)));
     }
 
