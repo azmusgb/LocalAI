@@ -132,9 +132,14 @@ function recentRow(it){
  if(it.status==='awaiting_approval')row.querySelector('.run-card__bar')?.remove(); // waiting on you is not progress
  return row;
 }
+// Recent leaves out what Needs you already shows (the same run, or another card for the same thread): one row per thing.
+let lastRecent=null;
+const threadKey=r=>r.threadId||r.id;
 function paintRecent(box,data){
- const items=(data.items||[]).slice(0,6);
- if(!items.length)return false;
+ lastRecent={box,data};
+ const shown=new Set(needs.map(threadKey)),all=(data.items||[]).slice(0,6),items=all.filter(r=>!shown.has(threadKey(r)));
+ if(!all.length)return false;
+ if(!items.length){box.innerHTML='<div class="state-empty empty-state">Everything recent is in Needs you, above.</div>';return true}
  box.replaceChildren(...items.map(recentRow));
  return true;
 }
@@ -150,6 +155,7 @@ async function loadNeeds(){
    .map(a=>({a,run:a.meta?.changeId&&(runs||[]).find(r=>r.meta?.changeId===a.meta.changeId)||null}));
  }
  paintNeeds();
+ if(lastRecent?.box.isConnected&&!lastRecent.box.querySelector(':scope > .state-loading,:scope > .state-error'))paintRecent(lastRecent.box,lastRecent.data); // Recent may have painted before Needs you knew its rows
 }
 let inflight=null;
 function refresh(){

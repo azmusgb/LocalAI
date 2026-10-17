@@ -35,7 +35,11 @@ test('registry has five domains and every view belongs to one', () => {
   assert.equal(registry.resolve('create'), 'home');
   // Improve's stages replaced Change requests, Issues and Quality signals.
   for (const [from, to] of [['engineering', 'inProgress'], ['changes', 'inProgress'], ['issues', 'signals'], ['quality', 'signals']]) assert.equal(registry.resolve(from), to, from);
-  for (const id of ['changes', 'issues', 'quality']) assert.equal(registry.view(id).domain, 'hidden', `${id} has no nav entry`);
+  // Retired (owner decision D4): no page of their own, only the address.
+  for (const id of ['changes', 'issues', 'quality']) {
+    assert.ok(!registry.VIEWS.some(v => v.id === id), `${id} is not a view`);
+    assert.doesNotMatch(html, new RegExp(`<section id="${id}"|data-view="${id}"`), `#${id} is gone`);
+  }
 });
 
 test('every domain icon has a sprite symbol', () => {
@@ -100,7 +104,6 @@ test('tabs belong to a top-level page in the same domain', () => {
     assert.equal(parent.domain, v.domain, `${v.id} must share its parent's domain`);
     assert.ok(v.tab && parent.tab, `${v.id} and ${parent.id} need tab labels`);
   }
-  assert.deepEqual(registry.tabs('quality').map(v => v.id), ['issues', 'quality']);
   assert.deepEqual(registry.tabs('approvals').map(v => v.id), ['inbox', 'approvals']);
   assert.deepEqual(registry.tabs('projects').map(v => v.id), ['projects', 'knowledge', 'memory']);
   assert.deepEqual(registry.tabs('claude'), []);
@@ -123,13 +126,13 @@ test('every page loads its data when opened, whichever control opened it', () =>
   assert.doesNotMatch(app, /const oldShow=showView/, 'loaders must not depend on nav button click handlers');
 });
 
-test('change requests use one form for plan-only and agent runs', () => {
-  for (const id of ['engineeringRequest', 'engineeringTarget', 'engineeringAttempts', 'engineeringRunBtn', 'changeList', 'engineeringRuns']) {
-    assert.match(html, new RegExp(`id="${id}"`), `#${id}`);
+test('the retired Change requests form and its scripts are gone; the run view keeps the change detail', () => {
+  for (const id of ['engineeringRequest', 'engineeringTarget', 'engineeringAttempts', 'engineeringRunBtn', 'changeList', 'engineeringRuns', 'issueList', 'qualityChecks']) {
+    assert.doesNotMatch(html, new RegExp(`id="${id}"`), `#${id}`);
   }
-  assert.match(html, /<option value="0">Plan only/);
-  assert.doesNotMatch(html, /id="changeRequest"|id="changePlanBtn"/);
-  assert.match(app, /if\(Number\(\$\('engineeringAttempts'\)\.value\)===0\)return planChange\(\)/);
+  for (const fn of ['planChange', 'runEngineeringAgent', 'loadQuality', 'loadIssues', 'scanIssues', 'runQualityScanClient']) assert.doesNotMatch(app, new RegExp(`function ${fn}\\(`), fn);
+  // The run view and the deploy contract still use these.
+  for (const fn of ['selectChange', 'showChange', 'stageChange', 'approveChange', 'applyChange', 'renderEngineeringRun', 'loadEngineeringRuns', 'pollEngineeringIntent', 'engineeringRunText', 'reportQualityEvent']) assert.match(app, new RegExp(`function ${fn}\\(`), fn);
 });
 
 // Menus draw every page's icon from the sprite; letters and loose symbols (M, W, R, PS, ↗) looked like three designs.

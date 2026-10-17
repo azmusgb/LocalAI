@@ -435,8 +435,8 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         severity: 'info',
         title: `${count} change ${count === 1 ? 'request is' : 'requests are'} unfinished`,
         detail: 'Planned, failed or staged changes are waiting to be finished or discarded.',
-        action: 'Open change requests',
-        view: 'changes'
+        action: 'Open In progress',
+        view: 'inProgress'
       });
     }
 
@@ -446,8 +446,8 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         severity: 'warning',
         title: `${count} autonomous ${count === 1 ? 'issue is' : 'issues are'} open`,
         detail: 'Quality scans have unresolved findings.',
-        action: 'Open issues',
-        view: 'issues'
+        action: 'Open Signals',
+        view: 'signals'
       });
     }
 
@@ -822,6 +822,8 @@ const listedGroups=d=>d.groups.map(g=>({label:g.label,views:g.views.filter(liste
 function domainForView(view){let id=REG.view(view)?.domain;if(id==='hidden')id=REG.view(REG.resolve(view))?.domain;return DOMAINS.find(d=>d.id===id)||DOMAINS[0]}
 // Tabs share their parent's nav entry and breadcrumb.
 function pageForView(view){return REG.page(view)?.id||view}
+// The menu entry a view lights: its page, or for a hidden page (Missions, Chat, Images) the page that owns it.
+function menuPage(view){return REG.view(view)?.domain==='hidden'?pageForView(REG.resolve(view)):pageForView(view)}
 function labelForView(view){return REG.view(view)?.label||viewButton(view)?.textContent?.trim()||view}
 function activeView(){return q('.view.active')?.id||q('.navbtn.active')?.dataset.view||'home'}
 function activateSyntheticView(view){
@@ -959,18 +961,19 @@ function buildMobile(){
 function renderSheet(){
  const d=DOMAINS.find(x=>x.id===currentDomain)||DOMAINS[0],holder=q('#uxMobileSheetItems');if(!holder)return;
  q('#uxMobileSheetTitle').textContent=d.label;q('#uxMobileSheetTagline').textContent=d.tagline;holder.innerHTML='';
- listedGroups(d).forEach(g=>{const section=document.createElement('section');section.className='ux-mobile-section';section.innerHTML='<div class="ux-mobile-section-label">'+g.label+'</div>';g.views.forEach(v=>{if(!viewButton(v))return;const b=document.createElement('button');b.type='button';b.className='ux-mobile-link '+(v===pageForView(activeView())?'active':'');b.innerHTML='<span><strong>'+labelForView(v)+'</strong><small>'+DESCRIPTIONS[v]+'</small></span><span>›</span>';b.addEventListener('click',()=>{navigate(v);toggleSheet(false)});section.appendChild(b)});holder.appendChild(section)});
+ listedGroups(d).forEach(g=>{const section=document.createElement('section');section.className='ux-mobile-section';section.innerHTML='<div class="ux-mobile-section-label">'+g.label+'</div>';g.views.forEach(v=>{if(!viewButton(v))return;const b=document.createElement('button');b.type='button';b.className='ux-mobile-link '+(v===menuPage(activeView())?'active':'');b.innerHTML='<span><strong>'+labelForView(v)+'</strong><small>'+DESCRIPTIONS[v]+'</small></span><span>›</span>';b.addEventListener('click',()=>{navigate(v);toggleSheet(false)});section.appendChild(b)});holder.appendChild(section)});
 }
 let sheetRelease=null; // Back closes the sheet (LocalAIUI.sheetHistory)
 function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;const s=q('#uxMobileSheet');if(s&&sheetOpen&&!sheetRelease&&window.LocalAIUI?.sheetHistory)sheetRelease=window.LocalAIUI.sheetHistory(s,()=>{sheetRelease=null;toggleSheet(false)});else if(!sheetOpen&&sheetRelease){const r=sheetRelease;sheetRelease=null;r()}if(s){s.dataset.open=String(sheetOpen);s.inert=!sheetOpen;s.setAttribute('aria-hidden',String(!sheetOpen))}q('#uxContextMenu')?.setAttribute('aria-expanded',String(sheetOpen));document.body.classList.toggle('ux-sheet-open',sheetOpen);if(sheetOpen)renderSheet()}
 function sync(forced){
  const view=REG.view(forced||activeView())?.id||forced||activeView(),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
- const page=pageForView(view),viewLabel=labelForView(page);renderPageStrip(d,page);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=listedGroups(d).flatMap(g=>g.views).length<2;document.body.classList.toggle('ux-single-page',single);q('#uxContextBar')?.classList.toggle('ux-context-same',single||viewLabel===d.label)} // "Local AI / Domain" for a domain with one page, "Local AI / Domain / Page" otherwise
+ // A hidden page (Missions, Chat, Images) names itself in the breadcrumb and lights the page that owns it in the menus.
+ const hidden=REG.view(view)?.domain==='hidden',page=pageForView(view),viewLabel=labelForView(page),navPage=menuPage(view);renderPageStrip(d,navPage);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=listedGroups(d).flatMap(g=>g.views).filter(v=>viewButton(v)).length<2;document.body.classList.toggle('ux-single-page',single);q('#uxContextBar')?.classList.toggle('ux-context-same',!hidden&&(single||viewLabel===d.label))} // "Local AI / Domain" for a domain with one page, "Local AI / Domain / Page" otherwise
  q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);q('#uxContextMenu')?.setAttribute('aria-label',d.label+' pages');syncHeaderAction(view);{const g=q('#uxContextGreeting');if(g)g.textContent=greeting()};
  qa('.ux-primary-item').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
  qa('#uxMobileNav [data-domain]').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
  if(q('#uxSecondaryTitle')?.textContent!==d.label||q('#uxSecondaryGroups')?.dataset.dev!==String(!devOff()))renderSecondary(d.id);
- qa('.ux-secondary-link').forEach(b=>{const on=b.dataset.view===page;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
+ qa('.ux-secondary-link').forEach(b=>{const on=b.dataset.view===navPage;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
  qa('.ux-tab').forEach(b=>{const on=b.dataset.uxTab===view;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1});
  if(sheetOpen)renderSheet();
 }
@@ -3328,12 +3331,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
 // ===== Long lists ============================================================
 // Long lists show their first items and a "Show N more" button: a few on a phone, three times as many on a
-// larger screen. Without it the Change ledger,
-// Files and Library pages ran to tens of thousands of pixels. Lists re-render often (polling), so a MutationObserver
+// larger screen. Without it the Files and Library pages ran to tens of thousands of pixels. Lists re-render often (polling), so a MutationObserver
 // re-applies the limit; "Show more" is remembered per list until the page reloads.
 (() => {
   'use strict';
-  const LIMITS = { changeList: 8, engineeringRuns: 6, inboxList: 10, approvalList: 10, activityList: 15, runList: 10, issueList: 10, libraryGrid: 12, knowledgeList: 10, qualityEvents: 10, monitorList: 10, automationList: 10 };
+  const LIMITS = { inboxList: 10, approvalList: 10, activityList: 15, runList: 10, libraryGrid: 12, knowledgeList: 10, monitorList: 10, automationList: 10 };
   const phone = window.matchMedia('(max-width: 760px)');
   const observers = new Map();
 
