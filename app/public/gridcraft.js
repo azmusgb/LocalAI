@@ -45,13 +45,14 @@
         body: JSON.stringify({ prompt: text })
       });
       const data = await r.json();
-      if (!r.ok || !data.ok) throw new Error(data.error || data.stderr || `HTTP ${r.status}`);
+      if (!r.ok || !data.ok) throw new Error([data.error || `HTTP ${r.status}`, data.reason].filter(Boolean).join(': '));
       result.textContent = data.answer || data.stdout || 'Completed.';
       duration.textContent = `${((performance.now() - started) / 1000).toFixed(1)}s`;
       await health();
     } catch (e) {
-      result.textContent = `Error: ${e.message || e}`;
-      setStatus('down', 'Request failed');
+      result.textContent = `Error: ${e.message || e}\n\nThe request didn't finish. Try again; if it keeps failing, the reason above says why.`;
+      // One failed request doesn't mean the bridge is down: show its real state.
+      await health();
     } finally {
       run.disabled = false;
     }
