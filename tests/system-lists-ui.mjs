@@ -99,6 +99,22 @@ await check('Health: an answer without a service list is a failed check, not "re
   assert.doesNotMatch(await page.locator('#home').innerText(), /Healthy/);
 });
 
+await check('Health: a failed check says when it was tried and when the list was last right', async () => {
+  assert.match(await page.locator('#statusCheckedAt').innerText(), /^Tried \d{1,2}:\d{2}:\d{2}.* · last good check \d{1,2}:\d{2}:\d{2}/);
+});
+// iOS can freeze a request when the app goes to the background. One that never answers must time out, or it holds
+// the "checking" flag forever and every later check is skipped, leaving an old failure on screen.
+await check('Health: a status request that never answers times out, and the next check still runs', async () => {
+  await page.route('**/api/status', () => {}); // never fulfilled
+  await page.evaluate(() => document.getElementById('statusRetryBtn').click());
+  await page.waitForFunction(() => document.getElementById('statusRetryBtn').textContent === 'Check again', null, { timeout: 25000 });
+  assert.match(await page.locator('#statusSummary').innerText(), /Couldn't check the services/);
+  await page.route('**/api/status', r => r.fulfill({ json: { ...healthy, checkedAt: new Date().toISOString() } }));
+  await checkAgain();
+  await page.waitForFunction(() => /Everything is ready/.test(document.getElementById('statusSummary').textContent));
+  assert.match(await page.locator('#statusCheckedAt').innerText(), /^Checked /);
+});
+
 // Reviewing a change reads in the owner's words, not the planner's.
 await check('Changes: an unplanned change reads "Nothing to apply yet", "Not tested yet", "Changes appear after testing"', async () => {
   await page.route('**/api/changes', r => r.fulfill({ json: { items: [{ id: 'chg-1', status: 'planned', target: 'self', request: 'Make the header fit on phones', summary: 'Header fits on phones', files: [], validation: null, diffs: [], createdAt: new Date().toISOString() }], pending: 0 } }));

@@ -570,14 +570,17 @@ function serviceDescription(s){
 }
 // Response time is shown only when it's slow enough to notice.
 const slowNote=ms=>Number.isFinite(ms)&&ms>=2000?`Slow · ${(ms/1000).toFixed(1)} s`:'';
-let statusRefreshing=false;
+let statusRefreshing=false,statusLastOk='';
+const clock=d=>d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'});
 async function refreshStatus(force=false){
   if(document.hidden&&!force)return;
   if(statusRefreshing)return;
   statusRefreshing=true;
   const retry=$('statusRetryBtn');if(retry){retry.disabled=true;retry.textContent='Checking…';}
   try{
-    let r;try{r=await fetch('/api/status',{cache:'no-store'})}catch(e){e.unreachable=true;throw e}
+    // A time limit: iOS can freeze a request when the app goes to the background, and a request that never settles
+    // would keep statusRefreshing set and stop every later check, leaving an old answer on screen.
+    let r;try{r=await fetch('/api/status',{cache:'no-store',signal:AbortSignal.timeout(15000)})}catch(e){e.unreachable=true;throw e}
     // An error reply, or one without a service list, is a failed check: it must never read as "ready".
     if(!r.ok)throw new Error(`HTTP ${r.status}`);
     const j=await r.json();if(!j||!Array.isArray(j.services))throw new Error('No service list');
@@ -588,7 +591,8 @@ async function refreshStatus(force=false){
     const friendly=overall==='HEALTHY'?'Healthy':'Attention needed';
     $('homeState').textContent=friendly;$('sideState').textContent=overall==='HEALTHY'?'Healthy':'Attention';
     $('statusSummary').innerHTML=`<span class="dot ${overall}"></span> ${coreBad.length?`${coreBad.length} core service${coreBad.length===1?' needs':'s need'} attention`:optionalBad.length?`Core ready · ${optionalBad.length} optional service${optionalBad.length===1?'':'s'} off`:'Everything is ready'}`;
-    const checked=$('statusCheckedAt');if(checked)checked.textContent=j.checkedAt?`Checked ${new Date(j.checkedAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'})}`:'';
+    statusLastOk=j.checkedAt?clock(new Date(j.checkedAt)):clock(new Date());
+    const checked=$('statusCheckedAt');if(checked)checked.textContent=`Checked ${statusLastOk}`;
     $('serviceList').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);return `<div class="service service-card ${st}"><div class="service-copy"><strong>${esc(s.label)}</strong><small>${esc(serviceDescription(s))}</small></div><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">${esc(slowNote(s.latencyMs))}</span></div>`}).join('');
     $('technicalStatus').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);const err=s.error?` · ${esc(s.error)}`:'';return `<div class="service"><span>${esc(s.name)} · ${s.required===false?'optional companion':'core'}<small class="service-tech-note">${esc(s.impact||'')}${err}</small></span><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">HTTP ${s.statusCode??'—'}</span></div>`}).join('');
     const c=j.certification||{};const res=String(c.result||'').toUpperCase(),word={PASS:'Passed',WARN:'Passed with warnings',FAIL:'Failed'}[res]||human(c.result||'Unknown'),tone={PASS:'HEALTHY',WARN:'DEGRADED',FAIL:'DOWN'}[res]||'DEGRADED';$('certBox').innerHTML=c.available?`<span class="dot ${tone}"></span> ${esc(word)}${c.modifiedAt?` · ${esc(new Date(c.modifiedAt).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}`:''}`:'<span class="dot DEGRADED"></span> No check on record';
@@ -598,6 +602,8 @@ async function refreshStatus(force=false){
     const why=e&&e.unreachable?"Can't reach Local AI from this device.":"Local AI answered, but its status couldn't be read.";
     for(const id of ['homeDot','sideDot'])$(id).className='dot DOWN';$('homeState').textContent='Unavailable';$('sideState').textContent='Offline';
     $('statusSummary').innerHTML='<span class="dot DOWN"></span> Couldn\'t check the services. Try again';
+    // Say when this attempt was, and when the list below was last right, so an old time never reads as current.
+    const checked=$('statusCheckedAt');if(checked)checked.textContent=`Tried ${clock(new Date())}${statusLastOk?` · last good check ${statusLastOk}`:''}`;
     // The last known list stays on the page; the failure sits above it (or alone, when nothing was ever shown).
     const list=$('serviceList');if(list){list.querySelector('.status-error')?.remove();list.insertAdjacentHTML('afterbegin',`<div class="status-error">${why} <button class="btn-outline" type="button" data-status-retry>Try again</button></div>`);}
   }finally{
