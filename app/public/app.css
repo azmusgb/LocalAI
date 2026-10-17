@@ -1893,3 +1893,7 @@ h1[tabindex="-1"]:focus,h1[tabindex="-1"]:focus-visible{outline:none}
 .inbox-approvals{width:100%;text-align:left;cursor:pointer;font:inherit;color:inherit}
 /* Health: a failed check sits above the last known services, not instead of them. */
 #serviceList .status-error{margin-bottom:10px}
+
+/* Developer tools (appended; nothing above edited). Diagnostic details marked data-dev-only (Models' runtime tile,
+   Health's Advanced service details) show only while the Health switch is on; first-run.js sets body.dev-tools-off. */
+body.dev-tools-off [data-dev-only]{display:none!important}
