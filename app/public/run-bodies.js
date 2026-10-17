@@ -314,7 +314,7 @@
   if (window.LocalAIUI?.registerRunBody) window.LocalAIUI.registerRunBody('engineering', mountEngineering);
 
   // ---- missions ----
-  // The Missions page owns Agent World, the headline and the timeline; a mission run borrows them and gives them back.
+  // The Missions page owns Agent World, the headline, the crew and the story; a mission run borrows them and gives them back.
   // Without a mission id (the first instant, or an older run) the run's output is shown as plain text.
   function mountMission(run, slot) {
     const id = run.meta?.missionId || run.output?.missionId, M = window.LocalAIMissions;
@@ -327,10 +327,11 @@
     }
     RB.mount(slot, ctx => {
       slot.classList.add('run-body-mission');
-      const top = h('div', 'run-body-mission__world'), strip = h('div', 'run-body-mission__strip'), line = h('div', 'run-body-mission__timeline');
-      slot.append(top, strip, line);
+      const top = h('div', 'run-body-mission__world'), strip = h('div', 'run-body-mission__strip'), crew = h('div', 'run-body-mission__crew'), line = h('div', 'run-body-mission__timeline');
+      slot.append(top, strip, crew, line);
       RB.borrow(ctx, $('agentWorldCityMount'), top);
       RB.borrow(ctx, $('agentMissionHeadline')?.closest('.agent-mission-strip'), strip);
+      RB.borrow(ctx, $('awcRoster')?.closest('.aw-crew'), crew);
       RB.borrow(ctx, $('agentTimeline'), line);
       // The nodes are in the page only once the run view attaches this slot, so select a moment later.
       slot.dataset.missionId = id; slot.dataset.status = run.status;

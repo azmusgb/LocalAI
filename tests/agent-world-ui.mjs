@@ -166,6 +166,127 @@ for (const deviceScaleFactor of [1, 2]) {
   await context.close();
 }
 
+// Story-first layout (design PR 2): header sentence and one action, crew + worker card + story, history in Work.
+const T0 = Date.now() - 400e3, t = s => new Date(T0 + s * 1000).toISOString();
+const snapW = (u, c, ux = {}) => [{ id: 'router', name: 'Mission Router', state: 'complete', dependsOn: [] }, { id: 'ux_analyst', name: 'UX Analyst', state: u, dependsOn: ['router'], model: 'qwen3:4b-instruct-32k', routingMeta: { capabilityScore: 0, modelScore: 38 }, ...ux }, { id: 'synthesis', name: 'Coordinator', state: c, dependsOn: ['ux_analyst'] }];
+const FAILED = {
+  id: 'mission-ui-failed', goal: 'Improve the look and polish of Agent World', status: 'needs_attention', error: 'Mission stopped after specialist failure', createdAt: t(0), updatedAt: t(301),
+  workers: snapW('error', 'blocked', { errorCode: 'MODEL_CONNECTION_ERROR' }),
+  results: [{ agentId: 'ux_analyst', agentName: 'UX Analyst', status: 'error', error: 'fetch failed', errorCode: 'MODEL_CONNECTION_ERROR' }],
+  timeline: [{ at: t(0), type: 'mission-start', workers: snapW('pending', 'pending') }, { at: t(1), type: 'dispatch', workers: snapW('running', 'pending') }, { at: t(300), type: 'worker-result', workers: snapW('error', 'pending', { errorCode: 'MODEL_CONNECTION_ERROR' }) }, { at: t(301), type: 'mission-attention', status: 'needs_attention', workers: snapW('error', 'blocked', { errorCode: 'MODEL_CONNECTION_ERROR' }) }]
+};
+const DONE = { ...FAILED, id: 'mission-ui-done', status: 'complete', error: '', answer: 'The summary of what the team found.', finishedAt: t(240), workers: snapW('complete', 'complete'), results: [{ agentId: 'ux_analyst', agentName: 'UX Analyst', status: 'complete', answer: 'Three things to fix.' }], timeline: [] };
+async function withMission(contextOpts, mission) {
+  const context = await browser.newContext({ serviceWorkers: 'block', ...contextOpts });
+  await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  const page = await context.newPage();
+  const errors = []; page.on('pageerror', e => errors.push(e.message));
+  await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [mission] }) }));
+  await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => typeof window.showView === 'function');
+  await page.evaluate(() => window.showView('agents'));
+  await page.waitForFunction(g => document.getElementById('awTitle')?.textContent === g, mission.goal);
+  return { context, page, errors };
+}
+{
+  const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, FAILED);
+  await check('1440px: the header says what went wrong and offers one action', async () => {
+    assert.match(await page.locator('#awStatus').innerText(), /^Needs you · 1 of 3 done · UX Analyst stopped: the model didn’t answer$/);
+    assert.equal(await page.locator('#awPrimary').innerText(), 'Try again');
+    assert.equal(await page.locator('#agents .pill').count(), 0, 'the Mission-first pill is gone');
+  });
+  await check('1440px: the city fills the main area; the rail beside it is 360 px', async () => {
+    const city = await page.locator('.aw-city').boundingBox(), rail = await page.locator('#awSheet').boundingBox();
+    assert.ok(Math.abs(rail.width - 360) < 2, `rail ${rail.width}`);
+    assert.ok(rail.x >= city.x + city.width, 'rail is to the right of the city');
+    assert.ok((await page.locator('.awc__mapWrap').boundingBox()).height >= 520, 'the city is at least 520 px tall');
+  });
+  await check('1440px: the story tells the mission in sentences, newest first', async () => {
+    const items = await page.locator('#agentTimeline li li').allInnerTexts();
+    assert.match(items[0], /The mission stopped and needs you/);
+    assert.ok(items.some(x => /UX Analyst stopped: the model didn’t answer/.test(x)));
+    assert.match(items.at(-1), /The team lead picked the team: UX Analyst and Coordinator/);
+    assert.equal(await page.getByText('Mission timeline').count(), 0);
+  });
+  await check('1440px: history lives in Work: one link, no list', async () => {
+    assert.equal(await page.locator('#agentMissionHistory a').getAttribute('href'), '#work?kind=missions');
+    assert.equal(await page.locator('#agentHistorySearch').count(), 0);
+  });
+  await check('1440px: a crew row opens the worker card: why it stopped and Try again; developer details hidden', async () => {
+    await page.locator('#awcRoster [data-awc-roster="ux_analyst"]').click();
+    const card = page.locator('#agentInspector');
+    await card.waitFor({ state: 'visible' });
+    const text = await card.innerText();
+    assert.match(text, /UX Analyst/); assert.match(text, /Reviews screens for usability/); assert.match(text, /Stopped: the model didn’t answer/);
+    await card.locator('#agentRetryBtn').waitFor({ state: 'visible' });
+    assert.equal(await card.locator('[data-dev-only]').isVisible(), false, 'model and scores only with developer tools');
+    await page.locator('#awWorkerClose').click();
+    await card.waitFor({ state: 'hidden' });
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.awcRoster), 'ux_analyst', 'focus returns to the crew row');
+  });
+  await check('1440px: Try again starts the same goal again', async () => {
+    const bodies = [];
+    await page.route(u => u.pathname === '/api/agents/missions/start', r => { bodies.push(r.request().postDataJSON()); r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"stubbed"}' }); });
+    await page.route(u => u.pathname === '/api/agents/dispatch', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ routing: { mode: 'auto', workers: [] } }) }));
+    await page.locator('#awPrimary').click();
+    await page.waitForFunction(() => true); for (let i = 0; i < 50 && !bodies.length; i++) await page.waitForTimeout(100);
+    assert.equal(bodies[0]?.goal, FAILED.goal);
+  });
+  await check('1440px: the ⋯ menu opens, moves with arrows, closes with Escape back on its button', async () => {
+    await page.locator('#awMoreBtn').click();
+    const menu = page.locator('#awMenu');
+    await menu.waitFor({ state: 'visible' });
+    assert.deepEqual(await menu.locator('[role=menuitem]').allInnerTexts(), ['Start a new mission', 'Watch the replay', 'Open in Work', 'Copy result', 'All missions']);
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.awMenu), 'replay');
+    await page.keyboard.press('Escape');
+    await menu.waitFor({ state: 'hidden' });
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'awMoreBtn');
+    await page.locator('#awMoreBtn').click();
+    await menu.locator('[data-aw-menu="all"]').click();
+    await page.waitForSelector('#work.active');
+  });
+  await check('1440px: no script errors', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+{
+  const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, DONE);
+  await check('1440px: a finished mission says how long it took and offers the result', async () => {
+    assert.match(await page.locator('#awStatus').innerText(), /^Done in 4 min · 3 workers$/);
+    assert.equal(await page.locator('#awPrimary').innerText(), 'See the result');
+  });
+  await check('1440px: no script errors (done)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+{
+  const { context, page, errors } = await withMission({ viewport: { width: 900, height: 1100 } }, FAILED);
+  await check('900px: the rail is under the city, crew beside the story', async () => {
+    const city = await page.locator('.aw-city').boundingBox(), crew = await page.locator('.aw-crew').boundingBox(), story = await page.locator('.aw-story-box').boundingBox();
+    assert.ok(crew.y >= city.y + city.height, 'crew under the city');
+    assert.ok(story.x > crew.x + crew.width - 2 && Math.abs(story.y - crew.y) < 4, 'story beside the crew');
+  });
+  await check('900px: no script errors', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+{
+  const { defaultBrowserType, ...device } = devices['iPhone 14'];
+  const { context, page, errors } = await withMission(device, FAILED);
+  await check('iPhone 14: the peek offers Try again; a crew row raises the sheet to the worker card', async () => {
+    assert.equal(await page.locator('#awPeekAction').innerText(), 'Try again');
+    await page.locator('#awSheetHandle').click();
+    await page.waitForFunction(() => document.getElementById('awSheet').dataset.snap === 'half');
+    await page.locator('#awcRoster [data-awc-roster="ux_analyst"]').click();
+    await page.locator('#agentInspector').waitFor({ state: 'visible' });
+  });
+  await check('iPhone 14: ⋯ is in the header and opens the menu', async () => {
+    await page.locator('#uxHeaderAction').click();
+    await page.locator('#awMenu').waitFor({ state: 'visible' });
+    await page.keyboard.press('Escape');
+  });
+  await check('iPhone 14: no script errors (story)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+
 await browser.close();
 if (failures.length) { console.error('\nAgent World failures:\n' + failures.map(x => ' - ' + x).join('\n')); process.exit(1); }
 console.log('\nAll Agent World checks passed.');

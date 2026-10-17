@@ -79,3 +79,46 @@ test('durations read like a person would say them', () => {
   assert.equal(words.duration(75 * 60e3), '1 h 15 min');
   assert.equal(words.duration(NaN), '');
 });
+
+test('the story: the mission’s events as sentences, newest first', () => {
+  const snap = (type, s, uxState, coState, o = {}) => ({ at: at(s), type, workerId: o.workerId || '', detail: o.detail || '', status: o.status || 'running', workers: [router(), ux({ state: uxState, ...(o.ux || {}) }), coord({ state: coState })] });
+  const m = mission({
+    status: 'needs_attention',
+    timeline: [
+      snap('mission-start', 0, 'pending', 'pending', { workerId: 'router' }),
+      snap('dispatch', 1, 'running', 'pending', { workerId: 'ux_analyst' }),
+      snap('worker-progress', 2, 'running', 'pending', { workerId: 'ux_analyst' }),
+      snap('heartbeat', 3, 'running', 'pending'),
+      snap('worker-result', 300, 'error', 'pending', { workerId: 'ux_analyst', ux: { errorCode: 'MODEL_CONNECTION_ERROR' } }),
+      snap('mission-attention', 301, 'error', 'blocked', { status: 'needs_attention' })
+    ]
+  });
+  const s = words.storyEvents(m);
+  assert.deepEqual(s.map(e => e.text), [
+    'The mission stopped and needs you',
+    'Coordinator couldn’t start: UX Analyst stopped',
+    'UX Analyst stopped: the model didn’t answer',
+    'Coordinator is waiting for UX Analyst',
+    'UX Analyst started reviewing the screens',
+    'The team lead picked the team: UX Analyst and Coordinator'
+  ]);
+  assert.deepEqual(s.map(e => e.workerId), ['', 'synthesis', 'ux_analyst', 'synthesis', 'ux_analyst', 'router']);
+  assert.deepEqual(s.map(e => e.tone), ['bad', 'bad', 'bad', 'wait', 'working', 'done']);
+  assert.equal(s[2].at, at(300));
+});
+
+test('the story of a finished mission ends with the summary', () => {
+  const t = (type, s, u, c, status = 'running') => ({ at: at(s), type, status, workers: [router(), ux({ state: u }), coord({ state: c })] });
+  const m = mission({ status: 'complete', timeline: [t('mission-start', 0, 'pending', 'pending'), t('dispatch', 1, 'running', 'pending'), t('worker-result', 120, 'complete', 'pending'), t('synthesis', 121, 'complete', 'running'), t('mission-complete', 200, 'complete', 'complete', 'complete')] });
+  assert.deepEqual(words.storyEvents(m).slice(0, 4).map(e => e.text), ['Done: the summary is ready', 'Coordinator finished', 'Coordinator started putting the findings together', 'UX Analyst finished']);
+});
+
+test('a mission without a timeline still tells where each worker is', () => {
+  const m = mission({ timeline: [], workers: [router(), ux({ state: 'running' }), coord()] });
+  assert.deepEqual(words.storyEvents(m).map(e => e.text), ['Coordinator is waiting for UX Analyst', 'UX Analyst is reviewing the screens', 'The team lead picked the team: UX Analyst and Coordinator']);
+});
+
+test('runs of events from one worker are grouped', () => {
+  const g = words.groupStory([{ workerId: 'a', text: '1' }, { workerId: 'a', text: '2' }, { workerId: '', text: '3' }, { workerId: 'b', text: '4' }]);
+  assert.deepEqual(g.map(x => [x.workerId, x.items.map(i => i.text)]), [['a', ['1', '2']], ['', ['3']], ['b', ['4']]]);
+});
