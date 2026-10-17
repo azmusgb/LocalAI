@@ -35,7 +35,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
       const frame = now => { gaps.push(now - last); last = now; if (now < end) requestAnimationFrame(frame); else { gaps.sort((a, b) => a - b); done({ frames: gaps.length, p95: gaps[Math.floor(gaps.length * 0.95)], longest: Math.max(0, ...long) }); } };
       requestAnimationFrame(frame);
     }), SECONDS);
-    assert.match(await page.locator('#awcStatus').innerText(), /Running|Complete/i, 'the demo mission is playing');
+    assert.match(await page.locator('#awSheetStatus').textContent(), /Starting|Working|Done/, 'the demo mission is playing');
     assert.ok(r.p95 <= P95_MS, `p95 frame ${r.p95.toFixed(1)} ms over ${r.frames} frames`);
     assert.ok(r.longest <= LONGEST_MS, `longest animation frame ${Math.round(r.longest)} ms`);
     console.log(`  ${viewport.width}px: ${r.frames} frames, p95 ${r.p95.toFixed(1)} ms, longest ${Math.round(r.longest)} ms`);

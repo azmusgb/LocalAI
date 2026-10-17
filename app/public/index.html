@@ -106,7 +106,9 @@
 </div>
 <!-- Agent World: the city is the page. Desktop: a rail beside it; phone: a bottom sheet over it (peek, half, full). -->
 <div class="aw-stage">
-  <div class="aw-city"><div id="agentWorldCityMount"></div></div>
+  <div class="aw-city"><div id="agentWorldCityMount"></div>
+    <div id="awEmpty" class="aw-empty" hidden><div class="aw-empty__card"><h2>Give your team a goal</h2><p>Say what you want done. A team picks it up, and you watch them work here.</p><div class="aw-empty__actions"><button type="button" id="awEmptyStart" class="btn-primary">Start a mission</button><button type="button" id="awEmptyDemo" class="btn-outline">Try a demo mission</button></div></div></div>
+  </div>
   <section id="awSheet" class="aw-sheet" data-snap="peek" aria-label="Mission details">
     <div class="aw-sheet__top">
       <button type="button" id="awSheetHandle" class="aw-sheet__handle" aria-expanded="false" aria-controls="awSheetBody" aria-label="Show mission details"><span class="aw-sheet__grip" aria-hidden="true"></span></button>
@@ -121,44 +123,6 @@
       <section id="agentInspector" class="aw-worker" aria-labelledby="awWorkerName" hidden></section>
       <section class="aw-story-box" aria-labelledby="awStoryTitle"><h2 id="awStoryTitle" class="aw-h">Story</h2><ol id="agentTimeline" class="aw-story"><li class="aw-story__empty">What the team does will be told here.</li></ol></section>
       <div class="agent-ops">
-        <div class="agent-compose">
-          <div class="agent-compose__row">
-            <label>Mission objective<textarea id="agentGoal" rows="4" placeholder="Audit and improve the Local AI mobile experience, then document a prioritized implementation plan."></textarea></label>
-            <label>Project<select id="agentProject"></select></label>
-          </div>
-          <label class="agent-compose__check"><input type="checkbox" id="agentWebSearch"> Let specialists search the web <span class="sub">(searches leave this machine)</span></label>
-          <div class="agent-compose__actions">
-            <button id="missionRunBtn" class="btn primary">Start Mission</button>
-            <button id="routePreviewBtn" class="btn">Preview plan</button>
-            <button id="agentAdvancedToggle" class="btn" type="button" aria-expanded="false">Advanced routing</button>
-          </div>
-          <div id="agentInlineNotice" class="agent-inline-notice" hidden aria-live="polite"></div>
-          <div id="routePreviewWrap" hidden><div id="routePreview" class="preview-pane" style="margin-top:10px"><span class="muted">Enter an objective to preview automatic dispatch.</span></div></div>
-          <div id="agentAdvancedPanel" class="agent-advanced" hidden style="margin-top:12px">
-            <div class="agent-advanced-grid">
-              <div>
-                <div class="agent-panel__head"><div><h2>Routing override</h2><small>Automatic routing is recommended. Use this only when you want explicit control.</small></div></div>
-                <label class="toggle"><input type="checkbox" id="manualRouteToggle"> Manually choose specialists</label>
-                <div id="manualRouteOptions" class="agent-meta" hidden>
-                  <label><input type="checkbox" data-mission-agent value="ux_analyst"> UX Analyst</label>
-                  <label><input type="checkbox" data-mission-agent value="documentation"> Documentation Agent</label>
-                </div>
-              </div>
-              <div>
-                <div class="agent-panel__head"><div><h2>Direct execution</h2><small>Developer tools for bypassing Mission Router orchestration.</small></div></div>
-                <div id="specialistRegistry" class="agent-registry"><div class="empty">Loading specialists…</div></div>
-                <div class="actions" style="margin-top:10px">
-                  <button id="specialistRunBtn" class="btn">Run specialist</button>
-                  <button id="agentRunBtn" class="btn">Run general agent</button>
-                </div>
-              </div>
-            </div>
-            <div class="agent-direct-grid">
-              <div class="agent-panel"><div class="agent-panel__head"><h2>Direct specialist execution</h2></div><div id="specialistExecution"><div class="empty">No direct specialist run.</div></div></div>
-              <div class="agent-panel"><div class="agent-panel__head"><h2>General agent execution</h2></div><div id="agentExecution" class="flow"><div class="empty">No general agent run.</div></div><div id="agentRuns" class="stack" style="margin-top:10px"></div></div>
-            </div>
-          </div>
-        </div>
         <section class="agent-results">
           <div class="agent-result-tabs" role="tablist" aria-label="Mission details">
             <button type="button" class="active" role="tab" id="agentResultTab-summary" aria-controls="agentResultBody" aria-selected="true" tabindex="0" data-agent-result-tab="summary">Synthesis</button>
@@ -174,6 +138,43 @@
     </div>
   </section>
 </div>
+<dialog id="awStart" class="aw-start" aria-labelledby="awStartTitle">
+  <div class="aw-start__head"><h2 id="awStartTitle">What should the team do?</h2><button type="button" class="aw-start__close" id="awStartClose" aria-label="Close">×</button></div>
+  <textarea id="agentGoal" rows="4" aria-labelledby="awStartTitle" placeholder="For example: look over the phone screens for anything confusing, then write a short plan to fix it."></textarea>
+  <div id="awTeam" class="aw-team" aria-live="polite"></div>
+  <label class="aw-start__check"><input type="checkbox" id="agentWebSearch"> <span>Let the team search the web <small>(searches leave this computer)</small></span></label>
+  <label class="aw-start__project">Keep it in a project<select id="agentProject"></select></label>
+  <div id="agentInlineNotice" class="agent-inline-notice" hidden aria-live="polite"></div>
+  <div class="aw-start__actions"><button id="missionRunBtn" class="btn-primary" type="button">Start</button></div>
+  <div class="aw-start__dev" data-dev-only>
+    <div class="aw-start__devbar"><button id="agentAdvancedToggle" class="btn-outline" type="button" aria-expanded="false">Advanced</button><button id="routePreviewBtn" class="btn-outline" type="button">Preview plan</button></div>
+    <div id="routePreviewWrap" hidden><div id="routePreview" class="preview-pane"><span class="muted">Enter a goal to preview the plan.</span></div></div>
+    <div id="agentAdvancedPanel" class="agent-advanced" hidden>
+      <div class="agent-advanced-grid">
+        <div>
+          <div class="agent-panel__head"><div><h2>Routing override</h2><small>Automatic routing is recommended. Use this only when you want explicit control.</small></div></div>
+          <label class="toggle"><input type="checkbox" id="manualRouteToggle"> Manually choose specialists</label>
+          <div id="manualRouteOptions" class="agent-meta" hidden>
+            <label><input type="checkbox" data-mission-agent value="ux_analyst"> UX Analyst</label>
+            <label><input type="checkbox" data-mission-agent value="documentation"> Documentation Agent</label>
+          </div>
+        </div>
+        <div>
+          <div class="agent-panel__head"><div><h2>Direct execution</h2><small>Developer tools for bypassing Mission Router orchestration.</small></div></div>
+          <div id="specialistRegistry" class="agent-registry"><div class="empty">Loading specialists…</div></div>
+          <div class="actions">
+            <button id="specialistRunBtn" class="btn">Run specialist</button>
+            <button id="agentRunBtn" class="btn">Run general agent</button>
+          </div>
+        </div>
+      </div>
+      <div class="agent-direct-grid">
+        <div class="agent-panel"><div class="agent-panel__head"><h2>Direct specialist execution</h2></div><div id="specialistExecution"><div class="empty">No direct specialist run.</div></div></div>
+        <div class="agent-panel"><div class="agent-panel__head"><h2>General agent execution</h2></div><div id="agentExecution" class="flow"><div class="empty">No general agent run.</div></div><div id="agentRuns" class="stack"></div></div>
+      </div>
+    </div>
+  </div>
+</dialog>
 </section>
 <section id="automationStudio" class="view feature-v14"><div class="topbar"><div><h1>Automations</h1><p class="sub">Prompts and research on a schedule, health checks, and your morning brief.</p></div><a class="btn-outline" href="/go/n8n" target="_blank" rel="noopener">Open n8n ↗</a></div><div class="two"><div class="card"><h2>New automation</h2><div class="form-grid" style="margin-top:12px"><label>Name<input id="autoName"></label><label>Kind<select id="autoKind"><option value="prompt">Prompt</option><option value="research">Research</option><option value="monitor">Health check</option><option value="brief">Morning brief</option></select></label><label data-auto-field="schedule">Schedule<select id="autoSchedule"><option value="manual">Manual</option><option value="hourly">Hourly</option><option value="daily">Daily</option></select></label><label class="wide" data-auto-field="prompt">Instruction<textarea id="autoPrompt" rows="6"></textarea></label><p id="autoKindNote" class="wide muted auto-kind-note" hidden></p></div><button id="autoCreateBtn" class="btn-primary" style="margin-top:10px">Create automation</button><button id="briefBtn" class="btn-primary" style="margin-top:10px" hidden>Generate brief</button></div><div class="card"><h2>Automations</h2><div id="automationList" class="stack" style="margin-top:10px"></div></div></div><div id="briefCard" class="card" style="margin-top:12px" hidden><h2>Morning brief</h2><div id="briefBox" class="preview-pane"></div></div><div class="card" style="margin-top:12px"><h2>Run history</h2><div id="automationRuns" class="stack" style="margin-top:10px"></div></div></section>
 <section id="workbench" class="view feature-v15"><div class="topbar"><div><h1>Files</h1><p class="sub">Browse, search and safely edit the folders mounted for Local AI.</p></div><span class="pill">Backs up before saving</span></div><div class="toolbar"><input id="workbenchPath" value="" placeholder="projects or repos" aria-label="Folder to open"><button id="workbenchLoadBtn" class="btn-outline">Load tree</button><input id="workbenchSearch" placeholder="Search files/content" aria-label="Search files"><button id="workbenchSearchBtn" class="btn-outline">Search</button></div><div class="split"><div class="card"><h2>Workspace</h2><div id="workbenchTree" class="stack" style="margin-top:10px"></div></div><div class="card"><div class="statusline"><h2 style="flex:1">Editor</h2><span id="editorPath" class="statuschip">No file</span></div><textarea id="workbenchEditor" class="editor" spellcheck="false" aria-label="File contents" disabled></textarea><div class="actions" style="margin-top:10px"><button id="workbenchDiffBtn" class="btn-outline" disabled>Preview diff</button><button id="workbenchSaveBtn" class="btn-primary" disabled>Save with backup</button></div><div id="workbenchDiff" class="codebox" style="margin-top:10px;display:none"></div></div></div></section>
