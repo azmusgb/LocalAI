@@ -1736,7 +1736,7 @@ input::placeholder,textarea::placeholder{color:var(--ds-faint);font-weight:400}
 .improve-note{display:block;margin-top:12px;font-weight:600}#improveItemNote{width:100%;margin:6px 0 8px}#improveItemNoteSave{min-height:44px}
 #claude [hidden]{display:none!important}
 
-/* Tap targets: every control is at least 44px to touch (appended;
+/* Tap targets: every control is at least 44px to touch (appended; nothing above edited). */
 .awc__districtLegend button,.agent-result-tabs button{min-height:44px}
 .first-run-detail a,.meta a[data-goto],#integrations a[data-external]{display:inline-flex;align-items:center;min-height:44px}
 #ask .toggle{min-height:44px;align-items:center}
