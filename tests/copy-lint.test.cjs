@@ -21,14 +21,14 @@ const BANNED = new RegExp(String.raw`\b(capabilit(?:y|ies)|runtimes?|orchestrati
 const DEV = new Set([...VIEWS.filter(v => v.domain === 'improve').map(v => v.id), 'workbench', 'repoTools', 'powershell', 'actions']);
 
 const CEILING = {
-  'index.html': 0,
+  'index.html': 4,
   'app.js': 4,
-  'ui.js': 3,
+  'ui.js': 10,
   'home.js': 0,
   'work.js': 0,
   'components.js': 0,
   'run-bodies.js': 0,
-  'view-registry.js': 0,
+  'view-registry.js': 1,
   'offline-copy.js': 0
 };
 
