@@ -1292,7 +1292,7 @@ function toggleDemoPlay(){if(!demo.active){startDemo();return}demo.running=true;
 function cycleSpeed(){demo.speed=demo.speed===1?2:demo.speed===2?4:1;syncDemoControls()}
 function syncDemoControls(){if(!root)return;$('#awcDemoPlay').textContent=demo.active&&demo.running&&!demo.paused?'Pause':'Play';$('#awcDemoSpeed').textContent=demo.speed+'×';$('#awcLiveBtn').hidden=!demo.active;$('#awcDemoScenario').value=demo.scenario}
 function syncHud(){
- if(!root)return;const workers=current?.workers||[],done=workers.filter(w=>w.state==='complete').length,running=workers.filter(w=>w.state==='running').length,bad=workers.filter(w=>['error','blocked'].includes(w.state)).length;
+ if(!root)return;const workers=current?.workers||[],running=workers.filter(w=>w.state==='running').length,bad=workers.filter(w=>['error','blocked'].includes(w.state)).length;
  root.dataset.source=sourceType;root.dataset.state=bad?'attention':running?'running':current?.status==='complete'?'complete':workers.length?'waiting':'idle';syncRoster();paint()
 }
 // Crew rows, the accessible equivalent of the city: portrait, name, role in words, state, and what they are doing now.
@@ -1353,7 +1353,6 @@ function updateHover(e){
  tip.style.left=clamp(e.offsetX+12,8,canvas.clientWidth-176)+'px';tip.style.top=clamp(e.offsetY-54,8,canvas.clientHeight-54)+'px'
 }
 function toggleDisplay(k){display[k]=!display[k];document.querySelector('[data-aw-view="'+k+'"]')?.setAttribute('aria-checked',String(display[k]));if(k==='night')root?.classList.toggle('is-night',display.night)}
-function toggleCrew(){display.crew=!display.crew;root?.classList.toggle('crew-hidden',!display.crew);document.querySelector('.aw-page')?.classList.toggle('crew-hidden',!display.crew);$('#awcCrewToggle')?.setAttribute('aria-pressed',String(display.crew))}
 function toggleFollow(on=!display.follow){display.follow=!!on;$('#awcFollow')?.setAttribute('aria-pressed',String(display.follow));if(display.follow){const a=agents.get(focusId)||[...agents.values()].find(x=>x.state==='running');if(a)focusPoint(a.x,a.y,Math.max(1.7,view.targetZoom))}window.dispatchEvent(new Event('localai:agentworld-follow'))}
 // Theater moves the frame to <body>: an ancestor of the Agents page creates a containing block that traps position:fixed.
 let theaterHome=null;
