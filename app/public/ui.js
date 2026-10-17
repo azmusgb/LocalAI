@@ -65,13 +65,13 @@ function renderHead(m){const A=window.LocalAIAgentWords,st=A?.statusSentence(m||
 function doPrimary(action){if(action==='retry')retryMission();else if(action==='result')showResult();else if(action==='watch')window.LocalAIAgentWorld?.follow?.(true);else openStart();renderHead(currentMission)}
 function showResult(){const r=document.querySelector('#agents .agent-results');if(phone.matches)setSnap('full');r?.scrollIntoView?.({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});$('agentResultTab-summary')?.click();$('agentResultBody')?.focus({preventScroll:true})}
 // ⋯ menu: Start a new mission, Watch the replay, Open in Work, Copy result, All missions.
-function setupMenu(){const btn=$('awMoreBtn'),menu=$('awMenu');if(!btn||!menu)return;const items=()=>[...menu.querySelectorAll('[role=menuitem]:not(:disabled)')];
+function setupMenu(){const btn=$('awMoreBtn'),menu=$('awMenu');if(!btn||!menu)return;const items=()=>[...menu.querySelectorAll('[role^=menuitem]:not(:disabled)')];
  const outside=e=>{if(!menu.hidden&&!menu.contains(e.target)&&!btn.contains(e.target)&&!e.target.closest?.('#uxHeaderAction'))close(false)};
  const close=(focus=true)=>{if(menu.hidden)return;menu.hidden=true;document.removeEventListener('pointerdown',outside);btn.setAttribute('aria-expanded','false');if(focus)(phone.matches?document.getElementById('uxHeaderAction'):btn)?.focus()};
  const open=()=>{menu.hidden=false;document.addEventListener('pointerdown',outside);btn.setAttribute('aria-expanded','true');items()[0]?.focus()};
  window.LocalAIAgentMenu={toggle:()=>menu.hidden?open():close()};btn.onclick=()=>menu.hidden?open():close();
  menu.addEventListener('keydown',e=>{const l=items(),i=l.indexOf(document.activeElement);if(e.key==='Escape'){e.preventDefault();close()}else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();l[(i+(e.key==='ArrowDown'?1:-1)+l.length)%l.length]?.focus()}else if(e.key==='Tab')close(false)});
- menu.addEventListener('click',async e=>{const b=e.target.closest('[data-aw-menu]');if(!b)return;close(false);const m=currentMission,a=b.dataset.awMenu;
+ menu.addEventListener('click',async e=>{const v=e.target.closest('[data-aw-view]');if(v){const k=v.dataset.awView;if(k==='theater'||k==='fit')close(false);window.LocalAIAgentWorld?.view?.(k);return}const b=e.target.closest('[data-aw-menu]');if(!b)return;close(false);const m=currentMission,a=b.dataset.awMenu;
   if(a==='new')doPrimary('start');
   else if(a==='replay'&&m)window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:m,play:true}}));
   else if(a==='all')window.LocalAIRouter?.go('#work?kind=missions');
@@ -99,7 +99,7 @@ function closeStart(){const d=$('awStart');if(d?.open)d.close()}
 function renderTeam(){const g=$('agentGoal')?.value.trim()||'',el=$('awTeam');if(!el)return;clearTimeout(teamTimer);if(!g){el.innerHTML='';teamFor='';return}if(g===teamFor)return;
  teamTimer=setTimeout(async()=>{let r;try{const body={goal:g},ids=manualIds();if(ids?.length)body.agentIds=ids;r=(await req('/api/agents/dispatch',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})).routing}catch{return}if(($('agentGoal')?.value.trim()||'')!==g)return;teamFor=g;renderRoute(r);
   const p=window.LocalAIAgentWords?.teamPreview(r?.workers||[]);if(!p?.text){el.innerHTML='';return}el.innerHTML='<span class="aw-team__label">Who’s on the team</span><span class="aw-team__faces">'+p.workers.map(w=>'<img class="awc__avatar" src="'+(window.LocalAIAgentWorld?.avatar?.(w)||'')+'" alt="" width="32" height="32">').join('')+'</span><p>'+esc(p.text)+'</p>'},450)}
-function setupStart(){const d=$('awStart');if(!d)return;d.addEventListener('close',()=>{const r=releaseStart;releaseStart=null;r?.();const o=startOpener;startOpener=null;const back=()=>{if(o?.isConnected)o.focus()};back();(window.LocalAIUI?.afterSheetPop||(fn=>fn()))(()=>setTimeout(back,0))});$('awStartClose').onclick=closeStart;d.addEventListener('click',e=>{if(e.target===d)closeStart()});$('agentGoal')?.addEventListener('input',renderTeam);
+function setupStart(){const d=$('awStart');if(!d)return;d.addEventListener('close',()=>{const r=releaseStart;releaseStart=null;r?.();const o=startOpener;startOpener=null;const back=()=>{if(o?.isConnected&&document.activeElement!==o)o.focus()};back();(window.LocalAIUI?.afterSheetPop||(fn=>fn()))(()=>{back();requestAnimationFrame(()=>requestAnimationFrame(back))})});$('awStartClose').onclick=closeStart;d.addEventListener('click',e=>{if(e.target===d)closeStart()});$('agentGoal')?.addEventListener('input',renderTeam);
  $('awEmptyStart')?.addEventListener('click',openStart);$('awEmptyDemo')?.addEventListener('click',()=>{$('awEmpty').hidden=true;window.LocalAIAgentWorld?.demo?.()});window.LocalAIAgentStart={open:openStart}}
 async function runSpecialist(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter an objective first.');return}const b=$('specialistRunBtn');if(b)b.disabled=true;try{const j=await req('/api/agents/specialist/run',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({agentId:selected,goal,projectId:$('agentProject')?.value||''})});renderRun(j.run)}catch(e){notice('error',e.message)}finally{if(b)b.disabled=false}}
 function setupTabs(){
@@ -1146,11 +1146,11 @@ let root,canvas,ctx,current=null,liveSnapshot=null,sourceType='idle',selected=nu
 let roads=new Set(),agents=new Map(),artifacts=[],packets=[],traffic=[],sparks=[],dust=[],events=[],clouds=[];
 let view={zoom:1,panX:0,panY:0,targetZoom:1,targetPanX:0,targetPanY:0};
 let drag=null,pointers=new Map(),pinch=null,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-let display={labels:true,flows:true,night:false,crew:true,follow:false};
+let display={labels:true,flows:true,night:false,crew:true,follow:true};
 let demo={active:false,running:false,paused:false,stage:0,speed:1,lastAdvance:0,scenario:'success'};
 const REPLAY_KEY='localai.agentworld.replay.v2';
 let replay={frames:[],active:false,index:0,playing:false,lastStep:0,speed:1,sourceMissionId:''};
-let celebrationUntil=0;
+let celebrationUntil=0,focusId='',notes=[];
 // Camera: the map box's CSS size, device pixels per CSS pixel (capped at 2), and `base`, the scale at zoom 1, which
 // covers the box with the city at any aspect ratio (a phone shows a tall slice, a desktop nearly all of it). Pans are
 // CSS pixels; zoom is a multiple of base. The static ground is drawn once into groundCache and copied each frame.
@@ -1214,10 +1214,11 @@ function ensureAgent(w){
  const id=w.id||w.agentId||w.name;if(!id)return;
  let a=agents.get(id),zone=zoneForWorker(w),target=workerTarget(w,zone);
  if(!a){const p=districtCenter('command'),style=ROLE_STYLE[id]||ROLE_STYLE[(w.agentId||'')]||ROLE_STYLE.synthesis;a={id,name:w.name||id,glyph:(w.name||id).trim()[0]?.toUpperCase()||'A',x:p.x,y:p.y,tx:p.x,ty:p.y,path:[],pathI:0,state:'pending',zone:'command',targetZone:zone,color:ROLE_COLOR[id]||'#8fb5e8',model:w.model||'',dir:1,bob:Math.random()*Math.PI*2,step:Math.random()*Math.PI*2,style,activitySeed:Math.random()*10,inside:false,insideZone:null,targetInside:false,transition:'idle'};agents.set(id,a)}
- const old=a.state;a.name=w.name||a.name;a.model=w.model||a.model;a.state=w.state||a.state;a.targetZone=zone;a.color=ROLE_COLOR[id]||a.color;
+ const fresh=!a.seen;a.seen=true;const old=a.state;a.name=w.name||a.name;a.model=w.model||a.model;a.state=w.state||a.state;a.targetZone=zone;a.color=ROLE_COLOR[id]||a.color;
  if(a.zone!==zone||Math.hypot(a.tx-target.x,a.ty-target.y)>2||a.targetInside!==target.inside){a.tx=target.x;a.ty=target.y;a.targetInside=!!target.inside;a.transition=target.inside?'entering':(a.inside?'exiting':'traveling');a.path=routeToTarget(a,target,zone);a.pathI=0;a.zone=zone}
+ if(reduced){a.x=target.x;a.y=target.y;a.path=[];a.inside=!!target.inside;a.insideZone=a.inside?zone:null}
  if(old!==a.state){
-  addEvent(a.name+' → '+humanState(a.state));
+  if(!fresh&&sourceType!=='replay'){focusId=id;const t=window.LocalAIAgentWords?.changeSentence(w,current?.raw||current);if(t)note(t,a.state)}
   if(a.state==='running'){spawnPacket('models',zone,a.color,'MODEL');spawnSpark(target.x,target.y,a.color,18)}
   if(a.state==='complete'){
    spawnArtifact(a);spawnSpark(target.x,target.y,'#75dfa2',26);
@@ -1229,6 +1230,9 @@ function ensureAgent(w){
 function spawnArtifact(a){if(artifacts.some(x=>x.workerId===a.id))return;const p=districtCenter(a.zone),kind=['engineer','code_analyst','deployer'].includes(a.id)?'build':['validator','test_engineer','security_reviewer'].includes(a.id)?'certificate':['documentation','research_agent','ux_analyst'].includes(a.id)?'document':'node';artifacts.push({workerId:a.id,label:a.name,kind,x:p.x+26,y:p.y-14,color:a.color,created:now()})}
 function spawnPacket(from,to,color,label='EVIDENCE'){const p=astar(districtCenter(from),districtCenter(to));if(p.length)packets.push({path:p,i:0,x:p[0].x,y:p[0].y,color,label,done:false,created:now()})}
 function spawnSpark(x,y,color,n=12){for(let i=0;i<n;i++)sparks.push({x,y,vx:(Math.random()-.5)*80,vy:-20-Math.random()*80,life:.7+Math.random()*.7,color,size:1+Math.random()*2})}
+// Notes float over the city's top-left for 4 s, three at most; the story keeps them all.
+function note(text,state){notes.unshift({text,state,at:now()});notes=notes.slice(0,3);syncNotes();setTimeout(syncNotes,4100)}
+function syncNotes(){const h=$('#awcToasts');if(!h)return;const t=now();notes=notes.filter(n=>t-n.at<4000);h.innerHTML=notes.map(n=>`<li data-state="${esc(n.state)}">${esc(n.text)}</li>`).join('')}
 function addEvent(text){events.unshift({text,at:new Date()});events=events.slice(0,12);syncEventFeed()}
 function loadReplay(){try{const saved=JSON.parse(localStorage.getItem(REPLAY_KEY)||'null');if(saved&&Array.isArray(saved.frames)){replay.frames=saved.frames.slice(-120);replay.index=Math.max(0,replay.frames.length-1);replay.speed=saved.speed||1;replay.sourceMissionId=saved.sourceMissionId||''}}catch{}}
 function persistReplay(){try{localStorage.setItem(REPLAY_KEY,JSON.stringify({frames:replay.frames.slice(-120),speed:replay.speed,sourceMissionId:replay.sourceMissionId}))}catch{}}
@@ -1269,7 +1273,7 @@ function applyMission(m){
  current=next;liveSnapshot=next;sourceType='mission';current.workers.forEach(ensureAgent);
  if(!prev||prev.id!==current.id)addEvent('Mission entered Agent World');
  if(next.timeline?.length)primeMissionReplay(next);else recordReplayFrame('mission');
- if(next.status==='complete'&&!wasComplete){const p=districtCenter('command');spawnSpark(p.x,p.y,'#75dfa2',54);celebrationUntil=now()+3600;addEvent('Mission complete · Command Center received final synthesis')}
+ if(next.status==='complete'&&!wasComplete&&prev?.id===next.id&&!reduced){const p=districtCenter('command');spawnSpark(p.x,p.y,'#75dfa2',54);celebrationUntil=now()+3600;addEvent('Mission complete · Command Center received final synthesis')}
  syncHud()
 }
 function engWorkers(run){const s=run.status||'idle';return[{id:'engineer',name:'Engineer',state:s==='running'?'running':s==='needs_attention'?'error':s==='applied'?'complete':'pending'},{id:'validator',name:'Validator',state:s==='running'?'running':s==='awaiting_approval'?'complete':'pending'},{id:'reviewer',name:'Reviewer',state:s==='awaiting_approval'?'running':['approved','apply_requested','applied'].includes(s)?'complete':'pending'},{id:'deployer',name:'Deployer',state:['approved','apply_requested'].includes(s)?'running':s==='applied'?'complete':'pending'},{id:'operator',name:'Operator',state:s==='applied'?'complete':'pending'}]}
@@ -1280,16 +1284,16 @@ function demoMission(){
  return{type:'mission',id:'demo-city-mission',status:demo.scenario==='failure'&&demo.stage>=2?'needs_attention':demo.stage===4?'complete':'running',goal:demo.scenario==='failure'?'Demo: recover a failed documentation handoff':'Demo: audit and improve Local AI mobile UX',workers,error:demo.scenario==='failure'&&demo.stage>=2?'Documentation Agent needs attention':''}
 }
 function applyDemo(){const next=demoMission();if(!demo.active||current?.id!==next.id){agents.clear();artifacts=[];packets=[];sparks=[]}current=next;sourceType='demo';current.workers.forEach(ensureAgent);syncHud();addEvent('Demo: '+DEMO_STAGES[demo.stage].label);recordReplayFrame('demo-stage-'+demo.stage)}
-function startDemo(){demo.active=true;demo.running=true;demo.paused=false;demo.stage=0;demo.lastAdvance=now();applyDemo();fitWorld();syncDemoControls()}
+function startDemo(){document.querySelector('.aw-page')?.classList.add('is-demo');demo.active=true;demo.running=true;demo.paused=false;demo.stage=0;demo.lastAdvance=now();applyDemo();fitWorld();syncDemoControls()}
 function stepDemo(){if(!demo.active)startDemo();else{demo.stage=Math.min(DEMO_STAGES.length-1,demo.stage+1);demo.lastAdvance=now();applyDemo();if(demo.stage===DEMO_STAGES.length-1)demo.running=false}syncDemoControls()}
 function resetDemo(){demo.stage=0;demo.running=false;demo.paused=false;applyDemo();syncDemoControls()}
-function returnLive(){replay.active=false;replay.playing=false;demo.active=false;demo.running=false;demo.paused=false;agents.clear();artifacts=[];packets=[];sparks=[];dust=[];if(liveSnapshot){current=liveSnapshot;sourceType='mission';current.workers.forEach(ensureAgent)}else{current=null;sourceType='idle';idleCrew()}syncHud();syncDemoControls();syncReplay();fitWorld()}
+function returnLive(){document.querySelector('.aw-page')?.classList.remove('is-demo');replay.active=false;replay.playing=false;demo.active=false;demo.running=false;demo.paused=false;agents.clear();artifacts=[];packets=[];sparks=[];dust=[];if(liveSnapshot){current=liveSnapshot;sourceType='mission';current.workers.forEach(ensureAgent)}else{current=null;sourceType='idle';idleCrew()}syncHud();syncDemoControls();syncReplay();fitWorld()}
 function toggleDemoPlay(){if(!demo.active){startDemo();return}demo.running=true;demo.paused=!demo.paused;demo.lastAdvance=now();syncDemoControls()}
 function cycleSpeed(){demo.speed=demo.speed===1?2:demo.speed===2?4:1;syncDemoControls()}
 function syncDemoControls(){if(!root)return;$('#awcDemoPlay').textContent=demo.active&&demo.running&&!demo.paused?'Pause':'Play';$('#awcDemoSpeed').textContent=demo.speed+'×';$('#awcLiveBtn').hidden=!demo.active;$('#awcDemoScenario').value=demo.scenario}
 function syncHud(){
  if(!root)return;const workers=current?.workers||[],done=workers.filter(w=>w.state==='complete').length,running=workers.filter(w=>w.state==='running').length,bad=workers.filter(w=>['error','blocked'].includes(w.state)).length;
- $('#awcSource').textContent=sourceType.toUpperCase();root.dataset.state=bad?'attention':running?'running':current?.status==='complete'?'complete':workers.length?'waiting':'idle';$('#awcStatRun').textContent=running;$('#awcStatDone').textContent=done;$('#awcStatAlert').textContent=bad;$('#awcStatArtifacts').textContent=artifacts.length;syncRoster();paint()
+ root.dataset.source=sourceType;root.dataset.state=bad?'attention':running?'running':current?.status==='complete'?'complete':workers.length?'waiting':'idle';syncRoster();paint()
 }
 // Crew rows, the accessible equivalent of the city: portrait, name, role in words, state, and what they are doing now.
 // The sheet's peek row shows the same crew as small portraits beside the status sentence.
@@ -1320,7 +1324,8 @@ function limitTargetPan(){const p=clampPan(view.targetZoom,view.targetPanX,view.
 function fitWorld(){focusPoint(W/2,H/2,1)}
 function focusPoint(x,y,z=1.8){view.targetZoom=clamp(z,1,ZMAX);const s=sc(view.targetZoom);view.targetPanX=cam.w/2-x*s;view.targetPanY=cam.h/2-y*s;limitTargetPan();syncZoomLabel()}
 function focusActive(){const a=[...agents.values()].find(x=>x.state==='running')||[...agents.values()][0];if(a){selected={type:'agent',id:a.id};syncSelection();focusPoint(a.x,a.y,2)}}
-function focusWorker(id){const a=agents.get(id);if(a){selected={type:'agent',id};syncSelection();focusPoint(a.x,a.y,2)}}
+function userCamera(){if(display.follow)toggleFollow(false)}
+function focusWorker(id){const a=agents.get(id);if(a){if(!externalFocus)userCamera();selected={type:'agent',id};syncSelection();focusPoint(a.x,a.y,2)}}
 function zoomAt(factor,cx=cam.w/2,cy=cam.h/2){const old=sc(view.targetZoom),nz=clamp(view.targetZoom*factor,1,ZMAX),wx=(cx-view.targetPanX)/old,wy=(cy-view.targetPanY)/old;view.targetZoom=nz;view.targetPanX=cx-wx*sc(nz);view.targetPanY=cy-wy*sc(nz);limitTargetPan();syncZoomLabel()}
 function syncZoomLabel(){const l=$('#awcZoomLabel');if(l)l.textContent=Math.round(view.targetZoom*100)+'%'}
 function screenPoint(e){const r=canvas.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top,s=sc(view.zoom);return{px,py,x:(px-view.panX)/s,y:(py-view.panY)/s}}
@@ -1347,34 +1352,17 @@ function updateHover(e){
  const a=agents.get(hit.id);tip.innerHTML='<strong>'+esc(a.name)+'</strong><span>'+esc(humanState(a.state))+' · '+esc(DISTRICTS[a.zone]?.name||a.zone)+'</span>';tip.hidden=false;
  tip.style.left=clamp(e.offsetX+12,8,canvas.clientWidth-176)+'px';tip.style.top=clamp(e.offsetY-54,8,canvas.clientHeight-54)+'px'
 }
-function toggleDisplay(k){display[k]=!display[k];root?.querySelector('[data-awc-display="'+k+'"]')?.setAttribute('aria-pressed',String(display[k]));if(k==='night')root?.classList.toggle('is-night',display.night)}
+function toggleDisplay(k){display[k]=!display[k];document.querySelector('[data-aw-view="'+k+'"]')?.setAttribute('aria-checked',String(display[k]));if(k==='night')root?.classList.toggle('is-night',display.night)}
 function toggleCrew(){display.crew=!display.crew;root?.classList.toggle('crew-hidden',!display.crew);document.querySelector('.aw-page')?.classList.toggle('crew-hidden',!display.crew);$('#awcCrewToggle')?.setAttribute('aria-pressed',String(display.crew))}
-function toggleFollow(on=!display.follow){display.follow=!!on;$('#awcFollow')?.setAttribute('aria-pressed',String(display.follow));if(display.follow)focusActive();window.dispatchEvent(new Event('localai:agentworld-follow'))}
+function toggleFollow(on=!display.follow){display.follow=!!on;$('#awcFollow')?.setAttribute('aria-pressed',String(display.follow));if(display.follow){const a=agents.get(focusId)||[...agents.values()].find(x=>x.state==='running');if(a)focusPoint(a.x,a.y,Math.max(1.7,view.targetZoom))}window.dispatchEvent(new Event('localai:agentworld-follow'))}
 // Theater moves the frame to <body>: an ancestor of the Agents page creates a containing block that traps position:fixed.
 let theaterHome=null;
 function setTheaterHost(on){if(on&&!theaterHome){theaterHome=document.createComment('agent-world');root.before(theaterHome);document.body.appendChild(root)}else if(!on&&theaterHome){theaterHome.replaceWith(root);theaterHome=null}}
-function toggleExpanded(){const on=!root.classList.contains('is-expanded');setTheaterHost(on);root.classList.toggle('is-expanded',on);document.body.classList.toggle('awc-stage-expanded',on);$('#awcExpand').textContent=on?'Exit theater':'Theater';setTimeout(()=>{if(on)focusActive();else fitWorld()},40)}
-function exitExpanded(){if(!root?.classList.contains('is-expanded'))return;root.classList.remove('is-expanded');setTheaterHost(false);document.body.classList.remove('awc-stage-expanded');$('#awcExpand').textContent='Theater';fitWorld()}
+function toggleExpanded(){const on=!root.classList.contains('is-expanded');setTheaterHost(on);root.classList.toggle('is-expanded',on);document.body.classList.toggle('awc-stage-expanded',on);const v=document.querySelector('[data-aw-view="theater"]');if(v)v.textContent=on?'Exit full screen':'Full screen';setTimeout(()=>{if(on)focusActive();else fitWorld()},40)}
+function exitExpanded(){if(!root?.classList.contains('is-expanded'))return;root.classList.remove('is-expanded');setTheaterHost(false);document.body.classList.remove('awc-stage-expanded');const v=document.querySelector('[data-aw-view="theater"]');if(v)v.textContent='Full screen';fitWorld()}
 
 function mount(){
  const host=$('#agentWorldCityMount');if(!host)return;root=document.createElement('section');root.className='awc awc-v3';root.dataset.state='idle';root.innerHTML=`
- <header class="awc__commandbar">
-  <div class="awc__brand">
-   <svg class="awc__mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 22a10 10 0 0 1 20 0z" fill="currentColor"/><rect x="4" y="22" width="24" height="4" rx="2" fill="currentColor"/><path d="M14 12h4v6h-4z" fill="#0b1624" opacity=".35"/></svg>
-   <div class="awc__brandText"><div class="awc__titleRow"><h2 class="awc__title">Agent World</h2><span class="awc__live"><i></i><b id="awcSource">IDLE</b></span></div><div class="awc__sub">Mission construction crew</div></div>
-  </div>
-  <dl class="awc__topstats">
-   <div class="awc__stat is-run"><dt>Working</dt><dd id="awcStatRun">0</dd></div>
-   <div class="awc__stat is-done"><dt>Done</dt><dd id="awcStatDone">0</dd></div>
-   <div class="awc__stat is-alert"><dt>Alerts</dt><dd id="awcStatAlert">0</dd></div>
-   <div class="awc__stat is-art"><dt>Artifacts</dt><dd id="awcStatArtifacts">0</dd></div>
-  </dl>
-  <div class="awc__toolbar" role="toolbar" aria-label="Map controls">
-   <div class="awc__group"><button id="awcFit" type="button" title="Show the whole city (0)">Fit</button><button id="awcCenter" type="button" title="Jump to the active worker (A)">Active</button></div>
-   <div class="awc__group"><button type="button" data-awc-display="labels" aria-pressed="true">Labels</button><button type="button" data-awc-display="flows" aria-pressed="true">Flows</button><button type="button" data-awc-display="night" aria-pressed="false">Night</button></div>
-   <div class="awc__group"><button id="awcCrewToggle" type="button" aria-pressed="true">Crew</button><button id="awcExpand" data-game-primary="true" type="button" title="Full-screen view (T)">Theater</button></div>
-  </div>
- </header>
  <div class="awc__gameShell">
   <div class="awc__mapWrap">
    <canvas id="awcCanvas" tabindex="0" aria-label="Agent World city map. Drag to move, pinch or scroll to zoom, tap a worker or building. The crew list has the same information."></canvas>
@@ -1383,9 +1371,8 @@ function mount(){
     <div class="awc__selection" id="awcSelection" data-empty="true"><span>Select a worker or building</span><small>Click to inspect</small></div>
     <div class="awc__minimap" id="awcMinimap" aria-hidden="true"></div>
    </div>
-   <div class="awc__eventFeed" id="awcEventFeed" aria-live="polite"></div>
-   <div class="awc__legend" aria-label="Map legend"><span><i class="run"></i>Running</span><span><i class="done"></i>Complete</span><span><i class="wait"></i>Waiting</span><span><i class="bad"></i>Attention</span><span><i class="dep"></i>Active dependency</span><span><i class="art"></i>Artifact</span></div>
-   <div class="awc__controls" role="toolbar" aria-label="Zoom and follow"><button id="awcZoomOut" type="button" aria-label="Zoom out">−</button><span id="awcZoomLabel" aria-live="polite">100%</span><button id="awcZoomIn" type="button" aria-label="Zoom in">+</button><button id="awcFollow" type="button" aria-pressed="false" title="Keep the camera on the busy worker (F)">Follow</button></div>
+   <ul class="awc__toasts" id="awcToasts" aria-hidden="true"></ul>
+   <div class="awc__controls" role="toolbar" aria-label="Zoom and follow"><button id="awcZoomOut" type="button" aria-label="Zoom out">−</button><span id="awcZoomLabel" aria-live="polite">100%</span><button id="awcZoomIn" type="button" aria-label="Zoom in">+</button><button id="awcFollow" type="button" aria-pressed="true" title="Keep the camera on the busy worker (F)">Follow</button></div>
   </div>
  </div>`;
  // Districts, replay and the demo are the page's: in the rail (desktop) or the sheet (phone), not over the city.
@@ -1396,30 +1383,32 @@ function mount(){
     <section class="awc__section awc__demoPanel"><div class="awc__opsHead"><h3>Simulation</h3><span class="awc__eyebrow">Try the city without a real mission</span></div><select id="awcDemoScenario" aria-label="Demo scenario"><option value="success">Successful mission</option><option value="failure">Failure and repair</option></select><div class="awc__demoActions"><button id="awcDemoPlay" type="button">Play</button><button id="awcDemoStep" type="button">Step</button><button id="awcDemoReset" type="button">Reset</button><button id="awcDemoSpeed" type="button">1×</button></div><button id="awcLiveBtn" class="awc__liveBtn" type="button" hidden>Return to live mission</button></section>
     <p class="awc__hint">Drag to move, scroll or pinch to zoom, double-click to fit, click a district or worker. Keys: 0 fit · A active · F follow · +/− zoom · T theater.</p>`;
  host.appendChild(root);($('#awCityExtras')||$('.awc__gameShell',root)).appendChild(ops);loadReplay();syncReplay();canvas=$('#awcCanvas');ctx=canvas.getContext('2d');
- $('#awcReplayPrev').onclick=()=>stepReplay(-1);$('#awcReplayPlay').onclick=toggleReplay;$('#awcReplayNext').onclick=()=>stepReplay(1);$('#awcReplaySpeed').onclick=cycleReplaySpeed;$('#awcReplayLive').onclick=returnReplayLive;$('#awcReplayRange').oninput=e=>applyReplayFrame(e.target.value);$('#awcExpand').onclick=toggleExpanded;$('#awcCrewToggle').onclick=toggleCrew;$('#awcFollow').onclick=()=>toggleFollow();$('#awcFit').onclick=fitWorld;$('#awcCenter').onclick=focusActive;$('#awcZoomIn').onclick=()=>zoomAt(1.2);$('#awcZoomOut').onclick=()=>zoomAt(.84);$('#awcDemoPlay').onclick=toggleDemoPlay;$('#awcDemoStep').onclick=stepDemo;$('#awcDemoReset').onclick=resetDemo;$('#awcDemoSpeed').onclick=cycleSpeed;$('#awcLiveBtn').onclick=returnLive;$('#awcDemoScenario').onchange=e=>{demo.scenario=e.target.value;if(demo.active)applyDemo()};
- document.querySelectorAll('[data-awc-display]').forEach(b=>b.onclick=()=>toggleDisplay(b.dataset.awcDisplay));document.querySelectorAll('[data-awc-district]').forEach(b=>b.onclick=()=>{selected={type:'district',id:b.dataset.awcDistrict};syncSelection();const d=DISTRICTS[b.dataset.awcDistrict];focusPoint((d.x+d.w/2)*T,(d.y+d.h/2)*T,1.7)});
- canvas.addEventListener('wheel',e=>{e.preventDefault();const p=screenPoint(e);zoomAt(e.deltaY<0?1.12:.89,p.px,p.py)},{passive:false});
- canvas.addEventListener('dblclick',e=>{e.preventDefault();fitWorld()});
+ $('#awcReplayPrev').onclick=()=>stepReplay(-1);$('#awcReplayPlay').onclick=toggleReplay;$('#awcReplayNext').onclick=()=>stepReplay(1);$('#awcReplaySpeed').onclick=cycleReplaySpeed;$('#awcReplayLive').onclick=returnReplayLive;$('#awcReplayRange').oninput=e=>applyReplayFrame(e.target.value);$('#awcFollow').onclick=()=>toggleFollow();$('#awcZoomIn').onclick=()=>{userCamera();zoomAt(1.2)};$('#awcZoomOut').onclick=()=>{userCamera();zoomAt(.84)};$('#awcDemoPlay').onclick=toggleDemoPlay;$('#awcDemoStep').onclick=stepDemo;$('#awcDemoReset').onclick=resetDemo;$('#awcDemoSpeed').onclick=cycleSpeed;$('#awcLiveBtn').onclick=returnLive;$('#awcDemoScenario').onchange=e=>{demo.scenario=e.target.value;if(demo.active)applyDemo()};
+ document.querySelectorAll('[data-awc-district]').forEach(b=>b.onclick=()=>{selected={type:'district',id:b.dataset.awcDistrict};syncSelection();const d=DISTRICTS[b.dataset.awcDistrict];focusPoint((d.x+d.w/2)*T,(d.y+d.h/2)*T,1.7)});
+ canvas.addEventListener('wheel',e=>{e.preventDefault();userCamera();const p=screenPoint(e);zoomAt(e.deltaY<0?1.12:.89,p.px,p.py)},{passive:false});
+ canvas.addEventListener('dblclick',e=>{e.preventDefault();userCamera();fitWorld()});
  canvas.addEventListener('pointerdown',e=>{try{canvas.setPointerCapture(e.pointerId)}catch{}const p=screenPoint(e);pointers.set(e.pointerId,{x:p.px,y:p.py});if(pointers.size===1){drag={id:e.pointerId,startX:p.px,startY:p.py,panX:view.targetPanX,panY:view.targetPanY,moved:false};pinch=null}else if(pointers.size===2){const ps=[...pointers.values()];pinch={distance:Math.max(1,Math.hypot(ps[1].x-ps[0].x,ps[1].y-ps[0].y)),zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,cx:(ps[0].x+ps[1].x)/2,cy:(ps[0].y+ps[1].y)/2};drag=null}});
  canvas.addEventListener('pointermove',e=>{updateHover(e);if(!pointers.has(e.pointerId))return;const p=screenPoint(e);pointers.set(e.pointerId,{x:p.px,y:p.py});
-  if(pointers.size===2&&pinch){const ps=[...pointers.values()],dist=Math.max(1,Math.hypot(ps[1].x-ps[0].x,ps[1].y-ps[0].y)),cx=(ps[0].x+ps[1].x)/2,cy=(ps[0].y+ps[1].y)/2,nz=clamp(pinch.zoom*dist/pinch.distance,1,ZMAX),wx=(pinch.cx-pinch.panX)/sc(pinch.zoom),wy=(pinch.cy-pinch.panY)/sc(pinch.zoom);view.targetZoom=nz;view.targetPanX=cx-wx*sc(nz);view.targetPanY=cy-wy*sc(nz);limitTargetPan();syncZoomLabel();return}
-  if(!drag||drag.id!==e.pointerId)return;const dx=p.px-drag.startX,dy=p.py-drag.startY;if(Math.abs(dx)+Math.abs(dy)>4)drag.moved=true;view.targetPanX=drag.panX+dx;view.targetPanY=drag.panY+dy;limitTargetPan()});
+  if(pointers.size===2&&pinch){userCamera();const ps=[...pointers.values()],dist=Math.max(1,Math.hypot(ps[1].x-ps[0].x,ps[1].y-ps[0].y)),cx=(ps[0].x+ps[1].x)/2,cy=(ps[0].y+ps[1].y)/2,nz=clamp(pinch.zoom*dist/pinch.distance,1,ZMAX),wx=(pinch.cx-pinch.panX)/sc(pinch.zoom),wy=(pinch.cy-pinch.panY)/sc(pinch.zoom);view.targetZoom=nz;view.targetPanX=cx-wx*sc(nz);view.targetPanY=cy-wy*sc(nz);limitTargetPan();syncZoomLabel();return}
+  if(!drag||drag.id!==e.pointerId)return;const dx=p.px-drag.startX,dy=p.py-drag.startY;if(Math.abs(dx)+Math.abs(dy)>4){drag.moved=true;userCamera()}view.targetPanX=drag.panX+dx;view.targetPanY=drag.panY+dy;limitTargetPan()});
  // A tap selects; two taps in quick succession fit the city (touch has no double-click).
- canvas.addEventListener('pointerup',e=>{const wasSingle=pointers.size===1,moved=drag?.moved||false;pointers.delete(e.pointerId);if(wasSingle&&!moved){if(e.pointerType==='touch'&&e.timeStamp-lastTap<320){lastTap=0;fitWorld()}else{lastTap=e.timeStamp;selectAt(e)}}if(pointers.size===1){const[id,p]=[...pointers.entries()][0];drag={id,startX:p.x,startY:p.y,panX:view.targetPanX,panY:view.targetPanY,moved:true}}else drag=null;if(pointers.size<2)pinch=null});
+ canvas.addEventListener('pointerup',e=>{const wasSingle=pointers.size===1,moved=drag?.moved||false;pointers.delete(e.pointerId);if(wasSingle&&!moved){if(e.pointerType==='touch'&&e.timeStamp-lastTap<320){lastTap=0;userCamera();fitWorld()}else{lastTap=e.timeStamp;selectAt(e)}}if(pointers.size===1){const[id,p]=[...pointers.entries()][0];drag={id,startX:p.x,startY:p.y,panX:view.targetPanX,panY:view.targetPanY,moved:true}}else drag=null;if(pointers.size<2)pinch=null});
  canvas.addEventListener('pointercancel',e=>{pointers.delete(e.pointerId);drag=null;if(pointers.size<2)pinch=null});canvas.addEventListener('pointerleave',()=>{const t=$('#awcTooltip');if(t)t.hidden=true});
- canvas.addEventListener('keydown',e=>{if(e.key==='+'||e.key==='=')zoomAt(1.2);if(e.key==='-')zoomAt(.84);if(e.key==='0')fitWorld();if(e.key==='f')toggleFollow();if(e.key==='a')focusActive();if(e.key==='t')toggleExpanded();if(e.key==='Enter'&&hovered){selected=hovered;syncSelection()}});document.addEventListener('keydown',e=>{if(e.key==='Escape')exitExpanded()});
+ canvas.addEventListener('keydown',e=>{if(['+','=','-','0'].includes(e.key))userCamera();if(e.key==='+'||e.key==='=')zoomAt(1.2);if(e.key==='-')zoomAt(.84);if(e.key==='0')fitWorld();if(e.key==='f')toggleFollow();if(e.key==='a')focusActive();if(e.key==='t')toggleExpanded();if(e.key==='Enter'&&hovered){selected=hovered;syncSelection()}});document.addEventListener('keydown',e=>{if(e.key==='Escape')exitExpanded()});
  // The Agents panel answers our select event with a focus event; don't echo it back as another select.
  window.addEventListener('localai:agentworld-focus',e=>{externalFocus=true;try{focusWorker(e.detail?.workerId)}finally{externalFocus=false}});
  if('ResizeObserver' in window)new ResizeObserver(resize).observe($('.awc__mapWrap',root));window.addEventListener('resize',resize);
- window.LocalAIAgentWorld={camera:()=>({zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,...cam}),avatar,following:()=>display.follow,follow:on=>toggleFollow(on),demo:()=>{startDemo();syncDemoControls()},busy:()=>demo.active||replay.active};
+ window.LocalAIAgentWorld={camera:()=>({zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,shown:{zoom:view.zoom,panX:view.panX,panY:view.panY},...cam}),avatar,following:()=>display.follow,follow:on=>toggleFollow(on),demo:()=>{startDemo();syncDemoControls()},busy:()=>demo.active||replay.active,display:()=>({...display}),view:k=>k==='theater'?toggleExpanded():k==='fit'?(userCamera(),fitWorld()):toggleDisplay(k),walking:()=>[...agents.values()].filter(workerIsMoving).length,
+  moments:()=>({flags:[...agents.values()].filter(a=>a.state==='complete').map(a=>a.id),warnings:[...agents.values()].filter(a=>a.state==='error'||a.state==='blocked').map(a=>a.id),fireworks:celebrationUntil>now()})};
  document.body.classList.add('agent-world-city-ready');buildRoads();seedAmbient();syncDemoControls();syncHud();syncEventFeed();resize();start();bootstrap()
 }
 const IDLE=[['router','Team lead'],['ux_analyst','UX Analyst'],['documentation','Documentation Agent'],['research_agent','Research Agent'],['engineer','Engineer']];
 function idleCrew(){if(current||agents.size)return;for(const[id,name]of IDLE)ensureAgent({id,name,state:'pending'})}
 function seedAmbient(){traffic=[{x:2*T,y:13.5*T,v:28,axis:'x',dir:1,color:'#6aaeff'},{x:36*T,y:14.5*T,v:23,axis:'x',dir:-1,color:'#ffc56b'},{x:25.5*T,y:3*T,v:20,axis:'y',dir:1,color:'#c18cff'},{x:13.5*T,y:21*T,v:18,axis:'y',dir:-1,color:'#75dfa2'}];clouds=[{x:160,y:80,s:1.1},{x:880,y:130,s:.8},{x:560,y:40,s:.6}]}
 function update(dt,ts){
- if(display.follow&&!drag&&!pointers.size){const a=[...agents.values()].find(q=>q.state==='running');if(a){view.targetZoom=Math.max(view.targetZoom,1.7);view.targetPanX=cam.w/2-a.x*sc(view.targetZoom);view.targetPanY=cam.h/2-a.y*sc(view.targetZoom);limitTargetPan()}}
- view.zoom+= (view.targetZoom-view.zoom)*Math.min(1,dt*10);view.panX+=(view.targetPanX-view.panX)*Math.min(1,dt*10);view.panY+=(view.targetPanY-view.panY)*Math.min(1,dt*10);
+ if(display.follow&&!drag&&!pointers.size){const f=agents.get(focusId),a=f&&f.state!=='pending'?f:[...agents.values()].find(q=>q.state==='running');if(a){view.targetZoom=Math.max(view.targetZoom,1.7);view.targetPanX=cam.w/2-a.x*sc(view.targetZoom);view.targetPanY=cam.h/2-a.y*sc(view.targetZoom);limitTargetPan()}}
+ const k=reduced?1:Math.min(1,dt*4);view.zoom+=(view.targetZoom-view.zoom)*k;view.panX+=(view.targetPanX-view.panX)*k;view.panY+=(view.targetPanY-view.panY)*k;
+ if(celebrationUntil>ts&&ts-(update.lastBurst||0)>380){update.lastBurst=ts;const d=DISTRICTS.command,cx=(d.x+d.w/2)*T+(Math.random()-.5)*160,cy=d.y*T-60-Math.random()*70,c=['#75dfa2','#71b7ff','#f5c04f','#ff8494','#c498ff'][Math.floor(Math.random()*5)];for(let i=0;i<26;i++){const r=Math.random()*Math.PI*2,v=60+Math.random()*70;sparks.push({x:cx,y:cy,vx:Math.cos(r)*v,vy:Math.sin(r)*v-30,life:.9+Math.random()*.6,color:c,size:2+Math.random()*1.5})}}
  for(const a of agents.values()){
   const moving=workerIsMoving(a),running=a.state==='running'&&moving;
   a.motion=running?'running':moving?'walking':a.state==='running'?'working':'idle';
@@ -1788,6 +1777,7 @@ function drawRunningWorkerSprite(a,ts){
  ctx.save();ctx.shadowColor=stateColor;ctx.shadowBlur=14;ctx.fillStyle=stateColor;ctx.beginPath();ctx.arc(x,y-40,3+(Math.sin(ts/150)+1),0,Math.PI*2);ctx.fill();ctx.restore()
 }
 function drawWorkerSprite(a,ts){
+ if(a.state==='error'&&!workerIsMoving(a)){ctx.save();ctx.translate(a.x,a.y+14);ctx.scale(1,.78);ctx.translate(-a.x,-a.y-14)}else ctx.save();
  const s=roleStyle(a),moving=workerIsMoving(a),running=workerIsRunning(a),walk=moving?Math.sin(a.step)*2.4:0,idle=!moving?Math.sin(ts/680+a.activitySeed)*.7:0,bob=(a.state==='running'?Math.sin(a.bob)*1.1:idle),x=a.x,y=a.y+bob,sel=selected?.type==='agent'&&selected.id===a.id,stateColor=['error','blocked'].includes(a.state)?'#ff7383':a.state==='complete'?'#75dfa2':a.state==='pending'?'#6d7985':s.accent;
  if(sel){ctx.save();ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.shadowColor=stateColor;ctx.shadowBlur=14;ctx.beginPath();ctx.ellipse(x,y+18,21,10,0,0,Math.PI*2);ctx.stroke();ctx.restore()}
  if(running){drawRunningWorkerSprite(a,ts)}
@@ -1808,6 +1798,7 @@ function drawWorkerSprite(a,ts){
  const isHover=hovered?.type==='agent'&&hovered.id===a.id;
  if(display.labels&&(sel||isHover)){const labelW=Math.min(110,Math.max(58,a.name.length*6+16));ctx.fillStyle='rgba(5,10,16,.92)';ctx.fillRect(x-labelW/2,y+25,labelW,17);txt(a.name,x,y+33,'#eef6ff',8)}
  if(sel||(a.state==='running'&&view.zoom>1.55))drawWorkerBubble(a,x,y-1,ts)
+ ctx.restore()
 }
 function drawAgents(ts){
  for(const d of dust){ctx.globalAlpha=clamp(d.life/.42,0,1)*.5;ctx.fillStyle=display.night?'#70808c':'#c5b99a';ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1;for(const a of agents.values()){drawWorkerSprite(a,ts);drawWorkingAction(a,ts)}
@@ -1822,11 +1813,14 @@ function drawAgents(ts){
  }
  for(const s of sparks){ctx.globalAlpha=clamp(s.life,0,1);px(s.x,s.y,s.size,s.size,s.color)}ctx.globalAlpha=1
 }
-function drawClouds(ts){if(display.night)return;ctx.save();ctx.globalAlpha=.08;for(const c of clouds){const x=(c.x+ts*.006*c.s)%W,y=c.y;ctx.fillStyle='#d8f0ff';ctx.beginPath();ctx.arc(x,y,26*c.s,0,Math.PI*2);ctx.arc(x+28*c.s,y+6,20*c.s,0,Math.PI*2);ctx.arc(x-25*c.s,y+8,17*c.s,0,Math.PI*2);ctx.fill()}ctx.restore()}function drawCommandCelebration(ts){
+function drawClouds(ts){if(display.night)return;ctx.save();ctx.globalAlpha=.08;for(const c of clouds){const x=(c.x+ts*.006*c.s)%W,y=c.y;ctx.fillStyle='#d8f0ff';ctx.beginPath();ctx.arc(x,y,26*c.s,0,Math.PI*2);ctx.arc(x+28*c.s,y+6,20*c.s,0,Math.PI*2);ctx.arc(x-25*c.s,y+8,17*c.s,0,Math.PI*2);ctx.fill()}ctx.restore()}function drawMoments(ts){let i=0;for(const a of agents.values()){if(a.state!=='complete'&&a.state!=='error'&&a.state!=='blocked')continue;const d=DISTRICTS[a.zone];if(!d)continue;
+ if(a.state==='complete'){const fx=d.x*T+18+(i++%4)*16,fy=d.y*T-34,wave=reduced?0:Math.sin(ts/220+fx)*2;px(fx,fy,2,22,'#cfd8e0');pathPoly([[fx+2,fy],[fx+14,fy+4+wave],[fx+2,fy+9]],a.color||'#3ed598')}
+ else{const x=a.x+16,y=a.y-30,bl=reduced||Math.floor(ts/500)%2===0;pathPoly([[x,y-12],[x+11,y+8],[x-11,y+8]],bl?'#ffc640':'#e0a020');txt('!',x,y+2,'#2a1600',11)}}}
+function drawCommandCelebration(ts){
  if(ts>celebrationUntil)return;const d=DISTRICTS.command,x=(d.x+d.w/2)*T,y=d.y*T-10,life=clamp((celebrationUntil-ts)/3600,0,1);
  ctx.save();ctx.globalAlpha=Math.min(1,life*2);
  for(let i=0;i<18;i++){const a=i/18*Math.PI*2,r=18+(1-life)*90,c=i%3===0?'#75dfa2':i%3===1?'#71b7ff':'#f5c04f';px(x+Math.cos(a)*r,y+Math.sin(a)*r*.55,4,4,c)}
- ctx.strokeStyle='rgba(117,223,162,'+(.35+.35*Math.sin(ts/160))+')';ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,20+(1-life)*28,0,Math.PI*2);ctx.stroke();txt('MISSION COMPLETE',x,y-30,'#eafff1',8);ctx.restore()
+ ctx.strokeStyle='rgba(117,223,162,'+(.35+.35*Math.sin(ts/160))+')';ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,20+(1-life)*28,0,Math.PI*2);ctx.stroke();txt('DONE!',x,y-30,'#eafff1',9);ctx.restore()
 }
 
 function drawMinimap(){
@@ -1835,7 +1829,7 @@ function drawMinimap(){
  el.innerHTML='<span></span>'+markers;
 }
 function draw(ts){
- if(!ctx||!cam.w)return;const s=sc(view.zoom);ctx.setTransform(cam.dpr,0,0,cam.dpr,0,0);ctx.clearRect(0,0,cam.w,cam.h);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(s,s);drawGround(ts);drawFlows(ts);drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,ts);drawBuilding(id,d,ts);drawInterior(id,d,ts);drawWorksite(id,d,ts)}drawAgents(ts);drawCommandCelebration(ts);drawClouds(ts);if(!current&&!display.night){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'rgba(255,170,90,.20)');g.addColorStop(.6,'rgba(255,140,70,.08)');g.addColorStop(1,'rgba(120,60,90,.14)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H)}if(display.night){ctx.fillStyle='rgba(3,7,14,.18)';ctx.fillRect(0,0,W,H)}ctx.restore()
+ if(!ctx||!cam.w)return;const s=sc(view.zoom);ctx.setTransform(cam.dpr,0,0,cam.dpr,0,0);ctx.clearRect(0,0,cam.w,cam.h);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(s,s);drawGround(ts);drawFlows(ts);drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,ts);drawBuilding(id,d,ts);drawInterior(id,d,ts);drawWorksite(id,d,ts)}drawAgents(ts);drawMoments(ts);drawCommandCelebration(ts);drawClouds(ts);if(!current&&!display.night){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'rgba(255,170,90,.20)');g.addColorStop(.6,'rgba(255,140,70,.08)');g.addColorStop(1,'rgba(120,60,90,.14)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H)}if(display.night){ctx.fillStyle='rgba(3,7,14,.18)';ctx.fillRect(0,0,W,H)}ctx.restore()
 }
 // Animate only while the city canvas is on screen and the tab is visible; at most one rAF chain.
 let io=null,observed=null,onScreen=!('IntersectionObserver' in window);

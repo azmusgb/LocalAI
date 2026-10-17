@@ -79,13 +79,11 @@ await check('Crew and story are readable and do not overlap the city at desktop 
   }
   await page.setViewportSize({width:1440,height:1000});
 });
-await check('Agent World theater, crew and follow controls',async()=>{
-  await page.locator('#awcCrewToggle').click();
-  assert.ok((await page.locator('.awc-v3').getAttribute('class')).includes('crew-hidden'));
-  await page.locator('#awcCrewToggle').click();
+await check('Agent World full screen and follow controls',async()=>{
+  if(await page.locator('#awcFollow').getAttribute('aria-pressed')==='true')await page.locator('#awcFollow').click();
   await page.locator('#awcFollow').click();
   assert.equal(await page.locator('#awcFollow').getAttribute('aria-pressed'),'true');
-  await page.locator('#awcExpand').click();
+  await page.locator('#awMoreBtn').click();await page.locator('#awMenu [data-aw-view="theater"]').click();
   assert.ok((await page.locator('.awc-v3').getAttribute('class')).includes('is-expanded'));
   await page.keyboard.press('Escape');
   assert.ok(!(await page.locator('.awc-v3').getAttribute('class')).includes('is-expanded'));
@@ -139,7 +137,7 @@ await check('the web-search choice reaches the mission request',async()=>{
 });
 await check('interactive demo controls',async()=>{
   await page.locator('#awcDemoPlay').click();
-  assert.equal(await page.locator('#awcSource').innerText(),'DEMO');
+  assert.equal(await page.locator('.awc-v3').getAttribute('data-source'),'demo');
   await page.locator('#awcDemoStep').click();
   await page.locator('#awcDemoSpeed').click();
   assert.equal(await page.locator('#awcDemoSpeed').innerText(),'2×');
@@ -152,7 +150,7 @@ await check('interactive demo controls',async()=>{
 await check('desktop zoom controls',async()=>{
   await page.locator('#awcZoomIn').click();
   assert.notEqual(await page.locator('#awcZoomLabel').innerText(),'100%');
-  await page.locator('#awcFit').click();
+  await page.locator('#awMoreBtn').click();await page.locator('#awMenu [data-aw-view="fit"]').click();
   assert.equal(await page.locator('#awcZoomLabel').innerText(),'100%');
 });
 await check('Living Worksite replay controls are interactive',async()=>{
@@ -181,7 +179,6 @@ await check('Replay supports event stepping, speed, and historical mission timel
   await page.locator('#awcReplayLive').click();
 });
 await check('Operational Agent World exposes durable observability semantics',async()=>{
-  assert.match(await page.locator('.awc__legend').innerText(),/Active dependency/i);
   await page.locator('#awcDemoPlay').click();
   await page.locator('#awcDemoStep').click();
   await page.locator('#awcDemoStep').click();
@@ -207,8 +204,7 @@ await check('Agent World keeps same-district workers separated',async()=>{
   assert.ok(rosterCount>=4);
   await page.locator('#awcLiveBtn').click();
 });
-await check('Agent World uses construction-crew presentation',async()=>{
-  assert.match(await page.locator('.awc__sub').innerText(),/construction crew/i);
+await check('Agent World crew have portraits',async()=>{
   await page.locator('#awcDemoPlay').click();
   await page.waitForTimeout(150);
   assert.ok(await page.locator('#awcRoster .awc__avatar').count()>=4);
@@ -224,14 +220,14 @@ await check('Agent World worker identities render in roster',async()=>{
 await check('Agent World v3 HUD and simulation controls',async()=>{
   await page.locator('#awcRoster').waitFor({state:'visible'});
   await page.locator('#awcMinimap').waitFor({state:'visible'});
-  await page.locator('[data-awc-display="night"]').click();
-  assert.equal(await page.locator('[data-awc-display="night"]').getAttribute('aria-pressed'),'true');
-  await page.locator('[data-awc-display="night"]').click();
+  await page.locator('#awMoreBtn').click();await page.locator('#awMenu [data-aw-view="night"]').click();
+  assert.equal(await page.locator('#awMenu [data-aw-view="night"]').getAttribute('aria-checked'),'true');
+  await page.locator('#awMenu [data-aw-view="night"]').click();await page.keyboard.press('Escape');
   await page.locator('[data-awc-district="ux"]').click();
-  assert.match(await page.locator('#awcSelection').innerText(),/UX Lab/i);
-  await page.locator('[data-awc-display="flows"]').click();
-  assert.equal(await page.locator('[data-awc-display="flows"]').getAttribute('aria-pressed'),'false');
-  await page.locator('[data-awc-display="flows"]').click();
+  assert.match(await page.locator('#awcSelection').textContent(),/UX Lab/i);
+  await page.locator('#awMoreBtn').click();await page.locator('#awMenu [data-aw-view="flows"]').click();
+  assert.equal(await page.locator('#awMenu [data-aw-view="flows"]').getAttribute('aria-checked'),'false');
+  await page.locator('#awMenu [data-aw-view="flows"]').click();await page.keyboard.press('Escape');
 });
 await page.close();
 
@@ -280,7 +276,7 @@ await check('mobile demo remains user-controlled',async()=>{
   await mobile.locator('#awcDemoPlay').scrollIntoViewIfNeeded();
   await mobile.locator('#awcDemoPlay').click();
   await mobile.locator('#awcDemoStep').click();
-  assert.equal(await mobile.locator('#awcSource').innerText(),'DEMO');
+  assert.equal(await mobile.locator('.awc-v3').getAttribute('data-source'),'demo');
 });
 await mobile.close();
 await check('the mission strip and Agent World show the same mission while the specialist catalog is slow',async()=>{

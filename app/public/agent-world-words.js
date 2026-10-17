@@ -103,12 +103,7 @@ function storyEvents(m){
   if(!prev)say(e.at,'router','The team lead picked the team: '+team(ws),'done');
   for(const w of ws){
    if(key(w)==='router')continue;const id=idOf(w),n=workerName(w),was=before(id);
-   if(w.state!==was){
-    if(w.state==='running')say(e.at,id,n+' started '+activity(w),'working');
-    else if(w.state==='complete')say(e.at,id,n+' finished','done');
-    else if(w.state==='error')say(e.at,id,n+' stopped: '+workerError(w,snap),'bad');
-    else if(w.state==='blocked')say(e.at,id,n+' '+workerStep(w,snap).replace(/^C/,'c'),'bad');
-   }
+   if(w.state!==was){const c=changeSentence(w,snap);if(c)say(e.at,id,c,TONE[w.state])}
    if(w.state==='pending'&&!waited.has(id)){const deps=(w.dependsOn||[]).map(d=>ws.find(x=>idOf(x)===d)).filter(Boolean);
     if(deps.some(d=>d.state==='running')){waited.add(id);say(e.at,id,n+' is waiting for '+names(deps.filter(d=>d.state!=='complete').map(workerName)),'wait')}}
   }
@@ -118,6 +113,8 @@ function storyEvents(m){
  }
  return out.reverse();
 }
+// One worker's new state as a sentence (the story and the city's floating notes): "UX Analyst started reviewing the screens".
+function changeSentence(w,m){const n=workerName(w);return w.state==='running'?n+' started '+activity(w):w.state==='complete'?n+' finished':w.state==='error'?n+' stopped: '+workerError(w,m):w.state==='blocked'?n+' '+workerStep(w,m).replace(/^C/,'c'):''}
 const TONE={running:'working',complete:'done',error:'bad',blocked:'bad',pending:'wait'};
 // Consecutive sentences about one worker read as one group under that worker.
 function groupStory(list){const g=[];for(const e of list||[]){const last=g[g.length-1];if(last&&e.workerId&&last.workerId===e.workerId)last.items.push(e);else g.push({workerId:e.workerId||'',items:[e]})}return g}
@@ -130,7 +127,7 @@ function teamPreview(list){
  const parts=ws.map((w,i)=>{const n=workerName(w),a=/^[AEIOU]/i.test(n)&&!/^U[A-Z]/.test(n)?'an ':'a ';return(i?a:a.charAt(0).toUpperCase()+a.slice(1))+n+' will '+will(w)});
  return{workers:ws,text:parts.join('; ')+'.'};
 }
-const api={teamPreview,workerName,workerRole,workerStep,stateBadge,statusSentence,storyEvents,groupStory,errorWords,duration};
+const api={changeSentence,teamPreview,workerName,workerRole,workerStep,stateBadge,statusSentence,storyEvents,groupStory,errorWords,duration};
 root.LocalAIAgentWords=api;
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);
