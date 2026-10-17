@@ -1,7 +1,7 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 
-// System lists: Approvals shows waiting items first with resolved ones folded away; the Audit log's Clear button is not the page's headline action.
+// System lists: the Inbox shows waiting approvals first with decided ones folded into History; the Audit log's Clear button is not the page's headline action.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch({ headless: true });
 const failures = [];
@@ -13,32 +13,33 @@ let items = [card('a1', 'pending'), card('a2', 'approved'), card('a3', 'rejected
 const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 const errors = []; page.on('pageerror', e => errors.push(e.message));
 await page.route('**/api/approvals', r => r.fulfill({ json: { items } }));
-await page.goto(base + '/#approvals', { waitUntil: 'domcontentloaded' });
+await page.route('**/api/notifications', r => r.fulfill({ json: { items: [], unread: 0 } }));
+await page.goto(base + '/#inbox', { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => typeof window.showView === 'function');
-const open = async () => { await page.evaluate(() => window.showView('approvals')); await page.waitForSelector('#approvals.active #approvalList .approval-card, #approvals.active #approvalList .empty'); };
+const open = async () => { await page.evaluate(() => window.showView('inbox')); await page.waitForSelector('#inbox.active #inboxList .inbox-waiting, #inbox.active #inboxList .empty'); };
 
-await check('Approvals: waiting items are listed; resolved ones sit in a closed "Resolved (2)" section', async () => {
+await check('Inbox: waiting approvals come first; decided ones sit in a closed "History (2)" section', async () => {
   await open();
-  await page.waitForSelector('#approvalList .approval-card.pending');
-  const top = await page.locator('#approvalList > .approval-card').evaluateAll(cs => cs.map(c => c.className));
-  assert.deepEqual(top, ['approval-card pending']);
-  const resolved = page.locator('#approvalList details.approval-resolved');
-  assert.match(await resolved.locator('summary').innerText(), /Resolved \(2\)/);
-  assert.equal(await resolved.evaluate(d => d.open), false);
+  await page.waitForSelector('#inboxList .inbox-waiting li');
+  assert.deepEqual(await page.locator('#inboxList .inbox-waiting li').allInnerTexts().then(t => t.map(x => /Approval a1/.test(x))), [true]);
+  const history = page.locator('#inboxList details.inbox-resolved');
+  assert.match(await history.locator('summary').innerText(), /History \(2\)/);
+  assert.equal(await history.evaluate(d => d.open), false);
 });
 
-await check('Approvals: Approve confirms in the owner\'s words', async () => {
-  await page.route('**/api/approvals/decide', r => r.fulfill({ json: { item: { id: 'a1', status: 'approved' } } }));
-  await page.locator('#approvalList [data-app-ok="a1"]').click();
+await check('Inbox: Approve in the sheet confirms in the owner\'s words', async () => {
+  await page.route('**/api/approvals/decide', r => { items[0] = card('a1', 'approved'); r.fulfill({ json: { item: { id: 'a1', status: 'approved' } } }); });
+  await page.locator('#inboxList [data-approval-open="a1"]').click();
+  await page.locator('#approvalSheet [data-decide="approved"]').click();
   await page.waitForFunction(() => document.getElementById('toast').textContent === 'Approved — Local AI will apply it');
 });
 
-await check('Approvals: with nothing pending it says so, above the resolved section', async () => {
+await check('Inbox: with nothing waiting it says so, above the history', async () => {
   items = [card('a2', 'approved')];
   await page.evaluate(() => window.showView('home'));
   await open();
-  await page.waitForFunction(() => /Nothing is waiting for you/.test(document.getElementById('approvalList').textContent));
-  assert.match(await page.locator('#approvalList details.approval-resolved summary').innerText(), /Resolved \(1\)/);
+  await page.waitForFunction(() => /Nothing needs you right now/.test(document.getElementById('inboxList').textContent));
+  assert.match(await page.locator('#inboxList details.inbox-resolved summary').innerText(), /History \(1\)/);
 });
 
 await check('Audit log: Clear user activity is not in the page header', async () => {

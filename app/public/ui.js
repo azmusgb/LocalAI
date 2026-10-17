@@ -912,10 +912,8 @@ function buildContext(){
  // Unread alerts plus approvals waiting, reported by app.js after it loads Inbox or Approvals.
  let inbox={unread:0,pending:0};
  window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');
-  // The Approvals tab carries the same number as the bell, so the two never disagree.
-  const tab=REG.VIEWS.find(v=>v.id==='approvals');qa('[data-ux-tab="approvals"]').forEach(t=>{t.textContent=inbox.pending?`${tab?.tab||'Approvals'} · ${inbox.pending}`:(tab?.tab||'Approvals')});
   if(!b)return;b.hidden=total===0;b.dataset.empty=String(total===0);q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',total?`Inbox, ${total} waiting: ${inbox.unread} unread, ${inbox.pending} approvals waiting`:'Inbox')});
- q('#uxInboxBtn')?.addEventListener('click',()=>navigate(inbox.pending&&!inbox.unread?'approvals':'inbox'));
+ q('#uxInboxBtn')?.addEventListener('click',()=>navigate('inbox')); // one queue (D8): the bell's one number opens the Inbox, which lists what waits first
 }
 // A page's single action (Health: Check again) shows as an icon in the phone header while that page is open.
 const headerActions=new Map();
@@ -1969,7 +1967,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
 
   async function act(fn) {
-    try { await fn(); await load(); } catch (e) { (window.toast || alert)(e.message); }
+    // app.js is a module, so there is no window.toast: say it in the shared toast, never a blocking alert().
+    try { await fn(); await load(); } catch (e) { const m = `Couldn't do that: ${e.message}`; if (window.LocalAIUI?.toast) window.LocalAIUI.toast(m); else toast(m); }
   }
 
   function bind() {
@@ -3322,7 +3321,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // re-applies the limit; "Show more" is remembered per list until the page reloads.
 (() => {
   'use strict';
-  const LIMITS = { changeList: 8, engineeringRuns: 6, inboxList: 10, approvalList: 10, activityList: 15, runList: 10, issueList: 10, libraryGrid: 12, knowledgeList: 10, qualityEvents: 10, monitorList: 10, automationList: 10 };
+  const LIMITS = { changeList: 8, engineeringRuns: 6, inboxList: 10, activityList: 15, runList: 10, issueList: 10, libraryGrid: 12, knowledgeList: 10, qualityEvents: 10, monitorList: 10, automationList: 10 };
   const phone = window.matchMedia('(max-width: 760px)');
   const observers = new Map();
 

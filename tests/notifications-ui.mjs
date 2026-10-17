@@ -159,28 +159,47 @@ for (const [tag, viewport, mobile] of [['phone', { width: 390, height: 844 }, tr
   await context.close();
 });
 
-// One count everywhere: the bell, the Inbox pill, the Approvals tab and the Alerts row agree on what is waiting.
-await check('two approvals and no alerts: Alerts shows "2 approvals waiting", the tab reads "Approvals · 2", the bell says 2', async () => {
+// One queue (D8): Needs you is where you decide; the Inbox is the history, its own page named "Inbox", and the bell carries
+// one number. Waiting approvals head the Inbox and open the same sheet as Needs you; decided ones are in its history.
+await check('two approvals and no alerts: the Inbox lists them and opens the sheet, the bell says 2, #approvals opens the Inbox', async () => {
   const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
   await context.addInitScript(() => localStorage.setItem('localai.firstRun.done', '1'));
   const page = await context.newPage({ serviceWorkers: 'block' });
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+  const items = [{ id: 'a1', status: 'pending', title: 'Run npm install', detail: 'Host command', risk: 'host' }, { id: 'a2', status: 'pending', title: 'Apply change', detail: 'Writes a file', risk: 'medium' }, { id: 'a0', status: 'rejected', title: 'Old request', detail: '', risk: 'low' }];
   await page.route('**/api/notifications', (route) => route.fulfill({ json: { items: [], unread: 0 } }));
-  await page.route('**/api/approvals', (route) => route.fulfill({ json: { items: [{ id: 'a1', status: 'pending', title: 'Run npm install', detail: 'Host command', risk: 'host' }, { id: 'a2', status: 'pending', title: 'Apply change', detail: 'Writes a file', risk: 'medium' }] } }));
-  await page.goto(base + '/#inbox', { waitUntil: 'networkidle' });
+  await page.route('**/api/approvals', (route) => route.fulfill({ json: { items } }));
+  await page.route('**/api/approvals/decide', (route) => { const b = route.request().postDataJSON(); items.find((a) => a.id === b.id).status = b.decision; route.fulfill({ json: { item: {} } }); });
+  await page.goto(base + '/#approvals', { waitUntil: 'networkidle' });
   await page.waitForFunction(() => typeof window.showView === 'function');
-  await page.evaluate(() => window.showView('inbox'));
-  const row = page.locator('#inboxList [data-goto="approvals"]');
-  await row.waitFor();
-  assert.match(await row.innerText(), /2 approvals waiting/);
-  assert.match(await row.innerText(), /Approvals/);
+  await page.waitForSelector('#inbox.active');
+  assert.equal(await page.evaluate(() => location.hash), '#inbox');
+  assert.equal(await page.locator('#approvals').count(), 0, 'Approvals is no longer a page of its own');
+  assert.equal(await page.locator('#inbox h1').innerText(), 'Inbox');
+  assert.doesNotMatch(await page.locator('#inbox').innerText(), /\bAlerts\b/);
+  const waiting = page.locator('#inboxList .inbox-waiting');
+  await waiting.waitFor();
+  assert.match(await waiting.innerText(), /2 approvals waiting/);
+  assert.deepEqual(await waiting.locator('li button').evaluateAll((bs) => bs.map((b) => b.getAttribute('aria-label') || b.textContent)), ['Review: Run npm install', 'Review: Apply change']);
   assert.doesNotMatch(await page.locator('#inboxList').innerText(), /Nothing needs you/);
   assert.equal(await page.locator('#inboxUnread').innerText(), '2 waiting');
-  assert.equal(await page.locator('#inbox .ux-tabs [data-ux-tab="approvals"]').innerText(), 'Approvals · 2');
   assert.equal(await page.locator('#uxInboxCount').innerText(), '2');
-  await row.click();
-  await page.waitForSelector('#approvals.active');
-  assert.equal(await page.locator('#approvalCount').innerText(), '2 waiting');
+  // History holds what was decided.
+  const history = page.locator('#inboxList details.inbox-resolved');
+  assert.match(await history.locator('summary').innerText(), /History \(1\)/);
+  assert.match(await history.evaluate((d) => d.textContent), /Old request[\s\S]*Rejected/);
+  // Review opens the one approval sheet; deciding there updates the Inbox and the bell.
+  await page.getByRole('button', { name: 'Review: Run npm install' }).click();
+  await page.waitForSelector('#approvalSheet[open]');
+  await page.getByRole('button', { name: 'Approve: Run npm install' }).click();
+  await page.waitForFunction(() => /^Approved/.test(document.getElementById('toast').textContent));
+  await page.waitForFunction(() => document.getElementById('uxInboxCount').textContent === '1');
+  await page.waitForFunction(() => /1 approval waiting/.test(document.getElementById('inboxList').textContent));
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Review: Apply change', null, { timeout: 4000 });
+  // The bell opens the Inbox.
+  await page.evaluate(() => window.showView('home'));
+  await page.locator('#uxInboxBtn').click();
+  await page.waitForSelector('#inbox.active');
   assert.deepEqual(errors, []);
   await context.close();
 });

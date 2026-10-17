@@ -100,8 +100,22 @@ function infoRow(title,sub,label,tone,go){
  return row;
 }
 const attentionRow=a=>infoRow(a.title,a.detail,'Fix','bad',()=>root.LocalAIRouter.open(a.view||'status'));
-// A pending approval that is not itself a run: open its run when one exists, else Improve's approvals.
-const approvalRow=(a,run)=>infoRow(a.title||'Approval needed',a.detail||'Waiting for your decision','Review','attention',()=>run?openRun(run):root.LocalAIRouter.open('approvals'));
+// A pending approval that is not itself a run: open its run when one exists, else decide it here in the approval sheet
+// (one queue, D8). After a decision Needs you reloads and focus moves to the next approval, or the one before, or the next
+// thing on Home.
+function approvalRow(a,run){
+ const row=infoRow(String(a.title||'').replace(/\s+chg-\d+-[0-9a-f]+$/,'')||'Approval needed',a.detail||'Waiting for your decision','Review','attention',()=>run?openRun(run):decideHere(a));
+ row.dataset.approvalId=a.id;return row;
+}
+async function decideHere(a){
+ const ids=approvals.map(x=>x.a.id),i=ids.indexOf(a.id),next=ids[i+1],prev=i>0?ids[i-1]:null;
+ if(!await root.LocalAIUI.approvalSheet(a))return;
+ await loadNeeds();
+ const list=$('homeNeedsList'),find=id=>id&&list?.querySelector(`[data-approval-id="${CSS.escape(id)}"]`);
+ let to=find(next)||find(prev)||(!$('homeNeedsYou')?.hidden&&list?.querySelector('button'));
+ if(!to){to=$('homeRecentTitle');if(to&&!to.hasAttribute('tabindex'))to.setAttribute('tabindex','-1')}
+ to?.focus({preventScroll:true});
+}
 let needs=[],approvals=[],newSignals=0;
 // Another device on plain HTTP can't use voice, notifications or Add to Home Screen; point it at the setup until it opts out there.
 const onPlainHttp=()=>location.protocol==='http:'&&!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);

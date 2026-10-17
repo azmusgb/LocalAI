@@ -148,5 +148,45 @@
     if(typeof message==='string')t.textContent=message;else t.replaceChildren(message);
     t._ms=ms;t.classList.add('show');toastTimer(t,ms);return t;
   }
-  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{toast,hideToast:()=>{const t=document.getElementById('toast');if(t)hideToast(t)},fetchJson,loadInto,ask,runCard,sheetHistory,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
+  // One queue (D8): the one place an approval is decided. Home › Needs you and the Inbox open it; you stay on your page.
+  // approvalSheet(a) -> Promise<'approved'|'rejected'|null>. It shows the whole detail, Approve / Reject (named for the item)
+  // and Not now; Back or Escape close it without deciding and focus goes back where it was. A decision is said in the toast
+  // and announced as `localai:approval-decided` {id, decision} so the bell and other lists catch up; the caller moves focus
+  // (the row it came from is gone). A failed decision stays in the sheet and says why.
+  const cleanTitle=t=>String(t||'').replace(/\s+chg-\d+-[0-9a-f]+$/,'')||'Approval needed';
+  const human=s=>String(s||'').replace(/[_-]+/g,' ').replace(/^./,c=>c.toUpperCase());
+  function when(iso){const t=Date.parse(iso);if(!t)return '';const m=Math.round((Date.now()-t)/60000);if(m<1)return 'just now';if(m<60)return `${m} min ago`;const h=Math.round(m/60);if(h<24)return `${h} h ago`;return new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric'})}
+  function approvalSheet(a){
+    a=a||{};const opener=document.activeElement,title=cleanTitle(a.title);
+    document.getElementById('approvalSheet')?.remove();
+    const d=document.createElement('dialog');d.id='approvalSheet';d.className='ask-sheet approval-sheet';
+    d.setAttribute('aria-labelledby','approvalSheetTitle');d.setAttribute('aria-describedby','approvalSheetDetail');
+    d.innerHTML=`<form method="dialog" class="ask-sheet__form"><h2 class="ask-sheet__title" id="approvalSheetTitle"></h2><p class="approval-sheet__meta"></p><div class="approval-sheet__detail" id="approvalSheetDetail"></div><p class="approval-sheet__error" role="alert" hidden></p><div class="ask-sheet__actions"><button type="button" class="btn-outline" data-decide="rejected"></button><button type="button" class="btn-primary" data-decide="approved"></button></div><button type="button" class="approval-sheet__later">Not now</button></form>`;
+    d.querySelector('h2').textContent=title;
+    d.querySelector('.approval-sheet__meta').textContent=[a.risk?`${human(a.risk)} risk`:'',a.kind?human(a.kind):'',when(a.createdAt)?`asked ${when(a.createdAt)}`:''].filter(Boolean).join(' · ');
+    d.querySelector('.approval-sheet__detail').textContent=a.detail||'No more detail was given. Approve lets it go ahead; Reject stops it and nothing changes.';
+    const ok=d.querySelector('[data-decide="approved"]'),no=d.querySelector('[data-decide="rejected"]'),err=d.querySelector('.approval-sheet__error');
+    ok.textContent='Approve';ok.setAttribute('aria-label',`Approve: ${title}`);no.textContent='Reject';no.setAttribute('aria-label',`Reject: ${title}`);
+    return new Promise(resolve=>{
+      let decided=null,release=null;
+      const decide=async decision=>{
+        ok.disabled=no.disabled=true;err.hidden=true;
+        try{await fetchJson('/api/approvals/decide',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:a.id,decision})})}
+        catch(e){err.textContent=`Couldn't record that: ${e&&e.message||e}. Try again.`;err.hidden=false;ok.disabled=no.disabled=false;return}
+        decided=decision;d.close();
+      };
+      ok.addEventListener('click',()=>decide('approved'));no.addEventListener('click',()=>decide('rejected'));
+      d.querySelector('.approval-sheet__later').addEventListener('click',()=>d.close());
+      d.addEventListener('click',e=>{if(e.target===d)d.close()});
+      d.addEventListener('close',()=>{
+        const r=release;release=null;if(r)r();d.remove();
+        if(decided){toast(decided==='approved'?'Approved — Local AI will apply it':'Rejected — nothing will change');window.dispatchEvent(new CustomEvent('localai:approval-decided',{detail:{id:a.id,decision:decided}}))}
+        else if(opener&&opener.isConnected&&opener.focus)opener.focus();
+        resolve(decided);
+      });
+      document.body.appendChild(d);d.showModal();release=sheetHistory(d,()=>{release=null;if(d.open)d.close()});
+      d.querySelector('h2').setAttribute('tabindex','-1');d.querySelector('h2').focus();
+    });
+  }
+  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{approvalSheet,toast,hideToast:()=>{const t=document.getElementById('toast');if(t)hideToast(t)},fetchJson,loadInto,ask,runCard,sheetHistory,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
 })();
