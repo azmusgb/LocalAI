@@ -42,11 +42,24 @@ await check('Inbox: with nothing waiting it says so, above the history', async (
   assert.match(await page.locator('#inboxList details.inbox-resolved summary').innerText(), /History \(1\)/);
 });
 
-await check('Audit log: Clear user activity is not in the page header', async () => {
+const EMPTY = /^[^.]+ appear(s)? here\. [A-Z][^.]*\.$|^What happens on Local AI is listed here\. [^.]+\.$/;
+await check('Audit log: Clear user activity is not in the page header, and shows only when there is user activity to clear (E3)', async () => {
+  let activity = [{ id: 's1', type: 'system', title: 'Appliance started', detail: 'v2.0.1', createdAt: new Date().toISOString() }];
+  await page.route('**/api/activity', r => r.fulfill({ json: { items: activity } }));
   await page.evaluate(() => window.showView('activity'));
-  await page.waitForSelector('#activity.active');
+  await page.waitForFunction(() => { const t = document.querySelector('#activity.active #activityList')?.innerText || ''; return /Appliance started/.test(t) && !/Asked/.test(t) && document.querySelectorAll('#activityList > *').length === 1; });
   assert.equal(await page.locator('#activity .topbar #clearUserActivityBtn').count(), 0);
   assert.equal(await page.locator('#activity #clearUserActivityBtn').count(), 1);
+  assert.equal(await page.locator('#clearUserActivityBtn').isVisible(), false, 'a log of system events only has nothing to clear');
+  activity = [...activity, { id: 'u1', type: 'chat', title: 'Asked a question', detail: '', createdAt: new Date().toISOString() }];
+  await page.evaluate(() => window.showView('home')); await page.evaluate(() => window.showView('activity'));
+  await page.locator('#clearUserActivityBtn').waitFor({ state: 'visible' });
+  activity = [];
+  await page.evaluate(() => window.showView('home')); await page.evaluate(() => window.showView('activity'));
+  await page.waitForFunction(() => /listed here/.test(document.getElementById('activityList').textContent));
+  assert.match((await page.locator('#activityList').innerText()).trim(), EMPTY);
+  assert.equal(await page.locator('#clearUserActivityBtn').isVisible(), false);
+  await page.unroute('**/api/activity');
 });
 
 await check('Health: the Notifications card comes after the Appliance summary', async () => {
@@ -103,9 +116,28 @@ await check('Changes: an unplanned change reads "Nothing to apply yet", "Not tes
 await check('Projects: with no projects there is one empty state, not zero tiles and an empty detail pane', async () => {
   await page.route('**/api/projects', r => r.fulfill({ json: { items: [] } }));
   await page.evaluate(() => window.showView('projects'));
-  await page.waitForFunction(() => /Create your first project/.test(document.getElementById('projectList').textContent));
+  await page.waitForFunction(() => /Your projects appear here/.test(document.getElementById('projectList').textContent));
+  assert.match((await page.locator('#projectList').innerText()).trim(), EMPTY);
   assert.equal(await page.locator('#projectMetrics').isVisible(), false);
   assert.equal(await page.locator('#projectDetail').isVisible(), false);
+  assert.doesNotMatch(await page.locator('#projects').innerText(), /workspace/i);
+});
+
+await check('Empty states say what appears and how (E3): Automations, Sources, Library, Signals without an empty Latest checks', async () => {
+  await page.route('**/api/automations', r => r.fulfill({ json: { items: [], runs: [] } }));
+  await page.route('**/api/library', r => r.fulfill({ json: { items: [] } }));
+  await page.route('**/api/quality', r => r.fulfill({ json: { latest: null, events: [] } }));
+  await page.evaluate(() => window.showView('automationStudio'));
+  await page.waitForFunction(() => /appear here/.test(document.getElementById('automationList').textContent));
+  assert.match((await page.locator('#automationList').innerText()).trim(), EMPTY);
+  await page.evaluate(() => window.showView('library'));
+  await page.waitForFunction(() => /appear here/.test(document.getElementById('libraryGrid').textContent));
+  assert.match((await page.locator('#libraryGrid').innerText()).trim(), EMPTY);
+  await page.evaluate(() => window.showView('signals'));
+  await page.waitForSelector('#signals.active');
+  await page.waitForFunction(() => document.querySelector('#signalsScan > *'));
+  assert.equal(await page.locator('#signalsDetails').isVisible(), false, 'no empty Latest checks');
+  for (const u of ['**/api/automations', '**/api/library', '**/api/quality']) await page.unroute(u);
 });
 
 // Health's technical detail (probe names, HTTP results) is for a developer: it shows only with developer tools on.

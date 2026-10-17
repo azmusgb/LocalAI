@@ -107,6 +107,7 @@ async function loadDetails(){
  await root.LocalAIUI.loadInto(box,()=>root.LocalAIUI.fetchJson('/api/quality',{cache:'no-store'}),{what:'the quality checks',empty:'No checks have run yet.',render:(el,q)=>{
   const checks=[...(q.latest?.checks||[])].sort((a,b)=>(a.result==='FAIL'?0:1)-(b.result==='FAIL'?0:1));
   const events=(q.events||[]).slice(0,10);
+  const details=$('signalsDetails');if(details)details.hidden=!checks.length&&!events.length;   // no empty "Latest checks" (E3)
   if(!checks.length&&!events.length)return false;
   el.innerHTML=`${checks.length?`<ul class="improve-checks">${checks.map(c=>`<li><span class="badge badge--${c.result==='FAIL'?'bad':'good'}">${c.result==='FAIL'?'Failed':'Passed'}</span> ${esc(c.name)}${c.detail?` <span class="list-row__sub">${esc(c.detail)}</span>`:''}</li>`).join('')}</ul>`:''}`+
    `${events.length?`<h3>Recent browser errors</h3><ul class="improve-checks">${events.map(e=>`<li>${esc(e.message)} <span class="list-row__sub">${esc(e.source||'')} · ${esc(ago(e.createdAt))}</span></li>`).join('')}</ul>`:''}`;
@@ -226,9 +227,9 @@ async function refresh(){
  const opts=(render,what,empty)=>({render,what,empty});
  return st.last=Promise.all([
   $('backlogList')&&root.LocalAIUI.loadInto($('backlogList'),once(),opts(renderBacklog,'the backlog','Nothing in the Backlog. Add an idea, or promote a Signal.')),
-  $('signalsList')&&root.LocalAIUI.loadInto($('signalsList'),once(),opts(renderSignals,'the signals','No open Signals. Local AI looks healthy.')),
+  $('signalsList')&&root.LocalAIUI.loadInto($('signalsList'),once(),opts(renderSignals,'the signals','Problems Local AI notices appear here. Run checks looks for some now.')),
   $('inProgressList')&&root.LocalAIUI.loadInto($('inProgressList'),()=>Promise.all([once()(),sessions()]).then(([d])=>d),opts(renderInProgress,'what is in progress','Nothing in progress. Start an item from the Backlog.')),
-  $('shippedList')&&root.LocalAIUI.loadInto($('shippedList'),once(),opts(renderShipped,'what has shipped','Nothing shipped yet.'))
+  $('shippedList')&&root.LocalAIUI.loadInto($('shippedList'),once(),opts(renderShipped,'what has shipped','Changes appear here once they ship. Start one from the Backlog.'))
  ]).catch(()=>{});
 }
 function init(){
