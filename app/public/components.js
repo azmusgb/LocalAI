@@ -148,5 +148,15 @@
     if(typeof message==='string')t.textContent=message;else t.replaceChildren(message);
     t._ms=ms;t.classList.add('show');toastTimer(t,ms);return t;
   }
+  // A container whose children are all run cards (Work's groups, Home's Recent, Runs) is a list of them; one that also
+  // holds other rows (Home's Needs you) or none is left alone, so a listitem never sits outside a list.
+  function markRunList(box){if(!box||box.nodeType!==1)return;const kids=[...box.children],all=kids.length>0&&kids.every(k=>k.classList.contains('run-card'));
+    if(all){box.setAttribute('role','list');box.dataset.runList='1';kids.forEach(k=>k.setAttribute('role','listitem'))}
+    else if(box.dataset.runList){box.removeAttribute('role');delete box.dataset.runList;kids.forEach(k=>{if(k.getAttribute('role')==='listitem')k.removeAttribute('role')})}}
+  // Lists are often built off the page and attached whole (Work's day groups), so added subtrees are searched too.
+  new MutationObserver(ms=>{const boxes=new Set();for(const m of ms){if(m.type!=='childList')continue;
+    if(m.target.dataset?.runList||[...m.removedNodes].some(n=>n.classList?.contains('run-card')))boxes.add(m.target);
+    for(const n of m.addedNodes){if(n.nodeType!==1)continue;if(n.classList.contains('run-card'))boxes.add(m.target);else n.querySelectorAll('.run-card').forEach(c=>boxes.add(c.parentElement))}}
+    boxes.forEach(markRunList)}).observe(document.documentElement,{subtree:true,childList:true});
   window.LocalAIUI=Object.assign(window.LocalAIUI||{},{toast,hideToast:()=>{const t=document.getElementById('toast');if(t)hideToast(t)},fetchJson,loadInto,ask,runCard,sheetHistory,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
 })();
