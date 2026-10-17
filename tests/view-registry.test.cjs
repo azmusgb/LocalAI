@@ -19,7 +19,7 @@ const PENDING = new Set(['work']);
 
 test('registry has five domains and every view belongs to one', () => {
   assert.deepEqual(registry.DOMAINS.map(d => d.id), ['home', 'work', 'projects', 'improve', 'system']);
-  assert.deepEqual(registry.DOMAINS.map(d => d.defaultView), ['home', 'work', 'library', 'backlog', 'status']);
+  assert.deepEqual(registry.DOMAINS.map(d => d.defaultView), ['home', 'work', 'projects', 'backlog', 'status']);
   const domains = new Set([...registry.DOMAINS.map(d => d.id), 'hidden']);
   const ids = registry.VIEWS.map(v => v.id);
   assert.equal(new Set(ids).size, ids.length, 'view ids must be unique');
@@ -36,6 +36,15 @@ test('registry has five domains and every view belongs to one', () => {
   // Improve's stages replaced Change requests, Issues and Quality signals.
   for (const [from, to] of [['engineering', 'inProgress'], ['changes', 'inProgress'], ['issues', 'signals'], ['quality', 'signals']]) assert.equal(registry.resolve(from), to, from);
   for (const id of ['changes', 'issues', 'quality']) assert.equal(registry.view(id).domain, 'hidden', `${id} has no nav entry`);
+});
+
+test('Library is a tab of Projects named "Everything you kept" (D7)', () => {
+  const lib = registry.view('library');
+  assert.equal(lib.parent, 'projects');
+  assert.equal(lib.tab, 'Everything you kept');
+  assert.equal(registry.page('library').id, 'projects');
+  assert.ok(registry.tabs('projects').some(v => v.id === 'library'));
+  assert.deepEqual(registry.sections('projects').flatMap(s => s.views), ['projects'], 'Projects is the only page in its domain');
 });
 
 test('every domain icon has a sprite symbol', () => {
@@ -94,7 +103,7 @@ test('tabs belong to a top-level page in the same domain', () => {
   }
   assert.deepEqual(registry.tabs('quality').map(v => v.id), ['issues', 'quality']);
   assert.deepEqual(registry.tabs('approvals').map(v => v.id), ['inbox', 'approvals']);
-  assert.deepEqual(registry.tabs('projects').map(v => v.id), ['projects', 'knowledge', 'memory']);
+  assert.deepEqual(registry.tabs('projects').map(v => v.id), ['projects', 'knowledge', 'memory', 'library']);
   assert.deepEqual(registry.tabs('claude'), []);
 });
 

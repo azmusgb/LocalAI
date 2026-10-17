@@ -8,7 +8,7 @@
 const DOMAINS=[
  {id:'home',label:'Home',symbol:'⌂',icon:'home',tagline:'What needs you',defaultView:'home'},
  {id:'work',label:'Work',symbol:'≡',icon:'work',tagline:'Everything running and done',defaultView:'work'},
- {id:'projects',label:'Projects',symbol:'▣',icon:'projects',tagline:'Make and keep things',defaultView:'library'},
+ {id:'projects',label:'Projects',symbol:'▣',icon:'projects',tagline:'Make and keep things',defaultView:'projects'},
  {id:'improve',label:'Improve',symbol:'Δ',icon:'improve',tagline:'Change Local AI itself',defaultView:'backlog'},
  {id:'system',label:'System',symbol:'◉',icon:'system',tagline:'Health and history',defaultView:'status'}
 ];
@@ -19,10 +19,11 @@ const VIEWS=[
  {id:'work',svg:'work',domain:'work',section:'Work',icon:'≡',label:'Work',description:'Everything running and done, in one place.',aka:['runs','missions','agents']},
  {id:'ask',svg:'compose',domain:'hidden',section:'Make',icon:'✦',label:'Chat',description:'Private conversation with your local models.',aka:['ask','ask ai']},
  {id:'create',svg:'image',domain:'hidden',section:'Make',icon:'◇',label:'Images',description:'Generate images with your local models.',aka:['create','create image']},
- {id:'library',svg:'library',domain:'projects',section:'Keep',icon:'▦',label:'Library',description:"Everything you've made: chats, research and images."},
  {id:'projects',svg:'projects',domain:'projects',section:'Keep',icon:'▣',label:'Projects',tab:'Projects',description:'Group related work with its own sources and memory.'},
  {id:'knowledge',svg:'sources',domain:'projects',section:'Keep',parent:'projects',tab:'Sources',icon:'◫',label:'Sources',description:'Files and notes the assistant can search.',aka:['knowledge']},
  {id:'memory',svg:'memory',domain:'projects',section:'Keep',parent:'projects',tab:'Memory',icon:'M',label:'Memory',description:'Facts the assistant keeps about each project.',aka:['project memory']},
+ // Library is the last tab of Projects: what you kept, as opposed to Work (everything you did). Old #library links open it.
+ {id:'library',svg:'library',domain:'projects',section:'Keep',parent:'projects',tab:'Everything you kept',icon:'▦',label:'Library',description:'Everything you kept: chats, research and images.',aka:['everything you kept','kept']},
  {id:'agents',svg:'target',domain:'hidden',section:'Agents',icon:'◎',label:'Missions',description:'Give a goal; specialist agents work it live.',aka:['agents','agent operations']},
  {id:'status',svg:'health',domain:'system',section:'Health',icon:'●',label:'Health',description:'Core services and optional companions.',aka:['status','system status']},
  {id:'models',svg:'model',domain:'system',section:'Health',icon:'M',label:'Models',description:"Installed models and what's loaded now."},
