@@ -48,6 +48,7 @@ $py = "$env:USERPROFILE\gridcraft-local-ai\.venv\Scripts\python.exe"
 | `--once` | | | Run one request and exit |
 | `--list-tools` | | | Print the MCP tools offered to the model and exit |
 | `--all-tools` | | off | Offer every GridCraft tool instead of the compact core set |
+| `--tool`, `--args` | | | Call one MCP tool with a JSON object of arguments, print `{"ok","result"}` as JSON and exit; no model. The bridge uses it for the Spreadsheets workbook view |
 
 Long workbooks: the bridge runs the fast `qwen3:4b-instruct` (4096-token window). When a request's prompt
 reaches 3500 tokens, the agent redoes that turn on `qwen3:4b-instruct-32k` and stays on it for the rest of the

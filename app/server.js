@@ -18,7 +18,7 @@ const MAC_AI_HOME_URL = process.env.MAC_AI_HOME_URL || 'http://10.0.0.16:3083';
 const MAC_DSH_URL = process.env.MAC_DSH_URL || 'http://10.0.0.16:3084';
 // GridCraft host bridge. The browser reaches it only through /api/gridcraft/*, so the bridge can stay off the LAN.
 const GRIDCRAFT_URL = process.env.GRIDCRAFT_URL || 'http://host.docker.internal:8787';
-const GRIDCRAFT_RUN_TIMEOUT_MS = 330000;
+const GRIDCRAFT_RUN_TIMEOUT_MS = 360000; // the bridge allows 300 s, after waiting up to 30 s for a workbook read to finish
 const REPORT_PATH = process.env.REPORT_PATH || '/reports/LocalAI-Certification-latest.txt';
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -1453,6 +1453,46 @@ async function apiGridcraftRun(req, res) {
   } catch (e) {
     json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
   }
+}
+// System › Spreadsheets' workbook view. Read-only, except /open, which only takes a file name the bridge checks
+// against its GridCraft folder. Responses are rebuilt field by field so no host path reaches the browser.
+const GRIDCRAFT_READ_TIMEOUT_MS = 65000; // the bridge may wait 30 s for the lock, then 30 s for GridCraft
+const A1_RANGE = /^[A-Z]{1,3}[0-9]{1,7}(:[A-Z]{1,3}[0-9]{1,7})?$/;
+const baseName = v => typeof v === 'string' ? v.split(/[\\/]/).pop().slice(0, 200) : null;
+const gridcraftError = d => ({ ok: false, error: String(d.error || 'GridCraft bridge error').slice(0, 300), ...(d.reason ? { reason: String(d.reason).slice(0, 300) } : {}), ...(d.code ? { code: String(d.code).slice(0, 40) } : {}) });
+const gridcraftCell = c => c === null || ['number', 'string', 'boolean'].includes(typeof c) ? c : typeof c?.error === 'string' ? { error: c.error.slice(0, 40) } : null;
+const GRIDCRAFT_SHAPES = {
+  workbook: d => ({ ok: true, title: String(baseName(d.title) || 'Workbook'), file: baseName(d.file), dirty: d.dirty === true, activeSheet: d.activeSheet == null ? null : String(d.activeSheet).slice(0, 100),
+    sheets: (Array.isArray(d.sheets) ? d.sheets : []).slice(0, 200).map(s => ({ name: String(s?.name ?? '').slice(0, 100), usedRange: typeof s?.usedRange === 'string' && A1_RANGE.test(s.usedRange) ? s.usedRange : null, cells: Number.isInteger(s?.cells) ? s.cells : null })) }),
+  range: d => ({ ok: true, range: typeof d.range === 'string' && A1_RANGE.test(d.range) ? d.range : null, rows: Array.isArray(d.rows) ? d.rows.slice(0, 200).map(r => Array.isArray(r) ? r.slice(0, 30).map(gridcraftCell) : []) : [], truncated: d.truncated === true }),
+  workbooks: d => ({ ok: true, workbooks: (Array.isArray(d.workbooks) ? d.workbooks : []).slice(0, 500).map(w => ({ name: baseName(w?.name) || '', size: Number(w?.size) || 0, modified: Number(w?.modified) || 0 })).filter(w => w.name) }),
+  open: d => ({ ok: true, name: baseName(d.name) })
+};
+async function gridcraftForward(res, kind, path, options = {}) {
+  try {
+    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}${path}`, { cache: 'no-store', ...options }, GRIDCRAFT_READ_TIMEOUT_MS);
+    const data = await r.json().catch(() => ({ error: `Bridge returned HTTP ${r.status}` }));
+    json(res, r.status, r.ok && data.ok ? GRIDCRAFT_SHAPES[kind](data) : gridcraftError(data));
+  } catch (e) {
+    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+  }
+}
+async function apiGridcraftRange(req, res, urlObj) {
+  const sheet = urlObj.searchParams.get('sheet') || '', range = (urlObj.searchParams.get('range') || '').toUpperCase();
+  if (sheet.length > 100) return json(res, 400, { ok: false, error: 'sheet is longer than 100 characters' });
+  if (range && !A1_RANGE.test(range)) return json(res, 400, { ok: false, error: 'range must look like A1:Z200' });
+  const q = new URLSearchParams();
+  if (sheet) q.set('sheet', sheet);
+  if (range) q.set('range', range);
+  return gridcraftForward(res, 'range', `/range?${q}`);
+}
+async function apiGridcraftOpen(req, res) {
+  if (!sameOriginJson(req, res)) return;
+  let b;
+  try { b = await readBody(req, 4096); } catch (e) { return json(res, 400, { ok: false, error: e.message }); }
+  const name = typeof b?.name === 'string' ? b.name : '';
+  if (!name || name.length > 200 || /[\\/:]|\.\./.test(name)) return json(res, 400, { ok: false, error: 'name must be a workbook file name' });
+  return gridcraftForward(res, 'open', '/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
 }
 async function apiImageView(req, res, urlObj) {
   try {
@@ -3242,6 +3282,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/images/view') return await apiImageView(req, res, urlObj);
     if (req.method === 'GET' && p === '/api/gridcraft/health') return await apiGridcraftHealth(req, res);
     if (req.method === 'POST' && p === '/api/gridcraft/run') return await apiGridcraftRun(req, res);
+    if (req.method === 'GET' && p === '/api/gridcraft/workbook') return await gridcraftForward(res, 'workbook', '/workbook');
+    if (req.method === 'GET' && p === '/api/gridcraft/workbooks') return await gridcraftForward(res, 'workbooks', '/workbooks');
+    if (req.method === 'GET' && p === '/api/gridcraft/range') return await apiGridcraftRange(req, res, urlObj);
+    if (req.method === 'POST' && p === '/api/gridcraft/open') return await apiGridcraftOpen(req, res);
 
     // cumulative release features
     if (req.method === 'GET' && p === '/api/projects') return await apiProjects(req,res,urlObj);

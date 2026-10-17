@@ -2122,6 +2122,29 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .sheets-result .btn-outline{justify-self:start}
 .sheets-result .btn-outline[hidden]{display:none}
 @media(max-width:760px){.topbar:has(.sheets-status){flex-wrap:wrap;gap:8px}.sheets-actions .btn-primary{width:100%}}
+/* System › Spreadsheets › Workbook card (spreadsheets.js): read-only grid; only the grid scrolls sideways */
+.sheets-book{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-top:12px;min-width:0}
+.sheets-book__head{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap}
+.sheets-book__head h2{margin:0;overflow-wrap:anywhere}
+.sheets-dirty{color:var(--ds-attention-text)}
+.sheets-dirty[hidden],.sheets-tabs[hidden],.sheets-grid-wrap[hidden],#sheetsPicker[hidden]{display:none}
+.sheets-book__tools{display:flex;gap:8px;margin-left:auto;min-width:0;max-width:100%}
+.sheets-book__tools select{min-width:0;max-width:100%;min-height:44px;font-size:16px}
+.sheets-tabs{display:flex;gap:2px;overflow-x:auto;border-bottom:1px solid var(--ds-line)}
+.sheets-tabs [role=tab]{flex:none;min-height:44px;padding:0 14px;border:0;border-bottom:2px solid transparent;background:none;color:var(--ds-muted);font:inherit;cursor:pointer}
+.sheets-tabs [aria-selected=true]{border-bottom-color:var(--ds-accent);color:var(--ds-text);font-weight:650}
+.sheets-note{margin:0;color:var(--ds-muted)}
+.sheets-note:empty{display:none}
+.sheets-note[data-kind=error]{color:var(--ds-bad-text)}
+.sheets-grid-wrap{max-height:70vh;overflow:auto;border:1px solid var(--ds-line);border-radius:var(--ds-r-sm)}
+.sheets-grid{border-spacing:0;font-size:14px;font-variant-numeric:tabular-nums}
+.sheets-grid th,.sheets-grid td{max-width:24em;padding:6px 10px;font-size:14px;overflow:hidden;border:solid var(--ds-line);border-width:0 1px 1px 0;background:var(--ds-surface);text-align:left;white-space:nowrap;text-overflow:ellipsis}
+.sheets-grid thead th,.sheets-grid__corner{position:sticky;top:0;z-index:1;background:var(--ds-surface-2);color:var(--ds-muted);font-weight:600;text-align:center}
+.sheets-grid tbody th{position:sticky;left:0;background:var(--ds-surface-2);color:var(--ds-muted);font-weight:500;text-align:right}
+.sheets-grid .sheets-grid__corner{left:0;z-index:2}
+.sheets-grid .is-num{text-align:right}
+.sheets-grid .is-error{color:var(--ds-bad-text)}
+@media(max-width:760px){.sheets-book__tools{width:100%;margin-left:0}.sheets-book__tools select{flex:1}}
 
 /* Start a mission: one sheet (a modal dialog; a bottom sheet on phones). */
 .aw-start{box-sizing:border-box;width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 32px);padding:20px;border:1px solid var(--ds-line-2);border-radius:var(--ds-r-xl);background:var(--ds-surface);color:var(--ds-text);font-family:var(--ds-font);box-shadow:0 24px 70px rgba(0,0,0,.5);overflow:auto}
