@@ -1879,7 +1879,6 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .awc__controls button:hover{background:#15273d;color:#fff}
 .awc__controls button[aria-pressed="true"]{background:var(--ds-accent-soft);color:var(--ds-accent-text)}
 
-@media(pointer:coarse){}
 
 @media(max-width:760px){
   body.ux-v3[data-view="agents"]{padding-bottom:0;overflow:hidden}
