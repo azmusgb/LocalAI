@@ -1439,20 +1439,80 @@ async function apiGridcraftHealth(req, res) {
     json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
   }
 }
+// A request's record: what was asked, in which mode, and what it changed (the agent's journal), so the page can show the
+// changes and the owner can keep or discard a Review request later, also from another device.
+const GRIDCRAFT_RUN_PREFIX = 'gridcraft:run:';
+const GRIDCRAFT_MODES = new Set(['read', 'review', 'apply']);
+const GRIDCRAFT_KEEP_RUNS = 50;
+function gridcraftRunStatus(ok, mode, journal) {
+  const changed = !!journal && ((journal.edits || []).length > 0 || (journal.changes || []).length > 0 || journal.undoSteps > 0);
+  if (mode === 'review' && changed) return 'review'; // also after a failure: whatever it changed can still be discarded
+  if (!ok) return 'failed';
+  return mode === 'apply' && changed ? 'applied' : 'done';
+}
+function gridcraftRuns(limit = 30) { return storage.listSettings(GRIDCRAFT_RUN_PREFIX, { limit }); }
+function saveGridcraftRun(run) { storage.writeSetting(GRIDCRAFT_RUN_PREFIX + run.id, run); }
 async function apiGridcraftRun(req, res) {
   // Same rules the bridge applies to browsers: same-origin only, JSON only.
-  const origin = req.headers.origin;
-  if (origin && origin !== `http://${req.headers.host}` && origin !== `https://${req.headers.host}`) return json(res, 403, { ok: false, error: 'Origin not allowed' });
-  if (String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase() !== 'application/json') return json(res, 415, { ok: false, error: 'Content-Type must be application/json' });
+  if (!sameOriginJson(req, res)) return;
+  let b;
+  try { b = await readBody(req, 64 * 1024); } catch (e) { return json(res, 400, { ok: false, error: e.message }); }
+  const prompt = String(b.prompt || ''), mode = b.mode === undefined ? 'review' : String(b.mode);
+  if (!GRIDCRAFT_MODES.has(mode)) return json(res, 400, { ok: false, error: 'mode must be read, review or apply' });
   try {
-    const b = await readBody(req, 64 * 1024);
-    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: String(b.prompt || '') }) }, GRIDCRAFT_RUN_TIMEOUT_MS);
+    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, mode }) }, GRIDCRAFT_RUN_TIMEOUT_MS);
     const data = await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` }));
-    if (r.ok) recordActivity('gridcraft', 'GridCraft request', String(b.prompt || '').slice(0, 180), { durationSec: data.durationSec });
-    json(res, r.status, data);
+    const ok = r.ok && data.ok === true, journal = data.journal && typeof data.journal === 'object' ? data.journal : null;
+    // A request the bridge refused before running (busy, bad prompt) changed nothing and isn't worth a record.
+    if (!ok && !journal && r.status !== 500 && r.status !== 504) return json(res, r.status, { ok: false, error: data.error, reason: data.reason });
+    const now = new Date().toISOString();
+    const run = {
+      id: makeId('gc'), prompt: prompt.slice(0, 2000), mode, status: gridcraftRunStatus(ok, mode, journal),
+      answer: ok ? String(data.answer || '') : '', error: ok ? '' : [data.error, data.reason].filter(Boolean).join(': '),
+      edits: journal?.edits || [], changes: journal?.changes || [], undoSteps: Number(journal?.undoSteps) || 0,
+      undoTop: Array.isArray(journal?.undoTop) ? journal.undoTop : [], saved: journal?.saved === true,
+      durationSec: data.durationSec, createdAt: now, updatedAt: now
+    };
+    saveGridcraftRun(run);
+    storage.pruneSettings(GRIDCRAFT_RUN_PREFIX, GRIDCRAFT_KEEP_RUNS);
+    if (ok) recordActivity('gridcraft', 'GridCraft request', prompt.slice(0, 180), { durationSec: data.durationSec, mode });
+    json(res, r.status, { ok, answer: run.answer, ...(ok ? {} : { error: data.error, reason: data.reason }), durationSec: data.durationSec, run });
   } catch (e) {
     json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
   }
+}
+async function apiGridcraftRuns(req, res) { json(res, 200, { items: gridcraftRuns() }); }
+async function apiGridcraftWorkbook(req, res, urlObj) {
+  const q = new URLSearchParams();
+  for (const k of ['sheet', 'range']) { const v = urlObj.searchParams.get(k); if (v) q.set(k, v.slice(0, 200)); }
+  try {
+    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/workbook${q.size ? `?${q}` : ''}`, { cache: 'no-store' }, 65000);
+    json(res, r.status, await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` })));
+  } catch (e) {
+    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+  }
+}
+async function apiGridcraftDecide(req, res, id, action) {
+  if (!sameOriginJson(req, res)) return;
+  const run = storage.readSetting(GRIDCRAFT_RUN_PREFIX + id, null);
+  if (!run) return json(res, 404, { ok: false, error: 'No such request' });
+  if (run.status !== 'review') return json(res, 409, { ok: false, error: 'This request is not waiting for review' });
+  // GridCraft's undo is one line: only the newest request's changes are on top of it.
+  if (action === 'discard' && gridcraftRuns(1)[0]?.id !== id) return json(res, 409, { ok: false, error: 'Only the latest request can be undone' });
+  let r = { ok: true }, data = { ok: true };
+  try {
+    if (action === 'keep' || run.undoSteps > 0) {
+      r = await fetchWithTimeout(`${GRIDCRAFT_URL}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action === 'discard' ? { steps: run.undoSteps, undoTop: run.undoTop } : {}) }, 65000);
+      data = await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` }));
+    }
+  } catch (e) { return json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` }); }
+  if (!r.ok || data.ok !== true) return json(res, r.ok ? 502 : r.status, { ok: false, error: data.error || 'GridCraft did not do it' });
+  const now = new Date().toISOString();
+  // Saving saves every change in the workbook, so every request waiting for review is kept.
+  const decided = action === 'keep' ? gridcraftRuns(GRIDCRAFT_KEEP_RUNS).filter(x => x.status === 'review') : [run];
+  for (const x of decided) saveGridcraftRun({ ...x, status: action === 'keep' ? 'kept' : 'discarded', updatedAt: now });
+  recordActivity('gridcraft', action === 'keep' ? 'GridCraft changes kept' : 'GridCraft changes discarded', run.prompt.slice(0, 180));
+  json(res, 200, { ok: true, dirty: data.dirty, runs: decided.map(x => x.id) });
 }
 async function apiImageView(req, res, urlObj) {
   try {
@@ -3242,6 +3302,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/images/view') return await apiImageView(req, res, urlObj);
     if (req.method === 'GET' && p === '/api/gridcraft/health') return await apiGridcraftHealth(req, res);
     if (req.method === 'POST' && p === '/api/gridcraft/run') return await apiGridcraftRun(req, res);
+    if (req.method === 'GET' && p === '/api/gridcraft/runs') return await apiGridcraftRuns(req, res);
+    if (req.method === 'GET' && p === '/api/gridcraft/workbook') return await apiGridcraftWorkbook(req, res, urlObj);
+    { const m = req.method === 'POST' && p.match(/^\/api\/gridcraft\/runs\/(gc-[\w-]+)\/(keep|discard)$/); if (m) return await apiGridcraftDecide(req, res, m[1], m[2]); }
 
     // cumulative release features
     if (req.method === 'GET' && p === '/api/projects') return await apiProjects(req,res,urlObj);
