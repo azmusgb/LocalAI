@@ -92,7 +92,7 @@ await check('chips filter by kind, the hash mirrors the chip, and a reload keeps
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#work.active .run-card', T);
   assert.deepEqual(await kinds(page), ['image']);
-  assert.equal(await page.locator('[data-work-kind="images"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.locator('[data-work-kind="images"]').getAttribute('aria-checked'), 'true');
   await pick(page, 'chats');
   assert.deepEqual(await kinds(page), ['chat', 'research']);
   await pick(page, 'missions');
@@ -103,6 +103,27 @@ await check('chips filter by kind, the hash mirrors the chip, and a reload keeps
   assert.deepEqual(await kinds(page), ['automation']);
   await pick(page, 'all');
   assert.equal(await rows(page).count(), 7);
+  await page.context().close();
+});
+
+await check('the chips are one segmented control: one Tab stop, arrows move and pick, like the page tabs (E5)', async () => {
+  const page = await open(desk, '#work', async () => mixed());
+  await page.waitForSelector('#work .run-card', T);
+  const group = page.locator('#work .work-chips');
+  assert.equal(await group.getAttribute('role'), 'radiogroup');
+  assert.match(await group.getAttribute('class'), /\bux-tabs\b/);
+  const chips = page.locator('#work .work-chips .ux-tab');
+  assert.deepEqual(await chips.evaluateAll(b => b.map(x => [x.getAttribute('role'), x.tabIndex])), [['radio', 0], ['radio', -1], ['radio', -1], ['radio', -1], ['radio', -1], ['radio', -1]]);
+  await chips.first().focus();
+  await page.keyboard.press('ArrowRight');
+  await page.waitForSelector('#workList:not([aria-busy="true"])', T);
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset.workKind), 'chats');
+  assert.equal(await page.locator('[data-work-kind="chats"]').getAttribute('aria-checked'), 'true');
+  assert.deepEqual(await kinds(page), ['chat', 'research']);
+  await page.keyboard.press('End');
+  await page.waitForSelector('#workList:not([aria-busy="true"])', T);
+  assert.equal(await page.evaluate(() => location.hash), '#work?kind=other');
+  assert.equal(await chips.evaluateAll(b => b.filter(x => x.tabIndex === 0).map(x => x.dataset.workKind).join()), 'other');
   await page.context().close();
 });
 
@@ -335,7 +356,7 @@ for (const viewport of [phone, desk]) {
   await check(`${viewport.width}px: /#agents lands on Work with the Missions chip, only mission rows`, async () => {
     const page = await open(viewport, '#agents', async () => mixed());
     await page.waitForSelector('#work.active .run-card', T);
-    assert.equal(await page.locator('[data-work-kind="missions"]').getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.locator('[data-work-kind="missions"]').getAttribute('aria-checked'), 'true');
     assert.deepEqual(await kinds(page), ['agent']);
     assert.equal(await page.evaluate(() => location.hash), '#work?kind=missions');
     assert.equal(await page.locator('#agents.active').count(), 0);

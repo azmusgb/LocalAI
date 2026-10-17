@@ -18,7 +18,7 @@ const MAC_AI_HOME_URL = process.env.MAC_AI_HOME_URL || 'http://10.0.0.16:3083';
 const MAC_DSH_URL = process.env.MAC_DSH_URL || 'http://10.0.0.16:3084';
 // GridCraft host bridge. The browser reaches it only through /api/gridcraft/*, so the bridge can stay off the LAN.
 const GRIDCRAFT_URL = process.env.GRIDCRAFT_URL || 'http://host.docker.internal:8787';
-const GRIDCRAFT_RUN_TIMEOUT_MS = 330000;
+const GRIDCRAFT_RUN_TIMEOUT_MS = 360000; // the bridge allows 300 s, after waiting up to 30 s for a workbook read to finish
 const REPORT_PATH = process.env.REPORT_PATH || '/reports/LocalAI-Certification-latest.txt';
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -45,7 +45,8 @@ const { loadOllamaModelRuntime } = require('./model-runtime');
 const { createModelPulls } = require('./model-pulls');
 const imageEngines = require('./image-engines');
 const plainText = require('./plain-text');
-// Last measured seconds per engine on this machine, shown as an estimate in the Images page.
+// Last measured seconds per engine on this machine, shown as an estimate in the Images page. Keyed by id and
+// family, so "best" switching from FLUX to Z-Image doesn't show FLUX's time.
 const IMAGE_ESTIMATES = {};
 const IMAGE_PROMPT_MODEL = process.env.IMAGE_PROMPT_MODEL || process.env.GRIDCRAFT_MODEL || 'qwen3:4b-instruct';
 const release = require('./release').readRelease(__dirname);
@@ -455,6 +456,7 @@ function sanitizeMessages(messages) {
 
 function capabilityPrompt(snapshot) {
   const images = snapshot?.images?.models || [];
+  const imageEngineList = snapshot?.images?.engines || [];
   const textModels = snapshot?.models || {};
   const installedText = Array.isArray(textModels.installed) ? textModels.installed : [];
   const loadedText = Array.isArray(textModels.loaded) ? textModels.loaded : [];
@@ -468,13 +470,14 @@ function capabilityPrompt(snapshot) {
     `Installed text models: ${installedText.length ? installedText.map(x => x.name).join(', ') : 'none verified'}`,
     `Loaded text models: ${loadedText.length ? loadedText.map(x => `${x.name}${x.contextLength ? ` [ctx ${x.contextLength}]` : ''}`).join(', ') : 'none currently resident'}`,
     `Model runtime detail: ${textModels.runtimeAvailable ? 'available' : 'unavailable'}`,
-    `Installed image models: ${images.length ? images.map(x => `${x.checkpoint} [${x.familyLabel || x.family}]`).join(', ') : 'none discovered'}`,
+    `Image engines (Images page): ${imageEngineList.length ? imageEngineList.map(x => `${x.label} = ${x.model} (${x.files.join(', ')})`).join('; ') : 'none discovered'}`,
+    `Installed image checkpoints: ${images.length ? images.map(x => `${x.checkpoint} [${x.familyLabel || x.family}]`).join(', ') : 'none discovered'}`,
     `Projects: ${snapshot?.projects?.count ?? 0}`,
     `Engineering: ${snapshot?.engineering?.active ?? 0} active; ${snapshot?.engineering?.awaitingApproval ?? 0} awaiting approval`,
     `Changes: ${snapshot?.changes?.pending ?? 0} pending`,
     `Issues: ${snapshot?.issues?.open ?? 0} open`,
     `PowerShell Workbench: ${snapshot?.powershell?.configured ? 'configured' : 'not configured'}`,
-    'Use this snapshot instead of guessing. Never claim a text or image model is installed unless it appears above. A text model can be installed without being currently loaded because Ollama may unload idle models. Never report a hard-coded appliance version. Image generation is available only when a supported discovered model is present. Local AI can prepare self-changes through Engineering -> Change Intelligence -> approval -> host self-update; never claim a change was applied unless the runtime reports it.'
+    'Use this snapshot instead of guessing. Never claim a text or image model is installed unless it appears above. A text model can be installed without being currently loaded because Ollama may unload idle models. Never report a hard-coded appliance version. Image models are not Ollama models: they are files in ComfyUI on the Windows computer (its models folders: checkpoints, diffusion_models, text_encoders, vae), so never suggest installing one with Ollama. Image generation is available only when a discovered image engine or supported checkpoint is present. Local AI can prepare self-changes through Engineering -> Change Intelligence -> approval -> host self-update; never claim a change was applied unless the runtime reports it.'
   ].join('\n');
 }
 
@@ -482,7 +485,10 @@ async function getCapabilitiesSnapshot(force = false) {
   if (!force && capabilityCache.value && capabilityCache.expiresAt > Date.now()) return capabilityCache.value;
   const [statusResult, imageResult, modelResult] = await Promise.allSettled([
     getStatusAndRecordTransition(),
-    getCheckpointNames().then(names => buildImageModelCatalog(names)),
+    getImageModelLists().then(lists => ({
+      ...buildImageModelCatalog(lists.checkpoints),
+      engines: imageEngines.discoverEngines(lists).engines.map(e => ({ id: e.id, label: e.label, model: e.model, files: Object.values(e.files) }))
+    })),
     loadOllamaModelRuntime({
       baseUrl: OLLAMA_URL,
       fetchWithTimeout,
@@ -491,7 +497,7 @@ async function getCapabilitiesSnapshot(force = false) {
     })
   ]);
   const status = statusResult.status === 'fulfilled' ? statusResult.value : { overall: 'UNKNOWN', services: [] };
-  const imageCatalog = imageResult.status === 'fulfilled' ? imageResult.value : { models: [], families: [], defaultCheckpoint: null, defaultFamily: null };
+  const imageCatalog = imageResult.status === 'fulfilled' ? imageResult.value : { models: [], families: [], engines: [], defaultCheckpoint: null, defaultFamily: null };
   const modelRuntime = modelResult.status === 'fulfilled'
     ? modelResult.value
     : {
@@ -514,7 +520,7 @@ async function getCapabilitiesSnapshot(force = false) {
     appliance: 'Local AI', version: APP_VERSION, model: MODEL,
     overall: status.overall, services: status.services || [], serviceSummary: status.serviceSummary || {},
     models: modelRuntime,
-    images: { ...imageCatalog, available: imageCatalog.models.some(x => x.supported) },
+    images: { ...imageCatalog, available: imageCatalog.models.some(x => x.supported) || imageCatalog.engines.length > 0 },
     projects: { count: projectStore().length },
     agents: { running: agentRunStore().filter(x => x.status === 'running').length },
     changes: { pending: changes.filter(x => ['planned','patch_failed','validation_failed','staged','awaiting_approval','approved','apply_requested'].includes(x.status)).length },
@@ -1212,7 +1218,8 @@ function buildImageModelCatalog(names) {
 }
 
 // Every model list the image engines need, from ComfyUI's object_info. A node type that isn't installed
-// (UnetLoaderGGUF before ComfyUI-GGUF) just yields an empty list.
+// (UnetLoaderGGUF before ComfyUI-GGUF) just yields an empty list. UNETLoader lists models/diffusion_models and
+// CLIPLoader lists models/text_encoders (plus models/clip), which Z-Image Turbo needs.
 async function getImageModelLists() {
   const read = async (node, input) => {
     try {
@@ -1221,17 +1228,18 @@ async function getImageModelLists() {
       return comfyOptions((await r.json())?.[node]?.input?.required?.[input]);
     } catch { return []; }
   };
-  const [checkpoints, unets, clips, vaes, upscalers] = await Promise.all([
-    getCheckpointNames(), read('UnetLoaderGGUF', 'unet_name'), read('DualCLIPLoader', 'clip_name1'), read('VAELoader', 'vae_name'), read('UpscaleModelLoader', 'model_name')
+  const [checkpoints, unets, clips, vaes, upscalers, diffusionModels, textEncoders] = await Promise.all([
+    getCheckpointNames(), read('UnetLoaderGGUF', 'unet_name'), read('DualCLIPLoader', 'clip_name1'), read('VAELoader', 'vae_name'), read('UpscaleModelLoader', 'model_name'),
+    read('UNETLoader', 'unet_name'), read('CLIPLoader', 'clip_name')
   ]);
-  return { checkpoints, unets, clips, vaes, upscalers };
+  return { checkpoints, unets, clips, vaes, upscalers, diffusionModels, textEncoders };
 }
 
 async function apiImageModels(req, res) {
   try {
     const lists = await getImageModelLists();
     const found = imageEngines.discoverEngines(lists);
-    const engines = found.engines.map(({ id, label, blurb, family, base }) => ({ id, label, blurb, family, base, estimateSec: IMAGE_ESTIMATES[id] || null }));
+    const engines = found.engines.map(({ id, label, blurb, family, base, model }) => ({ id, label, blurb, family, base, model, estimateSec: IMAGE_ESTIMATES[`${id}:${family}`] || null }));
     const aspects = Object.entries(imageEngines.ASPECTS).map(([id, a]) => ({ id, label: a.label, sizes: { 512: a[512], 1024: a[1024] } }));
     const styles = Object.entries(imageEngines.STYLES).map(([id, st]) => ({ id, label: st.label }));
     json(res, 200, { ...buildImageModelCatalog(lists.checkpoints), engines, custom: found.custom, upscale: !!found.upscaler, aspects, styles, defaultEngine: found.defaultEngine });
@@ -1375,7 +1383,7 @@ async function apiGenerateImage(req, res) {
       try { prompt = await enhanceImagePrompt(original, engine.id); runLedger.update(execution.id, { progress: 15 }, 'Prompt improved'); }
       catch (e) { runLedger.update(execution.id, { progress: 15 }, `Prompt helper unavailable; using your prompt (${e.message})`); }
     }
-    const styled = imageEngines.applyStyle(prompt, userNegative, style);
+    const styled = imageEngines.applyStyle(prompt, userNegative, style, engine);
 
     let source = null;
     if (editing) {
@@ -1385,7 +1393,7 @@ async function apiGenerateImage(req, res) {
     }
 
     const started = Date.now();
-    const timeoutMs = (engine.family === 'flux' ? 900000 : 420000) * count;
+    const timeoutMs = (engine.family === 'flux' || engine.family === 'zimage' ? 900000 : 420000) * count;
     const results = [];
     let n = 0;
     for (const batch of imageEngines.batchesFor(engine, count)) {
@@ -1415,7 +1423,7 @@ async function apiGenerateImage(req, res) {
       artifactIds,
       meta: { promptId: results[0].promptId, checkpoint, elapsedMs }
     });
-    if (!upscaler && body.enhance !== true && !editing && count === 1) IMAGE_ESTIMATES[engine.id] = Math.round(elapsedMs / 1000);
+    if (!upscaler && body.enhance !== true && !editing && count === 1) IMAGE_ESTIMATES[`${engine.id}:${engine.family}`] = Math.round(elapsedMs / 1000);
 
     json(res, 200, { promptId: results[0].promptId, ...common, imageUrl: images[0].imageUrl, seed: images[0].seed, images, familyLabel: engine.label, prompt: original, usedPrompt: styled.prompt, runId: execution.id, threadId: execution.threadId });
   } catch (e) {

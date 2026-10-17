@@ -103,3 +103,66 @@ test('a run summary reads as a sentence: count only when several, no model file 
   assert.equal(e.runSummary({ count: 1, width: 704, height: 1024, engine: 'Quality', editing: true }), 'Image edited with Quality · 704 × 1024');
   assert.equal(e.runSummary({ count: 4, width: 1024, height: 1024, engine: 'Fast', editing: false }), '4 images made with Fast · 1024 × 1024');
 });
+
+// Z-Image Turbo as installed on the owner's ComfyUI: diffusion_models, text_encoders and vae.
+const zimage = { diffusionModels: ['z_image_turbo_bf16.safetensors'], textEncoders: ['qwen_3_4b_fp8_mixed.safetensors', 'qwen_3_4b.safetensors', 'clip_l.safetensors'], vaes: ['ae.safetensors', 'flux_ae.safetensors'] };
+
+test('Best runs Z-Image Turbo when its three files are installed, else FLUX schnell, else nothing', () => {
+  const both = e.discoverEngines({ ...full, ...zimage, vaes: ['flux_ae.safetensors', 'ae.safetensors'] });
+  const best = both.engines.find(x => x.id === 'best');
+  assert.equal(best.family, 'zimage');
+  assert.equal(best.label, 'Best');
+  assert.equal(best.model, 'Z-Image Turbo');
+  // The plain bf16 text encoder wins over fp8_mixed; the "ae" VAE wins over flux_ae.
+  assert.deepEqual(best.files, { unet: 'z_image_turbo_bf16.safetensors', textEncoder: 'qwen_3_4b.safetensors', vae: 'ae.safetensors' });
+  assert.deepEqual(both.engines.map(x => x.id), ['fast', 'quality', 'best']);
+  // Only fp8_mixed installed: that one is used.
+  assert.equal(e.discoverEngines({ ...zimage, textEncoders: ['qwen_3_4b_fp8_mixed.safetensors'] }).engines[0].files.textEncoder, 'qwen_3_4b_fp8_mixed.safetensors');
+  // A flux_ae-only VAE folder still works (same file).
+  assert.equal(e.discoverEngines({ ...zimage, vaes: ['flux_ae.safetensors'] }).engines[0].files.vae, 'flux_ae.safetensors');
+  // Partial Z-Image installs fall back to FLUX for Best.
+  for (const partial of [{ diffusionModels: [] }, { textEncoders: ['clip_l.safetensors'] }]) {
+    const d = e.discoverEngines({ ...full, ...zimage, ...partial });
+    const fallback = d.engines.find(x => x.id === 'best');
+    assert.equal(fallback.family, 'flux');
+    assert.equal(fallback.model, 'FLUX.1 schnell');
+    assert.equal(fallback.files.unet, 'flux1-schnell-Q4_K_S.gguf');
+  }
+  // Partial Z-Image and no FLUX: no Best at all.
+  assert.deepEqual(e.discoverEngines({ checkpoints: full.checkpoints, ...zimage, diffusionModels: [] }).engines.map(x => x.id), ['fast', 'quality']);
+  assert.deepEqual(e.discoverEngines({ ...zimage, vaes: ['sdxl_vae.safetensors'] }).engines, []);
+});
+
+test('Z-Image graph: UNETLoader, Qwen3 text encoder, AuraFlow shift 3, 8 steps at cfg 1, no negative text', () => {
+  const best = e.discoverEngines(zimage).engines[0];
+  assert.deepEqual([best.base, best.steps, best.cfg, best.sampler, best.scheduler, best.shift], [1024, 8, 1, 'res_multistep', 'simple', 3]);
+  assert.deepEqual(e.sizeFor(best, 'portrait'), [832, 1216]);
+  const g = e.buildWorkflow(best, { prompt: 'a lighthouse', negativePrompt: 'ignored', width: 1024, height: 1024, steps: 8, cfg: 1, seed: 7 });
+  assert.deepEqual(g[1], { class_type: 'UNETLoader', inputs: { unet_name: 'z_image_turbo_bf16.safetensors', weight_dtype: 'default' } });
+  assert.deepEqual(g[2], { class_type: 'CLIPLoader', inputs: { clip_name: 'qwen_3_4b.safetensors', type: 'lumina2', device: 'default' } });
+  assert.deepEqual(g[3].inputs, { vae_name: 'ae.safetensors' });
+  assert.deepEqual(g[13], { class_type: 'ModelSamplingAuraFlow', inputs: { model: ['1', 0], shift: 3 } });
+  assert.deepEqual(g[4].inputs, { text: 'a lighthouse', clip: ['2', 0] });
+  assert.deepEqual(g[5], { class_type: 'ConditioningZeroOut', inputs: { conditioning: ['4', 0] } });
+  assert.equal(g[6].class_type, 'EmptySD3LatentImage');
+  assert.deepEqual(g[7].inputs, { seed: 7, steps: 8, cfg: 1, sampler_name: 'res_multistep', scheduler: 'simple', denoise: 1, model: ['13', 0], positive: ['4', 0], negative: ['5', 0], latent_image: ['6', 0] });
+  assert.deepEqual(g[8].inputs, { samples: ['7', 0], vae: ['3', 0] });
+  assert.deepEqual(g[9].inputs.images, ['8', 0]);
+  // The only text in the graph is the prompt: the negative never reaches it.
+  assert.ok(!JSON.stringify(g).includes('ignored'));
+  assert.deepEqual(Object.values(g).map(n => n.class_type).sort(), ['CLIPLoader', 'CLIPTextEncode', 'ConditioningZeroOut', 'EmptySD3LatentImage', 'KSampler', 'ModelSamplingAuraFlow', 'SaveImage', 'UNETLoader', 'VAEDecode', 'VAELoader']);
+  // Edits encode with the Z-Image VAE; batches stay one at a time at 1024 px.
+  const edit = e.buildWorkflow(best, { prompt: 'x', width: 1024, height: 1024, steps: 8, cfg: 1, seed: 1, source: { image: 'src.png', mask: 'm.png' }, denoise: 0.6 });
+  assert.deepEqual(edit[21].inputs.vae, ['3', 0]);
+  assert.deepEqual(edit[7].inputs.model, ['13', 0]);
+  assert.deepEqual(e.batchesFor(best, 3), [1, 1, 1]);
+  for (const graph of [g, edit]) for (const n of Object.values(graph)) for (const v of Object.values(n.inputs)) if (Array.isArray(v)) assert.ok(graph[v[0]], `missing node ${v[0]}`);
+});
+
+test('cfg-1 engines (Z-Image, FLUX) drop style "avoid" words; the others keep them', () => {
+  const zi = e.discoverEngines(zimage).engines[0];
+  const [fast, , flux] = e.discoverEngines(full).engines;
+  assert.deepEqual(e.applyStyle('a cat', 'blurry', 'photo', zi), { prompt: `a cat, ${e.STYLES.photo.add}`, negative: '' });
+  assert.equal(e.applyStyle('a cat', '', 'anime', flux).negative, '');
+  assert.match(e.applyStyle('a cat', 'blurry', 'anime', fast).negative, /^blurry, photo/);
+});

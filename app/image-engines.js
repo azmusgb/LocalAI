@@ -4,24 +4,34 @@
 //
 //   fast     SD 1.5 fine-tune (DreamShaper 8 preferred)    ~512 px, 25 steps   ~16 s on a GTX 1660 SUPER
 //   quality  SDXL Lightning (DreamShaper XL Lightning)     ~1024 px, 6 steps   ~55 s
-//   best     FLUX.1 schnell, GGUF-quantised                 ~1024 px, 4 steps   ~3 min; best prompt-following and text
+//   best     Z-Image Turbo (bf16) when installed            ~1024 px, 8 steps   ~3 min on a GTX 1660 SUPER (first run,
+//                                                                               model load included); most detailed
+//            else FLUX.1 schnell, GGUF-quantised           ~1024 px, 4 steps   ~3 min; prompt-following and text
 //
 // Any other checkpoint stays usable through the standard checkpoint graph ("custom").
 
 const ENGINES = {
   fast: {
-    label: 'Fast', family: 'sd15', base: 512, steps: 25, cfg: 7, sampler: 'dpmpp_2m', scheduler: 'karras',
+    label: 'Fast', model: 'Stable Diffusion 1.5', family: 'sd15', base: 512, steps: 25, cfg: 7, sampler: 'dpmpp_2m', scheduler: 'karras',
     negative: 'blurry, low quality, distorted, deformed, extra fingers, text, watermark',
     blurb: 'Quick drafts and illustrations.'
   },
   quality: {
-    label: 'Quality', family: 'sdxl', base: 1024, steps: 6, cfg: 2, sampler: 'dpmpp_sde', scheduler: 'karras',
+    label: 'Quality', model: 'SDXL Lightning', family: 'sdxl', base: 1024, steps: 6, cfg: 2, sampler: 'dpmpp_sde', scheduler: 'karras',
     negative: 'blurry, low quality, distorted, watermark',
     blurb: 'Detailed, high-resolution images.'
   },
+  // Z-Image Turbo and FLUX schnell are distilled to run at cfg 1, where the sampler ignores the negative
+  // prompt entirely, so `usesNegative: false` drops a style's "avoid" words instead of pretending to apply them.
   best: {
-    label: 'Best', family: 'flux', base: 1024, steps: 4, cfg: 1, sampler: 'euler', scheduler: 'simple',
-    negative: '',
+    label: 'Best', model: 'Z-Image Turbo', family: 'zimage', base: 1024, steps: 8, cfg: 1, sampler: 'res_multistep', scheduler: 'simple',
+    shift: 3, negative: '', usesNegative: false,
+    blurb: 'Most detailed and realistic; follows long prompts and can draw text.'
+  },
+  // "Best" when Z-Image Turbo isn't installed.
+  bestFlux: {
+    label: 'Best', model: 'FLUX.1 schnell', family: 'flux', base: 1024, steps: 4, cfg: 1, sampler: 'euler', scheduler: 'simple',
+    negative: '', usesNegative: false,
     blurb: 'Follows long prompts closely and can draw readable text.'
   }
 };
@@ -48,11 +58,12 @@ const STYLES = {
   sketch: { label: 'Sketch', add: 'pencil sketch, graphite, cross-hatching, monochrome line art on paper', avoid: 'color, photo, 3d render' }
 };
 
-function applyStyle(prompt, negative, styleId) {
+// engine.usesNegative === false (cfg-1 engines) gets no negative at all: it would be ignored by the sampler.
+function applyStyle(prompt, negative, styleId, engine = null) {
   const style = STYLES[styleId] || STYLES.none;
   return {
     prompt: style.add ? `${prompt}, ${style.add}` : prompt,
-    negative: [negative, style.avoid].filter(Boolean).join(', ')
+    negative: engine?.usesNegative === false ? '' : [negative, style.avoid].filter(Boolean).join(', ')
   };
 }
 
@@ -79,11 +90,18 @@ function discoverEngines(lists = {}) {
   const clipL = (lists.clips || []).find((c) => /clip_l/i.test(c)) || null;
   const fluxVae = (lists.vaes || []).find((v) => /flux|(^|[\\/])ae\.safetensors$/i.test(v)) || null;
   const upscaler = (lists.upscalers || []).find((u) => /esrgan|ultrasharp|x4|4x/i.test(u)) || null;
+  // Z-Image Turbo: its diffusion model (models/diffusion_models), the Qwen3 4B text encoder
+  // (models/text_encoders; the plain bf16 file preferred over fp8) and the FLUX "ae" VAE (models/vae).
+  const zUnet = (lists.diffusionModels || []).find((u) => /z[_-]?image.*turbo/i.test(u)) || null;
+  const qwen = (lists.textEncoders || []).filter((c) => /qwen[_-]?3[_-]?4b/i.test(c));
+  const zClip = qwen.find((c) => !/fp8|fp4|gguf|q\d/i.test(c)) || qwen.find((c) => /fp8[_-]?mixed/i.test(c)) || qwen[0] || null;
+  const zVae = (lists.vaes || []).find((v) => /(^|[\\/])ae\.safetensors$/i.test(v)) || fluxVae;
 
   const engines = [];
   if (fastCkpt) engines.push({ id: 'fast', ...ENGINES.fast, files: { checkpoint: fastCkpt } });
   if (qualityCkpt) engines.push({ id: 'quality', ...ENGINES.quality, files: { checkpoint: qualityCkpt } });
-  if (fluxUnet && t5 && clipL && fluxVae) engines.push({ id: 'best', ...ENGINES.best, files: { unet: fluxUnet, t5, clipL, vae: fluxVae } });
+  if (zUnet && zClip && zVae) engines.push({ id: 'best', ...ENGINES.best, files: { unet: zUnet, textEncoder: zClip, vae: zVae } });
+  else if (fluxUnet && t5 && clipL && fluxVae) engines.push({ id: 'best', ...ENGINES.bestFlux, files: { unet: fluxUnet, t5, clipL, vae: fluxVae } });
   const used = new Set(engines.map((e) => e.files.checkpoint).filter(Boolean));
   const custom = ckpts.filter((c) => !used.has(c) && inferCheckpointFamily(c) !== 'flux');
   return { engines, custom, upscaler, defaultEngine: engines[0]?.id || null };
@@ -114,8 +132,21 @@ function sizeFor(engine, aspect, width, height) {
 function buildWorkflow(engine, { prompt, negativePrompt, width, height, steps, cfg, seed, upscaler, batch = 1, source = null, denoise = 1 }) {
   const sampler = { seed, steps, cfg, sampler_name: engine.sampler, scheduler: engine.scheduler, denoise: source ? denoise : 1 };
   const flux = engine.family === 'flux';
-  let graph, vae;
-  if (flux) {
+  let graph, vae, model = ['1', 0];
+  if (engine.family === 'zimage') {
+    graph = {
+      1: { class_type: 'UNETLoader', inputs: { unet_name: engine.files.unet, weight_dtype: 'default' } },
+      2: { class_type: 'CLIPLoader', inputs: { clip_name: engine.files.textEncoder, type: 'lumina2', device: 'default' } },
+      3: { class_type: 'VAELoader', inputs: { vae_name: engine.files.vae } },
+      4: { class_type: 'CLIPTextEncode', inputs: { text: prompt, clip: ['2', 0] } },
+      // No negative prompt at cfg 1: an empty conditioning keeps KSampler happy.
+      5: { class_type: 'ConditioningZeroOut', inputs: { conditioning: ['4', 0] } },
+      6: { class_type: 'EmptySD3LatentImage', inputs: { width, height, batch_size: batch } },
+      13: { class_type: 'ModelSamplingAuraFlow', inputs: { model: ['1', 0], shift: engine.shift ?? 3 } }
+    };
+    vae = ['3', 0];
+    model = ['13', 0];
+  } else if (flux) {
     graph = {
       1: { class_type: 'UnetLoaderGGUF', inputs: { unet_name: engine.files.unet } },
       2: { class_type: 'DualCLIPLoader', inputs: { clip_name1: engine.files.t5, clip_name2: engine.files.clipL, type: 'flux' } },
@@ -151,7 +182,7 @@ function buildWorkflow(engine, { prompt, negativePrompt, width, height, steps, c
     }
     if (batch > 1) { graph[25] = { class_type: 'RepeatLatentBatch', inputs: { samples: latent, amount: batch } }; latent = ['25', 0]; }
   }
-  graph[7] = { class_type: 'KSampler', inputs: { ...sampler, model: ['1', 0], positive: ['4', 0], negative: ['5', 0], latent_image: latent } };
+  graph[7] = { class_type: 'KSampler', inputs: { ...sampler, model, positive: ['4', 0], negative: ['5', 0], latent_image: latent } };
   graph[8] = { class_type: 'VAEDecode', inputs: { samples: ['7', 0], vae } };
   let last = ['8', 0];
   if (mask) {

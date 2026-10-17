@@ -262,5 +262,17 @@
     finally{busy=false}
   },{passive:true});
   function pullToRefresh(view,fn){if(typeof fn==='function')pages.set(String(view),fn)}
-  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{pullToRefresh});
+  // One segmented control (E5) for picking one of a few: a .ux-tabs[role=radiogroup] of .ux-tab[role=radio], the look and
+  // keyboard of the page tabs (G1): one stop in the Tab order, arrows / Home / End move and pick, as radios do.
+  // segmented(group,{onPick}) returns {pick(button)} for code that changes the choice (a URL, a reset).
+  function segmented(group,{onPick}={}){
+    const all=()=>[...group.querySelectorAll('.ux-tab')];
+    group.classList.add('ux-tabs');group.setAttribute('role','radiogroup');
+    const pick=b=>{all().forEach(x=>{const on=x===b;x.setAttribute('role','radio');x.classList.toggle('active',on);x.setAttribute('aria-checked',String(on));x.tabIndex=on?0:-1})};
+    group.addEventListener('click',e=>{const b=e.target.closest('.ux-tab');if(!b||!group.contains(b))return;pick(b);if(onPick)onPick(b)});
+    group.addEventListener('keydown',e=>{const list=all(),i=list.indexOf(e.target);if(i<0)return;const n=e.key==='ArrowRight'||e.key==='ArrowDown'?i+1:e.key==='ArrowLeft'||e.key==='ArrowUp'?i-1:e.key==='Home'?0:e.key==='End'?list.length-1:null;if(n===null)return;e.preventDefault();const b=list[(n+list.length)%list.length];pick(b);b.focus();b.scrollIntoView?.({block:'nearest',inline:'nearest'});if(onPick)onPick(b)});
+    pick(all().find(x=>x.classList.contains('active')||x.getAttribute('aria-checked')==='true')||all()[0]);
+    return {pick};
+  }
+  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{pullToRefresh,segmented});
 })();

@@ -1,7 +1,7 @@
 'use strict';
 // Every run describes itself as a card (icon, preview, badge, action) so the UI only renders. Pure: no I/O; lookups are injected.
 // STATUS mirrors LocalAIKit.statusBadge in public/ui.js: keep the two tables identical.
-const STATUS = Object.freeze({awaiting_approval:['Ready to review','accent'],ready:['Ready to review','accent'],needs_attention:['Needs a look','attention'],applied:['Done','good'],completed:['Done','good'],answered:['Done','good'],running:['Running','accent'],failed:['Failed','bad'],queued:['Queued','neutral'],down:['Down','bad'],healthy:['Healthy','good'],optional_offline:['Offline','neutral']});
+const STATUS = Object.freeze({awaiting_approval:['Ready to review','accent'],ready:['Ready to review','accent'],needs_attention:['Needs a look','attention'],applied:['Done','good'],completed:['Done','good'],answered:['Done','good'],running:['Running','accent'],failed:['Failed','bad'],error:['Failed','bad'],validation_failed:['Needs a look','bad'],patch_failed:['Needs a look','bad'],rejected:['Rejected','neutral'],cancelled:['Cancelled','neutral'],queued:['Queued','neutral'],down:['Down','bad'],healthy:['Healthy','good'],optional_offline:['Offline','neutral']});
 const KINDS = Object.freeze({chat:['compose','ask'],research:['globe','ask'],image:['image','create'],agent:['automate','agents'],automation:['refresh','automationStudio'],engineering:['build','changes']});
 const LEGACY_TYPES = Object.freeze({mission:'agent',specialist:'agent'});
 // Work's filter chips: which chip a run belongs to. GET /api/runs?kind= filters by it; anything not listed (automation too) is "other".

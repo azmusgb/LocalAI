@@ -16,7 +16,7 @@ await page.route('**/api/approvals', r => r.fulfill({ json: { items } }));
 await page.route('**/api/notifications', r => r.fulfill({ json: { items: [], unread: 0 } }));
 await page.goto(base + '/#inbox', { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => typeof window.showView === 'function');
-const open = async () => { await page.evaluate(() => window.showView('inbox')); await page.waitForSelector('#inbox.active #inboxList .inbox-waiting, #inbox.active #inboxList .empty'); };
+const open = async () => { await page.evaluate(() => window.showView('inbox')); await page.waitForSelector('#inbox.active #inboxList .inbox-waiting, #inbox.active #inboxList .empty-state'); };
 
 await check('Inbox: waiting approvals come first; decided ones sit in a closed "History (2)" section', async () => {
   await open();

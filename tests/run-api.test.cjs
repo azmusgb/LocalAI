@@ -235,6 +235,54 @@ test('image runs share a thread', { timeout: 60000 }, async t => {
   assert.equal((await request('/api/runs?threads=1&type=image')).value.items.length, 1);
 });
 
+// A ComfyUI with Z-Image Turbo's three files: Best runs it, and the chat's capability snapshot names it.
+test('Z-Image Turbo: Best engine, its graph, and the chat snapshot', { timeout: 60000 }, async t => {
+  const queued = [];
+  const lists = {
+    CheckpointLoaderSimple: ['ckpt_name', ['sd15.safetensors']],
+    UNETLoader: ['unet_name', ['z_image_turbo_bf16.safetensors']],
+    CLIPLoader: ['clip_name', ['qwen_3_4b.safetensors', 'clip_l.safetensors']],
+    VAELoader: ['vae_name', ['ae.safetensors']]
+  };
+  const comfy = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', c => raw += c);
+    req.on('end', () => {
+      const node = req.url.startsWith('/object_info/') ? req.url.slice('/object_info/'.length) : null;
+      if (node && !lists[node]) { res.writeHead(404); return res.end('{}'); }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (node) return res.end(JSON.stringify({ [node]: { input: { required: { [lists[node][0]]: [lists[node][1]] } } } }));
+      if (req.url === '/prompt') { queued.push(JSON.parse(raw).prompt); return res.end(JSON.stringify({ prompt_id: 'z1' })); }
+      if (req.url.startsWith('/history/')) return res.end(JSON.stringify({ z1: { status: { status_str: 'success' }, outputs: { 9: { images: [{ filename: 'z.png', subfolder: '', type: 'output' }] } } } }));
+      res.end('{}');
+    });
+  });
+  comfy.listen(0, '127.0.0.1');
+  await once(comfy, 'listening');
+  t.after(async () => { comfy.closeAllConnections(); await new Promise(resolve => comfy.close(resolve)); });
+  const { request, ollamaCalls } = await startServer(t, { COMFY_URL: `http://127.0.0.1:${comfy.address().port}` });
+
+  const models = await request('/api/images/models');
+  const best = models.value.engines.find(x => x.id === 'best');
+  assert.deepEqual([best.label, best.family, best.model, best.base], ['Best', 'zimage', 'Z-Image Turbo', 1024]);
+
+  const made = await request('/api/images/generate', { prompt: 'a lighthouse at dusk', engine: 'best', style: 'photo', aspect: 'portrait' });
+  assert.equal(made.response.status, 200, JSON.stringify(made.value));
+  assert.deepEqual([made.value.family, made.value.width, made.value.height, made.value.steps, made.value.cfg], ['zimage', 832, 1216, 8, 1]);
+  const g = queued[0];
+  assert.equal(g[1].class_type, 'UNETLoader');
+  assert.equal(g[13].class_type, 'ModelSamplingAuraFlow');
+  assert.equal(g[7].inputs.sampler_name, 'res_multistep');
+  assert.match(g[4].inputs.text, /^a lighthouse at dusk, professional photograph/);
+  // The Photo style's "avoid" words go nowhere: cfg 1 would ignore them.
+  assert.ok(!JSON.stringify(g).includes('cartoon'));
+
+  await request('/api/chat', { messages: [{ role: 'user', content: 'Which image models do you have?' }] });
+  const system = ollamaCalls.filter(c => c.url === '/api/chat').flatMap(c => c.body.messages || []).filter(m => m.role === 'system').map(m => m.content).join('\n');
+  assert.match(system, /Best = Z-Image Turbo \(z_image_turbo_bf16\.safetensors, qwen_3_4b\.safetensors, ae\.safetensors\)/);
+  assert.match(system, /Image models are not Ollama models/);
+});
+
 test('before pages the timeline by creation time', { timeout: 120000 }, async t => {
   const { request } = await startServer(t);
   const ids = [];
