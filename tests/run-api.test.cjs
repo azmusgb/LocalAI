@@ -582,3 +582,31 @@ test('kind filters the threads timeline before before and limit', { timeout: 120
   assert.equal((await request('/api/runs?threads=1&kind=all')).value.items.length, 72, 'all means no filter');
   assert.equal((await request('/api/runs?threads=1&kind=nonsense')).response.status, 400);
 });
+
+// Work › Missions showed "om the supplied source, …" for an older specialist run. A build that ran on the appliance
+// around 14 Oct wrote each specialist and mission into the ledger itself (type 'specialist'/'mission', input {}, title =
+// the goal). The stored goal was already missing "Fr" everywhere (mission, worker, ledger row): the request arrived that
+// way, so the text can't be recovered. Listing must still show such a row's title whole, and a new mission keeps the
+// start of its goal.
+const GOAL = 'From the supplied source, identify one mission completion behavior. Cite the source file. Limit your answer to three bullets.';
+const seedSpecialist = s => {
+  const at = '2026-10-14T23:56:54.381Z';
+  s.writeSetting('unified-run/run-1792022214381-8545b46', { id: 'run-1792022214381-8545b46', projectId: null, threadId: 'run-1792022214381-8545b46', pinned: false, type: 'specialist', title: GOAL, status: 'completed', progress: 100, createdAt: at, startedAt: at, updatedAt: at, finishedAt: at, summary: '', input: {}, output: '- one\n- two', error: null, artifactIds: [], source: { id: 'spec-mv8rra3x-77ea11', type: 'specialist' }, meta: { sourceId: 'spec-mv8rra3x-77ea11', missionId: 'mission-mv8rra37-318475', phase: 'complete' }, cancellable: false, retryRequest: null, attempt: 1, retryOf: null, events: [{ at, status: 'completed', detail: 'complete' }] });
+  s.put('specialistRuns', { id: 'spec-mv8rra3x-77ea11', agentId: 'research_agent', goal: GOAL, status: 'complete', createdAt: at, updatedAt: at, ledgerId: 'run-1792022214381-8545b46' });
+};
+test('an older specialist run lists in Missions with its whole title', { timeout: 60000 }, async t => {
+  const { request } = await startServer(t, {}, seedSpecialist);
+  const rows = (await request('/api/runs?threads=1&kind=missions&limit=50')).value.items;
+  const row = rows.find(x => x.id === 'run-1792022214381-8545b46');
+  assert.ok(row, JSON.stringify(rows.map(x => x.id)));
+  assert.equal(row.title, GOAL);
+  assert.equal(row.card.title, GOAL);
+  assert.equal(row.card.kind, 'agent');
+  assert.equal((await request('/api/runs?id=run-1792022214381-8545b46')).value.item.card.title, GOAL);
+  const a = await request('/api/agents/missions/start', { goal: GOAL, agentIds: ['code_analyst'], async: true });
+  assert.equal(a.response.status, 202, JSON.stringify(a.value));
+  const run = (await request('/api/runs?id=' + a.value.runId)).value.item;
+  assert.ok(run.title.startsWith('From the supplied source, identify'), run.title);
+  assert.equal(run.input.goal, GOAL);
+  await waitRun(request, a.value.runId, r => r.status === 'completed' || r.status === 'failed');
+});

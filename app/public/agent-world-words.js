@@ -21,13 +21,18 @@ const ROLES={
  deployer:['Ships the change','shipping the change'],
  operator:['Watches it run','watching it run']
 };
-const key=w=>{const id=String(w&&(w.id||w.agentId)||'');return ROUTERS.has(id)?'router':COORDS.has(id)?'synthesis':id};
+// A follow-up the Coordinator asks for ("ux_analyst-followup-1") is the same specialist doing a second, smaller job.
+const FOLLOW=/-followup-\d+$/;
+const key=w=>{const id=String(w&&(w.id||w.agentId)||'').replace(FOLLOW,'');return ROUTERS.has(id)?'router':COORDS.has(id)?'synthesis':id};
+const isFollowUp=w=>FOLLOW.test(String(w&&(w.id||w.agentId)||''));
 function workerName(w){
  if(!w)return'';const id=key(w);
  if(id==='router')return'Team lead';
  const n=String(w.name||w.agentName||'').trim();if(n)return n;
  const raw=String(w.id||w.agentId||'Worker').replace(/[_-]+/g,' ');return raw.charAt(0).toUpperCase()+raw.slice(1);
 }
+// The worker as the subject of a sentence: a follow-up reads "UX Analyst’s follow-up", not "UX Analyst · follow-up".
+function subject(w){if(!isFollowUp(w))return workerName(w);const n=workerName(w).replace(/\s*·\s*follow-up$/i,'');return n+'’s follow-up'}
 const workerRole=w=>(ROLES[key(w)]||['Helps with the mission'])[0];
 const activity=w=>(ROLES[key(w)]||[0,'working'])[1];
 const BADGE={running:['Working','accent'],complete:['Done','good'],pending:['Waiting','neutral'],queued:['Waiting','neutral'],error:['Needs you','bad'],blocked:['Needs you','bad'],needs_attention:['Needs you','bad']};
@@ -38,8 +43,14 @@ function duration(ms){
  const h=Math.floor(m/60),r=m%60;return h+' h'+(r?' '+r+' min':'');
 }
 const span=(a,b)=>Date.parse(b)-Date.parse(a);
+// The server's step labels ("Follow-up stopped: …", "Follow-up failed: …") are dropped: the sentence names the step.
+const STEP_LABEL=/^(?:follow-up\s+)?(?:stopped|failed)\s*:\s*/i;
 function errorWords(code,msg){
- const c=String(code||''),t=String(msg||'').trim();
+ const c=String(code||'');let t=String(msg||'').trim();
+ for(let i=0;i<3&&STEP_LABEL.test(t);i++)t=t.replace(STEP_LABEL,'').trim();
+ if(c==='AGENT_TIMEOUT'||/execution deadline reached/i.test(t))return'the agent ran out of time';
+ if(c==='AGENT_TURN_LIMIT'||/turn limit reached/i.test(t))return'the agent couldn’t settle on an answer';
+ if(c==='AGENT_CONTEXT_LIMIT'||/context limit reached/i.test(t))return'the agent had too much to read';
  if(c==='MODEL_CONNECTION_ERROR'||/fetch failed|ECONNREFUSED|ECONNRESET|socket hang up/i.test(t))return'the model didn’t answer';
  if(c==='MODEL_TIMEOUT'||/time(d)? ?out/i.test(t))return'the model took too long';
  if(c==='APPLIANCE_RESTART')return'Local AI restarted while it was working';
@@ -65,7 +76,7 @@ function workerStep(w,m){
   const d=duration(span(w.startedAt,w.finishedAt));return d?'Finished in '+d:'Finished';
  }
  if(w.state==='error')return'Stopped: '+workerError(w,m);
- if(w.state==='blocked'){const stuck=(w.dependsOn||[]).map(byId).filter(x=>x&&BAD.has(x.state));return stuck.length?'Couldn’t start: '+names(stuck.map(workerName))+' stopped':'Couldn’t start'}
+ if(w.state==='blocked'){const stuck=(w.dependsOn||[]).map(byId).filter(x=>x&&BAD.has(x.state));return stuck.length?'Couldn’t start: '+names(stuck.map(subject))+' stopped':'Couldn’t start'}
  const wait=(w.dependsOn||[]).map(byId).filter(x=>x&&x.state!=='complete');
  return wait.length?'Waiting for '+names(wait.map(workerName)):'Waiting to start';
 }
@@ -74,7 +85,7 @@ function statusSentence(m){
  const all=m.workers||[],done=all.filter(w=>w.state==='complete').length,count=done+' of '+all.length+' done';
  const bad=all.find(w=>w.state==='error')||all.find(w=>w.state==='blocked');
  if(m.status==='needs_attention'||m.status==='error'||m.status==='failed'||bad){
-  const why=bad?workerName(bad)+(bad.state==='error'?' stopped: '+workerError(bad,m):' couldn’t start'):errorWords(m.errorCode,m.error);
+  const why=bad?subject(bad)+(bad.state==='error'?' stopped: '+workerError(bad,m):' couldn’t start'):errorWords(m.errorCode,m.error);
   return{tone:'attention',label:'Needs you',text:'Needs you · '+(all.length?count+' · ':'')+why};
  }
  if(m.status==='complete'){const d=duration(span(m.createdAt,m.finishedAt||m.updatedAt)),n=all.length;return{tone:'done',label:'Done',text:'Done'+(d?' in '+d:'')+' · '+n+' worker'+(n===1?'':'s')}}
@@ -93,7 +104,7 @@ function storyEvents(m){
  const tl=(m.timeline||[]).filter(e=>e&&Array.isArray(e.workers));
  if(!tl.length){
   const all=m.workers||[];if(!all.length)return[];say(m.createdAt,'router','The team lead picked the team: '+team(all),'done');
-  for(const w of all){if(key(w)==='router')continue;const n=workerName(w),step=workerStep(w,m);
+  for(const w of all){if(key(w)==='router')continue;const n=subject(w),step=workerStep(w,m);
    say(m.updatedAt,idOf(w),w.state==='complete'?n+' finished':w.state==='error'||w.state==='blocked'?n+' '+step.charAt(0).toLowerCase()+step.slice(1):n+' is '+step.charAt(0).toLowerCase()+step.slice(1),TONE[w.state]||'wait')}
   return out.reverse();
  }
@@ -102,7 +113,7 @@ function storyEvents(m){
   const ws=e.workers,snap={...m,workers:ws},before=id=>prev?.find(x=>idOf(x)===id)?.state||'pending';
   if(!prev)say(e.at,'router','The team lead picked the team: '+team(ws),'done');
   for(const w of ws){
-   if(key(w)==='router')continue;const id=idOf(w),n=workerName(w),was=before(id);
+   if(key(w)==='router')continue;const id=idOf(w),n=subject(w),was=before(id);
    if(w.state!==was){const c=changeSentence(w,snap);if(c)say(e.at,id,c,TONE[w.state])}
    if(w.state==='pending'&&!waited.has(id)){const deps=(w.dependsOn||[]).map(d=>ws.find(x=>idOf(x)===d)).filter(Boolean);
     if(deps.some(d=>d.state==='running')){waited.add(id);say(e.at,id,n+' is waiting for '+names(deps.filter(d=>d.state!=='complete').map(workerName)),'wait')}}
@@ -114,7 +125,7 @@ function storyEvents(m){
  return out.reverse();
 }
 // One worker's new state as a sentence (the story and the city's floating notes): "UX Analyst started reviewing the screens".
-function changeSentence(w,m){const n=workerName(w);return w.state==='running'?n+' started '+activity(w):w.state==='complete'?n+' finished':w.state==='error'?n+' stopped: '+workerError(w,m):w.state==='blocked'?n+' '+workerStep(w,m).replace(/^C/,'c'):''}
+function changeSentence(w,m){const n=subject(w);return w.state==='running'?n+' started '+activity(w):w.state==='complete'?n+' finished':w.state==='error'?n+' stopped: '+workerError(w,m):w.state==='blocked'?n+' '+workerStep(w,m).replace(/^C/,'c'):''}
 const TONE={running:'working',complete:'done',error:'bad',blocked:'bad',pending:'wait'};
 // Consecutive sentences about one worker read as one group under that worker.
 function groupStory(list){const g=[];for(const e of list||[]){const last=g[g.length-1];if(last&&e.workerId&&last.workerId===e.workerId)last.items.push(e);else g.push({workerId:e.workerId||'',items:[e]})}return g}
@@ -129,10 +140,10 @@ function teamPreview(list){
 }
 // Why there is no summary yet, in one sentence.
 function summaryWhy(m){const all=(m&&m.workers)||[],c=all.find(w=>key(w)==='synthesis'),stopped=all.filter(w=>w.state==='error'&&key(w)!=='synthesis');
- if(c&&c.state==='blocked')return'No summary: the Coordinator couldn’t start because '+(stopped.length?names(stopped.map(workerName))+' stopped.':'a worker stopped.');
+ if(c&&c.state==='blocked')return'No summary: the Coordinator couldn’t start because '+(stopped.length?names(stopped.map(subject))+' stopped.':'a worker stopped.');
  if(c&&c.state==='error')return'No summary: the Coordinator stopped before finishing.';
  if(m&&m.status==='complete')return'No summary: the Coordinator didn’t write one.';
- if(stopped.length)return'No summary: '+names(stopped.map(workerName))+' stopped.';
+ if(stopped.length)return'No summary: '+names(stopped.map(subject))+' stopped.';
  return'No summary yet: the team is still working.'}
 const api={summaryWhy,changeSentence,teamPreview,workerName,workerRole,workerStep,stateBadge,statusSentence,storyEvents,groupStory,errorWords,duration};
 root.LocalAIAgentWords=api;

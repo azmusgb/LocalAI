@@ -147,3 +147,28 @@ test('without a summary, the page says why', () => {
   assert.equal(words.summaryWhy(mission({ status: 'complete', workers: [router(), ux({ state: 'complete' }), coord({ state: 'complete' })] })), 'No summary: the Coordinator didn’t write one.');
   assert.equal(words.summaryWhy(mission({ status: 'needs_attention', workers: [router(), ux({ state: 'complete' }), coord({ state: 'error' })] })), 'No summary: the Coordinator stopped before finishing.');
 });
+
+// Live, a follow-up that hit its deadline read "UX Analyst · follow-up stopped: follow-up stopped: Agent execution
+// deadline reached": the server's error already carried the step label, and the raw reason had no plain words.
+test('a stopped follow-up is said once, in plain words', () => {
+  const fu = (o = {}) => ({ id: 'ux_analyst-followup-1', name: 'UX Analyst · follow-up', state: 'error', dependsOn: [], error: 'Follow-up stopped: Agent execution deadline reached', ...o });
+  const doc = { id: 'documentation-followup-2', name: 'Documentation Agent · follow-up', state: 'error', dependsOn: [], error: 'Follow-up stopped: Agent execution deadline reached' };
+  const m = mission({ status: 'needs_attention', error: 'One or more follow-up investigations failed', workers: [router(), ux({ state: 'complete' }), coord({ state: 'complete' }), fu(), doc] });
+  const st = words.statusSentence(m);
+  assert.equal(st.text, 'Needs you · 3 of 5 done · UX Analyst’s follow-up stopped: the agent ran out of time');
+  assert.equal((st.text.match(/stopped/gi) || []).length, 1);
+  assert.equal(words.changeSentence(m.workers[3], m), 'UX Analyst’s follow-up stopped: the agent ran out of time');
+  assert.equal(words.workerStep(m.workers[3], m), 'Stopped: the agent ran out of time');
+  assert.equal(words.summaryWhy(m), 'No summary: UX Analyst’s follow-up and Documentation Agent’s follow-up stopped.');
+  // A follow-up is the same specialist: it has that specialist's role and activity.
+  assert.equal(words.workerRole(m.workers[3]), 'Reviews screens for usability');
+  assert.equal(words.changeSentence(fu({ state: 'running', error: '' }), m), 'UX Analyst’s follow-up started reviewing the screens');
+  // The step label is dropped whichever way the server wrote it, and the code alone is enough.
+  assert.equal(words.errorWords('', 'Follow-up failed: Agent execution deadline reached'), 'the agent ran out of time');
+  assert.equal(words.errorWords('AGENT_TIMEOUT', 'Stopped: whatever'), 'the agent ran out of time');
+  assert.equal(words.errorWords('', 'Agent turn limit reached without a supported final answer'), 'the agent couldn’t settle on an answer');
+  assert.equal(words.errorWords('AGENT_CONTEXT_LIMIT', 'Agent context limit reached; narrow the investigation'), 'the agent had too much to read');
+  assert.equal(words.errorWords('', 'Follow-up stopped: aborted'), 'aborted');
+  // Its name on its own (labels in the city) is unchanged.
+  assert.equal(words.workerName(m.workers[3]), 'UX Analyst · follow-up');
+});
