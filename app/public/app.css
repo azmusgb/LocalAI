@@ -2117,3 +2117,22 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
   .aw-sheet__action:not([hidden]){display:inline-flex;align-items:center;flex:none;min-height:44px;padding:0 14px}
   .aw-sheet__peek:has(.aw-sheet__action:not([hidden])) .aw-sheet__avatars{display:none}
 }
+/* System › Spreadsheets (spreadsheets.js) */
+.sheets-status[data-state="ready"] .dot{background:var(--ds-good)}
+.sheets-status[data-state="checking"] .dot{background:var(--ds-progress)}
+.sheets-status[data-state="down"] .dot{background:var(--ds-bad)}
+.sheets-ask{display:grid;gap:10px;margin-top:14px}
+.sheets-ask label{font-weight:650}
+.sheets-ask textarea{min-height:110px;font-size:16px;line-height:1.45;resize:vertical}
+.sheets-examples{display:flex;gap:8px;flex-wrap:wrap}
+.sheets-examples .suggestion-chip{text-align:left;white-space:normal}
+.sheets-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.sheets-result{display:grid;gap:10px;margin-top:12px}
+.sheets-result[hidden]{display:none}
+.sheets-result__head{display:flex;justify-content:space-between;gap:12px}
+.sheets-result__text{margin:0;white-space:pre-wrap;word-break:break-word;line-height:1.5}
+.sheets-result[data-kind="working"] .sheets-result__text{color:var(--ds-text-muted)}
+.sheets-result[data-kind="error"]{border-color:color-mix(in srgb,var(--ds-bad) 40%,var(--ds-line))}
+.sheets-result .btn-outline{justify-self:start}
+.sheets-result .btn-outline[hidden]{display:none}
+@media(max-width:760px){.topbar:has(.sheets-status){flex-wrap:wrap;gap:8px}.sheets-actions .btn-primary{width:100%}}

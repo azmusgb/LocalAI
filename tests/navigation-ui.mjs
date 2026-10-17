@@ -137,13 +137,15 @@ await check('top bar shows one Inbox count and opens the Inbox', async () => {
   }
 });
 
-await check('GridCraft is reachable from Services', async () => {
+await check('GridCraft is reachable from Services, and opens System › Spreadsheets', async () => {
   await page.evaluate(() => window.showView('integrations'));
   await page.waitForSelector('#integrations[data-integration-v2="true"]');
-  const link = page.locator('#integrations a[href="/gridcraft.html"]');
-  await link.waitFor({ state: 'visible' });
-  assert.equal(await link.innerText(), 'Open GridCraft');
   await page.locator('[data-integration-source-v2="gridcraft"]').filter({ hasNotText: 'Checking' }).waitFor({ timeout: 8000 });
+  const open = page.locator('#integrations [data-integration-view="spreadsheets"]');
+  await open.waitFor({ state: 'visible' });
+  assert.equal(await open.innerText(), 'Open Spreadsheets');
+  await open.click();
+  await page.waitForSelector('#spreadsheets.active');
 });
 
 await check('opening a run keeps you on your page (open is false for an unknown id and moves nothing)', async () => {
@@ -312,7 +314,7 @@ await mobile.close();
 
 // Developer tools off (a new install): System's menu, the page strip and the phone sheet hold the owner's pages only.
 // The developer pages still open by address, and the switch brings them back.
-const OWNER_SYSTEM = ['Health', 'Models', 'Services', 'Automations', 'Audit log']; // Monitors folded into Automations (D9)
+const OWNER_SYSTEM = ['Health', 'Models', 'Services', 'Automations', 'Spreadsheets', 'Audit log']; // Monitors folded into Automations (D9)
 const DEV_SYSTEM = ['Claude Code', 'Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows'];
 await check('developer tools off: System lists the owner pages only; a developer page still opens by address', async () => {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
@@ -323,7 +325,7 @@ await check('developer tools off: System lists the owner pages only; a developer
   await pg.waitForFunction(() => typeof window.showView === 'function' && document.body.classList.contains('dev-tools-off'));
   await pg.waitForSelector('#status.active');
   assert.deepEqual(await pg.locator('#uxSecondaryGroups .ux-link-label').allInnerTexts(), OWNER_SYSTEM);
-  assert.deepEqual(await pg.locator('#uxSecondaryGroups .ux-secondary-label').allInnerTexts(), ['Health', 'Automations', 'History'], 'an empty Tools group is not shown');
+  assert.deepEqual(await pg.locator('#uxSecondaryGroups .ux-secondary-label').allInnerTexts(), ['Health', 'Automations', 'Tools', 'History'], 'Tools shows only Spreadsheets');
   await pg.locator('.ux-nav-collapse').click();
   assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), OWNER_SYSTEM);
   await pg.locator('.ux-nav-expand').click();

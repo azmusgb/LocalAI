@@ -99,6 +99,12 @@ sheet. After them come open alerts, then **History**: resolved alerts and what y
 It keeps alerts you missed while notifications were quiet. The bell shows one number: unread alerts plus approvals
 waiting. Old Approvals links open the Inbox.
 
+## Spreadsheets
+**System › Spreadsheets** asks GridCraft, on the Windows computer, to check or change the workbook open there: type what
+you want ("add a Total row to the Sales sheet and save") or tap an example, then **Run**. It takes from a few seconds
+to a few minutes, one request at a time, and works from a phone too. The badge says whether GridCraft is ready; if a
+request fails, the answer says why and **Try again** sends it once more.
+
 ## Automations
 
 **System › Automations** is one page for everything that runs by itself. Pick a **Kind**, then create it:
