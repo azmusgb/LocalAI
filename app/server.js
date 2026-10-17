@@ -1814,10 +1814,17 @@ function legacyUnifiedRuns() {
   }
   return items;
 }
+// Older missions wrote a `mission` run and a `specialist` run per worker (meta.missionId). A worker belongs to its mission's
+// row, so lists show the mission once; the worker run is kept and still opens by id. A specialist run with no listed mission stays.
+function collapseMissionWorkers(items){
+  const missions=new Set();
+  for(const x of items){if(x.type==='mission'&&x.meta?.sourceId)missions.add(x.meta.sourceId);else if(x.type!=='specialist'&&x.meta?.missionId)missions.add(x.meta.missionId)}
+  return missions.size?items.filter(x=>!(x.type==='specialist'&&x.meta?.missionId&&missions.has(x.meta.missionId))):items;
+}
 function unifiedRunItems(limit=120,filter=null){
   const paged=!!filter?.threads; // a threads timeline pages through everything, so it reads the whole ledger, not its newest 500
   const native=runLedger.list({limit:500,all:paged,projectId:filter?.projectId,threadId:filter?.threadId});const legacy=legacyUnifiedRuns();
-  let all=[...native,...legacy];
+  let all=collapseMissionWorkers([...native,...legacy]);
   if(filter?.projectId)all=all.filter(x=>x.projectId===filter.projectId);
   if(filter?.threadId)all=all.filter(x=>(x.threadId||x.id)===filter.threadId);
   const byUpdate=(a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))||String(b.id).localeCompare(String(a.id));
@@ -2192,7 +2199,8 @@ async function apiSpecialistRun(req,res){if(!requireFeature(res,4))return;try{co
 async function apiAgentDispatch(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});json(res,200,{routing:await getSpecialistOrchestrator().dispatch(goal,Array.isArray(b.agentIds)?b.agentIds:undefined)})}catch(e){storageError(res,e,400)}}
 async function apiAgentMissions(req,res){if(!requireFeature(res,4))return;json(res,200,{items:getSpecialistOrchestrator().missions(200)})}
 async function apiAgentMission(req,res,urlObj){if(!requireFeature(res,4))return;const id=String(urlObj.searchParams.get('id')||''),m=getSpecialistOrchestrator().getMission(id);if(!m)return json(res,404,{error:'Mission not found'});json(res,200,{mission:m})}
-// A mission started with async:true is a ledger run from the first moment: 202 now, the run follows the mission's own events.
+// Every mission is a ledger run from the first moment, however it was started, so Work › Missions lists it.
+// async:true answers 202 at once; without it (Agent World) the reply waits for the mission. The run follows the mission's own events.
 // Mission statuses: running | complete | needs_attention | error (the last two end the run failed).
 function startMissionRun(goal,projectId,ids,allowWeb=false){
   const orch=getSpecialistOrchestrator();
@@ -2208,11 +2216,13 @@ function startMissionRun(goal,projectId,ids,allowWeb=false){
     if(m.status==='complete')runLedger.complete(run.id,{summary:String(m.answer||'Mission complete').replace(/\s+/g,' ').trim().slice(0,600),output:{missionId:m.id,outcome:m.status},meta:{missionId:m.id}});
     else runLedger.update(run.id,{status:'failed',error:String(m.error||'The mission needs attention.').slice(0,8000),output:{missionId:m.id,outcome:m.status},meta:{missionId:m.id}},'Mission '+m.status);
   };
-  orch.mission(goal,projectId,ids,{signal:controller.signal,allowWeb,onCreated:m=>{missionId=m.id;orch.events.on('mission',apply);off=()=>orch.events.off('mission',apply);runLedger.update(run.id,{meta:{missionId:m.id}},'Mission created')}})
-    .then(m=>apply(m),e=>{activeRunControllers.delete(run.id);if(ended)return;ended=true;off();runLedger.fail(run.id,e)});
-  return run;
+  // `done` settles with the mission (or its error) for callers that wait for it; the run records the outcome either way.
+  const done=orch.mission(goal,projectId,ids,{signal:controller.signal,allowWeb,onCreated:m=>{missionId=m.id;orch.events.on('mission',apply);off=()=>orch.events.off('mission',apply);runLedger.update(run.id,{meta:{missionId:m.id}},'Mission created')}})
+    .then(m=>{apply(m);return m},e=>{activeRunControllers.delete(run.id);if(!ended){ended=true;off();runLedger.fail(run.id,e)}throw e});
+  done.catch(()=>{});
+  return {run,done};
 }
-async function apiAgentMissionStart(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const ids=Array.isArray(b.agentIds)&&b.agentIds.length?b.agentIds:undefined;const allowWeb=b.webSearch===true;if(b.async===true){const run=startMissionRun(goal,String(b.projectId||''),ids,allowWeb);return json(res,202,{runId:run.id,threadId:run.threadId})}json(res,200,{mission:await getSpecialistOrchestrator().mission(goal,String(b.projectId||''),ids,{allowWeb})})}catch(e){storageError(res,e,400)}}
+async function apiAgentMissionStart(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const ids=Array.isArray(b.agentIds)&&b.agentIds.length?b.agentIds:undefined;const allowWeb=b.webSearch===true;const {run,done}=startMissionRun(goal,String(b.projectId||''),ids,allowWeb);if(b.async===true)return json(res,202,{runId:run.id,threadId:run.threadId});json(res,200,{mission:await done,runId:run.id})}catch(e){storageError(res,e,400)}}
 const SSE_KEEPALIVE_MS=Math.max(1000,Number(process.env.SSE_KEEPALIVE_MS)||25000);
 async function apiAgentMissionEvents(req,res,urlObj){if(!requireFeature(res,4))return;res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});const wanted=String(urlObj.searchParams.get('missionId')||'');const send=m=>{if(!wanted||m.id===wanted)res.write('data: '+JSON.stringify(m)+'\n\n')};const orch=getSpecialistOrchestrator();orch.events.on('mission',send);res.write(': connected\n\n');
   // A comment every 25 s keeps phones and proxies from dropping a quiet stream.
