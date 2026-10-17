@@ -8,15 +8,32 @@
 //
 // A PR is tested in a throwaway worktree (its head merged with origin/main, as GitHub's pull_request runs do), so
 // your own checkout is never touched. The log is kept in the system temp folder and its path printed at the end.
+//
+// What a red looks like on the PR: the failure status names the failed steps, and one comment names the failing
+// unit tests (first ten) and any browser suite that failed twice. A browser suite that fails is run once more on
+// its own against the same server; if it passes, the run is green but the status reads "All passed, 1 suite on
+// retry: <suite>" and a comment says so, so flakes stay visible. Unit tests are never retried. With a PR number, a
+// title longer than 70 characters or with more than one clause (";" or " — ") gets one advisory comment, since PR
+// titles become the release notes; that never fails the run. The decisions are in scripts/local-ci-lib.mjs, tested
+// by tests/local-ci.test.cjs.
+//
+// Dry run, for working on this script without taking the machine's CI slot: LOCALAI_CI_DRY=1 skips the queue and
+// every real step (each prints a stand-in line instead), starts no server and never posts; it prints what it would
+// have posted. LOCALAI_CI_FAIL_UNIT=<test name> makes the dry unit step red with that test; LOCALAI_CI_FAIL_SUITE=<x-ui.mjs>
+// makes the dry browser step fail that suite, which then passes on retry. A PR number still works in a dry run
+// (worktree, merge, title check).
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import { failingUnitTests, failedBrowserSuites, browserSuiteCounts, suitesToRetry, ciSummary, failureComment, retryComment,
+  releaseNoteAdvice, RELEASE_NOTE_MARKER } from './local-ci-lib.mjs';
 
 const args = process.argv.slice(2);
 const pr = args.find(a => /^\d+$/.test(a));
-const post = Boolean(pr) && !args.includes('--no-post');
+const DRY = process.env.LOCALAI_CI_DRY === '1';
+const post = Boolean(pr) && !args.includes('--no-post') && !DRY;
 const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-ci-'));
 const logFile = path.join(work, 'ci.log');
@@ -27,22 +44,39 @@ const gh = (...a) => execFileSync('gh', a, { cwd: repoRoot, encoding: 'utf8' }).
 
 let dir = repoRoot, sha = null, worktree = null;
 async function status(state, description) {
-  if (!post) return;
+  if (!post) { if (pr) say(`(not posting) status ${state}: ${description}`); return; }
   try {
     gh('api', '-X', 'POST', `repos/{owner}/{repo}/statuses/${sha}`, '-f', `state=${state}`, '-f', 'context=local-ci',
       '-f', `description=${description.slice(0, 140)}`);
   } catch (e) { say(`(couldn't post the status: ${e.message.split('\n')[0]})`); }
 }
+// A PR comment; what the status can't hold (test names, the retry note). Never throws: a comment is not the result.
+function comment(body) {
+  if (!post) { if (pr) say(`(not posting) comment:\n${body.split('\n').map(l => '  | ' + l).join('\n')}`); return; }
+  try { gh('pr', 'comment', pr, '--body', body); } catch (e) { say(`(couldn't post the comment: ${e.message.split('\n')[0]})`); }
+}
 
 function run(name, cmd, cmdArgs, { env = {}, cwd = dir } = {}) {
+  if (DRY) [cmd, cmdArgs] = dryCommand(name);
   return new Promise(resolve => {
     say(`\n=== ${name}`);
     const child = track(spawn(cmd, cmdArgs, { cwd, env: { ...process.env, ...env }, shell: false, detached: true }));
-    let tail = '';
-    const take = d => { const s = d.toString(); log.write(s); tail = (tail + s).slice(-4000); };
+    let tail = '', out = '';
+    const take = d => { const s = d.toString(); log.write(s); tail = (tail + s).slice(-4000); out = (out + s).slice(-2e6); };
     child.stdout.on('data', take); child.stderr.on('data', take);
-    child.on('close', code => { say(code === 0 ? `--- ${name}: ok` : `--- ${name}: FAILED (exit ${code})`); resolve({ ok: code === 0, tail }); });
+    child.on('close', code => { say(code === 0 ? `--- ${name}: ok` : `--- ${name}: FAILED (exit ${code})`); resolve({ ok: code === 0, tail, out }); });
   });
+}
+
+// Dry run: each step is a node one-liner that prints what the real step's output would show and exits like it.
+function dryCommand(name) {
+  const failUnit = process.env.LOCALAI_CI_FAIL_UNIT, failSuite = process.env.LOCALAI_CI_FAIL_SUITE;
+  let script = `console.log('(dry) ${name.replace(/'/g, '')}')`;
+  if (name === 'Unit and contract tests' && failUnit) script = `console.log('✖ ' + ${JSON.stringify(failUnit)} + ' (1ms)\\nℹ pass 5\\nℹ fail 1\\n\\n✖ failing tests:\\n\\n✖ ' + ${JSON.stringify(failUnit)} + ' (1ms)'); process.exit(1)`;
+  else if (name === 'Browser suites' && failSuite) script = `console.log('--- ' + ${JSON.stringify(failSuite)} + ': FAILED in 0.1s\\n\\n13 of 14 browser suites passed; failed: ' + ${JSON.stringify(failSuite)}); process.exit(1)`;
+  else if (name === 'Browser suites') script = `console.log('14 of 14 browser suites passed')`;
+  else if (name.startsWith('Retry ')) script = `console.log('1 of 1 browser suites passed')`;
+  return [process.execPath, ['-e', script]];
 }
 
 // Children run in their own process groups so a stopped run can take its whole tree (npm, node --test, browsers) with it.
@@ -57,6 +91,7 @@ let haveLock = false;
 const lockOwner = () => { try { return JSON.parse(fs.readFileSync(path.join(LOCK, 'owner.json'), 'utf8')); } catch { return null; } };
 const alive = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
 async function queue() {
+  if (DRY) { say('(dry run: not taking the CI slot)'); return; }
   let told = 0;
   for (;;) {
     try {
@@ -81,29 +116,56 @@ function releaseLock() { if (haveLock && lockOwner()?.pid === process.pid) fs.rm
 
 const freePort = () => new Promise(r => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
 
+// All browser suites against one fresh server. A suite that fails is run once more on its own against the same
+// server (tests/run-browser.mjs <suite>); one that passes then counts as passed but is reported in `retried`.
+// Returns { ok, passed, total, retried, failing }.
 async function browserSuites() {
   const data = fs.mkdtempSync(path.join(work, 'data-'));
   const port = await freePort();
-  say(`\n=== Browser acceptance (fresh server on port ${port})`);
-  const server = track(spawn(process.execPath, ['app/server.js'], { cwd: dir, env: { ...process.env, DATA_DIR: data, WORKSPACE_ROOT: data, PORT: String(port) }, detached: true }));
-  const serverLog = fs.createWriteStream(path.join(work, 'server.log'));
-  server.stdout.pipe(serverLog); server.stderr.pipe(serverLog);
+  say(`\n=== Browser acceptance (${DRY ? 'dry run, no server' : `fresh server on port ${port}`})`);
+  const server = DRY ? null : track(spawn(process.execPath, ['app/server.js'], { cwd: dir, env: { ...process.env, DATA_DIR: data, WORKSPACE_ROOT: data, PORT: String(port) }, detached: true }));
+  if (server) { const serverLog = fs.createWriteStream(path.join(work, 'server.log')); server.stdout.pipe(serverLog); server.stderr.pipe(serverLog); }
+  const none = { ok: false, passed: 0, total: 0, retried: [], failing: [] };
   try {
-    let ready = false;
+    let ready = DRY;
     for (let i = 0; i < 30 && !ready; i++) {
       try { ready = (await fetch(`http://127.0.0.1:${port}/healthz`)).ok; } catch {}
       if (!ready) await new Promise(r => setTimeout(r, 1000));
     }
-    if (!ready) { say('--- Browser acceptance: FAILED (server did not become ready; see server.log)'); return { ok: false, summary: 'server did not start' }; }
-    const r = await run('Browser suites', process.execPath, ['tests/run-browser.mjs'], { env: { LOCALAI_URL: `http://127.0.0.1:${port}` } });
-    const m = r.tail.match(/(\d+) of (\d+) browser suites passed/);
-    return { ok: r.ok, summary: m ? `${m[1]}/${m[2]} browser suites` : 'browser suites' };
-  } finally { server.kill(); }
+    if (!ready) { say('--- Browser acceptance: FAILED (server did not become ready; see server.log)'); return { ...none, failing: ['server did not start'] }; }
+    const env = { LOCALAI_URL: `http://127.0.0.1:${port}` };
+    const first = await run('Browser suites', process.execPath, ['tests/run-browser.mjs'], { env });
+    const counts = browserSuiteCounts(first.out) || { passed: 0, total: 0 };
+    if (first.ok) return { ...none, ok: true, ...counts };
+    const failed = failedBrowserSuites(first.out);
+    const toRetry = suitesToRetry(failed);
+    if (!toRetry.length) { say(failed.length ? `(${failed.length} suites failed: not a flake, nothing retried)` : '(no suite named as failed; nothing retried)'); return { ...none, ...counts, failing: failed }; }
+    const retried = [], failing = [];
+    for (const suite of toRetry) {
+      const again = await run(`Retry ${suite}`, process.execPath, ['tests/run-browser.mjs', suite], { env });
+      (again.ok ? retried : failing).push(suite);
+    }
+    return { ok: !failing.length, passed: counts.passed + retried.length, total: counts.total, retried, failing };
+  } finally { server?.kill(); }
+}
+
+// PR titles are the release notes. One advisory comment per PR, never a red.
+function adviseOnTitle(title) {
+  const advice = releaseNoteAdvice(title);
+  if (!advice) return;
+  say(`\n${advice}`);
+  if (post) {
+    try {
+      const existing = JSON.parse(gh('pr', 'view', pr, '--json', 'comments')).comments || [];
+      if (existing.some(c => String(c.body || '').startsWith(RELEASE_NOTE_MARKER))) return;
+    } catch {}
+  }
+  comment(advice);
 }
 
 async function main() {
   if (pr) {
-    const head = JSON.parse(gh('pr', 'view', pr, '--json', 'headRefOid,headRefName,baseRefName,state'));
+    const head = JSON.parse(gh('pr', 'view', pr, '--json', 'headRefOid,headRefName,baseRefName,state,title'));
     if (head.state !== 'OPEN') throw new Error(`PR #${pr} is ${head.state.toLowerCase()}`);
     sha = head.headRefOid;
     git('fetch', '-q', 'origin', head.baseRefName, `pull/${pr}/head`);
@@ -111,13 +173,14 @@ async function main() {
     git('worktree', 'add', '-q', '--detach', worktree, sha);
     dir = worktree;
     fs.symlinkSync(path.join(repoRoot, 'node_modules'), path.join(dir, 'node_modules'));
-    say(`Local CI for PR #${pr} (${head.headRefName} @ ${sha.slice(0, 7)}) merged with origin/${head.baseRefName}`);
+    say(`Local CI for PR #${pr} (${head.headRefName} @ ${sha.slice(0, 7)}) merged with origin/${head.baseRefName}${DRY ? ' [dry run]' : ''}`);
+    try { adviseOnTitle(head.title); } catch (e) { say(`(title check skipped: ${e.message.split('\n')[0]})`); }
     await queue();
     await status('pending', 'Running on ' + os.hostname());
     try { execFileSync('git', ['merge', '-q', '--no-edit', `origin/${head.baseRefName}`], { cwd: dir, stdio: 'pipe' }); }
     catch { say(`--- Merge with ${head.baseRefName}: FAILED (conflicts; merge main into the branch first)`); await status('failure', `Conflicts with ${head.baseRefName}`); return false; }
   } else {
-    say(`Local CI for the current checkout (${git('rev-parse', '--short', 'HEAD')}); nothing is posted`);
+    say(`Local CI for the current checkout (${git('rev-parse', '--short', 'HEAD')}); nothing is posted${DRY ? ' [dry run]' : ''}`);
     await queue();
   }
 
@@ -135,13 +198,16 @@ async function main() {
   await step('No private-key files', 'sh', ['-c', "! find app -type f \\( -name '*.pem' -o -name '*.key' -o -name '*.pfx' -o -name '*.p12' -o -name '.env' \\) | grep ."]);
   const browser = await browserSuites();
   results.push(['Browser acceptance', browser.ok]);
+  if (browser.retried.length) say(`(passed on retry: ${browser.retried.join(', ')})`);
 
-  const failed = results.filter(([, ok]) => !ok).map(([n]) => n);
-  const unitCount = (unit.tail.match(/ℹ pass (\d+)/) || [])[1];
-  const summary = failed.length ? `Failed: ${failed.join(', ')}` : `All passed: ${unitCount ? unitCount + ' unit tests, ' : ''}${browser.summary}${hasPwsh ? '' : ' (PowerShell skipped)'}`;
-  say(`\n${failed.length ? '❌' : '✅'} ${summary}`);
-  await status(failed.length ? 'failure' : 'success', summary);
-  return !failed.length;
+  const failedSteps = results.filter(([, ok]) => !ok).map(([n]) => n);
+  const unitCount = (unit.out.match(/ℹ pass (\d+)/) || [])[1];
+  const { state, description } = ciSummary({ failedSteps, unitCount, browser, pwshSkipped: !hasPwsh });
+  say(`\n${state === 'success' ? '✅' : '❌'} ${description}`);
+  await status(state, description);
+  if (failedSteps.length) comment(failureComment({ failedSteps, failingTests: unit.ok ? [] : failingUnitTests(unit.out), failingSuites: browser.failing, host: os.hostname() }));
+  else if (browser.retried.length) comment(retryComment(browser.retried));
+  return state === 'success';
 }
 
 let ok = false;
