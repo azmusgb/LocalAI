@@ -195,6 +195,27 @@ await check('phone: the composer sits on the tab bar and nothing hides under it'
   await page.context().close();
 });
 
+// iOS keeps innerHeight and only shrinks visualViewport when the keyboard opens (as chat-run-ui.mjs emulates it).
+await check('phone: with the keyboard up the composer sits on the keyboard and the tab bar is hidden; both come back on blur', async () => {
+  const page = await open(phone, '#home');
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  await page.locator('#commandInput').focus();
+  await page.evaluate(() => { const vv = window.visualViewport; Object.defineProperty(vv, 'height', { configurable: true, value: 500 }); vv.dispatchEvent(new Event('resize')); });
+  await page.waitForTimeout(250);
+  const up = await page.evaluate(() => ({ cb: document.getElementById('homeComposer').getBoundingClientRect().bottom, focused: document.activeElement?.id }));
+  assert.equal(up.focused, 'commandInput');
+  assert.ok(Math.abs(up.cb - 500) <= 1, `composer bottom ${up.cb} vs keyboard top 500`);
+  assert.equal(await page.locator('#uxMobileNav').isVisible(), false, 'tab bar hidden while typing');
+  // The keyboard closes: blur first, then the visual viewport grows back (the order iOS uses).
+  await page.locator('#commandInput').blur();
+  await page.evaluate(() => { const vv = window.visualViewport; delete vv.height; vv.dispatchEvent(new Event('resize')); });
+  await page.waitForTimeout(250);
+  assert.equal(await page.locator('#uxMobileNav').isVisible(), true, 'tab bar is back');
+  const down = await page.evaluate(() => ({ cb: document.getElementById('homeComposer').getBoundingClientRect().bottom, nt: document.getElementById('uxMobileNav').getBoundingClientRect().top }));
+  assert.ok(Math.abs(down.cb - down.nt) <= 1, `composer bottom ${down.cb} vs nav top ${down.nt}`);
+  await page.context().close();
+});
+
 await check('desktop: the composer is at the foot of a centred column no wider than 720 px', async () => {
   const page = await open(desk, '#home');
   await page.waitForSelector('#homeRecent2 .run-card', T);
