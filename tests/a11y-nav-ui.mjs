@@ -145,22 +145,22 @@ await check('page tabs: one tab stop, arrows/Home/End move between tabs, each ta
   await page.evaluate(() => { location.hash = '#projects' });
   await page.waitForSelector('#projects.active .ux-tab');
   const tabs = page.locator('#projects .ux-tab');
-  assert.deepEqual(await tabs.evaluateAll(ts => ts.map(t => t.tabIndex)), [0, -1, -1], 'only the selected tab is in the Tab order');
-  assert.deepEqual(await tabs.evaluateAll(ts => ts.map(t => t.getAttribute('aria-controls'))), ['projects', 'knowledge', 'memory']);
+  assert.deepEqual(await tabs.evaluateAll(ts => ts.map(t => t.tabIndex)), [0, -1, -1, -1], 'only the selected tab is in the Tab order');
+  assert.deepEqual(await tabs.evaluateAll(ts => ts.map(t => t.getAttribute('aria-controls'))), ['projects', 'knowledge', 'memory', 'library']);
   await tabs.first().focus();
   await page.keyboard.press('ArrowRight');
   await page.waitForSelector('#knowledge.active');
   await page.waitForFunction(() => document.activeElement?.closest('#knowledge') && document.activeElement.dataset.uxTab === 'knowledge', null, { timeout: 2000 });
-  assert.deepEqual(await page.locator('#knowledge .ux-tab').evaluateAll(ts => ts.map(t => t.tabIndex)), [-1, 0, -1]);
+  assert.deepEqual(await page.locator('#knowledge .ux-tab').evaluateAll(ts => ts.map(t => t.tabIndex)), [-1, 0, -1, -1]);
   await page.keyboard.press('End');
-  await page.waitForSelector('#memory.active');
-  await page.waitForFunction(() => document.activeElement?.closest('#memory') && document.activeElement.dataset.uxTab === 'memory', null, { timeout: 2000 });
+  await page.waitForSelector('#library.active');
+  await page.waitForFunction(() => document.activeElement?.closest('#library') && document.activeElement.dataset.uxTab === 'library', null, { timeout: 2000 });
   await page.keyboard.press('ArrowRight'); // wraps
   await page.waitForSelector('#projects.active');
   await page.waitForFunction(() => document.activeElement?.closest('#projects') && document.activeElement.dataset.uxTab === 'projects', null, { timeout: 2000 });
-  await page.keyboard.press('ArrowLeft');
-  await page.waitForSelector('#memory.active');
-  await page.waitForFunction(() => document.activeElement?.closest('#memory') && document.activeElement.dataset.uxTab === 'memory', null, { timeout: 2000 });
+  await page.keyboard.press('ArrowLeft'); // wraps back to the last tab
+  await page.waitForSelector('#library.active');
+  await page.waitForFunction(() => document.activeElement?.closest('#library') && document.activeElement.dataset.uxTab === 'library', null, { timeout: 2000 });
   await page.keyboard.press('Home');
   await page.waitForSelector('#projects.active');
   await page.waitForFunction(() => document.activeElement?.dataset?.uxTab === 'projects', null, { timeout: 2000 });
