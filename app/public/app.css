@@ -2012,7 +2012,7 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .sheets-ask label{font-weight:650}
 .sheets-ask textarea{min-height:110px;font-size:16px;line-height:1.45;resize:vertical}
 .sheets-examples{display:flex;gap:8px;flex-wrap:wrap}
-.sheets-examples .suggestion-chip{text-align:left;white-space:normal;line-height:1.35;padding:6px 12px;font-size:13px}
+.sheets-examples .btn-outline{justify-content:flex-start;text-align:left;white-space:normal;line-height:1.35;height:auto;min-height:44px;padding:8px 14px;font-size:14px;font-weight:500}
 .sheets-mode{border:0;margin:0;padding:0;display:grid;gap:6px;min-width:0}
 .sheets-mode legend{font-weight:650;padding:0;margin-bottom:6px}
 .sheets-mode__opts{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:3px;border:1px solid var(--ds-line);border-radius:var(--ds-r-md);background:var(--ds-bg-2)}
@@ -2099,7 +2099,8 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .sheets-cell__main code{font-size:12px;color:var(--ds-accent-text);overflow-wrap:anywhere}
 .sheets-cell__change{grid-column:1;margin:0;font-size:12px;color:var(--ds-attention-text)}
 .sheets-cell .btn-outline{grid-column:2;grid-row:1/span 2}
-@media(max-width:1100px){.sheets-layout{grid-template-columns:minmax(0,1fr)}.sheets-grid-wrap{max-height:60vh}}
+/* Stacked (tablet and phone): the workbook comes first, since seeing it is why you open the page. */
+@media(max-width:1100px){.sheets-layout{grid-template-columns:minmax(0,1fr)}.sheets-layout>.sheets-book{order:-1}.sheets-grid-wrap{max-height:60vh}}
 @media(max-width:760px){.topbar:has(.sheets-status){flex-wrap:wrap;gap:8px}.sheets-actions .btn-primary{width:100%}.sheets-cell{grid-template-columns:minmax(0,1fr)}.sheets-cell .btn-outline{grid-column:1;grid-row:auto;justify-self:start}.sheets-pager .btn-outline{min-width:0;padding:0 10px}}
 
 /* Start a mission: one sheet (a modal dialog; a bottom sheet on phones). */
