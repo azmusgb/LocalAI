@@ -312,11 +312,14 @@ await check('Runs shows one card per run: thumbnail, diff stat and the Review ac
   assert.match(await eng.innerText(), /Fix the login bug[\s\S]*2 files[\s\S]*\+14[\s\S]*-3[\s\S]*Review[\s\S]*Ready to review/);
   assert.equal(await eng.locator('.badge.badge--accent').count(), 1);
 });
-await check('opening a run shows header, Not filed, Pin and File, then the approval bar before Timeline', async () => {
+await check('opening a run shows its header (kind only until filed), then the approval bar before Timeline; the tab is named for the run', async () => {
   await openRun('run_eng');
   const d = drawerOpen();
   const t = await d.innerText();
-  assert.match(t, /Fix the login bug/); assert.match(t, /Engineering · Not filed/);
+  assert.match(t, /Fix the login bug/);
+  assert.equal((await d.locator('.run-drawer-sub').innerText()).trim(), 'Change', 'an unfiled run names its kind and nothing else (E2)');
+  assert.doesNotMatch(t, /Not filed/);
+  assert.equal(await runPage.title(), 'Fix the login bug · Local AI', 'document.title names the run (E8)');
   assert.equal(await d.getByRole('button', { name: 'Pin' }).count(), 0, 'Pin lives in the details sheet');
   assert.equal(await d.locator('.run-approval').count(), 1);
   assert.match(await d.locator('.run-approval').innerText(), /Apply the login fix[\s\S]*High risk/);
@@ -376,9 +379,11 @@ await check('File… picks a project in a select and shows its name', async () =
   await drawerOpen().getByText('Beta').waitFor();
   assert.deepEqual(rv.posts, [['/api/runs/update', { id: 'run_eng', projectId: 'prj_b' }]]);
   assert.doesNotMatch(await drawerOpen().innerText(), /Not filed/);
+  assert.equal((await drawerOpen().locator('.run-drawer-sub').innerText()).trim(), 'Change · Beta', 'once filed, the header names the project');
 });
 await check('a body registered for a kind mounts in place of Output', async () => {
   await closeRun();
+  assert.equal(await runPage.title(), 'Runs · Local AI', 'closing the run gives the tab back to the page (E8)');
   await runPage.evaluate(() => window.LocalAIUI.registerRunBody('image', (run, el) => { el.innerHTML = `<div id="imgBody">gallery for ${run.id}</div>`; }));
   await openRun('run_img');
   const d = drawerOpen();

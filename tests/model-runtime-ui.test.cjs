@@ -20,7 +20,7 @@ test('Models surface consumes live model runtime truth', () => {
 });
 
 test('Attention flags inventory and default-model problems without treating idle unload as failure', () => {
-  assert.match(ui, /Model inventory could not be verified/);
+  assert.match(ui, /Model list could not be verified/);
   assert.match(ui, /Configured default model is not installed/);
   assert.match(ui, /Active model residency is unavailable/);
   assert.match(ui, /Ollama loads models on demand and may unload them after idle time/);

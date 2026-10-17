@@ -11,17 +11,19 @@ const path = require('node:path');
 const PUBLIC = path.resolve(__dirname, '../app/public');
 const { VIEWS } = require(path.join(PUBLIC, 'view-registry.js'));
 
-// The Copy rules' banned list. Extend it as terms retire (plan E1).
-const BANNED = /\b(capabilit(?:y|ies)|runtimes?|orchestration|inventory|workspaces?|artifacts?|patch(?:es)?)\b/gi;
+// The Copy rules' banned list. Extend it as terms retire (plan E1). RETIRED are the words the glossary in
+// docs/USER-GUIDE.md replaces (run, change, service); the last test keeps the two lists the same.
+const RETIRED = ['companion', 'execution', 'integration', 'change request'];
+const BANNED = new RegExp(String.raw`\b(capabilit(?:y|ies)|runtimes?|orchestration|inventory|workspaces?|artifacts?|patch(?:es)?|${RETIRED.map(w => w.replace(/ /g, '\\s') + 's?').join('|')})\b`, 'gi');
 
 // Developer-only pages: Improve, the four pages behind the developer switch (owner decision D1), and any section
 // marked data-dev.
 const DEV = new Set([...VIEWS.filter(v => v.domain === 'improve').map(v => v.id), 'workbench', 'repoTools', 'powershell', 'actions']);
 
 const CEILING = {
-  'index.html': 5,
-  'app.js': 9,
-  'ui.js': 40,
+  'index.html': 0,
+  'app.js': 4,
+  'ui.js': 3,
   'home.js': 0,
   'work.js': 0,
   'components.js': 0,
@@ -82,4 +84,22 @@ test('copy lint sees banned words where they are, and skips developer pages, mar
   assert.equal(htmlStrings(html).join('|').match(BANNED).length, 2);
   const js = "const a='/api/workspace',b='workspaceRoot',c=`<div class=\"artifact-card\">${x}</div>`,d='Saved to your workspace library';";
   assert.deepEqual(scriptStrings(js).join('|').match(BANNED), ['workspace']);
+});
+
+// The glossary in the user guide is the vocabulary (plan E1): each retired word is listed under "Instead of", and each
+// word the glossary teaches is one the app actually shows, word for word.
+test('the user guide glossary retires the same words and teaches words the app shows', () => {
+  const guide = fs.readFileSync(path.resolve(__dirname, '../docs/USER-GUIDE.md'), 'utf8');
+  const section = /^## Glossary\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(guide)?.[1];
+  assert.ok(section, 'docs/USER-GUIDE.md has a ## Glossary section');
+  const rows = section.split('\n').filter(l => /^\|\s*\*\*/.test(l)).map(l => l.split('|').slice(1, -1).map(c => c.trim()));
+  assert.ok(rows.length >= 6, 'the glossary has its rows');
+  const insteadOf = rows.map(r => r[2].toLowerCase()).join(', ');
+  for (const w of RETIRED) assert.match(insteadOf, new RegExp(`\\b${w}\\b`), `"${w}" is retired, so the glossary lists it under Instead of`);
+  const shown = [...Object.keys(CEILING), 'improve.js'].map(f => (f.endsWith('.html') ? htmlStrings : scriptStrings)(fs.readFileSync(path.join(PUBLIC, f), 'utf8')).join('\n'))
+    .concat(VIEWS.map(v => `${v.label}\n${v.tab || ''}`)).join('\n');
+  for (const [term] of rows) {
+    const word = term.replace(/\*\*/g, '');
+    assert.match(shown, new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'), `the app shows "${word}"`);
+  }
 });

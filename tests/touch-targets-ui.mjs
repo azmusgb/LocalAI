@@ -1,7 +1,7 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 
-// Phone: links and buttons inside text (Integrations guidance links, the Home setup card) are at least 44 px tall.
+// Phone: links and buttons inside text (Services guidance links, the Home setup card) are at least 44 px tall.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch({ headless: true });
 const failures = [];
@@ -13,7 +13,7 @@ await page.goto(base + '/#home', { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => typeof window.showView === 'function');
 const small = sel => page.evaluate(s => [...document.querySelectorAll(s)].filter(e => e.offsetParent).map(e => [e.textContent.trim().slice(0, 30), Math.round(e.getBoundingClientRect().height)]).filter(([, h]) => h < 44), sel);
 
-await check('Integrations: guidance links are at least 44 px tall', async () => {
+await check('Services: guidance links are at least 44 px tall', async () => {
   await page.evaluate(() => window.showView('integrations'));
   await page.waitForSelector('.view.active .ux-int-research-grid a', { state: 'attached' });
   assert.deepEqual(await small('.view.active .ux-int-research-grid a'), []);

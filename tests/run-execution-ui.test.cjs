@@ -14,7 +14,7 @@ test('Runs surface and Home run center are installed', () => {
   assert.match(runtime, /section\.id = 'runs'/);
   assert.match(runtime, /button\.dataset\.view = 'runs'/);
   assert.match(runtime, /panel\.id = 'homeRunCenter'/);
-  assert.match(runtime, /Execution history/);
+  assert.match(runtime, /<h2>All runs<\/h2>/);
 });
 
 test('execution drawer exposes lifecycle, cancel, retry, lineage, output, and timeline', () => {
@@ -23,7 +23,7 @@ test('execution drawer exposes lifecycle, cancel, retry, lineage, output, and ti
   assert.match(runtime, /Retry/);
   assert.match(runtime, /\/api\/runs\/cancel/);
   assert.match(runtime, /\/api\/runs\/retry/);
-  assert.match(runtime, /\['Attempt', String\(run\.attempt \|\| 1\)\]/);
+  assert.match(runtime, /\['Try', String\(run\.attempt \|\| 1\)\]/);
   assert.match(runtime, /\['Retry of', run\.retryOf \|\| '—'\]/);
   assert.match(runtime, /Timeline/);
   assert.match(runtime, /Output/);

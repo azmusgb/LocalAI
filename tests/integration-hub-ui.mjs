@@ -27,7 +27,7 @@ await check('integration hub is reachable from System', async () => {
   await integrationLink.click();
   await page.waitForSelector('#integrations.active');
   await page.waitForSelector('#integrations[data-integration-v2="true"]');
-  assert.equal(await page.locator('#uxContextView').innerText(), 'Integrations');
+  assert.equal(await page.locator('#uxContextView').innerText(), 'Services');
 });
 
 await check('native Local AI integrations remain first-class', async () => {
@@ -55,9 +55,9 @@ await check('research-backed safeguards are visible and actionable', async () =>
   if (await about.getAttribute('open') === null) await about.locator('summary').click();
   const research = page.locator('.ux-int-research');
   const body = await research.innerText();
-  assert.match(body, /n8n security audit/i);
-  assert.match(body, /ComfyUI API compatibility/i);
-  assert.match(body, /Penpot self-host \+ MCP/i);
+  assert.match(body, /n8n security check/i);
+  assert.match(body, /ComfyUI add-ons/i);
+  assert.match(body, /Penpot on your own server/i);
   assert.ok(await research.locator('a[target="_blank"]').count() >= 3);
 });
 
@@ -118,7 +118,7 @@ await check('integration hub is reachable on mobile', async () => {
   await mobile.locator('#uxMobileNav [data-domain="system"]').click();
   await mobile.waitForSelector('#status.active');
   await mobile.locator('#uxContextMenu').click();
-  const link = mobile.locator('#uxMobileSheet .ux-mobile-link', { hasText: 'Integrations' });
+  const link = mobile.locator('#uxMobileSheet .ux-mobile-link', { hasText: /^Services/ });
   await link.waitFor({ state: 'visible' });
   await link.click();
   await mobile.waitForSelector('#integrations.active');

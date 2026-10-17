@@ -26,15 +26,15 @@ const VIEWS=[
  {id:'memory',svg:'memory',domain:'projects',section:'Keep',parent:'projects',tab:'Memory',icon:'M',label:'Memory',description:'Facts the assistant keeps about each project.',aka:['project memory']},
  // Library is the last tab of Projects: what you kept, as opposed to Work (everything you did). Old #library links open it.
  {id:'library',svg:'library',domain:'projects',section:'Keep',parent:'projects',tab:'Everything you kept',icon:'▦',label:'Library',description:'Everything you kept: chats, research and images.',aka:['everything you kept','kept']},
- {id:'agents',svg:'target',domain:'hidden',section:'Agents',icon:'◎',label:'Missions',description:'Give a goal; specialist agents work it live.',aka:['agents','agent operations']},
- {id:'status',svg:'health',domain:'system',section:'Health',icon:'●',label:'Health',description:'Core services and optional companions.',aka:['status','system status']},
+ {id:'agents',svg:'target',domain:'hidden',section:'Agents',icon:'◎',label:'Missions',description:'Give a goal; specialist agents work it live.',aka:['agents','agent operations','live map']},
+ {id:'status',svg:'health',domain:'system',section:'Health',icon:'●',label:'Health',description:'Whether Local AI is working, and which optional services are up.',aka:['status','system status']},
  {id:'models',svg:'model',domain:'system',section:'Health',icon:'M',label:'Models',description:"Installed models and what's loaded now."},
- {id:'integrations',svg:'plug',domain:'system',section:'Health',icon:'↔',label:'Integrations',description:'Local tools, host bridges and cloud fallbacks.'},
+ {id:'integrations',svg:'plug',domain:'system',section:'Health',icon:'↔',label:'Services',description:'What Local AI connects to, and whether each one is ready.',aka:['integrations','bridges','tools']},
  {id:'automationStudio',svg:'clock',domain:'system',section:'Automations',icon:'⌘',label:'Automations',description:'Scheduled prompts and research, health checks and the morning brief.',aka:['studio','automation studio','monitors','morning brief','health check']},
  {id:'automations',svg:'flow',short:'n8n',domain:'system',section:'Automations',dev:true,icon:'↗',label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
  {id:'actions',svg:'globe',short:'Browser',domain:'system',section:'Automations',dev:true,icon:'↗',label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
  {id:'backlog',svg:'improve',domain:'improve',section:'Pipeline',icon:'Δ',label:'Backlog',description:'One ranked list of what could change in Local AI.',aka:['improve','ideas','priorities']},
- {id:'inProgress',svg:'build',domain:'improve',section:'Pipeline',icon:'▶',label:'In progress',description:'Changes being planned, tested or waiting for your OK.',aka:['running changes','change requests','changes','engineer']},
+ {id:'inProgress',svg:'build',domain:'improve',section:'Pipeline',icon:'▶',label:'In progress',description:'Changes being planned, tested or waiting for your OK.',aka:['running changes','changes','engineer']},
  {id:'shipped',svg:'check',domain:'improve',section:'Pipeline',icon:'✓',label:'Shipped',description:'What changed, release by release.',aka:['done','released']},
  {id:'signals',svg:'alert',domain:'improve',section:'Pipeline',icon:'!',label:'Signals',description:'Problems Local AI noticed; serious ones join the Backlog.',aka:['detections','issues','quality signals']},
  {id:'claude',svg:'sparkle',domain:'system',section:'Tools',dev:true,icon:'✳',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
@@ -42,7 +42,7 @@ const VIEWS=[
  {id:'repoTools',svg:'branch',domain:'system',section:'Tools',dev:true,icon:'R',label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},
  {id:'powershell',svg:'terminal',domain:'system',section:'Tools',dev:true,icon:'PS',label:'PowerShell',description:'Approval-gated scripts on the Windows host.',aka:['powershell workbench']},
  {id:'activity',svg:'history',domain:'system',section:'History',icon:'◷',label:'Audit log',description:'What happened on the appliance, and when.',aka:['activity']},
- {id:'runs',svg:'work',domain:'hidden',section:'History',icon:'▶',label:'Runs',description:'Every execution, live, with cancel and retry.'}
+ {id:'runs',svg:'work',domain:'hidden',section:'History',icon:'▶',label:'Runs',description:'Every run, live, with cancel and retry.'}
 ];
 // Change requests, Issues and Quality signals are retired: Improve's stages show the same things (see ALIASES).
 // Retired view ids and the page that replaced them.
@@ -62,6 +62,8 @@ function sections(domainId){
  for(const v of VIEWS){if(v.domain!==domainId||v.parent)continue;let s=out.find(x=>x.label===v.section);if(!s){s={label:v.section,views:[]};out.push(s)}s.views.push(v.id)}
  return out;
 }
-const api={DOMAINS,VIEWS,ALIASES,resolve,view,page,tabs,sections,label:id=>byId.get(id)?.label||id,description:id=>byId.get(id)?.description||''};
+// The browser tab's title for a page (E8): "Work · Local AI"; a tab of a page by its tab label ("Everything you kept · Local AI").
+function title(id){const v=view(id);if(!v||v.id==='home')return 'Local AI';return `${v.parent?(v.tab||v.label):v.label} · Local AI`}
+const api={DOMAINS,VIEWS,ALIASES,resolve,view,page,tabs,sections,title,label:id=>byId.get(id)?.label||id,description:id=>byId.get(id)?.description||''};
 if(typeof module==='object'&&module.exports)module.exports=api;else root.LocalAIViews=api;
 })(typeof window!=='undefined'?window:globalThis);

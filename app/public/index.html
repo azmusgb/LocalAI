@@ -29,7 +29,7 @@
 <section id="home" class="view active"><span hidden><span id="homeDot" class="dot"></span><span id="homeState">Checking…</span></span><header class="home-head"><h1 id="homeGreeting">Welcome</h1></header>
 <section id="homeNeedsYou" class="home-block" aria-labelledby="homeNeedsTitle" hidden><h2 id="homeNeedsTitle" class="home-label">Needs you <span id="homeNeedsCount"></span></h2><div id="homeNeedsList" class="list-group"></div></section>
 <section id="homeRecentSection" class="home-block" aria-labelledby="homeRecentTitle"><div class="home-label-row"><h2 id="homeRecentTitle" class="home-label">Recent</h2><button type="button" id="homeSeeAll" class="home-link">See all</button></div><div id="homeRecent2" class="list-group"></div></section>
-<div class="home-legacy" hidden><div id="homeExecutionCard" class="card" hidden><div class="section-head"><div><h2>Execution map</h2><p>Live phases for the current command.</p></div><span id="executionLabel" class="badge">Idle</span></div><div id="agentMap" class="agent-map"></div></div></div>
+<div class="home-legacy" hidden><div id="homeExecutionCard" class="card" hidden><div class="section-head"><div><h2>Live steps</h2><p>Each step of what you just asked for.</p></div><span id="executionLabel" class="badge">Idle</span></div><div id="agentMap" class="agent-map"></div></div></div>
 <div id="offlineHint" class="offline-hint" hidden></div>
 <div id="homeComposer" class="home-composer"><div id="homeComposerError" class="home-error" role="alert" hidden></div><div class="home-composer__box"><button type="button" id="homeModeChip" class="home-chip" aria-haspopup="dialog" aria-label="Mode: Auto. Change mode">Auto ▾</button><textarea id="commandInput" class="command" rows="1" autocomplete="off" placeholder="Ask anything, or describe a task…" aria-label="Local AI command"></textarea><button type="button" id="commandGo" class="go home-send" aria-label="Send"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-send"/></svg></button></div></div>
 <div class="home-modes-hidden" hidden><div class="modes" role="group" aria-label="Command mode"><button class="mode active" data-mode="auto">Auto</button><button class="mode" data-mode="ask">Chat</button><button class="mode" data-mode="research">Research</button><button class="mode" data-mode="create">Image</button><button class="mode" data-mode="automate">Automate</button><button class="mode" data-mode="engineering">Change Local AI</button></div><label class="mode-select"><span>Mode</span><select id="commandModeSelect" aria-label="Command mode"></select></label></div></section>
@@ -48,7 +48,7 @@
 <textarea id="imagePrompt" rows="3" placeholder="A lighthouse on a cliff at dusk, soft watercolor"></textarea>
 <label class="img-upload btn" for="imageUpload">Upload an image to edit<input id="imageUpload" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
 <label class="img-toggle"><input id="imageEnhance" type="checkbox"><span><b>Improve my prompt</b><small>The local language model adds detail, lighting and style first.</small></span></label>
-<fieldset class="img-group"><legend>Engine</legend><div id="imageEngines" class="img-engines" role="radiogroup" aria-label="Engine"><div class="meta">Finding installed models…</div></div></fieldset>
+<fieldset class="img-group"><legend>Engine</legend><div id="imageEngines" class="img-engines" role="radiogroup" aria-label="Engine"><div class="meta">Looking for installed models…</div></div></fieldset>
 <fieldset class="img-group"><legend>Style</legend><div id="imageStyles" class="img-styles" role="radiogroup" aria-label="Style"></div></fieldset>
 <fieldset class="img-group" id="imageShapeGroup"><legend>Shape</legend><div id="imageAspects" class="img-aspects" role="radiogroup" aria-label="Shape"></div></fieldset>
 <fieldset class="img-group"><legend>How many</legend><div id="imageCount" class="img-count" role="radiogroup" aria-label="How many"><button type="button" role="radio" data-count="1" class="active" aria-checked="true">1</button><button type="button" role="radio" data-count="2" aria-checked="false">2</button><button type="button" role="radio" data-count="4" aria-checked="false">4</button></div></fieldset>
@@ -75,44 +75,44 @@
 </div>
 </div></section>
 <section id="work" class="view"><div class="topbar"><div><h1>Work</h1><p class="sub">Everything you started, newest first.</p></div></div>
-<div class="work-tools"><div class="work-chips" role="group" aria-label="Show"><button type="button" class="suggestion-chip work-chip" data-work-kind="all">All</button><button type="button" class="suggestion-chip work-chip" data-work-kind="chats">Chats</button><button type="button" class="suggestion-chip work-chip" data-work-kind="images">Images</button><button type="button" class="suggestion-chip work-chip" data-work-kind="missions">Missions</button><button type="button" class="suggestion-chip work-chip" data-work-kind="changes">Changes</button><button type="button" class="suggestion-chip work-chip" data-work-kind="other">Other</button></div><input id="workSearch" class="work-search" type="search" placeholder="Search your work" aria-label="Search your work" autocomplete="off"></div><div id="workAgentWorld" class="banner work-agentworld" hidden><span>Watch missions live, with every worker on one map.</span><button type="button" class="btn-outline" id="workOpenAgentWorld">Open Agent World</button></div>
+<div class="work-tools"><div class="work-chips" role="group" aria-label="Show"><button type="button" class="suggestion-chip work-chip" data-work-kind="all">All</button><button type="button" class="suggestion-chip work-chip" data-work-kind="chats">Chats</button><button type="button" class="suggestion-chip work-chip" data-work-kind="images">Images</button><button type="button" class="suggestion-chip work-chip" data-work-kind="missions">Missions</button><button type="button" class="suggestion-chip work-chip" data-work-kind="changes">Changes</button><button type="button" class="suggestion-chip work-chip" data-work-kind="other">Other</button></div><input id="workSearch" class="work-search" type="search" placeholder="Search your work" aria-label="Search your work" autocomplete="off"></div><div id="workAgentWorld" class="banner work-agentworld" hidden><span>Watch missions live, with every worker on one map.</span><button type="button" class="btn-outline" id="workOpenAgentWorld">Open the live map</button></div>
 <div id="workList" class="work-list"></div><div class="work-more"><button type="button" id="workMore" class="btn-outline" hidden>Show more</button></div></section>
 <section id="activity" class="view"><div class="topbar"><div><h1>Audit log</h1><p class="sub">What happened on the appliance, and when. Entries from a run open it, as in Work.</p></div></div><div class="card"><div id="activityList" class="activity-list"></div></div><div class="activity-foot"><button id="clearUserActivityBtn" class="btn danger" type="button">Clear user activity</button></div></section>
 <section id="library" class="view"><div class="topbar"><div><h1>Projects</h1><p class="sub">Everything you kept: conversations and research as a list, images as pictures.</p></div><span id="libraryCount" class="pill">0 items</span></div><div class="filterbar"><input id="librarySearch" placeholder="Search what you kept…" aria-label="Search what you kept"><button class="filter active" data-kind="all">All</button><button class="filter" data-kind="conversation">Conversations</button><button class="filter" data-kind="research">Research</button><button class="filter" data-kind="image">Images</button><button class="filter" data-kind="pinned">Pinned</button></div><div id="libraryGrid" class="library-grid"></div></section>
-<section id="automations" class="view"><div class="topbar"><div><h1>n8n workflows</h1><p class="sub">Open n8n to build and inspect advanced workflows.</p></div></div><div><div class="card"><h2>Automation workspace</h2><p class="sub">n8n opens in a new tab. Every step of each workflow, and its full log, is there.</p><div class="actions"><a class="btn primary" href="/go/n8n" target="_blank" rel="noopener">Open workflows</a><a class="btn" href="/go/n8n-assistant" target="_blank" rel="noopener">Assistant</a></div></div></div></section>
-<section id="status" class="view"><div class="topbar"><div><h1>Health</h1><p class="sub">Core appliance health and optional companion availability are reported separately.</p></div><button id="statusRetryBtn" class="btn" type="button">Check again</button></div><div class="two"><div class="card status-overview"><h2>Appliance</h2><div id="statusSummary" class="status-summary" role="status">Checking…</div><div id="statusCheckedAt" class="meta"></div></div><div class="card status-overview"><h2>Last deployment check</h2><div id="certBox" class="status-summary">Checking…</div><div class="meta">Run on the host before each release.</div></div></div><div class="card" style="margin-top:12px"><div class="section-head"><div><h2>Capabilities</h2><p>Core services determine appliance health. Optional companions can be offline without degrading Local AI.</p></div></div><div id="serviceList" class="service-list" style="margin-top:10px"></div><details class="disclosure" data-dev-only><summary>Advanced service details</summary><p class="meta">Probe names, HTTP results, impact, and connection errors.</p><div id="technicalStatus" class="service-list" style="margin-top:10px"></div></details></div></section>
+<section id="automations" class="view"><div class="topbar"><div><h1>n8n workflows</h1><p class="sub">Open n8n to build and inspect advanced workflows.</p></div></div><div><div class="card"><h2>Workflows</h2><p class="sub">n8n opens in a new tab. Every step of each workflow, and its full log, is there.</p><div class="actions"><a class="btn primary" href="/go/n8n" target="_blank" rel="noopener">Open workflows</a><a class="btn" href="/go/n8n-assistant" target="_blank" rel="noopener">Assistant</a></div></div></div></section>
+<section id="status" class="view"><div class="topbar"><div><h1>Health</h1><p class="sub">Whether Local AI is working, and which optional services are up.</p></div><button id="statusRetryBtn" class="btn" type="button">Check again</button></div><div class="two"><div class="card status-overview"><h2>Appliance</h2><div id="statusSummary" class="status-summary" role="status">Checking…</div><div id="statusCheckedAt" class="meta"></div></div><div class="card status-overview"><h2>Last deployment check</h2><div id="certBox" class="status-summary">Checking…</div><div class="meta">Run on the host before each release.</div></div></div><div class="card" style="margin-top:12px"><div class="section-head"><div><h2>Services</h2><p>Core services determine appliance health. Optional services can be off and Local AI keeps working.</p></div></div><div id="serviceList" class="service-list" style="margin-top:10px"></div><details class="disclosure" data-dev-only><summary>Advanced service details</summary><p class="meta">Probe names, HTTP results, impact, and connection errors.</p><div id="technicalStatus" class="service-list" style="margin-top:10px"></div></details></div></section>
 
 <!-- cumulative release views -->
-<section id="projects" class="view feature-v13"><div class="topbar"><div><h1>Projects</h1><p class="sub">Group related conversations, sources and artifacts.</p></div><button id="newProjectBtn" class="btn primary">New project</button></div><div class="summary-grid" id="projectMetrics"></div><div class="split" style="margin-top:12px"><div class="card"><div class="section-head"><div><h2>Projects</h2><p>Choose a workspace.</p></div></div><div id="projectList" class="stack"></div></div><div class="card"><div id="projectDetail" class="empty">Select a project.</div></div></div></section>
+<section id="projects" class="view feature-v13"><div class="topbar"><div><h1>Projects</h1><p class="sub">Group related conversations, sources and memory.</p></div><button id="newProjectBtn" class="btn primary">New project</button></div><div class="summary-grid" id="projectMetrics"></div><div class="split" style="margin-top:12px"><div class="card"><div class="section-head"><div><h2>Projects</h2><p>Choose a project.</p></div></div><div id="projectList" class="stack"></div></div><div class="card"><div id="projectDetail" class="empty">Select a project.</div></div></div></section>
 <section id="knowledge" class="view feature-v13"><div class="topbar"><div><h1>Projects</h1><p class="sub">Notes, documents and files the assistant can look things up in when it answers.</p></div></div><div class="two"><div class="card"><h2>Add source</h2><div class="form-grid" style="margin-top:12px"><label>Project<select id="knowledgeProject"></select></label><label>Name<input id="knowledgeName" placeholder="architecture.md"></label><label class="wide">Content<textarea id="knowledgeContent" rows="12" placeholder="Paste or drop text here…"></textarea></label></div><div class="actions" style="margin-top:10px"><button id="knowledgeImportBtn" class="btn primary">Add source</button><input id="knowledgeFileInput" type="file" hidden multiple><button id="knowledgeFileBtn" class="btn">Import files</button></div></div><div class="card"><h2>Search your sources</h2><div class="toolbar" style="margin-top:12px"><input id="knowledgeQuery" placeholder="Search your sources…" aria-label="Search your sources"><button id="knowledgeSearchBtn" class="btn primary">Search</button></div><div id="knowledgeResults" class="stack"></div></div></div><div class="card" style="margin-top:12px"><div class="section-head"><div><h2>Your sources</h2><p>Kept on Local AI, never sent anywhere.</p></div></div><div id="knowledgeList" class="stack"></div></div></section>
 <section id="agents" class="view feature-v14">
-<div class="topbar"><div><h1>Missions</h1><p class="sub">Give the team an objective, let the Mission Router assemble the right specialists and models, and watch the work happen live.</p></div><span class="pill">Mission-first · Local models</span></div>
+<div class="topbar"><div><h1>Missions</h1><p class="sub">Give a goal to a team of specialist agents, then follow each worker and step as they go.</p></div></div>
 <div class="agent-ops">
   <div class="agent-compose">
     <div class="agent-compose__row">
-      <label>Mission objective<textarea id="agentGoal" rows="4" placeholder="Audit and improve the Local AI mobile experience, then document a prioritized implementation plan."></textarea></label>
+      <label>Goal<textarea id="agentGoal" rows="4" placeholder="Review the Local AI phone experience, then write up what to fix first."></textarea></label>
       <label>Project<select id="agentProject"></select></label>
     </div>
     <label class="agent-compose__check"><input type="checkbox" id="agentWebSearch"> Let specialists search the web <span class="sub">(searches leave this machine)</span></label>
     <div class="agent-compose__actions">
-      <button id="missionRunBtn" class="btn primary">Start Mission</button>
+      <button id="missionRunBtn" class="btn primary">Start mission</button>
       <button id="routePreviewBtn" class="btn">Preview plan</button>
-      <button id="agentAdvancedToggle" class="btn" type="button" aria-expanded="false">Advanced routing</button>
+      <button id="agentAdvancedToggle" class="btn" type="button" aria-expanded="false">Choose specialists</button>
     </div>
     <div id="agentInlineNotice" class="agent-inline-notice" hidden aria-live="polite"></div>
-    <div id="routePreviewWrap" hidden><div id="routePreview" class="preview-pane" style="margin-top:10px"><span class="muted">Enter an objective to preview automatic dispatch.</span></div></div>
+    <div id="routePreviewWrap" hidden><div id="routePreview" class="preview-pane" style="margin-top:10px"><span class="muted">Enter a goal to preview the plan.</span></div></div>
     <div id="agentAdvancedPanel" class="agent-advanced" hidden style="margin-top:12px">
       <div class="agent-advanced-grid">
         <div>
-          <div class="agent-panel__head"><div><h2>Routing override</h2><small>Automatic routing is recommended. Use this only when you want explicit control.</small></div></div>
-          <label class="toggle"><input type="checkbox" id="manualRouteToggle"> Manually choose specialists</label>
+          <div class="agent-panel__head"><div><h2>Choose the team yourself</h2><small>Local AI picks the team for you. Choose here only when you want particular specialists.</small></div></div>
+          <label class="toggle"><input type="checkbox" id="manualRouteToggle"> Let me choose the specialists</label>
           <div id="manualRouteOptions" class="agent-meta" hidden>
             <label><input type="checkbox" data-mission-agent value="ux_analyst"> UX Analyst</label>
             <label><input type="checkbox" data-mission-agent value="documentation"> Documentation Agent</label>
           </div>
         </div>
         <div>
-          <div class="agent-panel__head"><div><h2>Direct execution</h2><small>Developer tools for bypassing Mission Router orchestration.</small></div></div>
+          <div class="agent-panel__head"><div><h2>Run one specialist</h2><small>Skip the team and give the goal to one specialist, or to a general agent.</small></div></div>
           <div id="specialistRegistry" class="agent-registry"><div class="empty">Loading specialists…</div></div>
           <div class="actions" style="margin-top:10px">
             <button id="specialistRunBtn" class="btn">Run specialist</button>
@@ -121,44 +121,43 @@
         </div>
       </div>
       <div class="agent-direct-grid">
-        <div class="agent-panel"><div class="agent-panel__head"><h2>Direct specialist execution</h2></div><div id="specialistExecution"><div class="empty">No direct specialist run.</div></div></div>
-        <div class="agent-panel"><div class="agent-panel__head"><h2>General agent execution</h2></div><div id="agentExecution" class="flow"><div class="empty">No general agent run.</div></div><div id="agentRuns" class="stack" style="margin-top:10px"></div></div>
+        <div class="agent-panel"><div class="agent-panel__head"><h2>Specialist run</h2></div><div id="specialistExecution"><div class="empty">No specialist run yet.</div></div></div>
+        <div class="agent-panel"><div class="agent-panel__head"><h2>General agent run</h2></div><div id="agentExecution" class="flow"><div class="empty">No general agent run yet.</div></div><div id="agentRuns" class="stack" style="margin-top:10px"></div></div>
       </div>
     </div>
   </div>
 
   <div class="agent-mission-strip">
-    <div><h2 id="agentMissionHeadline">No active mission</h2><small id="agentMissionMeta">Start a mission or select one from history.</small></div>
+    <div><h2 id="agentMissionHeadline">No mission yet</h2><small id="agentMissionMeta">Start a mission, or pick one from the list below.</small></div>
     <div class="agent-mission-progress" role="progressbar" aria-label="Mission progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="agentMissionProgress"></span></div>
   </div>
 
-  <div class="agent-live-grid">
-    <div id="agentWorldCityMount"></div>
-    <div class="agent-side-stack">
-      <section class="agent-panel">
-        <div class="agent-panel__head"><div><h2>Mission timeline</h2><small>Worker order, dependencies and live state.</small></div></div>
-        <div id="agentTimeline"><div class="empty">No mission timeline yet.</div></div>
-        <div id="missionExecution" hidden></div>
-      </section>
-      <section class="agent-panel">
-        <div class="agent-panel__head"><div><h2>Inspector</h2><small>Select a worker in the timeline or city.</small></div></div>
-        <div id="agentInspector"><div class="empty">Select a mission or worker.</div></div>
-      </section>
-    </div>
+  <div class="agent-side-stack">
+    <section class="agent-panel">
+      <div class="agent-panel__head"><div><h2>Workers</h2><small>Who is working on which step, in order.</small></div></div>
+      <div id="agentTimeline"><div class="empty">No workers yet.</div></div>
+      <div id="missionExecution" hidden></div>
+    </section>
+    <section class="agent-panel">
+      <div class="agent-panel__head"><div><h2>Worker details</h2><small>Pick a worker to see what it did.</small></div></div>
+      <div id="agentInspector"><div class="empty">Pick a mission or a worker.</div></div>
+    </section>
   </div>
+
+  <div class="agent-map-wrap"><button type="button" id="agentMapToggle" class="btn" aria-expanded="false" aria-controls="agentMapPanel">Watch live map</button><div id="agentMapPanel" hidden><div id="agentWorldCityMount"></div></div></div>
 
   <section class="agent-results">
     <div class="agent-result-tabs" role="tablist" aria-label="Mission details">
-      <button type="button" class="active" role="tab" id="agentResultTab-summary" aria-controls="agentResultBody" aria-selected="true" tabindex="0" data-agent-result-tab="summary">Synthesis</button>
-      <button type="button" role="tab" id="agentResultTab-workers" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="workers">Worker outputs</button>
-      <button type="button" role="tab" id="agentResultTab-evidence" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="evidence">Evidence</button>
-      <button type="button" role="tab" id="agentResultTab-routing" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="routing">Routing</button>
+      <button type="button" class="active" role="tab" id="agentResultTab-summary" aria-controls="agentResultBody" aria-selected="true" tabindex="0" data-agent-result-tab="summary">Summary</button>
+      <button type="button" role="tab" id="agentResultTab-workers" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="workers">Workers</button>
+      <button type="button" role="tab" id="agentResultTab-evidence" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="evidence">Sources</button>
+      <button type="button" role="tab" id="agentResultTab-routing" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="routing">Steps</button>
     </div>
-    <div id="agentResultBody" class="agent-result-body" role="tabpanel" tabindex="0" aria-labelledby="agentResultTab-summary"><div class="empty">Mission results will appear here.</div></div>
+    <div id="agentResultBody" class="agent-result-body" role="tabpanel" tabindex="0" aria-labelledby="agentResultTab-summary"><div class="empty">The mission's summary appears here.</div></div>
   </section>
 
   <section class="agent-panel">
-    <div class="agent-history-head"><div><h2>Mission history</h2><small class="muted">Review prior outcomes, attention states, worker outputs and evidence.</small></div><input id="agentHistorySearch" placeholder="Search mission history" aria-label="Search mission history"></div>
+    <div class="agent-history-head"><div><h2>Past missions</h2><small class="muted">Open one to see its workers, summary and sources again.</small></div><input id="agentHistorySearch" placeholder="Search past missions" aria-label="Search past missions"></div>
     <div id="agentMissionHistory"><div class="empty">No missions yet. Describe a goal above to run your first one.</div></div>
   </section>
 </div>
@@ -179,8 +178,8 @@ Get-Date
 Get-Location</textarea></label></div><div class="actions" style="margin-top:10px"><button id="powershellCreateBtn" class="btn primary">Create for review</button><button id="powershellRefreshBtn" class="btn">Refresh</button></div><div id="powershellStatus" class="meta" style="margin-top:10px">Scripts do not run until you explicitly approve and queue them.</div></div><div class="card"><h2>Selected job</h2><div id="powershellDetail" class="preview-pane"><div class="empty">Select a job to view code, approval state, stdout, stderr, and exit code.</div></div></div></div><div class="card" style="margin-top:12px"><h2>Execution history</h2><div id="powershellJobs" class="stack" style="margin-top:10px"></div></div></section>
 <dialog id="cmdk" class="cmdk" aria-label="Go to a page"><div class="cmdk-card"><input id="cmdkInput" placeholder="Go to a page…" aria-label="Go to a page" aria-controls="cmdkList" autocomplete="off"><div id="cmdkList" class="cmdk-list" role="list"></div><div id="cmdkCount" class="visually-hidden" role="status"></div></div></dialog>
 
-<section id="backlog" class="view"><div class="topbar"><div><h1>Backlog</h1><p class="sub">One ranked list of what could change in Local AI: your ideas, Claude's findings and serious Signals.</p></div><button id="improveNewIdea" class="btn primary" type="button">+ New idea</button></div><div id="backlogList" class="list-group improve-list"></div></section><section id="inProgress" class="view"><div class="topbar"><div><h1>In progress</h1><p class="sub">Changes being planned, tested or waiting for your OK, and items Claude is working on.</p></div></div><div id="inProgressList" class="list-group improve-list"></div></section><section id="shipped" class="view"><div class="topbar"><div><h1>Shipped</h1><p class="sub">What changed in Local AI, release by release.</p></div></div><div id="shippedList" class="improve-list"></div></section>
-<section id="signals" class="view"><div class="topbar"><div><h1>Signals</h1><p class="sub">Problems Local AI noticed. Serious ones join the Backlog on their own.</p></div><button id="signalsRunChecks" class="btn" type="button">Run checks now</button></div><div id="signalsList" class="list-group improve-list"></div><details id="signalsDetails" class="improve-details"><summary>Latest checks</summary><div id="signalsScan"></div></details></section>
+<section id="backlog" class="view"><div class="topbar"><div><h1>Backlog</h1><p class="sub">One ranked list of what could change in Local AI: your ideas, Claude's findings and serious Signals.</p></div><button id="improveNewIdea" class="btn primary" type="button">New idea</button></div><div id="backlogList" class="list-group improve-list"></div></section><section id="inProgress" class="view"><div class="topbar"><div><h1>In progress</h1><p class="sub">Changes being planned, tested or waiting for your OK, and items Claude is working on.</p></div></div><div id="inProgressList" class="list-group improve-list"></div></section><section id="shipped" class="view"><div class="topbar"><div><h1>Shipped</h1><p class="sub">What changed in Local AI, release by release.</p></div></div><div id="shippedList" class="improve-list"></div></section>
+<section id="signals" class="view"><div class="topbar"><div><h1>Signals</h1><p class="sub">Problems Local AI noticed. Serious ones join the Backlog on their own.</p></div><button id="signalsRunChecks" class="btn" type="button">Run checks</button></div><div id="signalsList" class="list-group improve-list"></div><details id="signalsDetails" class="improve-details"><summary>Latest checks</summary><div id="signalsScan"></div></details></section>
 <dialog id="improveItemSheet" class="improve-sheet" aria-labelledby="improveItemTitle"><form method="dialog" class="improve-sheet__body"><h2 id="improveItemTitle"></h2><div id="improveItemBody"></div><p id="improveItemError" class="improve-error" role="alert" hidden></p><div class="improve-sheet__actions" id="improveItemActions"></div><button class="btn-outline" value="close">Close</button></form></dialog>
 <dialog id="improveIdeaSheet" class="improve-sheet" aria-labelledby="improveIdeaTitle"><form method="dialog" class="improve-sheet__body"><h2 id="improveIdeaTitle">New idea</h2><label for="improveIdeaText">What should change in Local AI?</label><textarea id="improveIdeaText" rows="4" placeholder="e.g. Remember the image size I used last"></textarea><p id="improveIdeaError" class="improve-error" role="alert" hidden></p><div class="improve-sheet__actions"><button type="button" class="btn-primary" data-idea-start="false">Add to backlog</button><button type="button" class="btn-outline" data-idea-start="true">Start now</button></div><button class="btn-outline" value="close">Cancel</button></form></dialog>
 <section id="claude" class="view"><div class="topbar"><div><h1>Claude Code</h1><p class="sub">Chat with your Claude Code sessions and watch them work. What they recommend is in Improve › Backlog.</p></div><div class="claude-head-actions"><span id="claudeLive" class="claude-live">…</span><select id="claudeSession" aria-label="Session"><option value="">All sessions</option></select><button id="claudeRefresh" class="btn" type="button">Refresh</button></div></div><div id="claudeChat" class="card claude-chat" aria-label="Chat with a Claude Code session"><div class="empty">Loading chat…</div></div><div id="claudeProgress" class="card" hidden></div><div class="claude-grid"><div class="card"><h2>Activity</h2><div id="claudeTimeline" class="claude-timeline" tabindex="0" role="region" aria-label="Claude Code activity"><div class="empty">Loading…</div></div></div><div class="card" hidden><h2>Findings by category and severity</h2><div id="claudeMatrix" class="claude-matrix-wrap"></div></div></div><div id="claudeLiveNow" class="claude-livenow" role="group" aria-label="Live Claude sessions" hidden></div><div class="claude-board-head" hidden><div><h2 class="section-title">Priorities</h2><span id="claudeFindingCount" class="statuschip"></span></div><div id="claudeFilters" class="claude-filters"></div></div><div id="claudeFindings" class="claude-findings" hidden></div></section></main></div><div id="toast" class="toast" role="status" aria-live="polite"></div><script src="/offline-copy.js"></script><script src="/view-registry.js"></script><script src="/components.js"></script><script src="/router.js"></script>

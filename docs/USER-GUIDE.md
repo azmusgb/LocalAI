@@ -28,7 +28,7 @@ Improve appears only with developer tools on (see the end of this guide).
 | **Work** | Everything that is running or done: chats, images, missions, changes |
 | **Projects** | What you keep: your projects with their Sources and Memory, and everything you kept |
 | **Improve** | Changing Local AI itself: ideas, problems it noticed, changes in progress, what shipped |
-| **System** | Health, models, integrations, automations, the audit log and tools |
+| **System** | Health, models, services, automations, the audit log and tools |
 
 To jump anywhere, press **⌘K** on a computer or tap the **magnifier** on a phone, then type a page name. If no page
 matches, **Search your work for …** looks through your chats, images and runs.
@@ -61,7 +61,12 @@ Work lists every run, newest first, grouped by day. Filter it with **All**, **Ch
 **Changes** and **Other**, or search it.
 
 Tap a row to open it. A chat opens as the conversation, with a reply box at the bottom. While something runs you can
-watch it live and cancel it; a failed run offers **Retry**.
+watch it live and cancel it; a failed run offers **Retry**. A run's header names its kind, and the project once you
+file it there (**Details › File…**).
+
+A mission opens on its workers: the step running now, then each worker in order. **Watch live map** shows the team
+on a map as it works. Its tabs are **Summary** (the answer), **Workers** (what each one wrote), **Sources** (what they
+cited) and **Steps** (the plan).
 
 ## Projects: what you keep
 
@@ -80,7 +85,7 @@ Improve is one list of everything that could change in Local AI, from your ideas
 findings from Claude Code sessions. It is shown when **Show developer tools** is on.
 
 - **Backlog:** the ranked list. Vote items up or down, or open one to **Start** it, **Hand to Claude**,
-  **Move to top**, **Defer** or **Reject**. **+ New idea** adds your own; choose **Add to backlog** or **Start now**.
+  **Move to top**, **Defer** or **Reject**. **New idea** adds your own; choose **Add to backlog** or **Start now**.
 - **Signals:** problems Local AI noticed on its own. Serious ones (high severity, or seen three or more times) join
   the Backlog by themselves; **Promote** adds any other, **Dismiss** drops it.
 - **In progress:** changes being planned, tested or waiting for your OK. Open one for its next step:
@@ -139,3 +144,21 @@ choices, and the developer pages under System: **Claude Code**, **Files**, **Rep
 **Browser & computer** and **n8n workflows**. It also shows Models' runtime tile and Health's **Advanced service
 details**. Off, all of these are hidden from the menu, the page strip and search; a page's address still opens it.
 Everything else works the same. The setting is kept per device.
+
+## Glossary
+
+Local AI uses one word for each thing, everywhere. If you meet one of the words in the last column, it is an old name
+for the word in the first.
+
+| Word | What it means | Instead of |
+|---|---|---|
+| **Run** | One thing Local AI does for you: a chat, research, an image, a mission, an automation or a change. Every run is in **Work**. | job, task, execution, attempt |
+| **Mission** | A run where a team of specialist agents works on one goal. Its **Workers** each do one step. | agent operation |
+| **Change** | A change to Local AI itself. It starts as an idea or a Signal and goes through **Improve**. | change request, finding, item, patch |
+| **Service** | Something Local AI runs on or connects to, such as Ollama, ComfyUI, n8n or GridCraft. **System › Services** lists them. | companion, capability, integration, tool, bridge, extension |
+| **Project** | A group of related work, with its own Sources and Memory. | workspace |
+| **Source** | A file or note a project's assistant can look things up in. | knowledge source |
+| **Kept** | What you kept from your work: **Projects › Everything you kept**. | artifact, library item |
+| **Check again** | Asks every service how it is doing, now (Health, Services). | Refresh status, Recheck |
+| **Run checks** | Looks for problems in Local AI now (Signals). | Run checks now, Scan now, Run quality scan |
+| **Refresh** | Reloads a list. | Reload |

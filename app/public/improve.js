@@ -212,7 +212,7 @@ function alertBox(cls){const p=document.createElement('p');p.className='improve-
 // Under the row the action was taken on (a vote, Promote, Dismiss).
 function rowError(row,msg){let p=row.nextElementSibling?.classList.contains('improve-row__error')?row.nextElementSibling:null;
  if(!msg){p?.remove();return}if(!p){p=alertBox('improve-row__error');row.after(p)}p.textContent=msg}
-// Signals' Run checks now: under the page's top bar (where its button is), above the list; the header button on phones runs the same.
+// Signals' Run checks: under the page's top bar (where its button is), above the list; the header button on phones runs the same.
 function checksError(msg){const sec=$('signals');if(!sec)return;let p=$('signalsError');
  if(!msg){if(p)p.hidden=true;return}if(!p){p=alertBox('improve-page-error');p.id='signalsError';(sec.querySelector('.topbar')||sec.firstElementChild).after(p)}p.textContent=msg;p.hidden=false}
 
@@ -235,7 +235,7 @@ function init(){
  if(!$('backlog'))return;
  $('improveNewIdea').onclick=openIdea;$('signalsRunChecks').onclick=e=>runChecks(e.currentTarget);
  document.querySelectorAll('[data-idea-start]').forEach(b=>b.onclick=()=>submitIdea(b.dataset.ideaStart==='true',b));
- const register=()=>{root.LocalAIShell?.setAction('backlog',{icon:'plus',label:'New idea',onClick:openIdea});root.LocalAIShell?.setAction('signals',{icon:'refresh',label:'Run checks now',onClick:()=>runChecks()})};
+ const register=()=>{root.LocalAIShell?.setAction('backlog',{icon:'plus',label:'New idea',onClick:openIdea});root.LocalAIShell?.setAction('signals',{icon:'refresh',label:'Run checks',onClick:()=>runChecks()})};
  if(root.LocalAIShell)register();else root.addEventListener('load',register,{once:true});
  for(const id of ['backlog','inProgress','shipped','signals']){const sec=$(id);if(!sec)continue;root.LocalAIUI.pullToRefresh?.(id,refresh);let was=sec.classList.contains('active');
   new MutationObserver(()=>{const now=sec.classList.contains('active');if(now&&!was){refresh();if(id==='signals')loadDetails()}was=now}).observe(sec,{attributes:true,attributeFilter:['class']});

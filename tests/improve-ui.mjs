@@ -79,7 +79,7 @@ await check('votes post to the board', async () => {
   assert.deepEqual((await voted).postDataJSON(), { id: 'claude-top', delta: 1 });
 });
 
-await check('+ New idea: Add to backlog and Start now post the text and the choice', async () => {
+await check('New idea: Add to backlog and Start now post the text and the choice', async () => {
   for (const [label, start] of [['Add to backlog', false], ['Start now', true]]) {
     await page.locator('#uxHeaderAction').click();
     const sheet = page.locator('#improveIdeaSheet');
@@ -121,14 +121,14 @@ await check('Signals: open ones listed with Promote and Dismiss; a promoted one 
   assert.match(await page.locator('#signalsList [data-signal-id="issue-1"]').innerText(), /In the Backlog/);
   assert.deepEqual(await postFrom(() => page.locator('#signalsList [data-signal-id="issue-2"]').getByRole('button', { name: 'Promote' }).click()), { url: '/api/improve/signal', body: { id: 'issue-2', action: 'promote' } });
   assert.deepEqual(await postFrom(() => page.locator('#signalsList [data-signal-id="issue-2"]').getByRole('button', { name: 'Dismiss' }).click()), { url: '/api/improve/signal', body: { id: 'issue-2', action: 'dismiss' } });
-  assert.equal(await page.locator('#uxHeaderAction').getAttribute('aria-label'), 'Run checks now');
+  assert.equal(await page.locator('#uxHeaderAction').getAttribute('aria-label'), 'Run checks');
 });
 
 await check('a failed Run checks shows the reason in the page under the button, not in a passing toast', async () => {
   await page.route('**/api/issues/scan', r => r.fulfill({ status: 500, json: { error: 'The checks could not start' } }));
   await page.evaluate(() => window.showView('signals'));
   await page.waitForSelector('#signals.active #signalsList .improve-row');
-  await page.locator('#uxHeaderAction').click(); // on a phone Run checks now is the header button; the page's own sits in the hidden top bar
+  await page.locator('#uxHeaderAction').click(); // on a phone Run checks is the header button; the page's own sits in the hidden top bar
   const err = page.locator('#signals [role="alert"]', { hasText: 'The checks could not start' });
   await err.waitFor();
   assert.equal(await err.isVisible(), true);

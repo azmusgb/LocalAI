@@ -36,28 +36,29 @@ function humanState(s){return ({pending:'Waiting',running:'Running',complete:'Co
 function cards(){const el=$('specialistRegistry');if(!el)return;el.innerHTML=catalog.filter(a=>!a.infrastructure).map(a=>`<button class="agent-card ${a.id===selected?'active':''}" data-spec="${esc(a.id)}"><span class="agent-card__icon">${esc((a.name||a.id)[0])}</span><span><strong>${esc(a.name)}</strong><small>${esc(a.description)}</small><span class="agent-meta">${(a.capabilities||[]).slice(0,4).map(x=>`<span class="statuschip">${esc(x)}</span>`).join('')}</span></span></button>`).join('');el.querySelectorAll('[data-spec]').forEach(b=>b.onclick=()=>{selected=b.dataset.spec;cards();updateDirectActionLabel()})}
 function updateDirectActionLabel(){const a=catalog.find(x=>x.id===selected);const b=$('specialistRunBtn');if(b)b.textContent='Run '+(a?.name||'specialist')}
 function manualIds(){return $('manualRouteToggle')?.checked?[...document.querySelectorAll('[data-mission-agent]:checked')].map(x=>x.value):undefined}
-function renderRoute(r){const el=$('routePreview');if(!el||!r)return;el.innerHTML=`<div class="route-head"><div><strong>${esc(r.mode==='auto'?'Automatic mission plan':'Manual mission plan')}</strong><small>${esc(r.reason||'')}</small></div><span class="statuschip">${r.workers?.length||0} specialists</span></div><div class="route-flow">${(r.workers||[]).map((w,i)=>{const m=w.routingMeta||{};return `<div class="route-step"><span class="route-step__n">${i+1}</span><span><strong>${esc(w.name)}</strong><small>${esc(w.model||'Auto model')}</small><div class="route-scorebar"><i style="width:${Math.max(0,Math.min(100,m.capabilityScore||0))}%"></i></div><small>Capability ${m.capabilityScore??'—'}% · model fit ${m.modelScore??'—'}% · ${esc(m.availability||'available')}</small><small>${esc(w.reason||'')}</small>${w.dependsOn?.length?`<small>After: ${esc(w.dependsOn.join(', '))}</small>`:''}${m.retryPolicy?.fallbackAgentId?`<small>Fallback: ${esc(m.retryPolicy.fallbackAgentId)}</small>`:''}</span></div>`}).join('')}</div>`}
-async function preview(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter a mission objective first.');return}clearNotice();const body={goal};const ids=manualIds();if(ids?.length)body.agentIds=ids;const j=await req('/api/agents/dispatch',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});renderRoute(j.routing);$('routePreviewWrap')?.removeAttribute('hidden');return j.routing}
+function renderRoute(r){const el=$('routePreview');if(!el||!r)return;el.innerHTML=`<div class="route-head"><div><strong>${esc(r.mode==='auto'?'The plan Local AI chose':'The plan you chose')}</strong><small>${esc(r.reason||'')}</small></div><span class="statuschip">${r.workers?.length||0} specialists</span></div><div class="route-flow">${(r.workers||[]).map((w,i)=>{const m=w.routingMeta||{};return `<div class="route-step"><span class="route-step__n">${i+1}</span><span><strong>${esc(w.name)}</strong><small>${esc(w.model||'Auto model')}</small><div class="route-scorebar"><i style="width:${Math.max(0,Math.min(100,m.capabilityScore||0))}%"></i></div><small>Skill match ${m.capabilityScore??'—'}% · model match ${m.modelScore??'—'}%</small><small>${esc(w.reason||'')}</small>${w.dependsOn?.length?`<small>After: ${esc(w.dependsOn.join(', '))}</small>`:''}${m.retryPolicy?.fallbackAgentId?`<small>Fallback: ${esc(m.retryPolicy.fallbackAgentId)}</small>`:''}</span></div>`}).join('')}</div>`}
+async function preview(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter a goal first.');return}clearNotice();const body={goal};const ids=manualIds();if(ids?.length)body.agentIds=ids;const j=await req('/api/agents/dispatch',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});renderRoute(j.routing);$('routePreviewWrap')?.removeAttribute('hidden');return j.routing}
 function planState(plan){return (plan||[]).map((s,i)=>`<div class="timeline-step ${esc(s.state)}"><span class="timeline-dot"></span><span><strong>${esc(s.name)}</strong><small>${humanState(s.state)}</small></span></div>`).join('')}
-function renderRun(r){const el=$('specialistExecution');if(!el)return;el.innerHTML=`<div class="detail-head"><div><span class="eyebrow">Direct specialist</span><h3>${esc(r.agentName)}</h3></div><span class="statuschip ${esc(r.status)}">${humanState(r.status)}</span></div><div class="timeline-vertical">${planState(r.plan)}</div><div class="execution-output">${esc(r.answer||r.error||'Waiting for output…')}</div>`;if(r.error)notice('error',r.error)}
+function renderRun(r){const el=$('specialistExecution');if(!el)return;el.innerHTML=`<div class="detail-head"><div><span class="eyebrow">Specialist</span><h3>${esc(r.agentName)}</h3></div><span class="statuschip ${esc(r.status)}">${humanState(r.status)}</span></div><div class="timeline-vertical">${planState(r.plan)}</div><div class="execution-output">${esc(r.answer||r.error||'Waiting for output…')}</div>`;if(r.error)notice('error',r.error)}
 function workerIcon(w){return (w.name||w.id||'?').trim()[0]?.toUpperCase()||'?'}
-function renderTimeline(m){const el=$('agentTimeline');if(!el)return;const workers=m?.workers||[];el.innerHTML=workers.length?workers.map((w,i)=>`<button class="mission-line ${esc(w.state)}" data-worker-id="${esc(w.id)}"><span class="mission-line__rail"><i></i>${i<workers.length-1?'<b></b>':''}</span><span class="mission-line__icon">${esc(workerIcon(w))}</span><span class="mission-line__copy"><strong>${esc(w.name||w.id)}</strong><small>${esc(w.model||w.reason||'')}</small></span><span class="mission-line__state">${humanState(w.state)}</span></button>`).join(''):'<div class="empty">No mission timeline yet.</div>';el.querySelectorAll('[data-worker-id]').forEach(b=>b.onclick=()=>selectWorker(b.dataset.workerId))}
+function renderTimeline(m){const el=$('agentTimeline');if(!el)return;const workers=m?.workers||[];el.innerHTML=workers.length?workers.map((w,i)=>`<button class="mission-line ${esc(w.state)}" data-worker-id="${esc(w.id)}"><span class="mission-line__rail"><i></i>${i<workers.length-1?'<b></b>':''}</span><span class="mission-line__icon">${esc(workerIcon(w))}</span><span class="mission-line__copy"><strong>${esc(w.name||w.id)}</strong><small>${esc(w.model||w.reason||'')}</small></span><span class="mission-line__state">${humanState(w.state)}</span></button>`).join(''):'<div class="empty">No workers yet.</div>';el.querySelectorAll('[data-worker-id]').forEach(b=>b.onclick=()=>selectWorker(b.dataset.workerId))}
 function resultForWorker(id){return currentMission?.results?.find(r=>r.agentId===id)||null}
 function selectWorker(id){activeInspectorId=id;renderInspector();window.dispatchEvent(new CustomEvent('localai:agentworld-focus',{detail:{workerId:id}}))}
-function renderInspector(){const el=$('agentInspector');if(!el)return;const m=currentMission;if(!m){el.innerHTML='<div class="empty">Select a mission or start new work.</div>';return}const w=(m.workers||[]).find(x=>x.id===activeInspectorId)||(m.workers||[]).find(x=>x.state==='running')||(m.workers||[])[0];if(!w){el.innerHTML='<div class="empty">No worker selected.</div>';return}activeInspectorId=w.id;const r=resultForWorker(w.id),evidence=r?.evidence||[],rm=w.routingMeta||{};el.innerHTML=`<div class="inspector-head"><span class="agent-avatar-lg">${esc(workerIcon(w))}</span><div><span class="eyebrow">Worker inspector</span><h3>${esc(w.name||w.id)}</h3></div><span class="statuschip ${esc(w.state)}">${humanState(w.state)}</span></div><dl class="inspector-grid"><dt>Model</dt><dd>${esc(w.model||r?.model||'Automatic')}</dd><dt>Capability fit</dt><dd>${rm.capabilityScore??'—'}%</dd><dt>Model fit</dt><dd>${rm.modelScore??'—'}%</dd><dt>Availability</dt><dd>${esc(rm.availability||'available')} · load ${rm.workload??0}</dd><dt>Dependencies</dt><dd>${esc((w.dependsOn||[]).join(', ')||'None')}</dd><dt>Grounding</dt><dd>${rm.groundingRequired===false?'Not required':'Required'}</dd><dt>Fallback</dt><dd>${esc(rm.retryPolicy?.fallbackAgentId||'None')}</dd><dt>Evidence</dt><dd>${evidence.length}</dd><dt>Run</dt><dd>${esc(r?.id||m.id)}</dd></dl>${w.reason?`<div class="routing-rationale"><strong>Assignment rationale</strong><span>${esc(w.reason)}</span></div>`:''}${r?.plan?.length?`<div class="mini-plan">${planState(r.plan)}</div>`:''}${evidence.length?`<details class="inspector-details"><summary>Evidence sources</summary><div class="evidence-list">${evidence.map(x=>`<code>${esc(x)}</code>`).join('')}</div></details>`:''}${r?.answer?`<details class="inspector-details" open><summary>Worker output</summary><pre class="agent-result-pre">${esc(r.answer)}</pre></details>`:r?.error?`<div class="inline-error">${esc(r.error)}</div>`:''}`}
+function renderInspector(){const el=$('agentInspector');if(!el)return;const m=currentMission;if(!m){el.innerHTML='<div class="empty">Pick a mission or a worker.</div>';return}const w=(m.workers||[]).find(x=>x.id===activeInspectorId)||(m.workers||[]).find(x=>x.state==='running')||(m.workers||[])[0];if(!w){el.innerHTML='<div class="empty">Pick a worker.</div>';return}activeInspectorId=w.id;const r=resultForWorker(w.id),evidence=r?.evidence||[],rm=w.routingMeta||{};el.innerHTML=`<div class="inspector-head"><span class="agent-avatar-lg">${esc(workerIcon(w))}</span><div><span class="eyebrow">Worker</span><h3>${esc(w.name||w.id)}</h3></div><span class="statuschip ${esc(w.state)}">${humanState(w.state)}</span></div><dl class="inspector-grid"><dt>Model</dt><dd>${esc(w.model||r?.model||'Automatic')}</dd><dt>Skill match</dt><dd>${rm.capabilityScore??'—'}%</dd><dt>Model match</dt><dd>${rm.modelScore??'—'}%</dd><dt>Waits for</dt><dd>${esc((w.dependsOn||[]).join(', ')||'Nobody')}</dd><dt>Must cite sources</dt><dd>${rm.groundingRequired===false?'No':'Yes'}</dd><dt>If it fails</dt><dd>${esc(rm.retryPolicy?.fallbackAgentId?'Hands over to '+rm.retryPolicy.fallbackAgentId:'Stops')}</dd><dt>Sources</dt><dd>${evidence.length}</dd></dl>${w.reason?`<div class="routing-rationale"><strong>Why this worker</strong><span>${esc(w.reason)}</span></div>`:''}${r?.plan?.length?`<div class="mini-plan">${planState(r.plan)}</div>`:''}${evidence.length?`<details class="inspector-details"><summary>Sources</summary><div class="evidence-list">${evidence.map(x=>`<code>${esc(x)}</code>`).join('')}</div></details>`:''}${r?.answer?`<details class="inspector-details" open><summary>What it wrote</summary><pre class="agent-result-pre">${esc(r.answer)}</pre></details>`:r?.error?`<div class="inline-error">${esc(r.error)}</div>`:''}`}
+function currentStep(m){const w=(m?.workers||[]).find(x=>x.state==='running');return w?(w.name||w.id):''}
 function missionSummary(m){const done=(m.workers||[]).filter(w=>w.state==='complete').length,total=(m.workers||[]).length;return {done,total,percent:total?Math.round(done/total*100):0}}
-function renderMission(m){if(!m)return;currentMission=m;if(m.routing)renderRoute(m.routing);const s=missionSummary(m),headline=$('agentMissionHeadline'),meta=$('agentMissionMeta'),progress=$('agentMissionProgress');if(headline)headline.textContent=m.goal||'Mission';if(meta)meta.textContent=humanState(m.status)+' · '+s.done+'/'+s.total+' workers complete';if(progress)progress.style.width=s.percent+'%';progress.parentElement?.setAttribute('aria-valuenow',String(s.percent));renderTimeline(m);renderInspector();renderResults();renderHistorySelection();if(m.status==='needs_attention'||m.status==='error')notice('error',m.error||'Mission needs attention.','<button type="button" class="btn" id="agentRetryBtn">Retry mission</button>');else if(m.status==='complete')notice('success','Mission completed successfully.');else clearNotice();setTimeout(()=>{const b=$('agentRetryBtn');if(b)b.onclick=retryMission},0)}
+function renderMission(m){if(!m)return;currentMission=m;if(m.routing)renderRoute(m.routing);const s=missionSummary(m),headline=$('agentMissionHeadline'),meta=$('agentMissionMeta'),progress=$('agentMissionProgress');if(headline)headline.textContent=m.goal||'Mission';if(meta)meta.textContent=humanState(m.status)+' · '+s.done+' of '+s.total+' workers done'+(currentStep(m)?' · Now: '+currentStep(m):'');if(progress)progress.style.width=s.percent+'%';progress.parentElement?.setAttribute('aria-valuenow',String(s.percent));renderTimeline(m);renderInspector();renderResults();renderHistorySelection();if(m.status==='needs_attention'||m.status==='error')notice('error',m.error||'Mission needs attention.','<button type="button" class="btn" id="agentRetryBtn">Retry mission</button>');else if(m.status==='complete')notice('success','Mission finished.');else clearNotice();setTimeout(()=>{const b=$('agentRetryBtn');if(b)b.onclick=retryMission},0)}
 function retryMission(){if(!currentMission?.goal)return;const g=$('agentGoal');if(g)g.value=currentMission.goal;startMission()}
-function renderResults(){const el=$('agentResultBody');if(!el)return;const m=currentMission;if(!m){el.innerHTML='<div class="empty">Mission results will appear here.</div>';return}
- if(activeResultTab==='summary'){el.innerHTML=m.answer?`<pre class="agent-result-pre">${esc(m.answer)}</pre>`:`<div class="empty">${m.status==='running'?'Final synthesis will appear when all workers complete.':'No final synthesis available.'}</div>`}
- if(activeResultTab==='workers'){el.innerHTML=(m.results||[]).length?(m.results||[]).map(r=>`<article class="result-card"><div class="detail-head"><strong>${esc(r.agentName||r.agentId)}</strong><span class="statuschip ${esc(r.status)}">${humanState(r.status)}</span></div><pre class="agent-result-pre">${esc(r.answer||r.error||'')}</pre></article>`).join(''):'<div class="empty">No specialist outputs yet.</div>'}
- if(activeResultTab==='evidence'){const rows=[];(m.results||[]).forEach(r=>(r.evidence||[]).forEach(e=>rows.push([r.agentName||r.agentId,e])));el.innerHTML=rows.length?`<div class="evidence-table">${rows.map(([a,e])=>`<div><strong>${esc(a)}</strong><code>${esc(e)}</code></div>`).join('')}</div>`:'<div class="empty">No evidence recorded yet.</div>'}
- if(activeResultTab==='routing'){el.innerHTML=m.routing?`<pre class="agent-result-pre">${esc(JSON.stringify(m.routing,null,2))}</pre>`:'<div class="empty">No routing decision available.</div>'}
+function renderResults(){const el=$('agentResultBody');if(!el)return;const m=currentMission;if(!m){el.innerHTML='<div class="empty">The mission\'s summary appears here.</div>';return}
+ if(activeResultTab==='summary'){el.innerHTML=m.answer?`<pre class="agent-result-pre">${esc(m.answer)}</pre>`:`<div class="empty">${m.status==='running'?'The summary appears when every worker has finished.':'This mission has no summary.'}</div>`}
+ if(activeResultTab==='workers'){el.innerHTML=(m.results||[]).length?(m.results||[]).map(r=>`<article class="result-card"><div class="detail-head"><strong>${esc(r.agentName||r.agentId)}</strong><span class="statuschip ${esc(r.status)}">${humanState(r.status)}</span></div><pre class="agent-result-pre">${esc(r.answer||r.error||'')}</pre></article>`).join(''):'<div class="empty">No worker has written anything yet.</div>'}
+ if(activeResultTab==='evidence'){const rows=[];(m.results||[]).forEach(r=>(r.evidence||[]).forEach(e=>rows.push([r.agentName||r.agentId,e])));el.innerHTML=rows.length?`<div class="evidence-table">${rows.map(([a,e])=>`<div><strong>${esc(a)}</strong><code>${esc(e)}</code></div>`).join('')}</div>`:'<div class="empty">No sources yet.</div>'}
+ if(activeResultTab==='routing'){const steps=m.routing?.workers||m.workers||[];el.innerHTML=steps.length?`<ol class="mission-steps">${steps.map(w=>`<li><strong>${esc(w.name||w.id)}</strong>${w.reason?`<span>${esc(w.reason)}</span>`:''}${w.dependsOn?.length?`<small>After ${esc(w.dependsOn.join(', '))}</small>`:''}</li>`).join('')}</ol>`:'<div class="empty">No plan yet.</div>'}
 }
-function renderHistory(){const el=$('agentMissionHistory');if(!el)return;el.innerHTML=history.length?history.slice(0,20).map(m=>{const s=missionSummary(m);return `<button class="history-row ${m.id===currentMission?.id?'active':''}" data-mission-id="${esc(m.id)}"><span class="history-state ${esc(m.status)}"></span><span><strong>${esc(m.goal||m.id)}</strong><small>${humanState(m.status)} · ${s.done}/${s.total} workers · ${new Date(m.updatedAt||m.createdAt).toLocaleString()}</small></span><span>›</span></button>`}).join(''):'<div class="empty">No missions yet. Describe a goal above to run your first one.</div>';el.querySelectorAll('[data-mission-id]').forEach(b=>b.onclick=()=>{const m=history.find(x=>x.id===b.dataset.missionId);if(m){renderMission(m);window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:m}}))}});applyHistoryFilter()}
+function renderHistory(){const el=$('agentMissionHistory');if(!el)return;el.innerHTML=history.length?history.slice(0,20).map(m=>{const s=missionSummary(m);return `<button class="history-row ${m.id===currentMission?.id?'active':''}" data-mission-id="${esc(m.id)}"><span class="history-state ${esc(m.status)}"></span><span><strong>${esc(m.goal||m.id)}</strong><small>${humanState(m.status)} · ${s.done} of ${s.total} workers · ${new Date(m.updatedAt||m.createdAt).toLocaleString()}</small></span><span>›</span></button>`}).join(''):'<div class="empty">No missions yet. Describe a goal above to run your first one.</div>';el.querySelectorAll('[data-mission-id]').forEach(b=>b.onclick=()=>{const m=history.find(x=>x.id===b.dataset.missionId);if(m){renderMission(m);window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:m}}))}});applyHistoryFilter()}
 function renderHistorySelection(){renderHistory()}
-async function loadHistory(){try{const j=await req('/api/agents/missions');history=j.items||j.missions||[];renderHistory();if(!currentMission&&history[0])renderMission(history.find(m=>m.status==='running')||history[0])}catch(e){notice('error','Could not load mission history: '+e.message)}}
-async function startMission(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter a mission objective first.');return}const body={goal,projectId:$('agentProject')?.value||''},ids=manualIds();if($('agentWebSearch')?.checked)body.webSearch=true;if(ids?.length)body.agentIds=ids;const b=$('missionRunBtn');if(b){b.disabled=true;b.textContent='Starting…'}clearNotice();try{await preview();notice('info','Mission accepted. Agent World will update live as workers execute.');req('/api/agents/missions/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}).then(j=>{if(j.mission)renderMission(j.mission);loadHistory()}).catch(e=>{notice('error',e.message,'<button type="button" class="btn" id="agentRetryBtn">Retry</button>');setTimeout(()=>{const r=$('agentRetryBtn');if(r)r.onclick=startMission},0)})}catch(e){notice('error',e.message)}finally{if(b){b.disabled=false;b.textContent='Start Mission'}}}
+async function loadHistory(){try{const j=await req('/api/agents/missions');history=j.items||j.missions||[];renderHistory();if(!currentMission&&history[0])renderMission(history.find(m=>m.status==='running')||history[0])}catch(e){notice('error','Could not load past missions: '+e.message)}}
+async function startMission(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter a goal first.');return}const body={goal,projectId:$('agentProject')?.value||''},ids=manualIds();if($('agentWebSearch')?.checked)body.webSearch=true;if(ids?.length)body.agentIds=ids;const b=$('missionRunBtn');if(b){b.disabled=true;b.textContent='Starting…'}clearNotice();try{await preview();notice('info','Mission started. The workers below update as they go.');req('/api/agents/missions/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}).then(j=>{if(j.mission)renderMission(j.mission);loadHistory()}).catch(e=>{notice('error',e.message,'<button type="button" class="btn" id="agentRetryBtn">Retry</button>');setTimeout(()=>{const r=$('agentRetryBtn');if(r)r.onclick=startMission},0)})}catch(e){notice('error',e.message)}finally{if(b){b.disabled=false;b.textContent='Start mission'}}}
 async function runSpecialist(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter an objective first.');return}const b=$('specialistRunBtn');if(b)b.disabled=true;try{const j=await req('/api/agents/specialist/run',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({agentId:selected,goal,projectId:$('agentProject')?.value||''})});renderRun(j.run)}catch(e){notice('error',e.message)}finally{if(b)b.disabled=false}}
 function setupTabs(){
  const tabs=[...document.querySelectorAll('[data-agent-result-tab]')],body=$('agentResultBody');
@@ -67,14 +68,17 @@ function setupTabs(){
   b.onkeydown=e=>{const n=e.key==='ArrowRight'?i+1:e.key==='ArrowLeft'?i-1:e.key==='Home'?0:e.key==='End'?tabs.length-1:null;if(n===null)return;e.preventDefault();pick(tabs[(n+tabs.length)%tabs.length],true)}});
  if(body){body.setAttribute('role','tabpanel');body.tabIndex=0;const a=tabs.find(x=>x.classList.contains('active'));if(a)body.setAttribute('aria-labelledby',a.id)}
 }
-function setupAdvanced(){const toggle=$('agentAdvancedToggle'),panel=$('agentAdvancedPanel');if(toggle&&panel)toggle.onclick=()=>{const open=panel.hidden;panel.hidden=!open;toggle.setAttribute('aria-expanded',String(open));toggle.textContent=open?'Hide advanced routing':'Advanced routing'};$('manualRouteToggle')?.addEventListener('change',e=>{$('manualRouteOptions').hidden=!e.target.checked})}
+function setupAdvanced(){const toggle=$('agentAdvancedToggle'),panel=$('agentAdvancedPanel');if(toggle&&panel)toggle.onclick=()=>{const open=panel.hidden;panel.hidden=!open;toggle.setAttribute('aria-expanded',String(open));toggle.textContent=open?'Hide specialists':'Choose specialists'};$('manualRouteToggle')?.addEventListener('change',e=>{$('manualRouteOptions').hidden=!e.target.checked})}
 function applyHistoryFilter(){const term=($('agentHistorySearch')?.value||'').toLowerCase();document.querySelectorAll('.history-row').forEach(r=>r.hidden=!r.textContent.toLowerCase().includes(term))}
 function setupHistoryFilter(){const q=$('agentHistorySearch');if(q)q.addEventListener('input',applyHistoryFilter)}
-async function init(){if(!$('specialistRegistry'))return;const historyLoaded=loadHistory();try{const j=await req('/api/agents/catalog');catalog=j.items||[];cards();updateDirectActionLabel()}catch(e){notice('error','Could not load specialist catalog: '+e.message)}setupTabs();setupAdvanced();setupHistoryFilter();$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m);else renderHistory()},()=>notice('info','Live mission stream reconnecting…'),()=>{const n=$('agentInlineNotice');if(n&&/reconnecting/.test(n.textContent))clearNotice();loadHistory()})}catch{notice('info','Live mission stream unavailable; history remains accessible.')}}
+async function init(){if(!$('specialistRegistry'))return;const historyLoaded=loadHistory();try{const j=await req('/api/agents/catalog');catalog=j.items||[];cards();updateDirectActionLabel()}catch(e){notice('error','Could not load the specialists: '+e.message)}setupTabs();setupAdvanced();setupHistoryFilter();if($('agentMapToggle')&&$('agentMapPanel'))bindMapToggle($('agentMapToggle'),$('agentMapPanel'));$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m);else renderHistory()},()=>notice('info','Reconnecting to the live mission…'),()=>{const n=$('agentInlineNotice');if(n&&/Reconnecting/.test(n.textContent))clearNotice();loadHistory()})}catch{notice('info','Live updates are unavailable; past missions still open.')}}
 window.addEventListener('localai:agentworld-select',e=>{if(e.detail?.workerId)selectWorker(e.detail.workerId)});
+// The live map sits behind "Watch live map" (E2): workers and the current step come first. It stays mounted while hidden, so it keeps up.
+function bindMapToggle(button,panel){const set=open=>{panel.hidden=!open;button.setAttribute('aria-expanded',String(open));button.textContent=open?'Hide live map':'Watch live map';if(open)requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')))};button.setAttribute('aria-controls',panel.id);set(!panel.hidden);button.onclick=()=>set(panel.hidden);return button}
+function mapToggle(panel){const b=document.createElement('button');b.type='button';b.className='btn agent-map-toggle';return bindMapToggle(b,panel)}
 window.LocalAISpecialists={init,preview,renderMission};
 // Home starts a mission here: 202 {runId} comes back at once and the run view follows the mission. A failure fails the pending view and throws.
-window.LocalAIMissions={async start(goal,{pending,agentIds,projectId,webSearch}={}){let j;try{j=await req('/api/agents/missions/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({goal,projectId:projectId||'',agentIds:agentIds?.length?agentIds:undefined,webSearch:webSearch===true||undefined,async:true})});if(!j.runId)throw Error('The mission did not start. Try again.')}catch(e){pending?.fail(e.message||'Something went wrong.');throw e}pending?.resolve(j.runId)},
+window.LocalAIMissions={mapToggle,async start(goal,{pending,agentIds,projectId,webSearch}={}){let j;try{j=await req('/api/agents/missions/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({goal,projectId:projectId||'',agentIds:agentIds?.length?agentIds:undefined,webSearch:webSearch===true||undefined,async:true})});if(!j.runId)throw Error('The mission did not start. Try again.')}catch(e){pending?.fail(e.message||'Something went wrong.');throw e}pending?.resolve(j.runId)},
  // The run view's body shows a mission this way: select it (live while it runs, replayed once it ended), and make Agent World re-measure.
  async show(missionId,{replay=true,alive}={}){let m=null;try{m=(await req('/api/agents/mission?id='+encodeURIComponent(missionId))).mission}catch{}if(!m||(alive&&!alive()))return false;renderMission(m);if(replay&&m.status!=='running')window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:m}}));requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')));return true}};
 document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',e.message)));
@@ -210,7 +214,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       <div class="truth-attention-head">
         <div>
           <h2 id="truthAttentionTitle">Attention</h2>
-          <p id="truthAttentionSummary">Checking live capability state…</p>
+          <p id="truthAttentionSummary">Checking what Local AI can do right now…</p>
         </div>
         <span id="truthAttentionCount" class="pill truth-attention-count">Checking</span>
       </div>
@@ -235,7 +239,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         <div class="topbar">
           <div>
             <h1>Models</h1>
-            <p class="sub">Installed Ollama models and the models currently resident in memory.</p>
+            <p class="sub">The models on this computer, and which ones are loaded right now.</p>
           </div>
           <button id="modelRuntimeRefresh" class="btn" type="button">Refresh</button>
         </div>
@@ -363,7 +367,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         items.push({
           severity: item.state === 'DOWN' ? 'critical' : 'warning',
           title: `${item.label || item.name || 'Core service'} is ${String(item.state || 'unavailable').toLowerCase()}`,
-          detail: item.impact || 'A core capability is affected.',
+          detail: item.impact || 'Part of Local AI is affected.',
           action: 'Open Health',
           view: 'status'
         });
@@ -373,8 +377,8 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     if (healthy(snapshot, 'ollama') && models?.available === false) {
       items.push({
         severity: 'warning',
-        title: 'Model inventory could not be verified',
-        detail: models.runtimeError || 'Ollama is reachable, but installed model inventory is unavailable.',
+        title: 'Model list could not be verified',
+        detail: models.runtimeError || 'Ollama is reachable, but the list of installed models is not.',
         action: 'Open Models',
         view: 'models'
       });
@@ -382,7 +386,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       items.push({
         severity: 'critical',
         title: 'Configured default model is not installed',
-        detail: `${models.default} is configured as the default but is not present in the verified Ollama inventory.`,
+        detail: `${models.default} is set as the default but is not installed in Ollama.`,
         action: 'Open Models',
         view: 'models'
       });
@@ -392,7 +396,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       items.push({
         severity: 'info',
         title: 'Active model residency is unavailable',
-        detail: models.runtimeError || 'Installed models are known, but Ollama /api/ps runtime detail could not be read.',
+        detail: models.runtimeError || 'Installed models are known, but which ones are loaded could not be read.',
         action: 'Open Models',
         view: 'models'
       });
@@ -465,15 +469,15 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     list.replaceChildren();
 
     if (loadError) {
-      window.LocalAIHome?.setAttention([{ severity: 'critical', title: 'Capability registry unavailable', detail: 'Local AI could not verify the current runtime state.', action: 'Open Health', view: 'status' }]);
+      window.LocalAIHome?.setAttention([{ severity: 'critical', title: 'Status unavailable', detail: 'Local AI could not check what is working right now.', action: 'Open Health', view: 'status' }]);
       surface.hidden = false;
       surface.dataset.state = 'attention';
-      summary.textContent = 'Live capability state could not be verified. Existing controls remain available.';
+      summary.textContent = 'Local AI could not check what is working right now. Everything else still works.';
       count.textContent = 'State unavailable';
       const row = document.createElement('div');
       row.className = 'truth-attention-item';
       row.dataset.severity = 'critical';
-      row.innerHTML = '<span class="truth-attention-marker" aria-hidden="true"></span><div class="truth-attention-copy"><strong>Capability registry unavailable</strong><span>Local AI could not verify the current runtime state. Open Status for diagnostics.</span></div>';
+      row.innerHTML = '<span class="truth-attention-marker" aria-hidden="true"></span><div class="truth-attention-copy"><strong>Status unavailable</strong><span>Local AI could not check what is working right now. Open Health for details.</span></div>';
       const action = document.createElement('button');
       action.type = 'button';
       action.className = 'btn truth-attention-action';
@@ -490,7 +494,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     surface.hidden = !items.length;
     if (!items.length) {
       surface.dataset.state = 'clear';
-      summary.textContent = 'No action is required. Core capabilities currently report ready.';
+      summary.textContent = 'Nothing needs you. Everything reports ready.';
       count.textContent = 'Clear';
       return;
     }
@@ -550,8 +554,8 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       <div class="model-runtime-metric" data-dev-only><strong>${runtimeLabel}</strong><span>Runtime detail</span></div>`;
 
     if (models?.available === false) {
-      list.innerHTML = `<div class="model-runtime-note model-runtime-error"><strong>Model inventory unavailable</strong><div style="margin-top:4px">${esc(models.runtimeError || 'Ollama model inventory could not be read.')}</div></div>`;
-      note.textContent = 'The application will not infer installed model state while inventory is unavailable.';
+      list.innerHTML = `<div class="model-runtime-note model-runtime-error"><strong>Model list unavailable</strong><div style="margin-top:4px">${esc(models.runtimeError || 'Could not read the list of models from Ollama.')}</div></div>`;
+      note.textContent = 'Local AI will not guess which models are installed until it can read the list.';
       return;
     }
 
@@ -621,15 +625,15 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
 
     if (models?.default && models.defaultInstalled === false) {
       note.classList.add('model-runtime-error');
-      note.textContent = `Configured default ${models.default} is not installed. Requests using the configured default can fail until the model configuration or inventory is corrected.`;
+      note.textContent = `Configured default ${models.default} is not installed. Requests that use the default can fail until it is installed or another default is chosen.`;
     } else if (models?.runtimeAvailable === false) {
       note.classList.add('model-runtime-error');
-      note.textContent = `Installed model inventory is available, but active residency detail is not: ${models.runtimeError || 'Ollama /api/ps unavailable.'}`;
+      note.textContent = `The installed models are known, but which ones are loaded is not: ${models.runtimeError || 'Ollama /api/ps unavailable.'}`;
     } else {
       note.classList.remove('model-runtime-error');
       note.textContent = Number(models?.loadedCount || 0) === 0
         ? 'No model is resident right now. This is normal: Ollama loads models on demand and may unload them after idle time.'
-        : 'Loaded means currently resident in Ollama runtime memory. Installed models remain available even when they are not loaded.';
+        : 'Loaded means in memory right now. Installed models stay available when they are not loaded.';
     }
   }
 
@@ -754,7 +758,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         headers: { Accept: 'application/json' },
         cache: 'no-store'
       });
-      if (!response.ok) throw new Error(`Capability registry returned HTTP ${response.status}`);
+      if (!response.ok) throw new Error(`Status check returned HTTP ${response.status}`);
       const snapshot = await response.json();
       lastTruthSnapshot = snapshot;
       applyCapabilityGates(snapshot);
@@ -1063,11 +1067,11 @@ const ROLE_STYLE={
  performance_analyst:{skin:'#e0b38c',hair:'#342b2a',shirt:'#d2762d',vest:'#ffa23a',pants:'#604b36',accent:'#ff8494',tool:'holo',hat:'#f3c247',badge:'PF'}
 }
 const DEMO_STAGES=[
- {label:'Router planning',detail:'Matching capabilities, dependencies and models',states:{router:'running',ux_analyst:'pending',documentation:'pending',synthesis:'pending'}},
+ {label:'Router planning',detail:'Choosing specialists and models for each step',states:{router:'running',ux_analyst:'pending',documentation:'pending',synthesis:'pending'}},
  {label:'UX analysis',detail:'UX Analyst is working in the Interface Lab',states:{router:'complete',ux_analyst:'running',documentation:'pending',synthesis:'pending'}},
  {label:'Documentation',detail:'Grounded findings are handed to Documentation',states:{router:'complete',ux_analyst:'complete',documentation:'running',synthesis:'pending'}},
  {label:'Synthesis',detail:'Coordinator is assembling the final mission result',states:{router:'complete',ux_analyst:'complete',documentation:'complete',synthesis:'running'}},
- {label:'Complete',detail:'Mission artifacts are ready',states:{router:'complete',ux_analyst:'complete',documentation:'complete',synthesis:'complete'}}
+ {label:'Complete',detail:'The mission\'s results are ready',states:{router:'complete',ux_analyst:'complete',documentation:'complete',synthesis:'complete'}}
 ];
 
 let root,canvas,ctx,current=null,liveSnapshot=null,sourceType='idle',selected=null,hovered=null,raf=0,last=0;
@@ -1177,7 +1181,7 @@ function syncReplay(){
  if(label)label.textContent=replay.frames.length?(replay.active?'Replay '+(replay.index+1)+' / '+replay.frames.length+' · '+String(frame?.reason||'state').replaceAll('-',' '):replay.frames.length+' event'+(replay.frames.length===1?'':'s')+' ready'):'0 events';
  if(markers){markers.innerHTML=replay.frames.map((f,i)=>`<button type="button" data-replay-index="${i}" class="${replayEventClass(f)} ${i===replay.index?'active':''}" title="${esc((f.reason||'state')+(f.detail?' — '+f.detail:''))}"></button>`).join('');markers.querySelectorAll('[data-replay-index]').forEach(b=>b.onclick=()=>applyReplayFrame(Number(b.dataset.replayIndex)))}
  $('#awcReplayPlay',root).textContent=replay.playing?'Pause':'Play';$('#awcReplaySpeed',root).textContent=replay.speed+'×';$('#awcReplayLive',root).hidden=!replay.active;
- const detail=$('#awcReplayDetail',root);if(detail)detail.textContent=frame?(new Date(frame.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})+' · '+(frame.detail||String(frame.reason||'state').replaceAll('-',' '))):'Select a mission from history to inspect its execution.'
+ const detail=$('#awcReplayDetail',root);if(detail)detail.textContent=frame?(new Date(frame.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})+' · '+(frame.detail||String(frame.reason||'state').replaceAll('-',' '))):'Pick a past mission to replay it.'
 }
 function applyReplayFrame(i,preservePlaying=false){
  if(!replay.frames.length)return;const wasPlaying=replay.playing;replay.active=true;replay.playing=preservePlaying&&wasPlaying;replay.index=clamp(Number(i)||0,0,replay.frames.length-1);const frame=replay.frames[replay.index];agents.clear();artifacts=[];packets=[];sparks=[];dust=[];current=JSON.parse(JSON.stringify(frame.mission));sourceType='replay';current.workers.forEach(ensureAgent);selected=frame.workerId?{type:'agent',id:String(frame.workerId).split(',')[0]}:selected;syncHud();syncSelection();syncReplay()
@@ -1220,7 +1224,7 @@ function activeStage(){
 }
 function syncHud(){
  if(!root)return;const stage=activeStage(),workers=current?.workers||[],done=workers.filter(w=>w.state==='complete').length,running=workers.filter(w=>w.state==='running').length,bad=workers.filter(w=>['error','blocked'].includes(w.state)).length;
- $('#awcSource',root).textContent=sourceType.toUpperCase();$('#awcObjective',root).textContent=current?.goal||'No active mission';$('#awcObjective',root).title=current?.goal||'';root.dataset.state=bad?'attention':running?'running':current?.status==='complete'?'complete':workers.length?'waiting':'idle';$('#awcStage',root).textContent=stage.label;$('#awcStageDetail',root).textContent=stage.detail;$('#awcStatus',root).textContent=current?humanState(current.status):'Idle';$('#awcProgressText',root).textContent=workers.length?done+'/'+workers.length+' complete':'No workers';$('#awcProgress',root).style.width=(workers.length?Math.round(done/workers.length*100):0)+'%';$('#awcStatRun',root).textContent=running;$('#awcStatDone',root).textContent=done;$('#awcStatAlert',root).textContent=bad;$('#awcStatArtifacts',root).textContent=artifacts.length;$('#awcAttention',root).hidden=!bad;syncRoster()
+ $('#awcSource',root).textContent=sourceType.charAt(0).toUpperCase()+sourceType.slice(1);$('#awcObjective',root).textContent=current?.goal||'No active mission';$('#awcObjective',root).title=current?.goal||'';root.dataset.state=bad?'attention':running?'running':current?.status==='complete'?'complete':workers.length?'waiting':'idle';$('#awcStage',root).textContent=stage.label;$('#awcStageDetail',root).textContent=stage.detail;$('#awcStatus',root).textContent=current?humanState(current.status):'Idle';$('#awcProgressText',root).textContent=workers.length?done+'/'+workers.length+' complete':'No workers';$('#awcProgress',root).style.width=(workers.length?Math.round(done/workers.length*100):0)+'%';$('#awcStatRun',root).textContent=running;$('#awcStatDone',root).textContent=done;$('#awcStatAlert',root).textContent=bad;$('#awcStatArtifacts',root).textContent=artifacts.length;$('#awcAttention',root).hidden=!bad;syncRoster()
 }
 function syncRoster(){
  const h=$('#awcRoster',root);if(!h)return;const workers=current?.workers||[];h.innerHTML=workers.length?workers.map(w=>{const s=ROLE_STYLE[w.id]||ROLE_STYLE[w.agentId]||ROLE_STYLE.synthesis;return `<button class="awc__rosterItem ${esc(w.state)}" data-awc-roster="${esc(w.id)}"><span class="awc__rosterGlyph" style="--worker:${esc(s.accent)}">${esc((s.badge||w.name||w.id||'?').slice(0,2))}</span><span><strong>${esc(w.name||w.id)}</strong><small>${esc(DISTRICTS[zoneForWorker(w)]?.short||zoneForWorker(w))} · ${esc(s.tool)}</small></span><em>${esc(humanState(w.state))}</em></button>`}).join(''):'<div class="awc__empty">No workers active.</div>';h.querySelectorAll('[data-awc-roster]').forEach(b=>b.onclick=()=>focusWorker(b.dataset.awcRoster))
@@ -1258,27 +1262,27 @@ function toggleFollow(){display.follow=!display.follow;$('#awcFollow',root)?.set
 // Theater moves the frame to <body>: an ancestor of the Agents page creates a containing block that traps position:fixed.
 let theaterHome=null;
 function setTheaterHost(on){if(on&&!theaterHome){theaterHome=document.createComment('agent-world');root.before(theaterHome);document.body.appendChild(root)}else if(!on&&theaterHome){theaterHome.replaceWith(root);theaterHome=null}}
-function toggleExpanded(){const on=!root.classList.contains('is-expanded');setTheaterHost(on);root.classList.toggle('is-expanded',on);document.body.classList.toggle('awc-stage-expanded',on);$('#awcExpand',root).textContent=on?'Exit theater':'Theater';setTimeout(()=>{if(on)focusActive();else fitWorld()},40)}
-function exitExpanded(){if(!root?.classList.contains('is-expanded'))return;root.classList.remove('is-expanded');setTheaterHost(false);document.body.classList.remove('awc-stage-expanded');$('#awcExpand',root).textContent='Theater';fitWorld()}
+function toggleExpanded(){const on=!root.classList.contains('is-expanded');setTheaterHost(on);root.classList.toggle('is-expanded',on);document.body.classList.toggle('awc-stage-expanded',on);$('#awcExpand',root).textContent=on?'Exit full screen':'Full screen';setTimeout(()=>{if(on)focusActive();else fitWorld()},40)}
+function exitExpanded(){if(!root?.classList.contains('is-expanded'))return;root.classList.remove('is-expanded');setTheaterHost(false);document.body.classList.remove('awc-stage-expanded');$('#awcExpand',root).textContent='Full screen';fitWorld()}
 
 function mount(){
  const host=$('#agentWorldCityMount');if(!host)return;root=document.createElement('section');root.className='awc awc-v3';root.dataset.state='idle';root.innerHTML=`
  <header class="awc__commandbar">
   <div class="awc__brand">
    <svg class="awc__mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 22a10 10 0 0 1 20 0z" fill="currentColor"/><rect x="4" y="22" width="24" height="4" rx="2" fill="currentColor"/><path d="M14 12h4v6h-4z" fill="#0b1624" opacity=".35"/></svg>
-   <div class="awc__brandText"><div class="awc__titleRow"><h2 class="awc__title">Agent World</h2><span class="awc__live"><i></i><b id="awcSource">IDLE</b></span></div><div class="awc__sub">Mission construction crew</div></div>
+   <div class="awc__brandText"><div class="awc__titleRow"><h2 class="awc__title">Agent World</h2><span class="awc__live"><i></i><b id="awcSource">Idle</b></span></div><div class="awc__sub">Mission construction crew</div></div>
   </div>
   <dl class="awc__topstats">
    <div class="awc__stat is-run"><dt>Working</dt><dd id="awcStatRun">0</dd></div>
    <div class="awc__stat is-done"><dt>Done</dt><dd id="awcStatDone">0</dd></div>
    <div class="awc__stat is-alert"><dt>Alerts</dt><dd id="awcStatAlert">0</dd></div>
-   <div class="awc__stat is-art"><dt>Artifacts</dt><dd id="awcStatArtifacts">0</dd></div>
+   <div class="awc__stat is-art"><dt>Results</dt><dd id="awcStatArtifacts">0</dd></div>
   </dl>
   <div class="awc__toolbar" role="toolbar" aria-label="Map controls">
-   <div class="awc__group"><button id="awcFit" type="button" title="Show the whole city (0)">Fit</button><button id="awcCenter" type="button" title="Jump to the active worker (A)">Active</button><button id="awcFollow" type="button" aria-pressed="false" title="Keep the camera on the active worker (F)">Follow</button></div>
-   <div class="awc__group"><button id="awcZoomOut" type="button" aria-label="Zoom out">−</button><span id="awcZoomLabel" aria-live="polite">100%</span><button id="awcZoomIn" type="button" aria-label="Zoom in">+</button></div>
-   <div class="awc__group"><button type="button" data-awc-display="labels" aria-pressed="true">Labels</button><button type="button" data-awc-display="flows" aria-pressed="true">Flows</button><button type="button" data-awc-display="night" aria-pressed="false">Night</button></div>
-   <div class="awc__group"><button id="awcCrewToggle" type="button" aria-pressed="true">Crew</button><button id="awcExpand" data-game-primary="true" type="button" title="Full-screen view (T)">Theater</button></div>
+   <div class="awc__group"><button id="awcFit" type="button" title="Show the whole map (0)">Whole map</button><button id="awcCenter" type="button" title="Jump to the worker who is working now (A)">Find worker</button><button id="awcFollow" type="button" aria-pressed="false" title="Keep the worker who is working now in view (F)">Follow worker</button></div>
+   <div class="awc__group"><button id="awcZoomOut" type="button">Zoom out</button><span id="awcZoomLabel" aria-live="polite">100%</span><button id="awcZoomIn" type="button">Zoom in</button></div>
+   <div class="awc__group"><button type="button" data-awc-display="labels" aria-pressed="true">Names</button><button type="button" data-awc-display="flows" aria-pressed="true">Hand-offs</button><button type="button" data-awc-display="night" aria-pressed="false">Dark map</button></div>
+   <div class="awc__group"><button id="awcCrewToggle" type="button" aria-pressed="true">Workers</button><button id="awcExpand" data-game-primary="true" type="button" title="Full-screen view (T)">Full screen</button></div>
   </div>
  </header>
  <div class="awc__missionstrip">
@@ -1291,7 +1295,7 @@ function mount(){
  </div>
  <div class="awc__gameShell">
   <div class="awc__mapWrap">
-   <canvas width="${W}" height="${H}" id="awcCanvas" tabindex="0" aria-label="Interactive Agent World map. Drag to pan, scroll or pinch to zoom, click a district or worker to inspect. Keys: 0 fit, A active worker, F follow, plus and minus zoom, T theater."></canvas>
+   <canvas width="${W}" height="${H}" id="awcCanvas" tabindex="0" aria-label="Interactive Agent World map. Drag to pan, scroll or pinch to zoom, click a district or worker to inspect. Keys: 0 whole map, A find worker, F follow worker, plus and minus zoom, T full screen."></canvas>
    <div class="awc__scanlines"></div>
    <div class="awc__tooltip" id="awcTooltip" hidden></div>
    <div class="awc__mapHud">
@@ -1299,17 +1303,17 @@ function mount(){
     <div class="awc__minimap" id="awcMinimap" aria-hidden="true"></div>
    </div>
    <div class="awc__eventFeed" id="awcEventFeed" aria-live="polite"></div>
-   <div class="awc__legend" aria-label="Map legend"><span><i class="run"></i>Running</span><span><i class="done"></i>Complete</span><span><i class="wait"></i>Waiting</span><span><i class="bad"></i>Attention</span><span><i class="dep"></i>Active dependency</span><span><i class="art"></i>Artifact</span></div>
+   <div class="awc__legend" aria-label="Map legend"><span><i class="run"></i>Running</span><span><i class="done"></i>Complete</span><span><i class="wait"></i>Waiting</span><span><i class="bad"></i>Attention</span><span><i class="dep"></i>Active dependency</span><span><i class="art"></i>Result</span></div>
   </div>
   <div class="awc__ops" role="complementary" aria-label="Mission details">
    <div class="awc__opsScroll">
-    <section class="awc__section"><div class="awc__opsHead"><h3>Crew</h3><span class="awc__eyebrow">Live roster</span></div>
+    <section class="awc__section"><div class="awc__opsHead"><h3>Workers</h3><span class="awc__eyebrow">Working now</span></div>
      <div class="awc__roster" id="awcRoster"><div class="awc__empty">No workers active.</div></div></section>
     <section class="awc__section"><div class="awc__opsHead"><h3>Districts</h3><span class="awc__eyebrow">Jump to</span></div>
      <div class="awc__districtLegend">${Object.entries(DISTRICTS).map(([id,d])=>`<button type="button" data-awc-district="${id}"><i style="--district:${d.accent}"></i><span>${d.short}</span></button>`).join('')}</div></section>
-    <section class="awc__section awc__replayPanel"><div class="awc__opsHead"><h3>Replay</h3><strong id="awcReplayLabel">0 events</strong></div><div class="awc__replayMarkers" id="awcReplayMarkers"></div><input id="awcReplayRange" type="range" min="0" max="0" value="0" disabled aria-label="Mission replay position"><small id="awcReplayDetail">Select a mission from history to inspect its execution.</small><div class="awc__replayActions"><button id="awcReplayPrev" type="button" aria-label="Previous replay event">◀</button><button id="awcReplayPlay" type="button">Play</button><button id="awcReplayNext" type="button" aria-label="Next replay event">▶</button><button id="awcReplaySpeed" type="button">1×</button><button id="awcReplayLive" type="button" hidden>Live</button></div></section>
-    <section class="awc__section awc__demoPanel"><div class="awc__opsHead"><h3>Simulation</h3><span class="awc__eyebrow">Try the city without a real mission</span></div><select id="awcDemoScenario" aria-label="Demo scenario"><option value="success">Successful mission</option><option value="failure">Failure and repair</option></select><div class="awc__demoActions"><button id="awcDemoPlay" type="button">Play</button><button id="awcDemoStep" type="button">Step</button><button id="awcDemoReset" type="button">Reset</button><button id="awcDemoSpeed" type="button">1×</button></div><button id="awcLiveBtn" class="awc__liveBtn" type="button" hidden>Return to live mission</button></section>
-    <p class="awc__hint">Drag to pan, scroll or pinch to zoom, click a district or worker. Keys: 0 fit · A active · F follow · +/− zoom · T theater.</p>
+    <section class="awc__section awc__replayPanel"><div class="awc__opsHead"><h3>Replay</h3><strong id="awcReplayLabel">0 events</strong></div><div class="awc__replayMarkers" id="awcReplayMarkers"></div><input id="awcReplayRange" type="range" min="0" max="0" value="0" disabled aria-label="Mission replay position"><small id="awcReplayDetail">Pick a past mission to replay it.</small><div class="awc__replayActions"><button id="awcReplayPrev" type="button" aria-label="Previous replay event">◀</button><button id="awcReplayPlay" type="button">Play</button><button id="awcReplayNext" type="button" aria-label="Next replay event">▶</button><button id="awcReplaySpeed" type="button">1×</button><button id="awcReplayLive" type="button" hidden>Live</button></div></section>
+    <section class="awc__section awc__demoPanel"><div class="awc__opsHead"><h3>Practice run</h3><span class="awc__eyebrow">See the map work without a real mission</span></div><select id="awcDemoScenario" aria-label="Demo scenario"><option value="success">Successful mission</option><option value="failure">Failure and repair</option></select><div class="awc__demoActions"><button id="awcDemoPlay" type="button">Play</button><button id="awcDemoStep" type="button">Step</button><button id="awcDemoReset" type="button">Reset</button><button id="awcDemoSpeed" type="button">1×</button></div><button id="awcLiveBtn" class="awc__liveBtn" type="button" hidden>Return to live mission</button></section>
+    <p class="awc__hint">Drag to pan, scroll or pinch to zoom, click a district or worker. Keys: 0 whole map · A find worker · F follow worker · +/− zoom · T full screen.</p>
    </div>
   </div>
  </div>`;
@@ -2524,14 +2528,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       actions: [{ type: 'view', view: 'create', label: 'Open Images' }]
     },
     {
-      id: 'gridcraft', name: 'GridCraft', tier: 'bridge', decision: 'Host bridge', source: 'gridcraft',
+      id: 'gridcraft', name: 'GridCraft', tier: 'bridge', decision: 'On the Windows computer', source: 'gridcraft',
       summary: 'Lets Local AI open, check, edit and save spreadsheets on the Windows computer.',
       guidance: 'Works on one request at a time. Nothing leaves your network.',
       actions: [{ type: 'page', url: '/gridcraft.html', label: 'Open GridCraft' }]
     },
     {
       id: 'penpot', name: 'Penpot', tier: 'bridge', decision: 'Not set up',
-      summary: 'A design tool Local AI could read and update designs in, if you run your own copy.',
+      summary: 'A design app Local AI could read and update designs in, if you run your own copy.',
       guidance: 'Its access key is a password: keep it out of screenshots, notes and shared files.',
       actions: [
         { type: 'url', url: 'https://help.penpot.app/technical-guide/getting-started/', label: 'Self-host guide' },
@@ -2565,21 +2569,21 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   ];
 
   const ALTERNATIVES = [
-    ['Gemini / Nano Banana / ImageFX / Google Flow', 'Cloud creative stack', 'Skip as core', 'Duplicates local model and ComfyUI capabilities and weakens the local-first boundary. Add a cloud adapter only for a concrete quality gap.'],
-    ['DALL·E 3', 'Cloud image generation', 'Skip as core', 'Keep ComfyUI as the default media backend and expose cloud providers only as explicit opt-in fallbacks.'],
-    ['Hugging Chat / Hugging Face Chat', 'Cloud chat frontend', 'Skip', 'Local AI already provides the chat/orchestration layer. Hugging Face is more valuable here as a model registry.'],
-    ['Meta AI / You.com', 'Cloud assistants/search', 'Skip', 'They duplicate Ask/Research and would fragment history, routing, privacy, and capability state.'],
-    ['LMArena / Chatbot Arena', 'Model comparison', 'Reference only', 'Useful for external model evaluation, but not an appliance runtime dependency.'],
-    ['Coze / Bardeen', 'Cloud automation/agents', 'Skip', 'n8n plus Local AI agents already cover this space with better control and local deployment.'],
-    ['Pixlr X / Lovart', 'Design/image tools', 'Skip', 'Photopea plus Penpot provides a simpler editor/design pair with less overlap.'],
-    ['Laxis', 'Meeting notes', 'Skip for now', 'Meeting capture is outside the current Local AI core and would add a narrow cloud workflow.'],
-    ['Google Slides', 'Presentations', 'Defer', 'Prefer a future artifact/export capability rather than coupling the appliance to one office suite.'],
-    ['10Web', 'Website builder', 'Skip', 'Local AI engineering/workbench features are a better fit for code-backed site work.'],
-    ['Icons8', 'Asset library', 'Reference only', 'Useful content source, not an integration. Keep it outside the runtime dependency graph.']
+    ['Gemini / Nano Banana / ImageFX / Google Flow', 'Cloud images and video', 'Not built in', 'Does what your local models and ComfyUI already do, but in the cloud. Worth adding only if local results fall clearly short.'],
+    ['DALL·E 3', 'Cloud images', 'Not built in', 'ComfyUI stays the way pictures are made; a cloud service would only ever be something you switch on yourself.'],
+    ['Hugging Chat / Hugging Face Chat', 'Cloud chat', 'Skip', 'Local AI is already your chat. Hugging Face is more useful here as the place models come from.'],
+    ['Meta AI / You.com', 'Cloud assistants and search', 'Skip', 'They do what Chat and Research do, and would split your history and send your questions outside.'],
+    ['LMArena / Chatbot Arena', 'Model comparison', 'Reference only', 'Handy for comparing models before you download one; Local AI does not need it to work.'],
+    ['Coze / Bardeen', 'Cloud automations and agents', 'Skip', 'n8n and Local AI missions already do this, on this computer and under your control.'],
+    ['Pixlr X / Lovart', 'Design and photo apps', 'Skip', 'Photopea and Penpot cover photo editing and design with less overlap.'],
+    ['Laxis', 'Meeting notes', 'Skip for now', 'Recording meetings is not something Local AI does, and this would send them to the cloud.'],
+    ['Google Slides', 'Presentations', 'Later', 'Better that Local AI learns to export slides than ties itself to one office suite.'],
+    ['10Web', 'Website builder', 'Skip', 'For a website, the developer pages in Local AI fit better.'],
+    ['Icons8', 'Icons and pictures', 'Reference only', 'A good place to find icons and pictures; nothing to connect.']
   ];
 
   function tierBadge(tier) {
-    const labels = { native: 'Native', extend: 'Local extension', bridge: 'Bridge', utility: 'Utility' };
+    const labels = { native: 'Built in', extend: 'Add-on', bridge: 'Connects to', utility: 'Outside' };
     return `<span class="ux-int-tier ${tier}">${labels[tier] || tier}</span>`;
   }
 
@@ -2645,7 +2649,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (!button) return;
     button.disabled = busy;
     button.setAttribute('aria-busy', String(busy));
-    button.textContent = busy ? 'Checking…' : 'Refresh status';
+    button.textContent = busy ? 'Checking…' : 'Check again';
   }
 
   async function loadStatus() {
@@ -2680,10 +2684,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         if (status) {
           const healthy = services.filter(service => ['n8n', 'comfy'].includes(service.name) && service.state === 'HEALTHY').length;
           q('#uxIntegrationNativeCountV2').textContent = `${healthy}/2`;
-          summary.textContent = healthy === 2 ? 'Core local integrations are healthy.' : healthy === 1 ? 'One core local integration needs attention.' : 'Core local integration health needs attention.';
+          summary.textContent = healthy === 2 ? 'Both core services are working.' : healthy === 1 ? 'One core service needs attention.' : 'The core services need attention.';
         } else {
           q('#uxIntegrationNativeCountV2').textContent = '—';
-          summary.textContent = 'Live service status is unavailable; integration recommendations are unchanged.';
+          summary.textContent = 'Live status is unavailable; what each service is for is unchanged.';
         }
 
         q('#uxIntegrationMediaStateV2').textContent = capabilities
@@ -2691,7 +2695,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
           : 'Status only';
         checked.textContent = `Checked ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
       } catch {
-        if (summary) summary.textContent = 'Could not read live integration status.';
+        if (summary) summary.textContent = 'Could not check the services.';
         if (checked) checked.textContent = 'Status request failed';
       } finally {
         setBusy(false);
@@ -2707,14 +2711,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (!section || section.dataset.integrationV2 === 'true') return Boolean(section);
     section.dataset.integrationV2 = 'true';
     section.innerHTML = `
-      <div class="topbar"><div><h1>Integrations</h1><p class="sub">The services Local AI runs on, how each one is doing, and the tools it can connect to.</p></div><button class="btn" type="button" id="uxIntegrationRefreshV2" aria-busy="false">Refresh status</button></div>
-      <div class="card ux-int-hero ux-int-v2"><div><h2>Connected services</h2><p id="uxIntegrationStatusSummaryV2" role="status" aria-live="polite">Checking local services…</p><span id="uxIntegrationLastCheckedV2" class="ux-int-checked"></span></div><div class="ux-int-metrics"><div><b id="uxIntegrationNativeCountV2">—</b><span>core services healthy</span></div><div><b id="uxIntegrationMediaStateV2">—</b><span>image and media</span></div><div><b>Opt-in</b><span>cloud and outside tools</span></div></div></div>
-      <div class="section-head ux-int-section-head"><div><h2>Services and tools</h2><p>What each one does here, and whether it is ready.</p></div></div><div id="uxIntegrationCardsV2" class="ux-int-grid"></div>
-      <details class="ux-int-about"><summary>How integrations are chosen</summary><div class="card ux-int-policy"><div><h2>What gets into the core</h2></div><div class="ux-int-policy-grid"><div><strong>1. Native before cloud</strong><span>Ollama, n8n and ComfyUI remain the default execution path.</span></div><div><strong>2. One owner per capability</strong><span>Do not add another primary chat, automation, or media surface that fragments state.</span></div><div><strong>3. Bridges must create durable value</strong><span>Penpot and Obsidian should exchange inspectable artifacts or source context, not merely open another tab.</span></div><div><strong>4. Cloud is an explicit fallback</strong><span>Credentials and uploads require deliberate user action after a measured local capability gap is documented.</span></div></div></div>
-      <div class="card ux-int-research"><div><h2>Safeguards</h2></div><div class="ux-int-research-grid"><div><strong>n8n security audit</strong><span>Use the official audit after adding credentials, community nodes, or public webhooks; it checks credential, database, filesystem, node, and instance risks.</span><a data-external="true" href="https://docs.n8n.io/hosting/securing/security-audit/" target="_blank" rel="noopener noreferrer" aria-label="n8n security audit official guidance (opens external site)">Official guidance ↗</a></div><div><strong>ComfyUI API compatibility</strong><span>Custom nodes that require direct client/server communication may not be usable through API-mode automation. Verify this before making a node part of a Local AI workflow.</span><a data-external="true" href="https://docs.comfy.org/custom-nodes/overview" target="_blank" rel="noopener noreferrer" aria-label="ComfyUI custom-node model guidance (opens external site)">Custom-node model ↗</a></div><div><strong>Penpot self-host + MCP</strong><span>Penpot can run on your own server and exposes an MCP workflow for design-to-code/design-to-design work. MCP keys are secrets and stay out of client code.</span><a data-external="true" href="https://help.penpot.app/mcp/" target="_blank" rel="noopener noreferrer" aria-label="Penpot MCP guidance (opens external site)">Penpot MCP ↗</a></div></div></div>
-      <div class="card ux-int-next"><div><h2>Planned next</h2></div><div class="ux-int-next-grid"><div><b>Shipped</b><strong>Live n8n / ComfyUI health</strong><span>Uses the appliance status and capability endpoints already present.</span></div><div><b>Next</b><strong>ComfyUI capability discovery</strong><span>Detect video/avatar model and node readiness before SVD or SadTalker can show as available.</span></div><div><b>Next</b><strong>Obsidian vault ingestion</strong><span>Mount/select a local vault and ingest supported source files into Project Knowledge with source provenance.</span></div><div><b>Opt-in</b><strong>Penpot MCP bridge</strong><span>Connect a self-hosted Penpot design workspace without exposing MCP credentials to the browser.</span></div></div></div>
+      <div class="topbar"><div><h1>Services</h1><p class="sub">What Local AI connects to, how each one is doing, and what each one is for.</p></div><button class="btn" type="button" id="uxIntegrationRefreshV2" aria-busy="false">Check again</button></div>
+      <div class="card ux-int-hero ux-int-v2"><div><h2>Connected services</h2><p id="uxIntegrationStatusSummaryV2" role="status" aria-live="polite">Checking local services…</p><span id="uxIntegrationLastCheckedV2" class="ux-int-checked"></span></div><div class="ux-int-metrics"><div><b id="uxIntegrationNativeCountV2">—</b><span>core services healthy</span></div><div><b id="uxIntegrationMediaStateV2">—</b><span>image and media</span></div><div><b>Opt-in</b><span>cloud and outside services</span></div></div></div>
+      <div class="section-head ux-int-section-head"><div><h2>What each one does</h2><p>What it is for here, and whether it is ready.</p></div></div><div id="uxIntegrationCardsV2" class="ux-int-grid"></div>
+      <details class="ux-int-about"><summary>How services are chosen</summary><div class="card ux-int-policy"><div><h2>What gets built in</h2></div><div class="ux-int-policy-grid"><div><strong>1. On this computer first</strong><span>Ollama, n8n and ComfyUI do the work by default, so nothing leaves your network.</span></div><div><strong>2. One service per job</strong><span>No second chat, automation or image service that would split your history in two.</span></div><div><strong>3. A connection has to be worth it</strong><span>Penpot and Obsidian would share real designs and notes with Local AI, not just open another tab.</span></div><div><strong>4. The cloud only when you choose it</strong><span>Accounts and uploads to outside services happen only when you set them up yourself.</span></div></div></div>
+      <div class="card ux-int-research"><div><h2>Safeguards</h2></div><div class="ux-int-research-grid"><div><strong>n8n security check</strong><span>Run it after you connect an account, add a community add-on or a public webhook. It checks accounts, data, files and add-ons.</span><a data-external="true" href="https://docs.n8n.io/hosting/securing/security-audit/" target="_blank" rel="noopener noreferrer" aria-label="n8n security check guidance (opens external site)">Official guidance ↗</a></div><div><strong>ComfyUI add-ons</strong><span>Some add-ons only work in ComfyUI's own window, not when Local AI asks for an image. Check before you rely on one.</span><a data-external="true" href="https://docs.comfy.org/custom-nodes/overview" target="_blank" rel="noopener noreferrer" aria-label="ComfyUI add-on guidance (opens external site)">Add-on guidance ↗</a></div><div><strong>Penpot on your own server</strong><span>Penpot can run at home and let Local AI read and update designs. Its access key is a password and never goes into the page.</span><a data-external="true" href="https://help.penpot.app/mcp/" target="_blank" rel="noopener noreferrer" aria-label="Penpot connection guidance (opens external site)">Penpot guide ↗</a></div></div></div>
+      <div class="card ux-int-next"><div><h2>Planned next</h2></div><div class="ux-int-next-grid"><div><b>Shipped</b><strong>Live n8n and ComfyUI health</strong><span>This page checks both every time you open it.</span></div><div><b>Next</b><strong>Video and talking portraits</strong><span>Show Stable Video Diffusion and SadTalker as ready once their models are installed in ComfyUI.</span></div><div><b>Next</b><strong>Obsidian notes as Sources</strong><span>Pick a notes folder and add its files to a project's Sources, each with where it came from.</span></div><div><b>Opt-in</b><strong>Penpot connection</strong><span>Connect your own Penpot without its access key ever reaching the browser.</span></div></div></div>
       </details>
-      <details class="ux-int-reviewed"><summary>Reviewed alternatives <span>${ALTERNATIVES.length} tools/groups intentionally kept out of the core</span></summary><div class="section-head ux-int-section-head"><div><h2>Reviewed, not integrated</h2><p>Useful independently in some cases, but not justified as Local AI runtime dependencies today.</p></div></div><div id="uxIntegrationAlternativesV2" class="ux-int-table"></div></details>`;
+      <details class="ux-int-reviewed"><summary>Reviewed alternatives <span>${ALTERNATIVES.length} services kept out on purpose</span></summary><div class="section-head ux-int-section-head"><div><h2>Reviewed, not added</h2><p>Some are useful on their own, but none earns a place inside Local AI today.</p></div></div><div id="uxIntegrationAlternativesV2" class="ux-int-table"></div></details>`;
 
     renderCards();
     renderAlternatives();
@@ -2745,7 +2749,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   'use strict';
 
   const state = { inerted: [], opener: null, runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '', projects: null, viewError: '', fetched: null, gap: '', pending: null, inApp: false, closing: false };
-  const KINDS = { chat: ['Chat', 'compose'], research: ['Research', 'globe'], image: ['Image', 'image'], agent: ['Agent', 'automate'], automation: ['Automation', 'refresh'], engineering: ['Engineering', 'build'] };
+  const KINDS = { chat: ['Chat', 'compose'], research: ['Research', 'globe'], image: ['Image', 'image'], agent: ['Mission', 'automate'], automation: ['Automation', 'refresh'], engineering: ['Change', 'build'] };
   // Home starts a run by mode name; a run not yet reported is labelled by the kind that mode becomes.
   const MODE_KINDS = { ask: 'chat', create: 'image', mission: 'agent' };
   const kindOf = (kind) => MODE_KINDS[kind] || kind;
@@ -2792,9 +2796,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       section.id = 'runs';
       section.className = 'view';
       section.innerHTML = `
-        <div class="topbar"><div><h1>Runs</h1><p class="sub">One execution history for AI, images, agents, automations, and engineering.</p></div><button id="runsRefresh" type="button" class="btn">Refresh</button></div>
+        <div class="topbar"><div><h1>Runs</h1><p class="sub">Every run: chats, images, missions, automations and changes.</p></div><button id="runsRefresh" type="button" class="btn">Refresh</button></div>
         <div id="runMetrics" class="run-summary-grid"></div>
-        <div class="card" style="margin-top:12px"><div class="section-head"><div><h2>Execution history</h2><p>Open a run for lifecycle events, output, errors, cancel, or retry when supported.</p></div></div><div id="runList" class="run-list"><div class="empty">Loading runs…</div></div></div>`;
+        <div class="card" style="margin-top:12px"><div class="section-head"><div><h2>All runs</h2><p>Open a run to see what happened, its result, and to cancel or retry it.</p></div></div><div id="runList" class="run-list"><div class="empty">Loading runs…</div></div></div>`;
       main.appendChild(section);
       el('runsRefresh')?.addEventListener('click', () => loadRuns(true));
     }
@@ -2818,7 +2822,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         panel.id = 'homeRunCenter';
         panel.className = 'card home-run-center';
         panel.hidden = true;
-        panel.innerHTML = '<div class="section-head"><div><h2>Runs</h2><p id="homeRunSummary">Checking current execution state…</p></div><button id="homeRunsOpen" type="button" class="btn">View runs</button></div><div id="homeRunList" class="run-list"></div>';
+        panel.innerHTML = '<div class="section-head"><div><h2>Runs</h2><p id="homeRunSummary">Checking what is running…</p></div><button id="homeRunsOpen" type="button" class="btn">View runs</button></div><div id="homeRunList" class="run-list"></div>';
         const attention = el('truthAttention');
         if (attention?.parentNode === home) attention.insertAdjacentElement('afterend', panel);
         else home.prepend(panel);
@@ -2862,7 +2866,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const list = el('runList');
     if (list) {
       list.replaceChildren();
-      if (!runs.length) list.innerHTML = '<div class="empty">No execution history yet.</div>';
+      if (!runs.length) list.innerHTML = '<div class="empty">No runs yet.</div>';
       else runs.forEach((run) => list.appendChild(makeRunRow(run)));
     }
 
@@ -2939,10 +2943,16 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     state.drawerSig = drawerSignature(run);
     if (!run) { renderGap(drawer); if (lost) refocus(lost); return; }   // Starting…/Loading… is rebuilt too (the router re-renders it): keep focus in the view
     const card = run.card, kit = window.LocalAIKit;
-    const project = document.createElement('span'); project.className = 'run-view-project';
-    project.textContent = !run.projectId ? 'Not filed' : !state.projects ? 'Filed' : (state.projects.find((p) => p.id === run.projectId)?.name || 'Project removed');
-    drawer.appendChild(viewHead(run.threadTitle || run.title || 'Untitled run',   // a conversation keeps its first message as its name
-      [`${kindLabel(card?.kind || run.type)} · `, project], run));
+    // The header names the project only once the run is filed in one (E2): an unfiled run says nothing about it.
+    const sub = [kindLabel(card?.kind || run.type)];
+    if (run.projectId) {
+      const project = document.createElement('span'); project.className = 'run-view-project';
+      project.textContent = !state.projects ? 'Filed' : (state.projects.find((p) => p.id === run.projectId)?.name || 'Project removed');
+      sub.push(' · ', project);
+    }
+    const runTitle = run.threadTitle || run.title || 'Untitled run';   // a conversation keeps its first message as its name
+    drawer.appendChild(viewHead(runTitle, sub, run));
+    document.title = `${runTitle} · Local AI`;   // browser history names the run (E8); showView sets the page's title back
 
     // Status badge, then a progress bar while the run is live.
     const vh = document.createElement('div'); vh.className = 'run-view-head';
@@ -3084,7 +3094,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const values = [
       ['Status', statusLabel(run.status)], ['Progress', `${Math.max(0, Math.min(100, Number(run.progress) || 0))}%`],
       ['Started', shownDate(run.startedAt)], ['Finished', shownDate(run.finishedAt)],
-      ['Attempt', String(run.attempt || 1)], ['Retry of', run.retryOf || '—'], ['Run ID', run.id]
+      ['Try', String(run.attempt || 1)], ['Retry of', run.retryOf || '—'], ['Run ID', run.id]
     ];
     values.forEach(([label, value]) => {
       const cell = document.createElement('div'); cell.className = 'run-detail';
@@ -3212,6 +3222,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (backdrop) { backdrop.classList.remove('show'); backdrop.setAttribute('aria-hidden', 'true'); }
     const sheet = el('runDetailsSheet'); if (sheet?.open) { state.selectedId = null; sheet.close(); }
     document.body.classList.remove('run-view-open');
+    { const page = document.querySelector('main .view.active')?.id; if (page && window.LocalAIViews) document.title = window.LocalAIViews.title(page); }   // the run's title gives way to the page's again
     setInert(false); state.opener = null;
     if (wasOpen) queueMicrotask(() => restoreFocus(opener));
     clearTimeout(state.closeTimer); state.closeTimer = 0;
@@ -3315,7 +3326,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       render();
     } catch (error) {
       const list = el('runList');
-      if (list) { list.replaceChildren(); const box = document.createElement('div'); box.className = 'status-error'; box.textContent = `Execution history unavailable: ${error.message}`; list.appendChild(box); }
+      if (list) { list.replaceChildren(); const box = document.createElement('div'); box.className = 'status-error'; box.textContent = `Runs unavailable: ${error.message}`; list.appendChild(box); }
     } finally {
       state.loading = false;
       schedule();
