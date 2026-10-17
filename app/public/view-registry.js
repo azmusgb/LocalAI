@@ -26,7 +26,7 @@ const VIEWS=[
  {id:'memory',svg:'memory',domain:'projects',section:'Keep',parent:'projects',tab:'Memory',icon:'M',label:'Memory',description:'Facts the assistant keeps about each project.',aka:['project memory']},
  // Library is the last tab of Projects: what you kept, as opposed to Work (everything you did). Old #library links open it.
  {id:'library',svg:'library',domain:'projects',section:'Keep',parent:'projects',tab:'Everything you kept',icon:'▦',label:'Library',description:'Everything you kept: chats, research and images.',aka:['everything you kept','kept']},
- {id:'agents',svg:'target',domain:'hidden',section:'Agents',icon:'◎',label:'Missions',description:'Give a goal; specialist agents work it live.',aka:['agents','agent operations','live map']},
+ {id:'agents',svg:'target',domain:'hidden',section:'Agents',icon:'◎',label:'Missions',description:'Give a goal; specialist agents work it live.',aka:['agents','agent operations']},
  {id:'status',svg:'health',domain:'system',section:'Health',icon:'●',label:'Health',description:'Whether Local AI is working, and which optional services are up.',aka:['status','system status']},
  {id:'models',svg:'model',domain:'system',section:'Health',icon:'M',label:'Models',description:"Installed models and what's loaded now."},
  {id:'integrations',svg:'plug',domain:'system',section:'Health',icon:'↔',label:'Services',description:'What Local AI connects to, and whether each one is ready.',aka:['integrations','bridges','tools']},
@@ -34,7 +34,7 @@ const VIEWS=[
  {id:'automations',svg:'flow',short:'n8n',domain:'system',section:'Automations',dev:true,icon:'↗',label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
  {id:'actions',svg:'globe',short:'Browser',domain:'system',section:'Automations',dev:true,icon:'↗',label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
  {id:'backlog',svg:'improve',domain:'improve',section:'Pipeline',icon:'Δ',label:'Backlog',description:'One ranked list of what could change in Local AI.',aka:['improve','ideas','priorities']},
- {id:'inProgress',svg:'build',domain:'improve',section:'Pipeline',icon:'▶',label:'In progress',description:'Changes being planned, tested or waiting for your OK.',aka:['running changes','changes','engineer']},
+ {id:'inProgress',svg:'build',domain:'improve',section:'Pipeline',icon:'▶',label:'In progress',description:'Changes being planned, tested or waiting for your OK.',aka:['running changes','change requests','changes','engineer']},
  {id:'shipped',svg:'check',domain:'improve',section:'Pipeline',icon:'✓',label:'Shipped',description:'What changed, release by release.',aka:['done','released']},
  {id:'signals',svg:'alert',domain:'improve',section:'Pipeline',icon:'!',label:'Signals',description:'Problems Local AI noticed; serious ones join the Backlog.',aka:['detections','issues','quality signals']},
  {id:'claude',svg:'sparkle',domain:'system',section:'Tools',dev:true,icon:'✳',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},

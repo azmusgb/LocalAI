@@ -46,12 +46,6 @@ async function open(viewport, { hash = '#home', runs = [] } = {}) {
 }
 const phone = { width: 390, height: 844 };
 const awc = '#agentWorldCityMount';
-// The live map waits behind Watch live map (E2): open it, then it is the same Agent World as before.
-async function watchMap(p) {
-  const b = p.locator('#runDrawer button', { hasText: 'Watch live map' });
-  await b.waitFor(T); await b.click();
-  await p.locator('#runDrawer .awc').waitFor({ state: 'visible', timeout: 6000 });
-}
 
 const page = await open({ width: 1280, height: 860 });
 await check('Mission mode Send posts async, opens #run/<runId> with Agent World, the headline and the timeline inside the run view', async () => {
@@ -62,12 +56,7 @@ await check('Mission mode Send posts async, opens #run/<runId> with Agent World,
   for (const sel of [awc, '#agentTimeline', '#agentMissionHeadline', '#agentMissionProgress'])
     await page.locator('#runDrawer ' + sel).waitFor({ state: 'attached', timeout: 6000 });
   assert.equal(await page.locator(awc).count(), 1);
-  await page.waitForFunction(() => document.querySelectorAll('#runDrawer #agentTimeline .mission-line').length >= 3, null, T);
-  const lead = await page.evaluate(() => { const at = s => document.querySelector('#runDrawer ' + s), first = (a, b) => !!(at(a).compareDocumentPosition(at(b)) & Node.DOCUMENT_POSITION_FOLLOWING); return { strip: first('#agentMissionHeadline', '#agentWorldCityMount'), workers: first('#agentTimeline', '#agentWorldCityMount'), hidden: !at('#agentWorldCityMount').checkVisibility() }; });
-  assert.deepEqual(lead, { strip: true, workers: true, hidden: true }, 'workers and the current step lead; the map waits');
-  assert.match(await page.locator('#agentMissionMeta').innerText(), /Now: Code Analyst/, 'the strip names the step running now');
-  assert.equal(await page.title(), GOAL + ' · Local AI');
-  await watchMap(page);
+  await page.locator('#runDrawer .awc').waitFor({ state: 'visible', timeout: 6000 });
   assert.equal(await page.locator('#agentMissionHeadline').innerText(), GOAL);
   assert.ok(await page.locator('#agentTimeline .mission-line').count() >= 3, 'the mission is selected: its workers are listed');
   const box = await page.locator('#runDrawer .awc').boundingBox();
@@ -93,7 +82,7 @@ await check('a mission transition updates the run view in place: same Agent Worl
   const p = await open({ width: 1280, height: 520 }, { runs: [missionRun(), other] });
   const gets = () => p.db.missionGets || 0;
   await p.evaluate(() => window.LocalAIRuns.show('run-m1'));
-  await watchMap(p);
+  await p.locator('#runDrawer .awc').waitFor({ state: 'visible', timeout: 6000 });
   await p.waitForFunction(() => document.querySelectorAll('#agentTimeline .mission-line').length >= 3, null, T);
   const before = await p.evaluate(() => { const d = document.getElementById('runDrawer'); d.scrollTop = 150; const b = document.querySelector('#agentTimeline .mission-line'); b.focus(); document.querySelector('#runDrawer .awc').__tag = 'same'; document.querySelector('#runDrawer .run-body').__tag = 'slot'; return { top: d.scrollTop, focus: document.activeElement === b }; });
   assert.ok(before.top > 0 && before.focus, 'set up scrolled and focused: ' + JSON.stringify(before));
@@ -123,7 +112,7 @@ await check('a mission run view asks for the one mission, not the whole list', a
   let list = 0; p.on('request', q => { if (new URL(q.url()).pathname === '/api/agents/missions') list++; });
   const before = list;
   await p.evaluate(() => window.LocalAIRuns.show('run-m1'));
-  await watchMap(p);
+  await p.locator('#runDrawer .awc').waitFor({ state: 'visible', timeout: 6000 });
   await p.waitForFunction(() => document.querySelectorAll('#agentTimeline .mission-line').length >= 3, null, T);
   assert.ok((p.db.missionGets || 0) >= 1);
   assert.equal(list, before);
@@ -153,7 +142,7 @@ await check('a failed start fails the Starting… view and keeps the text on Hom
 await check('390x844: the mission run view fits, passes axe color-contrast and target-size', async () => {
   const p = await open(phone, { runs: [missionRun()] });
   await p.evaluate(() => window.LocalAIRuns.show('run-m1'));
-  await watchMap(p);
+  await p.locator('#runDrawer .awc').waitFor({ state: 'visible', timeout: 6000 });
   await p.waitForTimeout(600);
   assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1 && document.querySelector('#runDrawer').scrollWidth <= document.querySelector('#runDrawer').clientWidth + 1), true, 'no sideways scroll');
   if (shotDir) await p.screenshot({ path: join(shotDir, 'task-7-mission-run-390.png') });

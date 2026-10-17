@@ -327,11 +327,8 @@
     }
     RB.mount(slot, ctx => {
       slot.classList.add('run-body-mission');
-      // Workers and the current step lead (E2); the live map waits behind a button, still mounted so it keeps up.
-      const strip = h('div', 'run-body-mission__strip'), line = h('div', 'run-body-mission__timeline'), top = h('div', 'run-body-mission__world');
-      top.id = 'runMissionMap'; top.hidden = true;
-      const watch = window.LocalAIMissions?.mapToggle?.(top) || h('span', '', '');
-      slot.append(strip, line, watch, top);
+      const top = h('div', 'run-body-mission__world'), strip = h('div', 'run-body-mission__strip'), line = h('div', 'run-body-mission__timeline');
+      slot.append(top, strip, line);
       RB.borrow(ctx, $('agentWorldCityMount'), top);
       RB.borrow(ctx, $('agentMissionHeadline')?.closest('.agent-mission-strip'), strip);
       RB.borrow(ctx, $('agentTimeline'), line);

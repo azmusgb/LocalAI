@@ -50,23 +50,7 @@ await check('contextual navigation switches domains',async()=>{
 await check('mission-first composer',async()=>{
   await page.locator('#agentGoal').waitFor({state:'visible'});
   await page.locator('#missionRunBtn').waitFor({state:'visible'});
-  assert.equal(await page.locator('#missionRunBtn').innerText(),'Start mission');
-});
-await check('Missions leads with workers and the current step; the live map waits behind Watch live map (E2)',async()=>{
-  const order=await page.evaluate(()=>{const at=s=>document.querySelector(s);const before=(a,b)=>!!(at(a).compareDocumentPosition(at(b))&Node.DOCUMENT_POSITION_FOLLOWING);return{strip:before('.agent-mission-strip','#agentWorldCityMount'),workers:before('#agentTimeline','#agentWorldCityMount'),toggle:before('#agentMapToggle','#agentWorldCityMount')}});
-  assert.deepEqual(order,{strip:true,workers:true,toggle:true});
-  assert.equal(await page.locator('#agentMapPanel').isVisible(),false,'the map is hidden until asked for');
-  assert.equal(await page.locator('#agentMapToggle').getAttribute('aria-expanded'),'false');
-  assert.equal(await page.locator('#agentMapToggle').innerText(),'Watch live map');
-  await page.locator('#agentMapToggle').click();
-  assert.equal(await page.locator('#agentMapToggle').getAttribute('aria-expanded'),'true');
-  assert.equal(await page.locator('#agentMapToggle').innerText(),'Hide live map');
-});
-await check('the result tabs and the map toolbar speak in words',async()=>{
-  assert.deepEqual((await page.locator('[data-agent-result-tab]').allInnerTexts()).map(s=>s.trim()),['Summary','Workers','Sources','Steps']);
-  const bar=(await page.locator('.awc__toolbar button').allInnerTexts()).map(s=>s.trim());
-  assert.deepEqual(bar,['Whole map','Find worker','Follow worker','Zoom out','Zoom in','Names','Hand-offs','Dark map','Workers','Full screen']);
-  assert.doesNotMatch(await page.locator('#agents').innerText(),/Theater|Routing override|Advanced routing|IDLE|Direct execution|Mission objective|Start Mission/);
+  assert.equal(await page.locator('#missionRunBtn').innerText(),'Start Mission');
 });
 await check('Agent World is mounted',async()=>{
   await page.locator('#agentWorldCityMount .awc').waitFor({state:'visible'});
@@ -74,8 +58,8 @@ await check('Agent World is mounted',async()=>{
   assert.ok(box&&box.width>0&&box.height>0,'Agent World should render a visible game surface');
 });
 await check('Agent World stage is landscape and full-width',async()=>{
-  const panel=await page.locator('#agentMapPanel').boundingBox(),ops=await page.locator('.agent-ops').boundingBox();
-  assert.ok(panel&&ops&&panel.width>=ops.width-2,'Agent World spans the page, not squeezed beside a column');
+  const live=await page.locator('.agent-live-grid').evaluate(el=>getComputedStyle(el).gridTemplateColumns);
+  assert.ok(!live.includes('360px'),'Agent World must not be squeezed by a fixed inspector column');
   const map=await page.locator('.awc__mapWrap').boundingBox();
   assert.ok(map&&map.width>map.height,'Game map should be landscape, not a tall portrait strip');
 });
@@ -120,14 +104,13 @@ await check('results tabs are interactive',async()=>{
   assert.ok((await page.locator('[data-agent-result-tab="evidence"]').getAttribute('class')||'').includes('active'));
   await page.locator('[data-agent-result-tab="routing"]').click();
   assert.ok((await page.locator('[data-agent-result-tab="routing"]').getAttribute('class')||'').includes('active'));
-  assert.doesNotMatch(await page.locator('#agentResultBody').innerText(),/[{}\[\]]/,'Steps is a list, not JSON');
 });
 await check('mission history exists',async()=>{await page.locator('#agentMissionHistory').waitFor({state:'visible'})});
 await check('inline error replaces alert workflow',async()=>{
   await page.locator('#agentGoal').fill('');
   await page.locator('#missionRunBtn').click();
   await page.locator('#agentInlineNotice').waitFor({state:'visible'});
-  assert.match(await page.locator('#agentInlineNotice').innerText(),/Enter a goal first/i);
+  assert.match(await page.locator('#agentInlineNotice').innerText(),/Enter a mission objective first/i);
   assert.equal(dialogs,0,'No browser alert dialogs should be used');
 });
 await check('the web-search choice reaches the mission request',async()=>{
@@ -149,7 +132,7 @@ await check('the web-search choice reaches the mission request',async()=>{
 });
 await check('interactive demo controls',async()=>{
   await page.locator('#awcDemoPlay').click();
-  assert.equal(await page.locator('#awcSource').innerText(),'Demo');
+  assert.equal(await page.locator('#awcSource').innerText(),'DEMO');
   await page.locator('#awcDemoStep').click();
   await page.locator('#awcDemoSpeed').click();
   assert.equal(await page.locator('#awcDemoSpeed').innerText(),'2×');
@@ -254,7 +237,6 @@ await mobile.waitForSelector('#uxMobileNav');
 await mobile.waitForFunction(()=>typeof window.showView==='function');
 await mobile.evaluate(()=>window.showView('agents'));
 await mobile.waitForSelector('#agents.active');
-await mobile.locator('#agentMapToggle').click();
 await mobile.waitForSelector('#agentWorldCityMount .awc');
 
 await check('mobile navigation is domain-first with contextual sheet',async()=>{
@@ -288,7 +270,7 @@ await check('mobile pinch zoom changes world scale',async()=>{
 await check('mobile demo remains user-controlled',async()=>{
   await mobile.locator('#awcDemoPlay').click();
   await mobile.locator('#awcDemoStep').click();
-  assert.equal(await mobile.locator('#awcSource').innerText(),'Demo');
+  assert.equal(await mobile.locator('#awcSource').innerText(),'DEMO');
 });
 await mobile.close();
 await check('the mission strip and Agent World show the same mission while the specialist catalog is slow',async()=>{

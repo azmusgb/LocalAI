@@ -75,7 +75,7 @@
 </div>
 </div></section>
 <section id="work" class="view"><div class="topbar"><div><h1>Work</h1><p class="sub">Everything you started, newest first.</p></div></div>
-<div class="work-tools"><div class="work-chips" role="group" aria-label="Show"><button type="button" class="suggestion-chip work-chip" data-work-kind="all">All</button><button type="button" class="suggestion-chip work-chip" data-work-kind="chats">Chats</button><button type="button" class="suggestion-chip work-chip" data-work-kind="images">Images</button><button type="button" class="suggestion-chip work-chip" data-work-kind="missions">Missions</button><button type="button" class="suggestion-chip work-chip" data-work-kind="changes">Changes</button><button type="button" class="suggestion-chip work-chip" data-work-kind="other">Other</button></div><input id="workSearch" class="work-search" type="search" placeholder="Search your work" aria-label="Search your work" autocomplete="off"></div><div id="workAgentWorld" class="banner work-agentworld" hidden><span>Watch missions live, with every worker on one map.</span><button type="button" class="btn-outline" id="workOpenAgentWorld">Open the live map</button></div>
+<div class="work-tools"><div class="work-chips" role="group" aria-label="Show"><button type="button" class="suggestion-chip work-chip" data-work-kind="all">All</button><button type="button" class="suggestion-chip work-chip" data-work-kind="chats">Chats</button><button type="button" class="suggestion-chip work-chip" data-work-kind="images">Images</button><button type="button" class="suggestion-chip work-chip" data-work-kind="missions">Missions</button><button type="button" class="suggestion-chip work-chip" data-work-kind="changes">Changes</button><button type="button" class="suggestion-chip work-chip" data-work-kind="other">Other</button></div><input id="workSearch" class="work-search" type="search" placeholder="Search your work" aria-label="Search your work" autocomplete="off"></div><div id="workAgentWorld" class="banner work-agentworld" hidden><span>Watch missions live, with every worker on one map.</span><button type="button" class="btn-outline" id="workOpenAgentWorld">Open Agent World</button></div>
 <div id="workList" class="work-list"></div><div class="work-more"><button type="button" id="workMore" class="btn-outline" hidden>Show more</button></div></section>
 <section id="activity" class="view"><div class="topbar"><div><h1>Audit log</h1><p class="sub">What happened on the appliance, and when. Entries from a run open it, as in Work.</p></div></div><div class="card"><div id="activityList" class="activity-list"></div></div><div class="activity-foot"><button id="clearUserActivityBtn" class="btn danger" type="button">Clear user activity</button></div></section>
 <section id="library" class="view"><div class="topbar"><div><h1>Projects</h1><p class="sub">Everything you kept: conversations and research as a list, images as pictures.</p></div><span id="libraryCount" class="pill">0 items</span></div><div class="filterbar"><input id="librarySearch" placeholder="Search what you kept…" aria-label="Search what you kept"><button class="filter active" data-kind="all">All</button><button class="filter" data-kind="conversation">Conversations</button><button class="filter" data-kind="research">Research</button><button class="filter" data-kind="image">Images</button><button class="filter" data-kind="pinned">Pinned</button></div><div id="libraryGrid" class="library-grid"></div></section>
@@ -86,33 +86,33 @@
 <section id="projects" class="view feature-v13"><div class="topbar"><div><h1>Projects</h1><p class="sub">Group related conversations, sources and memory.</p></div><button id="newProjectBtn" class="btn primary">New project</button></div><div class="summary-grid" id="projectMetrics"></div><div class="split" style="margin-top:12px"><div class="card"><div class="section-head"><div><h2>Projects</h2><p>Choose a project.</p></div></div><div id="projectList" class="stack"></div></div><div class="card"><div id="projectDetail" class="empty">Select a project.</div></div></div></section>
 <section id="knowledge" class="view feature-v13"><div class="topbar"><div><h1>Projects</h1><p class="sub">Notes, documents and files the assistant can look things up in when it answers.</p></div></div><div class="two"><div class="card"><h2>Add source</h2><div class="form-grid" style="margin-top:12px"><label>Project<select id="knowledgeProject"></select></label><label>Name<input id="knowledgeName" placeholder="architecture.md"></label><label class="wide">Content<textarea id="knowledgeContent" rows="12" placeholder="Paste or drop text here…"></textarea></label></div><div class="actions" style="margin-top:10px"><button id="knowledgeImportBtn" class="btn primary">Add source</button><input id="knowledgeFileInput" type="file" hidden multiple><button id="knowledgeFileBtn" class="btn">Import files</button></div></div><div class="card"><h2>Search your sources</h2><div class="toolbar" style="margin-top:12px"><input id="knowledgeQuery" placeholder="Search your sources…" aria-label="Search your sources"><button id="knowledgeSearchBtn" class="btn primary">Search</button></div><div id="knowledgeResults" class="stack"></div></div></div><div class="card" style="margin-top:12px"><div class="section-head"><div><h2>Your sources</h2><p>Kept on Local AI, never sent anywhere.</p></div></div><div id="knowledgeList" class="stack"></div></div></section>
 <section id="agents" class="view feature-v14">
-<div class="topbar"><div><h1>Missions</h1><p class="sub">Give a goal to a team of specialist agents, then follow each worker and step as they go.</p></div></div>
+<div class="topbar"><div><h1>Missions</h1><p class="sub">Give the team an objective, let the Mission Router assemble the right specialists and models, and watch the work happen live.</p></div><span class="pill">Mission-first · Local models</span></div>
 <div class="agent-ops">
   <div class="agent-compose">
     <div class="agent-compose__row">
-      <label>Goal<textarea id="agentGoal" rows="4" placeholder="Review the Local AI phone experience, then write up what to fix first."></textarea></label>
+      <label>Mission objective<textarea id="agentGoal" rows="4" placeholder="Audit and improve the Local AI mobile experience, then document a prioritized implementation plan."></textarea></label>
       <label>Project<select id="agentProject"></select></label>
     </div>
     <label class="agent-compose__check"><input type="checkbox" id="agentWebSearch"> Let specialists search the web <span class="sub">(searches leave this machine)</span></label>
     <div class="agent-compose__actions">
-      <button id="missionRunBtn" class="btn primary">Start mission</button>
+      <button id="missionRunBtn" class="btn primary">Start Mission</button>
       <button id="routePreviewBtn" class="btn">Preview plan</button>
-      <button id="agentAdvancedToggle" class="btn" type="button" aria-expanded="false">Choose specialists</button>
+      <button id="agentAdvancedToggle" class="btn" type="button" aria-expanded="false">Advanced routing</button>
     </div>
     <div id="agentInlineNotice" class="agent-inline-notice" hidden aria-live="polite"></div>
-    <div id="routePreviewWrap" hidden><div id="routePreview" class="preview-pane" style="margin-top:10px"><span class="muted">Enter a goal to preview the plan.</span></div></div>
+    <div id="routePreviewWrap" hidden><div id="routePreview" class="preview-pane" style="margin-top:10px"><span class="muted">Enter an objective to preview automatic dispatch.</span></div></div>
     <div id="agentAdvancedPanel" class="agent-advanced" hidden style="margin-top:12px">
       <div class="agent-advanced-grid">
         <div>
-          <div class="agent-panel__head"><div><h2>Choose the team yourself</h2><small>Local AI picks the team for you. Choose here only when you want particular specialists.</small></div></div>
-          <label class="toggle"><input type="checkbox" id="manualRouteToggle"> Let me choose the specialists</label>
+          <div class="agent-panel__head"><div><h2>Routing override</h2><small>Automatic routing is recommended. Use this only when you want explicit control.</small></div></div>
+          <label class="toggle"><input type="checkbox" id="manualRouteToggle"> Manually choose specialists</label>
           <div id="manualRouteOptions" class="agent-meta" hidden>
             <label><input type="checkbox" data-mission-agent value="ux_analyst"> UX Analyst</label>
             <label><input type="checkbox" data-mission-agent value="documentation"> Documentation Agent</label>
           </div>
         </div>
         <div>
-          <div class="agent-panel__head"><div><h2>Run one specialist</h2><small>Skip the team and give the goal to one specialist, or to a general agent.</small></div></div>
+          <div class="agent-panel__head"><div><h2>Direct execution</h2><small>Developer tools for bypassing Mission Router orchestration.</small></div></div>
           <div id="specialistRegistry" class="agent-registry"><div class="empty">Loading specialists…</div></div>
           <div class="actions" style="margin-top:10px">
             <button id="specialistRunBtn" class="btn">Run specialist</button>
@@ -121,43 +121,44 @@
         </div>
       </div>
       <div class="agent-direct-grid">
-        <div class="agent-panel"><div class="agent-panel__head"><h2>Specialist run</h2></div><div id="specialistExecution"><div class="empty">No specialist run yet.</div></div></div>
-        <div class="agent-panel"><div class="agent-panel__head"><h2>General agent run</h2></div><div id="agentExecution" class="flow"><div class="empty">No general agent run yet.</div></div><div id="agentRuns" class="stack" style="margin-top:10px"></div></div>
+        <div class="agent-panel"><div class="agent-panel__head"><h2>Direct specialist execution</h2></div><div id="specialistExecution"><div class="empty">No direct specialist run.</div></div></div>
+        <div class="agent-panel"><div class="agent-panel__head"><h2>General agent execution</h2></div><div id="agentExecution" class="flow"><div class="empty">No general agent run.</div></div><div id="agentRuns" class="stack" style="margin-top:10px"></div></div>
       </div>
     </div>
   </div>
 
   <div class="agent-mission-strip">
-    <div><h2 id="agentMissionHeadline">No mission yet</h2><small id="agentMissionMeta">Start a mission, or pick one from the list below.</small></div>
+    <div><h2 id="agentMissionHeadline">No active mission</h2><small id="agentMissionMeta">Start a mission or select one from history.</small></div>
     <div class="agent-mission-progress" role="progressbar" aria-label="Mission progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="agentMissionProgress"></span></div>
   </div>
 
-  <div class="agent-side-stack">
-    <section class="agent-panel">
-      <div class="agent-panel__head"><div><h2>Workers</h2><small>Who is working on which step, in order.</small></div></div>
-      <div id="agentTimeline"><div class="empty">No workers yet.</div></div>
-      <div id="missionExecution" hidden></div>
-    </section>
-    <section class="agent-panel">
-      <div class="agent-panel__head"><div><h2>Worker details</h2><small>Pick a worker to see what it did.</small></div></div>
-      <div id="agentInspector"><div class="empty">Pick a mission or a worker.</div></div>
-    </section>
+  <div class="agent-live-grid">
+    <div id="agentWorldCityMount"></div>
+    <div class="agent-side-stack">
+      <section class="agent-panel">
+        <div class="agent-panel__head"><div><h2>Mission timeline</h2><small>Worker order, dependencies and live state.</small></div></div>
+        <div id="agentTimeline"><div class="empty">No mission timeline yet.</div></div>
+        <div id="missionExecution" hidden></div>
+      </section>
+      <section class="agent-panel">
+        <div class="agent-panel__head"><div><h2>Inspector</h2><small>Select a worker in the timeline or city.</small></div></div>
+        <div id="agentInspector"><div class="empty">Select a mission or worker.</div></div>
+      </section>
+    </div>
   </div>
-
-  <div class="agent-map-wrap"><button type="button" id="agentMapToggle" class="btn" aria-expanded="false" aria-controls="agentMapPanel">Watch live map</button><div id="agentMapPanel" hidden><div id="agentWorldCityMount"></div></div></div>
 
   <section class="agent-results">
     <div class="agent-result-tabs" role="tablist" aria-label="Mission details">
-      <button type="button" class="active" role="tab" id="agentResultTab-summary" aria-controls="agentResultBody" aria-selected="true" tabindex="0" data-agent-result-tab="summary">Summary</button>
-      <button type="button" role="tab" id="agentResultTab-workers" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="workers">Workers</button>
-      <button type="button" role="tab" id="agentResultTab-evidence" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="evidence">Sources</button>
-      <button type="button" role="tab" id="agentResultTab-routing" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="routing">Steps</button>
+      <button type="button" class="active" role="tab" id="agentResultTab-summary" aria-controls="agentResultBody" aria-selected="true" tabindex="0" data-agent-result-tab="summary">Synthesis</button>
+      <button type="button" role="tab" id="agentResultTab-workers" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="workers">Worker outputs</button>
+      <button type="button" role="tab" id="agentResultTab-evidence" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="evidence">Evidence</button>
+      <button type="button" role="tab" id="agentResultTab-routing" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="routing">Routing</button>
     </div>
-    <div id="agentResultBody" class="agent-result-body" role="tabpanel" tabindex="0" aria-labelledby="agentResultTab-summary"><div class="empty">The mission's summary appears here.</div></div>
+    <div id="agentResultBody" class="agent-result-body" role="tabpanel" tabindex="0" aria-labelledby="agentResultTab-summary"><div class="empty">Mission results will appear here.</div></div>
   </section>
 
   <section class="agent-panel">
-    <div class="agent-history-head"><div><h2>Past missions</h2><small class="muted">Open one to see its workers, summary and sources again.</small></div><input id="agentHistorySearch" placeholder="Search past missions" aria-label="Search past missions"></div>
+    <div class="agent-history-head"><div><h2>Mission history</h2><small class="muted">Review prior outcomes, attention states, worker outputs and evidence.</small></div><input id="agentHistorySearch" placeholder="Search mission history" aria-label="Search mission history"></div>
     <div id="agentMissionHistory"><div class="empty">No missions yet. Describe a goal above to run your first one.</div></div>
   </section>
 </div>
