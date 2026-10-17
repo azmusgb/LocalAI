@@ -30,13 +30,42 @@ await check('a missing model offers a one-click download', async () => {
   if (!expectCard || models.defaultInstalled) return;
   assert.equal(await page.locator('#firstRun [data-first-run-download]').isVisible(), true);
 });
-await check('a sample task fills the command and marks the step done', async () => {
+// One story: while Get started is on Home, Needs you does not repeat its step 1 as red "Fix" rows.
+const status = await (await fetch(base + '/api/status')).json().catch(() => ({}));
+const coreDown = (status.services || []).filter(s => s.required !== false && s.state !== 'HEALTHY');
+await check('while Get started shows, Needs you lists no service rows', async () => {
   if (!expectCard) return;
+  await page.waitForFunction(() => window.LocalAIHome && document.querySelector('#firstRun'));
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('#homeNeedsList .home-attn').count(), 0);
+});
+await check('a sample task that cannot start says what Chat needs; step 3 is done only once a run opens', async () => {
+  if (!expectCard) return;
+  const gated = await page.locator('.mode[data-mode="ask"]').isDisabled();
   await page.locator('#firstRun [data-sample="0"]').click();
-  assert.equal(await page.locator('#firstRun [data-step="try"]').getAttribute('data-state'), 'done');
-  // The sample starts a real request; let it finish (it may switch pages) before the next checks navigate.
+  if (gated) {
+    await page.waitForSelector('#homeComposerError:not([hidden])');
+    assert.equal(await page.locator('#homeComposerError').innerText(), 'Chat needs Intelligence running. See Health');
+    assert.equal(await page.locator('#firstRun [data-step="try"]').getAttribute('data-state'), 'todo', 'a failed send is not a done step');
+    // A run opening (the pending run resolves to a real id) is what completes the step.
+    await page.evaluate(() => window.LocalAIRuns.openPending({ kind: 'ask', title: 'Q' }).resolve('run_first'));
+  } else {
+    await page.waitForFunction(() => /^#run\/(?!pending)/.test(location.hash));
+  }
+  await page.waitForFunction(() => document.querySelector('#firstRun [data-step="try"]')?.dataset.state === 'done');
   await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(500);
+  // Leave the run view the way the owner would, so Home is clickable again.
+  await page.evaluate(() => window.LocalAIRouter.go('#home'));
+  await page.waitForSelector('#runDrawerBackdrop:not(.show)', { state: 'attached' });
+  await page.evaluate(() => window.showView('home'));
+});
+await check('Health: a stopped core service says what to do about it', async () => {
+  if (!coreDown.length) return;
+  await page.evaluate(() => window.showView('status'));
+  await page.waitForSelector('#status.active #serviceList .service-card');
+  const card = page.locator('#serviceList .service-card', { hasText: 'Intelligence' });
+  if (coreDown.some(s => s.name === 'ollama')) assert.match(await card.innerText(), /Start Ollama on the Windows host\./);
+  assert.doesNotMatch(await page.locator('#serviceList').innerText(), /capability/i);
   await page.evaluate(() => window.showView('home'));
 });
 await check('Build is hidden while Developer tools is off', async () => {
@@ -70,6 +99,8 @@ await check('dismissing Get started keeps it hidden after reload', async () => {
   await page.evaluate(() => window.showView('home'));
   await page.locator('#firstRun .first-run-foot [data-first-run-dismiss]').click();
   assert.equal(await page.locator('#firstRun').count(), 0);
+  // With Get started gone, Needs you takes over the service rows.
+  if (coreDown.length) await page.waitForFunction(() => document.querySelectorAll('#homeNeedsList .home-attn').length > 0);
   await page.reload({ waitUntil: 'networkidle' });
   await page.waitForTimeout(500);
   assert.equal(await page.locator('#firstRun').count(), 0);
