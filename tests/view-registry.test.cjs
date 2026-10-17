@@ -42,6 +42,13 @@ test('registry has five domains and every view belongs to one', () => {
   }
 });
 
+test('Monitors is part of Automations: #operations opens Automations (D9)', () => {
+  assert.equal(registry.VIEWS.some(v => v.id === 'operations'), false);
+  assert.equal(registry.resolve('operations'), 'automationStudio');
+  assert.equal(registry.view('operations').id, 'automationStudio');
+  assert.ok(registry.view('automationStudio').aka.includes('morning brief'), 'typing "morning brief" in ⌘K finds Automations');
+});
+
 test('every domain icon has a sprite symbol', () => {
   for (const d of registry.DOMAINS) assert.match(html, new RegExp(`<symbol id="i-${d.icon}"`), `i-${d.icon}`);
 });

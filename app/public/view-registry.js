@@ -29,10 +29,9 @@ const VIEWS=[
  {id:'status',svg:'health',domain:'system',section:'Health',icon:'●',label:'Health',description:'Core services and optional companions.',aka:['status','system status']},
  {id:'models',svg:'model',domain:'system',section:'Health',icon:'M',label:'Models',description:"Installed models and what's loaded now."},
  {id:'integrations',svg:'plug',domain:'system',section:'Health',icon:'↔',label:'Integrations',description:'Local tools, host bridges and cloud fallbacks.'},
- {id:'automationStudio',svg:'clock',domain:'system',section:'Automations',icon:'⌘',label:'Automations',description:'Scheduled prompts, research and health checks.',aka:['studio','automation studio']},
+ {id:'automationStudio',svg:'clock',domain:'system',section:'Automations',icon:'⌘',label:'Automations',description:'Scheduled prompts and research, health checks and the morning brief.',aka:['studio','automation studio','monitors','morning brief','health check']},
  {id:'automations',svg:'flow',short:'n8n',domain:'system',section:'Automations',dev:true,icon:'↗',label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
  {id:'actions',svg:'globe',short:'Browser',domain:'system',section:'Automations',dev:true,icon:'↗',label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
- {id:'operations',svg:'eye',domain:'system',section:'Automations',icon:'◉',label:'Monitors',description:'Recurring health checks and the morning brief.',aka:['operations','morning brief']},
  {id:'backlog',svg:'improve',domain:'improve',section:'Pipeline',icon:'Δ',label:'Backlog',description:'One ranked list of what could change in Local AI.',aka:['improve','ideas','priorities']},
  {id:'inProgress',svg:'build',domain:'improve',section:'Pipeline',icon:'▶',label:'In progress',description:'Changes being planned, tested or waiting for your OK.',aka:['running changes','change requests','changes','engineer']},
  {id:'shipped',svg:'check',domain:'improve',section:'Pipeline',icon:'✓',label:'Shipped',description:'What changed, release by release.',aka:['done','released']},
@@ -48,7 +47,8 @@ const VIEWS=[
 // Retired view ids and the page that replaced them.
 // `runs`, `agents`, `ask` and `create` keep their own hidden pages for code and ⌘K; a URL resolves them to the page that now owns them.
 // Improve's four stages replaced Change requests, Issues and Quality signals: old links land on the stage that shows them.
-const ALIASES={engineering:'inProgress',changes:'inProgress',issues:'signals',quality:'signals',runs:'work',agents:'work',ask:'home',create:'home'};
+// Monitors folded into Automations as its Health check and Morning brief kinds (D9).
+const ALIASES={operations:'automationStudio',engineering:'inProgress',changes:'inProgress',issues:'signals',quality:'signals',runs:'work',agents:'work',ask:'home',create:'home'};
 const byId=new Map(VIEWS.map(v=>[v.id,v]));
 function resolve(id){return ALIASES[id]||id}
 // A view that still has its own page (hidden ones) wins over its alias.
