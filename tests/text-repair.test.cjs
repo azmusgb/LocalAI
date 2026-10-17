@@ -28,3 +28,23 @@ test('leaves correct text alone', () => {
 test('repairs only the broken part of mixed text', () => {
   assert.equal(repairText(`café ${garble('— ok')} 🎉`), 'café — ok 🎉');
 });
+
+// Old image-run summaries put the count before the size ("1 704 × 1024 image …"), so the count reads as a width.
+test('rewrites old image-run summaries so the count no longer reads as a width', () => {
+  const { repairImageSummary } = require('../app/text-repair.js');
+  assert.equal(repairImageSummary('1 704 × 1024 image edited with Quality (X)'), '704 × 1024 image, edited with Quality (X)');
+  assert.equal(repairImageSummary('1 512 × 512 image made with Fast'), '512 × 512 image, made with Fast');
+  assert.equal(repairImageSummary('3 1024 × 680 images edited with Quality (X)'), '3 images, 1024 × 680, edited with Quality (X)');
+  assert.equal(repairImageSummary('2 512 × 512 images made with Fast · seed 7'), '2 images, 512 × 512, made with Fast · seed 7');
+  // Nothing after the size: no dangling comma.
+  assert.equal(repairImageSummary('1 704 × 1024 image'), '704 × 1024 image');
+  assert.equal(repairImageSummary('4 512 × 512 images'), '4 images, 512 × 512');
+});
+
+test('leaves modern and unrelated summaries alone', () => {
+  const { repairImageSummary } = require('../app/text-repair.js');
+  for (const s of ['Image edited with Quality (X) · 704 × 1024', '3 images made with Fast · 512 × 512', '704 × 1024 image, edited with Quality (X)',
+    '12 imagery notes', 'An idée', '', '1 704 × 1024 imagery']) assert.equal(repairImageSummary(s), s);
+  assert.equal(repairImageSummary(null), null);
+  assert.equal(repairImageSummary(42), 42);
+});

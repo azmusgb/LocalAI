@@ -3373,6 +3373,17 @@ function repairRunTextOnce() {
   if (repaired) console.log(`${nowIso()} Repaired run text: ${repaired}`);
 }
 
+// One time: image runs saved before the summary format changed read "1 704 × 1024 image edited with …", where the
+// count looks like a width. Only the summary changes; times, status and output are left alone.
+function repairImageSummariesOnce() {
+  const KEY = 'repair:image-summaries-v1';
+  if (storage.readSetting(KEY, null)) return;
+  const { repairImageSummary } = require('./text-repair.js');
+  const repaired = runLedger.rewriteText(repairImageSummary);
+  storage.writeSetting(KEY, { completedAt: nowIso(), repaired });
+  if (repaired) console.log(`${nowIso()} Repaired image-run summaries: ${repaired}`);
+}
+
 async function apiPush(req, res, p) {
   try {
     if (req.method === 'GET' && p === '/api/push/key') return json(res, 200, { publicKey: pushLib.loadOrCreateVapid(storage).publicKey });
@@ -3433,6 +3444,7 @@ const HEALTH_TICK_MS = Math.max(200, Number(process.env.HEALTH_TICK_MS) || 60000
 setInterval(() => { getStatusAndRecordTransition().catch(() => {}); }, HEALTH_TICK_MS).unref();
 repairGarbledTextOnce();
 try { repairRunTextOnce(); } catch (e) { console.error(`${nowIso()} Run text repair failed:`, e); }
+try { repairImageSummariesOnce(); } catch (e) { console.error(`${nowIso()} Image summary repair failed:`, e); }
 
 server.listen(PORT, '0.0.0.0', () => {
   warmText();
