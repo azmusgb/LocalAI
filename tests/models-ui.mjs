@@ -43,6 +43,16 @@ await check('the default model cannot be removed', async () => {
   const r = await fetch(base + '/api/models/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: model }) });
   assert.equal(r.status, 409);
 });
+// The runtime tile ("Runtime detail": Live / Unavailable) is diagnostic: it shows only with developer tools on.
+await check('the runtime tile shows only with developer tools on', async () => {
+  await page.evaluate(() => window.showView('models'));
+  await page.waitForSelector('#modelRuntimeSummary .model-runtime-metric');
+  const visibleLabels = () => page.locator('#modelRuntimeSummary .model-runtime-metric span').evaluateAll(es => es.filter(e => e.getClientRects().length).map(e => e.textContent.trim()));
+  await page.evaluate(() => document.body.classList.add('dev-tools-off'));
+  assert.deepEqual(await visibleLabels(), ['Configured default', 'Installed', 'Loaded now']);
+  await page.evaluate(() => document.body.classList.remove('dev-tools-off'));
+  assert.deepEqual(await visibleLabels(), ['Configured default', 'Installed', 'Loaded now', 'Runtime detail']);
+});
 await check('no script errors', async () => assert.deepEqual(errors, []));
 await browser.close();
 if (failed) { console.log(`${failed} models check(s) failed`); process.exit(1) }

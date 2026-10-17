@@ -1894,6 +1894,9 @@ h1[tabindex="-1"]:focus,h1[tabindex="-1"]:focus-visible{outline:none}
 /* Health: a failed check sits above the last known services, not instead of them. */
 #serviceList .status-error{margin-bottom:10px}
 
+/* Developer tools (appended; nothing above edited). Diagnostic details marked data-dev-only (Models' runtime tile,
+   Health's Advanced service details) show only while the Health switch is on; first-run.js sets body.dev-tools-off. */
+body.dev-tools-off [data-dev-only]{display:none!important}
 /* Feedback (appended; nothing above edited). Status toasts can be hovered (the pointer pauses them, components.js);
    the update notice has its own Dismiss; errors sit in the page as alert boxes under what failed. */
 .toast.show{pointer-events:auto}

@@ -85,6 +85,14 @@ test('navigation surfaces read from the registry instead of their own lists', ()
   assert.match(sw, /'\/view-registry\.js'/);
 });
 
+// Developer tools (the Health switch) hide the pages whose first screen is for a developer: the registry says
+// which, so the rail, the page strip, the phone sheet and ⌘K all agree and a future developer page gets it for free.
+test('the developer pages carry the dev flag and nothing else does', () => {
+  const dev = registry.VIEWS.filter(v => v.dev).map(v => v.id).sort();
+  assert.deepEqual(dev, ['actions', 'automations', 'claude', 'powershell', 'repoTools', 'workbench']);
+  for (const v of registry.VIEWS.filter(x => x.dev)) assert.equal(v.domain, 'system', `${v.id} is a System page`);
+});
+
 test('tabs belong to a top-level page in the same domain', () => {
   for (const v of registry.VIEWS.filter(x => x.parent)) {
     const parent = registry.view(v.parent);
