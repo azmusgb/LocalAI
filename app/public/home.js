@@ -219,13 +219,19 @@ function fromHash(){const R=root.LocalAIRouter;if(!R)return;const cur=R.current(
 function onHomeHash(){const p=root.LocalAIRouter?.current().page;return !p||p==='home'||root.LocalAIViews?.resolve(p)==='home'}
 function activate(){fromHash();greet();if(root.LocalAIUI)refresh().then(schedule)}
 function dockToNav(){
- // On phones the composer sits exactly on the tab bar, whatever its height is.
+ // On phones the composer sits exactly on the tab bar, whatever its height is. While the owner types, the tab bar
+ // steps aside (body.home-typing, see app.css) and the composer sits on the keyboard: iOS keeps innerHeight and only
+ // shrinks visualViewport, so the keyboard is innerHeight - vv.height - vv.offsetTop (as the run view's reply box does).
  const c=$('homeComposer'),n=$('uxMobileNav');if(!c)return;
- const phone=matchMedia('(max-width:760px)').matches&&n&&getComputedStyle(n).display!=='none';
+ const typing=document.body.classList.contains('home-typing');
+ const phone=matchMedia('(max-width:760px)').matches&&n&&(typing||getComputedStyle(n).display!=='none');
  if(!phone){c.style.removeProperty('--home-dock');document.documentElement.style.removeProperty('--home-pad');return}
- c.style.setProperty('--home-dock',Math.round(innerHeight-n.getBoundingClientRect().top)+'px');
+ const vv=root.visualViewport,keyboard=vv?Math.round(innerHeight-vv.height-vv.offsetTop):0;
+ const dock=keyboard>0?keyboard+'px':typing?'env(safe-area-inset-bottom)':Math.round(innerHeight-n.getBoundingClientRect().top)+'px';
+ c.style.setProperty('--home-dock',dock);
  document.documentElement.style.setProperty('--home-pad',Math.ceil(c.getBoundingClientRect().height)+'px');
 }
+function typing(on){document.body.classList.toggle('home-typing',on);dockToNav()}
 function init(){
  if(!$('homeComposer'))return;
  paintChip();greet();
@@ -233,13 +239,16 @@ function init(){
  $('homeModeChip').addEventListener('click',()=>autoWait?autoWait.cancel():openSheet());
  $('commandGo').addEventListener('click',()=>send($('commandInput').value));
  $('commandInput').addEventListener('input',()=>{grow();dockToNav()});
+ $('commandInput').addEventListener('focus',()=>typing(true));
+ $('commandInput').addEventListener('blur',()=>typing(false));
  $('homeSeeAll').addEventListener('click',()=>root.LocalAIRouter?.go('#work'));
  document.addEventListener('click',e=>{const b=e.target.closest?.('.mode[data-mode]');if(b&&!syncing)setMode(b.dataset.mode)});
  addEventListener('resize',dockToNav,{passive:true});
+ if(root.visualViewport){root.visualViewport.addEventListener('resize',dockToNav,{passive:true});root.visualViewport.addEventListener('scroll',dockToNav,{passive:true})}
  if(root.ResizeObserver)new ResizeObserver(dockToNav).observe($('homeComposer'));
  // The tab bar is built after this script; look again once it exists.
  let tries=0;(function wait(){if($('uxMobileNav')){dockToNav();if(root.ResizeObserver)new ResizeObserver(dockToNav).observe($('uxMobileNav'))}else if(tries++<40)setTimeout(wait,100)})();
- new MutationObserver(()=>{if(active())activate()}).observe($('home'),{attributes:true,attributeFilter:['class']});
+ new MutationObserver(()=>{if(active())activate();else if(document.body.classList.contains('home-typing'))typing(false)}).observe($('home'),{attributes:true,attributeFilter:['class']}); // leaving Home brings the tab bar back even if no blur fired
  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&active())refresh().then(schedule)});
  // Home is on screen before the router has read the hash; a link to another page should not make Home load.
  if(active()&&onHomeHash())setTimeout(activate,0);
