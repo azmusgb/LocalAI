@@ -6,6 +6,7 @@ the conversation to the LocalAI relay (Stop uses last_assistant_message, else th
 The relay URL is LOCALAI_URL, else config.json "url" (written by install.sh), else plain HTTP on 3080. HTTPS is verified
 against config.json "ca" (the LocalAI CA); verification is never turned off, and certificate problems go to hook.log.
 """
+import hashlib
 import json
 import os
 import shlex
@@ -119,6 +120,33 @@ def start_bridge(session_id, cwd):
                      close_fds=True)
 
 
+def bridge_alive(session_id):
+    """True when a live bridge for this session holds the lock for the session's current messaging socket.
+    Unknown socket: True (nothing to check against, so nothing is started)."""
+    sock = os.environ.get('CLAUDE_CODE_MESSAGING_SOCKET', '')
+    if not sock:
+        return True
+    lock = os.path.join(chat_home(), 'run', 'sock-' + hashlib.sha256(sock.encode()).hexdigest()[:16] + '.json')
+    try:
+        with open(lock, encoding='utf-8') as f:
+            held = json.load(f)
+        pid = int(held.get('pid') or 0)
+        if held.get('sessionId') != session_id or pid <= 0:
+            return False
+        os.kill(pid, 0)
+        return True
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+
+
+def ensure_bridge(session_id, cwd):
+    """A bridge exits when its socket goes away (the session reconnected, e.g. after /model or a resume), and only
+    SessionStart used to start one. Each prompt and reply now restarts it if needed; the bridge settles races itself
+    (a second bridge for a live one exits at once, a stale lock is taken over)."""
+    if not bridge_alive(session_id):
+        start_bridge(session_id, cwd)
+
+
 def block_text(content):
     """Text blocks of a message joined with blank lines (a plain string is returned as is)."""
     if isinstance(content, str):
@@ -164,10 +192,12 @@ def main():
     if event == 'SessionStart':
         start_bridge(session_id, str(data.get('cwd') or ''))
     elif event == 'UserPromptSubmit':
+        ensure_bridge(session_id, str(data.get('cwd') or ''))
         prompt = data.get('prompt')
         if isinstance(prompt, str) and prompt.strip() and not prompt.startswith(WEB_PREFIX):
             post(session_id, 'user', 'terminal', prompt)
     elif event == 'Stop':
+        ensure_bridge(session_id, str(data.get('cwd') or ''))
         # The transcript is written asynchronously and may not hold the turn's final text yet; Claude Code passes that
         # text as last_assistant_message. The transcript is only the fallback for versions that do not send it.
         final = data.get('last_assistant_message')

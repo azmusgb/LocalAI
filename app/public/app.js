@@ -786,6 +786,7 @@ function commandPalette(){
     list.innerHTML=groups?groups.map((g,i)=>`<div class="cmdk-group" role="group" aria-labelledby="cmdk-group-${i}"><div class="cmdk-group__label" id="cmdk-group-${i}">${esc(g.label)}</div>${g.items.map(a=>opt(a,n++)).join('')}</div>`).join('')
       :shown.length?shown.map(opt).join('')
       :`<div class="cmdk-empty"><p>No pages match “${esc(input.value.trim())}”.</p><button type="button" class="btn-outline" data-cmd-work>Search your work for “${esc(input.value.trim())}”</button></div>`;
+    {const n=shown.length,c=$('cmdkCount');if(c)c.textContent=n?`${n} page${n===1?'':'s'}`:'No pages match'} // a screen reader hears the count
     list.querySelectorAll('[data-cmd-view]').forEach(b=>b.onclick=()=>go(b.dataset.cmdView));
     list.querySelector('[data-cmd-work]')?.addEventListener('click',searchWork);
     select(0);

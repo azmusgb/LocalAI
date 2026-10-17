@@ -256,3 +256,46 @@ test('an unreadable config.json: nothing is posted and hook.log says why', async
   }
   assert.equal(r.requests.length, 0);
 });
+
+// A bridge dies when its session's messaging socket goes away (the session reconnected). The next prompt or reply
+// starts one for the current socket unless a live bridge for this session already holds that socket's lock.
+const crypto = require('node:crypto');
+const SOCK = '/tmp/cc-socks/test-current.sock';
+function writeLock(s, { pid, sessionId = SID, socket = SOCK }) {
+  const run = path.join(s.home, 'run'); fs.mkdirSync(run, { recursive: true });
+  const name = 'sock-' + crypto.createHash('sha256').update(socket).digest('hex').slice(0, 16) + '.json';
+  fs.writeFileSync(path.join(run, name), JSON.stringify({ pid, sessionId }));
+}
+const deadPid = () => { const c = require('node:child_process').spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))']); return Number(c.stdout); };
+const promptEv = { hook_event_name: 'UserPromptSubmit', session_id: SID, cwd: '/Users/x/proj', prompt: 'hello' };
+
+test('a prompt starts a bridge when none holds the current socket', async (t) => {
+  const r = await relay(t); const s = setup();
+  assert.equal((await runHook(promptEv, envFor(s, r, { CLAUDE_CODE_MESSAGING_SOCKET: SOCK }))).code, 0);
+  assert.deepEqual(JSON.parse(await waitFor(s.out)), [SID, 'proj · 01234567', '/Users/x/proj']);
+});
+
+test('a prompt leaves a live bridge for this session alone', async (t) => {
+  const r = await relay(t); const s = setup();
+  writeLock(s, { pid: process.pid });
+  await runHook(promptEv, envFor(s, r, { CLAUDE_CODE_MESSAGING_SOCKET: SOCK }));
+  assert.equal(await waitFor(s.out, 600), null);
+});
+
+test('a lock whose bridge is dead, or that belongs to another session, gets a new bridge', async (t) => {
+  for (const lock of [{ pid: deadPid() }, { pid: process.pid, sessionId: 'another-session' }]) {
+    const r = await relay(t); const s = setup();
+    writeLock(s, lock);
+    await runHook(promptEv, envFor(s, r, { CLAUDE_CODE_MESSAGING_SOCKET: SOCK }));
+    assert.ok(await waitFor(s.out), JSON.stringify(lock));
+  }
+});
+
+test('without a known socket nothing is started; a reply checks the same way as a prompt', async (t) => {
+  const r = await relay(t); const s = setup();
+  await runHook(promptEv, envFor(s, r));
+  assert.equal(await waitFor(s.out, 600), null);
+  const tr = writeTranscript(s.dir, [user('hi'), asst([{ type: 'text', text: 'yo' }])]);
+  await runHook({ hook_event_name: 'Stop', session_id: SID, cwd: '/Users/x/proj', transcript_path: tr }, envFor(s, r, { CLAUDE_CODE_MESSAGING_SOCKET: SOCK }));
+  assert.ok(await waitFor(s.out));
+});

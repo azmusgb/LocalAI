@@ -115,6 +115,8 @@ Appliance side (`app/claude-chat.js`): `LOCALAI_CHAT_ONLINE_MS` (45 s), `LOCALAI
 
 ## Troubleshooting
 
+- **The page stopped reaching a session after it reconnected** (a model switch, a resume): a bridge exits when its session's messaging socket goes away. In a chat-mode session (`claude-chat`), the next prompt or reply starts a new one for the current socket; `localai-chat status` lists it. A session started without `claude-chat` has no bridge and no mirroring.
+
 Start with `localai-chat status`. It prints the key state, relay reachability, whether the relay accepts the key, and each running bridge with its last successful injection.
 
 `~/.claude/localai-chat/bridge.log` lines:
