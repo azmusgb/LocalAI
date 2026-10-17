@@ -112,4 +112,4 @@ Write-Host "Installed and started: $TaskName"
 $health | Format-List
 Write-Host "Allowed origins: $origins"
 Write-Host "Log: $LogPath"
-Write-Host "LocalAI UI: http://<this-host>:3080/gridcraft.html"
+Write-Host "LocalAI UI: http://<this-host>:3080/#spreadsheets (System > Spreadsheets)"

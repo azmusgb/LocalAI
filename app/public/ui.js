@@ -2597,7 +2597,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       id: 'gridcraft', name: 'GridCraft', tier: 'bridge', decision: 'On the Windows computer', source: 'gridcraft',
       summary: 'Lets Local AI open, check, edit and save spreadsheets on the Windows computer.',
       guidance: 'Works on one request at a time. Nothing leaves your network.',
-      actions: [{ type: 'page', url: '/gridcraft.html', label: 'Open GridCraft' }]
+      actions: [{ type: 'view', view: 'spreadsheets', label: 'Open Spreadsheets' }]
     },
     {
       id: 'penpot', name: 'Penpot', tier: 'bridge', decision: 'Not set up',
