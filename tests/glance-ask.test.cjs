@@ -33,25 +33,30 @@ async function startServer(t, { reply = 'Fine.', seed, env = {}, onChat } = {}) 
     });
   });
   mock.listen(0, '127.0.0.1'); await once(mock, 'listening');
-  const port = await freePort(), base = `http://127.0.0.1:${port}`;
-  let log = '';
-  const child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], {
+  // Another test's server can take the free port between freePort() and listen() (EADDRINUSE); then start again on a new one.
+  let port, base, log, child;
+  for (let attempt = 0; attempt < 3; attempt++) {
+  port = await freePort(); base = `http://127.0.0.1:${port}`;
+  log = '';
+  child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], {
     env: { ...process.env, DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, PORT: String(port), OLLAMA_URL: `http://127.0.0.1:${mock.address().port}`, MODEL: 'test-model',
       SELF_APP_ROOT: path.resolve(__dirname, '../app'),
       COMFY_URL: 'http://127.0.0.1:9', N8N_URL: 'http://127.0.0.1:9', PROXY_URL: 'http://127.0.0.1:9', SEARXNG_URL: 'http://127.0.0.1:9', MAC_AI_HOME_URL: 'http://127.0.0.1:9', MAC_DSH_URL: 'http://127.0.0.1:9', ...env }
   });
   child.stdout.on('data', c => log += c); child.stderr.on('data', c => log += c);
+  const ready = await (async () => { for (let i = 0; i < 80; i++) {
+    if (child.exitCode !== null) return false;
+    try { if ((await fetch(`${base}/healthz`)).ok) return true; } catch {}
+    await new Promise(r => setTimeout(r, 50)); } return false; })();
+  if (ready) break;
+  if (child.exitCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
+  if (!/EADDRINUSE/.test(log) || attempt === 2) throw new Error(`Server did not start: ${log}`);
+  }
   t.after(async () => {
     if (child.exitCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
     mock.closeAllConnections(); await new Promise(r => mock.close(r));
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
-  for (let i = 0; i < 80; i++) {
-    if (child.exitCode !== null) throw new Error(log);
-    try { if ((await fetch(`${base}/healthz`)).ok) break; } catch {}
-    if (i === 79) throw new Error(`Server did not start: ${log}`);
-    await new Promise(r => setTimeout(r, 50));
-  }
   const ask = async (q, extra = '') => { const r = await fetch(`${base}/api/glance/ask?q=${encodeURIComponent(q)}${extra}`); return { status: r.status, type: r.headers.get('content-type'), body: await r.text() }; };
   // The Ask Local AI shortcut: POST {text}, no Origin header.
   const post = async (q, headers = {}) => { const r = await fetch(`${base}/api/glance/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ text: q }) }); return { status: r.status, type: r.headers.get('content-type'), body: await r.text() }; };

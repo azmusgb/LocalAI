@@ -72,6 +72,8 @@ The installer ends with `Relay: https://10.0.0.21 (HTTPS, verified with the Loca
 
 ## Managing devices
 
+A device is named after what it is ("iPhone", "Mac") unless you give a name when pairing; `localai-chat devices` shows the kind, and `localai-chat rename <id> <name…>` renames one (Mac key only).
+
 On the page, expand **Paired devices** (below the composer) to see each paired device with last-seen and **Revoke** (any paired device may revoke any device, including itself). From the Mac:
 
 ```sh
