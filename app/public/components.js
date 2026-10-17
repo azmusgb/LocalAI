@@ -56,6 +56,29 @@
       document.body.appendChild(d);d.showModal();(inputs[0]||cancel).focus();
     });
   }
+  // Focus after an action re-renders a list: refocus(id, {within, key, next, prev, control, fallback, highlight}) -> element|null.
+  // Finds the row [data-<key>=id] inside `within` (an element or a selector), else the row for `next`, else `prev`, and focuses
+  // its `control` (default: its first button or link), or the row itself. With none of them, `fallback` (an element or a
+  // selector) gets focus, made focusable if it isn't. highlight: the row gets .is-highlighted for a few seconds.
+  function refocus(id,{within=document,key='itemId',next='',prev='',control='button,a[href]',fallback=null,highlight=false}={}){
+    const box=typeof within==='string'?document.querySelector(within):within;   // a list that emptied may be gone: then only the fallback
+    const attr='data-'+key.replace(/[A-Z]/g,c=>'-'+c.toLowerCase()),find=v=>v&&box?[...box.querySelectorAll(`[${attr}]`)].find(n=>n.getAttribute(attr)===String(v)):null;
+    const row=find(id)||find(next)||find(prev);
+    const to=row?(row.querySelector(control)||row):(typeof fallback==='string'?box?.querySelector(fallback):fallback);
+    if(!to)return null;
+    if(!to.matches('button,a[href],input,select,textarea,[tabindex]'))to.tabIndex=-1;
+    to.focus({preventScroll:true});to.scrollIntoView?.({block:'nearest'});
+    if(row&&highlight){row.classList.add('is-highlighted');setTimeout(()=>row.classList.remove('is-highlighted'),4000)}
+    return to;
+  }
+  // A sentence after an action, in the page's role=status #toast: the shared LocalAIUI.toast when there is one, else shown
+  // for 6 s and emptied when it hides.
+  function announce(m){
+    if(window.LocalAIUI&&typeof window.LocalAIUI.toast==='function')return window.LocalAIUI.toast(m);
+    const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');
+    clearTimeout(t._hide);t._hide=setTimeout(()=>{t.classList.remove('show');t.replaceChildren()},6000);
+  }
+  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{refocus,announce});
   // One card for every run, whatever its kind: icon, title, summary, status badge, a bar while active, the preview, one action.
   // item is a /api/runs list item; item.card (from the server) says what to show. onOpen(item) opens the run view.
   const ACTIVE=new Set(['queued','running','streaming','awaiting_approval']);
@@ -148,5 +171,15 @@
     if(typeof message==='string')t.textContent=message;else t.replaceChildren(message);
     t._ms=ms;t.classList.add('show');toastTimer(t,ms);return t;
   }
+  // A container whose children are all run cards (Work's groups, Home's Recent, Runs) is a list of them; one that also
+  // holds other rows (Home's Needs you) or none is left alone, so a listitem never sits outside a list.
+  function markRunList(box){if(!box||box.nodeType!==1)return;const kids=[...box.children],all=kids.length>0&&kids.every(k=>k.classList.contains('run-card'));
+    if(all){box.setAttribute('role','list');box.dataset.runList='1';kids.forEach(k=>k.setAttribute('role','listitem'))}
+    else if(box.dataset.runList){box.removeAttribute('role');delete box.dataset.runList;kids.forEach(k=>{if(k.getAttribute('role')==='listitem')k.removeAttribute('role')})}}
+  // Lists are often built off the page and attached whole (Work's day groups), so added subtrees are searched too.
+  new MutationObserver(ms=>{const boxes=new Set();for(const m of ms){if(m.type!=='childList')continue;
+    if(m.target.dataset?.runList||[...m.removedNodes].some(n=>n.classList?.contains('run-card')))boxes.add(m.target);
+    for(const n of m.addedNodes){if(n.nodeType!==1)continue;if(n.classList.contains('run-card'))boxes.add(m.target);else n.querySelectorAll('.run-card').forEach(c=>boxes.add(c.parentElement))}}
+    boxes.forEach(markRunList)}).observe(document.documentElement,{subtree:true,childList:true});
   window.LocalAIUI=Object.assign(window.LocalAIUI||{},{toast,hideToast:()=>{const t=document.getElementById('toast');if(t)hideToast(t)},fetchJson,loadInto,ask,runCard,sheetHistory,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
 })();

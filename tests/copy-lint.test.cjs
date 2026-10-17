@@ -19,8 +19,8 @@ const BANNED = /\b(capabilit(?:y|ies)|runtimes?|orchestration|inventory|workspac
 const DEV = new Set([...VIEWS.filter(v => v.domain === 'improve').map(v => v.id), 'workbench', 'repoTools', 'powershell', 'actions']);
 
 const CEILING = {
-  'index.html': 8,
-  'app.js': 12,
+  'index.html': 5,
+  'app.js': 9,
   'ui.js': 40,
   'home.js': 0,
   'work.js': 0,

@@ -20,7 +20,7 @@ const open = async () => { await page.evaluate(() => window.showView('approvals'
 await check('Approvals: waiting items are listed; resolved ones sit in a closed "Resolved (2)" section', async () => {
   await open();
   await page.waitForSelector('#approvalList .approval-card.pending');
-  const top = await page.locator('#approvalList > .approval-card').evaluateAll(cs => cs.map(c => c.className));
+  const top = await page.locator('#approvalList > .approval-list > .approval-card').evaluateAll(cs => cs.map(c => c.className));
   assert.deepEqual(top, ['approval-card pending']);
   const resolved = page.locator('#approvalList details.approval-resolved');
   assert.match(await resolved.locator('summary').innerText(), /Resolved \(2\)/);
@@ -88,9 +88,11 @@ await check('Health: an answer without a service list is a failed check, not "re
 // Reviewing a change reads in the owner's words, not the planner's.
 await check('Changes: an unplanned change reads "Nothing to apply yet", "Not tested yet", "Changes appear after testing"', async () => {
   await page.route('**/api/changes', r => r.fulfill({ json: { items: [{ id: 'chg-1', status: 'planned', target: 'self', request: 'Make the header fit on phones', summary: 'Header fits on phones', files: [], validation: null, diffs: [], createdAt: new Date().toISOString() }], pending: 0 } }));
-  await page.evaluate(() => window.showView('changes'));
-  await page.waitForFunction(() => /Header fits on phones/.test(document.getElementById('changeDetail').textContent));
-  const text = await page.locator('#changeDetail').innerText();
+  // The change detail lives in the run view now (Change requests is retired); render it the way the run view does.
+  await page.evaluate(() => { const el = document.createElement('div'); el.id = 'testChangeDetail'; document.body.appendChild(el); window.LocalAIChanges.show('chg-1', el); });
+  await page.waitForFunction(() => /Header fits on phones/.test(document.getElementById('testChangeDetail').textContent));
+  const text = await page.locator('#testChangeDetail').innerText();
+  await page.evaluate(() => document.getElementById('testChangeDetail').remove());
   assert.match(text, /Nothing to apply yet/);
   assert.match(text, /Not tested yet/);
   assert.match(text, /Changes appear after testing/);

@@ -30,5 +30,5 @@ test('truth layer exposes actionable attention state', () => {
   assert.match(source, /attentionItems\(snapshot\)/);
   assert.match(source, /Open Health/);
   assert.match(source, /Open approvals/);
-  assert.match(source, /Open issues/);
+  assert.match(source, /Open Signals/);
 });

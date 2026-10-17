@@ -103,7 +103,8 @@
       for (const [suffix, who] of [['u', 'user'], ['a', 'assistant']]) {
         const key = `${t.key}:${suffix}`; keep.add(key);
         let n = c.nodes.get(key);
-        if (!n) { n = h('div'); n.dataset.key = key; c.nodes.set(key, n); }
+        // Each turn is an article named for who spoke, so a screen reader says "You" or "Local AI" before the words.
+        if (!n) { n = h('div'); n.dataset.key = key; n.setAttribute('role', 'article'); n.setAttribute('aria-label', who === 'user' ? 'You' : 'Local AI'); c.nodes.set(key, n); }
         const text = who === 'user' ? t.prompt : t.answer, cls = `chat-turn chat-turn--${who}${who === 'assistant' && t.kind ? ' chat-turn--' + t.kind : ''}`;
         if (n.className !== cls) n.className = cls;
         if (n.dataset.text !== text) { n.dataset.text = text; n.textContent = text; }

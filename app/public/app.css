@@ -1107,7 +1107,6 @@ kbd{font:600 11px/1 var(--ds-mono);padding:2px 6px;border-radius:6px;border:1px 
 .tree-file .tree-icon{color:var(--ds-muted)}
 
 /* Run and change lists: requests can be whole pasted documents; show three lines (all sizes). */
-#engineeringRuns .item-card strong,#changeList .item-card strong{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 
 /* Claude chat panel: above the board on narrow screens, beside it from 1100px up. */
 .claude-chat{margin-bottom:12px;display:flex;flex-direction:column;gap:10px}
@@ -1237,10 +1236,6 @@ kbd{font:600 11px/1 var(--ds-mono);padding:2px 6px;border-radius:6px;border:1px 
   #workbenchTree .tree-children{padding-left:10px;margin-left:8px}
   #workbenchTree strong,#workbenchTree small{overflow-wrap:anywhere}
 
-  /* Change requests: long logs scroll inside their card instead of stretching the page. */
-  #engineeringExecution .item-card .meta{max-height:10em;overflow:auto}
-  #changeDetail.preview-pane{max-height:70vh;overflow:auto}
-
   /* Inbox alerts can carry whole pasted documents; four lines is enough to recognise one. */
   #inboxList .item-card>.muted,#approvalList .approval-card>.muted{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
   /* Code stays code: 16px (iOS zooms below that) but no mid-token wrapping; long lines scroll sideways. */
@@ -1340,9 +1335,6 @@ body.ux-v3.ux-nav-collapsed .ux-page-strip{display:flex}
 /* Long lists, all sizes: see "Long lists" in ui.js */
 .mobile-clipped{display:none!important}
 .mobile-more{width:100%;margin-top:8px;grid-column:1/-1}
-/* Detail panes and captured stack traces stay readable instead of running down the page. */
-#changeDetail.preview-pane{max-height:70vh;overflow:auto}
-#issueList .item-card pre,#issueList .item-card .muted,#qualityEvents .item-card pre{max-height:9em;overflow:auto;overflow-wrap:anywhere}
 .library-grid>.empty{grid-column:1/-1}
 .inbox-resolved{border-top:1px solid var(--ds-line);margin-top:12px;padding-top:4px}
 .inbox-resolved>summary{min-height:44px;display:flex;align-items:center;color:var(--ds-soft);font-weight:600}
@@ -1894,6 +1886,14 @@ h1[tabindex="-1"]:focus,h1[tabindex="-1"]:focus-visible{outline:none}
 /* Health: a failed check sits above the last known services, not instead of them. */
 #serviceList .status-error{margin-bottom:10px}
 
+/* Feedback after actions (appended; nothing above edited). Approvals are a list of cards with an <h3> title;
+   an item just started from the Backlog is highlighted for a moment on In progress. */
+.approval-list{list-style:none;margin:0;padding:0;display:grid;gap:inherit}
+.approval-card .approval-title{margin:0;font-size:inherit;font-weight:700}
+.improve-row.is-highlighted{background:color-mix(in srgb,var(--ds-accent) 14%,transparent);transition:background .6s}
+@media(prefers-reduced-motion:reduce){.improve-row.is-highlighted{transition:none}}
+.approval-resolved>.approval-list{margin-top:8px;gap:8px}
+
 /* Developer tools (appended; nothing above edited). Diagnostic details marked data-dev-only (Models' runtime tile,
    Health's Advanced service details) show only while the Health switch is on; first-run.js sets body.dev-tools-off. */
 body.dev-tools-off [data-dev-only]{display:none!important}
@@ -1908,6 +1908,11 @@ body.dev-tools-off [data-dev-only]{display:none!important}
 .whatsnew-dismiss:hover{color:var(--ds-text)}
 .improve-page-error,.improve-row__error{margin:8px 0;padding:10px 12px;border:1px solid color-mix(in srgb,var(--ds-bad) 40%,var(--ds-line));border-radius:var(--ds-r-md);background:color-mix(in srgb,var(--ds-bad) 8%,var(--ds-surface))}
 .improve-page-error[hidden]{display:none}
+/* Accessibility semantics (appended; nothing above edited). Text only a screen reader hears (⌘K's result count), and
+   the run view's title, now an <h2>, keeps the look it had as a div. */
+.visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+h2.run-drawer-title{margin:0;letter-spacing:normal}
+
 /* Text reachable by touch (appended; nothing above edited). */
 /* Inbox: an alert body stops at four lines on every screen; Show more (aria-expanded, app.js inboxMore) opens the rest. */
 #inboxList .item-card>.muted{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}

@@ -435,8 +435,8 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         severity: 'info',
         title: `${count} change ${count === 1 ? 'request is' : 'requests are'} unfinished`,
         detail: 'Planned, failed or staged changes are waiting to be finished or discarded.',
-        action: 'Open change requests',
-        view: 'changes'
+        action: 'Open In progress',
+        view: 'inProgress'
       });
     }
 
@@ -446,8 +446,8 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         severity: 'warning',
         title: `${count} autonomous ${count === 1 ? 'issue is' : 'issues are'} open`,
         detail: 'Quality scans have unresolved findings.',
-        action: 'Open issues',
-        view: 'issues'
+        action: 'Open Signals',
+        view: 'signals'
       });
     }
 
@@ -822,6 +822,8 @@ const listedGroups=d=>d.groups.map(g=>({label:g.label,views:g.views.filter(liste
 function domainForView(view){let id=REG.view(view)?.domain;if(id==='hidden')id=REG.view(REG.resolve(view))?.domain;return DOMAINS.find(d=>d.id===id)||DOMAINS[0]}
 // Tabs share their parent's nav entry and breadcrumb.
 function pageForView(view){return REG.page(view)?.id||view}
+// The menu entry a view lights: its page, or for a hidden page (Missions, Chat, Images) the page that owns it.
+function menuPage(view){return REG.view(view)?.domain==='hidden'?pageForView(REG.resolve(view)):pageForView(view)}
 function labelForView(view){return REG.view(view)?.label||viewButton(view)?.textContent?.trim()||view}
 function activeView(){return q('.view.active')?.id||q('.navbtn.active')?.dataset.view||'home'}
 function activateSyntheticView(view){
@@ -862,10 +864,10 @@ function buildDesktopNav(){
  const originals=qa('.navbtn[data-view]',nav);allButtons=new Map(originals.map(b=>[b.dataset.view,b]));
  const registry=document.createElement('div');registry.id='uxNavRegistry';registry.hidden=true;originals.forEach(b=>registry.appendChild(b));aside.appendChild(registry);
  const shell=document.createElement('div');shell.className='ux-nav-shell';
- const rail=document.createElement('div');rail.className='ux-primary-rail';rail.setAttribute('aria-label','Primary navigation');
+ const rail=document.createElement('div');rail.className='ux-primary-rail';rail.setAttribute('role','navigation');rail.setAttribute('aria-label','Primary');
  const secondary=document.createElement('div');secondary.className='ux-secondary-nav';
  const secondaryHead=document.createElement('div');secondaryHead.className='ux-secondary-head';secondaryHead.innerHTML='<div><strong id="uxSecondaryTitle">Home</strong><small id="uxSecondaryTagline"></small></div><button type="button" class="ux-nav-collapse" data-nav-collapse="true" aria-label="Hide page list" title="Hide page list">‹</button>';
- const groups=document.createElement('div');groups.className='ux-secondary-groups';groups.id='uxSecondaryGroups';
+ const groups=document.createElement('div');groups.className='ux-secondary-groups';groups.id='uxSecondaryGroups';groups.setAttribute('role','navigation');groups.setAttribute('aria-label','Pages in this section');
  secondary.append(secondaryHead,groups);
  DOMAINS.forEach(d=>{
    const b=document.createElement('button');b.type='button';b.className='ux-primary-item';b.dataset.domain=d.id;b.title=d.label;b.innerHTML='<span class="ux-primary-symbol" aria-hidden="true">'+(icon(d.icon)||d.symbol)+'</span><span>'+d.label+'</span>';
@@ -896,7 +898,10 @@ function buildTabs(){
    for(const t of REG.tabs(v.id)){
      const section=q('#'+t.id);if(!section||q('.ux-tabs',section))continue;
      const strip=document.createElement('div');strip.className='ux-tabs';strip.setAttribute('role','tablist');strip.setAttribute('aria-label',REG.label(REG.page(t.id).id)+' sections');
-     REG.tabs(t.id).forEach(x=>{const b=document.createElement('button');b.type='button';b.className='ux-tab';b.setAttribute('role','tab');b.dataset.uxTab=x.id;b.textContent=x.tab||x.label;b.addEventListener('click',()=>navigate(x.id));strip.appendChild(b)});
+     REG.tabs(t.id).forEach(x=>{const b=document.createElement('button');b.type='button';b.className='ux-tab';b.setAttribute('role','tab');b.setAttribute('aria-controls',x.id);b.tabIndex=-1;b.dataset.uxTab=x.id;b.textContent=x.tab||x.label;b.addEventListener('click',()=>navigate(x.id));strip.appendChild(b)});
+     // One tab stop per strip (sync() gives the selected tab tabindex 0); arrows, Home and End open the next page, and
+     // app.js keeps focus on the same tab in that page's copy of the strip (as the mission result tabs do).
+     strip.addEventListener('keydown',e=>{const all=qa('.ux-tab',strip),i=all.indexOf(e.target);if(i<0)return;const n=e.key==='ArrowRight'?i+1:e.key==='ArrowLeft'?i-1:e.key==='Home'?0:e.key==='End'?all.length-1:null;if(n===null)return;e.preventDefault();const to=all[(n+all.length)%all.length];to.focus();navigate(to.dataset.uxTab)});
      const top=q('.topbar',section);if(top)top.after(strip);else section.prepend(strip);
    }
  }
@@ -956,25 +961,34 @@ function buildMobile(){
 function renderSheet(){
  const d=DOMAINS.find(x=>x.id===currentDomain)||DOMAINS[0],holder=q('#uxMobileSheetItems');if(!holder)return;
  q('#uxMobileSheetTitle').textContent=d.label;q('#uxMobileSheetTagline').textContent=d.tagline;holder.innerHTML='';
- listedGroups(d).forEach(g=>{const section=document.createElement('section');section.className='ux-mobile-section';section.innerHTML='<div class="ux-mobile-section-label">'+g.label+'</div>';g.views.forEach(v=>{if(!viewButton(v))return;const b=document.createElement('button');b.type='button';b.className='ux-mobile-link '+(v===pageForView(activeView())?'active':'');b.innerHTML='<span><strong>'+labelForView(v)+'</strong><small>'+DESCRIPTIONS[v]+'</small></span><span>›</span>';b.addEventListener('click',()=>{navigate(v);toggleSheet(false)});section.appendChild(b)});holder.appendChild(section)});
+ listedGroups(d).forEach(g=>{const section=document.createElement('section');section.className='ux-mobile-section';section.innerHTML='<div class="ux-mobile-section-label">'+g.label+'</div>';g.views.forEach(v=>{if(!viewButton(v))return;const b=document.createElement('button');b.type='button';b.className='ux-mobile-link '+(v===menuPage(activeView())?'active':'');b.innerHTML='<span><strong>'+labelForView(v)+'</strong><small>'+DESCRIPTIONS[v]+'</small></span><span>›</span>';b.addEventListener('click',()=>{navigate(v);toggleSheet(false)});section.appendChild(b)});holder.appendChild(section)});
 }
 let sheetRelease=null; // Back closes the sheet (LocalAIUI.sheetHistory)
 function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;const s=q('#uxMobileSheet');if(s&&sheetOpen&&!sheetRelease&&window.LocalAIUI?.sheetHistory)sheetRelease=window.LocalAIUI.sheetHistory(s,()=>{sheetRelease=null;toggleSheet(false)});else if(!sheetOpen&&sheetRelease){const r=sheetRelease;sheetRelease=null;r()}if(s){s.dataset.open=String(sheetOpen);s.inert=!sheetOpen;s.setAttribute('aria-hidden',String(!sheetOpen))}q('#uxContextMenu')?.setAttribute('aria-expanded',String(sheetOpen));document.body.classList.toggle('ux-sheet-open',sheetOpen);if(sheetOpen)renderSheet()}
 function sync(forced){
  const view=REG.view(forced||activeView())?.id||forced||activeView(),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
- const page=pageForView(view),viewLabel=labelForView(page);renderPageStrip(d,page);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=listedGroups(d).flatMap(g=>g.views).length<2;document.body.classList.toggle('ux-single-page',single);q('#uxContextBar')?.classList.toggle('ux-context-same',single||viewLabel===d.label)} // "Local AI / Domain" for a domain with one page, "Local AI / Domain / Page" otherwise
+ // A hidden page (Missions, Chat, Images) names itself in the breadcrumb and lights the page that owns it in the menus.
+ const hidden=REG.view(view)?.domain==='hidden',page=pageForView(view),viewLabel=labelForView(page),navPage=menuPage(view);renderPageStrip(d,navPage);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=listedGroups(d).flatMap(g=>g.views).filter(v=>viewButton(v)).length<2;document.body.classList.toggle('ux-single-page',single);q('#uxContextBar')?.classList.toggle('ux-context-same',!hidden&&(single||viewLabel===d.label))} // "Local AI / Domain" for a domain with one page, "Local AI / Domain / Page" otherwise
  q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);q('#uxContextMenu')?.setAttribute('aria-label',d.label+' pages');syncHeaderAction(view);{const g=q('#uxContextGreeting');if(g)g.textContent=greeting()};
- qa('.ux-primary-item').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
+ qa('.ux-primary-item').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
  qa('#uxMobileNav [data-domain]').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
  if(q('#uxSecondaryTitle')?.textContent!==d.label||q('#uxSecondaryGroups')?.dataset.dev!==String(!devOff()))renderSecondary(d.id);
- qa('.ux-secondary-link').forEach(b=>b.classList.toggle('active',b.dataset.view===page));
- qa('.ux-tab').forEach(b=>{const on=b.dataset.uxTab===view;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on))});
+ qa('.ux-secondary-link').forEach(b=>{const on=b.dataset.view===navPage;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
+ qa('.ux-tab').forEach(b=>{const on=b.dataset.uxTab===view;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1});
  if(sheetOpen)renderSheet();
 }
 function observeViews(){const views=qa('.view');if(!views.length)return;const mo=new MutationObserver(()=>sync());views.forEach(v=>mo.observe(v,{attributes:true,attributeFilter:['class']}));
  // The Developer tools switch (first-run.js) toggles body.dev-tools-off: the menus redraw with or without the developer pages.
  let dev=devOff();new MutationObserver(()=>{if(devOff()===dev)return;dev=devOff();sync()}).observe(document.body,{attributes:true,attributeFilter:['class']});document.addEventListener('click',e=>{const b=e.target.closest?.('.navbtn[data-view]');if(b)requestAnimationFrame(()=>sync(b.dataset.view))})}
-function init(){document.body.classList.add('ux-v3');buildIntegrationsView();buildTabs();buildDesktopNav();buildContext();buildPageStrip();buildMobile();observeViews();sync()}
+// An error box shown for a field marks that field invalid and describes it with the box; hidden again, it lets go.
+// The boxes are drawn by their own pages (home.js, Models, improve.js); this follows their `hidden` attribute.
+const ERROR_FIELDS={homeComposerError:'commandInput',modelPullError:'modelPullName',improveIdeaError:'improveIdeaText',improveItemError:'improveItemSheet'};
+function linkError(box){const field=document.getElementById(ERROR_FIELDS[box.id]);if(!field)return;const ids=(field.getAttribute('aria-describedby')||'').split(' ').filter(x=>x&&x!==box.id),on=!box.hidden;
+ if(on)ids.push(box.id);if(ids.length)field.setAttribute('aria-describedby',ids.join(' '));else field.removeAttribute('aria-describedby');
+ if(field.tagName!=='DIALOG'){if(on)field.setAttribute('aria-invalid','true');else field.removeAttribute('aria-invalid')}}
+function linkErrors(){const sync=()=>Object.keys(ERROR_FIELDS).forEach(id=>{const b=document.getElementById(id);if(b)linkError(b)});sync();
+ new MutationObserver(ms=>{for(const m of ms){if(m.type==='attributes'){if(ERROR_FIELDS[m.target.id])linkError(m.target)}else if(m.addedNodes.length){sync();return}}}).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden']})}
+function init(){document.body.classList.add('ux-v3');linkErrors();buildIntegrationsView();buildTabs();buildDesktopNav();buildContext();buildPageStrip();buildMobile();observeViews();sync()}
 if(document.readyState==='complete')init();else window.addEventListener('load',init,{once:true});
 })();
 
@@ -2861,7 +2875,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const head = document.createElement('div'); head.className = 'run-drawer-head';
     const back = iconBtn('chevron-left', 'Back'); back.addEventListener('click', closeRunView);
     const copy = document.createElement('div'); copy.className = 'run-drawer-copy';
-    const t = document.createElement('div'); t.id = 'runDrawerTitle'; t.className = 'run-drawer-title'; t.textContent = title; t.title = title;   // desktops: the full text is on hover
+    const t = document.createElement('h2'); t.id = 'runDrawerTitle'; t.className = 'run-drawer-title'; t.textContent = title; t.title = title;   // desktops: the full text is on hover
     // Phones clamp it to two lines and have no hover: a tap (or Enter) opens the whole title, a second one folds it; aria-expanded says which.
     if (matchMedia('(max-width:760px)').matches) {
       t.setAttribute('role', 'button'); t.tabIndex = 0; t.setAttribute('aria-expanded', 'false');
@@ -3317,12 +3331,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
 // ===== Long lists ============================================================
 // Long lists show their first items and a "Show N more" button: a few on a phone, three times as many on a
-// larger screen. Without it the Change ledger,
-// Files and Library pages ran to tens of thousands of pixels. Lists re-render often (polling), so a MutationObserver
+// larger screen. Without it the Files and Library pages ran to tens of thousands of pixels. Lists re-render often (polling), so a MutationObserver
 // re-applies the limit; "Show more" is remembered per list until the page reloads.
 (() => {
   'use strict';
-  const LIMITS = { changeList: 8, engineeringRuns: 6, inboxList: 10, approvalList: 10, activityList: 15, runList: 10, issueList: 10, libraryGrid: 12, knowledgeList: 10, qualityEvents: 10, monitorList: 10, automationList: 10 };
+  const LIMITS = { inboxList: 10, approvalList: 10, activityList: 15, runList: 10, libraryGrid: 12, knowledgeList: 10, monitorList: 10, automationList: 10 };
   const phone = window.matchMedia('(max-width: 760px)');
   const observers = new Map();
 
