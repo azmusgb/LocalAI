@@ -206,7 +206,7 @@ await check('the menus are navigation landmarks and mark the current page', asyn
 
 await check('fields have names, and an error is tied to its field', async () => {
   const { page, context } = await open();
-  for (const id of ['knowledgeQuery', 'browserUrl', 'monitorName', 'workbenchPath', 'workbenchSearch', 'repoPath']) {
+  for (const id of ['knowledgeQuery', 'browserUrl', 'autoName', 'workbenchPath', 'workbenchSearch', 'repoPath']) {
     const name = await page.evaluate(i => { const e = document.getElementById(i); return e?.getAttribute('aria-label') || (e?.labels?.[0]?.textContent || '').trim(); }, id);
     assert.ok(name, `#${id} has a name besides its placeholder`);
   }

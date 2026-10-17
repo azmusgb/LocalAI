@@ -98,6 +98,20 @@ sheet. After them come open alerts, then **History**: resolved alerts and what y
 It keeps alerts you missed while notifications were quiet. The bell shows one number: unread alerts plus approvals
 waiting. Old Approvals links open the Inbox.
 
+## Automations
+
+**System › Automations** is one page for everything that runs by itself. Pick a **Kind**, then create it:
+
+| Kind | What it does |
+|---|---|
+| **Prompt** | Asks your local model something, by hand or every hour or day |
+| **Research** | Searches the web and summarises it with sources, on the same schedule |
+| **Health check** | Checks every service every 15 minutes and tells you in the Inbox when one needs attention |
+| **Morning brief** | **Generate brief** sums up health, open alerts and recent activity, right now |
+
+Your automations and health checks are listed together; **Run now** runs one at once. **Open n8n ↗** opens n8n for
+advanced workflows. Old Monitors links open this page.
+
 ## Notifications
 
 On an iPhone, open Local AI from the Home Screen, then **System › Health › Notifications › Allow notifications**, and

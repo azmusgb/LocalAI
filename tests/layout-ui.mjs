@@ -161,7 +161,7 @@ for (const size of SIZES) await check(`${size[0]}: the Files tree is a compact l
 await check('phone: under each page title, status sits on the left and the page action on the right', async () => {
   const { page, context } = await open(SIZES[0]);
   const wrong = [];
-  for (const id of ['signals', 'inProgress', 'workbench', 'repoTools', 'operations']) {
+  for (const id of ['signals', 'inProgress', 'workbench', 'repoTools', 'automationStudio']) {
     await page.evaluate(h => { location.hash = h }, '#' + id);
     await page.waitForTimeout(200);
     const r = await page.evaluate(i => {

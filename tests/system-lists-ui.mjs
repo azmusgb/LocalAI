@@ -119,6 +119,45 @@ await check('Health: Advanced service details shows only with developer tools on
   assert.equal(await details.isVisible(), true, 'shown with developer tools on');
 });
 
+// One Automations page (D9): Monitors folded in as the kinds Health check and Morning brief; "Open n8n" stays a button.
+await check('Automations: an old #operations link lands on Automations, which has the four kinds and Open n8n', async () => {
+  await page.evaluate(() => { location.hash = '#operations'; });
+  await page.waitForSelector('#automationStudio.active');
+  assert.equal(await page.evaluate(() => location.hash), '#automationStudio');
+  assert.equal(await page.locator('#operations').count(), 0, 'Monitors is no longer a page of its own');
+  assert.deepEqual(await page.locator('#autoKind option').allInnerTexts(), ['Prompt', 'Research', 'Health check', 'Morning brief']);
+  assert.equal(await page.locator('#automationStudio a[href="/go/n8n"]').innerText(), 'Open n8n ↗');
+});
+
+await check('Automations: a health monitor is created with kind "Health check" and listed with the automations', async () => {
+  await page.selectOption('#autoKind', 'monitor');
+  assert.equal(await page.locator('#autoSchedule').isVisible(), false, 'a health check runs every 15 minutes; no schedule to pick');
+  assert.equal(await page.locator('#autoPrompt').isVisible(), false, 'a health check needs no instruction');
+  assert.match(await page.locator('#autoKindNote').innerText(), /15 minutes/);
+  await page.fill('#autoName', 'Nightly health');
+  const created = page.waitForRequest(r => r.url().endsWith('/api/monitors/create'));
+  await page.locator('#autoCreateBtn').click();
+  assert.deepEqual((await created).postDataJSON(), { name: 'Nightly health', kind: 'health' });
+  const row = page.locator('#automationList .item-card', { hasText: 'Nightly health' });
+  await row.waitFor();
+  assert.match(await row.innerText(), /Health check/);
+  assert.equal(await row.locator('[data-monitor-run]').count(), 1, 'Run now checks it at once');
+  await page.waitForFunction(() => /Health check created/.test(document.getElementById('toast').textContent));
+});
+
+await check('Automations: Generate brief lives on Automations, as the Morning brief kind', async () => {
+  await page.selectOption('#autoKind', 'brief');
+  assert.equal(await page.locator('#autoCreateBtn').isVisible(), false);
+  const brief = page.locator('#automationStudio #briefBtn');
+  assert.equal(await brief.innerText(), 'Generate brief');
+  await brief.click();
+  await page.waitForFunction(() => /system health/i.test(document.getElementById('briefBox')?.textContent || ''));
+  assert.equal(await page.locator('#briefBox').isVisible(), true);
+  await page.selectOption('#autoKind', 'prompt');
+  assert.equal(await page.locator('#autoSchedule').isVisible(), true);
+  assert.equal(await page.locator('#autoCreateBtn').isVisible(), true);
+});
+
 await check('no script errors', async () => assert.deepEqual(errors, []));
 await browser.close();
 if (failures.length) { console.error('\nSystem list failures:\n' + failures.map(x => ' - ' + x).join('\n')); process.exit(1); }

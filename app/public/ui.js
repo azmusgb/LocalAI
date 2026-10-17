@@ -3356,7 +3356,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // re-applies the limit; "Show more" is remembered per list until the page reloads.
 (() => {
   'use strict';
-  const LIMITS = { inboxList: 10, activityList: 15, runList: 10, libraryGrid: 12, knowledgeList: 10, monitorList: 10, automationList: 10 };
+  const LIMITS = { inboxList: 10, activityList: 15, runList: 10, libraryGrid: 12, knowledgeList: 10, automationList: 10 };
   const phone = window.matchMedia('(max-width: 760px)');
   const observers = new Map();
 
