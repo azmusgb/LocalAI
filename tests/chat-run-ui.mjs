@@ -103,6 +103,25 @@ await check('Home Research sends webSearch; a failed start shows the reason and 
   await page.context().close();
 });
 
+// A chat that fails to start is still a Chat, offers Try again, and for a model problem points at Models.
+await check('Home Chat failure: subtitle "Chat", Try again resends, a model error links to Models', async () => {
+  const page = await open(desk, '#home', { storage: { 'localai.home.mode': 'ask' }, stream: 'fail' });
+  await page.locator('#commandInput').fill('What is a mutex');
+  await page.locator('#commandGo').click();
+  await page.locator('#runDrawer .status-error', { hasText: 'No model is loaded' }).waitFor(T);
+  assert.equal(await page.locator('#runDrawer .run-drawer-sub').innerText(), 'Chat');
+  assert.equal(await page.locator('#runDrawer button', { hasText: 'Close' }).count(), 1);
+  assert.equal(await page.locator('#runDrawer button', { hasText: 'Open Models' }).count(), 1);
+  await page.locator('#runDrawer button', { hasText: 'Try again' }).click();
+  await page.waitForFunction(() => window.__reqs.length === 2, null, T);
+  assert.deepEqual((await reqs(page))[1].messages, [{ role: 'user', content: 'What is a mutex' }]);
+  await page.locator('#runDrawer .status-error', { hasText: 'No model is loaded' }).waitFor(T);
+  await page.locator('#runDrawer button', { hasText: 'Open Models' }).click();
+  await page.waitForSelector('#models.active', T);
+  assert.equal(page.errors.length, 0, page.errors.join('|'));
+  await page.context().close();
+});
+
 await check('a thread with 3 runs renders 3 user and 3 assistant turns in order', async () => {
   const page = await open(desk, '#home', { runs: three() });
   await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[1].id);

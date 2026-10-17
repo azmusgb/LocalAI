@@ -1881,3 +1881,11 @@ h1[tabindex="-1"]:focus,h1[tabindex="-1"]:focus-visible{outline:none}
 .improve-details[open]>summary::after{transform:rotate(225deg);margin-top:4px}
 /* Work and Home: a very long run title stops at three lines. */
 .list-row__title .work-open{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+
+/* Trust (appended; nothing above edited). */
+/* Run view: a failed start offers its next steps in one row (Try again, Open Models, Close). */
+.run-view-state__actions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+/* Inbox: the approvals-waiting row is a button that reads like the cards around it. */
+.inbox-approvals{width:100%;text-align:left;cursor:pointer;font:inherit;color:inherit}
+/* Health: a failed check sits above the last known services, not instead of them. */
+#serviceList .status-error{margin-bottom:10px}
