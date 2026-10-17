@@ -145,3 +145,28 @@ test('old runs with garbled text or markdown bold are cleaned at start-up, keepi
   assert.equal(run.summary, 'An idée');
   assert.equal(run.createdAt, createdAt);
 });
+
+// Work's old image runs: the summary put the count before the size ("1 704 × 1024 image…"), so the count read as a
+// width. Repaired once at start-up; modern summaries and the run's dates are untouched.
+test('old image-run summaries are rewritten at start-up, keeping their dates', { timeout: 30000 }, async t => {
+  const { RunLedger } = require('../app/run-ledger');
+  const seeded = {};
+  const base = await startServer(t, { seed: s => {
+    const ledger = new RunLedger({ storage: s });
+    for (const [key, summary] of [['one', '1 704 × 1024 image edited with Quality (X)'], ['many', '3 1024 × 680 images edited with Quality (X)'], ['modern', 'Image edited with Quality (X) · 704 × 1024']]) {
+      const r = ledger.create({ type: 'image', title: 'A picture', summary });
+      ledger.complete(r.id, { summary });
+      const saved = ledger.get(r.id);
+      seeded[key] = { id: r.id, createdAt: saved.createdAt, finishedAt: saved.finishedAt };
+    }
+  } });
+  const fetchRun = async id => (await (await fetch(`${base}/api/runs?id=${id}`)).json()).item;
+  assert.equal((await fetchRun(seeded.one.id)).summary, '704 × 1024 image, edited with Quality (X)');
+  assert.equal((await fetchRun(seeded.many.id)).summary, '3 images, 1024 × 680, edited with Quality (X)');
+  assert.equal((await fetchRun(seeded.modern.id)).summary, 'Image edited with Quality (X) · 704 × 1024');
+  for (const k of ['one', 'many', 'modern']) {
+    const run = await fetchRun(seeded[k].id);
+    assert.equal(run.createdAt, seeded[k].createdAt, `${k} createdAt`);
+    assert.equal(run.finishedAt, seeded[k].finishedAt, `${k} finishedAt`);
+  }
+});
