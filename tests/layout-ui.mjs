@@ -1,7 +1,7 @@
 // Layout guard: no page scrolls sideways on a phone or a desktop, run rows stay inside their list whatever they
 // hold, and the approval sheet is styled. Behaviour suites miss lost or conflicting CSS; this one doesn't.
 import assert from 'node:assert/strict';
-import { chromium } from 'playwright';
+import { chromium, devices } from 'playwright';
 
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch();
@@ -223,6 +223,99 @@ await check('320px: a Work row keeps at least 200px for its text', async () => {
   const widths = await page.$$eval('#work .run-card .list-row__main', els => els.map(e => Math.round(e.getBoundingClientRect().width)));
   assert.ok(widths.length >= 3 && widths.every(w => w >= 200), `text columns are ${widths.join('/')}px wide`);
   assert.equal(await overflow(page), 0, 'Work scrolls sideways at 320px');
+  await context.close();
+});
+
+// ---- Phone polish (critique §3.7): the iPad shell, the scrolled header, sheets that hold the page still ----
+async function device(name) {
+  const context = await browser.newContext({ ...devices[name], serviceWorkers: 'block' });
+  await context.addInitScript(() => { localStorage.setItem('localai.firstRun.done', '1'); });
+  const page = await context.newPage();
+  await page.goto(base + '/#home', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => typeof window.showView === 'function' && window.LocalAIShell && window.LocalAICommand);
+  return { page, context };
+}
+const go = async (page, id) => { await page.evaluate(v => window.LocalAIRouter.open(v), id); await page.waitForFunction(v => document.getElementById(v)?.classList.contains('active'), id); await page.waitForTimeout(250); };
+
+for (const name of ['iPad Mini', 'iPad Mini landscape']) {
+  await check(`${name}: the content starts at the same x on every page, and there is no ⌘K hint on a touch screen`, async () => {
+    const { page, context } = await device(name);
+    const xs = {};
+    for (const id of ['home', 'work', 'inbox', 'library', 'status', 'backlog']) {
+      await go(page, id);
+      xs[id] = await page.evaluate(() => Math.round(document.querySelector('.view.active').getBoundingClientRect().left));
+    }
+    assert.equal(new Set(Object.values(xs)).size, 1, `content x per page: ${JSON.stringify(xs)}`);
+    const hints = await page.evaluate(() => [...document.querySelectorAll('kbd')].filter(k => k.getBoundingClientRect().width > 0).map(k => k.textContent));
+    assert.deepEqual(hints, [], 'no keyboard-shortcut hint where there is no hover');
+    await context.close();
+  });
+}
+
+await check('desktop with a mouse: Work still drops the page list, and the ⌘K hint shows', async () => {
+  const { page, context } = await open(SIZES[1]);
+  await go(page, 'work');
+  assert.ok(await page.evaluate(() => document.body.classList.contains('ux-single-page')));
+  assert.ok(await page.evaluate(() => [...document.querySelectorAll('.ux-context-search kbd')].some(k => k.getBoundingClientRect().width > 0)), '⌘K hint visible');
+  await context.close();
+});
+
+await check('phone: the sticky header gets a hairline once the page scrolls, where no page tabs draw one', async () => {
+  const { page, context } = await device('iPhone 14');
+  const line = () => page.evaluate(() => getComputedStyle(document.querySelector('.ux-context-bar')).boxShadow);
+  await go(page, 'work');
+  await page.evaluate(() => { document.getElementById('work').style.minHeight = '3000px'; window.scrollTo(0, 0); });
+  await page.waitForTimeout(150);
+  assert.equal(await line(), 'none', 'no line at the top');
+  await page.evaluate(() => window.scrollTo(0, 300));
+  await page.waitForTimeout(150);
+  assert.match(await line(), /1px/, 'a 1px line once scrolled');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(150);
+  assert.equal(await line(), 'none', 'gone again at the top');
+  await go(page, 'status'); // System has page tabs, whose own border is the line
+  await page.evaluate(() => { document.getElementById('status').style.minHeight = '3000px'; window.scrollTo(0, 300); });
+  await page.waitForTimeout(150);
+  assert.equal(await line(), 'none', 'the page tabs already draw the line');
+  await context.close();
+});
+
+await check('phone: an open sheet holds the page still (iOS scroll lock) and closing it returns to the same place', async () => {
+  const { page, context } = await device('iPhone 14');
+  await go(page, 'integrations');
+  await page.evaluate(() => { document.getElementById('integrations').style.minHeight = '3000px'; window.scrollTo(0, 500); });
+  await page.waitForTimeout(150);
+  const body = () => page.evaluate(() => ({ pos: getComputedStyle(document.body).position, top: document.body.style.top, y: Math.round(scrollY) }));
+  // ⌘K
+  await page.evaluate(() => window.LocalAICommand.open());
+  await page.waitForSelector('#cmdk[open]');
+  await page.waitForTimeout(100);
+  let b = await body();
+  assert.equal(b.pos, 'fixed'); assert.equal(b.top, '-500px');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  b = await body();
+  assert.notEqual(b.pos, 'fixed'); assert.equal(b.y, 500, 'back where you were');
+  // The page menu sheet
+  await page.click('#uxContextMenu');
+  await page.waitForFunction(() => document.body.classList.contains('ux-sheet-open'));
+  await page.waitForTimeout(100);
+  b = await body();
+  assert.equal(b.pos, 'fixed'); assert.equal(b.top, '-500px');
+  await page.goBack(); // Back closes the sheet
+  await page.waitForFunction(() => !document.body.classList.contains('ux-sheet-open'));
+  await page.waitForTimeout(150);
+  b = await body();
+  assert.notEqual(b.pos, 'fixed'); assert.equal(b.y, 500, 'back where you were after the page menu');
+  // Opening another page from a sheet starts that page at its top.
+  await page.evaluate(() => window.LocalAICommand.open());
+  await page.waitForSelector('#cmdk[open]');
+  await page.fill('#cmdkInput', 'models');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('#models.active');
+  await page.waitForTimeout(200);
+  b = await body();
+  assert.notEqual(b.pos, 'fixed'); assert.equal(b.y, 0);
   await context.close();
 });
 

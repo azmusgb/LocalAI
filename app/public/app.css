@@ -1933,6 +1933,11 @@ h2.run-drawer-title{margin:0;letter-spacing:normal}
 .cmdk-group+.cmdk-group{margin-top:6px}
 .cmdk-group__label{padding:6px 10px 2px;color:var(--ds-muted);font-size:13px;font-weight:600}
 
+/* Phone polish: layout and install (appended; nothing above edited). No keyboard-shortcut hint where there is no hover
+   (an iPad, a phone); the sticky header's hairline once the page scrolls (ui.js headerLine sets body.ux-scrolled). */
+@media(hover:none){.ux-context-search kbd,.ux-context-search>kbd{display:none}}
+body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
+
 /* Text reachable by touch (appended; nothing above edited). */
 /* Inbox: an alert body stops at four lines on every screen; Show more (aria-expanded, app.js inboxMore) opens the rest. */
 #inboxList .item-card>.muted{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
