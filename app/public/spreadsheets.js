@@ -130,7 +130,7 @@ async function openBook(){
 }
 function init(){
  const sec=$('spreadsheets');if(!sec)return;
- $('sheetsExamples').innerHTML=EXAMPLES.map((x,i)=>`<button type="button" class="suggestion-chip" data-sheets-example="${i}">${x}</button>`).join('');
+ $('sheetsExamples').innerHTML=EXAMPLES.map((x,i)=>`<button type="button" class="btn-outline" data-sheets-example="${i}">${x}</button>`).join('');
  sec.querySelectorAll('[data-sheets-example]').forEach(b=>b.addEventListener('click',()=>{$('sheetsPrompt').value=EXAMPLES[b.dataset.sheetsExample];$('sheetsPrompt').focus()}));
  $('sheetsRun').addEventListener('click',run);
  $('sheetsRetry').addEventListener('click',run);

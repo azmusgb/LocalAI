@@ -73,7 +73,7 @@ await check('phone: pages by 24, chips in one scrolling row, the count in the se
   assert.equal(await shown(), 60);
   assert.equal(await p.locator('#libraryGrid > .mobile-more').count(), 0);
   assert.equal(await p.locator('#librarySearch').getAttribute('placeholder'), 'Search 60 things you kept…');
-  const tops = await p.locator('#library .library-chips .filter').evaluateAll(b => [...new Set(b.map(e => Math.round(e.getBoundingClientRect().top)))]);
+  const tops = await p.locator('#library .library-chips .ux-tab').evaluateAll(b => [...new Set(b.map(e => Math.round(e.getBoundingClientRect().top)))]);
   assert.equal(tops.length, 1, 'the chips sit in one row');
   assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'no sideways page scroll');
   await p.locator('#library [data-kind="research"]').click();

@@ -311,7 +311,7 @@ await check('navigation reaches Missions through Work',async()=>{
   };
   const onlyMissions=async pg=>{
     await pg.waitForSelector('#work.active .run-card');
-    assert.equal(await pg.locator('[data-work-kind="missions"]').getAttribute('aria-pressed'),'true');
+    assert.equal(await pg.locator('[data-work-kind="missions"]').getAttribute('aria-checked'),'true'); // Work's chips are one segmented control (E5)
     assert.deepEqual(await pg.locator('#work .run-card').evaluateAll(r=>r.map(x=>x.dataset.kind)),['agent']);
   };
   const deep=await visit('#agents',{width:1280,height:860});await onlyMissions(deep);await deep.close();

@@ -187,7 +187,7 @@ await check('the Projects tab lands on Projects, and Library is its "Everything 
   await page.waitForSelector('#home.active');
   await page.evaluate(() => { location.hash = '#library' });
   await page.waitForSelector('#library.active');
-  assert.equal(await page.locator('#library .ux-tab.active').innerText(), 'Everything you kept');
+  assert.equal(await page.locator('#library [role="tablist"] .ux-tab.active').innerText(), 'Everything you kept');
 });
 
 await check('no script errors while navigating', async () => {
