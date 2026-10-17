@@ -1882,6 +1882,10 @@ h1[tabindex="-1"]:focus,h1[tabindex="-1"]:focus-visible{outline:none}
 /* Work and Home: a very long run title stops at three lines. */
 .list-row__title .work-open{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 
+/* Phone keyboard (appended; nothing above edited). While the owner types in Home's composer the tab bar steps aside and
+   the composer sits on the keyboard: home.js adds body.home-typing on focus and sets --home-dock from visualViewport. */
+@media(max-width:760px){body.ux-v3.home-typing .ux-mobile-nav{display:none}}
+
 /* Trust (appended; nothing above edited). */
 /* Run view: a failed start offers its next steps in one row (Try again, Open Models, Close). */
 .run-view-state__actions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}

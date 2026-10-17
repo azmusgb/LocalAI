@@ -277,6 +277,23 @@ await check('at 390x844 the reply box stays above a keyboard that only shrinks t
   await page.context().close();
 });
 
+// On a notched iPhone the reply bar must clear the home indicator: its bottom padding carries env(safe-area-inset-bottom).
+// Chromium reports the inset as 0, so the rule is read from the stylesheet, not the computed padding.
+await check('the reply bar keeps the safe-area inset under Reply and Send', async () => {
+  const page = await open(phone, '#home', { runs: long() });
+  await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);
+  await page.locator('#runReply').waitFor(T);
+  const r = await page.evaluate(() => {
+    const bar = document.querySelector('.chat-body__reply');
+    const rules = [];
+    for (const sheet of document.styleSheets) { let list; try { list = sheet.cssRules; } catch { continue; } for (const rule of list) if (rule.selectorText && bar.matches(rule.selectorText)) rules.push(rule.style.paddingBottom || rule.style.padding || ''); }
+    return { safe: rules.some(p => /safe-area-inset-bottom/.test(p)), pad: parseFloat(getComputedStyle(bar).paddingBottom) };
+  });
+  assert.ok(r.safe, 'no rule on the reply bar uses env(safe-area-inset-bottom)');
+  assert.ok(r.pad >= 12, `padding-bottom ${r.pad}px`);
+  await page.context().close();
+});
+
 await check('/#ask lands on Home with the chip reading "Chat ▾"', async () => {
   const page = await open(desk, '#ask');
   await page.waitForSelector('#home.active', T);

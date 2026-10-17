@@ -45,4 +45,18 @@ function repairText(value) {
   return current;
 }
 
-module.exports = { repairText };
+// Image-run summaries written before the count moved ("1 704 × 1024 image edited with …") read the count as a width.
+// One image: drop the count and set the rest off with a comma ("704 × 1024 image, edited with …"). Several: name
+// the count first ("3 images, 1024 × 680, edited with …"). Anything else is returned as it is.
+const OLD_IMAGE_SUMMARY = /^(\d+) (\d+ × \d+) image(s?)(?![A-Za-z])(.*)$/s;
+function repairImageSummary(value) {
+  if (typeof value !== 'string') return value;
+  const m = value.match(OLD_IMAGE_SUMMARY);
+  if (!m) return value;
+  const [, count, size, , tail] = m;
+  const rest = tail.replace(/^[\s,]+/, '');
+  const head = Number(count) > 1 ? `${count} images, ${size}` : `${size} image`;
+  return rest ? `${head}, ${rest}` : head;
+}
+
+module.exports = { repairText, repairImageSummary };

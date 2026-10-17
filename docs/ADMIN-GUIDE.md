@@ -36,6 +36,12 @@ It tests the PR merged with the latest `main` in a temporary checkout (syntax, u
 deploy-candidate checks, and every browser suite against a fresh server, about 15 minutes), then posts a ✅ or ❌
 **local-ci** check on the PR. Merge only on a green local-ci.
 
+- A red is hard to miss: the ❌ status names the failed steps, and a comment on the PR names the failing unit
+  tests (first ten) so you need not open the log. A red has been a real bug before; fix or explain it before merging.
+- A browser suite that fails is run once more on its own. If it passes, the check is green but reads
+  "All passed, 1 suite on retry: <suite>" and a comment names the suite, so a flake is on record rather than hidden.
+  Unit tests are never retried. A title over 70 characters or with more than one clause gets a "Release note" comment
+  (titles become release notes); it never turns the check red.
 - One run at a time per machine. A second run waits, and its PR shows "Queued behind PR #N".
 - Ctrl-C stops a run cleanly: the PR is marked "Stopped before it finished" and nothing is left running.
 - When GitHub billing works again: `gh workflow enable validate -R azmusgb/LocalAI` (and `storage`,

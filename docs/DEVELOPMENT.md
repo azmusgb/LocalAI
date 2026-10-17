@@ -134,6 +134,15 @@ a stopped run (Ctrl-C, SIGTERM) kills its test processes, marks the PR "Stopped 
 worktree and releases the lock. The log path is printed at the end. Re-enable Actions with
 `gh workflow enable <name> -R azmusgb/LocalAI`.
 
+A red run also leaves one PR comment naming the failed steps, the failing unit tests (first ten, parsed from the
+`✖` lines) and any browser suite that failed twice. A browser suite that fails is rerun once on its own
+(`tests/run-browser.mjs <suite>`, same server; at most three suites, more is not a flake); a suite green on retry
+keeps the run green but the status reads "All passed, 1 suite on retry: <suite>" and a comment names it. Unit tests
+are never retried. With a PR number, a title over 70 characters or containing ";" or " — " gets one advisory
+"Release note:" comment, never a failure. The decisions live in `scripts/local-ci-lib.mjs` (tested by
+`tests/local-ci.test.cjs`); `LOCALAI_CI_DRY=1` runs the script without the CI slot, the real steps or posting
+(`LOCALAI_CI_FAIL_UNIT`, `LOCALAI_CI_FAIL_SUITE` inject a failure; see the file header).
+
 CI runs on pull requests only (plus schedules and manual runs); nothing runs after a merge, because the
 auto-deploy certifies `main` itself before promoting it. A newer push to a PR cancels its older run.
 
