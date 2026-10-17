@@ -128,5 +128,31 @@ await check('notification links open their page', async () => {
   await context.close();
 });
 
+// One count everywhere: the bell, the Inbox pill, the Approvals tab and the Alerts row agree on what is waiting.
+await check('two approvals and no alerts: Alerts shows "2 approvals waiting", the tab reads "Approvals · 2", the bell says 2', async () => {
+  const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
+  await context.addInitScript(() => localStorage.setItem('localai.firstRun.done', '1'));
+  const page = await context.newPage({ serviceWorkers: 'block' });
+  const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+  await page.route('**/api/notifications', (route) => route.fulfill({ json: { items: [], unread: 0 } }));
+  await page.route('**/api/approvals', (route) => route.fulfill({ json: { items: [{ id: 'a1', status: 'pending', title: 'Run npm install', detail: 'Host command', risk: 'host' }, { id: 'a2', status: 'pending', title: 'Apply change', detail: 'Writes a file', risk: 'medium' }] } }));
+  await page.goto(base + '/#inbox', { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => typeof window.showView === 'function');
+  await page.evaluate(() => window.showView('inbox'));
+  const row = page.locator('#inboxList [data-goto="approvals"]');
+  await row.waitFor();
+  assert.match(await row.innerText(), /2 approvals waiting/);
+  assert.match(await row.innerText(), /Approvals/);
+  assert.doesNotMatch(await page.locator('#inboxList').innerText(), /Nothing needs you/);
+  assert.equal(await page.locator('#inboxUnread').innerText(), '2 waiting');
+  assert.equal(await page.locator('#inbox .ux-tabs [data-ux-tab="approvals"]').innerText(), 'Approvals · 2');
+  assert.equal(await page.locator('#uxInboxCount').innerText(), '2');
+  await row.click();
+  await page.waitForSelector('#approvals.active');
+  assert.equal(await page.locator('#approvalCount').innerText(), '2 waiting');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 await browser.close();
 if (failed) { console.log(`${failed} notifications check(s) failed`); process.exit(1) }
