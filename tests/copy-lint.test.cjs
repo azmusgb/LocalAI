@@ -22,7 +22,7 @@ const DEV = new Set([...VIEWS.filter(v => v.domain === 'improve').map(v => v.id)
 
 const CEILING = {
   'index.html': 4,
-  'app.js': 4,
+  'app.js': 3,
   'ui.js': 10,
   'home.js': 0,
   'work.js': 0,

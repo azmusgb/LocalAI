@@ -55,6 +55,32 @@ await check('desktop: rows span the page, one under another; image cards sit sid
   await desk.close();
 });
 
+await check('phone: pages by 24, chips in one scrolling row, the count in the search box (F3)', async () => {
+  const many = Array.from({ length: 60 }, (_, i) => ({ id: 'm' + i, kind: i % 3 ? 'chat' : 'research', title: 'Kept thing ' + i, summary: '', createdAt: at }));
+  const p = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await p.route('**/api/library', r => r.fulfill({ json: { items: many } }));
+  await p.goto(base + '/#library', { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('#library.active #libraryGrid .artifact');
+  const shown = () => p.locator('#libraryGrid .artifact:not(.mobile-clipped)').count();
+  await p.waitForFunction(() => document.querySelector('#libraryGrid > .mobile-more'));
+  assert.equal(await shown(), 24);
+  assert.equal(await p.locator('#libraryGrid > .mobile-more').innerText(), 'Show 24 more');
+  await p.locator('#libraryGrid > .mobile-more').click();
+  assert.equal(await shown(), 48);
+  assert.equal(await p.locator('#libraryGrid > .mobile-more').innerText(), 'Show 12 more');
+  assert.equal(await p.evaluate(() => document.activeElement?.classList.contains('mobile-more')), true, 'focus stays on Show more');
+  await p.locator('#libraryGrid > .mobile-more').click();
+  assert.equal(await shown(), 60);
+  assert.equal(await p.locator('#libraryGrid > .mobile-more').count(), 0);
+  assert.equal(await p.locator('#librarySearch').getAttribute('placeholder'), 'Search 60 things you kept…');
+  const tops = await p.locator('#library .library-chips .filter').evaluateAll(b => [...new Set(b.map(e => Math.round(e.getBoundingClientRect().top)))]);
+  assert.equal(tops.length, 1, 'the chips sit in one row');
+  assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'no sideways page scroll');
+  await p.locator('#library [data-kind="research"]').click();
+  assert.equal(await shown(), 20, 'a new filter starts from the first page (20 research items, too few to clip)');
+  await p.close();
+});
+
 await check('no script errors', async () => assert.deepEqual(errors, []));
 await browser.close();
 if (failures.length) { console.error('\nLibrary failures:\n' + failures.map(x => ' - ' + x).join('\n')); process.exit(1); }

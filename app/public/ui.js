@@ -3363,7 +3363,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // re-applies the limit; "Show more" is remembered per list until the page reloads.
 (() => {
   'use strict';
-  const LIMITS = { inboxList: 10, activityList: 15, runList: 10, libraryGrid: 12, knowledgeList: 10, automationList: 10 };
+  const LIMITS = { inboxList: 10, activityList: 15, runList: 10, libraryGrid: 24, knowledgeList: 10, automationList: 10 };
+  // Paged lists show one more page per tap instead of everything at once (Library: 24 at a time on a phone, F3).
+  const PAGED = new Set(['libraryGrid']);
   const phone = window.matchMedia('(max-width: 760px)');
   const observers = new Map();
 
@@ -3372,7 +3374,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     observer?.disconnect();
     list.querySelector(':scope > .mobile-more')?.remove();
     const items = [...list.children];
-    const limit = LIMITS[list.id] * (phone.matches ? 1 : 3);
+    const page = LIMITS[list.id] * (phone.matches ? 1 : 3), paged = PAGED.has(list.id);
+    const limit = paged ? page * Math.max(1, Number(list.dataset.pages) || 1) : page;
     // Clipping only one or two items saves nothing; show them.
     const clip = list.dataset.showAll !== 'true' && items.length > limit + 2;
     items.forEach((item, i) => item.classList.toggle('mobile-clipped', clip && i >= limit));
@@ -3380,8 +3383,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const more = document.createElement('button');
       more.type = 'button';
       more.className = 'btn mobile-more';
-      more.textContent = `Show ${items.length - limit} more`;
-      more.addEventListener('click', () => { list.dataset.showAll = 'true'; apply(list); });
+      more.textContent = `Show ${paged ? Math.min(page, items.length - limit) : items.length - limit} more`;
+      more.addEventListener('click', () => { if (paged) list.dataset.pages = String(limit / page + 1); else list.dataset.showAll = 'true'; apply(list); list.querySelector(':scope > .mobile-more')?.focus(); });
       list.appendChild(more);
     }
     observer?.observe(list, { childList: true });

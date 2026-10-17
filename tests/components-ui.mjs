@@ -107,13 +107,13 @@ await check('axe waits for a running fade to finish, and ignores endless animati
 });
 await page.close();
 
-for (const [api, sel, , hint] of [['/api/library', '#libraryGrid', 'library', 'your library'], ['/api/activity', '#activityList', 'activity', 'activity']]) {
+for (const [api, sel, , hint] of [['/api/library', '#libraryGrid', 'library', 'what you kept'], ['/api/activity', '#activityList', 'activity', 'activity']]) {
   await check(`${api} failing shows an error in ${sel}, not an empty list`, async () => {
     const p = await newPage(pg => pg.route('**' + api, r => r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"disk on fire"}' })));
     await p.waitForSelector(`${sel} .state-error`, { state: 'attached' });
     const t = await p.locator(sel).innerText();
     assert.match(t, new RegExp(`Couldn't load ${hint}\\.`));
-    assert.doesNotMatch(t, /Nothing saved yet|No activity yet/);
+    assert.doesNotMatch(t, /Your chats, research and images appear here|What happens on Local AI is listed here/);
     await p.close();
   });
 }
@@ -125,7 +125,7 @@ await check('library Retry recovers once the API works', async () => {
   fail = false;
   await p.locator('#libraryGrid .state-error button').evaluate(b => b.click());
   // Wait for the re-rendered list, not just for the error to go: on a slow runner the grid is briefly empty.
-  await p.waitForFunction(() => /Nothing saved yet/.test(document.querySelector('#libraryGrid')?.innerText || ''), null, { timeout: 10000 });
+  await p.waitForFunction(() => /Your chats, research and images appear here/.test(document.querySelector('#libraryGrid')?.innerText || ''), null, { timeout: 10000 });
   assert.equal(await p.locator('#libraryGrid .state-error').count(), 0);
   await p.close();
 });
