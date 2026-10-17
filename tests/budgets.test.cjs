@@ -12,7 +12,7 @@ const zlib = require('node:zlib');
 
 const pub = path.join(__dirname, '..', 'app', 'public');
 const KB = 1024;
-const TOTAL = 218 * KB;
+const TOTAL = 220 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 const PER_FILE = { 'ui.js': 92 * KB, 'app.css': 39 * KB, 'app.js': 35 * KB, 'index.html': 13 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 

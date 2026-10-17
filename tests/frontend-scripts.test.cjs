@@ -7,8 +7,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const pub = path.join(__dirname, '..', 'app', 'public');
-// Not page modules: the service worker itself, and GridCraft's script, which its own page (gridcraft.html) loads.
-const NOT_PAGE_SCRIPTS = new Set(['sw.js', 'gridcraft.js']);
+// Not a page module: the service worker itself.
+const NOT_PAGE_SCRIPTS = new Set(['sw.js']);
 const modules = fs.readdirSync(pub).filter(f => f.endsWith('.js') && !NOT_PAGE_SCRIPTS.has(f));
 
 test('index.html loads every front-end module', () => {

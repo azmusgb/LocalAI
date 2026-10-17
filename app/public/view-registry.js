@@ -37,6 +37,8 @@ const VIEWS=[
  {id:'inProgress',svg:'build',domain:'improve',section:'Pipeline',icon:'▶',label:'In progress',description:'Changes being planned, tested or waiting for your OK.',aka:['running changes','change requests','changes','engineer']},
  {id:'shipped',svg:'check',domain:'improve',section:'Pipeline',icon:'✓',label:'Shipped',description:'What changed, release by release.',aka:['done','released']},
  {id:'signals',svg:'alert',domain:'improve',section:'Pipeline',icon:'!',label:'Signals',description:'Problems Local AI noticed; serious ones join the Backlog.',aka:['detections','issues','quality signals']},
+ // GridCraft on the Windows computer, through the appliance (spreadsheets.js). The old /gridcraft.html page sends you here.
+ {id:'spreadsheets',svg:'library',domain:'system',section:'Tools',icon:'▦',label:'Spreadsheets',description:'Ask for a spreadsheet on the Windows computer to be checked or changed.',aka:['gridcraft','excel','workbook']},
  {id:'claude',svg:'sparkle',domain:'system',section:'Tools',dev:true,icon:'✳',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
  {id:'workbench',svg:'folder',domain:'system',section:'Tools',dev:true,icon:'W',label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
  {id:'repoTools',svg:'branch',domain:'system',section:'Tools',dev:true,icon:'R',label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},
