@@ -1,4 +1,4 @@
-import { chromium } from 'playwright';
+import { chromium, devices } from 'playwright';
 import assert from 'node:assert/strict';
 
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
@@ -238,6 +238,153 @@ await check('shell: Health puts Check again in the header in place of Search', a
   assert.equal(await shell.locator('#uxCommandBtn').isVisible(), true, 'Search is back on pages without an action');
 });
 await shell.close();
+
+// ---- Phone polish (critique §3.7): pull to refresh, the mode sheet, ⌘K as a bottom sheet ----
+async function phone(device, { dev = false } = {}) {
+  const context = await browser.newContext({ ...devices[device], serviceWorkers: 'block' });
+  const p = await context.newPage();
+  p.on('pageerror', e => pageErrors.push(`${device}: ${e.message}`));
+  if (dev) await p.addInitScript(() => { try { localStorage.setItem('localai.devTools', '1'); } catch {} });
+  await p.goto(base, { waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('#uxMobileNav');
+  await p.waitForFunction(() => typeof window.showView === 'function' && window.LocalAIShell && window.LocalAICommand);
+  return { p, context };
+}
+// A finger pulls down from y=200 by `dy` px (touchstart, a few touchmoves, touchend) on the open page (not a text field).
+const pull = (p, dy) => p.evaluate(async dy => {
+  const x = 180, y0 = 200, target = document.querySelector('.view.active') || document.body;
+  const touch = y => new Touch({ identifier: 7, target, clientX: x, clientY: y, pageX: x, pageY: y + scrollY });
+  const fire = (type, y) => { const t = touch(y); target.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, composed: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] })); };
+  fire('touchstart', y0);
+  for (let i = 1; i <= 5; i++) { fire('touchmove', y0 + dy * i / 5); await new Promise(r => setTimeout(r, 16)); }
+  fire('touchend', y0 + dy);
+}, dy);
+
+await check('pull to refresh: Work, Inbox, Library and Backlog refresh once on a pull past 64px, and say so', async () => {
+  const { p, context } = await phone('iPhone 14', { dev: true });
+  try {
+    assert.equal(await p.evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorY), 'contain', 'iOS should not rubber-band the shell');
+    for (const [view, api] of [['work', '/api/runs'], ['inbox', '/api/notifications'], ['library', '/api/library'], ['backlog', '/api/improve/items']]) {
+      await p.evaluate(v => { window.LocalAIRouter.open(v); }, view);
+      await p.waitForFunction(v => document.getElementById(v)?.classList.contains('active'), view);
+      await p.waitForTimeout(700); // the page's own first load settles
+      await p.evaluate(() => window.scrollTo(0, 0));
+      let hits = 0;
+      const count = r => { if (new URL(r.url()).pathname === api) hits++; };
+      p.on('request', count);
+      await pull(p, 30);
+      await p.waitForTimeout(400);
+      assert.equal(hits, 0, `${view}: a 30px pull is not a refresh`);
+      await pull(p, 110);
+      await p.waitForFunction(() => /Updating|Updated just now/.test(document.getElementById('pullRefresh')?.textContent || ''), null, { timeout: 2000 });
+      await p.waitForFunction(() => /Updated just now/.test(document.getElementById('pullRefresh')?.textContent || ''), null, { timeout: 4000 });
+      await p.waitForTimeout(300);
+      p.off('request', count);
+      assert.equal(hits, 1, `${view}: one pull asks ${api} once (saw ${hits})`);
+      assert.equal(await p.locator('#pullRefresh').getAttribute('role'), 'status');
+    }
+    // Health has its own Check again: a pull there is just a scroll.
+    await p.evaluate(() => { window.LocalAIRouter.open('status'); });
+    await p.waitForTimeout(600);
+    let health = 0;
+    const onReq = r => { if (new URL(r.url()).pathname === '/api/status') health++; };
+    p.on('request', onReq);
+    await pull(p, 110);
+    await p.waitForTimeout(500);
+    p.off('request', onReq);
+    assert.equal(health, 0, 'Health has no pull to refresh');
+  } finally { await context.close(); }
+});
+
+await check('Home mode sheet: one bottom-anchored column of 56px rows, the current mode nearest the thumb; Back closes it', async () => {
+  for (const device of ['iPhone SE', 'iPhone 14']) {
+    const { p, context } = await phone(device);
+    try {
+      await p.evaluate(() => window.LocalAIHome.setMode('auto'));
+      await p.click('#homeModeChip');
+      await p.waitForSelector('#homeModeSheet[open]');
+      await p.waitForTimeout(250);
+      const r = await p.evaluate(() => {
+        const rows = [...document.querySelectorAll('#homeModeSheet [role="radio"]')].map(b => { const x = b.getBoundingClientRect(); return { id: b.dataset.homeMode, checked: b.getAttribute('aria-checked') === 'true', left: Math.round(x.left), width: Math.round(x.width), h: x.height }; });
+        return { rows, sheet: document.getElementById('homeModeSheet').getBoundingClientRect().bottom, vh: innerHeight };
+      });
+      assert.ok(r.rows.length >= 6, `${device}: ${r.rows.length} modes`);
+      assert.equal(new Set(r.rows.map(x => x.left)).size, 1, `${device}: one column (lefts ${r.rows.map(x => x.left)})`);
+      assert.equal(new Set(r.rows.map(x => x.width)).size, 1, `${device}: rows share one width`);
+      assert.ok(r.rows.every(x => x.h >= 56), `${device}: rows at least 56px (${r.rows.map(x => Math.round(x.h))})`);
+      assert.ok(Math.abs(r.sheet - r.vh) <= 1, `${device}: the sheet sits on the bottom edge (${r.sheet} vs ${r.vh})`);
+      const last = r.rows[r.rows.length - 1];
+      assert.equal(last.id, 'auto', `${device}: the current mode is the lowest row`);
+      assert.ok(last.checked);
+      assert.deepEqual(r.rows.slice(-2).map(x => x.id), ['ask', 'auto'], `${device}: Chat sits just above the current mode`);
+      // Choosing a mode that has options keeps the sheet open and the rows where they are (a thumb, or arrow keys, don't chase them).
+      const before = r.rows.map(x => x.id);
+      const pick = await p.evaluate(() => ['ask', 'create', 'mission', 'research'].find(m => !document.querySelector(`#homeModeSheet [data-home-mode="${m}"]`)?.disabled));
+      if (pick) {
+        await p.click(`#homeModeSheet [data-home-mode="${pick}"]`);
+        await p.waitForTimeout(150);
+        assert.deepEqual(await p.evaluate(() => [...document.querySelectorAll('#homeModeSheet [role="radio"]')].map(b => b.dataset.homeMode)), before);
+      }
+      await p.goBack();
+      await p.waitForFunction(() => !document.getElementById('homeModeSheet').open, null, { timeout: 2000 });
+      assert.equal(await p.evaluate(() => window.LocalAIHome.mode()), pick || 'auto');
+      // Opened again, the rows start from the new current mode.
+      await p.click('#homeModeChip');
+      await p.waitForSelector('#homeModeSheet[open]');
+      assert.equal(await p.evaluate(() => [...document.querySelectorAll('#homeModeSheet [role="radio"]')].pop().dataset.homeMode), pick || 'auto');
+    } finally { await context.close(); }
+  }
+});
+
+await check('⌘K on a phone: a bottom sheet with the search at its top and the 8 likeliest pages, grouped; typing finds the rest', async () => {
+  const { p, context } = await phone('iPhone 14');
+  try {
+    for (const v of ['inbox', 'models', 'library']) { await p.evaluate(v => window.LocalAIRouter.open(v), v); await p.waitForTimeout(200); }
+    await p.evaluate(() => window.LocalAIRouter.open('status'));
+    await p.waitForTimeout(200);
+    await p.evaluate(() => window.LocalAICommand.open());
+    await p.waitForSelector('#cmdk[open]');
+    await p.waitForTimeout(250);
+    const r = await p.evaluate(() => {
+      const card = document.querySelector('.cmdk-card').getBoundingClientRect(), input = document.getElementById('cmdkInput').getBoundingClientRect();
+      const opts = [...document.querySelectorAll('#cmdkList [role="option"]')];
+      const groups = [...document.querySelectorAll('#cmdkList [role="group"]')].map(g => ({ label: document.getElementById(g.getAttribute('aria-labelledby'))?.textContent || g.getAttribute('aria-label'), items: [...g.querySelectorAll('[role="option"]')].map(o => o.dataset.cmdView) }));
+      return { cardBottom: card.bottom, cardLeft: card.left, cardWidth: card.width, inputTop: input.top - card.top, vh: innerHeight, vw: innerWidth, ids: opts.map(o => o.dataset.cmdView), groups, focus: document.activeElement?.id };
+    });
+    assert.ok(Math.abs(r.cardBottom - r.vh) <= 1, `sheet bottom ${r.cardBottom} vs ${r.vh}`);
+    assert.ok(r.cardLeft <= 1 && r.cardWidth >= r.vw - 2, 'full width');
+    assert.ok(r.inputTop < 40, `the search is at the top of the sheet (${r.inputTop}px down)`);
+    assert.equal(r.focus, 'cmdkInput');
+    assert.equal(r.ids.length, 8, `8 pages (${r.ids})`);
+    assert.equal(new Set(r.ids).size, 8, 'no page twice');
+    assert.ok(!r.ids.includes('status'), 'not the page you are on');
+    assert.equal(r.groups[0].label, 'Recent');
+    assert.deepEqual(r.groups[0].items.slice(0, 3), ['library', 'models', 'inbox'], 'most recent first');
+    assert.ok(r.groups.length >= 2 && r.groups.every(g => g.label && g.items.length), JSON.stringify(r.groups));
+    assert.ok(r.groups.some(g => g.label === 'System' && g.items.includes('integrations')), 'then the pages of the section you are in');
+    await p.fill('#cmdkInput', 'audit');
+    await p.waitForTimeout(100);
+    assert.deepEqual(await p.evaluate(() => [...document.querySelectorAll('#cmdkList [role="option"]')].map(o => o.dataset.cmdView)), ['activity'], 'typing reaches every page');
+    await p.fill('#cmdkInput', '');
+    await p.keyboard.press('ArrowDown');
+    await p.keyboard.press('Enter');
+    await p.waitForFunction(() => !document.getElementById('cmdk').open);
+    await p.waitForFunction(() => document.querySelector('.view.active')?.id !== 'status', null, { timeout: 2000 }).catch(() => {});
+    assert.equal(await p.evaluate(() => document.querySelector('.view.active').id), 'models', 'arrows walk the suggestions in order');
+  } finally { await context.close(); }
+  // Desktop keeps the full list, ungrouped, in the centred palette.
+  const desk = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1440, height: 900 } });
+  try {
+    await desk.goto(base, { waitUntil: 'domcontentloaded' });
+    await desk.waitForFunction(() => window.LocalAICommand);
+    await desk.evaluate(() => window.LocalAICommand.open());
+    await desk.waitForSelector('#cmdk[open]');
+    const d = await desk.evaluate(() => ({ n: document.querySelectorAll('#cmdkList [role="option"]').length, groups: document.querySelectorAll('#cmdkList [role="group"]').length, top: document.querySelector('.cmdk-card').getBoundingClientRect().top }));
+    assert.ok(d.n > 8, `desktop lists every page (${d.n})`);
+    assert.equal(d.groups, 0);
+    assert.ok(d.top < 200, 'desktop palette sits near the top');
+  } finally { await desk.close(); }
+});
 
 await check('no script errors on phone', async () => {
   assert.deepEqual(pageErrors, []);

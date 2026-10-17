@@ -1908,6 +1908,27 @@ body.dev-tools-off [data-dev-only]{display:none!important}
 .whatsnew-dismiss:hover{color:var(--ds-text)}
 .improve-page-error,.improve-row__error{margin:8px 0;padding:10px 12px;border:1px solid color-mix(in srgb,var(--ds-bad) 40%,var(--ds-line));border-radius:var(--ds-r-md);background:color-mix(in srgb,var(--ds-bad) 8%,var(--ds-surface))}
 .improve-page-error[hidden]{display:none}
+/* Phone polish: interaction (appended; nothing above edited). Pull to refresh on list pages (components.js
+   pullToRefresh), Home's mode sheet as one column on the bottom edge, and ⌘K as a bottom sheet on phones. */
+@media(pointer:coarse){html,body{overscroll-behavior-y:contain}}
+.pull-refresh{position:fixed;top:calc(var(--pull-top,0px) + 8px);left:50%;z-index:180;transform:translate(-50%,calc(var(--pull,0px) / 3));padding:8px 14px;border:1px solid var(--ds-line-2);border-radius:999px;background:var(--ds-surface);color:var(--ds-soft);font-size:14px;line-height:1.2;box-shadow:0 6px 20px rgba(0,0,0,.35);pointer-events:none;white-space:nowrap}
+.pull-refresh.is-ready{color:var(--ds-text);border-color:var(--ds-accent)}
+.pull-refresh[hidden]{display:none}
+.home-modes{grid-template-columns:1fr}
+@media(max-width:760px){
+  .home-sheet{width:100%;max-width:100%;max-height:calc(100dvh - env(safe-area-inset-top) - 12px);margin:auto 0 0;border-radius:var(--ds-r-xl) var(--ds-r-xl) 0 0;border-bottom:0;padding-bottom:env(safe-area-inset-bottom)}
+  .home-sheet .ask-sheet__form{gap:12px;padding:18px 16px 16px}
+  .home-modes{gap:6px}
+  .home-mode{min-height:56px;padding:8px 14px}
+  .cmdk{place-items:end stretch;padding:0}
+  .cmdk-card{box-sizing:border-box;display:flex;flex-direction:column;width:100%;max-height:min(80dvh,calc(var(--cmdk-vh,100dvh) - 24px));margin-bottom:var(--cmdk-kb,0px);padding:12px 12px calc(12px + env(safe-area-inset-bottom));border-radius:var(--ds-r-xl) var(--ds-r-xl) 0 0;border-bottom:0}
+  .cmdk-card input{flex:none}
+  .cmdk-list{min-height:0;overflow:auto;overscroll-behavior:contain}
+}
+.cmdk-group{display:grid;gap:4px}
+.cmdk-group+.cmdk-group{margin-top:6px}
+.cmdk-group__label{padding:6px 10px 2px;color:var(--ds-muted);font-size:13px;font-weight:600}
+
 /* Text reachable by touch (appended; nothing above edited). */
 /* Inbox: an alert body stops at four lines on every screen; Show more (aria-expanded, app.js inboxMore) opens the rest. */
 #inboxList .item-card>.muted{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
