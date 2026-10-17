@@ -137,7 +137,7 @@ await check('top bar shows one Inbox count and opens the Inbox', async () => {
   }
 });
 
-await check('GridCraft is reachable from Integrations', async () => {
+await check('GridCraft is reachable from Services', async () => {
   await page.evaluate(() => window.showView('integrations'));
   await page.waitForSelector('#integrations[data-integration-v2="true"]');
   const link = page.locator('#integrations a[href="/gridcraft.html"]');
@@ -312,7 +312,7 @@ await mobile.close();
 
 // Developer tools off (a new install): System's menu, the page strip and the phone sheet hold the owner's pages only.
 // The developer pages still open by address, and the switch brings them back.
-const OWNER_SYSTEM = ['Health', 'Models', 'Integrations', 'Automations', 'Audit log']; // Monitors folded into Automations (D9)
+const OWNER_SYSTEM = ['Health', 'Models', 'Services', 'Automations', 'Audit log']; // Monitors folded into Automations (D9)
 const DEV_SYSTEM = ['Claude Code', 'Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows'];
 await check('developer tools off: System lists the owner pages only; a developer page still opens by address', async () => {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });

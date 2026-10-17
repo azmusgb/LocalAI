@@ -39,9 +39,9 @@ function setPhase(phase,detail=''){
 function renderAgentMap(phase = 'idle') {
   const steps = [
     ['route', 'Route', 'Interpret command'],
-    ['work', 'Work', 'Use the selected capability'],
+    ['work', 'Work', 'Do the work'],
     ['compose', 'Compose', 'Build the result'],
-    ['complete', 'Finish', 'Save activity and artifacts']
+    ['complete', 'Finish', 'Save the result']
   ];
   
   const rank = { idle: -1, routing: 0, sending: 1, searching: 1, generating: 1, streaming: 2, done: 3, error: 1 };
@@ -91,7 +91,7 @@ function showView(id){
   if(state.view==='ask' && id!=='ask' && state.chatPhase==='streaming') abortStream('Stream stopped when leaving Ask');
   const first=!state.viewShown,from=document.activeElement;state.viewShown=true;
   state.view=id;qsa('.view').forEach(x=>x.classList.toggle('active',x.id===id));
-  document.title=id==='home'?'Local AI':`${window.LocalAIViews?.label(id)||id} · Local AI`;
+  document.title=window.LocalAIViews?.title(id)||'Local AI';
   announcePage(id,first,from);qsa('.navbtn').forEach(x=>x.classList.toggle('active',x.dataset.view===id));
   if(id==='library')loadLibrary(); if(id==='activity')loadActivity(); if(id==='create')loadCheckpoints();
   window.scrollTo({top:0,behavior:'instant'});
@@ -118,7 +118,7 @@ qsa('[data-view]').forEach(el=>el.addEventListener('click',()=>goTo(el.dataset.v
 
 function renderMessages(follow=true){
   const box=$('messages');
-  if(!state.messages.length){box.innerHTML='<div class="empty">Start a private conversation. Requests to change Local AI become change requests that wait for your approval.</div>';return;}
+  if(!state.messages.length){box.innerHTML='<div class="empty">Start a private conversation. Asking to change Local AI starts a change that waits for your OK.</div>';return;}
   box.innerHTML=state.messages.map((m,i)=>{
     const action=m.action?.view?`<div class="actions" style="margin-top:9px"><button class="btn" data-msg-action="${i}">${esc(m.action.label||'Open')}</button></div>`:'';
     return `<div class="msg ${m.role} ${m.streaming?'streaming':''}" data-msg="${i}">${esc(m.content||'')}${action}</div>`;
@@ -411,7 +411,7 @@ function localRoute(text,mode='auto'){
 function legacyOpen(intent,text){
   if(intent==='create'){openCreate();$('imagePrompt').value=text;setPhase('idle');}
   else if(intent==='mission'){goTo('agents');if($('agentGoal'))$('agentGoal').value=text;}
-  else if(intent==='automate'){goTo('automationStudio');if($('autoPrompt'))$('autoPrompt').value=text;setPhase('done','Automation workspace');}
+  else if(intent==='automate'){goTo('automationStudio');if($('autoPrompt'))$('autoPrompt').value=text;setPhase('done','Automations');}
   else{openAsk(intent==='research');$('chatInput').value=text;setTimeout(sendChat,20);}
 }
 window.LocalAILegacy={resolveIntentRequest,engineeringRequest:engineeringRequestWithContext,open:legacyOpen};
@@ -528,7 +528,7 @@ function foldRestarts(items){const out=[];for(let i=0;i<items.length;){const x=i
   const v=r=>(/v(\d+\.\d+\.\d+)/.exec(r.detail||'')||[])[1];const newest=v(run[0]),oldest=v(run[run.length-1]);
   out.push({...run[0],id:run[0].id+'-folded',title:`Appliance updated ${run.length} times`,detail:newest&&oldest?`v${oldest} → v${newest}`:`${run.length} restarts`,meta:{}})}
  return out}
-function renderActivity(){const user=foldRestarts(state.activity);$('activityList').innerHTML=user.length?user.map(activityHtml).join(''):'<div class="empty">No activity yet.</div>';qsa('[data-open-run]').forEach(b=>b.onclick=async()=>{if(!await window.LocalAIRuns?.open(b.dataset.openRun))toast('That run is no longer in the execution history')});}
+function renderActivity(){const user=foldRestarts(state.activity);$('activityList').innerHTML=user.length?user.map(activityHtml).join(''):'<div class="empty">No activity yet.</div>';qsa('[data-open-run]').forEach(b=>b.onclick=async()=>{if(!await window.LocalAIRuns?.open(b.dataset.openRun))toast('That run is no longer in Work')});}
 async function loadActivity(){try{await LocalAIUI.loadInto($('activityList'),()=>LocalAIUI.fetchJson('/api/activity',{cache:'no-store'}),{what:'activity',empty:'No activity yet.',render:(c,j)=>{state.activity=j.items||[];renderActivity();return true}})}catch{/* the list shows the error and a Retry */}}
 $('clearUserActivityBtn').addEventListener('click',async()=>{if(!(await LocalAIUI.ask({title:'Clear your activity?',effect:'System and recovery audit events are kept.',confirmLabel:'Clear activity',tone:'danger'})).ok)return;await fetch('/api/activity/clear',{method:'POST'});await Promise.all([loadActivity(),loadWorkspace()]);toast('User activity cleared');});
 
@@ -557,9 +557,9 @@ function normalizedState(v){return ['HEALTHY','DEGRADED','DOWN','OPTIONAL_OFFLIN
 function serviceDisplayState(s){return s.displayState||(s.required===false&&s.state!=='HEALTHY'?'OPTIONAL_OFFLINE':normalizedState(s.state));}
 function serviceStateLabel(s){const v=serviceDisplayState(s);return v==='OPTIONAL_OFFLINE'?'Optional · Offline':v==='HEALTHY'?'Healthy':v==='DEGRADED'?'Degraded':'Down';}
 // What each service does for you; the row's badge already says whether it's up.
-const SERVICE_PURPOSE={ollama:'Answers your questions, using the models on this computer.',comfy:'Makes the pictures you ask for.',n8n:'Runs your automations.',proxy:'Lets other apps talk to Local AI as if it were a cloud AI.',search:'Searches the web for Research.',home:'The companion app on your Mac.',dsh:'Developer helper on your Mac.'};
+const SERVICE_PURPOSE={ollama:'Answers your questions, using the models on this computer.',comfy:'Makes the pictures you ask for.',n8n:'Runs your automations.',proxy:'Lets other apps talk to Local AI as if it were a cloud AI.',search:'Searches the web for Research.',home:'The Local AI app on your Mac.',dsh:'Developer helper on your Mac.'};
 // What to do when a service is down. Ollama and ComfyUI run on the Windows host itself; the rest are containers in the stack.
-const SERVICE_ACTION={ollama:'Start Ollama on the Windows host.',comfy:'Start ComfyUI on the Windows host.',n8n:'Start its container in Docker Desktop on the Windows host.',proxy:'Start its container in Docker Desktop on the Windows host.',search:'Start its container in Docker Desktop on the Windows host.',home:'Open the companion app on your Mac.',dsh:'Open the developer helper on your Mac.'};
+const SERVICE_ACTION={ollama:'Start Ollama on the Windows host.',comfy:'Start ComfyUI on the Windows host.',n8n:'Start its container in Docker Desktop on the Windows host.',proxy:'Start its container in Docker Desktop on the Windows host.',search:'Start its container in Docker Desktop on the Windows host.',home:'Open the Local AI app on your Mac.',dsh:'Open the developer helper on your Mac.'};
 function serviceDescription(s){
   const what=SERVICE_PURPOSE[s.name]||'',todo=SERVICE_ACTION[s.name]||'';
   if(s.state==='HEALTHY')return what||(s.required===false?'Optional service is reachable.':'Ready.');
@@ -621,7 +621,7 @@ function featureLevelFor(version){const [major,minor]=String(version||'1.2').spl
 function featureLevel(){return featureLevelFor(releaseState.config?.version)}
 function fillProjectSelects(){for(const id of ['knowledgeProject','agentProject']){const el=$(id);if(!el)continue;const old=el.value;el.innerHTML='<option value="">No project</option>'+releaseState.projects.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');if([...el.options].some(o=>o.value===old))el.value=old}}
 async function loadReleaseConfig(){try{releaseState.config=await api('/api/config');const brand=document.querySelector('.brand-sub');if(brand)brand.textContent=`Private AI on your machine · v${releaseState.config.version}`;document.querySelectorAll('[class*="feature-v"]').forEach(el=>{const m=[...el.classList].map(x=>/^feature-v1(\d+)$/.exec(x)).find(Boolean);if(m&&featureLevel()<Number(m[1]))el.classList.add('feature-hidden')});document.querySelectorAll('[data-min-version]').forEach(el=>{if(featureLevel()<Number(el.dataset.minVersion))el.classList.add('feature-hidden')})}catch(e){console.warn(e)}}
-async function loadProjects(){if(featureLevel()<3)return;return LocalAIUI.loadInto($('projectList')||document.createElement('div'),()=>api('/api/projects'),{what:'projects',empty:'',render:(c,j)=>{releaseState.projects=j.items||[];fillProjectSelects();$('projects')?.classList.toggle('projects-empty',!releaseState.projects.length);const list=$('projectList');if(list)list.innerHTML=releaseState.projects.length?releaseState.projects.map(p=>`<button class="item-card" data-project="${esc(p.id)}"><strong>${esc(p.name)}</strong><small>${p.counts.conversations} conversations · ${p.counts.knowledge} sources · ${p.counts.artifacts} artifacts</small></button>`).join(''):'<div class="empty">Create your first project.</div>';const m=$('projectMetrics');if(m){const totals=releaseState.projects.reduce((a,p)=>{a.c+=p.counts.conversations;a.k+=p.counts.knowledge;a.a+=p.counts.artifacts;return a},{c:0,k:0,a:0});m.innerHTML=`<div class="metric"><b>${releaseState.projects.length}</b><span>Projects</span></div><div class="metric"><b>${totals.c}</b><span>Conversations</span></div><div class="metric"><b>${totals.k}</b><span>Knowledge sources</span></div><div class="metric"><b>${totals.a}</b><span>Artifacts</span></div>`}qsa('[data-project]').forEach(b=>b.onclick=()=>showProject(b.dataset.project));return true}})}
+async function loadProjects(){if(featureLevel()<3)return;return LocalAIUI.loadInto($('projectList')||document.createElement('div'),()=>api('/api/projects'),{what:'projects',empty:'',render:(c,j)=>{releaseState.projects=j.items||[];fillProjectSelects();$('projects')?.classList.toggle('projects-empty',!releaseState.projects.length);const list=$('projectList');if(list)list.innerHTML=releaseState.projects.length?releaseState.projects.map(p=>`<button class="item-card" data-project="${esc(p.id)}"><strong>${esc(p.name)}</strong><small>${p.counts.conversations} conversations · ${p.counts.knowledge} sources · ${p.counts.artifacts} kept</small></button>`).join(''):'<div class="empty">Create your first project.</div>';const m=$('projectMetrics');if(m){const totals=releaseState.projects.reduce((a,p)=>{a.c+=p.counts.conversations;a.k+=p.counts.knowledge;a.a+=p.counts.artifacts;return a},{c:0,k:0,a:0});m.innerHTML=`<div class="metric"><b>${releaseState.projects.length}</b><span>Projects</span></div><div class="metric"><b>${totals.c}</b><span>Conversations</span></div><div class="metric"><b>${totals.k}</b><span>Sources</span></div><div class="metric"><b>${totals.a}</b><span>Kept</span></div>`}qsa('[data-project]').forEach(b=>b.onclick=()=>showProject(b.dataset.project));return true}})}
 async function showProject(id){releaseState.selectedProject=id;const p=releaseState.projects.find(x=>x.id===id);if(!p)return;const [c,k]=await Promise.all([api('/api/conversations?projectId='+encodeURIComponent(id)),api('/api/knowledge?projectId='+encodeURIComponent(id))]);$('projectDetail').innerHTML=`<div class="section-head"><div><h2>${esc(p.name)}</h2><p>${esc(p.description||'Project workspace')}</p></div><span class="badge">${p.pinned?'Pinned':'Workspace'}</span></div><div class="two"><div><h3>Conversations</h3><div class="stack" style="margin-top:8px">${(c.items||[]).slice(0,8).map(x=>`<div class="item-card"><strong>${esc(x.title)}</strong><small>${ago(x.updatedAt)}</small></div>`).join('')||'<div class="empty">No conversations.</div>'}</div></div><div><h3>Knowledge</h3><div class="stack" style="margin-top:8px">${(k.items||[]).slice(0,8).map(x=>`<div class="item-card"><strong>${esc(x.name)}</strong><small>${Math.round((x.size||0)/1024)} KB</small></div>`).join('')||'<div class="empty">No sources.</div>'}</div></div></div>`}
 async function newProject(){const q=await LocalAIUI.ask({title:'New project',confirmLabel:'Create',input:{label:'Project name',type:'text'}});if(!q.ok||!q.value)return;const name=q.value;await post('/api/projects/create',{name});await loadProjects();toast('Project created')}
 async function loadKnowledge(){if(featureLevel()<3)return;return LocalAIUI.loadInto($('knowledgeList')||document.createElement('div'),()=>api('/api/knowledge'),{what:'knowledge',empty:'',render:(c,j)=>{releaseState.knowledge=j.items||[];const el=$('knowledgeList');if(el)el.innerHTML=releaseState.knowledge.length?releaseState.knowledge.map(x=>`<div class="item-card"><strong>${esc(x.name)}</strong><small>${esc(releaseState.projects.find(p=>p.id===x.projectId)?.name||'Unassigned')} · ${Math.round((x.size||0)/1024)} KB</small></div>`).join(''):'<div class="empty">Nothing indexed yet. Add a source above, and Chat can answer from it.</div>';return true}})}

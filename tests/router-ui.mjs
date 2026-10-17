@@ -142,7 +142,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
   });
 
   if (viewport.width >= 760) {
-    await check(`${tag}: secondary links, Models and Integrations push history and set the hash`, async () => {
+    await check(`${tag}: secondary links, Models and Services push history and set the hash`, async () => {
       const page = await open(viewport, '#status');
       await page.waitForSelector('#status.active', T);
       for (const view of ['activity', 'models', 'integrations', 'status']) {

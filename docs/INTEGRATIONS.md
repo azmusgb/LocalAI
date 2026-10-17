@@ -39,7 +39,7 @@ MCP guide: <https://help.penpot.app/mcp/>
 
 ## Implementation order
 
-1. **Shipped:** Live n8n and ComfyUI health on **System › Integrations**; ComfyUI image engines on **Images** ([ComfyUI](../host/comfyui/README.md)).
+1. **Shipped:** Live n8n and ComfyUI health on **System › Services**; ComfyUI image engines on **Images** ([ComfyUI](../host/comfyui/README.md)).
 2. **Next:** ComfyUI runtime capability discovery for video/avatar nodes and models.
 3. **Next:** Read-only Obsidian vault mounting/ingestion into Project Knowledge with source provenance.
 4. **Opt-in:** Server-side Penpot MCP connector for self-hosted design workspaces.
