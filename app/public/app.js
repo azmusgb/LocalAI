@@ -552,11 +552,13 @@ function serviceDisplayState(s){return s.displayState||(s.required===false&&s.st
 function serviceStateLabel(s){const v=serviceDisplayState(s);return v==='OPTIONAL_OFFLINE'?'Optional · Offline':v==='HEALTHY'?'Healthy':v==='DEGRADED'?'Degraded':'Down';}
 // What each service does for you; the row's badge already says whether it's up.
 const SERVICE_PURPOSE={ollama:'Answers your questions, using the models on this computer.',comfy:'Makes the pictures you ask for.',n8n:'Runs your automations.',proxy:'Lets other apps talk to Local AI as if it were a cloud AI.',search:'Searches the web for Research.',home:'The companion app on your Mac.',dsh:'Developer helper on your Mac.'};
+// What to do when a service is down. Ollama and ComfyUI run on the Windows host itself; the rest are containers in the stack.
+const SERVICE_ACTION={ollama:'Start Ollama on the Windows host.',comfy:'Start ComfyUI on the Windows host.',n8n:'Start its container in Docker Desktop on the Windows host.',proxy:'Start its container in Docker Desktop on the Windows host.',search:'Start its container in Docker Desktop on the Windows host.',home:'Open the companion app on your Mac.',dsh:'Open the developer helper on your Mac.'};
 function serviceDescription(s){
-  const what=SERVICE_PURPOSE[s.name]||'';
-  if(s.state==='HEALTHY')return what||(s.required===false?'Optional companion is reachable.':'Ready.');
+  const what=SERVICE_PURPOSE[s.name]||'',todo=SERVICE_ACTION[s.name]||'';
+  if(s.state==='HEALTHY')return what||(s.required===false?'Optional service is reachable.':'Ready.');
   if(s.required===false)return `${what} Optional: Local AI works without it.`.trim();
-  return `${what} ${s.state==='DEGRADED'?'Answering slowly or with errors.':'Not answering right now.'}`.trim();
+  return `${what} ${s.state==='DEGRADED'?'Answering slowly or with errors.':'Not answering right now.'} ${todo}`.trim();
 }
 // Response time is shown only when it's slow enough to notice.
 const slowNote=ms=>Number.isFinite(ms)&&ms>=2000?`Slow · ${(ms/1000).toFixed(1)} s`:'';

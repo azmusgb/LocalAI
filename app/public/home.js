@@ -111,7 +111,9 @@ const secureRow=()=>infoRow('Use the secure address on this device','Voice, noti
 const signalsRow=n=>infoRow(`${n} new signal${n===1?'':'s'} in your backlog`,'Problems Local AI noticed. Start, defer or reject them.','Review','attention',()=>root.LocalAIRouter.open('backlog'));
 function paintNeeds(){
  const box=$('homeNeedsList'),sec=$('homeNeedsYou');if(!box||!sec)return;
- const rows=[...needs.map(recentRow),...approvals.map(x=>approvalRow(x.a,x.run)),...(newSignals?[signalsRow(newSignals)]:[]),...attention.map(attentionRow),...(secureNudge()?[secureRow()]:[])];
+ // While Get started is on the page its step 1 already covers stopped services; the same news is not repeated as "Fix" rows.
+ const serviceRows=document.getElementById('firstRun')?[]:attention.map(attentionRow);
+ const rows=[...needs.map(recentRow),...approvals.map(x=>approvalRow(x.a,x.run)),...(newSignals?[signalsRow(newSignals)]:[]),...serviceRows,...(secureNudge()?[secureRow()]:[])];
  box.replaceChildren(...rows);
  $('homeNeedsCount').textContent=rows.length?'· '+rows.length:'';
  sec.hidden=!rows.length;
@@ -254,6 +256,7 @@ function init(){
  // Home is on screen before the router has read the hash; a link to another page should not make Home load.
  if(active()&&onHomeHash())setTimeout(activate,0);
 }
+addEventListener('localai:first-run',paintNeeds); // Get started appeared or was dismissed: decide again who shows the service rows
 root.LocalAIHome={send,activate,refresh,mode:()=>cur(),setMode,
  // ui.js hands over the critical items of the capability check (a stopped service, an unreachable registry).
  setAttention(items){attention=(items||[]).filter(a=>a&&a.severity==='critical');paintNeeds()}};

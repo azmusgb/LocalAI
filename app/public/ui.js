@@ -338,18 +338,19 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     const createReady = healthy(snapshot, 'comfy') && snapshot?.images?.available === true;
     const automateReady = healthy(snapshot, 'n8n');
 
-    gateMode('ask', intelligenceReady, 'local intelligence service is not healthy');
+    // The reason is what the owner reads when a send fails (Home shows it under the composer): the service by its Health name, and where to look.
+    gateMode('ask', intelligenceReady, 'Chat needs Intelligence running. See Health');
     gateMode('research', researchReady, !intelligenceReady
-      ? 'local intelligence service is not healthy'
-      : 'web research service is not healthy');
+      ? 'Research needs Intelligence running. See Health'
+      : 'Research needs Web research running. See Health');
     gateMode('create', createReady, healthy(snapshot, 'comfy')
-      ? 'no supported local image model is currently available'
-      : 'image generation service is not healthy');
-    gateMode('automate', automateReady, 'automation engine is not healthy');
-    gateMode('engineering', intelligenceReady, 'local intelligence service is not healthy');
+      ? 'Images need a picture model installed. See Models'
+      : 'Images need Image generation running. See Health');
+    gateMode('automate', automateReady, 'Automations need the Automation engine running. See Health');
+    gateMode('engineering', intelligenceReady, 'Changes need Intelligence running. See Health');
 
     const webSearch = document.getElementById('webSearch');
-    if (webSearch) setTruthAvailability(webSearch, healthy(snapshot, 'search'), 'Unavailable: web research service is not healthy');
+    if (webSearch) setTruthAvailability(webSearch, healthy(snapshot, 'search'), 'Unavailable: Web research is not running. See Health');
   }
 
   function attentionItems(snapshot) {
@@ -3209,7 +3210,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     showView();
     if (window.LocalAIRouter) window.LocalAIRouter.go('#run/pending');
     return {
-      resolve(runId) { if (state.pending !== token || token.resolved) return; token.resolved = String(runId); if (window.LocalAIRouter) window.LocalAIRouter.go(`#run/${encodeURIComponent(runId)}`, { replace: true }); else routeRun(token.resolved); },
+      resolve(runId) { if (state.pending !== token || token.resolved) return; token.resolved = String(runId); window.dispatchEvent(new CustomEvent('localai:run-opened', { detail: { runId: token.resolved, kind: token.kind } })); if (window.LocalAIRouter) window.LocalAIRouter.go(`#run/${encodeURIComponent(runId)}`, { replace: true }); else routeRun(token.resolved); },
       fail(message) { if (state.pending !== token || token.resolved || token.error) return; token.error = String(message || 'Something went wrong.'); el('runLiveRegion').textContent = token.error; renderDrawer('pending'); }
     };
   }
@@ -3415,6 +3416,9 @@ async function mountFirstRun(){
  <ol class="first-run-steps">${stepHtml('service','Local AI is running')}${stepHtml('model','A language model is installed')}<li data-step="try" data-state="todo"><span class="first-run-mark" aria-hidden="true"></span><div><strong>Try a first task</strong><div class="first-run-detail">Pick one. It runs right here, and the result is saved to your Library.</div><div class="first-run-samples">${SAMPLES.map((s,i)=>`<button type="button" class="btn" data-sample="${i}"><span>${esc(s.label)}</span><small>${esc(s.text)}</small></button>`).join('')}</div></div></li></ol>
  <div class="first-run-foot"><span class="meta">Developer tools are ${document.body.classList.contains('dev-tools-off')?'hidden':'shown'}. Change this in <a href="#" data-goto="status">Health</a>.</span><button type="button" class="btn primary" data-first-run-dismiss>I'm set up, hide this</button></div>`;
  hero.before(card) // Get started takes Recent's place while it shows;
+ window.dispatchEvent(new CustomEvent('localai:first-run')); // Home may have painted its rows already
+ // Step 3 is done when a run really opens (the pending run gets its id), not when a sample is tapped: a send that fails is no first task.
+ window.addEventListener('localai:run-opened',()=>{const li=q('[data-step="try"]',card);if(li&&card.isConnected)li.dataset.state='done'});
  window.addEventListener('localai:model-pulls',e=>{
   const step=q('[data-step="model"]',card);if(!step||step.dataset.state==='done')return;
   const p=(e.detail.items||[]).find(x=>x.name===(config?.model||''));const box=q('.first-run-progress',step);if(!p||!box)return;
@@ -3425,10 +3429,10 @@ async function mountFirstRun(){
  });
  card.addEventListener('click',e=>{
   const t=e.target.closest('button,a');if(!t)return;
-  if(t.matches('[data-first-run-dismiss]')){pref.set(DONE_KEY,'1');card.remove()}
+  if(t.matches('[data-first-run-dismiss]')){pref.set(DONE_KEY,'1');card.remove();window.dispatchEvent(new CustomEvent('localai:first-run'))}
   else if(t.matches('[data-first-run-recheck]'))checkSteps(card);
   else if(t.dataset.firstRunDownload){t.disabled=true;t.textContent='Starting…';window.LocalAIModels?.startPull(t.dataset.firstRunDownload).then(ok=>{if(!ok){t.disabled=false;t.textContent='Download it now'}})}
-  else if(t.dataset.sample!==undefined){runSample(SAMPLES[Number(t.dataset.sample)]);const li=q('[data-step="try"]',card);li.dataset.state='done'}
+  else if(t.dataset.sample!==undefined)runSample(SAMPLES[Number(t.dataset.sample)]);
   else if(t.dataset.goto){e.preventDefault();window.LocalAIRouter?.open(t.dataset.goto)}
  });
  checkSteps(card);
