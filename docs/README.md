@@ -28,6 +28,7 @@ Start with the [project README](../README.md) for what LocalAI is.
 - [Apple Watch and Siri](APPLE-WATCH.md): the "Ask Local AI" Siri Shortcut for an iPhone or watch: what needs you, health, time, weather, news, and starting work by voice.
 - [GridCraft](GRIDCRAFT.md): the GridCraft page, its Windows bridge and agent.
 - [GridCraft agent](../host/gridcraft-agent/README.md): running the agent by hand, desktop launcher, long-context switch.
+- [ArtCraft](ARTCRAFT.md): the ArtCraft card on Services: installed/open status and opening it on the Windows computer.
 - [ComfyUI](../host/comfyui/README.md): image generation service and engines.
 - [PowerShell bridge](../host/powershell-bridge/README.md): the host runner behind the PowerShell Workbench.
 - [Integrations](INTEGRATIONS.md): which tool owns which capability, and the integration roadmap.

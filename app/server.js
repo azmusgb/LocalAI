@@ -1556,6 +1556,31 @@ async function apiGridcraftDecide(req, res, id, action) {
   recordActivity('gridcraft', action === 'keep' ? 'GridCraft changes kept' : 'GridCraft changes discarded', run.prompt.slice(0, 180));
   json(res, 200, { ok: true, dirty: data.dirty, runs: decided.map(x => x.id) });
 }
+// Services › ArtCraft: the GridCraft bridge reports whether ArtCraft is installed and open on the Windows computer, and
+// opens it (its fixed exe, no arguments). The page never talks to ArtCraft itself.
+async function apiArtcraftStatus(req, res) {
+  try {
+    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/artcraft`, { cache: 'no-store' }, 20000);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) return json(res, 502, { ok: false, error: String(d.error || `Bridge returned HTTP ${r.status}`).slice(0, 300) });
+    json(res, 200, { ok: true, installed: d.installed === true, running: d.running === true, version: typeof d.version === 'string' ? d.version.slice(0, 40) : null });
+  } catch (e) {
+    json(res, 502, { ok: false, error: `Windows computer bridge unavailable: ${e.message || e}` });
+  }
+}
+async function apiArtcraftOpen(req, res) {
+  if (!sameOriginJson(req, res)) return;
+  req.resume(); // nothing from the body is used
+  try {
+    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/artcraft/open`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, 20000);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) return json(res, r.ok ? 502 : r.status, { ok: false, error: String(d.error || `Bridge returned HTTP ${r.status}`).slice(0, 300) });
+    recordActivity('artcraft', 'ArtCraft opened', d.alreadyRunning ? 'It was already open' : 'Opened on the Windows computer');
+    json(res, 200, { ok: true, alreadyRunning: d.alreadyRunning === true });
+  } catch (e) {
+    json(res, 502, { ok: false, error: `Windows computer bridge unavailable: ${e.message || e}` });
+  }
+}
 async function apiImageView(req, res, urlObj) {
   try {
     const u = new URL(`${COMFY_URL}/view`);
@@ -3349,6 +3374,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/gridcraft/workbooks') return await apiGridcraftWorkbooks(req, res);
     if (req.method === 'POST' && p === '/api/gridcraft/open') return await apiGridcraftOpen(req, res);
     { const m = req.method === 'POST' && p.match(/^\/api\/gridcraft\/runs\/(gc-[\w-]+)\/(keep|discard)$/); if (m) return await apiGridcraftDecide(req, res, m[1], m[2]); }
+    if (req.method === 'GET' && p === '/api/artcraft/status') return await apiArtcraftStatus(req, res);
+    if (req.method === 'POST' && p === '/api/artcraft/open') return await apiArtcraftOpen(req, res);
 
     // cumulative release features
     if (req.method === 'GET' && p === '/api/projects') return await apiProjects(req,res,urlObj);
