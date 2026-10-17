@@ -29,6 +29,10 @@ test('GridCraft is reached through the appliance, not directly from the browser'
       res.setHeader('Content-Type', 'application/json');
       if (req.url === '/health') return res.end(JSON.stringify({ ok: true, gridcraftConnected: true, model: 'qwen3:4b-instruct', workbook: 'C:\\Users\\someone\\Book.xlsx' }));
       if (req.url === '/run') return res.end(JSON.stringify({ ok: true, answer: 'done', durationSec: 0.1 }));
+      if (req.url === '/workbook') return res.end(JSON.stringify({ ok: true, title: 'Sales', file: 'C:\\Users\\someone\\Sales.xlsx', dirty: true, activeSheet: 'Q1', path: 'C:\\Users\\someone\\Sales.xlsx', sheets: [{ name: 'Q1', usedRange: 'A1:C3', cells: 9, extra: 'C:\\x' }] }));
+      if (req.url === '/workbooks') return res.end(JSON.stringify({ ok: true, folder: 'C:\\Users\\someone\\Documents\\GridCraft', workbooks: [{ name: 'Sales.xlsx', size: 10, modified: 1700000000 }] }));
+      if (req.url.startsWith('/range')) return res.end(JSON.stringify({ ok: true, range: 'A1:B2', rows: [[1, 'a'], [null, { error: '#DIV/0!', where: 'C:\\x' }]], truncated: true }));
+      if (req.url === '/open') { res.statusCode = JSON.parse(body).name === 'busy.xlsx' ? 409 : 200; return res.end(JSON.stringify(res.statusCode === 409 ? { ok: false, error: 'GridCraft is busy with a request' } : { ok: true, name: JSON.parse(body).name })); }
       res.statusCode = 404; res.end('{}');
     });
   });
@@ -73,6 +77,29 @@ test('GridCraft is reached through the appliance, not directly from the browser'
   const formPost = await fetch(`${base}/api/gridcraft/run`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{"prompt":"x"}' });
   assert.equal(formPost.status, 415);
   assert.equal(seen.filter(x => x.url === '/run').length, 1, 'rejected requests never reach the bridge');
+
+  // System › Spreadsheets' workbook view: read-only reads, and /open by file name only.
+  const book = await (await fetch(`${base}/api/gridcraft/workbook`)).json();
+  assert.deepEqual(book, { ok: true, title: 'Sales', file: 'Sales.xlsx', dirty: true, activeSheet: 'Q1', sheets: [{ name: 'Q1', usedRange: 'A1:C3', cells: 9 }] });
+  const books = await (await fetch(`${base}/api/gridcraft/workbooks`)).json();
+  assert.deepEqual(books, { ok: true, workbooks: [{ name: 'Sales.xlsx', size: 10, modified: 1700000000 }] }, 'no host folder path');
+  const range = await fetch(`${base}/api/gridcraft/range?sheet=Q%201&range=a1:c3&path=C:/x`);
+  assert.equal(range.status, 200);
+  assert.deepEqual(await range.json(), { ok: true, range: 'A1:B2', rows: [[1, 'a'], [null, { error: '#DIV/0!' }]], truncated: true });
+  assert.equal(seen.find(x => x.url.startsWith('/range')).url, '/range?sheet=Q+1&range=A1%3AC3', 'only sheet and range are forwarded');
+  for (const q of ['range=A1:B2;rm', 'range=Sheet1!A1', 'range=A1:B', `sheet=${'x'.repeat(101)}`]) {
+    assert.equal((await fetch(`${base}/api/gridcraft/range?${q}`)).status, 400, q);
+  }
+  assert.equal(seen.filter(x => x.url.startsWith('/range')).length, 1, 'invalid reads never reach the bridge');
+  const post = (body, headers = {}) => fetch(`${base}/api/gridcraft/open`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base, ...headers }, body: JSON.stringify(body) });
+  const opened = await post({ name: 'Sales.xlsx', path: 'C:\\Windows' });
+  assert.equal(opened.status, 200);
+  assert.deepEqual(JSON.parse(seen.find(x => x.url === '/open').body), { name: 'Sales.xlsx' }, 'only the name is forwarded');
+  assert.equal((await post({ name: 'busy.xlsx' })).status, 409, 'bridge status passes through');
+  for (const name of ['..\\x.xlsx', 'C:\\x.xlsx', 'a/b.xlsx', '', 42]) assert.equal((await post({ name })).status, 400, String(name));
+  assert.equal((await post({ name: 'Sales.xlsx' }, { Origin: 'http://evil.example' })).status, 403);
+  assert.equal((await post({ name: 'Sales.xlsx' }, { 'Content-Type': 'text/plain' })).status, 415);
+  assert.equal(seen.filter(x => x.url === '/open').length, 2, 'rejected opens never reach the bridge');
 
   bridge.close();
   await new Promise(r => setTimeout(r, 50));

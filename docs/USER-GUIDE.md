@@ -105,6 +105,12 @@ you want ("add a Total row to the Sales sheet and save") or tap an example, then
 to a few minutes, one request at a time, and works from a phone too. The badge says whether GridCraft is ready; if a
 request fails, the answer says why and **Try again** sends it once more.
 
+The **Workbook** card below shows the workbook itself, read-only: its name ("Unsaved changes" when GridCraft hasn't
+saved it yet), a tab for each sheet, and the cells as a grid. Swipe or scroll sideways inside the grid; column letters
+and row numbers stay in view. Big sheets show their first 200 rows and 30 columns. The grid reloads after each request;
+**Refresh** reloads it by hand. The menu next to Refresh lists the workbooks in `Documents\GridCraft` on the Windows
+computer; picking one opens it in GridCraft.
+
 ## Automations
 
 **System › Automations** is one page for everything that runs by itself. Pick a **Kind**, then create it:

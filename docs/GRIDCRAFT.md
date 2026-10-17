@@ -2,9 +2,10 @@
 
 GridCraft is a Windows spreadsheet app. LocalAI exposes it as **System › Spreadsheets**
 (`http://<host>:3080/#spreadsheets`, `app/public/spreadsheets.js`), where you type a request and a local model
-works on the open workbook. It works on phones too. The old `/gridcraft.html` address sends you there.
+works on the open workbook, and see the workbook itself: the **Workbook** card under the request box shows its sheets
+as a read-only grid and opens other workbooks from `Documents\GridCraft`. It works on phones too. The old `/gridcraft.html` address sends you there.
 
-The page is part of LocalAI. The page calls the appliance (`/api/gridcraft/health`, `/api/gridcraft/run`), and the appliance forwards to a small Windows-host bridge on `127.0.0.1:8787`, which runs the GridCraft Python agent kept in this repo at `host/gridcraft-agent/`. That agent continues to own Ollama tool calling and GridCraft MCP control.
+The page is part of LocalAI. The page calls the appliance (`/api/gridcraft/health`, `/api/gridcraft/run`, and for the Workbook card `/api/gridcraft/workbook`, `/range`, `/workbooks`, `/open`), and the appliance forwards to a small Windows-host bridge on `127.0.0.1:8787`, which runs the GridCraft Python agent kept in this repo at `host/gridcraft-agent/`. That agent continues to own Ollama tool calling and GridCraft MCP control.
 
 ## Architecture
 
@@ -88,7 +89,9 @@ Bridge environment (`host/gridcraft-bridge.py`):
 | `GRIDCRAFT_AGENT_SCRIPT` | `host/gridcraft-agent/gridcraft_ai.py` next to the bridge | The agent |
 | `GRIDCRAFT_EXE` | `C:\Program Files\GridCraft\gridcraft.exe` | GridCraft executable launched when not running |
 | `GRIDCRAFT_WORKBOOK` | `%USERPROFILE%\Documents\GridCraft\Quarterly-Sales-Dashboard.xlsx` | Workbook opened at launch |
-| `GRIDCRAFT_RUN_TIMEOUT` | `300` (seconds) | Per-request limit; the appliance waits 330 s |
+| `GRIDCRAFT_RUN_TIMEOUT` | `300` (seconds) | Per-request limit; a request first waits up to `GRIDCRAFT_TOOL_TIMEOUT` for a workbook read to finish, and the appliance waits 360 s |
+| `GRIDCRAFT_TOOL_TIMEOUT` | `30` (seconds) | Limit for one workbook read or open (Workbook card) |
+| `GRIDCRAFT_WORKBOOKS_DIR` | `%USERPROFILE%\Documents\GridCraft` | Folder the Workbook card lists and opens workbooks from |
 | `GRIDCRAFT_ALLOWED_ORIGINS` | `http://10.0.0.21:3080,http://127.0.0.1:3080,http://localhost:3080` | CORS allow-list |
 | `GRIDCRAFT_BRIDGE_LOG` | unset (stdout) | Log file, rotated at 2 MB × 3; the installer sets `gridcraft-bridge.log` |
 
@@ -110,6 +113,23 @@ not listening, the bridge launches it with `WGPU_BACKEND=vulkan` and the configu
 `sales` sample if the workbook does not exist), then runs the
 agent once with `--once`. The agent's model choice, including the switch to the 32k-context model for long
 requests, is described in the [agent README](../host/gridcraft-agent/README.md).
+
+## Workbook view
+
+The Workbook card on System › Spreadsheets reads the workbook without a model. For each read the bridge runs the agent
+once with `--tool <name> --args <json>`, which makes one GridCraft MCP call and prints the result as JSON. Only three
+tools are callable this way: `inspect_workbook`, `read_range` and `open_workbook`.
+
+| Bridge | Appliance | What it does |
+|---|---|---|
+| `GET /workbook` | `GET /api/gridcraft/workbook` | Title, file name (never the full path), unsaved-changes flag, active sheet, and each sheet's name, used range and cell count |
+| `GET /range?sheet=&range=` | `GET /api/gridcraft/range` | `read_range` with `formatted: true` (values as GridCraft displays them). The range is clipped to 200 rows × 30 columns from its top-left cell before the call; `truncated` says so. The appliance forwards only `sheet` (≤ 100 characters) and an A1 `range`, and answers 400 to anything else |
+| `GET /workbooks` | `GET /api/gridcraft/workbooks` | Name, size and modified time of each `.xlsx`, `.xlsm`, `.xls`, `.csv`, `.ods` file directly in `GRIDCRAFT_WORKBOOKS_DIR` (no subfolders, no `~$` lock files) |
+| `POST /open {"name"}` | `POST /api/gridcraft/open` | Opens that file from `GRIDCRAFT_WORKBOOKS_DIR` in GridCraft (starting GridCraft if needed). The name must be a plain file name with one of those extensions: no folders, no `..`. Same Origin and JSON rules as `/run` |
+
+Reads share the request lock with `/run`: while a request runs they answer 409 "GridCraft is busy with a request",
+and a request waits for a read in progress. Reads don't start GridCraft; if it isn't running they answer 503 with
+`code: "not_running"`. Failures are logged with the agent's last error line.
 
 ## Security boundary
 

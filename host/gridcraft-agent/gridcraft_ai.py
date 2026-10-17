@@ -118,6 +118,15 @@ def parse_args() -> argparse.Namespace:
         help="Run one request and exit instead of opening an interactive prompt.",
     )
     parser.add_argument(
+        "--tool",
+        help="Call this one GridCraft MCP tool (no model), print its result as JSON and exit. Used by the bridge.",
+    )
+    parser.add_argument(
+        "--args",
+        default="{}",
+        help="JSON object of arguments for --tool.",
+    )
+    parser.add_argument(
         "--list-tools",
         action="store_true",
         help="List the GridCraft MCP tools exposed to the model and exit.",
@@ -233,6 +242,39 @@ def assistant_message_dict(message: Any) -> dict[str, Any]:
             )
 
     return data
+
+
+def tool_result_payload(result: Any) -> dict[str, Any]:
+    """The --tool mode's output: {"ok": bool, "result": <structured content, else JSON text, else text>}."""
+    data = json.loads(tool_result_to_text(result))
+    value: Any = data.get("structured_content")
+    if value is None:
+        texts = [b.get("text", "") for b in data.get("content", []) if isinstance(b, dict) and b.get("type") == "text"]
+        text = "\n".join(t for t in texts if t)
+        try:
+            value = json.loads(text)
+        except (ValueError, TypeError):
+            value = text
+    return {"ok": not data.get("is_error"), "result": value}
+
+
+async def call_one_tool(server: StdioServerParameters, name: str, raw_args: str) -> int:
+    try:
+        arguments = json.loads(raw_args or "{}")
+        if not isinstance(arguments, dict):
+            raise ValueError("--args must be a JSON object")
+    except ValueError as exc:
+        print(f"ERROR: Invalid --args: {exc}", file=sys.stderr)
+        return 2
+    try:
+        async with Client(server, mode="auto") as mcp_client:
+            result = await mcp_client.call_tool(name, arguments)
+    except Exception as exc:
+        print(f"ERROR: MCP call {name} failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 5
+    payload = tool_result_payload(result)
+    print(json.dumps(payload, ensure_ascii=False, default=str))
+    return 0 if payload["ok"] else 7
 
 
 async def verify_ollama(client: AsyncOpenAI, model: str) -> set[str]:
@@ -412,6 +454,27 @@ async def async_main() -> int:
         print(f"ERROR: GridCraft CLI not found: {args.gridcraft_cli}", file=sys.stderr)
         return 2
 
+    mcp_args = ["mcp"]
+    if args.headless:
+        if args.workbook and args.sample:
+            print("ERROR: Use either --workbook or --sample in headless mode, not both.", file=sys.stderr)
+            return 2
+        if args.workbook:
+            mcp_args += ["--in", os.path.abspath(args.workbook)]
+        elif args.sample:
+            mcp_args += ["--sample", args.sample]
+    else:
+        mcp_args += ["--connect", str(args.port)]
+
+    server = StdioServerParameters(
+        command=args.gridcraft_cli,
+        args=mcp_args,
+    )
+
+    if args.tool:
+        # One direct tool call for the bridge's read-only workbook views: no model, so no Ollama check.
+        return await call_one_tool(server, args.tool, args.args)
+
     llm = AsyncOpenAI(
         base_url=args.base_url.rstrip("/"),
         api_key="ollama",
@@ -432,23 +495,6 @@ async def async_main() -> int:
         long_model = None
     # Shared across turns: once a conversation needs the long model it keeps using it.
     models = {"current": args.model, "long": long_model, "long_at": args.long_context_at}
-
-    mcp_args = ["mcp"]
-    if args.headless:
-        if args.workbook and args.sample:
-            print("ERROR: Use either --workbook or --sample in headless mode, not both.", file=sys.stderr)
-            return 2
-        if args.workbook:
-            mcp_args += ["--in", os.path.abspath(args.workbook)]
-        elif args.sample:
-            mcp_args += ["--sample", args.sample]
-    else:
-        mcp_args += ["--connect", str(args.port)]
-
-    server = StdioServerParameters(
-        command=args.gridcraft_cli,
-        args=mcp_args,
-    )
 
     print(
         "Connecting to GridCraft MCP "
