@@ -366,8 +366,12 @@ await check('Needs you: new serious Signals in the Backlog show as one row that 
   const ctxItems = [sig('signal-a', fresh), sig('signal-b', fresh), sig('signal-old', old), sig('signal-taken', fresh, { stage: 'inProgress' }), { id: 'idea-x', source: 'idea', status: 'approved', stage: 'backlog', createdAt: fresh }];
   const page = await open(desk, '#home', { all: () => [] });
   await page.route(u => u.pathname === '/api/improve/items', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: ctxItems, signals: [] }) }));
-  await page.evaluate(() => window.LocalAIHome.refresh?.());
-  await page.waitForFunction(() => /2 new signals in your backlog/.test(document.getElementById('homeNeedsList')?.textContent || ''), null, T);
+  // Home's own first load (real server, no Signals) can land after this refresh and overwrite it on a busy machine, so
+  // refresh until the stubbed items show.
+  await page.waitForFunction(async () => {
+    if (/2 new signals in your backlog/.test(document.getElementById('homeNeedsList')?.textContent || '')) return true;
+    await window.LocalAIHome.refresh?.(); return false;
+  }, null, { ...T, polling: 500 });
   assert.doesNotMatch(await page.locator('#homeNeedsYou').innerText(), /unfinished/);
   await page.locator('#homeNeedsList .home-attn', { hasText: 'new signals' }).click();
   await page.waitForFunction(() => location.hash === '#backlog', null, T);
