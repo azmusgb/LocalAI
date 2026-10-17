@@ -195,7 +195,7 @@
     const bar=document.getElementById('uxContextBar');el.style.setProperty('--pull-top',Math.max(0,Math.round(bar?bar.getBoundingClientRect().bottom:0))+'px');
     return el;
   }
-  function show(text,{dy=0,ready=false}={}){clearTimeout(hideTimer);const el=line();el.hidden=false;el.textContent=text;el.classList.toggle('is-ready',ready);el.style.setProperty('--pull',Math.round(Math.min(dy,PULL*1.5))+'px')}
+  function show(text,{dy=0,ready=false}={}){clearTimeout(hideTimer);const el=line();el.hidden=false;if(el.textContent!==text)el.textContent=text;el.classList.toggle('is-ready',ready);el.style.setProperty('--pull',Math.round(Math.min(dy,PULL*1.5))+'px')}
   function hide(ms){clearTimeout(hideTimer);hideTimer=setTimeout(()=>{const el=document.getElementById('pullRefresh');if(el){el.hidden=true;el.textContent=''}},ms)}
   const current=()=>{const v=document.querySelector('.view.active');return v&&pages.has(v.id)?v:null};
   // Not from a text field, and not while a sheet or dialog is open: only from the page's own content at the very top.

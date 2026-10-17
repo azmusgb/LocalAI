@@ -246,8 +246,8 @@ await check('the mode chip opens a sheet with seven modes, and Image persists ac
   assert.equal((await chip.innerText()).trim(), 'Auto ▾');
   await chip.click();
   await page.waitForSelector('#homeModeSheet[open]', T);
-  assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').evaluateAll(b => b.map(x => x.dataset.homeMode)), ['auto', 'ask', 'research', 'create', 'mission', 'automate', 'engineering']);
-  assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').allInnerTexts().then(a => a.map(s => s.trim().split('\n')[0])), ['Auto', 'Chat', 'Research', 'Image', 'Mission', 'Automate', 'Change Local AI']);
+  assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').evaluateAll(b => b.map(x => x.dataset.homeMode)), ['engineering', 'automate', 'mission', 'create', 'research', 'ask', 'auto'], 'the current mode (Auto) is the lowest row, nearest the thumb');
+  assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').allInnerTexts().then(a => a.map(s => s.trim().split('\n')[0])), ['Change Local AI', 'Automate', 'Mission', 'Image', 'Research', 'Chat', 'Auto']);
   await page.locator('#homeModeSheet [data-home-mode="create"]').click();
   await page.waitForSelector('#homeModeSheet[open]', { state: 'detached', timeout: 1500 }).catch(() => {});
   if (await page.locator('#homeModeSheet[open]').count()) await page.locator('#homeModeSheet .home-sheet__done').click();
@@ -528,7 +528,7 @@ await check('Developer tools off: no Change Local AI mode, and Auto never routes
   await page.waitForSelector('#homeRecent2 .run-card', T);
   await page.evaluate(() => { window.__starts = []; window.LocalAIChat = { start: async (t, o) => { window.__starts.push(t); o.pending.resolve('run-1'); } }; });
   await page.locator('#homeModeChip').click(); await page.waitForSelector('#homeModeSheet[open]', T);
-  assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').evaluateAll(b => b.map(x => x.dataset.homeMode)), ['auto', 'ask', 'research', 'create', 'mission', 'automate']);
+  assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').evaluateAll(b => b.map(x => x.dataset.homeMode)), ['automate', 'mission', 'create', 'research', 'ask', 'auto']);
   await page.locator('#homeModeSheet .home-sheet__done').click();
   await page.locator('#commandInput').fill('Change the login page'); await page.locator('#commandGo').click();
   await page.waitForFunction(() => window.__starts.length === 1, null, T);
