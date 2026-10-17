@@ -75,7 +75,7 @@ await check('Build is hidden while Developer tools is off', async () => {
 await check('switching Developer tools on in Health shows Build and is remembered', async () => {
   await page.evaluate(() => window.showView('status'));
   await page.waitForSelector('#status.active .dev-tools-pref input');
-  assert.match(await page.locator('.dev-tools-pref').innerText(), /Adds Improve to the menu: change requests, issues, quality signals and the Claude board\./);
+  assert.match(await page.locator('.dev-tools-pref').innerText(), /Adds Improve and the developer tools: Claude Code, Files, Repository, PowerShell, Browser & computer, n8n workflows/);
   await page.locator('.dev-tools-pref input').check();
   assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), true);
   assert.equal(await page.evaluate(() => localStorage.getItem('localai.devTools')), '1');

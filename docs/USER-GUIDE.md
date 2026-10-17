@@ -115,5 +115,8 @@ be paired first, once. See [Claude chat](CLAUDE-CHAT.md).
 
 ## Developer tools
 
-**System › Health › Show developer tools** adds the Improve section to the menu and **Change Local AI** to Home's
-choices. Off, both are hidden; everything else works the same. The setting is kept per device.
+**System › Health › Show developer tools** adds the Improve section to the menu, **Change Local AI** to Home's
+choices, and the developer pages under System: **Claude Code**, **Files**, **Repository**, **PowerShell**,
+**Browser & computer** and **n8n workflows**. It also shows Models' runtime tile and Health's **Advanced service
+details**. Off, all of these are hidden from the menu, the page strip and search; a page's address still opens it.
+Everything else works the same. The setting is kept per device.
