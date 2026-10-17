@@ -284,6 +284,15 @@ function overallState(services) {
   return 'HEALTHY';
 }
 
+// What stops working when a core service is down, in the owner's words (Home › Needs you shows it).
+const SERVICE_IMPACT = {
+  ollama: 'Chat, research and missions are unavailable.',
+  comfy: 'Images are unavailable.',
+  n8n: 'Workflows and scheduled automations are paused.',
+  proxy: 'Apps that talk to Local AI through its compatible endpoint are cut off.',
+  search: 'Research and current facts are unavailable.'
+};
+
 function presentService(service) {
   const optional = service.required === false;
   const available = service.state === 'HEALTHY';
@@ -292,7 +301,7 @@ function presentService(service) {
     availability: available ? 'available' : 'unavailable',
     displayState: optional && !available ? 'OPTIONAL_OFFLINE' : service.state,
     severity: available ? 'ok' : optional ? 'info' : service.state === 'DEGRADED' ? 'warning' : 'critical',
-    impact: optional && !available ? 'Core appliance unaffected' : available ? 'Ready' : 'Core capability affected'
+    impact: optional && !available ? 'Core appliance unaffected' : available ? 'Ready' : SERVICE_IMPACT[service.name] || 'Part of Local AI is unavailable.'
   };
 }
 
