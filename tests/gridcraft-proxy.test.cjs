@@ -81,12 +81,13 @@ test('GridCraft is reached through the appliance, not directly from the browser'
   assert.equal((await down.json()).ok, false);
 });
 
-test('the GridCraft page and Integrations card use the appliance route', () => {
+test('Spreadsheets and the Services card use the appliance route; the old page sends you to Spreadsheets', () => {
   const pub = path.resolve(__dirname, '../app/public');
-  const page = fs.readFileSync(path.join(pub, 'gridcraft.js'), 'utf8');
-  assert.match(page, /const BRIDGE = '\/api\/gridcraft'/);
+  const page = fs.readFileSync(path.join(pub, 'spreadsheets.js'), 'utf8');
+  assert.match(page, /API='\/api\/gridcraft'/);
   assert.doesNotMatch(page, /8787/);
   const hub = fs.readFileSync(path.join(pub, 'ui.js'), 'utf8');
   assert.match(hub, /fetch\('\/api\/gridcraft\/health'/);
-  assert.match(hub, /url: '\/gridcraft\.html'/);
+  assert.match(hub, /view: 'spreadsheets', label: 'Open Spreadsheets'/);
+  assert.match(fs.readFileSync(path.join(pub, 'gridcraft.html'), 'utf8'), /url=\/#spreadsheets/);
 });
