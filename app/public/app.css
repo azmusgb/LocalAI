@@ -1546,7 +1546,6 @@ body.run-view-open{overflow:hidden}
 .work-day{margin:0 4px 8px;font-size:var(--ds-fs-1);font-weight:650;color:var(--ds-muted);letter-spacing:0;text-transform:none}
 .work-more{display:flex;justify-content:center;margin-top:16px}
 .work-more[hidden],.work-more button[hidden]{display:none}
-@media(max-width:760px){}
 /* The whole row is the tap target: the title is a button whose hit area stretches over the row. Review and Retry stay small buttons above it. */
 .work-list .run-card,#home .run-card{position:relative}
 .work-open{display:block;min-height:24px;max-width:100%;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;white-space:normal;overflow-wrap:anywhere}

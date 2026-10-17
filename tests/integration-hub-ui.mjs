@@ -16,6 +16,15 @@ async function check(name, fn) {
 }
 
 const page = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
+// ArtCraft lives on the Windows computer; stub the appliance's view of it.
+const artcraftOpens = [];
+let artcraftRunning = false;
+await page.route(u => u.pathname === '/api/artcraft/status', r => r.fulfill({ json: { ok: true, installed: true, running: artcraftRunning, version: '0.41.0' } }));
+await page.route(u => u.pathname === '/api/artcraft/open', r => {
+  artcraftOpens.push({ method: r.request().method(), type: r.request().headers()['content-type'] });
+  const already = artcraftRunning; artcraftRunning = true;
+  return r.fulfill({ json: { ok: true, alreadyRunning: already } });
+});
 await page.goto(base, { waitUntil: 'domcontentloaded' });
 await page.waitForSelector('.ux-primary-rail');
 
@@ -38,6 +47,24 @@ await check('native Local AI integrations remain first-class', async () => {
   assert.match(body, /Built in · images/i);
   assert.equal(await page.locator('[data-integration-source-v2="n8n"]').count(), 1);
   assert.equal(await page.locator('[data-integration-source-v2="comfy"]').count(), 1);
+});
+
+await check('ArtCraft has a card that says it uses cloud services, shows whether it is open, and opens it', async () => {
+  const card = page.locator('.ux-int-card', { hasText: 'ArtCraft' });
+  const body = await card.innerText();
+  assert.match(body, /On the Windows computer · uses cloud services/);
+  assert.match(body, /cloud services and your ArtCraft account, unlike Images/);
+  assert.match(body, /Use Images for anything private/);
+  const live = card.locator('[data-integration-source-v2="artcraft"]');
+  await page.waitForFunction(() => /Installed, not open · 0\.41\.0/.test(document.querySelector('[data-integration-source-v2="artcraft"]')?.textContent || ''));
+  await card.getByRole('button', { name: 'Open on the Windows computer' }).click();
+  await page.locator('#toast', { hasText: 'ArtCraft is opening on the Windows computer' }).waitFor();
+  assert.deepEqual(artcraftOpens, [{ method: 'POST', type: 'application/json' }]);
+  await card.getByRole('button', { name: 'Open on the Windows computer' }).click();
+  await page.locator('#toast', { hasText: "It's already open there" }).waitFor();
+  await page.locator('#uxIntegrationRefreshV2').click();
+  await page.waitForFunction(() => /Open now/.test(document.querySelector('[data-integration-source-v2="artcraft"]')?.textContent || ''));
+  assert.match(await live.getAttribute('class'), /healthy/);
 });
 
 await check('unverified media extensions do not pretend to be installed', async () => {
