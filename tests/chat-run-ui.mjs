@@ -258,6 +258,36 @@ await check('at 390x844 the reply box stays above a keyboard that only shrinks t
   await page.context().close();
 });
 
+// Nothing is hover-only: on a phone the two-line title opens in full on a tap; on a desktop the full text stays on hover.
+const TITLE = 'Explain in careful detail how a heat pump moves warmth from cold outdoor air into a house in the middle of winter, and what that costs';
+const titled = () => Object.assign(run(1, TITLE, 'the answer'), { title: TITLE });   // the run view shows run.title, which run() cuts to 40 characters
+await check('390x844: a tap on the clamped run title shows all of it; a second tap folds it again', async () => {
+  const page = await open(phone, '#home', { runs: [titled()] });
+  await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);
+  await page.locator('#runDrawerTitle').waitFor(T);
+  const t = page.locator('#runDrawerTitle');
+  const lines = () => t.evaluate(e => ({ h: e.getBoundingClientRect().height, lh: parseFloat(getComputedStyle(e).lineHeight) }));
+  const before = await lines();
+  assert.ok(before.h <= before.lh * 2 + 2, `title is ${before.h}px before the tap`);
+  assert.equal(await t.getAttribute('aria-expanded'), 'false');
+  await t.tap();
+  const after = await lines();
+  assert.ok(after.h > before.lh * 2 + 2, `title is still ${after.h}px after the tap`);
+  assert.equal(await t.getAttribute('aria-expanded'), 'true');
+  await t.tap();
+  assert.ok((await lines()).h <= before.lh * 2 + 2, 'second tap folds it');
+  assert.equal(await t.getAttribute('title'), TITLE);
+  await page.context().close();
+});
+await check('1280x860: the run title is not clamped and keeps its hover text', async () => {
+  const page = await open(desk, '#home', { runs: [titled()] });
+  await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);
+  await page.locator('#runDrawerTitle').waitFor(T);
+  assert.equal(await page.locator('#runDrawerTitle').getAttribute('title'), TITLE);
+  assert.equal(await page.locator('#runDrawerTitle').evaluate(e => e.scrollHeight > e.clientHeight + 1), false);
+  await page.context().close();
+});
+
 await check('/#ask lands on Home with the chip reading "Chat ▾"', async () => {
   const page = await open(desk, '#ask');
   await page.waitForSelector('#home.active', T);
