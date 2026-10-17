@@ -100,16 +100,21 @@ It keeps alerts you missed while notifications were quiet. The bell shows one nu
 waiting. Old Approvals links open the Inbox.
 
 ## Spreadsheets
-**System › Spreadsheets** asks GridCraft, on the Windows computer, to check or change the workbook open there: type what
-you want ("add a Total row to the Sales sheet and save") or tap an example, then **Run**. It takes from a few seconds
-to a few minutes, one request at a time, and works from a phone too. The badge says whether GridCraft is ready; if a
-request fails, the answer says why and **Try again** sends it once more.
+**System › Spreadsheets** shows the workbook open in GridCraft on the Windows computer and asks GridCraft to check or
+change it. Pick a sheet tab to see its cells; tap a cell for its value and formula, and **Ask about this cell** to put its
+address in your request. **Show formulas** shows formula text in the grid. Long sheets page by 100 rows.
 
-The **Workbook** card below shows the workbook itself, read-only: its name ("Unsaved changes" when GridCraft hasn't
-saved it yet), a tab for each sheet, and the cells as a grid. Swipe or scroll sideways inside the grid; column letters
-and row numbers stay in view. Big sheets show their first 200 rows and 30 columns. The grid reloads after each request;
-**Refresh** reloads it by hand. The menu next to Refresh lists the workbooks in `Documents\GridCraft` on the Windows
-computer; picking one opens it in GridCraft.
+Type what you want or tap an example, choose what the request may do, then **Run**:
+
+- **Read only**: it looks and answers, and cannot change anything.
+- **Review** (the default): it makes the changes in GridCraft without saving. The answer lists every changed cell,
+  before and after, and the grid marks them in amber. **Keep changes** saves the workbook; **Discard** undoes them.
+  Only the latest request can be undone, and Discard refuses if someone changed the workbook in GridCraft since.
+- **Apply**: it makes the changes and saves the workbook.
+
+A request takes from a few seconds to a few minutes, one at a time, and works from a phone too. **Earlier requests**
+lists past ones with what each changed. The badge says whether GridCraft is ready; if a request fails, the answer says
+why and **Try again** sends it once more.
 
 ## Automations
 

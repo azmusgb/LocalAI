@@ -3,7 +3,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
+const { once } = require('node:events');
 
 const bridge = path.resolve(__dirname, '../host/gridcraft-bridge.py');
 const python = ['python3', 'python'].find(cmd => spawnSync(cmd, ['--version']).status === 0);
@@ -34,60 +35,57 @@ test('a failed GridCraft run says why', { skip: !python && 'no python' }, () => 
   ]);
 });
 
-// Runs `expr` (Python, with the bridge module as m and the JSON input as data) and returns its JSON result.
-function py(expr, data = null, env = {}) {
+test('the journal line is read from stderr and is never the failure reason', { skip: !python && 'no python' }, () => {
   const code = `import importlib.util, json, sys
 spec = importlib.util.spec_from_file_location('bridge', sys.argv[1])
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-data = json.loads(sys.stdin.read())
-print(json.dumps(${expr}))`;
-  const r = spawnSync(python, ['-I', '-c', code, bridge], { input: JSON.stringify(data), encoding: 'utf8', env: { ...process.env, ...env } });
+err = 'RuntimeError: Stopped after 12 tool rounds\\n[journal] {"mode": "review", "undoSteps": 2}\\n'
+print(json.dumps([m.parse_journal(err), m.failure_reason('', err), m.parse_journal('no journal'), m.without_journal(err)]))`;
+  const r = spawnSync(python, ['-I', '-c', code, bridge], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
-  return JSON.parse(r.stdout);
-}
-
-test('Spreadsheets can only open a workbook file by name, never a path', { skip: !python && 'no python' }, () => {
-  const names = ['Budget.xlsx', 'Q3 sales.XLSM', 'old.xls', 'list.csv', 'calc.ods',
-    '..\\secret.xlsx', '../secret.xlsx', 'C:\\Users\\x\\Book.xlsx', 'sub/Book.xlsx', 'Book.xlsx.exe', 'notes.txt', '.hidden.xlsx',
-    'a..b.xlsx', ' Book.xlsx', 'Book', '', 'x'.repeat(200) + '.xlsx', 'line\nbreak.xlsx'];
-  assert.deepEqual(py('[m.valid_workbook_name(n) for n in data] + [m.valid_workbook_name(None), m.valid_workbook_name(5)]', names),
-    [true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]);
+  assert.deepEqual(JSON.parse(r.stdout), [{ mode: 'review', undoSteps: 2 }, 'RuntimeError: Stopped after 12 tool rounds', null, 'RuntimeError: Stopped after 12 tool rounds']);
 });
 
-test('workbook reads are capped at 200 rows and 30 columns', { skip: !python && 'no python' }, () => {
-  assert.deepEqual(py('[m.clip_range(r) for r in data]', ['A1:F20', 'a1:zz5000', 'B3', 'C10:A1', 'A1:AD200', 'A1:AE201', 'Sheet1!A1', '', 'A0B']),
-    [['A1:F20', false], ['A1:AD200', true], ['B3:B3', false], ['A1:C10', false], ['A1:AD200', false], ['A1:AD200', true], null, null, null]);
-  const big = Array.from({ length: 250 }, (_, r) => Array.from({ length: 40 }, (_, c) => r * 100 + c));
-  const shaped = py('m.shape_range(data, "A1:AN250", False)', big);
-  assert.equal(shaped.rows.length, 200);
-  assert.equal(shaped.rows[0].length, 30);
-  assert.equal(shaped.truncated, true);
-  assert.deepEqual(py('m.shape_range(data, None, False)', { range: 'Sheet1!$B$2:$D$3', values: [[1, 'x', null], [true, { error: '#DIV/0!' }, { value: 2, formatted: '$2.00' }]] }),
-    { range: 'B2:D3', rows: [[1, 'x', null], [true, { error: '#DIV/0!' }, '$2.00']], truncated: false });
-});
+test('the bridge passes the mode, returns the journal, and runs workbook, keep and discard', { skip: !python && 'no python', timeout: 30000 }, async t => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const net = require('node:net');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gridcraft-bridge-'));
+  // A stand-in agent and ops helper: they echo what they were given.
+  fs.writeFileSync(path.join(dir, 'agent.py'), `import sys, json
+mode = sys.argv[sys.argv.index('--mode') + 1]
+print('[agent] model returned final text.'); print('answer for ' + mode)
+print('[journal] ' + json.dumps({'mode': mode, 'edits': [], 'undoSteps': 0}), file=sys.stderr)
+`);
+  fs.writeFileSync(path.join(dir, 'gridcraft_ops.py'), `import sys, json
+req = json.loads(sys.stdin.read() or '{}')
+if sys.argv[1] == 'discard' and req.get('undoTop') != ['Enter Cell']:
+    print(json.dumps({'ok': False, 'status': 409, 'error': 'The workbook changed'}))
+else:
+    print(json.dumps({'ok': True, 'op': sys.argv[1], 'req': req}))
+`);
+  const control = net.createServer(s => s.end()).listen(0, '127.0.0.1');
+  await once(control, 'listening');
+  const port = await new Promise(res => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
+  const child = spawn(python, ['-I', bridge], { env: { ...process.env, GRIDCRAFT_BRIDGE_PORT: String(port), GRIDCRAFT_CONTROL_PORT: String(control.address().port), GRIDCRAFT_AGENT_PYTHON: spawnSync(python, ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).stdout.trim(), GRIDCRAFT_AGENT_SCRIPT: path.join(dir, 'agent.py'), GRIDCRAFT_AGENT_DIR: dir } });
+  let log = ''; child.stderr.on('data', c => log += c); child.stdout.on('data', c => log += c);
+  t.after(() => { child.kill(); control.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${port}`;
+  for (let i = 0; ; i++) { try { await fetch(base + '/health'); break; } catch { if (i > 100) throw new Error(log); await new Promise(r => setTimeout(r, 100)); } }
+  const post = (p, body) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
-test('the workbook summary keeps file names, not host paths', { skip: !python && 'no python' }, () => {
-  const book = py('m.shape_workbook(data)', {
-    title: 'Quarterly Sales', path: 'C:\\Users\\owner\\Documents\\GridCraft\\Quarterly-Sales-Dashboard.xlsx', dirty: true,
-    sheets: [{ name: 'Sales', used_range: 'A1:F20', cell_count: 120 }, { name: 'Notes', used_range: null, cell_count: 0 }],
-    selection: { sheet: 'Sales', range: 'B2' }
-  });
-  assert.deepEqual(book, { title: 'Quarterly Sales', file: 'Quarterly-Sales-Dashboard.xlsx', dirty: true, activeSheet: 'Sales',
-    sheets: [{ name: 'Sales', usedRange: 'A1:F20', cells: 120 }, { name: 'Notes', usedRange: null, cells: 0 }] });
-  assert.doesNotMatch(JSON.stringify(book), /Users/);
-});
+  const review = await (await post('/run', { prompt: 'add a total', mode: 'review' })).json();
+  assert.equal(review.answer, 'answer for review');
+  assert.deepEqual(review.journal, { mode: 'review', edits: [], undoSteps: 0 });
+  assert.equal((await (await post('/run', { prompt: 'x' })).json()).mode, 'apply', 'an older appliance that sends no mode gets the old behavior');
+  assert.equal((await post('/run', { prompt: 'x', mode: 'admin' })).status, 400);
 
-test('the workbook list is only spreadsheet files in the GridCraft folder', { skip: !python && 'no python' }, () => {
-  const fs = require('node:fs'), os = require('node:os');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gridcraft-books-'));
-  try {
-    for (const f of ['Budget.xlsx', 'b.csv', '~$Budget.xlsx', 'notes.txt']) fs.writeFileSync(path.join(dir, f), 'x');
-    fs.mkdirSync(path.join(dir, 'Archive.xlsx'));
-    fs.writeFileSync(path.join(dir, 'Archive.xlsx', 'Old.xlsx'), 'x');
-    const list = py('m.list_workbooks()', null, { GRIDCRAFT_WORKBOOKS_DIR: dir });
-    assert.deepEqual(list.map(w => w.name), ['b.csv', 'Budget.xlsx']);
-    assert.equal(list[0].size, 1);
-    assert.ok(list[0].modified > 1.7e9);
-    assert.deepEqual(py('m.list_workbooks()', null, { GRIDCRAFT_WORKBOOKS_DIR: path.join(dir, 'missing') }), []);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  const wb = await (await fetch(base + '/workbook?sheet=Sales&range=A1:C3&path=C:/x')).json();
+  assert.deepEqual(wb, { ok: true, op: 'workbook', req: { sheet: 'Sales', range: 'A1:C3' } }, 'only sheet and range are passed on');
+  assert.deepEqual((await (await post('/keep', { anything: 1 })).json()).req, {});
+  const ok = await post('/discard', { steps: 2, undoTop: ['Enter Cell'], extra: 1 });
+  assert.deepEqual((await ok.json()).req, { steps: 2, undoTop: ['Enter Cell'] });
+  const conflict = await post('/discard', { steps: 2, undoTop: ['Bold'] });
+  assert.equal(conflict.status, 409);
+  assert.deepEqual(await conflict.json(), { ok: false, error: 'The workbook changed' });
 });

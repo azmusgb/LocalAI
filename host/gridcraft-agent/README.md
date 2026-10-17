@@ -33,6 +33,7 @@ $py = "$env:USERPROFILE\gridcraft-local-ai\.venv\Scripts\python.exe"
 & $py C:\LocalAI\repo\host\gridcraft-agent\gridcraft_ai.py --list-tools
 & $py C:\LocalAI\repo\host\gridcraft-agent\gridcraft_ai.py --once "Inspect the current workbook and summarize what is in it."
 & $py C:\LocalAI\repo\host\gridcraft-agent\gridcraft_ai.py --headless --sample sales
+& $py C:\LocalAI\repo\host\gridcraft-agent\gridcraft_ai.py --mode review --once "Add a Total row"  # read | review | apply (default)
 ```
 
 | Option | Environment variable | Default | Purpose |
@@ -48,7 +49,6 @@ $py = "$env:USERPROFILE\gridcraft-local-ai\.venv\Scripts\python.exe"
 | `--once` | | | Run one request and exit |
 | `--list-tools` | | | Print the MCP tools offered to the model and exit |
 | `--all-tools` | | off | Offer every GridCraft tool instead of the compact core set |
-| `--tool`, `--args` | | | Call one MCP tool with a JSON object of arguments, print `{"ok","result"}` as JSON and exit; no model. The bridge uses it for the Spreadsheets workbook view |
 
 Long workbooks: the bridge runs the fast `qwen3:4b-instruct` (4096-token window). When a request's prompt
 reaches 3500 tokens, the agent redoes that turn on `qwen3:4b-instruct-32k` and stays on it for the rest of the

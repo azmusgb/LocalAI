@@ -1,112 +1,148 @@
 import { chromium, devices } from 'playwright';
 import assert from 'node:assert/strict';
 
-// Work › Spreadsheets: GridCraft requests from inside the app, on a computer and a phone. The bridge is stubbed.
+// System › Spreadsheets: the workbook, GridCraft requests in each mode, and keeping or discarding a Review request, on a
+// computer and a phone. The appliance's /api/gridcraft routes are stubbed.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
+const shots = process.env.SHEETS_SHOTS; // a directory: save a screenshot of each layout for review
 const browser = await chromium.launch({ headless: true });
 const failures = [];
 async function check(name, fn) { try { await fn(); console.log('PASS', name); } catch (e) { failures.push(`${name}: ${e.message}`); console.error('FAIL', name, e.message); } }
 
-async function until(fn, what, ms = 5000) {
-  for (const end = Date.now() + ms; !fn();) { if (Date.now() > end) throw new Error(`timed out: ${what}`); await new Promise(r => setTimeout(r, 50)); }
+const EXAMPLE_TOTAL = 'What is the total of the Sales column? Do not change anything.';
+const SALES = {
+  ok: true, title: 'Quarterly Sales Dashboard', file: 'Quarterly-Sales-Dashboard.xlsx', dirty: false, activeSheet: 'Sales',
+  sheets: [{ name: 'Sales', usedRange: 'A1:D3', cells: 9, tables: 1, charts: 0 }, { name: 'Notes', usedRange: 'A1:A250', cells: 250, tables: 0, charts: 0 }],
+  sheet: 'Sales', usedRange: 'A1:D3', range: 'A1:D3', truncated: false,
+  values: [['Region', 'Q1', 'Q2', 'Total'], ['North', '$48,200', '$51,340', '$99,540'], ['South', '$39,150', '$37,980', '$77,130']],
+  formulas: [['Region', 'Q1', 'Q2', 'Total'], ['North', 48200, 51340, '=B2+C2'], ['South', 39150, 37980, '=B3+C3']],
+  raw: [['Region', 'Q1', 'Q2', 'Total'], ['North', 48200, 51340, 99540], ['South', 39150, 37980, 77130]]
+};
+function notes(range) {
+  const [a, b] = range.split(':'), r1 = +a.slice(1), r2 = +b.slice(1);
+  const rows = Array.from({ length: r2 - r1 + 1 }, (_, i) => [`Note ${r1 + i}`]);
+  return { ...SALES, sheet: 'Notes', usedRange: 'A1:A250', range, truncated: r2 < 250, values: rows, formulas: rows, raw: rows };
 }
 
 async function open(options) {
   const page = await browser.newPage({ serviceWorkers: 'block', ...options });
-  const runs = [], reads = { workbook: 0, ranges: [], opened: [] };
-  const book = { ok: true, title: 'Quarterly Sales', file: 'Quarterly-Sales-Dashboard.xlsx', dirty: true, activeSheet: 'Sales',
-    sheets: [{ name: 'Sales', usedRange: 'A1:AN250', cells: 900 }, { name: 'Notes', usedRange: 'A1:B2', cells: 2 }, { name: 'Blank', usedRange: null, cells: 0 }] };
-  const wide = Array.from({ length: 200 }, (_, r) => Array.from({ length: 30 }, (_, c) => r === 0 ? `Column ${c + 1} heading` : r * 100 + c));
-  wide[1][1] = 'North'; wide[1][2] = { error: '#DIV/0!' }; wide[1][3] = null; wide[1][4] = '$1,250.00';
-  await page.route(u => u.pathname === '/api/gridcraft/workbook', r => { reads.workbook++; return r.fulfill({ json: book }); });
-  await page.route(u => u.pathname === '/api/gridcraft/workbooks', r => r.fulfill({ json: { ok: true, workbooks: [{ name: 'Budget.xlsx', size: 1, modified: 1 }, { name: 'Quarterly-Sales-Dashboard.xlsx', size: 1, modified: 1 }] } }));
-  await page.route(u => u.pathname === '/api/gridcraft/range', r => {
-    const q = new URL(r.request().url()).searchParams;
-    reads.ranges.push(`${q.get('sheet')}!${q.get('range')}`);
-    if (q.get('sheet') === 'Notes') return r.fulfill({ json: { ok: true, range: 'A1:B2', rows: [['Owner', 'Kim'], [null, true]], truncated: false } });
-    return r.fulfill({ json: { ok: true, range: 'A1:AD200', rows: wide, truncated: true } });
-  });
-  await page.route(u => u.pathname === '/api/gridcraft/open', r => { reads.opened.push(JSON.parse(r.request().postData()).name); return r.fulfill({ json: { ok: true, name: 'Budget.xlsx' } }); });
+  const calls = { runs: [], workbook: [], keep: 0, discard: 0 };
+  let runs = [];
   await page.route(u => u.pathname === '/api/gridcraft/health', r => r.fulfill({ json: { ok: true, gridcraftConnected: true, model: 'qwen3:4b-instruct' } }));
+  await page.route(u => u.pathname === '/api/gridcraft/workbook', r => {
+    const q = new URL(r.request().url()).searchParams;
+    calls.workbook.push(q.toString());
+    if (q.get('sheet') === 'Notes') return r.fulfill({ json: notes(q.get('range') || 'A1:A100') });
+    const changed = runs.some(x => x.status === 'review');
+    return r.fulfill({ json: { ...SALES, dirty: changed, values: changed ? [SALES.values[0], ['North', '$50,000', '$51,340', '$101,340'], SALES.values[2]] : SALES.values } });
+  });
+  await page.route(u => u.pathname === '/api/gridcraft/runs', r => r.fulfill({ json: { items: runs } }));
+  await page.route(u => /\/api\/gridcraft\/runs\/[^/]+\/(keep|discard)$/.test(u.pathname), r => {
+    const action = r.request().url().endsWith('keep') ? 'keep' : 'discard';
+    calls[action]++;
+    if (action === 'discard' && calls.discard === 1) return r.fulfill({ status: 409, json: { ok: false, error: 'The workbook changed in GridCraft after this request, so undoing it could remove other work.' } });
+    runs = runs.map(x => x.status === 'review' ? { ...x, status: action === 'keep' ? 'kept' : 'discarded' } : x);
+    return r.fulfill({ json: { ok: true, dirty: false } });
+  });
   await page.route(u => u.pathname === '/api/gridcraft/run', async r => {
-    const { prompt } = JSON.parse(r.request().postData());
-    runs.push(prompt);
+    const { prompt, mode } = JSON.parse(r.request().postData());
+    calls.runs.push({ prompt, mode });
     if (prompt.includes('break')) return r.fulfill({ status: 500, json: { ok: false, error: 'GridCraft agent failed', reason: 'httpx.ConnectError: connection refused' } });
-    return r.fulfill({ json: { ok: true, answer: 'The Sales total is 48,250.', durationSec: 2 } });
+    const edits = mode === 'review' ? [{ tool: 'set_cell', sheet: 'Sales', range: 'B2', before: [[48200]], after: [[50000]], afterValues: [[50000]] }] : [];
+    const run = { id: `gc-${runs.length + 1}`, prompt, mode, status: mode === 'review' ? 'review' : 'done', answer: mode === 'review' ? 'Set North Q1 to 50,000.' : 'The Sales total is 48,250.', error: '', edits, changes: mode === 'review' ? [{ tool: 'format_range', summary: 'Formatted B2: bold' }] : [], undoSteps: 2, undoTop: ['Bold', 'Enter Cell'], createdAt: new Date().toISOString() };
+    runs = [run, ...runs];
+    return r.fulfill({ json: { ok: true, answer: run.answer, durationSec: 2, run } });
   });
   await page.goto(base + '/#spreadsheets', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#spreadsheets.active');
-  return { page, runs, reads };
+  return { page, calls };
 }
 
 for (const [name, options] of [['computer', { viewport: { width: 1280, height: 900 } }], ['phone', devices['iPhone 14']]]) {
-  const { page, runs, reads } = await open(options);
+  const { page, calls } = await open(options);
 
-  await check(`${name}: the page says GridCraft is ready`, async () => {
+  await check(`${name}: the page says GridCraft is ready and shows the workbook`, async () => {
     await page.locator('#sheetsStatus[data-state="ready"]').waitFor({ timeout: 8000 });
     assert.equal(await page.locator('#sheetsStatus').innerText(), 'Ready');
+    await page.locator('#sheetsGrid td[data-cell="A1"]').waitFor();
+    assert.equal(await page.locator('#sheetsTitle').innerText(), 'Quarterly Sales Dashboard');
+    assert.deepEqual(await page.locator('#sheetsTabs [role="tab"]').allInnerTexts(), ['Sales', 'Notes']);
+    assert.equal(await page.locator('#sheetsGrid td[data-cell="B2"]').innerText(), '$48,200');
+    assert.equal(await page.locator('#sheetsGrid td.is-formula').count(), 2);
+    assert.equal(await page.locator('#sheetsDirty').isVisible(), false);
   });
 
-  await check(`${name}: the Workbook card shows the open workbook's active sheet`, async () => {
-    await page.locator('#sheetsGrid td.is-error').first().waitFor({ timeout: 8000 });
-    assert.equal(await page.locator('#sheetsBookTitle').innerText(), 'Quarterly Sales');
-    assert.equal(await page.locator('#sheetsDirty').isVisible(), true);
-    assert.equal(await page.locator('#sheetsPicker').inputValue(), 'Quarterly-Sales-Dashboard.xlsx');
-    assert.deepEqual(await page.locator('#sheetsTabs [role=tab]').allInnerTexts(), ['Sales', 'Notes', 'Blank']);
-    assert.equal(await page.locator('#sheetsTabs [aria-selected=true]').innerText(), 'Sales');
-    assert.equal(reads.ranges[0], 'Sales!A1:AN250');
-    assert.deepEqual(await page.locator('#sheetsGrid thead th').evaluateAll(t => [t[0].textContent, t[25].textContent, t[26].textContent, t[29].textContent, t[0].scope]), ['A', 'Z', 'AA', 'AD', 'col']);
-    assert.equal(await page.locator('#sheetsGrid tbody th').first().innerText(), '1');
-    const row2 = page.locator('#sheetsGrid tbody tr').nth(1).locator('td');
-    assert.equal(await row2.nth(1).innerText(), 'North');
-    assert.equal(await row2.nth(2).innerText(), '#DIV/0!');
-    assert.equal(await row2.nth(3).innerText(), '');
-    const align = await row2.evaluateAll(t => [0, 1, 4].map(i => getComputedStyle(t[i]).textAlign));
-    assert.deepEqual(align, ['right', 'left', 'right'], 'numbers right-aligned, text left');
-    assert.notEqual(await row2.nth(2).evaluate(e => getComputedStyle(e).color), await row2.nth(1).evaluate(e => getComputedStyle(e).color), 'errors in a different colour');
-    assert.equal(await page.locator('#sheetsNote').innerText(), 'Showing the first 200 rows and 30 columns.');
-    assert.ok((await page.locator('#sheetsGrid tbody th, #sheetsGrid td').evaluateAll(t => t.slice(0, 40).map(e => parseFloat(getComputedStyle(e).fontSize)))).every(n => n >= 14), 'text is at least 14px');
+  await check(`${name}: a cell shows its formula, and Show formulas shows them in the grid`, async () => {
+    await page.locator('#sheetsGrid td[data-cell="D2"]').click();
+    assert.equal(await page.locator('#sheetsCellRef').innerText(), 'Sales!D2');
+    assert.equal(await page.locator('#sheetsCellFormula').innerText(), '=B2+C2');
+    await page.keyboard.press('ArrowLeft');
+    assert.equal(await page.locator('#sheetsCellRef').innerText(), 'Sales!C2', 'arrow keys move the selection');
+    await page.locator('#sheetsFormulas').click();
+    assert.equal(await page.locator('#sheetsFormulas').getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.locator('#sheetsGrid td[data-cell="D3"]').innerText(), '=B3+C3');
+    await page.locator('#sheetsFormulas').click();
+    await page.locator('#sheetsAskCell').click();
+    assert.equal(await page.locator('#sheetsPrompt').inputValue(), 'Sales!C2 ');
   });
 
-  await check(`${name}: the grid scrolls sideways inside its card, never the page`, async () => {
-    const wrap = page.locator('#sheetsGridWrap');
-    const m = await wrap.evaluate(e => ({ sw: e.scrollWidth, cw: e.clientWidth, page: document.documentElement.scrollWidth <= window.innerWidth }));
-    assert.ok(m.sw > m.cw, 'the grid is wider than its card');
-    assert.equal(m.page, true);
-    await wrap.evaluate(e => { e.scrollLeft = 600; e.scrollTop = 300; });
-    const stuck = await page.evaluate(() => {
-      const w = document.getElementById('sheetsGridWrap').getBoundingClientRect();
-      const head = document.querySelector('#sheetsGrid thead th').getBoundingClientRect(), row = document.querySelector('#sheetsGrid tbody th').getBoundingClientRect();
-      return Math.abs(head.top - w.top) < 3 && Math.abs(row.left - w.left) < 3;
-    });
-    assert.equal(stuck, true, 'header row and row numbers stay in view');
+  await check(`${name}: another sheet pages through its rows`, async () => {
+    await page.locator('#sheetsTabs [data-sheet="Notes"]').click();
+    await page.locator('#sheetsGrid td[data-cell="A100"]').waitFor();
+    assert.match(await page.locator('#sheetsPagerText').innerText(), /Rows 1–100 of 250/);
+    await page.locator('[data-sheets-page="1"]').click();
+    await page.locator('#sheetsGrid td[data-cell="A101"]').waitFor();
+    assert.ok(calls.workbook.some(q => q.includes('range=A101%3AA200')));
+    await page.locator('#sheetsTabs [data-sheet="Sales"]').click();
+    await page.locator('#sheetsGrid td[data-cell="D3"]').waitFor();
   });
 
-  await check(`${name}: tabs switch sheets, with arrow keys too; an empty sheet says so`, async () => {
-    await page.locator('#sheetsTabs [role=tab]', { hasText: 'Notes' }).click();
-    await page.waitForFunction(() => document.querySelector('#sheetsGrid tbody td')?.textContent === 'Owner');
-    assert.equal(await page.locator('#sheetsGrid tbody tr').nth(1).locator('td').nth(1).innerText(), 'TRUE');
-    assert.equal(await page.locator('#sheetsNote').isVisible(), false);
-    await page.keyboard.press('ArrowRight');
-    await page.waitForFunction(() => document.querySelector('#sheetsNote')?.textContent === 'This sheet is empty.');
-    assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Blank');
-    assert.equal(await page.locator('#sheetsGridWrap').isVisible(), false);
-    await page.keyboard.press('Home');
-    await page.locator('#sheetsGrid td.is-error').first().waitFor();
-  });
-
-  await check(`${name}: an example fills the box, Run shows the answer`, async () => {
+  await check(`${name}: Read only sends its mode and shows the answer`, async () => {
+    await page.locator('#sheetsMode [data-mode="read"]').click();
+    assert.match(await page.locator('#sheetsModeHint').innerText(), /cannot change anything/);
     await page.locator('[data-sheets-example="1"]').click();
-    assert.match(await page.locator('#sheetsPrompt').inputValue(), /total of the Sales column/);
     await page.locator('#sheetsRun').click();
     await page.locator('#sheetsResult[data-kind="done"]').waitFor();
     assert.equal(await page.locator('#sheetsResultText').innerText(), 'The Sales total is 48,250.');
-    assert.equal(await page.locator('#sheetsRetry').isVisible(), false);
-    assert.equal(runs.length, 1);
-    await until(() => reads.workbook === 2, 'the workbook reloads after a successful Run');
+    assert.deepEqual(calls.runs.at(-1), { prompt: EXAMPLE_TOTAL, mode: 'read' });
+    assert.equal(await page.locator('#sheetsReview').isVisible(), false);
+  });
+
+  await check(`${name}: a Review request shows what changed, highlights it, and can be kept`, async () => {
+    await page.locator('#sheetsMode [data-mode="review"]').click();
+    await page.locator('#sheetsPrompt').fill('Set North Q1 to 50000');
+    await page.locator('#sheetsRun').click();
+    await page.locator('#sheetsReview').waitFor({ state: 'visible' });
+    assert.deepEqual(calls.runs.at(-1).mode, 'review');
+    assert.match(await page.locator('#sheetsChanges').innerText(), /B2[\s\S]*48200[\s\S]*50000/);
+    assert.match(await page.locator('#sheetsChanges').innerText(), /Formatted B2: bold/);
+    await page.locator('#sheetsGrid td[data-cell="B2"].is-pending').waitFor();
+    await page.locator('#sheetsDirty').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#sheetsHistory').innerText(), /Waiting for review/);
+    assert.equal(await page.locator('#spreadsheets .btn-primary:visible').count(), 1, 'Keep changes is the one blue action while a review waits');
+    if (shots) await page.screenshot({ path: `${shots}/sheets-${name}-review.png`, fullPage: true });
+    await page.locator('.sheets-goto[data-cell="B2"]').click();
+    assert.match(await page.locator('#sheetsCellChange').innerText(), /48200 → 50000/);
+    await page.locator('#sheetsKeep').click();
+    await page.locator('#sheetsReview').waitFor({ state: 'hidden' });
+    assert.equal(calls.keep, 1);
+    assert.match(await page.locator('#sheetsHistory').innerText(), /Kept/);
+    await page.locator('#sheetsDirty').waitFor({ state: 'hidden' });
+  });
+
+  await check(`${name}: Discard says why it can't, then undoes the latest request`, async () => {
+    await page.locator('#sheetsPrompt').fill('Set North Q1 to 50000 again');
+    await page.locator('#sheetsRun').click();
+    await page.locator('#sheetsReview').waitFor({ state: 'visible' });
+    await page.locator('#sheetsDiscard').click();
+    await page.waitForFunction(() => /changed in GridCraft/.test(document.querySelector('#sheetsReviewNote')?.textContent || ''));
+    await page.locator('#sheetsDiscard').click();
+    await page.locator('#sheetsReview').waitFor({ state: 'hidden' });
+    assert.match(await page.locator('#sheetsHistory').innerText(), /Discarded/);
   });
 
   await check(`${name}: a failure says why, keeps GridCraft "Ready", and Try again resends it`, async () => {
+    const before = calls.runs.length;
     await page.locator('#sheetsPrompt').fill('break the workbook');
     await page.locator('#sheetsRun').click();
     await page.locator('#sheetsResult[data-kind="error"]').waitFor();
@@ -114,18 +150,19 @@ for (const [name, options] of [['computer', { viewport: { width: 1280, height: 9
     await page.locator('#sheetsStatus[data-state="ready"]').waitFor();
     await page.locator('#sheetsRetry').click();
     await page.waitForFunction(() => document.querySelector('#sheetsRun')?.disabled === false && document.querySelector('#sheetsResult')?.dataset.kind === 'error');
-    assert.equal(runs.length, 3);
+    assert.equal(calls.runs.length, before + 2);
   });
 
-  await check(`${name}: picking another workbook opens it in GridCraft and reloads`, async () => {
-    const before = reads.workbook;
-    await page.locator('#sheetsPicker').selectOption('Budget.xlsx');
-    await page.locator('.ask-sheet .ask-sheet__ok').click(); // the open workbook has unsaved changes
-    await until(() => reads.workbook > before, 'reloads after opening');
-    assert.deepEqual(reads.opened, ['Budget.xlsx']);
+  await check(`${name}: the mode is remembered`, async () => {
+    await page.locator('#sheetsMode [data-mode="apply"]').click();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#spreadsheets.active');
+    assert.equal(await page.locator('#sheetsMode [aria-checked="true"]').getAttribute('data-mode'), 'apply');
   });
 
   await check(`${name}: nothing scrolls sideways`, async () => {
+    await page.locator('#sheetsGrid td[data-cell="A1"]').waitFor();
+    if (shots) await page.screenshot({ path: `${shots}/sheets-${name}.png`, fullPage: true });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   });
   await page.close();
