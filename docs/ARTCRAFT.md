@@ -26,9 +26,14 @@ second host service.
 | Route | Answer |
 |---|---|
 | `GET /artcraft` (appliance: `GET /api/artcraft/status`) | `{ok, installed, running, version}`. `running` comes from `tasklist`; `version` is the exe's product version, read once per file change through PowerShell. |
-| `POST /artcraft/open` (appliance: `POST /api/artcraft/open`) | Starts the fixed exe with no arguments and answers `{ok, alreadyRunning}`; 404 if it isn't installed. Nothing from the request body is used. Same Origin and JSON rules as the bridge's `/run`; the appliance also requires same-origin JSON and records "ArtCraft opened" in the Audit log. |
+| `POST /artcraft/open` (appliance: `POST /api/artcraft/open`) | Starts the fixed exe (on Windows through `explorer.exe <exe>`, see below) with no request arguments and answers `{ok, alreadyRunning}`; 404 if it isn't installed. Nothing from the request body is used. Same Origin and JSON rules as the bridge's `/run`; the appliance also requires same-origin JSON and records "ArtCraft opened" in the Audit log. |
 
 Bridge setting: `ARTCRAFT_EXE` (default `%LOCALAPPDATA%\ArtCraft\artcraft.exe`).
 
-The bridge's scheduled task runs with highest privileges at logon, so ArtCraft opened from LocalAI runs with them
-too, in the signed-in user's session (as GridCraft does).
+## Why it opens through explorer.exe
+
+The bridge's scheduled task runs with highest privileges at logon. ArtCraft is unsigned and talks to cloud services,
+so it must not inherit that token. On Windows the bridge runs `explorer.exe <ArtCraft exe>`, which hands the launch to
+the signed-in user's normal, non-admin shell. `explorer.exe` returns at once and its exit code means nothing, so
+whether ArtCraft is running is still read from `tasklist`. (GridCraft, which the bridge starts directly, still runs
+elevated.)

@@ -36,6 +36,7 @@ ALLOWED_ORIGINS = {
 # ArtCraft (an image and video studio that works through cloud services) is only reported on and opened, never driven.
 LOCALAPPDATA = Path(os.environ.get('LOCALAPPDATA', USERPROFILE / 'AppData' / 'Local'))
 ARTCRAFT_EXE = Path(os.environ.get('ARTCRAFT_EXE', LOCALAPPDATA / 'ArtCraft' / 'artcraft.exe'))
+ON_WINDOWS = os.name == 'nt'
 
 run_lock = threading.Lock()
 launch_lock = threading.Lock()
@@ -132,13 +133,22 @@ def artcraft_status() -> dict:
     }
 
 
+def artcraft_launch_args() -> list:
+    # The bridge runs with the highest privileges, and ArtCraft is unsigned and talks to cloud services, so it must not
+    # inherit that token. explorer.exe hands the launch to the signed-in user's normal, non-admin shell. It returns at
+    # once and its exit code means nothing, so whether ArtCraft is running is still read from tasklist.
+    if ON_WINDOWS:
+        return ['explorer.exe', str(ARTCRAFT_EXE)]
+    return [str(ARTCRAFT_EXE)]
+
+
 def open_artcraft() -> tuple:
     # Only the configured exe, with no arguments: nothing from the request reaches the command line.
     if not ARTCRAFT_EXE.is_file():
         return 404, {'ok': False, 'error': "ArtCraft isn't installed on the Windows computer"}
     if process_running(ARTCRAFT_EXE.name):
         return 200, {'ok': True, 'alreadyRunning': True}
-    subprocess.Popen([str(ARTCRAFT_EXE)], cwd=str(ARTCRAFT_EXE.parent), creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0))
+    subprocess.Popen(artcraft_launch_args(), cwd=str(ARTCRAFT_EXE.parent), creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0))
     log.info('Opened ArtCraft')
     return 200, {'ok': True, 'alreadyRunning': False}
 

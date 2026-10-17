@@ -20,12 +20,14 @@ m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 launched = []
 m.subprocess.Popen = lambda args, **kw: launched.append(args)
 out = []
-for running in json.loads(sys.stdin.read()):
+cases = json.loads(sys.stdin.read())
+m.ON_WINDOWS = cases['windows']
+for running in cases['running']:
     m.process_running = lambda name, r=running: r
     out.append([m.artcraft_status(), list(m.open_artcraft())])
 print(json.dumps({'out': out, 'launched': launched}))`;
-  const run = cases => {
-    const r = spawnSync(python, ['-I', '-c', code, bridge], { input: JSON.stringify(cases), encoding: 'utf8', env: { ...process.env, ARTCRAFT_EXE: exe } });
+  const run = (running, windows = false) => {
+    const r = spawnSync(python, ['-I', '-c', code, bridge], { input: JSON.stringify({ running, windows }), encoding: 'utf8', env: { ...process.env, ARTCRAFT_EXE: exe } });
     assert.equal(r.status, 0, r.stderr);
     return JSON.parse(r.stdout);
   };
@@ -44,5 +46,12 @@ print(json.dumps({'out': out, 'launched': launched}))`;
     assert.equal(out[1][0].running, true);
     assert.deepEqual(out[1][1], [200, { ok: true, alreadyRunning: true }]);
     assert.deepEqual(launched, [[exe]], 'launched once, the configured exe with no arguments');
+
+    // On Windows it goes through explorer.exe, so ArtCraft runs un-elevated in the signed-in user's shell, not with
+    // the bridge's highest-privileges token. Exactly the exe path, nothing else.
+    const win = run([false, true], true);
+    assert.deepEqual(win.launched, [['explorer.exe', exe]]);
+    assert.deepEqual(win.out[0][1], [200, { ok: true, alreadyRunning: false }]);
+    assert.deepEqual(win.out[1][1], [200, { ok: true, alreadyRunning: true }]);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

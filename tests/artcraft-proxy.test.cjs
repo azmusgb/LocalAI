@@ -92,5 +92,6 @@ test('the Services card asks the appliance, not the bridge, and has no free-form
   assert.match(ui, /url: '\/api\/artcraft\/open', label: 'Open on the Windows computer'/);
   assert.doesNotMatch(ui, /8787/);
   const bridge = fs.readFileSync(path.resolve(__dirname, '../host/gridcraft-bridge.py'), 'utf8');
-  assert.match(bridge, /subprocess\.Popen\(\[str\(ARTCRAFT_EXE\)\], cwd=/, 'only the fixed exe, with no arguments');
+  assert.match(bridge, /subprocess\.Popen\(artcraft_launch_args\(\), cwd=/, 'only the fixed exe, with no arguments');
+  assert.match(bridge, /return \['explorer\.exe', str\(ARTCRAFT_EXE\)\]/, 'on Windows, un-elevated through the shell');
 });
