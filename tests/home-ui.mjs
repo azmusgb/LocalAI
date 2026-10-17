@@ -37,7 +37,7 @@ const needs = () => [
 ];
 // Stubs: `threads` answers /api/runs?threads=1, `all` answers the plain /api/runs list, `engineering` the start endpoint.
 let capabilities = () => ({ services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' });
-async function open(viewport, hash, { threads = six, all = needs, engineering = null, storage = {}, caps = null, approvals = [], activity = [], route = null } = {}) {
+async function open(viewport, hash, { threads = six, all = needs, engineering = null, storage = {}, caps = null, approvals = [], activity = [], route = null, improve = null } = {}) {
   capabilities = caps || (() => ({ services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' }));
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.devTools': '1', 'localai.firstRun.done': '1', ...storage });
@@ -45,6 +45,8 @@ async function open(viewport, hash, { threads = six, all = needs, engineering = 
   await ctx.route(u => u.pathname === '/api/approvals', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: approvals }) }));
   await ctx.route(u => u.pathname === '/api/activity', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: activity }) }));
   if (route) await ctx.route(u => u.pathname === '/api/route', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(route) }));
+  // Improve items stubbed before the page loads, so Home's first load can't land late with the real server's answer.
+  if (improve) await ctx.route(u => u.pathname === '/api/improve/items', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(improve) }));
   page.calls = []; page.known = new Map(); page.started = []; page.memo = {};
   await page.route(u => u.pathname === '/api/capabilities', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(capabilities()) }));
   await page.route(u => u.pathname === '/api/runs', async r => {
@@ -364,14 +366,10 @@ await check('Needs you: new serious Signals in the Backlog show as one row that 
   const fresh = new Date(NOW - HOUR).toISOString(), old = new Date(NOW - 3 * 24 * HOUR).toISOString();
   const sig = (id, createdAt, o = {}) => ({ id, source: 'signal', status: 'proposed', stage: 'backlog', title: id, createdAt, ...o });
   const ctxItems = [sig('signal-a', fresh), sig('signal-b', fresh), sig('signal-old', old), sig('signal-taken', fresh, { stage: 'inProgress' }), { id: 'idea-x', source: 'idea', status: 'approved', stage: 'backlog', createdAt: fresh }];
-  const page = await open(desk, '#home', { all: () => [] });
-  await page.route(u => u.pathname === '/api/improve/items', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: ctxItems, signals: [] }) }));
-  // Home's own first load (real server, no Signals) can land after this refresh and overwrite it on a busy machine, so
-  // refresh until the stubbed items show.
-  await page.waitForFunction(async () => {
-    if (/2 new signals in your backlog/.test(document.getElementById('homeNeedsList')?.textContent || '')) return true;
-    await window.LocalAIHome.refresh?.(); return false;
-  }, null, { ...T, polling: 500 });
+  // Stubbed before the page loads: stubbing after it let Home's own first load (real server, no Signals) land late and
+  // replace the row between the wait and the click, which made this check flaky (CI, 17 Oct).
+  const page = await open(desk, '#home', { all: () => [], improve: { items: ctxItems, signals: [] } });
+  await page.waitForFunction(() => /2 new signals in your backlog/.test(document.getElementById('homeNeedsList')?.textContent || ''), null, T);
   assert.doesNotMatch(await page.locator('#homeNeedsYou').innerText(), /unfinished/);
   await page.locator('#homeNeedsList .home-attn', { hasText: 'new signals' }).click();
   await page.waitForFunction(() => location.hash === '#backlog', null, T);
