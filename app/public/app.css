@@ -1897,3 +1897,27 @@ h1[tabindex="-1"]:focus,h1[tabindex="-1"]:focus-visible{outline:none}
 /* Developer tools (appended; nothing above edited). Diagnostic details marked data-dev-only (Models' runtime tile,
    Health's Advanced service details) show only while the Health switch is on; first-run.js sets body.dev-tools-off. */
 body.dev-tools-off [data-dev-only]{display:none!important}
+/* Text reachable by touch (appended; nothing above edited). */
+/* Inbox: an alert body stops at four lines on every screen; Show more (aria-expanded, app.js inboxMore) opens the rest. */
+#inboxList .item-card>.muted{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+#inboxList .item-card.inbox-open>.muted{display:block;-webkit-line-clamp:none}
+#inboxList .inbox-more{min-height:44px;margin-top:4px}#inboxList [hidden]{display:none!important}
+/* Run view on phones: the clamped title opens in full on a tap (ui.js viewHead). */
+@media(max-width:760px){.run-drawer-title[role="button"]{cursor:pointer}.run-drawer-title.is-open{display:block;-webkit-line-clamp:none}}
+/* Files: the parent folder sits under the name where there is no hover to show the path. */
+.tree-path{display:none}
+@media(pointer:coarse){
+  .tree-row:has(.tree-path){display:grid;grid-template-columns:16px minmax(0,1fr);column-gap:8px;align-items:center;min-height:44px;padding-top:4px;padding-bottom:4px}
+  .tree-row>.tree-path{display:block;grid-column:2;font-size:13px;line-height:1.3;color:var(--ds-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
+/* Audit log: a detail wraps to two lines instead of being cut to one. */
+.activity-detail{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+/* Phones: secondary text on Library cards and the Audit log is at least 13px. */
+@media(max-width:760px){
+  body.ux-v3 .artifact-kind,body.ux-v3 .artifact-summary,body.ux-v3 .artifact-foot .meta,body.ux-v3 .activity-detail,body.ux-v3 .activity-time,body.ux-v3 .activity-run{font-size:13px}
+}
+/* The narrowest phones: a run row's badge moves under the title so the text keeps at least 200px. */
+@media(max-width:370px){
+  body.ux-v3 .work-list .run-card,body.ux-v3 #home .run-card{flex-wrap:wrap}
+  body.ux-v3 .work-list .run-card .list-row__trail,body.ux-v3 #home .run-card .list-row__trail{width:100%;padding:0 0 0 48px;justify-content:flex-start}
+}

@@ -27,6 +27,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import crypto from 'node:crypto';
 import { failingUnitTests, failedBrowserSuites, browserSuiteCounts, suitesToRetry, ciSummary, failureComment, retryComment,
   releaseNoteAdvice, RELEASE_NOTE_MARKER } from './local-ci-lib.mjs';
 
@@ -163,6 +164,23 @@ function adviseOnTitle(title) {
   comment(advice);
 }
 
+// The tree under test gets its own complete dependencies, installed once per lockfile from package-lock.json
+// (devDependencies included) and cached in ~/.cache/localai-ci. Borrowing a checkout's node_modules let eslint and
+// stylelint go missing, and their tests skip rather than fail. Runs hold the queue lock here, so one install at a time.
+function ciDeps(treeDir) {
+  if (DRY) return path.join(repoRoot, 'node_modules');
+  const lock = fs.readFileSync(path.join(treeDir, 'package-lock.json'));
+  const cache = path.join(os.homedir(), '.cache', 'localai-ci', 'deps-' + crypto.createHash('sha256').update(lock).digest('hex').slice(0, 16));
+  if (!fs.existsSync(path.join(cache, 'node_modules', '.package-lock.json'))) {
+    fs.rmSync(cache, { recursive: true, force: true });
+    fs.mkdirSync(cache, { recursive: true });
+    for (const f of ['package.json', 'package-lock.json']) fs.copyFileSync(path.join(treeDir, f), path.join(cache, f));
+    say('Installing the locked dependencies (once per lockfile)…');
+    execFileSync('npm', ['ci', '--no-audit', '--no-fund', '--ignore-scripts'], { cwd: cache, stdio: 'pipe' });
+  }
+  return path.join(cache, 'node_modules');
+}
+
 async function main() {
   if (pr) {
     const head = JSON.parse(gh('pr', 'view', pr, '--json', 'headRefOid,headRefName,baseRefName,state,title'));
@@ -172,13 +190,14 @@ async function main() {
     worktree = path.join(work, 'tree');
     git('worktree', 'add', '-q', '--detach', worktree, sha);
     dir = worktree;
-    fs.symlinkSync(path.join(repoRoot, 'node_modules'), path.join(dir, 'node_modules'));
     say(`Local CI for PR #${pr} (${head.headRefName} @ ${sha.slice(0, 7)}) merged with origin/${head.baseRefName}${DRY ? ' [dry run]' : ''}`);
     try { adviseOnTitle(head.title); } catch (e) { say(`(title check skipped: ${e.message.split('\n')[0]})`); }
     await queue();
     await status('pending', 'Running on ' + os.hostname());
     try { execFileSync('git', ['merge', '-q', '--no-edit', `origin/${head.baseRefName}`], { cwd: dir, stdio: 'pipe' }); }
     catch { say(`--- Merge with ${head.baseRefName}: FAILED (conflicts; merge main into the branch first)`); await status('failure', `Conflicts with ${head.baseRefName}`); return false; }
+    try { fs.symlinkSync(ciDeps(dir), path.join(dir, 'node_modules')); }
+    catch (e) { say(`--- Dependencies: FAILED (${String(e.message).split('\n')[0]})`); await status('error', 'Could not install dependencies'); return false; }
   } else {
     say(`Local CI for the current checkout (${git('rev-parse', '--short', 'HEAD')}); nothing is posted${DRY ? ' [dry run]' : ''}`);
     await queue();
