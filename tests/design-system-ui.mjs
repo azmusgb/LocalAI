@@ -19,6 +19,17 @@ await check('no visible text under 11px in any view', async () => {
   }
   assert.deepEqual(tiny, []);
 });
+// The type scale's floor (E6): secondary text is at least 13 px on every owner page; only badges and pills go smaller.
+// Missions (#agents) keeps its own type until its redesign.
+await check('no visible text under 13px outside badges, on owner pages', async () => {
+  const small = [];
+  for (const v of views) {
+    if (v === 'agents' || !await page.evaluate(v => { if (!document.getElementById(v)) return false; window.showView(v); return true }, v)) continue;
+    await page.waitForTimeout(250);
+    for (const t of await page.evaluate(() => [...document.querySelectorAll('main .view.active *, .ux-shell *')].filter(el => el.offsetParent && !el.closest('.badge,.pill,.statuschip,kbd,.awc,#agents,[data-dev-only],svg') && [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(el).fontSize) < 12.5).map(el => `${String(el.className || el.tagName).slice(0, 40)} ${getComputedStyle(el).fontSize}`))) small.push(`${v}: ${t}`);
+  }
+  assert.deepEqual([...new Set(small)], []);
+});
 await check('primary actions use the accent, not white', async () => {
   await page.evaluate(() => window.showView('agents'));
   const colors = await page.evaluate(() => [...document.querySelectorAll('.btn.primary,.btn-primary,.go')].filter(b => b.offsetParent).map(b => getComputedStyle(b).backgroundColor));
