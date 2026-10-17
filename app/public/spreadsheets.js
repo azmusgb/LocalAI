@@ -11,7 +11,7 @@ const EXAMPLES=[
 const MODES={read:'Looks and answers. It cannot change anything.',review:'Makes the changes in GridCraft without saving. You keep or discard them.',apply:'Makes the changes and saves the workbook.'};
 const STATUS={review:'Waiting for review',kept:'Kept',discarded:'Discarded',applied:'Applied',done:'No changes',failed:'Failed'};
 const PAGE=100;
-const st={busy:false,timer:0,started:0,mode:'review',book:null,sheet:'',top:1,runs:[],run:null,sel:null,formulas:false};
+const st={busy:false,timer:0,started:0,mode:'review',book:null,sheet:'',top:1,runs:[],run:null,sel:null,formulas:false,books:[]};
 const active=()=>$('spreadsheets')?.classList.contains('active');
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const show1=v=>v==null?'':typeof v==='object'?(v.error||JSON.stringify(v)):String(v);
@@ -122,6 +122,7 @@ function renderBook(){
  const b=st.book;if(!b)return;
  $('sheetsTitle').textContent=b.title||b.file||'Workbook';
  $('sheetsDirty').hidden=!b.dirty;
+ renderBooks();
  $('sheetsTabs').innerHTML=(b.sheets||[]).map(s=>`<button type="button" role="tab" class="ux-tab${s.name===b.sheet?' active':''}" aria-selected="${s.name===b.sheet}" data-sheet="${esc(s.name)}">${esc(s.name)}</button>`).join('');
  renderGrid();
 }
@@ -179,6 +180,40 @@ function gridKeys(e){
  if(next)showCell(next.dataset.cell);
 }
 
+// ---- Workbook menu: the files in the GridCraft folder on the Windows computer ----
+async function loadBooks(){
+ try{const r=await fetch(`${API}/workbooks`,{cache:'no-store'}),data=await r.json();if(r.ok&&data.ok)st.books=data.items||[]}catch{/* the menu stays as it was */}
+ renderBooks();
+}
+function renderBooks(){
+ const sel=$('sheetsBooks'),cur=st.book?.file||'',names=st.books.map(x=>x.name);
+ if(cur&&!names.includes(cur))names.unshift(cur);
+ sel.innerHTML=names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+ sel.value=cur;sel.hidden=names.length<2; // nothing else to open
+}
+async function openBook(){
+ const sel=$('sheetsBooks'),name=sel.value,cur=st.book?.file||'';
+ if(!name||name===cur)return;
+ if(st.book?.dirty){
+  const effect=`${cur} has unsaved changes in GridCraft. Open ${name} anyway? The changes stay in GridCraft's undo history only until it's closed.`;
+  const ask=root.LocalAIUI?.ask,ok=ask?(await ask({title:`Open ${name}?`,effect,confirmLabel:'Open anyway'})).ok:root.confirm(effect);
+  if(!ok){sel.value=cur;return}
+ }
+ sel.disabled=true;$('sheetsRange').textContent=`Opening ${name}…`;
+ try{
+  const r=await fetch(`${API}/open`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok||!data.ok)throw new Error(data.error||`HTTP ${r.status}`);
+  st.book=null;st.sheet='';st.sel=null;st.top=1;$('sheetsCell').hidden=true;
+  await loadBook();
+  root.LocalAIUI?.toast?.(`Opened ${name}`);
+ }catch(e){
+  sel.value=cur;renderGrid();
+  $('sheetsResultTitle').textContent=`${name} didn't open`;$('sheetsResult').dataset.status='';$('sheetsElapsed').textContent='';
+  show('error',e.message||String(e));
+ }finally{sel.disabled=false}
+}
+
 // ---- Run, keep, discard ----
 function tick(){$('sheetsElapsed').textContent=`${Math.round((Date.now()-st.started)/1000)}s`}
 async function run(){
@@ -219,10 +254,10 @@ async function decide(action){
  finally{btn.disabled=false}
 }
 
-function refresh(){health().then(ok=>{if(ok){loadBook();loadRuns()}else if(!st.book)emptyGrid('The Windows computer is not answering, so the workbook can\'t be shown. Check System › Health.')})}
+function refresh(){health().then(ok=>{if(ok){loadBook();loadRuns();loadBooks()}else if(!st.book)emptyGrid('The Windows computer is not answering, so the workbook can\'t be shown. Check System › Health.')})}
 function init(){
  const sec=$('spreadsheets');if(!sec)return;
- $('sheetsExamples').innerHTML=EXAMPLES.map((x,i)=>`<button type="button" class="suggestion-chip" data-sheets-example="${i}">${x}</button>`).join('');
+ $('sheetsExamples').innerHTML=EXAMPLES.map((x,i)=>`<button type="button" class="btn-outline" data-sheets-example="${i}">${x}</button>`).join('');
  sec.querySelectorAll('[data-sheets-example]').forEach(b=>b.addEventListener('click',()=>{$('sheetsPrompt').value=EXAMPLES[b.dataset.sheetsExample];$('sheetsPrompt').focus()}));
  setMode(store.get('sheets.mode')||'review');
  $('sheetsMode').addEventListener('click',e=>{const b=e.target.closest('[data-mode]');if(b)setMode(b.dataset.mode)});
@@ -233,6 +268,7 @@ function init(){
  $('sheetsKeep').addEventListener('click',()=>decide('keep'));
  $('sheetsDiscard').addEventListener('click',()=>decide('discard'));
  $('sheetsRefresh').addEventListener('click',refresh);
+ $('sheetsBooks').addEventListener('change',openBook);
  $('sheetsFormulas').addEventListener('click',e=>{st.formulas=!st.formulas;e.currentTarget.setAttribute('aria-pressed',st.formulas);renderGrid()});
  $('sheetsTabs').addEventListener('click',e=>{const b=e.target.closest('[data-sheet]');if(b&&b.dataset.sheet!==st.sheet){st.sel=null;$('sheetsCell').hidden=true;loadBook(b.dataset.sheet,1)}});
  $('sheetsPager').addEventListener('click',e=>{const b=e.target.closest('[data-sheets-page]');if(b)loadBook(st.sheet,Math.max(1,st.top+PAGE*+b.dataset.sheetsPage))});

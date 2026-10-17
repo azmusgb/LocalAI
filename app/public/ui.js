@@ -13,7 +13,7 @@ window.LocalAIKit=Object.freeze({icon,statusBadge,badgeHtml});
 
 // ==== agent-specialists.js ====
 (()=>{'use strict';
-let catalog=[],selected='ux_analyst',source=null,currentMission=null,history=[],activeResultTab='summary',activeInspectorId='';
+let catalog=[],selected='ux_analyst',source=null,currentMission=null,history=[],activeInspectorId='';
 const $=id=>document.getElementById(id);
 // One shared mission EventSource per tab (agent-specialists.js and agent-world-city.js both subscribe; whichever loads first creates it).
 const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=(()=>{
@@ -63,9 +63,9 @@ function renderHead(m){const A=window.LocalAIAgentWords,st=A?.statusSentence(m||
  const p=primaryFor(m);for(const id of ['awPrimary','awPeekAction']){const b=$(id);if(!b)continue;b.hidden=!p;if(p){b.textContent=p[1];b.dataset.action=p[0]}}
  document.querySelectorAll('[data-aw-menu="copy"],[data-aw-menu="replay"]').forEach(b=>b.disabled=b.dataset.awMenu==='copy'?!m?.answer:!(m?.timeline||[]).length||m?.status==='running')}
 function doPrimary(action){if(action==='retry')retryMission();else if(action==='result')showResult();else if(action==='watch')window.LocalAIAgentWorld?.follow?.(true);else openStart();renderHead(currentMission)}
-function showResult(){const r=document.querySelector('#agents .agent-results');if(phone.matches)setSnap('full');r?.scrollIntoView?.({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});$('agentResultTab-summary')?.click();$('agentResultBody')?.focus({preventScroll:true})}
+function showResult(){const r=document.querySelector('#agents .aw-results');if(phone.matches)setSnap('full');r?.scrollIntoView?.({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});$('agentResultBody')?.focus({preventScroll:true})}
 // ⋯ menu: Start a new mission, Watch the replay, Open in Work, Copy result, All missions.
-function setupMenu(){const btn=$('awMoreBtn'),menu=$('awMenu');if(!btn||!menu)return;const items=()=>[...menu.querySelectorAll('[role^=menuitem]:not(:disabled)')];
+function setupMenu(){const btn=$('awMoreBtn'),menu=$('awMenu');if(!btn||!menu)return;const items=()=>[...menu.querySelectorAll('[role^=menuitem]:not(:disabled)')].filter(x=>x.offsetParent);
  const outside=e=>{if(!menu.hidden&&!menu.contains(e.target)&&!btn.contains(e.target)&&!e.target.closest?.('#uxHeaderAction'))close(false)};
  const close=(focus=true)=>{if(menu.hidden)return;menu.hidden=true;document.removeEventListener('pointerdown',outside);btn.setAttribute('aria-expanded','false');if(focus)(phone.matches?document.getElementById('uxHeaderAction'):btn)?.focus()};
  const open=()=>{menu.hidden=false;document.addEventListener('pointerdown',outside);btn.setAttribute('aria-expanded','true');items()[0]?.focus()};
@@ -75,16 +75,20 @@ function setupMenu(){const btn=$('awMoreBtn'),menu=$('awMenu');if(!btn||!menu)re
   if(a==='new')doPrimary('start');
   else if(a==='replay'&&m)window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:m,play:true}}));
   else if(a==='all')window.LocalAIRouter?.go('#work?kind=missions');
+  else if(a==='demo')window.LocalAIAgentWorld?.demo?.();
   else if(a==='work'){let id='';try{id=((await req('/api/runs?kind=missions&limit=60')).items||[]).find(x=>(x.meta?.missionId||x.output?.missionId||x.source?.id)===m?.id)?.id||''}catch{}if(id&&window.LocalAIRuns)window.LocalAIRuns.show(id);else window.LocalAIRouter?.go('#work?kind=missions')}
   else if(a==='copy'&&m?.answer){try{await navigator.clipboard.writeText(m.answer);window.LocalAIUI?.toast?.('Result copied')}catch{window.LocalAIUI?.toast?.('Couldn’t copy. Select the summary and copy it instead.')}}});
  window.LocalAIShell?.setAction('agents',{icon:'more',label:'More',onClick:()=>window.LocalAIAgentMenu.toggle()})}
 function retryMission(){if(!currentMission?.goal)return;const g=$('agentGoal');if(g)g.value=currentMission.goal;startMission()}
-function renderResults(){const el=$('agentResultBody');if(!el)return;const m=currentMission;if(!m){el.innerHTML='<div class="empty">Mission results will appear here.</div>';return}
- if(activeResultTab==='summary'){el.innerHTML=m.answer?`<pre class="agent-result-pre">${esc(m.answer)}</pre>`:`<div class="empty">${m.status==='running'?'Final synthesis will appear when all workers complete.':'No final synthesis available.'}</div>`}
- if(activeResultTab==='workers'){el.innerHTML=(m.results||[]).length?(m.results||[]).map(r=>`<article class="result-card"><div class="detail-head"><strong>${esc(r.agentName||r.agentId)}</strong><span class="statuschip ${esc(r.status)}">${humanState(r.status)}</span></div><pre class="agent-result-pre">${esc(r.answer||r.error||'')}</pre></article>`).join(''):'<div class="empty">No specialist outputs yet.</div>'}
- if(activeResultTab==='evidence'){const rows=[];(m.results||[]).forEach(r=>(r.evidence||[]).forEach(e=>rows.push([r.agentName||r.agentId,e])));el.innerHTML=rows.length?`<div class="evidence-table">${rows.map(([a,e])=>`<div><strong>${esc(a)}</strong><code>${esc(e)}</code></div>`).join('')}</div>`:'<div class="empty">No evidence recorded yet.</div>'}
- if(activeResultTab==='routing'){el.innerHTML=m.routing?`<pre class="agent-result-pre">${esc(JSON.stringify(m.routing,null,2))}</pre>`:'<div class="empty">No routing decision available.</div>'}
-}
+// The result: Summary first (or why there is none), then what each worker found (one fold each), then the sources as
+// links. The routing decision is a developer detail.
+function renderResults(){const el=$('agentResultBody'),A=window.LocalAIAgentWords,m=currentMission;if(!el||!A)return;if(!m){el.innerHTML='<p class="aw-results__none">The result will be here when the team finishes.</p>';return}
+ const rs=m.results||[],seen=new Set(),src=[];for(const r of rs){for(const e of r.evidenceRecords||[]){const k=e.source||e.url||e.title;if(k&&!seen.has(k)){seen.add(k);src.push({title:e.title||k,url:e.url||e.source||''})}}for(const e of r.evidence||[]){if(e&&!seen.has(e)){seen.add(e);src.push({title:e,url:e})}}}
+ const link=e=>/^https?:\/\//i.test(e.url)?`<a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.title)}</a>`:`<span>${esc(e.title)}</span>`,pic=r=>window.LocalAIAgentWorld?.avatar?.({id:r.agentId})||'';
+ el.innerHTML=`<h3>Summary</h3>${m.answer?`<div class="aw-results__text">${esc(m.answer)}</div>`:`<p class="aw-results__none">${esc(A.summaryWhy(m))}</p>`}
+ <h3>What each worker found</h3>${rs.length?rs.map(r=>{const w={id:r.agentId,name:r.agentName},b=A.stateBadge(r.status);return `<details class="aw-results__worker"><summary><img class="awc__avatar" src="${pic(r)}" alt="" width="28" height="28"><span>${esc(A.workerName(w))}</span><span class="badge badge--${b.tone}">${esc(b.label)}</span></summary><div class="aw-results__text">${esc(r.answer||(r.status==='error'?'Stopped: '+A.errorWords(r.errorCode,r.error):'Nothing yet.'))}</div></details>`}).join(''):'<p class="aw-results__none">Nothing yet.</p>'}
+ <h3>Sources</h3>${src.length?`<ul class="aw-results__sources">${src.map(e=>`<li>${link(e)}</li>`).join('')}</ul>`:'<p class="aw-results__none">No sources were used.</p>'}
+ <details class="aw-results__dev" data-dev-only><summary>Routing</summary><pre class="agent-result-pre">${m.routing?esc(JSON.stringify(m.routing,null,2)):'No routing recorded.'}</pre></details>`}
 // History lives in Work › Missions; this page only needs the missions to pick the one to show.
 async function loadHistory(){try{const j=await req('/api/agents/missions');history=j.items||j.missions||[];if(!currentMission){const m=history.find(m=>m.status==='running')||history[0];if(m)renderMission(m);else renderHead(null)}}catch(e){notice('error','Couldn’t load the missions: '+e.message)}}
 // Start: the plan is checked first (so a bad goal is said in the sheet), then the mission starts; the sheet closes,
@@ -102,16 +106,8 @@ function renderTeam(){const g=$('agentGoal')?.value.trim()||'',el=$('awTeam');if
 function setupStart(){const d=$('awStart');if(!d)return;d.addEventListener('close',()=>{const r=releaseStart;releaseStart=null;r?.();const o=startOpener;startOpener=null;const back=()=>{if(o?.isConnected&&document.activeElement!==o)o.focus()};back();(window.LocalAIUI?.afterSheetPop||(fn=>fn()))(()=>{back();requestAnimationFrame(()=>requestAnimationFrame(back))})});$('awStartClose').onclick=closeStart;d.addEventListener('click',e=>{if(e.target===d)closeStart()});$('agentGoal')?.addEventListener('input',renderTeam);
  $('awEmptyStart')?.addEventListener('click',openStart);$('awEmptyDemo')?.addEventListener('click',()=>{$('awEmpty').hidden=true;window.LocalAIAgentWorld?.demo?.()});window.LocalAIAgentStart={open:openStart}}
 async function runSpecialist(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter an objective first.');return}const b=$('specialistRunBtn');if(b)b.disabled=true;try{const j=await req('/api/agents/specialist/run',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({agentId:selected,goal,projectId:$('agentProject')?.value||''})});renderRun(j.run)}catch(e){notice('error',e.message)}finally{if(b)b.disabled=false}}
-function setupTabs(){
- const tabs=[...document.querySelectorAll('[data-agent-result-tab]')],body=$('agentResultBody');
- const pick=(b,focus)=>{tabs.forEach(x=>{const on=x===b;x.classList.toggle('active',on);x.setAttribute('aria-selected',String(on));x.tabIndex=on?0:-1});if(focus)b.focus();if(body)body.setAttribute('aria-labelledby',b.id);activeResultTab=b.dataset.agentResultTab;renderResults()};
- tabs.forEach((b,i)=>{b.setAttribute('role','tab');b.id=b.id||'agentResultTab-'+b.dataset.agentResultTab;b.setAttribute('aria-controls','agentResultBody');const on=b.classList.contains('active');b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;
-  b.onclick=()=>pick(b);
-  b.onkeydown=e=>{const n=e.key==='ArrowRight'?i+1:e.key==='ArrowLeft'?i-1:e.key==='Home'?0:e.key==='End'?tabs.length-1:null;if(n===null)return;e.preventDefault();pick(tabs[(n+tabs.length)%tabs.length],true)}});
- if(body){body.setAttribute('role','tabpanel');body.tabIndex=0;const a=tabs.find(x=>x.classList.contains('active'));if(a)body.setAttribute('aria-labelledby',a.id)}
-}
 function setupAdvanced(){const toggle=$('agentAdvancedToggle'),panel=$('agentAdvancedPanel');if(toggle&&panel)toggle.onclick=()=>{const open=panel.hidden;panel.hidden=!open;toggle.setAttribute('aria-expanded',String(open));toggle.textContent=open?'Hide advanced':'Advanced'};$('manualRouteToggle')?.addEventListener('change',e=>{$('manualRouteOptions').hidden=!e.target.checked})}
-async function init(){if(!$('specialistRegistry'))return;setupSheet();const historyLoaded=loadHistory();try{const j=await req('/api/agents/catalog');catalog=j.items||[];cards();updateDirectActionLabel()}catch(e){notice('error','Could not load specialist catalog: '+e.message)}setupTabs();setupAdvanced();setupMenu();setupStart();for(const id of ['awPrimary','awPeekAction'])$(id)?.addEventListener('click',e=>doPrimary(e.currentTarget.dataset.action));window.addEventListener('localai:agentworld-follow',()=>renderHead(currentMission));$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m)},()=>notice('info','Live mission stream reconnecting…'),()=>{const n=$('agentInlineNotice');if(n&&/reconnecting/.test(n.textContent))clearNotice();loadHistory()})}catch{notice('info','Live mission stream unavailable; history remains accessible.')}}
+async function init(){if(!$('specialistRegistry'))return;setupSheet();const historyLoaded=loadHistory();try{const j=await req('/api/agents/catalog');catalog=j.items||[];cards();updateDirectActionLabel()}catch(e){notice('error','Could not load specialist catalog: '+e.message)}setupAdvanced();setupMenu();setupStart();for(const id of ['awPrimary','awPeekAction'])$(id)?.addEventListener('click',e=>doPrimary(e.currentTarget.dataset.action));window.addEventListener('localai:agentworld-follow',()=>renderHead(currentMission));$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m)},()=>notice('info','Live mission stream reconnecting…'),()=>{const n=$('agentInlineNotice');if(n&&/reconnecting/.test(n.textContent))clearNotice();loadHistory()})}catch{notice('info','Live mission stream unavailable; history remains accessible.')}}
 // ---- Phone: everything but the city is a bottom sheet over it, with three snaps ----
 // peek (the status sentence and the crew's portraits), half, full. Drag the top of the sheet, tap the handle to step
 // up, Back to lower it (one history entry while it is up). At peek the body is inert, so focus never lands in what is
@@ -1041,7 +1037,7 @@ function sync(forced){
  const hidden=REG.view(view)?.domain==='hidden',page=pageForView(view),viewLabel=labelForView(page),navPage=menuPage(view);renderPageStrip(d,navPage);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=listedGroups(d).flatMap(g=>g.views).filter(v=>viewButton(v)).length<2;document.body.classList.toggle('ux-single-page',single&&!touchWide());q('#uxContextBar')?.classList.toggle('ux-context-same',!hidden&&(single||viewLabel===d.label))} // "Local AI / Domain" for a domain with one page, "Local AI / Domain / Page" otherwise
  q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);q('#uxContextMenu')?.setAttribute('aria-label',d.label+' pages');syncHeaderAction(view);{const g=q('#uxContextGreeting');if(g)g.textContent=greeting()};
  qa('.ux-primary-item').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
- qa('#uxMobileNav [data-domain]').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
+ qa('#uxMobileNav [data-domain]').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
  if(q('#uxSecondaryTitle')?.textContent!==d.label||q('#uxSecondaryGroups')?.dataset.dev!==String(!devOff()))renderSecondary(d.id);
  qa('.ux-secondary-link').forEach(b=>{const on=b.dataset.view===navPage;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
  qa('.ux-tab[data-ux-tab]').forEach(b=>{const on=b.dataset.uxTab===view;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1});
@@ -1251,14 +1247,16 @@ function recordReplayFrame(reason){
  if(replay.active||!current)return;const sig=(current.workers||[]).map(w=>w.id+':'+w.state).join('|')+'|'+current.status;const last=replay.frames.at(-1);if(last?.sig===sig)return;
  replay.frames.push({at:Date.now(),reason,detail:'',workerId:'',sig,mission:JSON.parse(JSON.stringify(current))});replay.frames=replay.frames.slice(-120);replay.index=replay.frames.length-1;replay.sourceMissionId=current.id||replay.sourceMissionId;persistReplay();syncReplay()
 }
-function replayEventClass(frame){const r=String(frame?.reason||'').toLowerCase();if(/error|attention|blocked|fail/.test(r))return'bad';if(/complete|result/.test(r))return'done';if(/handoff|dispatch|synthesis/.test(r))return'active';return'wait'}
+function replayEventClass(frame){const m=frame?.mission,ws=m?.workers||[];if(ws.length&&ws.every(w=>w.state==='complete'))return'done';if(ws.some(w=>w.state==='error'||w.state==='blocked')||/attention|fail/.test(String(frame?.reason)))return'bad';if(ws.some(w=>w.state==='running'))return'active';return'wait'}
 function syncReplay(){
- if(!root)return;const range=$('#awcReplayRange'),label=$('#awcReplayLabel'),markers=$('#awcReplayMarkers'),frame=replay.frames[replay.index];
- if(range){range.max=Math.max(0,replay.frames.length-1);range.value=replay.index;range.disabled=replay.frames.length<2}
- if(label)label.textContent=replay.frames.length?(replay.active?'Replay '+(replay.index+1)+' / '+replay.frames.length+' · '+String(frame?.reason||'state').replaceAll('-',' '):replay.frames.length+' event'+(replay.frames.length===1?'':'s')+' ready'):'0 events';
- if(markers){markers.innerHTML=replay.frames.map((f,i)=>`<button type="button" data-replay-index="${i}" class="${replayEventClass(f)} ${i===replay.index?'active':''}" title="${esc((f.reason||'state')+(f.detail?' — '+f.detail:''))}"></button>`).join('');markers.querySelectorAll('[data-replay-index]').forEach(b=>b.onclick=()=>applyReplayFrame(Number(b.dataset.replayIndex)))}
- $('#awcReplayPlay').textContent=replay.playing?'Pause':'Play';$('#awcReplaySpeed').textContent=replay.speed+'×';$('#awcReplayLive').hidden=!replay.active;
- const detail=$('#awcReplayDetail');if(detail)detail.textContent=frame?(new Date(frame.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})+' · '+(frame.detail||String(frame.reason||'state').replaceAll('-',' '))):'Select a mission from history to inspect its execution.'
+ if(!root)return;const range=$('#awcReplayRange'),label=$('#awcReplayLabel'),markers=$('#awcReplayMarkers'),play=$('#awcReplayPlay'),scrub=$('#awcScrub'),n=replay.frames.length,frame=replay.frames[replay.index];
+ if(scrub)scrub.hidden=!(n>1&&(replay.active||sourceType==='mission'&&current?.status!=='running'));
+ if(range){range.max=Math.max(0,n-1);range.value=replay.index;range.disabled=n<2}
+ const when=f=>f?new Date(f.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'';
+ if(label)label.textContent=n?(replay.active?'Step '+(replay.index+1)+' of '+n+' · '+when(frame):n+' steps'):'';
+ if(markers){markers.innerHTML=replay.frames.map((f,i)=>`<button type="button" data-replay-index="${i}" class="${replayEventClass(f)} ${i===replay.index&&replay.active?'active':''}" aria-label="Step ${i+1}, ${esc(when(f))}"></button>`).join('');markers.querySelectorAll('[data-replay-index]').forEach(b=>b.onclick=()=>applyReplayFrame(Number(b.dataset.replayIndex)))}
+ if(play){play.textContent=replay.playing?'❚❚':'▶';play.setAttribute('aria-label',replay.playing?'Pause the replay':'Play the replay')}
+ const live=$('#awcReplayLive');if(live)live.hidden=!replay.active;const sp=document.querySelector('[data-aw-view="speed"]');if(sp)sp.textContent='Replay speed: '+replay.speed+'×'
 }
 function applyReplayFrame(i,preservePlaying=false){
  if(!replay.frames.length)return;const wasPlaying=replay.playing;replay.active=true;replay.playing=preservePlaying&&wasPlaying;replay.index=clamp(Number(i)||0,0,replay.frames.length-1);const frame=replay.frames[replay.index];agents.clear();artifacts=[];packets=[];sparks=[];dust=[];current=JSON.parse(JSON.stringify(frame.mission));sourceType='replay';current.workers.forEach(ensureAgent);selected=frame.workerId?{type:'agent',id:String(frame.workerId).split(',')[0]}:selected;syncHud();syncSelection();syncReplay()
@@ -1290,10 +1288,10 @@ function resetDemo(){demo.stage=0;demo.running=false;demo.paused=false;applyDemo
 function returnLive(){document.querySelector('.aw-page')?.classList.remove('is-demo');replay.active=false;replay.playing=false;demo.active=false;demo.running=false;demo.paused=false;agents.clear();artifacts=[];packets=[];sparks=[];dust=[];if(liveSnapshot){current=liveSnapshot;sourceType='mission';current.workers.forEach(ensureAgent)}else{current=null;sourceType='idle';idleCrew()}syncHud();syncDemoControls();syncReplay();fitWorld()}
 function toggleDemoPlay(){if(!demo.active){startDemo();return}demo.running=true;demo.paused=!demo.paused;demo.lastAdvance=now();syncDemoControls()}
 function cycleSpeed(){demo.speed=demo.speed===1?2:demo.speed===2?4:1;syncDemoControls()}
-function syncDemoControls(){if(!root)return;$('#awcDemoPlay').textContent=demo.active&&demo.running&&!demo.paused?'Pause':'Play';$('#awcDemoSpeed').textContent=demo.speed+'×';$('#awcLiveBtn').hidden=!demo.active;$('#awcDemoScenario').value=demo.scenario}
+function syncDemoControls(){const l=$('#awcLiveBtn');if(l)l.hidden=!demo.active}
 function syncHud(){
  if(!root)return;const workers=current?.workers||[],running=workers.filter(w=>w.state==='running').length,bad=workers.filter(w=>['error','blocked'].includes(w.state)).length;
- root.dataset.source=sourceType;root.dataset.state=bad?'attention':running?'running':current?.status==='complete'?'complete':workers.length?'waiting':'idle';syncRoster();paint()
+ root.dataset.source=sourceType;root.dataset.state=bad?'attention':running?'running':current?.status==='complete'?'complete':workers.length?'waiting':'idle';syncRoster();syncReplay();paint()
 }
 // Crew rows, the accessible equivalent of the city: portrait, name, role in words, state, and what they are doing now.
 // The sheet's peek row shows the same crew as small portraits beside the status sentence.
@@ -1315,7 +1313,7 @@ function syncEventFeed(){if(!root)return;const h=$('#awcEventFeed');if(h)h.inner
 let externalFocus=false;
 function syncSelection(){
  if(!root)return;const h=$('#awcSelection');h.dataset.empty=String(!selected);if(!selected){h.innerHTML='<span>Select a worker or building</span><small>Inspect district state and focus the camera.</small>';return}
- if(selected.type==='agent'){const a=agents.get(selected.id);if(!a)return;const w=(current?.workers||[]).find(q=>(q.id||q.agentId)===a.id),rm=w?.routingMeta||{};h.innerHTML=`<strong>${esc(a.name)}</strong><small>${esc(humanState(a.state))} · ${esc(DISTRICTS[a.zone]?.name||a.zone)} · ${esc(a.model||'automatic model')}</small>${rm.capabilityScore!=null?`<small>Capability ${rm.capabilityScore}% · model ${rm.modelScore??'—'}% · ${esc(rm.availability||'available')} · deps ${rm.dependencyCount??0}</small>`:''}`;if(!externalFocus)window.dispatchEvent(new CustomEvent('localai:agentworld-select',{detail:{workerId:a.id}}))}
+ if(selected.type==='agent'){const a=agents.get(selected.id);if(!a)return;const A=window.LocalAIAgentWords,w=(current?.workers||[]).find(q=>(q.id||q.agentId)===a.id)||a;h.innerHTML=`<strong>${esc(A?A.workerName(w):a.name)}</strong><small>${esc(A?A.stateBadge(a.state).label+' · '+A.workerRole(w):a.state)}</small>`;if(!externalFocus)window.dispatchEvent(new CustomEvent('localai:agentworld-select',{detail:{workerId:a.id}}))}
  else{const d=DISTRICTS[selected.id],workers=[...agents.values()].filter(a=>a.zone===selected.id);h.innerHTML=`<strong>${esc(d.name)}</strong><small>${workers.length?workers.map(a=>esc(a.name)).join(', '):'No workers in district'}</small>`}
 }
 // The pan that keeps the city covering the box at zoom z (centred on an axis where the city is the smaller).
@@ -1349,7 +1347,7 @@ function selectAt(e){const p=screenPoint(e);selected=hitAt(p.x,p.y);syncSelectio
 function updateHover(e){
  if(drag||pointers.size>1)return;const p=screenPoint(e),hit=hitAt(p.x,p.y);hovered=hit;const tip=$('#awcTooltip');if(!tip)return;
  if(!hit||hit.type!=='agent'){tip.hidden=true;return}
- const a=agents.get(hit.id);tip.innerHTML='<strong>'+esc(a.name)+'</strong><span>'+esc(humanState(a.state))+' · '+esc(DISTRICTS[a.zone]?.name||a.zone)+'</span>';tip.hidden=false;
+ const a=agents.get(hit.id),A=window.LocalAIAgentWords;tip.innerHTML='<strong>'+esc(A?A.workerName(a):a.name)+'</strong><span>'+esc(A?A.stateBadge(a.state).label:a.state)+' · '+esc(DISTRICTS[a.zone]?.name||a.zone)+'</span>';tip.hidden=false;
  tip.style.left=clamp(e.offsetX+12,8,canvas.clientWidth-176)+'px';tip.style.top=clamp(e.offsetY-54,8,canvas.clientHeight-54)+'px'
 }
 function toggleDisplay(k){display[k]=!display[k];document.querySelector('[data-aw-view="'+k+'"]')?.setAttribute('aria-checked',String(display[k]));if(k==='night')root?.classList.toggle('is-night',display.night)}
@@ -1364,7 +1362,7 @@ function mount(){
  const host=$('#agentWorldCityMount');if(!host)return;root=document.createElement('section');root.className='awc awc-v3';root.dataset.state='idle';root.innerHTML=`
  <div class="awc__gameShell">
   <div class="awc__mapWrap">
-   <canvas id="awcCanvas" tabindex="0" aria-label="Agent World city map. Drag to move, pinch or scroll to zoom, tap a worker or building. The crew list has the same information."></canvas>
+   <canvas id="awcCanvas" tabindex="0" aria-label="Agent World city map. Drag to move, pinch or scroll to zoom, tap a worker or building. Keys: plus and minus zoom, 0 fits the city, F follows, T full screen. The crew list has the same information."></canvas>
    <div class="awc__tooltip" id="awcTooltip" hidden></div>
    <div class="awc__mapHud">
     <div class="awc__selection" id="awcSelection" data-empty="true"><span>Select a worker or building</span><small>Click to inspect</small></div>
@@ -1373,17 +1371,12 @@ function mount(){
    <ul class="awc__toasts" id="awcToasts" aria-hidden="true"></ul>
    <div class="awc__controls" role="toolbar" aria-label="Zoom and follow"><button id="awcZoomOut" type="button" aria-label="Zoom out">−</button><span id="awcZoomLabel" aria-live="polite">100%</span><button id="awcZoomIn" type="button" aria-label="Zoom in">+</button><button id="awcFollow" type="button" aria-pressed="true" title="Keep the camera on the busy worker (F)">Follow</button></div>
   </div>
- </div>`;
- // Districts, replay and the demo are the page's: in the rail (desktop) or the sheet (phone), not over the city.
- const ops=document.createElement('div');ops.className='awc__ops';ops.innerHTML=`
-    <section class="awc__section"><div class="awc__opsHead"><h3>Districts</h3><span class="awc__eyebrow">Jump to</span></div>
-     <div class="awc__districtLegend">${Object.entries(DISTRICTS).map(([id,d])=>`<button type="button" data-awc-district="${id}"><i style="--district:${d.accent}"></i><span>${d.short}</span></button>`).join('')}</div></section>
-    <section class="awc__section awc__replayPanel"><div class="awc__opsHead"><h3>Replay</h3><strong id="awcReplayLabel">0 events</strong></div><div class="awc__replayMarkers" id="awcReplayMarkers"></div><input id="awcReplayRange" type="range" min="0" max="0" value="0" disabled aria-label="Mission replay position"><small id="awcReplayDetail">Select a mission from history to inspect its execution.</small><div class="awc__replayActions"><button id="awcReplayPrev" type="button" aria-label="Previous replay event">◀</button><button id="awcReplayPlay" type="button">Play</button><button id="awcReplayNext" type="button" aria-label="Next replay event">▶</button><button id="awcReplaySpeed" type="button">1×</button><button id="awcReplayLive" type="button" hidden>Live</button></div></section>
-    <section class="awc__section awc__demoPanel"><div class="awc__opsHead"><h3>Simulation</h3><span class="awc__eyebrow">Try the city without a real mission</span></div><select id="awcDemoScenario" aria-label="Demo scenario"><option value="success">Successful mission</option><option value="failure">Failure and repair</option></select><div class="awc__demoActions"><button id="awcDemoPlay" type="button">Play</button><button id="awcDemoStep" type="button">Step</button><button id="awcDemoReset" type="button">Reset</button><button id="awcDemoSpeed" type="button">1×</button></div><button id="awcLiveBtn" class="awc__liveBtn" type="button" hidden>Return to live mission</button></section>
-    <p class="awc__hint">Drag to move, scroll or pinch to zoom, double-click to fit, click a district or worker. Keys: 0 fit · A active · F follow · +/− zoom · T theater.</p>`;
- host.appendChild(root);($('#awCityExtras')||$('.awc__gameShell',root)).appendChild(ops);loadReplay();syncReplay();canvas=$('#awcCanvas');ctx=canvas.getContext('2d');
- $('#awcReplayPrev').onclick=()=>stepReplay(-1);$('#awcReplayPlay').onclick=toggleReplay;$('#awcReplayNext').onclick=()=>stepReplay(1);$('#awcReplaySpeed').onclick=cycleReplaySpeed;$('#awcReplayLive').onclick=returnReplayLive;$('#awcReplayRange').oninput=e=>applyReplayFrame(e.target.value);$('#awcFollow').onclick=()=>toggleFollow();$('#awcZoomIn').onclick=()=>{userCamera();zoomAt(1.2)};$('#awcZoomOut').onclick=()=>{userCamera();zoomAt(.84)};$('#awcDemoPlay').onclick=toggleDemoPlay;$('#awcDemoStep').onclick=stepDemo;$('#awcDemoReset').onclick=resetDemo;$('#awcDemoSpeed').onclick=cycleSpeed;$('#awcLiveBtn').onclick=returnLive;$('#awcDemoScenario').onchange=e=>{demo.scenario=e.target.value;if(demo.active)applyDemo()};
- document.querySelectorAll('[data-awc-district]').forEach(b=>b.onclick=()=>{selected={type:'district',id:b.dataset.awcDistrict};syncSelection();const d=DISTRICTS[b.dataset.awcDistrict];focusPoint((d.x+d.w/2)*T,(d.y+d.h/2)*T,1.7)});
+ </div>
+ <div class="awc__scrub" id="awcScrub" hidden><button id="awcReplayPlay" type="button" aria-label="Play the replay">▶</button><div class="awc__scrubTrack"><div class="awc__replayMarkers" id="awcReplayMarkers"></div><input id="awcReplayRange" type="range" min="0" max="0" value="0" disabled aria-label="Replay position"></div><span id="awcReplayLabel"></span><button id="awcReplayLive" type="button" hidden>Back to now</button></div>
+ <button id="awcLiveBtn" class="awc__demoChip" type="button" hidden>Demo · Stop</button>`;
+ host.appendChild(root);loadReplay();syncReplay();canvas=$('#awcCanvas');ctx=canvas.getContext('2d');
+ $('#awcReplayPlay').onclick=toggleReplay;$('#awcReplayLive').onclick=returnReplayLive;$('#awcReplayRange').oninput=e=>applyReplayFrame(e.target.value);$('#awcFollow').onclick=()=>toggleFollow();$('#awcZoomIn').onclick=()=>{userCamera();zoomAt(1.2)};$('#awcZoomOut').onclick=()=>{userCamera();zoomAt(.84)};$('#awcLiveBtn').onclick=returnLive;
+
  canvas.addEventListener('wheel',e=>{e.preventDefault();userCamera();const p=screenPoint(e);zoomAt(e.deltaY<0?1.12:.89,p.px,p.py)},{passive:false});
  canvas.addEventListener('dblclick',e=>{e.preventDefault();userCamera();fitWorld()});
  canvas.addEventListener('pointerdown',e=>{try{canvas.setPointerCapture(e.pointerId)}catch{}const p=screenPoint(e);pointers.set(e.pointerId,{x:p.px,y:p.py});if(pointers.size===1){drag={id:e.pointerId,startX:p.px,startY:p.py,panX:view.targetPanX,panY:view.targetPanY,moved:false};pinch=null}else if(pointers.size===2){const ps=[...pointers.values()];pinch={distance:Math.max(1,Math.hypot(ps[1].x-ps[0].x,ps[1].y-ps[0].y)),zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,cx:(ps[0].x+ps[1].x)/2,cy:(ps[0].y+ps[1].y)/2};drag=null}});
@@ -1397,7 +1390,7 @@ function mount(){
  // The Agents panel answers our select event with a focus event; don't echo it back as another select.
  window.addEventListener('localai:agentworld-focus',e=>{externalFocus=true;try{focusWorker(e.detail?.workerId)}finally{externalFocus=false}});
  if('ResizeObserver' in window)new ResizeObserver(resize).observe($('.awc__mapWrap',root));window.addEventListener('resize',resize);
- window.LocalAIAgentWorld={camera:()=>({zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,shown:{zoom:view.zoom,panX:view.panX,panY:view.panY},...cam}),avatar,following:()=>display.follow,follow:on=>toggleFollow(on),demo:()=>{startDemo();syncDemoControls()},busy:()=>demo.active||replay.active,display:()=>({...display}),view:k=>k==='theater'?toggleExpanded():k==='fit'?(userCamera(),fitWorld()):toggleDisplay(k),walking:()=>[...agents.values()].filter(workerIsMoving).length,
+ window.LocalAIAgentWorld={camera:()=>({zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,shown:{zoom:view.zoom,panX:view.panX,panY:view.panY},...cam}),avatar,following:()=>display.follow,follow:on=>toggleFollow(on),demo:()=>{startDemo();syncDemoControls()},demoStep:()=>stepDemo(),busy:()=>demo.active||replay.active,display:()=>({...display}),view:k=>k==='speed'?cycleReplaySpeed():k==='theater'?toggleExpanded():k==='fit'?(userCamera(),fitWorld()):toggleDisplay(k),walking:()=>[...agents.values()].filter(workerIsMoving).length,
   moments:()=>({flags:[...agents.values()].filter(a=>a.state==='complete').map(a=>a.id),warnings:[...agents.values()].filter(a=>a.state==='error'||a.state==='blocked').map(a=>a.id),fireworks:celebrationUntil>now()})};
  document.body.classList.add('agent-world-city-ready');buildRoads();seedAmbient();syncDemoControls();syncHud();syncEventFeed();resize();start();bootstrap()
 }
@@ -1405,7 +1398,7 @@ const IDLE=[['router','Team lead'],['ux_analyst','UX Analyst'],['documentation',
 function idleCrew(){if(current||agents.size)return;for(const[id,name]of IDLE)ensureAgent({id,name,state:'pending'})}
 function seedAmbient(){traffic=[{x:2*T,y:13.5*T,v:28,axis:'x',dir:1,color:'#6aaeff'},{x:36*T,y:14.5*T,v:23,axis:'x',dir:-1,color:'#ffc56b'},{x:25.5*T,y:3*T,v:20,axis:'y',dir:1,color:'#c18cff'},{x:13.5*T,y:21*T,v:18,axis:'y',dir:-1,color:'#75dfa2'}];clouds=[{x:160,y:80,s:1.1},{x:880,y:130,s:.8},{x:560,y:40,s:.6}]}
 function update(dt,ts){
- if(display.follow&&!drag&&!pointers.size){const f=agents.get(focusId),a=f&&f.state!=='pending'?f:[...agents.values()].find(q=>q.state==='running');if(a){view.targetZoom=Math.max(view.targetZoom,1.7);view.targetPanX=cam.w/2-a.x*sc(view.targetZoom);view.targetPanY=cam.h/2-a.y*sc(view.targetZoom);limitTargetPan()}}
+ if(display.follow&&!drag&&!pointers.size){const f=agents.get(focusId),a=f&&f.state!=='pending'?f:[...agents.values()].find(q=>q.state==='running');if(a){view.targetZoom=Math.max(view.targetZoom,1.7);view.targetPanX=cam.w/2-a.x*sc(view.targetZoom);view.targetPanY=cam.h/2-a.y*sc(view.targetZoom);limitTargetPan();const zl=Math.round(view.targetZoom*100);if(zl!==update.zl){update.zl=zl;syncZoomLabel()}}}
  const k=reduced?1:Math.min(1,dt*4);view.zoom+=(view.targetZoom-view.zoom)*k;view.panX+=(view.targetPanX-view.panX)*k;view.panY+=(view.targetPanY-view.panY)*k;
  if(celebrationUntil>ts&&ts-(update.lastBurst||0)>380){update.lastBurst=ts;const d=DISTRICTS.command,cx=(d.x+d.w/2)*T+(Math.random()-.5)*160,cy=d.y*T-60-Math.random()*70,c=['#75dfa2','#71b7ff','#f5c04f','#ff8494','#c498ff'][Math.floor(Math.random()*5)];for(let i=0;i<26;i++){const r=Math.random()*Math.PI*2,v=60+Math.random()*70;sparks.push({x:cx,y:cy,vx:Math.cos(r)*v,vy:Math.sin(r)*v-30,life:.9+Math.random()*.6,color:c,size:2+Math.random()*1.5})}}
  for(const a of agents.values()){
@@ -3534,7 +3527,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 // ==== first-run.js ====
-// "Get started" on Home for a new install, and the Developer tools preference that hides the Build domain.
+// "Get started" on Home for a new install, and the Developer tools preference that adds the developer pages.
 (()=>{'use strict';
 const q=(s,r=document)=>r.querySelector(s),qa=(s,r=document)=>[...r.querySelectorAll(s)];
 const DEV_KEY='localai.devTools',DONE_KEY='localai.firstRun.done';
@@ -3544,7 +3537,7 @@ async function getJson(url){const r=await fetch(url,{cache:'no-store'});return r
 let config=null;
 async function loadConfig(){if(!config)config=await getJson('/api/config').catch(()=>({}));return config}
 
-// Developer tools: Improve and the developer pages (registry `dev`: Claude Code, Files, Repository, PowerShell, Browser & computer,
+// Developer tools: the developer pages (registry `dev`: Files, Repository, PowerShell, Browser & computer,
 // n8n workflows), plus the diagnostic tiles marked data-dev-only. An install that has used them
 // starts with them shown; a new one starts with them hidden. The choice is remembered per browser.
 function applyDevTools(on,fromToggle=false){
@@ -3552,7 +3545,7 @@ function applyDevTools(on,fromToggle=false){
  qa('[data-dev-tools-toggle]').forEach(i=>{i.checked=on});
  const active=q('.view.active')?.id;
  const v=window.LocalAIViews?.view(active);
- if(fromToggle&&!on&&(v?.domain==='improve'||v?.dev)&&typeof window.showView==='function')window.showView('home');
+ if(fromToggle&&!on&&v?.dev&&typeof window.showView==='function')window.showView('home');
 }
 async function initDevTools(){
  const saved=pref.get(DEV_KEY);
@@ -3562,7 +3555,7 @@ async function initDevTools(){
 function mountDevToolsToggle(){
  const status=q('#status');if(!status||q('.dev-tools-pref',status))return;
  const row=document.createElement('label');row.className='dev-tools-pref card';
- row.innerHTML='<input type="checkbox" data-dev-tools-toggle><span><strong>Show developer tools</strong><small>Adds Improve and the developer tools: Claude Code, Files, Repository, PowerShell, Browser &amp; computer, n8n workflows.</small></span>';
+ row.innerHTML='<input type="checkbox" data-dev-tools-toggle><span><strong>Show developer tools</strong><small>Adds the developer tools: Files, Repository, PowerShell, Browser &amp; computer, n8n workflows.</small></span>';
  status.appendChild(row); // a setting, so it follows the health results
  row.querySelector('input').addEventListener('change',e=>{pref.set(DEV_KEY,e.target.checked?'1':'0');applyDevTools(e.target.checked,true)});
  row.querySelector('input').checked=!document.body.classList.contains('dev-tools-off');

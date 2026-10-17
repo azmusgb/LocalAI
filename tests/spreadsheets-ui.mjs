@@ -26,15 +26,25 @@ function notes(range) {
 
 async function open(options) {
   const page = await browser.newPage({ serviceWorkers: 'block', ...options });
-  const calls = { runs: [], workbook: [], keep: 0, discard: 0 };
+  const calls = { runs: [], workbook: [], keep: 0, discard: 0, open: [] };
+  const book = { file: SALES.file, dirty: false }; // what GridCraft has open
   let runs = [];
+  await page.route(u => u.pathname === '/api/gridcraft/workbooks', r => r.fulfill({ json: { ok: true, items: [SALES.file, 'Budget.xlsx', 'Inventory.csv'].map(name => ({ name, size: 2048, modified: '2026-10-17T09:00:00+00:00' })) } }));
+  await page.route(u => u.pathname === '/api/gridcraft/open', r => {
+    const { name } = JSON.parse(r.request().postData());
+    calls.open.push(name);
+    if (runs.some(x => x.status === 'review')) return r.fulfill({ status: 409, json: { ok: false, error: 'A request is waiting for review. Keep or discard its changes first, then open another workbook.' } });
+    Object.assign(book, { file: name, dirty: false });
+    return r.fulfill({ json: { ok: true, file: name } });
+  });
   await page.route(u => u.pathname === '/api/gridcraft/health', r => r.fulfill({ json: { ok: true, gridcraftConnected: true, model: 'qwen3:4b-instruct' } }));
   await page.route(u => u.pathname === '/api/gridcraft/workbook', r => {
     const q = new URL(r.request().url()).searchParams;
     calls.workbook.push(q.toString());
     if (q.get('sheet') === 'Notes') return r.fulfill({ json: notes(q.get('range') || 'A1:A100') });
     const changed = runs.some(x => x.status === 'review');
-    return r.fulfill({ json: { ...SALES, dirty: changed, values: changed ? [SALES.values[0], ['North', '$50,000', '$51,340', '$101,340'], SALES.values[2]] : SALES.values } });
+    const named = book.file === SALES.file ? {} : { file: book.file, title: book.file.replace(/\.\w+$/, '') };
+    return r.fulfill({ json: { ...SALES, ...named, dirty: changed || book.dirty, values: changed ? [SALES.values[0], ['North', '$50,000', '$51,340', '$101,340'], SALES.values[2]] : SALES.values } });
   });
   await page.route(u => u.pathname === '/api/gridcraft/runs', r => r.fulfill({ json: { items: runs } }));
   await page.route(u => /\/api\/gridcraft\/runs\/[^/]+\/(keep|discard)$/.test(u.pathname), r => {
@@ -55,11 +65,11 @@ async function open(options) {
   });
   await page.goto(base + '/#spreadsheets', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#spreadsheets.active');
-  return { page, calls };
+  return { page, calls, book };
 }
 
 for (const [name, options] of [['computer', { viewport: { width: 1280, height: 900 } }], ['phone', devices['iPhone 14']]]) {
-  const { page, calls } = await open(options);
+  const { page, calls, book } = await open(options);
 
   await check(`${name}: the page says GridCraft is ready and shows the workbook`, async () => {
     await page.locator('#sheetsStatus[data-state="ready"]').waitFor({ timeout: 8000 });
@@ -70,6 +80,13 @@ for (const [name, options] of [['computer', { viewport: { width: 1280, height: 9
     assert.equal(await page.locator('#sheetsGrid td[data-cell="B2"]').innerText(), '$48,200');
     assert.equal(await page.locator('#sheetsGrid td.is-formula').count(), 2);
     assert.equal(await page.locator('#sheetsDirty').isVisible(), false);
+  });
+
+  await check(`${name}: the examples are the kit's outline buttons; on a phone the workbook comes before the request box`, async () => {
+    assert.equal(await page.locator('#sheetsExamples .btn-outline').count(), 3);
+    const top = sel => page.locator(sel).evaluate(el => el.getBoundingClientRect().top);
+    if (name === 'phone') assert.ok(await top('#sheetsBook') < await top('.sheets-ask'), 'workbook first on a phone');
+    else assert.ok(Math.abs(await top('#sheetsBook') - await top('.sheets-ask')) < 4, 'side by side on a computer');
   });
 
   await check(`${name}: a cell shows its formula, and Show formulas shows them in the grid`, async () => {
@@ -151,6 +168,54 @@ for (const [name, options] of [['computer', { viewport: { width: 1280, height: 9
     await page.locator('#sheetsRetry').click();
     await page.waitForFunction(() => document.querySelector('#sheetsRun')?.disabled === false && document.querySelector('#sheetsResult')?.dataset.kind === 'error');
     assert.equal(calls.runs.length, before + 2);
+  });
+
+  await check(`${name}: the workbook menu lists the GridCraft folder and opens another workbook`, async () => {
+    const menu = page.locator('#sheetsBooks');
+    await menu.waitFor({ state: 'visible' });
+    assert.deepEqual(await menu.locator('option').allInnerTexts(), [SALES.file, 'Budget.xlsx', 'Inventory.csv']);
+    assert.equal(await menu.inputValue(), SALES.file, 'the open workbook is selected');
+    assert.ok((await menu.boundingBox()).height >= 44, 'the menu is 44px to touch');
+    await page.locator('#sheetsTabs [data-sheet="Notes"]').click();
+    await page.locator('#sheetsGrid td[data-cell="A100"]').waitFor();
+    await menu.selectOption('Budget.xlsx');
+    await page.waitForFunction(() => document.querySelector('#sheetsTitle')?.textContent === 'Budget');
+    assert.deepEqual(calls.open, ['Budget.xlsx']);
+    assert.equal(calls.workbook.at(-1), '', 'the new workbook opens on its own first sheet');
+    assert.equal(await menu.inputValue(), 'Budget.xlsx');
+    assert.equal(await page.locator('#sheetsTabs [aria-selected="true"]').innerText(), 'Sales');
+  });
+
+  await check(`${name}: with unsaved changes it asks first, and Cancel opens nothing`, async () => {
+    book.dirty = true;
+    await page.locator('#sheetsRefresh').click();
+    await page.locator('#sheetsDirty').waitFor({ state: 'visible' });
+    await page.locator('#sheetsBooks').selectOption('Inventory.csv');
+    const sheet = page.locator('dialog.ask-sheet');
+    await sheet.waitFor({ state: 'visible' });
+    assert.match(await sheet.innerText(), /Budget\.xlsx has unsaved changes in GridCraft\. Open Inventory\.csv anyway\?/);
+    await sheet.locator('.ask-sheet__cancel').click();
+    await sheet.waitFor({ state: 'detached' });
+    assert.deepEqual(calls.open, ['Budget.xlsx'], 'nothing was opened');
+    assert.equal(await page.locator('#sheetsBooks').inputValue(), 'Budget.xlsx');
+    book.dirty = false;
+  });
+
+  await check(`${name}: while a request waits for review, opening says why it can't`, async () => {
+    await page.locator('#sheetsMode [data-mode="review"]').click();
+    await page.locator('#sheetsPrompt').fill('Set North Q1 to 50000 once more');
+    await page.locator('#sheetsRun').click();
+    await page.locator('#sheetsReview').waitFor({ state: 'visible' });
+    await page.locator('#sheetsDirty').waitFor({ state: 'visible' });
+    await page.locator('#sheetsBooks').selectOption('Inventory.csv');
+    await page.locator('dialog.ask-sheet .ask-sheet__ok').click();
+    await page.locator('#sheetsResult[data-kind="error"]').waitFor();
+    assert.match(await page.locator('#sheetsResultText').innerText(), /waiting for review\. Keep or discard its changes first/);
+    assert.equal(await page.locator('#sheetsBooks').inputValue(), 'Budget.xlsx', 'the menu still shows the open workbook');
+    assert.equal(await page.locator('#spreadsheets .btn-primary:visible').count(), 1);
+    if (shots) await page.screenshot({ path: `${shots}/sheets-${name}-open-refused.png`, fullPage: true });
+    await page.locator('#sheetsKeep').click();
+    await page.locator('#sheetsReview').waitFor({ state: 'hidden' });
   });
 
   await check(`${name}: the mode is remembered`, async () => {

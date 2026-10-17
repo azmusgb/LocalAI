@@ -34,7 +34,12 @@ test('GridCraft is reached through the appliance, not directly from the browser'
         if (JSON.parse(body).prompt === 'fail') { res.statusCode = 500; return res.end(JSON.stringify({ ok: false, error: 'GridCraft agent failed', reason: 'boom', journal })); }
         return res.end(JSON.stringify({ ok: true, answer: 'done', durationSec: 0.1, journal, stdout: 'log' }));
       }
-      if (req.url.startsWith('/workbook')) return res.end(JSON.stringify({ ok: true, file: 'Q.xlsx', sheet: new URL(req.url, 'http://x').searchParams.get('sheet') }));
+      if (/^\/workbook(\?|$)/.test(req.url)) return res.end(JSON.stringify({ ok: true, file: 'Q.xlsx', sheet: new URL(req.url, 'http://x').searchParams.get('sheet') }));
+      if (req.url === '/workbooks') return res.end(JSON.stringify({ ok: true, items: [{ name: 'Budget.xlsx', size: 9, modified: '2026-10-17T10:00:00+00:00', path: 'C:\\Users\\someone\\Budget.xlsx' }, { name: '..\\evil.xlsx', size: 1 }] }));
+      if (req.url === '/open') {
+        if (JSON.parse(body).name === 'Gone.xlsx') { res.statusCode = 404; return res.end(JSON.stringify({ ok: false, error: 'Gone.xlsx is not in the GridCraft folder' })); }
+        return res.end(JSON.stringify({ ok: true, file: JSON.parse(body).name }));
+      }
       if (req.url === '/keep') return res.end(JSON.stringify({ ok: true, dirty: false }));
       if (req.url === '/discard') {
         if (JSON.parse(body).undoTop?.[0] !== 'Enter Cell') { res.statusCode = 409; return res.end(JSON.stringify({ ok: false, error: 'The workbook changed in GridCraft after this request' })); }
@@ -99,6 +104,11 @@ test('GridCraft is reached through the appliance, not directly from the browser'
   assert.equal(failed.run.status, 'review', 'a failed Review request that changed cells can still be discarded');
   assert.equal(failed.run.error, 'GridCraft agent failed: boom');
 
+  const waiting = await post('/api/gridcraft/open', { name: 'Budget.xlsx' });
+  assert.equal(waiting.status, 409, 'opening another workbook would strand the requests waiting for review');
+  assert.match((await waiting.json()).error, /waiting for review/);
+  assert.equal(seen.some(x => x.url === '/open'), false);
+
   const runs = (await (await fetch(`${base}/api/gridcraft/runs`)).json()).items;
   assert.deepEqual(runs.map(x => x.status), ['review', 'done', 'review'], 'newest first');
   const older = await post(`/api/gridcraft/runs/${first.run.id}/discard`);
@@ -114,9 +124,26 @@ test('GridCraft is reached through the appliance, not directly from the browser'
   assert.equal((await fetch(`${base}/api/gridcraft/runs/${first.run.id}/keep`, { method: 'POST', headers: { 'Content-Type': 'text/plain' } })).status, 415);
   assert.equal((await post('/api/gridcraft/runs/gc-nope/keep')).status, 404);
 
+  const books = await (await fetch(`${base}/api/gridcraft/workbooks`)).json();
+  assert.deepEqual(books, { ok: true, items: [{ name: 'Budget.xlsx', size: 9, modified: '2026-10-17T10:00:00+00:00' }] }, 'names, sizes and dates only; never a path');
+  const opened = await fetch(`${base}/api/gridcraft/open`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base }, body: JSON.stringify({ name: 'Budget.xlsx', path: 'C:\\x' }) });
+  assert.equal(opened.status, 200);
+  assert.deepEqual(await opened.json(), { ok: true, file: 'Budget.xlsx' });
+  assert.deepEqual(JSON.parse(seen.find(x => x.url === '/open').body), { name: 'Budget.xlsx' }, 'only the name is forwarded');
+  for (const name of ['../Budget.xlsx', 'C:\\Users\\x\\Budget.xlsx', 'sub/Budget.xlsx', '..', 'notes.txt', '', 42]) {
+    assert.equal((await post('/api/gridcraft/open', { name })).status, 400, `refuses ${JSON.stringify(name)}`);
+  }
+  const crossOpen = await fetch(`${base}/api/gridcraft/open`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://evil.example' }, body: '{"name":"Budget.xlsx"}' });
+  assert.equal(crossOpen.status, 403);
+  assert.equal((await fetch(`${base}/api/gridcraft/open`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{"name":"Budget.xlsx"}' })).status, 415);
+  const gone = await post('/api/gridcraft/open', { name: 'Gone.xlsx' });
+  assert.equal(gone.status, 404);
+  assert.match((await gone.json()).error, /not in the GridCraft folder/);
+  assert.equal(seen.filter(x => x.url === '/open').length, 2, 'refused names never reach the bridge');
+
   const wb = await (await fetch(`${base}/api/gridcraft/workbook?sheet=Sales&other=1`)).json();
   assert.deepEqual(wb, { ok: true, file: 'Q.xlsx', sheet: 'Sales' });
-  assert.equal(seen.find(x => x.url.startsWith('/workbook')).url, '/workbook?sheet=Sales', 'only sheet and range are forwarded');
+  assert.equal(seen.find(x => /^\/workbook(\?|$)/.test(x.url)).url, '/workbook?sheet=Sales', 'only sheet and range are forwarded');
 
   bridge.close();
   await new Promise(r => setTimeout(r, 50));

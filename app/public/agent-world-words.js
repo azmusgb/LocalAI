@@ -127,7 +127,14 @@ function teamPreview(list){
  const parts=ws.map((w,i)=>{const n=workerName(w),a=/^[AEIOU]/i.test(n)&&!/^U[A-Z]/.test(n)?'an ':'a ';return(i?a:a.charAt(0).toUpperCase()+a.slice(1))+n+' will '+will(w)});
  return{workers:ws,text:parts.join('; ')+'.'};
 }
-const api={changeSentence,teamPreview,workerName,workerRole,workerStep,stateBadge,statusSentence,storyEvents,groupStory,errorWords,duration};
+// Why there is no summary yet, in one sentence.
+function summaryWhy(m){const all=(m&&m.workers)||[],c=all.find(w=>key(w)==='synthesis'),stopped=all.filter(w=>w.state==='error'&&key(w)!=='synthesis');
+ if(c&&c.state==='blocked')return'No summary: the Coordinator couldn’t start because '+(stopped.length?names(stopped.map(workerName))+' stopped.':'a worker stopped.');
+ if(c&&c.state==='error')return'No summary: the Coordinator stopped before finishing.';
+ if(m&&m.status==='complete')return'No summary: the Coordinator didn’t write one.';
+ if(stopped.length)return'No summary: '+names(stopped.map(workerName))+' stopped.';
+ return'No summary yet: the team is still working.'}
+const api={summaryWhy,changeSentence,teamPreview,workerName,workerRole,workerStep,stateBadge,statusSentence,storyEvents,groupStory,errorWords,duration};
 root.LocalAIAgentWords=api;
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

@@ -88,6 +88,7 @@ Bridge environment (`host/gridcraft-bridge.py`):
 | `GRIDCRAFT_AGENT_SCRIPT` | `host/gridcraft-agent/gridcraft_ai.py` next to the bridge | The agent |
 | `GRIDCRAFT_EXE` | `C:\Program Files\GridCraft\gridcraft.exe` | GridCraft executable launched when not running |
 | `GRIDCRAFT_WORKBOOK` | `%USERPROFILE%\Documents\GridCraft\Quarterly-Sales-Dashboard.xlsx` | Workbook opened at launch |
+| `GRIDCRAFT_WORKBOOKS_DIR` | the folder of `GRIDCRAFT_WORKBOOK` | Folder the Spreadsheets workbook menu lists and opens from (no subfolders) |
 | `GRIDCRAFT_RUN_TIMEOUT` | `300` (seconds) | Per-request limit; the appliance waits 330 s |
 | `GRIDCRAFT_ALLOWED_ORIGINS` | `http://10.0.0.21:3080,http://127.0.0.1:3080,http://localhost:3080` | CORS allow-list |
 | `GRIDCRAFT_BRIDGE_LOG` | unset (stdout) | Log file, rotated at 2 MB × 3; the installer sets `gridcraft-bridge.log` |
@@ -126,11 +127,27 @@ Without a model, through `host/gridcraft-agent/gridcraft_ops.py`:
 - `POST /keep`: saves the workbook.
 - `POST /discard {"steps":N,"undoTop":[...]}`: undoes `N` steps, but only if GridCraft's newest undo labels still
   equal `undoTop` (otherwise 409: something else changed the workbook since).
+- `GET /workbooks`: the `.xlsx .xlsm .xls .csv .ods` files directly in `GRIDCRAFT_WORKBOOKS_DIR` (name, size, modified;
+  never a path). Doesn't need GridCraft running.
+- `POST /open {"name":"Budget.xlsx"}`: opens that file from the folder (GridCraft `open_workbook`), replacing the open
+  workbook. Only a bare file name: a path separator, `:`, `..` or another extension gets 400, a file not in the folder
+  404.
 
-Keep and discard wait for no running request (409). The appliance stores each request as a settings row
-`gridcraft:run:<id>` (50 kept) and adds `GET /api/gridcraft/runs`, `GET /api/gridcraft/workbook`,
-`POST /api/gridcraft/runs/<id>/keep` (marks every request waiting for review kept, since saving saves them all) and
-`POST /api/gridcraft/runs/<id>/discard` (the newest request only).
+Keep, discard and open wait for no running request (409; open says "GridCraft is busy with a request"). The appliance
+stores each request as a settings row `gridcraft:run:<id>` (50 kept) and adds these routes:
+
+| Appliance route | Bridge | Notes |
+|---|---|---|
+| `GET /api/gridcraft/health` | `GET /health` | ready and connected flags and the model only |
+| `POST /api/gridcraft/run` | `POST /run` | records the request and its journal |
+| `GET /api/gridcraft/runs` | | the recorded requests, newest first |
+| `GET /api/gridcraft/workbook` | `GET /workbook` | `sheet` and `range` only |
+| `POST /api/gridcraft/runs/<id>/keep` | `POST /keep` | marks every request waiting for review kept, since saving saves them all |
+| `POST /api/gridcraft/runs/<id>/discard` | `POST /discard` | the newest request only |
+| `GET /api/gridcraft/workbooks` | `GET /workbooks` | names, sizes and dates only |
+| `POST /api/gridcraft/open` | `POST /open` | checks the name the same way; 409 while any request waits for review, since opening another workbook would leave its Keep and Discard meaning nothing |
+
+POSTs follow the same rules as the bridge: same origin only (403) and `Content-Type: application/json` (415).
 
 Prompts are limited to 20,000 characters. One request runs at a time; a second gets HTTP 409. If GridCraft is
 not listening, the bridge launches it with `WGPU_BACKEND=vulkan` and the configured workbook (or GridCraft's

@@ -1,6 +1,7 @@
-"""Workbook operations the bridge runs without a model: show the workbook, keep (save) or discard (undo) a request.
+"""Workbook operations the bridge runs without a model: show the workbook, keep (save) or discard (undo) a request,
+list the workbooks in the GridCraft folder and open one of them.
 
-Usage: python gridcraft_ops.py workbook|keep|discard < request.json   ->  one JSON object on stdout.
+Usage: python gridcraft_ops.py workbook|keep|discard|workbooks|open < request.json   ->  one JSON object on stdout.
 """
 from __future__ import annotations
 
@@ -8,13 +9,16 @@ import asyncio
 import json
 import os
 import sys
-from pathlib import PureWindowsPath
+from datetime import datetime, timezone
+from pathlib import Path, PureWindowsPath
 from typing import Any, Awaitable, Callable
 
 from gridcraft_journal import clamp_range, is_error, payload, undo_top_matches, window_range
 
 DEFAULT_GRIDCRAFT_CLI = r"C:\Program Files\GridCraft\gridcraft-cli.exe"
 Call = Callable[[str, dict[str, Any]], Awaitable[Any]]
+# What the workbook menu lists and opens: files directly in the GridCraft folder with one of these extensions.
+WORKBOOK_EXTENSIONS = (".xlsx", ".xlsm", ".xls", ".csv", ".ods")
 
 
 class OpError(Exception):
@@ -105,10 +109,64 @@ async def discard(call: Call, req: dict[str, Any]) -> dict[str, Any]:
     return {"dirty": bool(info.get("dirty")), "undone": steps}
 
 
-OPS = {"workbook": workbook, "keep": keep, "discard": discard}
+def workbooks_dir() -> Path:
+    # The bridge sets this from GRIDCRAFT_WORKBOOKS_DIR, or the folder of its GRIDCRAFT_WORKBOOK.
+    default = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Documents" / "GridCraft"
+    return Path(os.environ.get("GRIDCRAFT_WORKBOOKS_DIR") or default)
+
+
+def _is_workbook(name: str) -> bool:
+    return name.lower().endswith(WORKBOOK_EXTENSIONS) and not name.startswith("~$")  # ~$ is Excel's lock file
+
+
+def workbook_name(name: Any) -> str:
+    """A bare file name in the GridCraft folder, or OpError. Never a path: the page only ever names a file."""
+    if not isinstance(name, str) or not name.strip() or len(name) > 255:
+        raise OpError("Choose a workbook file", 400)
+    if any(c in name for c in "/\\:\0") or ".." in name:
+        raise OpError("A workbook is named by its file name only, not a path", 400)
+    if not _is_workbook(name):
+        raise OpError(f"GridCraft opens {', '.join(WORKBOOK_EXTENSIONS)} files", 400)
+    if not (workbooks_dir() / name).is_file():
+        raise OpError(f"{name} is not in the GridCraft folder", 404)
+    return name
+
+
+async def workbooks(call: Call | None, req: dict[str, Any]) -> dict[str, Any]:
+    # Names, sizes and dates only: the page never sees a host path. No subfolders.
+    items = []
+    try:
+        entries = list(os.scandir(workbooks_dir()))
+    except OSError:
+        entries = []
+    for e in entries:
+        try:
+            if not _is_workbook(e.name) or not e.is_file():
+                continue
+            info = e.stat()
+        except OSError:
+            continue
+        modified = datetime.fromtimestamp(info.st_mtime, timezone.utc).isoformat(timespec="seconds")
+        items.append({"name": e.name, "size": info.st_size, "modified": modified})
+    items.sort(key=lambda x: x["name"].casefold())
+    return {"items": items}
+
+
+async def open_book(call: Call, req: dict[str, Any]) -> dict[str, Any]:
+    name = workbook_name(req.get("name"))
+    await _json(call, "open_workbook", {"path": os.path.join(str(workbooks_dir()), name)})
+    return {"file": name}
+
+
+OPS = {"workbook": workbook, "keep": keep, "discard": discard, "workbooks": workbooks, "open": open_book}
+NO_GRIDCRAFT = {"workbooks"}  # reads the folder only
 
 
 async def run(op: str, req: dict[str, Any]) -> dict[str, Any]:
+    if op in NO_GRIDCRAFT:
+        return await OPS[op](None, req)
+    if op == "open":
+        workbook_name(req.get("name"))  # refuse a bad name before connecting to GridCraft
     from mcp import Client, StdioServerParameters
 
     cli = os.environ.get("GRIDCRAFT_CLI", DEFAULT_GRIDCRAFT_CLI)
