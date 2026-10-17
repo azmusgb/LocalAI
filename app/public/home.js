@@ -65,7 +65,7 @@ function sheet(){
  d=document.createElement('dialog');d.id='homeModeSheet';d.className='ask-sheet home-sheet';d.setAttribute('aria-labelledby','homeModeTitle');
  d.innerHTML='<form method="dialog" class="ask-sheet__form"><h2 class="ask-sheet__title" id="homeModeTitle">What kind of work?</h2><div class="home-modes" role="radiogroup" aria-labelledby="homeModeTitle"></div><div id="homeModeOptions" class="home-sheet__options" hidden></div><div class="ask-sheet__actions"><button type="submit" class="btn-primary home-sheet__done">Done</button></div></form>';
  d.addEventListener('click',e=>{if(e.target===d)d.close()});
- d.addEventListener('close',()=>{const r=release;release=null;r?.();const c=$('homeModeChip');if(c&&c.isConnected)c.focus()});
+ d.addEventListener('close',()=>{order=null;const r=release;release=null;r?.();const c=$('homeModeChip');if(c&&c.isConnected)c.focus()});
  // A radio group: one Tab stop (the chosen mode); arrows, Home and End choose another, as radios do, without closing the sheet.
  d.querySelector('.home-modes').addEventListener('keydown',e=>{
   const all=[...d.querySelectorAll('[data-home-mode]:not([disabled])')],i=all.indexOf(e.target);if(i<0)return;
@@ -79,13 +79,17 @@ function sheet(){
  });
  document.body.appendChild(d);return d;
 }
+// One column of rows on the bottom edge: the current mode is the lowest row, nearest the thumb, with Auto and Chat just
+// above it. The order is set as the sheet opens and stays put while it is open, so a row never moves under a finger.
+let order=null;
+const ordered=()=>{const c=cur();return [...MODES.filter(m=>allowed(m[0])&&m[0]!==c).reverse(),MODES.find(m=>m[0]===c)]};
 function paintModes(){
  const box=sheet().querySelector('.home-modes');
- box.innerHTML=MODES.filter(m=>allowed(m[0])).map(([id,label,hint])=>{
+ box.innerHTML=(order||ordered()).filter(m=>allowed(m[0])).map(([id,label,hint])=>{
   const gate=document.querySelector(`.mode[data-mode="${id}"]`),off=!!gate?.disabled,why=off?String(gate.title||'').replace(/^Unavailable:\s*/,''):'';
   return `<button type="button" role="radio" class="home-mode" data-home-mode="${id}" aria-checked="${id===cur()}" tabindex="${id===cur()?0:-1}"${off?' disabled':''}><b>${esc(label)}</b><span>${esc(off&&why?'Not available: '+why:hint)}</span></button>`}).join('');
 }
-function openSheet(){const d=sheet();paintModes();paintOptions();if(!d.open){d.showModal();release=root.LocalAIUI.sheetHistory(d,()=>d.close());d.querySelector('[data-home-mode][aria-checked="true"]')?.focus()}}
+function openSheet(){const d=sheet();if(!d.open)order=ordered();paintModes();paintOptions();if(!d.open){d.showModal();d.scrollTop=d.scrollHeight;release=root.LocalAIUI.sheetHistory(d,()=>d.close());d.querySelector('[data-home-mode][aria-checked="true"]')?.focus()}}
 
 // ---- Needs you and Recent ----
 // The runs module opens the run on top of Home, so Back returns here.
