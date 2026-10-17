@@ -86,7 +86,7 @@ in a checkout, else `APP_VERSION` (`appVersion` in `app/release.js`). Features a
 | `npm test` | Every `tests/*.test.cjs` with `node --test`: storage, API, runs, orchestrator, chat relay, Mac bridge/hook/CLI/installer, security and front-end contracts | Node only; tests start their own servers on free ports |
 | `npm run lint` | ESLint over the repo (`eslint.config.mjs`): correctness rules only (undefined and unused names, duplicate keys, unreachable code, fallthrough), no formatting rules. `tests/lint.test.cjs` runs the same check inside `npm test` | `npm ci` (eslint is a devDependency; without it the `npm test` check skips) |
 | `npm run test:browser` | `tests/run-browser.mjs`: every `tests/*-ui.mjs` Playwright suite in turn, reporting all failures at the end | A running server at `LOCALAI_URL` (default `http://127.0.0.1:3080`) |
-| `pwsh -NoProfile -File deploy/Test-LocalAI-Candidate.ps1 -CandidateRoot . -LocalNode` | The deploy validator, as CI runs it | `pwsh` |
+| `pwsh -NoProfile -File deploy/Test-LocalAI-Candidate.ps1 -CandidateRoot . -LocalNode` | The deploy validator, as CI runs it. Its string and file contracts also run in `npm test` ([Deploy check in `npm test`](#deploy-check-in-npm-test)) | `pwsh` |
 | `pwsh -NoProfile -File tests/Test-LocalAI-DeployContracts.ps1` | Deploy and rollback scripts against mocked Docker, git and robocopy | `pwsh`; CI runs it on Windows only |
 
 Browser tests against a disposable server on a spare port:
@@ -153,6 +153,18 @@ auto-deploy certifies `main` itself before promoting it. A newer push to a PR ca
 | `windows-contracts.yml` (`deployment-contracts`) | PRs touching `deploy/**`, `host/**/*.ps1` or `tests/*.ps1`; weekly; on demand | Windows | `tests/Test-LocalAI-DeployContracts.ps1` on PowerShell 7 and Windows PowerShell 5.1 |
 
 A docs-only PR runs no checks.
+
+### Deploy check in `npm test`
+
+`deploy/Test-LocalAI-Candidate.ps1` lists names (routes, functions, element ids, strings) that must stay in particular
+files, grouped by contract (`Server contract`, `Frontend contract`, `Operational Agent World v8 contract`, ...), plus
+required files. It runs only under `pwsh`, in local CI and on the host, so removing a listed name used to pass
+`npm test` and then block every deploy. **`tests/deploy-contracts.test.cjs`** reads the script itself: it finds each
+`foreach($s in @(...)){if(-not $var.Contains($s)){throw "..."}}` list (and single `.Contains("...")` checks), maps
+`$var` to the file its `$var=Get-Content (Join-Path $app "...") -Raw` line reads, and checks every string is there; it
+also checks the required-file and `$nativeTests` lists exist. A failure names the contract, the string and the file.
+If the removal was deliberate, update the list in the script in the same PR. The test fails, rather than passing
+quietly, if the script grows a check shape or file read it doesn't understand; extend its parser then.
 
 ## Front-end structure
 
