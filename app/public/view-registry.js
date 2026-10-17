@@ -4,6 +4,8 @@
 // A view with `parent` is a tab of that page: it has no nav entry of its own and shows the parent's heading.
 // `tab` is the label a page uses in its parent's tab strip (the parent's own tab included).
 // A domain's `icon` and a view's `svg` name symbols in the index.html sprite; every menu draws them from here.
+// `dev` marks a developer page: the rail, page strip, phone sheet and ⌘K leave it out while Developer tools (Health) is off.
+// Its address still opens it, as Improve's pages do.
 (function(root){'use strict';
 const DOMAINS=[
  {id:'home',label:'Home',symbol:'⌂',icon:'home',tagline:'What needs you',defaultView:'home'},
@@ -28,8 +30,8 @@ const VIEWS=[
  {id:'models',svg:'model',domain:'system',section:'Health',icon:'M',label:'Models',description:"Installed models and what's loaded now."},
  {id:'integrations',svg:'plug',domain:'system',section:'Health',icon:'↔',label:'Integrations',description:'Local tools, host bridges and cloud fallbacks.'},
  {id:'automationStudio',svg:'clock',domain:'system',section:'Automations',icon:'⌘',label:'Automations',description:'Scheduled prompts, research and health checks.',aka:['studio','automation studio']},
- {id:'automations',svg:'flow',short:'n8n',domain:'system',section:'Automations',icon:'↗',label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
- {id:'actions',svg:'globe',short:'Browser',domain:'system',section:'Automations',icon:'↗',label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
+ {id:'automations',svg:'flow',short:'n8n',domain:'system',section:'Automations',dev:true,icon:'↗',label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
+ {id:'actions',svg:'globe',short:'Browser',domain:'system',section:'Automations',dev:true,icon:'↗',label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
  {id:'operations',svg:'eye',domain:'system',section:'Automations',icon:'◉',label:'Monitors',description:'Recurring health checks and the morning brief.',aka:['operations','morning brief']},
  {id:'backlog',svg:'improve',domain:'improve',section:'Pipeline',icon:'Δ',label:'Backlog',description:'One ranked list of what could change in Local AI.',aka:['improve','ideas','priorities']},
  {id:'inProgress',svg:'build',domain:'improve',section:'Pipeline',icon:'▶',label:'In progress',description:'Changes being planned, tested or waiting for your OK.',aka:['running changes']},
@@ -38,10 +40,10 @@ const VIEWS=[
  {id:'changes',svg:'build',short:'Changes',domain:'hidden',section:'Changes',icon:'Δ',label:'Change requests',description:"Describe a change; it's planned, tested and held for approval.",aka:['changes','change intelligence','engineer','engineering agent']},
  {id:'issues',svg:'alert',domain:'hidden',section:'Changes',icon:'!',label:'Issues',tab:'Issues',description:'Problems found in Local AI, deduplicated.'},
  {id:'quality',svg:'gauge',domain:'hidden',section:'Changes',parent:'issues',tab:'Quality signals',icon:'Q',label:'Quality signals',description:'Static checks, browser errors and regressions.',aka:['quality','quality intelligence']},
- {id:'claude',svg:'sparkle',domain:'system',section:'Tools',icon:'✳',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
- {id:'workbench',svg:'folder',domain:'system',section:'Tools',icon:'W',label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
- {id:'repoTools',svg:'branch',domain:'system',section:'Tools',icon:'R',label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},
- {id:'powershell',svg:'terminal',domain:'system',section:'Tools',icon:'PS',label:'PowerShell',description:'Approval-gated scripts on the Windows host.',aka:['powershell workbench']},
+ {id:'claude',svg:'sparkle',domain:'system',section:'Tools',dev:true,icon:'✳',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
+ {id:'workbench',svg:'folder',domain:'system',section:'Tools',dev:true,icon:'W',label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
+ {id:'repoTools',svg:'branch',domain:'system',section:'Tools',dev:true,icon:'R',label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},
+ {id:'powershell',svg:'terminal',domain:'system',section:'Tools',dev:true,icon:'PS',label:'PowerShell',description:'Approval-gated scripts on the Windows host.',aka:['powershell workbench']},
  {id:'activity',svg:'history',domain:'system',section:'History',icon:'◷',label:'Audit log',description:'What happened on the appliance, and when.',aka:['activity']},
  {id:'runs',svg:'work',domain:'hidden',section:'History',icon:'▶',label:'Runs',description:'Every execution, live, with cancel and retry.'}
 ];

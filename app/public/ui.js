@@ -547,7 +547,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       <div class="model-runtime-metric"><strong title="${esc(configured)}">${esc(configured)}</strong><span>Configured default</span></div>
       <div class="model-runtime-metric"><strong>${Number(models?.installedCount ?? installed.length)}</strong><span>Installed</span></div>
       <div class="model-runtime-metric"><strong>${Number(models?.loadedCount ?? loaded.length)}</strong><span>Loaded now</span></div>
-      <div class="model-runtime-metric"><strong>${runtimeLabel}</strong><span>Runtime detail</span></div>`;
+      <div class="model-runtime-metric" data-dev-only><strong>${runtimeLabel}</strong><span>Runtime detail</span></div>`;
 
     if (models?.available === false) {
       list.innerHTML = `<div class="model-runtime-note model-runtime-error"><strong>Model inventory unavailable</strong><div style="margin-top:4px">${esc(models.runtimeError || 'Ollama model inventory could not be read.')}</div></div>`;
@@ -813,6 +813,11 @@ let currentDomain='home',sheetOpen=false,allButtons=new Map();
 const icon=(name,cls)=>window.LocalAIKit?.icon(name,cls)||'';
 
 function viewButton(view){return allButtons.get(view)||q('.navbtn[data-view="'+view+'"]')}
+// Developer pages (registry `dev`) leave every menu while Developer tools (Health) is off; their addresses still work.
+const devOff=()=>document.body.classList.contains('dev-tools-off');
+const listed=view=>!!viewButton(view)&&!(REG.view(view)?.dev&&devOff());
+// A domain's groups with the pages a menu may list right now; a group left empty (Tools, with the switch off) is dropped.
+const listedGroups=d=>d.groups.map(g=>({label:g.label,views:g.views.filter(listed)})).filter(g=>g.views.length);
 // A hidden page (chat, images, missions, runs) lights up the page that owns it.
 function domainForView(view){let id=REG.view(view)?.domain;if(id==='hidden')id=REG.view(REG.resolve(view))?.domain;return DOMAINS.find(d=>d.id===id)||DOMAINS[0]}
 // Tabs share their parent's nav entry and breadcrumb.
@@ -877,8 +882,8 @@ function renderSecondary(domainId){
  const d=DOMAINS.find(x=>x.id===domainId)||DOMAINS[0],holder=q('#uxSecondaryGroups'),registry=q('#uxNavRegistry');if(!holder)return;
  qa('.navbtn[data-view]',holder).forEach(b=>registry?.appendChild(b));
  q('#uxSecondaryTitle').textContent=d.label;q('#uxSecondaryTagline').textContent=d.tagline;
- holder.innerHTML='';
- d.groups.forEach(g=>{
+ holder.innerHTML='';holder.dataset.dev=String(!devOff());
+ listedGroups(d).forEach(g=>{
    const section=document.createElement('section');section.className='ux-secondary-section';
    const h=document.createElement('div');h.className='ux-secondary-label';h.textContent=g.label;section.appendChild(h);
    g.views.forEach(v=>{const src=viewButton(v);if(!src)return;const b=src;b.classList.add('ux-secondary-link');b.title=DESCRIPTIONS[v]||'';b.setAttribute('aria-description',DESCRIPTIONS[v]||'');b.innerHTML='<span class="ux-link-icon" aria-hidden="true">'+(icon(REG.view(v)?.svg)||REG.view(v)?.icon||'')+'</span><span class="ux-link-label">'+labelForView(v)+'</span>';section.appendChild(b)});
@@ -934,7 +939,7 @@ function buildPageStrip(){
 }
 function renderPageStrip(d,page){
  const strip=q('#uxPageStrip');if(!strip)return;
- const views=d.groups.flatMap(g=>g.views).filter(v=>viewButton(v));
+ const views=listedGroups(d).flatMap(g=>g.views);
  const key=d.id+'|'+views.join(',');
  if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=views.map(v=>'<button type="button" data-strip-view="'+v+'">'+(REG.view(v)?.short||labelForView(v))+'</button>').join('');}
  strip.hidden=views.length<2||d.id==='home'; // Home's only other page, Inbox, already has a button in the top bar
@@ -954,22 +959,24 @@ function buildMobile(){
 function renderSheet(){
  const d=DOMAINS.find(x=>x.id===currentDomain)||DOMAINS[0],holder=q('#uxMobileSheetItems');if(!holder)return;
  q('#uxMobileSheetTitle').textContent=d.label;q('#uxMobileSheetTagline').textContent=d.tagline;holder.innerHTML='';
- d.groups.forEach(g=>{const section=document.createElement('section');section.className='ux-mobile-section';section.innerHTML='<div class="ux-mobile-section-label">'+g.label+'</div>';g.views.forEach(v=>{if(!viewButton(v))return;const b=document.createElement('button');b.type='button';b.className='ux-mobile-link '+(v===pageForView(activeView())?'active':'');b.innerHTML='<span><strong>'+labelForView(v)+'</strong><small>'+DESCRIPTIONS[v]+'</small></span><span>›</span>';b.addEventListener('click',()=>{navigate(v);toggleSheet(false)});section.appendChild(b)});holder.appendChild(section)});
+ listedGroups(d).forEach(g=>{const section=document.createElement('section');section.className='ux-mobile-section';section.innerHTML='<div class="ux-mobile-section-label">'+g.label+'</div>';g.views.forEach(v=>{if(!viewButton(v))return;const b=document.createElement('button');b.type='button';b.className='ux-mobile-link '+(v===pageForView(activeView())?'active':'');b.innerHTML='<span><strong>'+labelForView(v)+'</strong><small>'+DESCRIPTIONS[v]+'</small></span><span>›</span>';b.addEventListener('click',()=>{navigate(v);toggleSheet(false)});section.appendChild(b)});holder.appendChild(section)});
 }
 let sheetRelease=null; // Back closes the sheet (LocalAIUI.sheetHistory)
 function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;const s=q('#uxMobileSheet');if(s&&sheetOpen&&!sheetRelease&&window.LocalAIUI?.sheetHistory)sheetRelease=window.LocalAIUI.sheetHistory(s,()=>{sheetRelease=null;toggleSheet(false)});else if(!sheetOpen&&sheetRelease){const r=sheetRelease;sheetRelease=null;r()}if(s){s.dataset.open=String(sheetOpen);s.inert=!sheetOpen;s.setAttribute('aria-hidden',String(!sheetOpen))}q('#uxContextMenu')?.setAttribute('aria-expanded',String(sheetOpen));document.body.classList.toggle('ux-sheet-open',sheetOpen);if(sheetOpen)renderSheet()}
 function sync(forced){
  const view=REG.view(forced||activeView())?.id||forced||activeView(),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
- const page=pageForView(view),viewLabel=labelForView(page);renderPageStrip(d,page);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=d.groups.flatMap(g=>g.views).filter(v=>viewButton(v)).length<2;document.body.classList.toggle('ux-single-page',single);q('#uxContextBar')?.classList.toggle('ux-context-same',single||viewLabel===d.label)} // "Local AI / Domain" for a domain with one page, "Local AI / Domain / Page" otherwise
+ const page=pageForView(view),viewLabel=labelForView(page);renderPageStrip(d,page);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=listedGroups(d).flatMap(g=>g.views).length<2;document.body.classList.toggle('ux-single-page',single);q('#uxContextBar')?.classList.toggle('ux-context-same',single||viewLabel===d.label)} // "Local AI / Domain" for a domain with one page, "Local AI / Domain / Page" otherwise
  q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);q('#uxContextMenu')?.setAttribute('aria-label',d.label+' pages');syncHeaderAction(view);{const g=q('#uxContextGreeting');if(g)g.textContent=greeting()};
  qa('.ux-primary-item').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
  qa('#uxMobileNav [data-domain]').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
- if(q('#uxSecondaryTitle')?.textContent!==d.label)renderSecondary(d.id);
+ if(q('#uxSecondaryTitle')?.textContent!==d.label||q('#uxSecondaryGroups')?.dataset.dev!==String(!devOff()))renderSecondary(d.id);
  qa('.ux-secondary-link').forEach(b=>{const on=b.dataset.view===page;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
  qa('.ux-tab').forEach(b=>{const on=b.dataset.uxTab===view;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1});
  if(sheetOpen)renderSheet();
 }
-function observeViews(){const views=qa('.view');if(!views.length)return;const mo=new MutationObserver(()=>sync());views.forEach(v=>mo.observe(v,{attributes:true,attributeFilter:['class']}));document.addEventListener('click',e=>{const b=e.target.closest?.('.navbtn[data-view]');if(b)requestAnimationFrame(()=>sync(b.dataset.view))})}
+function observeViews(){const views=qa('.view');if(!views.length)return;const mo=new MutationObserver(()=>sync());views.forEach(v=>mo.observe(v,{attributes:true,attributeFilter:['class']}));
+ // The Developer tools switch (first-run.js) toggles body.dev-tools-off: the menus redraw with or without the developer pages.
+ let dev=devOff();new MutationObserver(()=>{if(devOff()===dev)return;dev=devOff();sync()}).observe(document.body,{attributes:true,attributeFilter:['class']});document.addEventListener('click',e=>{const b=e.target.closest?.('.navbtn[data-view]');if(b)requestAnimationFrame(()=>sync(b.dataset.view))})}
 // An error box shown for a field marks that field invalid and describes it with the box; hidden again, it lets go.
 // The boxes are drawn by their own pages (home.js, Models, improve.js); this follows their `hidden` attribute.
 const ERROR_FIELDS={homeComposerError:'commandInput',modelPullError:'modelPullName',improveIdeaError:'improveIdeaText',improveItemError:'improveItemSheet'};
@@ -3378,13 +3385,15 @@ async function getJson(url){const r=await fetch(url,{cache:'no-store'});return r
 let config=null;
 async function loadConfig(){if(!config)config=await getJson('/api/config').catch(()=>({}));return config}
 
-// Developer tools: change requests, the Claude board, Workbench and PowerShell. An install that has used them
+// Developer tools: Improve and the developer pages (registry `dev`: Claude Code, Files, Repository, PowerShell, Browser & computer,
+// n8n workflows), plus the diagnostic tiles marked data-dev-only. An install that has used them
 // starts with them shown; a new one starts with them hidden. The choice is remembered per browser.
 function applyDevTools(on,fromToggle=false){
  document.body.classList.toggle('dev-tools-off',!on);
  qa('[data-dev-tools-toggle]').forEach(i=>{i.checked=on});
  const active=q('.view.active')?.id;
- if(fromToggle&&!on&&window.LocalAIViews?.view(active)?.domain==='improve'&&typeof window.showView==='function')window.showView('home');
+ const v=window.LocalAIViews?.view(active);
+ if(fromToggle&&!on&&(v?.domain==='improve'||v?.dev)&&typeof window.showView==='function')window.showView('home');
 }
 async function initDevTools(){
  const saved=pref.get(DEV_KEY);
@@ -3394,7 +3403,7 @@ async function initDevTools(){
 function mountDevToolsToggle(){
  const status=q('#status');if(!status||q('.dev-tools-pref',status))return;
  const row=document.createElement('label');row.className='dev-tools-pref card';
- row.innerHTML='<input type="checkbox" data-dev-tools-toggle><span><strong>Show developer tools</strong><small>Adds Improve to the menu: change requests, issues, quality signals and the Claude board.</small></span>';
+ row.innerHTML='<input type="checkbox" data-dev-tools-toggle><span><strong>Show developer tools</strong><small>Adds Improve and the developer tools: Claude Code, Files, Repository, PowerShell, Browser &amp; computer, n8n workflows.</small></span>';
  status.appendChild(row); // a setting, so it follows the health results
  row.querySelector('input').addEventListener('change',e=>{pref.set(DEV_KEY,e.target.checked?'1':'0');applyDevTools(e.target.checked,true)});
  row.querySelector('input').checked=!document.body.classList.contains('dev-tools-off');
