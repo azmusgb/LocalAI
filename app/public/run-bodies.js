@@ -228,7 +228,11 @@
         if (e.name !== 'AbortError') live.err = e.message;
       } finally {
         live.streaming = false;
-        if (resolved) { paint(c); loadThread(c); }
+        if (resolved) {
+          paint(c); loadThread(c);
+          // A screen reader hears nothing when the text stops growing: say the answer is ready (a failed start already said why; Stop says nothing new).
+          if (!live.controller.signal.aborted) document.getElementById('runLiveRegion')?.replaceChildren(document.createTextNode(live.err ? 'The answer failed.' : 'Answer ready.'));
+        }
       }
     }
   };
