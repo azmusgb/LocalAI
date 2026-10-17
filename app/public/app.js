@@ -433,7 +433,7 @@ function renderImageControls(){
   const editing=!!imageUi.edit;$('imageEditPanel').hidden=!editing;$('imageShapeGroup').hidden=editing;$('imagePromptLabel').textContent=editing?'Describe the change, or the whole new picture':'Describe the image';$('generateBtn').textContent=editing?'Apply edit':imageUi.count>1?`Create ${imageUi.count} images`:'Create image';
   $('imageUpscaleRow').hidden=!data.upscale;
   const custom=[...(data.custom||[])];$('checkpoint').innerHTML='<option value="">Engine\'s model</option>'+custom.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
-  $('imageModelInfo').textContent=eng?`${eng.label} uses ${eng.family==='flux'?'FLUX.1 schnell':eng.family==='sdxl'?'SDXL Lightning':'Stable Diffusion 1.5'}.`:'';
+  $('imageModelInfo').textContent=eng?`${eng.label} uses ${eng.model||(eng.family==='zimage'?'Z-Image Turbo':eng.family==='flux'?'FLUX.1 schnell':eng.family==='sdxl'?'SDXL Lightning':'Stable Diffusion 1.5')}.`:'';
   $('generateBtn').disabled=!engines.length&&!custom.length;imageUi.onControls?.();
 }
 // Typical times on a 6 GB GTX 1660 SUPER, until this machine has measured its own.
