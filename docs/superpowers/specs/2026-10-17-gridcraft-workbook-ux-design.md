@@ -90,7 +90,8 @@ does not take the run lock (reads are safe while a run works); `/keep` and `/dis
 
 ## Page (System › Spreadsheets)
 
-Desktop: two columns, workbook left (wide), request + changes right. Phone: one column, workbook first.
+Desktop: two columns, request + changes + history left (narrow), workbook right (wide). Phone: one column, request
+first (asking is what a phone is for), then the answer and history, then the workbook.
 
 - **Header**: workbook title, "Unsaved changes" pill when dirty, GridCraft status pill (existing `#sheetsStatus`).
 - **Workbook card**: sheet tabs (with cell counts), a scrollable grid with sticky column letters and row numbers,

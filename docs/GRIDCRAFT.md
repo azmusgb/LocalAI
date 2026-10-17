@@ -102,8 +102,35 @@ appliance proxies it as `GET /api/gridcraft/health`.
 `POST /run` (appliance: `POST /api/gridcraft/run`) takes JSON:
 
 ```json
-{"prompt":"Inspect the workbook and summarize each sheet."}
+{"prompt":"Inspect the workbook and summarize each sheet.","mode":"review"}
 ```
+
+`mode` says what the request may do (the bridge defaults to `apply`, what it always did; the appliance defaults to
+`review`):
+
+| Mode | The model gets | Saves |
+|---|---|---|
+| `read` | `inspect_workbook`, `read_range`, `get_cell`, `evaluate_formula`, `list_functions` | never |
+| `review` | the core tools without `save_workbook`, `open_workbook`, `new_workbook` | never; the owner keeps or discards |
+| `apply` | the core tools | when the agent saves |
+
+The agent refuses any other tool itself (`host/gridcraft-agent/gridcraft_journal.py`), and records what each write
+changed: `set_cell` and `write_range` cell by cell (before, after, computed after; 2,000 cells per request), other
+writes as one line, and the number of GridCraft undo steps the request made. It prints that journal as one
+`[journal] {...}` line on stderr, also when the request fails, and `/run` returns it as `journal`.
+
+Without a model, through `host/gridcraft-agent/gridcraft_ops.py`:
+
+- `GET /workbook?sheet=&range=`: title, file name (never the host path), unsaved flag, sheets, and up to 100 rows by 40
+  columns of the chosen sheet as display text (`values`), formulas (`formulas`) and computed values (`raw`).
+- `POST /keep`: saves the workbook.
+- `POST /discard {"steps":N,"undoTop":[...]}`: undoes `N` steps, but only if GridCraft's newest undo labels still
+  equal `undoTop` (otherwise 409: something else changed the workbook since).
+
+Keep and discard wait for no running request (409). The appliance stores each request as a settings row
+`gridcraft:run:<id>` (50 kept) and adds `GET /api/gridcraft/runs`, `GET /api/gridcraft/workbook`,
+`POST /api/gridcraft/runs/<id>/keep` (marks every request waiting for review kept, since saving saves them all) and
+`POST /api/gridcraft/runs/<id>/discard` (the newest request only).
 
 Prompts are limited to 20,000 characters. One request runs at a time; a second gets HTTP 409. If GridCraft is
 not listening, the bridge launches it with `WGPU_BACKEND=vulkan` and the configured workbook (or GridCraft's
