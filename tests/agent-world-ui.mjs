@@ -287,6 +287,89 @@ async function withMission(contextOpts, mission) {
   await context.close();
 }
 
+// Start a mission (design PR 3): one sheet, the team in words as you type, Advanced only with developer tools; the
+// empty city invites a goal and offers a demo.
+async function emptyPage(contextOpts) {
+  const context = await browser.newContext({ serviceWorkers: 'block', ...contextOpts });
+  await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  const page = await context.newPage();
+  const errors = []; page.on('pageerror', e => errors.push(e.message));
+  const sent = [];
+  await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) }));
+  await page.route(u => u.pathname === '/api/agents/dispatch', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ routing: { mode: 'auto', workers: [{ agentId: 'ux_analyst', name: 'UX Analyst' }] } }) }));
+  await page.route(u => u.pathname === '/api/agents/missions/start', r => { sent.push(r.request().postDataJSON()); r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"stubbed"}' }); });
+  await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => typeof window.showView === 'function');
+  await page.evaluate(() => window.showView('agents'));
+  await page.waitForSelector('#agents.active #awcCanvas');
+  return { context, page, errors, sent };
+}
+for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 } }], ['iPhone 14', (({ defaultBrowserType, ...d }) => d)(devices['iPhone 14'])]]) {
+  const { context, page, errors, sent } = await emptyPage(opts);
+  await check(`${label}: with no mission the city invites a goal and offers a demo`, async () => {
+    const empty = page.locator('#awEmpty');
+    await empty.waitFor({ state: 'visible' });
+    assert.match(await empty.innerText(), /Give your team a goal/);
+    await page.locator('#awEmptyDemo').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('.agent-compose').isVisible(), false, 'no form on the page itself');
+  });
+  await check(`${label}: Start a mission opens the sheet; typing shows the team in words`, async () => {
+    await page.locator('#awEmptyStart').click();
+    const sheet = page.locator('#awStart');
+    await sheet.waitFor({ state: 'visible' });
+    assert.match(await sheet.innerText(), /What should the team do\?/);
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'agentGoal');
+    await page.locator('#agentGoal').fill('Check the phone screens for problems');
+    await page.locator('#awTeam').getByText('A UX Analyst will review screens for usability; a Coordinator will put everyone’s findings together.').waitFor();
+    assert.equal(await page.locator('#awTeam img').count(), 2, 'a portrait per worker');
+    assert.equal(await sheet.locator('#agentAdvancedPanel, #agentAdvancedToggle').first().isVisible(), false, 'Advanced only with developer tools');
+    assert.match(await sheet.innerText(), /Let the team search the web/);
+  });
+  await check(`${label}: Start sends the goal and the choices`, async () => {
+    await page.locator('#agentWebSearch').check();
+    await page.locator('#missionRunBtn').click();
+    for (let i = 0; i < 50 && !sent.length; i++) await page.waitForTimeout(100);
+    assert.equal(sent[0]?.goal, 'Check the phone screens for problems');
+    assert.equal(sent[0]?.webSearch, true);
+    await page.locator('#agentInlineNotice').waitFor({ state: 'visible' }); // the stubbed failure is said in the sheet
+  });
+  await check(`${label}: Escape closes the sheet and focus returns`, async () => {
+    await page.keyboard.press('Escape');
+    await page.locator('#awStart').waitFor({ state: 'hidden' });
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'awEmptyStart');
+  });
+  await check(`${label}: Try a demo mission runs the city and hides the invitation`, async () => {
+    await page.locator('#awEmptyDemo').click();
+    await page.locator('#awEmpty').waitFor({ state: 'hidden' });
+    await page.waitForFunction(() => document.querySelectorAll('#awcRoster [data-awc-roster]').length >= 3);
+  });
+  await check(`${label}: no script errors (start)`, async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+{
+  const { context, page, errors, sent } = await emptyPage({ viewport: { width: 1440, height: 900 } });
+  await check('1440px: a started mission flies the camera to Command Center', async () => {
+    await page.unroute(u => u.pathname === '/api/agents/missions/start');
+    const m = { id: 'mission-started', goal: 'Fly test', status: 'running', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), workers: [{ id: 'router', name: 'Mission Router', state: 'complete', dependsOn: [] }, { id: 'ux_analyst', name: 'UX Analyst', state: 'running', dependsOn: ['router'] }], results: [], timeline: [] };
+    await page.route(u => u.pathname === '/api/agents/missions/start', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ mission: m }) }));
+    await page.locator('#awPrimary').click();
+    await page.locator('#agentGoal').fill('Fly test');
+    await page.locator('#missionRunBtn').click();
+    await page.locator('#awStart').waitFor({ state: 'hidden' });
+    await page.waitForFunction(() => window.LocalAIAgentWorld.camera().zoom > 1.2);
+    assert.equal(await page.locator('#awTitle').innerText(), 'Fly test');
+  });
+  await check('1440px: Advanced shows with developer tools on', async () => {
+    await page.evaluate(() => document.body.classList.remove('dev-tools-off'));
+    await page.locator('#awPrimary').click().catch(() => {});
+    await page.evaluate(() => window.LocalAIAgentStart.open());
+    await page.locator('#agentAdvancedToggle').waitFor({ state: 'visible' });
+    await page.keyboard.press('Escape');
+  });
+  await check('1440px: no script errors (fly)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+
 await browser.close();
 if (failures.length) { console.error('\nAgent World failures:\n' + failures.map(x => ' - ' + x).join('\n')); process.exit(1); }
 console.log('\nAll Agent World checks passed.');
