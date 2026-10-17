@@ -122,6 +122,21 @@ await check('Home Chat failure: subtitle "Chat", Try again resends, a model erro
   await page.context().close();
 });
 
+// One conversation, one name: the server names a thread by its first message; Home and the run header use it.
+await check('a two-turn conversation: Home shows its first message with "2 turns", and the run header matches', async () => {
+  const latest = { ...run(2, 'second question', 'second answer'), threadTitle: 'first question', turns: 2 };
+  latest.card = { ...latest.card, title: 'first question' };
+  const page = await open(desk, '#home', { runs: [latest] });
+  const row = page.locator('#homeRecent2 [data-run-id]').first();
+  await row.waitFor(T);
+  const text = await row.innerText();
+  assert.match(text, /first question/); assert.match(text, /2 turns/); assert.doesNotMatch(text, /second question/);
+  await page.evaluate(id => window.LocalAIRuns.show(id), latest.id);
+  await page.locator('#runDrawerTitle', { hasText: 'first question' }).waitFor(T);
+  assert.equal(page.errors.length, 0, page.errors.join('|'));
+  await page.context().close();
+});
+
 await check('a thread with 3 runs renders 3 user and 3 assistant turns in order', async () => {
   const page = await open(desk, '#home', { runs: three() });
   await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[1].id);
