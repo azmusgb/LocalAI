@@ -72,6 +72,13 @@ for (const [name, options] of [['computer', { viewport: { width: 1280, height: 9
     assert.equal(await page.locator('#sheetsDirty').isVisible(), false);
   });
 
+  await check(`${name}: the examples are the kit's outline buttons; on a phone the workbook comes before the request box`, async () => {
+    assert.equal(await page.locator('#sheetsExamples .btn-outline').count(), 3);
+    const top = sel => page.locator(sel).evaluate(el => el.getBoundingClientRect().top);
+    if (name === 'phone') assert.ok(await top('#sheetsBook') < await top('.sheets-ask'), 'workbook first on a phone');
+    else assert.ok(Math.abs(await top('#sheetsBook') - await top('.sheets-ask')) < 4, 'side by side on a computer');
+  });
+
   await check(`${name}: a cell shows its formula, and Show formulas shows them in the grid`, async () => {
     await page.locator('#sheetsGrid td[data-cell="D2"]').click();
     assert.equal(await page.locator('#sheetsCellRef').innerText(), 'Sales!D2');
