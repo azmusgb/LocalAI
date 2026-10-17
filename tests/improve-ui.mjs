@@ -124,6 +124,31 @@ await check('Signals: open ones listed with Promote and Dismiss; a promoted one 
   assert.equal(await page.locator('#uxHeaderAction').getAttribute('aria-label'), 'Run checks now');
 });
 
+await check('a failed Run checks shows the reason in the page under the button, not in a passing toast', async () => {
+  await page.route('**/api/issues/scan', r => r.fulfill({ status: 500, json: { error: 'The checks could not start' } }));
+  await page.evaluate(() => window.showView('signals'));
+  await page.waitForSelector('#signals.active #signalsList .improve-row');
+  await page.locator('#uxHeaderAction').click(); // on a phone Run checks now is the header button; the page's own sits in the hidden top bar
+  const err = page.locator('#signals [role="alert"]', { hasText: 'The checks could not start' });
+  await err.waitFor();
+  assert.equal(await err.isVisible(), true);
+  assert.equal(await err.evaluate(e => !!(document.getElementById('signalsRunChecks').compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING) && !!(e.compareDocumentPosition(document.getElementById('signalsList')) & Node.DOCUMENT_POSITION_FOLLOWING)), true, 'after the button, above the list');
+  assert.doesNotMatch(await page.locator('#toast').innerText(), /could not start/);
+  await page.unroute('**/api/issues/scan');
+});
+
+await check('a failed vote says why under that row, in an alert', async () => {
+  await page.route('**/api/claude/findings/vote', r => r.fulfill({ status: 503, json: { error: 'The board is busy' } }));
+  await page.evaluate(() => window.showView('backlog'));
+  await page.waitForSelector('#backlog.active #backlogList .improve-row');
+  await page.locator('#backlogList [data-item-id="idea-sticky"] [data-vote="1"]').click();
+  const err = page.locator('#backlogList [role="alert"]', { hasText: 'The board is busy' });
+  await err.waitFor();
+  assert.equal(await err.evaluate(e => e.previousElementSibling?.dataset.itemId), 'idea-sticky', 'right under the row voted on');
+  assert.doesNotMatch(await page.locator('#toast').innerText(), /busy/);
+  await page.unroute('**/api/claude/findings/vote');
+});
+
 await check('a failed load shows the error state with Retry, and Retry recovers', async () => {
   failItems = true;
   await page.evaluate(() => window.showView('backlog'));
