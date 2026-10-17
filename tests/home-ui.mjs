@@ -136,6 +136,19 @@ await check('Recent and Needs you show a run summary once, not again as preview 
   await page.context().close();
 });
 
+await check('a run shown in Needs you is not repeated in Recent', async () => {
+  const failed = item('agent', 'Weekly report mission', 2 * HOUR, { status: 'failed', threadId: 't-weekly' });
+  const waiting = item('engineering', 'Fix the login bug', 10 * 60e3, { status: 'awaiting_approval' });
+  const fine = item('chat', 'Plan the garden', 5 * 60e3);
+  const page = await open(desk, '#home', { threads: () => [waiting, fine, failed], all: () => [waiting, fine, failed] });
+  await page.waitForSelector('#homeNeedsYou .run-card', T);
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  await page.waitForTimeout(300);
+  assert.deepEqual((await titles(page, '#homeNeedsYou')).sort(), ['Fix the login bug', 'Weekly report mission']);
+  assert.deepEqual(await titles(page, '#homeRecent2'), ['Plan the garden']);
+  await page.context().close();
+});
+
 await check('Needs you rows that open another page push it, so Back returns to Home', async () => {
   const caps = () => ({ services: [{ name: 'ollama', label: 'Intelligence', state: 'DOWN', required: true, impact: 'Chat is unavailable.' }, ...['search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true }))], models: { defaultInstalled: true }, images: { available: true } });
   const page = await open(desk, '#home', { caps, all: () => [], approvals: [{ id: 'apr_x', status: 'pending', title: 'Run the thing', detail: 'Needs a yes' }] });

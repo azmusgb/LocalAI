@@ -204,5 +204,33 @@ await check('two approvals and no alerts: the Inbox lists them and opens the she
   await context.close();
 });
 
+// Approvals waiting in the Inbox: a list whose buttons say what they review; the sheet's buttons say what they decide;
+// after each decision focus goes to the next waiting one, then to the "Nothing needs you" line, and it is announced.
+await check('Inbox approvals are a list with named buttons; deciding moves focus to the next one, then to "Nothing needs you"', async () => {
+  const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
+  await context.addInitScript(() => localStorage.setItem('localai.firstRun.done', '1'));
+  const page = await context.newPage({ serviceWorkers: 'block' });
+  const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+  const items = [{ id: 'a1', status: 'pending', title: 'Run npm install', detail: 'Host command', risk: 'host' }, { id: 'a2', status: 'pending', title: 'Apply change', detail: 'Writes a file', risk: 'medium' }, { id: 'a3', status: 'approved', title: 'Old one', detail: '', risk: 'low' }];
+  await page.route('**/api/notifications', (route) => route.fulfill({ json: { items: [], unread: 0 } }));
+  await page.route('**/api/approvals', (route) => route.fulfill({ json: { items } }));
+  await page.route('**/api/approvals/decide', (route) => { const b = route.request().postDataJSON(); items.find((a) => a.id === b.id).status = b.decision; route.fulfill({ json: { item: {} } }); });
+  await page.goto(base + '/#inbox', { waitUntil: 'networkidle' });
+  await page.waitForSelector('#inboxList .approval-list [data-approval-open]');
+  const shape = await page.evaluate(() => [...document.querySelectorAll('#inboxList .approval-list > li')].map((li) => [...li.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))));
+  assert.deepEqual(shape, [['Review: Run npm install'], ['Review: Apply change']]);
+  await page.getByRole('button', { name: 'Review: Run npm install' }).click();
+  assert.deepEqual(await page.locator('#approvalSheet [data-decide]').evaluateAll((bs) => bs.map((b) => b.getAttribute('aria-label'))), ['Reject: Run npm install', 'Approve: Run npm install']);
+  await page.getByRole('button', { name: 'Approve: Run npm install' }).click();
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Review: Apply change', null, { timeout: 4000 });
+  await page.waitForFunction(() => /^Approved/.test(document.getElementById('toast').textContent), null, { timeout: 4000 });
+  await page.getByRole('button', { name: 'Review: Apply change' }).click();
+  await page.getByRole('button', { name: 'Reject: Apply change' }).click();
+  await page.waitForFunction(() => /Nothing needs you/.test(document.activeElement?.textContent || ''), null, { timeout: 4000 });
+  await page.waitForFunction(() => /^Rejected/.test(document.getElementById('toast').textContent), null, { timeout: 4000 });
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 await browser.close();
 if (failed) { console.log(`${failed} notifications check(s) failed`); process.exit(1) }

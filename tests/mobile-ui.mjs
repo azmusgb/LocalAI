@@ -75,7 +75,7 @@ await check('the run view\'s chat reply box and Send sit inside the screen (the 
 
 await check('chips, filters and tabs are at least 44px tall', async () => {
   const short = [];
-  for (const view of ['home', 'library', 'issues', 'inbox', 'projects']) {
+  for (const view of ['home', 'library', 'signals', 'inbox', 'projects']) {
     await page.evaluate(v => { window.showView(v); window.scrollTo(0, 0); }, view);
     await page.waitForTimeout(150);
     short.push(...await page.evaluate(() => [...document.querySelectorAll('.view.active :is(.mode,.filter,.ux-tab)')]

@@ -89,9 +89,11 @@ await check('Health: an answer without a service list is a failed check, not "re
 // Reviewing a change reads in the owner's words, not the planner's.
 await check('Changes: an unplanned change reads "Nothing to apply yet", "Not tested yet", "Changes appear after testing"', async () => {
   await page.route('**/api/changes', r => r.fulfill({ json: { items: [{ id: 'chg-1', status: 'planned', target: 'self', request: 'Make the header fit on phones', summary: 'Header fits on phones', files: [], validation: null, diffs: [], createdAt: new Date().toISOString() }], pending: 0 } }));
-  await page.evaluate(() => window.showView('changes'));
-  await page.waitForFunction(() => /Header fits on phones/.test(document.getElementById('changeDetail').textContent));
-  const text = await page.locator('#changeDetail').innerText();
+  // The change detail lives in the run view now (Change requests is retired); render it the way the run view does.
+  await page.evaluate(() => { const el = document.createElement('div'); el.id = 'testChangeDetail'; document.body.appendChild(el); window.LocalAIChanges.show('chg-1', el); });
+  await page.waitForFunction(() => /Header fits on phones/.test(document.getElementById('testChangeDetail').textContent));
+  const text = await page.locator('#testChangeDetail').innerText();
+  await page.evaluate(() => document.getElementById('testChangeDetail').remove());
   assert.match(text, /Nothing to apply yet/);
   assert.match(text, /Not tested yet/);
   assert.match(text, /Changes appear after testing/);

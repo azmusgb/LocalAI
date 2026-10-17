@@ -111,10 +111,8 @@ async function decideHere(a){
  const ids=approvals.map(x=>x.a.id),i=ids.indexOf(a.id),next=ids[i+1],prev=i>0?ids[i-1]:null;
  if(!await root.LocalAIUI.approvalSheet(a))return;
  await loadNeeds();
- const list=$('homeNeedsList'),find=id=>id&&list?.querySelector(`[data-approval-id="${CSS.escape(id)}"]`);
- let to=find(next)||find(prev)||(!$('homeNeedsYou')?.hidden&&list?.querySelector('button'));
- if(!to){to=$('homeRecentTitle');if(to&&!to.hasAttribute('tabindex'))to.setAttribute('tabindex','-1')}
- to?.focus({preventScroll:true});
+ const sec=$('homeNeedsYou'),first=sec&&!sec.hidden?$('homeNeedsList')?.querySelector('button'):null;
+ root.LocalAIUI.refocus(a.id,{within:'#homeNeedsList',key:'approvalId',next,prev,fallback:first||$('homeRecentTitle')});
 }
 let needs=[],approvals=[],newSignals=0;
 // Another device on plain HTTP can't use voice, notifications or Add to Home Screen; point it at the setup until it opts out there.
@@ -140,9 +138,14 @@ function recentRow(it){
  if(it.status==='awaiting_approval')row.querySelector('.run-card__bar')?.remove(); // waiting on you is not progress
  return row;
 }
+// Recent leaves out what Needs you already shows (the same run, or another card for the same thread): one row per thing.
+let lastRecent=null;
+const threadKey=r=>r.threadId||r.id;
 function paintRecent(box,data){
- const items=(data.items||[]).slice(0,6);
- if(!items.length)return false;
+ lastRecent={box,data};
+ const shown=new Set(needs.map(threadKey)),all=(data.items||[]).slice(0,6),items=all.filter(r=>!shown.has(threadKey(r)));
+ if(!all.length)return false;
+ if(!items.length){box.innerHTML='<div class="state-empty empty-state">Everything recent is in Needs you, above.</div>';return true}
  box.replaceChildren(...items.map(recentRow));
  return true;
 }
@@ -158,6 +161,7 @@ async function loadNeeds(){
    .map(a=>({a,run:a.meta?.changeId&&(runs||[]).find(r=>r.meta?.changeId===a.meta.changeId)||null}));
  }
  paintNeeds();
+ if(lastRecent?.box.isConnected&&!lastRecent.box.querySelector(':scope > .state-loading,:scope > .state-error'))paintRecent(lastRecent.box,lastRecent.data); // Recent may have painted before Needs you knew its rows
 }
 let inflight=null;
 function refresh(){

@@ -37,21 +37,43 @@ await check('home has one command surface and a short breadcrumb', async () => {
   assert.equal(await crumb(), 'Local AI / Home');
 });
 
-await check('change requests and the engineering agent are one page', async () => {
-  await page.locator('.ux-primary-item[data-domain="improve"]').click();
-  await page.waitForSelector('#backlog.active'); // Improve opens on its Backlog (sub-project 4)
-  await page.evaluate(() => window.showView('changes'));
-  await page.waitForSelector('#changes.active');
-  const labels = await secondaryLabels();
-  // Change requests opens from inside the app but has no menu entry: Improve › In progress shows the same changes.
-  assert.ok(!labels.includes('Change requests'));
-  assert.ok(labels.includes('In progress'));
-  assert.ok(!labels.includes('Engineering agent'), 'Engineering agent should not have its own nav entry');
-  assert.equal(await page.locator('#engineering').count(), 0);
-  const options = await page.locator('#engineeringAttempts option').allInnerTexts();
-  assert.ok(options.some(o => /^Plan only/.test(o)));
-  await page.evaluate(() => window.showView('engineering'));
-  await page.waitForSelector('#inProgress.active'); // the old engineering id means Improve › In progress now
+// The legacy pages are retired (owner decision D4): their addresses land on the page that replaced them.
+await check('retired pages are gone and their addresses land on Signals, In progress and Work', async () => {
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
+  await ctx.addInitScript(() => { localStorage.setItem('localai.devTools', '1'); localStorage.setItem('localai.firstRun.done', '1'); });
+  const pg = await ctx.newPage();
+  const errs = [], missing = [];
+  pg.on('pageerror', e => errs.push(e.message));
+  pg.on('response', r => { if (r.status() === 404) missing.push(r.url()); });
+  await pg.goto(base + '/#home', { waitUntil: 'domcontentloaded' });
+  await pg.waitForFunction(() => typeof window.showView === 'function');
+  for (const id of ['issues', 'quality', 'changes']) assert.equal(await pg.locator(`section#${id}`).count(), 0, `#${id} section is gone`);
+  for (const [from, to] of [['issues', 'signals'], ['quality', 'signals'], ['changes', 'inProgress'], ['runs', 'work'], ['engineering', 'inProgress']]) {
+    await pg.evaluate(h => { location.hash = h; }, '#' + from);
+    await pg.waitForFunction(t => document.querySelector('.view.active')?.id === t, to, { timeout: 5000 });
+  }
+  const labels = await pg.locator('#uxSecondaryGroups .ux-link-label').allInnerTexts();
+  assert.ok(!labels.includes('Change requests') && !labels.includes('Issues'), `menu: ${labels}`);
+  await pg.waitForTimeout(300);
+  assert.deepEqual(errs, []);
+  assert.deepEqual(missing, [], 'nothing 404s');
+  await ctx.close();
+});
+
+// A hidden page that remains (Missions, Chat, Images) names itself in the breadcrumb and lights the page that owns it.
+await check('a hidden page shows its own breadcrumb leaf and lights its owner in the menu', async () => {
+  await page.evaluate(() => window.showView('agents'));
+  await page.waitForSelector('#agents.active');
+  await page.waitForFunction(() => document.querySelector('#uxContextView')?.textContent === 'Missions');
+  assert.equal(await crumb(), 'Local AI / Work / Missions');
+  assert.equal(await page.locator('.ux-primary-item[data-domain="work"]').getAttribute('data-active'), 'true');
+  assert.match(await page.locator('.ux-secondary-link[data-view="work"]').getAttribute('class'), /\bactive\b/, 'Work is lit');
+  await page.evaluate(() => window.showView('ask'));
+  await page.waitForSelector('#ask.active');
+  await page.waitForFunction(() => document.querySelector('#uxContextView')?.textContent === 'Chat');
+  assert.equal(await crumb(), 'Local AI / Home / Chat');
+  assert.match(await page.locator('.ux-secondary-link[data-view="home"]').getAttribute('class'), /\bactive\b/, 'Home is lit');
+  await page.evaluate(() => window.showView('home'));
 });
 
 await check('opening a page loads its data even without a nav button click', async () => {
@@ -191,7 +213,7 @@ await check('Back closes the phone section sheet without leaving the page', asyn
 });
 
 await check('mobile tab pages have no horizontal overflow', async () => {
-  for (const view of ['issues', 'inbox', 'projects', 'changes']) {
+  for (const view of ['inbox', 'projects', 'signals', 'inProgress']) {
     await mobile.evaluate(v => window.showView(v), view);
     await mobile.waitForSelector(`#${view}.active`);
     const dims = await mobile.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
