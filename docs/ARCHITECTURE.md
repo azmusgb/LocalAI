@@ -59,7 +59,7 @@ Navigation is defined once in `app/public/view-registry.js`: five domains, each 
 | Workspace | Chat, Images, Library, Projects (Projects, Sources, Memory) |
 | Automate | Missions, Automations, n8n workflows, Browser & computer, Monitors |
 | Build | Change requests, Issues (Issues, Quality signals), Claude Code, Files, Repository, PowerShell |
-| System | Health, Models, Integrations, Runs, Audit log |
+| System | Health, Models, Services, Runs, Audit log |
 
 The page structure is being reorganized per the [evolution roadmap](superpowers/specs/2026-10-15-localai-evolution-design.md); this table is the current map.
 

@@ -107,13 +107,13 @@ await check('axe waits for a running fade to finish, and ignores endless animati
 });
 await page.close();
 
-for (const [api, sel, , hint] of [['/api/library', '#libraryGrid', 'library', 'your library'], ['/api/activity', '#activityList', 'activity', 'activity']]) {
+for (const [api, sel, , hint] of [['/api/library', '#libraryGrid', 'library', 'what you kept'], ['/api/activity', '#activityList', 'activity', 'activity']]) {
   await check(`${api} failing shows an error in ${sel}, not an empty list`, async () => {
     const p = await newPage(pg => pg.route('**' + api, r => r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"disk on fire"}' })));
     await p.waitForSelector(`${sel} .state-error`, { state: 'attached' });
     const t = await p.locator(sel).innerText();
     assert.match(t, new RegExp(`Couldn't load ${hint}\\.`));
-    assert.doesNotMatch(t, /Nothing saved yet|No activity yet/);
+    assert.doesNotMatch(t, /Your chats, research and images appear here|What happens on Local AI is listed here/);
     await p.close();
   });
 }
@@ -125,7 +125,7 @@ await check('library Retry recovers once the API works', async () => {
   fail = false;
   await p.locator('#libraryGrid .state-error button').evaluate(b => b.click());
   // Wait for the re-rendered list, not just for the error to go: on a slow runner the grid is briefly empty.
-  await p.waitForFunction(() => /Nothing saved yet/.test(document.querySelector('#libraryGrid')?.innerText || ''), null, { timeout: 10000 });
+  await p.waitForFunction(() => /Your chats, research and images appear here/.test(document.querySelector('#libraryGrid')?.innerText || ''), null, { timeout: 10000 });
   assert.equal(await p.locator('#libraryGrid .state-error').count(), 0);
   await p.close();
 });
@@ -312,11 +312,14 @@ await check('Runs shows one card per run: thumbnail, diff stat and the Review ac
   assert.match(await eng.innerText(), /Fix the login bug[\s\S]*2 files[\s\S]*\+14[\s\S]*-3[\s\S]*Review[\s\S]*Ready to review/);
   assert.equal(await eng.locator('.badge.badge--accent').count(), 1);
 });
-await check('opening a run shows header, Not filed, Pin and File, then the approval bar before Timeline', async () => {
+await check('opening a run shows its header (kind only until filed), then the approval bar before Timeline; the tab is named for the run', async () => {
   await openRun('run_eng');
   const d = drawerOpen();
   const t = await d.innerText();
-  assert.match(t, /Fix the login bug/); assert.match(t, /Engineering · Not filed/);
+  assert.match(t, /Fix the login bug/);
+  assert.equal((await d.locator('.run-drawer-sub').innerText()).trim(), 'Change', 'an unfiled run names its kind and nothing else (E2)');
+  assert.doesNotMatch(t, /Not filed/);
+  assert.equal(await runPage.title(), 'Fix the login bug · Local AI', 'document.title names the run (E8)');
   assert.equal(await d.getByRole('button', { name: 'Pin' }).count(), 0, 'Pin lives in the details sheet');
   assert.equal(await d.locator('.run-approval').count(), 1);
   assert.match(await d.locator('.run-approval').innerText(), /Apply the login fix[\s\S]*High risk/);
@@ -376,9 +379,11 @@ await check('File… picks a project in a select and shows its name', async () =
   await drawerOpen().getByText('Beta').waitFor();
   assert.deepEqual(rv.posts, [['/api/runs/update', { id: 'run_eng', projectId: 'prj_b' }]]);
   assert.doesNotMatch(await drawerOpen().innerText(), /Not filed/);
+  assert.equal((await drawerOpen().locator('.run-drawer-sub').innerText()).trim(), 'Change · Beta', 'once filed, the header names the project');
 });
 await check('a body registered for a kind mounts in place of Output', async () => {
   await closeRun();
+  assert.equal(await runPage.title(), 'Runs · Local AI', 'closing the run gives the tab back to the page (E8)');
   await runPage.evaluate(() => window.LocalAIUI.registerRunBody('image', (run, el) => { el.innerHTML = `<div id="imgBody">gallery for ${run.id}</div>`; }));
   await openRun('run_img');
   const d = drawerOpen();

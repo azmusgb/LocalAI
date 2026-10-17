@@ -108,6 +108,18 @@ def run_agent(prompt: str) -> subprocess.CompletedProcess:
     return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
 
 
+def failure_reason(stdout: str, stderr: str) -> str:
+    # The agent's last error line (a traceback ends with it), so the page can say why rather than just "failed".
+    for text in (stderr, stdout):
+        lines = [x.strip() for x in (text or '').splitlines() if x.strip()]
+        for line in reversed(lines):
+            if 'error' in line.lower() or 'exception' in line.lower():
+                return line[:300]
+        if lines:
+            return lines[-1][:300]
+    return ''
+
+
 def extract_answer(stdout: str) -> str:
     # In --once mode the agent prints its progress log, this marker, then only the answer.
     idx = stdout.rfind(FINAL_MARKER)
@@ -192,9 +204,12 @@ class Handler(BaseHTTPRequestHandler):
             proc = run_agent(prompt)
             elapsed = round(time.time() - started, 2)
             if proc.returncode != 0:
+                reason = failure_reason(proc.stdout, proc.stderr)
+                log.warning('Agent exited %s after %ss: %s', proc.returncode, elapsed, reason or '(no output)')
                 return self._json(500, {
                     'ok': False,
                     'error': 'GridCraft agent failed',
+                    'reason': reason,
                     'exitCode': proc.returncode,
                     'stdout': proc.stdout[-12000:],
                     'stderr': proc.stderr[-12000:],
@@ -207,6 +222,7 @@ class Handler(BaseHTTPRequestHandler):
                 'durationSec': elapsed,
             })
         except subprocess.TimeoutExpired:
+            log.warning('Agent timed out after %ss', RUN_TIMEOUT)
             return self._json(504, {'ok': False, 'error': f'GridCraft request exceeded {RUN_TIMEOUT}s'})
         except Exception as exc:
             return self._json(500, {'ok': False, 'error': f'Bridge failed to run the agent: {type(exc).__name__}: {exc}'})

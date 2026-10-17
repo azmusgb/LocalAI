@@ -241,7 +241,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       <div class="truth-attention-head">
         <div>
           <h2 id="truthAttentionTitle">Attention</h2>
-          <p id="truthAttentionSummary">Checking live capability state…</p>
+          <p id="truthAttentionSummary">Checking what Local AI can do right now…</p>
         </div>
         <span id="truthAttentionCount" class="pill truth-attention-count">Checking</span>
       </div>
@@ -266,7 +266,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         <div class="topbar">
           <div>
             <h1>Models</h1>
-            <p class="sub">Installed Ollama models and the models currently resident in memory.</p>
+            <p class="sub">The models on this computer, and which ones are loaded right now.</p>
           </div>
           <button id="modelRuntimeRefresh" class="btn" type="button">Refresh</button>
         </div>
@@ -394,7 +394,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         items.push({
           severity: item.state === 'DOWN' ? 'critical' : 'warning',
           title: `${item.label || item.name || 'Core service'} is ${String(item.state || 'unavailable').toLowerCase()}`,
-          detail: item.impact || 'A core capability is affected.',
+          detail: item.impact || 'Part of Local AI is affected.',
           action: 'Open Health',
           view: 'status'
         });
@@ -404,8 +404,8 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     if (healthy(snapshot, 'ollama') && models?.available === false) {
       items.push({
         severity: 'warning',
-        title: 'Model inventory could not be verified',
-        detail: models.runtimeError || 'Ollama is reachable, but installed model inventory is unavailable.',
+        title: 'Model list could not be verified',
+        detail: models.runtimeError || 'Ollama is reachable, but the list of installed models is not.',
         action: 'Open Models',
         view: 'models'
       });
@@ -413,7 +413,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       items.push({
         severity: 'critical',
         title: 'Configured default model is not installed',
-        detail: `${models.default} is configured as the default but is not present in the verified Ollama inventory.`,
+        detail: `${models.default} is set as the default but is not installed in Ollama.`,
         action: 'Open Models',
         view: 'models'
       });
@@ -423,7 +423,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       items.push({
         severity: 'info',
         title: 'Active model residency is unavailable',
-        detail: models.runtimeError || 'Installed models are known, but Ollama /api/ps runtime detail could not be read.',
+        detail: models.runtimeError || 'Installed models are known, but which ones are loaded could not be read.',
         action: 'Open Models',
         view: 'models'
       });
@@ -496,15 +496,15 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     list.replaceChildren();
 
     if (loadError) {
-      window.LocalAIHome?.setAttention([{ severity: 'critical', title: 'Capability registry unavailable', detail: 'Local AI could not verify the current runtime state.', action: 'Open Health', view: 'status' }]);
+      window.LocalAIHome?.setAttention([{ severity: 'critical', title: 'Status unavailable', detail: 'Local AI could not check what is working right now.', action: 'Open Health', view: 'status' }]);
       surface.hidden = false;
       surface.dataset.state = 'attention';
-      summary.textContent = 'Live capability state could not be verified. Existing controls remain available.';
+      summary.textContent = 'Local AI could not check what is working right now. Everything else still works.';
       count.textContent = 'State unavailable';
       const row = document.createElement('div');
       row.className = 'truth-attention-item';
       row.dataset.severity = 'critical';
-      row.innerHTML = '<span class="truth-attention-marker" aria-hidden="true"></span><div class="truth-attention-copy"><strong>Capability registry unavailable</strong><span>Local AI could not verify the current runtime state. Open Status for diagnostics.</span></div>';
+      row.innerHTML = '<span class="truth-attention-marker" aria-hidden="true"></span><div class="truth-attention-copy"><strong>Status unavailable</strong><span>Local AI could not check what is working right now. Open Health for details.</span></div>';
       const action = document.createElement('button');
       action.type = 'button';
       action.className = 'btn truth-attention-action';
@@ -521,7 +521,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     surface.hidden = !items.length;
     if (!items.length) {
       surface.dataset.state = 'clear';
-      summary.textContent = 'No action is required. Core capabilities currently report ready.';
+      summary.textContent = 'Nothing needs you. Everything reports ready.';
       count.textContent = 'Clear';
       return;
     }
@@ -581,8 +581,8 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       <div class="model-runtime-metric" data-dev-only><strong>${runtimeLabel}</strong><span>Runtime detail</span></div>`;
 
     if (models?.available === false) {
-      list.innerHTML = `<div class="model-runtime-note model-runtime-error"><strong>Model inventory unavailable</strong><div style="margin-top:4px">${esc(models.runtimeError || 'Ollama model inventory could not be read.')}</div></div>`;
-      note.textContent = 'The application will not infer installed model state while inventory is unavailable.';
+      list.innerHTML = `<div class="model-runtime-note model-runtime-error"><strong>Model list unavailable</strong><div style="margin-top:4px">${esc(models.runtimeError || 'Could not read the list of models from Ollama.')}</div></div>`;
+      note.textContent = 'Local AI will not guess which models are installed until it can read the list.';
       return;
     }
 
@@ -652,15 +652,15 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
 
     if (models?.default && models.defaultInstalled === false) {
       note.classList.add('model-runtime-error');
-      note.textContent = `Configured default ${models.default} is not installed. Requests using the configured default can fail until the model configuration or inventory is corrected.`;
+      note.textContent = `Configured default ${models.default} is not installed. Requests that use the default can fail until it is installed or another default is chosen.`;
     } else if (models?.runtimeAvailable === false) {
       note.classList.add('model-runtime-error');
-      note.textContent = `Installed model inventory is available, but active residency detail is not: ${models.runtimeError || 'Ollama /api/ps unavailable.'}`;
+      note.textContent = `The installed models are known, but which ones are loaded is not: ${models.runtimeError || 'Ollama /api/ps unavailable.'}`;
     } else {
       note.classList.remove('model-runtime-error');
       note.textContent = Number(models?.loadedCount || 0) === 0
         ? 'No model is resident right now. This is normal: Ollama loads models on demand and may unload them after idle time.'
-        : 'Loaded means currently resident in Ollama runtime memory. Installed models remain available even when they are not loaded.';
+        : 'Loaded means in memory right now. Installed models stay available when they are not loaded.';
     }
   }
 
@@ -785,7 +785,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         headers: { Accept: 'application/json' },
         cache: 'no-store'
       });
-      if (!response.ok) throw new Error(`Capability registry returned HTTP ${response.status}`);
+      if (!response.ok) throw new Error(`Status check returned HTTP ${response.status}`);
       const snapshot = await response.json();
       lastTruthSnapshot = snapshot;
       applyCapabilityGates(snapshot);
@@ -2594,14 +2594,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       actions: [{ type: 'view', view: 'create', label: 'Open Images' }]
     },
     {
-      id: 'gridcraft', name: 'GridCraft', tier: 'bridge', decision: 'Host bridge', source: 'gridcraft',
+      id: 'gridcraft', name: 'GridCraft', tier: 'bridge', decision: 'On the Windows computer', source: 'gridcraft',
       summary: 'Lets Local AI open, check, edit and save spreadsheets on the Windows computer.',
       guidance: 'Works on one request at a time. Nothing leaves your network.',
       actions: [{ type: 'page', url: '/gridcraft.html', label: 'Open GridCraft' }]
     },
     {
       id: 'penpot', name: 'Penpot', tier: 'bridge', decision: 'Not set up',
-      summary: 'A design tool Local AI could read and update designs in, if you run your own copy.',
+      summary: 'A design app Local AI could read and update designs in, if you run your own copy.',
       guidance: 'Its access key is a password: keep it out of screenshots, notes and shared files.',
       actions: [
         { type: 'url', url: 'https://help.penpot.app/technical-guide/getting-started/', label: 'Self-host guide' },
@@ -2635,21 +2635,21 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   ];
 
   const ALTERNATIVES = [
-    ['Gemini / Nano Banana / ImageFX / Google Flow', 'Cloud creative stack', 'Skip as core', 'Duplicates local model and ComfyUI capabilities and weakens the local-first boundary. Add a cloud adapter only for a concrete quality gap.'],
-    ['DALL·E 3', 'Cloud image generation', 'Skip as core', 'Keep ComfyUI as the default media backend and expose cloud providers only as explicit opt-in fallbacks.'],
-    ['Hugging Chat / Hugging Face Chat', 'Cloud chat frontend', 'Skip', 'Local AI already provides the chat/orchestration layer. Hugging Face is more valuable here as a model registry.'],
-    ['Meta AI / You.com', 'Cloud assistants/search', 'Skip', 'They duplicate Ask/Research and would fragment history, routing, privacy, and capability state.'],
-    ['LMArena / Chatbot Arena', 'Model comparison', 'Reference only', 'Useful for external model evaluation, but not an appliance runtime dependency.'],
-    ['Coze / Bardeen', 'Cloud automation/agents', 'Skip', 'n8n plus Local AI agents already cover this space with better control and local deployment.'],
-    ['Pixlr X / Lovart', 'Design/image tools', 'Skip', 'Photopea plus Penpot provides a simpler editor/design pair with less overlap.'],
-    ['Laxis', 'Meeting notes', 'Skip for now', 'Meeting capture is outside the current Local AI core and would add a narrow cloud workflow.'],
-    ['Google Slides', 'Presentations', 'Defer', 'Prefer a future artifact/export capability rather than coupling the appliance to one office suite.'],
-    ['10Web', 'Website builder', 'Skip', 'Local AI engineering/workbench features are a better fit for code-backed site work.'],
-    ['Icons8', 'Asset library', 'Reference only', 'Useful content source, not an integration. Keep it outside the runtime dependency graph.']
+    ['Gemini / Nano Banana / ImageFX / Google Flow', 'Cloud images and video', 'Not built in', 'Does what your local models and ComfyUI already do, but in the cloud. Worth adding only if local results fall clearly short.'],
+    ['DALL·E 3', 'Cloud images', 'Not built in', 'ComfyUI stays the way pictures are made; a cloud service would only ever be something you switch on yourself.'],
+    ['Hugging Chat / Hugging Face Chat', 'Cloud chat', 'Skip', 'Local AI is already your chat. Hugging Face is more useful here as the place models come from.'],
+    ['Meta AI / You.com', 'Cloud assistants and search', 'Skip', 'They do what Chat and Research do, and would split your history and send your questions outside.'],
+    ['LMArena / Chatbot Arena', 'Model comparison', 'Reference only', 'Handy for comparing models before you download one; Local AI does not need it to work.'],
+    ['Coze / Bardeen', 'Cloud automations and agents', 'Skip', 'n8n and Local AI missions already do this, on this computer and under your control.'],
+    ['Pixlr X / Lovart', 'Design and photo apps', 'Skip', 'Photopea and Penpot cover photo editing and design with less overlap.'],
+    ['Laxis', 'Meeting notes', 'Skip for now', 'Recording meetings is not something Local AI does, and this would send them to the cloud.'],
+    ['Google Slides', 'Presentations', 'Later', 'Better that Local AI learns to export slides than ties itself to one office suite.'],
+    ['10Web', 'Website builder', 'Skip', 'For a website, the developer pages in Local AI fit better.'],
+    ['Icons8', 'Icons and pictures', 'Reference only', 'A good place to find icons and pictures; nothing to connect.']
   ];
 
   function tierBadge(tier) {
-    const labels = { native: 'Native', extend: 'Local extension', bridge: 'Bridge', utility: 'Utility' };
+    const labels = { native: 'Built in', extend: 'Add-on', bridge: 'Connects to', utility: 'Outside' };
     return `<span class="ux-int-tier ${tier}">${labels[tier] || tier}</span>`;
   }
 
@@ -2715,7 +2715,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (!button) return;
     button.disabled = busy;
     button.setAttribute('aria-busy', String(busy));
-    button.textContent = busy ? 'Checking…' : 'Refresh status';
+    button.textContent = busy ? 'Checking…' : 'Check again';
   }
 
   async function loadStatus() {
@@ -2750,10 +2750,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         if (status) {
           const healthy = services.filter(service => ['n8n', 'comfy'].includes(service.name) && service.state === 'HEALTHY').length;
           q('#uxIntegrationNativeCountV2').textContent = `${healthy}/2`;
-          summary.textContent = healthy === 2 ? 'Core local integrations are healthy.' : healthy === 1 ? 'One core local integration needs attention.' : 'Core local integration health needs attention.';
+          summary.textContent = healthy === 2 ? 'Both core services are working.' : healthy === 1 ? 'One core service needs attention.' : 'The core services need attention.';
         } else {
           q('#uxIntegrationNativeCountV2').textContent = '—';
-          summary.textContent = 'Live service status is unavailable; integration recommendations are unchanged.';
+          summary.textContent = 'Live status is unavailable; what each service is for is unchanged.';
         }
 
         q('#uxIntegrationMediaStateV2').textContent = capabilities
@@ -2761,7 +2761,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
           : 'Status only';
         checked.textContent = `Checked ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
       } catch {
-        if (summary) summary.textContent = 'Could not read live integration status.';
+        if (summary) summary.textContent = 'Could not check the services.';
         if (checked) checked.textContent = 'Status request failed';
       } finally {
         setBusy(false);
@@ -2777,14 +2777,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (!section || section.dataset.integrationV2 === 'true') return Boolean(section);
     section.dataset.integrationV2 = 'true';
     section.innerHTML = `
-      <div class="topbar"><div><h1>Integrations</h1><p class="sub">The services Local AI runs on, how each one is doing, and the tools it can connect to.</p></div><button class="btn" type="button" id="uxIntegrationRefreshV2" aria-busy="false">Refresh status</button></div>
-      <div class="card ux-int-hero ux-int-v2"><div><h2>Connected services</h2><p id="uxIntegrationStatusSummaryV2" role="status" aria-live="polite">Checking local services…</p><span id="uxIntegrationLastCheckedV2" class="ux-int-checked"></span></div><div class="ux-int-metrics"><div><b id="uxIntegrationNativeCountV2">—</b><span>core services healthy</span></div><div><b id="uxIntegrationMediaStateV2">—</b><span>image and media</span></div><div><b>Opt-in</b><span>cloud and outside tools</span></div></div></div>
-      <div class="section-head ux-int-section-head"><div><h2>Services and tools</h2><p>What each one does here, and whether it is ready.</p></div></div><div id="uxIntegrationCardsV2" class="ux-int-grid"></div>
-      <details class="ux-int-about"><summary>How integrations are chosen</summary><div class="card ux-int-policy"><div><h2>What gets into the core</h2></div><div class="ux-int-policy-grid"><div><strong>1. Native before cloud</strong><span>Ollama, n8n and ComfyUI remain the default execution path.</span></div><div><strong>2. One owner per capability</strong><span>Do not add another primary chat, automation, or media surface that fragments state.</span></div><div><strong>3. Bridges must create durable value</strong><span>Penpot and Obsidian should exchange inspectable artifacts or source context, not merely open another tab.</span></div><div><strong>4. Cloud is an explicit fallback</strong><span>Credentials and uploads require deliberate user action after a measured local capability gap is documented.</span></div></div></div>
-      <div class="card ux-int-research"><div><h2>Safeguards</h2></div><div class="ux-int-research-grid"><div><strong>n8n security audit</strong><span>Use the official audit after adding credentials, community nodes, or public webhooks; it checks credential, database, filesystem, node, and instance risks.</span><a data-external="true" href="https://docs.n8n.io/hosting/securing/security-audit/" target="_blank" rel="noopener noreferrer" aria-label="n8n security audit official guidance (opens external site)">Official guidance ↗</a></div><div><strong>ComfyUI API compatibility</strong><span>Custom nodes that require direct client/server communication may not be usable through API-mode automation. Verify this before making a node part of a Local AI workflow.</span><a data-external="true" href="https://docs.comfy.org/custom-nodes/overview" target="_blank" rel="noopener noreferrer" aria-label="ComfyUI custom-node model guidance (opens external site)">Custom-node model ↗</a></div><div><strong>Penpot self-host + MCP</strong><span>Penpot can run on your own server and exposes an MCP workflow for design-to-code/design-to-design work. MCP keys are secrets and stay out of client code.</span><a data-external="true" href="https://help.penpot.app/mcp/" target="_blank" rel="noopener noreferrer" aria-label="Penpot MCP guidance (opens external site)">Penpot MCP ↗</a></div></div></div>
-      <div class="card ux-int-next"><div><h2>Planned next</h2></div><div class="ux-int-next-grid"><div><b>Shipped</b><strong>Live n8n / ComfyUI health</strong><span>Uses the appliance status and capability endpoints already present.</span></div><div><b>Next</b><strong>ComfyUI capability discovery</strong><span>Detect video/avatar model and node readiness before SVD or SadTalker can show as available.</span></div><div><b>Next</b><strong>Obsidian vault ingestion</strong><span>Mount/select a local vault and ingest supported source files into Project Knowledge with source provenance.</span></div><div><b>Opt-in</b><strong>Penpot MCP bridge</strong><span>Connect a self-hosted Penpot design workspace without exposing MCP credentials to the browser.</span></div></div></div>
+      <div class="topbar"><div><h1>Services</h1><p class="sub">What Local AI connects to, how each one is doing, and what each one is for.</p></div><button class="btn" type="button" id="uxIntegrationRefreshV2" aria-busy="false">Check again</button></div>
+      <div class="card ux-int-hero ux-int-v2"><div><h2>Connected services</h2><p id="uxIntegrationStatusSummaryV2" role="status" aria-live="polite">Checking local services…</p><span id="uxIntegrationLastCheckedV2" class="ux-int-checked"></span></div><div class="ux-int-metrics"><div><b id="uxIntegrationNativeCountV2">—</b><span>core services healthy</span></div><div><b id="uxIntegrationMediaStateV2">—</b><span>image and media</span></div><div><b>Opt-in</b><span>cloud and outside services</span></div></div></div>
+      <div class="section-head ux-int-section-head"><div><h2>What each one does</h2><p>What it is for here, and whether it is ready.</p></div></div><div id="uxIntegrationCardsV2" class="ux-int-grid"></div>
+      <details class="ux-int-about"><summary>How services are chosen</summary><div class="card ux-int-policy"><div><h2>What gets built in</h2></div><div class="ux-int-policy-grid"><div><strong>1. On this computer first</strong><span>Ollama, n8n and ComfyUI do the work by default, so nothing leaves your network.</span></div><div><strong>2. One service per job</strong><span>No second chat, automation or image service that would split your history in two.</span></div><div><strong>3. A connection has to be worth it</strong><span>Penpot and Obsidian would share real designs and notes with Local AI, not just open another tab.</span></div><div><strong>4. The cloud only when you choose it</strong><span>Accounts and uploads to outside services happen only when you set them up yourself.</span></div></div></div>
+      <div class="card ux-int-research"><div><h2>Safeguards</h2></div><div class="ux-int-research-grid"><div><strong>n8n security check</strong><span>Run it after you connect an account, add a community add-on or a public webhook. It checks accounts, data, files and add-ons.</span><a data-external="true" href="https://docs.n8n.io/hosting/securing/security-audit/" target="_blank" rel="noopener noreferrer" aria-label="n8n security check guidance (opens external site)">Official guidance ↗</a></div><div><strong>ComfyUI add-ons</strong><span>Some add-ons only work in ComfyUI's own window, not when Local AI asks for an image. Check before you rely on one.</span><a data-external="true" href="https://docs.comfy.org/custom-nodes/overview" target="_blank" rel="noopener noreferrer" aria-label="ComfyUI add-on guidance (opens external site)">Add-on guidance ↗</a></div><div><strong>Penpot on your own server</strong><span>Penpot can run at home and let Local AI read and update designs. Its access key is a password and never goes into the page.</span><a data-external="true" href="https://help.penpot.app/mcp/" target="_blank" rel="noopener noreferrer" aria-label="Penpot connection guidance (opens external site)">Penpot guide ↗</a></div></div></div>
+      <div class="card ux-int-next"><div><h2>Planned next</h2></div><div class="ux-int-next-grid"><div><b>Shipped</b><strong>Live n8n and ComfyUI health</strong><span>This page checks both every time you open it.</span></div><div><b>Next</b><strong>Video and talking portraits</strong><span>Show Stable Video Diffusion and SadTalker as ready once their models are installed in ComfyUI.</span></div><div><b>Next</b><strong>Obsidian notes as Sources</strong><span>Pick a notes folder and add its files to a project's Sources, each with where it came from.</span></div><div><b>Opt-in</b><strong>Penpot connection</strong><span>Connect your own Penpot without its access key ever reaching the browser.</span></div></div></div>
       </details>
-      <details class="ux-int-reviewed"><summary>Reviewed alternatives <span>${ALTERNATIVES.length} tools/groups intentionally kept out of the core</span></summary><div class="section-head ux-int-section-head"><div><h2>Reviewed, not integrated</h2><p>Useful independently in some cases, but not justified as Local AI runtime dependencies today.</p></div></div><div id="uxIntegrationAlternativesV2" class="ux-int-table"></div></details>`;
+      <details class="ux-int-reviewed"><summary>Reviewed alternatives <span>${ALTERNATIVES.length} services kept out on purpose</span></summary><div class="section-head ux-int-section-head"><div><h2>Reviewed, not added</h2><p>Some are useful on their own, but none earns a place inside Local AI today.</p></div></div><div id="uxIntegrationAlternativesV2" class="ux-int-table"></div></details>`;
 
     renderCards();
     renderAlternatives();
@@ -2815,7 +2815,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   'use strict';
 
   const state = { inerted: [], opener: null, runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '', projects: null, viewError: '', fetched: null, gap: '', pending: null, inApp: false, closing: false };
-  const KINDS = { chat: ['Chat', 'compose'], research: ['Research', 'globe'], image: ['Image', 'image'], agent: ['Agent', 'automate'], automation: ['Automation', 'refresh'], engineering: ['Engineering', 'build'] };
+  const KINDS = { chat: ['Chat', 'compose'], research: ['Research', 'globe'], image: ['Image', 'image'], agent: ['Mission', 'automate'], automation: ['Automation', 'refresh'], engineering: ['Change', 'build'] };
   // Home starts a run by mode name; a run not yet reported is labelled by the kind that mode becomes.
   const MODE_KINDS = { ask: 'chat', create: 'image', mission: 'agent' };
   const kindOf = (kind) => MODE_KINDS[kind] || kind;
@@ -2862,9 +2862,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       section.id = 'runs';
       section.className = 'view';
       section.innerHTML = `
-        <div class="topbar"><div><h1>Runs</h1><p class="sub">One execution history for AI, images, agents, automations, and engineering.</p></div><button id="runsRefresh" type="button" class="btn">Refresh</button></div>
+        <div class="topbar"><div><h1>Runs</h1><p class="sub">Every run: chats, images, missions, automations and changes.</p></div><button id="runsRefresh" type="button" class="btn">Refresh</button></div>
         <div id="runMetrics" class="run-summary-grid"></div>
-        <div class="card" style="margin-top:12px"><div class="section-head"><div><h2>Execution history</h2><p>Open a run for lifecycle events, output, errors, cancel, or retry when supported.</p></div></div><div id="runList" class="run-list"><div class="empty">Loading runs…</div></div></div>`;
+        <div class="card" style="margin-top:12px"><div class="section-head"><div><h2>All runs</h2><p>Open a run to see what happened, its result, and to cancel or retry it.</p></div></div><div id="runList" class="run-list"><div class="empty">Loading runs…</div></div></div>`;
       main.appendChild(section);
       el('runsRefresh')?.addEventListener('click', () => loadRuns(true));
     }
@@ -2888,7 +2888,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         panel.id = 'homeRunCenter';
         panel.className = 'card home-run-center';
         panel.hidden = true;
-        panel.innerHTML = '<div class="section-head"><div><h2>Runs</h2><p id="homeRunSummary">Checking current execution state…</p></div><button id="homeRunsOpen" type="button" class="btn">View runs</button></div><div id="homeRunList" class="run-list"></div>';
+        panel.innerHTML = '<div class="section-head"><div><h2>Runs</h2><p id="homeRunSummary">Checking what is running…</p></div><button id="homeRunsOpen" type="button" class="btn">View runs</button></div><div id="homeRunList" class="run-list"></div>';
         const attention = el('truthAttention');
         if (attention?.parentNode === home) attention.insertAdjacentElement('afterend', panel);
         else home.prepend(panel);
@@ -2932,7 +2932,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const list = el('runList');
     if (list) {
       list.replaceChildren();
-      if (!runs.length) list.innerHTML = '<div class="empty">No execution history yet.</div>';
+      if (!runs.length) list.innerHTML = '<div class="empty">No runs yet.</div>';
       else runs.forEach((run) => list.appendChild(makeRunRow(run)));
     }
 
@@ -3009,10 +3009,16 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     state.drawerSig = drawerSignature(run);
     if (!run) { renderGap(drawer); if (lost) refocus(lost); return; }   // Starting…/Loading… is rebuilt too (the router re-renders it): keep focus in the view
     const card = run.card, kit = window.LocalAIKit;
-    const project = document.createElement('span'); project.className = 'run-view-project';
-    project.textContent = !run.projectId ? 'Not filed' : !state.projects ? 'Filed' : (state.projects.find((p) => p.id === run.projectId)?.name || 'Project removed');
-    drawer.appendChild(viewHead(run.threadTitle || run.title || 'Untitled run',   // a conversation keeps its first message as its name
-      [`${kindLabel(card?.kind || run.type)} · `, project], run));
+    // The header names the project only once the run is filed in one (E2): an unfiled run says nothing about it.
+    const sub = [kindLabel(card?.kind || run.type)];
+    if (run.projectId) {
+      const project = document.createElement('span'); project.className = 'run-view-project';
+      project.textContent = !state.projects ? 'Filed' : (state.projects.find((p) => p.id === run.projectId)?.name || 'Project removed');
+      sub.push(' · ', project);
+    }
+    const runTitle = run.threadTitle || run.title || 'Untitled run';   // a conversation keeps its first message as its name
+    drawer.appendChild(viewHead(runTitle, sub, run));
+    document.title = `${runTitle} · Local AI`;   // browser history names the run (E8); showView sets the page's title back
 
     // Status badge, then a progress bar while the run is live.
     const vh = document.createElement('div'); vh.className = 'run-view-head';
@@ -3154,7 +3160,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const values = [
       ['Status', statusLabel(run.status)], ['Progress', `${Math.max(0, Math.min(100, Number(run.progress) || 0))}%`],
       ['Started', shownDate(run.startedAt)], ['Finished', shownDate(run.finishedAt)],
-      ['Attempt', String(run.attempt || 1)], ['Retry of', run.retryOf || '—'], ['Run ID', run.id]
+      ['Try', String(run.attempt || 1)], ['Retry of', run.retryOf || '—'], ['Run ID', run.id]
     ];
     values.forEach(([label, value]) => {
       const cell = document.createElement('div'); cell.className = 'run-detail';
@@ -3282,6 +3288,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (backdrop) { backdrop.classList.remove('show'); backdrop.setAttribute('aria-hidden', 'true'); }
     const sheet = el('runDetailsSheet'); if (sheet?.open) { state.selectedId = null; sheet.close(); }
     document.body.classList.remove('run-view-open');
+    { const page = document.querySelector('main .view.active')?.id; if (page && window.LocalAIViews) document.title = window.LocalAIViews.title(page); }   // the run's title gives way to the page's again
     setInert(false); state.opener = null;
     if (wasOpen) queueMicrotask(() => restoreFocus(opener));
     clearTimeout(state.closeTimer); state.closeTimer = 0;
@@ -3385,7 +3392,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       render();
     } catch (error) {
       const list = el('runList');
-      if (list) { list.replaceChildren(); const box = document.createElement('div'); box.className = 'status-error'; box.textContent = `Execution history unavailable: ${error.message}`; list.appendChild(box); }
+      if (list) { list.replaceChildren(); const box = document.createElement('div'); box.className = 'status-error'; box.textContent = `Runs unavailable: ${error.message}`; list.appendChild(box); }
     } finally {
       state.loading = false;
       schedule();
@@ -3426,7 +3433,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // re-applies the limit; "Show more" is remembered per list until the page reloads.
 (() => {
   'use strict';
-  const LIMITS = { inboxList: 10, activityList: 15, runList: 10, libraryGrid: 12, knowledgeList: 10, automationList: 10 };
+  const LIMITS = { inboxList: 10, activityList: 15, runList: 10, libraryGrid: 24, knowledgeList: 10, automationList: 10 };
+  // Paged lists show one more page per tap instead of everything at once (Library: 24 at a time on a phone, F3).
+  const PAGED = new Set(['libraryGrid']);
   const phone = window.matchMedia('(max-width: 760px)');
   const observers = new Map();
 
@@ -3435,7 +3444,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     observer?.disconnect();
     list.querySelector(':scope > .mobile-more')?.remove();
     const items = [...list.children];
-    const limit = LIMITS[list.id] * (phone.matches ? 1 : 3);
+    const page = LIMITS[list.id] * (phone.matches ? 1 : 3), paged = PAGED.has(list.id);
+    const limit = paged ? page * Math.max(1, Number(list.dataset.pages) || 1) : page;
     // Clipping only one or two items saves nothing; show them.
     const clip = list.dataset.showAll !== 'true' && items.length > limit + 2;
     items.forEach((item, i) => item.classList.toggle('mobile-clipped', clip && i >= limit));
@@ -3443,8 +3453,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const more = document.createElement('button');
       more.type = 'button';
       more.className = 'btn mobile-more';
-      more.textContent = `Show ${items.length - limit} more`;
-      more.addEventListener('click', () => { list.dataset.showAll = 'true'; apply(list); });
+      more.textContent = `Show ${paged ? Math.min(page, items.length - limit) : items.length - limit} more`;
+      more.addEventListener('click', () => { if (paged) list.dataset.pages = String(limit / page + 1); else list.dataset.showAll = 'true'; apply(list); list.querySelector(':scope > .mobile-more')?.focus(); });
       list.appendChild(more);
     }
     observer?.observe(list, { childList: true });
