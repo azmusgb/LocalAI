@@ -119,6 +119,8 @@ function paintNeeds(){
  sec.hidden=!rows.length;
 }
 function recentRow(it){
+ // A conversation shows once, under its first message, with its turn count (as Work does).
+ const n=it.turns||1;if(it.card?.kind==='chat'&&n>1)it={...it,card:{...it.card,summary:`Chat · ${n} turns`,preview:it.card.preview||(it.card.summary?{type:'text',text:it.card.summary}:null)}};
  const row=root.LocalAIUI.runCard(it,{onOpen:openRun,rowOpen:true}),act=row.querySelector('.run-card__action');
  if(act)act.remove(); // the row itself opens the run
  if(it.status==='awaiting_approval')row.querySelector('.run-card__bar')?.remove(); // waiting on you is not progress

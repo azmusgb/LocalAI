@@ -128,6 +128,37 @@ await check('notification links open their page', async () => {
   await context.close();
 });
 
+// Inbox: an alert body is clamped to four lines; Show more opens the rest (aria-expanded), on a phone and on a desktop.
+const LONG_ALERT = Array.from({ length: 12 }, (_, i) => `Line ${i + 1} of a pasted alert that goes on about disk space, services and what happened overnight.`).join(' ');
+for (const [tag, viewport, mobile] of [['phone', { width: 390, height: 844 }, true], ['desktop', { width: 1440, height: 900 }, false]]) await check(`${tag}: a long Inbox alert shows four lines and Show more opens the rest`, async () => {
+  const context = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: mobile, hasTouch: mobile });
+  await context.addInitScript(() => localStorage.setItem('localai.firstRun.done', '1'));
+  const page = await context.newPage({ serviceWorkers: 'block' });
+  const now = new Date().toISOString();
+  await page.route(u => u.pathname === '/api/notifications', r => r.fulfill({ json: { unread: 1, items: [
+    { id: 'n1', title: 'Disk is nearly full', kind: 'monitor', level: 'warning', detail: LONG_ALERT, read: false, resolved: false, createdAt: now },
+    { id: 'n2', title: 'Backup finished', kind: 'automation', level: 'warning', detail: 'One line.', read: false, resolved: false, createdAt: now }] } }));
+  await page.goto(base + '/#inbox', { waitUntil: 'networkidle' });
+  await page.waitForSelector('#inboxList .item-card');
+  const card = page.locator('#inboxList .item-card', { hasText: 'Disk is nearly full' });
+  const body = card.locator('.muted').first();
+  const lines = async () => body.evaluate(e => ({ h: e.getBoundingClientRect().height, lh: parseFloat(getComputedStyle(e).lineHeight), cut: e.scrollHeight > e.clientHeight + 1 }));
+  const before = await lines();
+  assert.ok(before.cut && before.h <= before.lh * 4 + 2, `clamped body is ${before.h}px for line height ${before.lh}`);
+  const more = card.locator('[aria-expanded]');
+  assert.equal(await more.getAttribute('aria-expanded'), 'false');
+  assert.match(await more.innerText(), /show more/i);
+  assert.ok((await more.boundingBox()).height >= 44, 'Show more is a 44px tap target');
+  await more.click();
+  assert.equal(await more.getAttribute('aria-expanded'), 'true');
+  const after = await lines();
+  assert.ok(!after.cut && after.h > before.lh * 5, `opened body is ${after.h}px`);
+  assert.match(await more.innerText(), /show less/i);
+  // A short alert needs no Show more.
+  assert.equal(await page.locator('#inboxList .item-card', { hasText: 'Backup finished' }).locator('[aria-expanded]:visible').count(), 0);
+  await context.close();
+});
+
 // One count everywhere: the bell, the Inbox pill, the Approvals tab and the Alerts row agree on what is waiting.
 await check('two approvals and no alerts: Alerts shows "2 approvals waiting", the tab reads "Approvals · 2", the bell says 2', async () => {
   const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });

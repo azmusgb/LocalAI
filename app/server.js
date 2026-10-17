@@ -40,6 +40,7 @@ const { Storage } = require('./storage');
 const { RunLedger, cleanId: cleanRunId } = require('./run-ledger');
 const improve = require('./improve');
 const { runCard, workKind, WORK_CHIPS } = require('./run-cards');
+const libraryThreads = require('./library-threads');
 const { loadOllamaModelRuntime } = require('./model-runtime');
 const { createModelPulls } = require('./model-pulls');
 const imageEngines = require('./image-engines');
@@ -171,6 +172,18 @@ function recordArtifact(kind, title, summary = '', meta = {}, data = {}) {
   };
   prependRecord(LIBRARY_STORE, item);
   return item;
+}
+
+// A chat or research turn: the thread's first turn makes its Library item, later turns update that item in place
+// (title stays the first message; summary becomes the latest answer). One conversation, one Library item.
+function recordTurnArtifact(kind, title, summary, meta, data, execution) {
+  const threadId = execution?.threadId || '', runId = execution?.id || '';
+  const now = new Date().toISOString();
+  if (threadId) {
+    const next = libraryThreads.continueThread(libraryStore(), { threadId, runId, summary, meta, data, now });
+    if (next) return storage.upsert(LIBRARY_STORE, next);
+  }
+  return recordArtifact(kind, title, summary, { ...meta, ...(threadId ? { threadId } : {}) }, libraryThreads.firstTurnData(data, runId));
 }
 
 function updateArtifact(id, patch = {}) {
@@ -833,12 +846,13 @@ async function chatOnce(body) {
       (lastUser?.content || '').slice(0, 180),
       { model: prep.model, elapsedMs, sources: prep.sources.length, runId: execution.id }
     );
-    const artifact = recordArtifact(
+    const artifact = recordTurnArtifact(
       body.webSearch === true ? 'research' : 'conversation',
       lastUser?.content || (body.webSearch === true ? 'Research' : 'Conversation'),
       content.slice(0, 420),
       { model: prep.model, elapsedMs, sources: prep.sources.length, runId: execution.id },
-      { prompt: lastUser?.content || '', response: content.slice(0, 40000), sources: prep.sources }
+      { prompt: lastUser?.content || '', response: content.slice(0, 40000), sources: prep.sources },
+      execution
     );
     runLedger.complete(execution.id, {
       summary: content.slice(0, 420),
@@ -962,12 +976,13 @@ async function apiChatStream(req, res) {
       (lastUser?.content || '').slice(0, 180),
       { model: prep.model, elapsedMs, sources: prep.sources.length, runId: execution.id }
     );
-    const artifact = recordArtifact(
+    const artifact = recordTurnArtifact(
       body.webSearch === true ? 'research' : 'conversation',
       lastUser?.content || (body.webSearch === true ? 'Research' : 'Conversation'),
       full.slice(0, 420),
       { model: prep.model, elapsedMs, sources: prep.sources.length, runId: execution.id },
-      { prompt: lastUser?.content || '', response: full.slice(0, 40000), sources: prep.sources }
+      { prompt: lastUser?.content || '', response: full.slice(0, 40000), sources: prep.sources },
+      execution
     );
     runLedger.complete(execution.id, {
       summary: full.slice(0, 420),
@@ -1667,11 +1682,15 @@ function unifiedRunItems(limit=120,filter=null){
   if(filter?.threadId)all=all.filter(x=>(x.threadId||x.id)===filter.threadId);
   const byUpdate=(a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))||String(b.id).localeCompare(String(a.id));
   const byCreate=(a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))||String(b.id).localeCompare(String(a.id));
+  // A conversation keeps its first message as its name (owner decision D10): every turn carries the thread's first title.
+  const first=new Map();
+  for(const x of all){const k=x.threadId||x.id,f=first.get(k);if(!f||byCreate(x,f)>0)first.set(k,x)}
+  all=all.map(x=>{const f=first.get(x.threadId||x.id);return f&&f.id!==x.id&&f.title?{...x,threadTitle:f.title}:x});
   if(filter?.threads){
-    // One row per thread: its latest run by (createdAt, id), with `turns` = runs in the thread. Dedupe first, then page by that same key.
+    // One row per thread: its latest run by (createdAt, id), with `turns` = runs in the thread, named by its first run. Dedupe first, then page by that same key.
     const by=new Map();
     for(const x of all){const k=x.threadId||x.id,e=by.get(k);if(!e)by.set(k,{run:x,turns:1});else{e.turns++;if(byCreate(x,e.run)<0)e.run=x}}
-    all=[...by.values()].map(e=>({...e.run,turns:e.turns}));
+    all=[...by.values()].map(e=>({...e.run,title:e.run.threadTitle||e.run.title,turns:e.turns}));
     if(filter.kind)all=all.filter(x=>workKind(x)===filter.kind); // Work's chip: the thread's row (its latest run) decides, as on screen
     if(filter.before)all=all.filter(x=>byCreate(x,filter.before)>0);
     return all.sort(byCreate).slice(0,Math.max(1,Math.min(500,Number(limit)||120)));
@@ -3384,6 +3403,19 @@ function repairImageSummariesOnce() {
   if (repaired) console.log(`${nowIso()} Repaired image-run summaries: ${repaired}`);
 }
 
+// One time: conversations saved before one-item-per-thread have a Library item per turn. Merge them by thread; the
+// oldest item keeps its id, title and pin, the newest gives the summary, and every turn's answer is kept.
+function repairLibraryThreadsOnce() {
+  const KEY = 'repair:library-threads-v1';
+  if (storage.readSetting(KEY, null)) return;
+  const items = libraryStore();
+  const threadOf = it => it?.meta?.threadId || (it?.meta?.runId ? runLedger.get(it.meta.runId)?.threadId : '') || '';
+  const { items: next, merged } = libraryThreads.mergeThreads(items, threadOf);
+  if (merged) writeState(LIBRARY_STORE, next, items);
+  storage.writeSetting(KEY, { completedAt: nowIso(), merged });
+  if (merged) console.log(`${nowIso()} Merged per-turn Library items into their conversations: ${merged}`);
+}
+
 async function apiPush(req, res, p) {
   try {
     if (req.method === 'GET' && p === '/api/push/key') return json(res, 200, { publicKey: pushLib.loadOrCreateVapid(storage).publicKey });
@@ -3445,6 +3477,7 @@ setInterval(() => { getStatusAndRecordTransition().catch(() => {}); }, HEALTH_TI
 repairGarbledTextOnce();
 try { repairRunTextOnce(); } catch (e) { console.error(`${nowIso()} Run text repair failed:`, e); }
 try { repairImageSummariesOnce(); } catch (e) { console.error(`${nowIso()} Image summary repair failed:`, e); }
+try { repairLibraryThreadsOnce(); } catch (e) { console.error(`${nowIso()} Library thread repair failed:`, e); }
 
 server.listen(PORT, '0.0.0.0', () => {
   warmText();
