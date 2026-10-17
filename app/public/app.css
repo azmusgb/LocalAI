@@ -2194,7 +2194,7 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .sheets-book__name h2{margin:0;font-size:17px;overflow-wrap:anywhere}
 .sheets-book__name .meta{font-size:12px}
 .sheets-book__tools{display:flex;gap:10px;align-items:center}
-.sheets-book__tools .toggle{font-size:13px}
+#sheetsFormulas[aria-pressed="true"]{border-color:var(--ds-accent);background:var(--ds-accent-soft)}
 .sheets-tabs{margin:0}
 .sheets-tabs:empty{display:none}
 .sheets-grid-wrap{overflow:auto;max-height:min(68vh,720px);border:1px solid var(--ds-line);border-radius:var(--ds-r-md);background:var(--ds-bg-2);overscroll-behavior:contain}

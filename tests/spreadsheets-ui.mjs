@@ -78,9 +78,10 @@ for (const [name, options] of [['computer', { viewport: { width: 1280, height: 9
     assert.equal(await page.locator('#sheetsCellFormula').innerText(), '=B2+C2');
     await page.keyboard.press('ArrowLeft');
     assert.equal(await page.locator('#sheetsCellRef').innerText(), 'Sales!C2', 'arrow keys move the selection');
-    await page.locator('#sheetsFormulas').check();
+    await page.locator('#sheetsFormulas').click();
+    assert.equal(await page.locator('#sheetsFormulas').getAttribute('aria-pressed'), 'true');
     assert.equal(await page.locator('#sheetsGrid td[data-cell="D3"]').innerText(), '=B3+C3');
-    await page.locator('#sheetsFormulas').uncheck();
+    await page.locator('#sheetsFormulas').click();
     await page.locator('#sheetsAskCell').click();
     assert.equal(await page.locator('#sheetsPrompt').inputValue(), 'Sales!C2 ');
   });
@@ -118,6 +119,7 @@ for (const [name, options] of [['computer', { viewport: { width: 1280, height: 9
     await page.locator('#sheetsGrid td[data-cell="B2"].is-pending').waitFor();
     await page.locator('#sheetsDirty').waitFor({ state: 'visible' });
     assert.match(await page.locator('#sheetsHistory').innerText(), /Waiting for review/);
+    assert.equal(await page.locator('#spreadsheets .btn-primary:visible').count(), 1, 'Keep changes is the one blue action while a review waits');
     if (shots) await page.screenshot({ path: `${shots}/sheets-${name}-review.png`, fullPage: true });
     await page.locator('.sheets-goto[data-cell="B2"]').click();
     assert.match(await page.locator('#sheetsCellChange').innerText(), /48200 → 50000/);

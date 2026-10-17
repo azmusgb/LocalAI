@@ -74,13 +74,15 @@ function show(kind,text,{retry=false}={}){
 }
 function showRun(run){
  st.run=run;
- if(!run){$('sheetsChanges').hidden=true;$('sheetsReview').hidden=true;return}
+ if(!run){$('sheetsChanges').hidden=true;$('sheetsReview').hidden=true;$('sheetsRun').classList.add('btn-primary');$('sheetsRun').classList.remove('btn-outline');return}
  $('sheetsResultTitle').textContent=run.prompt?`“${run.prompt.length>90?run.prompt.slice(0,90)+'…':run.prompt}”`:'Answer';
  show(run.status==='failed'?'error':'done',run.answer||run.error||'Done.',{retry:run.status==='failed'});
  $('sheetsResult').dataset.status=run.status;
  const changes=changesHtml(run);$('sheetsChanges').innerHTML=changes;$('sheetsChanges').hidden=!changes;
  const review=run.status==='review',latest=st.runs[0]?.id===run.id;
  $('sheetsReview').hidden=!review;$('sheetsDiscard').hidden=!latest;
+ // One blue action per page: while a request waits for review, deciding is the next step, not another run.
+ $('sheetsRun').classList.toggle('btn-primary',!review);$('sheetsRun').classList.toggle('btn-outline',review);
  $('sheetsReviewNote').textContent=review?(latest?'These changes are in GridCraft but not saved yet.':'Only the latest request can be undone. Keep changes saves everything in the workbook.'):'';
  renderHistory();renderGrid();
 }
@@ -231,7 +233,7 @@ function init(){
  $('sheetsKeep').addEventListener('click',()=>decide('keep'));
  $('sheetsDiscard').addEventListener('click',()=>decide('discard'));
  $('sheetsRefresh').addEventListener('click',refresh);
- $('sheetsFormulas').addEventListener('change',e=>{st.formulas=e.target.checked;renderGrid()});
+ $('sheetsFormulas').addEventListener('click',e=>{st.formulas=!st.formulas;e.currentTarget.setAttribute('aria-pressed',st.formulas);renderGrid()});
  $('sheetsTabs').addEventListener('click',e=>{const b=e.target.closest('[data-sheet]');if(b&&b.dataset.sheet!==st.sheet){st.sel=null;$('sheetsCell').hidden=true;loadBook(b.dataset.sheet,1)}});
  $('sheetsPager').addEventListener('click',e=>{const b=e.target.closest('[data-sheets-page]');if(b)loadBook(st.sheet,Math.max(1,st.top+PAGE*+b.dataset.sheetsPage))});
  $('sheetsGrid').addEventListener('click',e=>{const td=e.target.closest('td[data-cell]');if(td)showCell(td.dataset.cell)});
