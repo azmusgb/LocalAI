@@ -58,7 +58,16 @@ async function devices() {
   const r = await call('GET', '/devices', needKey());
   if (r.status !== 200) fail(r, 'listing devices');
   if (!r.data.items.length) return console.log('No paired devices.');
-  for (const d of r.data.items) console.log(`${d.id}  ${d.name}  paired ${when(d.pairedAt)}  last seen ${when(d.lastSeenAt)}`);
+  for (const d of r.data.items) console.log(`${d.id}  ${d.name}${d.kind && d.kind !== d.name ? ` (${d.kind})` : ''}  paired ${when(d.pairedAt)}  last seen ${when(d.lastSeenAt)}`);
+}
+
+async function rename(args) {
+  const [id, ...nameParts] = args;
+  if (!id || !nameParts.length) die('usage: localai-chat rename <id> <name...>');
+  const r = await call('POST', '/devices/rename', needKey(), { id, name: nameParts.join(' ') });
+  if (r.status === 404) die(`unknown device ${id}`);
+  if (r.status !== 200) fail(r, 'rename');
+  console.log(`Renamed ${id} to ${r.data.name}`);
 }
 
 async function revoke(args) {
@@ -103,6 +112,6 @@ async function status() {
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
-const commands = { pair, devices, revoke, status };
-if (!commands[cmd]) die('usage: localai-chat pair <code> [name...] | devices | revoke <id> | status');
+const commands = { pair, devices, rename, revoke, status };
+if (!commands[cmd]) die('usage: localai-chat pair <code> [name...] | devices | rename <id> <name...> | revoke <id> | status');
 await commands[cmd](rest);

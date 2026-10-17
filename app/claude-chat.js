@@ -76,18 +76,32 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
     return out;
   }
   // The single device check: valid cookie -> {id, name}, else null.
+  // What a browser says it runs on, for naming a device ("iPhone", "Mac"); '' when it can't tell.
+  function deviceKind(ua) {
+    ua = String(ua || '');
+    if (/iPhone/.test(ua)) return 'iPhone';
+    if (/iPad/.test(ua)) return 'iPad';
+    if (/Android/.test(ua)) return 'Android';
+    if (/Macintosh|Mac OS X/.test(ua)) return 'Mac';
+    if (/Windows/.test(ua)) return 'Windows';
+    if (/Linux|CrOS/.test(ua)) return 'Linux';
+    return '';
+  }
   function deviceFor(req) {
     const cookies = parseCookies(req.headers.cookie);
-    return deviceForCookie(cookies[COOKIE]) || deviceForCookie(cookies[COOKIE_HTTP]);
+    const ua = req.headers['user-agent'];
+    return deviceForCookie(cookies[COOKIE], ua) || deviceForCookie(cookies[COOKIE_HTTP], ua);
   }
-  function deviceForCookie(value) {
+  function deviceForCookie(value, ua) {
     const m = /^(dev-[0-9a-f]{12})\.([A-Za-z0-9_-]{1,100})$/.exec(value || '');
     if (!m) return null;
     const device = storage.readSetting(deviceKey(m[1]), null);
     if (!device || typeof device.tokenSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(device.tokenSha256)) return null;
     const actual = crypto.createHash('sha256').update(m[2]).digest();
     if (!crypto.timingSafeEqual(actual, Buffer.from(device.tokenSha256, 'hex'))) return null;
-    if (now() - (device.lastSeenAt || 0) >= LASTSEEN_MS) storage.writeSetting(deviceKey(device.id), { ...device, lastSeenAt: now() });
+    // Devices paired before kinds were recorded pick one up the next time they are used.
+    const kind = device.kind || deviceKind(ua);
+    if (now() - (device.lastSeenAt || 0) >= LASTSEEN_MS || kind !== (device.kind || '')) storage.writeSetting(deviceKey(device.id), { ...device, ...(kind ? { kind } : {}), lastSeenAt: now() });
     return { id: device.id, name: device.name };
   }
 
@@ -279,7 +293,8 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
       while (pending.length >= MAX_PENDING) storage.deleteSetting(pairKey(pending.shift().id));
       // Strictly increasing, so two requests in the same millisecond still have an order and "oldest" is never a coin toss.
       const createdAt = Math.max(now(), ...pending.map(r => r.createdAt + 1));
-      const record = { id: `pair-${crypto.randomBytes(8).toString('hex')}`, code: newCode(new Set(pending.map(r => r.code))), status: 'pending', createdAt, expiresAt: createdAt + PAIR_TTL_MS };
+      const kind = deviceKind(req.headers['user-agent']);
+      const record = { id: `pair-${crypto.randomBytes(8).toString('hex')}`, code: newCode(new Set(pending.map(r => r.code))), status: 'pending', createdAt, expiresAt: createdAt + PAIR_TTL_MS, ...(kind ? { kind } : {}) };
       storage.writeSetting(pairKey(record.id), record);
       return { record, resumed: false };
     });
@@ -296,7 +311,7 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
       storage.deleteSetting(pairKey(id));
       const token = crypto.randomBytes(32).toString('base64url');
       const t = now();
-      const device = { id: record.deviceId, name: record.deviceName, tokenSha256: sha256hex(token), pairedAt: record.approvedAt || t, lastSeenAt: t };
+      const device = { id: record.deviceId, name: record.deviceName, tokenSha256: sha256hex(token), pairedAt: record.approvedAt || t, lastSeenAt: t, ...(record.kind ? { kind: record.kind } : {}) };
       storage.writeSetting(deviceKey(device.id), device);
       return { status: 'approved', device: { id: device.id, name: device.name }, cookie: requestIsHttps(req)
         ? `${COOKIE}=${device.id}.${token}; HttpOnly; SameSite=Strict; Path=/api/claude/chat; Max-Age=15552000; Secure`
@@ -311,23 +326,37 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
   }
   async function pairApprove(req, res) {
     const b = await body(req, res); if (!b) return;
-    const name = (b.name === undefined || b.name === null ? '' : String(b.name).trim()) || 'Device';
-    if (name.length > 60) return json(res, 400, { error: 'name must be at most 60 characters' });
+    const given = b.name === undefined || b.name === null ? '' : String(b.name).trim();
+    if (given.length > 60) return json(res, 400, { error: 'name must be at most 60 characters' });
     const code = String(b.code || '').trim().toUpperCase();
     const result = storage.transaction(() => {
       const record = livePairings().find(r => r.status === 'pending' && r.code === code);
       if (!record) return null;
       const deviceId = `dev-${crypto.randomBytes(6).toString('hex')}`;
-      storage.writeSetting(pairKey(record.id), { ...record, status: 'approved', deviceId, deviceName: name, approvedAt: now() });
+      // No name given: the device is called what it is ("iPhone"), else "Device".
+      storage.writeSetting(pairKey(record.id), { ...record, status: 'approved', deviceId, deviceName: given || record.kind || 'Device', approvedAt: now() });
       return deviceId;
     });
     if (!result) return json(res, 404, { error: 'Unknown or expired code' });
     json(res, 200, { deviceId: result });
   }
   function devicesList(req, res, current) {
-    const items = storage.listSettings(`${PREFIX}device:`).map(d => ({ id: d.id, name: d.name, pairedAt: d.pairedAt, lastSeenAt: d.lastSeenAt, current: !!current && d.id === current.id }));
+    const items = storage.listSettings(`${PREFIX}device:`).map(d => ({ id: d.id, name: d.name, kind: d.kind || '', pairedAt: d.pairedAt, lastSeenAt: d.lastSeenAt, current: !!current && d.id === current.id }));
     items.sort((a, c) => (a.pairedAt || 0) - (c.pairedAt || 0));
     json(res, 200, { items });
+  }
+  async function devicesRename(req, res) {
+    const b = await body(req, res); if (!b) return;
+    const id = String(b.id || ''), name = String(b.name ?? '').trim();
+    if (!name || name.length > 60) return json(res, 400, { error: 'name must be 1 to 60 characters' });
+    const found = /^dev-[0-9a-f]{12}$/.test(id) && storage.transaction(() => {
+      const d = storage.readSetting(deviceKey(id), null);
+      if (!d) return false;
+      storage.writeSetting(deviceKey(id), { ...d, name });
+      return true;
+    });
+    if (!found) return json(res, 404, { error: 'Unknown device' });
+    json(res, 200, { ok: true, id, name });
   }
   async function devicesRevoke(req, res) {
     const b = await body(req, res); if (!b) return;
@@ -408,6 +437,12 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
     if (route === 'POST /api/claude/chat/pair/approve') {
       if (!macAuthorized(req)) { json(res, 401, { error: 'Unauthorized' }); return true; }
       await pairApprove(req, res);
+      return true;
+    }
+    // Renaming is the Mac's call only.
+    if (route === 'POST /api/claude/chat/devices/rename') {
+      if (!macAuthorized(req)) { json(res, 401, { error: 'Unauthorized' }); return true; }
+      await devicesRename(req, res);
       return true;
     }
     // Either the Mac key or a device cookie.
