@@ -58,22 +58,22 @@ await check('Agent World is mounted',async()=>{
   assert.ok(box&&box.width>0&&box.height>0,'Agent World should render a visible game surface');
 });
 await check('Agent World stage is landscape and full-width',async()=>{
-  const live=await page.locator('.agent-live-grid').evaluate(el=>getComputedStyle(el).gridTemplateColumns);
-  assert.ok(!live.includes('360px'),'Agent World must not be squeezed by a fixed inspector column');
+  const city=await page.locator('.aw-city').boundingBox(),rail=await page.locator('#awSheet').boundingBox();
+  assert.ok(city.width>=2*rail.width,'the city takes the main area; the rail beside it is narrow');
   const map=await page.locator('.awc__mapWrap').boundingBox();
   assert.ok(map&&map.width>map.height,'Game map should be landscape, not a tall portrait strip');
 });
-await check('Mission timeline and Inspector are readable and do not overlap at desktop widths',async()=>{
+await check('Crew and story are readable and do not overlap the city at desktop widths',async()=>{
   const hit=(a,b)=>a.x<b.x+b.width-1&&b.x<a.x+a.width-1&&a.y<b.y+b.height-1&&b.y<a.y+a.height-1;
   for(const width of [1440,1280,1100]){
     await page.setViewportSize({width,height:900});
     const t=await page.locator('#agentTimeline').boundingBox();
-    const i=await page.locator('#agentInspector').boundingBox();
+    const i=await page.locator('#awcRoster').boundingBox();
     const m=await page.locator('.awc__mapWrap').boundingBox();
     assert.ok(t&&i&&m,`panels render at ${width}`);
-    assert.ok(t.width>=280,`timeline ${Math.round(t.width)}px wide at ${width}`);
-    assert.ok(i.width>=280,`inspector ${Math.round(i.width)}px wide at ${width}`);
-    assert.ok(!hit(t,i),`timeline overlaps inspector at ${width}`);
+    assert.ok(t.width>=280,`story ${Math.round(t.width)}px wide at ${width}`);
+    assert.ok(i.width>=280,`crew ${Math.round(i.width)}px wide at ${width}`);
+    assert.ok(!hit(t,i),`story overlaps crew at ${width}`);
     assert.ok(!hit(t,m)&&!hit(i,m),`panels overlap map at ${width}`);
   }
   await page.setViewportSize({width:1440,height:1000});
@@ -94,9 +94,9 @@ await check('advanced routing collapsed by default',async()=>{
   await page.locator('#agentAdvancedToggle').click();
   assert.equal(await page.locator('#agentAdvancedPanel').isVisible(),true);
 });
-await check('timeline + inspector replace duplicate execution views',async()=>{
+await check('the story and the worker card replace the timeline and inspector',async()=>{
   await page.locator('#agentTimeline').waitFor({state:'visible'});
-  await page.locator('#agentInspector').waitFor({state:'visible'});
+  assert.equal(await page.locator('#agentInspector').isVisible(),false,'the worker card opens only for a chosen worker');
   assert.equal(await page.locator('#missionExecution').isVisible(),false);
 });
 await check('results tabs are interactive',async()=>{
@@ -174,7 +174,6 @@ await check('Replay supports event stepping, speed, and historical mission timel
   await page.locator('#awcReplayLive').click();
 });
 await check('Operational Agent World exposes durable observability semantics',async()=>{
-  await page.locator('#awcStatArtifacts').waitFor({state:'visible'});
   assert.match(await page.locator('.awc__legend').innerText(),/Active dependency/i);
   await page.locator('#awcDemoPlay').click();
   await page.locator('#awcDemoStep').click();
@@ -205,13 +204,13 @@ await check('Agent World uses construction-crew presentation',async()=>{
   assert.match(await page.locator('.awc__sub').innerText(),/construction crew/i);
   await page.locator('#awcDemoPlay').click();
   await page.waitForTimeout(150);
-  assert.ok(await page.locator('#awcRoster .awc__rosterGlyph').count()>=4);
+  assert.ok(await page.locator('#awcRoster .awc__avatar').count()>=4);
   await page.locator('#awcLiveBtn').click();
 });
 await check('Agent World worker identities render in roster',async()=>{
   await page.locator('#awcDemoPlay').click();
   await page.waitForTimeout(150);
-  assert.ok(await page.locator('#awcRoster .awc__rosterGlyph').count()>=4);
+  assert.ok(await page.locator('#awcRoster .awc__avatar').count()>=4);
   assert.match(await page.locator('#awcRoster').innerText(),/UX Analyst/i);
   await page.locator('#awcLiveBtn').click();
 });
@@ -252,7 +251,8 @@ await check('mobile layout has no page-level horizontal overflow',async()=>{
   assert.ok(dims.sw<=dims.cw+2,`scrollWidth ${dims.sw} > clientWidth ${dims.cw}`);
 });
 await check('mobile touch targets and controls are available',async()=>{
-  for(const id of ['#awcZoomIn','#awcZoomOut','#awcFit','#awcCenter','#awcDemoPlay','#awcDemoStep']){
+  // On a phone the city keeps three controls; the rest is in the sheet.
+  for(const id of ['#awcZoomIn','#awcZoomOut','#awcFollow','#awSheetHandle']){
     await mobile.locator(id).waitFor({state:'visible'});
   }
 });
@@ -268,6 +268,9 @@ await check('mobile pinch zoom changes world scale',async()=>{
   assert.notEqual(await mobile.locator('#awcZoomLabel').innerText(),'100%');
 });
 await check('mobile demo remains user-controlled',async()=>{
+  await mobile.locator('#awSheetHandle').click();await mobile.locator('#awSheetHandle').click();
+  await mobile.waitForFunction(()=>document.getElementById('awSheet').dataset.snap==='full');
+  await mobile.locator('#awcDemoPlay').scrollIntoViewIfNeeded();
   await mobile.locator('#awcDemoPlay').click();
   await mobile.locator('#awcDemoStep').click();
   assert.equal(await mobile.locator('#awcSource').innerText(),'DEMO');

@@ -89,81 +89,89 @@
 <!-- cumulative release views -->
 <section id="projects" class="view feature-v13"><div class="topbar"><div><h1>Projects</h1><p class="sub">Group related conversations, sources and memory.</p></div><button id="newProjectBtn" class="btn-primary">New project</button></div><div class="summary-grid" id="projectMetrics"></div><div class="split" style="margin-top:12px"><div class="card"><div class="section-head"><div><h2>Projects</h2><p>Pick one to see its conversations, sources and memory.</p></div></div><div id="projectList" class="stack"></div></div><div class="card"><div id="projectDetail" class="empty">A project's conversations, sources and memory appear here. Pick a project to see them.</div></div></div></section>
 <section id="knowledge" class="view feature-v13"><div class="topbar"><div><h1>Projects</h1><p class="sub">Notes, documents and files the assistant can look things up in when it answers.</p></div></div><div class="two"><div class="card"><h2>Add source</h2><div class="form-grid" style="margin-top:12px"><label>Project<select id="knowledgeProject"></select></label><label>Name<input id="knowledgeName" placeholder="architecture.md"></label><label class="wide">Content<textarea id="knowledgeContent" rows="12" placeholder="Paste or drop text here…"></textarea></label></div><div class="actions" style="margin-top:10px"><button id="knowledgeImportBtn" class="btn-primary">Add source</button><input id="knowledgeFileInput" type="file" hidden multiple><button id="knowledgeFileBtn" class="btn-outline">Import files</button></div></div><div class="card"><h2>Search your sources</h2><div class="toolbar" style="margin-top:12px"><input id="knowledgeQuery" placeholder="Search your sources…" aria-label="Search your sources"><button id="knowledgeSearchBtn" class="btn-outline">Search</button></div><div id="knowledgeResults" class="stack"></div></div></div><div class="card" style="margin-top:12px"><div class="section-head"><div><h2>Your sources</h2><p>Kept on Local AI, never sent anywhere.</p></div></div><div id="knowledgeList" class="stack"></div></div></section>
-<section id="agents" class="view feature-v14">
-<div class="topbar"><div><h1>Missions</h1><p class="sub">Give the team an objective, let the Mission Router assemble the right specialists and models, and watch the work happen live.</p></div><span class="pill">Mission-first · Local models</span></div>
-<div class="agent-ops">
-  <div class="agent-compose">
-    <div class="agent-compose__row">
-      <label>Mission objective<textarea id="agentGoal" rows="4" placeholder="Audit and improve the Local AI mobile experience, then document a prioritized implementation plan."></textarea></label>
-      <label>Project<select id="agentProject"></select></label>
+<section id="agents" class="view feature-v14 aw-page">
+<div class="topbar aw-head">
+  <div class="aw-head__text"><h1 id="awTitle">Agent World</h1><p id="awStatus" class="aw-head__status">Give your team a goal</p></div>
+  <div class="aw-head__actions">
+    <button type="button" id="awPrimary" class="btn-primary" data-action="start">Start a mission</button>
+    <button type="button" id="awMoreBtn" class="btn-outline aw-head__more" aria-haspopup="true" aria-expanded="false" aria-controls="awMenu" aria-label="More"><svg class="icon" aria-hidden="true"><use href="#i-more"/></svg></button>
+  </div>
+</div>
+<div id="awMenu" class="aw-menu" role="menu" aria-label="Mission" hidden>
+  <button type="button" role="menuitem" data-aw-menu="new">Start a new mission</button>
+  <button type="button" role="menuitem" data-aw-menu="replay">Watch the replay</button>
+  <button type="button" role="menuitem" data-aw-menu="work">Open in Work</button>
+  <button type="button" role="menuitem" data-aw-menu="copy">Copy result</button>
+  <button type="button" role="menuitem" data-aw-menu="all">All missions</button>
+</div>
+<!-- Agent World: the city is the page. Desktop: a rail beside it; phone: a bottom sheet over it (peek, half, full). -->
+<div class="aw-stage">
+  <div class="aw-city"><div id="agentWorldCityMount"></div></div>
+  <section id="awSheet" class="aw-sheet" data-snap="peek" aria-label="Mission details">
+    <div class="aw-sheet__top">
+      <button type="button" id="awSheetHandle" class="aw-sheet__handle" aria-expanded="false" aria-controls="awSheetBody" aria-label="Show mission details"><span class="aw-sheet__grip" aria-hidden="true"></span></button>
+      <div class="aw-sheet__peek"><p id="awSheetStatus" class="aw-sheet__status">Give your team a goal</p><div id="awSheetAvatars" class="aw-sheet__avatars" aria-hidden="true"></div><button type="button" id="awPeekAction" class="btn-primary aw-sheet__action" data-action="start">Start a mission</button></div>
     </div>
-    <label class="agent-compose__check"><input type="checkbox" id="agentWebSearch"> Let specialists search the web <span class="sub">(searches leave this machine)</span></label>
-    <div class="agent-compose__actions">
-      <button id="missionRunBtn" class="btn primary">Start Mission</button>
-      <button id="routePreviewBtn" class="btn">Preview plan</button>
-      <button id="agentAdvancedToggle" class="btn" type="button" aria-expanded="false">Advanced routing</button>
-    </div>
-    <div id="agentInlineNotice" class="agent-inline-notice" hidden aria-live="polite"></div>
-    <div id="routePreviewWrap" hidden><div id="routePreview" class="preview-pane" style="margin-top:10px"><span class="muted">Enter an objective to preview automatic dispatch.</span></div></div>
-    <div id="agentAdvancedPanel" class="agent-advanced" hidden style="margin-top:12px">
-      <div class="agent-advanced-grid">
-        <div>
-          <div class="agent-panel__head"><div><h2>Routing override</h2><small>Automatic routing is recommended. Use this only when you want explicit control.</small></div></div>
-          <label class="toggle"><input type="checkbox" id="manualRouteToggle"> Manually choose specialists</label>
-          <div id="manualRouteOptions" class="agent-meta" hidden>
-            <label><input type="checkbox" data-mission-agent value="ux_analyst"> UX Analyst</label>
-            <label><input type="checkbox" data-mission-agent value="documentation"> Documentation Agent</label>
+    <div id="awSheetBody" class="aw-sheet__body">
+      <div class="agent-mission-strip">
+        <div><h2 id="agentMissionHeadline">No active mission</h2><small id="agentMissionMeta">Start a mission or select one from history.</small></div>
+        <div class="agent-mission-progress" role="progressbar" aria-label="Mission progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="agentMissionProgress"></span></div>
+      </div>
+      <section class="aw-crew" aria-labelledby="awCrewTitle"><h2 id="awCrewTitle" class="aw-h">Crew</h2><div id="awcRoster" class="aw-crew__rows"><div class="awc__empty">No workers yet.</div></div></section>
+      <section id="agentInspector" class="aw-worker" aria-labelledby="awWorkerName" hidden></section>
+      <section class="aw-story-box" aria-labelledby="awStoryTitle"><h2 id="awStoryTitle" class="aw-h">Story</h2><ol id="agentTimeline" class="aw-story"><li class="aw-story__empty">What the team does will be told here.</li></ol></section>
+      <div class="agent-ops">
+        <div class="agent-compose">
+          <div class="agent-compose__row">
+            <label>Mission objective<textarea id="agentGoal" rows="4" placeholder="Audit and improve the Local AI mobile experience, then document a prioritized implementation plan."></textarea></label>
+            <label>Project<select id="agentProject"></select></label>
+          </div>
+          <label class="agent-compose__check"><input type="checkbox" id="agentWebSearch"> Let specialists search the web <span class="sub">(searches leave this machine)</span></label>
+          <div class="agent-compose__actions">
+            <button id="missionRunBtn" class="btn primary">Start Mission</button>
+            <button id="routePreviewBtn" class="btn">Preview plan</button>
+            <button id="agentAdvancedToggle" class="btn" type="button" aria-expanded="false">Advanced routing</button>
+          </div>
+          <div id="agentInlineNotice" class="agent-inline-notice" hidden aria-live="polite"></div>
+          <div id="routePreviewWrap" hidden><div id="routePreview" class="preview-pane" style="margin-top:10px"><span class="muted">Enter an objective to preview automatic dispatch.</span></div></div>
+          <div id="agentAdvancedPanel" class="agent-advanced" hidden style="margin-top:12px">
+            <div class="agent-advanced-grid">
+              <div>
+                <div class="agent-panel__head"><div><h2>Routing override</h2><small>Automatic routing is recommended. Use this only when you want explicit control.</small></div></div>
+                <label class="toggle"><input type="checkbox" id="manualRouteToggle"> Manually choose specialists</label>
+                <div id="manualRouteOptions" class="agent-meta" hidden>
+                  <label><input type="checkbox" data-mission-agent value="ux_analyst"> UX Analyst</label>
+                  <label><input type="checkbox" data-mission-agent value="documentation"> Documentation Agent</label>
+                </div>
+              </div>
+              <div>
+                <div class="agent-panel__head"><div><h2>Direct execution</h2><small>Developer tools for bypassing Mission Router orchestration.</small></div></div>
+                <div id="specialistRegistry" class="agent-registry"><div class="empty">Loading specialists…</div></div>
+                <div class="actions" style="margin-top:10px">
+                  <button id="specialistRunBtn" class="btn">Run specialist</button>
+                  <button id="agentRunBtn" class="btn">Run general agent</button>
+                </div>
+              </div>
+            </div>
+            <div class="agent-direct-grid">
+              <div class="agent-panel"><div class="agent-panel__head"><h2>Direct specialist execution</h2></div><div id="specialistExecution"><div class="empty">No direct specialist run.</div></div></div>
+              <div class="agent-panel"><div class="agent-panel__head"><h2>General agent execution</h2></div><div id="agentExecution" class="flow"><div class="empty">No general agent run.</div></div><div id="agentRuns" class="stack" style="margin-top:10px"></div></div>
+            </div>
           </div>
         </div>
-        <div>
-          <div class="agent-panel__head"><div><h2>Direct execution</h2><small>Developer tools for bypassing Mission Router orchestration.</small></div></div>
-          <div id="specialistRegistry" class="agent-registry"><div class="empty">Loading specialists…</div></div>
-          <div class="actions" style="margin-top:10px">
-            <button id="specialistRunBtn" class="btn">Run specialist</button>
-            <button id="agentRunBtn" class="btn">Run general agent</button>
+        <section class="agent-results">
+          <div class="agent-result-tabs" role="tablist" aria-label="Mission details">
+            <button type="button" class="active" role="tab" id="agentResultTab-summary" aria-controls="agentResultBody" aria-selected="true" tabindex="0" data-agent-result-tab="summary">Synthesis</button>
+            <button type="button" role="tab" id="agentResultTab-workers" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="workers">Worker outputs</button>
+            <button type="button" role="tab" id="agentResultTab-evidence" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="evidence">Evidence</button>
+            <button type="button" role="tab" id="agentResultTab-routing" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="routing">Routing</button>
           </div>
-        </div>
+          <div id="agentResultBody" class="agent-result-body" role="tabpanel" tabindex="0" aria-labelledby="agentResultTab-summary"><div class="empty">Mission results will appear here.</div></div>
+        </section>
+        <p id="agentMissionHistory" class="aw-all-wrap"><a class="aw-all" href="#work?kind=missions">All missions</a></p>
+        <div id="awCityExtras" class="aw-extras"></div>
       </div>
-      <div class="agent-direct-grid">
-        <div class="agent-panel"><div class="agent-panel__head"><h2>Direct specialist execution</h2></div><div id="specialistExecution"><div class="empty">No direct specialist run.</div></div></div>
-        <div class="agent-panel"><div class="agent-panel__head"><h2>General agent execution</h2></div><div id="agentExecution" class="flow"><div class="empty">No general agent run.</div></div><div id="agentRuns" class="stack" style="margin-top:10px"></div></div>
-      </div>
     </div>
-  </div>
-
-  <div class="agent-mission-strip">
-    <div><h2 id="agentMissionHeadline">No active mission</h2><small id="agentMissionMeta">Start a mission or select one from history.</small></div>
-    <div class="agent-mission-progress" role="progressbar" aria-label="Mission progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="agentMissionProgress"></span></div>
-  </div>
-
-  <div class="agent-live-grid">
-    <div id="agentWorldCityMount"></div>
-    <div class="agent-side-stack">
-      <section class="agent-panel">
-        <div class="agent-panel__head"><div><h2>Mission timeline</h2><small>Worker order, dependencies and live state.</small></div></div>
-        <div id="agentTimeline"><div class="empty">No mission timeline yet.</div></div>
-        <div id="missionExecution" hidden></div>
-      </section>
-      <section class="agent-panel">
-        <div class="agent-panel__head"><div><h2>Inspector</h2><small>Select a worker in the timeline or city.</small></div></div>
-        <div id="agentInspector"><div class="empty">Select a mission or worker.</div></div>
-      </section>
-    </div>
-  </div>
-
-  <section class="agent-results">
-    <div class="agent-result-tabs" role="tablist" aria-label="Mission details">
-      <button type="button" class="active" role="tab" id="agentResultTab-summary" aria-controls="agentResultBody" aria-selected="true" tabindex="0" data-agent-result-tab="summary">Synthesis</button>
-      <button type="button" role="tab" id="agentResultTab-workers" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="workers">Worker outputs</button>
-      <button type="button" role="tab" id="agentResultTab-evidence" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="evidence">Evidence</button>
-      <button type="button" role="tab" id="agentResultTab-routing" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="routing">Routing</button>
-    </div>
-    <div id="agentResultBody" class="agent-result-body" role="tabpanel" tabindex="0" aria-labelledby="agentResultTab-summary"><div class="empty">Mission results will appear here.</div></div>
-  </section>
-
-  <section class="agent-panel">
-    <div class="agent-history-head"><div><h2>Mission history</h2><small class="muted">Review prior outcomes, attention states, worker outputs and evidence.</small></div><input id="agentHistorySearch" placeholder="Search mission history" aria-label="Search mission history"></div>
-    <div id="agentMissionHistory"><div class="empty">No missions yet. Describe a goal above to run your first one.</div></div>
   </section>
 </div>
 </section>
@@ -188,5 +196,5 @@ Get-Location</textarea></label></div><div class="actions" style="margin-top:10px
 <dialog id="improveItemSheet" class="improve-sheet" aria-labelledby="improveItemTitle"><form method="dialog" class="improve-sheet__body"><h2 id="improveItemTitle"></h2><div id="improveItemBody"></div><p id="improveItemError" class="improve-error" role="alert" hidden></p><div class="improve-sheet__actions" id="improveItemActions"></div><button class="btn-outline" value="close">Close</button></form></dialog>
 <dialog id="improveIdeaSheet" class="improve-sheet" aria-labelledby="improveIdeaTitle"><form method="dialog" class="improve-sheet__body"><h2 id="improveIdeaTitle">New idea</h2><label for="improveIdeaText">What should change in Local AI?</label><textarea id="improveIdeaText" rows="4" placeholder="e.g. Remember the image size I used last"></textarea><p id="improveIdeaError" class="improve-error" role="alert" hidden></p><div class="improve-sheet__actions"><button type="button" class="btn-primary" data-idea-start="false">Add to backlog</button><button type="button" class="btn-outline" data-idea-start="true">Start now</button></div><button class="btn-outline" value="close">Cancel</button></form></dialog>
 <section id="claude" class="view"><div class="topbar"><div><h1>Claude Code</h1><p class="sub">Chat with your Claude Code sessions and watch them work. What they recommend is in Improve › Backlog.</p></div><div class="claude-head-actions"><span id="claudeLive" class="claude-live">…</span><select id="claudeSession" aria-label="Session"><option value="">All sessions</option></select><button id="claudeRefresh" class="btn-outline" type="button">Refresh</button></div></div><div id="claudeChat" class="card claude-chat" aria-label="Chat with a Claude Code session"><div class="empty">Loading chat…</div></div><div id="claudeProgress" class="card" hidden></div><div class="claude-grid"><div class="card"><h2>Activity</h2><div id="claudeTimeline" class="claude-timeline" tabindex="0" role="region" aria-label="Claude Code activity"><div class="empty">Loading…</div></div></div><div class="card" hidden><h2>Findings by category and severity</h2><div id="claudeMatrix" class="claude-matrix-wrap"></div></div></div><div id="claudeLiveNow" class="claude-livenow" role="group" aria-label="Live Claude sessions" hidden></div><div class="claude-board-head" hidden><div><h2 class="section-title">Priorities</h2><span id="claudeFindingCount" class="statuschip"></span></div><div id="claudeFilters" class="claude-filters"></div></div><div id="claudeFindings" class="claude-findings" hidden></div></section></main></div><div id="toast" class="toast" role="status" aria-live="polite"></div><script src="/offline-copy.js"></script><script src="/view-registry.js"></script><script src="/components.js"></script><script src="/router.js"></script>
-<script src="/work.js"></script><script src="/spreadsheets.js"></script><script src="/improve.js"></script><script src="/home.js"></script><script src="/run-bodies.js"></script><script type="module" src="/app.js"></script>  <script src="/qr.js"></script>
+<script src="/work.js"></script><script src="/spreadsheets.js"></script><script src="/improve.js"></script><script src="/home.js"></script><script src="/run-bodies.js"></script><script src="/agent-world-words.js"></script><script type="module" src="/app.js"></script>  <script src="/qr.js"></script>
 <script src="/ui.js" defer></script></body></html>

@@ -40,13 +40,44 @@ function renderRoute(r){const el=$('routePreview');if(!el||!r)return;el.innerHTM
 async function preview(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter a mission objective first.');return}clearNotice();const body={goal};const ids=manualIds();if(ids?.length)body.agentIds=ids;const j=await req('/api/agents/dispatch',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});renderRoute(j.routing);$('routePreviewWrap')?.removeAttribute('hidden');return j.routing}
 function planState(plan){return (plan||[]).map((s,i)=>`<div class="timeline-step ${esc(s.state)}"><span class="timeline-dot"></span><span><strong>${esc(s.name)}</strong><small>${humanState(s.state)}</small></span></div>`).join('')}
 function renderRun(r){const el=$('specialistExecution');if(!el)return;el.innerHTML=`<div class="detail-head"><div><span class="eyebrow">Direct specialist</span><h3>${esc(r.agentName)}</h3></div><span class="statuschip ${esc(r.status)}">${humanState(r.status)}</span></div><div class="timeline-vertical">${planState(r.plan)}</div><div class="execution-output">${esc(r.answer||r.error||'Waiting for output…')}</div>`;if(r.error)notice('error',r.error)}
-function workerIcon(w){return (w.name||w.id||'?').trim()[0]?.toUpperCase()||'?'}
-function renderTimeline(m){const el=$('agentTimeline');if(!el)return;const workers=m?.workers||[];el.innerHTML=workers.length?workers.map((w,i)=>`<button class="mission-line ${esc(w.state)}" data-worker-id="${esc(w.id)}"><span class="mission-line__rail"><i></i>${i<workers.length-1?'<b></b>':''}</span><span class="mission-line__icon">${esc(workerIcon(w))}</span><span class="mission-line__copy"><strong>${esc(w.name||w.id)}</strong><small>${esc(w.model||w.reason||'')}</small></span><span class="mission-line__state">${humanState(w.state)}</span></button>`).join(''):'<div class="empty">No mission timeline yet.</div>';el.querySelectorAll('[data-worker-id]').forEach(b=>b.onclick=()=>selectWorker(b.dataset.workerId))}
+// The story: the mission's events in sentences, newest first, a run of events from one worker under that worker.
+function renderTimeline(m){const el=$('agentTimeline'),A=window.LocalAIAgentWords;if(!el||!A)return;const groups=A.groupStory(A.storyEvents(m)),all=m?.workers||[],pic=w=>window.LocalAIAgentWorld?.avatar?.(w)||'',t=at=>{const d=Date.parse(at);return d?`<time datetime="${esc(at)}">${new Date(d).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</time>`:''};
+ el.innerHTML=groups.length?groups.map(g=>{const w=all.find(x=>(x.id||x.agentId)===g.workerId);return `<li class="aw-story__group" data-tone="${esc(g.items[0].tone)}">${w?`<img class="awc__avatar" src="${pic(w)}" alt="" width="28" height="28">`:'<span class="aw-story__dot" aria-hidden="true"></span>'}<ol>${g.items.map(e=>`<li data-tone="${esc(e.tone)}"><span>${esc(e.text)}</span>${t(e.at)}</li>`).join('')}</ol></li>`}).join(''):'<li class="aw-story__empty">What the team does will be told here.</li>'}
 function resultForWorker(id){return currentMission?.results?.find(r=>r.agentId===id)||null}
-function selectWorker(id){activeInspectorId=id;renderInspector();window.dispatchEvent(new CustomEvent('localai:agentworld-focus',{detail:{workerId:id}}))}
-function renderInspector(){const el=$('agentInspector');if(!el)return;const m=currentMission;if(!m){el.innerHTML='<div class="empty">Select a mission or start new work.</div>';return}const w=(m.workers||[]).find(x=>x.id===activeInspectorId)||(m.workers||[]).find(x=>x.state==='running')||(m.workers||[])[0];if(!w){el.innerHTML='<div class="empty">No worker selected.</div>';return}activeInspectorId=w.id;const r=resultForWorker(w.id),evidence=r?.evidence||[],rm=w.routingMeta||{};el.innerHTML=`<div class="inspector-head"><span class="agent-avatar-lg">${esc(workerIcon(w))}</span><div><span class="eyebrow">Worker inspector</span><h3>${esc(w.name||w.id)}</h3></div><span class="statuschip ${esc(w.state)}">${humanState(w.state)}</span></div><dl class="inspector-grid"><dt>Model</dt><dd>${esc(w.model||r?.model||'Automatic')}</dd><dt>Capability fit</dt><dd>${rm.capabilityScore??'—'}%</dd><dt>Model fit</dt><dd>${rm.modelScore??'—'}%</dd><dt>Availability</dt><dd>${esc(rm.availability||'available')} · load ${rm.workload??0}</dd><dt>Dependencies</dt><dd>${esc((w.dependsOn||[]).join(', ')||'None')}</dd><dt>Grounding</dt><dd>${rm.groundingRequired===false?'Not required':'Required'}</dd><dt>Fallback</dt><dd>${esc(rm.retryPolicy?.fallbackAgentId||'None')}</dd><dt>Evidence</dt><dd>${evidence.length}</dd><dt>Run</dt><dd>${esc(r?.id||m.id)}</dd></dl>${w.reason?`<div class="routing-rationale"><strong>Assignment rationale</strong><span>${esc(w.reason)}</span></div>`:''}${r?.plan?.length?`<div class="mini-plan">${planState(r.plan)}</div>`:''}${evidence.length?`<details class="inspector-details"><summary>Evidence sources</summary><div class="evidence-list">${evidence.map(x=>`<code>${esc(x)}</code>`).join('')}</div></details>`:''}${r?.answer?`<details class="inspector-details" open><summary>Worker output</summary><pre class="agent-result-pre">${esc(r.answer)}</pre></details>`:r?.error?`<div class="inline-error">${esc(r.error)}</div>`:''}`}
+function selectWorker(id){activeInspectorId=id;renderInspector();if(phone.matches&&snap==='peek')setSnap('half');window.dispatchEvent(new CustomEvent('localai:agentworld-focus',{detail:{workerId:id}}))}
+// The worker card: who they are, what they are doing, what they found so far and, if stuck, why and Try again. Model,
+// scores and routing are developer details (data-dev-only: shown only with developer tools on).
+function renderInspector(){const el=$('agentInspector'),A=window.LocalAIAgentWords,m=currentMission;if(!el||!A)return;const w=(m?.workers||[]).find(x=>x.id===activeInspectorId);el.hidden=!w;if(!w){el.innerHTML='';return}
+ const r=resultForWorker(w.id),rm=w.routingMeta||{},b=A.stateBadge(w.state),bad=w.state==='error'||w.state==='blocked',out=String(r?.answer||''),src=(r?.evidenceRecords||[]).length||(r?.evidence||[]).length;
+ el.innerHTML=`<div class="aw-worker__head"><img class="awc__avatar" src="${window.LocalAIAgentWorld?.avatar?.(w)||''}" alt="" width="48" height="48"><div><h2 id="awWorkerName">${esc(A.workerName(w))}</h2><p>${esc(A.workerRole(w))}</p></div><span class="badge badge--${b.tone}">${esc(b.label)}</span><button type="button" class="aw-worker__close" id="awWorkerClose" aria-label="Close ${esc(A.workerName(w))}">×</button></div>
+ <p class="aw-worker__now${bad?' is-bad':''}">${esc(A.workerStep(w,m))}</p>${bad?`<div class="aw-worker__fix"><span>${w.state==='error'?'Trying again runs the mission again from the start.':'It starts when the workers before it finish.'}</span>${w.state==='error'?'<button type="button" class="btn-primary" id="agentRetryBtn">Try again</button>':''}</div>`:''}
+ ${out?`<details class="aw-worker__out"${out.length<600?' open':''}><summary>What ${esc(A.workerName(w))} found${src?` · ${src} source${src===1?'':'s'}`:''}</summary><div class="aw-worker__text">${esc(out)}</div></details>`:''}
+ <dl class="aw-worker__dev" data-dev-only><dt>Model</dt><dd>${esc(w.model||r?.model||'Automatic')}</dd><dt>Capability fit</dt><dd>${rm.capabilityScore??'—'}%</dd><dt>Model fit</dt><dd>${rm.modelScore??'—'}%</dd><dt>Grounding</dt><dd>${rm.groundingRequired===false?'Not required':'Required'}</dd><dt>Fallback</dt><dd>${esc(rm.retryPolicy?.fallbackAgentId||'None')}</dd>${w.reason?`<dt>Assignment rationale</dt><dd>${esc(w.reason)}</dd>`:''}</dl>`;
+ $('awWorkerClose').onclick=()=>{activeInspectorId='';renderInspector();refocusCrew(w.id)};const t=$('agentRetryBtn');if(t)t.onclick=retryMission}
+function refocusCrew(id){window.LocalAIUI?.refocus?.(id,{within:'#awcRoster',key:'awcRoster',control:':scope'})||document.querySelector(`#awcRoster [data-awc-roster="${CSS.escape(id)}"]`)?.focus()}
 function missionSummary(m){const done=(m.workers||[]).filter(w=>w.state==='complete').length,total=(m.workers||[]).length;return {done,total,percent:total?Math.round(done/total*100):0}}
-function renderMission(m){if(!m)return;currentMission=m;if(m.routing)renderRoute(m.routing);const s=missionSummary(m),headline=$('agentMissionHeadline'),meta=$('agentMissionMeta'),progress=$('agentMissionProgress');if(headline)headline.textContent=m.goal||'Mission';if(meta)meta.textContent=humanState(m.status)+' · '+s.done+'/'+s.total+' workers complete';if(progress)progress.style.width=s.percent+'%';progress.parentElement?.setAttribute('aria-valuenow',String(s.percent));renderTimeline(m);renderInspector();renderResults();renderHistorySelection();if(m.status==='needs_attention'||m.status==='error')notice('error',m.error||'Mission needs attention.','<button type="button" class="btn" id="agentRetryBtn">Retry mission</button>');else if(m.status==='complete')notice('success','Mission completed successfully.');else clearNotice();setTimeout(()=>{const b=$('agentRetryBtn');if(b)b.onclick=retryMission},0)}
+function renderMission(m){if(!m)return;currentMission=m;if(m.routing)renderRoute(m.routing);const s=missionSummary(m),A=window.LocalAIAgentWords,st=A?.statusSentence(m),headline=$('agentMissionHeadline'),meta=$('agentMissionMeta'),progress=$('agentMissionProgress');if(headline)headline.textContent=m.goal||'Mission';if(meta)meta.textContent=st?.text||'';if(progress)progress.style.width=s.percent+'%';progress?.parentElement?.setAttribute('aria-valuenow',String(s.percent));renderHead(m);renderTimeline(m);renderInspector();renderResults();clearNotice()}
+// The header: the goal, one sentence and one action for the state the mission is in.
+function primaryFor(m){const t=window.LocalAIAgentWords?.statusSentence(m)?.tone||'idle';return t==='attention'?['retry','Try again']:t==='done'?['result','See the result']:t==='working'?(window.LocalAIAgentWorld?.following?.()?null:['watch','Watch live']):['start','Start a mission']}
+function renderHead(m){const A=window.LocalAIAgentWords,st=A?.statusSentence(m||null),title=$('awTitle'),status=$('awStatus'),page=$('agents');if(!st)return;if(title)title.textContent=m?.goal||'Agent World';if(status){const i=st.label?st.text.indexOf(' · '):-1;status.innerHTML=i>0?`<b>${esc(st.text.slice(0,i))}</b>${esc(st.text.slice(i))}`:esc(st.text)}page?.setAttribute('data-aw-state',st.tone);
+ const p=primaryFor(m);for(const id of ['awPrimary','awPeekAction']){const b=$(id);if(!b)continue;b.hidden=!p;if(p){b.textContent=p[1];b.dataset.action=p[0]}}
+ document.querySelectorAll('[data-aw-menu="copy"],[data-aw-menu="replay"]').forEach(b=>b.disabled=b.dataset.awMenu==='copy'?!m?.answer:!(m?.timeline||[]).length||m?.status==='running')}
+function doPrimary(action){if(action==='retry')retryMission();else if(action==='result')showResult();else if(action==='watch')window.LocalAIAgentWorld?.follow?.(true);else{if(phone.matches)setSnap('full');const g=$('agentGoal');g?.scrollIntoView?.({block:'center'});g?.focus()}renderHead(currentMission)}
+function showResult(){const r=document.querySelector('#agents .agent-results');if(phone.matches)setSnap('full');r?.scrollIntoView?.({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});$('agentResultTab-summary')?.click();$('agentResultBody')?.focus({preventScroll:true})}
+// ⋯ menu: Start a new mission, Watch the replay, Open in Work, Copy result, All missions.
+function setupMenu(){const btn=$('awMoreBtn'),menu=$('awMenu');if(!btn||!menu)return;const items=()=>[...menu.querySelectorAll('[role=menuitem]:not(:disabled)')];
+ const outside=e=>{if(!menu.hidden&&!menu.contains(e.target)&&!btn.contains(e.target)&&!e.target.closest?.('#uxHeaderAction'))close(false)};
+ const close=(focus=true)=>{if(menu.hidden)return;menu.hidden=true;document.removeEventListener('pointerdown',outside);btn.setAttribute('aria-expanded','false');if(focus)(phone.matches?document.getElementById('uxHeaderAction'):btn)?.focus()};
+ const open=()=>{menu.hidden=false;document.addEventListener('pointerdown',outside);btn.setAttribute('aria-expanded','true');items()[0]?.focus()};
+ window.LocalAIAgentMenu={toggle:()=>menu.hidden?open():close()};btn.onclick=()=>menu.hidden?open():close();
+ menu.addEventListener('keydown',e=>{const l=items(),i=l.indexOf(document.activeElement);if(e.key==='Escape'){e.preventDefault();close()}else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();l[(i+(e.key==='ArrowDown'?1:-1)+l.length)%l.length]?.focus()}else if(e.key==='Tab')close(false)});
+ menu.addEventListener('click',async e=>{const b=e.target.closest('[data-aw-menu]');if(!b)return;close(false);const m=currentMission,a=b.dataset.awMenu;
+  if(a==='new')doPrimary('start');
+  else if(a==='replay'&&m)window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:m,play:true}}));
+  else if(a==='all')window.LocalAIRouter?.go('#work?kind=missions');
+  else if(a==='work'){let id='';try{id=((await req('/api/runs?kind=missions&limit=60')).items||[]).find(x=>(x.meta?.missionId||x.output?.missionId||x.source?.id)===m?.id)?.id||''}catch{}if(id&&window.LocalAIRuns)window.LocalAIRuns.show(id);else window.LocalAIRouter?.go('#work?kind=missions')}
+  else if(a==='copy'&&m?.answer){try{await navigator.clipboard.writeText(m.answer);window.LocalAIUI?.toast?.('Result copied')}catch{window.LocalAIUI?.toast?.('Couldn’t copy. Select the summary and copy it instead.')}}});
+ window.LocalAIShell?.setAction('agents',{icon:'more',label:'More',onClick:()=>window.LocalAIAgentMenu.toggle()})}
 function retryMission(){if(!currentMission?.goal)return;const g=$('agentGoal');if(g)g.value=currentMission.goal;startMission()}
 function renderResults(){const el=$('agentResultBody');if(!el)return;const m=currentMission;if(!m){el.innerHTML='<div class="empty">Mission results will appear here.</div>';return}
  if(activeResultTab==='summary'){el.innerHTML=m.answer?`<pre class="agent-result-pre">${esc(m.answer)}</pre>`:`<div class="empty">${m.status==='running'?'Final synthesis will appear when all workers complete.':'No final synthesis available.'}</div>`}
@@ -54,9 +85,8 @@ function renderResults(){const el=$('agentResultBody');if(!el)return;const m=cur
  if(activeResultTab==='evidence'){const rows=[];(m.results||[]).forEach(r=>(r.evidence||[]).forEach(e=>rows.push([r.agentName||r.agentId,e])));el.innerHTML=rows.length?`<div class="evidence-table">${rows.map(([a,e])=>`<div><strong>${esc(a)}</strong><code>${esc(e)}</code></div>`).join('')}</div>`:'<div class="empty">No evidence recorded yet.</div>'}
  if(activeResultTab==='routing'){el.innerHTML=m.routing?`<pre class="agent-result-pre">${esc(JSON.stringify(m.routing,null,2))}</pre>`:'<div class="empty">No routing decision available.</div>'}
 }
-function renderHistory(){const el=$('agentMissionHistory');if(!el)return;el.innerHTML=history.length?history.slice(0,20).map(m=>{const s=missionSummary(m);return `<button class="history-row ${m.id===currentMission?.id?'active':''}" data-mission-id="${esc(m.id)}"><span class="history-state ${esc(m.status)}"></span><span><strong>${esc(m.goal||m.id)}</strong><small>${humanState(m.status)} · ${s.done}/${s.total} workers · ${new Date(m.updatedAt||m.createdAt).toLocaleString()}</small></span><span>›</span></button>`}).join(''):'<div class="empty">No missions yet. Describe a goal above to run your first one.</div>';el.querySelectorAll('[data-mission-id]').forEach(b=>b.onclick=()=>{const m=history.find(x=>x.id===b.dataset.missionId);if(m){renderMission(m);window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:m}}))}});applyHistoryFilter()}
-function renderHistorySelection(){renderHistory()}
-async function loadHistory(){try{const j=await req('/api/agents/missions');history=j.items||j.missions||[];renderHistory();if(!currentMission&&history[0])renderMission(history.find(m=>m.status==='running')||history[0])}catch(e){notice('error','Could not load mission history: '+e.message)}}
+// History lives in Work › Missions; this page only needs the missions to pick the one to show.
+async function loadHistory(){try{const j=await req('/api/agents/missions');history=j.items||j.missions||[];if(!currentMission){const m=history.find(m=>m.status==='running')||history[0];if(m)renderMission(m);else renderHead(null)}}catch(e){notice('error','Couldn’t load the missions: '+e.message)}}
 async function startMission(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter a mission objective first.');return}const body={goal,projectId:$('agentProject')?.value||''},ids=manualIds();if($('agentWebSearch')?.checked)body.webSearch=true;if(ids?.length)body.agentIds=ids;const b=$('missionRunBtn');if(b){b.disabled=true;b.textContent='Starting…'}clearNotice();try{await preview();notice('info','Mission accepted. Agent World will update live as workers execute.');req('/api/agents/missions/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}).then(j=>{if(j.mission)renderMission(j.mission);loadHistory()}).catch(e=>{notice('error',e.message,'<button type="button" class="btn" id="agentRetryBtn">Retry</button>');setTimeout(()=>{const r=$('agentRetryBtn');if(r)r.onclick=startMission},0)})}catch(e){notice('error',e.message)}finally{if(b){b.disabled=false;b.textContent='Start Mission'}}}
 async function runSpecialist(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter an objective first.');return}const b=$('specialistRunBtn');if(b)b.disabled=true;try{const j=await req('/api/agents/specialist/run',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({agentId:selected,goal,projectId:$('agentProject')?.value||''})});renderRun(j.run)}catch(e){notice('error',e.message)}finally{if(b)b.disabled=false}}
 function setupTabs(){
@@ -68,15 +98,44 @@ function setupTabs(){
  if(body){body.setAttribute('role','tabpanel');body.tabIndex=0;const a=tabs.find(x=>x.classList.contains('active'));if(a)body.setAttribute('aria-labelledby',a.id)}
 }
 function setupAdvanced(){const toggle=$('agentAdvancedToggle'),panel=$('agentAdvancedPanel');if(toggle&&panel)toggle.onclick=()=>{const open=panel.hidden;panel.hidden=!open;toggle.setAttribute('aria-expanded',String(open));toggle.textContent=open?'Hide advanced routing':'Advanced routing'};$('manualRouteToggle')?.addEventListener('change',e=>{$('manualRouteOptions').hidden=!e.target.checked})}
-function applyHistoryFilter(){const term=($('agentHistorySearch')?.value||'').toLowerCase();document.querySelectorAll('.history-row').forEach(r=>r.hidden=!r.textContent.toLowerCase().includes(term))}
-function setupHistoryFilter(){const q=$('agentHistorySearch');if(q)q.addEventListener('input',applyHistoryFilter)}
-async function init(){if(!$('specialistRegistry'))return;const historyLoaded=loadHistory();try{const j=await req('/api/agents/catalog');catalog=j.items||[];cards();updateDirectActionLabel()}catch(e){notice('error','Could not load specialist catalog: '+e.message)}setupTabs();setupAdvanced();setupHistoryFilter();$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m);else renderHistory()},()=>notice('info','Live mission stream reconnecting…'),()=>{const n=$('agentInlineNotice');if(n&&/reconnecting/.test(n.textContent))clearNotice();loadHistory()})}catch{notice('info','Live mission stream unavailable; history remains accessible.')}}
+async function init(){if(!$('specialistRegistry'))return;setupSheet();const historyLoaded=loadHistory();try{const j=await req('/api/agents/catalog');catalog=j.items||[];cards();updateDirectActionLabel()}catch(e){notice('error','Could not load specialist catalog: '+e.message)}setupTabs();setupAdvanced();setupMenu();for(const id of ['awPrimary','awPeekAction'])$(id)?.addEventListener('click',e=>doPrimary(e.currentTarget.dataset.action));window.addEventListener('localai:agentworld-follow',()=>renderHead(currentMission));$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m)},()=>notice('info','Live mission stream reconnecting…'),()=>{const n=$('agentInlineNotice');if(n&&/reconnecting/.test(n.textContent))clearNotice();loadHistory()})}catch{notice('info','Live mission stream unavailable; history remains accessible.')}}
+// ---- Phone: everything but the city is a bottom sheet over it, with three snaps ----
+// peek (the status sentence and the crew's portraits), half, full. Drag the top of the sheet, tap the handle to step
+// up, Back to lower it (one history entry while it is up). At peek the body is inert, so focus never lands in what is
+// off screen. On wider screens the same element is the rail beside the city and none of this applies.
+const phone=matchMedia('(max-width:760px)');let snap='peek',releaseSheet=null,dragEnd=-1e9;
+function sheetY(s,to){const h=s.clientHeight,peek=parseFloat(getComputedStyle(s).getPropertyValue('--aw-peek'))||112;return to==='full'?0:to==='half'?Math.round(h*.45):h-peek}
+function setSnap(to,{fromBack=false}={}){
+ const s=$('awSheet'),handle=$('awSheetHandle'),body=$('awSheetBody');if(!s)return;snap=to;s.dataset.snap=to;s.classList.remove('is-dragging');
+ if(to==='peek')s.style.removeProperty('--aw-y');else s.style.setProperty('--aw-y',sheetY(s,to)+'px');
+ const up=to!=='peek'&&phone.matches;handle?.setAttribute('aria-expanded',String(up));handle?.setAttribute('aria-label',up?'Show less':'Show mission details');if(body)body.inert=phone.matches&&!up;
+ if(up&&!releaseSheet&&window.LocalAIUI?.sheetHistory)releaseSheet=LocalAIUI.sheetHistory(s,()=>{releaseSheet=null;setSnap('peek',{fromBack:true})});
+ if(!up&&releaseSheet){const r=releaseSheet;releaseSheet=null;if(!fromBack)r()}
+}
+function setupSheet(){
+ const s=$('awSheet'),top=s?.querySelector('.aw-sheet__top'),page=$('agents');if(!top)return;let d=null;
+ // Capture the pointer only once it moves, so a tap still clicks the handle.
+ // The stage sits between the header and the tab bar: measure both (they follow the safe areas).
+ const measure=()=>{const b=document.getElementById('uxContextBar')?.getBoundingClientRect().bottom;if(b>0)page.style.setProperty('--aw-top',Math.round(b)+'px');const n=document.getElementById('uxMobileNav')?.getBoundingClientRect();if(n?.height)page.style.setProperty('--aw-bottom',Math.max(0,Math.round(innerHeight-n.top))+'px');if(snap!=='peek')s.style.setProperty('--aw-y',sheetY(s,snap)+'px')};
+ $('awSheetHandle').addEventListener('click',()=>{if(performance.now()-dragEnd<300)return;setSnap(snap==='peek'?'half':snap==='half'?'full':'peek')});
+ s.querySelector('.aw-sheet__peek').addEventListener('click',()=>{if(performance.now()-dragEnd>=300&&snap==='peek')setSnap('half')});
+ top.addEventListener('pointerdown',e=>{if(!phone.matches||e.button>0)return;d={id:e.pointerId,y:e.clientY,t:e.timeStamp,from:sheetY(s,snap),moved:false}});
+ top.addEventListener('pointermove',e=>{if(!d||e.pointerId!==d.id)return;const dy=e.clientY-d.y;if(!d.moved&&Math.abs(dy)<6)return;if(!d.moved)try{top.setPointerCapture(e.pointerId)}catch{}d.moved=true;s.classList.add('is-dragging');s.style.setProperty('--aw-y',Math.max(0,Math.min(sheetY(s,'peek'),d.from+dy))+'px')});
+ const end=e=>{if(!d||e.pointerId!==d.id)return;const was=d;d=null;if(!was.moved)return;dragEnd=performance.now();
+  // Where the sheet would come to rest at this speed picks the snap.
+  const dy=e.clientY-was.y,v=dy/Math.max(1,e.timeStamp-was.t),y=was.from+dy+v*160;
+  setSnap(['full','half','peek'].reduce((a,b)=>Math.abs(sheetY(s,b)-y)<Math.abs(sheetY(s,a)-y)?b:a))};
+ top.addEventListener('pointerup',end);top.addEventListener('pointercancel',end);
+ // Leaving the page or the phone layout lowers the sheet without a history step.
+ new MutationObserver(()=>{if(!page.classList.contains('active')&&snap!=='peek'){const r=releaseSheet;releaseSheet=null;setSnap('peek',{fromBack:true});r?.()}else if(page.classList.contains('active'))measure()}).observe(page,{attributes:true,attributeFilter:['class']});
+ phone.addEventListener?.('change',()=>setSnap('peek'));window.addEventListener('resize',measure);measure();setSnap('peek')
+}
 window.addEventListener('localai:agentworld-select',e=>{if(e.detail?.workerId)selectWorker(e.detail.workerId)});
 window.LocalAISpecialists={init,preview,renderMission};
 // Home starts a mission here: 202 {runId} comes back at once and the run view follows the mission. A failure fails the pending view and throws.
 window.LocalAIMissions={async start(goal,{pending,agentIds,projectId,webSearch}={}){let j;try{j=await req('/api/agents/missions/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({goal,projectId:projectId||'',agentIds:agentIds?.length?agentIds:undefined,webSearch:webSearch===true||undefined,async:true})});if(!j.runId)throw Error('The mission did not start. Try again.')}catch(e){pending?.fail(e.message||'Something went wrong.');throw e}pending?.resolve(j.runId)},
  // The run view's body shows a mission this way: select it (live while it runs, replayed once it ended), and make Agent World re-measure.
- async show(missionId,{replay=true,alive}={}){let m=null;try{m=(await req('/api/agents/mission?id='+encodeURIComponent(missionId))).mission}catch{}if(!m||(alive&&!alive()))return false;renderMission(m);if(replay&&m.status!=='running')window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:m}}));requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')));return true}};
+ async show(missionId,{replay=true,alive}={}){let m=null;try{m=(await req('/api/agents/mission?id='+encodeURIComponent(missionId))).mission}catch{}if(!m||(alive&&!alive()))return false;renderMission(m);if(replay&&m.status!=='running')window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:m}}));else window.dispatchEvent(new CustomEvent('localai:agentworld-mission',{detail:{mission:m}}));requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')));return true}};
 document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',e.message)));
 })();
 
@@ -1079,6 +1138,11 @@ let demo={active:false,running:false,paused:false,stage:0,speed:1,lastAdvance:0,
 const REPLAY_KEY='localai.agentworld.replay.v2';
 let replay={frames:[],active:false,index:0,playing:false,lastStep:0,speed:1,sourceMissionId:''};
 let celebrationUntil=0;
+// Camera: the map box's CSS size, device pixels per CSS pixel (capped at 2), and `base`, the scale at zoom 1, which
+// covers the box with the city at any aspect ratio (a phone shows a tall slice, a desktop nearly all of it). Pans are
+// CSS pixels; zoom is a multiple of base. The static ground is drawn once into groundCache and copied each frame.
+const ZMAX=3;let cam={w:0,h:0,dpr:1,base:1},lastTap=0,groundCache=null,groundKey='';
+const sc=z=>cam.base*z;
 
 function humanState(s){return({needs_attention:'Needs attention',running:'Running',complete:'Complete',blocked:'Blocked',error:'Needs attention',pending:'Waiting',awaiting_approval:'Awaiting approval',applied:'Applied'})[s]||String(s||'Idle').replaceAll('_',' ')}
 function zoneForWorker(w){if(['error','blocked'].includes(w.state))return'repair';return ROLE_ZONE[w.id]||ROLE_ZONE[w.agentId]||(/doc/i.test(w.name||'')?'docs':/ux/i.test(w.name||'')?'ux':/model/i.test(w.name||'')?'models':'command')}
@@ -1132,7 +1196,7 @@ function astar(a,b){
   for(const n of[{x:cur.x+1,y:cur.y},{x:cur.x-1,y:cur.y},{x:cur.x,y:cur.y+1},{x:cur.x,y:cur.y-1}]){if(blocked(n.x,n.y)&&!(n.x===goal.x&&n.y===goal.y))continue;const nk=key(n.x,n.y),tent=(g.get(key(cur.x,cur.y))||0)+1;if(tent<(g.get(nk)??1e9)){came.set(nk,cur);g.set(nk,tent);f.set(nk,tent+Math.abs(n.x-goal.x)+Math.abs(n.y-goal.y));if(!open.some(o=>o.x===n.x&&o.y===n.y))open.push(n)}}}
  return[]
 }
-function normalizeMission(m){return{type:'mission',id:m.id,status:m.status,goal:m.goal||'Mission',updatedAt:m.updatedAt||m.createdAt,workers:(m.workers||[]).map(w=>({...w,id:w.id||w.agentId})),routing:m.routing||null,timeline:m.timeline||[],results:m.results||[],error:m.error||'',raw:m}}
+function normalizeMission(m){return{type:'mission',id:m.id,status:m.status,goal:m.goal||'Mission',createdAt:m.createdAt,finishedAt:m.finishedAt,updatedAt:m.updatedAt||m.createdAt,workers:(m.workers||[]).map(w=>({...w,id:w.id||w.agentId})),routing:m.routing||null,timeline:m.timeline||[],results:m.results||[],error:m.error||'',raw:m}}
 function ensureAgent(w){
  const id=w.id||w.agentId||w.name;if(!id)return;
  let a=agents.get(id),zone=zoneForWorker(w),target=workerTarget(w,zone);
@@ -1172,12 +1236,12 @@ function recordReplayFrame(reason){
 }
 function replayEventClass(frame){const r=String(frame?.reason||'').toLowerCase();if(/error|attention|blocked|fail/.test(r))return'bad';if(/complete|result/.test(r))return'done';if(/handoff|dispatch|synthesis/.test(r))return'active';return'wait'}
 function syncReplay(){
- if(!root)return;const range=$('#awcReplayRange',root),label=$('#awcReplayLabel',root),markers=$('#awcReplayMarkers',root),frame=replay.frames[replay.index];
+ if(!root)return;const range=$('#awcReplayRange'),label=$('#awcReplayLabel'),markers=$('#awcReplayMarkers'),frame=replay.frames[replay.index];
  if(range){range.max=Math.max(0,replay.frames.length-1);range.value=replay.index;range.disabled=replay.frames.length<2}
  if(label)label.textContent=replay.frames.length?(replay.active?'Replay '+(replay.index+1)+' / '+replay.frames.length+' · '+String(frame?.reason||'state').replaceAll('-',' '):replay.frames.length+' event'+(replay.frames.length===1?'':'s')+' ready'):'0 events';
  if(markers){markers.innerHTML=replay.frames.map((f,i)=>`<button type="button" data-replay-index="${i}" class="${replayEventClass(f)} ${i===replay.index?'active':''}" title="${esc((f.reason||'state')+(f.detail?' — '+f.detail:''))}"></button>`).join('');markers.querySelectorAll('[data-replay-index]').forEach(b=>b.onclick=()=>applyReplayFrame(Number(b.dataset.replayIndex)))}
- $('#awcReplayPlay',root).textContent=replay.playing?'Pause':'Play';$('#awcReplaySpeed',root).textContent=replay.speed+'×';$('#awcReplayLive',root).hidden=!replay.active;
- const detail=$('#awcReplayDetail',root);if(detail)detail.textContent=frame?(new Date(frame.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})+' · '+(frame.detail||String(frame.reason||'state').replaceAll('-',' '))):'Select a mission from history to inspect its execution.'
+ $('#awcReplayPlay').textContent=replay.playing?'Pause':'Play';$('#awcReplaySpeed').textContent=replay.speed+'×';$('#awcReplayLive').hidden=!replay.active;
+ const detail=$('#awcReplayDetail');if(detail)detail.textContent=frame?(new Date(frame.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})+' · '+(frame.detail||String(frame.reason||'state').replaceAll('-',' '))):'Select a mission from history to inspect its execution.'
 }
 function applyReplayFrame(i,preservePlaying=false){
  if(!replay.frames.length)return;const wasPlaying=replay.playing;replay.active=true;replay.playing=preservePlaying&&wasPlaying;replay.index=clamp(Number(i)||0,0,replay.frames.length-1);const frame=replay.frames[replay.index];agents.clear();artifacts=[];packets=[];sparks=[];dust=[];current=JSON.parse(JSON.stringify(frame.mission));sourceType='replay';current.workers.forEach(ensureAgent);selected=frame.workerId?{type:'agent',id:String(frame.workerId).split(',')[0]}:selected;syncHud();syncSelection();syncReplay()
@@ -1209,7 +1273,7 @@ function resetDemo(){demo.stage=0;demo.running=false;demo.paused=false;applyDemo
 function returnLive(){replay.active=false;replay.playing=false;demo.active=false;demo.running=false;demo.paused=false;agents.clear();artifacts=[];packets=[];sparks=[];dust=[];if(liveSnapshot){current=liveSnapshot;sourceType='mission';current.workers.forEach(ensureAgent)}else{current=null;sourceType='idle'}syncHud();syncDemoControls();syncReplay();fitWorld()}
 function toggleDemoPlay(){if(!demo.active){startDemo();return}demo.running=true;demo.paused=!demo.paused;demo.lastAdvance=now();syncDemoControls()}
 function cycleSpeed(){demo.speed=demo.speed===1?2:demo.speed===2?4:1;syncDemoControls()}
-function syncDemoControls(){if(!root)return;$('#awcDemoPlay',root).textContent=demo.active&&demo.running&&!demo.paused?'Pause':'Play';$('#awcDemoSpeed',root).textContent=demo.speed+'×';$('#awcLiveBtn',root).hidden=!demo.active;$('#awcDemoScenario',root).value=demo.scenario}
+function syncDemoControls(){if(!root)return;$('#awcDemoPlay').textContent=demo.active&&demo.running&&!demo.paused?'Pause':'Play';$('#awcDemoSpeed').textContent=demo.speed+'×';$('#awcLiveBtn').hidden=!demo.active;$('#awcDemoScenario').value=demo.scenario}
 function activeStage(){
  if(demo.active)return DEMO_STAGES[demo.stage];
  const w=current?.workers||[],running=w.find(x=>x.state==='running'),bad=w.find(x=>['error','blocked'].includes(x.state));
@@ -1220,26 +1284,52 @@ function activeStage(){
 }
 function syncHud(){
  if(!root)return;const stage=activeStage(),workers=current?.workers||[],done=workers.filter(w=>w.state==='complete').length,running=workers.filter(w=>w.state==='running').length,bad=workers.filter(w=>['error','blocked'].includes(w.state)).length;
- $('#awcSource',root).textContent=sourceType.toUpperCase();$('#awcObjective',root).textContent=current?.goal||'No active mission';$('#awcObjective',root).title=current?.goal||'';root.dataset.state=bad?'attention':running?'running':current?.status==='complete'?'complete':workers.length?'waiting':'idle';$('#awcStage',root).textContent=stage.label;$('#awcStageDetail',root).textContent=stage.detail;$('#awcStatus',root).textContent=current?humanState(current.status):'Idle';$('#awcProgressText',root).textContent=workers.length?done+'/'+workers.length+' complete':'No workers';$('#awcProgress',root).style.width=(workers.length?Math.round(done/workers.length*100):0)+'%';$('#awcStatRun',root).textContent=running;$('#awcStatDone',root).textContent=done;$('#awcStatAlert',root).textContent=bad;$('#awcStatArtifacts',root).textContent=artifacts.length;$('#awcAttention',root).hidden=!bad;syncRoster()
+ $('#awcSource').textContent=sourceType.toUpperCase();$('#awcObjective').textContent=current?.goal||'No active mission';$('#awcObjective').title=current?.goal||'';root.dataset.state=bad?'attention':running?'running':current?.status==='complete'?'complete':workers.length?'waiting':'idle';$('#awcStage').textContent=stage.label;$('#awcStageDetail').textContent=stage.detail;$('#awcStatus').textContent=current?humanState(current.status):'Idle';$('#awcProgressText').textContent=workers.length?done+'/'+workers.length+' complete':'No workers';$('#awcProgress').style.width=(workers.length?Math.round(done/workers.length*100):0)+'%';$('#awcStatRun').textContent=running;$('#awcStatDone').textContent=done;$('#awcStatAlert').textContent=bad;$('#awcStatArtifacts').textContent=artifacts.length;$('#awcAttention').hidden=!bad;syncRoster();paint()
 }
+// Crew rows, the accessible equivalent of the city: portrait, name, role in words, state, and what they are doing now.
+// The sheet's peek row shows the same crew as small portraits beside the status sentence.
 function syncRoster(){
- const h=$('#awcRoster',root);if(!h)return;const workers=current?.workers||[];h.innerHTML=workers.length?workers.map(w=>{const s=ROLE_STYLE[w.id]||ROLE_STYLE[w.agentId]||ROLE_STYLE.synthesis;return `<button class="awc__rosterItem ${esc(w.state)}" data-awc-roster="${esc(w.id)}"><span class="awc__rosterGlyph" style="--worker:${esc(s.accent)}">${esc((s.badge||w.name||w.id||'?').slice(0,2))}</span><span><strong>${esc(w.name||w.id)}</strong><small>${esc(DISTRICTS[zoneForWorker(w)]?.short||zoneForWorker(w))} · ${esc(s.tool)}</small></span><em>${esc(humanState(w.state))}</em></button>`}).join(''):'<div class="awc__empty">No workers active.</div>';h.querySelectorAll('[data-awc-roster]').forEach(b=>b.onclick=()=>focusWorker(b.dataset.awcRoster))
+ const A=window.LocalAIAgentWords,workers=current?.workers||[],m=current?(current.raw||current):null,h=$('#awcRoster');if(!A)return;
+ if(h){h.innerHTML=workers.length?workers.map(w=>{const b=A.stateBadge(w.state);return `<button type="button" class="awc__rosterItem ${esc(w.state)}" data-awc-roster="${esc(w.id)}"><img class="awc__avatar" src="${avatar(w)}" alt="" width="40" height="40"><span class="awc__rosterText"><strong>${esc(A.workerName(w))}</strong><small>${esc(A.workerRole(w))}</small><span>${esc(A.workerStep(w,m))}</span></span><em class="badge badge--${b.tone}">${esc(b.label)}</em></button>`}).join(''):'<div class="awc__empty">No workers yet.</div>';h.querySelectorAll('[data-awc-roster]').forEach(b=>b.onclick=()=>focusWorker(b.dataset.awcRoster))}
+ const av=$('#awSheetAvatars');if(av)av.innerHTML=workers.map(w=>`<img class="awc__avatar is-${esc(w.state)}" data-worker="${esc(w.id)}" src="${avatar(w)}" alt="" width="30" height="30">`).join('');
+ const st=$('#awSheetStatus');if(st){const t=A.statusSentence(m),i=t.label?t.text.indexOf(' · '):-1;st.dataset.tone=t.tone;st.innerHTML=i>0?`<b>${esc(t.text.slice(0,i))}</b>${esc(t.text.slice(i))}`:esc(t.text)}
 }
-function syncEventFeed(){if(!root)return;const h=$('#awcEventFeed',root);if(h)h.innerHTML=events.length?events.slice(0,4).map(e=>`<div><span>${esc(e.text)}</span><time>${e.at.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</time></div>`).join(''):'<div><span>Waiting for activity</span></div>'}
+// A worker's pixel portrait: the city's own sprite, drawn once per role into a small canvas (head and shoulders).
+const portraits=new Map();
+function avatar(w){
+ const id=ROLE_STYLE[w.id]?w.id:ROLE_STYLE[w.agentId]?w.agentId:'synthesis';if(portraits.has(id))return portraits.get(id);
+ const c=document.createElement('canvas'),prev=ctx,sel=selected,hov=hovered;c.width=c.height=48;let url='';selected=hovered=null;
+ try{ctx=c.getContext('2d');ctx.beginPath();ctx.rect(0,6,48,42);ctx.clip();drawWorkerSprite({id,name:'',glyph:'',x:24,y:41,dir:1,state:'complete',style:ROLE_STYLE[id],activitySeed:0,step:0,bob:0,path:[]},0);url=c.toDataURL()}catch{}
+ ctx=prev;selected=sel;hovered=hov;portraits.set(id,url);return url
+}
+function syncEventFeed(){if(!root)return;const h=$('#awcEventFeed');if(h)h.innerHTML=events.length?events.slice(0,4).map(e=>`<div><span>${esc(e.text)}</span><time>${e.at.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</time></div>`).join(''):'<div><span>Waiting for activity</span></div>'}
 let externalFocus=false;
 function syncSelection(){
- if(!root)return;const h=$('#awcSelection',root);if(!selected){h.innerHTML='<span>Select a worker or building</span><small>Inspect district state and focus the camera.</small>';return}
+ if(!root)return;const h=$('#awcSelection');h.dataset.empty=String(!selected);if(!selected){h.innerHTML='<span>Select a worker or building</span><small>Inspect district state and focus the camera.</small>';return}
  if(selected.type==='agent'){const a=agents.get(selected.id);if(!a)return;const w=(current?.workers||[]).find(q=>(q.id||q.agentId)===a.id),rm=w?.routingMeta||{};h.innerHTML=`<strong>${esc(a.name)}</strong><small>${esc(humanState(a.state))} · ${esc(DISTRICTS[a.zone]?.name||a.zone)} · ${esc(a.model||'automatic model')}</small>${rm.capabilityScore!=null?`<small>Capability ${rm.capabilityScore}% · model ${rm.modelScore??'—'}% · ${esc(rm.availability||'available')} · deps ${rm.dependencyCount??0}</small>`:''}`;if(!externalFocus)window.dispatchEvent(new CustomEvent('localai:agentworld-select',{detail:{workerId:a.id}}))}
  else{const d=DISTRICTS[selected.id],workers=[...agents.values()].filter(a=>a.zone===selected.id);h.innerHTML=`<strong>${esc(d.name)}</strong><small>${workers.length?workers.map(a=>esc(a.name)).join(', '):'No workers in district'}</small>`}
 }
-function fitWorld(){view.targetZoom=1;view.targetPanX=0;view.targetPanY=0;syncZoomLabel()}
-function focusPoint(x,y,z=1.8){view.targetZoom=clamp(z,1,3);view.targetPanX=W/2-x*view.targetZoom;view.targetPanY=H/2-y*view.targetZoom;limitTargetPan();syncZoomLabel()}
+// The pan that keeps the city covering the box at zoom z (centred on an axis where the city is the smaller).
+function clampPan(z,px,py){const s=sc(z),mx=cam.w-W*s,my=cam.h-H*s;return{x:mx>0?mx/2:clamp(px,mx,0),y:my>0?my/2:clamp(py,my,0)}}
+function limitTargetPan(){const p=clampPan(view.targetZoom,view.targetPanX,view.targetPanY);view.targetPanX=p.x;view.targetPanY=p.y}
+function fitWorld(){focusPoint(W/2,H/2,1)}
+function focusPoint(x,y,z=1.8){view.targetZoom=clamp(z,1,ZMAX);const s=sc(view.targetZoom);view.targetPanX=cam.w/2-x*s;view.targetPanY=cam.h/2-y*s;limitTargetPan();syncZoomLabel()}
 function focusActive(){const a=[...agents.values()].find(x=>x.state==='running')||[...agents.values()][0];if(a){selected={type:'agent',id:a.id};syncSelection();focusPoint(a.x,a.y,2)}}
 function focusWorker(id){const a=agents.get(id);if(a){selected={type:'agent',id};syncSelection();focusPoint(a.x,a.y,2)}}
-function zoomAt(factor,cx=W/2,cy=H/2){const old=view.targetZoom,nz=clamp(old*factor,1,3),wx=(cx-view.targetPanX)/old,wy=(cy-view.targetPanY)/old;view.targetZoom=nz;view.targetPanX=cx-wx*nz;view.targetPanY=cy-wy*nz;limitTargetPan();syncZoomLabel()}
-function limitTargetPan(){if(view.targetZoom<=1){view.targetPanX=0;view.targetPanY=0;return}view.targetPanX=clamp(view.targetPanX,W-W*view.targetZoom,0);view.targetPanY=clamp(view.targetPanY,H-H*view.targetZoom,0)}
-function syncZoomLabel(){if(root)$('#awcZoomLabel',root).textContent=Math.round(view.targetZoom*100)+'%'}
-function screenPoint(e){const r=canvas.getBoundingClientRect(),sx=W/r.width,sy=H/r.height,px=(e.clientX-r.left)*sx,py=(e.clientY-r.top)*sy;return{px,py,x:(px-view.panX)/view.zoom,y:(py-view.panY)/view.zoom}}
+function zoomAt(factor,cx=cam.w/2,cy=cam.h/2){const old=sc(view.targetZoom),nz=clamp(view.targetZoom*factor,1,ZMAX),wx=(cx-view.targetPanX)/old,wy=(cy-view.targetPanY)/old;view.targetZoom=nz;view.targetPanX=cx-wx*sc(nz);view.targetPanY=cy-wy*sc(nz);limitTargetPan();syncZoomLabel()}
+function syncZoomLabel(){const l=$('#awcZoomLabel');if(l)l.textContent=Math.round(view.targetZoom*100)+'%'}
+function screenPoint(e){const r=canvas.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top,s=sc(view.zoom);return{px,py,x:(px-view.panX)/s,y:(py-view.panY)/s}}
+// The backing store follows the box: CSS size × device pixels, re-measured whenever the box changes (phone sheet,
+// theater, a run view borrowing the city), keeping the same spot in the middle. It paints at once, so the city never
+// waits on the animation loop (or on an IntersectionObserver) to appear.
+function resize(){
+ const wrap=canvas?.parentElement;if(!wrap)return;const w=wrap.clientWidth,h=wrap.clientHeight;if(!w||!h)return;
+ const dpr=Math.min(2,devicePixelRatio||1),bw=Math.round(w*dpr),bh=Math.round(h*dpr);if(w===cam.w&&h===cam.h&&canvas.width===bw&&canvas.height===bh)return;
+ const first=!cam.w,s=sc(view.targetZoom),cx=first?W/2:(cam.w/2-view.targetPanX)/s,cy=first?H/2:(cam.h/2-view.targetPanY)/s;
+ cam={w,h,dpr,base:Math.max(w/W,h/H)};canvas.width=bw;canvas.height=bh;ctx=canvas.getContext('2d');
+ focusPoint(cx,cy,view.targetZoom);view.zoom=view.targetZoom;view.panX=view.targetPanX;view.panY=view.targetPanY;paint()
+}
+function paint(){if(ctx&&cam.w&&!raf)draw(now())}
 function hitAt(x,y){
  for(const a of agents.values())if(Math.hypot(x-a.x,y-a.y)<27)return{type:'agent',id:a.id};
  for(const[id,d]of Object.entries(DISTRICTS))if(x>=d.x*T&&x<=(d.x+d.w)*T&&y>=d.y*T&&y<=(d.y+d.h)*T)return{type:'district',id};
@@ -1247,19 +1337,19 @@ function hitAt(x,y){
 }
 function selectAt(e){const p=screenPoint(e);selected=hitAt(p.x,p.y);syncSelection();if(selected?.type==='district'){const d=DISTRICTS[selected.id];focusPoint((d.x+d.w/2)*T,(d.y+d.h/2)*T,1.65)}}
 function updateHover(e){
- if(drag||pointers.size>1)return;const p=screenPoint(e),hit=hitAt(p.x,p.y);hovered=hit;const tip=$('#awcTooltip',root);if(!tip)return;
+ if(drag||pointers.size>1)return;const p=screenPoint(e),hit=hitAt(p.x,p.y);hovered=hit;const tip=$('#awcTooltip');if(!tip)return;
  if(!hit||hit.type!=='agent'){tip.hidden=true;return}
  const a=agents.get(hit.id);tip.innerHTML='<strong>'+esc(a.name)+'</strong><span>'+esc(humanState(a.state))+' · '+esc(DISTRICTS[a.zone]?.name||a.zone)+'</span>';tip.hidden=false;
  tip.style.left=clamp(e.offsetX+12,8,canvas.clientWidth-176)+'px';tip.style.top=clamp(e.offsetY-54,8,canvas.clientHeight-54)+'px'
 }
 function toggleDisplay(k){display[k]=!display[k];root?.querySelector('[data-awc-display="'+k+'"]')?.setAttribute('aria-pressed',String(display[k]));if(k==='night')root?.classList.toggle('is-night',display.night)}
-function toggleCrew(){display.crew=!display.crew;root?.classList.toggle('crew-hidden',!display.crew);$('#awcCrewToggle',root)?.setAttribute('aria-pressed',String(display.crew))}
-function toggleFollow(){display.follow=!display.follow;$('#awcFollow',root)?.setAttribute('aria-pressed',String(display.follow));if(display.follow)focusActive()}
+function toggleCrew(){display.crew=!display.crew;root?.classList.toggle('crew-hidden',!display.crew);document.querySelector('.aw-page')?.classList.toggle('crew-hidden',!display.crew);$('#awcCrewToggle')?.setAttribute('aria-pressed',String(display.crew))}
+function toggleFollow(on=!display.follow){display.follow=!!on;$('#awcFollow')?.setAttribute('aria-pressed',String(display.follow));if(display.follow)focusActive();window.dispatchEvent(new Event('localai:agentworld-follow'))}
 // Theater moves the frame to <body>: an ancestor of the Agents page creates a containing block that traps position:fixed.
 let theaterHome=null;
 function setTheaterHost(on){if(on&&!theaterHome){theaterHome=document.createComment('agent-world');root.before(theaterHome);document.body.appendChild(root)}else if(!on&&theaterHome){theaterHome.replaceWith(root);theaterHome=null}}
-function toggleExpanded(){const on=!root.classList.contains('is-expanded');setTheaterHost(on);root.classList.toggle('is-expanded',on);document.body.classList.toggle('awc-stage-expanded',on);$('#awcExpand',root).textContent=on?'Exit theater':'Theater';setTimeout(()=>{if(on)focusActive();else fitWorld()},40)}
-function exitExpanded(){if(!root?.classList.contains('is-expanded'))return;root.classList.remove('is-expanded');setTheaterHost(false);document.body.classList.remove('awc-stage-expanded');$('#awcExpand',root).textContent='Theater';fitWorld()}
+function toggleExpanded(){const on=!root.classList.contains('is-expanded');setTheaterHost(on);root.classList.toggle('is-expanded',on);document.body.classList.toggle('awc-stage-expanded',on);$('#awcExpand').textContent=on?'Exit theater':'Theater';setTimeout(()=>{if(on)focusActive();else fitWorld()},40)}
+function exitExpanded(){if(!root?.classList.contains('is-expanded'))return;root.classList.remove('is-expanded');setTheaterHost(false);document.body.classList.remove('awc-stage-expanded');$('#awcExpand').textContent='Theater';fitWorld()}
 
 function mount(){
  const host=$('#agentWorldCityMount');if(!host)return;root=document.createElement('section');root.className='awc awc-v3';root.dataset.state='idle';root.innerHTML=`
@@ -1275,8 +1365,7 @@ function mount(){
    <div class="awc__stat is-art"><dt>Artifacts</dt><dd id="awcStatArtifacts">0</dd></div>
   </dl>
   <div class="awc__toolbar" role="toolbar" aria-label="Map controls">
-   <div class="awc__group"><button id="awcFit" type="button" title="Show the whole city (0)">Fit</button><button id="awcCenter" type="button" title="Jump to the active worker (A)">Active</button><button id="awcFollow" type="button" aria-pressed="false" title="Keep the camera on the active worker (F)">Follow</button></div>
-   <div class="awc__group"><button id="awcZoomOut" type="button" aria-label="Zoom out">−</button><span id="awcZoomLabel" aria-live="polite">100%</span><button id="awcZoomIn" type="button" aria-label="Zoom in">+</button></div>
+   <div class="awc__group"><button id="awcFit" type="button" title="Show the whole city (0)">Fit</button><button id="awcCenter" type="button" title="Jump to the active worker (A)">Active</button></div>
    <div class="awc__group"><button type="button" data-awc-display="labels" aria-pressed="true">Labels</button><button type="button" data-awc-display="flows" aria-pressed="true">Flows</button><button type="button" data-awc-display="night" aria-pressed="false">Night</button></div>
    <div class="awc__group"><button id="awcCrewToggle" type="button" aria-pressed="true">Crew</button><button id="awcExpand" data-game-primary="true" type="button" title="Full-screen view (T)">Theater</button></div>
   </div>
@@ -1291,44 +1380,46 @@ function mount(){
  </div>
  <div class="awc__gameShell">
   <div class="awc__mapWrap">
-   <canvas width="${W}" height="${H}" id="awcCanvas" tabindex="0" aria-label="Interactive Agent World map. Drag to pan, scroll or pinch to zoom, click a district or worker to inspect. Keys: 0 fit, A active worker, F follow, plus and minus zoom, T theater."></canvas>
-   <div class="awc__scanlines"></div>
+   <canvas id="awcCanvas" tabindex="0" aria-label="Agent World city map. Drag to move, pinch or scroll to zoom, tap a worker or building. The crew list has the same information."></canvas>
    <div class="awc__tooltip" id="awcTooltip" hidden></div>
    <div class="awc__mapHud">
-    <div class="awc__selection" id="awcSelection"><span>Select a worker or building</span><small>Click to inspect</small></div>
+    <div class="awc__selection" id="awcSelection" data-empty="true"><span>Select a worker or building</span><small>Click to inspect</small></div>
     <div class="awc__minimap" id="awcMinimap" aria-hidden="true"></div>
    </div>
    <div class="awc__eventFeed" id="awcEventFeed" aria-live="polite"></div>
    <div class="awc__legend" aria-label="Map legend"><span><i class="run"></i>Running</span><span><i class="done"></i>Complete</span><span><i class="wait"></i>Waiting</span><span><i class="bad"></i>Attention</span><span><i class="dep"></i>Active dependency</span><span><i class="art"></i>Artifact</span></div>
+   <div class="awc__controls" role="toolbar" aria-label="Zoom and follow"><button id="awcZoomOut" type="button" aria-label="Zoom out">−</button><span id="awcZoomLabel" aria-live="polite">100%</span><button id="awcZoomIn" type="button" aria-label="Zoom in">+</button><button id="awcFollow" type="button" aria-pressed="false" title="Keep the camera on the busy worker (F)">Follow</button></div>
   </div>
-  <div class="awc__ops" role="complementary" aria-label="Mission details">
-   <div class="awc__opsScroll">
-    <section class="awc__section"><div class="awc__opsHead"><h3>Crew</h3><span class="awc__eyebrow">Live roster</span></div>
-     <div class="awc__roster" id="awcRoster"><div class="awc__empty">No workers active.</div></div></section>
+ </div>`;
+ // Districts, replay and the demo are the page's: in the rail (desktop) or the sheet (phone), not over the city.
+ const ops=document.createElement('div');ops.className='awc__ops';ops.innerHTML=`
     <section class="awc__section"><div class="awc__opsHead"><h3>Districts</h3><span class="awc__eyebrow">Jump to</span></div>
      <div class="awc__districtLegend">${Object.entries(DISTRICTS).map(([id,d])=>`<button type="button" data-awc-district="${id}"><i style="--district:${d.accent}"></i><span>${d.short}</span></button>`).join('')}</div></section>
     <section class="awc__section awc__replayPanel"><div class="awc__opsHead"><h3>Replay</h3><strong id="awcReplayLabel">0 events</strong></div><div class="awc__replayMarkers" id="awcReplayMarkers"></div><input id="awcReplayRange" type="range" min="0" max="0" value="0" disabled aria-label="Mission replay position"><small id="awcReplayDetail">Select a mission from history to inspect its execution.</small><div class="awc__replayActions"><button id="awcReplayPrev" type="button" aria-label="Previous replay event">◀</button><button id="awcReplayPlay" type="button">Play</button><button id="awcReplayNext" type="button" aria-label="Next replay event">▶</button><button id="awcReplaySpeed" type="button">1×</button><button id="awcReplayLive" type="button" hidden>Live</button></div></section>
     <section class="awc__section awc__demoPanel"><div class="awc__opsHead"><h3>Simulation</h3><span class="awc__eyebrow">Try the city without a real mission</span></div><select id="awcDemoScenario" aria-label="Demo scenario"><option value="success">Successful mission</option><option value="failure">Failure and repair</option></select><div class="awc__demoActions"><button id="awcDemoPlay" type="button">Play</button><button id="awcDemoStep" type="button">Step</button><button id="awcDemoReset" type="button">Reset</button><button id="awcDemoSpeed" type="button">1×</button></div><button id="awcLiveBtn" class="awc__liveBtn" type="button" hidden>Return to live mission</button></section>
-    <p class="awc__hint">Drag to pan, scroll or pinch to zoom, click a district or worker. Keys: 0 fit · A active · F follow · +/− zoom · T theater.</p>
-   </div>
-  </div>
- </div>`;
- host.appendChild(root);loadReplay();syncReplay();canvas=$('#awcCanvas',root);ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=false;
- $('#awcReplayPrev',root).onclick=()=>stepReplay(-1);$('#awcReplayPlay',root).onclick=toggleReplay;$('#awcReplayNext',root).onclick=()=>stepReplay(1);$('#awcReplaySpeed',root).onclick=cycleReplaySpeed;$('#awcReplayLive',root).onclick=returnReplayLive;$('#awcReplayRange',root).oninput=e=>applyReplayFrame(e.target.value);$('#awcExpand',root).onclick=toggleExpanded;$('#awcCrewToggle',root).onclick=toggleCrew;$('#awcFollow',root).onclick=toggleFollow;$('#awcFit',root).onclick=fitWorld;$('#awcCenter',root).onclick=focusActive;$('#awcZoomIn',root).onclick=()=>zoomAt(1.2);$('#awcZoomOut',root).onclick=()=>zoomAt(.84);$('#awcDemoPlay',root).onclick=toggleDemoPlay;$('#awcDemoStep',root).onclick=stepDemo;$('#awcDemoReset',root).onclick=resetDemo;$('#awcDemoSpeed',root).onclick=cycleSpeed;$('#awcLiveBtn',root).onclick=returnLive;$('#awcDemoScenario',root).onchange=e=>{demo.scenario=e.target.value;if(demo.active)applyDemo()};
- root.querySelectorAll('[data-awc-display]').forEach(b=>b.onclick=()=>toggleDisplay(b.dataset.awcDisplay));root.querySelectorAll('[data-awc-district]').forEach(b=>b.onclick=()=>{selected={type:'district',id:b.dataset.awcDistrict};syncSelection();const d=DISTRICTS[b.dataset.awcDistrict];focusPoint((d.x+d.w/2)*T,(d.y+d.h/2)*T,1.7)});
+    <p class="awc__hint">Drag to move, scroll or pinch to zoom, double-click to fit, click a district or worker. Keys: 0 fit · A active · F follow · +/− zoom · T theater.</p>`;
+ host.appendChild(root);($('#awCityExtras')||$('.awc__gameShell',root)).appendChild(ops);loadReplay();syncReplay();canvas=$('#awcCanvas');ctx=canvas.getContext('2d');
+ $('#awcReplayPrev').onclick=()=>stepReplay(-1);$('#awcReplayPlay').onclick=toggleReplay;$('#awcReplayNext').onclick=()=>stepReplay(1);$('#awcReplaySpeed').onclick=cycleReplaySpeed;$('#awcReplayLive').onclick=returnReplayLive;$('#awcReplayRange').oninput=e=>applyReplayFrame(e.target.value);$('#awcExpand').onclick=toggleExpanded;$('#awcCrewToggle').onclick=toggleCrew;$('#awcFollow').onclick=()=>toggleFollow();$('#awcFit').onclick=fitWorld;$('#awcCenter').onclick=focusActive;$('#awcZoomIn').onclick=()=>zoomAt(1.2);$('#awcZoomOut').onclick=()=>zoomAt(.84);$('#awcDemoPlay').onclick=toggleDemoPlay;$('#awcDemoStep').onclick=stepDemo;$('#awcDemoReset').onclick=resetDemo;$('#awcDemoSpeed').onclick=cycleSpeed;$('#awcLiveBtn').onclick=returnLive;$('#awcDemoScenario').onchange=e=>{demo.scenario=e.target.value;if(demo.active)applyDemo()};
+ document.querySelectorAll('[data-awc-display]').forEach(b=>b.onclick=()=>toggleDisplay(b.dataset.awcDisplay));document.querySelectorAll('[data-awc-district]').forEach(b=>b.onclick=()=>{selected={type:'district',id:b.dataset.awcDistrict};syncSelection();const d=DISTRICTS[b.dataset.awcDistrict];focusPoint((d.x+d.w/2)*T,(d.y+d.h/2)*T,1.7)});
  canvas.addEventListener('wheel',e=>{e.preventDefault();const p=screenPoint(e);zoomAt(e.deltaY<0?1.12:.89,p.px,p.py)},{passive:false});
- canvas.addEventListener('pointerdown',e=>{try{canvas.setPointerCapture(e.pointerId)}catch{}const p=screenPoint(e);pointers.set(e.pointerId,{x:p.px,y:p.py});if(pointers.size===1){drag={id:e.pointerId,startX:p.px,startY:p.py,panX:view.targetPanX,panY:view.targetPanY,moved:false};pinch=null}else if(pointers.size===2){const ps=[...pointers.values()],dx=ps[1].x-ps[0].x,dy=ps[1].y-ps[0].y;pinch={distance:Math.max(1,Math.hypot(dx,dy)),zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,cx:(ps[0].x+ps[1].x)/2,cy:(ps[0].y+ps[1].y)/2};drag=null}});
- canvas.addEventListener('pointermove',e=>{updateHover(e);if(!pointers.has(e.pointerId))return;const r=canvas.getBoundingClientRect(),sx=W/r.width,sy=H/r.height,px=(e.clientX-r.left)*sx,py=(e.clientY-r.top)*sy;pointers.set(e.pointerId,{x:px,y:py});if(pointers.size===2&&pinch){const ps=[...pointers.values()],dx=ps[1].x-ps[0].x,dy=ps[1].y-ps[0].y,dist=Math.max(1,Math.hypot(dx,dy)),cx=(ps[0].x+ps[1].x)/2,cy=(ps[0].y+ps[1].y)/2,nz=clamp(pinch.zoom*(dist/pinch.distance),1,3),wx=(pinch.cx-pinch.panX)/pinch.zoom,wy=(pinch.cy-pinch.panY)/pinch.zoom;view.targetZoom=nz;view.targetPanX=cx-wx*nz;view.targetPanY=cy-wy*nz;limitTargetPan();syncZoomLabel();return}if(!drag||drag.id!==e.pointerId)return;const dx=px-drag.startX,dy=py-drag.startY;if(Math.abs(dx)+Math.abs(dy)>4)drag.moved=true;view.targetPanX=drag.panX+dx;view.targetPanY=drag.panY+dy;limitTargetPan()});
- canvas.addEventListener('pointerup',e=>{const wasSingle=pointers.size===1,moved=drag?.moved||false;pointers.delete(e.pointerId);if(wasSingle&&!moved)selectAt(e);if(pointers.size===1){const[id,p]=[...pointers.entries()][0];drag={id,startX:p.x,startY:p.y,panX:view.targetPanX,panY:view.targetPanY,moved:true}}else drag=null;if(pointers.size<2)pinch=null});
- canvas.addEventListener('pointercancel',e=>{pointers.delete(e.pointerId);drag=null;if(pointers.size<2)pinch=null});canvas.addEventListener('pointerleave',()=>{const t=$('#awcTooltip',root);if(t)t.hidden=true});
+ canvas.addEventListener('dblclick',e=>{e.preventDefault();fitWorld()});
+ canvas.addEventListener('pointerdown',e=>{try{canvas.setPointerCapture(e.pointerId)}catch{}const p=screenPoint(e);pointers.set(e.pointerId,{x:p.px,y:p.py});if(pointers.size===1){drag={id:e.pointerId,startX:p.px,startY:p.py,panX:view.targetPanX,panY:view.targetPanY,moved:false};pinch=null}else if(pointers.size===2){const ps=[...pointers.values()];pinch={distance:Math.max(1,Math.hypot(ps[1].x-ps[0].x,ps[1].y-ps[0].y)),zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,cx:(ps[0].x+ps[1].x)/2,cy:(ps[0].y+ps[1].y)/2};drag=null}});
+ canvas.addEventListener('pointermove',e=>{updateHover(e);if(!pointers.has(e.pointerId))return;const p=screenPoint(e);pointers.set(e.pointerId,{x:p.px,y:p.py});
+  if(pointers.size===2&&pinch){const ps=[...pointers.values()],dist=Math.max(1,Math.hypot(ps[1].x-ps[0].x,ps[1].y-ps[0].y)),cx=(ps[0].x+ps[1].x)/2,cy=(ps[0].y+ps[1].y)/2,nz=clamp(pinch.zoom*dist/pinch.distance,1,ZMAX),wx=(pinch.cx-pinch.panX)/sc(pinch.zoom),wy=(pinch.cy-pinch.panY)/sc(pinch.zoom);view.targetZoom=nz;view.targetPanX=cx-wx*sc(nz);view.targetPanY=cy-wy*sc(nz);limitTargetPan();syncZoomLabel();return}
+  if(!drag||drag.id!==e.pointerId)return;const dx=p.px-drag.startX,dy=p.py-drag.startY;if(Math.abs(dx)+Math.abs(dy)>4)drag.moved=true;view.targetPanX=drag.panX+dx;view.targetPanY=drag.panY+dy;limitTargetPan()});
+ // A tap selects; two taps in quick succession fit the city (touch has no double-click).
+ canvas.addEventListener('pointerup',e=>{const wasSingle=pointers.size===1,moved=drag?.moved||false;pointers.delete(e.pointerId);if(wasSingle&&!moved){if(e.pointerType==='touch'&&e.timeStamp-lastTap<320){lastTap=0;fitWorld()}else{lastTap=e.timeStamp;selectAt(e)}}if(pointers.size===1){const[id,p]=[...pointers.entries()][0];drag={id,startX:p.x,startY:p.y,panX:view.targetPanX,panY:view.targetPanY,moved:true}}else drag=null;if(pointers.size<2)pinch=null});
+ canvas.addEventListener('pointercancel',e=>{pointers.delete(e.pointerId);drag=null;if(pointers.size<2)pinch=null});canvas.addEventListener('pointerleave',()=>{const t=$('#awcTooltip');if(t)t.hidden=true});
  canvas.addEventListener('keydown',e=>{if(e.key==='+'||e.key==='=')zoomAt(1.2);if(e.key==='-')zoomAt(.84);if(e.key==='0')fitWorld();if(e.key==='f')toggleFollow();if(e.key==='a')focusActive();if(e.key==='t')toggleExpanded();if(e.key==='Enter'&&hovered){selected=hovered;syncSelection()}});document.addEventListener('keydown',e=>{if(e.key==='Escape')exitExpanded()});
  // The Agents panel answers our select event with a focus event; don't echo it back as another select.
  window.addEventListener('localai:agentworld-focus',e=>{externalFocus=true;try{focusWorker(e.detail?.workerId)}finally{externalFocus=false}});
- document.body.classList.add('agent-world-city-ready');buildRoads();seedAmbient();syncDemoControls();syncHud();syncEventFeed();start();bootstrap()
+ if('ResizeObserver' in window)new ResizeObserver(resize).observe($('.awc__mapWrap',root));window.addEventListener('resize',resize);
+ window.LocalAIAgentWorld={camera:()=>({zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,...cam}),avatar,following:()=>display.follow,follow:on=>toggleFollow(on)};
+ document.body.classList.add('agent-world-city-ready');buildRoads();seedAmbient();syncDemoControls();syncHud();syncEventFeed();resize();start();bootstrap()
 }
 function seedAmbient(){traffic=[{x:2*T,y:13.5*T,v:28,axis:'x',dir:1,color:'#6aaeff'},{x:36*T,y:14.5*T,v:23,axis:'x',dir:-1,color:'#ffc56b'},{x:25.5*T,y:3*T,v:20,axis:'y',dir:1,color:'#c18cff'},{x:13.5*T,y:21*T,v:18,axis:'y',dir:-1,color:'#75dfa2'}];clouds=[{x:160,y:80,s:1.1},{x:880,y:130,s:.8},{x:560,y:40,s:.6}]}
 function update(dt,ts){
- if(display.follow&&!drag&&!pointers.size){const a=[...agents.values()].find(q=>q.state==='running');if(a){view.targetZoom=Math.max(view.targetZoom,1.7);view.targetPanX=W/2-a.x*view.targetZoom;view.targetPanY=H/2-a.y*view.targetZoom;limitTargetPan()}}
+ if(display.follow&&!drag&&!pointers.size){const a=[...agents.values()].find(q=>q.state==='running');if(a){view.targetZoom=Math.max(view.targetZoom,1.7);view.targetPanX=cam.w/2-a.x*sc(view.targetZoom);view.targetPanY=cam.h/2-a.y*sc(view.targetZoom);limitTargetPan()}}
  view.zoom+= (view.targetZoom-view.zoom)*Math.min(1,dt*10);view.panX+=(view.targetPanX-view.panX)*Math.min(1,dt*10);view.panY+=(view.targetPanY-view.panY)*Math.min(1,dt*10);
  for(const a of agents.values()){
   const moving=workerIsMoving(a),running=a.state==='running'&&moving;
@@ -1352,7 +1443,16 @@ function update(dt,ts){
 function px(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h))}
 function pathPoly(points,fill){ctx.fillStyle=fill;ctx.beginPath();ctx.moveTo(points[0][0],points[0][1]);for(let i=1;i<points.length;i++)ctx.lineTo(points[i][0],points[i][1]);ctx.closePath();ctx.fill()}
 function txt(t,x,y,c='#d9e7f4',size=11,align='center'){ctx.fillStyle=c;ctx.font='800 '+size+'px ui-monospace,monospace';ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillText(t,x,y)}
+const TREES=[[2,2],[3,3],[37,3],[38,4],[2,22],[38,22],[9,2],[30,2],[9,25],[30,25],[11,6],[28,6],[11,20],[28,20]];
+// The static ground is cached at 1× or 2× the world's size (2× once the city is drawn bigger than 1.2 device pixels
+// per world pixel) and copied each frame: nearest-neighbour when enlarged, so the pixel art stays crisp.
 function drawGround(ts){
+ const q=sc(view.zoom)*cam.dpr>1.2?2:1,k=q+(display.night?'n':'d');
+ if(groundKey!==k){const c=groundCache||document.createElement('canvas'),g=(c.width=W*q,c.height=H*q,c.getContext('2d'));if(g){const prev=ctx;ctx=g;ctx.setTransform(q,0,0,q,0,0);drawGroundStatic();ctx=prev;groundCache=c;groundKey=k}}
+ if(groundKey===k){ctx.imageSmoothingEnabled=sc(view.zoom)*cam.dpr<q;ctx.drawImage(groundCache,0,0,W,H);ctx.imageSmoothingEnabled=false}else drawGroundStatic();
+ for(const[x,y]of TREES)drawTree(x*T+T/2,y*T+T/2,ts)
+}
+function drawGroundStatic(){
  px(0,0,W,H,display.night?'#07121b':'#0d2220');
  for(let y=0;y<H;y+=T)for(let x=0;x<W;x+=T){const n=((x/T*13+y/T*7)%11);px(x,y,T,T,display.night?(n<4?'#0b211f':'#0e2822'):(n<3?'#17382b':n<7?'#1a422f':'#1d4933'));if(n===0){px(x+6,y+8,3,3,'#2d6548');px(x+22,y+20,2,2,'#2a5c43')}}
  // water / edge
@@ -1366,8 +1466,6 @@ function drawGround(ts){
  for(const [tx,ty,vert] of [[13,9,false],[25,9,false],[13,23,false],[25,23,false],[13,13,true],[25,13,true]])for(let i=0;i<5;i++)px(tx*T+(vert?8+i*4:5+i*5),ty*T+(vert?5+i*5:8),vert?2:3,vert?3:2,'#98a3ab');
  // plaza + paths
  px(16*T,11*T,9*T,5*T,display.night?'#3f443f':'#746f59');for(let i=0;i<18;i++)px(16*T+(i%6)*T/1.5+9,11*T+Math.floor(i/6)*T/1.5+10,4,4,display.night?'#545a54':'#999078');
- // trees
- for(const [x,y] of [[2,2],[3,3],[37,3],[38,4],[2,22],[38,22],[9,2],[30,2],[9,25],[30,25],[11,6],[28,6],[11,20],[28,20]])drawTree(x*T+T/2,y*T+T/2,ts);
 }
 function drawTree(x,y,ts){px(x-2,y+3,4,9,'#4d3522');const sway=Math.sin(ts/700+x*.02)*1.2;ctx.fillStyle=display.night?'#13402c':'#22663c';ctx.beginPath();ctx.arc(x+sway,y,9,0,Math.PI*2);ctx.fill();ctx.fillStyle=display.night?'#195037':'#2d8050';ctx.beginPath();ctx.arc(x-3+sway,y-3,6,0,Math.PI*2);ctx.fill()}
 function drawDistrictScene(id,d,ts){
@@ -1733,12 +1831,12 @@ function drawClouds(ts){if(display.night)return;ctx.save();ctx.globalAlpha=.08;f
 }
 
 function drawMinimap(){
- const el=$('#awcMinimap',root);if(!el)return;
+ const el=$('#awcMinimap');if(!el)return;
  const markers=Object.entries(DISTRICTS).map(([id,d])=>`<i style="left:${((d.x+d.w/2)*T/W)*100}%;top:${((d.y+d.h/2)*T/H)*100}%;--c:${d.accent}" title="${esc(d.name)}"></i>`).join('');
  el.innerHTML='<span></span>'+markers;
 }
 function draw(ts){
- ctx.clearRect(0,0,W,H);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(view.zoom,view.zoom);drawGround(ts);drawFlows(ts);drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,ts);drawBuilding(id,d,ts);drawInterior(id,d,ts);drawWorksite(id,d,ts)}drawAgents(ts);drawCommandCelebration(ts);drawClouds(ts);if(display.night){ctx.fillStyle='rgba(3,7,14,.18)';ctx.fillRect(0,0,W,H)}ctx.restore()
+ if(!ctx||!cam.w)return;const s=sc(view.zoom);ctx.setTransform(cam.dpr,0,0,cam.dpr,0,0);ctx.clearRect(0,0,cam.w,cam.h);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(s,s);drawGround(ts);drawFlows(ts);drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,ts);drawBuilding(id,d,ts);drawInterior(id,d,ts);drawWorksite(id,d,ts)}drawAgents(ts);drawCommandCelebration(ts);drawClouds(ts);if(display.night){ctx.fillStyle='rgba(3,7,14,.18)';ctx.fillRect(0,0,W,H)}ctx.restore()
 }
 // Animate only while the city canvas is on screen and the tab is visible; at most one rAF chain.
 let io=null,observed=null,onScreen=!('IntersectionObserver' in window);
@@ -1755,7 +1853,7 @@ let unsubscribeSSE=null;
 // On every (re)open, catch up on the mission that ran while Missions was off screen.
 async function refreshLiveMission(){try{const r=await fetch('/api/agents/missions'),j=await r.json(),items=j.items||j.missions||[],m=items.find(x=>x.status==='running')||items[0];if(m)applyMission(m)}catch{}}
 function connectSSE(){if(unsubscribeSSE)return;try{unsubscribeSSE=missionStream.subscribe(m=>{liveSnapshot=normalizeMission(m);applyMission(m)},null,refreshLiveMission)}catch{}}
-document.addEventListener('localai:engineering-run',e=>applyEngineering(e.detail?.run||e.detail));window.addEventListener('localai:agentworld-replay-mission',e=>{const m=e.detail?.mission;if(m){loadMissionReplay(m);if((m.timeline||[]).length>1)applyReplayFrame(0)}});
+document.addEventListener('localai:engineering-run',e=>applyEngineering(e.detail?.run||e.detail));window.addEventListener('localai:agentworld-mission',e=>{if(e.detail?.mission&&!replay.active)applyMission(e.detail.mission)});window.addEventListener('localai:agentworld-replay-mission',e=>{const m=e.detail?.mission;if(m){loadMissionReplay(m);if((m.timeline||[]).length>1){applyReplayFrame(0);if(e.detail.play&&!replay.playing)toggleReplay()}}});
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{mount();drawMinimap()},{once:true});else{mount();drawMinimap()}
 })();
 

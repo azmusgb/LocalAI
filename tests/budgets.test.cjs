@@ -12,7 +12,9 @@ const zlib = require('node:zlib');
 
 const pub = path.join(__dirname, '..', 'app', 'public');
 const KB = 1024;
-const TOTAL = 220 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// 2026-10-17: +10 KB for the Agent World redesign while its old panels and new ones overlap (agent-world-words.js, the
+// phone sheet, crew rows); the last Agent World PR removes the old panels and brings this back down.
+const TOTAL = 230 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 const PER_FILE = { 'ui.js': 92 * KB, 'app.css': 39 * KB, 'app.js': 35 * KB, 'index.html': 13 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
