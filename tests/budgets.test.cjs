@@ -17,7 +17,8 @@ const KB = 1024;
 // 2026-10-17: +7 KB (and app.css +2 KB) for the Spreadsheets workbook view: grid, edit review, history and modes.
 // spreadsheets.js is loaded with the shell; if the router ever loads page scripts on demand it should move there.
 const TOTAL = 237 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
-const PER_FILE = { 'ui.js': 92 * KB, 'app.css': 41 * KB, 'app.js': 35 * KB, 'index.html': 13 * KB };
+// 2026-10-17: ui.js +1 KB for the ArtCraft card on Services (live status and its Open button).
+const PER_FILE = { 'ui.js': 93 * KB, 'app.css': 41 * KB, 'app.js': 35 * KB, 'index.html': 13 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
