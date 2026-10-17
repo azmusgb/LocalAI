@@ -12,8 +12,8 @@ const zlib = require('node:zlib');
 
 const pub = path.join(__dirname, '..', 'app', 'public');
 const KB = 1024;
-// 2026-10-17: +10 KB for the Agent World redesign while its old panels and new ones overlap (agent-world-words.js, the
-// phone sheet, crew rows); the last Agent World PR removes the old panels and brings this back down.
+// 2026-10-17: +10 KB for the Agent World redesign (agent-world-words.js, the phone sheet, crew rows, story, worker card,
+// start sheet); its last PR removed the old panels (form, timeline, inspector, history, tabs, side panels): 237 -> 236 KB.
 // 2026-10-17: +7 KB (and app.css +2 KB) for the Spreadsheets workbook view: grid, edit review, history and modes.
 // spreadsheets.js is loaded with the shell; if the router ever loads page scripts on demand it should move there.
 const TOTAL = 237 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page

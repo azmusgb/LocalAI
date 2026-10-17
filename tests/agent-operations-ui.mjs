@@ -102,11 +102,9 @@ await check('the story and the worker card replace the timeline and inspector',a
   assert.equal(await page.locator('#agentInspector').isVisible(),false,'the worker card opens only for a chosen worker');
   assert.equal(await page.locator('#missionExecution').isVisible(),false);
 });
-await check('results tabs are interactive',async()=>{
-  await page.locator('[data-agent-result-tab="evidence"]').click();
-  assert.ok((await page.locator('[data-agent-result-tab="evidence"]').getAttribute('class')||'').includes('active'));
-  await page.locator('[data-agent-result-tab="routing"]').click();
-  assert.ok((await page.locator('[data-agent-result-tab="routing"]').getAttribute('class')||'').includes('active'));
+await check('the result reads Summary, What each worker found, Sources',async()=>{
+  await page.locator('#agentResultBody').waitFor({state:'attached'});
+  assert.equal(await page.locator('[data-agent-result-tab]').count(),0,'no tabs');
 });
 await check('mission history exists',async()=>{await page.locator('#agentMissionHistory').waitFor({state:'visible'})});
 await check('inline error replaces alert workflow',async()=>{
@@ -135,17 +133,13 @@ await check('the web-search choice reaches the mission request',async()=>{
    assert.equal(bodies[1].webSearch,undefined);
   }finally{await page.unroute(isDispatch);await page.unroute(isStart);await page.locator('#agentGoal').fill('');await page.keyboard.press('Escape')}
 });
-await check('interactive demo controls',async()=>{
-  await page.locator('#awcDemoPlay').click();
+await check('the demo runs and stops from its chip',async()=>{
+  await page.evaluate(()=>window.LocalAIAgentWorld.demo());
   assert.equal(await page.locator('.awc-v3').getAttribute('data-source'),'demo');
-  await page.locator('#awcDemoStep').click();
-  await page.locator('#awcDemoSpeed').click();
-  assert.equal(await page.locator('#awcDemoSpeed').innerText(),'2×');
-  await page.locator('#awcDemoScenario').selectOption('failure');
-  await page.locator('#awcDemoStep').click();
-  await page.locator('#awcDemoStep').click();
-  assert.match(await page.locator('#awSheetStatus').textContent(),/Needs you|Working/);
+  await page.evaluate(()=>{window.LocalAIAgentWorld.demoStep();window.LocalAIAgentWorld.demoStep()});
+  assert.match(await page.locator('#awSheetStatus').textContent(),/Working|Needs you|Done/);
   await page.locator('#awcLiveBtn').click();
+  await page.locator('#awcLiveBtn').waitFor({state:'hidden'});
 });
 await check('desktop zoom controls',async()=>{
   await page.locator('#awcZoomIn').click();
@@ -153,41 +147,21 @@ await check('desktop zoom controls',async()=>{
   await page.locator('#awMoreBtn').click();await page.locator('#awMenu [data-aw-view="fit"]').click();
   assert.equal(await page.locator('#awcZoomLabel').innerText(),'100%');
 });
-await check('Living Worksite replay controls are interactive',async()=>{
-  await page.locator('#awcReplayPlay').waitFor({state:'visible'});
-  await page.locator('#awcReplayRange').waitFor({state:'visible'});
-  await page.locator('#awcDemoPlay').click();
-  await page.locator('#awcDemoStep').click();
-  await page.locator('#awcDemoStep').click();
-  const max=Number(await page.locator('#awcReplayRange').getAttribute('max'));
-  assert.ok(max>=1,'demo should create replay checkpoints');
-  await page.locator('#awcReplayPlay').click();
-  assert.match(await page.locator('#awcReplayLabel').innerText(),/Replay/i);
-  await page.locator('#awcReplayLive').click();
-  await page.locator('#awcLiveBtn').click();
-});
-await check('Replay supports event stepping, speed, and historical mission timelines',async()=>{
-  await page.locator('#awcReplayPrev').waitFor({state:'visible'});
-  await page.locator('#awcReplayNext').waitFor({state:'visible'});
-  await page.locator('#awcReplaySpeed').click();
-  assert.equal(await page.locator('#awcReplaySpeed').innerText(),'2×');
-  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:{id:'history-test',goal:'Historical test',status:'complete',workers:[{id:'router',name:'Mission Router',state:'complete',dependsOn:[]},{id:'ux_analyst',name:'UX Analyst',state:'complete',dependsOn:['router']}],timeline:[{at:new Date(Date.now()-1000).toISOString(),type:'mission-start',detail:'Started',status:'running',workerId:'router',workers:[{id:'router',name:'Mission Router',state:'complete',dependsOn:[]},{id:'ux_analyst',name:'UX Analyst',state:'pending',dependsOn:['router']}]},{at:new Date().toISOString(),type:'mission-complete',detail:'Finished',status:'complete',workerId:'ux_analyst',workers:[{id:'router',name:'Mission Router',state:'complete',dependsOn:[]},{id:'ux_analyst',name:'UX Analyst',state:'complete',dependsOn:['router']}]}]}}})));
-  await page.waitForTimeout(100);
+await check('Replay: one scrubber with markers, Play, and a historical mission timeline',async()=>{
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:{id:'history-test',goal:'Historical test',status:'complete',workers:[{id:'router',name:'Mission Router',state:'complete',dependsOn:[]},{id:'ux_analyst',name:'UX Analyst',state:'complete',dependsOn:['router']}],timeline:[{at:new Date(Date.now()-1000).toISOString(),type:'mission-start',detail:'Started',status:'running',workerId:'router',workers:[{id:'router',name:'Mission Router',state:'complete'},{id:'ux_analyst',name:'UX Analyst',state:'running'}]},{at:new Date().toISOString(),type:'mission-complete',detail:'Done',status:'complete',workerId:'ux_analyst',workers:[{id:'router',name:'Mission Router',state:'complete'},{id:'ux_analyst',name:'UX Analyst',state:'complete'}]}]}}})));
+  await page.locator('#awcScrub').waitFor({state:'visible'});
   assert.equal(await page.locator('#awcReplayMarkers button').count(),2);
-  await page.locator('#awcReplayNext').click();
-  assert.match(await page.locator('#awcReplayLabel').innerText(),/Replay 2 \/ 2/i);
-  await page.locator('#awcReplayLive').click();
-});
-await check('Operational Agent World exposes durable observability semantics',async()=>{
-  await page.locator('#awcDemoPlay').click();
-  await page.locator('#awcDemoStep').click();
-  await page.locator('#awcDemoStep').click();
+  await page.locator('#awcReplayMarkers button').nth(1).click();
+  assert.match(await page.locator('#awcReplayLabel').innerText(),/Step 2 of 2/);
+  await page.locator('#awMoreBtn').click();await page.locator('#awMenu [data-aw-view="speed"]').click();
+  assert.match(await page.locator('#awMenu [data-aw-view="speed"]').innerText(),/2×/);
+  await page.keyboard.press('Escape');
   const stored=await page.evaluate(()=>{const v=JSON.parse(localStorage.getItem('localai.agentworld.replay.v2')||'null');return v?.frames?.length||0});
-  assert.ok(stored>=2,'replay events should persist locally');
-  await page.locator('#awcLiveBtn').click();
+  assert.ok(stored>=2,'replay steps persist locally');
+  await page.locator('#awcReplayLive').click();
 });
 await check('Agent World running-worker controls remain interactive',async()=>{
-  await page.locator('#awcDemoPlay').click();
+  await page.evaluate(()=>window.LocalAIAgentWorld.demo());
   await page.waitForTimeout(250);
   assert.match(await page.locator('#awSheetStatus').textContent(),/Starting|Working|Done/);
   const beforeFollow=await page.locator('#awcFollow').getAttribute('aria-pressed');
@@ -198,34 +172,32 @@ await check('Agent World running-worker controls remain interactive',async()=>{
   await page.locator('#awcLiveBtn').click();
 });
 await check('Agent World keeps same-district workers separated',async()=>{
-  await page.locator('#awcDemoPlay').click();
+  await page.evaluate(()=>window.LocalAIAgentWorld.demo());
   await page.waitForTimeout(200);
   const rosterCount=await page.locator('#awcRoster .awc__rosterItem').count();
   assert.ok(rosterCount>=4);
   await page.locator('#awcLiveBtn').click();
 });
 await check('Agent World crew have portraits',async()=>{
-  await page.locator('#awcDemoPlay').click();
+  await page.evaluate(()=>window.LocalAIAgentWorld.demo());
   await page.waitForTimeout(150);
   assert.ok(await page.locator('#awcRoster .awc__avatar').count()>=4);
   await page.locator('#awcLiveBtn').click();
 });
 await check('Agent World worker identities render in roster',async()=>{
-  await page.locator('#awcDemoPlay').click();
+  await page.evaluate(()=>window.LocalAIAgentWorld.demo());
   await page.waitForTimeout(150);
   assert.ok(await page.locator('#awcRoster .awc__avatar').count()>=4);
   assert.match(await page.locator('#awcRoster').innerText(),/UX Analyst/i);
   await page.locator('#awcLiveBtn').click();
 });
-await check('Agent World v3 HUD and simulation controls',async()=>{
+await check('Agent World HUD: minimap, night and flows through ⋯ › View',async()=>{
   await page.locator('#awcRoster').waitFor({state:'visible'});
   await page.locator('#awcMinimap').waitFor({state:'visible'});
   await page.locator('#awMoreBtn').click();await page.locator('#awMenu [data-aw-view="night"]').click();
   assert.equal(await page.locator('#awMenu [data-aw-view="night"]').getAttribute('aria-checked'),'true');
-  await page.locator('#awMenu [data-aw-view="night"]').click();await page.keyboard.press('Escape');
-  await page.locator('[data-awc-district="ux"]').click();
-  assert.match(await page.locator('#awcSelection').textContent(),/UX Lab/i);
-  await page.locator('#awMoreBtn').click();await page.locator('#awMenu [data-aw-view="flows"]').click();
+  await page.locator('#awMenu [data-aw-view="night"]').click();
+  await page.locator('#awMenu [data-aw-view="flows"]').click();
   assert.equal(await page.locator('#awMenu [data-aw-view="flows"]').getAttribute('aria-checked'),'false');
   await page.locator('#awMenu [data-aw-view="flows"]').click();await page.keyboard.press('Escape');
 });
@@ -270,13 +242,10 @@ await check('mobile pinch zoom changes world scale',async()=>{
   await c.dispatchEvent('pointerup',{pointerId:1,pointerType:'touch',clientX:cx-30,clientY:cy,bubbles:true});
   assert.notEqual(await mobile.locator('#awcZoomLabel').innerText(),'100%');
 });
-await check('mobile demo remains user-controlled',async()=>{
-  await mobile.locator('#awSheetHandle').click();await mobile.locator('#awSheetHandle').click();
-  await mobile.waitForFunction(()=>document.getElementById('awSheet').dataset.snap==='full');
-  await mobile.locator('#awcDemoPlay').scrollIntoViewIfNeeded();
-  await mobile.locator('#awcDemoPlay').click();
-  await mobile.locator('#awcDemoStep').click();
+await check('mobile demo is a tap away and stops from its chip',async()=>{
+  await mobile.evaluate(()=>window.LocalAIAgentWorld.demo());
   assert.equal(await mobile.locator('.awc-v3').getAttribute('data-source'),'demo');
+  await mobile.locator('#awcLiveBtn').click();
 });
 await mobile.close();
 await check('the mission strip and Agent World show the same mission while the specialist catalog is slow',async()=>{

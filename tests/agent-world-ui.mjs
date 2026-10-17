@@ -236,7 +236,7 @@ async function withMission(contextOpts, mission) {
     await page.locator('#awMoreBtn').click();
     const menu = page.locator('#awMenu');
     await menu.waitFor({ state: 'visible' });
-    assert.deepEqual(await menu.locator('[data-aw-menu]').allInnerTexts(), ['Start a new mission', 'Watch the replay', 'Open in Work', 'Copy result', 'All missions']);
+    assert.deepEqual(await menu.locator('[data-aw-menu]:visible').allInnerTexts(), ['Start a new mission', 'Watch the replay', 'Open in Work', 'Copy result', 'All missions']);
     await page.keyboard.press('ArrowDown');
     assert.equal(await page.evaluate(() => document.activeElement.dataset.awMenu), 'replay');
     await page.keyboard.press('Escape');
@@ -396,7 +396,7 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
     assert.equal(await page.getByText(/Artifacts?/).count(), 0, 'no “Artifacts”');
     await (label === '1440px' ? page.locator('#awMoreBtn') : page.locator('#uxHeaderAction')).click();
     const view = page.locator('#awMenu [data-aw-view]');
-    assert.deepEqual(await view.allInnerTexts(), ['Labels', 'Flows', 'Night', 'Full screen', 'Fit the city']);
+    assert.deepEqual(await view.allInnerTexts(), ['Labels', 'Flows', 'Night', 'Full screen', 'Fit the city', 'Replay speed: 1×']);
     await page.locator('#awMenu [data-aw-view="night"]').click();
     assert.equal(await page.evaluate(() => window.LocalAIAgentWorld.display().night), true);
   });
@@ -430,6 +430,77 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
     assert.equal((await page.evaluate(() => window.LocalAIAgentWorld.moments())).fireworks, false);
   });
   await check('reduced motion: no script errors', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+
+// Results and replay (design PR 5): Summary, What each worker found, Sources; one scrubber; owner words only.
+const DONE2 = { ...DONE, id: 'mission-ui-done2', timeline: FAILED.timeline.slice(0, 3).concat([{ at: t(240), type: 'mission-complete', status: 'complete', workers: snapW('complete', 'complete') }]),
+  results: [{ agentId: 'ux_analyst', agentName: 'UX Analyst', status: 'complete', answer: 'Three things to fix on the phone screens.', evidenceRecords: [{ title: 'Apple guidelines', source: 'https://developer.apple.com/design/' }, { title: 'App review notes', source: 'knowledge:doc-1#chunk-0' }] }] };
+const DEV_WORDS = /Synthesis|Evidence|Routing|Mission Router|Capability|Grounding|Fallback|Simulation|Artifact|Inspector|Worker outputs/i;
+{
+  const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, DONE2);
+  await check('1440px: results read Summary, What each worker found, Sources', async () => {
+    const box = page.locator('#agentResultBody');
+    assert.deepEqual(await box.locator('h3').allInnerTexts(), ['Summary', 'What each worker found', 'Sources']);
+    assert.match(await box.innerText(), /The summary of what the team found\./);
+    const worker = box.locator('details', { hasText: 'UX Analyst' });
+    await worker.locator('summary').click();
+    assert.match(await worker.innerText(), /Three things to fix on the phone screens\./);
+    assert.equal(await box.locator('a[href="https://developer.apple.com/design/"]').innerText(), 'Apple guidelines');
+    assert.match(await box.innerText(), /App review notes/);
+  });
+  await check('1440px: one replay scrubber under the city, with event markers and Play', async () => {
+    const scrub = page.locator('#awcScrub');
+    await scrub.waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#awcReplayMarkers button').count(), 4);
+    for (const gone of ['#awcReplayPrev', '#awcReplayNext', '#awcDemoPlay', '#awcDemoScenario']) assert.equal(await page.locator(gone).count(), 0, gone);
+    await page.locator('#awcReplayPlay').click();
+    assert.equal(await page.locator('#awcReplayPlay').getAttribute('aria-label'), 'Pause the replay');
+    await page.locator('#awcReplayPlay').click();
+    const city = await page.locator('.awc__mapWrap').boundingBox(), s = await scrub.boundingBox();
+    assert.ok(s.y >= city.y + city.height - 1, 'under the city');
+  });
+  await check('1440px: replay speed is in ⋯ › View; the demo only with developer tools', async () => {
+    await page.locator('#awMoreBtn').click();
+    await page.locator('#awMenu [data-aw-view="speed"]').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#awMenu [data-aw-menu="demo"]').isVisible(), false);
+    await page.keyboard.press('Escape');
+  });
+  await check('1440px: no developer words on the page with developer tools off', async () => {
+    const text = await page.locator('#agents').innerText();
+    assert.doesNotMatch(text, DEV_WORDS);
+  });
+  await check('1440px: with developer tools on, Routing and the demo appear', async () => {
+    await page.evaluate(() => document.body.classList.remove('dev-tools-off'));
+    await page.locator('#agentResultBody details', { hasText: 'Routing' }).waitFor({ state: 'visible' });
+    await page.locator('#awMoreBtn').click();
+    await page.locator('#awMenu [data-aw-menu="demo"]').click();
+    await page.locator('#awcLiveBtn').waitFor({ state: 'visible' });
+    await page.locator('#awcLiveBtn').click();
+    await page.locator('#awcLiveBtn').waitFor({ state: 'hidden' });
+    await page.evaluate(() => document.body.classList.add('dev-tools-off'));
+  });
+  await check('1440px: no script errors (results)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+{
+  const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, FAILED);
+  await check('1440px: no summary says why', async () => {
+    assert.match(await page.locator('#agentResultBody').innerText(), /No summary: the Coordinator couldn’t start because UX Analyst stopped\./);
+  });
+  await check('1440px: no script errors (no summary)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+{
+  const { defaultBrowserType, ...device } = devices['iPhone 14'];
+  const { context, page, errors } = await withMission(device, DONE2);
+  await check('iPhone 14: See the result raises the sheet to the summary', async () => {
+    await page.locator('#awPeekAction').click();
+    await page.waitForFunction(() => document.getElementById('awSheet').dataset.snap === 'full');
+    await page.locator('#agentResultBody h3', { hasText: 'Summary' }).waitFor({ state: 'visible' });
+    await page.locator('#awcScrub').waitFor({ state: 'attached' });
+  });
+  await check('iPhone 14: no script errors (results)', async () => assert.deepEqual(errors, []));
   await context.close();
 }
 

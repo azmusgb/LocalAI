@@ -139,3 +139,11 @@ test('a worker’s change is one sentence (the city’s floating notes)', () => 
   assert.equal(words.changeSentence(m.workers[2], m), 'Coordinator couldn’t start: UX Analyst stopped');
   assert.equal(words.changeSentence(ux({ state: 'pending' }), m), '');
 });
+
+test('without a summary, the page says why', () => {
+  const stopped = mission({ status: 'needs_attention', workers: [router(), ux({ state: 'error' }), coord({ state: 'blocked' })] });
+  assert.equal(words.summaryWhy(stopped), 'No summary: the Coordinator couldn’t start because UX Analyst stopped.');
+  assert.equal(words.summaryWhy(mission({ workers: [router(), ux({ state: 'running' }), coord()] })), 'No summary yet: the team is still working.');
+  assert.equal(words.summaryWhy(mission({ status: 'complete', workers: [router(), ux({ state: 'complete' }), coord({ state: 'complete' })] })), 'No summary: the Coordinator didn’t write one.');
+  assert.equal(words.summaryWhy(mission({ status: 'needs_attention', workers: [router(), ux({ state: 'complete' }), coord({ state: 'error' })] })), 'No summary: the Coordinator stopped before finishing.');
+});
