@@ -236,7 +236,7 @@ async function withMission(contextOpts, mission) {
     await page.locator('#awMoreBtn').click();
     const menu = page.locator('#awMenu');
     await menu.waitFor({ state: 'visible' });
-    assert.deepEqual(await menu.locator('[role=menuitem]').allInnerTexts(), ['Start a new mission', 'Watch the replay', 'Open in Work', 'Copy result', 'All missions']);
+    assert.deepEqual(await menu.locator('[data-aw-menu]').allInnerTexts(), ['Start a new mission', 'Watch the replay', 'Open in Work', 'Copy result', 'All missions']);
     await page.keyboard.press('ArrowDown');
     assert.equal(await page.evaluate(() => document.activeElement.dataset.awMenu), 'replay');
     await page.keyboard.press('Escape');
@@ -367,6 +367,69 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
     await page.keyboard.press('Escape');
   });
   await check('1440px: no script errors (fly)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+
+// The city's behaviour (design PR 4): follow by default, three controls (the rest in ⋯ › View), floating notes,
+// moments (flag, warning sign, fireworks) and the reduced-motion path.
+const RUN = () => ({ id: 'mission-ui-run', goal: 'Watch the team', status: 'running', createdAt: new Date(Date.now() - 60e3).toISOString(), updatedAt: new Date().toISOString(),
+  workers: [{ id: 'router', name: 'Mission Router', state: 'complete', dependsOn: [] }, { id: 'ux_analyst', name: 'UX Analyst', state: 'running', dependsOn: ['router'] }, { id: 'synthesis', name: 'Coordinator', state: 'pending', dependsOn: ['ux_analyst'] }], results: [], timeline: [] });
+const push = (page, m) => page.evaluate(m => window.dispatchEvent(new CustomEvent('localai:agentworld-mission', { detail: { mission: m } })), m);
+for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 } }], ['iPhone 14', (({ defaultBrowserType, ...d }) => d)(devices['iPhone 14'])]]) {
+  const { context, page, errors } = await withMission(opts, RUN());
+  await check(`${label}: the camera follows the action by default; moving it pauses Follow, the button resumes`, async () => {
+    await page.waitForFunction(() => window.LocalAIAgentWorld.following());
+    assert.equal(await page.locator('#awcFollow').getAttribute('aria-pressed'), 'true');
+    await page.waitForFunction(() => window.LocalAIAgentWorld.camera().zoom > 1.2, null, { timeout: 5000 });
+    const c = page.locator('#awcCanvas'), b = await c.boundingBox(), x = b.x + b.width / 2, y = b.y + b.height / 3;
+    await c.dispatchEvent('pointerdown', { pointerId: 3, pointerType: 'touch', clientX: x, clientY: y, isPrimary: true });
+    await c.dispatchEvent('pointermove', { pointerId: 3, pointerType: 'touch', clientX: x + 60, clientY: y + 20, isPrimary: true });
+    await c.dispatchEvent('pointerup', { pointerId: 3, pointerType: 'touch', clientX: x + 60, clientY: y + 20, isPrimary: true });
+    assert.equal(await page.evaluate(() => window.LocalAIAgentWorld.following()), false);
+    assert.equal(await page.locator('#awcFollow').getAttribute('aria-pressed'), 'false');
+    await page.locator('#awcFollow').click();
+    assert.equal(await page.evaluate(() => window.LocalAIAgentWorld.following()), true);
+  });
+  await check(`${label}: three controls over the city; the rest is in ⋯ › View`, async () => {
+    assert.deepEqual(await page.locator('.awc__controls button:visible').evaluateAll(b => b.map(x => x.id)), ['awcZoomOut', 'awcZoomIn', 'awcFollow']);
+    assert.equal(await page.locator('.awc__commandbar').count(), 0);
+    assert.equal(await page.getByText(/Artifacts?/).count(), 0, 'no “Artifacts”');
+    await (label === '1440px' ? page.locator('#awMoreBtn') : page.locator('#uxHeaderAction')).click();
+    const view = page.locator('#awMenu [data-aw-view]');
+    assert.deepEqual(await view.allInnerTexts(), ['Labels', 'Flows', 'Night', 'Full screen', 'Fit the city']);
+    await page.locator('#awMenu [data-aw-view="night"]').click();
+    assert.equal(await page.evaluate(() => window.LocalAIAgentWorld.display().night), true);
+  });
+  await check(`${label}: changes float over the city as short notes, at most three`, async () => {
+    const m = RUN(); m.workers[1].state = 'complete'; m.workers[2].state = 'running';
+    await push(page, m);
+    await page.locator('#awcToasts li', { hasText: 'UX Analyst finished' }).waitFor();
+    await page.locator('#awcToasts li', { hasText: 'Coordinator started putting the findings together' }).waitFor();
+    for (const s of ['complete', 'error']) { const n = RUN(); n.workers[2].state = s; n.workers[1].state = 'complete'; await push(page, n); }
+    assert.ok(await page.locator('#awcToasts li').count() <= 3);
+  });
+  await check(`${label}: moments: a flag for a finished worker, a warning sign for a stopped one, fireworks when done`, async () => {
+    const bad = RUN(); bad.workers[1].state = 'error'; bad.status = 'needs_attention'; await push(page, bad);
+    assert.ok((await page.evaluate(() => window.LocalAIAgentWorld.moments())).warnings.includes('ux_analyst'));
+    const done = RUN(); done.status = 'complete'; done.workers.forEach(w => { w.state = 'complete'; }); await push(page, done);
+    const mo = await page.evaluate(() => window.LocalAIAgentWorld.moments());
+    assert.ok(mo.flags.includes('ux_analyst') && mo.fireworks, JSON.stringify(mo));
+  });
+  await check(`${label}: no script errors (city)`, async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+{
+  const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' }, RUN());
+  await check('reduced motion: the camera jumps, workers don’t walk, no fireworks', async () => {
+    await page.locator('#awcRoster [data-awc-roster="ux_analyst"]').click();
+    await page.waitForTimeout(80);
+    const c = await page.evaluate(() => window.LocalAIAgentWorld.camera());
+    assert.equal(c.shown.zoom, c.zoom, 'no easing');
+    assert.equal(await page.evaluate(() => window.LocalAIAgentWorld.walking()), 0);
+    const done = RUN(); done.status = 'complete'; done.workers.forEach(w => { w.state = 'complete'; }); await push(page, done);
+    assert.equal((await page.evaluate(() => window.LocalAIAgentWorld.moments())).fireworks, false);
+  });
+  await check('reduced motion: no script errors', async () => assert.deepEqual(errors, []));
   await context.close();
 }
 

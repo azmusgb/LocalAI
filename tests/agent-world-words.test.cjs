@@ -130,3 +130,12 @@ test('the team preview says who will do what, in words', () => {
   assert.equal(words.teamPreview([]).text, '');
   assert.equal(words.teamPreview([{ agentId: 'research_agent', name: 'Research Agent' }]).text, 'A Research Agent will look things up and gather sources; a Coordinator will put everyone’s findings together.');
 });
+
+test('a worker’s change is one sentence (the city’s floating notes)', () => {
+  const m = mission({ workers: [router(), ux({ state: 'error' }), coord({ state: 'blocked' })] });
+  assert.equal(words.changeSentence(ux({ state: 'running' }), m), 'UX Analyst started reviewing the screens');
+  assert.equal(words.changeSentence(ux({ state: 'complete' }), m), 'UX Analyst finished');
+  assert.equal(words.changeSentence(ux({ state: 'error', errorCode: 'MODEL_TIMEOUT' }), m), 'UX Analyst stopped: the model took too long');
+  assert.equal(words.changeSentence(m.workers[2], m), 'Coordinator couldn’t start: UX Analyst stopped');
+  assert.equal(words.changeSentence(ux({ state: 'pending' }), m), '');
+});
