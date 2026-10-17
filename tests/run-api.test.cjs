@@ -422,12 +422,44 @@ test('a mission that cannot run ends its run failed with an error', { timeout: 1
   assert.equal(run.status, 'failed', JSON.stringify(run));
   assert.ok(run.error);
 });
-test('mission start without async still answers with the mission', { timeout: 60000 }, async t => {
+// Agent World starts missions without async and waits for the mission; it still gets a ledger run, so Work › Missions lists it.
+test('mission start without async answers with the mission and lists it in Work › Missions', { timeout: 60000 }, async t => {
   const { request } = await startServer(t);
   const a = await request('/api/agents/missions/start', { goal: 'Review the product quality', agentIds: ['code_analyst'] });
-  assert.equal(a.response.status, 200);
+  assert.equal(a.response.status, 200, JSON.stringify(a.value));
   assert.equal(a.value.mission.status, 'complete');
-  assert.equal(a.value.runId, undefined);
+  assert.match(a.value.runId, /^run-/);
+  const missions = (await request('/api/runs?threads=1&kind=missions')).value.items;
+  assert.deepEqual(missions.map(x => x.id), [a.value.runId]);
+  const run = missions[0];
+  assert.equal(run.status, 'completed');
+  assert.equal(run.meta.missionId, a.value.mission.id);
+  assert.equal(run.title, 'Review the product quality');
+  assert.equal(run.card.view, 'agents', 'opening it goes to Agent World');
+});
+
+// Older missions wrote a `mission` ledger row plus a `specialist` row per worker; Work › Missions shows each mission once.
+const seedMissionPair = s => {
+  const { RunLedger } = require('../app/run-ledger');
+  const ledger = new RunLedger({ storage: s });
+  const solo = ledger.create({ type: 'specialist', title: 'Check the backups', meta: { sourceId: 'spec-solo' } });
+  ledger.complete(solo.id, { summary: 'Backups look fine' });
+  const mission = ledger.create({ type: 'mission', title: 'Audit the mobile layout', meta: { sourceId: 'mission-pair' } });
+  ledger.complete(mission.id, { summary: 'Done' });
+  const worker = ledger.create({ type: 'specialist', title: 'Audit the mobile layout', meta: { sourceId: 'spec-pair', missionId: 'mission-pair' } });
+  ledger.complete(worker.id, { summary: 'Worker done' });
+  seedMissionPair.ids = { solo: solo.id, mission: mission.id, worker: worker.id };
+};
+test('a legacy mission and its specialist list once; a standalone specialist still lists', { timeout: 60000 }, async t => {
+  const { request } = await startServer(t, {}, seedMissionPair);
+  const { solo, mission, worker } = seedMissionPair.ids;
+  const missions = (await request('/api/runs?threads=1&kind=missions')).value.items.map(x => x.id);
+  assert.deepEqual(missions, [mission, solo]);
+  const all = (await request('/api/runs')).value.items.map(x => x.id);
+  assert.ok(!all.includes(worker), 'the worker row folds into its mission everywhere');
+  const opened = await request('/api/runs?id=' + worker);
+  assert.equal(opened.response.status, 200, 'the worker run is kept and still opens by id');
+  assert.equal(opened.value.item.id, worker);
 });
 
 test('mission runs investigate with tools and can be cancelled', { timeout: 60000 }, async t => {

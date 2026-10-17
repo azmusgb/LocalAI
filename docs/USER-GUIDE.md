@@ -63,6 +63,9 @@ Tap a row to open it. A chat opens as the conversation, with a reply box at the 
 watch it live and cancel it; a failed run offers **Retry**. A run's header names its kind, and the project once you
 file it there (**Details › File…**).
 
+**Missions** is the history of every mission, however you started it, each listed once; tap one to open it in Agent
+World.
+
 ## Projects: what you keep
 
 The Projects tab opens on your projects. Its tabs:
