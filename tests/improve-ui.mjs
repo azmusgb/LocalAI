@@ -235,6 +235,73 @@ await check('a note for Claude is saved from a Backlog item', async () => {
   await page.waitForFunction(() => !document.getElementById('improveItemSheet').open);
 });
 
+// After an action on a Backlog item: focus comes back to that item's row (or the next one when it left the list), and
+// #toast (role=status) says what happened. The stub applies each action to ITEMS the way the server would.
+const APPLY = { moveToTop: () => {}, defer: it => { it.stage = 'aside'; it.status = 'deferred'; }, reject: it => { it.stage = 'aside'; it.status = 'rejected'; }, handToClaude: it => { it.handedToClaude = true; }, start: it => { it.stage = 'inProgress'; it.change = { id: 'chg-9', status: 'planned', summary: 's' }; } };
+async function itemAct(id, label, view = 'backlog') {
+  const saved = ITEMS.map(i => ({ ...i }));
+  const apply = async r => { const b = r.request().postDataJSON(); posts.push({ url: '/api/improve/item', body: b }); APPLY[b.action]?.(ITEMS.find(i => i.id === b.id)); await r.fulfill({ json: { item: {} } }); };
+  await page.route('**/api/improve/item', apply);
+  await page.evaluate(v => window.showView(v), view);
+  await page.evaluate(() => window.LocalAIImprove.refresh()); // the previous check put ITEMS back
+  await page.waitForSelector(`#${view}.active [data-item-id="${id}"]`);
+  await page.locator(`#${view}List [data-item-id="${id}"] .improve-row__open`).click();
+  const sheet = page.locator('#improveItemSheet');
+  await sheet.waitFor({ state: 'visible' });
+  await sheet.getByRole('button', { name: label, exact: true }).click();
+  await page.waitForFunction(() => !document.getElementById('improveItemSheet').open);
+  return async () => { await page.unroute('**/api/improve/item', apply); ITEMS.splice(0, ITEMS.length, ...saved); };
+}
+const focusIn = sel => page.waitForFunction(s => !!document.activeElement?.closest(s), sel, { timeout: 4000 }).then(() => true, () => false);
+const said = text => page.waitForFunction(t => document.getElementById('toast').textContent.includes(t), text, { timeout: 4000 }).then(() => true, () => false);
+
+await check('Move to top: focus returns to that item\'s row and "Moved to top" is announced', async () => {
+  const done = await itemAct('idea-sticky', 'Move to top');
+  try {
+    assert.equal(await focusIn('#backlogList [data-item-id="idea-sticky"]'), true, 'focus on the row, not ' + await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80)));
+    assert.equal(await said('Moved to top'), true, 'announced');
+  } finally { await done(); }
+});
+
+await check('Defer: the item leaves the Backlog, focus moves to the next row, and "Deferred" is announced', async () => {
+  const done = await itemAct('claude-top', 'Defer');
+  try {
+    await page.waitForFunction(() => !document.querySelector('#backlogList [data-item-id="claude-top"]'));
+    assert.equal(await focusIn('#backlogList [data-item-id="idea-sticky"]'), true, 'focus on the next row');
+    assert.equal(await said('Deferred'), true);
+  } finally { await done(); }
+});
+
+await check('Reject the last item: focus moves to the row before it, and "Rejected" is announced', async () => {
+  const done = await itemAct('signal-issue-1', 'Reject');
+  try {
+    await page.waitForFunction(() => !document.querySelector('#backlogList [data-item-id="signal-issue-1"]'));
+    assert.equal(await focusIn('#backlogList [data-item-id="idea-sticky"]'), true);
+    assert.equal(await said('Rejected'), true);
+  } finally { await done(); }
+});
+
+await check('Hand to Claude says what happens next, the badge appears and focus stays on the row', async () => {
+  const done = await itemAct('claude-top', 'Hand to Claude');
+  try {
+    assert.equal(await said('Claude will pick this up in its next session'), true);
+    await page.waitForFunction(() => /Handed to Claude/.test(document.querySelector('#backlogList [data-item-id="claude-top"]')?.textContent || ''));
+    assert.equal(await focusIn('#backlogList [data-item-id="claude-top"]'), true);
+  } finally { await done(); }
+});
+
+await check('Start from the Backlog lands on In progress with the item highlighted and focused', async () => {
+  const done = await itemAct('claude-top', 'Start');
+  try {
+    await page.waitForFunction(() => location.hash === '#inProgress' && document.querySelector('#inProgress.active'), null, { timeout: 4000 });
+    const row = page.locator('#inProgressList [data-item-id="claude-top"]');
+    await row.waitFor();
+    assert.equal(await focusIn('#inProgressList [data-item-id="claude-top"]'), true);
+    assert.match(await row.getAttribute('class'), /is-highlighted/);
+    assert.equal(await said('In progress'), true);
+  } finally { await done(); }
+});
+
 await check('the old pages land in Improve: #changes and #engineering on In progress, #issues and #quality on Signals', async () => {
   for (const [from, to] of [['changes', 'inProgress'], ['engineering', 'inProgress'], ['issues', 'signals'], ['quality', 'signals']]) {
     await page.evaluate(h => { location.hash = h; }, '#' + from);

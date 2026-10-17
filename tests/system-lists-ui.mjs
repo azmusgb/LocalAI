@@ -20,7 +20,7 @@ const open = async () => { await page.evaluate(() => window.showView('approvals'
 await check('Approvals: waiting items are listed; resolved ones sit in a closed "Resolved (2)" section', async () => {
   await open();
   await page.waitForSelector('#approvalList .approval-card.pending');
-  const top = await page.locator('#approvalList > .approval-card').evaluateAll(cs => cs.map(c => c.className));
+  const top = await page.locator('#approvalList > .approval-list > .approval-card').evaluateAll(cs => cs.map(c => c.className));
   assert.deepEqual(top, ['approval-card pending']);
   const resolved = page.locator('#approvalList details.approval-resolved');
   assert.match(await resolved.locator('summary').innerText(), /Resolved \(2\)/);

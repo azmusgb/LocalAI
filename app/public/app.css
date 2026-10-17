@@ -1893,3 +1893,11 @@ h1[tabindex="-1"]:focus,h1[tabindex="-1"]:focus-visible{outline:none}
 .inbox-approvals{width:100%;text-align:left;cursor:pointer;font:inherit;color:inherit}
 /* Health: a failed check sits above the last known services, not instead of them. */
 #serviceList .status-error{margin-bottom:10px}
+
+/* Feedback after actions (appended; nothing above edited). Approvals are a list of cards with an <h3> title;
+   an item just started from the Backlog is highlighted for a moment on In progress. */
+.approval-list{list-style:none;margin:0;padding:0;display:grid;gap:inherit}
+.approval-card .approval-title{margin:0;font-size:inherit;font-weight:700}
+.improve-row.is-highlighted{background:color-mix(in srgb,var(--ds-accent) 14%,transparent);transition:background .6s}
+@media(prefers-reduced-motion:reduce){.improve-row.is-highlighted{transition:none}}
+.approval-resolved>.approval-list{margin-top:8px;gap:8px}

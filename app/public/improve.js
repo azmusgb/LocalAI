@@ -151,18 +151,39 @@ async function changeAction(id,action,btn){
  if(action==='diff'){btn.disabled=true;try{showDiff((await root.LocalAIUI.fetchJson('/api/changes?id='+encodeURIComponent(cid),{cache:'no-store'})).item)}catch(e){err.textContent=e.message;err.hidden=false}finally{btn.disabled=false}return}
  if(action==='approve'&&!(await root.LocalAIUI.ask({title:'Approve this change?',effect:'Claude ships it to Local AI as a pull request.',confirmLabel:'Approve'})).ok)return;
  btn.disabled=true;
- try{await post(action==='stage'?'/api/changes/stage':'/api/changes/approve',action==='stage'?{id:cid}:{id:cid,decision:'approved'});$('improveItemSheet').close();await refresh()}
+ try{await post(action==='stage'?'/api/changes/stage':'/api/changes/approve',action==='stage'?{id:cid}:{id:cid,decision:'approved'});await settle(id,DONE[action])}
  catch(e){err.textContent=e.message;err.hidden=false;btn.disabled=false}
 }
 // A note travels with the item to Claude (the board's decisionNote); the item's status stays as it is.
 async function saveNote(it,btn){
  const err=$('improveItemError');btn.disabled=true;
- try{await post('/api/claude/findings/decision',{id:it.id,status:it.status,note:$('improveItemNote').value.trim()});$('improveItemSheet').close();await refresh()}
+ try{await post('/api/claude/findings/decision',{id:it.id,status:it.status,note:$('improveItemNote').value.trim()});await settle(it.id,'Note saved for Claude')}
  catch(e){err.textContent=e.message;err.hidden=false;btn.disabled=false}
+}
+// What each action did, in words, for the status toast.
+const DONE={moveToTop:'Moved to top',defer:'Deferred',reject:'Rejected',handToClaude:'Claude will pick this up in its next session',backToBacklog:'Back in the Backlog',
+ start:'Started. It is in In progress',stage:'Testing the change',approve:'Approved. Claude ships it as a pull request',retry:'Trying the change again'};
+const LIST={backlog:'backlogList',inProgress:'inProgressList',shipped:'shippedList'};
+// The rows around an item on screen now, so focus has somewhere to go if the item leaves its list.
+function neighbours(id){const row=document.querySelector(`.view.active .improve-row[data-item-id="${CSS.escape(id)}"]`);const sib=(n,dir)=>{while(n&&(n=n[dir])&&!n.dataset?.itemId);return n?.dataset?.itemId||''};
+ return {list:row?.parentElement?.id||'',next:sib(row,'nextElementSibling'),prev:sib(row,'previousElementSibling')}}
+// After the sheet closes and the list is redrawn: focus the item's row (or its neighbour), and say what happened.
+// Start goes to In progress, where the item is highlighted.
+async function settle(id,said,{go}={}){
+ const around=neighbours(id);$('improveItemSheet').close();
+ if(go&&root.LocalAIRouter){root.LocalAIRouter.open(go)}
+ await refresh();
+ // Opening a page starts its own refresh, and the page change moves focus a frame later: wait for both before placing focus.
+ for(let p=st.last;;p=st.last){await p;if(p===st.last)break}
+ if(go)await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+ const list=go?LIST[go]:around.list||LIST.backlog;
+ root.LocalAIUI.refocus?.(id,{within:'#'+list,next:go?'':around.next,prev:go?'':around.prev,control:'.improve-row__open',fallback:'.empty-state',highlight:!!go});
+ if(said)root.LocalAIUI.announce?.(said);
 }
 async function itemAction(id,action,btn,then){
  const err=$('improveItemError');btn.disabled=true;
- try{await post('/api/improve/item',then?{id,action,then}:{id,action});$('improveItemSheet').close();await refresh()}
+ try{await post('/api/improve/item',then?{id,action,then}:{id,action});
+  await settle(id,action==='discard'?(then==='aside'?'Set aside':'Back in the Backlog'):DONE[action],{go:action==='start'?'inProgress':''})}
  catch(e){err.textContent=e.message;err.hidden=false;btn.disabled=false}
 }
 // Shows a sheet that Back closes (LocalAIUI.sheetHistory); closing it any other way pops that history entry again.
@@ -196,7 +217,7 @@ async function refresh(){
  // The first call shares this refresh's request; a Retry from the error state fetches again.
  const once=()=>{let first=true;return()=>{if(first){first=false;return p}return load()}};
  const opts=(render,what,empty)=>({render,what,empty});
- await Promise.all([
+ return st.last=Promise.all([
   $('backlogList')&&root.LocalAIUI.loadInto($('backlogList'),once(),opts(renderBacklog,'the backlog','Nothing in the Backlog. Add an idea, or promote a Signal.')),
   $('signalsList')&&root.LocalAIUI.loadInto($('signalsList'),once(),opts(renderSignals,'the signals','No open Signals. Local AI looks healthy.')),
   $('inProgressList')&&root.LocalAIUI.loadInto($('inProgressList'),()=>Promise.all([once()(),sessions()]).then(([d])=>d),opts(renderInProgress,'what is in progress','Nothing in progress. Start an item from the Backlog.')),
