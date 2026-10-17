@@ -47,10 +47,11 @@ await check('contextual navigation switches domains',async()=>{
   await page.waitForSelector('#agents.active');
   assert.equal(await page.locator('#uxSecondaryTitle').textContent(),'Work');
 });
-await check('mission-first composer',async()=>{
+await check('the start sheet asks what the team should do',async()=>{
+  await page.evaluate(()=>window.LocalAIAgentStart.open());
   await page.locator('#agentGoal').waitFor({state:'visible'});
-  await page.locator('#missionRunBtn').waitFor({state:'visible'});
-  assert.equal(await page.locator('#missionRunBtn').innerText(),'Start Mission');
+  assert.equal(await page.locator('#missionRunBtn').innerText(),'Start');
+  await page.keyboard.press('Escape');await page.locator('#awStart').waitFor({state:'hidden'});
 });
 await check('Agent World is mounted',async()=>{
   await page.locator('#agentWorldCityMount .awc').waitFor({state:'visible'});
@@ -89,10 +90,14 @@ await check('Agent World theater, crew and follow controls',async()=>{
   await page.keyboard.press('Escape');
   assert.ok(!(await page.locator('.awc-v3').getAttribute('class')).includes('is-expanded'));
 });
-await check('advanced routing collapsed by default',async()=>{
+await check('advanced routing collapsed by default (developer tools)',async()=>{
+  await page.evaluate(()=>document.body.classList.remove('dev-tools-off'));
+  await page.evaluate(()=>window.LocalAIAgentStart.open());
   assert.equal(await page.locator('#agentAdvancedPanel').isVisible(),false);
   await page.locator('#agentAdvancedToggle').click();
   assert.equal(await page.locator('#agentAdvancedPanel').isVisible(),true);
+  await page.locator('#agentAdvancedToggle').click();await page.evaluate(()=>document.body.classList.add('dev-tools-off'));
+  await page.keyboard.press('Escape');await page.locator('#awStart').waitFor({state:'hidden'});
 });
 await check('the story and the worker card replace the timeline and inspector',async()=>{
   await page.locator('#agentTimeline').waitFor({state:'visible'});
@@ -107,10 +112,11 @@ await check('results tabs are interactive',async()=>{
 });
 await check('mission history exists',async()=>{await page.locator('#agentMissionHistory').waitFor({state:'visible'})});
 await check('inline error replaces alert workflow',async()=>{
+  await page.evaluate(()=>window.LocalAIAgentStart.open());
   await page.locator('#agentGoal').fill('');
   await page.locator('#missionRunBtn').click();
   await page.locator('#agentInlineNotice').waitFor({state:'visible'});
-  assert.match(await page.locator('#agentInlineNotice').innerText(),/Enter a mission objective first/i);
+  assert.match(await page.locator('#agentInlineNotice').innerText(),/Say what the team should do first/i);
   assert.equal(dialogs,0,'No browser alert dialogs should be used');
 });
 await check('the web-search choice reaches the mission request',async()=>{
@@ -119,6 +125,7 @@ await check('the web-search choice reaches the mission request',async()=>{
   await page.route(isStart,r=>{bodies.push(r.request().postDataJSON());r.fulfill({status:500,contentType:'application/json',body:JSON.stringify({error:'stubbed'})})});
   const sent=async n=>{for(let i=0;i<60&&bodies.length<n;i++)await page.waitForTimeout(100);assert.equal(bodies.length,n)};
   try{
+   await page.evaluate(()=>window.LocalAIAgentStart.open());
    await page.locator('#agentGoal').fill('Check release notes');
    await page.locator('#agentWebSearch').check();
    await page.locator('#missionRunBtn').click();
@@ -128,7 +135,7 @@ await check('the web-search choice reaches the mission request',async()=>{
    await page.locator('#missionRunBtn').click();
    await sent(2);
    assert.equal(bodies[1].webSearch,undefined);
-  }finally{await page.unroute(isDispatch);await page.unroute(isStart);await page.locator('#agentGoal').fill('')}
+  }finally{await page.unroute(isDispatch);await page.unroute(isStart);await page.locator('#agentGoal').fill('');await page.keyboard.press('Escape')}
 });
 await check('interactive demo controls',async()=>{
   await page.locator('#awcDemoPlay').click();
@@ -139,7 +146,7 @@ await check('interactive demo controls',async()=>{
   await page.locator('#awcDemoScenario').selectOption('failure');
   await page.locator('#awcDemoStep').click();
   await page.locator('#awcDemoStep').click();
-  assert.match(await page.locator('#awcStatus').innerText(),/Needs attention|Running/i);
+  assert.match(await page.locator('#awSheetStatus').textContent(),/Needs you|Working/);
   await page.locator('#awcLiveBtn').click();
 });
 await check('desktop zoom controls',async()=>{
@@ -185,7 +192,7 @@ await check('Operational Agent World exposes durable observability semantics',as
 await check('Agent World running-worker controls remain interactive',async()=>{
   await page.locator('#awcDemoPlay').click();
   await page.waitForTimeout(250);
-  assert.match(await page.locator('#awcStage').innerText(),/Router planning|UX analysis|Documentation|Synthesis|Complete/i);
+  assert.match(await page.locator('#awSheetStatus').textContent(),/Starting|Working|Done/);
   const beforeFollow=await page.locator('#awcFollow').getAttribute('aria-pressed');
   await page.locator('#awcFollow').click();
   const afterFollow=await page.locator('#awcFollow').getAttribute('aria-pressed');
@@ -289,7 +296,7 @@ await check('the mission strip and Agent World show the same mission while the s
   await pg.waitForFunction(()=>typeof window.showView==='function');
   await pg.evaluate(()=>window.showView('agents'));
   await pg.waitForSelector('#agents.active');
-  await pg.waitForFunction(g=>document.getElementById('awcObjective')?.textContent===g,goal,{timeout:10000});
+  await pg.waitForFunction(g=>document.getElementById('awTitle')?.textContent===g,goal,{timeout:10000});
   await pg.waitForFunction(g=>document.getElementById('agentMissionHeadline')?.textContent===g,goal,{timeout:3000});
   releaseCatalog();
   await pg.close();
