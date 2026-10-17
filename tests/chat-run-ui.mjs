@@ -122,6 +122,21 @@ await check('Home Chat failure: subtitle "Chat", Try again resends, a model erro
   await page.context().close();
 });
 
+// One conversation, one name: the server names a thread by its first message; Home and the run header use it.
+await check('a two-turn conversation: Home shows its first message with "2 turns", and the run header matches', async () => {
+  const latest = { ...run(2, 'second question', 'second answer'), threadTitle: 'first question', turns: 2 };
+  latest.card = { ...latest.card, title: 'first question' };
+  const page = await open(desk, '#home', { runs: [latest] });
+  const row = page.locator('#homeRecent2 [data-run-id]').first();
+  await row.waitFor(T);
+  const text = await row.innerText();
+  assert.match(text, /first question/); assert.match(text, /2 turns/); assert.doesNotMatch(text, /second question/);
+  await page.evaluate(id => window.LocalAIRuns.show(id), latest.id);
+  await page.locator('#runDrawerTitle', { hasText: 'first question' }).waitFor(T);
+  assert.equal(page.errors.length, 0, page.errors.join('|'));
+  await page.context().close();
+});
+
 await check('a thread with 3 runs renders 3 user and 3 assistant turns in order', async () => {
   const page = await open(desk, '#home', { runs: three() });
   await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[1].id);
@@ -274,6 +289,36 @@ await check('at 390x844 the reply box stays above a keyboard that only shrinks t
   const b = await page.locator('#runReply').boundingBox(), s = await page.locator('#runReplySend').boundingBox();
   assert.ok(b.y >= 0 && b.y + b.height <= 544, `reply box ${b.y}..${b.y + b.height} not inside 544`);
   assert.ok(s.y + s.height <= 544, 'send button is above the keyboard');
+  await page.context().close();
+});
+
+// Nothing is hover-only: on a phone the two-line title opens in full on a tap; on a desktop the full text stays on hover.
+const TITLE = 'Explain in careful detail how a heat pump moves warmth from cold outdoor air into a house in the middle of winter, and what that costs';
+const titled = () => Object.assign(run(1, TITLE, 'the answer'), { title: TITLE });   // the run view shows run.title, which run() cuts to 40 characters
+await check('390x844: a tap on the clamped run title shows all of it; a second tap folds it again', async () => {
+  const page = await open(phone, '#home', { runs: [titled()] });
+  await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);
+  await page.locator('#runDrawerTitle').waitFor(T);
+  const t = page.locator('#runDrawerTitle');
+  const lines = () => t.evaluate(e => ({ h: e.getBoundingClientRect().height, lh: parseFloat(getComputedStyle(e).lineHeight) }));
+  const before = await lines();
+  assert.ok(before.h <= before.lh * 2 + 2, `title is ${before.h}px before the tap`);
+  assert.equal(await t.getAttribute('aria-expanded'), 'false');
+  await t.tap();
+  const after = await lines();
+  assert.ok(after.h > before.lh * 2 + 2, `title is still ${after.h}px after the tap`);
+  assert.equal(await t.getAttribute('aria-expanded'), 'true');
+  await t.tap();
+  assert.ok((await lines()).h <= before.lh * 2 + 2, 'second tap folds it');
+  assert.equal(await t.getAttribute('title'), TITLE);
+  await page.context().close();
+});
+await check('1280x860: the run title is not clamped and keeps its hover text', async () => {
+  const page = await open(desk, '#home', { runs: [titled()] });
+  await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);
+  await page.locator('#runDrawerTitle').waitFor(T);
+  assert.equal(await page.locator('#runDrawerTitle').getAttribute('title'), TITLE);
+  assert.equal(await page.locator('#runDrawerTitle').evaluate(e => e.scrollHeight > e.clientHeight + 1), false);
   await page.context().close();
 });
 

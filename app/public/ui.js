@@ -2849,7 +2849,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const head = document.createElement('div'); head.className = 'run-drawer-head';
     const back = iconBtn('chevron-left', 'Back'); back.addEventListener('click', closeRunView);
     const copy = document.createElement('div'); copy.className = 'run-drawer-copy';
-    const t = document.createElement('div'); t.id = 'runDrawerTitle'; t.className = 'run-drawer-title'; t.textContent = title; t.title = title;   // phones clamp it to two lines; the full text is on hover
+    const t = document.createElement('div'); t.id = 'runDrawerTitle'; t.className = 'run-drawer-title'; t.textContent = title; t.title = title;   // desktops: the full text is on hover
+    // Phones clamp it to two lines and have no hover: a tap (or Enter) opens the whole title, a second one folds it; aria-expanded says which.
+    if (matchMedia('(max-width:760px)').matches) {
+      t.setAttribute('role', 'button'); t.tabIndex = 0; t.setAttribute('aria-expanded', 'false');
+      const flip = () => { const open = t.classList.toggle('is-open'); t.setAttribute('aria-expanded', String(open)); };
+      t.addEventListener('click', flip); t.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } });
+    }
     const s = document.createElement('div'); s.className = 'run-drawer-sub'; if (typeof sub === 'string') s.textContent = sub; else s.append(...sub);
     copy.append(t, s); head.append(back, copy);
     if (run) {
@@ -2888,7 +2894,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const card = run.card, kit = window.LocalAIKit;
     const project = document.createElement('span'); project.className = 'run-view-project';
     project.textContent = !run.projectId ? 'Not filed' : !state.projects ? 'Filed' : (state.projects.find((p) => p.id === run.projectId)?.name || 'Project removed');
-    drawer.appendChild(viewHead(run.title || 'Untitled run', [`${kindLabel(card?.kind || run.type)} · `, project], run));
+    drawer.appendChild(viewHead(run.threadTitle || run.title || 'Untitled run',   // a conversation keeps its first message as its name
+      [`${kindLabel(card?.kind || run.type)} · `, project], run));
 
     // Status badge, then a progress bar while the run is live.
     const vh = document.createElement('div'); vh.className = 'run-view-head';

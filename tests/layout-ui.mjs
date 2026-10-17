@@ -130,8 +130,10 @@ await check('every project picker says what it will use, even with no projects y
   await context.close();
 });
 
-for (const size of SIZES) await check(`${size[0]}: the Files tree is a compact list: one line per entry, the path only on hover`, async () => {
+// Nothing is hover-only: a desktop shows the path on hover; a phone (pointer: coarse) shows the parent folder under the name.
+for (const size of SIZES) await check(`${size[0]}: the Files tree is a compact list: the path on hover, or the parent folder under the name on touch`, async () => {
   const { page, context } = await open(size);
+  const touch = size[2];
   const tree = [{ type: 'directory', name: 'projects', path: 'projects', children: [
     { type: 'directory', name: 'ImageOCR', path: 'projects/ImageOCR', children: [{ type: 'file', name: 'main.py', path: 'projects/ImageOCR/main.py' }] },
     { type: 'file', name: 'notes.md', path: 'projects/notes.md' },
@@ -140,13 +142,16 @@ for (const size of SIZES) await check(`${size[0]}: the Files tree is a compact l
   await page.evaluate(() => { location.hash = '#workbench' });
   await page.evaluate(() => window.loadWorkbench?.() ?? document.getElementById('workbenchTreeBtn')?.click());
   await page.waitForSelector('#workbenchTree [data-file-path="projects/notes.md"]');
-  const rows = await page.$$eval('#workbenchTree .tree-row', els => els.map(e => { const i = e.querySelector('svg').getBoundingClientRect(), t = e.querySelector('span').getBoundingClientRect(); return { h: e.getBoundingClientRect().height, oneLine: Math.abs((i.top + i.bottom) / 2 - (t.top + t.bottom) / 2) < 4, text: e.textContent.trim(), title: e.getAttribute('title') }; }));
+  const rows = await page.$$eval('#workbenchTree .tree-row', els => els.map(e => { const i = e.querySelector('svg').getBoundingClientRect(), t = e.querySelector('span').getBoundingClientRect(); const p = e.querySelector('.tree-path'); const pb = p && p.getBoundingClientRect(); return { h: e.getBoundingClientRect().height, oneLine: Math.abs((i.top + i.bottom) / 2 - (t.top + t.bottom) / 2) < 4, name: e.querySelector('span').textContent.trim(), text: e.textContent.trim(), title: e.getAttribute('title'), path: pb && pb.height > 0 ? { text: p.textContent.trim(), below: pb.top >= t.bottom - 1, size: parseFloat(getComputedStyle(p).fontSize) } : null }; }));
   assert.ok(rows.length >= 3, `rows: ${rows.length}`);
   for (const r of rows) {
-    assert.ok(r.h <= 40, `${r.text} is ${r.h}px tall`);
+    assert.ok(r.h <= (touch && r.path ? 60 : 40), `${r.text} is ${r.h}px tall`);
     assert.ok(r.oneLine, `${r.text}: icon and name are on different lines`);
-    assert.ok(!r.text.includes('/projects') && !/projects\/.+\//.test(r.text), `path repeated in "${r.text}"`);
     assert.match(r.title || '', /^projects/);
+    const parent = r.title.includes('/') ? r.title.slice(0, r.title.lastIndexOf('/')) : '';
+    if (!touch) assert.equal(r.path, null, `${r.name}: the path is written out on a desktop ("${r.text}")`);
+    else if (!parent) assert.equal(r.path, null, `${r.name}: a top-level entry shows a parent`);
+    else { assert.ok(r.path, `${r.name}: no parent folder under the name on touch`); assert.equal(r.path.text, parent); assert.ok(r.path.below, `${r.name}: the folder is not under the name`); assert.ok(r.path.size >= 13, `${r.name}: folder text is ${r.path.size}px`); }
   }
   const edge = await page.evaluate(() => { const W = document.documentElement.clientWidth; return ['#workbenchTree', '#workbench .card'].map(q => Math.round(document.querySelector(q).getBoundingClientRect().right - W)); });
   assert.ok(edge.every(d => d <= 0), `Files runs past the screen edge by ${edge.join('/')}px`);
@@ -181,6 +186,43 @@ await check('phone: the top bar and page tabs are solid, so scrolled content nev
     .flat().filter(e => e.getBoundingClientRect().height > 0 && ['sticky', 'fixed'].includes(getComputedStyle(e).position))
     .map(e => [e.className, getComputedStyle(e).backgroundColor]).filter(([, bg]) => { const m = bg.match(/rgba?\(([^)]+)\)/); const a = m ? (m[1].split(',')[3] ?? '1') : '0'; return parseFloat(a) < 1; }));
   assert.deepEqual(seeThrough, []);
+  await context.close();
+});
+
+// Secondary text a phone can read: nothing in a Library card or the Audit log is under 13px, and an audit detail wraps
+// to two lines instead of being cut to one.
+const smallText = (page, sel) => page.evaluate(s => {
+  const out = []; const w = document.createTreeWalker(document.querySelector(s), NodeFilter.SHOW_TEXT); let n;
+  while ((n = w.nextNode())) { if (!n.textContent.trim()) continue; const e = n.parentElement, r = e.getBoundingClientRect(); if (!r.width || !r.height) continue; const fs = parseFloat(getComputedStyle(e).fontSize); if (fs < 13) out.push(`${e.className || e.tagName} ${fs}px "${n.textContent.trim().slice(0, 30)}"`); }
+  return [...new Set(out)];
+}, sel);
+await check('phone: Library cards and the Audit log have no text under 13px, and an audit detail wraps to two lines', async () => {
+  const { page, context } = await open(SIZES[0]);
+  await page.route(u => u.pathname === '/api/library', r => r.fulfill({ json: { items: [{ id: 'l1', kind: 'conversation', title: 'Plan the vegetable garden', summary: 'Raised beds, tomatoes and basil along the south fence.', createdAt: now, pinned: true, meta: {}, data: {} }], counts: {}, total: 1 } }));
+  await page.route(u => u.pathname === '/api/activity', r => r.fulfill({ json: { items: [
+    { id: 'a1', type: 'run', title: 'Run finished', detail: LONG, at: now, meta: { runId: 'r_txt' } },
+    { id: 'a2', type: 'system', title: 'Service restarted', detail: 'Ollama came back after 40 seconds.', at: now, meta: {} }] } }));
+  await page.evaluate(() => { location.hash = '#library' });
+  await page.waitForSelector('#library .artifact');
+  assert.deepEqual(await smallText(page, '#library .library-grid'), []);
+  await page.evaluate(() => { location.hash = '#activity' });
+  await page.waitForSelector('#activityList .activity-item');
+  assert.deepEqual(await smallText(page, '#activityList'), []);
+  const d = await page.$eval('#activityList .activity-detail', e => { const cs = getComputedStyle(e); return { ws: cs.whiteSpace, h: e.getBoundingClientRect().height, lh: parseFloat(cs.lineHeight), w: e.getBoundingClientRect().width, sw: e.scrollWidth }; });
+  assert.notEqual(d.ws, 'nowrap');
+  assert.ok(d.h > d.lh * 1.5 && d.h <= d.lh * 2 + 2, `detail is ${d.h}px for line height ${d.lh}: not two lines`);
+  assert.ok(d.sw <= d.w + 1, 'detail runs sideways');
+  await context.close();
+});
+
+// The narrowest phones: a Work row still leaves 200px for its text.
+await check('320px: a Work row keeps at least 200px for its text', async () => {
+  const { page, context } = await open(['narrow', { width: 320, height: 640 }, true]);
+  await page.evaluate(() => { location.hash = '#work' });
+  await page.waitForSelector('#work .run-card .list-row__main');
+  const widths = await page.$$eval('#work .run-card .list-row__main', els => els.map(e => Math.round(e.getBoundingClientRect().width)));
+  assert.ok(widths.length >= 3 && widths.every(w => w >= 200), `text columns are ${widths.join('/')}px wide`);
+  assert.equal(await overflow(page), 0, 'Work scrolls sideways at 320px');
   await context.close();
 });
 
