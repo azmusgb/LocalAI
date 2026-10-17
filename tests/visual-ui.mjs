@@ -84,17 +84,33 @@ async function stubData(page) {
 // checked its services (the server's clock, not the page's).
 const masks = page => [page.getByText(/^\s*(Local AI |Version |v)?\d+\.\d+\.\d+\s*$/), page.getByText(/^\s*\d+\s*ms\s*$/), page.locator('#claudeChatCode, .claude-chat-cmd code, #statusCheckedAt')];
 
-async function shoot(viewport, view) {
+// Agent World in its four states (design 2026-10-17-agent-world), phone and 1440 wide. The city is animated, so its canvas
+// is hidden (the map box stays) and the story's clock times are masked: these baselines guard the page around the city.
+const A_W = (u, c, ux = {}) => [{ id: 'router', name: 'Mission Router', state: 'complete', dependsOn: [] }, { id: 'ux_analyst', name: 'UX Analyst', state: u, dependsOn: ['router'], ...ux }, { id: 'synthesis', name: 'Coordinator', state: c, dependsOn: ['ux_analyst'] }];
+const A_BASE = { goal: 'Improve the look and polish of Agent World', createdAt: ago(300), updatedAt: ago(60), results: [] };
+const A_TL = [{ at: ago(300), type: 'mission-start', workers: A_W('pending', 'pending') }, { at: ago(299), type: 'dispatch', workers: A_W('running', 'pending') }];
+const AGENT_STATES = {
+  empty: [],
+  running: [{ ...A_BASE, id: 'm-run', status: 'running', workers: A_W('running', 'pending'), timeline: A_TL }],
+  needs: [{ ...A_BASE, id: 'm-bad', status: 'needs_attention', workers: A_W('error', 'blocked', { errorCode: 'MODEL_CONNECTION_ERROR' }), timeline: [...A_TL, { at: ago(60), type: 'mission-attention', status: 'needs_attention', workers: A_W('error', 'blocked', { errorCode: 'MODEL_CONNECTION_ERROR' }) }] }],
+  done: [{ ...A_BASE, id: 'm-done', status: 'complete', finishedAt: ago(60), answer: 'Three fixes for the phone screens, in order of impact.', workers: A_W('complete', 'complete'), results: [{ agentId: 'ux_analyst', agentName: 'UX Analyst', status: 'complete', answer: 'Three things to fix.' }], timeline: [...A_TL, { at: ago(60), type: 'mission-complete', status: 'complete', workers: A_W('complete', 'complete') }] }]
+};
+const AGENT_VIEWPORTS = [VIEWPORTS[0], { name: 'desktop1440', width: 1440, height: 900, mobile: false }];
+async function shoot(viewport, view, missions) {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.mobile, hasTouch: viewport.mobile, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: 'dark', locale: 'en-US', timezoneId: 'America/New_York' });
   await ctx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); sessionStorage.setItem('localai.httpsTrusted', '0'); } catch {} });
   const page = await ctx.newPage();
   await page.clock.setFixedTime(NOW);
   await stubData(page);
-  await page.goto(`${base}/#${view}`, { waitUntil: 'networkidle' });
+  if (missions) await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: missions }) }));
+  await page.goto(`${base}/#${missions ? 'home' : view}`, { waitUntil: 'networkidle' });
+  if (missions) await page.evaluate(() => window.showView('agents'));
   await page.waitForFunction(v => typeof window.showView === 'function' && document.querySelector(`#${v}.active, .view.active`), view);
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(600); // lists load after the page shows
-  const shot = await page.screenshot({ animations: 'disabled', caret: 'hide', mask: masks(page), maskColor: '#ff00ff' });
+  if (missions) await page.addStyleTag({ content: '#awcCanvas{visibility:hidden}' }); // the city animates; its box and everything over it stay
+  const mask = missions ? [...masks(page), page.locator('#agentTimeline time')] : masks(page);
+  const shot = await page.screenshot({ animations: 'disabled', caret: 'hide', mask, maskColor: '#ff00ff' });
   await ctx.close();
   return shot;
 }
@@ -124,11 +140,13 @@ async function compare(a, b) {
 try {
   fs.mkdirSync(dir, { recursive: true });
   fs.rmSync(results, { recursive: true, force: true });
-  for (const viewport of VIEWPORTS) {
-    for (const view of PAGES) {
-      const name = `${view}-${viewport.name}`, file = path.join(dir, `${name}.png`);
+  const shots = [...VIEWPORTS.flatMap(viewport => PAGES.map(view => ({ name: `${view}-${viewport.name}`, viewport, view }))),
+    ...AGENT_VIEWPORTS.flatMap(viewport => Object.entries(AGENT_STATES).map(([state, missions]) => ({ name: `agents-${state}-${viewport.name}`, viewport, view: 'agents', missions })))];
+  {
+    for (const { name, viewport, view, missions } of shots) {
+      const file = path.join(dir, `${name}.png`);
       try {
-        const shot = await shoot(viewport, view);
+        const shot = await shoot(viewport, view, missions);
         if (UPDATE || !fs.existsSync(file)) {
           fs.writeFileSync(file, shot);
           notes.push(`${UPDATE ? 'updated' : 'new baseline'}: ${path.relative(process.cwd(), file)}`);

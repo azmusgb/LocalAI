@@ -103,12 +103,14 @@
   <button type="button" role="menuitem" data-aw-menu="work">Open in Work</button>
   <button type="button" role="menuitem" data-aw-menu="copy">Copy result</button>
   <button type="button" role="menuitem" data-aw-menu="all">All missions</button>
+  <button type="button" role="menuitem" data-aw-menu="demo" data-dev-only>Try a demo mission</button>
   <div class="aw-menu__group" role="group" aria-labelledby="awViewLabel"><span id="awViewLabel" class="aw-menu__label">View</span>
     <button type="button" role="menuitemcheckbox" aria-checked="true" data-aw-view="labels">Labels</button>
     <button type="button" role="menuitemcheckbox" aria-checked="true" data-aw-view="flows">Flows</button>
     <button type="button" role="menuitemcheckbox" aria-checked="false" data-aw-view="night">Night</button>
     <button type="button" role="menuitem" data-aw-view="theater">Full screen</button>
     <button type="button" role="menuitem" data-aw-view="fit">Fit the city</button>
+    <button type="button" role="menuitem" data-aw-view="speed">Replay speed: 1×</button>
   </div>
 </div>
 <!-- Agent World: the city is the page. Desktop: a rail beside it; phone: a bottom sheet over it (peek, half, full). -->
@@ -130,17 +132,8 @@
       <section id="agentInspector" class="aw-worker" aria-labelledby="awWorkerName" hidden></section>
       <section class="aw-story-box" aria-labelledby="awStoryTitle"><h2 id="awStoryTitle" class="aw-h">Story</h2><ol id="agentTimeline" class="aw-story"><li class="aw-story__empty">What the team does will be told here.</li></ol></section>
       <div class="agent-ops">
-        <section class="agent-results">
-          <div class="agent-result-tabs" role="tablist" aria-label="Mission details">
-            <button type="button" class="active" role="tab" id="agentResultTab-summary" aria-controls="agentResultBody" aria-selected="true" tabindex="0" data-agent-result-tab="summary">Synthesis</button>
-            <button type="button" role="tab" id="agentResultTab-workers" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="workers">Worker outputs</button>
-            <button type="button" role="tab" id="agentResultTab-evidence" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="evidence">Evidence</button>
-            <button type="button" role="tab" id="agentResultTab-routing" aria-controls="agentResultBody" aria-selected="false" tabindex="-1" data-agent-result-tab="routing">Routing</button>
-          </div>
-          <div id="agentResultBody" class="agent-result-body" role="tabpanel" tabindex="0" aria-labelledby="agentResultTab-summary"><div class="empty">Mission results will appear here.</div></div>
-        </section>
+        <section class="aw-results" aria-labelledby="awResultsTitle"><h2 id="awResultsTitle" class="aw-h">Result</h2><div id="agentResultBody" class="aw-results__body" tabindex="-1"><p class="aw-results__none">The result will be here when the team finishes.</p></div></section>
         <p id="agentMissionHistory" class="aw-all-wrap"><a class="aw-all" href="#work?kind=missions">All missions</a></p>
-        <div id="awCityExtras" class="aw-extras"></div>
       </div>
     </div>
   </section>

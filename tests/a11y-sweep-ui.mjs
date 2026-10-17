@@ -71,21 +71,13 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
   await page.context().close();
 }
 
-await check('Missions result tabs: tab roles, one selected, arrow keys move the selection', async () => {
+await check('Agent World result: headed sections in order; Routing only with developer tools', async () => {
   const page = await stubbed({ width: 1280, height: 860 });
   await page.evaluate(() => window.showView('agents'));
-  const tabs = page.locator('[data-agent-result-tab]');
-  await tabs.first().waitFor({ state: 'attached' });
-  assert.deepEqual(await tabs.evaluateAll(t => t.map(x => [x.getAttribute('role'), x.getAttribute('aria-selected')])), [['tab', 'true'], ['tab', 'false'], ['tab', 'false'], ['tab', 'false']]);
-  await tabs.first().focus();
-  await page.keyboard.press('ArrowRight');
-  assert.equal(await page.evaluate(() => document.activeElement.dataset.agentResultTab), 'workers');
-  assert.deepEqual(await tabs.evaluateAll(t => t.map(x => x.getAttribute('aria-selected'))), ['false', 'true', 'false', 'false']);
-  await page.keyboard.press('End');
-  assert.equal(await page.evaluate(() => document.activeElement.dataset.agentResultTab), 'routing');
-  await page.keyboard.press('ArrowRight');
-  assert.equal(await page.evaluate(() => document.activeElement.dataset.agentResultTab), 'summary');
-  assert.equal(await page.locator('#agentResultBody').getAttribute('role'), 'tabpanel');
+  await page.evaluate(m => window.LocalAISpecialists.renderMission(m), { id: 'm-a11y', goal: 'A goal', status: 'complete', answer: 'The summary.', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), workers: [{ id: 'router', name: 'Mission Router', state: 'complete' }], results: [] });
+  await page.waitForFunction(() => document.querySelectorAll('#agentResultBody h3').length === 3);
+  assert.deepEqual(await page.locator('#agentResultBody h3').allInnerTexts(), ['Summary', 'What each worker found', 'Sources']);
+  assert.equal(await page.locator('#agentResultBody details', { hasText: 'Routing' }).isVisible(), false);
   await page.context().close();
 });
 
