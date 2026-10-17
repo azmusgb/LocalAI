@@ -12,7 +12,9 @@ const zlib = require('node:zlib');
 
 const pub = path.join(__dirname, '..', 'app', 'public');
 const KB = 1024;
-const TOTAL = 218 * KB;
+// 2026-10-17: +8 KB for the Agent World redesign while its old panels and new ones overlap (agent-world-words.js, the
+// phone sheet, crew rows); the last Agent World PR removes the old panels and brings this back down.
+const TOTAL = 226 * KB;
 const PER_FILE = { 'ui.js': 92 * KB, 'app.css': 39 * KB, 'app.js': 35 * KB, 'index.html': 13 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
