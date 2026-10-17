@@ -19,7 +19,7 @@ const OLD = /\b(?:class(?:Name)?\s*=\s*\\?["'`]|(?:el|h)\(\s*'[a-z]+'\s*,\s*')(?
 
 test('no page outside Missions uses the old .btn or .iconbtn classes', () => {
   const hits = [];
-  for (const f of ['index.html', 'app.js', 'ui.js', 'work.js', 'components.js', 'home.js', 'improve.js', 'run-bodies.js', 'qr.js']) {
+  for (const f of ['index.html', 'app.js', 'ui.js', 'work.js', 'components.js', 'home.js', 'improve.js', 'run-bodies.js', 'qr.js', 'spreadsheets.js']) {
     for (const m of outsideMissions(f, read(f)).matchAll(OLD)) hits.push(`${f}: ${m[0].slice(0, 60)}`);
   }
   assert.deepEqual(hits, []);
