@@ -132,7 +132,9 @@ await check('library Retry recovers once the API works', async () => {
 
 // ---- toast(): status the owner can read ----
 await check('a status toast lasts at least 5 s, pauses while hovered or focused, and leaves nothing behind', async () => {
-  const p = await newPage(pg => pg.clock.install());
+  // Desktop width: the toast sits still in its corner. (On a phone page it follows Home's composer, which the clock's
+  // frames can move from under a parked pointer, so a hover check there would race the layout.)
+  const p = await newPage(async pg => { await pg.clock.install(); await pg.setViewportSize({ width: 1280, height: 860 }); }, '#status');
   const shown = () => p.evaluate(() => document.getElementById('toast').classList.contains('show'));
   await p.evaluate(() => window.LocalAIUI.toast('Moved to top'));
   assert.equal(await p.locator('#toast').getAttribute('role'), 'status');
@@ -145,6 +147,7 @@ await check('a status toast lasts at least 5 s, pauses while hovered or focused,
   // Hover pauses it; leaving starts the time again.
   await p.evaluate(() => window.LocalAIUI.toast('Approved'));
   { const b = await p.locator('#toast').boundingBox(); await p.mouse.move(b.x + b.width / 2, b.y + b.height / 2); } // a plain move: the installed clock holds the fade's frames
+  await p.waitForFunction(() => document.getElementById('toast').matches(':hover')); // the hover has registered before time runs
   await p.clock.runFor(20000);
   assert.equal(await shown(), true, 'paused while hovered');
   await p.mouse.move(5, 5);
