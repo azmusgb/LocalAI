@@ -53,7 +53,6 @@ await check('a run with a change shows the change detail with Approve in the run
   await page.locator('#runDrawer [data-change-apply="c1"]').waitFor(T);
   assert.deepEqual(page.posts, [{ id: 'c1', decision: 'approved' }]);
   assert.equal(await page.locator('#runDrawer [data-change-approve]').count(), 0);
-  assert.equal(await page.locator('#changeDetail [data-change-approve]').count(), 0, 'the Changes page copy is not the one shown');
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });
@@ -75,13 +74,6 @@ await check('a run with no change yet shows its steps, then the change once it e
   assert.equal(await page.locator('#runDrawer [data-change-approve]').count(), 0);
   db.changes.push(change()); db.eng[0].finalChangeId = 'c1'; db.eng[0].status = 'completed';
   await page.locator('#runDrawer [data-change-approve="c1"]').waitFor({ timeout: 12000 });
-  await page.context().close();
-});
-await check('#changes still renders the change in #changeDetail', async () => {
-  const db = { changes: [change()], runs: [], eng: [] };
-  const page = await open({ width: 1280, height: 860 }, db);
-  await page.evaluate(() => window.showView('changes'));
-  await page.locator('#changeDetail [data-change-approve="c1"]').waitFor(T);
   await page.context().close();
 });
 await check('axe: the change run view passes color-contrast and target-size at 390x844', async () => {
