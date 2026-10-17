@@ -25,6 +25,8 @@ AGENT = Path(os.environ.get('GRIDCRAFT_AGENT_SCRIPT', Path(__file__).resolve().p
 OPS = AGENT.parent / 'gridcraft_ops.py'
 GRIDCRAFT_EXE = Path(os.environ.get('GRIDCRAFT_EXE', r'C:\Program Files\GridCraft\gridcraft.exe'))
 WORKBOOK = Path(os.environ.get('GRIDCRAFT_WORKBOOK', USERPROFILE / 'Documents' / 'GridCraft' / 'Quarterly-Sales-Dashboard.xlsx'))
+# The workbook menu lists and opens files directly in this folder (gridcraft_ops.py checks every name against it).
+WORKBOOKS_DIR = Path(os.environ.get('GRIDCRAFT_WORKBOOKS_DIR') or WORKBOOK.parent)
 RUN_TIMEOUT = int(os.environ.get('GRIDCRAFT_RUN_TIMEOUT', '300'))
 ALLOWED_ORIGINS = {
     x.strip() for x in os.environ.get(
@@ -149,17 +151,19 @@ def failure_reason(stdout: str, stderr: str) -> str:
     return ''
 
 
-def run_ops(op: str, payload: dict) -> tuple[int, dict]:
-    # Workbook view, keep and discard: gridcraft_ops.py talks to GridCraft directly, no model. JSON in, JSON out.
+def run_ops(op: str, payload: dict, gridcraft: bool = True) -> tuple[int, dict]:
+    # Workbook view, keep, discard and open: gridcraft_ops.py talks to GridCraft directly, no model. JSON in, JSON out.
+    # gridcraft=False for listing the folder, which doesn't need GridCraft running.
     if not PYTHON.exists() or not OPS.exists():
         return 503, {'ok': False, 'error': 'GridCraft local agent is not installed'}
-    if not ensure_gridcraft():
+    if gridcraft and not ensure_gridcraft():
         return 503, {'ok': False, 'error': f'GridCraft control port {CONTROL_PORT} is unavailable'}
     try:
         proc = subprocess.run(
             [str(PYTHON), str(OPS), op], input=json.dumps(payload), capture_output=True, text=True,
             encoding='utf-8', errors='replace', timeout=OPS_TIMEOUT, cwd=str(PROJECT_DIR),
-            env={**os.environ, 'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8', 'GRIDCRAFT_PORT': str(CONTROL_PORT)},
+            env={**os.environ, 'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8', 'GRIDCRAFT_PORT': str(CONTROL_PORT),
+                 'GRIDCRAFT_WORKBOOKS_DIR': str(WORKBOOKS_DIR)},
         )
     except subprocess.TimeoutExpired:
         return 504, {'ok': False, 'error': f'GridCraft did not answer within {OPS_TIMEOUT}s'}
@@ -218,6 +222,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/workbook':
             query = {k: v[0] for k, v in parse_qs(url.query).items() if k in ('sheet', 'range') and v}
             return self._json(*run_ops('workbook', query))
+        if url.path == '/workbooks':
+            return self._json(*run_ops('workbooks', {}, gridcraft=False))
         if url.path != '/health':
             return self._json(404, {'ok': False, 'error': 'Not found'})
         return self._json(200, {
@@ -227,10 +233,11 @@ class Handler(BaseHTTPRequestHandler):
             'controlPort': CONTROL_PORT,
             'agent': str(AGENT),
             'workbook': str(WORKBOOK),
+            'workbooksDir': str(WORKBOOKS_DIR),
         })
 
     def do_POST(self):
-        if self.path not in ('/run', '/keep', '/discard'):
+        if self.path not in ('/run', '/keep', '/discard', '/open'):
             return self._json(404, {'ok': False, 'error': 'Not found'})
         # CORS only hides responses; it does not stop a page on another site from firing a simple POST.
         # Require an allowed Origin when a browser sends one, and a JSON content type (which forces a preflight).
@@ -248,12 +255,14 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             return self._json(400, {'ok': False, 'error': f'Invalid request: {exc}'})
         if self.path != '/run':
-            # Keep and discard change the workbook, so they wait for no one: a running request gets 409 like a second run.
+            # Keep, discard and open change the workbook, so they wait for no one: a running request gets 409 like a second run.
+            op = self.path.strip('/')
             if not run_lock.acquire(blocking=False):
-                return self._json(409, {'ok': False, 'error': 'A GridCraft request is running; try again when it finishes'})
+                busy = 'GridCraft is busy with a request' if op == 'open' else 'A GridCraft request is running; try again when it finishes'
+                return self._json(409, {'ok': False, 'error': busy})
             try:
-                op = self.path.strip('/')
-                return self._json(*run_ops(op, {k: payload.get(k) for k in ('steps', 'undoTop')} if op == 'discard' else {}))
+                keys = {'discard': ('steps', 'undoTop'), 'open': ('name',)}.get(op, ())
+                return self._json(*run_ops(op, {k: payload.get(k) for k in keys}))
             finally:
                 run_lock.release()
         # Older appliances send no mode: they get what /run always did.

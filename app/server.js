@@ -1500,6 +1500,40 @@ async function apiGridcraftWorkbook(req, res, urlObj) {
     json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
   }
 }
+// The workbook menu: files directly in the GridCraft folder on the host, by bare name. The bridge checks the name again
+// against the folder; this check keeps paths and odd names from ever reaching it.
+const GRIDCRAFT_BOOK = /^[^\\/:\0]{1,251}\.(xlsx|xlsm|xls|csv|ods)$/i;
+const gridcraftBookName = v => typeof v === 'string' && v.trim() && GRIDCRAFT_BOOK.test(v) && !v.includes('..') ? v : '';
+async function apiGridcraftWorkbooks(req, res) {
+  try {
+    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/workbooks`, { cache: 'no-store' }, 15000);
+    const data = await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` }));
+    if (!r.ok || data.ok !== true) return json(res, r.ok ? 502 : r.status, { ok: false, error: data.error || 'GridCraft did not list the workbooks' });
+    const items = (Array.isArray(data.items) ? data.items : []).filter(x => gridcraftBookName(x?.name))
+      .map(x => ({ name: x.name, size: Number(x.size) || 0, modified: String(x.modified || '') }));
+    json(res, 200, { ok: true, items });
+  } catch (e) {
+    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+  }
+}
+async function apiGridcraftOpen(req, res) {
+  if (!sameOriginJson(req, res)) return;
+  let b;
+  try { b = await readBody(req, 4096); } catch (e) { return json(res, 400, { ok: false, error: e.message }); }
+  const name = gridcraftBookName(b?.name);
+  if (!name) return json(res, 400, { ok: false, error: 'Choose a .xlsx, .xlsm, .xls, .csv or .ods file from the GridCraft folder' });
+  // Opening replaces the workbook, so a request waiting for review would lose its Keep and Discard.
+  if (gridcraftRuns(GRIDCRAFT_KEEP_RUNS).some(x => x.status === 'review')) return json(res, 409, { ok: false, error: 'A request is waiting for review. Keep or discard its changes first, then open another workbook.' });
+  try {
+    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/open`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }, 65000);
+    const data = await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` }));
+    if (!r.ok || data.ok !== true) return json(res, r.ok ? 502 : r.status, { ok: false, error: data.error || 'GridCraft did not open it' });
+    recordActivity('gridcraft', 'GridCraft workbook opened', name);
+    json(res, 200, { ok: true, file: name });
+  } catch (e) {
+    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+  }
+}
 async function apiGridcraftDecide(req, res, id, action) {
   if (!sameOriginJson(req, res)) return;
   const run = storage.readSetting(GRIDCRAFT_RUN_PREFIX + id, null);
@@ -3312,6 +3346,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/gridcraft/run') return await apiGridcraftRun(req, res);
     if (req.method === 'GET' && p === '/api/gridcraft/runs') return await apiGridcraftRuns(req, res);
     if (req.method === 'GET' && p === '/api/gridcraft/workbook') return await apiGridcraftWorkbook(req, res, urlObj);
+    if (req.method === 'GET' && p === '/api/gridcraft/workbooks') return await apiGridcraftWorkbooks(req, res);
+    if (req.method === 'POST' && p === '/api/gridcraft/open') return await apiGridcraftOpen(req, res);
     { const m = req.method === 'POST' && p.match(/^\/api\/gridcraft\/runs\/(gc-[\w-]+)\/(keep|discard)$/); if (m) return await apiGridcraftDecide(req, res, m[1], m[2]); }
 
     // cumulative release features

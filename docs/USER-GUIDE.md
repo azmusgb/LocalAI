@@ -104,6 +104,10 @@ waiting. Old Approvals links open the Inbox.
 change it. Pick a sheet tab to see its cells; tap a cell for its value and formula, and **Ask about this cell** to put its
 address in your request. **Show formulas** shows formula text in the grid. Long sheets page by 100 rows.
 
+To work on another workbook, choose it in the menu next to the workbook's name. It lists the spreadsheet files in the
+GridCraft folder on the Windows computer (`Documents\GridCraft`). If the open workbook has unsaved changes, the page asks
+first. While a Review request is waiting, keep or discard it before opening another workbook.
+
 Type what you want or tap an example, choose what the request may do, then **Run**:
 
 - **Read only**: it looks and answers, and cannot change anything.
