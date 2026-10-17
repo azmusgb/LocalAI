@@ -1937,3 +1937,17 @@ h2.run-drawer-title{margin:0;letter-spacing:normal}
   body.ux-v3 .work-list .run-card,body.ux-v3 #home .run-card{flex-wrap:wrap}
   body.ux-v3 .work-list .run-card .list-row__trail,body.ux-v3 #home .run-card .list-row__trail{width:100%;padding:0 0 0 48px;justify-content:flex-start}
 }
+/* Projects › Everything you kept (D7): conversations and research are list rows across the page; images stay cards. */
+.library-grid>.artifact--row{grid-column:1/-1;min-height:0;border-radius:var(--ds-r-md)}
+.artifact--row .artifact-body{display:grid;grid-template-columns:110px minmax(0,1fr) auto;align-items:center;gap:4px 14px;padding:10px 14px}
+.artifact--row .artifact-text{min-width:0;display:grid;gap:2px}
+.artifact--row .artifact-summary{-webkit-line-clamp:1}
+.artifact--row .artifact-foot{margin-top:0;gap:10px}
+@media(max-width:760px){
+  .artifact--row .artifact-body{grid-template-columns:minmax(0,1fr) auto;padding:10px 12px}
+  .artifact--row .artifact-text{grid-column:1/-1;grid-row:2}
+  .artifact--row .artifact-kind{grid-row:1}
+  .artifact--row .artifact-foot{grid-row:1;grid-column:2}
+}
+/* Phones: a strip of four or more tabs (Projects) is a two-column grid, so "Everything you kept" is never cut off. */
+@media(max-width:760px){body.ux-v3 .ux-tabs:has(>.ux-tab:nth-child(4)){display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;overflow:visible}}
