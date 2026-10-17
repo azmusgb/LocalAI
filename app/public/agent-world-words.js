@@ -121,7 +121,16 @@ function storyEvents(m){
 const TONE={running:'working',complete:'done',error:'bad',blocked:'bad',pending:'wait'};
 // Consecutive sentences about one worker read as one group under that worker.
 function groupStory(list){const g=[];for(const e of list||[]){const last=g[g.length-1];if(last&&e.workerId&&last.workerId===e.workerId)last.items.push(e);else g.push({workerId:e.workerId||'',items:[e]})}return g}
-const api={workerName,workerRole,workerStep,stateBadge,statusSentence,storyEvents,groupStory,errorWords,duration};
+// Who will be on the team, from the plan preview (/api/agents/dispatch routing.workers): "A UX Analyst will review
+// screens for usability; a Coordinator will put everyone’s findings together." The Coordinator always joins.
+function teamPreview(list){
+ const ws=(list||[]).map(w=>({...w,id:w.id||w.agentId})).filter(w=>key(w)!=='router'&&key(w)!=='synthesis');if(!ws.length)return{workers:[],text:''};
+ ws.push({id:'synthesis',name:'Coordinator'});
+ const base=(b,e)=>e==='es'&&/(ch|sh|x|ss)$/.test(b)?b:b+(e==='es'?'e':''),will=w=>workerRole(w).replace(/^(\w+?)(es|s)\b/,(m,b,e)=>base(b,e)).replace(/\band (\w+?)(es|s)\b/g,(m,b,e)=>'and '+base(b,e)).replace(/^./,c=>c.toLowerCase());
+ const parts=ws.map((w,i)=>{const n=workerName(w),a=/^[AEIOU]/i.test(n)&&!/^U[A-Z]/.test(n)?'an ':'a ';return(i?a:a.charAt(0).toUpperCase()+a.slice(1))+n+' will '+will(w)});
+ return{workers:ws,text:parts.join('; ')+'.'};
+}
+const api={teamPreview,workerName,workerRole,workerStep,stateBadge,statusSentence,storyEvents,groupStory,errorWords,duration};
 root.LocalAIAgentWords=api;
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);
