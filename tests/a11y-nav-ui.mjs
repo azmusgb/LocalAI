@@ -311,9 +311,13 @@ await check('journey: approve with the keyboard', async () => {
   let items = [{ id: 'ap1', title: 'Write notes.md', detail: 'Writes one file', risk: 'low', status: 'pending', createdAt: NOW }];
   await page.route(u => u.pathname === '/api/approvals', r => r.fulfill({ json: { items } }));
   await page.route(u => u.pathname === '/api/approvals/decide', r => { const b = r.request().postDataJSON(); decided.push(b); items = items.map(x => x.id === b.id ? { ...x, status: b.decision } : x); r.fulfill({ json: { ok: true } }); });
+  // One queue: old #approvals links open the Inbox; "Review: …" opens the approval sheet, where the decision is made.
   await page.evaluate(() => { location.hash = '#approvals' });
-  await page.waitForSelector('#approvals.active #approvalList [data-app-ok]');
-  await tabTo(page, '#approvalList [data-app-ok]');
+  await page.waitForSelector('#inbox.active [data-approval-open="ap1"]');
+  await tabTo(page, '[data-approval-open="ap1"]');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.getElementById('approvalSheet')?.open === true);
+  await tabTo(page, '#approvalSheet [data-decide="approved"]');
   await page.keyboard.press('Enter');
   for (let i = 0; i < 60 && !decided.length; i++) await page.waitForTimeout(50);
   assert.deepEqual(decided.map(d => [d.id, d.decision]), [['ap1', 'approved']]);
