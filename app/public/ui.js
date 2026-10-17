@@ -1033,7 +1033,7 @@ function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;
 function sync(forced){
  const view=REG.view(forced||activeView())?.id||forced||activeView(),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
  // A hidden page (Missions, Chat, Images) names itself in the breadcrumb and lights the page that owns it in the menus.
- const hidden=REG.view(view)?.domain==='hidden',page=pageForView(view),viewLabel=labelForView(page),navPage=menuPage(view);renderPageStrip(d,navPage);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=listedGroups(d).flatMap(g=>g.views).filter(v=>viewButton(v)).length<2;document.body.classList.toggle('ux-single-page',single&&!touchWide());q('#uxContextBar')?.classList.toggle('ux-context-same',!hidden&&(single||viewLabel===d.label))} // "Local AI / Domain" for a domain with one page, "Local AI / Domain / Page" otherwise
+ const hidden=REG.view(view)?.domain==='hidden',page=pageForView(view),viewLabel=labelForView(page),navPage=menuPage(view);renderPageStrip(d,navPage);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=listedGroups(d).flatMap(g=>g.views).filter(v=>viewButton(v)).length<2;document.body.classList.toggle('ux-single-page',single&&(hidden||!touchWide()));q('#uxContextBar')?.classList.toggle('ux-context-same',!hidden&&(single||viewLabel===d.label))} // "Local AI / Domain" for a domain with one page, "Local AI / Domain / Page" otherwise
  q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);q('#uxContextMenu')?.setAttribute('aria-label',d.label+' pages');syncHeaderAction(view);{const g=q('#uxContextGreeting');if(g)g.textContent=greeting()};
  qa('.ux-primary-item').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
  qa('#uxMobileNav [data-domain]').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
@@ -1055,6 +1055,8 @@ function linkErrors(){const sync=()=>Object.keys(ERROR_FIELDS).forEach(id=>{cons
  new MutationObserver(ms=>{for(const m of ms){if(m.type==='attributes'){if(ERROR_FIELDS[m.target.id])linkError(m.target)}else if(m.addedNodes.length){sync();return}}}).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden']})}
 // A touch screen wider than a phone (an iPad) keeps the page list on every page, even Work's one page, so the content
 // starts at the same x on every page instead of jumping 188px between tabs. A desktop with a mouse still drops it.
+// A page of its own that belongs to a one-page domain (Missions' Agent World, Runs: both Work) drops it on an iPad too:
+// the city is full width on a tablet (docs/superpowers/specs/2026-10-17-agent-world-design.md).
 function touchWide(){return matchMedia('(pointer:coarse) and (min-width:761px)').matches}
 // The sticky header draws a 1px line once the page scrolls (body.ux-scrolled), unless page tabs under it draw their own.
 function headerLine(){const strip=q('#uxPageStrip'),tabs=!!strip&&!strip.hidden&&strip.getBoundingClientRect().height>0;document.body.classList.toggle('ux-scrolled',window.scrollY>0&&!tabs)}

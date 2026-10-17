@@ -491,6 +491,25 @@ const DEV_WORDS = /Synthesis|Evidence|Routing|Mission Router|Capability|Groundin
   await check('1440px: no script errors (no summary)', async () => assert.deepEqual(errors, []));
   await context.close();
 }
+// iPad in portrait (tablet, 761–1023 px): the city is full width. Live, Work's one-item page list stayed open on this
+// hidden page (an iPad keeps the list on listed pages) and squeezed the city to 434 of 768 px.
+{
+  const { defaultBrowserType, ...device } = devices['iPad Mini'];
+  const context = await browser.newContext({ ...device, serviceWorkers: 'block' });
+  const { page, errors } = await seeded(context);
+  await check('iPad Mini: the city is full width; Work’s page list is closed', async () => {
+    await page.waitForTimeout(300);
+    const m = await page.evaluate(() => {
+      const w = s => document.querySelector(s)?.getBoundingClientRect().width || 0, sec = document.querySelector('.ux-secondary-nav');
+      return { vw: innerWidth, main: w('main'), canvas: w('#awcCanvas'), secShown: !!sec && getComputedStyle(sec).display !== 'none' && sec.getBoundingClientRect().width > 0 };
+    });
+    assert.equal(m.secShown, false, 'the page list is hidden');
+    assert.ok(m.main >= m.vw - 80, `main content takes all but the rail (${Math.round(m.main)} of ${m.vw})`);
+    assert.ok(m.canvas >= m.main * 0.85, `the city is at least 85% of the main content (${Math.round(m.canvas)} of ${Math.round(m.main)})`);
+  });
+  await check('iPad Mini: no script errors', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
 {
   const { defaultBrowserType, ...device } = devices['iPhone 14'];
   const { context, page, errors } = await withMission(device, DONE2);
