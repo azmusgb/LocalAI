@@ -1275,11 +1275,15 @@ function clampInt(v, min, max, fallback) {
 async function pollComfyHistory(promptId, timeoutMs = 180000) {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
-    const r = await fetchWithTimeout(`${COMFY_URL}/history/${encodeURIComponent(promptId)}`, {}, 7000);
-    if (r.ok) {
-      const j = await r.json();
-      if (j && j[promptId]) return j[promptId];
-    }
+    // ComfyUI can stop answering for a while when it loads a big model (Z-Image's 12 GB file on the 6 GB GPU took
+    // over 7 s), so a slow or failed check means "not done yet", not a failed image; only `end` gives up.
+    try {
+      const r = await fetchWithTimeout(`${COMFY_URL}/history/${encodeURIComponent(promptId)}`, {}, 7000);
+      if (r.ok) {
+        const j = await r.json();
+        if (j && j[promptId]) return j[promptId];
+      }
+    } catch {}
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
   throw new Error('Image generation timed out');
