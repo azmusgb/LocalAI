@@ -2891,7 +2891,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const card = run.card, kit = window.LocalAIKit;
     const project = document.createElement('span'); project.className = 'run-view-project';
     project.textContent = !run.projectId ? 'Not filed' : !state.projects ? 'Filed' : (state.projects.find((p) => p.id === run.projectId)?.name || 'Project removed');
-    drawer.appendChild(viewHead(run.title || 'Untitled run', [`${kindLabel(card?.kind || run.type)} · `, project], run));
+    drawer.appendChild(viewHead(run.threadTitle || run.title || 'Untitled run',   // a conversation keeps its first message as its name
+      [`${kindLabel(card?.kind || run.type)} · `, project], run));
 
     // Status badge, then a progress bar while the run is live.
     const vh = document.createElement('div'); vh.className = 'run-view-head';
