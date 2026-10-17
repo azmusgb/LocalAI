@@ -235,6 +235,35 @@ test('image runs share a thread', { timeout: 60000 }, async t => {
   assert.equal((await request('/api/runs?threads=1&type=image')).value.items.length, 1);
 });
 
+// ComfyUI stops answering while it loads a big model (Z-Image's 12 GB on the owner's 6 GB GPU): a history check that
+// times out is "not done yet", not a failed image. The first check here answers only after the 7 s per-check limit.
+test('an image survives a ComfyUI that is too busy to answer one progress check', { timeout: 60000 }, async t => {
+  let checks = 0;
+  const comfy = http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (req.url.startsWith('/object_info/CheckpointLoaderSimple')) return res.end(JSON.stringify({ CheckpointLoaderSimple: { input: { required: { ckpt_name: [['sd15.safetensors']] } } } }));
+      if (req.url === '/prompt') return res.end(JSON.stringify({ prompt_id: 'p1' }));
+      if (req.url.startsWith('/history/')) {
+        const done = () => res.end(JSON.stringify({ p1: { status: { status_str: 'success' }, outputs: { 9: { images: [{ filename: 'a.png', subfolder: '', type: 'output' }] } } } }));
+        if (++checks === 1) return setTimeout(() => { if (!res.writableEnded) done(); }, 8000);
+        return done();
+      }
+      res.end('{}');
+    });
+  });
+  comfy.listen(0, '127.0.0.1');
+  await once(comfy, 'listening');
+  t.after(async () => { comfy.closeAllConnections(); await new Promise(resolve => comfy.close(resolve)); });
+  const { request } = await startServer(t, { COMFY_URL: `http://127.0.0.1:${comfy.address().port}` });
+  const made = await request('/api/images/generate', { prompt: 'a lighthouse' });
+  assert.equal(made.response.status, 200, JSON.stringify(made.value));
+  assert.ok(checks >= 2, 'it asked again after the slow check');
+  const run = (await request(`/api/runs?limit=1&type=image`)).value.items[0];
+  assert.equal(run.status, 'completed');
+});
+
 // A ComfyUI with Z-Image Turbo's three files: Best runs it, and the chat's capability snapshot names it.
 test('Z-Image Turbo: Best engine, its graph, and the chat snapshot', { timeout: 60000 }, async t => {
   const queued = [];
