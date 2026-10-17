@@ -1107,7 +1107,6 @@ kbd{font:600 11px/1 var(--ds-mono);padding:2px 6px;border-radius:6px;border:1px 
 .tree-file .tree-icon{color:var(--ds-muted)}
 
 /* Run and change lists: requests can be whole pasted documents; show three lines (all sizes). */
-#engineeringRuns .item-card strong,#changeList .item-card strong{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 
 /* Claude chat panel: above the board on narrow screens, beside it from 1100px up. */
 .claude-chat{margin-bottom:12px;display:flex;flex-direction:column;gap:10px}
@@ -1237,10 +1236,6 @@ kbd{font:600 11px/1 var(--ds-mono);padding:2px 6px;border-radius:6px;border:1px 
   #workbenchTree .tree-children{padding-left:10px;margin-left:8px}
   #workbenchTree strong,#workbenchTree small{overflow-wrap:anywhere}
 
-  /* Change requests: long logs scroll inside their card instead of stretching the page. */
-  #engineeringExecution .item-card .meta{max-height:10em;overflow:auto}
-  #changeDetail.preview-pane{max-height:70vh;overflow:auto}
-
   /* Inbox alerts can carry whole pasted documents; four lines is enough to recognise one. */
   #inboxList .item-card>.muted,#approvalList .approval-card>.muted{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
   /* Code stays code: 16px (iOS zooms below that) but no mid-token wrapping; long lines scroll sideways. */
@@ -1340,9 +1335,6 @@ body.ux-v3.ux-nav-collapsed .ux-page-strip{display:flex}
 /* Long lists, all sizes: see "Long lists" in ui.js */
 .mobile-clipped{display:none!important}
 .mobile-more{width:100%;margin-top:8px;grid-column:1/-1}
-/* Detail panes and captured stack traces stay readable instead of running down the page. */
-#changeDetail.preview-pane{max-height:70vh;overflow:auto}
-#issueList .item-card pre,#issueList .item-card .muted,#qualityEvents .item-card pre{max-height:9em;overflow:auto;overflow-wrap:anywhere}
 .library-grid>.empty{grid-column:1/-1}
 .inbox-resolved{border-top:1px solid var(--ds-line);margin-top:12px;padding-top:4px}
 .inbox-resolved>summary{min-height:44px;display:flex;align-items:center;color:var(--ds-soft);font-weight:600}
