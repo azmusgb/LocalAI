@@ -40,5 +40,6 @@ kept up to date; the guides above describe what exists now.
 - [LocalAI evolution roadmap](superpowers/specs/2026-10-15-localai-evolution-design.md): one composer, one timeline; the page map will change
 - [Claude chat design](superpowers/specs/2026-10-15-claude-chat-design.md) and [plan](superpowers/plans/2026-10-15-claude-chat.md)
 - [Phone redesign design](superpowers/specs/2026-10-15-phone-redesign-design.md) and [plan](superpowers/plans/2026-10-15-phone-redesign.md)
+- [Agent World design](superpowers/specs/2026-10-17-agent-world-design.md): the Missions page redesigned around the city; phone sheet, story rail, plain words
 - [Web critique](superpowers/specs/2026-10-16-web-critique.md) and [web polish plan](superpowers/plans/2026-10-16-web-polish.md): what the 16 October review of every page found, what was fixed, and the owner's decisions
 - [Improve design](superpowers/specs/2026-10-15-improve-design.md) and [plan](superpowers/plans/2026-10-15-improve.md): roadmap sub-project 4, one pipeline for changing Local AI
