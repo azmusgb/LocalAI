@@ -29,7 +29,7 @@ function cacheBust(value){
   return u.origin===location.origin?u.pathname+u.search+u.hash:u.href;
 }
 function ago(iso){const d=Date.now()-new Date(iso).getTime();if(!Number.isFinite(d))return '';const future=d<0,s=Math.floor(Math.abs(d)/1000);if(s<60)return future?'in under a minute':'just now';const v=s<3600?`${Math.floor(s/60)}m`:s<86400?`${Math.floor(s/3600)}h`:`${Math.floor(s/86400)}d`;return future?`in ${v}`:`${v} ago`;}
-function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._hide);t._hide=setTimeout(()=>t.classList.remove('show'),2200);}
+function toast(msg){LocalAIUI.toast(String(msg??''))} // components.js: 6 s, paused on hover or focus
 function setPhase(phase,detail=''){
   state.chatPhase=phase;
   if($('chatState')) $('chatState').textContent=detail||phaseLabels[phase]||phase;

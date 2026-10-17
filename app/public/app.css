@@ -1894,6 +1894,17 @@ h1[tabindex="-1"]:focus,h1[tabindex="-1"]:focus-visible{outline:none}
 /* Health: a failed check sits above the last known services, not instead of them. */
 #serviceList .status-error{margin-bottom:10px}
 
+/* Feedback (appended; nothing above edited). Status toasts can be hovered (the pointer pauses them, components.js);
+   the update notice has its own Dismiss; errors sit in the page as alert boxes under what failed. */
+.toast.show{pointer-events:auto}
+/* Above the run view and Home's composer, which used to cover it on phones; on Home it sits above the composer. */
+.toast{z-index:190}
+@media(max-width:760px){body.ux-v3:has(#home.active) .toast{bottom:calc(76px + env(safe-area-inset-bottom) + var(--home-pad,0px) + 8px)}}
+.whatsnew-toast__body{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.whatsnew-dismiss{border:0;background:transparent;color:var(--ds-muted);font-size:20px;line-height:1;cursor:pointer;min-width:44px;min-height:44px}
+.whatsnew-dismiss:hover{color:var(--ds-text)}
+.improve-page-error,.improve-row__error{margin:8px 0;padding:10px 12px;border:1px solid color-mix(in srgb,var(--ds-bad) 40%,var(--ds-line));border-radius:var(--ds-r-md);background:color-mix(in srgb,var(--ds-bad) 8%,var(--ds-surface))}
+.improve-page-error[hidden]{display:none}
 /* Text reachable by touch (appended; nothing above edited). */
 /* Inbox: an alert body stops at four lines on every screen; Show more (aria-expanded, app.js inboxMore) opens the rest. */
 #inboxList .item-card>.muted{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}

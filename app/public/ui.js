@@ -1928,12 +1928,20 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   // Decisions update the card immediately, then sync; a toast offers Undo for six seconds.
   function toast(message, undo) {
     let el = $('claudeToast');
-    if (!el) { el = document.createElement('div'); el.id = 'claudeToast'; el.className = 'claude-toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+    // Paused while the pointer or focus is on it (Undo stays reachable); hiding empties it so no invisible Undo stays in the Tab order.
+    const hide = () => { clearTimeout(view.toastTimer); el.classList.remove('show'); el.replaceChildren(); };
+    const later = () => { clearTimeout(view.toastTimer); view.toastTimer = setTimeout(() => { if (!el.matches(':hover') && !el.contains(document.activeElement)) hide(); }, 6000); };
+    if (!el) {
+      el = document.createElement('div'); el.id = 'claudeToast'; el.className = 'claude-toast'; el.setAttribute('role', 'status'); document.body.appendChild(el);
+      el.addEventListener('mouseenter', () => clearTimeout(view.toastTimer)); el.addEventListener('focusin', () => clearTimeout(view.toastTimer));
+      el.addEventListener('mouseleave', () => { if (el.classList.contains('show')) el._later(); });
+      el.addEventListener('focusout', (e) => { if (el.classList.contains('show') && !el.contains(e.relatedTarget)) el._later(); });
+    }
+    el._later = later;
     el.innerHTML = `<span>${esc(message)}</span>${undo ? '<button type="button" class="btn small">Undo</button>' : ''}`;
     el.classList.add('show');
-    if (undo) el.querySelector('button').onclick = () => { el.classList.remove('show'); undo(); };
-    clearTimeout(view.toastTimer);
-    view.toastTimer = setTimeout(() => el.classList.remove('show'), 6000);
+    if (undo) el.querySelector('button').onclick = () => { hide(); undo(); };
+    later();
   }
   async function decide(id, status, { note, quiet } = {}) {
     const f = view.data?.findings.find((x) => x.id === id);
@@ -2887,7 +2895,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     drawer.replaceChildren();
     el('runDetailsSheet').replaceChildren();
     state.drawerSig = drawerSignature(run);
-    if (!run) { renderGap(drawer); return; }
+    if (!run) { renderGap(drawer); if (lost) refocus(lost); return; }   // Starting…/Loading… is rebuilt too (the router re-renders it): keep focus in the view
     const card = run.card, kit = window.LocalAIKit;
     const project = document.createElement('span'); project.className = 'run-view-project';
     project.textContent = !run.projectId ? 'Not filed' : !state.projects ? 'Filed' : (state.projects.find((p) => p.id === run.projectId)?.name || 'Project removed');
@@ -3561,10 +3569,12 @@ function mount(){const status=q('#status');if(!status||q('.whatsnew-card',status
 function announce(){
  const v=data?.current?.version,seen=pref.get();if(!v)return;pref.set(v);
  if(!seen||seen===v)return;
- const t=document.getElementById('toast');if(!t)return;
- t.innerHTML=`Updated to ${esc(v)}. <button type="button" class="whatsnew-open">See what's new</button>`;t.classList.add('show','whatsnew-toast');
- t.querySelector('.whatsnew-open').onclick=()=>{t.classList.remove('show');window.LocalAIRouter?.open('status');setTimeout(()=>q('#whatsNew')?.scrollIntoView({block:'start'}),100)};
- clearTimeout(t._hide);t._hide=setTimeout(()=>t.classList.remove('show','whatsnew-toast'),10000);
+ // Not timed: it stays until the owner opens What's new or dismisses it, and hiding it empties it (no invisible Tab stop).
+ const box=document.createElement('span');box.className='whatsnew-toast__body';
+ box.innerHTML=`<span>Updated to ${esc(v)}.</span> <button type="button" class="whatsnew-open">See what's new</button><button type="button" class="whatsnew-dismiss" aria-label="Dismiss">×</button>`;
+ const UI=window.LocalAIUI,t=UI?.toast?UI.toast(box,{ms:0}):null;if(!t)return;t.classList.add('whatsnew-toast');
+ box.querySelector('.whatsnew-open').onclick=()=>{UI.hideToast();window.LocalAIRouter?.open('status');setTimeout(()=>q('#whatsNew')?.scrollIntoView({block:'start'}),100)};
+ box.querySelector('.whatsnew-dismiss').onclick=()=>UI.hideToast();
 }
 async function start(){await load();mount();announce()}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(start,50),{once:true});else setTimeout(start,50);
