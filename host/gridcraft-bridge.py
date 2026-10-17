@@ -33,6 +33,11 @@ ALLOWED_ORIGINS = {
     ).split(',') if x.strip()
 }
 
+# ArtCraft (an image and video studio that works through cloud services) is only reported on and opened, never driven.
+LOCALAPPDATA = Path(os.environ.get('LOCALAPPDATA', USERPROFILE / 'AppData' / 'Local'))
+ARTCRAFT_EXE = Path(os.environ.get('ARTCRAFT_EXE', LOCALAPPDATA / 'ArtCraft' / 'artcraft.exe'))
+ON_WINDOWS = os.name == 'nt'
+
 run_lock = threading.Lock()
 launch_lock = threading.Lock()
 MODES = ('read', 'review', 'apply')
@@ -79,6 +84,73 @@ def _ensure_gridcraft() -> bool:
             return True
         time.sleep(0.5)
     return False
+
+
+def process_running(exe_name: str) -> bool:
+    name = exe_name.lower()
+    try:
+        if os.name == 'nt':
+            out = subprocess.run(['tasklist', '/FI', f'IMAGENAME eq {exe_name}', '/NH', '/FO', 'CSV'],
+                                 capture_output=True, text=True, timeout=10).stdout
+            return f'"{name}"' in out.lower()
+        out = subprocess.run(['ps', '-A', '-o', 'comm='], capture_output=True, text=True, timeout=10).stdout
+        return any(Path(line.strip()).name.lower() == name for line in out.splitlines())
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+_version_cache: dict = {}
+
+
+def file_version(path: Path):
+    # The exe's product version (Windows only), cached until the file changes.
+    if os.name != 'nt':
+        return None
+    try:
+        key = (str(path), path.stat().st_mtime)
+    except OSError:
+        return None
+    if key not in _version_cache:
+        try:
+            out = subprocess.run(
+                ['powershell', '-NoProfile', '-NonInteractive', '-Command',
+                 '(Get-Item -LiteralPath $env:LOCALAI_VERSION_OF).VersionInfo.ProductVersion'],
+                capture_output=True, text=True, timeout=15, env={**os.environ, 'LOCALAI_VERSION_OF': str(path)},
+            ).stdout.strip()
+            _version_cache[key] = out[:40] or None
+        except (OSError, subprocess.SubprocessError):
+            return None
+    return _version_cache[key]
+
+
+def artcraft_status() -> dict:
+    installed = ARTCRAFT_EXE.is_file()
+    return {
+        'ok': True,
+        'installed': installed,
+        'running': installed and process_running(ARTCRAFT_EXE.name),
+        'version': file_version(ARTCRAFT_EXE) if installed else None,
+    }
+
+
+def artcraft_launch_args() -> list:
+    # The bridge runs with the highest privileges, and ArtCraft is unsigned and talks to cloud services, so it must not
+    # inherit that token. explorer.exe hands the launch to the signed-in user's normal, non-admin shell. It returns at
+    # once and its exit code means nothing, so whether ArtCraft is running is still read from tasklist.
+    if ON_WINDOWS:
+        return ['explorer.exe', str(ARTCRAFT_EXE)]
+    return [str(ARTCRAFT_EXE)]
+
+
+def open_artcraft() -> tuple:
+    # Only the configured exe, with no arguments: nothing from the request reaches the command line.
+    if not ARTCRAFT_EXE.is_file():
+        return 404, {'ok': False, 'error': "ArtCraft isn't installed on the Windows computer"}
+    if process_running(ARTCRAFT_EXE.name):
+        return 200, {'ok': True, 'alreadyRunning': True}
+    subprocess.Popen(artcraft_launch_args(), cwd=str(ARTCRAFT_EXE.parent), creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0))
+    log.info('Opened ArtCraft')
+    return 200, {'ok': True, 'alreadyRunning': False}
 
 
 FINAL_MARKER = '[agent] model returned final text.'
@@ -214,6 +286,8 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        if self.path == '/artcraft':
+            return self._json(200, artcraft_status())
         url = urlsplit(self.path)
         if url.path == '/workbook':
             query = {k: v[0] for k, v in parse_qs(url.query).items() if k in ('sheet', 'range') and v}
@@ -230,7 +304,7 @@ class Handler(BaseHTTPRequestHandler):
         })
 
     def do_POST(self):
-        if self.path not in ('/run', '/keep', '/discard'):
+        if self.path not in ('/run', '/keep', '/discard', '/artcraft/open'):
             return self._json(404, {'ok': False, 'error': 'Not found'})
         # CORS only hides responses; it does not stop a page on another site from firing a simple POST.
         # Require an allowed Origin when a browser sends one, and a JSON content type (which forces a preflight).
@@ -239,6 +313,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(403, {'ok': False, 'error': 'Origin not allowed'})
         if self.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
             return self._json(415, {'ok': False, 'error': 'Content-Type must be application/json'})
+        if self.path == '/artcraft/open':
+            try:
+                return self._json(*open_artcraft())
+            except OSError as exc:
+                log.warning('Could not open ArtCraft: %s', exc)
+                return self._json(500, {'ok': False, 'error': f'Could not open ArtCraft: {exc}'})
         try:
             length = min(int(self.headers.get('Content-Length', '0')), 1024 * 1024)
             payload = json.loads(self.rfile.read(length) or b'{}')

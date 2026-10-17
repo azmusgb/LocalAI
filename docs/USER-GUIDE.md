@@ -116,6 +116,12 @@ A request takes from a few seconds to a few minutes, one at a time, and works fr
 lists past ones with what each changed. The badge says whether GridCraft is ready; if a request fails, the answer says
 why and **Try again** sends it once more.
 
+## ArtCraft
+**System › Services** has a card for ArtCraft, the image and video studio on the Windows computer. It says whether
+ArtCraft is installed and open there; **Open on the Windows computer** starts it. ArtCraft makes pictures and video
+through cloud services with your ArtCraft account, so what you type and the pictures you use leave your network and
+what it makes stays in that account. For anything private, use **Images**, which stays on this computer.
+
 ## Automations
 
 **System › Automations** is one page for everything that runs by itself. Pick a **Kind**, then create it:

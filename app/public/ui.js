@@ -2613,6 +2613,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       actions: [{ type: 'view', view: 'spreadsheets', label: 'Open Spreadsheets' }]
     },
     {
+      id: 'artcraft', name: 'ArtCraft', tier: 'bridge', decision: 'On the Windows computer · uses cloud services', source: 'artcraft',
+      summary: "An image and video studio. What you type and the pictures you use go to ArtCraft's cloud services and your ArtCraft account, unlike Images, which stays on this computer.",
+      guidance: 'Use Images for anything private. What ArtCraft makes is kept in your ArtCraft account, not on this computer.',
+      actions: [{ type: 'post', url: '/api/artcraft/open', label: 'Open on the Windows computer', done: 'ArtCraft is opening on the Windows computer', already: "It's already open there" }]
+    },
+    {
       id: 'penpot', name: 'Penpot', tier: 'bridge', decision: 'Not set up',
       summary: 'A design app Local AI could read and update designs in, if you run your own copy.',
       guidance: 'Its access key is a password: keep it out of screenshots, notes and shared files.',
@@ -2681,6 +2687,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (action.type === 'url') {
       return `<a class="btn-outline ux-int-action" data-external="true" href="${action.url}" target="_blank" rel="noopener noreferrer" aria-label="${action.label} for ${item.name} (opens external site)">${action.label} ↗</a>`;
     }
+    if (action.type === 'post') {
+      return `<button class="btn-outline ux-int-action" type="button" data-integration-post="${item.id}">${action.label}</button>`;
+    }
     if (action.type === 'page') {
       return `<a class="btn-outline ux-int-action" href="${action.url}">${action.label}</a>`;
     }
@@ -2703,6 +2712,26 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       </article>`;
     }).join('');
     qa('[data-integration-view]', holder).forEach(button => button.addEventListener('click', () => navigate(button.dataset.integrationView)));
+    qa('[data-integration-post]', holder).forEach(button => button.addEventListener('click', () => postAction(button)));
+  }
+
+  // An action that asks the appliance to do something (open ArtCraft on the Windows computer), then says what happened.
+  async function postAction(button) {
+    const action = INTEGRATIONS.find(item => item.id === button.dataset.integrationPost)?.actions.find(a => a.type === 'post');
+    if (!action || button.disabled) return;
+    const say = text => window.LocalAIUI?.toast(text);
+    button.disabled = true;
+    try {
+      const response = await fetch(action.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      say(data.alreadyRunning ? action.already : action.done);
+      window.setTimeout(loadStatus, 3000);
+    } catch (error) {
+      say(`That didn't work. ${error.message || error}`);
+    } finally {
+      button.disabled = false;
+    }
   }
 
   function renderAlternatives() {
@@ -2719,8 +2748,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const state = service?.state || 'UNKNOWN';
     const optional = service?.displayState === 'OPTIONAL_OFFLINE';
     element.className = `ux-int-live ${String(state).toLowerCase()}`;
-    const label = optional ? 'Optional offline' : state === 'HEALTHY' ? 'Healthy' : state === 'DOWN' ? 'Down' : state === 'DEGRADED' ? 'Degraded' : 'Status unavailable';
-    element.innerHTML = `<span class="dot ${optional ? '' : state}"></span> ${label}`;
+    const label = service?.label || (optional ? 'Optional offline' : state === 'HEALTHY' ? 'Healthy' : state === 'DOWN' ? 'Down' : state === 'DEGRADED' ? 'Degraded' : 'Status unavailable');
+    element.innerHTML = `<span class="dot ${optional ? '' : state}"></span> `;
+    element.append(label); // ArtCraft's label carries a version string from the Windows computer
   }
 
   function setBusy(busy) {
@@ -2745,8 +2775,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         const results = await Promise.allSettled([
           fetch('/api/status', { cache: 'no-store', signal: timed() }),
           fetch('/api/capabilities', { cache: 'no-store', signal: timed() }),
-          fetch('/api/gridcraft/health', { cache: 'no-store', signal: timed() })
+          fetch('/api/gridcraft/health', { cache: 'no-store', signal: timed() }),
+          fetch('/api/artcraft/status', { cache: 'no-store', signal: timed() })
         ]);
+        const artcraft = results[3].status === 'fulfilled' ? await results[3].value.json().catch(() => null) : null;
+        updateService('artcraft', !artcraft?.ok ? { state: 'NEUTRAL', label: 'Windows computer not answering' }
+          : artcraft.running ? { state: 'HEALTHY', label: `Open now${artcraft.version ? ` · ${artcraft.version}` : ''}` }
+            : artcraft.installed ? { state: 'NEUTRAL', label: `Installed, not open${artcraft.version ? ` · ${artcraft.version}` : ''}` }
+              : { state: 'DOWN', label: 'Not installed' });
         const gridcraft = results[2].status === 'fulfilled' ? await results[2].value.json().catch(() => null) : null;
         updateService('gridcraft', gridcraft?.ok
           ? { state: gridcraft.gridcraftConnected ? 'HEALTHY' : 'DEGRADED' }
