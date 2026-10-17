@@ -21,7 +21,7 @@ await check('no visible text under 11px in any view', async () => {
 });
 await check('primary actions use the accent, not white', async () => {
   await page.evaluate(() => window.showView('agents'));
-  const colors = await page.evaluate(() => [...document.querySelectorAll('.btn.primary,.go')].filter(b => b.offsetParent).map(b => getComputedStyle(b).backgroundColor));
+  const colors = await page.evaluate(() => [...document.querySelectorAll('.btn.primary,.btn-primary,.go')].filter(b => b.offsetParent).map(b => getComputedStyle(b).backgroundColor));
   assert.ok(colors.length > 0);
   for (const c of colors) assert.notEqual(c, 'rgb(238, 244, 255)', 'white primary button');
 });

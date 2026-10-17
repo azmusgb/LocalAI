@@ -122,3 +122,11 @@ test('runs of events from one worker are grouped', () => {
   const g = words.groupStory([{ workerId: 'a', text: '1' }, { workerId: 'a', text: '2' }, { workerId: '', text: '3' }, { workerId: 'b', text: '4' }]);
   assert.deepEqual(g.map(x => [x.workerId, x.items.map(i => i.text)]), [['a', ['1', '2']], ['', ['3']], ['b', ['4']]]);
 });
+
+test('the team preview says who will do what, in words', () => {
+  const p = words.teamPreview([{ agentId: 'ux_analyst', name: 'UX Analyst' }, { agentId: 'engineer', name: 'Engineer' }]);
+  assert.equal(p.text, 'A UX Analyst will review screens for usability; an Engineer will build the change; a Coordinator will put everyone’s findings together.');
+  assert.deepEqual(p.workers.map(w => w.id), ['ux_analyst', 'engineer', 'synthesis']);
+  assert.equal(words.teamPreview([]).text, '');
+  assert.equal(words.teamPreview([{ agentId: 'research_agent', name: 'Research Agent' }]).text, 'A Research Agent will look things up and gather sources; a Coordinator will put everyone’s findings together.');
+});

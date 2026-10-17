@@ -386,8 +386,7 @@ summary:focus-visible {
 /* ==== agent-specialists.css ==== */
 /* Agent Operations v2 — mission-first control surface */
 .agent-ops{display:grid;gap:14px}
-.agent-compose{border:1px solid var(--ux-line,var(--line));background:linear-gradient(180deg,#111925,#0d141d);border-radius:18px;padding:16px}
-.agent-compose__row{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:10px;align-items:end}.agent-compose textarea{min-height:96px;font-size:15px;line-height:1.45;resize:vertical}.agent-compose label{font-weight:760}.agent-compose__actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.agent-compose label.agent-compose__check{display:flex;align-items:center;gap:8px;min-height:44px;margin-top:6px;text-transform:none;letter-spacing:0;font-weight:500;font-size:14px}.agent-compose__check input{width:20px;height:20px;margin:0}.agent-compose__check .sub{font-size:13px}.agent-compose__actions .btn.primary{min-width:132px}
+
 .agent-inline-notice{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--ux-line,var(--line));border-radius:12px;padding:10px 12px;background:#0d151f}.agent-inline-notice>div{display:grid;gap:2px}.agent-inline-notice span{font-size:12px;color:var(--muted)}.agent-inline-notice[data-kind="error"]{border-color:rgba(255,113,128,.35);background:rgba(255,113,128,.05)}.agent-inline-notice[data-kind="success"]{border-color:rgba(98,222,160,.3);background:rgba(98,222,160,.05)}
 .agent-mission-strip{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--ux-line,var(--line));border-radius:12px;background:rgba(255,255,255,.018)}.agent-mission-strip :is(h2,h3){font-size:13px;margin:0 0 2px;letter-spacing:0}.agent-mission-strip small{color:var(--muted)}.agent-mission-progress{width:170px;height:6px;border-radius:99px;background:#172230;overflow:hidden}.agent-mission-progress span{display:block;height:100%;width:0;background:linear-gradient(90deg,#65a9ff,#55dff1,#6ce39a);transition:width .25s ease}
 .agent-panel{border:1px solid var(--ux-line,var(--line));background:var(--ux-surface,#101620);border-radius:16px;padding:14px;min-width:0}.agent-panel__head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.agent-panel__head h2{margin:0;font-size:14px}.agent-panel__head small{color:var(--muted)}
@@ -399,7 +398,7 @@ summary:focus-visible {
 .agent-advanced{border:1px solid var(--ux-line,var(--line));background:rgba(255,255,255,.012);border-radius:16px;padding:14px}.agent-advanced-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,.8fr);gap:12px}.route-head{display:flex;justify-content:space-between;gap:10px}.route-head>div{display:grid}.route-head small{color:var(--muted)}.route-flow{display:grid;gap:6px;margin-top:10px}.route-step{display:grid;grid-template-columns:28px 1fr;gap:8px;border:1px solid var(--ux-line,var(--line));border-radius:9px;padding:8px}.route-step__n{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:#162437;font-weight:850}.route-step span:last-child{display:grid}.route-step small{color:var(--muted)}.route-scorebar{height:4px;border-radius:99px;background:#172431;overflow:hidden;margin:5px 0 3px}.route-scorebar i{display:block;height:100%;background:linear-gradient(90deg,#6d9fff,#59e2ed,#75dfa2)}
 .agent-registry{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}.agent-card{display:grid;grid-template-columns:34px minmax(0,1fr);gap:9px;text-align:left;color:var(--text);border:1px solid var(--ux-line,var(--line));border-radius:11px;padding:10px;background:rgba(255,255,255,.018)}.agent-card.active{border-color:rgba(121,169,255,.45);background:rgba(121,169,255,.06)}.agent-card__icon{width:34px;height:34px;border-radius:8px;display:grid;place-items:center;background:#17263a;font-weight:850}.agent-card strong{display:block;font-size:11px}.agent-card small{display:block;color:var(--muted);margin-top:2px}.agent-meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}.execution-output{white-space:pre-wrap;max-height:300px;overflow:auto;margin-top:10px}.agent-direct-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
 @media(max-width:1100px){.agent-advanced-grid{grid-template-columns:1fr}}
-@media(max-width:760px){.agent-compose__row{grid-template-columns:1fr}.agent-mission-strip{grid-template-columns:1fr}.agent-mission-progress{width:100%}.agent-advanced-grid,.agent-direct-grid{grid-template-columns:1fr}.evidence-table>div{grid-template-columns:1fr}.agent-compose textarea{font-size:16px}}
+@media(max-width:760px){.agent-mission-strip{grid-template-columns:1fr}.agent-mission-progress{width:100%}.agent-advanced-grid,.agent-direct-grid{grid-template-columns:1fr}.evidence-table>div{grid-template-columns:1fr}}
 
 /* ==== ux-architecture-v2.css ==== */
 /* Local AI Navigation Architecture v3 */
@@ -523,27 +522,8 @@ body.ux-v3 .two{gap:14px}
 .awc__group button[data-game-primary="true"]{color:var(--aw-amber)}
 #awcZoomLabel{min-width:46px;text-align:center;font-size:12px;color:var(--aw-muted)}
 
-/* Mission strip */
-.awc__missionstrip{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(200px,.8fr) minmax(220px,.8fr);gap:20px;align-items:center;padding:12px 16px;background:var(--ds-bg-2);border-bottom:1px solid var(--aw-line)}
 .awc__eyebrow{font-size:11px;color:var(--aw-faint)}
-.awc__missioncopy{display:grid;gap:2px;min-width:0}
-.awc__missioncopy strong{font-size:14px;font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.awc__phase{display:grid;grid-template-columns:12px minmax(0,1fr);gap:9px;align-items:center;min-width:0}
-.awc__phaseDot{width:10px;height:10px;border-radius:3px;background:var(--aw-faint)}
-.awc-v3[data-state="running"] .awc__phaseDot{background:var(--aw-amber)}.awc-v3[data-state="complete"] .awc__phaseDot{background:var(--aw-green)}.awc-v3[data-state="attention"] .awc__phaseDot{background:var(--aw-red)}
-.awc__phase>span:last-child{display:grid;min-width:0}
-.awc__phase strong{font-size:13px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.awc__phase small{font-size:12px;color:var(--aw-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.awc__missionstate{display:grid;gap:7px}
-.awc__missionstateTop{display:flex;align-items:baseline;gap:9px;font-size:12px;color:var(--aw-muted)}
-.awc__missionstateTop b{font-size:13px;color:var(--aw-text)}
-.awc__attention{margin-left:auto;padding:1px 8px;border-radius:999px;border:1px solid rgba(255,107,107,.45);color:#ffc4c4;background:rgba(255,107,107,.08);font-size:11px}
-/* Hazard tape: amber/navy stripes while the crew is working, solid green once the job is done. */
-.awc__progress{height:10px;border-radius:999px;background:#13233a;overflow:hidden;box-shadow:inset 0 0 0 1px var(--aw-line)}
-.awc__progress span{display:block;height:100%;width:0;border-radius:inherit;background:var(--aw-green);transition:width .4s cubic-bezier(.2,.8,.2,1)}
-.awc-v3:is([data-state="running"],[data-state="waiting"]) .awc__progress span{background:repeating-linear-gradient(-45deg,var(--aw-amber) 0 8px,#2a2210 8px 16px);background-size:22.6px 100%;animation:awcTape 1.2s linear infinite}
-.awc-v3[data-state="attention"] .awc__progress span{background:repeating-linear-gradient(-45deg,var(--aw-red) 0 8px,#3a1515 8px 16px)}
-@keyframes awcTape{to{background-position:22.6px 0}}
+
 
 /* Stage: the map box sets the size and the canvas fills it absolutely (its height never depends on a percentage of an
    aspect-ratio box, which iOS Safari can resolve to 0); ui.js sizes the backing store to the box × device pixels. */
@@ -632,8 +612,7 @@ body.awc-stage-expanded{overflow:hidden}
   .awc__toolbar{grid-column:2;grid-row:1}
 }
 @container awc (max-width:1000px){
-  .awc__missionstrip{grid-template-columns:minmax(0,1fr) minmax(200px,.8fr)}
-  .awc__phase{grid-column:1/-1;grid-row:2}
+
 }
 @container awc (max-width:820px){
   .awc__commandbar{grid-template-columns:minmax(0,1fr)}
@@ -647,8 +626,7 @@ body.awc-stage-expanded{overflow:hidden}
   .awc__toolbar{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
   .awc__group{flex:0 0 auto}
   .awc__group button{min-height:40px}
-  .awc__missionstrip{grid-template-columns:minmax(0,1fr);gap:10px;padding:11px 12px}
-  .awc__phase{grid-row:auto}
+
   /* The phone map is small: keep only a compact selection chip on it. */
   .awc__minimap,.awc__eventFeed,.awc__legend{display:none}
   .awc__mapHud{left:8px;top:8px}
@@ -994,7 +972,6 @@ kbd{font:600 11px/1 var(--ds-mono);padding:2px 6px;border-radius:6px;border:1px 
 .statuschip{font-size:11px}
 .badge{font-size:11px}
 
-.agent-compose label{font-size:11px;text-transform:none;letter-spacing:0}
 .agent-inline-notice strong{font-size:11px;text-transform:none;letter-spacing:0}
 
 .timeline-step strong{font-size:11px}
@@ -2000,8 +1977,8 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .awc__rosterItem em{font-style:normal}
 .awc__rosterText>span{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .awc__tooltip[hidden]{display:none}
-/* In the rail the form and the strip are one column. */
-.aw-sheet .agent-compose__row,.aw-sheet .agent-mission-strip{grid-template-columns:minmax(0,1fr)}
+/* In the rail the strip is one column. */
+.aw-sheet .agent-mission-strip{grid-template-columns:minmax(0,1fr)}
 .aw-sheet .agent-mission-progress{width:100%}
 .awc__avatar{width:40px;height:40px;border-radius:10px;background:radial-gradient(circle at 50% 35%,#24405f,#0f1a2a 72%);image-rendering:pixelated}
 
@@ -2024,7 +2001,7 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
   #agents .aw-stage{position:fixed;left:0;right:0;top:var(--aw-top,56px);bottom:var(--aw-bottom,calc(var(--mobile-nav-height) + env(safe-area-inset-bottom)));z-index:1;display:block;overflow:hidden}
   #agents .aw-city,#agents #agentWorldCityMount{height:100%}
   #agents .awc-v3{height:100%;display:flex;flex-direction:column;border:0;border-radius:0;box-shadow:none}
-  #agents .awc__commandbar,#agents .awc__missionstrip{display:none}
+  #agents .awc__commandbar{display:none}
   #agents .awc__gameShell{flex:1;min-height:0}
   #agents .awc__mapWrap{height:100%;aspect-ratio:auto}
   #agents .awc__controls{bottom:calc(var(--aw-peek) + 20px)}
@@ -2045,7 +2022,7 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
   .aw-sheet__avatars .is-running{border-color:var(--ds-progress)}
   .aw-sheet__avatars :is(.is-error,.is-blocked){border-color:var(--ds-bad)}
   .aw-sheet__body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:0 16px calc(20px + env(safe-area-inset-bottom))}
-  .run-body-mission__world .awc__commandbar,.run-body-mission__world .awc__missionstrip{display:none}
+  .run-body-mission__world .awc__commandbar{display:none}
   .run-body-mission__world .awc__mapWrap{height:min(58vh,480px);aspect-ratio:auto}
 }
 @media(prefers-reduced-motion:reduce){.aw-sheet{transition:none}}
@@ -2070,7 +2047,7 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .aw-menu button:disabled{color:var(--ds-faint);cursor:default;background:transparent}
 
 /* In this page the header carries the title and the status, and the worker card replaces the city's chip. */
-#agents .awc__brand,#agents .awc__topstats,#agents .awc__missionstrip,#agents .awc__selection,#agents .agent-mission-strip{display:none}
+#agents .awc__brand,#agents .awc__topstats,#agents .awc__selection,#agents .agent-mission-strip{display:none}
 @media(min-width:761px){#agents .awc__commandbar{display:flex;justify-content:flex-end;padding:8px 10px}}
 @media(min-width:761px){#agents .awc__mapWrap{aspect-ratio:auto;height:min(760px,max(520px,calc(100vh - 230px)))}}
 
@@ -2144,3 +2121,43 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .sheets-result .btn-outline{justify-self:start}
 .sheets-result .btn-outline[hidden]{display:none}
 @media(max-width:760px){.topbar:has(.sheets-status){flex-wrap:wrap;gap:8px}.sheets-actions .btn-primary{width:100%}}
+
+/* Start a mission: one sheet (a modal dialog; a bottom sheet on phones). */
+.aw-start{box-sizing:border-box;width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 32px);padding:20px;border:1px solid var(--ds-line-2);border-radius:var(--ds-r-xl);background:var(--ds-surface);color:var(--ds-text);font-family:var(--ds-font);box-shadow:0 24px 70px rgba(0,0,0,.5);overflow:auto}
+.aw-start[open]{display:grid;gap:14px}
+.aw-start::backdrop{background:rgba(4,8,14,.72)}
+.aw-start__head{display:flex;align-items:center;gap:12px}
+.aw-start__head h2{flex:1;margin:0;font-size:20px}
+.aw-start__close{width:44px;height:44px;border:0;border-radius:10px;background:transparent;color:var(--ds-muted);font-size:22px;cursor:pointer}
+.aw-start__close:hover{background:var(--ds-surface-2);color:var(--ds-text)}
+.aw-start textarea{min-height:120px;font-size:16px;line-height:1.5;resize:vertical}
+.aw-team:empty{display:none}
+.aw-team{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;align-items:center;padding:12px;border-radius:var(--ds-r-md);background:var(--ds-bg-2)}
+.aw-team__label{font-size:12px;font-weight:650;color:var(--ds-muted)}
+.aw-team__faces{display:flex;justify-content:flex-end}
+.aw-team__faces .awc__avatar{width:32px;height:32px;margin-left:-6px;border:2px solid var(--ds-bg-2);border-radius:50%}
+.aw-team p{grid-column:1/-1;margin:0;font-size:14px;line-height:1.45;color:var(--ds-soft)}
+.aw-start__check{display:flex;align-items:center;gap:10px;min-height:44px;font-size:15px}
+.aw-start__check input{width:20px;height:20px;margin:0}
+.aw-start__check small{color:var(--ds-muted);font-size:13px}
+.aw-start__project{display:grid;gap:6px;font-size:13px;font-weight:600;color:var(--ds-soft)}
+.aw-start__actions{display:flex;justify-content:flex-end}
+.aw-start__actions .btn-primary{min-width:140px;min-height:48px;font-size:16px}
+.aw-start__dev{display:grid;gap:10px;padding-top:12px;border-top:1px solid var(--ds-line)}
+.aw-start__devbar{display:flex;gap:8px}
+.aw-start__devbar button{min-height:44px}
+@media(max-width:760px){
+  .aw-start{width:100%;max-width:100%;margin:auto 0 0;border-bottom:0;border-radius:var(--ds-r-xl) var(--ds-r-xl) 0 0;padding-bottom:calc(20px + env(safe-area-inset-bottom))}
+}
+
+/* No mission yet: the city at golden hour invites a goal. */
+.aw-city{position:relative}
+.aw-empty{position:absolute;inset:0;z-index:3;display:grid;place-items:center;padding:16px;pointer-events:none}
+.aw-empty[hidden]{display:none}
+.aw-empty__card{pointer-events:auto;max-width:420px;padding:22px;border:1px solid rgba(255,200,140,.35);border-radius:var(--ds-r-xl);background:rgba(12,20,34,.9);box-shadow:0 20px 60px rgba(0,0,0,.45);text-align:center}
+.aw-empty__card h2{margin:0;font-size:22px}
+.aw-empty__card p{margin:8px 0 16px;color:var(--ds-soft);font-size:15px;line-height:1.45}
+.aw-empty__actions{display:flex;flex-wrap:wrap;justify-content:center;gap:10px}
+.aw-empty__actions button{min-height:44px}
+@media(max-width:760px){.aw-empty{bottom:var(--aw-peek)}}
+.agent-inline-notice[hidden]{display:none}
