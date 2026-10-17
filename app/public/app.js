@@ -63,7 +63,7 @@ function renderAgentMap(phase = 'idle') {
 function activityHtml(item){const run=item.meta?.runId?`<button class="btn activity-run" type="button" data-open-run="${esc(item.meta.runId)}">Open run</button>`:'';return `<div class="activity-item"><div class="activity-icon">${icons[item.type]||'·'}</div><div><div class="activity-title">${esc(item.title)}</div><div class="activity-detail">${esc(item.detail||'')}</div>${run}</div><div class="activity-time">${ago(item.at)}</div></div>`;}
 
 // Data loaders for pages whose content is fetched on open. Every route (rail, tabs, mobile sheet, ⌘K) goes through showView.
-const VIEW_LOADERS={inbox:()=>loadInbox(),approvals:()=>loadApprovals(),memory:()=>loadMemory(),powershell:()=>loadPowerShellJobs()};
+const VIEW_LOADERS={inbox:()=>loadInbox(),memory:()=>loadMemory(),powershell:()=>loadPowerShellJobs()};
 // After a navigation, focus goes to the new page (its heading, else the page itself) so keyboard and screen-reader
 // users land where the page changed. Not on first load, and not when switching tabs inside a page.
 // The element that last had focus: hiding a page drops focus to the body before showView can look.
@@ -106,8 +106,12 @@ function showView(id){
   if(releaseState.selectedProject)for(const [view,sel] of [['knowledge','knowledgeProject'],['memory','memoryProject']])if(id===view&&$(sel))$(sel).value=releaseState.selectedProject;
   if(VIEW_LOADERS[id])Promise.resolve().then(VIEW_LOADERS[id]).catch(()=>{});
   window.LocalAIRouter?.shown(id);
-
+  rememberPage(id);
 }
+// The pages opened lately, newest first: ⌘K on a phone offers them before anything else.
+const RECENT_KEY='localai.recentPages';
+function recentPages(){try{const a=JSON.parse(localStorage.getItem(RECENT_KEY)||'[]');return Array.isArray(a)?a.filter(x=>typeof x==='string'):[]}catch{return []}}
+function rememberPage(id){if(window.LocalAIViews?.view(id)?.domain==='hidden')return;try{localStorage.setItem(RECENT_KEY,JSON.stringify([id,...recentPages().filter(x=>x!==id)].slice(0,12)))}catch{}}
 // A person's navigation goes through the router (push, hash, Back); showView is what the router and code call.
 function goTo(id){const R=window.LocalAIRouter;if(R&&R.open)R.open(id);else showView(id)}
 qsa('[data-view]').forEach(el=>el.addEventListener('click',()=>goTo(el.dataset.view)));
@@ -533,9 +537,15 @@ function artifactCard(item){
   const image=item.kind==='image'?safeUrl(item.meta?.imageUrl||item.data?.imageUrl,{image:true}):'';const symbol=icons[item.kind]||'□';
   return `<article class="artifact${image?' artifact--image':''}" data-artifact="${esc(item.id)}"><div class="artifact-preview">${image?`<img src="${esc(image)}" alt="">`:symbol}</div><div class="artifact-body"><div class="artifact-kind">${esc(KIND_LABEL[item.kind]||String(item.kind||'Item').replace(/^./,c=>c.toUpperCase()))}</div><div class="artifact-title" title="${esc(item.title)}">${esc(item.title)}</div><div class="artifact-summary">${esc(item.summary||'')}</div><div class="artifact-foot"><span class="meta">${ago(item.createdAt)}</span><span><button class="iconbtn pin-artifact" title="${item.pinned?'Unpin':'Pin'}" aria-label="${item.pinned?'Unpin':'Pin'} ${esc(item.title)}">${item.pinned?'★':'☆'}</button><button class="iconbtn delete-artifact" title="Delete" aria-label="Delete ${esc(item.title)}">×</button></span></div></div></article>`;
 }
+// Everything you kept (Projects › Library): text reads best as a list, so conversations and research are rows that span the
+// page, newest first; images keep their picture cards after them. One flat list, so "Show more" clips both alike.
+function artifactRow(item){
+  const kind=KIND_LABEL[item.kind]||String(item.kind||'Item').replace(/^./,c=>c.toUpperCase());
+  return `<article class="artifact artifact--row" data-artifact="${esc(item.id)}"><div class="artifact-body"><div class="artifact-kind">${esc(kind)}</div><div class="artifact-text"><div class="artifact-title" title="${esc(item.title)}">${esc(item.title)}</div>${item.summary?`<div class="artifact-summary">${esc(item.summary)}</div>`:''}</div><div class="artifact-foot"><span class="meta">${ago(item.createdAt)}</span><span><button class="iconbtn pin-artifact" title="${item.pinned?'Unpin':'Pin'}" aria-label="${item.pinned?'Unpin':'Pin'} ${esc(item.title)}">${item.pinned?'★':'☆'}</button><button class="iconbtn delete-artifact" title="Delete" aria-label="Delete ${esc(item.title)}">×</button></span></div></div></article>`;
+}
 function renderLibrary(){
   let items=state.library;const query=state.librarySearch.toLowerCase();if(state.libraryKind==='pinned')items=items.filter(x=>x.pinned);else if(state.libraryKind!=='all')items=items.filter(x=>x.kind===state.libraryKind);if(query)items=items.filter(x=>`${x.title} ${x.summary} ${x.kind}`.toLowerCase().includes(query));
-  $('libraryCount').textContent=`${items.length} item${items.length===1?'':'s'}`;const sig=items.map(x=>`${x.id}:${x.pinned}`).join('|');if(sig===state.lastLibrarySignature&&$('libraryGrid').children.length)return;state.lastLibrarySignature=sig;$('libraryGrid').innerHTML=items.length?items.map(artifactCard).join(''):`<div class="empty">${state.library.length?'Nothing matches that search or filter.':'Nothing saved yet. Chats, research and images you make are saved here.'}</div>`;
+  $('libraryCount').textContent=`${items.length} item${items.length===1?'':'s'}`;const sig=items.map(x=>`${x.id}:${x.pinned}`).join('|');if(sig===state.lastLibrarySignature&&$('libraryGrid').children.length)return;state.lastLibrarySignature=sig;$('libraryGrid').innerHTML=items.length?[...items.filter(x=>x.kind!=='image').map(artifactRow),...items.filter(x=>x.kind==='image').map(artifactCard)].join(''):`<div class="empty">${state.library.length?'Nothing matches that search or filter.':'Nothing saved yet. Chats, research and images you make are saved here.'}</div>`;
   qsa('.pin-artifact').forEach(b=>b.addEventListener('click',async e=>{const card=e.target.closest('[data-artifact]'),item=state.library.find(x=>x.id===card.dataset.artifact);if(!item)return;await fetch('/api/library/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:item.id,pinned:!item.pinned})});state.lastLibrarySignature='';await Promise.all([loadLibrary(),loadWorkspace()]);}));
   qsa('.delete-artifact').forEach(b=>b.addEventListener('click',async e=>{const id=e.target.closest('[data-artifact]').dataset.artifact,it=state.library.find(x=>x.id===id);if(!(await LocalAIUI.ask({title:`Delete "${it?.title||'this item'}"?`,effect:"It's removed from Library for good.",confirmLabel:'Delete',tone:'danger'})).ok)return;await fetch('/api/library/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});state.lastLibrarySignature='';await Promise.all([loadLibrary(),loadWorkspace(),loadActivity()]);}));
 }
@@ -660,13 +670,30 @@ window.addEventListener('DOMContentLoaded',()=>initReleaseFeatures().catch(e=>co
 const evo={notifications:[],memory:[],approvals:[],monitors:[],changes:[],selectedChange:'',quality:null,issues:[],engineeringRuns:[],selectedEngineeringRun:'',powerShellJobs:[],selectedPowerShellJob:''};
 async function evoApi(url,opts){const r=await fetch(url,opts);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);return j}
 async function evoPost(url,body){return evoApi(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
-// Approvals waiting on the owner: one number, counted here and read by the bell, both pills, the tab and the Alerts row.
+// Approvals waiting on the owner: one number, counted here and read by the bell, the Inbox pill and its "waiting" heading.
 function countPending(items){return (items||[]).filter(x=>x.status==='pending').length}
-async function loadInbox(){if(featureLevel()<7)return;return LocalAIUI.loadInto($('inboxList'),async()=>{const [n,a]=await Promise.all([evoApi('/api/notifications'),evoApi('/api/approvals').catch(()=>null)]);return {...n,approvals:a}},{what:'your inbox',empty:'',render:(c,j)=>{evo.notifications=j.items||[];evo.unread=j.unread||0;if(j.approvals)evo.pendingApprovals=countPending(j.approvals.items);const pending=evo.pendingApprovals||0;announceInboxCount();$('inboxUnread').textContent=`${evo.unread+pending} waiting`;const inboxCard=n=>`<div class="item-card"><div class="statusline"><strong style="flex:1">${esc(n.title)}</strong><span class="statuschip">${n.resolved?'Resolved':n.read?'Read':'New'}</span></div><small>${esc(n.kind)} · ${ago(n.createdAt)}</small><div class="muted" style="margin-top:6px">${esc(n.detail||'')}</div><button type="button" class="btn inbox-more" data-note-more aria-expanded="false" hidden>Show more</button><div class="actions" style="margin-top:8px">${!n.read?`<button class="btn" data-note-read="${esc(n.id)}">Mark read</button>`:''}${!n.resolved?`<button class="btn" data-note-resolve="${esc(n.id)}">Resolve</button>`:''}</div></div>`;
-  // What still needs you comes first: approvals waiting one tab over, then open alerts; resolved notices (updates, recoveries) fold away under Resolved.
+const approvalTitle=a=>String(a.title||'').replace(/\s+chg-\d+-[0-9a-f]+$/,'')||'Approval needed';
+// The Inbox is the history (one queue, D8): approvals still waiting head it, each opening the one approval sheet that Home ›
+// Needs you uses; then open alerts; then History, where resolved alerts and decided approvals fold away, newest first.
+async function loadInbox(){if(featureLevel()<7)return;return LocalAIUI.loadInto($('inboxList'),async()=>{const [n,a]=await Promise.all([evoApi('/api/notifications'),evoApi('/api/approvals').catch(()=>null)]);return {...n,approvals:a}},{what:'your inbox',empty:'',render:(c,j)=>{evo.notifications=j.items||[];evo.unread=j.unread||0;if(j.approvals){evo.approvals=j.approvals.items||[];evo.pendingApprovals=countPending(evo.approvals)}const pending=evo.pendingApprovals||0;announceInboxCount();$('inboxUnread').textContent=`${evo.unread+pending} waiting`;const inboxCard=n=>`<div class="item-card"><div class="statusline"><strong style="flex:1">${esc(n.title)}</strong><span class="statuschip">${n.resolved?'Resolved':n.read?'Read':'New'}</span></div><small>${esc(n.kind)} · ${ago(n.createdAt)}</small><div class="muted" style="margin-top:6px">${esc(n.detail||'')}</div><button type="button" class="btn inbox-more" data-note-more aria-expanded="false" hidden>Show more</button><div class="actions" style="margin-top:8px">${!n.read?`<button class="btn" data-note-read="${esc(n.id)}">Mark read</button>`:''}${!n.resolved?`<button class="btn" data-note-resolve="${esc(n.id)}">Resolve</button>`:''}</div></div>`;
+  const decidedCard=a=>`<div class="item-card inbox-decided"><div class="statusline"><strong style="flex:1">${esc(approvalTitle(a))}</strong><span class="statuschip">${esc(human(a.status))}</span></div><small>Approval · ${ago(a.updatedAt||a.createdAt)}</small>${a.detail?`<div class="muted" style="margin-top:6px">${esc(a.detail)}</div><button type="button" class="btn inbox-more" data-note-more aria-expanded="false" hidden>Show more</button>`:''}</div>`;
+  const waitingRow=a=>`<li data-approval-id="${esc(a.id)}"><button type="button" class="item-card inbox-approval" data-approval-open="${esc(a.id)}" aria-label="Review: ${esc(approvalTitle(a))}"><span class="statusline"><strong style="flex:1">${esc(approvalTitle(a))}</strong><span class="statuschip">${a.risk?`${esc(human(a.risk))} risk · `:''}Review</span></span><small>${esc(a.detail||'Waiting for your decision')}</small></button></li>`;
+  const waiting=(evo.approvals||[]).filter(x=>x.status==='pending'),decided=(evo.approvals||[]).filter(x=>x.status!=='pending');
   const open=evo.notifications.filter(n=>!n.resolved&&n.level!=='info'),done=evo.notifications.filter(n=>n.resolved||n.level==='info');
-  const approvalsRow=pending?`<button type="button" class="item-card inbox-approvals" data-goto="approvals"><div class="statusline"><strong style="flex:1">${pending} approval${pending===1?'':'s'} waiting</strong><span class="statuschip">Approvals →</span></div><small>Actions that wait for your OK before they change anything.</small></button>`:'';
-  $('inboxList').innerHTML=approvalsRow+(open.length?open.map(inboxCard).join(''):pending?'':'<div class="empty">Nothing needs you right now.</div>')+(done.length?`<details class="inbox-resolved"><summary>Updates and resolved (${done.length})</summary>${done.slice(0,40).map(inboxCard).join('')}</details>`:'');inboxMore();qsa('#inboxList [data-goto="approvals"]').forEach(b=>b.onclick=()=>showView('approvals'));qsa('[data-note-read]').forEach(b=>b.onclick=async()=>{await evoPost('/api/notifications/update',{id:b.dataset.noteRead,read:true});loadInbox()});qsa('[data-note-resolve]').forEach(b=>b.onclick=async()=>{await evoPost('/api/notifications/update',{id:b.dataset.noteResolve,resolved:true,read:true});loadInbox()});return true}})}
+  const history=[...done.map(n=>({t:Date.parse(n.updatedAt||n.createdAt)||0,html:inboxCard(n)})),...decided.map(a=>({t:Date.parse(a.updatedAt||a.createdAt)||0,html:decidedCard(a)}))].sort((x,y)=>y.t-x.t);
+  const waitingHtml=waiting.length?`<section class="inbox-waiting" aria-labelledby="inboxWaitingTitle"><h2 id="inboxWaitingTitle" class="inbox-waiting__title" tabindex="-1">${pending} approval${pending===1?'':'s'} waiting</h2><ul class="approval-list">${waiting.map(waitingRow).join('')}</ul></section>`:'';
+  $('inboxList').innerHTML=waitingHtml+(open.length?open.map(inboxCard).join(''):waiting.length?'':'<div class="empty" tabindex="-1">Nothing needs you right now.</div>')+(history.length?`<details class="inbox-resolved"><summary>History (${history.length})</summary>${history.slice(0,40).map(x=>x.html).join('')}</details>`:'');inboxMore();qsa('#inboxList [data-approval-open]').forEach(b=>b.onclick=()=>reviewApproval(b.dataset.approvalOpen));qsa('[data-note-read]').forEach(b=>b.onclick=async()=>{await evoPost('/api/notifications/update',{id:b.dataset.noteRead,read:true});loadInbox()});qsa('[data-note-resolve]').forEach(b=>b.onclick=async()=>{await evoPost('/api/notifications/update',{id:b.dataset.noteResolve,resolved:true,read:true});loadInbox()});return true}})}
+// Review in the Inbox opens the same sheet as Needs you; after a decision focus goes to the next waiting one (or the one
+// before, or the "Nothing needs you" line), and the sheet has already said what happened.
+async function reviewApproval(id){
+  const a=(evo.approvals||[]).find(x=>x.id===id);if(!a)return;
+  const ids=qsa('#inboxList [data-approval-open]').map(b=>b.dataset.approvalOpen),i=ids.indexOf(id),next=ids[i+1],prev=i>0?ids[i-1]:null;
+  if(!await LocalAIUI.approvalSheet(a))return;
+  await loadInbox().catch(()=>{});
+  LocalAIUI.refocus(id,{within:'#inboxList .approval-list',key:'approvalId',next,prev,control:'[data-approval-open]',fallback:document.getElementById('inboxWaitingTitle')||document.querySelector('#inboxList > .empty')||document.querySelector('#inbox h1')});
+}
+// A decision made elsewhere (Home › Needs you, a run) moves the bell and this list; the Inbox reloads itself after its own Review.
+window.addEventListener('localai:approval-decided',()=>{if(state.view!=='inbox')loadInbox().catch(()=>{})});
 // An alert body is clamped to four lines (app.css); when there is more, Show more opens it (aria-expanded) and a second tap folds it.
 // Cards folded under Resolved have no size yet, so they are measured again when that disclosure opens.
 function inboxMore(){
@@ -679,16 +706,8 @@ async function loadMemory(){if(featureLevel()<8)return;return LocalAIUI.loadInto
 async function addMemory(){const text=$('memoryText').value.trim();if(!text)return;await evoPost('/api/memory/add',{projectId:$('memoryProject').value,category:$('memoryCategory').value,text});$('memoryText').value='';await loadMemory();toast('Memory saved')}
 // The top bar shows one Inbox count: unread alerts plus approvals waiting on you.
 function announceInboxCount(){window.dispatchEvent(new CustomEvent('localai:inbox-count',{detail:{unread:evo.unread||0,pending:evo.pendingApprovals||0}}))}
-async function loadApprovals(){if(featureLevel()<9)return;return LocalAIUI.loadInto($('approvalList'),()=>evoApi('/api/approvals'),{what:'approvals',empty:'',render:(c,j)=>{evo.approvals=j.items||[];const pending=countPending(evo.approvals);evo.pendingApprovals=pending;announceInboxCount();$('approvalCount').textContent=`${pending} waiting`;const card=a=>{const t=esc(String(a.title||'').replace(/\s+chg-\d+-[0-9a-f]+$/,''));return `<li class="approval-card ${esc(a.status)}" data-approval-id="${esc(a.id)}"><div class="statusline"><h3 class="approval-title" style="flex:1">${t}</h3><span class="statuschip">${esc(human(a.risk))} risk · ${esc(human(a.status))}</span></div><div class="muted" style="margin-top:6px">${esc(a.detail)}</div>${a.status==='pending'?`<div class="actions" style="margin-top:8px"><button class="btn primary" data-app-ok="${esc(a.id)}" aria-label="Approve: ${t}">Approve</button><button class="btn danger" data-app-no="${esc(a.id)}" aria-label="Reject: ${t}">Reject</button></div>`:''}</li>`};
- // Waiting items first; resolved ones are folded into a closed section so they don't bury what needs a decision.
- const waiting=evo.approvals.filter(x=>x.status==='pending'),done=evo.approvals.filter(x=>x.status!=='pending');
- $('approvalList').innerHTML=(waiting.length?`<ul class="approval-list" aria-label="Waiting for you">${waiting.map(card).join('')}</ul>`:'<div class="empty">Nothing is waiting for you.</div>')+(done.length?`<details class="approval-resolved"><summary>Resolved (${done.length})</summary><ul class="approval-list">${done.map(card).join('')}</ul></details>`:'');qsa('[data-app-ok]').forEach(b=>b.onclick=()=>decideApproval(b.dataset.appOk,'approved'));qsa('[data-app-no]').forEach(b=>b.onclick=()=>decideApproval(b.dataset.appNo,'rejected'));return true}})}
-// After a decision: focus the next waiting Approve (or the one before, or "Nothing is waiting"), and say what happened.
-async function decideApproval(id,decision){
-  const ids=qsa('#approvalList [data-app-ok]').map(b=>b.dataset.appOk),i=ids.indexOf(id),next=ids[i+1]||'',prev=i>0?ids[i-1]:'';
-  await evoPost('/api/approvals/decide',{id,decision});await Promise.all([loadApprovals(),loadInbox()]);
-  LocalAIUI.refocus?.(id,{within:'#approvalList > .approval-list',key:'approvalId',next,prev,control:'[data-app-ok]',fallback:document.querySelector('#approvalList > .empty')});
-  toast(decision==='approved'?'Approved — Local AI will apply it':'Rejected — nothing will change')}
+// Approvals live in the Inbox now (D8): callers that refreshed them refresh the Inbox, which loads both.
+function loadApprovals(){return loadInbox()}
 async function inspectRepo(){try{const j=await evoApi('/api/repo/inspect?path='+encodeURIComponent($('repoPath').value));$('repoInfo').innerHTML=j.isRepo?`<div class="metric"><b>${esc(j.branch)}</b><span>branch</span></div><div class="muted" style="margin-top:8px">${esc(j.path)} · ${esc(j.commit||'unknown commit')}</div>`:'<div class="empty">No .git repository found from that path.</div>'}catch(e){toast(e.message)}}
 async function runWorkbenchCommand(){const cmd=$('commandName').value,args=$('commandArgs').value.trim().split(/\s+/).filter(Boolean),cwd=$('commandCwd').value;if(!(await LocalAIUI.ask({title:`Run "${cmd} ${args.join(' ')}"?`,effect:`In ${cwd}. Allow-listed command.`,confirmLabel:'Run',tone:'host',typed:'RUN'})).ok)return;$('commandOutput').textContent='Running…';try{const j=await evoPost('/api/workbench/command',{command:cmd,args,cwd,approved:true});$('commandOutput').textContent=`exit ${j.code}\n\n${j.stdout||''}${j.stderr?'\nSTDERR:\n'+j.stderr:''}`}catch(e){$('commandOutput').textContent=e.message}}
 async function createMonitor(){const name=$('autoName').value.trim()||'Local AI health';try{await evoPost('/api/monitors/create',{name,kind:'health'});$('autoName').value='';await loadAutomations();toast('Health check created — it runs every 15 minutes')}catch(e){toast(e.message)}}
@@ -789,19 +808,40 @@ function commandPalette(){
     // A developer page (registry `dev`) is offered only while Developer tools (Health) is on, like the menus.
     const devOff=document.body.classList.contains('dev-tools-off');
     const q=input.value.trim().toLowerCase();shown=actions.filter(a=>$(a.id)&&a.terms.includes(q)&&!(devOff&&R.view(a.id)?.dev));
-    list.innerHTML=shown.length?shown.map((a,n)=>`<button type="button" id="cmdk-opt-${n}" role="option" class="cmdk-item" data-cmd-view="${esc(a.id)}">${esc(a.label)}</button>`).join('')
+    const groups=!q&&phone()?likely(shown):null;if(groups)shown=groups.flatMap(g=>g.items);
+    const opt=(a,n)=>`<button type="button" id="cmdk-opt-${n}" role="option" class="cmdk-item" data-cmd-view="${esc(a.id)}">${esc(a.label)}</button>`;
+    let n=0;
+    list.innerHTML=groups?groups.map((g,i)=>`<div class="cmdk-group" role="group" aria-labelledby="cmdk-group-${i}"><div class="cmdk-group__label" id="cmdk-group-${i}">${esc(g.label)}</div>${g.items.map(a=>opt(a,n++)).join('')}</div>`).join('')
+      :shown.length?shown.map(opt).join('')
       :`<div class="cmdk-empty"><p>No pages match “${esc(input.value.trim())}”.</p><button type="button" class="btn-outline" data-cmd-work>Search your work for “${esc(input.value.trim())}”</button></div>`;
     {const n=shown.length,c=$('cmdkCount');if(c)c.textContent=n?`${n} page${n===1?'':'s'}`:'No pages match'} // a screen reader hears the count
     list.querySelectorAll('[data-cmd-view]').forEach(b=>b.onclick=()=>go(b.dataset.cmdView));
     list.querySelector('[data-cmd-work]')?.addEventListener('click',searchWork);
     select(0);
   }
+  // On a phone, an empty search offers the 8 likeliest pages instead of all of them: the ones opened lately, then the
+  // other pages of the section you are in, then each section's first page. Typing still searches every page.
+  const phone=()=>matchMedia('(max-width:760px)').matches;
+  function likely(offered){
+    const by=new Map(offered.map(a=>[a.id,a])),here=new Set([state.view,R.page(state.view)?.id]),taken=new Set(),out=[];let room=8;
+    const take=(label,ids,max=room)=>{const items=[];for(const id of ids){if(items.length>=Math.min(max,room))break;const a=by.get(id);if(a&&!here.has(id)&&!taken.has(id)){taken.add(id);items.push(a)}}room-=items.length;if(items.length)out.push({label,items})};
+    const dom=R.DOMAINS.find(d=>d.id===R.page(state.view)?.domain);
+    take('Recent',recentPages(),5);
+    if(dom)take(dom.label,R.sections(dom.id).flatMap(s=>s.views));
+    take('Go to',R.DOMAINS.map(d=>d.defaultView));
+    take('More',offered.map(a=>a.id));
+    return out;
+  }
+  // The sheet sits on the keyboard: iOS keeps innerHeight and shrinks only the visual viewport.
+  const vv=window.visualViewport;
+  function dock(){if(!el.classList.contains('show'))return;const kb=vv?Math.max(0,Math.round(innerHeight-vv.height-vv.offsetTop)):0;el.style.setProperty('--cmdk-kb',kb+'px');el.style.setProperty('--cmdk-vh',Math.round(vv?vv.height:innerHeight)+'px')}
+  if(vv){vv.addEventListener('resize',dock,{passive:true});vv.addEventListener('scroll',dock,{passive:true})}
   function go(id){close(false);goTo(id)}
   // No page matched: look through the owner's own work instead (Work's search box filters the loaded runs).
   function searchWork(){const q=input.value.trim();close(false);goTo('work');
     // Work sets itself up when it becomes the open page; fill its search box after that, not before.
     let tries=0;const fill=()=>{const w=$('workSearch'),sec=$('work');if(w&&sec?.classList.contains('active')&&tries>2){w.value=q;w.dispatchEvent(new Event('input',{bubbles:true}));return}if(++tries<40)setTimeout(fill,50)};fill()}
-  function open(){if(el.classList.contains('show'))return;opener=document.activeElement;el.classList.add('show');el.setAttribute('aria-hidden','false');input.setAttribute('aria-expanded','true');input.value='';render();if(typeof el.showModal==='function'&&!el.open)el.showModal();input.focus()}
+  function open(){if(el.classList.contains('show'))return;opener=document.activeElement;el.classList.add('show');el.setAttribute('aria-hidden','false');input.setAttribute('aria-expanded','true');input.value='';render();if(typeof el.showModal==='function'&&!el.open)el.showModal();dock();input.focus()}
   function close(restore=true){if(!el.classList.contains('show'))return;el.classList.remove('show');el.setAttribute('aria-hidden','true');input.setAttribute('aria-expanded','false');if(el.open)el.close();if(restore&&opener?.isConnected&&opener.focus)opener.focus()}
   input.addEventListener('input',render);
   input.addEventListener('keydown',e=>{
@@ -819,12 +859,14 @@ function commandPalette(){
 async function bindEvo(){
   if(!releaseState.config) await loadReleaseConfig();
   commandPalette();
+  // A pull down from the top refreshes these lists on a touch screen (components.js pullToRefresh).
+  for(const [v,fn] of [['inbox',loadInbox],['approvals',loadApprovals],['library',loadLibrary],['projects',loadProjects]])LocalAIUI.pullToRefresh?.(v,fn);
   $('memoryAddBtn')?.addEventListener('click',addMemory);$('memoryProject')?.addEventListener('change',loadMemory);
   $('repoInspectBtn')?.addEventListener('click',inspectRepo);$('commandRunBtn')?.addEventListener('click',runWorkbenchCommand);
   $('briefBtn')?.addEventListener('click',generateBrief);$('autoKind')?.addEventListener('change',syncAutoKind);syncAutoKind();
   $('powershellUnlockForm')?.addEventListener('submit',e=>{e.preventDefault();unlockPowerShell();});$('powershellCreateBtn')?.addEventListener('click',createPowerShellJob);$('powershellRefreshBtn')?.addEventListener('click',()=>loadPowerShellJobs());
   window.showView=showView;window.LocalAIRouter?.start();
-  if(featureLevel()>=7){loadInbox().catch(()=>{});setInterval(()=>{if(!document.hidden)loadInbox().catch(()=>{})},60000)}if(featureLevel()>=9)loadApprovals().catch(()=>{});if(featureLevel()>=17)loadPowerShellJobs().catch(()=>{});
+  if(featureLevel()>=7){loadInbox().catch(()=>{});setInterval(()=>{if(!document.hidden)loadInbox().catch(()=>{})},60000)}if(featureLevel()>=17)loadPowerShellJobs().catch(()=>{});
 }
 window.addEventListener('DOMContentLoaded',()=>bindEvo().catch(e=>console.warn('evolution features',e)));
 // ===== end product evolution client ==========================================

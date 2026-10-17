@@ -145,22 +145,22 @@ await check('page tabs: one tab stop, arrows/Home/End move between tabs, each ta
   await page.evaluate(() => { location.hash = '#projects' });
   await page.waitForSelector('#projects.active .ux-tab');
   const tabs = page.locator('#projects .ux-tab');
-  assert.deepEqual(await tabs.evaluateAll(ts => ts.map(t => t.tabIndex)), [0, -1, -1], 'only the selected tab is in the Tab order');
-  assert.deepEqual(await tabs.evaluateAll(ts => ts.map(t => t.getAttribute('aria-controls'))), ['projects', 'knowledge', 'memory']);
+  assert.deepEqual(await tabs.evaluateAll(ts => ts.map(t => t.tabIndex)), [0, -1, -1, -1], 'only the selected tab is in the Tab order');
+  assert.deepEqual(await tabs.evaluateAll(ts => ts.map(t => t.getAttribute('aria-controls'))), ['projects', 'knowledge', 'memory', 'library']);
   await tabs.first().focus();
   await page.keyboard.press('ArrowRight');
   await page.waitForSelector('#knowledge.active');
   await page.waitForFunction(() => document.activeElement?.closest('#knowledge') && document.activeElement.dataset.uxTab === 'knowledge', null, { timeout: 2000 });
-  assert.deepEqual(await page.locator('#knowledge .ux-tab').evaluateAll(ts => ts.map(t => t.tabIndex)), [-1, 0, -1]);
+  assert.deepEqual(await page.locator('#knowledge .ux-tab').evaluateAll(ts => ts.map(t => t.tabIndex)), [-1, 0, -1, -1]);
   await page.keyboard.press('End');
-  await page.waitForSelector('#memory.active');
-  await page.waitForFunction(() => document.activeElement?.closest('#memory') && document.activeElement.dataset.uxTab === 'memory', null, { timeout: 2000 });
+  await page.waitForSelector('#library.active');
+  await page.waitForFunction(() => document.activeElement?.closest('#library') && document.activeElement.dataset.uxTab === 'library', null, { timeout: 2000 });
   await page.keyboard.press('ArrowRight'); // wraps
   await page.waitForSelector('#projects.active');
   await page.waitForFunction(() => document.activeElement?.closest('#projects') && document.activeElement.dataset.uxTab === 'projects', null, { timeout: 2000 });
-  await page.keyboard.press('ArrowLeft');
-  await page.waitForSelector('#memory.active');
-  await page.waitForFunction(() => document.activeElement?.closest('#memory') && document.activeElement.dataset.uxTab === 'memory', null, { timeout: 2000 });
+  await page.keyboard.press('ArrowLeft'); // wraps back to the last tab
+  await page.waitForSelector('#library.active');
+  await page.waitForFunction(() => document.activeElement?.closest('#library') && document.activeElement.dataset.uxTab === 'library', null, { timeout: 2000 });
   await page.keyboard.press('Home');
   await page.waitForSelector('#projects.active');
   await page.waitForFunction(() => document.activeElement?.dataset?.uxTab === 'projects', null, { timeout: 2000 });
@@ -311,9 +311,13 @@ await check('journey: approve with the keyboard', async () => {
   let items = [{ id: 'ap1', title: 'Write notes.md', detail: 'Writes one file', risk: 'low', status: 'pending', createdAt: NOW }];
   await page.route(u => u.pathname === '/api/approvals', r => r.fulfill({ json: { items } }));
   await page.route(u => u.pathname === '/api/approvals/decide', r => { const b = r.request().postDataJSON(); decided.push(b); items = items.map(x => x.id === b.id ? { ...x, status: b.decision } : x); r.fulfill({ json: { ok: true } }); });
+  // One queue: old #approvals links open the Inbox; "Review: …" opens the approval sheet, where the decision is made.
   await page.evaluate(() => { location.hash = '#approvals' });
-  await page.waitForSelector('#approvals.active #approvalList [data-app-ok]');
-  await tabTo(page, '#approvalList [data-app-ok]');
+  await page.waitForSelector('#inbox.active [data-approval-open="ap1"]');
+  await tabTo(page, '[data-approval-open="ap1"]');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.getElementById('approvalSheet')?.open === true);
+  await tabTo(page, '#approvalSheet [data-decide="approved"]');
   await page.keyboard.press('Enter');
   for (let i = 0; i < 60 && !decided.length; i++) await page.waitForTimeout(50);
   assert.deepEqual(decided.map(d => [d.id, d.decision]), [['ap1', 'approved']]);

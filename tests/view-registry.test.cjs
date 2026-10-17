@@ -19,7 +19,7 @@ const PENDING = new Set(['work']);
 
 test('registry has five domains and every view belongs to one', () => {
   assert.deepEqual(registry.DOMAINS.map(d => d.id), ['home', 'work', 'projects', 'improve', 'system']);
-  assert.deepEqual(registry.DOMAINS.map(d => d.defaultView), ['home', 'work', 'library', 'backlog', 'status']);
+  assert.deepEqual(registry.DOMAINS.map(d => d.defaultView), ['home', 'work', 'projects', 'backlog', 'status']);
   const domains = new Set([...registry.DOMAINS.map(d => d.id), 'hidden']);
   const ids = registry.VIEWS.map(v => v.id);
   assert.equal(new Set(ids).size, ids.length, 'view ids must be unique');
@@ -47,6 +47,15 @@ test('Monitors is part of Automations: #operations opens Automations (D9)', () =
   assert.equal(registry.resolve('operations'), 'automationStudio');
   assert.equal(registry.view('operations').id, 'automationStudio');
   assert.ok(registry.view('automationStudio').aka.includes('morning brief'), 'typing "morning brief" in ⌘K finds Automations');
+});
+
+test('Library is a tab of Projects named "Everything you kept" (D7)', () => {
+  const lib = registry.view('library');
+  assert.equal(lib.parent, 'projects');
+  assert.equal(lib.tab, 'Everything you kept');
+  assert.equal(registry.page('library').id, 'projects');
+  assert.ok(registry.tabs('projects').some(v => v.id === 'library'));
+  assert.deepEqual(registry.sections('projects').flatMap(s => s.views), ['projects'], 'Projects is the only page in its domain');
 });
 
 test('every domain icon has a sprite symbol', () => {
@@ -111,8 +120,12 @@ test('tabs belong to a top-level page in the same domain', () => {
     assert.equal(parent.domain, v.domain, `${v.id} must share its parent's domain`);
     assert.ok(v.tab && parent.tab, `${v.id} and ${parent.id} need tab labels`);
   }
-  assert.deepEqual(registry.tabs('approvals').map(v => v.id), ['inbox', 'approvals']);
-  assert.deepEqual(registry.tabs('projects').map(v => v.id), ['projects', 'knowledge', 'memory']);
+  // One queue (D8): Approvals is no longer a tab; the Inbox is one page named Inbox, and old #approvals links open it.
+  assert.deepEqual(registry.tabs('inbox'), []);
+  assert.equal(registry.resolve('approvals'), 'inbox');
+  assert.equal(registry.view('approvals').id, 'inbox');
+  assert.notEqual(registry.view('inbox').tab, 'Alerts');
+  assert.deepEqual(registry.tabs('projects').map(v => v.id), ['projects', 'knowledge', 'memory', 'library']);
   assert.deepEqual(registry.tabs('claude'), []);
 });
 

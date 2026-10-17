@@ -84,12 +84,15 @@ await check('opening a page loads its data even without a nav button click', asy
 
 for (const [parent, child, childTab, domain] of [
   // Issues / Quality signals are hidden while Signals (Improve) shows the same detections.
-  ['inbox', 'approvals', 'Approvals', 'home'],
   ['projects', 'knowledge', 'Sources', 'projects'],
+  ['projects', 'library', 'Everything you kept', 'projects'],
 ]) {
   await check(`${child} is a tab of ${parent}`, async () => {
     await page.locator(`.ux-primary-item[data-domain="${domain}"]`).click();
-    await page.locator(`.ux-secondary-link[data-view="${parent}"]`).click();
+    // A domain with one page (Projects) has no page list beside the rail: the rail item opens that page.
+    const link = page.locator(`.ux-secondary-link[data-view="${parent}"]`);
+    const listed = await link.isVisible();
+    if (listed) await link.click();
     await page.waitForSelector(`#${parent}.active`);
     const tabs = page.locator(`#${parent} .ux-tabs .ux-tab`);
     assert.ok(await tabs.count() >= 2);
@@ -99,29 +102,27 @@ for (const [parent, child, childTab, domain] of [
     assert.equal(await page.locator(`#${child} .ux-tab[data-ux-tab="${child}"]`).innerText(), childTab);
     assert.equal(await page.locator(`#${child} .ux-tab[data-ux-tab="${child}"]`).getAttribute('aria-selected'), 'true');
     assert.equal(await page.locator('#uxContextView').innerText(), await page.locator(`#${child} h1`).first().innerText());
-    assert.ok((await page.locator(`.ux-secondary-link[data-view="${parent}"]`).getAttribute('class')).includes('active'), 'parent stays highlighted in the nav');
+    if (listed) assert.ok((await link.getAttribute('class')).includes('active'), 'parent stays highlighted in the nav');
     assert.ok(!(await secondaryLabels()).includes(childTab), `${childTab} should not have its own nav entry`);
   });
 }
 
-await check('top bar shows one Inbox count and opens the right tab', async () => {
+await check('top bar shows one Inbox count and opens the Inbox', async () => {
   // Stub the two sources so the real loaders produce known counts.
   const counts = { unread: 0, pending: 2 };
   await page.route('**/api/notifications', route => route.fulfill({ json: { items: [], unread: counts.unread } }));
   await page.route('**/api/approvals', route => route.fulfill({ json: { items: Array.from({ length: counts.pending }, (_, i) => ({ id: `a${i}`, status: 'pending', title: 'Approve change', createdAt: new Date().toISOString() })) } }));
   const refresh = async () => {
-    for (const view of ['inbox', 'approvals']) {
-      const loaded = page.waitForResponse(r => r.url().includes(view === 'inbox' ? '/api/notifications' : '/api/approvals'));
-      await page.evaluate(v => window.showView(v), view);
-      await loaded;
-    }
+    const loaded = Promise.all(['/api/notifications', '/api/approvals'].map(u => page.waitForResponse(r => r.url().includes(u))));
+    await page.evaluate(() => window.showView('inbox'));
+    await loaded;
     await page.evaluate(() => window.showView('home'));
   };
   try {
     await refresh();
     await page.waitForFunction(() => document.querySelector('#uxInboxCount')?.textContent === '2');
     await page.locator('#uxInboxBtn').click();
-    await page.waitForSelector('#approvals.active');
+    await page.waitForSelector('#inbox.active');
     counts.unread = 3;
     await refresh();
     await page.waitForFunction(() => document.querySelector('#uxInboxCount')?.textContent === '5');
@@ -153,18 +154,38 @@ await check('opening a run keeps you on your page (open is false for an unknown 
 });
 
 await check('page list collapses to the rail, shows the page strip, and remembers it', async () => {
-  await page.evaluate(() => window.showView('library'));
+  await page.evaluate(() => window.showView('models'));
   await page.locator('.ux-nav-collapse').click();
   assert.equal(await page.locator('.ux-secondary-nav').isVisible(), false);
-  assert.deepEqual(await page.locator('#uxPageStrip button').allInnerTexts(), ['Library', 'Projects']);
-  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Library');
-  await page.locator('#uxPageStrip [data-strip-view="projects"]').click();
-  await page.waitForSelector('#projects.active');
+  const strip = await page.locator('#uxPageStrip button').allInnerTexts();
+  assert.ok(strip.includes('Health') && strip.includes('Models'), strip.join(','));
+  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Models');
+  await page.locator('#uxPageStrip [data-strip-view="status"]').click();
+  await page.waitForSelector('#status.active');
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.body.classList.contains('ux-nav-collapsed'));
   await page.locator('.ux-nav-expand').click();
   assert.equal(await page.locator('.ux-secondary-nav').isVisible(), true);
   assert.equal(await page.locator('#uxPageStrip').isVisible(), false);
+});
+
+await check('the Projects tab lands on Projects, and Library is its "Everything you kept" tab (D7)', async () => {
+  await page.locator('.ux-primary-item[data-domain="projects"]').click();
+  await page.waitForSelector('#projects.active');
+  assert.equal(await page.evaluate(() => location.hash), '#projects');
+  const tabs = await page.locator('#projects .ux-tabs .ux-tab').allInnerTexts();
+  assert.ok(tabs.includes('Everything you kept'), tabs.join(','));
+  assert.equal((await secondaryLabels()).includes('Library'), false, 'Library has no menu entry of its own');
+  await page.locator('#projects .ux-tab[data-ux-tab="library"]').click();
+  await page.waitForSelector('#library.active');
+  assert.equal(await page.locator('#library h1').innerText(), 'Projects');
+  assert.match(await crumb(), /Projects/);
+  // An old #library link still opens it, as the tab of Projects.
+  await page.evaluate(() => { location.hash = '#home' });
+  await page.waitForSelector('#home.active');
+  await page.evaluate(() => { location.hash = '#library' });
+  await page.waitForSelector('#library.active');
+  assert.equal(await page.locator('#library .ux-tab.active').innerText(), 'Everything you kept');
 });
 
 await check('no script errors while navigating', async () => {
@@ -224,13 +245,13 @@ await check('mobile tab pages have no horizontal overflow', async () => {
   }
 });
 await check('phone: the page strip switches pages in the section in one tap', async () => {
-  await mobile.locator('#uxMobileNav [data-domain="projects"]').tap();
-  await mobile.waitForSelector('#library.active');
-  assert.equal(await mobile.locator('.ux-context-domain').innerText(), 'Projects');
-  assert.deepEqual(await mobile.locator('#uxPageStrip button').allInnerTexts(), ['Library', 'Projects']);
-  await mobile.locator('#uxPageStrip [data-strip-view="projects"]').tap();
-  await mobile.waitForSelector('#projects.active');
-  assert.equal(await mobile.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Projects');
+  await mobile.locator('#uxMobileNav [data-domain="system"]').tap();
+  await mobile.waitForSelector('#status.active');
+  assert.equal(await mobile.locator('.ux-context-domain').innerText(), 'System');
+  assert.ok((await mobile.locator('#uxPageStrip button').allInnerTexts()).includes('Models'));
+  await mobile.locator('#uxPageStrip [data-strip-view="models"]').tap();
+  await mobile.waitForSelector('#models.active');
+  assert.equal(await mobile.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Models');
   const h = await mobile.locator('#uxPageStrip button').first().evaluate(b => b.getBoundingClientRect().height);
   assert.ok(h >= 43.5 && h <= 52, `strip button height ${h}`);
 });

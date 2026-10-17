@@ -29,8 +29,10 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
   await check(`${w}px: every open starts empty with the full list`, async () => {
     await open(page);
     assert.equal(await page.locator('#cmdkInput').inputValue(), '');
-    assert.ok((await items(page)).length > 10);
+    const n = (await items(page)).length;
     await page.keyboard.press('Escape');
+    // A phone offers the 8 likeliest pages until you type (mobile-ui.mjs checks which); a desktop lists every page.
+    if (w <= 760) assert.equal(n, 8); else assert.ok(n > 10, `${n} pages`);
   });
 
   await check(`${w}px: arrows move the selection and Enter opens it`, async () => {

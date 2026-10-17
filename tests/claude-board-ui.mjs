@@ -157,5 +157,19 @@ await check('live titles and steps are text, never markup', async () => {
   assert.match(await pg.locator('#claudeLiveNow button').innerText(), /<img src=x/);
   await pg.close();
 });
+// app.js is a module, so window.toast never existed and a failed vote fell back to a blocking alert(). It says so in the toast.
+await check('a failed action says so in the toast, never a blocking alert', async () => {
+  await post('/api/claude/findings', { sessionId: 'ui-test', findings: [{ id: 'ui-vote-fail', title: 'Vote target', category: 'ux', severity: 'low', summary: 'x' }] });
+  const pg = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
+  const dialogs = []; pg.on('dialog', (d) => { dialogs.push(d.message()); d.dismiss().catch(() => {}); });
+  await pg.route('**/api/claude/findings/vote', (r) => r.fulfill({ status: 500, json: { error: 'vote store is busy' } }));
+  await pg.goto(base, { waitUntil: 'networkidle' });
+  await pg.evaluate(() => window.showView('claude'));
+  await pg.waitForSelector('#claude .claude-finding[data-id="ui-vote-fail"] [data-claude-vote="1"]', { state: 'attached' });
+  await pg.evaluate(() => document.querySelector('#claude .claude-finding[data-id="ui-vote-fail"] [data-claude-vote="1"]').click());
+  await pg.waitForFunction(() => /vote store is busy/.test(document.getElementById('toast')?.textContent || ''), null, { timeout: 5000 });
+  assert.deepEqual(dialogs, []);
+  await pg.close();
+});
 await browser.close();
 if (failed) process.exit(1);

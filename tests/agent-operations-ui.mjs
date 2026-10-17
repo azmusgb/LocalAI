@@ -41,9 +41,8 @@ await check('desktop navigation architecture',async()=>{
 });
 await check('contextual navigation switches domains',async()=>{
   await page.locator('.ux-primary-item[data-domain="projects"]').click();
-  await page.waitForSelector('#library.active');
+  await page.waitForSelector('#projects.active');
   assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Projects');
-  assert.ok(await page.locator('.ux-secondary-link').count()>=1);
   await page.evaluate(()=>window.showView('agents'));
   await page.waitForSelector('#agents.active');
   assert.equal(await page.locator('#uxSecondaryTitle').textContent(),'Work');

@@ -65,7 +65,7 @@ function sheet(){
  d=document.createElement('dialog');d.id='homeModeSheet';d.className='ask-sheet home-sheet';d.setAttribute('aria-labelledby','homeModeTitle');
  d.innerHTML='<form method="dialog" class="ask-sheet__form"><h2 class="ask-sheet__title" id="homeModeTitle">What kind of work?</h2><div class="home-modes" role="radiogroup" aria-labelledby="homeModeTitle"></div><div id="homeModeOptions" class="home-sheet__options" hidden></div><div class="ask-sheet__actions"><button type="submit" class="btn-primary home-sheet__done">Done</button></div></form>';
  d.addEventListener('click',e=>{if(e.target===d)d.close()});
- d.addEventListener('close',()=>{const r=release;release=null;r?.();const c=$('homeModeChip');if(c&&c.isConnected)c.focus()});
+ d.addEventListener('close',()=>{order=null;const r=release;release=null;r?.();const c=$('homeModeChip');if(c&&c.isConnected)c.focus()});
  // A radio group: one Tab stop (the chosen mode); arrows, Home and End choose another, as radios do, without closing the sheet.
  d.querySelector('.home-modes').addEventListener('keydown',e=>{
   const all=[...d.querySelectorAll('[data-home-mode]:not([disabled])')],i=all.indexOf(e.target);if(i<0)return;
@@ -79,13 +79,17 @@ function sheet(){
  });
  document.body.appendChild(d);return d;
 }
+// One column of rows on the bottom edge: the current mode is the lowest row, nearest the thumb, with Auto and Chat just
+// above it. The order is set as the sheet opens and stays put while it is open, so a row never moves under a finger.
+let order=null;
+const ordered=()=>{const c=cur();return [...MODES.filter(m=>allowed(m[0])&&m[0]!==c).reverse(),MODES.find(m=>m[0]===c)]};
 function paintModes(){
  const box=sheet().querySelector('.home-modes');
- box.innerHTML=MODES.filter(m=>allowed(m[0])).map(([id,label,hint])=>{
+ box.innerHTML=(order||ordered()).filter(m=>allowed(m[0])).map(([id,label,hint])=>{
   const gate=document.querySelector(`.mode[data-mode="${id}"]`),off=!!gate?.disabled,why=off?String(gate.title||'').replace(/^Unavailable:\s*/,''):'';
   return `<button type="button" role="radio" class="home-mode" data-home-mode="${id}" aria-checked="${id===cur()}" tabindex="${id===cur()?0:-1}"${off?' disabled':''}><b>${esc(label)}</b><span>${esc(off&&why?'Not available: '+why:hint)}</span></button>`}).join('');
 }
-function openSheet(){const d=sheet();paintModes();paintOptions();if(!d.open){d.showModal();release=root.LocalAIUI.sheetHistory(d,()=>d.close());d.querySelector('[data-home-mode][aria-checked="true"]')?.focus()}}
+function openSheet(){const d=sheet();if(!d.open)order=ordered();paintModes();paintOptions();if(!d.open){d.showModal();d.scrollTop=d.scrollHeight;release=root.LocalAIUI.sheetHistory(d,()=>d.close());d.querySelector('[data-home-mode][aria-checked="true"]')?.focus()}}
 
 // ---- Needs you and Recent ----
 // The runs module opens the run on top of Home, so Back returns here.
@@ -106,8 +110,20 @@ function infoRow(title,sub,label,tone,go){
  return row;
 }
 const attentionRow=a=>infoRow(a.title,a.detail,'Fix','bad',()=>root.LocalAIRouter.open(a.view||'status'));
-// A pending approval that is not itself a run: open its run when one exists, else Improve's approvals.
-const approvalRow=(a,run)=>infoRow(a.title||'Approval needed',a.detail||'Waiting for your decision','Review','attention',()=>run?openRun(run):root.LocalAIRouter.open('approvals'));
+// A pending approval that is not itself a run: open its run when one exists, else decide it here in the approval sheet
+// (one queue, D8). After a decision Needs you reloads and focus moves to the next approval, or the one before, or the next
+// thing on Home.
+function approvalRow(a,run){
+ const row=infoRow(String(a.title||'').replace(/\s+chg-\d+-[0-9a-f]+$/,'')||'Approval needed',a.detail||'Waiting for your decision','Review','attention',()=>run?openRun(run):decideHere(a));
+ row.dataset.approvalId=a.id;return row;
+}
+async function decideHere(a){
+ const ids=approvals.map(x=>x.a.id),i=ids.indexOf(a.id),next=ids[i+1],prev=i>0?ids[i-1]:null;
+ if(!await root.LocalAIUI.approvalSheet(a))return;
+ await loadNeeds();
+ const sec=$('homeNeedsYou'),first=sec&&!sec.hidden?$('homeNeedsList')?.querySelector('button'):null;
+ root.LocalAIUI.refocus(a.id,{within:'#homeNeedsList',key:'approvalId',next,prev,fallback:first||$('homeRecentTitle')});
+}
 let needs=[],approvals=[],newSignals=0;
 // Another device on plain HTTP can't use voice, notifications or Add to Home Screen; point it at the setup until it opts out there.
 const onPlainHttp=()=>location.protocol==='http:'&&!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);

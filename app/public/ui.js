@@ -917,10 +917,8 @@ function buildContext(){
  // Unread alerts plus approvals waiting, reported by app.js after it loads Inbox or Approvals.
  let inbox={unread:0,pending:0};
  window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');
-  // The Approvals tab carries the same number as the bell, so the two never disagree.
-  const tab=REG.VIEWS.find(v=>v.id==='approvals');qa('[data-ux-tab="approvals"]').forEach(t=>{t.textContent=inbox.pending?`${tab?.tab||'Approvals'} · ${inbox.pending}`:(tab?.tab||'Approvals')});
   if(!b)return;b.hidden=total===0;b.dataset.empty=String(total===0);q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',total?`Inbox, ${total} waiting: ${inbox.unread} unread, ${inbox.pending} approvals waiting`:'Inbox')});
- q('#uxInboxBtn')?.addEventListener('click',()=>navigate(inbox.pending&&!inbox.unread?'approvals':'inbox'));
+ q('#uxInboxBtn')?.addEventListener('click',()=>navigate('inbox')); // one queue (D8): the bell's one number opens the Inbox, which lists what waits first
 }
 // A page's single action (Health: Check again) shows as an icon in the phone header while that page is open.
 const headerActions=new Map();
@@ -968,7 +966,7 @@ function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;
 function sync(forced){
  const view=REG.view(forced||activeView())?.id||forced||activeView(),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
  // A hidden page (Missions, Chat, Images) names itself in the breadcrumb and lights the page that owns it in the menus.
- const hidden=REG.view(view)?.domain==='hidden',page=pageForView(view),viewLabel=labelForView(page),navPage=menuPage(view);renderPageStrip(d,navPage);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=listedGroups(d).flatMap(g=>g.views).filter(v=>viewButton(v)).length<2;document.body.classList.toggle('ux-single-page',single);q('#uxContextBar')?.classList.toggle('ux-context-same',!hidden&&(single||viewLabel===d.label))} // "Local AI / Domain" for a domain with one page, "Local AI / Domain / Page" otherwise
+ const hidden=REG.view(view)?.domain==='hidden',page=pageForView(view),viewLabel=labelForView(page),navPage=menuPage(view);renderPageStrip(d,navPage);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=listedGroups(d).flatMap(g=>g.views).filter(v=>viewButton(v)).length<2;document.body.classList.toggle('ux-single-page',single&&!touchWide());q('#uxContextBar')?.classList.toggle('ux-context-same',!hidden&&(single||viewLabel===d.label))} // "Local AI / Domain" for a domain with one page, "Local AI / Domain / Page" otherwise
  q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);q('#uxContextMenu')?.setAttribute('aria-label',d.label+' pages');syncHeaderAction(view);{const g=q('#uxContextGreeting');if(g)g.textContent=greeting()};
  qa('.ux-primary-item').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
  qa('#uxMobileNav [data-domain]').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
@@ -988,7 +986,29 @@ function linkError(box){const field=document.getElementById(ERROR_FIELDS[box.id]
  if(field.tagName!=='DIALOG'){if(on)field.setAttribute('aria-invalid','true');else field.removeAttribute('aria-invalid')}}
 function linkErrors(){const sync=()=>Object.keys(ERROR_FIELDS).forEach(id=>{const b=document.getElementById(id);if(b)linkError(b)});sync();
  new MutationObserver(ms=>{for(const m of ms){if(m.type==='attributes'){if(ERROR_FIELDS[m.target.id])linkError(m.target)}else if(m.addedNodes.length){sync();return}}}).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden']})}
-function init(){document.body.classList.add('ux-v3');linkErrors();buildIntegrationsView();buildTabs();buildDesktopNav();buildContext();buildPageStrip();buildMobile();observeViews();sync()}
+// A touch screen wider than a phone (an iPad) keeps the page list on every page, even Work's one page, so the content
+// starts at the same x on every page instead of jumping 188px between tabs. A desktop with a mouse still drops it.
+function touchWide(){return matchMedia('(pointer:coarse) and (min-width:761px)').matches}
+// The sticky header draws a 1px line once the page scrolls (body.ux-scrolled), unless page tabs under it draw their own.
+function headerLine(){const strip=q('#uxPageStrip'),tabs=!!strip&&!strip.hidden&&strip.getBoundingClientRect().height>0;document.body.classList.toggle('ux-scrolled',window.scrollY>0&&!tabs)}
+// iOS scrolls the page under a sheet even with overflow:hidden. While a sheet or a modal dialog is open on a touch
+// screen, the body is pinned (position:fixed at minus the scroll) and put back where it was on close; a page opened
+// from the sheet starts at its top instead.
+let pinned=null;
+function scrollLock(){
+ const open=matchMedia('(pointer:coarse)').matches&&(document.body.classList.contains('ux-sheet-open')||!!document.querySelector('dialog[open]'));
+ if(open&&!pinned){const y=window.scrollY;pinned={y,view:activeView(),hash:location.hash};Object.assign(document.body.style,{position:'fixed',top:-y+'px',left:'0',right:'0',width:'100%'})}
+ else if(!open&&pinned){const p=pinned;pinned=null;for(const k of ['position','top','left','right','width'])document.body.style.removeProperty(k);
+  const back=()=>{if(!pinned)window.scrollTo({top:p.view===activeView()&&p.hash===location.hash?p.y:0,behavior:'instant'})};
+  back();requestAnimationFrame(()=>requestAnimationFrame(back))} // again after a Back's own scroll restoration, which lands a frame later
+}
+function watchScroll(){
+ let frame=0;window.addEventListener('scroll',()=>{if(!frame)frame=requestAnimationFrame(()=>{frame=0;headerLine()})},{passive:true});
+ new MutationObserver(scrollLock).observe(document.body,{attributes:true,attributeFilter:['class']});
+ new MutationObserver(scrollLock).observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']});
+ headerLine();
+}
+function init(){document.body.classList.add('ux-v3');linkErrors();buildIntegrationsView();buildTabs();buildDesktopNav();buildContext();buildPageStrip();buildMobile();observeViews();sync();watchScroll()}
 if(document.readyState==='complete')init();else window.addEventListener('load',init,{once:true});
 })();
 
@@ -1983,7 +2003,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
 
   async function act(fn) {
-    try { await fn(); await load(); } catch (e) { (window.toast || alert)(e.message); }
+    // app.js is a module, so there is no window.toast: say it in the shared toast, never a blocking alert().
+    try { await fn(); await load(); } catch (e) { const m = `Couldn't do that: ${e.message}`; if (window.LocalAIUI?.toast) window.LocalAIUI.toast(m); else toast(m); }
   }
 
   function bind() {
@@ -3335,7 +3356,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // re-applies the limit; "Show more" is remembered per list until the page reloads.
 (() => {
   'use strict';
-  const LIMITS = { inboxList: 10, approvalList: 10, activityList: 15, runList: 10, libraryGrid: 12, knowledgeList: 10, automationList: 10 };
+  const LIMITS = { inboxList: 10, activityList: 15, runList: 10, libraryGrid: 12, knowledgeList: 10, automationList: 10 };
   const phone = window.matchMedia('(max-width: 760px)');
   const observers = new Map();
 
