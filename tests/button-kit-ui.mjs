@@ -48,7 +48,7 @@ for (const vp of [{ width: 390, height: 844, mobile: true }, { width: 1280, heig
     await fresh.waitForTimeout(500);
     const prim = await fresh.locator('#home .btn-primary').evaluateAll(b => b.filter(e => e.getBoundingClientRect().width > 0).map(e => e.textContent.trim()));
     assert.ok(prim.length <= 1, prim.join(', '));
-    assert.equal(await fresh.locator('[data-first-run-dismiss]').getAttribute('class'), 'btn-outline');
+    assert.equal(await fresh.locator('.first-run-foot [data-first-run-dismiss]').getAttribute('class'), 'btn-outline');
     await fresh.close();
   });
 }
