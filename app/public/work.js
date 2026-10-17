@@ -89,7 +89,7 @@ function setKind(k,{mirror=true,remember=true,fetch=true}={}){
  if(!KINDS.includes(k))k='all';
  const changed=k!==st.kind;
  st.kind=k;
- document.querySelectorAll('[data-work-kind]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.workKind===k)));
+ st.chips?.pick(document.querySelector(`[data-work-kind="${k}"]`));
  // Agent World (the live mission map) has no menu entry since Missions became a Work filter; link to it from there.
  const aw=$('workAgentWorld');if(aw)aw.hidden=k!=='missions';
  if(remember)store.set(k);
@@ -121,7 +121,7 @@ function activate(){
 }
 function init(){
  const sec=$('work');if(!sec)return;
- sec.querySelectorAll('[data-work-kind]').forEach(b=>b.addEventListener('click',()=>setKind(b.dataset.workKind)));
+ const chips=sec.querySelector('.work-chips');if(chips&&window.LocalAIUI?.segmented)st.chips=window.LocalAIUI.segmented(chips,{onPick:b=>setKind(b.dataset.workKind)});
  $('workSearch').addEventListener('input',e=>{st.query=e.target.value;if(st.loaded)paint()});
  $('workMore').addEventListener('click',more);
  $('workOpenAgentWorld')?.addEventListener('click',()=>window.LocalAIRouter?.open('agents'));

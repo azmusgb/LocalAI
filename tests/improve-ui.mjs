@@ -57,7 +57,7 @@ async function postFrom(click) { const n = posts.length; await click(); for (let
 await check('Backlog lists only Backlog items, in rank order, with source icons and the Handed badge', async () => {
   const rows = await page.locator('#backlogList .improve-row').evaluateAll(rs => rs.map(r => ({ id: r.dataset.itemId, icon: r.querySelector('.list-row__icon use')?.getAttribute('href'), text: r.textContent })));
   assert.deepEqual(rows.map(r => r.id), ['claude-top', 'idea-sticky', 'signal-issue-1']);
-  assert.deepEqual(rows.map(r => r.icon), ['#i-sparkle', '#i-compose', '#i-alert']);
+  assert.deepEqual(rows.map(r => r.icon), ['#i-sparkle', '#i-improve', '#i-alert']);
   assert.match(rows[1].text, /Handed to Claude/);
   assert.doesNotMatch(rows[0].text, /Handed to Claude/);
 });
