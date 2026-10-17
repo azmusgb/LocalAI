@@ -1891,8 +1891,6 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .aw-sheet{min-width:0}
 .aw-sheet__top{display:none}
 .aw-sheet__body{display:grid;gap:14px;min-width:0}
-.aw-page.crew-hidden .aw-stage{grid-template-columns:minmax(0,1fr)}
-.aw-page.crew-hidden .aw-sheet{display:none}
 @media(min-width:761px){.aw-sheet{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--ds-line-2) transparent}}
 @media(min-width:761px) and (max-width:1023px){.aw-stage{grid-template-columns:minmax(0,1fr)}.aw-sheet{position:static;max-height:none;overflow:visible}}
 
@@ -1983,7 +1981,6 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 
 /* In this page the header carries the title and the status, and the worker card replaces the city's chip. */
 #agents .awc__selection,#agents .agent-mission-strip{display:none}
-@media(min-width:761px){}
 @media(min-width:761px){#agents .awc__mapWrap{aspect-ratio:auto;height:min(760px,max(520px,calc(100vh - 230px)))}}
 
 /* The worker card */
