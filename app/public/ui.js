@@ -905,7 +905,10 @@ function buildContext(){
  q('#uxContextMenu')?.addEventListener('click',()=>toggleSheet());
  // Unread alerts plus approvals waiting, reported by app.js after it loads Inbox or Approvals.
  let inbox={unread:0,pending:0};
- window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');if(!b)return;b.hidden=total===0;b.dataset.empty=String(total===0);q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',total?`Inbox, ${total} waiting: ${inbox.unread} unread, ${inbox.pending} approvals waiting`:'Inbox')});
+ window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');
+  // The Approvals tab carries the same number as the bell, so the two never disagree.
+  const tab=REG.VIEWS.find(v=>v.id==='approvals');qa('[data-ux-tab="approvals"]').forEach(t=>{t.textContent=inbox.pending?`${tab?.tab||'Approvals'} · ${inbox.pending}`:(tab?.tab||'Approvals')});
+  if(!b)return;b.hidden=total===0;b.dataset.empty=String(total===0);q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',total?`Inbox, ${total} waiting: ${inbox.unread} unread, ${inbox.pending} approvals waiting`:'Inbox')});
  q('#uxInboxBtn')?.addEventListener('click',()=>navigate(inbox.pending&&!inbox.unread?'approvals':'inbox'));
 }
 // A page's single action (Health: Check again) shows as an icon in the phone header while that page is open.
@@ -2692,7 +2695,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
   const state = { inerted: [], opener: null, runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '', projects: null, viewError: '', fetched: null, gap: '', pending: null, inApp: false, closing: false };
   const KINDS = { chat: ['Chat', 'compose'], research: ['Research', 'globe'], image: ['Image', 'image'], agent: ['Agent', 'automate'], automation: ['Automation', 'refresh'], engineering: ['Engineering', 'build'] };
-  const kindLabel = (kind) => (KINDS[kind] || ['Run'])[0];
+  // Home starts a run by mode name; a run not yet reported is labelled by the kind that mode becomes.
+  const MODE_KINDS = { ask: 'chat', create: 'image', mission: 'agent' };
+  const kindOf = (kind) => MODE_KINDS[kind] || kind;
+  const kindLabel = (kind) => (KINDS[kindOf(kind)] || ['Run'])[0];
   const lookup = (id) => state.runs.find((item) => item.id === id) || (state.fetched?.id === id ? state.fetched : null);
   const ACTIVE = new Set(['queued', 'running', 'streaming', 'awaiting_approval']);
 
@@ -2966,13 +2972,18 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       drawer.appendChild(viewHead(p.title || 'New run', kindLabel(p.kind)));
       if (p.error) {
         const msg = textNode('status-error', p.error); msg.setAttribute('role', 'alert');
-        const close = document.createElement('button'); close.type = 'button'; close.className = 'btn-outline'; close.textContent = 'Close'; close.addEventListener('click', closeRunView);
-        drawer.appendChild(stateBlock((KINDS[p.kind] || [0, 'system'])[1], [msg, close]));
+        const btn = (label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn-outline'; b.textContent = label; b.addEventListener('click', fn); return b; };
+        // What to do next: send it again, see why the model isn't answering, or leave it.
+        const actions = document.createElement('div'); actions.className = 'run-view-state__actions';
+        if (typeof p.retry === 'function') actions.appendChild(btn('Try again', () => { const again = p.retry; state.pending = null; Promise.resolve().then(again).catch(() => {}); }));
+        if (/\bmodel\b/i.test(p.error)) actions.appendChild(btn('Open Models', () => window.LocalAIRouter?.go('#models')));   // the router closes the run view, as Open Work does
+        actions.appendChild(btn('Close', closeRunView));
+        drawer.appendChild(stateBlock((KINDS[kindOf(p.kind)] || [0, 'system'])[1], [msg, actions]));
       } else {
         const spin = document.createElement('span'); spin.className = 'run-spinner'; spin.setAttribute('aria-hidden', 'true');
         // An image is drawn before its run is reported, so its wait is shown honestly: a label and the seconds so far.
         const text = textNode('run-view-state__text', p.kind === 'create' ? pendingText(p) : 'Starting…'); text.setAttribute('role', 'status');
-        drawer.appendChild(stateBlock((KINDS[p.kind] || [0, 'system'])[1], [spin, text]));
+        drawer.appendChild(stateBlock((KINDS[kindOf(p.kind)] || [0, 'system'])[1], [spin, text]));
       }
       return;
     }
@@ -3185,8 +3196,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     showView();
     fetchRun(id, false);
   }
-  function openPending({ kind, title } = {}) {
-    const token = { kind: String(kind || ''), title: String(title || ''), error: '', resolved: '', startedAt: Date.now() };
+  function openPending({ kind, title, retry } = {}) {
+    const token = { kind: String(kind || ''), title: String(title || ''), error: '', resolved: '', startedAt: Date.now(), retry: typeof retry === 'function' ? retry : null };
     state.pending = token;
     if (token.kind === 'create') { const t = setInterval(() => { const n = el('runDrawer')?.querySelector('.run-view-state__text'); if (state.pending !== token || token.resolved || token.error || !n) { if (state.pending !== token || token.resolved || token.error) clearInterval(t); return; } n.textContent = pendingText(token); }, 1000); } state.selectedId = 'pending'; state.gap = ''; state.fetched = null; state.inApp = true; state.closing = false;
     showView();

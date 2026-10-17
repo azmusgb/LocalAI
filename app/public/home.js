@@ -171,7 +171,8 @@ async function viaStarter(name,intent,text,extra){
  const S=root[name];
  const L=root.LocalAILegacy;
  if(!S||typeof S.start!=='function'){L.open(intent,text);clearInput();return}
- const pending=root.LocalAIRuns.openPending({kind:intent,title:titleOf(text)});
+ // Try again in the run view sends the same text the same way.
+ const pending=root.LocalAIRuns.openPending({kind:intent,title:titleOf(text),retry:()=>send(text,intent)});
  clearInput();
  try{await S.start(text,{...extra,pending})}catch(e){pending.fail(e.message);throw e}
 }
