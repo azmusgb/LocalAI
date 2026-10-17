@@ -34,7 +34,7 @@ function backlogRow(it){
   `<span class="list-row__sub">${sev(it.severity)} <span>${SOURCE[it.source]||''}</span>${it.handedToClaude?' <span class="badge badge--accent">Handed to Claude</span>':''}</span></button>`+
   `<span class="list-row__trail improve-votes"><button type="button" class="icon-btn" data-vote="1" aria-label="Vote up: ${esc(it.title)}">▲</button><span aria-label="Net votes">${net}</span><button type="button" class="icon-btn" data-vote="-1" aria-label="Vote down: ${esc(it.title)}">▼</button></span>`;
  row.querySelector('.improve-row__open').onclick=()=>openItem(it.id);
- row.querySelectorAll('[data-vote]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await post('/api/claude/findings/vote',{id:it.id,delta:Number(b.dataset.vote)});await refresh()}catch(e){b.disabled=false;showToast(e.message)}});
+ row.querySelectorAll('[data-vote]').forEach(b=>b.onclick=async()=>{b.disabled=true;rowError(row,'');try{await post('/api/claude/findings/vote',{id:it.id,delta:Number(b.dataset.vote)});await refresh()}catch(e){b.disabled=false;rowError(row,`Couldn't save your vote: ${e.message}`)}});
  return row;
 }
 function renderBacklog(box,data){
@@ -95,7 +95,7 @@ function signalRow(s,inBacklog){
  row.innerHTML=`<span class="list-row__icon">${icon('alert')}</span><span class="list-row__main"><span class="list-row__title">${esc(s.name)}</span>`+
   `<span class="list-row__sub">${sev(s.severity)} Seen ${Number(s.occurrences)||1} time${Number(s.occurrences)===1?'':'s'} · ${esc(ago(s.lastSeenAt||s.updatedAt))}${inBacklog?' · In the Backlog':''}</span></span>`+
   `<span class="list-row__trail">${inBacklog?'':'<button type="button" class="btn-outline" data-act="promote">Promote</button>'}<button type="button" class="btn-outline" data-act="dismiss">Dismiss</button></span>`;
- row.querySelectorAll('[data-act]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await post('/api/improve/signal',{id:s.id,action:b.dataset.act});await refresh()}catch(e){b.disabled=false;showToast(e.message)}});
+ row.querySelectorAll('[data-act]').forEach(b=>b.onclick=async()=>{b.disabled=true;rowError(row,'');try{await post('/api/improve/signal',{id:s.id,action:b.dataset.act});await refresh()}catch(e){b.disabled=false;rowError(row,`Couldn't ${b.dataset.act==='promote'?'promote':'dismiss'} it: ${e.message}`)}});
  return row;
 }
 function renderSignals(box,data){
@@ -206,8 +206,15 @@ async function submitIdea(start,btn){
  catch(e){err.textContent=e.message;err.hidden=false}
  finally{btn.disabled=false}
 }
-async function runChecks(btn){if(btn)btn.disabled=true;try{await post('/api/issues/scan',{});await refresh();loadDetails()}catch(e){showToast(e.message)}finally{if(btn)btn.disabled=false}}
-function showToast(m){const t=$('toast');if(!t)return;t.textContent=m;t.classList.add('show');clearTimeout(t._hide);t._hide=setTimeout(()=>t.classList.remove('show'),3000)}
+async function runChecks(btn){if(btn)btn.disabled=true;checksError('');try{await post('/api/issues/scan',{});await refresh();loadDetails()}catch(e){checksError(`Couldn't run the checks: ${e.message}`)}finally{if(btn)btn.disabled=false}}
+// Errors stay in the page until the next try (an alert box), not in a toast that fades before it can be read.
+function alertBox(cls){const p=document.createElement('p');p.className='improve-error '+cls;p.setAttribute('role','alert');return p}
+// Under the row the action was taken on (a vote, Promote, Dismiss).
+function rowError(row,msg){let p=row.nextElementSibling?.classList.contains('improve-row__error')?row.nextElementSibling:null;
+ if(!msg){p?.remove();return}if(!p){p=alertBox('improve-row__error');row.after(p)}p.textContent=msg}
+// Signals' Run checks now: under the page's top bar (where its button is), above the list; the header button on phones runs the same.
+function checksError(msg){const sec=$('signals');if(!sec)return;let p=$('signalsError');
+ if(!msg){if(p)p.hidden=true;return}if(!p){p=alertBox('improve-page-error');p.id='signalsError';(sec.querySelector('.topbar')||sec.firstElementChild).after(p)}p.textContent=msg;p.hidden=false}
 
 // Claude sessions' live status, for items Claude is working on; the list still shows without it.
 async function sessions(){try{st.sessions=(await root.LocalAIUI.fetchJson('/api/claude/board',{cache:'no-store'})).sessions||[]}catch{st.sessions=[]}}
