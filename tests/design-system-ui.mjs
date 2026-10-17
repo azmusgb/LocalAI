@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
-const views = ['home','ask','create','library','projects','knowledge','memory','agents','claude','automations','automationStudio','actions','engineering','changes','approvals','status','operations','activity','quality','issues','workbench','repoTools','powershell','inbox','runs','models','integrations'];
+const views = ['home','ask','create','library','projects','knowledge','memory','agents','claude','automations','automationStudio','actions','engineering','approvals','status','operations','activity','workbench','repoTools','powershell','inbox','runs','models','integrations'];
 const browser = await chromium.launch();
 let failed = 0;
 async function check(name, fn) { try { await fn(); console.log('PASS', name) } catch (e) { failed++; console.log('FAIL', name, e.message) } }

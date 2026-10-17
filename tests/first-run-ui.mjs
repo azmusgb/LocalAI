@@ -89,7 +89,7 @@ await check('Health shows the secure-connection card (the host itself counts as 
 });
 await check('switching it off while on a Build page returns to Home', async () => {
   await page.evaluate(() => window.showView('status'));
-  await page.evaluate(() => window.showView('changes'));
+  await page.evaluate(() => window.showView('backlog'));
   await page.evaluate(() => window.showView('status'));
   await page.locator('.dev-tools-pref input').uncheck();
   assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), false);
