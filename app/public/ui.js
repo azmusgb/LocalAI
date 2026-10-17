@@ -237,14 +237,14 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
             <h1>Models</h1>
             <p class="sub">The models on this computer, and which ones are loaded right now.</p>
           </div>
-          <button id="modelRuntimeRefresh" class="btn" type="button">Refresh</button>
+          <button id="modelRuntimeRefresh" class="btn-outline" type="button">Refresh</button>
         </div>
         <div id="modelRuntimeSummary" class="model-runtime-summary" aria-live="polite"></div>
         <div class="card model-download" style="margin-top:12px">
           <div class="section-head"><div><h2>Download a model</h2><p>From the Ollama library, stored on the Windows host. A 4B model is about 2.5 GB.</p></div></div>
           <form id="modelPullForm" class="model-pull-form">
             <input id="modelPullName" list="modelPullSuggestions" placeholder="Model name, for example gemma3:4b" aria-label="Model name" autocomplete="off" autocapitalize="off" spellcheck="false">
-            <button class="btn primary" type="submit">Download</button>
+            <button class="btn-primary" type="submit">Download</button>
           </form>
           <datalist id="modelPullSuggestions">
             <option value="qwen3:4b-instruct">Fast general model, 2.5 GB</option>
@@ -476,7 +476,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       row.innerHTML = '<span class="truth-attention-marker" aria-hidden="true"></span><div class="truth-attention-copy"><strong>Status unavailable</strong><span>Local AI could not check what is working right now. Open Health for details.</span></div>';
       const action = document.createElement('button');
       action.type = 'button';
-      action.className = 'btn truth-attention-action';
+      action.className = 'btn-outline truth-attention-action';
       action.textContent = 'Open Health';
       action.addEventListener('click', () => navigate('status'));
       row.appendChild(action);
@@ -522,7 +522,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
 
       const action = document.createElement('button');
       action.type = 'button';
-      action.className = 'btn truth-attention-action';
+      action.className = 'btn-outline truth-attention-action';
       action.textContent = item.action;
       action.addEventListener('click', () => navigate(item.view));
 
@@ -612,7 +612,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         if ((models?.protectedModels || [models?.default]).includes(item.name)) {
           actions.innerHTML = `<span class="meta">${item.name === models?.default ? 'Used by Local AI by default' : 'Used by Local AI (GridCraft)'}</span>`;
         } else {
-          actions.innerHTML = `<button type="button" class="btn" data-model-remove="${esc(item.name)}">Remove</button>`;
+          actions.innerHTML = `<button type="button" class="btn-outline" data-model-remove="${esc(item.name)}">Remove</button>`;
         }
         card.appendChild(actions);
         list.appendChild(card);
@@ -704,7 +704,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         ? (p.total ? `${pct}% · ${formatBytes(p.completed)} of ${formatBytes(p.total)}` : esc(p.status || 'Starting'))
         : p.state === 'done' ? 'Downloaded' : p.state === 'cancelled' ? 'Cancelled' : `Failed: ${esc(p.error || 'unknown error')}`;
       return `<div class="model-pull is-${esc(p.state)}">
-        <div class="model-pull-head"><strong>${esc(p.name)}</strong><span>${label}</span>${p.state === 'running' ? `<button type="button" class="btn" data-pull-cancel="${esc(p.name)}">Cancel</button>` : ''}</div>
+        <div class="model-pull-head"><strong>${esc(p.name)}</strong><span>${label}</span>${p.state === 'running' ? `<button type="button" class="btn-outline" data-pull-cancel="${esc(p.name)}">Cancel</button>` : ''}</div>
         <div class="model-pull-bar" role="progressbar" aria-label="${esc(p.name)} download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.state === 'done' ? 100 : pct}"><i style="width:${p.state === 'done' ? 100 : pct}%"></i></div>
         ${p.state === 'running' && p.total ? `<small>${esc(p.status || '')}</small>` : ''}
       </div>`;
@@ -728,11 +728,11 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     if (button.dataset.modelRemove) {
       const name = button.dataset.modelRemove;
       actions.innerHTML = `<span>Remove ${esc(name)} from the Windows host? You can download it again later.</span>
-        <button type="button" class="btn danger" data-model-remove-confirm="${esc(name)}">Remove</button>
-        <button type="button" class="btn" data-model-remove-cancel="${esc(name)}">Keep</button>`;
+        <button type="button" class="btn-danger" data-model-remove-confirm="${esc(name)}">Remove</button>
+        <button type="button" class="btn-outline" data-model-remove-cancel="${esc(name)}">Keep</button>`;
       actions.querySelector('[data-model-remove-cancel]')?.focus();
     } else if (button.dataset.modelRemoveCancel) {
-      actions.innerHTML = `<button type="button" class="btn" data-model-remove="${esc(button.dataset.modelRemoveCancel)}">Remove</button>`;
+      actions.innerHTML = `<button type="button" class="btn-outline" data-model-remove="${esc(button.dataset.modelRemoveCancel)}">Remove</button>`;
     } else {
       const name = button.dataset.modelRemoveConfirm;
       button.disabled = true;
@@ -741,7 +741,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         await modelPost('/api/models/delete', { name });
         refreshModelsSurface();
       } catch (error) {
-        actions.innerHTML = `<span class="model-pull-error">${esc(error.message)}</span><button type="button" class="btn" data-model-remove="${esc(name)}">Remove</button>`;
+        actions.innerHTML = `<span class="model-pull-error">${esc(error.message)}</span><button type="button" class="btn-outline" data-model-remove="${esc(name)}">Remove</button>`;
       }
     }
   }
@@ -1936,9 +1936,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     }
     $('claudeFindings').innerHTML = list.map((f) => {
       const st = STATUS[f.status] || STATUS.proposed;
-      const actions = (ACTIONS[f.status] || []).map(([to, label, style]) => `<button type="button" class="btn small ${style}" data-claude-decision="${to}">${esc(label)}</button>`).join('');
+      const actions = (ACTIONS[f.status] || []).map(([to, label, style]) => `<button type="button" class="btn-outline ${style}" data-claude-decision="${to}">${esc(label)}</button>`).join('');
       const note = view.noteId === f.id
-        ? `<form class="claude-note-form" data-claude-note-form><textarea rows="2" maxlength="1000" placeholder="Context or instructions for Claude">${esc(f.decisionNote || '')}</textarea><div><button type="submit" class="btn small primary">Save note</button><button type="button" class="btn small quiet" data-claude-note-cancel>Cancel</button></div></form>`
+        ? `<form class="claude-note-form" data-claude-note-form><textarea rows="2" maxlength="1000" placeholder="Context or instructions for Claude">${esc(f.decisionNote || '')}</textarea><div><button type="submit" class="btn-primary">Save note</button><button type="button" class="btn-outline" data-claude-note-cancel>Cancel</button></div></form>`
         : `<button type="button" class="link" data-claude-note>${f.decisionNote ? 'Edit note' : 'Add a note for Claude'}</button>`;
       return `
       <article class="claude-finding st-${esc(f.status)}" data-id="${esc(f.id)}">
@@ -1957,9 +1957,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
           </details>
         </div>
         <div class="claude-vote" role="group" aria-label="Priority">
-          <button type="button" class="btn" data-claude-vote="1" aria-label="Raise priority" title="Raise priority">▲</button>
+          <button type="button" class="btn-outline" data-claude-vote="1" aria-label="Raise priority" title="Raise priority">▲</button>
           <span title="${f.votes.up} up · ${f.votes.down} down">${f.votes.up - f.votes.down}</span>
-          <button type="button" class="btn" data-claude-vote="-1" aria-label="Lower priority" title="Lower priority">▼</button>
+          <button type="button" class="btn-outline" data-claude-vote="-1" aria-label="Lower priority" title="Lower priority">▼</button>
         </div>
         <div class="claude-decide">${actions}${note}</div>
       </article>`;
@@ -1979,7 +1979,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       el.addEventListener('focusout', (e) => { if (el.classList.contains('show') && !el.contains(e.relatedTarget)) el._later(); });
     }
     el._later = later;
-    el.innerHTML = `<span>${esc(message)}</span>${undo ? '<button type="button" class="btn small">Undo</button>' : ''}`;
+    el.innerHTML = `<span>${esc(message)}</span>${undo ? '<button type="button" class="btn-outline">Undo</button>' : ''}`;
     el.classList.add('show');
     if (undo) el.querySelector('button').onclick = () => { hide(); undo(); };
     later();
@@ -2303,11 +2303,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     box.append(el('h2', null, 'Chat with Claude Code'), el('p', 'meta', 'Pair this device once to message your Mac sessions from here.'));
     if (st.pairError) {
       box.append(el('p', 'claude-chat-error', st.pairError));
-      const retry = el('button', 'btn', 'Try again'); retry.type = 'button'; retry.dataset.chatAction = 'pair';
+      const retry = el('button', 'btn-outline', 'Try again'); retry.type = 'button'; retry.dataset.chatAction = 'pair';
       box.append(retry);
     } else if (st.pair?.expired) {
       box.append(el('p', 'claude-chat-error', 'That code expired.'));
-      const again = el('button', 'btn primary', 'Get a new code'); again.type = 'button'; again.dataset.chatAction = 'pair';
+      const again = el('button', 'btn-primary', 'Get a new code'); again.type = 'button'; again.dataset.chatAction = 'pair';
       box.append(again);
     } else {
       const code = el('div', 'claude-chat-code', st.pair ? st.pair.code : '…');
@@ -2315,13 +2315,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       box.append(el('p', 'meta', 'Your pairing code'), code, el('p', 'meta', 'On your Mac, run:'));
       const cmd = el('div', 'claude-chat-cmd');
       cmd.append(el('code', null, st.pair ? `localai-chat pair ${st.pair.code}` : '…'));
-      const copy = el('button', 'btn', 'Copy'); copy.type = 'button'; copy.dataset.chatAction = 'copy';
+      const copy = el('button', 'btn-outline', 'Copy'); copy.type = 'button'; copy.dataset.chatAction = 'copy';
       cmd.append(copy);
       box.append(cmd, el('p', 'meta claude-chat-wait', st.pair ? 'Waiting for approval… this page switches over by itself.' : 'Requesting a code…'));
     }
     if (location.protocol === 'http:') {
       if (st.secureOk) {
-        const go = el('a', 'btn primary claude-chat-secure', 'Open the secure address');
+        const go = el('a', 'btn-primary claude-chat-secure', 'Open the secure address');
         go.href = `${SECURE_URL}#claude`;
         box.append(el('p', 'meta', 'This device trusts the secure address. If it was paired there, chat works there right away.'), go);
       }
@@ -2346,7 +2346,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const composer = el('div', 'claude-chat-composer');
     const input = el('textarea'); input.id = 'claudeChatInput'; input.rows = 3; input.setAttribute('aria-label', 'Message to Claude');
     input.placeholder = 'Message Claude (Cmd/Ctrl+Enter to send)';
-    const sendBtn = el('button', 'btn primary', 'Send'); sendBtn.id = 'claudeChatSend'; sendBtn.type = 'button';
+    const sendBtn = el('button', 'btn-primary', 'Send'); sendBtn.id = 'claudeChatSend'; sendBtn.type = 'button';
     composer.append(input, sendBtn);
     const hint = el('p', 'meta claude-chat-hint'); hint.id = 'claudeChatHint';
     const note = el('p', 'meta claude-chat-note', NOTE);
@@ -2394,7 +2394,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const offline = (m.status === 'queued' || m.status === 'delivering') && current() && !current().online;
       foot.append(el('span', `claude-chat-status ${offline ? 'bad' : m.status}`, offline ? 'not delivered' : STATUS_LABEL[m.status] || m.status));
       if (m.status === 'queued' || offline) {
-        const del = el('button', 'btn quiet', 'Delete'); del.type = 'button'; del.dataset.chatAction = 'delete'; del.dataset.id = m.id;
+        const del = el('button', 'btn-outline', 'Delete'); del.type = 'button'; del.dataset.chatAction = 'delete'; del.dataset.id = m.id;
         foot.append(del);
       }
       row.append(foot);
@@ -2439,7 +2439,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       const row = el('div', 'claude-chat-device');
       const info = el('div');
       info.append(el('strong', null, d.name || 'Unnamed device'), el('span', 'meta', `${d.current ? ' · this device' : ''} · seen ${d.lastSeenAt ? when(d.lastSeenAt) : 'never'}`));
-      const b = el('button', 'btn quiet', d.current ? 'Revoke this device' : 'Revoke'); b.type = 'button'; b.dataset.chatAction = 'revoke'; b.dataset.id = d.id;
+      const b = el('button', 'btn-outline', d.current ? 'Revoke this device' : 'Revoke'); b.type = 'button'; b.dataset.chatAction = 'revoke'; b.dataset.id = d.id;
       row.append(info, b);
       list.append(row);
     }
@@ -2596,12 +2596,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
   function actionHtml(item, action) {
     if (action.type === 'url') {
-      return `<a class="btn ux-int-action" data-external="true" href="${action.url}" target="_blank" rel="noopener noreferrer" aria-label="${action.label} for ${item.name} (opens external site)">${action.label} ↗</a>`;
+      return `<a class="btn-outline ux-int-action" data-external="true" href="${action.url}" target="_blank" rel="noopener noreferrer" aria-label="${action.label} for ${item.name} (opens external site)">${action.label} ↗</a>`;
     }
     if (action.type === 'page') {
-      return `<a class="btn ux-int-action" href="${action.url}">${action.label}</a>`;
+      return `<a class="btn-outline ux-int-action" href="${action.url}">${action.label}</a>`;
     }
-    return `<button class="btn ux-int-action" type="button" data-integration-view="${action.view}">${action.label}</button>`;
+    return `<button class="btn-outline ux-int-action" type="button" data-integration-view="${action.view}">${action.label}</button>`;
   }
 
   function renderCards() {
@@ -2707,7 +2707,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (!section || section.dataset.integrationV2 === 'true') return Boolean(section);
     section.dataset.integrationV2 = 'true';
     section.innerHTML = `
-      <div class="topbar"><div><h1>Services</h1><p class="sub">What Local AI connects to, how each one is doing, and what each one is for.</p></div><button class="btn" type="button" id="uxIntegrationRefreshV2" aria-busy="false">Check again</button></div>
+      <div class="topbar"><div><h1>Services</h1><p class="sub">What Local AI connects to, how each one is doing, and what each one is for.</p></div><button class="btn-outline" type="button" id="uxIntegrationRefreshV2" aria-busy="false">Check again</button></div>
       <div class="card ux-int-hero ux-int-v2"><div><h2>Connected services</h2><p id="uxIntegrationStatusSummaryV2" role="status" aria-live="polite">Checking local services…</p><span id="uxIntegrationLastCheckedV2" class="ux-int-checked"></span></div><div class="ux-int-metrics"><div><b id="uxIntegrationNativeCountV2">—</b><span>core services healthy</span></div><div><b id="uxIntegrationMediaStateV2">—</b><span>image and media</span></div><div><b>Opt-in</b><span>cloud and outside services</span></div></div></div>
       <div class="section-head ux-int-section-head"><div><h2>What each one does</h2><p>What it is for here, and whether it is ready.</p></div></div><div id="uxIntegrationCardsV2" class="ux-int-grid"></div>
       <details class="ux-int-about"><summary>How services are chosen</summary><div class="card ux-int-policy"><div><h2>What gets built in</h2></div><div class="ux-int-policy-grid"><div><strong>1. On this computer first</strong><span>Ollama, n8n and ComfyUI do the work by default, so nothing leaves your network.</span></div><div><strong>2. One service per job</strong><span>No second chat, automation or image service that would split your history in two.</span></div><div><strong>3. A connection has to be worth it</strong><span>Penpot and Obsidian would share real designs and notes with Local AI, not just open another tab.</span></div><div><strong>4. The cloud only when you choose it</strong><span>Accounts and uploads to outside services happen only when you set them up yourself.</span></div></div></div>
@@ -2792,7 +2792,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       section.id = 'runs';
       section.className = 'view';
       section.innerHTML = `
-        <div class="topbar"><div><h1>Runs</h1><p class="sub">Every run: chats, images, missions, automations and changes.</p></div><button id="runsRefresh" type="button" class="btn">Refresh</button></div>
+        <div class="topbar"><div><h1>Runs</h1><p class="sub">Every run: chats, images, missions, automations and changes.</p></div><button id="runsRefresh" type="button" class="btn-outline">Refresh</button></div>
         <div id="runMetrics" class="run-summary-grid"></div>
         <div class="card" style="margin-top:12px"><div class="section-head"><div><h2>All runs</h2><p>Open a run to see what happened, its result, and to cancel or retry it.</p></div></div><div id="runList" class="run-list"><div class="empty">Loading runs…</div></div></div>`;
       main.appendChild(section);
@@ -2818,7 +2818,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         panel.id = 'homeRunCenter';
         panel.className = 'card home-run-center';
         panel.hidden = true;
-        panel.innerHTML = '<div class="section-head"><div><h2>Runs</h2><p id="homeRunSummary">Checking what is running…</p></div><button id="homeRunsOpen" type="button" class="btn">View runs</button></div><div id="homeRunList" class="run-list"></div>';
+        panel.innerHTML = '<div class="section-head"><div><h2>Runs</h2><p id="homeRunSummary">Checking what is running…</p></div><button id="homeRunsOpen" type="button" class="btn-outline">View runs</button></div><div id="homeRunList" class="run-list"></div>';
         const attention = el('truthAttention');
         if (attention?.parentNode === home) attention.insertAdjacentElement('afterend', panel);
         else home.prepend(panel);
@@ -3382,7 +3382,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (clip) {
       const more = document.createElement('button');
       more.type = 'button';
-      more.className = 'btn mobile-more';
+      more.className = 'btn-outline mobile-more';
       more.textContent = `Show ${paged ? Math.min(page, items.length - limit) : items.length - limit} more`;
       more.addEventListener('click', () => { if (paged) list.dataset.pages = String(limit / page + 1); else list.dataset.showAll = 'true'; apply(list); list.querySelector(':scope > .mobile-more')?.focus(); });
       list.appendChild(more);
@@ -3458,7 +3458,7 @@ async function checkSteps(card){
  else setStep(card,'service','done','Running on this computer. Nothing you type leaves it unless you turn on web research.');
  const model=models?.default||config?.model||'the default model';
  if(models?.defaultInstalled)setStep(card,'model','done',`<code>${esc(model)}</code> is installed and ready.`);
- else setStep(card,'model','todo',`<code>${esc(model)}</code> isn't installed yet. It's about 2.5 GB. <button type="button" class="btn primary" data-first-run-download="${esc(model)}">Download it now</button> <button type="button" class="btn" data-first-run-recheck>Check again</button><div class="first-run-progress" aria-live="polite"></div>`);
+ else setStep(card,'model','todo',`<code>${esc(model)}</code> isn't installed yet. It's about 2.5 GB. <button type="button" class="btn-primary" data-first-run-download="${esc(model)}">Download it now</button> <button type="button" class="btn-outline" data-first-run-recheck>Check again</button><div class="first-run-progress" aria-live="polite"></div>`);
  return !!models?.defaultInstalled;
 }
 function runSample(s){
@@ -3474,9 +3474,9 @@ async function mountFirstRun(){
  if(models?.defaultInstalled&&(library?.items||[]).length)return;
  await loadConfig();
  const card=document.createElement('section');card.id='firstRun';card.className='first-run card';card.setAttribute('aria-labelledby','firstRunTitle');
- card.innerHTML=`<div class="first-run-head"><div><h2 id="firstRunTitle">Get started</h2><p>Two checks, then try a first task. Everything runs on this computer.</p></div><button type="button" class="iconbtn" data-first-run-dismiss aria-label="Hide Get started">×</button></div>
- <ol class="first-run-steps">${stepHtml('service','Local AI is running')}${stepHtml('model','A language model is installed')}<li data-step="try" data-state="todo"><span class="first-run-mark" aria-hidden="true"></span><div><strong>Try a first task</strong><div class="first-run-detail">Pick one. It runs right here, and the result is saved to your Library.</div><div class="first-run-samples">${SAMPLES.map((s,i)=>`<button type="button" class="btn" data-sample="${i}"><span>${esc(s.label)}</span><small>${esc(s.text)}</small></button>`).join('')}</div></div></li></ol>
- <div class="first-run-foot"><span class="meta">Developer tools are ${document.body.classList.contains('dev-tools-off')?'hidden':'shown'}. Change this in <a href="#" data-goto="status">Health</a>.</span><button type="button" class="btn primary" data-first-run-dismiss>I'm set up, hide this</button></div>`;
+ card.innerHTML=`<div class="first-run-head"><div><h2 id="firstRunTitle">Get started</h2><p>Two checks, then try a first task. Everything runs on this computer.</p></div><button type="button" class="icon-btn" data-first-run-dismiss aria-label="Hide Get started">×</button></div>
+ <ol class="first-run-steps">${stepHtml('service','Local AI is running')}${stepHtml('model','A language model is installed')}<li data-step="try" data-state="todo"><span class="first-run-mark" aria-hidden="true"></span><div><strong>Try a first task</strong><div class="first-run-detail">Pick one. It runs right here, and the result is saved to your Library.</div><div class="first-run-samples">${SAMPLES.map((s,i)=>`<button type="button" class="btn-outline" data-sample="${i}"><span>${esc(s.label)}</span><small>${esc(s.text)}</small></button>`).join('')}</div></div></li></ol>
+ <div class="first-run-foot"><span class="meta">Developer tools are ${document.body.classList.contains('dev-tools-off')?'hidden':'shown'}. Change this in <a href="#" data-goto="status">Health</a>.</span><button type="button" class="btn-outline" data-first-run-dismiss>I'm set up, hide this</button></div>`;
  hero.before(card) // Get started takes Recent's place while it shows;
  window.dispatchEvent(new CustomEvent('localai:first-run')); // Home may have painted its rows already
  // Step 3 is done when a run really opens (the pending run gets its id), not when a sample is tapped: a send that fails is no first task.
@@ -3503,7 +3503,7 @@ async function mountFirstRun(){
 async function mountHomeLocation(){
  const status=q('#status');if(!status||q('.voice-home-pref',status))return;
  const row=document.createElement('div');row.className='voice-home-pref card';
- row.innerHTML='<span><strong data-voice-home-label>Home location</strong><small data-voice-home-note>Used for spoken weather when your phone does not share where it is.</small></span><button type="button" class="btn">Change…</button>';
+ row.innerHTML='<span><strong data-voice-home-label>Home location</strong><small data-voice-home-note>Used for spoken weather when your phone does not share where it is.</small></span><button type="button" class="btn-outline">Change…</button>';
  (q('.dev-tools-pref',status)||status).after(row);
  const label=q('[data-voice-home-label]',row),note=q('[data-voice-home-note]',row);
  const show=h=>{label.textContent='Home location: '+(h&&h.place?h.place:'Not set')};
@@ -3580,7 +3580,7 @@ async function render(card){
  else{const ok=await trusted();state=ok?'ready':'todo';detail=ok?`This device already trusts Local AI's certificate. Switch to <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>.`:'This page uses plain HTTP, so other devices on the network could read what you send, and some features (copy to clipboard, installing as an app, signing PowerShell jobs) are unavailable.'}
  card.dataset.state=state;
  card.innerHTML=`<div class="secure-head"><span class="secure-dot" aria-hidden="true"></span><div><h2>Secure connection</h2><p>${detail}</p></div></div>
- ${state==='todo'?`<details class="secure-setup"><summary>Set up HTTPS on this device</summary><ol class="secure-steps"><li><a class="btn primary" href="${esc(caUrl)}" download>Download the certificate</a> <span class="meta">Local AI's own certificate authority. Its private key never leaves the Local AI computer, which uses it only to sign Local AI's certificate.</span></li><li>Trust it on this device:<dl>${stepsHtml()}</dl></li><li>Open <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>. To use the name <b>localai.home.arpa</b>, add it for ${esc(host)} in your router's DNS settings.</li></ol>${nudgeOff()?'':'<button type="button" class="btn secure-nudge-off">Don\'t remind me on Home</button>'}</details>`:''}${phoneHtml(remote)}`;
+ ${state==='todo'?`<details class="secure-setup"><summary>Set up HTTPS on this device</summary><ol class="secure-steps"><li><a class="btn-primary" href="${esc(caUrl)}" download>Download the certificate</a> <span class="meta">Local AI's own certificate authority. Its private key never leaves the Local AI computer, which uses it only to sign Local AI's certificate.</span></li><li>Trust it on this device:<dl>${stepsHtml()}</dl></li><li>Open <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>. To use the name <b>localai.home.arpa</b>, add it for ${esc(host)} in your router's DNS settings.</li></ol>${nudgeOff()?'':'<button type="button" class="btn-outline secure-nudge-off">Don\'t remind me on Home</button>'}</details>`:''}${phoneHtml(remote)}`;
  card.querySelector('.secure-nudge-off')?.addEventListener('click',e=>{try{localStorage.setItem(NUDGE_KEY,'1')}catch{}e.currentTarget.replaceWith(Object.assign(document.createElement('p'),{className:'meta',textContent:'Home won\'t remind you on this device.'}))});
  focusSetup(card);
 }
@@ -3656,9 +3656,9 @@ const status=(card,text)=>{q('.notify-status',card).textContent=text};
 
 function settingsHtml(me,devices){
  const kinds=KINDS.map(([id,label,hint])=>`<label class="notify-kind"><input type="checkbox" data-notify-kind="${id}"${me.kinds.includes(id)?' checked':''}><span><b>${label}</b><small>${hint}</small></span></label>`).join('');
- const list=devices.map(d=>`<li data-device="${esc(d.id)}"><span><b>${esc(d.name)}</b>${d.id===me.id?' (this device)':''}<small>Last delivered ${esc(when(d.lastOkAt))}${d.lastError?` · last error: ${esc(d.lastError)}`:''}</small></span><span class="notify-device-actions"><button type="button" class="btn" data-notify-rename="${esc(d.id)}">Rename</button><button type="button" class="btn" data-notify-remove="${esc(d.id)}">Remove</button></span></li>`).join('');
+ const list=devices.map(d=>`<li data-device="${esc(d.id)}"><span><b>${esc(d.name)}</b>${d.id===me.id?' (this device)':''}<small>Last delivered ${esc(when(d.lastOkAt))}${d.lastError?` · last error: ${esc(d.lastError)}`:''}</small></span><span class="notify-device-actions"><button type="button" class="btn-outline" data-notify-rename="${esc(d.id)}">Rename</button><button type="button" class="btn-outline" data-notify-remove="${esc(d.id)}">Remove</button></span></li>`).join('');
  return `<p>Notifications are on for this device.</p>
- <div class="notify-actions"><button type="button" class="btn" data-notify-test>Send a test</button><button type="button" class="btn" data-notify-off>Turn off on this device</button></div>
+ <div class="notify-actions"><button type="button" class="btn-outline" data-notify-test>Send a test</button><button type="button" class="btn-outline" data-notify-off>Turn off on this device</button></div>
  <fieldset class="notify-group"><legend>What notifies this device</legend>${kinds}</fieldset>
  <fieldset class="notify-group"><legend>Quiet hours</legend><label class="notify-kind"><input type="checkbox" data-notify-quiet-on${me.quiet.on?' checked':''}><span><b>Only failures and outages</b><small>Everything else waits in the Inbox.</small></span></label>
  <div class="notify-times"><label>From <input type="time" data-notify-quiet-start value="${esc(me.quiet.start)}"></label><label>to <input type="time" data-notify-quiet-end value="${esc(me.quiet.end)}"></label></div></fieldset>
@@ -3675,8 +3675,8 @@ async function render(card){
  try{sub=await subscription()}catch{say(card,'<p><b>Local AI\'s background service didn\'t start</b>, so this device can\'t receive notifications yet. Reload Local AI and try again.</p>');return}
  const {devices=[]}=await fetch('/api/push/devices',{cache:'no-store'}).then(r=>r.json()).catch(()=>({}));
  me=sub&&devices.find(d=>d.endpoint===sub.endpoint);
- if(sub&&!me){say(card,'<p><b>Notifications stopped on this device.</b> Local AI no longer has this device on its list, for example after it was removed.</p><button type="button" class="btn primary" data-notify-allow>Turn them on again</button>');return}
- if(!sub){say(card,'<p>Get a notification when Local AI needs you, something fails or goes down, or a long run finishes.</p><button type="button" class="btn primary" data-notify-allow>Allow notifications</button>');return}
+ if(sub&&!me){say(card,'<p><b>Notifications stopped on this device.</b> Local AI no longer has this device on its list, for example after it was removed.</p><button type="button" class="btn-primary" data-notify-allow>Turn them on again</button>');return}
+ if(!sub){say(card,'<p>Get a notification when Local AI needs you, something fails or goes down, or a long run finishes.</p><button type="button" class="btn-primary" data-notify-allow>Allow notifications</button>');return}
  say(card,settingsHtml(me,devices));
 }
 async function allow(card){
@@ -3698,7 +3698,7 @@ function mount(){
  (q(':scope > .two',host)||q('.secure-card',host)||q('.topbar',host))?.after(card);
  card.addEventListener('click',async e=>{
   const rename=e.target.closest('[data-notify-rename]');
-  if(rename){const li=rename.closest('li'),b=q('b',li);li.querySelector('.notify-device-actions').innerHTML=`<input class="notify-rename" maxlength="40" value="${esc(b.textContent)}" aria-label="Device name"><button type="button" class="btn primary" data-notify-rename-save="${esc(rename.dataset.notifyRename)}">Save</button>`;q('.notify-rename',li).focus();return}
+  if(rename){const li=rename.closest('li'),b=q('b',li);li.querySelector('.notify-device-actions').innerHTML=`<input class="notify-rename" maxlength="40" value="${esc(b.textContent)}" aria-label="Device name"><button type="button" class="btn-primary" data-notify-rename-save="${esc(rename.dataset.notifyRename)}">Save</button>`;q('.notify-rename',li).focus();return}
   const btn=e.target.closest('[data-notify-allow],[data-notify-test],[data-notify-off],[data-notify-remove],[data-notify-rename-save]');if(!btn)return;
   btn.disabled=true;status(card,'');
   try{
