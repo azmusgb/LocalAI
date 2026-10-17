@@ -988,12 +988,11 @@ function buildContext(){
   if(!b)return;b.hidden=total===0;b.dataset.empty=String(total===0);q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',total?`Inbox, ${total} waiting: ${inbox.unread} unread, ${inbox.pending} approvals waiting`:'Inbox')});
  q('#uxInboxBtn')?.addEventListener('click',()=>navigate('inbox')); // one queue (D8): the bell's one number opens the Inbox, which lists what waits first
 }
-// A page's single action (Health: Check again) shows as an icon in the phone header while that page is open.
+// Agent World's ⋯ menu as an icon in the phone header (its heading is hidden behind the city). It sits beside Search and
+// the bell, never in place of them; every other page keeps its action in the page (fixed header slots, navigation spec).
 const headerActions=new Map();
 function syncHeaderAction(view){const b=q('#uxHeaderAction');if(!b)return;const a=headerActions.get(REG.view(view||activeView())?.id||view||activeView());b.hidden=!a;q('#uxContextBar')?.classList.toggle('ux-context-has-action',!!a);if(!a){b.onclick=null;return}b.innerHTML=icon(a.icon,'ux-ico');b.setAttribute('aria-label',a.label);b.onclick=a.onClick}
 window.LocalAIShell={setAction(view,action){headerActions.set(view,action);syncHeaderAction()},clearAction(view){headerActions.delete(view);syncHeaderAction()}};
-// Health's refresh lives in the header on phones; the page's own button stays for desktop.
-window.LocalAIShell.setAction('status',{icon:'refresh',label:'Check again',onClick:()=>q('#statusRetryBtn')?.click()});
 function greeting(){const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'}
 function prefGet(k){try{return localStorage.getItem(k)}catch{return null}}
 function prefSet(k,v){try{localStorage.setItem(k,v)}catch{}}

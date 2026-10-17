@@ -1394,10 +1394,6 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
   body.ux-v3[data-view="home"] .ux-context-bar .ux-context-domain,body.ux-v3[data-view="home"] .ux-context-bar .ux-context-view,body.ux-v3[data-view="home"] .ux-context-menu{display:none!important}
   .ux-context-mark{width:30px;height:30px;border-radius:var(--ds-r-sm);box-shadow:none}.ux-context-mark svg{width:17px;height:17px}
   .ux-context-brand-names{display:grid;line-height:1.15}.ux-context-brand-names small{font-size:var(--ds-fs-1);color:var(--ds-muted)}.ux-context-brand-names strong{font-size:var(--ds-fs-3);font-weight:650;color:var(--ds-text)}
-  /* A page's own action takes Search's place in the header. */
-  body.ux-v3 .ux-context-has-action .ux-context-search{display:none!important}
-  body.ux-v3 #status>.topbar{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
-  body.ux-v3 #status>.topbar>:not(div:first-child){display:none}
 }
 .secure-setup{margin-top:12px}.secure-setup .secure-nudge-off{margin-top:12px;min-height:44px}.secure-phone{margin-top:12px}.secure-phone>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--ds-accent-text);font-weight:600}.secure-phone__steps{margin:10px 0 0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;align-items:start}.secure-phone__steps li{display:grid;gap:10px;align-content:start}.secure-phone__steps .qr{width:168px;height:168px;border-radius:var(--ds-r-sm)}.secure-phone__steps p{margin:0;font-size:var(--ds-fs-1);color:var(--ds-soft)}.secure-phone__steps p b:first-child{color:var(--ds-text)}
 .secure-setup>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--ds-accent-text);font-weight:600}
@@ -1639,10 +1635,6 @@ body.run-view-open{overflow:hidden}
 .improve-details h3{font-size:var(--ds-fs-2);color:var(--ds-muted);margin:12px 0 6px}
 .improve-checks{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
 .improve-checks li{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0;overflow-wrap:anywhere}
-@media(max-width:760px){
-  /* On phones the page's one action is the header icon (LocalAIShell); the heading button would repeat it. */
-  #backlog>.topbar button,#signals>.topbar button{display:none}
-}
 /* Improve's own sheets: styled like the shared approval sheet, but a class of their own so code and tests that look
    for .ask-sheet only ever find the approval sheet. */
 .improve-sheet{box-sizing:border-box;width:min(460px,calc(100vw - 32px));max-height:calc(100vh - 32px);padding:22px 20px 20px;border:1px solid var(--ds-line-2);border-radius:var(--ds-r-lg);background:var(--ds-surface);color:var(--ds-text);font-family:var(--ds-font);box-shadow:0 24px 70px rgba(0,0,0,.5);overflow:auto}

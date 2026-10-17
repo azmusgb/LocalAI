@@ -222,20 +222,21 @@ await check('shell: tab-bar icons come from the registry', async () => {
   }
 });
 
-await check('shell: Health puts Check again in the header in place of Search', async () => {
+await check('shell: Search and the bell keep their places on every page; Health keeps Check again in the page', async () => {
+  const slots = () => shell.evaluate(() => ['#uxCommandBtn', '#uxInboxBtn'].map(s => { const e = document.querySelector(s), r = e?.getBoundingClientRect(); return e && r.width > 0 ? `${s}@${Math.round(r.left)}` : `${s} hidden`; }).join(' '));
+  const seen = new Set();
+  for (const v of ['home', 'work', 'projects', 'backlog', 'signals', 'status', 'models', 'spreadsheets']) {
+    await shell.evaluate(id => window.showView(id), v);
+    await shell.waitForTimeout(150);
+    assert.equal(await shell.locator('#uxCommandBtn').isVisible(), true, `Search on ${v}`);
+    seen.add(await slots());
+  }
+  assert.equal(seen.size, 1, `header slots move between pages: ${[...seen].join(' | ')}`);
   await shell.evaluate(() => window.showView('status'));
-  await shell.waitForTimeout(150);
-  const action = shell.locator('#uxHeaderAction');
-  await action.waitFor({ state: 'visible' });
-  assert.equal(await action.getAttribute('aria-label'), 'Check again');
-  assert.equal(await shell.locator('#uxCommandBtn').isVisible(), false, 'Search gives its place to the page action');
-  assert.equal(await shell.locator('#statusRetryBtn').isVisible(), false, 'no second Check again on the page');
+  await shell.locator('#statusRetryBtn').waitFor({ state: 'visible' });
   const checked = shell.waitForRequest(r => r.url().includes('/api/status'));
-  await action.click();
+  await shell.locator('#statusRetryBtn').click();
   await checked;
-  await shell.evaluate(() => window.showView('models'));
-  await shell.waitForTimeout(150);
-  assert.equal(await shell.locator('#uxCommandBtn').isVisible(), true, 'Search is back on pages without an action');
 });
 await shell.close();
 
