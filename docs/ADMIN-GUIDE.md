@@ -78,7 +78,7 @@ On the Mac that runs the Claude Code session:
 
 | Command | Does |
 |---|---|
-| `localai-chat pair <code> [name]` | Pairs the device showing that code on System › Claude Code |
+| `localai-chat pair <code> [name]` | Pairs the device showing that code on Improve › Claude Code |
 | `localai-chat devices` | Lists paired devices |
 | `localai-chat revoke <id>` | Removes one |
 | `localai-chat status` | Shows whether the bridge is running |

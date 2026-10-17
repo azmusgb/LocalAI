@@ -5,7 +5,7 @@
 // `tab` is the label a page uses in its parent's tab strip (the parent's own tab included).
 // A domain's `icon` and a view's `svg` name symbols in the index.html sprite; every menu draws them from here.
 // `dev` marks a developer page: the rail, page strip, phone sheet and ⌘K leave it out while Developer tools (Health) is off.
-// Its address still opens it, as Improve's pages do.
+// Its address still opens it. Improve and its pages are always shown: the owner runs that pipeline (N1).
 (function(root){'use strict';
 const DOMAINS=[
  {id:'home',label:'Home',icon:'home',tagline:'What needs you',defaultView:'home'},
@@ -39,7 +39,7 @@ const VIEWS=[
  {id:'signals',svg:'alert',domain:'improve',section:'Pipeline',label:'Signals',description:'Problems Local AI noticed; serious ones join the Backlog.',aka:['detections','issues','quality signals']},
  // GridCraft on the Windows computer, through the appliance (spreadsheets.js). The old /gridcraft.html page sends you here.
  {id:'spreadsheets',svg:'file',domain:'system',section:'Tools',label:'Spreadsheets',description:'Ask for a spreadsheet on the Windows computer to be checked or changed.',aka:['gridcraft','excel','workbook']},
- {id:'claude',svg:'sparkle',domain:'system',section:'Tools',dev:true,label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
+ {id:'claude',svg:'sparkle',domain:'improve',section:'Pipeline',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
  {id:'workbench',svg:'folder',domain:'system',section:'Tools',dev:true,label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
  {id:'repoTools',svg:'branch',domain:'system',section:'Tools',dev:true,label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},
  {id:'powershell',svg:'terminal',domain:'system',section:'Tools',dev:true,label:'PowerShell',description:'Approval-gated scripts on the Windows host.',aka:['powershell workbench']},

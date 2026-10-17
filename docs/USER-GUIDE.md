@@ -19,8 +19,7 @@ can be reached again, or tap **Try again**.
 
 ## Find your way around
 
-There are up to five sections. On a phone they are the tabs at the bottom; on a computer they are on the left.
-Improve appears only with developer tools on (see the end of this guide).
+There are five sections. On a phone they are the tabs at the bottom; on a computer they are on the left.
 
 | Section | What it's for |
 |---|---|
@@ -78,7 +77,7 @@ The Projects tab opens on your projects. Its tabs:
 ## Improve: change Local AI itself
 
 Improve is one list of everything that could change in Local AI, from your ideas, problems Local AI noticed, and
-findings from Claude Code sessions. It is shown when **Show developer tools** is on.
+findings from Claude Code sessions.
 
 - **Backlog:** the ranked list. Vote items up or down, or open one to **Start** it, **Hand to Claude**,
   **Move to top**, **Defer** or **Reject**. **New idea** adds your own; choose **Add to backlog** or **Start now**.
@@ -157,14 +156,13 @@ For weather, set your home location in **System › Health › Home location**.
 
 ## Chat with Claude Code
 
-**System › Claude Code** lets you message a Claude Code session running on the Mac, and watch it work. A phone has to
+**Improve › Claude Code** lets you message a Claude Code session running on the Mac, and watch it work. A phone has to
 be paired first, once. See [Claude chat](CLAUDE-CHAT.md).
 
 ## Developer tools
 
-**System › Health › Show developer tools** adds the Improve section to the menu, **Change Local AI** to Home's
-choices, and the developer pages under System: **Claude Code**, **Files**, **Repository**, **PowerShell**,
-**Browser & computer** and **n8n workflows**. It also shows Models' runtime tile and Health's **Advanced service
+**System › Health › Show developer tools** adds **Change Local AI** to Home's choices, and the developer pages
+under System: **Files**, **Repository**, **PowerShell**, **Browser & computer** and **n8n workflows**. It also shows Models' runtime tile and Health's **Advanced service
 details**. Off, all of these are hidden from the menu, the page strip and search; a page's address still opens it.
 Everything else works the same. The setting is kept per device.
 

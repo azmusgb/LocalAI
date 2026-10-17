@@ -114,7 +114,8 @@ test('navigation surfaces read from the registry instead of their own lists', ()
 // which, so the rail, the page strip, the phone sheet and ⌘K all agree and a future developer page gets it for free.
 test('the developer pages carry the dev flag and nothing else does', () => {
   const dev = registry.VIEWS.filter(v => v.dev).map(v => v.id).sort();
-  assert.deepEqual(dev, ['actions', 'automations', 'claude', 'powershell', 'repoTools', 'workbench']);
+  assert.deepEqual(dev, ['actions', 'automations', 'powershell', 'repoTools', 'workbench']);
+  assert.equal(registry.view('claude').domain, 'improve', 'Claude Code is an ordinary Improve page (N2)');
   for (const v of registry.VIEWS.filter(x => x.dev)) assert.equal(v.domain, 'system', `${v.id} is a System page`);
 });
 
