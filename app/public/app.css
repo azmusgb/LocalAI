@@ -1134,7 +1134,7 @@ kbd{font:600 11px/1 var(--ds-mono);padding:2px 6px;border-radius:6px;border:1px 
   body.ux-v3 .summary-grid,.run-summary-grid,.ux-int-metrics,.model-runtime-summary,body.ux-v3 .library-grid{grid-template-columns:1fr!important}
 }
 /* ==== first-run ==== */
-.dev-tools-off [data-domain="improve"],.dev-tools-off .mode[data-mode="engineering"]{display:none!important}
+.dev-tools-off .mode[data-mode="engineering"]{display:none!important}
 .dev-tools-pref{display:flex;flex-direction:row-reverse;justify-content:space-between;gap:16px;align-items:center;margin-top:12px;cursor:pointer}
 /* A switch: the track is the input, the knob its ::after. */
 .dev-tools-pref input{appearance:none;-webkit-appearance:none;position:relative;width:44px;height:26px;margin:0;border-radius:999px;background:var(--ds-surface-3);border:1px solid var(--ds-line-2);flex:none;cursor:pointer;transition:background .15s ease}
@@ -1536,7 +1536,6 @@ body.run-view-open{overflow:hidden}
 .work-day{margin:0 4px 8px;font-size:13px;font-weight:650;color:var(--ds-muted);letter-spacing:0;text-transform:none}
 .work-more{display:flex;justify-content:center;margin-top:16px}
 .work-more[hidden],.work-more button[hidden]{display:none}
-@media(max-width:760px){}
 /* The whole row is the tap target: the title is a button whose hit area stretches over the row. Review and Retry stay small buttons above it. */
 .work-list .run-card,#home .run-card{position:relative}
 .work-open{display:block;min-height:24px;max-width:100%;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;white-space:normal;overflow-wrap:anywhere}

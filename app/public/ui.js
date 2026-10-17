@@ -1041,7 +1041,7 @@ function sync(forced){
  const hidden=REG.view(view)?.domain==='hidden',page=pageForView(view),viewLabel=labelForView(page),navPage=menuPage(view);renderPageStrip(d,navPage);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=listedGroups(d).flatMap(g=>g.views).filter(v=>viewButton(v)).length<2;document.body.classList.toggle('ux-single-page',single&&!touchWide());q('#uxContextBar')?.classList.toggle('ux-context-same',!hidden&&(single||viewLabel===d.label))} // "Local AI / Domain" for a domain with one page, "Local AI / Domain / Page" otherwise
  q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);q('#uxContextMenu')?.setAttribute('aria-label',d.label+' pages');syncHeaderAction(view);{const g=q('#uxContextGreeting');if(g)g.textContent=greeting()};
  qa('.ux-primary-item').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
- qa('#uxMobileNav [data-domain]').forEach(b=>b.dataset.active=String(b.dataset.domain===d.id));
+ qa('#uxMobileNav [data-domain]').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
  if(q('#uxSecondaryTitle')?.textContent!==d.label||q('#uxSecondaryGroups')?.dataset.dev!==String(!devOff()))renderSecondary(d.id);
  qa('.ux-secondary-link').forEach(b=>{const on=b.dataset.view===navPage;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
  qa('.ux-tab[data-ux-tab]').forEach(b=>{const on=b.dataset.uxTab===view;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1});
@@ -3498,7 +3498,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 // ==== first-run.js ====
-// "Get started" on Home for a new install, and the Developer tools preference that hides the Build domain.
+// "Get started" on Home for a new install, and the Developer tools preference that adds the developer pages.
 (()=>{'use strict';
 const q=(s,r=document)=>r.querySelector(s),qa=(s,r=document)=>[...r.querySelectorAll(s)];
 const DEV_KEY='localai.devTools',DONE_KEY='localai.firstRun.done';
@@ -3508,7 +3508,7 @@ async function getJson(url){const r=await fetch(url,{cache:'no-store'});return r
 let config=null;
 async function loadConfig(){if(!config)config=await getJson('/api/config').catch(()=>({}));return config}
 
-// Developer tools: Improve and the developer pages (registry `dev`: Claude Code, Files, Repository, PowerShell, Browser & computer,
+// Developer tools: the developer pages (registry `dev`: Files, Repository, PowerShell, Browser & computer,
 // n8n workflows), plus the diagnostic tiles marked data-dev-only. An install that has used them
 // starts with them shown; a new one starts with them hidden. The choice is remembered per browser.
 function applyDevTools(on,fromToggle=false){
@@ -3516,7 +3516,7 @@ function applyDevTools(on,fromToggle=false){
  qa('[data-dev-tools-toggle]').forEach(i=>{i.checked=on});
  const active=q('.view.active')?.id;
  const v=window.LocalAIViews?.view(active);
- if(fromToggle&&!on&&(v?.domain==='improve'||v?.dev)&&typeof window.showView==='function')window.showView('home');
+ if(fromToggle&&!on&&v?.dev&&typeof window.showView==='function')window.showView('home');
 }
 async function initDevTools(){
  const saved=pref.get(DEV_KEY);
@@ -3526,7 +3526,7 @@ async function initDevTools(){
 function mountDevToolsToggle(){
  const status=q('#status');if(!status||q('.dev-tools-pref',status))return;
  const row=document.createElement('label');row.className='dev-tools-pref card';
- row.innerHTML='<input type="checkbox" data-dev-tools-toggle><span><strong>Show developer tools</strong><small>Adds Improve and the developer tools: Claude Code, Files, Repository, PowerShell, Browser &amp; computer, n8n workflows.</small></span>';
+ row.innerHTML='<input type="checkbox" data-dev-tools-toggle><span><strong>Show developer tools</strong><small>Adds the developer tools: Files, Repository, PowerShell, Browser &amp; computer, n8n workflows.</small></span>';
  status.appendChild(row); // a setting, so it follows the health results
  row.querySelector('input').addEventListener('change',e=>{pref.set(DEV_KEY,e.target.checked?'1':'0');applyDevTools(e.target.checked,true)});
  row.querySelector('input').checked=!document.body.classList.contains('dev-tools-off');

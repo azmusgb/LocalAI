@@ -185,12 +185,13 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
     await page.context().close();
   });
 
-  await check(`${tag}: Developer tools off hides Improve but its pages still open`, async () => {
+  await check(`${tag}: Developer tools off still shows Improve, and it is the current area on its pages`, async () => {
     const page = await open(viewport, '#inProgress', { devTools: '0' });
     await page.waitForSelector('#inProgress.active', T);
-    assert.equal(await item(page, 'improve').isVisible(), false);
+    assert.equal(await item(page, 'improve').isVisible(), true);
+    assert.equal(await item(page, 'improve').getAttribute('aria-current'), 'true', 'you can see where you are');
     const boxes = await nav(page).locator('[data-domain]:visible').evaluateAll(els => els.map(e => Math.round(e.getBoundingClientRect().width)));
-    assert.equal(boxes.length, 4);
+    assert.equal(boxes.length, 5);
     if (viewport.width < 760) assert.ok(Math.max(...boxes) - Math.min(...boxes) <= 1, `unequal widths ${boxes}`);
     await page.context().close();
   });

@@ -68,14 +68,14 @@ await check('Health: a stopped core service says what to do about it', async () 
   assert.doesNotMatch(await page.locator('#serviceList').innerText(), /capability/i);
   await page.evaluate(() => window.showView('home'));
 });
-await check('Build is hidden while Developer tools is off', async () => {
-  assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), false);
+await check('Improve is shown while Developer tools is off; the engineering mode is not', async () => {
+  assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), true);
   assert.equal(await page.locator('.mode[data-mode="engineering"]').isVisible(), false);
 });
-await check('switching Developer tools on in Health shows Build and is remembered', async () => {
+await check('switching Developer tools on in Health is remembered', async () => {
   await page.evaluate(() => window.showView('status'));
   await page.waitForSelector('#status.active .dev-tools-pref input');
-  assert.match(await page.locator('.dev-tools-pref').innerText(), /Adds Improve and the developer tools: Claude Code, Files, Repository, PowerShell, Browser & computer, n8n workflows/);
+  assert.match(await page.locator('.dev-tools-pref').innerText(), /Adds the developer tools: Files, Repository, PowerShell, Browser & computer, n8n workflows/);
   await page.locator('.dev-tools-pref input').check();
   assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), true);
   assert.equal(await page.evaluate(() => localStorage.getItem('localai.devTools')), '1');
@@ -87,12 +87,10 @@ await check('Health shows the secure-connection card (the host itself counts as 
   await page.waitForSelector('#status.active .secure-card[data-state]');
   assert.equal(await page.locator('.secure-card').getAttribute('data-state'), 'good');
 });
-await check('switching it off while on a Build page returns to Home', async () => {
-  await page.evaluate(() => window.showView('status'));
-  await page.evaluate(() => window.showView('backlog'));
+await check('switching it off keeps Improve', async () => {
   await page.evaluate(() => window.showView('status'));
   await page.locator('.dev-tools-pref input').uncheck();
-  assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), false);
+  assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), true);
 });
 await check('dismissing Get started keeps it hidden after reload', async () => {
   if (!expectCard) return;

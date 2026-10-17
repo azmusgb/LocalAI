@@ -315,7 +315,7 @@ await mobile.close();
 // Developer tools off (a new install): System's menu, the page strip and the phone sheet hold the owner's pages only.
 // The developer pages still open by address, and the switch brings them back.
 const OWNER_SYSTEM = ['Health', 'Models', 'Services', 'Automations', 'Spreadsheets', 'Audit log']; // Monitors folded into Automations (D9)
-const DEV_SYSTEM = ['Claude Code', 'Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows'];
+const DEV_SYSTEM = ['Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows']; // Claude Code is in Improve (N2)
 await check('developer tools off: System lists the owner pages only; a developer page still opens by address', async () => {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
   await ctx.addInitScript(() => { localStorage.setItem('localai.devTools', '0'); localStorage.setItem('localai.firstRun.done', '1'); });
@@ -343,7 +343,7 @@ await check('developer tools off: System lists the owner pages only; a developer
   await pg.locator('.ux-nav-collapse').click();
   assert.equal((await pg.locator('#uxPageStrip button').allInnerTexts()).length, OWNER_SYSTEM.length + DEV_SYSTEM.length);
   await pg.locator('.ux-nav-expand').click();
-  // Switching it off while on a developer page returns to Home, as it does for Improve.
+  // Switching it off while on a developer page returns to Home.
   await pg.evaluate(() => window.showView('workbench'));
   await pg.waitForSelector('#workbench.active');
   await pg.evaluate(() => document.querySelector('.dev-tools-pref input').click());
