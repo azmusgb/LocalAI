@@ -311,7 +311,9 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
       storage.deleteSetting(pairKey(id));
       const token = crypto.randomBytes(32).toString('base64url');
       const t = now();
-      const device = { id: record.deviceId, name: record.deviceName, tokenSha256: sha256hex(token), pairedAt: record.approvedAt || t, lastSeenAt: t, ...(record.kind ? { kind: record.kind } : {}) };
+      // Strictly after every earlier pairing, so two approved in the same millisecond still list in pairing order.
+      const latest = Math.max(0, ...storage.listSettings(`${PREFIX}device:`).map(d => d.pairedAt || 0));
+      const device = { id: record.deviceId, name: record.deviceName, tokenSha256: sha256hex(token), pairedAt: Math.max(record.approvedAt || t, latest + 1), lastSeenAt: t, ...(record.kind ? { kind: record.kind } : {}) };
       storage.writeSetting(deviceKey(device.id), device);
       return { status: 'approved', device: { id: device.id, name: device.name }, cookie: requestIsHttps(req)
         ? `${COOKIE}=${device.id}.${token}; HttpOnly; SameSite=Strict; Path=/api/claude/chat; Max-Age=15552000; Secure`
