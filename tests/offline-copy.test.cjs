@@ -49,7 +49,7 @@ test('the service worker marks a saved copy and the page loads the module that r
   assert.match(sw, /X-LocalAI-Offline-Copy/);
   assert.match(sw, /localai-offline-copy/);
   assert.match(sw, /'\/offline-copy\.js'/);
-  assert.match(sw, /const CACHE='local-ai-shell-v1\.18-unified-runs[^']*-offline1'/);
+  assert.match(sw, /const CACHE='local-ai-shell-v1\.18-unified-runs[^']*-offline1[^']*'/);
 });
 
 test('only Local AI\'s own health payload counts as reachable (not a proxy 502 or a captive portal)', () => {

@@ -58,8 +58,8 @@ await check('Agent World is mounted',async()=>{
   assert.ok(box&&box.width>0&&box.height>0,'Agent World should render a visible game surface');
 });
 await check('Agent World stage is landscape and full-width',async()=>{
-  const live=await page.locator('.agent-live-grid').evaluate(el=>getComputedStyle(el).gridTemplateColumns);
-  assert.ok(!live.includes('360px'),'Agent World must not be squeezed by a fixed inspector column');
+  const city=await page.locator('.aw-city').boundingBox(),rail=await page.locator('#awSheet').boundingBox();
+  assert.ok(city.width>=2*rail.width,'the city takes the main area; the rail beside it is narrow');
   const map=await page.locator('.awc__mapWrap').boundingBox();
   assert.ok(map&&map.width>map.height,'Game map should be landscape, not a tall portrait strip');
 });
@@ -205,13 +205,13 @@ await check('Agent World uses construction-crew presentation',async()=>{
   assert.match(await page.locator('.awc__sub').innerText(),/construction crew/i);
   await page.locator('#awcDemoPlay').click();
   await page.waitForTimeout(150);
-  assert.ok(await page.locator('#awcRoster .awc__rosterGlyph').count()>=4);
+  assert.ok(await page.locator('#awcRoster .awc__avatar').count()>=4);
   await page.locator('#awcLiveBtn').click();
 });
 await check('Agent World worker identities render in roster',async()=>{
   await page.locator('#awcDemoPlay').click();
   await page.waitForTimeout(150);
-  assert.ok(await page.locator('#awcRoster .awc__rosterGlyph').count()>=4);
+  assert.ok(await page.locator('#awcRoster .awc__avatar').count()>=4);
   assert.match(await page.locator('#awcRoster').innerText(),/UX Analyst/i);
   await page.locator('#awcLiveBtn').click();
 });
@@ -252,7 +252,8 @@ await check('mobile layout has no page-level horizontal overflow',async()=>{
   assert.ok(dims.sw<=dims.cw+2,`scrollWidth ${dims.sw} > clientWidth ${dims.cw}`);
 });
 await check('mobile touch targets and controls are available',async()=>{
-  for(const id of ['#awcZoomIn','#awcZoomOut','#awcFit','#awcCenter','#awcDemoPlay','#awcDemoStep']){
+  // On a phone the city keeps three controls; the rest is in the sheet.
+  for(const id of ['#awcZoomIn','#awcZoomOut','#awcFollow','#awSheetHandle']){
     await mobile.locator(id).waitFor({state:'visible'});
   }
 });
@@ -268,6 +269,9 @@ await check('mobile pinch zoom changes world scale',async()=>{
   assert.notEqual(await mobile.locator('#awcZoomLabel').innerText(),'100%');
 });
 await check('mobile demo remains user-controlled',async()=>{
+  await mobile.locator('#awSheetHandle').click();await mobile.locator('#awSheetHandle').click();
+  await mobile.waitForFunction(()=>document.getElementById('awSheet').dataset.snap==='full');
+  await mobile.locator('#awcDemoPlay').scrollIntoViewIfNeeded();
   await mobile.locator('#awcDemoPlay').click();
   await mobile.locator('#awcDemoStep').click();
   assert.equal(await mobile.locator('#awcSource').innerText(),'DEMO');

@@ -397,7 +397,7 @@ summary:focus-visible {
 .agent-compose__row{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:10px;align-items:end}.agent-compose textarea{min-height:96px;font-size:15px;line-height:1.45;resize:vertical}.agent-compose label{font-weight:760}.agent-compose__actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.agent-compose label.agent-compose__check{display:flex;align-items:center;gap:8px;min-height:44px;margin-top:6px;text-transform:none;letter-spacing:0;font-weight:500;font-size:14px}.agent-compose__check input{width:20px;height:20px;margin:0}.agent-compose__check .sub{font-size:13px}.agent-compose__actions .btn.primary{min-width:132px}
 .agent-inline-notice{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--ux-line,var(--line));border-radius:12px;padding:10px 12px;background:#0d151f}.agent-inline-notice>div{display:grid;gap:2px}.agent-inline-notice span{font-size:12px;color:var(--muted)}.agent-inline-notice[data-kind="error"]{border-color:rgba(255,113,128,.35);background:rgba(255,113,128,.05)}.agent-inline-notice[data-kind="success"]{border-color:rgba(98,222,160,.3);background:rgba(98,222,160,.05)}
 .agent-mission-strip{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--ux-line,var(--line));border-radius:12px;background:rgba(255,255,255,.018)}.agent-mission-strip :is(h2,h3){font-size:13px;margin:0 0 2px;letter-spacing:0}.agent-mission-strip small{color:var(--muted)}.agent-mission-progress{width:170px;height:6px;border-radius:99px;background:#172230;overflow:hidden}.agent-mission-progress span{display:block;height:100%;width:0;background:linear-gradient(90deg,#65a9ff,#55dff1,#6ce39a);transition:width .25s ease}
-.agent-live-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start}.agent-side-stack{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;min-width:0}.agent-panel{border:1px solid var(--ux-line,var(--line));background:var(--ux-surface,#101620);border-radius:16px;padding:14px;min-width:0}.agent-panel__head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.agent-panel__head h2{margin:0;font-size:14px}.agent-panel__head small{color:var(--muted)}
+.agent-panel{border:1px solid var(--ux-line,var(--line));background:var(--ux-surface,#101620);border-radius:16px;padding:14px;min-width:0}.agent-panel__head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.agent-panel__head h2{margin:0;font-size:14px}.agent-panel__head small{color:var(--muted)}
 .mission-line{width:100%;display:grid;grid-template-columns:18px 34px minmax(0,1fr) auto;gap:8px;align-items:center;border:0;background:transparent;color:var(--text);text-align:left;padding:6px;border-radius:9px;min-height:48px}.mission-line:hover,.mission-line:focus-visible{background:rgba(255,255,255,.035)}.mission-line__rail{height:100%;display:grid;place-items:center;position:relative}.mission-line__rail i{width:8px;height:8px;border-radius:50%;background:#526174;border:2px solid #182434;z-index:1}.mission-line__rail b{position:absolute;width:1px;background:#28394b;top:50%;bottom:-24px}.mission-line.running .mission-line__rail i{background:#55dff1;box-shadow:0 0 0 4px rgba(85,223,241,.1)}.mission-line.complete .mission-line__rail i{background:#6ce39a}.mission-line.error .mission-line__rail i,.mission-line.blocked .mission-line__rail i{background:#ff7180}.mission-line__icon{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:#162335;border:1px solid rgba(255,255,255,.07);font-weight:850}.mission-line__copy{min-width:0}.mission-line__copy strong{display:block;font-size:11px}.mission-line__copy small{display:block;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mission-line__state{color:var(--muted);font-weight:800}
 .inspector-head{display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:10px;align-items:center}.agent-avatar-lg{width:42px;height:42px;border-radius:10px;display:grid;place-items:center;background:linear-gradient(145deg,#79a9ff,#a98cff);color:#08101a;font-weight:900}.inspector-head h3{font-size:14px;margin:1px 0 0}.inspector-grid{display:grid;grid-template-columns:88px minmax(0,1fr);gap:6px 10px;margin:12px 0 0}.inspector-grid dt{color:var(--muted)}.inspector-grid dd{margin:0;overflow-wrap:anywhere}.mini-plan{margin-top:12px}.timeline-vertical{display:grid;gap:4px}.timeline-step{display:grid;grid-template-columns:12px 1fr;gap:8px;align-items:start;padding:4px}.timeline-step span:last-child{display:grid}.timeline-step small{color:var(--muted)}.timeline-dot{width:8px;height:8px;border-radius:50%;background:#526174;margin-top:3px}.timeline-step.complete .timeline-dot{background:#6ce39a}.timeline-step.running .timeline-dot{background:#55dff1}.timeline-step.error .timeline-dot{background:#ff7180}
 .inspector-details{margin-top:12px;padding-top:10px;border-top:1px solid var(--ux-line,var(--line))}.inspector-details summary{font-weight:760}.evidence-list{display:grid;gap:4px;margin-top:8px}.evidence-list code,.evidence-table code{color:#bfd1e2;overflow-wrap:anywhere}.agent-result-pre{white-space:pre-wrap;word-break:break-word;margin:8px 0 0;max-height:420px;overflow:auto;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;color:#cbd8e6}.inline-error{margin-top:10px;border:1px solid rgba(255,113,128,.28);background:rgba(255,113,128,.05);padding:9px;border-radius:9px;color:#ffc2c8}
@@ -405,8 +405,8 @@ summary:focus-visible {
 .agent-history-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}.agent-history-head input{max-width:260px}.history-row{width:100%;display:grid;grid-template-columns:8px minmax(0,1fr) auto;gap:10px;align-items:center;border:0;background:transparent;color:var(--text);text-align:left;padding:9px 7px;border-radius:9px}.history-row:hover,.history-row.active{background:rgba(255,255,255,.035)}.history-state{width:7px;height:28px;border-radius:6px;background:#536275}.history-state.complete{background:#6ce39a}.history-state.running{background:#55dff1}.history-state.needs_attention,.history-state.error{background:#ff7180}.history-row strong{display:block;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.history-row small{display:block;color:var(--muted)}
 .agent-advanced{border:1px solid var(--ux-line,var(--line));background:rgba(255,255,255,.012);border-radius:16px;padding:14px}.agent-advanced-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,.8fr);gap:12px}.route-head{display:flex;justify-content:space-between;gap:10px}.route-head>div{display:grid}.route-head small{color:var(--muted)}.route-flow{display:grid;gap:6px;margin-top:10px}.route-step{display:grid;grid-template-columns:28px 1fr;gap:8px;border:1px solid var(--ux-line,var(--line));border-radius:9px;padding:8px}.route-step__n{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:#162437;font-weight:850}.route-step span:last-child{display:grid}.route-step small{color:var(--muted)}.route-scorebar{height:4px;border-radius:99px;background:#172431;overflow:hidden;margin:5px 0 3px}.route-scorebar i{display:block;height:100%;background:linear-gradient(90deg,#6d9fff,#59e2ed,#75dfa2)}.routing-rationale{display:grid;gap:3px;margin-top:10px;padding:8px 9px;border:1px solid var(--ux-line,var(--line));border-radius:9px;background:rgba(255,255,255,.018)}.routing-rationale span{color:var(--muted);line-height:1.45}
 .agent-registry{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}.agent-card{display:grid;grid-template-columns:34px minmax(0,1fr);gap:9px;text-align:left;color:var(--text);border:1px solid var(--ux-line,var(--line));border-radius:11px;padding:10px;background:rgba(255,255,255,.018)}.agent-card.active{border-color:rgba(121,169,255,.45);background:rgba(121,169,255,.06)}.agent-card__icon{width:34px;height:34px;border-radius:8px;display:grid;place-items:center;background:#17263a;font-weight:850}.agent-card strong{display:block;font-size:11px}.agent-card small{display:block;color:var(--muted);margin-top:2px}.agent-meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}.execution-output{white-space:pre-wrap;max-height:300px;overflow:auto;margin-top:10px}.agent-direct-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
-@media(max-width:1100px){.agent-live-grid{grid-template-columns:1fr}.agent-side-stack{grid-template-columns:1fr 1fr}.agent-advanced-grid{grid-template-columns:1fr}}
-@media(max-width:760px){.agent-compose__row{grid-template-columns:1fr}.agent-live-grid{display:block}.agent-side-stack{display:grid;grid-template-columns:1fr;margin-top:12px}.agent-mission-strip{grid-template-columns:1fr}.agent-mission-progress{width:100%}.agent-advanced-grid,.agent-direct-grid{grid-template-columns:1fr}.agent-history-head{align-items:stretch;flex-direction:column}.agent-history-head input{max-width:none}.evidence-table>div{grid-template-columns:1fr}.mission-line{grid-template-columns:16px 32px minmax(0,1fr)}.mission-line__state{grid-column:3;margin-top:-6px}.agent-compose textarea{font-size:16px}}
+@media(max-width:1100px){.agent-advanced-grid{grid-template-columns:1fr}}
+@media(max-width:760px){.agent-compose__row{grid-template-columns:1fr}.agent-mission-strip{grid-template-columns:1fr}.agent-mission-progress{width:100%}.agent-advanced-grid,.agent-direct-grid{grid-template-columns:1fr}.agent-history-head{align-items:stretch;flex-direction:column}.agent-history-head input{max-width:none}.evidence-table>div{grid-template-columns:1fr}.mission-line{grid-template-columns:16px 32px minmax(0,1fr)}.mission-line__state{grid-column:3;margin-top:-6px}.agent-compose textarea{font-size:16px}}
 
 /* ==== ux-architecture-v2.css ==== */
 /* Local AI Navigation Architecture v3 */
@@ -438,8 +438,6 @@ body.ux-v3 .topbar{align-items:flex-start;padding-top:2px}body.ux-v3 h1{margin-b
 body.ux-v3 .preview-pane,body.ux-v3 .metric,body.ux-v3 .memory-card{border-color:var(--ds-line);background:var(--ds-surface);box-shadow:none}body.ux-v3 .card,body.ux-v3 .item-card{box-shadow:none}
 body.ux-v3 .card{padding:18px}
 body.ux-v3 .two{gap:14px}
-body.ux-v3 #agents .agent-live-grid{grid-template-columns:minmax(0,1fr) 320px}
-body.ux-v3 #agents .agent-side-stack{grid-template-columns:minmax(0,1fr)}
 
 /* Local-first integration hub */
 .ux-int-hero{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(300px,.75fr);gap:18px;align-items:center;margin:0 0 20px}
@@ -554,17 +552,17 @@ body.ux-v3 #agents .agent-side-stack{grid-template-columns:minmax(0,1fr)}
 .awc-v3[data-state="attention"] .awc__progress span{background:repeating-linear-gradient(-45deg,var(--aw-red) 0 8px,#3a1515 8px 16px)}
 @keyframes awcTape{to{background-position:22.6px 0}}
 
-/* Stage: the map sets the height; the side panel scrolls inside it. */
-.awc__gameShell{display:grid;grid-template-columns:minmax(0,1fr) 300px}
-.awc__mapWrap{position:relative;overflow:hidden;min-width:0;aspect-ratio:1280/760;background:#071019;isolation:isolate}
-.awc canvas{display:block;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges;cursor:grab;touch-action:none;outline:none}
+/* Stage: the map box sets the size and the canvas fills it absolutely (its height never depends on a percentage of an
+   aspect-ratio box, which iOS Safari can resolve to 0); ui.js sizes the backing store to the box × device pixels. */
+.awc__gameShell{display:block}
+.awc__mapWrap{position:relative;overflow:hidden;min-width:0;aspect-ratio:16/10;background:#0d2220}
+.awc canvas{position:absolute;inset:0;display:block;width:100%;height:100%;image-rendering:pixelated;cursor:grab;touch-action:none;outline:none}
 .awc canvas:active{cursor:grabbing}
 .awc canvas:focus-visible{box-shadow:inset 0 0 0 2px var(--aw-blue)}
 .awc__mapWrap:after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 90px rgba(2,8,14,.45)}
-.awc__scanlines{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(180deg,rgba(255,255,255,.012) 0 1px,transparent 1px 4px);mix-blend-mode:soft-light;opacity:.4}
 
 .awc__mapHud{position:absolute;left:12px;right:12px;top:12px;z-index:2;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;pointer-events:none}
-.awc__selection,.awc__minimap,.awc__eventFeed>div,.awc__legend,.awc__tooltip{background:rgba(7,15,25,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(140,175,215,.16);box-shadow:0 10px 30px rgba(0,0,0,.28)}
+.awc__selection,.awc__minimap,.awc__eventFeed>div,.awc__legend,.awc__tooltip{background:rgba(7,15,25,.9);border:1px solid rgba(140,175,215,.16);box-shadow:0 10px 30px rgba(0,0,0,.28)}
 .awc__selection{max-width:min(320px,52%);display:grid;gap:3px;padding:9px 12px;border-radius:12px}
 .awc__selection strong,.awc__selection span{font-size:13px;font-weight:650}
 .awc__selection small{font-size:12px;color:var(--aw-muted)}
@@ -590,28 +588,14 @@ body.ux-v3 #agents .agent-side-stack{grid-template-columns:minmax(0,1fr)}
 .awc__tooltip{position:absolute;z-index:5;min-width:150px;max-width:220px;display:grid;gap:2px;padding:8px 10px;border-radius:9px;pointer-events:none}
 .awc__tooltip strong{font-size:12px}.awc__tooltip span{font-size:11px;color:var(--aw-muted)}
 
-/* Side panel */
-.awc__ops{position:relative;min-width:0;border-left:1px solid var(--aw-line);background:var(--aw-panel)}
-.awc__opsScroll{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--ds-line-2) transparent}
+/* Districts, replay and the demo: a panel the page hosts beside or under the city. */
+.awc__ops{min-width:0;border:1px solid var(--aw-line);border-radius:16px;background:var(--aw-panel);color:var(--aw-text);overflow:hidden}
+.awc__ops button{font:inherit;cursor:pointer}
 .awc__section{padding:14px;border-bottom:1px solid var(--aw-line)}
 .awc__opsHead{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:10px}
 .awc__opsHead h3{margin:0;font-size:13px;font-weight:700}
 .awc__opsHead strong{font-size:12px;font-weight:600;color:var(--aw-muted)}
 
-.awc__roster{display:grid;gap:6px}
-.awc__rosterItem{position:relative;display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:10px;align-items:center;width:100%;padding:8px 10px 8px 8px;border:1px solid var(--aw-line);border-radius:11px;background:#0b1726;color:var(--aw-text);text-align:left;transition:border-color .15s ease,background .15s ease}
-.awc__rosterItem:hover{background:#12223a;border-color:var(--aw-line2)}
-.awc__rosterGlyph{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-size:12px;font-weight:800;color:color-mix(in srgb,var(--worker,#8fb5e8) 80%,white);background:color-mix(in srgb,var(--worker,#8fb5e8) 16%,#122135);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--worker,#8fb5e8) 45%,transparent)}
-.awc__rosterItem>span:nth-child(2){display:grid;min-width:0}
-.awc__rosterItem strong{font-size:13px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.awc__rosterItem small{font-size:11px;color:var(--aw-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.awc__rosterItem em{font-style:normal;font-size:11px;font-weight:650;padding:2px 8px;border-radius:999px;color:var(--aw-muted);background:#13233a}
-.awc__rosterItem.running{border-color:rgba(255,178,36,.55);background:linear-gradient(90deg,rgba(255,178,36,.1),#0b1726 60%)}
-.awc__rosterItem.running:before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:3px;border-radius:2px;background:var(--aw-amber)}
-.awc__rosterItem.running em{color:#1d1503;background:var(--aw-amber)}
-.awc__rosterItem.complete em{color:#062b1b;background:var(--aw-green)}
-.awc__rosterItem:is(.error,.blocked){border-color:rgba(255,107,107,.45)}
-.awc__rosterItem:is(.error,.blocked) em{color:#2e0b0b;background:var(--aw-red)}
 .awc__empty{padding:14px 8px;text-align:center;color:var(--aw-faint);font-size:12px}
 
 .awc__districtLegend{display:flex;flex-wrap:wrap;gap:6px}
@@ -641,15 +625,12 @@ body.ux-v3 #agents .agent-side-stack{grid-template-columns:minmax(0,1fr)}
 /* Night mode deepens the frame to match the canvas */
 .awc-v3.is-night{--aw-ground:#060d16;--aw-panel:#0a1420}
 
-/* Crew hidden: map takes the full width */
-.awc-v3.crew-hidden .awc__gameShell{grid-template-columns:minmax(0,1fr)}
-.awc-v3.crew-hidden .awc__ops{display:none}
 
 /* Theater */
 .awc-v3.is-expanded{position:fixed;inset:10px;z-index:9999;display:flex;flex-direction:column;border-radius:16px;box-shadow:0 30px 100px rgba(0,0,0,.72)}
 .awc-v3.is-expanded .awc__gameShell{flex:1;min-height:0;background:#071019}
-/* Keep the map's true proportions (pointer mapping assumes an unscaled 1280:760 box). */
-.awc-v3.is-expanded .awc__mapWrap{height:100%;width:auto;max-width:100%;justify-self:center;align-self:center}
+/* The map fills the theater; the camera covers it at any shape. */
+.awc-v3.is-expanded .awc__mapWrap{height:100%;aspect-ratio:auto}
 body.awc-stage-expanded{overflow:hidden}
 
 /* Layout follows the space Agent World actually gets (the Agents page gives it ~730px; theater gives it the screen). */
@@ -659,11 +640,6 @@ body.awc-stage-expanded{overflow:hidden}
   .awc__toolbar{grid-column:2;grid-row:1}
 }
 @container awc (max-width:1000px){
-  .awc__gameShell{grid-template-columns:minmax(0,1fr)}
-  .awc__ops{border-left:0;border-top:1px solid var(--aw-line)}
-  .awc__opsScroll{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
-  .awc__section:nth-child(odd){border-right:1px solid var(--aw-line)}
-  .awc__hint{grid-column:1/-1}
   .awc__missionstrip{grid-template-columns:minmax(0,1fr) minmax(200px,.8fr)}
   .awc__phase{grid-column:1/-1;grid-row:2}
 }
@@ -686,16 +662,11 @@ body.awc-stage-expanded{overflow:hidden}
   .awc__mapHud{left:8px;top:8px}
   .awc__selection{max-width:75%;padding:6px 9px}
   .awc__selection small{display:none}
-  .awc__opsScroll{grid-template-columns:minmax(0,1fr)}
-  .awc__section:nth-child(odd){border-right:0}
-  .awc__roster{grid-auto-flow:column;grid-auto-columns:minmax(220px,80%);overflow-x:auto;padding-bottom:4px}
   .awc__replayActions button,.awc__demoActions button,.awc__liveBtn,.awc__demoPanel select{min-height:44px}
-  .awc__ops{padding-bottom:72px}
 }
 @media(max-width:600px){.awc-v3{border-radius:14px}.awc-v3.is-expanded{inset:0;border-radius:0}}
 @media(prefers-reduced-motion:reduce){
   .awc-v3 *{animation:none!important;transition:none!important}
-  .awc__scanlines{display:none}
 }
 
 /* ==== claude-board.css ==== */
@@ -947,7 +918,7 @@ details.disclosure{margin-top:12px;border-top:1px solid var(--ds-line);padding-t
   --ux-radius:var(--ds-r-md);--ux-radius-lg:var(--ds-r-lg);
 }
 /* Agent World uses the same palette */
-.awc-v3{--aw-ground:var(--ds-bg);--aw-panel:var(--ds-surface);--aw-panel2:var(--ds-surface-2);--aw-line:var(--ds-line);--aw-line2:var(--ds-line-2);
+.awc-v3,.aw-page{--aw-ground:var(--ds-bg);--aw-panel:var(--ds-surface);--aw-panel2:var(--ds-surface-2);--aw-line:var(--ds-line);--aw-line2:var(--ds-line-2);
   --aw-text:var(--ds-text);--aw-muted:var(--ds-muted);--aw-faint:var(--ds-faint);--aw-amber:var(--ds-progress);--aw-green:var(--ds-good);--aw-red:var(--ds-bad);--aw-blue:var(--ds-accent)}
 
 /* Base */
@@ -1995,6 +1966,86 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 /* Phones: a strip of four or more tabs (Projects) is a two-column grid, so "Everything you kept" is never cut off. */
 @media(max-width:760px){body.ux-v3 .ux-tabs:has(>.ux-tab:nth-child(4)){display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;overflow:visible}}
 
+/* ==== Agent World page (redesign 2026-10-17; docs/superpowers/specs/2026-10-17-agent-world-design.md) ====
+   The city is the page. Desktop: the city beside a rail; tablet: the rail under the city. Phone (≤760px): the city
+   fills the screen between the header and the tab bar, and everything else is a bottom sheet over it with three
+   snaps (#awSheet[data-snap]: peek, half, full) that ui.js drives; the page itself never scrolls. */
+.aw-page{--aw-peek:112px}
+.aw-stage{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:14px;align-items:start}
+.aw-city{min-width:0}
+.aw-sheet{min-width:0}
+.aw-sheet__top{display:none}
+.aw-sheet__body{display:grid;gap:14px;min-width:0}
+.aw-page.crew-hidden .aw-stage{grid-template-columns:minmax(0,1fr)}
+.aw-page.crew-hidden .aw-sheet{display:none}
+@media(min-width:761px){.aw-sheet{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--ds-line-2) transparent}}
+@media(min-width:761px) and (max-width:1023px){.aw-stage{grid-template-columns:minmax(0,1fr)}.aw-sheet{position:static;max-height:none;overflow:visible}}
+
+/* Crew: one row per worker, the accessible equivalent of the city. */
+.aw-h{margin:0 0 8px;font-size:13px;font-weight:650;color:var(--ds-soft)}
+.aw-crew__rows{display:grid;gap:6px}
+.awc__rosterItem{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:12px;align-items:center;width:100%;min-height:60px;padding:8px 12px 8px 8px;border:1px solid var(--ds-line);border-radius:var(--ds-r-md);background:var(--ds-surface);color:var(--ds-text);text-align:left;font:inherit;cursor:pointer;transition:border-color .15s ease,background .15s ease}
+.awc__rosterItem:hover{background:var(--ds-surface-2);border-color:var(--ds-line-2)}
+.awc__rosterItem:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+.awc__rosterItem.running{border-color:rgba(255,178,36,.45);box-shadow:inset 3px 0 0 var(--ds-progress)}
+.awc__rosterItem:is(.error,.blocked){border-color:rgba(255,107,107,.45);box-shadow:inset 3px 0 0 var(--ds-bad)}
+.awc__rosterText{display:grid;gap:1px;min-width:0}
+.awc__rosterText>*{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.awc__rosterText strong{font-size:14px;font-weight:650}
+.awc__rosterText small{font-size:12px;color:var(--ds-muted)}
+.awc__rosterText span{font-size:13px;color:var(--ds-soft)}
+.awc__rosterItem em{font-style:normal}
+.awc__rosterText>span{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.awc__tooltip[hidden]{display:none}
+/* In the rail the form and the strip are one column. */
+.aw-sheet .agent-compose__row,.aw-sheet .agent-mission-strip{grid-template-columns:minmax(0,1fr)}
+.aw-sheet .agent-mission-progress{width:100%}
+.awc__avatar{width:40px;height:40px;border-radius:10px;background:radial-gradient(circle at 50% 35%,#24405f,#0f1a2a 72%);image-rendering:pixelated}
+
+/* The city's own controls: zoom and Follow, over its bottom-right corner. */
+.awc__controls{position:absolute;right:12px;bottom:12px;z-index:3;display:flex;align-items:center;border:1px solid var(--aw-line2);border-radius:12px;background:rgba(10,17,28,.92);overflow:hidden}
+.awc__controls>*+*{border-left:1px solid var(--aw-line)}
+.awc__controls button{min-width:44px;min-height:44px;padding:0 12px;border:0;background:transparent;color:var(--ds-soft);font-size:15px;font-weight:600}
+.awc__controls button:hover{background:#15273d;color:#fff}
+.awc__controls button[aria-pressed="true"]{background:var(--ds-accent-soft);color:var(--ds-accent-text)}
+.awc__legend{bottom:68px}
+@media(pointer:coarse){.awc__hint{display:none}}
+
+@media(max-width:760px){
+  body.ux-v3[data-view="agents"]{padding-bottom:0;overflow:hidden}
+  body.ux-v3[data-view="agents"] .app{min-height:0}
+  /* The page-in animation leaves a transform that would trap the fixed stage inside the (empty) page; 1px keeps
+     the page itself "visible" while all of it is the fixed stage. */
+  body.ux-v3 #agents{animation:none;min-height:1px}
+  #agents>.topbar{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+  #agents .aw-stage{position:fixed;left:0;right:0;top:var(--aw-top,56px);bottom:var(--aw-bottom,calc(var(--mobile-nav-height) + env(safe-area-inset-bottom)));z-index:1;display:block;overflow:hidden}
+  #agents .aw-city,#agents #agentWorldCityMount{height:100%}
+  #agents .awc-v3{height:100%;display:flex;flex-direction:column;border:0;border-radius:0;box-shadow:none}
+  #agents .awc__commandbar,#agents .awc__missionstrip{display:none}
+  #agents .awc__gameShell{flex:1;min-height:0}
+  #agents .awc__mapWrap{height:100%;aspect-ratio:auto}
+  #agents .awc__controls{bottom:calc(var(--aw-peek) + 20px)}
+  #agents #awcZoomLabel{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .aw-sheet{position:absolute;left:0;right:0;top:8px;bottom:0;z-index:4;display:flex;flex-direction:column;border-top:1px solid var(--ds-line-2);border-radius:20px 20px 0 0;background:var(--ds-bg-2);box-shadow:0 -12px 40px rgba(0,0,0,.45);transform:translateY(var(--aw-y,calc(100% - var(--aw-peek))));transition:transform .28s cubic-bezier(.2,.8,.2,1)}
+  .aw-sheet.is-dragging{transition:none}
+  .aw-sheet__top{display:block;flex:none;height:var(--aw-peek);padding:0 16px;touch-action:none;cursor:grab}
+  .aw-sheet__handle{display:grid;place-items:center;width:100%;height:44px;padding:0;border:0;background:transparent;cursor:grab}
+  .aw-sheet__grip{width:40px;height:5px;border-radius:3px;background:var(--ds-line-2)}
+  .aw-sheet__peek{display:flex;align-items:center;gap:12px;min-height:60px}
+  .aw-sheet__status{flex:1;min-width:0;margin:0;font-size:15px;font-weight:600;line-height:1.35;color:var(--ds-text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .aw-sheet__status[data-tone="working"] b{color:var(--ds-attention-text)}
+  .aw-sheet__status[data-tone="attention"] b{color:var(--ds-bad-text)}
+  .aw-sheet__status[data-tone="done"] b{color:var(--ds-good-text)}
+  #agents .awc__selection[data-empty="true"]{display:none}
+  .aw-sheet__avatars{display:flex;flex:none;padding-left:8px}
+  .aw-sheet__avatars .awc__avatar{width:30px;height:30px;margin-left:-8px;border:2px solid var(--ds-bg-2);border-radius:50%}
+  .aw-sheet__avatars .is-running{border-color:var(--ds-progress)}
+  .aw-sheet__avatars :is(.is-error,.is-blocked){border-color:var(--ds-bad)}
+  .aw-sheet__body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:0 16px calc(20px + env(safe-area-inset-bottom))}
+  .run-body-mission__world .awc__commandbar,.run-body-mission__world .awc__missionstrip{display:none}
+  .run-body-mission__world .awc__mapWrap{height:min(58vh,480px);aspect-ratio:auto}
+}
+@media(prefers-reduced-motion:reduce){.aw-sheet{transition:none}}
 /* System › Spreadsheets (spreadsheets.js) */
 .sheets-status[data-state="ready"] .dot{background:var(--ds-good)}
 .sheets-status[data-state="checking"] .dot{background:var(--ds-progress)}

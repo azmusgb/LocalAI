@@ -18,11 +18,14 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
     await page.goto(base + '/', { waitUntil: 'networkidle' });
     await page.evaluate(() => window.showView('agents'));
     await page.waitForSelector('#awcCanvas');
+    // On a phone the demo controls are in the sheet: raise it, start the demo, lower it so the whole city is in view.
+    const phone = viewport.width <= 760;
+    if (phone) { await page.click('#awSheetHandle'); await page.click('#awSheetHandle'); await page.waitForFunction(() => document.getElementById('awSheet').dataset.snap === 'full'); }
     await page.selectOption('#awcDemoScenario', 'success');
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: SLOWDOWN });
     await page.click('#awcDemoPlay');
-    // The map only animates while it is on screen; on a phone it starts below the fold.
+    if (phone) { await page.evaluate(() => history.back()); await page.waitForFunction(() => document.getElementById('awSheet').dataset.snap === 'peek'); }
     await page.locator('#awcCanvas').scrollIntoViewIfNeeded();
     await page.waitForTimeout(300);
     const r = await page.evaluate(seconds => new Promise(done => {
