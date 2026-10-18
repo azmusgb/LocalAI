@@ -74,9 +74,9 @@ await check('ArtCraft has a card that says it uses cloud services, shows whether
 await check('the Workshop display card shows whether it is answering and opens its own portal in a new tab', async () => {
   const card = page.locator('.ux-int-card', { hasText: 'Workshop display' });
   const body = await card.innerText();
-  assert.match(body, /On your network · its own sign-in/);
+  assert.match(body, /On your network · no sign-in yet/);
   assert.match(body, /touchscreen beside the 3D printer/);
-  assert.match(body, /own access code and the printer controls/);
+  assert.match(body, /has the printer controls and, for now, no sign-in/);
   assert.match(body, /Away from home, Tailscale must be on\./);
   const live = '[data-integration-source-v2="workshop"]';
   await page.waitForFunction(s => /Online · Waveshare 3\.5"/.test(document.querySelector(s)?.textContent || ''), live);
