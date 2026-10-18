@@ -50,7 +50,9 @@ const TOTAL = 257 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // and props, shadows, lit windows, sidewalks, crossings, lamps, benches, trees (239.1 KB measured; +4 KB for the pass).
 // 2026-10-18: ui.js 98 → 99 KB for Agent World's start sheet offering Hand to Claude (+0.1 KB; main was 97.9 KB, this
 // measures 98.0 KB). The suggestion itself lives in self-change.js.
-const PER_FILE = { 'ui.js': 99 * KB, 'components.js': 11 * KB, 'app.css': 41 * KB, 'app.js': 36 * KB, 'index.html': 13 * KB };
+// 2026-10-18: ui.js 99 → 100 KB for Agent World workers walking out of their door and along the streets with square
+// turns (routeToTarget and its street legs, +0.8 KB); with the Workshop printer line (#312) ui.js measures 99.5 KB.
+const PER_FILE = { 'ui.js': 100 * KB, 'app.css': 41 * KB, 'app.js': 36 * KB, 'index.html': 13 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
