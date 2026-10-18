@@ -123,8 +123,8 @@ const secureNudge=()=>{if(!onPlainHttp())return false;try{return localStorage.ge
 const secureRow=()=>infoRow('Use the secure address on this device','Voice, notifications and adding Local AI to your Home Screen need it. Setup takes about a minute.','Set up','attention',()=>root.LocalAIRouter.open('status?secure=1'));
 // Serious Signals promoted into the Backlog in the last day, waiting for a decision.
 const signalsRow=n=>infoRow(`${n} new signal${n===1?'':'s'} in your backlog`,'Problems Local AI noticed. Start, defer or reject them.','Review','attention',()=>root.LocalAIRouter.open('backlog'));
-// At most CAP rows, then "See all N", which opens Work's Needs you filter. What asks for a decision or a fix comes first,
-// so a pile of failures never hides it; failures of one goal are one row ("Failed ×5"), newest first.
+// What asks for a decision, a fix or a setup step always shows. Failures fill the list up to CAP rows, newest first, one
+// row per goal ("Failed ×5"); the rest are behind "See all N", which opens Work's Needs you filter.
 const CAP=3;
 function seeAllRow(n){
  const row=document.createElement('button');row.type='button';row.className='list-row home-attn home-needs-all';
@@ -148,10 +148,11 @@ function paintNeeds(){
  // While Get started is on the page its step 1 already covers stopped services; the same news is not repeated as "Fix" rows.
  const serviceRows=document.getElementById('firstRun')?[]:attention.map(attentionRow);
  const failed=root.LocalAINeedsYou.group(needs.filter(r=>r.status==='failed'));
- const rows=[...needs.filter(r=>r.status!=='failed').map(r=>recentRow(r)),...approvals.map(x=>approvalRow(x.a,x.run)),...serviceRows,...(newSignals?[signalsRow(newSignals)]:[]),...failed.map(failedRow),...(secureNudge()?[secureRow()]:[])];
- box.replaceChildren(...(rows.length>CAP?[...rows.slice(0,CAP),seeAllRow(rows.length)]:rows));
- $('homeNeedsCount').textContent=rows.length?'· '+rows.length:'';
- sec.hidden=!rows.length;
+ const act=[...needs.filter(r=>r.status!=='failed').map(r=>recentRow(r)),...approvals.map(x=>approvalRow(x.a,x.run)),...serviceRows,...(newSignals?[signalsRow(newSignals)]:[]),...(secureNudge()?[secureRow()]:[])];
+ const n=act.length+failed.length,room=act.length+failed.length>CAP?Math.max(0,CAP-act.length):failed.length;
+ box.replaceChildren(...act,...failed.slice(0,room).map(failedRow),...(room<failed.length?[seeAllRow(n)]:[]));
+ $('homeNeedsCount').textContent=n?'· '+n:'';
+ sec.hidden=!n;
 }
 function recentRow(it,onOpen=openRun){
  // A conversation shows once, under its first message, with its turn count (as Work does).

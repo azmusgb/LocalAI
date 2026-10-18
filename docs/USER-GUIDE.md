@@ -58,8 +58,9 @@ services that are down, and new Signals. Tap one to deal with it. An approval op
 everything it will do, and **Approve** or **Reject** right there; you stay on Home. While the 3D printer is printing,
 paused or stopped with an error, one line about it sits just above.
 
-Needs you shows three rows at most, approvals and fixes first; **See all** opens Work's **Needs you** filter. Repeated
-failures of the same goal are one row ("Failed ×5"). A failure leaves Needs you once you open it (on any device), a
+Approvals, fixes and setup steps always show. Failed runs fill Needs you up to three rows, newest first, and the rest
+wait behind **See all**, which opens Work's **Needs you** filter. Repeated failures of the same goal are one row
+("Failed ×5"). A failure leaves Needs you once you open it (on any device), a
 day after it failed, or when you retry it or run the same goal again (if that fails too, the new failure shows
 instead); it always stays in Work. Approvals stay until you decide them.
 

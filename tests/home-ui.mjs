@@ -808,6 +808,15 @@ for (const [tag, vp] of [['390', phone], ['desktop', desk]]) {
   });
 }
 
+await check('approvals always show, however many; failures wait behind See all', async () => {
+  const approvals = [1, 2, 3, 4].map(i => ({ id: 'apr_' + i, status: 'pending', title: 'Decide thing ' + i, detail: 'Needs a yes' }));
+  const page = await open(phone, '#home', { all: pile, approvals });
+  await page.waitForSelector('#homeNeedsList .home-needs-all', T);
+  const t = await titles(page, '#homeNeedsList');
+  assert.deepEqual(t, ['Fix the login bug', 'Decide thing 1', 'Decide thing 2', 'Decide thing 3', 'Decide thing 4', 'See all 10']);
+  await page.context().close();
+});
+
 await check('opening a failed run from anywhere (the run view) marks it seen once; a finished run is not posted', async () => {
   const failed = item('agent', 'Weekly report mission', HOUR, { status: 'failed' }), fine = item('chat', 'Fine chat', HOUR);
   const page = await open(desk, '#home', { all: () => [failed, fine] });
