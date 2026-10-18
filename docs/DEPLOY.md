@@ -157,6 +157,20 @@ sets the version). `Install-LocalAI-Stack.ps1 -Adopt` brings them under compose.
 `docker compose --env-file C:\LocalAI\stack\stack.env -f deploy\stack\compose.yml up -d sandbox-api` (after adopting). Finally, give
 n8n's assistant the new key in its sandbox connection settings.
 
+**Applying a `compose.yml` change.** Deploys and repairs never recreate running containers (`--no-recreate`), so a
+change to `compose.yml` (a limit, a healthcheck, a pinned image) waits until it is applied by hand:
+
+```powershell
+Disable-ScheduledTask 'LocalAI Safe Deploy'
+docker compose -p local-ai --env-file C:\LocalAI\stack\stack.env -f C:\LocalAI\repo\deploy\stack\compose.yml up -d
+docker ps --format 'table {{.Names}}\t{{.Status}}'          # wait for (healthy)
+.\deploy\stack\Test-LocalAI-Stack.ps1
+Enable-ScheduledTask 'LocalAI Safe Deploy'
+```
+
+`up -d` recreates only the services whose settings changed; a running mission or image is interrupted, so pick a quiet
+moment. Every service logs to json-file capped at 3 × 10 MB (`x-logging`), and the long-running ones have healthchecks.
+
 ## Old backup containers
 
 Migrations keep the container they replace, stopped, for rollback: `local-ai-<name>-pre-compose`
