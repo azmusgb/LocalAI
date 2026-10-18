@@ -80,7 +80,9 @@ function announcePage(id,first,from){
   // `from` is what had focus before the old page was hidden (hiding it drops focus to the body).
   const strip=!force&&from?.closest?.('.ux-tabs[role="tablist"],.ux-page-strip,[role="tablist"]');
   // A tab switch: each page has its own copy of the tab strip, so keep focus on the same tab in the new copy.
-  if(strip){if(!strip.closest('.view')||strip.closest('.view')===sec)return;requestAnimationFrame(()=>{const t=sec.querySelector('.ux-page-tabs .ux-tab.active,.ux-page-tabs [aria-selected="true"]');if(t)t.focus({preventScroll:true})});return}
+  // The page strip sits above every page: keep focus on its current button (the hash change took focus off it).
+  if(strip&&!strip.closest('.view')){requestAnimationFrame(()=>(strip.querySelector('[aria-current="page"]')||from).focus?.({preventScroll:true}));return}
+  if(strip){if(strip.closest('.view')===sec)return;requestAnimationFrame(()=>{const t=sec.querySelector('.ux-tabs[role="tablist"] .ux-tab.active,.ux-tabs [aria-selected="true"]');if(t)t.focus({preventScroll:true})});return}
   // The new page already put focus somewhere inside itself on purpose (Work's "Start something" focuses the composer): keep it.
   requestAnimationFrame(()=>{const a=document.activeElement;if(!force&&a&&a!==document.body&&sec.contains(a))return;const h=[...sec.querySelectorAll('h1')].find(x=>x.offsetParent!==null),t=h||sec;if(!t.hasAttribute('tabindex'))t.setAttribute('tabindex','-1');t.focus({preventScroll:true})});
 }

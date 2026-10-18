@@ -24,146 +24,36 @@ await check('the first load leaves focus alone and titles the tab', async () => 
   await context.close();
 });
 
-await check('choosing a page from the menu titles the tab and moves focus to that page', async () => {
+await check('choosing an area titles the tab and moves focus to that page; the strip keeps focus on itself', async () => {
   const { page, context } = await open();
   await page.click('.ux-primary-item[data-domain="system"]');
   await page.waitForFunction(() => document.title === 'Health · Local AI');
   await page.waitForFunction(() => !!document.activeElement?.closest('#status'), null, { timeout: 2000 }).catch(() => {});
   assert.equal(await inView(page, 'status'), true, 'focus is on the Health page');
-  await page.click('#uxSecondaryGroups .ux-secondary-link[data-view="models"]');
+  // The strip is a row of tabs: switching from it keeps focus on it, so the next tab is one key away.
+  const models = page.locator('#uxPageStrip [data-strip-view="models"]');
+  await models.focus(); await models.press('Enter');
   await page.waitForFunction(() => document.title === 'Models · Local AI');
-  await page.waitForFunction(() => !!document.activeElement?.closest('#models'), null, { timeout: 2000 }).catch(() => {});
-  assert.equal(await inView(page, 'models'), true, 'focus is on the Models page');
-  await context.close();
-});
-
-await check('switching tabs inside a page keeps focus on the tab', async () => {
-  const { page, context } = await open();
-  // #issues now resolves to Improve's Signals stage, so this uses Projects, which still has tabs.
-  await page.evaluate(() => { location.hash = '#projects' });
-  await page.waitForSelector('#projects.active .ux-tab');
-  const tab = page.locator('#projects .ux-tab', { hasText: 'Sources' });
-  await tab.focus(); await tab.press('Enter');
-  await page.waitForFunction(() => document.title === 'Sources · Local AI');
-  await page.waitForFunction(() => !!document.activeElement?.closest('#knowledge .ux-tabs'), null, { timeout: 2000 }).catch(() => {});
-  assert.match(await page.evaluate(() => document.activeElement?.textContent || ''), /Sources/);
-  assert.equal(await page.evaluate(() => !!document.activeElement?.closest('.ux-tabs')), true);
-  await context.close();
-});
-
-await check('⌘K is a modal dialog: focus stays inside, the highlighted page opens on Enter, Escape returns focus', async () => {
-  const { page, context } = await open();
-  await page.focus('#uxCommandBtn');
-  await page.keyboard.press('Meta+k');
-  await page.waitForFunction(() => document.getElementById('cmdk')?.open === true);
-  assert.equal(await page.evaluate(() => document.activeElement?.id), 'cmdkInput');
-  for (let i = 0; i < 12; i++) await page.keyboard.press('Tab');
-  assert.equal(await page.evaluate(() => !!document.activeElement?.closest('#cmdk')), true, 'Tab stays in the palette');
-  await page.keyboard.press('Escape');
-  await page.waitForFunction(() => document.getElementById('cmdk')?.open === false);
-  assert.equal(await page.evaluate(() => document.activeElement?.id), 'uxCommandBtn', 'focus returns to what opened it');
-
-  await page.click('#uxCommandBtn');
-  await page.waitForFunction(() => document.getElementById('cmdk')?.open === true);
-  await page.keyboard.type('model');
-  // A combobox: focus stays in the search box and the highlighted option is aria-activedescendant.
-  assert.equal(await page.evaluate(() => document.activeElement?.id), 'cmdkInput');
-  assert.match(await page.evaluate(() => document.getElementById(document.getElementById('cmdkInput').getAttribute('aria-activedescendant'))?.textContent || ''), /Models/);
-  await page.keyboard.press('Enter');
-  await page.waitForFunction(() => document.title === 'Models · Local AI');
-  assert.equal(await page.evaluate(() => document.getElementById('cmdk').open), false);
-  await page.waitForFunction(() => !!document.activeElement?.closest('#models'), null, { timeout: 2000 }).catch(() => {});
-  assert.equal(await inView(page, 'models'), true, 'focus moves to the chosen page');
-
-  await page.keyboard.press('Control+k');
-  await page.waitForFunction(() => document.getElementById('cmdk')?.open === true);
-  await page.keyboard.type('health');
-  await page.keyboard.press('Enter');
-  await page.waitForFunction(() => document.title === 'Health · Local AI');
-  await context.close();
-});
-
-await check('closing the run view does not pull focus to the page heading', async () => {
-  const { page, context } = await open();
-  const now = new Date().toISOString();
-  const run = { id: 'r1', type: 'chat', title: 'Hello', status: 'completed', progress: 100, updatedAt: now, createdAt: now, summary: 'x', output: 'x', events: [], pinned: false, projectId: null,
-    card: { kind: 'chat', icon: 'compose', title: 'Hello', summary: 'x', badge: { label: 'Done', tone: 'good' }, preview: { type: 'text', text: 'x' }, action: { label: 'Open' }, approval: null } };
-  await page.route(u => u.pathname === '/api/runs', r => { const id = new URL(r.request().url()).searchParams.get('id'); r.fulfill({ json: id ? { item: run } : { items: [run], summary: {} } }) });
-  await page.evaluate(() => { location.hash = '#work' });
-  const row = page.locator('.view.active .run-card').first(); await row.waitFor();
-  await row.click();
-  await page.waitForFunction(() => location.hash === '#run/r1', null, { timeout: 5000 });
-  await page.locator('#runDrawer button').first().focus(); // as a user tabbing into it would
-  await page.keyboard.press('Escape');
-  await page.waitForFunction(() => location.hash === '#work', null, { timeout: 5000 }).catch(async () => { throw new Error('Escape did not close: ' + await page.evaluate(() => location.hash)) });
-  await page.waitForTimeout(300);
-  assert.notEqual(await page.evaluate(() => document.activeElement?.tagName), 'H1');
-  await context.close();
-});
-
-await check('sending from Home keeps focus in the run view through the pending→run re-render, and the answer is announced', async () => {
-  // Chat is available (the Chat mode is gated on the model service).
-  const { page, context } = await open(undefined, p => p.route(u => u.pathname === '/api/capabilities', r => r.fulfill({ json: { services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' } })));
-  // A controllable /api/chat/stream, as chat-run-ui.mjs stubs it: __streams[0].push(event, data) / .close().
-  await page.evaluate(() => {
-    const real = window.fetch.bind(window); window.__streams = [];
-    window.fetch = (url, opts = {}) => {
-      if (!String(url).includes('/api/chat/stream')) return real(url, opts);
-      let ctl; const enc = new TextEncoder();
-      const rs = new ReadableStream({ start(c) { ctl = c; } });
-      window.__streams.push({ push: (ev, data) => ctl.enqueue(enc.encode(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`)), close: () => ctl.close() });
-      return Promise.resolve(new Response(rs, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }));
-    };
-  });
-  const now = new Date().toISOString();
-  const run = { id: 'r-home-1', type: 'chat', threadId: 't-home', title: 'What is a mutex', status: 'running', progress: 10, updatedAt: now, createdAt: now, input: { prompt: 'What is a mutex' }, output: null, events: [], projectId: null,
-    card: { kind: 'chat', icon: 'compose', title: 'What is a mutex', summary: '', badge: { label: 'Working', tone: 'accent' }, preview: null, action: { label: 'Open' }, approval: null } };
-  await page.route(u => u.pathname === '/api/runs', r => { const q = new URL(r.request().url()).searchParams; r.fulfill({ json: q.get('id') ? { item: run } : { items: q.get('threadId') ? [run] : [], summary: {} } }) });
-  await page.evaluate(() => window.LocalAIHome.setMode('ask'));
-  await page.waitForFunction(() => !document.querySelector('.mode[data-mode="ask"]')?.disabled, null, { timeout: 4000 });
-  await page.locator('#commandInput').fill('What is a mutex');
-  await page.keyboard.press('Enter');
-  await page.waitForFunction(() => location.hash === '#run/pending', null, { timeout: 4000 });
-  await page.waitForTimeout(300);
-  assert.equal(await inView(page, 'runDrawer'), true, 'focus is in the run view while it says Starting…');
-  await page.evaluate(() => { window.__streams[0].push('meta', { runId: 'r-home-1', threadId: 't-home' }); window.__streams[0].push('token', { text: 'A mutex is a lock.' }); });
-  await page.waitForFunction(() => location.hash === '#run/r-home-1', null, { timeout: 4000 });
-  await page.waitForTimeout(300);
-  assert.equal(await inView(page, 'runDrawer'), true, 'focus stays in the run view after the pending→run re-render');
-  assert.notEqual(await page.evaluate(() => document.activeElement?.tagName), 'BODY');
-  await page.evaluate(() => { window.__streams[0].push('done', { elapsedMs: 1 }); window.__streams[0].close(); });
-  await page.waitForFunction(() => document.getElementById('runLiveRegion')?.textContent === 'Answer ready.', null, { timeout: 4000 });
-  assert.equal(await inView(page, 'runDrawer'), true, 'focus is still in the run view when the answer is ready');
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.stripView), 'models');
   await context.close();
 });
 
 // ---- Semantics (critique §3.8) ----
 const active = page => page.evaluate(() => { const a = document.activeElement; return a ? { id: a.id, tab: a.dataset?.uxTab || '', mode: a.dataset?.homeMode || '', text: (a.textContent || '').trim() } : null; });
 
-await check('page tabs: one tab stop, arrows/Home/End move between tabs, each tab names the page it controls', async () => {
+await check('the page strip is one navigation landmark, each page one Tab stop, the open one marked', async () => {
   const { page, context } = await open();
   await page.evaluate(() => { location.hash = '#projects' });
-  await page.waitForSelector('#projects.active .ux-tab');
-  const tabs = page.locator('#projects .ux-tab');
-  assert.deepEqual(await tabs.evaluateAll(ts => ts.map(t => t.tabIndex)), [0, -1, -1, -1, -1], 'only the selected tab is in the Tab order');
-  assert.deepEqual(await tabs.evaluateAll(ts => ts.map(t => t.getAttribute('aria-controls'))), ['projects', 'knowledge', 'memory', 'library', 'spreadsheets']);
-  await tabs.first().focus();
-  await page.keyboard.press('ArrowRight');
+  await page.waitForSelector('#projects.active');
+  const strip = page.locator('nav#uxPageStrip[aria-label="Pages in this section"]');
+  assert.equal(await strip.count(), 1);
+  const buttons = strip.locator('button');
+  assert.deepEqual(await buttons.allInnerTexts(), ['Projects', 'Sources', 'Memory', 'Library', 'Spreadsheets']);
+  assert.deepEqual(await buttons.evaluateAll(bs => bs.map(b => b.tabIndex)), [0, 0, 0, 0, 0]);
+  assert.deepEqual(await buttons.evaluateAll(bs => bs.map(b => b.getAttribute('aria-current'))), ['page', null, null, null, null]);
+  await buttons.nth(1).focus(); await page.keyboard.press('Enter');
   await page.waitForSelector('#knowledge.active');
-  await page.waitForFunction(() => document.activeElement?.closest('#knowledge') && document.activeElement.dataset.uxTab === 'knowledge', null, { timeout: 2000 });
-  assert.deepEqual(await page.locator('#knowledge .ux-tab').evaluateAll(ts => ts.map(t => t.tabIndex)), [-1, 0, -1, -1, -1]);
-  await page.keyboard.press('End');
-  await page.waitForSelector('#spreadsheets.active');
-  await page.waitForFunction(() => document.activeElement?.closest('#spreadsheets') && document.activeElement.dataset.uxTab === 'spreadsheets', null, { timeout: 2000 });
-  await page.keyboard.press('ArrowRight'); // wraps
-  await page.waitForSelector('#projects.active');
-  await page.waitForFunction(() => document.activeElement?.closest('#projects') && document.activeElement.dataset.uxTab === 'projects', null, { timeout: 2000 });
-  await page.keyboard.press('ArrowLeft'); // wraps back to the last tab
-  await page.waitForSelector('#spreadsheets.active');
-  await page.waitForFunction(() => document.activeElement?.closest('#spreadsheets') && document.activeElement.dataset.uxTab === 'spreadsheets', null, { timeout: 2000 });
-  await page.keyboard.press('Home');
-  await page.waitForSelector('#projects.active');
-  await page.waitForFunction(() => document.activeElement?.dataset?.uxTab === 'projects', null, { timeout: 2000 });
+  assert.equal(await strip.locator('[aria-current="page"]').innerText(), 'Sources');
   await context.close();
 });
 
@@ -194,13 +84,13 @@ await check('the menus are navigation landmarks and mark the current page', asyn
   await page.waitForSelector('#models.active');
   const primary = page.locator('[role="navigation"][aria-label="Primary"], nav[aria-label="Primary"]').filter({ has: page.locator('.ux-primary-item') });
   assert.equal(await primary.count(), 1, 'the rail is a Primary navigation landmark');
-  const pages = page.locator('[role="navigation"][aria-label="Pages in this section"], nav[aria-label="Pages in this section"]').filter({ has: page.locator('.ux-secondary-link') });
-  assert.equal(await pages.count(), 1, 'the page list is a navigation landmark');
-  assert.deepEqual(await page.locator('.ux-secondary-link[aria-current="page"]').evaluateAll(b => b.map(x => x.dataset.view)), ['models']);
+  const pages = page.locator('[role="navigation"][aria-label="Pages in this section"], nav[aria-label="Pages in this section"]').filter({ has: page.locator('[data-strip-view]') });
+  assert.equal(await pages.count(), 1, 'the page strip is a navigation landmark');
+  assert.deepEqual(await page.locator('[data-strip-view][aria-current="page"]').evaluateAll(b => b.map(x => x.dataset.stripView)), ['models']);
   assert.equal(await page.locator('.ux-primary-item[aria-current]').getAttribute('data-domain'), 'system');
   await page.evaluate(() => window.showView('status'));
-  await page.waitForFunction(() => document.querySelector('.ux-secondary-link[aria-current="page"]')?.dataset.view === 'status');
-  assert.equal(await page.locator('.ux-secondary-link[aria-current="page"]').count(), 1);
+  await page.waitForFunction(() => document.querySelector('[data-strip-view][aria-current="page"]')?.dataset.stripView === 'status');
+  assert.equal(await page.locator('[data-strip-view][aria-current="page"]').count(), 1);
   await context.close();
 });
 

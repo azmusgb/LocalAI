@@ -36,17 +36,17 @@ await check('system capability health distinguishes optional companions',async()
 });
 await check('desktop navigation architecture',async()=>{
   await page.locator('.ux-primary-rail').waitFor({state:'visible'});
-  await page.locator('.ux-secondary-nav').waitFor({state:'hidden'}); // Work has one page, so no page list beside the rail
   assert.equal(await page.locator('.ux-primary-item').count(),5);
-  assert.equal(await page.locator('#uxSecondaryTitle').textContent(),'Work');
+  assert.equal(await page.locator('.ux-primary-item[data-domain="work"]').getAttribute('aria-current'),'true','Missions lights Work');
+  assert.equal(await page.locator('#uxPageStrip').isVisible(),false,'no page strip over the city');
 });
 await check('contextual navigation switches domains',async()=>{
   await page.locator('.ux-primary-item[data-domain="projects"]').click();
   await page.waitForSelector('#projects.active');
-  assert.equal(await page.locator('#uxSecondaryTitle').innerText(),'Projects');
+  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(),'Projects');
   await page.evaluate(()=>window.showView('agents'));
   await page.waitForSelector('#agents.active');
-  assert.equal(await page.locator('#uxSecondaryTitle').textContent(),'Work');
+  assert.equal(await page.locator('.ux-primary-item[data-domain="work"]').getAttribute('aria-current'),'true');
 });
 await check('the start sheet asks what the team should do',async()=>{
   await page.evaluate(()=>window.LocalAIAgentStart.open());
@@ -233,13 +233,10 @@ await mobile.evaluate(()=>window.showView('agents'));
 await mobile.waitForSelector('#agents.active');
 await mobile.waitForSelector('#agentWorldCityMount .awc');
 
-await check('mobile navigation is domain-first with contextual sheet',async()=>{
+await check('mobile navigation is domain-first: the tab bar lights Work on Missions',async()=>{
   await mobile.locator('#uxMobileNav').waitFor({state:'visible'});
   assert.equal(await mobile.locator('#uxMobileNav [data-domain]').count(),5);
-  await mobile.locator('#uxContextMenu').click();
-  await mobile.locator('#uxMobileSheet').waitFor({state:'visible'});
-  assert.match(await mobile.locator('#uxMobileSheetTitle').innerText(),/Work/i);
-  await mobile.locator('#uxMobileSheetClose').click();
+  assert.equal(await mobile.locator('#uxMobileNav [data-domain="work"]').getAttribute('aria-current'),'true');
 });
 await check('mobile layout has no page-level horizontal overflow',async()=>{
   const dims=await mobile.evaluate(()=>({sw:document.documentElement.scrollWidth,cw:document.documentElement.clientWidth}));
