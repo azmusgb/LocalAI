@@ -55,7 +55,14 @@ page is) and it answers from this appliance's own setup: its addresses, its fold
 
 **Needs you**, near the top of Home, lists what is waiting for you: approvals, runs that failed in the last day,
 services that are down, and new Signals. Tap one to deal with it. An approval opens in a sheet over Home with
-everything it will do, and **Approve** or **Reject** right there; you stay on Home.
+everything it will do, and **Approve** or **Reject** right there; you stay on Home. While the 3D printer is printing,
+paused or stopped with an error, one line about it sits just above.
+
+Approvals, fixes and setup steps always show. Failed runs fill Needs you up to three rows, newest first, and the rest
+wait behind **See all**, which opens Work's **Needs you** filter. Repeated failures of the same goal are one row
+("Failed ×5"). A failure leaves Needs you once you open it (on any device), a
+day after it failed, or when you retry it or run the same goal again (if that fails too, the new failure shows
+instead); it always stays in Work. Approvals stay until you decide them.
 
 ## Images
 
@@ -190,7 +197,14 @@ asks for the code shown on the display, System → Local Portal.) Away from home
 
 With the display's read-only status token set up ([Workshop display › Printer status](WORKSHOP-DISPLAY.md#printer-status-read-only-token)),
 **Home** shows one line while a print runs or has stopped with an error, such as "Printer · 42% · 1 h 10 min left".
-Tap it to open the Workshop display card. Nothing shows while the printer is idle.
+Tap it to open the Workshop display card. Nothing shows while the printer is idle or after you stopped a print
+yourself (the card says "Printer · Print stopped").
+
+To sign in to the display's portal without walking to the touchscreen, set up its code key once
+([Workshop display › Sign-in code](WORKSHOP-DISPLAY.md#sign-in-code-on-the-services-card)). The card then has **Show
+sign-in code**: tap it to see the code in two groups of five, with **Copy** and **Open portal ↗**. It hides itself after
+a minute or when you switch away. Anyone who can open Local AI can do the same, so only set it up while you are the one
+using it.
 
 ## Automations
 
