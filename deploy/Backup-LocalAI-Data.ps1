@@ -9,9 +9,9 @@ param(
     # (every device trusts it), the Responses proxy's data. Pass @() to skip.
     [string[]]$Volumes = @('n8n_data', 'localai-caddy-data', 'local-ai-ollama-responses-proxy-data'),
     [string]$VolumeRoot = 'C:\LocalAI\backups\volumes',
-    # A second copy on another drive. Never OneDrive: these hold the HTTPS root key and n8n's credentials with their key.
-    # Skipped when the drive doesn't exist; pass '' to skip.
-    [string]$VolumeCopyRoot = 'G:\LocalAI-Backups\volumes',
+    # A second copy on another LOCAL disk, off by default (this PC has only C:; its G: is Google Drive). Never a
+    # cloud-synced folder: these hold the HTTPS root key and n8n's credentials with their key, so one is refused.
+    [string]$VolumeCopyRoot = '',
     # The stack's secrets (n8n's encryption key among them): a rebuild needs them. Kept beside the volume archives.
     [string]$StackEnv = 'C:\LocalAI\stack\stack.env'
 )
@@ -32,6 +32,16 @@ function Invoke-Native([scriptblock]$Command, [string]$What) {
     $out = & $Command 2>&1 | ForEach-Object { "$_" }
     if ($LASTEXITCODE -ne 0) { throw "$What failed: $($out -join ' ')" }
     return ($out | Where-Object { $_ -notmatch 'ExperimentalWarning|trace-warnings' }) -join "`n"
+}
+# True for a folder a cloud client syncs: OneDrive, Dropbox, iCloud, or a drive labelled Google Drive (G:\My Drive).
+# Labels maps drive letters to volume labels (Win32_LogicalDisk's), so tests can pass their own.
+function Test-CloudPath([string]$Path, [hashtable]$Labels = $null) {
+    if ($Path -match '(?i)\\(OneDrive( - [^\\]+)?|Dropbox|iCloudDrive|iCloud Drive|Google Drive|My Drive)(\\|$)') { return $true }
+    $letter = ([IO.Path]::GetPathRoot($Path) -replace '[:\\]', '').ToUpper()
+    if (-not $letter) { return $false }
+    # Win32_LogicalDisk, not Get-Volume: Google Drive's virtual drive only shows up here (label "Google Drive").
+    if ($null -eq $Labels) { $Labels = @{}; Get-CimInstance Win32_LogicalDisk -ErrorAction SilentlyContinue | ForEach-Object { $Labels["$($_.DeviceID)".TrimEnd(':')] = $_.VolumeName } }
+    return "$($Labels[$letter])" -match '(?i)Google Drive|OneDrive|Dropbox|iCloud'
 }
 function Select-Keep([System.IO.FileInfo[]]$Files) {
     # Every backup name carries its time as yyyyMMdd-HHmmss (localai-…db, volume-<name>-….tgz).
@@ -85,6 +95,7 @@ try {
     # 4. Docker volumes: a tar.gz each, made by a throwaway container that mounts the volume read-only.
     if ($Volumes.Count) {
         New-Item -ItemType Directory -Force -Path $VolumeRoot | Out-Null
+        if ($VolumeCopyRoot -and (Test-CloudPath $VolumeCopyRoot)) { throw "Refusing to copy volume archives to $VolumeCopyRoot`: it is a cloud-synced folder, and they hold secrets" }
         $copyRoot = if ($VolumeCopyRoot -and (Test-Path (Split-Path -Qualifier $VolumeCopyRoot))) { $VolumeCopyRoot } else { $null }
         if ($copyRoot) { New-Item -ItemType Directory -Force -Path $copyRoot | Out-Null }
         $image = Invoke-Native { docker inspect --format '{{.Config.Image}}' $Container } 'Find a helper image'
