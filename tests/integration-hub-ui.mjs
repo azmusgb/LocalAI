@@ -25,6 +25,10 @@ await page.route(u => u.pathname === '/api/artcraft/open', r => {
   const already = artcraftRunning; artcraftRunning = true;
   return r.fulfill({ json: { ok: true, alreadyRunning: already } });
 });
+// The Workshop display is a device on the home network; stub the appliance's view of it.
+const WORKSHOP_ONLINE = { online: true, board: 'Waveshare_ESP32-S3-Touch-LCD-3.5', panel: 'ST7796_320x480_FT6336', screen: 6, touchscreenConfigured: true, portalUrl: 'http://10.0.0.124' };
+let workshopStatus = WORKSHOP_ONLINE;
+await page.route(u => u.pathname === '/api/workshop/status', r => r.fulfill({ json: workshopStatus }));
 await page.goto(base, { waitUntil: 'domcontentloaded' });
 await page.waitForSelector('.ux-primary-rail');
 
@@ -65,6 +69,38 @@ await check('ArtCraft has a card that says it uses cloud services, shows whether
   await page.locator('#uxIntegrationRefreshV2').click();
   await page.waitForFunction(() => /Open now/.test(document.querySelector('[data-integration-source-v2="artcraft"]')?.textContent || ''));
   assert.match(await live.getAttribute('class'), /healthy/);
+});
+
+await check('the Workshop display card shows whether it is answering and opens its own portal in a new tab', async () => {
+  const card = page.locator('.ux-int-card', { hasText: 'Workshop display' });
+  const body = await card.innerText();
+  assert.match(body, /On your network · its own sign-in/);
+  assert.match(body, /touchscreen beside the 3D printer/);
+  assert.match(body, /own access code and the printer controls/);
+  assert.match(body, /Away from home, Tailscale must be on\./);
+  const live = '[data-integration-source-v2="workshop"]';
+  await page.waitForFunction(s => /Online · Waveshare 3\.5"/.test(document.querySelector(s)?.textContent || ''), live);
+  assert.match(await card.locator(live).getAttribute('class'), /healthy/);
+  const link = card.getByRole('link', { name: 'Open Workshop portal' });
+  assert.equal(await link.isVisible(), true);
+  assert.equal(await link.getAttribute('href'), 'http://10.0.0.124');
+  assert.equal(await link.getAttribute('target'), '_blank');
+  assert.equal(await link.getAttribute('rel'), 'noopener noreferrer');
+
+  workshopStatus = { online: false, board: null, panel: null, screen: null, touchscreenConfigured: null, portalUrl: 'http://10.0.0.124' };
+  await page.locator('#uxIntegrationRefreshV2').click();
+  await page.waitForFunction(s => /Not answering/.test(document.querySelector(s)?.textContent || ''), live);
+  assert.doesNotMatch(await card.locator(live).getAttribute('class'), /healthy/);
+  assert.equal(await link.isVisible(), true, 'the portal can still be opened while the appliance cannot reach it');
+  assert.equal(await link.getAttribute('href'), 'http://10.0.0.124');
+
+  workshopStatus = { ...workshopStatus, portalUrl: null };
+  await page.locator('#uxIntegrationRefreshV2').click();
+  await page.waitForFunction(s => /Address not set up/.test(document.querySelector(s)?.textContent || ''), live);
+  assert.equal(await card.locator('[data-integration-portal]').isVisible(), false, 'no link without a valid address');
+  workshopStatus = WORKSHOP_ONLINE;
+  await page.locator('#uxIntegrationRefreshV2').click();
+  await page.waitForFunction(s => /Online/.test(document.querySelector(s)?.textContent || ''), live);
 });
 
 await check('unverified media extensions do not pretend to be installed', async () => {

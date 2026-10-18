@@ -43,6 +43,9 @@ services:
       LOCALAI_REMOTE_NAME: ${LOCALAI_REMOTE_NAME:-}
       # With LOCALAI_REMOTE_NAME, the addresses a phone is offered when the one it uses can't be reached (/healthz).
       LOCALAI_HOST_IP: ${LOCALAI_HOST_IP:-}
+      # Services › Workshop display: the touchscreen beside the printer (docs/WORKSHOP-DISPLAY.md). Empty means the
+      # default, http://10.0.0.124; only an http(s) address on the home network or a .local name is used.
+      LOCALAI_WORKSHOP_URL: ${LOCALAI_WORKSHOP_URL:-}
       POWERSHELL_UI_TOKEN: ${POWERSHELL_UI_TOKEN:?set in stack.env}
       POWERSHELL_BRIDGE_TOKEN: ${POWERSHELL_BRIDGE_TOKEN:?set in stack.env}
     volumes:

@@ -96,6 +96,10 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
 - **Model management.** Pull, cancel and delete check `Origin` and `Content-Type`; the default model and
   the GridCraft model (plus `PROTECTED_MODELS`) cannot be deleted.
 - **GridCraft bridge.** Bound to `127.0.0.1`; CORS limited to the configured LocalAI origins; one run at a time.
+- **Workshop display.** The appliance only reads the display's public `GET /hardware/health` (`LOCALAI_WORKSHOP_URL`,
+  private addresses and `.local` names only) and passes on five fields; the display's portal and printer controls are
+  linked to, never proxied, so its own sign-in and same-origin checks stay the only way in
+  ([Workshop display](WORKSHOP-DISPLAY.md#why-the-portal-isnt-proxied)).
 - **No secrets in the image or repo.** `.gitignore` excludes keys and `.env`; CI and the candidate test
   fail on `.env`, `.key`, `.pem`, `.pfx` or `.p12` files under `app/`. Tokens reach the container only as
   environment variables; `Enable-LocalAI-HostOnlyPort.ps1` passes them through a user-only temp file that it deletes.
