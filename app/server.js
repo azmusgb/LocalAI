@@ -3077,7 +3077,7 @@ function crossSiteRequest(req) {
   return !sameHost(parsed.protocol, parsed.host, req.headers.host) && !sameHost(parsed.protocol, parsed.host, forwarded);
 }
 // The server's areas (app/server/*.js), each given what it uses; a module comes after those it takes names from.
-const { apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopStatus } = require('./server/gridcraft').createGridcraft({ GRIDCRAFT_RUN_TIMEOUT_MS, GRIDCRAFT_URL, inFlight, json, makeId, modelFetchWithTimeout, readBody, recordActivity, sameOriginJson, storage, workshop, workshopPrinter });
+const { apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopPortalCode, apiWorkshopStatus } = require('./server/gridcraft').createGridcraft({ GRIDCRAFT_RUN_TIMEOUT_MS, GRIDCRAFT_URL, inFlight, json, makeId, modelFetchWithTimeout, readBody, recordActivity, sameOriginJson, storage, workshop, workshopPrinter });
 const { addNotification, apiApprovalCreate, apiApprovalDecide, apiApprovals, apiNotificationSeed, apiNotificationSystem, apiNotificationUpdate, apiNotifications, approvalStore, notificationStore, resolveDeployFailures } = require('./server/notifications').createNotifications({ APPROVALS_STORE, NOTIFICATIONS_STORE, changeStore, decideChange, hostDetail, isInfoNotice, json, makeId, normalizeTitle, notifier, notifyLib, nowIso, objectStore, prependRecord, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
 const { accessAddresses, apiAccess, apiPush, apiReleases, recordReleaseHistory } = require('./server/push').createPush({ APP_VERSION, json, notifier, nowIso, pushLib, readBody, release, resolveDeployFailures, storage, storageError });
 const { apiConfig, redirectFor, serveStatic } = require('./server/web').createWeb({ APP_VERSION, CAPABILITY_CACHE_MS, CHAT_MODEL_TIMEOUT_MS, ENGINEERING_MODEL_TIMEOUT_MS, LOCAL_UI_PORT, MODEL, PUBLIC_DIR, accessAddresses, changeStore, claudeFindings, crypto, engineeringRunStore, fs, json, listenPort, path, release, text });
@@ -3133,6 +3133,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/artcraft/status') return await apiArtcraftStatus(req, res);
     if (req.method === 'POST' && p === '/api/artcraft/open') return await apiArtcraftOpen(req, res);
     if (req.method === 'GET' && p === '/api/workshop/status') return await apiWorkshopStatus(req, res, urlObj);
+    if (req.method === 'POST' && p === '/api/workshop/portal-code') return await apiWorkshopPortalCode(req, res);
 
     // cumulative release features
     if (req.method === 'GET' && p === '/api/projects') return await apiProjects(req,res,urlObj);

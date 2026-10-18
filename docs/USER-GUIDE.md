@@ -197,7 +197,14 @@ asks for the code shown on the display, System → Local Portal.) Away from home
 
 With the display's read-only status token set up ([Workshop display › Printer status](WORKSHOP-DISPLAY.md#printer-status-read-only-token)),
 **Home** shows one line while a print runs or has stopped with an error, such as "Printer · 42% · 1 h 10 min left".
-Tap it to open the Workshop display card. Nothing shows while the printer is idle.
+Tap it to open the Workshop display card. Nothing shows while the printer is idle or after you stopped a print
+yourself (the card says "Printer · Print stopped").
+
+To sign in to the display's portal without walking to the touchscreen, set up its code key once
+([Workshop display › Sign-in code](WORKSHOP-DISPLAY.md#sign-in-code-on-the-services-card)). The card then has **Show
+sign-in code**: tap it to see the code in two groups of five, with **Copy** and **Open portal ↗**. It hides itself after
+a minute or when you switch away. Anyone who can open Local AI can do the same, so only set it up while you are the one
+using it.
 
 ## Automations
 
