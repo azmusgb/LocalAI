@@ -24,8 +24,32 @@
 	import ca_download
 	handle {
 		# Streams (chat replies) pass straight through; long image runs have no proxy timeout.
+		# A deploy recreates the appliance; while it is gone its name doesn't resolve ("dial tcp: lookup
+		# local-ai-appliance ... failed"). Requests wait and retry for up to 20 s instead of failing at once.
 		reverse_proxy local-ai-appliance:3080 {
 			flush_interval -1
+			lb_try_duration 20s
+			lb_try_interval 500ms
+		}
+	}
+	import updating
+}
+
+# Still gone after 20 s (a deploy backs up the database while the appliance is stopped): say Local AI is updating.
+# API calls (and /healthz) get JSON with Retry-After (app/public/app.js reads it as "updating"); pages get one that
+# retries itself. Takes effect on: docker exec local-ai-https caddy reload --config /etc/caddy/Caddyfile
+(updating) {
+	handle_errors 502 503 504 {
+		header Retry-After 5
+		header Cache-Control no-store
+		@api path /api/* /healthz
+		handle @api {
+			header Content-Type application/json
+			respond `{"error":"Local AI is updating","updating":true}` 503
+		}
+		handle {
+			header Content-Type "text/html; charset=utf-8"
+			respond `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><meta http-equiv="refresh" content="5"><title>Local AI is updating</title></head><body style="font-family:system-ui,sans-serif;max-width:32rem;margin:20vh auto;padding:0 16px;line-height:1.5"><h1 style="font-size:1.4rem">Local AI is updating, back in a moment</h1><p>This page tries again every few seconds.</p></body></html>` 503
 		}
 	}
 }

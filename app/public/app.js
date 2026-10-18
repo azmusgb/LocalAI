@@ -584,7 +584,9 @@ async function refreshStatus(force=false){
     // would keep statusRefreshing set and stop every later check, leaving an old answer on screen.
     let r;try{r=await fetch('/api/status',{cache:'no-store',signal:AbortSignal.timeout(15000)})}catch(e){e.unreachable=true;throw e}
     // An error reply, or one without a service list, is a failed check: it must never read as "ready".
-    if(!r.ok)throw new Error(`HTTP ${r.status}`);
+    if(!r.ok){const e=new Error(`HTTP ${r.status}`);let body=null;try{body=await r.json()}catch{}
+      if(window.LocalAIConnection?.isUpdatingReply?.(r.status,body)){e.updating=true;e.retryAfter=Number(r.headers.get('Retry-After'))||5}
+      throw e}
     const j=await r.json();if(!j||!Array.isArray(j.services))throw new Error('No service list');
     const overall=normalizedState(j.overall);
     $('homeDot').className=`dot ${overall}`;
@@ -601,9 +603,12 @@ async function refreshStatus(force=false){
   }catch(e){
     // No answer at all (offline, an untrusted certificate, Local AI restarting) is not the same as an answer that
     // couldn't be read; say which.
-    const why=e&&e.unreachable?"Can't reach Local AI from this device.":"Local AI answered, but its status couldn't be read.";
-    $('homeDot').className='dot DOWN';$('homeState').textContent='Unavailable';
-    $('statusSummary').innerHTML='<span class="dot DOWN"></span> Couldn\'t check the services. Try again';
+    // An update restarting Local AI is neither: say so, and look again soon.
+    const updating=!!(e&&e.updating);
+    const why=updating?'Local AI is updating. This checks again in a moment.':e&&e.unreachable?"Can't reach Local AI from this device.":"Local AI answered, but its status couldn't be read.";
+    $('homeDot').className=`dot ${updating?'DEGRADED':'DOWN'}`;$('homeState').textContent=updating?'Updating…':'Unavailable';
+    $('statusSummary').innerHTML=updating?'<span class="dot DEGRADED"></span> Local AI is updating…':'<span class="dot DOWN"></span> Couldn\'t check the services. Try again';
+    if(updating){clearTimeout(state.updatingTimer);state.updatingTimer=setTimeout(()=>refreshStatus(),Math.min(Math.max(e.retryAfter,2),30)*1000)}
     // Say when this attempt was, and when the list below was last right, so an old time never reads as current.
     const checked=$('statusCheckedAt');if(checked)checked.textContent=`Tried ${clock(new Date())}${statusLastOk?` · last good check ${statusLastOk}`:''}`;
     // The last known list stays on the page; the failure sits above it (or alone, when nothing was ever shown).
