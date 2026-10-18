@@ -59,6 +59,8 @@ const imageEngines = require('./image-engines');
 const plainText = require('./plain-text');
 const workshop = require('./workshop');
 if (String(process.env.LOCALAI_WORKSHOP_URL || '').trim() && !workshop.portalUrl()) console.warn('LOCALAI_WORKSHOP_URL is not an http(s) address on the home network (a private IP or a .local name); the Workshop display card shows it as not set up.');
+// Printer status through the display's read-only token, when LOCALAI_WORKSHOP_STATUS_TOKEN is set; started after listen.
+const workshopPrinter = workshop.createPrinterPoller();
 // Last measured seconds per engine on this machine, shown as an estimate in the Images page. Keyed by id and
 // family, so "best" switching from FLUX to Z-Image doesn't show FLUX's time.
 const IMAGE_ESTIMATES = {};
@@ -1823,10 +1825,16 @@ async function apiArtcraftOpen(req, res) {
     bridgeFailure(res, e, 'The Windows computer', 'Windows computer bridge unavailable');
   }
 }
-// Services › Workshop display: is the touchscreen beside the printer answering, and where its own portal is. Read-only;
-// the portal itself is never proxied (app/workshop.js, docs/WORKSHOP-DISPLAY.md).
-async function apiWorkshopStatus(req, res) {
-  json(res, 200, await workshop.workshopStatus());
+// Services › Workshop display: is the touchscreen beside the printer answering, is its sign-in on, where its own portal
+// is, and (with the read-only token) what the printer is doing. Read-only; the portal itself is never proxied
+// (app/workshop.js, docs/WORKSHOP-DISPLAY.md). ?part=printer (Home) answers from the poller's last read only, so it
+// never sends the display a request. printer is null when no token is set.
+async function apiWorkshopStatus(req, res, urlObj) {
+  const printer = workshopPrinter.current();
+  if (urlObj.searchParams.get('part') === 'printer') return json(res, 200, { printer });
+  const status = await workshop.workshopStatus();
+  if (printer?.access === 'ok') status.signIn = true; // the token only exists on firmware that has the sign-in
+  json(res, 200, { ...status, printer });
 }
 async function apiImageView(req, res, urlObj) {
   try {
@@ -3691,7 +3699,7 @@ const server = http.createServer(async (req, res) => {
     { const m = req.method === 'POST' && p.match(/^\/api\/gridcraft\/runs\/(gc-[\w-]+)\/(keep|discard)$/); if (m) return await apiGridcraftDecide(req, res, m[1], m[2]); }
     if (req.method === 'GET' && p === '/api/artcraft/status') return await apiArtcraftStatus(req, res);
     if (req.method === 'POST' && p === '/api/artcraft/open') return await apiArtcraftOpen(req, res);
-    if (req.method === 'GET' && p === '/api/workshop/status') return await apiWorkshopStatus(req, res);
+    if (req.method === 'GET' && p === '/api/workshop/status') return await apiWorkshopStatus(req, res, urlObj);
 
     // cumulative release features
     if (req.method === 'GET' && p === '/api/projects') return await apiProjects(req,res,urlObj);
@@ -3973,6 +3981,7 @@ server.listen(PORT, '0.0.0.0', () => {
   // The bound port, not PORT: with PORT=0 the system picks a free one (tests/spawn-server.cjs reads it from this line).
   console.log(`${new Date().toISOString()} Local AI Appliance v${APP_VERSION} listening on 0.0.0.0:${server.address().port}`);
   recordActivity('system', 'Appliance started', `Local AI Appliance v${APP_VERSION} is ready.`);
+  workshopPrinter.start();
 });
 const localUiServer = LOCAL_UI_PORT && LOCAL_UI_PORT !== PORT ? http.createServer((req, res) => server.emit('request', req, res)) : null;
 localUiServer?.listen(LOCAL_UI_PORT, '0.0.0.0', () => console.log(`${new Date().toISOString()} Host-only tools listening on 0.0.0.0:${LOCAL_UI_PORT}`));

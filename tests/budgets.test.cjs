@@ -37,9 +37,9 @@ const KB = 1024;
 // 2026-10-18: 253 → 256 KB for handing requests to change Local AI itself to Claude Code (self-change.js 1.8 KB: the
 // detector and the Hand to Claude suggestion on Home, Agent World and New idea; +0.3 KB elsewhere). main measured
 // 249.96 KB before it; about 254.6 KB with it and #308.
-// 2026-10-18: +2 KB for delete with Undo (components.js deleteItems, Work › Select, Delete in a run's Details, Library and
-// Delete project): +1.85 KB; components.js gets its own 11 KB.
-const TOTAL = 258 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// 2026-10-18: 256 → 257 KB for the Workshop display's sign-in words and printer status (card wording from the
+// display's real answer, its printer line, the jump to the card, Home's printer line: ui.js +0.6 KB, home.js +0.6 KB; 255.9 KB measured with #309).
+const TOTAL = 257 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
 // tab rows (234.9 KB measured).
