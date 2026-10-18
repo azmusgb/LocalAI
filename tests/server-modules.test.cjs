@@ -44,7 +44,7 @@ test('app/server/stores.js reads, writes and caps collections through the storag
 // Every area module (create<Area>(ctx)): server.js passes exactly the names the module unpacks from ctx, and the factory
 // returns every name server.js takes from it.
 const calls = [...server.matchAll(/^const \{([^}]+)\} = require\('\.\/server\/([\w-]+)'\)\.(create\w+)\(\{([^}]*)\}\);$/gm)]
-  .map(m => ({ file: m[2], factory: m[3], takes: m[1].split(',').map(x => x.trim()), gives: m[4].split(',').map(x => x.trim()).filter(Boolean) }));
+  .map(m => ({ file: m[2], factory: m[3], takes: m[1].split(',').map(x => x.trim()), gives: m[4].split(',').map(x => x.trim().split(':')[0].trim()).filter(Boolean) })); // `name: (...a) => name(...a)` is looked up when called
 const list = xs => [...xs].sort();
 
 test('server.js builds its area modules with create<Area>({...})', () => {
