@@ -13,7 +13,8 @@ param(
 # Away from home: with Tailscale signed in on this computer, its Tailscale name (or -RemoteName) is added too, and ports
 # 80/443 are opened to Tailscale addresses (100.64.0.0/10) only. -NoRemote leaves it out.
 # On a host whose containers come from deploy\stack\compose.yml, the values go into stack.env and compose recreates
-# Caddy and the appliance (so the phone QR code in Health picks up the Tailscale name); otherwise Caddy is run directly.
+# Caddy and the appliance (so the phone QR code in Health picks up the Tailscale name, and a phone that can't reach one
+# address is offered the other: /healthz addresses); otherwise Caddy is run directly.
 $ErrorActionPreference = 'Stop'
 function Invoke-Docker { & docker @args; if ($LASTEXITCODE -ne 0) { throw "docker $($args[0]) failed ($LASTEXITCODE)" } }
 if (-not $HostIp) {
@@ -94,5 +95,5 @@ if ($RemoteName -and -not (Get-NetFirewallRule -DisplayName 'Local AI HTTPS (Tai
 if ($RemoteName) {
     "Away from home (Tailscale): https://$RemoteName"
     if ($composed) { "stack.env updated and the appliance recreated: Health shows the phone QR code for it." }
-    else { "For the phone QR code in Health, run the appliance with LOCALAI_REMOTE_NAME=$RemoteName." }
+    else { "For the phone QR code in Health and the other address on a saved copy, run the appliance with LOCALAI_REMOTE_NAME=$RemoteName and LOCALAI_HOST_IP=$HostIp." }
 } elseif (-not $NoRemote) { 'Tailscale is not signed in on this computer, so access away from home is not set up.' }

@@ -1661,7 +1661,8 @@ function redirectFor(req, res, pathname) {
 // older build can see that /healthz now reports another one (app/public/offline-copy.js).
 function withBuildMeta(html) {
   const attr = v => String(v ?? '').replace(/[&"<>]/g, c => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' }[c]));
-  const meta = `<meta name="localai-version" content="${attr(APP_VERSION)}"><meta name="localai-release" content="${attr(release?.commit || '')}">`;
+  // The addresses ride along too, so a saved copy can offer the other one with no network at all.
+  const meta = `<meta name="localai-version" content="${attr(APP_VERSION)}"><meta name="localai-release" content="${attr(release?.commit || '')}"><meta name="localai-addresses" content="${attr(JSON.stringify(accessAddresses()))}">`;
   return Buffer.from(String(html).replace('<head>', `<head>\n${meta}`));
 }
 
@@ -3385,7 +3386,7 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (crossSiteRequest(req)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 403, { error: 'Cross-site request blocked' }); }
-    if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 } });
+    if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 }, addresses: accessAddresses() });
     if (req.method === 'GET' && p === '/api/busy') return apiBusy(req, res);
     if (req.method === 'GET' && p === '/api/releases') return await apiReleases(req, res);
     if (req.method === 'GET' && p === '/api/access') return await apiAccess(req, res);
@@ -3634,8 +3635,22 @@ function remoteAccessName(raw = process.env.LOCALAI_REMOTE_NAME) {
   const name = String(raw || '').trim().toLowerCase().replace(/\.$/, '');
   return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(name) && !name.endsWith('.invalid') ? name : '';
 }
+// LOCALAI_HOST_IP is the host's LAN address (the one Caddy serves https://<ip> for). Anything else counts as not set.
+function homeAccessIp(raw = process.env.LOCALAI_HOST_IP) {
+  const ip = String(raw || '').trim();
+  return /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(ip) ? ip : '';
+}
+// Every HTTPS address this appliance answers on, for a phone that can't reach the one it's using (offline-copy.js
+// offers the other one). Host names and URLs only, from the deploy (deploy/Install-LocalAI-HTTPS.ps1 → stack.env).
+function accessAddresses() {
+  const ip = homeAccessIp(), remote = remoteAccessName();
+  return [
+    ...(ip ? [{ label: 'Home Wi-Fi', url: `https://${ip}` }] : []),
+    ...(remote ? [{ label: 'Anywhere (Tailscale)', url: `https://${remote}` }] : [])
+  ];
+}
 async function apiAccess(req, res) {
-  json(res, 200, { remoteName: remoteAccessName() });
+  json(res, 200, { remoteName: remoteAccessName(), addresses: accessAddresses() });
 }
 async function apiReleases(req, res) {
   json(res, 200, {

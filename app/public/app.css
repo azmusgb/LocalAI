@@ -1369,6 +1369,8 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
   .ux-context-brand-names{display:grid;line-height:1.15}.ux-context-brand-names small{font-size:var(--ds-fs-1);color:var(--ds-muted)}.ux-context-brand-names strong{font-size:var(--ds-fs-3);font-weight:650;color:var(--ds-text)}
 }
 .secure-setup{margin-top:12px}.secure-setup .secure-nudge-off{margin-top:12px;min-height:44px}.secure-phone{margin-top:12px}.secure-phone>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--ds-accent-text);font-weight:600}.secure-phone__steps{margin:10px 0 0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;align-items:start}.secure-phone__steps li{display:grid;gap:10px;align-content:start}.secure-phone__steps .qr{width:168px;height:168px;border-radius:var(--ds-r-sm)}.secure-phone__steps p{margin:0;font-size:var(--ds-fs-1);color:var(--ds-soft)}.secure-phone__steps p b:first-child{color:var(--ds-text)}
+.secure-addresses{margin-top:12px}.secure-addresses dl{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;font-size:var(--ds-fs-1)}.secure-addresses dt{font-weight:650}.secure-addresses dd{margin:0;overflow-wrap:anywhere}.secure-addresses a{color:var(--ds-accent);text-decoration:underline}.secure-addresses .meta{margin:8px 0 0}
+@media(max-width:760px){.secure-addresses dl{grid-template-columns:1fr;gap:2px}.secure-addresses dd{margin-bottom:6px}}
 .secure-setup>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--ds-accent-text);font-weight:600}
 .secure-setup[open]>summary{margin-bottom:4px}
 
@@ -1679,6 +1681,11 @@ input::placeholder,textarea::placeholder{color:var(--ds-faint);font-weight:400}
 .offline-banner .icon{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8}
 .offline-banner__text{flex:1;min-width:0;margin:0}
 .offline-banner__retry.btn-outline{min-height:44px;padding:0 14px;font-size:var(--ds-fs-2);flex:none}
+.offline-banner:has(.offline-banner__alt){flex-wrap:wrap}
+.offline-banner__alt{order:3;flex:1 0 100%;display:grid;gap:6px;padding-left:32px}
+.offline-banner__alt p{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.offline-banner__open.btn-primary{min-height:44px;display:inline-flex;align-items:center;padding:0 14px;text-decoration:none}
+.offline-banner__hint{font-size:var(--ds-fs-1);color:var(--ds-soft)}
 
 /* Desktop polish (appended; nothing above edited). */
 /* A heading focused for screen readers after navigation is not a control: no box around it. */

@@ -43,10 +43,15 @@ await check('the service worker installs every shell file, activates, and serves
 // The page must say so instead of passing an old copy off as current. To make Local AI really unreachable for the
 // worker as well as the page, the page talks to a pass-through proxy that this test stops and starts.
 const upstream = new URL(base);
-function startProxy(port = 0) {
+// addresses: what this appliance's /healthz lists (the test server has no LOCALAI_HOST_IP or LOCALAI_REMOTE_NAME).
+function startProxy(port = 0, { addresses } = {}) {
   const sockets = new Set();
   const server = http.createServer((req, res) => {
-    const up = http.request({ hostname: upstream.hostname, port: upstream.port, path: req.url, method: req.method, headers: { ...req.headers, host: upstream.host } }, r => { res.writeHead(r.statusCode, r.headers); r.pipe(res); });
+    const up = http.request({ hostname: upstream.hostname, port: upstream.port, path: req.url, method: req.method, headers: { ...req.headers, host: upstream.host } }, r => {
+      if (!addresses || req.url !== '/healthz') { res.writeHead(r.statusCode, r.headers); r.pipe(res); return; }
+      let raw = ''; r.setEncoding('utf8'); r.on('data', c => { raw += c; });
+      r.on('end', () => { const body = JSON.stringify({ ...JSON.parse(raw), addresses }); res.writeHead(r.statusCode, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }); res.end(body); });
+    });
     up.on('error', () => res.destroy());
     req.pipe(up);
   });
@@ -99,6 +104,41 @@ await check('unreachable: the saved copy says so, Health says the device cannot 
     assert.equal(await page.locator('#offlineBanner').count(), 0, 'the banner is gone after the reload');
     await page.waitForTimeout(2500);
     assert.equal(loads, 1, 'it reloaded once');
+    assert.deepEqual(errors, []);
+  } finally {
+    await ctx.close();
+    await proxy.stop();
+  }
+});
+
+// 17 Oct: the Home Screen app from https://10.0.0.21 only works on home Wi-Fi. Away from it, the saved copy offers the
+// Tailscale address it learned while Local AI answered, with no network needed to show it.
+await check('unreachable: the saved copy offers the other address, with what the phone needs for it', async () => {
+  const tailscale = 'https://localai-pc.tail1234.ts.net';
+  let proxy = await startProxy(0, { addresses: [{ label: 'Anywhere (Tailscale)', url: tailscale }] });
+  const origin = `http://127.0.0.1:${proxy.port}`;
+  const ctx = await browser.newContext({ serviceWorkers: 'allow', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const page = await ctx.newPage();
+  try {
+    const errors = []; page.on('pageerror', e => errors.push(e.message));
+    await page.goto(origin + '/', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => navigator.serviceWorker.ready.then(r => r.active.state === 'activated'), null, T);
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction(() => !!navigator.serviceWorker.controller && !!localStorage.getItem('localai.addresses'), null, T);
+
+    await proxy.stop();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    const banner = page.locator('#offlineBanner');
+    await banner.waitFor({ state: 'visible', ...T });
+    const open = banner.getByRole('link', { name: 'Open over Tailscale' });
+    await open.waitFor(T);
+    assert.equal(await open.getAttribute('href'), tailscale + '/');
+    assert.match(await banner.innerText(), /Turn on Tailscale on this phone first\./);
+    assert.equal(await banner.getByRole('button', { name: 'Try again' }).count(), 1);
+    // big enough to tap, and the banner still fits the phone's width
+    const box = await open.boundingBox();
+    assert.ok(box.height >= 44, `tap target ${box.height}px`);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no sideways scroll');
     assert.deepEqual(errors, []);
   } finally {
     await ctx.close();

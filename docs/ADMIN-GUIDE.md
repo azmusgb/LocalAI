@@ -72,8 +72,14 @@ to restore: [Operations › Backups](OPERATIONS.md#backups) and [Restore](OPERAT
 1. Trust Local AI's certificate once: on the phone open `http://10.0.0.21/localai-ca.crt`, install it, then turn on
    full trust for it (iPhone: Settings › General › About › Certificate Trust Settings). **Health › Secure connection**
    shows whether it worked.
-2. Open `https://10.0.0.21` in Safari, Share › **Add to Home Screen**, and use that icon from then on.
-3. Notifications: from the Home Screen app, **System › Health › Notifications › Allow notifications**.
+2. **One icon that works everywhere:** with Tailscale set up (see [Reach it away from home](#reach-it-away-from-home))
+   and turned on on the phone, open the Tailscale address (`https://<computer>.<tailnet>.ts.net`; Health › Secure
+   connection shows it) in Safari, Share › **Add to Home
+   Screen**, and use that icon from then on. It works at home and away. An icon added from `https://10.0.0.21` works
+   on the home Wi-Fi only; away from home its saved copy offers **Open over Tailscale**. **Health › Secure
+   connection** lists both addresses.
+3. Notifications: from the Home Screen app, **System › Health › Notifications › Allow notifications**. Notifications
+   belong to the icon they were allowed from, so allow them again after switching icons.
 
 HTTPS and the certificate: [Deploy › HTTPS with Caddy](DEPLOY.md#https-with-caddy).
 
@@ -81,7 +87,12 @@ HTTPS and the certificate: [Deploy › HTTPS with Caddy](DEPLOY.md#https-with-ca
 
 Install Tailscale on the Windows computer and the phone, sign both in to the same account, then re-run
 `deploy\Install-LocalAI-HTTPS.ps1` (elevated). Nothing is opened to the internet; only devices on your Tailscale
-network get in. Details: [Deploy › HTTPS with Caddy](DEPLOY.md#https-with-caddy).
+network get in. The phone already trusts the Tailscale address's certificate (same Local AI certificate authority).
+
+For one icon that works everywhere, add Local AI to the Home Screen from the Tailscale address (Health › Secure
+connection shows it) and keep Tailscale on. If a phone opens the home address while away, Local AI can't be reached,
+and the saved copy's banner offers **Open over Tailscale** ("Turn on Tailscale on this phone first"), from what the
+phone saved on its last visit, with no network needed. Details: [Deploy › HTTPS with Caddy](DEPLOY.md#https-with-caddy).
 
 ## Pair a device for Claude Code chat
 
