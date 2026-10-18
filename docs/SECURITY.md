@@ -132,4 +132,5 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
 | Host notifications endpoint is unauthenticated | Any LAN client can post `deploy`/`backup`/`monitor` notices to the Inbox | `/api/notifications/system` |
 | GridCraft bridge task runs elevated | The bridge and the agent it starts run with highest privileges | `deploy/Install-GridCraft-Bridge.ps1` (`-RunLevel Highest`) |
 | Nightly backups go to OneDrive | A copy of the whole database leaves the PC | `deploy/Backup-LocalAI-Data.ps1` (`-OffsiteRoot`) |
+| Volume backups hold secrets in plain archives | `C:\LocalAI\backups\volumes` and its G: copy contain Caddy's root key and n8n's credentials with their key; they stay on this PC's drives, never OneDrive | `deploy/Backup-LocalAI-Data.ps1` (`-VolumeRoot`, `-VolumeCopyRoot`) |
 | `/go/n8n` and `/go/comfy` redirect to ports bound to loopback | They only work on the host itself | `redirectFor` in `app/server.js` |
