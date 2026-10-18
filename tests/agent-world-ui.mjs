@@ -346,6 +346,46 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await check(`${label}: no script errors (start)`, async () => assert.deepEqual(errors, []));
   await context.close();
 }
+// A goal that changes Local AI itself: the start sheet offers Claude Code (Hand to Claude) and still starts the mission.
+for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 } }], ['iPhone 14', (({ defaultBrowserType, ...d }) => d)(devices['iPhone 14'])]]) {
+  const { context, page, errors, sent } = await emptyPage(opts);
+  const handed = [];
+  await page.route(u => u.pathname === '/api/improve/handoff', r => { handed.push(r.request().postDataJSON()); r.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ item: { id: 'idea-1' } }) }); });
+  const SELF = 'Improve look feel and polish of agent world';
+  await check(`${label}: a plain goal gets no suggestion; a goal to change Local AI itself does`, async () => {
+    await page.locator('#awEmptyStart').click();
+    await page.locator('#awStart').waitFor({ state: 'visible' });
+    await page.locator('#agentGoal').fill('plan the vegetable garden');
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator('#awSelfChange').isVisible(), false, 'no suggestion for a plain mission');
+    await page.locator('#agentGoal').fill(SELF);
+    const box = page.locator('#awSelfChange');
+    await box.waitFor({ state: 'visible' });
+    assert.match(await box.innerText(), /This is a change to Local AI itself\. Claude Code reviews the code and opens a tested pull request\./);
+    await box.getByRole('button', { name: 'Start a mission anyway' }).waitFor({ state: 'visible' });
+    await page.locator('#agentGoal').fill('plan the vegetable garden');
+    await box.waitFor({ state: 'hidden' });
+  });
+  await check(`${label}: Hand to Claude posts the goal from Agent World, says where it went and closes the sheet`, async () => {
+    await page.locator('#agentGoal').fill(SELF);
+    await page.locator('#awSelfChange').getByRole('button', { name: 'Hand to Claude' }).click();
+    await page.locator('#awStart').waitFor({ state: 'hidden' });
+    assert.deepEqual(handed, [{ text: SELF, from: 'agentWorld' }]);
+    assert.equal(sent.length, 0, 'no mission started');
+    await page.waitForFunction(() => /Handed to Claude Code — it appears in Improve › In progress/.test(document.getElementById('toast')?.textContent || ''));
+  });
+  await check(`${label}: Start a mission anyway starts the mission`, async () => {
+    await page.evaluate(() => window.LocalAIAgentStart.open());
+    await page.locator('#awStart').waitFor({ state: 'visible' });
+    await page.locator('#agentGoal').fill(SELF);
+    await page.locator('#awSelfChange').getByRole('button', { name: 'Start a mission anyway' }).click();
+    for (let i = 0; i < 50 && !sent.length; i++) await page.waitForTimeout(100);
+    assert.equal(sent[0]?.goal, SELF);
+    assert.equal(handed.length, 1, 'nothing more handed over');
+  });
+  await check(`${label}: no script errors (hand to Claude)`, async () => assert.deepEqual(errors, []));
+  await context.close();
+}
 {
   const { context, page, errors } = await emptyPage({ viewport: { width: 1440, height: 900 } });
   await check('1440px: a started mission flies the camera to Command Center', async () => {
