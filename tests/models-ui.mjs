@@ -43,7 +43,7 @@ await check('the default model cannot be removed', async () => {
   const r = await fetch(base + '/api/models/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: model }) });
   assert.equal(r.status, 409);
 });
-// The runtime tile ("Runtime detail": Live / Unavailable) is diagnostic: it shows only with developer tools on.
+// The runtime tile ("Loaded list": Live / Unavailable) is diagnostic: it shows only with developer tools on.
 await check('the runtime tile shows only with developer tools on', async () => {
   await page.evaluate(() => window.showView('models'));
   await page.waitForSelector('#modelRuntimeSummary .model-runtime-metric');
@@ -51,7 +51,7 @@ await check('the runtime tile shows only with developer tools on', async () => {
   await page.evaluate(() => document.body.classList.add('dev-tools-off'));
   assert.deepEqual(await visibleLabels(), ['Configured default', 'Installed', 'Loaded now']);
   await page.evaluate(() => document.body.classList.remove('dev-tools-off'));
-  assert.deepEqual(await visibleLabels(), ['Configured default', 'Installed', 'Loaded now', 'Runtime detail']);
+  assert.deepEqual(await visibleLabels(), ['Configured default', 'Installed', 'Loaded now', 'Loaded list']);
 });
 // An installed model's card: family, size and "Model size" are for the owner; quantization, file format and the
 // memory rows (VRAM resident, Context, Unload target) are diagnostic, shown only with developer tools on (critique §3.4).
