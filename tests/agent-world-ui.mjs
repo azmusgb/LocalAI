@@ -479,6 +479,43 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await context.close();
 }
 
+// Signs and bubbles (visuals pass, PR 2): a district's sign and progress pill sit on its roof; name tags and bubbles
+// step aside so none covers a sign or another bubble, with eight workers busy around the roofs. The selected Validator
+// is stopped inside Repair Bay, right under its sign, so its name tag has to move.
+{
+  const W8 = (id, name, state, dependsOn = []) => ({ id, name, state, dependsOn });
+  const CROWD = { id: 'mission-ui-crowd', goal: 'A busy city', status: 'running', createdAt: new Date(Date.now() - 60e3).toISOString(), updatedAt: new Date().toISOString(), results: [], timeline: [], workers: [
+    W8('router', 'Mission Router', 'complete'), W8('ux_analyst', 'UX Analyst', 'running', ['router']), W8('code_analyst', 'Code Analyst', 'running', ['router']), W8('documentation', 'Documentation Agent', 'pending', ['ux_analyst']),
+    W8('validator', 'Validator', 'error', ['code_analyst']), W8('research_agent', 'Research Agent', 'complete', ['router']), W8('performance_analyst', 'Performance Analyst', 'running', ['router']), W8('synthesis', 'Coordinator', 'pending', ['documentation', 'code_analyst'])] };
+  const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 900 } }); await debugOn(context);
+  const { page, errors } = await (async () => { await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+    const page = await context.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
+    await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [CROWD] }) }));
+    await page.goto(base + '/', { waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => typeof window.showView === 'function');
+    await page.evaluate(() => window.showView('agents')); await page.waitForFunction(() => window.__awcLayout?.().workers.length === 8); return { page, errors }; })();
+  await check('1440px: no name tag or bubble covers a district sign or another bubble', async () => {
+    await page.evaluate(() => window.LocalAIAgentWorld.follow(false));
+    await page.waitForFunction(() => window.__awcLayout().workers.every(w => !w.moving), null, { timeout: 20000 });
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('localai:agentworld-focus', { detail: { workerId: 'validator' } })));
+    await page.waitForTimeout(1500);
+    const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    let most = 0;
+    for (let i = 0; i < 8; i++) {
+      const l = await page.evaluate(() => window.__awcLayout());
+      assert.ok(l.labels.length >= 8, `every district has a sign (${l.labels.length})`);
+      most = Math.max(most, l.bubbles.length);
+      for (const b of l.bubbles) {
+        for (const s of l.labels) assert.ok(!overlap(b, s), `bubble ${JSON.stringify(b)} covers sign ${JSON.stringify(s)}`);
+        for (const o of l.bubbles) if (o !== b) assert.ok(!overlap(b, o), 'two bubbles overlap');
+      }
+      await page.waitForTimeout(120);
+    }
+    assert.ok(most >= 3, `the working workers and the selected one show bubbles (${most})`);
+  });
+  await check('1440px: no script errors (signs)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+
 // Live review (17 Oct): while a mission ran, the phone's collapsed sheet offered nothing, the header's hidden button
 // still said "Start a mission", the city called the team lead "Mission Router", and the worker card listed scores.
 const visiblePrimaries = page => page.evaluate(() => [...document.querySelectorAll('#agents .btn-primary')].filter(b => { const r = b.getBoundingClientRect(); return r.width > 2 && r.height > 2 && getComputedStyle(b).visibility !== 'hidden'; }).map(b => b.textContent.trim()));

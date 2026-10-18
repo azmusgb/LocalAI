@@ -1092,7 +1092,7 @@ const DEMO_STAGES=[
 ];
 
 let root,canvas,ctx,current=null,liveSnapshot=null,sourceType='idle',selected=null,hovered=null,raf=0,last=0;
-let roads=new Set(),agents=new Map(),artifacts=[],packets=[],traffic=[],sparks=[],dust=[],events=[],clouds=[];
+let roads=new Set(),reach=new Set(),agents=new Map(),artifacts=[],packets=[],pulses=[],traffic=[],sparks=[],dust=[],events=[],clouds=[];
 let view={zoom:1,panX:0,panY:0,targetZoom:1,targetPanX:0,targetPanY:0};
 let drag=null,pointers=new Map(),pinch=null,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let display={labels:true,flows:true,night:false,crew:true,follow:true};
@@ -1143,13 +1143,15 @@ function buildRoads(){
  for(let x=3;x<37;x++){road(x,9);road(x,23)}
  for(let y=4;y<23;y++){road(3,y);road(36,y)}
  for(let x=14;x<=25;x++){road(x,17);road(x,18)}
+ // the street network a path can use: road tiles joined to the centre, not kerbs hugging a building or cut-off stubs
+ reach.clear();const q=[[13,13]];while(q.length){const[x,y]=q.pop(),k=key(x,y);if(reach.has(k)||blocked(x,y))continue;reach.add(k);q.push([x+1,y],[x-1,y],[x,y+1],[x,y-1])}
 }
 function blocked(x,y){
  if(x<1||y<1||x>=COLS-1||y>=ROWS-1)return true;
  for(const d of Object.values(DISTRICTS))if(x>=d.x-1&&x<d.x+d.w+1&&y>=d.y-1&&y<d.y+d.h+1)return true;
  return!roads.has(key(x,y))
 }
-function nearestRoad(pt){let best={x:14,y:14},bd=Infinity;for(const k of roads){const[x,y]=k.split(',').map(Number),px=(x+.5)*T,py=(y+.5)*T,d=(px-pt.x)**2+(py-pt.y)**2;if(d<bd){bd=d;best={x,y}}}return best}
+function nearestRoad(pt){let best={x:13,y:13},bd=Infinity;for(const k of reach){const[x,y]=k.split(',').map(Number),px=(x+.5)*T,py=(y+.5)*T,d=(px-pt.x)**2+(py-pt.y)**2;if(d<bd){bd=d;best={x,y}}}return best}
 function astar(a,b){
  const start=nearestRoad(a),goal=nearestRoad(b),open=[start],came=new Map(),g=new Map([[key(start.x,start.y),0]]),f=new Map([[key(start.x,start.y),Math.abs(start.x-goal.x)+Math.abs(start.y-goal.y)]]);
  while(open.length){open.sort((u,v)=>(f.get(key(u.x,u.y))??1e9)-(f.get(key(v.x,v.y))??1e9));const cur=open.shift();
@@ -1178,7 +1180,7 @@ function ensureAgent(w){
  }
 }
 function spawnArtifact(a){if(artifacts.some(x=>x.workerId===a.id))return;const p=districtCenter(a.zone),kind=['engineer','code_analyst','deployer'].includes(a.id)?'build':['validator','test_engineer','security_reviewer'].includes(a.id)?'certificate':['documentation','research_agent','ux_analyst'].includes(a.id)?'document':'node';artifacts.push({workerId:a.id,label:a.name,kind,x:p.x+26,y:p.y-14,color:a.color,created:now()})}
-function spawnPacket(from,to,color,label='EVIDENCE'){const p=astar(districtCenter(from),districtCenter(to));if(p.length)packets.push({path:p,i:0,x:p[0].x,y:p[0].y,color,label,done:false,created:now()})}
+function spawnPacket(from,to,color,label='EVIDENCE'){if(reduced)return;const p=astar(districtCenter(from),districtCenter(to));if(p.length)packets.push({path:p,i:0,x:p[0].x,y:p[0].y,color,label,done:false,created:now()})}
 function spawnSpark(x,y,color,n=12){if(!reduced)for(let i=0;i<n;i++)sparks.push({x,y,vx:(Math.random()-.5)*80,vy:-20-Math.random()*80,life:.7+Math.random()*.7,color,size:1+Math.random()*2})}
 // Notes float over the city's top-left for 4 s, three at most; the story keeps them all.
 function note(text,state){notes.unshift({text,state,at:now()});notes=notes.slice(0,3);syncNotes();setTimeout(syncNotes,4100)}
@@ -1362,7 +1364,7 @@ function update(dt,ts){
   a.x+=dx/d*speed*dt;a.y+=dy/d*speed*dt;
   if(running)spawnRunDust(a,ts)
  }
- for(const p of packets){if(p.done||!p.path[p.i])continue;const t=p.path[p.i],dx=t.x-p.x,dy=t.y-p.y,d=Math.hypot(dx,dy);if(d<3){p.i++;if(p.i>=p.path.length){p.done=true;spawnSpark(p.x,p.y,p.color,8);if(p.label==='HANDOFF')addEvent('Handoff received')}continue}p.x+=dx/d*150*dt;p.y+=dy/d*150*dt}packets=packets.filter(p=>!p.done);
+ for(const p of packets){if(p.done||!p.path[p.i])continue;const t=p.path[p.i],dx=t.x-p.x,dy=t.y-p.y,d=Math.hypot(dx,dy);if(d<3){p.i++;if(p.i>=p.path.length){p.done=true;spawnSpark(p.x,p.y,p.color,8);if(p.label==='HANDOFF'){addEvent('Handoff received');pulses.push({x:p.x,y:p.y,t:ts})}}continue}p.x+=dx/d*150*dt;p.y+=dy/d*150*dt}packets=packets.filter(p=>!p.done);pulses=pulses.filter(q=>ts-q.t<700);
  updateConstruction(dt,ts);updateCrew(dt);
  if(reduced){sparks=[];dust=[]}
  for(const s of sparks){s.x+=s.vx*dt;s.y+=s.vy*dt;s.vy+=90*dt;s.life-=dt}sparks=sparks.filter(s=>s.life>0);for(const d of dust){d.x+=d.vx*dt;d.y+=d.vy*dt;d.r+=dt*5;d.life-=dt}dust=dust.filter(d=>d.life>0);
@@ -1372,7 +1374,10 @@ function update(dt,ts){
 }
 function px(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h))}
 function pathPoly(points,fill){ctx.fillStyle=fill;ctx.beginPath();ctx.moveTo(points[0][0],points[0][1]);for(let i=1;i<points.length;i++)ctx.lineTo(points[i][0],points[i][1]);ctx.closePath();ctx.fill()}
-function txt(t,x,y,c='#d9e7f4',size=11,align='center'){ctx.fillStyle=c;ctx.font='800 '+size+'px ui-monospace,monospace';ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillText(t,x,y)}
+// Text is drawn in device pixels at a whole-pixel size and position (fk = device px per world px this frame), so it
+// stays crisp at any zoom and only a handful of font strings are ever parsed.
+let fk=1;const fonts={},font=n=>fonts[n]||(fonts[n]='800 '+n+'px ui-monospace,monospace');
+function txt(t,x,y,c='#d9e7f4',size=11,align='center'){ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle=c;ctx.font=font(Math.max(1,Math.round(size*fk)));ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillText(t,Math.round(cam.dpr*view.panX+x*fk),Math.round(cam.dpr*view.panY+y*fk));ctx.restore()}
 const TREES=[[2,2],[3,3],[37,3],[38,4],[2,22],[38,22],[9,2],[30,2],[9,25],[30,25],[11,6],[28,6],[11,20],[28,20]];
 // The static ground is cached at 1× or 2× the world's size (2× once the city is drawn bigger than 1.2 device pixels
 // per world pixel) and copied each frame: nearest-neighbour when enlarged, so the pixel art stays crisp.
@@ -1540,7 +1545,6 @@ function drawBuilding(id,d,ts){
  // Damage sits on whatever has been built so far.
  if(bad){const by=Math.max(y,top);drawDamage(x,by,w,y+h-by,workers.some(q=>q.state==='running'),ts)}
  if(done&&!under)drawTopping(x,y,w,ts);
- if(display.labels){const tag=workers.length&&(under||bad)?d.name+'  '+(bad?'repair ':'')+Math.round(level*100)+'%':d.name;ctx.fillStyle='rgba(6,11,17,.88)';ctx.fillRect(x+4,y-21,Math.min(w+depth,tag.length*7+18),17);txt(tag,x+10,y-12,bad?'#ffb0b0':active?'#fff':'#c6d4e1',9,'left')}
  if(active){ctx.strokeStyle=d.accent;ctx.globalAlpha=.55+.35*pulse;ctx.lineWidth=3;ctx.strokeRect(x-4,y-4,w+depth+8,h+10);ctx.globalAlpha=1}
  if(done){ctx.fillStyle='#75dfa2';ctx.beginPath();ctx.arc(x+w-8,y+18,5,0,Math.PI*2);ctx.fill()}
  if(bad){ctx.strokeStyle='#ff7383';ctx.lineWidth=4;ctx.globalAlpha=.6+.4*pulse;ctx.strokeRect(x-5,y-5,w+depth+10,h+11);ctx.globalAlpha=1;px(x+w-16,y+11,10,10,pulse>.5?'#ff7383':'#6f2632')}
@@ -1570,7 +1574,8 @@ function drawWorksite(id,d,ts){
 function siteSpot(a){
  const d=DISTRICTS[a.zone];if(!d)return null;const f=districtFlags(a.zone),lvl=buildLevel(a.zone);if(a.state!=='running'||workerIsMoving(a)||!a.inside)return null;
  if(!(lvl<.995||f.bad))return null;const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,top=y+h-h*lvl;
- const sx=clamp(a.tx??x+w/2,x+16,x+w-16);
+ // stand clear of the roof sign: the name plate at the left end, the progress pill at the right
+ const hi=x+w-30,sx=clamp(a.tx??x+w/2,Math.min(hi,x+tw(d.name,9)+42),hi);
  return f.bad&&lvl>=.995?{x:sx,y:y+h*.55-12}:{x:sx,y:Math.max(y+14,top)-20}
 }
 function updateCrew(dt){
@@ -1595,16 +1600,23 @@ function dependencyState(from,to){
  if(from.state==='complete')return'ready';
  return'waiting'
 }
+// A dependency is drawn along the streets between the two districts (the same A* the workers walk), faint, with
+// packets riding it while the hand-off is live. Paths are found once per district pair: the roads never change.
+const flowPaths=new Map();
+function flowPath(a,b){
+ const k=a+'>'+b;if(!flowPaths.has(k)){const p1=districtCenter(a),p2=districtCenter(b),p=[p1,...astar(p1,p2),p2];let len=0;const seg=p.slice(1).map((q,i)=>{const l=Math.hypot(q.x-p[i].x,q.y-p[i].y);len+=l;return l});flowPaths.set(k,{p,seg,len})}
+ return flowPaths.get(k)
+}
+function along(f,t){let d=t*f.len;for(let i=0;i<f.seg.length;i++){if(d<=f.seg[i]){const a=f.p[i],b=f.p[i+1],k=f.seg[i]?d/f.seg[i]:0;return{x:a.x+(b.x-a.x)*k,y:a.y+(b.y-a.y)*k}}d-=f.seg[i]}return f.p.at(-1)}
 function drawFlows(ts){
- if(!display.flows||!current?.workers?.length)return;
- ctx.save();ctx.lineCap='round';
- for(const w of current.workers){for(const dep of w.dependsOn||[]){const a=current.workers.find(x=>x.id===dep);if(!a)continue;const p1=districtCenter(zoneForWorker(a)),p2=districtCenter(zoneForWorker(w)),state=dependencyState(a,w),pulse=(Math.sin(ts/180)+1)/2;
-  ctx.setLineDash(state==='waiting'?[3,9]:state==='blocked'?[2,6]:[7,6]);ctx.lineDashOffset=-(ts/(state==='active'?45:90))%13;
-  ctx.strokeStyle=state==='blocked'?'rgba(255,115,131,.82)':state==='active'?('rgba(89,226,237,'+(.55+.35*pulse)+')'):state==='ready'?'rgba(117,223,162,.55)':'rgba(120,145,170,.26)';
-  ctx.lineWidth=state==='active'?3:2;ctx.shadowColor=state==='active'?'#59e2ed':'transparent';ctx.shadowBlur=state==='active'?10:0;ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.stroke();
-  if(state==='active'){const t=((ts/900)%1),mx=p1.x+(p2.x-p1.x)*t,my=p1.y+(p2.y-p1.y)*t;ctx.fillStyle='#eaffff';ctx.beginPath();ctx.arc(mx,my,3,0,Math.PI*2);ctx.fill()}
- }}
- ctx.setLineDash([]);ctx.shadowBlur=0;ctx.restore()
+ if(!display.flows||!current?.workers?.length)return;ctx.save();ctx.lineJoin=ctx.lineCap='round';
+ for(const w of current.workers)for(const dep of w.dependsOn||[]){
+  const a=current.workers.find(x=>x.id===dep),za=a&&zoneForWorker(a),zb=zoneForWorker(w);if(!a||za===zb)continue;
+  const f=flowPath(za,zb),st=dependencyState(a,w),c=st==='blocked'?'255,115,131':st==='active'?'89,226,237':st==='ready'?'117,223,162':'150,170,190';
+  ctx.strokeStyle='rgba('+c+','+(st==='waiting'?.2:.36)+')';ctx.lineWidth=st==='active'?3:2;ctx.setLineDash(st==='blocked'?[4,6]:[]);ctx.beginPath();ctx.moveTo(f.p[0].x,f.p[0].y);for(const q of f.p)ctx.lineTo(q.x,q.y);ctx.stroke();
+  if(!reduced&&(st==='active'||st==='ready'))for(let i=0,n=st==='active'?3:1;i<n;i++){const q=along(f,(ts/(f.len*12)+i/n)%1);px(q.x-4,q.y-4,8,8,'rgba(5,10,16,.85)');px(q.x-3,q.y-3,6,6,'rgb('+c+')')}
+ }
+ ctx.setLineDash([]);ctx.restore()
 }
 function roleStyle(a){return a.style||ROLE_STYLE[a.id]||ROLE_STYLE.synthesis}
 function workerIsMoving(a){return !!(a.path?.length&&a.pathI<a.path.length)}
@@ -1684,8 +1696,9 @@ function sheetFor(s){
 // Which frame, by state: walk while moving (faster when running), the prop's action while working, look around and
 // check the watch while waiting, thumbs-up then relax when done, sit on the kerb when stopped, wave when blocked.
 // Reduced motion keeps one still frame per state.
-// Debug and tests (localStorage localai.debug = 1): where each worker is drawn, in canvas pixels, and its frame.
-function layout(){const k=sc(view.zoom)*cam.dpr,box=(x,y,w,h)=>({x:view.panX*cam.dpr+x*k,y:view.panY*cam.dpr+y*k,w:w*k,h:h*k});return{workers:[...agents.values()].map(a=>({id:a.id,state:a.state,frame:a.frame,moving:workerIsMoving(a),vest:roleStyle(a).vest,box:box(Math.round(a.x/2)*2-FW,Math.round(a.y/2)*2-34,FW*2,FH*2)}))}}
+// Debug and tests (localStorage localai.debug = 1), in canvas pixels: where each worker is drawn and its frame, the
+// district signs, and the name tags and bubbles.
+function layout(){const k=sc(view.zoom)*cam.dpr,box=(x,y,w,h)=>({x:view.panX*cam.dpr+x*k,y:view.panY*cam.dpr+y*k,w:w*k,h:h*k});return{workers:[...agents.values()].map(a=>({id:a.id,state:a.state,frame:a.frame,moving:workerIsMoving(a),vest:roleStyle(a).vest,box:box(Math.round(a.x/2)*2-FW,Math.round(a.y/2)*2-34,FW*2,FH*2)})),labels:L.signs.map(r=>box(r.x,r.y,r.w,r.h)),bubbles:L.bubbles.map(r=>box(r.x,r.y,r.w,r.h))}}
 function workerFrame(a,ts){
  const t=ts/1000+a.activitySeed,st=a.state;
  if(reduced)return st==='running'?F.work:st==='error'?F.sit:st==='blocked'?F.wave:F.stand;
@@ -1701,27 +1714,48 @@ function drawRunningWorkerSprite(a,ts,x,y,f){
  // a worker hurrying to a job: two speed lines behind them
  const d=a.dir||1;ctx.globalAlpha=.4;px(x-d*30-(d<0?0:8),y-6,8,2,roleStyle(a).accent);px(x-d*26-(d<0?0:6),y+2,6,2,roleStyle(a).accent);ctx.globalAlpha=1;blit(a,f,x,y)
 }
-function drawWorkerBubble(a,x,y,ts){
- if(a.state==='running'){const labels={router:'PLAN',mission_router:'PLAN',ux_analyst:'AUDIT',documentation:'WRITE',synthesis:'MERGE',coordinator:'MERGE',engineer:'BUILD',validator:'TEST',reviewer:'REVIEW',deployer:'SHIP',operator:'WATCH'},label=labels[a.id]||'WORK',pulse=(Math.sin(ts/350+a.activitySeed)+1)/2,w=Math.max(34,label.length*6+12);ctx.fillStyle='rgba(5,10,16,.88)';ctx.fillRect(x-w/2,y-46,w,14);px(x-2,y-32,4,4,'rgba(5,10,16,.88)');txt(label,x,y-39,pulse>.35?'#ffffff':roleStyle(a).accent,7)}
- else if(a.state==='complete'){ctx.fillStyle='rgba(5,10,16,.86)';ctx.fillRect(x-16,y-43,32,14);txt('DONE',x,y-36,'#75dfa2',7)}
- else if(['error','blocked'].includes(a.state)){ctx.fillStyle='rgba(70,18,27,.92)';ctx.fillRect(x-18,y-43,36,14);txt('!',x,y-36,'#ffd2d7',10)}
+// ---- Signs and bubbles -----------------------------------------------------------------------------------------
+// A district's sign sits on its roof edge: the name on a plate, and progress as its own pill at the right end (above
+// the name when the roof is too short for both). Signs are laid out before the workers are drawn, so a name tag or
+// bubble steps sideways (then up) off any sign or other bubble; signs are drawn last, over the city.
+let L={signs:[],bubbles:[]};const widths=new Map();
+function tw(t,n){const k=n+t;if(!widths.has(k)){ctx.font=font(n);widths.set(k,Math.ceil(ctx.measureText(t).width))}return widths.get(k)}
+function layoutSigns(){
+ L={signs:[],bubbles:[]};if(!display.labels)return;
+ for(const[id,d]of Object.entries(DISTRICTS)){
+  const f=districtFlags(id),lvl=buildLevel(id),x=d.x*T,y=d.y*T,nw=tw(d.name,9)+16,n={x:x+2,y:y-12,w:nw,h:14,text:d.name,c:f.bad?'#ffb0b0':f.active?'#fff':'#c6d4e1',accent:d.accent};L.signs.push(n);
+  if(f.workers.length&&(lvl<.995||f.bad)){const t=Math.round(lvl*100)+'%',w=tw(t,8)+14,rx=x+d.w*T+12-w,fits=rx>=n.x+nw+4;L.signs.push({pill:1,x:fits?rx:n.x,y:fits?y-11:y-27,w,h:12,text:t,pct:lvl,bad:f.bad})}
+ }
 }
-// Name tag over the head ("Team lead", "Code Analyst"): for the selected worker, and on hover.
-function drawNameTag(a,x,y){
- const t=a.name;ctx.font='800 8px ui-monospace,monospace';const w=Math.ceil(ctx.measureText(t).width)+12;
- ctx.fillStyle='rgba(5,10,16,.9)';ctx.beginPath();ctx.roundRect(x-w/2,y-51,w,13,4);ctx.fill();txt(t,x,y-44.5,'#eef6ff',8)
+function drawSigns(){
+ for(const r of L.signs){
+  if(r.pill){ctx.fillStyle='rgba(6,11,17,.9)';ctx.beginPath();ctx.roundRect(r.x,r.y,r.w,r.h,6);ctx.fill();px(r.x+5,r.y+r.h-3,(r.w-10)*r.pct,2,r.bad?'#ff7383':'#ffb224');txt(r.text,r.x+r.w/2,r.y+r.h/2-1,r.bad?'#ffb0b0':'#ffd27a',8)}
+  else{px(r.x,r.y+r.h,r.w,2,'rgba(0,0,0,.35)');px(r.x,r.y,r.w,r.h,'rgba(6,11,17,.9)');px(r.x,r.y,3,r.h,r.accent);txt(r.text,r.x+9,r.y+r.h/2,r.c,9,'left')}
+ }
 }
+// Finds room for a tag or bubble: where asked if it's clear, else the nearer side of whatever it hits, else a row up.
+function place(r){
+ const hit=(x,y)=>L.signs.find(o=>x<o.x+o.w+2&&x+r.w+2>o.x&&y<o.y+o.h+2&&y+r.h+2>o.y)||L.bubbles.find(o=>x<o.x+o.w+2&&x+r.w+2>o.x&&y<o.y+o.h+2&&y+r.h+2>o.y);
+ for(let up=0;up<4;up++,r.y-=r.h+3){let x=r.x;for(let i=0;i<5;i++){const o=hit(x,r.y);if(!o){r.x=x;L.bubbles.push(r);return r}const lf=o.x-r.w-2,rt=o.x+o.w+2;x=Math.abs(lf-r.x)<=Math.abs(rt-r.x)?lf:rt}}
+ return null
+}
+// One short word or mark: the step's verb while working, ✓ done, … waiting, ! stopped.
+const VERB={router:'Planning',mission_router:'Planning',ux_analyst:'Reviewing',documentation:'Writing',code_analyst:'Reading',test_engineer:'Testing',research_agent:'Searching',security_reviewer:'Checking',performance_analyst:'Measuring',synthesis:'Combining',coordinator:'Combining',engineer:'Building',validator:'Testing',reviewer:'Reviewing',deployer:'Shipping',operator:'Watching'};
+function drawWorkerBubble(r,t,c,x){ctx.fillStyle='rgba(5,10,16,.9)';ctx.beginPath();ctx.roundRect(r.x,r.y,r.w,r.h,5);ctx.fill();const k=clamp(x,r.x+6,r.x+r.w-6);pathPoly([[k-3,r.y+r.h],[k+3,r.y+r.h],[k,r.y+r.h+3]],'rgba(5,10,16,.9)');txt(t,r.x+r.w/2,r.y+r.h/2,c,8)}
+// Name tag ("Team lead", "Code Analyst"): for the selected worker, and on hover.
+function drawNameTag(r,t){ctx.fillStyle='rgba(5,10,16,.92)';ctx.beginPath();ctx.roundRect(r.x,r.y,r.w,r.h,4);ctx.fill();txt(t,r.x+r.w/2,r.y+r.h/2,'#eef6ff',8)}
 function drawWorkerSprite(a,ts){
- const x=Math.round(a.x/2)*2,y=Math.round(a.y/2)*2,sel=selected?.type==='agent'&&selected.id===a.id,f=a.frame=workerFrame(a,ts),c=roleStyle(a).accent;
+ const x=Math.round(a.x/2)*2,y=Math.round(a.y/2)*2,sel=selected?.type==='agent'&&selected.id===a.id,f=a.frame=workerFrame(a,ts),c=roleStyle(a).accent;let top=y-37;
  if(sel){ctx.save();ctx.fillStyle='rgba(255,255,255,.14)';ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.shadowColor=c;ctx.shadowBlur=10;ctx.beginPath();ctx.ellipse(x,y+19,19,7,0,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.restore()}
  if(workerIsRunning(a))drawRunningWorkerSprite(a,ts,x,y,f);else blit(a,f,x,y);
- const tag=display.labels&&(sel||hovered?.type==='agent'&&hovered.id===a.id);if(tag)drawNameTag(a,x,y);
- if(sel||(a.state==='running'&&view.zoom>1.55))drawWorkerBubble(a,x,tag?y-16:y,ts);
+ if(display.labels&&(sel||hovered?.type==='agent'&&hovered.id===a.id)){const w=tw(a.name,8)+12,r=place({x:x-w/2,y:top-13,w,h:13});if(r){drawNameTag(r,a.name);top=r.y-3}}
+ if(sel||a.state==='running'&&view.zoom>1.4){const s=a.state,t=s==='running'?VERB[a.id.replace(/-followup-\d+$/,'')]||'Working':s==='complete'?'✓':s==='pending'?'…':'!',w=tw(t,8)+12,r=place({x:x-w/2,y:top-13,w,h:13});if(r)drawWorkerBubble(r,t,s==='running'?c:s==='complete'?'#75dfa2':s==='pending'?'#9fb0c0':'#ffb0b0',x)}
  else if(a.state==='running'){ctx.globalAlpha=reduced?1:.6+.4*Math.sin(ts/180);px(x-2,y-44,4,4,c);ctx.globalAlpha=1}
 }
 function drawAgents(ts){
  for(const d of dust){ctx.globalAlpha=clamp(d.life/.42,0,1)*.5;ctx.fillStyle=display.night?'#70808c':'#c5b99a';ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1;for(const a of agents.values()){drawWorkerSprite(a,ts);drawWorkingAction(a,ts)}
- for(const p of packets){ctx.save();ctx.shadowColor=p.color;ctx.shadowBlur=12;px(p.x-6,p.y-5,12,9,'#182431');px(p.x-5,p.y-4,10,7,p.color);px(p.x-2,p.y-2,4,2,'#fff');ctx.restore();if(view.zoom>1.35){ctx.fillStyle='rgba(5,10,16,.88)';ctx.fillRect(p.x-22,p.y-20,44,11);txt(p.label||'DATA',p.x,p.y-14,'#eaf5ff',6)}}
+ for(const p of packets){ctx.save();ctx.shadowColor=p.color;ctx.shadowBlur=12;px(p.x-6,p.y-5,12,9,'#182431');px(p.x-5,p.y-4,10,7,p.color);px(p.x-2,p.y-2,4,2,'#fff');ctx.restore()}
+ for(const q of pulses){const k=(now()-q.t)/700;ctx.strokeStyle='rgba(117,223,162,'+(1-k)+')';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(q.x,q.y,6+k*22,3+k*9,0,0,Math.PI*2);ctx.stroke()}
  for(const a of artifacts){
   ctx.save();ctx.shadowColor=a.color;ctx.shadowBlur=8;
   if(a.kind==='build'){px(a.x-10,a.y-8,20,14,'#263746');px(a.x-8,a.y-6,16,10,a.color);px(a.x-5,a.y-3,10,5,'#14202b')}
@@ -1748,7 +1782,7 @@ function drawMinimap(){
  el.innerHTML='<span></span>'+markers;
 }
 function draw(ts){
- if(!ctx||!cam.w)return;const s=sc(view.zoom);ctx.setTransform(cam.dpr,0,0,cam.dpr,0,0);ctx.clearRect(0,0,cam.w,cam.h);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(s,s);drawGround(ts);ctx.imageSmoothingEnabled=false;drawFlows(ts);drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,ts);drawBuilding(id,d,ts);drawInterior(id,d,ts);drawWorksite(id,d,ts)}drawAgents(ts);drawMoments(ts);drawCommandCelebration(ts);drawClouds(ts);if(!current&&!display.night){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'rgba(255,170,90,.20)');g.addColorStop(.6,'rgba(255,140,70,.08)');g.addColorStop(1,'rgba(120,60,90,.14)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H)}if(display.night){ctx.fillStyle='rgba(3,7,14,.18)';ctx.fillRect(0,0,W,H)}ctx.restore()
+ if(!ctx||!cam.w)return;const s=sc(view.zoom);fk=s*cam.dpr;ctx.setTransform(cam.dpr,0,0,cam.dpr,0,0);ctx.clearRect(0,0,cam.w,cam.h);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(s,s);drawGround(ts);ctx.imageSmoothingEnabled=false;drawFlows(ts);drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,ts);drawBuilding(id,d,ts);drawInterior(id,d,ts);drawWorksite(id,d,ts)}layoutSigns();drawAgents(ts);drawMoments(ts);drawCommandCelebration(ts);drawClouds(ts);drawSigns();if(!current&&!display.night){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'rgba(255,170,90,.20)');g.addColorStop(.6,'rgba(255,140,70,.08)');g.addColorStop(1,'rgba(120,60,90,.14)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H)}if(display.night){ctx.fillStyle='rgba(3,7,14,.18)';ctx.fillRect(0,0,W,H)}ctx.restore()
 }
 // Animate only while the city canvas is on screen and the tab is visible; at most one rAF chain.
 let io=null,observed=null,onScreen=!('IntersectionObserver' in window);
