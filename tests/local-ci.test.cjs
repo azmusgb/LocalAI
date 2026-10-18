@@ -144,3 +144,12 @@ test('release-note advice fires on long or multi-clause titles only', async () =
   assert.equal(releaseNoteAdvice(''), null);
   assert.equal(releaseNoteAdvice(undefined), null);
 });
+
+test('ship merges only the tested commit, and refuses anything else', async () => {
+  const { shipMergeArgs } = await lib();
+  const sha = 'a'.repeat(40);
+  assert.deepEqual(shipMergeArgs(270, sha), ['pr', 'merge', '270', '--merge', '--match-head-commit', sha]);
+  assert.throws(() => shipMergeArgs('270; rm -rf /', sha));
+  assert.throws(() => shipMergeArgs(270, 'main'));
+  assert.throws(() => shipMergeArgs(270, null));
+});
