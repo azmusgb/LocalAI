@@ -153,3 +153,46 @@ test('ship merges only the tested commit, and refuses anything else', async () =
   assert.throws(() => shipMergeArgs(270, 'main'));
   assert.throws(() => shipMergeArgs(270, null));
 });
+
+// Ship re-checks against the newest main before it merges: two PRs green on their own can be red together.
+test('ship merges when main has not moved, re-checks when it has, and gives up if it keeps moving', async () => {
+  const { shipNextStep, MAX_RECHECKS } = await lib();
+  const a = 'a'.repeat(40), b = 'b'.repeat(40);
+  assert.equal(shipNextStep({ testedBase: a, latestBase: a }), 'merge');
+  assert.equal(shipNextStep({ testedBase: a, latestBase: b }), 'recheck');
+  assert.equal(shipNextStep({ testedBase: a, latestBase: b, rechecks: MAX_RECHECKS - 1 }), 'recheck');
+  assert.equal(shipNextStep({ testedBase: a, latestBase: b, rechecks: MAX_RECHECKS }), 'give-up');
+  // After a re-check, main where that re-check saw it means merge.
+  assert.equal(shipNextStep({ testedBase: b, latestBase: b, rechecks: 1 }), 'merge');
+  assert.throws(() => shipNextStep({ testedBase: null, latestBase: a }));
+  assert.throws(() => shipNextStep({ testedBase: a, latestBase: '' }));
+});
+
+test('a green re-check lets ship merge', async () => {
+  const { recheckOutcome } = await lib();
+  assert.deepEqual(recheckOutcome({ base: 'main', failedSteps: [], failingTests: [] }), { ok: true });
+});
+
+test('a red re-check blocks the merge and names the failing tests', async () => {
+  const { recheckOutcome } = await lib();
+  const red = recheckOutcome({ base: 'main', failedSteps: ['Unit and contract tests'], failingTests: ['the app shell stays within its total download budget (gzipped)'], host: 'mac' });
+  assert.equal(red.ok, false);
+  assert.equal(red.state, 'failure');
+  assert.equal(red.description, 'main moved; re-check failed: the app shell stays within its total download budget (gzipped)');
+  assert.match(red.comment, /not merged/i);
+  assert.match(red.comment, /- the app shell stays within its total download budget/);
+  assert.match(red.comment, /Unit and contract tests/);
+  // A red step with no test names (the deploy validator) is named instead.
+  const validator = recheckOutcome({ base: 'main', failedSteps: ['Validate deployment candidate'] });
+  assert.equal(validator.description, 'main moved; re-check failed: Validate deployment candidate');
+  assert.doesNotMatch(validator.comment, /Failing/);
+});
+
+test('a conflict with the newer main blocks the merge', async () => {
+  const { recheckOutcome } = await lib();
+  const c = recheckOutcome({ base: 'main', conflict: true });
+  assert.equal(c.ok, false);
+  assert.equal(c.state, 'failure');
+  assert.equal(c.description, 'main moved; re-check failed: conflicts with the newer main');
+  assert.match(c.comment, /merge `main` into the branch/);
+});

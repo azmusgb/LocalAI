@@ -40,8 +40,12 @@ deploy-candidate checks, and every browser suite against a fresh server, about 1
 
 To test and merge in one step, use `npm run ship -- <PR number>` instead: it runs the same checks and merges the PR
 only if they're green, and only the exact commit that was tested (if anything is pushed to the PR meanwhile, GitHub
-refuses the merge). GitHub can't *require* a green check on this account (that needs a paid plan for a private
-repository), so this is the safe way to merge.
+refuses the merge). If another PR was merged into `main` while the checks ran, ship first re-runs the quick checks
+(unit tests, size budgets, deploy contracts; a minute or two) on the PR combined with the newer `main`, and merges only
+if those pass too. If they fail, it doesn't merge: the PR gets a ❌ "main moved; re-check failed" naming the failing
+tests, and a comment. That is how two PRs that each passed on their own are kept from breaking `main` together.
+GitHub can't *require* a green check on this account (that needs a paid plan for a private repository), so this is
+the safe way to merge.
 
 - A red is hard to miss: the ❌ status names the failed steps, and a comment on the PR names the failing unit
   tests (first ten) so you need not open the log. A red has been a real bug before; fix or explain it before merging.
