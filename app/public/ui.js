@@ -958,7 +958,7 @@ function buildContext(){
  // Unread alerts plus approvals waiting, reported by app.js after it loads Inbox or Approvals.
  let inbox={unread:0,pending:0};
  window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');
-  if(!b)return;b.hidden=total===0;b.dataset.empty=String(total===0);q('#uxInboxCount').textContent=String(total);b.setAttribute('aria-label',total?`Inbox, ${total} waiting: ${inbox.unread} unread, ${inbox.pending} approvals waiting`:'Inbox')});
+  if(!b)return;b.hidden=total===0;b.dataset.empty=String(total===0);q('#uxInboxCount').textContent=String(total);const n=(c,w)=>c?`${c} ${w}${c===1?'':'s'}`:'';b.setAttribute('aria-label',total?`Inbox, ${[n(inbox.pending,'approval'),n(inbox.unread,'alert')].filter(Boolean).join(' and ')} waiting`:'Inbox')});
  q('#uxInboxBtn')?.addEventListener('click',()=>navigate('inbox')); // one queue (D8): the bell's one number opens the Inbox, which lists what waits first
 }
 // Agent World's ⋯ menu as an icon in the phone header (its heading is hidden behind the city). It sits beside Search and
@@ -984,8 +984,19 @@ function renderPageStrip(d,page,view){
  if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=views.map(v=>'<button type="button" data-strip-view="'+v+'" title="'+REG.description(v).replace(/"/g,'&quot;')+'">'+(REG.view(v)?.tab||REG.view(v)?.short||labelForView(v))+'</button>').join('');}
  // Home's only other page, Inbox, already has a button in the top bar; a hidden page (Missions, Chat) is none of these.
  strip.hidden=views.length<2||d.id==='home'||REG.view(view)?.domain==='hidden';
- qa('[data-strip-view]',strip).forEach(b=>{const on=b.dataset.stripView===page;b.classList.toggle('active',on);if(on){b.setAttribute('aria-current','page');if(strip.scrollWidth>strip.clientWidth)strip.scrollLeft=Math.max(0,b.offsetLeft-strip.clientWidth/2+b.offsetWidth/2)}else b.removeAttribute('aria-current')});
+ qa('[data-strip-view]',strip).forEach(b=>{const on=b.dataset.stripView===page;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
+ revealActive(strip);
  fadeStrip(strip);
+}
+// An overflowing strip scrolls so the open tab is fully in view and the first tab shown starts at the edge: a label is
+// never cut mid-word on the left, and the fade on the right says there are more.
+function revealActive(strip){
+ if(strip.scrollWidth<=strip.clientWidth){strip.scrollLeft=0;return}
+ const bs=qa('[data-strip-view]',strip),i=bs.findIndex(b=>b.classList.contains('active'));if(i<0)return;
+ const cs=getComputedStyle(strip),pad=parseFloat(cs.paddingLeft)||0,room=strip.clientWidth-pad-(parseFloat(cs.paddingRight)||0),base=strip.getBoundingClientRect().left-strip.scrollLeft;
+ const left=b=>b.getBoundingClientRect().left-base,right=b=>left(b)+b.getBoundingClientRect().width;
+ let first=0;while(first<i&&right(bs[i])-left(bs[first])>room)first++;
+ strip.scrollLeft=first?left(bs[first])-pad:0;
 }
 // A strip that overflows fades at the edge that has more tabs (CSS reads data-fade-start / data-fade-end).
 function fadeStrip(strip){const max=strip.scrollWidth-strip.clientWidth,x=strip.scrollLeft;strip.dataset.fadeStart=String(x>2);strip.dataset.fadeEnd=String(max-x>2)}
