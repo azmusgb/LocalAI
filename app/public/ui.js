@@ -3526,12 +3526,17 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     clearTimeout(state.closeTimer); state.closeTimer = 0;
     Object.assign(state, { selectedId: null, drawerSig: '', fetched: null, gap: '', pending: null, inApp: false, closing: false, viewError: '' });
   }
+  // An opened failure leaves Home's Needs you, on every device (app/public/needs-you.js).
+  function markSeen(run) { if (run?.status === 'failed' && !run.seenAt) window.LocalAINeedsYou?.markSeen([run.id]); }
   async function fetchRun(id, quiet) {
     try {
       const response = await fetch(`/api/runs?id=${encodeURIComponent(id)}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
       const data = await response.json().catch(() => ({}));
       if (state.selectedId !== id) return;
-      if (response.ok && data.item) { state.fetched = data.item; state.gap = ''; if (state.pending?.resolved === id) state.pending = null; }
+      if (response.ok && data.item) {
+        state.fetched = data.item; state.gap = ''; if (state.pending?.resolved === id) state.pending = null;
+        markSeen(data.item);
+      }
       else if (quiet) return;
       else { state.gap = response.status === 404 ? 'missing' : 'error'; if (state.pending?.resolved === id) state.pending = null; }
     } catch { if (quiet || state.selectedId !== id) return; state.gap = 'error'; }
@@ -3558,7 +3563,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       if (state.pending) { showView(); return; }
       state.selectedId = null; window.LocalAIRouter?.go('#home', { replace: true }); return;   // nothing to resume (reload, or Forward after a failed start)
     }
-    if (lookup(id)) { if (state.pending?.resolved === id) state.pending = null; showView(); projectName(id); return; }
+    if (lookup(id)) { if (state.pending?.resolved === id) state.pending = null; markSeen(lookup(id)); showView(); projectName(id); return; }
     state.gap = '';
     showView();
     fetchRun(id, false);

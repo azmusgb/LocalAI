@@ -85,7 +85,7 @@ await check('day groups come in order: Today, Yesterday, Earlier this week, Olde
 await check('chips filter by kind, the hash mirrors the chip, and a reload keeps it', async () => {
   const page = await open(desk, '#work', async () => mixed());
   await page.waitForSelector('#work .run-card', T);
-  assert.deepEqual(await page.locator('#work [data-work-kind]').evaluateAll(b => b.map(x => x.dataset.workKind)), ['all', 'chats', 'images', 'missions', 'changes', 'other']);
+  assert.deepEqual(await page.locator('#work [data-work-kind]').evaluateAll(b => b.map(x => x.dataset.workKind)), ['all', 'needs', 'chats', 'images', 'missions', 'changes', 'other']);
   await pick(page, 'images');
   assert.deepEqual(await kinds(page), ['image']);
   assert.equal(page.calls.at(-1).searchParams.get('kind'), 'images', 'the chip asks the server');
@@ -114,8 +114,11 @@ await check('the chips are one segmented control: one Tab stop, arrows move and 
   assert.equal(await group.getAttribute('role'), 'radiogroup');
   assert.match(await group.getAttribute('class'), /\bux-tabs\b/);
   const chips = page.locator('#work .work-chips .ux-tab');
-  assert.deepEqual(await chips.evaluateAll(b => b.map(x => [x.getAttribute('role'), x.tabIndex])), [['radio', 0], ['radio', -1], ['radio', -1], ['radio', -1], ['radio', -1], ['radio', -1]]);
+  assert.deepEqual(await chips.evaluateAll(b => b.map(x => [x.getAttribute('role'), x.tabIndex])), [['radio', 0], ['radio', -1], ['radio', -1], ['radio', -1], ['radio', -1], ['radio', -1], ['radio', -1]]);
   await chips.first().focus();
+  await page.keyboard.press('ArrowRight');
+  await page.waitForSelector('#workList:not([aria-busy="true"])', T);
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset.workKind), 'needs');
   await page.keyboard.press('ArrowRight');
   await page.waitForSelector('#workList:not([aria-busy="true"])', T);
   assert.equal(await page.evaluate(() => document.activeElement?.dataset.workKind), 'chats');

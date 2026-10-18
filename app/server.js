@@ -50,6 +50,7 @@ const { Trash } = require('./trash');
 const busy = require('./busy');
 const improve = require('./improve');
 const selfChange = require('./public/self-change');
+const needsYou = require('./public/needs-you');
 const { runCard, workKind, WORK_CHIPS } = require('./run-cards');
 const libraryThreads = require('./library-threads');
 const { loadOllamaModelRuntime } = require('./model-runtime');
@@ -238,6 +239,23 @@ function keptMarker() {
     for (const id of libraryThreads.runIdsOf(it)) runs.add(id);
   }
   return x => (KEEPABLE.has(x?.type) ? { ...x, kept: (!!x.threadId && threads.has(x.threadId)) || runs.has(x.id) } : x);
+}
+
+// Failed runs the owner has opened, on any device (id -> when), so Home's Needs you lets them go everywhere at once
+// (app/public/needs-you.js). One settings record; the newest SEEN_MAX are kept, which covers far more than a day's runs.
+const SEEN_KEY = 'needs-you/seen', SEEN_MAX = 1000;
+const seenRuns = () => { const v = storage.readSetting(SEEN_KEY, null); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; };
+const withSeen = seen => x => (seen[x?.id] ? { ...x, seenAt: seen[x.id] } : x);
+async function apiRunsSeen(req, res) {
+  try {
+    const b = await readBody(req), ids = Array.isArray(b.ids) ? b.ids.map(String) : [];
+    if (!ids.length || ids.length > 200 || ids.some(id => !(cleanRunId(id) || (/^legacy-[a-z]+:[\w.-]{1,160}$/.test(id))))) return json(res, 400, { error: 'Say which runs (1 to 200 run ids)' });
+    const at = nowIso(), seen = seenRuns();
+    for (const id of ids) if (!seen[id]) seen[id] = at;
+    const kept = Object.entries(seen).sort((a, b) => String(b[1]).localeCompare(String(a[1]))).slice(0, SEEN_MAX);
+    storage.writeSetting(SEEN_KEY, Object.fromEntries(kept));
+    json(res, 200, { seen: ids.length });
+  } catch (e) { storageError(res, e, 400); }
 }
 
 function updateArtifact(id, patch = {}) {
@@ -1708,8 +1726,15 @@ function apiBusy(req,res){
   try{json(res,200,busy.activeWork({runs:['queued','running','streaming'].flatMap(status=>runLedger.list({status,all:true})),missions:specialistOrchestrator?specialistOrchestrator.missions(200):[],specialists:specialistOrchestrator?specialistOrchestrator.runs(200):[],inFlight:inFlight.list()}))}
   catch(e){json(res,500,{error:String(e.message||e)})}
 }
+// Work's Needs you filter: the same runs Home asks about (app/public/needs-you.js), one row per thread, newest first.
+function needsThreads(before){
+  const seen=withSeen(seenRuns()),all=unifiedRunItems(500).map(seen),turns=new Map();
+  for(const x of all){const k=x.threadId||x.id;turns.set(k,(turns.get(k)||0)+1)}
+  const byCreate=(a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))||String(b.id).localeCompare(String(a.id));
+  return needsYou.pick(all).map(x=>({...x,title:x.threadTitle||x.title,turns:turns.get(x.threadId||x.id)||1})).filter(x=>!before||byCreate(x,before)>0).sort(byCreate);
+}
 async function apiRuns(req,res,urlObj){
-  try{const id=String(urlObj.searchParams.get('id')||'');const pid=String(urlObj.searchParams.get('projectId')||''),tid=String(urlObj.searchParams.get('threadId')||''),threads=urlObj.searchParams.get('threads')==='1';const kind=String(urlObj.searchParams.get('kind')||'');if(kind&&kind!=='all'&&!WORK_CHIPS.includes(kind))return json(res,400,{error:'Unknown kind'});const beforeId=String(urlObj.searchParams.get('before')||'');let before=null;if(beforeId){if(!cleanRunId(beforeId))return json(res,400,{error:'Invalid run id'});const ref=runLedger.get(beforeId)||legacyUnifiedRuns().find(x=>x.id===beforeId);if(!ref)return json(res,404,{error:'Run not found'});before={createdAt:ref.createdAt,id:ref.id}}let items=unifiedRunItems(urlObj.searchParams.get('limit')||120,{projectId:pid,threadId:tid,threads,before,kind:threads&&kind!=='all'?kind:''});const pending=approvalStore().filter(a=>a.status==='pending'),changes=changeStore();const cardOpts={approvalFor:r=>r.meta?.changeId&&pending.find(a=>a.meta?.changeId===r.meta.changeId)||null,changeFor:cid=>changes.find(c=>c.id===cid)||null},mark=keptMarker();if(id){const item=items.find(x=>x.id===id)||runLedger.get(id)||(id.startsWith('legacy-')?legacyUnifiedRuns().find(x=>x.id===id):null);if(!item)return json(res,404,{error:'Run not found'});return json(res,200,{item:{...mark(item),card:runCard(item,cardOpts)}})}const status=String(urlObj.searchParams.get('status')||''),type=String(urlObj.searchParams.get('type')||'');if(status)items=items.filter(x=>x.status===status);if(type)items=items.filter(x=>x.type===type);items=items.map(x=>({...mark(x),card:runCard(x,cardOpts)}));json(res,200,{items,summary:{total:items.length,active:items.filter(x=>['queued','running','streaming','awaiting_approval'].includes(x.status)).length,failed:items.filter(x=>x.status==='failed').length,awaitingApproval:items.filter(x=>x.status==='awaiting_approval').length}})}catch(e){storageError(res,e,500)}
+  try{const id=String(urlObj.searchParams.get('id')||'');const pid=String(urlObj.searchParams.get('projectId')||''),tid=String(urlObj.searchParams.get('threadId')||''),threads=urlObj.searchParams.get('threads')==='1';const kind=String(urlObj.searchParams.get('kind')||'');if(kind&&kind!=='all'&&kind!=='needs'&&!WORK_CHIPS.includes(kind))return json(res,400,{error:'Unknown kind'});const beforeId=String(urlObj.searchParams.get('before')||'');let before=null;if(beforeId){if(!cleanRunId(beforeId))return json(res,400,{error:'Invalid run id'});const ref=runLedger.get(beforeId)||legacyUnifiedRuns().find(x=>x.id===beforeId);if(!ref)return json(res,404,{error:'Run not found'});before={createdAt:ref.createdAt,id:ref.id}}const seen=withSeen(seenRuns());let items=kind==='needs'?needsThreads(before):unifiedRunItems(urlObj.searchParams.get('limit')||120,{projectId:pid,threadId:tid,threads,before,kind:threads&&kind!=='all'?kind:''}).map(seen);const pending=approvalStore().filter(a=>a.status==='pending'),changes=changeStore();const cardOpts={approvalFor:r=>r.meta?.changeId&&pending.find(a=>a.meta?.changeId===r.meta.changeId)||null,changeFor:cid=>changes.find(c=>c.id===cid)||null},mark=keptMarker();if(id){const item=items.find(x=>x.id===id)||runLedger.get(id)||(id.startsWith('legacy-')?legacyUnifiedRuns().find(x=>x.id===id):null);if(!item)return json(res,404,{error:'Run not found'});return json(res,200,{item:{...mark(seen(item)),card:runCard(item,cardOpts)}})}const status=String(urlObj.searchParams.get('status')||''),type=String(urlObj.searchParams.get('type')||'');if(status)items=items.filter(x=>x.status===status);if(type)items=items.filter(x=>x.type===type);items=items.map(x=>({...mark(x),card:runCard(x,cardOpts)}));json(res,200,{items,summary:{total:items.length,active:items.filter(x=>['queued','running','streaming','awaiting_approval'].includes(x.status)).length,failed:items.filter(x=>x.status==='failed').length,awaitingApproval:items.filter(x=>x.status==='awaiting_approval').length}})}catch(e){storageError(res,e,500)}
 }
 async function apiRunCancel(req,res){
   try{const b=await readBody(req),id=String(b.id||''),run=runLedger.get(id);if(!run)return json(res,404,{error:'Run not found or is managed by a legacy executor'});if(!run.cancellable)return json(res,409,{error:'This run is not cancellable'});if(!['queued','running','streaming','awaiting_approval'].includes(run.status))return json(res,409,{error:`Run cannot be cancelled from status ${run.status}`});runLedger.cancel(id,'Cancelled by user');const controller=activeRunControllers.get(id);if(controller&&!controller.signal.aborted)controller.abort();recordActivity('run','Run cancelled',run.title,{runId:id,type:run.type});json(res,200,{item:runLedger.get(id)})}catch(e){storageError(res,e,400)}
@@ -3351,6 +3376,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/runs/answers') return await apiRunAnswers(req,res,urlObj);
     if (req.method === 'POST' && p === '/api/runs/cancel') return await apiRunCancel(req,res);
     if (req.method === 'POST' && p === '/api/runs/update') return await apiRunUpdate(req,res);
+    if (req.method === 'POST' && p === '/api/runs/seen') return await apiRunsSeen(req,res);
     if (req.method === 'POST' && p === '/api/runs/retry') return await apiRunRetry(req,res);
     if (req.method === 'GET' && p === '/api/engineering/runs') return await apiEngineeringRuns(req,res);
     if (req.method === 'POST' && p === '/api/engineering/run') return await apiEngineeringRun(req,res);

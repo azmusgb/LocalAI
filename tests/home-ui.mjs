@@ -732,6 +732,110 @@ await check('the hidden mode buttons and the select the gate and first-run code 
   await page.context().close();
 });
 
+// Needs you stays short: what asks for a decision first, failures of one goal as one row, at most 3 rows and See all.
+const POLISH = 'Improve look feel and polish of agent world';
+const pile = () => [
+  item('engineering', 'Fix the login bug', 50 * 60e3, { status: 'awaiting_approval' }),
+  ...[20, 60, 80, 100, 120].map(m => item('agent', POLISH, m * 60e3, { status: 'failed' })),
+  item('chat', 'Chat', 40 * 60e3, { status: 'failed' }), item('chat', 'Chat', 3 * HOUR, { status: 'failed' }),
+  item('image', 'A red fox at dusk, failed', 4 * HOUR, { status: 'failed' }), item('research', 'Heat pump prices, failed', 5 * HOUR, { status: 'failed' }),
+  item('agent', 'Summarise the inbox, failed', 6 * HOUR, { status: 'failed' }), item('chat', 'Fine chat', HOUR)
+];
+// Records POST /api/runs/seen and answers later lists with seenAt, as the server does.
+async function trackSeen(page) {
+  page.seen = [];
+  await page.route(u => u.pathname === '/api/runs/seen', r => {
+    const ids = r.request().postDataJSON().ids; page.seen.push(ids);
+    for (const id of ids) { const it = page.known.get(id); if (it) it.seenAt = new Date().toISOString(); }
+    r.fulfill({ contentType: 'application/json', body: JSON.stringify({ seen: ids.length }) });
+  });
+}
+for (const [tag, vp] of [['390', phone], ['desktop', desk]]) {
+  await check(`${tag}: the printer line sits above Needs you, which shows 3 rows, repeats as one row, and See all 6`, async () => {
+    const page = await open(vp, '#home', { all: pile, printer: PRINTER('printing', { progress: 14, minutesLeft: 390 }) });
+    await page.waitForSelector('#homeNeedsYou .home-needs-all', T);
+    await page.locator('#homePrinter [data-printer-state]').waitFor({ state: 'visible', ...T });
+    assert.equal(await page.locator('#homePrinter .list-row__title').innerText(), 'Printer · 14% · 6 h 30 min left');
+    const printerBox = await page.locator('#homePrinter').boundingBox(), needsBox = await page.locator('#homeNeedsYou').boundingBox();
+    assert.ok(printerBox.y + printerBox.height <= needsBox.y + 1, `printer ${printerBox.y} above Needs you ${needsBox.y}`);
+    assert.ok(printerBox.y + printerBox.height <= vp.height, 'the printer line is on the first screen');
+    const rows = page.locator('#homeNeedsList > *');
+    assert.equal(await rows.count(), 4, '3 rows and See all');
+    assert.deepEqual((await titles(page, '#homeNeedsList')), ['Fix the login bug', POLISH, 'Chat', 'See all 6']);
+    assert.equal(await page.locator('#homeNeedsCount').innerText(), '· 6');
+    const group = page.locator('#homeNeedsList [data-needs-count="5"]');
+    assert.match(await group.innerText(), /Failed ×5/);
+    assert.match(await page.locator('#homeNeedsList [data-needs-count="2"]').innerText(), /Chat[\s\S]*Failed ×2/);
+    const all = page.locator('#homeNeedsList .home-needs-all'), box = await all.boundingBox();
+    assert.ok(box.height >= 44, `See all tap target ${box.height}px`);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, 'no sideways scroll');
+    await all.click();
+    await page.waitForSelector('#work.active', T);
+    assert.equal(await page.evaluate(() => location.hash), '#work?kind=needs');
+    assert.equal(await page.locator('[data-work-kind="needs"]').getAttribute('aria-checked'), 'true');
+    assert.ok(page.calls.some(u => u.searchParams.get('kind') === 'needs'), 'Work asks the server for its Needs you list: ' + page.calls.map(u => u.search).join());
+    assert.equal(await page.evaluate(() => localStorage.getItem('localai.work.kind')), null, 'Work does not open on Needs you next time');
+    await page.context().close();
+  });
+
+  await check(`${tag}: a failure leaves Needs you a day after it failed, or once a later run of the same goal succeeds; it stays in Work`, async () => {
+    const old = item('agent', 'Failed yesterday', 30 * HOUR, { status: 'failed' }); old.updatedAt = new Date(NOW - 25 * HOUR).toISOString();
+    const recent = item('agent', 'Failed this morning', 23 * HOUR, { status: 'failed' });
+    const settled = item('agent', POLISH, 3 * HOUR, { status: 'failed' }), later = item('agent', POLISH, HOUR);
+    const page = await open(vp, '#home', { all: () => [old, recent, settled, later] });
+    await page.waitForSelector('#homeNeedsYou .run-card', T);
+    assert.deepEqual(await titles(page, '#homeNeedsList'), ['Failed this morning']);
+    await page.context().close();
+  });
+
+  await check(`${tag}: opening a failure from Needs you marks it and its repeats seen; it is gone on the way back and stays gone`, async () => {
+    const page = await open(vp, '#home', { all: pile });
+    await trackSeen(page);
+    const group = page.locator('#homeNeedsList [data-needs-count="5"]');
+    await group.waitFor(T);
+    await group.click();
+    await page.waitForFunction(() => /^#run\//.test(location.hash), null, T);
+    await page.waitForFunction(() => document.body.classList.contains('run-view-open'), null, T);
+    assert.equal(page.seen.length, 1, 'one request: ' + JSON.stringify(page.seen));
+    assert.equal(page.seen[0].length, 5, 'all five repeats');
+    await page.goBack();
+    await page.waitForFunction(() => !document.body.classList.contains('run-view-open'), null, T);
+    await page.waitForFunction(() => !document.querySelector('#homeNeedsList [data-needs-count="5"]'), null, T);
+    await page.evaluate(() => window.LocalAIHome.refresh());
+    await page.waitForTimeout(200);
+    assert.deepEqual(await titles(page, '#homeNeedsList'), ['Fix the login bug', 'Chat', 'A red fox at dusk, failed', 'See all 5']);
+    await page.context().close();
+  });
+}
+
+await check('approvals always show, however many; failures wait behind See all', async () => {
+  const approvals = [1, 2, 3, 4].map(i => ({ id: 'apr_' + i, status: 'pending', title: 'Decide thing ' + i, detail: 'Needs a yes' }));
+  const page = await open(phone, '#home', { all: pile, approvals });
+  await page.waitForSelector('#homeNeedsList .home-needs-all', T);
+  const t = await titles(page, '#homeNeedsList');
+  assert.deepEqual(t, ['Fix the login bug', 'Decide thing 1', 'Decide thing 2', 'Decide thing 3', 'Decide thing 4', 'See all 10']);
+  await page.context().close();
+});
+
+await check('opening a failed run from anywhere (the run view) marks it seen once; a finished run is not posted', async () => {
+  const failed = item('agent', 'Weekly report mission', HOUR, { status: 'failed' }), fine = item('chat', 'Fine chat', HOUR);
+  const page = await open(desk, '#home', { all: () => [failed, fine] });
+  await trackSeen(page);
+  await page.waitForSelector('#homeNeedsYou .run-card', T);
+  await page.evaluate(id => window.LocalAIRuns.show(id), fine.id);
+  await page.waitForFunction(() => document.body.classList.contains('run-view-open'), null, T);
+  await page.waitForTimeout(300);
+  assert.deepEqual(page.seen, []);
+  await page.goBack();
+  await page.waitForFunction(() => !document.body.classList.contains('run-view-open'), null, T);
+  await page.evaluate(id => window.LocalAIRuns.show(id), failed.id);
+  await page.waitForFunction(() => document.body.classList.contains('run-view-open'), null, T);
+  for (let i = 0; i < 30 && !page.seen.length; i++) await page.waitForTimeout(100);
+  await page.waitForTimeout(300); // and only once, though the run view polls
+  assert.deepEqual(page.seen, [[failed.id]]);
+  await page.context().close();
+});
+
 for (const [tag, vp] of [['390x844', phone], ['1280x860', desk]]) {
   await check(`axe: Home and the mode sheet pass color-contrast and target-size at ${tag}`, async () => {
     const page = await open(vp, '#home');

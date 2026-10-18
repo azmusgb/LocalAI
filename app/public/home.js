@@ -5,7 +5,7 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const MODES=[['auto','Auto','Picks for you'],['ask','Chat','Ask a question'],['research','Research','Search the web first'],['create','Image','Make pictures'],['mission','Mission','Give the team a goal'],['automate','Automate','Set up a task'],['engineering','Change Local AI','Always asks you first']];
 const LABEL=Object.fromEntries(MODES.map(m=>[m[0],m[1]]));
-const MODE_KEY='localai.home.mode',OPT_KEY='localai.home.options',DAY=864e5;
+const MODE_KEY='localai.home.mode',OPT_KEY='localai.home.options';
 const store={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}}};
 let mode=LABEL[store.get(MODE_KEY)]?store.get(MODE_KEY):'auto',options={},sending=false,flash=0,attention=[],timer=0,loaded=false;
 try{options=JSON.parse(store.get(OPT_KEY)||'{}')||{}}catch{}
@@ -94,14 +94,6 @@ function openSheet(){const d=sheet();if(d.open){paintModes();paintOptions();retu
 // ---- Needs you and Recent ----
 // The runs module opens the run on top of Home, so Back returns here.
 const openRun=it=>root.LocalAIRuns?root.LocalAIRuns.show(it.id):root.LocalAIRouter?.go('#run/'+encodeURIComponent(it.id));
-function needsRuns(all){
- // A thread's latest turn is its newest by when it started (createdAt, then id), not by when it last changed: a retry that succeeded settles an older failure.
- const now=Date.now(),latest=new Map(),started=r=>Date.parse(r.createdAt||r.updatedAt)||0;
- for(const r of all){const k=r.threadId||r.id,p=latest.get(k);if(!p||started(r)>started(p.r)||(started(r)===started(p.r)&&String(r.id)>String(p.r.id)))latest.set(k,{r,t:Date.parse(r.updatedAt||r.createdAt)||0})}
- const mine=[...latest.values()].filter(({r,t})=>r.status==='awaiting_approval'||(r.status==='failed'&&now-t<DAY));
- const rank=r=>r.status==='awaiting_approval'?0:1;
- return mine.sort((a,b)=>rank(a.r)-rank(b.r)||b.t-a.t).map(x=>x.r);
-}
 function infoRow(title,sub,label,tone,go){
  const kit=root.LocalAIKit,row=document.createElement('button');
  row.type='button';row.className='list-row home-attn';
@@ -131,19 +123,41 @@ const secureNudge=()=>{if(!onPlainHttp())return false;try{return localStorage.ge
 const secureRow=()=>infoRow('Use the secure address on this device','Voice, notifications and adding Local AI to your Home Screen need it. Setup takes about a minute.','Set up','attention',()=>root.LocalAIRouter.open('status?secure=1'));
 // Serious Signals promoted into the Backlog in the last day, waiting for a decision.
 const signalsRow=n=>infoRow(`${n} new signal${n===1?'':'s'} in your backlog`,'Problems Local AI noticed. Start, defer or reject them.','Review','attention',()=>root.LocalAIRouter.open('backlog'));
+// What asks for a decision, a fix or a setup step always shows. Failures fill the list up to CAP rows, newest first, one
+// row per goal ("Failed ×5"); the rest are behind "See all N", which opens Work's Needs you filter.
+const CAP=3;
+function seeAllRow(n){
+ const row=document.createElement('button');row.type='button';row.className='list-row home-attn home-needs-all';
+ row.innerHTML=`<span class="list-row__main"><span class="list-row__title">See all ${n}</span></span><span class="list-row__trail" aria-hidden="true">›</span>`;
+ row.setAttribute('aria-label',`See all ${n} in Work`);
+ row.addEventListener('click',()=>root.LocalAIRouter?.go('#work?kind=needs'));
+ return row;
+}
+// Opening a failure marks it (and the repeats on its row) seen on the server: it leaves Needs you on every device. The row
+// goes once the run view closes, so nothing moves under the open run.
+let stale=false;
+function failedRow(g){
+ const n=g.runs.length,it=n>1&&g.run.card?{...g.run,card:{...g.run.card,badge:{tone:'bad',...g.run.card?.badge,label:`Failed ×${n}`}}}:g.run;
+ const row=recentRow(it,r=>{const ids=new Set(g.runs.map(x=>x.id));root.LocalAINeedsYou.markSeen([...ids]);needs=needs.filter(x=>!ids.has(x.id));stale=true;openRun(r)});
+ if(n>1)row.dataset.needsCount=n;
+ return row;
+}
 function paintNeeds(){
  const box=$('homeNeedsList'),sec=$('homeNeedsYou');if(!box||!sec)return;
+ stale=false;
  // While Get started is on the page its step 1 already covers stopped services; the same news is not repeated as "Fix" rows.
  const serviceRows=document.getElementById('firstRun')?[]:attention.map(attentionRow);
- const rows=[...needs.map(recentRow),...approvals.map(x=>approvalRow(x.a,x.run)),...(newSignals?[signalsRow(newSignals)]:[]),...serviceRows,...(secureNudge()?[secureRow()]:[])];
- box.replaceChildren(...rows);
- $('homeNeedsCount').textContent=rows.length?'· '+rows.length:'';
- sec.hidden=!rows.length;
+ const failed=root.LocalAINeedsYou.group(needs.filter(r=>r.status==='failed'));
+ const act=[...needs.filter(r=>r.status!=='failed').map(r=>recentRow(r)),...approvals.map(x=>approvalRow(x.a,x.run)),...serviceRows,...(newSignals?[signalsRow(newSignals)]:[]),...(secureNudge()?[secureRow()]:[])];
+ const n=act.length+failed.length,room=act.length+failed.length>CAP?Math.max(0,CAP-act.length):failed.length;
+ box.replaceChildren(...act,...failed.slice(0,room).map(failedRow),...(room<failed.length?[seeAllRow(n)]:[]));
+ $('homeNeedsCount').textContent=n?'· '+n:'';
+ sec.hidden=!n;
 }
-function recentRow(it){
+function recentRow(it,onOpen=openRun){
  // A conversation shows once, under its first message, with its turn count (as Work does).
  const n=it.turns||1;if(it.card?.kind==='chat'&&n>1)it={...it,card:{...it.card,summary:`Chat · ${n} turns`,preview:it.card.preview||(it.card.summary?{type:'text',text:it.card.summary}:null)}};
- const row=root.LocalAIUI.runCard(it,{onOpen:openRun,rowOpen:true}),act=row.querySelector('.run-card__action');
+ const row=root.LocalAIUI.runCard(it,{onOpen,rowOpen:true}),act=row.querySelector('.run-card__action');
  if(act)act.remove(); // the row itself opens the run
  if(it.status==='awaiting_approval')row.querySelector('.run-card__bar')?.remove(); // waiting on you is not progress
  return row;
@@ -179,7 +193,7 @@ function paintRecent(box,data){
  const shown=new Set(needs.map(threadKey)),all=(data.items||[]).slice(0,6),items=all.filter(r=>!shown.has(threadKey(r)));
  if(!all.length)return false;
  if(!items.length){box.innerHTML='<div class="state-empty empty-state">Everything recent is in Needs you, above.</div>';return true}
- box.replaceChildren(...items.map(recentRow));
+ box.replaceChildren(...items.map(r=>recentRow(r)));
  return true;
 }
 const recentUrl='/api/runs?threads=1&limit=6';
@@ -187,7 +201,7 @@ async function loadNeeds(){
  const [d,p,imp]=await Promise.allSettled([root.LocalAIUI.fetchJson('/api/runs?limit=120',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/approvals',{cache:'no-store'}),devOn()?root.LocalAIUI.fetchJson('/api/improve/items',{cache:'no-store'}):Promise.resolve({items:[]})]);
  if(imp.status==='fulfilled'){const day=Date.now()-864e5;newSignals=(imp.value.items||[]).filter(i=>i.source==='signal'&&i.status==='proposed'&&i.stage==='backlog'&&Date.parse(i.createdAt)>day).length}
  const runs=d.status==='fulfilled'?d.value.items||[]:null;
- if(runs)needs=needsRuns(runs);
+ if(runs)needs=root.LocalAINeedsYou.pick(runs);
  if(p.status==='fulfilled'){
   const waiting=new Set(needs.filter(r=>r.status==='awaiting_approval').map(r=>r.meta?.changeId).filter(Boolean));
   approvals=(p.value.items||[]).filter(a=>a.status==='pending'&&!(a.meta?.changeId&&waiting.has(a.meta.changeId)))
@@ -299,7 +313,7 @@ function typing(on){document.body.classList.toggle('home-typing',on);dockToNav()
 function init(){
  if(!$('homeComposer'))return;
  paintChip();greet();
- new MutationObserver(()=>paintChip()).observe(document.body,{attributes:true,attributeFilter:['class']}); // developer tools toggled
+ new MutationObserver(()=>{paintChip();if(stale&&!document.body.classList.contains('run-view-open'))paintNeeds()}).observe(document.body,{attributes:true,attributeFilter:['class']}); // developer tools toggled; a run view closed
  $('homeModeChip').addEventListener('click',()=>autoWait?autoWait.cancel():openSheet());
  $('commandGo').addEventListener('click',()=>send($('commandInput').value));
  $('commandInput').addEventListener('input',()=>{grow();dockToNav();root.LocalAISelfChange?.hide($('homeSelfChange'))});
