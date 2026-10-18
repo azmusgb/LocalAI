@@ -11,7 +11,9 @@ param(
     [string]$VolumeRoot = 'C:\LocalAI\backups\volumes',
     # A second copy on another drive. Never OneDrive: these hold the HTTPS root key and n8n's credentials with their key.
     # Skipped when the drive doesn't exist; pass '' to skip.
-    [string]$VolumeCopyRoot = 'G:\LocalAI-Backups\volumes'
+    [string]$VolumeCopyRoot = 'G:\LocalAI-Backups\volumes',
+    # The stack's secrets (n8n's encryption key among them): a rebuild needs them. Kept beside the volume archives.
+    [string]$StackEnv = 'C:\LocalAI\stack\stack.env'
 )
 # Nightly backup of the appliance database: a consistent SQLite snapshot (VACUUM INTO, includes WAL writes),
 # verified by opening it read-only with the app's own storage code before it is kept, then pruned to
@@ -48,7 +50,7 @@ function Select-Keep([System.IO.FileInfo[]]$Files) {
     return @($keep + $weeks.Values | Select-Object -Unique)
 }
 
-$result = [ordered]@{ at = (Get-Date).ToString('o'); ok = $false; file = $null; sizeBytes = 0; counts = $null; offsite = $null; volumes = @(); error = $null }
+$result = [ordered]@{ at = (Get-Date).ToString('o'); ok = $false; file = $null; sizeBytes = 0; counts = $null; offsite = $null; volumes = @(); stackEnv = $null; error = $null }
 try {
     # 1. Snapshot inside the container, then copy it out.
     Invoke-Native { docker exec $Container node /app/storage-cli.js backup --data-dir /data --output "/data/backups/nightly/$name" } 'Snapshot' | Out-Null
@@ -106,6 +108,16 @@ try {
                 $keep = Select-Keep $files
                 $files | Where-Object { $keep.FullName -notcontains $_.FullName } | Remove-Item -Force
             }
+        }
+        if ($StackEnv -and (Test-Path $StackEnv)) {
+            $envCopy = "stack-env-$stamp.env"
+            foreach ($root in @($VolumeRoot, $copyRoot) | Where-Object { $_ }) {
+                Copy-Item $StackEnv (Join-Path $root $envCopy)
+                $files = @(Get-ChildItem $root -File -Filter 'stack-env-*.env')
+                $keep = Select-Keep $files
+                $files | Where-Object { $keep.FullName -notcontains $_.FullName } | Remove-Item -Force
+            }
+            $result.stackEnv = Join-Path $VolumeRoot $envCopy
         }
     }
     $result.ok = $true

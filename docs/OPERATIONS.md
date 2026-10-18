@@ -77,7 +77,8 @@ machine is next on). Each run:
    few seconds its archive takes (so n8n's SQLite files are consistent; a healthcheck that lands in that moment can
    show one "unhealthy" until the next), each archive is checked readable and not empty, and the same 7 + 4 copies are
    kept. A second copy goes to `G:\LocalAI-Backups\volumes` (`-VolumeCopyRoot`; skipped when there is no G: drive). These
-   never go to OneDrive: they hold the HTTPS root key and n8n's credentials together with their key;
+   never go to OneDrive: they hold the HTTPS root key and n8n's credentials together with their key. A copy of
+   `C:\LocalAI\stack\stack.env` (`stack-env-<stamp>.env`, the stack's secrets a rebuild needs) is kept beside them;
 6. writes `C:\LocalAI\backups\last-backup.json` (time, file, size, record counts, volumes, error).
 
 ```powershell
