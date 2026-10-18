@@ -34,7 +34,8 @@ const { child: server, ready } = spawnAppServer({
 const base = await ready;
 
 const PAGES = ['home', 'work', 'library', 'projects', 'backlog', 'claude', 'status', 'models'];
-const VIEWPORTS = [{ name: 'phone', width: 390, height: 844, mobile: true }, { name: 'desktop', width: 1280, height: 860, mobile: false }];
+// Every page is shot at phone width and at 1440 wide (the key pages were 1280 until 2026-10-18; their baselines moved too).
+const VIEWPORTS = [{ name: 'phone', width: 390, height: 844, mobile: true }, { name: 'desktop1440', width: 1440, height: 900, mobile: false }];
 
 const browser = await chromium.launch({ headless: true });
 const failures = [], notes = [];
@@ -196,7 +197,7 @@ const MORE_PAGES = {
   memory: '#memoryList .memory-card',
   spreadsheets: '#sheetsGrid td[data-cell="D5"]'
 };
-const MORE_VIEWPORTS = [VIEWPORTS[0], { name: 'desktop1440', width: 1440, height: 900, mobile: false }];
+const MORE_VIEWPORTS = VIEWPORTS;
 
 // What differs between runs by design: the version, response times, a fresh pairing code, and when the server last
 // checked its services (the server's clock, not the page's). Shipped's release headings come from fixed data, so they stay.
@@ -213,7 +214,7 @@ const AGENT_STATES = {
   needs: [{ ...A_BASE, id: 'm-bad', status: 'needs_attention', workers: A_W('error', 'blocked', { errorCode: 'MODEL_CONNECTION_ERROR' }), timeline: [...A_TL, { at: ago(60), type: 'mission-attention', status: 'needs_attention', workers: A_W('error', 'blocked', { errorCode: 'MODEL_CONNECTION_ERROR' }) }] }],
   done: [{ ...A_BASE, id: 'm-done', status: 'complete', finishedAt: ago(60), answer: 'Three fixes for the phone screens, in order of impact.', workers: A_W('complete', 'complete'), results: [{ agentId: 'ux_analyst', agentName: 'UX Analyst', status: 'complete', answer: 'Three things to fix.' }], timeline: [...A_TL, { at: ago(60), type: 'mission-complete', status: 'complete', workers: A_W('complete', 'complete') }] }]
 };
-const AGENT_VIEWPORTS = [VIEWPORTS[0], { name: 'desktop1440', width: 1440, height: 900, mobile: false }];
+const AGENT_VIEWPORTS = VIEWPORTS;
 async function shoot(viewport, view, missions, ready) {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.mobile, hasTouch: viewport.mobile, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: 'dark', locale: 'en-US', timezoneId: 'America/New_York' });
   await ctx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); sessionStorage.setItem('localai.httpsTrusted', '0'); } catch {} });

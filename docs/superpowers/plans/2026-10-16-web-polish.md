@@ -307,7 +307,7 @@ Checked on 18 Oct (critique §5).
   appliance at 1440 with Developer tools off, for all 17 owner pages except Claude Code (not loaded: it creates a
   pairing code).
 - [x] Visual baselines exist for every owner page at 390 and 1440 (#282). The 8 older desktop baselines (home,
-  work, library, projects, backlog, claude, status, models) are shot at 1280, not 1440.
+  work, library, projects, backlog, claude, status, models) were shot at 1280; they are now shot at 1440 too.
 - [ ] …and match the owner's screens. **Needs the owner.**
 - [ ] `npm run ci` on `main` is green. Not checked here (this close-out does not run it): #285 merged with no
   `local-ci` result and left `npm test` red on the shell budget until #286; #283 and #284 were green (553 unit tests,

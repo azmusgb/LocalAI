@@ -1134,18 +1134,26 @@ function workerTarget(w,zone){
  const base=districtCenter(zone),slots=[[-42,0],[42,0],[-72,24],[72,24],[0,34],[-34,54],[34,54]],slot=slots[idx%slots.length];
  return{x:base.x+slot[0],y:base.y+slot[1],inside:false}
 }
+// A worker's walk, in straight legs that follow the tile grid: out of the door and straight down its path to the
+// street (streetLeg), along the streets (A* over road tiles), and up the other district's path to its door or to a
+// spot on its apron. Inside a building they turn square too: across to the door, then out (and the reverse going in).
+// Worked out once when the worker's target changes; update() just walks the points.
+// A move within one district (desk to desk, desk to apron, apron to desk) stays off the street.
 function routeToTarget(agent,target,zone){
- const path=[],from={x:agent.x,y:agent.y};
- if(agent.inside&&agent.insideZone){const exit=districtDoor(agent.insideZone);path.push(exit.inside,exit.outside);from.x=exit.outside.x;from.y=exit.outside.y}
- if(target.inside){
-  const door=districtDoor(zone),roadPath=astar(from,door.outside);path.push(...roadPath);
-  if(!path.length||Math.hypot(path.at(-1).x-door.outside.x,path.at(-1).y-door.outside.y)>3)path.push(door.outside);
-  path.push(door.inside,{x:target.x,y:target.y})
- }else{
-  const roadPath=astar(from,target);path.push(...roadPath);
-  if(!path.length||Math.hypot(path.at(-1).x-target.x,path.at(-1).y-target.y)>3)path.push({x:target.x,y:target.y})
- }
- return path
+ const from={x:agent.x,y:agent.y},path=[from],door=target.inside?districtDoor(zone):null;let start=from;
+ const home=agent.inside?agent.insideZone===zone:agent.zone===zone&&!workerIsMoving(agent);
+ if(home&&agent.inside&&door)return squareUp([from,{x:target.x,y:from.y},target]).slice(1);
+ if(agent.inside&&agent.insideZone){const exit=districtDoor(agent.insideZone);path.push({x:exit.inside.x,y:from.y},exit.inside,exit.outside);start=exit.outside}
+ const end=door?door.outside:target;
+ if(home)path.push(agent.inside?{x:start.x,y:end.y}:{x:end.x,y:start.y},end);
+ else{const s=streetLeg(start),e=streetLeg(end);path.push(...s,...astar(s.at(-1),e.at(-1)).slice(1,-1),...e.reverse())}
+ if(door)path.push(door.inside,{x:door.inside.x,y:target.y},{x:target.x,y:target.y});
+ return squareUp(path).slice(1)
+}
+// Drop repeated points and turn any leg that isn't level or plumb into an L (across, then up or down).
+function squareUp(p){
+ const out=[];for(const q of p){const l=out.at(-1);if(l&&Math.abs(q.x-l.x)<.5&&Math.abs(q.y-l.y)<.5)continue;if(l&&Math.abs(q.x-l.x)>=.5&&Math.abs(q.y-l.y)>=.5)out.push({x:q.x,y:l.y});out.push({x:q.x,y:q.y})}
+ return out
 }
 function road(x,y){roads.add(key(x,y))}
 function buildRoads(){
@@ -1356,7 +1364,10 @@ function mount(){
  window.LocalAIAgentWorld={camera:()=>({zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,shown:{zoom:view.zoom,panX:view.panX,panY:view.panY},...cam}),avatar,following:()=>display.follow,follow:on=>toggleFollow(on),demo:()=>{startDemo();syncDemoControls()},demoStep:()=>stepDemo(),busy:()=>demo.active||replay.active,display:()=>({...display}),view:k=>k==='speed'?cycleReplaySpeed():k==='theater'?toggleExpanded():k==='fit'?(userCamera(),fitWorld()):toggleDisplay(k),walking:()=>[...agents.values()].filter(workerIsMoving).length,names:()=>[...agents.values()].map(a=>a.name),
   moments:()=>({flags:[...agents.values()].filter(a=>a.state==='complete').map(a=>a.id),warnings:[...agents.values()].filter(a=>a.state==='error'||a.state==='blocked').map(a=>a.id),fireworks:celebrationUntil>now()})};
  // __awcSim (tests): put a worker somewhere still, or a car somewhere on its street, in world pixels.
- try{if(localStorage.getItem('localai.debug')==='1'){window.__awcLayout=layout;window.__awcSim={put(id,x,y){const a=agents.get(id);if(a){a.x=a.tx=x;a.y=a.ty=y;a.path=[];a.pathI=0;a.onSite=false}},car(i,x,y){const c=traffic[i];if(c){c.x=x;c.y=y;c.go=1}}}}}catch{}
+ try{if(localStorage.getItem('localai.debug')==='1'){window.__awcLayout=layout;window.__awcSim={put(id,x,y){const a=agents.get(id);if(a){a.x=a.tx=x;a.y=a.ty=y;a.path=[];a.pathI=0;a.onSite=false}},car(i,x,y){const c=traffic[i];if(c){c.x=x;c.y=y;c.go=1}},
+  // the walk a worker would take to a zone (inside: to a desk; else to a spot on its apron), from where it stands now
+  // or, given `from`, from its desk inside that district. Nothing moves.
+  route(id,zone,inside,from){let a=agents.get(id);if(!a)return null;if(from){const d=workerTarget({id,state:'running'},from);a={...a,x:d.x,y:d.y,inside:true,insideZone:from}}const t=workerTarget({id,state:inside?'running':'complete'},zone);return{inside:!!(a.inside&&a.insideZone),from:a.inside?a.insideZone:a.zone,door:a.inside&&a.insideZone?districtDoor(a.insideZone):null,points:[{x:a.x,y:a.y},...routeToTarget(a,t,zone)]}}}}}catch{}
  document.body.classList.add('agent-world-city-ready');buildRoads();plantScenery();seedAmbient();syncDemoControls();syncHud();syncEventFeed();resize();start();bootstrap()
 }
 const IDLE=[['router','Team lead'],['ux_analyst','UX Analyst'],['documentation','Documentation Agent'],['research_agent','Research Agent'],['engineer','Engineer']];
@@ -1690,12 +1701,16 @@ function flowPath(a,b){
  return flowPaths.get(k)
 }
 // From a district's door (districtCenter) straight down its path to the street, then along the kerb to the middle of
-// the road tile: two straight legs, never a diagonal. Doors face south; the nearest street tile in the door's column
-// (or the one beside it) within three tiles, else the nearest anywhere, joined with an L.
-function doorLeg(id){
- const p=districtCenter(id),c=Math.floor(p.x/T);let t=null;
+// the road tile: two straight legs, never a diagonal. Doors face south; the nearest street tile in the point's column
+// (or the one beside it) within three tiles, else the nearest anywhere, joined with an L. When that street is behind
+// the door (the districts along the bottom edge, whose street is off the walkable map) the L runs along the front first,
+// so it never cuts back through the building. streetLeg does the same from any point (a worker's door step or apron
+// spot); a point already on a street tile just steps to its middle.
+function doorLeg(id){return streetLeg(districtCenter(id))}
+function streetLeg(p){
+ const c=Math.floor(p.x/T);let t=null;
  for(let y=Math.floor(p.y/T);y<Math.floor(p.y/T)+3&&!t;y++)for(const x of[c,c-1,c+1])if(reach.has(key(x,y))){t={x,y};break}
- t=t||nearestRoad(p);const e={x:(t.x+.5)*T,y:(t.y+.5)*T},legs=[p,{x:p.x,y:e.y},e];
+ t=t||nearestRoad(p);const e={x:(t.x+.5)*T,y:(t.y+.5)*T},legs=[{x:p.x,y:p.y},e.y<p.y-.5?{x:e.x,y:p.y}:{x:p.x,y:e.y},e];
  return legs.filter((q,i)=>!i||Math.hypot(q.x-legs[i-1].x,q.y-legs[i-1].y)>.5)
 }
 function along(f,t){let d=t*f.len;for(let i=0;i<f.seg.length;i++){if(d<=f.seg[i]){const a=f.p[i],b=f.p[i+1],k=f.seg[i]?d/f.seg[i]:0;return{x:a.x+(b.x-a.x)*k,y:a.y+(b.y-a.y)*k}}d-=f.seg[i]}return f.p.at(-1)}

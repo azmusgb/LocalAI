@@ -110,7 +110,7 @@ with `node tests/<name>-ui.mjs`.
 ### Screenshots and budgets
 
 - **`tests/visual-ui.mjs`** (part of `npm run test:browser`) starts its own server and compares screenshots of Home,
-  Work, Library, Projects, Backlog, Claude Code, Health and Models at 390 and 1280 px with the baselines in
+  Work, Library, Projects, Backlog, Claude Code, Health and Models at 390 and 1440 px with the baselines in
   `tests/visual/<platform>/` (`darwin` is committed; fonts differ per OS, so another OS writes its own baselines on the
   first run and passes). The lists get fixed data, the clock is fixed and the version and pairing code are masked. A
   failure writes `<page>.actual.png` and `<page>.diff.png` (changed pixels in red) to `tests/visual/<platform>/__results__/`.

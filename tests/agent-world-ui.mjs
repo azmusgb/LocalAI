@@ -593,8 +593,31 @@ const spriteScale = page => page.evaluate(() => { const l = window.__awcLayout()
     for (const f of flows) {
       assert.ok(f.points.length >= 3, `${f.from}>${f.to} has ${f.points.length} points`);
       f.points.slice(1).forEach((q, i) => { const p = f.points[i]; assert.ok(Math.abs(q.x - p.x) < 0.5 || Math.abs(q.y - p.y) < 0.5, `${f.from}>${f.to} leg ${i} is diagonal: ${JSON.stringify([p, q])}`); });
-      const [a, b] = f.points; assert.ok(Math.abs(a.x - b.x) < 0.5, `${f.from}>${f.to} leaves its door straight down`);
+      // straight down to a street in front of the door, or along the front when the street is behind it; never back up
+      const [a, b] = f.points; assert.ok(b.y >= a.y - 0.5, `${f.from}>${f.to} leaves its door without cutting back through the building`);
     }
+  });
+  await check('1440px: a worker walks out of the door straight to the street, then along it, with no diagonal leg', async () => {
+    const zones = ['command', 'ux', 'docs', 'engineering', 'validation', 'models', 'projects', 'repair'];
+    const ids = ['router', 'ux_analyst', 'documentation', 'code_analyst', 'performance_analyst', 'validator'];
+    // from where each worker stands now, and from a desk inside every district, to a desk or an apron spot in every district
+    const routes = await page.evaluate(({ ids, zones }) => ids.flatMap(id => [undefined, ...zones].flatMap(from => zones.flatMap(z => [true, false].map(inside => ({ id, z, inside, r: window.__awcSim.route(id, z, inside, from) }))))), { ids, zones });
+    assert.equal(routes.length, ids.length * (zones.length + 1) * zones.length * 2);
+    let fromInside = 0;
+    for (const { id, z, inside, r } of routes) {
+      const p = r.points, name = `${id} from ${r.from}${r.inside ? ' (inside)' : ''} to ${z}${inside ? ' (inside)' : ''}`;
+      assert.ok(p.length >= (r.inside && r.from === z && inside ? 1 : 2), `${name} has ${p.length} points`);
+      p.slice(1).forEach((q, i) => { const a = p[i]; assert.ok(Math.abs(q.x - a.x) < 0.5 || Math.abs(q.y - a.y) < 0.5, `${name} leg ${i} is diagonal: ${JSON.stringify([a, q])}`); });
+      if (r.inside) {
+        fromInside++;
+        if (r.from === z && inside) { assert.ok(p.every(q => q.y < r.door.outside.y), `${name} stays indoors`); continue; }
+        const at = p.findIndex(q => Math.abs(q.x - r.door.outside.x) < 0.5 && Math.abs(q.y - r.door.outside.y) < 0.5);
+        assert.ok(at > 0, `${name} goes out through its door`);
+        const di = p[at - 1]; assert.ok(Math.abs(di.x - r.door.outside.x) < 0.5 && di.y < r.door.outside.y, `${name} walks straight out of the door`);
+        assert.ok(p[at + 1].y >= r.door.outside.y - 0.5, `${name} does not turn back into the building from the door step`);
+      }
+    }
+    assert.equal(fromInside, ids.length * zones.length * zones.length * 2, 'every route from a desk is checked');
   });
   await check('1440px: a car stops short of a zebra crossing while a worker is on it, then drives on', async () => {
     // car 2 drives down the east avenue (x 816) towards the crossing at y 384-416; the UX Analyst stands on it
