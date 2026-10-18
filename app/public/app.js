@@ -603,7 +603,7 @@ async function refreshStatus(force=false){
   }catch(e){
     // No answer at all (offline, an untrusted certificate, Local AI restarting) is not the same as an answer that
     // couldn't be read; say which.
-    // An update restarting Local AI (the HTTPS front end says so) is neither: say that, and look again soon.
+    // An update restarting Local AI is neither: say so, and look again soon.
     const updating=!!(e&&e.updating);
     const why=updating?'Local AI is updating. This checks again in a moment.':e&&e.unreachable?"Can't reach Local AI from this device.":"Local AI answered, but its status couldn't be read.";
     $('homeDot').className=`dot ${updating?'DEGRADED':'DOWN'}`;$('homeState').textContent=updating?'Updating…':'Unavailable';

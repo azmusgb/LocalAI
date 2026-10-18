@@ -251,6 +251,11 @@ docker pull caddy:2.10-alpine                       # once, from a normal (not S
   up the name too. Otherwise it runs Caddy directly, and the appliance needs `LOCALAI_REMOTE_NAME` set by hand.
   Use the name, not the `100.x` address: browsers send no server name for an IP, so Caddy would answer with the LAN
   IP's certificate.
+- The appliance lists its addresses in `/healthz` and `/api/access` as `addresses: [{label: 'Home Wi-Fi', url},
+  {label: 'Anywhere (Tailscale)', url}]`, from `LOCALAI_HOST_IP` and `LOCALAI_REMOTE_NAME` (compose passes both from
+  `stack.env`; the installer re-run recreates the appliance with them). A phone's saved copy offers the address it
+  isn't using when Local AI can't be reached, and Health › Secure connection lists both. A missing value leaves its
+  address out.
 - The firewall rule `Local AI HTTPS` opens 80 and 443 on private networks only.
 - After editing `deploy\caddy\Caddyfile`: `docker exec local-ai-https caddy reload --config /etc/caddy/Caddyfile`,
   or re-run the installer. Caddy reads the file from `C:\LocalAI\repo\deploy\caddy`, which the auto-deploy keeps

@@ -80,3 +80,11 @@ test('the HTTPS front end rides over an appliance restart', () => {
   const html = /respond `(<!doctype[^`]*)`/.exec(updating)[1];
   assert.doesNotMatch(html, /[{}]/);
 });
+
+// /healthz lists the addresses a phone can switch to; the appliance needs both the LAN IP and the Tailscale name.
+test('the appliance gets the host IP and the Tailscale name from stack.env', () => {
+  const compose = read('deploy/stack/compose.yml');
+  const appliance = compose.slice(compose.indexOf('\n  appliance:'), compose.indexOf('\n  https:'));
+  assert.match(appliance, /LOCALAI_REMOTE_NAME: \$\{LOCALAI_REMOTE_NAME:-\}/);
+  assert.match(appliance, /LOCALAI_HOST_IP: \$\{LOCALAI_HOST_IP:-\}/);
+});

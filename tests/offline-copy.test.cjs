@@ -64,9 +64,21 @@ test('only Local AI\'s own health payload counts as reachable (not a proxy 502 o
 test('isUpdatingReply recognises the HTTPS front end saying Local AI is updating, and nothing else', () => {
   const body = { error: 'Local AI is updating', updating: true };
   assert.equal(offline.isUpdatingReply(503, body), true);
-  assert.equal(offline.isUpdatingReply(502, { error: 'Local AI is updating' }), true);
+  assert.equal(offline.isUpdatingReply(502, body), true);
   assert.equal(offline.isUpdatingReply(200, body), false);
   assert.equal(offline.isUpdatingReply(500, { error: 'boom' }), false);
   assert.equal(offline.isUpdatingReply(503, { error: 'Ollama is down' }), false);
   assert.equal(offline.isUpdatingReply(502, null), false, 'a bare 502 could be a crash: not called an update');
+});
+
+test('otherAddresses offers the addresses that are not this page, Tailscale marked, https only', () => {
+  const list = [{ label: 'Home Wi-Fi', url: 'https://10.0.0.21' }, { label: 'Anywhere (Tailscale)', url: 'https://bill-hpdesktop.tailfa018e.ts.net' }];
+  assert.deepEqual(offline.otherAddresses(list, 'https://10.0.0.21'), [{ label: 'Anywhere (Tailscale)', url: 'https://bill-hpdesktop.tailfa018e.ts.net/', tailscale: true }]);
+  assert.deepEqual(offline.otherAddresses(list, 'https://bill-hpdesktop.tailfa018e.ts.net'), [{ label: 'Home Wi-Fi', url: 'https://10.0.0.21/', tailscale: false }]);
+  assert.equal(offline.otherAddresses(list, 'https://localai.home.arpa').length, 2);
+  // nothing saved yet, or junk: nothing to offer, and never a script or plain-HTTP link
+  assert.deepEqual(offline.otherAddresses(null, 'https://10.0.0.21'), []);
+  assert.deepEqual(offline.otherAddresses([{ label: 'x', url: 'javascript:alert(1)' }, { label: 'y', url: 'http://10.0.0.21' }, { label: 'z' }, null], 'https://a'), []);
+  // the same address twice is offered once
+  assert.equal(offline.otherAddresses([list[1], list[1]], 'https://10.0.0.21').length, 1);
 });

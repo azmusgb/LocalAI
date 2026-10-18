@@ -21,10 +21,21 @@ const buildKey=b=>`${b&&b.version||''}@${b&&b.releaseCommit||''}`;
 // Only Local AI's own health payload means Local AI answered. Caddy keeps answering while the appliance restarts
 // (502), and a captive portal answers anything; neither is Local AI. A 503 from Local AI itself still is.
 const isLocalAIHealth=d=>!!d&&typeof d==='object'&&d.appliance==='Local AI'&&typeof d.version==='string'&&d.version!=='';
-// While a deploy recreates the appliance, the HTTPS front end (deploy/caddy/Caddyfile) answers API calls with
-// 503 {error:"Local AI is updating", updating:true} and Retry-After: that is an update, not a failure.
-const isUpdatingReply=(status,body)=>(status===502||status===503||status===504)&&!!body&&typeof body==='object'&&(body.updating===true||body.error==='Local AI is updating');
-const api={relativeTime,buildDiffers,buildKey,isLocalAIHealth,isUpdatingReply};
+// Caddy's answer while a deploy restarts the appliance (deploy/caddy/Caddyfile): an update, not a failure.
+const isUpdatingReply=(status,body)=>status>=502&&status<=504&&body?.updating===true;
+// The appliance's other addresses (/healthz and index.html carry them: Home Wi-Fi, Anywhere (Tailscale)). A saved copy
+// offers the ones that aren't this page's own: away from home, the Tailscale one still answers.
+function otherAddresses(list,origin){
+ if(!Array.isArray(list))return [];
+ const seen=new Set([String(origin||'')]),out=[];
+ for(const a of list){
+  let u;try{u=new URL(String(a&&a.url||''))}catch{continue}
+  if(u.protocol!=='https:'||seen.has(u.origin))continue;
+  seen.add(u.origin);out.push({label:String(a.label||u.host),url:u.origin+'/',tailscale:/tailscale/i.test(String(a.label||''))||/\.ts\.net$/i.test(u.hostname)});
+ }
+ return out;
+}
+const api={relativeTime,buildDiffers,buildKey,isLocalAIHealth,isUpdatingReply,otherAddresses};
 if(typeof module==='object'&&module.exports){module.exports=api;return}
 if(typeof document==='undefined')return;
 
@@ -33,13 +44,18 @@ const meta=name=>document.querySelector(`meta[name="${name}"]`);
 const page={version:meta('localai-version')?.content||'',releaseCommit:meta('localai-release')?.content||''};
 const mark=meta('localai-offline-copy');
 const copy={active:!!mark,savedAt:mark?mark.content:''};
+// Saved on each answer from /healthz; the page's own meta is the fallback (both survive with no network).
+const ADDR_KEY='localai.addresses';
+function parseList(text){try{const v=JSON.parse(text||'null');return Array.isArray(v)?v:null}catch{return null}}
+function knownAddresses(){let saved=null;try{saved=parseList(localStorage.getItem(ADDR_KEY))}catch{}return saved||parseList(meta('localai-addresses')?.content)||[]}
+function rememberAddresses(list){if(!Array.isArray(list))return;try{localStorage.setItem(ADDR_KEY,JSON.stringify(list))}catch{}}
 // One /healthz request at a time, reused for a moment so Health's cards share it. null: Local AI didn't answer.
 let pending=null,pendingAt=0;
 function healthz(){
  if(pending&&Date.now()-pendingAt<3000)return pending;
  pendingAt=Date.now();
  const signal=typeof AbortSignal!=='undefined'&&typeof AbortSignal.timeout==='function'?AbortSignal.timeout(6000):undefined;
- pending=fetch('/healthz',{cache:'no-store',signal}).then(async r=>{let data=null;try{data=await r.json()}catch{}return isLocalAIHealth(data)?{status:r.status,data}:null}).catch(()=>null);
+ pending=fetch('/healthz',{cache:'no-store',signal}).then(async r=>{let data=null;try{data=await r.json()}catch{}if(!isLocalAIHealth(data))return null;rememberAddresses(data.addresses);return {status:r.status,data}}).catch(()=>null);
  return pending;
 }
 async function reachable(){return !!(await healthz())}
@@ -69,6 +85,21 @@ function showBanner(){
   document.body.prepend(el);
  }
  el.querySelector('.offline-banner__text').textContent=bannerText();
+ showOtherAddresses(el);
+}
+// One tap to the address that may still work, with what the phone needs for it. Built from saved data only.
+function showOtherAddresses(el){
+ const others=otherAddresses(knownAddresses(),location.origin);
+ let box=el.querySelector('.offline-banner__alt');
+ if(!others.length){box?.remove();return}
+ if(!box){box=document.createElement('div');box.className='offline-banner__alt';el.querySelector('.offline-banner__text').after(box)}
+ box.replaceChildren(...others.map(a=>{
+  const row=document.createElement('p'),link=document.createElement('a');
+  link.className='btn-primary offline-banner__open';link.href=a.url;link.textContent=a.tailscale?'Open over Tailscale':`Open on ${a.label}`;
+  row.append(link);
+  if(a.tailscale){const hint=document.createElement('span');hint.className='offline-banner__hint';hint.textContent='Turn on Tailscale on this phone first.';row.append(' ',hint)}
+  return row;
+ }));
 }
 let timer=0;
 async function check(){

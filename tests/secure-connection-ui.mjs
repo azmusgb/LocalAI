@@ -111,6 +111,20 @@ await check('computer with Tailscale: an away-from-home code opens the Tailscale
 });
 await away.close();
 
+// Health lists both addresses and says which one to put on the Home Screen to use Local AI anywhere.
+const both = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+await both.route(u => u.pathname === '/api/access', r => r.fulfill({ json: { remoteName: 'localai-pc.tail1234.ts.net', addresses: [{ label: 'Home Wi-Fi', url: 'https://10.0.0.21' }, { label: 'Anywhere (Tailscale)', url: 'https://localai-pc.tail1234.ts.net' }] } }));
+await both.goto(`http://${name}:${base.port}/#status`, { waitUntil: 'load' });
+await check('Health › Secure connection shows both addresses and the one icon that works everywhere', async () => {
+  await both.waitForSelector('#status.active .secure-card .secure-addresses', { timeout: 8000 });
+  const box = both.locator('.secure-addresses');
+  assert.match(await box.innerText(), /Home Wi-Fi\s*https:\/\/10\.0\.0\.21.*Anywhere \(Tailscale\)\s*https:\/\/localai-pc\.tail1234\.ts\.net/s);
+  assert.match(await box.innerText(), /Add to Home Screen from the Tailscale address to use Local AI anywhere/);
+  assert.equal(await box.locator('a[href="https://localai-pc.tail1234.ts.net/"]').count(), 1);
+  assert.ok(await both.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no sideways scroll');
+});
+await both.close();
+
 const local = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
 await local.goto(`${base.origin}/#home`, { waitUntil: 'load' });
 await check('the computer itself (localhost) gets no Home reminder', async () => {
