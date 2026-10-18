@@ -31,6 +31,11 @@ test('agent and automation runs', () => {
   assert.equal(a.icon, 'automate');
   assert.deepEqual(a.preview, { type: 'mission', text: 'Do a thing' });
   assert.equal(a.view, 'agents');
+  // A mission that finished without some follow-ups says so before its answer.
+  const n = runCard({ id: 'r9', type: 'agent', status: 'completed', summary: 'The answer', output: { missionId: 'm', outcome: 'complete', note: '2 follow-ups ran out of time' } }, none);
+  assert.equal(n.summary, '2 follow-ups ran out of time · The answer');
+  assert.deepEqual(n.preview, { type: 'mission', text: '2 follow-ups ran out of time · The answer' });
+  assert.deepEqual(n.badge, { label: 'Done', tone: 'good' });
   const u = runCard({ id: 'legacy-automation:1', type: 'automation', status: 'failed', retryable: true }, none);
   assert.equal(u.icon, 'refresh');
   assert.equal(u.view, 'automationStudio');

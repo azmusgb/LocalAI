@@ -2226,7 +2226,7 @@ function startMissionRun(goal,projectId,ids,allowWeb=false){
     const ws=m.workers||[],done=ws.filter(w=>w.state==='complete').length,pct=ws.length?Math.max(5,Math.min(95,Math.round(done/ws.length*100))):5;
     if(m.status==='running'){const sig=pct+':'+done;if(sig===last)return;last=sig;runLedger.update(run.id,{status:'running',progress:pct},'Mission progress: '+done+' of '+ws.length+' steps');return}
     ended=true;off();activeRunControllers.delete(run.id);
-    if(m.status==='complete')runLedger.complete(run.id,{summary:String(m.answer||'Mission complete').replace(/\s+/g,' ').trim().slice(0,600),output:{missionId:m.id,outcome:m.status},meta:{missionId:m.id}});
+    if(m.status==='complete')runLedger.complete(run.id,{summary:String(m.answer||'Mission complete').replace(/\s+/g,' ').trim().slice(0,600),output:{missionId:m.id,outcome:m.status,...(m.note?{note:String(m.note).slice(0,200)}:{})},meta:{missionId:m.id}});
     else runLedger.update(run.id,{status:'failed',error:String(m.error||'The mission needs attention.').slice(0,8000),output:{missionId:m.id,outcome:m.status},meta:{missionId:m.id}},'Mission '+m.status);
   };
   // `done` settles with the mission (or its error) for callers that wait for it; the run records the outcome either way.

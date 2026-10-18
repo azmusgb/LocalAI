@@ -28,6 +28,9 @@ function New-Fixture {
     foreach ($dir in @($repo, $live, (Join-Path $repo 'app'), (Join-Path $repo 'deploy'), (Join-Path $repo 'tests'))) { [System.IO.Directory]::CreateDirectory($dir) | Out-Null }
     foreach ($name in @('server.js','storage.js','storage-cli.js','release.js')) { Set-Content -LiteralPath (Join-Path $repo "app/$name") -Value 'candidate source' }
     Set-Content -LiteralPath (Join-Path $live 'server.js') -Value 'legacy source'
+    foreach ($dir in @((Join-Path $repo 'docs'), (Join-Path $repo 'host'))) { [System.IO.Directory]::CreateDirectory($dir) | Out-Null }
+    Set-Content -LiteralPath (Join-Path $repo 'docs/GRIDCRAFT.md') -Value '# GridCraft'
+    Set-Content -LiteralPath (Join-Path $repo 'host/gridcraft-bridge.py') -Value 'bridge'
     Copy-Item -LiteralPath (Join-Path $repository 'deploy/Storage-LocalAI.ps1') -Destination (Join-Path $repo 'deploy/Storage-LocalAI.ps1')
     Copy-Item -LiteralPath (Join-Path $repository 'deploy/Deployment-LocalAI.ps1') -Destination (Join-Path $repo 'deploy/Deployment-LocalAI.ps1')
     Set-Content -LiteralPath (Join-Path $repo 'deploy/Test-LocalAI-Candidate.ps1') -Value 'param($CandidateRoot)'
@@ -70,7 +73,7 @@ function git {
 function tar {
     $Arguments = [string[]]$args
     $destination = $Arguments[[Array]::IndexOf($Arguments,'-C')+1]
-    foreach ($dir in @('app','deploy','tests')) { Copy-Item -LiteralPath (Join-Path $fixture.Repo $dir) -Destination $destination -Recurse }
+    foreach ($dir in @('app','deploy','tests','docs','host')) { if (Test-Path -LiteralPath (Join-Path $fixture.Repo $dir)) { Copy-Item -LiteralPath (Join-Path $fixture.Repo $dir) -Destination $destination -Recurse } }
     $global:LASTEXITCODE=0
 }
 function robocopy {
@@ -166,6 +169,8 @@ try {
         Assert-True ($state.rollbackSnapshotCommit -eq $oldSha) 'Rollback identity missing'
         Assert-True ($f.Running) 'Container did not restart'
         Assert-True (@($f.Calls | Where-Object { $_ -contains 'preflight' }).Count -eq 2) 'Stopped-data recheck was omitted'
+        # Missions read docs/ and host/ from inside the app tree (app/mission-evidence.js).
+        Assert-True ((Test-Path -LiteralPath (Join-Path $f.Live 'repo-context/docs/GRIDCRAFT.md')) -and (Test-Path -LiteralPath (Join-Path $f.Live 'repo-context/host/gridcraft-bridge.py'))) 'Docs and host scripts did not ship with the app'
     }
     Test-Case 'failed candidate health restores old code and exports SQLite before JSON rollback' {
         $f = New-Fixture; $f.RejectNewRelease=$true

@@ -123,13 +123,15 @@ test('a fallback that throws keeps sibling results and leaves no worker running'
   assert.ok(mission.timeline.some(e => e.type === 'fallback' && /failed/.test(e.detail)));
 });
 
-test('a coordinator failure settles every worker', async t => {
+// A coordinator that fails leaves no answer: the mission needs you (cancelling it is still an error).
+test('a coordinator failure settles every worker and needs you', async t => {
   const { orchestrator } = fixture(t, (prompt, system) => {
     if (system.includes('mission coordinator')) throw new Error('Model rejected request');
     return 'Finding [app/server.js]';
   });
   const mission = await orchestrator.mission('Review design', '', ['ux_analyst']);
-  assert.equal(mission.status, 'error');
+  assert.equal(mission.status, 'needs_attention');
+  assert.equal(mission.error, 'No answer: Model rejected request');
   assert.equal(mission.workers.find(w => w.id === 'synthesis').state, 'error');
   assert.ok(orchestrator.missions()[0].workers.every(w => !['running', 'pending'].includes(w.state)));
 });

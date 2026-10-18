@@ -31,7 +31,9 @@ function runCard(run, { approvalFor, changeFor } = {}) {
   const type = LEGACY_TYPES[run.type] || run.type; // older mission and specialist runs are agent runs
   const kind = Object.prototype.hasOwnProperty.call(KINDS, type) ? type : 'other';
   const [icon, view] = KINDS[kind] || ['system', 'runs'];
-  const summary = String(run.summary ?? ''), out = run.output && typeof run.output === 'object' ? run.output : {}, meta = run.meta && typeof run.meta === 'object' ? run.meta : {};
+  const out = run.output && typeof run.output === 'object' ? run.output : {}, meta = run.meta && typeof run.meta === 'object' ? run.meta : {};
+  // A mission that finished without some optional follow-ups says so first: "2 follow-ups ran out of time · <answer>".
+  const note = kind === 'agent' && typeof out.note === 'string' ? out.note.trim() : '', summary = (note ? note + ' · ' : '') + String(run.summary ?? '');
   let preview = null;
   if (kind === 'chat' || kind === 'research') preview = { type: 'text', text: String(out.text || summary).slice(0, 240) };
   else if (kind === 'image') { const imgs = Array.isArray(out.images) ? out.images : []; preview = { type: 'image', src: imgs[0]?.imageUrl || '', count: imgs.length } }
