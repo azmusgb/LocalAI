@@ -11,7 +11,8 @@ from typing import Any
 from mcp import Client, StdioServerParameters
 from openai import AsyncOpenAI
 
-from gridcraft_journal import MODES, Journal, ToolRefused, allowed_tools
+from gridcraft_answer import Reads, check_answer
+from gridcraft_journal import MODES, Journal, ToolRefused, allowed_tools, is_write
 
 
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"
@@ -29,6 +30,7 @@ CORE_TOOL_NAMES = {
     "inspect_workbook",
     "read_range",
     "get_cell",
+    "evaluate_formula",
     "write_range",
     "set_cell",
     "format_range",
@@ -63,6 +65,9 @@ Rules:
 - Never claim a workbook change succeeded unless the tool result indicates success.
 - Keep the final answer concise. It must contain the actual information the user asked for (names, values, counts, findings) taken from the tool results, plus what changed, if anything.
 - Never reply only that the request is complete; the user cannot see tool results, so restate them.
+- For a total, sum, average, count, minimum or maximum, compute it without changing the workbook: use evaluate_formula
+  with a formula such as =SUM(Sales!D2:D17) (or AVERAGE, COUNT, MIN, MAX) and state the number it returns in your
+  answer. Find the column and its rows with inspect_workbook or read_range first.
 """
 
 MODE_PROMPTS = {
@@ -295,6 +300,7 @@ async def run_agent_turn(
     action_request = journal.mode != "read" and looks_like_action_request(user_text)
     completion_gate_used = False
     tool_calls_seen: list[str] = []
+    reads = Reads()
 
     for round_index in range(1, MAX_TOOL_ROUNDS + 1):
         print(f"[agent] model turn {round_index} ...", flush=True)
@@ -360,7 +366,20 @@ async def run_agent_turn(
                 continue
 
             print("[agent] model returned final text.", flush=True)
-            return final_text or "(The model returned no text.)"
+
+            async def ask_without_tools(prompt: str) -> str:
+                # One short turn with no tools: the question, the values read, and the request to state them.
+                response = await llm.chat.completions.create(
+                    model=models["current"],
+                    messages=[history[0], {"role": "user", "content": f"Question: {user_text}\n\n{prompt}"}],
+                    temperature=0.1,
+                )
+                return (response.choices[0].message.content or "") if response.choices else ""
+
+            answer = await check_answer(final_text, user_text, reads, ask_without_tools)
+            if answer != final_text:
+                history[-1]["content"] = answer
+            return answer or "(The model returned no text.)"
 
         for call in message.tool_calls:
             tool_calls_seen.append(call.function.name)
@@ -370,6 +389,8 @@ async def run_agent_turn(
             print(f"[agent] tool call: {call.function.name} {raw_args_preview}", flush=True)
             tool_name = call.function.name
             raw_arguments = call.function.arguments or "{}"
+            arguments: Any = None
+            failed = True
 
             try:
                 arguments = json.loads(raw_arguments)
@@ -392,6 +413,7 @@ async def run_agent_turn(
                 try:
                     result = await journal.call(tool_name, arguments)
                     result_text = tool_result_to_text(result)
+                    failed = bool(getattr(result, "is_error", False))
                 except ToolRefused as exc:
                     result_text = json.dumps(
                         {"is_error": True, "content": [{"type": "text", "text": str(exc)}]},
@@ -410,6 +432,12 @@ async def run_agent_turn(
                         },
                         ensure_ascii=False,
                     )
+
+            # What the answer has to state (values read), and whether this was a change request after all.
+            if isinstance(arguments, dict):
+                reads.add(tool_name, arguments, result_text)
+            if is_write(tool_name) and not failed:
+                reads.wrote = True
 
             print(
                 f"[agent] tool result: {call.function.name} -> "
@@ -493,7 +521,7 @@ async def async_main() -> int:
             else:
                 tools = [tool for tool in all_tools if tool.name in CORE_TOOL_NAMES]
                 tool_profile = "core"
-            # Read only mode takes every read tool GridCraft has (evaluate_formula is not in the core set).
+            # Read only mode takes every read tool GridCraft has (list_functions is not in the core set).
             pool = all_tools if args.mode == "read" else tools
             allowed = allowed_tools(args.mode, {tool.name for tool in pool})
             tools = [tool for tool in pool if tool.name in allowed]

@@ -120,6 +120,13 @@ changed: `set_cell` and `write_range` cell by cell (before, after, computed afte
 writes as one line, and the number of GridCraft undo steps the request made. It prints that journal as one
 `[journal] {...}` line on stderr, also when the request fails, and `/run` returns it as `journal`.
 
+Answers state the values they found. The model is told to compute totals, averages and counts with
+`evaluate_formula` (for example `=SUM(Sales!D2:D17)`), which every mode offers, instead of writing a formula into the
+workbook. When a request that changed nothing read values (`read_range`, `get_cell`, `evaluate_formula`) but the
+answer states none of them, or only says it "verified" or "addressed" the request, the agent
+(`host/gridcraft-agent/gridcraft_answer.py`) asks the model once more without tools, giving it the values read; if
+that answer still has none, it appends `Values read: …` from the tool results.
+
 Without a model, through `host/gridcraft-agent/gridcraft_ops.py`:
 
 - `GET /workbook?sheet=&range=`: title, file name (never the host path), unsaved flag, sheets, and up to 100 rows by 40
