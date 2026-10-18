@@ -2,8 +2,9 @@
 
 // Services › Workshop display: the BambuHelper touchscreen beside the 3D printer (docs/WORKSHOP-DISPLAY.md).
 // Local AI only reads the display's one public route, GET /hardware/health, and links to the display's own portal.
-// It never proxies the portal: that has its own sign-in, CSRF and same-origin checks and the printer controls (Stop
-// among them), and a second way in through Local AI would get around all three.
+// It never proxies the portal, which holds the printer controls (Stop among them). The portal is meant to have its own
+// sign-in, CSRF and same-origin checks; the firmware installed on 18 Oct 2026 has no sign-in (docs/WORKSHOP-DISPLAY.md,
+// Current state), and Local AI must not become another way to the controls either way.
 const { modelFetchWithTimeout } = require('./model-http');
 
 const DEFAULT_URL = 'http://10.0.0.124';

@@ -161,8 +161,8 @@ through cloud services with your ArtCraft account, so what you type and the pict
 what it makes stays in that account. For anything private, use **Images**, which stays on this computer.
 
 **System › Services** also has a card for the Workshop display, the touchscreen beside the printer: it says whether
-the display is answering, and **Open Workshop portal** opens the display's own page, where you sign in with its
-access code. Away from home, Tailscale must be on ([Workshop display](WORKSHOP-DISPLAY.md)).
+the display is answering, and **Open Workshop portal** opens the display's own page. (Its current firmware has no sign-in; an update
+that brings it back is being prepared.) Away from home, Tailscale must be on ([Workshop display](WORKSHOP-DISPLAY.md)).
 
 ## Automations
 

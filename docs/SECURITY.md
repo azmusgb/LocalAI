@@ -98,7 +98,8 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
 - **GridCraft bridge.** Bound to `127.0.0.1`; CORS limited to the configured LocalAI origins; one run at a time.
 - **Workshop display.** The appliance only reads the display's public `GET /hardware/health` (`LOCALAI_WORKSHOP_URL`,
   private addresses and `.local` names only) and passes on five fields; the display's portal and printer controls are
-  linked to, never proxied, so its own sign-in and same-origin checks stay the only way in
+  linked to, never proxied, so Local AI never becomes a way to the printer controls. Note: the display's current firmware has no sign-in at all
+  (see [Workshop display › Current state](WORKSHOP-DISPLAY.md#current-state-18-oct-2026-the-portal-has-no-sign-in)); a fix is being prepared in that repo
   ([Workshop display](WORKSHOP-DISPLAY.md#why-the-portal-isnt-proxied)).
 - **No secrets in the image or repo.** `.gitignore` excludes keys and `.env`; CI and the candidate test
   fail on `.env`, `.key`, `.pem`, `.pfx` or `.p12` files under `app/`. Tokens reach the container only as

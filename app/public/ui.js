@@ -2677,8 +2677,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       actions: [{ type: 'post', url: '/api/artcraft/open', label: 'Open on the Windows computer', done: 'ArtCraft is opening on the Windows computer', already: "It's already open there" }]
     },
     {
-      id: 'workshop', name: 'Workshop display', tier: 'bridge', decision: 'On your network · its own sign-in', source: 'workshop',
-      summary: 'The touchscreen beside the 3D printer. Its own page has its own access code and the printer controls, so you sign in there, not in Local AI.',
+      id: 'workshop', name: 'Workshop display', tier: 'bridge', decision: 'On your network · no sign-in yet', source: 'workshop',
+      summary: 'The touchscreen beside the 3D printer. Its page has the printer controls and, for now, no sign-in; an update to fix that is coming.',
       guidance: 'Away from home, Tailscale must be on.',
       actions: [{ type: 'portal', label: 'Open Workshop portal' }]
     },
