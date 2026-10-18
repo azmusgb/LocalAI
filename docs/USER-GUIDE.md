@@ -24,10 +24,10 @@ There are five sections. On a phone they are the tabs at the bottom; on a comput
 | Section | What it's for |
 |---|---|
 | **Home** | Start something, see what needs you, pick up where you left off |
-| **Work** | Everything that is running or done: chats, images, missions, changes |
-| **Projects** | What you keep: your projects with their Sources and Memory, and everything you kept |
+| **Work** | Everything that is running or done (chats, images, missions, changes), and **Automations**, what runs on a schedule |
+| **Projects** | What you make and keep: your projects with their Sources and Memory, your **Library**, and **Spreadsheets** |
 | **Improve** | Changing Local AI itself: ideas, problems it noticed, changes in progress, what shipped |
-| **System** | Health, models, services, automations, the audit log and tools |
+| **System** | Health, models, services and the audit log (and the developer tools, when they are on) |
 
 To jump anywhere, press **⌘K** on a computer or tap the **magnifier** on a phone, then type a page name. If no page
 matches, **Search your work for …** looks through your chats, images and runs.
@@ -73,7 +73,7 @@ The Projects tab opens on your projects. Its tabs:
 - **Projects:** group related work, each with its own sources and memory.
 - **Sources:** files and notes the assistant can search when it answers.
 - **Memory:** facts the assistant keeps about each project.
-- **Everything you kept** (once called Library): your conversations and research as a list, newest first, and your
+- **Library**: your conversations and research as a list, newest first, and your
   images as pictures after them. Filter by kind, or show only what you **pinned**. ☆ pins an item; × deletes it.
   Work is everything you did; this is what you kept. Old Library links open this tab.
 
@@ -102,7 +102,7 @@ It keeps alerts you missed while notifications were quiet. The bell shows one nu
 waiting. Old Approvals links open the Inbox.
 
 ## Spreadsheets
-**System › Spreadsheets** shows the workbook open in GridCraft on the Windows computer and asks GridCraft to check or
+**Projects › Spreadsheets** shows the workbook open in GridCraft on the Windows computer and asks GridCraft to check or
 change it. Pick a sheet tab to see its cells; tap a cell for its value and formula, and **Ask about this cell** to put its
 address in your request. **Show formulas** shows formula text in the grid. Long sheets page by 100 rows.
 
@@ -130,7 +130,7 @@ what it makes stays in that account. For anything private, use **Images**, which
 
 ## Automations
 
-**System › Automations** is one page for everything that runs by itself. Pick a **Kind**, then create it:
+**Work › Automations** is one page for everything that runs by itself. Pick a **Kind**, then create it:
 
 | Kind | What it does |
 |---|---|
@@ -182,7 +182,7 @@ for the word in the first.
 | **Service** | Something Local AI runs on or connects to, such as Ollama, ComfyUI, n8n or GridCraft. **System › Services** lists them. | companion, capability, integration, tool, bridge, extension |
 | **Project** | A group of related work, with its own Sources and Memory. | workspace |
 | **Source** | A file or note a project's assistant can look things up in. | knowledge source |
-| **Kept** | What you kept from your work: **Projects › Everything you kept**. | artifact, library item |
+| **Kept** | What you kept from your work: **Projects › Library**. | artifact, library item |
 | **Check again** | Asks every service how it is doing, now (Health, Services). | Refresh status, Recheck |
 | **Run checks** | Looks for problems in Local AI now (Signals). | Run checks now, Scan now, Run quality scan |
 | **Refresh** | Reloads a list. | Reload |

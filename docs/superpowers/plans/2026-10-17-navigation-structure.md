@@ -9,10 +9,13 @@ Spec: `docs/superpowers/specs/2026-10-17-navigation-structure-design.md`. One PR
    pages list), claude-board, layout. This PR also carries the spec and this plan.
 2. **Fixed header slots** (spec: Fixed header). Search and bell on every page; Refresh and "+" move into their
    pages. Tests: mobile, layout, tap-targets, visual.
-3. **Pages to their areas** (spec table). Automations → Work › Scheduled; Spreadsheets → Projects; "Everything you
+3. **Pages to their areas** (spec table). Automations → a tab of Work (keeps its name); Spreadsheets → Projects; "Everything you
    kept" → "Library" in the registry and copy. Tests: navigation, router, search (⌘K labels), visual.
-4. **One strip everywhere** (N5). Phone: drop the "⌄" sheet; Projects' tabs use the strip; Work's kinds become
-   chips. Desktop: drop the section column and the breadcrumb, use the strip under the H1. Tests: a11y-nav,
+   Done with part of step 4, because moving pages without it stacked two identical tab rows: the phone strip lists a
+   page's tabs (Projects › Library, Work › Automations) and the page's own tab row hides there; page tabs are
+   underlined everywhere (`.ux-page-tabs`), so they never look like the boxed filters under them.
+4. **One strip everywhere** (N5), the rest. Phone: drop the "⌄" sheet. Desktop: drop the section column and the
+   breadcrumb, use the strip under the H1. Tests: a11y-nav,
    navigation, layout, mobile, visual (largest PR; may split phone / desktop).
 5. **One "what needs me"**. Bell count opens the Inbox; drop the desktop "Attention" footer; Inbox leaves Home's
    strip. Tests: notifications, home, navigation.

@@ -85,7 +85,9 @@ await check('opening a page loads its data even without a nav button click', asy
 for (const [parent, child, childTab, domain] of [
   // Issues / Quality signals are hidden while Signals (Improve) shows the same detections.
   ['projects', 'knowledge', 'Sources', 'projects'],
-  ['projects', 'library', 'Everything you kept', 'projects'],
+  ['projects', 'library', 'Library', 'projects'],
+  ['projects', 'spreadsheets', 'Spreadsheets', 'projects'],
+  ['work', 'automationStudio', 'Automations', 'work'],
 ]) {
   await check(`${child} is a tab of ${parent}`, async () => {
     await page.locator(`.ux-primary-item[data-domain="${domain}"]`).click();
@@ -171,12 +173,12 @@ await check('page list collapses to the rail, shows the page strip, and remember
   assert.equal(await page.locator('#uxPageStrip').isVisible(), false);
 });
 
-await check('the Projects tab lands on Projects, and Library is its "Everything you kept" tab (D7)', async () => {
+await check('the Projects tab lands on Projects, and Library is its Library tab (D7)', async () => {
   await page.locator('.ux-primary-item[data-domain="projects"]').click();
   await page.waitForSelector('#projects.active');
   assert.equal(await page.evaluate(() => location.hash), '#projects');
   const tabs = await page.locator('#projects .ux-tabs .ux-tab').allInnerTexts();
-  assert.ok(tabs.includes('Everything you kept'), tabs.join(','));
+  assert.ok(tabs.includes('Library'), tabs.join(','));
   assert.equal((await secondaryLabels()).includes('Library'), false, 'Library has no menu entry of its own');
   await page.locator('#projects .ux-tab[data-ux-tab="library"]').click();
   await page.waitForSelector('#library.active');
@@ -187,7 +189,7 @@ await check('the Projects tab lands on Projects, and Library is its "Everything 
   await page.waitForSelector('#home.active');
   await page.evaluate(() => { location.hash = '#library' });
   await page.waitForSelector('#library.active');
-  assert.equal(await page.locator('#library [role="tablist"] .ux-tab.active').innerText(), 'Everything you kept');
+  assert.equal(await page.locator('#library [role="tablist"] .ux-tab.active').innerText(), 'Library');
 });
 
 await check('no script errors while navigating', async () => {
@@ -314,7 +316,7 @@ await mobile.close();
 
 // Developer tools off (a new install): System's menu, the page strip and the phone sheet hold the owner's pages only.
 // The developer pages still open by address, and the switch brings them back.
-const OWNER_SYSTEM = ['Health', 'Models', 'Services', 'Automations', 'Spreadsheets', 'Audit log']; // Monitors folded into Automations (D9)
+const OWNER_SYSTEM = ['Health', 'Models', 'Services', 'Audit log']; // Automations is in Work, Spreadsheets in Projects (navigation step 3)
 const DEV_SYSTEM = ['Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows']; // Claude Code is in Improve (N2)
 await check('developer tools off: System lists the owner pages only; a developer page still opens by address', async () => {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
@@ -325,7 +327,7 @@ await check('developer tools off: System lists the owner pages only; a developer
   await pg.waitForFunction(() => typeof window.showView === 'function' && document.body.classList.contains('dev-tools-off'));
   await pg.waitForSelector('#status.active');
   assert.deepEqual(await pg.locator('#uxSecondaryGroups .ux-link-label').allInnerTexts(), OWNER_SYSTEM);
-  assert.deepEqual(await pg.locator('#uxSecondaryGroups .ux-secondary-label').allInnerTexts(), ['Health', 'Automations', 'Tools', 'History'], 'Tools shows only Spreadsheets');
+  assert.deepEqual(await pg.locator('#uxSecondaryGroups .ux-secondary-label').allInnerTexts(), ['Health', 'History'], 'with developer tools off, System holds no tools');
   await pg.locator('.ux-nav-collapse').click();
   assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), OWNER_SYSTEM);
   await pg.locator('.ux-nav-expand').click();

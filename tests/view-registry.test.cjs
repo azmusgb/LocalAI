@@ -49,10 +49,10 @@ test('Monitors is part of Automations: #operations opens Automations (D9)', () =
   assert.ok(registry.view('automationStudio').aka.includes('morning brief'), 'typing "morning brief" in ⌘K finds Automations');
 });
 
-test('Library is a tab of Projects named "Everything you kept" (D7)', () => {
+test('Library is a tab of Projects named Library (D7, navigation step 3)', () => {
   const lib = registry.view('library');
   assert.equal(lib.parent, 'projects');
-  assert.equal(lib.tab, 'Everything you kept');
+  assert.equal(lib.tab, 'Library');
   assert.equal(registry.page('library').id, 'projects');
   assert.ok(registry.tabs('projects').some(v => v.id === 'library'));
   assert.deepEqual(registry.sections('projects').flatMap(s => s.views), ['projects'], 'Projects is the only page in its domain');
@@ -131,7 +131,8 @@ test('tabs belong to a top-level page in the same domain', () => {
   assert.equal(registry.resolve('approvals'), 'inbox');
   assert.equal(registry.view('approvals').id, 'inbox');
   assert.notEqual(registry.view('inbox').tab, 'Alerts');
-  assert.deepEqual(registry.tabs('projects').map(v => v.id), ['projects', 'knowledge', 'memory', 'library']);
+  assert.deepEqual(registry.tabs('projects').map(v => v.id), ['projects', 'knowledge', 'memory', 'library', 'spreadsheets']);
+  assert.deepEqual(registry.tabs('work').map(v => v.id), ['work', 'automationStudio'], 'Automations is scheduled work');
   assert.deepEqual(registry.tabs('claude'), []);
 });
 

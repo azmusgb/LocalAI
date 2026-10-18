@@ -166,7 +166,7 @@ and loads three scripts: `view-registry.js`, `app.js` (an ES module), then `ui.j
 | `ui.js` | Hand-maintained bundle of former separate scripts. Each section starts with `// ==== <name>.js ====` and is its own scope, in load order: `ui-kit`, `agent-specialists`, `mobile-overhaul`, `ux-architecture-v2`, `agent-world-city`, `claude-board`, `claude-chat`, `integration-hub-v2`, `execution-runtime`, `first-run`, `secure-connection` |
 | `app.css` | One stylesheet in cascade order; sections start with `/* ==== <name> ==== */`. The `design-system.css` section comes after the older sections and maps their tokens (`--panel…`, `--ux-…`, `--aw-…`) onto `--ds-*` tokens; feature sections added since follow it |
 | `sw.js` | Service worker. Shell files are always revalidated (ETag), so a deploy shows on the next load. Add new shell files to `SHELL` and change `CACHE` |
-| `spreadsheets.js` | System › Spreadsheets: GridCraft requests (`gridcraft.html` only redirects there) |
+| `spreadsheets.js` | Projects › Spreadsheets: GridCraft requests (`gridcraft.html` only redirects there) |
 
 `scripts/design-system-overrides.py app/public` regenerates the block at the end of the design-system section
 of `app.css` that raises small text to 11 px and turns all-caps labels into sentence case; see its docstring.

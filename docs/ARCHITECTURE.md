@@ -33,7 +33,7 @@ through it.
 | Component | Where | Code | Talks to |
 |---|---|---|---|
 | Appliance server | container `local-ai-appliance` | `app/server.js` (HTTP, all `/api/*` routes), `app/storage.js`, `app/run-ledger.js`, `app/agent-orchestrator.js`, `app/claude-chat.js`, `app/image-engines.js`, `app/model-pulls.js` | Everything below |
-| Web app | served by the appliance from `app/public` | `index.html`, `app.css`, `app.js`, `ui.js`, `view-registry.js`, `sw.js`; `spreadsheets.js` (System › Spreadsheets, GridCraft) | Appliance `/api/*` only |
+| Web app | served by the appliance from `app/public` | `index.html`, `app.css`, `app.js`, `ui.js`, `view-registry.js`, `sw.js`; `spreadsheets.js` (Projects › Spreadsheets, GridCraft) | Appliance `/api/*` only |
 | Database | `/data/localai.db` in a Docker volume | `app/storage.js` | — ([Storage](STORAGE.md)) |
 | Ollama | Windows host, `127.0.0.1:11434` | not in this repo | — |
 | ComfyUI | Windows host, `127.0.0.1:8188` | `host/comfyui/` ([README](../host/comfyui/README.md)) | — |
@@ -63,7 +63,7 @@ Navigation is defined once in `app/public/view-registry.js`: five domains, each 
 
 The page structure is being reorganized per the [evolution roadmap](superpowers/specs/2026-10-15-localai-evolution-design.md); this table is the current map.
 
-GridCraft is the System › Spreadsheets page (`#spreadsheets`); the old `/gridcraft.html` sends you there. New installs hide the Build tools until they are used
+GridCraft is the Projects › Spreadsheets page (`#spreadsheets`); the old `/gridcraft.html` sends you there. New installs hide the Build tools until they are used
 (`developerHistory` in `GET /api/config`).
 
 ## Ports

@@ -28,7 +28,7 @@ Date: 2026-10-17. Status: approved by the owner ("Yes") after the critique in ch
 | Area (bar / rail) | Pages, in one strip | Change |
 |---|---|---|
 | Home | Home | Inbox only behind the bell |
-| Work | Runs · Scheduled · Missions | Automations becomes Work › Scheduled; Work's kinds are chips, not tabs |
+| Work | Work · Automations | Automations moves here under its own name; Work's kinds are chips, not tabs; Missions stays reachable from Work's Missions filter (Agent World is a separate project) |
 | Projects | Projects · Sources · Memory · Library · Spreadsheets | "Library" everywhere; Spreadsheets moves here |
 | Improve | Backlog · In progress · Shipped · Signals · Claude Code | always shown; Claude Code is an ordinary page |
 | System | Health · Models · Services · Audit log | + developer pages while Developer tools is on |
