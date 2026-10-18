@@ -66,10 +66,33 @@ The `LocalAI Safe Deploy` scheduled task runs `deploy\Run-LocalAI-AutoDeploy.ps1
 
 1. Fast-forwards `C:\LocalAI\repo` with `git pull --ff-only origin main`, but only when the target is
    `origin/main` and the checkout has no local changes, so the deploy scripts themselves stay current.
-2. Runs `Deploy-LocalAI.ps1` in a child Windows PowerShell. An idle run ends with `NO CHANGE` in about a second.
-3. Posts to the Inbox (`POST /api/notifications/system`, kind `deploy`) when a release goes live, or when a
+2. When the target commit isn't the one running, waits for running work (see [Updates wait for running
+   work](#updates-wait-for-running-work)).
+3. Runs `Deploy-LocalAI.ps1` in a child Windows PowerShell. An idle run ends with `NO CHANGE` in about a second.
+4. Posts to the Inbox (`POST /api/notifications/system`, kind `deploy`) when a release goes live, or when a
    deploy fails (once per failing commit, not on every retry).
-4. Rewrites `C:\LocalAI\.deploy\auto-deploy.log`: up to 500 one-line summaries plus the last run's full output.
+5. Rewrites `C:\LocalAI\.deploy\auto-deploy.log`: up to 500 one-line summaries plus the last deploy's full output.
+
+### Updates wait for running work
+
+A deploy restarts the appliance, and a restart stops whatever is running. Before deploying a new commit the task
+asks the appliance `GET http://127.0.0.1:3080/api/busy`, which answers `{busy, active: [{kind, title, startedAt}], since}`:
+
+- run-ledger runs that are queued, running or streaming (chats, research, images, missions…);
+- running missions and specialist runs in the orchestrator;
+- GridCraft requests and automation runs in flight.
+
+A record that hasn't changed for an hour counts as stuck, not running. The answer carries only a kind, a short
+title and a start time.
+
+While it says busy, the run deploys nothing and logs `Waiting: 2 things running (Review the Work page; A
+lighthouse at dusk); held 5 of 45 min`. The first time an update was held back is kept in
+`C:\LocalAI\.deploy\auto-deploy-held-since.txt`. Once the hold has lasted `-MaxHoldMinutes` (default 45), the
+next run deploys anyway and the Inbox says "Updating now; 2 things were still running and were stopped", naming
+them. Missions stopped this way read "Local AI restarted for an update while this was running".
+
+If `/api/busy` doesn't answer (the appliance is down, or a build from before it), the run deploys as before, so a
+broken appliance can always be fixed by a deploy. Manual `Deploy-LocalAI.ps1` runs don't wait.
 
 Install, change or remove the task:
 

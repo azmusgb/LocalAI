@@ -6,17 +6,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { spawn } = require('node:child_process');
 const { once } = require('node:events');
-
-async function freePort() {
-  const s = http.createServer();
-  s.listen(0, '127.0.0.1');
-  await once(s, 'listening');
-  const port = s.address().port;
-  await new Promise(resolve => s.close(resolve));
-  return port;
-}
+const { spawnAppServer } = require('./spawn-server.cjs');
 
 test('Services › ArtCraft: status and open go through the appliance, which forwards nothing from the request', { timeout: 30000 }, async t => {
   // A stand-in for host/gridcraft-bridge.py's /artcraft routes.
@@ -37,26 +28,16 @@ test('Services › ArtCraft: status and open go through the appliance, which for
   await once(bridge, 'listening');
 
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-artcraft-'));
-  const port = await freePort();
-  const base = `http://127.0.0.1:${port}`;
-  let diagnostics = '';
   const off = 'http://127.0.0.1:9';
-  const child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], {
-    env: { ...process.env, DATA_DIR: dataDir, PORT: String(port), WORKSPACE_ROOT: dataDir, GRIDCRAFT_URL: `http://127.0.0.1:${bridge.address().port}`, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off }
+  const { child, ready } = spawnAppServer({
+    env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, GRIDCRAFT_URL: `http://127.0.0.1:${bridge.address().port}`, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off }
   });
-  child.stdout.on('data', c => diagnostics += c);
-  child.stderr.on('data', c => diagnostics += c);
   t.after(async () => {
     if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
     bridge.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
-  for (let attempt = 0; attempt < 80; attempt++) {
-    if (child.exitCode !== null) throw new Error(diagnostics);
-    try { if ((await fetch(`${base}/healthz`)).ok) break; } catch {}
-    if (attempt === 79) throw new Error(`Server did not start: ${diagnostics}`);
-    await new Promise(r => setTimeout(r, 100));
-  }
+  const base = await ready;
 
   const status = await fetch(`${base}/api/artcraft/status`);
   assert.equal(status.status, 200);

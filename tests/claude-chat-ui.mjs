@@ -2,37 +2,22 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { once } from 'node:events';
-import { fileURLToPath } from 'node:url';
+
+const { spawnAppServer } = createRequire(import.meta.url)('./spawn-server.cjs');
 
 // Starts its own appliance because it has to hold the Mac key (to approve pairing and play the Mac side).
-const here = path.dirname(fileURLToPath(import.meta.url));
 const MAC_KEY = crypto.randomBytes(32).toString('hex');
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-chat-ui-'));
 fs.writeFileSync(path.join(dataDir, 'claude-chat-mac-key.sha256'), crypto.createHash('sha256').update(MAC_KEY).digest('hex'));
-const probe = http.createServer();
-probe.listen(0, '127.0.0.1');
-await once(probe, 'listening');
-const port = probe.address().port;
-await new Promise(r => probe.close(r));
-const base = `http://127.0.0.1:${port}`;
 const off = 'http://127.0.0.1:9';
-const server = spawn(process.execPath, [path.resolve(here, '../app/server.js')], {
-  env: { ...process.env, DATA_DIR: dataDir, PORT: String(port), WORKSPACE_ROOT: dataDir, LOCALAI_CHAT_ONLINE_MS: '4000', LOCALAI_CHAT_LEASE_MS: '25000', OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
+const { child: server, ready } = spawnAppServer({
+  env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, LOCALAI_CHAT_ONLINE_MS: '4000', LOCALAI_CHAT_LEASE_MS: '25000', OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
 });
-let diagnostics = '';
-server.stdout.on('data', c => diagnostics += c);
-server.stderr.on('data', c => diagnostics += c);
-for (let i = 0; ; i++) {
-  if (server.exitCode !== null) throw new Error(diagnostics);
-  try { if ((await fetch(`${base}/healthz`)).ok) break; } catch {}
-  if (i > 100) throw new Error(`Server did not start: ${diagnostics}`);
-  await new Promise(r => setTimeout(r, 100));
-}
+const base = await ready;
 
 const mac = async (method, route, body) => {
   const r = await fetch(`${base}/api/claude/chat/${route}`, { method, headers: { 'Content-Type': 'application/json', 'X-LocalAI-Mac-Key': MAC_KEY }, body: body ? JSON.stringify(body) : undefined });

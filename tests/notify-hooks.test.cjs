@@ -6,8 +6,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { spawn } = require('node:child_process');
 const { once } = require('node:events');
+const { spawnAppServer } = require('./spawn-server.cjs');
 
 // Decrypt what the server pushed (RFC 8291 receiver side), to read the notification's title and tag.
 function decrypt(body, ua, auth) {
@@ -18,7 +18,6 @@ function decrypt(body, ua, auth) {
   const p = Buffer.concat([d.update(ct.subarray(0, ct.length - 16)), d.final()]);
   return JSON.parse(p.subarray(0, p.lastIndexOf(2)).toString('utf8'));
 }
-async function freePort() { const s = http.createServer(); s.listen(0, '127.0.0.1'); await once(s, 'listening'); const p = s.address().port; await new Promise(r => s.close(r)); return p; }
 
 test('events reach the phone: failed run, approval, new Claude finding, host failure', { timeout: 60000 }, async t => {
   const pushes = [];
@@ -28,11 +27,10 @@ test('events reach the phone: failed run, approval, new Claude finding, host fai
   fake.listen(0, '127.0.0.1'); await once(fake, 'listening');
   const host = `127.0.0.1:${fake.address().port}`;
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-hooks-'));
-  const port = await freePort(), base = `http://127.0.0.1:${port}`;
   // OLLAMA_URL points at a closed port, so a chat run fails quickly.
-  const child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], { env: { ...process.env, DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, PORT: String(port), PUSH_TEST_ENDPOINT_HOST: host, OLLAMA_URL: 'http://127.0.0.1:9', TZ: 'UTC' }, stdio: 'ignore' });
+  const { child, ready } = spawnAppServer({ env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, PUSH_TEST_ENDPOINT_HOST: host, OLLAMA_URL: 'http://127.0.0.1:9', TZ: 'UTC' } });
   t.after(async () => { if (child.exitCode === null) { child.kill('SIGTERM'); await once(child, 'exit'); } fake.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
-  for (let i = 0; i < 100; i++) { try { if ((await fetch(base + '/healthz')).ok) break; } catch {} await new Promise(r => setTimeout(r, 100)); }
+  const base = await ready;
   const post = (p, body) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const sub = await (await post('/api/push/subscribe', { subscription: { endpoint: `http://${host}/phone`, keys: { p256dh: ua.getPublicKey().toString('base64url'), auth: auth.toString('base64url') } }, name: 'iPhone' })).json();
   // No quiet hours, so every kind can arrive whatever time the test runs.

@@ -50,6 +50,11 @@ test('errors are said in plain words', () => {
   assert.equal(words.errorWords('', 'fetch failed'), 'the model didn’t answer');
   assert.equal(words.errorWords('MODEL_TIMEOUT', ''), 'the model took too long');
   assert.equal(words.errorWords('APPLIANCE_RESTART', ''), 'Local AI restarted while it was working');
+  // The restart reason, new and old wording, reads the same.
+  assert.equal(words.errorWords('', 'Local AI restarted for an update while this was running'), 'interrupted by an update');
+  assert.equal(words.errorWords('INTERRUPTED', 'Interrupted: the appliance restarted while this was running'), 'interrupted by an update');
+  const m = mission({ status: 'error', workers: [router(), ux({ state: 'error', error: 'Local AI restarted for an update while this was running' }), coord({ state: 'blocked' })] });
+  assert.equal(words.changeSentence(m.workers[1], m), 'UX Analyst stopped: interrupted by an update');
   assert.equal(words.errorWords('', 'Disk full.'), 'disk full');
   assert.equal(words.errorWords('', 'x'.repeat(200)), 'something went wrong');
   assert.equal(words.errorWords('', ''), 'something went wrong');

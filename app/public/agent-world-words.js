@@ -60,6 +60,8 @@ function errorWords(code,msg){
  if(c==='MODEL_CONNECTION_ERROR'||/fetch failed|ECONNREFUSED|ECONNRESET|socket hang up/i.test(t))return'the model didn’t answer';
  if(c==='MODEL_TIMEOUT'||/time(d)? ?out/i.test(t))return'the model took too long';
  if(c==='APPLIANCE_RESTART')return'Local AI restarted while it was working';
+ // Work a restart stopped (agent-orchestrator.js reconcileInterrupted). The first wording predates updates waiting for running work.
+ if(/^Local AI restarted for an update while this was running|^Interrupted: the appliance restarted while this was running/i.test(t))return'interrupted by an update';
  if(c==='MODEL_NO_TOOLS')return'the model can’t use tools';
  if(!t||t.length>80)return'something went wrong';
  return t.replace(/[.\s]+$/,'').replace(/^[A-Z](?![A-Z])/,s=>s.toLowerCase());

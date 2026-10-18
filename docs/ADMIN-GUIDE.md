@@ -17,7 +17,9 @@ Details and the troubleshooting index: [Operations](OPERATIONS.md).
 ## Update it
 
 Merge a pull request into `main`. The host's **LocalAI Safe Deploy** task deploys it within about 5 minutes, checks
-it, and rolls back by itself if the new build is unhealthy. It's live when `/healthz` reports the merge's commit as
+it, and rolls back by itself if the new build is unhealthy. Updates wait for running work: while a mission, an image,
+a chat, a GridCraft request or an automation is running, the update waits for it, up to 45 minutes. After that it
+updates anyway and the Inbox says what it stopped. It's live when `/healthz` reports the merge's commit as
 `releaseCommit`. Each release's notes are the merged PR titles: **What's new** lists them, the first load after an
 update says "Updated to …", and Improve › Shipped groups changes by release.
 
