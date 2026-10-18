@@ -1515,7 +1515,6 @@ async function apiGenerateImage(req, res) {
   }
 }
 
-const { apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopStatus } = require('./server/gridcraft').createGridcraft({ GRIDCRAFT_RUN_TIMEOUT_MS, GRIDCRAFT_URL, inFlight, json, makeId, modelFetchWithTimeout, readBody, recordActivity, sameOriginJson, storage, workshop, workshopPrinter });
 
 async function apiImageView(req, res, urlObj) {
   try {
@@ -1535,8 +1534,6 @@ async function apiImageView(req, res, urlObj) {
   }
 }
 
-const { accessAddresses, apiAccess, apiPush, apiReleases, recordReleaseHistory } = require('./server/push').createPush({ APP_VERSION, json, notifier, nowIso, pushLib, readBody, release, resolveDeployFailures, storage, storageError });
-const { apiConfig, redirectFor, serveStatic } = require('./server/web').createWeb({ APP_VERSION, CAPABILITY_CACHE_MS, CHAT_MODEL_TIMEOUT_MS, ENGINEERING_MODEL_TIMEOUT_MS, LOCAL_UI_PORT, MODEL, PUBLIC_DIR, accessAddresses, changeStore, claudeFindings, crypto, engineeringRunStore, fs, json, listenPort, path, release, text });
 
 
 
@@ -1789,103 +1786,14 @@ function nowIso() { return new Date().toISOString(); }
 function normalizeTitle(v, fallback) { return titleFromText(String(v || ''), fallback); }
 function requireFeature(res, level) { if (!featureAtLeast(level)) { json(res, 404, { error: `Requires v1.${level}+` }); return false; } return true; }
 
-function projectStore(){ return objectStore(PROJECTS_STORE); }
-function conversationStore(){ return objectStore(CONVERSATIONS_STORE); }
-function knowledgeStore(){ return objectStore(KNOWLEDGE_STORE); }
 function automationStore(){ return objectStore(AUTOMATIONS_STORE); }
 function agentRunStore(){ return objectStore(RUNS_STORE); }
 function automationRunStore(){ return objectStore(AUTOMATION_RUNS_STORE); }
 
-function statePage(collection, urlObj, defaultLimit) {
-  const rawLimit = urlObj.searchParams.get('limit');
-  const rawOffset = urlObj.searchParams.get('offset');
-  const limit = rawLimit === null ? defaultLimit : Number(rawLimit);
-  const offset = rawOffset === null ? 0 : Number(rawOffset);
-  if ((rawLimit !== null && !/^\d+$/.test(rawLimit)) || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000 ||
-      (rawOffset !== null && !/^\d+$/.test(rawOffset)) || !Number.isSafeInteger(offset) || offset < 0) {
-    const error = new Error('limit must be 1..1000 and offset must be a nonnegative integer');
-    error.statusCode = 400; throw error;
-  }
-  const projectId = urlObj.searchParams.get('projectId') || undefined;
-  return { items: storage.list(collection,{projectId,limit,offset}), total:storage.count(collection,projectId),limit,offset };
-}
 
-function publicProject(p){
-  const conv = storage.count('conversations',p.id);
-  const docs = storage.count('knowledge',p.id);
-  const artifacts = storage.count('library',p.id);
-  return {...p, counts:{conversations:conv, knowledge:docs, artifacts}};
-}
 
-async function apiProjects(req,res,urlObj){
-  if(!requireFeature(res,3)) return;
-  const page=statePage('projects',urlObj,250);
-  json(res,200,{...page,items:page.items.map(publicProject)});
-}
-async function apiProjectsCreate(req,res){
-  if(!requireFeature(res,3)) return;
-  try{
-    const b=await readBody(req); const name=String(b.name||'').trim();
-    if(!name) return json(res,400,{error:'name is required'});
-    const items=projectStore(); const item={id:makeId('prj'),name:normalizeTitle(name,'Project'),description:String(b.description||'').slice(0,1200),createdAt:nowIso(),updatedAt:nowIso(),pinned:false};
-    items.unshift(item); saveStore(PROJECTS_STORE,items,250); recordActivity('project','Created project',item.name,{projectId:item.id});
-    json(res,201,{item:publicProject(item)});
-  }catch(e){storageError(res,e,400)}
-}
-async function apiProjectsUpdate(req,res){
-  if(!requireFeature(res,3)) return;
-  try{
-    const b=await readBody(req); const items=projectStore(); const i=items.findIndex(x=>x.id===b.id); if(i<0)return json(res,404,{error:'Project not found'});
-    if(typeof b.name==='string'&&b.name.trim())items[i].name=normalizeTitle(b.name,'Project');
-    if(typeof b.description==='string')items[i].description=b.description.slice(0,1200);
-    if(typeof b.pinned==='boolean')items[i].pinned=b.pinned; items[i].updatedAt=nowIso(); saveStore(PROJECTS_STORE,items,250); json(res,200,{item:publicProject(items[i])});
-  }catch(e){storageError(res,e,400)}
-}
 
-async function apiConversations(req,res,urlObj){
-  if(!requireFeature(res,3)) return;
-  json(res,200,statePage('conversations',urlObj,300));
-}
-async function apiConversationSave(req,res){
-  if(!requireFeature(res,3)) return;
-  try{
-    const b=await readBody(req,2*1024*1024); const messages=(Array.isArray(b.messages)?b.messages:[]).filter(m=>m&&(m.role==='user'||m.role==='assistant')&&typeof m.content==='string').map(m=>({role:m.role,content:m.content})); if(!messages.length)return json(res,400,{error:'messages[] is required'});
-    const items=conversationStore(); let item=items.find(x=>x.id===b.id);
-    const firstUser=messages.find(x=>x.role==='user')?.content||'Conversation';
-    if(!item){item={id:makeId('chat'),createdAt:nowIso(),pinned:false};items.unshift(item)}
-    item.projectId=String(b.projectId||item.projectId||''); item.title=normalizeTitle(b.title||item.title||firstUser,'Conversation'); item.updatedAt=nowIso(); item.messages=messages; item.webSearch=!!b.webSearch;
-    saveStore(CONVERSATIONS_STORE,items,500); recordActivity('conversation','Saved conversation',item.title,{conversationId:item.id,projectId:item.projectId});
-    json(res,200,{item});
-  }catch(e){storageError(res,e,400)}
-}
-async function apiConversationDelete(req,res){
-  if(!requireFeature(res,3)) return;
-  try{const b=await readBody(req);const items=conversationStore();const next=items.filter(x=>x.id!==b.id);if(next.length===items.length)return json(res,404,{error:'Conversation not found'});saveStore(CONVERSATIONS_STORE,next,500,items);json(res,200,{ok:true})}catch(e){storageError(res,e,400)}
-}
 
-function chunkText(textValue, chunkSize=1800){
-  const t=String(textValue||'').replace(/\r/g,'').trim(); const out=[]; if(!t)return out;
-  for(let i=0;i<t.length;i+=chunkSize){out.push(t.slice(i,i+chunkSize))} return out;
-}
-function tokens(s){return String(s||'').toLowerCase().match(/[a-z0-9_\-.]{2,}/g)||[]}
-function knowledgeScore(query,textValue){
-  const q=[...new Set(tokens(query))]; if(!q.length)return 0; const t=String(textValue||'').toLowerCase(); let score=0; for(const w of q){if(t.includes(w))score+=1+(t.split(w).length-2)*0.08} return score/q.length;
-}
-async function apiKnowledge(req,res,urlObj){
-  if(!requireFeature(res,3)) return; const page=statePage('knowledge',urlObj,500); json(res,200,{...page,items:page.items.map(x=>({...x,chunks:undefined,content:undefined}))});
-}
-async function apiKnowledgeImport(req,res){
-  if(!requireFeature(res,3)) return;
-  try{
-    const b=await readBody(req,6*1024*1024); const content=String(b.content||''); const name=String(b.name||'').trim(); if(!name||!content.trim())return json(res,400,{error:'name and content are required'});
-    const items=knowledgeStore(); const chunks=chunkText(content); const item={id:makeId('doc'),projectId:String(b.projectId||''),name:normalizeTitle(name,'Document'),mimeType:String(b.mimeType||'text/plain'),size:Buffer.byteLength(content,'utf8'),createdAt:nowIso(),updatedAt:nowIso(),chunks,preview:content.slice(0,800)};
-    items.unshift(item);saveStore(KNOWLEDGE_STORE,items,500);recordActivity('knowledge','Indexed knowledge source',item.name,{projectId:item.projectId,chunks:chunks.length});json(res,201,{item:{...item,chunks:undefined}});
-  }catch(e){storageError(res,e,400)}
-}
-async function apiKnowledgeDelete(req,res){if(!requireFeature(res,3))return;try{const b=await readBody(req);const items=knowledgeStore();const next=items.filter(x=>x.id!==b.id);if(next.length===items.length)return json(res,404,{error:'Knowledge source not found'});saveStore(KNOWLEDGE_STORE,next,500,items);json(res,200,{ok:true})}catch(e){storageError(res,e,400)}}
-async function apiKnowledgeSearch(req,res){
-  if(!requireFeature(res,3)) return; try{const b=await readBody(req);const query=String(b.query||'').trim();if(!query)return json(res,400,{error:'query is required'});let docs=knowledgeStore();if(b.projectId)docs=docs.filter(x=>x.projectId===b.projectId);const hits=[];for(const d of docs){(d.chunks||[]).forEach((c,i)=>{const score=knowledgeScore(query,c);if(score>0)hits.push({documentId:d.id,name:d.name,projectId:d.projectId,chunk:i,score:Number(score.toFixed(3)),text:c})})}hits.sort((a,b)=>b.score-a.score);json(res,200,{query,hits:hits.slice(0,10)})}catch(e){storageError(res,e,400)}
-}
 
 async function runLocalModel(prompt, system='You are a concise local AI assistant.', timeoutMs=180000, model=MODEL){
   const selectedModel=String(model||MODEL).trim()||MODEL;
@@ -2142,8 +2050,6 @@ const APPROVALS_STORE = 'approvals';
 const MONITORS_STORE = 'monitors';
 const { spawn } = require('child_process');
 
-function notificationStore(){ return objectStore(NOTIFICATIONS_STORE); }
-function memoryStore(){ return objectStore(MEMORY_STORE); }
 
 // Delete with Undo (app/trash.js): Work rows (a whole thread), Library items and projects. A day later it is for good.
 const trash = new Trash({
@@ -2171,113 +2077,18 @@ async function apiItemsRestore(req, res) {
 }
 try { trash.purge(); } catch (e) { console.error(`${nowIso()} Trash purge failed:`, e); }
 setInterval(() => { try { trash.purge(); } catch (e) { console.error(`${nowIso()} Trash purge failed:`, e); } }, 60 * 60 * 1000).unref?.();
-function approvalStore(){ return objectStore(APPROVALS_STORE); }
 function monitorStore(){ return objectStore(MONITORS_STORE); }
 
-function addNotification(kind,title,detail='',meta={},level='attention'){
-  const item={id:makeId('note'),kind,level,title:normalizeTitle(title,'Notification'),detail:String(detail||'').slice(0,2000),createdAt:nowIso(),read:false,resolved:false,meta};
-  prependRecord(NOTIFICATIONS_STORE,item);
-  const e=notifyLib.noticeEvent(kind,item.title,item.detail,level,meta);if(e)notifier.notify(meta.approvalId?{...e,tag:`approval:${meta.approvalId}`}:e);
-  return item;
-}
 // Info notices (a release went live, a backup finished, a monitor recovered) stay in the Inbox but don't count
 // toward its badge; only things that need the owner do. Older deploy notices predate `level`, hence the meta check.
 const isInfoNotice=x=>x.level==='info'||(x.kind==='deploy'&&x.meta?.outcome==='deployed');
-async function apiNotifications(req,res){
-  if(!requireFeature(res,7))return;
-  // Host notices stored before hostDetail() existed still carry PowerShell's filler lines; clean them on the way out.
-  const items=notificationStore().map(x=>isInfoNotice(x)&&!x.level?{...x,level:'info'}:x).map(x=>x.meta?.source==='host'&&/RemoteException/.test(x.detail||'')?{...x,detail:hostDetail(x.detail)}:x);
-  json(res,200,{items,unread:items.filter(x=>!x.read&&!x.resolved&&!isInfoNotice(x)).length});
-}
-async function apiNotificationUpdate(req,res){
-  if(!requireFeature(res,7))return;
-  try{const b=await readBody(req);const items=notificationStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Notification not found'});
-    if(typeof b.read==='boolean')items[i].read=b.read;if(typeof b.resolved==='boolean')items[i].resolved=b.resolved;
-    saveStore(NOTIFICATIONS_STORE,items,500);json(res,200,{item:items[i]});
-  }catch(e){storageError(res,e,400)}
-}
 // Windows PowerShell 5.1 turns a blank stderr line from a native command into the text
 // "System.Management.Automation.RemoteException"; it says nothing, so it never reaches the Inbox.
 function hostDetail(detail){
   return String(detail||'').split('\n').map(l=>l.replace(/(?:\s*System\.Management\.Automation\.RemoteException)+\s*$/g,'').trimEnd()).filter(l=>l.trim()).join('\n').slice(0,2000);
 }
-// A failed update is over once a later one goes live: resolve it, so it stops counting on the Inbox and the bell.
-function resolveDeployFailures(by){
-  let n=0;
-  storage.transaction(()=>{const items=notificationStore();for(const x of items){if(x.kind==='deploy'&&!x.resolved&&x.meta?.outcome==='failed'){x.resolved=true;x.read=true;x.meta={...x.meta,resolvedBy:`Resolved by ${by}`};n++}}if(n)saveStore(NOTIFICATIONS_STORE,items,500)});
-  return n;
-}
-// Host-side jobs (auto-deploy, backups, monitors) report to the Inbox. Same LAN trust model as the rest of the API.
-const HOST_NOTIFICATION_KINDS=new Set(['deploy','backup','monitor']);
-async function apiNotificationSystem(req,res){
-  try{const b=await readBody(req,64*1024);const kind=String(b.kind||'');if(!HOST_NOTIFICATION_KINDS.has(kind))return json(res,400,{error:`kind must be one of ${[...HOST_NOTIFICATION_KINDS].join(', ')}`});
-    const title=String(b.title||'').trim().slice(0,200);if(!title)return json(res,400,{error:'title is required'});
-    const meta=b.meta&&typeof b.meta==='object'&&!Array.isArray(b.meta)?Object.fromEntries(Object.entries(b.meta).slice(0,12).map(([k,v])=>[String(k).slice(0,40),String(v).slice(0,300)])):{};
-    // Only a known success is information; anything else (failures, alerts without an outcome) needs the owner.
-    const level=/^(deployed|ok|success|succeeded|recovered|done)$/i.test(meta.outcome||'')?'info':'attention';
-    const item=addNotification(kind,title,hostDetail(b.detail),{source:'host',...meta},level);
-    if(kind==='deploy'&&meta.outcome==='deployed')resolveDeployFailures(title.replace(/^Local AI updated to\s*/i,'')||'a later update');
-    json(res,201,{item})}catch(e){storageError(res,e,400)}
-}
-async function apiNotificationSeed(req,res){
-  if(!requireFeature(res,7))return;
-  const item=addNotification('system','Notification center ready','Local AI v1.7 notification state is active.');
-  json(res,201,{item});
-}
 
-async function apiMemory(req,res,urlObj){
-  if(!requireFeature(res,8))return;
-  const projectId=urlObj.searchParams.get('projectId')||'';
-  let items=memoryStore(); if(projectId)items=items.filter(x=>x.projectId===projectId);
-  json(res,200,{items});
-}
-async function apiMemoryAdd(req,res){
-  if(!requireFeature(res,8))return;
-  try{const b=await readBody(req);const textValue=String(b.text||'').trim();if(!textValue)return json(res,400,{error:'text is required'});
-    const items=memoryStore();const item={id:makeId('mem'),projectId:String(b.projectId||''),category:String(b.category||'note'),text:textValue.slice(0,4000),pinned:!!b.pinned,createdAt:nowIso(),updatedAt:nowIso()};
-    items.unshift(item);saveStore(MEMORY_STORE,items,1000);recordActivity('memory','Saved project memory',item.text.slice(0,160),{projectId:item.projectId});json(res,201,{item});
-  }catch(e){storageError(res,e,400)}
-}
-async function apiMemoryUpdate(req,res){
-  if(!requireFeature(res,8))return;
-  try{const b=await readBody(req);const items=memoryStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Memory not found'});
-    if(typeof b.text==='string'&&b.text.trim())items[i].text=b.text.slice(0,4000);if(typeof b.pinned==='boolean')items[i].pinned=b.pinned;if(typeof b.category==='string')items[i].category=b.category;
-    items[i].updatedAt=nowIso();saveStore(MEMORY_STORE,items,1000);json(res,200,{item:items[i]});
-  }catch(e){storageError(res,e,400)}
-}
-async function apiMemoryDelete(req,res){
-  if(!requireFeature(res,8))return;
-  try{const b=await readBody(req);const items=memoryStore();const next=items.filter(x=>x.id!==b.id);if(next.length===items.length)return json(res,404,{error:'Memory not found'});saveStore(MEMORY_STORE,next,1000,items);json(res,200,{ok:true})}catch(e){storageError(res,e,400)}
-}
-async function apiProjectIntelligence(req,res,urlObj){
-  if(!requireFeature(res,8))return;
-  const projectId=urlObj.searchParams.get('projectId')||'';
-  const p=projectStore().find(x=>x.id===projectId); if(!p)return json(res,404,{error:'Project not found'});
-  const mem=memoryStore().filter(x=>x.projectId===projectId);
-  const docs=knowledgeStore().filter(x=>x.projectId===projectId);
-  const conv=conversationStore().filter(x=>x.projectId===projectId);
-  json(res,200,{project:publicProject(p),memory:mem.slice(0,30),summary:{knowledge:docs.length,conversations:conv.length,pinnedMemory:mem.filter(x=>x.pinned).length}});
-}
 
-async function apiApprovals(req,res){
-  if(!requireFeature(res,9))return;
-  json(res,200,{items:approvalStore()});
-}
-async function apiApprovalCreate(req,res){
-  if(!requireFeature(res,9))return;
-  try{const b=await readBody(req);const items=approvalStore();const item={id:makeId('approval'),title:normalizeTitle(b.title,'Approval required'),detail:String(b.detail||'').slice(0,4000),risk:String(b.risk||'medium'),status:'pending',createdAt:nowIso(),updatedAt:nowIso(),meta:b.meta||{}};items.unshift(item);saveStore(APPROVALS_STORE,items,500);addNotification('approval',item.title,item.detail,{approvalId:item.id});json(res,201,{item})}catch(e){storageError(res,e,400)}
-}
-async function apiApprovalDecide(req,res){
-  if(!requireFeature(res,9))return;
-  try{const b=await readBody(req);const items=approvalStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Approval not found'});
-    if(!['approved','rejected'].includes(b.decision))return json(res,400,{error:'decision must be approved or rejected'});
-    // An approval for a change decides the change as well; otherwise approving it here left the change waiting forever.
-    const changeId=items[i].meta?.changeId;
-    if(changeId&&items[i].status==='pending'){const changes=changeStore(),c=changes.find(x=>x.id===changeId);
-      if(c&&c.status==='awaiting_approval'){decideChange(changes,c,b.decision);recordActivity('approval',`Approval ${b.decision}`,items[i].title,{approvalId:items[i].id,changeId});return json(res,200,{item:approvalStore().find(x=>x.id===b.id)||items[i]})}}
-    items[i].status=b.decision;items[i].updatedAt=nowIso();saveStore(APPROVALS_STORE,items,500);recordActivity('approval',`Approval ${b.decision}`,items[i].title,{approvalId:items[i].id});json(res,200,{item:items[i]});
-  }catch(e){storageError(res,e,400)}
-}
 async function apiAgentPlan(req,res){
   if(!requireFeature(res,9))return;
   try{const b=await readBody(req);const goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const plan=buildAgentPlan(goal);
@@ -2971,7 +2782,6 @@ async function apiEngineeringStart(req,res){
   if(!requireFeature(res,16))return;
   try{const b=await readBody(req);const request=String(b.request||'').trim();if(!request)return json(res,400,{error:'request is required'});const target=b.target==='workspace'?'workspace':'self',rootRel=String(b.root||'repos').trim(),maxAttempts=Math.max(1,Math.min(3,Number(b.maxAttempts)||3));const run=createEngineeringRunRecord(request,target,rootRel,maxAttempts);json(res,202,{run});setImmediate(()=>executeEngineeringRun(run).catch(e=>{run.status='needs_attention';run.error=String(e.message||e);run.updatedAt=nowIso();engineeringStep(run,'Stopped safely','error',run.error);refreshEngineeringRun(run)}))}catch(e){storageError(res,e,500)}
 }
-const { apiPowerShellApprove, apiPowerShellCancel, apiPowerShellCreate, apiPowerShellHostNext, apiPowerShellHostResult, apiPowerShellJobs, apiPowerShellRequestRun } = require('./server/powershell').createPowerShell({ LOCAL_UI_PORT, POWERSHELL_BRIDGE_TOKEN, POWERSHELL_UI_TOKEN, json, listenPort, makeId, nowIso, objectStore, readBody, recordActivity, requireFeature, saveStore, storageError });
 // ===== END POWERSHELL WORKBENCH =============================================
 
 // ===== CLAUDE BOARD ==========================================================
@@ -3241,6 +3051,13 @@ function crossSiteRequest(req) {
   const forwarded = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
   return !sameHost(parsed.protocol, parsed.host, req.headers.host) && !sameHost(parsed.protocol, parsed.host, forwarded);
 }
+// The server's areas (app/server/*.js), each given what it uses; a module comes after those it takes names from.
+const { apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopStatus } = require('./server/gridcraft').createGridcraft({ GRIDCRAFT_RUN_TIMEOUT_MS, GRIDCRAFT_URL, inFlight, json, makeId, modelFetchWithTimeout, readBody, recordActivity, sameOriginJson, storage, workshop, workshopPrinter });
+const { addNotification, apiApprovalCreate, apiApprovalDecide, apiApprovals, apiNotificationSeed, apiNotificationSystem, apiNotificationUpdate, apiNotifications, approvalStore, notificationStore, resolveDeployFailures } = require('./server/notifications').createNotifications({ APPROVALS_STORE, NOTIFICATIONS_STORE, changeStore, decideChange, hostDetail, isInfoNotice, json, makeId, normalizeTitle, notifier, notifyLib, nowIso, objectStore, prependRecord, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
+const { accessAddresses, apiAccess, apiPush, apiReleases, recordReleaseHistory } = require('./server/push').createPush({ APP_VERSION, json, notifier, nowIso, pushLib, readBody, release, resolveDeployFailures, storage, storageError });
+const { apiConfig, redirectFor, serveStatic } = require('./server/web').createWeb({ APP_VERSION, CAPABILITY_CACHE_MS, CHAT_MODEL_TIMEOUT_MS, ENGINEERING_MODEL_TIMEOUT_MS, LOCAL_UI_PORT, MODEL, PUBLIC_DIR, accessAddresses, changeStore, claudeFindings, crypto, engineeringRunStore, fs, json, listenPort, path, release, text });
+const { apiPowerShellApprove, apiPowerShellCancel, apiPowerShellCreate, apiPowerShellHostNext, apiPowerShellHostResult, apiPowerShellJobs, apiPowerShellRequestRun } = require('./server/powershell').createPowerShell({ LOCAL_UI_PORT, POWERSHELL_BRIDGE_TOKEN, POWERSHELL_UI_TOKEN, json, listenPort, makeId, nowIso, objectStore, readBody, recordActivity, requireFeature, saveStore, storageError });
+const { apiConversationDelete, apiConversationSave, apiConversations, apiKnowledge, apiKnowledgeDelete, apiKnowledgeImport, apiKnowledgeSearch, apiMemory, apiMemoryAdd, apiMemoryDelete, apiMemoryUpdate, apiProjectIntelligence, apiProjects, apiProjectsCreate, apiProjectsUpdate, knowledgeScore, knowledgeStore, projectStore } = require('./server/projects').createProjects({ CONVERSATIONS_STORE, KNOWLEDGE_STORE, MEMORY_STORE, PROJECTS_STORE, json, makeId, normalizeTitle, nowIso, objectStore, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
 const server = http.createServer(async (req, res) => {
   const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const p = urlObj.pathname;
