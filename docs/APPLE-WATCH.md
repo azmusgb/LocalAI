@@ -103,7 +103,7 @@ answer right now. Try again in a minute." (503); Siri speaks the body either way
 mission or research (it answers "Use the Ask Local AI shortcut to start that."), and a POST with a foreign `Origin` or
 `Sec-Fetch-Site: cross-site` gets 403 like every other mutating request. The router is `app/voice.js` (rules
 only, no model); the handler is `apiGlanceAsk` in `app/server.js`. Model answers are ordinary chat runs, so they show
-in Work and the Library. `GET /api/voice/home` and `POST /api/voice/home {"place": "…"}` read and set the home
+in Work (and in the Library once you keep them). `GET /api/voice/home` and `POST /api/voice/home {"place": "…"}` read and set the home
 location.
 
 `GET /api/glance` returns JSON: `{topic, speech, needsYou:{count, items:[{kind, count, text}]}, health:{ok, down, total},

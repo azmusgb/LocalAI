@@ -114,7 +114,7 @@ for (const [api, sel, , hint] of [['/api/library', '#libraryGrid', 'library', 'w
     await p.waitForSelector(`${sel} .state-error`, { state: 'attached' });
     const t = await p.locator(sel).innerText();
     assert.match(t, new RegExp(`Couldn't load ${hint}\\.`));
-    assert.doesNotMatch(t, /Your chats, research and images appear here|What happens on Local AI is listed here/);
+    assert.doesNotMatch(t, /What you keep appears here|What happens on Local AI is listed here/);
     await p.close();
   });
 }
@@ -126,7 +126,7 @@ await check('library Retry recovers once the API works', async () => {
   fail = false;
   await p.locator('#libraryGrid .state-error button').evaluate(b => b.click());
   // Wait for the re-rendered list, not just for the error to go: on a slow runner the grid is briefly empty.
-  await p.waitForFunction(() => /Your chats, research and images appear here/.test(document.querySelector('#libraryGrid')?.innerText || ''), null, { timeout: 10000 });
+  await p.waitForFunction(() => /What you keep appears here/.test(document.querySelector('#libraryGrid')?.innerText || ''), null, { timeout: 10000 });
   assert.equal(await p.locator('#libraryGrid .state-error').count(), 0);
   await p.close();
 });

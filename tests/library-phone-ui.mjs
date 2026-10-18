@@ -81,6 +81,28 @@ await check('phone: pages by 24, chips in one scrolling row, the count in the se
   await p.close();
 });
 
+await check('un-keep from Library: a chat is taken out (it stays in Work), and the empty Library says how to keep one', async () => {
+  const p = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  p.on('pageerror', e => errors.push(e.message));
+  let lib = [{ id: 'c9', kind: 'conversation', title: 'Plan the garden', summary: 'Raised beds.', createdAt: at, kept: true, pinned: false, meta: {}, data: {} }];
+  const deleted = [];
+  await p.route('**/api/library', r => r.fulfill({ json: { items: lib } }));
+  await p.route('**/api/library/delete', r => { deleted.push(JSON.parse(r.request().postData()).id); lib = []; r.fulfill({ json: { ok: true } }); });
+  await p.goto(base + '/#library', { waitUntil: 'domcontentloaded' });
+  await p.waitForFunction(() => typeof window.showView === 'function');
+  await p.evaluate(() => window.showView('library'));
+  await p.locator('[data-artifact="c9"] .delete-artifact').click();
+  const sheet = p.locator('dialog.ask-sheet[open]');
+  await sheet.waitFor({ timeout: 6000 });
+  const text = await sheet.innerText();
+  assert.match(text, /Take "Plan the garden" out of Library\?/);
+  assert.match(text, /It stays in Work/);
+  await sheet.getByRole('button', { name: 'Take out' }).click();
+  await p.waitForFunction(() => /Tap ☆ Keep on a chat to keep it here/.test(document.getElementById('libraryGrid')?.innerText || ''), null, { timeout: 6000 });
+  assert.deepEqual(deleted, ['c9']);
+  await p.close();
+});
+
 await check('no script errors', async () => assert.deepEqual(errors, []));
 await browser.close();
 if (failures.length) { console.error('\nLibrary failures:\n' + failures.map(x => ' - ' + x).join('\n')); process.exit(1); }

@@ -164,7 +164,7 @@ await check('Empty states say what appears and how (E3): Automations, Sources, L
   await page.waitForFunction(() => /appear here/.test(document.getElementById('automationList').textContent));
   assert.match((await page.locator('#automationList').innerText()).trim(), EMPTY);
   await page.evaluate(() => window.showView('library'));
-  await page.waitForFunction(() => /appear here/.test(document.getElementById('libraryGrid').textContent));
+  await page.waitForFunction(() => /appears? here/.test(document.getElementById('libraryGrid').textContent));   // "What you keep appears here"
   assert.match((await page.locator('#libraryGrid').innerText()).trim(), EMPTY);
   await page.evaluate(() => window.showView('signals'));
   await page.waitForSelector('#signals.active');

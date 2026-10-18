@@ -21,7 +21,9 @@ const KB = 1024;
 // 2026-10-18: 241 → 242 KB for the saved copy's "Open over Tailscale" and Health's address list (241.7 KB measured).
 // 2026-10-18: 242 → 243 KB for Agent World's partial-findings words ("Finished with partial findings", the mission
 // note, the Partly done badge): +0.4 KB, 242.0 KB measured.
-const TOTAL = 243 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// 2026-10-18: 243 → 244 KB (and ui.js 95 → 96 KB) for ☆ Keep (Library holds only what you keep): the run view's Keep
+// button, Work's ☆ on chat rows, Library's "take out" wording and the long-answer lookup (243.7 KB measured; ui.js 95.3 KB).
+const TOTAL = 244 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
 // tab rows (234.9 KB measured).
@@ -30,7 +32,7 @@ const TOTAL = 243 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // the streets: 236.5 KB measured); the pass as a whole aims at no more than +6 KB.
 // 2026-10-18: 238 → 240 KB (and ui.js 93 → 95 KB) for its last part, district buildings and the ground: silhouettes
 // and props, shadows, lit windows, sidewalks, crossings, lamps, benches, trees (239.1 KB measured; +4 KB for the pass).
-const PER_FILE = { 'ui.js': 95 * KB, 'app.css': 41 * KB, 'app.js': 35 * KB, 'index.html': 13 * KB };
+const PER_FILE = { 'ui.js': 96 * KB, 'app.css': 41 * KB, 'app.js': 35 * KB, 'index.html': 13 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
