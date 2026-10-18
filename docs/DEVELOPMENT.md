@@ -52,6 +52,10 @@ All read at startup in `app/server.js` unless noted.
 | `OLLAMA_URL` | `http://host.docker.internal:11434` | Ollama |
 | `LOCALAI_NUM_CTX` | `8192` | Integer 2048-131072; context for every chat-model call (fits the 6 GB GPU; the prompt is trimmed to it) |
 | `LOCALAI_NUM_CTX_LARGE` | `32768` | Context for the patch planner only (rare, code-heavy; a reload is accepted) |
+| `LOCALAI_MISSION_NUM_CTX` | `12288` | Integer 2048-131072; context for mission workers and the coordinator (32768 spills half the model to the CPU). If `ollama ps` on the host shows a CPU share, try `8192` |
+| `LOCALAI_MISSION_EVIDENCE_TOKENS` | `6000` (500–100000) | Source evidence in a worker's first prompt, at about 4 characters a token; capped at the mission context minus 5000 |
+| `LOCALAI_MISSION_MODEL_CONCURRENCY` | `1` (1–8) | Mission model turns at once; the others wait in a queue that doesn't count against their deadline |
+| `LOCALAI_MISSION_TIMEOUT_MS` | `600000` (1 s–60 min) | A mission worker's and the coordinator's own deadline (model calls have no other limit; `app/model-http.js`) |
 | `LOCALAI_KEEP_ALIVE` | `30m` | How long Ollama keeps the chat model loaded after a call |
 | `COMFY_URL` | `http://host.docker.internal:8188` | ComfyUI |
 | `GRIDCRAFT_URL` | `http://host.docker.internal:8787` | GridCraft bridge |

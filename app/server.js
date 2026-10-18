@@ -11,7 +11,8 @@ const listenPort = () => server.address()?.port || PORT;
 const LOCAL_UI_PORT = Number(process.env.LOCAL_UI_PORT || 0);
 const MODEL = process.env.MODEL || 'qwen3:4b-instruct-32k';
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://host.docker.internal:11434';
-const { TEXT_NUM_CTX, TEXT_NUM_CTX_LARGE, LARGE_ANSWER_RESERVE, TEXT_KEEP_ALIVE, ANSWER_RESERVE, fitMessages, warmTextModel, unloadTextModel } = require('./text-context');
+const { modelFetch, modelFetchWithTimeout } = require('./model-http');
+const { TEXT_NUM_CTX, TEXT_NUM_CTX_LARGE, LARGE_ANSWER_RESERVE, MISSION_NUM_CTX, MISSION_ANSWER_RESERVE, TEXT_KEEP_ALIVE, ANSWER_RESERVE, fitMessages, warmTextModel, unloadTextModel } = require('./text-context');
 const COMFY_URL = process.env.COMFY_URL || 'http://host.docker.internal:8188';
 const N8N_URL = process.env.N8N_URL || 'http://local-ai-n8n:5678';
 const PROXY_URL = process.env.PROXY_URL || 'http://local-ai-ollama-responses-proxy:8080';
@@ -27,6 +28,11 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const SELF_APP_ROOT = process.env.SELF_APP_ROOT || '/app';
 const ENGINEERING_MODEL_TIMEOUT_MS = Math.max(60000, Math.min(1800000, Number(process.env.ENGINEERING_MODEL_TIMEOUT_MS || 600000)));
 const CHAT_MODEL_TIMEOUT_MS = Math.max(30000, Math.min(900000, Number(process.env.CHAT_MODEL_TIMEOUT_MS || 180000)));
+// Mission settings (agent-orchestrator.js). Each is optional; out-of-range values fall back to the default.
+const envInt = (name, min, max) => { const n = Number(process.env[name]); return Number.isSafeInteger(n) && n >= min && n <= max ? n : undefined; };
+const MISSION_TIMEOUT_MS = envInt('LOCALAI_MISSION_TIMEOUT_MS', 1000, 3600000); // a worker's and the coordinator's deadline; default 10 minutes
+const MISSION_EVIDENCE_TOKENS = envInt('LOCALAI_MISSION_EVIDENCE_TOKENS', 500, 100000); // first-turn evidence; default 6000
+const MISSION_MODEL_CONCURRENCY = envInt('LOCALAI_MISSION_MODEL_CONCURRENCY', 1, 8); // model turns at once; default 1
 const CAPABILITY_CACHE_MS = Math.max(5000, Math.min(300000, Number(process.env.CAPABILITY_CACHE_MS || 30000)));
 let capabilityCache = { expiresAt: 0, value: null };
 const POWERSHELL_BRIDGE_TOKEN = String(process.env.POWERSHELL_BRIDGE_TOKEN || '');
@@ -841,7 +847,7 @@ async function chatOnce(body) {
     const prep = await prepareChat(body);
     const started = Date.now();
 
-    const r = await fetchWithTimeout(`${OLLAMA_URL}/api/chat`, {
+    const r = await modelFetchWithTimeout(`${OLLAMA_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -941,7 +947,8 @@ async function apiChatStream(req, res) {
     send('meta', { model: prep.model, sources: prep.sources, runId: execution.id });
 
     armIdle();
-    const upstream = await fetch(`${OLLAMA_URL}/api/chat`, {
+    // modelFetch: no 300 s limit on Ollama's first byte while it reads a long prompt behind other work.
+    const upstream = await modelFetch(`${OLLAMA_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: controller.signal,
@@ -1298,7 +1305,7 @@ async function pollComfyHistory(promptId, timeoutMs = 180000) {
 // so the image model has the GPU to itself (they share 6 GB of VRAM).
 async function enhanceImagePrompt(prompt, engineId) {
   const style = engineId === 'best' ? 'Write natural sentences.' : 'Write a comma-separated list of descriptive phrases.';
-  const r = await fetchWithTimeout(`${OLLAMA_URL}/api/chat`, {
+  const r = await modelFetchWithTimeout(`${OLLAMA_URL}/api/chat`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: IMAGE_PROMPT_MODEL, stream: false, keep_alive: 0, options: { num_ctx: 2048, temperature: 0.7 },
@@ -2044,7 +2051,7 @@ async function apiKnowledgeSearch(req,res){
 
 async function runLocalModel(prompt, system='You are a concise local AI assistant.', timeoutMs=180000, model=MODEL){
   const selectedModel=String(model||MODEL).trim()||MODEL;
-  const r=await fetchWithTimeout(`${OLLAMA_URL}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:selectedModel,messages:fitMessages([{role:'system',content:system},{role:'user',content:String(prompt).slice(0,50000)}]),stream:false,keep_alive:TEXT_KEEP_ALIVE,options:{num_ctx:TEXT_NUM_CTX}})},timeoutMs);
+  const r=await modelFetchWithTimeout(`${OLLAMA_URL}/api/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:selectedModel,messages:fitMessages([{role:'system',content:system},{role:'user',content:String(prompt).slice(0,50000)}]),stream:false,keep_alive:TEXT_KEEP_ALIVE,options:{num_ctx:TEXT_NUM_CTX}})},timeoutMs);
   const raw=await r.text(); if(!r.ok)throw new Error(`Intelligence service HTTP ${r.status}: ${raw.slice(0,400)}`); const j=JSON.parse(raw); return j?.message?.content||'';
 }
 async function runEngineeringPlannerModel(prompt, system, timeoutMs=ENGINEERING_MODEL_TIMEOUT_MS){
@@ -2200,9 +2207,12 @@ function getSpecialistOrchestrator(){
   dataDir:DATA_DIR,storage,ollamaUrl:OLLAMA_URL,defaultModel:MODEL,fetchWithTimeout,runLocalModel,
   knowledgeStore,knowledgeScore,searxSearch,recordActivity,
   projectRoot:__dirname,
-  // Missions are rare and code-heavy like the planner, so agent turns share its large context and keep-alive.
-  runAgentTurn:require('./agent-runtime').createOllamaTurn({ollamaUrl:OLLAMA_URL,numCtx:TEXT_NUM_CTX_LARGE,keepAlive:TEXT_KEEP_ALIVE}),
-  agentLimits:{maxContextChars:Math.floor((TEXT_NUM_CTX_LARGE-LARGE_ANSWER_RESERVE)*3.5)}
+  // Mission turns use a context sized to fit the GPU (text-context.js MISSION_NUM_CTX), one model turn at a time, and
+  // an opening-evidence budget that keeps the first prompt to about a minute of reading.
+  runAgentTurn:require('./agent-runtime').createOllamaTurn({ollamaUrl:OLLAMA_URL,numCtx:MISSION_NUM_CTX,keepAlive:TEXT_KEEP_ALIVE}),
+  agentLimits:{maxContextChars:Math.floor((MISSION_NUM_CTX-MISSION_ANSWER_RESERVE)*3.5)},
+  numCtx:MISSION_NUM_CTX,evidenceTokens:MISSION_EVIDENCE_TOKENS,modelConcurrency:MISSION_MODEL_CONCURRENCY,
+  groundedTimeoutMs:MISSION_TIMEOUT_MS,coordinatorTimeoutMs:MISSION_TIMEOUT_MS
  });
  return specialistOrchestrator;
 }

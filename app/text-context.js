@@ -23,6 +23,11 @@ const TEXT_NUM_CTX = parseNumCtx(process.env.LOCALAI_NUM_CTX, 8192, 'LOCALAI_NUM
 // reload when its context differs from the chat context is accepted.
 const TEXT_NUM_CTX_LARGE = parseNumCtx(process.env.LOCALAI_NUM_CTX_LARGE, 32768, 'LOCALAI_NUM_CTX_LARGE');
 const LARGE_ANSWER_RESERVE = 4096;
+// Mission workers and the coordinator. At 32768 the 4B model loads at 7.9 GB and runs half on the CPU (prompt reading
+// about 113 tokens/s); 12288 is about 4.5 GB, close to fitting the 6 GB GPU beside the desktop, and holds the opening
+// evidence (mission-evidence.js evidenceTokenBudget), a few tool results and the answer.
+const MISSION_NUM_CTX = parseNumCtx(process.env.LOCALAI_MISSION_NUM_CTX, 12288, 'LOCALAI_MISSION_NUM_CTX');
+const MISSION_ANSWER_RESERVE = 2048;
 const TEXT_KEEP_ALIVE = parseKeepAlive(process.env.LOCALAI_KEEP_ALIVE);
 const ANSWER_RESERVE = 1024;
 const CHARS_PER_TOKEN = 3.5;
@@ -84,4 +89,4 @@ function unloadTextModel({ fetch: fetchFn = fetch, url, model, waitMs = UNLOAD_W
   return post(fetchFn, url, { model, keep_alive: 0 }, waitMs);
 }
 
-module.exports = { parseNumCtx, parseKeepAlive, TEXT_NUM_CTX_LARGE, LARGE_ANSWER_RESERVE, TEXT_NUM_CTX, TEXT_KEEP_ALIVE, ANSWER_RESERVE, CHARS_PER_TOKEN, estimateTokens, fitMessages, warmTextModel, unloadTextModel };
+module.exports = { parseNumCtx, parseKeepAlive, TEXT_NUM_CTX_LARGE, LARGE_ANSWER_RESERVE, MISSION_NUM_CTX, MISSION_ANSWER_RESERVE, TEXT_NUM_CTX, TEXT_KEEP_ALIVE, ANSWER_RESERVE, CHARS_PER_TOKEN, estimateTokens, fitMessages, warmTextModel, unloadTextModel };

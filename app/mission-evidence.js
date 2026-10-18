@@ -257,3 +257,36 @@ module.exports = function createMissionEvidence({ appRoot, repoRoots, maxSources
   return { select, featuresFor: goal => featuresFor(goal).map(f => f.id), goalTerms };
 };
 module.exports.FEATURES = FEATURES;
+
+// The first turn's budget. A 4B model on the 6 GB GPU reads a prompt at about 113 tokens/s when its context spills to
+// the CPU, so 6000 tokens of evidence is under a minute, and under two with a second worker queued. The budget never
+// takes more of the mission context than leaves room for the answer and a few tool calls.
+const CHARS_PER_TOKEN = 4;
+const DEFAULT_EVIDENCE_TOKENS = 6000;
+const EVIDENCE_HEADROOM_TOKENS = 5000; // system prompt, rules, tool definitions, tool results and the answer
+function evidenceTokenBudget(tokens, numCtx) {
+  const wanted = Number.isSafeInteger(tokens) && tokens > 0 ? tokens : DEFAULT_EVIDENCE_TOKENS;
+  const room = Number.isSafeInteger(numCtx) && numCtx > 0 ? Math.max(1000, numCtx - EVIDENCE_HEADROOM_TOKENS) : Infinity;
+  return Math.min(wanted, room);
+}
+
+// Source blocks arrive most relevant first (select above). Whole blocks are kept while they fit; the next one is cut
+// to the room left when that is still worth reading; the rest are left for the tools.
+const MIN_CUT_CHARS = 800;
+const SEPARATOR = 2; // '\n\n' between blocks
+function fitEvidence(blocks, budgetChars) {
+  const kept = [];
+  let used = 0;
+  for (const block of blocks || []) {
+    const text = String(block);
+    const room = budgetChars - used - (kept.length ? SEPARATOR : 0);
+    if (text.length <= room) { kept.push(text); used += text.length + (kept.length > 1 ? SEPARATOR : 0); continue; }
+    if (room >= MIN_CUT_CHARS) { const cut = text.slice(0, room - 2) + ' …'; kept.push(cut); used += cut.length + (kept.length > 1 ? SEPARATOR : 0); }
+    break;
+  }
+  return { blocks: kept, kept: kept.length, chars: used };
+}
+module.exports.fitEvidence = fitEvidence;
+module.exports.evidenceTokenBudget = evidenceTokenBudget;
+module.exports.CHARS_PER_TOKEN = CHARS_PER_TOKEN;
+module.exports.DEFAULT_EVIDENCE_TOKENS = DEFAULT_EVIDENCE_TOKENS;

@@ -48,7 +48,14 @@ test('a worker’s second line says what it is doing now', () => {
 test('errors are said in plain words', () => {
   assert.equal(words.errorWords('MODEL_CONNECTION_ERROR', 'fetch failed'), 'the model didn’t answer');
   assert.equal(words.errorWords('', 'fetch failed'), 'the model didn’t answer');
-  assert.equal(words.errorWords('MODEL_TIMEOUT', ''), 'the model took too long');
+  assert.equal(words.errorWords('MODEL_TIMEOUT', ''), 'the model took too long to start answering (the computer was busy)');
+  // Node's fetch gives up on a silent model after 5 minutes; whatever the wording, the raw error never shows.
+  assert.equal(words.errorWords('MODEL_CONNECTION_ERROR', 'fetch failed (UND_ERR_HEADERS_TIMEOUT)'), 'the model took too long to start answering (the computer was busy)');
+  assert.equal(words.errorWords('', 'Grounded specialist inference exceeded 10 minute timeout: The model took longer than 600 s (request timed out)'), 'the model took too long to start answering (the computer was busy)');
+  assert.equal(words.errorWords('MODEL_UNREACHABLE', 'Ollama wasn’t answering at ollama:11434 (ECONNREFUSED)'), 'Ollama wasn’t answering');
+  assert.equal(words.errorWords('MODEL_CONNECTION_ERROR', 'connect ECONNREFUSED 127.0.0.1:11434'), 'Ollama wasn’t answering');
+  assert.equal(words.errorWords('', 'Ollama connection failed: ECONNRESET'), 'the model didn’t answer');
+  for (const [c, t] of [['MODEL_CONNECTION_ERROR', 'fetch failed'], ['', 'fetch failed'], ['MODEL_TIMEOUT', 'fetch failed'], ['', 'TypeError: fetch failed']]) assert.doesNotMatch(words.errorWords(c, t), /fetch failed/);
   assert.equal(words.errorWords('APPLIANCE_RESTART', ''), 'Local AI restarted while it was working');
   // The restart reason, new and old wording, reads the same.
   assert.equal(words.errorWords('', 'Local AI restarted for an update while this was running'), 'interrupted by an update');
@@ -140,7 +147,7 @@ test('a worker’s change is one sentence (the city’s floating notes)', () => 
   const m = mission({ workers: [router(), ux({ state: 'error' }), coord({ state: 'blocked' })] });
   assert.equal(words.changeSentence(ux({ state: 'running' }), m), 'UX Analyst started reviewing the screens');
   assert.equal(words.changeSentence(ux({ state: 'complete' }), m), 'UX Analyst finished');
-  assert.equal(words.changeSentence(ux({ state: 'error', errorCode: 'MODEL_TIMEOUT' }), m), 'UX Analyst stopped: the model took too long');
+  assert.equal(words.changeSentence(ux({ state: 'error', errorCode: 'MODEL_TIMEOUT' }), m), 'UX Analyst stopped: the model took too long to start answering (the computer was busy)');
   assert.equal(words.changeSentence(m.workers[2], m), 'Coordinator couldn’t start: UX Analyst stopped');
   assert.equal(words.changeSentence(ux({ state: 'pending' }), m), '');
 });
