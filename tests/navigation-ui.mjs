@@ -25,7 +25,9 @@ await page.waitForSelector('.ux-primary-rail');
 // window.showView is published once app.js finishes binding, which can land after the rail renders.
 await page.waitForFunction(() => typeof window.showView === 'function');
 
-const secondaryLabels = () => page.locator('#uxSecondaryGroups .ux-link-label').allInnerTexts();
+// Navigation spec step 4: the rail picks the area; the page strip under the top bar lists its pages; the top bar names
+// the area (a page without a strip, such as Missions, names itself).
+const stripLabels = () => page.locator('#uxPageStrip button').allInnerTexts();
 const crumbOf = async pg => (await pg.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').trim();
 const crumb = () => crumbOf(page);
 
@@ -34,7 +36,8 @@ await check('home has one command surface and a short breadcrumb', async () => {
   await page.waitForSelector('#home.active');
   assert.equal(await page.locator('#home .quick').count(), 0);
   assert.equal(await page.locator('#commandInput').getAttribute('placeholder'), 'Ask anything, or describe a task…');
-  assert.equal(await crumb(), 'Local AI / Home');
+  assert.equal(await page.locator('#uxPageStrip').isVisible(), false, 'Home has no page strip');
+  assert.doesNotMatch(await crumb(), /Local AI \//, 'no breadcrumb');
 });
 
 // The legacy pages are retired (owner decision D4): their addresses land on the page that replaced them.
@@ -52,27 +55,27 @@ await check('retired pages are gone and their addresses land on Signals, In prog
     await pg.evaluate(h => { location.hash = h; }, '#' + from);
     await pg.waitForFunction(t => document.querySelector('.view.active')?.id === t, to, { timeout: 5000 });
   }
-  const labels = await pg.locator('#uxSecondaryGroups .ux-link-label').allInnerTexts();
-  assert.ok(!labels.includes('Change requests') && !labels.includes('Issues'), `menu: ${labels}`);
+  const labels = await pg.locator('#uxPageStrip button').allInnerTexts();
+  assert.ok(!labels.includes('Change requests') && !labels.includes('Issues'), `strip: ${labels}`);
   await pg.waitForTimeout(300);
   assert.deepEqual(errs, []);
   assert.deepEqual(missing, [], 'nothing 404s');
   await ctx.close();
 });
 
-// A hidden page that remains (Missions, Chat, Images) names itself in the breadcrumb and lights the page that owns it.
-await check('a hidden page shows its own breadcrumb leaf and lights its owner in the menu', async () => {
+// A hidden page that remains (Missions, Chat, Images) names itself in the top bar and lights the area that owns it.
+await check('a hidden page names itself in the top bar and lights the area that owns it', async () => {
   await page.evaluate(() => window.showView('agents'));
   await page.waitForSelector('#agents.active');
   await page.waitForFunction(() => document.querySelector('#uxContextView')?.textContent === 'Missions');
-  assert.equal(await crumb(), 'Local AI / Work / Missions');
-  assert.equal(await page.locator('.ux-primary-item[data-domain="work"]').getAttribute('data-active'), 'true');
-  assert.match(await page.locator('.ux-secondary-link[data-view="work"]').getAttribute('class'), /\bactive\b/, 'Work is lit');
+  assert.equal(await crumb(), 'Missions');
+  assert.equal(await page.locator('.ux-primary-item[data-domain="work"]').getAttribute('aria-current'), 'true');
+  assert.equal(await page.locator('#uxPageStrip').isVisible(), false);
   await page.evaluate(() => window.showView('ask'));
   await page.waitForSelector('#ask.active');
   await page.waitForFunction(() => document.querySelector('#uxContextView')?.textContent === 'Chat');
-  assert.equal(await crumb(), 'Local AI / Home / Chat');
-  assert.match(await page.locator('.ux-secondary-link[data-view="home"]').getAttribute('class'), /\bactive\b/, 'Home is lit');
+  assert.equal(await crumb(), 'Chat');
+  assert.equal(await page.locator('.ux-primary-item[data-domain="home"]').getAttribute('aria-current'), 'true');
   await page.evaluate(() => window.showView('home'));
 });
 
@@ -82,30 +85,22 @@ await check('opening a page loads its data even without a nav button click', asy
   await waitForNotifications;
 });
 
-for (const [parent, child, childTab, domain] of [
-  // Issues / Quality signals are hidden while Signals (Improve) shows the same detections.
-  ['projects', 'knowledge', 'Sources', 'projects'],
-  ['projects', 'library', 'Library', 'projects'],
-  ['projects', 'spreadsheets', 'Spreadsheets', 'projects'],
-  ['work', 'automationStudio', 'Automations', 'work'],
+for (const [parent, child, childTab, domain, area] of [
+  ['projects', 'knowledge', 'Sources', 'projects', 'Projects'],
+  ['projects', 'library', 'Library', 'projects', 'Projects'],
+  ['projects', 'spreadsheets', 'Spreadsheets', 'projects', 'Projects'],
+  ['work', 'automationStudio', 'Automations', 'work', 'Work'],
 ]) {
-  await check(`${child} is a tab of ${parent}`, async () => {
+  await check(`${child} is a tab of ${parent}, in the strip`, async () => {
     await page.locator(`.ux-primary-item[data-domain="${domain}"]`).click();
-    // A domain with one page (Projects) has no page list beside the rail: the rail item opens that page.
-    const link = page.locator(`.ux-secondary-link[data-view="${parent}"]`);
-    const listed = await link.isVisible();
-    if (listed) await link.click();
     await page.waitForSelector(`#${parent}.active`);
-    const tabs = page.locator(`#${parent} .ux-tabs .ux-tab`);
-    assert.ok(await tabs.count() >= 2);
-    assert.equal(await page.locator(`#${parent} .ux-tab[data-ux-tab="${parent}"]`).getAttribute('aria-selected'), 'true');
-    await page.locator(`#${parent} .ux-tab[data-ux-tab="${child}"]`).click();
+    assert.equal(await page.locator(`#uxPageStrip [data-strip-view="${parent}"]`).getAttribute('aria-current'), 'page');
+    await page.locator(`#uxPageStrip [data-strip-view="${child}"]`).click();
     await page.waitForSelector(`#${child}.active`);
-    assert.equal(await page.locator(`#${child} .ux-tab[data-ux-tab="${child}"]`).innerText(), childTab);
-    assert.equal(await page.locator(`#${child} .ux-tab[data-ux-tab="${child}"]`).getAttribute('aria-selected'), 'true');
-    assert.equal(await page.locator('#uxContextView').innerText(), await page.locator(`#${child} h1`).first().innerText());
-    if (listed) assert.ok((await link.getAttribute('class')).includes('active'), 'parent stays highlighted in the nav');
-    assert.ok(!(await secondaryLabels()).includes(childTab), `${childTab} should not have its own nav entry`);
+    assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), childTab);
+    assert.equal(await page.locator(`.ux-primary-item[data-domain="${domain}"]`).getAttribute('aria-current'), 'true', 'its area stays lit');
+    assert.equal(await crumb(), area);
+    assert.equal(await page.locator(`#${child} .ux-page-tabs, #${child} [role="tablist"][aria-label$=" sections"]`).count(), 0, 'no second row of page tabs');
   });
 }
 
@@ -157,39 +152,32 @@ await check('opening a run keeps you on your page (open is false for an unknown 
   assert.equal(await page.evaluate(() => location.hash), before);
 });
 
-await check('page list collapses to the rail, shows the page strip, and remembers it', async () => {
+await check('the page strip switches pages in the area and marks the open one', async () => {
   await page.evaluate(() => window.showView('models'));
-  await page.locator('.ux-nav-collapse').click();
-  assert.equal(await page.locator('.ux-secondary-nav').isVisible(), false);
-  const strip = await page.locator('#uxPageStrip button').allInnerTexts();
+  await page.waitForSelector('#models.active');
+  const strip = await stripLabels();
   assert.ok(strip.includes('Health') && strip.includes('Models'), strip.join(','));
   assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Models');
   await page.locator('#uxPageStrip [data-strip-view="status"]').click();
   await page.waitForSelector('#status.active');
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => document.body.classList.contains('ux-nav-collapsed'));
-  await page.locator('.ux-nav-expand').click();
-  assert.equal(await page.locator('.ux-secondary-nav').isVisible(), true);
-  assert.equal(await page.locator('#uxPageStrip').isVisible(), false);
+  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Health');
+  assert.equal(await page.locator('.ux-secondary-nav, #uxSecondaryGroups, .ux-nav-collapse').count(), 0, 'no page list column');
 });
 
 await check('the Projects tab lands on Projects, and Library is its Library tab (D7)', async () => {
   await page.locator('.ux-primary-item[data-domain="projects"]').click();
   await page.waitForSelector('#projects.active');
   assert.equal(await page.evaluate(() => location.hash), '#projects');
-  const tabs = await page.locator('#projects .ux-tabs .ux-tab').allInnerTexts();
-  assert.ok(tabs.includes('Library'), tabs.join(','));
-  assert.equal((await secondaryLabels()).includes('Library'), false, 'Library has no menu entry of its own');
-  await page.locator('#projects .ux-tab[data-ux-tab="library"]').click();
+  assert.deepEqual(await stripLabels(), ['Projects', 'Sources', 'Memory', 'Library', 'Spreadsheets']);
+  await page.locator('#uxPageStrip [data-strip-view="library"]').click();
   await page.waitForSelector('#library.active');
   assert.equal(await page.locator('#library h1').innerText(), 'Projects');
-  assert.match(await crumb(), /Projects/);
   // An old #library link still opens it, as the tab of Projects.
   await page.evaluate(() => { location.hash = '#home' });
   await page.waitForSelector('#home.active');
   await page.evaluate(() => { location.hash = '#library' });
   await page.waitForSelector('#library.active');
-  assert.equal(await page.locator('#library [role="tablist"] .ux-tab.active').innerText(), 'Library');
+  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Library');
 });
 
 await check('no script errors while navigating', async () => {
@@ -203,41 +191,15 @@ await mobile.goto(base, { waitUntil: 'domcontentloaded' });
 await mobile.waitForSelector('#uxMobileNav');
 await mobile.waitForFunction(() => typeof window.showView === 'function');
 
-await check('mobile sheet lists pages, not tabs', async () => {
-  // Home itself shows the brand instead of the section menu, so open it from Inbox (same section).
-  await mobile.evaluate(() => window.showView('inbox'));
-  await mobile.locator('#uxContextMenu').click();
-  await mobile.locator('#uxMobileSheet').waitFor({ state: 'visible' });
-  const items = await mobile.locator('#uxMobileSheetItems .ux-mobile-link strong').allInnerTexts();
-  assert.deepEqual(items, ['Home', 'Inbox']);
-  await mobile.locator('#uxMobileSheetClose').click();
-});
-
-await check('Back closes the phone section sheet without leaving the page', async () => {
-  await mobile.evaluate(() => window.showView('inbox'));
-  await mobile.waitForSelector('#inbox.active');
-  const before = await mobile.evaluate(() => ({ h: location.hash }));
-  await mobile.locator('#uxContextMenu').click();
-  await mobile.locator('#uxMobileSheet').waitFor({ state: 'visible' });
-  assert.ok(await mobile.evaluate(() => !!history.state?.localaiSheet), 'the open sheet has a history entry');
+await check('phone: no section menu; the strip lists the pages and tabs of the area', async () => {
+  await mobile.evaluate(() => window.showView('projects'));
+  await mobile.waitForSelector('#projects.active');
+  assert.equal(await mobile.locator('#uxContextMenu, #uxMobileSheet').count(), 0, 'the ⌄ sheet is gone');
+  assert.deepEqual(await mobile.locator('#uxPageStrip button').allInnerTexts(), ['Projects', 'Sources', 'Memory', 'Library', 'Spreadsheets']);
+  await mobile.locator('#uxPageStrip [data-strip-view="memory"]').click();
+  await mobile.waitForSelector('#memory.active');
   await mobile.evaluate(() => history.back());
-  await mobile.waitForFunction(() => document.getElementById('uxMobileSheet').dataset.open === 'false');
-  assert.equal(await mobile.evaluate(() => location.hash), before.h);
-  assert.equal(await mobile.locator('#inbox.active').count(), 1);
-  // Closing with the sheet's own button pops the entry; a link inside the sheet replaces it (one Back returns to where you were).
-  await mobile.locator('#uxContextMenu').click();
-  await mobile.locator('#uxMobileSheet').waitFor({ state: 'visible' });
-  await mobile.locator('#uxMobileSheetClose').click();
-  await mobile.waitForFunction(() => document.getElementById('uxMobileSheet').dataset.open === 'false');
-  await mobile.waitForFunction(() => !history.state || !history.state.localaiSheet);
-  assert.equal(await mobile.locator('#inbox.active').count(), 1);
-  await mobile.locator('#uxContextMenu').click();
-  await mobile.locator('#uxMobileSheet').waitFor({ state: 'visible' });
-  await mobile.locator('#uxMobileSheetItems .ux-mobile-link', { hasText: 'Home' }).click();
-  await mobile.waitForSelector('#home.active');
-  assert.equal(await mobile.evaluate(() => location.hash), '#home');
-  await mobile.evaluate(() => history.back());
-  await mobile.waitForSelector('#inbox.active');
+  await mobile.waitForSelector('#projects.active');
 });
 
 await check('mobile tab pages have no horizontal overflow', async () => {
@@ -326,25 +288,18 @@ await check('developer tools off: System lists the owner pages only; a developer
   await pg.goto(base + '/#status', { waitUntil: 'domcontentloaded' });
   await pg.waitForFunction(() => typeof window.showView === 'function' && document.body.classList.contains('dev-tools-off'));
   await pg.waitForSelector('#status.active');
-  assert.deepEqual(await pg.locator('#uxSecondaryGroups .ux-link-label').allInnerTexts(), OWNER_SYSTEM);
-  assert.deepEqual(await pg.locator('#uxSecondaryGroups .ux-secondary-label').allInnerTexts(), ['Health', 'History'], 'with developer tools off, System holds no tools');
-  await pg.locator('.ux-nav-collapse').click();
   assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), OWNER_SYSTEM);
-  await pg.locator('.ux-nav-expand').click();
   // Deep links keep working, as Improve's do.
   await pg.evaluate(() => { location.hash = '#powershell'; });
   await pg.waitForSelector('#powershell.active');
-  assert.equal(await crumbOf(pg), 'Local AI / System / PowerShell');
-  assert.deepEqual(await pg.locator('#uxSecondaryGroups .ux-link-label').allInnerTexts(), OWNER_SYSTEM, 'the open developer page does not add itself to the menu');
+  assert.equal(await crumbOf(pg), 'System');
+  assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), OWNER_SYSTEM, 'the open developer page does not add itself to the strip');
   // The switch brings every developer page back, in place.
   await pg.evaluate(() => window.showView('status'));
   await pg.locator('.dev-tools-pref input').check();
   await pg.waitForFunction(() => !document.body.classList.contains('dev-tools-off'));
-  const all = await pg.locator('#uxSecondaryGroups .ux-link-label').allInnerTexts();
-  for (const label of [...OWNER_SYSTEM, ...DEV_SYSTEM]) assert.ok(all.includes(label), `${label} is listed with the switch on: ${all}`);
-  await pg.locator('.ux-nav-collapse').click();
-  assert.equal((await pg.locator('#uxPageStrip button').allInnerTexts()).length, OWNER_SYSTEM.length + DEV_SYSTEM.length);
-  await pg.locator('.ux-nav-expand').click();
+  const all = await pg.locator('#uxPageStrip button').allInnerTexts();
+  assert.equal(all.length, OWNER_SYSTEM.length + DEV_SYSTEM.length, `strip with the switch on: ${all}`);
   // Switching it off while on a developer page returns to Home.
   await pg.evaluate(() => window.showView('workbench'));
   await pg.waitForSelector('#workbench.active');
@@ -353,7 +308,7 @@ await check('developer tools off: System lists the owner pages only; a developer
   assert.deepEqual(errs, []);
   await ctx.close();
 });
-await check('phone, developer tools off: the section sheet and page strip list the owner pages only', async () => {
+await check('phone, developer tools off: the page strip lists the owner pages only', async () => {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   await ctx.addInitScript(() => { localStorage.setItem('localai.devTools', '0'); localStorage.setItem('localai.firstRun.done', '1'); });
   const pg = await ctx.newPage();
@@ -361,9 +316,6 @@ await check('phone, developer tools off: the section sheet and page strip list t
   await pg.waitForFunction(() => typeof window.showView === 'function' && document.body.classList.contains('dev-tools-off'));
   await pg.waitForSelector('#status.active');
   assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), OWNER_SYSTEM);
-  await pg.locator('#uxContextMenu').click();
-  await pg.locator('#uxMobileSheet').waitFor({ state: 'visible' });
-  assert.deepEqual(await pg.locator('#uxMobileSheetItems .ux-mobile-link strong').allInnerTexts(), OWNER_SYSTEM);
   await ctx.close();
 });
 await browser.close();

@@ -257,7 +257,7 @@
   function hide(ms){clearTimeout(hideTimer);hideTimer=setTimeout(()=>{const el=document.getElementById('pullRefresh');if(el){el.hidden=true;el.textContent=''}},ms)}
   const current=()=>{const v=document.querySelector('.view.active');return v&&pages.has(v.id)?v:null};
   // Not from a text field, and not while a sheet or dialog is open: only from the page's own content at the very top.
-  const blocked=t=>!t||!t.closest||!!t.closest('dialog,input,textarea,select,[contenteditable="true"]')||!!document.querySelector('dialog[open]')||document.body.classList.contains('ux-sheet-open');
+  const blocked=t=>!t||!t.closest||!!t.closest('dialog,input,textarea,select,[contenteditable="true"]')||!!document.querySelector('dialog[open]');
   document.addEventListener('touchstart',e=>{
     start=null;if(busy||e.touches.length!==1||!coarse()||window.scrollY>0)return;
     const v=current();if(!v||!v.contains(e.target)||blocked(e.target))return;
