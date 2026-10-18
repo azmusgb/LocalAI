@@ -125,7 +125,8 @@
     return row;
   }
   // A sheet that Back should close. sheetHistory(el, onClose) -> release(), where `el` is the sheet element.
-  // Call it as the sheet opens: it pushes a history entry, so Back (popstate) calls onClose(el) and the person stays on the page.
+  // Call it as the sheet opens: it pushes a history entry (after any release()'s pending history.back() lands), so Back (popstate)
+  // calls onClose(el) and the person stays on the page.
   // Call release() when the sheet closes any other way: it pops that entry again (no page change, hashchange never fires), and does
   // nothing if the entry is no longer on top (the router replaces it when a link inside the sheet navigates). release() is idempotent,
   // so onClose may call it, or the sheet's own close handler may.
@@ -144,9 +145,10 @@
   function sheetHistory(el,onClose){
     const id='sheet'+sheetLoad+'-'+(++sheetSeq),here=()=>history.state&&history.state.localaiSheet===id;let live=true;
     liveSheets.add(id);
-    try{history.pushState({...(history.state&&typeof history.state==='object'?history.state:{}),localaiSheet:id},'',location.href)}catch{}
     const onPop=()=>{if(!live||here())return;live=false;liveSheets.delete(id);window.removeEventListener('popstate',onPop);try{if(typeof onClose==='function')onClose(el)}catch(e){console.error(e)}};
-    window.addEventListener('popstate',onPop);
+    // A sheet opened while the last one's history.back() is still in flight pushes its entry only once that has landed:
+    // pushed at once, the late back() would step off the new entry and its popstate would close the new sheet.
+    afterSheetPop(()=>{if(!live)return;try{history.pushState({...(history.state&&typeof history.state==='object'?history.state:{}),localaiSheet:id},'',location.href)}catch{}window.addEventListener('popstate',onPop)});
     return function release(){if(!live)return;live=false;liveSheets.delete(id);window.removeEventListener('popstate',onPop);if(here())popBack()};
   }
   // Each run kind can own the body of its run view: mount(run, el) fills el. Kinds with none show the Output block.

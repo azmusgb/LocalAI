@@ -110,13 +110,18 @@ await check('a page from another build reloads itself once, and only once', asyn
   const ctx = await browser.newContext({ serviceWorkers: 'block' });
   const page = await ctx.newPage();
   try {
-    await ctx.route(u => u.pathname === '/healthz', r => r.fulfill({ json: { status: 'ok', appliance: 'Local AI', version: '9.9.999', releaseCommit: 'f'.repeat(40) } }));
-    let loads = 0;
-    page.on('load', () => { loads++; });
-    await page.goto(base + '/', { waitUntil: 'load' });
-    await page.waitForFunction(() => { try { return !!sessionStorage.getItem('localai.buildReload'); } catch { return false; } }, null, T);
-    await page.waitForTimeout(4000);
-    assert.equal(loads, 2, `loaded ${loads} times: the first load and one reload`);
+    // Count document requests, not load events: under load the stubbed /healthz answers before the first document
+    // finishes loading, so its reload cancels that load event and only one 'load' fires for two documents.
+    const docs = []; // per document request: how many /healthz checks it has made
+    page.on('request', r => { if (r.isNavigationRequest() && r.frame() === page.mainFrame()) docs.push(0); });
+    await ctx.route(u => u.pathname === '/healthz', r => { if (docs.length) docs[docs.length - 1]++; return r.fulfill({ json: { status: 'ok', appliance: 'Local AI', version: '9.9.999', releaseCommit: 'f'.repeat(40) } }); });
+    await page.goto(base + '/', { waitUntil: 'commit' });
+    // The reloaded document checks /healthz too; once it has, it has decided (synchronously) whether to reload again.
+    const until = async (ok, what) => { for (let i = 0; i < 200 && !ok(); i++) await page.waitForTimeout(100); assert.ok(ok(), what); };
+    await until(() => docs.length >= 2 && docs[1] >= 1, `the page reloaded and the reload checked /healthz (documents: ${JSON.stringify(docs)})`);
+    await page.waitForLoadState('load');
+    await page.waitForTimeout(2500); // freshReload waits up to 1.5 s for the worker before reloading: a second reload would show by now
+    assert.equal(docs.length, 2, `loaded ${docs.length} documents: the first and one reload`);
     assert.equal(await page.evaluate(() => sessionStorage.getItem('localai.buildReload')), '9.9.999@' + 'f'.repeat(40));
   } finally {
     await ctx.close();

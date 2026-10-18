@@ -53,6 +53,20 @@ await check('the start sheet asks what the team should do',async()=>{
   assert.equal(await page.locator('#missionRunBtn').innerText(),'Start');
   await page.keyboard.press('Escape');await page.locator('#awStart').waitFor({state:'hidden'});
 });
+await check('the start sheet opened again right after closing stays open',async()=>{
+  // The closed sheet's queued close event and its history.back() used to land after the reopen and close the new sheet.
+  for(let i=0;i<3;i++){
+    await page.evaluate(()=>window.LocalAIAgentStart.open());
+    await page.locator('#agentGoal').waitFor({state:'visible'});
+    await page.keyboard.press('Escape');await page.locator('#awStart').waitFor({state:'hidden'});
+    await page.evaluate(()=>window.LocalAIAgentStart.open());
+    await page.waitForFunction(()=>!!history.state?.localaiSheet);
+    await page.waitForTimeout(600); // past sheetHistory's 500 ms pop fallback: anything late has landed
+    assert.equal(await page.evaluate(()=>document.getElementById('awStart').open),true,`round ${i}: the reopened sheet closed itself`);
+    await page.keyboard.press('Escape');await page.locator('#awStart').waitFor({state:'hidden'});
+    await page.waitForFunction(()=>!history.state?.localaiSheet);
+  }
+});
 await check('Agent World is mounted',async()=>{
   await page.locator('#agentWorldCityMount .awc').waitFor({state:'visible'});
   const box=await page.locator('#agentWorldCityMount .awc').boundingBox();
