@@ -9,13 +9,18 @@ param(
     # Checked before tidying old backup containers when there was nothing to deploy (and after a deploy).
     [string]$HealthUrl = 'http://127.0.0.1:3080/healthz',
     [ValidateRange(0, 1440)]
-    [int]$MaxHoldMinutes = 45
+    [int]$MaxHoldMinutes = 45,
+    # The compose stack whose stopped services each run starts again (Repair-LocalAI-Stack.ps1); skipped without them.
+    [string]$StackEnvFile = 'C:\LocalAI\stack\stack.env',
+    [string]$StackCompose = (Join-Path $Repo 'deploy\stack\compose.yml')
 )
 # What the 'LocalAI Safe Deploy' task runs every few minutes. Keeps the host checkout current, runs the safe
 # deploy (certify, promote, health-check, roll back), logs it, and tells the Inbox when something happened:
 # a new release went live, or a deploy failed (once per failing commit, not on every retry). No change = silent.
 # After a healthy deploy, or a quiet run with /healthz OK, it removes stopped migration backups (local-ai-*-pre-*)
 # older than 7 days whose live twin is healthy (Remove-LocalAI-OldBackups.ps1); that step never fails the run.
+# Every run first starts compose services a Windows restart left stopped (Repair-LocalAI-Stack.ps1); that step
+# never fails the run either.
 # A new release waits while the appliance is running something a restart would stop (a mission, an image, a chat,
 # a GridCraft request, an automation), for up to MaxHoldMinutes; then it goes ahead and says what it stopped.
 $ErrorActionPreference = 'Continue'
@@ -86,11 +91,32 @@ function Invoke-BackupTidy {
         try { Write-AutoDeployLog ((Get-Date).ToString('s') + ' tidy: failed: ' + $_.Exception.Message) $null } catch { }
     }
 }
+# Starts compose services that should be running but are stopped (a Windows restart leaves them Exited: Docker
+# Desktop counts that as a user stop, so `restart: unless-stopped` doesn't bring them back). Logs each start, sends
+# one Inbox line, and never fails the deploy. Silent when everything is running.
+function Invoke-StackRepair {
+    try {
+        $repair = & (Join-Path $PSScriptRoot 'Repair-LocalAI-Stack.ps1') -EnvFile $StackEnvFile -Compose $StackCompose -HealthUrl $HealthUrl
+        $lines = @($repair.Log | Where-Object { $_ } | ForEach-Object { (Get-Date).ToString('s') + ' repair: ' + $_ })
+        if ($lines.Count) { Write-AutoDeployLog $lines $null }
+        $count = @($repair.Started).Count
+        if ($count -gt 0) {
+            $title = if ($count -eq 1) { 'Restarted 1 Local AI service that was stopped (probably by a Windows restart)' } else { "Restarted $count Local AI services that were stopped (probably by a Windows restart)" }
+            $health = if ($repair.Healthy) { 'The appliance answers /healthz.' } else { 'The appliance did not answer /healthz within a minute; see Health.' }
+            Notify $title ('Started: ' + (@($repair.Started) -join ', ') + '. ' + $health) @{ outcome = 'done'; action = 'repair-stack'; started = (@($repair.Started) -join ', ') }
+        }
+    } catch {
+        try { Write-AutoDeployLog ((Get-Date).ToString('s') + ' repair: failed: ' + $_.Exception.Message) $null } catch { }
+    }
+}
 
 # The deploy scripts themselves come from this checkout, so fast-forward it when it tracks main and is clean.
 # Otherwise fetch, so the check below sees what the deploy would.
 if ($TargetRef -eq 'origin/main' -and -not (git -C $Repo status --porcelain 2>$null)) { git -C $Repo pull -q --ff-only origin main 2>&1 | Out-Null }
 else { git -C $Repo fetch -q --prune origin 2>&1 | Out-Null }
+
+# Before anything else: services a Windows restart left stopped come back even when there is nothing to deploy.
+Invoke-StackRepair
 
 $started = Get-Date
 $target = [string](git -C $Repo rev-parse --verify "$TargetRef^{commit}" 2>$null)

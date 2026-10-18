@@ -66,14 +66,31 @@ The `LocalAI Safe Deploy` scheduled task runs `deploy\Run-LocalAI-AutoDeploy.ps1
 
 1. Fast-forwards `C:\LocalAI\repo` with `git pull --ff-only origin main`, but only when the target is
    `origin/main` and the checkout has no local changes, so the deploy scripts themselves stay current.
-2. When the target commit isn't the one running, waits for running work (see [Updates wait for running
+2. Starts any stopped Local AI services (see [After a Windows restart](#after-a-windows-restart)).
+3. When the target commit isn't the one running, waits for running work (see [Updates wait for running
    work](#updates-wait-for-running-work)).
-3. Runs `Deploy-LocalAI.ps1` in a child Windows PowerShell. An idle run ends with `NO CHANGE` in about a second.
-4. Posts to the Inbox (`POST /api/notifications/system`, kind `deploy`) when a release goes live, or when a
+4. Runs `Deploy-LocalAI.ps1` in a child Windows PowerShell. An idle run ends with `NO CHANGE` in about a second.
+5. Posts to the Inbox (`POST /api/notifications/system`, kind `deploy`) when a release goes live, or when a
    deploy fails (once per failing commit, not on every retry).
-5. Rewrites `C:\LocalAI\.deploy\auto-deploy.log`: up to 500 one-line summaries plus the last deploy's full output.
-6. After a healthy deploy, or a run with nothing to deploy and `/healthz` OK, tidies old backup containers (see
+6. Rewrites `C:\LocalAI\.deploy\auto-deploy.log`: up to 500 one-line summaries plus the last deploy's full output.
+7. After a healthy deploy, or a run with nothing to deploy and `/healthz` OK, tidies old backup containers (see
    [Old backup containers](#old-backup-containers)).
+
+### After a Windows restart
+
+Docker Desktop treats containers stopped by a Windows shutdown as stopped on purpose, so `restart: unless-stopped`
+doesn't bring them back: after a reboot, everything except the appliance can stay `Exited` (n8n, the Responses proxy,
+search, HTTPS, the code sandbox). The next update check (within 5 minutes) starts them again, even when there is
+nothing to deploy. `deploy\Repair-LocalAI-Stack.ps1` lists the stack's services
+(`docker compose --env-file C:\LocalAI\stack\stack.env -f deploy\stack\compose.yml ps -a`) and, if any that should
+run is exited or created, runs `docker compose ... up -d --no-recreate`, which leaves running containers (the
+appliance included) alone. The one-shot `local-ai-sandbox-certs` job, `*-pre-*` backups and containers outside the
+compose project are never started; if a backup still carries the project's labels it starts the stopped services by
+name instead, so `up` can't remove the backup. Each start is a line in `auto-deploy.log` (`repair: started
+local-ai-n8n (was Exited 143)`), followed by the appliance's `/healthz` result after up to a minute, and the Inbox
+gets one notice, e.g. "Restarted 6 Local AI services that were stopped (probably by a Windows restart)". It does
+nothing on a host without `stack.env`, is silent when everything runs, and a failure is logged and never stops the
+deploy.
 
 ### Updates wait for running work
 
