@@ -46,9 +46,20 @@ other `/api/workshop/` route.
 The link opens as a top-level page with `rel="noopener noreferrer"`, so an `http://` address works from the
 `https://` app and the portal can't reach back into Local AI.
 
+## Current state (18 Oct 2026): the portal has no sign-in
+
+On the firmware installed on the display (Workshop OS 12, source `48ddd58`) the Local Portal has **no sign-in**: an
+unauthenticated `GET /status` returns full live printer status, and the firmware's same-origin check accepts a
+request that simply carries the header `X-BambuHelper-Client: 1`, so any program on the home network can probably use
+the printer controls, Stop included (not tested, to avoid stopping a print). This contradicts that repo's own
+`SECURITY.md` and `docs/portal-auth-v11-20.md`. A firmware update that restores the sign-in is being prepared in
+`azmusgb/bambuhelper-smart-display`; it needs the repo's physical acceptance on the display before it is installed.
+Until then: Local AI still only reads `/hardware/health` and never sends anything else to the display; the Tailscale
+route `10.0.0.124/32` reaches the display only from your own Tailscale devices.
+
 ## Why the portal isn't proxied
 
-The portal protects the printer with its own session sign-in (a rotating access code), CSRF tokens and same-origin
+The portal is meant to protect the printer with its own session sign-in (a rotating access code), CSRF tokens and same-origin
 checks on every change (see that repo's `docs/portal-auth-v11-20.md` and `docs/CONTROL_SAFETY.md`). Loading it
 through Local AI would add a second way to the printer controls that sits outside those checks: Local AI has no
 sign-in of its own (see [Security](SECURITY.md#known-gaps)), every request would come from the appliance's origin
