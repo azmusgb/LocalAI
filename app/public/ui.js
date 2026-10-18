@@ -2792,13 +2792,77 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       return `<article class="ux-int-card" data-tier="${item.tier}" aria-labelledby="ux-int-v2-${item.id}">
         <div class="ux-int-card-head"><div><div class="ux-int-name" id="ux-int-v2-${item.id}">${item.name}</div><div class="ux-int-decision" data-integration-decision="${item.id}">${item.decision}</div></div>${tierBadge(item.tier)}</div>
         <p data-integration-summary="${item.id}">${item.summary}</p>
-        <div class="ux-int-guidance">${item.guidance}</div>${item.id === 'workshop' ? '<div class="ux-int-guidance" data-workshop-printer hidden></div>' : ''}
+        <div class="ux-int-guidance">${item.guidance}</div>${item.id === 'workshop' ? `<div class="ux-int-guidance" data-workshop-printer hidden></div>${CODE_HTML}` : ''}
         <div class="ux-int-card-foot">${live}<div class="ux-int-actions">${actions}</div></div>
       </article>`;
     }).join('');
     qa('[data-integration-view]', holder).forEach(button => button.addEventListener('click', () => navigate(button.dataset.integrationView)));
     qa('[data-integration-post]', holder).forEach(button => button.addEventListener('click', () => postAction(button)));
+    q('[data-workshop-code-show]', holder)?.addEventListener('click', showCode);
+    q('[data-workshop-code-copy]', holder)?.addEventListener('click', copyCode);
+    q('[data-workshop-code-hide]', holder)?.addEventListener('click', hideCode);
   }
+
+  // Workshop display › Show sign-in code (the display's code key stays on the appliance). Each tap asks the appliance,
+  // which asks the display. The code lives only in this box: never in storage, the address bar or a cache. It hides
+  // after 60 s, when the page is hidden, or when Services is left (docs/WORKSHOP-DISPLAY.md).
+  const CODE_HTML = `<div class="ux-ws-code" data-workshop-code hidden>
+    <p class="ux-ws-code-off" data-workshop-code-off>To show the sign-in code here, add code access in the display's portal (More → Sign-in code access)</p>
+    <div data-workshop-code-on><button class="btn-outline ux-int-action" type="button" data-workshop-code-show>Show sign-in code</button>
+    <div class="ux-ws-code-box" data-workshop-code-box hidden><span class="ux-ws-code-label">Portal sign-in code · hides in 60 s</span><output class="ux-ws-code-value" data-workshop-code-value></output>
+    <div class="ux-int-actions"><button class="btn-outline ux-int-action" type="button" data-workshop-code-copy>Copy</button><a class="btn-outline ux-int-action" target="_blank" rel="noopener noreferrer" data-workshop-code-portal aria-label="Open portal (opens in a new tab)">Open portal ↗</a><button class="btn-outline ux-int-action" type="button" data-workshop-code-hide>Hide</button></div></div>
+    <p class="ux-ws-code-msg" data-workshop-code-msg role="status" aria-live="polite"></p></div></div>`;
+  let codeTimer = 0;
+  function hideCode() {
+    clearTimeout(codeTimer);
+    const value = q('[data-workshop-code-value]'), box = q('[data-workshop-code-box]'), show = q('[data-workshop-code-show]');
+    if (value) { value.textContent = ''; value.removeAttribute('aria-label'); }
+    if (box && !box.hidden) { box.hidden = true; if (show) show.hidden = false; }
+  }
+  async function showCode() {
+    const button = q('[data-workshop-code-show]'), msg = q('[data-workshop-code-msg]');
+    if (!button || button.disabled) return;
+    button.disabled = true;
+    button.textContent = 'Getting the code…';
+    msg.textContent = '';
+    try {
+      const r = await fetch('/api/workshop/portal-code', { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || typeof d.code !== 'string') throw new Error(d.error || "Local AI isn't answering.");
+      if (document.hidden) return;
+      const value = q('[data-workshop-code-value]'), link = q('[data-workshop-code-portal]');
+      value.textContent = `${d.code.slice(0, 5)} ${d.code.slice(5)}`;
+      value.setAttribute('aria-label', `Sign-in code ${[...d.code].join(' ')}`);
+      const url = /^https?:\/\//.test(d.address || '') ? d.address : '';
+      if (url) link.href = url; else link.removeAttribute('href');
+      link.hidden = !url;
+      q('[data-workshop-code-box]').hidden = false;
+      button.hidden = true;
+      clearTimeout(codeTimer);
+      codeTimer = window.setTimeout(hideCode, 60000);
+      q('[data-workshop-code-copy]').focus();
+    } catch (error) {
+      msg.textContent = error.message || String(error);
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Show sign-in code';
+    }
+  }
+  // The clipboard API needs https; on the plain-http address a hidden text box and copy do it.
+  async function copyCode() {
+    const code = (q('[data-workshop-code-value]')?.textContent || '').replace(/\s/g, '');
+    if (!code) return;
+    let ok = false;
+    try { await navigator.clipboard.writeText(code); ok = true; } catch {
+      const t = document.createElement('textarea');
+      t.value = code; t.readOnly = true; t.style.cssText = 'position:fixed;top:0;opacity:0';
+      document.body.append(t); t.select();
+      try { ok = document.execCommand('copy'); } catch { ok = false; }
+      t.remove();
+    }
+    window.LocalAIUI?.toast(ok ? 'Code copied' : "Couldn't copy. Type the code instead.");
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden) hideCode(); });
 
   // An action that asks the appliance to do something (open ArtCraft on the Windows computer), then says what happened.
   async function postAction(button) {
@@ -2858,7 +2922,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   function workshopPrinter(p) {
     const box = q('[data-workshop-printer]');
     if (!box) return;
-    const words = !p ? '' : p.access === 'ok' ? window.LocalAIHome?.printerWords?.(p) || (p.state === 'idle' ? 'Printer · Idle' : 'Printer · Status unknown') : PRINTER_ACCESS[p.access] || '';
+    const words = !p ? '' : p.access === 'ok' ? window.LocalAIHome?.printerWords?.(p) || ({ idle: 'Printer · Idle', cancelled: 'Printer · Print stopped' }[p.state] || 'Printer · Status unknown') : PRINTER_ACCESS[p.access] || '';
     if (p?.access !== 'busy') { box.textContent = words; box.hidden = !words; }
   }
 
@@ -2876,6 +2940,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       if (summary) summary.textContent = words[1];
     }
     workshopPrinter(status?.printer);
+    const code = q('[data-workshop-code]');
+    if (code && status) {
+      const on = status.codeAccess === true;
+      code.hidden = false;
+      q('[data-workshop-code-on]').hidden = !on;
+      q('[data-workshop-code-off]').hidden = on;
+      if (!on) hideCode();
+    }
     const board = boardName(status?.board);
     updateService('workshop', !status ? { state: 'NEUTRAL', label: 'Status unavailable' }
       : !url ? { state: 'NEUTRAL', label: 'Address not set up' }
@@ -2984,7 +3056,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (section.classList.contains('active')) window.setTimeout(showCard, 0);
 
     const observer = new MutationObserver(() => {
-      if (section.classList.contains('active')) { window.setTimeout(loadStatus, 75); window.setTimeout(showCard, 0); }
+      if (section.classList.contains('active')) { window.setTimeout(loadStatus, 75); window.setTimeout(showCard, 0); } else hideCode();
     });
     observer.observe(section, { attributes: true, attributeFilter: ['class'] });
     return true;
@@ -3526,12 +3598,17 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     clearTimeout(state.closeTimer); state.closeTimer = 0;
     Object.assign(state, { selectedId: null, drawerSig: '', fetched: null, gap: '', pending: null, inApp: false, closing: false, viewError: '' });
   }
+  // An opened failure leaves Home's Needs you, on every device (app/public/needs-you.js).
+  function markSeen(run) { if (run?.status === 'failed' && !run.seenAt) window.LocalAINeedsYou?.markSeen([run.id]); }
   async function fetchRun(id, quiet) {
     try {
       const response = await fetch(`/api/runs?id=${encodeURIComponent(id)}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
       const data = await response.json().catch(() => ({}));
       if (state.selectedId !== id) return;
-      if (response.ok && data.item) { state.fetched = data.item; state.gap = ''; if (state.pending?.resolved === id) state.pending = null; }
+      if (response.ok && data.item) {
+        state.fetched = data.item; state.gap = ''; if (state.pending?.resolved === id) state.pending = null;
+        markSeen(data.item);
+      }
       else if (quiet) return;
       else { state.gap = response.status === 404 ? 'missing' : 'error'; if (state.pending?.resolved === id) state.pending = null; }
     } catch { if (quiet || state.selectedId !== id) return; state.gap = 'error'; }
@@ -3558,7 +3635,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       if (state.pending) { showView(); return; }
       state.selectedId = null; window.LocalAIRouter?.go('#home', { replace: true }); return;   // nothing to resume (reload, or Forward after a failed start)
     }
-    if (lookup(id)) { if (state.pending?.resolved === id) state.pending = null; showView(); projectName(id); return; }
+    if (lookup(id)) { if (state.pending?.resolved === id) state.pending = null; markSeen(lookup(id)); showView(); projectName(id); return; }
     state.gap = '';
     showView();
     fetchRun(id, false);

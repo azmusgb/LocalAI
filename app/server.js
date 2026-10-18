@@ -50,6 +50,7 @@ const { Trash } = require('./trash');
 const busy = require('./busy');
 const improve = require('./improve');
 const selfChange = require('./public/self-change');
+const needsYou = require('./public/needs-you');
 const { runCard, workKind, WORK_CHIPS } = require('./run-cards');
 const libraryThreads = require('./library-threads');
 const { loadOllamaModelRuntime } = require('./model-runtime');
@@ -240,6 +241,23 @@ function keptMarker() {
     for (const id of libraryThreads.runIdsOf(it)) runs.add(id);
   }
   return x => (KEEPABLE.has(x?.type) ? { ...x, kept: (!!x.threadId && threads.has(x.threadId)) || runs.has(x.id) } : x);
+}
+
+// Failed runs the owner has opened, on any device (id -> when), so Home's Needs you lets them go everywhere at once
+// (app/public/needs-you.js). One settings record; the newest SEEN_MAX are kept, which covers far more than a day's runs.
+const SEEN_KEY = 'needs-you/seen', SEEN_MAX = 1000;
+const seenRuns = () => { const v = storage.readSetting(SEEN_KEY, null); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; };
+const withSeen = seen => x => (seen[x?.id] ? { ...x, seenAt: seen[x.id] } : x);
+async function apiRunsSeen(req, res) {
+  try {
+    const b = await readBody(req), ids = Array.isArray(b.ids) ? b.ids.map(String) : [];
+    if (!ids.length || ids.length > 200 || ids.some(id => !(cleanRunId(id) || (/^legacy-[a-z]+:[\w.-]{1,160}$/.test(id))))) return json(res, 400, { error: 'Say which runs (1 to 200 run ids)' });
+    const at = nowIso(), seen = seenRuns();
+    for (const id of ids) if (!seen[id]) seen[id] = at;
+    const kept = Object.entries(seen).sort((a, b) => String(b[1]).localeCompare(String(a[1]))).slice(0, SEEN_MAX);
+    storage.writeSetting(SEEN_KEY, Object.fromEntries(kept));
+    json(res, 200, { seen: ids.length });
+  } catch (e) { storageError(res, e, 400); }
 }
 
 function updateArtifact(id, patch = {}) {
@@ -2191,10 +2209,7 @@ function crossSiteRequest(req) {
   return !sameHost(parsed.protocol, parsed.host, req.headers.host) && !sameHost(parsed.protocol, parsed.host, forwarded);
 }
 // The server's areas (app/server/*.js), each given what it uses; a module comes after those it takes names from.
-// The server's areas (app/server/*.js), each given what it uses; a module comes after those it takes names from.
-// The server's areas (app/server/*.js), each given what it uses; a module comes after those it takes names from.
-// The server's areas (app/server/*.js), each given what it uses; a module comes after those it takes names from.
-const { apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopStatus } = require('./server/gridcraft').createGridcraft({ GRIDCRAFT_RUN_TIMEOUT_MS, GRIDCRAFT_URL, inFlight, json, makeId, modelFetchWithTimeout, readBody, recordActivity, sameOriginJson, storage, workshop, workshopPrinter });
+const { apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopPortalCode, apiWorkshopStatus } = require('./server/gridcraft').createGridcraft({ GRIDCRAFT_RUN_TIMEOUT_MS, GRIDCRAFT_URL, inFlight, json, makeId, modelFetchWithTimeout, readBody, recordActivity, sameOriginJson, storage, workshop, workshopPrinter });
 const { addNotification, apiApprovalCreate, apiApprovalDecide, apiApprovals, apiNotificationSeed, apiNotificationSystem, apiNotificationUpdate, apiNotifications, approvalStore, notificationStore, resolveDeployFailures } = require('./server/notifications').createNotifications({ APPROVALS_STORE, NOTIFICATIONS_STORE, changeStore, decideChange, hostDetail, isInfoNotice, json, makeId, normalizeTitle, notifier, notifyLib, nowIso, objectStore, prependRecord, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
 const { accessAddresses, apiAccess, apiPush, apiReleases, recordReleaseHistory } = require('./server/push').createPush({ APP_VERSION, json, notifier, nowIso, pushLib, readBody, release, resolveDeployFailures, storage, storageError });
 const { apiConfig, redirectFor, serveStatic } = require('./server/web').createWeb({ APP_VERSION, CAPABILITY_CACHE_MS, CHAT_MODEL_TIMEOUT_MS, ENGINEERING_MODEL_TIMEOUT_MS, LOCAL_UI_PORT, MODEL, PUBLIC_DIR, accessAddresses, changeStore, claudeFindings, crypto, engineeringRunStore, fs, json, listenPort, path, release, text });
@@ -2205,7 +2220,7 @@ const { apiIssuePrepareChange, apiIssueUpdate, apiIssues, apiIssuesScan, apiQual
 const { apiBrowserFetch, apiComputerBatch, apiHttpCheck, apiRepoInspect, apiWorkbenchCommand, apiWorkbenchDiff, apiWorkbenchRead, apiWorkbenchSearch, apiWorkbenchTree, apiWorkbenchWrite, childEnv, safeWorkspacePath, simpleDiff, workspaceRel } = require('./server/workbench').createWorkbench({ URL, WORKSPACE_ROOT, fetchWithTimeout, fs, json, path, readBody, recordActivity, requireFeature, spawn, storageError });
 const { apiAgentCatalog, apiAgentDispatch, apiAgentMission, apiAgentMissionEvents, apiAgentMissionStart, apiAgentMissions, apiAgentModels, apiAgentPlan, apiAgentRun, apiAgents, apiBusy, apiSpecialistRun, runEngineeringPlannerModel, runLocalModel, startMissionRun } = require('./server/agents').createAgents({ APPROVALS_STORE, APP_DIR, DATA_DIR, ENGINEERING_MODEL_TIMEOUT_MS, LARGE_ANSWER_RESERVE, MISSION_ANSWER_RESERVE, MISSION_EVIDENCE_TOKENS, MISSION_MODEL_CONCURRENCY, MISSION_NUM_CTX, MISSION_TIMEOUT_MS, MODEL, OLLAMA_URL, RUNS_STORE, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, TEXT_NUM_CTX_LARGE, URL, activeRunControllers, addNotification, agentRunStore, approvalStore, busy, fetchWithTimeout, fitMessages, inFlight, json, knowledgeScore, knowledgeStore, makeId, modelFetchWithTimeout, nowIso, plainText, readBody, recordActivity, requireFeature, runLedger, saveStore, searxSearch, storage, storageError, titleFromText });
 const { apiAutomationCreate, apiAutomationRun, apiAutomationUpdate, apiAutomations, apiMonitorCreate, apiMonitorRun, apiMonitors, apiMorningBrief, automationSchedulerTick, monitorSchedulerTick } = require('./server/automations').createAutomations({ AUTOMATIONS_STORE, AUTOMATION_RUNS_STORE, MONITORS_STORE, activityStore, addNotification, automationRunStore, automationStore, featureAtLeast, getStatusAndRecordTransition, inFlight, json, makeId, normalizeTitle, notificationStore, nowIso, objectStore, readBody, recordActivity, requireFeature, runLocalModel, saveStore, searxSearch, storageError });
-const { apiRunCancel, apiRunRetry, apiRunUpdate, apiRuns, createChatExecution } = require('./server/runs').createRuns({ AUTOMATION_RUNS_STORE, MODEL, RUNS_STORE, WORK_CHIPS, activeRunControllers, agentRunStore, approvalStore, automationRunStore, changeStore, cleanRunId, effectiveEngineeringRuns, fetchWithTimeout, json, keptMarker, listenPort, nowIso, projectStore, readBody, recordActivity, runCard, runLedger, sanitizeMessages, saveStore, storageError, titleFromText, workKind });
+const { apiRunCancel, apiRunRetry, apiRunUpdate, apiRuns, createChatExecution } = require('./server/runs').createRuns({ AUTOMATION_RUNS_STORE, MODEL, RUNS_STORE, WORK_CHIPS, activeRunControllers, agentRunStore, approvalStore, automationRunStore, changeStore, cleanRunId, effectiveEngineeringRuns, fetchWithTimeout, json, keptMarker, listenPort, needsYou, nowIso, projectStore, readBody, recordActivity, runCard, runLedger, sanitizeMessages, saveStore, seenRuns, storageError, titleFromText, withSeen, workKind });
 const server = http.createServer(async (req, res) => {
   const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const p = urlObj.pathname;
@@ -2256,6 +2271,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/artcraft/status') return await apiArtcraftStatus(req, res);
     if (req.method === 'POST' && p === '/api/artcraft/open') return await apiArtcraftOpen(req, res);
     if (req.method === 'GET' && p === '/api/workshop/status') return await apiWorkshopStatus(req, res, urlObj);
+    if (req.method === 'POST' && p === '/api/workshop/portal-code') return await apiWorkshopPortalCode(req, res);
 
     // cumulative release features
     if (req.method === 'GET' && p === '/api/projects') return await apiProjects(req,res,urlObj);
@@ -2316,6 +2332,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/runs/answers') return await apiRunAnswers(req,res,urlObj);
     if (req.method === 'POST' && p === '/api/runs/cancel') return await apiRunCancel(req,res);
     if (req.method === 'POST' && p === '/api/runs/update') return await apiRunUpdate(req,res);
+    if (req.method === 'POST' && p === '/api/runs/seen') return await apiRunsSeen(req,res);
     if (req.method === 'POST' && p === '/api/runs/retry') return await apiRunRetry(req,res);
     if (req.method === 'GET' && p === '/api/engineering/runs') return await apiEngineeringRuns(req,res);
     if (req.method === 'POST' && p === '/api/engineering/run') return await apiEngineeringRun(req,res);

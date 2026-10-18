@@ -19,6 +19,8 @@ const HEALTH = {
 };
 const FIELDS = ['online', 'board', 'panel', 'screen', 'touchscreenConfigured', 'signIn', 'portalUrl'];
 const TOKEN = 'wsl_ABCDEFGHJKLMNPQRSTUVWXYZ23'; // synthetic, in the firmware's format
+const CODE_TOKEN = 'wsc_QRSTUVWXYZ23456789ABCDEFGH'; // synthetic, the code token's format
+const CODE = 'QWZ7RT4XKP'; // the portal sign-in code the stand-in display answers
 
 // What GET /api/status/lite answers (docs/status-lite-token-12-1-0.md in the firmware repo), plus fields that must not pass.
 const LITE = {
@@ -28,8 +30,9 @@ const LITE = {
 
 // A stand-in for the display. health: 'ok' answers HEALTH plus fields that must not pass through, 'signin' answers 401
 // (firmware 12.0.1 and later), 'hang' never answers. lite: the status-lite answer, or a number to answer that status.
+// portalCode: the portal-code answer for CODE_TOKEN, or a number to answer that status (404: firmware without the route).
 async function fakeDevice() {
-  const device = { seen: [], mode: 'ok', lite: LITE };
+  const device = { seen: [], mode: 'ok', lite: LITE, portalCode: { code: CODE, bootId: 7 } };
   device.server = http.createServer((req, res) => {
     device.seen.push({ method: req.method, url: req.url, headers: req.headers });
     if (device.mode === 'hang') return; // closed by closeAllConnections
@@ -38,6 +41,12 @@ async function fakeDevice() {
       if (typeof device.lite === 'number') { res.statusCode = device.lite; return res.end('{}'); }
       if (req.headers.authorization !== `Bearer ${TOKEN}`) { res.statusCode = 401; res.setHeader('WWW-Authenticate', 'Bearer'); return res.end('{"error":"unauthorized"}'); }
       return res.end(JSON.stringify(device.lite));
+    }
+    if (req.method === 'GET' && req.url === '/api/portal-code') {
+      res.setHeader('Cache-Control', 'no-store');
+      if (typeof device.portalCode === 'number') { res.statusCode = device.portalCode; return res.end('{}'); }
+      if (req.headers.authorization !== `Bearer ${CODE_TOKEN}`) { res.statusCode = 401; res.setHeader('WWW-Authenticate', 'Bearer'); return res.end('{"error":"unauthorized"}'); }
+      return res.end(JSON.stringify(device.portalCode));
     }
     if (req.url !== '/hardware/health') { res.statusCode = 404; return res.end('{}'); }
     if (device.mode === 'signin') { res.statusCode = 401; return res.end('{"error":"sign in"}'); }
@@ -120,7 +129,7 @@ test('GET /api/workshop/status through the appliance: online, extra fields dropp
   const online = await fetch(`${base}/api/workshop/status`, { headers: { Cookie: 'portal_session=abc', Authorization: 'Bearer x' } });
   assert.equal(online.status, 200);
   const body = await online.json();
-  assert.deepEqual(body, { online: true, board: HEALTH.board, panel: HEALTH.panel, screen: 6, touchscreenConfigured: true, signIn: false, portalUrl: device.url, printer: null });
+  assert.deepEqual(body, { online: true, board: HEALTH.board, panel: HEALTH.panel, screen: 6, touchscreenConfigured: true, signIn: false, portalUrl: device.url, printer: null, codeAccess: false });
   assert.deepEqual(device.seen.map(x => `${x.method} ${x.url}`), ['GET /hardware/health']);
   assert.equal(device.seen[0].headers.cookie, undefined, 'nothing from the request reaches the display');
   assert.equal(device.seen[0].headers.authorization, undefined);
@@ -133,6 +142,13 @@ test('GET /api/workshop/status through the appliance: online, extra fields dropp
   }
   assert.equal(device.seen.length, 1);
 
+  // No code token: Show sign-in code says it isn't set up, and the display is not asked.
+  const unset = await fetch(`${base}/api/workshop/portal-code`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  assert.equal(unset.status, 409);
+  assert.equal(unset.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await unset.json(), { reason: 'not_set_up', error: workshop.CODE_WORDS.not_set_up });
+  assert.equal(device.seen.length, 1);
+
   device.mode = 'hang';
   const started = Date.now();
   const slow = await fetch(`${base}/api/workshop/status`);
@@ -143,7 +159,7 @@ test('GET /api/workshop/status through the appliance: online, extra fields dropp
 
   await device.close();
   const down = await (await fetch(`${base}/api/workshop/status`)).json();
-  assert.deepEqual(down, { online: false, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: null, portalUrl: device.url, printer: null });
+  assert.deepEqual(down, { online: false, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: null, portalUrl: device.url, printer: null, codeAccess: false });
 });
 
 test('the card links to the display itself and asks only the appliance for status', () => {
@@ -177,9 +193,18 @@ test('printer summary: only the allowed words, and nothing stale shown as curren
   assert.deepEqual(one({ activity: 'paused', progressPercent: 42, remainingMinutes: 70 }), S('paused', 42, 70));
   assert.deepEqual(one({ activity: 'idle', progressPercent: 42 }), S('idle'), 'idle has no progress');
   assert.deepEqual(one({ activity: 'finished', progressPercent: 100 }), S('idle'));
-  assert.deepEqual(one({ activity: 'error', error: { code: '0300_400C', text: 'Nozzle clog <b>', canceled: false } }), S('error', null, null, '0300_400C'));
-  assert.deepEqual(one({ activity: 'paused', progressPercent: 40, error: { code: '0300_400C', text: null, canceled: false } }), S('error', null, null, '0300_400C'));
+  assert.deepEqual(one({ activity: 'error', error: { code: '0700_8010', text: 'Nozzle clog <b>', canceled: false } }), S('error', null, null, '0700_8010'));
+  assert.deepEqual(one({ activity: 'paused', progressPercent: 40, error: { code: '0700_8010', text: null, canceled: false } }), S('error', null, null, '0700_8010'));
   assert.deepEqual(one({ activity: 'idle', error: { code: '0300_400C', text: null, canceled: true } }), S('idle'), 'a canceled print is not an error');
+  // A print stopped on purpose (Bambu's cancel codes) is cancelled, not an error, whether or not the display flags it.
+  assert.deepEqual(one({ activity: 'error', error: { code: '0300-400C', text: null, canceled: false } }), S('cancelled'), 'the live answer after a deliberate stop');
+  assert.deepEqual(one({ activity: 'error', error: { code: '0300_400C', text: 'The task was canceled.', canceled: false } }), S('cancelled'));
+  assert.deepEqual(one({ activity: 'error', error: { code: '0500_400E', text: null, canceled: false } }), S('cancelled'), "the other cancel code");
+  assert.deepEqual(one({ activity: 'error', error: { code: '0300_400D', text: null, canceled: true } }), S('cancelled'), "the display's own cancel flag");
+  assert.deepEqual(one({ activity: 'printing', progressPercent: 3, error: { code: '0300-400C', canceled: false } }), S('printing', 3), 'a new print after a stop is printing');
+  assert.deepEqual(one({ activity: 'error', error: { code: '0300-4002', text: null, canceled: false } }), S('error', null, null, '0300-4002'), 'a real fault stays an error');
+  assert.deepEqual(one({ activity: 'error', error: { code: '0700_8010', text: null, canceled: false } }), S('error', null, null, '0700_8010'));
+  assert.deepEqual(one({ activity: 'error', error: null }), S('cancelled'), 'FAILED without a code is a stop (live after the display restarted)');
   assert.deepEqual(one({ activity: 'error', error: { code: '<script>', canceled: false } }), S('error'), 'an odd code is dropped');
   assert.deepEqual(one({ activity: 'printing', progressPercent: 420, remainingMinutes: -3 }), S('printing'), 'out-of-range numbers are dropped');
   assert.deepEqual(one({ activity: 'printing', progressPercent: '42' }), S('printing'));
@@ -278,7 +303,7 @@ test('GET /api/workshop/status with a token: printer summary, sign-in from the t
   const printer = { state: 'printing', progress: 42, minutesLeft: 70, errorCode: null, access: 'ok' };
   const full = await get('/api/workshop/status');
   assert.equal(full.status, 200);
-  assert.deepEqual({ ...full.body, printer: { ...full.body.printer, seenAt: null } }, { online: true, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: true, portalUrl: device.url, printer: { ...printer, seenAt: null } });
+  assert.deepEqual({ ...full.body, printer: { ...full.body.printer, seenAt: null } }, { online: true, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: true, portalUrl: device.url, printer: { ...printer, seenAt: null }, codeAccess: false });
   assert.match(full.body.printer.seenAt, /^\d{4}-\d\d-\d\dT/);
 
   const before = device.seen.length;
@@ -315,8 +340,148 @@ test('the token stays out of child processes, the repo and the browser', () => {
   const compose = fs.readFileSync(path.resolve(__dirname, '../deploy/stack/compose.yml'), 'utf8');
   assert.match(compose, /LOCALAI_WORKSHOP_STATUS_TOKEN: \$\{LOCALAI_WORKSHOP_STATUS_TOKEN:-\}/);
   assert.match(fs.readFileSync(path.resolve(__dirname, '../deploy/stack/stack.env.example'), 'utf8'), /^LOCALAI_WORKSHOP_STATUS_TOKEN=$/m);
-  assert.match(fs.readFileSync(path.resolve(__dirname, '../deploy/stack/Export-LocalAI-StackEnv.ps1'), 'utf8'), /'LOCALAI_WORKSHOP_STATUS_TOKEN' \}\)/, 'optional in the export');
+  assert.match(fs.readFileSync(path.resolve(__dirname, '../deploy/stack/Export-LocalAI-StackEnv.ps1'), 'utf8'), /'LOCALAI_WORKSHOP_STATUS_TOKEN', 'LOCALAI_WORKSHOP_CODE_TOKEN' \}\)/, 'optional in the export');
   const workshopSrc = fs.readFileSync(path.resolve(__dirname, '../app/workshop.js'), 'utf8');
   assert.doesNotMatch(workshopSrc, /console\.|method: '(POST|PUT|PATCH|DELETE)'|X-BambuHelper-Client/i, 'no logging, only GET, no portal shortcut header');
   for (const f of ['ui.js', 'home.js']) assert.doesNotMatch(fs.readFileSync(path.resolve(__dirname, `../app/public/${f}`), 'utf8'), /status\/lite|STATUS_TOKEN|Bearer/, f);
+});
+
+
+test('portal code: reads /api/portal-code with the code token; 401, 404, 429, odd answers and timeouts say so plainly', async t => {
+  const device = await fakeDevice();
+  t.after(device.close);
+  assert.deepEqual(await workshop.readPortalCode({ url: device.url, token: CODE_TOKEN }), { access: 'ok', code: CODE }, 'only the code; bootId is dropped');
+  assert.deepEqual(device.seen.map(x => `${x.method} ${x.url}`), ['GET /api/portal-code']);
+  assert.equal(device.seen[0].headers.authorization, `Bearer ${CODE_TOKEN}`);
+  assert.equal(device.seen[0].headers['x-bambuhelper-client'], undefined, 'never the portal shortcut header');
+  assert.deepEqual(await workshop.readPortalCode({ url: device.url, token: TOKEN }), { access: 'refused' }, 'the status token does not open it');
+  for (const [code, access] of [[401, 'refused'], [404, 'unsupported'], [429, 'busy'], [500, 'offline'], [302, 'offline']]) {
+    device.portalCode = code;
+    assert.deepEqual(await workshop.readPortalCode({ url: device.url, token: CODE_TOKEN }), { access }, `HTTP ${code}`);
+  }
+  for (const odd of [{ code: 'abc' }, { code: '<script>xx' }, { code: 42 }, {}, { code: 'A'.repeat(20000) }]) {
+    device.portalCode = odd;
+    assert.deepEqual(await workshop.readPortalCode({ url: device.url, token: CODE_TOKEN }), { access: 'offline' }, JSON.stringify(odd).slice(0, 30));
+  }
+  device.portalCode = { code: ' qwz7rt4xkp ' };
+  assert.deepEqual(await workshop.readPortalCode({ url: device.url, token: CODE_TOKEN }), { access: 'ok', code: CODE }, 'case and spaces are tidied');
+  device.mode = 'hang';
+  const started = Date.now();
+  assert.deepEqual(await workshop.readPortalCode({ url: device.url, token: CODE_TOKEN, timeoutMs: 300 }), { access: 'offline' });
+  assert.ok(Date.now() - started < 2000, 'gave up at the time limit');
+  assert.ok(device.seen.every(x => x.method === 'GET' && x.url === workshop.CODE_PATH));
+
+  let called = false;
+  const spy = async () => { called = true; };
+  for (const token of [undefined, '', '  ']) assert.deepEqual(await workshop.readPortalCode({ url: device.url, token, fetchImpl: spy }), { access: 'not_set_up' });
+  assert.deepEqual(await workshop.readPortalCode({ url: workshop.portalUrl('http://8.8.8.8'), token: CODE_TOKEN, fetchImpl: spy }), { access: 'not_set_up' }, 'never sent off the home network');
+  assert.equal(called, false);
+  assert.equal(workshop.codeToken(' wsc_x '), 'wsc_x');
+  assert.equal(workshop.codeToken(undefined), '');
+});
+
+test('POST /api/workshop/portal-code: same-origin only, every answer plainly, no-store, audited without the code; code and token never logged or stored', { timeout: 30000 }, async t => {
+  const device = await fakeDevice();
+  device.mode = 'signin';
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-workshop-'));
+  const off = 'http://127.0.0.1:9';
+  const { child, ready } = spawnAppServer({
+    env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, LOCALAI_WORKSHOP_URL: device.url, LOCALAI_WORKSHOP_STATUS_TOKEN: '', LOCALAI_WORKSHOP_CODE_TOKEN: CODE_TOKEN, GRIDCRAFT_URL: off, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off }
+  });
+  let log = '';
+  child.stdout.on('data', b => { log += b; });
+  child.stderr.on('data', b => { log += b; });
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
+    await device.close().catch(() => {});
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+  const base = await ready;
+  const gets = [];
+  const codeAsks = () => device.seen.filter(x => x.url === workshop.CODE_PATH).length;
+  const ask = (headers = {}, body = '{}') => fetch(`${base}/api/workshop/portal-code`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base, 'Sec-Fetch-Site': 'same-origin', ...headers }, body });
+
+  const status = await fetch(`${base}/api/workshop/status`);
+  const statusText = await status.text();
+  gets.push(statusText);
+  assert.equal(JSON.parse(statusText).codeAccess, true, 'the card offers the button');
+
+  // Same-origin: another site, a sandboxed frame, or a form post without JSON gets nothing, and the display isn't asked.
+  for (const [headers, want] of [[{ Origin: 'http://evil.example' }, 403], [{ 'Sec-Fetch-Site': 'cross-site' }, 403], [{ Origin: 'null' }, 403], [{ 'Content-Type': 'text/plain' }, 415]]) {
+    const r = await ask(headers);
+    assert.equal(r.status, want, JSON.stringify(headers));
+    assert.doesNotMatch(await r.text(), new RegExp(CODE));
+  }
+  assert.equal(codeAsks(), 0, 'refused requests never reach the display');
+
+  // GET never answers the code (an unknown GET is the app page).
+  const get = await fetch(`${base}/api/workshop/portal-code`);
+  gets.push(await get.text());
+  assert.equal(codeAsks(), 0, 'a GET never asks the display');
+
+  const ok = await ask({ Cookie: 'portal_session=abc', Authorization: 'Bearer x' });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await ok.json(), { code: CODE, address: device.url });
+  const sent = device.seen.filter(x => x.url === workshop.CODE_PATH);
+  assert.equal(sent.length, 1, 'one tap, one request');
+  assert.equal(sent[0].method, 'GET');
+  assert.equal(sent[0].headers.authorization, `Bearer ${CODE_TOKEN}`, 'the code token, never what the browser sent');
+  assert.equal(sent[0].headers.cookie, undefined);
+
+  const again = await ask();
+  assert.equal((await again.json()).code, CODE);
+  assert.equal(codeAsks(), 2, 'nothing is cached: each tap asks the display');
+
+  for (const [code, status, reason] of [[401, 502, 'refused'], [404, 502, 'unsupported'], [429, 503, 'busy'], [500, 504, 'offline']]) {
+    device.portalCode = code;
+    const r = await ask();
+    assert.equal(r.status, status, `display HTTP ${code}`);
+    assert.equal(r.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await r.json(), { reason, error: workshop.CODE_WORDS[reason] });
+  }
+  await device.close();
+  const down = await ask();
+  assert.equal(down.status, 504);
+  assert.equal((await down.json()).reason, 'offline');
+
+  const activity = await (await fetch(`${base}/api/activity`)).text();
+  gets.push(activity);
+  const shown = JSON.parse(activity);
+  const items = Array.isArray(shown) ? shown : shown.items || shown.activity || [];
+  assert.equal(items.filter(x => x.title === 'Workshop sign-in code shown').length, 2, 'one audit entry per code shown, none for refusals');
+  for (const p of ['/api/workshop/status', '/api/status', '/api/capabilities', '/healthz']) gets.push(await (await fetch(`${base}${p}`)).text());
+  for (const text of gets) {
+    assert.ok(!text.includes(CODE), 'the code never reaches a GET answer or the audit log');
+    assert.ok(!text.includes(CODE_TOKEN.slice(4)), 'the token never reaches an answer');
+  }
+  const data = fs.readdirSync(dataDir, { recursive: true }).map(f => path.join(dataDir, f)).filter(f => fs.statSync(f).isFile());
+  assert.ok(data.length > 0);
+  for (const f of data) {
+    const bytes = fs.readFileSync(f);
+    assert.ok(!bytes.includes(CODE), `the code is not stored (${path.relative(dataDir, f)})`);
+    assert.ok(!bytes.includes(CODE_TOKEN.slice(4)), `the token is not stored (${path.relative(dataDir, f)})`);
+  }
+  assert.ok(!log.includes(CODE), 'the code is never logged');
+  assert.ok(!log.includes(CODE_TOKEN.slice(4)), 'the token is never logged');
+});
+
+test('the code token stays out of child processes, the repo and the browser; the code stays out of storage and caches', () => {
+  const server = require('./server-source.cjs').serverSource();
+  const secret = new RegExp(/const SECRET_ENV=\/(.+?)\/i;/.exec(server)[1], 'i');
+  assert.ok(secret.test('LOCALAI_WORKSHOP_CODE_TOKEN'), 'childEnv drops it');
+  const compose = fs.readFileSync(path.resolve(__dirname, '../deploy/stack/compose.yml'), 'utf8');
+  assert.match(compose, /LOCALAI_WORKSHOP_CODE_TOKEN: \$\{LOCALAI_WORKSHOP_CODE_TOKEN:-\}/);
+  assert.match(fs.readFileSync(path.resolve(__dirname, '../deploy/stack/stack.env.example'), 'utf8'), /^LOCALAI_WORKSHOP_CODE_TOKEN=$/m);
+  assert.match(fs.readFileSync(path.resolve(__dirname, '../deploy/stack/Export-LocalAI-StackEnv.ps1'), 'utf8'), /LOCALAI_WORKSHOP_CODE_TOKEN = \$app\['LOCALAI_WORKSHOP_CODE_TOKEN'\]/);
+  const ui = fs.readFileSync(path.resolve(__dirname, '../app/public/ui.js'), 'utf8');
+  assert.doesNotMatch(ui, /CODE_TOKEN|wsc_|Bearer/, 'the page never sees the token');
+  const from = ui.indexOf('// Workshop display › Show sign-in code');
+  const block = ui.slice(from, ui.indexOf("document.addEventListener('visibilitychange'", from));
+  assert.ok(block.length > 500);
+  assert.doesNotMatch(block, /localStorage|sessionStorage|indexedDB|history\.|location\.|caches\./, 'the code is never stored or put in the address');
+  assert.match(block, /fetch\('\/api\/workshop\/portal-code', \{ method: 'POST', cache: 'no-store'/);
+  const sw = fs.readFileSync(path.resolve(__dirname, '../app/public/sw.js'), 'utf8');
+  assert.match(sw, /if\(req\.method!=='GET'\)return;/, 'the service worker leaves POSTs alone');
+  assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)\)return;/, 'and never caches /api/');
 });

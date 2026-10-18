@@ -2,9 +2,9 @@
 // run-cards.js), so an older mission is reachable however many chats came since; search works on the loaded rows.
 // Show more pages by `before` within the kind; the list refreshes itself while something runs and a row updates in place.
 (function(root){'use strict';
-const $=id=>document.getElementById(id),PAGE=60,KEY='localai.work.kind',KINDS=['all','chats','images','missions','changes','other'];
+const $=id=>document.getElementById(id),PAGE=60,KEY='localai.work.kind',KINDS=['all','needs','chats','images','missions','changes','other'];
 const GROUPS=['Today','Yesterday','Earlier this week','Older'],LIVE=new Set(['queued','running','streaming']);
-const key=it=>it.threadId||it.id,NONE={chats:'No chats yet.',images:'No images yet.',missions:'No missions yet.',changes:'No changes yet.',other:'Nothing else yet.'};
+const key=it=>it.threadId||it.id,NONE={needs:'Nothing needs you.',chats:'No chats yet.',images:'No images yet.',missions:'No missions yet.',changes:'No changes yet.',other:'Nothing else yet.'};
 // Threads sort and page by their latest run's (createdAt, id), newest first, the same key the server's `before` uses.
 const newest=(a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))||String(b.id).localeCompare(String(a.id));
 const store={get:()=>{try{return localStorage.getItem(KEY)}catch{return null}},set:v=>{try{localStorage.setItem(KEY,v)}catch{}}};
@@ -129,7 +129,7 @@ function setKind(k,{mirror=true,remember=true,fetch=true}={}){
  st.chips?.pick(document.querySelector(`[data-work-kind="${k}"]`));
  // Agent World (the live mission map) has no menu entry since Missions became a Work filter; link to it from there.
  const aw=$('workAgentWorld');if(aw)aw.hidden=k!=='missions';
- if(remember)store.set(k);
+ if(remember&&k!=='needs')store.set(k); // Needs you is a look from Home's See all, not where Work opens next time
  if(mirror){const h='#work'+(k==='all'?'':'?kind='+k);if(location.hash!==h)history.replaceState(null,'',location.pathname+location.search+h)}
  if(changed){ // the rows on screen are another kind's: clear them and load this one (activate() loads on its own)
   st.gen++;st.threads.clear();st.items=[];st.more=false;st.loaded=false;st.shown='';st.rows.clear();
