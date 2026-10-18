@@ -5,6 +5,7 @@
 //   npm run ci -- 195            test PR #195 merged with the latest main, post pending, then success or failure
 //   npm run ci -- 195 --no-post  same, without posting
 //   npm run ci                   test the current checkout as it is (never posts)
+//   npm run ship -- 195          same as ci -- 195, then merges the PR if it's green (only the commit that was tested)
 //
 // A PR is tested in a throwaway worktree (its head merged with origin/main, as GitHub's pull_request runs do), so
 // your own checkout is never touched. The log is kept in the system temp folder and its path printed at the end.
@@ -29,12 +30,13 @@ import path from 'node:path';
 import net from 'node:net';
 import crypto from 'node:crypto';
 import { failingUnitTests, failedBrowserSuites, browserSuiteCounts, suitesToRetry, ciSummary, failureComment, retryComment,
-  releaseNoteAdvice, RELEASE_NOTE_MARKER } from './local-ci-lib.mjs';
+  releaseNoteAdvice, RELEASE_NOTE_MARKER, shipMergeArgs } from './local-ci-lib.mjs';
 
 const args = process.argv.slice(2);
 const pr = args.find(a => /^\d+$/.test(a));
 const DRY = process.env.LOCALAI_CI_DRY === '1';
 const post = Boolean(pr) && !args.includes('--no-post') && !DRY;
+const ship = args.includes('--merge');
 const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-ci-'));
 const logFile = path.join(work, 'ci.log');
@@ -249,5 +251,15 @@ finally {
   if (worktree) { try { git('worktree', 'remove', '--force', worktree); } catch {} }
   say(`Log: ${logFile}`);
   log.end();
+}
+// npm run ship: merge only on green, only what was tested, and only when results were actually posted. (The log is
+// closed by now, so these lines go to the terminal only.)
+if (ship) {
+  if (!ok) console.log(`Not merged: local CI isn't green.`);
+  else if (!post) console.log(`Not merged: ship needs a PR number and posting (no --no-post, no dry run).`);
+  else {
+    try { gh(...shipMergeArgs(pr, sha)); console.log(`Merged PR #${pr} (${sha.slice(0, 7)}).`); }
+    catch (e) { ok = false; console.log(`Not merged: ${String(e.stderr || e.message).trim().split('\n')[0]} (was something pushed after the test started?)`); }
+  }
 }
 process.exit(ok ? 0 : 1);

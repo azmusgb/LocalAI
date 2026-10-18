@@ -132,7 +132,8 @@ New `tests/*.test.cjs` and `tests/*-ui.mjs` files are picked up automatically by
 locally:** `npm run ci -- <PR number>` (`scripts/local-ci.mjs`) runs every `validate.yml` step on the PR merged with
 `main`, in a throwaway worktree, against a fresh server on a free port, and posts a `local-ci` commit status (pending,
 then success or failure) to the PR. `--no-post` skips posting; with no PR number it tests the current checkout and
-never posts. Runs queue one at a time per machine (a lock in the temp folder; a dead owner's lock is taken over), and
+never posts. `npm run ship -- <PR number>` (`--merge`) does the same and then, only on green, merges with
+`gh pr merge --match-head-commit <tested sha>`, so a commit pushed after the run started can't land untested. Runs queue one at a time per machine (a lock in the temp folder; a dead owner's lock is taken over), and
 a stopped run (Ctrl-C, SIGTERM) kills its test processes, marks the PR "Stopped before it finished", removes its
 worktree and releases the lock. The log path is printed at the end. Re-enable Actions with
 `gh workflow enable <name> -R azmusgb/LocalAI`. The tree under test gets its own locked dependencies (devDependencies included), installed once per `package-lock.json` into `~/.cache/localai-ci/` and reused, so the eslint and stylelint tests run instead of skipping.
