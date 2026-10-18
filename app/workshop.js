@@ -1,15 +1,21 @@
 'use strict';
 
 // Services › Workshop display: the BambuHelper touchscreen beside the 3D printer (docs/WORKSHOP-DISPLAY.md).
-// Local AI only reads the display's one public route, GET /hardware/health, and links to the display's own portal.
-// It never proxies the portal, which holds the printer controls (Stop among them). The portal is meant to have its own
-// sign-in, CSRF and same-origin checks; the firmware installed on 18 Oct 2026 has no sign-in (docs/WORKSHOP-DISPLAY.md,
-// Current state), and Local AI must not become another way to the controls either way.
+// Local AI sends the display exactly two requests, both GET: /hardware/health (is it answering; a 401 means it is up
+// and its portal sign-in is on) and, only when LOCALAI_WORKSHOP_STATUS_TOKEN is set, /api/status/lite with that
+// read-only Bearer token (firmware 12.1.0). It links to the display's own portal and never proxies it: the portal holds
+// the printer controls (Stop among them) behind its own sign-in, and Local AI must not become another way to them.
+// The token stays on the server: it is never logged, never put in an error or an answer, and child processes don't get
+// it (childEnv drops every *TOKEN* variable).
 const { modelFetchWithTimeout } = require('./model-http');
 
 const DEFAULT_URL = 'http://10.0.0.124';
 const TIMEOUT_MS = 4000;
-const MAX_BODY = 16 * 1024; // the real answer is about 500 bytes
+const MAX_BODY = 16 * 1024; // the real answers are about 500 bytes
+const HEALTH_PATH = '/hardware/health';
+const LITE_PATH = '/api/status/lite';
+const POLL_MS = 30 * 1000;
+const MAX_BACKOFF_MS = 5 * 60 * 1000;
 
 // 10/8, 172.16/12 and 192.168/16 (the home network), or 127/8 (tests run a stand-in device on loopback).
 function privateIpv4(host) {
@@ -52,12 +58,14 @@ async function readCapped(response, limit) {
 }
 
 // What the Services card shows. The object is rebuilt field by field: nothing else the display reports (Wi-Fi
-// strength, memory, printer state) passes through.
+// strength, memory, printer state) passes through. signIn: false when the health route answered without a sign-in
+// (the firmware of 18 Oct 2026), true when it asked for one (401: the display is up and protected), null when offline.
 async function workshopStatus({ url = portalUrl(), fetchImpl = modelFetchWithTimeout, timeoutMs = TIMEOUT_MS } = {}) {
-  const offline = { online: false, board: null, panel: null, screen: null, touchscreenConfigured: null, portalUrl: url };
+  const offline = { online: false, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: null, portalUrl: url };
   if (!url) return offline;
   try {
-    const r = await fetchImpl(`${url}/hardware/health`, { method: 'GET', headers: { Accept: 'application/json' } }, timeoutMs);
+    const r = await fetchImpl(`${url}${HEALTH_PATH}`, { method: 'GET', headers: { Accept: 'application/json' } }, timeoutMs);
+    if (r.status === 401) { await r.body?.cancel().catch(() => {}); return { ...offline, online: true, signIn: true }; }
     if (!r.ok) { await r.body?.cancel().catch(() => {}); return offline; }
     const d = JSON.parse(await readCapped(r, MAX_BODY));
     if (!d || typeof d !== 'object' || Array.isArray(d)) return offline;
@@ -67,6 +75,7 @@ async function workshopStatus({ url = portalUrl(), fetchImpl = modelFetchWithTim
       panel: text(d.panel),
       screen: Number.isSafeInteger(d.screen) ? d.screen : null,
       touchscreenConfigured: typeof d.touchscreenConfigured === 'boolean' ? d.touchscreenConfigured : null,
+      signIn: false,
       portalUrl: url
     };
   } catch {
@@ -74,4 +83,85 @@ async function workshopStatus({ url = portalUrl(), fetchImpl = modelFetchWithTim
   }
 }
 
-module.exports = { DEFAULT_URL, TIMEOUT_MS, portalUrl, workshopStatus };
+// ---- printer status through the read-only token (GET /api/status/lite, firmware 12.1.0) ----
+// The answer, per the firmware's docs/status-lite-token-12-1-0.md:
+//   {schema:1, firmware:{…}, printers:[{slot, connection, activity, freshness, ageSeconds, progressPercent,
+//    remainingMinutes, error:{code, text, canceled}|null}]}
+// Only the first listed printer is used, and only these words reach the browser:
+//   state: printing | paused | error | idle | unknown; progress (0–100) and minutesLeft only while printing or paused;
+//   errorCode (the printer's own code, e.g. 0300_400C) only in error.
+// access: ok | refused (401: no token on the display, or a revoked one) | unsupported (404: older firmware or the
+// display's own setup Wi-Fi) | busy (429) | offline (no answer, an odd answer, or the time limit).
+const intIn = (v, lo, hi) => (Number.isSafeInteger(v) && v >= lo && v <= hi ? v : null);
+const UNKNOWN_PRINTER = { state: 'unknown', progress: null, minutesLeft: null, errorCode: null };
+
+function printerSummary(d) {
+  const p = Array.isArray(d?.printers) ? d.printers.find(x => x && typeof x === 'object' && !Array.isArray(x)) : null;
+  if (!p || p.connection !== 'online' || p.freshness !== 'fresh') return { ...UNKNOWN_PRINTER };
+  const err = p.error && typeof p.error === 'object' && !Array.isArray(p.error) ? p.error : null;
+  const code = typeof err?.code === 'string' && /^[0-9A-Za-z_-]{1,24}$/.test(err.code) ? err.code : null;
+  const activity = String(p.activity || '');
+  const state = activity === 'error' || (err && err.canceled !== true) ? 'error'
+    : activity === 'printing' || activity === 'preparing' ? 'printing'
+      : activity === 'paused' ? 'paused'
+        : activity === 'idle' || activity === 'finished' ? 'idle'
+          : 'unknown';
+  const running = state === 'printing' || state === 'paused';
+  return {
+    state,
+    progress: running ? intIn(p.progressPercent, 0, 100) : null,
+    minutesLeft: running ? intIn(p.remainingMinutes, 0, 100000) : null,
+    errorCode: state === 'error' ? code : null
+  };
+}
+
+// One read. Never throws, and never puts the token (or anything from the request) in what it returns.
+async function readPrinter({ url, token, fetchImpl = modelFetchWithTimeout, timeoutMs = TIMEOUT_MS }) {
+  try {
+    const r = await fetchImpl(`${url}${LITE_PATH}`, { method: 'GET', headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } }, timeoutMs);
+    const access = r.status === 200 ? 'ok' : r.status === 401 ? 'refused' : r.status === 404 ? 'unsupported' : r.status === 429 ? 'busy' : 'offline';
+    if (access !== 'ok') { await r.body?.cancel().catch(() => {}); return { ...UNKNOWN_PRINTER, access }; }
+    const d = JSON.parse(await readCapped(r, MAX_BODY));
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return { ...UNKNOWN_PRINTER, access: 'offline' };
+    return { ...printerSummary(d), access: 'ok' };
+  } catch {
+    return { ...UNKNOWN_PRINTER, access: 'offline' };
+  }
+}
+
+// The one server-side poller: every 30 s while the display answers, then 60 s, 2, 4 and 5 min while it doesn't (or
+// refuses the token, so a wrong one doesn't keep tripping the display's lock-out). Tabs read its last answer and never
+// add requests of their own. A 429 keeps the last answer and tries again at the normal pace. Nothing is logged.
+function createPrinterPoller({ url = portalUrl(), token = process.env.LOCALAI_WORKSHOP_STATUS_TOKEN, fetchImpl = modelFetchWithTimeout, timeoutMs = TIMEOUT_MS, pollMs = POLL_MS, maxBackoffMs = MAX_BACKOFF_MS, now = () => Date.now() } = {}) {
+  const secret = String(token ?? '').trim();
+  const enabled = Boolean(url && secret);
+  let last = enabled ? { ...UNKNOWN_PRINTER, access: 'offline', seenAt: null } : null;
+  let failures = 0;
+  let timer = null;
+  let stopped = true;
+  async function poll() {
+    const r = await readPrinter({ url, token: secret, fetchImpl, timeoutMs });
+    if (r.access === 'busy') return pollMs;
+    if (r.access === 'ok') { failures = 0; last = { ...r, seenAt: new Date(now()).toISOString() }; return pollMs; }
+    failures++;
+    last = { ...r, seenAt: last?.seenAt ?? null }; // nothing old is shown as current
+    return Math.min(pollMs * 2 ** failures, maxBackoffMs);
+  }
+  function loop() {
+    if (stopped) return;
+    poll().then(wait => {
+      if (stopped) return;
+      timer = setTimeout(loop, wait);
+      timer.unref?.();
+    });
+  }
+  return {
+    enabled,
+    current: () => (last ? { ...last } : null),
+    poll: () => (enabled ? poll() : Promise.resolve(null)),
+    start() { if (enabled && stopped) { stopped = false; loop(); } return this; },
+    stop() { stopped = true; clearTimeout(timer); timer = null; }
+  };
+}
+
+module.exports = { DEFAULT_URL, TIMEOUT_MS, POLL_MS, HEALTH_PATH, LITE_PATH, portalUrl, workshopStatus, printerSummary, readPrinter, createPrinterPoller };

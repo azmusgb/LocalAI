@@ -38,7 +38,7 @@ const needs = () => [
 ];
 // Stubs: `threads` answers /api/runs?threads=1, `all` answers the plain /api/runs list, `engineering` the start endpoint.
 let capabilities = () => ({ services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' });
-async function open(viewport, hash, { threads = six, all = needs, engineering = null, storage = {}, caps = null, approvals = [], activity = [], route = null, improve = null } = {}) {
+async function open(viewport, hash, { threads = six, all = needs, engineering = null, storage = {}, caps = null, approvals = [], activity = [], route = null, improve = null, printer = undefined } = {}) {
   capabilities = caps || (() => ({ services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' }));
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.devTools': '1', 'localai.firstRun.done': '1', ...storage });
@@ -48,7 +48,9 @@ async function open(viewport, hash, { threads = six, all = needs, engineering = 
   if (route) await ctx.route(u => u.pathname === '/api/route', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(route) }));
   // Improve items stubbed before the page loads, so Home's first load can't land late with the real server's answer.
   if (improve) await ctx.route(u => u.pathname === '/api/improve/items', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(improve) }));
-  page.calls = []; page.known = new Map(); page.started = []; page.memo = {};
+  page.calls = []; page.known = new Map(); page.started = []; page.memo = {}; page.printer = printer; page.printerAsks = [];
+  // The appliance's last read of the Workshop display's printer status (null: no token set). Undefined leaves the real server.
+  if (printer !== undefined) await page.route(u => u.pathname === '/api/workshop/status', r => { page.printerAsks.push(new URL(r.request().url()).search); return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ printer: page.printer }) }); });
   await page.route(u => u.pathname === '/api/capabilities', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(capabilities()) }));
   await page.route(u => u.pathname === '/api/runs', async r => {
     const url = new URL(r.request().url());
@@ -116,6 +118,59 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
     await page.context().close();
   });
 }
+
+// The Workshop display's printer line: one row while a print runs or has stopped with an error; nothing otherwise.
+const PRINTER = (state, o = {}) => ({ state, progress: null, minutesLeft: null, errorCode: null, access: 'ok', seenAt: new Date().toISOString(), ...o });
+for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
+  await check(`${tag}: the printer line shows while printing, fits, and opens Services › Workshop display`, async () => {
+    const page = await open(vp, '#home', { printer: PRINTER('printing', { progress: 42, minutesLeft: 70 }) });
+    const row = page.locator('#homePrinter [data-printer-state]');
+    await row.waitFor({ state: 'visible', ...T });
+    assert.equal(await row.locator('.list-row__title').innerText(), 'Printer · 42% · 1 h 10 min left');
+    assert.ok(page.printerAsks.includes('?part=printer'), `Home asks for the printer part only (asked: ${page.printerAsks.join()})`);
+    const box = await row.boundingBox(), width = await page.evaluate(() => document.documentElement.clientWidth);
+    assert.ok(box.x >= 0 && box.x + box.width <= width + 1, `row ${box.x}+${box.width} within ${width}`);
+    assert.ok(box.height >= 44, `tap target ${box.height}px`);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, 'no sideways scroll');
+    await row.click();
+    await page.waitForSelector('#integrations.active', T);
+    assert.equal(await page.evaluate(() => location.hash), '#integrations?card=workshop');
+    await page.waitForFunction(() => document.activeElement?.matches('.ux-int-card') && /Workshop display/.test(document.activeElement.textContent), null, T);
+    await page.goBack();
+    await page.waitForSelector('#home.active', T);
+    await page.context().close();
+  });
+}
+
+await check('the printer line: paused and error words; hidden when idle, unknown, refused or no token, and it follows the poll', async () => {
+  const page = await open(phone, '#home', { printer: PRINTER('paused', { progress: 42, minutesLeft: 70 }) });
+  const sec = page.locator('#homePrinter'), title = page.locator('#homePrinter .list-row__title');
+  await sec.waitFor({ state: 'visible', ...T });
+  assert.equal(await title.innerText(), 'Printer · Paused · 42%');
+  const show = async (printer, words) => {
+    page.printer = printer;
+    await page.evaluate(() => window.LocalAIHome.refresh());
+    if (words) { await page.waitForFunction(w => document.querySelector('#homePrinter .list-row__title')?.textContent === w, words, T); assert.equal(await sec.isVisible(), true); }
+    else { await page.waitForFunction(() => document.getElementById('homePrinter').hidden, null, T); assert.equal(await page.locator('#homePrinter [data-printer-state]').count(), 0); }
+  };
+  await show(PRINTER('error', { errorCode: '0300_400C' }), 'Printer · Stopped with an error (0300_400C)');
+  await show(PRINTER('error'), 'Printer · Stopped with an error');
+  await show(PRINTER('printing', { minutesLeft: 41 }), 'Printer · Printing · 41 min left');
+  await show(PRINTER('printing', { progress: 99, minutesLeft: 60 }), 'Printer · 99% · 1 h left');
+  for (const p of [PRINTER('idle'), PRINTER('unknown'), { ...PRINTER('unknown'), access: 'refused' }, { ...PRINTER('unknown'), access: 'offline' }, null]) await show(p, '');
+  await show(PRINTER('printing', { progress: 5 }), 'Printer · 5%');
+  await page.context().close();
+});
+
+await check('no token set: the real appliance answers printer null and Home shows no printer line', async () => {
+  const page = await open(desk, '#home');
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  const answer = await page.evaluate(() => fetch('/api/workshop/status?part=printer').then(r => r.json()));
+  assert.deepEqual(answer, { printer: null });
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('#homePrinter').isVisible(), false);
+  await page.context().close();
+});
 
 await check('Needs you drops a failed run once a newer run in the same thread succeeded', async () => {
   // The failed turn finished failing after the retry had already succeeded (updatedAt is later), but the retry is the newer turn.

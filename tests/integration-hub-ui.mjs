@@ -26,7 +26,7 @@ await page.route(u => u.pathname === '/api/artcraft/open', r => {
   return r.fulfill({ json: { ok: true, alreadyRunning: already } });
 });
 // The Workshop display is a device on the home network; stub the appliance's view of it.
-const WORKSHOP_ONLINE = { online: true, board: 'Waveshare_ESP32-S3-Touch-LCD-3.5', panel: 'ST7796_320x480_FT6336', screen: 6, touchscreenConfigured: true, portalUrl: 'http://10.0.0.124' };
+const WORKSHOP_ONLINE = { online: true, board: 'Waveshare_ESP32-S3-Touch-LCD-3.5', panel: 'ST7796_320x480_FT6336', screen: 6, touchscreenConfigured: true, signIn: false, portalUrl: 'http://10.0.0.124', printer: null };
 let workshopStatus = WORKSHOP_ONLINE;
 await page.route(u => u.pathname === '/api/workshop/status', r => r.fulfill({ json: workshopStatus }));
 await page.goto(base, { waitUntil: 'domcontentloaded' });
@@ -87,7 +87,7 @@ await check('the Workshop display card shows whether it is answering and opens i
   assert.equal(await link.getAttribute('target'), '_blank');
   assert.equal(await link.getAttribute('rel'), 'noopener noreferrer');
 
-  workshopStatus = { online: false, board: null, panel: null, screen: null, touchscreenConfigured: null, portalUrl: 'http://10.0.0.124' };
+  workshopStatus = { online: false, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: null, portalUrl: 'http://10.0.0.124', printer: null };
   await page.locator('#uxIntegrationRefreshV2').click();
   await page.waitForFunction(s => /Not answering/.test(document.querySelector(s)?.textContent || ''), live);
   assert.doesNotMatch(await card.locator(live).getAttribute('class'), /healthy/);
@@ -101,6 +101,40 @@ await check('the Workshop display card shows whether it is answering and opens i
   workshopStatus = WORKSHOP_ONLINE;
   await page.locator('#uxIntegrationRefreshV2').click();
   await page.waitForFunction(s => /Online/.test(document.querySelector(s)?.textContent || ''), live);
+});
+
+await check('the Workshop display card: a 401 reads as online with its own sign-in, never offline; printer status words', async () => {
+  const card = page.locator('.ux-int-card', { hasText: 'Workshop display' });
+  const live = '[data-integration-source-v2="workshop"]';
+  const refresh = async (status, re) => { workshopStatus = status; await page.locator('#uxIntegrationRefreshV2').click(); await page.waitForSelector('#uxIntegrationRefreshV2[aria-busy="false"]'); await page.waitForFunction(([s, r]) => new RegExp(r).test(document.querySelector(s)?.textContent || ''), [live, re.source]); };
+  const signedIn = { online: true, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: true, portalUrl: 'http://10.0.0.124', printer: null };
+  await refresh(signedIn, /Online · sign-in on/);
+  assert.match(await card.locator(live).getAttribute('class'), /healthy/);
+  let body = await card.innerText();
+  assert.match(body, /On your network · its own sign-in/);
+  assert.match(body, /the portal asks for the code shown on the display \(System → Local Portal\)/);
+  assert.doesNotMatch(body, /no sign-in/);
+  assert.equal(await card.locator('[data-workshop-printer]').isVisible(), false, 'no token, no printer line');
+
+  // Offline keeps the sign-in words the display last gave.
+  await refresh({ ...signedIn, online: false, signIn: null }, /Not answering/);
+  assert.match(await card.innerText(), /On your network · its own sign-in/);
+
+  const printer = (state, o = {}) => ({ state, progress: null, minutesLeft: null, errorCode: null, access: 'ok', seenAt: '2026-10-18T12:00:00.000Z', ...o });
+  const line = card.locator('[data-workshop-printer]');
+  await refresh({ ...signedIn, printer: printer('printing', { progress: 42, minutesLeft: 70 }) }, /sign-in on/);
+  assert.equal(await line.innerText(), 'Printer · 42% · 1 h 10 min left');
+  await refresh({ ...signedIn, printer: printer('idle') }, /sign-in on/);
+  assert.equal(await line.innerText(), 'Printer · Idle');
+  await refresh({ ...signedIn, printer: { ...printer('unknown'), access: 'refused' } }, /sign-in on/);
+  assert.match(await line.innerText(), /turned the token down/);
+  await refresh({ ...signedIn, printer: { ...printer('unknown'), access: 'unsupported' } }, /sign-in on/);
+  assert.match(await line.innerText(), /update the display/);
+
+  await refresh(WORKSHOP_ONLINE, /Online · Waveshare/);
+  body = await card.innerText();
+  assert.match(body, /On your network · no sign-in yet/, 'an answer without a 401 means no sign-in yet');
+  assert.equal(await line.isVisible(), false);
 });
 
 await check('unverified media extensions do not pretend to be installed', async () => {

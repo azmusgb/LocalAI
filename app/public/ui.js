@@ -2694,8 +2694,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       actions: [{ type: 'post', url: '/api/artcraft/open', label: 'Open on the Windows computer', done: 'ArtCraft is opening on the Windows computer', already: "It's already open there" }]
     },
     {
-      id: 'workshop', name: 'Workshop display', tier: 'bridge', decision: 'On your network · no sign-in yet', source: 'workshop',
-      summary: 'The touchscreen beside the 3D printer. Its page has the printer controls and, for now, no sign-in; an update to fix that is coming.',
+      id: 'workshop', name: 'Workshop display', tier: 'bridge', decision: 'On your network', source: 'workshop',
+      summary: 'The touchscreen beside the 3D printer. Its page has the printer controls.',
       guidance: 'Away from home, Tailscale must be on.',
       actions: [{ type: 'portal', label: 'Open Workshop portal' }]
     },
@@ -2790,9 +2790,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         ? `<span class="ux-int-live" data-integration-source-v2="${item.source}"><span class="dot"></span> Checking</span>`
         : '<span class="ux-int-live neutral"><span class="dot"></span> Not verified</span>';
       return `<article class="ux-int-card" data-tier="${item.tier}" aria-labelledby="ux-int-v2-${item.id}">
-        <div class="ux-int-card-head"><div><div class="ux-int-name" id="ux-int-v2-${item.id}">${item.name}</div><div class="ux-int-decision">${item.decision}</div></div>${tierBadge(item.tier)}</div>
-        <p>${item.summary}</p>
-        <div class="ux-int-guidance">${item.guidance}</div>
+        <div class="ux-int-card-head"><div><div class="ux-int-name" id="ux-int-v2-${item.id}">${item.name}</div><div class="ux-int-decision" data-integration-decision="${item.id}">${item.decision}</div></div>${tierBadge(item.tier)}</div>
+        <p data-integration-summary="${item.id}">${item.summary}</p>
+        <div class="ux-int-guidance">${item.guidance}</div>${item.id === 'workshop' ? '<div class="ux-int-guidance" data-workshop-printer hidden></div>' : ''}
         <div class="ux-int-card-foot">${live}<div class="ux-int-actions">${actions}</div></div>
       </article>`;
     }).join('');
@@ -2848,6 +2848,20 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return text.replace(/[_-]+/g, ' ').trim().slice(0, 40);
   }
 
+  // The sign-in words come from what the display really answered: its health route asked for a sign-in (401), or the
+  // read-only status token works (that firmware has the sign-in), or neither. Unknown (offline) keeps what was shown.
+  const WORKSHOP_SIGNIN = {
+    true: ['On your network · its own sign-in', 'The touchscreen beside the 3D printer. Its page has the printer controls behind its own sign-in: the portal asks for the code shown on the display (System → Local Portal).'],
+    false: ['On your network · no sign-in yet', 'The touchscreen beside the 3D printer. Its page has the printer controls and, for now, no sign-in; an update to fix that is coming.']
+  };
+  const PRINTER_ACCESS = { refused: 'Printer status: the display turned the token down. Create a new one there.', unsupported: 'Printer status: update the display to see it here.', offline: 'Printer status: not answering.' };
+  function workshopPrinter(p) {
+    const box = q('[data-workshop-printer]');
+    if (!box) return;
+    const words = !p ? '' : p.access === 'ok' ? window.LocalAIHome?.printerWords?.(p) || (p.state === 'idle' ? 'Printer · Idle' : 'Printer · Status unknown') : PRINTER_ACCESS[p.access] || '';
+    if (p?.access !== 'busy') { box.textContent = words; box.hidden = !words; }
+  }
+
   function updateWorkshop(status) {
     const url = typeof status?.portalUrl === 'string' && /^https?:\/\//.test(status.portalUrl) ? status.portalUrl : '';
     const link = q('[data-integration-portal="workshop"]');
@@ -2855,11 +2869,28 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       if (url) link.href = url; else link.removeAttribute('href');
       link.hidden = !url;
     }
+    const words = WORKSHOP_SIGNIN[status?.signIn];
+    if (words) {
+      const decision = q('[data-integration-decision="workshop"]'), summary = q('[data-integration-summary="workshop"]');
+      if (decision) decision.textContent = words[0];
+      if (summary) summary.textContent = words[1];
+    }
+    workshopPrinter(status?.printer);
     const board = boardName(status?.board);
     updateService('workshop', !status ? { state: 'NEUTRAL', label: 'Status unavailable' }
       : !url ? { state: 'NEUTRAL', label: 'Address not set up' }
-        : status.online ? { state: 'HEALTHY', label: board ? `Online · ${board}` : 'Online' }
+        : status.online ? { state: 'HEALTHY', label: board ? `Online · ${board}` : status.signIn ? 'Online · sign-in on' : 'Online' }
           : { state: 'NEUTRAL', label: 'Not answering' });
+  }
+
+  // Home's printer line opens #integrations?card=workshop: bring that card into view.
+  function showCard() {
+    const id = window.LocalAIRouter?.current().query.get('card');
+    const card = id && q(`#ux-int-v2-${CSS.escape(id)}`)?.closest('.ux-int-card');
+    if (!card) return;
+    card.tabIndex = -1;
+    card.scrollIntoView({ block: 'center' });
+    card.focus({ preventScroll: true });
   }
 
   function setBusy(busy) {
@@ -2950,9 +2981,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     renderAlternatives();
     q('#uxIntegrationRefreshV2')?.addEventListener('click', loadStatus);
     loadStatus();
+    if (section.classList.contains('active')) window.setTimeout(showCard, 0);
 
     const observer = new MutationObserver(() => {
-      if (section.classList.contains('active')) window.setTimeout(loadStatus, 75);
+      if (section.classList.contains('active')) { window.setTimeout(loadStatus, 75); window.setTimeout(showCard, 0); }
     });
     observer.observe(section, { attributes: true, attributeFilter: ['class'] });
     return true;
