@@ -21,6 +21,8 @@ const buildKey=b=>`${b&&b.version||''}@${b&&b.releaseCommit||''}`;
 // Only Local AI's own health payload means Local AI answered. Caddy keeps answering while the appliance restarts
 // (502), and a captive portal answers anything; neither is Local AI. A 503 from Local AI itself still is.
 const isLocalAIHealth=d=>!!d&&typeof d==='object'&&d.appliance==='Local AI'&&typeof d.version==='string'&&d.version!=='';
+// Caddy's answer while a deploy restarts the appliance (deploy/caddy/Caddyfile): an update, not a failure.
+const isUpdatingReply=(status,body)=>status>=502&&status<=504&&body?.updating===true;
 // The appliance's other addresses (/healthz and index.html carry them: Home Wi-Fi, Anywhere (Tailscale)). A saved copy
 // offers the ones that aren't this page's own: away from home, the Tailscale one still answers.
 function otherAddresses(list,origin){
@@ -33,7 +35,7 @@ function otherAddresses(list,origin){
  }
  return out;
 }
-const api={relativeTime,buildDiffers,buildKey,isLocalAIHealth,otherAddresses};
+const api={relativeTime,buildDiffers,buildKey,isLocalAIHealth,isUpdatingReply,otherAddresses};
 if(typeof module==='object'&&module.exports){module.exports=api;return}
 if(typeof document==='undefined')return;
 
@@ -119,5 +121,5 @@ let lastVisibleCheck=Date.now();
 document.addEventListener('visibilitychange',()=>{if(document.hidden)return;if(copy.active||Date.now()-lastVisibleCheck>60000){lastVisibleCheck=Date.now();check()}});
 const start=()=>{if(copy.active)enterCopy(copy.savedAt);check()};
 if(document.body)start();else document.addEventListener('DOMContentLoaded',start,{once:true});
-root.LocalAIConnection={reachable,isSavedCopy:()=>copy.active,build:()=>({...page})};
+root.LocalAIConnection={reachable,isSavedCopy:()=>copy.active,build:()=>({...page}),isUpdatingReply};
 })(typeof window!=='undefined'?window:globalThis);

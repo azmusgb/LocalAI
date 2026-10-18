@@ -99,6 +99,23 @@ await check('Health: an answer without a service list is a failed check, not "re
   assert.doesNotMatch(await page.locator('#home').innerText(), /Healthy/);
 });
 
+// During a deploy the HTTPS front end answers 503 {error:"Local AI is updating"} with Retry-After (deploy/caddy/Caddyfile).
+await check('Health: while Local AI restarts for an update, the check says "updating", not that it failed', async () => {
+  await page.route('**/api/status', r => r.fulfill({ status: 503, headers: { 'Retry-After': '5' }, json: { error: 'Local AI is updating', updating: true } }));
+  await checkAgain();
+  const summary = await page.locator('#statusSummary').innerText();
+  assert.match(summary, /Local AI is updating…/);
+  assert.doesNotMatch(summary, /Couldn't check/);
+  assert.match(await page.locator('#serviceList .status-error').innerText(), /Local AI is updating\. This checks again in a moment\./);
+  assert.equal(await page.locator('#homeState').innerText(), 'Updating…');
+  assert.equal(await page.locator('#serviceList .service-card').count(), 2, 'the last known list stays');
+  // It looks again after Retry-After on its own: once Local AI is back, the services show without a tap.
+  await page.route('**/api/status', r => r.fulfill({ json: { ...healthy, checkedAt: new Date().toISOString() } }));
+  await page.waitForFunction(() => /Everything is ready/.test(document.getElementById('statusSummary').textContent), null, { timeout: 9000 });
+  await page.route('**/api/status', r => r.fulfill({ json: {} }));
+  await checkAgain();
+});
+
 await check('Health: a failed check says when it was tried and when the list was last right', async () => {
   assert.match(await page.locator('#statusCheckedAt').innerText(), /^Tried \d{1,2}:\d{2}:\d{2}.* · last good check \d{1,2}:\d{2}:\d{2}/);
 });
