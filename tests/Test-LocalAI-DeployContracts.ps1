@@ -582,6 +582,15 @@ try {
             Assert-True ($kept -eq '20261015 20261014 20261013 20261012 20261011 20261010 20261009 20261004 20260927 20260920 20260913') "Unexpected retention: $kept"
         } finally { Remove-Item $dir -Recurse -Force }
     }
+    Test-Case 'volume archives never go to a cloud-synced folder, and have no second copy by default' {
+        $source = Get-Content (Join-Path $repository 'deploy/Backup-LocalAI-Data.ps1') -Raw
+        Assert-True ($source -match "\[string\]\`$VolumeCopyRoot = ''") 'The second copy must be off by default (this PC has no second local disk; G: is Google Drive)'
+        Invoke-Expression ([regex]::Match($source, '(?s)function Test-CloudPath.*?\n\}').Value)
+        foreach ($p in 'C:\Users\me\OneDrive\LocalAI-Backups', 'C:\Users\me\OneDrive - Work\x', 'C:\Users\me\Dropbox\b', 'C:\Users\me\iCloudDrive\b', 'G:\My Drive\b') {
+            Assert-True (Test-CloudPath $p -Labels @{ G = 'Google Drive' }) "Not refused: $p"
+        }
+        Assert-True (-not (Test-CloudPath 'D:\Backups' -Labels @{ D = 'Data' })) 'A local disk was refused'
+    }
     if ($failures.Count) { throw "$($failures.Count) deployment contract failure(s):`n$($failures -join "`n")" }
     Write-Host "PASS: $passed deployment contracts (native boundaries simulated; actual Docker promotion requires host verification)."
 } finally { Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue }
