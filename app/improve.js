@@ -25,7 +25,8 @@ function changeTitle(change) {
 function stageOf(item, changesById = new Map()) {
   if (item.status === 'fixed') return 'shipped';
   if (item.status === 'deferred' || item.status === 'rejected') return 'setAside';
-  if (item.status === 'in_progress') return 'inProgress';
+  // Handed to Claude is Claude's to do now (it leads /api/claude/priorities), so it is In progress, not waiting.
+  if (item.status === 'in_progress' || item.handedToClaude) return 'inProgress';
   const change = item.changeId ? changesById.get(item.changeId) : null;
   if (change && LIVE_CHANGE.includes(change.status)) return 'inProgress';
   return 'backlog';
@@ -73,6 +74,27 @@ function handToClaude(item, at) {
     status: 'approved', handedToClaude: true, handedAt: at,
     priorityBoost: (Number(item.priorityBoost) || 0) + HAND_TO_CLAUDE_BOOST,
     decisionNote: item.decisionNote ? `${item.decisionNote} · ${HANDED_NOTE}` : HANDED_NOTE
+  };
+}
+
+// A request to change Local AI itself, handed to Claude from where the owner typed it (Home, Agent World, Improve's
+// New idea) instead of a mission or a planned change. It is an idea item handed to Claude; the fix tells the session
+// what was asked and where, since /api/claude/priorities shows title, fix and decisionNote (not the summary or source).
+// An open item with the same title is handed over again rather than duplicated. Returns the whole item to write.
+const HANDOFF_FROM = { home: 'Home', agentWorld: 'Agent World', improve: 'Improve' };
+function handoffItem(text, from, at, existing = null) {
+  const base = existing || ideaItem(text, at);
+  if (!base) return null;
+  const where = HANDOFF_FROM[from] || 'Improve';
+  const body = String(text ?? '').trim();
+  const note = `Handed to Claude from ${where}`;
+  // The owner's own note stays; an earlier "Handed to Claude …" gives way to this one.
+  const prior = String(base.decisionNote || '').split(' · ').filter(p => p && !p.startsWith(HANDED_NOTE)).join(' · ');
+  return {
+    ...base, ...(base.handedToClaude ? {} : handToClaude(base, at)), status: 'approved', handedToClaude: true, handedAt: base.handedAt || at,
+    decisionNote: prior ? `${prior} · ${note}` : note,
+    fix: clip(`The owner asked from ${where}: "${body}". Review the code, make the change and open a tested pull request.`, 2000),
+    updatedAt: at
   };
 }
 
@@ -127,4 +149,4 @@ function reconcile({ items = [], changes = [], signals = [], release = null, sta
   return { upserts };
 }
 
-module.exports = { LIVE_CHANGE, changeTitle, stageOf, shouldPromote, signalItemId, promoteSignal, ideaItem, moveToTopBoost, handToClaude, reconcile };
+module.exports = { LIVE_CHANGE, HANDOFF_FROM, changeTitle, stageOf, shouldPromote, signalItemId, promoteSignal, ideaItem, moveToTopBoost, handToClaude, handoffItem, reconcile };

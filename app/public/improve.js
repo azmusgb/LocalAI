@@ -46,7 +46,7 @@ function inProgressRow(it){
  const s=sessionOf(it),state=it.change?badge(CHANGE_STATE[it.change.status]||['Working','neutral']):badge(['Claude','accent']);
  // The session's state, not its latest step: one session holds many items, so its step would repeat on each of them.
  const quiet=s&&s.status!=='active'&&Date.now()-Date.parse(s.updatedAt||'')>6*36e5;
- const claude=!it.change?` <span>${!s?"Claude's session isn't reporting":quiet?`Paused: Claude last worked on this ${esc(ago(s.updatedAt))}`:`Claude's session is ${s.status==='active'?'active':'idle'}${s.updatedAt?' · '+esc(ago(s.updatedAt)):''}`}</span>`:'';
+ const claude=!it.change?` <span>${!s?(it.handedToClaude?'Waiting for a Claude session':"Claude's session isn't reporting"):quiet?`Paused: Claude last worked on this ${esc(ago(s.updatedAt))}`:`Claude's session is ${s.status==='active'?'active':'idle'}${s.updatedAt?' · '+esc(ago(s.updatedAt)):''}`}</span>`:'';
  row.innerHTML=`<span class="list-row__icon">${icon(ICON[it.source]||'improve')}</span>`+
   `<button type="button" class="improve-row__open list-row__main"><span class="list-row__title">${esc(it.title)}</span><span class="list-row__sub">${state}${claude}</span></button>`;
  row.querySelector('.improve-row__open').onclick=()=>openItem(it.id);
@@ -191,8 +191,9 @@ async function itemAction(id,action,btn,then){
 }
 // A sheet that Back closes; closing it any other way pops that history entry again.
 const showSheet=(d,onClosed)=>root.LocalAIUI.showSheet(d,onClosed);
-// Opens the idea sheet, optionally with text (Home's Change Local AI mode). Resolves {start, error?} once saved, or null if closed unsaved.
-function openIdea(text){
+// Opens the idea sheet, optionally with text (Home's Change Local AI mode). Resolves {start, error?} once saved, {handed}
+// once handed to Claude, or null if closed unsaved. `from` names where the owner typed it, for Claude.
+function openIdea(text,{from='improve'}={}){st.ideaFrom=from;
  const d=$('improveIdeaSheet');if(!d)return Promise.resolve(null);
  $('improveIdeaText').value=typeof text==='string'?text:'';$('improveIdeaError').hidden=true;
  // Closed unsaved (or opened again at once): the waiting promise resolves null.
@@ -204,6 +205,16 @@ async function submitIdea(start,btn){
  if(!text.trim()){err.textContent='Describe the change first.';err.hidden=false;return}
  btn.disabled=true;
  try{const r=await post('/api/improve/idea',{text,start});const done=st.ideaDone;st.ideaDone=null;await refresh();if(r.error){err.textContent=r.error;err.hidden=false;done?.({start,error:r.error})}else{done?.({start});$('improveIdeaSheet').close()}}
+ catch(e){err.textContent=e.message;err.hidden=false}
+ finally{btn.disabled=false}
+}
+// Hand to Claude straight from the sheet: an idea item handed over at once (In progress), for a Claude session to do.
+async function handIdea(btn){
+ const text=$('improveIdeaText').value,err=$('improveIdeaError');
+ if(!text.trim()){err.textContent='Describe the change first.';err.hidden=false;return}
+ btn.disabled=true;
+ try{await post('/api/improve/handoff',{text,from:st.ideaFrom||'improve'});const done=st.ideaDone;st.ideaDone=null;done?.({handed:true});$('improveIdeaSheet').close();
+  root.LocalAIUI.toast?.('Handed to Claude Code — it appears in Improve › In progress');await refresh()}
  catch(e){err.textContent=e.message;err.hidden=false}
  finally{btn.disabled=false}
 }
@@ -234,7 +245,7 @@ async function refresh(){
 }
 function init(){
  if(!$('backlog'))return;
- $('improveNewIdea').onclick=openIdea;$('signalsRunChecks').onclick=e=>runChecks(e.currentTarget);
+ $('improveNewIdea').onclick=()=>openIdea();const hand=$('improveIdeaHand');if(hand)hand.onclick=()=>handIdea(hand);$('signalsRunChecks').onclick=e=>runChecks(e.currentTarget);
  document.querySelectorAll('[data-idea-start]').forEach(b=>b.onclick=()=>submitIdea(b.dataset.ideaStart==='true',b));
  for(const id of ['backlog','inProgress','shipped','signals']){const sec=$(id);if(!sec)continue;root.LocalAIUI.pullToRefresh?.(id,refresh);let was=sec.classList.contains('active');
   new MutationObserver(()=>{const now=sec.classList.contains('active');if(now&&!was){refresh();if(id==='signals')loadDetails()}was=now}).observe(sec,{attributes:true,attributeFilter:['class']});

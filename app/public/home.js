@@ -213,7 +213,7 @@ async function dispatch(intent,text,route){
  const L=root.LocalAILegacy;
  if(intent==='engineering'&&root.LocalAIImprove?.openIdea){
   // Change Local AI asks each time: Add to backlog, or Start now and follow it in In progress. Closing the sheet keeps the text.
-  const r=await root.LocalAIImprove.openIdea(text);if(!r)return;
+  const r=await root.LocalAIImprove.openIdea(text,{from:'home'});if(!r)return;
   clearInput();if(r.start&&!r.error)root.LocalAIRouter.open('inProgress');
  }else if(intent==='engineering'){
   const request=L.engineeringRequest(text,route);
@@ -228,10 +228,17 @@ async function dispatch(intent,text,route){
 }
 let autoWait=null;
 function waitAuto(ms){return new Promise(res=>{const t=setTimeout(()=>{autoWait=null;res(true)},ms);autoWait={cancel:()=>{clearTimeout(t);autoWait=null;res(false)}}})}
-async function send(text,m=cur()){
+// A mission (or, with developer tools off, a chat) asking to change Local AI itself: offer Claude Code first, once.
+// Either answer is one tap; the text stays in the box until it is handed over or sent.
+function offerClaude(text,intent){
+ const SC=root.LocalAISelfChange,box=$('homeSelfChange');if(!SC||!box)return false;
+ SC.offer(box,{text,from:'home',anywayLabel:intent==='mission'?'Start a mission anyway':'Ask anyway',anyway:()=>send(text,intent,{anyway:true}),onHanded:clearInput});
+ return true;
+}
+async function send(text,m=cur(),{anyway=false}={}){
  text=String(text??'').trim();
  if(!text||sending)return;
- const input=$('commandInput');busy(true);setError('');
+ const input=$('commandInput');busy(true);setError('');root.LocalAISelfChange?.hide($('homeSelfChange'));
  try{
   let intent=m,route=null;
   if(m==='auto'){
@@ -240,6 +247,7 @@ async function send(text,m=cur()){
    // A tap on the chip within the window changes the mode instead: nothing starts and the text stays.
    if(!await waitAuto(1500)){setMode(LABEL[intent]?intent:'ask');openSheet();return}
   }
+  if(!anyway&&(intent==='mission'&&root.LocalAISelfChange?.isSelfChange(text)||intent==='ask'&&route?.intent==='engineering')&&offerClaude(text,intent))return;
   await dispatch(intent,text,route);
  }catch(e){
   if(input&&!input.value){input.value=text;grow()} // the text stays so nothing is lost
@@ -271,7 +279,7 @@ function init(){
  new MutationObserver(()=>paintChip()).observe(document.body,{attributes:true,attributeFilter:['class']}); // developer tools toggled
  $('homeModeChip').addEventListener('click',()=>autoWait?autoWait.cancel():openSheet());
  $('commandGo').addEventListener('click',()=>send($('commandInput').value));
- $('commandInput').addEventListener('input',()=>{grow();dockToNav()});
+ $('commandInput').addEventListener('input',()=>{grow();dockToNav();root.LocalAISelfChange?.hide($('homeSelfChange'))});
  $('commandInput').addEventListener('focus',()=>typing(true));
  $('commandInput').addEventListener('blur',()=>typing(false));
  $('homeSeeAll').addEventListener('click',()=>root.LocalAIRouter?.go('#work'));

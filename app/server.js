@@ -50,6 +50,7 @@ const { RunLedger, cleanId: cleanRunId } = require('./run-ledger');
 const { Trash } = require('./trash');
 const busy = require('./busy');
 const improve = require('./improve');
+const selfChange = require('./public/self-change');
 const { runCard, workKind, WORK_CHIPS } = require('./run-cards');
 const libraryThreads = require('./library-threads');
 const { loadOllamaModelRuntime } = require('./model-runtime');
@@ -1170,7 +1171,8 @@ function routeIntent(textValue, requestedMode = 'auto', messages = [], skipConti
   const codeArtifact = /\b(html|css|javascript|js|frontend|backend|endpoint|route|navigation|dashboard|component|layout|code|feature)\b/.test(t);
   const explicitEngineering = /\b(generate|create)\b.*\b(html|css|javascript|code|component|dashboard|page|navigation|endpoint)\b/.test(t);
   const informational = /^(how|what|why|which|where|when|explain|describe|tell me|show me how|can you explain|could you explain)\b/.test(t);
-  if (!informational && ((engineeringVerb && (selfObject || codeArtifact)) || explicitEngineering)) {
+  // selfChange names Local AI's pages too ("polish Agent World"), the same check missions and Home's suggestion use.
+  if (!informational && ((engineeringVerb && (selfObject || codeArtifact)) || explicitEngineering || selfChange.isSelfChange(text))) {
     return { intent: 'engineering', target: 'self', confidence: 0.97, reason: 'software-modification', effectiveRequest: text };
   }
 
@@ -3459,6 +3461,17 @@ async function apiImproveIdea(req,res){
     try{const change=await planChange({request:improveChangeRequest(item),target:'self'},{itemId:item.id});json(res,201,{item:improveRead(item.id),change:publicChange(change)})}
     catch(e){json(res,201,{item:improveRead(item.id),error:`Saved to your backlog, but planning failed: ${e.message}`})}}catch(e){storageError(res,e,500)}
 }
+// Hand to Claude from where the owner asked (Home, Agent World, New idea): a request to change Local AI itself goes to
+// Claude Code as a handed idea item, which leads /api/claude/priorities. The same request again updates its item.
+async function apiImproveHandoff(req,res){
+  try{const b=await readBody(req,512*1024);const text=String(b.text??'').trim();if(!text)return json(res,400,{error:'Describe the change first.'});
+    const at=nowIso(),title=text.split('\n')[0].trim().slice(0,120).toLowerCase();
+    const existing=claudeFindings().find(f=>['proposed','approved'].includes(f.status)&&!f.changeId&&String(f.title||'').trim().toLowerCase()===title)||null;
+    const item=improve.handoffItem(text,b.from,at,existing);
+    storage.writeSetting(CLAUDE_FINDING_PREFIX+item.id,{sessionId:'owner',category:'idea',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',pr:'',...item});
+    recordActivity('change','Handed to Claude Code',`${item.title} (from ${improve.HANDOFF_FROM[b.from]||'Improve'})`,{itemId:item.id});
+    json(res,existing?200:201,{item:improveRead(item.id)})}catch(e){storageError(res,e,500)}
+}
 async function apiImproveItem(req,res){
   try{const b=await readBody(req);if(!IMPROVE_ACTIONS.includes(b.action))return json(res,400,{error:`action must be one of ${IMPROVE_ACTIONS.join(', ')}`});
     const f=improveRead(b.id);if(!f)return json(res,404,{error:'Item not found'});
@@ -3772,6 +3785,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/improve/items') return await apiImproveItems(req,res);
     if (req.method === 'POST' && p === '/api/improve/idea') return await apiImproveIdea(req,res);
     if (req.method === 'POST' && p === '/api/improve/item') return await apiImproveItem(req,res);
+    if (req.method === 'POST' && p === '/api/improve/handoff') return await apiImproveHandoff(req,res);
     if (req.method === 'POST' && p === '/api/improve/signal') return await apiImproveSignal(req,res);
     if (req.method === 'GET' && p === '/api/claude/board') return await apiClaudeBoard(req,res,urlObj);
     if (req.method === 'GET' && p === '/api/claude/priorities') return await apiClaudePriorities(req,res,urlObj);

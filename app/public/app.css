@@ -1623,6 +1623,14 @@ body.run-view-open{overflow:hidden}
 .improve-sheet__actions{display:flex;flex-wrap:wrap;gap:8px}
 .improve-error{color:var(--ds-bad-text);font-size:var(--ds-fs-2)}
 .improve-error[hidden]{display:none}
+.improve-sheet__hint{color:var(--ds-muted);font-size:var(--ds-fs-2)}
+/* The suggestion to hand a change to Local AI itself to Claude Code (self-change.js): Home's composer, Agent World's start sheet. */
+.self-change{display:grid;gap:8px;margin:0 0 8px;padding:10px 14px;border:1px solid var(--ds-line);border-radius:var(--ds-r-md);background:var(--ds-surface);font-size:var(--ds-fs-2);line-height:1.4}
+.self-change[hidden]{display:none}
+.self-change p{margin:0}
+.self-change__actions{display:flex;flex-wrap:wrap;gap:8px}
+.self-change__error{color:var(--ds-bad-text)}
+.self-change__error[hidden]{display:none}
 .improve-details{margin-top:16px}
 .improve-details>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--ds-muted)}
 .improve-details h3{font-size:var(--ds-fs-2);color:var(--ds-muted);margin:12px 0 6px}
