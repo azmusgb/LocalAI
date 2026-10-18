@@ -47,6 +47,7 @@ const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 const crypto = require('crypto');
 const { Storage } = require('./storage');
 const { RunLedger, cleanId: cleanRunId } = require('./run-ledger');
+const { Trash } = require('./trash');
 const busy = require('./busy');
 const improve = require('./improve');
 const { runCard, workKind, WORK_CHIPS } = require('./run-cards');
@@ -2458,6 +2459,33 @@ const { spawn } = require('child_process');
 
 function notificationStore(){ return objectStore(NOTIFICATIONS_STORE); }
 function memoryStore(){ return objectStore(MEMORY_STORE); }
+
+// Delete with Undo (app/trash.js): Work rows (a whole thread), Library items and projects. A day later it is for good.
+const trash = new Trash({
+  settings: storage, ledger: runLedger, now: () => Date.now(),
+  collections: { get: name => objectStore(name), set: (name, next, previous) => writeState(name, next, previous) },
+  beforeLibraryRemove: item => keepItemAnswers(item) // a conversation's runs stay in Work, with their long answers
+});
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+async function apiItemsDelete(req, res) {
+  if (!sameOriginJson(req, res)) return;
+  try {
+    const b = await readBody(req), out = trash.delete(b.items);
+    const d = out.deleted, what = [d.runs && plural(d.runs, 'run'), d.library && plural(d.library, 'Library item'), d.projects && plural(d.projects, 'project')].filter(Boolean).join(', ');
+    recordActivity('system', 'Deleted', what || 'Nothing');
+    json(res, 200, { ok: true, ...out });
+  } catch (e) { json(res, e.status || 500, { error: e.message || String(e) }); }
+}
+async function apiItemsRestore(req, res) {
+  if (!sameOriginJson(req, res)) return;
+  try {
+    const b = await readBody(req), out = trash.restore(b.trashId);
+    recordActivity('system', 'Undid a delete', '');
+    json(res, 200, { ok: true, ...out });
+  } catch (e) { json(res, e.status || 500, { error: e.message || String(e) }); }
+}
+try { trash.purge(); } catch (e) { console.error(`${nowIso()} Trash purge failed:`, e); }
+setInterval(() => { try { trash.purge(); } catch (e) { console.error(`${nowIso()} Trash purge failed:`, e); } }, 60 * 60 * 1000).unref?.();
 function approvalStore(){ return objectStore(APPROVALS_STORE); }
 function monitorStore(){ return objectStore(MONITORS_STORE); }
 
@@ -3562,6 +3590,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/library') return await apiLibrary(req, res);
     if (req.method === 'POST' && p === '/api/library/update') return await apiLibraryUpdate(req, res);
     if (req.method === 'POST' && p === '/api/library/delete') return await apiLibraryDelete(req, res);
+    if (req.method === 'POST' && p === '/api/items/delete') return await apiItemsDelete(req, res);
+    if (req.method === 'POST' && p === '/api/items/restore') return await apiItemsRestore(req, res);
     if (req.method === 'POST' && p === '/api/library/keep') return await apiLibraryKeep(req, res);
     if (req.method === 'GET' && p === '/api/workspace') return await apiWorkspace(req, res);
     if (req.method === 'POST' && p === '/api/route') return await apiRoute(req, res);
