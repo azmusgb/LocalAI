@@ -3638,7 +3638,8 @@ try { repairLibraryThreadsOnce(); } catch (e) { console.error(`${nowIso()} Libra
 
 server.listen(PORT, '0.0.0.0', () => {
   warmText();
-  console.log(`${new Date().toISOString()} Local AI Appliance v${APP_VERSION} listening on 0.0.0.0:${PORT}`);
+  // The bound port, not PORT: with PORT=0 the system picks a free one (tests/spawn-server.cjs reads it from this line).
+  console.log(`${new Date().toISOString()} Local AI Appliance v${APP_VERSION} listening on 0.0.0.0:${server.address().port}`);
   recordActivity('system', 'Appliance started', `Local AI Appliance v${APP_VERSION} is ready.`);
 });
 const localUiServer = LOCAL_UI_PORT && LOCAL_UI_PORT !== PORT ? http.createServer((req, res) => server.emit('request', req, res)) : null;

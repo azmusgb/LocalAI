@@ -120,6 +120,9 @@ with `node tests/<name>-ui.mjs`.
 `npm run validate` runs the validator **without** `-LocalNode`, which runs the native tests inside the
 `local-ai-appliance` Docker image; it only works on the appliance host. Use the `-LocalNode` form above elsewhere.
 
+A unit test that needs a real server starts it with `spawnAppServer()` from `tests/spawn-server.cjs` (`PORT=0`, so the
+system picks the port). Picking a "free" port first and passing it in races other tests for that port.
+
 New `tests/*.test.cjs` and `tests/*-ui.mjs` files are picked up automatically by `npm test`,
 `npm run test:browser` and CI; there are no hand-kept file lists.
 

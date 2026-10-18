@@ -7,17 +7,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const http = require('node:http');
-const { spawn } = require('node:child_process');
-const { once } = require('node:events');
 const { Storage } = require('../app/storage');
+const { spawnAppServer } = require('./spawn-server.cjs');
 
 const APP = path.resolve(__dirname, '../app');
-
-async function freePort() {
-  const s = http.createServer(); s.listen(0, '127.0.0.1'); await once(s, 'listening');
-  const port = s.address().port; await new Promise(r => s.close(r)); return port;
-}
 
 // Starts a server on its own data folder. `seed(storage)` runs first; `release` runs a copy of app/ with a release.json.
 async function startServer(t, { seed, release, ollama } = {}) {
@@ -29,15 +22,9 @@ async function startServer(t, { seed, release, ollama } = {}) {
     fs.cpSync(APP, appDir, { recursive: true });
     fs.writeFileSync(path.join(appDir, 'release.json'), JSON.stringify(release));
   }
-  const port = await freePort();
-  const child = spawn(process.execPath, [path.join(appDir, 'server.js')], {
-    env: { ...process.env, DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, PORT: String(port), OLLAMA_URL: ollama || 'http://127.0.0.1:9' },
-    stdio: 'ignore'
-  });
+  const { child, ready } = spawnAppServer({ appDir, env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: ollama || 'http://127.0.0.1:9' } });
   t.after(() => { child.kill(); fs.rmSync(dataDir, { recursive: true, force: true }); if (release) fs.rmSync(path.dirname(appDir), { recursive: true, force: true }); });
-  const base = `http://127.0.0.1:${port}`;
-  for (let i = 0; i < 150; i++) { try { if ((await fetch(base + '/healthz')).ok) return base; } catch {} await new Promise(r => setTimeout(r, 100)); }
-  throw new Error('server did not start');
+  return ready;
 }
 const post = (base, p, body) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(async r => ({ status: r.status, body: await r.json() }));
 
