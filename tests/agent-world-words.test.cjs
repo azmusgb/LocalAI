@@ -54,7 +54,7 @@ test('errors are said in plain words', () => {
   assert.equal(words.errorWords('', 'Local AI restarted for an update while this was running'), 'interrupted by an update');
   assert.equal(words.errorWords('INTERRUPTED', 'Interrupted: the appliance restarted while this was running'), 'interrupted by an update');
   const m = mission({ status: 'error', workers: [router(), ux({ state: 'error', error: 'Local AI restarted for an update while this was running' }), coord({ state: 'blocked' })] });
-  assert.equal(words.changeSentence(m.workers[1], m), 'UX Analyst stopped: interrupted by an update');
+  assert.equal(words.changeSentence(m.workers[1], m), 'UX Analyst was interrupted by an update');
   assert.equal(words.errorWords('', 'Disk full.'), 'disk full');
   assert.equal(words.errorWords('', 'x'.repeat(200)), 'something went wrong');
   assert.equal(words.errorWords('', ''), 'something went wrong');
@@ -188,8 +188,8 @@ test('an interruption reads as one sentence, not "stopped: interrupted: …"', (
     assert.equal(words.workerStep(ca, m), 'Interrupted by an update');
     assert.equal(words.workerStep(m.workers[2], m), 'Interrupted by an update');
     assert.equal(words.changeSentence(ca, m), 'Code Analyst was interrupted by an update');
-    assert.equal(words.errorWords('', reason), 'Local AI restarted for an update');
-    assert.equal(words.errorWords('', 'Follow-up stopped: ' + reason), 'Local AI restarted for an update');
+    assert.equal(words.errorWords('', reason), 'interrupted by an update');
+    assert.equal(words.errorWords('', 'Follow-up stopped: ' + reason), 'interrupted by an update');
     assert.equal(words.summaryWhy(m), 'No summary: Local AI restarted for an update before the team finished.');
     assert.ok(words.storyEvents(m).some(e => e.text === 'Code Analyst was interrupted by an update'));
     assert.doesNotMatch(JSON.stringify(words.storyEvents(m)), /stopped: |interrupted:/i);
