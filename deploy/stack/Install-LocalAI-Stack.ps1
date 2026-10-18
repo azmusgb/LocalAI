@@ -48,6 +48,11 @@ if (-not (Get-ChildItem $app -Force -ErrorAction SilentlyContinue)) { Copy-Item 
 Invoke-Compose config --quiet
 if ($DryRun) { Invoke-Compose --dry-run up -d; return }
 
+# compose.yml marks the volumes and network external (compose never creates or removes them): make any that are missing.
+$config = & docker compose --env-file $EnvFile -f $compose config --format json | ConvertFrom-Json
+foreach ($v in $config.volumes.PSObject.Properties.Value.name) { & docker volume inspect $v *> $null; if ($LASTEXITCODE -ne 0) { & docker volume create $v | Out-Null; "Created volume $v" } }
+foreach ($n in $config.networks.PSObject.Properties.Value.name) { & docker network inspect $n *> $null; if ($LASTEXITCODE -ne 0) { & docker network create $n | Out-Null; "Created network $n" } }
+
 # 3. Containers that exist but belong to no compose project (or another one) are in the way.
 $names = (& docker compose --env-file $EnvFile -f $compose config --format json | ConvertFrom-Json).services.PSObject.Properties.Value.container_name
 $foreign = @(foreach ($n in $names) {

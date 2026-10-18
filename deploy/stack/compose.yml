@@ -262,14 +262,17 @@ services:
       local-ai:
         aliases: [sandbox-runner-1]
 
-# Names match the existing volumes and network, so data carries over.
+# Names match the existing volumes and network, so data carries over. They are external: they predate this file, hold
+# the data, and compose never creates, renames or removes them (a `down` can't take them with it). On a new host
+# deploy\stack\Install-LocalAI-Stack.ps1 creates them first.
 volumes:
-  appliance-data: { name: local-ai-appliance-data }
-  caddy-data: { name: localai-caddy-data }
-  n8n-data: { name: n8n_data }
-  proxy-data: { name: local-ai-ollama-responses-proxy-data }
-  sandbox-tls: { name: local-ai-sandbox-tls }
+  appliance-data: { name: local-ai-appliance-data, external: true }
+  caddy-data: { name: localai-caddy-data, external: true }
+  n8n-data: { name: n8n_data, external: true }
+  proxy-data: { name: local-ai-ollama-responses-proxy-data, external: true }
+  sandbox-tls: { name: local-ai-sandbox-tls, external: true }
 
 networks:
   local-ai:
     name: local-ai-sandbox-net
+    external: true
