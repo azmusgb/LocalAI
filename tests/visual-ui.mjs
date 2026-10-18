@@ -29,7 +29,7 @@ const NOW = Date.parse('2026-10-14T15:30:00Z');
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-visual-'));
 const off = 'http://127.0.0.1:9';
 const { child: server, ready } = spawnAppServer({
-  env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
+  env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off, LOCALAI_WORKSHOP_URL: off }
 });
 const base = await ready;
 
@@ -164,6 +164,7 @@ async function stubPages(page) {
   await page.route(u => u.pathname === '/api/status', route => healthy(route));
   await page.route(u => u.pathname === '/api/capabilities', route => healthy(route, { images: { available: true } }));
   await page.route(u => u.pathname === '/api/artcraft/status', route => json(route, { ok: true, installed: true, running: false, version: '0.41.0' }));
+  await page.route(u => u.pathname === '/api/workshop/status', route => json(route, { online: true, board: 'Waveshare_ESP32-S3-Touch-LCD-3.5', panel: 'ST7796_320x480_FT6336', screen: 6, touchscreenConfigured: true, portalUrl: 'http://10.0.0.124' }));
   await page.route(u => u.pathname === '/api/notifications', route => json(route, { items: NOTIFICATIONS, unread: NOTIFICATIONS.filter(n => !n.read).length }));
   await page.route(u => u.pathname === '/api/approvals', route => json(route, { items: APPROVALS }));
   await page.route(u => u.pathname === '/api/projects', route => json(route, { items: PROJECTS }));

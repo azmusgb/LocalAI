@@ -67,6 +67,7 @@ All read at startup in `app/server.js` unless noted.
 | `SEARXNG_URL` | `http://local-ai-searxng:8080` | Web research |
 | `MAC_AI_HOME_URL` | `http://10.0.0.16:3083` | Optional Mac companion (health probe) |
 | `MAC_DSH_URL` | `http://10.0.0.16:3084` | Optional Mac developer assistant (health probe) |
+| `LOCALAI_WORKSHOP_URL` | `http://10.0.0.124` | Workshop display beside the printer (Services card); only an http(s) address on a private IP or a `.local` name is used ([Workshop display](WORKSHOP-DISPLAY.md)) |
 | `REPORT_PATH` | `/reports/LocalAI-Certification-latest.txt` | Certification report shown in the app |
 | `CHAT_MODEL_TIMEOUT_MS` | `180000` (30 s–15 min) | Chat model timeout |
 | `ENGINEERING_MODEL_TIMEOUT_MS` | `600000` (1–30 min) | Change request model timeout |
