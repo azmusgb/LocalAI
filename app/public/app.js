@@ -587,11 +587,11 @@ async function refreshStatus(force=false){
     if(!r.ok)throw new Error(`HTTP ${r.status}`);
     const j=await r.json();if(!j||!Array.isArray(j.services))throw new Error('No service list');
     const overall=normalizedState(j.overall);
-    for(const id of ['homeDot','sideDot'])$(id).className=`dot ${overall}`;
+    $('homeDot').className=`dot ${overall}`;
     const coreBad=j.services.filter(s=>s.required!==false&&s.state!=='HEALTHY');
     const optionalBad=j.services.filter(s=>s.required===false&&s.state!=='HEALTHY');
     const friendly=overall==='HEALTHY'?'Healthy':'Attention needed';
-    $('homeState').textContent=friendly;$('sideState').textContent=overall==='HEALTHY'?'Healthy':'Attention';
+    $('homeState').textContent=friendly;
     $('statusSummary').innerHTML=`<span class="dot ${overall}"></span> ${coreBad.length?`${coreBad.length} core service${coreBad.length===1?' needs':'s need'} attention`:optionalBad.length?`Core ready · ${optionalBad.length} optional service${optionalBad.length===1?'':'s'} off`:'Everything is ready'}`;
     statusLastOk=j.checkedAt?clock(new Date(j.checkedAt)):clock(new Date());
     const checked=$('statusCheckedAt');if(checked)checked.textContent=`Checked ${statusLastOk}`;
@@ -602,7 +602,7 @@ async function refreshStatus(force=false){
     // No answer at all (offline, an untrusted certificate, Local AI restarting) is not the same as an answer that
     // couldn't be read; say which.
     const why=e&&e.unreachable?"Can't reach Local AI from this device.":"Local AI answered, but its status couldn't be read.";
-    for(const id of ['homeDot','sideDot'])$(id).className='dot DOWN';$('homeState').textContent='Unavailable';$('sideState').textContent='Offline';
+    $('homeDot').className='dot DOWN';$('homeState').textContent='Unavailable';
     $('statusSummary').innerHTML='<span class="dot DOWN"></span> Couldn\'t check the services. Try again';
     // Say when this attempt was, and when the list below was last right, so an old time never reads as current.
     const checked=$('statusCheckedAt');if(checked)checked.textContent=`Tried ${clock(new Date())}${statusLastOk?` · last good check ${statusLastOk}`:''}`;
@@ -689,10 +689,13 @@ async function evoApi(url,opts){const r=await fetch(url,opts);const j=await r.js
 async function evoPost(url,body){return evoApi(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
 // Approvals waiting on the owner: one number, counted here and read by the bell, the Inbox pill and its "waiting" heading.
 function countPending(items){return (items||[]).filter(x=>x.status==='pending').length}
+// The Inbox pill says what waits in the words the page uses below it: "1 approval and 1 alert waiting".
+const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
+function waitingWords(approvals,alerts){const parts=[approvals&&plural(approvals,'approval'),alerts&&plural(alerts,'alert')].filter(Boolean);return parts.length?parts.join(' and ')+' waiting':'Nothing waiting'}
 const approvalTitle=a=>String(a.title||'').replace(/\s+chg-\d+-[0-9a-f]+$/,'')||'Approval needed';
 // The Inbox is the history (one queue, D8): approvals still waiting head it, each opening the one approval sheet that Home ›
 // Needs you uses; then open alerts; then History, where resolved alerts and decided approvals fold away, newest first.
-async function loadInbox(){if(featureLevel()<7)return;return LocalAIUI.loadInto($('inboxList'),async()=>{const [n,a]=await Promise.all([evoApi('/api/notifications'),evoApi('/api/approvals').catch(()=>null)]);return {...n,approvals:a}},{what:'your inbox',empty:'',render:(c,j)=>{evo.notifications=j.items||[];evo.unread=j.unread||0;if(j.approvals){evo.approvals=j.approvals.items||[];evo.pendingApprovals=countPending(evo.approvals)}const pending=evo.pendingApprovals||0;announceInboxCount();$('inboxUnread').textContent=`${evo.unread+pending} waiting`;const inboxCard=n=>`<div class="item-card"><div class="statusline"><strong style="flex:1">${esc(n.title)}</strong><span class="statuschip">${n.resolved?'Resolved':n.read?'Read':'New'}</span></div><small>${esc(n.kind)} · ${ago(n.createdAt)}</small><div class="muted" style="margin-top:6px">${esc(n.detail||'')}</div><button type="button" class="btn-outline inbox-more" data-note-more aria-expanded="false" hidden>Show more</button><div class="actions" style="margin-top:8px">${!n.read?`<button class="btn-outline" data-note-read="${esc(n.id)}">Mark read</button>`:''}${!n.resolved?`<button class="btn-outline" data-note-resolve="${esc(n.id)}">Resolve</button>`:''}</div></div>`;
+async function loadInbox(){if(featureLevel()<7)return;return LocalAIUI.loadInto($('inboxList'),async()=>{const [n,a]=await Promise.all([evoApi('/api/notifications'),evoApi('/api/approvals').catch(()=>null)]);return {...n,approvals:a}},{what:'your inbox',empty:'',render:(c,j)=>{evo.notifications=j.items||[];evo.unread=j.unread||0;if(j.approvals){evo.approvals=j.approvals.items||[];evo.pendingApprovals=countPending(evo.approvals)}const pending=evo.pendingApprovals||0;announceInboxCount();$('inboxUnread').textContent=waitingWords(pending,evo.unread);const inboxCard=n=>`<div class="item-card"><div class="statusline"><strong style="flex:1">${esc(n.title)}</strong><span class="statuschip">${n.resolved?'Resolved':n.read?'Read':'New'}</span></div><small>${esc(n.kind)} · ${ago(n.createdAt)}</small><div class="muted" style="margin-top:6px">${esc(n.detail||'')}</div><button type="button" class="btn-outline inbox-more" data-note-more aria-expanded="false" hidden>Show more</button><div class="actions" style="margin-top:8px">${!n.read?`<button class="btn-outline" data-note-read="${esc(n.id)}">Mark read</button>`:''}${!n.resolved?`<button class="btn-outline" data-note-resolve="${esc(n.id)}">Resolve</button>`:''}</div></div>`;
   const decidedCard=a=>`<div class="item-card inbox-decided"><div class="statusline"><strong style="flex:1">${esc(approvalTitle(a))}</strong><span class="statuschip">${esc(human(a.status))}</span></div><small>Approval · ${ago(a.updatedAt||a.createdAt)}</small>${a.detail?`<div class="muted" style="margin-top:6px">${esc(a.detail)}</div><button type="button" class="btn-outline inbox-more" data-note-more aria-expanded="false" hidden>Show more</button>`:''}</div>`;
   const waitingRow=a=>`<li data-approval-id="${esc(a.id)}"><button type="button" class="item-card inbox-approval" data-approval-open="${esc(a.id)}" aria-label="Review: ${esc(approvalTitle(a))}"><span class="statusline"><strong style="flex:1">${esc(approvalTitle(a))}</strong><span class="statuschip">${a.risk?`${esc(human(a.risk))} risk · `:''}Review</span></span><small>${esc(a.detail||'Waiting for your decision')}</small></button></li>`;
   const waiting=(evo.approvals||[]).filter(x=>x.status==='pending'),decided=(evo.approvals||[]).filter(x=>x.status!=='pending');

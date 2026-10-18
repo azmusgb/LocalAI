@@ -182,7 +182,7 @@ await check('two approvals and no alerts: the Inbox lists them and opens the she
   assert.match(await waiting.innerText(), /2 approvals waiting/);
   assert.deepEqual(await waiting.locator('li button').evaluateAll((bs) => bs.map((b) => b.getAttribute('aria-label') || b.textContent)), ['Review: Run npm install', 'Review: Apply change']);
   assert.doesNotMatch(await page.locator('#inboxList').innerText(), /Nothing needs you/);
-  assert.equal(await page.locator('#inboxUnread').innerText(), '2 waiting');
+  assert.equal(await page.locator('#inboxUnread').innerText(), '2 approvals waiting', 'the pill uses the same words as the heading');
   assert.equal(await page.locator('#uxInboxCount').innerText(), '2');
   // History holds what was decided.
   const history = page.locator('#inboxList details.inbox-resolved');

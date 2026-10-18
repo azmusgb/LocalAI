@@ -165,9 +165,8 @@ await check('shell: the icon sprite takes no space above the app', async () => {
 
 await check('shell: the inbox bell names its count', async () => {
   await shell.evaluate(() => window.dispatchEvent(new CustomEvent('localai:inbox-count', { detail: { unread: 3, pending: 1 } })));
-  assert.match(await shell.locator('#uxInboxBtn').getAttribute('aria-label'), /3 unread, 1 approval/);
+  assert.equal(await shell.locator('#uxInboxBtn').getAttribute('aria-label'), 'Inbox, 1 approval and 3 alerts waiting');
   assert.equal(await shell.locator('#uxInboxCount').innerText(), '4');
-  assert.match(await shell.locator('#uxInboxBtn').getAttribute('aria-label'), /^Inbox, 4 waiting/);
   await shell.evaluate(() => window.dispatchEvent(new CustomEvent('localai:inbox-count', { detail: { unread: 0, pending: 0 } })));
   assert.equal(await shell.locator('#uxInboxBtn').isVisible(), true, 'the bell stays on phones at zero');
   assert.equal(await shell.locator('#uxInboxCount').isVisible(), false, 'no badge at zero');
