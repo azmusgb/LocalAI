@@ -1119,25 +1119,9 @@ const DISTRICTS={
 };
 const ROLE_ZONE={router:'command',mission_router:'command',ux_analyst:'ux',documentation:'docs',synthesis:'command',coordinator:'command',engineer:'engineering',validator:'validation',reviewer:'command',deployer:'engineering',operator:'validation',code_analyst:'engineering',test_engineer:'validation',research_agent:'projects',security_reviewer:'validation',performance_analyst:'models'};
 const ROLE_COLOR={router:'#71b7ff',mission_router:'#71b7ff',ux_analyst:'#59e2ed',documentation:'#c498ff',synthesis:'#a8b5ff',coordinator:'#a8b5ff',engineer:'#ffb86a',validator:'#75dfa2',reviewer:'#c498ff',deployer:'#ffb86a',operator:'#75dfa2',code_analyst:'#ffb86a',test_engineer:'#75dfa2',research_agent:'#8db7ff',security_reviewer:'#ff8494',performance_analyst:'#ff8494'};
-const ROLE_STYLE={
- router:{skin:'#d9a77f',hair:'#2a211e',shirt:'#d9792c',vest:'#ff9d33',pants:'#6b4a2f',accent:'#71b7ff',tool:'headset',hat:'#f2bf3e',badge:'R'},
- mission_router:{skin:'#d9a77f',hair:'#2a211e',shirt:'#d9792c',vest:'#ff9d33',pants:'#6b4a2f',accent:'#71b7ff',tool:'headset',hat:'#f2bf3e',badge:'R'},
- ux_analyst:{skin:'#e6b98d',hair:'#6c3f35',shirt:'#d87e30',vest:'#ffa43b',pants:'#6e4d32',accent:'#59e2ed',tool:'tablet',hat:'#f6c548',badge:'UX'},
- documentation:{skin:'#c99572',hair:'#332522',shirt:'#c9712c',vest:'#ff9d33',pants:'#60452f',accent:'#c498ff',tool:'clipboard',hat:'#f3bd3d',badge:'D'},
- synthesis:{skin:'#e1b58f',hair:'#3d3340',shirt:'#db7d2d',vest:'#ffa43b',pants:'#655039',accent:'#a8b5ff',tool:'holo',hat:'#f4c64a',badge:'C'},
- coordinator:{skin:'#e1b58f',hair:'#3d3340',shirt:'#db7d2d',vest:'#ffa43b',pants:'#655039',accent:'#a8b5ff',tool:'holo',hat:'#f4c64a',badge:'C'},
- engineer:{skin:'#d7a07a',hair:'#402d23',shirt:'#cf6e24',vest:'#ff942b',pants:'#60452e',accent:'#ffb86a',tool:'wrench',hat:'#ffc640',badge:'E'},
- validator:{skin:'#ebc09b',hair:'#302925',shirt:'#d87b2e',vest:'#ffa43b',pants:'#66513a',accent:'#75dfa2',tool:'scanner',hat:'#f5c64b',badge:'V'},
- reviewer:{skin:'#bd8968',hair:'#262329',shirt:'#c96f2b',vest:'#ff9b31',pants:'#594331',accent:'#c498ff',tool:'clipboard',hat:'#efb93c',badge:'RV'},
- deployer:{skin:'#dba47e',hair:'#3a2a21',shirt:'#cf7026',vest:'#ff962c',pants:'#60472f',accent:'#ffb86a',tool:'crate',hat:'#ffc640',badge:'DP'},
- operator:{skin:'#d0a47f',hair:'#242b2f',shirt:'#d4782a',vest:'#ffa036',pants:'#63503b',accent:'#75dfa2',tool:'radio',hat:'#f4c448',badge:'OP'}
-,
- code_analyst:{skin:'#d8aa83',hair:'#2b2422',shirt:'#c96e2b',vest:'#ff9a31',pants:'#594632',accent:'#ffb86a',tool:'tablet',hat:'#f2bd3d',badge:'CA'},
- test_engineer:{skin:'#e4b58b',hair:'#342923',shirt:'#cf762d',vest:'#ffa43b',pants:'#5e4b35',accent:'#75dfa2',tool:'scanner',hat:'#f5c64b',badge:'TE'},
- research_agent:{skin:'#c99673',hair:'#392a27',shirt:'#d1782c',vest:'#ff9d33',pants:'#5e4933',accent:'#8db7ff',tool:'clipboard',hat:'#f0bd42',badge:'RS'},
- security_reviewer:{skin:'#d9a67f',hair:'#28242b',shirt:'#c86c2c',vest:'#ff9632',pants:'#594331',accent:'#ff8494',tool:'scanner',hat:'#efb93c',badge:'SC'},
- performance_analyst:{skin:'#e0b38c',hair:'#342b2a',shirt:'#d2762d',vest:'#ffa23a',pants:'#604b36',accent:'#ff8494',tool:'holo',hat:'#f3c247',badge:'PF'}
-}
+// A look per role: the prop they carry and, for the builders, a hard hat. The vest is their district's colour; skin,
+// hair, shirt and trousers come from the worker id (lookFor), so a crew never looks like clones.
+const ROLE_STYLE={router:{tool:'blueprint',hat:'#eef2f5'},mission_router:{tool:'blueprint',hat:'#eef2f5'},ux_analyst:{tool:'tablet'},documentation:{tool:'clipboard'},synthesis:{tool:'radio'},coordinator:{tool:'radio'},engineer:{tool:'wrench',hat:'#ffc640'},validator:{tool:'magnifier'},reviewer:{tool:'clipboard'},deployer:{tool:'crate',hat:'#ffc640'},operator:{tool:'radio',hat:'#ffc640'},code_analyst:{tool:'laptop'},test_engineer:{tool:'magnifier'},research_agent:{tool:'book'},security_reviewer:{tool:'magnifier'},performance_analyst:{tool:'drive'}};
 const DEMO_STAGES=[
  {label:'Router planning',detail:'Matching capabilities, dependencies and models',states:{router:'running',ux_analyst:'pending',documentation:'pending',synthesis:'pending'}},
  {label:'UX analysis',detail:'UX Analyst is working in the Interface Lab',states:{router:'complete',ux_analyst:'running',documentation:'pending',synthesis:'pending'}},
@@ -1216,15 +1200,15 @@ function normalizeMission(m){return{type:'mission',id:m.id,status:m.status,goal:
 function ensureAgent(w){
  const id=w.id||w.agentId||w.name;if(!id)return;
  let a=agents.get(id),zone=zoneForWorker(w),target=workerTarget(w,zone);
- if(!a){const p=districtCenter('command'),style=ROLE_STYLE[id]||ROLE_STYLE[(w.agentId||'')]||ROLE_STYLE.synthesis;a={id,name:w.name||id,glyph:(w.name||id).trim()[0]?.toUpperCase()||'A',x:p.x,y:p.y,tx:p.x,ty:p.y,path:[],pathI:0,state:'pending',zone:'command',targetZone:zone,color:ROLE_COLOR[id]||'#8fb5e8',model:w.model||'',dir:1,bob:Math.random()*Math.PI*2,step:Math.random()*Math.PI*2,style,activitySeed:Math.random()*10,inside:false,insideZone:null,targetInside:false,transition:'idle'};agents.set(id,a)}
- const fresh=!a.seen;a.seen=true;const old=a.state;a.name=w.name||a.name;a.model=w.model||a.model;a.state=w.state||a.state;a.targetZone=zone;a.color=ROLE_COLOR[id]||a.color;
+ if(!a){const p=districtCenter('command'),h=hash(id);a={id,name:w.name||id,x:p.x,y:p.y,tx:p.x,ty:p.y,path:[],pathI:0,state:'pending',zone:'command',targetZone:zone,color:ROLE_COLOR[id]||'#8fb5e8',model:w.model||'',dir:h&1?1:-1,style:lookFor(id),activitySeed:h%997/97,inside:false,insideZone:null,targetInside:false,transition:'idle'};agents.set(id,a)}
+ const fresh=!a.seen;a.seen=true;const old=a.state;a.name=w.name||a.name;a.tag=window.LocalAIAgentWords?.workerName(w)||a.name;a.model=w.model||a.model;a.state=w.state||a.state;a.targetZone=zone;a.color=ROLE_COLOR[id]||a.color;
  if(a.zone!==zone||Math.hypot(a.tx-target.x,a.ty-target.y)>2||a.targetInside!==target.inside){a.tx=target.x;a.ty=target.y;a.targetInside=!!target.inside;a.transition=target.inside?'entering':(a.inside?'exiting':'traveling');a.path=routeToTarget(a,target,zone);a.pathI=0;a.zone=zone}
  if(reduced){a.x=target.x;a.y=target.y;a.path=[];a.inside=!!target.inside;a.insideZone=a.inside?zone:null}
  if(old!==a.state){
   if(!fresh&&sourceType!=='replay'){focusId=id;const t=window.LocalAIAgentWords?.changeSentence(w,current?.raw||current);if(t)note(t,a.state)}
   if(a.state==='running'){spawnPacket('models',zone,a.color,'MODEL');spawnSpark(target.x,target.y,a.color,18)}
   if(a.state==='complete'){
-   spawnArtifact(a);spawnSpark(target.x,target.y,'#75dfa2',26);
+   if(!fresh)a.doneAt=now();spawnArtifact(a);spawnSpark(target.x,target.y,'#75dfa2',26);
    for(const next of current?.workers||[])if((next.dependsOn||[]).includes(id))spawnPacket(zone,zoneForWorker(next),a.color,'HANDOFF')
   }
   if(['error','blocked'].includes(a.state))spawnSpark(target.x,target.y,'#ff7383',36)
@@ -1232,7 +1216,7 @@ function ensureAgent(w){
 }
 function spawnArtifact(a){if(artifacts.some(x=>x.workerId===a.id))return;const p=districtCenter(a.zone),kind=['engineer','code_analyst','deployer'].includes(a.id)?'build':['validator','test_engineer','security_reviewer'].includes(a.id)?'certificate':['documentation','research_agent','ux_analyst'].includes(a.id)?'document':'node';artifacts.push({workerId:a.id,label:a.name,kind,x:p.x+26,y:p.y-14,color:a.color,created:now()})}
 function spawnPacket(from,to,color,label='EVIDENCE'){const p=astar(districtCenter(from),districtCenter(to));if(p.length)packets.push({path:p,i:0,x:p[0].x,y:p[0].y,color,label,done:false,created:now()})}
-function spawnSpark(x,y,color,n=12){for(let i=0;i<n;i++)sparks.push({x,y,vx:(Math.random()-.5)*80,vy:-20-Math.random()*80,life:.7+Math.random()*.7,color,size:1+Math.random()*2})}
+function spawnSpark(x,y,color,n=12){if(!reduced)for(let i=0;i<n;i++)sparks.push({x,y,vx:(Math.random()-.5)*80,vy:-20-Math.random()*80,life:.7+Math.random()*.7,color,size:1+Math.random()*2})}
 // Notes float over the city's top-left for 4 s, three at most; the story keeps them all.
 function note(text,state){notes.unshift({text,state,at:now()});notes=notes.slice(0,3);syncNotes();setTimeout(syncNotes,4100)}
 function syncNotes(){const h=$('#awcToasts');if(!h)return;const t=now();notes=notes.filter(n=>t-n.at<4000);h.innerHTML=notes.map(n=>`<li data-state="${esc(n.state)}">${esc(n.text)}</li>`).join('')}
@@ -1304,13 +1288,12 @@ function syncRoster(){
  const av=$('#awSheetAvatars');if(av)av.innerHTML=workers.map(w=>`<img class="awc__avatar is-${esc(w.state)}" data-worker="${esc(w.id)}" src="${avatar(w)}" alt="" width="30" height="30">`).join('');
  const st=$('#awSheetStatus');if(st){const t=A.statusSentence(m),i=t.label?t.text.indexOf(' · '):-1;st.dataset.tone=t.tone;st.innerHTML=i>0?`<b>${esc(t.text.slice(0,i))}</b>${esc(t.text.slice(i))}`:esc(t.text)}
 }
-// A worker's pixel portrait: the city's own sprite, drawn once per role into a small canvas (head and shoulders).
+// A worker's pixel portrait: head and shoulders from the city's own sprite sheet.
 const portraits=new Map();
 function avatar(w){
- const id=ROLE_STYLE[w.id]?w.id:ROLE_STYLE[w.agentId]?w.agentId:'synthesis';if(portraits.has(id))return portraits.get(id);
- const c=document.createElement('canvas'),prev=ctx,sel=selected,hov=hovered;c.width=c.height=48;let url='';selected=hovered=null;
- try{ctx=c.getContext('2d');ctx.beginPath();ctx.rect(0,6,48,42);ctx.clip();drawWorkerSprite({id,name:'',glyph:'',x:24,y:41,dir:1,state:'complete',style:ROLE_STYLE[id],activitySeed:0,step:0,bob:0,path:[]},0);url=c.toDataURL()}catch{}
- ctx=prev;selected=sel;hovered=hov;portraits.set(id,url);return url
+ const s=lookFor(w.id||w.agentId||w.name);if(portraits.has(s.key))return portraits.get(s.key);let url='';
+ try{const c=document.createElement('canvas'),g=c.getContext('2d');c.width=c.height=48;g.imageSmoothingEnabled=false;g.drawImage(sheetFor(s),4,0,12,12,0,0,48,48);url=c.toDataURL()}catch{}
+ portraits.set(s.key,url);return url
 }
 function syncEventFeed(){if(!root)return;const h=$('#awcEventFeed');if(h)h.innerHTML=events.length?events.slice(0,4).map(e=>`<div><span>${esc(e.text)}</span><time>${e.at.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</time></div>`).join(''):'<div><span>Waiting for activity</span></div>'}
 let externalFocus=false;
@@ -1395,6 +1378,7 @@ function mount(){
  if('ResizeObserver' in window)new ResizeObserver(resize).observe($('.awc__mapWrap',root));window.addEventListener('resize',resize);
  window.LocalAIAgentWorld={camera:()=>({zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,shown:{zoom:view.zoom,panX:view.panX,panY:view.panY},...cam}),avatar,following:()=>display.follow,follow:on=>toggleFollow(on),demo:()=>{startDemo();syncDemoControls()},demoStep:()=>stepDemo(),busy:()=>demo.active||replay.active,display:()=>({...display}),view:k=>k==='speed'?cycleReplaySpeed():k==='theater'?toggleExpanded():k==='fit'?(userCamera(),fitWorld()):toggleDisplay(k),walking:()=>[...agents.values()].filter(workerIsMoving).length,
   moments:()=>({flags:[...agents.values()].filter(a=>a.state==='complete').map(a=>a.id),warnings:[...agents.values()].filter(a=>a.state==='error'||a.state==='blocked').map(a=>a.id),fireworks:celebrationUntil>now()})};
+ try{if(localStorage.getItem('localai.debug')==='1')window.__awcLayout=layout}catch{}
  document.body.classList.add('agent-world-city-ready');buildRoads();seedAmbient();syncDemoControls();syncHud();syncEventFeed();resize();start();bootstrap()
 }
 const IDLE=[['router','Team lead'],['ux_analyst','UX Analyst'],['documentation','Documentation Agent'],['research_agent','Research Agent'],['engineer','Engineer']];
@@ -1407,7 +1391,6 @@ function update(dt,ts){
  for(const a of agents.values()){
   const moving=workerIsMoving(a),running=a.state==='running'&&moving;
   a.motion=running?'running':moving?'walking':a.state==='running'?'working':'idle';
-  a.bob+=dt*(running?12:7);a.step+=dt*(running?19:10);
   if(!moving)continue;
   const p=a.path[a.pathI],dx=p.x-a.x,dy=p.y-a.y,d=Math.hypot(dx,dy);
   if(d<3){a.pathI++;if(a.pathI>=a.path.length){a.inside=!!a.targetInside;a.insideZone=a.inside?a.zone:null;a.transition=a.inside?'working':'idle';a.motion=a.state==='running'?'working':'idle';a.arrivedAt=ts;spawnSpark(a.x,a.y,a.inside?'#71b7ff':'#f5c04f',5)}continue}
@@ -1418,6 +1401,7 @@ function update(dt,ts){
  }
  for(const p of packets){if(p.done||!p.path[p.i])continue;const t=p.path[p.i],dx=t.x-p.x,dy=t.y-p.y,d=Math.hypot(dx,dy);if(d<3){p.i++;if(p.i>=p.path.length){p.done=true;spawnSpark(p.x,p.y,p.color,8);if(p.label==='HANDOFF')addEvent('Handoff received')}continue}p.x+=dx/d*150*dt;p.y+=dy/d*150*dt}packets=packets.filter(p=>!p.done);
  updateConstruction(dt,ts);updateCrew(dt);
+ if(reduced){sparks=[];dust=[]}
  for(const s of sparks){s.x+=s.vx*dt;s.y+=s.vy*dt;s.vy+=90*dt;s.life-=dt}sparks=sparks.filter(s=>s.life>0);for(const d of dust){d.x+=d.vx*dt;d.y+=d.vy*dt;d.r+=dt*5;d.life-=dt}dust=dust.filter(d=>d.life>0);
  for(const c of traffic){if(c.axis==='x'){c.x+=c.v*c.dir*dt;if(c.x>38*T)c.x=2*T;if(c.x<2*T)c.x=38*T}else{c.y+=c.v*c.dir*dt;if(c.y>23*T)c.y=3*T;if(c.y<3*T)c.y=23*T}}
  if(demo.active&&demo.running&&!demo.paused&&!reduced&&ts-demo.lastAdvance>3200/demo.speed){if(demo.stage<DEMO_STAGES.length-1){demo.stage++;applyDemo();recordReplayFrame('demo');demo.lastAdvance=ts}else demo.running=false;syncDemoControls()}
@@ -1450,7 +1434,7 @@ function drawGroundStatic(){
  // plaza + paths
  px(16*T,11*T,9*T,5*T,display.night?'#3f443f':'#746f59');for(let i=0;i<18;i++)px(16*T+(i%6)*T/1.5+9,11*T+Math.floor(i/6)*T/1.5+10,4,4,display.night?'#545a54':'#999078');
 }
-function drawTree(x,y,ts){px(x-2,y+3,4,9,'#4d3522');const sway=Math.sin(ts/700+x*.02)*1.2;ctx.fillStyle=display.night?'#13402c':'#22663c';ctx.beginPath();ctx.arc(x+sway,y,9,0,Math.PI*2);ctx.fill();ctx.fillStyle=display.night?'#195037':'#2d8050';ctx.beginPath();ctx.arc(x-3+sway,y-3,6,0,Math.PI*2);ctx.fill()}
+function drawTree(x,y,ts){px(x-2,y+3,4,9,'#4d3522');const sway=reduced?0:Math.sin(ts/700+x*.02)*1.2;ctx.fillStyle=display.night?'#13402c':'#22663c';ctx.beginPath();ctx.arc(x+sway,y,9,0,Math.PI*2);ctx.fill();ctx.fillStyle=display.night?'#195037':'#2d8050';ctx.beginPath();ctx.arc(x-3+sway,y-3,6,0,Math.PI*2);ctx.fill()}
 function drawDistrictScene(id,d,ts){
  const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,pulse=(Math.sin(ts/420)+1)/2;
  // paved service apron and pedestrian path to the door
@@ -1634,51 +1618,12 @@ function updateCrew(dt){
   else if(workerIsMoving(a)){a.onSite=false;a.climbing=false}
  }
 }
-function siteTrade(a){
- if(districtFlags(a.zone).bad)return'repair';
- const tool=roleStyle(a).tool;
- return{wrench:'hammer',scanner:'weld',tablet:'glass',crate:'bricks',clipboard:'blueprint',holo:'signal',headset:'signal',radio:'signal'}[tool]||'hammer'
-}
 function drawLadder(x,y1,y2){ctx.save();ctx.strokeStyle='#c9a46a';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x-5,y1);ctx.lineTo(x-5,y2);ctx.moveTo(x+5,y1);ctx.lineTo(x+5,y2);for(let yy=y2+3;yy<y1;yy+=6){ctx.moveTo(x-5,yy);ctx.lineTo(x+5,yy)}ctx.stroke();ctx.restore()}
-function drawSiteWork(a,ts){
- const x=a.x,y=a.y,seed=a.activitySeed||0,sx=x+9,sy=y-6,trade=siteTrade(a),s=roleStyle(a);
- const arm=(ang,len=13)=>{const hx=sx+Math.cos(ang)*len,hy=sy+Math.sin(ang)*len;ctx.strokeStyle=s.skin;ctx.lineWidth=6;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(hx,hy);ctx.stroke();ctx.fillStyle='#f2b23d';ctx.beginPath();ctx.arc(hx,hy,3.5,0,Math.PI*2);ctx.fill();return{hx,hy}};
- if(a.climbing){const k=Math.sin(ts/110+seed);arm(-1.9+k*.5,12);return}
- if(trade==='hammer'){
-  const t=((ts/520)+seed)%1,ang=t<.72?-.4-1.9*(t/.72):-2.3+2.3*((t-.72)/.28),{hx,hy}=arm(ang);
-  const hx2=hx+Math.cos(ang)*9,hy2=hy+Math.sin(ang)*9;ctx.strokeStyle='#8b5a2b';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(hx,hy);ctx.lineTo(hx2,hy2);ctx.stroke();
-  ctx.save();ctx.translate(hx2,hy2);ctx.rotate(ang+Math.PI/2);px(-5,-3,10,5,'#9aa6b1');ctx.restore();
-  const cyc=Math.floor((ts/520)+seed);if(t>.96&&a.lastStrike!==cyc){a.lastStrike=cyc;spawnSpark(x+20,y+16,'#ffd36b',5);dust.push({x:x+20,y:y+18,vx:6,vy:-6,r:2,life:.45})}
- }else if(trade==='weld'){
-  px(x-8,y-24,16,7,'#1d2a33');px(x-6,y-23,12,4,'#2f8fa8');
-  const {hx,hy}=arm(-.15);ctx.strokeStyle='#4b5866';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(hx,hy);ctx.lineTo(hx+8,hy+5);ctx.stroke();
-  const fl=Math.random();ctx.save();ctx.shadowColor='#bfefff';ctx.shadowBlur=16+fl*12;ctx.fillStyle=fl>.5?'#ffffff':'#bfefff';ctx.beginPath();ctx.arc(hx+9,hy+6,2+fl*2.5,0,Math.PI*2);ctx.fill();ctx.restore();
-  if(fl>.55)spawnSpark(hx+9,hy+6,fl>.8?'#ffffff':'#ffb224',2)
- }else if(trade==='glass'){
-  const t=((ts/1600)+seed)%1,lift=Math.sin(t*Math.PI)*6;arm(-1.25);
-  ctx.save();ctx.globalAlpha=.75;px(x+4,y-34-lift,18,20,'#5fd3e8');ctx.globalAlpha=1;ctx.strokeStyle='#d8f6ff';ctx.lineWidth=1;ctx.strokeRect(x+4,y-34-lift,18,20);
-  if(t>.45&&t<.55){ctx.strokeStyle='rgba(255,255,255,.9)';ctx.beginPath();ctx.moveTo(x+7,y-30-lift);ctx.lineTo(x+13,y-24-lift);ctx.stroke()}ctx.restore()
- }else if(trade==='bricks'){
-  const t=((ts/1300)+seed)%1,up=Math.sin(t*Math.PI);const {hx,hy}=arm(-.3-1.1*up);px(hx-6,hy-8,12,8,'#c96a4a');px(hx-6,hy-5,12,1,'#8a3f2b');
-  if(t>.48&&t<.52)dust.push({x:hx,y:hy-2,vx:0,vy:-4,r:1.5,life:.35})
- }else if(trade==='blueprint'){
-  px(x-4,y-8,26,12,'#2c5aa0');ctx.strokeStyle='rgba(255,255,255,.75)';ctx.lineWidth=1;ctx.strokeRect(x-1,y-6,8,7);ctx.beginPath();ctx.moveTo(x+9,y-4);ctx.lineTo(x+19,y-4);ctx.moveTo(x+9,y);ctx.lineTo(x+16,y);ctx.stroke();
-  const t=Math.sin(ts/260+seed);const {hx,hy}=arm(.25+t*.35,12);px(hx-1,hy-6,2,7,'#f2d06b')
- }else if(trade==='signal'){
-  const w=Math.sin(ts/170+seed);arm(-1.75+w*.35,14);px(x-17,y-20,5,9,'#16222c');px(x-16,y-18,3,2,s.accent);
-  ctx.save();ctx.strokeStyle=s.accent;ctx.lineWidth=1.5;for(let i=0;i<3;i++){const k=((ts/700)+i/3)%1;ctx.globalAlpha=(1-k)*.8;ctx.beginPath();ctx.arc(x-15,y-22,4+k*12,-2.4,-.8);ctx.stroke()}ctx.restore()
- }else{
-  const ang=-.6+Math.sin(ts/140+seed)*.7,{hx,hy}=arm(-.2);ctx.save();ctx.translate(hx+4,hy);ctx.rotate(ang);ctx.strokeStyle='#d5dee8';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(10,0);ctx.stroke();ctx.beginPath();ctx.arc(12,0,3.5,0,Math.PI*2);ctx.stroke();ctx.restore();
-  if(Math.random()<.25)spawnSpark(hx+12,hy,Math.random()<.5?'#ff9b9b':'#ffffff',2)
- }
-}
+// A working worker gives off a little of their job: sparks from a wrench, paper from a clipboard, light from a screen.
+const FX={wrench:'#ffd36b',clipboard:'#f4f1e6',book:'#f4f1e6',blueprint:'#cfe0f7',tablet:'#9ff3fa',laptop:'#9fdcff',magnifier:'#eaffff',radio:'#a8b5ff',drive:'#6ee7a0',crate:'#c5b99a'};
 function drawWorkingAction(a,ts){
- if(a.onSite){drawSiteWork(a,ts);return}
- if(a.state!=='running'||workerIsMoving(a))return;const s=roleStyle(a),phase=Math.sin(ts/120+a.activitySeed),x=a.x,y=a.y;
- if(['engineer','code_analyst','deployer'].includes(a.id)){ctx.strokeStyle='#d7e0e8';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x+10,y-1);ctx.lineTo(x+17+phase*3,y-11);ctx.stroke()}
- else if(['validator','test_engineer','security_reviewer'].includes(a.id)){ctx.save();ctx.globalAlpha=.18+.12*Math.abs(phase);ctx.fillStyle=s.accent;ctx.beginPath();ctx.moveTo(x+10,y-6);ctx.lineTo(x+34,y-16);ctx.lineTo(x+34,y+5);ctx.closePath();ctx.fill();ctx.restore()}
- else if(['ux_analyst','documentation','research_agent'].includes(a.id)){px(x+10,y-7,13,9,'#111d29');px(x+12,y-5,9,5,s.accent);px(x+12+Math.floor((ts/180)%7),y+2,2,2,'#fff')}
- else{ctx.strokeStyle=s.accent;ctx.globalAlpha=.65;ctx.strokeRect(x+10,y-15,18,12);ctx.beginPath();ctx.moveTo(x+13,y-5);ctx.lineTo(x+18,y-10);ctx.lineTo(x+23,y-7);ctx.lineTo(x+26,y-13);ctx.stroke();ctx.globalAlpha=1}
+ if(reduced||a.state!=='running'||workerIsMoving(a)||a.climbing||ts-(a.lastFx||0)<520)return;a.lastFx=ts;const s=roleStyle(a),d=a.dir||1;
+ sparks.push({x:a.x+d*16,y:a.y-10,vx:d*(4+Math.random()*10),vy:-28-Math.random()*16,life:.55,color:FX[s.tool]||s.accent,size:2})
 }
 function drawTraffic(){for(const c of traffic){ctx.save();ctx.translate(c.x,c.y);px(-7,-4,14,8,c.color);px(-4,-6,8,3,'#b8dbff');px(-5,4,3,2,'#0b0e12');px(2,4,3,2,'#0b0e12');ctx.restore()}}
 function dependencyState(from,to){
@@ -1705,95 +1650,111 @@ function spawnRunDust(a,ts){
  if(reduced||ts-(a.lastDust||0)<85)return;a.lastDust=ts;
  for(let i=0;i<2;i++)dust.push({x:a.x-a.dir*(7+Math.random()*5),y:a.y+16+Math.random()*3,vx:-a.dir*(10+Math.random()*16),vy:-4-Math.random()*8,r:2+Math.random()*2,life:.42})
 }
-function drawWorkerTool(a,x,y,bob,walk){
- const s=roleStyle(a),dir=a.dir||1,handX=x+dir*9,handY=y-3+bob,tool=s.tool;
- if(tool==='tablet'){px(handX+(dir>0?0:-8),handY-2,8,6,'#14212d');px(handX+(dir>0?1:-7),handY-1,6,4,s.accent)}
- else if(tool==='clipboard'){px(handX+(dir>0?0:-7),handY-2,7,8,'#e9e3ce');px(handX+(dir>0?2:-5),handY,3,1,'#556272');px(handX+(dir>0?2:-5),handY+3,3,1,'#556272')}
- else if(tool==='wrench'){ctx.strokeStyle='#d5dee8';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(handX,handY+5);ctx.lineTo(handX+dir*7,handY-3);ctx.stroke();ctx.beginPath();ctx.arc(handX+dir*8,handY-4,3,0,Math.PI*2);ctx.stroke()}
- else if(tool==='scanner'){px(handX+(dir>0?0:-6),handY-1,6,7,'#172531');px(handX+(dir>0?1:-5),handY,4,2,s.accent);ctx.globalAlpha=.25;ctx.fillStyle=s.accent;ctx.beginPath();ctx.moveTo(handX+dir*5,handY+1);ctx.lineTo(handX+dir*18,handY-4);ctx.lineTo(handX+dir*18,handY+7);ctx.closePath();ctx.fill();ctx.globalAlpha=1}
- else if(tool==='headset'){ctx.strokeStyle=s.accent;ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y-18+bob,7,Math.PI,Math.PI*2);ctx.stroke();px(x+dir*7,y-18+bob,2,6,s.accent);px(x+dir*8,y-13+bob,5,2,s.accent)}
- else if(tool==='holo'){ctx.strokeStyle=s.accent;ctx.globalAlpha=.7;ctx.lineWidth=1;ctx.strokeRect(handX+(dir>0?0:-10),handY-6,10,8);ctx.globalAlpha=.18;ctx.fillStyle=s.accent;ctx.fillRect(handX+(dir>0?0:-10),handY-6,10,8);ctx.globalAlpha=1}
- else if(tool==='crate'){px(handX+(dir>0?-1:-9),handY-2,10,9,'#8b643c');px(handX+(dir>0?1:-7),handY,6,1,'#d7aa61');px(handX+(dir>0?3:-5),handY-2,1,9,'#5b4028')}
- else if(tool==='radio'){px(handX+(dir>0?0:-5),handY-3,5,8,'#16222c');px(handX+(dir>0?1:-4),handY-1,3,2,s.accent);ctx.strokeStyle='#8797a8';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(handX+dir*2,handY-3);ctx.lineTo(handX+dir*4,handY-8);ctx.stroke()}
+// ---- Workers: pixel sprites drawn once per look --------------------------------------------------------------
+// A worker is FW x FH art pixels, each 2 world px. Its sheet holds every frame facing right (row 0) and left (row 1):
+// stand, a 4-frame walk, two work frames, look around, check watch, two waves, thumbs-up, sitting. Each frame is
+// one drawImage, so a bigger crew costs no more per worker than before.
+const FW=20,FH=28,F={stand:0,walk:1,work:5,look:7,watch:8,wave:9,thumbs:11,sit:12};
+const POSES=[{},{legs:[-2,0,2,0],sw:-1},{by:-1,legs:[0,1,0,0]},{legs:[2,0,-2,0],sw:1},{by:-1,legs:[0,0,0,1]},{arm:'work',k:0},{arm:'work',k:1},{eye:'back'},{arm:'watch',eye:'down'},{arm:'wave',k:0,front:1},{arm:'wave',k:1,front:1},{arm:'thumb',front:1},{sit:1}];
+const SKIN=['#f2cba8','#e2ad86','#c98d63','#a8714b','#875536','#683f28'],HAIR=['#251a16','#4a2e1f','#7b4a26','#b8843f','#dcc07a','#8d8f99','#a33d2c'],SHIRT=['#e9eef3','#3c4a5d','#90a4b9','#6a4458'],PANTS=['#2e3a52','#4b3e30','#25292f','#59626f'];
+const hash=s=>{let h=2166136261;for(const c of String(s))h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0};
+const shade=(c,f)=>'#'+[1,3,5].map(i=>Math.round(clamp(parseInt(c.slice(i,i+2),16)*f,0,255)).toString(16).padStart(2,'0')).join('');
+function lookFor(id){
+ const k=String(id||'').replace(/-followup-\d+$/,''),r=ROLE_STYLE[k]||ROLE_STYLE.synthesis,h=hash(id),vest=(DISTRICTS[ROLE_ZONE[k]]||DISTRICTS.command).accent;
+ return{key:k+'.'+h,tool:r.tool,hat:r.hat,vest,accent:vest,skin:SKIN[h%6],hair:HAIR[(h>>>3)%7],cut:(h>>>6)%4,shirt:SHIRT[(h>>>9)%4],pants:PANTS[(h>>>12)%4]}
 }
-function drawWorkerHat(a,x,y,bob){
- const s=roleStyle(a),helmet=s.hat||'#f4c448';
- // oversized rounded hard hat with brim, closer to a chunky construction-game character
- ctx.fillStyle=helmet;ctx.beginPath();ctx.ellipse(x,y-27+bob,10,6,0,Math.PI,Math.PI*2);ctx.fill();
- px(x-9,y-27+bob,18,5,helmet);px(x-6,y-31+bob,12,5,helmet);px(x+(a.dir>0?4:-10),y-24+bob,10,3,'#d39a2d');
- // helmet role stripe
- px(x-2,y-31+bob,4,7,s.accent);
- // hair showing under helmet
- px(x-7,y-23+bob,4,4,s.hair);px(x+3,y-23+bob,4,3,s.hair)
+// Hair (four cuts) or a hard hat striped in the district colour.
+function drawWorkerHat(R,s,b,front){
+ const H=s.hair;
+ if(s.hat){R(7,b,6,1,s.hat);R(6,1+b,8,2,s.hat);R(9,b,2,3,s.vest);R(5,3+b,11,1,shade(s.hat,.75));R(6,4+b,1,1,H);return}
+ R(6,2+b,8,2,H);R(7,1+b,6,1,H);R(6,4+b,1,2,H);if(front)R(13,4+b,1,2,H);else R(13,3+b,1,1,H);
+ if(s.cut===1)R(5,3+b,2,7,H);else if(s.cut===2)R(3,1+b,3,3,H);else if(s.cut===3){R(5,b,10,3,H);R(5,3+b,1,4,H);R(14,3+b,1,2,H)}
+}
+// The prop, at the hand (hx,hy): carried at the side, or in use (two frames, k).
+function drawWorkerTool(R,s,work,k,hx,hy){
+ const t=s.tool,m='#b9c4cd';
+ if(t==='tablet'){if(work){R(hx-1,hy-4,4,5,'#1c2733');R(hx,hy-3,2,3,k?'#c8fbff':'#5fdde8')}else{R(hx,hy+1,3,4,'#1c2733');R(hx+1,hy+2,1,2,'#5fdde8')}}
+ else if(t==='laptop'){if(work){R(hx-4,hy+1,7,1,'#a3adb8');R(hx+2,hy-4,1,5,'#a3adb8');R(hx+1,hy-3,1,3,k?'#c6ecff':'#6fb8e8')}else R(hx-2,hy+1,6,2,'#a3adb8')}
+ else if(t==='clipboard'){if(work){R(hx-1,hy-4,4,5,'#8a5a2b');R(hx,hy-3,2,4,'#f1eee2');R(hx,hy-5,2,1,m);R(hx-2+k,hy-3+k,1,2,'#f2c94c')}else{R(hx,hy+1,3,4,'#8a5a2b');R(hx+1,hy+2,1,2,'#f1eee2')}}
+ else if(t==='book'){if(work){R(hx-2,hy-3,6,3,'#f1eee2');R(hx,hy-3,1,3,'#b84a3a');R(hx-2,hy,6,1,'#b84a3a');R(hx+(k?2:-1),hy-2,1,1,'#8a93a0')}else R(hx,hy+1,3,4,'#b84a3a')}
+ else if(t==='magnifier'){const x=work?hx+1+k:hx-1,y=work?hy-4:hy+2;R(x+1,y,2,1,m);R(x,y+1,1,2,m);R(x+3,y+1,1,2,m);R(x+1,y+3,2,1,m);R(x+1,y+1,2,2,'#bfeaff');R(work?x-1:x+2,work?y+4:y-1,1,2,'#6b4a2f')}
+ else if(t==='radio'){const y=work?hy-3:hy+1;R(hx+1,y,2,4,'#1d242c');R(hx+2,y-3,1,3,'#8797a8');R(hx+1,y+1,1,1,work&&k?'#ff6b6b':'#4ade80')}
+ else if(t==='blueprint'){if(work){R(hx-3,hy-4,6,5,'#3d78d6');R(hx-2,hy-3,4,1,'#cfe0f7');R(hx-2,hy-1,3,1,'#cfe0f7');R(hx-2+k*3,hy-2,1,1,'#ffffff')}else{R(hx-2,hy+1,6,2,'#3d78d6');R(hx-2,hy+1,1,2,'#cfe0f7')}}
+ else if(t==='wrench'){if(work&&!k){R(hx+1,hy-5,1,5,m);R(hx,hy-6,3,1,m);R(hx,hy-7,1,1,m);R(hx+2,hy-7,1,1,m)}else if(work){R(hx+2,hy,5,1,m);R(hx+6,hy-1,1,3,m);R(hx+7,hy-1,1,1,m);R(hx+7,hy+1,1,1,m)}else{R(hx+1,hy+1,1,5,m);R(hx,hy+5,3,1,m);R(hx,hy+6,1,1,m);R(hx+2,hy+6,1,1,m)}}
+ else if(t==='crate'){const y=hy-(work&&k?4:3);R(hx-3,y,6,5,'#9a6b3a');R(hx-3,y+2,6,1,'#6b4626')}
+ else if(t==='drive'){if(work){R(hx-1,hy-4,4,4,'#3b4149');R(hx-1,hy-2,4,1,'#252a30');R(hx+2,hy-4,1,1,k?'#4ade80':'#1d5c36')}else R(hx,hy+1,4,3,'#3b4149')}
+}
+function paintWorker(g,o,p,s){
+ const R=(x,y,w,h,c)=>{g.fillStyle=c;g.fillRect(o+x,y,w,h)},b=p.sit?4:p.by||0,[bd,bl,fd,fl]=p.legs||[0,0,0,0],sw=p.sw||0,sk=s.skin,skd=shade(sk,.8),sd=shade(s.shirt,.78),eye='#16181f',boot='#2a211b';
+ const leg=(x,dx,l,c)=>{R(x,19+b,3,3-b,c);R(x+dx,22-l,3,3,c);R(x+dx,25-l,4,2,boot)};
+ // back arm, legs, body
+ R(4,12+b,2,3,sd);R(4-sw,15+b,2,2,sd);R(4-sw,17+b,2,2,skd);
+ if(p.sit){R(8,22,8,2,s.pants);R(14,24,3,1,s.pants);R(14,25,4,2,boot)}else{leg(6,bd,bl,shade(s.pants,.75));leg(11,fd,fl,s.pants)}
+ R(6,11+b,9,8,s.shirt);R(6,12+b,9,6,s.vest);R(6,12+b,1,6,shade(s.vest,.72));R(6,15+b,9,1,'#f3efc4');R(11,12+b,1,3,s.shirt);R(6,18+b,9,1,'#2b241f');
+ // front arm and the prop
+ let hx=15+sw,hy=17+b,work=false;
+ if(p.arm==='work'){work=true;if(s.tool==='magnifier'){R(15,11+b,2,3,s.shirt);R(16,9+b,2,2,s.shirt);hx=16;hy=7+b}else if(s.tool==='radio'){R(15,11+b,2,3,s.shirt);R(14,10+b,2,1,s.shirt);hx=13;hy=8+b}else{R(15,12+b,2,2,s.shirt);R(16,14+b,1,1,s.shirt);hx=17;hy=14+b}}
+ else if(p.arm==='watch'){R(15,12+b,2,3,s.shirt);R(12,15+b,4,1,s.shirt);hx=11;hy=15+b;R(13,15+b,1,1,'#d8dde3')}
+ else if(p.arm==='wave'){R(15,10,2,3,s.shirt);R(16+p.k,6,2,4,s.shirt);hx=16+p.k*2;hy=4}
+ else if(p.arm==='thumb'){R(15,12,2,2,s.shirt);R(16,9,2,3,s.shirt);hx=16;hy=7;R(17,6,1,1,sk)}
+ else{R(15,12+b,2,3,s.shirt);R(15+sw,15+b,2,2,s.shirt)}
+ if(!['wave','thumb','watch'].includes(p.arm)&&!p.sit)drawWorkerTool(R,s,work,p.k||0,hx,hy);
+ R(hx,hy,2,2,sk);
+ // head
+ R(7,2+b,6,1,sk);R(6,3+b,8,6,sk);R(7,9+b,6,1,sk);R(9,10+b,3,1,skd);
+ if(p.front){R(8,6+b,1,2,eye);R(11,6+b,1,2,eye);R(9,8+b,2,1,skd)}
+ else if(p.eye==='back'){R(7,6+b,1,2,eye);R(9,6+b,1,2,eye);R(12,6+b,1,2,skd)}
+ else{const e=p.eye==='down'?1:0;R(10,6+b+e,1,2-e,eye);R(12,6+b+e,1,2-e,eye);R(7,6+b,1,2,skd);R(11,8+b,2,1,skd)}
+ drawWorkerHat(R,s,b,p.front)
+}
+const sheets=new Map();
+function sheetFor(s){
+ let c=sheets.get(s.key);if(c)return c;c=document.createElement('canvas');const n=POSES.length,w=FW*n;c.width=w;c.height=FH*2;const g=c.getContext('2d');
+ POSES.forEach((p,f)=>paintWorker(g,f*FW,p,s));
+ // a dark 1 px outline so a worker reads on any ground, then a soft shadow behind the feet
+ const d=g.getImageData(0,0,w,FH),q=d.data,o=new Uint8ClampedArray(q),r=w*4,on=i=>q[i]>=120;
+ for(let i=3;i<q.length;i+=4)if(!on(i)){const x=(i>>2)%w;if((x%FW&&on(i-4))||((x+1)%FW&&on(i+4))||on(i-r)||on(i+r)){o[i-3]=10;o[i-2]=14;o[i-1]=20;o[i]=210}}
+ g.putImageData(new ImageData(o,w),0,0);g.globalCompositeOperation='destination-over';g.fillStyle='rgba(0,0,0,.3)';for(let f=0;f<n;f++){g.fillRect(f*FW+4,26,12,2);g.fillRect(f*FW+6,25,8,1)}
+ g.globalCompositeOperation='source-over';for(let f=0;f<n;f++){g.save();g.translate(f*FW+FW,0);g.scale(-1,1);g.drawImage(c,f*FW,0,FW,FH,0,FH,FW,FH);g.restore()}
+ sheets.set(s.key,c);return c
+}
+// Which frame, by state: walk while moving (faster when running), the prop's action while working, look around and
+// check the watch while waiting, thumbs-up then relax when done, sit on the kerb when stopped, wave when blocked.
+// Reduced motion keeps one still frame per state.
+// Debug and tests (localStorage localai.debug = 1): where each worker is drawn, in canvas pixels, and its frame.
+function layout(){const k=sc(view.zoom)*cam.dpr,box=(x,y,w,h)=>({x:view.panX*cam.dpr+x*k,y:view.panY*cam.dpr+y*k,w:w*k,h:h*k});return{workers:[...agents.values()].map(a=>({id:a.id,state:a.state,frame:a.frame,moving:workerIsMoving(a),vest:roleStyle(a).vest,box:box(Math.round(a.x/2)*2-FW,Math.round(a.y/2)*2-34,FW*2,FH*2)}))}}
+function workerFrame(a,ts){
+ const t=ts/1000+a.activitySeed,st=a.state;
+ if(reduced)return st==='running'?F.work:st==='error'?F.sit:st==='blocked'?F.wave:F.stand;
+ if(workerIsMoving(a)||a.climbing)return F.walk+Math.floor(t*(st==='running'?10:6))%4;
+ if(st==='running')return F.work+Math.floor(t*4)%2;
+ if(st==='error')return F.sit;
+ if(st==='blocked')return F.wave+Math.floor(t*3)%2;
+ if(st==='complete')return ts-(a.doneAt||-1e4)<1800?F.thumbs:F.stand;
+ const c=t/7%1;return c<.62?F.stand:c<.8?F.look:F.watch
+}
+function blit(a,f,x,y){ctx.drawImage(sheetFor(roleStyle(a)),f*FW,a.dir<0?FH:0,FW,FH,x-FW,y-34,FW*2,FH*2)}
+function drawRunningWorkerSprite(a,ts,x,y,f){
+ // a worker hurrying to a job: two speed lines behind them
+ const d=a.dir||1;ctx.globalAlpha=.4;px(x-d*30-(d<0?0:8),y-6,8,2,roleStyle(a).accent);px(x-d*26-(d<0?0:6),y+2,6,2,roleStyle(a).accent);ctx.globalAlpha=1;blit(a,f,x,y)
 }
 function drawWorkerBubble(a,x,y,ts){
  if(a.state==='running'){const labels={router:'ROUTE',mission_router:'ROUTE',ux_analyst:'AUDIT',documentation:'WRITE',synthesis:'MERGE',coordinator:'MERGE',engineer:'BUILD',validator:'TEST',reviewer:'REVIEW',deployer:'SHIP',operator:'WATCH'},label=labels[a.id]||'WORK',pulse=(Math.sin(ts/350+a.activitySeed)+1)/2,w=Math.max(34,label.length*6+12);ctx.fillStyle='rgba(5,10,16,.88)';ctx.fillRect(x-w/2,y-46,w,14);px(x-2,y-32,4,4,'rgba(5,10,16,.88)');txt(label,x,y-39,pulse>.35?'#ffffff':roleStyle(a).accent,7)}
  else if(a.state==='complete'){ctx.fillStyle='rgba(5,10,16,.86)';ctx.fillRect(x-16,y-43,32,14);txt('DONE',x,y-36,'#75dfa2',7)}
  else if(['error','blocked'].includes(a.state)){ctx.fillStyle='rgba(70,18,27,.92)';ctx.fillRect(x-18,y-43,36,14);txt('!',x,y-36,'#ffd2d7',10)}
 }
-function drawRunningWorkerSprite(a,ts){
- const s=roleStyle(a),phase=Math.sin(a.step),dir=a.dir||1,x=a.x,y=a.y-2+Math.abs(phase)*1.4,stateColor=s.accent;
- ctx.save();ctx.translate(x,y);ctx.rotate(dir*.07);
- // stretched moving shadow
- ctx.fillStyle='rgba(0,0,0,.28)';ctx.beginPath();ctx.ellipse(-dir*4,21,18,5,-dir*.08,0,Math.PI*2);ctx.fill();
- // speed streaks
- ctx.globalAlpha=.38;ctx.strokeStyle=s.accent;ctx.lineWidth=2;
- for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(-dir*(20+i*6),-2+i*6);ctx.lineTo(-dir*(9+i*4),-2+i*6);ctx.stroke()}ctx.globalAlpha=1;
- // legs: long opposing running stride
- ctx.strokeStyle=s.pants;ctx.lineWidth=8;ctx.lineCap='round';
- ctx.beginPath();ctx.moveTo(-4,6);ctx.lineTo(-8-dir*phase*8,13);ctx.lineTo(-13-dir*phase*12,18);ctx.stroke();
- ctx.beginPath();ctx.moveTo(4,6);ctx.lineTo(8+dir*phase*8,12);ctx.lineTo(12+dir*phase*12,17);ctx.stroke();
- // boots
- ctx.strokeStyle='#2a211b';ctx.lineWidth=5;
- ctx.beginPath();ctx.moveTo(-13-dir*phase*12,18);ctx.lineTo(-18-dir*phase*12,18);ctx.stroke();
- ctx.beginPath();ctx.moveTo(12+dir*phase*12,17);ctx.lineTo(17+dir*phase*12,17);ctx.stroke();
- // torso leaned into the run
- ctx.fillStyle=s.shirt;ctx.beginPath();ctx.roundRect(-12,-10,24,20,6);ctx.fill();
- ctx.fillStyle=s.vest||'#ff9d33';ctx.beginPath();ctx.roundRect(-10,-9,20,15,4);ctx.fill();
- px(-2+x-x,-9+y-y,4,15,s.shirt); // local vest opening
- ctx.fillStyle='#ffe885';ctx.fillRect(-9,-3,18,2);ctx.fillRect(-9,2,18,2);
- ctx.fillStyle='#4d3828';ctx.fillRect(-11,6,22,4);
- // arms pump hard opposite the legs
- ctx.strokeStyle=s.skin;ctx.lineWidth=8;
- ctx.beginPath();ctx.moveTo(-10,-5);ctx.lineTo(-15+dir*phase*8,-1);ctx.lineTo(-10+dir*phase*13,5);ctx.stroke();
- ctx.beginPath();ctx.moveTo(10,-5);ctx.lineTo(15-dir*phase*8,-2);ctx.lineTo(10-dir*phase*13,-10);ctx.stroke();
- ctx.fillStyle='#f2b23d';ctx.beginPath();ctx.arc(-10+dir*phase*13,5,4,0,Math.PI*2);ctx.arc(10-dir*phase*13,-10,4,0,Math.PI*2);ctx.fill();
- // head and hard hat
- ctx.fillStyle=s.skin;ctx.beginPath();ctx.roundRect(-10,-27,20,15,6);ctx.fill();
- ctx.fillStyle=s.hair;ctx.fillRect(-7,-24,14,4);
- ctx.fillStyle='#18222b';ctx.fillRect(-5,-20,3,3);ctx.fillRect(2,-20,3,3);
- ctx.fillStyle=s.hat||'#f4c448';ctx.beginPath();ctx.ellipse(0,-29,10,6,0,Math.PI,Math.PI*2);ctx.fill();ctx.fillRect(-9,-29,18,5);ctx.fillRect(-6,-33,12,5);ctx.fillStyle=s.accent;ctx.fillRect(-2,-33,4,7);
- // role patch + backpack
- ctx.fillStyle=s.accent;ctx.beginPath();ctx.roundRect(4,-7,6,6,2);ctx.fill();ctx.fillStyle='#4a4036';ctx.fillRect(-dir*14,-5,4,11);
- ctx.restore();
- // tool stays readable while running
- drawWorkerTool(a,x+dir*2,y+1,0,phase*3);
- // running state beacon
- ctx.save();ctx.shadowColor=stateColor;ctx.shadowBlur=14;ctx.fillStyle=stateColor;ctx.beginPath();ctx.arc(x,y-40,3+(Math.sin(ts/150)+1),0,Math.PI*2);ctx.fill();ctx.restore()
+// Name tag over the head ("Team lead", "Code Analyst"): for the selected worker, and on hover.
+function drawNameTag(a,x,y){
+ const t=a.tag||a.name;ctx.font='800 8px ui-monospace,monospace';const w=Math.ceil(ctx.measureText(t).width)+12;
+ ctx.fillStyle='rgba(5,10,16,.9)';ctx.beginPath();ctx.roundRect(x-w/2,y-51,w,13,4);ctx.fill();txt(t,x,y-44.5,'#eef6ff',8)
 }
 function drawWorkerSprite(a,ts){
- if(a.state==='error'&&!workerIsMoving(a)){ctx.save();ctx.translate(a.x,a.y+14);ctx.scale(1,.78);ctx.translate(-a.x,-a.y-14)}else ctx.save();
- const s=roleStyle(a),moving=workerIsMoving(a),running=workerIsRunning(a),walk=moving?Math.sin(a.step)*2.4:0,idle=!moving?Math.sin(ts/680+a.activitySeed)*.7:0,bob=(a.state==='running'?Math.sin(a.bob)*1.1:idle),x=a.x,y=a.y+bob,sel=selected?.type==='agent'&&selected.id===a.id,stateColor=['error','blocked'].includes(a.state)?'#ff7383':a.state==='complete'?'#75dfa2':a.state==='pending'?'#6d7985':s.accent;
- if(sel){ctx.save();ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.shadowColor=stateColor;ctx.shadowBlur=14;ctx.beginPath();ctx.ellipse(x,y+18,21,10,0,0,Math.PI*2);ctx.stroke();ctx.restore()}
- if(running){drawRunningWorkerSprite(a,ts)}
- else{
-  ctx.fillStyle='rgba(0,0,0,.30)';ctx.beginPath();ctx.ellipse(x,y+20,14,6,0,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle=s.pants;ctx.beginPath();ctx.roundRect(x-10,y+4+walk,8,14,3);ctx.fill();ctx.beginPath();ctx.roundRect(x+2,y+4-walk,8,14,3);ctx.fill();
-  ctx.fillStyle='#2a211b';ctx.beginPath();ctx.roundRect(x-11,y+15+walk,10,5,2);ctx.fill();ctx.beginPath();ctx.roundRect(x+1,y+15-walk,10,5,2);ctx.fill();
-  ctx.fillStyle=a.state==='pending'?'#8a7563':s.shirt;ctx.beginPath();ctx.roundRect(x-12,y-10,24,20,6);ctx.fill();
-  ctx.fillStyle=s.vest||'#ff9d33';ctx.beginPath();ctx.roundRect(x-10,y-9,20,15,4);ctx.fill();px(x-2,y-9,4,15,s.shirt);px(x-9,y-3,18,2,'#ffe885');px(x-9,y+2,18,2,'#ffe885');px(x-11,y+6,22,4,'#4d3828');px(x-2,y+6,5,4,'#d59a3d');
-  ctx.fillStyle=s.skin;ctx.beginPath();ctx.ellipse(x-14,y-2-walk*.25,5,9,-.15,0,Math.PI*2);ctx.fill();if(!a.onSite){ctx.beginPath();ctx.ellipse(x+14,y-2+walk*.25,5,9,.15,0,Math.PI*2);ctx.fill()}
-  ctx.fillStyle='#f2b23d';ctx.beginPath();ctx.arc(x-15,y+5-walk*.25,4,0,Math.PI*2);ctx.fill();if(!a.onSite){ctx.beginPath();ctx.arc(x+15,y+5+walk*.25,4,0,Math.PI*2);ctx.fill()}
-  px(x-4,y-14,8,5,s.skin);ctx.fillStyle=s.skin;ctx.beginPath();ctx.roundRect(x-10,y-27,20,15,6);ctx.fill();ctx.beginPath();ctx.arc(x-10,y-20,3,0,Math.PI*2);ctx.arc(x+10,y-20,3,0,Math.PI*2);ctx.fill();
-  px(x-6,y-23,5,2,s.hair);px(x+1,y-23,5,2,s.hair);px(x-5,y-20,3,3,'#18222b');px(x+2,y-20,3,3,'#18222b');px(x-2,y-16,5,2,'#965b46');
-  drawWorkerHat(a,x,y,bob);if(!a.onSite)drawWorkerTool(a,x,y+2,bob,walk);
-  ctx.fillStyle=s.accent;ctx.beginPath();ctx.roundRect(x+4,y-7,6,6,2);ctx.fill();ctx.fillStyle='#071019';ctx.font='900 5px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText((s.badge||a.glyph).slice(0,2),x+7,y-4);px(x+(a.dir>0?-14:10),y-5,4,11,'#4a4036');
-  ctx.save();ctx.shadowColor=stateColor;ctx.shadowBlur=a.state==='running'?14:6;ctx.fillStyle=stateColor;ctx.beginPath();ctx.arc(x,y-38,3+(a.state==='running'?(Math.sin(ts/180)+1):0),0,Math.PI*2);ctx.fill();ctx.restore()
- }
- const isHover=hovered?.type==='agent'&&hovered.id===a.id;
- if(display.labels&&(sel||isHover)){const labelW=Math.min(110,Math.max(58,a.name.length*6+16));ctx.fillStyle='rgba(5,10,16,.92)';ctx.fillRect(x-labelW/2,y+25,labelW,17);txt(a.name,x,y+33,'#eef6ff',8)}
- if(sel||(a.state==='running'&&view.zoom>1.55))drawWorkerBubble(a,x,y-1,ts)
- ctx.restore()
+ const x=Math.round(a.x/2)*2,y=Math.round(a.y/2)*2,sel=selected?.type==='agent'&&selected.id===a.id,f=a.frame=workerFrame(a,ts),c=roleStyle(a).accent;
+ if(sel){ctx.save();ctx.fillStyle='rgba(255,255,255,.14)';ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.shadowColor=c;ctx.shadowBlur=10;ctx.beginPath();ctx.ellipse(x,y+19,19,7,0,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.restore()}
+ if(workerIsRunning(a))drawRunningWorkerSprite(a,ts,x,y,f);else blit(a,f,x,y);
+ const tag=display.labels&&(sel||hovered?.type==='agent'&&hovered.id===a.id);if(tag)drawNameTag(a,x,y);
+ if(sel||(a.state==='running'&&view.zoom>1.55))drawWorkerBubble(a,x,tag?y-16:y,ts);
+ else if(a.state==='running'){ctx.globalAlpha=reduced?1:.6+.4*Math.sin(ts/180);px(x-2,y-44,4,4,c);ctx.globalAlpha=1}
 }
 function drawAgents(ts){
  for(const d of dust){ctx.globalAlpha=clamp(d.life/.42,0,1)*.5;ctx.fillStyle=display.night?'#70808c':'#c5b99a';ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1;for(const a of agents.values()){drawWorkerSprite(a,ts);drawWorkingAction(a,ts)}
@@ -1808,7 +1769,7 @@ function drawAgents(ts){
  }
  for(const s of sparks){ctx.globalAlpha=clamp(s.life,0,1);px(s.x,s.y,s.size,s.size,s.color)}ctx.globalAlpha=1
 }
-function drawClouds(ts){if(display.night)return;ctx.save();ctx.globalAlpha=.08;for(const c of clouds){const x=(c.x+ts*.006*c.s)%W,y=c.y;ctx.fillStyle='#d8f0ff';ctx.beginPath();ctx.arc(x,y,26*c.s,0,Math.PI*2);ctx.arc(x+28*c.s,y+6,20*c.s,0,Math.PI*2);ctx.arc(x-25*c.s,y+8,17*c.s,0,Math.PI*2);ctx.fill()}ctx.restore()}function drawMoments(ts){let i=0;for(const a of agents.values()){if(a.state!=='complete'&&a.state!=='error'&&a.state!=='blocked')continue;const d=DISTRICTS[a.zone];if(!d)continue;
+function drawClouds(ts){if(display.night)return;ctx.save();ctx.globalAlpha=.08;for(const c of clouds){const x=(c.x+(reduced?0:ts)*.006*c.s)%W,y=c.y;ctx.fillStyle='#d8f0ff';ctx.beginPath();ctx.arc(x,y,26*c.s,0,Math.PI*2);ctx.arc(x+28*c.s,y+6,20*c.s,0,Math.PI*2);ctx.arc(x-25*c.s,y+8,17*c.s,0,Math.PI*2);ctx.fill()}ctx.restore()}function drawMoments(ts){let i=0;for(const a of agents.values()){if(a.state!=='complete'&&a.state!=='error'&&a.state!=='blocked')continue;const d=DISTRICTS[a.zone];if(!d)continue;
  if(a.state==='complete'){const fx=d.x*T+18+(i++%4)*16,fy=d.y*T-34,wave=reduced?0:Math.sin(ts/220+fx)*2;px(fx,fy,2,22,'#cfd8e0');pathPoly([[fx+2,fy],[fx+14,fy+4+wave],[fx+2,fy+9]],a.color||'#3ed598')}
  else{const x=a.x+16,y=a.y-30,bl=reduced||Math.floor(ts/500)%2===0;pathPoly([[x,y-12],[x+11,y+8],[x-11,y+8]],bl?'#ffc640':'#e0a020');txt('!',x,y+2,'#2a1600',11)}}}
 function drawCommandCelebration(ts){
@@ -1824,7 +1785,7 @@ function drawMinimap(){
  el.innerHTML='<span></span>'+markers;
 }
 function draw(ts){
- if(!ctx||!cam.w)return;const s=sc(view.zoom);ctx.setTransform(cam.dpr,0,0,cam.dpr,0,0);ctx.clearRect(0,0,cam.w,cam.h);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(s,s);drawGround(ts);drawFlows(ts);drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,ts);drawBuilding(id,d,ts);drawInterior(id,d,ts);drawWorksite(id,d,ts)}drawAgents(ts);drawMoments(ts);drawCommandCelebration(ts);drawClouds(ts);if(!current&&!display.night){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'rgba(255,170,90,.20)');g.addColorStop(.6,'rgba(255,140,70,.08)');g.addColorStop(1,'rgba(120,60,90,.14)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H)}if(display.night){ctx.fillStyle='rgba(3,7,14,.18)';ctx.fillRect(0,0,W,H)}ctx.restore()
+ if(!ctx||!cam.w)return;const s=sc(view.zoom);ctx.setTransform(cam.dpr,0,0,cam.dpr,0,0);ctx.clearRect(0,0,cam.w,cam.h);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(s,s);drawGround(ts);ctx.imageSmoothingEnabled=false;drawFlows(ts);drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,ts);drawBuilding(id,d,ts);drawInterior(id,d,ts);drawWorksite(id,d,ts)}drawAgents(ts);drawMoments(ts);drawCommandCelebration(ts);drawClouds(ts);if(!current&&!display.night){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'rgba(255,170,90,.20)');g.addColorStop(.6,'rgba(255,140,70,.08)');g.addColorStop(1,'rgba(120,60,90,.14)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H)}if(display.night){ctx.fillStyle='rgba(3,7,14,.18)';ctx.fillRect(0,0,W,H)}ctx.restore()
 }
 // Animate only while the city canvas is on screen and the tab is visible; at most one rAF chain.
 let io=null,observed=null,onScreen=!('IntersectionObserver' in window);

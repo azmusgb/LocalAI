@@ -433,6 +433,52 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await context.close();
 }
 
+// Workers (visuals pass, 2026-10-18-agent-world-visuals.md): a look per role, a walk cycle, still frames with reduced
+// motion. window.__awcLayout() (localStorage localai.debug = 1) says where each worker is drawn, in canvas pixels.
+const PAIR = () => ({ id: 'mission-ui-pair', goal: 'Two roles', status: 'running', createdAt: new Date(Date.now() - 60e3).toISOString(), updatedAt: new Date().toISOString(),
+  workers: [{ id: 'ux_analyst', name: 'UX Analyst', state: 'pending', dependsOn: [] }, { id: 'code_analyst', name: 'Code Analyst', state: 'pending', dependsOn: [] }, { id: 'synthesis', name: 'Coordinator', state: 'running', dependsOn: [] }], results: [], timeline: [] });
+const debugOn = context => context.addInitScript(() => { try { localStorage.setItem('localai.debug', '1'); } catch {} });
+const frames = page => page.evaluate(() => Object.fromEntries(window.__awcLayout().workers.map(w => [w.id, w.frame])));
+for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 } }], ['reduced motion', { viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' }]]) {
+  const context = await browser.newContext({ serviceWorkers: 'block', ...opts }); await debugOn(context);
+  await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  const page = await context.newPage(); const errors = []; page.on('pageerror', e => errors.push(e.message));
+  await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [PAIR()] }) }));
+  await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => typeof window.showView === 'function');
+  await page.evaluate(() => window.showView('agents'));
+  await page.waitForFunction(() => window.__awcLayout?.().workers.length === 3 && window.__awcLayout().workers.every(w => w.frame !== undefined));
+  await page.evaluate(() => { window.LocalAIAgentWorld.follow(false); window.LocalAIAgentWorld.view('fit'); });
+  if (label === '1440px') {
+    await check('1440px: workers walk with a 4-frame cycle on their way', async () => {
+      const seen = new Set();
+      for (let i = 0; i < 20 && seen.size < 3; i++) { const l = await page.evaluate(() => window.__awcLayout().workers.find(w => w.moving)); if (l && l.frame >= 1 && l.frame <= 4) seen.add(l.frame); await page.waitForTimeout(60); }
+      assert.ok(seen.size >= 2, `walk frames seen: ${[...seen]}`);
+    });
+    await check('1440px: workers with different roles look different (each wears their district colour)', async () => {
+      await page.waitForFunction(() => window.__awcLayout().workers.every(w => !w.moving), null, { timeout: 15000 });
+      await page.waitForTimeout(300);
+      const r = await page.evaluate(() => {
+        const c = document.getElementById('awcCanvas'), g = c.getContext('2d'), ws = window.__awcLayout().workers.filter(w => w.id !== 'synthesis');
+        const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+        return ws.map(w => { const b = w.box, d = g.getImageData(Math.round(b.x), Math.round(b.y), Math.round(b.w), Math.round(b.h)).data;
+          const count = h => { const [R, G, B] = rgb(h); let n = 0; for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - R) < 24 && Math.abs(d[i + 1] - G) < 24 && Math.abs(d[i + 2] - B) < 24) n++; return n; };
+          return { id: w.id, own: count(w.vest), other: count(ws.find(x => x !== w).vest), px: d.length / 4 }; });
+      });
+      for (const w of r) assert.ok(w.own > 20 && w.own > w.other * 4, `${w.id}: ${w.own} pixels of its vest colour, ${w.other} of the other's (${JSON.stringify(r)})`);
+    });
+  } else {
+    await check('reduced motion: no walk cycle; each worker holds one still frame', async () => {
+      const a = await frames(page); await page.waitForTimeout(700); const b = await frames(page);
+      assert.deepEqual(a, b, 'frames do not change');
+      assert.ok(Object.values(a).every(f => f < 1 || f > 4), `no walk frames: ${JSON.stringify(a)}`);
+      assert.equal(await page.evaluate(() => window.LocalAIAgentWorld.walking()), 0);
+    });
+  }
+  await check(`${label}: no script errors (workers)`, async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+
 // Results and replay (design PR 5): Summary, What each worker found, Sources; one scrubber; owner words only.
 const DONE2 = { ...DONE, id: 'mission-ui-done2', timeline: FAILED.timeline.slice(0, 3).concat([{ at: t(240), type: 'mission-complete', status: 'complete', workers: snapW('complete', 'complete') }]),
   results: [{ agentId: 'ux_analyst', agentName: 'UX Analyst', status: 'complete', answer: 'Three things to fix on the phone screens.', evidenceRecords: [{ title: 'Apple guidelines', source: 'https://developer.apple.com/design/' }, { title: 'App review notes', source: 'knowledge:doc-1#chunk-0' }] }] };
