@@ -46,7 +46,7 @@ print(json.dumps([m.parse_journal(err), m.failure_reason('', err), m.parse_journ
   assert.deepEqual(JSON.parse(r.stdout), [{ mode: 'review', undoSteps: 2 }, 'RuntimeError: Stopped after 12 tool rounds', null, 'RuntimeError: Stopped after 12 tool rounds']);
 });
 
-test('the bridge passes the mode, returns the journal, and runs workbook, keep, discard, workbooks and open', { skip: !python && 'no python', timeout: 30000 }, async t => {
+test('the bridge passes the mode, returns the journal, and runs workbook, keep, discard, workbooks, open and set_cell', { skip: !python && 'no python', timeout: 30000 }, async t => {
   const fs = require('node:fs');
   const os = require('node:os');
   const net = require('node:net');
@@ -101,7 +101,13 @@ else:
   const busy = await post('/open', { name: 'Budget.xlsx' });
   assert.equal(busy.status, 409);
   assert.equal((await busy.json()).error, 'GridCraft is busy with a request');
+  const busyCell = await post('/cell', { sheet: 'Sales', cell: 'B2', input: '5' });
+  assert.equal(busyCell.status, 409, 'a cell edit waits for no request');
+  assert.match((await busyCell.json()).error, /busy with a request\. Change the cell when it finishes/);
   assert.equal((await slow).status, 200);
+  const cell = await (await post('/cell', { sheet: 'Sales', cell: 'B2', input: '=A1', prompt: 'x', path: 'C:/x' })).json();
+  assert.deepEqual([cell.op, cell.req], ['set_cell', { sheet: 'Sales', cell: 'B2', input: '=A1' }], '/cell runs the set_cell op with only the sheet, cell and input');
+  assert.equal((await fetch(base + '/cell', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://evil.example' }, body: '{}' })).status, 403);
 });
 
 test('the workbook menu lists the GridCraft folder and opens only a bare file name in it', { skip: !python && 'no python' }, () => {

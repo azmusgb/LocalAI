@@ -1387,8 +1387,10 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
 /* Restored: these rules were lost when merge 7f35ecc kept only one side of an app.css conflict.
    The run view's container and progress bar are not restored; #127 restyled them below. */
 /* Approval sheet (LocalAIUI.ask): a modal dialog, a bottom sheet on phones. */
-.ask-sheet{box-sizing:border-box;width:min(460px,calc(100vw - 32px));max-height:calc(100vh - 32px);padding:0;border:1px solid var(--ds-line-2);border-radius:var(--ds-r-lg);background:var(--ds-surface);color:var(--ds-text);font-family:var(--ds-font);box-shadow:0 24px 70px rgba(0,0,0,.5);overflow:auto}
-.ask-sheet::backdrop{background:rgba(4,8,14,.72)}
+/* .sheets-edit (Spreadsheets' phone cell sheet) looks the same but has its own class: code and tests that look for
+   .ask-sheet only ever find the approval sheet. */
+.ask-sheet,.sheets-edit{box-sizing:border-box;width:min(460px,calc(100vw - 32px));max-height:calc(100vh - 32px);padding:0;border:1px solid var(--ds-line-2);border-radius:var(--ds-r-lg);background:var(--ds-surface);color:var(--ds-text);font-family:var(--ds-font);box-shadow:0 24px 70px rgba(0,0,0,.5);overflow:auto}
+.ask-sheet::backdrop,.sheets-edit::backdrop{background:rgba(4,8,14,.72)}
 .ask-sheet__form{display:grid;gap:14px;padding:22px 20px 20px;margin:0}
 .ask-sheet__title{margin:0;font-size:var(--ds-fs-4);line-height:1.25;font-weight:700;overflow-wrap:anywhere}
 .ask-sheet__effect{margin:0;color:var(--ds-soft);font-size:var(--ds-fs-2);line-height:1.5;white-space:pre-line;overflow-wrap:anywhere}
@@ -1401,8 +1403,8 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
 .ask-sheet--danger .ask-sheet__ok{background:var(--ds-bad);color:var(--ds-accent-ink)}
 .ask-sheet--host .ask-sheet__ok{background:var(--ds-attention);color:var(--ds-accent-ink)}
 .ask-sheet--host{border-color:var(--ds-attention)}
-@media (max-width:640px){.ask-sheet{width:100%;max-width:100%;margin:auto 0 0;border-radius:var(--ds-r-lg) var(--ds-r-lg) 0 0;border-bottom:0;padding-bottom:env(safe-area-inset-bottom)}}
-@media (prefers-reduced-motion:no-preference){.ask-sheet[open]{animation:ask-in .16s ease-out}@keyframes ask-in{from{opacity:0;transform:translateY(16px)}}}
+@media (max-width:640px){.ask-sheet,.sheets-edit{width:100%;max-width:100%;margin:auto 0 0;border-radius:var(--ds-r-lg) var(--ds-r-lg) 0 0;border-bottom:0;padding-bottom:env(safe-area-inset-bottom)}}
+@media (prefers-reduced-motion:no-preference){.ask-sheet[open],.sheets-edit[open]{animation:ask-in .16s ease-out}@keyframes ask-in{from{opacity:0;transform:translateY(16px)}}}
 
 /* ---- run card and run view ---- */
 .run-list{gap:0;grid-template-columns:minmax(0,1fr)}
@@ -2098,10 +2100,16 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .sheets-cell__main span{overflow-wrap:anywhere}
 .sheets-cell__main code{font-size:var(--ds-fs-1);color:var(--ds-accent-text);overflow-wrap:anywhere}
 .sheets-cell__change{grid-column:1;margin:0;font-size:var(--ds-fs-1);color:var(--ds-attention-text)}
-.sheets-cell .btn-outline{grid-column:2;grid-row:1/span 2}
+.sheets-cell__btns{grid-column:2;grid-row:1/span 3;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.sheets-cell__error{grid-column:1;margin:0;font-size:var(--ds-fs-1);color:var(--ds-bad-text);overflow-wrap:anywhere}
+.sheets-cell__error[hidden]{display:none}
+.sheets-grid td.is-editing{padding:0;outline:2px solid var(--ds-accent);outline-offset:-2px}
+.sheets-grid__input{box-sizing:border-box;width:100%;min-width:120px;height:28px;min-height:0;margin:0;padding:0 8px;border:0;border-radius:0;background:var(--ds-surface);color:var(--ds-text);font:inherit}
+.sheets-grid__input:focus{outline:0}
+.sheets-grid td.is-saving{color:var(--ds-muted);font-style:italic}
 /* Stacked (tablet and phone): the workbook comes first, since seeing it is why you open the page. */
 @media(max-width:1100px){.sheets-layout{grid-template-columns:minmax(0,1fr)}.sheets-layout>.sheets-book{order:-1}.sheets-grid-wrap{max-height:60vh}}
-@media(max-width:760px){.topbar:has(.sheets-status){flex-wrap:wrap;gap:8px}.sheets-actions .btn-primary{width:100%}.sheets-cell{grid-template-columns:minmax(0,1fr)}.sheets-cell .btn-outline{grid-column:1;grid-row:auto;justify-self:start}.sheets-pager .btn-outline{min-width:0;padding:0 10px}}
+@media(max-width:760px){.topbar:has(.sheets-status){flex-wrap:wrap;gap:8px}.sheets-actions .btn-primary{width:100%}.sheets-cell{grid-template-columns:minmax(0,1fr)}.sheets-cell__btns{grid-column:1;grid-row:auto;justify-content:flex-start}.sheets-pager .btn-outline{min-width:0;padding:0 10px}}
 
 /* Start a mission: one sheet (a modal dialog; a bottom sheet on phones). */
 .aw-start{box-sizing:border-box;width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 32px);padding:20px;border:1px solid var(--ds-line-2);border-radius:var(--ds-r-lg);background:var(--ds-surface);color:var(--ds-text);font-family:var(--ds-font);box-shadow:0 24px 70px rgba(0,0,0,.5);overflow:auto}

@@ -1,19 +1,20 @@
 """Workbook operations the bridge runs without a model: show the workbook, keep (save) or discard (undo) a request,
-list the workbooks in the GridCraft folder and open one of them.
+list the workbooks in the GridCraft folder and open one of them, and change one cell by hand (set_cell).
 
-Usage: python gridcraft_ops.py workbook|keep|discard|workbooks|open < request.json   ->  one JSON object on stdout.
+Usage: python gridcraft_ops.py workbook|keep|discard|workbooks|open|set_cell < request.json  ->  one JSON object on stdout.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
 from typing import Any, Awaitable, Callable
 
-from gridcraft_journal import clamp_range, is_error, payload, undo_top_matches, window_range
+from gridcraft_journal import UNDO_TOP, Journal, clamp_range, is_error, payload, undo_top_matches, window_range
 
 DEFAULT_GRIDCRAFT_CLI = r"C:\Program Files\GridCraft\gridcraft-cli.exe"
 Call = Callable[[str, dict[str, Any]], Awaitable[Any]]
@@ -158,7 +159,50 @@ async def open_book(call: Call, req: dict[str, Any]) -> dict[str, Any]:
     return {"file": name}
 
 
-OPS = {"workbook": workbook, "keep": keep, "discard": discard, "workbooks": workbooks, "open": open_book}
+# A cell the owner changes by hand: one cell, A1 style, upper case (the page always sends it so); GridCraft's own limits
+# on a sheet name and on what a cell holds are wider, these are what the page needs.
+CELL_REF = re.compile(r"^[A-Z]{1,3}[1-9][0-9]{0,6}$")
+MAX_SHEET_CHARS = 100
+MAX_INPUT_CHARS = 8192
+
+
+def cell_edit(req: dict[str, Any]) -> tuple[str, str, str]:
+    """(sheet, cell, input) from a set_cell request, or OpError 400."""
+    sheet, cell, text = req.get("sheet"), req.get("cell"), req.get("input")
+    if not isinstance(sheet, str) or not sheet.strip() or len(sheet) > MAX_SHEET_CHARS or any(ord(c) < 32 for c in sheet):
+        raise OpError(f"sheet must be a sheet name of 1 to {MAX_SHEET_CHARS} characters", 400)
+    if not isinstance(cell, str) or not CELL_REF.match(cell):
+        raise OpError("cell must look like B7", 400)
+    if not isinstance(text, str) or len(text) > MAX_INPUT_CHARS:
+        raise OpError(f"input must be text of at most {MAX_INPUT_CHARS} characters", 400)
+    return sheet, cell, text
+
+
+def qualified(sheet: str, cell: str) -> str:
+    """Sales!B7, or 'Q1 Sales'!B7 when the name needs quotes (gridcraft_journal.split_sheet reads both)."""
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", sheet):
+        return f"{sheet}!{cell}"
+    return "'" + sheet.replace("'", "''") + f"'!{cell}"
+
+
+async def set_cell(call: Call, req: dict[str, Any]) -> dict[str, Any]:
+    """Changes one cell the way a Review request would: never saves, and returns the journal (before -> after and the
+    undo steps) so the owner can keep or discard it. undoBefore is the undo list's top before the edit, so the appliance
+    can tell whether this edit sits directly on top of the previous one."""
+    sheet, cell, text = cell_edit(req)
+    info = await _json(call, "inspect_workbook", {})
+    if not any(s.get("name") == sheet for s in info.get("sheets") or []):
+        raise OpError(f"No sheet named {sheet}", 404)
+    undo_before = list(info.get("undo") or [])[:UNDO_TOP]
+    journal = Journal("review", call, {"set_cell"})
+    result = await journal.call("set_cell", {"cell": qualified(sheet, cell), "input": text})
+    if is_error(result):
+        reason = next((getattr(b, "text", "") for b in getattr(result, "content", None) or []), "")
+        raise OpError(reason or "GridCraft did not change the cell", 400)
+    return {"journal": await journal.finish(), "undoBefore": undo_before}
+
+
+OPS = {"workbook": workbook, "keep": keep, "discard": discard, "workbooks": workbooks, "open": open_book, "set_cell": set_cell}
 NO_GRIDCRAFT = {"workbooks"}  # reads the folder only
 
 
@@ -167,6 +211,8 @@ async def run(op: str, req: dict[str, Any]) -> dict[str, Any]:
         return await OPS[op](None, req)
     if op == "open":
         workbook_name(req.get("name"))  # refuse a bad name before connecting to GridCraft
+    if op == "set_cell":
+        cell_edit(req)
     from mcp import Client, StdioServerParameters
 
     cli = os.environ.get("GRIDCRAFT_CLI", DEFAULT_GRIDCRAFT_CLI)

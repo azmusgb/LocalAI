@@ -1,6 +1,8 @@
 // Projects › Spreadsheets: see the workbook open in GridCraft on the Windows computer, ask for it to be read or changed,
 // and keep or discard what a Review request changed. The appliance proxies the host bridge (/api/gridcraft), so the
 // bridge port never has to be open to the network. One request at a time.
+// A cell can also be changed by hand (tap the selected cell, double-click, Enter, F2 or just type; a sheet on phones).
+// It goes through the same review: it is in GridCraft but not saved until Keep changes, and Discard undoes it.
 (function(root){'use strict';
 const $=id=>document.getElementById(id),API='/api/gridcraft';
 const EXAMPLES=[
@@ -11,7 +13,8 @@ const EXAMPLES=[
 const MODES={read:'Looks and answers. It cannot change anything.',review:'Makes the changes in GridCraft without saving. You keep or discard them.',apply:'Makes the changes and saves the workbook.'};
 const STATUS={review:'Waiting for review',kept:'Kept',discarded:'Discarded',applied:'Applied',done:'No changes',failed:'Failed'};
 const PAGE=100;
-const st={busy:false,timer:0,started:0,mode:'review',book:null,sheet:'',top:1,runs:[],run:null,sel:null,formulas:false,books:[]};
+const st={busy:false,timer:0,started:0,mode:'review',book:null,sheet:'',top:1,runs:[],run:null,sel:null,formulas:false,books:[],edit:null,saving:false,stale:false,editSheet:null};
+const phone=()=>matchMedia('(max-width:640px)').matches;
 const active=()=>$('spreadsheets')?.classList.contains('active');
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const show1=v=>v==null?'':typeof v==='object'?(v.error||JSON.stringify(v)):String(v);
@@ -36,6 +39,8 @@ function setMode(m){
  st.mode=MODES[m]?m:'review';store.set('sheets.mode',st.mode);
  $('sheetsMode').querySelectorAll('[data-mode]').forEach(b=>{const on=b.dataset.mode===st.mode;b.classList.toggle('active',on);b.setAttribute('aria-checked',on);b.tabIndex=on?0:-1});
  $('sheetsModeHint').textContent=MODES[st.mode];
+ // Read only means read only: the grid can't be changed by hand either.
+ $('sheetsGrid').setAttribute('aria-readonly',st.mode==='read');$('sheetsEditCell').hidden=st.mode==='read';
 }
 
 // ---- Changes: cell edits of the shown run, by "Sheet!A1" ----
@@ -75,7 +80,7 @@ function show(kind,text,{retry=false}={}){
 function showRun(run){
  st.run=run;
  if(!run){$('sheetsChanges').hidden=true;$('sheetsReview').hidden=true;$('sheetsRun').classList.add('btn-primary');$('sheetsRun').classList.remove('btn-outline');return}
- $('sheetsResultTitle').textContent=run.prompt?`“${run.prompt.length>90?run.prompt.slice(0,90)+'…':run.prompt}”`:'Answer';
+ $('sheetsResultTitle').textContent=run.kind==='edit'?run.prompt:run.prompt?`“${run.prompt.length>90?run.prompt.slice(0,90)+'…':run.prompt}”`:'Answer';
  show(run.status==='failed'?'error':'done',run.answer||run.error||'Done.',{retry:run.status==='failed'});
  $('sheetsResult').dataset.status=run.status;
  const changes=changesHtml(run);$('sheetsChanges').innerHTML=changes;$('sheetsChanges').hidden=!changes;
@@ -128,6 +133,7 @@ function renderBook(){
 }
 function renderGrid(){
  const b=st.book;if(!b)return;
+ if(st.edit){st.stale=true;return} // never under a cell being typed in: it renders when the edit ends
  const range=bounds(b.range),grid=$('sheetsGrid');
  if(!range||!b.values?.length){emptyGrid(b.sheet?`${b.sheet} is empty.`:'This workbook has no sheets.');$('sheetsRange').textContent='';return}
  $('sheetsGridEmpty').hidden=true;
@@ -141,6 +147,7 @@ function renderGrid(){
    const sel=st.sel===ref;
    html+=`<td role="gridcell" data-cell="${ref}" data-i="${i}" data-j="${j}"${cls?` class="${cls}"`:''} tabindex="${sel?0:-1}" aria-selected="${sel}">${esc(text)}</td>`});
   html+='</tr>'});
+ const focused=grid.contains(document.activeElement); // a re-render keeps keyboard focus on the selected cell
  grid.innerHTML=html+'</tbody>';
  if(!grid.querySelector('[tabindex="0"]'))grid.querySelector('td')?.setAttribute('tabindex','0');
  const total=u?u.r2:range.r2,cols=u?u.c2:range.c2;
@@ -150,10 +157,12 @@ function renderGrid(){
  $('sheetsPager').querySelector('[data-sheets-page="-1"]').disabled=range.r1<=1;
  $('sheetsPager').querySelector('[data-sheets-page="1"]').disabled=range.r2>=total;
  if(st.sel)showCell(st.sel,false);
+ if(focused)grid.querySelector('td[tabindex="0"]')?.focus({preventScroll:true});
 }
 function showCell(ref,focus=true){
  const b=st.book,td=$('sheetsGrid').querySelector(`td[data-cell="${ref}"]`);
  if(!b||!td){$('sheetsCell').hidden=true;return}
+ if(st.sel!==ref)cellError('');
  st.sel=ref;
  $('sheetsGrid').querySelectorAll('td[aria-selected="true"]').forEach(x=>{x.setAttribute('aria-selected','false');x.tabIndex=-1});
  td.setAttribute('aria-selected','true');td.tabIndex=0;if(focus)td.focus({preventScroll:false});
@@ -173,11 +182,94 @@ async function goto(sheet,ref){
  $('sheetsBook').scrollIntoView({block:'nearest',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
 }
 function gridKeys(e){
- const td=e.target.closest('td[data-cell]');if(!td)return;
+ const td=e.target.closest('td[data-cell]');if(!td||e.target!==td)return; // keys typed into a cell's editor stay there
+ if(e.key==='Enter'||e.key==='F2'){e.preventDefault();return startEdit(td.dataset.cell)}
+ if(e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&e.key!==' '){e.preventDefault();return startEdit(td.dataset.cell,e.key)}
  const d={ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]}[e.key];
  if(!d)return;e.preventDefault();
  const next=$('sheetsGrid').querySelector(`td[data-i="${+td.dataset.i+d[0]}"][data-j="${+td.dataset.j+d[1]}"]`);
  if(next)showCell(next.dataset.cell);
+}
+
+// ---- Changing a cell by hand: inline on a computer, a small sheet on a phone. Enter (or Save) commits, Esc cancels.
+function cellError(text){for(const id of ['sheetsCellError','sheetsEditError']){$(id).textContent=text;$(id).hidden=!text}}
+function editBlocked(){
+ if(st.mode==='read')return 'Read only is on, so cells can\'t be changed. Choose Review or Apply to change them.';
+ if(st.busy)return 'GridCraft is busy with a request. Change the cell when it finishes.';
+ if(st.saving)return 'The last change is still being made. Try again in a moment.';
+ return '';
+}
+const cellAt=ref=>$('sheetsGrid').querySelector(`td[data-cell="${ref}"]`);
+function cellInput(td){ // what the cell holds: its formula, or its value as typed
+ const i=+td.dataset.i,j=+td.dataset.j,f=st.book.formulas?.[i]?.[j],raw=st.book.raw?.[i]?.[j];
+ const v=typeof f==='string'&&f.startsWith('=')?f:raw??f??st.book.values?.[i]?.[j];
+ return v==null||typeof v==='object'?'':String(v);
+}
+function startEdit(ref,typed){
+ const td=ref&&cellAt(ref);if(!td||st.edit||!st.book)return;
+ showCell(ref,false);
+ const why=editBlocked();if(why){cellError(why);return}
+ cellError('');
+ if(phone())return openEditSheet(td);
+ const old=cellInput(td),sheet=st.book.sheet;
+ st.edit={ref};td.classList.add('is-editing');
+ td.innerHTML=`<input class="sheets-grid__input" aria-label="${esc(`New value for ${sheet}!${ref}`)}" autocomplete="off" spellcheck="false">`;
+ const input=td.firstChild;input.value=typed??old;input.focus();if(typed==null)input.select();
+ let done=false;
+ const finish=async how=>{
+  if(done)return;done=true;
+  const text=input.value,commit=how!=='cancel'&&text!==old;st.edit=null;
+  if(commit){td.classList.replace('is-editing','is-saving');td.textContent=text}
+  if(!commit||st.stale){st.stale=false;renderGrid()}
+  if(how!=='blur')cellAt(ref)?.focus();
+  if(!commit)return;
+  const err=await saveCell(sheet,ref,text);
+  if(st.book?.sheet===sheet){if(err)renderGrid();if(how!=='blur')cellAt(ref)?.focus()}
+  if(err)cellError(`${sheet}!${ref} wasn't changed. ${err}`);
+ };
+ input.addEventListener('keydown',e=>{
+  e.stopPropagation();
+  if(e.key==='Enter'||e.key==='Tab'){e.preventDefault();finish('enter')}
+  else if(e.key==='Escape'){e.preventDefault();finish('cancel')}
+ });
+ input.addEventListener('blur',()=>finish('blur'));
+}
+function openEditSheet(td){
+ const d=$('sheetsEdit'),b=st.book;if(d.open)return;
+ const ref=td.dataset.cell,i=+td.dataset.i,j=+td.dataset.j,f=b.formulas?.[i]?.[j],isF=typeof f==='string'&&f.startsWith('=');
+ st.editSheet={sheet:b.sheet,ref,old:cellInput(td)};
+ $('sheetsEditTitle').textContent=`Change ${b.sheet}!${ref}`;
+ $('sheetsEditNow').textContent=`Now: ${show1(b.values?.[i]?.[j])||'empty'}${isF?`\nFormula: ${f}`:''}\nNothing is saved until you choose Keep changes.`;
+ const input=$('sheetsEditInput');input.value=st.editSheet.old;cellError('');
+ $('sheetsEditSave').disabled=false;$('sheetsEditSave').textContent='Save';
+ const done=reopened=>{st.editSheet=null;if(!reopened)cellAt(ref)?.focus()};
+ root.LocalAIUI.showSheet(d,done); // Back closes it too
+ input.focus();input.select();
+}
+async function submitEditSheet(e){
+ e.preventDefault();
+ const s=st.editSheet,save=$('sheetsEditSave'),d=$('sheetsEdit');if(!s||save.disabled)return;
+ const text=$('sheetsEditInput').value;
+ if(text===s.old){d.close();return}
+ const why=editBlocked();if(why){cellError(why);return}
+ save.disabled=true;save.textContent='Saving…';
+ const err=await saveCell(s.sheet,s.ref,text);
+ save.disabled=false;save.textContent='Save';
+ if(err)cellError(`${s.sheet}!${s.ref} wasn't changed. ${err}`);else if(d.open)d.close();
+}
+// Returns '' when GridCraft changed the cell, else why not. The change joins the requests as a Direct edit waiting for review.
+async function saveCell(sheet,ref,text){
+ st.saving=true;
+ try{
+  const r=await fetch(`${API}/cell`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sheet,cell:ref,input:text})});
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok||!data.ok||!data.run)return data.error||`HTTP ${r.status}`;
+  st.runs=[data.run,...st.runs.filter(x=>x.id!==data.run.id)];
+  showRun(data.run);
+  root.LocalAIUI?.toast?.(`${sheet}!${ref} changed. It isn't saved until you choose Keep changes.`);
+  return '';
+ }catch(e){return e.message||String(e)}
+ finally{st.saving=false;loadBook()}
 }
 
 // ---- Workbook menu: the files in the GridCraft folder on the Windows computer ----
@@ -272,7 +364,12 @@ function init(){
  $('sheetsFormulas').addEventListener('click',e=>{st.formulas=!st.formulas;e.currentTarget.setAttribute('aria-pressed',st.formulas);renderGrid()});
  $('sheetsTabs').addEventListener('click',e=>{const b=e.target.closest('[data-sheet]');if(b&&b.dataset.sheet!==st.sheet){st.sel=null;$('sheetsCell').hidden=true;loadBook(b.dataset.sheet,1)}});
  $('sheetsPager').addEventListener('click',e=>{const b=e.target.closest('[data-sheets-page]');if(b)loadBook(st.sheet,Math.max(1,st.top+PAGE*+b.dataset.sheetsPage))});
- $('sheetsGrid').addEventListener('click',e=>{const td=e.target.closest('td[data-cell]');if(td)showCell(td.dataset.cell)});
+ // A tap or click selects a cell; one on the cell already selected (or a double-click) changes it.
+ $('sheetsGrid').addEventListener('click',e=>{const td=e.target.closest('td[data-cell]');if(!td||st.edit)return;if(st.sel===td.dataset.cell&&!$('sheetsCell').hidden&&e.detail<2)startEdit(td.dataset.cell);else showCell(td.dataset.cell)});
+ $('sheetsGrid').addEventListener('dblclick',e=>{const td=e.target.closest('td[data-cell]');if(td&&!st.edit)startEdit(td.dataset.cell)});
+ $('sheetsEditCell').addEventListener('click',()=>startEdit(st.sel));
+ $('sheetsEdit').addEventListener('submit',submitEditSheet);
+ $('sheetsEditCancel').addEventListener('click',()=>$('sheetsEdit').close());
  $('sheetsGrid').addEventListener('keydown',gridKeys);
  $('sheetsAskCell').addEventListener('click',()=>{const p=$('sheetsPrompt'),ref=$('sheetsCellRef').textContent;p.value=(p.value.trim()?p.value.trim()+' ':'')+`${ref} `;p.focus();p.setSelectionRange(p.value.length,p.value.length)});
  $('sheetsHistory').addEventListener('click',e=>{const b=e.target.closest('[data-run]');if(b)showRun(st.runs.find(x=>x.id===b.dataset.run))});
