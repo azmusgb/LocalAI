@@ -40,3 +40,28 @@ test('app/server/stores.js reads, writes and caps collections through the storag
   stores.prependRecord('activity', {}); stores.prependRecord('library', {});
   assert.deepEqual(calls, [['readSetting', 'status'], ['list', 'library'], ['writeSetting', 'status'], ['save', 'library'], ['prepend', 'activity', 2000], ['prepend', 'library', undefined]]);
 });
+
+// Every area module (create<Area>(ctx)): server.js passes exactly the names the module unpacks from ctx, and the factory
+// returns every name server.js takes from it.
+const calls = [...server.matchAll(/^const \{([^}]+)\} = require\('\.\/server\/([\w-]+)'\)\.(create\w+)\(\{([^}]*)\}\);$/gm)]
+  .map(m => ({ file: m[2], factory: m[3], takes: m[1].split(',').map(x => x.trim()), gives: m[4].split(',').map(x => x.trim()).filter(Boolean) }));
+const list = xs => [...xs].sort();
+
+test('server.js builds its area modules with create<Area>({...})', () => {
+  assert.ok(calls.length >= 1, 'no area modules found');
+});
+
+for (const c of calls) {
+  test(`app/server/${c.file}.js: ${c.factory} gets what it unpacks and returns what server.js takes`, () => {
+    const mod = require(`../app/server/${c.file}`);
+    const source = fs.readFileSync(path.join(app, 'server', `${c.file}.js`), 'utf8');
+    const unpack = source.match(/^ {2}const \{([^}]*)\} = ctx;$/m);
+    if (unpack) assert.deepEqual(list(c.gives), list(unpack[1].split(',').map(x => x.trim()).filter(Boolean)), 'ctx passed by server.js vs unpacked by the module');
+    // Any input is a harmless stand-in: the factory only defines things; it must not call them while being built.
+    const stub = new Proxy(function () {}, { get: (t, k) => (k === Symbol.toPrimitive ? () => '' : stub), apply: () => stub });
+    const ctx = Object.fromEntries(c.gives.map(n => [n, stub]));
+    const out = mod[c.factory](ctx);
+    for (const n of c.takes) assert.ok(n in out, `${c.factory} does not return ${n}`);
+  });
+}
+
