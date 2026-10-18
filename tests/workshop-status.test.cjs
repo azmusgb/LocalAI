@@ -309,7 +309,7 @@ test('GET /api/workshop/status with a token: printer summary, sign-in from the t
 });
 
 test('the token stays out of child processes, the repo and the browser', () => {
-  const server = fs.readFileSync(path.resolve(__dirname, '../app/server.js'), 'utf8');
+  const server = require('./server-source.cjs').serverSource(); // server.js and app/server/*.js
   const secret = new RegExp(/const SECRET_ENV=\/(.+?)\/i;/.exec(server)[1], 'i');
   assert.ok(secret.test('LOCALAI_WORKSHOP_STATUS_TOKEN'), 'childEnv drops it');
   const compose = fs.readFileSync(path.resolve(__dirname, '../deploy/stack/compose.yml'), 'utf8');

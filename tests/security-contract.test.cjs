@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.join(__dirname, '..');
-const server = fs.readFileSync(path.join(root, 'app', 'server.js'), 'utf8');
+const server = require('./server-source.cjs').serverSource(); // server.js and app/server/*.js
 const hostRunner = fs.readFileSync(path.join(root, 'host', 'powershell-bridge', 'Run-LocalAI-PowerShellHost.ps1'), 'utf8');
 const bridge = fs.readFileSync(path.join(root, 'host', 'gridcraft-bridge.py'), 'utf8');
 

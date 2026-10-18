@@ -42,7 +42,6 @@ const POWERSHELL_UI_TOKEN = String(process.env.POWERSHELL_UI_TOKEN || '');
 const ACTIVITY_STORE = 'activity';
 const STATUS_STORE = 'status';
 const LIBRARY_STORE = 'library';
-const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 
 const crypto = require('crypto');
 const { Storage } = require('./storage');
@@ -69,6 +68,9 @@ const release = require('./release').readRelease(__dirname);
 // A staged copy (self-change smoke test) passes its own APP_VERSION; otherwise the release decides.
 const APP_VERSION = /-stage$/.test(process.env.APP_VERSION || '') ? process.env.APP_VERSION : require('./release').appVersion(__dirname, release);
 const storage = new Storage({ dataDir: DATA_DIR });
+// The state collections and the HTTP helpers every area uses live in app/server/ (the server split, step 1).
+const { readState, writeState, prependRecord, RETENTION } = require('./server/stores').createStores({ storage, STATUS_STORE });
+const { json, storageError, text, readBody, fetchWithTimeout, sameOriginJson } = require('./server/http');
 // Phone notifications (Web Push): app/push.js sends, app/notify.js decides; docs/OPERATIONS.md › Notifications.
 const pushLib = require('./push');
 const notifyLib = require('./notify');
@@ -91,63 +93,12 @@ const runLedger = new RunLedger({ storage, onTransition: (run, previous) => { co
 const activeRunControllers = new Map();
 const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody });
 
-function json(res, status, value) {
-  res.writeHead(status, JSON_HEADERS);
-  res.end(JSON.stringify(value));
-}
 
-function storageError(res, error, defaultStatus = 400) {
-  return json(res, error.statusCode || defaultStatus, { error: String(error.message || error), ...(error.code ? { code: error.code } : {}) });
-}
 
-function text(res, status, value, contentType = 'text/plain; charset=utf-8', extraHeaders = {}) {
-  res.writeHead(status, { 'Content-Type': contentType, ...extraHeaders });
-  res.end(value);
-}
 
-function readState(collection, fallback) {
-  return collection === STATUS_STORE ? storage.readSetting('status', fallback) : storage.list(collection);
-}
 
-// History and log collections are capped; user-owned data (projects, conversations, knowledge, memory,
-// approvals, library, …) is never pruned.
-const RETENTION = Object.freeze({ activity: 2000, notifications: 500, automationRuns: 500, qualityEvents: 500, qualityScans: 100, agentRuns: 300, engineeringRuns: 300, powerShellJobs: 250 });
-function prependRecord(collection, item) { return storage.prepend(collection, item, RETENTION[collection]); }
 
-function writeState(collection, value, previous = value) {
-  if (collection === STATUS_STORE) return storage.writeSetting('status', value);
-  return storage.save(collection, value, previous);
-}
 
-function readBody(req, maxBytes = 1024 * 1024) {
-  return new Promise((resolve, reject) => {
-    let total = 0;
-    let tooLarge = false;
-    const chunks = [];
-    req.on('data', chunk => {
-      if (tooLarge) return;
-      total += chunk.length;
-      if (total > maxBytes) {
-        // Keep draining instead of destroying the socket so the handler can still answer 413.
-        tooLarge = true;
-        chunks.length = 0;
-        reject(Object.assign(new Error('Request body too large'), { statusCode: 413 }));
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => {
-      if (tooLarge) return;
-      try {
-        const raw = Buffer.concat(chunks).toString('utf8');
-        resolve(raw ? JSON.parse(raw) : {});
-      } catch {
-        reject(new Error('Invalid JSON request body'));
-      }
-    });
-    req.on('error', reject);
-  });
-}
 
 function activityStore() {
   const value = readState(ACTIVITY_STORE, []);
@@ -335,32 +286,6 @@ function migrateLegacyActivityToLibrary() {
     writeState(LIBRARY_STORE, items);
   }
 }
-async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
-  const controller = new AbortController();
-  const externalSignal = options?.signal || null;
-  const abortFromExternal = () => controller.abort(externalSignal?.reason);
-  if (externalSignal?.aborted) abortFromExternal();
-  else externalSignal?.addEventListener('abort', abortFromExternal, { once: true });
-  const timer = setTimeout(() => controller.abort(new Error('Request timed out')), timeoutMs);
-  const done = () => {
-    clearTimeout(timer);
-    externalSignal?.removeEventListener('abort', abortFromExternal);
-  };
-  let response;
-  try {
-    response = await fetch(url, { ...options, signal: controller.signal });
-  } catch (error) {
-    done();
-    throw error;
-  }
-  // fetch resolves at the headers; keep the deadline armed until the body has been read too.
-  if (!response.body) done();
-  else for (const method of ['text', 'json', 'arrayBuffer', 'blob', 'formData']) {
-    const read = response[method].bind(response);
-    response[method] = () => read().finally(done);
-  }
-  return response;
-}
 
 async function probe(name, label, url, goodCodes = [200], timeoutMs = 3000, required = true) {
   const started = Date.now();
@@ -491,13 +416,6 @@ const modelPulls = createModelPulls({
     else if (p.state === 'failed') recordActivity('model', 'Model download failed', `${p.name}: ${p.error}`);
   }
 });
-// Another site open in the browser could otherwise post here (a text/plain form needs no preflight).
-function sameOriginJson(req, res) {
-  const origin = req.headers.origin;
-  if (origin && origin !== `http://${req.headers.host}` && origin !== `https://${req.headers.host}`) { json(res, 403, { error: 'Origin not allowed' }); return false; }
-  if (String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase() !== 'application/json') { json(res, 415, { error: 'Content-Type must be application/json' }); return false; }
-  return true;
-}
 async function apiModelPulls(req, res) { json(res, 200, { items: modelPulls.list() }); }
 async function apiModelPull(req, res) {
   if (!sameOriginJson(req, res)) return;
@@ -2899,7 +2817,7 @@ function domReferenceFailures(stageRoot){
 }
 function runtimeBoundaryFailures(rel,ops){
   const out=[];const textValue=(ops||[]).map(op=>String(op.content||op.replace||op.replacement||'')).join('\n');
-  if(/(^|\/)server\.js$/i.test(rel)){
+  if(/(^|\/)server(\.js|\/[^/]+\.js)$/i.test(rel)){ // server.js and the modules split out of it
     if(/\bdocument\.|\bwindow\.|\blocalStorage\b|\bstate\.imageModels\b/.test(textValue))out.push('server.js patch contains browser-only runtime references');
     if(/validationChecks\.every[\s\S]{0,2500}return\s+true/.test(textValue))out.push('server.js patch appears to contain hard-coded validation success logic');
   }
@@ -3062,7 +2980,9 @@ async function validateStagedChange(change,stageRoot){  const sourceRoot =
     contractFailures.length===0,
     contractFailures.join('; ')
   );  if(change.target==='self'){
-    for(const rel of ['server.js','public/app.js','public/sw.js']){const full=path.join(stageRoot,rel);if(fs.existsSync(full)){const r=await runProcess('node',['--check',full],stageRoot);add(`core syntax ${rel}`,r.code===0,r.stderr||r.stdout)}}
+    // server.js and the modules split out of it (app/server/*.js) are all core.
+    const serverModules=fs.existsSync(path.join(stageRoot,'server'))?fs.readdirSync(path.join(stageRoot,'server')).filter(f=>f.endsWith('.js')).map(f=>'server/'+f):[];
+    for(const rel of ['server.js',...serverModules,'public/app.js','public/sw.js']){const full=path.join(stageRoot,rel);if(fs.existsSync(full)){const r=await runProcess('node',['--check',full],stageRoot);add(`core syntax ${rel}`,r.code===0,r.stderr||r.stdout)}}
     const html=path.join(stageRoot,'public','index.html');if(fs.existsSync(html)){const dup=duplicateHtmlIds(fs.readFileSync(html,'utf8'));add('core duplicate HTML ids',dup.length===0,dup.join(', '))}
     const dom=domReferenceFailures(stageRoot);add('DOM reference contract',dom.length===0,dom.length?`Missing IDs: ${dom.join(', ')}`:'all referenced IDs resolved');
     const smokePort=3200+Math.floor(Math.random()*300); const stageData=path.join(CHANGE_STAGE_ROOT,change.id,'smoke-data');fs.rmSync(stageData,{recursive:true,force:true});fs.mkdirSync(stageData,{recursive:true});
@@ -3170,7 +3090,8 @@ function htmlIds(htmlText){const ids=new Set();const rx=/\bid=["']([^"']+)["']/g
 async function runQualityScan(){
   const checks=[];const add=(name,result,detail='')=>{const normalized=typeof result==='string'?result:(result?'PASS':'FAIL');checks.push({name,result:['PASS','WARN','FAIL'].includes(normalized)?normalized:'FAIL',detail:String(detail||'').slice(0,3000)})};
   const serverFile=path.join(__dirname,'server.js'),appFile=path.join(PUBLIC_DIR,'app.js'),swFile=path.join(PUBLIC_DIR,'sw.js'),htmlFile=path.join(PUBLIC_DIR,'index.html');
-  for(const [name,file] of [['server.js',serverFile],['app.js',appFile],['sw.js',swFile]]){if(fs.existsSync(file)){const r=await runProcess('node',['--check',file],__dirname);add(`syntax ${name}`,r.code===0,r.stderr||r.stdout)}else add(`syntax ${name}`,false,'file missing')}
+  const serverModules=fs.existsSync(path.join(__dirname,'server'))?fs.readdirSync(path.join(__dirname,'server')).filter(f=>f.endsWith('.js')).map(f=>['server/'+f,path.join(__dirname,'server',f)]):[]; // the split-out server modules count as the server
+  for(const [name,file] of [['server.js',serverFile],...serverModules,['app.js',appFile],['sw.js',swFile]]){if(fs.existsSync(file)){const r=await runProcess('node',['--check',file],__dirname);add(`syntax ${name}`,r.code===0,r.stderr||r.stdout)}else add(`syntax ${name}`,false,'file missing')}
   if(fs.existsSync(appFile)){const app=fs.readFileSync(appFile,'utf8');const dup=duplicateTopLevelFunctions(app);add('duplicate browser functions',dup.length===0,dup.join(', '));if(fs.existsSync(htmlFile)){const html=fs.readFileSync(htmlFile,'utf8'),ids=htmlIds(html),refs=referencedDomIds(app);const uiFile=path.join(PUBLIC_DIR,'ui.js');if(fs.existsSync(uiFile)){const ui=fs.readFileSync(uiFile,'utf8');for(const id of htmlIds(ui))ids.add(id);for(const m of ui.matchAll(/\.id\s*=\s*['"]([^'"]+)['"]/g))ids.add(m[1])}const missing=refs.filter(x=>!ids.has(x));add('DOM reference contract',missing.length===0,missing.length?`Missing IDs: ${missing.slice(0,40).join(', ')}`:`${refs.length} referenced IDs resolved`)}}
   if(fs.existsSync(htmlFile)){const dup=duplicateHtmlIds(fs.readFileSync(htmlFile,'utf8'));add('duplicate HTML ids',dup.length===0,dup.join(', '))}
   try{const st=await getStatusAndRecordTransition();const coreBad=st.services.filter(x=>x.required!==false&&x.state!=='HEALTHY'),optionalBad=st.services.filter(x=>x.required===false&&x.state!=='HEALTHY');if(coreBad.length)add('service health','FAIL',coreBad.map(x=>`${x.label}:${x.state}`).join(', '));else if(optionalBad.length)add('service health','WARN',`Optional: ${optionalBad.map(x=>`${x.label}:${x.state}`).join(', ')}`);else add('service health','PASS',st.overall)}catch(e){add('service health','FAIL',String(e.message||e))}
