@@ -521,6 +521,83 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await context.close();
 }
 
+// Follow-ups to the visuals pass: workers drawn 1.25x on phones (and still tappable where they are drawn), flows that
+// leave each door straight down to the street (every leg horizontal or vertical), and cars that stop short of a zebra
+// crossing while a worker is on it. window.__awcSim (debug only) puts a worker or a car somewhere, so this is exact.
+const FLOW = () => ({ id: 'mission-ui-flow', goal: 'Flows and crossings', status: 'running', createdAt: new Date(Date.now() - 60e3).toISOString(), updatedAt: new Date().toISOString(), results: [], timeline: [],
+  workers: [{ id: 'router', name: 'Mission Router', state: 'complete', dependsOn: [] }, { id: 'ux_analyst', name: 'UX Analyst', state: 'pending', dependsOn: ['router'] }, { id: 'documentation', name: 'Documentation Agent', state: 'pending', dependsOn: ['ux_analyst'] },
+    { id: 'code_analyst', name: 'Code Analyst', state: 'pending', dependsOn: ['router'] }, { id: 'performance_analyst', name: 'Performance Analyst', state: 'pending', dependsOn: ['code_analyst'] }, { id: 'validator', name: 'Validator', state: 'pending', dependsOn: ['performance_analyst'] }] });
+async function cityWithFlow(opts) {
+  const context = await browser.newContext({ serviceWorkers: 'block', ...opts }); await debugOn(context);
+  await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  const page = await context.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
+  await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [FLOW()] }) }));
+  await page.goto(base + '/', { waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => typeof window.showView === 'function');
+  await page.evaluate(() => window.showView('agents')); await page.waitForFunction(() => window.__awcLayout?.().workers.length === 6);
+  await page.evaluate(() => { window.LocalAIAgentWorld.follow(false); window.LocalAIAgentWorld.view('fit'); });
+  await page.waitForFunction(() => window.__awcLayout().workers.every(w => !w.moving), null, { timeout: 20000 });
+  await page.waitForTimeout(400);
+  return { context, page, errors };
+}
+const spriteScale = page => page.evaluate(() => { const l = window.__awcLayout(), c = window.LocalAIAgentWorld.camera(), k = c.base * c.shown.zoom * c.dpr; return { scale: l.workerScale, ratio: l.workers.map(w => w.box.h / (56 * k)) }; });
+{
+  const { context, page, errors } = await cityWithFlow({ viewport: { width: 1440, height: 900 } });
+  await check('1440px: workers are drawn at their usual size', async () => {
+    const s = await spriteScale(page);
+    assert.equal(s.scale, 1);
+    for (const r of s.ratio) assert.ok(Math.abs(r - 1) < 0.02, `box height ratio ${r}`);
+  });
+  await check('1440px: every flow runs door to street to door in straight legs, none diagonal', async () => {
+    const flows = (await page.evaluate(() => window.__awcLayout())).flows;
+    assert.ok(flows.length >= 4, `${flows.length} flows`);
+    for (const f of flows) {
+      assert.ok(f.points.length >= 3, `${f.from}>${f.to} has ${f.points.length} points`);
+      f.points.slice(1).forEach((q, i) => { const p = f.points[i]; assert.ok(Math.abs(q.x - p.x) < 0.5 || Math.abs(q.y - p.y) < 0.5, `${f.from}>${f.to} leg ${i} is diagonal: ${JSON.stringify([p, q])}`); });
+      const [a, b] = f.points; assert.ok(Math.abs(a.x - b.x) < 0.5, `${f.from}>${f.to} leaves its door straight down`);
+    }
+  });
+  await check('1440px: a car stops short of a zebra crossing while a worker is on it, then drives on', async () => {
+    // car 2 drives down the east avenue (x 816) towards the crossing at y 384-416; the UX Analyst stands on it
+    const z = await page.evaluate(() => window.__awcLayout().crossings.find(c => c.axis === 'y' && c.x === 800 && c.y === 384));
+    assert.ok(z, 'the crossing is listed');
+    await page.evaluate(() => { window.__awcSim.put('ux_analyst', 830, 400); window.__awcSim.car(2, 816, 330); });
+    await page.waitForFunction(() => window.__awcLayout().cars[2].go === 0, null, { timeout: 8000 });
+    const a = (await page.evaluate(() => window.__awcLayout())).cars[2]; await page.waitForTimeout(600); const b = (await page.evaluate(() => window.__awcLayout())).cars[2];
+    assert.ok(a.y + 7 <= z.y, `stopped before the stripes (front ${a.y + 7}, crossing at ${z.y})`);
+    assert.ok(a.y + 7 >= z.y - 12, `stopped close to them (front ${a.y + 7})`);
+    assert.equal(b.y, a.y, 'and stays stopped');
+    await page.evaluate(() => window.__awcSim.put('ux_analyst', 160, 330));
+    await page.waitForFunction(y => window.__awcLayout().cars[2].y - 7 > y, z.y + z.h, { timeout: 8000 });
+  });
+  await check('1440px: no script errors (flows and cars)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+for (const name of ['iPhone 14', 'iPad Mini']) {
+  const { defaultBrowserType, ...device } = devices[name];
+  const { context, page, errors } = await cityWithFlow(device);
+  await check(`${name}: workers are drawn 1.25x, and a tap on the head of the bigger sprite still selects them`, async () => {
+    const s = await spriteScale(page);
+    assert.equal(s.scale, 1.25);
+    for (const r of s.ratio) assert.ok(Math.abs(r - 1.25) < 0.03, `box height ratio ${r}`);
+    const target = await page.evaluate(() => {
+      const c = document.getElementById('awcCanvas'), r = c.getBoundingClientRect(), dpr = window.LocalAIAgentWorld.camera().dpr;
+      for (const w of window.__awcLayout().workers) {
+        // just under the hat: above where the unscaled sprite's hit circle reached
+        const x = r.left + (w.box.x + w.box.w / 2) / dpr, y = r.top + (w.box.y + w.box.h * 0.15) / dpr;
+        if (document.elementFromPoint(x, y) === c) return { id: w.id, x, y };
+      }
+      return null;
+    });
+    assert.ok(target, 'a worker is on screen and uncovered');
+    await page.touchscreen.tap(target.x, target.y);
+    await page.waitForFunction(() => !!document.querySelector('#awcSelection strong'));
+    const want = await page.evaluate(w => window.LocalAIAgentWords.workerName(w), FLOW().workers.find(w => w.id === target.id));
+    assert.equal(await page.locator('#awcSelection strong').innerText(), want);
+  });
+  await check(`${name}: no script errors (worker scale)`, async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+
 // Live review (17 Oct): while a mission ran, the phone's collapsed sheet offered nothing, the header's hidden button
 // still said "Start a mission", the city called the team lead "Mission Router", and the worker card listed scores.
 const visiblePrimaries = page => page.evaluate(() => [...document.querySelectorAll('#agents .btn-primary')].filter(b => { const r = b.getBoundingClientRect(); return r.width > 2 && r.height > 2 && getComputedStyle(b).visibility !== 'hidden'; }).map(b => b.textContent.trim()));
