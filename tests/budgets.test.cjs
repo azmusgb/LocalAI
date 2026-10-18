@@ -33,7 +33,7 @@ const KB = 1024;
 // Make the full picture / Keep preview bar and its request logic (+1.4 KB; 249.0 KB measured, app.js 35.3 KB).
 // 2026-10-18: 250 → 253 KB for handing requests to change Local AI itself to Claude Code (self-change.js 1.8 KB: the
 // detector and the Hand to Claude suggestion on Home, Agent World and New idea; +0.3 KB elsewhere). main measured
-// 249.96 KB before it, 252.0 KB after.
+// 249.96 KB before it; 252.6 KB with it and main as of #307.
 const TOTAL = 253 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
@@ -43,7 +43,9 @@ const TOTAL = 253 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // the streets: 236.5 KB measured); the pass as a whole aims at no more than +6 KB.
 // 2026-10-18: 238 → 240 KB (and ui.js 93 → 95 KB) for its last part, district buildings and the ground: silhouettes
 // and props, shadows, lit windows, sidewalks, crossings, lamps, benches, trees (239.1 KB measured; +4 KB for the pass).
-const PER_FILE = { 'ui.js': 98 * KB, 'app.css': 41 * KB, 'app.js': 36 * KB, 'index.html': 13 * KB };
+// 2026-10-18: ui.js 98 → 99 KB for Agent World's start sheet offering Hand to Claude (+0.1 KB; main was 97.9 KB, this
+// measures 98.0 KB). The suggestion itself lives in self-change.js.
+const PER_FILE = { 'ui.js': 99 * KB, 'app.css': 41 * KB, 'app.js': 36 * KB, 'index.html': 13 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;

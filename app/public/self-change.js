@@ -27,6 +27,9 @@ function offer(box,{text,from,anywayLabel='Start a mission anyway',anyway,onHand
  other.onclick=()=>{hide(box);anyway?.()};
 }
 function hide(box){if(box){box.hidden=true;box.replaceChildren()}}
-const api={isSelfChange,offer,hide};
+// Keeps the suggestion in step with text being typed: shown while it is a change to Local AI itself, hidden otherwise.
+// After either button it stays hidden until the text changes again.
+function follow(box,text,opts){if(!box)return;const on=isSelfChange(text);if(on===!box.hidden)return;if(on)offer(box,opts);else hide(box)}
+const api={isSelfChange,offer,hide,follow};
 if(typeof module==='object'&&module.exports)module.exports=api;else root.LocalAISelfChange=api;
 })(typeof window!=='undefined'?window:globalThis);

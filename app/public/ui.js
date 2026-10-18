@@ -112,13 +112,9 @@ function openStart(){const d=$('awStart');if(!d||d.open)return;const o=document.
  window.LocalAIUI.showSheet(d,reopened=>{if(reopened)return;const back=()=>{if(o?.isConnected&&document.activeElement!==o)o.focus()};back();window.LocalAIUI.afterSheetPop(()=>{back();requestAnimationFrame(()=>requestAnimationFrame(back))})});
  $('agentGoal')?.focus();renderTeam()}
 function closeStart(){const d=$('awStart');if(d?.open)d.close()}
-// A goal that changes Local AI itself is better handed to Claude Code; the line says so as you type, and Start (or
-// Start a mission anyway) still starts the mission.
-let selfShown=false;
-function renderSelfChange(g){const SC=window.LocalAISelfChange,box=$('awSelfChange');if(!SC||!box)return;const on=SC.isSelfChange(g);if(on===selfShown)return;selfShown=on;
- if(!on){SC.hide(box);return}
- SC.offer(box,{text:()=>$('agentGoal')?.value.trim()||'',from:'agentWorld',anyway:()=>{selfShown=false;startMission()},onHanded:()=>{selfShown=false;const t=$('agentGoal');if(t)t.value='';renderTeam();closeStart()}})}
-function renderTeam(){const g=$('agentGoal')?.value.trim()||'',el=$('awTeam');renderSelfChange(g);if(!el)return;clearTimeout(teamTimer);if(!g){el.innerHTML='';teamFor='';return}if(g===teamFor)return;
+function renderTeam(){const g=$('agentGoal')?.value.trim()||'',el=$('awTeam');
+ // A change to Local AI itself offers Claude Code (self-change.js).
+ window.LocalAISelfChange?.follow($('awSelfChange'),g,{text:()=>$('agentGoal').value.trim(),from:'agentWorld',anyway:startMission,onHanded:()=>{$('agentGoal').value='';renderTeam();closeStart()}});if(!el)return;clearTimeout(teamTimer);if(!g){el.innerHTML='';teamFor='';return}if(g===teamFor)return;
  teamTimer=setTimeout(async()=>{let r;try{const body={goal:g},ids=manualIds();if(ids?.length)body.agentIds=ids;r=(await req('/api/agents/dispatch',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})).routing}catch{return}if(($('agentGoal')?.value.trim()||'')!==g)return;teamFor=g;renderRoute(r);
   const p=window.LocalAIAgentWords?.teamPreview(r?.workers||[]);if(!p?.text){el.innerHTML='';return}el.innerHTML='<span class="aw-team__label">Who’s on the team</span><span class="aw-team__faces">'+p.workers.map(w=>'<img class="awc__avatar" src="'+(window.LocalAIAgentWorld?.avatar?.(w)||'')+'" alt="" width="32" height="32">').join('')+'</span><p>'+esc(p.text)+'</p>'},450)}
 function setupStart(){const d=$('awStart');if(!d)return;$('awStartClose').onclick=closeStart;d.addEventListener('click',e=>{if(e.target===d)closeStart()});$('agentGoal')?.addEventListener('input',renderTeam);
