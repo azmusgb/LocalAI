@@ -64,6 +64,9 @@ services:
       # The display's read-only printer-status token (Local Portal › More › Read-only status access). Empty means no
       # printer line. A secret: it lives only in stack.env.
       LOCALAI_WORKSHOP_STATUS_TOKEN: ${LOCALAI_WORKSHOP_STATUS_TOKEN:-}
+      # The display's sign-in code token (Local Portal › More › Sign-in code access, wsc_…). Empty means no Show sign-in
+      # code button. A secret: it lives only in stack.env.
+      LOCALAI_WORKSHOP_CODE_TOKEN: ${LOCALAI_WORKSHOP_CODE_TOKEN:-}
       POWERSHELL_UI_TOKEN: ${POWERSHELL_UI_TOKEN:?set in stack.env}
       POWERSHELL_BRIDGE_TOKEN: ${POWERSHELL_BRIDGE_TOKEN:?set in stack.env}
     volumes:

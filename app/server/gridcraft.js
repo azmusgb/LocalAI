@@ -241,9 +241,25 @@ function createGridcraft(ctx) {
     if (urlObj.searchParams.get('part') === 'printer') return json(res, 200, { printer });
     const status = await workshop.workshopStatus();
     if (printer?.access === 'ok') status.signIn = true; // the token only exists on firmware that has the sign-in
-    json(res, 200, { ...status, printer });
+    // codeAccess: whether the card offers Show sign-in code (LOCALAI_WORKSHOP_CODE_TOKEN set); never the token itself.
+    json(res, 200, { ...status, printer, codeAccess: Boolean(status.portalUrl && workshop.codeToken()) });
   }
-  return { apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopStatus };
+  // Services › Workshop display › Show sign-in code: reads the display's current portal sign-in code with the code token,
+  // on demand, and hands it to this one answer only. POST (with the same-origin and JSON checks every mutating route has),
+  // so a prefetch, a link or another site can't fetch it, and no-store so no cache keeps it. Local AI has no sign-in of
+  // its own, so whoever can use Local AI can read the code: the owner's accepted trade-off (docs/SECURITY.md). The audit
+  // entry says a code was shown, never which one; nothing else is logged or stored.
+  async function apiWorkshopPortalCode(req, res) {
+    if (!sameOriginJson(req, res)) return;
+    try { await readBody(req, 1024); } catch { /* the body carries nothing; an oversized one is just ignored */ }
+    const send = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
+    const address = workshop.portalUrl();
+    const r = await workshop.readPortalCode({ url: address });
+    if (r.access !== 'ok') return send(r.access === 'not_set_up' ? 409 : r.access === 'busy' ? 503 : r.access === 'offline' ? 504 : 502, { reason: r.access, error: workshop.CODE_WORDS[r.access] });
+    recordActivity('workshop', 'Workshop sign-in code shown', 'Services › Workshop display');
+    send(200, { code: r.code, address });
+  }
+  return { apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopPortalCode, apiWorkshopStatus };
 }
 
 module.exports = { createGridcraft };

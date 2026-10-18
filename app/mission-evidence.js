@@ -22,7 +22,7 @@ const FEATURES = [
     sources: [{ path: 'app/public/spreadsheets.js' }, { path: 'docs/GRIDCRAFT.md' }, { path: SPECS + '2026-10-17-gridcraft-workbook-ux-design.md' }, { path: 'app/public/index.html', anchor: 'spreadsheets' },
       { path: 'app/server/gridcraft.js' }, { path: 'host/gridcraft-bridge.py' }, { path: 'host/gridcraft-agent/gridcraft_ai.py' }, { path: 'app/public/app.css', match: ['.sheets-', '#spreadsheets'] }] },
   { id: 'images', views: ['create'], names: ['image', 'images', 'picture', 'pictures', 'comfyui', 'artcraft', 'image generation'],
-    sources: [{ path: 'app/image-engines.js' }, { path: 'app/public/index.html', anchor: 'create' }, { path: 'docs/ARTCRAFT.md' }, { path: 'host/comfyui/README.md' }, { path: 'app/server.js', match: ['comfy', 'image'] }, { path: 'app/public/app.css', match: ['.img-'] }] },
+    sources: [{ path: 'app/image-engines.js' }, { path: 'app/public/index.html', anchor: 'create' }, { path: 'docs/ARTCRAFT.md' }, { path: 'host/comfyui/README.md' }, { path: 'app/server/images.js' }, { path: 'app/public/app.css', match: ['.img-'] }] },
   { id: 'health', views: ['status', 'models', 'integrations'], names: ['health', 'health check', 'services', 'models', 'integrations'],
     sources: [{ path: 'app/public/index.html', anchor: 'status' }, { path: 'app/glance.js' }, { path: 'app/server.js', match: ['capabilit', 'health'] }, { path: 'docs/OPERATIONS.md' }, { path: 'app/model-runtime.js' }] },
   { id: 'work', views: ['work', 'runs'], names: ['work page', 'work tab', 'run card', 'run cards'],
