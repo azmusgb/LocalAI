@@ -21,14 +21,14 @@ let seq = 0;
 const run = (n, prompt, text, o = {}) => ({
   id: o.id || `run-${NOW + n * 1000}-${++seq}`, type: o.type || 'chat', status: o.status || 'completed', progress: 100, threadId: o.threadId === undefined ? THREAD : o.threadId,
   title: prompt.slice(0, 40), createdAt: new Date(NOW + n * 1000).toISOString(), updatedAt: new Date(NOW + n * 1000).toISOString(),
-  input: { prompt, model: 'm' }, output: o.output || { text }, artifactIds: o.artifactIds || [],
+  input: { prompt, model: 'm' }, output: o.output || { text }, artifactIds: o.artifactIds || [], kept: o.kept ?? false,
   card: { kind: o.type || 'chat', icon: 'system', title: prompt, summary: text, badge: { label: 'Done', tone: 'good' }, preview: null, action: { label: 'Open' }, approval: null }
 });
 const three = () => [run(3, 'third question', 'third answer'), run(1, 'first question', 'first answer'), run(2, 'second question', 'second answer')];
 
 // db.runs: every ledger run the stub knows (a test can push into it); db.library: Library items.
-async function open(viewport, hash, { runs = [], library = [], storage = {}, stream = 'live' } = {}) {
-  const db = { runs, library };
+async function open(viewport, hash, { runs = [], library = [], answers = {}, storage = {}, stream = 'live' } = {}) {
+  const db = { runs, library, answers, keeps: [] };
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.devTools': '1', 'localai.firstRun.done': '1', ...storage });
   // /api/chat/stream is a controllable SSE stream: __reqs records each request body, __streams[i].push(event, data) / .close(), and an abort errors it.
@@ -56,6 +56,13 @@ async function open(viewport, hash, { runs = [], library = [], storage = {}, str
   await ctx.route(u => u.pathname === '/api/activity', r => json(r, { items: [] }));
   await page.route(u => u.pathname === '/api/capabilities', r => json(r, { services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' }));
   await page.route(u => u.pathname === '/api/library', r => json(r, { items: db.library, counts: {}, total: db.library.length }));
+  // Long answers kept whole by run id; ☆ Keep marks every run of the thread, like the server.
+  await page.route(u => u.pathname === '/api/runs/answers', r => json(r, { answers: Object.fromEntries(new URL(r.request().url()).searchParams.get('ids').split(',').filter(id => db.answers[id]).map(id => [id, db.answers[id]])) }));
+  await page.route(u => u.pathname === '/api/library/keep', r => {
+    const b = JSON.parse(r.request().postData()); db.keeps.push(b);
+    const t = db.runs.find(x => x.id === b.runId)?.threadId; db.runs.forEach(x => { if (x.id === b.runId || (t && x.threadId === t)) x.kept = b.kept; });
+    json(r, { ok: true, kept: b.kept, item: null });
+  });
   await page.route(u => u.pathname === '/api/runs', r => {
     const q = new URL(r.request().url()).searchParams, all = db.runs;
     if (q.get('id')) { const it = all.find(x => x.id === q.get('id')); return it ? json(r, { item: it }) : json(r, { error: 'Run not found' }, 404); }
@@ -146,11 +153,32 @@ await check('a thread with 3 runs renders 3 user and 3 assistant turns in order'
   await page.context().close();
 });
 
-await check('a truncated answer shows the full text from the Library', async () => {
-  const r = run(1, 'long one', '', { output: { truncated: true, preview: 'PREVIEW' }, artifactIds: ['art-1'] });
-  const page = await open(desk, '#home', { runs: [r], library: [{ id: 'other', data: { response: 'nope' } }, { id: 'art-1', data: { response: 'FULL LIBRARY ANSWER' } }] });
+await check('a truncated answer shows the full text kept with its run, kept or not', async () => {
+  const r = run(1, 'long one', '', { output: { truncated: true, preview: 'PREVIEW' } });
+  const page = await open(desk, '#home', { runs: [r], answers: { 'run-other': 'nope', [r.id]: 'FULL KEPT ANSWER' } });
   await page.evaluate(id => window.LocalAIRuns.show(id), r.id);
-  await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'FULL LIBRARY ANSWER' }).waitFor(T);
+  await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'FULL KEPT ANSWER' }).waitFor(T);
+  await page.context().close();
+});
+
+for (const [tag, vp] of [['390x844', phone], ['1280x860', desk]]) await check(`${tag}: ☆ Keep in the run view keeps the conversation, and a second tap takes it out of Library`, async () => {
+  const page = await open(vp, '#home', { runs: three() });
+  await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);
+  const keep = page.locator('#runKeepBtn');
+  await keep.waitFor(T);
+  assert.equal(await keep.innerText(), '☆ Keep'); assert.equal(await keep.getAttribute('aria-pressed'), 'false');
+  await keep.click();
+  await page.locator('#runKeepBtn[aria-pressed="true"]').waitFor(T);
+  assert.equal(await keep.innerText(), '★ Kept');
+  await page.waitForFunction(() => /Kept in your Library/.test(document.getElementById('runLiveRegion')?.textContent || ''), null, T);
+  await page.locator('#runKeepBtn').click();
+  await page.locator('#runKeepBtn[aria-pressed="false"]').waitFor(T);
+  assert.equal(await keep.innerText(), '☆ Keep');
+  assert.match(await page.locator('#runLiveRegion').textContent(), /still in Work/);
+  assert.deepEqual(page.db.keeps, [{ runId: page.db.runs[0].id, kept: true }, { runId: page.db.runs[0].id, kept: false }]);
+  const box = await keep.boundingBox();
+  assert.ok(box.height >= (vp === phone ? 44 : 32), `Keep is a real tap target (${box.height}px)`);
+  assert.deepEqual(page.errors, []);
   await page.context().close();
 });
 

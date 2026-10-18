@@ -66,6 +66,10 @@ Tap a row to open it. A chat opens as the conversation, with a reply box at the 
 watch it live and cancel it; a failed run offers **Retry**. A run's header names its kind, and the project once you
 file it there (**Details › File…**).
 
+Chats and research stay here, in Work, and nowhere else unless you keep them. To keep one in your **Library**, tap
+**☆ Keep** in the open chat, or the ☆ on its row in Work; it turns to ★ **Kept**, and the whole conversation is one
+Library item that later replies update. Tap it again to take it out of Library; it stays in Work.
+
 **Missions** is the history of every mission, however you started it, each listed once; tap one to open it in Agent
 World.
 
@@ -76,9 +80,15 @@ The Projects tab opens on your projects. Its tabs:
 - **Projects:** group related work, each with its own sources and memory.
 - **Sources:** files and notes the assistant can search when it answers.
 - **Memory:** facts the assistant keeps about each project.
-- **Library**: your conversations and research as a list, newest first, and your
-  images as pictures after them. Filter by kind, or show only what you **pinned**. ☆ pins an item; × deletes it.
-  Work is everything you did; this is what you kept. Old Library links open this tab.
+- **Library**: what you kept. Chats and research arrive only when you tap **☆ Keep** on them (in the open chat or
+  on their row in Work); images you make arrive by themselves. Conversations and research are a list, newest first,
+  and images are pictures after them. Filter by kind, or show only what you **pinned**. ☆ pins an item. × takes a
+  chat out of Library (it stays in Work) and deletes an image. Work is everything you did; this is what you kept.
+  Old Library links open this tab.
+
+  Before 18 October every chat landed in Library by itself. The chats you had not pinned or filed in a project were
+  moved out once, on the first start after the update (the Audit log says how many); they are all still in Work,
+  and you can keep any of them again.
 
 ## Improve: change Local AI itself
 

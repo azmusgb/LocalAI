@@ -24,6 +24,7 @@ const item = (kind, title, ageMs, o = {}) => {
   const n = ++seq, status = o.status || 'completed';
   return {
     id: o.id || `run-${NOW - ageMs}-${n}`, type: kind, status, progress: o.progress ?? (status === 'running' ? 20 : 100), threadId: o.threadId || undefined,
+    kept: o.kept ?? (kind === 'chat' || kind === 'research' ? false : undefined),   // the server marks chats and research (☆ Keep)
     createdAt: new Date(NOW - ageMs).toISOString(), updatedAt: new Date(NOW - ageMs).toISOString(),
     card: { kind, icon: 'system', title, summary: o.summary || '', badge: { label: status === 'running' ? 'Working' : 'Done', tone: status === 'running' ? 'accent' : 'good' }, preview: null, action: { label: 'Open' }, approval: null }
   };
@@ -266,7 +267,7 @@ await check('the whole row opens the run: no per-row Open button, Review and Ret
   await page.waitForSelector('#work .run-card', T);
   assert.equal(await page.locator('#work .run-card__action').filter({ hasText: /^Open$/ }).count(), 0);
   assert.deepEqual(await page.locator('#work .work-secondary').allInnerTexts(), ['Review', 'Retry']);
-  const name = page.getByRole('button', { name: 'Plain chat' });
+  const name = page.getByRole('button', { name: 'Plain chat', exact: true });   // its ☆ is "Keep Plain chat"
   assert.equal(await name.count(), 1, 'the row has one button named by its title');
   const row = page.locator(`#work [data-run-id="${plain.id}"]`), box = await row.boundingBox();
   await page.mouse.click(box.x + box.width - 140, box.y + box.height / 2); // empty space inside the row, away from the title text
@@ -362,6 +363,28 @@ for (const viewport of [phone, desk]) {
     await page.context().close();
   });
 }
+
+await check('☆ Keep on a chat row keeps it in Library and a second tap takes it out; the row stays and does not open', async () => {
+  const chat = item('chat', 'Plan the garden', 5 * 60e3, { summary: 'Raised beds' }), img = item('image', 'A red fox at dusk', 2 * HOUR);
+  const page = await open(desk, '#work', async () => [chat, img]);
+  const posts = [];
+  await page.route(u => u.pathname === '/api/library/keep', r => { const b = JSON.parse(r.request().postData()); posts.push(b); r.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, kept: b.kept, item: null }) }); });
+  const star = page.locator(`[data-run-id="${chat.id}"] .work-keep`);
+  await star.waitFor(T);
+  assert.equal(await page.locator(`[data-run-id="${img.id}"] .work-keep`).count(), 0, 'images are kept by themselves');
+  assert.equal(await star.getAttribute('aria-pressed'), 'false');
+  assert.equal(await star.getAttribute('aria-label'), 'Keep Plan the garden');
+  assert.equal(await star.innerText(), '☆');
+  await star.click();
+  await page.waitForFunction(id => document.querySelector(`[data-run-id="${id}"] .work-keep`)?.getAttribute('aria-pressed') === 'true', chat.id, T);
+  assert.equal(await star.innerText(), '★');
+  assert.ok(!/^#run\//.test(await page.evaluate(() => location.hash)), 'the tap did not open the run');
+  await star.click();
+  await page.waitForFunction(id => document.querySelector(`[data-run-id="${id}"] .work-keep`)?.getAttribute('aria-pressed') === 'false', chat.id, T);
+  assert.deepEqual(posts, [{ runId: chat.id, kept: true }, { runId: chat.id, kept: false }]);
+  assert.equal(await page.locator(`#work [data-run-id="${chat.id}"]`).count(), 1, 'un-keep leaves the row in Work');
+  await page.context().close();
+});
 
 await check('axe: Work passes color-contrast and target-size at 390x844', async () => {
   const page = await open(phone, '#work', async () => [...mixed(), item('agent', 'Sorting the archive', 60e3, { status: 'running' })]);

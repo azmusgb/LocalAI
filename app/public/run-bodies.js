@@ -74,7 +74,7 @@
       const prompt = r.input?.prompt || r.title || '';
       let answer = '', kind = '', lost = false;
       const o = r.output, lv = live && live.runId === r.id ? live : null;
-      if (o && o.truncated) { answer = c.lib.get(r.id) || c.lib.get(r.artifactIds?.[0]) || previewText(o.preview); if (!answer) { answer = 'This answer was too long to keep here.'; lost = true; } }
+      if (o && o.truncated) { answer = c.lib.get(r.id) || previewText(o.preview); if (!answer) { answer = 'This answer was too long to keep here.'; lost = true; } }
       else answer = typeof o === 'string' ? o : o?.text || '';
       if (!answer && lv) answer = lv.text;
       if (r.status === 'failed' && !answer) { answer = r.error || 'This answer could not be written.'; kind = 'error'; }
@@ -135,11 +135,11 @@
     try {
       const j = await RB.json(`/api/runs?threadId=${encodeURIComponent(c.threadId)}&limit=500`);
       c.runs = (Array.isArray(j.items) ? j.items : []).filter(r => r && r.id);
-      const need = c.runs.filter(r => r.output?.truncated && r.artifactIds?.[0] && !c.lib.has(r.artifactIds[0]) && !c.libTried.has(r.artifactIds[0]));
+      const need = c.runs.filter(r => r.output?.truncated && !c.lib.has(r.id) && !c.libTried.has(r.id));
       if (need.length) {
-        need.forEach(r => c.libTried.add(r.artifactIds[0]));
-        // One Library item per conversation: each turn's full answer is filed under its run id.
-        try { const lib = await RB.json('/api/library'); for (const it of lib.items || []) { const text = it?.data?.response ?? it?.response; if (it?.id && typeof text === 'string') c.lib.set(it.id, text); for (const [runId, t] of Object.entries(it?.data?.turns || {})) if (typeof t === 'string') c.lib.set(runId, t); } } catch {}
+        need.forEach(r => c.libTried.add(r.id));
+        // An answer too long for the run is kept whole on the server (with the run, and in Library once kept), by run id.
+        try { const j = await RB.json('/api/runs/answers?ids=' + need.slice(0, 100).map(r => encodeURIComponent(r.id)).join(',')); for (const [runId, t] of Object.entries(j.answers || {})) if (typeof t === 'string') c.lib.set(runId, t); } catch {}
       }
       // A finished stream hands over to the ledger once the ledger has the run.
       if (c.live && !c.live.streaming && c.live.runId && c.runs.some(r => r.id === c.live.runId && r.output)) c.live = null;

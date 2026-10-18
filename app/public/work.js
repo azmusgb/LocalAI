@@ -15,7 +15,7 @@ function groupOf(it){
  const n=Math.round((d(new Date())-d(t))/864e5);
  return n<=0?0:n===1?1:n<7?2:3;
 }
-const sig=it=>[it.id,it.status,it.progress,it.updatedAt,it.turns,it.card?.title,it.card?.summary,it.card?.badge?.label].join('|');
+const sig=it=>[it.id,it.status,it.progress,it.updatedAt,it.turns,it.kept,it.card?.title,it.card?.summary,it.card?.badge?.label].join('|');
 // The server sends one row per thread (its latest run, with `turns`), so each thread lives on exactly one page.
 // `window` (a refresh of the newest page) also drops what that page no longer holds: runs deleted or filed away.
 function merge(list,{older=false,window=false}={}){
@@ -35,8 +35,26 @@ function rowFor(it){
  const row=window.LocalAIUI.runCard({...it,card:c},{onOpen:openRun,rowOpen:true});
  const act=row.querySelector('.run-card__action');
  if(act){if(/^(Review|Retry)$/i.test(act.textContent.trim()))act.className='btn-outline work-secondary';else act.remove()}
+ if(typeof it.kept==='boolean')row.querySelector('.list-row__trail')?.appendChild(keepButton(it));
  return row;
 }
+// ☆ Keep on a chat or research row: Library holds only what you keep. Un-keep takes it out of Library; the row stays.
+function keepButton(it){
+ const b=document.createElement('button'),name=it.card?.title||it.title||'this chat';b.type='button';b.className='icon-btn work-keep';
+ b.textContent=it.kept?'★':'☆';b.setAttribute('aria-pressed',String(it.kept));b.setAttribute('aria-label',it.kept?`Kept in Library: ${name}`:`Keep ${name}`);
+ b.title=it.kept?'Kept in Library. Tap to take it out; it stays in Work.':'Keep in Library';
+ b.addEventListener('click',async e=>{
+  e.stopPropagation();b.disabled=true;const kept=!it.kept;
+  try{
+   const r=await fetch('/api/library/keep',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:it.id,kept})});
+   if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'HTTP '+r.status);
+   setKept(it.threadId||it.id,kept);
+   window.LocalAIUI?.toast?.(kept?'Kept in Library':"Taken out of Library. It's still in Work.");
+  }catch(err){b.disabled=false;window.LocalAIUI?.toast?.(`Couldn't ${kept?'keep':'un-keep'} it. ${err.message||err}`)}
+ });
+ return b;
+}
+function setKept(k,kept){const it=st.threads.get(k);if(!it)return;st.threads.set(k,{...it,kept});st.items=[...st.threads.values()].sort(newest);if(st.loaded)paint()}
 const text=it=>`${it.card?.title||''} ${it.card?.summary||''}`.toLowerCase();
 const visible=()=>{const q=st.query.trim().toLowerCase();return st.items.filter(it=>!q||text(it).includes(q))};
 function paint(){
@@ -131,6 +149,7 @@ function init(){
  // #agents while Work is already open, or Back to another #work?kind=…: the router has settled the hash by the next turn.
  window.addEventListener('hashchange',()=>setTimeout(()=>{const k=active()&&fromHash();if(k&&k!==st.kind)setKind(k,{mirror:false})},0));
  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&active()&&st.loaded)refresh().then(schedule)});
+ window.addEventListener('localai:kept',e=>setKept(e.detail?.threadId||e.detail?.runId,!!e.detail?.kept)); // ☆ Keep in the run view
  window.LocalAIUI.pullToRefresh?.('work',()=>st.loaded?refresh():first()); // a pull down from the top (components.js)
  if(was)activate();
 }
