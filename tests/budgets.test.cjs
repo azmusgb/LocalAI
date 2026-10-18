@@ -39,7 +39,9 @@ const KB = 1024;
 // 249.96 KB before it; about 254.6 KB with it and #308.
 // 2026-10-18: 256 → 257 KB for the Workshop display's sign-in words and printer status (card wording from the
 // display's real answer, its printer line, the jump to the card, Home's printer line: ui.js +0.6 KB, home.js +0.6 KB; 255.9 KB measured with #309).
-const TOTAL = 257 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// 2026-10-18: 257 → 260 KB: the merge of #311 (delete with Undo, +1.85 KB) kept main's 257 and dropped its own raise and
+// the components.js limit; 258.7 KB measured with #313's worker routes.
+const TOTAL = 260 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
 // tab rows (234.9 KB measured).
@@ -52,7 +54,7 @@ const TOTAL = 257 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // measures 98.0 KB). The suggestion itself lives in self-change.js.
 // 2026-10-18: ui.js 99 → 100 KB for Agent World workers walking out of their door and along the streets with square
 // turns (routeToTarget and its street legs, +0.8 KB); with the Workshop printer line (#312) ui.js measures 99.5 KB.
-const PER_FILE = { 'ui.js': 100 * KB, 'app.css': 41 * KB, 'app.js': 36 * KB, 'index.html': 13 * KB };
+const PER_FILE = { 'ui.js': 100 * KB, 'components.js': 11 * KB, 'app.css': 41 * KB, 'app.js': 36 * KB, 'index.html': 13 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
