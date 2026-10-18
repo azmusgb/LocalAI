@@ -291,12 +291,15 @@ after A, B, D.
 
 Checked on 18 Oct (critique §5).
 
-- [ ] Every page passes A5's copy lint; the user guide's glossary matches the UI word for word.
-  The glossary half is true (`copy-lint.test.cjs` checks it). The lint half is not: 12 banned words remain under the
-  ratchet (index.html 3, Missions' "Direct execution" routing options; app.js 3, "workspace patch" in change
-  approvals; ui.js 5, Missions' "Capability fit" and "Mission artifacts are ready" plus three in the Models
-  page's template, one of them the developer-only "Runtime detail" tile; view-registry.js 1, the ⌘K alias "change
-  requests"). Small, but it is §3.5 (M) work, outside this close-out.
+- [x] Every page passes A5's copy lint; the user guide's glossary matches the UI word for word.
+  The glossary half is checked by `copy-lint.test.cjs`. The lint half: every owner file's ceiling is 0. The last
+  12 were reworded in the glossary's words: Missions' "Direct execution" headings are "Direct runs", "Direct
+  specialist run" and "General agent run"; "Workspace patch applied" is "Change applied" (and its confirm says "your files", not "the workspace"); "Run N
+  workspace operation(s)?" is "Run N operation(s) on this computer?"; the developer-only
+  "Capability fit" is "Skill fit"; "Mission artifacts are ready" is "Mission results are ready"; the Models page
+  says "Loading models…", explains loading in plain words and calls its developer tile "Loaded list". The ⌘K alias
+  "change requests" stays: an `aka` list is never shown, it is the old names a page is still found by, so the lint
+  skips it.
 - [x] The four accessibility journeys (G5) and the keyboard-composer check (C1) pass in CI (`a11y-nav-ui` journeys
   ask/act/approve/⌘K, `home-ui` keyboard check; both green in this PR's browser run).
 - [ ] The owner has confirmed the composer on the iPhone. **Needs the owner** (#217's on-device checklist).

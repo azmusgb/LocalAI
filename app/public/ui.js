@@ -52,7 +52,7 @@ function renderInspector(){const el=$('agentInspector'),A=window.LocalAIAgentWor
  el.innerHTML=`<div class="aw-worker__head"><img class="awc__avatar" src="${window.LocalAIAgentWorld?.avatar?.(w)||''}" alt="" width="48" height="48"><div><h2 id="awWorkerName">${esc(A.workerName(w))}</h2><p>${esc(A.workerRole(w))}</p></div><span class="badge badge--${b.tone}">${esc(b.label)}</span><button type="button" class="aw-worker__close" id="awWorkerClose" aria-label="Close ${esc(A.workerName(w))}">×</button></div>
  <p class="aw-worker__now${bad?' is-bad':''}">${esc(A.workerStep(w,m))}</p>${bad?`<div class="aw-worker__fix"><span>${w.state==='error'?'Trying again runs the mission again from the start.':'It starts when the workers before it finish.'}</span>${w.state==='error'?'<button type="button" class="btn-primary" id="agentRetryBtn">Try again</button>':''}</div>`:''}
  ${out?`<details class="aw-worker__out"${out.length<600?' open':''}><summary>What ${esc(A.workerName(w))} found${src?` · ${src} source${src===1?'':'s'}`:''}</summary><div class="aw-worker__text">${esc(out)}</div></details>`:''}
- <dl class="aw-worker__dev" data-dev-only><dt>Model</dt><dd>${esc(w.model||r?.model||'Automatic')}</dd><dt>Capability fit</dt><dd>${rm.capabilityScore??'—'}%</dd><dt>Model fit</dt><dd>${rm.modelScore??'—'}%</dd><dt>Grounding</dt><dd>${rm.groundingRequired===false?'Not required':'Required'}</dd><dt>Fallback</dt><dd>${esc(rm.retryPolicy?.fallbackAgentId||'None')}</dd>${w.reason?`<dt>Assignment rationale</dt><dd>${esc(w.reason)}</dd>`:''}</dl>`;
+ <dl class="aw-worker__dev" data-dev-only><dt>Model</dt><dd>${esc(w.model||r?.model||'Automatic')}</dd><dt>Skill fit</dt><dd>${rm.capabilityScore??'—'}%</dd><dt>Model fit</dt><dd>${rm.modelScore??'—'}%</dd><dt>Grounding</dt><dd>${rm.groundingRequired===false?'Not required':'Required'}</dd><dt>Fallback</dt><dd>${esc(rm.retryPolicy?.fallbackAgentId||'None')}</dd>${w.reason?`<dt>Assignment rationale</dt><dd>${esc(w.reason)}</dd>`:''}</dl>`;
  $('awWorkerClose').onclick=()=>{activeInspectorId='';renderInspector();refocusCrew(w.id)};const t=$('agentRetryBtn');if(t)t.onclick=retryMission}
 function refocusCrew(id){window.LocalAIUI?.refocus?.(id,{within:'#awcRoster',key:'awcRoster',control:':scope'})||document.querySelector(`#awcRoster [data-awc-roster="${CSS.escape(id)}"]`)?.focus()}
 function missionSummary(m){const done=(m.workers||[]).filter(w=>w.state==='complete').length,total=(m.workers||[]).length;return {done,total,percent:total?Math.round(done/total*100):0}}
@@ -336,8 +336,8 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
           <div class="section-head">
             <div><h2>Installed models</h2><p>Loaded now shows what is in memory. Idle models unload on their own.</p></div>
           </div>
-          <div id="modelRuntimeList" class="model-runtime-list"><div class="empty-state">Loading model runtime…</div></div>
-          <div id="modelRuntimeNote" class="model-runtime-note">Model residency is runtime state, not an availability requirement.</div>
+          <div id="modelRuntimeList" class="model-runtime-list"><div class="empty-state">Loading models…</div></div>
+          <div id="modelRuntimeNote" class="model-runtime-note">A model doesn’t need to be loaded to be used: Ollama loads it when asked.</div>
         </div>`;
       main.appendChild(section);
       section.querySelector('#modelRuntimeRefresh')?.addEventListener('click', refreshModelsSurface);
@@ -623,7 +623,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       <div class="model-runtime-metric"><strong title="${esc(configured)}">${esc(configured)}</strong><span>Configured default</span></div>
       <div class="model-runtime-metric"><strong>${Number(models?.installedCount ?? installed.length)}</strong><span>Installed</span></div>
       <div class="model-runtime-metric"><strong>${Number(models?.loadedCount ?? loaded.length)}</strong><span>Loaded now</span></div>
-      <div class="model-runtime-metric" data-dev-only><strong>${runtimeLabel}</strong><span>Runtime detail</span></div>`;
+      <div class="model-runtime-metric" data-dev-only><strong>${runtimeLabel}</strong><span>Loaded list</span></div>`;
 
     if (models?.available === false) {
       list.innerHTML = `<div class="model-runtime-note model-runtime-error"><strong>Model list unavailable</strong><div style="margin-top:4px">${esc(models.runtimeError || 'Could not read the list of models from Ollama.')}</div></div>`;
@@ -1091,7 +1091,7 @@ const DEMO_STAGES=[
  {label:'UX analysis',detail:'UX Analyst is working in the Interface Lab',states:{router:'complete',ux_analyst:'running',documentation:'pending',synthesis:'pending'}},
  {label:'Documentation',detail:'Findings are handed to Documentation',states:{router:'complete',ux_analyst:'complete',documentation:'running',synthesis:'pending'}},
  {label:'Synthesis',detail:'Coordinator is assembling the final mission result',states:{router:'complete',ux_analyst:'complete',documentation:'complete',synthesis:'running'}},
- {label:'Complete',detail:'Mission artifacts are ready',states:{router:'complete',ux_analyst:'complete',documentation:'complete',synthesis:'complete'}}
+ {label:'Complete',detail:'Mission results are ready',states:{router:'complete',ux_analyst:'complete',documentation:'complete',synthesis:'complete'}}
 ];
 
 let root,canvas,ctx,current=null,liveSnapshot=null,sourceType='idle',selected=null,hovered=null,raf=0,last=0;

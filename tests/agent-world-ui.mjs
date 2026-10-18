@@ -596,7 +596,7 @@ const panCity = async page => {
     await page.locator('#awcRoster [data-awc-roster="router"]').click();
     const card = page.locator('#agentInspector');
     await card.waitFor({ state: 'visible' });
-    assert.doesNotMatch(await card.innerText(), /Capability fit|Model fit|Grounding|Fallback|Assignment rationale|Model\b/);
+    assert.doesNotMatch(await card.innerText(), /Skill fit|Model fit|Grounding|Fallback|Assignment rationale|Model\b/);
     assert.match(await card.innerText(), /Team lead/);
   });
   await check('1440px: no script errors (live review)', async () => assert.deepEqual(errors, []));

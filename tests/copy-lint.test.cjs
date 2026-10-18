@@ -1,8 +1,8 @@
 'use strict';
 // Copy lint (plan A5): words the owner shouldn't meet on an owner page. Counts banned words in what the app shows:
 // index.html's text, placeholders, titles and aria-labels outside developer-only pages, and the prose string
-// literals of the scripts that render owner pages. Each count may only go down: the ceilings below are what was
-// there when this test was written. When you remove some, lower the ceiling to the new count in the same PR.
+// literals of the scripts that render owner pages. Every owner page is at 0 now; keep it there.
+// A file's ceiling may only go down: a new banned word is reworded in the glossary's words, not allowed through.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -21,14 +21,14 @@ const BANNED = new RegExp(String.raw`\b(capabilit(?:y|ies)|runtimes?|orchestrati
 const DEV = new Set([...VIEWS.filter(v => v.domain === 'improve').map(v => v.id), 'workbench', 'repoTools', 'powershell', 'actions']);
 
 const CEILING = {
-  'index.html': 3,
-  'app.js': 3,
-  'ui.js': 5,
+  'index.html': 0,
+  'app.js': 0,
+  'ui.js': 0,
   'home.js': 0,
   'work.js': 0,
   'components.js': 0,
   'run-bodies.js': 0,
-  'view-registry.js': 1,
+  'view-registry.js': 0,
   'offline-copy.js': 0
 };
 
@@ -52,9 +52,11 @@ function htmlStrings(html) {
 }
 
 // Prose literals in a script: quoted or template strings with a space in them, markup and ${…} removed. Paths,
-// ids, class names and keys have no spaces, so they are left out.
+// ids, class names and keys have no spaces, so they are left out. A view's `aka` list is never shown: it holds the
+// old names ⌘K still finds a page by, so retired words belong there.
 function scriptStrings(src) {
   const out = [];
+  src = src.replace(/\baka:\s*\[[^\]]*\]/g, ' ');
   for (const m of src.matchAll(/'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"|`((?:[^`\\]|\\.)*)`/g)) {
     let s = m[1] ?? m[2] ?? m[3] ?? '';
     s = s.replace(/\$\{[^}]*\}/g, ' ').replace(/<[^>]*>/g, ' ').replace(/\b[\w-]+="[^"]*"/g, ' ');
@@ -82,7 +84,7 @@ for (const [file, ceiling] of Object.entries(CEILING)) {
 test('copy lint sees banned words where they are, and skips developer pages, markup and paths', () => {
   const html = '<section id="home" class="view"><p>Open your workspace</p><input placeholder="Runtime"></section><section id="powershell"><p>workspace</p></section><section id="x" data-dev><p>artifact</p></section>';
   assert.equal(htmlStrings(html).join('|').match(BANNED).length, 2);
-  const js = "const a='/api/workspace',b='workspaceRoot',c=`<div class=\"artifact-card\">${x}</div>`,d='Saved to your workspace library';";
+  const js = "const a='/api/workspace',b='workspaceRoot',c=`<div class=\"artifact-card\">${x}</div>`,d='Saved to your workspace library',e={aka:['change requests','old workspace']};";
   assert.deepEqual(scriptStrings(js).join('|').match(BANNED), ['workspace']);
 });
 
