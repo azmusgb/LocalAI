@@ -512,6 +512,11 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
     }
     assert.ok(most >= 3, `the working workers and the selected one show bubbles (${most})`);
   });
+  await check('1440px: the ground has lamp posts and trees in three shapes and two sizes', async () => {
+    const l = await page.evaluate(() => window.__awcLayout());
+    assert.deepEqual([...new Set(l.trees)].sort(), ['0L', '0S', '1L', '1S', '2L', '2S']);
+    assert.ok(l.lamps >= 10, `${l.lamps} lamp posts`);
+  });
   await check('1440px: no script errors (signs)', async () => assert.deepEqual(errors, []));
   await context.close();
 }

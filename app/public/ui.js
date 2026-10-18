@@ -1344,7 +1344,7 @@ function mount(){
  window.LocalAIAgentWorld={camera:()=>({zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,shown:{zoom:view.zoom,panX:view.panX,panY:view.panY},...cam}),avatar,following:()=>display.follow,follow:on=>toggleFollow(on),demo:()=>{startDemo();syncDemoControls()},demoStep:()=>stepDemo(),busy:()=>demo.active||replay.active,display:()=>({...display}),view:k=>k==='speed'?cycleReplaySpeed():k==='theater'?toggleExpanded():k==='fit'?(userCamera(),fitWorld()):toggleDisplay(k),walking:()=>[...agents.values()].filter(workerIsMoving).length,names:()=>[...agents.values()].map(a=>a.name),
   moments:()=>({flags:[...agents.values()].filter(a=>a.state==='complete').map(a=>a.id),warnings:[...agents.values()].filter(a=>a.state==='error'||a.state==='blocked').map(a=>a.id),fireworks:celebrationUntil>now()})};
  try{if(localStorage.getItem('localai.debug')==='1')window.__awcLayout=layout}catch{}
- document.body.classList.add('agent-world-city-ready');buildRoads();seedAmbient();syncDemoControls();syncHud();syncEventFeed();resize();start();bootstrap()
+ document.body.classList.add('agent-world-city-ready');buildRoads();plantScenery();seedAmbient();syncDemoControls();syncHud();syncEventFeed();resize();start();bootstrap()
 }
 const IDLE=[['router','Team lead'],['ux_analyst','UX Analyst'],['documentation','Documentation Agent'],['research_agent','Research Agent'],['engineer','Engineer']];
 function idleCrew(){if(current||agents.size)return;for(const[id,name]of IDLE)ensureAgent({id,name,state:'pending'})}
@@ -1378,58 +1378,83 @@ function pathPoly(points,fill){ctx.fillStyle=fill;ctx.beginPath();ctx.moveTo(poi
 // stays crisp at any zoom and only a handful of font strings are ever parsed.
 let fk=1;const fonts={},font=n=>fonts[n]||(fonts[n]='800 '+n+'px ui-monospace,monospace');
 function txt(t,x,y,c='#d9e7f4',size=11,align='center'){ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle=c;ctx.font=font(Math.max(1,Math.round(size*fk)));ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillText(t,Math.round(cam.dpr*view.panX+x*fk),Math.round(cam.dpr*view.panY+y*fk));ctx.restore()}
-const TREES=[[2,2],[3,3],[37,3],[38,4],[2,22],[38,22],[9,2],[30,2],[9,25],[30,25],[11,6],[28,6],[11,20],[28,20]];
-// The static ground is cached at 1× or 2× the world's size (2× once the city is drawn bigger than 1.2 device pixels
-// per world pixel) and copied each frame: nearest-neighbour when enlarged, so the pixel art stays crisp.
+// ---- Ground ----------------------------------------------------------------------------------------------------
+// Everything that doesn't move is drawn once into groundCache (per scale and day/night): grass, water, streets with
+// sidewalks and zebra crossings, lamp posts (lit at night), benches and planters. Only the trees are drawn each frame,
+// one sprite each, so they can sway. Light comes from the top left, so shadows fall down and to the right.
+const inDistrict=(x,y,m=0)=>Object.values(DISTRICTS).some(d=>x>=d.x-m&&x<d.x+d.w+m&&y>=d.y-m&&y<d.y+d.h+m);
+const wh=(a,b,c=0)=>((a*73856093)^(b*19349663)^(c*83492791))>>>0;
+let trees=[],lamps=[];
+function plantScenery(){
+ trees=[];lamps=[];
+ for(let y=3;y<ROWS;y++)for(let x=1;x<COLS-1;x++){
+  if(roads.has(key(x,y))||inDistrict(x,y,1))continue;const h=wh(x,y,7)%100,near=[[1,0],[-1,0],[0,1],[0,-1]].some(([a,b])=>roads.has(key(x+a,y+b)));
+  if(h<(near?12:46))trees.push([(x+.5)*T+(h%7)*2-6,(y+.5)*T+(h%5)*2-4,h%3,h<20])
+ }
+ roads.forEach(k=>{const[x,y]=k.split(',').map(Number);if((x+y)%5)return;for(const[a,b]of[[0,-1],[-1,0]])if(!roads.has(key(x+a,y+b))&&!inDistrict(x+a,y+b)){lamps.push(a?[x*T-4,(y+.5)*T]:[(x+.5)*T,y*T-4]);break}})
+}
+// The ground is cached at 1× or 2× the world's size (2× once the city is drawn bigger than 1.2 device pixels per world
+// pixel) and copied each frame: nearest-neighbour when enlarged, so the pixel art stays crisp.
 function drawGround(ts){
  const q=sc(view.zoom)*cam.dpr>1.2?2:1,k=q+(display.night?'n':'d');
  if(groundKey!==k){const c=groundCache||document.createElement('canvas'),g=(c.width=W*q,c.height=H*q,c.getContext('2d'));if(g){const prev=ctx;ctx=g;ctx.setTransform(q,0,0,q,0,0);drawGroundStatic();ctx=prev;groundCache=c;groundKey=k}}
  if(groundKey===k){ctx.imageSmoothingEnabled=sc(view.zoom)*cam.dpr<q;ctx.drawImage(groundCache,0,0,W,H);ctx.imageSmoothingEnabled=false}else drawGroundStatic();
- for(const[x,y]of TREES)drawTree(x*T+T/2,y*T+T/2,ts)
+ for(const[x,y,s,b]of trees)drawTree(x,y,ts,s,b)
 }
 function drawGroundStatic(){
- px(0,0,W,H,display.night?'#07121b':'#0d2220');
- for(let y=0;y<H;y+=T)for(let x=0;x<W;x+=T){const n=((x/T*13+y/T*7)%11);px(x,y,T,T,display.night?(n<4?'#0b211f':'#0e2822'):(n<3?'#17382b':n<7?'#1a422f':'#1d4933'));if(n===0){px(x+6,y+8,3,3,'#2d6548');px(x+22,y+20,2,2,'#2a5c43')}}
+ const N=display.night,G=N?['#0b1e1c','#0c221f','#0e2622']:['#19402d','#1b4530','#1e4b34'];
+ // grass: broad soft patches and a few tufts
+ for(let y=0;y<H;y+=T)for(let x=0;x<W;x+=T){const n=Math.sin(x*.009+y*.004)+Math.sin(y*.012-x*.003),h=wh(x,y);px(x,y,T,T,G[n<-.5?0:n<.6?1:2]);if(h%13===0){px(x+8+h%14,y+10+h%11,2,4,N?'#17382c':'#2b6847');px(x+11+h%14,y+12+h%11,2,2,N?'#17382c':'#2b6847')}}
  // water / edge
- pathPoly([[0,0],[W,0],[W,56],[1010,74],[820,48],[620,65],[420,45],[180,70],[0,52]],display.night?'#071a27':'#143a4c');
- ctx.strokeStyle=display.night?'#0c3248':'#23627e';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,52);ctx.bezierCurveTo(260,78,420,37,640,60);ctx.bezierCurveTo(860,82,1020,45,W,58);ctx.stroke();
- // roads
- roads.forEach(k=>{const[x,y]=k.split(',').map(Number);px(x*T,y*T,T,T,display.night?'#1b2530':'#2b343f');px(x*T+2,y*T+2,T-4,T-4,display.night?'#232f3b':'#35414d')});
- for(let x=0;x<COLS;x++){if(roads.has(key(x,13)))px(x*T+8,13*T+15,16,2,'#d6ab52');if(roads.has(key(x,14)))px(x*T+8,14*T+15,16,2,'#d6ab52')}
- for(let y=0;y<ROWS;y++){if(roads.has(key(13,y)))px(13*T+15,y*T+8,2,16,'#d6ab52');if(roads.has(key(25,y)))px(25*T+15,y*T+8,2,16,'#d6ab52')}
- // crosswalks
- for(const [tx,ty,vert] of [[13,9,false],[25,9,false],[13,23,false],[25,23,false],[13,13,true],[25,13,true]])for(let i=0;i<5;i++)px(tx*T+(vert?8+i*4:5+i*5),ty*T+(vert?5+i*5:8),vert?2:3,vert?3:2,'#98a3ab');
- // plaza + paths
- px(16*T,11*T,9*T,5*T,display.night?'#3f443f':'#746f59');for(let i=0;i<18;i++)px(16*T+(i%6)*T/1.5+9,11*T+Math.floor(i/6)*T/1.5+10,4,4,display.night?'#545a54':'#999078');
+ pathPoly([[0,0],[W,0],[W,56],[1010,74],[820,48],[620,65],[420,45],[180,70],[0,52]],N?'#071a27':'#143a4c');
+ ctx.strokeStyle=N?'#0c3248':'#23627e';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,52);ctx.bezierCurveTo(260,78,420,37,640,60);ctx.bezierCurveTo(860,82,1020,45,W,58);ctx.stroke();
+ // streets, with a sidewalk and kerb wherever a street meets grass
+ const walk=N?'#2a3135':'#7b7f77',kerb=N?'#1b2226':'#5b5f58';
+ roads.forEach(k=>{const[x,y]=k.split(',').map(Number);px(x*T,y*T,T,T,N?'#1c2630':'#313c47')});
+ roads.forEach(k=>{const[x,y]=k.split(',').map(Number),X=x*T,Y=y*T;
+  if(!roads.has(key(x,y-1))){px(X,Y-6,T,6,walk);px(X,Y-1,T,1,kerb)}if(!roads.has(key(x,y+1))){px(X,Y+T,T,6,walk);px(X,Y+T,T,1,kerb)}
+  if(!roads.has(key(x-1,y))){px(X-6,Y,6,T,walk);px(X-1,Y,1,T,kerb)}if(!roads.has(key(x+1,y))){px(X+T,Y,6,T,walk);px(X+T,Y,1,T,kerb)}});
+ for(let x=0;x<COLS;x++){if(roads.has(key(x,13)))px(x*T+8,13*T+31,16,2,'#d6ab52')}
+ for(let y=0;y<ROWS;y++){if(roads.has(key(13,y)))px(13*T+31,y*T+8,2,16,'#d6ab52');if(roads.has(key(25,y)))px(25*T+31,y*T+8,2,16,'#d6ab52')}
+ // zebra crossings on every street leading into the big junctions
+ const zebra=N?'#59636b':'#c9cec8';
+ for(const cx of[13,25]){for(const ty of[12,15])for(let i=0;i<6;i++)px(cx*T+4+i*10,ty*T+6,5,20,zebra);for(const tx of[cx-1,cx+2])for(let i=0;i<6;i++)px(tx*T+6,13*T+4+i*10,20,5,zebra)}
+ // plaza
+ px(16*T,11*T,9*T,5*T,N?'#3f443f':'#746f59');for(let i=0;i<18;i++)px(16*T+(i%6)*T/1.5+9,11*T+Math.floor(i/6)*T/1.5+10,4,4,N?'#545a54':'#999078');
+ for(const[id,d]of Object.entries(DISTRICTS))drawDistrictScene(id,d,0,true);
+ // lamp posts: a pool of light under each at night
+ for(const[x,y]of lamps){if(N){const g=ctx.createRadialGradient(x,y+2,2,x,y+2,30);g.addColorStop(0,'rgba(255,214,140,.32)');g.addColorStop(1,'rgba(255,214,140,0)');ctx.fillStyle=g;ctx.fillRect(x-30,y-28,60,60)}px(x+1,y-1,4,2,'rgba(0,0,0,.3)');px(x-1,y-20,2,20,'#3a434b');px(x-1,y-20,7,2,'#3a434b');px(x+3,y-19,4,3,N?'#fff1c2':'#c9d2da')}
 }
-function drawTree(x,y,ts){px(x-2,y+3,4,9,'#4d3522');const sway=reduced?0:Math.sin(ts/700+x*.02)*1.2;ctx.fillStyle=display.night?'#13402c':'#22663c';ctx.beginPath();ctx.arc(x+sway,y,9,0,Math.PI*2);ctx.fill();ctx.fillStyle=display.night?'#195037':'#2d8050';ctx.beginPath();ctx.arc(x-3+sway,y-3,6,0,Math.PI*2);ctx.fill()}
-function drawDistrictScene(id,d,ts){
- const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,pulse=(Math.sin(ts/420)+1)/2;
- // paved service apron and pedestrian path to the door
- px(x+w*.32,y+h+8,w*.36,14,display.night?'#2a3337':'#7a786c');px(x+w/2-3,y+h,6,24,display.night?'#3c4547':'#9a9583');
- if(id==='command'){
-  px(x+w/2-34,y-18,68,10,'#23384d');px(x+w/2-2,y-36,4,18,'#5f7689');ctx.fillStyle='#71b7ff';ctx.beginPath();ctx.arc(x+w/2,y-39,4+pulse*2,0,Math.PI*2);ctx.fill();
-  for(const dx of[-34,28]){px(x+w/2+dx,y+h+27,6,18,'#55432d');px(x+w/2+dx-6,y+h+23,18,5,'#6e5a3d')}
- }else if(id==='ux'){
-  px(x-24,y+24,18,54,'#254b55');px(x-21,y+28,12,18,'#59e2ed');px(x-21,y+51,12,18,'#315f69');
-  for(let i=0;i<3;i++){px(x+18+i*32,y+h+24,24,5,'#74624c');px(x+20+i*32,y+h+29,3,9,'#493a2d');px(x+37+i*32,y+h+29,3,9,'#493a2d')}
- }else if(id==='docs'){
-  for(let i=0;i<4;i++){px(x+w+10,y+18+i*20,22,14,'#493f5a');px(x+w+13,y+21+i*20,4,8,'#c498ff');px(x+w+20,y+21+i*20,3,8,'#8db7ff')}
- }else if(id==='engineering'){
-  px(x-30,y+h-20,26,18,'#5d4a32');px(x-27,y+h-17,20,4,'#ffb86a');
-  for(let i=0;i<3;i++){px(x+18+i*30,y+h+27,22,8,'#54442f');px(x+22+i*30,y+h+20,14,7,'#8c744e')}
- }else if(id==='validation'){
-  for(let i=0;i<3;i++){const gx=x+18+i*38;px(gx,y+h+22,28,4,'#75dfa2');px(gx,y+h+8,3,18,'#486c59');px(gx+25,y+h+8,3,18,'#486c59')}
-  ctx.save();ctx.globalAlpha=.18+.12*pulse;ctx.fillStyle='#75dfa2';ctx.fillRect(x+8,y+18,w-16,4);ctx.restore()
- }else if(id==='models'){
-  for(let i=0;i<4;i++){const sx=x+12+i*42;px(sx,y+h+20,28,22,'#182838');px(sx+4,y+h+24,20,3,'#ff8494');px(sx+4,y+h+31,20,3,'#71b7ff')}
-  ctx.strokeStyle='#ff8494';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x+w-18,y-14,10,Math.PI,Math.PI*2);ctx.stroke()
- }else if(id==='projects'){
-  for(let i=0;i<5;i++){px(x+12+i*42,y+h+22,30,7,'#405f95');px(x+16+i*42,y+h+29,4,12,'#2b3d5d');px(x+34+i*42,y+h+29,4,12,'#2b3d5d')}
- }else if(id==='repair'){
-  for(let i=0;i<7;i++)px(x-12+i*16,y+h+20,10,5,i%2?'#1e2024':'#ffb23d');
-  ctx.fillStyle='rgba(255,115,131,'+(.28+.25*pulse)+')';ctx.beginPath();ctx.arc(x+w+16,y+18,8,0,Math.PI*2);ctx.fill();px(x+w+14,y+2,4,16,'#6c3940')
+// Trees: three shapes in two sizes, drawn once per shape into a sprite (with the shadow) and swayed a pixel.
+const treeSprites=new Map();
+function treeSprite(s,b){
+ const k=s+'.'+b+display.night;if(treeSprites.has(k))return treeSprites.get(k);const c=document.createElement('canvas'),g=c.getContext('2d'),N=display.night,dk=N?'#123d2a':'#1f5f39',md=N?'#185034':'#2a7a49',lt=N?'#1f5d3d':'#3c9a5c';
+ c.width=c.height=64;g.scale(2,2);const o=(cx,cy,r,f)=>{g.fillStyle=f;g.beginPath();g.arc(cx,cy,r,0,7);g.fill()};
+ g.fillStyle='rgba(0,0,0,.25)';g.beginPath();g.ellipse(20,27,10,4,0,0,7);g.fill();g.fillStyle='#4d3522';g.fillRect(14,17,4,11);
+ if(s===0){o(16,12,10,dk);o(14,10,8,md);o(12,8,4,lt)}
+ else if(s===1){for(let i=0;i<3;i++){g.fillStyle=i?md:dk;g.beginPath();g.moveTo(16,1+i*6);g.lineTo(26-i*2,14+i*4);g.lineTo(6+i*2,14+i*4);g.fill()}g.fillStyle=lt;g.fillRect(12,8,3,3)}
+ else{o(10,14,7,dk);o(22,14,7,dk);o(16,8,8,md);o(13,6,4,lt);o(8,12,3,lt)}
+ const r={c,z:b?1:.72};treeSprites.set(k,r);return r
+}
+function drawTree(x,y,ts,s=0,b=1){const t=treeSprite(s,b),sz=32*t.z,sway=reduced?0:Math.round(Math.sin(ts/900+x*.05));ctx.drawImage(t.c,Math.round(x-sz/2)+sway,Math.round(y-sz*.8),sz,sz)}
+// District aprons: a path to the door, planters either side of it, benches, and each district's yard props. The still
+// parts go into the ground cache (still = true); the few lights that pulse are drawn each frame.
+function drawDistrictScene(id,d,ts,still){
+ const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,pulse=(Math.sin(ts/420)+1)/2,N=display.night;
+ if(!still){
+  if(id==='validation'){ctx.save();ctx.globalAlpha=.18+.12*pulse;ctx.fillStyle='#75dfa2';ctx.fillRect(x+8,y+18,w-16,4);ctx.restore()}
+  else if(id==='repair'){ctx.fillStyle='rgba(255,115,131,'+(.28+.25*pulse)+')';ctx.beginPath();ctx.arc(x+w+16,y+18,8,0,Math.PI*2);ctx.fill()}
+  return
  }
+ px(x+w*.32,y+h+8,w*.36,14,N?'#2a3337':'#7a786c');px(x+w/2-3,y+h,6,24,N?'#3c4547':'#9a9583');
+ for(const s of[-1,1]){const px0=x+w/2+s*16-4;px(px0,y+h+2,8,6,'#5b4632');ctx.fillStyle=N?'#18452f':'#2d7a49';ctx.beginPath();ctx.arc(px0+4,y+h,5,0,7);ctx.fill();px(x+w/2+s*(w*.3)-8,y+h+30,16,3,'#7a5a3a');px(x+w/2+s*(w*.3)-7,y+h+33,2,3,'#4a3828');px(x+w/2+s*(w*.3)+5,y+h+33,2,3,'#4a3828')}
+ if(id==='command'){for(const dx of[-34,28]){px(x+w/2+dx,y+h+27,6,18,'#55432d');px(x+w/2+dx-6,y+h+23,18,5,'#6e5a3d')}}
+ else if(id==='ux'){px(x-24,y+24,18,54,'#254b55');px(x-21,y+28,12,18,'#59e2ed');px(x-21,y+51,12,18,'#315f69')}
+ else if(id==='docs'){for(let i=0;i<4;i++){px(x+w+10,y+18+i*20,22,14,'#493f5a');px(x+w+13,y+21+i*20,4,8,'#c498ff');px(x+w+20,y+21+i*20,3,8,'#8db7ff')}px(x-26,y+h-22,20,14,'#d8dde3');px(x-24,y+h-26,16,4,'#f4f1e6');px(x-23,y+h-16,14,2,'#3a4048')}
+ else if(id==='engineering'){px(x-30,y+h-20,26,18,'#5d4a32');px(x-27,y+h-17,20,4,'#ffb86a');for(let i=0;i<3;i++){px(x+18+i*30,y+h+27,22,8,'#54442f');px(x+22+i*30,y+h+20,14,7,'#8c744e')}}
+ else if(id==='validation'){for(let i=0;i<3;i++){const gx=x+18+i*38;px(gx,y+h+22,28,4,'#75dfa2');px(gx,y+h+8,3,18,'#486c59');px(gx+25,y+h+8,3,18,'#486c59')}}
+ else if(id==='models'){for(let i=0;i<4;i++){const sx=x+12+i*42;px(sx,y+h+20,28,22,'#182838');px(sx+4,y+h+24,20,3,'#ff8494');px(sx+4,y+h+31,20,3,'#71b7ff')}}
+ else if(id==='repair'){for(let i=0;i<7;i++)px(x-12+i*16,y+h+20,10,5,i%2?'#1e2024':'#ffb23d');px(x+w+14,y+2,4,16,'#6c3940')}
 }
 function drawInterior(id,d,ts){
  const workers=[...agents.values()].filter(a=>a.inside&&a.insideZone===id&&!a.onSite),active=workers.length>0;if(!active)return;
@@ -1519,34 +1544,56 @@ function drawDamage(x,y,w,h,repairing,ts){
 }
 // Green pennant on the roof once a district's work is complete.
 function drawTopping(x,y,w,ts){const fx=x+w-14,fy=y-14,wave=Math.sin(ts/200)*2;px(fx,fy,2,20,'#cfd8e0');pathPoly([[fx+2,fy],[fx+16,fy+4+wave],[fx+2,fy+9]],'#3ed598')}
+// ---- Buildings -------------------------------------------------------------------------------------------------
+// Each district has its own silhouette and a prop that says what it does: Command Center's antenna tower and big
+// status screen, UX Lab's glass front with wireframes on its screens, Documentation Studio's book-stacked windows,
+// Engineering Bay's sawtooth roof and hangar door, Validation Lab's check beacon (green and blinking once it passes),
+// Model Foundry's chimney and furnace, Projects Quarter's filing towers, Repair Bay's roller door (up while someone is
+// being fixed). Windows light in a slowly changing pattern and glow at night; light spills onto the pavement.
+function drawWindows(id,d,x,y,w,h,ts,f){
+ const N=display.night,e=Math.floor(ts/9000),rate=f.active?72:f.done?58:42,lit=N?'#ffd27a':f.active?'#d9fbff':f.done?'#b9efcc':'#bfdfe9',off=N?'#122230':'#294657',books=['#c0563f','#d9b25e','#7aa2d6','#8fc98f'];
+ for(let r=0,yy=y+28;yy<y+h-22;yy+=18,r++)for(let c=0,xx=x+14;xx<x+w-16;xx+=22,c++){
+  if(!(wh(c+id.length*7,r,e+(c*r)%4)%100<rate)){px(xx,yy,10,8,off);continue}
+  if(id==='docs'){px(xx,yy,10,8,N?'#3a2a1a':'#33424e');for(let b=0;b<4;b++)px(xx+1+b*2,yy+2+b%2,2,6-b%2,books[(b+c+r)%4]);continue}
+  px(xx,yy,10,8,lit);px(xx+1,yy+1,8,1,'rgba(255,255,255,.25)');if(N){ctx.globalAlpha=.16;px(xx-3,yy-3,16,14,'#ffc861');ctx.globalAlpha=1}
+ }
+}
 function drawBuilding(id,d,ts){
- const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,depth=14,workers=districtWorkers(id),active=workers.some(q=>q.state==='running'),bad=workers.some(q=>['error','blocked'].includes(q.state)),done=workers.length&&workers.every(q=>q.state==='complete'),selectedDistrict=selected?.type==='district'&&selected.id===id,pulse=(Math.sin(ts/240)+1)/2;
- const level=buildLevel(id),under=level<.995,top=y+h-h*level;
+ const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,depth=14,f=districtFlags(id),{workers,active,bad,done}=f,selectedDistrict=selected?.type==='district'&&selected.id===id,pulse=(Math.sin(ts/240)+1)/2,N=display.night,blink=reduced||Math.floor(ts/500)%2;
+ const level=buildLevel(id),under=level<.995,top=y+h-h*level,sy=Math.max(y,top-8),wall=shade(d.roof,N?.3:.42);
+ // shadow, cast down and to the right; light from the windows on the pavement at night
+ pathPoly([[x+w+depth,sy],[x+w+depth+22,sy+18],[x+w+depth+22,y+h+12],[x+12,y+h+12],[x,y+h]],'rgba(0,0,0,.28)');
+ if(N){ctx.globalAlpha=.09;px(x-8,y+h,w+depth+16,24,'#ffc861');ctx.globalAlpha=1}
  ctx.save();
- ctx.shadowColor='rgba(0,0,0,.35)';ctx.shadowBlur=18;px(x+8,y+12,w-2,h-2,'rgba(0,0,0,.28)');ctx.shadowBlur=0;
- px(x-4,y+h-6,w+depth+8,8,display.night?'#2a333b':'#59616a');
+ px(x-4,y+h-6,w+depth+8,8,N?'#2a333b':'#59616a');
  // Only the finished floors are solid; the rest is drawn as a steel frame below.
  ctx.save();if(under){ctx.beginPath();ctx.rect(x-40,top,w+depth+80,h+80);ctx.clip()}
- // side face
- pathPoly([[x+w,y+8],[x+w+depth,y],[x+w+depth,y+h-depth],[x+w,y+h]],display.night?'#152332':'#233749');
- // front
- px(x,y+8,w,h-8,display.night?'#172634':'#223646');
- // roof base and accent
- pathPoly([[x,y+8],[x+depth,y],[x+w+depth,y],[x+w,y+8]],d.roof);
- px(x+8,y+14,w-16,6,d.accent);
- // windows
- const win=active?(pulse>.35?'#ddfbff':'#70dce7'):done?'#7ce0a4':display.night?'#172d3e':'#24455a';
- for(let yy=y+28;yy<y+h-20;yy+=18)for(let xx=x+14;xx<x+w-14;xx+=22){px(xx,yy,10,7,win);px(xx+1,yy+1,8,1,'rgba(255,255,255,.18)')}
- // door + signage
- px(x+w/2-9,y+h-22,18,22,'#0d1720');px(x+w/2-5,y+h-17,4,4,d.accent);
- px(x+10,y+10,28,18,'rgba(6,12,18,.72)');txt(d.icon,x+24,y+19,d.accent,d.icon.length>1?9:13);
+ pathPoly([[x+w,y+8],[x+w+depth,y],[x+w+depth,y+h-depth],[x+w,y+h]],shade(d.roof,N?.22:.3));
+ px(x,y+8,w,h-8,wall);px(x,y+8,2,h-8,shade(d.roof,N?.4:.58));
+ pathPoly([[x,y+8],[x+depth,y],[x+w+depth,y],[x+w,y+8]],d.roof);px(x,y+7,w,2,shade(d.roof,1.35));px(x+8,y+14,w-16,4,d.accent);
+ if(id==='ux'){px(x+6,y+22,w-12,h-30,N?'#123039':'#2b6f7d');for(let xx=x+6;xx<x+w-6;xx+=20)px(xx,y+22,2,h-30,'#1a4650');for(let i=0;i<5;i++){const sx=x+14+i*34,s2=y+30+(i%2)*26;px(sx,s2,16,12,'#0c1a22');px(sx+2,s2+2,12,2,d.accent);px(sx+2,s2+6,5,4,'#8fb3bf');px(sx+9,s2+6,5,1,'#8fb3bf');px(sx+9,s2+8,4,1,'#8fb3bf')}}
+ else drawWindows(id,d,x,y,w,h,ts,f);
+ if(id==='command'){const ws=current?.workers||[],p=ws.length?Math.round(100*ws.filter(q=>q.state==='complete').length/ws.length):0,sx=x+w/2-36;px(sx,y+24,72,28,'#0a141c');px(sx+2,y+26,68,24,'#10202c');txt(ws.length?p+'%':'READY',sx+36,y+35,d.accent,10);px(sx+6,y+45,60,3,'#22384a');px(sx+6,y+45,60*p/100,3,'#75dfa2')}
+ else if(id==='engineering'){px(x+w-62,y+h-36,46,36,'#262d34');for(let yy=y+h-34;yy<y+h;yy+=5)px(x+w-60,yy,42,1,'#3a434c');px(x+w-62,y+h-38,46,3,d.accent)}
+ else if(id==='models'){const fl=reduced?.8:.65+.35*Math.sin(ts/90)*Math.sin(ts/53);px(x+12,y+h-26,28,16,'#2a1a14');ctx.globalAlpha=fl;px(x+14,y+h-24,24,12,'#ff9a3c');ctx.globalAlpha=1}
+ else if(id==='repair'){const up=workers.length?24:0;px(x+w/2-26,y+h-32,52,32,'#141a20');if(up){ctx.globalAlpha=.6;px(x+w/2-24,y+h-10,48,10,'#ffb23d');ctx.globalAlpha=1}for(let yy=y+h-32;yy<y+h-up;yy+=4)px(x+w/2-26,yy,52,3,'#59626c')}
+ // door
+ if(id!=='repair'){px(x+w/2-9,y+h-22,18,22,'#0d1720');px(x+w/2-5,y+h-17,4,4,d.accent)}
  ctx.restore();
+ // what stands on the roof, once it's built
+ if(!under){
+  if(id==='command'){px(x+w*.6,y-22,w*.26,26,wall);px(x+w*.6,y-24,w*.26,4,shade(d.roof,1.2));px(x+w*.73,y-46,2,24,'#8fa3b5');px(x+w*.73-4,y-38,10,2,'#8fa3b5');px(x+w*.73-1,y-50,4,4,blink?'#71b7ff':'#23476b')}
+  else if(id==='engineering')for(let xx=x+2;xx<x+w-20;xx+=26){pathPoly([[xx,y+4],[xx+24,y+4],[xx+24,y-12]],shade(d.roof,1.15));px(xx+20,y-10,3,13,'#9fd8ff')}
+  else if(id==='validation'){px(x+w-20,y-18,3,18,'#486c59');const g=done?(blink?'#75dfa2':'#3c7a58'):'#2c4a3a';ctx.fillStyle=g;ctx.beginPath();ctx.arc(x+w-18,y-24,8,0,7);ctx.fill();px(x+w-23,y-24,3,2,'#0b1a12');px(x+w-20,y-23,2,2,'#0b1a12');px(x+w-18,y-27,2,4,'#0b1a12')}
+  else if(id==='models'){px(x+w-48,y-34,12,40,'#4a3838');px(x+w-50,y-36,16,4,'#2a2020');ctx.globalAlpha=reduced?.5:.4+.3*Math.sin(ts/120);px(x+w-46,y-35,8,2,'#ffb36b');ctx.globalAlpha=1;if(!reduced)for(let i=0;i<3;i++){const k=(ts/2400+i/3)%1;ctx.globalAlpha=(1-k)*.3;ctx.fillStyle='#9aa4ae';ctx.beginPath();ctx.arc(x+w-42+k*10,y-40-k*40,4+k*8,0,7);ctx.fill()}ctx.globalAlpha=1}
+  else if(id==='projects')for(const tx of[x+w-96,x+w-58]){px(tx,y-30,30,36,wall);px(tx,y-33,30,4,d.roof);for(let yy=y-24;yy<y+4;yy+=7){px(tx+4,yy,22,1,shade(d.roof,.8));px(tx+13,yy+2,4,2,d.accent)}}
+  else if(id==='docs'){pathPoly([[x+w-70,y+2],[x+w-40,y-18],[x+w-10,y+2]],shade(d.roof,1.15));px(x+w-46,y-8,12,8,N?'#ffd27a':'#cfe0f7')}
+ }
  if(under)drawSkeleton(d,x,y,w,h,top,bad,ts);
  // Damage sits on whatever has been built so far.
  if(bad){const by=Math.max(y,top);drawDamage(x,by,w,y+h-by,workers.some(q=>q.state==='running'),ts)}
  if(done&&!under)drawTopping(x,y,w,ts);
  if(active){ctx.strokeStyle=d.accent;ctx.globalAlpha=.55+.35*pulse;ctx.lineWidth=3;ctx.strokeRect(x-4,y-4,w+depth+8,h+10);ctx.globalAlpha=1}
- if(done){ctx.fillStyle='#75dfa2';ctx.beginPath();ctx.arc(x+w-8,y+18,5,0,Math.PI*2);ctx.fill()}
  if(bad){ctx.strokeStyle='#ff7383';ctx.lineWidth=4;ctx.globalAlpha=.6+.4*pulse;ctx.strokeRect(x-5,y-5,w+depth+10,h+11);ctx.globalAlpha=1;px(x+w-16,y+11,10,10,pulse>.5?'#ff7383':'#6f2632')}
  if(selectedDistrict){ctx.strokeStyle='#ffffff';ctx.lineWidth=2;ctx.setLineDash([6,4]);ctx.strokeRect(x-8,y-8,w+depth+16,h+17);ctx.setLineDash([])}
  ctx.restore()
@@ -1697,8 +1744,8 @@ function sheetFor(s){
 // check the watch while waiting, thumbs-up then relax when done, sit on the kerb when stopped, wave when blocked.
 // Reduced motion keeps one still frame per state.
 // Debug and tests (localStorage localai.debug = 1), in canvas pixels: where each worker is drawn and its frame, the
-// district signs, and the name tags and bubbles.
-function layout(){const k=sc(view.zoom)*cam.dpr,box=(x,y,w,h)=>({x:view.panX*cam.dpr+x*k,y:view.panY*cam.dpr+y*k,w:w*k,h:h*k});return{workers:[...agents.values()].map(a=>({id:a.id,state:a.state,frame:a.frame,moving:workerIsMoving(a),vest:roleStyle(a).vest,box:box(Math.round(a.x/2)*2-FW,Math.round(a.y/2)*2-34,FW*2,FH*2)})),labels:L.signs.map(r=>box(r.x,r.y,r.w,r.h)),bubbles:L.bubbles.map(r=>box(r.x,r.y,r.w,r.h))}}
+// district signs, the name tags and bubbles, and the scenery (tree kinds, lamp count).
+function layout(){const k=sc(view.zoom)*cam.dpr,box=(x,y,w,h)=>({x:view.panX*cam.dpr+x*k,y:view.panY*cam.dpr+y*k,w:w*k,h:h*k});return{workers:[...agents.values()].map(a=>({id:a.id,state:a.state,frame:a.frame,moving:workerIsMoving(a),vest:roleStyle(a).vest,box:box(Math.round(a.x/2)*2-FW,Math.round(a.y/2)*2-34,FW*2,FH*2)})),labels:L.signs.map(r=>box(r.x,r.y,r.w,r.h)),bubbles:L.bubbles.map(r=>box(r.x,r.y,r.w,r.h)),trees:trees.map(t=>t[2]+(t[3]?'L':'S')),lamps:lamps.length}}
 function workerFrame(a,ts){
  const t=ts/1000+a.activitySeed,st=a.state;
  if(reduced)return st==='running'?F.work:st==='error'?F.sit:st==='blocked'?F.wave:F.stand;
