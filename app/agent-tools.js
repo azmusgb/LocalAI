@@ -51,7 +51,7 @@ function createResearchTools({ projectRoot, projectId = '', knowledgeStore = () 
     }),
     tool('read_project_file', 'Read a text file relative to the configured project root. Hidden, credential, generated-data and dependency paths are unavailable. Specify a line range for focused evidence.', {
       path: stringSchema, start_line: { type: 'integer', minimum: 1 }, max_lines: { type: 'integer', minimum: 1, maximum: 120 },
-    }, ['path'], async args => {
+    }, ['path'], async (args, { maxChars } = {}) => {
       objectArgs(args, ['path', 'start_line', 'max_lines']);
       const relative = stringArg(args.path, 'path');
       checkFileName(relative);
@@ -78,11 +78,28 @@ function createResearchTools({ projectRoot, projectId = '', knowledgeStore = () 
         if (text.includes('\0')) throw new Error('Binary files are unavailable');
         const lines = text.split(/\r?\n/);
         if (start > lines.length) throw new Error(`File has only ${lines.length} lines`);
-        const end = Math.min(lines.length, start + count - 1);
-        const full = lines.slice(start - 1, end).join('\n'), content = full.slice(0, 8000);
-        const source = `project:${resolvedRelative}#L${start}-L${end}`;
-        const evidence = [evidenceRecord(source, content, { kind: 'file', title: resolvedRelative })];
-        return { data: { path: resolvedRelative, startLine: start, endLine: end, totalLines: lines.length, content, truncated: full.length > content.length, moreLines: end < lines.length, evidenceId: evidence[0].id }, evidence };
+        const asked = Math.min(lines.length, start + count - 1);
+        const piece = (end, cap = 8000) => {
+          const full = lines.slice(start - 1, end).join('\n'), content = full.slice(0, cap);
+          const source = `project:${resolvedRelative}#L${start}-L${end}`;
+          const evidence = [evidenceRecord(source, content, { kind: 'file', title: resolvedRelative })];
+          const data = { path: resolvedRelative, startLine: start, endLine: end, totalLines: lines.length, content, truncated: full.length > content.length, moreLines: end < lines.length, evidenceId: evidence[0].id };
+          if (end < asked) Object.assign(data, { fitted: true, note: `Showing lines ${start}–${end} of the ${start}–${asked} you asked for, to fit the room left; ask for the next part from line ${end + 1}` });
+          return { data, evidence };
+        };
+        // The caller's room (agent-runtime.js) bounds the result: the largest run of whole lines from start_line that
+        // fits comes back with a note, rather than a refusal that costs the model a turn.
+        const fits = r => !maxChars || JSON.stringify({ ok: true, ...r }).length <= maxChars;
+        let result = piece(asked);
+        if (!fits(result)) {
+          let lo = start, hi = asked - 1, best = null;
+          while (lo <= hi) { const mid = (lo + hi) >> 1, r = piece(mid); if (fits(r)) { best = r; lo = mid + 1; } else hi = mid - 1; }
+          // One long line (a bundle) is cut to fit; below a few hundred characters there is nothing worth reading.
+          if (!best) { const one = piece(start), cap = one.data.content.length - (JSON.stringify({ ok: true, ...one }).length - maxChars) - 16; if (cap >= 300) { best = piece(start, cap); best.data.fitted = true; best.data.note = `Showing the start of line ${start} to fit the room left; write up what you have or ask for a smaller part`; } }
+          if (!best || !fits(best)) throw new Error('Not enough room left in the model context to read more; write up what you have');
+          result = best;
+        }
+        return result;
       } finally { await handle.close(); }
     }),
   ];

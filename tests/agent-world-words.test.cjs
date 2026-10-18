@@ -178,7 +178,7 @@ test('a stopped follow-up is said once, in plain words', () => {
   // The step label is dropped whichever way the server wrote it, and the code alone is enough.
   assert.equal(words.errorWords('', 'Follow-up failed: Agent execution deadline reached'), 'the agent ran out of time');
   assert.equal(words.errorWords('AGENT_TIMEOUT', 'Stopped: whatever'), 'the agent ran out of time');
-  assert.equal(words.errorWords('', 'Agent turn limit reached without a supported final answer'), 'the agent couldn’t settle on an answer');
+  assert.equal(words.errorWords('', 'Agent turn limit reached without a supported final answer'), 'ran out of steps before writing up');
   assert.equal(words.errorWords('AGENT_CONTEXT_LIMIT', 'Agent context limit reached; narrow the investigation'), 'the agent had too much to read');
   assert.equal(words.errorWords('', 'Follow-up stopped: aborted'), 'aborted');
   // Its name on its own (labels in the city) is unchanged.

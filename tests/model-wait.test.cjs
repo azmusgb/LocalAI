@@ -155,12 +155,13 @@ test('the model queue lets one turn through at a time and drops a cancelled wait
 });
 
 test('older tool results give way before a run hits its context limit', async () => {
-  const big = 'x'.repeat(4000);
+  const big = 'x'.repeat(3000);
   let turns = 0;
   const reader = { name: 'read', definition: { type: 'function', function: { name: 'read' } }, execute: async () => ({ data: big }) };
-  const turn = async ({ messages }) => {
+  const turn = async ({ messages, tools }) => {
     turns++;
     assert.ok(JSON.stringify(messages).length <= 9000, 'every turn fits the context');
+    assert.ok(tools.length, 'there was room to keep reading, so tools were still offered');
     if (turns <= 3) return { role: 'assistant', content: '', tool_calls: [{ function: { name: 'read', arguments: {} } }] };
     return { role: 'assistant', content: 'Read it all' };
   };
