@@ -6,13 +6,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { spawn } = require('node:child_process');
 const { once } = require('node:events');
-
-async function freePort() {
-  const s = http.createServer(); s.listen(0, '127.0.0.1'); await once(s, 'listening');
-  const p = s.address().port; await new Promise(r => s.close(r)); return p;
-}
+const { spawnAppServer } = require('./spawn-server.cjs');
 
 // A fake push service: records requests and answers with whatever status the test sets per path.
 async function fakePushService() {
@@ -36,11 +31,9 @@ function subscription(fake, name) {
 test('push API: key, subscribe, test, removal and same-origin', { timeout: 30000 }, async t => {
   const fake = await fakePushService();
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-push-'));
-  const port = await freePort();
-  const base = `http://127.0.0.1:${port}`;
-  const child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], { env: { ...process.env, DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, PORT: String(port), PUSH_TEST_ENDPOINT_HOST: fake.host }, stdio: 'ignore' });
+  const { child, ready } = spawnAppServer({ env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, PUSH_TEST_ENDPOINT_HOST: fake.host } });
   t.after(async () => { if (child.exitCode === null) { child.kill('SIGTERM'); await once(child, 'exit'); } fake.server.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
-  for (let i = 0; i < 100; i++) { try { if ((await fetch(base + '/healthz')).ok) break; } catch {} await new Promise(r => setTimeout(r, 100)); }
+  const base = await ready;
   const post = (p, body, headers = {}) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
 
   await t.test('key is stable', async () => {

@@ -7,13 +7,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { spawn } = require('node:child_process');
 const { once } = require('node:events');
-
-async function freePort() {
-  const s = http.createServer(); s.listen(0, '127.0.0.1'); await once(s, 'listening');
-  const port = s.address().port; await new Promise(r => s.close(r)); return port;
-}
+const { spawnAppServer } = require('./spawn-server.cjs');
 
 async function startServer(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-glance-'));
@@ -29,24 +24,16 @@ async function startServer(t) {
     });
   });
   mock.listen(0, '127.0.0.1'); await once(mock, 'listening');
-  const port = await freePort(), base = `http://127.0.0.1:${port}`;
-  let log = '';
-  const child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], {
-    env: { ...process.env, DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, PORT: String(port), OLLAMA_URL: `http://127.0.0.1:${mock.address().port}`, MODEL: 'test-model',
+  const { child, ready } = spawnAppServer({
+    env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: `http://127.0.0.1:${mock.address().port}`, MODEL: 'test-model',
       COMFY_URL: 'http://127.0.0.1:9', N8N_URL: 'http://127.0.0.1:9', PROXY_URL: 'http://127.0.0.1:9', SEARXNG_URL: 'http://127.0.0.1:9', MAC_AI_HOME_URL: 'http://127.0.0.1:9', MAC_DSH_URL: 'http://127.0.0.1:9' }
   });
-  child.stdout.on('data', c => log += c); child.stderr.on('data', c => log += c);
   t.after(async () => {
     if (child.exitCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
     mock.closeAllConnections(); await new Promise(r => mock.close(r));
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
-  for (let i = 0; i < 80; i++) {
-    if (child.exitCode !== null) throw new Error(log);
-    try { if ((await fetch(`${base}/healthz`)).ok) break; } catch {}
-    if (i === 79) throw new Error(`Server did not start: ${log}`);
-    await new Promise(r => setTimeout(r, 50));
-  }
+  const base = await ready;
   return { base, chats };
 }
 

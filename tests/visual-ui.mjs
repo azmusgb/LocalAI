@@ -10,12 +10,13 @@
 // changed pixels) to tests/visual/<platform>/__results__/ (ignored by git).
 import { chromium } from 'playwright';
 import fs from 'node:fs';
-import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
+
+const { spawnAppServer } = createRequire(import.meta.url)('./spawn-server.cjs');
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dir = path.join(here, 'visual', process.platform);
@@ -26,19 +27,11 @@ const CHANNEL = 24, MAX_CHANGED = 0.002;
 const NOW = Date.parse('2026-10-14T15:30:00Z');
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-visual-'));
-const probe = http.createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'listening');
-const port = probe.address().port; await new Promise(r => probe.close(r));
-const base = `http://127.0.0.1:${port}`, off = 'http://127.0.0.1:9';
-const server = spawn(process.execPath, [path.resolve(here, '../app/server.js')], {
-  env: { ...process.env, DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, PORT: String(port), OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
+const off = 'http://127.0.0.1:9';
+const { child: server, ready } = spawnAppServer({
+  env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
 });
-let log = ''; server.stdout.on('data', c => log += c); server.stderr.on('data', c => log += c);
-for (let i = 0; ; i++) {
-  if (server.exitCode !== null) throw new Error(log);
-  try { if ((await fetch(`${base}/healthz`)).ok) break; } catch {}
-  if (i > 100) throw new Error(`Server did not start: ${log}`);
-  await new Promise(r => setTimeout(r, 100));
-}
+const base = await ready;
 
 const PAGES = ['home', 'work', 'library', 'projects', 'backlog', 'claude', 'status', 'models'];
 const VIEWPORTS = [{ name: 'phone', width: 390, height: 844, mobile: true }, { name: 'desktop', width: 1280, height: 860, mobile: false }];

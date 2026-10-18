@@ -5,9 +5,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 const { Storage } = require('../app/storage');
+const { spawnAppServer } = require('./spawn-server.cjs');
 
 test('HTTP state remains compatible, persists across restart and retains concurrent model results', { timeout: 30000 }, async t => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-api-'));
@@ -22,7 +22,7 @@ test('HTTP state remains compatible, persists across restart and retains concurr
   });
   mock.listen(0, '127.0.0.1'); await once(mock, 'listening');
   const mockUrl = 'http://127.0.0.1:' + mock.address().port;
-  let child, base, diagnostics = '';
+  let child, base;
   const stop = async () => {
     const running = child;
     child = undefined;
@@ -31,19 +31,11 @@ test('HTTP state remains compatible, persists across restart and retains concurr
   };
   t.after(async () => { await stop(); mock.closeAllConnections(); await new Promise(resolve => mock.close(resolve)); fs.rmSync(dataDir, { recursive: true, force: true }); });
   async function start() {
-    const reserve = http.createServer(); reserve.listen(0, '127.0.0.1'); await once(reserve, 'listening');
-    const port = reserve.address().port; await new Promise(resolve => reserve.close(resolve));
-    base = 'http://127.0.0.1:' + port;
-    child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], {
-      env: { ...process.env, DATA_DIR: dataDir, PORT: String(port), OLLAMA_URL: mockUrl, MODEL: 'test-model', SELF_APP_ROOT: path.resolve(__dirname, '../app'), WORKSPACE_ROOT: dataDir }
-    });
-    child.stdout.on('data', chunk => diagnostics += chunk); child.stderr.on('data', chunk => diagnostics += chunk);
-    for (let attempt = 0; attempt < 60; attempt++) {
-      if (child.exitCode !== null) throw new Error(diagnostics);
-      try { if ((await fetch(base + '/healthz')).ok) return; } catch {}
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-    throw new Error('Server did not start: ' + diagnostics);
+    let ready;
+    ({ child, ready } = spawnAppServer({
+      env: { DATA_DIR: dataDir, OLLAMA_URL: mockUrl, MODEL: 'test-model', SELF_APP_ROOT: path.resolve(__dirname, '../app'), WORKSPACE_ROOT: dataDir }
+    }));
+    base = await ready;
   }
   async function api(url, body) {
     const response = await fetch(base + url, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });

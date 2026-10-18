@@ -4,6 +4,8 @@ const path = require('path');
 const { URL } = require('url');
 
 const PORT = Number(process.env.PORT || 3080);
+// The port the server listens on: PORT, or the one the system picked when PORT=0 (tests/spawn-server.cjs). Calls to itself use it.
+const listenPort = () => server.address()?.port || PORT;
 // Second listener for host-only tools (PowerShell Workbench). Docker publishes it on 127.0.0.1 only, so a request
 // that arrives on this port came from the Windows host itself; unlike the Host header, a LAN client cannot fake that.
 const LOCAL_UI_PORT = Number(process.env.LOCAL_UI_PORT || 0);
@@ -535,7 +537,7 @@ async function getCapabilitiesSnapshot(force = false) {
     changes: { pending: changes.filter(x => ['planned','patch_failed','validation_failed','staged','awaiting_approval','approved','apply_requested'].includes(x.status)).length },
     issues: { open: issues.filter(x => x.status === 'open').length },
     engineering: { active: engineeringRuns.filter(x => x.status === 'running').length, awaitingApproval: engineeringRuns.filter(x => x.status === 'awaiting_approval').length },
-    powershell: { configured: !!POWERSHELL_BRIDGE_TOKEN, localOnly: true, localPort: LOCAL_UI_PORT || PORT }
+    powershell: { configured: !!POWERSHELL_BRIDGE_TOKEN, localOnly: true, localPort: LOCAL_UI_PORT || listenPort() }
   };
   capabilityCache = { value: snapshot, expiresAt: Date.now() + CAPABILITY_CACHE_MS };
   return snapshot;
@@ -653,7 +655,7 @@ async function voiceAction({ action, subject }) {
   if (action === 'image') {
     if (!subject) return 'What should the image show?';
     // Through the server's own route, so the image is made exactly as one asked for in the app.
-    fetchWithTimeout(`http://127.0.0.1:${PORT}/api/images/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: subject, voice: true }) }, 900000)
+    fetchWithTimeout(`http://127.0.0.1:${listenPort()}/api/images/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: subject, voice: true }) }, 900000)
       .then(async r => {
         const j = await r.json().catch(() => ({}));
         if (r.ok) voiceNotify('Your image is ready', subject, j.runId);
@@ -1618,7 +1620,7 @@ function apiConfig(req, res) {
     subtitle: 'Private Intelligence Hub',
     version: APP_VERSION,
     model: MODEL,
-    localUiPort: LOCAL_UI_PORT || PORT,
+    localUiPort: LOCAL_UI_PORT || listenPort(),
     // An install that has used the Build tools keeps them in the menu by default; a new one starts without them.
     developerHistory: changeStore().length > 0 || engineeringRunStore().length > 0 || claudeFindings().length > 0,
     chatTimeoutMs: CHAT_MODEL_TIMEOUT_MS,
@@ -1886,7 +1888,7 @@ async function apiRunRetry(req, res) {
 
     const parent = unifiedRunItems(500).find(x => x.id === id) || runLedger.get(id);
     const nextAttempt = Math.max(1, Number(parent?.attempt) || 1) + 1;
-    const response = await fetchWithTimeout(`http://127.0.0.1:${PORT}${replay.path}`, {
+    const response = await fetchWithTimeout(`http://127.0.0.1:${listenPort()}${replay.path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(replay.body || {})
@@ -3086,7 +3088,7 @@ function powerShellJobStore(){return objectStore(POWERSHELL_JOBS_STORE)}
 function savePowerShellJobs(items){saveStore(POWERSHELL_JOBS_STORE,items,250)}
 // The port proves the request came from the host (see LOCAL_UI_PORT); the Host check still blocks DNS-rebinding pages.
 function localUiRequest(req){if(LOCAL_UI_PORT&&req.socket?.localPort!==LOCAL_UI_PORT)return false;const raw=String(req.headers.host||'').toLowerCase();const host=raw.startsWith('[')?raw.slice(1,raw.indexOf(']')):raw.split(':')[0];return host==='127.0.0.1'||host==='localhost'||host==='::1'}
-function requireLocalUi(req,res){if(!localUiRequest(req)){json(res,403,{error:`PowerShell Workbench is available only from http://localhost:${LOCAL_UI_PORT||PORT} on the Windows host.`});return false}if(!POWERSHELL_UI_TOKEN||String(req.headers['x-localai-powershell-token']||'')!==POWERSHELL_UI_TOKEN){json(res,401,{error:'PowerShell Workbench is locked. Enter the local UI token from C:\\LocalAI\\powershell-bridge\\ui-token.txt.'});return false}return true}
+function requireLocalUi(req,res){if(!localUiRequest(req)){json(res,403,{error:`PowerShell Workbench is available only from http://localhost:${LOCAL_UI_PORT||listenPort()} on the Windows host.`});return false}if(!POWERSHELL_UI_TOKEN||String(req.headers['x-localai-powershell-token']||'')!==POWERSHELL_UI_TOKEN){json(res,401,{error:'PowerShell Workbench is locked. Enter the local UI token from C:\\LocalAI\\powershell-bridge\\ui-token.txt.'});return false}return true}
 function hostBridgeAuthorized(req){if(!POWERSHELL_BRIDGE_TOKEN)return false;const auth=String(req.headers.authorization||'');return auth===`Bearer ${POWERSHELL_BRIDGE_TOKEN}`}
 function normalizeWindowsCwd(value){let v=String(value||'C:\\Projects').trim().replace(/\//g,'\\');if(/\.\.(?:\\|$)/.test(v))throw new Error('Working directory may not contain ..');const low=v.toLowerCase();const roots=['c:\\projects','c:\\repos','c:\\localai'];if(!roots.some(r=>low===r||low.startsWith(r+'\\')))throw new Error('Working directory must be under C:\\Projects, C:\\repos, or C:\\LocalAI');return v}
 function powerShellRisk(script){const s=String(script||'').toLowerCase();if(/format-volume|clear-disk|remove-item\s+[^\r\n]*-recurse|stop-computer|restart-computer|docker\s+(?:rm|system\s+prune)|remove-netfirewallrule/.test(s))return 'high';if(/set-content|add-content|copy-item|move-item|remove-item|new-item|docker\s+(?:restart|stop|start)|invoke-webrequest|invoke-restmethod/.test(s))return 'medium';return 'low'}
