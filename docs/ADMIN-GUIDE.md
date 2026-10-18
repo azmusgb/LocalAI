@@ -36,6 +36,11 @@ It tests the PR merged with the latest `main` in a temporary checkout (syntax, u
 deploy-candidate checks, and every browser suite against a fresh server, about 15 minutes), then posts a ✅ or ❌
 **local-ci** check on the PR. Merge only on a green local-ci.
 
+To test and merge in one step, use `npm run ship -- <PR number>` instead: it runs the same checks and merges the PR
+only if they're green, and only the exact commit that was tested (if anything is pushed to the PR meanwhile, GitHub
+refuses the merge). GitHub can't *require* a green check on this account (that needs a paid plan for a private
+repository), so this is the safe way to merge.
+
 - A red is hard to miss: the ❌ status names the failed steps, and a comment on the PR names the failing unit
   tests (first ten) so you need not open the log. A red has been a real bug before; fix or explain it before merging.
 - A browser suite that fails is run once more on its own. If it passes, the check is green but reads

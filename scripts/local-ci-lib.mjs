@@ -79,3 +79,10 @@ export function releaseNoteAdvice(title) {
   if (t.length <= 70 && !t.includes(';') && !t.includes(' — ')) return null;
   return `${RELEASE_NOTE_MARKER} this title becomes the release note; consider ≤ 70 chars, one clause. (It is ${t.length} characters${t.includes(';') || t.includes(' — ') ? ' and has more than one clause' : ''}.)`;
 }
+
+// npm run ship -- <PR>: after a green run, merge exactly the commit that was tested. --match-head-commit makes GitHub
+// refuse the merge if anything was pushed to the PR after the test began, so an untested commit never lands.
+export function shipMergeArgs(pr, sha) {
+  if (!/^\d+$/.test(String(pr)) || !/^[0-9a-f]{40}$/.test(String(sha))) throw new Error('ship needs a PR number and the tested commit');
+  return ['pr', 'merge', String(pr), '--merge', '--match-head-commit', String(sha)];
+}
