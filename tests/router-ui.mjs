@@ -142,17 +142,17 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
   });
 
   if (viewport.width >= 760) {
-    await check(`${tag}: secondary links, Models and Services push history and set the hash`, async () => {
+    await check(`${tag}: the page strip (Audit log, Models, Services) pushes history and sets the hash`, async () => {
       const page = await open(viewport, '#status');
       await page.waitForSelector('#status.active', T);
       for (const view of ['activity', 'models', 'integrations', 'status']) {
         const before = await page.evaluate(() => history.length);
-        await page.locator(`.ux-secondary-link[data-view="${view}"]`).click();
+        await page.locator(`#uxPageStrip [data-strip-view="${view}"]`).click();
         await page.waitForSelector(`#${view}.active`, T);
         assert.equal(await page.evaluate(() => location.hash), '#' + view);
         assert.equal(await page.evaluate(() => history.length), before + 1, view);
       }
-      await page.locator('.ux-secondary-link[data-view="models"]').click();
+      await page.locator('#uxPageStrip [data-strip-view="models"]').click();
       await page.waitForSelector('#models.active', T);
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.waitForSelector('#models.active', T);

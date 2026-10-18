@@ -1139,12 +1139,13 @@ body.ux-v3 .ux-nav-shell{grid-template-columns:76px}
 .ux-primary-symbol .icon{width:20px;height:20px}
 @media(min-width:761px){body.ux-v3 .brand-title,body.ux-v3 .brand-sub,body.ux-v3 .side-bottom{display:none}}
 /* Page strip */
-.ux-page-strip{display:none;align-items:center;height:auto;min-height:0;gap:6px;overflow-x:auto;scrollbar-width:none;margin:-8px 0 16px;padding:2px}
+.ux-page-strip{display:none;align-items:center;gap:22px;overflow-x:auto;scrollbar-width:none;margin:-8px 0 16px;padding:0;border-bottom:1px solid var(--ds-line)}
 .ux-page-strip::-webkit-scrollbar{display:none}
 .ux-page-strip[hidden]{display:none!important}
-.ux-page-strip button{flex:none;border:1px solid var(--ds-line);background:var(--ds-surface);color:var(--ds-muted);border-radius:999px;min-height:40px;padding:0 16px;font-size:var(--ds-fs-2);font-weight:560;white-space:nowrap;cursor:pointer}
-.ux-page-strip button:hover{color:var(--ds-text);border-color:var(--ds-line-2)}
-.ux-page-strip button.active{background:var(--ds-accent-soft);border-color:var(--ds-accent);color:var(--ds-text)}
+/* Underlined page names, as on the phone: one look for moving between pages, boxed controls are filters. */
+.ux-page-strip button{flex:none;border:0;background:transparent;color:var(--ds-faint);border-radius:0;min-height:44px;padding:0;font-size:var(--ds-fs-2);font-weight:500;white-space:nowrap;cursor:pointer}
+.ux-page-strip button:hover{color:var(--ds-text)}
+.ux-page-strip button.active{color:var(--ds-text);font-weight:650;box-shadow:inset 0 -2px 0 var(--ds-accent)}
 @media(min-width:761px){
   body.ux-v3 .ux-page-strip{display:flex}
   /* The top bar names the area (the strip and the H1 name the page); a page without a strip (Missions) names itself. */
@@ -1293,6 +1294,7 @@ body.ux-v3 .ux-nav-shell{grid-template-columns:76px}
   body.ux-v3 .ux-context-bar:not(.ux-context-has-strip) .ux-context-domain{display:none!important}
   body.ux-v3 .ux-context-bar:not(.ux-context-has-strip) .ux-context-view{display:inline!important}
   body.ux-v3 .ux-context-actions{display:contents}
+  body.ux-v3 .ux-context-left{margin-right:auto} /* Search and the bell sit at the right edge */
   body.ux-v3 .ux-context-bar .ux-ico{display:block;width:22px;height:22px}
   body.ux-v3 .ux-context-search,body.ux-v3 .ux-context-inbox,body.ux-v3 .ux-context-action{display:grid!important;place-items:center;position:relative;width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;border-radius:var(--ds-r-md);background:transparent;color:var(--ds-soft)}
   body.ux-v3 .ux-context-action[hidden]{display:none!important}
@@ -1491,7 +1493,7 @@ body.run-view-open{overflow:hidden}
 @media(max-width:760px){.work-secondary{min-height:44px}#work{padding-inline:3px}}
 
 /* ---- Home: needs you, recent, and a composer at your thumb ---- */
-#home{max-width:720px;margin-inline:auto}
+#home{max-width:720px} /* left-aligned like every page, so content never jumps sideways between pages */
 #home .home-head{padding:2px 0 0}
 #home .home-head h1{margin:0;font-size:var(--ds-fs-5);line-height:1.2;letter-spacing:-.02em}
 .home-block{margin-top:20px}

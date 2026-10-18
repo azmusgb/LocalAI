@@ -31,12 +31,12 @@ await page.waitForSelector('.ux-primary-rail');
 await check('integration hub is reachable from System', async () => {
   await page.locator('.ux-primary-item[data-domain="system"]').click();
   await page.waitForSelector('#status.active');
-  const integrationLink = page.locator('.ux-secondary-link[data-view="integrations"]');
+  const integrationLink = page.locator('#uxPageStrip [data-strip-view="integrations"]');
   await integrationLink.waitFor({ state: 'visible' });
   await integrationLink.click();
   await page.waitForSelector('#integrations.active');
   await page.waitForSelector('#integrations[data-integration-v2="true"]');
-  assert.equal(await page.locator('#uxContextView').innerText(), 'Services');
+  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Services');
 });
 
 await check('native Local AI integrations remain first-class', async () => {
@@ -144,8 +144,7 @@ await mobile.waitForSelector('#uxMobileNav');
 await check('integration hub is reachable on mobile', async () => {
   await mobile.locator('#uxMobileNav [data-domain="system"]').click();
   await mobile.waitForSelector('#status.active');
-  await mobile.locator('#uxContextMenu').click();
-  const link = mobile.locator('#uxMobileSheet .ux-mobile-link', { hasText: /^Services/ });
+  const link = mobile.locator('#uxPageStrip [data-strip-view="integrations"]');
   await link.waitFor({ state: 'visible' });
   await link.click();
   await mobile.waitForSelector('#integrations.active');

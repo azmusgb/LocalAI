@@ -110,7 +110,7 @@ await check('desktop: every menu entry draws a sprite icon, not a letter', async
   for (const d of ['home', 'projects', 'improve', 'system']) {
     await page.click(`.ux-primary-item[data-domain="${d}"]`);
     await page.waitForTimeout(150);
-    bad.push(...await page.evaluate(() => [...document.querySelectorAll('.ux-primary-symbol, .ux-secondary-link .ux-link-icon')]
+    bad.push(...await page.evaluate(() => [...document.querySelectorAll('.ux-primary-symbol')]
       .filter(e => !e.querySelector('svg use[href^="#i-"]') || e.textContent.trim()).map(e => (e.closest('[data-view],[data-domain]')?.dataset.view || e.closest('[data-domain]')?.dataset.domain) + ':' + e.textContent.trim())));
   }
   assert.deepEqual([...new Set(bad)], []);
@@ -252,10 +252,9 @@ for (const name of ['iPad Mini', 'iPad Mini landscape']) {
   });
 }
 
-await check('desktop with a mouse: Work still drops the page list, and the ⌘K hint shows', async () => {
+await check('desktop with a mouse: the ⌘K hint shows', async () => {
   const { page, context } = await open(SIZES[1]);
   await go(page, 'work');
-  assert.ok(await page.evaluate(() => document.body.classList.contains('ux-single-page')));
   assert.ok(await page.evaluate(() => [...document.querySelectorAll('.ux-context-search kbd')].some(k => k.getBoundingClientRect().width > 0)), '⌘K hint visible');
   await context.close();
 });
@@ -296,17 +295,6 @@ await check('phone: an open sheet holds the page still (iOS scroll lock) and clo
   await page.waitForTimeout(150);
   b = await body();
   assert.notEqual(b.pos, 'fixed'); assert.equal(b.y, 500, 'back where you were');
-  // The page menu sheet
-  await page.click('#uxContextMenu');
-  await page.waitForFunction(() => document.body.classList.contains('ux-sheet-open'));
-  await page.waitForTimeout(100);
-  b = await body();
-  assert.equal(b.pos, 'fixed'); assert.equal(b.top, '-500px');
-  await page.goBack(); // Back closes the sheet
-  await page.waitForFunction(() => !document.body.classList.contains('ux-sheet-open'));
-  await page.waitForTimeout(150);
-  b = await body();
-  assert.notEqual(b.pos, 'fixed'); assert.equal(b.y, 500, 'back where you were after the page menu');
   // Opening another page from a sheet starts that page at its top.
   await page.evaluate(() => window.LocalAICommand.open());
   await page.waitForSelector('#cmdk[open]');

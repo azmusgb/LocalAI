@@ -45,23 +45,22 @@ await check('phone: the run view title clamps to two lines (full title on hover)
   await page.context().close();
 });
 
-await check('desktop: Work has no page list column; System keeps its list; the breadcrumb follows one rule', async () => {
+await check('desktop: one rail and one strip on every page; the top bar names the area', async () => {
   const page = await open(desk, '#work');
   await page.waitForSelector('#work.active', T);
   await page.waitForTimeout(300);
-  assert.equal(await page.locator('.ux-secondary-nav').isVisible(), false);
-  const w = await page.evaluate(() => document.querySelector('main').getBoundingClientRect().left);
-  assert.ok(w < 120, `main starts at ${w}px, beside the 76px rail`);
-  assert.equal((await page.locator('#uxContextBar .ux-context-left').innerText()).replace(/\s+/g, ' ').trim().replace(/^.*?(Local AI \/)/, '$1'), 'Local AI / Work');
+  const left = () => page.evaluate(() => document.querySelector('main').getBoundingClientRect().left);
+  const area = async () => (await page.locator('#uxContextBar .ux-context-left').innerText()).replace(/\s+/g, ' ').trim();
+  const x = await left();
+  assert.ok(x < 120, `main starts at ${x}px, beside the 76px rail`);
+  assert.equal(await area(), 'Work');
+  assert.deepEqual(await page.locator('#uxPageStrip button').allInnerTexts(), ['Work', 'Automations']);
   await page.evaluate(() => LocalAIRouter.go('#status'));
   await page.waitForSelector('#status.active', T);
   await page.waitForTimeout(300);
-  assert.equal(await page.locator('.ux-secondary-nav').isVisible(), true);
-  assert.match((await page.locator('#uxContextBar .ux-context-left').innerText()).replace(/\s+/g, ' '), /Local AI \/ System \/ Health/);
-  await page.evaluate(() => LocalAIRouter.go('#work'));
-  await page.waitForSelector('#work.active', T);
-  await page.waitForTimeout(300);
-  assert.equal(await page.locator('.ux-secondary-nav').isVisible(), false);
+  assert.equal(await left(), x, 'content starts at the same x in every area');
+  assert.equal(await area(), 'System');
+  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Health');
   await page.context().close();
 });
 

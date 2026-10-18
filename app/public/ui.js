@@ -997,7 +997,8 @@ function sync(forced){
  qa('.ux-primary-item').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
  qa('#uxMobileNav [data-domain]').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
 }
-function observeViews(){const views=qa('.view');if(!views.length)return;const mo=new MutationObserver(()=>sync());views.forEach(v=>mo.observe(v,{attributes:true,attributeFilter:['class']}));
+// Mid-switch no page is active for a moment; syncing then would take it for Home and hide the strip under the focus.
+function observeViews(){const views=qa('.view');if(!views.length)return;const mo=new MutationObserver(()=>{if(q('.view.active'))sync()});views.forEach(v=>mo.observe(v,{attributes:true,attributeFilter:['class']}));
  // The Developer tools switch (first-run.js) toggles body.dev-tools-off: the menus redraw with or without the developer pages.
  let dev=devOff();new MutationObserver(()=>{if(devOff()===dev)return;dev=devOff();sync()}).observe(document.body,{attributes:true,attributeFilter:['class']});document.addEventListener('click',e=>{const b=e.target.closest?.('.navbtn[data-view]');if(b)requestAnimationFrame(()=>sync(b.dataset.view))})}
 // An error box shown for a field marks that field invalid and describes it with the box; hidden again, it lets go.
