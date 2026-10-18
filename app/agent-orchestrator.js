@@ -184,7 +184,7 @@ module.exports=function createAgentOrchestrator(deps={}){
   storage.transaction(()=>{storage.put(collection, record);if(limit)storage.prune(collection, limit)});
  }
  function settleWorkers(m,reason){for(const w of m.workers||[]){if(w.state==='running'){w.state='error';w.error=reason}else if(w.state==='pending'){w.state='blocked';w.error=reason}}}
- function reconcileInterrupted(){const reason='Interrupted: the appliance restarted while this was running';for(const m of storage.list(missionsFile,{status:'running'})){m.status='error';m.error=reason;settleWorkers(m,reason);m.updatedAt=iso();storage.upsert(missionsFile,m)}for(const r of storage.list(runsFile,{status:'running'})){r.status='error';r.error=reason;r.errorCode='INTERRUPTED';for(const p of r.plan||[])if(p.state==='running')p.state='error';r.updatedAt=iso();storage.upsert(runsFile,r)}}
+ function reconcileInterrupted(){const reason='Local AI restarted for an update while this was running';for(const m of storage.list(missionsFile,{status:'running'})){m.status='error';m.error=reason;settleWorkers(m,reason);m.updatedAt=iso();storage.upsert(missionsFile,m)}for(const r of storage.list(runsFile,{status:'running'})){r.status='error';r.error=reason;r.errorCode='INTERRUPTED';for(const p of r.plan||[])if(p.state==='running')p.state='error';r.updatedAt=iso();storage.upsert(runsFile,r)}}
  function missionSnapshot(m,type='state',detail='',workerId=''){
   m.timeline=m.timeline||[];
   const workers=(m.workers||[]).map(w=>({id:w.id,name:w.name,state:w.state,model:w.model,dependsOn:w.dependsOn||[],reason:w.reason,routingMeta:w.routingMeta||null,error:w.error||''}));

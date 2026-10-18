@@ -35,6 +35,8 @@ function New-Fixture {
         Root = $root; Repo = $repo; Live = $live; Releases = (Join-Path $root 'releases'); StateDir = (Join-Path $root 'state')
         Running = $true; RejectNewRelease = $false; RejectAllHealth = $false; PreflightFailure = $false; ExportFailure = $false
         Calls = [System.Collections.Generic.List[object]]::new()
+        # Auto-deploy: what GET /api/busy answers ($null with BusyFails = no answer), and the Inbox notices sent.
+        Busy = $null; BusyFails = $false; BusyAsked = 0; Notices = [System.Collections.Generic.List[object]]::new()
     }
     [System.IO.Directory]::CreateDirectory($fixture.StateDir) | Out-Null
     Write-LocalAI-DeployState (Join-Path $fixture.StateDir 'state.json') ([ordered]@{status='HEALTHY';currentCommit=$oldSha})
@@ -79,7 +81,9 @@ function robocopy {
 function Start-Sleep { param([int]$Seconds) }
 function Get-ScheduledTask { param($TaskName, $ErrorAction) return $null }
 function Invoke-RestMethod {
-    param($Uri, $TimeoutSec)
+    param($Uri, $TimeoutSec, $Method, $ContentType, $Body, $ErrorAction)
+    if ("$Uri" -like '*/api/busy') { $fixture.BusyAsked++; if ($fixture.BusyFails) { throw 'Unable to connect to the remote server' }; return $fixture.Busy }
+    if ("$Uri" -like '*/api/notifications/system') { $fixture.Notices.Add(([System.Text.Encoding]::UTF8.GetString($Body) | ConvertFrom-Json)); return }
     $commit = Read-LocalAI-ReleaseCommit $fixture.Live
     $status = if ($fixture.RejectAllHealth -or ($fixture.RejectNewRelease -and $commit -eq $newSha)) { 'error' } else { 'ok' }
     return [pscustomobject]@{status=$status;releaseCommit=$commit;storage=[pscustomobject]@{engine=$(if(Test-Path -LiteralPath (Join-Path $fixture.Live 'storage.js')){'sqlite'}else{'json'});schemaVersion=1}}
@@ -87,6 +91,17 @@ function Invoke-RestMethod {
 function Invoke-FixtureDeploy([switch]$CheckOnly) {
     & (Join-Path $repository 'deploy/Deploy-LocalAI.ps1') -Repo $fixture.Repo -Live $fixture.Live -Releases $fixture.Releases -StateDir $fixture.StateDir -Container 'fixture-appliance' -HealthUrl 'http://fixture/healthz' -SkipFetch -CheckOnly:$CheckOnly
 }
+# The auto-deploy's child Windows PowerShell running Deploy-LocalAI.ps1.
+function powershell.exe {
+    $fixture.Calls.Add(@('auto-deploy') + [string[]]$args)
+    Write-LocalAI-DeployState (Join-Path $fixture.Live 'release.json') ([ordered]@{commit=$newSha;version='2.0.1';notes=@()})
+    $global:LASTEXITCODE = 0
+    "DEPLOYED: $newSha"
+}
+function Invoke-FixtureAutoDeploy([int]$MaxHoldMinutes = 45) {
+    & (Join-Path $repository 'deploy/Run-LocalAI-AutoDeploy.ps1') -Repo $fixture.Repo -Live $fixture.Live -StateDir $fixture.StateDir -NotifyUrl 'http://fixture/api/notifications/system' -BusyUrl 'http://fixture/api/busy' -MaxHoldMinutes $MaxHoldMinutes
+}
+function Get-AutoDeployCount { @($fixture.Calls | Where-Object { $_[0] -eq 'auto-deploy' }).Count }
 function Invoke-FixtureRollback([string]$Snapshot) {
     & (Join-Path $repository 'deploy/Rollback-LocalAI.ps1') -Snapshot $Snapshot -Live $fixture.Live -StateDir $fixture.StateDir -Container 'fixture-appliance' -HealthUrl 'http://fixture/healthz'
 }
@@ -209,6 +224,58 @@ try {
         $f.RejectAllHealth=$true
         $report = & (Join-Path $repository 'deploy/Get-LocalAI-DeployStatus.ps1') -Repo $f.Repo -StatePath (Join-Path $f.StateDir 'state.json') -AsJson | ConvertFrom-Json
         Assert-True ($report.health -eq 'UNHEALTHY') 'Error JSON reported healthy'
+    }
+    Test-Case 'auto-deploy waits while the appliance is busy and records when the hold began' {
+        $f = New-Fixture
+        $f.Busy = [pscustomobject]@{ busy = $true; since = '2026-10-17T10:00:00.000Z'; active = @([pscustomobject]@{ kind = 'agent'; title = 'Review the Work page'; startedAt = '2026-10-17T10:00:00.000Z' }, [pscustomobject]@{ kind = 'image'; title = 'A {lighthouse} at dusk'; startedAt = '2026-10-17T10:02:00.000Z' }) }
+        $said = Invoke-FixtureAutoDeploy
+        Assert-True ((Get-AutoDeployCount) -eq 0) 'Deployed while work was running'
+        Assert-True ("$said" -match 'Waiting: 2 things running \(Review the Work page; A \{lighthouse\} at dusk\)') "Unexpected output: $said"
+        $hold = Join-Path $f.StateDir 'auto-deploy-held-since.txt'
+        Assert-True (Test-Path -LiteralPath $hold) 'Hold start was not recorded'
+        $first = Get-Content -LiteralPath $hold -Raw
+        $log = Get-Content -LiteralPath (Join-Path $f.StateDir 'auto-deploy.log') -Raw
+        Assert-True ($log -match 'exit=0 aaaaaaaaaaaa Waiting: 2 things running') "Wait not logged: $log"
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ((Get-AutoDeployCount) -eq 0) 'Deployed on the second busy run'
+        Assert-True ((Get-Content -LiteralPath $hold -Raw) -eq $first) 'The hold start moved, so the limit would never be reached'
+        Assert-True ($f.Notices.Count -eq 0) 'Waiting sent a notice'
+        $f.Busy = [pscustomobject]@{ busy = $false; since = $null; active = @() }
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ((Get-AutoDeployCount) -eq 1) 'Did not deploy once idle'
+        Assert-True (-not (Test-Path -LiteralPath $hold)) 'Hold state was left behind'
+        Assert-True (-not @($f.Notices | Where-Object { $_.meta.outcome -eq 'forced' }).Count) 'An idle deploy said it stopped work'
+    }
+    Test-Case 'auto-deploy goes ahead after the hold limit and tells the owner what it stopped' {
+        $f = New-Fixture
+        $f.Busy = [pscustomobject]@{ busy = $true; active = @([pscustomobject]@{ kind = 'agent'; title = 'Review the Work page' }, [pscustomobject]@{ kind = 'chat'; title = 'Plan the week' }) }
+        Set-Content -LiteralPath (Join-Path $f.StateDir 'auto-deploy-held-since.txt') -Value (Get-Date).ToUniversalTime().AddMinutes(-46).ToString('o')
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ((Get-AutoDeployCount) -eq 1) 'Did not deploy after the limit'
+        $forced = @($f.Notices | Where-Object { $_.meta.outcome -eq 'forced' })
+        Assert-True ($forced.Count -eq 1 -and $forced[0].title -eq 'Updating now; 2 things were still running and were stopped') "Unexpected notice: $($f.Notices | ConvertTo-Json -Compress -Depth 4)"
+        Assert-True ($forced[0].kind -eq 'deploy' -and $forced[0].detail -match 'Review the Work page; Plan the week') 'The notice does not say what stopped'
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $f.StateDir 'auto-deploy-held-since.txt'))) 'Hold state was left behind'
+        # A shorter limit set on the task applies too.
+        $g = New-Fixture
+        $g.Busy = $f.Busy
+        Set-Content -LiteralPath (Join-Path $g.StateDir 'auto-deploy-held-since.txt') -Value (Get-Date).ToUniversalTime().AddMinutes(-11).ToString('o')
+        $script:fixture = $g
+        Invoke-FixtureAutoDeploy -MaxHoldMinutes 10 | Out-Null
+        Assert-True ((Get-AutoDeployCount) -eq 1) 'MaxHoldMinutes was ignored'
+    }
+    Test-Case 'auto-deploy deploys as before when /api/busy does not answer, and does not ask when nothing is new' {
+        $f = New-Fixture; $f.BusyFails = $true
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ($f.BusyAsked -eq 1 -and (Get-AutoDeployCount) -eq 1) 'An appliance that cannot answer blocked the deploy'
+        $f = New-Fixture; $f.Busy = '<!doctype html><title>Local AI</title>'
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ((Get-AutoDeployCount) -eq 1) 'A build without /api/busy blocked the deploy'
+        $f = New-Fixture; $f.Busy = [pscustomobject]@{ busy = $true; active = @([pscustomobject]@{ title = 'Running' }) }
+        Write-LocalAI-DeployState (Join-Path $f.StateDir 'state.json') ([ordered]@{status='HEALTHY';currentCommit=$newSha})
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ($f.BusyAsked -eq 0) 'Asked /api/busy with nothing new to deploy'
+        Assert-True ((Get-AutoDeployCount) -eq 1) 'The idle deploy check did not run'
     }
     Test-Case 'nightly backups keep 7 daily and 4 older weekly copies' {
         $source = Get-Content (Join-Path $repository 'deploy/Backup-LocalAI-Data.ps1') -Raw
