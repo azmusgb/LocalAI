@@ -40,17 +40,52 @@ function New-Fixture {
         Calls = [System.Collections.Generic.List[object]]::new()
         # Auto-deploy: what GET /api/busy answers ($null with BusyFails = no answer), and the Inbox notices sent.
         Busy = $null; BusyFails = $false; BusyAsked = 0; Notices = [System.Collections.Generic.List[object]]::new()
+        # Backup tidy: the containers `docker ps -a` lists (New-FixtureContainer), and simulated docker failures.
+        Containers = [System.Collections.Generic.List[object]]::new(); PsFails = $false; RmFails = @(); NoChange = $false
     }
     [System.IO.Directory]::CreateDirectory($fixture.StateDir) | Out-Null
     Write-LocalAI-DeployState (Join-Path $fixture.StateDir 'state.json') ([ordered]@{status='HEALTHY';currentCommit=$oldSha})
     return $fixture
 }
+# A container for the backup tidy. Times are ISO 8601 (Docker's 9 fractional digits included); $null FinishedAt is
+# Docker's zero time (never ran).
+function New-FixtureContainer([string]$Name, [string]$State = 'exited', [double]$StoppedDaysAgo = 10, [string]$Health = $null, [string]$Labels = '', [double]$CreatedDaysAgo = -1, [string]$Restart = 'unless-stopped') {
+    $now = (Get-Date).ToUniversalTime()
+    if ($CreatedDaysAgo -lt 0) { $CreatedDaysAgo = $StoppedDaysAgo + 30 }
+    $finished = if ($State -eq 'exited') { $now.AddDays(-$StoppedDaysAgo).ToString('yyyy-MM-ddTHH:mm:ss') + '.123456789Z' } else { '0001-01-01T00:00:00Z' }
+    $fixture.Containers.Add([pscustomobject]@{ Name = $Name; State = $State; Health = $Health; Labels = $Labels; Restart = $Restart; Created = $now.AddDays(-$CreatedDaysAgo).ToString('yyyy-MM-ddTHH:mm:ss') + '.987654321Z'; FinishedAt = $finished })
+}
+function Get-FixtureContainer([string]$Name) { @($fixture.Containers | Where-Object { $_.Name -eq $Name })[0] }
 function docker {
     $Arguments = [string[]]$args
     $fixture.Calls.Add($Arguments)
     $global:LASTEXITCODE = 0
     switch ($Arguments[0]) {
-        'inspect' { return @([ordered]@{Image='sha256:existing-image';State=@{Running=$fixture.Running};Config=@{Env=@('DATA_DIR=/data')};Mounts=@(@{Destination='/app'},@{Destination='/data'})}) | ConvertTo-Json -Depth 8 -Compress }
+        'ps' {
+            if ($fixture.PsFails) { throw 'error during connect: Docker Desktop is not running' }
+            foreach ($c in $fixture.Containers) { [ordered]@{ ID = "id$($c.Name.Length)"; Names = $c.Name; State = $c.State; Status = 'whatever'; Labels = $c.Labels; CreatedAt = '2026-10-01 10:00:00 -0700 PDT' } | ConvertTo-Json -Compress }
+            return
+        }
+        'update' {
+            $c = Get-FixtureContainer $Arguments[-1]
+            if (-not $c) { $global:LASTEXITCODE = 1; return }
+            if ($Arguments -contains '--restart=no') { $c.Restart = 'no' }
+            return $c.Name
+        }
+        'rm' {
+            $c = Get-FixtureContainer $Arguments[-1]
+            if (-not $c -or $fixture.RmFails -contains $c.Name -or $c.State -eq 'running') { $global:LASTEXITCODE = 1; return }
+            [void]$fixture.Containers.Remove($c)
+            return $c.Name
+        }
+        'inspect' {
+            $c = Get-FixtureContainer $Arguments[1]
+            if ($c) {
+                $health = if ($c.Health) { @{ Status = $c.Health } } else { $null }
+                return (ConvertTo-Json -Depth 8 -InputObject @([ordered]@{ Id = "id-$($c.Name)"; Name = "/$($c.Name)"; Created = $c.Created; State = [ordered]@{ Status = $c.State; Running = ($c.State -eq 'running'); FinishedAt = $c.FinishedAt; Health = $health }; HostConfig = @{ RestartPolicy = @{ Name = $c.Restart; MaximumRetryCount = 0 } } }))
+            }
+            if ($fixture.Containers.Count -and $Arguments[1] -ne 'fixture-appliance') { $global:LASTEXITCODE = 1; return }
+            return @([ordered]@{Image='sha256:existing-image';State=@{Running=$fixture.Running};Config=@{Env=@('DATA_DIR=/data')};Mounts=@(@{Destination='/app'},@{Destination='/data'})}) | ConvertTo-Json -Depth 8 -Compress }
         'stop' { $fixture.Running=$false; return }
         'start' { $fixture.Running=$true; return }
         'run' {
@@ -97,12 +132,13 @@ function Invoke-FixtureDeploy([switch]$CheckOnly) {
 # The auto-deploy's child Windows PowerShell running Deploy-LocalAI.ps1.
 function powershell.exe {
     $fixture.Calls.Add(@('auto-deploy') + [string[]]$args)
-    Write-LocalAI-DeployState (Join-Path $fixture.Live 'release.json') ([ordered]@{commit=$newSha;version='2.0.1';notes=@()})
     $global:LASTEXITCODE = 0
+    if ($fixture.NoChange) { return "NO CHANGE: $($newSha.Substring(0,12)) is running and healthy." }
+    Write-LocalAI-DeployState (Join-Path $fixture.Live 'release.json') ([ordered]@{commit=$newSha;version='2.0.1';notes=@()})
     "DEPLOYED: $newSha"
 }
 function Invoke-FixtureAutoDeploy([int]$MaxHoldMinutes = 45) {
-    & (Join-Path $repository 'deploy/Run-LocalAI-AutoDeploy.ps1') -Repo $fixture.Repo -Live $fixture.Live -StateDir $fixture.StateDir -NotifyUrl 'http://fixture/api/notifications/system' -BusyUrl 'http://fixture/api/busy' -MaxHoldMinutes $MaxHoldMinutes
+    & (Join-Path $repository 'deploy/Run-LocalAI-AutoDeploy.ps1') -Repo $fixture.Repo -Live $fixture.Live -StateDir $fixture.StateDir -NotifyUrl 'http://fixture/api/notifications/system' -BusyUrl 'http://fixture/api/busy' -HealthUrl 'http://fixture/healthz' -MaxHoldMinutes $MaxHoldMinutes
 }
 function Get-AutoDeployCount { @($fixture.Calls | Where-Object { $_[0] -eq 'auto-deploy' }).Count }
 function Invoke-FixtureRollback([string]$Snapshot) {
@@ -281,6 +317,110 @@ try {
         Invoke-FixtureAutoDeploy | Out-Null
         Assert-True ($f.BusyAsked -eq 0) 'Asked /api/busy with nothing new to deploy'
         Assert-True ((Get-AutoDeployCount) -eq 1) 'The idle deploy check did not run'
+    }
+    Test-Case 'backup tidy removes only old stopped migration backups whose live twin is healthy' {
+        $f = New-Fixture
+        New-FixtureContainer 'local-ai-n8n' 'running' -Health 'healthy'
+        New-FixtureContainer 'local-ai-appliance' 'running'
+        New-FixtureContainer 'local-ai-https-new' 'running' -Labels 'com.docker.compose.project=local-ai,com.docker.compose.service=https'
+        New-FixtureContainer 'local-ai-sandbox-api' 'running' -Health 'unhealthy'
+        New-FixtureContainer 'local-ai-searxng' 'running' -Health 'healthy'
+        New-FixtureContainer 'local-ai-sandbox-runner-1' 'running' -Health 'healthy'
+        New-FixtureContainer 'local-ai-ollama-responses-proxy' 'running'
+        # Removed: stopped 10 days, healthy twin by name / by name without a healthcheck / by compose service.
+        New-FixtureContainer 'local-ai-n8n-pre-compose' 'exited' 10
+        New-FixtureContainer 'local-ai-appliance-pre-hostport' 'exited' 9
+        New-FixtureContainer 'local-ai-https-pre-compose' 'created' -CreatedDaysAgo 20
+        New-FixtureContainer 'local-ai-n8n-pre-lockdown' 'exited' 30
+        # Kept: too recent; renamed recently although created long ago; twin unhealthy; running; no twin;
+        # unknown suffix; not ours.
+        New-FixtureContainer 'local-ai-searxng-pre-compose' 'exited' 3
+        New-FixtureContainer 'local-ai-sandbox-runner-1-pre-compose' 'exited' 2 -CreatedDaysAgo 90
+        New-FixtureContainer 'local-ai-sandbox-api-pre-lockdown' 'exited' 10
+        New-FixtureContainer 'local-ai-ollama-responses-proxy-pre-compose' 'running' 10
+        New-FixtureContainer 'local-ai-gone-pre-compose' 'exited' 40
+        New-FixtureContainer 'local-ai-n8n-pre-upgrade' 'exited' 40
+        New-FixtureContainer 'local-ai-n8n-pre-compose-old' 'exited' 40
+        New-FixtureContainer 'festive_turing' 'exited' 60 -Restart 'no'
+        New-FixtureContainer 'localai-agent-design-candidate' 'exited' 60
+        $result = & (Join-Path $repository 'deploy/Remove-LocalAI-OldBackups.ps1')
+        $removed = (@($result.Removed) | Sort-Object) -join ' '
+        Assert-True ($removed -eq 'local-ai-appliance-pre-hostport local-ai-https-pre-compose local-ai-n8n-pre-compose local-ai-n8n-pre-lockdown') "Unexpected removals: $removed`n$($result.Log -join "`n")"
+        $left = @($f.Containers | ForEach-Object { $_.Name })
+        foreach ($kept in @('local-ai-searxng-pre-compose','local-ai-sandbox-runner-1-pre-compose','local-ai-sandbox-api-pre-lockdown','local-ai-ollama-responses-proxy-pre-compose','local-ai-gone-pre-compose','local-ai-n8n-pre-upgrade','local-ai-n8n-pre-compose-old','festive_turing','localai-agent-design-candidate','local-ai-n8n','local-ai-appliance')) {
+            Assert-True ($left -contains $kept) "$kept was removed"
+        }
+        # Volumes are never touched: plain `docker rm <name>`, no -v/-f, no prune or volume/image commands.
+        $rms = @($f.Calls | Where-Object { $_[0] -eq 'rm' })
+        Assert-True ($rms.Count -eq 4) "Expected 4 docker rm calls, got $($rms.Count)"
+        foreach ($rm in $rms) { Assert-True ($rm.Count -eq 2) "docker rm with options: $($rm -join ' ')" }
+        Assert-True (-not @($f.Calls | Where-Object { ($_ -join ' ') -match '(^| )(-v|--volumes|-f|--force|prune|volume|image)( |$)' }).Count) 'A volume, prune, image or forced command was run'
+        # --restart=no comes first, for each removal.
+        foreach ($name in @($result.Removed)) {
+            $calls = @($f.Calls | ForEach-Object { $_ -join ' ' })
+            $update = [Array]::IndexOf($calls, "update --restart=no $name"); $rm = [Array]::IndexOf($calls, "rm $name")
+            Assert-True ($update -ge 0 -and $update -lt $rm) "$name was not set to --restart=no before rm"
+        }
+        # Stopped backups that stay are stopped from restarting on a reboot; running ones and strangers are untouched.
+        Assert-True ((Get-FixtureContainer 'local-ai-searxng-pre-compose').Restart -eq 'no') 'A kept stopped backup can still restart on a reboot'
+        Assert-True ((Get-FixtureContainer 'local-ai-ollama-responses-proxy-pre-compose').Restart -eq 'unless-stopped') 'A running backup was changed'
+        Assert-True ((Get-FixtureContainer 'localai-agent-design-candidate').Restart -eq 'unless-stopped') 'A container that is not ours was changed'
+        Assert-True (@($result.Log | Where-Object { $_ -like 'Removed old backup container local-ai-n8n-pre-compose (stopped 10 days; local-ai-n8n is running and healthy; volumes kept)' }).Count -eq 1) "Removal not logged: $($result.Log -join '; ')"
+        # Idempotent: a second run removes and changes nothing.
+        $before = $f.Calls.Count
+        $again = & (Join-Path $repository 'deploy/Remove-LocalAI-OldBackups.ps1')
+        Assert-True (@($again.Removed).Count -eq 0 -and @($again.Log).Count -eq 0) "Second run did something: $($again.Log -join '; ')"
+        Assert-True (-not @($f.Calls | Select-Object -Skip $before | Where-Object { $_[0] -in @('rm','update') }).Count) 'Second run changed containers'
+    }
+    Test-Case 'backup tidy failures are logged, never thrown' {
+        $f = New-Fixture; $f.PsFails = $true
+        $result = & (Join-Path $repository 'deploy/Remove-LocalAI-OldBackups.ps1')
+        Assert-True (@($result.Removed).Count -eq 0 -and "$($result.Log)" -match 'Backup tidy skipped: .*Docker Desktop is not running') "Unexpected: $($result.Log)"
+        $f = New-Fixture
+        New-FixtureContainer 'local-ai-n8n' 'running' -Health 'healthy'
+        New-FixtureContainer 'local-ai-appliance' 'running' -Health 'healthy'
+        New-FixtureContainer 'local-ai-n8n-pre-compose' 'exited' 10
+        New-FixtureContainer 'local-ai-appliance-pre-hostport' 'exited' 10
+        $f.RmFails = @('local-ai-n8n-pre-compose')
+        $result = & (Join-Path $repository 'deploy/Remove-LocalAI-OldBackups.ps1')
+        Assert-True ((@($result.Removed) -join ' ') -eq 'local-ai-appliance-pre-hostport') "One failure stopped the rest: $($result.Removed)"
+        Assert-True ("$($result.Log)" -match 'Kept local-ai-n8n-pre-compose: docker rm failed') "rm failure not logged: $($result.Log)"
+        # The auto-deploy still succeeds when the tidy fails.
+        $f = New-Fixture; $f.PsFails = $true
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ($LASTEXITCODE -eq 0 -and (Get-AutoDeployCount) -eq 1) 'A tidy failure failed the deploy'
+        Assert-True ((Get-Content -LiteralPath (Join-Path $f.StateDir 'auto-deploy.log') -Raw) -match 'tidy: Backup tidy skipped') 'Tidy failure not logged'
+    }
+    Test-Case 'auto-deploy tidies backups after a healthy deploy or a healthy quiet run, and tells the Inbox once' {
+        $f = New-Fixture
+        New-FixtureContainer 'local-ai-n8n' 'running' -Health 'healthy'
+        New-FixtureContainer 'local-ai-appliance' 'running' -Health 'healthy'
+        New-FixtureContainer 'local-ai-n8n-pre-compose' 'exited' 10
+        New-FixtureContainer 'local-ai-appliance-pre-hostport' 'exited' 10
+        # Quiet run, appliance unhealthy: nothing is touched.
+        $f.NoChange = $true; $f.RejectAllHealth = $true
+        Write-LocalAI-DeployState (Join-Path $f.StateDir 'state.json') ([ordered]@{status='HEALTHY';currentCommit=$newSha})
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True (-not @($f.Calls | Where-Object { $_[0] -in @('ps','update','rm') }).Count) 'Tidied while /healthz was not OK'
+        # Quiet run, healthy: both go, one notice.
+        $f.RejectAllHealth = $false
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True (@($f.Containers | Where-Object { $_.Name -like '*-pre-*' }).Count -eq 0) 'Backups were not removed on a healthy quiet run'
+        $tidied = @($f.Notices | Where-Object { $_.meta.action -eq 'tidy-backups' })
+        Assert-True ($tidied.Count -eq 1 -and $tidied[0].title -eq 'Removed 2 old backup containers (stopped copies from earlier migrations)' -and $tidied[0].kind -eq 'deploy' -and $tidied[0].meta.outcome -eq 'done') "Unexpected notices: $($f.Notices | ConvertTo-Json -Compress -Depth 4)"
+        $log = Get-Content -LiteralPath (Join-Path $f.StateDir 'auto-deploy.log') -Encoding UTF8
+        Assert-True (@($log | Where-Object { $_ -match '^\d{4}-\d\d-\d\dT\S+ tidy: Removed old backup container local-ai-(n8n-pre-compose|appliance-pre-hostport) ' }).Count -eq 2) "Removals not in the log: $($log -join "`n")"
+        Assert-True ($log -contains '--- last run ---') 'The log lost its last-run section'
+        # Next run: nothing left, no notice.
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True (@($f.Notices | Where-Object { $_.meta.action -eq 'tidy-backups' }).Count -eq 1) 'A run with nothing to tidy sent a notice'
+        # After a healthy deploy too.
+        $g = New-Fixture; $script:fixture = $g
+        New-FixtureContainer 'local-ai-n8n' 'running' -Health 'healthy'
+        New-FixtureContainer 'local-ai-n8n-pre-lockdown' 'exited' 8
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ((Get-AutoDeployCount) -eq 1 -and -not (Get-FixtureContainer 'local-ai-n8n-pre-lockdown')) 'No tidy after a healthy deploy'
+        Assert-True (@($g.Notices | Where-Object { $_.title -eq 'Removed 1 old backup container (a stopped copy from an earlier migration)' }).Count -eq 1) 'Singular notice missing'
     }
     Test-Case 'nightly backups keep 7 daily and 4 older weekly copies' {
         $source = Get-Content (Join-Path $repository 'deploy/Backup-LocalAI-Data.ps1') -Raw

@@ -60,6 +60,17 @@ the safe way to merge.
 
 More: [Development › CI](DEVELOPMENT.md#ci).
 
+## Old containers in Docker Desktop
+
+Stopped containers named `local-ai-…-pre-compose`, `-pre-hostport` or `-pre-lockdown` are copies kept from earlier
+migrations, for rollback. They never start on their own, and they are kept for 7 days and then removed automatically
+once the live stack is healthy (volumes and data kept); the Inbox says "Removed 5 old backup containers (stopped
+copies from earlier migrations)". `festive_turing` (Docker's tutorial) and `localai-agent-design-candidate` aren't
+Local AI's; remove them by hand if you like: `docker rm festive_turing` and `docker rm localai-agent-design-candidate`.
+
+**Never run `docker system prune --volumes` here.** It deletes volumes, and Caddy's certificate authority
+(`localai-caddy-data`) and n8n's data live in volumes. Details: [Deploy › Old backup containers](DEPLOY.md#old-backup-containers).
+
 ## Back up and restore
 
 The database is backed up nightly at 02:30, to the host and to OneDrive, and each copy is restore-tested; a failed

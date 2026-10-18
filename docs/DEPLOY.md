@@ -72,6 +72,8 @@ The `LocalAI Safe Deploy` scheduled task runs `deploy\Run-LocalAI-AutoDeploy.ps1
 4. Posts to the Inbox (`POST /api/notifications/system`, kind `deploy`) when a release goes live, or when a
    deploy fails (once per failing commit, not on every retry).
 5. Rewrites `C:\LocalAI\.deploy\auto-deploy.log`: up to 500 one-line summaries plus the last deploy's full output.
+6. After a healthy deploy, or a run with nothing to deploy and `/healthz` OK, tidies old backup containers (see
+   [Old backup containers](#old-backup-containers)).
 
 ### Updates wait for running work
 
@@ -123,7 +125,7 @@ live only in `C:\LocalAI\stack\stack.env`, which is readable by your account and
 
 | Script | Does |
 |---|---|
-| `deploy\stack\Install-LocalAI-Stack.ps1` | New host: creates `stack.env` with new secrets (reusing the PowerShell bridge tokens if present), the mounted folders and a first copy of the app; starts the stack, waits for `/healthz`, opens the firewall and trusts the HTTPS CA. `-DryRun` plans only. `-Adopt` recreates containers that were made by hand, keeping volumes and the old containers (`*-pre-compose`) for rollback. |
+| `deploy\stack\Install-LocalAI-Stack.ps1` | New host: creates `stack.env` with new secrets (reusing the PowerShell bridge tokens if present), the mounted folders and a first copy of the app; starts the stack, waits for `/healthz`, opens the firewall and trusts the HTTPS CA. `-DryRun` plans only. `-Adopt` recreates containers that were made by hand, keeping volumes and the old containers (`*-pre-compose`, set never to restart) for rollback; they are [tidied after 7 days](#old-backup-containers). |
 | `deploy\stack\Export-LocalAI-StackEnv.ps1` | Writes the running stack's secrets to `stack.env` so a rebuild keeps the same keys (above all `N8N_ENCRYPTION_KEY`, without which n8n's saved credentials can't be read). Back the file up. |
 | `deploy\stack\Test-LocalAI-Stack.ps1` | Compares every running container with `compose.yml` (image, restart, ports, mounts, network, command, environment values) without changing anything or printing values. |
 
@@ -137,6 +139,42 @@ sets the version). `Install-LocalAI-Stack.ps1 -Adopt` brings them under compose.
 **Rotating the sandbox key.** Put a new random value in `SANDBOX_API_KEYS` in `stack.env`, then run
 `docker compose --env-file C:\LocalAI\stack\stack.env -f deploy\stack\compose.yml up -d sandbox-api` (after adopting). Finally, give
 n8n's assistant the new key in its sandbox connection settings.
+
+## Old backup containers
+
+Migrations keep the container they replace, stopped, for rollback: `local-ai-<name>-pre-compose`
+(`Install-LocalAI-Stack.ps1 -Adopt`), `local-ai-appliance-pre-hostport` (`Enable-LocalAI-HostOnlyPort.ps1`) and
+`local-ai-n8n-pre-lockdown`. They are kept for 7 days, then tidied automatically by
+`deploy\Remove-LocalAI-OldBackups.ps1`, which the auto-deploy runs after a healthy deploy or on a quiet run while
+`/healthz` is OK. It removes a backup only when all of these hold:
+
+- the name is exactly `local-ai-<name>-pre-compose`, `-pre-hostport` or `-pre-lockdown`;
+- it is stopped (exited or created), never running;
+- its live twin (the name without the suffix, or that compose service) is running and healthy;
+- it has been stopped for 7 days (the later of its created and finished times; a renamed container keeps its
+  original created time).
+
+It runs `docker update --restart=no`, then `docker rm` without `-v`: volumes are never removed, and it never prunes or
+removes volumes or images. Each removal is a line in `auto-deploy.log` (`tidy: Removed old backup container …`), and
+the Inbox gets one notice, e.g. "Removed 5 old backup containers (stopped copies from earlier migrations)". A failure
+is logged and never fails the deploy.
+
+Backups made before this change could still restart with Windows: Docker then tried to start one next to the live
+stack and logged `Bind for 0.0.0.0:3080 failed: port is already allocated`. The scripts now create backups with
+`--restart=no`, and the tidy sets `--restart=no` on any stopped backup it finds, old enough or not.
+
+Two other stopped containers on the current host were not made by these scripts, so the tidy leaves them alone. Both
+are safe to remove by hand if you don't want them:
+
+```powershell
+docker rm festive_turing                    # Docker Desktop's getting-started tutorial
+docker rm localai-agent-design-candidate    # made by hand, not by these scripts
+```
+
+**Never run `docker system prune --volumes` (or `docker volume prune`) on this host.** Stopped containers' volumes count
+as unused, and the volumes hold data that can't be recreated: Caddy's certificate authority (`localai-caddy-data`;
+losing it means every phone and computer has to trust a new certificate), n8n's workflows and credentials (`n8n_data`), and the
+appliance's database. Remove containers by name with `docker rm <name>`.
 
 ## Versions and release notes
 
@@ -278,8 +316,9 @@ policy, plus `LOCAL_UI_PORT=3090` published on `127.0.0.1:3090` only.
 .\deploy\Enable-LocalAI-HostOnlyPort.ps1             # -LocalPort 3090 by default
 ```
 
-It keeps the old container stopped as `local-ai-appliance-pre-hostport` and restores it if the new one does
-not become healthy within a minute. Re-running it when the port is already set up does nothing. See
+It keeps the old container stopped as `local-ai-appliance-pre-hostport` (set never to restart) and restores it,
+with its restart policy, if the new one does not become healthy within a minute. The backup is
+[tidied after 7 days](#old-backup-containers). Re-running it when the port is already set up does nothing. See
 [Security](SECURITY.md#powershell-workbench) for why the port matters.
 
 ## SQLite and deploys
