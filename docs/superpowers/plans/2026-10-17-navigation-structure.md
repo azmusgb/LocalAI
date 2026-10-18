@@ -20,7 +20,9 @@ Spec: `docs/superpowers/specs/2026-10-17-navigation-structure-design.md`. One PR
    validator's required names updated, shell budget lowered. Tests: a11y-nav,
    navigation, layout, mobile, visual (largest PR; may split phone / desktop).
 5. **One "what needs me"**. Bell count opens the Inbox; drop the desktop "Attention" footer; Inbox leaves Home's
-   strip. Tests: notifications, home, navigation.
+   strip. Tests: notifications, home, navigation. Done with: the footer's markup, styles and status updates removed; the Inbox pill and the
+   bell's label use the heading's words ("1 approval and 1 alert waiting"); and, from the every-page screenshots (#282),
+   the strip scrolls to a tab start so no label is cut mid-word, with snap and the edge fade.
 
 Each PR: `npm test`, lint, all browser suites on a fresh server, `npm run ci -- <PR>`; post progress to the Claude
 board.
