@@ -54,6 +54,7 @@
 <fieldset class="img-group" id="imageShapeGroup"><legend>Shape</legend><div id="imageAspects" class="img-aspects" role="radiogroup" aria-label="Shape"></div></fieldset>
 <fieldset class="img-group"><legend>How many</legend><div id="imageCount" class="img-count" role="radiogroup" aria-label="How many"><button type="button" role="radio" data-count="1" class="active" aria-checked="true">1</button><button type="button" role="radio" data-count="2" aria-checked="false">2</button><button type="button" role="radio" data-count="4" aria-checked="false">4</button></div></fieldset>
 <label class="img-toggle" id="imageUpscaleRow" hidden><input id="imageUpscale" type="checkbox"><span><b>Sharpen and upscale 2×</b><small>Real-ESRGAN; adds a few seconds.</small></span></label>
+<label class="img-toggle" id="imagePreviewRow" hidden><input id="imagePreviewFirst" type="checkbox" checked><span><b>Best: show a quick preview first</b><small>A smaller draft in about a minute. Make the full picture only if you like it.</small></span></label>
 <details class="img-advanced"><summary>Advanced</summary><div class="form-grid">
 <label class="wide">Model<select id="checkpoint"><option value="">Engine's model</option></select></label>
 <label>Steps<input id="steps" type="number" min="1" max="60" placeholder="Auto"></label>
@@ -66,8 +67,9 @@
 </div>
 <div class="card img-output">
 <div id="imageShow" class="img-show"><div id="imageStage" class="img-stage" aria-live="polite"><div class="img-placeholder">Your image appears here.</div></div>
-<div id="imageResult" class="image-result"><img id="generatedImage" alt="Generated result"></div>
+<div id="imageResult" class="image-result"><img id="generatedImage" alt="Generated result"><span id="imagePreviewTag" class="img-preview-tag" hidden>Preview</span></div>
 <div id="imageMeta" class="meta"></div>
+<div id="imagePreviewBar" class="img-preview" hidden><p class="img-preview__text"><b>This is a quick preview.</b> The full picture keeps the same seed and prompt, so it matches this one, larger and with finer detail.</p><div class="img-preview__actions"><button id="imageMakeFull" class="btn-primary" type="button">Make the full picture</button><span id="imageFullEstimate" class="img-preview__time">About 4 min</span><button id="imageKeepPreview" class="btn-outline" type="button" aria-pressed="false">Keep preview</button></div></div>
 <div id="imageBatch" class="img-batch" hidden></div>
 <div id="imageActions" class="actions img-result-actions" hidden><button id="imageEditThis" class="btn-outline" type="button">Edit this image</button><button id="imageAgain" class="btn-outline" type="button">Another version</button><a id="imageOpen" class="btn-outline" target="_blank" rel="noopener">Open full size</a></div>
 <details id="imageUsedPromptBox" class="img-used" hidden><summary>Prompt used</summary><p id="imageUsedPrompt"></p></details></div>

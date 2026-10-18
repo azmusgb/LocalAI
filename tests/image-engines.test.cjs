@@ -166,3 +166,28 @@ test('cfg-1 engines (Z-Image, FLUX) drop style "avoid" words; the others keep th
   assert.equal(e.applyStyle('a cat', '', 'anime', flux).negative, '');
   assert.match(e.applyStyle('a cat', 'blurry', 'anime', fast).negative, /^blurry, photo/);
 });
+
+test('Best preview: 512 square or the shape scaled into 576, 6 steps, and the graph keeps the seed and prompt', () => {
+  const best = e.discoverEngines(zimage).engines[0];
+  const [fast, quality] = e.discoverEngines(full).engines;
+  assert.equal(e.previewable(best), true);
+  assert.equal(e.previewable(fast), false);
+  assert.equal(e.previewable(quality), false);
+  assert.deepEqual(e.previewSettings(...e.sizeFor(best, 'square'), best.steps), { width: 512, height: 512, steps: 6 });
+  // Other shapes keep their proportions, longest side 576, sides a multiple of 16.
+  assert.deepEqual(e.previewSettings(...e.sizeFor(best, 'portrait'), 8), { width: 400, height: 576, steps: 6 });
+  assert.deepEqual(e.previewSettings(...e.sizeFor(best, 'landscape'), 8), { width: 576, height: 400, steps: 6 });
+  assert.deepEqual(e.previewSettings(...e.sizeFor(best, 'wide'), 8), { width: 576, height: 336, steps: 6 });
+  // Never more steps than the full picture (FLUX schnell runs 4).
+  assert.equal(e.previewSettings(1024, 1024, 4).steps, 4);
+  const p = e.previewSettings(1024, 1024, best.steps);
+  const preview = e.buildWorkflow(best, { prompt: 'a lighthouse', width: p.width, height: p.height, steps: p.steps, cfg: 1, seed: 4242 });
+  const fullGraph = e.buildWorkflow(best, { prompt: 'a lighthouse', width: 1024, height: 1024, steps: best.steps, cfg: 1, seed: 4242 });
+  assert.deepEqual(preview[6].inputs, { width: 512, height: 512, batch_size: 1 });
+  assert.equal(preview[7].inputs.steps, 6);
+  assert.equal(fullGraph[7].inputs.steps, 8);
+  assert.equal(preview[7].inputs.seed, fullGraph[7].inputs.seed);
+  assert.deepEqual(preview[4].inputs, fullGraph[4].inputs);
+  assert.deepEqual(preview[13], fullGraph[13]);
+  assert.equal(e.runSummary({ count: 1, width: 512, height: 512, engine: 'Best', preview: true }), 'Preview made with Best · 512 × 512');
+});

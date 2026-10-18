@@ -123,6 +123,25 @@ await check('a run opened later (not made here) has Another version and Edit tha
   await p.context().close();
 });
 
+await check('a Best preview opened as a run shows Preview and Make the full picture, which asks for its shape and seed', async () => {
+  const pvRun = imgRun(1, { threadId: 't7' });
+  Object.assign(pvRun, { meta: { preview: true }, input: { ...pvRun.input, engine: 'best', aspect: 'portrait', width: 400, height: 576, steps: 6 }, output: { ...pvRun.output, engine: 'best', engineLabel: 'Best', preview: true, width: 400, height: 576 } });
+  const p = await open({ width: 1280, height: 860 }, { runs: [pvRun], mode: 'ask' });
+  await p.evaluate(() => window.LocalAIRuns.show('run-i1'));
+  await p.locator('#runDrawer #imagePreviewBar:not([hidden])').waitFor(T);
+  assert.equal(await p.locator('#runDrawer #imagePreviewTag').isVisible(), true);
+  assert.equal(await p.locator('#imageFullEstimate').innerText(), 'About 4 minutes');
+  await addAxe(p, axePath);
+  const v = await p.evaluate(() => window.axe.run('#runDrawer', { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(x => `${x.id}: ${x.nodes.map(n => n.html.slice(0, 120)).join(' | ')}`)));
+  assert.deepEqual(v, []);
+  await p.locator('#imageMakeFull').click();
+  await p.waitForFunction(() => location.hash === '#run/run-i2', null, T);
+  const b = p.db.sent[0];
+  assert.deepEqual([b.previewOf, b.seed, b.preview, b.aspect, b.width, b.steps, b.threadId], ['run-i1', 11, undefined, 'portrait', undefined, undefined, 't7']);
+  assert.deepEqual(p.errors, []);
+  await p.context().close();
+});
+
 await check('a failed start fails the Starting… view and keeps the text on Home', async () => {
   const p = await open({ width: 1280, height: 860 });
   await p.unroute(u => u.pathname === '/api/images/generate').catch(() => {});

@@ -1253,6 +1253,16 @@ body.ux-v3 .ux-nav-shell{grid-template-columns:76px}
 .img-thumb:hover{border-color:var(--ds-accent)}
 @media(max-width:900px){.img-studio{grid-template-columns:1fr}.img-placeholder,.img-working,.img-error{min-height:220px}}
 .img-recent>.meta{grid-column:1/-1}
+/* Best's quick preview: a tag on the picture, and the full picture offered under it */
+.image-result{position:relative}
+.img-preview-tag{position:absolute;top:10px;left:10px;padding:3px 10px;border-radius:999px;background:var(--ds-surface);border:1px solid var(--ds-line-2);color:var(--ds-text);font-size:var(--ds-fs-1);font-weight:700}
+.img-preview-tag[hidden],.img-preview[hidden]{display:none}
+.img-preview{display:grid;gap:10px;padding:12px;border:1px solid var(--ds-accent);border-radius:var(--ds-r-md);background:var(--ds-accent-soft)}
+.img-preview__text{margin:0;color:var(--ds-soft);font-size:var(--ds-fs-1)}.img-preview__text b{color:var(--ds-text)}
+.img-preview__actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.img-preview__actions .btn-primary,.img-preview__actions .btn-outline{min-height:44px}
+.img-preview__time{color:var(--ds-soft);font-size:var(--ds-fs-1);font-variant-numeric:tabular-nums}
+.img-preview__actions .btn-outline{margin-left:auto}
 /* ==== image studio: styles, count, edit ==== */
 .img-styles{display:flex;flex-wrap:wrap;gap:6px}
 .img-style,.img-count button{border:1px solid var(--ds-line);background:var(--ds-surface);color:var(--ds-soft);border-radius:999px;min-height:40px;padding:0 14px;font-size:var(--ds-fs-1);font-weight:600;cursor:pointer}

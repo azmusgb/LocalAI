@@ -57,6 +57,25 @@ page is) and it answers from this appliance's own setup: its addresses, its fold
 services that are down, and new Signals. Tap one to deal with it. An approval opens in a sheet over Home with
 everything it will do, and **Approve** or **Reject** right there; you stay on Home.
 
+## Images
+
+Pick **Image** on Home (or open **Images** with ⌘K) and describe the picture. Three engines run on the computer's own
+GPU: **Fast** (about 15 seconds), **Quality** (about a minute) and **Best** (Z-Image Turbo, the most detailed, about
+4 minutes for a full 1024 px picture on a 6 GB graphics card). Each engine shows the time it last took on this
+computer.
+
+**Best starts with a quick preview.** A Best image is first drawn small (512 × 512, or the chosen shape scaled to fit
+576 px) in fewer steps, in about a minute, and shows with a **Preview** tag. If you like it, tap **Make the full
+picture** under it; it says how long that takes here (about 4 minutes until it has been measured). The full picture
+uses the same seed and prompt, so it is the preview's picture, larger and with finer detail. If you don't like the
+preview, change the prompt or tap **Another version** instead, and you have saved the 4 minutes. To skip the preview
+and always go straight to the full picture, turn off **Best: show a quick preview first** on the Images page (it is
+on by default and remembered on each device). Fast and Quality never preview; they are quick already. Neither do
+several images at once, edits, or a model picked under **Advanced**.
+
+Previews and full pictures are both in **Work** (as versions of one image), but only full pictures arrive in
+**Library**. To keep a preview there too, tap **Keep preview** under it; tap it again to take it out.
+
 ## Work: everything running and done
 
 Work lists every run, newest first, grouped by day. Filter it with **All**, **Chats**, **Images**, **Missions**,
@@ -81,7 +100,7 @@ The Projects tab opens on your projects. Its tabs:
 - **Sources:** files and notes the assistant can search when it answers.
 - **Memory:** facts the assistant keeps about each project.
 - **Library**: what you kept. Chats and research arrive only when you tap **☆ Keep** on them (in the open chat or
-  on their row in Work); images you make arrive by themselves. Conversations and research are a list, newest first,
+  on their row in Work); images you make arrive by themselves (a Best quick preview only when you keep it). Conversations and research are a list, newest first,
   and images are pictures after them. Filter by kind, or show only what you **pinned**. ☆ pins an item. × takes a
   chat out of Library (it stays in Work) and deletes an image. Work is everything you did; this is what you kept.
   Old Library links open this tab.
