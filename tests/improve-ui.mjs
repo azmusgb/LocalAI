@@ -43,7 +43,7 @@ await page.addInitScript(() => { try { localStorage.setItem('localai.devTools', 
 let failItems = false;
 const posts = [];
 await page.route('**/api/improve/items', r => failItems ? r.fulfill({ status: 500, json: { error: 'Database is busy' } }) : r.fulfill({ json: { items: ITEMS, signals: SIGNALS } }));
-await page.route('**/api/improve/{item,idea,signal}', async r => { posts.push({ url: new URL(r.request().url()).pathname, body: r.request().postDataJSON() }); await r.fulfill({ status: 200, json: { item: ITEMS[0] } }); });
+await page.route('**/api/improve/{item,idea,signal,handoff}', async r => { posts.push({ url: new URL(r.request().url()).pathname, body: r.request().postDataJSON() }); await r.fulfill({ status: 200, json: { item: ITEMS[0] } }); });
 await page.route('**/api/claude/board', r => r.fulfill({ json: { sessions: [{ id: 'sess-1', title: 'Fix login', status: 'active', lastEvent: 'Running the tests', updatedAt: new Date(Date.now() - 120e3).toISOString() }] } }));
 // Releases as the appliance records them (newest first): an unstamped item belongs to the first release after it closed.
 await page.route('**/api/releases', r => r.fulfill({ json: { current: { version: '2.0.310' }, history: [
@@ -90,6 +90,17 @@ await check('New idea: Add to backlog and Start now post the text and the choice
     await page.waitForFunction(() => !document.getElementById('improveIdeaSheet').open);
     assert.deepEqual(lastPost(), { url: '/api/improve/idea', body: { text: 'Remember the last image size', start } });
   }
+});
+
+await check('New idea: Hand to Claude hands the text to Claude Code from Improve and says where it went', async () => {
+  await page.locator('#improveNewIdea').click();
+  const sheet = page.locator('#improveIdeaSheet');
+  await sheet.waitFor({ state: 'visible' });
+  await sheet.locator('textarea').fill('Polish Agent World');
+  await sheet.getByRole('button', { name: 'Hand to Claude' }).click();
+  await page.waitForFunction(() => !document.getElementById('improveIdeaSheet').open);
+  assert.deepEqual(lastPost(), { url: '/api/improve/handoff', body: { text: 'Polish Agent World', from: 'improve' } });
+  await page.waitForFunction(() => /Handed to Claude Code — it appears in Improve › In progress/.test(document.getElementById('toast')?.textContent || ''));
 });
 
 await check('Back closes an open item or idea sheet and stays on Backlog; a sheet closed another way leaves no extra history', async () => {

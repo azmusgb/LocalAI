@@ -92,6 +92,9 @@ Library item that later replies update. Tap it again to take it out of Library; 
 **Missions** is the history of every mission, however you started it, each listed once; tap one to open it in Agent
 World.
 
+A mission goal that asks to change Local AI itself (in Agent World or Home) offers **Hand to Claude** first, since
+Claude Code reviews the code and opens a tested pull request; **Start a mission anyway** still starts it.
+
 ## Projects: what you keep
 
 The Projects tab opens on your projects. Its tabs:
@@ -115,7 +118,8 @@ Improve is one list of everything that could change in Local AI, from your ideas
 findings from Claude Code sessions.
 
 - **Backlog:** the ranked list. Vote items up or down, or open one to **Start** it, **Hand to Claude**,
-  **Move to top**, **Defer** or **Reject**. **New idea** adds your own; choose **Add to backlog** or **Start now**.
+  **Move to top**, **Defer** or **Reject**. **New idea** adds your own; choose **Add to backlog**, **Hand to Claude**
+  or **Start now**. Anything handed to Claude waits in **In progress** for the next Claude Code session.
 - **Signals:** problems Local AI noticed on its own. Serious ones (high severity, or seen three or more times) join
   the Backlog by themselves; **Promote** adds any other, **Dismiss** drops it.
 - **In progress:** changes being planned, tested or waiting for your OK. Open one for its next step:
