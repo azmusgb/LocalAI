@@ -4,8 +4,8 @@ Spec: `docs/superpowers/specs/2026-10-18-server-split-design.md`. One PR per ste
 move (no behaviour change). Every PR: `npm test`, deploy contracts, every browser suite on a fresh server,
 `npm run ci -- <PR>`, and after it deploys a smoke check (healthz, a chat reply, Images page, Work, Improve).
 
-1. **Context and checks.** `app/server/context.js`: `json`, `text`, `storageError`, `readBody`, `fetchWithTimeout`,
-   `sameOriginJson` and the store helpers (`readState`, `writeState`, `prependRecord`, `RETENTION`). server.js
+1. **Shared helpers and checks.** `app/server/http.js`: `json`, `text`, `storageError`, `readBody`,
+   `fetchWithTimeout`, `sameOriginJson`; `app/server/stores.js`: `readState`, `writeState`, `prependRecord`, `RETENTION`. server.js
    destructures them, so every call site stays as it is. `tests/server-source.cjs` (S4) and the tests that read
    server.js switch to it. The quality scan and staged validation check every app `.js` (S6). This PR also carries
    the spec and this plan.
