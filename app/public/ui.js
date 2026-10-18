@@ -653,12 +653,14 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         const meta = document.createElement('div');
         meta.className = 'model-runtime-meta';
         const detail = item.details || {};
+        // Quantization, file format and the memory rows are diagnostic: developer tools only (critique §3.4, D6).
         [detail.family, detail.parameterSize, detail.quantizationLevel, detail.format]
-          .filter(Boolean)
-          .forEach((value) => {
+          .forEach((value, i) => {
+            if (!value) return;
             const chip = document.createElement('span');
             chip.className = 'badge';
             chip.textContent = value;
+            if (i > 1) chip.dataset.devOnly = '';
             meta.appendChild(chip);
           });
 
@@ -673,6 +675,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         rows.forEach(([label, value]) => {
           const cell = document.createElement('div');
           cell.className = 'model-runtime-detail';
+          if (label !== 'Model size') cell.dataset.devOnly = '';
           const key = document.createElement('span');
           key.textContent = label;
           const val = document.createElement('b');

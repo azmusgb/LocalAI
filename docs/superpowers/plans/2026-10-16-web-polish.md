@@ -289,9 +289,25 @@ after A, B, D.
 
 ## Done when
 
-- Every page passes A5's copy lint; the user guide's glossary matches the UI word for word.
-- The four accessibility journeys (G5) and the keyboard-composer check (C1) pass in CI; the owner has confirmed
-  the composer on the iPhone.
-- The owner menu (after D) has no page whose first screen contains raw ids, paths or JSON.
-- Visual baselines exist for every owner page at 390 and 1440 and match the owner's screens.
-- `npm run ci` on `main` is green, and the critique's §3 has no open Important rows.
+Checked on 18 Oct (critique §5).
+
+- [ ] Every page passes A5's copy lint; the user guide's glossary matches the UI word for word.
+  The glossary half is true (`copy-lint.test.cjs` checks it). The lint half is not: 12 banned words remain under the
+  ratchet (index.html 3, Missions' "Direct execution" routing options; app.js 3, "workspace patch" in change
+  approvals; ui.js 5, Missions' "Capability fit" and "Mission artifacts are ready" plus three in the Models
+  page's template, one of them the developer-only "Runtime detail" tile; view-registry.js 1, the ⌘K alias "change
+  requests"). Small, but it is §3.5 (M) work, outside this close-out.
+- [x] The four accessibility journeys (G5) and the keyboard-composer check (C1) pass in CI (`a11y-nav-ui` journeys
+  ask/act/approve/⌘K, `home-ui` keyboard check; both green in this PR's browser run).
+- [ ] The owner has confirmed the composer on the iPhone. **Needs the owner** (#217's on-device checklist).
+- [x] The owner menu (after D) has no page whose first screen contains raw ids, paths or JSON. Scanned on the live
+  appliance at 1440 with Developer tools off, for all 17 owner pages except Claude Code (not loaded: it creates a
+  pairing code).
+- [x] Visual baselines exist for every owner page at 390 and 1440 (#282). The 8 older desktop baselines (home,
+  work, library, projects, backlog, claude, status, models) are shot at 1280, not 1440.
+- [ ] …and match the owner's screens. **Needs the owner.**
+- [ ] `npm run ci` on `main` is green. Not checked here (this close-out does not run it): #285 merged with no
+  `local-ci` result and left `npm test` red on the shell budget until #286; #283 and #284 were green (553 unit tests,
+  43/43 browser suites).
+- [ ] The critique's §3 has no open Important rows. One is partly fixed: Library still collects every chat
+  (§3.4, "Library is a second Work"); its follow-up waits for the owner to say what "kept" means.
