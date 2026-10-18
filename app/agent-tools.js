@@ -58,7 +58,12 @@ function createResearchTools({ projectRoot, projectId = '', knowledgeStore = () 
       const start = args.start_line ?? 1, count = args.max_lines ?? 80;
       if (!Number.isSafeInteger(start) || start < 1 || !Number.isSafeInteger(count) || count < 1 || count > 120) throw new Error('Invalid line range');
       const root = await fs.realpath(projectRoot);
-      const target = await fs.realpath(path.resolve(root, relative));
+      // Evidence labels are repo paths ("app/public/ui.js", "docs/GRIDCRAFT.md"); the root is the app folder, and the
+      // deploy copies docs/ and host/ into its repo-context folder (mission-evidence.js).
+      const aliases = [relative, ...(/^app\//.test(relative) ? [relative.slice(4)] : []), ...(/^(docs|host)\//.test(relative) ? ['repo-context/' + relative] : [])];
+      let chosen = relative;
+      for (const candidate of aliases) { try { await fs.access(path.resolve(root, candidate)); chosen = candidate; break; } catch { /* try the next spelling */ } }
+      const target = await fs.realpath(path.resolve(root, chosen));
       const resolvedRelative = path.relative(root, target).split(path.sep).join('/');
       checkFileName(resolvedRelative);
       const handle = await fs.open(target, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));

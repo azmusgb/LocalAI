@@ -37,3 +37,6 @@ __pycache__/
 tests/visual/*/__results__/
 # Local Gemini CLI settings
 .gemini/settings.json
+
+# Docs and host scripts the deploy copies in for missions (app/mission-evidence.js)
+app/repo-context/

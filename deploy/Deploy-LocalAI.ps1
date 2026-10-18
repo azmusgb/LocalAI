@@ -37,11 +37,13 @@ try {
     [System.IO.Directory]::CreateDirectory($candidate) | Out-Null
     $archive = Join-Path $StateDir ('candidate-' + [Guid]::NewGuid().ToString('N') + '.tar')
     try {
-        git -C $Repo archive --format=tar -o $archive $sha app deploy tests
+        git -C $Repo archive --format=tar -o $archive $sha app deploy tests docs host
         if ($LASTEXITCODE -ne 0) { throw 'Failed to create candidate archive' }
         tar -xf $archive -C $candidate
         if ($LASTEXITCODE -ne 0) { throw 'Failed to extract candidate archive' }
     } finally { Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue }
+    # Missions about Local AI read its docs and host scripts (app/mission-evidence.js); the container sees only app/.
+    Copy-LocalAI-RepoContext -Candidate $candidate
 
     & (Join-Path $candidate 'deploy/Test-LocalAI-Candidate.ps1') -CandidateRoot $candidate -Container $Container
     # Run the candidate's worker contracts rather than assuming repo and target match.
