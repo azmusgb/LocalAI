@@ -11,13 +11,26 @@ x-host-gateway: &host-gateway
   extra_hosts:
     - "host.docker.internal:host-gateway"
 
+# Every container's log is capped at 3 × 10 MB (Docker Desktop keeps json-file logs with no limit otherwise).
+x-logging: &logging
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
 services:
   appliance:
-    image: node:22-alpine
+    # node:22-alpine, pinned to the image that has been running; bump it in a PR.
+    image: node@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
     container_name: local-ai-appliance
     restart: unless-stopped
     command: ["node", "/app/server.js"]
-    <<: *host-gateway
+    <<: [*host-gateway, *logging]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     ports:
       - "3080:3080"
       # Host-only tools (PowerShell Workbench); published on the host's loopback only.
@@ -25,6 +38,8 @@ services:
     environment:
       PORT: "3080"
       LOCAL_UI_PORT: "3090"
+      # node:sqlite prints an ExperimentalWarning on every start; it isn't an error, and scripts read stderr as one.
+      NODE_OPTIONS: --disable-warning=ExperimentalWarning
       DATA_DIR: /data
       WORKSPACE_ROOT: /workspace
       MODEL: qwen3:4b-instruct-32k
@@ -61,9 +76,18 @@ services:
     networks: [local-ai]
 
   https:
-    image: caddy:2.10-alpine
+    # caddy:2.10-alpine, pinned to the image that has been running.
+    image: caddy@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     container_name: local-ai-https
     restart: unless-stopped
+    <<: *logging
+    healthcheck:
+      # Caddy's admin API answers inside the container only (localhost:2019).
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     ports: ["80:80", "443:443"]
     environment:
       LOCALAI_NAME: ${LOCALAI_NAME:-localai.home.arpa}
@@ -80,6 +104,15 @@ services:
     image: docker.n8n.io/n8nio/n8n@sha256:ffeb52485f78b1b06c9a832205853cf75da72a07a514c9a27724df85979d6c34
     container_name: local-ai-n8n
     restart: unless-stopped
+    <<: *logging
+    # About 0.5 GB in use; the cap keeps a runaway workflow from taking the memory the appliance needs.
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5678/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     ports: ["127.0.0.1:5678:5678"]
     environment:
       N8N_EDITOR_BASE_URL: http://${LOCALAI_HOST_IP}:5678/
@@ -95,11 +128,11 @@ services:
     networks: [local-ai]
 
   ollama-responses-proxy:
-    image: node:22-alpine
+    image: node@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
     container_name: local-ai-ollama-responses-proxy
     restart: unless-stopped
     command: ["node", "/app/server.js"]
-    <<: *host-gateway
+    <<: [*host-gateway, *logging]
     environment:
       LISTEN_HOST: 0.0.0.0
       LISTEN_PORT: "8080"
@@ -124,6 +157,14 @@ services:
     image: ghcr.io/searxng/searxng@sha256:5286edb35782454ab8a102c5eff6b54bff745853191b46aeead95f225aa6dfb6
     container_name: local-ai-searxng
     restart: unless-stopped
+    <<: *logging
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     environment:
       SEARXNG_SECRET: ${SEARXNG_SECRET:?set in stack.env}
     volumes:
@@ -136,6 +177,7 @@ services:
   sandbox-certs:
     image: n8nio/n8n-sandbox-service-api:${N8N_SANDBOX_VERSION:-1.5.0}
     container_name: local-ai-sandbox-certs
+    <<: *logging
     user: "0:0"
     entrypoint: ["sh", "-c"]
     command:
@@ -153,6 +195,7 @@ services:
     image: n8nio/n8n-sandbox-service-api:${N8N_SANDBOX_VERSION:-1.5.0}
     container_name: local-ai-sandbox-api
     restart: unless-stopped
+    <<: *logging
     depends_on:
       sandbox-certs:
         condition: service_completed_successfully
@@ -183,6 +226,9 @@ services:
     container_name: local-ai-sandbox-runner-1
     privileged: true
     restart: unless-stopped
+    <<: *logging
+    # Docker-in-Docker for n8n's code sandboxes (each capped at 512 MB below); the runner as a whole gets 2 GB.
+    mem_limit: 2g
     depends_on:
       sandbox-api:
         condition: service_healthy
