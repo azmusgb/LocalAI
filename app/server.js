@@ -2364,15 +2364,15 @@ function getSpecialistOrchestrator(){
 async function apiAgentCatalog(req,res){if(!requireFeature(res,4))return;json(res,200,{items:getSpecialistOrchestrator().catalog})}
 async function apiAgentModels(req,res){if(!requireFeature(res,4))return;try{json(res,200,{items:await getSpecialistOrchestrator().models()})}catch(e){json(res,503,{error:String(e.message||e)})}}
 async function apiSpecialistRun(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});json(res,200,{run:await getSpecialistOrchestrator().specialist(String(b.agentId||''),goal,String(b.projectId||''))})}catch(e){storageError(res,e,400)}}
-async function apiAgentDispatch(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});json(res,200,{routing:await getSpecialistOrchestrator().dispatch(goal,Array.isArray(b.agentIds)?b.agentIds:undefined)})}catch(e){storageError(res,e,400)}}
+async function apiAgentDispatch(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});json(res,200,{routing:await getSpecialistOrchestrator().dispatch(goal,Array.isArray(b.agentIds)?b.agentIds:undefined,{workerModel:b.workerModel||''})})}catch(e){workerModelError(res,e)}}
 async function apiAgentMissions(req,res){if(!requireFeature(res,4))return;json(res,200,{items:getSpecialistOrchestrator().missions(200)})}
 async function apiAgentMission(req,res,urlObj){if(!requireFeature(res,4))return;const id=String(urlObj.searchParams.get('id')||''),m=getSpecialistOrchestrator().getMission(id);if(!m)return json(res,404,{error:'Mission not found'});json(res,200,{mission:m})}
 // Every mission is a ledger run from the first moment, however it was started, so Work › Missions lists it.
 // async:true answers 202 at once; without it (Agent World) the reply waits for the mission. The run follows the mission's own events.
 // Mission statuses: running | complete | needs_attention | error (the last two end the run failed).
-function startMissionRun(goal,projectId,ids,allowWeb=false){
+function startMissionRun(goal,projectId,ids,allowWeb=false,workerModel=''){
   const orch=getSpecialistOrchestrator();
-  const run=runLedger.create({type:'agent',title:titleFromText(goal,'Mission'),input:{goal:goal.slice(0,4000),projectId,agentIds:ids||[],webSearch:allowWeb},projectId,meta:{},cancellable:true});
+  const run=runLedger.create({type:'agent',title:titleFromText(goal,'Mission'),input:{goal:goal.slice(0,4000),projectId,agentIds:ids||[],webSearch:allowWeb,...(workerModel?{workerModel}:{})},projectId,meta:{},cancellable:true});
   runLedger.start(run.id,'Mission started');
   const controller=new AbortController();activeRunControllers.set(run.id,controller);
   let missionId='',off=()=>{},ended=false,last='';
@@ -2385,12 +2385,15 @@ function startMissionRun(goal,projectId,ids,allowWeb=false){
     else runLedger.update(run.id,{status:'failed',error:String(m.error||'The mission needs attention.').slice(0,8000),output:{missionId:m.id,outcome:m.status},meta:{missionId:m.id}},'Mission '+m.status);
   };
   // `done` settles with the mission (or its error) for callers that wait for it; the run records the outcome either way.
-  const done=orch.mission(goal,projectId,ids,{signal:controller.signal,allowWeb,onCreated:m=>{missionId=m.id;orch.events.on('mission',apply);off=()=>orch.events.off('mission',apply);runLedger.update(run.id,{meta:{missionId:m.id}},'Mission created')}})
+  const done=orch.mission(goal,projectId,ids,{signal:controller.signal,allowWeb,workerModel,onCreated:m=>{missionId=m.id;orch.events.on('mission',apply);off=()=>orch.events.off('mission',apply);runLedger.update(run.id,{meta:{missionId:m.id}},'Mission created')}})
     .then(m=>{apply(m);return m},e=>{activeRunControllers.delete(run.id);if(!ended){ended=true;off();runLedger.fail(run.id,e)}throw e});
   done.catch(()=>{});
   return {run,done};
 }
-async function apiAgentMissionStart(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const ids=Array.isArray(b.agentIds)&&b.agentIds.length?b.agentIds:undefined;const allowWeb=b.webSearch===true;const {run,done}=startMissionRun(goal,String(b.projectId||''),ids,allowWeb);if(b.async===true)return json(res,202,{runId:run.id,threadId:run.threadId});json(res,200,{mission:await done,runId:run.id})}catch(e){storageError(res,e,400)}}
+// workerModel (optional, developer tools): an installed model's exact name that every specialist in the mission uses.
+// It is checked before the run exists, so an unknown name answers 400 with the installed names, async or not.
+function workerModelError(res,e){if(e&&e.code==='UNKNOWN_MODEL')return json(res,400,{error:e.message,code:e.code,installed:e.installed||[]});storageError(res,e,400)}
+async function apiAgentMissionStart(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req),goal=String(b.goal||'').trim();if(!goal)return json(res,400,{error:'goal is required'});const ids=Array.isArray(b.agentIds)&&b.agentIds.length?b.agentIds:undefined;const allowWeb=b.webSearch===true;let workerModel='';if(b.workerModel!==undefined&&b.workerModel!==null&&b.workerModel!==''){try{workerModel=await getSpecialistOrchestrator().checkWorkerModel(b.workerModel)}catch(e){if(e.code==='UNKNOWN_MODEL')return workerModelError(res,e);return json(res,503,{error:String(e.message||e)})}}const {run,done}=startMissionRun(goal,String(b.projectId||''),ids,allowWeb,workerModel);if(b.async===true)return json(res,202,{runId:run.id,threadId:run.threadId});json(res,200,{mission:await done,runId:run.id})}catch(e){storageError(res,e,400)}}
 const SSE_KEEPALIVE_MS=Math.max(1000,Number(process.env.SSE_KEEPALIVE_MS)||25000);
 async function apiAgentMissionEvents(req,res,urlObj){if(!requireFeature(res,4))return;res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});const wanted=String(urlObj.searchParams.get('missionId')||'');const send=m=>{if(!wanted||m.id===wanted)res.write('data: '+JSON.stringify(m)+'\n\n')};const orch=getSpecialistOrchestrator();orch.events.on('mission',send);res.write(': connected\n\n');
   // A comment every 25 s keeps phones and proxies from dropping a quiet stream.
