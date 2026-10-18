@@ -168,8 +168,14 @@ through cloud services with your ArtCraft account, so what you type and the pict
 what it makes stays in that account. For anything private, use **Images**, which stays on this computer.
 
 **System › Services** also has a card for the Workshop display, the touchscreen beside the printer: it says whether
-the display is answering, and **Open Workshop portal** opens the display's own page. (Its current firmware has no sign-in; an update
-that brings it back is being prepared.) Away from home, Tailscale must be on ([Workshop display](WORKSHOP-DISPLAY.md)).
+the display is answering and whether its page has its own sign-in, and **Open Workshop portal** opens the display's own
+page. (Today's firmware has no sign-in; once the update is installed the card says "its own sign-in", and the portal
+asks for the code shown on the display, System → Local Portal.) Away from home, Tailscale must be on
+([Workshop display](WORKSHOP-DISPLAY.md)).
+
+With the display's read-only status token set up ([Workshop display › Printer status](WORKSHOP-DISPLAY.md#printer-status-read-only-token)),
+**Home** shows one line while a print runs or has stopped with an error, such as "Printer · 42% · 1 h 10 min left".
+Tap it to open the Workshop display card. Nothing shows while the printer is idle.
 
 ## Automations
 

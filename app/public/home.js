@@ -148,6 +148,29 @@ function recentRow(it){
  if(it.status==='awaiting_approval')row.querySelector('.run-card__bar')?.remove(); // waiting on you is not progress
  return row;
 }
+// ---- Printer: one calm line while a print runs or stops with an error (Workshop display's read-only token) ----
+// The appliance polls the display; ?part=printer answers from its last read, so Home never sends the display anything.
+// Nothing shows when the printer is idle or unknown, or when no token is set (printer: null).
+const span=m=>m<60?`${m} min`:`${Math.floor(m/60)} h${m%60?` ${m%60} min`:''}`;
+function printerWords(p){
+ if(!p||p.access!=='ok')return '';
+ const pct=Number.isInteger(p.progress)?`${p.progress}%`:null,left=Number.isInteger(p.minutesLeft)?`${span(p.minutesLeft)} left`:null;
+ if(p.state==='printing')return ['Printer',pct||'Printing',left].filter(Boolean).join(' · ');
+ if(p.state==='paused')return ['Printer','Paused',pct].filter(Boolean).join(' · ');
+ if(p.state==='error')return `Printer · Stopped with an error${p.errorCode?` (${p.errorCode})`:''}`;
+ return '';
+}
+function paintPrinter(p){
+ const sec=$('homePrinter'),box=$('homePrinterLine');if(!sec||!box)return;
+ const words=printerWords(p);sec.hidden=!words;if(!words){box.replaceChildren();return}
+ const kit=root.LocalAIKit,row=document.createElement('button');
+ row.type='button';row.className='list-row home-attn';row.dataset.printerState=p.state;
+ row.innerHTML=`<span class="list-row__icon">${kit?kit.icon(p.state==='error'?'alert':'clock'):''}</span><span class="list-row__main"><span class="list-row__title">${esc(words)}</span></span>`;
+ row.setAttribute('aria-label',`${words}. Open Workshop display in Services`);
+ row.addEventListener('click',()=>root.LocalAIRouter.open('integrations?card=workshop'));
+ box.replaceChildren(row);
+}
+const loadPrinter=()=>root.LocalAIUI.fetchJson('/api/workshop/status?part=printer',{cache:'no-store'}).then(d=>paintPrinter(d?.printer),()=>{});
 // Recent leaves out what Needs you already shows (the same run, or another card for the same thread): one row per thing.
 let lastRecent=null;
 const threadKey=r=>r.threadId||r.id;
@@ -181,7 +204,7 @@ function refresh(){
  const first=!loaded;
  const recent=first?root.LocalAIUI.loadInto(box,()=>root.LocalAIUI.fetchJson(recentUrl,{cache:'no-store'}),{what:'your recent work',empty:'Nothing yet. Ask a question or make an image below.',render:paintRecent}).then(()=>{loaded=true},()=>{})
   :root.LocalAIUI.fetchJson(recentUrl,{cache:'no-store'}).then(d=>{if(!paintRecent(box,d))box.innerHTML='<div class="state-empty empty-state">Nothing yet. Ask a question or make an image below.</div>'}).catch(()=>{});
- return inflight=Promise.all([recent,loadNeeds()]).finally(()=>{inflight=null});
+ return inflight=Promise.all([recent,loadNeeds(),loadPrinter()]).finally(()=>{inflight=null});
 }
 function schedule(){clearTimeout(timer);timer=setTimeout(()=>{if(active()&&!document.hidden)refresh().then(schedule);else schedule()},30000)}
 
@@ -287,7 +310,7 @@ function init(){
  if(active()&&onHomeHash())setTimeout(activate,0);
 }
 addEventListener('localai:first-run',paintNeeds); // Get started appeared or was dismissed: decide again who shows the service rows
-root.LocalAIHome={send,activate,refresh,mode:()=>cur(),setMode,
+root.LocalAIHome={send,activate,refresh,mode:()=>cur(),setMode,printerWords,
  // ui.js hands over the critical items of the capability check (a stopped service, an unreachable registry).
  setAttention(items){attention=(items||[]).filter(a=>a&&a.severity==='critical');paintNeeds()}};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();

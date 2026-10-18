@@ -34,7 +34,10 @@ const KB = 1024;
 // 2026-10-18: 250 → 253 KB for changing a Spreadsheets cell by hand (the inline editor, the phone sheet and its markup,
 // the Direct edit review): spreadsheets.js +1.8 KB, index.html +0.2 KB, app.css +0.1 KB; with the Workshop card (#307,
 // ui.js +0.7 KB) 252.0 KB measured.
-const TOTAL = 253 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// 2026-10-18: 253 → 254 KB (and ui.js 98 → 99 KB) for the Workshop display's sign-in words and printer status: the
+// card's sign-in wording from the display's real answer, its printer line, the jump to the card, and Home's printer
+// line (ui.js +0.6 KB, home.js +0.6 KB; 253.3 KB measured, ui.js 98.5 KB).
+const TOTAL = 254 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
 // tab rows (234.9 KB measured).
@@ -43,7 +46,7 @@ const TOTAL = 253 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // the streets: 236.5 KB measured); the pass as a whole aims at no more than +6 KB.
 // 2026-10-18: 238 → 240 KB (and ui.js 93 → 95 KB) for its last part, district buildings and the ground: silhouettes
 // and props, shadows, lit windows, sidewalks, crossings, lamps, benches, trees (239.1 KB measured; +4 KB for the pass).
-const PER_FILE = { 'ui.js': 98 * KB, 'app.css': 41 * KB, 'app.js': 36 * KB, 'index.html': 13 * KB };
+const PER_FILE = { 'ui.js': 99 * KB, 'app.css': 41 * KB, 'app.js': 36 * KB, 'index.html': 13 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;

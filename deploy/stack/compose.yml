@@ -46,6 +46,9 @@ services:
       # Services › Workshop display: the touchscreen beside the printer (docs/WORKSHOP-DISPLAY.md). Empty means the
       # default, http://10.0.0.124; only an http(s) address on the home network or a .local name is used.
       LOCALAI_WORKSHOP_URL: ${LOCALAI_WORKSHOP_URL:-}
+      # The display's read-only printer-status token (Local Portal › More › Read-only status access). Empty means no
+      # printer line. A secret: it lives only in stack.env.
+      LOCALAI_WORKSHOP_STATUS_TOKEN: ${LOCALAI_WORKSHOP_STATUS_TOKEN:-}
       POWERSHELL_UI_TOKEN: ${POWERSHELL_UI_TOKEN:?set in stack.env}
       POWERSHELL_BRIDGE_TOKEN: ${POWERSHELL_BRIDGE_TOKEN:?set in stack.env}
     volumes:
