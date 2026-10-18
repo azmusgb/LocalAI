@@ -162,3 +162,28 @@ the two odd-titled runs · **D3** no blocking merge gate · **D4** retire `issue
 | D10 | Thread naming: a conversation keeps its **first** message as its title (or a short generated one), and the Library holds one item per thread. | First message, generated title later if wanted. |
 
 D6–D10 change structure the owner sees every day, so they wait for a yes. Everything else in the plan proceeds.
+
+## 5. Status on 18 Oct
+
+Every row of §3 marked **I** (there are none higher), checked against `main` at 9c4b8d0 (2.0.648), the live
+appliance at that release (read-only: no form submitted, nothing approved, `#claude` not loaded), and screenshots at
+390 (iPhone 14, WebKit) and 1440 (Chromium) taken in a context that blocks every non-GET request. **Fixed 10 · Partly
+fixed 1 · Still open 0 · No longer applies 0** (one of the 10, §3.4 developer boundary, was partly fixed until this
+PR).
+
+| § | Row | Status | Evidence / PR | Note |
+|---|---|---|---|---|
+| 3.1 | Health says "Everything is ready" when `/api/status` fails | Fixed | #219 (A1), #262; `app.js` `refreshStatus` checks `r.ok` and `Array.isArray(services)`; `system-lists-ui` | Failure reads "Couldn't check the services. Try again" and keeps the last list; #262 adds a 15 s time limit so it never sticks. |
+| 3.1 | First run contradicts itself | Fixed | #220 (A2); `home.js` `paintNeeds` + `localai:first-run`, `ui.js` `localai:run-opened`; `first-run-ui` | No service rows under Get started; step 3 done only when a run opens; "Chat needs Intelligence running. See Health"; Health down-cards name the action. |
+| 3.1 | A conversation is renamed by each reply and saved once per turn | Fixed | #223 (A3, D10); `server.js` `threadTitle`, `app/library-threads.js`, `repair:library-threads-v1`; `library-threads.test.cjs`, `chat-run-ui` | Live Work and Library show one row per thread under its first message. |
+| 3.2 | Sending from Home drops focus; the answer is never announced | Fixed | #224 (B1); `run-bodies.js` writes "Answer ready." to `#runLiveRegion`; `a11y-nav-ui` journey "ask from Home" | Focus stays in `#runDrawer` through the pending→run re-render. |
+| 3.2 | Acting on an item loses focus and leaves no trace | Fixed | #227 (B2/B3/B5), #231 (D8); `LocalAIUI.refocus`/`announce` in `components.js`; `improve-ui`, `notifications-ui`, `home-ui` | Backlog actions and approvals refocus the row (or the next) and announce what happened. |
+| 3.2 | A ghost button after the "Updated to x.y.z" toast | Fixed | #224 (B4); `ui.js` What's new toast is `ms:0` with Dismiss, `hideToast` empties it; `whatsnew-ui` | No timer; nothing left in `#toast` once dismissed or opened. |
+| 3.3 | The Home composer ignores the iOS keyboard | Fixed (needs the owner) | #217 (C1); `home.js` `dockToNav` reads `visualViewport`, `body.home-typing` hides the tab bar; `home-ui` keyboard check | Emulated keyboard passes; the plan's on-device check on the owner's iPhone is still open. |
+| 3.3 | Inbox alert bodies cut at four lines, no way to read the rest | Fixed | #221 (C3); `app.js` `inboxMore()`; `notifications-ui` long-alert check | "Show more" (`aria-expanded`) on phone and desktop; the Inbox history cards have it too (#231). |
+| 3.3 | Hover-only text (run title, file folder paths) | Fixed | #221 (C4); `ui.js` `viewHead` tap-to-unclamp, `app.js` `renderTree` `.tree-path` on `(pointer:coarse)`; `chat-run-ui`, `layout-ui` | Live 390 run view shows the full title on two lines. |
+| 3.4 | The developer boundary is too far right | Fixed (this PR) | #226 (D-1/D-4), #211, #270 (navigation step 3), #258 (N1: Improve always shown); this PR: Models card details | Was partly fixed: with Developer tools off, every Models card still showed "Q4_K_M", "gguf", "VRAM resident", "Context", "Unload target". Those are now `data-dev-only`; `models-ui` checks both states. Improve and Claude Code being always shown is the owner's later decision N1 (navigation spec), which supersedes the "Improve when on" part. |
+| 3.4 | The same chat appears in four places; Library is a second Work | Partly fixed | #229 (D-5, D7), #270, #223 | Library is a tab of Projects, text items are list rows, one item per thread. But every chat still lands in Library automatically: live it holds 125 items, mostly ordinary chats and test turns ("Reply exactly: EVOLUTION_OK"), so it is still a second Work. Proposed follow-up in the PR: Library holds only what you keep. |
+
+Not in the audit (no **I** rows, noted while looking): the Audit log still lists "Specialist error / Open run" per
+mission step, and the Models page with Ollama down still reads "Model list unavailable / fetch failed" (§3.1 M row).
