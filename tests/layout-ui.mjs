@@ -263,8 +263,8 @@ await check('desktop with a mouse: Work still drops the page list, and the ⌘K 
 await check('phone: the sticky header gets a hairline once the page scrolls, where no page tabs draw one', async () => {
   const { page, context } = await device('iPhone 14');
   const line = () => page.evaluate(() => getComputedStyle(document.querySelector('.ux-context-bar')).boxShadow);
-  await go(page, 'work');
-  await page.evaluate(() => { document.getElementById('work').style.minHeight = '3000px'; window.scrollTo(0, 0); });
+  await go(page, 'home'); // Home has no page strip (Work has one since navigation step 3)
+  await page.evaluate(() => { document.getElementById('home').style.minHeight = '3000px'; window.scrollTo(0, 0); });
   await page.waitForTimeout(150);
   assert.equal(await line(), 'none', 'no line at the top');
   await page.evaluate(() => window.scrollTo(0, 300));

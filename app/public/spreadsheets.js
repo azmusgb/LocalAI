@@ -1,4 +1,4 @@
-// System › Spreadsheets: see the workbook open in GridCraft on the Windows computer, ask for it to be read or changed,
+// Projects › Spreadsheets: see the workbook open in GridCraft on the Windows computer, ask for it to be read or changed,
 // and keep or discard what a Review request changed. The appliance proxies the host bridge (/api/gridcraft), so the
 // bridge port never has to be open to the network. One request at a time.
 (function(root){'use strict';

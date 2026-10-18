@@ -966,8 +966,8 @@ function buildTabs(){
  for(const v of REG.VIEWS){
    if(!v.parent)continue;
    for(const t of REG.tabs(v.id)){
-     const section=q('#'+t.id);if(!section||q('.ux-tabs[role="tablist"]',section))continue;
-     const strip=document.createElement('div');strip.className='ux-tabs';strip.setAttribute('role','tablist');strip.setAttribute('aria-label',REG.label(REG.page(t.id).id)+' sections');
+     const section=q('#'+t.id);if(!section||q('.ux-page-tabs',section))continue; // its own tab rows (Spreadsheets' sheets) are not page tabs
+     const strip=document.createElement('div');strip.className='ux-tabs ux-page-tabs';strip.setAttribute('role','tablist');strip.setAttribute('aria-label',REG.label(REG.page(t.id).id)+' sections');
      REG.tabs(t.id).forEach(x=>{const b=document.createElement('button');b.type='button';b.className='ux-tab';b.setAttribute('role','tab');b.setAttribute('aria-controls',x.id);b.tabIndex=-1;b.dataset.uxTab=x.id;b.textContent=x.tab||x.label;b.addEventListener('click',()=>navigate(x.id));strip.appendChild(b)});
      // One tab stop per strip (sync() gives the selected tab tabindex 0); arrows, Home and End open the next page, and
      // app.js keeps focus on the same tab in that page's copy of the strip (as the mission result tabs do).
@@ -1006,12 +1006,16 @@ function buildPageStrip(){
  strip.addEventListener('scroll',()=>fadeStrip(strip),{passive:true});window.addEventListener('resize',()=>fadeStrip(strip),{passive:true});
  strip.addEventListener('click',e=>{const b=e.target.closest('[data-strip-view]');if(b){navigate(b.dataset.stripView);toggleSheet(false)}});
 }
-function renderPageStrip(d,page){
+// One strip for the area (navigation spec N5): its pages, and a page's tabs in place of the page (Projects › Library,
+// Work › Automations), so a phone never shows a second row of page tabs under it.
+function renderPageStrip(d,page,view){
  const strip=q('#uxPageStrip');if(!strip)return;
- const views=listedGroups(d).flatMap(g=>g.views);
+ const views=listedGroups(d).flatMap(g=>g.views).flatMap(v=>{const t=REG.tabs(v);return t.length?t.map(x=>x.id):[v]});
+ const current=REG.view(view)?.id;if(views.includes(current))page=current;
  const key=d.id+'|'+views.join(',');
  if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=views.map(v=>'<button type="button" data-strip-view="'+v+'">'+(REG.view(v)?.short||labelForView(v))+'</button>').join('');}
- strip.hidden=views.length<2||d.id==='home'; // Home's only other page, Inbox, already has a button in the top bar
+ // Home's only other page, Inbox, already has a button in the top bar; a hidden page (Missions, Chat) is none of these.
+ strip.hidden=views.length<2||d.id==='home'||REG.view(view)?.domain==='hidden';
  qa('[data-strip-view]',strip).forEach(b=>{const on=b.dataset.stripView===page;b.classList.toggle('active',on);if(on){b.setAttribute('aria-current','page');if(strip.scrollWidth>strip.clientWidth)strip.scrollLeft=Math.max(0,b.offsetLeft-strip.clientWidth/2+b.offsetWidth/2)}else b.removeAttribute('aria-current')});
  fadeStrip(strip);
 }
@@ -1035,7 +1039,7 @@ function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;
 function sync(forced){
  const view=REG.view(forced||activeView())?.id||forced||activeView(),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
  // A hidden page (Missions, Chat, Images) names itself in the breadcrumb and lights the page that owns it in the menus.
- const hidden=REG.view(view)?.domain==='hidden',page=pageForView(view),viewLabel=labelForView(page),navPage=menuPage(view);renderPageStrip(d,navPage);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=listedGroups(d).flatMap(g=>g.views).filter(v=>viewButton(v)).length<2;document.body.classList.toggle('ux-single-page',single&&(hidden||!touchWide()));q('#uxContextBar')?.classList.toggle('ux-context-same',!hidden&&(single||viewLabel===d.label))} // "Local AI / Domain" for a domain with one page, "Local AI / Domain / Page" otherwise
+ const hidden=REG.view(view)?.domain==='hidden',page=pageForView(view),viewLabel=labelForView(page),navPage=menuPage(view);renderPageStrip(d,navPage,view);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=listedGroups(d).flatMap(g=>g.views).filter(v=>viewButton(v)).length<2;document.body.classList.toggle('ux-single-page',single&&(hidden||!touchWide()));q('#uxContextBar')?.classList.toggle('ux-context-same',!hidden&&(single||viewLabel===d.label))} // "Local AI / Domain" for a domain with one page, "Local AI / Domain / Page" otherwise
  q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);q('#uxContextMenu')?.setAttribute('aria-label',d.label+' pages');syncHeaderAction(view);{const g=q('#uxContextGreeting');if(g)g.textContent=greeting()};
  qa('.ux-primary-item').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
  qa('#uxMobileNav [data-domain]').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});

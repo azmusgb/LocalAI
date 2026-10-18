@@ -18,19 +18,20 @@ const VIEWS=[
  {id:'home',svg:'home',domain:'home',section:'Overview',label:'Home',description:'Start something, or pick up where you left off.',aka:['overview']},
  // One queue (D8): you decide approvals in Home › Needs you; the Inbox is the history (alerts and decisions). Old #approvals links open it.
  {id:'inbox',svg:'inbox',domain:'home',section:'Overview',label:'Inbox',description:'Alerts, approvals and what was decided.',aka:['notifications','alerts','approvals']},
- {id:'work',svg:'work',domain:'work',section:'Work',label:'Work',description:'Everything running and done, in one place.',aka:['runs','missions','agents']},
+ {id:'work',svg:'work',domain:'work',section:'Work',label:'Work',tab:'Work',description:'Everything running and done, in one place.',aka:['runs','missions','agents']},
  {id:'ask',svg:'compose',domain:'hidden',section:'Make',label:'Chat',description:'Private conversation with your local models.',aka:['ask','ask ai']},
  {id:'create',svg:'image',domain:'hidden',section:'Make',label:'Images',description:'Generate images with your local models.',aka:['create','create image']},
  {id:'projects',svg:'projects',domain:'projects',section:'Keep',label:'Projects',tab:'Projects',description:'Group related work with its own sources and memory.'},
  {id:'knowledge',svg:'sources',domain:'projects',section:'Keep',parent:'projects',tab:'Sources',label:'Sources',description:'Files and notes the assistant can search.',aka:['knowledge']},
  {id:'memory',svg:'memory',domain:'projects',section:'Keep',parent:'projects',tab:'Memory',label:'Memory',description:'Facts the assistant keeps about each project.',aka:['project memory']},
- // Library is the last tab of Projects: what you kept, as opposed to Work (everything you did). Old #library links open it.
- {id:'library',svg:'library',domain:'projects',section:'Keep',parent:'projects',tab:'Everything you kept',label:'Library',description:'Everything you kept: chats, research and images.',aka:['everything you kept','kept']},
+ // Library is a tab of Projects: what you kept, as opposed to Work (everything you did). Old #library links open it.
+// Automations is a tab of Work (scheduled work) and Spreadsheets a tab of Projects (making things): navigation spec, step 3.
+ {id:'library',svg:'library',domain:'projects',section:'Keep',parent:'projects',tab:'Library',label:'Library',description:'Everything you kept: chats, research and images.',aka:['everything you kept','kept']},
  {id:'agents',svg:'target',domain:'hidden',section:'Agents',label:'Missions',description:'Give a goal; specialist agents work it live.',aka:['agents','agent operations']},
  {id:'status',svg:'health',domain:'system',section:'Health',label:'Health',description:'Whether Local AI is working, and which optional services are up.',aka:['status','system status']},
  {id:'models',svg:'model',domain:'system',section:'Health',label:'Models',description:"Installed models and what's loaded now."},
  {id:'integrations',svg:'plug',domain:'system',section:'Health',label:'Services',description:'What Local AI connects to, and whether each one is ready.',aka:['integrations','bridges','tools']},
- {id:'automationStudio',svg:'clock',domain:'system',section:'Automations',label:'Automations',description:'Scheduled prompts and research, health checks and the morning brief.',aka:['studio','automation studio','monitors','morning brief','health check']},
+ {id:'automationStudio',svg:'clock',domain:'work',section:'Work',parent:'work',tab:'Automations',label:'Automations',description:'Scheduled prompts and research, health checks and the morning brief.',aka:['studio','automation studio','monitors','morning brief','health check']},
  {id:'automations',svg:'flow',short:'n8n',domain:'system',section:'Automations',dev:true,label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
  {id:'actions',svg:'globe',short:'Browser',domain:'system',section:'Automations',dev:true,label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
  {id:'backlog',svg:'improve',domain:'improve',section:'Pipeline',label:'Backlog',description:'One ranked list of what could change in Local AI.',aka:['improve','ideas','priorities']},
@@ -38,7 +39,7 @@ const VIEWS=[
  {id:'shipped',svg:'check',domain:'improve',section:'Pipeline',label:'Shipped',description:'What changed, release by release.',aka:['done','released']},
  {id:'signals',svg:'alert',domain:'improve',section:'Pipeline',label:'Signals',description:'Problems Local AI noticed; serious ones join the Backlog.',aka:['detections','issues','quality signals']},
  // GridCraft on the Windows computer, through the appliance (spreadsheets.js). The old /gridcraft.html page sends you here.
- {id:'spreadsheets',svg:'file',domain:'system',section:'Tools',label:'Spreadsheets',description:'Ask for a spreadsheet on the Windows computer to be checked or changed.',aka:['gridcraft','excel','workbook']},
+ {id:'spreadsheets',svg:'file',domain:'projects',section:'Keep',parent:'projects',tab:'Spreadsheets',label:'Spreadsheets',description:'Ask for a spreadsheet on the Windows computer to be checked or changed.',aka:['gridcraft','excel','workbook']},
  {id:'claude',svg:'sparkle',domain:'improve',section:'Pipeline',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
  {id:'workbench',svg:'folder',domain:'system',section:'Tools',dev:true,label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
  {id:'repoTools',svg:'branch',domain:'system',section:'Tools',dev:true,label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},
@@ -64,7 +65,7 @@ function sections(domainId){
  for(const v of VIEWS){if(v.domain!==domainId||v.parent)continue;let s=out.find(x=>x.label===v.section);if(!s){s={label:v.section,views:[]};out.push(s)}s.views.push(v.id)}
  return out;
 }
-// The browser tab's title for a page (E8): "Work · Local AI"; a tab of a page by its tab label ("Everything you kept · Local AI").
+// The browser tab's title for a page (E8): "Work · Local AI"; a tab of a page by its tab label ("Library · Local AI").
 function title(id){const v=view(id);if(!v||v.id==='home')return 'Local AI';return `${v.parent?(v.tab||v.label):v.label} · Local AI`}
 const api={DOMAINS,VIEWS,ALIASES,resolve,view,page,tabs,sections,title,label:id=>byId.get(id)?.label||id,description:id=>byId.get(id)?.description||''};
 if(typeof module==='object'&&module.exports)module.exports=api;else root.LocalAIViews=api;

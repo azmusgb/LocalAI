@@ -80,7 +80,7 @@ function announcePage(id,first,from){
   // `from` is what had focus before the old page was hidden (hiding it drops focus to the body).
   const strip=!force&&from?.closest?.('.ux-tabs[role="tablist"],.ux-page-strip,[role="tablist"]');
   // A tab switch: each page has its own copy of the tab strip, so keep focus on the same tab in the new copy.
-  if(strip){if(!strip.closest('.view')||strip.closest('.view')===sec)return;requestAnimationFrame(()=>{const t=sec.querySelector('.ux-tabs[role="tablist"] .ux-tab.active,.ux-tabs [aria-selected="true"]');if(t)t.focus({preventScroll:true})});return}
+  if(strip){if(!strip.closest('.view')||strip.closest('.view')===sec)return;requestAnimationFrame(()=>{const t=sec.querySelector('.ux-page-tabs .ux-tab.active,.ux-page-tabs [aria-selected="true"]');if(t)t.focus({preventScroll:true})});return}
   // The new page already put focus somewhere inside itself on purpose (Work's "Start something" focuses the composer): keep it.
   requestAnimationFrame(()=>{const a=document.activeElement;if(!force&&a&&a!==document.body&&sec.contains(a))return;const h=[...sec.querySelectorAll('h1')].find(x=>x.offsetParent!==null),t=h||sec;if(!t.hasAttribute('tabindex'))t.setAttribute('tabindex','-1');t.focus({preventScroll:true})});
 }
@@ -538,7 +538,7 @@ function artifactCard(item){
   const image=item.kind==='image'?safeUrl(item.meta?.imageUrl||item.data?.imageUrl,{image:true}):'';const symbol='';
   return `<article class="artifact${image?' artifact--image':''}" data-artifact="${esc(item.id)}"><div class="artifact-preview">${image?`<img src="${esc(image)}" alt="">`:symbol}</div><div class="artifact-body"><div class="artifact-kind">${esc(KIND_LABEL[item.kind]||String(item.kind||'Item').replace(/^./,c=>c.toUpperCase()))}</div><div class="artifact-title" title="${esc(item.title)}">${esc(item.title)}</div><div class="artifact-summary">${esc(item.summary||'')}</div><div class="artifact-foot"><span class="meta">${ago(item.createdAt)}</span><span><button class="icon-btn pin-artifact" title="${item.pinned?'Unpin':'Pin'}" aria-label="${item.pinned?'Unpin':'Pin'} ${esc(item.title)}">${item.pinned?'★':'☆'}</button><button class="icon-btn delete-artifact" title="Delete" aria-label="Delete ${esc(item.title)}">×</button></span></div></div></article>`;
 }
-// Everything you kept (Projects › Library): text reads best as a list, so conversations and research are rows that span the
+// Projects › Library: text reads best as a list, so conversations and research are rows that span the
 // page, newest first; images keep their picture cards after them. One flat list, so "Show more" clips both alike.
 function artifactRow(item){
   const kind=KIND_LABEL[item.kind]||String(item.kind||'Item').replace(/^./,c=>c.toUpperCase());

@@ -1,6 +1,6 @@
 # GridCraft integration
 
-GridCraft is a Windows spreadsheet app. LocalAI exposes it as **System › Spreadsheets**
+GridCraft is a Windows spreadsheet app. LocalAI exposes it as **Projects › Spreadsheets**
 (`http://<host>:3080/#spreadsheets`, `app/public/spreadsheets.js`), where you type a request and a local model
 works on the open workbook. It works on phones too. The old `/gridcraft.html` address sends you there.
 
@@ -52,7 +52,7 @@ Verify:
 Invoke-RestMethod http://127.0.0.1:8787/health
 ```
 
-Then open System › Spreadsheets (`http://<host>:3080/#spreadsheets`).
+Then open Projects › Spreadsheets (`http://<host>:3080/#spreadsheets`).
 
 ## Bridge configuration
 
