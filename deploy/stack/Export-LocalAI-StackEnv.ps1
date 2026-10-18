@@ -16,13 +16,14 @@ $values = [ordered]@{
     LOCALAI_HOST_IP = $https['LOCALAI_HOST_IP']; LOCALAI_NAME = $https['LOCALAI_NAME']; TZ = $n8n['TZ']
     LOCALAI_REMOTE_NAME = $(if ($https['LOCALAI_REMOTE_NAME'] -and $https['LOCALAI_REMOTE_NAME'] -notlike '*.invalid') { $https['LOCALAI_REMOTE_NAME'] } else { '' })
     MAC_AI_HOME_URL = $app['MAC_AI_HOME_URL']; MAC_DSH_URL = $app['MAC_DSH_URL']
+    LOCALAI_WORKSHOP_URL = $app['LOCALAI_WORKSHOP_URL']
     POWERSHELL_UI_TOKEN = $app['POWERSHELL_UI_TOKEN']; POWERSHELL_BRIDGE_TOKEN = $app['POWERSHELL_BRIDGE_TOKEN']
     N8N_ENCRYPTION_KEY = $n8n['N8N_ENCRYPTION_KEY']; SEARXNG_SECRET = $search['SEARXNG_SECRET']
     N8N_SANDBOX_VERSION = ($sandboxImage -split ':')[-1]
     SANDBOX_API_KEYS = $sandbox['SANDBOX_API_KEYS']; SANDBOX_API_RUNNER_REGISTRATION_TOKEN = $sandbox['SANDBOX_API_RUNNER_REGISTRATION_TOKEN']
     SANDBOX_API_RUNNER_API_KEY = $sandbox['SANDBOX_API_RUNNER_API_KEY']
 }
-$missing = @($values.Keys | Where-Object { [string]::IsNullOrEmpty($values[$_]) -and $_ -notlike 'MAC_*' -and $_ -ne 'LOCALAI_REMOTE_NAME' })
+$missing = @($values.Keys | Where-Object { [string]::IsNullOrEmpty($values[$_]) -and $_ -notlike 'MAC_*' -and $_ -notin 'LOCALAI_REMOTE_NAME', 'LOCALAI_WORKSHOP_URL' })
 if ($missing) { throw "Not found in the running containers: $($missing -join ', ')" }
 New-Item -ItemType Directory -Force (Split-Path $Out) | Out-Null
 $text = "# Exported $(Get-Date -Format s) from the running containers by Export-LocalAI-StackEnv.ps1. Secret: never commit.`r`n" + (($values.Keys | ForEach-Object { "$_=$($values[$_])" }) -join "`r`n") + "`r`n"

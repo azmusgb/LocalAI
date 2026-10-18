@@ -29,6 +29,7 @@ Start with the [project README](../README.md) for what LocalAI is.
 - [GridCraft](GRIDCRAFT.md): the GridCraft page, its Windows bridge and agent.
 - [GridCraft agent](../host/gridcraft-agent/README.md): running the agent by hand, desktop launcher, long-context switch.
 - [ArtCraft](ARTCRAFT.md): the ArtCraft card on Services: installed/open status and opening it on the Windows computer.
+- [Workshop display](WORKSHOP-DISPLAY.md): the Services card for the touchscreen beside the printer: its status, opening its own portal, its address and Tailscale route.
 - [ComfyUI](../host/comfyui/README.md): image generation service and engines.
 - [PowerShell bridge](../host/powershell-bridge/README.md): the host runner behind the PowerShell Workbench.
 - [Integrations](INTEGRATIONS.md): which tool owns which capability, and the integration roadmap.
