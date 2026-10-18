@@ -50,6 +50,9 @@ Type in the box at the bottom of Home and send. The chip next to it picks what k
 
 What you send opens where you are and keeps running if you leave; it is always in **Work**.
 
+Ask the chat about Local AI itself (where image models go, how to reach it away from home, how updates work, where a
+page is) and it answers from this appliance's own setup: its addresses, its folders and its page names.
+
 **Needs you**, near the top of Home, lists what is waiting for you: approvals, runs that failed in the last day,
 services that are down, and new Signals. Tap one to deal with it. An approval opens in a sheet over Home with
 everything it will do, and **Approve** or **Reject** right there; you stay on Home.
