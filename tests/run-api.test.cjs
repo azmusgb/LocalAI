@@ -471,7 +471,7 @@ test('mission runs investigate with tools and can be cancelled', { timeout: 6000
   assert.ok(turn, 'the specialist turn reached the model with tools');
   assert.ok(turn.tools.some(x => x.function.name === 'read_project_file'));
   assert.ok(!turn.tools.some(x => x.function.name === 'search_web'), 'web search stays off unless asked for');
-  assert.equal(turn.options.num_ctx, 32768);
+  assert.equal(turn.options.num_ctx, 12288, 'mission turns use the context sized for the GPU');
   assert.equal((await request('/api/runs?id=' + a.value.runId)).value.item.cancellable, true);
   const cancel = await request('/api/runs/cancel', { id: a.value.runId });
   assert.equal(cancel.response.status, 200, JSON.stringify(cancel.value));

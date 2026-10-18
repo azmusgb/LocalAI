@@ -1,17 +1,25 @@
 'use strict';
 const fs=require('fs'),path=require('path'),{EventEmitter}=require('events');
-const {runAgentLoop}=require('./agent-runtime');
-const createMissionEvidence=require('./mission-evidence');
+const {runAgentLoop,createModelQueue}=require('./agent-runtime');
+const createMissionEvidence=require('./mission-evidence'),{fitEvidence,evidenceTokenBudget,CHARS_PER_TOKEN}=require('./mission-evidence');
 const {followupNote}=require('./public/agent-world-words');
 const {createResearchTools,evidenceRecord,tool,objectArgs,stringArg}=require('./agent-tools');
 module.exports=function createAgentOrchestrator(deps={}){
  const {dataDir,ollamaUrl,defaultModel,fetchWithTimeout,runLocalModel,knowledgeStore,knowledgeScore,searxSearch,recordActivity}=deps;
  const catalog=JSON.parse(fs.readFileSync(path.join(__dirname,'specialist-agents.json'),'utf8')).agents;
- const GROUNDED_TIMEOUT_MS=600000,COORDINATOR_TIMEOUT_MS=600000,FOLLOWUP_TIMEOUT_MS=180000,OPENING_EVIDENCE_CHARS=40000,MAX_TOOL_EVENTS=200,MODEL_RETRY_DELAYS_MS=[1500,4000];
+ const GROUNDED_TIMEOUT_MS=600000,COORDINATOR_TIMEOUT_MS=600000,FOLLOWUP_TIMEOUT_MS=180000,MAX_TOOL_EVENTS=200,MODEL_RETRY_DELAYS_MS=[1500,4000];
  const specialists=catalog.filter(a=>!a.infrastructure);
  const projectRoot=deps.projectRoot||__dirname;
  // Two follow-ups at this limit leave the coordinator time to synthesize within its own deadline.
  const followupTimeoutMs=deps.followupTimeoutMs||FOLLOWUP_TIMEOUT_MS;
+ // Tests (and LOCALAI_MISSION_TIMEOUT_MS) shorten a worker's own deadline; the contract defaults above stay the defaults.
+ const groundedTimeoutMs=deps.groundedTimeoutMs||GROUNDED_TIMEOUT_MS,coordinatorTimeoutMs=deps.coordinatorTimeoutMs||COORDINATOR_TIMEOUT_MS;
+ // The first turn's evidence fits a token budget so the 6 GB GPU reads it in about a minute (~113 tokens/s with the
+ // model partly on the CPU); the tools can read the rest. evidenceTokens comes from LOCALAI_MISSION_EVIDENCE_TOKENS.
+ const evidenceChars=evidenceTokenBudget(deps.evidenceTokens,deps.numCtx)*CHARS_PER_TOKEN;
+ // One model turn at a time across all workers (LOCALAI_MISSION_MODEL_CONCURRENCY): parallel workers would otherwise
+ // queue inside Ollama with their deadlines running.
+ const modelQueue=deps.modelQueue||createModelQueue({concurrency:deps.modelConcurrency||1});
  const policy=options=>({allowWeb:options?.allowWeb===true&&deps.webSearchEnabled!==false});
  const pushCapped=(list,item)=>{list.push(item);if(list.length>MAX_TOOL_EVENTS)list.splice(0,list.length-MAX_TOOL_EVENTS)};
  const storage=deps.storage||new (require('./storage').Storage)({dataDir});
@@ -72,7 +80,7 @@ module.exports=function createAgentOrchestrator(deps={}){
  function projectGrounding(goal,agentId){return missionEvidence.select(goal,{agentId})}
  async function runModelReliable(prompt,system,timeoutMs,model){
   let last;
-  for(let attempt=0;attempt<=MODEL_RETRY_DELAYS_MS.length;attempt++){try{return await runLocalModel(prompt,system,timeoutMs,model)}catch(e){last=e;const msg=String(e&&e.message||e),transient=/fetch failed|ECONNRESET|ECONNREFUSED|socket|network|UND_ERR|terminated/i.test(msg);if(!transient||attempt>=MODEL_RETRY_DELAYS_MS.length)throw e;await new Promise(r=>setTimeout(r,MODEL_RETRY_DELAYS_MS[attempt]))}}
+  for(let attempt=0;attempt<=MODEL_RETRY_DELAYS_MS.length;attempt++){const release=await modelQueue.acquire();try{return await runLocalModel(prompt,system,timeoutMs,model)}catch(e){last=e;const msg=String(e&&e.message||e),transient=/fetch failed|ECONNRESET|ECONNREFUSED|socket|network|UND_ERR|terminated/i.test(msg);if(!transient||attempt>=MODEL_RETRY_DELAYS_MS.length)throw e;release();await new Promise(r=>setTimeout(r,MODEL_RETRY_DELAYS_MS[attempt]))}finally{release()}}
   throw last;
  }
  function dependencyContext(results,dependsOn){return (dependsOn||[]).map(dep=>results.find(r=>r.agentId===dep&&r.status==='complete')).filter(Boolean).map(r=>'DEPENDENCY RESULT: '+r.agentName+' ['+r.agentId+']\nEvidence: '+(r.evidence||[]).join(', ')+'\n'+String(r.answer||'').slice(0,12000)).join('\n\n')}
@@ -102,26 +110,29 @@ module.exports=function createAgentOrchestrator(deps={}){
    run.evidenceRecords=packet.sources.map(x=>evidenceRecord(x.source,x.text,{kind:'source',title:x.source}));
    run.plan[1].state='complete';run.plan[2].state='running';
    const grounding='PRODUCT IDENTITY:\n'+JSON.stringify(packet.product)+'\n\n'+groundingRules();
-   const upstreamText=upstream?'\n\nCompleted prerequisite specialist output:\n'+upstream:'';
+   // Prerequisite output and opening evidence share the first turn's budget; prerequisites take at most half of it.
+   const upstreamCut=String(upstream||'').slice(0,Math.floor(evidenceChars/2)),upstreamText=upstreamCut?'\n\nCompleted prerequisite specialist output:\n'+upstreamCut:'';
+   const evidenceRoom=evidenceChars-upstreamCut.length;
    let usedTools=tooled;
    if(tooled)try{
-    // Leave most of the context for investigation: the opening evidence stops at a fixed share; tools can read the rest.
-    let used=0;const opening=packet.sources.map((x,i)=>'['+run.evidenceRecords[i].id+'] SOURCE: '+x.source+'\n'+x.text).filter(block=>(used+=block.length)<=OPENING_EVIDENCE_CHARS);
-    const evidence=opening.join('\n\n');
+    // Leave the rest of the context for investigation: the most relevant sources open the run; tools can read the rest.
+    const opening=fitEvidence(packet.sources.map((x,i)=>'['+run.evidenceRecords[i].id+'] SOURCE: '+x.source+'\n'+x.text),evidenceRoom);
+    run.openingEvidence={sources:opening.kept,of:packet.sources.length,chars:opening.chars,budgetChars:evidenceRoom};
+    const evidence=opening.blocks.join('\n\n');
     const prompt=grounding+'Goal:\n'+goal+'\n\nAuthoritative project evidence:\n'+(evidence||'(none)')+upstreamText+'\n\nInvestigate missing facts using the offered tools. Read files by the paths in the source labels (for example app/public/ui.js, app/public/app.css, docs/README.md). Search knowledge only within the selected project. Cite evidence IDs such as [E-...] for every observation. Separate observations, recommendations, and remaining unknowns.';
-    const result=await runAgentLoop({model:rt.model,system:agent.system,prompt,turn:deps.runAgentTurn,tools:createResearchTools({projectRoot,projectId,knowledgeStore,knowledgeScore,searxSearch,...run.policy}),evidence:run.evidenceRecords,onEvent:publish,signal:options.signal,...deps.agentLimits,timeoutMs:GROUNDED_TIMEOUT_MS});
+    const result=await runAgentLoop({model:rt.model,system:agent.system,prompt,turn:deps.runAgentTurn,tools:createResearchTools({projectRoot,projectId,knowledgeStore,knowledgeScore,searxSearch,...run.policy}),evidence:run.evidenceRecords,onEvent:publish,signal:options.signal,modelQueue,...deps.agentLimits,timeoutMs:groundedTimeoutMs});
     Object.assign(run,result);run.evidence=result.evidenceRecords.map(x=>x.source);
    }catch(e){
     if(e.code!=='MODEL_NO_TOOLS')throw e;
     usedTools=false;run.toolFallback=e.message+'; ran one grounded prompt instead';run.plan[2].name='Execute specialist';
    }
    if(!usedTools){
-    const evidence=packet.sources.map((x,i)=>'['+(i+1)+'] SOURCE: '+x.source+'\n'+x.text).join('\n\n');
-    run.answer=await runModelReliable(grounding+'Goal:\n'+goal+'\n\nAuthoritative project evidence:\n'+(evidence||'(none)')+upstreamText+'\n\nReturn a concrete, structured, evidence-grounded result. Before finalizing, verify that each observation is supported by its cited source and that the report contains no contradictory claims.',agent.system,GROUNDED_TIMEOUT_MS,rt.model);
+    const evidence=fitEvidence(packet.sources.map((x,i)=>'['+(i+1)+'] SOURCE: '+x.source+'\n'+x.text),evidenceRoom).blocks.join('\n\n');
+    run.answer=await runModelReliable(grounding+'Goal:\n'+goal+'\n\nAuthoritative project evidence:\n'+(evidence||'(none)')+upstreamText+'\n\nReturn a concrete, structured, evidence-grounded result. Before finalizing, verify that each observation is supported by its cited source and that the report contains no contradictory claims.',agent.system,groundedTimeoutMs,rt.model);
    }
    run.plan[2].state='complete';run.plan[3].state='complete';run.status='complete';
   }catch(e){
-   run.status='error';const msg=String(e.message||e),timedOut=/abort|timed? ?out/i.test(msg);run.error=timedOut?'Grounded specialist inference exceeded '+Math.round(GROUNDED_TIMEOUT_MS/60000)+' minute timeout: '+msg:msg;run.errorCode=/^AGENT_/.test(e.code||'')?e.code:(timedOut?'MODEL_TIMEOUT':(/fetch failed|ECONNRESET|ECONNREFUSED|socket|network|UND_ERR|terminated/i.test(msg)?'MODEL_CONNECTION_ERROR':'SPECIALIST_ERROR'));const active=run.plan.find(x=>x.state==='running');if(active)active.state='error'}
+   run.status='error';const cause=e&&e.cause&&e.cause.code,msg=String(e.message||e)+(cause&&!String(e.message).includes(cause)?' ('+cause+')':''),timedOut=/abort|timed? ?out/i.test(msg);run.error=timedOut?'Grounded specialist inference exceeded '+Math.round(groundedTimeoutMs/60000)+' minute timeout: '+msg:msg;run.errorCode=/^(AGENT|MODEL)_/.test(e.code||'')?e.code:(timedOut?'MODEL_TIMEOUT':(/fetch failed|ECONNRESET|ECONNREFUSED|socket|network|UND_ERR|terminated/i.test(msg)?'MODEL_CONNECTION_ERROR':'SPECIALIST_ERROR'));const active=run.plan.find(x=>x.state==='running');if(active)active.state='error'}
   run.updatedAt=iso();persistRecord(runsFile,run,300);
   if(recordActivity)recordActivity('agent','Specialist '+run.status,agent.name,{runId:run.id,agentId});
   return run;
@@ -129,8 +140,10 @@ module.exports=function createAgentOrchestrator(deps={}){
  // Tool-mode synthesis: the coordinator may ask a specialist for up to two focused follow-up investigations.
  async function coordinate(m,goal,projectId,model,joined,options){
   const evidence=[...new Map(m.results.flatMap(r=>r.evidenceRecords||[]).map(record=>[record.id,record])).values()];
-  // The coordinator sees each record briefly; full excerpts are already in the specialist outputs.
+  // The coordinator sees each record briefly; full excerpts are already in the specialist outputs. Outputs take two
+  // thirds of the evidence budget and the index a quarter, leaving room in the mission context for a follow-up's answer.
   const evidenceIndex=evidence.slice(0,60).map(r=>({id:r.id,source:r.source,excerpt:String(r.excerpt||'').slice(0,300)}));
+  while(evidenceIndex.length>1&&JSON.stringify(evidenceIndex).length>evidenceChars/4)evidenceIndex.pop();
   const followup=tool('request_investigation','Ask one specialist to investigate a specific missing fact before synthesis. At most two follow-up requests are allowed. Inherits this mission’s project and web policy.',{agent_id:{type:'string',enum:specialists.map(a=>a.id)},question:{type:'string'}},['agent_id','question'],async(args,{signal})=>{
    objectArgs(args,['agent_id','question']);
    const agentId=stringArg(args.agent_id,'agent_id',100),question=stringArg(args.question,'question',1500);
@@ -147,14 +160,18 @@ module.exports=function createAgentOrchestrator(deps={}){
    Object.assign(m.followups.find(f=>f.workerId===workerId),{status:result.status,runId:result.id,error:result.error||''});
    missionSnapshot(m,'worker-result','Follow-up investigation finished',workerId);
    if(result.status!=='complete')throw new Error('Follow-up failed: '+result.error);
-   return {data:{workerId,answer:result.answer.slice(0,10000),truncated:result.answer.length>10000},evidence:result.evidenceRecords.slice(-12)};
+   const keep=Math.floor(evidenceChars/4);return {data:{workerId,answer:result.answer.slice(0,keep),truncated:result.answer.length>keep},evidence:result.evidenceRecords.slice(-12)};
   });
-  const result=await runAgentLoop({model,system:'You are the mission coordinator for the Local AI Appliance. Check specialist evidence before accepting conclusions. Request a focused investigation if a material fact is missing. Synthesize only claims grounded in the specialist evidence. Preserve source labels and evidence IDs. State uncertainty and failed investigations explicitly.',prompt:'Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nAvailable evidence:\n'+JSON.stringify(evidenceIndex),turn:deps.runAgentTurn,tools:[followup],evidence,maxTurns:4,maxToolCalls:2,...(deps.agentLimits?.maxContextChars?{maxContextChars:deps.agentLimits.maxContextChars}:{}),timeoutMs:COORDINATOR_TIMEOUT_MS,toolTimeoutMs:followupTimeoutMs,signal:options.signal,onEvent:event=>recordMissionTool(m,{...event,at:iso(),workerId:'synthesis',runId:m.id})});
+  const result=await runAgentLoop({model,system:'You are the mission coordinator for the Local AI Appliance. Check specialist evidence before accepting conclusions. Request a focused investigation if a material fact is missing. Synthesize only claims grounded in the specialist evidence. Preserve source labels and evidence IDs. State uncertainty and failed investigations explicitly.',prompt:'Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nAvailable evidence:\n'+JSON.stringify(evidenceIndex),turn:deps.runAgentTurn,tools:[followup],evidence,maxTurns:4,maxToolCalls:2,...(deps.agentLimits?.maxContextChars?{maxContextChars:deps.agentLimits.maxContextChars}:{}),timeoutMs:coordinatorTimeoutMs,toolTimeoutMs:followupTimeoutMs,signal:options.signal,modelQueue,onEvent:event=>recordMissionTool(m,{...event,at:iso(),workerId:'synthesis',runId:m.id})});
   m.evidenceRecords=result.evidenceRecords;m.citations=result.citations;if(result.citationWarning)m.citationWarning=result.citationWarning;return result.answer;
  }
  // Tool steps update the mission record and live stream without adding timeline entries.
  function recordMissionTool(m,event){
   pushCapped(m.toolEvents,event);
+  // A worker waiting for another's model turn says so ("Waiting for the model (1 ahead)", agent-world-words.js).
+  const w=(m.workers||[]).find(x=>x.id===event.workerId);
+  if(w&&event.type==='model_queue'){w.phase='model_queue';w.queuePosition=event.ahead}
+  else if(w&&w.phase==='model_queue'){delete w.phase;delete w.queuePosition}
   m.updatedAt=iso();persistRecord(missionsFile,m,200);events.emit('mission',m);
  }
  // Upsert and keep only the newest `limit` records (oldest are finished history).
@@ -198,9 +215,11 @@ module.exports=function createAgentOrchestrator(deps={}){
    const failed=results.filter(r=>r.status!=='complete'),blockedWorkers=m.workers.filter(w=>w.state==='blocked');if(failed.length||blockedWorkers.length){const sw=m.workers.find(x=>x.id==='synthesis');sw.state='blocked';sw.error='Synthesis skipped because prerequisite specialists did not complete';m.status='needs_attention';m.error='Mission stopped after specialist failure';m.updatedAt=iso();missionSnapshot(m,'mission-attention','Mission stopped after specialist failure');return m}
    const sw=m.workers.find(x=>x.id==='synthesis');sw.state='running';missionSnapshot(m,'synthesis','Coordinator started synthesis','synthesis');
    try{
-    const coordinatorModel=(await routeModel(goal+' synthesis')).model,joined=results.map(r=>'## '+r.agentName+(r.citationWarning?' (citation warning: '+r.citationWarning+')':'')+'\n'+String(r.answer||r.error||'').slice(0,12000)).join('\n\n');
+    // Specialist outputs share two thirds of the evidence budget evenly (12000 characters each at most).
+    const perResult=Math.min(12000,Math.floor(evidenceChars*2/3/Math.max(1,results.length)));
+    const coordinatorModel=(await routeModel(goal+' synthesis')).model,joined=results.map(r=>'## '+r.agentName+(r.citationWarning?' (citation warning: '+r.citationWarning+')':'')+'\n'+String(r.answer||r.error||'').slice(0,perResult)).join('\n\n');
     m.answer=typeof deps.runAgentTurn==='function'?await coordinate(m,goal,projectId,coordinatorModel,joined,opts).catch(e=>{if(e.code!=='MODEL_NO_TOOLS')throw e;m.toolFallback=e.message;return null}):null;
-    if(m.answer===null)m.answer=await runModelReliable('Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nSynthesize only claims grounded in the specialist evidence. Preserve source labels. Reject invented product behavior, metrics, dates, screens, users, or defects. Clearly distinguish observed evidence from recommendations and identify remaining evidence gaps.','You are the mission coordinator for the Local AI Appliance. Produce an actionable, source-grounded synthesis; never substitute a generic consumer AI product.',COORDINATOR_TIMEOUT_MS,coordinatorModel);m.coordinatorModel=coordinatorModel;
+    if(m.answer===null)m.answer=await runModelReliable('Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nSynthesize only claims grounded in the specialist evidence. Preserve source labels. Reject invented product behavior, metrics, dates, screens, users, or defects. Clearly distinguish observed evidence from recommendations and identify remaining evidence gaps.','You are the mission coordinator for the Local AI Appliance. Produce an actionable, source-grounded synthesis; never substitute a generic consumer AI product.',coordinatorTimeoutMs,coordinatorModel);m.coordinatorModel=coordinatorModel;
    }catch(e){
     // Cancelling the mission stays an error; a coordinator that fails on its own leaves no answer, so the mission needs you.
     if(opts.signal?.aborted)throw e;
