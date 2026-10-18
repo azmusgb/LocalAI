@@ -55,7 +55,13 @@ page is) and it answers from this appliance's own setup: its addresses, its fold
 
 **Needs you**, near the top of Home, lists what is waiting for you: approvals, runs that failed in the last day,
 services that are down, and new Signals. Tap one to deal with it. An approval opens in a sheet over Home with
-everything it will do, and **Approve** or **Reject** right there; you stay on Home.
+everything it will do, and **Approve** or **Reject** right there; you stay on Home. While the 3D printer is printing,
+paused or stopped with an error, one line about it sits just above.
+
+Needs you shows three rows at most, approvals and fixes first; **See all** opens Work's **Needs you** filter. Repeated
+failures of the same goal are one row ("Failed ×5"). A failure leaves Needs you once you open it (on any device), a
+day after it failed, or when you retry it or run the same goal again (if that fails too, the new failure shows
+instead); it always stays in Work. Approvals stay until you decide them.
 
 ## Images
 
