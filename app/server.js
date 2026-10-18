@@ -67,6 +67,8 @@ const IMAGE_PROMPT_MODEL = process.env.IMAGE_PROMPT_MODEL || process.env.GRIDCRA
 const release = require('./release').readRelease(__dirname);
 // A staged copy (self-change smoke test) passes its own APP_VERSION; otherwise the release decides.
 const APP_VERSION = /-stage$/.test(process.env.APP_VERSION || '') ? process.env.APP_VERSION : require('./release').appVersion(__dirname, release);
+// The app folder (server.js's own): area modules in app/server/ get it as APP_DIR instead of their own __dirname.
+const APP_DIR = __dirname;
 const storage = new Storage({ dataDir: DATA_DIR });
 // The state collections and the HTTP helpers every area uses live in app/server/ (the server split, step 1).
 const { readState, writeState, prependRecord, RETENTION } = require('./server/stores').createStores({ storage, STATUS_STORE });
@@ -1276,263 +1278,17 @@ function buildImageModelCatalog(names) {
   };
 }
 
-// Every model list the image engines need, from ComfyUI's object_info. A node type that isn't installed
-// (UnetLoaderGGUF before ComfyUI-GGUF) just yields an empty list. UNETLoader lists models/diffusion_models and
-// CLIPLoader lists models/text_encoders (plus models/clip), which Z-Image Turbo needs.
-async function getImageModelLists() {
-  const read = async (node, input) => {
-    try {
-      const r = await fetchWithTimeout(`${COMFY_URL}/object_info/${node}`, {}, 7000);
-      if (!r.ok) return [];
-      return comfyOptions((await r.json())?.[node]?.input?.required?.[input]);
-    } catch { return []; }
-  };
-  const [checkpoints, unets, clips, vaes, upscalers, diffusionModels, textEncoders] = await Promise.all([
-    getCheckpointNames(), read('UnetLoaderGGUF', 'unet_name'), read('DualCLIPLoader', 'clip_name1'), read('VAELoader', 'vae_name'), read('UpscaleModelLoader', 'model_name'),
-    read('UNETLoader', 'unet_name'), read('CLIPLoader', 'clip_name')
-  ]);
-  return { checkpoints, unets, clips, vaes, upscalers, diffusionModels, textEncoders };
-}
-
-async function apiImageModels(req, res) {
-  try {
-    const lists = await getImageModelLists();
-    const found = imageEngines.discoverEngines(lists);
-    const engines = found.engines.map(({ id, label, blurb, family, base, model }) => ({ id, label, blurb, family, base, model, estimateSec: IMAGE_ESTIMATES[`${id}:${family}`] || null,
-      ...(imageEngines.previewable({ id }) ? { preview: true, previewEstimateSec: IMAGE_ESTIMATES[`${id}:${family}:preview`] || null } : {}) }));
-    const aspects = Object.entries(imageEngines.ASPECTS).map(([id, a]) => ({ id, label: a.label, sizes: { 512: a[512], 1024: a[1024] } }));
-    const styles = Object.entries(imageEngines.STYLES).map(([id, st]) => ({ id, label: st.label }));
-    json(res, 200, { ...buildImageModelCatalog(lists.checkpoints), engines, custom: found.custom, upscale: !!found.upscaler, aspects, styles, defaultEngine: found.defaultEngine });
-  } catch (e) {
-    json(res, 502, { error: String(e.message || e), models: [], families: [], defaultCheckpoint: null, defaultFamily: null });
-  }
-}
-
-async function apiCheckpoints(req, res) {
-  try {
-    const catalog = buildImageModelCatalog(await getCheckpointNames());
-    json(res, 200, { checkpoints: catalog.models.map(x => x.checkpoint), models: catalog.models, families: catalog.families, defaultCheckpoint: catalog.defaultCheckpoint, defaultFamily: catalog.defaultFamily });
-  } catch (e) {
-    json(res, 502, { error: String(e.message || e), checkpoints: [], models: [], families: [], defaultCheckpoint: null, defaultFamily: null });
-  }
-}
-
-function clampInt(v, min, max, fallback) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(min, Math.min(max, Math.round(n)));
-}
-
-async function pollComfyHistory(promptId, timeoutMs = 180000) {
-  const end = Date.now() + timeoutMs;
-  while (Date.now() < end) {
-    // ComfyUI can stop answering for a while when it loads a big model (Z-Image's 12 GB file on the 6 GB GPU took
-    // over 7 s), so a slow or failed check means "not done yet", not a failed image; only `end` gives up.
-    try {
-      const r = await fetchWithTimeout(`${COMFY_URL}/history/${encodeURIComponent(promptId)}`, {}, 7000);
-      if (r.ok) {
-        const j = await r.json();
-        if (j && j[promptId]) return j[promptId];
-      }
-    } catch {}
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  }
-  throw new Error('Image generation timed out');
-}
-
-// Rewrites a short idea into a detailed image prompt with the local language model, then unloads that model
-// so the image model has the GPU to itself (they share 6 GB of VRAM).
-async function enhanceImagePrompt(prompt, engineId) {
-  const style = engineId === 'best' ? 'Write natural sentences.' : 'Write a comma-separated list of descriptive phrases.';
-  const r = await modelFetchWithTimeout(`${OLLAMA_URL}/api/chat`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: IMAGE_PROMPT_MODEL, stream: false, keep_alive: 0, options: { num_ctx: 2048, temperature: 0.7 },
-      messages: [
-        { role: 'system', content: `You turn a short idea into one prompt for an image generator. Keep the subject and every detail the user gave; add composition, lighting, setting, style and quality cues. ${style} Under 70 words. Reply with the prompt only, no quotes or preamble.` },
-        { role: 'user', content: prompt.slice(0, 1000) }
-      ]
-    })
-  }, 60000);
-  if (!r.ok) throw new Error(`Prompt helper HTTP ${r.status}`);
-  const text = String((await r.json())?.message?.content || '').replace(/^["'\s]+|["'\s]+$/g, '').trim();
-  return text.length >= 8 ? text.slice(0, 1200) : prompt;
-}
-
-// An image the browser sent for editing (data URL), uploaded into ComfyUI's input folder for LoadImage.
-async function uploadToComfy(dataUrl, name) {
-  const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
-  if (!m) throw Object.assign(new Error('The image to edit must be a PNG, JPEG or WebP data URL'), { status: 400 });
-  const bytes = Buffer.from(m[2], 'base64');
-  if (bytes.length > 12 * 1024 * 1024) throw Object.assign(new Error('The image to edit is larger than 12 MB'), { status: 413 });
-  const form = new FormData();
-  form.append('image', new Blob([bytes], { type: `image/${m[1]}` }), `${name}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`);
-  form.append('type', 'input');
-  form.append('overwrite', 'true');
-  const r = await fetchWithTimeout(`${COMFY_URL}/upload/image`, { method: 'POST', body: form }, 30000);
-  if (!r.ok) throw new Error(`Image service upload HTTP ${r.status}`);
-  const j = await r.json();
-  return j.subfolder ? `${j.subfolder}/${j.name}` : j.name;
-}
-
-async function runComfyGraph(workflow, timeoutMs) {
-  const queued = await fetchWithTimeout(`${COMFY_URL}/prompt`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: workflow, client_id: 'local-ai-appliance' })
-  }, 10000);
-  const qraw = await queued.text();
-  if (!queued.ok) throw new Error(`Image queue HTTP ${queued.status}: ${qraw.slice(0, 500)}`);
-  const q = JSON.parse(qraw);
-  if (!q.prompt_id) throw new Error('Image service did not return a prompt ID');
-  const history = await pollComfyHistory(q.prompt_id, timeoutMs);
-  const failure = history.status?.status_str === 'error' ? (history.status.messages || []).find(m => m[0] === 'execution_error')?.[1] : null;
-  if (failure) throw new Error(`ComfyUI: ${failure.exception_message || failure.exception_type || 'execution error'}`.slice(0, 500));
-  const outputs = history.outputs || {};
-  const images = outputs?.['9']?.images || Object.values(outputs).flatMap(x => Array.isArray(x?.images) ? x.images : []);
-  if (!images.length) throw new Error('Image generation completed without an output image');
-  return { promptId: q.prompt_id, images };
-}
-
-// Fire-and-forget: loads the chat model into the GPU. Failures are ignored.
-function warmText() { warmTextModel({ url: OLLAMA_URL, model: MODEL }); }
-// Images and text take turns on the 6 GB GPU: the chat model unloads while ComfyUI works and reloads after the last image job.
-let imageJobsActive = 0;
-
-async function apiGenerateImage(req, res) {
-  let execution = null;
-  let tookGpu = false;
-  try {
-    const body = await readBody(req, 30 * 1024 * 1024);
-    const original = String(body.prompt || '').trim();
-    if (!original) return json(res, 400, { error: 'prompt is required' });
-
-    const lists = await getImageModelLists();
-    const found = imageEngines.discoverEngines(lists);
-    // Engine by id; a checkpoint picked under Advanced (or sent by older clients); else the default engine.
-    let engine = found.engines.find(e => e.id === body.engine) || null;
-    if (!engine && body.checkpoint && lists.checkpoints.includes(body.checkpoint)) engine = found.engines.find(e => e.files.checkpoint === body.checkpoint) || imageEngines.customEngine(body.checkpoint);
-    if (!engine) engine = found.engines.find(e => e.id === found.defaultEngine) || (lists.checkpoints[0] ? imageEngines.customEngine(lists.checkpoints[0]) : null);
-    if (!engine) throw new Error('No image models were found in ComfyUI');
-
-    const editing = !!body.source;
-    const checkpoint = engine.files.checkpoint || engine.files.unet;
-    const count = clampInt(body.count, 1, 4, 1);
-    // Best's quick preview: its own run, smaller and in fewer steps, kept out of Library unless the owner keeps it.
-    // Only for one new Best image; anything else asked as a preview is made as usual.
-    const preview = body.preview === true && imageEngines.previewable(engine) && !editing && count === 1;
-    // The full picture of a preview: same seed and the same (improved) prompt, so it is that picture made properly.
-    const previewRun = !preview && cleanRunId(body.previewOf) ? runLedger.get(body.previewOf) : null;
-    const fromPreview = previewRun?.type === 'image' && previewRun.meta?.preview === true && previewRun.output?.images?.length ? previewRun : null;
-    // An edit keeps the source picture's own size (sent by the browser); a new image uses the shape's size.
-    let [width, height] = editing ? [clampInt(body.sourceWidth, 64, 2048, 512), clampInt(body.sourceHeight, 64, 2048, 512)]
-      : imageEngines.sizeFor(engine, body.aspect, body.aspect ? null : body.width, body.aspect ? null : body.height);
-    let steps = clampInt(body.steps, 1, 60, engine.steps);
-    if (preview) ({ width, height, steps } = imageEngines.previewSettings(width, height, steps));
-    const cfg = Math.max(1, Math.min(20, Number(body.cfg) || engine.cfg));
-    const seed = Number.isFinite(Number(body.seed)) ? Math.floor(Number(body.seed))
-      : fromPreview ? fromPreview.output.images[0].seed : Math.floor(Math.random() * 2147483647);
-    const userNegative = body.negativePrompt === undefined || body.negativePrompt === null ? engine.negative : String(body.negativePrompt);
-    const style = imageEngines.STYLES[body.style] ? body.style : 'none';
-    const upscaler = body.upscale === true && !preview ? found.upscaler : null;
-    const enhance = body.enhance === true && !fromPreview;
-    const strength = Math.max(0.1, Math.min(1, Number(body.strength) || 0.6));
-
-    execution = runLedger.create({
-      type: 'image',
-      threadId: body.threadId,
-      title: titleFromText(original, editing ? 'Image edit' : 'Image generation'),
-      input: { prompt: original.slice(0, 2000), engine: engine.id, checkpoint, family: engine.family, aspect: body.aspect || undefined, width, height, steps, cfg, seed, style, count, upscale: !!upscaler, enhance, edit: editing ? { masked: !!body.mask, strength } : null },
-      // Started by voice: the ask sends its own "ready" or "couldn't" notification, so the generic ones stay quiet.
-      // meta.preview marks Best's quick preview; meta.previewOf links a full picture to the preview it was made from.
-      meta: { ...(body.voice === true ? { voice: true } : {}), ...(preview ? { preview: true } : {}), ...(fromPreview ? { previewOf: fromPreview.id } : {}) },
-      // An edit's source image isn't kept with the run, so Retry repeats it as a new image.
-      retryRequest: { path: '/api/images/generate', body: { prompt: original, engine: engine.id, checkpoint: engine.id === 'custom' ? checkpoint : undefined, negativePrompt: body.negativePrompt, aspect: body.aspect, width, height, steps, cfg, style, count, upscale: !!upscaler, enhance, preview: preview || undefined, previewOf: fromPreview?.id, seed: fromPreview ? seed : undefined, threadId: cleanRunId(body.threadId) || undefined } }
-    });
-    runLedger.start(execution.id, editing ? 'Image edit started' : 'Image generation started');
-    imageJobsActive++; tookGpu = true;
-    await unloadTextModel({ url: OLLAMA_URL, model: MODEL });
-
-    let prompt = fromPreview?.meta?.improvedPrompt || original;
-    if (enhance) {
-      try { prompt = await enhanceImagePrompt(original, engine.id); runLedger.update(execution.id, { progress: 15 }, 'Prompt improved'); }
-      catch (e) { runLedger.update(execution.id, { progress: 15 }, `Prompt helper unavailable; using your prompt (${e.message})`); }
-      // The full picture made from a preview reuses this prompt instead of asking for a new one.
-      if (preview && prompt !== original) runLedger.update(execution.id, { meta: { improvedPrompt: prompt } });
-    }
-    const styled = imageEngines.applyStyle(prompt, userNegative, style, engine);
-
-    let source = null;
-    if (editing) {
-      const tag = `localai-edit-${execution.id}`;
-      source = { image: await uploadToComfy(body.source, tag), mask: body.mask ? await uploadToComfy(body.mask, `${tag}-mask`) : null };
-      runLedger.update(execution.id, { progress: 25 }, body.mask ? 'Repainting the marked area' : 'Redrawing the image');
-    }
-
-    const started = Date.now();
-    const timeoutMs = (engine.family === 'flux' || engine.family === 'zimage' ? 900000 : 420000) * count;
-    const results = [];
-    let n = 0;
-    for (const batch of imageEngines.batchesFor(engine, count)) {
-      const workflow = imageEngines.buildWorkflow(engine, { prompt: styled.prompt, negativePrompt: styled.negative, width, height, steps, cfg, seed: seed + n, upscaler, batch, source, denoise: strength });
-      const run = await runComfyGraph(workflow, timeoutMs);
-      // ComfyUI gives each image in a batch the batch seed plus its index.
-      run.images.forEach((img, i) => results.push({ img, seed: seed + n + i, promptId: run.promptId }));
-      n += batch;
-      runLedger.update(execution.id, { progress: Math.min(95, 30 + Math.round((65 * n) / count)), meta: { promptId: run.promptId, checkpoint } }, `${n} of ${count} image${count === 1 ? '' : 's'} done`);
-    }
-    const elapsedMs = Date.now() - started;
-    const outW = upscaler ? width * 2 : width, outH = upscaler ? height * 2 : height;
-    const common = { engine: engine.id, engineLabel: engine.label, checkpoint, family: engine.family, style, width: outW, height: outH, steps, cfg, upscaled: !!upscaler, edited: editing, elapsedMs, ...(preview ? { preview: true } : {}), ...(fromPreview ? { previewOf: fromPreview.id } : {}) };
-    const images = results.map(({ img, seed: s }) => ({ imageUrl: `/api/images/view?${new URLSearchParams({ filename: img.filename, subfolder: img.subfolder || '', type: img.type || 'output' })}`, seed: s }));
-
-    // A preview stays out of Library (it is in Work) unless the owner keeps it; the full picture arrives as usual.
-    const artifactIds = [];
-    for (const im of preview ? [] : images) {
-      const meta = { ...common, imageUrl: im.imageUrl, seed: im.seed };
-      const label = `${outW} × ${outH} · ${engine.label}${style !== 'none' ? ` · ${imageEngines.STYLES[style].label}` : ''}${editing ? ' · edited' : ''}${upscaler ? ' · upscaled' : ''}`;
-      const artifact = recordArtifact('image', original, label, { ...meta, runId: execution.id }, { prompt: original, usedPrompt: styled.prompt, negativePrompt: styled.negative, imageUrl: im.imageUrl });
-      if (artifact?.id) artifactIds.push(artifact.id);
-    }
-    recordActivity('image', preview ? 'Made a quick preview' : editing ? 'Edited an image' : count > 1 ? `Created ${images.length} images` : 'Created an image', original.slice(0, 180), { ...common, imageUrl: images[0].imageUrl, seed: images[0].seed, runId: execution.id });
-    runLedger.complete(execution.id, {
-      summary: imageEngines.runSummary({ count: images.length, width: outW, height: outH, engine: engine.label, editing, preview }),
-      output: { ...common, images },
-      artifactIds,
-      meta: { promptId: results[0].promptId, checkpoint, elapsedMs }
-    });
-    // A preview has its own estimate: its minute must not make the full picture look quick.
-    if (!upscaler && !enhance && !editing && count === 1) IMAGE_ESTIMATES[`${engine.id}:${engine.family}${preview ? ':preview' : ''}`] = Math.round(elapsedMs / 1000);
-
-    json(res, 200, { promptId: results[0].promptId, ...common, imageUrl: images[0].imageUrl, seed: images[0].seed, images, familyLabel: engine.label, prompt: original, usedPrompt: styled.prompt, runId: execution.id, threadId: execution.threadId });
-  } catch (e) {
-    if (execution) runLedger.fail(execution.id, e);
-    const run = execution ? { runId: execution.id } : {};
-    if (e.status) return json(res, e.status, { error: e.message, ...run });
-    json(res, e.statusCode || 500, { error: String(e.message || e), ...(e.code ? { code: e.code } : {}), ...run });
-  }
-  finally {
-    if (tookGpu && --imageJobsActive === 0) warmText();
-  }
-}
 
 
-async function apiImageView(req, res, urlObj) {
-  try {
-    const u = new URL(`${COMFY_URL}/view`);
-    for (const key of ['filename', 'subfolder', 'type']) {
-      const value = urlObj.searchParams.get(key);
-      if (value !== null) u.searchParams.set(key, value);
-    }
-    const r = await fetchWithTimeout(u.toString(), {}, 15000);
-    if (!r.ok) throw new Error(`Image retrieval HTTP ${r.status}`);
-    const contentType = r.headers.get('content-type') || 'image/png';
-    const buf = Buffer.from(await r.arrayBuffer());
-    res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'private, max-age=300' });
-    res.end(buf);
-  } catch (e) {
-    json(res, 502, { error: String(e.message || e) });
-  }
-}
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2561,92 +2317,6 @@ async function apiChangeDeployResult(req,res){
   if(!requireFeature(res,13))return;
   try{const b=await readBody(req);const status=String(b.status||'');if(!['applied','rolled_back','deploy_failed'].includes(status))return json(res,400,{error:'invalid deployment status'});const items=changeStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Change not found'});items[i].status=status;items[i].deploymentDetail=String(b.detail||'').slice(0,4000);items[i].updatedAt=nowIso();if(status==='applied')items[i].appliedAt=nowIso();saveChanges(items);recordActivity('change',status==='applied'?'Self-update applied':'Self-update rollback/failure',items[i].summary,{changeId:items[i].id,status});json(res,200,{item:publicChange(items[i])})}catch(e){storageError(res,e,400)}
 }
-// ===== END CHANGE INTELLIGENCE =============================================
-
-
-
-// ===== QUALITY INTELLIGENCE (v1.14+) =========================================
-const QUALITY_EVENTS_STORE = 'qualityEvents';
-const QUALITY_SCANS_STORE = 'qualityScans';
-function qualityEventStore(){return objectStore(QUALITY_EVENTS_STORE)}
-function qualityScanStore(){return objectStore(QUALITY_SCANS_STORE)}
-function qualitySeverity(type,message){
-  const t=String(type||'').toLowerCase(),m=String(message||'').toLowerCase();
-  if(t==='error'||/uncaught|syntaxerror|referenceerror|typeerror|failed to load/.test(m))return 'high';
-  if(t==='rejection'||/timeout|degraded|warning/.test(m))return 'medium';
-  return 'low';
-}
-async function apiQualityClientEvent(req,res){
-  if(!requireFeature(res,14))return;
-  try{
-    const b=await readBody(req,256*1024);const message=String(b.message||'').slice(0,4000);if(!message)return json(res,400,{error:'message is required'});
-    // Opaque cross-origin errors carry no file, line or stack and can't be acted on (older cached pages still send them).
-    if(/^Script error\.?$/.test(message.trim())&&!b.stack&&!Number(b.line))return json(res,202,{ignored:true,reason:'opaque script error'});
-    const item={id:makeId('qevt'),type:String(b.type||'error').slice(0,40),severity:qualitySeverity(b.type,message),message,source:String(b.source||'').slice(0,1000),line:Number(b.line)||null,column:Number(b.column)||null,stack:String(b.stack||'').slice(0,12000),url:String(b.url||'').slice(0,1200),userAgent:String(req.headers['user-agent']||'').slice(0,300),createdAt:nowIso()};
-    prependRecord(QUALITY_EVENTS_STORE,item);recordActivity('quality','Client quality event',message.slice(0,180),{qualityEventId:item.id,severity:item.severity});json(res,201,{item});
-  }catch(e){storageError(res,e,400)}
-}
-function referencedDomIds(jsText){const ids=new Set();const rx=/\$\(['"]([^'"]+)['"]\)/g;let m;while((m=rx.exec(String(jsText||''))))ids.add(m[1]);return [...ids]}
-function htmlIds(htmlText){const ids=new Set();const rx=/\bid=["']([^"']+)["']/g;let m;while((m=rx.exec(String(htmlText||''))))ids.add(m[1]);return ids}
-async function runQualityScan(){
-  const checks=[];const add=(name,result,detail='')=>{const normalized=typeof result==='string'?result:(result?'PASS':'FAIL');checks.push({name,result:['PASS','WARN','FAIL'].includes(normalized)?normalized:'FAIL',detail:String(detail||'').slice(0,3000)})};
-  const serverFile=path.join(__dirname,'server.js'),appFile=path.join(PUBLIC_DIR,'app.js'),swFile=path.join(PUBLIC_DIR,'sw.js'),htmlFile=path.join(PUBLIC_DIR,'index.html');
-  const serverModules=fs.existsSync(path.join(__dirname,'server'))?fs.readdirSync(path.join(__dirname,'server')).filter(f=>f.endsWith('.js')).map(f=>['server/'+f,path.join(__dirname,'server',f)]):[]; // the split-out server modules count as the server
-  for(const [name,file] of [['server.js',serverFile],...serverModules,['app.js',appFile],['sw.js',swFile]]){if(fs.existsSync(file)){const r=await runProcess('node',['--check',file],__dirname);add(`syntax ${name}`,r.code===0,r.stderr||r.stdout)}else add(`syntax ${name}`,false,'file missing')}
-  if(fs.existsSync(appFile)){const app=fs.readFileSync(appFile,'utf8');const dup=duplicateTopLevelFunctions(app);add('duplicate browser functions',dup.length===0,dup.join(', '));if(fs.existsSync(htmlFile)){const html=fs.readFileSync(htmlFile,'utf8'),ids=htmlIds(html),refs=referencedDomIds(app);const uiFile=path.join(PUBLIC_DIR,'ui.js');if(fs.existsSync(uiFile)){const ui=fs.readFileSync(uiFile,'utf8');for(const id of htmlIds(ui))ids.add(id);for(const m of ui.matchAll(/\.id\s*=\s*['"]([^'"]+)['"]/g))ids.add(m[1])}const missing=refs.filter(x=>!ids.has(x));add('DOM reference contract',missing.length===0,missing.length?`Missing IDs: ${missing.slice(0,40).join(', ')}`:`${refs.length} referenced IDs resolved`)}}
-  if(fs.existsSync(htmlFile)){const dup=duplicateHtmlIds(fs.readFileSync(htmlFile,'utf8'));add('duplicate HTML ids',dup.length===0,dup.join(', '))}
-  try{const st=await getStatusAndRecordTransition();const coreBad=st.services.filter(x=>x.required!==false&&x.state!=='HEALTHY'),optionalBad=st.services.filter(x=>x.required===false&&x.state!=='HEALTHY');if(coreBad.length)add('service health','FAIL',coreBad.map(x=>`${x.label}:${x.state}`).join(', '));else if(optionalBad.length)add('service health','WARN',`Optional: ${optionalBad.map(x=>`${x.label}:${x.state}`).join(', ')}`);else add('service health','PASS',st.overall)}catch(e){add('service health','FAIL',String(e.message||e))}
-  const recent=qualityEventStore().filter(x=>Date.now()-new Date(x.createdAt).getTime()<24*60*60*1000);const high=recent.filter(x=>x.severity==='high'&&!issueSettled(issueStore(),'browser-runtime',x.message,x.createdAt));add('browser runtime 24h',high.length===0,high.length?`${high.length} unresolved high-severity event(s)`:`${recent.length} event(s), no unresolved high-severity errors`);
-  const scan={id:makeId('qscan'),createdAt:nowIso(),passed:checks.every(x=>x.result!=='FAIL'),checks,summary:{pass:checks.filter(x=>x.result==='PASS').length,warn:checks.filter(x=>x.result==='WARN').length,fail:checks.filter(x=>x.result==='FAIL').length,events24h:recent.length,high24h:high.length}};
-  prependRecord(QUALITY_SCANS_STORE,scan);return scan;
-}
-async function apiQuality(req,res){if(!requireFeature(res,14))return;const scans=qualityScanStore(),events=qualityEventStore();json(res,200,{latest:scans[0]||null,scans:scans.slice(0,20),events:events.slice(0,80),summary:{events:events.length,high:events.filter(x=>x.severity==='high').length}})}
-async function apiQualityScan(req,res){if(!requireFeature(res,14))return;try{const scan=await runQualityScan();recordActivity('quality',scan.passed?'Quality scan passed':'Quality scan found issues',`${scan.summary.pass} pass / ${scan.summary.warn||0} warn / ${scan.summary.fail} fail`,{scanId:scan.id});json(res,200,{scan})}catch(e){storageError(res,e,500)}}
-// ===== END QUALITY INTELLIGENCE =============================================
-
-
-
-// ===== AUTONOMOUS ISSUE DETECTION (v1.15+) ==================================
-const ISSUES_STORE = 'issues';
-function issueStore(){return objectStore(ISSUES_STORE)}
-function saveIssues(items){saveStore(ISSUES_STORE,items,500)}
-function issueKey(kind,name){return `${String(kind||'issue').toLowerCase()}:${String(name||'unknown').toLowerCase().replace(/\s+/g,' ').slice(0,240)}`}
-// When an issue was closed: by the operator (resolvedAt), by a passing scan (autoResolvedAt), or ignored.
-function issueClosedAt(item){return item.resolvedAt||item.autoResolvedAt||(item.status==='ignored'?item.updatedAt:null)||item.updatedAt}
-// True when this occurrence was already counted, or happened before the issue was resolved or ignored.
-function issueSettled(items,kind,name,seenAt){
-  const item=items.find(x=>x.key===issueKey(kind,name));if(!item||!seenAt)return false;
-  if(item.lastEventAt&&seenAt<=item.lastEventAt&&item.status!=='open')return true;
-  return ['resolved','ignored'].includes(item.status)&&seenAt<=issueClosedAt(item);
-}
-// spec.seenAt is when the problem happened (a browser error's time); scans that re-read old events pass it so a
-// past error is counted once and does not reopen an issue resolved after it.
-function upsertIssue(items,spec){
-  const key=issueKey(spec.kind,spec.name),seenAt=spec.seenAt||nowIso();let item=items.find(x=>x.key===key&&x.status!=='ignored');
-  if(item){
-    if(item.lastEventAt&&seenAt<=item.lastEventAt)return item;
-    if(item.status==='resolved'&&seenAt<=issueClosedAt(item))return item;
-    item.lastSeenAt=seenAt;item.lastEventAt=seenAt;item.occurrences=(item.occurrences||1)+1;item.detail=String(spec.detail||item.detail||'').slice(0,5000);item.severity=spec.severity||item.severity;item.updatedAt=nowIso();if(item.status==='resolved'){item.status='open';delete item.resolvedAt}return item}
-  if(items.some(x=>x.key===key&&x.status==='ignored'&&seenAt<=issueClosedAt(x)))return null;
-  item={id:makeId('issue'),key,kind:spec.kind||'quality',name:String(spec.name||'Issue').slice(0,500),detail:String(spec.detail||'').slice(0,5000),severity:spec.severity||'medium',status:'open',occurrences:1,createdAt:nowIso(),updatedAt:nowIso(),lastSeenAt:seenAt,lastEventAt:seenAt,changeId:null};items.unshift(item);return item;
-}
-async function detectIssues(){
-  const scan=await runQualityScan();const items=issueStore();const seen=[];
-  for(const c of scan.checks.filter(x=>x.result==='FAIL')){const sev=/service health|syntax|duplicate|DOM/.test(c.name)?'high':'medium';const item=upsertIssue(items,{kind:'quality-check',name:c.name,detail:c.detail,severity:sev});if(item)seen.push(item.id)}
-  const recent=qualityEventStore().filter(x=>Date.now()-new Date(x.createdAt).getTime()<24*60*60*1000&&x.severity==='high').slice(0,50);
-  // Oldest first, so each event is compared with the ones counted before it.
-  for(const e of [...recent].reverse()){const item=upsertIssue(items,{kind:'browser-runtime',name:e.message.slice(0,220),detail:`${e.source||''}${e.line?`:${e.line}`:''}\n${e.stack||''}`.trim(),severity:'high',seenAt:e.createdAt});if(item)seen.push(item.id)}
-  for(const item of items){if(item.kind==='quality-check'&&item.status==='open'&&!seen.includes(item.id)){item.status='resolved';item.autoResolvedAt=nowIso();item.updatedAt=nowIso()}}
-  saveIssues(items);runImproveReconcile();return {scan,items:items.slice(0,200),detected:seen.length,open:items.filter(x=>x.status==='open').length};
-}
-async function apiIssues(req,res){if(!requireFeature(res,15))return;const items=issueStore();json(res,200,{items:items.slice(0,250),open:items.filter(x=>x.status==='open').length,high:items.filter(x=>x.status==='open'&&x.severity==='high').length})}
-async function apiIssuesScan(req,res){if(!requireFeature(res,15))return;try{const r=await detectIssues();recordActivity('issue',r.open?'Issue scan complete':'Issue scan clear',`${r.open} open issue(s)`,{detected:r.detected});if(r.open)addNotification('issue','Quality issues detected',`${r.open} issue(s) are open; ${r.items.filter(x=>x.status==='open'&&x.severity==='high').length} high severity.`,{});json(res,200,r)}catch(e){storageError(res,e,500)}}
-async function apiIssueUpdate(req,res){if(!requireFeature(res,15))return;try{const b=await readBody(req);const items=issueStore(),i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Issue not found'});if(['open','resolved','ignored'].includes(b.status)){items[i].status=b.status;if(b.status==='resolved')items[i].resolvedAt=nowIso();else delete items[i].resolvedAt}items[i].updatedAt=nowIso();saveIssues(items);json(res,200,{item:items[i]})}catch(e){storageError(res,e,400)}}
-async function apiIssuePrepareChange(req,res){
-  if(!requireFeature(res,15))return;
-  try{const b=await readBody(req);const issues=issueStore(),ii=issues.findIndex(x=>x.id===b.id);if(ii<0)return json(res,404,{error:'Issue not found'});const issue=issues[ii];const request=`Fix this Local AI issue while preserving existing behavior.\nIssue: ${issue.name}\nSeverity: ${issue.severity}\nDetails:\n${issue.detail}`;const plan=await generatePatchPlan(request,SELF_APP_ROOT);const changes=changeStore();const item={id:makeId('chg'),target:'self',root:'app',request,summary:plan.summary,notes:`Prepared from issue ${issue.id}. ${plan.notes||''}`.trim(),files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[],sourceIssueId:issue.id};changes.unshift(item);saveChanges(changes);issue.changeId=item.id;issue.updatedAt=nowIso();saveIssues(issues);recordActivity('issue','Issue promoted to change',issue.name,{issueId:issue.id,changeId:item.id});json(res,201,{issue,item:publicChange(item)})}catch(e){storageError(res,e,500)}
-}
-async function issueSchedulerTick(){if(!featureAtLeast(15))return;try{await detectIssues()}catch{}}
 setInterval(()=>issueSchedulerTick(),5*60*1000).unref?.();
 // ===== END AUTONOMOUS ISSUE DETECTION =======================================
 
@@ -3052,12 +2722,15 @@ function crossSiteRequest(req) {
   return !sameHost(parsed.protocol, parsed.host, req.headers.host) && !sameHost(parsed.protocol, parsed.host, forwarded);
 }
 // The server's areas (app/server/*.js), each given what it uses; a module comes after those it takes names from.
+// The server's areas (app/server/*.js), each given what it uses; a module comes after those it takes names from.
 const { apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopStatus } = require('./server/gridcraft').createGridcraft({ GRIDCRAFT_RUN_TIMEOUT_MS, GRIDCRAFT_URL, inFlight, json, makeId, modelFetchWithTimeout, readBody, recordActivity, sameOriginJson, storage, workshop, workshopPrinter });
 const { addNotification, apiApprovalCreate, apiApprovalDecide, apiApprovals, apiNotificationSeed, apiNotificationSystem, apiNotificationUpdate, apiNotifications, approvalStore, notificationStore, resolveDeployFailures } = require('./server/notifications').createNotifications({ APPROVALS_STORE, NOTIFICATIONS_STORE, changeStore, decideChange, hostDetail, isInfoNotice, json, makeId, normalizeTitle, notifier, notifyLib, nowIso, objectStore, prependRecord, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
 const { accessAddresses, apiAccess, apiPush, apiReleases, recordReleaseHistory } = require('./server/push').createPush({ APP_VERSION, json, notifier, nowIso, pushLib, readBody, release, resolveDeployFailures, storage, storageError });
 const { apiConfig, redirectFor, serveStatic } = require('./server/web').createWeb({ APP_VERSION, CAPABILITY_CACHE_MS, CHAT_MODEL_TIMEOUT_MS, ENGINEERING_MODEL_TIMEOUT_MS, LOCAL_UI_PORT, MODEL, PUBLIC_DIR, accessAddresses, changeStore, claudeFindings, crypto, engineeringRunStore, fs, json, listenPort, path, release, text });
 const { apiPowerShellApprove, apiPowerShellCancel, apiPowerShellCreate, apiPowerShellHostNext, apiPowerShellHostResult, apiPowerShellJobs, apiPowerShellRequestRun } = require('./server/powershell').createPowerShell({ LOCAL_UI_PORT, POWERSHELL_BRIDGE_TOKEN, POWERSHELL_UI_TOKEN, json, listenPort, makeId, nowIso, objectStore, readBody, recordActivity, requireFeature, saveStore, storageError });
 const { apiConversationDelete, apiConversationSave, apiConversations, apiKnowledge, apiKnowledgeDelete, apiKnowledgeImport, apiKnowledgeSearch, apiMemory, apiMemoryAdd, apiMemoryDelete, apiMemoryUpdate, apiProjectIntelligence, apiProjects, apiProjectsCreate, apiProjectsUpdate, knowledgeScore, knowledgeStore, projectStore } = require('./server/projects').createProjects({ CONVERSATIONS_STORE, KNOWLEDGE_STORE, MEMORY_STORE, PROJECTS_STORE, json, makeId, normalizeTitle, nowIso, objectStore, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
+const { apiCheckpoints, apiGenerateImage, apiImageModels, apiImageView, getImageModelLists, warmText } = require('./server/images').createImages({ COMFY_URL, IMAGE_ESTIMATES, IMAGE_PROMPT_MODEL, MODEL, OLLAMA_URL, URL, buildImageModelCatalog, cleanRunId, comfyOptions, fetchWithTimeout, getCheckpointNames, imageEngines, json, modelFetchWithTimeout, readBody, recordActivity, recordArtifact, runLedger, titleFromText, unloadTextModel, warmTextModel });
+const { apiIssuePrepareChange, apiIssueUpdate, apiIssues, apiIssuesScan, apiQuality, apiQualityClientEvent, apiQualityScan, issueSchedulerTick, issueStore, saveIssues } = require('./server/quality').createQuality({ APP_DIR, PUBLIC_DIR, SELF_APP_ROOT, addNotification, changeStore, duplicateHtmlIds, duplicateTopLevelFunctions, featureAtLeast, fs, generatePatchPlan, getStatusAndRecordTransition, json, makeId, nowIso, objectStore, path, prependRecord, publicChange, readBody, recordActivity, requireFeature, runImproveReconcile, runProcess, saveChanges, saveStore, storageError });
 const server = http.createServer(async (req, res) => {
   const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const p = urlObj.pathname;
