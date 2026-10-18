@@ -113,8 +113,11 @@ function printerSummary(d) {
     : activity === 'paused' ? (err && !cancel ? 'error' : 'paused')
       : activity === 'idle' || activity === 'finished' ? (err && !cancel ? 'error' : 'idle')
         : cancel ? 'cancelled'
-          : activity === 'error' || err ? 'error'
-            : 'unknown';
+          // Bambu reports a stopped print as FAILED. A real fault always carries a code; with none (e.g. the display
+          // restarted after the stop and lost it) say "Print stopped" rather than raise an error on Home.
+          : activity === 'error' && !err ? 'cancelled'
+            : activity === 'error' || err ? 'error'
+              : 'unknown';
   const running = state === 'printing' || state === 'paused';
   return {
     state,

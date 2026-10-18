@@ -204,7 +204,7 @@ test('printer summary: only the allowed words, and nothing stale shown as curren
   assert.deepEqual(one({ activity: 'printing', progressPercent: 3, error: { code: '0300-400C', canceled: false } }), S('printing', 3), 'a new print after a stop is printing');
   assert.deepEqual(one({ activity: 'error', error: { code: '0300-4002', text: null, canceled: false } }), S('error', null, null, '0300-4002'), 'a real fault stays an error');
   assert.deepEqual(one({ activity: 'error', error: { code: '0700_8010', text: null, canceled: false } }), S('error', null, null, '0700_8010'));
-  assert.deepEqual(one({ activity: 'error', error: null }), S('error'), 'an error without a code stays an error');
+  assert.deepEqual(one({ activity: 'error', error: null }), S('cancelled'), 'FAILED without a code is a stop (live after the display restarted)');
   assert.deepEqual(one({ activity: 'error', error: { code: '<script>', canceled: false } }), S('error'), 'an odd code is dropped');
   assert.deepEqual(one({ activity: 'printing', progressPercent: 420, remainingMinutes: -3 }), S('printing'), 'out-of-range numbers are dropped');
   assert.deepEqual(one({ activity: 'printing', progressPercent: '42' }), S('printing'));
