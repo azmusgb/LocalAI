@@ -1466,14 +1466,30 @@ async function apiGenerateImage(req, res) {
   }
 }
 
+// Calls to the host bridge (GridCraft and ArtCraft) go over node:http (model-http.js), not the global fetch: undici
+// gives up when headers take more than 300 s, so a long GridCraft request died as "fetch failed" at five minutes
+// whatever its own deadline. Here the deadline passed in is the only one.
+function bridgeFetch(pathname, options, timeoutMs) {
+  return modelFetchWithTimeout(`${GRIDCRAFT_URL}${pathname}`, options, timeoutMs);
+}
+const bridgeTimedOut = e => e?.code === 'MODEL_TIMEOUT' || e?.name === 'TimeoutError';
+// The bridge's JSON; a body cut off by the deadline is a time-out, anything else unreadable is the fallback.
+const bridgeJson = (r, fallback) => r.json().catch(e => { if (bridgeTimedOut(e)) throw e; return fallback; });
+// What the page shows when the bridge call itself failed: never undici's "fetch failed" or Ollama wording.
+function bridgeFailure(res, e, who = 'GridCraft', unavailable = 'GridCraft bridge unavailable') {
+  if (bridgeTimedOut(e)) return json(res, 504, { ok: false, error: `${who} took too long to answer` });
+  const code = e?.cause?.code || '';
+  json(res, 502, { ok: false, error: `${unavailable}${code ? ` (${code})` : ''}` });
+}
+
 async function apiGridcraftHealth(req, res) {
   try {
-    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/health`, { cache: 'no-store' }, 4000);
-    const data = await r.json().catch(() => ({}));
+    const r = await bridgeFetch('/health', { cache: 'no-store' }, 4000);
+    const data = await bridgeJson(r, {});
     // Only what the UI shows: the bridge also reports host file paths.
     json(res, r.ok ? 200 : 502, { ok: r.ok && data.ok === true, gridcraftConnected: data.gridcraftConnected === true, ...(data.model ? { model: String(data.model) } : {}) });
   } catch (e) {
-    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+    bridgeFailure(res, e);
   }
 }
 // A request's record: what was asked, in which mode, and what it changed (the agent's journal), so the page can show the
@@ -1498,8 +1514,8 @@ async function apiGridcraftRun(req, res) {
   if (!GRIDCRAFT_MODES.has(mode)) return json(res, 400, { ok: false, error: 'mode must be read, review or apply' });
   const untrack = inFlight.track('gridcraft', 'GridCraft: ' + prompt);
   try {
-    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, mode }) }, GRIDCRAFT_RUN_TIMEOUT_MS);
-    const data = await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` }));
+    const r = await bridgeFetch('/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, mode }) }, GRIDCRAFT_RUN_TIMEOUT_MS);
+    const data = await bridgeJson(r, { ok: false, error: `Bridge returned HTTP ${r.status}` });
     const ok = r.ok && data.ok === true, journal = data.journal && typeof data.journal === 'object' ? data.journal : null;
     // A request the bridge refused before running (busy, bad prompt) changed nothing and isn't worth a record.
     if (!ok && !journal && r.status !== 500 && r.status !== 504) return json(res, r.status, { ok: false, error: data.error, reason: data.reason });
@@ -1516,7 +1532,7 @@ async function apiGridcraftRun(req, res) {
     if (ok) recordActivity('gridcraft', 'GridCraft request', prompt.slice(0, 180), { durationSec: data.durationSec, mode });
     json(res, r.status, { ok, answer: run.answer, ...(ok ? {} : { error: data.error, reason: data.reason }), durationSec: data.durationSec, run });
   } catch (e) {
-    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+    bridgeFailure(res, e);
   } finally { untrack(); }
 }
 async function apiGridcraftRuns(req, res) { json(res, 200, { items: gridcraftRuns() }); }
@@ -1524,10 +1540,10 @@ async function apiGridcraftWorkbook(req, res, urlObj) {
   const q = new URLSearchParams();
   for (const k of ['sheet', 'range']) { const v = urlObj.searchParams.get(k); if (v) q.set(k, v.slice(0, 200)); }
   try {
-    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/workbook${q.size ? `?${q}` : ''}`, { cache: 'no-store' }, 65000);
-    json(res, r.status, await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` })));
+    const r = await bridgeFetch(`/workbook${q.size ? `?${q}` : ''}`, { cache: 'no-store' }, 65000);
+    json(res, r.status, await bridgeJson(r, { ok: false, error: `Bridge returned HTTP ${r.status}` }));
   } catch (e) {
-    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+    bridgeFailure(res, e);
   }
 }
 // The workbook menu: files directly in the GridCraft folder on the host, by bare name. The bridge checks the name again
@@ -1536,14 +1552,14 @@ const GRIDCRAFT_BOOK = /^[^\\/:\0]{1,251}\.(xlsx|xlsm|xls|csv|ods)$/i;
 const gridcraftBookName = v => typeof v === 'string' && v.trim() && GRIDCRAFT_BOOK.test(v) && !v.includes('..') ? v : '';
 async function apiGridcraftWorkbooks(req, res) {
   try {
-    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/workbooks`, { cache: 'no-store' }, 15000);
-    const data = await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` }));
+    const r = await bridgeFetch('/workbooks', { cache: 'no-store' }, 15000);
+    const data = await bridgeJson(r, { ok: false, error: `Bridge returned HTTP ${r.status}` });
     if (!r.ok || data.ok !== true) return json(res, r.ok ? 502 : r.status, { ok: false, error: data.error || 'GridCraft did not list the workbooks' });
     const items = (Array.isArray(data.items) ? data.items : []).filter(x => gridcraftBookName(x?.name))
       .map(x => ({ name: x.name, size: Number(x.size) || 0, modified: String(x.modified || '') }));
     json(res, 200, { ok: true, items });
   } catch (e) {
-    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+    bridgeFailure(res, e);
   }
 }
 async function apiGridcraftOpen(req, res) {
@@ -1555,13 +1571,13 @@ async function apiGridcraftOpen(req, res) {
   // Opening replaces the workbook, so a request waiting for review would lose its Keep and Discard.
   if (gridcraftRuns(GRIDCRAFT_KEEP_RUNS).some(x => x.status === 'review')) return json(res, 409, { ok: false, error: 'A request is waiting for review. Keep or discard its changes first, then open another workbook.' });
   try {
-    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/open`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }, 65000);
-    const data = await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` }));
+    const r = await bridgeFetch('/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }, 65000);
+    const data = await bridgeJson(r, { ok: false, error: `Bridge returned HTTP ${r.status}` });
     if (!r.ok || data.ok !== true) return json(res, r.ok ? 502 : r.status, { ok: false, error: data.error || 'GridCraft did not open it' });
     recordActivity('gridcraft', 'GridCraft workbook opened', name);
     json(res, 200, { ok: true, file: name });
   } catch (e) {
-    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+    bridgeFailure(res, e);
   }
 }
 async function apiGridcraftDecide(req, res, id, action) {
@@ -1574,10 +1590,10 @@ async function apiGridcraftDecide(req, res, id, action) {
   let r = { ok: true }, data = { ok: true };
   try {
     if (action === 'keep' || run.undoSteps > 0) {
-      r = await fetchWithTimeout(`${GRIDCRAFT_URL}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action === 'discard' ? { steps: run.undoSteps, undoTop: run.undoTop } : {}) }, 65000);
-      data = await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` }));
+      r = await bridgeFetch(`/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action === 'discard' ? { steps: run.undoSteps, undoTop: run.undoTop } : {}) }, 65000);
+      data = await bridgeJson(r, { ok: false, error: `Bridge returned HTTP ${r.status}` });
     }
-  } catch (e) { return json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` }); }
+  } catch (e) { return bridgeFailure(res, e); }
   if (!r.ok || data.ok !== true) return json(res, r.ok ? 502 : r.status, { ok: false, error: data.error || 'GridCraft did not do it' });
   const now = new Date().toISOString();
   // Saving saves every change in the workbook, so every request waiting for review is kept.
@@ -1590,25 +1606,25 @@ async function apiGridcraftDecide(req, res, id, action) {
 // opens it (its fixed exe, no arguments). The page never talks to ArtCraft itself.
 async function apiArtcraftStatus(req, res) {
   try {
-    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/artcraft`, { cache: 'no-store' }, 20000);
-    const d = await r.json().catch(() => ({}));
+    const r = await bridgeFetch('/artcraft', { cache: 'no-store' }, 20000);
+    const d = await bridgeJson(r, {});
     if (!r.ok || !d.ok) return json(res, 502, { ok: false, error: String(d.error || `Bridge returned HTTP ${r.status}`).slice(0, 300) });
     json(res, 200, { ok: true, installed: d.installed === true, running: d.running === true, version: typeof d.version === 'string' ? d.version.slice(0, 40) : null });
   } catch (e) {
-    json(res, 502, { ok: false, error: `Windows computer bridge unavailable: ${e.message || e}` });
+    bridgeFailure(res, e, 'The Windows computer', 'Windows computer bridge unavailable');
   }
 }
 async function apiArtcraftOpen(req, res) {
   if (!sameOriginJson(req, res)) return;
   req.resume(); // nothing from the body is used
   try {
-    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/artcraft/open`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, 20000);
-    const d = await r.json().catch(() => ({}));
+    const r = await bridgeFetch('/artcraft/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, 20000);
+    const d = await bridgeJson(r, {});
     if (!r.ok || !d.ok) return json(res, r.ok ? 502 : r.status, { ok: false, error: String(d.error || `Bridge returned HTTP ${r.status}`).slice(0, 300) });
     recordActivity('artcraft', 'ArtCraft opened', d.alreadyRunning ? 'It was already open' : 'Opened on the Windows computer');
     json(res, 200, { ok: true, alreadyRunning: d.alreadyRunning === true });
   } catch (e) {
-    json(res, 502, { ok: false, error: `Windows computer bridge unavailable: ${e.message || e}` });
+    bridgeFailure(res, e, 'The Windows computer', 'Windows computer bridge unavailable');
   }
 }
 async function apiImageView(req, res, urlObj) {
