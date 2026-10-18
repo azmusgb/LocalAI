@@ -3,8 +3,8 @@
 // the part of the app the goal names. A goal naming a page or feature ("agent world", "Spreadsheets") brings that
 // feature's files, ui.js sections and specs; otherwise a keyword search over app/, docs/ and host/ ranks files by
 // matches; a goal about nothing in the repo brings no repo code.
-// Excerpts stay small (the model is a 4B on a 6 GB GPU): each source is its header, an outline of its functions or
-// headings, then its most relevant blocks, with long bundle lines cut.
+// Excerpts stay small (the model is a 4B on a 6 GB GPU): each source is a map of its functions or headings with their
+// line numbers (first, so it survives fitEvidence's cut), its header, then its most relevant blocks, long lines cut.
 const fs = require('node:fs');
 const path = require('node:path');
 const VIEWS = require('./public/view-registry').VIEWS;
@@ -109,7 +109,7 @@ function splitBlocks(lines, kind) {
     const line = lines[i], prevComment = i > 0 && comment && comment.test(lines[i - 1]);
     const begin = !cur || (starts.test(line) && !prevComment) || (comment && comment.test(line) && !prevComment && !(cur && cur.start === i));
     if (begin) { cur = { start: i, end: i, head: '' }; blocks.push(cur); } else cur.end = i;
-    if (!cur.head && (starts.test(line) || kind === 'md')) cur.head = headOf(line, kind);
+    if (!cur.head && (starts.test(line) || kind === 'md')) { cur.head = headOf(line, kind);cur.headLine = i; }
   }
   return blocks;
 }
@@ -130,25 +130,53 @@ function scoreText(text, terms) {
   for (const t of terms) { if (!low.includes(t)) continue; distinct++; let i = low.indexOf(t), n = 0; while (i >= 0 && n < 5) { n++; i = low.indexOf(t, i + t.length); } hits += n; }
   return distinct * 10 + hits;
 }
+// The map that opens a source: each function (heading, rule, element) and `// ==== section ====` header with its line
+// in the real file, so a worker reads exactly that range with read_project_file instead of paging through a bundle.
+// Names and lines only; over MAP_CHARS the names that match the goal and the longer (more specific) ones are kept.
+const MAP_CHARS = 3000;
+function sourceMap(file, all, blocks, { kind, terms, from, end }) {
+  const seen = new Set(), names = [];
+  for (const b of blocks) {
+    const h = b.head;if (!h || h.length < 3 || KEYWORDS.has(h) || seen.has(h)) continue;
+    seen.add(h);names.push({ name: h, line: b.headLine + 1 });
+  }
+  const sections = [];
+  if (kind === 'code') for (let n = from; n <= end; n++) { const m = /^\/\/ ==== (.+?) ====/.exec(all[n]); if (m) sections.push({ name: m[1], line: n + 1 }); }
+  if (names.length < 2 && sections.length < 2) return '';
+  const title = `MAP ${file} lines ${from + 1}–${end + 1} (name line; read_project_file start_line = that line):`;
+  const label = kind === 'md' ? 'Headings: ' : kind === 'css' ? 'Rules: ' : kind === 'html' ? 'Elements: ' : 'Functions: ';
+  const join = list => list.map(x => x.name + ' ' + x.line).join(', ');
+  const head = title + (sections.length > 1 ? '\nSections: ' + join(sections) : '') + '\n' + label;
+  let kept = names, room = MAP_CHARS - head.length;
+  if (join(names).length > room) {
+    const rank = x => (terms.some(t => lower(x.name).includes(t)) ? 2 : 0) + (x.name.length >= 5 ? 1 : 0);
+    const order = names.map((x, i) => ({ x, i, r: rank(x) })).sort((a, b) => b.r - a.r || a.i - b.i);
+    room -= 60;kept = [];let size = 0;
+    for (const { x } of order) { const add = x.name.length + String(x.line).length + 3; if (size + add > room) continue; kept.push(x);size += add; }
+    kept.sort((a, b) => a.line - b.line);
+    return head + join(kept) + ` … ${names.length - kept.length} more (find_in_project finds any name)`;
+  }
+  return head + join(kept);
+}
 const cut = line => line.length > LINE_CHARS ? line.slice(0, LINE_CHARS) + ' …' : line;
 const numbered = (lines, from, to) => { const out = []; for (let n = from; n <= to; n++) out.push(String(n + 1).padStart(5, ' ') + ' | ' + cut(lines[n])); return out.join('\n'); };
 
-// One source as a small excerpt: header lines, an outline, then the most relevant blocks in file order.
+// One source as a small excerpt: the map, header lines, then the most relevant blocks in file order.
 function excerpt(label, raw, { kind, terms, from = 0, to, match, maxChars }) {
   const all = raw.split(/\r?\n/), end = Math.min(all.length - 1, to ?? all.length - 1);
   if (kind === 'json' || (end - from < 60 && !match)) {
     const text = numbered(all, from, end);
     return { source: label, text: text.slice(0, maxChars), truncated: text.length > maxChars };
   }
-  let blocks = splitBlocks(all.slice(from, end + 1), kind).map(b => ({ ...b, start: b.start + from, end: b.end + from }));
+  let blocks = splitBlocks(all.slice(from, end + 1), kind).map(b => ({ ...b, start: b.start + from, end: b.end + from, headLine: (b.headLine ?? b.start) + from }));
   const head = blocks[0];
   if (match) blocks = blocks.filter(b => match.some(m => all.slice(b.start, b.end + 1).join('\n').includes(m)));
   if (!blocks.length) return null;
   const parts = [];let used = 0;
-  const outline = [...new Set(blocks.map(b => b.head).filter(h => h && h.length > 2 && !KEYWORDS.has(h)))];
   const lead = match ? null : head;
   if (lead) { const text = numbered(all, lead.start, Math.min(lead.end, lead.start + 7)); parts.push({ at: lead.start, text }); used += text.length; }
-  if (outline.length > 1) { const o = (kind === 'md' ? 'Headings: ' : kind === 'css' ? 'Rules: ' : kind === 'html' ? 'Elements: ' : 'Functions: ') + outline.join(', '); const text = o.length > 900 ? o.slice(0, 900) + ' …' : o; parts.push({ at: -1, text }); used += text.length; }
+  const map = sourceMap(label.split('#')[0], all, blocks, { kind, terms, from, end });
+  if (map) { parts.push({ at: -1, text: map }); used += map.length; }
   const ranked = blocks.filter(b => b !== lead).map((b, i) => ({ b, i, score: scoreText(all.slice(b.start, b.end + 1).join('\n'), terms) }))
     .sort((x, y) => y.score - x.score || x.i - y.i);
   for (const { b, score } of ranked) {
@@ -290,3 +318,28 @@ module.exports.fitEvidence = fitEvidence;
 module.exports.evidenceTokenBudget = evidenceTokenBudget;
 module.exports.CHARS_PER_TOKEN = CHARS_PER_TOKEN;
 module.exports.DEFAULT_EVIDENCE_TOKENS = DEFAULT_EVIDENCE_TOKENS;
+
+// The Coordinator's answer, checked for absence it can't back. Live (18 Oct): a worker read a few parts of a 3,900-line
+// file, wrote that cranes, flags and fireworks were "not evident", and the Coordinator reported them as unimplemented;
+// all of them exist. A sentence that says something does not exist, has no evidence or is missing stands only when it
+// cites a find_in_project search that found nothing ([E-...]) or names one of that search's words. Any other such
+// sentence is quoted in a caveat line put first in the answer. A caveat rather than a rewrite: it never garbles the
+// model's sentence or hides what it said, and the owner sees both the claim and that it wasn't checked.
+const ABSENCE = /\b(?:does(?:n['’]t| not) exist|do(?:n['’]t| not) exist|no evidence|lacks?(?: an?| any)? implementation|(?:is|are) missing|(?:is|are) not implemented|not (?:yet )?implemented|(?:is|are) absent)\b/i;
+function absenceSentences(text) {
+  return String(text || '').split(/\n+|(?<=[.!?])\s+(?=[*_"“([]*[A-Z0-9])/).map(s => s.trim()).filter(s => ABSENCE.test(s));
+}
+function checkAbsenceClaims(answer, searches = []) {
+  const empty = searches.filter(s => s && s.kind === 'search' && s.matches === 0 && s.complete !== false);
+  const backed = [], flagged = [];
+  for (const sentence of absenceSentences(answer)) {
+    const low = lower(sentence);
+    const by = empty.find(s => sentence.includes(s.id) || String(s.query || '').toLowerCase().split(/[\s|,;"'`]+/).some(t => t.length >= 4 && low.includes(t)));
+    if (by) backed.push({ sentence, search: by.id }); else flagged.push(sentence);
+  }
+  if (!flagged.length) return { answer, flagged, backed };
+  const quote = s => '“' + (s.length > 160 ? s.slice(0, 157).trimEnd() + '…' : s).replace(/\*\*|__/g, '').replace(/^[-*#>\s]+/, '') + '”';
+  const caveat = `Caveat: ${flagged.length === 1 ? 'one statement below says' : flagged.length + ' statements below say'} something is missing, but no worker searched the code for it, so it wasn't checked and may well exist: ${flagged.slice(0, 5).map(quote).join('; ')}${flagged.length > 5 ? '; …' : ''}`;
+  return { answer: caveat + '\n\n' + answer, flagged, backed, caveat };
+}
+module.exports.checkAbsenceClaims = checkAbsenceClaims;
