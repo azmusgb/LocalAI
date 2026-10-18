@@ -71,7 +71,14 @@ machine is next on). Each run:
    `%USERPROFILE%\OneDrive\LocalAI-Backups` (`-OffsiteRoot ''` skips the second copy);
 3. restore-tests the copy by opening it with the app's own storage code (`storage-cli.js status`) before keeping it;
 4. keeps 7 daily copies plus 4 weekly copies from the weeks before (`-KeepDaily`, `-KeepWeekly`), in both places;
-5. writes `C:\LocalAI\backups\last-backup.json` (time, file, size, record counts, error).
+5. archives the Docker volumes whose state is not in the database (`-Volumes`, default `n8n_data`,
+   `localai-caddy-data`, `local-ai-ollama-responses-proxy-data`) to
+   `C:\LocalAI\backups\volumes\volume-<name>-<yyyyMMdd-HHmmss>.tgz`: each container using a volume is paused for the
+   few seconds its archive takes (so n8n's SQLite files are consistent; a healthcheck that lands in that moment can
+   show one "unhealthy" until the next), each archive is checked readable and not empty, and the same 7 + 4 copies are
+   kept. A second copy goes to `G:\LocalAI-Backups\volumes` (`-VolumeCopyRoot`; skipped when there is no G: drive). These
+   never go to OneDrive: they hold the HTTPS root key and n8n's credentials together with their key;
+6. writes `C:\LocalAI\backups\last-backup.json` (time, file, size, record counts, volumes, error).
 
 ```powershell
 .\deploy\Install-LocalAI-Backup.ps1                 # schedule at 02:30
@@ -88,6 +95,18 @@ Deploys and rollbacks also leave database backups in `/data/backups` (`before-de
 ```powershell
 .\deploy\Restore-LocalAI-Data.ps1 -Backup C:\LocalAI\backups\data\localai-YYYYMMDD-HHMMSS.db -Force
 ```
+
+A volume (n8n shown; the same for `localai-caddy-data` and the proxy's) goes back with its containers stopped. Pause
+`LocalAI Safe Deploy` first so it does not restart them halfway:
+
+```powershell
+docker stop local-ai-n8n
+docker run --rm -v n8n_data:/v -v C:\LocalAI\backups\volumes:/in:ro node:22-alpine sh -c "rm -rf /v/* /v/.[!.]* && tar xzf /in/volume-n8n_data-YYYYMMDD-HHMMSS.tgz -C /v"
+docker start local-ai-n8n
+```
+
+Never restore `localai-caddy-data` from anything but its own archive: a new root certificate means every device has to
+trust it again.
 
 Without `-Force` it refuses and says what it would replace. With it, it snapshots the current database to
 `/data/backups/pre-restore-<stamp>.db` (so a restore can be undone), stops the container, swaps the

@@ -570,6 +570,18 @@ try {
             Assert-True ($kept -eq '20261015 20261014 20261013 20261012 20261011 20261010 20261009 20261004 20260927 20260920 20260913') "Unexpected retention: $kept"
         } finally { Remove-Item $dir -Recurse -Force }
     }
+    Test-Case 'volume archives keep 7 daily and 4 older weekly copies, by the date in their name' {
+        $source = Get-Content (Join-Path $repository 'deploy/Backup-LocalAI-Data.ps1') -Raw
+        Invoke-Expression ([regex]::Match($source, '(?s)function Select-Keep.*?\n\}').Value)
+        $KeepDaily = 7; $KeepWeekly = 4
+        $dir = Join-Path ([IO.Path]::GetTempPath()) ('localai-retention-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory $dir | Out-Null
+        try {
+            for ($i = 0; $i -lt 40; $i++) { New-Item -ItemType File (Join-Path $dir ('volume-n8n_data-' + (Get-Date '2026-10-15').AddDays(-$i).ToString('yyyyMMdd') + '-023000.tgz')) | Out-Null }
+            $kept = (Select-Keep (Get-ChildItem $dir -File) | ForEach-Object { [regex]::Match($_.Name, '(\d{8})-\d{6}').Groups[1].Value } | Sort-Object -Descending) -join ' '
+            Assert-True ($kept -eq '20261015 20261014 20261013 20261012 20261011 20261010 20261009 20261004 20260927 20260920 20260913') "Unexpected retention: $kept"
+        } finally { Remove-Item $dir -Recurse -Force }
+    }
     if ($failures.Count) { throw "$($failures.Count) deployment contract failure(s):`n$($failures -join "`n")" }
     Write-Host "PASS: $passed deployment contracts (native boundaries simulated; actual Docker promotion requires host verification)."
 } finally { Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue }
