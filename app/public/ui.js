@@ -97,15 +97,16 @@ async function startMission(){const goal=$('agentGoal')?.value.trim(),open=$('aw
  try{await preview();const j=await req('/api/agents/missions/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});closeStart();if(j.mission){currentMission=null;renderMission(j.mission);window.dispatchEvent(new CustomEvent('localai:agentworld-mission',{detail:{mission:j.mission}}))}window.dispatchEvent(new Event('localai:agentworld-start'));window.LocalAIUI?.toast?.('The team is on it');loadHistory()}
  catch(e){if(open)notice('error','Couldn’t start the mission: '+e.message);else window.LocalAIUI?.toast?.('Couldn’t start the mission: '+e.message)}finally{if(b){b.disabled=false;b.textContent='Start'}}}
 // The start sheet: one text box, the team in words as you type, two plain options, Advanced only with developer tools.
-// The dialog's close event is queued, so it can arrive after the sheet was opened again (close, then Start at once): openStart
-// releases the last sheet's history entry itself, and a close event for a sheet that is open again is ignored.
-let releaseStart=null,startOpener=null,teamTimer=0,teamFor='';
-function openStart(){const d=$('awStart');if(!d||d.open)return;const prev=releaseStart;releaseStart=null;prev?.();startOpener=document.activeElement;clearNotice();d.showModal();releaseStart=window.LocalAIUI?.sheetHistory?.(d,()=>{releaseStart=null;d.close()})||null;$('agentGoal')?.focus();renderTeam()}
+// Closed, focus goes back to whatever opened it, again once the sheet's history.back() has landed.
+let teamTimer=0,teamFor='';
+function openStart(){const d=$('awStart');if(!d||d.open)return;const o=document.activeElement;clearNotice();
+ window.LocalAIUI.showSheet(d,reopened=>{if(reopened)return;const back=()=>{if(o?.isConnected&&document.activeElement!==o)o.focus()};back();window.LocalAIUI.afterSheetPop(()=>{back();requestAnimationFrame(()=>requestAnimationFrame(back))})});
+ $('agentGoal')?.focus();renderTeam()}
 function closeStart(){const d=$('awStart');if(d?.open)d.close()}
 function renderTeam(){const g=$('agentGoal')?.value.trim()||'',el=$('awTeam');if(!el)return;clearTimeout(teamTimer);if(!g){el.innerHTML='';teamFor='';return}if(g===teamFor)return;
  teamTimer=setTimeout(async()=>{let r;try{const body={goal:g},ids=manualIds();if(ids?.length)body.agentIds=ids;r=(await req('/api/agents/dispatch',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})).routing}catch{return}if(($('agentGoal')?.value.trim()||'')!==g)return;teamFor=g;renderRoute(r);
   const p=window.LocalAIAgentWords?.teamPreview(r?.workers||[]);if(!p?.text){el.innerHTML='';return}el.innerHTML='<span class="aw-team__label">Who’s on the team</span><span class="aw-team__faces">'+p.workers.map(w=>'<img class="awc__avatar" src="'+(window.LocalAIAgentWorld?.avatar?.(w)||'')+'" alt="" width="32" height="32">').join('')+'</span><p>'+esc(p.text)+'</p>'},450)}
-function setupStart(){const d=$('awStart');if(!d)return;d.addEventListener('close',()=>{if(d.open)return;const r=releaseStart;releaseStart=null;r?.();const o=startOpener;startOpener=null;const back=()=>{if(o?.isConnected&&document.activeElement!==o)o.focus()};back();(window.LocalAIUI?.afterSheetPop||(fn=>fn()))(()=>{back();requestAnimationFrame(()=>requestAnimationFrame(back))})});$('awStartClose').onclick=closeStart;d.addEventListener('click',e=>{if(e.target===d)closeStart()});$('agentGoal')?.addEventListener('input',renderTeam);
+function setupStart(){const d=$('awStart');if(!d)return;$('awStartClose').onclick=closeStart;d.addEventListener('click',e=>{if(e.target===d)closeStart()});$('agentGoal')?.addEventListener('input',renderTeam);
  $('awEmptyStart')?.addEventListener('click',openStart);$('awEmptyDemo')?.addEventListener('click',()=>{$('awEmpty').hidden=true;window.LocalAIAgentWorld?.demo?.()});window.LocalAIAgentStart={open:openStart}}
 async function runSpecialist(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter an objective first.');return}const b=$('specialistRunBtn');if(b)b.disabled=true;try{const j=await req('/api/agents/specialist/run',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({agentId:selected,goal,projectId:$('agentProject')?.value||''})});renderRun(j.run)}catch(e){notice('error',e.message)}finally{if(b)b.disabled=false}}
 function setupAdvanced(){const toggle=$('agentAdvancedToggle'),panel=$('agentAdvancedPanel');if(toggle&&panel)toggle.onclick=()=>{const open=panel.hidden;panel.hidden=!open;toggle.setAttribute('aria-expanded',String(open));toggle.textContent=open?'Hide advanced':'Advanced'};$('manualRouteToggle')?.addEventListener('change',e=>{$('manualRouteOptions').hidden=!e.target.checked})}
@@ -2957,7 +2958,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       backdrop.addEventListener('click', (event) => { if (event.target === backdrop) closeRunView(); });
       const dlg = el('runDetailsSheet');
       dlg.addEventListener('click', (event) => { if (event.target === dlg) dlg.close(); });   // the dimmed area outside the sheet
-      dlg.addEventListener('close', () => { const r = state.detailsRelease; state.detailsRelease = null; r?.(); if (state.selectedId) el('runDetailsBtn')?.focus(); });
       document.addEventListener('click', (event) => { if (!event.target.closest?.('.run-menu, #runMoreBtn')) closeMenu(); });
     }
   }
@@ -3237,7 +3237,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     }
     sheet.appendChild(box);
   }
-  function openDetails() { const sheet = el('runDetailsSheet'); if (sheet && !sheet.open && sheet.childElementCount) { sheet.showModal(); state.detailsRelease = window.LocalAIUI?.sheetHistory?.(sheet, () => sheet.close()); sheet.querySelector('button')?.focus(); } }
+  function openDetails() {
+    const sheet = el('runDetailsSheet'); if (!sheet || sheet.open || !sheet.childElementCount) return;
+    const release = window.LocalAIUI.showSheet(sheet, (reopened) => { if (state.detailsRelease === release) state.detailsRelease = null; if (!reopened && state.selectedId) el('runDetailsBtn')?.focus(); });
+    state.detailsRelease = release; sheet.querySelector('button')?.focus();
+  }
 
   // Approve and Reject only record a decision, so they are plain confirms (no typed word), whatever the risk.
   function approvalBar(approval) {

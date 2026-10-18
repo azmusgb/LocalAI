@@ -187,17 +187,15 @@ async function itemAction(id,action,btn,then){
   await settle(id,action==='discard'?(then==='aside'?'Set aside':'Back in the Backlog'):DONE[action],{go:action==='start'?'inProgress':''})}
  catch(e){err.textContent=e.message;err.hidden=false;btn.disabled=false}
 }
-// Shows a sheet that Back closes (LocalAIUI.sheetHistory); closing it any other way pops that history entry again.
-function showSheet(d){
- if(d.open)return;d.showModal();
- const release=root.LocalAIUI.sheetHistory?.(d,()=>d.close());
- if(release)d.addEventListener('close',release,{once:true});
-}
+// A sheet that Back closes; closing it any other way pops that history entry again.
+const showSheet=(d,onClosed)=>root.LocalAIUI.showSheet(d,onClosed);
 // Opens the idea sheet, optionally with text (Home's Change Local AI mode). Resolves {start, error?} once saved, or null if closed unsaved.
 function openIdea(text){
  const d=$('improveIdeaSheet');if(!d)return Promise.resolve(null);
- $('improveIdeaText').value=typeof text==='string'?text:'';$('improveIdeaError').hidden=true;showSheet(d);$('improveIdeaText').focus();
- return new Promise(res=>{st.ideaDone=res;d.addEventListener('close',()=>{if(st.ideaDone===res){st.ideaDone=null;res(null)}},{once:true})});
+ $('improveIdeaText').value=typeof text==='string'?text:'';$('improveIdeaError').hidden=true;
+ // Closed unsaved (or opened again at once): the waiting promise resolves null.
+ showSheet(d,()=>{const r=st.ideaDone;st.ideaDone=null;r?.(null)});$('improveIdeaText').focus();
+ return new Promise(res=>{st.ideaDone=res});
 }
 async function submitIdea(start,btn){
  const text=$('improveIdeaText').value,err=$('improveIdeaError');
