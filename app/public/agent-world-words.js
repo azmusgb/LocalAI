@@ -35,7 +35,7 @@ function workerName(w){
 function subject(w){if(!isFollowUp(w))return workerName(w);const n=workerName(w).replace(/\s*·\s*follow-up$/i,'');return n+'’s follow-up'}
 const workerRole=w=>(ROLES[key(w)]||['Helps with the mission'])[0];
 const activity=w=>(ROLES[key(w)]||[0,'working'])[1];
-const BADGE={running:['Working','accent'],complete:['Done','good'],pending:['Waiting','neutral'],queued:['Waiting','neutral'],error:['Needs you','bad'],blocked:['Needs you','bad'],needs_attention:['Needs you','bad']};
+const BADGE={running:['Working','accent'],complete:['Done','good'],pending:['Waiting','neutral'],queued:['Waiting','neutral'],error:['Needs you','bad'],blocked:['Needs you','bad'],needs_attention:['Needs you','bad'],partial:['Partly done','neutral']};
 function stateBadge(state){const b=BADGE[state]||['Waiting','neutral'];return{label:b[0],tone:b[1]}}
 function duration(ms){
  if(!Number.isFinite(ms)||ms<0)return'';
@@ -56,7 +56,8 @@ function errorWords(code,msg){
  // Work a restart stopped (agent-orchestrator.js reconcileInterrupted), in either wording.
  if(interrupted(c,t))return'interrupted by an update';
  if(c==='AGENT_TIMEOUT'||/execution deadline reached/i.test(t))return'the agent ran out of time';
- if(c==='AGENT_TURN_LIMIT'||/turn limit reached/i.test(t))return'the agent couldn’t settle on an answer';
+ // Older records: the run used its last step reading (agent-runtime.js now saves the last step for writing).
+ if(c==='AGENT_TURN_LIMIT'||/turn limit reached/i.test(t))return'ran out of steps before writing up';
  if(c==='AGENT_CONTEXT_LIMIT'||/context limit reached/i.test(t))return'the agent had too much to read';
  // Ollama refused the connection or isn't there (model-http.js MODEL_UNREACHABLE), before any other model failure.
  if(c==='MODEL_UNREACHABLE'||/ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|wasn.t answering/i.test(t))return'Ollama wasn’t answering';
@@ -86,6 +87,8 @@ function workerStep(w,m){
  }
  if(w.state==='complete'){
   if(key(w)==='router')return'Picked the team';
+  // A worker that wrote up without citing anything, or stopped after reading, still helped (agent-orchestrator.js).
+  if(w.partial)return'Finished with partial findings';
   const d=duration(span(w.startedAt,w.finishedAt));return d?'Finished in '+d:'Finished';
  }
  if((w.state==='error'||w.state==='blocked')&&wasInterrupted(w,m))return'Interrupted by an update';
@@ -99,16 +102,27 @@ function followupNote(m){
  const n={};for(const w of(m&&m.workers)||[])if(isFollowUp(w)&&BAD.has(w.state)){const k=wasInterrupted(w,m)?1:/out of time|too long/.test(workerError(w,m))?0:2;n[k]=(n[k]||0)+1}
  return[0,1,2].filter(k=>n[k]).map(k=>n[k]+' follow-up'+(n[k]>1?'s ':' ')+[`ran out of time`,(n[k]>1?'were':'was')+' interrupted by an update','didn’t finish'][k]).join(' · ');
 }
+// Workers that gave partial findings or none, in a mission that still finished: "UX Analyst finished with partial findings".
+function partialNote(m){
+ if(!m)return'';
+ const out=[];for(const w of m.workers||[]){const k=key(w);if(k==='router'||k==='synthesis'||isFollowUp(w))continue;
+  if(w.state==='complete'&&w.partial)out.push(subject(w)+' finished with partial findings');
+  else if(w.state==='error')out.push(subject(w)+' '+stoppedWords(w,m));
+  else if(w.state==='blocked')out.push(subject(w)+' couldn’t start');}
+ return out.join(' · ');
+}
+// What a finished mission's summary is missing: partial or missing workers, then follow-ups that didn't finish.
+function missionNote(m){return[partialNote(m),followupNote(m)].filter(Boolean).join(' · ')}
 function statusSentence(m){
  if(!m)return{tone:'idle',label:'',text:'Give your team a goal'};
  const all=m.workers||[],done=all.filter(w=>w.state==='complete').length,count=done+' of '+all.length+' done';
- const counts=w=>!(m.status==='complete'&&isFollowUp(w)); // a done mission's stopped follow-ups are its note
+ const counts=()=>m.status!=='complete'; // a done mission's stopped workers and follow-ups are its note
  const bad=all.find(w=>w.state==='error'&&counts(w))||all.find(w=>w.state==='blocked'&&counts(w));
  if(m.status==='needs_attention'||m.status==='error'||m.status==='failed'||bad){
   const why=bad?subject(bad)+(bad.state==='error'||wasInterrupted(bad,m)?' '+stoppedWords(bad,m):' couldn’t start'):errorWords(m.errorCode,m.error);
   return{tone:'attention',label:'Needs you',text:'Needs you · '+(all.length?count+' · ':'')+why};
  }
- if(m.status==='complete'){const d=duration(span(m.createdAt,m.finishedAt||m.updatedAt)),n=all.filter(w=>!isFollowUp(w)).length,note=followupNote(m);return{tone:'done',label:'Done',text:'Done'+(d?' in '+d:'')+' · '+n+' worker'+(n===1?'':'s')+(note?' · '+note:'')}}
+ if(m.status==='complete'){const d=duration(span(m.createdAt,m.finishedAt||m.updatedAt)),n=all.filter(w=>!isFollowUp(w)).length,note=missionNote(m);return{tone:'done',label:'Done',text:'Done'+(d?' in '+d:'')+' · '+n+' worker'+(n===1?'':'s')+(note?' · '+note:'')}}
  const running=all.filter(w=>w.state==='running');
  if(running.length===1&&key(running[0])==='router')return{tone:'working',label:'Working',text:'Starting · the team lead is picking the team'};
  if(!running.length)return{tone:'working',label:'Working',text:'Working · '+count};
@@ -125,7 +139,7 @@ function storyEvents(m){
  if(!tl.length){
   const all=m.workers||[];if(!all.length)return[];say(m.createdAt,'router','The team lead picked the team: '+team(all),'done');
   for(const w of all){if(key(w)==='router')continue;const n=subject(w),step=workerStep(w,m);
-   say(m.updatedAt,idOf(w),w.state==='complete'?n+' finished':w.state==='error'||w.state==='blocked'?changeSentence(w,m):n+' is '+step.charAt(0).toLowerCase()+step.slice(1),TONE[w.state]||'wait')}
+   say(m.updatedAt,idOf(w),w.state==='complete'?changeSentence(w,m):w.state==='error'||w.state==='blocked'?changeSentence(w,m):n+' is '+step.charAt(0).toLowerCase()+step.slice(1),TONE[w.state]||'wait')}
   return out.reverse();
  }
  let prev=null;const waited=new Set();
@@ -145,7 +159,7 @@ function storyEvents(m){
  return out.reverse();
 }
 // One worker's new state as a sentence (the story and the city's floating notes): "UX Analyst started reviewing the screens".
-function changeSentence(w,m){const n=subject(w);return w.state==='running'?n+' started '+activity(w):w.state==='complete'?n+' finished':w.state==='error'||(w.state==='blocked'&&wasInterrupted(w,m))?n+' '+stoppedWords(w,m):w.state==='blocked'?n+' '+workerStep(w,m).replace(/^C/,'c'):''}
+function changeSentence(w,m){const n=subject(w);return w.state==='running'?n+' started '+activity(w):w.state==='complete'?n+(w.partial?' finished with partial findings':' finished'):w.state==='error'||(w.state==='blocked'&&wasInterrupted(w,m))?n+' '+stoppedWords(w,m):w.state==='blocked'?n+' '+workerStep(w,m).replace(/^C/,'c'):''}
 const TONE={running:'working',complete:'done',error:'bad',blocked:'bad',pending:'wait'};
 // Consecutive sentences about one worker read as one group under that worker.
 function groupStory(list){const g=[];for(const e of list||[]){const last=g[g.length-1];if(last&&e.workerId&&last.workerId===e.workerId)last.items.push(e);else g.push({workerId:e.workerId||'',items:[e]})}return g}
@@ -166,7 +180,7 @@ function summaryWhy(m){const all=(m&&m.workers)||[],c=all.find(w=>key(w)==='synt
  if(m&&m.status==='complete')return'No summary: the Coordinator didn’t write one.';
  if(stopped.length)return'No summary: '+names(stopped.map(subject))+' stopped.';
  return'No summary yet: the team is still working.'}
-const api={followupNote,summaryWhy,changeSentence,stoppedWords,teamPreview,workerName,workerRole,workerStep,stateBadge,statusSentence,storyEvents,groupStory,errorWords,duration};
+const api={followupNote,partialNote,missionNote,summaryWhy,changeSentence,stoppedWords,teamPreview,workerName,workerRole,workerStep,stateBadge,statusSentence,storyEvents,groupStory,errorWords,duration};
 root.LocalAIAgentWords=api;
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

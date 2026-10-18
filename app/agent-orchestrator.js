@@ -2,7 +2,7 @@
 const fs=require('fs'),path=require('path'),{EventEmitter}=require('events');
 const {runAgentLoop,createModelQueue}=require('./agent-runtime');
 const createMissionEvidence=require('./mission-evidence'),{fitEvidence,evidenceTokenBudget,CHARS_PER_TOKEN}=require('./mission-evidence');
-const {followupNote}=require('./public/agent-world-words');
+const {missionNote}=require('./public/agent-world-words');
 const {createResearchTools,evidenceRecord,tool,objectArgs,stringArg}=require('./agent-tools');
 module.exports=function createAgentOrchestrator(deps={}){
  const {dataDir,ollamaUrl,defaultModel,fetchWithTimeout,runLocalModel,knowledgeStore,knowledgeScore,searxSearch,recordActivity}=deps;
@@ -83,7 +83,9 @@ module.exports=function createAgentOrchestrator(deps={}){
   for(let attempt=0;attempt<=MODEL_RETRY_DELAYS_MS.length;attempt++){const release=await modelQueue.acquire();try{return await runLocalModel(prompt,system,timeoutMs,model)}catch(e){last=e;const msg=String(e&&e.message||e),transient=/fetch failed|ECONNRESET|ECONNREFUSED|socket|network|UND_ERR|terminated/i.test(msg);if(!transient||attempt>=MODEL_RETRY_DELAYS_MS.length)throw e;release();await new Promise(r=>setTimeout(r,MODEL_RETRY_DELAYS_MS[attempt]))}finally{release()}}
   throw last;
  }
- function dependencyContext(results,dependsOn){return (dependsOn||[]).map(dep=>results.find(r=>r.agentId===dep&&r.status==='complete')).filter(Boolean).map(r=>'DEPENDENCY RESULT: '+r.agentName+' ['+r.agentId+']\nEvidence: '+(r.evidence||[]).join(', ')+'\n'+String(r.answer||'').slice(0,12000)).join('\n\n')}
+ // A result is usable when it finished, or stopped but left partial findings (notes or an uncited answer).
+ const usable=r=>!!r&&(r.status==='complete'||r.partial===true);
+ function dependencyContext(results,dependsOn){return (dependsOn||[]).map(dep=>results.find(r=>r.agentId===dep&&usable(r))).filter(Boolean).map(r=>'DEPENDENCY RESULT: '+r.agentName+' ['+r.agentId+']'+(r.partial?' (partial findings)':'')+'\nEvidence: '+(r.evidence||[]).join(', ')+'\n'+String(r.answer||r.notes||'').slice(0,12000)).join('\n\n')}
  function groundingRules(){return 'EVIDENCE RULES:\n- Analyze Local AI Appliance only.\n- Treat supplied sources as authoritative evidence.\n- Do not invent screens, metrics, users, product features, defects, dates, or runtime behavior.\n- Every observed finding must cite one or more supplied source labels such as [app/public/index.html].\n- Distinguish: OBSERVED PRESENCE (shown by evidence), OBSERVED ABSENCE IN SUPPLIED EXCERPTS (searched evidence does not show it), and NOT VERIFIED (evidence is insufficient).\n- Never convert absence from an excerpt into a product-wide claim that a feature does not exist.\n- Check the report for internal contradictions before publishing.\n- Clearly label recommendations as recommendations, not observations.\n- If evidence is insufficient, state exactly what is missing.\n- Use the current runtime date only if supplied; never invent a report date.\n\n'}
  function evidencePacket(goal,agentId,projectId){
   const knowledge=context(projectId,goal).map(v=>({source:v.source,text:v.text.slice(0,5000)}));
@@ -122,6 +124,8 @@ module.exports=function createAgentOrchestrator(deps={}){
     const prompt=grounding+'Goal:\n'+goal+'\n\nAuthoritative project evidence:\n'+(evidence||'(none)')+upstreamText+'\n\nInvestigate missing facts using the offered tools. Read files by the paths in the source labels (for example app/public/ui.js, app/public/app.css, docs/README.md). Search knowledge only within the selected project. Cite evidence IDs such as [E-...] for every observation. Separate observations, recommendations, and remaining unknowns.';
     const result=await runAgentLoop({model:rt.model,system:agent.system,prompt,turn:deps.runAgentTurn,tools:createResearchTools({projectRoot,projectId,knowledgeStore,knowledgeScore,searxSearch,...run.policy}),evidence:run.evidenceRecords,onEvent:publish,signal:options.signal,modelQueue,...deps.agentLimits,timeoutMs:groundedTimeoutMs});
     Object.assign(run,result);run.evidence=result.evidenceRecords.map(x=>x.source);
+    // An answer that cites nothing is kept, marked partial (agent-runtime.js), rather than thrown away.
+    if(result.unsupported)run.partial=true;
    }catch(e){
     if(e.code!=='MODEL_NO_TOOLS')throw e;
     usedTools=false;run.toolFallback=e.message+'; ran one grounded prompt instead';run.plan[2].name='Execute specialist';
@@ -132,7 +136,9 @@ module.exports=function createAgentOrchestrator(deps={}){
    }
    run.plan[2].state='complete';run.plan[3].state='complete';run.status='complete';
   }catch(e){
-   run.status='error';const cause=e&&e.cause&&e.cause.code,msg=String(e.message||e)+(cause&&!String(e.message).includes(cause)?' ('+cause+')':''),timedOut=/abort|timed? ?out/i.test(msg);run.error=timedOut?'Grounded specialist inference exceeded '+Math.round(groundedTimeoutMs/60000)+' minute timeout: '+msg:msg;run.errorCode=/^(AGENT|MODEL)_/.test(e.code||'')?e.code:(timedOut?'MODEL_TIMEOUT':(/fetch failed|ECONNRESET|ECONNREFUSED|socket|network|UND_ERR|terminated/i.test(msg)?'MODEL_CONNECTION_ERROR':'SPECIALIST_ERROR'));const active=run.plan.find(x=>x.state==='running');if(active)active.state='error'}
+   run.status='error';const cause=e&&e.cause&&e.cause.code,msg=String(e.message||e)+(cause&&!String(e.message).includes(cause)?' ('+cause+')':''),timedOut=/abort|timed? ?out/i.test(msg);run.error=timedOut?'Grounded specialist inference exceeded '+Math.round(groundedTimeoutMs/60000)+' minute timeout: '+msg:msg;run.errorCode=/^(AGENT|MODEL)_/.test(e.code||'')?e.code:(timedOut?'MODEL_TIMEOUT':(/fetch failed|ECONNRESET|ECONNREFUSED|socket|network|UND_ERR|terminated/i.test(msg)?'MODEL_CONNECTION_ERROR':'SPECIALIST_ERROR'));const active=run.plan.find(x=>x.state==='running');if(active)active.state='error';
+   // A worker that stopped after reading keeps what it gathered, marked partial, for the Coordinator.
+   const p=e&&e.partial;if(p&&(p.notes||p.gathered)){run.partial=true;run.notes=String(p.notes||'');if(Array.isArray(p.evidenceRecords)&&p.evidenceRecords.length){run.evidenceRecords=p.evidenceRecords;run.evidence=p.evidenceRecords.map(x=>x.source)}}}
   run.updatedAt=iso();persistRecord(runsFile,run,300);
   if(recordActivity)recordActivity('agent','Specialist '+run.status,agent.name,{runId:run.id,agentId});
   return run;
@@ -182,7 +188,7 @@ module.exports=function createAgentOrchestrator(deps={}){
  function reconcileInterrupted(){const reason='Local AI restarted for an update while this was running';for(const m of storage.list(missionsFile,{status:'running'})){m.status='error';m.error=reason;settleWorkers(m,reason);m.updatedAt=iso();storage.upsert(missionsFile,m)}for(const r of storage.list(runsFile,{status:'running'})){r.status='error';r.error=reason;r.errorCode='INTERRUPTED';for(const p of r.plan||[])if(p.state==='running')p.state='error';r.updatedAt=iso();storage.upsert(runsFile,r)}}
  function missionSnapshot(m,type='state',detail='',workerId=''){
   m.timeline=m.timeline||[];
-  const workers=(m.workers||[]).map(w=>({id:w.id,name:w.name,state:w.state,model:w.model,dependsOn:w.dependsOn||[],reason:w.reason,routingMeta:w.routingMeta||null,error:w.error||''}));
+  const workers=(m.workers||[]).map(w=>({id:w.id,name:w.name,state:w.state,model:w.model,dependsOn:w.dependsOn||[],reason:w.reason,routingMeta:w.routingMeta||null,error:w.error||'',...(w.partial?{partial:true}:{})}));
   const sig=workers.map(w=>w.id+':'+w.state).join('|')+'|'+m.status+'|'+type;
   if(m.timeline.at(-1)?.sig!==sig)m.timeline.push({at:iso(),type,detail,workerId,status:m.status,sig,workers});
   m.updatedAt=iso();
@@ -196,7 +202,7 @@ module.exports=function createAgentOrchestrator(deps={}){
   missionSnapshot(m,'mission-start','Mission accepted and routing plan created','router');
   try{
    const pending=new Set(routing.selectedAgentIds),done=new Set(),results=[];
-   while(pending.size){opts.signal?.throwIfAborted();const blocked=routing.workers.filter(w=>pending.has(w.agentId)&&(w.dependsOn||[]).some(d=>done.has(d)&&!results.some(r=>r.agentId===d&&r.status==='complete')));blocked.forEach(w=>{pending.delete(w.agentId);done.add(w.agentId);const mw=m.workers.find(x=>x.id===w.agentId);mw.state='blocked';mw.error='Blocked because a prerequisite specialist failed';});if(blocked.length){m.results=results;m.updatedAt=iso();missionSnapshot(m,'blocked','A dependency failure blocked downstream work',blocked[0]?.agentId||'')}const ready=routing.workers.filter(w=>pending.has(w.agentId)&&(w.dependsOn||[]).every(d=>done.has(d)&&results.some(r=>r.agentId===d&&r.status==='complete')));if(!ready.length){if(!pending.size)break;throw new Error('Mission dependency graph cannot make progress');}
+   while(pending.size){opts.signal?.throwIfAborted();const blocked=routing.workers.filter(w=>pending.has(w.agentId)&&(w.dependsOn||[]).some(d=>done.has(d)&&!results.some(r=>r.agentId===d&&usable(r))));blocked.forEach(w=>{pending.delete(w.agentId);done.add(w.agentId);const mw=m.workers.find(x=>x.id===w.agentId);mw.state='blocked';mw.error='Blocked because a prerequisite specialist failed';});if(blocked.length){m.results=results;m.updatedAt=iso();missionSnapshot(m,'blocked','A dependency failure blocked downstream work',blocked[0]?.agentId||'')}const ready=routing.workers.filter(w=>pending.has(w.agentId)&&(w.dependsOn||[]).every(d=>done.has(d)&&results.some(r=>r.agentId===d&&usable(r))));if(!ready.length){if(!pending.size)break;throw new Error('Mission dependency graph cannot make progress');}
     ready.forEach(w=>m.workers.find(x=>x.id===w.agentId).state='running');m.updatedAt=iso();missionSnapshot(m,'dispatch','Ready workers entered execution',ready.map(w=>w.agentId).join(','));
     const batch=await Promise.all(ready.map(async w=>{
      const workerOpts={...opts,workerId:w.agentId,onEvent:event=>recordMissionTool(m,event)};
@@ -208,16 +214,20 @@ module.exports=function createAgentOrchestrator(deps={}){
      }
      return r
     }));results.push(...batch);
-    ready.forEach(w=>{pending.delete(w.agentId);done.add(w.agentId);const r=results.find(x=>x.agentId===w.agentId),mw=m.workers.find(x=>x.id===w.agentId);mw.state=r.status;if(r.fallbackFor){mw.fallbackUsed=r.executedBy;mw.reason=(mw.reason||'')+' · fallback executed by '+r.executedBy}});
+    ready.forEach(w=>{pending.delete(w.agentId);done.add(w.agentId);const r=results.find(x=>x.agentId===w.agentId),mw=m.workers.find(x=>x.id===w.agentId);mw.state=usable(r)?'complete':r.status;if(r.partial){mw.partial=true;if(r.error){mw.error=r.error;mw.errorCode=r.errorCode}}if(r.fallbackFor){mw.fallbackUsed=r.executedBy;mw.reason=(mw.reason||'')+' · fallback executed by '+r.executedBy}});
     m.results=results;m.updatedAt=iso();missionSnapshot(m,'worker-result','Specialist results published',ready.map(w=>w.agentId).join(','));
    }
    opts.signal?.throwIfAborted();
-   const failed=results.filter(r=>r.status!=='complete'),blockedWorkers=m.workers.filter(w=>w.state==='blocked');if(failed.length||blockedWorkers.length){const sw=m.workers.find(x=>x.id==='synthesis');sw.state='blocked';sw.error='Synthesis skipped because prerequisite specialists did not complete';m.status='needs_attention';m.error='Mission stopped after specialist failure';m.updatedAt=iso();missionSnapshot(m,'mission-attention','Mission stopped after specialist failure');return m}
+   // Partial or missing parts don't stop the team: the Coordinator writes from what exists and says what is missing.
+   // Only with nothing at all to work from does the mission need you.
+   if(!results.some(usable)){const sw=m.workers.find(x=>x.id==='synthesis');sw.state='blocked';sw.error='Synthesis skipped because prerequisite specialists did not complete';m.status='needs_attention';m.error='Mission stopped after specialist failure';m.updatedAt=iso();missionSnapshot(m,'mission-attention','Mission stopped after specialist failure');return m}
    const sw=m.workers.find(x=>x.id==='synthesis');sw.state='running';missionSnapshot(m,'synthesis','Coordinator started synthesis','synthesis');
    try{
     // Specialist outputs share two thirds of the evidence budget evenly (12000 characters each at most).
     const perResult=Math.min(12000,Math.floor(evidenceChars*2/3/Math.max(1,results.length)));
-    const coordinatorModel=(await routeModel(goal+' synthesis')).model,joined=results.map(r=>'## '+r.agentName+(r.citationWarning?' (citation warning: '+r.citationWarning+')':'')+'\n'+String(r.answer||r.error||'').slice(0,perResult)).join('\n\n');
+    const missing=m.workers.filter(w=>w.state==='blocked'&&!results.some(r=>r.agentId===w.id)).map(w=>'## '+w.name+' (missing: did not run because a prerequisite stopped)');
+    const gaps=results.some(r=>!usable(r)||r.partial)||missing.length?'NOTE: Some specialist work is partial or missing (marked below). Write the answer from what exists, and say plainly which parts are missing.\n\n':'';
+    const coordinatorModel=(await routeModel(goal+' synthesis')).model,joined=gaps+[...results.map(r=>'## '+r.agentName+(!usable(r)?' (missing: stopped without findings)':r.partial?' (partial findings'+(r.status!=='complete'?': stopped before writing up':': cites no evidence')+')':'')+(r.citationWarning&&!r.partial?' (citation warning: '+r.citationWarning+')':'')+'\n'+String(r.answer||r.notes||r.error||'').slice(0,perResult)),...missing].join('\n\n');
     m.answer=typeof deps.runAgentTurn==='function'?await coordinate(m,goal,projectId,coordinatorModel,joined,opts).catch(e=>{if(e.code!=='MODEL_NO_TOOLS')throw e;m.toolFallback=e.message;return null}):null;
     if(m.answer===null)m.answer=await runModelReliable('Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nSynthesize only claims grounded in the specialist evidence. Preserve source labels. Reject invented product behavior, metrics, dates, screens, users, or defects. Clearly distinguish observed evidence from recommendations and identify remaining evidence gaps.','You are the mission coordinator for the Local AI Appliance. Produce an actionable, source-grounded synthesis; never substitute a generic consumer AI product.',coordinatorTimeoutMs,coordinatorModel);m.coordinatorModel=coordinatorModel;
    }catch(e){
@@ -227,7 +237,7 @@ module.exports=function createAgentOrchestrator(deps={}){
    }
    // Follow-ups are optional extras: with an answer the mission is done and says which didn't finish (their own rows
    // keep their stopped state). Only a missing answer needs you.
-   const note=followupNote(m);if(note)m.note=note;
+   const note=missionNote(m);if(note)m.note=note;
    if(sw.state!=='error'&&String(m.answer||'').trim()){sw.state='complete';m.status='complete'}
    else{if(sw.state!=='error'){sw.state='error';sw.error='The coordinator didn’t write an answer'}m.status='needs_attention';m.error='No answer: '+(sw.error||'the coordinator didn’t write one')+(note?' ('+note+')':'');m.errorCode=sw.errorCode||'MISSION_NO_ANSWER';settleWorkers(m,m.error);missionSnapshot(m,'mission-attention',m.error,'synthesis');return m}
   }catch(e){m.status='error';m.error=String(e.message||e);m.errorCode=e.code||'MISSION_ERROR';settleWorkers(m,m.error)}
