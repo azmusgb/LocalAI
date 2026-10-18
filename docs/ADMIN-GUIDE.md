@@ -11,6 +11,9 @@ goes through Caddy on port 443.
 - **In the app:** System › Health shows each core service and the optional companions.
 - **From any computer:** `curl -s http://10.0.0.21:3080/healthz` returns the running `version` and `releaseCommit`.
 - When core health changes and stays changed for 2 minutes, phones with notifications get **Down** / **Recovered**.
+- **After a Windows restart** some services (n8n, search, HTTPS) can stay stopped. The next update check, within
+  5 minutes, starts any stopped services again and the Inbox says "Restarted N Local AI services that were stopped".
+  Details: [Deploy](DEPLOY.md#after-a-windows-restart).
 
 Details and the troubleshooting index: [Operations](OPERATIONS.md).
 

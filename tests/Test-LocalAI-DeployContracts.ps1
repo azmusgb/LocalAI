@@ -42,6 +42,10 @@ function New-Fixture {
         Busy = $null; BusyFails = $false; BusyAsked = 0; Notices = [System.Collections.Generic.List[object]]::new()
         # Backup tidy: the containers `docker ps -a` lists (New-FixtureContainer), and simulated docker failures.
         Containers = [System.Collections.Generic.List[object]]::new(); PsFails = $false; RmFails = @(); NoChange = $false
+        # Stack repair: what `docker compose ps -a` lists (New-FixtureStack), printed as a JSON array or one object per
+        # line, and simulated compose failures.
+        Stack = [System.Collections.Generic.List[object]]::new(); StackAsArray = $false; ComposeFails = $false; ComposeUpFails = $false
+        StackEnv = (Join-Path $root 'stack.env'); StackCompose = (Join-Path $root 'compose.yml')
     }
     [System.IO.Directory]::CreateDirectory($fixture.StateDir) | Out-Null
     Write-LocalAI-DeployState (Join-Path $fixture.StateDir 'state.json') ([ordered]@{status='HEALTHY';currentCommit=$oldSha})
@@ -55,12 +59,53 @@ function New-FixtureContainer([string]$Name, [string]$State = 'exited', [double]
     $finished = if ($State -eq 'exited') { $now.AddDays(-$StoppedDaysAgo).ToString('yyyy-MM-ddTHH:mm:ss') + '.123456789Z' } else { '0001-01-01T00:00:00Z' }
     $fixture.Containers.Add([pscustomobject]@{ Name = $Name; State = $State; Health = $Health; Labels = $Labels; Restart = $Restart; Created = $now.AddDays(-$CreatedDaysAgo).ToString('yyyy-MM-ddTHH:mm:ss') + '.987654321Z'; FinishedAt = $finished })
 }
+# The compose stack for the repair: stack.env and compose.yml exist, and every service runs unless listed in $Stopped
+# (name = 'exited <code>' or 'created'). sandbox-certs is the one-shot job: exited 0, no restart policy.
+$script:stackServices = [ordered]@{ appliance = 'unless-stopped'; https = 'unless-stopped'; n8n = 'unless-stopped'; 'ollama-responses-proxy' = 'unless-stopped'; searxng = 'unless-stopped'; 'sandbox-certs' = ''; 'sandbox-api' = 'unless-stopped'; 'sandbox-runner-1' = 'unless-stopped' }
+function New-FixtureStack([hashtable]$Stopped = @{}) {
+    Set-Content -LiteralPath $fixture.StackEnv -Value 'LOCALAI_HOST_IP=10.0.0.21'
+    Set-Content -LiteralPath $fixture.StackCompose -Value 'name: local-ai'
+    foreach ($service in $stackServices.Keys) {
+        $name = "local-ai-$service"
+        $state = if ($Stopped.ContainsKey($name)) { $Stopped[$name] } elseif ($service -eq 'sandbox-certs') { 'exited 0' } else { 'running' }
+        Add-FixtureStackEntry $name $service $state
+    }
+}
+function Add-FixtureStackEntry([string]$Name, [string]$Service, [string]$State, [string]$Project = 'local-ai') {
+    $parts = $State -split ' '
+    $fixture.Stack.Add([pscustomobject]@{ Name = $Name; Service = $Service; Project = $Project; State = $parts[0]; ExitCode = $(if ($parts.Count -gt 1) { [int]$parts[1] } else { 0 }) })
+}
+function Get-FixtureStackEntry([string]$Name) { @($fixture.Stack | Where-Object { $_.Name -eq $Name })[0] }
+function Invoke-FixtureRepair { & (Join-Path $repository 'deploy/Repair-LocalAI-Stack.ps1') -EnvFile $fixture.StackEnv -Compose $fixture.StackCompose -HealthUrl 'http://fixture/healthz' }
 function Get-FixtureContainer([string]$Name) { @($fixture.Containers | Where-Object { $_.Name -eq $Name })[0] }
 function docker {
     $Arguments = [string[]]$args
     $fixture.Calls.Add($Arguments)
     $global:LASTEXITCODE = 0
     switch ($Arguments[0]) {
+        'compose' {
+            if ($fixture.ComposeFails) { $global:LASTEXITCODE = 1; return 'error during connect: Docker Desktop is not running' }
+            $sub = $Arguments[5]
+            if ($Arguments[1] -ne '--env-file' -or $Arguments[2] -ne $fixture.StackEnv -or $Arguments[4] -ne $fixture.StackCompose) { throw "Unexpected compose files: $($Arguments -join ' ')" }
+            if ($sub -eq 'config') {
+                $services = [ordered]@{}
+                foreach ($k in $stackServices.Keys) { $svc = [ordered]@{ container_name = "local-ai-$k"; image = 'img' }; if ($stackServices[$k]) { $svc.restart = $stackServices[$k] }; $services[$k] = $svc }
+                return (ConvertTo-Json -Depth 6 -InputObject ([ordered]@{ name = 'local-ai'; services = $services }))
+            }
+            if ($sub -eq 'ps') {
+                # Other projects' containers too: a real `compose ps` leaves them out, but the script must not rely on it.
+                $rows = @($fixture.Stack | ForEach-Object { [ordered]@{ Name = $_.Name; Service = $_.Service; Project = $_.Project; State = $_.State; ExitCode = $_.ExitCode; Status = "$($_.State)"; Labels = "com.docker.compose.project=$($_.Project)" } })
+                if ($fixture.StackAsArray) { return (ConvertTo-Json -Depth 4 -Compress -InputObject @($rows)) }
+                foreach ($r in $rows) { $r | ConvertTo-Json -Compress }
+                return
+            }
+            if ($sub -eq 'up') {
+                if ($fixture.ComposeUpFails) { $global:LASTEXITCODE = 1; return 'Error response from daemon: Bind for 0.0.0.0:443 failed: port is already allocated' }
+                foreach ($e in $fixture.Stack) { if ($e.Project -eq 'local-ai' -and $e.Name -notmatch '-pre-' -and $e.Service -ne 'sandbox-certs') { $e.State = 'running' } }
+                return 'Container local-ai-n8n  Started'
+            }
+            throw "Unexpected docker compose command: $($Arguments -join ' ')"
+        }
         'ps' {
             if ($fixture.PsFails) { throw 'error during connect: Docker Desktop is not running' }
             foreach ($c in $fixture.Containers) { [ordered]@{ ID = "id$($c.Name.Length)"; Names = $c.Name; State = $c.State; Status = 'whatever'; Labels = $c.Labels; CreatedAt = '2026-10-01 10:00:00 -0700 PDT' } | ConvertTo-Json -Compress }
@@ -87,7 +132,11 @@ function docker {
             if ($fixture.Containers.Count -and $Arguments[1] -ne 'fixture-appliance') { $global:LASTEXITCODE = 1; return }
             return @([ordered]@{Image='sha256:existing-image';State=@{Running=$fixture.Running};Config=@{Env=@('DATA_DIR=/data')};Mounts=@(@{Destination='/app'},@{Destination='/data'})}) | ConvertTo-Json -Depth 8 -Compress }
         'stop' { $fixture.Running=$false; return }
-        'start' { $fixture.Running=$true; return }
+        'start' {
+            $e = Get-FixtureStackEntry $Arguments[1]
+            if ($e) { $e.State = 'running'; return $e.Name }
+            $fixture.Running=$true; return
+        }
         'run' {
             if ($Arguments -contains 'preflight' -and $fixture.PreflightFailure) { $global:LASTEXITCODE=1 }
             if ($Arguments -contains 'downgrade-json' -and $fixture.ExportFailure) { $global:LASTEXITCODE=1 }
@@ -138,7 +187,7 @@ function powershell.exe {
     "DEPLOYED: $newSha"
 }
 function Invoke-FixtureAutoDeploy([int]$MaxHoldMinutes = 45) {
-    & (Join-Path $repository 'deploy/Run-LocalAI-AutoDeploy.ps1') -Repo $fixture.Repo -Live $fixture.Live -StateDir $fixture.StateDir -NotifyUrl 'http://fixture/api/notifications/system' -BusyUrl 'http://fixture/api/busy' -HealthUrl 'http://fixture/healthz' -MaxHoldMinutes $MaxHoldMinutes
+    & (Join-Path $repository 'deploy/Run-LocalAI-AutoDeploy.ps1') -Repo $fixture.Repo -Live $fixture.Live -StateDir $fixture.StateDir -NotifyUrl 'http://fixture/api/notifications/system' -BusyUrl 'http://fixture/api/busy' -HealthUrl 'http://fixture/healthz' -MaxHoldMinutes $MaxHoldMinutes -StackEnvFile $fixture.StackEnv -StackCompose $fixture.StackCompose
 }
 function Get-AutoDeployCount { @($fixture.Calls | Where-Object { $_[0] -eq 'auto-deploy' }).Count }
 function Invoke-FixtureRollback([string]$Snapshot) {
@@ -421,6 +470,93 @@ try {
         Invoke-FixtureAutoDeploy | Out-Null
         Assert-True ((Get-AutoDeployCount) -eq 1 -and -not (Get-FixtureContainer 'local-ai-n8n-pre-lockdown')) 'No tidy after a healthy deploy'
         Assert-True (@($g.Notices | Where-Object { $_.title -eq 'Removed 1 old backup container (a stopped copy from an earlier migration)' }).Count -eq 1) 'Singular notice missing'
+    }
+    Test-Case 'stack repair does nothing on a host without the compose stack or when every service runs' {
+        $f = New-Fixture
+        $result = Invoke-FixtureRepair
+        Assert-True (@($result.Started).Count -eq 0 -and @($result.Log).Count -eq 0) "Non-compose host: $($result.Log -join '; ')"
+        Assert-True (-not @($f.Calls | Where-Object { $_[0] -eq 'compose' }).Count) 'Ran docker compose on a host without the stack'
+        # All running (the one-shot sandbox-certs exited 0 by design): no up, no start, no log.
+        $f = New-Fixture; New-FixtureStack
+        $result = Invoke-FixtureRepair
+        Assert-True (@($result.Started).Count -eq 0 -and @($result.Log).Count -eq 0 -and $null -eq $result.Healthy) "All running: $($result.Log -join '; ')"
+        Assert-True (-not @($f.Calls | Where-Object { $_[0] -eq 'start' -or ($_[0] -eq 'compose' -and $_ -contains 'up') }).Count) 'Started something while everything was running'
+        # Through the auto-deploy: silent.
+        $f.NoChange = $true
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True (-not @($f.Notices | Where-Object { $_.meta.action -eq 'repair-stack' }).Count) 'A run with nothing stopped sent a notice'
+        Assert-True (-not ((Get-Content -LiteralPath (Join-Path $f.StateDir 'auto-deploy.log') -Raw) -match 'repair:')) 'A run with nothing stopped logged a repair'
+    }
+    Test-Case 'stack repair starts stopped services once with up -d --no-recreate and tells the Inbox' {
+        foreach ($asArray in @($false, $true)) {
+            $f = New-Fixture; $f.StackAsArray = $asArray
+            New-FixtureStack @{ 'local-ai-https' = 'exited 137'; 'local-ai-n8n' = 'exited 143'; 'local-ai-searxng' = 'exited 0'; 'local-ai-ollama-responses-proxy' = 'exited 137'; 'local-ai-sandbox-api' = 'exited 2'; 'local-ai-sandbox-runner-1' = 'created' }
+            $result = Invoke-FixtureRepair
+            $ups = @($f.Calls | Where-Object { $_[0] -eq 'compose' -and $_ -contains 'up' })
+            Assert-True ($ups.Count -eq 1 -and (($ups[0] | Select-Object -Skip 5) -join ' ') -eq 'up -d --no-recreate') "Expected one up -d --no-recreate (array=$asArray): $($ups | ForEach-Object { $_ -join ' ' })"
+            Assert-True (-not @($f.Calls | Where-Object { $_[0] -in @('start','stop','restart','rm') }).Count) 'Touched containers outside docker compose up'
+            Assert-True ((@($result.Started) | Sort-Object) -join ' ' -eq 'local-ai-https local-ai-n8n local-ai-ollama-responses-proxy local-ai-sandbox-api local-ai-sandbox-runner-1 local-ai-searxng') "Unexpected starts (array=$asArray): $($result.Started)"
+            Assert-True ($result.Log -contains 'started local-ai-n8n (was Exited 143)' -and $result.Log -contains 'started local-ai-sandbox-runner-1 (was Created)') "Unexpected log: $($result.Log -join '; ')"
+            Assert-True ($result.Healthy -eq $true -and $result.Log -contains 'appliance /healthz OK') 'Health not checked'
+        }
+        # Through the auto-deploy: one notice, filed as info, and one log line per service; the deploy still runs.
+        $f = New-Fixture
+        New-FixtureStack @{ 'local-ai-https' = 'exited 137'; 'local-ai-n8n' = 'exited 143'; 'local-ai-searxng' = 'exited 0'; 'local-ai-ollama-responses-proxy' = 'exited 137'; 'local-ai-sandbox-api' = 'exited 2'; 'local-ai-sandbox-runner-1' = 'created' }
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ($LASTEXITCODE -eq 0 -and (Get-AutoDeployCount) -eq 1) 'The repair stopped the deploy'
+        $notice = @($f.Notices | Where-Object { $_.meta.action -eq 'repair-stack' })
+        Assert-True ($notice.Count -eq 1 -and $notice[0].title -eq 'Restarted 6 Local AI services that were stopped (probably by a Windows restart)' -and $notice[0].meta.outcome -eq 'done' -and $notice[0].detail -match 'local-ai-n8n') "Unexpected notices: $($f.Notices | ConvertTo-Json -Compress -Depth 4)"
+        $log = Get-Content -LiteralPath (Join-Path $f.StateDir 'auto-deploy.log') -Encoding UTF8
+        Assert-True (@($log | Where-Object { $_ -match '^\d{4}-\d\d-\d\dT\S+ repair: started local-ai-' }).Count -eq 6) "Starts not in the log: $($log -join "`n")"
+        Assert-True (@($log | Where-Object { $_ -match ' repair: started local-ai-n8n \(was Exited 143\)$' }).Count -eq 1) 'n8n start not logged'
+        # The repair runs before the deploy.
+        $order = @($f.Calls | ForEach-Object { if ($_[0] -eq 'compose' -and $_ -contains 'up') { 'up' } elseif ($_[0] -eq 'auto-deploy') { 'deploy' } } | Where-Object { $_ })
+        Assert-True (($order -join ' ') -eq 'up deploy') "Unexpected order: $($order -join ' ')"
+        # Next run: nothing stopped, no second notice. A stopped appliance alone is also brought back (singular).
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True (@($f.Notices | Where-Object { $_.meta.action -eq 'repair-stack' }).Count -eq 1) 'A second run sent another notice'
+        $g = New-Fixture; $script:fixture = $g
+        New-FixtureStack @{ 'local-ai-appliance' = 'exited 137' }
+        $g.NoChange = $true
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True (@($g.Notices | Where-Object { $_.title -eq 'Restarted 1 Local AI service that was stopped (probably by a Windows restart)' }).Count -eq 1) 'Singular notice missing'
+    }
+    Test-Case 'stack repair ignores *-pre-* backups and containers outside the compose project' {
+        $f = New-Fixture; New-FixtureStack
+        Add-FixtureStackEntry 'local-ai-n8n-pre-compose' 'n8n' 'exited 0'
+        Add-FixtureStackEntry 'local-ai-appliance-pre-hostport' 'appliance' 'exited 137'
+        Add-FixtureStackEntry 'localai-agent-design-candidate' 'app' 'exited 1' 'design'
+        Add-FixtureStackEntry 'local-ai-searxng' 'searxng' 'exited 0' 'other-project'
+        $result = Invoke-FixtureRepair
+        Assert-True (@($result.Started).Count -eq 0 -and @($result.Log).Count -eq 0) "Acted on backups or strangers: $($result.Log -join '; ')"
+        Assert-True (-not @($f.Calls | Where-Object { $_[0] -eq 'start' -or ($_[0] -eq 'compose' -and $_ -contains 'up') }).Count) 'Started a backup or a stranger'
+        # With a backup carrying this project's labels, `up` could remove it as an extra replica: start by name instead.
+        $f = New-Fixture
+        New-FixtureStack @{ 'local-ai-n8n' = 'exited 143'; 'local-ai-https' = 'exited 137' }
+        Add-FixtureStackEntry 'local-ai-appliance-pre-hostport' 'appliance' 'exited 137'
+        $result = Invoke-FixtureRepair
+        Assert-True (-not @($f.Calls | Where-Object { $_[0] -eq 'compose' -and $_ -contains 'up' }).Count) 'Ran docker compose up next to a labelled backup'
+        $starts = @($f.Calls | Where-Object { $_[0] -eq 'start' } | ForEach-Object { $_[1] } | Sort-Object)
+        Assert-True (($starts -join ' ') -eq 'local-ai-https local-ai-n8n') "Unexpected docker start calls: $($starts -join ' ')"
+        Assert-True ((Get-FixtureStackEntry 'local-ai-appliance-pre-hostport').State -eq 'exited') 'A backup was started'
+        Assert-True (@($result.Started).Count -eq 2) "Unexpected starts: $($result.Started)"
+    }
+    Test-Case 'stack repair logs docker failures and never throws out of the auto-deploy' {
+        $f = New-Fixture; New-FixtureStack @{ 'local-ai-n8n' = 'exited 143' }; $f.ComposeFails = $true
+        $result = Invoke-FixtureRepair
+        Assert-True (@($result.Started).Count -eq 0 -and "$($result.Log)" -match 'stack check skipped: docker compose config --format json failed \(1\): .*Docker Desktop is not running') "Unexpected: $($result.Log)"
+        $f = New-Fixture; New-FixtureStack @{ 'local-ai-https' = 'exited 137' }; $f.ComposeUpFails = $true
+        $result = Invoke-FixtureRepair
+        Assert-True (@($result.Started).Count -eq 0 -and "$($result.Log)" -match 'stack check skipped: docker compose up -d --no-recreate failed \(1\): .*port is already allocated') "Unexpected: $($result.Log)"
+        $f = New-Fixture; New-FixtureStack @{ 'local-ai-n8n' = 'exited 143' }; $f.ComposeFails = $true
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ($LASTEXITCODE -eq 0 -and (Get-AutoDeployCount) -eq 1) 'A docker failure failed the deploy'
+        Assert-True ((Get-Content -LiteralPath (Join-Path $f.StateDir 'auto-deploy.log') -Raw) -match 'repair: stack check skipped') 'The failure was not logged'
+        Assert-True (-not @($f.Notices | Where-Object { $_.meta.action -eq 'repair-stack' }).Count) 'A failed repair sent a notice'
+        # An appliance that stays unhealthy is logged, and the notice says so.
+        $f = New-Fixture; New-FixtureStack @{ 'local-ai-n8n' = 'exited 143' }; $f.RejectAllHealth = $true
+        $result = Invoke-FixtureRepair
+        Assert-True ($result.Healthy -eq $false -and $result.Log -contains 'appliance /healthz not OK after 60 s') "Unexpected: $($result.Log -join '; ')"
     }
     Test-Case 'nightly backups keep 7 daily and 4 older weekly copies' {
         $source = Get-Content (Join-Path $repository 'deploy/Backup-LocalAI-Data.ps1') -Raw
