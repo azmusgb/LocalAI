@@ -647,8 +647,67 @@ await check('Developer tools off: no Change Local AI mode, and Auto never routes
   assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').evaluateAll(b => b.map(x => x.dataset.homeMode)), ['automate', 'mission', 'create', 'research', 'ask', 'auto']);
   await page.locator('#homeModeSheet .home-sheet__done').click();
   await page.locator('#commandInput').fill('Change the login page'); await page.locator('#commandGo').click();
+  // A change to Local AI itself offers Claude Code first; Ask anyway sends it to Chat.
+  await page.locator('#homeSelfChange').getByRole('button', { name: 'Ask anyway' }).click(T);
   await page.waitForFunction(() => window.__starts.length === 1, null, T);
   assert.deepEqual(page.started, []);
+  await page.context().close();
+});
+
+// A mission to change Local AI itself: Home offers Claude Code first (Hand to Claude), and the mission is one tap away.
+async function missionHome() {
+  const page = await open(desk, '#home', { storage: { 'localai.home.mode': 'mission' } });
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  page.missions = []; page.handed = [];
+  await page.route(u => u.pathname === '/api/agents/missions/start', r => { page.missions.push(r.request().postDataJSON()); r.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ runId: 'run-m9' }) }); });
+  await page.route(u => u.pathname === '/api/improve/handoff', r => { page.handed.push(r.request().postDataJSON()); r.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ item: { id: 'idea-9' } }) }); });
+  return page;
+}
+const SELF_GOAL = 'Improve look feel and polish of agent world';
+await check('Mission: a goal to change Local AI itself offers Claude Code; Hand to Claude posts it from Home and toasts', async () => {
+  const page = await missionHome();
+  await page.locator('#commandInput').fill(SELF_GOAL); await page.locator('#commandGo').click();
+  const box = page.locator('#homeSelfChange');
+  await box.waitFor({ state: 'visible', ...T });
+  assert.match(await box.innerText(), /This is a change to Local AI itself\. Claude Code reviews the code and opens a tested pull request\./);
+  assert.deepEqual(page.missions, [], 'nothing started yet');
+  await box.getByRole('button', { name: 'Hand to Claude' }).click();
+  await page.waitForFunction(() => /Handed to Claude Code — it appears in Improve › In progress/.test(document.getElementById('toast')?.textContent || ''), null, T);
+  assert.deepEqual(page.handed, [{ text: SELF_GOAL, from: 'home' }]);
+  assert.deepEqual(page.missions, []);
+  assert.equal(await page.locator('#commandInput').inputValue(), '');
+  assert.equal(await box.isVisible(), false);
+  await page.context().close();
+});
+await check('Mission: Start a mission anyway starts it; a plain goal starts with no suggestion', async () => {
+  const page = await missionHome();
+  await page.locator('#commandInput').fill(SELF_GOAL); await page.locator('#commandGo').click();
+  await page.locator('#homeSelfChange').getByRole('button', { name: 'Start a mission anyway' }).click(T);
+  await page.waitForFunction(() => location.hash.startsWith('#run/'), null, T);
+  assert.deepEqual(page.missions.map(m => m.goal), [SELF_GOAL]);
+  assert.deepEqual(page.handed, []);
+  await page.context().close();
+  const plain = await missionHome();
+  await plain.locator('#commandInput').fill('plan the vegetable garden'); await plain.locator('#commandGo').click();
+  await plain.waitForFunction(() => location.hash.startsWith('#run/'), null, T);
+  assert.deepEqual(plain.missions.map(m => m.goal), ['plan the vegetable garden']);
+  assert.equal(await plain.locator('#homeSelfChange').isVisible(), false);
+  await plain.context().close();
+});
+await check('Change Local AI: the sheet\'s Hand to Claude hands it over from Home and clears the box', async () => {
+  const page = await open(desk, '#home', { storage: { 'localai.home.mode': 'engineering' } });
+  await ideaStub(page, async () => ({ body: { item: { id: 'idea-3' } } }));
+  const handed = [];
+  await page.route(u => u.pathname === '/api/improve/handoff', r => { handed.push(r.request().postDataJSON()); r.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ item: { id: 'idea-3' } }) }); });
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  await page.locator('#commandInput').fill('Polish Agent World');
+  await page.locator('#commandGo').click();
+  await page.locator('#improveIdeaSheet').getByRole('button', { name: 'Hand to Claude' }).click(T);
+  await page.waitForFunction(() => !document.getElementById('improveIdeaSheet').open, null, T);
+  assert.deepEqual(handed, [{ text: 'Polish Agent World', from: 'home' }]);
+  assert.deepEqual(page.ideas, []);
+  assert.equal(await page.locator('#commandInput').inputValue(), '');
+  await page.waitForFunction(() => /Handed to Claude Code/.test(document.getElementById('toast')?.textContent || ''), null, T);
   await page.context().close();
 });
 

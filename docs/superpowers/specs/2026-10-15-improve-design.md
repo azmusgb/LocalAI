@@ -41,7 +41,7 @@ The **stage** is derived, never stored:
 |---|---|
 | Shipped | status `fixed` |
 | Set aside (filter, not a tab) | status `deferred` or `rejected` |
-| In progress | status `in_progress`, or `changeId` points to a change in `planned`, `patch_failed`, `validation_failed`, `staged`, `awaiting_approval`, `approved`, `apply_requested` |
+| In progress | status `in_progress`, or `handedToClaude` (since 2026-10-18: handed items are Claude's to do), or `changeId` points to a change in `planned`, `patch_failed`, `validation_failed`, `staged`, `awaiting_approval`, `approved`, `apply_requested` |
 | Backlog | everything else (`proposed`, `approved`) |
 
 **Signals** are today's Issues store (`ISSUES_STORE`) with its deduplication and auto-resolve kept.
