@@ -139,8 +139,15 @@ Without a model, through `host/gridcraft-agent/gridcraft_ops.py`:
 - `POST /open {"name":"Budget.xlsx"}`: opens that file from the folder (GridCraft `open_workbook`), replacing the open
   workbook. Only a bare file name: a path separator, `:`, `..` or another extension gets 400, a file not in the folder
   404.
+- `POST /cell {"sheet":"Sales","cell":"B7","input":"=B5*2"}`: the `set_cell` op, a cell changed by hand in the grid. It
+  checks the input (cell `^[A-Z]{1,3}[1-9][0-9]{0,6}$`, sheet name 1 to 100 characters without control characters,
+  input text up to 8,192 characters, empty clears the cell; otherwise 400, an unknown sheet 404), then calls GridCraft
+  MCP `set_cell {cell:"Sales!B7", input}` (a sheet name that needs it is quoted: `'Q1 Sales'!B7`) through the same
+  journal as a Review request. It never saves. It returns `journal` (the before → after edit, `undoSteps`, `undoTop`)
+  and `undoBefore`, the newest 5 undo labels before the edit.
 
-Keep, discard and open wait for no running request (409; open says "GridCraft is busy with a request"). The appliance
+Keep, discard, open and cell edits wait for no running request (409; open says "GridCraft is busy with a request", a
+cell edit "GridCraft is busy with a request. Change the cell when it finishes."). The appliance
 stores each request as a settings row `gridcraft:run:<id>` (50 kept) and adds these routes:
 
 | Appliance route | Bridge | Notes |
@@ -153,6 +160,15 @@ stores each request as a settings row `gridcraft:run:<id>` (50 kept) and adds th
 | `POST /api/gridcraft/runs/<id>/discard` | `POST /discard` | the newest request only |
 | `GET /api/gridcraft/workbooks` | `GET /workbooks` | names, sizes and dates only |
 | `POST /api/gridcraft/open` | `POST /open` | checks the name the same way; 409 while any request waits for review, since opening another workbook would leave its Keep and Discard meaning nothing |
+| `POST /api/gridcraft/cell` | `POST /cell` | `{sheet, cell, input}`, checked the same way (400) before it reaches the bridge; records a Direct edit (below) |
+
+**Direct edits.** A cell changed by hand becomes a request record with `kind: "edit"`, mode `review`, status `review`
+("Waiting for review"), titled `Direct edit: Sales!B7`, with its journal entry and undo step count, whatever mode the
+page is in. Keep and Discard work on it exactly as on a Review request. An edit joins the newest record instead when
+that record is a Direct edit still waiting for review and the bridge's `undoBefore` equals its `undoTop` (nothing else
+changed the workbook in between): its steps add up, `undoTop` becomes the newest, and a cell changed twice keeps its
+first before. Otherwise the edit starts a record of its own, and as always only the newest can be discarded. One cell
+edit at a time (409 "Another cell change is still being made"); while a request runs, the bridge's 409 is passed on.
 
 POSTs follow the same rules as the bridge: same origin only (403) and `Content-Type: application/json` (415).
 
