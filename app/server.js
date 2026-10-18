@@ -55,6 +55,8 @@ const { loadOllamaModelRuntime } = require('./model-runtime');
 const { createModelPulls } = require('./model-pulls');
 const imageEngines = require('./image-engines');
 const plainText = require('./plain-text');
+const workshop = require('./workshop');
+if (String(process.env.LOCALAI_WORKSHOP_URL || '').trim() && !workshop.portalUrl()) console.warn('LOCALAI_WORKSHOP_URL is not an http(s) address on the home network (a private IP or a .local name); the Workshop display card shows it as not set up.');
 // Last measured seconds per engine on this machine, shown as an estimate in the Images page. Keyed by id and
 // family, so "best" switching from FLUX to Z-Image doesn't show FLUX's time.
 const IMAGE_ESTIMATES = {};
@@ -1817,6 +1819,11 @@ async function apiArtcraftOpen(req, res) {
   } catch (e) {
     bridgeFailure(res, e, 'The Windows computer', 'Windows computer bridge unavailable');
   }
+}
+// Services › Workshop display: is the touchscreen beside the printer answering, and where its own portal is. Read-only;
+// the portal itself is never proxied (app/workshop.js, docs/WORKSHOP-DISPLAY.md).
+async function apiWorkshopStatus(req, res) {
+  json(res, 200, await workshop.workshopStatus());
 }
 async function apiImageView(req, res, urlObj) {
   try {
@@ -3641,6 +3648,7 @@ const server = http.createServer(async (req, res) => {
     { const m = req.method === 'POST' && p.match(/^\/api\/gridcraft\/runs\/(gc-[\w-]+)\/(keep|discard)$/); if (m) return await apiGridcraftDecide(req, res, m[1], m[2]); }
     if (req.method === 'GET' && p === '/api/artcraft/status') return await apiArtcraftStatus(req, res);
     if (req.method === 'POST' && p === '/api/artcraft/open') return await apiArtcraftOpen(req, res);
+    if (req.method === 'GET' && p === '/api/workshop/status') return await apiWorkshopStatus(req, res);
 
     // cumulative release features
     if (req.method === 'GET' && p === '/api/projects') return await apiProjects(req,res,urlObj);

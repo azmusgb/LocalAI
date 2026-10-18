@@ -2677,6 +2677,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       actions: [{ type: 'post', url: '/api/artcraft/open', label: 'Open on the Windows computer', done: 'ArtCraft is opening on the Windows computer', already: "It's already open there" }]
     },
     {
+      id: 'workshop', name: 'Workshop display', tier: 'bridge', decision: 'On your network · no sign-in yet', source: 'workshop',
+      summary: 'The touchscreen beside the 3D printer. Its page has the printer controls and, for now, no sign-in; an update to fix that is coming.',
+      guidance: 'Away from home, Tailscale must be on.',
+      actions: [{ type: 'portal', label: 'Open Workshop portal' }]
+    },
+    {
       id: 'penpot', name: 'Penpot', tier: 'bridge', decision: 'Not set up',
       summary: 'A design app Local AI could read and update designs in, if you run your own copy.',
       guidance: 'Its access key is a password: keep it out of screenshots, notes and shared files.',
@@ -2745,6 +2751,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if (action.type === 'url') {
       return `<a class="btn-outline ux-int-action" data-external="true" href="${action.url}" target="_blank" rel="noopener noreferrer" aria-label="${action.label} for ${item.name} (opens external site)">${action.label} ↗</a>`;
     }
+    // The display's own page, in a new tab; its address arrives with the status (updateWorkshop), so it stays hidden until then.
+    if (action.type === 'portal') {
+      return `<a class="btn-outline ux-int-action" hidden target="_blank" rel="noopener noreferrer" data-integration-portal="${item.id}" aria-label="${action.label} (opens in a new tab)">${action.label} ↗</a>`;
+    }
     if (action.type === 'post') {
       return `<button class="btn-outline ux-int-action" type="button" data-integration-post="${item.id}">${action.label}</button>`;
     }
@@ -2808,7 +2818,31 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     element.className = `ux-int-live ${String(state).toLowerCase()}`;
     const label = service?.label || (optional ? 'Optional offline' : state === 'HEALTHY' ? 'Healthy' : state === 'DOWN' ? 'Down' : state === 'DEGRADED' ? 'Degraded' : 'Status unavailable');
     element.innerHTML = `<span class="dot ${optional ? '' : state}"></span> `;
-    element.append(label); // ArtCraft's label carries a version string from the Windows computer
+    element.append(label); // ArtCraft's and the Workshop display's labels carry text from those devices
+  }
+
+  // Workshop display: the appliance reads the display's public health answer and says where its portal is
+  // (LOCALAI_WORKSHOP_URL). The portal opens as a top-level page in a new tab, so its http address works from the https
+  // app; Local AI never loads the portal itself (docs/WORKSHOP-DISPLAY.md).
+  function boardName(board) {
+    const text = String(board || '');
+    const size = /(\d+(?:\.\d+)?)$/.exec(text)?.[1];
+    if (/waveshare/i.test(text)) return size ? `Waveshare ${size}"` : 'Waveshare';
+    return text.replace(/[_-]+/g, ' ').trim().slice(0, 40);
+  }
+
+  function updateWorkshop(status) {
+    const url = typeof status?.portalUrl === 'string' && /^https?:\/\//.test(status.portalUrl) ? status.portalUrl : '';
+    const link = q('[data-integration-portal="workshop"]');
+    if (link) {
+      if (url) link.href = url; else link.removeAttribute('href');
+      link.hidden = !url;
+    }
+    const board = boardName(status?.board);
+    updateService('workshop', !status ? { state: 'NEUTRAL', label: 'Status unavailable' }
+      : !url ? { state: 'NEUTRAL', label: 'Address not set up' }
+        : status.online ? { state: 'HEALTHY', label: board ? `Online · ${board}` : 'Online' }
+          : { state: 'NEUTRAL', label: 'Not answering' });
   }
 
   function setBusy(busy) {
@@ -2834,8 +2868,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
           fetch('/api/status', { cache: 'no-store', signal: timed() }),
           fetch('/api/capabilities', { cache: 'no-store', signal: timed() }),
           fetch('/api/gridcraft/health', { cache: 'no-store', signal: timed() }),
-          fetch('/api/artcraft/status', { cache: 'no-store', signal: timed() })
+          fetch('/api/artcraft/status', { cache: 'no-store', signal: timed() }),
+          fetch('/api/workshop/status', { cache: 'no-store', signal: timed() })
         ]);
+        updateWorkshop(results[4].status === 'fulfilled' && results[4].value.ok ? await results[4].value.json().catch(() => null) : null);
         const artcraft = results[3].status === 'fulfilled' ? await results[3].value.json().catch(() => null) : null;
         updateService('artcraft', !artcraft?.ok ? { state: 'NEUTRAL', label: 'Windows computer not answering' }
           : artcraft.running ? { state: 'HEALTHY', label: `Open now${artcraft.version ? ` · ${artcraft.version}` : ''}` }
