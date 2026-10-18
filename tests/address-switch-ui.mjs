@@ -9,6 +9,10 @@ import http from 'node:http';
 // for Tailscale; both report that pair as the appliance's addresses (offline-copy.js accepts plain http only on
 // 127.0.0.1). Runs in Chromium, and in WebKit (Safari's engine) when it is installed. Each phone is a fresh context
 // kept short: Playwright's WebKit empties a service worker's cache once the worker has sat idle for about 40 s.
+// That is Playwright's WebKit, not sw.js: its contexts are always ephemeral (in memory, like Private Browsing), and it
+// drops an origin's CacheStorage entries once nothing of that origin runs. Without any service worker, a cache a page
+// made is empty 5 s after the page leaves; Chromium keeps both. A Home Screen app keeps its data on disk. If the cache
+// is gone anyway, sw.js still answers with a small "Can't reach Local AI" page (the last check here).
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const upstream = new URL(base);
 const T = { timeout: 15000 };
@@ -177,6 +181,24 @@ for (const [engine, type] of engines) {
       assert.equal(new URL(page.url()).origin, A);
       assert.equal(await banner(page).getByRole('button', { name: 'Try again' }).isVisible(), true);
       assert.match(await banner(page).innerText(), /Turn on Tailscale on this phone first\./);
+      assert.deepEqual(errors.filter(e => !noise(e)), []);
+    } finally { await ctx.close(); }
+  });
+
+  // WebKit only: the worker idles out with no page open, so Playwright's WebKit empties its cache (see the top). The
+  // phone still hears that Local AI can't be reached, from the worker's own page, with the other address to try.
+  if (engine === 'webkit') await check('after the worker sits idle with its cache emptied, the banner still shows', async () => {
+    await ensure('a', true); await ensure('b', true);
+    const { ctx, page, errors } = await phone();
+    try {
+      await page.goto('about:blank');
+      await page.waitForTimeout(50000);
+      await a.stop(); await b.stop();
+      await page.goto(A + '/#claude', { waitUntil: 'domcontentloaded' });
+      await banner(page).waitFor({ state: 'visible', ...T });
+      assert.match(await banner(page).innerText(), /Can't reach Local AI/);
+      assert.equal(await banner(page).getByRole('button', { name: 'Try again' }).count(), 1);
+      assert.equal(await banner(page).getByRole('link', { name: 'Open over Tailscale' }).getAttribute('href'), B + '/#claude');
       assert.deepEqual(errors.filter(e => !noise(e)), []);
     } finally { await ctx.close(); }
   });

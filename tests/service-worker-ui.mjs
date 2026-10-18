@@ -146,6 +146,52 @@ await check('unreachable: the saved copy offers the other address, with what the
   }
 });
 
+// No saved copy at all: sw.js answers with its own small page that still says Local AI can't be reached. Playwright's
+// WebKit empties CacheStorage (entries, not the cache's name) once nothing of that origin has run for a while: with no
+// service worker, a cache a page made is empty 5 s after the page leaves; with one, after the worker idles out (~40 s).
+// Chromium keeps both, and sw.js never deletes entries, so this is Playwright's WebKit (its contexts are always
+// ephemeral, like Private Browsing), not sw.js. A Home Screen app keeps its data on disk. The test empties the cache itself.
+await check('unreachable with no saved copy: the banner still says so, offers the other address, and recovers', async () => {
+  const tailscale = 'https://localai-pc.tail1234.ts.net';
+  let proxy = await startProxy(0, { addresses: [{ label: 'Anywhere (Tailscale)', url: tailscale }] });
+  const port = proxy.port, origin = `http://127.0.0.1:${port}`;
+  const ctx = await browser.newContext({ serviceWorkers: 'allow', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const page = await ctx.newPage();
+  try {
+    const errors = []; page.on('pageerror', e => errors.push(e.message));
+    await page.goto(origin + '/', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => navigator.serviceWorker.ready.then(r => r.active.state === 'activated'), null, T);
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction(() => !!navigator.serviceWorker.controller && !!localStorage.getItem('localai.addresses'), null, T);
+    await page.evaluate(async () => { for (const k of await caches.keys()) { const c = await caches.open(k); for (const r of await c.keys()) await c.delete(r); } });
+
+    await proxy.stop();
+    const res = await page.reload({ waitUntil: 'domcontentloaded' });
+    assert.equal(res.fromServiceWorker(), true, 'the worker answered');
+    assert.equal(res.headers()['x-localai-offline-copy'], 'none');
+    const banner = page.locator('#offlineBanner');
+    await banner.waitFor({ state: 'visible', ...T });
+    assert.equal(await banner.getAttribute('role'), 'status');
+    assert.match(await banner.innerText(), /Can't reach Local AI, and this device has no saved copy to show\./);
+    assert.equal(await banner.getByRole('button', { name: 'Try again' }).count(), 1);
+    const open = banner.getByRole('link', { name: 'Open over Tailscale' });
+    assert.equal(await open.getAttribute('href'), tailscale + '/#home', 'the same page at the other address');
+    assert.match(await banner.innerText(), /Turn on Tailscale on this phone first\./);
+    assert.ok((await open.boundingBox()).height >= 44, 'tap target');
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no sideways scroll');
+
+    // Local AI comes back: the page reloads by itself within one 15 s check, into the app.
+    proxy = await startProxy(port, { addresses: [{ label: 'Anywhere (Tailscale)', url: tailscale }] });
+    await page.waitForEvent('load', { timeout: 25000 });
+    await page.waitForFunction(() => typeof window.showView === 'function', null, T);
+    assert.equal(await page.locator('#offlineBanner').count(), 0, 'the banner is gone after the reload');
+    assert.deepEqual(errors, []);
+  } finally {
+    await ctx.close();
+    await proxy.stop();
+  }
+});
+
 await check('a page from another build reloads itself once, and only once', async () => {
   const ctx = await browser.newContext({ serviceWorkers: 'block' });
   const page = await ctx.newPage();

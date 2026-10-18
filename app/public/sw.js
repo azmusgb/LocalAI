@@ -17,6 +17,22 @@ async function savedCopy(hit,event,html){
   headers.delete('Content-Length');headers.delete('ETag');
   return new Response(body,{status:hit.status,statusText:hit.statusText,headers});
 }
+// No saved copy at all (the cache is gone or was never filled): a page still says Local AI can't be reached, with Try
+// again, the other addresses this device learned (offline-copy.js saves them in localStorage), and a reload once
+// Local AI answers again. Everything is inline: nothing else can be loaded.
+function noCopyPage(){
+  const html=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="light dark"><title>Local AI</title>
+<style>body{margin:0;font:16px/1.45 -apple-system,system-ui,sans-serif;background:Canvas;color:CanvasText}#offlineBanner{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:calc(12px + env(safe-area-inset-top)) 16px 12px;background:color-mix(in srgb,#d97706 14%,Canvas);border-bottom:1px solid color-mix(in srgb,#d97706 40%,Canvas)}#offlineBanner p{margin:0;flex:1 1 220px}#offlineBanner button,#offlineBanner a{min-height:44px;padding:0 14px;border-radius:10px;font:inherit;display:inline-flex;align-items:center;text-decoration:none}#offlineBanner button{border:1px solid currentColor;background:none;color:inherit}#offlineBanner a{background:#2563eb;color:#fff}.offline-banner__alt{flex:1 0 100%;display:grid;gap:6px}.offline-banner__alt p{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}.offline-banner__hint{font-size:14px;opacity:.75}</style></head>
+<body><div id="offlineBanner" class="offline-banner offline-banner--no-copy" role="status"><p class="offline-banner__text">Can't reach Local AI, and this device has no saved copy to show.</p><button type="button" class="offline-banner__retry">Try again</button></div>
+<script>(function(){var b=document.getElementById('offlineBanner');b.querySelector('button').onclick=function(){this.disabled=true;this.textContent='Trying…';location.reload()};
+var list=[];try{list=JSON.parse(localStorage.getItem('localai.addresses')||'[]')||[]}catch(e){}var box=document.createElement('div');box.className='offline-banner__alt';
+(Array.isArray(list)?list:[]).forEach(function(a){try{var u=new URL(String(a&&a.url||''));var local=/^(127\\.0\\.0\\.1|localhost|\\[::1\\])$/.test(u.hostname);if(u.origin===location.origin||!(u.protocol==='https:'||(u.protocol==='http:'&&local)))return;
+var ts=/tailscale/i.test(String(a.label||''))||/\\.ts\\.net$/i.test(u.hostname),p=document.createElement('p'),l=document.createElement('a');l.className='offline-banner__open';l.href=u.origin+'/'+location.hash;l.textContent=ts?'Open over Tailscale':'Open on '+String(a.label||u.host);p.appendChild(l);
+if(ts){var h=document.createElement('span');h.className='offline-banner__hint';h.textContent='Turn on Tailscale on this phone first.';p.appendChild(h)}box.appendChild(p)}catch(e){}});
+if(box.childNodes.length)b.appendChild(box);
+setInterval(function(){fetch('/healthz',{cache:'no-store'}).then(function(r){return r.json()}).then(function(d){if(d&&d.appliance==='Local AI')location.reload()}).catch(function(){})},15000)})();</script></body></html>`;
+  return new Response(html,{status:503,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store',[MARK]:'none'}});
+}
 self.addEventListener('fetch',event=>{
   const req=event.request;
   if(req.method!=='GET')return;
@@ -27,7 +43,7 @@ self.addEventListener('fetch',event=>{
   event.respondWith(fetch(req,shell?{cache:'no-cache'}:undefined).then(res=>{if(shell&&res.ok&&res.type==='basic'){const copy=stamped(res.clone());event.waitUntil(caches.open(CACHE).then(c=>c.put(url.pathname,copy)));}return res;}).catch(async err=>{
     const hit=await caches.match(shell?url.pathname:req);
     if(hit)return savedCopy(hit,event,nav||url.pathname==='/'||url.pathname==='/index.html');
-    if(nav){const index=await caches.match('/index.html');if(index)return savedCopy(index,event,true);}
+    if(nav){const index=await caches.match('/index.html');if(index)return savedCopy(index,event,true);return noCopyPage();}
     throw err;
   }));
 });
