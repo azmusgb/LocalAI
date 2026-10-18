@@ -31,6 +31,8 @@ module.exports=function createAgentOrchestrator(deps={}){
  const iso=()=>new Date().toISOString(),id=p=>p+'-'+Date.now().toString(36)+'-'+Math.random().toString(16).slice(2,8);
  async function models(){const r=await fetchWithTimeout(ollamaUrl+'/api/tags',{method:'GET'},15000);if(!r.ok)throw new Error('Ollama inventory unavailable: HTTP '+r.status);const j=await r.json();return (j.models||[]).filter(x=>!x.remote_model&&!/[:-]cloud(?:$|[-:])/i.test(x.name||'')).map(x=>({name:x.name,size:x.size,modified_at:x.modified_at}));}
  function modelScore(name,task){let s=0,n=name.toLowerCase(),t=task.toLowerCase();if(/coder|code|debug|implement|engineering/.test(t)&&/coder|qwen/.test(n))s+=40;if(/document|summar|write|research|ux|design/.test(t)&&/qwen|gemma/.test(n))s+=25;if(/32k|16k/.test(n))s+=8;if(name===defaultModel)s+=5;return s}
+ // A mission may name its workers' model (developer tools, Agent World's start sheet); it must be installed exactly as named.
+ async function checkWorkerModel(name,inventory){const inv=inventory||await models(),names=inv.map(x=>x.name);if(typeof name!=='string'||!names.includes(name))throw Object.assign(new Error('Unknown model '+JSON.stringify(String(name))+'. Installed: '+(names.join(', ')||'none')),{statusCode:400,code:'UNKNOWN_MODEL',installed:names});return name}
  async function routeModel(task,inventory){const inv=inventory||await models();if(!inv.length)throw new Error('No installed Ollama models reported');const ranked=inv.map(m=>({...m,score:modelScore(m.name,task)})).sort((a,b)=>b.score-a.score||a.name.localeCompare(b.name));return {model:ranked[0].name,score:ranked[0].score,reason:'Highest deterministic fit among installed Ollama models',inventory:ranked};}
  function termHit(text,term){const t=String(term||'').toLowerCase();if(!t)return false;let i=text.indexOf(t);while(i>=0){if(i===0||!/[a-z0-9]/.test(text[i-1]))return true;i=text.indexOf(t,i+1)}return false}
  function activeWorkload(){
@@ -57,19 +59,19 @@ module.exports=function createAgentOrchestrator(deps={}){
   add('performance_analyst','code_analyst');
   return d
  }
- async function dispatch(goal,manualAgentIds){
-  const inventory=await models(),workload=activeWorkload();
+ async function dispatch(goal,manualAgentIds,opts={}){
+  const inventory=await models(),workload=activeWorkload(),workerModel=opts.workerModel?await checkWorkerModel(opts.workerModel,inventory):'';
   let chosen=[],mode='auto',scores=specialists.map(a=>({agent:a,...agentScore(a,goal,workload)}));
   if(Array.isArray(manualAgentIds)&&manualAgentIds.length){mode='manual';const unknown=manualAgentIds.filter(x=>!specialists.some(a=>a.id===x));if(unknown.length)throw Object.assign(new Error('Unknown or non-dispatchable specialist: '+unknown.join(', ')),{statusCode:400});chosen=specialists.filter(a=>manualAgentIds.includes(a.id))}
   else{chosen=scores.filter(x=>x.score>0&&x.availability!=='busy').sort((a,b)=>b.score-a.score||a.workload-b.workload).map(x=>x.agent);if(!chosen.length){const best=scores.slice().sort((a,b)=>b.score-a.score||a.workload-b.workload)[0];chosen=[best?.agent].filter(Boolean)}}
   const ids=[...new Set(chosen.map(a=>a.id))],dependencies=dependencyPlan(ids),workers=[];
   for(const a of chosen){
-   const rt=await routeModel(goal+' '+a.capabilities.join(' '),inventory),sc=scores.find(x=>x.agent.id===a.id),fallbackAgentId=fallbackFor(a,scores,ids);
+   const rt=workerModel?{model:workerModel,score:modelScore(workerModel,goal+' '+a.capabilities.join(' '))}:await routeModel(goal+' '+a.capabilities.join(' '),inventory),sc=scores.find(x=>x.agent.id===a.id),fallbackAgentId=fallbackFor(a,scores,ids);
    const routingMeta={capabilityScore:sc?.capabilityScore||0,modelScore:clampScore(rt.score),workload:sc?.workload||0,availability:sc?.availability||'available',groundingRequired:true,dependencyCount:(dependencies[a.id]||[]).length,retryPolicy:{transportRetries:MODEL_RETRY_DELAYS_MS.length,fallbackAgentId:fallbackAgentId||null},matchTerms:sc?.hits||[]};
-   const reason=mode==='manual'?'Manual override':(sc?.hits?.length?'Matched '+sc.hits.join(', ')+'; capability '+routingMeta.capabilityScore+'%; model fit '+routingMeta.modelScore+'%':'Fallback specialist selected from available registry');
+   const reason=(mode==='manual'?'Manual override':(sc?.hits?.length?'Matched '+sc.hits.join(', ')+'; capability '+routingMeta.capabilityScore+'%; model fit '+routingMeta.modelScore+'%':'Fallback specialist selected from available registry'))+(workerModel?'; model chosen for the mission':'');
    workers.push({agentId:a.id,name:a.name,model:rt.model,dependsOn:dependencies[a.id]||[],reason,routingMeta})
   }
-  return {mode,goal,workers,selectedAgentIds:ids,reason:mode==='manual'?'Manual specialist override':'Capability, workload, dependency and model-aware routing',inventory:inventory.map(x=>x.name),scheduler:{policy:'dependency-aware parallel execution',groundingRequired:true}};
+  return {mode,goal,workers,selectedAgentIds:ids,reason:mode==='manual'?'Manual specialist override':'Capability, workload, dependency and model-aware routing',inventory:inventory.map(x=>x.name),...(workerModel?{workerModel}:{}),scheduler:{policy:'dependency-aware parallel execution',groundingRequired:true}};
  }
  // Rank the selected project's chunks against the goal; no project means no knowledge context.
  function context(projectId,goal){
@@ -162,7 +164,7 @@ module.exports=function createAgentOrchestrator(deps={}){
    m.workers.push(worker);missionSnapshot(m,'followup',question,workerId);
    // A timeout or cancellation settles the worker now; the late specialist result is then ignored.
    signal.addEventListener('abort',()=>{worker.state='error';worker.error='Follow-up stopped: '+String(signal.reason?.message||signal.reason||'aborted');m.followups.find(f=>f.workerId===workerId).status='error';missionSnapshot(m,'worker-result',worker.error,workerId)},{once:true});
-   const result=await specialist(agentId,question,projectId,'',joined.slice(0,10000),{...options,signal,workerId,onEvent:event=>recordMissionTool(m,event)});
+   const result=await specialist(agentId,question,projectId,m.routing?.workerModel||'',joined.slice(0,10000),{...options,signal,workerId,onEvent:event=>recordMissionTool(m,event)});
    signal.throwIfAborted();
    worker.state=result.status;worker.model=result.model;worker.error=result.error||'';
    Object.assign(m.followups.find(f=>f.workerId===workerId),{status:result.status,runId:result.id,error:result.error||''});
@@ -198,7 +200,8 @@ module.exports=function createAgentOrchestrator(deps={}){
   events.emit('mission',m);return m
  }
  async function mission(goal,projectId='',manualAgentIds,opts={}){
-  const routing=await dispatch(goal,manualAgentIds);
+  // opts.workerModel (an installed model's exact name) runs every specialist and follow-up on it; the coordinator routes as usual.
+  const routing=await dispatch(goal,manualAgentIds,{workerModel:opts.workerModel});
   const m={id:id('mission'),goal,projectId,status:'running',routing,createdAt:iso(),updatedAt:iso(),timeline:[],toolEvents:[],followups:[],policy:policy(opts),workers:[{id:'router',name:'Mission Router',state:'complete',dependsOn:[],reason:routing.reason,routingMeta:{capabilityScore:100,modelScore:100,workload:0,availability:'available',groundingRequired:false,dependencyCount:0,retryPolicy:{transportRetries:0,fallbackAgentId:null},matchTerms:['mission-planning']}},...routing.workers.map(w=>({id:w.agentId,name:w.name,state:'pending',model:w.model,dependsOn:['router',...w.dependsOn],reason:w.reason,routingMeta:w.routingMeta})),{id:'synthesis',name:'Coordinator',state:'pending',dependsOn:routing.selectedAgentIds,reason:'Synthesize grounded specialist outputs',routingMeta:{capabilityScore:100,modelScore:0,workload:0,availability:'available',groundingRequired:true,dependencyCount:routing.selectedAgentIds.length,retryPolicy:{transportRetries:MODEL_RETRY_DELAYS_MS.length,fallbackAgentId:null},matchTerms:['synthesis']}}],results:[]};
   try{opts.onCreated?.(m)}catch{}
   missionSnapshot(m,'mission-start','Mission accepted and routing plan created','router');
@@ -212,7 +215,7 @@ module.exports=function createAgentOrchestrator(deps={}){
      const fallbackId=w.routingMeta?.retryPolicy?.fallbackAgentId;
      if(r.status!=='complete'&&fallbackId){
       const fbAgent=specialists.find(a=>a.id===fallbackId);
-      if(fbAgent){missionSnapshot(m,'fallback','Primary worker failed; attempting fallback '+fbAgent.name,w.agentId);try{const fbRoute=await routeModel(goal+' '+fbAgent.capabilities.join(' '));const fb=await specialist(fallbackId,goal,projectId,fbRoute.model,dependencyContext(results,w.dependsOn),workerOpts);if(fb.status==='complete')r={...fb,agentId:w.agentId,agentName:fb.agentName+' (fallback for '+w.name+')',executedBy:fallbackId,fallbackFor:w.agentId}}catch(fe){missionSnapshot(m,'fallback','Fallback '+fbAgent.name+' failed: '+String(fe.message||fe),w.agentId)}}
+      if(fbAgent){missionSnapshot(m,'fallback','Primary worker failed; attempting fallback '+fbAgent.name,w.agentId);try{const fbRoute=routing.workerModel?{model:routing.workerModel}:await routeModel(goal+' '+fbAgent.capabilities.join(' '));const fb=await specialist(fallbackId,goal,projectId,fbRoute.model,dependencyContext(results,w.dependsOn),workerOpts);if(fb.status==='complete')r={...fb,agentId:w.agentId,agentName:fb.agentName+' (fallback for '+w.name+')',executedBy:fallbackId,fallbackFor:w.agentId}}catch(fe){missionSnapshot(m,'fallback','Fallback '+fbAgent.name+' failed: '+String(fe.message||fe),w.agentId)}}
      }
      return r
     }));results.push(...batch);
@@ -248,5 +251,5 @@ module.exports=function createAgentOrchestrator(deps={}){
   m.updatedAt=iso();missionSnapshot(m,m.status==='complete'?'mission-complete':'mission-error',m.status==='complete'?'Mission completed and artifacts are ready':(m.error||'Mission ended with an error'));return m
  }
  reconcileInterrupted();
- return {close:()=>{if(!deps.storage)storage.close()},catalog,models,route:routeModel,dispatch,specialist,mission,runs:(limit)=>storage.list(runsFile,limit?{limit}:{}),missions:(limit)=>storage.list(missionsFile,limit?{limit}:{}),getMission:id=>storage.get(missionsFile,id),events};
+ return {close:()=>{if(!deps.storage)storage.close()},catalog,models,checkWorkerModel,route:routeModel,dispatch,specialist,mission,runs:(limit)=>storage.list(runsFile,limit?{limit}:{}),missions:(limit)=>storage.list(missionsFile,limit?{limit}:{}),getMission:id=>storage.get(missionsFile,id),events};
 };

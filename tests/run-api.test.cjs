@@ -9,8 +9,8 @@ const http = require('node:http');
 const { once } = require('node:events');
 const { spawnAppServer } = require('./spawn-server.cjs');
 
-// seed(storage) writes records (older legacy runs, say) before the server starts.
-async function startServer(t, extraEnv = {}, seed = null) {
+// seed(storage) writes records (older legacy runs, say) before the server starts; tags are the installed models.
+async function startServer(t, extraEnv = {}, seed = null, tags = ['test-model']) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-runs-'));
   if (seed) { const { Storage } = require('../app/storage'); const storage = new Storage({ dataDir }); seed(storage); storage.close?.(); }
   const ollamaCalls = []; // every /api/chat and /api/generate body Ollama received, in order
@@ -20,7 +20,7 @@ async function startServer(t, extraEnv = {}, seed = null) {
     req.on('end', () => {
       if (req.url === '/api/chat' || req.url === '/api/generate') { try { ollamaCalls.push({ url: req.url, body: JSON.parse(raw) }); } catch {} }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      if (req.url === '/api/tags') return res.end(JSON.stringify({ models: [{ name: 'test-model' }] }));
+      if (req.url === '/api/tags') return res.end(JSON.stringify({ models: tags.map(name => ({ name })) }));
       if (req.url === '/api/ps') return res.end(JSON.stringify({ models: [] }));
       res.end(JSON.stringify({ message: { content: 'Run API result' } }));
     });
@@ -433,6 +433,28 @@ test('a mission that cannot run ends its run failed with an error', { timeout: 1
   const run = await waitRun(request, a.value.runId, r => r.status === 'completed' || r.status === 'failed');
   assert.equal(run.status, 'failed', JSON.stringify(run));
   assert.ok(run.error);
+});
+// Developer tools can name the workers' model: checked against the installed models before the run exists.
+test('mission start takes an installed workers\' model and refuses an unknown one', { timeout: 60000 }, async t => {
+  const CODER = 'qwen2.5-coder:7b-16k';
+  const { request, ollamaCalls } = await startServer(t, {}, null, ['test-model', CODER]);
+  for (const async of [true, false]) {
+    const bad = await request('/api/agents/missions/start', { goal: 'Review the code', agentIds: ['code_analyst'], workerModel: 'qwen2.5-coder:7b', async });
+    assert.equal(bad.response.status, 400, JSON.stringify(bad.value));
+    assert.equal(bad.value.code, 'UNKNOWN_MODEL');
+    assert.deepEqual(bad.value.installed, ['test-model', CODER]);
+  }
+  assert.equal((await request('/api/runs?type=agent')).value.items.length, 0, 'a refused start leaves no run');
+  const a = await request('/api/agents/missions/start', { goal: 'Review the code', agentIds: ['code_analyst'], workerModel: CODER, async: true });
+  assert.equal(a.response.status, 202, JSON.stringify(a.value));
+  const run = await waitRun(request, a.value.runId, r => r.status === 'completed' || r.status === 'failed');
+  assert.equal(run.input.workerModel, CODER);
+  const mission = (await request('/api/agents/mission?id=' + encodeURIComponent(run.meta.missionId))).value.mission;
+  assert.equal(mission.routing.workerModel, CODER);
+  const turns = ollamaCalls.filter(c => c.url === '/api/chat' && c.body.model === CODER);
+  assert.ok(turns.length, 'the worker ran on the chosen model');
+  // A 16k-named model still gets the mission context (LOCALAI_MISSION_NUM_CTX).
+  assert.ok(turns.every(c => c.body.options.num_ctx === 12288));
 });
 // Agent World starts missions without async and waits for the mission; it still gets a ledger run, so Work › Missions lists it.
 test('mission start without async answers with the mission and lists it in Work › Missions', { timeout: 60000 }, async t => {

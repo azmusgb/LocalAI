@@ -201,6 +201,8 @@ under System: **Files**, **Repository**, **PowerShell**, **Browser & computer** 
 details**. Off, all of these are hidden from the menu, the page strip and search; a page's address still opens it.
 Everything else works the same. The setting is kept per device.
 
+In a mission's start sheet, **Advanced › Workers' model** runs every worker on one installed model instead of **Automatic**; the team lead still picks its own.
+
 ## Glossary
 
 Local AI uses one word for each thing, everywhere. If you meet one of the words in the last column, it is an old name
