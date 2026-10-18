@@ -479,6 +479,102 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await context.close();
 }
 
+// Live review (17 Oct): while a mission ran, the phone's collapsed sheet offered nothing, the header's hidden button
+// still said "Start a mission", the city called the team lead "Mission Router", and the worker card listed scores.
+const visiblePrimaries = page => page.evaluate(() => [...document.querySelectorAll('#agents .btn-primary')].filter(b => { const r = b.getBoundingClientRect(); return r.width > 2 && r.height > 2 && getComputedStyle(b).visibility !== 'hidden'; }).map(b => b.textContent.trim()));
+const panCity = async page => {
+  const c = page.locator('#awcCanvas'), b = await c.boundingBox(), x = b.x + b.width / 2, y = b.y + b.height / 3;
+  await c.dispatchEvent('pointerdown', { pointerId: 9, pointerType: 'touch', clientX: x, clientY: y, isPrimary: true });
+  await c.dispatchEvent('pointermove', { pointerId: 9, pointerType: 'touch', clientX: x + 60, clientY: y + 20, isPrimary: true });
+  await c.dispatchEvent('pointerup', { pointerId: 9, pointerType: 'touch', clientX: x + 60, clientY: y + 20, isPrimary: true });
+};
+{
+  const { defaultBrowserType, ...device } = devices['iPhone 14'];
+  const { context, page, errors } = await withMission(device, RUN());
+  await check('iPhone 14 running: the peek always offers a next step, 44 px tall, and never two loud ones', async () => {
+    await page.waitForFunction(() => window.LocalAIAgentWorld.following());
+    const a = page.locator('#awPeekAction');
+    await a.waitFor({ state: 'visible' });
+    assert.equal(await a.innerText(), 'See the crew', 'following: a quiet action');
+    assert.ok((await a.boundingBox()).height >= 44);
+    assert.deepEqual(await visiblePrimaries(page), []);
+    await panCity(page);
+    await page.waitForFunction(() => document.getElementById('awPeekAction').textContent === 'Watch live');
+    assert.ok((await a.boundingBox()).height >= 44);
+    assert.deepEqual(await visiblePrimaries(page), ['Watch live']);
+    await a.tap();
+    assert.equal(await page.evaluate(() => window.LocalAIAgentWorld.following()), true);
+    await page.waitForFunction(() => document.getElementById('awPeekAction').textContent === 'See the crew');
+    await a.tap();
+    await page.waitForFunction(() => document.getElementById('awSheet').dataset.snap === 'half');
+    await page.evaluate(() => history.back());
+    await page.waitForFunction(() => document.getElementById('awSheet').dataset.snap === 'peek');
+  });
+  await check('iPhone 14: at peek the crew rows are inert and a tap there never reaches them', async () => {
+    assert.equal(await page.evaluate(() => document.getElementById('awSheetBody').inert), true);
+    const hit = await page.evaluate(() => { const r = document.querySelector('#awcRoster [data-awc-roster]').getBoundingClientRect(), e = document.elementFromPoint(r.x + r.width / 2, Math.min(innerHeight - 1, r.y + r.height / 2)); return !!e?.closest('#awcRoster'); });
+    assert.equal(hit, false);
+  });
+  await check('iPhone 14: at half a real tap on a crew row focuses that worker and opens the card, on this page', async () => {
+    await page.locator('#awSheetHandle').tap();
+    await page.waitForFunction(() => document.getElementById('awSheet').dataset.snap === 'half');
+    const row = page.locator('#awcRoster [data-awc-roster="ux_analyst"]');
+    await page.waitForFunction(() => { const y = document.getElementById('awSheet').getBoundingClientRect().y, s = window.__awY; window.__awY = y; return s === y; }, null, { polling: 100 }); // the sheet has settled
+    const b = await row.boundingBox(), nav = await page.locator('#uxMobileNav').boundingBox();
+    assert.ok(b.y + b.height / 2 < nav.y, 'the row is above the tab bar');
+    await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
+    await page.locator('#agentInspector').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#awWorkerName').innerText(), /UX Analyst/);
+    assert.equal(await page.evaluate(() => document.querySelector('#agents').classList.contains('active')), true, 'still on Agent World');
+    assert.notEqual(await page.locator('#awSheet').getAttribute('data-snap'), 'peek');
+  });
+  await check('iPhone 14: no script errors (live review)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+{
+  const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, RUN());
+  await check('1440px running (loaded from history): no Start a mission; Watch live once the camera stops following', async () => {
+    await page.waitForFunction(() => window.LocalAIAgentWorld.following());
+    assert.match(await page.locator('#awStatus').innerText(), /^Working · 1 of 3 done/);
+    assert.equal(await page.locator('#awPrimary').isVisible(), false, 'following: no loud action');
+    assert.notEqual(await page.locator('#awPrimary').textContent(), 'Start a mission');
+    await panCity(page);
+    await page.locator('#awPrimary').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#awPrimary').innerText(), 'Watch live');
+    assert.deepEqual(await visiblePrimaries(page), ['Watch live']);
+    await page.locator('#awPrimary').click();
+    assert.equal(await page.evaluate(() => window.LocalAIAgentWorld.following()), true);
+    await page.locator('#awPrimary').waitFor({ state: 'hidden' });
+  });
+  await check('1440px: developer tools off: no Mission Router anywhere, no scores in the worker card', async () => {
+    assert.equal(await page.evaluate(() => document.body.classList.contains('dev-tools-off')), true);
+    assert.equal(await page.evaluate(() => document.documentElement.outerHTML.includes('Mission Router')), false, 'not in the DOM');
+    const names = await page.evaluate(() => window.LocalAIAgentWorld.names());
+    assert.ok(names.includes('Team lead') && !names.includes('Mission Router'), 'city labels: ' + names.join(', '));
+    await page.locator('#awcRoster [data-awc-roster="router"]').click();
+    const card = page.locator('#agentInspector');
+    await card.waitFor({ state: 'visible' });
+    assert.doesNotMatch(await card.innerText(), /Capability fit|Model fit|Grounding|Fallback|Assignment rationale|Model\b/);
+    assert.match(await card.innerText(), /Team lead/);
+  });
+  await check('1440px: no script errors (live review)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+{
+  const reason = 'Interrupted: the appliance restarted while this was running';
+  const m = { ...RUN(), status: 'error', error: reason, workers: [{ id: 'router', name: 'Mission Router', state: 'complete', dependsOn: [] }, { id: 'code_analyst', name: 'Code Analyst', state: 'error', error: reason, dependsOn: ['router'] }, { id: 'synthesis', name: 'Coordinator', state: 'blocked', error: reason, dependsOn: ['code_analyst'] }] };
+  const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, m);
+  await check('1440px: an interrupted mission reads "was interrupted by an update", whole in the crew row', async () => {
+    assert.equal(await page.locator('#awStatus').innerText(), 'Needs you · 1 of 3 done · Code Analyst was interrupted by an update');
+    const step = page.locator('#awcRoster [data-awc-roster="code_analyst"] .awc__rosterText span');
+    assert.equal(await step.innerText(), 'Interrupted by an update');
+    assert.ok(await step.evaluate(e => e.scrollWidth <= e.clientWidth + 1), 'not cut off');
+    assert.equal(await page.locator('#awPrimary').innerText(), 'Try again');
+  });
+  await check('1440px: no script errors (interrupted)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+
 // Results and replay (design PR 5): Summary, What each worker found, Sources; one scrubber; owner words only.
 const DONE2 = { ...DONE, id: 'mission-ui-done2', timeline: FAILED.timeline.slice(0, 3).concat([{ at: t(240), type: 'mission-complete', status: 'complete', workers: snapW('complete', 'complete') }]),
   results: [{ agentId: 'ux_analyst', agentName: 'UX Analyst', status: 'complete', answer: 'Three things to fix on the phone screens.', evidenceRecords: [{ title: 'Apple guidelines', source: 'https://developer.apple.com/design/' }, { title: 'App review notes', source: 'knowledge:doc-1#chunk-0' }] }] };
