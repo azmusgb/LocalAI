@@ -12,6 +12,7 @@ const LOCAL_UI_PORT = Number(process.env.LOCAL_UI_PORT || 0);
 const MODEL = process.env.MODEL || 'qwen3:4b-instruct-32k';
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://host.docker.internal:11434';
 const { modelFetch, modelFetchWithTimeout } = require('./model-http');
+const { isAboutLocalAi, aboutApplianceBlock } = require('./about-appliance');
 const { TEXT_NUM_CTX, TEXT_NUM_CTX_LARGE, LARGE_ANSWER_RESERVE, MISSION_NUM_CTX, MISSION_ANSWER_RESERVE, TEXT_KEEP_ALIVE, ANSWER_RESERVE, fitMessages, warmTextModel, unloadTextModel } = require('./text-context');
 const COMFY_URL = process.env.COMFY_URL || 'http://host.docker.internal:8188';
 const N8N_URL = process.env.N8N_URL || 'http://local-ai-n8n:5678';
@@ -830,6 +831,9 @@ async function prepareChat(body, signal = null) {
     if (signal?.aborted) throw error;
   }
   throwIfAborted();
+  // Questions about Local AI itself also get the "About this appliance" facts (where things run and live, addresses, updates).
+  const asked = [...messages].reverse().find(m => m.role === 'user');
+  if (asked && isAboutLocalAi(asked.content)) capabilityContext = [capabilityContext, aboutApplianceBlock({ addresses: accessAddresses() })].filter(Boolean).join('\n\n');
   return { model, messages, sources, researchContext, capabilityContext, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
 }
 
