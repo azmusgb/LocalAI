@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { addAxe } from './axe-helper.mjs';
+import { checkReopenQuickly } from './sheet-reopen.mjs';
 
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const axePath = join(dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min.js');
@@ -332,6 +333,11 @@ await check('opening a run shows its header (kind only until filed), then the ap
   assert.match(await sh.innerText(), /Timeline/);
   await runPage.keyboard.press('Escape'); await runPage.waitForSelector('#runDetailsSheet:not([open])', { state: 'attached' });
   assert.equal(await runPage.locator('#runList .list-row[data-run-id="run_img"]').count(), 1);
+});
+await check('the run details sheet closed and opened again at once stays open, three times, and leaves no entry behind', async () => {
+  if (!(await drawerOpen().count())) await openRun('run_eng');
+  await openSheet();
+  await checkReopenQuickly(runPage, 'runDetailsSheet', () => { document.getElementById('runDetailsSheet').close(); document.getElementById('runDetailsBtn').click(); });
 });
 await check('axe: the open run view passes color-contrast and target-size', async () => {
   await addAxe(runPage, axePath);

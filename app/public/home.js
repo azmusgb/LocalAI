@@ -59,13 +59,11 @@ async function paintOptions(){
   }
  }catch(e){if(mode===m)box.innerHTML=`<p class="home-sheet__note">Couldn't load the options (${esc(e.message)}). The usual choices are used.</p>`}
 }
-let release=null; // Back closes the sheet (LocalAIUI.sheetHistory)
 function sheet(){
  let d=$('homeModeSheet');if(d)return d;
  d=document.createElement('dialog');d.id='homeModeSheet';d.className='ask-sheet home-sheet';d.setAttribute('aria-labelledby','homeModeTitle');
  d.innerHTML='<form method="dialog" class="ask-sheet__form"><h2 class="ask-sheet__title" id="homeModeTitle">What kind of work?</h2><div class="home-modes" role="radiogroup" aria-labelledby="homeModeTitle"></div><div id="homeModeOptions" class="home-sheet__options" hidden></div><div class="ask-sheet__actions"><button type="submit" class="btn-primary home-sheet__done">Done</button></div></form>';
  d.addEventListener('click',e=>{if(e.target===d)d.close()});
- d.addEventListener('close',()=>{order=null;const r=release;release=null;r?.();const c=$('homeModeChip');if(c&&c.isConnected)c.focus()});
  // A radio group: one Tab stop (the chosen mode); arrows, Home and End choose another, as radios do, without closing the sheet.
  d.querySelector('.home-modes').addEventListener('keydown',e=>{
   const all=[...d.querySelectorAll('[data-home-mode]:not([disabled])')],i=all.indexOf(e.target);if(i<0)return;
@@ -89,7 +87,9 @@ function paintModes(){
   const gate=document.querySelector(`.mode[data-mode="${id}"]`),off=!!gate?.disabled,why=off?String(gate.title||'').replace(/^Unavailable:\s*/,''):'';
   return `<button type="button" role="radio" class="home-mode" data-home-mode="${id}" aria-checked="${id===cur()}" tabindex="${id===cur()?0:-1}"${off?' disabled':''}><b>${esc(label)}</b><span>${esc(off&&why?'Not available: '+why:hint)}</span></button>`}).join('');
 }
-function openSheet(){const d=sheet();if(!d.open)order=ordered();paintModes();paintOptions();if(!d.open){d.showModal();d.scrollTop=d.scrollHeight;release=root.LocalAIUI.sheetHistory(d,()=>d.close());d.querySelector('[data-home-mode][aria-checked="true"]')?.focus()}}
+function openSheet(){const d=sheet();if(d.open){paintModes();paintOptions();return}
+ root.LocalAIUI.showSheet(d,reopened=>{order=null;if(reopened)return;const c=$('homeModeChip');if(c&&c.isConnected)c.focus()});
+ order=ordered();paintModes();paintOptions();d.scrollTop=d.scrollHeight;d.querySelector('[data-home-mode][aria-checked="true"]')?.focus()}
 
 // ---- Needs you and Recent ----
 // The runs module opens the run on top of Home, so Back returns here.

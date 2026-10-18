@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
+import { checkReopenQuickly } from './sheet-reopen.mjs';
 import { createRequire } from 'node:module';
 const { workKind } = createRequire(import.meta.url)('../app/run-cards.js'); // the server's Work chip mapping
 
@@ -66,6 +67,11 @@ await check('the start sheet opened again right after closing stays open',async(
     await page.keyboard.press('Escape');await page.locator('#awStart').waitFor({state:'hidden'});
     await page.waitForFunction(()=>!history.state?.localaiSheet);
   }
+});
+await check('the start sheet closed and opened again in the same task stays open, three times, and leaves no entry behind', async () => {
+  await page.evaluate(() => window.LocalAIAgentStart.open());
+  await page.locator('#agentGoal').waitFor({ state: 'visible' });
+  await checkReopenQuickly(page, 'awStart', () => { document.getElementById('awStart').close(); window.LocalAIAgentStart.open(); });
 });
 await check('Agent World is mounted',async()=>{
   await page.locator('#agentWorldCityMount .awc').waitFor({state:'visible'});
