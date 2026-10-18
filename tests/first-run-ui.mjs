@@ -14,9 +14,9 @@ const page = await context.newPage({ serviceWorkers: 'block' });
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 await page.goto(base, { waitUntil: 'networkidle' });
-const library = await (await fetch(base + '/api/library')).json();
+const runs = await (await fetch(base + '/api/runs?limit=1')).json();   // anything in Work means a first task was tried
 const models = await (await fetch(base + '/api/models')).json().catch(() => ({}));
-const expectCard = !models.defaultInstalled || !(library.items || []).length;
+const expectCard = !models.defaultInstalled || !(runs.items || []).length;
 
 await check('Get started appears for a new install and finishes its checks', async () => {
   if (!expectCard) return;

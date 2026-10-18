@@ -1,5 +1,5 @@
 'use strict';
-// One conversation, one Library item. Pure: no I/O. A conversation's item keeps its first message as its title and
+// One conversation, one Library item, and only once you keep it. Pure: no I/O. A conversation's item keeps its first message as its title and
 // shows its latest answer; every turn's full answer stays readable under data.turns[runId] (the run view reads an
 // answer too long for the run ledger from there).
 const THREAD_KINDS = new Set(['conversation', 'research']);
@@ -70,4 +70,39 @@ function mergeThreads(items, threadOf) {
   return { items: (items || []).filter(it => !drop.has(it?.id)).map(it => replace.get(it?.id) || it), merged };
 }
 
-module.exports = { continueThread, firstTurnData, mergeThreads, THREAD_KINDS };
+// Library holds only what you keep (owner decision, 18 Oct). Chats and research reach Library only through Keep (☆);
+// images and other kinds still arrive by themselves. A chat or research item stays when it was kept, pinned, or is
+// tied to a project (`tied(item)` checks its runs); everything else is an auto-saved item that belongs only in Work.
+function staysInLibrary(it, tied = () => false) {
+  if (!isThreadItem(it)) return true;
+  return !!(it.kept || it.pinned || it.projectId || it.meta?.projectId || tied(it));
+}
+// One-time repair (repair:library-kept-v1): the items that stay, and the auto-saved ones that leave Library.
+function splitKept(items, tied) {
+  const keep = [], moved = [];
+  for (const it of items || []) (staysInLibrary(it, tied) ? keep : moved).push(it);
+  return { keep, moved };
+}
+// The run ids a thread item holds an answer for (its latest run and every filed turn).
+const runIdsOf = it => [...new Set([it?.meta?.runId, ...Object.keys(turnsOf(it))].filter(Boolean))];
+
+// Keep (☆): a conversation's Library item, built from its runs. `runs` is the thread oldest first; `answerOf(run)` is
+// that turn's full answer. The title is the first message (D10); the summary and answer are the latest turn's.
+function itemFromRuns(runs, { id, now, answerOf = r => r?.output?.text }) {
+  const list = (runs || []).filter(Boolean);
+  if (!list.length) return null;
+  const first = list[0], last = list[list.length - 1];
+  const turns = {};
+  for (const r of list) { const a = answerOf(r); if (typeof a === 'string') turns[r.id] = a; }
+  const response = typeof answerOf(last) === 'string' ? answerOf(last) : '';
+  return {
+    id, kind: last.type === 'research' ? 'research' : 'conversation',
+    title: String(first.title || first.input?.prompt || (last.type === 'research' ? 'Research' : 'Conversation')),
+    summary: String(last.summary || response).slice(0, 1200),
+    createdAt: now, updatedAt: now, pinned: false, kept: true,
+    meta: { ...(last.threadId ? { threadId: last.threadId } : {}), runId: last.id, ...(last.output?.model ? { model: last.output.model } : {}) },
+    data: { prompt: String(last.input?.prompt || ''), response, sources: Array.isArray(last.output?.sources) ? last.output.sources : [], turns: capTurns(turns) }
+  };
+}
+
+module.exports = { continueThread, firstTurnData, mergeThreads, staysInLibrary, splitKept, runIdsOf, itemFromRuns, isThreadItem, THREAD_KINDS };

@@ -143,3 +143,62 @@ test('Spreadsheets and the Services card use the appliance route; the old page s
   assert.match(hub, /view: 'spreadsheets', label: 'Open Spreadsheets'/);
   assert.match(fs.readFileSync(path.join(pub, 'gridcraft.html'), 'utf8'), /url=\/#spreadsheets/);
 });
+
+test('a GridCraft request that takes longer than fetch allows still gets its answer; a time-out says so', { timeout: 60000 }, async t => {
+  // undici (the global fetch) stops waiting for headers after 300 s whatever the caller's deadline, and the bridge
+  // can take longer than that. The preload shortens that limit to 1 s; the bridge answers after 2.5 s.
+  const preload = path.join(__dirname, 'short-undici-timeouts.cjs');
+  const SLOW_MS = 2500;
+  const bridge = http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      const reply = body => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(body)); };
+      if (req.url === '/run') return setTimeout(() => reply({ ok: true, answer: 'slow but done', durationSec: 2.5, journal: { mode: 'read', edits: [], changes: [], undoSteps: 0 } }), SLOW_MS);
+      if (req.url === '/workbooks') return setTimeout(() => reply({ ok: true, items: [{ name: 'Budget.xlsx', size: 9 }] }), SLOW_MS);
+      if (req.url === '/health') return setTimeout(() => reply({ ok: true, gridcraftConnected: true }), 6000); // past the proxy's 4 s
+      res.statusCode = 404; res.end('{}');
+    });
+  });
+  bridge.listen(0, '127.0.0.1');
+  await once(bridge, 'listening');
+  const bridgeUrl = `http://127.0.0.1:${bridge.address().port}`;
+  const env = { UNDICI_TIMEOUT_MS: '1000', NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --require ${JSON.stringify(preload)}`.trim() };
+
+  // The shortened limit is real: a plain fetch from a process with the preload gives up.
+  const { execFile } = require('node:child_process');
+  const plain = await new Promise(resolve => execFile(process.execPath, ['-e', `fetch(${JSON.stringify(bridgeUrl + '/run')}, { method: 'POST', body: '{}' }).then(() => console.log('answered'), e => console.log(e.message, e.cause?.code))`], { env: { ...process.env, ...env } }, (err, stdout) => resolve(stdout.trim())));
+  assert.match(plain, /fetch failed UND_ERR_HEADERS_TIMEOUT/, 'the preload shortens the global fetch timeout');
+
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-gridcraft-slow-'));
+  const off = 'http://127.0.0.1:9';
+  const { child, ready } = spawnAppServer({
+    env: { ...env, DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, GRIDCRAFT_URL: bridgeUrl, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off }
+  });
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
+    bridge.closeAllConnections(); bridge.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+  const base = await ready;
+  const post = (p, body) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+  const [run, books] = await Promise.all([post('/api/gridcraft/run', { prompt: 'total column B', mode: 'read' }), fetch(`${base}/api/gridcraft/workbooks`)]);
+  const ran = await run.json();
+  assert.equal(run.status, 200, JSON.stringify(ran));
+  assert.equal(ran.answer, 'slow but done', 'the proxy waited past the shortened fetch limit');
+  assert.equal(ran.run.status, 'done');
+  assert.equal(books.status, 200);
+  assert.deepEqual((await books.json()).items.map(x => x.name), ['Budget.xlsx']);
+
+  const health = await fetch(`${base}/api/gridcraft/health`);
+  const late = await health.json();
+  assert.equal(health.status, 504);
+  assert.equal(late.error, 'GridCraft took too long to answer');
+  assert.doesNotMatch(JSON.stringify(late), /fetch failed/);
+
+  bridge.closeAllConnections(); bridge.close();
+  await new Promise(r => setTimeout(r, 50));
+  const down = await (await post('/api/gridcraft/run', { prompt: 'x', mode: 'read' })).json();
+  assert.match(down.error, /^GridCraft bridge unavailable/);
+  assert.doesNotMatch(down.error, /fetch failed|Ollama/);
+});

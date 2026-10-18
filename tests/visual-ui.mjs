@@ -42,10 +42,11 @@ const failures = [], notes = [];
 // Fixed data for the lists, so the pages show real content rather than empty states. Times are relative to NOW.
 const ago = s => new Date(NOW - s * 1000).toISOString();
 const run = (id, kind, title, s, o = {}) => ({ id, type: kind, status: o.status || 'completed', progress: o.status === 'running' ? 40 : 100, createdAt: ago(s), updatedAt: ago(s),
+  ...(kind === 'chat' || kind === 'research' ? { kept: !!o.kept } : {}),   // the server marks chats and research for ☆ Keep
   card: { kind, icon: 'system', title, summary: o.summary || '', badge: { label: o.status === 'running' ? 'Working' : o.status === 'failed' ? 'Failed' : 'Done', tone: o.status === 'running' ? 'accent' : o.status === 'failed' ? 'bad' : 'good' }, preview: null, action: { label: 'Open' }, approval: null } });
 const RUNS = [
   run('run-1', 'agent', 'Compare NAS drives for Plex', 120, { status: 'running', summary: 'Three specialists working' }),
-  run('run-2', 'chat', 'Plan the vegetable garden', 3600, { summary: 'Raised beds, tomatoes and basil' }),
+  run('run-2', 'chat', 'Plan the vegetable garden', 3600, { summary: 'Raised beds, tomatoes and basil', kept: true }),
   run('run-3', 'image', 'A red fox reading in a library, watercolor', 7200),
   run('run-4', 'research', 'Heat pump prices in Arizona', 90000, { summary: 'Five sources compared' }),
   run('run-5', 'engineering', 'Add a dark mode toggle', 4 * 86400, { status: 'failed' }),

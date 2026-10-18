@@ -2943,7 +2943,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     try { return JSON.stringify(value, null, 2); } catch { return String(value); }
   }
   function drawerSignature(run) {
-    return run ? [run.id, run.status, run.updatedAt, run.progress, outputText(run.output).length, run.error || '', run.pinned ? 1 : 0, run.projectId || '', run.card?.approval?.id || '', Array.isArray(run.events) ? run.events.length : 0].join('|') : '';
+    return run ? [run.id, run.status, run.updatedAt, run.progress, outputText(run.output).length, run.error || '', run.pinned ? 1 : 0, run.kept ? 1 : 0, run.projectId || '', run.card?.approval?.id || '', Array.isArray(run.events) ? run.events.length : 0].join('|') : '';
   }
 
 
@@ -3078,6 +3078,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const s = document.createElement('div'); s.className = 'run-drawer-sub'; if (typeof sub === 'string') s.textContent = sub; else s.append(...sub);
     copy.append(t, s); head.append(back, copy);
     if (run) {
+      // ☆ Keep: Library holds only what you keep (owner decision, 18 Oct). A chat or research run says whether it is kept.
+      if (typeof run.kept === 'boolean') head.appendChild(keepButton(run));
       const info = iconBtn('info', 'Details', 'runDetailsBtn'); info.addEventListener('click', openDetails);
       const more = iconBtn('more', 'More', 'runMoreBtn'); more.setAttribute('aria-haspopup', 'menu'); more.setAttribute('aria-expanded', 'false');
       const menu = document.createElement('div'); menu.className = 'run-menu'; menu.setAttribute('role', 'menu'); menu.hidden = true;
@@ -3338,6 +3340,27 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       state.viewError = ''; el('runLiveRegion').textContent = done;
       render(); if (state.selectedId === run.id) renderDrawer(run.id);
     } catch (error) { viewFail(`Could not update the run: ${error.message}`); }
+  }
+
+  function keepButton(run) {
+    const b = document.createElement('button'); b.type = 'button'; b.id = 'runKeepBtn'; b.className = 'btn-outline run-keep';
+    b.textContent = run.kept ? '★ Kept' : '☆ Keep'; b.setAttribute('aria-pressed', String(!!run.kept));
+    b.title = run.kept ? 'In your Library. Tap to take it out; it stays in Work.' : 'Keep this conversation in your Library';
+    b.addEventListener('click', () => keepRun(run, !run.kept, b));
+    return b;
+  }
+  // Keep or un-keep the run's whole conversation. Un-keep takes it out of Library only; the runs stay in Work.
+  async function keepRun(run, kept, button) {
+    if (button) button.disabled = true;
+    try {
+      await post('/api/library/keep', { runId: run.id, kept });
+      state.runs = state.runs.map((r) => ((run.threadId && r.threadId === run.threadId) || r.id === run.id ? { ...r, kept } : r));
+      if (state.fetched && ((run.threadId && state.fetched.threadId === run.threadId) || state.fetched.id === run.id)) state.fetched = { ...state.fetched, kept };
+      state.viewError = ''; el('runLiveRegion').textContent = kept ? 'Kept in your Library.' : "Taken out of Library. It's still in Work.";
+      window.dispatchEvent(new CustomEvent('localai:kept', { detail: { runId: run.id, threadId: run.threadId || '', kept } }));
+      render(); if (state.selectedId) renderDrawer(state.selectedId);
+      window.LocalAIUI?.toast?.(kept ? 'Kept in Library' : "Taken out of Library. It's still in Work.");
+    } catch (error) { viewFail(`Could not ${kept ? 'keep' : 'un-keep'} this: ${error.message}`); if (button?.isConnected) button.disabled = false; }
   }
 
   async function fileRun(run) {
@@ -3646,12 +3669,12 @@ function runSample(s){
 async function mountFirstRun(){
  if(pref.get(DONE_KEY)==='1')return;
  const home=q('#home'),hero=q('#homeRecentSection');if(!home||!hero||q('#firstRun'))return;
- const [models,library]=await Promise.all([getJson('/api/models').catch(()=>null),getJson('/api/library').catch(()=>null)]);
- if(models?.defaultInstalled&&(library?.items||[]).length)return;
+ const [models,runs]=await Promise.all([getJson('/api/models').catch(()=>null),getJson('/api/runs?limit=1').catch(()=>null)]);
+ if(models?.defaultInstalled&&(runs?.items||[]).length)return; // anything in Work: a first task was tried
  await loadConfig();
  const card=document.createElement('section');card.id='firstRun';card.className='first-run card';card.setAttribute('aria-labelledby','firstRunTitle');
  card.innerHTML=`<div class="first-run-head"><div><h2 id="firstRunTitle">Get started</h2><p>Two checks, then try a first task. Everything runs on this computer.</p></div><button type="button" class="icon-btn" data-first-run-dismiss aria-label="Hide Get started">×</button></div>
- <ol class="first-run-steps">${stepHtml('service','Local AI is running')}${stepHtml('model','A language model is installed')}<li data-step="try" data-state="todo"><span class="first-run-mark" aria-hidden="true"></span><div><strong>Try a first task</strong><div class="first-run-detail">Pick one. It runs right here, and the result is saved to your Library.</div><div class="first-run-samples">${SAMPLES.map((s,i)=>`<button type="button" class="btn-outline" data-sample="${i}"><span>${esc(s.label)}</span><small>${esc(s.text)}</small></button>`).join('')}</div></div></li></ol>
+ <ol class="first-run-steps">${stepHtml('service','Local AI is running')}${stepHtml('model','A language model is installed')}<li data-step="try" data-state="todo"><span class="first-run-mark" aria-hidden="true"></span><div><strong>Try a first task</strong><div class="first-run-detail">Pick one. It runs right here, and the result is in Work. Tap ☆ Keep to keep it in your Library.</div><div class="first-run-samples">${SAMPLES.map((s,i)=>`<button type="button" class="btn-outline" data-sample="${i}"><span>${esc(s.label)}</span><small>${esc(s.text)}</small></button>`).join('')}</div></div></li></ol>
  <div class="first-run-foot"><span class="meta">Developer tools are ${document.body.classList.contains('dev-tools-off')?'hidden':'shown'}. Change this in <a href="#" data-goto="status">Health</a>.</span><button type="button" class="btn-outline" data-first-run-dismiss>I'm set up, hide this</button></div>`;
  hero.before(card) // Get started takes Recent's place while it shows;
  window.dispatchEvent(new CustomEvent('localai:first-run')); // Home may have painted its rows already

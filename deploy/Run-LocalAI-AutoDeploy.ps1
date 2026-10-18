@@ -6,12 +6,16 @@ param(
     [string]$NotifyUrl = 'http://127.0.0.1:3080/api/notifications/system',
     # Asked before an update restarts the appliance: while something is running the update waits, up to MaxHoldMinutes.
     [string]$BusyUrl = 'http://127.0.0.1:3080/api/busy',
+    # Checked before tidying old backup containers when there was nothing to deploy (and after a deploy).
+    [string]$HealthUrl = 'http://127.0.0.1:3080/healthz',
     [ValidateRange(0, 1440)]
     [int]$MaxHoldMinutes = 45
 )
 # What the 'LocalAI Safe Deploy' task runs every few minutes. Keeps the host checkout current, runs the safe
 # deploy (certify, promote, health-check, roll back), logs it, and tells the Inbox when something happened:
 # a new release went live, or a deploy failed (once per failing commit, not on every retry). No change = silent.
+# After a healthy deploy, or a quiet run with /healthz OK, it removes stopped migration backups (local-ai-*-pre-*)
+# older than 7 days whose live twin is healthy (Remove-LocalAI-OldBackups.ps1); that step never fails the run.
 # A new release waits while the appliance is running something a restart would stop (a mission, an image, a chat,
 # a GridCraft request, an automation), for up to MaxHoldMinutes; then it goes ahead and says what it stopped.
 $ErrorActionPreference = 'Continue'
@@ -31,12 +35,12 @@ function Notify([string]$title, [string]$detail, [hashtable]$meta) {
 
 # Keep the log bounded: up to 500 one-line summaries, then the last deploy's full output. $runOutput $null keeps
 # the previous output (a run that only waited has none worth keeping over it).
-function Write-AutoDeployLog([string]$summary, $runOutput) {
+function Write-AutoDeployLog([string[]]$summary, $runOutput) {
     $lines = @(if (Test-Path $log) { Get-Content $log -Encoding UTF8 })
     $marker = [Array]::IndexOf($lines, '--- last run ---')
     $history = @($(if ($marker -gt 0) { $lines[0..($marker - 1)] } elseif ($marker -lt 0) { $lines }) | Where-Object { $_ -match '^\d{4}-\d\d-\d\dT' } | Select-Object -Last 500)
     if ($null -eq $runOutput) { $runOutput = @(if ($marker -ge 0 -and $marker -lt $lines.Count - 1) { $lines[($marker + 1)..($lines.Count - 1)] }) }
-    Set-Content -Path $log -Value (@($history) + $summary + '--- last run ---' + @($runOutput)) -Encoding UTF8
+    Set-Content -Path $log -Value (@($history) + @($summary) + '--- last run ---' + @($runOutput)) -Encoding UTF8
 }
 # The commit the appliance runs: its release.json, else the deploy state.
 function Get-RunningCommit {
@@ -62,6 +66,25 @@ function Get-BusyTitles($busy, [int]$first = 3) {
 function Get-HeldSince {
     if (-not (Test-Path $holdState)) { return $null }
     try { return [DateTime]::Parse((Get-Content $holdState -Raw).Trim(), [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime() } catch { return $null }
+}
+function Test-ApplianceHealthy {
+    try { return (Invoke-RestMethod -Method Get -Uri $HealthUrl -TimeoutSec 10 -ErrorAction Stop).status -eq 'ok' } catch { return $false }
+}
+# Removes old stopped backup containers once the stack is healthy. Logs each removal, sends one Inbox line, and
+# never fails the deploy.
+function Invoke-BackupTidy {
+    try {
+        $tidy = & (Join-Path $PSScriptRoot 'Remove-LocalAI-OldBackups.ps1')
+        $lines = @($tidy.Log | Where-Object { $_ } | ForEach-Object { (Get-Date).ToString('s') + ' tidy: ' + $_ })
+        if ($lines.Count) { Write-AutoDeployLog $lines $null }
+        $count = @($tidy.Removed).Count
+        if ($count -gt 0) {
+            $title = if ($count -eq 1) { 'Removed 1 old backup container (a stopped copy from an earlier migration)' } else { "Removed $count old backup containers (stopped copies from earlier migrations)" }
+            Notify $title ('Removed: ' + (@($tidy.Removed) -join ', ') + '. Their volumes and data were kept.') @{ outcome = 'done'; action = 'tidy-backups'; removed = (@($tidy.Removed) -join ', ') }
+        }
+    } catch {
+        try { Write-AutoDeployLog ((Get-Date).ToString('s') + ' tidy: failed: ' + $_.Exception.Message) $null } catch { }
+    }
 }
 
 # The deploy scripts themselves come from this checkout, so fast-forward it when it tracks main and is clean.
@@ -121,6 +144,9 @@ if ($code -eq 0 -and $last -like 'DEPLOYED:*') {
               else { [string](git -C $Repo log -1 --format=%s $sha 2>$null) }
     Notify "Local AI updated to $name" $detail @{ commit = $sha.Trim(); version = "$($release.version)"; outcome = 'deployed' }
     Remove-Item $failState -ErrorAction SilentlyContinue
+    if (Test-ApplianceHealthy) { Invoke-BackupTidy }
+} elseif ($code -eq 0 -and $last -like 'NO CHANGE:*') {
+    if (Test-ApplianceHealthy) { Invoke-BackupTidy }
 } elseif ($code -ne 0) {
     $previous = if (Test-Path $failState) { (Get-Content $failState -Raw).Trim() } else { '' }
     if ($previous -ne $short) {

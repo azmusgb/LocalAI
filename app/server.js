@@ -12,6 +12,7 @@ const LOCAL_UI_PORT = Number(process.env.LOCAL_UI_PORT || 0);
 const MODEL = process.env.MODEL || 'qwen3:4b-instruct-32k';
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://host.docker.internal:11434';
 const { modelFetch, modelFetchWithTimeout } = require('./model-http');
+const { isAboutLocalAi, aboutApplianceBlock } = require('./about-appliance');
 const { TEXT_NUM_CTX, TEXT_NUM_CTX_LARGE, LARGE_ANSWER_RESERVE, MISSION_NUM_CTX, MISSION_ANSWER_RESERVE, TEXT_KEEP_ALIVE, ANSWER_RESERVE, fitMessages, warmTextModel, unloadTextModel } = require('./text-context');
 const COMFY_URL = process.env.COMFY_URL || 'http://host.docker.internal:8188';
 const N8N_URL = process.env.N8N_URL || 'http://local-ai-n8n:5678';
@@ -186,16 +187,80 @@ function recordArtifact(kind, title, summary = '', meta = {}, data = {}) {
   return item;
 }
 
-// A chat or research turn: the thread's first turn makes its Library item, later turns update that item in place
-// (title stays the first message; summary becomes the latest answer). One conversation, one Library item.
-function recordTurnArtifact(kind, title, summary, meta, data, execution) {
+// A chat or research turn reaches Library only once its conversation is kept (☆ Keep; owner decision, 18 Oct). A
+// later turn of a kept conversation updates its item in place (title stays the first message; summary becomes the
+// latest answer). Any other turn stays in Work only, and this returns null.
+function recordTurnArtifact(summary, meta, data, execution) {
   const threadId = execution?.threadId || '', runId = execution?.id || '';
-  const now = new Date().toISOString();
-  if (threadId) {
-    const next = libraryThreads.continueThread(libraryStore(), { threadId, runId, summary, meta, data, now });
-    if (next) return storage.upsert(LIBRARY_STORE, next);
+  if (!threadId) return null;
+  const next = libraryThreads.continueThread(libraryStore(), { threadId, runId, summary, meta, data, now: new Date().toISOString() });
+  return next ? storage.upsert(LIBRARY_STORE, next) : null;
+}
+
+// An answer too long for the run ledger (its output is cut to a preview) is kept whole under answer/<runId>, so the run
+// view shows it whether or not its conversation is in Library. Only the newest MAX_LONG_ANSWERS are kept.
+const ANSWER_PREFIX = 'answer/', MAX_LONG_ANSWERS = 500;
+function keepLongAnswer(runId, text) {
+  if (!runId || typeof text !== 'string' || !runLedger.get(runId)?.output?.truncated) return false;
+  if (typeof storage.readSetting(ANSWER_PREFIX + runId, null)?.text === 'string') return true;
+  storage.writeSetting(ANSWER_PREFIX + runId, { runId, text });
+  storage.pruneSettings(ANSWER_PREFIX, MAX_LONG_ANSWERS);
+  return true;
+}
+// A Library item leaving Library (un-keep, delete, the one-time repair) leaves its long answers with their runs.
+function keepItemAnswers(item) {
+  for (const runId of libraryThreads.runIdsOf(item)) {
+    const text = item?.data?.turns?.[runId] ?? (item?.meta?.runId === runId ? item?.data?.response : undefined);
+    keepLongAnswer(runId, text);
   }
-  return recordArtifact(kind, title, summary, { ...meta, ...(threadId ? { threadId } : {}) }, libraryThreads.firstTurnData(data, runId));
+}
+function fullAnswer(runId, items = null) {
+  const saved = storage.readSetting(ANSWER_PREFIX + runId, null);
+  if (typeof saved?.text === 'string') return saved.text;
+  for (const it of items || libraryStore()) {
+    const t = it?.data?.turns?.[runId] ?? (it?.meta?.runId === runId ? it?.data?.response : undefined);
+    if (typeof t === 'string') return t;
+  }
+  return null;
+}
+
+// Keep (☆) a chat or research run: its whole conversation becomes one Library item (or the item it already has is
+// marked kept). Un-keep takes the conversation out of Library; its runs stay in Work. Returns {kept, item} or {error}.
+const KEEPABLE = new Set(['chat', 'research']);
+function libraryItemsOfRun(run, items) {
+  return items.filter(it => libraryThreads.isThreadItem(it) && ((run.threadId && it.meta?.threadId === run.threadId) || libraryThreads.runIdsOf(it).includes(run.id)));
+}
+function setRunKept(runId, kept) {
+  const run = runLedger.get(runId);
+  if (!run) return { status: 404, error: 'Run not found' };
+  if (!KEEPABLE.has(run.type)) return { status: 409, error: 'Only chats and research are kept this way' };
+  const items = libraryStore(), found = libraryItemsOfRun(run, items);
+  if (!kept) {
+    if (!found.length) return { kept: false, item: null };
+    for (const it of found) keepItemAnswers(it);
+    const drop = new Set(found.map(it => it.id));
+    writeState(LIBRARY_STORE, items.filter(it => !drop.has(it?.id)), items);
+    return { kept: false, item: null };
+  }
+  if (found.length) return { kept: true, item: found[0].kept ? found[0] : storage.upsert(LIBRARY_STORE, { ...found[0], kept: true }) };
+  const runs = run.threadId ? runLedger.list({ threadId: run.threadId, limit: 500 }) : [run];
+  runs.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || String(a.id).localeCompare(String(b.id)));
+  const answered = runs.filter(r => r.output);
+  const answerOf = r => (r?.output?.truncated ? fullAnswer(r.id, items) : r?.output?.text);
+  const item = libraryThreads.itemFromRuns(answered.length ? answered : runs, { id: `${Date.now()}-${Math.random().toString(16).slice(2, 9)}`, now: nowIso(), answerOf });
+  item.title = titleFromText(item.title, 'Conversation');
+  prependRecord(LIBRARY_STORE, item);
+  return { kept: true, item };
+}
+// Which runs are in Library: for chat and research rows, `kept` says whether ☆ Keep is on.
+function keptMarker() {
+  const threads = new Set(), runs = new Set();
+  for (const it of libraryStore()) {
+    if (!libraryThreads.isThreadItem(it)) continue;
+    if (it.meta?.threadId) threads.add(it.meta.threadId);
+    for (const id of libraryThreads.runIdsOf(it)) runs.add(id);
+  }
+  return x => (KEEPABLE.has(x?.type) ? { ...x, kept: (!!x.threadId && threads.has(x.threadId)) || runs.has(x.id) } : x);
 }
 
 function updateArtifact(id, patch = {}) {
@@ -212,6 +277,7 @@ function deleteArtifact(id) {
   const items = libraryStore();
   const next = items.filter(x => x && x.id !== id);
   if (next.length === items.length) return false;
+  keepItemAnswers(items.find(x => x && x.id === id));   // a conversation's runs stay in Work, with their long answers
   writeState(LIBRARY_STORE, next, items);
   return true;
 }
@@ -830,6 +896,9 @@ async function prepareChat(body, signal = null) {
     if (signal?.aborted) throw error;
   }
   throwIfAborted();
+  // Questions about Local AI itself also get the "About this appliance" facts (where things run and live, addresses, updates).
+  const asked = [...messages].reverse().find(m => m.role === 'user');
+  if (asked && isAboutLocalAi(asked.content)) capabilityContext = [capabilityContext, aboutApplianceBlock({ addresses: accessAddresses() })].filter(Boolean).join('\n\n');
   return { model, messages, sources, researchContext, capabilityContext, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
 }
 
@@ -873,8 +942,6 @@ async function chatOnce(body) {
       { model: prep.model, elapsedMs, sources: prep.sources.length, runId: execution.id }
     );
     const artifact = recordTurnArtifact(
-      body.webSearch === true ? 'research' : 'conversation',
-      lastUser?.content || (body.webSearch === true ? 'Research' : 'Conversation'),
       content.slice(0, 420),
       { model: prep.model, elapsedMs, sources: prep.sources.length, runId: execution.id },
       { prompt: lastUser?.content || '', response: content.slice(0, 40000), sources: prep.sources },
@@ -886,6 +953,7 @@ async function chatOnce(body) {
       artifactIds: artifact?.id ? [artifact.id] : [],
       meta: { model: prep.model, elapsedMs, sources: prep.sources.length, ...(body.voice === true || body.voiceRun === true ? { voice: true } : {}) }
     });
+    keepLongAnswer(execution.id, content.slice(0, 40000));
 
     return {
       message: { role: 'assistant', content },
@@ -1004,8 +1072,6 @@ async function apiChatStream(req, res) {
       { model: prep.model, elapsedMs, sources: prep.sources.length, runId: execution.id }
     );
     const artifact = recordTurnArtifact(
-      body.webSearch === true ? 'research' : 'conversation',
-      lastUser?.content || (body.webSearch === true ? 'Research' : 'Conversation'),
       full.slice(0, 420),
       { model: prep.model, elapsedMs, sources: prep.sources.length, runId: execution.id },
       { prompt: lastUser?.content || '', response: full.slice(0, 40000), sources: prep.sources },
@@ -1017,6 +1083,7 @@ async function apiChatStream(req, res) {
       artifactIds: artifact?.id ? [artifact.id] : [],
       meta: { model: prep.model, elapsedMs, sources: prep.sources.length }
     });
+    keepLongAnswer(execution.id, full.slice(0, 40000));
 
     send('done', { elapsedMs, model: prep.model, sources: prep.sources, runId: execution.id });
     res.end();
@@ -1153,6 +1220,30 @@ async function apiLibraryDelete(req, res) {
   } catch (e) {
     storageError(res,e,400);
   }
+}
+
+// ☆ Keep / un-keep a chat or research run: {runId, kept}. Un-keep takes it out of Library only; it stays in Work.
+async function apiLibraryKeep(req, res) {
+  try {
+    const body = await readBody(req);
+    const runId = String(body.runId || '');
+    if (!cleanRunId(runId)) return json(res, 400, { error: 'runId is required' });
+    if (typeof body.kept !== 'boolean') return json(res, 400, { error: 'kept must be true or false' });
+    const out = setRunKept(runId, body.kept);
+    if (out.error) return json(res, out.status, { error: out.error });
+    json(res, 200, { ok: true, kept: out.kept, item: out.item });
+  } catch (e) {
+    storageError(res, e, 400);
+  }
+}
+
+// Full answers too long for the run ledger: ?ids=run-a,run-b → {answers: {runId: text}} (a missing one is left out).
+async function apiRunAnswers(req, res, urlObj) {
+  const ids = String(urlObj.searchParams.get('ids') || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 100);
+  if (!ids.length || ids.some(id => !cleanRunId(id))) return json(res, 400, { error: 'ids must be run ids' });
+  const items = libraryStore(), answers = {};
+  for (const id of ids) { const text = fullAnswer(id, items); if (typeof text === 'string') answers[id] = text; }
+  json(res, 200, { answers });
 }
 
 async function apiWorkspace(req, res) {
@@ -1462,14 +1553,30 @@ async function apiGenerateImage(req, res) {
   }
 }
 
+// Calls to the host bridge (GridCraft and ArtCraft) go over node:http (model-http.js), not the global fetch: undici
+// gives up when headers take more than 300 s, so a long GridCraft request died as "fetch failed" at five minutes
+// whatever its own deadline. Here the deadline passed in is the only one.
+function bridgeFetch(pathname, options, timeoutMs) {
+  return modelFetchWithTimeout(`${GRIDCRAFT_URL}${pathname}`, options, timeoutMs);
+}
+const bridgeTimedOut = e => e?.code === 'MODEL_TIMEOUT' || e?.name === 'TimeoutError';
+// The bridge's JSON; a body cut off by the deadline is a time-out, anything else unreadable is the fallback.
+const bridgeJson = (r, fallback) => r.json().catch(e => { if (bridgeTimedOut(e)) throw e; return fallback; });
+// What the page shows when the bridge call itself failed: never undici's "fetch failed" or Ollama wording.
+function bridgeFailure(res, e, who = 'GridCraft', unavailable = 'GridCraft bridge unavailable') {
+  if (bridgeTimedOut(e)) return json(res, 504, { ok: false, error: `${who} took too long to answer` });
+  const code = e?.cause?.code || '';
+  json(res, 502, { ok: false, error: `${unavailable}${code ? ` (${code})` : ''}` });
+}
+
 async function apiGridcraftHealth(req, res) {
   try {
-    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/health`, { cache: 'no-store' }, 4000);
-    const data = await r.json().catch(() => ({}));
+    const r = await bridgeFetch('/health', { cache: 'no-store' }, 4000);
+    const data = await bridgeJson(r, {});
     // Only what the UI shows: the bridge also reports host file paths.
     json(res, r.ok ? 200 : 502, { ok: r.ok && data.ok === true, gridcraftConnected: data.gridcraftConnected === true, ...(data.model ? { model: String(data.model) } : {}) });
   } catch (e) {
-    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+    bridgeFailure(res, e);
   }
 }
 // A request's record: what was asked, in which mode, and what it changed (the agent's journal), so the page can show the
@@ -1494,8 +1601,8 @@ async function apiGridcraftRun(req, res) {
   if (!GRIDCRAFT_MODES.has(mode)) return json(res, 400, { ok: false, error: 'mode must be read, review or apply' });
   const untrack = inFlight.track('gridcraft', 'GridCraft: ' + prompt);
   try {
-    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, mode }) }, GRIDCRAFT_RUN_TIMEOUT_MS);
-    const data = await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` }));
+    const r = await bridgeFetch('/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, mode }) }, GRIDCRAFT_RUN_TIMEOUT_MS);
+    const data = await bridgeJson(r, { ok: false, error: `Bridge returned HTTP ${r.status}` });
     const ok = r.ok && data.ok === true, journal = data.journal && typeof data.journal === 'object' ? data.journal : null;
     // A request the bridge refused before running (busy, bad prompt) changed nothing and isn't worth a record.
     if (!ok && !journal && r.status !== 500 && r.status !== 504) return json(res, r.status, { ok: false, error: data.error, reason: data.reason });
@@ -1512,7 +1619,7 @@ async function apiGridcraftRun(req, res) {
     if (ok) recordActivity('gridcraft', 'GridCraft request', prompt.slice(0, 180), { durationSec: data.durationSec, mode });
     json(res, r.status, { ok, answer: run.answer, ...(ok ? {} : { error: data.error, reason: data.reason }), durationSec: data.durationSec, run });
   } catch (e) {
-    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+    bridgeFailure(res, e);
   } finally { untrack(); }
 }
 async function apiGridcraftRuns(req, res) { json(res, 200, { items: gridcraftRuns() }); }
@@ -1520,10 +1627,10 @@ async function apiGridcraftWorkbook(req, res, urlObj) {
   const q = new URLSearchParams();
   for (const k of ['sheet', 'range']) { const v = urlObj.searchParams.get(k); if (v) q.set(k, v.slice(0, 200)); }
   try {
-    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/workbook${q.size ? `?${q}` : ''}`, { cache: 'no-store' }, 65000);
-    json(res, r.status, await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` })));
+    const r = await bridgeFetch(`/workbook${q.size ? `?${q}` : ''}`, { cache: 'no-store' }, 65000);
+    json(res, r.status, await bridgeJson(r, { ok: false, error: `Bridge returned HTTP ${r.status}` }));
   } catch (e) {
-    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+    bridgeFailure(res, e);
   }
 }
 // The workbook menu: files directly in the GridCraft folder on the host, by bare name. The bridge checks the name again
@@ -1532,14 +1639,14 @@ const GRIDCRAFT_BOOK = /^[^\\/:\0]{1,251}\.(xlsx|xlsm|xls|csv|ods)$/i;
 const gridcraftBookName = v => typeof v === 'string' && v.trim() && GRIDCRAFT_BOOK.test(v) && !v.includes('..') ? v : '';
 async function apiGridcraftWorkbooks(req, res) {
   try {
-    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/workbooks`, { cache: 'no-store' }, 15000);
-    const data = await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` }));
+    const r = await bridgeFetch('/workbooks', { cache: 'no-store' }, 15000);
+    const data = await bridgeJson(r, { ok: false, error: `Bridge returned HTTP ${r.status}` });
     if (!r.ok || data.ok !== true) return json(res, r.ok ? 502 : r.status, { ok: false, error: data.error || 'GridCraft did not list the workbooks' });
     const items = (Array.isArray(data.items) ? data.items : []).filter(x => gridcraftBookName(x?.name))
       .map(x => ({ name: x.name, size: Number(x.size) || 0, modified: String(x.modified || '') }));
     json(res, 200, { ok: true, items });
   } catch (e) {
-    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+    bridgeFailure(res, e);
   }
 }
 async function apiGridcraftOpen(req, res) {
@@ -1551,13 +1658,13 @@ async function apiGridcraftOpen(req, res) {
   // Opening replaces the workbook, so a request waiting for review would lose its Keep and Discard.
   if (gridcraftRuns(GRIDCRAFT_KEEP_RUNS).some(x => x.status === 'review')) return json(res, 409, { ok: false, error: 'A request is waiting for review. Keep or discard its changes first, then open another workbook.' });
   try {
-    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/open`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }, 65000);
-    const data = await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` }));
+    const r = await bridgeFetch('/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }, 65000);
+    const data = await bridgeJson(r, { ok: false, error: `Bridge returned HTTP ${r.status}` });
     if (!r.ok || data.ok !== true) return json(res, r.ok ? 502 : r.status, { ok: false, error: data.error || 'GridCraft did not open it' });
     recordActivity('gridcraft', 'GridCraft workbook opened', name);
     json(res, 200, { ok: true, file: name });
   } catch (e) {
-    json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
+    bridgeFailure(res, e);
   }
 }
 async function apiGridcraftDecide(req, res, id, action) {
@@ -1570,10 +1677,10 @@ async function apiGridcraftDecide(req, res, id, action) {
   let r = { ok: true }, data = { ok: true };
   try {
     if (action === 'keep' || run.undoSteps > 0) {
-      r = await fetchWithTimeout(`${GRIDCRAFT_URL}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action === 'discard' ? { steps: run.undoSteps, undoTop: run.undoTop } : {}) }, 65000);
-      data = await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` }));
+      r = await bridgeFetch(`/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action === 'discard' ? { steps: run.undoSteps, undoTop: run.undoTop } : {}) }, 65000);
+      data = await bridgeJson(r, { ok: false, error: `Bridge returned HTTP ${r.status}` });
     }
-  } catch (e) { return json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` }); }
+  } catch (e) { return bridgeFailure(res, e); }
   if (!r.ok || data.ok !== true) return json(res, r.ok ? 502 : r.status, { ok: false, error: data.error || 'GridCraft did not do it' });
   const now = new Date().toISOString();
   // Saving saves every change in the workbook, so every request waiting for review is kept.
@@ -1586,25 +1693,25 @@ async function apiGridcraftDecide(req, res, id, action) {
 // opens it (its fixed exe, no arguments). The page never talks to ArtCraft itself.
 async function apiArtcraftStatus(req, res) {
   try {
-    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/artcraft`, { cache: 'no-store' }, 20000);
-    const d = await r.json().catch(() => ({}));
+    const r = await bridgeFetch('/artcraft', { cache: 'no-store' }, 20000);
+    const d = await bridgeJson(r, {});
     if (!r.ok || !d.ok) return json(res, 502, { ok: false, error: String(d.error || `Bridge returned HTTP ${r.status}`).slice(0, 300) });
     json(res, 200, { ok: true, installed: d.installed === true, running: d.running === true, version: typeof d.version === 'string' ? d.version.slice(0, 40) : null });
   } catch (e) {
-    json(res, 502, { ok: false, error: `Windows computer bridge unavailable: ${e.message || e}` });
+    bridgeFailure(res, e, 'The Windows computer', 'Windows computer bridge unavailable');
   }
 }
 async function apiArtcraftOpen(req, res) {
   if (!sameOriginJson(req, res)) return;
   req.resume(); // nothing from the body is used
   try {
-    const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/artcraft/open`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, 20000);
-    const d = await r.json().catch(() => ({}));
+    const r = await bridgeFetch('/artcraft/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, 20000);
+    const d = await bridgeJson(r, {});
     if (!r.ok || !d.ok) return json(res, r.ok ? 502 : r.status, { ok: false, error: String(d.error || `Bridge returned HTTP ${r.status}`).slice(0, 300) });
     recordActivity('artcraft', 'ArtCraft opened', d.alreadyRunning ? 'It was already open' : 'Opened on the Windows computer');
     json(res, 200, { ok: true, alreadyRunning: d.alreadyRunning === true });
   } catch (e) {
-    json(res, 502, { ok: false, error: `Windows computer bridge unavailable: ${e.message || e}` });
+    bridgeFailure(res, e, 'The Windows computer', 'Windows computer bridge unavailable');
   }
 }
 async function apiImageView(req, res, urlObj) {
@@ -1872,7 +1979,7 @@ function apiBusy(req,res){
   catch(e){json(res,500,{error:String(e.message||e)})}
 }
 async function apiRuns(req,res,urlObj){
-  try{const id=String(urlObj.searchParams.get('id')||'');const pid=String(urlObj.searchParams.get('projectId')||''),tid=String(urlObj.searchParams.get('threadId')||''),threads=urlObj.searchParams.get('threads')==='1';const kind=String(urlObj.searchParams.get('kind')||'');if(kind&&kind!=='all'&&!WORK_CHIPS.includes(kind))return json(res,400,{error:'Unknown kind'});const beforeId=String(urlObj.searchParams.get('before')||'');let before=null;if(beforeId){if(!cleanRunId(beforeId))return json(res,400,{error:'Invalid run id'});const ref=runLedger.get(beforeId)||legacyUnifiedRuns().find(x=>x.id===beforeId);if(!ref)return json(res,404,{error:'Run not found'});before={createdAt:ref.createdAt,id:ref.id}}let items=unifiedRunItems(urlObj.searchParams.get('limit')||120,{projectId:pid,threadId:tid,threads,before,kind:threads&&kind!=='all'?kind:''});const pending=approvalStore().filter(a=>a.status==='pending'),changes=changeStore();const cardOpts={approvalFor:r=>r.meta?.changeId&&pending.find(a=>a.meta?.changeId===r.meta.changeId)||null,changeFor:cid=>changes.find(c=>c.id===cid)||null};if(id){const item=items.find(x=>x.id===id)||runLedger.get(id)||(id.startsWith('legacy-')?legacyUnifiedRuns().find(x=>x.id===id):null);if(!item)return json(res,404,{error:'Run not found'});return json(res,200,{item:{...item,card:runCard(item,cardOpts)}})}const status=String(urlObj.searchParams.get('status')||''),type=String(urlObj.searchParams.get('type')||'');if(status)items=items.filter(x=>x.status===status);if(type)items=items.filter(x=>x.type===type);items=items.map(x=>({...x,card:runCard(x,cardOpts)}));json(res,200,{items,summary:{total:items.length,active:items.filter(x=>['queued','running','streaming','awaiting_approval'].includes(x.status)).length,failed:items.filter(x=>x.status==='failed').length,awaitingApproval:items.filter(x=>x.status==='awaiting_approval').length}})}catch(e){storageError(res,e,500)}
+  try{const id=String(urlObj.searchParams.get('id')||'');const pid=String(urlObj.searchParams.get('projectId')||''),tid=String(urlObj.searchParams.get('threadId')||''),threads=urlObj.searchParams.get('threads')==='1';const kind=String(urlObj.searchParams.get('kind')||'');if(kind&&kind!=='all'&&!WORK_CHIPS.includes(kind))return json(res,400,{error:'Unknown kind'});const beforeId=String(urlObj.searchParams.get('before')||'');let before=null;if(beforeId){if(!cleanRunId(beforeId))return json(res,400,{error:'Invalid run id'});const ref=runLedger.get(beforeId)||legacyUnifiedRuns().find(x=>x.id===beforeId);if(!ref)return json(res,404,{error:'Run not found'});before={createdAt:ref.createdAt,id:ref.id}}let items=unifiedRunItems(urlObj.searchParams.get('limit')||120,{projectId:pid,threadId:tid,threads,before,kind:threads&&kind!=='all'?kind:''});const pending=approvalStore().filter(a=>a.status==='pending'),changes=changeStore();const cardOpts={approvalFor:r=>r.meta?.changeId&&pending.find(a=>a.meta?.changeId===r.meta.changeId)||null,changeFor:cid=>changes.find(c=>c.id===cid)||null},mark=keptMarker();if(id){const item=items.find(x=>x.id===id)||runLedger.get(id)||(id.startsWith('legacy-')?legacyUnifiedRuns().find(x=>x.id===id):null);if(!item)return json(res,404,{error:'Run not found'});return json(res,200,{item:{...mark(item),card:runCard(item,cardOpts)}})}const status=String(urlObj.searchParams.get('status')||''),type=String(urlObj.searchParams.get('type')||'');if(status)items=items.filter(x=>x.status===status);if(type)items=items.filter(x=>x.type===type);items=items.map(x=>({...mark(x),card:runCard(x,cardOpts)}));json(res,200,{items,summary:{total:items.length,active:items.filter(x=>['queued','running','streaming','awaiting_approval'].includes(x.status)).length,failed:items.filter(x=>x.status==='failed').length,awaitingApproval:items.filter(x=>x.status==='awaiting_approval').length}})}catch(e){storageError(res,e,500)}
 }
 async function apiRunCancel(req,res){
   try{const b=await readBody(req),id=String(b.id||''),run=runLedger.get(id);if(!run)return json(res,404,{error:'Run not found or is managed by a legacy executor'});if(!run.cancellable)return json(res,409,{error:'This run is not cancellable'});if(!['queued','running','streaming','awaiting_approval'].includes(run.status))return json(res,409,{error:`Run cannot be cancelled from status ${run.status}`});runLedger.cancel(id,'Cancelled by user');const controller=activeRunControllers.get(id);if(controller&&!controller.signal.aborted)controller.abort();recordActivity('run','Run cancelled',run.title,{runId:id,type:run.type});json(res,200,{item:runLedger.get(id)})}catch(e){storageError(res,e,400)}
@@ -3408,6 +3515,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/library') return await apiLibrary(req, res);
     if (req.method === 'POST' && p === '/api/library/update') return await apiLibraryUpdate(req, res);
     if (req.method === 'POST' && p === '/api/library/delete') return await apiLibraryDelete(req, res);
+    if (req.method === 'POST' && p === '/api/library/keep') return await apiLibraryKeep(req, res);
     if (req.method === 'GET' && p === '/api/workspace') return await apiWorkspace(req, res);
     if (req.method === 'POST' && p === '/api/route') return await apiRoute(req, res);
     if (req.method === 'POST' && p === '/api/chat') return await apiChat(req, res);
@@ -3482,6 +3590,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/monitors/run') return await apiMonitorRun(req,res);
     if (req.method === 'GET' && p === '/api/brief') return await apiMorningBrief(req,res);
     if (req.method === 'GET' && p === '/api/runs') return await apiRuns(req,res,urlObj);
+    if (req.method === 'GET' && p === '/api/runs/answers') return await apiRunAnswers(req,res,urlObj);
     if (req.method === 'POST' && p === '/api/runs/cancel') return await apiRunCancel(req,res);
     if (req.method === 'POST' && p === '/api/runs/update') return await apiRunUpdate(req,res);
     if (req.method === 'POST' && p === '/api/runs/retry') return await apiRunRetry(req,res);
@@ -3599,6 +3708,28 @@ function repairLibraryThreadsOnce() {
   if (merged) console.log(`${nowIso()} Merged per-turn Library items into their conversations: ${merged}`);
 }
 
+// One time (owner decision, 18 Oct: Library holds only what you keep): chats and research saved to Library by themselves
+// leave it. Kept, pinned and project items stay (an item counts as in a project when it or one of its runs is filed
+// there, or its run is pinned in Work), and images stay. Runs and threads are not touched, so every one is still in
+// Work. The removed records are backed up under backup:library-kept-v1 (ids and records), so this can be undone.
+const LIBRARY_KEPT_BACKUP = 'backup:library-kept-v1';
+function repairLibraryKeptOnce() {
+  const KEY = 'repair:library-kept-v1';
+  if (storage.readSetting(KEY, null)) return;
+  const items = libraryStore();
+  const tied = it => libraryThreads.runIdsOf(it).some(id => { const r = runLedger.get(id); return !!(r?.projectId || r?.pinned); });
+  const { keep, moved } = libraryThreads.splitKept(items, tied);
+  if (moved.length) {
+    if (!storage.readSetting(LIBRARY_KEPT_BACKUP, null)) storage.writeSetting(LIBRARY_KEPT_BACKUP, { at: nowIso(), ids: moved.map(it => it.id), items: moved });
+    for (const it of moved) keepItemAnswers(it);
+    writeState(LIBRARY_STORE, keep, items);
+    const n = moved.length, line = `Library: ${n} auto-saved chat${n === 1 ? '' : 's'} moved out; ${n === 1 ? "it's" : "they're"} still in Work`;
+    recordActivity('system', line, 'Library now holds only what you keep. Tap ☆ Keep on a chat to keep it there.', { moved: n, backup: LIBRARY_KEPT_BACKUP });
+    console.log(`${nowIso()} ${line} (backup: ${LIBRARY_KEPT_BACKUP})`);
+  }
+  storage.writeSetting(KEY, { completedAt: nowIso(), moved: moved.length, ...(moved.length ? { backup: LIBRARY_KEPT_BACKUP } : {}) });
+}
+
 async function apiPush(req, res, p) {
   try {
     if (req.method === 'GET' && p === '/api/push/key') return json(res, 200, { publicKey: pushLib.loadOrCreateVapid(storage).publicKey });
@@ -3675,6 +3806,7 @@ repairGarbledTextOnce();
 try { repairRunTextOnce(); } catch (e) { console.error(`${nowIso()} Run text repair failed:`, e); }
 try { repairImageSummariesOnce(); } catch (e) { console.error(`${nowIso()} Image summary repair failed:`, e); }
 try { repairLibraryThreadsOnce(); } catch (e) { console.error(`${nowIso()} Library thread repair failed:`, e); }
+try { repairLibraryKeptOnce(); } catch (e) { console.error(`${nowIso()} Library kept-only repair failed:`, e); }
 
 server.listen(PORT, '0.0.0.0', () => {
   warmText();

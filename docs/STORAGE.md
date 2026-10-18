@@ -89,6 +89,13 @@ Runs (`unified-run/` settings rows): a run that is pinned or filed under a proje
 kept runs grow without a ceiling. Every other run, including successful chats and images, ages out after the
 newest 250. Library items are not deleted when their run ages out. Unpin or unfile a run to let it age out.
 
+Chats and research reach Library (`artifacts`) only through ☆ Keep (`POST /api/library/keep {"runId", "kept"}`);
+images arrive by themselves. An answer too long for its run (the run keeps a preview) is kept whole in an
+`answer/<runId>` settings row (newest 500), read by `GET /api/runs/answers?ids=<runId,…>`. The one-time repair
+`repair:library-kept-v1` moved the auto-saved chats and research out of Library (not pinned, not kept, not in a
+project); their runs were not touched. The removed records are in the `backup:library-kept-v1` settings row
+(`{at, ids, items}`); put them back with `storage.put('library', item)` to undo it.
+
 `GET /api/projects`, `/api/conversations` and `/api/knowledge` accept optional `limit` (1–1000), `offset`
 (0 or more) and `projectId`. Responses keep `items` and add `total`, `limit` and `offset`. Default page
 sizes are 250, 300 and 500.
