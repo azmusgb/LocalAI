@@ -1661,7 +1661,9 @@ input::placeholder,textarea::placeholder{color:var(--ds-faint);font-weight:400}
 /* Improve › Shipped: one group per release (appended; nothing above edited). */
 .improve-release+.improve-release{margin-top:18px}
 .improve-release>h3{margin:0 0 8px;font-size:var(--ds-fs-1);font-weight:600;color:var(--ds-muted)}
-.improve-release .list-row__sub a{display:inline-flex;align-items:center;min-height:44px}
+/* The pull request link stays inline, so every row is the same height; its ::after covers the row, which is the 44px tap target. */
+.improve-release .improve-row{position:relative}
+.improve-release .list-row__sub a::after{content:'';position:absolute;inset:0}
 /* Improve: a change's diff inside the item sheet, and the note for Claude; the Claude page's retired priorities list (appended; nothing above edited). */
 .improve-diff details{margin-top:8px}.improve-diff summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-weight:600}
 .improve-diff pre{margin:0;padding:10px;max-height:40vh;overflow:auto;white-space:pre;font-size:var(--ds-fs-1);border:1px solid var(--ds-line);border-radius:var(--ds-r-md,var(--ds-r-sm));background:var(--ds-surface)}
@@ -2155,3 +2157,14 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .aw-results__sources{display:grid;gap:6px;margin:0;padding-left:18px;font-size:var(--ds-fs-2);color:var(--ds-soft);overflow-wrap:anywhere}
 .aw-results__sources a{color:var(--ds-accent-text)}
 .aw-results__dev summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--ds-muted)}
+/* Sources, Memory and Automations: the cards beside the form size to their content instead of stretching to its
+   height. On a phone the "New …" form folds behind a button so the owner's items come first; with none yet
+   (.no-items, set by app.js) it stays open as the empty state (appended; nothing above edited). */
+#knowledge>.two,#memory>.two,#automationStudio>.two{align-items:start}
+.phone-fold__toggle{display:none}
+@media(max-width:760px){
+ .view:not(.no-items) .phone-fold>.phone-fold__toggle{display:inline-flex}
+ .view:not(.no-items) .phone-fold>h2{display:none}
+ .view:not(.no-items) .phone-fold:not(.is-open){padding:0;border:0;background:none;box-shadow:none}
+ .view:not(.no-items) .phone-fold:not(.is-open)>:not(.phone-fold__toggle,[data-fold-keep]){display:none}
+}

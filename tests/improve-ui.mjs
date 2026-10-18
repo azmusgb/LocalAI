@@ -244,6 +244,19 @@ await check('Shipped groups items by release, newest first, with the PR link or 
   assert.match(await page.locator('#shippedList [data-item-id="signal-gone"]').innerText(), /Resolved on its own/);
 });
 
+await check('Shipped: each release is one card of rows, all the same height with or without a pull request link', async () => {
+  for (const g of await page.locator('#shippedList .improve-release').all()) {
+    assert.equal(await g.locator(':scope > .list-group').count(), 1, 'one card per release');
+    assert.equal(await g.locator(':scope > .list-group > .improve-row').count(), await g.locator('.improve-row').count(), 'every row is in the card');
+  }
+  const h = id => page.locator(`#shippedList [data-item-id="${id}"]`).evaluate(r => r.getBoundingClientRect().height - parseFloat(getComputedStyle(r).borderTopWidth));   // a row after another has a 1px divider
+  const [withPr, resolved, plain] = [await h('claude-new'), await h('signal-gone'), await h('claude-old')];
+  assert.ok(Math.abs(withPr - resolved) < 1 && Math.abs(withPr - plain) < 1, `rows are ${withPr}, ${resolved} and ${plain}px`);
+  // The link is the whole row to tap.
+  const hit = await page.locator('#shippedList [data-item-id="claude-new"]').evaluate(r => { const b = r.getBoundingClientRect(); return document.elementFromPoint(b.right - 8, b.top + b.height / 2)?.closest('a')?.href || ''; });
+  assert.equal(hit, 'https://github.com/azmusgb/LocalAI/pull/150');
+});
+
 await check('See the changes shows the diff inside the item sheet, without leaving In progress', async () => {
   await page.route('**/api/changes?id=*', r => r.fulfill({ json: { item: { id: 'chg-2', status: 'awaiting_approval', notes: 'Rounds the buttons.', files: [{ path: 'app/public/app.css' }], diffs: [{ path: 'app/public/app.css', diff: '-.btn{border-radius:4px}\n+.btn{border-radius:12px}' }] } } }));
   await page.evaluate(() => window.showView('inProgress'));

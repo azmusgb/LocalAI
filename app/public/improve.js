@@ -82,7 +82,9 @@ function renderShipped(box,data){
  // Next release first, then releases newest first (by deploy time, else by their newest item), Earlier last.
  const when=([k,list])=>k==='next'?Infinity:k==='earlier'?-Infinity:relAt.get(k.slice(2))||Date.parse(at(list[0]))||0;
  const section=([k,list])=>{const g=document.createElement('section');g.className='improve-release';
-  const h=document.createElement('h3');h.textContent=k==='next'?'Next release':k==='earlier'?'Earlier':`Version ${k.slice(2)}`;g.append(h,...list.map(shippedRow));return g};
+  const h=document.createElement('h3');h.textContent=k==='next'?'Next release':k==='earlier'?'Earlier':`Version ${k.slice(2)}`;
+  // Each release's rows sit in one card, like Backlog, In progress and Signals.
+  const rows=document.createElement('div');rows.className='list-group';rows.append(...list.map(shippedRow));g.append(h,rows);return g};
  const ordered=[...groups].sort((a,b)=>when(b)-when(a)).map(section);
  // A long history stays short: older releases fold away.
  if(ordered.length>SHOWN_RELEASES){const d=document.createElement('details');d.className='improve-details';const n=ordered.slice(SHOWN_RELEASES).reduce((c,g)=>c+g.querySelectorAll('.improve-row').length,0);

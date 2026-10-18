@@ -206,6 +206,73 @@ await check('Automations: Generate brief lives on Automations, as the Morning br
   assert.equal(await page.locator('#autoCreateBtn').isVisible(), true);
 });
 
+// Automations, Sources and Memory: on a phone the owner's items come first and the "New …" form opens from a button;
+// with nothing yet the form is the empty state and stays open. On a computer the cards beside the form fit their content.
+const ago = new Date().toISOString();
+const listed = { automations: { items: [1, 2, 3].map(n => ({ id: `a${n}`, name: `Automation ${n}`, kind: 'prompt', schedule: 'daily', enabled: true })), runs: [] },
+  knowledge: { items: [1, 2, 3].map(n => ({ id: `k${n}`, name: `source-${n}.md`, size: 2048, projectId: '' })) },
+  memory: { items: [1, 2, 3].map(n => ({ id: `m${n}`, category: 'note', text: `Memory ${n}`, pinned: false, createdAt: ago })) } };
+async function foldPage(viewport, data) {
+  const p = await browser.newPage({ viewport, isMobile: viewport.width < 500, hasTouch: viewport.width < 500, serviceWorkers: 'block' });
+  p.on('pageerror', e => errors.push(e.message));
+  await p.route('**/api/automations', r => r.fulfill({ json: data.automations }));
+  await p.route('**/api/monitors', r => r.fulfill({ json: { items: [] } }));
+  await p.route('**/api/knowledge', r => r.fulfill({ json: data.knowledge }));
+  await p.route(/\/api\/memory\?/, r => r.fulfill({ json: data.memory }));
+  await p.goto(base + '/#home', { waitUntil: 'load' });
+  await p.waitForFunction(() => typeof window.showView === 'function');
+  return p;
+}
+const FOLDS = [['automationStudio', 'autoForm', '#automationList .item-card', '#autoName', 'New automation'],
+  ['knowledge', 'knowledgeForm', '#knowledgeList .item-card', '#knowledgeName', 'New source'],
+  ['memory', 'memoryForm', '#memoryList .memory-card', '#memoryText', 'New memory']];
+await check('Automations, Sources and Memory on a phone: items first, the "New …" form opens from a button', async () => {
+  const p = await foldPage({ width: 390, height: 844 }, listed);
+  for (const [view, form, item, field, label] of FOLDS) {
+    await p.evaluate(v => window.showView(v), view);
+    await p.waitForSelector(`#${view}.active ${item}`);
+    await p.waitForFunction(v => !document.getElementById(v).classList.contains('no-items'), view);
+    const toggle = p.locator(`#${form} > .phone-fold__toggle`);
+    assert.equal(await toggle.innerText(), label, view);
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'false', view);
+    assert.equal(await p.locator(field).isVisible(), false, `${view}: the empty form is folded away`);
+    const top = await p.locator(item).first().evaluate(e => e.getBoundingClientRect().top);
+    assert.ok(top < 844 - 120, `${view}: the first item starts at ${Math.round(top)}px, on the first screen`);
+    await toggle.click();
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'true', view);
+    assert.equal(await p.locator(field).isVisible(), true, `${view}: the button opens the form`);
+    await toggle.click();
+    assert.equal(await p.locator(field).isVisible(), false, `${view}: and closes it`);
+  }
+  assert.equal(await p.locator('#memoryProject').isVisible(), true, 'Memory keeps its project picker, which chooses the list');
+  await p.close();
+});
+await check('Automations, Sources and Memory on a phone: with nothing yet the form stays open as the empty state', async () => {
+  const p = await foldPage({ width: 390, height: 844 }, { automations: { items: [], runs: [] }, knowledge: { items: [] }, memory: { items: [] } });
+  for (const [view, form, , field] of FOLDS) {
+    await p.evaluate(v => window.showView(v), view);
+    await p.waitForFunction(v => document.getElementById(v).classList.contains('no-items'), view);
+    assert.equal(await p.locator(`#${form} > .phone-fold__toggle`).isVisible(), false, view);
+    assert.equal(await p.locator(field).isVisible(), true, `${view}: the form is open`);
+  }
+  await p.close();
+});
+await check('Automations, Sources and Memory on a computer: the form shows as before; the card beside it fits its content', async () => {
+  const p = await foldPage({ width: 1440, height: 900 }, listed);
+  for (const [view, form, item, field] of FOLDS) {
+    await p.evaluate(v => window.showView(v), view);
+    await p.waitForSelector(`#${view}.active ${item}`);
+    assert.equal(await p.locator(`#${form} > .phone-fold__toggle`).isVisible(), false, view);
+    assert.equal(await p.locator(field).isVisible(), true, view);
+  }
+  for (const view of ['knowledge', 'memory']) {
+    await p.evaluate(v => window.showView(v), view);
+    const [a, b] = await p.locator(`#${view} > .two > .card`).evaluateAll(cs => cs.map(c => c.getBoundingClientRect().height));
+    assert.ok(b < a - 100, `${view}: the side card is ${Math.round(b)}px beside a ${Math.round(a)}px form, not stretched to it`);
+  }
+  await p.close();
+});
+
 await check('no script errors', async () => assert.deepEqual(errors, []));
 await browser.close();
 if (failures.length) { console.error('\nSystem list failures:\n' + failures.map(x => ' - ' + x).join('\n')); process.exit(1); }
