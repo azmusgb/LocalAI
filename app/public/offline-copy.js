@@ -21,7 +21,10 @@ const buildKey=b=>`${b&&b.version||''}@${b&&b.releaseCommit||''}`;
 // Only Local AI's own health payload means Local AI answered. Caddy keeps answering while the appliance restarts
 // (502), and a captive portal answers anything; neither is Local AI. A 503 from Local AI itself still is.
 const isLocalAIHealth=d=>!!d&&typeof d==='object'&&d.appliance==='Local AI'&&typeof d.version==='string'&&d.version!=='';
-const api={relativeTime,buildDiffers,buildKey,isLocalAIHealth};
+// While a deploy recreates the appliance, the HTTPS front end (deploy/caddy/Caddyfile) answers API calls with
+// 503 {error:"Local AI is updating", updating:true} and Retry-After: that is an update, not a failure.
+const isUpdatingReply=(status,body)=>(status===502||status===503||status===504)&&!!body&&typeof body==='object'&&(body.updating===true||body.error==='Local AI is updating');
+const api={relativeTime,buildDiffers,buildKey,isLocalAIHealth,isUpdatingReply};
 if(typeof module==='object'&&module.exports){module.exports=api;return}
 if(typeof document==='undefined')return;
 
@@ -87,5 +90,5 @@ let lastVisibleCheck=Date.now();
 document.addEventListener('visibilitychange',()=>{if(document.hidden)return;if(copy.active||Date.now()-lastVisibleCheck>60000){lastVisibleCheck=Date.now();check()}});
 const start=()=>{if(copy.active)enterCopy(copy.savedAt);check()};
 if(document.body)start();else document.addEventListener('DOMContentLoaded',start,{once:true});
-root.LocalAIConnection={reachable,isSavedCopy:()=>copy.active,build:()=>({...page})};
+root.LocalAIConnection={reachable,isSavedCopy:()=>copy.active,build:()=>({...page}),isUpdatingReply};
 })(typeof window!=='undefined'?window:globalThis);

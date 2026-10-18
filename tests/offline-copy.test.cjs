@@ -60,3 +60,13 @@ test('only Local AI\'s own health payload counts as reachable (not a proxy 502 o
   assert.equal(isLocalAIHealth({ ok: true }), false, 'some other JSON (captive portal)');
   assert.equal(isLocalAIHealth({ appliance: 'Local AI', version: '' }), false);
 });
+
+test('isUpdatingReply recognises the HTTPS front end saying Local AI is updating, and nothing else', () => {
+  const body = { error: 'Local AI is updating', updating: true };
+  assert.equal(offline.isUpdatingReply(503, body), true);
+  assert.equal(offline.isUpdatingReply(502, { error: 'Local AI is updating' }), true);
+  assert.equal(offline.isUpdatingReply(200, body), false);
+  assert.equal(offline.isUpdatingReply(500, { error: 'boom' }), false);
+  assert.equal(offline.isUpdatingReply(503, { error: 'Ollama is down' }), false);
+  assert.equal(offline.isUpdatingReply(502, null), false, 'a bare 502 could be a crash: not called an update');
+});

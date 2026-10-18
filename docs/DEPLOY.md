@@ -253,7 +253,13 @@ docker pull caddy:2.10-alpine                       # once, from a normal (not S
   IP's certificate.
 - The firewall rule `Local AI HTTPS` opens 80 and 443 on private networks only.
 - After editing `deploy\caddy\Caddyfile`: `docker exec local-ai-https caddy reload --config /etc/caddy/Caddyfile`,
-  or re-run the installer.
+  or re-run the installer. Caddy reads the file from `C:\LocalAI\repo\deploy\caddy`, which the auto-deploy keeps
+  current, but a deploy doesn't reload Caddy: a merged Caddyfile change takes effect on that one-line reload.
+- While a deploy restarts the appliance, Caddy holds each request and retries for up to 20 s (`lb_try_duration`). If the
+  appliance is still gone (a deploy backs up the database while it is stopped), API calls and `/healthz` get
+  `503 {"error":"Local AI is updating","updating":true}` with `Retry-After: 5`, and pages get a short "Local AI is
+  updating, back in a moment" page that reloads itself. Health reads the 503 as "Local AI is updating…" and checks
+  again after `Retry-After`.
 - Over SSH, `docker pull` fails with `A specified logon session does not exist` (Docker's credential helper);
   pull from a desktop session.
 

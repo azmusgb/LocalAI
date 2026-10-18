@@ -53,3 +53,30 @@ test('the Tailscale name has its own site with an explicit internal issuer', () 
   const shared = caddy.slice(caddy.indexOf('https://{$LOCALAI_NAME}'), caddy.indexOf('\n}\n', caddy.indexOf('https://{$LOCALAI_NAME}')));
   assert.doesNotMatch(shared, /LOCALAI_REMOTE_NAME/);
 });
+
+// 17 Oct: each deploy gave a few seconds of 502 ("dial tcp: lookup local-ai-appliance ... failed") while the appliance
+// was recreated. The proxy waits and retries, then says "updating" (JSON for the API) instead of an error.
+test('the HTTPS front end rides over an appliance restart', () => {
+  const caddy = read('deploy/caddy/Caddyfile');
+  const proxy = /reverse_proxy local-ai-appliance:3080 \{([^}]*)\}/.exec(caddy);
+  assert.ok(proxy, 'reverse_proxy block');
+  const secs = v => Number(/^(\d+)s$/.exec(v)?.[1] ?? /^(\d+)ms$/.exec(v)?.[1] / 1000);
+  const tryFor = /lb_try_duration (\S+)/.exec(proxy[1]), every = /lb_try_interval (\S+)/.exec(proxy[1]);
+  assert.ok(tryFor && secs(tryFor[1]) >= 15 && secs(tryFor[1]) <= 30, `lb_try_duration ${tryFor && tryFor[1]}`);
+  assert.ok(every && secs(every[1]) > 0 && secs(every[1]) <= 2, `lb_try_interval ${every && every[1]}`);
+  assert.match(proxy[1], /flush_interval -1/, 'streams still pass straight through');
+  // Both appliance sites (LAN and Tailscale) import the snippet that carries the retry and the "updating" answers.
+  const appliance = caddy.slice(caddy.indexOf('(appliance) {'), caddy.indexOf('\n}\n', caddy.indexOf('(appliance) {')));
+  assert.match(appliance, /import updating/);
+  assert.equal((caddy.match(/^\s*import appliance$/gm) || []).length, 2);
+  const updating = caddy.slice(caddy.indexOf('(updating) {'), caddy.indexOf('\n}\n', caddy.indexOf('(updating) {')));
+  assert.match(updating, /handle_errors 502 503 504 \{/);
+  assert.match(updating, /header Retry-After \d+/);
+  assert.match(updating, /@api path \/api\/\* \/healthz/);
+  assert.match(updating, /header Content-Type application\/json\s+respond `\{"error":"Local AI is updating","updating":true\}` 503/);
+  assert.match(updating, /<meta http-equiv="refresh" content="\d+">/);
+  assert.match(updating, /Local AI is updating, back in a moment/);
+  // Caddy fills {placeholders} in a response body; the page must have no braces of its own.
+  const html = /respond `(<!doctype[^`]*)`/.exec(updating)[1];
+  assert.doesNotMatch(html, /[{}]/);
+});
