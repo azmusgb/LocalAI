@@ -3691,7 +3691,15 @@ const nudgeOff=()=>{try{return localStorage.getItem(NUDGE_KEY)==='1'}catch{retur
 // Only where a camera-holding device would be pointed at this screen (a mouse or trackpad), and only when this page
 // was opened by the computer's network address, which is the one a phone can reach.
 // remote: this computer's Tailscale name, when set up (deploy/Install-LocalAI-HTTPS.ps1), for use away from home.
-async function remoteName(){try{const r=await fetch('/api/access',{cache:'no-store'});return r.ok?String((await r.json()).remoteName||''):''}catch{return ''}}
+// addresses: every HTTPS address it answers on ({label,url}: Home Wi-Fi, Anywhere (Tailscale)).
+async function access(){try{const r=await fetch('/api/access',{cache:'no-store'});const j=r.ok?await r.json():{};return {remote:String(j.remoteName||''),addresses:Array.isArray(j.addresses)?j.addresses:[]}}catch{return {remote:'',addresses:[]}}}
+// Both addresses, with the one that works everywhere called out: a Home Screen icon keeps the address it was added from.
+function addressesHtml(list){
+ const rows=list.map(a=>{let u;try{u=new URL(String(a.url))}catch{return ''}return `<dt>${esc(a.label)}${u.origin===location.origin?' <span class="badge badge--good">This page</span>':''}</dt><dd><a href="${esc(u.origin+'/')}">${esc(u.origin)}</a></dd>`}).join('');
+ if(!rows)return '';
+ const away=list.some(a=>/tailscale/i.test(String(a.label||'')));
+ return `<div class="secure-addresses"><dl>${rows}</dl>${away?'<p class="meta">Add to Home Screen from the Tailscale address to use Local AI anywhere. It works at home too, with Tailscale turned on on the phone.</p>':''}</div>`;
+}
 function phoneHtml(remote){
  if(!(matchMedia('(pointer: fine)').matches&&root.LocalAIQR))return '';
  const qr=(url,label)=>{try{return root.LocalAIQR.svg(url,label)}catch{return ''}};
@@ -3703,7 +3711,7 @@ function phoneHtml(remote){
  <li><p><b>3.</b> Scan to open <b>${esc(httpsUrl)}</b>, then add it to the Home Screen from there.</p>${qr(httpsUrl,'QR code: open Local AI securely')}</li>${away}</ol></details>`;
 }
 async function render(card){
- const secure=location.protocol==='https:',remote=await remoteName();
+ const secure=location.protocol==='https:',{remote,addresses}=await access();
  let state,detail;
  // Without an answer from Local AI nothing here can be confirmed (the page may be a saved copy): say so, neutrally.
  const reach=root.LocalAIConnection?.reachable;
@@ -3712,7 +3720,7 @@ async function render(card){
  else if(isLocal){state='good';detail='You are on the Local AI computer itself, which browsers already treat as secure.'}
  else{const ok=await trusted();state=ok?'ready':'todo';detail=ok?`This device already trusts Local AI's certificate. Switch to <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>.`:'This page uses plain HTTP, so other devices on the network could read what you send, and some features (copy to clipboard, installing as an app, signing PowerShell jobs) are unavailable.'}
  card.dataset.state=state;
- card.innerHTML=`<div class="secure-head"><span class="secure-dot" aria-hidden="true"></span><div><h2>Secure connection</h2><p>${detail}</p></div></div>
+ card.innerHTML=`<div class="secure-head"><span class="secure-dot" aria-hidden="true"></span><div><h2>Secure connection</h2><p>${detail}</p></div></div>${addressesHtml(addresses)}
  ${state==='todo'?`<details class="secure-setup"><summary>Set up HTTPS on this device</summary><ol class="secure-steps"><li><a class="btn-primary" href="${esc(caUrl)}" download>Download the certificate</a> <span class="meta">Local AI's own certificate authority. Its private key never leaves the Local AI computer, which uses it only to sign Local AI's certificate.</span></li><li>Trust it on this device:<dl>${stepsHtml()}</dl></li><li>Open <a href="${esc(httpsUrl)}">${esc(httpsUrl)}</a>. To use the name <b>localai.home.arpa</b>, add it for ${esc(host)} in your router's DNS settings.</li></ol>${nudgeOff()?'':'<button type="button" class="btn-outline secure-nudge-off">Don\'t remind me on Home</button>'}</details>`:''}${phoneHtml(remote)}`;
  card.querySelector('.secure-nudge-off')?.addEventListener('click',e=>{try{localStorage.setItem(NUDGE_KEY,'1')}catch{}e.currentTarget.replaceWith(Object.assign(document.createElement('p'),{className:'meta',textContent:'Home won\'t remind you on this device.'}))});
  focusSetup(card);

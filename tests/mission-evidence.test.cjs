@@ -14,7 +14,8 @@ const { createResearchTools } = require('../app/agent-tools');
 const repo = path.resolve(__dirname, '..');
 const evidence = createMissionEvidence({ appRoot: path.join(repo, 'app') });
 const labels = goal => evidence.select(goal).map(s => s.source);
-// The packet limits the 4B model on a 6 GB GPU works within (agent-orchestrator.js: 7 sources, 40000 opening chars).
+// The packet limits: 7 sources, 40000 chars in all. The first turn then takes the most relevant of them up to the
+// evidence budget (fitEvidence, tests/model-wait.test.cjs); the tools can read the rest.
 function assertSmall(sources) {
   assert.ok(sources.length <= 7, 'at most 7 sources');
   for (const s of sources) assert.ok(s.text.length <= 5600, s.source + ' is ' + s.text.length + ' chars');

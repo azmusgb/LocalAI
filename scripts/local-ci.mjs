@@ -5,7 +5,8 @@
 //   npm run ci -- 195            test PR #195 merged with the latest main, post pending, then success or failure
 //   npm run ci -- 195 --no-post  same, without posting
 //   npm run ci                   test the current checkout as it is (never posts)
-//   npm run ship -- 195          same as ci -- 195, then merges the PR if it's green (only the commit that was tested)
+//   npm run ship -- 195          same as ci -- 195, then merges the PR if it's green (only the commit that was tested),
+//                                after re-checking it against main if main moved during the run (see below)
 //
 // A PR is tested in a throwaway worktree (its head merged with origin/main, as GitHub's pull_request runs do), so
 // your own checkout is never touched. The log is kept in the system temp folder and its path printed at the end.
@@ -18,11 +19,20 @@
 // titles become the release notes; that never fails the run. The decisions are in scripts/local-ci-lib.mjs, tested
 // by tests/local-ci.test.cjs.
 //
+// Ship re-check: a run tests the PR with main as main was when it started, ~15 minutes earlier. Before merging, ship
+// fetches main again; if it moved, it merges the newer main into the tested tree and re-runs the fast checks (npm test,
+// and the deploy validator when pwsh is installed; not the browser suites), up to three times while main keeps moving.
+// A conflict or a red re-check means no merge: a failure status "main moved; re-check failed: <tests>", a PR comment
+// naming them, and a non-zero exit. What is left: a merge in the seconds between the last fetch and ship's own, or one
+// made without ship (GitHub can't make a merge conditional on main's commit).
+//
 // Dry run, for working on this script without taking the machine's CI slot: LOCALAI_CI_DRY=1 skips the queue and
 // every real step (each prints a stand-in line instead), starts no server and never posts; it prints what it would
 // have posted. LOCALAI_CI_FAIL_UNIT=<test name> makes the dry unit step red with that test; LOCALAI_CI_FAIL_SUITE=<x-ui.mjs>
 // makes the dry browser step fail that suite, which then passes on retry. A PR number still works in a dry run
-// (worktree, merge, title check).
+// (worktree, merge, title check). With --merge, a dry run pretends main moved once and runs the re-check with stand-ins
+// (LOCALAI_CI_MAIN_MOVED=0: main didn't move; LOCALAI_CI_RECHECK_CONFLICT=1: the newer main conflicts;
+// LOCALAI_CI_FAIL_RECHECK=<test name>: the re-check is red with that test), then prints the merge it would have run.
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -30,7 +40,7 @@ import path from 'node:path';
 import net from 'node:net';
 import crypto from 'node:crypto';
 import { failingUnitTests, failedBrowserSuites, browserSuiteCounts, suitesToRetry, ciSummary, failureComment, retryComment,
-  releaseNoteAdvice, RELEASE_NOTE_MARKER, shipMergeArgs } from './local-ci-lib.mjs';
+  releaseNoteAdvice, RELEASE_NOTE_MARKER, shipMergeArgs, shipNextStep, recheckOutcome } from './local-ci-lib.mjs';
 
 const args = process.argv.slice(2);
 const pr = args.find(a => /^\d+$/.test(a));
@@ -45,7 +55,8 @@ const say = line => { console.log(line); log.write(line + '\n'); };
 const git = (...a) => execFileSync('git', a, { cwd: repoRoot, encoding: 'utf8' }).trim();
 const gh = (...a) => execFileSync('gh', a, { cwd: repoRoot, encoding: 'utf8' }).trim();
 
-let dir = repoRoot, sha = null, worktree = null;
+let dir = repoRoot, sha = null, worktree = null, baseRef = 'main', testedBase = null;
+const hasPwsh = (() => { try { execFileSync('pwsh', ['-v'], { stdio: 'ignore' }); return true; } catch { return false; } })();
 async function status(state, description) {
   if (!post) { if (pr) say(`(not posting) status ${state}: ${description}`); return; }
   try {
@@ -79,6 +90,7 @@ function dryCommand(name) {
   else if (name === 'Browser suites' && failSuite) script = `console.log('--- ' + ${JSON.stringify(failSuite)} + ': FAILED in 0.1s\\n\\n13 of 14 browser suites passed; failed: ' + ${JSON.stringify(failSuite)}); process.exit(1)`;
   else if (name === 'Browser suites') script = `console.log('14 of 14 browser suites passed')`;
   else if (name.startsWith('Retry ')) script = `console.log('1 of 1 browser suites passed')`;
+  else if (name === 'Re-check: unit and contract tests' && process.env.LOCALAI_CI_FAIL_RECHECK) script = `console.log('✖ ' + ${JSON.stringify(process.env.LOCALAI_CI_FAIL_RECHECK)} + ' (1ms)\\nℹ pass 5\\nℹ fail 1'); process.exit(1)`;
   return [process.execPath, ['-e', script]];
 }
 
@@ -188,6 +200,7 @@ async function main() {
     const head = JSON.parse(gh('pr', 'view', pr, '--json', 'headRefOid,headRefName,baseRefName,state,title'));
     if (head.state !== 'OPEN') throw new Error(`PR #${pr} is ${head.state.toLowerCase()}`);
     sha = head.headRefOid;
+    baseRef = head.baseRefName;
     git('fetch', '-q', 'origin', head.baseRefName, `pull/${pr}/head`);
     worktree = path.join(work, 'tree');
     git('worktree', 'add', '-q', '--detach', worktree, sha);
@@ -196,6 +209,8 @@ async function main() {
     try { adviseOnTitle(head.title); } catch (e) { say(`(title check skipped: ${e.message.split('\n')[0]})`); }
     await queue();
     await status('pending', 'Running on ' + os.hostname());
+    // The main this run tests: the ship re-check compares against it. (Fetched before the queue, so a wait counts too.)
+    testedBase = git('rev-parse', `origin/${head.baseRefName}`);
     try { execFileSync('git', ['merge', '-q', '--no-edit', `origin/${head.baseRefName}`], { cwd: dir, stdio: 'pipe' }); }
     catch { say(`--- Merge with ${head.baseRefName}: FAILED (conflicts; merge main into the branch first)`); await status('failure', `Conflicts with ${head.baseRefName}`); return false; }
     try { fs.symlinkSync(ciDeps(dir), path.join(dir, 'node_modules')); }
@@ -211,7 +226,6 @@ async function main() {
   await step('JavaScript syntax', 'sh', ['-c', jsFiles.map(f => `node --check '${f}'`).join(' && ')]);
   const unit = await step('Unit and contract tests', 'npm', ['test']);
   await step('Python syntax', 'python3', ['-m', 'py_compile', 'host/gridcraft-bridge.py', 'host/gridcraft-agent/gridcraft_ai.py']);
-  const hasPwsh = (() => { try { execFileSync('pwsh', ['-v'], { stdio: 'ignore' }); return true; } catch { return false; } })();
   if (hasPwsh) {
     await step('PowerShell syntax', 'pwsh', ['-NoProfile', '-Command', "$f=$false; Get-ChildItem -Path deploy,tests,host -Filter '*.ps1' -File -Recurse | % { $t=$null;$e=$null; [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$t,[ref]$e)|Out-Null; if($e.Count){$f=$true; Write-Host \"$($_.FullName): $($e[0].Message)\"} }; if($f){exit 1}"]);
     await step('Validate deployment candidate', 'pwsh', ['-NoProfile', '-File', 'deploy/Test-LocalAI-Candidate.ps1', '-CandidateRoot', '.', '-LocalNode']);
@@ -231,6 +245,57 @@ async function main() {
   return state === 'success';
 }
 
+// Ship, after a green run: re-check against the newest main, then merge. Runs before cleanup, so the tested worktree
+// (and the CI slot) are still there. Returns whether the PR was merged (or, in a dry run, would have been).
+let dryFetches = 0;
+function latestBase() {
+  if (DRY) return process.env.LOCALAI_CI_MAIN_MOVED !== '0' && ++dryFetches === 1 ? 'dry-new' : null;
+  git('fetch', '-q', 'origin', baseRef);
+  return git('rev-parse', `origin/${baseRef}`);
+}
+// Merges the newer main into the tested tree; false on a conflict.
+function mergeNewerBase() {
+  if (DRY) { say(`(dry) merge origin/${baseRef} into the tested tree`); return process.env.LOCALAI_CI_RECHECK_CONFLICT !== '1'; }
+  try { execFileSync('git', ['merge', '-q', '--no-edit', `origin/${baseRef}`], { cwd: dir, stdio: 'pipe' }); }
+  catch { try { execFileSync('git', ['merge', '--abort'], { cwd: dir, stdio: 'ignore' }); } catch {} return false; }
+  // A newer main may have changed the lockfile: point the tree at the matching dependencies.
+  const deps = ciDeps(dir), link = path.join(dir, 'node_modules');
+  if (fs.readlinkSync(link) !== deps) { fs.unlinkSync(link); fs.symlinkSync(deps, link); }
+  return true;
+}
+async function shipAfterGreen() {
+  if (!DRY && !post) { say('Not merged: ship needs a PR number and posting (no --no-post, no dry run).'); return false; }
+  let tested = testedBase || 'dry-old';
+  for (let rechecks = 0; ; rechecks++) {
+    const latest = latestBase() || tested;
+    const next = shipNextStep({ testedBase: tested, latestBase: latest, rechecks });
+    if (next === 'merge') break;
+    if (next === 'give-up') { say(`Not merged: ${baseRef} kept moving through ${rechecks} re-checks; run ship again.`); return false; }
+    say(`\n${baseRef} moved since the run started (${tested.slice(0, 7)} → ${latest.slice(0, 7)}): re-checking against it before merging.`);
+    const results = [];
+    let unit = { ok: true, out: '' };
+    const conflict = !mergeNewerBase();
+    if (!conflict) {
+      unit = await run('Re-check: unit and contract tests', 'npm', ['test']);
+      results.push(['Unit and contract tests', unit.ok]);
+      if (hasPwsh) results.push(['Validate deployment candidate', (await run('Re-check: validate deployment candidate', 'pwsh', ['-NoProfile', '-File', 'deploy/Test-LocalAI-Candidate.ps1', '-CandidateRoot', '.', '-LocalNode'])).ok]);
+    }
+    const outcome = recheckOutcome({ base: baseRef, conflict, failedSteps: results.filter(([, ok]) => !ok).map(([n]) => n),
+      failingTests: unit.ok ? [] : failingUnitTests(unit.out), host: os.hostname() });
+    if (!outcome.ok) {
+      say(`\n❌ Not merged: ${outcome.description}`);
+      await status(outcome.state, outcome.description);
+      comment(outcome.comment);
+      return false;
+    }
+    say(`--- Re-check against ${baseRef} @ ${latest.slice(0, 7)}: ok`);
+    tested = latest;
+  }
+  if (DRY) { say(`(dry run) would merge${pr ? `: gh ${shipMergeArgs(pr, sha).join(' ')}` : ' (no PR number, so nothing to merge)'}`); return true; }
+  try { gh(...shipMergeArgs(pr, sha)); say(`Merged PR #${pr} (${sha.slice(0, 7)}).`); return true; }
+  catch (e) { say(`Not merged: ${String(e.stderr || e.message).trim().split('\n')[0]} (was something pushed after the test started?)`); return false; }
+}
+
 let ok = false;
 // Stopped (Ctrl-C, kill): stop the tests, say so on the PR, and clean up like a normal end.
 let stopping = false;
@@ -243,23 +308,16 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, async () => {
   releaseLock();
   process.exit(130);
 });
-try { ok = await main(); }
-catch (e) { say(`Local CI couldn't run: ${e.message}`); if (sha) await status('error', `Couldn't run: ${e.message}`); }
+try {
+  ok = await main();
+  if (ship) { if (ok) ok = await shipAfterGreen(); else say(`Not merged: local CI isn't green.`); }
+}
+catch (e) { ok = false; say(`Local CI couldn't run: ${e.message}`); if (sha) await status('error', `Couldn't run: ${e.message}`); }
 finally {
   killChildren();
   releaseLock();
   if (worktree) { try { git('worktree', 'remove', '--force', worktree); } catch {} }
   say(`Log: ${logFile}`);
   log.end();
-}
-// npm run ship: merge only on green, only what was tested, and only when results were actually posted. (The log is
-// closed by now, so these lines go to the terminal only.)
-if (ship) {
-  if (!ok) console.log(`Not merged: local CI isn't green.`);
-  else if (!post) console.log(`Not merged: ship needs a PR number and posting (no --no-post, no dry run).`);
-  else {
-    try { gh(...shipMergeArgs(pr, sha)); console.log(`Merged PR #${pr} (${sha.slice(0, 7)}).`); }
-    catch (e) { ok = false; console.log(`Not merged: ${String(e.stderr || e.message).trim().split('\n')[0]} (was something pushed after the test started?)`); }
-  }
 }
 process.exit(ok ? 0 : 1);

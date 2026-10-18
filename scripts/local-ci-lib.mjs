@@ -86,3 +86,34 @@ export function shipMergeArgs(pr, sha) {
   if (!/^\d+$/.test(String(pr)) || !/^[0-9a-f]{40}$/.test(String(sha))) throw new Error('ship needs a PR number and the tested commit');
   return ['pr', 'merge', String(pr), '--merge', '--match-head-commit', String(sha)];
 }
+
+// npm run ship -- <PR>: the run tests the PR merged with main as main was when the run started (~15 min earlier).
+// Another PR merged meanwhile isn't in what was tested, and two PRs green on their own can be red together (twice the
+// shell's size budget went over that way). So after a green run ship fetches main again and, if main has moved,
+// merges it into the tested tree and re-runs the fast checks (npm test, the deploy validator) before merging. Main
+// can move again during that minute or two, so this repeats, at most MAX_RECHECKS times.
+export const MAX_RECHECKS = 3;
+// What to do next: 'merge' (main is where the last check saw it), 'recheck' (main moved; check again), or 'give-up'
+// (it kept moving through MAX_RECHECKS re-checks; run ship again later).
+export function shipNextStep({ testedBase, latestBase, rechecks = 0 }) {
+  if (!testedBase || !latestBase) throw new Error('ship needs the main commit that was tested and the latest one');
+  if (testedBase === latestBase) return 'merge';
+  return rechecks >= MAX_RECHECKS ? 'give-up' : 'recheck';
+}
+
+// The result of one re-check against the newer main. `conflict`: the PR no longer merges with it. `failedSteps`: the
+// re-check steps that went red; `failingTests`: unit test names from their output. Returns whether ship may go on and,
+// when it may not, the failure status and the PR comment.
+export function recheckOutcome({ base = 'main', conflict = false, failedSteps = [], failingTests = [], host = '' }) {
+  if (!conflict && !failedSteps.length) return { ok: true };
+  const what = conflict ? `conflicts with the newer ${base}` : failingTests.length ? failingTests.join(', ') : failedSteps.join(', ');
+  const description = `${base} moved; re-check failed: ${what}`;
+  const lines = [`**local-ci: not merged.** The full run was green, but \`${base}\` moved while it ran, and the re-check against the newer \`${base}\`${host ? ` on ${host}` : ''} failed.`];
+  if (conflict) lines.push('', `The PR no longer merges cleanly with \`${base}\`: merge \`${base}\` into the branch, then ship again.`);
+  else {
+    lines.push('', `Failed: ${failedSteps.join(', ')}.`);
+    if (failingTests.length) lines.push('', `Failing ${plural(failingTests.length, 'test')}${failingTests.length >= 10 ? ' (first ten)' : ''}:`, ...failingTests.map(n => `- ${n}`));
+    lines.push('', `Each change passes on its own; together with what landed on \`${base}\` they don't. Merge \`${base}\` into the branch and fix it there.`);
+  }
+  return { ok: false, state: 'failure', description, comment: lines.join('\n') };
+}

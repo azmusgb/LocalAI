@@ -52,6 +52,10 @@ All read at startup in `app/server.js` unless noted.
 | `OLLAMA_URL` | `http://host.docker.internal:11434` | Ollama |
 | `LOCALAI_NUM_CTX` | `8192` | Integer 2048-131072; context for every chat-model call (fits the 6 GB GPU; the prompt is trimmed to it) |
 | `LOCALAI_NUM_CTX_LARGE` | `32768` | Context for the patch planner only (rare, code-heavy; a reload is accepted) |
+| `LOCALAI_MISSION_NUM_CTX` | `12288` | Integer 2048-131072; context for mission workers and the coordinator (32768 spills half the model to the CPU). If `ollama ps` on the host shows a CPU share, try `8192` |
+| `LOCALAI_MISSION_EVIDENCE_TOKENS` | `6000` (500–100000) | Source evidence in a worker's first prompt, at about 4 characters a token; capped at the mission context minus 5000 |
+| `LOCALAI_MISSION_MODEL_CONCURRENCY` | `1` (1–8) | Mission model turns at once; the others wait in a queue that doesn't count against their deadline |
+| `LOCALAI_MISSION_TIMEOUT_MS` | `600000` (1 s–60 min) | A mission worker's and the coordinator's own deadline (model calls have no other limit; `app/model-http.js`) |
 | `LOCALAI_KEEP_ALIVE` | `30m` | How long Ollama keeps the chat model loaded after a call |
 | `COMFY_URL` | `http://host.docker.internal:8188` | ComfyUI |
 | `GRIDCRAFT_URL` | `http://host.docker.internal:8787` | GridCraft bridge |
@@ -146,6 +150,20 @@ are never retried. With a PR number, a title over 70 characters or containing ";
 "Release note:" comment, never a failure. The decisions live in `scripts/local-ci-lib.mjs` (tested by
 `tests/local-ci.test.cjs`); `LOCALAI_CI_DRY=1` runs the script without the CI slot, the real steps or posting
 (`LOCALAI_CI_FAIL_UNIT`, `LOCALAI_CI_FAIL_SUITE` inject a failure; see the file header).
+
+**Ship re-checks against the newest `main`.** A run tests the PR with `main` as it was when the run started; a PR
+merged during those ~15 minutes isn't in it, and two PRs green on their own can be red together (on 17–18 Oct this
+happened three times, each time the shell's gzipped size budget in `tests/budgets.test.cjs`). So after a green run,
+`npm run ship` fetches `main` again and, if it moved, merges it into the tested worktree and re-runs the fast checks
+only: `npm test` (unit, contracts, budgets, deploy contracts, lint tests) and `Test-LocalAI-Candidate.ps1 -LocalNode`
+when `pwsh` is installed; no browser suites, about 1–2 minutes, still holding the CI slot. Green: it merges (if
+`main` moved again meanwhile it re-checks again, at most three times). A conflict or a red re-check: no merge, a
+failure status "main moved; re-check failed: <test names>", a PR comment naming them, and a non-zero exit. The
+decision (`shipNextStep`, `recheckOutcome`) is in `scripts/local-ci-lib.mjs`. In a dry run with `--merge` the re-check
+runs with stand-ins (main "moves" once; `LOCALAI_CI_MAIN_MOVED=0`, `LOCALAI_CI_RECHECK_CONFLICT=1`,
+`LOCALAI_CI_FAIL_RECHECK=<test name>` vary it) and nothing is merged. Still not covered: a merge made in the seconds
+between ship's last fetch and its own merge, or one made without ship; GitHub can't make a merge conditional on
+`main`'s commit.
 
 CI runs on pull requests only (plus schedules and manual runs); nothing runs after a merge, because the
 auto-deploy certifies `main` itself before promoting it. A newer push to a PR cancels its older run.

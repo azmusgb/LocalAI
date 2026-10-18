@@ -58,8 +58,11 @@ function errorWords(code,msg){
  if(c==='AGENT_TIMEOUT'||/execution deadline reached/i.test(t))return'the agent ran out of time';
  if(c==='AGENT_TURN_LIMIT'||/turn limit reached/i.test(t))return'the agent couldn’t settle on an answer';
  if(c==='AGENT_CONTEXT_LIMIT'||/context limit reached/i.test(t))return'the agent had too much to read';
- if(c==='MODEL_CONNECTION_ERROR'||/fetch failed|ECONNREFUSED|ECONNRESET|socket hang up/i.test(t))return'the model didn’t answer';
- if(c==='MODEL_TIMEOUT'||/time(d)? ?out/i.test(t))return'the model took too long';
+ // Ollama refused the connection or isn't there (model-http.js MODEL_UNREACHABLE), before any other model failure.
+ if(c==='MODEL_UNREACHABLE'||/ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|wasn.t answering/i.test(t))return'Ollama wasn’t answering';
+ // A model call that ran out of time, including Node's own 5-minute wait for the first byte (UND_ERR_HEADERS_TIMEOUT).
+ if(c==='MODEL_TIMEOUT'||/time(d)? ?out|UND_ERR_(HEADERS|BODY)_TIMEOUT/i.test(t))return'the model took too long to start answering (the computer was busy)';
+ if(c==='MODEL_CONNECTION_ERROR'||/fetch failed|ECONNRESET|socket hang up|connection failed/i.test(t))return'the model didn’t answer';
  if(c==='APPLIANCE_RESTART')return'Local AI restarted while it was working';
  if(c==='MODEL_NO_TOOLS')return'the model can’t use tools';
  if(!t||t.length>80)return'something went wrong';

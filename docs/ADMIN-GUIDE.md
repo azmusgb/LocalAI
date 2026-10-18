@@ -40,8 +40,12 @@ deploy-candidate checks, and every browser suite against a fresh server, about 1
 
 To test and merge in one step, use `npm run ship -- <PR number>` instead: it runs the same checks and merges the PR
 only if they're green, and only the exact commit that was tested (if anything is pushed to the PR meanwhile, GitHub
-refuses the merge). GitHub can't *require* a green check on this account (that needs a paid plan for a private
-repository), so this is the safe way to merge.
+refuses the merge). If another PR was merged into `main` while the checks ran, ship first re-runs the quick checks
+(unit tests, size budgets, deploy contracts; a minute or two) on the PR combined with the newer `main`, and merges only
+if those pass too. If they fail, it doesn't merge: the PR gets a ❌ "main moved; re-check failed" naming the failing
+tests, and a comment. That is how two PRs that each passed on their own are kept from breaking `main` together.
+GitHub can't *require* a green check on this account (that needs a paid plan for a private repository), so this is
+the safe way to merge.
 
 - A red is hard to miss: the ❌ status names the failed steps, and a comment on the PR names the failing unit
   tests (first ten) so you need not open the log. A red has been a real bug before; fix or explain it before merging.
@@ -68,8 +72,14 @@ to restore: [Operations › Backups](OPERATIONS.md#backups) and [Restore](OPERAT
 1. Trust Local AI's certificate once: on the phone open `http://10.0.0.21/localai-ca.crt`, install it, then turn on
    full trust for it (iPhone: Settings › General › About › Certificate Trust Settings). **Health › Secure connection**
    shows whether it worked.
-2. Open `https://10.0.0.21` in Safari, Share › **Add to Home Screen**, and use that icon from then on.
-3. Notifications: from the Home Screen app, **System › Health › Notifications › Allow notifications**.
+2. **One icon that works everywhere:** with Tailscale set up (see [Reach it away from home](#reach-it-away-from-home))
+   and turned on on the phone, open the Tailscale address (`https://<computer>.<tailnet>.ts.net`; Health › Secure
+   connection shows it) in Safari, Share › **Add to Home
+   Screen**, and use that icon from then on. It works at home and away. An icon added from `https://10.0.0.21` works
+   on the home Wi-Fi only; away from home its saved copy offers **Open over Tailscale**. **Health › Secure
+   connection** lists both addresses.
+3. Notifications: from the Home Screen app, **System › Health › Notifications › Allow notifications**. Notifications
+   belong to the icon they were allowed from, so allow them again after switching icons.
 
 HTTPS and the certificate: [Deploy › HTTPS with Caddy](DEPLOY.md#https-with-caddy).
 
@@ -77,7 +87,12 @@ HTTPS and the certificate: [Deploy › HTTPS with Caddy](DEPLOY.md#https-with-ca
 
 Install Tailscale on the Windows computer and the phone, sign both in to the same account, then re-run
 `deploy\Install-LocalAI-HTTPS.ps1` (elevated). Nothing is opened to the internet; only devices on your Tailscale
-network get in. Details: [Deploy › HTTPS with Caddy](DEPLOY.md#https-with-caddy).
+network get in. The phone already trusts the Tailscale address's certificate (same Local AI certificate authority).
+
+For one icon that works everywhere, add Local AI to the Home Screen from the Tailscale address (Health › Secure
+connection shows it) and keep Tailscale on. If a phone opens the home address while away, Local AI can't be reached,
+and the saved copy's banner offers **Open over Tailscale** ("Turn on Tailscale on this phone first"), from what the
+phone saved on its last visit, with no network needed. Details: [Deploy › HTTPS with Caddy](DEPLOY.md#https-with-caddy).
 
 ## Pair a device for Claude Code chat
 

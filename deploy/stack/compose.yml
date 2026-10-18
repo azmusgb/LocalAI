@@ -41,6 +41,8 @@ services:
       MAC_DSH_URL: ${MAC_DSH_URL:-}
       # Shown as a phone QR code in Health › Secure connection when set.
       LOCALAI_REMOTE_NAME: ${LOCALAI_REMOTE_NAME:-}
+      # With LOCALAI_REMOTE_NAME, the addresses a phone is offered when the one it uses can't be reached (/healthz).
+      LOCALAI_HOST_IP: ${LOCALAI_HOST_IP:-}
       POWERSHELL_UI_TOKEN: ${POWERSHELL_UI_TOKEN:?set in stack.env}
       POWERSHELL_BRIDGE_TOKEN: ${POWERSHELL_BRIDGE_TOKEN:?set in stack.env}
     volumes:

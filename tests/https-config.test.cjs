@@ -53,3 +53,11 @@ test('the Tailscale name has its own site with an explicit internal issuer', () 
   const shared = caddy.slice(caddy.indexOf('https://{$LOCALAI_NAME}'), caddy.indexOf('\n}\n', caddy.indexOf('https://{$LOCALAI_NAME}')));
   assert.doesNotMatch(shared, /LOCALAI_REMOTE_NAME/);
 });
+
+// /healthz lists the addresses a phone can switch to; the appliance needs both the LAN IP and the Tailscale name.
+test('the appliance gets the host IP and the Tailscale name from stack.env', () => {
+  const compose = read('deploy/stack/compose.yml');
+  const appliance = compose.slice(compose.indexOf('\n  appliance:'), compose.indexOf('\n  https:'));
+  assert.match(appliance, /LOCALAI_REMOTE_NAME: \$\{LOCALAI_REMOTE_NAME:-\}/);
+  assert.match(appliance, /LOCALAI_HOST_IP: \$\{LOCALAI_HOST_IP:-\}/);
+});

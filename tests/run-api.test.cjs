@@ -366,7 +366,35 @@ test('/api/access reports the Tailscale name only when it is a real host name', 
     const { request } = await startServer(t, { LOCALAI_REMOTE_NAME: value });
     const r = await request('/api/access');
     assert.equal(r.response.status, 200);
-    assert.deepEqual(r.value, { remoteName: want }, value);
+    assert.deepEqual(r.value, { remoteName: want, addresses: want ? [{ label: 'Anywhere (Tailscale)', url: `https://${want}` }] : [] }, value);
+  }
+});
+
+test('/healthz and index.html list the addresses a phone can switch to, and nothing else', { timeout: 60000 }, async t => {
+  const { request, base } = await startServer(t, { LOCALAI_HOST_IP: '10.0.0.21', LOCALAI_REMOTE_NAME: 'Bill-HPDesktop.tailfa018e.ts.net.' });
+  const want = [{ label: 'Home Wi-Fi', url: 'https://10.0.0.21' }, { label: 'Anywhere (Tailscale)', url: 'https://bill-hpdesktop.tailfa018e.ts.net' }];
+  const health = await request('/healthz');
+  assert.equal(health.response.status, 200);
+  assert.deepEqual(health.value.addresses, want);
+  assert.deepEqual((await request('/api/access')).value.addresses, want);
+  // Only labels and https URLs: no tokens, keys or other environment values.
+  for (const a of health.value.addresses) assert.deepEqual(Object.keys(a).sort(), ['label', 'url']);
+  const html = await (await fetch(base + '/')).text();
+  const meta = /<meta name="localai-addresses" content="([^"]*)">/.exec(html);
+  assert.ok(meta, 'index.html carries the addresses for a saved copy');
+  assert.deepEqual(JSON.parse(meta[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&')), want);
+});
+
+test('addresses leave out a host IP or Tailscale name that is missing or not plain', { timeout: 60000 }, async t => {
+  for (const [ip, remote, want] of [
+    ['', '', []],
+    ['10.0.0.21', 'localai.remote.invalid', [{ label: 'Home Wi-Fi', url: 'https://10.0.0.21' }]],
+    ['10.0.0.256', '', []],
+    ['10.0.0.21/24', '', []],
+    ['evil.example"><script>', 'not a name', []]
+  ]) {
+    const { request } = await startServer(t, { LOCALAI_HOST_IP: ip, LOCALAI_REMOTE_NAME: remote });
+    assert.deepEqual((await request('/healthz')).value.addresses, want, `${ip} ${remote}`);
   }
 });
 
@@ -471,7 +499,7 @@ test('mission runs investigate with tools and can be cancelled', { timeout: 6000
   assert.ok(turn, 'the specialist turn reached the model with tools');
   assert.ok(turn.tools.some(x => x.function.name === 'read_project_file'));
   assert.ok(!turn.tools.some(x => x.function.name === 'search_web'), 'web search stays off unless asked for');
-  assert.equal(turn.options.num_ctx, 32768);
+  assert.equal(turn.options.num_ctx, 12288, 'mission turns use the context sized for the GPU');
   assert.equal((await request('/api/runs?id=' + a.value.runId)).value.item.cancellable, true);
   const cancel = await request('/api/runs/cancel', { id: a.value.runId });
   assert.equal(cancel.response.status, 200, JSON.stringify(cancel.value));
