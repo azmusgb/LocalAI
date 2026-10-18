@@ -230,10 +230,30 @@ const KEEPABLE = new Set(['chat', 'research']);
 function libraryItemsOfRun(run, items) {
   return items.filter(it => libraryThreads.isThreadItem(it) && ((run.threadId && it.meta?.threadId === run.threadId) || libraryThreads.runIdsOf(it).includes(run.id)));
 }
+// Best's quick preview stays out of Library until it is kept: Keep adds its picture, un-keep removes it again.
+function setPreviewKept(run, kept) {
+  const items = libraryStore(), mine = it => it?.kind === 'image' && it.meta?.runId === run.id;
+  const found = items.filter(mine);
+  if (!kept) {
+    if (found.length) writeState(LIBRARY_STORE, items.filter(it => !mine(it)), items);
+    return { kept: false, item: null };
+  }
+  if (found.length) return { kept: true, item: found[0] };
+  const o = run.output || {}, prompt = run.input?.prompt || run.title || '';
+  const style = imageEngines.STYLES[o.style] && o.style !== 'none' ? ` · ${imageEngines.STYLES[o.style].label}` : '';
+  let item = null;
+  for (const im of [...(o.images || [])].reverse()) {
+    item = recordArtifact('image', prompt, `${o.width} × ${o.height} · ${o.engineLabel || 'Best'} preview${style}`,
+      { engine: o.engine, engineLabel: o.engineLabel, family: o.family, style: o.style, width: o.width, height: o.height, steps: o.steps, cfg: o.cfg, preview: true, imageUrl: im.imageUrl, seed: im.seed, runId: run.id },
+      { prompt, imageUrl: im.imageUrl });
+  }
+  return item ? { kept: true, item } : { status: 409, error: 'This preview has no picture to keep' };
+}
 function setRunKept(runId, kept) {
   const run = runLedger.get(runId);
   if (!run) return { status: 404, error: 'Run not found' };
-  if (!KEEPABLE.has(run.type)) return { status: 409, error: 'Only chats and research are kept this way' };
+  if (run.type === 'image' && run.meta?.preview === true) return setPreviewKept(run, kept);
+  if (!KEEPABLE.has(run.type)) return { status: 409, error: 'Only chats, research and image previews are kept this way' };
   const items = libraryStore(), found = libraryItemsOfRun(run, items);
   if (!kept) {
     if (!found.length) return { kept: false, item: null };
@@ -288,7 +308,9 @@ function migrateLegacyActivityToLibrary() {
   const seen = new Set(items.map(x => x?.meta?.imageUrl).filter(Boolean));
   let changed = false;
   for (const a of activityStore()) {
-    if (a?.type !== 'image' || !a?.meta?.imageUrl || seen.has(a.meta.imageUrl)) continue;
+    // Only v1.1 activity: an image made since has a run (a preview kept out of Library, an image deleted from it) and
+    // must not come back on the next start.
+    if (a?.type !== 'image' || !a?.meta?.imageUrl || a.meta.runId || a.meta.preview || seen.has(a.meta.imageUrl)) continue;
     items.push({
       id: `migrated-${a.id || Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
       kind: 'image',
@@ -1351,7 +1373,8 @@ async function apiImageModels(req, res) {
   try {
     const lists = await getImageModelLists();
     const found = imageEngines.discoverEngines(lists);
-    const engines = found.engines.map(({ id, label, blurb, family, base, model }) => ({ id, label, blurb, family, base, model, estimateSec: IMAGE_ESTIMATES[`${id}:${family}`] || null }));
+    const engines = found.engines.map(({ id, label, blurb, family, base, model }) => ({ id, label, blurb, family, base, model, estimateSec: IMAGE_ESTIMATES[`${id}:${family}`] || null,
+      ...(imageEngines.previewable({ id }) ? { preview: true, previewEstimateSec: IMAGE_ESTIMATES[`${id}:${family}:preview`] || null } : {}) }));
     const aspects = Object.entries(imageEngines.ASPECTS).map(([id, a]) => ({ id, label: a.label, sizes: { 512: a[512], 1024: a[1024] } }));
     const styles = Object.entries(imageEngines.STYLES).map(([id, st]) => ({ id, label: st.label }));
     json(res, 200, { ...buildImageModelCatalog(lists.checkpoints), engines, custom: found.custom, upscale: !!found.upscaler, aspects, styles, defaultEngine: found.defaultEngine });
@@ -1468,36 +1491,48 @@ async function apiGenerateImage(req, res) {
 
     const editing = !!body.source;
     const checkpoint = engine.files.checkpoint || engine.files.unet;
+    const count = clampInt(body.count, 1, 4, 1);
+    // Best's quick preview: its own run, smaller and in fewer steps, kept out of Library unless the owner keeps it.
+    // Only for one new Best image; anything else asked as a preview is made as usual.
+    const preview = body.preview === true && imageEngines.previewable(engine) && !editing && count === 1;
+    // The full picture of a preview: same seed and the same (improved) prompt, so it is that picture made properly.
+    const previewRun = !preview && cleanRunId(body.previewOf) ? runLedger.get(body.previewOf) : null;
+    const fromPreview = previewRun?.type === 'image' && previewRun.meta?.preview === true && previewRun.output?.images?.length ? previewRun : null;
     // An edit keeps the source picture's own size (sent by the browser); a new image uses the shape's size.
-    const [width, height] = editing ? [clampInt(body.sourceWidth, 64, 2048, 512), clampInt(body.sourceHeight, 64, 2048, 512)]
+    let [width, height] = editing ? [clampInt(body.sourceWidth, 64, 2048, 512), clampInt(body.sourceHeight, 64, 2048, 512)]
       : imageEngines.sizeFor(engine, body.aspect, body.aspect ? null : body.width, body.aspect ? null : body.height);
-    const steps = clampInt(body.steps, 1, 60, engine.steps);
+    let steps = clampInt(body.steps, 1, 60, engine.steps);
+    if (preview) ({ width, height, steps } = imageEngines.previewSettings(width, height, steps));
     const cfg = Math.max(1, Math.min(20, Number(body.cfg) || engine.cfg));
-    const seed = Number.isFinite(Number(body.seed)) ? Math.floor(Number(body.seed)) : Math.floor(Math.random() * 2147483647);
+    const seed = Number.isFinite(Number(body.seed)) ? Math.floor(Number(body.seed))
+      : fromPreview ? fromPreview.output.images[0].seed : Math.floor(Math.random() * 2147483647);
     const userNegative = body.negativePrompt === undefined || body.negativePrompt === null ? engine.negative : String(body.negativePrompt);
     const style = imageEngines.STYLES[body.style] ? body.style : 'none';
-    const upscaler = body.upscale === true ? found.upscaler : null;
-    const count = clampInt(body.count, 1, 4, 1);
+    const upscaler = body.upscale === true && !preview ? found.upscaler : null;
+    const enhance = body.enhance === true && !fromPreview;
     const strength = Math.max(0.1, Math.min(1, Number(body.strength) || 0.6));
 
     execution = runLedger.create({
       type: 'image',
       threadId: body.threadId,
       title: titleFromText(original, editing ? 'Image edit' : 'Image generation'),
-      input: { prompt: original.slice(0, 2000), engine: engine.id, checkpoint, family: engine.family, width, height, steps, cfg, style, count, upscale: !!upscaler, enhance: body.enhance === true, edit: editing ? { masked: !!body.mask, strength } : null },
+      input: { prompt: original.slice(0, 2000), engine: engine.id, checkpoint, family: engine.family, aspect: body.aspect || undefined, width, height, steps, cfg, seed, style, count, upscale: !!upscaler, enhance, edit: editing ? { masked: !!body.mask, strength } : null },
       // Started by voice: the ask sends its own "ready" or "couldn't" notification, so the generic ones stay quiet.
-      meta: body.voice === true ? { voice: true } : {},
+      // meta.preview marks Best's quick preview; meta.previewOf links a full picture to the preview it was made from.
+      meta: { ...(body.voice === true ? { voice: true } : {}), ...(preview ? { preview: true } : {}), ...(fromPreview ? { previewOf: fromPreview.id } : {}) },
       // An edit's source image isn't kept with the run, so Retry repeats it as a new image.
-      retryRequest: { path: '/api/images/generate', body: { prompt: original, engine: engine.id, checkpoint: engine.id === 'custom' ? checkpoint : undefined, negativePrompt: body.negativePrompt, aspect: body.aspect, width, height, steps, cfg, style, count, upscale: !!upscaler, enhance: body.enhance === true, threadId: cleanRunId(body.threadId) || undefined } }
+      retryRequest: { path: '/api/images/generate', body: { prompt: original, engine: engine.id, checkpoint: engine.id === 'custom' ? checkpoint : undefined, negativePrompt: body.negativePrompt, aspect: body.aspect, width, height, steps, cfg, style, count, upscale: !!upscaler, enhance, preview: preview || undefined, previewOf: fromPreview?.id, seed: fromPreview ? seed : undefined, threadId: cleanRunId(body.threadId) || undefined } }
     });
     runLedger.start(execution.id, editing ? 'Image edit started' : 'Image generation started');
     imageJobsActive++; tookGpu = true;
     await unloadTextModel({ url: OLLAMA_URL, model: MODEL });
 
-    let prompt = original;
-    if (body.enhance === true) {
+    let prompt = fromPreview?.meta?.improvedPrompt || original;
+    if (enhance) {
       try { prompt = await enhanceImagePrompt(original, engine.id); runLedger.update(execution.id, { progress: 15 }, 'Prompt improved'); }
       catch (e) { runLedger.update(execution.id, { progress: 15 }, `Prompt helper unavailable; using your prompt (${e.message})`); }
+      // The full picture made from a preview reuses this prompt instead of asking for a new one.
+      if (preview && prompt !== original) runLedger.update(execution.id, { meta: { improvedPrompt: prompt } });
     }
     const styled = imageEngines.applyStyle(prompt, userNegative, style, engine);
 
@@ -1522,24 +1557,26 @@ async function apiGenerateImage(req, res) {
     }
     const elapsedMs = Date.now() - started;
     const outW = upscaler ? width * 2 : width, outH = upscaler ? height * 2 : height;
-    const common = { engine: engine.id, engineLabel: engine.label, checkpoint, family: engine.family, style, width: outW, height: outH, steps, cfg, upscaled: !!upscaler, edited: editing, elapsedMs };
+    const common = { engine: engine.id, engineLabel: engine.label, checkpoint, family: engine.family, style, width: outW, height: outH, steps, cfg, upscaled: !!upscaler, edited: editing, elapsedMs, ...(preview ? { preview: true } : {}), ...(fromPreview ? { previewOf: fromPreview.id } : {}) };
     const images = results.map(({ img, seed: s }) => ({ imageUrl: `/api/images/view?${new URLSearchParams({ filename: img.filename, subfolder: img.subfolder || '', type: img.type || 'output' })}`, seed: s }));
 
+    // A preview stays out of Library (it is in Work) unless the owner keeps it; the full picture arrives as usual.
     const artifactIds = [];
-    for (const im of images) {
+    for (const im of preview ? [] : images) {
       const meta = { ...common, imageUrl: im.imageUrl, seed: im.seed };
       const label = `${outW} × ${outH} · ${engine.label}${style !== 'none' ? ` · ${imageEngines.STYLES[style].label}` : ''}${editing ? ' · edited' : ''}${upscaler ? ' · upscaled' : ''}`;
       const artifact = recordArtifact('image', original, label, { ...meta, runId: execution.id }, { prompt: original, usedPrompt: styled.prompt, negativePrompt: styled.negative, imageUrl: im.imageUrl });
       if (artifact?.id) artifactIds.push(artifact.id);
     }
-    recordActivity('image', editing ? 'Edited an image' : count > 1 ? `Created ${images.length} images` : 'Created an image', original.slice(0, 180), { ...common, imageUrl: images[0].imageUrl, seed: images[0].seed, runId: execution.id });
+    recordActivity('image', preview ? 'Made a quick preview' : editing ? 'Edited an image' : count > 1 ? `Created ${images.length} images` : 'Created an image', original.slice(0, 180), { ...common, imageUrl: images[0].imageUrl, seed: images[0].seed, runId: execution.id });
     runLedger.complete(execution.id, {
-      summary: imageEngines.runSummary({ count: images.length, width: outW, height: outH, engine: engine.label, editing }),
+      summary: imageEngines.runSummary({ count: images.length, width: outW, height: outH, engine: engine.label, editing, preview }),
       output: { ...common, images },
       artifactIds,
       meta: { promptId: results[0].promptId, checkpoint, elapsedMs }
     });
-    if (!upscaler && body.enhance !== true && !editing && count === 1) IMAGE_ESTIMATES[`${engine.id}:${engine.family}`] = Math.round(elapsedMs / 1000);
+    // A preview has its own estimate: its minute must not make the full picture look quick.
+    if (!upscaler && !enhance && !editing && count === 1) IMAGE_ESTIMATES[`${engine.id}:${engine.family}${preview ? ':preview' : ''}`] = Math.round(elapsedMs / 1000);
 
     json(res, 200, { promptId: results[0].promptId, ...common, imageUrl: images[0].imageUrl, seed: images[0].seed, images, familyLabel: engine.label, prompt: original, usedPrompt: styled.prompt, runId: execution.id, threadId: execution.threadId });
   } catch (e) {

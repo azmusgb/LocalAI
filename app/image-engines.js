@@ -4,8 +4,10 @@
 //
 //   fast     SD 1.5 fine-tune (DreamShaper 8 preferred)    ~512 px, 25 steps   ~16 s on a GTX 1660 SUPER
 //   quality  SDXL Lightning (DreamShaper XL Lightning)     ~1024 px, 6 steps   ~55 s
-//   best     Z-Image Turbo (bf16) when installed            ~1024 px, 8 steps   ~3 min on a GTX 1660 SUPER (first run,
-//                                                                               model load included); most detailed
+//   best     Z-Image Turbo (bf16) when installed            ~1024 px, 8 steps   ~4 min on a GTX 1660 SUPER (234-265 s,
+//                                                                               first or later image; compute-bound);
+//                                                                               most detailed. A quick preview first:
+//                                                                               512 px, 6 steps (previewSettings)
 //            else FLUX.1 schnell, GGUF-quantised           ~1024 px, 4 steps   ~3 min; prompt-following and text
 //
 // Any other checkpoint stays usable through the standard checkpoint graph ("custom").
@@ -207,10 +209,25 @@ function batchesFor(engine, count) {
   return engine.base >= 1024 ? Array.from({ length: n }, () => 1) : [n];
 }
 
+// Best's quick preview (about 4 minutes saved when the idea is wrong): the chosen shape scaled down to 512 x 512 for a
+// square, or to fit 576 x 576 otherwise (sides snapped to 16 px, what the latent needs), at 6 steps. The caller keeps
+// the seed and prompt, so the full picture made from it afterwards is the same picture, larger and finer.
+const PREVIEW = { square: 512, box: 576, steps: 6 };
+function previewSettings(width, height, steps) {
+  const fewer = Math.min(PREVIEW.steps, Math.max(1, Math.round(Number(steps) || PREVIEW.steps)));
+  if (width === height) return { width: PREVIEW.square, height: PREVIEW.square, steps: fewer };
+  const k = PREVIEW.box / Math.max(width, height);
+  const snap = (v) => Math.max(256, Math.round((v * k) / 16) * 16);
+  return { width: snap(width), height: snap(height), steps: fewer };
+}
+// Only Best is slow enough to be worth a preview; Fast and Quality are already quick.
+const previewable = (engine) => engine?.id === 'best';
+
 // The one-line summary a finished image run shows in Work.
-function runSummary({ count, width, height, engine, editing }) {
+function runSummary({ count, width, height, engine, editing, preview }) {
+  if (preview) return `Preview made with ${engine} · ${width} × ${height}`;
   const what = count > 1 ? `${count} images` : 'Image';
   return `${what} ${editing ? 'edited' : 'made'} with ${engine} · ${width} × ${height}`;
 }
 
-module.exports = { runSummary, ENGINES, ASPECTS, STYLES, applyStyle, batchesFor, inferCheckpointFamily, discoverEngines, customEngine, sizeFor, buildWorkflow };
+module.exports = { runSummary, previewSettings, previewable, PREVIEW, ENGINES, ASPECTS, STYLES, applyStyle, batchesFor, inferCheckpointFamily, discoverEngines, customEngine, sizeFor, buildWorkflow };

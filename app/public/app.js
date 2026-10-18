@@ -425,6 +425,17 @@ $('commandInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey
 const imageUi={threadId:null,editThread:null,engine:null,aspect:'square',style:'none',count:1,lastBody:null,timer:null,edit:null,last:null};
 function imageEngineList(){return state.imageModels?.engines||[]}
 function fmtSec(s){return s>=90?`${Math.round(s/60)} min`:`${Math.round(s)} s`}
+// Best's quick preview (Images setting, on unless turned off here): one new Best image is drawn small first, and the
+// full picture is made from it on request with the same seed and prompt.
+const PREVIEW_KEY='localai.images.bestPreview';
+function previewFirst(){try{return localStorage.getItem(PREVIEW_KEY)!=='0'}catch{return true}}
+function withPreview(body){const b={...body};delete b.preview;const eng=imageEngineList().find(e=>e.id===b.engine);if(eng?.preview&&!b.checkpoint&&!b.source&&(b.count||1)===1&&!b.previewOf&&previewFirst())b.preview=true;return b}
+const fmtLong=s=>s>=90?`${Math.round(s/60)} minutes`:`${Math.round(s)} seconds`;
+const previewKept=runId=>(state.library||[]).some(x=>x?.kind==='image'&&x.meta?.runId===runId);
+function paintKeep(kept){const b=$('imageKeepPreview');b.setAttribute('aria-pressed',String(kept));b.textContent=kept?'Kept in Library':'Keep preview'}
+// Under a preview: Make the full picture, with this machine's last measured time for it, and Keep (out of Library until kept).
+function showPreviewBar(j,runId){const seed=j?.seed??j?.images?.[0]?.seed,on=!!(j?.preview&&runId&&seed!=null);$('imagePreviewBar').hidden=!on;$('imagePreviewTag').hidden=!on;imageUi.preview=on?{runId,seed}:null;if(!on)return;
+  const est=imageEngineList().find(e=>e.id===(j.engine||'best'))?.estimateSec;$('imageFullEstimate').textContent=`About ${fmtLong(est||240)}`;paintKeep(previewKept(runId))}
 function renderImageControls(){
   const data=state.imageModels||{},engines=imageEngineList();
   if(!imageUi.engine||!engines.some(e=>e.id===imageUi.engine))imageUi.engine=data.defaultEngine||engines[0]?.id||null;
@@ -433,38 +444,38 @@ function renderImageControls(){
   $('imageAspects').innerHTML=(data.aspects||[]).map(a=>{const [w,h]=a.sizes[base];return `<button type="button" role="radio" aria-checked="${a.id===imageUi.aspect}" class="img-aspect${a.id===imageUi.aspect?' active':''}" data-aspect="${esc(a.id)}"><i style="aspect-ratio:${w}/${h}"></i><span>${esc(a.label)}</span><small>${w}×${h}</small></button>`}).join('');
   $('imageStyles').innerHTML=(data.styles||[]).map(st=>`<button type="button" role="radio" aria-checked="${st.id===imageUi.style}" class="img-style${st.id===imageUi.style?' active':''}" data-style="${esc(st.id)}">${esc(st.label)}</button>`).join('');
   qsa('#imageCount [data-count]').forEach(b=>{const on=Number(b.dataset.count)===imageUi.count;b.classList.toggle('active',on);b.setAttribute('aria-checked',String(on))});
-  const editing=!!imageUi.edit;$('imageEditPanel').hidden=!editing;$('imageShapeGroup').hidden=editing;$('imagePromptLabel').textContent=editing?'Describe the change, or the whole new picture':'Describe the image';$('generateBtn').textContent=editing?'Apply edit':imageUi.count>1?`Create ${imageUi.count} images`:'Create image';
+  const editing=!!imageUi.edit;$('imageEditPanel').hidden=!editing;$('imagePreviewRow').hidden=!eng?.preview||editing;$('imagePreviewFirst').checked=previewFirst();$('imageShapeGroup').hidden=editing;$('imagePromptLabel').textContent=editing?'Describe the change, or the whole new picture':'Describe the image';$('generateBtn').textContent=editing?'Apply edit':imageUi.count>1?`Create ${imageUi.count} images`:'Create image';
   $('imageUpscaleRow').hidden=!data.upscale;
   const custom=[...(data.custom||[])];$('checkpoint').innerHTML='<option value="">Engine\'s model</option>'+custom.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
   $('imageModelInfo').textContent=eng?`${eng.label} uses ${eng.model||(eng.family==='zimage'?'Z-Image Turbo':eng.family==='flux'?'FLUX.1 schnell':eng.family==='sdxl'?'SDXL Lightning':'Stable Diffusion 1.5')}.`:'';
   $('generateBtn').disabled=!engines.length&&!custom.length;imageUi.onControls?.();
 }
 // Typical times on a 6 GB GTX 1660 SUPER, until this machine has measured its own.
-const IMAGE_TYPICAL={fast:'About 15 s',quality:'About 1 min',best:'About 3 min'};
+const IMAGE_TYPICAL={fast:'About 15 s',quality:'About 1 min',best:'About 4 min'};
 async function loadCheckpoints(force){if(state.checkpointsLoaded&&!force)return;try{const r=await fetch('/api/images/models',{cache:'no-store'}),j=await r.json();if(!r.ok)throw new Error(j.error||'Unable to load image models');state.imageModels=j;state.checkpointsLoaded=true;renderImageControls();renderImageRecent()}catch(e){$('imageEngines').innerHTML=`<div class="meta">${esc(e.message)}</div>`;$('generateBtn').disabled=true}}
 function renderImageRecent(){const items=(state.library||[]).filter(x=>x.kind==='image'&&x.meta?.imageUrl).slice(0,8);$('imageRecent').innerHTML=items.length?items.map(x=>`<button type="button" class="img-thumb" data-recent="${esc(x.id)}" title="${esc(x.title||'')}"><img loading="lazy" alt="${esc(x.title||'Image')}" src="${esc(cacheBust(x.meta.imageUrl)||'')}"></button>`).join(''):'<div class="meta">Images you make are kept here and in the Library.</div>'}
 function showBatch(images){const box=$('imageBatch');if(!images||images.length<2){box.hidden=true;box.innerHTML='';return}box.hidden=false;box.innerHTML=images.map((im,i)=>`<button type="button" class="img-thumb${i===0?' active':''}" data-batch="${i}" aria-label="Image ${i+1} of ${images.length}, seed ${im.seed}"><img alt="" src="${esc(cacheBust(im.imageUrl)||'')}"></button>`).join('');box.onclick=e=>{const b=e.target.closest('[data-batch]');if(!b)return;const im=images[Number(b.dataset.batch)];qsa('#imageBatch .img-thumb').forEach(x=>x.classList.toggle('active',x===b));const src=cacheBust(im.imageUrl);$('generatedImage').src=src;$('imageOpen').href=src;imageUi.last={...imageUi.last,imageUrl:im.imageUrl,seed:im.seed};$('imageMeta').textContent=$('imageMeta').textContent.replace(/seed \d+/,`seed ${im.seed}`)}}
-function showImage(url,metaText,usedPrompt,original,threadId){imageUi.last={imageUrl:url};imageUi.threadId=threadId||null;const src=cacheBust(url);if(!src)return;$('imageStage').innerHTML='';$('generatedImage').src=src;$('imageResult').style.display='block';$('imageMeta').textContent=metaText||'';$('imageOpen').href=src;$('imageActions').hidden=false;const showUsed=usedPrompt&&usedPrompt!==original;$('imageUsedPromptBox').hidden=!showUsed;$('imageUsedPrompt').textContent=showUsed?usedPrompt:''}
+function showImage(url,metaText,usedPrompt,original,threadId){imageUi.last={imageUrl:url};showPreviewBar(null);imageUi.threadId=threadId||null;const src=cacheBust(url);if(!src)return;$('imageStage').innerHTML='';$('generatedImage').src=src;$('imageResult').style.display='block';$('imageMeta').textContent=metaText||'';$('imageOpen').href=src;$('imageActions').hidden=false;const showUsed=usedPrompt&&usedPrompt!==original;$('imageUsedPromptBox').hidden=!showUsed;$('imageUsedPrompt').textContent=showUsed?usedPrompt:''}
 function imageRequestBody(){const engine=imageUi.engine,ckpt=$('checkpoint').value,num=id=>{const v=$(id).value.trim();return v===''?undefined:Number(v)};const edit=imageEditPayload();return {...edit,style:imageUi.style,count:imageUi.count,prompt:$('imagePrompt').value.trim(),engine:ckpt?undefined:engine,checkpoint:ckpt||undefined,aspect:imageUi.aspect,upscale:!$('imageUpscaleRow').hidden&&$('imageUpscale').checked,enhance:$('imageEnhance').checked,steps:num('steps'),cfg:num('cfg'),seed:num('imageSeed'),negativePrompt:$('negativePrompt').value.trim()||undefined}}
 // The request itself: POST /api/images/generate (it returns when drawing is done) -> the response, or throws its error.
 async function startImage(body){const r=await fetch('/api/images/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);return j}
-const imageMetaText=j=>`${j.engineLabel||'Image'}${j.edited?' edit':''} · ${j.width}×${j.height} · ${fmtSec((j.elapsedMs||0)/1000)}${(j.images||[]).length>1?` for ${j.images.length}`:''} · seed ${j.seed??j.images?.[0]?.seed}${j.upscaled?' · upscaled':''}`;
+const imageMetaText=j=>`${j.engineLabel||'Image'}${j.preview?' preview':''}${j.edited?' edit':''} · ${j.width}×${j.height} · ${fmtSec((j.elapsedMs||0)/1000)}${(j.images||[]).length>1?` for ${j.images.length}`:''} · seed ${j.seed??j.images?.[0]?.seed}${j.upscaled?' · upscaled':''}`;
 // Show a finished image (a response, or a run's output) in the stage; imageUi.runId says which run it is.
-function paintImage(j,runId,usedPrompt,prompt){const url=j.imageUrl||j.images?.[0]?.imageUrl;if(!url)return;showImage(url,imageMetaText(j),usedPrompt??j.usedPrompt,prompt??j.prompt,j.threadId);imageUi.runId=runId||null;showBatch(j.images)}
+function paintImage(j,runId,usedPrompt,prompt){const url=j.imageUrl||j.images?.[0]?.imageUrl;if(!url)return;showImage(url,imageMetaText(j),usedPrompt??j.usedPrompt,prompt??j.prompt,j.threadId);imageUi.runId=runId||null;showBatch(j.images);showPreviewBar(j,runId)}
 async function generateImage(bodyOverride){
-  const body=bodyOverride||imageRequestBody();if(!body.prompt){$('imagePrompt').focus();return}
-  // Another version and edits continue the source image's thread; a fresh prompt starts its own.
+  const body=withPreview(bodyOverride||imageRequestBody());if(!body.prompt){$('imagePrompt').focus();return}
+  // Another version, the full picture of a preview, and edits continue the source image's thread; a fresh prompt starts its own.
   if(bodyOverride?body.threadId=imageUi.threadId||undefined:imageUi.edit?body.threadId=imageUi.editThread||undefined:delete body.threadId);
-  imageUi.lastBody={...body,seed:undefined};$('generateBtn').disabled=true;$('imageAgain').disabled=true;imageUi.busy=true;setPhase('generating','Generating image…');$('imageResult').style.display='none';$('imageActions').hidden=true;$('imageMeta').textContent='';
-  const eng=imageEngineList().find(e=>e.id===body.engine),started=Date.now(),est=eng?.estimateSec?eng.estimateSec*(body.count||1):null;showBatch(null);
-  const tick=()=>{const s=(Date.now()-started)/1000;$('imageStage').innerHTML=`<div class="img-working"><div class="img-spinner" aria-hidden="true"></div><b>${body.enhance&&s<8?'Improving your prompt…':body.source?'Editing…':body.count>1?`Drawing ${body.count} images…`:'Drawing…'}</b><span>${fmtSec(s)}${est?` of about ${fmtSec(est)}`:''}</span></div>`};
+  imageUi.lastBody={...body,seed:undefined,preview:undefined,previewOf:undefined};$('generateBtn').disabled=true;$('imageAgain').disabled=true;$('imageMakeFull').disabled=true;imageUi.busy=true;setPhase('generating',body.preview?'Drawing a quick preview…':'Generating image…');$('imageResult').style.display='none';$('imageActions').hidden=true;showPreviewBar(null);$('imageMeta').textContent='';
+  const eng=imageEngineList().find(e=>e.id===body.engine),started=Date.now(),est=body.preview?eng?.previewEstimateSec||null:eng?.estimateSec?eng.estimateSec*(body.count||1):null;showBatch(null);
+  const tick=()=>{const s=(Date.now()-started)/1000;$('imageStage').innerHTML=`<div class="img-working"><div class="img-spinner" aria-hidden="true"></div><b>${body.enhance&&!body.previewOf&&s<8?'Improving your prompt…':body.source?'Editing…':body.preview?'Drawing a quick preview…':body.previewOf?'Drawing the full picture…':body.count>1?`Drawing ${body.count} images…`:'Drawing…'}</b><span>${fmtSec(s)}${est?` of about ${fmtSec(est)}`:''}</span></div>`};
   tick();clearInterval(imageUi.timer);imageUi.timer=setInterval(tick,1000);
   try{const j=await startImage(body);
     paintImage(j,j.runId);
-    setPhase('done','Image ready');await Promise.all([loadActivity(),loadLibrary(),loadWorkspace()]);renderImageRecent();loadCheckpoints(true);
+    setPhase('done',j.preview?'Preview ready':'Image ready');await Promise.all([loadActivity(),loadLibrary(),loadWorkspace()]);renderImageRecent();loadCheckpoints(true);
     if(imageUi.hosted&&j.runId)window.LocalAIRouter?.go(`#run/${encodeURIComponent(j.runId)}`,{replace:true}); // in a run view, the new version replaces it: Close and Back still leave the images
   }catch(e){$('imageStage').innerHTML=`<div class="img-error"><b>That didn't work</b><span>${esc(e.message)}</span></div>`;setPhase('error','Image failed')}
-  finally{clearInterval(imageUi.timer);imageUi.busy=false;$('generateBtn').disabled=false;$('imageAgain').disabled=false}}
+  finally{clearInterval(imageUi.timer);imageUi.busy=false;$('generateBtn').disabled=false;$('imageAgain').disabled=false;$('imageMakeFull').disabled=false}}
 // Home (and any page) starts an image here. pending.resolve(runId) fires when the response arrives (the run exists then);
 // a failure fails the pending view first, then throws so the caller keeps the text.
 async function startImageRun(prompt,{pending,engine,aspect,style}={}){
@@ -474,11 +485,11 @@ async function startImageRun(prompt,{pending,engine,aspect,style}={}){
     if(engine&&imageEngineList().some(e=>e.id===engine))imageUi.engine=engine;if(aspect)imageUi.aspect=aspect;if(style)imageUi.style=style;
     if(imageUi.edit)stopImageEdit();else renderImageControls();
     $('checkpoint').value='';$('imagePrompt').value=prompt;
-    const body=imageRequestBody();delete body.threadId;
-    imageUi.threadId=null;imageUi.lastBody={...body,seed:undefined};imageUi.busy=true;
+    const body=withPreview(imageRequestBody());delete body.threadId;
+    imageUi.threadId=null;imageUi.lastBody={...body,seed:undefined,preview:undefined};imageUi.busy=true;
     let j;try{j=await startImage(body)}finally{imageUi.busy=false}
     if(!j.runId)throw new Error('The image could not be started.');
-    paintImage(j,j.runId);setPhase('done','Image ready');
+    paintImage(j,j.runId);setPhase('done',j.preview?'Preview ready':'Image ready');
     pending?.resolve(j.runId);
     Promise.all([loadActivity(),loadLibrary(),loadWorkspace()]).then(renderImageRecent).catch(()=>{});
   }catch(e){pending?.fail(e.message||'The image could not be made.');throw e}
@@ -488,12 +499,20 @@ window.LocalAIImages={start:startImageRun,ui:imageUi,
   adopt(run,{force=false}={}){const o=run.output||{},inp=run.input||{};imageUi.threadId=run.threadId||run.id;
     if(imageUi.busy||(!force&&imageUi.runId===run.id))return;
     if(o.images?.length)paintImage({...o,threadId:imageUi.threadId},run.id,inp.prompt,inp.prompt);
-    else{imageUi.runId=null;const bad=run.status==='failed',live=['queued','running'].includes(run.status);$('imageStage').innerHTML=bad?`<div class="img-error"><b>That didn't work</b><span>${esc(run.error||'')}</span></div>`:live?'<div class="img-working"><div class="img-spinner" aria-hidden="true"></div><b>Drawing…</b></div>':'<div class="img-placeholder">No image was kept for this run.</div>';$('imageResult').style.display='none';$('imageActions').hidden=true;showBatch(null)}
-    imageUi.lastBody=inp.prompt?{prompt:inp.prompt,engine:inp.engine==='custom'?undefined:inp.engine,checkpoint:inp.engine==='custom'?inp.checkpoint:undefined,width:inp.width,height:inp.height,steps:inp.steps,cfg:inp.cfg,style:inp.style,count:inp.count,upscale:inp.upscale,enhance:inp.enhance}:null}};
+    else{imageUi.runId=null;showPreviewBar(null);const bad=run.status==='failed',live=['queued','running'].includes(run.status);$('imageStage').innerHTML=bad?`<div class="img-error"><b>That didn't work</b><span>${esc(run.error||'')}</span></div>`:live?'<div class="img-working"><div class="img-spinner" aria-hidden="true"></div><b>Drawing…</b></div>':'<div class="img-placeholder">No image was kept for this run.</div>';$('imageResult').style.display='none';$('imageActions').hidden=true;showBatch(null)}
+    // A preview's own size and steps are the preview's: its full picture (and Another version) go by its shape instead.
+    const pv=!!run.meta?.preview&&!!inp.aspect;
+    imageUi.lastBody=inp.prompt?{prompt:inp.prompt,engine:inp.engine==='custom'?undefined:inp.engine,checkpoint:inp.engine==='custom'?inp.checkpoint:undefined,aspect:pv?inp.aspect:undefined,width:pv?undefined:inp.width,height:pv?undefined:inp.height,steps:pv?undefined:inp.steps,cfg:inp.cfg,style:inp.style,count:inp.count,upscale:inp.upscale,enhance:inp.enhance}:null}};
 $('imageEngines').addEventListener('click',e=>{const b=e.target.closest('[data-engine]');if(b){imageUi.engine=b.dataset.engine;$('checkpoint').value='';renderImageControls()}});
 $('imageAspects').addEventListener('click',e=>{const b=e.target.closest('[data-aspect]');if(b){imageUi.aspect=b.dataset.aspect;renderImageControls()}});
 $('imageRecent').addEventListener('click',e=>{const b=e.target.closest('[data-recent]');const x=b&&(state.library||[]).find(i=>i.id===b.dataset.recent);if(x)showImage(x.meta.imageUrl,`${x.summary||''}${x.meta.seed!=null?` · seed ${x.meta.seed}`:''}`,x.data?.usedPrompt,x.data?.prompt);if(x&&x.meta.runId){const u=x.meta.imageUrl;fetch('/api/runs?id='+encodeURIComponent(x.meta.runId)).then(r=>r.ok?r.json():null).then(j=>{if(j?.item&&imageUi.last?.imageUrl===u)imageUi.threadId=j.item.threadId||j.item.id}).catch(()=>{})}});
-$('generateBtn').addEventListener('click',()=>generateImage());$('imageAgain').addEventListener('click',()=>imageUi.lastBody&&generateImage(imageUi.lastBody));
+$('generateBtn').addEventListener('click',()=>generateImage());
+$('imagePreviewFirst').addEventListener('change',e=>{try{localStorage.setItem(PREVIEW_KEY,e.target.checked?'1':'0')}catch{}});
+$('imageMakeFull').addEventListener('click',()=>{const p=imageUi.preview;if(!p||imageUi.busy||!imageUi.lastBody)return;generateImage({...imageUi.lastBody,preview:undefined,previewOf:p.runId,seed:p.seed})});
+$('imageKeepPreview').addEventListener('click',async e=>{const p=imageUi.preview,b=e.currentTarget;if(!p)return;const kept=b.getAttribute('aria-pressed')!=='true';b.disabled=true;
+  try{const r=await fetch('/api/library/keep',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:p.runId,kept})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);
+    if(imageUi.preview?.runId===p.runId)paintKeep(kept);toast(kept?'Preview kept in Library':"Preview taken out of Library. It's still in Work.");await loadLibrary();renderImageRecent()}
+  catch(err){toast(`Couldn't ${kept?'keep':'un-keep'} the preview. ${err.message||err}`)}finally{b.disabled=false}});$('imageAgain').addEventListener('click',()=>imageUi.lastBody&&generateImage(imageUi.lastBody));
 $('imagePrompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();generateImage()}});
 $('imageStyles').addEventListener('click',e=>{const b=e.target.closest('[data-style]');if(b){imageUi.style=b.dataset.style;renderImageControls()}});
 $('imageCount').addEventListener('click',e=>{const b=e.target.closest('[data-count]');if(b){imageUi.count=Number(b.dataset.count);renderImageControls()}});

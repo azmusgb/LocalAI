@@ -118,6 +118,73 @@ await check('errors are shown in place', async () => {
   await page.waitForSelector('.img-error');
   assert.match(await page.locator('.img-error').innerText(), /out of memory/);
 });
+// Best's quick preview: a stand-in image service answers previews at 512 px and full pictures at 1024 px.
+const pv = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
+pv.on('pageerror', e => errors.push(e.message));
+const pvSent = [], kept = [];
+await pv.addInitScript(() => localStorage.setItem('localai.firstRun.done', '1'));
+const pvModels = { ...models, engines: [models.engines[0], { id: 'best', label: 'Best', blurb: 'Most detailed.', family: 'zimage', base: 1024, preview: true, estimateSec: 234, previewEstimateSec: 60 }], defaultEngine: 'best' };
+await pv.route('**/api/images/models', r => r.fulfill({ json: pvModels }));
+await pv.route('**/api/library/keep', r => { kept.push(JSON.parse(r.request().postData())); r.fulfill({ json: { ok: true, kept: true, item: { id: 'k1' } } }); });
+await pv.route('**/api/images/generate', async r => {
+  const body = JSON.parse(r.request().postData()); pvSent.push(body);
+  await new Promise(res => setTimeout(res, 300));
+  const n = pvSent.length, seed = body.seed ?? 4242, size = body.preview ? 512 : 1024;
+  const images = [{ imageUrl: `/api/images/view?filename=pv${n}.png&subfolder=&type=output`, seed }];
+  r.fulfill({ json: { imageUrl: images[0].imageUrl, images, engine: body.engine, engineLabel: body.engine === 'best' ? 'Best' : 'Fast', width: size, height: size, steps: body.preview ? 6 : 8, seed, elapsedMs: body.preview ? 58000 : 236000, prompt: body.prompt, usedPrompt: body.prompt, runId: `run-pv${n}`, threadId: body.threadId || 't-pv', ...(body.preview ? { preview: true } : {}), ...(body.previewOf ? { previewOf: body.previewOf } : {}) } });
+});
+await pv.route('**/api/images/view**', r => r.fulfill({ body: Buffer.from(pixel, 'base64'), contentType: 'image/png' }));
+await pv.goto(base, { waitUntil: 'networkidle' });
+await pv.evaluate(() => window.showView('create'));
+await pv.waitForSelector('[data-engine="best"][aria-checked="true"]');
+
+await check('Best: the preview setting is offered and on by default; the preview shows first, labelled Preview', async () => {
+  assert.equal(await pv.locator('#imagePreviewRow').isVisible(), true);
+  assert.equal(await pv.locator('#imagePreviewFirst').isChecked(), true);
+  await pv.fill('#imagePrompt', 'a lighthouse at dusk');
+  await pv.click('#generateBtn');
+  await pv.waitForSelector('.img-working');
+  assert.match(await pv.locator('.img-working').innerText(), /quick preview/);
+  await pv.waitForSelector('#imagePreviewBar:not([hidden])');
+  const b = pvSent.at(-1);
+  assert.deepEqual([b.engine, b.preview, b.count, b.previewOf], ['best', true, 1, undefined]);
+  assert.equal(await pv.locator('#imagePreviewTag').innerText(), 'Preview');
+  assert.match(await pv.locator('#imageMeta').innerText(), /Best preview · 512×512 · 58 s · seed 4242/);
+  assert.equal(await pv.locator('#imageFullEstimate').innerText(), 'About 4 minutes');
+});
+await check('Keep preview puts that run in Library', async () => {
+  await pv.click('#imageKeepPreview');
+  await pv.waitForSelector('#imageKeepPreview[aria-pressed="true"]');
+  assert.deepEqual(kept.at(-1), { runId: 'run-pv1', kept: true });
+});
+await check('Make the full picture queues a full run with the same seed, linked to the preview', async () => {
+  await pv.click('#imageMakeFull');
+  await pv.waitForSelector('.img-working');
+  assert.match(await pv.locator('.img-working').innerText(), /full picture/);
+  await pv.waitForSelector('#imageActions:not([hidden])');
+  const b = pvSent.at(-1);
+  assert.deepEqual([b.engine, b.preview, b.previewOf, b.seed, b.prompt, b.threadId], ['best', undefined, 'run-pv1', 4242, 'a lighthouse at dusk', 't-pv']);
+  assert.equal(await pv.locator('#imagePreviewBar').isHidden(), true);
+  assert.equal(await pv.locator('#imagePreviewTag').isHidden(), true);
+  assert.match(await pv.locator('#imageMeta').innerText(), /Best · 1024×1024 · 4 min · seed 4242/);
+});
+await check('with the setting off, Best goes straight to the full picture; Fast never previews', async () => {
+  await pv.uncheck('#imagePreviewFirst');
+  assert.equal(await pv.evaluate(() => localStorage.getItem('localai.images.bestPreview')), '0');
+  await pv.click('#generateBtn');
+  await pv.waitForFunction(() => !document.querySelector('#generateBtn').disabled);
+  assert.equal(pvSent.at(-1).preview, undefined);
+  assert.equal(await pv.locator('#imagePreviewBar').isHidden(), true);
+  await pv.check('#imagePreviewFirst');
+  await pv.click('[data-engine="fast"]');
+  assert.equal(await pv.locator('#imagePreviewRow').isHidden(), true);
+  const before = pvSent.length;
+  await pv.click('#generateBtn');
+  await pv.waitForFunction(() => !document.querySelector('#generateBtn').disabled);
+  await pv.waitForSelector('#imageActions:not([hidden])');
+  assert.equal(pvSent.length, before + 1);
+  assert.deepEqual([pvSent.at(-1).engine, pvSent.at(-1).preview], ['fast', undefined]);
+});
 await check('no script errors', async () => assert.deepEqual(errors, []));
 await browser.close();
 if (failed) { console.log(`${failed} images check(s) failed`); process.exit(1) }
