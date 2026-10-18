@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { addAxe } from './axe-helper.mjs';
+import { checkReopenQuickly } from './sheet-reopen.mjs';
 
 // Improve › Backlog and Signals (sub-project 4, task 4), with /api/improve/* stubbed.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
@@ -111,6 +112,15 @@ await check('Back closes an open item or idea sheet and stays on Backlog; a shee
     await page.waitForFunction(n => history.state?.localaiSheet == null && history.length >= n, before);
     assert.equal(await page.evaluate(() => history.state?.localaiSheet ?? null), null, 'no sheet entry left on top');
   }
+});
+
+await check('an item or idea sheet closed and opened again at once stays open, three times, and leaves no entry behind', async () => {
+  await page.locator('#backlogList [data-item-id="claude-top"] .improve-row__open').click();
+  await page.locator('#improveItemSheet').waitFor({ state: 'visible' });
+  await checkReopenQuickly(page, 'improveItemSheet', () => { document.getElementById('improveItemSheet').close(); window.LocalAIImprove.openItem('idea-sticky'); });
+  await page.locator('#improveNewIdea').click();
+  await page.locator('#improveIdeaSheet').waitFor({ state: 'visible' });
+  await checkReopenQuickly(page, 'improveIdeaSheet', () => { document.getElementById('improveIdeaSheet').close(); window.LocalAIImprove.openIdea(); });
 });
 
 await check('Signals: open ones listed with Promote and Dismiss; a promoted one says so', async () => {
