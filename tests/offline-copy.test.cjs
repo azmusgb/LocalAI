@@ -82,3 +82,61 @@ test('otherAddresses offers the addresses that are not this page, Tailscale mark
   // the same address twice is offered once
   assert.equal(offline.otherAddresses([list[1], list[1]], 'https://10.0.0.21').length, 1);
 });
+
+// Moving to the other address on its own (Home Wi-Fi can't be reached, Tailscale can, or the other way round).
+const HOME = 'https://10.0.0.21', TS = 'https://bill-hpdesktop.tailfa018e.ts.net';
+const LIST = [{ label: 'Home Wi-Fi', url: HOME }, { label: 'Anywhere (Tailscale)', url: TS }];
+
+test('otherAddresses allows plain http only on this machine (a developer or test appliance)', () => {
+  assert.deepEqual(offline.otherAddresses([{ label: 'Home Wi-Fi', url: 'http://127.0.0.1:3181' }], 'http://127.0.0.1:3180').map(a => a.url), ['http://127.0.0.1:3181/']);
+  assert.deepEqual(offline.otherAddresses([{ label: 'Home Wi-Fi', url: 'http://localhost:3181' }], 'x').length, 1);
+  assert.deepEqual(offline.otherAddresses([{ label: 'Home Wi-Fi', url: 'http://10.0.0.21' }, { label: 'x', url: 'http://127.0.0.1.evil.com' }], 'x'), []);
+});
+
+test('ownAddress finds this page in the list, and nothing for an address it does not list', () => {
+  assert.equal(offline.ownAddress(LIST, HOME).label, 'Home Wi-Fi');
+  assert.equal(offline.ownAddress(LIST, TS).tailscale, true);
+  assert.equal(offline.ownAddress(LIST, 'https://localai.home.arpa'), null);
+  assert.equal(offline.ownAddress(null, HOME), null);
+});
+
+test('autoSwitchAllowed: once per tab session, never after a cancel, never from an address it moved to', () => {
+  assert.equal(offline.autoSwitchAllowed({ choice: '', arrivedFrom: '' }), true);
+  assert.equal(offline.autoSwitchAllowed({ choice: 'cancelled', arrivedFrom: '' }), false);
+  assert.equal(offline.autoSwitchAllowed({ choice: 'switched ' + TS, arrivedFrom: '' }), false, 'already moved once: back here means the other one failed too');
+  assert.equal(offline.autoSwitchAllowed({ choice: '', arrivedFrom: HOME }), false, 'no bouncing back automatically');
+});
+
+test('pickReachable takes the first address that answered, in the list order', () => {
+  const others = offline.otherAddresses([...LIST, { label: 'Office', url: 'https://office.example' }], 'https://localai.home.arpa');
+  assert.equal(offline.pickReachable(others, [false, false, false]), null);
+  assert.equal(offline.pickReachable(others, [false, true, true]).label, 'Anywhere (Tailscale)');
+  assert.equal(offline.pickReachable(others, [true, true, false]).label, 'Home Wi-Fi');
+  assert.equal(offline.pickReachable([], []), null);
+  assert.equal(offline.pickReachable(others, undefined), null);
+});
+
+test('switchUrl keeps the page: path, query and hash', () => {
+  const target = offline.otherAddresses(LIST, HOME)[0];
+  assert.equal(offline.switchUrl(target, { pathname: '/', search: '', hash: '#claude' }), TS + '/#claude');
+  assert.equal(offline.switchUrl(target, { pathname: '/index.html', search: '?a=1', hash: '#work/run-12' }), TS + '/index.html?a=1#work/run-12');
+});
+
+test('arrivedFrom: the address it was moved from, from the tab memory or a listed referrer only', () => {
+  assert.equal(offline.arrivedFrom(HOME + '/', LIST, TS, ''), HOME);
+  assert.equal(offline.arrivedFrom('', LIST, TS, HOME), HOME, 'remembered for the tab after a reload drops the referrer');
+  assert.equal(offline.arrivedFrom('', LIST, TS, ''), '', 'opened directly: no offer to go back');
+  assert.equal(offline.arrivedFrom('https://example.com/', LIST, TS, ''), '', 'a link from elsewhere is not a move');
+  assert.equal(offline.arrivedFrom(TS + '/', LIST, TS, ''), '', 'its own address is not another one');
+  assert.equal(offline.arrivedFrom('not a url', LIST, TS, 'https://gone.example'), '', 'a remembered address no longer listed is ignored');
+});
+
+test('switchNotice and backOffer say where in plain words, and nothing about pairing', () => {
+  const [home, ts] = [offline.ownAddress(LIST, HOME), offline.ownAddress(LIST, TS)];
+  assert.equal(offline.switchNotice(home, ts), "Home Wi-Fi isn't reachable. Switching to Tailscale…");
+  assert.equal(offline.switchNotice(ts, home), "Anywhere (Tailscale) isn't reachable. Switching to Home Wi-Fi…");
+  assert.equal(offline.switchNotice(null, ts), "This address isn't reachable. Switching to Tailscale…");
+  assert.deepEqual(offline.backOffer(home), { text: 'Back on home Wi-Fi', link: 'open the home address' });
+  assert.deepEqual(offline.backOffer(ts), { text: 'Tailscale answers again', link: 'open the Tailscale address' });
+  for (const s of [offline.switchNotice(home, ts), offline.backOffer(home).text]) assert.doesNotMatch(s, /pair/i);
+});

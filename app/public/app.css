@@ -1686,6 +1686,14 @@ input::placeholder,textarea::placeholder{color:var(--ds-faint);font-weight:400}
 .offline-banner__alt p{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
 .offline-banner__open.btn-primary{min-height:44px;display:inline-flex;align-items:center;padding:0 14px;text-decoration:none}
 .offline-banner__hint{font-size:var(--ds-fs-1);color:var(--ds-soft)}
+.offline-banner--switching>.offline-banner__text,.offline-banner--switching>.offline-banner__alt,.offline-banner--switching>.offline-banner__retry{display:none}
+.offline-banner__switch{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.offline-banner__switch p{flex:1;min-width:0;margin:0}
+.offline-banner__cancel.btn-outline{min-height:44px;padding:0 14px;font-size:var(--ds-fs-2);flex:none}
+.offline-banner__countdown{flex:1 0 100%;height:3px;background:var(--ds-attention);transform-origin:left;animation:address-countdown 2s linear forwards}
+@keyframes address-countdown{to{transform:scaleX(0)}}
+.address-back{margin:0;padding:env(safe-area-inset-top) 16px 0;border-bottom:1px solid var(--ds-line-card);font-family:var(--ds-font);font-size:var(--ds-fs-1);color:var(--ds-soft);background:var(--ds-bg)}
+.address-back a{display:inline-flex;align-items:center;min-height:44px}
 
 /* Desktop polish (appended; nothing above edited). */
 /* A heading focused for screen readers after navigation is not a control: no box around it. */

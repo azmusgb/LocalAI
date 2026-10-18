@@ -76,8 +76,9 @@ to restore: [Operations › Backups](OPERATIONS.md#backups) and [Restore](OPERAT
    and turned on on the phone, open the Tailscale address (`https://<computer>.<tailnet>.ts.net`; Health › Secure
    connection shows it) in Safari, Share › **Add to Home
    Screen**, and use that icon from then on. It works at home and away. An icon added from `https://10.0.0.21` works
-   on the home Wi-Fi only; away from home its saved copy offers **Open over Tailscale**. **Health › Secure
-   connection** lists both addresses.
+   on the home Wi-Fi only; away from home its saved copy checks the Tailscale address and, if it answers, switches
+   there after 2 s (**Cancel** stays put, then it offers **Open over Tailscale**). **Health › Secure connection** lists
+   both addresses.
 3. Notifications: from the Home Screen app, **System › Health › Notifications › Allow notifications**. Notifications
    belong to the icon they were allowed from, so allow them again after switching icons.
 
