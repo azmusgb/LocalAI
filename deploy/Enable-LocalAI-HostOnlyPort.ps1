@@ -50,13 +50,16 @@ $backup = "$Container-pre-hostport"
 try {
     Invoke-Docker stop $Container | Out-Null
     Invoke-Docker rename $Container $backup
+    # The backup never restarts on its own: on a reboot it would fight the new container for port 3080.
+    Invoke-Docker update --restart=no $backup | Out-Null
     Invoke-Docker @runArgs | Out-Null
     if (-not (Test-Health)) { throw 'New container did not become healthy' }
-    "Enabled: PowerShell Workbench at http://localhost:$LocalPort (host only). Old container kept stopped as $backup."
+    "Enabled: PowerShell Workbench at http://localhost:$LocalPort (host only). Old container kept stopped as $backup (no restart; the auto-deploy removes it after 7 days)."
 } catch {
     "Rolling back: $_"
     & docker rm -f $Container 2>$null | Out-Null
     & docker rename $backup $Container 2>$null
+    if ($info.HostConfig.RestartPolicy.Name) { & docker update "--restart=$($info.HostConfig.RestartPolicy.Name)" $Container 2>$null | Out-Null }
     & docker start $Container | Out-Null
     throw
 } finally {

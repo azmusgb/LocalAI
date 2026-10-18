@@ -56,9 +56,18 @@ $foreign = @(foreach ($n in $names) {
     if ($LASTEXITCODE -eq 0) { $project = ($labels | ConvertFrom-Json).'com.docker.compose.project'; if ($project -ne 'local-ai') { $n } }
 })
 $renamed = @()
+$restart = @{}
 if ($foreign) {
     if (-not $Adopt) { throw "These containers exist outside this stack: $($foreign -join ', '). Re-run with -Adopt to recreate them from compose.yml (volumes are kept)." }
-    foreach ($n in $foreign) { & docker rm -f "$n-pre-compose" *> $null; & docker stop $n | Out-Null; & docker rename $n "$n-pre-compose"; $renamed += $n }
+    foreach ($n in $foreign) {
+        # Remember the restart policy for a rollback; the backup gets none, so a reboot never starts it (it would
+        # fight the new stack for its ports: "Bind for 0.0.0.0:3080 failed: port is already allocated").
+        $policy = (& docker inspect $n --format '{{json .HostConfig.RestartPolicy}}' | ConvertFrom-Json)
+        $restart[$n] = if ($policy.Name -eq 'on-failure' -and $policy.MaximumRetryCount) { "on-failure:$($policy.MaximumRetryCount)" } elseif ($policy.Name) { [string]$policy.Name } else { 'no' }
+        & docker rm -f "$n-pre-compose" *> $null; & docker stop $n | Out-Null; & docker rename $n "$n-pre-compose"
+        & docker update --restart=no "$n-pre-compose" | Out-Null
+        $renamed += $n
+    }
 }
 
 try {
@@ -70,7 +79,7 @@ try {
     if ($renamed) {
         "Restoring the previous containers: $_"
         Invoke-Compose down 2>$null
-        foreach ($n in $renamed) { & docker rename "$n-pre-compose" $n; & docker start $n | Out-Null }
+        foreach ($n in $renamed) { & docker rename "$n-pre-compose" $n; & docker update "--restart=$($restart[$n])" $n | Out-Null; & docker start $n | Out-Null }
     }
     throw
 }
@@ -81,5 +90,5 @@ if (-not (Get-NetFirewallRule -DisplayName 'Local AI HTTPS' -ErrorAction Silentl
 $ca = Join-Path $Root 'https\localai-ca.crt'; New-Item -ItemType Directory -Force (Split-Path $ca) | Out-Null
 for ($i = 0; $i -lt 15 -and -not (Test-Path $ca); $i++) { & docker cp local-ai-https:/data/caddy/pki/authorities/local/root.crt $ca 2>$null; if (-not (Test-Path $ca)) { Start-Sleep 2 } }
 if (Test-Path $ca) { Import-Certificate -FilePath $ca -CertStoreLocation Cert:\LocalMachine\Root | Out-Null }
-if ($renamed) { "Adopted: $($renamed -join ', '). The old containers are stopped as *-pre-compose; remove them once you're happy." }
+if ($renamed) { "Adopted: $($renamed -join ', '). The old containers are stopped as *-pre-compose (they never restart on their own); the auto-deploy removes them after 7 days once the stack is healthy, volumes kept." }
 'Local AI stack is up: http://127.0.0.1:3080 and https://' + ((Get-Content $EnvFile | Where-Object { $_ -like 'LOCALAI_HOST_IP=*' }) -replace '^LOCALAI_HOST_IP=')
