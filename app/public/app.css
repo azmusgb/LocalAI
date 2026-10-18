@@ -698,6 +698,11 @@ body.awc-stage-expanded{overflow:hidden}
 details.disclosure{margin-top:12px;border-top:1px solid var(--ds-line);padding-top:4px}details.disclosure>summary{min-height:44px;display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--ds-accent-text);font-weight:600;list-style:none}details.disclosure>summary::-webkit-details-marker{display:none}details.disclosure>summary:before{content:"+";width:14px;color:var(--ds-muted)}details.disclosure[open]>summary:before{content:"−"}
 .ux-int-about{margin-top:24px}.ux-int-about>summary{list-style:none;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 15px;border:1px solid var(--ds-line);border-radius:var(--ds-r-md);background:var(--ds-surface);cursor:pointer;color:var(--ds-text);font-size:var(--ds-fs-2);font-weight:600}.ux-int-about>summary::-webkit-details-marker{display:none}.ux-int-about>summary:after{content:'+';font-size:var(--ds-fs-3);color:var(--ds-muted)}.ux-int-about[open]>summary:after{content:'−'}.ux-int-about>.card{margin-top:12px}
 #uxIntegrationRefreshV2[aria-busy="true"]{opacity:.7;cursor:progress}
+/* Workshop display › Show sign-in code: the code large, in two groups of 5, with 44 px actions at every width. */
+.ux-ws-code .ux-int-action{min-height:44px}.ux-ws-code-off{margin:0;color:var(--ds-muted);font-size:var(--ds-fs-1);line-height:1.45}
+.ux-ws-code-box{display:grid;gap:8px;padding:12px;border:1px solid var(--ds-line-2);border-radius:var(--ds-r-md);background:var(--ds-surface-2)}
+.ux-ws-code-label{color:var(--ds-muted);font-size:var(--ds-fs-1)}.ux-ws-code-value{font:700 var(--ds-fs-5)/1.1 var(--ds-mono);letter-spacing:.08em;color:var(--ds-title);word-spacing:.3em;white-space:nowrap;user-select:all}
+.ux-ws-code-msg{margin:6px 0 0;color:var(--ds-attention-text);font-size:var(--ds-fs-1)}.ux-ws-code-msg:empty,.ux-ws-code [hidden]{display:none}
 @media(max-width:1100px) and (min-width:761px){.ux-int-research-grid{grid-template-columns:1fr}.ux-int-next-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.ux-int-research-grid,.ux-int-next-grid{grid-template-columns:1fr}.ux-int-action{min-height:44px}.ux-int-reviewed>summary{align-items:flex-start}.ux-int-reviewed>summary span{display:none}}
 @media(prefers-reduced-motion:reduce){#integrations[data-integration-v2="true"] *{scroll-behavior:auto}}

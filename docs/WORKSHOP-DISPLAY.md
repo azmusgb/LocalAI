@@ -6,7 +6,9 @@ board; firmware repo `azmusgb/bambuhelper-smart-display`). It shows the printer'
 
 **System › Services** has a card for it. The card says whether the display is answering (`Online · Waveshare 3.5"`,
 `Online · sign-in on` or `Not answering`), and **Open Workshop portal** opens the display's own portal in a new tab.
-You sign in there with the code the display shows (System → Local Portal), which changes from time to time; Local AI
+You sign in there with the code the display shows (System → Local Portal), which changes from time to time. With
+the optional code key set up, **Show sign-in code** on the card shows that code on your phone, so you don't have to
+walk to the touchscreen ([Sign-in code on the Services card](#sign-in-code-on-the-services-card)); otherwise Local AI
 never sees it.
 
 The card's wording follows what the display really answers, so it is right before and after the sign-in update:
@@ -46,6 +48,7 @@ route.
 ```text
 Services card --GET /api/workshop/status--> appliance --GET /hardware/health (4 s limit)--> display
 appliance poller (only with a token) --GET /api/status/lite, Authorization: Bearer … (every 30 s, 4 s limit)--> display
+Show sign-in code --POST /api/workshop/portal-code--> appliance (only with the code key) --GET /api/portal-code, Authorization: Bearer … (4 s limit)--> display
 Home --GET /api/workshop/status?part=printer--> appliance (the poller's last read; nothing is sent to the display)
 Open Workshop portal: a plain link, opened by the browser in a new tab --> http://10.0.0.124/ (the display itself)
 ```
@@ -54,19 +57,21 @@ Open Workshop portal: a plain link, opened by the browser in a new tab --> http:
 `{online, board, panel, screen, touchscreenConfigured, signIn, portalUrl, printer}`, rebuilt field by field: Wi-Fi
 strength, memory, uptime and printer state are dropped. `signIn` is `false` when the health route answered without a
 sign-in, `true` when it answered `401` (then `online` is `true` and the board fields are `null`) or the printer-status
-token works, and `null` when the display is offline. Nothing from the browser's request is forwarded. A display that is off,
-refuses the connection, sends something that isn't JSON or doesn't answer within 4 s is `online: false`. There is no
-other `/api/workshop/` route.
+token works, and `null` when the display is offline. `codeAccess` is `true` when the code key is set (the card then
+offers **Show sign-in code**); the key itself never leaves the server. Nothing from the browser's request is forwarded. A
+display that is off, refuses the connection, sends something that isn't JSON or doesn't answer within 4 s is
+`online: false`. The only other `/api/workshop/` route is `POST /api/workshop/portal-code` (below).
 
-Local AI sends the display **only two requests, both `GET`**: `/hardware/health` and, with a token, `/api/status/lite`.
+Local AI sends the display **only three requests, all `GET`**: `/hardware/health`, with the status token
+`/api/status/lite`, and with the code key, only when you tap Show sign-in code, `/api/portal-code`.
 It never sends `POST`, never calls a control route, and never sends the portal's `X-BambuHelper-Client` header.
 
 ## Printer status (read-only token)
 
 With Workshop OS 12.1.0 on the display, Home can show one line while a print runs or has stopped with an error, for
-example `Printer · 42% · 1 h 10 min left`, `Printer · Paused · 42%` or `Printer · Stopped with an error (0300_400C)`.
+example `Printer · 42% · 1 h 10 min left`, `Printer · Paused · 42%` or `Printer · Stopped with an error (0700_8010)`.
 Tapping it opens **System › Services** at the Workshop display card. Home shows nothing while the printer is idle, when
-its status is unknown or stale, and when no token is set. The card shows a printer line too (`Printer · Idle`, or why
+a print was stopped on purpose, when its status is unknown or stale, and when no token is set. The card shows a printer line too (`Printer · Idle`, or why
 there's no status).
 
 The display gives Local AI a **read-only status token**. It opens one route, `GET /api/status/lite`, and nothing else:
@@ -106,8 +111,11 @@ value in `stack.env`.
   a wrong token never keeps tripping the display's lock-out. A `429` keeps the last answer and tries again in 30 s.
   Browser tabs read the poller's last answer and never add requests of their own.
 - The answer is rebuilt field by field into `printer: {state, progress, minutesLeft, errorCode, access, seenAt}`:
-  `state` is `printing`, `paused`, `error`, `idle` or `unknown` (stale or offline telemetry is `unknown`, so old
-  progress is never shown as current); `access` is `ok`, `refused` (401), `unsupported` (404), `busy` (429) or
+  `state` is `printing`, `paused`, `error`, `cancelled`, `idle` or `unknown` (stale or offline telemetry is `unknown`, so
+  old progress is never shown as current). A print you stopped on purpose raises Bambu's cancel code (`0300_400C` "The
+  task was canceled." or `0500_400E` "Printing was cancelled."; either spelling, `_` or `-`) and is `cancelled`, not
+  `error`, even when the display doesn't flag it as a cancel: Home shows nothing and the card says `Printer · Print
+  stopped`. Any other code is still an error; `access` is `ok`, `refused` (401), `unsupported` (404), `busy` (429) or
   `offline`. `printer` is `null` when no token is set.
 - The token stays on the server. It is never sent to the browser, never logged, never put in an error message or an
   answer, never stored in the data folder, and child processes don't get it (`childEnv` drops every `*TOKEN*`
@@ -117,6 +125,60 @@ value in `stack.env`.
 
 The link opens as a top-level page with `rel="noopener noreferrer"`, so an `http://` address works from the
 `https://` app and the portal can't reach back into Local AI.
+
+## Sign-in code on the Services card
+
+The portal's sign-in code is shown on the display (System → Local Portal) and changes from time to time. With firmware
+that has the **code key** (`wsc_…`), the Workshop display card can show it: tap **Show sign-in code**, and the code
+appears large in two groups of five (`ABCDE FGHJK`) with **Copy** and **Open portal ↗**. It hides itself after 60 s,
+when the page goes to the background, or when you leave Services; tap again for a fresh read. Without the key, the card
+shows one muted line instead: "To show the sign-in code here, add code access in the display's portal (More → Sign-in
+code access)".
+
+### Set it up (once)
+
+1. On a phone or computer at home, open **System › Services › Open Workshop portal** and sign in with the code the
+   display shows.
+2. In the portal, open **More → Sign-in code access** and create access. Confirm on the display if it asks.
+3. The portal shows the key **once** (it starts with `wsc_`). Copy it.
+4. On the Windows computer, set `LOCALAI_WORKSHOP_CODE_TOKEN=wsc_…` in `C:\LocalAI\stack\stack.env`. Don't paste the
+   key anywhere else: not in a chat, a note, a screenshot or the repo.
+5. Restart the appliance:
+   `docker compose --env-file C:\LocalAI\stack\stack.env -f C:\LocalAI\repo\deploy\stack\compose.yml up -d appliance`.
+6. Open **System › Services**: the card has **Show sign-in code**.
+
+### Revoke or replace it
+
+- **Revoke:** in the portal, More → Sign-in code access → Revoke. The key stops working at once (the card then says
+  "The display turned the key down"). Empty `LOCALAI_WORKSHOP_CODE_TOKEN` in `stack.env` and restart the appliance so
+  the button goes away.
+- **Replace:** create access again (the old key stops working), put the new key in `stack.env`, restart.
+
+What the card says when it can't show the code:
+
+| Card | Meaning | What to do |
+|---|---|---|
+| `Sign-in code access isn't set up…` | No key in `stack.env` | Set it up (above) |
+| `The display turned the key down: it was revoked or replaced…` | `401` | Create access again and replace the value in `stack.env` |
+| `The display's firmware can't share its sign-in code yet…` | `404`: firmware without the route | Install the update |
+| `The display is busy. Try again in a minute.` | `429`: the display's rate limit | Wait, then tap again |
+| `The display isn't answering.` | No answer within 4 s, or an odd answer | Check the display is on and on Wi-Fi |
+
+### How the appliance uses it
+
+- `POST /api/workshop/portal-code` (POST, so a prefetch or a link can't trigger it) with the same checks as every other
+  change in Local AI: a browser request from another site is refused (`403`), and the body must be JSON (`415`).
+- On each request it sends the display one `GET /api/portal-code` with `Authorization: Bearer <code key>` and a 4 s limit,
+  and answers `{code, address}` with `Cache-Control: no-store`, or `{reason, error}` (`409` not set up, `502` refused or
+  old firmware, `503` busy, `504` offline). Only a code of 10 letters or digits is passed on; nothing else from the
+  display's answer is.
+- Nothing is cached, polled or stored. The code is never logged, never put in the data folder, and never in a `GET`
+  answer. Each code shown adds one Activity entry, "Workshop sign-in code shown", without the code.
+- The page keeps the code only in the card while it shows: never in browser storage, the address bar or the service
+  worker's cache.
+- The key is handled like the status token: `stack.env` only, never sent to the browser, logged or stored, and child
+  processes don't get it. It is only sent to the address in `LOCALAI_WORKSHOP_URL`.
+- Who can see the code: anyone who can use Local AI. See [Security](SECURITY.md#other-controls).
 
 ## Current state (18 Oct 2026): the portal has no sign-in
 

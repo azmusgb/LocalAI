@@ -44,7 +44,10 @@ const KB = 1024;
 // 2026-10-18: 260 → 262 KB (and home.js its own 11 KB) for a Needs you that stays short: needs-you.js (1.5 KB, the rule
 // Home, Work's Needs you filter and the server share: seen on any device, a day, a retry or a later success), Home's
 // cap of 3 rows with See all, failures of one goal as one row, and the printer line above it (260.6 KB measured).
-const TOTAL = 262 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// 2026-10-18: 262 → 263 KB (and ui.js 100 → 102 KB) for the Workshop display's Show sign-in code (the button, the code
+// box with Copy, Open portal and Hide, the 60 s hide, the plain-http copy fallback, the not-set-up line: ui.js +1.05 KB,
+// app.css +0.2 KB) and its Print stopped wording; 261.9 KB measured.
+const TOTAL = 263 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
 // tab rows (234.9 KB measured).
@@ -57,7 +60,7 @@ const TOTAL = 262 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // measures 98.0 KB). The suggestion itself lives in self-change.js.
 // 2026-10-18: ui.js 99 → 100 KB for Agent World workers walking out of their door and along the streets with square
 // turns (routeToTarget and its street legs, +0.8 KB); with the Workshop printer line (#312) ui.js measures 99.5 KB.
-const PER_FILE = { 'ui.js': 100 * KB, 'components.js': 11 * KB, 'app.css': 41 * KB, 'app.js': 36 * KB, 'index.html': 13 * KB, 'home.js': 11 * KB };
+const PER_FILE = { 'ui.js': 102 * KB, 'components.js': 11 * KB, 'app.css': 41 * KB, 'app.js': 36 * KB, 'index.html': 13 * KB, 'home.js': 11 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;

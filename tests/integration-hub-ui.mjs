@@ -126,6 +126,10 @@ await check('the Workshop display card: a 401 reads as online with its own sign-
   assert.equal(await line.innerText(), 'Printer · 42% · 1 h 10 min left');
   await refresh({ ...signedIn, printer: printer('idle') }, /sign-in on/);
   assert.equal(await line.innerText(), 'Printer · Idle');
+  await refresh({ ...signedIn, printer: printer('cancelled') }, /sign-in on/);
+  assert.equal(await line.innerText(), 'Printer · Print stopped', 'a print stopped on purpose is not an error');
+  await refresh({ ...signedIn, printer: printer('error', { errorCode: '0700_8010' }) }, /sign-in on/);
+  assert.equal(await line.innerText(), 'Printer · Stopped with an error (0700_8010)', 'a real fault still says so');
   await refresh({ ...signedIn, printer: { ...printer('unknown'), access: 'refused' } }, /sign-in on/);
   assert.match(await line.innerText(), /turned the token down/);
   await refresh({ ...signedIn, printer: { ...printer('unknown'), access: 'unsupported' } }, /sign-in on/);
@@ -237,6 +241,109 @@ await check('integration actions meet mobile touch-target guidance', async () =>
 });
 
 await mobile.close();
+
+// Workshop display › Show sign-in code, at iPhone width on the page's own clock (so the 60 s hide is checked without waiting).
+{
+  const CODE = 'QWZ7RT4XKP';
+  const phone = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await phone.clock.install();
+  let codeStatus = { ...WORKSHOP_ONLINE, signIn: true, codeAccess: false };
+  let codeAnswer = { status: 200, json: { code: CODE, address: 'http://10.0.0.124' } };
+  const asks = [];
+  await phone.route(u => u.pathname === '/api/workshop/status', r => r.fulfill({ json: codeStatus }));
+  await phone.route(u => u.pathname === '/api/workshop/portal-code', r => {
+    asks.push({ method: r.request().method(), type: r.request().headers()['content-type'] });
+    return r.fulfill({ status: codeAnswer.status, headers: { 'Cache-Control': 'no-store' }, json: codeAnswer.json });
+  });
+  // Capture what Copy puts on the clipboard.
+  await phone.addInitScript(() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async t => { window.__copied.push(t); } } }); });
+  await phone.goto(`${base}#integrations`, { waitUntil: 'domcontentloaded' });
+  await phone.waitForSelector('#integrations.active[data-integration-v2="true"]');
+  const card = phone.locator('.ux-int-card', { hasText: 'Workshop display' });
+  const refresh = async () => { await phone.locator('#uxIntegrationRefreshV2').click(); await phone.waitForSelector('#uxIntegrationRefreshV2[aria-busy="false"]'); };
+  const show = card.getByRole('button', { name: 'Show sign-in code' });
+  const value = card.locator('[data-workshop-code-value]');
+
+  await check('Workshop sign-in code: without code access, one muted line says how to add it and there is no button', async () => {
+    await refresh();
+    const off = card.locator('[data-workshop-code-off]');
+    await off.waitFor({ state: 'visible' });
+    assert.equal(await off.innerText(), "To show the sign-in code here, add code access in the display's portal (More → Sign-in code access)");
+    assert.equal(await show.isVisible(), false);
+  });
+
+  await check('Workshop sign-in code: shows the code large in two groups of 5, with Copy and Open portal, 44 px targets at iPhone width', async () => {
+    codeStatus = { ...codeStatus, codeAccess: true };
+    await refresh();
+    await show.waitFor({ state: 'visible' });
+    assert.equal(await card.locator('[data-workshop-code-off]').isVisible(), false);
+    await show.click();
+    await value.waitFor({ state: 'visible' });
+    assert.equal(await value.innerText(), 'QWZ7R T4XKP');
+    assert.equal(await value.getAttribute('aria-label'), 'Sign-in code Q W Z 7 R T 4 X K P');
+    assert.deepEqual(asks, [{ method: 'POST', type: 'application/json' }]);
+    const size = await value.evaluate(el => parseFloat(getComputedStyle(el).fontSize));
+    assert.ok(size >= 26, `the code is large (${size}px)`);
+    const portal = card.getByRole('link', { name: 'Open portal (opens in a new tab)' });
+    assert.equal(await portal.getAttribute('href'), 'http://10.0.0.124');
+    assert.equal(await portal.getAttribute('target'), '_blank');
+    assert.equal(await portal.getAttribute('rel'), 'noopener noreferrer');
+    for (const target of [card.getByRole('button', { name: 'Copy' }), portal, card.getByRole('button', { name: 'Hide' })]) {
+      const box = await target.boundingBox();
+      assert.ok(box && box.height >= 44 && box.width >= 44, `tap target ${box?.width}x${box?.height}`);
+    }
+    const dims = await phone.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+    assert.ok(dims[0] <= dims[1] + 2, `no sideways scroll (${dims})`);
+    await card.getByRole('button', { name: 'Copy' }).click();
+    await phone.locator('#toast', { hasText: 'Code copied' }).waitFor();
+    assert.deepEqual(await phone.evaluate(() => window.__copied), [CODE], 'copied without the space');
+    const kept = await phone.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage }, url: location.href }));
+    assert.ok(!kept.includes(CODE) && !kept.includes('QWZ7R'), 'never in storage or the address');
+  });
+
+  await check('Workshop sign-in code: hides itself after 60 s', async () => {
+    await phone.clock.runFor(59000);
+    assert.equal(await value.isVisible(), true, 'still shown at 59 s');
+    await phone.clock.runFor(1500);
+    assert.equal(await value.isVisible(), false, 'gone at 60 s');
+    assert.equal(await value.evaluate(el => el.textContent), '', 'and taken out of the page');
+    assert.equal(await show.isVisible(), true, 'the button is back');
+  });
+
+  await check('Workshop sign-in code: hides when the page is hidden, and says plainly why it cannot be shown', async () => {
+    await show.click();
+    await value.waitFor({ state: 'visible' });
+    await phone.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); });
+    assert.equal(await value.isVisible(), false);
+    assert.equal(await value.evaluate(el => el.textContent), '');
+    await phone.evaluate(() => { delete document.hidden; });
+    const reason = "The display turned the key down: it was revoked or replaced. Add code access again in the display's portal and update stack.env.";
+    codeAnswer = { status: 502, json: { reason: 'refused', error: reason } };
+    await show.click();
+    await card.locator('[data-workshop-code-msg]', { hasText: 'turned the key down' }).waitFor();
+    assert.equal(await value.isVisible(), false);
+    codeAnswer = { status: 503, json: { reason: 'busy', error: 'The display is busy. Try again in a minute.' } };
+    await show.click();
+    await card.locator('[data-workshop-code-msg]', { hasText: 'busy' }).waitFor();
+    assert.equal(await show.isEnabled(), true);
+  });
+
+  // The plain-http address has no clipboard API; Copy still works.
+  await check('Workshop sign-in code: Copy works without the clipboard API (plain http)', async () => {
+    codeAnswer = { status: 200, json: { code: CODE, address: 'http://10.0.0.124' } };
+    await phone.evaluate(() => { Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined }); window.__copied = []; document.addEventListener('copy', () => { const t = document.activeElement; window.__copied.push(t.value.slice(t.selectionStart, t.selectionEnd)); }); });
+    await show.click();
+    await value.waitFor({ state: 'visible' });
+    await card.getByRole('button', { name: 'Copy' }).click();
+    await phone.locator('#toast', { hasText: 'Code copied' }).waitFor();
+    assert.deepEqual(await phone.evaluate(() => window.__copied), [CODE]);
+    assert.equal(await phone.locator('textarea[readonly]').count(), 0, 'the helper box is gone');
+    await card.getByRole('button', { name: 'Hide' }).click();
+    assert.equal(await value.isVisible(), false);
+  });
+  await phone.close();
+}
+
 await browser.close();
 
 if (failures.length) {

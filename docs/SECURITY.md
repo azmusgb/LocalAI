@@ -96,15 +96,26 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
 - **Model management.** Pull, cancel and delete check `Origin` and `Content-Type`; the default model and
   the GridCraft model (plus `PROTECTED_MODELS`) cannot be deleted.
 - **GridCraft bridge.** Bound to `127.0.0.1`; CORS limited to the configured LocalAI origins; one run at a time.
-- **Workshop display.** The appliance sends the display only two `GET` requests: `/hardware/health` (a `401` there
-  means its sign-in is on) and, when `LOCALAI_WORKSHOP_STATUS_TOKEN` is set, `/api/status/lite` with that read-only
-  Bearer token (`LOCALAI_WORKSHOP_URL`, private addresses and `.local` names only). Both answers are rebuilt field by
+- **Workshop display.** The appliance sends the display only `GET` requests: `/hardware/health` (a `401` there
+  means its sign-in is on); when `LOCALAI_WORKSHOP_STATUS_TOKEN` is set, `/api/status/lite` with that read-only
+  Bearer token; and when `LOCALAI_WORKSHOP_CODE_TOKEN` is set, `/api/portal-code` (below) (`LOCALAI_WORKSHOP_URL`, private addresses and `.local` names only). Both answers are rebuilt field by
   field. The token opens only that status route on the display; it lives in `stack.env`, is never sent to the browser,
   logged, stored or put in an error, and child processes don't get it. The display's portal and printer controls are
   linked to, never proxied, so Local AI never becomes a way to the printer controls
   ([Workshop display › Printer status](WORKSHOP-DISPLAY.md#printer-status-read-only-token)). Note: the display's current firmware has no sign-in at all
   (see [Workshop display › Current state](WORKSHOP-DISPLAY.md#current-state-18-oct-2026-the-portal-has-no-sign-in)); a fix is being prepared in that repo
   ([Workshop display](WORKSHOP-DISPLAY.md#why-the-portal-isnt-proxied)).
+- **Workshop display sign-in code (a deliberate trade-off).** With `LOCALAI_WORKSHOP_CODE_TOKEN` set, Services ›
+  Workshop display › **Show sign-in code** reads the display portal's current sign-in code
+  (`POST /api/workshop/portal-code`) and shows it. Local AI has no sign-in of its own (see gaps), so **anyone who can
+  use Local AI can read the portal code**, and with it sign in to the portal and use the printer controls. For this
+  single-owner home setup that is accepted: the gate is who can reach Local AI at all (the home network and the
+  owner's own Tailscale devices), the same gate that already stands in front of everything else here. If Local AI ever
+  has other users, remove the key. What limits the exposure: the route is POST with the cross-site guard and the JSON
+  check, so another website or a prefetch can't read it; the code is never logged, stored, cached (`no-store`) or put in
+  a `GET` answer; each read adds an Activity entry ("Workshop sign-in code shown", without the code); the browser keeps it
+  on screen for at most 60 s and never in storage or the URL; the key opens only that one route on the display and can
+  be revoked there at once ([Workshop display › Sign-in code](WORKSHOP-DISPLAY.md#sign-in-code-on-the-services-card)).
 - **No secrets in the image or repo.** `.gitignore` excludes keys and `.env`; CI and the candidate test
   fail on `.env`, `.key`, `.pem`, `.pfx` or `.p12` files under `app/`. Tokens reach the container only as
   environment variables; `Enable-LocalAI-HostOnlyPort.ps1` passes them through a user-only temp file that it deletes.

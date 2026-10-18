@@ -1,12 +1,13 @@
 'use strict';
 
 // Services › Workshop display: the BambuHelper touchscreen beside the 3D printer (docs/WORKSHOP-DISPLAY.md).
-// Local AI sends the display exactly two requests, both GET: /hardware/health (is it answering; a 401 means it is up
-// and its portal sign-in is on) and, only when LOCALAI_WORKSHOP_STATUS_TOKEN is set, /api/status/lite with that
-// read-only Bearer token (firmware 12.1.0). It links to the display's own portal and never proxies it: the portal holds
+// Local AI sends the display at most three requests, all GET: /hardware/health (is it answering; a 401 means it is up
+// and its portal sign-in is on); only when LOCALAI_WORKSHOP_STATUS_TOKEN is set, /api/status/lite with that read-only
+// Bearer token (firmware 12.1.0); and only when LOCALAI_WORKSHOP_CODE_TOKEN is set and the owner taps Show sign-in code,
+// /api/portal-code with that Bearer token. It links to the display's own portal and never proxies it: the portal holds
 // the printer controls (Stop among them) behind its own sign-in, and Local AI must not become another way to them.
-// The token stays on the server: it is never logged, never put in an error or an answer, and child processes don't get
-// it (childEnv drops every *TOKEN* variable).
+// The tokens stay on the server: they are never logged, never put in an error or an answer, and child processes don't
+// get them (childEnv drops every *TOKEN* variable). The sign-in code is never logged or stored either.
 const { modelFetchWithTimeout } = require('./model-http');
 
 const DEFAULT_URL = 'http://10.0.0.124';
@@ -14,6 +15,7 @@ const TIMEOUT_MS = 4000;
 const MAX_BODY = 16 * 1024; // the real answers are about 500 bytes
 const HEALTH_PATH = '/hardware/health';
 const LITE_PATH = '/api/status/lite';
+const CODE_PATH = '/api/portal-code';
 const POLL_MS = 30 * 1000;
 const MAX_BACKOFF_MS = 5 * 60 * 1000;
 
@@ -88,10 +90,13 @@ async function workshopStatus({ url = portalUrl(), fetchImpl = modelFetchWithTim
 //   {schema:1, firmware:{…}, printers:[{slot, connection, activity, freshness, ageSeconds, progressPercent,
 //    remainingMinutes, error:{code, text, canceled}|null}]}
 // Only the first listed printer is used, and only these words reach the browser:
-//   state: printing | paused | error | idle | unknown; progress (0–100) and minutesLeft only while printing or paused;
-//   errorCode (the printer's own code, e.g. 0300_400C) only in error.
+//   state: printing | paused | error | cancelled (stopped on purpose) | idle | unknown; progress (0–100) and minutesLeft only while printing or paused;
+//   errorCode (the printer's own code, e.g. 0700_8010) only in error.
 // access: ok | refused (401: no token on the display, or a revoked one) | unsupported (404: older firmware or the
 // display's own setup Wi-Fi) | busy (429) | offline (no answer, an odd answer, or the time limit).
+// Bambu's two cancel-class print_error codes (BambuHelper src/hms_lookup.h, printErrorIsCancel): 0300_400C "The task
+// was canceled." and 0500_400E "Printing was cancelled.". Compared as hex digits, so 0300_400C and 0300-400C both match.
+const CANCEL_CODES = new Set(['0300400C', '0500400E']);
 const intIn = (v, lo, hi) => (Number.isSafeInteger(v) && v >= lo && v <= hi ? v : null);
 const UNKNOWN_PRINTER = { state: 'unknown', progress: null, minutesLeft: null, errorCode: null };
 
@@ -101,11 +106,15 @@ function printerSummary(d) {
   const err = p.error && typeof p.error === 'object' && !Array.isArray(p.error) ? p.error : null;
   const code = typeof err?.code === 'string' && /^[0-9A-Za-z_-]{1,24}$/.test(err.code) ? err.code : null;
   const activity = String(p.activity || '');
-  const state = activity === 'error' || (err && err.canceled !== true) ? 'error'
-    : activity === 'printing' || activity === 'preparing' ? 'printing'
-      : activity === 'paused' ? 'paused'
-        : activity === 'idle' || activity === 'finished' ? 'idle'
-          : 'unknown';
+  // A stop on purpose raises print_error like a fault. The display flags it (canceled) when its board knows the code;
+  // the two cancel codes are matched here too, so a board without the table doesn't turn a stop into an error.
+  const cancel = err && (err.canceled === true || CANCEL_CODES.has(String(err.code || '').replace(/[^0-9A-Fa-f]/g, '').toUpperCase()));
+  const state = activity === 'printing' || activity === 'preparing' ? (err && !cancel ? 'error' : 'printing')
+    : activity === 'paused' ? (err && !cancel ? 'error' : 'paused')
+      : activity === 'idle' || activity === 'finished' ? (err && !cancel ? 'error' : 'idle')
+        : cancel ? 'cancelled'
+          : activity === 'error' || err ? 'error'
+            : 'unknown';
   const running = state === 'printing' || state === 'paused';
   return {
     state,
@@ -164,4 +173,36 @@ function createPrinterPoller({ url = portalUrl(), token = process.env.LOCALAI_WO
   };
 }
 
-module.exports = { DEFAULT_URL, TIMEOUT_MS, POLL_MS, HEALTH_PATH, LITE_PATH, portalUrl, workshopStatus, printerSummary, readPrinter, createPrinterPoller };
+// ---- the portal sign-in code through the code token (GET /api/portal-code, Services › Show sign-in code) ----
+// The display answers {code:"ABCDEFGHJK", bootId:…} with Cache-Control: no-store; only the code is kept, and only when it
+// is 10 letters or digits. Read on demand, once per tap: nothing is cached, polled, logged or stored.
+// access: ok | not_set_up (no token or no address) | refused (401: the key was revoked or replaced) | unsupported (404:
+// older firmware) | busy (429: the display's rate limit) | offline (no answer, an odd answer, or the time limit).
+const CODE_WORDS = {
+  not_set_up: "Sign-in code access isn't set up. Add code access in the display's portal (More → Sign-in code access).",
+  refused: "The display turned the key down: it was revoked or replaced. Add code access again in the display's portal and update stack.env.",
+  unsupported: "The display's firmware can't share its sign-in code yet. Install the update.",
+  busy: 'The display is busy. Try again in a minute.',
+  offline: "The display isn't answering."
+};
+
+function codeToken(raw = process.env.LOCALAI_WORKSHOP_CODE_TOKEN) {
+  return String(raw ?? '').trim();
+}
+
+async function readPortalCode({ url = portalUrl(), token = codeToken(), fetchImpl = modelFetchWithTimeout, timeoutMs = TIMEOUT_MS } = {}) {
+  const secret = String(token ?? '').trim();
+  if (!url || !secret) return { access: 'not_set_up' };
+  try {
+    const r = await fetchImpl(`${url}${CODE_PATH}`, { method: 'GET', headers: { Accept: 'application/json', Authorization: `Bearer ${secret}` } }, timeoutMs);
+    const access = r.status === 200 ? 'ok' : r.status === 401 ? 'refused' : r.status === 404 ? 'unsupported' : r.status === 429 ? 'busy' : 'offline';
+    if (access !== 'ok') { await r.body?.cancel().catch(() => {}); return { access }; }
+    const d = JSON.parse(await readCapped(r, MAX_BODY));
+    const code = typeof d?.code === 'string' ? d.code.trim().toUpperCase() : '';
+    return /^[A-Z0-9]{10}$/.test(code) ? { access: 'ok', code } : { access: 'offline' };
+  } catch {
+    return { access: 'offline' };
+  }
+}
+
+module.exports = { DEFAULT_URL, TIMEOUT_MS, POLL_MS, HEALTH_PATH, LITE_PATH, CODE_PATH, CODE_WORDS, portalUrl, workshopStatus, printerSummary, readPrinter, createPrinterPoller, codeToken, readPortalCode };

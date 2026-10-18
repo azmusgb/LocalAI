@@ -164,7 +164,7 @@ function recentRow(it,onOpen=openRun){
 }
 // ---- Printer: one calm line while a print runs or stops with an error (Workshop display's read-only token) ----
 // The appliance polls the display; ?part=printer answers from its last read, so Home never sends the display anything.
-// Nothing shows when the printer is idle or unknown, or when no token is set (printer: null).
+// Nothing shows when the printer is idle, cancelled (stopped on purpose) or unknown, or when no token is set (printer: null).
 const span=m=>m<60?`${m} min`:`${Math.floor(m/60)} h${m%60?` ${m%60} min`:''}`;
 function printerWords(p){
  if(!p||p.access!=='ok')return '';

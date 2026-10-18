@@ -142,7 +142,7 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
   });
 }
 
-await check('the printer line: paused and error words; hidden when idle, unknown, refused or no token, and it follows the poll', async () => {
+await check('the printer line: paused and error words; hidden when cancelled (stopped on purpose), idle, unknown, refused or no token, and it follows the poll', async () => {
   const page = await open(phone, '#home', { printer: PRINTER('paused', { progress: 42, minutesLeft: 70 }) });
   const sec = page.locator('#homePrinter'), title = page.locator('#homePrinter .list-row__title');
   await sec.waitFor({ state: 'visible', ...T });
@@ -153,11 +153,11 @@ await check('the printer line: paused and error words; hidden when idle, unknown
     if (words) { await page.waitForFunction(w => document.querySelector('#homePrinter .list-row__title')?.textContent === w, words, T); assert.equal(await sec.isVisible(), true); }
     else { await page.waitForFunction(() => document.getElementById('homePrinter').hidden, null, T); assert.equal(await page.locator('#homePrinter [data-printer-state]').count(), 0); }
   };
-  await show(PRINTER('error', { errorCode: '0300_400C' }), 'Printer · Stopped with an error (0300_400C)');
+  await show(PRINTER('error', { errorCode: '0700_8010' }), 'Printer · Stopped with an error (0700_8010)');
   await show(PRINTER('error'), 'Printer · Stopped with an error');
   await show(PRINTER('printing', { minutesLeft: 41 }), 'Printer · Printing · 41 min left');
   await show(PRINTER('printing', { progress: 99, minutesLeft: 60 }), 'Printer · 99% · 1 h left');
-  for (const p of [PRINTER('idle'), PRINTER('unknown'), { ...PRINTER('unknown'), access: 'refused' }, { ...PRINTER('unknown'), access: 'offline' }, null]) await show(p, '');
+  for (const p of [PRINTER('cancelled'), PRINTER('idle'), PRINTER('unknown'), { ...PRINTER('unknown'), access: 'refused' }, { ...PRINTER('unknown'), access: 'offline' }, null]) await show(p, '');
   await show(PRINTER('printing', { progress: 5 }), 'Printer · 5%');
   await page.context().close();
 });
