@@ -293,4 +293,21 @@
     return {pick};
   }
   window.LocalAIUI=Object.assign(window.LocalAIUI||{},{pullToRefresh,segmented});
+
+  // Delete with Undo (/api/items/delete): items are [{kind:'thread'|'library'|'project', id}]. The toast says what went and
+  // offers Undo for 10 s; onUndo runs once it is put back. Resolves to the server's answer, or null when nothing was deleted
+  // (the toast then says why: a run still going, say).
+  async function deleteItems(items,{onUndo}={}){
+    const toast=window.LocalAIUI.toast,post=(url,body)=>fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(async r=>({r,b:await r.json().catch(()=>({}))}));
+    let res;try{res=await post('/api/items/delete',{items})}catch(e){toast(`Couldn't delete. ${e.message||e}`);return null}
+    if(!res.r.ok){toast(res.b.error||`Couldn't delete (HTTP ${res.r.status}).`);return null}
+    const box=document.createElement('span'),undo=document.createElement('button');box.className='toast-undo';
+    box.append(`Deleted ${items.length===1?'1 item':items.length+' items'}. `,undo);undo.type='button';undo.className='btn-outline';undo.textContent='Undo';
+    undo.addEventListener('click',async()=>{undo.disabled=true;
+      try{const back=await post('/api/items/restore',{trashId:res.b.trashId});if(!back.r.ok)throw new Error(back.b.error||'HTTP '+back.r.status);toast('Put back.');onUndo?.()}
+      catch(e){toast(`Couldn't put it back. ${e.message||e}`)}});
+    toast(box,{ms:10000});
+    return res.b;
+  }
+  window.LocalAIUI.deleteItems=deleteItems;
 })();

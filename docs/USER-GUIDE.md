@@ -112,6 +112,17 @@ The Projects tab opens on your projects. Its tabs:
   moved out once, on the first start after the update (the Audit log says how many); they are all still in Work,
   and you can keep any of them again.
 
+## Deleting things
+
+- **In Work:** choose **Select**, tick the rows, then **Delete (n)**. Or open a run, choose **Details**, then **Delete**.
+  Deleting a chat removes the whole conversation (every turn) and its Library copy.
+- **In Library:** × deletes a picture or a note. For a kept chat, × only takes it out of Library; it stays in Work.
+- **In Projects:** **Delete project** on the project's page. Its chats, sources and memories stay, under no project.
+
+Each delete shows **Undo** for 10 seconds. After a day, deleted things are gone for good. Something that is still
+running can't be deleted: stop it first. Pictures are removed from Local AI, but the image files stay in ComfyUI's
+output folder on the Windows computer.
+
 ## Improve: change Local AI itself
 
 Improve is one list of everything that could change in Local AI, from your ideas, problems Local AI noticed, and

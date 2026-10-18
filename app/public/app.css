@@ -1760,6 +1760,14 @@ body.dev-tools-off [data-dev-only]{display:none!important}
 /* Feedback (appended; nothing above edited). Status toasts can be hovered (the pointer pauses them, components.js);
    the update notice has its own Dismiss; errors sit in the page as alert boxes under what failed. */
 .toast.show{pointer-events:auto}
+/* Delete with Undo (components.js deleteItems): the sentence and its Undo button. */
+.toast-undo{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+/* Work › Select: a bar of what is picked, and a checkbox at the start of each row. */
+.work-select-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px;padding:8px 12px;border:1px solid var(--ds-line);border-radius:var(--ds-r-md);background:var(--ds-surface)}
+.work-select-bar[hidden]{display:none}
+.work-select-bar>span{flex:1;min-width:0;color:var(--ds-muted)}
+.list-row.is-picking{display:flex;align-items:center;gap:10px}
+.work-pick{position:relative;z-index:2;flex:none;width:22px;height:22px;margin:0 0 0 4px;accent-color:var(--ds-accent)} /* above the row-wide open target */
 /* Above the run view and Home's composer, which used to cover it on phones; on Home it sits above the composer. */
 .toast{z-index:190}
 @media(max-width:760px){body.ux-v3:has(#home.active) .toast{bottom:calc(76px + env(safe-area-inset-bottom) + var(--home-pad,0px) + 8px)}}

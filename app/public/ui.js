@@ -3345,7 +3345,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       pin.addEventListener('click', () => updateRun(run, { pinned: !run.pinned }, run.pinned ? 'Run unpinned.' : 'Run pinned.'));
       const file = document.createElement('button'); file.type = 'button'; file.className = 'btn-outline run-act'; file.textContent = 'File…';
       file.addEventListener('click', () => fileRun(run));
-      acts.append(pin, file);
+      // Delete takes the whole conversation (every turn) out of Work and Library; Undo is in the toast.
+      const del = document.createElement('button'); del.type = 'button'; del.className = 'btn-danger run-act'; del.textContent = 'Delete';
+      del.addEventListener('click', () => deleteRun(run, del));
+      acts.append(pin, file, del);
     }
     box.appendChild(acts);
     const details = document.createElement('div');
@@ -3450,6 +3453,17 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       render(); if (state.selectedId) renderDrawer(state.selectedId);
       window.LocalAIUI?.toast?.(kept ? 'Kept in Library' : "Taken out of Library. It's still in Work.");
     } catch (error) { viewFail(`Could not ${kept ? 'keep' : 'un-keep'} this: ${error.message}`); if (button?.isConnected) button.disabled = false; }
+  }
+
+  async function deleteRun(run, button) {
+    button.disabled = true;
+    const threadId = run.threadId || run.id;
+    const out = await window.LocalAIUI.deleteItems([{ kind: 'thread', id: threadId }], { onUndo: () => window.dispatchEvent(new CustomEvent('localai:restored')) });
+    if (!out) { if (button.isConnected) button.disabled = false; return; }
+    state.runs = state.runs.filter((r) => (r.threadId || r.id) !== threadId);
+    el('runDetailsSheet')?.close();
+    closeRunView();
+    window.dispatchEvent(new CustomEvent('localai:deleted', { detail: { threadId } }));
   }
 
   async function fileRun(run) {

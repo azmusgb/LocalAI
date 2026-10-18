@@ -8,14 +8,14 @@ const key=it=>it.threadId||it.id,NONE={chats:'No chats yet.',images:'No images y
 // Threads sort and page by their latest run's (createdAt, id), newest first, the same key the server's `before` uses.
 const newest=(a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))||String(b.id).localeCompare(String(a.id));
 const store={get:()=>{try{return localStorage.getItem(KEY)}catch{return null}},set:v=>{try{localStorage.setItem(KEY,v)}catch{}}};
-const st={threads:new Map(),items:[],more:false,loaded:false,started:false,kind:'all',gen:0,query:'',shown:'',rows:new Map(),timer:0}; // gen: bumps when the chip changes, so a late page of the old kind is dropped
+const st={threads:new Map(),items:[],more:false,loaded:false,started:false,kind:'all',gen:0,query:'',shown:'',rows:new Map(),timer:0,selecting:false,picked:new Set()}; // gen: bumps when the chip changes, so a late page of the old kind is dropped
 function groupOf(it){
  const t=new Date(it.createdAt),d=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime();
  if(isNaN(t))return 3;
  const n=Math.round((d(new Date())-d(t))/864e5);
  return n<=0?0:n===1?1:n<7?2:3;
 }
-const sig=it=>[it.id,it.status,it.progress,it.updatedAt,it.turns,it.kept,it.card?.title,it.card?.summary,it.card?.badge?.label].join('|');
+const sig=it=>[it.id,it.status,it.progress,it.updatedAt,it.turns,it.kept,it.card?.title,it.card?.summary,it.card?.badge?.label,st.selecting].join('|');
 // The server sends one row per thread (its latest run, with `turns`), so each thread lives on exactly one page.
 // `window` (a refresh of the newest page) also drops what that page no longer holds: runs deleted or filed away.
 function merge(list,{older=false,window=false}={}){
@@ -32,10 +32,15 @@ const openRun=it=>window.LocalAIRuns?window.LocalAIRuns.show(it.id):window.Local
 function rowFor(it){
  let c=it.card||{};const n=it.turns||1;
  if(c.kind==='chat'&&n>1)c={...c,summary:`Chat · ${n} turns`,preview:c.preview||(c.summary?{type:'text',text:c.summary}:null)};
- const row=window.LocalAIUI.runCard({...it,card:c},{onOpen:openRun,rowOpen:true});
+ // In Select mode a tap picks the row instead of opening it, and the row carries its checkbox.
+ const row=window.LocalAIUI.runCard({...it,card:c},{onOpen:x=>st.selecting?pick(key(x),!st.picked.has(key(x))):openRun(x),rowOpen:true});
  const act=row.querySelector('.run-card__action');
- if(act){if(/^(Review|Retry)$/i.test(act.textContent.trim()))act.className='btn-outline work-secondary';else act.remove()}
- if(typeof it.kept==='boolean')row.querySelector('.list-row__trail')?.appendChild(keepButton(it));
+ if(act){if(!st.selecting&&/^(Review|Retry)$/i.test(act.textContent.trim()))act.className='btn-outline work-secondary';else act.remove()}
+ if(st.selecting){
+  const box=document.createElement('input');box.type='checkbox';box.className='work-pick';box.dataset.key=key(it);box.checked=st.picked.has(key(it));
+  box.setAttribute('aria-label',`Select ${c.title||it.title||'this'}`);box.addEventListener('click',e=>e.stopPropagation());
+  box.addEventListener('change',()=>pick(key(it),box.checked));row.classList.add('is-picking');row.prepend(box);
+ }else if(typeof it.kept==='boolean')row.querySelector('.list-row__trail')?.appendChild(keepButton(it));
  return row;
 }
 // ☆ Keep on a chat or research row: Library holds only what you keep. Un-keep takes it out of Library; the row stays.
@@ -53,6 +58,20 @@ function keepButton(it){
   }catch(err){b.disabled=false;window.LocalAIUI?.toast?.(`Couldn't ${kept?'keep':'un-keep'} it. ${err.message||err}`)}
  });
  return b;
+}
+// Select mode: pick rows, then Delete (n). Undo (in the toast) reloads the list.
+function pick(k,on){if(on)st.picked.add(k);else st.picked.delete(k);document.querySelectorAll('#workList .work-pick').forEach(b=>{if(b.dataset.key===k)b.checked=on});selectBar()}
+function selectBar(){
+ const n=st.picked.size,del=$('workDeleteSelected');
+ $('workSelectBar').hidden=!st.selecting;$('workSelect').setAttribute('aria-pressed',String(st.selecting));$('workSelect').textContent=st.selecting?'Done':'Select';
+ $('workSelectCount').textContent=n?`${n} picked.`:'Pick what to delete.';del.disabled=!n;del.textContent=n?`Delete (${n})`:'Delete';
+}
+function setSelecting(on){st.selecting=on;if(!on)st.picked.clear();selectBar();if(st.loaded)paint()}
+async function deletePicked(){
+ const ids=[...st.picked],b=$('workDeleteSelected');b.disabled=true;
+ const out=await window.LocalAIUI.deleteItems(ids.map(id=>({kind:'thread',id})),{onUndo:()=>refresh()});
+ if(!out){selectBar();return}
+ for(const k of ids)st.threads.delete(k);st.items=[...st.threads.values()].sort(newest);setSelecting(false);
 }
 function setKept(k,kept){const it=st.threads.get(k);if(!it)return;st.threads.set(k,{...it,kept});st.items=[...st.threads.values()].sort(newest);if(st.loaded)paint()}
 const text=it=>`${it.card?.title||''} ${it.card?.summary||''}`.toLowerCase();
@@ -142,6 +161,9 @@ function init(){
  const chips=sec.querySelector('.work-chips');if(chips&&window.LocalAIUI?.segmented)st.chips=window.LocalAIUI.segmented(chips,{onPick:b=>setKind(b.dataset.workKind)});
  $('workSearch').addEventListener('input',e=>{st.query=e.target.value;if(st.loaded)paint()});
  $('workMore').addEventListener('click',more);
+ $('workSelect').addEventListener('click',()=>setSelecting(!st.selecting));
+ $('workSelectDone').addEventListener('click',()=>setSelecting(false));
+ $('workDeleteSelected').addEventListener('click',deletePicked);
  $('workOpenAgentWorld')?.addEventListener('click',()=>window.LocalAIRouter?.open('agents'));
  setKind(KINDS.includes(store.get())?store.get():'all',{mirror:false,remember:false});
  let was=active();
@@ -150,6 +172,9 @@ function init(){
  window.addEventListener('hashchange',()=>setTimeout(()=>{const k=active()&&fromHash();if(k&&k!==st.kind)setKind(k,{mirror:false})},0));
  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&active()&&st.loaded)refresh().then(schedule)});
  window.addEventListener('localai:kept',e=>setKept(e.detail?.threadId||e.detail?.runId,!!e.detail?.kept)); // ☆ Keep in the run view
+ // Delete in the run view takes the row out; its Undo (or one from Library) brings the list up to date.
+ window.addEventListener('localai:deleted',e=>{const k=e.detail?.threadId;if(k&&st.threads.delete(k)){st.items=[...st.threads.values()].sort(newest);if(st.loaded)paint()}});
+ window.addEventListener('localai:restored',()=>{if(st.loaded)refresh()});
  window.LocalAIUI.pullToRefresh?.('work',()=>st.loaded?refresh():first()); // a pull down from the top (components.js)
  if(was)activate();
 }
