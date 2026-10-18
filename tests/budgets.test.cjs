@@ -16,12 +16,14 @@ const KB = 1024;
 // start sheet); its last PR removed the old panels (form, timeline, inspector, history, tabs, side panels): 237 -> 236 KB.
 // 2026-10-17: +7 KB (and app.css +2 KB) for the Spreadsheets workbook view: grid, edit review, history and modes.
 // spreadsheets.js is loaded with the shell; if the router ever loads page scripts on demand it should move there.
-// 2026-10-18: +2 KB (and ui.js +2 KB) for the Agent World visuals pass (signs on the roofs, bubbles that step aside,
-// flows along the streets); the pass as a whole aims at no more than +6 KB.
-const TOTAL = 240 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+const TOTAL = 238 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
+// 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
+// tab rows (234.9 KB measured).
 // 2026-10-17: ui.js +1 KB for the ArtCraft card on Services (live status and its Open button).
-const PER_FILE = { 'ui.js': 95 * KB, 'app.css': 41 * KB, 'app.js': 35 * KB, 'index.html': 13 * KB };
+// 2026-10-18: 236 → 238 KB for the Agent World visuals pass (signs on the roofs, bubbles that step aside, flows along
+// the streets: 236.5 KB measured); the pass as a whole aims at no more than +6 KB.
+const PER_FILE = { 'ui.js': 93 * KB, 'app.css': 41 * KB, 'app.js': 35 * KB, 'index.html': 13 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;

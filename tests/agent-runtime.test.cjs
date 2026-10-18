@@ -6,6 +6,7 @@ const path = require('node:path');
 const createOrchestrator = require('../app/agent-orchestrator');
 const { runAgentLoop } = require('../app/agent-runtime');
 const { tool, evidenceRecord, createResearchTools } = require('../app/agent-tools');
+const words = require('../app/public/agent-world-words');
 
 const evidenceId = messages => JSON.stringify(messages).match(/E-[a-f0-9]{16}/)[0];
 const isCoordinator = messages => messages[0].content.startsWith('You are the mission coordinator');
@@ -54,7 +55,9 @@ test('mission cancellation reaches the coordinator', async t => {
   assert.match(mission.error, /Mission cancelled/);
 });
 
-test('a slow follow-up is cut off and synthesis still finishes', async t => {
+// Live (17 Oct): the coordinator wrote its answer, two optional follow-ups ran out of time, and the mission read
+// "needs attention" and showed as stopped. With an answer the mission is done and says what didn't finish.
+test('a slow follow-up is cut off, synthesis still finishes and the mission completes with a note', async t => {
   const orchestrator = fixture(t, async ({ messages, signal }) => {
     if (JSON.stringify(messages).includes('FOLLOWUP-Q')) {
       if (!isCoordinator(messages)) return untilAborted(signal);
@@ -66,10 +69,39 @@ test('a slow follow-up is cut off and synthesis still finishes', async t => {
     return { role: 'assistant', content: `Finding [${evidenceId(messages)}]` };
   }, { followupTimeoutMs: 50 });
   const mission = await orchestrator.mission('Review implementation', '', ['code_analyst']);
-  assert.equal(mission.status, 'needs_attention');
+  assert.equal(mission.status, 'complete');
+  assert.equal(mission.error, undefined);
+  assert.equal(mission.note, '1 follow-up ran out of time');
   assert.match(mission.answer, /Synthesis with gap/);
   assert.equal(mission.workers.find(w => w.id === 'synthesis').state, 'complete');
+  // The follow-up keeps its own stopped state, so Agent World's crew row still shows it.
   assert.equal(mission.followups[0].status, 'error');
+  assert.equal(mission.workers.find(w => w.id === 'code_analyst-followup-1').state, 'error');
+  assert.equal(mission.timeline.at(-1).type, 'mission-complete');
+  assert.match(words.statusSentence(mission).text, /^Done in .* · 3 workers · 1 follow-up ran out of time$/);
+});
+
+test('a follow-up that ran out of time and no answer: the mission needs you', async t => {
+  const orchestrator = fixture(t, async ({ messages, signal }) => {
+    if (JSON.stringify(messages).includes('FOLLOWUP-Q')) {
+      if (!isCoordinator(messages)) return untilAborted(signal);
+      // The coordinator gives up after the follow-up: no answer, no tool call.
+      if (messages.at(-1).role === 'tool') return { role: 'assistant', content: '' };
+    }
+    if (isCoordinator(messages)) {
+      return { role: 'assistant', content: '', tool_calls: [{ function: { name: 'request_investigation', arguments: { agent_id: 'code_analyst', question: 'FOLLOWUP-Q' } } }] };
+    }
+    return { role: 'assistant', content: `Finding [${evidenceId(messages)}]` };
+  }, { followupTimeoutMs: 50 });
+  const mission = await orchestrator.mission('Review implementation', '', ['code_analyst']);
+  assert.equal(mission.status, 'needs_attention');
+  assert.ok(!mission.answer);
+  assert.match(mission.error, /^No answer: .*\(1 follow-up ran out of time\)$/);
+  assert.equal(mission.workers.find(w => w.id === 'synthesis').state, 'error');
+  assert.equal(mission.results.find(r => r.agentId === 'code_analyst').status, 'complete', 'the specialists’ work is kept');
+  assert.ok(mission.workers.every(w => !['running', 'pending'].includes(w.state)));
+  assert.equal(mission.timeline.at(-1).type, 'mission-attention');
+  assert.match(words.statusSentence(mission).text, /^Needs you · .* · Coordinator stopped/);
 });
 
 test('specialists see only the selected project\'s knowledge', async t => {

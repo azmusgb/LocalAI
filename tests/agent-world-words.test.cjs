@@ -199,3 +199,18 @@ test('an interruption reads as one sentence, not "stopped: interrupted: …"', (
   assert.equal(words.changeSentence(m.workers[1], m), 'UX Analyst stopped: the model didn’t answer');
   assert.equal(words.workerStep(m.workers[2], m), 'Couldn’t start: UX Analyst stopped');
 });
+
+// A mission with an answer is done; follow-ups that didn't finish are its note, not "Needs you".
+test('a finished mission says which follow-ups didn’t finish', () => {
+  const fu = (n, o = {}) => ({ id: 'ux_analyst-followup-' + n, name: 'UX Analyst · follow-up', state: 'error', dependsOn: [], error: 'Follow-up stopped: Agent execution deadline reached', ...o });
+  const m = mission({ status: 'complete', updatedAt: at(700), finishedAt: at(720), answer: 'Summary', workers: [router(), ux({ state: 'complete' }), coord({ state: 'complete' }), fu(1), fu(2)] });
+  assert.deepEqual(words.statusSentence(m), { tone: 'done', label: 'Done', text: 'Done in 12 min · 3 workers · 2 follow-ups ran out of time' });
+  assert.equal(words.followupNote(m), '2 follow-ups ran out of time');
+  // The crew row still shows the follow-up stopped.
+  assert.equal(words.workerStep(m.workers[3], m), 'Stopped: the agent ran out of time');
+  const mixed = mission({ status: 'complete', workers: [router(), ux({ state: 'complete' }), coord({ state: 'complete' }), fu(1), fu(2, { error: 'Model rejected request' }), fu(3, { state: 'complete', error: '' })] });
+  assert.equal(words.followupNote(mixed), '1 follow-up ran out of time · 1 follow-up didn’t finish');
+  assert.equal(words.followupNote(mission({ status: 'complete', workers: [router(), fu(1, { error: 'Local AI restarted for an update while this was running' })] })), '1 follow-up was interrupted by an update');
+  assert.equal(words.followupNote(mission({ status: 'complete', workers: [router(), ux({ state: 'complete' })] })), '');
+  assert.equal(words.statusSentence(mission({ status: 'complete', updatedAt: at(240), finishedAt: at(250), workers: [router(), ux({ state: 'complete' }), coord({ state: 'complete' }), fu(1, { state: 'complete', error: '' })] })).text, 'Done in 4 min · 3 workers');
+});

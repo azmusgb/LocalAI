@@ -139,6 +139,17 @@ function Wait-LocalAI-Health {
     return $false
 }
 
+# docs/ and host/ go into the candidate's app/repo-context, so they ship, back up and roll back with the app tree.
+function Copy-LocalAI-RepoContext([string]$Candidate) {
+    $context = Join-Path $Candidate 'app/repo-context'
+    if (Test-Path -LiteralPath $context) { Remove-Item -LiteralPath $context -Recurse -Force }
+    foreach ($part in @('docs','host')) {
+        $source = Join-Path $Candidate $part
+        if (-not (Test-Path -LiteralPath $source)) { continue }
+        [System.IO.Directory]::CreateDirectory($context) | Out-Null
+        Copy-Item -LiteralPath $source -Destination (Join-Path $context $part) -Recurse -Force
+    }
+}
 function Copy-LocalAI-AppTree([string]$From, [string]$To, [switch]$Replace) {
     if (-not (Test-Path -LiteralPath (Join-Path $From 'server.js'))) { throw "Application source missing: $From" }
     if (Test-Path -LiteralPath $To) {

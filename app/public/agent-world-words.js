@@ -91,15 +91,21 @@ function workerStep(w,m){
  const wait=(w.dependsOn||[]).map(byId).filter(x=>x&&x.state!=='complete');
  return wait.length?'Waiting for '+names(wait.map(workerName)):'Waiting to start';
 }
+// Follow-ups that didn't finish: "2 follow-ups ran out of time". Extras: with an answer the mission is done (its note).
+function followupNote(m){
+ const n={};for(const w of(m&&m.workers)||[])if(isFollowUp(w)&&BAD.has(w.state)){const k=wasInterrupted(w,m)?1:/out of time|too long/.test(workerError(w,m))?0:2;n[k]=(n[k]||0)+1}
+ return[0,1,2].filter(k=>n[k]).map(k=>n[k]+' follow-up'+(n[k]>1?'s ':' ')+[`ran out of time`,(n[k]>1?'were':'was')+' interrupted by an update','didn’t finish'][k]).join(' · ');
+}
 function statusSentence(m){
  if(!m)return{tone:'idle',label:'',text:'Give your team a goal'};
  const all=m.workers||[],done=all.filter(w=>w.state==='complete').length,count=done+' of '+all.length+' done';
- const bad=all.find(w=>w.state==='error')||all.find(w=>w.state==='blocked');
+ const counts=w=>!(m.status==='complete'&&isFollowUp(w)); // a done mission's stopped follow-ups are its note
+ const bad=all.find(w=>w.state==='error'&&counts(w))||all.find(w=>w.state==='blocked'&&counts(w));
  if(m.status==='needs_attention'||m.status==='error'||m.status==='failed'||bad){
   const why=bad?subject(bad)+(bad.state==='error'||wasInterrupted(bad,m)?' '+stoppedWords(bad,m):' couldn’t start'):errorWords(m.errorCode,m.error);
   return{tone:'attention',label:'Needs you',text:'Needs you · '+(all.length?count+' · ':'')+why};
  }
- if(m.status==='complete'){const d=duration(span(m.createdAt,m.finishedAt||m.updatedAt)),n=all.length;return{tone:'done',label:'Done',text:'Done'+(d?' in '+d:'')+' · '+n+' worker'+(n===1?'':'s')}}
+ if(m.status==='complete'){const d=duration(span(m.createdAt,m.finishedAt||m.updatedAt)),n=all.filter(w=>!isFollowUp(w)).length,note=followupNote(m);return{tone:'done',label:'Done',text:'Done'+(d?' in '+d:'')+' · '+n+' worker'+(n===1?'':'s')+(note?' · '+note:'')}}
  const running=all.filter(w=>w.state==='running');
  if(running.length===1&&key(running[0])==='router')return{tone:'working',label:'Working',text:'Starting · the team lead is picking the team'};
  if(!running.length)return{tone:'working',label:'Working',text:'Working · '+count};
@@ -157,7 +163,7 @@ function summaryWhy(m){const all=(m&&m.workers)||[],c=all.find(w=>key(w)==='synt
  if(m&&m.status==='complete')return'No summary: the Coordinator didn’t write one.';
  if(stopped.length)return'No summary: '+names(stopped.map(subject))+' stopped.';
  return'No summary yet: the team is still working.'}
-const api={summaryWhy,changeSentence,stoppedWords,teamPreview,workerName,workerRole,workerStep,stateBadge,statusSentence,storyEvents,groupStory,errorWords,duration};
+const api={followupNote,summaryWhy,changeSentence,stoppedWords,teamPreview,workerName,workerRole,workerStep,stateBadge,statusSentence,storyEvents,groupStory,errorWords,duration};
 root.LocalAIAgentWords=api;
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

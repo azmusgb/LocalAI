@@ -882,9 +882,8 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
 // Domains, sections, labels and descriptions come from view-registry.js.
 const REG=window.LocalAIViews;
 const DOMAINS=REG.DOMAINS.map(d=>({...d,groups:REG.sections(d.id)}));
-const DESCRIPTIONS=Object.fromEntries(REG.VIEWS.map(v=>[v.id,v.description]));
 const q=(s,r=document)=>r.querySelector(s),qa=(s,r=document)=>[...r.querySelectorAll(s)];
-let currentDomain='home',sheetOpen=false,allButtons=new Map();
+let allButtons=new Map();
 // Sprite icons (index.html) for the phone header and tab bar; decorative, every button also has a text label.
 const icon=(name,cls)=>window.LocalAIKit?.icon(name,cls)||'';
 
@@ -935,61 +934,27 @@ function buildIntegrationsView(){
  }
 }
 
+// Desktop: the rail of areas; the page strip under the header lists the area's pages (navigation spec N5).
 function buildDesktopNav(){
  const aside=q('.app>aside'),nav=q('.app>aside nav');if(!aside||!nav)return;
  const originals=qa('.navbtn[data-view]',nav);allButtons=new Map(originals.map(b=>[b.dataset.view,b]));
  const registry=document.createElement('div');registry.id='uxNavRegistry';registry.hidden=true;originals.forEach(b=>registry.appendChild(b));aside.appendChild(registry);
  const shell=document.createElement('div');shell.className='ux-nav-shell';
  const rail=document.createElement('div');rail.className='ux-primary-rail';rail.setAttribute('role','navigation');rail.setAttribute('aria-label','Primary');
- const secondary=document.createElement('div');secondary.className='ux-secondary-nav';
- const secondaryHead=document.createElement('div');secondaryHead.className='ux-secondary-head';secondaryHead.innerHTML='<div><strong id="uxSecondaryTitle">Home</strong><small id="uxSecondaryTagline"></small></div><button type="button" class="ux-nav-collapse" data-nav-collapse="true" aria-label="Hide page list" title="Hide page list">‹</button>';
- const groups=document.createElement('div');groups.className='ux-secondary-groups';groups.id='uxSecondaryGroups';groups.setAttribute('role','navigation');groups.setAttribute('aria-label','Pages in this section');
- secondary.append(secondaryHead,groups);
  DOMAINS.forEach(d=>{
    const b=document.createElement('button');b.type='button';b.className='ux-primary-item';b.dataset.domain=d.id;b.title=d.label;b.innerHTML='<span class="ux-primary-symbol" aria-hidden="true">'+(icon(d.icon)||d.symbol)+'</span><span>'+d.label+'</span>';
    b.addEventListener('click',()=>navigate(d.defaultView));
    rail.appendChild(b);
  });
- const expand=document.createElement('button');expand.type='button';expand.className='ux-nav-expand';expand.dataset.navCollapse='false';expand.setAttribute('aria-label','Show page list');expand.title='Show page list';expand.textContent='›';rail.appendChild(expand);
- shell.append(rail,secondary);nav.replaceWith(shell);
- shell.addEventListener('click',e=>{const t=e.target.closest('[data-nav-collapse]');if(t)setCollapsed(t.dataset.navCollapse==='true',true)});
- setCollapsed(prefGet('localai.navCollapsed')==='1');
- renderSecondary('home');
-}
-function renderSecondary(domainId){
- const d=DOMAINS.find(x=>x.id===domainId)||DOMAINS[0],holder=q('#uxSecondaryGroups'),registry=q('#uxNavRegistry');if(!holder)return;
- qa('.navbtn[data-view]',holder).forEach(b=>registry?.appendChild(b));
- q('#uxSecondaryTitle').textContent=d.label;q('#uxSecondaryTagline').textContent=d.tagline;
- holder.innerHTML='';holder.dataset.dev=String(!devOff());
- listedGroups(d).forEach(g=>{
-   const section=document.createElement('section');section.className='ux-secondary-section';
-   const h=document.createElement('div');h.className='ux-secondary-label';h.textContent=g.label;section.appendChild(h);
-   g.views.forEach(v=>{const src=viewButton(v);if(!src)return;const b=src;b.classList.add('ux-secondary-link');b.title=DESCRIPTIONS[v]||'';b.setAttribute('aria-description',DESCRIPTIONS[v]||'');b.innerHTML='<span class="ux-link-icon" aria-hidden="true">'+icon(REG.view(v)?.svg)+'</span><span class="ux-link-label">'+labelForView(v)+'</span>';section.appendChild(b)});
-   holder.appendChild(section);
- });
-}
-function buildTabs(){
- for(const v of REG.VIEWS){
-   if(!v.parent)continue;
-   for(const t of REG.tabs(v.id)){
-     const section=q('#'+t.id);if(!section||q('.ux-page-tabs',section))continue; // its own tab rows (Spreadsheets' sheets) are not page tabs
-     const strip=document.createElement('div');strip.className='ux-tabs ux-page-tabs';strip.setAttribute('role','tablist');strip.setAttribute('aria-label',REG.label(REG.page(t.id).id)+' sections');
-     REG.tabs(t.id).forEach(x=>{const b=document.createElement('button');b.type='button';b.className='ux-tab';b.setAttribute('role','tab');b.setAttribute('aria-controls',x.id);b.tabIndex=-1;b.dataset.uxTab=x.id;b.textContent=x.tab||x.label;b.addEventListener('click',()=>navigate(x.id));strip.appendChild(b)});
-     // One tab stop per strip (sync() gives the selected tab tabindex 0); arrows, Home and End open the next page, and
-     // app.js keeps focus on the same tab in that page's copy of the strip (as the mission result tabs do).
-     strip.addEventListener('keydown',e=>{const all=qa('.ux-tab',strip),i=all.indexOf(e.target);if(i<0)return;const n=e.key==='ArrowRight'?i+1:e.key==='ArrowLeft'?i-1:e.key==='Home'?0:e.key==='End'?all.length-1:null;if(n===null)return;e.preventDefault();const to=all[(n+all.length)%all.length];to.focus();navigate(to.dataset.uxTab)});
-     const top=q('.topbar',section);if(top)top.after(strip);else section.prepend(strip);
-   }
- }
+ shell.append(rail);nav.replaceWith(shell);
 }
 function buildContext(){
  const main=q('main');if(!main||q('#uxContextBar'))return;
  const bar=document.createElement('header');bar.id='uxContextBar';bar.className='ux-context-bar';
- bar.innerHTML='<div class="ux-context-left"><span class="ux-context-brand"><span class="brandmark ux-context-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12c2.6-5.6 11.4-5.6 14 0-2.6 5.6-11.4 5.6-14 0Z" stroke="#0b0d11" stroke-width="2"/><circle cx="12" cy="12" r="2.2" fill="#0b0d11"/></svg></span><span class="ux-context-brand-names"><small id="uxContextGreeting"></small><strong>Local AI</strong></span></span><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-action icon-btn" type="button" id="uxHeaderAction" hidden></button><button class="ux-context-inbox" type="button" id="uxInboxBtn" data-empty="true" aria-label="Inbox" hidden>'+icon('bell','ux-ico')+'<span>Inbox</span><b id="uxInboxCount">0</b></button><button class="ux-context-search" type="button" id="uxCommandBtn" aria-label="Search commands">'+icon('search','ux-ico')+'<span>Search commands</span><kbd>⌘K</kbd></button><button class="ux-context-menu" id="uxContextMenu" type="button" aria-expanded="false" aria-label="Pages in this section"><span>Menu</span>'+icon('chevron-down','ux-ico')+'</button></div>';
+ bar.innerHTML='<div class="ux-context-left"><span class="ux-context-brand"><span class="brandmark ux-context-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12c2.6-5.6 11.4-5.6 14 0-2.6 5.6-11.4 5.6-14 0Z" stroke="#0b0d11" stroke-width="2"/><circle cx="12" cy="12" r="2.2" fill="#0b0d11"/></svg></span><span class="ux-context-brand-names"><small id="uxContextGreeting"></small><strong>Local AI</strong></span></span><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-action icon-btn" type="button" id="uxHeaderAction" hidden></button><button class="ux-context-inbox" type="button" id="uxInboxBtn" data-empty="true" aria-label="Inbox" hidden>'+icon('bell','ux-ico')+'<span>Inbox</span><b id="uxInboxCount">0</b></button><button class="ux-context-search" type="button" id="uxCommandBtn" aria-label="Search commands">'+icon('search','ux-ico')+'<span>Search commands</span><kbd>⌘K</kbd></button></div>';
  main.prepend(bar);
  q('[data-ux-go="home"]')?.addEventListener('click',()=>navigate('home'));
  q('#uxCommandBtn')?.addEventListener('click',()=>{if(window.LocalAICommand)return window.LocalAICommand.open();const cmd=q('#cmdk');if(cmd){cmd.classList.add('show');cmd.setAttribute('aria-hidden','false');q('#cmdkInput')?.focus()}});
- q('#uxContextMenu')?.addEventListener('click',()=>toggleSheet());
  // Unread alerts plus approvals waiting, reported by app.js after it loads Inbox or Approvals.
  let inbox={unread:0,pending:0};
  window.addEventListener('localai:inbox-count',e=>{inbox={...inbox,...e.detail};const total=inbox.unread+inbox.pending,b=q('#uxInboxBtn');
@@ -1002,24 +967,21 @@ const headerActions=new Map();
 function syncHeaderAction(view){const b=q('#uxHeaderAction');if(!b)return;const a=headerActions.get(REG.view(view||activeView())?.id||view||activeView());b.hidden=!a;q('#uxContextBar')?.classList.toggle('ux-context-has-action',!!a);if(!a){b.onclick=null;return}b.innerHTML=icon(a.icon,'ux-ico');b.setAttribute('aria-label',a.label);b.onclick=a.onClick}
 window.LocalAIShell={setAction(view,action){headerActions.set(view,action);syncHeaderAction()},clearAction(view){headerActions.delete(view);syncHeaderAction()}};
 function greeting(){const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'}
-function prefGet(k){try{return localStorage.getItem(k)}catch{return null}}
-function prefSet(k,v){try{localStorage.setItem(k,v)}catch{}}
-function setCollapsed(on,fromUser){document.body.classList.toggle('ux-nav-collapsed',on);if(fromUser){prefSet('localai.navCollapsed',on?'1':'0');q(on?'.ux-nav-expand':'.ux-nav-collapse')?.focus()}}
 function buildPageStrip(){
  const bar=q('#uxContextBar');if(!bar||q('#uxPageStrip'))return;
  const strip=document.createElement('nav');strip.id='uxPageStrip';strip.className='ux-page-strip';strip.setAttribute('aria-label','Pages in this section');
  bar.after(strip);
  strip.addEventListener('scroll',()=>fadeStrip(strip),{passive:true});window.addEventListener('resize',()=>fadeStrip(strip),{passive:true});
- strip.addEventListener('click',e=>{const b=e.target.closest('[data-strip-view]');if(b){navigate(b.dataset.stripView);toggleSheet(false)}});
+ strip.addEventListener('click',e=>{const b=e.target.closest('[data-strip-view]');if(b)navigate(b.dataset.stripView)});
 }
-// One strip for the area (navigation spec N5): its pages, and a page's tabs in place of the page (Projects › Library,
-// Work › Automations), so a phone never shows a second row of page tabs under it.
+// One strip for the area, on phones and desktops (navigation spec N5): its pages, and a page's tabs in place of the
+// page (Projects › Library, Work › Automations).
 function renderPageStrip(d,page,view){
  const strip=q('#uxPageStrip');if(!strip)return;
  const views=listedGroups(d).flatMap(g=>g.views).flatMap(v=>{const t=REG.tabs(v);return t.length?t.map(x=>x.id):[v]});
  const current=REG.view(view)?.id;if(views.includes(current))page=current;
  const key=d.id+'|'+views.join(',');
- if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=views.map(v=>'<button type="button" data-strip-view="'+v+'">'+(REG.view(v)?.short||labelForView(v))+'</button>').join('');}
+ if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=views.map(v=>'<button type="button" data-strip-view="'+v+'" title="'+REG.description(v).replace(/"/g,'&quot;')+'">'+(REG.view(v)?.tab||REG.view(v)?.short||labelForView(v))+'</button>').join('');}
  // Home's only other page, Inbox, already has a button in the top bar; a hidden page (Missions, Chat) is none of these.
  strip.hidden=views.length<2||d.id==='home'||REG.view(view)?.domain==='hidden';
  qa('[data-strip-view]',strip).forEach(b=>{const on=b.dataset.stripView===page;b.classList.toggle('active',on);if(on){b.setAttribute('aria-current','page');if(strip.scrollWidth>strip.clientWidth)strip.scrollLeft=Math.max(0,b.offsetLeft-strip.clientWidth/2+b.offsetWidth/2)}else b.removeAttribute('aria-current')});
@@ -1030,31 +992,19 @@ function fadeStrip(strip){const max=strip.scrollWidth-strip.clientWidth,x=strip.
 function buildMobile(){
  if(q('#uxMobileNav'))return;
  const nav=document.createElement('div');nav.id='uxMobileNav';nav.className='ux-mobile-nav';nav.setAttribute('role','navigation');nav.setAttribute('aria-label','Primary navigation');
- DOMAINS.forEach(d=>{const b=document.createElement('button');b.type='button';b.dataset.domain=d.id;b.innerHTML='<b>'+icon(d.icon)+'</b><span>'+d.label+'</span>';b.addEventListener('click',()=>{navigate(d.defaultView);toggleSheet(false)});nav.appendChild(b)});
- const sheet=document.createElement('div');sheet.id='uxMobileSheet';sheet.className='ux-mobile-sheet';sheet.dataset.open='false';sheet.innerHTML='<div class="ux-mobile-sheet-handle"></div><div class="ux-mobile-sheet-head"><div><span class="ux-secondary-kicker">Navigate</span><strong id="uxMobileSheetTitle"></strong><small id="uxMobileSheetTagline"></small></div><button type="button" id="uxMobileSheetClose" aria-label="Close menu">×</button></div><div class="ux-mobile-sheet-items" id="uxMobileSheetItems"></div>';
- sheet.inert=true;sheet.setAttribute('aria-hidden','true');document.body.append(sheet,nav);q('#uxMobileSheetClose')?.addEventListener('click',()=>toggleSheet(false));
- document.addEventListener('click',e=>{if(sheetOpen&&!sheet.contains(e.target)&&!nav.contains(e.target)&&!e.target.closest?.('#uxContextMenu'))toggleSheet(false)});
+ DOMAINS.forEach(d=>{const b=document.createElement('button');b.type='button';b.dataset.domain=d.id;b.innerHTML='<b>'+icon(d.icon)+'</b><span>'+d.label+'</span>';b.addEventListener('click',()=>navigate(d.defaultView));nav.appendChild(b)});
+ document.body.append(nav);
 }
-function renderSheet(){
- const d=DOMAINS.find(x=>x.id===currentDomain)||DOMAINS[0],holder=q('#uxMobileSheetItems');if(!holder)return;
- q('#uxMobileSheetTitle').textContent=d.label;q('#uxMobileSheetTagline').textContent=d.tagline;holder.innerHTML='';
- listedGroups(d).forEach(g=>{const section=document.createElement('section');section.className='ux-mobile-section';section.innerHTML='<div class="ux-mobile-section-label">'+g.label+'</div>';g.views.forEach(v=>{if(!viewButton(v))return;const b=document.createElement('button');b.type='button';b.className='ux-mobile-link '+(v===menuPage(activeView())?'active':'');b.innerHTML='<span><strong>'+labelForView(v)+'</strong><small>'+DESCRIPTIONS[v]+'</small></span><span>›</span>';b.addEventListener('click',()=>{navigate(v);toggleSheet(false)});section.appendChild(b)});holder.appendChild(section)});
-}
-let sheetRelease=null; // Back closes the sheet (LocalAIUI.sheetHistory)
-function toggleSheet(force){sheetOpen=typeof force==='boolean'?force:!sheetOpen;const s=q('#uxMobileSheet');if(s&&sheetOpen&&!sheetRelease&&window.LocalAIUI?.sheetHistory)sheetRelease=window.LocalAIUI.sheetHistory(s,()=>{sheetRelease=null;toggleSheet(false)});else if(!sheetOpen&&sheetRelease){const r=sheetRelease;sheetRelease=null;r()}if(s){s.dataset.open=String(sheetOpen);s.inert=!sheetOpen;s.setAttribute('aria-hidden',String(!sheetOpen))}q('#uxContextMenu')?.setAttribute('aria-expanded',String(sheetOpen));document.body.classList.toggle('ux-sheet-open',sheetOpen);if(sheetOpen)renderSheet()}
 function sync(forced){
- const view=REG.view(forced||activeView())?.id||forced||activeView(),d=domainForView(view);currentDomain=d.id;document.body.dataset.domain=d.id;document.body.dataset.view=view;
- // A hidden page (Missions, Chat, Images) names itself in the breadcrumb and lights the page that owns it in the menus.
- const hidden=REG.view(view)?.domain==='hidden',page=pageForView(view),viewLabel=labelForView(page),navPage=menuPage(view);renderPageStrip(d,navPage,view);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=listedGroups(d).flatMap(g=>g.views).filter(v=>viewButton(v)).length<2;document.body.classList.toggle('ux-single-page',single&&(hidden||!touchWide()));q('#uxContextBar')?.classList.toggle('ux-context-same',!hidden&&(single||viewLabel===d.label))} // "Local AI / Domain" for a domain with one page, "Local AI / Domain / Page" otherwise
- q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);q('#uxContextMenu')?.setAttribute('aria-label',d.label+' pages');syncHeaderAction(view);{const g=q('#uxContextGreeting');if(g)g.textContent=greeting()};
+ const view=REG.view(forced||activeView())?.id||forced||activeView(),d=domainForView(view);document.body.dataset.domain=d.id;document.body.dataset.view=view;
+ // A hidden page (Missions, Chat, Images) names itself in the top bar and lights the area that owns it.
+ const hidden=REG.view(view)?.domain==='hidden',page=pageForView(view),viewLabel=labelForView(page),navPage=menuPage(view);renderPageStrip(d,navPage,view);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=listedGroups(d).flatMap(g=>g.views).filter(v=>viewButton(v)).length<2;q('#uxContextBar')?.classList.toggle('ux-context-same',!hidden&&(single||viewLabel===d.label))} // the bar names the area; a hidden page (Missions) names itself
+ q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);syncHeaderAction(view);{const g=q('#uxContextGreeting');if(g)g.textContent=greeting()};
  qa('.ux-primary-item').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
  qa('#uxMobileNav [data-domain]').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
- if(q('#uxSecondaryTitle')?.textContent!==d.label||q('#uxSecondaryGroups')?.dataset.dev!==String(!devOff()))renderSecondary(d.id);
- qa('.ux-secondary-link').forEach(b=>{const on=b.dataset.view===navPage;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
- qa('.ux-tab[data-ux-tab]').forEach(b=>{const on=b.dataset.uxTab===view;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1});
- if(sheetOpen)renderSheet();
 }
-function observeViews(){const views=qa('.view');if(!views.length)return;const mo=new MutationObserver(()=>sync());views.forEach(v=>mo.observe(v,{attributes:true,attributeFilter:['class']}));
+// Mid-switch no page is active for a moment; syncing then would take it for Home and hide the strip under the focus.
+function observeViews(){const views=qa('.view');if(!views.length)return;const mo=new MutationObserver(()=>{if(q('.view.active'))sync()});views.forEach(v=>mo.observe(v,{attributes:true,attributeFilter:['class']}));
  // The Developer tools switch (first-run.js) toggles body.dev-tools-off: the menus redraw with or without the developer pages.
  let dev=devOff();new MutationObserver(()=>{if(devOff()===dev)return;dev=devOff();sync()}).observe(document.body,{attributes:true,attributeFilter:['class']});document.addEventListener('click',e=>{const b=e.target.closest?.('.navbtn[data-view]');if(b)requestAnimationFrame(()=>sync(b.dataset.view))})}
 // An error box shown for a field marks that field invalid and describes it with the box; hidden again, it lets go.
@@ -1065,19 +1015,14 @@ function linkError(box){const field=document.getElementById(ERROR_FIELDS[box.id]
  if(field.tagName!=='DIALOG'){if(on)field.setAttribute('aria-invalid','true');else field.removeAttribute('aria-invalid')}}
 function linkErrors(){const sync=()=>Object.keys(ERROR_FIELDS).forEach(id=>{const b=document.getElementById(id);if(b)linkError(b)});sync();
  new MutationObserver(ms=>{for(const m of ms){if(m.type==='attributes'){if(ERROR_FIELDS[m.target.id])linkError(m.target)}else if(m.addedNodes.length){sync();return}}}).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden']})}
-// A touch screen wider than a phone (an iPad) keeps the page list on every page, even Work's one page, so the content
-// starts at the same x on every page instead of jumping 188px between tabs. A desktop with a mouse still drops it.
-// A page of its own that belongs to a one-page domain (Missions' Agent World, Runs: both Work) drops it on an iPad too:
-// the city is full width on a tablet (docs/superpowers/specs/2026-10-17-agent-world-design.md).
-function touchWide(){return matchMedia('(pointer:coarse) and (min-width:761px)').matches}
 // The sticky header draws a 1px line once the page scrolls (body.ux-scrolled), unless page tabs under it draw their own.
 function headerLine(){const strip=q('#uxPageStrip'),tabs=!!strip&&!strip.hidden&&strip.getBoundingClientRect().height>0;document.body.classList.toggle('ux-scrolled',window.scrollY>0&&!tabs)}
-// iOS scrolls the page under a sheet even with overflow:hidden. While a sheet or a modal dialog is open on a touch
-// screen, the body is pinned (position:fixed at minus the scroll) and put back where it was on close; a page opened
-// from the sheet starts at its top instead.
+// iOS scrolls the page under a dialog even with overflow:hidden. While a modal dialog is open on a touch screen, the
+// body is pinned (position:fixed at minus the scroll) and put back where it was on close; a page opened from the
+// dialog starts at its top instead.
 let pinned=null;
 function scrollLock(){
- const open=matchMedia('(pointer:coarse)').matches&&(document.body.classList.contains('ux-sheet-open')||!!document.querySelector('dialog[open]'));
+ const open=matchMedia('(pointer:coarse)').matches&&!!document.querySelector('dialog[open]');
  if(open&&!pinned){const y=window.scrollY;pinned={y,view:activeView(),hash:location.hash};Object.assign(document.body.style,{position:'fixed',top:-y+'px',left:'0',right:'0',width:'100%'})}
  else if(!open&&pinned){const p=pinned;pinned=null;for(const k of ['position','top','left','right','width'])document.body.style.removeProperty(k);
   const back=()=>{if(!pinned)window.scrollTo({top:p.view===activeView()&&p.hash===location.hash?p.y:0,behavior:'instant'})};
@@ -1089,7 +1034,7 @@ function watchScroll(){
  new MutationObserver(scrollLock).observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']});
  headerLine();
 }
-function init(){document.body.classList.add('ux-v3');linkErrors();buildIntegrationsView();buildTabs();buildDesktopNav();buildContext();buildPageStrip();buildMobile();observeViews();sync();watchScroll()}
+function init(){document.body.classList.add('ux-v3');linkErrors();buildIntegrationsView();buildDesktopNav();buildContext();buildPageStrip();buildMobile();observeViews();sync();watchScroll()}
 if(document.readyState==='complete')init();else window.addEventListener('load',init,{once:true});
 })();
 

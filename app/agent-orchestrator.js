@@ -1,6 +1,8 @@
 'use strict';
 const fs=require('fs'),path=require('path'),{EventEmitter}=require('events');
 const {runAgentLoop}=require('./agent-runtime');
+const createMissionEvidence=require('./mission-evidence');
+const {followupNote}=require('./public/agent-world-words');
 const {createResearchTools,evidenceRecord,tool,objectArgs,stringArg}=require('./agent-tools');
 module.exports=function createAgentOrchestrator(deps={}){
  const {dataDir,ollamaUrl,defaultModel,fetchWithTimeout,runLocalModel,knowledgeStore,knowledgeScore,searxSearch,recordActivity}=deps;
@@ -65,33 +67,9 @@ module.exports=function createAgentOrchestrator(deps={}){
   const rows=knowledgeStore().filter(x=>x.projectId===projectId);
   return rows.flatMap(row=>(Array.isArray(row.chunks)?row.chunks:[row.text||row.content||'']).map((text,index)=>({source:'knowledge:'+row.id+'#chunk-'+index,text:String(text||''),score:typeof knowledgeScore==='function'?knowledgeScore(goal,String(text||'')):1}))).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,6);
  }
- const sourceFiles=[
-  ['app/agent-orchestrator.js',path.join(__dirname,'agent-orchestrator.js')],
-  ['app/specialist-agents.json',path.join(__dirname,'specialist-agents.json')],
-  ['app/server.js',path.join(__dirname,'server.js')],
-  ['app/agent-runtime.js',path.join(__dirname,'agent-runtime.js')],
-  ['app/agent-tools.js',path.join(__dirname,'agent-tools.js')],
-  ['app/public/index.html',path.join(__dirname,'public','index.html')],
-  ['app/public/app.js',path.join(__dirname,'public','app.js')],
-  ['app/public/ui.js',path.join(__dirname,'public','ui.js')],
-  ['app/public/app.css',path.join(__dirname,'public','app.css')]
- ];
- function goalTerms(goal){return [...new Set(String(goal||'').toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g)||[])].filter(t=>!['the','and','for','with','this','that','from','into','local','implementation','recommendations'].includes(t)).slice(0,18)}
- function sourceExcerpt(label,file,goal,maxChars=7000){
-  try{const raw=fs.readFileSync(file,'utf8'),lines=raw.split(/\r?\n/),terms=goalTerms(goal),picked=new Set();
-   if(lines.length<=140)return {source:label,text:raw.slice(0,maxChars),truncated:raw.length>maxChars};
-   lines.forEach((line,i)=>{const low=line.toLowerCase();if(terms.some(t=>low.includes(t)))for(let n=Math.max(0,i-5);n<=Math.min(lines.length-1,i+8);n++)picked.add(n)});
-   if(!picked.size)return null;
-   const ordered=[...picked].sort((a,b)=>a-b),out=[];let last=-2;
-   for(const n of ordered){if(n>last+1)out.push('...');out.push(String(n+1).padStart(5,' ')+' | '+lines[n]);last=n;if(out.join('\n').length>=maxChars)break}
-   return {source:label,text:out.join('\n').slice(0,maxChars),truncated:out.join('\n').length>maxChars};
-  }catch{return null}
- }
- function projectGrounding(goal,agentId){
-  const preferred=agentId==='ux_analyst'?sourceFiles.filter(([n])=>/public\/(index|app|agent-)/.test(n)||/specialist-agents/.test(n)):sourceFiles;
-  const evidence=preferred.map(([label,file])=>sourceExcerpt(label,file,goal)).filter(Boolean);
-  return evidence.slice(0,7);
- }
+ // Missions about Local AI itself read the code and docs of the part of the app the goal names (mission-evidence.js).
+ const missionEvidence=createMissionEvidence({appRoot:__dirname,...(deps.repoRoots?{repoRoots:deps.repoRoots}:{})});
+ function projectGrounding(goal,agentId){return missionEvidence.select(goal,{agentId})}
  async function runModelReliable(prompt,system,timeoutMs,model){
   let last;
   for(let attempt=0;attempt<=MODEL_RETRY_DELAYS_MS.length;attempt++){try{return await runLocalModel(prompt,system,timeoutMs,model)}catch(e){last=e;const msg=String(e&&e.message||e),transient=/fetch failed|ECONNRESET|ECONNREFUSED|socket|network|UND_ERR|terminated/i.test(msg);if(!transient||attempt>=MODEL_RETRY_DELAYS_MS.length)throw e;await new Promise(r=>setTimeout(r,MODEL_RETRY_DELAYS_MS[attempt]))}}
@@ -130,7 +108,7 @@ module.exports=function createAgentOrchestrator(deps={}){
     // Leave most of the context for investigation: the opening evidence stops at a fixed share; tools can read the rest.
     let used=0;const opening=packet.sources.map((x,i)=>'['+run.evidenceRecords[i].id+'] SOURCE: '+x.source+'\n'+x.text).filter(block=>(used+=block.length)<=OPENING_EVIDENCE_CHARS);
     const evidence=opening.join('\n\n');
-    const prompt=grounding+'Goal:\n'+goal+'\n\nAuthoritative project evidence:\n'+(evidence||'(none)')+upstreamText+'\n\nInvestigate missing facts using the offered tools. Read paths relative to the app folder (for example server.js, agent-orchestrator.js, public/app.js). Search knowledge only within the selected project. Cite evidence IDs such as [E-...] for every observation. Separate observations, recommendations, and remaining unknowns.';
+    const prompt=grounding+'Goal:\n'+goal+'\n\nAuthoritative project evidence:\n'+(evidence||'(none)')+upstreamText+'\n\nInvestigate missing facts using the offered tools. Read files by the paths in the source labels (for example app/public/ui.js, app/public/app.css, docs/README.md). Search knowledge only within the selected project. Cite evidence IDs such as [E-...] for every observation. Separate observations, recommendations, and remaining unknowns.';
     const result=await runAgentLoop({model:rt.model,system:agent.system,prompt,turn:deps.runAgentTurn,tools:createResearchTools({projectRoot,projectId,knowledgeStore,knowledgeScore,searxSearch,...run.policy}),evidence:run.evidenceRecords,onEvent:publish,signal:options.signal,...deps.agentLimits,timeoutMs:GROUNDED_TIMEOUT_MS});
     Object.assign(run,result);run.evidence=result.evidenceRecords.map(x=>x.source);
    }catch(e){
@@ -218,10 +196,21 @@ module.exports=function createAgentOrchestrator(deps={}){
    }
    opts.signal?.throwIfAborted();
    const failed=results.filter(r=>r.status!=='complete'),blockedWorkers=m.workers.filter(w=>w.state==='blocked');if(failed.length||blockedWorkers.length){const sw=m.workers.find(x=>x.id==='synthesis');sw.state='blocked';sw.error='Synthesis skipped because prerequisite specialists did not complete';m.status='needs_attention';m.error='Mission stopped after specialist failure';m.updatedAt=iso();missionSnapshot(m,'mission-attention','Mission stopped after specialist failure');return m}
-   m.workers.find(x=>x.id==='synthesis').state='running';missionSnapshot(m,'synthesis','Coordinator started synthesis','synthesis');
-   const coordinatorModel=(await routeModel(goal+' synthesis')).model,joined=results.map(r=>'## '+r.agentName+(r.citationWarning?' (citation warning: '+r.citationWarning+')':'')+'\n'+String(r.answer||r.error||'').slice(0,12000)).join('\n\n');
-   m.answer=typeof deps.runAgentTurn==='function'?await coordinate(m,goal,projectId,coordinatorModel,joined,opts).catch(e=>{if(e.code!=='MODEL_NO_TOOLS')throw e;m.toolFallback=e.message;return null}):null;
-   if(m.answer===null)m.answer=await runModelReliable('Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nSynthesize only claims grounded in the specialist evidence. Preserve source labels. Reject invented product behavior, metrics, dates, screens, users, or defects. Clearly distinguish observed evidence from recommendations and identify remaining evidence gaps.','You are the mission coordinator for the Local AI Appliance. Produce an actionable, source-grounded synthesis; never substitute a generic consumer AI product.',COORDINATOR_TIMEOUT_MS,coordinatorModel);m.coordinatorModel=coordinatorModel;m.workers.find(x=>x.id==='synthesis').state='complete';const followupFailed=m.followups.some(f=>f.status!=='complete');m.status=results.some(x=>x.status==='error')||followupFailed?'needs_attention':'complete';if(followupFailed)m.error='One or more follow-up investigations failed';
+   const sw=m.workers.find(x=>x.id==='synthesis');sw.state='running';missionSnapshot(m,'synthesis','Coordinator started synthesis','synthesis');
+   try{
+    const coordinatorModel=(await routeModel(goal+' synthesis')).model,joined=results.map(r=>'## '+r.agentName+(r.citationWarning?' (citation warning: '+r.citationWarning+')':'')+'\n'+String(r.answer||r.error||'').slice(0,12000)).join('\n\n');
+    m.answer=typeof deps.runAgentTurn==='function'?await coordinate(m,goal,projectId,coordinatorModel,joined,opts).catch(e=>{if(e.code!=='MODEL_NO_TOOLS')throw e;m.toolFallback=e.message;return null}):null;
+    if(m.answer===null)m.answer=await runModelReliable('Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nSynthesize only claims grounded in the specialist evidence. Preserve source labels. Reject invented product behavior, metrics, dates, screens, users, or defects. Clearly distinguish observed evidence from recommendations and identify remaining evidence gaps.','You are the mission coordinator for the Local AI Appliance. Produce an actionable, source-grounded synthesis; never substitute a generic consumer AI product.',COORDINATOR_TIMEOUT_MS,coordinatorModel);m.coordinatorModel=coordinatorModel;
+   }catch(e){
+    // Cancelling the mission stays an error; a coordinator that fails on its own leaves no answer, so the mission needs you.
+    if(opts.signal?.aborted)throw e;
+    const msg=String(e.message||e);sw.state='error';sw.error=msg;sw.errorCode=e.code||'';
+   }
+   // Follow-ups are optional extras: with an answer the mission is done and says which didn't finish (their own rows
+   // keep their stopped state). Only a missing answer needs you.
+   const note=followupNote(m);if(note)m.note=note;
+   if(sw.state!=='error'&&String(m.answer||'').trim()){sw.state='complete';m.status='complete'}
+   else{if(sw.state!=='error'){sw.state='error';sw.error='The coordinator didn’t write an answer'}m.status='needs_attention';m.error='No answer: '+(sw.error||'the coordinator didn’t write one')+(note?' ('+note+')':'');m.errorCode=sw.errorCode||'MISSION_NO_ANSWER';settleWorkers(m,m.error);missionSnapshot(m,'mission-attention',m.error,'synthesis');return m}
   }catch(e){m.status='error';m.error=String(e.message||e);m.errorCode=e.code||'MISSION_ERROR';settleWorkers(m,m.error)}
   m.updatedAt=iso();missionSnapshot(m,m.status==='complete'?'mission-complete':'mission-error',m.status==='complete'?'Mission completed and artifacts are ready':(m.error||'Mission ended with an error'));return m
  }
