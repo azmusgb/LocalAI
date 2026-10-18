@@ -71,7 +71,8 @@ await check('a model card shows quantization, format and memory details only wit
     await p.evaluate(() => window.showView('models'));
     await p.click('#modelRuntimeRefresh');
     await p.waitForSelector('#modelRuntimeList .model-runtime-card');
-    const seen = () => p.locator('#modelRuntimeList .model-runtime-card').evaluate(card => [...card.querySelectorAll('.model-runtime-meta .badge, .model-runtime-detail > span')].filter(e => e.getClientRects().length).map(e => e.textContent.trim()));
+    // One evaluate on the live DOM: the list is redrawn when the status poll comes back, so a held card can go stale.
+    const seen = () => p.evaluate(() => [...document.querySelectorAll('#modelRuntimeList .model-runtime-card .model-runtime-meta .badge, #modelRuntimeList .model-runtime-card .model-runtime-detail > span')].filter(e => e.getClientRects().length).map(e => e.textContent.trim()));
     await p.evaluate(() => document.body.classList.add('dev-tools-off'));
     assert.deepEqual(await seen(), ['qwen3', '4.0B', 'Model size']);
     assert.doesNotMatch(await p.locator('#modelRuntimeList').innerText(), /Q4_K_M|gguf|VRAM|Unload target/);

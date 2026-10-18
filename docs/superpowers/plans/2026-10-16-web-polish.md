@@ -306,7 +306,8 @@ Checked on 18 Oct (critique §5).
 - [x] Visual baselines exist for every owner page at 390 and 1440 (#282). The 8 older desktop baselines (home,
   work, library, projects, backlog, claude, status, models) are shot at 1280, not 1440.
 - [ ] …and match the owner's screens. **Needs the owner.**
-- [ ] `npm run ci` on `main` is green. Not checked here: the last merge (#285) has no `local-ci` result; #283 and
-  #284 just before it were green (553 unit tests, 43/43 browser suites).
+- [ ] `npm run ci` on `main` is green. Not checked here (this close-out does not run it): #285 merged with no
+  `local-ci` result and left `npm test` red on the shell budget until #286; #283 and #284 were green (553 unit tests,
+  43/43 browser suites).
 - [ ] The critique's §3 has no open Important rows. One is partly fixed: Library still collects every chat
   (§3.4, "Library is a second Work"); its follow-up waits for the owner to say what "kept" means.
