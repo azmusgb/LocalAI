@@ -21,9 +21,9 @@ const BANNED = new RegExp(String.raw`\b(capabilit(?:y|ies)|runtimes?|orchestrati
 const DEV = new Set([...VIEWS.filter(v => v.domain === 'improve').map(v => v.id), 'workbench', 'repoTools', 'powershell', 'actions']);
 
 const CEILING = {
-  'index.html': 4,
+  'index.html': 3,
   'app.js': 3,
-  'ui.js': 6,
+  'ui.js': 5,
   'home.js': 0,
   'work.js': 0,
   'components.js': 0,
