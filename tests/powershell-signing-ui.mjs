@@ -4,21 +4,17 @@
 // tests/Test-LocalAI-PowerShellBridge.ps1. Starts its own server with the bridge tokens set.
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { chromium } from 'playwright';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const port = await new Promise(r => { const s = createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
+const { spawnAppServer } = createRequire(import.meta.url)('./spawn-server.cjs');
 const dataDir = mkdtempSync(join(tmpdir(), 'localai-ps-'));
 const UI_TOKEN = 'ui-token-for-tests-0123456789', BRIDGE_TOKEN = 'bridge-token-for-tests-0123456789', KEY = 'approval-key-for-tests-0123456789abcdef';
-const server = spawn(process.execPath, [join(root, 'app/server.js')], { env: { ...process.env, PORT: String(port), DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, POWERSHELL_UI_TOKEN: UI_TOKEN, POWERSHELL_BRIDGE_TOKEN: BRIDGE_TOKEN }, stdio: 'ignore' });
-const base = `http://127.0.0.1:${port}`;
-for (let i = 0; i < 100; i++) { try { if ((await fetch(base + '/healthz')).ok) break; } catch {} await new Promise(r => setTimeout(r, 100)); }
+const { child: server, ready } = spawnAppServer({ env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, POWERSHELL_UI_TOKEN: UI_TOKEN, POWERSHELL_BRIDGE_TOKEN: BRIDGE_TOKEN } });
+const base = await ready;
 
 const browser = await chromium.launch();
 let failed = 0;

@@ -151,6 +151,22 @@
     afterSheetPop(()=>{if(!live)return;try{history.pushState({...(history.state&&typeof history.state==='object'?history.state:{}),localaiSheet:id},'',location.href)}catch{}window.addEventListener('popstate',onPop)});
     return function release(){if(!live)return;live=false;liveSheets.delete(id);window.removeEventListener('popstate',onPop);if(here())popBack()};
   }
+  // showSheet(d, onClosed) -> release() (null if d is open): showModal() + sheetHistory for a reusable <dialog>; onClosed(reopened) runs once
+  // when this opening ends. The close event is queued, so after close-then-open in one task it arrives while the new opening shows:
+  // opening again settles the last opening itself (onClosed(true): leave focus alone), and a close event while d is open is ignored.
+  const sheetOpenings=new WeakMap();
+  function showSheet(d,onClosed){
+    if(!d||d.open)return null;
+    sheetOpenings.get(d)?.(true);
+    let done=false;
+    const settle=reopened=>{if(done)return;done=true;d.removeEventListener('close',onCloseEvent);if(sheetOpenings.get(d)===settle)sheetOpenings.delete(d);release();
+      try{if(typeof onClosed==='function')onClosed(!!reopened)}catch(e){console.error(e)}};
+    const onCloseEvent=()=>{if(!d.open)settle(false)};
+    d.showModal();
+    const release=sheetHistory(d,()=>{if(d.open)d.close();else settle(false)});
+    d.addEventListener('close',onCloseEvent);sheetOpenings.set(d,settle);
+    return release;
+  }
   // Each run kind can own the body of its run view: mount(run, el) fills el. Kinds with none show the Output block.
   const runBodies=new Map();
   // opts.update(run, slot) -> boolean: the same run re-rendered keeps its slot (no release, no re-mount) and is updated in place; false asks for a re-mount.
@@ -223,7 +239,7 @@
     if(m.target.dataset?.runList||[...m.removedNodes].some(n=>n.classList?.contains('run-card')))boxes.add(m.target);
     for(const n of m.addedNodes){if(n.nodeType!==1)continue;if(n.classList.contains('run-card'))boxes.add(m.target);else n.querySelectorAll('.run-card').forEach(c=>boxes.add(c.parentElement))}}
     boxes.forEach(markRunList)}).observe(document.documentElement,{subtree:true,childList:true});
-  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{approvalSheet,toast,hideToast:()=>{const t=document.getElementById('toast');if(t)hideToast(t)},fetchJson,loadInto,ask,runCard,sheetHistory,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
+  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{approvalSheet,toast,hideToast:()=>{const t=document.getElementById('toast');if(t)hideToast(t)},fetchJson,loadInto,ask,runCard,sheetHistory,showSheet,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
 })();
 // Pull to refresh (touch only): on a list page that registered a refresh, a finger pulling down from the very top by
 // more than 64px refreshes the page once; a small status line says "Updating…", then "Updated just now".

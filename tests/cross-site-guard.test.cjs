@@ -8,35 +8,20 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { spawn } = require('node:child_process');
 const { once } = require('node:events');
+const { spawnAppServer } = require('./spawn-server.cjs');
 
-let child, dataDir, port, diagnostics = '';
-
-async function freePort() {
-  const s = http.createServer();
-  s.listen(0, '127.0.0.1');
-  await once(s, 'listening');
-  const p = s.address().port;
-  await new Promise(resolve => s.close(resolve));
-  return p;
-}
+let child, dataDir, port;
 
 before(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-csrf-'));
-  port = await freePort();
   const off = 'http://127.0.0.1:9';
-  child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], {
-    env: { ...process.env, DATA_DIR: dataDir, PORT: String(port), WORKSPACE_ROOT: dataDir, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
-  });
-  child.stdout.on('data', c => diagnostics += c);
-  child.stderr.on('data', c => diagnostics += c);
-  for (let attempt = 0; attempt < 80; attempt++) {
-    if (child.exitCode !== null) throw new Error(diagnostics);
-    try { if ((await fetch(`http://127.0.0.1:${port}/healthz`)).ok) break; } catch {}
-    if (attempt === 79) throw new Error(`Server did not start: ${diagnostics}`);
-    await new Promise(r => setTimeout(r, 100));
-  }
+  let ready;
+  ({ child, ready } = spawnAppServer({
+    env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
+  }));
+  // The tests below send Host and Origin headers with the port, so keep it.
+  port = Number(new URL(await ready).port);
 });
 
 after(async () => {

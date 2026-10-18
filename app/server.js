@@ -4,6 +4,8 @@ const path = require('path');
 const { URL } = require('url');
 
 const PORT = Number(process.env.PORT || 3080);
+// The port the server listens on: PORT, or the one the system picked when PORT=0 (tests/spawn-server.cjs). Calls to itself use it.
+const listenPort = () => server.address()?.port || PORT;
 // Second listener for host-only tools (PowerShell Workbench). Docker publishes it on 127.0.0.1 only, so a request
 // that arrives on this port came from the Windows host itself; unlike the Host header, a LAN client cannot fake that.
 const LOCAL_UI_PORT = Number(process.env.LOCAL_UI_PORT || 0);
@@ -38,6 +40,7 @@ const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 const crypto = require('crypto');
 const { Storage } = require('./storage');
 const { RunLedger, cleanId: cleanRunId } = require('./run-ledger');
+const busy = require('./busy');
 const improve = require('./improve');
 const { runCard, workKind, WORK_CHIPS } = require('./run-cards');
 const libraryThreads = require('./library-threads');
@@ -69,6 +72,8 @@ if (process.env.LOCALAI_NOTIFY_LOG) {
   const realNotify = notifier.notify;
   notifier.notify = event => { try { fs.appendFileSync(process.env.LOCALAI_NOTIFY_LOG, JSON.stringify(event) + '\n'); } catch {} return realNotify(event); };
 }
+// Work with no record while it runs (a GridCraft request, an automation): GET /api/busy lists it.
+const inFlight = busy.createInFlight();
 const runLedger = new RunLedger({ storage, onTransition: (run, previous) => { const e = notifyLib.runEvent(run, previous); if (e) notifier.notify(e); } });
 const activeRunControllers = new Map();
 const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody });
@@ -535,7 +540,7 @@ async function getCapabilitiesSnapshot(force = false) {
     changes: { pending: changes.filter(x => ['planned','patch_failed','validation_failed','staged','awaiting_approval','approved','apply_requested'].includes(x.status)).length },
     issues: { open: issues.filter(x => x.status === 'open').length },
     engineering: { active: engineeringRuns.filter(x => x.status === 'running').length, awaitingApproval: engineeringRuns.filter(x => x.status === 'awaiting_approval').length },
-    powershell: { configured: !!POWERSHELL_BRIDGE_TOKEN, localOnly: true, localPort: LOCAL_UI_PORT || PORT }
+    powershell: { configured: !!POWERSHELL_BRIDGE_TOKEN, localOnly: true, localPort: LOCAL_UI_PORT || listenPort() }
   };
   capabilityCache = { value: snapshot, expiresAt: Date.now() + CAPABILITY_CACHE_MS };
   return snapshot;
@@ -653,7 +658,7 @@ async function voiceAction({ action, subject }) {
   if (action === 'image') {
     if (!subject) return 'What should the image show?';
     // Through the server's own route, so the image is made exactly as one asked for in the app.
-    fetchWithTimeout(`http://127.0.0.1:${PORT}/api/images/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: subject, voice: true }) }, 900000)
+    fetchWithTimeout(`http://127.0.0.1:${listenPort()}/api/images/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: subject, voice: true }) }, 900000)
       .then(async r => {
         const j = await r.json().catch(() => ({}));
         if (r.ok) voiceNotify('Your image is ready', subject, j.runId);
@@ -1480,6 +1485,7 @@ async function apiGridcraftRun(req, res) {
   try { b = await readBody(req, 64 * 1024); } catch (e) { return json(res, 400, { ok: false, error: e.message }); }
   const prompt = String(b.prompt || ''), mode = b.mode === undefined ? 'review' : String(b.mode);
   if (!GRIDCRAFT_MODES.has(mode)) return json(res, 400, { ok: false, error: 'mode must be read, review or apply' });
+  const untrack = inFlight.track('gridcraft', 'GridCraft: ' + prompt);
   try {
     const r = await fetchWithTimeout(`${GRIDCRAFT_URL}/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, mode }) }, GRIDCRAFT_RUN_TIMEOUT_MS);
     const data = await r.json().catch(() => ({ ok: false, error: `Bridge returned HTTP ${r.status}` }));
@@ -1500,7 +1506,7 @@ async function apiGridcraftRun(req, res) {
     json(res, r.status, { ok, answer: run.answer, ...(ok ? {} : { error: data.error, reason: data.reason }), durationSec: data.durationSec, run });
   } catch (e) {
     json(res, 502, { ok: false, error: `GridCraft bridge unavailable: ${e.message || e}` });
-  }
+  } finally { untrack(); }
 }
 async function apiGridcraftRuns(req, res) { json(res, 200, { items: gridcraftRuns() }); }
 async function apiGridcraftWorkbook(req, res, urlObj) {
@@ -1618,7 +1624,7 @@ function apiConfig(req, res) {
     subtitle: 'Private Intelligence Hub',
     version: APP_VERSION,
     model: MODEL,
-    localUiPort: LOCAL_UI_PORT || PORT,
+    localUiPort: LOCAL_UI_PORT || listenPort(),
     // An install that has used the Build tools keeps them in the menu by default; a new one starts without them.
     developerHistory: changeStore().length > 0 || engineeringRunStore().length > 0 || claudeFindings().length > 0,
     chatTimeoutMs: CHAT_MODEL_TIMEOUT_MS,
@@ -1850,6 +1856,13 @@ function retryRequestForRunId(id){
   if(String(id).startsWith('legacy-automation:')){const sourceId=String(id).slice('legacy-automation:'.length),run=automationRunStore().find(x=>x.id===sourceId);if(run&&['complete','error','completed','failed'].includes(String(run.status)))return {path:'/api/automations/run',body:{id:run.automationId}}}
   return null;
 }
+// What a restart would interrupt now. The host's auto-deploy holds an update while this says busy (docs/DEPLOY.md).
+// The orchestrator is only asked once something has created it: before that nothing of its can be running, and
+// creating it here would settle records from before the restart as a side effect.
+function apiBusy(req,res){
+  try{json(res,200,busy.activeWork({runs:['queued','running','streaming'].flatMap(status=>runLedger.list({status,all:true})),missions:specialistOrchestrator?specialistOrchestrator.missions(200):[],specialists:specialistOrchestrator?specialistOrchestrator.runs(200):[],inFlight:inFlight.list()}))}
+  catch(e){json(res,500,{error:String(e.message||e)})}
+}
 async function apiRuns(req,res,urlObj){
   try{const id=String(urlObj.searchParams.get('id')||'');const pid=String(urlObj.searchParams.get('projectId')||''),tid=String(urlObj.searchParams.get('threadId')||''),threads=urlObj.searchParams.get('threads')==='1';const kind=String(urlObj.searchParams.get('kind')||'');if(kind&&kind!=='all'&&!WORK_CHIPS.includes(kind))return json(res,400,{error:'Unknown kind'});const beforeId=String(urlObj.searchParams.get('before')||'');let before=null;if(beforeId){if(!cleanRunId(beforeId))return json(res,400,{error:'Invalid run id'});const ref=runLedger.get(beforeId)||legacyUnifiedRuns().find(x=>x.id===beforeId);if(!ref)return json(res,404,{error:'Run not found'});before={createdAt:ref.createdAt,id:ref.id}}let items=unifiedRunItems(urlObj.searchParams.get('limit')||120,{projectId:pid,threadId:tid,threads,before,kind:threads&&kind!=='all'?kind:''});const pending=approvalStore().filter(a=>a.status==='pending'),changes=changeStore();const cardOpts={approvalFor:r=>r.meta?.changeId&&pending.find(a=>a.meta?.changeId===r.meta.changeId)||null,changeFor:cid=>changes.find(c=>c.id===cid)||null};if(id){const item=items.find(x=>x.id===id)||runLedger.get(id)||(id.startsWith('legacy-')?legacyUnifiedRuns().find(x=>x.id===id):null);if(!item)return json(res,404,{error:'Run not found'});return json(res,200,{item:{...item,card:runCard(item,cardOpts)}})}const status=String(urlObj.searchParams.get('status')||''),type=String(urlObj.searchParams.get('type')||'');if(status)items=items.filter(x=>x.status===status);if(type)items=items.filter(x=>x.type===type);items=items.map(x=>({...x,card:runCard(x,cardOpts)}));json(res,200,{items,summary:{total:items.length,active:items.filter(x=>['queued','running','streaming','awaiting_approval'].includes(x.status)).length,failed:items.filter(x=>x.status==='failed').length,awaitingApproval:items.filter(x=>x.status==='awaiting_approval').length}})}catch(e){storageError(res,e,500)}
 }
@@ -1886,7 +1899,7 @@ async function apiRunRetry(req, res) {
 
     const parent = unifiedRunItems(500).find(x => x.id === id) || runLedger.get(id);
     const nextAttempt = Math.max(1, Number(parent?.attempt) || 1) + 1;
-    const response = await fetchWithTimeout(`http://127.0.0.1:${PORT}${replay.path}`, {
+    const response = await fetchWithTimeout(`http://127.0.0.1:${listenPort()}${replay.path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(replay.body || {})
@@ -2237,7 +2250,8 @@ function nextRunFor(schedule,from=new Date()){
 }
 async function executeAutomation(a){
   const runs=automationRunStore(); const run={id:makeId('autorun'),automationId:a.id,name:a.name,status:'running',startedAt:nowIso()};runs.unshift(run);saveStore(AUTOMATION_RUNS_STORE,runs,500);
-  try{if(a.kind==='health'){const s=await getStatusAndRecordTransition();run.output=`Overall: ${s.overall}. ${s.services.map(x=>`${x.label}: ${x.state}`).join('; ')}`;}else if(a.kind==='research'){const rs=await searxSearch(a.prompt);run.output=await runLocalModel(`${a.prompt}\n\n${rs.map((x,i)=>`[${i+1}] ${x.title}\n${x.content}\n${x.url}`).join('\n\n')}`,'Summarize the research with source numbers.');}else{run.output=await runLocalModel(a.prompt||a.name)}run.status='complete'}catch(e){run.status='error';run.error=String(e.message||e)}run.finishedAt=nowIso();saveStore(AUTOMATION_RUNS_STORE,runs,500);recordActivity('automation',`Automation ${run.status}`,a.name,{automationId:a.id,runId:run.id});return run;
+  const untrack=inFlight.track('automation',a.name||'Automation');
+  try{if(a.kind==='health'){const s=await getStatusAndRecordTransition();run.output=`Overall: ${s.overall}. ${s.services.map(x=>`${x.label}: ${x.state}`).join('; ')}`;}else if(a.kind==='research'){const rs=await searxSearch(a.prompt);run.output=await runLocalModel(`${a.prompt}\n\n${rs.map((x,i)=>`[${i+1}] ${x.title}\n${x.content}\n${x.url}`).join('\n\n')}`,'Summarize the research with source numbers.');}else{run.output=await runLocalModel(a.prompt||a.name)}run.status='complete'}catch(e){run.status='error';run.error=String(e.message||e)}finally{untrack()}run.finishedAt=nowIso();saveStore(AUTOMATION_RUNS_STORE,runs,500);recordActivity('automation',`Automation ${run.status}`,a.name,{automationId:a.id,runId:run.id});return run;
 }
 async function apiAutomations(req,res){if(!requireFeature(res,4))return;json(res,200,{items:automationStore(),runs:automationRunStore().slice(0,100)})}
 async function apiAutomationCreate(req,res){if(!requireFeature(res,4))return;try{const b=await readBody(req);const name=String(b.name||'').trim();if(!name)return json(res,400,{error:'name is required'});const items=automationStore();const schedule=['manual','hourly','daily'].includes(b.schedule)?b.schedule:'manual';const item={id:makeId('auto'),name:normalizeTitle(name,'Automation'),kind:['prompt','research','health'].includes(b.kind)?b.kind:'prompt',prompt:String(b.prompt||'').slice(0,10000),schedule,enabled:b.enabled!==false,createdAt:nowIso(),updatedAt:nowIso(),nextRunAt:schedule==='manual'?null:nextRunFor(schedule)};items.unshift(item);saveStore(AUTOMATIONS_STORE,items,250);json(res,201,{item})}catch(e){storageError(res,e,400)}}
@@ -3086,7 +3100,7 @@ function powerShellJobStore(){return objectStore(POWERSHELL_JOBS_STORE)}
 function savePowerShellJobs(items){saveStore(POWERSHELL_JOBS_STORE,items,250)}
 // The port proves the request came from the host (see LOCAL_UI_PORT); the Host check still blocks DNS-rebinding pages.
 function localUiRequest(req){if(LOCAL_UI_PORT&&req.socket?.localPort!==LOCAL_UI_PORT)return false;const raw=String(req.headers.host||'').toLowerCase();const host=raw.startsWith('[')?raw.slice(1,raw.indexOf(']')):raw.split(':')[0];return host==='127.0.0.1'||host==='localhost'||host==='::1'}
-function requireLocalUi(req,res){if(!localUiRequest(req)){json(res,403,{error:`PowerShell Workbench is available only from http://localhost:${LOCAL_UI_PORT||PORT} on the Windows host.`});return false}if(!POWERSHELL_UI_TOKEN||String(req.headers['x-localai-powershell-token']||'')!==POWERSHELL_UI_TOKEN){json(res,401,{error:'PowerShell Workbench is locked. Enter the local UI token from C:\\LocalAI\\powershell-bridge\\ui-token.txt.'});return false}return true}
+function requireLocalUi(req,res){if(!localUiRequest(req)){json(res,403,{error:`PowerShell Workbench is available only from http://localhost:${LOCAL_UI_PORT||listenPort()} on the Windows host.`});return false}if(!POWERSHELL_UI_TOKEN||String(req.headers['x-localai-powershell-token']||'')!==POWERSHELL_UI_TOKEN){json(res,401,{error:'PowerShell Workbench is locked. Enter the local UI token from C:\\LocalAI\\powershell-bridge\\ui-token.txt.'});return false}return true}
 function hostBridgeAuthorized(req){if(!POWERSHELL_BRIDGE_TOKEN)return false;const auth=String(req.headers.authorization||'');return auth===`Bearer ${POWERSHELL_BRIDGE_TOKEN}`}
 function normalizeWindowsCwd(value){let v=String(value||'C:\\Projects').trim().replace(/\//g,'\\');if(/\.\.(?:\\|$)/.test(v))throw new Error('Working directory may not contain ..');const low=v.toLowerCase();const roots=['c:\\projects','c:\\repos','c:\\localai'];if(!roots.some(r=>low===r||low.startsWith(r+'\\')))throw new Error('Working directory must be under C:\\Projects, C:\\repos, or C:\\LocalAI');return v}
 function powerShellRisk(script){const s=String(script||'').toLowerCase();if(/format-volume|clear-disk|remove-item\s+[^\r\n]*-recurse|stop-computer|restart-computer|docker\s+(?:rm|system\s+prune)|remove-netfirewallrule/.test(s))return 'high';if(/set-content|add-content|copy-item|move-item|remove-item|new-item|docker\s+(?:restart|stop|start)|invoke-webrequest|invoke-restmethod/.test(s))return 'medium';return 'low'}
@@ -3362,6 +3376,7 @@ const server = http.createServer(async (req, res) => {
   try {
     if (crossSiteRequest(req)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 403, { error: 'Cross-site request blocked' }); }
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 } });
+    if (req.method === 'GET' && p === '/api/busy') return apiBusy(req, res);
     if (req.method === 'GET' && p === '/api/releases') return await apiReleases(req, res);
     if (req.method === 'GET' && p === '/api/access') return await apiAccess(req, res);
     if (req.method === 'GET' && p === '/api/glance') return await apiGlance(req, res, urlObj);

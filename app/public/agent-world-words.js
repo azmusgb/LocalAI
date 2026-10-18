@@ -45,9 +45,16 @@ function duration(ms){
 const span=(a,b)=>Date.parse(b)-Date.parse(a);
 // The server's step labels ("Follow-up stopped: …", "Follow-up failed: …") are dropped: the sentence names the step.
 const STEP_LABEL=/^(?:follow-up\s+)?(?:stopped|failed)\s*:\s*/i;
+const unlabel=msg=>{let t=String(msg||'').trim();for(let i=0;i<3&&STEP_LABEL.test(t);i++)t=t.replace(STEP_LABEL,'').trim();return t};
+// A restart (usually an update) cut the work short: the server says "Interrupted: the appliance restarted while this
+// was running" (older) or "Local AI restarted for an update while this was running". It reads as an interruption, not
+// as "stopped: interrupted: …".
+const INTERRUPTED=/\brestarted\b.*\bwhile (?:this|it) was (?:running|working)/i;
+function interrupted(code,msg){return String(code||'')==='INTERRUPTED'||INTERRUPTED.test(unlabel(msg))}
 function errorWords(code,msg){
- const c=String(code||'');let t=String(msg||'').trim();
- for(let i=0;i<3&&STEP_LABEL.test(t);i++)t=t.replace(STEP_LABEL,'').trim();
+ const c=String(code||''),t=unlabel(msg);
+ // Work a restart stopped (agent-orchestrator.js reconcileInterrupted), in either wording.
+ if(interrupted(c,t))return'interrupted by an update';
  if(c==='AGENT_TIMEOUT'||/execution deadline reached/i.test(t))return'the agent ran out of time';
  if(c==='AGENT_TURN_LIMIT'||/turn limit reached/i.test(t))return'the agent couldn’t settle on an answer';
  if(c==='AGENT_CONTEXT_LIMIT'||/context limit reached/i.test(t))return'the agent had too much to read';
@@ -61,6 +68,9 @@ function errorWords(code,msg){
 const BAD=new Set(['error','blocked']);
 function resultFor(m,w){return((m&&m.results)||[]).find(r=>r.agentId===(w.id||w.agentId))||null}
 function workerError(w,m){const r=resultFor(m,w)||{};return errorWords(w.errorCode||r.errorCode,w.error||r.error)}
+function wasInterrupted(w,m){const r=resultFor(m,w)||{};return interrupted(w.errorCode||r.errorCode,w.error||r.error)}
+// What happened to a stopped worker, after its name: "was interrupted by an update" or "stopped: the model didn’t answer".
+const stoppedWords=(w,m)=>wasInterrupted(w,m)?'was interrupted by an update':'stopped: '+workerError(w,m);
 const names=list=>list.length<2?list.join(''):list.slice(0,-1).join(', ')+' and '+list[list.length-1];
 function workerStep(w,m){
  if(!w)return'';const all=(m&&m.workers)||[],byId=id=>all.find(x=>(x.id||x.agentId)===id);
@@ -75,6 +85,7 @@ function workerStep(w,m){
   if(key(w)==='router')return'Picked the team';
   const d=duration(span(w.startedAt,w.finishedAt));return d?'Finished in '+d:'Finished';
  }
+ if((w.state==='error'||w.state==='blocked')&&wasInterrupted(w,m))return'Interrupted by an update';
  if(w.state==='error')return'Stopped: '+workerError(w,m);
  if(w.state==='blocked'){const stuck=(w.dependsOn||[]).map(byId).filter(x=>x&&BAD.has(x.state));return stuck.length?'Couldn’t start: '+names(stuck.map(subject))+' stopped':'Couldn’t start'}
  const wait=(w.dependsOn||[]).map(byId).filter(x=>x&&x.state!=='complete');
@@ -85,7 +96,7 @@ function statusSentence(m){
  const all=m.workers||[],done=all.filter(w=>w.state==='complete').length,count=done+' of '+all.length+' done';
  const bad=all.find(w=>w.state==='error')||all.find(w=>w.state==='blocked');
  if(m.status==='needs_attention'||m.status==='error'||m.status==='failed'||bad){
-  const why=bad?subject(bad)+(bad.state==='error'?' stopped: '+workerError(bad,m):' couldn’t start'):errorWords(m.errorCode,m.error);
+  const why=bad?subject(bad)+(bad.state==='error'||wasInterrupted(bad,m)?' '+stoppedWords(bad,m):' couldn’t start'):errorWords(m.errorCode,m.error);
   return{tone:'attention',label:'Needs you',text:'Needs you · '+(all.length?count+' · ':'')+why};
  }
  if(m.status==='complete'){const d=duration(span(m.createdAt,m.finishedAt||m.updatedAt)),n=all.length;return{tone:'done',label:'Done',text:'Done'+(d?' in '+d:'')+' · '+n+' worker'+(n===1?'':'s')}}
@@ -105,7 +116,7 @@ function storyEvents(m){
  if(!tl.length){
   const all=m.workers||[];if(!all.length)return[];say(m.createdAt,'router','The team lead picked the team: '+team(all),'done');
   for(const w of all){if(key(w)==='router')continue;const n=subject(w),step=workerStep(w,m);
-   say(m.updatedAt,idOf(w),w.state==='complete'?n+' finished':w.state==='error'||w.state==='blocked'?n+' '+step.charAt(0).toLowerCase()+step.slice(1):n+' is '+step.charAt(0).toLowerCase()+step.slice(1),TONE[w.state]||'wait')}
+   say(m.updatedAt,idOf(w),w.state==='complete'?n+' finished':w.state==='error'||w.state==='blocked'?changeSentence(w,m):n+' is '+step.charAt(0).toLowerCase()+step.slice(1),TONE[w.state]||'wait')}
   return out.reverse();
  }
  let prev=null;const waited=new Set();
@@ -125,7 +136,7 @@ function storyEvents(m){
  return out.reverse();
 }
 // One worker's new state as a sentence (the story and the city's floating notes): "UX Analyst started reviewing the screens".
-function changeSentence(w,m){const n=subject(w);return w.state==='running'?n+' started '+activity(w):w.state==='complete'?n+' finished':w.state==='error'?n+' stopped: '+workerError(w,m):w.state==='blocked'?n+' '+workerStep(w,m).replace(/^C/,'c'):''}
+function changeSentence(w,m){const n=subject(w);return w.state==='running'?n+' started '+activity(w):w.state==='complete'?n+' finished':w.state==='error'||(w.state==='blocked'&&wasInterrupted(w,m))?n+' '+stoppedWords(w,m):w.state==='blocked'?n+' '+workerStep(w,m).replace(/^C/,'c'):''}
 const TONE={running:'working',complete:'done',error:'bad',blocked:'bad',pending:'wait'};
 // Consecutive sentences about one worker read as one group under that worker.
 function groupStory(list){const g=[];for(const e of list||[]){const last=g[g.length-1];if(last&&e.workerId&&last.workerId===e.workerId)last.items.push(e);else g.push({workerId:e.workerId||'',items:[e]})}return g}
@@ -140,12 +151,13 @@ function teamPreview(list){
 }
 // Why there is no summary yet, in one sentence.
 function summaryWhy(m){const all=(m&&m.workers)||[],c=all.find(w=>key(w)==='synthesis'),stopped=all.filter(w=>w.state==='error'&&key(w)!=='synthesis');
+ if(m&&m.status!=='complete'&&!m.answer&&(interrupted(m.errorCode,m.error)||(c&&wasInterrupted(c,m))))return'No summary: Local AI restarted for an update before the team finished.';
  if(c&&c.state==='blocked')return'No summary: the Coordinator couldn’t start because '+(stopped.length?names(stopped.map(subject))+' stopped.':'a worker stopped.');
  if(c&&c.state==='error')return'No summary: the Coordinator stopped before finishing.';
  if(m&&m.status==='complete')return'No summary: the Coordinator didn’t write one.';
  if(stopped.length)return'No summary: '+names(stopped.map(subject))+' stopped.';
  return'No summary yet: the team is still working.'}
-const api={summaryWhy,changeSentence,teamPreview,workerName,workerRole,workerStep,stateBadge,statusSentence,storyEvents,groupStory,errorWords,duration};
+const api={summaryWhy,changeSentence,stoppedWords,teamPreview,workerName,workerRole,workerStep,stateBadge,statusSentence,storyEvents,groupStory,errorWords,duration};
 root.LocalAIAgentWords=api;
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

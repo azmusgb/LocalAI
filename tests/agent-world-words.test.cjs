@@ -50,6 +50,11 @@ test('errors are said in plain words', () => {
   assert.equal(words.errorWords('', 'fetch failed'), 'the model didn’t answer');
   assert.equal(words.errorWords('MODEL_TIMEOUT', ''), 'the model took too long');
   assert.equal(words.errorWords('APPLIANCE_RESTART', ''), 'Local AI restarted while it was working');
+  // The restart reason, new and old wording, reads the same.
+  assert.equal(words.errorWords('', 'Local AI restarted for an update while this was running'), 'interrupted by an update');
+  assert.equal(words.errorWords('INTERRUPTED', 'Interrupted: the appliance restarted while this was running'), 'interrupted by an update');
+  const m = mission({ status: 'error', workers: [router(), ux({ state: 'error', error: 'Local AI restarted for an update while this was running' }), coord({ state: 'blocked' })] });
+  assert.equal(words.changeSentence(m.workers[1], m), 'UX Analyst was interrupted by an update');
   assert.equal(words.errorWords('', 'Disk full.'), 'disk full');
   assert.equal(words.errorWords('', 'x'.repeat(200)), 'something went wrong');
   assert.equal(words.errorWords('', ''), 'something went wrong');
@@ -171,4 +176,26 @@ test('a stopped follow-up is said once, in plain words', () => {
   assert.equal(words.errorWords('', 'Follow-up stopped: aborted'), 'aborted');
   // Its name on its own (labels in the city) is unchanged.
   assert.equal(words.workerName(m.workers[3]), 'UX Analyst · follow-up');
+});
+
+// A restart for an update cut the mission short (agent-orchestrator.js reconcileInterrupted). Live it read "Code Analyst
+// stopped: interrupted: the appliance restarted while this was running", and the crew row cut it off mid-word.
+test('an interruption reads as one sentence, not "stopped: interrupted: …"', () => {
+  for (const reason of ['Interrupted: the appliance restarted while this was running', 'Local AI restarted for an update while this was running']) {
+    const ca = { id: 'code_analyst', name: 'Code Analyst', state: 'error', error: reason, dependsOn: ['router'] };
+    const m = mission({ status: 'error', error: reason, workers: [router(), ca, coord({ state: 'blocked', error: reason, dependsOn: ['code_analyst'] })] });
+    assert.equal(words.statusSentence(m).text, 'Needs you · 1 of 3 done · Code Analyst was interrupted by an update', reason);
+    assert.equal(words.workerStep(ca, m), 'Interrupted by an update');
+    assert.equal(words.workerStep(m.workers[2], m), 'Interrupted by an update');
+    assert.equal(words.changeSentence(ca, m), 'Code Analyst was interrupted by an update');
+    assert.equal(words.errorWords('', reason), 'interrupted by an update');
+    assert.equal(words.errorWords('', 'Follow-up stopped: ' + reason), 'interrupted by an update');
+    assert.equal(words.summaryWhy(m), 'No summary: Local AI restarted for an update before the team finished.');
+    assert.ok(words.storyEvents(m).some(e => e.text === 'Code Analyst was interrupted by an update'));
+    assert.doesNotMatch(JSON.stringify(words.storyEvents(m)), /stopped: |interrupted:/i);
+  }
+  // Other stops keep their reason.
+  const m = mission({ workers: [router(), ux({ state: 'error', errorCode: 'MODEL_CONNECTION_ERROR' }), coord({ state: 'blocked' })] });
+  assert.equal(words.changeSentence(m.workers[1], m), 'UX Analyst stopped: the model didn’t answer');
+  assert.equal(words.workerStep(m.workers[2], m), 'Couldn’t start: UX Analyst stopped');
 });

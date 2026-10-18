@@ -7,16 +7,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 const { Storage } = require('../app/storage');
 const { RunLedger } = require('../app/run-ledger');
 const { continueThread, mergeThreads } = require('../app/library-threads');
+const { spawnAppServer } = require('./spawn-server.cjs');
 
-async function freePort() {
-  const s = http.createServer(); s.listen(0, '127.0.0.1'); await once(s, 'listening');
-  const port = s.address().port; await new Promise(r => s.close(r)); return port;
-}
 // A stand-in Ollama: /api/chat answers "answer N" for the Nth request.
 async function fakeOllama(t) {
   let n = 0;
@@ -35,15 +31,12 @@ async function fakeOllama(t) {
 async function startServer(t, { seed, ollama } = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-threads-'));
   if (seed) { const storage = new Storage({ dataDir }); seed(storage); storage.close?.(); }
-  const port = await freePort(), off = 'http://127.0.0.1:9';
-  const child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], {
-    env: { ...process.env, DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, PORT: String(port), OLLAMA_URL: ollama || off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off },
-    stdio: 'ignore'
+  const off = 'http://127.0.0.1:9';
+  const { child, ready } = spawnAppServer({
+    env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: ollama || off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off }
   });
   t.after(() => { child.kill(); fs.rmSync(dataDir, { recursive: true, force: true }); });
-  const base = `http://127.0.0.1:${port}`;
-  for (let i = 0; i < 150; i++) { try { if ((await fetch(base + '/healthz')).ok) return { base, dataDir }; } catch {} await new Promise(r => setTimeout(r, 100)); }
-  throw new Error('server did not start');
+  return { base: await ready, dataDir };
 }
 const get = async (base, p) => (await fetch(base + p)).json();
 const chat = (base, body) => fetch(base + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());

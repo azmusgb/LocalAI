@@ -5,41 +5,23 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const http = require('node:http');
 const crypto = require('node:crypto');
-const { spawn } = require('node:child_process');
 const { once } = require('node:events');
+const { spawnAppServer } = require('./spawn-server.cjs');
 
 const KEY = 'test-mac-key-0123456789abcdef';
-let child, dataDir, base, diagnostics = '', deviceCookie = '', deviceId = '';
+let child, dataDir, base, deviceCookie = '', deviceId = '';
 let counter = 0;
-
-async function freePort() {
-  const s = http.createServer();
-  s.listen(0, '127.0.0.1');
-  await once(s, 'listening');
-  const port = s.address().port;
-  await new Promise(resolve => s.close(resolve));
-  return port;
-}
 
 before(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-chat-'));
   fs.writeFileSync(path.join(dataDir, 'claude-chat-mac-key.sha256'), crypto.createHash('sha256').update(KEY).digest('hex'));
-  const port = await freePort();
-  base = `http://127.0.0.1:${port}`;
   const off = 'http://127.0.0.1:9';
-  child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], {
-    env: { ...process.env, DATA_DIR: dataDir, PORT: String(port), WORKSPACE_ROOT: dataDir, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
-  });
-  child.stdout.on('data', c => diagnostics += c);
-  child.stderr.on('data', c => diagnostics += c);
-  for (let attempt = 0; attempt < 80; attempt++) {
-    if (child.exitCode !== null) throw new Error(diagnostics);
-    try { if ((await fetch(`${base}/healthz`)).ok) break; } catch {}
-    if (attempt === 79) throw new Error(`Server did not start: ${diagnostics}`);
-    await new Promise(r => setTimeout(r, 100));
-  }
+  let ready;
+  ({ child, ready } = spawnAppServer({
+    env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off }
+  }));
+  base = await ready;
   const paired = await pairDevice(base, 'Test device');
   deviceCookie = paired.cookie; deviceId = paired.deviceId;
 });
@@ -348,24 +330,15 @@ test('non-object JSON bodies get a 400, not a hang', async () => {
 
 test('device routes are closed (401) without a valid device cookie, even with a Mac key or a forged cookie', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-chat-closed-'));
-  const port = await freePort();
-  const url = `http://127.0.0.1:${port}`;
   const off = 'http://127.0.0.1:9';
-  const env = { ...process.env, DATA_DIR: dir, PORT: String(port), WORKSPACE_ROOT: dir, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off };
+  const env = { DATA_DIR: dir, WORKSPACE_ROOT: dir, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off };
   fs.writeFileSync(path.join(dir, 'claude-chat-mac-key.sha256'), crypto.createHash('sha256').update(KEY).digest('hex'));
-  const c = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], { env });
-  let diag = '';
-  c.stdout.on('data', d => diag += d); c.stderr.on('data', d => diag += d);
+  const { child: c, ready } = spawnAppServer({ env });
   t.after(async () => {
     if (c.exitCode === null && c.signalCode === null) { const done = once(c, 'exit'); c.kill('SIGTERM'); await done; }
     fs.rmSync(dir, { recursive: true, force: true });
   });
-  for (let a = 0; a < 80; a++) {
-    if (c.exitCode !== null) throw new Error(diag);
-    try { if ((await fetch(`${url}/healthz`)).ok) break; } catch {}
-    if (a === 79) throw new Error(`Server did not start: ${diag}`);
-    await new Promise(r => setTimeout(r, 100));
-  }
+  const url = await ready;
   for (const headers of [{}, mac(), { Cookie: 'localai_chat_device=dev-aaaaaaaaaaaa.forged' }, { Cookie: 'localai_chat_device=garbage' }]) {
     const h = { ...JSONH, ...headers };
     const calls = [
@@ -382,24 +355,14 @@ test('device routes are closed (401) without a valid device cookie, even with a 
 // ---- pairing and devices ---------------------------------------------------------------------
 async function startServer(t, extraEnv = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-chat-pair-'));
-  const port = await freePort();
-  const url = `http://127.0.0.1:${port}`;
   const off = 'http://127.0.0.1:9';
   fs.writeFileSync(path.join(dir, 'claude-chat-mac-key.sha256'), crypto.createHash('sha256').update(KEY).digest('hex'));
-  const c = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], { env: { ...process.env, DATA_DIR: dir, PORT: String(port), WORKSPACE_ROOT: dir, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off, ...extraEnv } });
-  let diag = '';
-  c.stdout.on('data', d => diag += d); c.stderr.on('data', d => diag += d);
+  const { child: c, ready } = spawnAppServer({ env: { DATA_DIR: dir, WORKSPACE_ROOT: dir, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off, ...extraEnv } });
   t.after(async () => {
     if (c.exitCode === null && c.signalCode === null) { const done = once(c, 'exit'); c.kill('SIGTERM'); await done; }
     fs.rmSync(dir, { recursive: true, force: true });
   });
-  for (let a = 0; a < 80; a++) {
-    if (c.exitCode !== null) throw new Error(diag);
-    try { if ((await fetch(`${url}/healthz`)).ok) break; } catch {}
-    if (a === 79) throw new Error(`Server did not start: ${diag}`);
-    await new Promise(r => setTimeout(r, 100));
-  }
-  return url;
+  return ready;
 }
 const pairReq = url => fetch(`${url}/api/claude/chat/pair-request`, { method: 'POST', headers: JSONH, body: '{}' });
 const approve = (url, body, headers = { 'X-LocalAI-Mac-Key': KEY }) => fetch(`${url}/api/claude/chat/pair/approve`, { method: 'POST', headers: { ...JSONH, ...headers }, body: JSON.stringify(body) });

@@ -1962,6 +1962,8 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 @media(max-width:760px){
   .aw-sheet__action:not([hidden]){display:inline-flex;align-items:center;flex:none;min-height:44px;padding:0 14px}
   .aw-sheet__peek:has(.aw-sheet__action:not([hidden])) .aw-sheet__avatars{display:none}
+  /* The peek row carries the page's one action on a phone; the header's copy (off screen) would be a second. */
+  #agents #awPrimary{display:none}
 }
 /* Projects › Spreadsheets (spreadsheets.js): the workbook grid is the page's one loud element; changed cells carry the
    review state (amber waiting, green kept), everything else stays in the card kit. */

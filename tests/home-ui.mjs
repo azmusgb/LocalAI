@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { addAxe } from './axe-helper.mjs';
+import { checkReopenQuickly } from './sheet-reopen.mjs';
 
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const axePath = join(dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min.js');
@@ -210,6 +211,15 @@ await check('an approval opens in a sheet on Home with its full detail; Approve 
   await page.waitForFunction(() => /^Rejected/.test(document.getElementById('toast')?.textContent || ''), null, T);
   await page.waitForFunction(() => document.getElementById('homeNeedsYou').hidden && document.activeElement && document.activeElement !== document.body && document.getElementById('home').contains(document.activeElement), null, T);
   assert.deepEqual(errors, []);
+  await page.context().close();
+});
+
+await check('the mode sheet closed and opened again at once stays open, three times, and leaves no entry behind', async () => {
+  const page = await open(desk, '#home');
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  await page.locator('#homeModeChip').click();
+  await page.waitForSelector('#homeModeSheet[open]', T);
+  await checkReopenQuickly(page, 'homeModeSheet', () => { document.getElementById('homeModeSheet').close(); document.getElementById('homeModeChip').click(); });
   await page.context().close();
 });
 
