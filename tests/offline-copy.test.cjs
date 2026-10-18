@@ -60,3 +60,15 @@ test('only Local AI\'s own health payload counts as reachable (not a proxy 502 o
   assert.equal(isLocalAIHealth({ ok: true }), false, 'some other JSON (captive portal)');
   assert.equal(isLocalAIHealth({ appliance: 'Local AI', version: '' }), false);
 });
+
+test('otherAddresses offers the addresses that are not this page, Tailscale marked, https only', () => {
+  const list = [{ label: 'Home Wi-Fi', url: 'https://10.0.0.21' }, { label: 'Anywhere (Tailscale)', url: 'https://bill-hpdesktop.tailfa018e.ts.net' }];
+  assert.deepEqual(offline.otherAddresses(list, 'https://10.0.0.21'), [{ label: 'Anywhere (Tailscale)', url: 'https://bill-hpdesktop.tailfa018e.ts.net/', tailscale: true }]);
+  assert.deepEqual(offline.otherAddresses(list, 'https://bill-hpdesktop.tailfa018e.ts.net'), [{ label: 'Home Wi-Fi', url: 'https://10.0.0.21/', tailscale: false }]);
+  assert.equal(offline.otherAddresses(list, 'https://localai.home.arpa').length, 2);
+  // nothing saved yet, or junk: nothing to offer, and never a script or plain-HTTP link
+  assert.deepEqual(offline.otherAddresses(null, 'https://10.0.0.21'), []);
+  assert.deepEqual(offline.otherAddresses([{ label: 'x', url: 'javascript:alert(1)' }, { label: 'y', url: 'http://10.0.0.21' }, { label: 'z' }, null], 'https://a'), []);
+  // the same address twice is offered once
+  assert.equal(offline.otherAddresses([list[1], list[1]], 'https://10.0.0.21').length, 1);
+});
