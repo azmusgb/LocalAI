@@ -5,21 +5,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const http = require('node:http');
-const { spawn } = require('node:child_process');
-const { once } = require('node:events');
+const { spawnAppServer } = require('./spawn-server.cjs');
 
 test('the mission event stream sends keep-alive comments while quiet', { timeout: 30000 }, async t => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-sse-'));
-  const reserve = http.createServer(); reserve.listen(0, '127.0.0.1'); await once(reserve, 'listening');
-  const port = reserve.address().port; await new Promise(r => reserve.close(r));
-  const child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], {
-    env: { ...process.env, DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, PORT: String(port), SSE_KEEPALIVE_MS: '200', OLLAMA_URL: 'http://127.0.0.1:9' },
-    stdio: 'ignore'
+  const { child, ready } = spawnAppServer({
+    env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, SSE_KEEPALIVE_MS: '200', OLLAMA_URL: 'http://127.0.0.1:9' }
   });
   t.after(() => { child.kill(); fs.rmSync(dataDir, { recursive: true, force: true }); });
-  const base = `http://127.0.0.1:${port}`;
-  for (let i = 0; i < 100; i++) { try { if ((await fetch(base + '/healthz')).ok) break; } catch {} await new Promise(r => setTimeout(r, 100)); }
+  const base = await ready;
 
   const ctrl = new AbortController();
   const res = await fetch(base + '/api/agents/missions/events', { signal: ctrl.signal });

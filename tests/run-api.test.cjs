@@ -6,8 +6,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { spawn } = require('node:child_process');
 const { once } = require('node:events');
+const { spawnAppServer } = require('./spawn-server.cjs');
 
 // seed(storage) writes records (older legacy runs, say) before the server starts.
 async function startServer(t, extraEnv = {}, seed = null) {
@@ -29,18 +29,9 @@ async function startServer(t, extraEnv = {}, seed = null) {
   await once(mock, 'listening');
   const mockUrl = `http://127.0.0.1:${mock.address().port}`;
 
-  const reserve = http.createServer();
-  reserve.listen(0, '127.0.0.1');
-  await once(reserve, 'listening');
-  const port = reserve.address().port;
-  await new Promise(resolve => reserve.close(resolve));
-  const base = `http://127.0.0.1:${port}`;
-  let diagnostics = '';
-  const child = spawn(process.execPath, [path.resolve(__dirname, '../app/server.js')], {
+  const { child, ready } = spawnAppServer({
     env: {
-      ...process.env,
       DATA_DIR: dataDir,
-      PORT: String(port),
       OLLAMA_URL: mockUrl,
       MODEL: 'test-model',
       SELF_APP_ROOT: path.resolve(__dirname, '../app'),
@@ -54,8 +45,6 @@ async function startServer(t, extraEnv = {}, seed = null) {
       ...extraEnv
     }
   });
-  child.stdout.on('data', chunk => diagnostics += chunk);
-  child.stderr.on('data', chunk => diagnostics += chunk);
 
   const stop = async () => {
     if (child.exitCode !== null || child.signalCode !== null) return;
@@ -70,12 +59,7 @@ async function startServer(t, extraEnv = {}, seed = null) {
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
-  for (let attempt = 0; attempt < 80; attempt++) {
-    if (child.exitCode !== null) throw new Error(diagnostics);
-    try { if ((await fetch(`${base}/healthz`)).ok) break; } catch {}
-    if (attempt === 79) throw new Error(`Server did not start: ${diagnostics}`);
-    await new Promise(resolve => setTimeout(resolve, 50));
-  }
+  const base = await ready;
 
   const request = async (url, body) => {
     const response = await fetch(base + url, body === undefined ? {} : {
