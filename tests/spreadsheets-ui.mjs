@@ -1,8 +1,8 @@
 import { chromium, devices } from 'playwright';
 import assert from 'node:assert/strict';
 
-// System › Spreadsheets: the workbook, GridCraft requests in each mode, and keeping or discarding a Review request, on a
-// computer and a phone. The appliance's /api/gridcraft routes are stubbed.
+// System › Spreadsheets: the workbook, GridCraft requests in each mode, keeping or discarding a Review request, and
+// changing a cell by hand, on a computer and a phone. The appliance's /api/gridcraft routes are stubbed.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const shots = process.env.SHEETS_SHOTS; // a directory: save a screenshot of each layout for review
 const browser = await chromium.launch({ headless: true });
@@ -26,8 +26,8 @@ function notes(range) {
 
 async function open(options) {
   const page = await browser.newPage({ serviceWorkers: 'block', ...options });
-  const calls = { runs: [], workbook: [], keep: 0, discard: 0, open: [] };
-  const book = { file: SALES.file, dirty: false }; // what GridCraft has open
+  const calls = { runs: [], workbook: [], keep: 0, discard: 0, open: [], cell: [] };
+  const book = { file: SALES.file, dirty: false, busy: false, edited: {} }; // what GridCraft has open; edited: cells changed by hand
   let runs = [];
   await page.route(u => u.pathname === '/api/gridcraft/workbooks', r => r.fulfill({ json: { ok: true, items: [SALES.file, 'Budget.xlsx', 'Inventory.csv'].map(name => ({ name, size: 2048, modified: '2026-10-17T09:00:00+00:00' })) } }));
   await page.route(u => u.pathname === '/api/gridcraft/open', r => {
@@ -44,13 +44,32 @@ async function open(options) {
     if (q.get('sheet') === 'Notes') return r.fulfill({ json: notes(q.get('range') || 'A1:A100') });
     const changed = runs.some(x => x.status === 'review');
     const named = book.file === SALES.file ? {} : { file: book.file, title: book.file.replace(/\.\w+$/, '') };
-    return r.fulfill({ json: { ...SALES, ...named, dirty: changed || book.dirty, values: changed ? [SALES.values[0], ['North', '$50,000', '$51,340', '$101,340'], SALES.values[2]] : SALES.values } });
+    const values = (changed ? [SALES.values[0], ['North', '$50,000', '$51,340', '$101,340'], SALES.values[2]] : SALES.values).map(r => [...r]);
+    const formulas = SALES.formulas.map(r => [...r]);
+    for (const [ref, input] of Object.entries(book.edited)) { const i = +ref.slice(1) - 1, j = ref.charCodeAt(0) - 65; values[i][j] = input; formulas[i][j] = input; }
+    return r.fulfill({ json: { ...SALES, ...named, dirty: changed || book.dirty, values, formulas } });
+  });
+  // A cell changed by hand: GridCraft is busy (409), or the edit joins the newest Direct edit waiting for review.
+  await page.route(u => u.pathname === '/api/gridcraft/cell', r => {
+    const body = JSON.parse(r.request().postData());
+    calls.cell.push(body);
+    if (book.busy) return r.fulfill({ status: 409, json: { ok: false, error: 'GridCraft is busy with a request. Change the cell when it finishes.' } });
+    const i = +body.cell.slice(1) - 1, j = body.cell.charCodeAt(0) - 65, before = book.edited[body.cell] ?? SALES.formulas[i][j];
+    book.edited[body.cell] = body.input;
+    const edit = { tool: 'set_cell', sheet: body.sheet, range: body.cell, before: [[before]], after: [[body.input]], afterValues: [[body.input]] };
+    const last = runs[0], where = `${body.sheet}!${body.cell}`;
+    const run = last?.kind === 'edit' && last.status === 'review'
+      ? { ...last, prompt: `${last.prompt}, ${where}`, edits: [...last.edits, edit], undoSteps: last.undoSteps + 1 }
+      : { id: `gc-${runs.length + 1}`, kind: 'edit', prompt: `Direct edit: ${where}`, mode: 'review', status: 'review', answer: `You changed ${where} by hand.`, error: '', edits: [edit], changes: [], undoSteps: 1, undoTop: ['Enter Cell'], createdAt: new Date().toISOString() };
+    runs = [run, ...runs.filter(x => x.id !== run.id)];
+    return r.fulfill({ json: { ok: true, run } });
   });
   await page.route(u => u.pathname === '/api/gridcraft/runs', r => r.fulfill({ json: { items: runs } }));
   await page.route(u => /\/api\/gridcraft\/runs\/[^/]+\/(keep|discard)$/.test(u.pathname), r => {
     const action = r.request().url().endsWith('keep') ? 'keep' : 'discard';
     calls[action]++;
     if (action === 'discard' && calls.discard === 1) return r.fulfill({ status: 409, json: { ok: false, error: 'The workbook changed in GridCraft after this request, so undoing it could remove other work.' } });
+    if (action === 'discard') book.edited = {};
     runs = runs.map(x => x.status === 'review' ? { ...x, status: action === 'keep' ? 'kept' : 'discarded' } : x);
     return r.fulfill({ json: { ok: true, dirty: false } });
   });
@@ -223,6 +242,137 @@ for (const [name, options] of [['computer', { viewport: { width: 1280, height: 9
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#spreadsheets.active');
     assert.equal(await page.locator('#sheetsMode [aria-checked="true"]').getAttribute('data-mode'), 'apply');
+  });
+
+  const cell = ref => page.locator(`#sheetsGrid td[data-cell="${ref}"]`);
+  const fits = async sel => { const b = await page.locator(sel).boundingBox(); assert.ok(b.height >= 44 && b.width >= 44, `${sel} is ${Math.round(b.width)}x${Math.round(b.height)}`); };
+  if (name === 'computer') {
+    await check(`${name}: Enter changes a cell inline; it shows amber and waits for review`, async () => {
+      await cell('B3').click();
+      await page.keyboard.press('Enter');
+      const input = cell('B3').locator('input');
+      assert.equal(await input.inputValue(), '39150', 'the editor starts from what the cell holds');
+      await input.fill('40000');
+      if (shots) await page.locator('#sheetsBook').screenshot({ path: `${shots}/sheets-${name}-cell-editing.png` });
+      await input.press('Enter');
+      await cell('B3').and(page.locator('.is-pending')).waitFor();
+      assert.deepEqual(calls.cell.at(-1), { sheet: 'Sales', cell: 'B3', input: '40000' });
+      assert.equal(await cell('B3').innerText(), '40000');
+      assert.equal(await page.locator('#sheetsResultTitle').innerText(), 'Direct edit: Sales!B3');
+      await page.locator('#sheetsReview').waitFor({ state: 'visible' });
+      assert.match(await page.locator('#sheetsHistory').innerText(), /Direct edit: Sales!B3[\s\S]*Waiting for review/);
+      assert.match(await page.locator('#sheetsChanges').innerText(), /B3[\s\S]*39150[\s\S]*40000/);
+      await page.waitForFunction(() => document.activeElement?.dataset?.cell === 'B3');
+    });
+    await check(`${name}: typing on a cell starts a change, F2 and double-click too; Esc cancels`, async () => {
+      const sent = calls.cell.length;
+      await cell('C3').click();
+      await page.keyboard.type('=B3*2');
+      assert.equal(await cell('C3').locator('input').inputValue(), '=B3*2');
+      await page.keyboard.press('Escape');
+      assert.equal(await cell('C3').locator('input').count(), 0);
+      assert.equal(await cell('C3').innerText(), '$37,980', 'Esc puts the cell back');
+      await page.waitForFunction(() => document.activeElement?.dataset?.cell === 'C3');
+      await page.keyboard.press('F2');
+      await cell('C3').locator('input').waitFor();
+      await page.keyboard.press('Escape');
+      await cell('D3').dblclick();
+      assert.equal(await cell('D3').locator('input').inputValue(), '=B3+C3', 'a formula cell edits its formula');
+      await page.keyboard.press('Escape');
+      assert.equal(calls.cell.length, sent, 'nothing was sent');
+    });
+    await check(`${name}: a second change joins the same review; GridCraft busy says so and changes nothing`, async () => {
+      await cell('C2').click();
+      await cell('C2').click(); // a click on the selected cell changes it
+      await cell('C2').locator('input').fill('52000');
+      await page.keyboard.press('Enter');
+      await cell('C2').and(page.locator('.is-pending')).waitFor();
+      assert.equal(await page.locator('#sheetsHistory .sheets-run').filter({ hasText: 'Direct edit' }).count(), 1, 'one review for both');
+      book.busy = true;
+      await cell('A3').dblclick();
+      await cell('A3').locator('input').fill('Southwest');
+      await page.keyboard.press('Enter');
+      await page.locator('#sheetsCellError').waitFor({ state: 'visible' });
+      assert.match(await page.locator('#sheetsCellError').innerText(), /Sales!A3 wasn't changed\. GridCraft is busy with a request/);
+      await page.waitForFunction(() => document.querySelector('#sheetsGrid td[data-cell="A3"]')?.textContent === 'South');
+      book.busy = false;
+    });
+  } else {
+    await check(`${name}: a cell changes in a small sheet: reference, value, formula, Save and Cancel`, async () => {
+      await cell('D3').click();
+      await fits('#sheetsEditCell');
+      await page.locator('#sheetsEditCell').click();
+      const sheet = page.locator('#sheetsEdit');
+      await sheet.waitFor({ state: 'visible' });
+      assert.equal(await page.locator('#sheetsEditTitle').innerText(), 'Change Sales!D3');
+      assert.match(await page.locator('#sheetsEditNow').innerText(), /Now: \$77,130\s+Formula: =B3\+C3/);
+      assert.equal(await page.locator('#sheetsEditInput').inputValue(), '=B3+C3');
+      for (const sel of ['#sheetsEditInput', '#sheetsEditSave', '#sheetsEditCancel']) await fits(sel);
+      if (shots) { await page.waitForTimeout(400); await page.screenshot({ path: `${shots}/sheets-${name}-cell-sheet.png` }); } // after the sheet's slide-in
+      const box = await sheet.boundingBox(), vw = page.viewportSize().width;
+      assert.ok(box.x >= 0 && box.x + box.width <= vw + 0.5, 'the sheet fits the screen');
+      assert.equal(await page.evaluate(() => document.querySelector('#sheetsEdit').scrollWidth <= document.querySelector('#sheetsEdit').clientWidth), true, 'nothing in it scrolls sideways');
+      await page.locator('#sheetsEditInput').fill('xyz');
+      await page.locator('#sheetsEditCancel').click();
+      await sheet.waitFor({ state: 'hidden' });
+      assert.equal(calls.cell.length, 0, 'Cancel sends nothing');
+      await cell('B3').click();
+      await cell('B3').click(); // a tap on the selected cell opens the sheet
+      await sheet.waitFor({ state: 'visible' });
+      assert.equal(await page.locator('#sheetsEditInput').inputValue(), '39150');
+      book.busy = true;
+      await page.locator('#sheetsEditInput').fill('41000');
+      await page.locator('#sheetsEditSave').click();
+      await page.locator('#sheetsEditError').waitFor({ state: 'visible' });
+      assert.match(await page.locator('#sheetsEditError').innerText(), /busy with a request/);
+      assert.equal(await sheet.isVisible(), true, 'the sheet stays open to try again');
+      book.busy = false;
+      await page.locator('#sheetsEditSave').click();
+      await sheet.waitFor({ state: 'hidden' });
+      assert.deepEqual(calls.cell.at(-1), { sheet: 'Sales', cell: 'B3', input: '41000' });
+      await cell('B3').and(page.locator('.is-pending')).waitFor();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    });
+  }
+
+  await check(`${name}: Keep and Discard clear the amber from changed cells`, async () => {
+    await page.locator('#sheetsKeep').click();
+    await page.locator('#sheetsReview').waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('#sheetsGrid td.is-pending').count(), 0, 'kept');
+    assert.match(await page.locator('#sheetsHistory').innerText(), /Direct edit[\s\S]*Kept/);
+    if (name === 'computer') {
+      await cell('A2').dblclick();
+      await cell('A2').locator('input').fill('Northeast');
+      await page.keyboard.press('Enter');
+    } else {
+      await cell('A2').click();
+      await page.locator('#sheetsEditCell').click();
+      await page.locator('#sheetsEditInput').fill('Northeast');
+      await page.locator('#sheetsEditSave').click();
+    }
+    await cell('A2').and(page.locator('.is-pending')).waitFor();
+    if (shots) await page.screenshot({ path: `${shots}/sheets-${name}-cell-review.png`, fullPage: true });
+    await page.locator('#sheetsDiscard').click();
+    await page.locator('#sheetsReview').waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('#sheetsGrid td.is-pending').count(), 0, 'discarded');
+    await page.waitForFunction(() => document.querySelector('#sheetsGrid td[data-cell="A2"]')?.textContent === 'North');
+  });
+
+  await check(`${name}: Read only can't change cells`, async () => {
+    const sent = calls.cell.length;
+    await page.locator('#sheetsMode [data-mode="read"]').click();
+    assert.equal(await page.locator('#sheetsGrid').getAttribute('aria-readonly'), 'true');
+    await cell('B2').click();
+    assert.equal(await page.locator('#sheetsEditCell').isVisible(), false, 'no Change button');
+    await cell('B2').click();
+    await page.keyboard.press('Enter');
+    if (name === 'computer') await cell('B2').dblclick();
+    assert.equal(await page.locator('#sheetsGrid input').count(), 0);
+    assert.equal(await page.locator('#sheetsEdit').isVisible(), false);
+    assert.match(await page.locator('#sheetsCellError').innerText(), /Read only is on/);
+    assert.equal(calls.cell.length, sent);
+    await page.locator('#sheetsMode [data-mode="review"]').click();
+    assert.equal(await page.locator('#sheetsEditCell').isVisible(), true);
   });
 
   await check(`${name}: nothing scrolls sideways`, async () => {
