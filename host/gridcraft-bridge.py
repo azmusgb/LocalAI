@@ -224,7 +224,7 @@ def failure_reason(stdout: str, stderr: str) -> str:
 
 
 def run_ops(op: str, payload: dict, gridcraft: bool = True) -> tuple[int, dict]:
-    # Workbook view, keep, discard and open: gridcraft_ops.py talks to GridCraft directly, no model. JSON in, JSON out.
+    # Workbook view, keep, discard, open and cell edits: gridcraft_ops.py talks to GridCraft directly, no model. JSON in, JSON out.
     # gridcraft=False for listing the folder, which doesn't need GridCraft running.
     if not PYTHON.exists() or not OPS.exists():
         return 503, {'ok': False, 'error': 'GridCraft local agent is not installed'}
@@ -311,7 +311,7 @@ class Handler(BaseHTTPRequestHandler):
         })
 
     def do_POST(self):
-        if self.path not in ('/run', '/keep', '/discard', '/open', '/artcraft/open'):
+        if self.path not in ('/run', '/keep', '/discard', '/open', '/cell', '/artcraft/open'):
             return self._json(404, {'ok': False, 'error': 'Not found'})
         # CORS only hides responses; it does not stop a page on another site from firing a simple POST.
         # Require an allowed Origin when a browser sends one, and a JSON content type (which forces a preflight).
@@ -335,13 +335,16 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             return self._json(400, {'ok': False, 'error': f'Invalid request: {exc}'})
         if self.path != '/run':
-            # Keep, discard and open change the workbook, so they wait for no one: a running request gets 409 like a second run.
-            op = self.path.strip('/')
+            # Keep, discard, open and a cell edit change the workbook, so they wait for no one: a running request gets
+            # 409 like a second run.
+            op = {'/cell': 'set_cell'}.get(self.path, self.path.strip('/'))
             if not run_lock.acquire(blocking=False):
-                busy = 'GridCraft is busy with a request' if op == 'open' else 'A GridCraft request is running; try again when it finishes'
+                busy = {'open': 'GridCraft is busy with a request',
+                        'set_cell': 'GridCraft is busy with a request. Change the cell when it finishes.'}.get(
+                    op, 'A GridCraft request is running; try again when it finishes')
                 return self._json(409, {'ok': False, 'error': busy})
             try:
-                keys = {'discard': ('steps', 'undoTop'), 'open': ('name',)}.get(op, ())
+                keys = {'discard': ('steps', 'undoTop'), 'open': ('name',), 'set_cell': ('sheet', 'cell', 'input')}.get(op, ())
                 return self._json(*run_ops(op, {k: payload.get(k) for k in keys}))
             finally:
                 run_lock.release()

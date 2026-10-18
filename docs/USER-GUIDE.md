@@ -154,6 +154,13 @@ Type what you want or tap an example, choose what the request may do, then **Run
   Only the latest request can be undone, and Discard refuses if someone changed the workbook in GridCraft since.
 - **Apply**: it makes the changes and saves the workbook.
 
+To change a cell yourself, select it, then tap or click it again (or double-click it, or press Enter or F2, or just
+start typing). Type a value or a formula starting with `=`; **Enter** puts it in, **Esc** cancels. On a phone, **Change
+this cell** opens a small sheet with the cell's value and formula; **Save** puts it in. Your changes go through Review,
+whatever mode is chosen: they show in amber, are listed under **Direct edit** in the requests, and nothing is saved
+until you choose **Keep changes**; **Discard** undoes them. Changes made one after another are kept or discarded
+together. **Read only** turns changing cells off, and while a request is running a change waits until it finishes.
+
 A request takes from a few seconds to a few minutes, one at a time, and works from a phone too. **Earlier requests**
 lists past ones with what each changed. The badge says whether GridCraft is ready; if a request fails, the answer says
 why and **Try again** sends it once more.

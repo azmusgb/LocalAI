@@ -1708,6 +1708,73 @@ async function apiGridcraftOpen(req, res) {
     bridgeFailure(res, e);
   }
 }
+// A cell the owner changes by hand in the grid. It goes through the same safety as a Review request: the bridge's
+// set_cell op journals it (before -> after, undo steps) and never saves, and it becomes a "Direct edit" run that waits
+// for Keep or Discard. Edits made one after another join the newest Direct edit run while it waits for review, but only
+// when GridCraft's undo list shows nothing happened in between, so Discard still undoes exactly those steps.
+const GRIDCRAFT_CELL = /^[A-Z]{1,3}[1-9][0-9]{0,6}$/;
+const GRIDCRAFT_SHEET_MAX = 100, GRIDCRAFT_INPUT_MAX = 8192;
+let gridcraftCellBusy = false;
+const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) && b.length > 0 && b.every((x, i) => a[i] === x);
+function mergeCellEdits(edits, more) {
+  const out = edits.map(e => ({ ...e }));
+  for (const e of more) {
+    // The same cell twice: keep the first before and the latest after, so the change reads from the original value.
+    const prev = out.find(x => x.sheet === e.sheet && x.range === e.range && x.tool === 'set_cell' && x.before && e.after);
+    if (prev) Object.assign(prev, { after: e.after, afterValues: e.afterValues });
+    else out.push(e);
+  }
+  return out;
+}
+async function apiGridcraftCell(req, res) {
+  if (!sameOriginJson(req, res)) return;
+  let b;
+  try { b = await readBody(req, 64 * 1024); } catch (e) { return json(res, 400, { ok: false, error: e.message }); }
+  const sheet = b?.sheet, cell = b?.cell, input = b?.input;
+  if (typeof sheet !== 'string' || !sheet.trim() || sheet.length > GRIDCRAFT_SHEET_MAX || [...sheet].some(c => c.charCodeAt(0) < 32)) return json(res, 400, { ok: false, error: `sheet must be a sheet name of 1 to ${GRIDCRAFT_SHEET_MAX} characters` });
+  if (typeof cell !== 'string' || !GRIDCRAFT_CELL.test(cell)) return json(res, 400, { ok: false, error: 'cell must look like B7' });
+  if (typeof input !== 'string' || input.length > GRIDCRAFT_INPUT_MAX) return json(res, 400, { ok: false, error: `input must be text of at most ${GRIDCRAFT_INPUT_MAX} characters` });
+  if (gridcraftCellBusy) return json(res, 409, { ok: false, error: 'Another cell change is still being made. Try again in a moment.' });
+  gridcraftCellBusy = true;
+  try {
+    const started = Date.now();
+    let r, data;
+    try {
+      r = await bridgeFetch('/cell', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sheet, cell, input }) }, 65000);
+      data = await bridgeJson(r, { ok: false, error: `Bridge returned HTTP ${r.status}` });
+    } catch (e) { return bridgeFailure(res, e); }
+    if (!r.ok || data.ok !== true) return json(res, r.ok ? 502 : r.status, { ok: false, error: data.error || 'GridCraft did not change the cell' });
+    const journal = data.journal && typeof data.journal === 'object' ? data.journal : {};
+    const edits = Array.isArray(journal.edits) ? journal.edits : [], changes = Array.isArray(journal.changes) ? journal.changes : [];
+    const steps = Number(journal.undoSteps) || 0, undoTop = Array.isArray(journal.undoTop) ? journal.undoTop : [];
+    const now = new Date().toISOString(), where = `${sheet}!${cell}`;
+    const last = gridcraftRuns(1)[0];
+    const join = last?.kind === 'edit' && last.status === 'review' && sameList(data.undoBefore, last.undoTop);
+    let run;
+    if (join) {
+      const cells = [...new Set([...(last.cells || []), where])];
+      run = {
+        ...last, cells, edits: mergeCellEdits(last.edits || [], edits), changes: [...(last.changes || []), ...changes],
+        undoSteps: (Number(last.undoSteps) || 0) + steps, undoTop, prompt: gridcraftEditTitle(cells), answer: gridcraftEditAnswer(cells), updatedAt: now
+      };
+    } else {
+      run = {
+        id: makeId('gc'), kind: 'edit', cells: [where], prompt: gridcraftEditTitle([where]), mode: 'review', status: steps > 0 ? 'review' : 'done',
+        answer: gridcraftEditAnswer([where]), error: '', edits, changes, undoSteps: steps, undoTop, saved: false,
+        durationSec: Math.round((Date.now() - started) / 10) / 100, createdAt: now, updatedAt: now
+      };
+    }
+    saveGridcraftRun(run);
+    storage.pruneSettings(GRIDCRAFT_RUN_PREFIX, GRIDCRAFT_KEEP_RUNS);
+    recordActivity('gridcraft', 'GridCraft cell changed by hand', where.slice(0, 180));
+    json(res, 200, { ok: true, run });
+  } finally { gridcraftCellBusy = false; }
+}
+function gridcraftEditTitle(cells) {
+  const shown = cells.slice(-4).join(', ');
+  return `Direct edit: ${cells.length > 4 ? `${cells.length} cells, last ${shown}` : shown}`.slice(0, 2000);
+}
+const gridcraftEditAnswer = cells => cells.length === 1 ? `You changed ${cells[0]} by hand.` : `You changed ${cells.length} cells by hand.`;
 async function apiGridcraftDecide(req, res, id, action) {
   if (!sameOriginJson(req, res)) return;
   const run = storage.readSetting(GRIDCRAFT_RUN_PREFIX + id, null);
@@ -3590,6 +3657,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/gridcraft/workbook') return await apiGridcraftWorkbook(req, res, urlObj);
     if (req.method === 'GET' && p === '/api/gridcraft/workbooks') return await apiGridcraftWorkbooks(req, res);
     if (req.method === 'POST' && p === '/api/gridcraft/open') return await apiGridcraftOpen(req, res);
+    if (req.method === 'POST' && p === '/api/gridcraft/cell') return await apiGridcraftCell(req, res);
     { const m = req.method === 'POST' && p.match(/^\/api\/gridcraft\/runs\/(gc-[\w-]+)\/(keep|discard)$/); if (m) return await apiGridcraftDecide(req, res, m[1], m[2]); }
     if (req.method === 'GET' && p === '/api/artcraft/status') return await apiArtcraftStatus(req, res);
     if (req.method === 'POST' && p === '/api/artcraft/open') return await apiArtcraftOpen(req, res);

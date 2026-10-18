@@ -202,3 +202,92 @@ test('a GridCraft request that takes longer than fetch allows still gets its ans
   assert.match(down.error, /^GridCraft bridge unavailable/);
   assert.doesNotMatch(down.error, /fetch failed|Ollama/);
 });
+
+test('a cell changed by hand is forwarded as set_cell and waits for review as a Direct edit', { timeout: 30000 }, async t => {
+  // A stand-in bridge with an undo list: each cell edit adds one step on top.
+  const seen = [], undo = ['Older'];
+  let busy = false;
+  const cells = { 'Sales!B2': 1, 'Sales!C3': 2 };
+  const bridge = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      seen.push({ url: req.url, body });
+      res.setHeader('Content-Type', 'application/json');
+      if (req.url === '/cell') {
+        if (busy) { res.statusCode = 409; return res.end(JSON.stringify({ ok: false, error: 'GridCraft is busy with a request. Change the cell when it finishes.' })); }
+        const { sheet, cell, input } = JSON.parse(body), key = `${sheet}!${cell}`, before = cells[key] ?? null;
+        const undoBefore = undo.slice(0, 5);
+        cells[key] = input; undo.unshift(`Enter Cell ${undo.length}`);
+        return res.end(JSON.stringify({ ok: true, undoBefore, journal: { mode: 'review', edits: [{ tool: 'set_cell', sheet, range: cell, before: [[before]], after: [[input]], afterValues: [[input]] }], changes: [], undoSteps: 1, undoTop: undo.slice(0, 5), saved: false } }));
+      }
+      if (req.url === '/discard') return res.end(JSON.stringify({ ok: true, dirty: false, undone: JSON.parse(body).steps }));
+      if (req.url === '/keep') return res.end(JSON.stringify({ ok: true, dirty: false }));
+      res.statusCode = 404; res.end('{}');
+    });
+  });
+  bridge.listen(0, '127.0.0.1');
+  await once(bridge, 'listening');
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-gridcraft-cell-'));
+  const off = 'http://127.0.0.1:9';
+  const { child, ready } = spawnAppServer({
+    env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, GRIDCRAFT_URL: `http://127.0.0.1:${bridge.address().port}`, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off }
+  });
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
+    bridge.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+  const base = await ready;
+  const post = (p, body, headers = {}) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+  const edit = (cell, input, sheet = 'Sales') => post('/api/gridcraft/cell', { sheet, cell, input });
+
+  const r1 = await post('/api/gridcraft/cell', { sheet: 'Sales', cell: 'B2', input: '50000', prompt: 'x', mode: 'apply' }, { Origin: base });
+  assert.equal(r1.status, 200);
+  const first = (await r1.json()).run;
+  assert.deepEqual(JSON.parse(seen.at(-1).body), { sheet: 'Sales', cell: 'B2', input: '50000' }, 'only the sheet, cell and input are forwarded');
+  assert.equal(seen.at(-1).url, '/cell');
+  assert.deepEqual({ kind: first.kind, prompt: first.prompt, mode: first.mode, status: first.status, undoSteps: first.undoSteps, saved: first.saved },
+    { kind: 'edit', prompt: 'Direct edit: Sales!B2', mode: 'review', status: 'review', undoSteps: 1, saved: false }, 'a Direct edit waiting for review, whatever mode the page was in');
+  assert.deepEqual(first.edits, [{ tool: 'set_cell', sheet: 'Sales', range: 'B2', before: [[1]], after: [['50000']], afterValues: [['50000']] }]);
+
+  // Edits one after another join the same review, so Discard undoes them together; the same cell keeps its first before.
+  await edit('C3', '=B2*2');
+  const joined = (await (await edit('B2', '51000')).json()).run;
+  assert.equal(joined.id, first.id);
+  assert.equal(joined.undoSteps, 3);
+  assert.deepEqual(joined.undoTop, undo.slice(0, 5));
+  assert.equal(joined.prompt, 'Direct edit: Sales!B2, Sales!C3');
+  assert.deepEqual(joined.edits.map(e => [e.range, e.before[0][0], e.after[0][0]]), [['B2', 1, '51000'], ['C3', 2, '=B2*2']]);
+  assert.equal((await (await fetch(`${base}/api/gridcraft/runs`)).json()).items.length, 1);
+
+  for (const body of [{ cell: 'b2' }, { cell: 'A0' }, { cell: 'A1:B2' }, { cell: 'Sales!B2' }, { cell: 'AAAA1' }, { cell: 'A12345678' }, { cell: 7 }, { sheet: '' }, { sheet: 'x'.repeat(101) }, { sheet: 'a\nb' }, { input: 5 }, { input: 'x'.repeat(8193) }, {}]) {
+    const r = await post('/api/gridcraft/cell', { sheet: 'Sales', cell: 'B2', input: '1', ...body, ...(Object.keys(body).length ? {} : { cell: undefined }) });
+    assert.equal(r.status, 400, `refuses ${JSON.stringify(body)}`);
+  }
+  assert.equal((await post('/api/gridcraft/cell', '{"sheet":"Sales","cell":"B2","input":"1"}', { Origin: 'http://evil.example' })).status, 403, 'cross-site');
+  assert.equal((await fetch(`${base}/api/gridcraft/cell`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{"sheet":"Sales","cell":"B2","input":"1"}' })).status, 415);
+  assert.equal(seen.filter(x => x.url === '/cell').length, 3, 'refused edits never reach the bridge');
+
+  busy = true;
+  const refused = await edit('D4', '1');
+  assert.equal(refused.status, 409, 'busy while a request runs');
+  assert.match((await refused.json()).error, /busy with a request/);
+  busy = false;
+  assert.equal((await (await fetch(`${base}/api/gridcraft/runs`)).json()).items.length, 1, 'a refused edit makes no record');
+
+  // Someone typed in GridCraft in between: the next edit starts its own review instead of joining.
+  undo.unshift('Typed in GridCraft');
+  const apart = (await (await edit('D4', '7')).json()).run;
+  assert.notEqual(apart.id, first.id);
+  assert.equal(apart.undoSteps, 1);
+  const older = await post(`/api/gridcraft/runs/${first.id}/discard`, {});
+  assert.equal(older.status, 409, 'only the latest can be undone');
+  const discarded = await post(`/api/gridcraft/runs/${apart.id}/discard`, {});
+  assert.equal(discarded.status, 200);
+  assert.deepEqual(JSON.parse(seen.at(-1).body), { steps: 1, undoTop: apart.undoTop });
+  const kept = await (await post(`/api/gridcraft/runs/${first.id}/keep`, {})).json();
+  assert.deepEqual(kept.runs, [first.id]);
+  assert.deepEqual((await (await fetch(`${base}/api/gridcraft/runs`)).json()).items.map(x => [x.kind, x.status]), [['edit', 'discarded'], ['edit', 'kept']]);
+  assert.equal(seen.filter(x => x.url === '/keep').length, 1, 'only Keep saved');
+});

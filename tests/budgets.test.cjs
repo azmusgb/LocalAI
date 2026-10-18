@@ -31,10 +31,13 @@ const KB = 1024;
 // 2026-10-18: both together (☆ Keep + Agent World follow-ups) measure 247.7 KB, ui.js 97.0 KB: 248 / 98 KB.
 // 2026-10-18: 248 → 250 KB (and app.js 35 → 36 KB) for Best's quick preview: the preview setting, the Preview tag, the
 // Make the full picture / Keep preview bar and its request logic (+1.4 KB; 249.0 KB measured, app.js 35.3 KB).
-// 2026-10-18: 250 → 253 KB for handing requests to change Local AI itself to Claude Code (self-change.js 1.8 KB: the
+// 2026-10-18: 250 → 253 KB for changing a Spreadsheets cell by hand (the inline editor, the phone sheet and its markup,
+// the Direct edit review): spreadsheets.js +1.8 KB, index.html +0.2 KB, app.css +0.1 KB; with the Workshop card (#307,
+// ui.js +0.7 KB) 252.0 KB measured.
+// 2026-10-18: 253 → 256 KB for handing requests to change Local AI itself to Claude Code (self-change.js 1.8 KB: the
 // detector and the Hand to Claude suggestion on Home, Agent World and New idea; +0.3 KB elsewhere). main measured
-// 249.96 KB before it; 252.6 KB with it and main as of #307.
-const TOTAL = 253 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// 249.96 KB before it; about 254.6 KB with it and #308.
+const TOTAL = 256 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
 // tab rows (234.9 KB measured).

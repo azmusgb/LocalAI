@@ -105,6 +105,28 @@ async def scenario(name):
         return {'ok': ok, 'undo': f.undo[:3], 'conflict': conflict, 'steps': info['undoSteps']}
     if name == 'keep':
         return await O.keep(f.call, {})
+    if name == 'set_cell':
+        first = await O.set_cell(f.call, {'sheet': 'Sales', 'cell': 'B2', 'input': '=B3+1'})
+        second = await O.set_cell(f.call, {'sheet': 'Sales', 'cell': 'C7', 'input': ''})
+        # The appliance joins the two into one Direct edit: both steps, the newest undo labels.
+        undone = await O.discard(f.call, {'steps': first['journal']['undoSteps'] + second['journal']['undoSteps'], 'undoTop': second['journal']['undoTop']})
+        bad = {}
+        for label, req in [('lower', {'cell': 'b2'}), ('row 0', {'cell': 'A0'}), ('4 letters', {'cell': 'AAAA1'}), ('8 digits', {'cell': 'A12345678'}),
+                           ('range', {'cell': 'A1:B2'}), ('qualified', {'cell': 'Sales!B2'}), ('no cell', {'cell': None}), ('no sheet', {'sheet': ''}),
+                           ('long sheet', {'sheet': 'x' * 101}), ('newline', {'sheet': 'a\nb'}), ('number', {'input': 5}), ('no input', {'input': None}),
+                           ('long input', {'input': 'x' * 8193})]:
+            calls = len(f.calls)
+            try: await O.set_cell(f.call, {'sheet': 'Sales', 'cell': 'B2', 'input': '1', **req}); bad[label] = 'accepted'
+            except O.OpError as e: bad[label] = [e.status, len(f.calls) - calls]
+        try: await O.run('set_cell', {'sheet': 'Sales', 'cell': 'b2', 'input': '1'}); early = 'connected'
+        except O.OpError as e: early = e.status
+        calls = len(f.calls)
+        try: await O.set_cell(f.call, {'sheet': 'Nope', 'cell': 'B2', 'input': '1'}); missing = None
+        except O.OpError as e: missing = [e.status, str(e), f.calls[calls:]]
+        return {'first': first, 'second': second, 'undone': undone, 'undo': f.undo[:3],
+                'saved': f.saved, 'saves': f.calls.count('save_workbook'), 'bad': bad, 'early': early, 'missing': missing,
+                'longest': len(O.cell_edit({'sheet': 'x' * 100, 'cell': 'XFD1048576', 'input': 'x' * 8192})[2]),
+                'qualified': [O.qualified('Sales', 'B2'), O.qualified('Q1 Sales', 'B2'), O.qualified("Bob's", 'A1'), O.qualified('2024', 'A1')]}
 
 pure = {
     'delta': [J.undo_delta(['a', 'b'], ['x', 'a', 'b']), J.undo_delta(['a'] * 20, ['n', 'm'] + ['a'] * 18), J.undo_delta([], ['x', 'y']), J.undo_delta(['a', 'b'], ['a', 'b'])],
@@ -179,4 +201,24 @@ test('Discard undoes exactly the request\'s steps, and refuses once GridCraft ha
   assert.equal(discard.conflict, 409);
   const { keep } = run('keep');
   assert.deepEqual(keep, { dirty: false });
+});
+
+test('A cell changed by hand is journaled like a Review request, never saved, and its input is checked', { skip }, () => {
+  const { set_cell: r } = run('set_cell');
+  assert.deepEqual(r.first.journal.edits, [{ tool: 'set_cell', sheet: 'Sales', range: 'B2', before: [[1]], after: [['=B3+1']], afterValues: [[99]] }]);
+  assert.equal(r.first.journal.mode, 'review');
+  assert.equal(r.first.journal.undoSteps, 1);
+  assert.equal(r.first.journal.saved, false);
+  assert.deepEqual(r.first.undoBefore, ['Older', 'Older', 'Older', 'Older', 'Older'], 'the undo list before the edit, so the appliance can tell nothing came between');
+  assert.deepEqual(r.second.undoBefore, r.first.journal.undoTop, 'a second edit sits right on top of the first');
+  assert.deepEqual(r.second.journal.edits[0].after, [['']], 'an empty input clears the cell');
+  assert.deepEqual(r.undone, { dirty: false, undone: 2 }, 'Discard undoes exactly both edits');
+  assert.deepEqual(r.undo, ['Older', 'Older', 'Older'], 'and only those: the undo list is back where it was');
+  assert.equal(r.saved, false);
+  assert.equal(r.saves, 0, 'a cell edit never saves the workbook');
+  for (const [label, v] of Object.entries(r.bad)) assert.deepEqual(v, [400, 0], `${label}: refused before GridCraft is asked anything`);
+  assert.equal(r.early, 400, 'the op refuses a bad cell before it connects to GridCraft');
+  assert.deepEqual(r.missing, [404, 'No sheet named Nope', ['inspect_workbook']], 'an unknown sheet is never written');
+  assert.equal(r.longest, 8192);
+  assert.deepEqual(r.qualified, ['Sales!B2', "'Q1 Sales'!B2", "'Bob''s'!A1", "'2024'!A1"]);
 });
