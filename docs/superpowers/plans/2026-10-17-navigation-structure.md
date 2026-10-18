@@ -15,7 +15,9 @@ Spec: `docs/superpowers/specs/2026-10-17-navigation-structure-design.md`. One PR
    page's tabs (Projects › Library, Work › Automations) and the page's own tab row hides there; page tabs are
    underlined everywhere (`.ux-page-tabs`), so they never look like the boxed filters under them.
 4. **One strip everywhere** (N5), the rest. Phone: drop the "⌄" sheet. Desktop: drop the section column and the
-   breadcrumb, use the strip under the H1. Tests: a11y-nav,
+   breadcrumb, use the strip under the H1. The strip sits under the top bar (as on the phone); the top bar names the area. Done with: the
+   in-page page-tab rows removed, focus kept on the strip after a switch, Home left-aligned like every page, the deploy
+   validator's required names updated, shell budget lowered. Tests: a11y-nav,
    navigation, layout, mobile, visual (largest PR; may split phone / desktop).
 5. **One "what needs me"**. Bell count opens the Inbox; drop the desktop "Attention" footer; Inbox leaves Home's
    strip. Tests: notifications, home, navigation.
