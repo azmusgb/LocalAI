@@ -127,6 +127,13 @@ answer states none of them, or only says it "verified" or "addressed" the reques
 (`host/gridcraft-agent/gridcraft_answer.py`) asks the model once more without tools, giving it the values read; if
 that answer still has none, it appends `Values read: …` from the tool results.
 
+While a request runs, the bridge reads the agent's log lines as they arrive (`[agent] model turn 2 ...`, `[agent] tool
+call: read_range {...}`) and `GET /progress` returns them as steps in words: `{running, startedAt, turn, steps:[{tool,
+text, at, failed?}]}`, for example "Reading Sales!A1:D17", "Calculating =SUM(Sales!D2:D17)", "Changing Sales!B7". A
+tool result marked `ERROR` marks its step failed. Only the newest request is kept (its newest 40 steps), and its steps
+stay until the next request starts. The Spreadsheets page polls it every 1.5 s while a request runs and lists the
+newest six steps under "GridCraft is working on it".
+
 Without a model, through `host/gridcraft-agent/gridcraft_ops.py`:
 
 - `GET /workbook?sheet=&range=`: title, file name (never the host path), unsaved flag, sheets, and up to 100 rows by 40
@@ -159,6 +166,7 @@ stores each request as a settings row `gridcraft:run:<id>` (50 kept) and adds th
 | `POST /api/gridcraft/runs/<id>/keep` | `POST /keep` | marks every request waiting for review kept, since saving saves them all |
 | `POST /api/gridcraft/runs/<id>/discard` | `POST /discard` | the newest request only |
 | `GET /api/gridcraft/workbooks` | `GET /workbooks` | names, sizes and dates only |
+| `GET /api/gridcraft/progress` | `GET /progress` | `running`, `turn` and each step's `tool`, `text` and `failed` only |
 | `POST /api/gridcraft/open` | `POST /open` | checks the name the same way; 409 while any request waits for review, since opening another workbook would leave its Keep and Discard meaning nothing |
 | `POST /api/gridcraft/cell` | `POST /cell` | `{sheet, cell, input}`, checked the same way (400) before it reaches the bridge; records a Direct edit (below) |
 

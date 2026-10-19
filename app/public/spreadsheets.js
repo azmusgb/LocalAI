@@ -13,7 +13,7 @@ const EXAMPLES=[
 const MODES={read:'Looks and answers. It cannot change anything.',review:'Makes the changes in GridCraft without saving. You keep or discard them.',apply:'Makes the changes and saves the workbook.'};
 const STATUS={review:'Waiting for review',kept:'Kept',discarded:'Discarded',applied:'Applied',done:'No changes',failed:'Failed'};
 const PAGE=100;
-const st={busy:false,timer:0,started:0,mode:'review',book:null,sheet:'',top:1,runs:[],run:null,sel:null,formulas:false,books:[],edit:null,saving:false,stale:false,editSheet:null};
+const st={busy:false,timer:0,poll:0,started:0,mode:'review',book:null,sheet:'',top:1,runs:[],run:null,sel:null,formulas:false,books:[],edit:null,saving:false,stale:false,editSheet:null};
 const phone=()=>matchMedia('(max-width:640px)').matches;
 const active=()=>$('spreadsheets')?.classList.contains('active');
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -308,13 +308,28 @@ async function openBook(){
 
 // ---- Run, keep, discard ----
 function tick(){$('sheetsElapsed').textContent=`${Math.round((Date.now()-st.started)/1000)}s`}
+// What the running request has done so far (the bridge reads the agent's steps as they happen): the newest few, in words.
+const STEPS_SHOWN=6;
+function renderSteps(steps){
+ const list=$('sheetsSteps'),shown=steps.slice(-STEPS_SHOWN),earlier=steps.length-shown.length;
+ list.hidden=!steps.length;
+ list.innerHTML=(earlier?`<li class="sheets-steps__more">${earlier} earlier step${earlier===1?'':'s'}</li>`:'')
+  +shown.map((x,i)=>`<li class="${x.failed?'is-failed':i===shown.length-1?'is-current':''}">${esc(x.text)}${x.failed?' (didn’t work)':''}</li>`).join('');
+}
+async function pollSteps(){
+ try{
+  const r=await fetch(`${API}/progress`,{cache:'no-store'});const data=await r.json();
+  if(st.busy&&r.ok&&data.ok&&data.running)renderSteps(data.steps||[]);
+ }catch{} // progress is a nicety: the request itself reports how it ended
+}
+function stopSteps(){clearInterval(st.poll);st.poll=0;renderSteps([])}
 async function run(){
  const text=$('sheetsPrompt').value.trim();
  if(!text||st.busy){if(!text)$('sheetsPrompt').focus();return}
  st.busy=true;st.started=Date.now();$('sheetsRun').disabled=true;$('sheetsRun').textContent='Working…';
  showRun(null);$('sheetsResultTitle').textContent='Answer';$('sheetsResult').dataset.status='';
  show('working','GridCraft is working on it. Larger requests can take a few minutes.');
- $('sheetsElapsed').textContent='0s';st.timer=setInterval(tick,1000);
+ $('sheetsElapsed').textContent='0s';st.timer=setInterval(tick,1000);st.poll=setInterval(pollSteps,1500);
  try{
   const r=await fetch(`${API}/run`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,mode:st.mode})});
   const data=await r.json().catch(()=>({ok:false,error:`HTTP ${r.status}`}));
@@ -326,7 +341,7 @@ async function run(){
   show('error',`That didn't work. ${e.message||e}`,{retry:true});
   health(); // one failed request doesn't mean GridCraft is down: show its real state
  }finally{
-  clearInterval(st.timer);tick();st.busy=false;$('sheetsRun').disabled=false;$('sheetsRun').textContent='Run';
+  clearInterval(st.timer);stopSteps();tick();st.busy=false;$('sheetsRun').disabled=false;$('sheetsRun').textContent='Run';
   if(st.mode!=='read'||!st.book)loadBook();
  }
 }

@@ -31,6 +31,7 @@ test('GridCraft is reached through the appliance, not directly from the browser'
         if (JSON.parse(body).name === 'Gone.xlsx') { res.statusCode = 404; return res.end(JSON.stringify({ ok: false, error: 'Gone.xlsx is not in the GridCraft folder' })); }
         return res.end(JSON.stringify({ ok: true, file: JSON.parse(body).name }));
       }
+      if (req.url === '/progress') return res.end(JSON.stringify({ ok: true, running: true, startedAt: 1, turn: 2, workbook: 'C:\\Users\\someone\\Book.xlsx', steps: [{ tool: 'read_range', text: 'Reading Sales!A1:D4', at: 1, args: { path: 'C:\\x' } }, { tool: 'set_cell', text: 'Changing Sales!B7', failed: true }] }));
       if (req.url === '/keep') return res.end(JSON.stringify({ ok: true, dirty: false }));
       if (req.url === '/discard') {
         if (JSON.parse(body).undoTop?.[0] !== 'Enter Cell') { res.statusCode = 409; return res.end(JSON.stringify({ ok: false, error: 'The workbook changed in GridCraft after this request' })); }
@@ -53,6 +54,9 @@ test('GridCraft is reached through the appliance, not directly from the browser'
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
   const base = await ready;
+
+  const progress = await (await fetch(`${base}/api/gridcraft/progress`)).json();
+  assert.deepEqual(progress, { ok: true, running: true, turn: 2, steps: [{ tool: 'read_range', text: 'Reading Sales!A1:D4' }, { tool: 'set_cell', text: 'Changing Sales!B7', failed: true }] }, 'the steps in words; no host paths or arguments');
 
   const health = await fetch(`${base}/api/gridcraft/health`);
   assert.equal(health.status, 200);
