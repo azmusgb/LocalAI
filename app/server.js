@@ -95,6 +95,8 @@ const inFlight = busy.createInFlight();
 const runLedger = new RunLedger({ storage, onTransition: (run, previous) => { const e = notifyLib.runEvent(run, previous); if (e) notifier.notify(e); } });
 const activeRunControllers = new Map();
 const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody });
+// Sign-in, report-only for now (app/signin.js): who would be refused is listed on Health; nothing is blocked.
+const signIn = require('./signin').createSignIn({ storage, signedIn: req => !!claudeChat.deviceFor(req) || claudeChat.macAuthorized(req) });
 
 
 
@@ -1472,6 +1474,9 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (crossSiteRequest(req)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 403, { error: 'Cross-site request blocked' }); }
+    signIn.check(req, p);
+    if (req.method === 'GET' && p === '/api/signin/report') return signIn.apiReport(req, res, json);
+    if (req.method === 'POST' && p === '/api/signin/report/clear') { signIn.clear(); return json(res, 200, { ok: true }); }
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 }, addresses: accessAddresses() });
     if (req.method === 'GET' && p === '/api/busy') return apiBusy(req, res);
     if (req.method === 'GET' && p === '/api/releases') return await apiReleases(req, res);

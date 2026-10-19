@@ -87,6 +87,19 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
     if (/Linux|CrOS/.test(ua)) return 'Linux';
     return '';
   }
+  // The device cookie signs a device in to all of Local AI (sign-in design A1, A6): path `/`, and Lax so a link from a
+  // notification or another app still carries it (mutating routes are guarded against other sites anyway). Devices
+  // paired before 19 Oct 2026 hold one scoped to /api/claude/chat; whoami re-issues it for `/` (refreshCookies).
+  const COOKIE_AGE_S = 15552000; // 180 days, renewed on use
+  function deviceCookie(name, value) {
+    return `${name}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${COOKIE_AGE_S}${name === COOKIE ? '; Secure' : ''}`;
+  }
+  function refreshCookies(req, res) {
+    const cookies = parseCookies(req.headers.cookie), ua = req.headers['user-agent'];
+    const fresh = [COOKIE, COOKIE_HTTP].filter(n => deviceForCookie(cookies[n], ua)).map(n => deviceCookie(n, cookies[n]));
+    if (fresh.length) { res.setHeader('Set-Cookie', fresh); res.setHeader('Cache-Control', 'no-store'); }
+    return fresh.length > 0;
+  }
   function deviceFor(req) {
     const cookies = parseCookies(req.headers.cookie);
     const ua = req.headers['user-agent'];
@@ -315,9 +328,7 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
       const latest = Math.max(0, ...storage.listSettings(`${PREFIX}device:`).map(d => d.pairedAt || 0));
       const device = { id: record.deviceId, name: record.deviceName, tokenSha256: sha256hex(token), pairedAt: Math.max(record.approvedAt || t, latest + 1), lastSeenAt: t, ...(record.kind ? { kind: record.kind } : {}) };
       storage.writeSetting(deviceKey(device.id), device);
-      return { status: 'approved', device: { id: device.id, name: device.name }, cookie: requestIsHttps(req)
-        ? `${COOKIE}=${device.id}.${token}; HttpOnly; SameSite=Strict; Path=/api/claude/chat; Max-Age=15552000; Secure`
-        : `${COOKIE_HTTP}=${device.id}.${token}; HttpOnly; SameSite=Strict; Path=/api/claude/chat; Max-Age=15552000` };
+      return { status: 'approved', device: { id: device.id, name: device.name }, cookie: deviceCookie(requestIsHttps(req) ? COOKIE : COOKIE_HTTP, `${device.id}.${token}`) };
     });
     if (outcome.cookie) {
       res.setHeader('Set-Cookie', outcome.cookie);
@@ -455,7 +466,8 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
       return true;
     }
     // Lets the page ask whether it is paired without provoking a 401 (and a console error) on every load.
-    if (route === 'GET /api/claude/chat/whoami') { json(res, 200, { paired: !!deviceFor(req) }); return true; }
+    // It also renews the device cookie for all of Local AI (refreshCookies); the app calls it on every load.
+    if (route === 'GET /api/claude/chat/whoami') { json(res, 200, { paired: refreshCookies(req, res) }); return true; }
     const deviceRoutes = {
       'GET /api/claude/chat/sessions': () => sessions(req, res),
       'GET /api/claude/chat/messages': () => messagesHandler(req, res, urlObj),
@@ -471,7 +483,7 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
     return false;
   }
 
-  return { handle };
+  return { handle, deviceFor, macAuthorized };
 }
 
 module.exports = { createClaudeChat, requestIsHttps };
