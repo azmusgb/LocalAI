@@ -323,23 +323,37 @@ module.exports.DEFAULT_EVIDENCE_TOKENS = DEFAULT_EVIDENCE_TOKENS;
 // file, wrote that cranes, flags and fireworks were "not evident", and the Coordinator reported them as unimplemented;
 // all of them exist. A sentence that says something does not exist, has no evidence or is missing stands only when it
 // cites a find_in_project search that found nothing ([E-...]) or names one of that search's words. Any other such
-// sentence is quoted in a caveat line put first in the answer. A caveat rather than a rewrite: it never garbles the
-// model's sentence or hides what it said, and the owner sees both the claim and that it wasn't checked.
+// sentence is marked "(not checked)" where it stands, and one caveat line closes the answer. A mark rather than a
+// rewrite: it never garbles the model's sentence or hides what it said. Marked in place rather than quoted in the
+// caveat (until 18 Oct the caveat opened the answer and quoted each sentence, so every one was read twice and the
+// answer started with the caveat instead of the answer).
 const ABSENCE = /\b(?:does(?:n['’]t| not) exist|do(?:n['’]t| not) exist|no evidence|lacks?(?: an?| any)? implementation|(?:is|are) missing|(?:is|are) not implemented|not (?:yet )?implemented|(?:is|are) absent)\b/i;
+const NOT_CHECKED = ' (not checked)';
 function absenceSentences(text) {
   return String(text || '').split(/\n+|(?<=[.!?])\s+(?=[*_"“([]*[A-Z0-9])/).map(s => s.trim()).filter(s => ABSENCE.test(s));
+}
+// "Fireworks do not exist." → "Fireworks do not exist (not checked)."
+function markSentence(answer, sentence) {
+  const at = answer.indexOf(sentence);if (at < 0 || answer.startsWith(NOT_CHECKED, at + sentence.length)) return answer;
+  const end = /[.!?:]["”'*_)\]]*$/.exec(sentence), cut = end ? sentence.length - end[0].length : sentence.length;
+  const marked = sentence.slice(0, cut).replace(/\s+$/, '') + NOT_CHECKED + sentence.slice(cut);
+  return answer.slice(0, at) + marked + answer.slice(at + sentence.length);
 }
 function checkAbsenceClaims(answer, searches = []) {
   const empty = searches.filter(s => s && s.kind === 'search' && s.matches === 0 && s.complete !== false);
   const backed = [], flagged = [];
   for (const sentence of absenceSentences(answer)) {
+    // Already marked, or noted beside a search that found lines for it (mission-answer.js fixContradictions).
+    if (sentence.includes(NOT_CHECKED) || sentence.includes('(but find_in_project found ')) continue;
     const low = lower(sentence);
     const by = empty.find(s => sentence.includes(s.id) || String(s.query || '').toLowerCase().split(/[\s|,;"'`]+/).some(t => t.length >= 4 && low.includes(t)));
     if (by) backed.push({ sentence, search: by.id }); else flagged.push(sentence);
   }
   if (!flagged.length) return { answer, flagged, backed };
-  const quote = s => '“' + (s.length > 160 ? s.slice(0, 157).trimEnd() + '…' : s).replace(/\*\*|__/g, '').replace(/^[-*#>\s]+/, '') + '”';
-  const caveat = `Caveat: ${flagged.length === 1 ? 'one statement below says' : flagged.length + ' statements below say'} something is missing, but no worker searched the code for it, so it wasn't checked and may well exist: ${flagged.slice(0, 5).map(quote).join('; ')}${flagged.length > 5 ? '; …' : ''}`;
-  return { answer: caveat + '\n\n' + answer, flagged, backed, caveat };
+  let marked = answer;
+  for (const sentence of flagged) marked = markSentence(marked, sentence);
+  const caveat = flagged.length === 1 ? 'Caveat: the statement marked “not checked” says something is missing, but no worker searched the code for it, so it may well exist.'
+    : `Caveat: ${flagged.length} statements marked “not checked” say something is missing, but no worker searched the code for those things, so they may well exist.`;
+  return { answer: marked.trimEnd() + '\n\n' + caveat, flagged, backed, caveat };
 }
 module.exports.checkAbsenceClaims = checkAbsenceClaims;
