@@ -1033,6 +1033,25 @@ const stubStart = async page => {
   await check('1440px: no script errors (partly failed)', async () => assert.deepEqual(errors, []));
   await context.close();
 }
+// Review (2026-10-19): Retry mission sent only the goal (and whatever the start sheet held), dropping the mission's
+// project, web search, picked workers and worker model, and it overwrote the goal the owner was typing.
+{
+  const KEPT = { ...PARTLY, id: 'mission-ui-kept', projectId: 'proj-1', policy: { allowWeb: true }, routing: { mode: 'manual', selectedAgentIds: ['ux_analyst'], workerModel: 'qwen3:4b-instruct-32k' } };
+  const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, KEPT);
+  await check('1440px: Retry mission starts again with the mission’s own options and leaves the start sheet alone', async () => {
+    await page.locator('#awRetry').waitFor({ state: 'visible' });
+    await page.evaluate(() => { document.getElementById('agentGoal').value = 'something new I was typing'; document.getElementById('agentWebSearch').checked = false; });
+    const s = await stubStart(page);
+    await page.locator('#awRetry').click();
+    await s.sent();
+    assert.deepEqual(s.bodies[0], { goal: KEPT.goal, projectId: 'proj-1', webSearch: true, agentIds: ['ux_analyst'], workerModel: 'qwen3:4b-instruct-32k' });
+    assert.equal(await page.inputValue('#agentGoal'), 'something new I was typing');
+    assert.equal(await page.locator('#agentWebSearch').isChecked(), false);
+    await page.waitForFunction(() => !document.getElementById('awRetry').disabled);
+  });
+  await check('1440px: no script errors (retry options)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
 // A demo while a real mission exists (2026-10-19): live, the header kept the real mission's goal and "Done in 2 min"
 // while the city, crew and story showed the demo. During a demo the header says so; stopping it brings the real one back.
 {
@@ -1053,6 +1072,34 @@ const stubStart = async page => {
     assert.match(await page.locator('#awStatus').innerText(), /^Done in 4 min/);
     assert.equal(await page.locator('#awPrimary').innerText(), 'See the result');
     await page.locator('#awRetry').waitFor({ state: 'visible' });
+  });
+  // Review (2026-10-19): the demo used the real workers' ids, so its frames went into the real replay (and its saved
+  // copy), the worker panel showed the real stopped worker, and its Try again started a real mission.
+  await check('1440px: a demo records no replay frames, shows its own worker, and starts nothing; stopping it gives the real ones back', async () => {
+    const frames = () => page.evaluate(() => { try { return JSON.parse(localStorage.getItem('localai.agentworld.replay.v2') || '{}').frames || []; } catch { return []; } });
+    const select = id => page.evaluate(i => window.dispatchEvent(new CustomEvent('localai:agentworld-select', { detail: { workerId: i } })), id);
+    const s = await stubStart(page), before = JSON.stringify(await frames());
+    await select('ux_analyst');
+    await page.locator('#agentRetryBtn').waitFor({ state: 'visible' });
+    const realPanel = await page.locator('#agentInspector').innerHTML();
+    await page.evaluate(() => window.LocalAIAgentWorld.demo());
+    await page.waitForFunction(() => document.getElementById('awTitle').textContent === 'Demo mission');
+    for (let i = 0; i < 4; i++) await page.evaluate(() => window.LocalAIAgentWorld.demoStep());
+    await select('ux_analyst');
+    assert.equal(await page.locator('#agentRetryBtn').count(), 0, 'no Try again for a demo worker');
+    assert.notEqual(await page.locator('#agentInspector').innerHTML(), realPanel, 'the demo’s worker, not the real one');
+    // Retry mission and Try again do nothing during a demo, even if reached.
+    await page.evaluate(() => { document.getElementById('awRetry')?.click(); document.getElementById('awPeekRetry')?.click(); });
+    await page.waitForTimeout(500);
+    assert.equal(s.bodies.length, 0, 'no POST /api/agents/missions/start during the demo');
+    assert.ok((await frames()).every(f => f.mission?.id !== 'demo-city-mission'), 'no demo frame was saved');
+    await page.locator('#awcLiveBtn').click();
+    await page.waitForFunction(g => document.getElementById('awTitle').textContent === g, PARTLY.goal);
+    assert.equal(JSON.stringify(await frames()), before, 'the saved replay is the real mission’s, as it was');
+    await page.locator('#agentRetryBtn').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#agentInspector').innerHTML(), realPanel, 'the real worker panel is back');
+    assert.equal(s.bodies.length, 0);
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
   });
   await check('1440px: no script errors (demo header)', async () => assert.deepEqual(errors, []));
   await context.close();

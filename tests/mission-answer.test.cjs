@@ -80,12 +80,16 @@ test('the repeated "Remaining Unknowns" say each gap once', () => {
   const before = look.coordinatorAnswer, { answer, report } = polish(look, Infinity);
   const count = (text, re) => (text.match(re) || []).length;
   assert.equal(count(before, /Missing Evidence/g), 4);
-  assert.equal(count(answer, /Missing Evidence/g), 0, 'each "❌ Missing Evidence:" restated a line above it');
+  // Three "❌ Missing Evidence:" lines restated a line above them; "Buildings and districts" adds districts, which the
+  // line above (building details or shadows) did not say, so it is a different fact and stays.
+  assert.equal(count(answer, /Missing Evidence/g), 1);
+  assert.match(answer, /Missing Evidence: Buildings and districts are not seen/);
   assert.doesNotMatch(answer, /The CSS does not include animation rules for workers/);
-  assert.doesNotMatch(answer, /Visual elements \(workers, buildings, ground, labels\)/, 'the assessment restated them again');
+  // The assessment's one-line roll-up says less than any line above it word for word, so it is not a near-exact repeat.
+  assert.match(answer, /^- Visual elements \(workers, buildings, ground, labels\): No evidence of implementation or animation\.$/m);
   for (const kept of ['confirms worker animation or sprite variation', 'confirms labels or bubbles', 'confirms building details or shadows', 'confirms ground texture or detail'])
     assert.equal(count(answer, new RegExp(kept, 'g')), 1, kept);
-  assert.equal(report.repeatsDropped, 6);
+  assert.equal(report.repeatsDropped, 4);
   // Different things that share a word are each kept.
   const list = 'Not checked:\n- Crane movement or construction progress animation → absent\n- Traffic vehicle movement or animation → absent';
   assert.equal(dropRepeatedGaps(list).text, list);
@@ -94,9 +98,9 @@ test('the repeated "Remaining Unknowns" say each gap once', () => {
 test('the caveat marks each unchecked claim where it stands and closes the answer, so nothing is read twice', () => {
   const { answer } = polish(look, Infinity);
   const checked = checkAbsenceClaims(answer, look.evidenceRecords.filter(r => r.kind === 'search'));
-  assert.equal(checked.flagged.length, 4);
+  assert.equal(checked.flagged.length, 5);
   assert.match(checked.answer, /^1\. Header and Primary Actions/, 'the answer leads');
-  assert.match(checked.answer, /\n\nCaveat: 4 statements marked “not checked” say something is missing, but no worker searched the code for those things, so they may well exist\.$/);
+  assert.match(checked.answer, /\n\nCaveat: 5 statements marked “not checked” say something is missing, but no worker searched the code for those things, so they may well exist\.$/);
   assert.match(checked.answer, /No evidence in the code or CSS confirms labels or bubbles exist or are positioned \(not checked\)\./);
   for (const sentence of checked.flagged) assert.equal(checked.answer.split(sentence.replace(/\.$/, '')).length - 1, 1, 'said once: ' + sentence);
 });
@@ -138,4 +142,53 @@ test('the Coordinator is asked for the same shape', () => {
   for (const rule of [/Start with the answer itself/, /Never describe your own process: no "I have received", "Below is"/, /no account of follow-ups or tool failures/, /no "#", no "\*\*" and no emoji/, /Say each thing once/, /never also call that thing missing/, /under "Not checked:"/, /At most about 400 words/])
     assert.match(ANSWER_FORMAT, rule);
   assert.ok(ANSWER_FORMAT.length < 1000, 'a few hundred tokens at most on a 12k context');
+});
+
+// Review findings (19 Oct 2026): each of these was reproduced against the tidier before the fix.
+test('code blocks and backtick spans are left exactly as written', () => {
+  const code = '```python\ndef f(**kwargs):\n    # square it\n    return x ** 2\n```';
+  const said = 'The fix is in `f(**kwargs)`.\n\n' + code + '\n- 2 ** 10 = 1024 [E-0123456789abcdef]';
+  const { answer } = polishAnswer(said);
+  assert.ok(answer.includes(code), answer);
+  assert.match(answer, /`f\(\*\*kwargs\)`/);
+  assert.match(answer, /2 \*\* 10 = 1024/, 'a spaced ** is an operator, not bold');
+  // A gap or a "missing" claim inside a block is code too.
+  const block = '```\n# Undo is not implemented\n# Undo is not implemented\n  indented   line\n```';
+  assert.ok(polishAnswer('Undo exists in `undoStack` [E-1111111111111111].\n\n' + block).answer.endsWith(block));
+  assert.equal(plainText('~~~\n## kept\n~~~'), '~~~\n## kept\n~~~');
+});
+
+test('a table keeps its rows and spacing', () => {
+  const table = '| Name | Count |\n|------|------:|\n| a    |   10  |\n| CSRF | is missing |\n| CSRF | is missing |';
+  const { answer } = polishAnswer('Results:\n' + table);
+  assert.equal(answer, 'Results:\n' + table);
+});
+
+test('"We verified that …" keeps its claim; only the process clause goes', () => {
+  const said = 'We verified that the nightly backup is not running because the cron entry is commented out.\n\n- cron line 4 is commented [E-0123456789abcdef]';
+  const { answer, report } = polishAnswer(said);
+  assert.match(answer, /^The nightly backup is not running because the cron entry is commented out\.\n\n- cron line 4/);
+  assert.equal(report.narrationDropped, 0, 'nothing was dropped, only trimmed');
+  assert.equal(dropNarration('I checked the logs and found that disk C is full.').text, 'Disk C is full.');
+  assert.equal(dropNarration('We checked the cron file and the job is disabled.').text, 'We checked the cron file and the job is disabled.', 'a claim with no "that" stays whole');
+  assert.equal(dropNarration('I have reviewed the code. The job is disabled.').text, 'The job is disabled.', 'pure process still goes');
+});
+
+test('"missing" becomes "present" only when one code name covers the whole subject', () => {
+  const said = 'Undo for delete is not implemented.\n- Delete calls `deleteRun` [E-0123456789abcdef]\n- The editor has an `undoStack` for text [E-1123456789abcdef]';
+  const { answer, report } = polishAnswer(said);
+  assert.match(answer, /^Undo for delete is not implemented\.$/m);
+  assert.doesNotMatch(answer, /Present, not missing/);
+  assert.equal(report.contradictions.length, 0);
+  const records = [{ id: 'E-aaaaaaaaaaaaaaaa', kind: 'source', source: 'app/x.js', excerpt: 'const isDark=false; function modeLabel(){}' }];
+  assert.equal(fixContradictions('Dark mode is not implemented.', { evidenceRecords: records }).text, 'Dark mode is not implemented.');
+  assert.equal(fixContradictions('Delete undo is missing. See `undoDelete` [E-2222222222222222].').text.split('. ')[0], 'Present, not missing: delete undo (`undoDelete`) [E-2222222222222222]');
+});
+
+test('a different fact under the same heading stays, with its citation', () => {
+  const said = 'Security:\n- No evidence of CSRF protection [E-0123456789abcdef].\n- No evidence of rate limiting on security login [E-1123456789abcdef].\n- Security headers are missing [E-2123456789abcdef].';
+  assert.equal(polishAnswer(said).answer, said);
+  // A near word-for-word repeat still goes.
+  const twice = 'Gaps:\n- No evidence of CSRF protection [E-0123456789abcdef].\n- CSRF protection is missing.';
+  assert.equal(dropRepeatedGaps(twice).text, 'Gaps:\n- No evidence of CSRF protection [E-0123456789abcdef].');
 });

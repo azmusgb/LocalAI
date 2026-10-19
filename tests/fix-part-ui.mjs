@@ -174,6 +174,22 @@ const openFix = async page => { await page.click('#imageFixPart'); await page.wa
     assert.match(await page.locator('#imageEditHint').innerText(), /Paint over the part to change/);
     await page.click('#imageEditCancel');
   });
+  // Review (2026-10-19): Keep on one version, then a quick Keep on the other before the first finished, deleted both.
+  await check('two quick Keep taps keep one: both Keeps are disabled once one is tapped, and only the other version is deleted', async () => {
+    await openFix(page);
+    const box = await canvasBox(page);
+    await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
+    await page.click('[data-fix-preset="hands"]');
+    const n = sent.length + 1, before = deleted.length;
+    await page.click('#imageFixGo');
+    await page.waitForSelector(`#imageFixCompare:not([hidden]) img[src*="r${n}-1.png"]`); // this fix's versions, not the last one's
+    const disabled = await page.evaluate(() => { const [a, b] = document.querySelectorAll('#imageFixCompare [data-fix-keep]'); a.click(); const d = [a.disabled, b.disabled]; b.click(); return d; });
+    assert.deepEqual(disabled, [true, true], 'both Keeps wait while one is kept');
+    await page.waitForSelector('#imageFixCompare', { state: 'hidden' });
+    await page.waitForTimeout(300);
+    assert.deepEqual(deleted.slice(before), [{ items: [{ kind: 'library', id: `lib-${n}-1` }] }], 'only the version not kept');
+    assert.match(await page.locator('#generatedImage').getAttribute('src'), new RegExp(`r${n}-0\\.png`));
+  });
   await page.close();
 }
 
