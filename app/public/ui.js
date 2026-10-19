@@ -3686,7 +3686,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
 
   // Opening a run is routing: #run/<id>. The router calls routeRun(id) (and routeRun(null) when the hash leaves a run).
+  // A spreadsheet request is kept, discarded and shown on Spreadsheets, so its row opens that page.
+  const ownPage = id => (String(id).startsWith('legacy-gridcraft:') ? 'spreadsheets' : '');
   function openRun(id) {
+    if (ownPage(id) && window.LocalAIRouter) { window.LocalAIRouter.go('#' + ownPage(id)); return; }
     state.inApp = true;
     if (window.LocalAIRouter) window.LocalAIRouter.go(`#run/${encodeURIComponent(id)}`); else routeRun(id);
   }
@@ -3756,6 +3759,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   // Router handler: show the run named by #run/<id>, or close the view when id is null.
   function routeRun(id) {
     if (id === null || id === undefined) { hideView(); return; }
+    if (ownPage(id) && window.LocalAIRouter) { window.LocalAIRouter.go('#' + ownPage(id)); return; }
     state.closing = false;
     if (state.selectedId !== id) { state.viewError = ''; state.gap = ''; state.fetched = null; }
     state.selectedId = id;

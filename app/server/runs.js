@@ -4,7 +4,7 @@
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
 function createRuns(ctx) {
-  const { AUTOMATION_RUNS_STORE, MODEL, RUNS_STORE, WORK_CHIPS, activeRunControllers, agentRunStore, approvalStore, automationRunStore, changeStore, cleanRunId, effectiveEngineeringRuns, fetchWithTimeout, json, keptMarker, listenPort, needsYou, nowIso, projectStore, readBody, recordActivity, runCard, runLedger, sanitizeMessages, saveStore, seenRuns, storageError, titleFromText, withSeen, workKind } = ctx;
+  const { AUTOMATION_RUNS_STORE, MODEL, RUNS_STORE, WORK_CHIPS, activeRunControllers, agentRunStore, approvalStore, automationRunStore, changeStore, cleanRunId, effectiveEngineeringRuns, fetchWithTimeout, gridcraftRuns, json, keptMarker, listenPort, needsYou, nowIso, projectStore, readBody, recordActivity, runCard, runLedger, sanitizeMessages, saveStore, seenRuns, storageError, titleFromText, withSeen, workKind } = ctx;
   function createChatExecution(body,streaming){
     const messages=sanitizeMessages(body?.messages);const prompt=[...messages].reverse().find(m=>m.role==='user')?.content||'Chat';
     const model=typeof body?.model==='string'&&body.model.trim()?body.model.trim():MODEL;
@@ -80,6 +80,35 @@ function createRuns(ctx) {
         retryable: ['completed','failed'].includes(status),
         attempt: Number.isSafeInteger(Number(run.attempt)) && Number(run.attempt) > 0 ? Number(run.attempt) : 1,
         retryOf: run.retryOf || null,
+        events: legacyEvents(run)
+      });
+    }
+    // Spreadsheet requests (GridCraft's own records, app/server/gridcraft.js): one waiting for Keep or Discard is waiting
+    // on the owner, so Work and Needs you show it; opening it goes to Spreadsheets, where Keep and Discard are.
+    const GRIDCRAFT_STATUS = { review: 'awaiting_approval', failed: 'failed', discarded: 'cancelled' };
+    for (const run of gridcraftRuns(50)) {
+      const status = GRIDCRAFT_STATUS[run.status] || 'completed';
+      items.push({
+        id: 'legacy-gridcraft:' + run.id,
+        type: 'spreadsheet',
+        title: titleFromText(run.prompt, 'Spreadsheet request'),
+        status,
+        progress: executionProgress(status),
+        createdAt: run.createdAt || null,
+        startedAt: run.createdAt || null,
+        updatedAt: run.updatedAt || run.createdAt || null,
+        finishedAt: status === 'awaiting_approval' ? null : (run.updatedAt || run.createdAt || null),
+        summary: String(run.answer || run.error || '').slice(0, 1200),
+        input: { prompt: String(run.prompt || '').slice(0, 4000), mode: run.mode || '' },
+        output: run.answer ? { text: String(run.answer).slice(0, 4000) } : null,
+        error: run.error || null,
+        artifactIds: [],
+        source: { kind: 'gridcraft', id: run.id },
+        meta: { mode: run.mode || '', gridcraftStatus: run.status || '', edits: Array.isArray(run.edits) ? run.edits.length : 0 },
+        cancellable: false,
+        retryable: false,
+        attempt: 1,
+        retryOf: null,
         events: legacyEvents(run)
       });
     }
