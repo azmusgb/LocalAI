@@ -242,7 +242,7 @@ await check('a planned change offers Test the change; one waiting for you offers
 await check('Shipped groups items by release, newest first, with the PR link or Resolved on its own', async () => {
   await page.evaluate(() => window.showView('shipped'));
   await page.waitForSelector('#shipped.active #shippedList .improve-row');
-  const groups = await page.locator('#shippedList .improve-release').evaluateAll(gs => gs.map(g => [g.querySelector('h3').textContent, [...g.querySelectorAll('.improve-row')].map(r => r.dataset.itemId)]));
+  const groups = await page.locator('#shippedList .improve-release').evaluateAll(gs => gs.map(g => [g.querySelector('h2').textContent, [...g.querySelectorAll('.improve-row')].map(r => r.dataset.itemId)]));
   assert.deepEqual(groups, [
     ['Next release', ['claude-fresh']],
     ['Version 2.0.310', ['claude-new', 'signal-gone']],

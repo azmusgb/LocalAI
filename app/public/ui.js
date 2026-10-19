@@ -1302,7 +1302,7 @@ function syncHud(){
 // The sheet's peek row shows the same crew as small portraits beside the status sentence.
 function syncRoster(){
  const A=window.LocalAIAgentWords,workers=current?.workers||[],m=current?(current.raw||current):null,h=$('#awcRoster');if(!A)return;
- if(h){h.innerHTML=workers.length?workers.map(w=>{const b=A.stateBadge(w.state);return `<button type="button" class="awc__rosterItem ${esc(w.state)}" data-awc-roster="${esc(w.id)}"><img class="awc__avatar" src="${avatar(w)}" alt="" width="40" height="40"><span class="awc__rosterText"><strong>${esc(A.workerName(w))}</strong><small>${esc(A.workerRole(w))}</small><span>${esc(A.workerStep(w,m))}</span></span><em class="badge badge--${b.tone}">${esc(b.label)}</em></button>`}).join(''):'<div class="awc__empty">No workers yet.</div>';h.querySelectorAll('[data-awc-roster]').forEach(b=>b.onclick=()=>focusWorker(b.dataset.awcRoster))}
+ if(h){h.innerHTML=workers.length?workers.map(w=>{const b=A.stateBadge(w.state);return `<div role="listitem"><button type="button" class="awc__rosterItem ${esc(w.state)}" data-awc-roster="${esc(w.id)}"><img class="awc__avatar" src="${avatar(w)}" alt="" width="40" height="40"><span class="awc__rosterText"><strong>${esc(A.workerName(w))}</strong><small>${esc(A.workerRole(w))}</small><span>${esc(A.workerStep(w,m))}</span></span><em class="badge badge--${b.tone}">${esc(b.label)}</em></button></div>`}).join(''):'<div class="awc__empty" role="listitem">No workers yet.</div>';h.querySelectorAll('[data-awc-roster]').forEach(b=>b.onclick=()=>focusWorker(b.dataset.awcRoster))}
  const av=$('#awSheetAvatars');if(av)av.innerHTML=workers.map(w=>`<img class="awc__avatar is-${esc(w.state)}" data-worker="${esc(w.id)}" src="${avatar(w)}" alt="" width="30" height="30">`).join('');
  const st=$('#awSheetStatus');if(st){const t=A.statusSentence(m),i=t.label?t.text.indexOf(' · '):-1;st.dataset.tone=t.tone;st.innerHTML=i>0?`<b>${esc(t.text.slice(0,i))}</b>${esc(t.text.slice(i))}`:esc(t.text)}
 }
@@ -1366,7 +1366,7 @@ function mount(){
  const host=$('#agentWorldCityMount');if(!host)return;root=document.createElement('section');root.className='awc awc-v3';root.dataset.state='idle';root.innerHTML=`
  <div class="awc__gameShell">
   <div class="awc__mapWrap">
-   <canvas id="awcCanvas" tabindex="0" aria-label="Agent World city map. Drag to move, pinch or scroll to zoom, tap a worker or building. Keys: plus and minus zoom, 0 fits the city, F follows, T full screen. The crew list has the same information."></canvas><i class="awc__sky awc__sky--light" aria-hidden="true"></i><i class="awc__sky" aria-hidden="true"></i><i class="awc__sky awc__sky--rays" aria-hidden="true"></i><i class="awc__sky awc__sky--flash" aria-hidden="true"></i>
+   <canvas id="awcCanvas" tabindex="0" aria-describedby="awCrewSummary" aria-label="Agent World city map. Drag to move, pinch or scroll to zoom, tap a worker or building. Keys: plus and minus zoom, 0 fits the city, F follows, T full screen. The crew list has the same information."></canvas><i class="awc__sky awc__sky--light" aria-hidden="true"></i><i class="awc__sky" aria-hidden="true"></i><i class="awc__sky awc__sky--rays" aria-hidden="true"></i><i class="awc__sky awc__sky--flash" aria-hidden="true"></i>
    <div class="awc__tooltip" id="awcTooltip" hidden></div>
    <div class="awc__mapHud">
     <div class="awc__selection" id="awcSelection" data-empty="true"><span>Select a worker or building</span><small>Click to inspect</small></div>
@@ -3297,7 +3297,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       backdrop.id = 'runDrawerBackdrop';
       backdrop.className = 'run-drawer-backdrop';
       backdrop.setAttribute('aria-hidden', 'true');
-      backdrop.innerHTML = '<aside id="runDrawer" class="run-drawer" role="dialog" aria-modal="true" aria-labelledby="runDrawerTitle"></aside><dialog id="runDetailsSheet" class="run-details-sheet" aria-labelledby="runDetailsTitle"></dialog><div id="runLiveRegion" class="run-live-region" aria-live="polite"></div>';
+      backdrop.innerHTML = '<div id="runDrawer" class="run-drawer" role="dialog" aria-modal="true" aria-labelledby="runDrawerTitle"></div><dialog id="runDetailsSheet" class="run-details-sheet" aria-labelledby="runDetailsTitle"></dialog><div id="runLiveRegion" class="run-live-region" aria-live="polite"></div>';
       document.body.appendChild(backdrop);
       backdrop.addEventListener('click', (event) => { if (event.target === backdrop) closeRunView(); });
       const dlg = el('runDetailsSheet');
@@ -3362,12 +3362,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const back = iconBtn('chevron-left', 'Back'); back.addEventListener('click', closeRunView);
     const copy = document.createElement('div'); copy.className = 'run-drawer-copy';
     const t = document.createElement('h2'); t.id = 'runDrawerTitle'; t.className = 'run-drawer-title'; t.textContent = title; t.title = title;   // desktops: the full text is on hover
-    // Phones clamp it to two lines and have no hover: a tap (or Enter) opens the whole title, a second one folds it; aria-expanded says which.
-    if (matchMedia('(max-width:760px)').matches) {
-      t.setAttribute('role', 'button'); t.tabIndex = 0; t.setAttribute('aria-expanded', 'false');
-      const flip = () => { const open = t.classList.toggle('is-open'); t.setAttribute('aria-expanded', String(open)); };
-      t.addEventListener('click', flip); t.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } });
-    }
+    // Phones clamp it to two lines and have no hover: a tap opens the whole title, a second one folds it. It stays a plain
+    // heading (a heading can't also be a button); the clamp is visual, so screen readers always read the whole title.
+    if (matchMedia('(max-width:760px)').matches) t.addEventListener('click', () => t.classList.toggle('is-open'));
     const s = document.createElement('div'); s.className = 'run-drawer-sub'; if (typeof sub === 'string') s.textContent = sub; else s.append(...sub);
     copy.append(t, s); head.append(back, copy);
     if (run) {

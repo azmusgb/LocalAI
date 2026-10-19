@@ -204,6 +204,18 @@ async function withMission(contextOpts, mission) {
     assert.equal(await page.locator('#awRetry').isVisible(), false, 'one Retry mission, not two');
     assert.equal(await page.locator('#agents .pill').count(), 0, 'the Mission-first pill is gone');
   });
+  await check('1440px: screen readers get the crew as a list, and the city points at its count', async () => {
+    assert.equal(await page.locator('#awcRoster[role="list"] > [role="listitem"] .awc__rosterItem').count(), 3);
+    assert.equal(await page.locator('#awCrewSummary').textContent(), '3 workers: 1 done, 2 need you.');
+    assert.equal(await page.locator('#awcCanvas').getAttribute('aria-describedby'), 'awCrewSummary');
+    assert.equal(await page.locator('#awCrewSummary').getAttribute('aria-live'), 'polite');
+  });
+  await check('1440px: the crew count follows the crew as it changes', async () => {
+    await page.evaluate(m => window.dispatchEvent(new CustomEvent('localai:agentworld-mission', { detail: { mission: { ...m, workers: m.workers.map(w => ({ ...w, state: 'complete' })) } } })), FAILED);
+    await page.waitForFunction(() => document.getElementById('awCrewSummary').textContent === '3 workers: 3 done.', null, { timeout: 4000 });
+    await page.evaluate(m => window.dispatchEvent(new CustomEvent('localai:agentworld-mission', { detail: { mission: m } })), FAILED);
+    await page.waitForFunction(() => document.getElementById('awCrewSummary').textContent === '3 workers: 1 done, 2 need you.', null, { timeout: 4000 });
+  });
   await check('1440px: the city fills the main area; the rail beside it is 360 px', async () => {
     const city = await page.locator('.aw-city').boundingBox(), rail = await page.locator('#awSheet').boundingBox();
     assert.ok(Math.abs(rail.width - 360) < 2, `rail ${rail.width}`);

@@ -331,11 +331,12 @@ await check('390x844: a tap on the clamped run title shows all of it; a second t
   const lines = () => t.evaluate(e => ({ h: e.getBoundingClientRect().height, lh: parseFloat(getComputedStyle(e).lineHeight) }));
   const before = await lines();
   assert.ok(before.h <= before.lh * 2 + 2, `title is ${before.h}px before the tap`);
-  assert.equal(await t.getAttribute('aria-expanded'), 'false');
+  // A plain heading (a heading can't also be a button); screen readers read the whole title, the clamp is visual.
+  assert.deepEqual(await t.evaluate(e => [e.tagName, e.getAttribute('role'), e.getAttribute('aria-expanded')]), ['H2', null, null]);
   await t.tap();
   const after = await lines();
   assert.ok(after.h > before.lh * 2 + 2, `title is still ${after.h}px after the tap`);
-  assert.equal(await t.getAttribute('aria-expanded'), 'true');
+  assert.equal(await t.evaluate(e => e.classList.contains('is-open')), true);
   await t.tap();
   assert.ok((await lines()).h <= before.lh * 2 + 2, 'second tap folds it');
   assert.equal(await t.getAttribute('title'), TITLE);
