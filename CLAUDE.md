@@ -24,7 +24,8 @@ container `local-ai-appliance` on a Windows host, UI on port 3080. Docs index: `
    posts a `local-ci` check to the PR. Merge only on a green `local-ci`. Runs on one machine queue (the PR shows
    "Queued behind PR #N"), so start yours and let it wait; never kill another session's run.
 2. Merge. The host's `LocalAI Safe Deploy` task deploys `main` within about 5 minutes and rolls back by itself.
-3. Confirm: `curl -s http://10.0.0.21:3080/healthz` (10.0.0.21 is the owner's appliance on their LAN) → `releaseCommit` equals the merge SHA. Deploy output
+3. Confirm: `curl -s https://10.0.0.21/healthz` (10.0.0.21 is the owner's appliance on their LAN; the Mac trusts its
+   CA, else add `--cacert ~/.claude/localai-chat/localai-ca.crt`) → `releaseCommit` equals the merge SHA. Deploy output
    contains fake `DEPLOYED: aaaa…` lines from contract tests; trust only `/healthz`.
 
 Host access, when needed: `ssh windows-ai` (the owner's ssh alias for the Windows host; PowerShell 5.1). Run deploy scripts as a child process
@@ -32,7 +33,7 @@ Host access, when needed: `ssh windows-ai` (the owner's ssh alias for the Window
 
 ## Report to the Claude board
 
-Base `http://10.0.0.21:3080` (the owner's appliance). JSON bodies, no auth. Mutating requests that carry a foreign `Origin` or
+Base `https://10.0.0.21` (the owner's appliance; port 3080 answers on the Windows host only). JSON bodies, no auth. Mutating requests that carry a foreign `Origin` or
 `Sec-Fetch-Site: cross-site` get 403; curl and scripts send neither, so they are unaffected.
 
 - Before choosing work: `GET /api/claude/priorities?limit=20` (open findings in the owner's rank order, with decisions).

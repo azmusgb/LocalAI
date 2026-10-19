@@ -9,14 +9,14 @@ through it.
 
 ```text
  LAN browsers and phones                                      Mac (Claude Code sessions)
-   | http://<host>:3080   https://<host> (443)                  | outbound HTTP only:
+   | https://<host> (443)                                       | outbound HTTPS only:
    |                                                            |  board events/findings, chat relay (Mac key)
    v                                                            v
  Windows host  ─────────────────────────────────────────────────────────────────────────────
   Docker Desktop
    local-ai-https  (Caddy, 0.0.0.0:80/443) ─────┐
                                                 v
-   local-ai-appliance   :3080  (LAN)            app/server.js  +  /data/localai.db (volume)
+   local-ai-appliance   :3080  (127.0.0.1 only) app/server.js  +  /data/localai.db (volume)
                         :3090  (127.0.0.1 only: PowerShell Workbench)
         |  Docker network                                 |  host.docker.internal → host 127.0.0.1
         v                                                 v

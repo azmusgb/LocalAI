@@ -32,7 +32,8 @@ services:
       retries: 3
       start_period: 60s
     ports:
-      - "3080:3080"
+      # Plain HTTP for this PC only (deploy, backup and repair scripts); every other device uses Caddy's HTTPS on 443.
+      - "127.0.0.1:3080:3080"
       # Host-only tools (PowerShell Workbench); published on the host's loopback only.
       - "127.0.0.1:3090:3090"
     environment:

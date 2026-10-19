@@ -8,7 +8,7 @@ import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
 
-export const DEFAULT_URL = 'http://10.0.0.21:3080';
+export const DEFAULT_URL = 'https://10.0.0.21';
 const INSTALL_HINT = 're-run host/claude-chat/install.sh';
 
 export function loadConfig(home, env = process.env) {

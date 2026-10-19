@@ -17,8 +17,8 @@ What LocalAI protects, how, and where it does not. Everything here is what the c
 
 | Surface | Reachable from | Control |
 |---|---|---|
-| App and API, port 3080 | LAN | No sign-in (see gaps); cross-site browser writes blocked ([guard](#other-controls)) |
-| HTTPS, ports 80/443 (Caddy) | LAN, private network profile only | Firewall rule `Local AI HTTPS` (`deploy/Install-LocalAI-HTTPS.ps1`) |
+| App and API, port 3080 (plain HTTP) | Windows host only | Published on `127.0.0.1` (`deploy/stack/compose.yml`); host scripts use it. Other devices come through HTTPS |
+| HTTPS, ports 80/443 (Caddy) | LAN, private network profile only | Firewall rule `Local AI HTTPS` (`deploy/Install-LocalAI-HTTPS.ps1`). No sign-in (see gaps); cross-site browser writes blocked ([guard](#other-controls)) |
 | PowerShell Workbench, port 3090 | Windows host only | Published on `127.0.0.1` only (`deploy/Enable-LocalAI-HostOnlyPort.ps1`) |
 | GridCraft bridge, ComfyUI | Windows host only | Bound to `127.0.0.1` by this repo's installers (`Install-GridCraft-Bridge.ps1`, `Install-ComfyUI-Task.ps1` `-Listen` default) |
 | Ollama, n8n | Windows host only, **if configured so** | Expected host configuration, not enforced by this repo: Ollama via the user env var `OLLAMA_HOST=127.0.0.1:11434`, n8n via `-p 127.0.0.1:5678:5678` on a container defined outside the repo. Verify below |
@@ -68,7 +68,7 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
   approve. The device cookie `localai_chat_device` is HttpOnly, `SameSite=Strict`, scoped to
   `/api/claude/chat`, valid 180 days, and `Secure` when the device paired over HTTPS (a TLS socket or
   `X-Forwarded-Proto: https` from Caddy; `requestIsHttps`); the appliance stores only its hash. Any paired device can
-  revoke any device. The header is trusted from any client: spoofing it on port 3080 only makes that client's own
+  revoke any device. The header is trusted from any client: spoofing it on the host's port 3080 only makes that client's own
   cookie HTTPS-only.
 - The Mac side (bridge, hooks, CLI) talks to `https://10.0.0.21` and verifies it against the LocalAI CA, which
   `install.sh` fetches over `ssh windows-ai` (authenticated), checks with `openssl x509` and records in
@@ -133,11 +133,9 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
 |---|---|---|
 | GitHub access to this repo means code on the host | The auto-deploy runs `origin/main` and that commit's scripts as the host user. Enable branch protection on `main` with required CI and reviews, and protect the GitHub account. CI is path-filtered and docs-only PRs run none, so a required check that did not run will block those PRs. Whether branch protection is on cannot be checked from the repo | `deploy/Run-LocalAI-AutoDeploy.ps1`, `deploy/Deploy-LocalAI.ps1` |
 | Ollama and n8n loopback binding is host configuration | If `OLLAMA_HOST` is unset or n8n is published on all interfaces, the model API or the n8n editor is open to the LAN without auth | [Network exposure](#network-exposure) |
-| No user authentication on port 3080 or 443 | Anyone on the LAN can read conversations and projects, start runs, edit files under `WORKSPACE_ROOT`, and run `node`/`npm`/`npx` there (code execution inside the container) | `app/server.js` request router |
+| No user authentication on port 443 | Anyone on the LAN can read conversations and projects, start runs, edit files under `WORKSPACE_ROOT`, and run `node`/`npm`/`npx` there (code execution inside the container) | `app/server.js` request router |
 | Change requests are unauthenticated | Any LAN client can request a change. A `self` change copies `SELF_APP_ROOT` to `DATA_DIR/change-staging/<id>/app`, applies a model-written patch there and validates it by running `node --check` and starting the staged `server.js` inside the container. Shipping it only hands it to a Claude session as an Improve item; it reaches the live app only as a pull request the owner merges. A `workspace` change, once approved, writes its files into `WORKSPACE_ROOT` | `stageChangeByIdUnlocked`, `validateStagedChange`, `apiChangeRequestApply` in `app/server.js` |
 | Files and Repository write under `WORKSPACE_ROOT` without auth | A LAN user can create or overwrite any file in the mounted workspace and run allow-listed commands there. What `/workspace` is mounted from is set by the container definition, which is not in this repo | `apiWorkbenchWrite`, `apiWorkbenchCommand` in `app/server.js` |
-| Port 3080 stays plain HTTP | HTTPS on 443 is available, but 3080 is still open and nothing redirects it; anything using `http://<host>:3080` is unencrypted on the Wi-Fi | container port mapping; `deploy/caddy/Caddyfile` |
-| The Mac falls back to plain HTTP when HTTPS is unavailable | On a fresh install, `install.sh` keeps `http://10.0.0.21:3080` (with a warning) if it cannot fetch a valid CA over ssh or cannot reach `https://10.0.0.21` with it, and a Mac installed before the HTTPS change stays on HTTP until `install.sh` is re-run. An existing HTTPS config is never downgraded without `install.sh --allow-http`, and an unreadable `config.json` stops sending instead of falling back. On HTTP the Mac key crosses the Wi-Fi in clear on every poll; whoever captures it can approve pairings and impersonate sessions. Rotate it if exposed ([steps](CLAUDE-CHAT.md#security-notes)) | `host/claude-chat/install.sh`, `~/.claude/localai-chat/config.json`, `LOCALAI_URL` |
 | Chat device cookies paired over plain HTTP lack `Secure` | A device that paired on `http://<host>:3080` (or before this change) keeps a cookie its browser also sends over plain HTTP. Re-pair it on the HTTPS address to get a `Secure` cookie | `app/claude-chat.js` |
 | Claude board endpoints are unauthenticated | Any LAN client can post events and findings, vote, and change finding status | `/api/claude/*` in `app/server.js` |
 | Host notifications endpoint is unauthenticated | Any LAN client can post `deploy`/`backup`/`monitor` notices to the Inbox | `/api/notifications/system` |

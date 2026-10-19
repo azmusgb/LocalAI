@@ -8,7 +8,7 @@ in [Architecture](ARCHITECTURE.md).
 
 | Check | How | Healthy looks like |
 |---|---|---|
-| Appliance alive, which release | `curl -s http://<host>:3080/healthz` | `status: ok`, `releaseCommit` = the SHA you expect |
+| Appliance alive, which release | `curl -s https://<host>/healthz` (on the host: `http://127.0.0.1:3080/healthz`) | `status: ok`, `releaseCommit` = the SHA you expect |
 | Services it depends on | **System › Health** page, or `GET /api/status` | Core services `HEALTHY`; the two Mac companions may show *optional offline* |
 | Database | `GET /api/storage/status` | `engine: sqlite`, `journalMode: wal`, collection counts |
 | Deploys | `.\deploy\Get-LocalAI-DeployStatus.ps1` | Running SHA = recorded SHA = `origin/main`, task `Ready` |

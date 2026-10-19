@@ -30,7 +30,7 @@ Data must stay on a mount outside `/app`; promotion replaces `/app` wholesale.
 4. Confirm the running release:
 
    ```sh
-   curl -s http://<host>:3080/healthz
+   curl -s https://<host>/healthz        # from another computer; on the host: http://127.0.0.1:3080/healthz
    ```
 
    `releaseCommit` must be the merge commit's full SHA. Do not rely on deploy output alone: the candidate
@@ -306,7 +306,7 @@ docker pull caddy:2.10-alpine                       # once, from a normal (not S
   `LocalMachine\Root` store (skip with `-SkipTrustOnHost`).
 - Other devices download it from `http://<host IP>/localai-ca.crt` and trust it once. **Health › Secure
   connection** shows the steps for each platform (the current device's first) and whether it already trusts it.
-- Setting up a phone: open Health on a computer **by the host's network address** (`http://<host IP>:3080`, not
+- Setting up a phone: open Health on a computer **by the host's network address** (`https://<host IP>`, not
   `localhost`) and unfold **Set up a phone or tablet**. It shows two QR codes, one for the certificate and one for
   `https://<host IP>/`. A phone that opens the plain-HTTP address gets a **Use the secure address on this device**
   item in Home's Needs you until it switches, or until **Don't remind me on Home** is pressed in the setup.
