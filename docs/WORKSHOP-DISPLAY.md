@@ -108,15 +108,18 @@ value in `stack.env`.
 
 - One poller on the server reads `GET /api/status/lite` every 30 s with `Authorization: Bearer <token>` and a 4 s
   limit. When the display doesn't answer, or turns the token down, it waits longer each time (1, 2, 4, then 5 min), so
-  a wrong token never keeps tripping the display's lock-out. A `429` keeps the last answer and tries again in 30 s.
+  a wrong token never keeps tripping the display's lock-out. One `429` keeps the last answer and tries again in 30 s;
+  a second in a row makes the printer `unknown` (`access: busy`). An answer more than 2 minutes old is reported as
+  `unknown` (`access: stale`) whatever the polls did, so Home's line goes away rather than show old progress.
   Browser tabs read the poller's last answer and never add requests of their own.
 - The answer is rebuilt field by field into `printer: {state, progress, minutesLeft, errorCode, access, seenAt}`:
-  `state` is `printing`, `paused`, `error`, `cancelled`, `idle` or `unknown` (stale or offline telemetry is `unknown`, so
+  `state` is `printing`, `paused`, `error`, `cancelled`, `ended`, `idle` or `unknown` (stale or offline telemetry is `unknown`, so
   old progress is never shown as current). A print you stopped on purpose raises Bambu's cancel code (`0300_400C` "The
   task was canceled." or `0500_400E` "Printing was cancelled."; either spelling, `_` or `-`) and is `cancelled`, not
   `error`, even when the display doesn't flag it as a cancel: Home shows nothing and the card says `Printer · Print
-  stopped`. Any other code is still an error; `access` is `ok`, `refused` (401), `unsupported` (404), `busy` (429) or
-  `offline`. `printer` is `null` when no token is set.
+  stopped`. A failed print with no code at all (the display restarted and lost it, say) could be either, so it is
+  `ended`: Home shows nothing and the card says `Printer · Print ended — check the display`. Any other code is still an
+  error; `access` is `ok`, `refused` (401), `unsupported` (404), `busy` (429), `offline` or `stale`. `printer` is `null` when no token is set.
 - The token stays on the server. It is never sent to the browser, never logged, never put in an error message or an
   answer, never stored in the data folder, and child processes don't get it (`childEnv` drops every `*TOKEN*`
   variable). Tests check each of these against a fake display.
@@ -161,18 +164,22 @@ What the card says when it can't show the code:
 | `Sign-in code access isn't set up…` | No key in `stack.env` | Set it up (above) |
 | `The display turned the key down: it was revoked or replaced…` | `401` | Create access again and replace the value in `stack.env` |
 | `The display's firmware can't share its sign-in code yet…` | `404`: firmware without the route | Install the update |
-| `The display is busy. Try again in a minute.` | `429`: the display's rate limit | Wait, then tap again |
+| `The display is busy. Try again in a few minutes.` | `429`: the display's rate limit | Wait, then tap again |
 | `The display isn't answering.` | No answer within 4 s, or an odd answer | Check the display is on and on Wi-Fi |
 
 ### How the appliance uses it
 
 - `POST /api/workshop/portal-code` (POST, so a prefetch or a link can't trigger it) with the same checks as every other
   change in Local AI: a browser request from another site is refused (`403`), and the body must be JSON (`415`).
-- On each request it sends the display one `GET /api/portal-code` with `Authorization: Bearer <code key>` and a 4 s limit,
+- Requests are limited before they reach the display, which counts wrong keys toward its sign-in lock-out: one at a
+  time (taps that arrive together share one answer), at most one every 5 s (inside that window the last answer is
+  served again from memory, then dropped), and none for 2 minutes after a `429` or 5 minutes after a `401` (the
+  answer then carries `Retry-After`).
+- Otherwise it sends the display one `GET /api/portal-code` with `Authorization: Bearer <code key>` and a 4 s limit,
   and answers `{code, address}` with `Cache-Control: no-store`, or `{reason, error}` (`409` not set up, `502` refused or
   old firmware, `503` busy, `504` offline). Only a code of 10 letters or digits is passed on; nothing else from the
   display's answer is.
-- Nothing is cached, polled or stored. The code is never logged, never put in the data folder, and never in a `GET`
+- Nothing is cached beyond those 5 s in memory, polled or stored. The code is never logged, never put in the data folder, and never in a `GET`
   answer. Each code shown adds one Activity entry, "Workshop sign-in code shown", without the code.
 - The page keeps the code only in the card while it shows: never in browser storage, the address bar or the service
   worker's cache.

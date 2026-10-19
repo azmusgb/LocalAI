@@ -142,7 +142,7 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
   });
 }
 
-await check('the printer line: paused and error words; hidden when cancelled (stopped on purpose), idle, unknown, refused or no token, and it follows the poll', async () => {
+await check('the printer line: paused and error words; hidden when cancelled (stopped on purpose), ended without a code, idle, unknown, busy, stale, refused or no token, and it follows the poll', async () => {
   const page = await open(phone, '#home', { printer: PRINTER('paused', { progress: 42, minutesLeft: 70 }) });
   const sec = page.locator('#homePrinter'), title = page.locator('#homePrinter .list-row__title');
   await sec.waitFor({ state: 'visible', ...T });
@@ -157,7 +157,7 @@ await check('the printer line: paused and error words; hidden when cancelled (st
   await show(PRINTER('error'), 'Printer · Stopped with an error');
   await show(PRINTER('printing', { minutesLeft: 41 }), 'Printer · Printing · 41 min left');
   await show(PRINTER('printing', { progress: 99, minutesLeft: 60 }), 'Printer · 99% · 1 h left');
-  for (const p of [PRINTER('cancelled'), PRINTER('idle'), PRINTER('unknown'), { ...PRINTER('unknown'), access: 'refused' }, { ...PRINTER('unknown'), access: 'offline' }, null]) await show(p, '');
+  for (const p of [PRINTER('cancelled'), PRINTER('ended'), PRINTER('idle'), PRINTER('unknown'), { ...PRINTER('unknown'), access: 'refused' }, { ...PRINTER('unknown'), access: 'offline' }, { ...PRINTER('unknown'), access: 'busy' }, { ...PRINTER('unknown'), access: 'stale' }, null]) await show(p, '');
   await show(PRINTER('printing', { progress: 5 }), 'Printer · 5%');
   await page.context().close();
 });

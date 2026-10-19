@@ -28,11 +28,12 @@ function healthSummary({ services = [], version = '' } = {}) {
   return { ok, down, total: core.length, speech };
 }
 
-// counts: approvals pending, unfinished change requests, Claude findings waiting for a decision,
-// runs failed in the last day, runs in progress.
-function needsYouSummary({ approvals = 0, changes = 0, findings = 0, failedToday = 0, running = 0 } = {}, health = null) {
+// counts: approvals pending, unfinished change requests, Claude findings waiting for a decision, failures that need
+// you (Home's rule: app/public/needs-you.js, one per goal), runs failed in the last day (said, not counted), runs in progress.
+function needsYouSummary({ approvals = 0, changes = 0, findings = 0, failed = 0, failedToday = 0, running = 0 } = {}, health = null) {
   const items = [];
   if (approvals) items.push({ kind: 'approvals', count: approvals, text: plural(approvals, 'approval') });
+  if (failed) items.push({ kind: 'failed', count: failed, text: plural(failed, 'failed run') });
   if (changes) items.push({ kind: 'changes', count: changes, text: plural(changes, 'unfinished change request') });
   if (findings) items.push({ kind: 'findings', count: findings, text: plural(findings, 'Claude finding') + ' to decide' });
   const sentences = [];

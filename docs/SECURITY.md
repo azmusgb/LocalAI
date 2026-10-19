@@ -92,6 +92,17 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
   the content type. Requests that carry neither header (curl, scripts, hooks, the host's jobs) pass: this blocks
   browsers being used against the appliance, it does not authenticate anyone. `GET` is not checked, so `GET` routes
   must stay free of side effects.
+- **Host name guard (DNS rebinding).** Before anything else, a request whose `Host` is a name the appliance doesn't
+  answer to gets 421 (`hostAllowed` in `app/server/http.js`; `tests/host-allowlist.test.cjs`). A page that re-points
+  its own name at this machine looks same-origin to the browser, so the Origin checks can't catch it, but its `Host`
+  is still its own name. Allowed: IP addresses, names without a dot (`localhost`, `local-ai-appliance`, the PC's name),
+  names under suffixes no one can register publicly (`.localhost`, `.local`, `.home.arpa`, `.test`, `.invalid`,
+  `.internal`, `.lan`), and the configured `LOCALAI_NAME`, `LOCALAI_HOST_IP`, `LOCALAI_REMOTE_NAME` (the Tailscale
+  name) and `LOCALAI_ALLOWED_HOSTS`. Caddy keeps the browser's `Host` when it proxies, so its sites pass.
+- **Board text is untrusted.** Until sign-in (#331) ships, anyone who can open Local AI can type a backlog item or a
+  Hand to Claude request. `POST /api/improve/handoff` has the same-origin and JSON checks, and the typed text is kept
+  in the item's `request` and quoted in its `fix` between `<<<UNTRUSTED_REQUEST` and `UNTRUSTED_REQUEST>>>` (any
+  `<<<`/`>>>` inside it defused), never spliced into the instruction (`handoffItem` in `app/improve.js`).
 - **Child process environment.** Commands the app spawns get its environment minus any variable whose name
   matches `TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY|CREDENTIAL` (`childEnv` in `app/server.js`;
   `tests/security-contract.test.cjs`).

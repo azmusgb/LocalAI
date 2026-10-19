@@ -4,7 +4,7 @@
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
 function createChanges(ctx) {
-  const { APPROVALS_STORE, APP_VERSION, DATA_DIR, ENGINEERING_MODEL_TIMEOUT_MS, SELF_APP_ROOT, addNotification, approvalStore, childEnv, fetchWithTimeout, fs, improve, issueStore, json, makeId, notifier, nowIso, objectStore, path, plainText, readBody, recordActivity, release, requireFeature, runEngineeringPlannerModel, safeWorkspacePath, saveIssues, saveStore, simpleDiff, spawn, storage, storageError, workspaceRel } = ctx;
+  const { APPROVALS_STORE, APP_VERSION, DATA_DIR, ENGINEERING_MODEL_TIMEOUT_MS, SELF_APP_ROOT, addNotification, approvalStore, childEnv, fetchWithTimeout, fs, improve, issueStore, json, makeId, notifier, nowIso, objectStore, path, plainText, readBody, recordActivity, release, requireFeature, runEngineeringPlannerModel, safeWorkspacePath, sameOriginJson, saveIssues, saveStore, simpleDiff, spawn, storage, storageError, workspaceRel } = ctx;
   // ===== END PRODUCT EVOLUTION PLATFORM ======================================
 
 
@@ -632,7 +632,9 @@ function createChanges(ctx) {
   }
   // Hand to Claude from where the owner asked (Home, Agent World, New idea): a request to change Local AI itself goes to
   // Claude Code as a handed idea item, which leads /api/claude/priorities. The same request again updates its item.
+  // The text lands at the top of Claude's queue, so it gets the same-origin and JSON checks the other owner-only routes have.
   async function apiImproveHandoff(req,res){
+    if(!sameOriginJson(req,res))return;
     try{const b=await readBody(req,512*1024);const text=String(b.text??'').trim();if(!text)return json(res,400,{error:'Describe the change first.'});
       const at=nowIso(),title=text.split('\n')[0].trim().slice(0,120).toLowerCase();
       const existing=claudeFindings().find(f=>['proposed','approved'].includes(f.status)&&!f.changeId&&String(f.title||'').trim().toLowerCase()===title)||null;

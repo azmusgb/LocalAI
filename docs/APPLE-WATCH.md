@@ -43,7 +43,7 @@ The first question after the model has been idle can take a few seconds longer w
 
 | Intent | You say | The answer comes from |
 |---|---|---|
-| `needs` | "Anything need me?", "What's waiting for me?" | Local AI's own lists, by name: approvals, change requests, Claude's questions, runs that failed today, services that are down. No model. |
+| `needs` | "Anything need me?", "What's waiting for me?" | What Home's Needs you lists, by name: approvals and failures you haven't opened yet (one per goal), and services that are down. No model. |
 | `health` | "Is Local AI OK?", "Health check" | The Health page's summary sentence. No model. |
 | `time` | "What time is it?", "What's the date?" | The appliance's clock, in its time zone. No model. |
 | `weather` | "What's the weather?", "Will it rain tomorrow?", "How cold is it tonight?" | Open-Meteo, for where your phone is (or your home location). |
@@ -108,6 +108,9 @@ location.
 
 `GET /api/glance` returns JSON: `{topic, speech, needsYou:{count, items:[{kind, count, text}]}, health:{ok, down, total},
 version}`. `?topic=health` switches `speech` to the health sentence; `?format=text` returns only `speech` as plain text.
-The sentences are built in `app/glance.js`.
+The sentences are built in `app/glance.js`. "What needs me?" (here and in Ask Local AI) counts what Home's Needs you
+lists, by the same rule (`app/public/needs-you.js`): waiting approvals, and failures you haven't opened, under a day
+old, not retried and not answered by a later success, one per goal. Opening a failure on any device takes it off
+Home and out of Siri's answer alike.
 
 Like the rest of the API, these have no password on the LAN (see [Security](SECURITY.md)).

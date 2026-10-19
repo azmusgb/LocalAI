@@ -260,7 +260,7 @@ function createRuns(ctx) {
       storageError(res, e, 500);
     }
   }
-  return { apiRunCancel, apiRunRetry, apiRunUpdate, apiRuns, createChatExecution };
+  return { apiRunCancel, apiRunRetry, apiRunUpdate, apiRuns, createChatExecution, needsThreads };
 }
 
 module.exports = { createRuns };

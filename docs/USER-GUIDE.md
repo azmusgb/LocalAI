@@ -198,7 +198,9 @@ asks for the code shown on the display, System → Local Portal.) Away from home
 With the display's read-only status token set up ([Workshop display › Printer status](WORKSHOP-DISPLAY.md#printer-status-read-only-token)),
 **Home** shows one line while a print runs or has stopped with an error, such as "Printer · 42% · 1 h 10 min left".
 Tap it to open the Workshop display card. Nothing shows while the printer is idle or after you stopped a print
-yourself (the card says "Printer · Print stopped").
+yourself (the card says "Printer · Print stopped"). When a print failed without saying why, the card says "Printer ·
+Print ended — check the display". If the display hasn't given a fresh answer for about 2 minutes, Home's line goes
+away rather than show old progress.
 
 To sign in to the display's portal without walking to the touchscreen, set up its code key once
 ([Workshop display › Sign-in code](WORKSHOP-DISPLAY.md#sign-in-code-on-the-services-card)). The card then has **Show

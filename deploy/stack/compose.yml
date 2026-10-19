@@ -73,6 +73,11 @@ services:
       ENGINEERING_MODEL_TIMEOUT_MS: "600000"
       MAC_AI_HOME_URL: ${MAC_AI_HOME_URL:-}
       MAC_DSH_URL: ${MAC_DSH_URL:-}
+      # Caddy's HTTPS name, one of the host names the appliance answers to (the DNS-rebinding guard, app/server/http.js).
+      LOCALAI_NAME: ${LOCALAI_NAME:-localai.home.arpa}
+      # Optional extra host names to answer to, comma-separated (the guard already takes IP addresses, names without a
+      # dot and .local/.home.arpa/.lan names).
+      LOCALAI_ALLOWED_HOSTS: ${LOCALAI_ALLOWED_HOSTS:-}
       # Shown as a phone QR code in Health › Secure connection when set.
       LOCALAI_REMOTE_NAME: ${LOCALAI_REMOTE_NAME:-}
       # With LOCALAI_REMOTE_NAME, the addresses a phone is offered when the one it uses can't be reached (/healthz).

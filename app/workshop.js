@@ -90,10 +90,11 @@ async function workshopStatus({ url = portalUrl(), fetchImpl = modelFetchWithTim
 //   {schema:1, firmware:{…}, printers:[{slot, connection, activity, freshness, ageSeconds, progressPercent,
 //    remainingMinutes, error:{code, text, canceled}|null}]}
 // Only the first listed printer is used, and only these words reach the browser:
-//   state: printing | paused | error | cancelled (stopped on purpose) | idle | unknown; progress (0–100) and minutesLeft only while printing or paused;
+//   state: printing | paused | error | cancelled (stopped on purpose) | ended (FAILED with no code: stop or fault) | idle | unknown; progress (0–100) and minutesLeft only while printing or paused;
 //   errorCode (the printer's own code, e.g. 0700_8010) only in error.
 // access: ok | refused (401: no token on the display, or a revoked one) | unsupported (404: older firmware or the
-// display's own setup Wi-Fi) | busy (429) | offline (no answer, an odd answer, or the time limit).
+// display's own setup Wi-Fi) | busy (429) | offline (no answer, an odd answer, or the time limit); and from the poller
+// only, stale (the last good answer is more than STALE_MS old).
 // Bambu's two cancel-class print_error codes (BambuHelper src/hms_lookup.h, printErrorIsCancel): 0300_400C "The task
 // was canceled." and 0500_400E "Printing was cancelled.". Compared as hex digits, so 0300_400C and 0300-400C both match.
 const CANCEL_CODES = new Set(['0300400C', '0500400E']);
@@ -113,9 +114,10 @@ function printerSummary(d) {
     : activity === 'paused' ? (err && !cancel ? 'error' : 'paused')
       : activity === 'idle' || activity === 'finished' ? (err && !cancel ? 'error' : 'idle')
         : cancel ? 'cancelled'
-          // Bambu reports a stopped print as FAILED. A real fault always carries a code; with none (e.g. the display
-          // restarted after the stop and lost it) say "Print stopped" rather than raise an error on Home.
-          : activity === 'error' && !err ? 'cancelled'
+          // Bambu reports a stopped print as FAILED. With no code at all (e.g. the display restarted and lost it) it may
+          // have been a stop or a fault: 'ended', said neutrally ("Print ended — check the display"), neither a
+          // cancel nor an error on Home. Only the cancel codes or the display's own flag make it 'cancelled'.
+          : activity === 'error' && !err ? 'ended'
             : activity === 'error' || err ? 'error'
               : 'unknown';
   const running = state === 'printing' || state === 'paused';
@@ -143,17 +145,26 @@ async function readPrinter({ url, token, fetchImpl = modelFetchWithTimeout, time
 
 // The one server-side poller: every 30 s while the display answers, then 60 s, 2, 4 and 5 min while it doesn't (or
 // refuses the token, so a wrong one doesn't keep tripping the display's lock-out). Tabs read its last answer and never
-// add requests of their own. A 429 keeps the last answer and tries again at the normal pace. Nothing is logged.
-function createPrinterPoller({ url = portalUrl(), token = process.env.LOCALAI_WORKSHOP_STATUS_TOKEN, fetchImpl = modelFetchWithTimeout, timeoutMs = TIMEOUT_MS, pollMs = POLL_MS, maxBackoffMs = MAX_BACKOFF_MS, now = () => Date.now() } = {}) {
+// add requests of their own. One 429 keeps the last answer and tries again at the normal pace; a second in a row makes
+// it unknown (access busy), so a busy display never leaves an old "42%" up. Whatever happens, an answer older than
+// STALE_MS is reported as unknown (access stale) rather than as current. Nothing is logged.
+const STALE_MS = 2 * 60 * 1000;
+const BUSY_MISSES = 2;
+function createPrinterPoller({ url = portalUrl(), token = process.env.LOCALAI_WORKSHOP_STATUS_TOKEN, fetchImpl = modelFetchWithTimeout, timeoutMs = TIMEOUT_MS, pollMs = POLL_MS, maxBackoffMs = MAX_BACKOFF_MS, staleMs = STALE_MS, now = () => Date.now() } = {}) {
   const secret = String(token ?? '').trim();
   const enabled = Boolean(url && secret);
   let last = enabled ? { ...UNKNOWN_PRINTER, access: 'offline', seenAt: null } : null;
   let failures = 0;
+  let busy = 0;
   let timer = null;
   let stopped = true;
   async function poll() {
     const r = await readPrinter({ url, token: secret, fetchImpl, timeoutMs });
-    if (r.access === 'busy') return pollMs;
+    if (r.access === 'busy') {
+      if (++busy >= BUSY_MISSES) last = { ...r, seenAt: last?.seenAt ?? null };
+      return pollMs;
+    }
+    busy = 0;
     if (r.access === 'ok') { failures = 0; last = { ...r, seenAt: new Date(now()).toISOString() }; return pollMs; }
     failures++;
     last = { ...r, seenAt: last?.seenAt ?? null }; // nothing old is shown as current
@@ -169,7 +180,12 @@ function createPrinterPoller({ url = portalUrl(), token = process.env.LOCALAI_WO
   }
   return {
     enabled,
-    current: () => (last ? { ...last } : null),
+    current() {
+      if (!last) return null;
+      const age = last.seenAt ? now() - Date.parse(last.seenAt) : Infinity;
+      if (last.access === 'ok' && !(age <= staleMs)) return { ...UNKNOWN_PRINTER, access: 'stale', seenAt: last.seenAt };
+      return { ...last };
+    },
     poll: () => (enabled ? poll() : Promise.resolve(null)),
     start() { if (enabled && stopped) { stopped = false; loop(); } return this; },
     stop() { stopped = true; clearTimeout(timer); timer = null; }
@@ -178,14 +194,15 @@ function createPrinterPoller({ url = portalUrl(), token = process.env.LOCALAI_WO
 
 // ---- the portal sign-in code through the code token (GET /api/portal-code, Services › Show sign-in code) ----
 // The display answers {code:"ABCDEFGHJK", bootId:…} with Cache-Control: no-store; only the code is kept, and only when it
-// is 10 letters or digits. Read on demand, once per tap: nothing is cached, polled, logged or stored.
+// is 10 letters or digits. Read on demand through createPortalCodeGate (below): nothing is polled, logged or stored, and
+// the only copy kept is that gate's few seconds in memory.
 // access: ok | not_set_up (no token or no address) | refused (401: the key was revoked or replaced) | unsupported (404:
 // older firmware) | busy (429: the display's rate limit) | offline (no answer, an odd answer, or the time limit).
 const CODE_WORDS = {
   not_set_up: "Sign-in code access isn't set up. Add code access in the display's portal (More → Sign-in code access).",
   refused: "The display turned the key down: it was revoked or replaced. Add code access again in the display's portal and update stack.env.",
   unsupported: "The display's firmware can't share its sign-in code yet. Install the update.",
-  busy: 'The display is busy. Try again in a minute.',
+  busy: 'The display is busy. Try again in a few minutes.',
   offline: "The display isn't answering."
 };
 
@@ -208,4 +225,48 @@ async function readPortalCode({ url = portalUrl(), token = codeToken(), fetchImp
   }
 }
 
-module.exports = { DEFAULT_URL, TIMEOUT_MS, POLL_MS, HEALTH_PATH, LITE_PATH, CODE_PATH, CODE_WORDS, portalUrl, workshopStatus, printerSummary, readPrinter, createPrinterPoller, codeToken, readPortalCode };
+// The one way the server asks for the code (POST /api/workshop/portal-code). The display counts wrong keys toward its
+// sign-in lock-out and rate-limits the route, so taps (or a script hammering the route) never turn into a burst:
+//  - one request at a time: callers that arrive while one is out share its answer;
+//  - at most one request every CODE_GAP_MS: inside that window the last answer is served again, from memory only (it is
+//    dropped when the window ends; never written to disk, an answer cache or a log);
+//  - after a 401 (the key was revoked) or a 429 (the display's own limit) nothing is sent for minutes; callers get the
+//    same reason with retryAfterMs.
+const CODE_GAP_MS = 5000;
+const CODE_REFUSED_HOLD_MS = 5 * 60 * 1000;
+const CODE_BUSY_HOLD_MS = 2 * 60 * 1000;
+function createPortalCodeGate({ read = readPortalCode, now = () => Date.now(), gapMs = CODE_GAP_MS, refusedHoldMs = CODE_REFUSED_HOLD_MS, busyHoldMs = CODE_BUSY_HOLD_MS } = {}) {
+  let inflight = null; // { url, promise }
+  let last = null; // { url, startedAt, result }: the last answer, kept for gapMs only
+  let hold = null; // { url, access, until }
+  let forget = null;
+  const drop = () => { last = null; clearTimeout(forget); forget = null; };
+  return function get(opts = {}) {
+    const url = opts.url ?? portalUrl();
+    const t = now();
+    if (hold && (hold.url !== url || t >= hold.until)) hold = null;
+    if (hold) return Promise.resolve({ access: hold.access, retryAfterMs: hold.until - t });
+    if (inflight && inflight.url === url) return inflight.promise;
+    if (last && (last.url !== url || t - last.startedAt >= gapMs)) drop();
+    if (last) return Promise.resolve({ ...last.result });
+    const startedAt = t;
+    const promise = new Promise(r => r(read({ ...opts, url }))).catch(() => ({ access: 'offline' })).then(result => {
+      if (inflight?.promise === promise) inflight = null;
+      if (result.access === 'refused' || result.access === 'busy') {
+        const ms = result.access === 'refused' ? refusedHoldMs : busyHoldMs;
+        hold = { url, access: result.access, until: now() + ms };
+        drop();
+        return { ...result, retryAfterMs: ms };
+      }
+      drop();
+      last = { url, startedAt, result };
+      forget = setTimeout(drop, Math.max(0, startedAt + gapMs - now()));
+      forget.unref?.();
+      return { ...result };
+    });
+    inflight = { url, promise };
+    return promise;
+  };
+}
+
+module.exports = { DEFAULT_URL, STALE_MS, CODE_GAP_MS, CODE_REFUSED_HOLD_MS, CODE_BUSY_HOLD_MS, createPortalCodeGate, TIMEOUT_MS, POLL_MS, HEALTH_PATH, LITE_PATH, CODE_PATH, CODE_WORDS, portalUrl, workshopStatus, printerSummary, readPrinter, createPrinterPoller, codeToken, readPortalCode };

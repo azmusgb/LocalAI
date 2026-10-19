@@ -61,6 +61,9 @@ const workshop = require('./workshop');
 if (String(process.env.LOCALAI_WORKSHOP_URL || '').trim() && !workshop.portalUrl()) console.warn('LOCALAI_WORKSHOP_URL is not an http(s) address on the home network (a private IP or a .local name); the Workshop display card shows it as not set up.');
 // Printer status through the display's read-only token, when LOCALAI_WORKSHOP_STATUS_TOKEN is set; started after listen.
 const workshopPrinter = workshop.createPrinterPoller();
+// LOCALAI_TEST_NOW_FILE (tests only): a file holding the clock in ms, so tests can move time.
+const clockNow = () => { const f = process.env.LOCALAI_TEST_NOW_FILE; if (f) { try { return Number(fs.readFileSync(f, 'utf8')) || Date.now(); } catch {} } return Date.now(); };
+const workshopCode = workshop.createPortalCodeGate({ now: clockNow });
 // Last measured seconds per engine on this machine, shown as an estimate in the Images page. Keyed by id and
 // family, so "best" switching from FLUX to Z-Image doesn't show FLUX's time.
 const IMAGE_ESTIMATES = {};
@@ -73,7 +76,8 @@ const APP_DIR = __dirname;
 const storage = new Storage({ dataDir: DATA_DIR });
 // The state collections and the HTTP helpers every area uses live in app/server/ (the server split, step 1).
 const { readState, writeState, prependRecord, RETENTION } = require('./server/stores').createStores({ storage, STATUS_STORE });
-const { json, storageError, text, readBody, fetchWithTimeout, sameOriginJson } = require('./server/http');
+const { json, storageError, text, readBody, fetchWithTimeout, sameOriginJson, allowedHosts, hostAllowed } = require('./server/http');
+const ALLOWED_HOSTS = allowedHosts(); // DNS-rebinding guard: the names this server answers to (server/http.js)
 // Phone notifications (Web Push): app/push.js sends, app/notify.js decides; docs/OPERATIONS.md › Notifications.
 const pushLib = require('./push');
 const notifyLib = require('./notify');
@@ -608,22 +612,28 @@ async function getCapabilitiesSnapshot(force = false) {
   return snapshot;
 }
 
+// What Home lists under Needs you (app/public/home.js, loadNeeds and paintNeeds), for Siri and the Watch to say the
+// same: the runs app/public/needs-you.js picks (a waiting approval; a failure that is unseen, under a day old, not
+// retried and not answered by a later success), failures of one goal as one entry, and the pending approvals that no
+// picked run already stands for. Changes and Claude findings are not on Home's list, so they are not spoken as needing you.
+function homeNeedsYou() {
+  const runs = needsThreads();
+  const awaiting = runs.filter(r => r.status === 'awaiting_approval');
+  const waiting = new Set(awaiting.map(r => r.meta?.changeId).filter(Boolean));
+  const approvals = approvalStore().filter(a => a.status === 'pending' && !(a.meta?.changeId && waiting.has(a.meta.changeId)));
+  const failed = needsYou.group(runs.filter(r => r.status === 'failed')).map(g => g.run);
+  return { approvals: [...awaiting, ...approvals], failed };
+}
+
 // Spoken summaries for Siri Shortcuts (docs/APPLE-WATCH.md). ?topic=health for "Is Local AI OK?", otherwise
 // "What needs me?". ?format=text returns just the sentence, which a shortcut can speak without parsing JSON.
 async function apiGlance(req, res, urlObj) {
   try {
     const snapshot = await getCapabilitiesSnapshot();
     const health = glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION });
-    const dayAgo = Date.now() - 86400000;
-    const recentFailed = runLedger.list({ status: 'failed', limit: 200 }).filter(r => Date.parse(r.finishedAt || r.updatedAt) >= dayAgo);
+    const home = homeNeedsYou();
     const running = ['running', 'streaming'].reduce((n, status) => n + runLedger.list({ status, limit: 200 }).length, 0);
-    const needs = glance.needsYouSummary({
-      approvals: approvalStore().filter(a => a.status === 'pending').length,
-      changes: Number(snapshot.changes?.pending || 0),
-      findings: claudeFindings().filter(f => f.status === 'proposed').length,
-      failedToday: recentFailed.length,
-      running
-    }, health);
+    const needs = glance.needsYouSummary({ approvals: home.approvals.length, failed: home.failed.length, running }, health);
     const topic = urlObj.searchParams.get('topic') === 'health' ? 'health' : 'needs';
     const speech = topic === 'health' ? health.speech : needs.speech;
     if (urlObj.searchParams.get('format') === 'text') return text(res, 200, speech, 'text/plain; charset=utf-8', { 'Cache-Control': 'no-store' });
@@ -635,8 +645,7 @@ async function apiGlance(req, res, urlObj) {
 // handles open questions, and every reply is plain text that is safe to read aloud. Siri speaks the body
 // whatever the status, so errors are sentences, never JSON.
 const voiceThreads = voice.createVoiceThreads({
-  // LOCALAI_TEST_NOW_FILE (tests only): a file holding the clock in ms, so tests can move time.
-  now: () => { const f = process.env.LOCALAI_TEST_NOW_FILE; if (f) { try { return Number(fs.readFileSync(f, 'utf8')) || Date.now(); } catch {} } return Date.now(); },
+  now: clockNow,
   windowMs: 300000
 });
 const VOICE_BUDGET_MS = Number(process.env.LOCALAI_VOICE_BUDGET_MS) || 8000;
@@ -693,17 +702,14 @@ async function apiVoiceHome(req, res) {
   json(res, 200, home);
 }
 
+// "What needs me?" names the same things Home lists (homeNeedsYou), plus core services that are down.
 async function voiceNeedsSentence() {
   const snapshot = await getCapabilitiesSnapshot();
-  const dayAgo = Date.now() - 86400000;
-  // Approved changes are with Claude or waiting for a PR merge (they ship as pull requests); they don't need you.
-  const pendingChange = new Set(['planned', 'patch_failed', 'validation_failed', 'staged', 'awaiting_approval']);
+  const home = homeNeedsYou();
   return glance.needsYouSentence(glance.needsYouItems({
-    approvals: approvalStore().filter(a => a.status === 'pending'),
-    // A change's Improve item has the short title (from its request); the change's own summary is the model's prose.
-    changes: (() => { const titles = new Map(claudeFindings().filter(f => f.changeId).map(f => [f.changeId, f.title])); return changeStore().filter(c => pendingChange.has(c.status)).map(c => ({ title: titles.get(c.id) || c.summary || c.request })); })(),
-    findings: claudeFindings().filter(f => f.status === 'proposed'),
-    failedRuns: runLedger.list({ status: 'failed', limit: 200 }).filter(r => Date.parse(r.finishedAt || r.updatedAt) >= dayAgo),
+    // Home's approval rows drop a trailing change id from the title; so does what is spoken.
+    approvals: home.approvals.map(a => ({ title: String(a.threadTitle || a.title || '').replace(/\s+chg-\d+-[0-9a-f]+$/, '') || 'Approval needed' })),
+    failedRuns: home.failed,
     downServices: (snapshot.services || []).filter(s => s && s.required !== false && s.state !== 'HEALTHY')
   }));
 }
@@ -1452,7 +1458,7 @@ function crossSiteRequest(req) {
   return !sameHost(parsed.protocol, parsed.host, req.headers.host) && !sameHost(parsed.protocol, parsed.host, forwarded);
 }
 // The server's areas (app/server/*.js), each given what it uses; a module comes after those it takes names from.
-const { gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftProgress, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopPortalCode, apiWorkshopStatus } = require('./server/gridcraft').createGridcraft({ GRIDCRAFT_RUN_TIMEOUT_MS, GRIDCRAFT_URL, inFlight, json, makeId, modelFetchWithTimeout, readBody, recordActivity, sameOriginJson, storage, workshop, workshopPrinter });
+const { gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftProgress, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopPortalCode, apiWorkshopStatus } = require('./server/gridcraft').createGridcraft({ GRIDCRAFT_RUN_TIMEOUT_MS, GRIDCRAFT_URL, inFlight, json, makeId, modelFetchWithTimeout, readBody, recordActivity, sameOriginJson, storage, workshop, workshopCode, workshopPrinter });
 // changes.js takes addNotification from here and this takes these two back from it: called, never at load, so
 // they are looked up when called (the server split, step 6).
 const { addNotification, apiApprovalCreate, apiApprovalDecide, apiApprovals, apiNotificationSeed, apiNotificationSystem, apiNotificationUpdate, apiNotifications, approvalStore, notificationStore, resolveDeployFailures } = require('./server/notifications').createNotifications({ APPROVALS_STORE, NOTIFICATIONS_STORE, changeStore: (...a) => changeStore(...a), decideChange: (...a) => decideChange(...a), hostDetail, isInfoNotice, json, makeId, normalizeTitle, notifier, notifyLib, nowIso, objectStore, prependRecord, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
@@ -1462,17 +1468,18 @@ const { apiBrowserFetch, apiComputerBatch, apiHttpCheck, apiRepoInspect, apiWork
 const { apiIssuePrepareChange, apiIssueUpdate, apiIssues, apiIssuesScan, apiQuality, apiQualityClientEvent, apiQualityScan, issueSchedulerTick, issueStore, saveIssues } = require('./server/quality').createQuality({ APP_DIR, PUBLIC_DIR, SELF_APP_ROOT, addNotification, changeStore: (...a) => changeStore(...a), duplicateHtmlIds: (...a) => duplicateHtmlIds(...a), duplicateTopLevelFunctions: (...a) => duplicateTopLevelFunctions(...a), featureAtLeast, fs, generatePatchPlan: (...a) => generatePatchPlan(...a), getStatusAndRecordTransition, json, makeId, nowIso, objectStore, path, prependRecord, publicChange: (...a) => publicChange(...a), readBody, recordActivity, requireFeature, runImproveReconcile: (...a) => runImproveReconcile(...a), runProcess: (...a) => runProcess(...a), saveChanges: (...a) => saveChanges(...a), saveStore, storageError });
 const { apiConversationDelete, apiConversationSave, apiConversations, apiKnowledge, apiKnowledgeDelete, apiKnowledgeImport, apiKnowledgeSearch, apiMemory, apiMemoryAdd, apiMemoryDelete, apiMemoryUpdate, apiProjectIntelligence, apiProjects, apiProjectsCreate, apiProjectsUpdate, knowledgeScore, knowledgeStore, projectStore } = require('./server/projects').createProjects({ CONVERSATIONS_STORE, KNOWLEDGE_STORE, MEMORY_STORE, PROJECTS_STORE, json, makeId, normalizeTitle, nowIso, objectStore, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
 const { apiAgentCatalog, apiAgentDispatch, apiAgentMission, apiAgentMissionEvents, apiAgentMissionStart, apiAgentMissions, apiAgentModels, apiAgentPlan, apiAgentRun, apiAgents, apiBusy, apiSpecialistRun, runEngineeringPlannerModel, runLocalModel, startMissionRun } = require('./server/agents').createAgents({ APPROVALS_STORE, APP_DIR, DATA_DIR, ENGINEERING_MODEL_TIMEOUT_MS, LARGE_ANSWER_RESERVE, MISSION_ANSWER_RESERVE, MISSION_EVIDENCE_TOKENS, MISSION_MODEL_CONCURRENCY, MISSION_NUM_CTX, MISSION_TIMEOUT_MS, MODEL, OLLAMA_URL, RUNS_STORE, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, TEXT_NUM_CTX_LARGE, URL, activeRunControllers, addNotification, agentRunStore, approvalStore, busy, fetchWithTimeout, fitMessages, inFlight, json, knowledgeScore, knowledgeStore, makeId, modelFetchWithTimeout, nowIso, plainText, readBody, recordActivity, requireFeature, runLedger, saveStore, searxSearch, storage, storageError, titleFromText });
-const { apiChangeApprove, apiChangeCapabilities, apiChangeDeployResult, apiChangePlan, apiChangeRequestApply, apiChangeStage, apiChanges, apiClaudeBoard, apiClaudeDecision, apiClaudeEvents, apiClaudeFindings, apiClaudePriorities, apiClaudeVote, apiEngineeringRun, apiEngineeringRuns, apiEngineeringStart, apiImproveHandoff, apiImproveIdea, apiImproveItem, apiImproveItems, apiImproveSignal, changeStore, claudeFindings, decideChange, duplicateHtmlIds, duplicateTopLevelFunctions, effectiveEngineeringRuns, engineeringRunStore, generatePatchPlan, publicChange, retireChangesOfClosedItems, runImproveReconcile, runProcess, saveChanges, shipQueuedSelfChanges } = require('./server/changes').createChanges({ APPROVALS_STORE, APP_VERSION, DATA_DIR, ENGINEERING_MODEL_TIMEOUT_MS, SELF_APP_ROOT, addNotification, approvalStore, childEnv, fetchWithTimeout, fs, improve, issueStore, json, makeId, notifier, nowIso, objectStore, path, plainText, readBody, recordActivity, release, requireFeature, runEngineeringPlannerModel, safeWorkspacePath, saveIssues, saveStore, simpleDiff, spawn, storage, storageError, workspaceRel });
+const { apiChangeApprove, apiChangeCapabilities, apiChangeDeployResult, apiChangePlan, apiChangeRequestApply, apiChangeStage, apiChanges, apiClaudeBoard, apiClaudeDecision, apiClaudeEvents, apiClaudeFindings, apiClaudePriorities, apiClaudeVote, apiEngineeringRun, apiEngineeringRuns, apiEngineeringStart, apiImproveHandoff, apiImproveIdea, apiImproveItem, apiImproveItems, apiImproveSignal, changeStore, claudeFindings, decideChange, duplicateHtmlIds, duplicateTopLevelFunctions, effectiveEngineeringRuns, engineeringRunStore, generatePatchPlan, publicChange, retireChangesOfClosedItems, runImproveReconcile, runProcess, saveChanges, shipQueuedSelfChanges } = require('./server/changes').createChanges({ APPROVALS_STORE, APP_VERSION, DATA_DIR, ENGINEERING_MODEL_TIMEOUT_MS, SELF_APP_ROOT, addNotification, approvalStore, childEnv, fetchWithTimeout, fs, improve, issueStore, json, makeId, notifier, nowIso, objectStore, path, plainText, readBody, recordActivity, release, requireFeature, runEngineeringPlannerModel, safeWorkspacePath, sameOriginJson, saveIssues, saveStore, simpleDiff, spawn, storage, storageError, workspaceRel });
 const { apiConfig, redirectFor, serveStatic } = require('./server/web').createWeb({ APP_VERSION, CAPABILITY_CACHE_MS, CHAT_MODEL_TIMEOUT_MS, ENGINEERING_MODEL_TIMEOUT_MS, LOCAL_UI_PORT, MODEL, PUBLIC_DIR, accessAddresses, changeStore, claudeFindings, crypto, engineeringRunStore, fs, json, listenPort, path, release, text });
 const { apiPowerShellApprove, apiPowerShellCancel, apiPowerShellCreate, apiPowerShellHostNext, apiPowerShellHostResult, apiPowerShellJobs, apiPowerShellRequestRun } = require('./server/powershell').createPowerShell({ LOCAL_UI_PORT, POWERSHELL_BRIDGE_TOKEN, POWERSHELL_UI_TOKEN, json, listenPort, makeId, nowIso, objectStore, readBody, recordActivity, requireFeature, saveStore, storageError });
 const { apiCheckpoints, apiGenerateImage, apiImageModels, apiImageView, getImageModelLists, warmText } = require('./server/images').createImages({ COMFY_URL, IMAGE_ESTIMATES, IMAGE_PROMPT_MODEL, MODEL, OLLAMA_URL, URL, buildImageModelCatalog, cleanRunId, comfyOptions, fetchWithTimeout, getCheckpointNames, imageEngines, json, modelFetchWithTimeout, readBody, recordActivity, recordArtifact, runLedger, titleFromText, unloadTextModel, warmTextModel });
 const { apiAutomationCreate, apiAutomationRun, apiAutomationUpdate, apiAutomations, apiMonitorCreate, apiMonitorRun, apiMonitors, apiMorningBrief, automationSchedulerTick, monitorSchedulerTick } = require('./server/automations').createAutomations({ AUTOMATIONS_STORE, AUTOMATION_RUNS_STORE, MONITORS_STORE, activityStore, addNotification, automationRunStore, automationStore, featureAtLeast, getStatusAndRecordTransition, inFlight, json, makeId, normalizeTitle, notificationStore, nowIso, objectStore, readBody, recordActivity, requireFeature, runLocalModel, saveStore, searxSearch, storageError });
-const { apiRunCancel, apiRunRetry, apiRunUpdate, apiRuns, createChatExecution } = require('./server/runs').createRuns({ AUTOMATION_RUNS_STORE, MODEL, RUNS_STORE, WORK_CHIPS, activeRunControllers, agentRunStore, approvalStore, automationRunStore, changeStore, cleanRunId, effectiveEngineeringRuns, fetchWithTimeout, gridcraftRuns, json, keptMarker, listenPort, needsYou, nowIso, projectStore, readBody, recordActivity, runCard, runLedger, sanitizeMessages, saveStore, seenRuns, storageError, titleFromText, withSeen, workKind });
+const { apiRunCancel, apiRunRetry, apiRunUpdate, apiRuns, createChatExecution, needsThreads } = require('./server/runs').createRuns({ AUTOMATION_RUNS_STORE, MODEL, RUNS_STORE, WORK_CHIPS, activeRunControllers, agentRunStore, approvalStore, automationRunStore, changeStore, cleanRunId, effectiveEngineeringRuns, fetchWithTimeout, gridcraftRuns, json, keptMarker, listenPort, needsYou, nowIso, projectStore, readBody, recordActivity, runCard, runLedger, sanitizeMessages, saveStore, seenRuns, storageError, titleFromText, withSeen, workKind });
 const server = http.createServer(async (req, res) => {
   const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const p = urlObj.pathname;
 
   try {
+    if (!hostAllowed(req.headers.host, ALLOWED_HOSTS)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 421, { error: 'Unknown host name. Open Local AI by its own address.' }); }
     if (crossSiteRequest(req)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 403, { error: 'Cross-site request blocked' }); }
     signIn.check(req, p);
     if (req.method === 'GET' && p === '/api/signin/report') return signIn.apiReport(req, res, json);

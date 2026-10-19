@@ -83,4 +83,32 @@ function sameOriginJson(req, res) {
   return true;
 }
 
-module.exports = { JSON_HEADERS, json, storageError, text, readBody, fetchWithTimeout, sameOriginJson };
+// DNS rebinding: a page on attacker.example can re-point its own name at this machine's address, and the browser then
+// treats this server as attacker.example's origin (same-origin, so the Origin checks above don't fire). Its requests
+// still carry Host: attacker.example, so only host names that can't be an attacker's are answered:
+//  - an IP address (rebinding needs a name), or a name with no dot (localhost, local-ai-appliance, a PC's name);
+//  - names under suffixes no one can register in public DNS (.localhost, .local, .home.arpa, .test, .invalid,
+//    .internal, .lan);
+//  - the configured names: LOCALAI_NAME (default localai.home.arpa), LOCALAI_HOST_IP, LOCALAI_REMOTE_NAME (the
+//    Tailscale *.ts.net name) and LOCALAI_ALLOWED_HOSTS (comma-separated extras). Caddy keeps the browser's Host when it
+//    proxies, so its sites (these same names) pass; scripts on the host use 127.0.0.1 or localhost.
+const PRIVATE_SUFFIXES = ['.localhost', '.local', '.home.arpa', '.test', '.invalid', '.internal', '.lan'];
+const hostName = raw => {
+  const h = String(raw || '').trim().toLowerCase();
+  if (h.startsWith('[')) return h.slice(0, h.indexOf(']') + 1);
+  return h.replace(/:\d*$/, '').replace(/\.$/, '');
+};
+function allowedHosts(env = process.env) {
+  const names = [env.LOCALAI_NAME || 'localai.home.arpa', env.LOCALAI_HOST_IP, env.LOCALAI_REMOTE_NAME, ...String(env.LOCALAI_ALLOWED_HOSTS || '').split(',')];
+  return new Set(names.map(hostName).filter(Boolean));
+}
+function hostAllowed(rawHost, allowed = allowedHosts()) {
+  if (rawHost === undefined || rawHost === '') return true; // HTTP/1.0 without Host: not a browser on a rebound name
+  const h = hostName(rawHost);
+  if (!h || /[^a-z0-9._\-[\]:]/.test(h)) return false;
+  if (/^\[[0-9a-f:.]+\]$/.test(h) || /^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return true;
+  if (!h.includes('.')) return true;
+  return allowed.has(h) || PRIVATE_SUFFIXES.some(sfx => h.endsWith(sfx));
+}
+
+module.exports = { JSON_HEADERS, json, storageError, text, readBody, fetchWithTimeout, sameOriginJson, allowedHosts, hostAllowed };

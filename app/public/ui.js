@@ -3050,12 +3050,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     true: ['On your network · its own sign-in', 'The touchscreen beside the 3D printer. Its page has the printer controls behind its own sign-in: the portal asks for the code shown on the display (System → Local Portal).'],
     false: ['On your network · no sign-in yet', 'The touchscreen beside the 3D printer. Its page has the printer controls and, for now, no sign-in; an update to fix that is coming.']
   };
-  const PRINTER_ACCESS = { refused: 'Printer status: the display turned the token down. Create a new one there.', unsupported: 'Printer status: update the display to see it here.', offline: 'Printer status: not answering.' };
+  const PRINTER_ACCESS = { refused: 'Printer status: the display turned the token down. Create a new one there.', unsupported: 'Printer status: update the display to see it here.', offline: 'Printer status: not answering.', busy: 'Printer status: the display is busy.', stale: 'Printer status: no recent answer.' };
   function workshopPrinter(p) {
     const box = q('[data-workshop-printer]');
     if (!box) return;
-    const words = !p ? '' : p.access === 'ok' ? window.LocalAIHome?.printerWords?.(p) || ({ idle: 'Printer · Idle', cancelled: 'Printer · Print stopped' }[p.state] || 'Printer · Status unknown') : PRINTER_ACCESS[p.access] || '';
-    if (p?.access !== 'busy') { box.textContent = words; box.hidden = !words; }
+    const words = !p ? '' : p.access === 'ok' ? window.LocalAIHome?.printerWords?.(p) || ({ idle: 'Printer · Idle', cancelled: 'Printer · Print stopped', ended: 'Printer · Print ended — check the display' }[p.state] || 'Printer · Status unknown') : PRINTER_ACCESS[p.access] || '';
+    box.textContent = words; box.hidden = !words;
   }
 
   function updateWorkshop(status) {
