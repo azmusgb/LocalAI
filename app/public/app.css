@@ -686,7 +686,7 @@ body.awc-stage-expanded{overflow:hidden}
 
 /* ==== integration-hub-v2.css ==== */
 /* Research-backed Local AI integration hub enhancements */
-.ux-int-v2 .ux-int-checked{display:block;min-height:16px;margin-top:5px;color:var(--ds-muted)}
+.ux-int-v2 .ux-int-checked{display:block;min-height:1lh;margin-top:5px;color:var(--ds-muted)}
 #integrations[data-integration-v2="true"] .ux-int-card{min-height:255px}
 #integrations[data-integration-v2="true"] .ux-int-card p{margin-bottom:9px}
 .ux-int-guidance{padding:9px 10px;border-left:2px solid rgba(121,169,255,.25);background:rgba(121,169,255,.035);color:#8090a5;line-height:1.45;border-radius:0 var(--ds-r-sm) var(--ds-r-sm) 0}

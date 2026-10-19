@@ -282,6 +282,9 @@ await check('phone: the sticky header gets a hairline once the page scrolls, whe
 await check('phone: an open sheet holds the page still (iOS scroll lock) and closing it returns to the same place', async () => {
   const { page, context } = await device('iPhone 14');
   await go(page, 'integrations');
+  // Services checks its services on open; scroll only once that check has drawn its result, so nothing above the
+  // fold changes size under the scroll position (Chrome's scroll anchoring would then move it a few pixels).
+  await page.waitForFunction(() => document.getElementById('uxIntegrationRefreshV2')?.getAttribute('aria-busy') === 'false' && !!document.getElementById('uxIntegrationLastCheckedV2')?.textContent);
   await page.evaluate(() => { document.getElementById('integrations').style.minHeight = '3000px'; window.scrollTo(0, 500); });
   await page.waitForTimeout(150);
   const body = () => page.evaluate(() => ({ pos: getComputedStyle(document.body).position, top: document.body.style.top, y: Math.round(scrollY) }));

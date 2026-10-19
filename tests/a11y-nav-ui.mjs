@@ -34,6 +34,8 @@ await check('choosing an area titles the tab and moves focus to that page; the s
   const models = page.locator('#uxPageStrip [data-strip-view="models"]');
   await models.focus(); await models.press('Enter');
   await page.waitForFunction(() => document.title === 'Models · Local AI');
+  // The title changes at once; showView puts focus back on the strip's tab a frame later (requestAnimationFrame).
+  await page.waitForFunction(() => document.activeElement?.dataset?.stripView === 'models', null, { timeout: 2000 }).catch(() => {});
   assert.equal(await page.evaluate(() => document.activeElement?.dataset?.stripView), 'models');
   await context.close();
 });
