@@ -100,14 +100,17 @@ test('changes whose items were closed before are retired at start-up', { timeout
   assert.equal((await getChange(base, 'chg-k')).status, 'planned', 'an open item keeps its change');
 });
 
-test('what needs me leaves out a change that is being shipped as a pull request', { timeout: 30000 }, async t => {
+// "What needs me?" says what Home's Needs you lists (tests/glance-needs.test.cjs); change requests live in Improve, not
+// there, so neither one being shipped nor one that failed to stage is spoken as needing you.
+test('what needs me leaves out change requests, as Home does: one being shipped as a pull request or one that failed', { timeout: 30000 }, async t => {
   const base = await startServer(t, { seed: s => {
     s.put('changes', change('chg-ship', 'approved', { shipVia: 'pr' }), 0); seedItemFor(s, 'idea-ship', 'chg-ship', 'approved');
     s.put('changes', change('chg-fail', 'patch_failed'), 1); seedItemFor(s, 'idea-fail', 'chg-fail', 'approved');
   } });
   const spoken = await (await fetch(base + '/api/glance/ask?q=' + encodeURIComponent('what needs me'))).text();
-  assert.match(spoken, /Item idea-fail/);
+  assert.doesNotMatch(spoken, /Item idea-fail/);
   assert.doesNotMatch(spoken, /Item idea-ship/);
+  assert.match(spoken, /need/);
 });
 
 test('a bad record does not stop the appliance starting', { timeout: 30000 }, async t => {

@@ -204,7 +204,8 @@ test('printer summary: only the allowed words, and nothing stale shown as curren
   assert.deepEqual(one({ activity: 'printing', progressPercent: 3, error: { code: '0300-400C', canceled: false } }), S('printing', 3), 'a new print after a stop is printing');
   assert.deepEqual(one({ activity: 'error', error: { code: '0300-4002', text: null, canceled: false } }), S('error', null, null, '0300-4002'), 'a real fault stays an error');
   assert.deepEqual(one({ activity: 'error', error: { code: '0700_8010', text: null, canceled: false } }), S('error', null, null, '0700_8010'));
-  assert.deepEqual(one({ activity: 'error', error: null }), S('cancelled'), 'FAILED without a code is a stop (live after the display restarted)');
+  assert.deepEqual(one({ activity: 'error', error: null }), S('ended'), 'FAILED without a code may be a stop or a fault: said neutrally, not as a cancel');
+  assert.deepEqual(one({ activity: 'error', error: { code: null, text: null, canceled: true } }), S('cancelled'), 'the display flag alone still makes it a stop');
   assert.deepEqual(one({ activity: 'error', error: { code: '<script>', canceled: false } }), S('error'), 'an odd code is dropped');
   assert.deepEqual(one({ activity: 'printing', progressPercent: 420, remainingMinutes: -3 }), S('printing'), 'out-of-range numbers are dropped');
   assert.deepEqual(one({ activity: 'printing', progressPercent: '42' }), S('printing'));
@@ -253,7 +254,14 @@ test('printer poller: 30 s while answering, backs off to 5 min while not, keeps 
   assert.deepEqual(poller.current(), { state: 'printing', progress: 42, minutesLeft: 70, errorCode: null, access: 'ok', seenAt: '2026-10-18T12:00:00.000Z' });
   answer = 429;
   assert.equal(await poller.poll(), 30000);
-  assert.equal(poller.current().state, 'printing', 'a 429 keeps the last answer');
+  assert.equal(poller.current().state, 'printing', 'one 429 keeps the last answer');
+  assert.equal(await poller.poll(), 30000, 'still the normal pace');
+  assert.deepEqual(poller.current(), { state: 'unknown', progress: null, minutesLeft: null, errorCode: null, access: 'busy', seenAt: '2026-10-18T12:00:00.000Z' }, 'a second 429 in a row makes it unknown');
+  answer = 'ok';
+  await poller.poll();
+  answer = 429;
+  await poller.poll();
+  assert.equal(poller.current().state, 'printing', 'a good answer starts the count again');
   answer = 'down';
   const waits = [];
   for (let i = 0; i < 6; i++) waits.push(await poller.poll());
@@ -276,6 +284,25 @@ test('printer poller: 30 s while answering, backs off to 5 min while not, keeps 
   }
   const offsite = workshop.createPrinterPoller({ url: workshop.portalUrl('http://8.8.8.8'), token: TOKEN });
   assert.equal(offsite.enabled, false, 'never sends the token to an address off the home network');
+});
+
+test('printer poller: an answer older than 2 minutes is unknown (stale), whatever the polls did', async () => {
+  let clock = Date.parse('2026-10-18T12:00:00Z'), answer = 'ok';
+  const fetchImpl = async () => (answer === 429 ? new Response('{}', { status: 429 }) : new Response(JSON.stringify(LITE), { status: 200 }));
+  const poller = workshop.createPrinterPoller({ url: 'http://10.0.0.124', token: TOKEN, fetchImpl, now: () => clock });
+  await poller.poll();
+  assert.equal(poller.current().state, 'printing');
+  clock += workshop.STALE_MS;
+  assert.equal(poller.current().state, 'printing', 'exactly 2 minutes is still current');
+  clock += 1;
+  assert.deepEqual(poller.current(), { state: 'unknown', progress: null, minutesLeft: null, errorCode: null, access: 'stale', seenAt: '2026-10-18T12:00:00.000Z' });
+  answer = 429;
+  await poller.poll();
+  assert.equal(poller.current().access, 'stale', 'one 429 does not bring an old answer back');
+  answer = 'ok';
+  await poller.poll();
+  assert.deepEqual([poller.current().state, poller.current().access], ['printing', 'ok'], 'a fresh answer is current again');
+  assert.equal(workshop.STALE_MS, 120000);
 });
 
 test('GET /api/workshop/status with a token: printer summary, sign-in from the token, Home part from cache, token never leaves the server', { timeout: 30000 }, async t => {
@@ -380,13 +407,57 @@ test('portal code: reads /api/portal-code with the code token; 401, 404, 429, od
   assert.equal(workshop.codeToken(undefined), '');
 });
 
+test('portal code gate: one request in flight, at most one every 5 s, a hold of minutes after 401 or 429', async () => {
+  let clock = 0, answers = [], reads = 0, release = null;
+  const read = () => { reads++; const a = answers.shift() || { access: 'ok', code: 'ABCDEFGHJK' }; return release ? new Promise(r => { const go = release; release = null; go(() => r(a)); }) : Promise.resolve(a); };
+  const gate = workshop.createPortalCodeGate({ read, now: () => clock });
+  const url = 'http://10.0.0.124';
+  // Three callers while the first request is out: one read, one answer for all.
+  let open; release = go => { open = go; };
+  const three = [gate({ url }), gate({ url }), gate({ url })];
+  await new Promise(r => setImmediate(r));
+  open();
+  assert.deepEqual(await Promise.all(three), [0, 1, 2].map(() => ({ access: 'ok', code: 'ABCDEFGHJK' })));
+  assert.equal(reads, 1);
+  clock = 4999;
+  assert.equal((await gate({ url })).code, 'ABCDEFGHJK');
+  assert.equal(reads, 1, 'served from memory inside the 5 s window');
+  clock = 5000;
+  answers = [{ access: 'offline' }];
+  assert.deepEqual(await gate({ url }), { access: 'offline' });
+  assert.equal(reads, 2, 'a new request once the window ends');
+  clock = 6000;
+  assert.deepEqual(await gate({ url }), { access: 'offline' }, 'a failure is not retried inside the window either');
+  assert.equal(reads, 2);
+  for (const [access, hold] of [['busy', workshop.CODE_BUSY_HOLD_MS], ['refused', workshop.CODE_REFUSED_HOLD_MS]]) {
+    clock += 5000;
+    answers = [{ access }];
+    const before = reads;
+    assert.deepEqual(await gate({ url }), { access, retryAfterMs: hold });
+    clock += hold - 1;
+    assert.deepEqual(await gate({ url }), { access, retryAfterMs: 1 }, `held after ${access}`);
+    assert.equal(reads, before + 1);
+    clock += 1;
+    assert.equal((await gate({ url })).access, 'ok', `asks again when the hold after ${access} ends`);
+    assert.equal(reads, before + 2);
+  }
+  assert.ok(workshop.CODE_BUSY_HOLD_MS >= 60000 && workshop.CODE_REFUSED_HOLD_MS >= 60000, 'holds last minutes');
+  assert.equal(workshop.CODE_GAP_MS, 5000);
+  const broken = workshop.createPortalCodeGate({ read: () => { throw new Error('boom'); }, now: () => 0 });
+  assert.deepEqual(await broken({ url }), { access: 'offline' }, 'never throws');
+});
+
 test('POST /api/workshop/portal-code: same-origin only, every answer plainly, no-store, audited without the code; code and token never logged or stored', { timeout: 30000 }, async t => {
   const device = await fakeDevice();
   device.mode = 'signin';
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-workshop-'));
   const off = 'http://127.0.0.1:9';
+  // The server's clock, moved by the test (LOCALAI_TEST_NOW_FILE), so the 5 s gap and the holds need no waiting.
+  const clockFile = path.join(dataDir, 'test-now'), T0 = Date.parse('2026-10-19T12:00:00Z');
+  const at = ms => fs.writeFileSync(clockFile, String(T0 + ms));
+  at(0);
   const { child, ready } = spawnAppServer({
-    env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, LOCALAI_WORKSHOP_URL: device.url, LOCALAI_WORKSHOP_STATUS_TOKEN: '', LOCALAI_WORKSHOP_CODE_TOKEN: CODE_TOKEN, GRIDCRAFT_URL: off, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off }
+    env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, LOCALAI_TEST_NOW_FILE: clockFile, LOCALAI_WORKSHOP_URL: device.url, LOCALAI_WORKSHOP_STATUS_TOKEN: '', LOCALAI_WORKSHOP_CODE_TOKEN: CODE_TOKEN, GRIDCRAFT_URL: off, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off }
   });
   let log = '';
   child.stdout.on('data', b => { log += b; });
@@ -429,17 +500,55 @@ test('POST /api/workshop/portal-code: same-origin only, every answer plainly, no
   assert.equal(sent[0].headers.authorization, `Bearer ${CODE_TOKEN}`, 'the code token, never what the browser sent');
   assert.equal(sent[0].headers.cookie, undefined);
 
+  // Inside 5 s the same code is served again from memory; the display is not asked.
+  at(1000);
   const again = await ask();
+  assert.equal(again.status, 200);
+  assert.equal(again.headers.get('cache-control'), 'no-store');
   assert.equal((await again.json()).code, CODE);
-  assert.equal(codeAsks(), 2, 'nothing is cached: each tap asks the display');
+  assert.equal(codeAsks(), 1, 'at most one display request every 5 s');
 
-  for (const [code, status, reason] of [[401, 502, 'refused'], [404, 502, 'unsupported'], [429, 503, 'busy'], [500, 504, 'offline']]) {
+  // Taps that arrive together share one request.
+  at(6000);
+  const together = await Promise.all([ask(), ask(), ask()]);
+  assert.deepEqual(await Promise.all(together.map(r => r.json())), [0, 1, 2].map(() => ({ code: CODE, address: device.url })));
+  assert.equal(codeAsks(), 2, 'one request in flight, its answer shared');
+  let shown = 5; // the first, the one from memory and the three together
+
+  let clock = 6000;
+  for (const [code, status, reason] of [[404, 502, 'unsupported'], [500, 504, 'offline']]) {
     device.portalCode = code;
+    at(clock += 6000);
     const r = await ask();
     assert.equal(r.status, status, `display HTTP ${code}`);
     assert.equal(r.headers.get('cache-control'), 'no-store');
     assert.deepEqual(await r.json(), { reason, error: workshop.CODE_WORDS[reason] });
   }
+  assert.equal(codeAsks(), 4);
+
+  // A 429 (the display's own limit) or a 401 (the key revoked) holds every request back for minutes.
+  for (const [code, status, reason, holdMs] of [[429, 503, 'busy', workshop.CODE_BUSY_HOLD_MS], [401, 502, 'refused', workshop.CODE_REFUSED_HOLD_MS]]) {
+    device.portalCode = code;
+    at(clock += 6000);
+    const before = codeAsks();
+    const r = await ask();
+    assert.equal(r.status, status, `display HTTP ${code}`);
+    assert.equal(r.headers.get('retry-after'), String(holdMs / 1000));
+    assert.deepEqual(await r.json(), { reason, error: workshop.CODE_WORDS[reason] });
+    device.portalCode = { code: CODE, bootId: 7 };
+    at(clock += holdMs - 60000);
+    const held = await ask();
+    assert.equal(held.status, status, 'still held a minute before the end');
+    assert.equal(held.headers.get('retry-after'), '60');
+    assert.equal(codeAsks(), before + 1, `nothing sent to the display during the hold after ${code}`);
+    at(clock += 60000);
+    const after = await ask();
+    assert.equal(after.status, 200, `asks again once the hold after ${code} ends`);
+    shown++;
+    assert.equal(codeAsks(), before + 2);
+  }
+
+  at(clock += 6000);
   await device.close();
   const down = await ask();
   assert.equal(down.status, 504);
@@ -447,9 +556,9 @@ test('POST /api/workshop/portal-code: same-origin only, every answer plainly, no
 
   const activity = await (await fetch(`${base}/api/activity`)).text();
   gets.push(activity);
-  const shown = JSON.parse(activity);
-  const items = Array.isArray(shown) ? shown : shown.items || shown.activity || [];
-  assert.equal(items.filter(x => x.title === 'Workshop sign-in code shown').length, 2, 'one audit entry per code shown, none for refusals');
+  const listed = JSON.parse(activity);
+  const items = Array.isArray(listed) ? listed : listed.items || listed.activity || [];
+  assert.equal(items.filter(x => x.title === 'Workshop sign-in code shown').length, shown, 'one audit entry per code shown, none for refusals');
   for (const p of ['/api/workshop/status', '/api/status', '/api/capabilities', '/healthz']) gets.push(await (await fetch(`${base}${p}`)).text());
   for (const text of gets) {
     assert.ok(!text.includes(CODE), 'the code never reaches a GET answer or the audit log');

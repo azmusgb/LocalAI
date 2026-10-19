@@ -30,6 +30,13 @@ test('needs you: lists what waits on the owner, then failures, progress and heal
   assert.equal(n.speech, 'Needs you: 1 approval, 11 unfinished change requests and 2 Claude findings to decide. 1 run failed today. 2 runs are in progress. Image generation is down. Everything else is up.');
 });
 
+test('needs you: failures that need you are counted like Home counts them', () => {
+  const n = needsYouSummary({ approvals: 1, failed: 2 });
+  assert.equal(n.count, 3);
+  assert.deepEqual(n.items.map(i => i.kind), ['approvals', 'failed']);
+  assert.equal(n.speech, 'Needs you: 1 approval and 2 failed runs.');
+});
+
 test('needs you: nothing pending says so, and a healthy appliance adds nothing', () => {
   const n = needsYouSummary({}, healthSummary({ services: all.map(l => svc(l, 'HEALTHY')) }));
   assert.equal(n.count, 0);

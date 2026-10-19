@@ -128,12 +128,20 @@ await check('the Workshop display card: a 401 reads as online with its own sign-
   assert.equal(await line.innerText(), 'Printer · Idle');
   await refresh({ ...signedIn, printer: printer('cancelled') }, /sign-in on/);
   assert.equal(await line.innerText(), 'Printer · Print stopped', 'a print stopped on purpose is not an error');
+  await refresh({ ...signedIn, printer: printer('ended') }, /sign-in on/);
+  assert.equal(await line.innerText(), 'Printer · Print ended — check the display', 'FAILED with no code is neither a stop nor an error');
   await refresh({ ...signedIn, printer: printer('error', { errorCode: '0700_8010' }) }, /sign-in on/);
   assert.equal(await line.innerText(), 'Printer · Stopped with an error (0700_8010)', 'a real fault still says so');
   await refresh({ ...signedIn, printer: { ...printer('unknown'), access: 'refused' } }, /sign-in on/);
   assert.match(await line.innerText(), /turned the token down/);
   await refresh({ ...signedIn, printer: { ...printer('unknown'), access: 'unsupported' } }, /sign-in on/);
   assert.match(await line.innerText(), /update the display/);
+  // Two 429s in a row, or no good answer for 2 minutes: the old progress is not left up.
+  await refresh({ ...signedIn, printer: printer('printing', { progress: 42 }) }, /sign-in on/);
+  await refresh({ ...signedIn, printer: { ...printer('unknown'), access: 'busy' } }, /sign-in on/);
+  assert.equal(await line.innerText(), 'Printer status: the display is busy.');
+  await refresh({ ...signedIn, printer: { ...printer('unknown'), access: 'stale' } }, /sign-in on/);
+  assert.equal(await line.innerText(), 'Printer status: no recent answer.');
 
   await refresh(WORKSHOP_ONLINE, /Online · Waveshare/);
   body = await card.innerText();
@@ -322,7 +330,7 @@ await mobile.close();
     await show.click();
     await card.locator('[data-workshop-code-msg]', { hasText: 'turned the key down' }).waitFor();
     assert.equal(await value.isVisible(), false);
-    codeAnswer = { status: 503, json: { reason: 'busy', error: 'The display is busy. Try again in a minute.' } };
+    codeAnswer = { status: 503, json: { reason: 'busy', error: 'The display is busy. Try again in a few minutes.' } };
     await show.click();
     await card.locator('[data-workshop-code-msg]', { hasText: 'busy' }).waitFor();
     assert.equal(await show.isEnabled(), true);

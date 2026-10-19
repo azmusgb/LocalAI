@@ -4,7 +4,7 @@
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
 function createGridcraft(ctx) {
-  const { GRIDCRAFT_RUN_TIMEOUT_MS, GRIDCRAFT_URL, inFlight, json, makeId, modelFetchWithTimeout, readBody, recordActivity, sameOriginJson, storage, workshop, workshopPrinter } = ctx;
+  const { GRIDCRAFT_RUN_TIMEOUT_MS, GRIDCRAFT_URL, inFlight, json, makeId, modelFetchWithTimeout, readBody, recordActivity, sameOriginJson, storage, workshop, workshopCode, workshopPrinter } = ctx;
   // Calls to the host bridge (GridCraft and ArtCraft) go over node:http (model-http.js), not the global fetch: undici
   // gives up when headers take more than 300 s, so a long GridCraft request died as "fetch failed" at five minutes
   // whatever its own deadline. Here the deadline passed in is the only one.
@@ -259,17 +259,18 @@ function createGridcraft(ctx) {
     json(res, 200, { ...status, printer, codeAccess: Boolean(status.portalUrl && workshop.codeToken()) });
   }
   // Services › Workshop display › Show sign-in code: reads the display's current portal sign-in code with the code token,
-  // on demand, and hands it to this one answer only. POST (with the same-origin and JSON checks every mutating route has),
+  // on demand (through workshopCode: one request at a time, at most one every 5 s, none for minutes after a 401 or 429),
+  // and hands it to the answer only. POST (with the same-origin and JSON checks every mutating route has),
   // so a prefetch, a link or another site can't fetch it, and no-store so no cache keeps it. Local AI has no sign-in of
   // its own, so whoever can use Local AI can read the code: the owner's accepted trade-off (docs/SECURITY.md). The audit
   // entry says a code was shown, never which one; nothing else is logged or stored.
   async function apiWorkshopPortalCode(req, res) {
     if (!sameOriginJson(req, res)) return;
     try { await readBody(req, 1024); } catch { /* the body carries nothing; an oversized one is just ignored */ }
-    const send = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
+    const send = (status, value, extra = {}) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...extra }); res.end(JSON.stringify(value)); };
     const address = workshop.portalUrl();
-    const r = await workshop.readPortalCode({ url: address });
-    if (r.access !== 'ok') return send(r.access === 'not_set_up' ? 409 : r.access === 'busy' ? 503 : r.access === 'offline' ? 504 : 502, { reason: r.access, error: workshop.CODE_WORDS[r.access] });
+    const r = await workshopCode({ url: address });
+    if (r.access !== 'ok') return send(r.access === 'not_set_up' ? 409 : r.access === 'busy' ? 503 : r.access === 'offline' ? 504 : 502, { reason: r.access, error: workshop.CODE_WORDS[r.access] }, r.retryAfterMs ? { 'Retry-After': String(Math.ceil(r.retryAfterMs / 1000)) } : {});
     recordActivity('workshop', 'Workshop sign-in code shown', 'Services › Workshop display');
     send(200, { code: r.code, address });
   }
