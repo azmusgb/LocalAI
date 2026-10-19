@@ -40,7 +40,7 @@ Channels were the first design. They are disabled for the Claude Team org (`chan
 
 ## Setup
 
-On the Mac, from the repo checkout (needs `ssh windows` to work, Node 22+, Python 3 at `/opt/homebrew/bin/python3`, `openssl` and `curl`, both standard on macOS):
+On the Mac, from the repo checkout (needs `ssh windows` to work; set `LOCALAI_SSH_HOST` if your alias for the Windows host differs, Node 22+, Python 3 at `/opt/homebrew/bin/python3`, `openssl` and `curl`, both standard on macOS):
 
 ```sh
 host/claude-chat/install.sh

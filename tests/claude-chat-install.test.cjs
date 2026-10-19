@@ -81,6 +81,16 @@ test('install.sh fetches the CA over ssh, verifies HTTPS with it, and writes con
   assert.match(r.stdout, new RegExp(`Relay: ${url.replace(/[.]/g, '\\.')} \\(HTTPS, verified with the LocalAI CA\\)`));
 });
 
+test('install.sh uses LOCALAI_SSH_HOST for every ssh call when set', { skip: tlsSkip }, async (t) => {
+  const s = sandbox(t);
+  const url = await httpsRelay(t, tls);
+  fs.writeFileSync(s.caOut, tls.caPem);
+  const r = await runInstall(s.home, s.stubs, { LOCALAI_HTTPS_URL: url, LOCALAI_SSH_HOST: 'other-host' });
+  assert.equal(r.status, 0, r.stderr);
+  const calls = fs.readFileSync(s.log, 'utf8').trim().split('\n');
+  assert.deepEqual(calls, [HASH_PUSH, CA_FETCH].map((c) => c.replace(/^windows /, 'other-host ')));
+});
+
 test('install.sh stops, writing no config, when HTTPS is unreachable or not trusted with the CA', { skip: tlsSkip }, async (t) => {
   const url = await httpsRelay(t, tls);
   for (const [name, env, pem] of [['unreachable', {}, tls.caPem], ['wrong CA', { LOCALAI_HTTPS_URL: url }, fs.readFileSync(tls.otherCaPath, 'utf8')]]) {

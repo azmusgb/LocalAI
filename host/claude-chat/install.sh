@@ -13,6 +13,8 @@ HOOK_CMD='/opt/homebrew/bin/python3 -I ~/.claude/localai-chat/hook.py'
 CA="$DEST/localai-ca.crt"
 CONFIG="$DEST/config.json"
 HTTPS_URL="${LOCALAI_HTTPS_URL:-https://10.0.0.21}"
+# ssh alias for the Windows host, from ~/.ssh/config (the host reaches the Mac back as `ssh mac`).
+SSH_HOST="${LOCALAI_SSH_HOST:-windows}"
 
 # 1. files
 mkdir -p "$DEST/run"
@@ -37,8 +39,8 @@ chmod 600 "$KEY"
 
 # 3. push the key hash to the appliance (hash of the trimmed key, as the relay hashes the header value)
 hash="$(tr -d '\r\n' < "$KEY" | shasum -a 256 | cut -d' ' -f1)"
-if ! printf '%s' "$hash" | ssh windows docker exec -i local-ai-appliance tee /data/claude-chat-mac-key.sha256 >/dev/null; then
-  echo "install.sh: created $KEY but could not push its hash to the appliance (ssh windows failed). Fix ssh access and re-run install.sh — it reuses the same key." >&2
+if ! printf '%s' "$hash" | ssh "$SSH_HOST" docker exec -i local-ai-appliance tee /data/claude-chat-mac-key.sha256 >/dev/null; then
+  echo "install.sh: created $KEY but could not push its hash to the appliance (ssh $SSH_HOST failed). Fix ssh access and re-run install.sh — it reuses the same key." >&2
   exit 1
 fi
 
@@ -50,7 +52,7 @@ why=''
 hint=''
 ca_tmp="$(mktemp "$DEST/localai-ca.XXXXXX")"
 trap 'rm -f "$ca_tmp"' EXIT
-if ssh windows type 'C:\LocalAI\https\localai-ca.crt' </dev/null 2>/dev/null | tr -d '\r' \
+if ssh "$SSH_HOST" type 'C:\LocalAI\https\localai-ca.crt' </dev/null 2>/dev/null | tr -d '\r' \
      | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' > "$ca_tmp" \
    && [ -s "$ca_tmp" ] \
    && openssl x509 -noout -in "$ca_tmp" >/dev/null 2>&1; then
