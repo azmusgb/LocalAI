@@ -1295,6 +1295,22 @@ body.ux-v3 .ux-nav-shell{grid-template-columns:76px}
 .img-batch .img-thumb.active{border-color:var(--ds-accent);box-shadow:0 0 0 2px var(--ds-accent)}
 /* Scrolling to the editor leaves its header clear of the sticky top bar. */
 .img-edit{scroll-margin-top:88px}
+/* Fix a part: the editor in its circle-and-redraw mode, and the original beside the new versions */
+.img-fixing .img-compose>:not(.img-edit),.img-fixing #imagePromptLabel,.img-fixing #imagePrompt,.img-fixing #generateBtn{display:none}
+.img-fix-mode{display:none;gap:6px}.img-fixing .img-fix-mode{display:flex}
+.img-fixing .img-edit button,.img-fix-compare button{min-height:44px}
+.img-fix-mode button,.img-fix-chip{border:1px solid var(--ds-line);background:var(--ds-surface);color:var(--ds-soft);border-radius:999px;min-width:64px;padding:0 14px;font-size:var(--ds-fs-1);font-weight:600;cursor:pointer}
+.img-fix-mode button.active,.img-fix-chip[aria-pressed="true"]{border-color:var(--ds-accent);background:var(--ds-accent-soft);color:var(--ds-text)}
+.img-fix{display:grid;gap:8px}.img-fix[hidden],.img-fix-compare[hidden]{display:none}
+.img-fix-chips{display:flex;flex-wrap:wrap;gap:6px}
+.img-fix input{min-height:44px;font-size:var(--ds-fs-input)}
+.img-fix-compare{display:grid;gap:10px}
+.img-fix-compare__head{margin:0;color:var(--ds-soft);font-size:var(--ds-fs-1)}.img-fix-compare__head b{color:var(--ds-text)}
+.img-fix-compare__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.img-fix-compare__item{display:grid;gap:6px;margin:0;min-width:0;align-content:start}
+.img-fix-compare__item figcaption{color:var(--ds-soft);font-size:var(--ds-fs-1);text-align:center}
+.img-fix-compare__pic{width:100%;aspect-ratio:auto}.img-fix-compare__pic img{height:auto;object-fit:contain}
+.img-fix-compare .btn-primary{padding:0 8px}
 
 /* Phone shell (redesign task 2): one header, underline page tabs, a flush icon tab bar. Desktop is unchanged. */
 .ux-context-bar .ux-ico{display:none}
