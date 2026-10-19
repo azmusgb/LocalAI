@@ -18,7 +18,8 @@ $Python = Join-Path $AgentDir '.venv\Scripts\python.exe'
 $LogPath = Join-Path $AgentDir 'gridcraft-bridge.log'
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) { throw 'Run this script from an elevated PowerShell (Run as administrator); it registers a scheduled task that runs elevated.' }
+# Admin for the installer only (it removes an old firewall rule); the task it registers runs with the user's normal rights.
+if (-not $isAdmin) { throw 'Run this script from an elevated PowerShell (Run as administrator).' }
 
 if ($Uninstall) {
     Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
@@ -90,7 +91,9 @@ if (Test-Path -LiteralPath $LogPath) {
 
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$envPath`""
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
+# Limited: the bridge only launches GridCraft and talks to it and Ollama over loopback ports, so it needs no admin token,
+# and neither do the agent and GridCraft it starts.
+$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
