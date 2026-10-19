@@ -187,11 +187,13 @@ test('the worker and Coordinator prompts carry the absence rule, and workers get
   assert.match(FINAL_TURN_PROMPT, /something you did not see is "not seen in the parts I read \(lines X–Y of file\)", never "does not exist"/);
   assert.ok(worker.tools.some(x => x.function.name === 'find_in_project'));
   assert.match(coordinator.messages[0].content, /not seen in the parts it read means it was not checked, never that a feature is missing\. Report something as missing only when a specialist's find_in_project search for it returned no matches/);
+  assert.ok(coordinator.messages[0].content.includes(require('../app/mission-answer').ANSWER_FORMAT), 'the Coordinator is told how to write the answer');
   assert.equal(mission.answer, 'Summary [' + firstId(coordinator.messages[1].content) + ']', 'nothing to caveat');
+  assert.equal(mission.rawAnswer, undefined, 'nothing to tidy');
   assert.equal(mission.absenceCheck, undefined);
 });
 
-test('a Coordinator answer that calls something missing nobody searched for gets a caveat line', async t => {
+test('a Coordinator answer that calls something missing nobody searched for is marked "not checked", with a caveat line', async t => {
   let said = '';
   const { orchestrator } = await missionFixture(t, body => {
     if (!isCoordinator(body)) return { content: 'Read the city section [' + firstId(body.messages[1].content) + ']; fireworks were not seen in the parts I read.' };
@@ -200,9 +202,11 @@ test('a Coordinator answer that calls something missing nobody searched for gets
   });
   const mission = await orchestrator.mission('Improve look feel and polish of agent world', '', ['ux_analyst']);
   assert.equal(mission.status, 'complete', mission.error);
-  assert.equal(mission.answer, 'Caveat: 2 statements below say something is missing, but no worker searched the code for it, so it wasn\'t checked and may well exist: '
-    + '“No evidence for construction stages such as cranes in the rendering logic.”; “Fireworks do not exist in the city.”\n\n' + said);
-  assert.deepEqual(mission.absenceCheck.flagged, ['**No evidence** for construction stages such as cranes in the rendering logic.', 'Fireworks do not exist in the city.']);
+  // The answer leads; each claim is marked where it stands (the bold went with the Markdown, mission-answer.js plainText).
+  assert.equal(mission.answer, said.replace('**No evidence**', 'No evidence').replace('rendering logic.', 'rendering logic (not checked).').replace('in the city.', 'in the city (not checked).')
+    + '\n\nCaveat: 2 statements marked “not checked” say something is missing, but no worker searched the code for those things, so they may well exist.');
+  assert.equal(mission.rawAnswer, said, 'the Coordinator\'s own words are kept');
+  assert.deepEqual(mission.absenceCheck.flagged, ['No evidence for construction stages such as cranes in the rendering logic.', 'Fireworks do not exist in the city.']);
   assert.deepEqual(mission.absenceCheck.backed, []);
 });
 
@@ -238,6 +242,8 @@ test('the check: a search that found the thing, or stopped early, backs no absen
   const checked = checkAbsenceClaims(answer, [found, early, empty]);
   assert.deepEqual(checked.flagged, ['drawCrane is missing [E-1111111111111111].', 'Fireworks are not implemented.']);
   assert.deepEqual(checked.backed, [{ sentence: 'Hovercraft lacks implementation.', search: empty.id }]);
-  assert.match(checked.answer, /^Caveat: 2 statements below say something is missing/);
+  assert.equal(checked.answer, 'drawCrane is missing [E-1111111111111111] (not checked). Fireworks are not implemented (not checked). Hovercraft lacks implementation. Workers walk.'
+    + '\n\nCaveat: 2 statements marked “not checked” say something is missing, but no worker searched the code for those things, so they may well exist.');
+  assert.match(checkAbsenceClaims('Fireworks do not exist.', []).answer, /^Fireworks do not exist \(not checked\)\.\n\nCaveat: the statement marked “not checked” says something is missing, but no worker searched the code for it, so it may well exist\.$/);
   assert.deepEqual(checkAbsenceClaims('All good.', []), { answer: 'All good.', flagged: [], backed: [] });
 });
