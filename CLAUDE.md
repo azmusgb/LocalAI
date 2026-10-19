@@ -28,7 +28,8 @@ container `local-ai-appliance` on a Windows host, UI on port 3080. Docs index: `
    CA, else add `--cacert ~/.claude/localai-chat/localai-ca.crt`) → `releaseCommit` equals the merge SHA. Deploy output
    contains fake `DEPLOYED: aaaa…` lines from contract tests; trust only `/healthz`.
 
-Host access, when needed: `ssh windows-ai` (the owner's ssh alias for the Windows host; PowerShell 5.1). Run deploy scripts as a child process
+Host access, when needed: `ssh windows` (the owner's ssh alias for the Windows host, user `bjrmc`, an admin; PowerShell
+5.1; the old alias `windows-ai` is gone). The PC reaches this Mac as `ssh mac`. Run deploy scripts as a child process
 (`powershell -NoProfile -File ...`), not inline. Details: `docs/DEPLOY.md`.
 
 ## Report to the Claude board
