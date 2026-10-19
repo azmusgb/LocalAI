@@ -50,10 +50,18 @@ const KB = 1024;
 // 2026-10-19: 263 → 264 KB (and ui.js 102 → 103 KB) for Agent World's lighting and building pass: building fronts
 // painted once into cached sprites (framed windows, lobbies with awnings, roof parapets), warm/cool light and a vignette,
 // textured grass and streets, glowing lamps, marching flow lines, busy-district brackets and light (ui.js +1.7 KB; 263.6 KB measured).
-// 2026-10-19: 264 → 270 KB for Images › Fix a part (fix-part.js 4.8 KB: the soft ellipse mask from a tap or drag, the
+// 2026-10-19: 264 → 268 KB (and ui.js 103 → 107 KB) for Agent World's bolder pass: the time-of-day sky (the drift, the
+// spotlight on the busy district, haze, rays, shadows that follow the sun), cars that read from above, birds, water
+// glints, stars and fireflies, hand-off arcs between roofs and the bigger mission-complete moment (ui.js +3.4 KB, app.css
+// +0.3 KB; 267.4 KB measured). All drawn in code: no images.
+// 2026-10-19: 268 → 271 KB (and ui.js 107 → 109 KB) for Agent World's replay timeline and Retry mission: the slim bar
+// under the city (in the sheet on a phone) with Play, times, hand-off/error/finish marks, drag and keyboard scrubbing and
+// the speed; Retry mission beside the city when a mission failed or partly failed; the demo's own header (ui.js +2.2 KB,
+// app.css +0.3 KB, index.html +0.1 KB; 270.3 KB measured).
+// 2026-10-19: 271 → 277 KB for Images › Fix a part (fix-part.js 4.8 KB: the soft ellipse mask from a tap or drag, the
 // brush layer over it, the Hands / Face / Ears / Remove object chips, the original-beside-two-versions view with Keep;
-// app.js +0.3 KB for its hooks, app.css +0.3 KB, index.html +0.2 KB): 269.2 KB measured.
-const TOTAL = 270 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// app.js +0.3 KB for its hooks, app.css +0.3 KB, index.html +0.2 KB): about 275.9 KB measured with #339.
+const TOTAL = 277 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
 // tab rows (234.9 KB measured).
@@ -66,7 +74,7 @@ const TOTAL = 270 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // measures 98.0 KB). The suggestion itself lives in self-change.js.
 // 2026-10-18: ui.js 99 → 100 KB for Agent World workers walking out of their door and along the streets with square
 // turns (routeToTarget and its street legs, +0.8 KB); with the Workshop printer line (#312) ui.js measures 99.5 KB.
-const PER_FILE = { 'ui.js': 103 * KB, 'components.js': 11 * KB, 'app.css': 41 * KB, 'app.js': 36 * KB, 'index.html': 13 * KB, 'home.js': 11 * KB };
+const PER_FILE = { 'ui.js': 109 * KB, 'components.js': 11 * KB, 'app.css': 41 * KB, 'app.js': 36 * KB, 'index.html': 13 * KB, 'home.js': 11 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;

@@ -229,7 +229,7 @@ async function shoot(viewport, view, missions, ready) {
   if (ready) await page.locator(ready).first().waitFor({ timeout: 8000 });
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(600); // lists load after the page shows
-  if (missions) await page.addStyleTag({ content: '#awcCanvas{visibility:hidden}' }); // the city animates; its box and everything over it stay
+  if (missions) await page.addStyleTag({ content: '#awcCanvas,.awc__sky{visibility:hidden}' }); // the city (and its sky) animates; its box and everything over it stay
   const mask = missions ? [...masks(page), page.locator('#agentTimeline time')] : masks(page);
   const shot = await page.screenshot({ animations: 'disabled', caret: 'hide', mask, maskColor: '#ff00ff' });
   await ctx.close();

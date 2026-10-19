@@ -8,6 +8,14 @@ const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch({ headless: true });
 const failures = [];
 async function check(name, fn) { try { await fn(); console.log('PASS', name); } catch (e) { failures.push(`${name}: ${e.message}`); console.error('FAIL', name, e.message); } }
+// Developer tools start on for a browser with no saved choice once the server has developer history (changes,
+// engineering runs or Claude board findings, which other suites leave behind), so every page here starts with them
+// off, as on a new install; checks that need them turn them on themselves.
+const newContext = async opts => {
+  const context = await browser.newContext(opts);
+  await context.addInitScript(() => { try { localStorage.setItem('localai.devTools', '0'); } catch {} });
+  return context;
+};
 
 const now = Date.now(), at = s => new Date(now - s * 1000).toISOString();
 const MISSION = {
@@ -41,7 +49,7 @@ const canvasState = page => page.evaluate(() => {
 // iPhone 14 and SE (WebKit's device settings on Chromium: size, scale factor, touch).
 for (const name of ['iPhone 14', 'iPhone SE']) {
   const { defaultBrowserType, ...device } = devices[name];
-  const context = await browser.newContext({ ...device, serviceWorkers: 'block' });
+  const context = await newContext({ ...device, serviceWorkers: 'block' });
   const { page, errors } = await seeded(context);
   const vw = device.viewport.width, vh = device.viewport.height;
   await check(`${name}: the city renders on screen without scrolling, at the device's pixel density`, async () => {
@@ -128,7 +136,7 @@ for (const name of ['iPhone 14', 'iPhone SE']) {
 }
 
 for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
-  const page = await browser.newPage({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 500, hasTouch: viewport.width < 500 });
+  const page = await (await newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 500, hasTouch: viewport.width < 500 })).newPage();
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.goto(base + '/#work', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#work.active');
@@ -148,12 +156,12 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
     await page.waitForSelector('#work.active');
   });
   await check(`${viewport.width}px: no script errors`, async () => assert.deepEqual(errors, []));
-  await page.close();
+  await page.context().close();
 }
 
 // Desktop at 1x and 2x: the city is painted at the screen's pixel density, so the pixel art stays crisp.
 for (const deviceScaleFactor of [1, 2]) {
-  const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 900 }, deviceScaleFactor });
+  const context = await newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 900 }, deviceScaleFactor });
   const { page, errors } = await seeded(context);
   await check(`1440px @${deviceScaleFactor}x: the city is painted at full resolution`, async () => {
     await page.waitForFunction(() => { const c = document.getElementById('awcCanvas'); return c.getContext('2d').getImageData(c.width >> 1, c.height >> 1, 1, 1).data[3] > 0; }, null, { timeout: 5000 });
@@ -177,7 +185,7 @@ const FAILED = {
 };
 const DONE = { ...FAILED, id: 'mission-ui-done', status: 'complete', error: '', answer: 'The summary of what the team found.', finishedAt: t(240), workers: snapW('complete', 'complete'), results: [{ agentId: 'ux_analyst', agentName: 'UX Analyst', status: 'complete', answer: 'Three things to fix.' }], timeline: [] };
 async function withMission(contextOpts, mission) {
-  const context = await browser.newContext({ serviceWorkers: 'block', ...contextOpts });
+  const context = await newContext({ serviceWorkers: 'block', ...contextOpts });
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
   const page = await context.newPage();
   const errors = []; page.on('pageerror', e => errors.push(e.message));
@@ -192,7 +200,8 @@ async function withMission(contextOpts, mission) {
   const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, FAILED);
   await check('1440px: the header says what went wrong and offers one action', async () => {
     assert.match(await page.locator('#awStatus').innerText(), /^Needs you · 1 of 3 done · UX Analyst stopped: the model didn’t answer$/);
-    assert.equal(await page.locator('#awPrimary').innerText(), 'Try again');
+    assert.equal(await page.locator('#awPrimary').innerText(), 'Retry mission');
+    assert.equal(await page.locator('#awRetry').isVisible(), false, 'one Retry mission, not two');
     assert.equal(await page.locator('#agents .pill').count(), 0, 'the Mission-first pill is gone');
   });
   await check('1440px: the city fills the main area; the rail beside it is 360 px', async () => {
@@ -224,13 +233,15 @@ async function withMission(contextOpts, mission) {
     await card.waitFor({ state: 'hidden' });
     assert.equal(await page.evaluate(() => document.activeElement?.dataset.awcRoster), 'ux_analyst', 'focus returns to the crew row');
   });
-  await check('1440px: Try again starts the same goal again', async () => {
+  await check('1440px: Retry mission starts the same goal again (the mission start, not Work’s run retry)', async () => {
     const bodies = [];
     await page.route(u => u.pathname === '/api/agents/missions/start', r => { bodies.push(r.request().postDataJSON()); r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"stubbed"}' }); });
     await page.route(u => u.pathname === '/api/agents/dispatch', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ routing: { mode: 'auto', workers: [] } }) }));
+    const ledger = []; await page.route(u => u.pathname === '/api/runs/retry', r => { ledger.push(1); r.fulfill({ status: 500, body: '{}' }); });
     await page.locator('#awPrimary').click();
     await page.waitForFunction(() => true); for (let i = 0; i < 50 && !bodies.length; i++) await page.waitForTimeout(100);
     assert.equal(bodies[0]?.goal, FAILED.goal);
+    assert.equal(ledger.length, 0, 'Work’s /api/runs/retry is not called');
   });
   await check('1440px: the ⋯ menu opens, moves with arrows, closes with Escape back on its button', async () => {
     await page.locator('#awMoreBtn').click();
@@ -271,8 +282,9 @@ async function withMission(contextOpts, mission) {
 {
   const { defaultBrowserType, ...device } = devices['iPhone 14'];
   const { context, page, errors } = await withMission(device, FAILED);
-  await check('iPhone 14: the peek offers Try again; a crew row raises the sheet to the worker card', async () => {
-    assert.equal(await page.locator('#awPeekAction').innerText(), 'Try again');
+  await check('iPhone 14: the peek offers Retry mission; a crew row raises the sheet to the worker card', async () => {
+    assert.equal(await page.locator('#awPeekAction').innerText(), 'Retry mission');
+    assert.equal(await page.locator('#awPeekRetry').isVisible(), false, 'one Retry, not two');
     await page.locator('#awSheetHandle').click();
     await page.waitForFunction(() => document.getElementById('awSheet').dataset.snap === 'half');
     await page.locator('#awcRoster [data-awc-roster="ux_analyst"]').click();
@@ -290,7 +302,7 @@ async function withMission(contextOpts, mission) {
 // Start a mission (design PR 3): one sheet, the team in words as you type, Advanced only with developer tools; the
 // empty city invites a goal and offers a demo.
 async function emptyPage(contextOpts) {
-  const context = await browser.newContext({ serviceWorkers: 'block', ...contextOpts });
+  const context = await newContext({ serviceWorkers: 'block', ...contextOpts });
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
   const page = await context.newPage();
   const errors = []; page.on('pageerror', e => errors.push(e.message));
@@ -493,7 +505,7 @@ const PAIR = () => ({ id: 'mission-ui-pair', goal: 'Two roles', status: 'running
 const debugOn = context => context.addInitScript(() => { try { localStorage.setItem('localai.debug', '1'); } catch {} });
 const frames = page => page.evaluate(() => Object.fromEntries(window.__awcLayout().workers.map(w => [w.id, w.frame])));
 for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 } }], ['reduced motion', { viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' }]]) {
-  const context = await browser.newContext({ serviceWorkers: 'block', ...opts }); await debugOn(context);
+  const context = await newContext({ serviceWorkers: 'block', ...opts }); await debugOn(context);
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
   const page = await context.newPage(); const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [PAIR()] }) }));
@@ -540,7 +552,7 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   const CROWD = { id: 'mission-ui-crowd', goal: 'A busy city', status: 'running', createdAt: new Date(Date.now() - 60e3).toISOString(), updatedAt: new Date().toISOString(), results: [], timeline: [], workers: [
     W8('router', 'Mission Router', 'complete'), W8('ux_analyst', 'UX Analyst', 'running', ['router']), W8('code_analyst', 'Code Analyst', 'running', ['router']), W8('documentation', 'Documentation Agent', 'pending', ['ux_analyst']),
     W8('validator', 'Validator', 'error', ['code_analyst']), W8('research_agent', 'Research Agent', 'complete', ['router']), W8('performance_analyst', 'Performance Analyst', 'running', ['router']), W8('synthesis', 'Coordinator', 'pending', ['documentation', 'code_analyst'])] };
-  const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 900 } }); await debugOn(context);
+  const context = await newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 900 } }); await debugOn(context);
   const { page, errors } = await (async () => { await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
     const page = await context.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [CROWD] }) }));
@@ -581,7 +593,7 @@ const FLOW = () => ({ id: 'mission-ui-flow', goal: 'Flows and crossings', status
   workers: [{ id: 'router', name: 'Mission Router', state: 'complete', dependsOn: [] }, { id: 'ux_analyst', name: 'UX Analyst', state: 'pending', dependsOn: ['router'] }, { id: 'documentation', name: 'Documentation Agent', state: 'pending', dependsOn: ['ux_analyst'] },
     { id: 'code_analyst', name: 'Code Analyst', state: 'pending', dependsOn: ['router'] }, { id: 'performance_analyst', name: 'Performance Analyst', state: 'pending', dependsOn: ['code_analyst'] }, { id: 'validator', name: 'Validator', state: 'pending', dependsOn: ['performance_analyst'] }] });
 async function cityWithFlow(opts) {
-  const context = await browser.newContext({ serviceWorkers: 'block', ...opts }); await debugOn(context);
+  const context = await newContext({ serviceWorkers: 'block', ...opts }); await debugOn(context);
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
   const page = await context.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [FLOW()] }) }));
@@ -764,7 +776,7 @@ const panCity = async page => {
     const step = page.locator('#awcRoster [data-awc-roster="code_analyst"] .awc__rosterText span');
     assert.equal(await step.innerText(), 'Interrupted by an update');
     assert.ok(await step.evaluate(e => e.scrollWidth <= e.clientWidth + 1), 'not cut off');
-    assert.equal(await page.locator('#awPrimary').innerText(), 'Try again');
+    assert.equal(await page.locator('#awPrimary').innerText(), 'Retry mission');
   });
   await check('1440px: no script errors (interrupted)', async () => assert.deepEqual(errors, []));
   await context.close();
@@ -789,7 +801,7 @@ const DEV_WORDS = /Synthesis|Evidence|Routing|Mission Router|Capability|Groundin
   await check('1440px: one replay scrubber under the city, with event markers and Play', async () => {
     const scrub = page.locator('#awcScrub');
     await scrub.waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#awcReplayMarkers button').count(), 4);
+    assert.deepEqual(await page.locator('#awcReplayMarkers .awc__mark').evaluateAll(m => m.map(x => x.dataset.kind)), ['handoff', 'error', 'done']);
     for (const gone of ['#awcReplayPrev', '#awcReplayNext', '#awcDemoPlay', '#awcDemoScenario']) assert.equal(await page.locator(gone).count(), 0, gone);
     await page.locator('#awcReplayPlay').click();
     assert.equal(await page.locator('#awcReplayPlay').getAttribute('aria-label'), 'Pause the replay');
@@ -832,7 +844,7 @@ const DEV_WORDS = /Synthesis|Evidence|Routing|Mission Router|Capability|Groundin
 // hidden page (an iPad keeps the list on listed pages) and squeezed the city to 434 of 768 px.
 {
   const { defaultBrowserType, ...device } = devices['iPad Mini'];
-  const context = await browser.newContext({ ...device, serviceWorkers: 'block' });
+  const context = await newContext({ ...device, serviceWorkers: 'block' });
   const { page, errors } = await seeded(context);
   await check('iPad Mini: the city is full width; Work’s page list is closed', async () => {
     await page.waitForTimeout(300);
@@ -857,6 +869,253 @@ const DEV_WORDS = /Synthesis|Evidence|Routing|Mission Router|Capability|Groundin
     await page.locator('#awcScrub').waitFor({ state: 'attached' });
   });
   await check('iPhone 14: no script errors (results)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+
+// The replay timeline (2026-10-19): a slim bar under the city (in the bottom sheet on a phone) with Play, the time so
+// far and the length, the track with hand-off, error and finish marks, and the speed. Drag (mouse or touch) scrubs;
+// the range under the track keeps the keyboard (arrows step, Home and End jump) and says the step to screen readers.
+const scrubbed = page => page.evaluate(() => ({ label: document.getElementById('awcReplayLabel').textContent, at: document.getElementById('awcReplayAt').textContent, end: document.getElementById('awcReplayEnd').textContent, vt: document.getElementById('awcReplayRange').getAttribute('aria-valuetext'), value: document.getElementById('awcReplayRange').value, source: document.querySelector('.awc-v3').dataset.source, p: Number(document.getElementById('awcScrubTrack').style.getPropertyValue('--p')) }));
+const DONE3 = { ...DONE2, id: 'mission-ui-done3', timeline: DONE2.timeline.map((e, i) => ({ ...e, at: t([0, 1, 100, 240][i]) })) };
+const tall = async (page, sel) => { const b = await page.locator(sel).boundingBox(); assert.ok(b && b.height >= 44 && b.width >= 44, `${sel} is ${b && Math.round(b.width)}×${b && Math.round(b.height)}`); };
+{
+  const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, DONE3);
+  await check('1440px timeline: under the city at its start, with the length and marks for the hand-off, the error and the finish', async () => {
+    await page.locator('#awcScrub').waitFor({ state: 'visible' });
+    const city = await page.locator('.awc__mapWrap').boundingBox(), s = await page.locator('#awcScrub').boundingBox();
+    assert.ok(s.y >= city.y + city.height - 1 && s.height <= 64, `a slim bar under the city (${Math.round(s.height)} px)`);
+    const r = await scrubbed(page);
+    assert.deepEqual([r.label, r.at, r.end, r.source], ['4 steps', '0:00', '4:00', 'mission']);
+    const marks = await page.locator('#awcReplayMarkers .awc__mark').evaluateAll(m => m.map(x => [x.dataset.kind, x.title, Math.round(parseFloat(x.style.left))]));
+    assert.deepEqual(marks, [['handoff', 'Hand-off to UX Analyst', 33], ['error', 'UX Analyst stopped', 67], ['done', 'Mission complete', 100]]);
+    assert.equal(await page.locator('#awcReplayMarkers').getAttribute('aria-hidden'), 'true', 'the marks are in the range’s value text instead');
+  });
+  await check('1440px timeline: Play, Pause, the speed and Back to now are 44 px targets', async () => {
+    for (const sel of ['#awcReplayPlay', '#awcReplaySpeed', '#awcScrubTrack']) await tall(page, sel);
+  });
+  await check('1440px timeline: Play replays from the start and Pause says where it stopped', async () => {
+    await page.locator('#awcReplayPlay').click();
+    assert.equal(await page.locator('#awcReplayPlay').getAttribute('aria-label'), 'Pause the replay');
+    assert.equal(await page.locator('#awcReplayStatus').textContent(), 'Playing the replay');
+    assert.equal(await page.locator('#awcReplayStatus').getAttribute('aria-live'), 'polite');
+    assert.equal((await scrubbed(page)).source, 'replay');
+    await page.locator('#awcReplayPlay').click();
+    assert.match(await page.locator('#awcReplayStatus').textContent(), /^Paused at step \d of 4$/);
+    await tall(page, '#awcReplayLive');
+  });
+  await check('1440px timeline: dragging the track scrubs through the steps', async () => {
+    const b = await page.locator('#awcScrubTrack').boundingBox(), y = b.y + b.height / 2;
+    await page.mouse.move(b.x + 12, y); await page.mouse.down();
+    assert.match((await scrubbed(page)).label, /^Step 1 of 4/);
+    await page.mouse.move(b.x + b.width * 0.5, y, { steps: 4 });
+    let r = await scrubbed(page);
+    assert.ok(/^Step [23] of 4/.test(r.label), r.label);
+    await page.mouse.move(b.x + b.width - 2, y, { steps: 4 }); await page.mouse.up();
+    r = await scrubbed(page);
+    assert.deepEqual([r.label, r.at, r.p, r.value], ['Step 4 of 4 · Mission complete', '4:00', 100, '3']);
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'awcReplayRange', 'the keyboard carries on from where the drag ended');
+  });
+  await check('1440px timeline: arrows step, Home and End jump, and the value text says the step, the time and what happened', async () => {
+    await page.locator('#awcReplayRange').focus();
+    await page.keyboard.press('ArrowLeft');
+    let r = await scrubbed(page);
+    assert.match(r.vt, /^Step 3 of 4, 1:40 of 4:00, \d{1,2}:\d\d\s?[AP]M, UX Analyst stopped$/);
+    assert.equal(r.label, 'Step 3 of 4 · UX Analyst stopped');
+    await page.keyboard.press('Home');
+    r = await scrubbed(page); assert.deepEqual([r.value, r.at, r.p], ['0', '0:00', 0]);
+    await page.keyboard.press('ArrowRight');
+    assert.match((await scrubbed(page)).vt, /^Step 2 of 4, 0:01 of 4:00, .*Hand-off to UX Analyst$/);
+    await page.keyboard.press('End');
+    assert.equal((await scrubbed(page)).value, '3');
+    assert.equal(await page.locator('#awcReplayMarkers .is-here').getAttribute('data-kind'), 'done');
+  });
+  await check('1440px timeline: the speed button cycles 1×, 2×, 4× and matches ⋯ › View', async () => {
+    const sp = page.locator('#awcReplaySpeed'), was = await sp.innerText();
+    await sp.click();
+    const next = { '1×': '2×', '2×': '4×', '4×': '1×' }[was];
+    assert.equal(await sp.innerText(), next);
+    assert.equal(await sp.getAttribute('aria-label'), 'Replay speed ' + next);
+    assert.equal(await page.locator('#awMenu [data-aw-view="speed"]').textContent(), 'Replay speed: ' + next);
+  });
+  await check('1440px timeline: Back to now leaves the replay', async () => {
+    await page.locator('#awcReplayLive').click();
+    const r = await scrubbed(page);
+    assert.deepEqual([r.source, r.label, r.at], ['mission', '4 steps', '0:00']);
+    await page.locator('#awcReplayLive').waitFor({ state: 'hidden' });
+  });
+  await check('1440px: a mission that finished cleanly offers no Retry mission', async () => {
+    assert.equal(await page.locator('#awPrimary').innerText(), 'See the result');
+    assert.equal(await page.locator('#awRetry').isVisible(), false);
+  });
+  await check('1440px: no script errors (timeline)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+{
+  const { defaultBrowserType, ...device } = devices['iPhone 14'];
+  const { context, page, errors } = await withMission(device, DONE3);
+  await check('iPhone 14 timeline: in the bottom sheet over the peek, full width, above the tab bar; the page still does not scroll', async () => {
+    await page.locator('#awcScrub').waitFor({ state: 'visible' });
+    assert.equal(await page.evaluate(() => document.getElementById('awcScrub').parentElement.id), 'awSheetScrub');
+    const s = await page.locator('#awcScrub').boundingBox(), peek = await page.locator('.aw-sheet__peek').boundingBox(), nav = await page.locator('#uxMobileNav').boundingBox(), vw = device.viewport.width;
+    assert.ok(s.y + s.height <= peek.y + 1, 'above the peek');
+    assert.ok(peek.y + peek.height <= nav.y + 1, 'the peek is above the tab bar');
+    assert.ok(s.width >= vw - 40, `full width (${Math.round(s.width)} of ${vw})`);
+    const d = await page.evaluate(() => ({ sh: document.scrollingElement.scrollHeight, ih: innerHeight, sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+    assert.ok(d.sh <= d.ih + 1 && d.sw <= d.cw + 1, JSON.stringify(d));
+    for (const sel of ['#awcReplayPlay', '#awcReplaySpeed', '#awcScrubTrack']) await tall(page, sel);
+  });
+  await check('iPhone 14 timeline: a touch drag scrubs and leaves the sheet where it was', async () => {
+    const b = await page.locator('#awcScrubTrack').boundingBox(), y = b.y + b.height / 2, cdp = await context.newCDPSession(page);
+    const touch = (type, x) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+    await touch('touchStart', b.x + 12);
+    for (const f of [0.3, 0.6, 0.9]) await touch('touchMove', b.x + b.width * f);
+    await touch('touchMove', b.x + b.width - 2); await touch('touchEnd');
+    assert.equal((await scrubbed(page)).label, 'Step 4 of 4 · Mission complete');
+    assert.equal(await page.locator('#awSheet').getAttribute('data-snap'), 'peek', 'scrubbing does not drag the sheet');
+  });
+  await check('iPhone 14 timeline: replaying adds the step and Back to now above the track; Back to now gives the city back', async () => {
+    await page.locator('#awcReplayLive').waitFor({ state: 'visible' });
+    await tall(page, '#awcReplayLive');
+    const head = await page.locator('.awc__scrubHead').boundingBox(), track = await page.locator('#awcScrubTrack').boundingBox();
+    assert.ok(head.y + head.height <= track.y + 1, 'the step line is above the track');
+    await page.locator('#awcReplayLive').click();
+    await page.locator('#awcReplayLive').waitFor({ state: 'hidden' });
+  });
+  await check('iPhone 14 timeline: no script errors', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+
+// Retry mission next to the city (2026-10-19): a stopped mission's one action is Retry mission; one that finished with a
+// worker stopped offers Retry mission beside See the result (the header, or the peek on a phone). Both start the same
+// goal again through the mission start; Work's run Retry (/api/runs/retry) stays in Work, and the run view borrows only
+// the city, so the two never show together.
+const PARTLY = { ...DONE, id: 'mission-ui-partly', workers: snapW('error', 'complete', { errorCode: 'MODEL_CONNECTION_ERROR' }), results: [{ agentId: 'ux_analyst', agentName: 'UX Analyst', status: 'error', error: 'fetch failed', errorCode: 'MODEL_CONNECTION_ERROR' }] };
+const stubStart = async page => {
+  const bodies = [], ledger = [];
+  await page.route(u => u.pathname === '/api/agents/dispatch', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ routing: { mode: 'auto', workers: [] } }) }));
+  await page.route(u => u.pathname === '/api/agents/missions/start', async r => { bodies.push(r.request().postDataJSON()); await new Promise(res => setTimeout(res, 300)); r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"stubbed"}' }); });
+  await page.route(u => u.pathname === '/api/runs/retry', r => { ledger.push(1); r.fulfill({ status: 500, body: '{}' }); });
+  return { bodies, ledger, sent: async () => { for (let i = 0; i < 50 && !bodies.length; i++) await page.waitForTimeout(100); } };
+};
+{
+  const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, PARTLY);
+  await check('1440px: partly failed: Retry mission beside See the result, in the header next to the city', async () => {
+    assert.match(await page.locator('#awStatus').innerText(), /^Done/);
+    assert.equal(await page.locator('#awPrimary').innerText(), 'See the result');
+    const r = page.locator('#awRetry');
+    await r.waitFor({ state: 'visible' });
+    assert.equal(await r.innerText(), 'Retry mission');
+    await tall(page, '#awRetry');
+    assert.equal(await page.locator('#agentWorldCityMount button', { hasText: /Retry|Try again/ }).count(), 0, 'nothing in the city Work’s run view borrows');
+  });
+  await check('1440px: partly failed: Retry mission starts the same goal through the mission start and waits while it does', async () => {
+    const s = await stubStart(page);
+    await page.locator('#awRetry').click();
+    await s.sent();
+    assert.equal(s.bodies[0]?.goal, PARTLY.goal);
+    assert.equal(await page.locator('#awRetry').isDisabled(), true, 'disabled while it starts');
+    await page.waitForFunction(() => !document.getElementById('awRetry').disabled);
+    assert.equal(s.bodies.length, 1);
+    assert.equal(s.ledger.length, 0, 'Work’s /api/runs/retry is not called');
+  });
+  await check('1440px: no script errors (partly failed)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+// A demo while a real mission exists (2026-10-19): live, the header kept the real mission's goal and "Done in 2 min"
+// while the city, crew and story showed the demo. During a demo the header says so; stopping it brings the real one back.
+{
+  const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, PARTLY);
+  await check('1440px: during a demo the header says Demo mission; stopping it restores the real mission', async () => {
+    await page.locator('#awRetry').waitFor({ state: 'visible' });
+    await page.evaluate(() => window.LocalAIAgentWorld.demo());
+    await page.waitForFunction(() => document.getElementById('awTitle').textContent === 'Demo mission');
+    assert.equal(await page.locator('#awStatus').innerText(), 'A sample run — nothing is sent anywhere');
+    assert.equal(await page.locator('#agents').getAttribute('data-aw-state'), 'demo');
+    assert.equal(await page.locator('#awPrimary').isVisible(), false, 'the real mission’s action is not offered for the demo');
+    assert.equal(await page.locator('#awRetry').isVisible(), false, 'no Retry mission for a demo');
+    await page.evaluate(() => window.LocalAIAgentWorld.demoStep());
+    await page.waitForTimeout(400);
+    assert.equal(await page.locator('#awTitle').innerText(), 'Demo mission', 'still the demo after it moves on');
+    await page.locator('#awcLiveBtn').click();
+    await page.waitForFunction(g => document.getElementById('awTitle').textContent === g, PARTLY.goal);
+    assert.match(await page.locator('#awStatus').innerText(), /^Done in 4 min/);
+    assert.equal(await page.locator('#awPrimary').innerText(), 'See the result');
+    await page.locator('#awRetry').waitFor({ state: 'visible' });
+  });
+  await check('1440px: no script errors (demo header)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+{
+  const { page, errors } = await seeded(await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' }));
+  await check('1440px: a running mission offers no Retry mission', async () => {
+    assert.equal(await page.locator('#awRetry').isVisible(), false);
+    assert.doesNotMatch(await page.locator('#awPrimary').innerText(), /Retry/);
+  });
+  await check('1440px: no script errors (running, retry)', async () => assert.deepEqual(errors, []));
+  await page.context().close();
+}
+{
+  const { defaultBrowserType, ...device } = devices['iPhone 14'];
+  const { context, page, errors } = await withMission(device, PARTLY);
+  await check('iPhone 14: partly failed: the peek has Retry (named Retry mission) beside See the result; it starts the goal again', async () => {
+    const r = page.locator('#awPeekRetry');
+    await r.waitFor({ state: 'visible' });
+    assert.equal(await r.getAttribute('aria-label'), 'Retry mission');
+    assert.equal(await page.locator('#awPeekAction').innerText(), 'See the result');
+    await tall(page, '#awPeekRetry');
+    const a = await page.locator('#awPeekAction').boundingBox(), b = await r.boundingBox();
+    assert.ok(b.x >= a.x + a.width - 1 && b.x + b.width <= device.viewport.width, 'beside See the result, on screen');
+    const s = await stubStart(page);
+    await r.tap();
+    await s.sent();
+    assert.equal(s.bodies[0]?.goal, PARTLY.goal);
+    assert.equal(s.ledger.length, 0);
+    assert.equal(await page.locator('#awSheet').getAttribute('data-snap'), 'peek', 'Retry does not raise the sheet');
+  });
+  await check('iPhone 14: no script errors (partly failed)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+
+// The bolder pass (2026-10-19): the sky (time of day, haze, the spotlight on the busy district) is four layers over the
+// canvas that follow the camera and never take a tap; Night locks it; a hand-off arcs between the two roofs. Reduced
+// motion holds the sky still and draws no arcs or birds.
+for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 } }], ['reduced motion', { viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' }]]) {
+  const still = label === 'reduced motion';
+  const context = await browser.newContext({ serviceWorkers: 'block', ...opts }); await debugOn(context);
+  await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); localStorage.removeItem('localai.agentworld.replay.v2'); } catch {} });
+  const page = await context.newPage(); const errors = []; page.on('pageerror', e => errors.push(e.message));
+  await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: '{"items":[]}' }));
+  await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => typeof window.showView === 'function');
+  await page.evaluate(() => window.showView('agents'));
+  await page.waitForSelector('#agents.active #awcCanvas');
+  await page.evaluate(() => { window.LocalAIAgentWorld.follow(false); window.LocalAIAgentWorld.view('fit'); });
+  await check(`${label}: the sky layers lie over the city, hidden from screen readers and taps, and follow the camera`, async () => {
+    await page.waitForFunction(() => { const c = window.LocalAIAgentWorld.camera(); return Math.abs(c.shown.zoom - c.zoom) < 1e-3 && Math.abs(c.shown.panX - c.panX) < .05 && Math.abs(c.shown.panY - c.panY) < .05; });
+    await page.waitForTimeout(100);
+    const r = await page.evaluate(() => ({ cam: window.LocalAIAgentWorld.camera(), layers: [...document.querySelectorAll('#awcCanvas ~ .awc__sky')].map(e => ({ hidden: e.getAttribute('aria-hidden'), taps: getComputedStyle(e).pointerEvents, t: e.style.transform })) }));
+    assert.equal(r.layers.length, 4);
+    for (const l of r.layers) {
+      assert.equal(l.hidden, 'true'); assert.equal(l.taps, 'none');
+      const [x, y, k] = (l.t.match(/-?[\d.]+/g) || []).map(Number), want = r.cam.base * r.cam.shown.zoom;
+      assert.ok(Math.abs(x - r.cam.shown.panX) < .1 && Math.abs(y - r.cam.shown.panY) < .1 && Math.abs(k - want) < 1e-3, `${l.t} vs ${JSON.stringify(r.cam.shown)}, scale ${want}`);
+    }
+    const box = await page.locator('#awcCanvas').boundingBox(), hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.id, [box.x + box.width * .1, box.y + box.height * .55]);
+    assert.equal(hit, 'awcCanvas', 'a tap on the city still reaches the canvas');
+  });
+  await check(`${label}: by day the sky ${still ? 'holds a still afternoon' : 'drifts through the day'}; Night locks it`, async () => {
+    const a = await page.evaluate(() => window.__awcLayout().sky);
+    if (still) assert.equal(a, 0.55); else assert.ok(a >= 0 && a <= 1, `sky ${a}`);
+    await page.evaluate(() => window.LocalAIAgentWorld.view('night'));
+    assert.equal(await page.evaluate(() => window.__awcLayout().sky), -1);
+    await page.evaluate(() => window.LocalAIAgentWorld.view('night'));
+  });
+  await check(`${label}: a hand-off ${still ? 'draws no arc' : 'arcs between the two roofs'}`, async () => {
+    await page.evaluate(() => { window.LocalAIAgentWorld.demo(); window.LocalAIAgentWorld.demoStep(); });
+    if (still) { await page.waitForTimeout(300); assert.equal(await page.evaluate(() => window.__awcLayout().arcs), 0); assert.equal(await page.evaluate(() => window.__awcLayout().birds), 0); }
+    else await page.waitForFunction(() => window.__awcLayout().arcs > 0, null, { timeout: 5000 });
+  });
+  await check(`${label}: no script errors (sky)`, async () => assert.deepEqual(errors, []));
   await context.close();
 }
 

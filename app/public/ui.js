@@ -65,13 +65,20 @@ function renderMission(m){if(!m)return;currentMission=m;if(m.routing)renderRoute
 // result (done), Watch live (running, camera not following), Start a mission (none). Running with the camera already
 // following needs no loud action: the header shows none and the phone's peek a quiet See the crew, so the collapsed
 // sheet always offers a next step. [action, label, quiet]
-function primaryFor(m){const t=window.LocalAIAgentWords?.statusSentence(m)?.tone||'idle';return t==='attention'?['retry','Try again']:t==='done'?['result','See the result']:t==='working'?(window.LocalAIAgentWorld?.following?.()?['crew','See the crew',true]:['watch','Watch live']):['start','Start a mission']}
-function renderHead(m){const A=window.LocalAIAgentWords,st=A?.statusSentence(m||null),title=$('awTitle'),status=$('awStatus'),page=$('agents');if(!st)return;if(title)title.textContent=m?.goal||'Agent World';if(status){const i=st.label?st.text.indexOf(' · '):-1;status.innerHTML=i>0?`<b>${esc(st.text.slice(0,i))}</b>${esc(st.text.slice(i))}`:esc(st.text)}page?.setAttribute('data-aw-state',st.tone);const empty=$('awEmpty');if(empty&&!m&&!window.LocalAIAgentWorld?.busy?.())empty.hidden=false;else if(empty&&m)empty.hidden=true;
+function primaryFor(m){const t=window.LocalAIAgentWords?.statusSentence(m)?.tone||'idle';return t==='attention'?['retry','Retry mission']:t==='done'?['result','See the result']:t==='working'?(window.LocalAIAgentWorld?.following?.()?['crew','See the crew',true]:['watch','Watch live']):['start','Start a mission']}
+function renderHead(m){const A=window.LocalAIAgentWords,st=A?.statusSentence(m||null),title=$('awTitle'),status=$('awStatus'),page=$('agents');if(!st)return;
+ // A demo owns the city, crew and story, so the header says it is one (not the real mission's goal and status); the
+ // Demo · Stop chip is its action. Stopping it renders the real mission again.
+ if(window.LocalAIAgentWorld?.demoing?.()){if(title)title.textContent='Demo mission';if(status)status.textContent='A sample run — nothing is sent anywhere';page?.setAttribute('data-aw-state','demo');for(const id of['awPrimary','awRetry','awPeekRetry']){const b=$(id);if(b)b.hidden=true}const e=$('awEmpty');if(e)e.hidden=true;return}
+if(title)title.textContent=m?.goal||'Agent World';if(status){const i=st.label?st.text.indexOf(' · '):-1;status.innerHTML=i>0?`<b>${esc(st.text.slice(0,i))}</b>${esc(st.text.slice(i))}`:esc(st.text)}page?.setAttribute('data-aw-state',st.tone);const empty=$('awEmpty');if(empty&&!m&&!window.LocalAIAgentWorld?.busy?.())empty.hidden=false;else if(empty&&m)empty.hidden=true;
  const [action,label,quiet]=primaryFor(m),head=$('awPrimary'),peek=$('awPeekAction');
  if(head){head.hidden=!!quiet;head.textContent=label;head.dataset.action=action}
  if(peek){peek.hidden=false;peek.textContent=label;peek.dataset.action=action;peek.classList.toggle('btn-primary',!quiet);peek.classList.toggle('btn-outline',!!quiet)}
+ // Partly failed (it finished, but a worker stopped or never started): Retry mission beside See the result. A full
+ // failure's one action is already Retry mission. Work's run view borrows only the city, so this never doubles its Retry.
+ const partly=m?.status==='complete'&&(m.workers||[]).some(w=>(w.state==='error'||w.state==='blocked')&&!/-followup-\d+$/.test(String(w.id||'')));for(const id of['awRetry','awPeekRetry']){const b=$(id);if(b){b.hidden=!partly;b.disabled=retrying}}if(head&&action==='retry')head.disabled=retrying;if(peek&&action==='retry')peek.disabled=retrying;
  document.querySelectorAll('[data-aw-menu="copy"],[data-aw-menu="replay"]').forEach(b=>b.disabled=b.dataset.awMenu==='copy'?!m?.answer:!(m?.timeline||[]).length||m?.status==='running')}
-function doPrimary(action){if(action==='retry')retryMission();else if(action==='result')showResult();else if(action==='watch')window.LocalAIAgentWorld?.follow?.(true);else if(action==='crew'){if(phone.matches)setSnap('half');document.querySelector('#awcRoster [data-awc-roster]')?.focus({preventScroll:phone.matches})}else openStart();renderHead(currentMission)}
+function doPrimary(action){if(action==='retry')return retryMission();else if(action==='result')showResult();else if(action==='watch')window.LocalAIAgentWorld?.follow?.(true);else if(action==='crew'){if(phone.matches)setSnap('half');document.querySelector('#awcRoster [data-awc-roster]')?.focus({preventScroll:phone.matches})}else openStart();renderHead(currentMission)}
 function showResult(){const r=document.querySelector('#agents .aw-results');if(phone.matches)setSnap('full');r?.scrollIntoView?.({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});$('agentResultBody')?.focus({preventScroll:true})}
 // ⋯ menu: Start a new mission, Watch the replay, Open in Work, Copy result, All missions.
 function setupMenu(){const btn=$('awMoreBtn'),menu=$('awMenu');if(!btn||!menu)return;const items=()=>[...menu.querySelectorAll('[role^=menuitem]:not(:disabled)')].filter(x=>x.offsetParent);
@@ -88,7 +95,10 @@ function setupMenu(){const btn=$('awMoreBtn'),menu=$('awMenu');if(!btn||!menu)re
   else if(a==='work'){let id='';try{id=((await req('/api/runs?kind=missions&limit=60')).items||[]).find(x=>(x.meta?.missionId||x.output?.missionId||x.source?.id||x.meta?.sourceId)===m?.id)?.id||''}catch{}if(id&&window.LocalAIRuns)window.LocalAIRuns.show(id);else window.LocalAIRouter?.go('#work?kind=missions')}
   else if(a==='copy'&&m?.answer){try{await navigator.clipboard.writeText(m.answer);window.LocalAIUI?.toast?.('Result copied')}catch{window.LocalAIUI?.toast?.('Couldn’t copy. Select the summary and copy it instead.')}}});
  window.LocalAIShell?.setAction('agents',{icon:'more',label:'More',onClick:()=>window.LocalAIAgentMenu.toggle()})}
-function retryMission(){if(!currentMission?.goal)return;const g=$('agentGoal');if(g)g.value=currentMission.goal;startMission()}
+// Retry runs the same goal again as a new mission (POST /api/agents/missions/start, the start sheet's path); Work's
+// Retry is the run ledger's /api/runs/retry and stays in Work. The buttons wait while it starts.
+let retrying=false;
+async function retryMission(){if(!currentMission?.goal||retrying)return;const g=$('agentGoal');if(g)g.value=currentMission.goal;retrying=true;renderHead(currentMission);try{await startMission()}finally{retrying=false;renderHead(currentMission)}}
 // The result: Summary first (or why there is none), then what each worker found (one fold each), then the sources as
 // links. The routing decision is a developer detail.
 function renderResults(){const el=$('agentResultBody'),A=window.LocalAIAgentWords,m=currentMission;if(!el||!A)return;if(!m){el.innerHTML='<p class="aw-results__none">The result will be here when the team finishes.</p>';return}
@@ -121,7 +131,7 @@ function setupStart(){const d=$('awStart');if(!d)return;$('awStartClose').onclic
  $('awEmptyStart')?.addEventListener('click',openStart);$('awEmptyDemo')?.addEventListener('click',()=>{$('awEmpty').hidden=true;window.LocalAIAgentWorld?.demo?.()});window.LocalAIAgentStart={open:openStart}}
 async function runSpecialist(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter an objective first.');return}const b=$('specialistRunBtn');if(b)b.disabled=true;try{const j=await req('/api/agents/specialist/run',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({agentId:selected,goal,projectId:$('agentProject')?.value||''})});renderRun(j.run)}catch(e){notice('error',e.message)}finally{if(b)b.disabled=false}}
 function setupAdvanced(){const toggle=$('agentAdvancedToggle'),panel=$('agentAdvancedPanel');if(toggle&&panel)toggle.onclick=()=>{const open=panel.hidden;panel.hidden=!open;if(open)loadWorkerModels();toggle.setAttribute('aria-expanded',String(open));toggle.textContent=open?'Hide advanced':'Advanced'};$('manualRouteToggle')?.addEventListener('change',e=>{$('manualRouteOptions').hidden=!e.target.checked})}
-async function init(){if(!$('specialistRegistry'))return;setupSheet();const historyLoaded=loadHistory();try{const j=await req('/api/agents/catalog');catalog=j.items||[];cards();updateDirectActionLabel()}catch(e){notice('error','Couldn’t load the list of workers: '+e.message)}setupAdvanced();setupMenu();setupStart();for(const id of ['awPrimary','awPeekAction'])$(id)?.addEventListener('click',e=>doPrimary(e.currentTarget.dataset.action));window.addEventListener('localai:agentworld-follow',()=>renderHead(currentMission));$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m)},()=>notice('info','Live mission stream reconnecting…'),()=>{const n=$('agentInlineNotice');if(n&&/reconnecting/.test(n.textContent))clearNotice();loadHistory()})}catch{notice('info','Live mission stream unavailable; history remains accessible.')}}
+async function init(){if(!$('specialistRegistry'))return;setupSheet();const historyLoaded=loadHistory();try{const j=await req('/api/agents/catalog');catalog=j.items||[];cards();updateDirectActionLabel()}catch(e){notice('error','Couldn’t load the list of workers: '+e.message)}setupAdvanced();setupMenu();setupStart();for(const id of ['awPrimary','awPeekAction'])$(id)?.addEventListener('click',e=>doPrimary(e.currentTarget.dataset.action));for(const id of ['awRetry','awPeekRetry'])$(id)?.addEventListener('click',retryMission);window.addEventListener('localai:agentworld-follow',()=>renderHead(currentMission));window.addEventListener('localai:agentworld-demo',()=>renderHead(currentMission));$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m)},()=>notice('info','Live mission stream reconnecting…'),()=>{const n=$('agentInlineNotice');if(n&&/reconnecting/.test(n.textContent))clearNotice();loadHistory()})}catch{notice('info','Live mission stream unavailable; history remains accessible.')}}
 // ---- Phone: everything but the city is a bottom sheet over it, with three snaps ----
 // peek (the status sentence and the crew's portraits), half, full. Drag the top of the sheet, tap the handle to step
 // up, Back to lower it (one history entry while it is up). At peek the body is inert, so focus never lands in what is
@@ -141,8 +151,8 @@ function setupSheet(){
  // The stage sits between the header and the tab bar: measure both (they follow the safe areas).
  const measure=()=>{const b=document.getElementById('uxContextBar')?.getBoundingClientRect().bottom;if(b>0)page.style.setProperty('--aw-top',Math.round(b)+'px');const n=document.getElementById('uxMobileNav')?.getBoundingClientRect();if(n?.height)page.style.setProperty('--aw-bottom',Math.max(0,Math.round(innerHeight-n.top))+'px');if(snap!=='peek')s.style.setProperty('--aw-y',sheetY(s,snap)+'px')};
  $('awSheetHandle').addEventListener('click',()=>{if(performance.now()-dragEnd<300)return;setSnap(snap==='peek'?'half':snap==='half'?'full':'peek')});
- s.querySelector('.aw-sheet__peek').addEventListener('click',()=>{if(performance.now()-dragEnd>=300&&snap==='peek')setSnap('half')});
- top.addEventListener('pointerdown',e=>{if(!phone.matches||e.button>0)return;d={id:e.pointerId,y:e.clientY,t:e.timeStamp,from:sheetY(s,snap),moved:false}});
+ s.querySelector('.aw-sheet__peek').addEventListener('click',e=>{if(performance.now()-dragEnd>=300&&snap==='peek'&&!e.target.closest('.aw-sheet__retry'))setSnap('half')});
+ top.addEventListener('pointerdown',e=>{if(!phone.matches||e.button>0||e.target.closest?.('.awc__scrub'))return;d={id:e.pointerId,y:e.clientY,t:e.timeStamp,from:sheetY(s,snap),moved:false}});
  top.addEventListener('pointermove',e=>{if(!d||e.pointerId!==d.id)return;const dy=e.clientY-d.y;if(!d.moved&&Math.abs(dy)<6)return;if(!d.moved)try{top.setPointerCapture(e.pointerId)}catch{}d.moved=true;s.classList.add('is-dragging');s.style.setProperty('--aw-y',Math.max(0,Math.min(sheetY(s,'peek'),d.from+dy))+'px')});
  const end=e=>{if(!d||e.pointerId!==d.id)return;const was=d;d=null;if(!was.moved)return;dragEnd=performance.now();
   // Where the sheet would come to rest at this speed picks the snap.
@@ -1101,7 +1111,7 @@ const DEMO_STAGES=[
 ];
 
 let root,canvas,ctx,current=null,liveSnapshot=null,sourceType='idle',selected=null,hovered=null,raf=0,last=0;
-let roads=new Set(),reach=new Set(),agents=new Map(),artifacts=[],packets=[],pulses=[],traffic=[],sparks=[],dust=[],events=[],clouds=[];
+let roads=new Set(),reach=new Set(),agents=new Map(),artifacts=[],packets=[],pulses=[],traffic=[],sparks=[],dust=[],events=[],clouds=[],arcs=[],birds=[],confetti=[];
 let view={zoom:1,panX:0,panY:0,targetZoom:1,targetPanX:0,targetPanY:0};
 let drag=null,pointers=new Map(),pinch=null,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let display={labels:true,flows:true,night:false,crew:true,follow:true};
@@ -1194,13 +1204,15 @@ function ensureAgent(w){
   if(a.state==='running'){spawnPacket('models',zone,a.color,'MODEL');spawnSpark(target.x,target.y,a.color,18)}
   if(a.state==='complete'){
    if(!fresh)a.doneAt=now();spawnArtifact(a);spawnSpark(target.x,target.y,'#75dfa2',26);
-   for(const next of current?.workers||[])if((next.dependsOn||[]).includes(id))spawnPacket(zone,zoneForWorker(next),a.color,'HANDOFF')
+   for(const next of current?.workers||[])if((next.dependsOn||[]).includes(id)){spawnPacket(zone,zoneForWorker(next),a.color,'HANDOFF');spawnArc(zone,zoneForWorker(next),a.color)}
   }
   if(['error','blocked'].includes(a.state))spawnSpark(target.x,target.y,'#ff7383',36)
  }
 }
 function spawnArtifact(a){if(artifacts.some(x=>x.workerId===a.id))return;const p=districtCenter(a.zone),kind=['engineer','code_analyst','deployer'].includes(a.id)?'build':['validator','test_engineer','security_reviewer'].includes(a.id)?'certificate':['documentation','research_agent','ux_analyst'].includes(a.id)?'document':'node';artifacts.push({workerId:a.id,label:a.name,kind,x:p.x+26,y:p.y-14,color:a.color,created:now()})}
 function spawnPacket(from,to,color,label='EVIDENCE'){if(reduced)return;const p=flowPath(from,to).p;if(p.length)packets.push({path:p,i:0,x:p[0].x,y:p[0].y,color,label,done:false,created:now()})}
+// A hand-off also leaps roof to roof: a glowing arc, then a ring and sparks where it lands.
+function spawnArc(from,to,c){const a=DISTRICTS[from],b=DISTRICTS[to];if(reduced||!a||!b||from===to)return;arcs.push({x0:(a.x+a.w/2)*T,y0:a.y*T-6,x1:(b.x+b.w/2)*T,y1:b.y*T-6,c,t:now()})}
 function spawnSpark(x,y,color,n=12){if(!reduced)for(let i=0;i<n;i++)sparks.push({x,y,vx:(Math.random()-.5)*80,vy:-20-Math.random()*80,life:.7+Math.random()*.7,color,size:1+Math.random()*2})}
 // Notes float over the city's top-left for 4 s, three at most; the story keeps them all.
 function note(text,state){notes.unshift({text,state,at:now()});notes=notes.slice(0,3);syncNotes();setTimeout(syncNotes,4100)}
@@ -1223,22 +1235,39 @@ function recordReplayFrame(reason){
  if(replay.active||!current)return;const sig=(current.workers||[]).map(w=>w.id+':'+w.state).join('|')+'|'+current.status;const last=replay.frames.at(-1);if(last?.sig===sig)return;
  replay.frames.push({at:Date.now(),reason,detail:'',workerId:'',sig,mission:JSON.parse(JSON.stringify(current))});replay.frames=replay.frames.slice(-120);replay.index=replay.frames.length-1;replay.sourceMissionId=current.id||replay.sourceMissionId;persistReplay();syncReplay()
 }
-function replayEventClass(frame){const m=frame?.mission,ws=m?.workers||[];if(ws.length&&ws.every(w=>w.state==='complete'))return'done';if(ws.some(w=>w.state==='error'||w.state==='blocked')||/attention|fail/.test(String(frame?.reason)))return'bad';if(ws.some(w=>w.state==='running'))return'active';return'wait'}
-function syncReplay(){
- if(!root)return;const range=$('#awcReplayRange'),label=$('#awcReplayLabel'),markers=$('#awcReplayMarkers'),play=$('#awcReplayPlay'),scrub=$('#awcScrub'),n=replay.frames.length,frame=replay.frames[replay.index];
- if(scrub)scrub.hidden=!(n>1&&(replay.active||sourceType==='mission'&&current?.status!=='running'));
- if(range){range.max=Math.max(0,n-1);range.value=replay.index;range.disabled=n<2}
- const when=f=>f?new Date(f.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'';
- if(label)label.textContent=n?(replay.active?'Step '+(replay.index+1)+' of '+n+' · '+when(frame):n+' steps'):'';
- if(markers){markers.innerHTML=replay.frames.map((f,i)=>`<button type="button" data-replay-index="${i}" class="${replayEventClass(f)} ${i===replay.index&&replay.active?'active':''}" aria-label="Step ${i+1}, ${esc(when(f))}"></button>`).join('');markers.querySelectorAll('[data-replay-index]').forEach(b=>b.onclick=()=>applyReplayFrame(Number(b.dataset.replayIndex)))}
- if(play){play.textContent=replay.playing?'❚❚':'▶';play.setAttribute('aria-label',replay.playing?'Pause the replay':'Play the replay')}
- const live=$('#awcReplayLive');if(live)live.hidden=!replay.active;const sp=document.querySelector('[data-aw-view="speed"]');if(sp)sp.textContent='Replay speed: '+replay.speed+'×'
+// What a replay step marks on the timeline: a hand-off (new workers start), an error (a worker stops or can't start) or
+// the finish, compared with the step before. Other steps are plain ticks of the slider.
+function replayMarker(f,p){
+ const ws=f?.mission?.workers||[],pw=p?.mission?.workers||[],was=id=>pw.find(w=>w.id===id)?.state,A=window.LocalAIAgentWords,nm=w=>A?.workerName?.(w)||w.name||w.id,fresh=s=>ws.filter(w=>w.state===s&&p&&was(w.id)!==s);
+ const err=fresh('error'),blk=fresh('blocked');if(err.length)return{kind:'error',text:nm(err[0])+' stopped'};if(blk.length)return{kind:'error',text:nm(blk[0])+' couldn’t start'};
+ const all=x=>!!x?.mission?.workers?.length&&x.mission.workers.every(w=>w.state==='complete'),done=x=>x?.reason==='mission-complete'||all(x);if(done(f)&&!done(p)||p&&f?.mission?.status==='complete'&&p.mission?.status!=='complete')return{kind:'done',text:'Mission complete'};
+ if(p&&/attention|mission-error/.test(String(f?.reason))&&p.mission?.status!==f?.mission?.status)return{kind:'error',text:'The mission stopped'};
+ const go=p?ws.filter(w=>w.state==='running'&&was(w.id)!=='running'&&w.id!=='router'):[];return go.length?{kind:'handoff',text:'Hand-off to '+go.map(nm).join(' and ')}:null
 }
+const clock=ms=>{const s=Math.max(0,Math.round(ms/1000)),h=Math.floor(s/3600),m=Math.floor(s/60)%60,x=String(s%60).padStart(2,'0');return h?h+':'+String(m).padStart(2,'0')+':'+x:m+':'+x};
+// On a phone the timeline sits in the bottom sheet, above the peek; anywhere else (and when Work's run view borrows the
+// city) it is the slim bar under the city.
+const phoneQ=matchMedia('(max-width:760px)');
+function placeScrub(){const s=$('#awcScrub'),slot=$('#awSheetScrub');if(!s||!root)return;const want=phoneQ.matches&&slot&&root.closest('#agents')?slot:root;if(s.parentNode!==want)want===root?root.insertBefore(s,$('#awcLiveBtn')):slot.appendChild(s)}
+function syncReplay(){
+ if(!root)return;placeScrub();const range=$('#awcReplayRange'),label=$('#awcReplayLabel'),markers=$('#awcReplayMarkers'),play=$('#awcReplayPlay'),scrub=$('#awcScrub'),n=replay.frames.length,frame=replay.frames[replay.index];
+ if(scrub){scrub.hidden=!(n>1&&(replay.active||sourceType==='mission'&&current?.status!=='running'));scrub.classList.toggle('is-active',replay.active)}
+ const t0=replay.frames[0]?.at||0,total=n?replay.frames[n-1].at-t0:0,pos=n>1&&replay.active?replay.index/(n-1)*100:0,mark=replay.index?replayMarker(frame,replay.frames[replay.index-1]):null;
+ const when=f=>f?new Date(f.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'',step='Step '+(replay.index+1)+' of '+n;
+ if(range){range.max=Math.max(0,n-1);range.value=replay.active?replay.index:0;range.disabled=n<2;range.setAttribute('aria-valuetext',!n?'No replay':replay.active?step+', '+clock(frame.at-t0)+' of '+clock(total)+', '+when(frame)+(mark?', '+mark.text:''):'Not playing: '+n+' steps, '+clock(total)+' long')}
+ if(label)label.textContent=n?(replay.active?step+(mark?' · '+mark.text:' · '+when(frame)):n+' steps'):'';
+ const at=$('#awcReplayAt'),end=$('#awcReplayEnd'),tr=$('#awcScrubTrack');if(at)at.textContent=clock(n&&replay.active?frame.at-t0:0);if(end)end.textContent=clock(total);tr?.style.setProperty('--p',String(pos));
+ if(markers){const sig=n+':'+t0+':'+replay.frames.at(-1)?.at;if(markers.dataset.sig!==sig){markers.dataset.sig=sig;markers.innerHTML=replay.frames.map((f,i)=>{const k=i?replayMarker(f,replay.frames[i-1]):null;return k?`<i class="awc__mark" data-kind="${k.kind}" data-replay-index="${i}" style="left:${n>1?i/(n-1)*100:0}%" title="${esc(k.text)}"></i>`:''}).join('')}markers.querySelectorAll('[data-replay-index]').forEach(m=>m.classList.toggle('is-here',replay.active&&Number(m.dataset.replayIndex)===replay.index))}
+ if(play){play.textContent=replay.playing?'❚❚':'▶';play.setAttribute('aria-label',replay.playing?'Pause the replay':'Play the replay')}
+ const sp=$('#awcReplaySpeed');if(sp){sp.textContent=replay.speed+'×';sp.setAttribute('aria-label','Replay speed '+replay.speed+'×')}
+ const live=$('#awcReplayLive');if(live)live.hidden=!replay.active;const ms=document.querySelector('[data-aw-view="speed"]');if(ms)ms.textContent='Replay speed: '+replay.speed+'×'
+}
+function sayReplay(t){const s=$('#awcReplayStatus');if(s)s.textContent=t}
 function applyReplayFrame(i,preservePlaying=false){
  if(!replay.frames.length)return;const wasPlaying=replay.playing;replay.active=true;replay.playing=preservePlaying&&wasPlaying;replay.index=clamp(Number(i)||0,0,replay.frames.length-1);const frame=replay.frames[replay.index];agents.clear();artifacts=[];packets=[];sparks=[];dust=[];current=JSON.parse(JSON.stringify(frame.mission));sourceType='replay';current.workers.forEach(ensureAgent);selected=frame.workerId?{type:'agent',id:String(frame.workerId).split(',')[0]}:selected;syncHud();syncSelection();syncReplay()
 }
-function toggleReplay(){if(replay.frames.length<2)return;if(!replay.active)applyReplayFrame(0);replay.playing=!replay.playing;replay.lastStep=now();syncReplay()}
-function cycleReplaySpeed(){replay.speed=replay.speed===1?2:replay.speed===2?4:1;persistReplay();syncReplay()}
+function toggleReplay(){if(replay.frames.length<2)return;if(!replay.active||replay.index>=replay.frames.length-1&&!replay.playing)applyReplayFrame(0);replay.playing=!replay.playing;replay.lastStep=now();syncReplay();sayReplay(replay.playing?'Playing the replay':'Paused at step '+(replay.index+1)+' of '+replay.frames.length)}
+function cycleReplaySpeed(){replay.speed=replay.speed===1?2:replay.speed===2?4:1;persistReplay();syncReplay();sayReplay('Replay speed '+replay.speed+'×')}
 function returnReplayLive(){replay.active=false;replay.playing=false;if(liveSnapshot){agents.clear();current=liveSnapshot;sourceType='mission';current.workers.forEach(ensureAgent)}syncHud();syncSelection();syncReplay()}
 function applyMission(m){
  if(!m||demo.active)return;const prev=current,next=normalizeMission(m),wasComplete=prev?.status==='complete';
@@ -1246,7 +1275,7 @@ function applyMission(m){
  current=next;liveSnapshot=next;sourceType='mission';current.workers.forEach(ensureAgent);
  if(!prev||prev.id!==current.id)addEvent('Mission entered Agent World');
  if(next.timeline?.length)primeMissionReplay(next);else recordReplayFrame('mission');
- if(next.status==='complete'&&!wasComplete&&prev?.id===next.id&&!reduced){const p=districtCenter('command');spawnSpark(p.x,p.y,'#75dfa2',54);celebrationUntil=now()+3600;addEvent('Mission complete · the summary is ready')}
+ if(next.status==='complete'&&!wasComplete&&prev?.id===next.id&&!reduced){const p=districtCenter('command');spawnSpark(p.x,p.y,'#75dfa2',54);celebrate();addEvent('Mission complete · the summary is ready')}
  syncHud()
 }
 function engWorkers(run){const s=run.status||'idle';return[{id:'engineer',name:'Engineer',state:s==='running'?'running':s==='needs_attention'?'error':s==='applied'?'complete':'pending'},{id:'validator',name:'Validator',state:s==='running'?'running':s==='awaiting_approval'?'complete':'pending'},{id:'reviewer',name:'Reviewer',state:s==='awaiting_approval'?'running':['approved','apply_requested','applied'].includes(s)?'complete':'pending'},{id:'deployer',name:'Deployer',state:['approved','apply_requested'].includes(s)?'running':s==='applied'?'complete':'pending'},{id:'operator',name:'Operator',state:s==='applied'?'complete':'pending'}]}
@@ -1256,10 +1285,11 @@ function demoMission(){
  if(demo.scenario==='failure'&&demo.stage>=2){workers.find(w=>w.id==='documentation').state='error';workers.find(w=>w.id==='synthesis').state='blocked'}
  return{type:'mission',id:'demo-city-mission',status:demo.scenario==='failure'&&demo.stage>=2?'needs_attention':demo.stage===4?'complete':'running',goal:demo.scenario==='failure'?'Demo: recover a failed documentation handoff':'Demo: audit and improve Local AI mobile UX',workers,error:demo.scenario==='failure'&&demo.stage>=2?'Documentation Agent needs attention':''}
 }
-function applyDemo(){const next=demoMission();if(!demo.active||current?.id!==next.id){agents.clear();artifacts=[];packets=[];sparks=[]}current=next;sourceType='demo';current.workers.forEach(ensureAgent);syncHud();if(next.status==='complete'&&!reduced)celebrationUntil=now()+3600;addEvent('Demo: '+DEMO_STAGES[demo.stage].label);recordReplayFrame('demo-stage-'+demo.stage)}
-function startDemo(){document.querySelector('.aw-page')?.classList.add('is-demo');const empty=document.getElementById('awEmpty');if(empty)empty.hidden=true;demo.active=true;demo.running=true;demo.paused=false;demo.stage=0;demo.lastAdvance=now();applyDemo();fitWorld();syncDemoControls()}
+function applyDemo(){const next=demoMission();if(!demo.active||current?.id!==next.id){agents.clear();artifacts=[];packets=[];sparks=[]}current=next;sourceType='demo';current.workers.forEach(ensureAgent);syncHud();if(next.status==='complete'&&!reduced)celebrate();addEvent('Demo: '+DEMO_STAGES[demo.stage].label);recordReplayFrame('demo-stage-'+demo.stage)}
+function startDemo(){document.querySelector('.aw-page')?.classList.add('is-demo');const empty=document.getElementById('awEmpty');if(empty)empty.hidden=true;demo.active=true;demo.running=true;demo.paused=false;demo.stage=0;demo.lastAdvance=now();applyDemo();fitWorld();syncDemoControls();demoSaid(true)}
+const demoSaid=on=>window.dispatchEvent(new CustomEvent('localai:agentworld-demo',{detail:{active:on}}));
 function stepDemo(){if(!demo.active)startDemo();else{demo.stage=Math.min(DEMO_STAGES.length-1,demo.stage+1);demo.lastAdvance=now();applyDemo();if(demo.stage===DEMO_STAGES.length-1)demo.running=false}syncDemoControls()}
-function returnLive(){document.querySelector('.aw-page')?.classList.remove('is-demo');replay.active=false;replay.playing=false;demo.active=false;demo.running=false;demo.paused=false;agents.clear();artifacts=[];packets=[];sparks=[];dust=[];if(liveSnapshot){current=liveSnapshot;sourceType='mission';current.workers.forEach(ensureAgent)}else{current=null;sourceType='idle';idleCrew()}syncHud();syncDemoControls();syncReplay();fitWorld()}
+function returnLive(){const was=demo.active;document.querySelector('.aw-page')?.classList.remove('is-demo');replay.active=false;replay.playing=false;demo.active=false;demo.running=false;demo.paused=false;agents.clear();artifacts=[];packets=[];sparks=[];dust=[];if(liveSnapshot){current=liveSnapshot;sourceType='mission';current.workers.forEach(ensureAgent)}else{current=null;sourceType='idle';idleCrew()}syncHud();syncDemoControls();syncReplay();fitWorld();if(was)demoSaid(false)}
 function syncDemoControls(){const l=$('#awcLiveBtn');if(l)l.hidden=!demo.active}
 function syncHud(){
  if(!root)return;const workers=current?.workers||[],running=workers.filter(w=>w.state==='running').length,bad=workers.filter(w=>['error','blocked'].includes(w.state)).length;
@@ -1333,7 +1363,7 @@ function mount(){
  const host=$('#agentWorldCityMount');if(!host)return;root=document.createElement('section');root.className='awc awc-v3';root.dataset.state='idle';root.innerHTML=`
  <div class="awc__gameShell">
   <div class="awc__mapWrap">
-   <canvas id="awcCanvas" tabindex="0" aria-label="Agent World city map. Drag to move, pinch or scroll to zoom, tap a worker or building. Keys: plus and minus zoom, 0 fits the city, F follows, T full screen. The crew list has the same information."></canvas>
+   <canvas id="awcCanvas" tabindex="0" aria-label="Agent World city map. Drag to move, pinch or scroll to zoom, tap a worker or building. Keys: plus and minus zoom, 0 fits the city, F follows, T full screen. The crew list has the same information."></canvas><i class="awc__sky awc__sky--light" aria-hidden="true"></i><i class="awc__sky" aria-hidden="true"></i><i class="awc__sky awc__sky--rays" aria-hidden="true"></i><i class="awc__sky awc__sky--flash" aria-hidden="true"></i>
    <div class="awc__tooltip" id="awcTooltip" hidden></div>
    <div class="awc__mapHud">
     <div class="awc__selection" id="awcSelection" data-empty="true"><span>Select a worker or building</span><small>Click to inspect</small></div>
@@ -1343,10 +1373,16 @@ function mount(){
    <div class="awc__controls" role="toolbar" aria-label="Zoom and follow"><button id="awcZoomOut" type="button" aria-label="Zoom out">−</button><span id="awcZoomLabel" aria-live="polite">100%</span><button id="awcZoomIn" type="button" aria-label="Zoom in">+</button><button id="awcFollow" type="button" aria-pressed="true" title="Keep the camera on the busy worker (F)">Follow</button></div>
   </div>
  </div>
- <div class="awc__scrub" id="awcScrub" hidden><button id="awcReplayPlay" type="button" aria-label="Play the replay">▶</button><div class="awc__scrubTrack"><div class="awc__replayMarkers" id="awcReplayMarkers"></div><input id="awcReplayRange" type="range" min="0" max="0" value="0" disabled aria-label="Replay position"></div><span id="awcReplayLabel"></span><button id="awcReplayLive" type="button" hidden>Back to now</button></div>
+ <div class="awc__scrub" id="awcScrub" role="group" aria-label="Replay" hidden><div class="awc__scrubHead"><span id="awcReplayLabel"></span><button id="awcReplayLive" type="button" hidden>Back to now</button></div><div class="awc__scrubRow"><button id="awcReplayPlay" type="button" aria-label="Play the replay">▶</button><span class="awc__scrubTime" id="awcReplayAt">0:00</span><div class="awc__scrubTrack" id="awcScrubTrack"><i class="awc__scrubBar" aria-hidden="true"><i></i></i><div class="awc__replayMarkers" id="awcReplayMarkers" aria-hidden="true"></div><i class="awc__scrubThumb" aria-hidden="true"></i><input id="awcReplayRange" type="range" min="0" max="0" value="0" disabled aria-label="Replay position"></div><span class="awc__scrubTime" id="awcReplayEnd">0:00</span><button id="awcReplaySpeed" type="button" aria-label="Replay speed 1×">1×</button></div><p class="visually-hidden" id="awcReplayStatus" aria-live="polite"></p></div>
  <button id="awcLiveBtn" class="awc__demoChip" type="button" hidden>Demo · Stop</button>`;
- host.appendChild(root);loadReplay();syncReplay();canvas=$('#awcCanvas');ctx=canvas.getContext('2d');
- $('#awcReplayPlay').onclick=toggleReplay;$('#awcReplayLive').onclick=returnReplayLive;$('#awcReplayRange').oninput=e=>applyReplayFrame(e.target.value);$('#awcFollow').onclick=()=>toggleFollow();$('#awcZoomIn').onclick=()=>{userCamera();zoomAt(1.2)};$('#awcZoomOut').onclick=()=>{userCamera();zoomAt(.84)};$('#awcLiveBtn').onclick=returnLive;
+ host.appendChild(root);loadReplay();syncReplay();canvas=$('#awcCanvas');sky=[...root.querySelectorAll('.awc__sky')];ctx=canvas.getContext('2d');
+ $('#awcReplayPlay').onclick=toggleReplay;$('#awcReplayLive').onclick=returnReplayLive;$('#awcReplayRange').oninput=e=>applyReplayFrame(e.target.value);$('#awcReplaySpeed').onclick=cycleReplaySpeed;$('#awcFollow').onclick=()=>toggleFollow();$('#awcZoomIn').onclick=()=>{userCamera();zoomAt(1.2)};$('#awcZoomOut').onclick=()=>{userCamera();zoomAt(.84)};$('#awcLiveBtn').onclick=returnLive;
+ // Drag anywhere on the track to scrub (touch too); the range under it keeps the keyboard (arrows step, Home and End
+ // jump) and tells screen readers the step, the time and what happened there.
+ {const tr=$('#awcScrubTrack'),rg=$('#awcReplayRange');let sid=null;const seek=e=>{const r=tr.getBoundingClientRect(),n=replay.frames.length,i=Math.round(clamp((e.clientX-r.left-10)/Math.max(1,r.width-20),0,1)*(n-1));if(i!==replay.index||!replay.active)applyReplayFrame(i)};
+  tr.addEventListener('pointerdown',e=>{if(replay.frames.length<2||e.button>0)return;e.preventDefault();sid=e.pointerId;try{tr.setPointerCapture(sid)}catch{}rg.focus({preventScroll:true});seek(e)});
+  tr.addEventListener('pointermove',e=>{if(sid===e.pointerId)seek(e)});const up=e=>{if(sid===e.pointerId)sid=null};tr.addEventListener('pointerup',up);tr.addEventListener('pointercancel',up);rg.addEventListener('keydown',e=>{if(!replay.active&&(e.key==='Home'||e.key==='End')&&replay.frames.length>1){e.preventDefault();applyReplayFrame(e.key==='Home'?0:replay.frames.length-1)}})}
+ phoneQ.addEventListener?.('change',placeScrub);
 
  canvas.addEventListener('wheel',e=>{e.preventDefault();userCamera();const p=screenPoint(e);zoomAt(e.deltaY<0?1.12:.89,p.px,p.py)},{passive:false});
  canvas.addEventListener('dblclick',e=>{e.preventDefault();userCamera();fitWorld()});
@@ -1361,10 +1397,10 @@ function mount(){
  // The Agents panel answers our select event with a focus event; don't echo it back as another select.
  window.addEventListener('localai:agentworld-focus',e=>{externalFocus=true;try{focusWorker(e.detail?.workerId)}finally{externalFocus=false}});
  if('ResizeObserver' in window)new ResizeObserver(resize).observe($('.awc__mapWrap',root));window.addEventListener('resize',resize);
- window.LocalAIAgentWorld={camera:()=>({zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,shown:{zoom:view.zoom,panX:view.panX,panY:view.panY},...cam}),avatar,following:()=>display.follow,follow:on=>toggleFollow(on),demo:()=>{startDemo();syncDemoControls()},demoStep:()=>stepDemo(),busy:()=>demo.active||replay.active,display:()=>({...display}),view:k=>k==='speed'?cycleReplaySpeed():k==='theater'?toggleExpanded():k==='fit'?(userCamera(),fitWorld()):toggleDisplay(k),walking:()=>[...agents.values()].filter(workerIsMoving).length,names:()=>[...agents.values()].map(a=>a.name),
+ window.LocalAIAgentWorld={camera:()=>({zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,shown:{zoom:view.zoom,panX:view.panX,panY:view.panY},...cam}),avatar,following:()=>display.follow,follow:on=>toggleFollow(on),demo:()=>{startDemo();syncDemoControls()},demoStep:()=>stepDemo(),busy:()=>demo.active||replay.active,demoing:()=>demo.active,display:()=>({...display}),view:k=>k==='speed'?cycleReplaySpeed():k==='theater'?toggleExpanded():k==='fit'?(userCamera(),fitWorld()):toggleDisplay(k),walking:()=>[...agents.values()].filter(workerIsMoving).length,names:()=>[...agents.values()].map(a=>a.name),
   moments:()=>({flags:[...agents.values()].filter(a=>a.state==='complete').map(a=>a.id),warnings:[...agents.values()].filter(a=>a.state==='error'||a.state==='blocked').map(a=>a.id),fireworks:celebrationUntil>now()})};
  // __awcSim (tests): put a worker somewhere still, or a car somewhere on its street, in world pixels.
- try{if(localStorage.getItem('localai.debug')==='1'){window.__awcLayout=layout;window.__awcSim={put(id,x,y){const a=agents.get(id);if(a){a.x=a.tx=x;a.y=a.ty=y;a.path=[];a.pathI=0;a.onSite=false}},car(i,x,y){const c=traffic[i];if(c){c.x=x;c.y=y;c.go=1}},
+ try{if(localStorage.getItem('localai.debug')==='1'){window.__awcLayout=layout;window.__awcSim={sky(u){skyU=u},put(id,x,y){const a=agents.get(id);if(a){a.x=a.tx=x;a.y=a.ty=y;a.path=[];a.pathI=0;a.onSite=false}},car(i,x,y){const c=traffic[i];if(c){c.x=x;c.y=y;c.go=1}},
   // the walk a worker would take to a zone (inside: to a desk; else to a spot on its apron), from where it stands now
   // or, given `from`, from its desk inside that district. Nothing moves.
   route(id,zone,inside,from){let a=agents.get(id);if(!a)return null;if(from){const d=workerTarget({id,state:'running'},from);a={...a,x:d.x,y:d.y,inside:true,insideZone:from}}const t=workerTarget({id,state:inside?'running':'complete'},zone);return{inside:!!(a.inside&&a.insideZone),from:a.inside?a.insideZone:a.zone,door:a.inside&&a.insideZone?districtDoor(a.insideZone):null,points:[{x:a.x,y:a.y},...routeToTarget(a,t,zone)]}}}}}catch{}
@@ -1385,11 +1421,19 @@ function carGo(c,dt){
  // brake at once, pull away over about a second
  return go<(c.go??1)?go:Math.min(go,(c.go??1)+dt)
 }
-function seedAmbient(){traffic=[{x:2*T,y:13.5*T,v:28,axis:'x',dir:1,color:'#6aaeff'},{x:36*T,y:14.5*T,v:23,axis:'x',dir:-1,color:'#ffc56b'},{x:25.5*T,y:3*T,v:20,axis:'y',dir:1,color:'#c18cff'},{x:13.5*T,y:21*T,v:18,axis:'y',dir:-1,color:'#75dfa2'}];clouds=[{x:160,y:80,s:1.1},{x:880,y:130,s:.8},{x:560,y:40,s:.6}]}
+function seedAmbient(){traffic=[{x:2*T,y:13.5*T,v:28,axis:'x',dir:1,color:'#6aaeff'},{x:36*T,y:14.5*T,v:23,axis:'x',dir:-1,color:'#ffc56b'},{x:25.5*T,y:3*T,v:20,axis:'y',dir:1,color:'#c18cff'},{x:13.5*T,y:21*T,v:18,axis:'y',dir:-1,color:'#75dfa2'},{x:30*T,y:23.5*T,v:22,axis:'x',dir:-1,color:'#ff8494'},{x:3.5*T,y:8*T,v:17,axis:'y',dir:1,color:'#e9eef3'}];clouds=[{x:160,y:80,s:1.1},{x:880,y:130,s:.8},{x:560,y:40,s:.6}]}
 function update(dt,ts){
  if(display.follow&&!drag&&!pointers.size){const f=agents.get(focusId),a=f&&f.state!=='pending'?f:[...agents.values()].find(q=>q.state==='running');if(a){view.targetZoom=Math.max(view.targetZoom,1.7);view.targetPanX=cam.w/2-a.x*sc(view.targetZoom);view.targetPanY=cam.h/2-a.y*sc(view.targetZoom);limitTargetPan();const zl=Math.round(view.targetZoom*100);if(zl!==update.zl){update.zl=zl;syncZoomLabel()}}}
  const k=reduced?1:Math.min(1,dt*4);view.zoom+=(view.targetZoom-view.zoom)*k;view.panX+=(view.targetPanX-view.panX)*k;view.panY+=(view.targetPanY-view.panY)*k;
- if(celebrationUntil>ts&&ts-(update.lastBurst||0)>380){update.lastBurst=ts;const d=DISTRICTS.command,cx=(d.x+d.w/2)*T+(Math.random()-.5)*160,cy=d.y*T-60-Math.random()*70,c=['#75dfa2','#71b7ff','#f5c04f','#ff8494','#c498ff'][Math.floor(Math.random()*5)];for(let i=0;i<26;i++){const r=Math.random()*Math.PI*2,v=60+Math.random()*70;sparks.push({x:cx,y:cy,vx:Math.cos(r)*v,vy:Math.sin(r)*v-30,life:.9+Math.random()*.6,color:c,size:2+Math.random()*1.5})}}
+ // fireworks over whatever part of the city is on screen, two colours a burst
+ if(celebrationUntil>ts&&ts-(update.lastBurst||0)>320){update.lastBurst=ts;const v0=viewBox(),cx=v0.x+v0.w*(.12+.76*Math.random()),cy=v0.y+v0.h*(.08+.36*Math.random()),P=['#75dfa2','#71b7ff','#f5c04f','#ff8494','#c498ff','#ffffff'],c=P[Math.floor(Math.random()*6)],c2=P[Math.floor(Math.random()*6)];for(let i=0;i<32;i++){const r=i/32*Math.PI*2+Math.random()*.2,v=(i%2?70:110)+Math.random()*30;sparks.push({x:cx,y:cy,vx:Math.cos(r)*v,vy:Math.sin(r)*v-30,life:1+Math.random()*.6,color:i%2?c2:c,size:i%2?2:3})}}
+ for(const f of confetti){f.y+=f.vy*dt;f.x+=Math.sin(ts/300+f.p)*22*dt;f.life-=dt}confetti=confetti.filter(f=>f.life>0);
+ // birds cross the sky by day, a flock every half minute or so
+ if(!reduced&&!display.night&&ts>(update.nextBirds??4000)){update.nextBirds=ts+24000+Math.random()*14000;birds.push({x:-80,y:140+Math.random()*320,n:4+Math.floor(Math.random()*3)})}
+ for(const b of birds){b.x+=44*dt;b.y-=8*dt}birds=birds.filter(b=>b.x<W+120&&!reduced&&!display.night);
+ // the spotlight drifts to the busy district (or a selected one); with nothing busy it rests on the middle, softer
+ let fz=selected?.type==='district'?selected.id:agents.get(focusId)?.state==='running'?agents.get(focusId).zone:'';if(!fz)for(const a of agents.values())if(a.state==='running'){fz=a.zone;break}const fd=DISTRICTS[fz],e=reduced?1:Math.min(1,dt*1.6);
+ spot.x+=((fd?(fd.x+fd.w/2)*T:W/2)-spot.x)*e;spot.y+=((fd?(fd.y+fd.h/2)*T:H*.55)-spot.y)*e;spot.a+=((fd?1:.5)-spot.a)*e;
  for(const a of agents.values()){
   const moving=workerIsMoving(a),running=a.state==='running'&&moving;
   a.motion=running?'running':moving?'walking':a.state==='running'?'working':'idle';
@@ -1399,15 +1443,15 @@ function update(dt,ts){
   a.dir=dx<0?-1:1;
   const base=running?150:64,arrival=a.pathI>=a.path.length-1?clamp(d/42,.45,1):1,speed=base*arrival;
   a.x+=dx/d*speed*dt;a.y+=dy/d*speed*dt;
-  if(running)spawnRunDust(a,ts)
+  spawnRunDust(a,ts,running)
  }
- for(const p of packets){if(p.done||!p.path[p.i])continue;const t=p.path[p.i],dx=t.x-p.x,dy=t.y-p.y,d=Math.hypot(dx,dy);if(d<3){p.i++;if(p.i>=p.path.length){p.done=true;spawnSpark(p.x,p.y,p.color,8);if(p.label==='HANDOFF'){addEvent('Handoff received');pulses.push({x:p.x,y:p.y,t:ts})}}continue}p.x+=dx/d*150*dt;p.y+=dy/d*150*dt}packets=packets.filter(p=>!p.done);pulses=pulses.filter(q=>ts-q.t<700);
+ for(const p of packets){if(p.done||!p.path[p.i])continue;const t=p.path[p.i],dx=t.x-p.x,dy=t.y-p.y,d=Math.hypot(dx,dy);if(d<3){p.i++;if(p.i>=p.path.length){p.done=true;spawnSpark(p.x,p.y,p.color,8);if(p.label==='HANDOFF'){addEvent('Handoff received');pulses.push({x:p.x,y:p.y,t:ts})}}continue}p.x+=dx/d*150*dt;p.y+=dy/d*150*dt}packets=packets.filter(p=>!p.done);pulses=pulses.filter(q=>ts-q.t<(q.big?1100:700));
  updateConstruction(dt,ts);updateCrew(dt);
- if(reduced){sparks=[];dust=[]}
+ if(reduced){sparks=[];dust=[];confetti=[];arcs=[]}
  for(const s of sparks){s.x+=s.vx*dt;s.y+=s.vy*dt;s.vy+=90*dt;s.life-=dt}sparks=sparks.filter(s=>s.life>0);for(const d of dust){d.x+=d.vx*dt;d.y+=d.vy*dt;d.r+=dt*5;d.life-=dt}dust=dust.filter(d=>d.life>0);
  for(const c of traffic){c.go=carGo(c,dt);const v=c.v*c.dir*c.go*dt;if(c.axis==='x'){c.x+=v;if(c.x>38*T)c.x=2*T;if(c.x<2*T)c.x=38*T}else{c.y+=v;if(c.y>23*T)c.y=3*T;if(c.y<3*T)c.y=23*T}}
  if(demo.active&&demo.running&&!demo.paused&&!reduced&&ts-demo.lastAdvance>3200/demo.speed){if(demo.stage<DEMO_STAGES.length-1){demo.stage++;applyDemo();recordReplayFrame('demo');demo.lastAdvance=ts}else demo.running=false;syncDemoControls()}
- if(replay.active&&replay.playing&&ts-replay.lastStep>1200/replay.speed){if(replay.index<replay.frames.length-1){replay.index++;const f=replay.frames[replay.index];agents.clear();artifacts=[];packets=[];sparks=[];dust=[];current=JSON.parse(JSON.stringify(f.mission));sourceType='replay';current.workers.forEach(ensureAgent);selected=f.workerId?{type:'agent',id:String(f.workerId).split(',')[0]}:selected;syncHud();syncSelection();replay.lastStep=ts;syncReplay()}else{replay.playing=false;syncReplay()}}
+ if(replay.active&&replay.playing&&ts-replay.lastStep>1200/replay.speed){if(replay.index<replay.frames.length-1){replay.index++;const f=replay.frames[replay.index];agents.clear();artifacts=[];packets=[];sparks=[];dust=[];current=JSON.parse(JSON.stringify(f.mission));sourceType='replay';current.workers.forEach(ensureAgent);selected=f.workerId?{type:'agent',id:String(f.workerId).split(',')[0]}:selected;syncHud();syncSelection();replay.lastStep=ts;syncReplay()}else{replay.playing=false;syncReplay();sayReplay('Replay finished')}}
 }
 function px(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h))}
 function pathPoly(points,fill){ctx.fillStyle=fill;ctx.beginPath();ctx.moveTo(points[0][0],points[0][1]);for(let i=1;i<points.length;i++)ctx.lineTo(points[i][0],points[i][1]);ctx.closePath();ctx.fill()}
@@ -1439,15 +1483,16 @@ function drawGround(ts){
  for(const[x,y,s,b]of trees)drawTree(x,y,ts,s,b)
 }
 function drawGroundStatic(){
- const N=display.night,G=N?['#0b1e1c','#0c221f','#0e2622']:['#22503a','#25573e','#295e42'],tuft=N?'#17382c':'#3a7a50',fl=['#f2d06b','#f49ab8','#ffb46b','#b9a6ff'];
+ const N=display.night,G=N?['#0b1e1c','#0c221f','#0e2622']:['#2a6340','#2e6c44','#33764a'],tuft=N?'#17382c':'#4a9a5c',fl=['#f2d06b','#f49ab8','#ffb46b','#b9a6ff'];
  // grass: broad soft patches, mown stripes, speckle, tufts and the odd clump of flowers
  for(let y=0;y<H;y+=T)for(let x=0;x<W;x+=T){const n=Math.sin(x*.009+y*.004)+Math.sin(y*.012-x*.003),h=wh(x,y);px(x,y,T,T,G[n<-.5?0:n<.6?1:2]);if((x/T)&1)px(x,y,T,T,N?'rgba(255,255,255,.012)':'rgba(255,250,210,.03)');
   for(let i=0;i<4;i++){const q=wh(x,y,i);px(x+q%30,y+(q>>>5)%30,2,2,i&1?'rgba(0,0,0,.08)':'rgba(255,255,220,.06)')}
   if(h%13===0){px(x+8+h%14,y+10+h%11,2,4,tuft);px(x+11+h%14,y+12+h%11,2,2,tuft)}if(!N&&h%29===0)for(let i=0;i<4;i++)px(x+12+(h>>>i)%7,y+12+(h>>>(i+3))%6,2,2,fl[(h>>>9)%4])}
  // water / edge
- pathPoly([[0,0],[W,0],[W,56],[1010,74],[820,48],[620,65],[420,45],[180,70],[0,52]],N?'#071a27':'#143a4c');
- ctx.strokeStyle=N?'#0c3248':'#23627e';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,52);ctx.bezierCurveTo(260,78,420,37,640,60);ctx.bezierCurveTo(860,82,1020,45,W,58);ctx.stroke();
+ pathPoly([[0,0],[W,0],[W,56],[1010,74],[820,48],[620,65],[420,45],[180,70],[0,52]],N?'#071a27':'#17506a');
+ ctx.strokeStyle=N?'#0c3248':'#3a95b8';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,52);ctx.bezierCurveTo(260,78,420,37,640,60);ctx.bezierCurveTo(860,82,1020,45,W,58);ctx.stroke();
  for(let i=0;i<26;i++){const q=wh(i,3,9);px(q%W,6+(q>>>11)%34,8+q%14,1,N?'rgba(160,200,255,.1)':'rgba(220,245,255,.16)')}
+ if(N){for(let i=0;i<40;i++){const q=wh(i,8,4);px(q%W,6+(q>>>9)%38,1,1,'rgba(225,236,255,'+(.25+(q>>>3)%5*.1)+')')}for(let i=0;i<9;i++){const w=12+(i*7)%13;px(W*.84-w/2+(i%3-1)*2,8+i*5,w,1.5,'rgba(220,232,255,.3)')}}
  // streets, with a sidewalk and kerb wherever a street meets grass
  const walk=N?'#2a3135':'#8a8778',kerb=N?'#1b2226':'#615f55';
  roads.forEach(k=>{const[x,y]=k.split(',').map(Number);px(x*T,y*T,T,T,N?'#1c2630':'#333e4a');for(let i=0;i<5;i++){const q=wh(x,y,i+3);px(x*T+q%31,y*T+(q>>>5)%31,1,1,i&1?'rgba(0,0,0,.18)':'rgba(255,255,255,.07)')}if(wh(x,y,2)%61===0){px(x*T+10,y*T+12,10,8,'rgba(0,0,0,.28)');px(x*T+11,y*T+13,8,1,'rgba(255,255,255,.08)')}});
@@ -1461,7 +1506,7 @@ function drawGroundStatic(){
  for(const cx of[13,25]){for(const ty of[12,15])for(let i=0;i<6;i++)px(cx*T+4+i*10,ty*T+6,5,20,zebra);for(const tx of[cx-1,cx+2])for(let i=0;i<6;i++)px(tx*T+6,13*T+4+i*10,20,5,zebra)}
  // plaza
  px(16*T,11*T,9*T,5*T,N?'#3f443f':'#746f59');for(let i=0;i<18;i++)px(16*T+(i%6)*T/1.5+9,11*T+Math.floor(i/6)*T/1.5+10,4,4,N?'#545a54':'#999078');
- for(const[id,d]of Object.entries(DISTRICTS))drawDistrictScene(id,d,0,true);
+ for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,0,true);if(N)spill(id+'g',d,.16,N)}
  // lamp posts: a pool of light under each at night
  for(const[x,y]of lamps){if(N){const g=ctx.createRadialGradient(x,y+2,2,x,y+2,30);g.addColorStop(0,'rgba(255,214,140,.32)');g.addColorStop(1,'rgba(255,214,140,0)');ctx.fillStyle=g;ctx.fillRect(x-30,y-28,60,60)}px(x+1,y-1,4,2,'rgba(0,0,0,.3)');px(x-1,y-20,2,20,'#3a434b');px(x-1,y-20,7,2,'#3a434b');px(x+3,y-19,4,3,N?'#fff1c2':'#c9d2da');if(N){const b=ctx.createRadialGradient(x+5,y-17,0,x+5,y-17,9);b.addColorStop(0,'rgba(255,236,180,.55)');b.addColorStop(1,'rgba(255,236,180,0)');ctx.fillStyle=b;ctx.fillRect(x-4,y-26,18,18)}}
  light()
@@ -1469,7 +1514,7 @@ function drawGroundStatic(){
 // Trees: three shapes in two sizes, drawn once per shape into a sprite (with the shadow) and swayed a pixel.
 const treeSprites=new Map();
 function treeSprite(s,b){
- const k=s+'.'+b+display.night;if(treeSprites.has(k))return treeSprites.get(k);const c=document.createElement('canvas'),g=c.getContext('2d'),N=display.night,dk=N?'#123d2a':'#1f5f39',md=N?'#185034':'#2a7a49',lt=N?'#1f5d3d':'#3c9a5c';
+ const k=s+'.'+b+display.night;if(treeSprites.has(k))return treeSprites.get(k);const c=document.createElement('canvas'),g=c.getContext('2d'),N=display.night,dk=N?'#123d2a':'#1f6a3a',md=N?'#185034':'#2c8a4c',lt=N?'#1f5d3d':'#4cb466';
  c.width=c.height=64;g.scale(2,2);const o=(cx,cy,r,f)=>{g.fillStyle=f;g.beginPath();g.arc(cx,cy,r,0,7);g.fill()};
  g.fillStyle='rgba(0,0,0,.25)';g.beginPath();g.ellipse(20,27,10,4,0,0,7);g.fill();g.fillStyle='#4d3522';g.fillRect(14,17,4,11);
  if(s===0){o(16,12,10,dk);o(14,10,8,md);o(12,8,4,lt)}
@@ -1613,6 +1658,8 @@ function drawRoofProps(id,d,x,y,w,wall,blink,done,ts){
 // frame; only what moves (screens, furnace, roller door, roof props, glow) is drawn live. The window pattern changes
 // every 9 s (never with reduced motion), and with the district's busy/done state and day or night.
 const facades=new Map(),spills=new Map();
+// Window light on the pavement: every building's at night is in the ground cache; a busy one adds more each frame.
+function spill(id,d,a,N){const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,gk=id+a+N;let g=spills.get(gk);if(!g){g=ctx.createRadialGradient(x+w/2,y+h+4,4,x+w/2,y+h+4,w*.62);g.addColorStop(0,(N?'rgba(255,200,110,':'rgba(255,224,150,')+a+')');g.addColorStop(1,'rgba(255,200,110,0)');spills.set(gk,g)}ctx.fillStyle=g;ctx.fillRect(x-w*.15,y+h-6,w*1.3,w*.5)}
 function facade(id,d,f,wall,ts){
  const N=display.night,e=reduced?0:Math.floor(ts/9000),k=e+N+(f.active?'a':f.done?'d':''),o=facades.get(id);if(o?.k===k)return o.c;
  const c=o?.c||document.createElement('canvas'),x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,depth=14,prev=ctx;c.width=(w+depth+12)*2;c.height=(h+4)*2;ctx=c.getContext('2d');ctx.setTransform(2,0,0,2,12-2*x,4-2*y);
@@ -1630,8 +1677,8 @@ function drawBuilding(id,d,ts){
  const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,depth=14,f=districtFlags(id),{workers,active,bad,done}=f,selectedDistrict=selected?.type==='district'&&selected.id===id,pulse=reduced?.5:(Math.sin(ts/240)+1)/2,N=display.night,blink=reduced||Math.floor(ts/500)%2;
  const level=buildLevel(id),under=level<.995,top=y+h-h*level,sy=Math.max(y,top-8),wall=d.wall?d.wall[N?1:0]:shade(d.roof,N?.3:.42);
  // shadow, cast down and to the right; light from the windows on the pavement at night
- pathPoly([[x+w+depth,sy],[x+w+depth+30,sy+24],[x+w+depth+30,y+h+16],[x+16,y+h+16],[x,y+h]],'rgba(0,0,0,.13)');pathPoly([[x+w+depth,sy],[x+w+depth+20,sy+16],[x+w+depth+20,y+h+10],[x+10,y+h+10],[x,y+h]],'rgba(0,0,0,.22)');
- if(N||active){const gk=id+N+active;let g=spills.get(gk);if(!g){g=ctx.createRadialGradient(x+w/2,y+h+4,4,x+w/2,y+h+4,w*.62);g.addColorStop(0,N?'rgba(255,200,110,'+(active?.34:.16)+')':'rgba(255,224,150,.2)');g.addColorStop(1,'rgba(255,200,110,0)');spills.set(gk,g)}ctx.fillStyle=g;ctx.fillRect(x-w*.15,y+h-6,w*1.3,w*.5)}
+ const K=shadowK;pathPoly([[x+w+depth,sy],[x+w+depth+30*K,sy+24*K],[x+w+depth+30*K,y+h+16*K],[x+16*K,y+h+16*K],[x,y+h]],'rgba(0,0,0,.13)');pathPoly([[x+w+depth,sy],[x+w+depth+20*K,sy+16*K],[x+w+depth+20*K,y+h+10*K],[x+10*K,y+h+10*K],[x,y+h]],'rgba(0,0,0,.22)');
+ if(active)spill(id,d,N?.18:.2,N);
  ctx.save();
  px(x-4,y+h-6,w+depth+8,8,N?'#2a333b':'#59616a');
  // Only the finished floors are solid; the rest is drawn as a steel frame below.
@@ -1702,7 +1749,15 @@ function drawWorkingAction(a,ts){
  if(reduced||a.state!=='running'||workerIsMoving(a)||a.climbing||ts-(a.lastFx||0)<520)return;a.lastFx=ts;const s=roleStyle(a),d=a.dir||1;
  sparks.push({x:a.x+d*16*WS,y:a.y+22-32*WS,vx:d*(4+Math.random()*10),vy:-28-Math.random()*16,life:.55,color:FX[s.tool]||s.accent,size:2})
 }
-function drawTraffic(){for(const c of traffic){ctx.save();ctx.translate(c.x,c.y);px(-7,-4,14,8,c.color);px(-4,-6,8,3,'#b8dbff');px(-5,4,3,2,'#0b0e12');px(2,4,3,2,'#0b0e12');ctx.restore()}}
+// Cars from above, turned to their street: a sprite per colour and day/night (body, glass, lights; beams at night).
+const cars=new Map();
+function carSprite(col){
+ const N=display.night,k=col+N;let c=cars.get(k);if(c)return c;c=document.createElement('canvas');c.width=104;c.height=48;const g=ctx;ctx=c.getContext('2d');ctx.setTransform(2,0,0,2,24,24);
+ if(N){ctx.fillStyle='rgba(255,226,150,.14)';ctx.beginPath();ctx.moveTo(9,-4);ctx.lineTo(40,-11);ctx.lineTo(40,9);ctx.lineTo(9,3);ctx.fill();px(-12,-5,4,9,'rgba(255,60,70,.22)')}
+ px(-7,-3,18,10,'rgba(0,0,0,.3)');px(-9,-5,18,10,shade(col,.62));px(-9,-5,18,8,col);px(-9,-5,18,1,shade(col,1.25));px(-4,-4,9,7,shade(col,.82));px(4,-4,3,7,N?'#26364a':'#a9dcff');px(-6,-4,2,7,N?'#1d2a38':'#5d7a92');px(8,-4,1,2,'#fff6d2');px(8,1,1,2,'#fff6d2');px(-9,-4,1,2,'#ff4d5a');px(-9,1,1,2,'#ff4d5a');
+ ctx=g;cars.set(k,c);return c
+}
+function drawTraffic(){for(const c of traffic){ctx.save();ctx.translate(Math.round(c.x),Math.round(c.y));if(c.axis==='y')ctx.rotate(Math.PI/2);if(c.dir<0)ctx.scale(-1,1);ctx.drawImage(carSprite(c.color),-12,-12,52,24);ctx.restore()}}
 function dependencyState(from,to){
  if(['error','blocked'].includes(from.state)||['error','blocked'].includes(to.state))return'blocked';
  if(from.state==='complete'&&to.state==='running')return'active';
@@ -1745,9 +1800,9 @@ function drawFlows(ts){
 function roleStyle(a){return a.style||ROLE_STYLE[a.id]||ROLE_STYLE.synthesis}
 function workerIsMoving(a){return !!(a.path?.length&&a.pathI<a.path.length)}
 function workerIsRunning(a){return a.state==='running'&&workerIsMoving(a)}
-function spawnRunDust(a,ts){
- if(reduced||ts-(a.lastDust||0)<85)return;a.lastDust=ts;
- for(let i=0;i<2;i++)dust.push({x:a.x-a.dir*(7+Math.random()*5),y:a.y+16+Math.random()*3,vx:-a.dir*(10+Math.random()*16),vy:-4-Math.random()*8,r:2+Math.random()*2,life:.42})
+function spawnRunDust(a,ts,run){
+ if(reduced||ts-(a.lastDust||0)<(run?85:220))return;a.lastDust=ts;
+ for(let i=0;i<(run?2:1);i++)dust.push({x:a.x-a.dir*(7+Math.random()*5),y:a.y+16+Math.random()*3,vx:-a.dir*(10+Math.random()*16),vy:-4-Math.random()*8,r:2+Math.random()*2,life:.42})
 }
 // ---- Workers: pixel sprites drawn once per look --------------------------------------------------------------
 // A worker is FW x FH art pixels, each 2 world px. Its sheet holds every frame facing right (row 0) and left (row 1):
@@ -1822,9 +1877,9 @@ function sheetFor(s){
 // Reduced motion keeps one still frame per state.
 // Debug and tests (localStorage localai.debug = 1), in canvas pixels: where each worker is drawn and its frame, the
 // district signs, the name tags and bubbles, and the scenery (tree kinds, lamp count).
-function layout(){const k=sc(view.zoom)*cam.dpr,box=(x,y,w,h)=>({x:view.panX*cam.dpr+x*k,y:view.panY*cam.dpr+y*k,w:w*k,h:h*k});return{workers:[...agents.values()].map(a=>({id:a.id,state:a.state,frame:a.frame,moving:workerIsMoving(a),vest:roleStyle(a).vest,box:box(Math.round(a.x/2)*2-FW*WS,Math.round(a.y/2)*2+22-FH*2*WS,FW*2*WS,FH*2*WS)})),workerScale:WS,labels:L.signs.map(r=>({...box(r.x,r.y,r.w,r.h),faded:!!r.faded})),bubbles:L.bubbles.map(r=>box(r.x,r.y,r.w,r.h)),trees:trees.map(t=>t[2]+(t[3]?'L':'S')),lamps:lamps.length,
+function layout(){const k=sc(view.zoom)*cam.dpr,box=(x,y,w,h)=>({x:view.panX*cam.dpr+x*k,y:view.panY*cam.dpr+y*k,w:w*k,h:h*k});return{workers:[...agents.values()].map(a=>({id:a.id,state:a.state,frame:a.frame,moving:workerIsMoving(a),vest:roleStyle(a).vest,box:box(Math.round(a.x/2)*2-FW*WS,Math.round(a.y/2)*2+22-FH*2*WS,FW*2*WS,FH*2*WS)})),workerScale:WS,labels:L.signs.map(r=>({...box(r.x,r.y,r.w,r.h),faded:!!r.faded,text:r.text})),bubbles:L.bubbles.map(r=>box(r.x,r.y,r.w,r.h)),trees:trees.map(t=>t[2]+(t[3]?'L':'S')),lamps:lamps.length,
  flows:flowList().map(([a,b])=>({from:a,to:b,points:flowPath(a,b).p.map(q=>({x:q.x,y:q.y}))})),
- cars:traffic.map(c=>({x:c.x,y:c.y,axis:c.axis,dir:c.dir,go:c.go??1})),crossings:CROSSINGS}}
+ cars:traffic.map(c=>({x:c.x,y:c.y,axis:c.axis,dir:c.dir,go:c.go??1})),crossings:CROSSINGS,sky:skyNow(now()),arcs:arcs.length,birds:birds.length,spot:{...spot}}}
 function flowList(){const out=[];for(const w of current?.workers||[])for(const dep of w.dependsOn||[]){const a=current.workers.find(x=>x.id===dep),za=a&&zoneForWorker(a),zb=zoneForWorker(w);if(a&&za!==zb)out.push([za,zb])}return out}
 function workerFrame(a,ts){
  const t=ts/1000+a.activitySeed,st=a.state;
@@ -1888,7 +1943,7 @@ function drawWorkerSprite(a,ts){
 function drawAgents(ts){
  for(const d of dust){ctx.globalAlpha=clamp(d.life/.42,0,1)*.5;ctx.fillStyle=display.night?'#70808c':'#c5b99a';ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1;for(const a of agents.values()){drawWorkerSprite(a,ts);drawWorkingAction(a,ts)}
  for(const p of packets){ctx.save();ctx.shadowColor=p.color;ctx.shadowBlur=12;px(p.x-6,p.y-5,12,9,'#182431');px(p.x-5,p.y-4,10,7,p.color);px(p.x-2,p.y-2,4,2,'#fff');ctx.restore()}
- for(const q of pulses){const k=(now()-q.t)/700;ctx.strokeStyle='rgba(117,223,162,'+(1-k)+')';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(q.x,q.y,6+k*22,3+k*9,0,0,Math.PI*2);ctx.stroke()}
+ for(const q of pulses){const k=(now()-q.t)/(q.big?1100:700),r=q.big?20+k*300:q.c?8+k*40:6+k*22;if(k<0||k>1)continue;ctx.globalAlpha=1-k;ctx.strokeStyle=q.c||'#75dfa2';ctx.lineWidth=q.big?4:2;ctx.beginPath();ctx.ellipse(q.x,q.y,r,r*.42,0,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1}
  for(const a of artifacts){
   ctx.save();ctx.shadowColor=a.color;ctx.shadowBlur=8;
   if(a.kind==='build'){px(a.x-10,a.y-8,20,14,'#263746');px(a.x-8,a.y-6,16,10,a.color);px(a.x-5,a.y-3,10,5,'#14202b')}
@@ -1899,14 +1954,25 @@ function drawAgents(ts){
  }
  for(const s of sparks){ctx.globalAlpha=clamp(s.life,0,1);px(s.x,s.y,s.size,s.size,s.color)}ctx.globalAlpha=1
 }
-function drawClouds(ts){if(display.night)return;ctx.save();ctx.globalAlpha=.08;for(const c of clouds){const x=(c.x+(reduced?0:ts)*.006*c.s)%W,y=c.y;ctx.fillStyle='#d8f0ff';ctx.beginPath();ctx.arc(x,y,26*c.s,0,Math.PI*2);ctx.arc(x+28*c.s,y+6,20*c.s,0,Math.PI*2);ctx.arc(x-25*c.s,y+8,17*c.s,0,Math.PI*2);ctx.fill()}ctx.restore()}function drawMoments(ts){let i=0;for(const a of agents.values()){if(a.state!=='complete'&&a.state!=='error'&&a.state!=='blocked')continue;const d=DISTRICTS[a.zone];if(!d)continue;
+// Clouds and birds fly above the city, so they slide a little against a pan (parallax) and cast a soft shadow.
+function parallax(){const v=viewBox();return(W/2-(v.x+v.w/2))*.14}
+function drawClouds(ts){if(display.night)return;const p=parallax();ctx.save();for(const[o,a,f]of[[60,.07,'#06121c'],[0,.12,'#e8f6ff']])for(const c of clouds){const x=(c.x+(reduced?0:ts)*.006*c.s)%(W+120)-60+p+o,y=c.y+o*.8;ctx.globalAlpha=a;ctx.fillStyle=f;ctx.beginPath();ctx.arc(x,y,26*c.s,0,7);ctx.arc(x+28*c.s,y+6,20*c.s,0,7);ctx.arc(x-25*c.s,y+8,17*c.s,0,7);ctx.fill()}ctx.restore()}
+function drawBirds(ts){const p=parallax()*1.3;for(const b of birds)for(let i=0;i<b.n;i++){const s=i?Math.ceil(i/2)*(i%2?1:-1):0,x=b.x-Math.abs(s)*13+p,y=b.y+s*9+Math.sin(ts/700+i)*2,up=Math.sin(ts/95+i*1.7)>0;px(x+26,y+44,6,2,'rgba(0,0,0,.16)');px(x-1,y,3,2,'#1b232c');if(up){px(x-5,y-2,4,1,'#1b232c');px(x+2,y-2,4,1,'#1b232c');px(x-2,y-1,1,1,'#1b232c');px(x+2,y-1,1,1,'#1b232c')}else{px(x-5,y+1,4,1,'#1b232c');px(x+2,y+1,4,1,'#1b232c')}}}function drawMoments(ts){let i=0;for(const a of agents.values()){if(a.state!=='complete'&&a.state!=='error'&&a.state!=='blocked')continue;const d=DISTRICTS[a.zone];if(!d)continue;
  if(a.state==='complete'){const fx=d.x*T+18+(i++%4)*16,fy=d.y*T-34,wave=reduced?0:Math.sin(ts/220+fx)*2;px(fx,fy,2,22,'#cfd8e0');pathPoly([[fx+2,fy],[fx+14,fy+4+wave],[fx+2,fy+9]],a.color||'#3ed598')}
  else{const x=a.x+16*WS,y=a.y+22-52*WS,bl=reduced||Math.floor(ts/500)%2===0;pathPoly([[x,y-12],[x+11,y+8],[x-11,y+8]],bl?'#ffc640':'#e0a020');txt('!',x,y+2,'#2a1600',11)}}}
+// Mission complete: a flash, rings from Command Center, fireworks over the view, confetti, rays and a MISSION COMPLETE
+// plate. Never with reduced motion.
+function celebrate(){
+ const t=now(),d=DISTRICTS.command,v=viewBox(),P=['#75dfa2','#71b7ff','#f5c04f','#ff8494','#c498ff','#ffffff'];celebrationUntil=t+4200;sky[3]?.animate?.([{opacity:.45},{opacity:0}],{duration:800,easing:'ease-out'});
+ for(let i=0;i<3;i++)pulses.push({x:(d.x+d.w/2)*T,y:(d.y+d.h/2)*T,t:t+i*220,c:P[i],big:1});
+ for(let i=0;i<80;i++)confetti.push({x:v.x+Math.random()*v.w,y:v.y-Math.random()*v.h*.5,vy:45+Math.random()*55,p:Math.random()*7,c:P[i%6],life:4.5})
+}
 function drawCommandCelebration(ts){
- if(ts>celebrationUntil)return;const d=DISTRICTS.command,x=(d.x+d.w/2)*T,y=d.y*T-10,life=clamp((celebrationUntil-ts)/3600,0,1);
- ctx.save();ctx.globalAlpha=Math.min(1,life*2)*.22;ctx.fillStyle='#ffe7a0';ctx.beginPath();for(let i=0;i<12;i++){const a=ts/2400+i*Math.PI/6;ctx.moveTo(x,y);ctx.arc(x,y,150,a,a+.13)}ctx.fill();ctx.globalAlpha=Math.min(1,life*2);
- for(let i=0;i<18;i++){const a=i/18*Math.PI*2,r=18+(1-life)*90,c=i%3===0?'#75dfa2':i%3===1?'#71b7ff':'#f5c04f';px(x+Math.cos(a)*r,y+Math.sin(a)*r*.55,4,4,c)}
- ctx.strokeStyle='rgba(117,223,162,'+(.35+.35*Math.sin(ts/160))+')';ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,20+(1-life)*28,0,Math.PI*2);ctx.stroke();txt('DONE!',x,y-30,'#eafff1',9);ctx.restore()
+ for(const f of confetti){ctx.globalAlpha=clamp(f.life,0,1);px(f.x,f.y,1+Math.abs(Math.sin(ts/140+f.p))*4,3,f.c)}ctx.globalAlpha=1;
+ if(ts>celebrationUntil)return;const d=DISTRICTS.command,x=(d.x+d.w/2)*T,y=d.y*T-10,life=clamp((celebrationUntil-ts)/4200,0,1),A=Math.min(1,life*2);
+ ctx.save();ctx.globalAlpha=A*.16;ctx.fillStyle='#ffe7a0';ctx.beginPath();for(let i=0;i<12;i++){const a=ts/2400+i*Math.PI/6;ctx.moveTo(x,y);ctx.arc(x,y,200,a,a+.1)}ctx.fill();ctx.globalAlpha=A;
+ for(let i=0;i<24;i++){const a=i/24*Math.PI*2,r=18+(1-life)*130,c=i%3===0?'#75dfa2':i%3===1?'#71b7ff':'#f5c04f';px(x+Math.cos(a)*r,y+Math.sin(a)*r*.55,4,4,c)}
+ const t='MISSION COMPLETE',w=tw(t,13)+30,by=y-74;ctx.fillStyle='rgba(6,11,17,.9)';ctx.beginPath();ctx.roundRect(x-w/2,by,w,26,7);ctx.fill();ctx.strokeStyle='#75dfa2';ctx.lineWidth=2;ctx.stroke();px(x-w/2+8,by+21,(w-16)*Math.min(1,(1-life)*3),2,'#75dfa2');txt(t,x,by+12,'#eafff1',13);ctx.restore()
 }
 
 function drawMinimap(){
@@ -1914,8 +1980,49 @@ function drawMinimap(){
  const markers=Object.entries(DISTRICTS).map(([id,d])=>`<i style="left:${((d.x+d.w/2)*T/W)*100}%;top:${((d.y+d.h/2)*T/H)*100}%;--c:${d.accent}" title="${esc(d.name)}"></i>`).join('');
  el.innerHTML='<span></span>'+markers;
 }
+// ---- Sky: the time of day -------------------------------------------------------------------------------------
+// By day the light drifts dawn > noon > golden hour > sunset and back, four minutes each way; Night locks it; reduced
+// motion holds a still afternoon. A low sun lengthens shadows. The sky is four world-sized layers over the canvas
+// (.awc__sky) that follow the camera and are blended by the compositor, so the canvas pays nothing: the light
+// (multiplied by day, a plain tint at night, with a spotlight dimming all but the busy district), haze and glow, low-sun
+// rays, a mission's flash.
+// Keys: light rgb and amount, haze/glow rgb, glow strength, shadow length. Dawn, noon, golden hour, sunset.
+const SKY=[[225,190,255,.17,215,170,245,.21,1.9],[255,255,255,0,200,230,255,.03,.8],[255,212,140,.16,255,200,120,.22,1.7],[255,150,120,.22,255,140,110,.28,2.4]];
+let skyU=null,skyK=0,skyT=[],sky=[],shadowK=1,spot={x:W/2,y:H/2,a:.5};
+function skyNow(ts){if(display.night)return-1;if(skyU!=null)return skyU;if(reduced)return .55;const t=ts/480000+.42;return 1-Math.abs(2*(t%1)-1)}
+function viewBox(){const s=sc(view.zoom)||1;return{x:-view.panX/s,y:-view.panY/s,w:cam.w/s,h:cam.h/s}}
+function syncSky(ts){
+ if(!sky.length)return;const N=display.night,u=skyNow(ts),k=(N?-1:Math.round(u*60))*1e9+Math.round(spot.x/8)*1e6+Math.round(spot.y/8)*1e3+Math.round(spot.a*30);
+ if(k!==skyK){skyK=k;let c=[150,170,255,.3,12,22,58,0,1];if(!N){const p=u*3,i=Math.min(2,Math.floor(p)),f=p-i;c=SKY[i].map((v,j)=>v+(SKY[i+1][j]-v)*f)}shadowK=c[8];
+  const rgb=(o,a)=>'rgba('+c.slice(o,o+3).map(Math.round)+','+a.toFixed(3)+')',lit='rgb('+[0,1,2].map(i=>Math.round(255+(c[i]-255)*c[3]))+')',[g,h,r]=sky;
+  g.style.background='radial-gradient(circle 720px at '+Math.round(spot.x)+'px '+Math.round(spot.y)+'px,rgba(4,8,26,0) '+(N?150:200)+'px,rgba(4,8,26,'+(spot.a*(N?.5:.2)).toFixed(3)+')),'+(N?'rgba(8,14,44,.16)':lit);g.style.mixBlendMode=N?'normal':'';
+  h.style.background='radial-gradient(circle '+(N?560:820)+'px at '+(N?W*.84:W*.06)+'px -40px,'+(N?'rgba(170,200,255,.22)':rgb(4,c[7]*.45))+','+rgb(4,0)+'),linear-gradient('+rgb(4,N?.5:.13)+','+rgb(4,N?.2:.035)+' 76px,'+rgb(4,0)+' 300px)';
+  r.style.setProperty('--ray',rgb(4,.9));r.style.opacity=N?0:clamp((c[7]-.1)*.7,0,.13)}
+ const z=sc(view.zoom);if(!skyT.length||Math.abs(view.panX-skyT[0])>.4||Math.abs(view.panY-skyT[1])>.4||Math.abs(z-skyT[2])>.001){skyT=[view.panX,view.panY,z];const t='translate('+view.panX.toFixed(1)+'px,'+view.panY.toFixed(1)+'px) scale('+z.toFixed(4)+')';for(const e of sky)e.style.transform=t}
+}
+// Glints sliding on the water by day; at night twinkling stars and fireflies (the still stars and the moon's path on
+// the water are in the night ground cache).
+function drawAmbient(ts){
+ const N=display.night,t=reduced?0:ts;ctx.fillStyle=N?'#e1ecff':'#fff6dc';
+ for(let i=0;i<(N?14:20);i++){const q=wh(i,5,11),y=8+(q>>>8)%36,a=.5+.5*Math.sin(t/(300+q%500)+i);
+  if(N){ctx.globalAlpha=.2+.8*a;ctx.fillRect(q%W,y,2,1)}else{ctx.globalAlpha=.12+.38*a;ctx.fillRect(Math.round(((q%W)+t*(.004+(q>>>4)%5*.003))%(W+40)-20),y,5+q%12,1)}}
+ if(N)for(let i=0;i<trees.length;i+=13){const[x0,y0]=trees[i],a=Math.sin(t/(700+i*13)+i),x=Math.round(x0+Math.sin(t/1900+i)*14),y=Math.round(y0+12+Math.cos(t/2300+i)*9);if(a<.05)continue;ctx.fillStyle='#d8ff7a';ctx.globalAlpha=a*.22;ctx.fillRect(x-3,y-3,6,6);ctx.globalAlpha=a;ctx.fillStyle='#f2ffc0';ctx.fillRect(x-1,y-1,2,2)}
+ ctx.globalAlpha=1
+}
+function drawArcs(ts){
+ if(!arcs.length)return;ctx.save();ctx.globalCompositeOperation='lighter';ctx.lineCap='round';
+ for(const r of arcs){
+  const k=(ts-r.t)/1500,h=clamp(k,0,1),e=1-(1-h)**3,tl=clamp((k-.45)/.9,0,1)**2,mx=(r.x0+r.x1)/2,my=Math.min(r.y0,r.y1)-30-Math.hypot(r.x1-r.x0,r.y1-r.y0)*.2,P=s=>{const u=1-s;return[u*u*r.x0+2*u*s*mx+s*s*r.x1,u*u*r.y0+2*u*s*my+s*s*r.y1]};
+  if(e>tl){ctx.beginPath();for(let i=0;i<=24;i++){const[x,y]=P(tl+(e-tl)*i/24);i?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.strokeStyle=r.c;ctx.globalAlpha=.28;ctx.lineWidth=10;ctx.stroke();ctx.globalAlpha=.95;ctx.lineWidth=3;ctx.stroke();ctx.strokeStyle='#fff';ctx.globalAlpha=.75;ctx.lineWidth=1;ctx.stroke()}
+  if(h<1){const[x,y]=P(e);ctx.globalAlpha=.45;ctx.fillStyle=r.c;ctx.beginPath();ctx.arc(x,y,11,0,7);ctx.fill();ctx.globalAlpha=1;px(x-3,y-3,6,6,'#fff')}
+  else if(!r.hit){r.hit=1;pulses.push({x:r.x1,y:r.y1+10,t:ts,c:r.c});spawnSpark(r.x1,r.y1,r.c,24)}
+ }
+ ctx.restore();arcs=arcs.filter(r=>ts-r.t<2900)
+}
 function draw(ts){
- if(!ctx||!cam.w)return;const s=sc(view.zoom);fk=s*cam.dpr;ctx.setTransform(cam.dpr,0,0,cam.dpr,0,0);ctx.clearRect(0,0,cam.w,cam.h);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(s,s);drawGround(ts);ctx.imageSmoothingEnabled=false;drawFlows(ts);drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,ts);drawBuilding(id,d,ts);drawInterior(id,d,ts);drawWorksite(id,d,ts)}layoutSigns();drawAgents(ts);drawMoments(ts);drawCommandCelebration(ts);drawClouds(ts);drawSigns();ctx.restore()
+ if(!ctx||!cam.w)return;const s=sc(view.zoom);fk=s*cam.dpr;ctx.setTransform(cam.dpr,0,0,cam.dpr,0,0);ctx.clearRect(0,0,cam.w,cam.h);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(s,s);drawGround(ts);ctx.imageSmoothingEnabled=false;drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,ts);drawBuilding(id,d,ts);drawInterior(id,d,ts);drawWorksite(id,d,ts)}drawAmbient(ts);drawFlows(ts);layoutSigns();drawAgents(ts);drawArcs(ts);drawMoments(ts);drawCommandCelebration(ts);drawBirds(ts);drawClouds(ts);drawSigns();ctx.restore();
+ // last: moving the sky dirties style, and a canvas font set after that would recalculate it mid-frame
+ syncSky(ts)
 }
 // Light: warm sun from the top left by day, cool moonlight at night. It is painted into the ground cache and the
 // building sprites, never per frame, and not over the workers and signs, so they keep their colours.
