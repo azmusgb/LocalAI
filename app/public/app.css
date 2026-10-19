@@ -493,6 +493,12 @@ body.ux-v3 .two{gap:14px}
 .awc canvas:active{cursor:grabbing}
 .awc canvas:focus-visible{box-shadow:inset 0 0 0 2px var(--aw-blue)}
 .awc__mapWrap:after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 90px rgba(2,8,14,.45)}
+/* The sky over the city (ui.js syncSky): world-sized layers that follow the camera; the light is multiplied over it,
+   haze and glow are laid on top, rays fan from the top-left corner when the sun is low, and a flash marks a finished mission. */
+.awc__sky{position:absolute;left:0;top:0;width:1280px;height:760px;transform-origin:0 0;pointer-events:none;will-change:transform}
+.awc__sky--light{mix-blend-mode:multiply}
+.awc__sky--rays{opacity:0;background:conic-gradient(from 0deg at -60px -60px,transparent 106deg,var(--ray) 108deg 110deg,transparent 112deg 116deg,var(--ray) 119deg 122deg,transparent 125deg,var(--ray) 127deg 129deg,transparent 131deg 135deg,var(--ray) 138deg 141deg,transparent 144deg 145deg,var(--ray) 147deg 148deg,transparent 150deg);mask-image:linear-gradient(135deg,#000,transparent 60%)}
+.awc__sky--flash{opacity:0;background:#ffecbe;mix-blend-mode:screen}
 
 .awc__mapHud{position:absolute;left:12px;right:12px;top:12px;z-index:2;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;pointer-events:none}
 .awc__selection,.awc__minimap,.awc__tooltip{background:rgba(7,15,25,.9);border:1px solid rgba(140,175,215,.16);box-shadow:0 10px 30px rgba(0,0,0,.28)}
