@@ -18,11 +18,27 @@ x-logging: &logging
     options: { max-size: "10m", max-file: "3" }
 
 services:
+  # One-shot job before the appliance: hands its data volume to the user it runs as (node, 1000), on a new host and on
+  # the host that ran it as root until 19 Oct 2026. Exits 0 by design, like sandbox-certs.
+  appliance-data-owner:
+    image: node@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
+    container_name: local-ai-appliance-data-owner
+    <<: *logging
+    user: "0:0"
+    network_mode: none
+    command: ["chown", "-R", "1000:1000", "/data"]
+    volumes: [appliance-data:/data]
+
   appliance:
     # node:22-alpine, pinned to the image that has been running; bump it in a PR.
     image: node@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
     container_name: local-ai-appliance
     restart: unless-stopped
+    # The image's node user, not root: the app needs no more than its data volume and the workspace (writable by all).
+    user: "1000:1000"
+    depends_on:
+      appliance-data-owner:
+        condition: service_completed_successfully
     command: ["node", "/app/server.js"]
     <<: [*host-gateway, *logging]
     # About 60 MB idle; the headroom is for the npm/node commands and staged self-changes it runs.
@@ -90,8 +106,9 @@ services:
     # About 20 MB in use.
     mem_limit: 256m
     healthcheck:
-      # Caddy's admin API answers inside the container only (localhost:2019).
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      # Real HTTPS: a TLS handshake and a file Caddy serves itself (the CA certificate), so it says whether devices can
+      # connect, without depending on the appliance (a deploy restarts that) or logging the admin API every 30 s.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "--no-check-certificate", "https://localhost/localai-ca.crt"]
       interval: 30s
       timeout: 5s
       retries: 3

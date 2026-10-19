@@ -2,7 +2,7 @@ param(
     [string]$EnvFile = 'C:\LocalAI\stack\stack.env',
     [string]$Compose = (Join-Path $PSScriptRoot 'compose.yml')
 )
-# Checks that the containers running now match deploy\stack\compose.yml: image, restart policy, ports, mounts,
+# Checks that the containers running now match deploy\stack\compose.yml: image, restart policy, user, ports, mounts,
 # network, command and every environment value compose sets. Changes nothing. Values are compared, never printed.
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path $EnvFile)) { throw "No $EnvFile; run Export-LocalAI-StackEnv.ps1 first" }
@@ -12,7 +12,8 @@ $norm = { param($p) ([string]$p).Replace('\', '/').ToLowerInvariant() -replace '
 $problems = 0
 foreach ($svc in $config.services.PSObject.Properties) {
     $want = $svc.Value; $name = $want.container_name; $diff = @()
-    $live = (& docker inspect $name 2>$null | ConvertFrom-Json)
+    # Continue here: under Windows PowerShell 5.1 with Stop, docker's 'no such object' on stderr ends the whole check.
+    $live = (& { $ErrorActionPreference = 'Continue'; & docker inspect $name 2>$null } | ConvertFrom-Json)
     if (-not $live) { "MISSING  $name"; $problems++; continue }
     $live = $live[0]
     # Same image: compare image IDs, so a tag and the digest it points to count as equal.
@@ -21,6 +22,9 @@ foreach ($svc in $config.services.PSObject.Properties) {
     $restart = if ($want.restart) { $want.restart } else { 'no' }
     if ($live.HostConfig.RestartPolicy.Name -ne $restart) { $diff += "restart ($restart vs $($live.HostConfig.RestartPolicy.Name))" }
     if ([bool]$want.privileged -ne [bool]$live.HostConfig.Privileged) { $diff += 'privileged' }
+    # User: what compose names, else the image's own (n8n's image runs as node, sandbox-api's as sandbox-api).
+    $wantUser = if ($want.user) { [string]$want.user } else { [string](& docker image inspect $live.Image --format '{{.Config.User}}') }
+    if ($wantUser -ne [string]$live.Config.User) { $diff += "user (compose '$wantUser', running '$($live.Config.User)')" }
     if ($want.command -and (($want.command -join ' ') -ne ($live.Config.Cmd -join ' '))) { $diff += 'command' }
     # Ports: host IP and port for each published container port.
     $wantPorts = @($want.ports | Where-Object { $_ } | ForEach-Object { "$($_.host_ip):$($_.published)->$($_.target)" } | Sort-Object)

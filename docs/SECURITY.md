@@ -80,6 +80,11 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
 
 ## Other controls
 
+- **The appliance runs as `node` (uid 1000), not root** (`user: "1000:1000"` in `deploy/stack/compose.yml`, since
+  19 Oct 2026). It can write its data volume (a one-shot `appliance-data-owner` job hands `/data` to it on each
+  `compose up`) and the workspace folders, and nothing else in the container. Host scripts that run the appliance image
+  on its data (deploy maintenance in `Storage-LocalAI.ps1`, `Restore-LocalAI-Data.ps1`) use the same user, so the files
+  SQLite creates stay writable by the appliance. `Test-LocalAI-Stack.ps1` reports a container running as another user.
 - **Cross-site request guard.** Before routing, every `POST`, `PUT`, `PATCH` and `DELETE` is rejected with 403
   `Cross-site request blocked` when `Sec-Fetch-Site` is `cross-site`, or when an `Origin` header is present and its
   host:port matches neither the `Host` header nor `X-Forwarded-Host` (`crossSiteRequest` in `app/server.js`;
