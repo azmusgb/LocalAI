@@ -8,6 +8,14 @@ const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch({ headless: true });
 const failures = [];
 async function check(name, fn) { try { await fn(); console.log('PASS', name); } catch (e) { failures.push(`${name}: ${e.message}`); console.error('FAIL', name, e.message); } }
+// Developer tools start on for a browser with no saved choice once the server has developer history (changes,
+// engineering runs or Claude board findings, which other suites leave behind), so every page here starts with them
+// off, as on a new install; checks that need them turn them on themselves.
+const newContext = async opts => {
+  const context = await browser.newContext(opts);
+  await context.addInitScript(() => { try { localStorage.setItem('localai.devTools', '0'); } catch {} });
+  return context;
+};
 
 const now = Date.now(), at = s => new Date(now - s * 1000).toISOString();
 const MISSION = {
@@ -41,7 +49,7 @@ const canvasState = page => page.evaluate(() => {
 // iPhone 14 and SE (WebKit's device settings on Chromium: size, scale factor, touch).
 for (const name of ['iPhone 14', 'iPhone SE']) {
   const { defaultBrowserType, ...device } = devices[name];
-  const context = await browser.newContext({ ...device, serviceWorkers: 'block' });
+  const context = await newContext({ ...device, serviceWorkers: 'block' });
   const { page, errors } = await seeded(context);
   const vw = device.viewport.width, vh = device.viewport.height;
   await check(`${name}: the city renders on screen without scrolling, at the device's pixel density`, async () => {
@@ -128,7 +136,7 @@ for (const name of ['iPhone 14', 'iPhone SE']) {
 }
 
 for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
-  const page = await browser.newPage({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 500, hasTouch: viewport.width < 500 });
+  const page = await (await newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 500, hasTouch: viewport.width < 500 })).newPage();
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.goto(base + '/#work', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#work.active');
@@ -148,12 +156,12 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
     await page.waitForSelector('#work.active');
   });
   await check(`${viewport.width}px: no script errors`, async () => assert.deepEqual(errors, []));
-  await page.close();
+  await page.context().close();
 }
 
 // Desktop at 1x and 2x: the city is painted at the screen's pixel density, so the pixel art stays crisp.
 for (const deviceScaleFactor of [1, 2]) {
-  const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 900 }, deviceScaleFactor });
+  const context = await newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 900 }, deviceScaleFactor });
   const { page, errors } = await seeded(context);
   await check(`1440px @${deviceScaleFactor}x: the city is painted at full resolution`, async () => {
     await page.waitForFunction(() => { const c = document.getElementById('awcCanvas'); return c.getContext('2d').getImageData(c.width >> 1, c.height >> 1, 1, 1).data[3] > 0; }, null, { timeout: 5000 });
@@ -177,7 +185,7 @@ const FAILED = {
 };
 const DONE = { ...FAILED, id: 'mission-ui-done', status: 'complete', error: '', answer: 'The summary of what the team found.', finishedAt: t(240), workers: snapW('complete', 'complete'), results: [{ agentId: 'ux_analyst', agentName: 'UX Analyst', status: 'complete', answer: 'Three things to fix.' }], timeline: [] };
 async function withMission(contextOpts, mission) {
-  const context = await browser.newContext({ serviceWorkers: 'block', ...contextOpts });
+  const context = await newContext({ serviceWorkers: 'block', ...contextOpts });
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
   const page = await context.newPage();
   const errors = []; page.on('pageerror', e => errors.push(e.message));
@@ -290,7 +298,7 @@ async function withMission(contextOpts, mission) {
 // Start a mission (design PR 3): one sheet, the team in words as you type, Advanced only with developer tools; the
 // empty city invites a goal and offers a demo.
 async function emptyPage(contextOpts) {
-  const context = await browser.newContext({ serviceWorkers: 'block', ...contextOpts });
+  const context = await newContext({ serviceWorkers: 'block', ...contextOpts });
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
   const page = await context.newPage();
   const errors = []; page.on('pageerror', e => errors.push(e.message));
@@ -493,7 +501,7 @@ const PAIR = () => ({ id: 'mission-ui-pair', goal: 'Two roles', status: 'running
 const debugOn = context => context.addInitScript(() => { try { localStorage.setItem('localai.debug', '1'); } catch {} });
 const frames = page => page.evaluate(() => Object.fromEntries(window.__awcLayout().workers.map(w => [w.id, w.frame])));
 for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 } }], ['reduced motion', { viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' }]]) {
-  const context = await browser.newContext({ serviceWorkers: 'block', ...opts }); await debugOn(context);
+  const context = await newContext({ serviceWorkers: 'block', ...opts }); await debugOn(context);
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
   const page = await context.newPage(); const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [PAIR()] }) }));
@@ -540,7 +548,7 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   const CROWD = { id: 'mission-ui-crowd', goal: 'A busy city', status: 'running', createdAt: new Date(Date.now() - 60e3).toISOString(), updatedAt: new Date().toISOString(), results: [], timeline: [], workers: [
     W8('router', 'Mission Router', 'complete'), W8('ux_analyst', 'UX Analyst', 'running', ['router']), W8('code_analyst', 'Code Analyst', 'running', ['router']), W8('documentation', 'Documentation Agent', 'pending', ['ux_analyst']),
     W8('validator', 'Validator', 'error', ['code_analyst']), W8('research_agent', 'Research Agent', 'complete', ['router']), W8('performance_analyst', 'Performance Analyst', 'running', ['router']), W8('synthesis', 'Coordinator', 'pending', ['documentation', 'code_analyst'])] };
-  const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 900 } }); await debugOn(context);
+  const context = await newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 900 } }); await debugOn(context);
   const { page, errors } = await (async () => { await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
     const page = await context.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [CROWD] }) }));
@@ -581,7 +589,7 @@ const FLOW = () => ({ id: 'mission-ui-flow', goal: 'Flows and crossings', status
   workers: [{ id: 'router', name: 'Mission Router', state: 'complete', dependsOn: [] }, { id: 'ux_analyst', name: 'UX Analyst', state: 'pending', dependsOn: ['router'] }, { id: 'documentation', name: 'Documentation Agent', state: 'pending', dependsOn: ['ux_analyst'] },
     { id: 'code_analyst', name: 'Code Analyst', state: 'pending', dependsOn: ['router'] }, { id: 'performance_analyst', name: 'Performance Analyst', state: 'pending', dependsOn: ['code_analyst'] }, { id: 'validator', name: 'Validator', state: 'pending', dependsOn: ['performance_analyst'] }] });
 async function cityWithFlow(opts) {
-  const context = await browser.newContext({ serviceWorkers: 'block', ...opts }); await debugOn(context);
+  const context = await newContext({ serviceWorkers: 'block', ...opts }); await debugOn(context);
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
   const page = await context.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [FLOW()] }) }));
@@ -832,7 +840,7 @@ const DEV_WORDS = /Synthesis|Evidence|Routing|Mission Router|Capability|Groundin
 // hidden page (an iPad keeps the list on listed pages) and squeezed the city to 434 of 768 px.
 {
   const { defaultBrowserType, ...device } = devices['iPad Mini'];
-  const context = await browser.newContext({ ...device, serviceWorkers: 'block' });
+  const context = await newContext({ ...device, serviceWorkers: 'block' });
   const { page, errors } = await seeded(context);
   await check('iPad Mini: the city is full width; Work’s page list is closed', async () => {
     await page.waitForTimeout(300);

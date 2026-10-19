@@ -158,6 +158,7 @@ await check('Projects: with no projects there is one empty state, not zero tiles
 
 await check('Empty states say what appears and how (E3): Automations, Sources, Library, Signals without an empty Latest checks', async () => {
   await page.route('**/api/automations', r => r.fulfill({ json: { items: [], runs: [] } }));
+  await page.route('**/api/monitors', r => r.fulfill({ json: { items: [] } }));   // health checks share the list
   await page.route('**/api/library', r => r.fulfill({ json: { items: [] } }));
   await page.route('**/api/quality', r => r.fulfill({ json: { latest: null, events: [] } }));
   await page.evaluate(() => window.showView('automationStudio'));
@@ -170,7 +171,7 @@ await check('Empty states say what appears and how (E3): Automations, Sources, L
   await page.waitForSelector('#signals.active');
   await page.waitForFunction(() => document.querySelector('#signalsScan > *'));
   assert.equal(await page.locator('#signalsDetails').isVisible(), false, 'no empty Latest checks');
-  for (const u of ['**/api/automations', '**/api/library', '**/api/quality']) await page.unroute(u);
+  for (const u of ['**/api/automations', '**/api/monitors', '**/api/library', '**/api/quality']) await page.unroute(u);
 });
 
 // Health's technical detail (probe names, HTTP results) is for a developer: it shows only with developer tools on.
@@ -185,6 +186,16 @@ await check('Health: Advanced service details shows only with developer tools on
 });
 
 // One Automations page (D9): Monitors folded in as the kinds Health check and Morning brief; "Open n8n" stays a button.
+// The health check below is really created on the server, which has no way to delete one, and a server reused across
+// runs keeps every earlier one (and other suites' automations). So the page sees only what this run creates: it starts
+// empty, as on a fresh server, which keeps the phone's New form open, and the new row is found by this run's name.
+const MONITOR = `Nightly health ${Date.now().toString(36)}`;
+const ours = async (route, keep) => {
+  const res = await route.fetch().catch(() => null); if (!res) return route.abort().catch(() => {});
+  const j = await res.json(); route.fulfill({ json: { ...j, items: (j.items || []).filter(keep) } });
+};
+await page.route('**/api/automations', r => ours(r, () => false));
+await page.route('**/api/monitors', r => ours(r, m => m.name === MONITOR));
 await check('Automations: an old #operations link lands on Automations, which has the four kinds and Open n8n', async () => {
   await page.evaluate(() => { location.hash = '#operations'; });
   await page.waitForSelector('#automationStudio.active');
@@ -199,11 +210,11 @@ await check('Automations: a health monitor is created with kind "Health check" a
   assert.equal(await page.locator('#autoSchedule').isVisible(), false, 'a health check runs every 15 minutes; no schedule to pick');
   assert.equal(await page.locator('#autoPrompt').isVisible(), false, 'a health check needs no instruction');
   assert.match(await page.locator('#autoKindNote').innerText(), /15 minutes/);
-  await page.fill('#autoName', 'Nightly health');
+  await page.fill('#autoName', MONITOR);
   const created = page.waitForRequest(r => r.url().endsWith('/api/monitors/create'));
   await page.locator('#autoCreateBtn').click();
-  assert.deepEqual((await created).postDataJSON(), { name: 'Nightly health', kind: 'health' });
-  const row = page.locator('#automationList .item-card', { hasText: 'Nightly health' });
+  assert.deepEqual((await created).postDataJSON(), { name: MONITOR, kind: 'health' });
+  const row = page.locator('#automationList .item-card', { hasText: MONITOR });
   await row.waitFor();
   assert.match(await row.innerText(), /Health check/);
   assert.equal(await row.locator('[data-monitor-run]').count(), 1, 'Run now checks it at once');
@@ -222,6 +233,7 @@ await check('Automations: Generate brief lives on Automations, as the Morning br
   assert.equal(await page.locator('#autoSchedule').isVisible(), true);
   assert.equal(await page.locator('#autoCreateBtn').isVisible(), true);
 });
+for (const u of ['**/api/automations', '**/api/monitors']) await page.unroute(u);
 
 // Automations, Sources and Memory: on a phone the owner's items come first and the "New …" form opens from a button;
 // with nothing yet the form is the empty state and stays open. On a computer the cards beside the form fit their content.
