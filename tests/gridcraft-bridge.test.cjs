@@ -55,6 +55,11 @@ test('the bridge passes the mode, returns the journal, and runs workbook, keep, 
   fs.writeFileSync(path.join(dir, 'agent.py'), `import sys, json, time
 mode = sys.argv[sys.argv.index('--mode') + 1]
 if sys.argv[-1] == '--once=slow': time.sleep(1.5)
+if sys.argv[-1] == '--once=steps':
+    for line in ['[agent] model turn 1 ...', '[agent] tool call: read_range {"range": "Sales!A1:D4"}', '[agent] tool result: read_range -> {}',
+                 '[agent] tool call: set_cell {"cell": "B7", "sheet": "Sales", "input": "5"}', '[agent] tool result: set_cell -> ERROR no such sheet']:
+        print(line, flush=True); time.sleep(0.2)
+    time.sleep(1)
 print('[agent] model returned final text.'); print('answer for ' + mode)
 print('[journal] ' + json.dumps({'mode': mode, 'edits': [], 'undoSteps': 0}), file=sys.stderr)
 `);
@@ -105,6 +110,17 @@ else:
   assert.equal(busyCell.status, 409, 'a cell edit waits for no request');
   assert.match((await busyCell.json()).error, /busy with a request\. Change the cell when it finishes/);
   assert.equal((await slow).status, 200);
+  // Progress: the steps of the running request, from the agent's log lines as they arrive.
+  const stepping = post('/run', { prompt: 'steps', mode: 'review' });
+  let live;
+  for (let i = 0; i < 50; i++) { live = await (await fetch(base + '/progress')).json(); if (live.steps[1]?.failed) break; await new Promise(r => setTimeout(r, 100)); }
+  assert.equal(live.running, true);
+  assert.equal(live.turn, 1);
+  assert.deepEqual(live.steps.map(x => [x.tool, x.text, !!x.failed]), [['read_range', 'Reading Sales!A1:D4', false], ['set_cell', 'Changing Sales!B7', true]]);
+  assert.equal((await stepping).status, 200);
+  const after = await (await fetch(base + '/progress')).json();
+  assert.equal(after.running, false, 'not running once the request finished');
+  assert.equal(after.steps.length, 2, "the last request's steps stay until the next starts");
   const cell = await (await post('/cell', { sheet: 'Sales', cell: 'B2', input: '=A1', prompt: 'x', path: 'C:/x' })).json();
   assert.deepEqual([cell.op, cell.req], ['set_cell', { sheet: 'Sales', cell: 'B2', input: '=A1' }], '/cell runs the set_cell op with only the sheet, cell and input');
   assert.equal((await fetch(base + '/cell', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://evil.example' }, body: '{}' })).status, 403);

@@ -4,6 +4,7 @@ import json
 import logging
 import logging.handlers
 import os
+import re
 import socket
 import subprocess
 import threading
@@ -161,6 +162,99 @@ FINAL_MARKER = '[agent] model returned final text.'
 # Windows limits a command line to about 32K characters.
 MAX_PROMPT_CHARS = 20000
 
+# What the running request is doing, for GET /progress: the agent logs each model turn and tool call on stdout as it
+# goes ("[agent] model turn 2 ...", "[agent] tool call: read_range {...}"), and the bridge turns those lines into steps
+# in the owner's words while the request runs. Only the newest request is kept, and only its newest MAX_STEPS steps.
+MAX_STEPS = 40
+progress_lock = threading.Lock()
+progress = {'running': False, 'startedAt': None, 'turn': 0, 'steps': []}
+
+
+def _short(value, limit: int = 60) -> str:
+    text = ' '.join(str(value or '').split())
+    return text if len(text) <= limit else text[:limit - 1] + '…'
+
+
+def describe_tool(name: str, args) -> str:
+    args = args if isinstance(args, dict) else {}
+    where = _short(args.get('range') or args.get('cell') or args.get('ref') or '')
+    sheet = _short(args.get('sheet') or '')
+    if sheet and where and '!' not in where:
+        where = f'{sheet}!{where}'
+    where = where or sheet
+    texts = {
+        'inspect_workbook': 'Looking over the workbook',
+        'list_functions': 'Looking up spreadsheet functions',
+        'read_range': f'Reading {where}' if where else 'Reading cells',
+        'get_cell': f'Reading {where}' if where else 'Reading a cell',
+        'evaluate_formula': f'Calculating {_short(args.get("formula"))}' if args.get('formula') else 'Calculating',
+        'set_cell': f'Changing {where}' if where else 'Changing a cell',
+        'write_range': f'Writing {where}' if where else 'Writing cells',
+        'save_workbook': 'Saving the workbook',
+        'open_workbook': 'Opening a workbook',
+        'new_workbook': 'Starting a new workbook',
+    }
+    return texts.get(name) or (f'Using {name} on {where}' if where else f'Using {name}')
+
+
+def step_from_line(line: str):
+    # One agent log line -> ('turn', n), ('step', {...}), ('failed', None) for the last step, or None.
+    line = line.strip()
+    if line.startswith('[agent] model turn '):
+        try:
+            return 'turn', int(line.split()[3])
+        except (IndexError, ValueError):
+            return None
+    if line.startswith('[agent] tool call: '):
+        name, _, raw = line[len('[agent] tool call: '):].partition(' ')
+        try:
+            args = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            # The agent cuts long arguments (a big write_range) at 500 characters: keep the short fields before the cut.
+            args = {k: v for k, v in re.findall(r'"(range|cell|ref|sheet|formula)"\s*:\s*"((?:[^"\\]|\\.)*)"', raw)}
+        return 'step', {'tool': name, 'text': describe_tool(name, args), 'at': round(time.time(), 1)}
+    if line.startswith('[agent] tool result: ') and ' -> ERROR' in line:  # summarize_tool_result marks failures
+        return 'failed', None
+    return None
+
+
+def note_progress(line: str) -> None:
+    found = step_from_line(line)
+    if not found:
+        return
+    kind, value = found
+    with progress_lock:
+        if kind == 'turn':
+            progress['turn'] = value
+        elif kind == 'step':
+            progress['steps'] = (progress['steps'] + [value])[-MAX_STEPS:]
+        elif progress['steps']:
+            progress['steps'][-1]['failed'] = True
+
+
+def set_running(running: bool) -> None:
+    with progress_lock:
+        if running:
+            progress.update(running=True, startedAt=round(time.time(), 1), turn=0, steps=[])
+        else:
+            progress['running'] = False
+
+
+def progress_snapshot() -> dict:
+    with progress_lock:
+        return {**progress, 'steps': [dict(x) for x in progress['steps']]}
+
+
+def _pump(stream, sink: list, on_line=None) -> None:
+    for line in iter(stream.readline, ''):
+        sink.append(line)
+        if on_line:
+            try:
+                on_line(line)
+            except Exception:  # progress is a nicety; never let it break the request
+                log.exception('Could not read a progress line')
+    stream.close()
+
 
 def run_agent(prompt: str, mode: str = 'apply') -> subprocess.CompletedProcess:
     # '--once=<prompt>' keeps argparse from reading a prompt that starts with '-' as an option.
@@ -176,20 +270,27 @@ def run_agent(prompt: str, mode: str = 'apply') -> subprocess.CompletedProcess:
         env={**os.environ, 'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8'},
         creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0),
     )
+    # Read both pipes as the agent writes them (stdout line by line for progress), so neither fills up and blocks it.
+    out: list = []
+    err: list = []
+    readers = [threading.Thread(target=_pump, args=(proc.stdout, out, note_progress), daemon=True),
+               threading.Thread(target=_pump, args=(proc.stderr, err), daemon=True)]
+    for reader in readers:
+        reader.start()
     try:
-        stdout, stderr = proc.communicate(timeout=RUN_TIMEOUT)
+        proc.wait(timeout=RUN_TIMEOUT)
     except subprocess.TimeoutExpired:
         # Kill the agent and its MCP child (gridcraft-cli); killing only the agent can leave the pipes open.
         if os.name == 'nt':
             subprocess.run(['taskkill', '/T', '/F', '/PID', str(proc.pid)], capture_output=True)
         else:
             proc.kill()
-        try:
-            proc.communicate(timeout=10)
-        except subprocess.TimeoutExpired:
-            pass
+        for reader in readers:
+            reader.join(timeout=10)
         raise
-    return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
+    for reader in readers:
+        reader.join(timeout=10)
+    return subprocess.CompletedProcess(args, proc.returncode, ''.join(out), ''.join(err))
 
 
 JOURNAL_PREFIX = '[journal] '
@@ -298,6 +399,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(*run_ops('workbook', query))
         if url.path == '/workbooks':
             return self._json(*run_ops('workbooks', {}, gridcraft=False))
+        if url.path == '/progress':
+            return self._json(200, {'ok': True, **progress_snapshot()})
         if url.path != '/health':
             return self._json(404, {'ok': False, 'error': 'Not found'})
         return self._json(200, {
@@ -365,6 +468,7 @@ class Handler(BaseHTTPRequestHandler):
             if not ensure_gridcraft():
                 return self._json(503, {'ok': False, 'error': f'GridCraft control port {CONTROL_PORT} is unavailable'})
             started = time.time()
+            set_running(True)
             proc = run_agent(prompt, mode)
             elapsed = round(time.time() - started, 2)
             journal = parse_journal(proc.stderr)
@@ -396,6 +500,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             return self._json(500, {'ok': False, 'error': f'Bridge failed to run the agent: {type(exc).__name__}: {exc}'})
         finally:
+            set_running(False)
             run_lock.release()
 
     def log_message(self, fmt, *args):

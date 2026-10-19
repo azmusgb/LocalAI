@@ -2071,6 +2071,11 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .sheets-result[data-kind="error"]{border-color:color-mix(in srgb,var(--ds-bad) 40%,var(--ds-line))}
 .sheets-result[data-status="review"]{border-color:color-mix(in srgb,var(--ds-attention) 45%,var(--ds-line))}
 .sheets-result .btn-outline{justify-self:start}
+.sheets-steps{margin:0;padding-left:1.4em;display:grid;gap:4px;color:var(--ds-muted);font-size:var(--ds-fs-1)}
+.sheets-steps[hidden]{display:none}
+.sheets-steps .is-current{color:var(--ds-text)}
+.sheets-steps .is-failed{color:var(--ds-bad)}
+.sheets-steps__more{list-style:none;margin-left:-1.4em}
 .sheets-result .btn-outline[hidden],.sheets-changes[hidden],.sheets-review[hidden],.sheets-review [hidden]{display:none}
 .sheets-changes{display:grid;gap:8px;border-top:1px solid var(--ds-line);padding-top:10px}
 .sheets-changes h2{font-size:var(--ds-fs-2);margin:0}

@@ -1450,7 +1450,7 @@ function crossSiteRequest(req) {
   return !sameHost(parsed.protocol, parsed.host, req.headers.host) && !sameHost(parsed.protocol, parsed.host, forwarded);
 }
 // The server's areas (app/server/*.js), each given what it uses; a module comes after those it takes names from.
-const { apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopPortalCode, apiWorkshopStatus } = require('./server/gridcraft').createGridcraft({ GRIDCRAFT_RUN_TIMEOUT_MS, GRIDCRAFT_URL, inFlight, json, makeId, modelFetchWithTimeout, readBody, recordActivity, sameOriginJson, storage, workshop, workshopPrinter });
+const { apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftProgress, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopPortalCode, apiWorkshopStatus } = require('./server/gridcraft').createGridcraft({ GRIDCRAFT_RUN_TIMEOUT_MS, GRIDCRAFT_URL, inFlight, json, makeId, modelFetchWithTimeout, readBody, recordActivity, sameOriginJson, storage, workshop, workshopPrinter });
 // changes.js takes addNotification from here and this takes these two back from it: called, never at load, so
 // they are looked up when called (the server split, step 6).
 const { addNotification, apiApprovalCreate, apiApprovalDecide, apiApprovals, apiNotificationSeed, apiNotificationSystem, apiNotificationUpdate, apiNotifications, approvalStore, notificationStore, resolveDeployFailures } = require('./server/notifications').createNotifications({ APPROVALS_STORE, NOTIFICATIONS_STORE, changeStore: (...a) => changeStore(...a), decideChange: (...a) => decideChange(...a), hostDetail, isInfoNotice, json, makeId, normalizeTitle, notifier, notifyLib, nowIso, objectStore, prependRecord, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
@@ -1510,6 +1510,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/gridcraft/runs') return await apiGridcraftRuns(req, res);
     if (req.method === 'GET' && p === '/api/gridcraft/workbook') return await apiGridcraftWorkbook(req, res, urlObj);
     if (req.method === 'GET' && p === '/api/gridcraft/workbooks') return await apiGridcraftWorkbooks(req, res);
+    if (req.method === 'GET' && p === '/api/gridcraft/progress') return await apiGridcraftProgress(req, res);
     if (req.method === 'POST' && p === '/api/gridcraft/open') return await apiGridcraftOpen(req, res);
     if (req.method === 'POST' && p === '/api/gridcraft/cell') return await apiGridcraftCell(req, res);
     { const m = req.method === 'POST' && p.match(/^\/api\/gridcraft\/runs\/(gc-[\w-]+)\/(keep|discard)$/); if (m) return await apiGridcraftDecide(req, res, m[1], m[2]); }
