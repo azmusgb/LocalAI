@@ -516,11 +516,6 @@ body.ux-v3 .two{gap:14px}
 
 .awc__empty{padding:14px 8px;text-align:center;color:var(--aw-faint);font-size:12px}
 
-.awc__replayMarkers{display:flex;flex-wrap:wrap;gap:3px;min-height:10px}
-.awc__replayMarkers button{width:10px;height:10px;padding:0;border:0;border-radius:3px;background:#3c526b}
-.awc__replayMarkers button.done{background:var(--aw-green)}.awc__replayMarkers button.bad{background:var(--aw-red)}.awc__replayMarkers button.wait{background:#5f7690}
-.awc__replayMarkers button.active{outline:2px solid #fff;outline-offset:1px}
-
 /* Night mode deepens the frame to match the canvas */
 .awc-v3.is-night{--aw-ground:#060d16;--aw-panel:#0a1420}
 
@@ -2194,22 +2189,39 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 @media(max-width:760px){.awc__toasts li{padding:6px 10px}.awc__toasts li:nth-child(n+3){display:none}}
 .aw-page.is-demo .aw-sheet__action{display:none}
 
-/* Agent World: one replay scrubber under the city (over its foot on a phone); the demo chip; the result. */
-.awc__scrub{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid var(--aw-line);background:var(--aw-panel)}
+/* Agent World: the replay timeline, a slim bar under the city (in the bottom sheet, over the peek, on a phone): Play,
+   the time so far, the track with hand-off, error and finish marks, the length, the speed; the step and Back to now. */
+.awc__scrub{display:flex;align-items:center;gap:12px;padding:4px 12px;border-top:1px solid var(--aw-line);background:var(--aw-panel)}
 .awc__scrub[hidden]{display:none}
-.awc__scrub>button{flex:none;min-width:44px;min-height:44px;border:1px solid var(--aw-line2);border-radius:10px;background:var(--ds-surface-2);color:var(--ds-text);font:inherit;cursor:pointer}
-.awc__scrubTrack{position:relative;flex:1;min-width:0;height:44px}
-.awc__scrubTrack input{position:absolute;inset:0;width:100%;height:100%;margin:0;accent-color:var(--aw-blue);cursor:pointer}
-.awc__replayMarkers{position:absolute;left:8px;right:8px;top:4px;z-index:1;display:flex;justify-content:space-between;pointer-events:none}
-.awc__replayMarkers button{width:8px;height:8px;padding:0;border:0;border-radius:2px;background:#5f7690;pointer-events:auto;cursor:pointer}
-.awc__replayMarkers button.done{background:var(--aw-green)}.awc__replayMarkers button.bad{background:var(--aw-red)}.awc__replayMarkers button.active{background:var(--aw-amber)}
-#awcReplayLabel{flex:none;font-size:12px;color:var(--aw-muted);white-space:nowrap}
+.awc__scrubRow{display:flex;align-items:center;gap:6px;flex:1;min-width:0}
+.awc__scrubHead{order:1;display:flex;align-items:center;gap:8px;flex:none;min-width:0}
+.awc__scrub button{flex:none;min-width:44px;min-height:44px;padding:0 10px;border:1px solid var(--aw-line2);border-radius:10px;background:var(--ds-surface-2);color:var(--ds-text);font:inherit;font-variant-numeric:tabular-nums;cursor:pointer}
+.awc__scrub button[hidden]{display:none}
+.awc__scrubTime{flex:none;min-width:4ch;font-size:12px;font-variant-numeric:tabular-nums;text-align:center;color:var(--aw-muted)}
+.awc__scrubTrack{--p:0;position:relative;flex:1;min-width:0;height:44px;touch-action:none;cursor:pointer}
+.awc__scrubBar{position:absolute;left:10px;right:10px;top:50%;height:6px;margin-top:-3px;border-radius:3px;background:var(--aw-line2);overflow:hidden}
+.awc__scrubBar i{position:absolute;left:0;top:0;bottom:0;width:calc(var(--p) * 1%);background:var(--aw-blue)}
+.awc__replayMarkers{position:absolute;left:10px;right:10px;top:50%;height:0;pointer-events:none}
+.awc__mark{position:absolute;top:0;width:10px;height:10px;margin:-5px 0 0 -5px;border:2px solid var(--aw-panel);border-radius:50%;background:var(--aw-green)}
+.awc__mark[data-kind="handoff"]{border-radius:2px;background:var(--aw-amber);transform:rotate(45deg)}
+.awc__mark[data-kind="error"]{background:var(--aw-red)}
+.awc__mark.is-here{width:14px;height:14px;margin:-7px 0 0 -7px}
+.awc__scrubThumb{position:absolute;top:50%;left:calc(10px + (100% - 20px) * var(--p) / 100);width:18px;height:18px;margin:-9px 0 0 -9px;border:3px solid var(--aw-blue);border-radius:50%;background:var(--ds-text);pointer-events:none}
+.awc__scrubTrack input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;pointer-events:none}
+.awc__scrubTrack:has(input:focus-visible) .awc__scrubThumb{outline:3px solid var(--aw-blue);outline-offset:2px}
+.awc__scrub:not(.is-active) .awc__scrubThumb{display:none}
+#awcReplayLabel{min-width:0;max-width:34ch;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--aw-muted);white-space:nowrap}
+.aw-sheet__scrub:empty{display:none}
+@media(max-width:760px){
+  .aw-page:has(#awSheetScrub>.awc__scrub:not([hidden])){--aw-peek:160px}
+  .aw-page:has(#awSheetScrub>.awc__scrub.is-active:not([hidden])){--aw-peek:200px}
+  .aw-sheet__scrub .awc__scrub{flex-direction:column;align-items:stretch;gap:0;padding:0;border:0;background:none}
+  .aw-sheet__scrub .awc__scrubHead{order:0;justify-content:space-between;min-height:44px}
+  .aw-sheet__scrub .awc__scrub:not(.is-active) .awc__scrubHead{display:none}
+  .aw-sheet__scrub #awcReplayLabel{max-width:none}
+}
 .awc__demoChip{position:absolute;left:50%;top:12px;z-index:4;transform:translateX(-50%);min-height:44px;padding:0 16px;border:1px solid rgba(255,178,36,.55);border-radius:999px;background:rgba(10,17,28,.92);color:var(--aw-amber);font:inherit;font-weight:600;cursor:pointer}
 .awc__demoChip[hidden]{display:none}
-@media(max-width:760px){
-  #agents .awc__scrub{position:absolute;left:12px;right:200px;bottom:calc(var(--aw-peek) + 20px);z-index:3;padding:0 8px;border:1px solid var(--aw-line2);border-radius:12px;background:rgba(10,17,28,.92)}
-  #agents #awcReplayLabel{display:none}
-}
 .aw-results__body{display:grid;gap:8px}
 .aw-results__body:focus{outline:none}
 .aw-results__body h3{margin:10px 0 0;font-size:var(--ds-fs-2)}
