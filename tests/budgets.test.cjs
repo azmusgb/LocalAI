@@ -50,7 +50,10 @@ const KB = 1024;
 // 2026-10-19: 263 → 264 KB (and ui.js 102 → 103 KB) for Agent World's lighting and building pass: building fronts
 // painted once into cached sprites (framed windows, lobbies with awnings, roof parapets), warm/cool light and a vignette,
 // textured grass and streets, glowing lamps, marching flow lines, busy-district brackets and light (ui.js +1.7 KB; 263.6 KB measured).
-const TOTAL = 264 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// 2026-10-19: 264 → 270 KB for Images › Fix a part (fix-part.js 4.8 KB: the soft ellipse mask from a tap or drag, the
+// brush layer over it, the Hands / Face / Ears / Remove object chips, the original-beside-two-versions view with Keep;
+// app.js +0.3 KB for its hooks, app.css +0.3 KB, index.html +0.2 KB): 269.2 KB measured.
+const TOTAL = 270 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
 // tab rows (234.9 KB measured).

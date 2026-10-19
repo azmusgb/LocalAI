@@ -444,7 +444,7 @@ function renderImageControls(){
   $('imageAspects').innerHTML=(data.aspects||[]).map(a=>{const [w,h]=a.sizes[base];return `<button type="button" role="radio" aria-checked="${a.id===imageUi.aspect}" class="img-aspect${a.id===imageUi.aspect?' active':''}" data-aspect="${esc(a.id)}"><i style="aspect-ratio:${w}/${h}"></i><span>${esc(a.label)}</span><small>${w}×${h}</small></button>`}).join('');
   $('imageStyles').innerHTML=(data.styles||[]).map(st=>`<button type="button" role="radio" aria-checked="${st.id===imageUi.style}" class="img-style${st.id===imageUi.style?' active':''}" data-style="${esc(st.id)}">${esc(st.label)}</button>`).join('');
   qsa('#imageCount [data-count]').forEach(b=>{const on=Number(b.dataset.count)===imageUi.count;b.classList.toggle('active',on);b.setAttribute('aria-checked',String(on))});
-  const editing=!!imageUi.edit;$('imageEditPanel').hidden=!editing;$('imagePreviewRow').hidden=!eng?.preview||editing;$('imagePreviewFirst').checked=previewFirst();$('imageShapeGroup').hidden=editing;$('imagePromptLabel').textContent=editing?'Describe the change, or the whole new picture':'Describe the image';$('generateBtn').textContent=editing?'Apply edit':imageUi.count>1?`Create ${imageUi.count} images`:'Create image';
+  const editing=!!imageUi.edit;$('imageEditPanel').hidden=!editing;const fixing=editing&&!!imageUi.fix;document.documentElement.classList.toggle('img-fixing',fixing);$('imageFixTools').hidden=!fixing;$('imageEditTitle').textContent=fixing?'Fix a part':'Editing an image';$('imagePreviewRow').hidden=!eng?.preview||editing;$('imagePreviewFirst').checked=previewFirst();$('imageShapeGroup').hidden=editing;$('imagePromptLabel').textContent=editing?'Describe the change, or the whole new picture':'Describe the image';$('generateBtn').textContent=editing?'Apply edit':imageUi.count>1?`Create ${imageUi.count} images`:'Create image';
   $('imageUpscaleRow').hidden=!data.upscale;
   const custom=[...(data.custom||[])];$('checkpoint').innerHTML='<option value="">Engine\'s model</option>'+custom.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
   $('imageModelInfo').textContent=eng?`${eng.label} uses ${eng.model||(eng.family==='zimage'?'Z-Image Turbo':eng.family==='flux'?'FLUX.1 schnell':eng.family==='sdxl'?'SDXL Lightning':'Stable Diffusion 1.5')}.`:'';
@@ -455,13 +455,13 @@ const IMAGE_TYPICAL={fast:'About 15 s',quality:'About 1 min',best:'About 4 min'}
 async function loadCheckpoints(force){if(state.checkpointsLoaded&&!force)return;try{const r=await fetch('/api/images/models',{cache:'no-store'}),j=await r.json();if(!r.ok)throw new Error(j.error||'Unable to load image models');state.imageModels=j;state.checkpointsLoaded=true;renderImageControls();renderImageRecent()}catch(e){$('imageEngines').innerHTML=`<div class="meta">${esc(e.message)}</div>`;$('generateBtn').disabled=true}}
 function renderImageRecent(){const items=(state.library||[]).filter(x=>x.kind==='image'&&x.meta?.imageUrl).slice(0,8);$('imageRecent').innerHTML=items.length?items.map(x=>`<button type="button" class="img-thumb" data-recent="${esc(x.id)}" title="${esc(x.title||'')}"><img loading="lazy" alt="${esc(x.title||'Image')}" src="${esc(cacheBust(x.meta.imageUrl)||'')}"></button>`).join(''):'<div class="meta">Images you make are kept here and in the Library.</div>'}
 function showBatch(images){const box=$('imageBatch');if(!images||images.length<2){box.hidden=true;box.innerHTML='';return}box.hidden=false;box.innerHTML=images.map((im,i)=>`<button type="button" class="img-thumb${i===0?' active':''}" data-batch="${i}" aria-label="Image ${i+1} of ${images.length}, seed ${im.seed}"><img alt="" src="${esc(cacheBust(im.imageUrl)||'')}"></button>`).join('');box.onclick=e=>{const b=e.target.closest('[data-batch]');if(!b)return;const im=images[Number(b.dataset.batch)];qsa('#imageBatch .img-thumb').forEach(x=>x.classList.toggle('active',x===b));const src=cacheBust(im.imageUrl);$('generatedImage').src=src;$('imageOpen').href=src;imageUi.last={...imageUi.last,imageUrl:im.imageUrl,seed:im.seed};$('imageMeta').textContent=$('imageMeta').textContent.replace(/seed \d+/,`seed ${im.seed}`)}}
-function showImage(url,metaText,usedPrompt,original,threadId){imageUi.last={imageUrl:url};showPreviewBar(null);imageUi.threadId=threadId||null;const src=cacheBust(url);if(!src)return;$('imageStage').innerHTML='';$('generatedImage').src=src;$('imageResult').style.display='block';$('imageMeta').textContent=metaText||'';$('imageOpen').href=src;$('imageActions').hidden=false;const showUsed=usedPrompt&&usedPrompt!==original;$('imageUsedPromptBox').hidden=!showUsed;$('imageUsedPrompt').textContent=showUsed?usedPrompt:''}
+function showImage(url,metaText,usedPrompt,original,threadId){imageUi.last={imageUrl:url,prompt:original||''};$('imageFixCompare').hidden=true;showPreviewBar(null);imageUi.threadId=threadId||null;const src=cacheBust(url);if(!src)return;$('imageStage').innerHTML='';$('generatedImage').src=src;$('imageResult').style.display='block';$('imageMeta').textContent=metaText||'';$('imageOpen').href=src;$('imageActions').hidden=false;const showUsed=usedPrompt&&usedPrompt!==original;$('imageUsedPromptBox').hidden=!showUsed;$('imageUsedPrompt').textContent=showUsed?usedPrompt:''}
 function imageRequestBody(){const engine=imageUi.engine,ckpt=$('checkpoint').value,num=id=>{const v=$(id).value.trim();return v===''?undefined:Number(v)};const edit=imageEditPayload();return {...edit,style:imageUi.style,count:imageUi.count,prompt:$('imagePrompt').value.trim(),engine:ckpt?undefined:engine,checkpoint:ckpt||undefined,aspect:imageUi.aspect,upscale:!$('imageUpscaleRow').hidden&&$('imageUpscale').checked,enhance:$('imageEnhance').checked,steps:num('steps'),cfg:num('cfg'),seed:num('imageSeed'),negativePrompt:$('negativePrompt').value.trim()||undefined}}
 // The request itself: POST /api/images/generate (it returns when drawing is done) -> the response, or throws its error.
 async function startImage(body){const r=await fetch('/api/images/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||`HTTP ${r.status}`);return j}
 const imageMetaText=j=>`${j.engineLabel||'Image'}${j.preview?' preview':''}${j.edited?' edit':''} · ${j.width}×${j.height} · ${fmtSec((j.elapsedMs||0)/1000)}${(j.images||[]).length>1?` for ${j.images.length}`:''} · seed ${j.seed??j.images?.[0]?.seed}${j.upscaled?' · upscaled':''}`;
 // Show a finished image (a response, or a run's output) in the stage; imageUi.runId says which run it is.
-function paintImage(j,runId,usedPrompt,prompt){const url=j.imageUrl||j.images?.[0]?.imageUrl;if(!url)return;showImage(url,imageMetaText(j),usedPrompt??j.usedPrompt,prompt??j.prompt,j.threadId);imageUi.runId=runId||null;showBatch(j.images);showPreviewBar(j,runId)}
+function paintImage(j,runId,usedPrompt,prompt){const url=j.imageUrl||j.images?.[0]?.imageUrl;if(!url)return;showImage(url,imageMetaText(j),usedPrompt??j.usedPrompt,prompt??j.prompt,j.threadId);Object.assign(imageUi.last,{engine:j.engine,style:j.style});imageUi.runId=runId||null;showBatch(j.images);showPreviewBar(j,runId)}
 async function generateImage(bodyOverride){
   const body=withPreview(bodyOverride||imageRequestBody());if(!body.prompt){$('imagePrompt').focus();return}
   // Another version, the full picture of a preview, and edits continue the source image's thread; a fresh prompt starts its own.
@@ -474,6 +474,7 @@ async function generateImage(bodyOverride){
     paintImage(j,j.runId);
     setPhase('done',j.preview?'Preview ready':'Image ready');await Promise.all([loadActivity(),loadLibrary(),loadWorkspace()]);renderImageRecent();loadCheckpoints(true);
     if(imageUi.hosted&&j.runId)window.LocalAIRouter?.go(`#run/${encodeURIComponent(j.runId)}`,{replace:true}); // in a run view, the new version replaces it: Close and Back still leave the images
+    return j;
   }catch(e){$('imageStage').innerHTML=`<div class="img-error"><b>That didn't work</b><span>${esc(e.message)}</span></div>`;setPhase('error','Image failed')}
   finally{clearInterval(imageUi.timer);imageUi.busy=false;$('generateBtn').disabled=false;$('imageAgain').disabled=false;$('imageMakeFull').disabled=false}}
 // Home (and any page) starts an image here. pending.resolve(runId) fires when the response arrives (the run exists then);
@@ -495,7 +496,8 @@ async function startImageRun(prompt,{pending,engine,aspect,style}={}){
   }catch(e){pending?.fail(e.message||'The image could not be made.');throw e}
 }
 // What a run view needs from this page: a run's output into the stage, its request into "Another version", its thread into Edit.
-window.LocalAIImages={start:startImageRun,ui:imageUi,
+// Fix a part (fix-part.js) edits through these.
+window.LocalAIImages={start:startImageRun,ui:imageUi,edit:(url,fix,onReady)=>startImageEdit(cacheBust(url),{fix,onReady}),stop:stopImageEdit,generate:generateImage,show:showImage,bust:cacheBust,engines:imageEngineList,library:()=>state.library||[],reload:()=>Promise.all([loadLibrary(),loadWorkspace()]).then(renderImageRecent),
   adopt(run,{force=false}={}){const o=run.output||{},inp=run.input||{};imageUi.threadId=run.threadId||run.id;
     if(imageUi.busy||(!force&&imageUi.runId===run.id))return;
     if(o.images?.length)paintImage({...o,threadId:imageUi.threadId},run.id,inp.prompt,inp.prompt);
@@ -517,13 +519,14 @@ $('imagePrompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||
 $('imageStyles').addEventListener('click',e=>{const b=e.target.closest('[data-style]');if(b){imageUi.style=b.dataset.style;renderImageControls()}});
 $('imageCount').addEventListener('click',e=>{const b=e.target.closest('[data-count]');if(b){imageUi.count=Number(b.dataset.count);renderImageControls()}});
 // ---- Editing: the source picture on one canvas, the painted mask on another laid over it ----
-const EDIT_MAX=1024;
-function startImageEdit(src){const img=new Image();img.onload=()=>{const k=Math.min(1,EDIT_MAX/Math.max(img.naturalWidth,img.naturalHeight));const w=Math.max(64,Math.round(img.naturalWidth*k/8)*8),h=Math.max(64,Math.round(img.naturalHeight*k/8)*8);
+const EDIT_MAX=1024,EDIT_HINT='Paint over the part to change. Leave it unmarked to redraw the whole image.';
+function startImageEdit(src,opts={}){const img=new Image();img.onload=()=>{const k=Math.min(1,EDIT_MAX/Math.max(img.naturalWidth,img.naturalHeight));const w=Math.max(64,Math.round(img.naturalWidth*k/8)*8),h=Math.max(64,Math.round(img.naturalHeight*k/8)*8);
   for(const c of [$('imageEditCanvas'),$('imageMaskCanvas')]){c.width=w;c.height=h}
   $('imageEditCanvas').getContext('2d').drawImage(img,0,0,w,h);$('imageMaskCanvas').getContext('2d').clearRect(0,0,w,h);
-  imageUi.edit={w,h,marked:false};renderImageControls();$('imageEditPanel').scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});$('imagePrompt').focus()};
+  // A part fix starts at full strength (a soft mask needs it to blend); a plain edit at 60%.
+  imageUi.edit={w,h,marked:false};imageUi.fix=opts.fix||null;$('imageStrength').value=opts.fix?100:60;$('imageStrengthOut').textContent=`${$('imageStrength').value}%`;renderImageControls();$('imageEditPanel').scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});if(opts.onReady)opts.onReady(w,h);else{$('imageEditHint').textContent=EDIT_HINT;$('imagePrompt').focus()}};
   img.onerror=()=>{$('imageModelInfo').textContent='That image could not be opened for editing.'};img.src=src}
-function stopImageEdit(){imageUi.edit=null;$('imageUpload').value='';renderImageControls()}
+function stopImageEdit(){imageUi.edit=imageUi.fix=null;$('imageUpload').value='';renderImageControls()}
 function imageEditPayload(){if(!imageUi.edit)return {};const {w,h,marked}=imageUi.edit,out={source:$('imageEditCanvas').toDataURL('image/png'),sourceWidth:w,sourceHeight:h,strength:Number($('imageStrength').value)/100};
   if(marked){const m=document.createElement('canvas');m.width=w;m.height=h;const mc=m.getContext('2d'),src=$('imageMaskCanvas').getContext('2d').getImageData(0,0,w,h),dst=mc.createImageData(w,h);
     for(let i=0;i<src.data.length;i+=4){const v=src.data[i+3]>0?255:0;dst.data[i]=dst.data[i+1]=dst.data[i+2]=v;dst.data[i+3]=255}mc.putImageData(dst,0,0);out.mask=m.toDataURL('image/png')}
@@ -535,7 +538,7 @@ function imageEditPayload(){if(!imageUi.edit)return {};const {w,h,marked}=imageU
   c.addEventListener('pointerdown',e=>{if(!imageUi.edit)return;drawing=true;lastPt=null;c.setPointerCapture(e.pointerId);paint(pt(e));e.preventDefault()});
   c.addEventListener('pointermove',e=>{if(drawing)paint(pt(e))});
   const end=()=>{drawing=false;lastPt=null};c.addEventListener('pointerup',end);c.addEventListener('pointercancel',end);})();
-$('imageMaskClear').addEventListener('click',()=>{const c=$('imageMaskCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);if(imageUi.edit)imageUi.edit.marked=false;$('imageEditHint').textContent='Paint over the part to change. Leave it unmarked to redraw the whole image.'});
+$('imageMaskClear').addEventListener('click',()=>{const c=$('imageMaskCanvas');c.getContext('2d').clearRect(0,0,c.width,c.height);if(imageUi.edit)imageUi.edit.marked=false;$('imageEditHint').textContent=EDIT_HINT});
 $('imageStrength').addEventListener('input',()=>{$('imageStrengthOut').textContent=`${$('imageStrength').value}%`});
 $('imageEditCancel').addEventListener('click',stopImageEdit);
 $('imageEditThis').addEventListener('click',()=>{if(imageUi.last?.imageUrl){imageUi.editThread=imageUi.threadId;startImageEdit(cacheBust(imageUi.last.imageUrl))}});
