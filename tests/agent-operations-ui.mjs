@@ -204,9 +204,9 @@ await check('desktop zoom controls',async()=>{
 await check('Replay: one scrubber with markers, Play, and a historical mission timeline',async()=>{
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:{id:'history-test',goal:'Historical test',status:'complete',workers:[{id:'router',name:'Mission Router',state:'complete',dependsOn:[]},{id:'ux_analyst',name:'UX Analyst',state:'complete',dependsOn:['router']}],timeline:[{at:new Date(Date.now()-1000).toISOString(),type:'mission-start',detail:'Started',status:'running',workerId:'router',workers:[{id:'router',name:'Mission Router',state:'complete'},{id:'ux_analyst',name:'UX Analyst',state:'running'}]},{at:new Date().toISOString(),type:'mission-complete',detail:'Done',status:'complete',workerId:'ux_analyst',workers:[{id:'router',name:'Mission Router',state:'complete'},{id:'ux_analyst',name:'UX Analyst',state:'complete'}]}]}}})));
   await page.locator('#awcScrub').waitFor({state:'visible'});
-  assert.equal(await page.locator('#awcReplayMarkers button').count(),2);
-  await page.locator('#awcReplayMarkers button').nth(1).click();
-  assert.match(await page.locator('#awcReplayLabel').innerText(),/Step 2 of 2/);
+  assert.deepEqual(await page.locator('#awcReplayMarkers .awc__mark').evaluateAll(m=>m.map(x=>x.dataset.kind)),['done'],'one mark: the finish');
+  await page.locator('#awcReplayRange').focus();await page.keyboard.press('End');
+  assert.match(await page.locator('#awcReplayLabel').innerText(),/Step 2 of 2 · Mission complete/);
   await page.locator('#awMoreBtn').click();await page.locator('#awMenu [data-aw-view="speed"]').click();
   assert.match(await page.locator('#awMenu [data-aw-view="speed"]').innerText(),/2×/);
   await page.keyboard.press('Escape');

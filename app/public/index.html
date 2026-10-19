@@ -111,6 +111,7 @@
   <div class="aw-head__text"><h1 id="awTitle">Agent World</h1><p id="awStatus" class="aw-head__status">Give your team a goal</p></div>
   <div class="aw-head__actions">
     <button type="button" id="awPrimary" class="btn-primary" data-action="start">Start a mission</button>
+    <button type="button" id="awRetry" class="btn-outline" hidden>Retry mission</button>
     <button type="button" id="awMoreBtn" class="btn-outline aw-head__more" aria-haspopup="true" aria-expanded="false" aria-controls="awMenu" aria-label="More"><svg class="icon" aria-hidden="true"><use href="#i-more"/></svg></button>
   </div>
 </div>
@@ -138,7 +139,8 @@
   <section id="awSheet" class="aw-sheet" data-snap="peek" aria-label="Mission details">
     <div class="aw-sheet__top">
       <button type="button" id="awSheetHandle" class="aw-sheet__handle" aria-expanded="false" aria-controls="awSheetBody" aria-label="Show mission details"><span class="aw-sheet__grip" aria-hidden="true"></span></button>
-      <div class="aw-sheet__peek"><p id="awSheetStatus" class="aw-sheet__status">Give your team a goal</p><div id="awSheetAvatars" class="aw-sheet__avatars" aria-hidden="true"></div><button type="button" id="awPeekAction" class="btn-primary aw-sheet__action" data-action="start">Start a mission</button></div>
+      <div id="awSheetScrub" class="aw-sheet__scrub"></div>
+      <div class="aw-sheet__peek"><p id="awSheetStatus" class="aw-sheet__status">Give your team a goal</p><div id="awSheetAvatars" class="aw-sheet__avatars" aria-hidden="true"></div><button type="button" id="awPeekAction" class="btn-primary aw-sheet__action" data-action="start">Start a mission</button><button type="button" id="awPeekRetry" class="btn-outline aw-sheet__action aw-sheet__retry" aria-label="Retry mission" hidden>Retry</button></div>
     </div>
     <div id="awSheetBody" class="aw-sheet__body">
       <div class="agent-mission-strip">

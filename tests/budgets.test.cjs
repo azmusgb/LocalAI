@@ -54,7 +54,11 @@ const KB = 1024;
 // spotlight on the busy district, haze, rays, shadows that follow the sun), cars that read from above, birds, water
 // glints, stars and fireflies, hand-off arcs between roofs and the bigger mission-complete moment (ui.js +3.4 KB, app.css
 // +0.3 KB; 267.4 KB measured). All drawn in code: no images.
-const TOTAL = 268 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// 2026-10-19: 268 → 271 KB (and ui.js 107 → 109 KB) for Agent World's replay timeline and Retry mission: the slim bar
+// under the city (in the sheet on a phone) with Play, times, hand-off/error/finish marks, drag and keyboard scrubbing and
+// the speed; Retry mission beside the city when a mission failed or partly failed; the demo's own header (ui.js +2.2 KB,
+// app.css +0.3 KB, index.html +0.1 KB; 270.3 KB measured).
+const TOTAL = 271 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
 // tab rows (234.9 KB measured).
@@ -67,7 +71,7 @@ const TOTAL = 268 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // measures 98.0 KB). The suggestion itself lives in self-change.js.
 // 2026-10-18: ui.js 99 → 100 KB for Agent World workers walking out of their door and along the streets with square
 // turns (routeToTarget and its street legs, +0.8 KB); with the Workshop printer line (#312) ui.js measures 99.5 KB.
-const PER_FILE = { 'ui.js': 107 * KB, 'components.js': 11 * KB, 'app.css': 41 * KB, 'app.js': 36 * KB, 'index.html': 13 * KB, 'home.js': 11 * KB };
+const PER_FILE = { 'ui.js': 109 * KB, 'components.js': 11 * KB, 'app.css': 41 * KB, 'app.js': 36 * KB, 'index.html': 13 * KB, 'home.js': 11 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
