@@ -1843,7 +1843,7 @@ function sheetFor(s){
 // Reduced motion keeps one still frame per state.
 // Debug and tests (localStorage localai.debug = 1), in canvas pixels: where each worker is drawn and its frame, the
 // district signs, the name tags and bubbles, and the scenery (tree kinds, lamp count).
-function layout(){const k=sc(view.zoom)*cam.dpr,box=(x,y,w,h)=>({x:view.panX*cam.dpr+x*k,y:view.panY*cam.dpr+y*k,w:w*k,h:h*k});return{workers:[...agents.values()].map(a=>({id:a.id,state:a.state,frame:a.frame,moving:workerIsMoving(a),vest:roleStyle(a).vest,box:box(Math.round(a.x/2)*2-FW*WS,Math.round(a.y/2)*2+22-FH*2*WS,FW*2*WS,FH*2*WS)})),workerScale:WS,labels:L.signs.map(r=>({...box(r.x,r.y,r.w,r.h),faded:!!r.faded})),bubbles:L.bubbles.map(r=>box(r.x,r.y,r.w,r.h)),trees:trees.map(t=>t[2]+(t[3]?'L':'S')),lamps:lamps.length,
+function layout(){const k=sc(view.zoom)*cam.dpr,box=(x,y,w,h)=>({x:view.panX*cam.dpr+x*k,y:view.panY*cam.dpr+y*k,w:w*k,h:h*k});return{workers:[...agents.values()].map(a=>({id:a.id,state:a.state,frame:a.frame,moving:workerIsMoving(a),vest:roleStyle(a).vest,box:box(Math.round(a.x/2)*2-FW*WS,Math.round(a.y/2)*2+22-FH*2*WS,FW*2*WS,FH*2*WS)})),workerScale:WS,labels:L.signs.map(r=>({...box(r.x,r.y,r.w,r.h),faded:!!r.faded,text:r.text})),bubbles:L.bubbles.map(r=>box(r.x,r.y,r.w,r.h)),trees:trees.map(t=>t[2]+(t[3]?'L':'S')),lamps:lamps.length,
  flows:flowList().map(([a,b])=>({from:a,to:b,points:flowPath(a,b).p.map(q=>({x:q.x,y:q.y}))})),
  cars:traffic.map(c=>({x:c.x,y:c.y,axis:c.axis,dir:c.dir,go:c.go??1})),crossings:CROSSINGS,sky:skyNow(now()),arcs:arcs.length,birds:birds.length,spot:{...spot}}}
 function flowList(){const out=[];for(const w of current?.workers||[])for(const dep of w.dependsOn||[]){const a=current.workers.find(x=>x.id===dep),za=a&&zoneForWorker(a),zb=zoneForWorker(w);if(a&&za!==zb)out.push([za,zb])}return out}
@@ -1953,7 +1953,7 @@ function drawMinimap(){
 // (multiplied by day, a plain tint at night, with a spotlight dimming all but the busy district), haze and glow, low-sun
 // rays, a mission's flash.
 // Keys: light rgb and amount, haze/glow rgb, glow strength, shadow length. Dawn, noon, golden hour, sunset.
-const SKY=[[225,190,255,.34,215,170,245,.42,1.9],[255,255,255,0,200,230,255,.08,.8],[255,212,140,.36,255,200,120,.5,1.7],[255,150,120,.44,255,140,110,.56,2.4]];
+const SKY=[[225,190,255,.17,215,170,245,.21,1.9],[255,255,255,0,200,230,255,.03,.8],[255,212,140,.16,255,200,120,.22,1.7],[255,150,120,.22,255,140,110,.28,2.4]];
 let skyU=null,skyK=0,skyT=[],sky=[],shadowK=1,spot={x:W/2,y:H/2,a:.5};
 function skyNow(ts){if(display.night)return-1;if(skyU!=null)return skyU;if(reduced)return .55;const t=ts/480000+.42;return 1-Math.abs(2*(t%1)-1)}
 function viewBox(){const s=sc(view.zoom)||1;return{x:-view.panX/s,y:-view.panY/s,w:cam.w/s,h:cam.h/s}}
@@ -1961,9 +1961,9 @@ function syncSky(ts){
  if(!sky.length)return;const N=display.night,u=skyNow(ts),k=(N?-1:Math.round(u*60))*1e9+Math.round(spot.x/8)*1e6+Math.round(spot.y/8)*1e3+Math.round(spot.a*30);
  if(k!==skyK){skyK=k;let c=[150,170,255,.3,12,22,58,0,1];if(!N){const p=u*3,i=Math.min(2,Math.floor(p)),f=p-i;c=SKY[i].map((v,j)=>v+(SKY[i+1][j]-v)*f)}shadowK=c[8];
   const rgb=(o,a)=>'rgba('+c.slice(o,o+3).map(Math.round)+','+a.toFixed(3)+')',lit='rgb('+[0,1,2].map(i=>Math.round(255+(c[i]-255)*c[3]))+')',[g,h,r]=sky;
-  g.style.background='radial-gradient(circle 720px at '+Math.round(spot.x)+'px '+Math.round(spot.y)+'px,rgba(4,8,26,0) 150px,rgba(4,8,26,'+(spot.a*(N?.5:.38)).toFixed(3)+')),'+(N?'rgba(8,14,44,.16)':lit);g.style.mixBlendMode=N?'normal':'';
-  h.style.background='radial-gradient(circle '+(N?560:820)+'px at '+(N?W*.84:W*.06)+'px -40px,'+(N?'rgba(170,200,255,.22)':rgb(4,c[7]*.45))+','+rgb(4,0)+'),linear-gradient('+rgb(4,N?.5:.26)+','+rgb(4,N?.2:.07)+' 76px,'+rgb(4,0)+' 300px)';
-  r.style.setProperty('--ray',rgb(4,.9));r.style.opacity=N?0:clamp((c[7]-.2)*.8,0,.26)}
+  g.style.background='radial-gradient(circle 720px at '+Math.round(spot.x)+'px '+Math.round(spot.y)+'px,rgba(4,8,26,0) '+(N?150:200)+'px,rgba(4,8,26,'+(spot.a*(N?.5:.2)).toFixed(3)+')),'+(N?'rgba(8,14,44,.16)':lit);g.style.mixBlendMode=N?'normal':'';
+  h.style.background='radial-gradient(circle '+(N?560:820)+'px at '+(N?W*.84:W*.06)+'px -40px,'+(N?'rgba(170,200,255,.22)':rgb(4,c[7]*.45))+','+rgb(4,0)+'),linear-gradient('+rgb(4,N?.5:.13)+','+rgb(4,N?.2:.035)+' 76px,'+rgb(4,0)+' 300px)';
+  r.style.setProperty('--ray',rgb(4,.9));r.style.opacity=N?0:clamp((c[7]-.1)*.7,0,.13)}
  const z=sc(view.zoom);if(!skyT.length||Math.abs(view.panX-skyT[0])>.4||Math.abs(view.panY-skyT[1])>.4||Math.abs(z-skyT[2])>.001){skyT=[view.panX,view.panY,z];const t='translate('+view.panX.toFixed(1)+'px,'+view.panY.toFixed(1)+'px) scale('+z.toFixed(4)+')';for(const e of sky)e.style.transform=t}
 }
 // Glints sliding on the water by day; at night twinkling stars and fireflies (the still stars and the moon's path on
