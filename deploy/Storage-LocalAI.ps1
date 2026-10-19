@@ -97,6 +97,9 @@ function Invoke-LocalAI-StorageMaintenance {
     $dataMountArgument = Get-LocalAI-ExplicitMountArgument $dataMount
     $appMountArgument = Get-LocalAI-ExplicitMountArgument $appMount -ReadOnly
     $arguments = @('run','--rm','--network','none')
+    # As the appliance's own user (node since 19 Oct 2026): files SQLite creates here (-wal, -shm, backups) must stay
+    # writable by the appliance. An appliance that still runs as root has no User set, and this runs as root too.
+    if ($configuration.Config.User) { $arguments += @('--user', [string]$configuration.Config.User) }
     if ($dataMountArgument -and $appMountArgument) {
         $arguments += @('--mount',$dataMountArgument,'--mount',$appMountArgument)
     } else {

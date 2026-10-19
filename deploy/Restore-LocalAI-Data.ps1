@@ -21,7 +21,10 @@ $image = (docker inspect $Container --format '{{.Config.Image}}')
 # Assigned first: in 5.1 ConvertFrom-Json emits the whole array as one pipeline item; a variable enumerates it.
 $mounts = (docker inspect $Container --format '{{json .Mounts}}') | ConvertFrom-Json
 $volume = ($mounts | Where-Object { $_.Destination -eq '/data' } | Select-Object -First 1).Name
-Run { docker run --rm -v "${volume}:/data" --entrypoint sh $image -c "cd /data && rm -f localai.db-wal localai.db-shm && cp backups/restore-$stamp.db localai.db" } 'Swap database'
+# As the appliance's own user, so the restored database stays writable by it (no User: it runs as root, and so does this).
+$user = (docker inspect $Container --format '{{.Config.User}}')
+$asUser = if ($user) { @('--user', $user) } else { @() }
+Run { docker run --rm @asUser -v "${volume}:/data" --entrypoint sh $image -c "cd /data && rm -f localai.db-wal localai.db-shm && cp backups/restore-$stamp.db localai.db" } 'Swap database'
 Run { docker start $Container } 'Start appliance'
 for ($i = 0; $i -lt 60; $i++) { Start-Sleep 2; try { if ((Invoke-RestMethod $HealthUrl -TimeoutSec 3).status -eq 'ok') { Write-Host "Restored $Backup. Previous data kept as /data/backups/pre-restore-$stamp.db"; exit 0 } } catch { } }
 throw "Appliance did not become healthy after restore. Previous data: /data/backups/pre-restore-$stamp.db"
