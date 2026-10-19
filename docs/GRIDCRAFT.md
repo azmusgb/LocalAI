@@ -178,6 +178,13 @@ changed the workbook in between): its steps add up, `undoTop` becomes the newest
 first before. Otherwise the edit starts a record of its own, and as always only the newest can be discarded. One cell
 edit at a time (409 "Another cell change is still being made"); while a request runs, the bridge's 409 is passed on.
 
+**In Work.** Every request record is also a Work run (`app/server/runs.js`, id `legacy-gridcraft:<id>`, type
+`spreadsheet`, the Spreadsheets icon), from the same `gridcraft:run:*` rows, so nothing is copied. A request waiting
+for review is `awaiting_approval`: Work shows it as Ready to review, with a Review button, and Home's Needs you lists it.
+Kept, applied and no-change requests are `completed`, discarded ones `cancelled`, and failed ones `failed`. Opening one,
+from Work, Needs you or a `#run/legacy-gridcraft:…` link, goes to Spreadsheets, where Keep and Discard are. Like other
+runs managed on their own page, it can't be deleted, filed or retried from Work.
+
 POSTs follow the same rules as the bridge: same origin only (403) and `Content-Type: application/json` (415).
 
 Prompts are limited to 20,000 characters. One request runs at a time; a second gets HTTP 409. If GridCraft is

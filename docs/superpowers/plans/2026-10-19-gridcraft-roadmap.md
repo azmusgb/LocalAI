@@ -9,10 +9,11 @@ hand, answers that state their numbers, and requests up to five minutes (`docs/G
 1. **Live progress while a request runs.** The bridge reads the agent's log lines (`[agent] tool call: …`) as they
    arrive and answers `GET /progress`. The appliance proxies it as `/api/gridcraft/progress`, words only. The page
    lists the newest steps under "GridCraft is working on it". This PR also carries this plan.
-2. **Spreadsheet requests in Work.** Each request becomes a run in the run ledger, kind `spreadsheet`, instead of only
-   a `gridcraft:run:<id>` settings row. It then shows in Work's timeline. A request waiting for review shows in Needs
-   you and reaches the phone, and Keep and Discard work from there too. The Spreadsheets page's history reads the same
-   runs. Existing rows are migrated once.
+2. **Spreadsheet requests in Work.** Work lists GridCraft's own request records (`gridcraft:run:*`) the way it lists
+   older agent and automation runs, as `legacy-gridcraft:<id>` runs of type `spreadsheet`: nothing copied, nothing to
+   migrate. A request waiting for review is `awaiting_approval`, so Work shows it as Ready to review and Needs you
+   lists it. Opening one goes to Spreadsheets, where Keep and Discard are. (The first draft said ledger runs migrated
+   once; listing the records gives the same result without two copies that could disagree.)
 3. **The bridge runs without administrator rights.** The `LocalAI GridCraft Bridge` task changes from `-RunLevel Highest`
    to limited. The installer checks that GridCraft still launches and the control port answers, and the Known gaps
    entry in `docs/SECURITY.md` goes.

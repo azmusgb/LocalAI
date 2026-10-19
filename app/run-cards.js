@@ -2,7 +2,7 @@
 // Every run describes itself as a card (icon, preview, badge, action) so the UI only renders. Pure: no I/O; lookups are injected.
 // STATUS mirrors LocalAIKit.statusBadge in public/ui.js: keep the two tables identical.
 const STATUS = Object.freeze({awaiting_approval:['Ready to review','accent'],ready:['Ready to review','accent'],needs_attention:['Needs a look','attention'],applied:['Done','good'],completed:['Done','good'],answered:['Done','good'],running:['Running','accent'],failed:['Failed','bad'],error:['Failed','bad'],validation_failed:['Needs a look','bad'],patch_failed:['Needs a look','bad'],rejected:['Rejected','neutral'],cancelled:['Cancelled','neutral'],queued:['Queued','neutral'],down:['Down','bad'],healthy:['Healthy','good'],optional_offline:['Offline','neutral']});
-const KINDS = Object.freeze({chat:['compose','ask'],research:['globe','ask'],image:['image','create'],agent:['automate','agents'],automation:['refresh','automationStudio'],engineering:['build','changes']});
+const KINDS = Object.freeze({chat:['compose','ask'],research:['globe','ask'],image:['image','create'],agent:['automate','agents'],automation:['refresh','automationStudio'],engineering:['build','changes'],spreadsheet:['file','spreadsheets']});
 const LEGACY_TYPES = Object.freeze({mission:'agent',specialist:'agent'});
 // Work's filter chips: which chip a run belongs to. GET /api/runs?kind= filters by it; anything not listed (automation too) is "other".
 const WORK_KINDS = Object.freeze({chat:'chats',research:'chats',image:'images',agent:'missions',engineering:'changes'});
@@ -38,6 +38,7 @@ function runCard(run, { approvalFor, changeFor } = {}) {
   if (kind === 'chat' || kind === 'research') preview = { type: 'text', text: String(out.text || summary).slice(0, 240) };
   else if (kind === 'image') { const imgs = Array.isArray(out.images) ? out.images : []; preview = { type: 'image', src: imgs[0]?.imageUrl || '', count: imgs.length } }
   else if (kind === 'agent') preview = { type: 'mission', text: summary };
+  else if (kind === 'spreadsheet') preview = { type: 'text', text: String(out.text || summary).slice(0, 240) };
   else if (kind === 'engineering') {
     const ch = meta.changeId && changeFor ? changeFor(meta.changeId) : null, files = ch && Array.isArray(ch.files) ? fileStats(ch) : null;
     // No file list: still being prepared while it runs or waits for approval; once finished (failed, cancelled, done) there's nothing to show.

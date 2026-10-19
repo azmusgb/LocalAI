@@ -96,6 +96,13 @@ test('GridCraft is reached through the appliance, not directly from the browser'
 
   const runs = (await (await fetch(`${base}/api/gridcraft/runs`)).json()).items;
   assert.deepEqual(runs.map(x => x.status), ['review', 'done', 'review'], 'newest first');
+  // Work lists the same requests: one waiting for review waits on the owner, so Needs you has it too.
+  const inWork = (await (await fetch(`${base}/api/runs?limit=20`)).json()).items.filter(x => x.type === 'spreadsheet');
+  assert.deepEqual(inWork.map(x => [x.id, x.status]).sort(), [[`legacy-gridcraft:${first.run.id}`, 'awaiting_approval'], [`legacy-gridcraft:${failed.run.id}`, 'awaiting_approval'], [`legacy-gridcraft:${read.run.id}`, 'completed']].sort());
+  const card = inWork.find(x => x.id === `legacy-gridcraft:${first.run.id}`).card;
+  assert.deepEqual([card.kind, card.icon, card.view, card.action.label, card.title], ['spreadsheet', 'file', 'spreadsheets', 'Review', 'sum column B']);
+  const needs = (await (await fetch(`${base}/api/runs?kind=needs&limit=20`)).json()).items.map(x => x.id);
+  assert.ok(needs.includes(`legacy-gridcraft:${first.run.id}`), 'a request waiting for review is in Needs you');
   const older = await post(`/api/gridcraft/runs/${first.run.id}/discard`);
   assert.equal(older.status, 409);
   assert.match((await older.json()).error, /Only the latest request/);
@@ -106,6 +113,9 @@ test('GridCraft is reached through the appliance, not directly from the browser'
   const keep = await (await post(`/api/gridcraft/runs/${first.run.id}/keep`)).json();
   assert.deepEqual(keep.runs, [first.run.id]);
   assert.deepEqual((await (await fetch(`${base}/api/gridcraft/runs`)).json()).items.map(x => x.status), ['discarded', 'done', 'kept']);
+  const after = Object.fromEntries((await (await fetch(`${base}/api/runs?limit=20`)).json()).items.filter(x => x.type === 'spreadsheet').map(x => [x.id, x.status]));
+  assert.deepEqual([after[`legacy-gridcraft:${first.run.id}`], after[`legacy-gridcraft:${failed.run.id}`]], ['completed', 'cancelled'], 'kept and discarded leave Needs you');
+  assert.equal((await (await fetch(`${base}/api/runs?kind=needs&limit=20`)).json()).items.some(x => x.type === 'spreadsheet'), false);
   assert.equal((await fetch(`${base}/api/gridcraft/runs/${first.run.id}/keep`, { method: 'POST', headers: { 'Content-Type': 'text/plain' } })).status, 415);
   assert.equal((await post('/api/gridcraft/runs/gc-nope/keep')).status, 404);
 

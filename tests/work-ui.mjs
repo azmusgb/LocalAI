@@ -327,6 +327,15 @@ await check('opening a row opens its run view', async () => {
   await page.context().close();
 });
 
+await check('a spreadsheet request opens Spreadsheets, where Keep and Discard are', async () => {
+  const page = await open(desk, '#work', async () => [item('spreadsheet', 'Add a Total row to Sales', 10 * 60e3, { id: 'legacy-gridcraft:gc-1', status: 'awaiting_approval' }), ...mixed()]);
+  await page.waitForSelector('#work .run-card[data-run-id="legacy-gridcraft:gc-1"]', T);
+  await page.locator('#work .run-card[data-run-id="legacy-gridcraft:gc-1"] .work-open').click();
+  await page.waitForFunction(() => location.hash === '#spreadsheets', null, T);
+  await page.waitForSelector('#spreadsheets.active', T);
+  await page.context().close();
+});
+
 await check('a row the run center has not loaded still opens (by id)', async () => {
   const page = await open(desk, '#work', async () => mixed(), { center: false });
   await page.waitForSelector('#work .run-card', T);
