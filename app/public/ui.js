@@ -1256,8 +1256,8 @@ function demoMission(){
  if(demo.scenario==='failure'&&demo.stage>=2){workers.find(w=>w.id==='documentation').state='error';workers.find(w=>w.id==='synthesis').state='blocked'}
  return{type:'mission',id:'demo-city-mission',status:demo.scenario==='failure'&&demo.stage>=2?'needs_attention':demo.stage===4?'complete':'running',goal:demo.scenario==='failure'?'Demo: recover a failed documentation handoff':'Demo: audit and improve Local AI mobile UX',workers,error:demo.scenario==='failure'&&demo.stage>=2?'Documentation Agent needs attention':''}
 }
-function applyDemo(){const next=demoMission();if(!demo.active||current?.id!==next.id){agents.clear();artifacts=[];packets=[];sparks=[]}current=next;sourceType='demo';current.workers.forEach(ensureAgent);syncHud();addEvent('Demo: '+DEMO_STAGES[demo.stage].label);recordReplayFrame('demo-stage-'+demo.stage)}
-function startDemo(){document.querySelector('.aw-page')?.classList.add('is-demo');demo.active=true;demo.running=true;demo.paused=false;demo.stage=0;demo.lastAdvance=now();applyDemo();fitWorld();syncDemoControls()}
+function applyDemo(){const next=demoMission();if(!demo.active||current?.id!==next.id){agents.clear();artifacts=[];packets=[];sparks=[]}current=next;sourceType='demo';current.workers.forEach(ensureAgent);syncHud();if(next.status==='complete'&&!reduced)celebrationUntil=now()+3600;addEvent('Demo: '+DEMO_STAGES[demo.stage].label);recordReplayFrame('demo-stage-'+demo.stage)}
+function startDemo(){document.querySelector('.aw-page')?.classList.add('is-demo');const empty=document.getElementById('awEmpty');if(empty)empty.hidden=true;demo.active=true;demo.running=true;demo.paused=false;demo.stage=0;demo.lastAdvance=now();applyDemo();fitWorld();syncDemoControls()}
 function stepDemo(){if(!demo.active)startDemo();else{demo.stage=Math.min(DEMO_STAGES.length-1,demo.stage+1);demo.lastAdvance=now();applyDemo();if(demo.stage===DEMO_STAGES.length-1)demo.running=false}syncDemoControls()}
 function returnLive(){document.querySelector('.aw-page')?.classList.remove('is-demo');replay.active=false;replay.playing=false;demo.active=false;demo.running=false;demo.paused=false;agents.clear();artifacts=[];packets=[];sparks=[];dust=[];if(liveSnapshot){current=liveSnapshot;sourceType='mission';current.workers.forEach(ensureAgent)}else{current=null;sourceType='idle';idleCrew()}syncHud();syncDemoControls();syncReplay();fitWorld()}
 function syncDemoControls(){const l=$('#awcLiveBtn');if(l)l.hidden=!demo.active}
@@ -1439,18 +1439,21 @@ function drawGround(ts){
  for(const[x,y,s,b]of trees)drawTree(x,y,ts,s,b)
 }
 function drawGroundStatic(){
- const N=display.night,G=N?['#0b1e1c','#0c221f','#0e2622']:['#19402d','#1b4530','#1e4b34'];
- // grass: broad soft patches and a few tufts
- for(let y=0;y<H;y+=T)for(let x=0;x<W;x+=T){const n=Math.sin(x*.009+y*.004)+Math.sin(y*.012-x*.003),h=wh(x,y);px(x,y,T,T,G[n<-.5?0:n<.6?1:2]);if(h%13===0){px(x+8+h%14,y+10+h%11,2,4,N?'#17382c':'#2b6847');px(x+11+h%14,y+12+h%11,2,2,N?'#17382c':'#2b6847')}}
+ const N=display.night,G=N?['#0b1e1c','#0c221f','#0e2622']:['#22503a','#25573e','#295e42'],tuft=N?'#17382c':'#3a7a50',fl=['#f2d06b','#f49ab8','#ffb46b','#b9a6ff'];
+ // grass: broad soft patches, mown stripes, speckle, tufts and the odd clump of flowers
+ for(let y=0;y<H;y+=T)for(let x=0;x<W;x+=T){const n=Math.sin(x*.009+y*.004)+Math.sin(y*.012-x*.003),h=wh(x,y);px(x,y,T,T,G[n<-.5?0:n<.6?1:2]);if((x/T)&1)px(x,y,T,T,N?'rgba(255,255,255,.012)':'rgba(255,250,210,.03)');
+  for(let i=0;i<4;i++){const q=wh(x,y,i);px(x+q%30,y+(q>>>5)%30,2,2,i&1?'rgba(0,0,0,.08)':'rgba(255,255,220,.06)')}
+  if(h%13===0){px(x+8+h%14,y+10+h%11,2,4,tuft);px(x+11+h%14,y+12+h%11,2,2,tuft)}if(!N&&h%29===0)for(let i=0;i<4;i++)px(x+12+(h>>>i)%7,y+12+(h>>>(i+3))%6,2,2,fl[(h>>>9)%4])}
  // water / edge
  pathPoly([[0,0],[W,0],[W,56],[1010,74],[820,48],[620,65],[420,45],[180,70],[0,52]],N?'#071a27':'#143a4c');
  ctx.strokeStyle=N?'#0c3248':'#23627e';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,52);ctx.bezierCurveTo(260,78,420,37,640,60);ctx.bezierCurveTo(860,82,1020,45,W,58);ctx.stroke();
+ for(let i=0;i<26;i++){const q=wh(i,3,9);px(q%W,6+(q>>>11)%34,8+q%14,1,N?'rgba(160,200,255,.1)':'rgba(220,245,255,.16)')}
  // streets, with a sidewalk and kerb wherever a street meets grass
- const walk=N?'#2a3135':'#7b7f77',kerb=N?'#1b2226':'#5b5f58';
- roads.forEach(k=>{const[x,y]=k.split(',').map(Number);px(x*T,y*T,T,T,N?'#1c2630':'#313c47')});
+ const walk=N?'#2a3135':'#8a8778',kerb=N?'#1b2226':'#615f55';
+ roads.forEach(k=>{const[x,y]=k.split(',').map(Number);px(x*T,y*T,T,T,N?'#1c2630':'#333e4a');for(let i=0;i<5;i++){const q=wh(x,y,i+3);px(x*T+q%31,y*T+(q>>>5)%31,1,1,i&1?'rgba(0,0,0,.18)':'rgba(255,255,255,.07)')}if(wh(x,y,2)%61===0){px(x*T+10,y*T+12,10,8,'rgba(0,0,0,.28)');px(x*T+11,y*T+13,8,1,'rgba(255,255,255,.08)')}});
  roads.forEach(k=>{const[x,y]=k.split(',').map(Number),X=x*T,Y=y*T;
-  if(!roads.has(key(x,y-1))){px(X,Y-6,T,6,walk);px(X,Y-1,T,1,kerb)}if(!roads.has(key(x,y+1))){px(X,Y+T,T,6,walk);px(X,Y+T,T,1,kerb)}
-  if(!roads.has(key(x-1,y))){px(X-6,Y,6,T,walk);px(X-1,Y,1,T,kerb)}if(!roads.has(key(x+1,y))){px(X+T,Y,6,T,walk);px(X+T,Y,1,T,kerb)}});
+  if(!roads.has(key(x,y-1))){px(X,Y-6,T,6,walk);px(X,Y-1,T,1,kerb);px(X+15,Y-6,1,5,kerb)}if(!roads.has(key(x,y+1))){px(X,Y+T,T,6,walk);px(X,Y+T,T,1,kerb);px(X+15,Y+T+1,1,5,kerb)}
+  if(!roads.has(key(x-1,y))){px(X-6,Y,6,T,walk);px(X-1,Y,1,T,kerb);px(X-6,Y+15,5,1,kerb)}if(!roads.has(key(x+1,y))){px(X+T,Y,6,T,walk);px(X+T,Y,1,T,kerb);px(X+T+1,Y+15,5,1,kerb)}});
  for(let x=0;x<COLS;x++){if(roads.has(key(x,13)))px(x*T+8,13*T+31,16,2,'#d6ab52')}
  for(let y=0;y<ROWS;y++){if(roads.has(key(13,y)))px(13*T+31,y*T+8,2,16,'#d6ab52');if(roads.has(key(25,y)))px(25*T+31,y*T+8,2,16,'#d6ab52')}
  // zebra crossings on every street leading into the big junctions
@@ -1460,7 +1463,8 @@ function drawGroundStatic(){
  px(16*T,11*T,9*T,5*T,N?'#3f443f':'#746f59');for(let i=0;i<18;i++)px(16*T+(i%6)*T/1.5+9,11*T+Math.floor(i/6)*T/1.5+10,4,4,N?'#545a54':'#999078');
  for(const[id,d]of Object.entries(DISTRICTS))drawDistrictScene(id,d,0,true);
  // lamp posts: a pool of light under each at night
- for(const[x,y]of lamps){if(N){const g=ctx.createRadialGradient(x,y+2,2,x,y+2,30);g.addColorStop(0,'rgba(255,214,140,.32)');g.addColorStop(1,'rgba(255,214,140,0)');ctx.fillStyle=g;ctx.fillRect(x-30,y-28,60,60)}px(x+1,y-1,4,2,'rgba(0,0,0,.3)');px(x-1,y-20,2,20,'#3a434b');px(x-1,y-20,7,2,'#3a434b');px(x+3,y-19,4,3,N?'#fff1c2':'#c9d2da')}
+ for(const[x,y]of lamps){if(N){const g=ctx.createRadialGradient(x,y+2,2,x,y+2,30);g.addColorStop(0,'rgba(255,214,140,.32)');g.addColorStop(1,'rgba(255,214,140,0)');ctx.fillStyle=g;ctx.fillRect(x-30,y-28,60,60)}px(x+1,y-1,4,2,'rgba(0,0,0,.3)');px(x-1,y-20,2,20,'#3a434b');px(x-1,y-20,7,2,'#3a434b');px(x+3,y-19,4,3,N?'#fff1c2':'#c9d2da');if(N){const b=ctx.createRadialGradient(x+5,y-17,0,x+5,y-17,9);b.addColorStop(0,'rgba(255,236,180,.55)');b.addColorStop(1,'rgba(255,236,180,0)');ctx.fillStyle=b;ctx.fillRect(x-4,y-26,18,18)}}
+ light()
 }
 // Trees: three shapes in two sizes, drawn once per shape into a sprite (with the shadow) and swayed a pixel.
 const treeSprites=new Map();
@@ -1587,13 +1591,14 @@ function drawTopping(x,y,w,ts){const fx=x+w-14,fy=y-14,wave=Math.sin(ts/200)*2;p
 // Engineering Bay's sawtooth roof and hangar door, Validation Lab's check beacon (green and blinking once it passes),
 // Model Foundry's chimney and furnace, Projects Quarter's filing towers, Repair Bay's roller door (up while someone is
 // being fixed). Windows light in a slowly changing pattern and glow at night; light spills onto the pavement.
-function drawWindows(id,d,x,y,w,h,ts,f){
- const N=display.night,e=Math.floor(ts/9000),rate=f.active?72:f.done?58:42,lit=N?'#ffd27a':f.active?'#d9fbff':f.done?'#b9efcc':'#bfdfe9',off=N?'#122230':'#294657',books=['#c0563f','#d9b25e','#7aa2d6','#8fc98f'];
- for(let r=0,yy=y+28;yy<y+h-22;yy+=18,r++)for(let c=0,xx=x+14;xx<x+w-16;xx+=22,c++){
-  if(!(wh(c+id.length*7,r,e+(c*r)%4)%100<rate)){px(xx,yy,10,8,off);continue}
+function drawWindows(id,d,x,y,w,h,e,f,wall){
+ const N=display.night,rate=f.active?78:f.done?58:42,lit=N?(f.active?'#ffe39a':'#ffc96b'):f.active?'#fff0c4':f.done?'#c9f2d6':'#cfe3ea',off=N?'#101d2a':'#2c4b5e',fr=shade(wall,.55),sill=shade(wall,1.3),books=['#c0563f','#d9b25e','#7aa2d6','#8fc98f'];
+ for(let r=0,yy=y+28;yy<y+h-22;yy+=18,r++){if(r)px(x+2,yy-5,w-2,1,shade(wall,.82));for(let c=0,xx=x+14;xx<x+w-16;xx+=22,c++){
+  px(xx-1,yy-1,12,10,fr);px(xx-1,yy+9,12,1,sill);
+  if(!(wh(c+id.length*7,r,e+(c*r)%4)%100<rate)){px(xx,yy,10,8,off);if(!N){px(xx+6,yy+1,2,2,'rgba(255,255,255,.14)');px(xx+4,yy+3,2,2,'rgba(255,255,255,.08)')}continue}
   if(id==='docs'){px(xx,yy,10,8,N?'#3a2a1a':'#33424e');for(let b=0;b<4;b++)px(xx+1+b*2,yy+2+b%2,2,6-b%2,books[(b+c+r)%4]);continue}
-  px(xx,yy,10,8,lit);px(xx+1,yy+1,8,1,'rgba(255,255,255,.25)');if(N){ctx.globalAlpha=.16;px(xx-3,yy-3,16,14,'#ffc861');ctx.globalAlpha=1}
- }
+  px(xx,yy,10,8,lit);px(xx,yy+5,10,3,'rgba(120,80,30,.12)');px(xx+4,yy,1,8,'rgba(0,0,0,.12)');if(N){ctx.globalAlpha=.16;px(xx-3,yy-3,16,14,'#ffc861');ctx.globalAlpha=1}
+ }}
 }
 function drawRoofProps(id,d,x,y,w,wall,blink,done,ts){
  const N=display.night,A=ctx.globalAlpha;
@@ -1604,27 +1609,38 @@ function drawRoofProps(id,d,x,y,w,wall,blink,done,ts){
  else if(id==='projects')for(const tx of[x+w-96,x+w-58]){px(tx,y-30,30,36,wall);px(tx,y-33,30,4,d.roof);for(let yy=y-24;yy<y+4;yy+=7){px(tx+4,yy,22,1,shade(d.roof,.8));px(tx+13,yy+2,4,2,d.accent)}}
  else if(id==='docs'){pathPoly([[x+w-70,y+2],[x+w-40,y-18],[x+w-10,y+2]],shade(d.roof,1.15));px(x+w-46,y-8,12,8,N?'#ffd27a':'#cfe0f7')}
 }
+// The finished building (walls, roof, windows, doors) is painted once per look into a sprite at 2x and copied each
+// frame; only what moves (screens, furnace, roller door, roof props, glow) is drawn live. The window pattern changes
+// every 9 s (never with reduced motion), and with the district's busy/done state and day or night.
+const facades=new Map(),spills=new Map();
+function facade(id,d,f,wall,ts){
+ const N=display.night,e=reduced?0:Math.floor(ts/9000),k=e+N+(f.active?'a':f.done?'d':''),o=facades.get(id);if(o?.k===k)return o.c;
+ const c=o?.c||document.createElement('canvas'),x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,depth=14,prev=ctx;c.width=(w+depth+12)*2;c.height=(h+4)*2;ctx=c.getContext('2d');ctx.setTransform(2,0,0,2,12-2*x,4-2*y);
+ pathPoly([[x+w,y+8],[x+w+depth,y],[x+w+depth,y+h-depth],[x+w,y+h]],shade(d.roof,N?.22:.3));
+ px(x,y+8,w,h-8,wall);const g=ctx.createLinearGradient(0,y+8,0,y+h);g.addColorStop(0,N?'rgba(140,170,255,.07)':'rgba(255,232,190,.16)');g.addColorStop(.45,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.32)');ctx.fillStyle=g;ctx.fillRect(x,y+8,w,h-8);
+ px(x,y+8,2,h-8,shade(wall,1.36));px(x+w-1,y+8,1,h-8,shade(wall,1.18));px(x,y+h-6,w,6,shade(wall,.68));px(x,y+h-6,w,1,shade(wall,1.12));
+ pathPoly([[x,y+8],[x+depth,y],[x+w+depth,y],[x+w,y+8]],d.roof);pathPoly([[x+5,y+7],[x+depth+2,y+2],[x+w+depth-4,y+2],[x+w-3,y+7]],shade(d.roof,.78));px(x,y+7,w,2,shade(d.roof,1.35));px(x,y+9,w,2,'rgba(0,0,0,.22)');px(x+8,y+14,w-16,4,d.accent);px(x+8,y+14,w-16,1,'rgba(255,255,255,.3)');
+ if(id==='ux'){px(x+6,y+22,w-12,h-30,N?'#123039':'#2b6f7d');ctx.globalAlpha=N?.05:.12;for(let i=0;i<3;i++)pathPoly([[x+40+i*70,y+22],[x+62+i*70,y+22],[x+22+i*70,y+h-8],[x+i*70,y+h-8]],'#fff');ctx.globalAlpha=1;for(let xx=x+6;xx<x+w-6;xx+=20)px(xx,y+22,2,h-30,'#1a4650');for(let i=0;i<5;i++){const sx=x+14+i*34,s2=y+30+(i%2)*26;px(sx,s2,16,12,'#0c1a22');px(sx+2,s2+2,12,2,d.accent);px(sx+2,s2+6,5,4,'#8fb3bf');px(sx+9,s2+6,5,1,'#8fb3bf');px(sx+9,s2+8,4,1,'#8fb3bf')}}
+ else drawWindows(id,d,x,y,w,h,e,f,wall);
+ if(id==='engineering'){px(x+w-62,y+h-36,46,36,'#262d34');for(let yy=y+h-34;yy<y+h;yy+=5)px(x+w-60,yy,42,1,'#3a434c');px(x+w-62,y+h-38,46,3,d.accent)}
+ if(id!=='repair'){const ax=x+w/2-17;px(x+w/2-22,y+h-37,44,31,id==='ux'?'#1a4650':wall);px(x+w/2-22,y+h-37,44,1,shade(wall,1.25));px(ax,y+h-29,34,6,d.accent);for(let i=0;i<34;i+=8)px(ax+i,y+h-29,4,6,'rgba(255,255,255,.35)');px(ax,y+h-23,34,2,'rgba(0,0,0,.3)');px(x+w/2-10,y+h-22,20,22,shade(wall,.6));px(x+w/2-9,y+h-21,18,21,N?'#2a2414':'#0d1720');px(x+w/2-5,y+h-17,4,4,d.accent);px(x+w/2-12,y+h-1,24,2,shade(wall,1.2))}
+ light(x-6,y-2,w+depth+12,h+4);ctx=prev;facades.set(id,{k,c});return c
+}
 function drawBuilding(id,d,ts){
- const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,depth=14,f=districtFlags(id),{workers,active,bad,done}=f,selectedDistrict=selected?.type==='district'&&selected.id===id,pulse=(Math.sin(ts/240)+1)/2,N=display.night,blink=reduced||Math.floor(ts/500)%2;
+ const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,depth=14,f=districtFlags(id),{workers,active,bad,done}=f,selectedDistrict=selected?.type==='district'&&selected.id===id,pulse=reduced?.5:(Math.sin(ts/240)+1)/2,N=display.night,blink=reduced||Math.floor(ts/500)%2;
  const level=buildLevel(id),under=level<.995,top=y+h-h*level,sy=Math.max(y,top-8),wall=d.wall?d.wall[N?1:0]:shade(d.roof,N?.3:.42);
  // shadow, cast down and to the right; light from the windows on the pavement at night
- pathPoly([[x+w+depth,sy],[x+w+depth+22,sy+18],[x+w+depth+22,y+h+12],[x+12,y+h+12],[x,y+h]],'rgba(0,0,0,.28)');
- if(N){ctx.globalAlpha=.09;px(x-8,y+h,w+depth+16,24,'#ffc861');ctx.globalAlpha=1}
+ pathPoly([[x+w+depth,sy],[x+w+depth+30,sy+24],[x+w+depth+30,y+h+16],[x+16,y+h+16],[x,y+h]],'rgba(0,0,0,.13)');pathPoly([[x+w+depth,sy],[x+w+depth+20,sy+16],[x+w+depth+20,y+h+10],[x+10,y+h+10],[x,y+h]],'rgba(0,0,0,.22)');
+ if(N||active){const gk=id+N+active;let g=spills.get(gk);if(!g){g=ctx.createRadialGradient(x+w/2,y+h+4,4,x+w/2,y+h+4,w*.62);g.addColorStop(0,N?'rgba(255,200,110,'+(active?.34:.16)+')':'rgba(255,224,150,.2)');g.addColorStop(1,'rgba(255,200,110,0)');spills.set(gk,g)}ctx.fillStyle=g;ctx.fillRect(x-w*.15,y+h-6,w*1.3,w*.5)}
  ctx.save();
  px(x-4,y+h-6,w+depth+8,8,N?'#2a333b':'#59616a');
  // Only the finished floors are solid; the rest is drawn as a steel frame below.
  ctx.save();if(under){ctx.beginPath();ctx.rect(x-40,top,w+depth+80,h+80);ctx.clip()}
- pathPoly([[x+w,y+8],[x+w+depth,y],[x+w+depth,y+h-depth],[x+w,y+h]],shade(d.roof,N?.22:.3));
- px(x,y+8,w,h-8,wall);px(x,y+8,2,h-8,shade(wall,1.36));
- pathPoly([[x,y+8],[x+depth,y],[x+w+depth,y],[x+w,y+8]],d.roof);px(x,y+7,w,2,shade(d.roof,1.35));px(x+8,y+14,w-16,4,d.accent);
- if(id==='ux'){px(x+6,y+22,w-12,h-30,N?'#123039':'#2b6f7d');for(let xx=x+6;xx<x+w-6;xx+=20)px(xx,y+22,2,h-30,'#1a4650');for(let i=0;i<5;i++){const sx=x+14+i*34,s2=y+30+(i%2)*26;px(sx,s2,16,12,'#0c1a22');px(sx+2,s2+2,12,2,d.accent);px(sx+2,s2+6,5,4,'#8fb3bf');px(sx+9,s2+6,5,1,'#8fb3bf');px(sx+9,s2+8,4,1,'#8fb3bf')}}
- else drawWindows(id,d,x,y,w,h,ts,f);
+ const sm=ctx.imageSmoothingEnabled;ctx.imageSmoothingEnabled=fk<2;ctx.drawImage(facade(id,d,f,wall,ts),x-6,y-2,w+depth+12,h+4);ctx.imageSmoothingEnabled=sm;
+ if(active&&!reduced){ctx.globalCompositeOperation='lighter';ctx.globalAlpha=(N?.1:.05)*(1+pulse);px(x,y+8,w,h-8,d.accent);ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1}
  if(id==='command'){const ws=current?.workers||[],p=ws.length?Math.round(100*ws.filter(q=>q.state==='complete').length/ws.length):0,sx=x+w/2-36;px(sx,y+24,72,28,'#0a141c');px(sx+2,y+26,68,24,'#10202c');txt(ws.length?p+'%':'READY',sx+36,y+35,d.accent,10);px(sx+6,y+45,60,3,'#22384a');px(sx+6,y+45,60*p/100,3,'#75dfa2')}
- else if(id==='engineering'){px(x+w-62,y+h-36,46,36,'#262d34');for(let yy=y+h-34;yy<y+h;yy+=5)px(x+w-60,yy,42,1,'#3a434c');px(x+w-62,y+h-38,46,3,d.accent)}
  else if(id==='models'){const fl=reduced?.8:.65+.35*Math.sin(ts/90)*Math.sin(ts/53);px(x+12,y+h-26,28,16,'#2a1a14');ctx.globalAlpha=fl;px(x+14,y+h-24,24,12,'#ff9a3c');ctx.globalAlpha=1}
  else if(id==='repair'){const up=workers.length?24:0;px(x+w/2-26,y+h-32,52,32,'#141a20');if(up){ctx.globalAlpha=.6;px(x+w/2-24,y+h-10,48,10,'#ffb23d');ctx.globalAlpha=1}for(let yy=y+h-32;yy<y+h-up;yy+=4)px(x+w/2-26,yy,52,3,'#59626c')}
- // door
- if(id!=='repair'){px(x+w/2-9,y+h-22,18,22,'#0d1720');px(x+w/2-5,y+h-17,4,4,d.accent)}
  ctx.restore();
  // what stands on the roof, once it's built; while it's going up, the finished silhouette shows faintly behind the
  // scaffold (a ghost of the walls and roof, its props, and a dashed outline), so the district is recognisable
@@ -1639,7 +1655,7 @@ function drawBuilding(id,d,ts){
  // Damage sits on whatever has been built so far.
  if(bad){const by=Math.max(y,top);drawDamage(x,by,w,y+h-by,workers.some(q=>q.state==='running'),ts)}
  if(done&&!under)drawTopping(x,y,w,ts);
- if(active){ctx.strokeStyle=d.accent;ctx.globalAlpha=.55+.35*pulse;ctx.lineWidth=3;ctx.strokeRect(x-4,y-4,w+depth+8,h+10);ctx.globalAlpha=1}
+ if(active){const o=6+3*pulse,X=x-o,Y=y-o,R=x+w+depth+o,B=y+h+6+o,l=16;ctx.strokeStyle=d.accent;ctx.lineWidth=3;ctx.globalAlpha=.6+.4*pulse;ctx.beginPath();for(const[a,b,dx,dy]of[[X,Y,1,1],[R,Y,-1,1],[X,B,1,-1],[R,B,-1,-1]]){ctx.moveTo(a+dx*l,b);ctx.lineTo(a,b);ctx.lineTo(a,b+dy*l)}ctx.stroke();ctx.globalAlpha=1}
  if(bad){ctx.strokeStyle='#ff7383';ctx.lineWidth=4;ctx.globalAlpha=.6+.4*pulse;ctx.strokeRect(x-5,y-5,w+depth+10,h+11);ctx.globalAlpha=1;px(x+w-16,y+11,10,10,pulse>.5?'#ff7383':'#6f2632')}
  if(selectedDistrict){ctx.strokeStyle='#ffffff';ctx.lineWidth=2;ctx.setLineDash([6,4]);ctx.strokeRect(x-8,y-8,w+depth+16,h+17);ctx.setLineDash([])}
  ctx.restore()
@@ -1719,10 +1735,12 @@ function drawFlows(ts){
  for(const w of current.workers)for(const dep of w.dependsOn||[]){
   const a=current.workers.find(x=>x.id===dep),za=a&&zoneForWorker(a),zb=zoneForWorker(w);if(!a||za===zb)continue;
   const f=flowPath(za,zb),st=dependencyState(a,w),c=st==='blocked'?'255,115,131':st==='active'?'89,226,237':st==='ready'?'117,223,162':'150,170,190';
-  ctx.strokeStyle='rgba('+c+','+(st==='waiting'?.2:.36)+')';ctx.lineWidth=st==='active'?3:2;ctx.setLineDash(st==='blocked'?[4,6]:[]);ctx.beginPath();ctx.moveTo(f.p[0].x,f.p[0].y);for(const q of f.p)ctx.lineTo(q.x,q.y);ctx.stroke();
-  if(!reduced&&(st==='active'||st==='ready'))for(let i=0,n=st==='active'?3:1;i<n;i++){const q=along(f,(ts/(f.len*12)+i/n)%1);px(q.x-4,q.y-4,8,8,'rgba(5,10,16,.85)');px(q.x-3,q.y-3,6,6,'rgb('+c+')')}
+  const live=st==='active'||st==='ready';if(!f.path){f.path=new Path2D();f.path.moveTo(f.p[0].x,f.p[0].y);for(const q of f.p)f.path.lineTo(q.x,q.y)}
+  if(st!=='waiting'){ctx.setLineDash([]);ctx.strokeStyle='rgba('+c+',.12)';ctx.lineWidth=st==='active'?10:7;ctx.stroke(f.path)}
+  ctx.strokeStyle='rgba('+c+','+(st==='waiting'?.22:.6)+')';ctx.lineWidth=st==='active'?3:2;ctx.setLineDash(st==='blocked'?[4,6]:live?[10,8]:[2,6]);ctx.lineDashOffset=live&&!reduced?-ts/40:0;ctx.stroke(f.path);
+  if(!reduced&&live)for(let i=0,n=st==='active'?3:1;i<n;i++){const q=along(f,(ts/(f.len*12)+i/n)%1);ctx.fillStyle='rgba('+c+',.25)';ctx.beginPath();ctx.arc(q.x,q.y,9,0,7);ctx.fill();px(q.x-4,q.y-4,8,8,'rgba(5,10,16,.85)');px(q.x-3,q.y-3,6,6,'rgb('+c+')');px(q.x-1,q.y-1,2,2,'#fff')}
  }
- ctx.setLineDash([]);ctx.restore()
+ ctx.setLineDash([]);ctx.lineDashOffset=0;ctx.restore()
 }
 function roleStyle(a){return a.style||ROLE_STYLE[a.id]||ROLE_STYLE.synthesis}
 function workerIsMoving(a){return !!(a.path?.length&&a.pathI<a.path.length)}
@@ -1861,6 +1879,7 @@ function drawNameTag(r,t){ctx.fillStyle='rgba(5,10,16,.92)';ctx.beginPath();ctx.
 function drawWorkerSprite(a,ts){
  const x=Math.round(a.x/2)*2,y=Math.round(a.y/2)*2,sel=selected?.type==='agent'&&selected.id===a.id,f=a.frame=workerFrame(a,ts),c=roleStyle(a).accent;let top=y+22-59*WS;
  if(sel){ctx.save();ctx.fillStyle='rgba(255,255,255,.14)';ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.shadowColor=c;ctx.shadowBlur=10;ctx.beginPath();ctx.ellipse(x,y+19,19*WS,7*WS,0,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.restore()}
+ if(a.state==='running'&&!workerIsMoving(a)){ctx.globalAlpha=reduced?.3:.22+.12*Math.sin(ts/300+a.activitySeed);ctx.fillStyle=c;ctx.beginPath();ctx.ellipse(x,y+19,16*WS,6*WS,0,0,7);ctx.fill();ctx.globalAlpha=1}
  if(workerIsRunning(a))drawRunningWorkerSprite(a,ts,x,y,f);else blit(a,f,x,y);
  if(display.labels&&(sel||hovered?.type==='agent'&&hovered.id===a.id)){const w=tw(a.name,8)+12,r=place({x:x-w/2,y:top-13,w,h:13});if(r){drawNameTag(r,a.name);top=r.y-3}}
  if(sel||a.state==='running'&&view.zoom>1.4){const s=a.state,t=s==='running'?VERB[a.id.replace(/-followup-\d+$/,'')]||'Working':s==='complete'?'✓':s==='pending'?'…':'!',w=tw(t,8)+12,r=place({x:x-w/2,y:top-13,w,h:13});if(r)drawWorkerBubble(r,t,s==='running'?c:s==='complete'?'#75dfa2':s==='pending'?'#9fb0c0':'#ffb0b0',x)}
@@ -1885,7 +1904,7 @@ function drawClouds(ts){if(display.night)return;ctx.save();ctx.globalAlpha=.08;f
  else{const x=a.x+16*WS,y=a.y+22-52*WS,bl=reduced||Math.floor(ts/500)%2===0;pathPoly([[x,y-12],[x+11,y+8],[x-11,y+8]],bl?'#ffc640':'#e0a020');txt('!',x,y+2,'#2a1600',11)}}}
 function drawCommandCelebration(ts){
  if(ts>celebrationUntil)return;const d=DISTRICTS.command,x=(d.x+d.w/2)*T,y=d.y*T-10,life=clamp((celebrationUntil-ts)/3600,0,1);
- ctx.save();ctx.globalAlpha=Math.min(1,life*2);
+ ctx.save();ctx.globalAlpha=Math.min(1,life*2)*.22;ctx.fillStyle='#ffe7a0';ctx.beginPath();for(let i=0;i<12;i++){const a=ts/2400+i*Math.PI/6;ctx.moveTo(x,y);ctx.arc(x,y,150,a,a+.13)}ctx.fill();ctx.globalAlpha=Math.min(1,life*2);
  for(let i=0;i<18;i++){const a=i/18*Math.PI*2,r=18+(1-life)*90,c=i%3===0?'#75dfa2':i%3===1?'#71b7ff':'#f5c04f';px(x+Math.cos(a)*r,y+Math.sin(a)*r*.55,4,4,c)}
  ctx.strokeStyle='rgba(117,223,162,'+(.35+.35*Math.sin(ts/160))+')';ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,20+(1-life)*28,0,Math.PI*2);ctx.stroke();txt('DONE!',x,y-30,'#eafff1',9);ctx.restore()
 }
@@ -1896,8 +1915,11 @@ function drawMinimap(){
  el.innerHTML='<span></span>'+markers;
 }
 function draw(ts){
- if(!ctx||!cam.w)return;const s=sc(view.zoom);fk=s*cam.dpr;ctx.setTransform(cam.dpr,0,0,cam.dpr,0,0);ctx.clearRect(0,0,cam.w,cam.h);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(s,s);drawGround(ts);ctx.imageSmoothingEnabled=false;drawFlows(ts);drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,ts);drawBuilding(id,d,ts);drawInterior(id,d,ts);drawWorksite(id,d,ts)}layoutSigns();drawAgents(ts);drawMoments(ts);drawCommandCelebration(ts);drawClouds(ts);drawSigns();if(!current&&!display.night){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'rgba(255,170,90,.20)');g.addColorStop(.6,'rgba(255,140,70,.08)');g.addColorStop(1,'rgba(120,60,90,.14)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H)}if(display.night){ctx.fillStyle='rgba(3,7,14,.18)';ctx.fillRect(0,0,W,H)}ctx.restore()
+ if(!ctx||!cam.w)return;const s=sc(view.zoom);fk=s*cam.dpr;ctx.setTransform(cam.dpr,0,0,cam.dpr,0,0);ctx.clearRect(0,0,cam.w,cam.h);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(s,s);drawGround(ts);ctx.imageSmoothingEnabled=false;drawFlows(ts);drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,ts);drawBuilding(id,d,ts);drawInterior(id,d,ts);drawWorksite(id,d,ts)}layoutSigns();drawAgents(ts);drawMoments(ts);drawCommandCelebration(ts);drawClouds(ts);drawSigns();ctx.restore()
 }
+// Light: warm sun from the top left by day, cool moonlight at night. It is painted into the ground cache and the
+// building sprites, never per frame, and not over the workers and signs, so they keep their colours.
+function light(x=0,y=0,w=W,h=H){const g=ctx.createLinearGradient(0,0,W,H);if(display.night){g.addColorStop(0,'rgba(40,70,150,.14)');g.addColorStop(1,'rgba(2,6,22,.34)')}else{g.addColorStop(0,'rgba(255,206,130,.22)');g.addColorStop(.55,'rgba(255,190,120,.05)');g.addColorStop(1,'rgba(60,50,120,.12)')}ctx.globalCompositeOperation='source-atop';ctx.fillStyle=g;ctx.fillRect(x,y,w,h);ctx.globalCompositeOperation='source-over'}
 // Animate only while the city canvas is on screen and the tab is visible; at most one rAF chain.
 let io=null,observed=null,onScreen=!('IntersectionObserver' in window);
 function canAnimate(){return !!(canvas&&canvas.isConnected&&onScreen&&!document.hidden)}

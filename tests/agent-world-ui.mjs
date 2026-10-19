@@ -346,6 +346,19 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await check(`${label}: no script errors (start)`, async () => assert.deepEqual(errors, []));
   await context.close();
 }
+// The More menu's "Try a demo mission" starts the demo without the card's button; the invitation must still go.
+{
+  const { context, page, errors } = await emptyPage({ viewport: { width: 1440, height: 900 } });
+  await check('1440px: a demo started from the menu hides the invitation', async () => {
+    await page.locator('#awEmpty').waitFor({ state: 'visible' });
+    await page.evaluate(() => window.LocalAIAgentWorld.demo());
+    await page.locator('#awEmpty').waitFor({ state: 'hidden' });
+    await page.waitForTimeout(2500); // a later status refresh must not bring it back while the demo runs
+    assert.equal(await page.locator('#awEmpty').isVisible(), false);
+    assert.deepEqual(errors, []);
+  });
+  await context.close();
+}
 // A goal that changes Local AI itself: the start sheet offers Claude Code (Hand to Claude) and still starts the mission.
 for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 } }], ['iPhone 14', (({ defaultBrowserType, ...d }) => d)(devices['iPhone 14'])]]) {
   const { context, page, errors, sent } = await emptyPage(opts);
