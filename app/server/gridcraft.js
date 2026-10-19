@@ -100,6 +100,20 @@ function createGridcraft(ctx) {
       bridgeFailure(res, e);
     }
   }
+  // What the running request is doing (the bridge reads it from the agent's log as it goes), for the page to show
+  // while it waits: each step as {tool, text, failed}, in the owner's words. Only those fields are passed on.
+  async function apiGridcraftProgress(req, res) {
+    try {
+      const r = await bridgeFetch('/progress', { cache: 'no-store' }, 4000);
+      const data = await bridgeJson(r, {});
+      if (!r.ok || data.ok !== true) return json(res, r.ok ? 502 : r.status, { ok: false, error: data.error || 'GridCraft did not say what it is doing' });
+      const steps = (Array.isArray(data.steps) ? data.steps : []).slice(-40)
+        .map(x => ({ tool: String(x?.tool || '').slice(0, 60), text: String(x?.text || '').slice(0, 160), ...(x?.failed ? { failed: true } : {}) }));
+      json(res, 200, { ok: true, running: data.running === true, turn: Number(data.turn) || 0, steps });
+    } catch (e) {
+      bridgeFailure(res, e);
+    }
+  }
   async function apiGridcraftOpen(req, res) {
     if (!sameOriginJson(req, res)) return;
     let b;
@@ -259,7 +273,7 @@ function createGridcraft(ctx) {
     recordActivity('workshop', 'Workshop sign-in code shown', 'Services › Workshop display');
     send(200, { code: r.code, address });
   }
-  return { gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopPortalCode, apiWorkshopStatus };
+  return { gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftProgress, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopPortalCode, apiWorkshopStatus };
 }
 
 module.exports = { createGridcraft };
