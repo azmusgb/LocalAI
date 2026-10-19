@@ -97,15 +97,17 @@ function init(){
     const pic=(url,i,label)=>`<figure class="img-fix-compare__item"><button type="button" class="img-thumb img-fix-compare__pic" data-fix-show="${i}" aria-label="Show ${esc(label)} larger"><img alt="${esc(label)}" src="${esc(bust(url)||'')}"></button><figcaption>${esc(label)}</figcaption>${i>=0?`<button type="button" class="btn-primary" data-fix-keep="${i}" aria-label="Keep ${esc(label)}">Keep</button>`:''}</figure>`;
     box.innerHTML=`<p class="img-fix-compare__head"><b>Keep the one you like.</b> The other is deleted, with Undo. Not right? Change the circle or the words and tap Fix it again.</p><div class="img-fix-compare__grid">${pic(fix.from.imageUrl,-1,'Original')}${images.map((im,i)=>pic(im.imageUrl,i,`Fix ${i+1}`)).join('')}</div>`;
     box.hidden=false;box.scrollIntoView?.({block:'nearest',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
+    // One Keep at a time: a second quick tap (on either version) while the first deletes the other would delete both.
+    let keeping=false;const keeps=on=>box.querySelectorAll('[data-fix-keep]').forEach(b=>{b.disabled=!on});
     box.onclick=async e=>{const s=e.target.closest('[data-fix-show]'),k=e.target.closest('[data-fix-keep]');
       if(s){const i=Number(s.dataset.fixShow),u=bust(i<0?fix.from.imageUrl:images[i].imageUrl);$('generatedImage').src=u;$('imageOpen').href=u;return}
-      if(!k)return;const i=Number(k.dataset.fixKeep),chosen=images[i],others=images.filter((_,n)=>n!==i);k.disabled=true;
+      if(!k||keeping)return;const i=Number(k.dataset.fixKeep),chosen=images[i],others=images.filter((_,n)=>n!==i);keeping=true;keeps(false);
       try{await I.reload();const ids=I.library().filter(x=>x.kind==='image'&&others.some(o=>o.imageUrl===x.meta?.imageUrl)).map(x=>({kind:'library',id:x.id}));
         if(ids.length&&!(await window.LocalAIUI.deleteItems(ids,{onUndo:()=>I.reload()})))return;
         const meta=$('imageMeta').textContent.replace(/seed \d+/,`seed ${chosen.seed}`),thread=ui.threadId;
         I.stop();I.show(chosen.imageUrl,meta,null,fix.scene,thread);Object.assign(ui.last,{engine:fix.from.engine,style:fix.from.style,seed:chosen.seed});await I.reload();
         if(!ids.length)window.LocalAIUI?.toast?.('Kept.');
-      }finally{if(k.isConnected)k.disabled=false}};
+      }finally{keeping=false;keeps(true)}};
   }
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
