@@ -1045,6 +1045,48 @@ const stubStart = async page => {
   await check('1440px: no script errors (demo header)', async () => assert.deepEqual(errors, []));
   await context.close();
 }
+// The same demo (2026-10-19): the Story still told the real mission's events and the Result showed its summary. During
+// a demo the Story is the demo's own, timed from its start; the Result says no result is saved; stopping it restores both.
+{
+  const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, DONE3);
+  const story = () => page.locator('#agentTimeline').innerText(), result = () => page.locator('#agentResultBody').innerHTML();
+  await check('1440px: during a demo the Story tells the demo and the Result saves nothing; stopping it restores the real ones', async () => {
+    await page.waitForFunction(() => /Done: the summary is ready/.test(document.getElementById('agentTimeline').textContent));
+    const realStory = await page.locator('#agentTimeline').innerHTML(), realResult = await result();
+    assert.match(realResult, /The summary of what the team found\./);
+    await page.evaluate(() => window.LocalAIAgentWorld.demo());
+    await page.waitForFunction(() => /picked the team: UX Analyst, Documentation Agent/.test(document.getElementById('agentTimeline').textContent));
+    await page.evaluate(() => { window.LocalAIAgentWorld.demoStep(); window.LocalAIAgentWorld.demoStep(); });
+    const s = await story();
+    assert.match(s, /UX Analyst started/);
+    assert.match(s, /UX Analyst finished/);
+    assert.match(s, /Documentation Agent started/);
+    assert.doesNotMatch(s, /stopped|Done: the summary is ready/, 'none of the real mission’s events');
+    const times = await page.locator('#agentTimeline time').allInnerTexts();
+    assert.ok(times.length && times.every(x => /^\d+:\d\d$/.test(x)), `demo-relative times: ${times}`);
+    assert.ok((await page.locator('#agentTimeline time').evaluateAll(ts => ts.map(x => x.getAttribute('datetime')))).every(d => /^PT\d+S$/.test(d)));
+    assert.equal(await page.locator('#agentResultBody').innerText(), 'This is a demo — no result is saved.');
+    await page.evaluate(() => { window.LocalAIAgentWorld.demoStep(); window.LocalAIAgentWorld.demoStep(); });
+    assert.match(await story(), /Done: the summary is ready/, 'the demo’s own finish');
+    assert.equal(await page.locator('#agentResultBody').innerText(), 'This is a demo — no result is saved.');
+    await page.locator('#awcLiveBtn').click();
+    await page.waitForFunction(g => document.getElementById('awTitle').textContent === g, DONE3.goal);
+    assert.equal(await page.locator('#agentTimeline').innerHTML(), realStory, 'the real Story is back as it was');
+    assert.equal(await result(), realResult, 'the real Result is back as it was');
+  });
+  await check('1440px: Work’s run view showing a mission ends a demo, so the Story it borrows is that mission’s', async () => {
+    await page.route(u => u.pathname === '/api/agents/mission', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ mission: DONE3 }) }));
+    await page.evaluate(() => window.LocalAIAgentWorld.demo());
+    await page.waitForFunction(() => /Documentation Agent/.test(document.getElementById('agentTimeline').textContent));
+    assert.equal(await page.evaluate(id => window.LocalAIMissions.show(id), DONE3.id), true);
+    assert.equal(await page.evaluate(() => window.LocalAIAgentWorld.demoing()), false);
+    assert.match(await story(), /Done: the summary is ready/);
+    assert.doesNotMatch(await story(), /Documentation Agent/);
+    assert.match(await result(), /The summary of what the team found\./);
+  });
+  await check('1440px: no script errors (demo story)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
 {
   const { page, errors } = await seeded(await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' }));
   await check('1440px: a running mission offers no Retry mission', async () => {
