@@ -860,6 +860,49 @@ const DEV_WORDS = /Synthesis|Evidence|Routing|Mission Router|Capability|Groundin
   await context.close();
 }
 
+// The bolder pass (2026-10-19): the sky (time of day, haze, the spotlight on the busy district) is four layers over the
+// canvas that follow the camera and never take a tap; Night locks it; a hand-off arcs between the two roofs. Reduced
+// motion holds the sky still and draws no arcs or birds.
+for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 } }], ['reduced motion', { viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' }]]) {
+  const still = label === 'reduced motion';
+  const context = await browser.newContext({ serviceWorkers: 'block', ...opts }); await debugOn(context);
+  await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); localStorage.removeItem('localai.agentworld.replay.v2'); } catch {} });
+  const page = await context.newPage(); const errors = []; page.on('pageerror', e => errors.push(e.message));
+  await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: '{"items":[]}' }));
+  await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => typeof window.showView === 'function');
+  await page.evaluate(() => window.showView('agents'));
+  await page.waitForSelector('#agents.active #awcCanvas');
+  await page.evaluate(() => { window.LocalAIAgentWorld.follow(false); window.LocalAIAgentWorld.view('fit'); });
+  await check(`${label}: the sky layers lie over the city, hidden from screen readers and taps, and follow the camera`, async () => {
+    await page.waitForFunction(() => { const c = window.LocalAIAgentWorld.camera(); return Math.abs(c.shown.zoom - c.zoom) < 1e-3 && Math.abs(c.shown.panX - c.panX) < .05 && Math.abs(c.shown.panY - c.panY) < .05; });
+    await page.waitForTimeout(100);
+    const r = await page.evaluate(() => ({ cam: window.LocalAIAgentWorld.camera(), layers: [...document.querySelectorAll('#awcCanvas ~ .awc__sky')].map(e => ({ hidden: e.getAttribute('aria-hidden'), taps: getComputedStyle(e).pointerEvents, t: e.style.transform })) }));
+    assert.equal(r.layers.length, 4);
+    for (const l of r.layers) {
+      assert.equal(l.hidden, 'true'); assert.equal(l.taps, 'none');
+      const [x, y, k] = (l.t.match(/-?[\d.]+/g) || []).map(Number), want = r.cam.base * r.cam.shown.zoom;
+      assert.ok(Math.abs(x - r.cam.shown.panX) < .1 && Math.abs(y - r.cam.shown.panY) < .1 && Math.abs(k - want) < 1e-3, `${l.t} vs ${JSON.stringify(r.cam.shown)}, scale ${want}`);
+    }
+    const box = await page.locator('#awcCanvas').boundingBox(), hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.id, [box.x + box.width * .1, box.y + box.height * .55]);
+    assert.equal(hit, 'awcCanvas', 'a tap on the city still reaches the canvas');
+  });
+  await check(`${label}: by day the sky ${still ? 'holds a still afternoon' : 'drifts through the day'}; Night locks it`, async () => {
+    const a = await page.evaluate(() => window.__awcLayout().sky);
+    if (still) assert.equal(a, 0.55); else assert.ok(a >= 0 && a <= 1, `sky ${a}`);
+    await page.evaluate(() => window.LocalAIAgentWorld.view('night'));
+    assert.equal(await page.evaluate(() => window.__awcLayout().sky), -1);
+    await page.evaluate(() => window.LocalAIAgentWorld.view('night'));
+  });
+  await check(`${label}: a hand-off ${still ? 'draws no arc' : 'arcs between the two roofs'}`, async () => {
+    await page.evaluate(() => { window.LocalAIAgentWorld.demo(); window.LocalAIAgentWorld.demoStep(); });
+    if (still) { await page.waitForTimeout(300); assert.equal(await page.evaluate(() => window.__awcLayout().arcs), 0); assert.equal(await page.evaluate(() => window.__awcLayout().birds), 0); }
+    else await page.waitForFunction(() => window.__awcLayout().arcs > 0, null, { timeout: 5000 });
+  });
+  await check(`${label}: no script errors (sky)`, async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+
 await browser.close();
 if (failures.length) { console.error('\nAgent World failures:\n' + failures.map(x => ' - ' + x).join('\n')); process.exit(1); }
 console.log('\nAll Agent World checks passed.');
