@@ -47,8 +47,8 @@ print(json.dumps({'out': out, 'launched': launched}))`;
     assert.deepEqual(out[1][1], [200, { ok: true, alreadyRunning: true }]);
     assert.deepEqual(launched, [[exe]], 'launched once, the configured exe with no arguments');
 
-    // On Windows it goes through explorer.exe, so ArtCraft runs un-elevated in the signed-in user's shell, not with
-    // the bridge's highest-privileges token. Exactly the exe path, nothing else.
+    // On Windows it goes through explorer.exe, so ArtCraft runs un-elevated in the signed-in user's shell even under a
+    // bridge that still runs elevated (installed before 19 Oct 2026). Exactly the exe path, nothing else.
     const win = run([false, true], true);
     assert.deepEqual(win.launched, [['explorer.exe', exe]]);
     assert.deepEqual(win.out[0][1], [200, { ok: true, alreadyRunning: false }]);

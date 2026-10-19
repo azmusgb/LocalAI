@@ -39,7 +39,7 @@ Prerequisites:
 - Ollama running on the host.
 - GridCraft is installed under `C:\Program Files\GridCraft`.
 
-Install and start the bridge from an **elevated** PowerShell (Run as administrator); the installer refuses to run otherwise:
+Install and start the bridge from an **elevated** PowerShell (Run as administrator); the installer refuses to run otherwise. The task it registers runs with your normal rights:
 
 ```powershell
 Set-Location C:\LocalAI\repo
@@ -66,7 +66,7 @@ It:
    installs `host/gridcraft-agent/requirements.txt`;
 2. writes `%USERPROFILE%\gridcraft-local-ai\gridcraft-bridge.env.ps1`, which sets the variables below and
    starts `host/gridcraft-bridge.py`;
-3. registers the scheduled task `LocalAI GridCraft Bridge` (at logon, highest privileges, restarts up to 3 times);
+3. registers the scheduled task `LocalAI GridCraft Bridge` (at logon, with the user's normal rights, not elevated; restarts up to 3 times);
 4. removes the inbound `8787` firewall rule older installs created;
 5. starts the task and waits for `/health`.
 
@@ -195,7 +195,7 @@ requests, is described in the [agent README](../host/gridcraft-agent/README.md).
 
 ## Security boundary
 
-The bridge listens on the host's loopback only, so the LAN reaches it only through the appliance. Browser CORS is restricted to the configured LocalAI origins. The scheduled task runs with highest privileges, and so does the agent it starts (see [Security › Known gaps](SECURITY.md#known-gaps)).
+The bridge listens on the host's loopback only, so the LAN reaches it only through the appliance. Browser CORS is restricted to the configured LocalAI origins. The scheduled task runs with the signed-in user's normal rights (`-RunLevel Limited`), and so do the agent and GridCraft it starts. A bridge installed before 19 Oct 2026 ran elevated: re-run the installer to switch it.
 
 ## Remove
 

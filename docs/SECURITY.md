@@ -139,7 +139,6 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
 | Chat device cookies paired over plain HTTP lack `Secure` | A device that paired on `http://<host>:3080` (or before this change) keeps a cookie its browser also sends over plain HTTP. Re-pair it on the HTTPS address to get a `Secure` cookie | `app/claude-chat.js` |
 | Claude board endpoints are unauthenticated | Any LAN client can post events and findings, vote, and change finding status | `/api/claude/*` in `app/server.js` |
 | Host notifications endpoint is unauthenticated | Any LAN client can post `deploy`/`backup`/`monitor` notices to the Inbox | `/api/notifications/system` |
-| GridCraft bridge task runs elevated | The bridge and the agent it starts run with highest privileges | `deploy/Install-GridCraft-Bridge.ps1` (`-RunLevel Highest`) |
 | Nightly backups go to OneDrive | A copy of the whole database leaves the PC | `deploy/Backup-LocalAI-Data.ps1` (`-OffsiteRoot`) |
 | Volume backups hold secrets in plain archives | `C:\LocalAI\backups\volumes` contains Caddy's root key and n8n's credentials with their key; it stays on this PC's disk, and the script refuses a cloud-synced copy location (OneDrive, Dropbox, iCloud, Google Drive) | `deploy/Backup-LocalAI-Data.ps1` (`-VolumeRoot`, `-VolumeCopyRoot`) |
 | `/go/n8n` and `/go/comfy` redirect to ports bound to loopback | They only work on the host itself | `redirectFor` in `app/server.js` |

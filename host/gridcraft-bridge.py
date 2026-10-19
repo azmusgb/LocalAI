@@ -137,8 +137,9 @@ def artcraft_status() -> dict:
 
 
 def artcraft_launch_args() -> list:
-    # The bridge runs with the highest privileges, and ArtCraft is unsigned and talks to cloud services, so it must not
-    # inherit that token. explorer.exe hands the launch to the signed-in user's normal, non-admin shell. It returns at
+    # ArtCraft is unsigned and talks to cloud services, so it must never get an admin token, and a bridge installed before
+    # 19 Oct 2026 still runs elevated until the installer is re-run. explorer.exe hands the launch to the signed-in user's
+    # normal, non-admin shell either way. It returns at
     # once and its exit code means nothing, so whether ArtCraft is running is still read from tasklist.
     if ON_WINDOWS:
         return ['explorer.exe', str(ARTCRAFT_EXE)]

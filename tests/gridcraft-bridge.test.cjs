@@ -166,3 +166,10 @@ print(json.dumps(out))`;
     assert.deepEqual(out.calls, ['Budget.xlsx', 'data.csv', 'Old.XLS'].map(n => ['open_workbook', { path: path.join(dir, n) }]), 'GridCraft is asked to open the file in the folder, and only for a good name');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('the bridge task runs with normal rights, not elevated', () => {
+  const fs = require('node:fs');
+  const installer = fs.readFileSync(path.resolve(__dirname, '../deploy/Install-GridCraft-Bridge.ps1'), 'utf8');
+  assert.match(installer, /New-ScheduledTaskPrincipal [^\n]*-RunLevel Limited/);
+  assert.doesNotMatch(installer, /-RunLevel Highest/);
+});
