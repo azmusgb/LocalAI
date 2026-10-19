@@ -63,7 +63,7 @@ Nothing on the Mac listens on the network. The appliance is the only rendezvous 
 | Hook | `host/claude-chat/hook.py`, installed to `~/.claude/localai-chat/` | `SessionStart`: start the bridge. `UserPromptSubmit`/`Stop`: mirror. Acts only when `LOCALAI_CHAT=1` | Python 3 stdlib |
 | Bridge | `host/claude-chat/bridge.mjs`, installed to `~/.claude/localai-chat/` | Announce the session, long-poll the relay, inject each web message into the session's inbox socket | Node ≥ 22 (Mac has 26), no npm deps |
 | Mac CLI | `host/claude-chat/localai-chat` (sh) + `cli.mjs` | `pair <code> [name]`, `devices`, `revoke <id>`, `status` | Mac key file |
-| Installer | `host/claude-chat/install.sh` | Copy files, add hook entries, create the Mac key, put its hash on the appliance over `ssh windows-ai`, add the `claude-chat` shell function | ssh access to the host |
+| Installer | `host/claude-chat/install.sh` | Copy files, add hook entries, create the Mac key, put its hash on the appliance over `ssh windows`, add the `claude-chat` shell function | ssh access to the host |
 
 ### Opt-in and session identity
 
@@ -75,7 +75,7 @@ Nothing on the Mac listens on the network. The appliance is the only rendezvous 
 ## Pairing and authentication
 
 **Mac key.** `install.sh` creates 32 random bytes at `~/.claude/localai-chat/mac.key` (mode 600) and writes its SHA-256
-to `/data/claude-chat-mac-key.sha256` inside the appliance container over `ssh windows-ai` + `docker exec`. No network
+to `/data/claude-chat-mac-key.sha256` inside the appliance container over `ssh windows` + `docker exec`. No network
 endpoint can set or change it. Mac-side requests send `X-LocalAI-Mac-Key`; the relay compares hashes in constant time.
 
 **Devices.**

@@ -40,7 +40,7 @@ Channels were the first design. They are disabled for the Claude Team org (`chan
 
 ## Setup
 
-On the Mac, from the repo checkout (needs `ssh windows-ai` to work, Node 22+, Python 3 at `/opt/homebrew/bin/python3`, `openssl` and `curl`, both standard on macOS):
+On the Mac, from the repo checkout (needs `ssh windows` to work; set `LOCALAI_SSH_HOST` if your alias for the Windows host differs, Node 22+, Python 3 at `/opt/homebrew/bin/python3`, `openssl` and `curl`, both standard on macOS):
 
 ```sh
 host/claude-chat/install.sh
@@ -52,8 +52,8 @@ The installer is safe to re-run. It:
 
 1. Copies `bridge.mjs`, `cli.mjs`, `relay.mjs`, `hook.py` and `localai-chat` to `~/.claude/localai-chat/` and symlinks `localai-chat` into `~/.local/bin` (it tells you if that directory does not exist).
 2. Creates the Mac key, 32 random bytes as hex, at `~/.claude/localai-chat/mac.key` (mode 600), unless one already exists.
-3. Pushes the key's SHA-256 to the appliance over `ssh windows-ai docker exec -i local-ai-appliance tee /data/claude-chat-mac-key.sha256`.
-4. Chooses the relay URL. It fetches the LocalAI CA certificate over ssh (`ssh windows-ai type C:\LocalAI\https\localai-ca.crt`, exported there by `deploy/Install-LocalAI-HTTPS.ps1`), checks it is a PEM certificate (`openssl x509`), saves it as `~/.claude/localai-chat/localai-ca.crt`, and checks `https://10.0.0.21/healthz` with it. If that works, `~/.claude/localai-chat/config.json` gets `{"url": "https://10.0.0.21", "ca": ".../localai-ca.crt"}`. If it cannot get a valid CA or reach HTTPS, it prints an error, leaves `config.json` and the CA file as they were, and exits non-zero: there is no plain-HTTP fallback, because port 3080 answers on the Windows host only. Only the PEM block of the ssh output is kept, so ssh banners do not matter. (`LOCALAI_HTTPS_URL` changes the HTTPS address it tries.)
+3. Pushes the key's SHA-256 to the appliance over `ssh windows docker exec -i local-ai-appliance tee /data/claude-chat-mac-key.sha256`.
+4. Chooses the relay URL. It fetches the LocalAI CA certificate over ssh (`ssh windows type C:\LocalAI\https\localai-ca.crt`, exported there by `deploy/Install-LocalAI-HTTPS.ps1`), checks it is a PEM certificate (`openssl x509`), saves it as `~/.claude/localai-chat/localai-ca.crt`, and checks `https://10.0.0.21/healthz` with it. If that works, `~/.claude/localai-chat/config.json` gets `{"url": "https://10.0.0.21", "ca": ".../localai-ca.crt"}`. If it cannot get a valid CA or reach HTTPS, it prints an error, leaves `config.json` and the CA file as they were, and exits non-zero: there is no plain-HTTP fallback, because port 3080 answers on the Windows host only. Only the PEM block of the ssh output is kept, so ssh banners do not matter. (`LOCALAI_HTTPS_URL` changes the HTTPS address it tries.)
 5. Backs up `~/.claude/settings.json` to `settings.json.bak-localai-chat-<timestamp>` and adds `SessionStart`, `UserPromptSubmit` and `Stop` hook entries (`/opt/homebrew/bin/python3 -I ~/.claude/localai-chat/hook.py`, async, 10 s), skipping any already present.
 6. Adds a marked block to `~/.zshrc` defining `claude-chat`.
 
@@ -154,8 +154,8 @@ Common problems:
 - **Message `delivered` but Claude does nothing.** Claude Code may be holding it behind an approval dialog in the terminal (the own-child check failed). Look at the terminal and answer the dialog.
 - **Injected lines in the log but messages stop arriving, or `lost` appears.** A Claude Code update may have changed the undocumented inbox format. This is the main maintenance risk; compare `last injection` in `status` with the Claude Code version and adjust `bridge.mjs`.
 - **Certificate errors** (`relay error tls ...` in `bridge.log`, the same line in `~/.claude/localai-chat/hook.log`, `Relay: certificate not trusted` in `localai-chat status`). The Mac does not trust the server it reached. Usually Caddy's CA changed (its `localai-caddy-data` volume was recreated) or `LOCALAI_URL` points at a name the certificate does not cover (`https://10.0.0.21` and `https://localai.home.arpa` are covered). Re-run `host/claude-chat/install.sh` to fetch the current CA, then restart the sessions. Check by hand with `curl --cacert ~/.claude/localai-chat/localai-ca.crt https://10.0.0.21/healthz`. Never work around it by disabling verification.
-- **Installer exits with `... left unchanged`.** Your existing setup is untouched. `could not get a valid LocalAI CA certificate over ssh`: run `deploy/Install-LocalAI-HTTPS.ps1` on the host (it exports `C:\LocalAI\https\localai-ca.crt`) and check `ssh windows-ai type C:\LocalAI\https\localai-ca.crt` prints a certificate. `HTTPS at ... is not reachable or not trusted`: check `local-ai-https` is running on the host and port 443 is open on the private network.
-- **`mac key rejected` or key `rejected` in status.** Re-run `host/claude-chat/install.sh`; it reuses the same key and re-pushes the hash (to replace the key, see the rotation steps under Security notes). Check `ssh windows-ai` works if the push fails.
+- **Installer exits with `... left unchanged`.** Your existing setup is untouched. `could not get a valid LocalAI CA certificate over ssh`: run `deploy/Install-LocalAI-HTTPS.ps1` on the host (it exports `C:\LocalAI\https\localai-ca.crt`) and check `ssh windows type C:\LocalAI\https\localai-ca.crt` prints a certificate. `HTTPS at ... is not reachable or not trusted`: check `local-ai-https` is running on the host and port 443 is open on the private network.
+- **`mac key rejected` or key `rejected` in status.** Re-run `host/claude-chat/install.sh`; it reuses the same key and re-pushes the hash (to replace the key, see the rotation steps under Security notes). Check `ssh windows` works if the push fails.
 - **Re-running the installer** is always safe: files are overwritten, hooks and the `.zshrc` block are not duplicated, a new settings backup is made.
 
 ## Uninstall
@@ -166,5 +166,5 @@ Common problems:
 4. Remove the appliance's key file, which makes the Mac side inert:
 
    ```sh
-   ssh windows-ai docker exec local-ai-appliance rm /data/claude-chat-mac-key.sha256
+   ssh windows docker exec local-ai-appliance rm /data/claude-chat-mac-key.sha256
    ```

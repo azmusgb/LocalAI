@@ -17,7 +17,7 @@
 - Inbox injection, exactly: connect to `$CLAUDE_CODE_MESSAGING_SOCKET`, write `{"type":"auth","token":"<CLAUDE_CODE_MESSAGING_TOKEN>"}\n` then `{"type":"user","message":{"role":"user","content":"[LocalAI web · <deviceName>] <text>"}}\n`, close. One message per connection, at most one per second.
 - Web-message prefix: `[LocalAI web · ` — the hook never mirrors a prompt that starts with it.
 - Never start or resume Claude Code from the appliance or the page.
-- Mac key: 32 random bytes at `~/.claude/localai-chat/mac.key` (mode 600); its SHA-256 hex at `${DATA_DIR}/claude-chat-mac-key.sha256` on the appliance, written only via `ssh windows-ai` + `docker exec`. Header: `X-LocalAI-Mac-Key`.
+- Mac key: 32 random bytes at `~/.claude/localai-chat/mac.key` (mode 600); its SHA-256 hex at `${DATA_DIR}/claude-chat-mac-key.sha256` on the appliance, written only via `ssh windows` + `docker exec`. Header: `X-LocalAI-Mac-Key`.
 - Device cookie: `localai_chat_device`, HttpOnly, SameSite=Strict, Path=/api/claude/chat, Max-Age 180 days (15552000 s); store only SHA-256 of the token.
 - Pairing code: 6 characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, valid 10 minutes, at most 5 pending (then 429).
 - Session online when `lastSeenAt` < 45 s ago. Inbox long-poll `wait` ≤ 25 s.
@@ -134,7 +134,7 @@ Findings are in the spec ("Spike findings"). Remaining step: write them into `do
 **Interfaces:**
 - Produces (HTTP): `POST /api/claude/chat/pair-request` → `201 {id, code, expiresAt}` (429 when 5 pending); `GET /api/claude/chat/pair-status?id=` → `{status:'pending'|'approved'|'expired'}` and, once, `Set-Cookie` on approval; `POST /api/claude/chat/pair/approve {code, name}` (Mac key) → `{deviceId}`; `GET /api/claude/chat/devices` and `POST /api/claude/chat/devices/revoke {id}` (Mac key **or** device cookie).
 - Produces (CLI): `localai-chat pair <code> [name]`, `localai-chat devices`, `localai-chat revoke <id>`, `localai-chat status` (key present, relay reachable, key accepted, running bridges and their last successful injection).
-- Produces (installer): copies `bridge.mjs`, `cli.mjs`, `hook.py` to `~/.claude/localai-chat/`; creates `mac.key` if missing; writes the hash on the appliance (`ssh windows-ai docker exec -i local-ai-appliance sh -c 'cat > /data/claude-chat-mac-key.sha256'`); adds hook entries (SessionStart, UserPromptSubmit, Stop → `/opt/homebrew/bin/python3 -I ~/.claude/localai-chat/hook.py`; async, 10 s) to `~/.claude/settings.json` after backing it up, without touching the existing progress hook; appends a `claude-chat` function (`LOCALAI_CHAT=1 claude "$@"`) to `~/.zshrc`; prints next steps. Re-running it is safe (idempotent).
+- Produces (installer): copies `bridge.mjs`, `cli.mjs`, `hook.py` to `~/.claude/localai-chat/`; creates `mac.key` if missing; writes the hash on the appliance (`ssh windows docker exec -i local-ai-appliance sh -c 'cat > /data/claude-chat-mac-key.sha256'`); adds hook entries (SessionStart, UserPromptSubmit, Stop → `/opt/homebrew/bin/python3 -I ~/.claude/localai-chat/hook.py`; async, 10 s) to `~/.claude/settings.json` after backing it up, without touching the existing progress hook; appends a `claude-chat` function (`LOCALAI_CHAT=1 claude "$@"`) to `~/.zshrc`; prints next steps. Re-running it is safe (idempotent).
 
 - [ ] **Step 1: Write failing tests:**
   - `device endpoints return 401 without a cookie` (and remove `LOCALAI_CHAT_TEST_OPEN` from Task 2's tests, pairing a device in a `before` hook instead).
