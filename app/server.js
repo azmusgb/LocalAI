@@ -372,6 +372,27 @@ function certificationInfo() {
   }
 }
 
+// Web research: up is SearXNG's /healthz, which costs the search engines nothing (a real search every health tick got
+// them rate-limiting us). Whether searches find anything comes from the last real one; with none for SEARCH_CHECK_MS,
+// one test search runs in the background. A search that found nothing marks research DEGRADED, naming the engines that
+// did not answer.
+const SEARCH_CHECK_MS = Math.max(1000, Number(process.env.SEARCH_CHECK_MS) || 6 * 60 * 60 * 1000);
+let searchOutcome = null, searchTest = null;
+function noteSearch(j) {
+  const unresponsive = (Array.isArray(j?.unresponsive_engines) ? j.unresponsive_engines : []).map(x => String(Array.isArray(x) ? x[0] : x));
+  searchOutcome = { at: Date.now(), results: Array.isArray(j?.results) ? j.results.length : null, unresponsive };
+}
+async function searchProbe() {
+  const up = await probe('search', 'Web research', `${SEARXNG_URL}/healthz`, [200], 5000);
+  if (up.state !== 'HEALTHY') return up;
+  if (!searchTest && (!searchOutcome || Date.now() - searchOutcome.at > SEARCH_CHECK_MS)) {
+    searchTest = searxSearch('weather today').catch(() => {}).finally(() => { searchTest = null; });
+  }
+  if (searchOutcome?.results !== 0) return up;
+  const engines = searchOutcome.unresponsive.length ? ` (not answering: ${searchOutcome.unresponsive.join(', ')})` : '';
+  return { ...up, state: 'DEGRADED', error: `Searches find nothing${engines}` };
+}
+
 const HEALTH_SETTLE_MS = Number(process.env.HEALTH_SETTLE_MS || 120000);
 async function getStatusAndRecordTransition() {
   const services = await Promise.all([
@@ -379,7 +400,7 @@ async function getStatusAndRecordTransition() {
     probe('comfy', 'Image generation', `${COMFY_URL}/system_stats`, [200]),
     probe('n8n', 'Automation engine', `${N8N_URL}/healthz`, [200]),
     probe('proxy', 'Conversation compatibility', `${PROXY_URL}/healthz`, [200]),
-    probe('search', 'Web research', `${SEARXNG_URL}/search?q=health&format=json`, [200], 5000),
+    searchProbe(),
     probe('home', 'Companion home', `${MAC_AI_HOME_URL}/`, [200], 3000, false),
     probe('dsh', 'Developer assistant', `${MAC_DSH_URL}/`, [200, 401], 3000, false)
   ]);
@@ -493,6 +514,7 @@ async function searxSearch(query, signal = null) {
   const r = await fetchWithTimeout(u.toString(), { signal }, 8000);
   if (!r.ok) throw new Error(`Web research returned HTTP ${r.status}`);
   const j = await r.json();
+  noteSearch(j);
   return (j.results || []).slice(0, 6).map(x => ({
     title: x.title || '',
     url: x.url || '',
