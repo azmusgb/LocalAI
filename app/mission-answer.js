@@ -21,22 +21,35 @@ const EVIDENCE_ID = /\[?E-[a-f0-9]{16}\]?/g;
 // ---- plainText: Markdown and emoji as plain text ----------------------------------------------------------------------
 // Pictographs and their joiners; ©, ® and ™ are pictographic in Unicode but ordinary text here.
 const EMOJI = /(?![©®™])\p{Extended_Pictographic}|\u{FE0F}|\u{200D}|\u{20E3}/gu;
+// Fenced code (```…```) is set aside before any pass and put back after, untouched: `**kwargs`, `x ** 2`, `# comment`
+// and indentation are code, not Markdown. Backtick spans are set aside inside plainText (the later passes read their names).
+const FENCE = /^([ \t]*)(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n\1?[ \t]*\2[ \t]*(?=\n|$)|(?![\s\S]))/gm;
+const HELD = /\uE000(\d+)\uE001/g, HELD_LINE = /^\uE000\d+\uE001$/;
+function holdFences(text) {
+  const held = [];
+  return { text: String(text || '').replace(/\r\n?/g, '\n').replace(FENCE, m => '\uE000' + (held.push(m) - 1) + '\uE001'), held };
+}
+const putBack = (text, held) => text.replace(HELD, (_, i) => held[i]);
+const TABLE_ROW = /^\s*\|.*\|\s*$/;
 function plainText(text) {
-  const out = [];
-  for (let line of String(text || '').replace(/\r\n?/g, '\n').split('\n')) {
+  const fences = holdFences(text), out = [];
+  for (let line of fences.text.split('\n')) {
+    if (HELD_LINE.test(line.trim()) || TABLE_ROW.test(line)) { out.push(line.replace(/\s+$/, '')); continue; }
+    const spans = [];
+    line = line.replace(/`[^`\n]+`/g, m => '\uE002' + (spans.push(m) - 1) + '\uE003');
     const indented = /^[ \t]+[-*•\d]/.test(line);
     if (/^\s*(?:-{3,}|\*{3,}|_{3,}|={3,})\s*$/.test(line)) continue; // horizontal rules
     line = line.replace(/^(\s*)>\s?/, '$1') // block quotes
       .replace(/^\s*#{1,6}\s+/, '') // headings become their words
       // __bold__ only between words: .awc__mapWrap is a class name.
-      .replace(/\*\*([^*\n]+?)\*\*/g, '$1').replace(/(?<!\w)__([^_\n]+?)__(?!\w)/g, '$1').replace(/\*\*/g, '')
+      .replace(/\*\*(?=\S)([^*\n]+?)(?<=\S)\*\*/g, '$1').replace(/(?<!\w)__([^_\n]+?)__(?!\w)/g, '$1').replace(/(?<!\s)\*\*|\*\*(?!\s)/g, '')
       .replace(EMOJI, '');
     // What removing a symbol leaves behind: "- ✅ Done" → "- Done", "> ✅ Done" → "Done", "Header  and" → "Header and".
     line = line.replace(/^(\s*(?:[-*•]|\d+[.)]))[ \t]{2,}/, '$1 ').replace(/(\S)[ \t]{2,}/g, '$1 ').replace(/\s+$/, '');
     if (!indented) line = line.trimStart();
-    out.push(line);
+    out.push(line.replace(/\uE002(\d+)\uE003/g, (_, i) => spans[i]));
   }
-  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return putBack(out.join('\n').replace(/\n{3,}/g, '\n\n').trim(), fences.held);
 }
 
 // ---- dropNarration: the model talking about its process, before the answer starts -------------------------------------
@@ -51,6 +64,17 @@ const NARRATION = [
 ];
 // A heading that only names the document ("Final Synthesis of Findings"); Agent World already titles it Summary.
 const TITLE_ONLY = /^(?:(?:final|revised|updated|verified|consolidated|mission|overall)\s+)*(?:synthesis|summary|report|answer)(?:\s+of\s+(?:the\s+)?(?:findings|evidence|results))?\s*:?\s*$/i;
+// After "We verified", "I checked the logs and found": a claim if it says "that …" or has a verb of its own.
+const CLAIM_AFTER = /^(?:[^.,;:]{0,80}?\s)?that\s+(\S[\s\S]*)$/i;
+const HAS_VERB = /\b(?:is|are|was|were|isn['’]t|aren['’]t|wasn['’]t|weren['’]t|does|do|did|doesn['’]t|don['’]t|didn['’]t|has|have|had|hasn['’]t|haven['’]t|can|cannot|can['’]t|will|won['’]t|because|runs?|fails?|works?)\b/i;
+// The sentence without its process clause, or '' when it is all process.
+function withoutNarration(sentence) {
+  const s = sentence.trim(), first = NARRATION[0].exec(s);
+  if (!first) return NARRATION.some(re => re.test(s)) ? '' : s;
+  const rest = s.slice(first[0].length), claim = CLAIM_AFTER.exec(rest);
+  if (claim) return claim[1].charAt(0).toUpperCase() + claim[1].slice(1);
+  return HAS_VERB.test(rest) ? s : '';
+}
 const splitSentences = text => String(text).split(/(?<=[.!?:])\s+(?=[*_"“([]*[A-Z0-9])/);
 function dropNarration(text) {
   const paragraphs = String(text || '').split(/\n{2,}/);
@@ -63,8 +87,11 @@ function dropNarration(text) {
     if (para.includes('\n')) break; // a list or a block: the answer has started
     const sentences = splitSentences(para);
     let i = 0;
-    while (i < sentences.length && !/E-[a-f0-9]{16}/.test(sentences[i]) && NARRATION.some(re => re.test(sentences[i].trim()))) i++;
-    dropped += i;
+    while (i < sentences.length && !/E-[a-f0-9]{16}/.test(sentences[i]) && NARRATION.some(re => re.test(sentences[i].trim()))) {
+      const kept = withoutNarration(sentences[i]);
+      if (kept) { sentences[i] = kept; break; } // a claim stays, without "We verified that"
+      dropped++;i++;
+    }
     paragraphs[p] = sentences.slice(i).join(' ').trim();
     if (paragraphs[p]) break;
   }
@@ -120,6 +147,7 @@ function fixContradictions(text, { evidenceRecords = [] } = {}) {
   const found = (evidenceRecords || []).filter(r => r && r.kind === 'search' && r.matches > 0 && r.query);
   const fixed = [], annotated = [];
   const out = lines.map((line, at) => {
+    if (HELD_LINE.test(line.trim()) || TABLE_ROW.test(line)) return line;
     const parts = splitSentences(line);
     let changed = false;
     const rewritten = parts.map((sentence, si) => {
@@ -141,9 +169,10 @@ function fixContradictions(text, { evidenceRecords = [] } = {}) {
       const named = new Map();
       for (const o of others) { if (NEGATIVE.test(o)) continue; const ids = o.match(/E-[a-f0-9]{16}/g) || []; for (const n of codeNames(o)) if (!named.has(n)) named.set(n, ids[0] || ''); }
       for (const [n, id] of fromEvidence) if (!named.has(n)) named.set(n, id || '');
-      const hits = subject.map(w => [...named.keys()].filter(n => nameParts(n).includes(w)));
-      if (hits.some(h => !h.length)) return searched(); // every word of the subject must be named in code
-      const names = [...new Set(hits.flat())].slice(0, 3), ids = [...new Set(names.map(n => named.get(n)).filter(Boolean))].slice(0, 2);
+      // One name must cover every word of the subject: `undoStack` and `deleteRun` are not "undo for delete".
+      const names = [...named.keys()].filter(n => subject.every(w => nameParts(n).includes(w))).slice(0, 3);
+      if (!names.length) return searched();
+      const ids = [...new Set(names.map(n => named.get(n)).filter(Boolean))].slice(0, 2);
       changed = true;fixed.push({ sentence: sentence.trim(), present: names });
       const lead = /^\s*(?:[-*•]|\d+[.)])\s+/.exec(sentence)?.[0] || '';
       return lead + 'Present, not missing: ' + subject.join(' ') + ' (' + names.map(n => '`' + n + '`').join(', ') + ')' + (ids.length ? ' [' + ids.join('] [') + ']' : '') + '.';
@@ -155,30 +184,24 @@ function fixContradictions(text, { evidenceRecords = [] } = {}) {
 
 // ---- dropRepeatedGaps: the same "not checked" said again ---------------------------------------------------------------
 const GAP = /\b(?:no evidence|missing evidence|not seen in (?:the )?parts|not (?:confirmed|verified|found|present|seen)|unverified|could not (?:be )?(?:confirmed|verified)|cannot (?:be )?(?:confirmed|verified)|does(?:n['’]t| not) (?:include|contain|show|mention|reference|exist)|do(?:n['’]t| not) exist|(?:is|are) missing|not (?:yet )?implemented|(?:is|are) absent)\b/i;
+// Near-exact: every word of one is in the other, and they share at least half of the longer one's words.
 function sameSubject(a, b) {
   const shared = a.filter(w => b.includes(w)).length, smaller = Math.min(a.length, b.length);
-  return smaller > 0 && shared >= Math.min(2, smaller) && shared / smaller >= 0.6;
+  return smaller > 0 && shared === smaller && shared / Math.max(a.length, b.length) >= 0.5;
 }
-// A heading: a numbered title ("2. Labels and Bubbles") or a short line ending in ":" or without a full stop.
-const HEADING = /^(?:\d+[.)]\s+[^.!?]{1,60}|[^-*•\s][^.!?]{0,60}:?)$/;
 function dropRepeatedGaps(text) {
-  const said = [], dropped = [];
-  // Gap subjects said since the last heading, and that heading's words: under "3. Buildings and Districts", a second gap
-  // about buildings or districts restates the first.
-  let inSection = [], topic = [];
-  const about = words => words.some(w => topic.includes(w));
-  const out = [];
+  // Only a gap said again, near word for word. Two gaps under one heading can be two facts ("Security:" then CSRF, then
+  // headers), so a shared heading is not a repeat.
+  const said = [], dropped = [], out = [];
   for (const line of String(text || '').split('\n')) {
-    if (HEADING.test(line.trim()) && !GAP.test(line)) { inSection = [];topic = subjectWords(line); }
+    if (HELD_LINE.test(line.trim()) || TABLE_ROW.test(line)) { out.push(line); continue; }
     const lead = /^\s*(?:[-*•]|\d+[.)])\s+/.exec(line)?.[0] || '';
     const sentences = splitSentences(line.slice(lead.length));
     const kept = sentences.filter(sentence => {
       if (!GAP.test(sentence)) return true;
       const words = subjectWords(sentence);
-      // Said before anywhere, or a second gap about the item a heading names ("Missing Evidence: …").
-      const again = said.some(prev => sameSubject(prev, words)) || (about(words) && inSection.some(about));
-      if (again) { dropped.push(sentence.trim()); return false; }
-      said.push(words);inSection.push(words);return true;
+      if (said.some(prev => sameSubject(prev, words))) { dropped.push(sentence.trim()); return false; }
+      said.push(words);return true;
     });
     const body = kept.join(' ').trim();
     // A line left with only a label ("Missing Evidence:", "Visual elements (workers, ground):") goes too.
@@ -223,11 +246,12 @@ function capLength(text, max = MAX_ANSWER_CHARS) {
 // All of it. Returns the tidied answer and what changed, for the mission record.
 function polishAnswer(answer, { evidenceRecords = [], maxChars = MAX_ANSWER_CHARS } = {}) {
   const original = String(answer || '');
-  let text = plainText(original);
+  const fences = holdFences(plainText(original));
+  let text = fences.text;
   const narration = dropNarration(text);text = narration.text;
   const contradictions = fixContradictions(text, { evidenceRecords });text = contradictions.text;
   const gaps = dropRepeatedGaps(text);text = gaps.text;
-  text = dropTemplateLeaks(text).trim();
+  text = putBack(dropTemplateLeaks(text).trim(), fences.held);
   // Nothing left (an answer that was all narration) keeps the original rather than showing nothing.
   if (!text) text = plainText(original) || original;
   const capped = capLength(text, maxChars);
