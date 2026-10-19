@@ -64,6 +64,9 @@ async function open(options) {
     runs = [run, ...runs.filter(x => x.id !== run.id)];
     return r.fulfill({ json: { ok: true, run } });
   });
+  await page.route(u => u.pathname === '/api/gridcraft/progress', r => r.fulfill({ json: { ok: true, running: calls.runs.length > 0, turn: 2, steps: [
+    { tool: 'inspect_workbook', text: 'Looking over the workbook' }, { tool: 'read_range', text: 'Reading Sales!A1:D3' },
+    { tool: 'set_cell', text: 'Changing Sales!Z9', failed: true }, { tool: 'evaluate_formula', text: 'Calculating =SUM(Sales!B2:B3)' }] } }));
   await page.route(u => u.pathname === '/api/gridcraft/runs', r => r.fulfill({ json: { items: runs } }));
   await page.route(u => /\/api\/gridcraft\/runs\/[^/]+\/(keep|discard)$/.test(u.pathname), r => {
     const action = r.request().url().endsWith('keep') ? 'keep' : 'discard';
@@ -76,6 +79,7 @@ async function open(options) {
   await page.route(u => u.pathname === '/api/gridcraft/run', async r => {
     const { prompt, mode } = JSON.parse(r.request().postData());
     calls.runs.push({ prompt, mode });
+    if (prompt.includes('slowly')) await new Promise(res => setTimeout(res, 4000)); // long enough for the steps to show
     if (prompt.includes('break')) return r.fulfill({ status: 500, json: { ok: false, error: 'GridCraft agent failed', reason: 'httpx.ConnectError: connection refused' } });
     const edits = mode === 'review' ? [{ tool: 'set_cell', sheet: 'Sales', range: 'B2', before: [[48200]], after: [[50000]], afterValues: [[50000]] }] : [];
     const run = { id: `gc-${runs.length + 1}`, prompt, mode, status: mode === 'review' ? 'review' : 'done', answer: mode === 'review' ? 'Set North Q1 to 50,000.' : 'The Sales total is 48,250.', error: '', edits, changes: mode === 'review' ? [{ tool: 'format_range', summary: 'Formatted B2: bold' }] : [], undoSteps: 2, undoTop: ['Bold', 'Enter Cell'], createdAt: new Date().toISOString() };
@@ -142,6 +146,18 @@ for (const [name, options] of [['computer', { viewport: { width: 1280, height: 9
     assert.equal(await page.locator('#sheetsResultText').innerText(), 'The Sales total is 48,250.');
     assert.deepEqual(calls.runs.at(-1), { prompt: EXAMPLE_TOTAL, mode: 'read' });
     assert.equal(await page.locator('#sheetsReview').isVisible(), false);
+  });
+
+  await check(`${name}: while a request runs, its steps show as they happen, and go when it finishes`, async () => {
+    await page.locator('#sheetsMode [data-mode="read"]').click();
+    await page.locator('#sheetsPrompt').fill('Add up the sales slowly');
+    await page.locator('#sheetsRun').click();
+    await page.locator('#sheetsSteps li').first().waitFor({ timeout: 5000 });
+    const steps = await page.locator('#sheetsSteps li').allInnerTexts();
+    assert.deepEqual(steps, ['Looking over the workbook', 'Reading Sales!A1:D3', 'Changing Sales!Z9 (didn’t work)', 'Calculating =SUM(Sales!B2:B3)']);
+    assert.equal(await page.locator('#sheetsSteps li.is-current').innerText(), 'Calculating =SUM(Sales!B2:B3)');
+    await page.locator('#sheetsResult[data-kind="done"]').waitFor();
+    assert.equal(await page.locator('#sheetsSteps').isHidden(), true, 'the answer replaces the steps');
   });
 
   await check(`${name}: a Review request shows what changed, highlights it, and can be kept`, async () => {

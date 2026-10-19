@@ -78,7 +78,9 @@ const TOTAL = 278 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // measures 98.0 KB). The suggestion itself lives in self-change.js.
 // 2026-10-18: ui.js 99 → 100 KB for Agent World workers walking out of their door and along the streets with square
 // turns (routeToTarget and its street legs, +0.8 KB); with the Workshop printer line (#312) ui.js measures 99.5 KB.
-const PER_FILE = { 'ui.js': 109 * KB, 'components.js': 11 * KB, 'app.css': 41 * KB, 'app.js': 36 * KB, 'index.html': 13 * KB, 'home.js': 11 * KB };
+// 2026-10-19: app.css 41 → 42 KB and index.html 13 → 14 KB for Spreadsheets' live steps while a request runs (the list
+// and its four rules: app.css +62 bytes, index.html +48 bytes; main had 4 and 16 bytes left). spreadsheets.js +0.4 KB.
+const PER_FILE = { 'ui.js': 109 * KB, 'components.js': 11 * KB, 'app.css': 42 * KB, 'app.js': 36 * KB, 'index.html': 14 * KB, 'home.js': 11 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
