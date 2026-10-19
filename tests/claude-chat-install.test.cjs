@@ -13,8 +13,8 @@ const { makeTlsFixture, OPENSSL_MISSING } = require('./tls-fixture.cjs');
 
 const INSTALL = path.resolve(__dirname, '../host/claude-chat/install.sh');
 const CMD = '/opt/homebrew/bin/python3 -I ~/.claude/localai-chat/hook.py';
-const CA_FETCH = 'windows-ai type C:\\LocalAI\\https\\localai-ca.crt';
-const HASH_PUSH = 'windows-ai docker exec -i local-ai-appliance tee /data/claude-chat-mac-key.sha256';
+const CA_FETCH = 'windows type C:\\LocalAI\\https\\localai-ca.crt';
+const HASH_PUSH = 'windows docker exec -i local-ai-appliance tee /data/claude-chat-mac-key.sha256';
 // Never let a test reach the real appliance: the HTTPS probe goes to a closed local port unless a test sets its own.
 const NO_HTTPS = 'https://127.0.0.1:9';
 
@@ -219,7 +219,7 @@ test('install.sh reports a failed hash push, keeps the key, leaves settings alon
 
     const failed = await run();
     assert.notEqual(failed.status, 0);
-    assert.match(failed.stderr, /install\.sh: created .*mac\.key but could not push its hash to the appliance \(ssh windows-ai failed\)\. Fix ssh access and re-run install\.sh/);
+    assert.match(failed.stderr, /install\.sh: created .*mac\.key but could not push its hash to the appliance \(ssh windows failed\)\. Fix ssh access and re-run install\.sh/);
     const key = fs.readFileSync(keyPath, 'utf8');
     assert.match(key, /^[0-9a-f]{64}$/);
     assert.equal(fs.readFileSync(settingsPath, 'utf8'), before);

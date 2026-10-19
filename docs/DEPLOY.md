@@ -235,7 +235,7 @@ version and the changes.
 
 The deploy lock keeps a manual run and the scheduled task from overlapping.
 
-When driving the host remotely (for example `ssh windows-ai` with an `-EncodedCommand`), run the deploy as a
+When driving the host remotely (for example `ssh windows` with an `-EncodedCommand`), run the deploy as a
 child process and keep its output, rather than calling it inline:
 
 ```powershell
