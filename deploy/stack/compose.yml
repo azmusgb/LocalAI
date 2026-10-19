@@ -25,6 +25,8 @@ services:
     restart: unless-stopped
     command: ["node", "/app/server.js"]
     <<: [*host-gateway, *logging]
+    # About 60 MB idle; the headroom is for the npm/node commands and staged self-changes it runs.
+    mem_limit: 2g
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3080/healthz"]
       interval: 30s
@@ -85,6 +87,8 @@ services:
     container_name: local-ai-https
     restart: unless-stopped
     <<: *logging
+    # About 20 MB in use.
+    mem_limit: 256m
     healthcheck:
       # Caddy's admin API answers inside the container only (localhost:2019).
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
@@ -129,7 +133,8 @@ services:
       N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
       N8N_RUNNERS_ENABLED: "true"
     volumes: [n8n-data:/home/node/.n8n]
-    networks: [local-ai]
+    # n8n is the sandbox's only client, so it alone joins the sandbox network.
+    networks: [local-ai, sandbox]
 
   ollama-responses-proxy:
     image: node@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
@@ -137,6 +142,8 @@ services:
     restart: unless-stopped
     command: ["node", "/app/server.js"]
     <<: [*host-gateway, *logging]
+    # About 40 MB in use.
+    mem_limit: 256m
     environment:
       LISTEN_HOST: 0.0.0.0
       LISTEN_PORT: "8080"
@@ -178,6 +185,7 @@ services:
         aliases: [searxng]
 
   # n8n's code sandbox: a one-shot job makes the mutual-TLS certificates, then an API and one Docker-in-Docker runner.
+  # They live on their own network with n8n, away from the appliance, Caddy and search: the runner is privileged.
   sandbox-certs:
     image: n8nio/n8n-sandbox-service-api:${N8N_SANDBOX_VERSION:-1.5.0}
     container_name: local-ai-sandbox-certs
@@ -193,7 +201,7 @@ services:
     environment:
       NUM_RUNNERS: "1"
     volumes: [sandbox-tls:/tls]
-    networks: [local-ai]
+    networks: [sandbox]
 
   sandbox-api:
     image: n8nio/n8n-sandbox-service-api:${N8N_SANDBOX_VERSION:-1.5.0}
@@ -215,6 +223,8 @@ services:
       SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_KEY_FILE: /tls/api/control-grpc-api-client.key
       SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_SERVER_NAME: sandbox-runner-1
     volumes: [sandbox-tls:/tls:ro]
+    # About 10 MB in use.
+    mem_limit: 256m
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
       interval: 5s
@@ -222,7 +232,7 @@ services:
       retries: 12
       start_period: 10s
     networks:
-      local-ai:
+      sandbox:
         aliases: [sandbox-api]
 
   sandbox-runner-1:
@@ -263,7 +273,7 @@ services:
       retries: 24
       start_period: 20s
     networks:
-      local-ai:
+      sandbox:
         aliases: [sandbox-runner-1]
 
 # Names match the existing volumes and network, so data carries over. They are external: they predate this file, hold
@@ -277,6 +287,11 @@ volumes:
   sandbox-tls: { name: local-ai-sandbox-tls, external: true }
 
 networks:
+  # The name is historical: this is the network every Local AI container shares.
   local-ai:
     name: local-ai-sandbox-net
+    external: true
+  # n8n and its code sandbox only. Not internal: the runner pulls the sandbox image.
+  sandbox:
+    name: local-ai-n8n-sandbox
     external: true
