@@ -374,7 +374,7 @@ test('device endpoints return 401 without a cookie', async () => {
   assert.equal((await post('/api/claude/chat/devices/revoke', { id: deviceId }, { Cookie: '' })).status, 401);
 });
 
-test('pairing: request -> approve with Mac key -> status sets an HttpOnly SameSite=Strict cookie once', async t => {
+test('pairing: request -> approve with Mac key -> status sets an HttpOnly SameSite=Lax cookie for all of Local AI, once', async t => {
   const url = await startServer(t);
   const r = await pairReq(url);
   assert.equal(r.status, 201);
@@ -392,7 +392,7 @@ test('pairing: request -> approve with Mac key -> status sets an HttpOnly SameSi
   const s1 = await fetch(`${url}/api/claude/chat/pair-status?id=${pr.id}`);
   assert.deepEqual(await s1.json(), { status: 'approved', device: { id, name: 'Phone' } });
   const cookie = s1.headers.get('set-cookie');
-  assert.match(cookie, new RegExp(`^localai_chat_device_http=${id}\\.[A-Za-z0-9_-]{43}; HttpOnly; SameSite=Strict; Path=/api/claude/chat; Max-Age=15552000$`));
+  assert.match(cookie, new RegExp(`^localai_chat_device_http=${id}\\.[A-Za-z0-9_-]{43}; HttpOnly; SameSite=Lax; Path=/; Max-Age=15552000$`));
   const s2 = await fetch(`${url}/api/claude/chat/pair-status?id=${pr.id}`);
   assert.deepEqual(await s2.json(), { status: 'expired' });
   assert.equal(s2.headers.get('set-cookie'), null);
@@ -409,7 +409,7 @@ test('pairing over HTTPS (behind the proxy) sets the Secure cookie; plain HTTP s
     return (await fetch(`${url}/api/claude/chat/pair-status?id=${pr.id}`, { headers: statusHeaders })).headers.get('set-cookie');
   };
   const viaProxy = await pairOnce({ 'X-Forwarded-Proto': 'https' });
-  assert.match(viaProxy, /^localai_chat_device=dev-[0-9a-f]{12}\.[A-Za-z0-9_-]{43}; HttpOnly; SameSite=Strict; Path=\/api\/claude\/chat; Max-Age=15552000; Secure$/);
+  assert.match(viaProxy, /^localai_chat_device=dev-[0-9a-f]{12}\.[A-Za-z0-9_-]{43}; HttpOnly; SameSite=Lax; Path=\/; Max-Age=15552000; Secure$/);
   const plain = await pairOnce({});
   assert.doesNotMatch(plain, /Secure/);
   // A browser keeps a Secure cookie and refuses a plain-HTTP cookie of the same name (RFC 6265bis), so a phone paired

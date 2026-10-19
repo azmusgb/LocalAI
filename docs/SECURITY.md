@@ -65,8 +65,9 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
 - The Mac authenticates with a 32-byte key; the appliance stores only its SHA-256 in
   `/data/claude-chat-mac-key.sha256`, written by `host/claude-chat/install.sh` over ssh. No endpoint can set it.
 - Phones and browsers pair with a 6-character code (10 minutes, at most 5 pending) that only the Mac can
-  approve. The device cookie `localai_chat_device` is HttpOnly, `SameSite=Strict`, scoped to
-  `/api/claude/chat`, valid 180 days, and `Secure` when the device paired over HTTPS (a TLS socket or
+  approve. The device cookie `localai_chat_device` is HttpOnly, `SameSite=Lax` (a link from a notification still
+  carries it; mutating routes have the cross-site guard), path `/` (it is the sign-in for all of Local AI, see
+  [Sign-in](#sign-in-report-only)), valid 180 days and renewed on each app load, and `Secure` when the device paired over HTTPS (a TLS socket or
   `X-Forwarded-Proto: https` from Caddy; `requestIsHttps`); the appliance stores only its hash. Any paired device can
   revoke any device. The header is trusted from any client: spoofing it on the host's port 3080 only makes that client's own
   cookie HTTPS-only.
@@ -126,6 +127,16 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
   (`deploy/caddy/Caddyfile`, `deploy/Install-LocalAI-HTTPS.ps1`), redirects port 80 to HTTPS, and serves the CA
   certificate at `http://<host>/localai-ca.crt`. Each device trusts the CA once; **Health › Secure connection**
   tells a device whether it is on HTTPS and whether it already trusts the CA. Setup: [Deploy › HTTPS](DEPLOY.md#https-with-caddy).
+
+## Sign-in (report only)
+
+Every API request that arrives through Caddy (it carries `X-Forwarded-For`) is checked for a paired device's cookie or
+the Mac key (`app/signin.js`; design: `docs/superpowers/specs/2026-10-18-sign-in-design.md`). For now nothing is
+refused: a request without either is counted by caller (IP address, device type, last route), and **Health › Sign-in
+(report only)** lists them. Requests that did not come through Caddy (the host's own port 3080, the Docker network) and
+the routes a device needs before it is paired (`/healthz`, `pair-request`, `pair-status`, `whoami`) are not checked;
+pages and static files never are. Switching to refusing is a later change, made once the list holds only callers to
+pair or drop.
 
 ## Known gaps
 

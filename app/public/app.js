@@ -648,7 +648,9 @@ document.addEventListener('visibilitychange',()=>{schedulePolling();if(!document
 
 // Only a positive result is worth showing; without a service worker (plain-HTTP LAN access) the hint stays hidden.
 async function detectOfflineReady(){const hint=$('offlineHint');if(!('serviceWorker' in navigator))return;try{const reg=await navigator.serviceWorker.register('/sw.js');reg.update?.().catch(()=>{});hint.textContent='Works offline · the app shell is cached on this device';hint.hidden=false;}catch(e){console.debug('Service worker registration failed',e);}}
-async function init(){syncModeSelect();renderAgentMap();renderMessages();setPhase('idle');loadActivity();loadLibrary();loadWorkspace();refreshStatus();schedulePolling();detectOfflineReady();try{const r=await fetch('/api/models',{cache:'no-store'}),j=await r.json();state.model=j.default||j.models?.[0]||null;}catch{} }
+// Renews this device's sign-in cookie for every page (app/signin.js; a cookie paired before 19 Oct 2026 covered chat only).
+const renewSignIn=()=>fetch('/api/claude/chat/whoami',{cache:'no-store'}).catch(()=>{});
+async function init(){renewSignIn();syncModeSelect();renderAgentMap();renderMessages();setPhase('idle');loadActivity();loadLibrary();loadWorkspace();refreshStatus();schedulePolling();detectOfflineReady();try{const r=await fetch('/api/models',{cache:'no-store'}),j=await r.json();state.model=j.default||j.models?.[0]||null;}catch{} }
 init();
 
 

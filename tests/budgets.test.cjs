@@ -65,7 +65,9 @@ const KB = 1024;
 // crew count for screen readers, kept beside the crew list) and the crew list's list markup (+0.1 KB). The CSS for 44 px
 // touch targets paid for itself by folding nine copies of the focus ring into one token (app.css +0.1 KB in all).
 // main measured 276.3 KB; this 277.3 KB.
-const TOTAL = 278 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// 2026-10-19: 278 → 280 KB for sign-in's report-only step: signin-report.js (1.1 KB, Health's list of callers that would
+// be refused), its card (index.html +0.1 KB) and the cookie renewal on load (app.js +0.05 KB). 279.2 KB measured.
+const TOTAL = 280 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
 // tab rows (234.9 KB measured).
