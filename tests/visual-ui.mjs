@@ -201,7 +201,7 @@ const MORE_VIEWPORTS = VIEWPORTS;
 
 // What differs between runs by design: the version, response times, a fresh pairing code, and when the server last
 // checked its services (the server's clock, not the page's). Shipped's release headings come from fixed data, so they stay.
-const masks = page => [page.getByText(/^\s*(Local AI |Version |v)?\d+\.\d+\.\d+\s*$/).and(page.locator(':not(.improve-release > h3)')), page.getByText(/^\s*\d+\s*ms\s*$/), page.locator('#claudeChatCode, .claude-chat-cmd code, #statusCheckedAt')];
+const masks = page => [page.getByText(/^\s*(Local AI |Version |v)?\d+\.\d+\.\d+\s*$/).and(page.locator(':not(.improve-release > h2)')), page.getByText(/^\s*\d+\s*ms\s*$/), page.locator('#claudeChatCode, .claude-chat-cmd code, #statusCheckedAt')];
 
 // Agent World in its four states (design 2026-10-17-agent-world), phone and 1440 wide. The city is animated, so its canvas
 // is hidden (the map box stays) and the story's clock times are masked: these baselines guard the page around the city.

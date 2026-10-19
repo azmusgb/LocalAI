@@ -61,7 +61,11 @@ const KB = 1024;
 // 2026-10-19: 271 → 277 KB for Images › Fix a part (fix-part.js 4.8 KB: the soft ellipse mask from a tap or drag, the
 // brush layer over it, the Hands / Face / Ears / Remove object chips, the original-beside-two-versions view with Keep;
 // app.js +0.3 KB for its hooks, app.css +0.3 KB, index.html +0.2 KB): about 275.9 KB measured with #339.
-const TOTAL = 277 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// 2026-10-19: 277 → 278 KB for the accessibility pass (prod-a11y, a11y-axe): crew-summary.js (0.85 KB, Agent World's
+// crew count for screen readers, kept beside the crew list) and the crew list's list markup (+0.1 KB). The CSS for 44 px
+// touch targets paid for itself by folding nine copies of the focus ring into one token (app.css +0.1 KB in all).
+// main measured 276.3 KB; this 277.3 KB.
+const TOTAL = 278 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
 // tab rows (234.9 KB measured).

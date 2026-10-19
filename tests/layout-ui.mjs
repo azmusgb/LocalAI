@@ -145,7 +145,8 @@ for (const size of SIZES) await check(`${size[0]}: the Files tree is a compact l
   const rows = await page.$$eval('#workbenchTree .tree-row', els => els.map(e => { const i = e.querySelector('svg').getBoundingClientRect(), t = e.querySelector('span').getBoundingClientRect(); const p = e.querySelector('.tree-path'); const pb = p && p.getBoundingClientRect(); return { h: e.getBoundingClientRect().height, oneLine: Math.abs((i.top + i.bottom) / 2 - (t.top + t.bottom) / 2) < 4, name: e.querySelector('span').textContent.trim(), text: e.textContent.trim(), title: e.getAttribute('title'), path: pb && pb.height > 0 ? { text: p.textContent.trim(), below: pb.top >= t.bottom - 1, size: parseFloat(getComputedStyle(p).fontSize) } : null }; }));
   assert.ok(rows.length >= 3, `rows: ${rows.length}`);
   for (const r of rows) {
-    assert.ok(r.h <= (touch && r.path ? 60 : 40), `${r.text} is ${r.h}px tall`);
+    // Compact with a mouse; a touch row is at least a 44 px target (the accessibility pass), 60 with its folder line.
+    assert.ok(r.h <= (touch ? (r.path ? 60 : 44) : 40), `${r.text} is ${r.h}px tall`);
     assert.ok(r.oneLine, `${r.text}: icon and name are on different lines`);
     assert.match(r.title || '', /^projects/);
     const parent = r.title.includes('/') ? r.title.slice(0, r.title.lastIndexOf('/')) : '';
