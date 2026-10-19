@@ -37,7 +37,9 @@ const RELEASES = { current: { version: '2.0.400', commit: 'a'.repeat(40), deploy
 
 async function stubbed(viewport) {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
-  await ctx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  // Developer tools off, as on a new install: with no saved choice they start on once the server has developer history
+  // (changes, engineering runs, Claude board findings), which other suites leave behind.
+  await ctx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); localStorage.setItem('localai.devTools', '0'); } catch {} });
   const page = await ctx.newPage();
   const json = (route, body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
   await page.route('**/api/claude/board*', async route => {
