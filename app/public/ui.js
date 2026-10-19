@@ -3950,7 +3950,7 @@ function phoneHtml(remote){
  if(!(matchMedia('(pointer: fine)').matches&&root.LocalAIQR))return '';
  const qr=(url,label)=>{try{return root.LocalAIQR.svg(url,label)}catch{return ''}};
  const away=remote?`<li class="secure-phone__away"><p><b>Away from home.</b> With the Tailscale app installed and signed in on the phone, scan to open <b>${esc(`https://${remote}/`)}</b>. It uses the same certificate, so do steps 1 and 2 first.</p>${qr(`https://${remote}/`,'QR code: open Local AI away from home')}</li>`:'';
- if(isLocal)return `<details class="secure-phone"><summary>Set up a phone or tablet</summary><p class="meta">Open this page using the computer's network address (for example <b>http://&lt;its IP address&gt;:3080</b>) and the codes to scan appear here.</p>${away?`<ol class="secure-phone__steps">${away}</ol>`:''}</details>`;
+ if(isLocal)return `<details class="secure-phone"><summary>Set up a phone or tablet</summary><p class="meta">Open this page using the computer's network address (for example <b>https://&lt;its IP address&gt;</b>) and the codes to scan appear here.</p>${away?`<ol class="secure-phone__steps">${away}</ol>`:''}</details>`;
  return `<details class="secure-phone"><summary>Set up a phone or tablet</summary><ol class="secure-phone__steps">
  <li><p><b>1.</b> Scan with the phone's camera to download the certificate.</p>${qr(caUrl,'QR code: download the certificate')}</li>
  <li><p><b>2.</b> Trust it on the phone (see <b>iPhone or iPad</b> or <b>Android</b> under Set up HTTPS on this device).</p></li>

@@ -89,8 +89,9 @@ try {
     throw
 }
 
-# 4. Firewall (3080 everywhere it was before; 80/443 on private networks) and the HTTPS certificate authority.
-if (-not (Get-NetFirewallRule -DisplayName 'Local AI Appliance 3080' -ErrorAction SilentlyContinue)) { New-NetFirewallRule -DisplayName 'Local AI Appliance 3080' -Direction Inbound -Protocol TCP -LocalPort 3080 -Action Allow | Out-Null }
+# 4. Firewall (80/443 on private networks; 3080 is published on 127.0.0.1 only, so its old rule goes) and the HTTPS
+# certificate authority.
+Get-NetFirewallRule -DisplayName 'Local AI Appliance 3080' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 if (-not (Get-NetFirewallRule -DisplayName 'Local AI HTTPS' -ErrorAction SilentlyContinue)) { New-NetFirewallRule -DisplayName 'Local AI HTTPS' -Direction Inbound -Protocol TCP -LocalPort 80,443 -Action Allow -Profile Private | Out-Null }
 $ca = Join-Path $Root 'https\localai-ca.crt'; New-Item -ItemType Directory -Force (Split-Path $ca) | Out-Null
 for ($i = 0; $i -lt 15 -and -not (Test-Path $ca); $i++) { & docker cp local-ai-https:/data/caddy/pki/authorities/local/root.crt $ca 2>$null; if (-not (Test-Path $ca)) { Start-Sleep 2 } }

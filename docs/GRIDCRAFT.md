@@ -1,7 +1,7 @@
 # GridCraft integration
 
 GridCraft is a Windows spreadsheet app. LocalAI exposes it as **Projects › Spreadsheets**
-(`http://<host>:3080/#spreadsheets`, `app/public/spreadsheets.js`), where you type a request and a local model
+(`https://<host>/#spreadsheets`, `app/public/spreadsheets.js`), where you type a request and a local model
 works on the open workbook. It works on phones too. The old `/gridcraft.html` address sends you there.
 
 The page is part of LocalAI. The page calls the appliance (`/api/gridcraft/health`, `/api/gridcraft/run`), and the appliance forwards to a small Windows-host bridge on `127.0.0.1:8787`, which runs the GridCraft Python agent kept in this repo at `host/gridcraft-agent/`. That agent continues to own Ollama tool calling and GridCraft MCP control.
@@ -52,7 +52,7 @@ Verify:
 Invoke-RestMethod http://127.0.0.1:8787/health
 ```
 
-Then open Projects › Spreadsheets (`http://<host>:3080/#spreadsheets`).
+Then open Projects › Spreadsheets (`https://<host>/#spreadsheets`).
 
 ## Bridge configuration
 

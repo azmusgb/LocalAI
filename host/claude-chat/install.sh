@@ -1,15 +1,9 @@
 #!/usr/bin/env bash
 # Installs the LocalAI Claude chat Mac side. Safe to re-run.
-# --allow-http: allow switching an existing HTTPS config back to plain HTTP when HTTPS cannot be set up.
+# The relay is HTTPS only: the appliance's plain-HTTP port 3080 answers on the host alone.
 set -euo pipefail
 
-ALLOW_HTTP=0
-for arg in "$@"; do
-  case "$arg" in
-    --allow-http) ALLOW_HTTP=1 ;;
-    *) echo "usage: install.sh [--allow-http]" >&2; exit 2 ;;
-  esac
-done
+if [ "$#" -gt 0 ]; then echo "usage: install.sh" >&2; exit 2; fi
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEST="$HOME/.claude/localai-chat"
@@ -18,7 +12,6 @@ SETTINGS="$HOME/.claude/settings.json"
 HOOK_CMD='/opt/homebrew/bin/python3 -I ~/.claude/localai-chat/hook.py'
 CA="$DEST/localai-ca.crt"
 CONFIG="$DEST/config.json"
-HTTP_URL='http://10.0.0.21:3080'
 HTTPS_URL="${LOCALAI_HTTPS_URL:-https://10.0.0.21}"
 
 # 1. files
@@ -49,17 +42,10 @@ if ! printf '%s' "$hash" | ssh windows-ai docker exec -i local-ai-appliance tee 
   exit 1
 fi
 
-# 4. relay URL: HTTPS, verified with the LocalAI CA, when that works. The CA comes over ssh (authenticated), never
-# over plain HTTP; only the PEM block is kept (ssh may print banners; Windows `type` uses CRLF). A config that already
-# uses HTTPS is never downgraded without --allow-http. LOCALAI_URL in the environment still overrides config.json.
-prev_url="$(CONFIG="$CONFIG" python3 -I -c 'import json, os
-try:
-    u = json.load(open(os.environ["CONFIG"], encoding="utf-8")).get("url")
-    print(u if isinstance(u, str) else "")
-except Exception:
-    print("")' 2>/dev/null || true)"
-url="$HTTP_URL"
-ca_ok=0
+# 4. relay URL: HTTPS, verified with the LocalAI CA. The CA comes over ssh (authenticated), never over plain HTTP;
+# only the PEM block is kept (ssh may print banners; Windows `type` uses CRLF). When either fails, config.json and the
+# CA are left as they were. LOCALAI_URL in the environment still overrides config.json.
+url=''
 why=''
 hint=''
 ca_tmp="$(mktemp "$DEST/localai-ca.XXXXXX")"
@@ -68,7 +54,6 @@ if ssh windows-ai type 'C:\LocalAI\https\localai-ca.crt' </dev/null 2>/dev/null 
      | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' > "$ca_tmp" \
    && [ -s "$ca_tmp" ] \
    && openssl x509 -noout -in "$ca_tmp" >/dev/null 2>&1; then
-  ca_ok=1
   if curl -fsS --max-time 5 --noproxy '*' --cacert "$ca_tmp" -o /dev/null "$HTTPS_URL/healthz" 2>/dev/null; then
     url="$HTTPS_URL"
   else
@@ -79,27 +64,15 @@ else
   why="could not get a valid LocalAI CA certificate over ssh (C:\\LocalAI\\https\\localai-ca.crt on the host)"
   hint="Run deploy/Install-LocalAI-HTTPS.ps1 on the host, then re-run install.sh."
 fi
-if [ "$url" = "$HTTP_URL" ]; then
-  case "$prev_url" in
-    https:*)
-      if [ "$ALLOW_HTTP" != 1 ]; then
-        echo "install.sh: error: $why. $CONFIG uses HTTPS ($prev_url); it and $CA are left unchanged. $hint To switch to plain HTTP instead, re-run with --allow-http." >&2
-        exit 1
-      fi ;;
-  esac
-  echo "install.sh: warning: $why; using plain HTTP ($HTTP_URL), so the Mac key crosses the network unencrypted. $hint" >&2
+if [ -z "$url" ]; then
+  echo "install.sh: error: $why. $CONFIG and $CA are left unchanged. $hint" >&2
+  exit 1
 fi
-if [ "$ca_ok" = 1 ]; then
-  chmod 644 "$ca_tmp"
-  mv "$ca_tmp" "$CA"
-else
-  rm -f "$CA"
-fi
-CONFIG="$CONFIG" URL="$url" CA="$CA" CA_OK="$ca_ok" python3 -I - <<'PY'
+chmod 644 "$ca_tmp"
+mv "$ca_tmp" "$CA"
+CONFIG="$CONFIG" URL="$url" CA="$CA" python3 -I - <<'PY'
 import json, os
-config = {'url': os.environ['URL']}
-if os.environ['CA_OK'] == '1':
-    config['ca'] = os.environ['CA']
+config = {'url': os.environ['URL'], 'ca': os.environ['CA']}
 tmp = os.environ['CONFIG'] + '.tmp'
 with open(tmp, 'w', encoding='utf-8') as f:
     f.write(json.dumps(config, indent=2) + '\n')
@@ -139,11 +112,10 @@ if ! grep -qF '# >>> localai-chat >>>' "$ZSHRC"; then
 fi
 
 # 7. next steps
-if [ "$url" = "$HTTP_URL" ]; then relay_note=" (plain HTTP)"; else relay_note=" (HTTPS, verified with the LocalAI CA)"; fi
 cat <<MSG
 
 LocalAI Claude chat installed.
-Relay: $url$relay_note
+Relay: $url (HTTPS, verified with the LocalAI CA)
 Next steps:
   source ~/.zshrc
   localai-chat status

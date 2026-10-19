@@ -6,7 +6,7 @@ and looking after it is in the [admin guide](ADMIN-GUIDE.md).
 
 ## Open it
 
-- **On a computer at home:** `https://10.0.0.21`, or `http://10.0.0.21:3080`.
+- **On a computer at home:** `https://10.0.0.21`.
 - **On an iPhone:** open `https://10.0.0.21` in Safari, then Share › **Add to Home Screen**. Open Local AI from the
   Home Screen icon from then on: notifications only work there. The first time, the phone has to trust Local AI's
   certificate; **Health › Secure connection** walks you through it.

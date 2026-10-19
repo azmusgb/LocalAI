@@ -24,7 +24,7 @@ On an iPhone or Apple Watch, one Siri Shortcut asks Local AI anything by voice (
 
 | Part | Where |
 |---|---|
-| App and API | container `local-ai-appliance` on the Windows host, `http://<host>:3080` (HTTPS on 443 via Caddy) |
+| App and API | container `local-ai-appliance` on the Windows host, `https://<host>` (Caddy on 443; port 3080 answers on the host only) |
 | Models, images, spreadsheets | Ollama, ComfyUI and the GridCraft bridge on the host's loopback |
 | Automation, web search | n8n and SearXNG containers |
 | Deploys, backups | PowerShell scripts and scheduled tasks on the host (`deploy/`) |

@@ -40,89 +40,6 @@ function runInstall(home, stubs, env = {}, args = []) {
 }
 const readConfig = (home) => JSON.parse(fs.readFileSync(path.join(home, '.claude', 'localai-chat', 'config.json'), 'utf8'));
 
-test('install.sh installs files, key, hash push, hooks and shell function, idempotently', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-install-'));
-  try {
-    const home = path.join(tmp, 'home'), stubs = path.join(tmp, 'stubs');
-    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
-    fs.mkdirSync(path.join(home, '.local', 'bin'), { recursive: true });
-    fs.mkdirSync(stubs);
-    const other = { type: 'command', command: '/opt/homebrew/bin/python3 -I ~/.claude/hooks/localai-progress.py', async: true, timeout: 10 };
-    const original = { statusLine: { type: 'command', command: 'x' }, hooks: { SessionStart: [{ hooks: [other] }], PostToolUse: [{ matcher: '*', hooks: [other] }] } };
-    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify(original, null, 2));
-    const log = path.join(tmp, 'ssh.log');
-    writeSshStub(path.join(stubs, 'ssh'), log, path.join(tmp, 'no-ca.pem'));
-    const run = () => spawnSync('bash', [INSTALL], { env: { ...process.env, HOME: home, PATH: `${stubs}:${process.env.PATH}`, LOCALAI_HTTPS_URL: NO_HTTPS }, encoding: 'utf8' });
-
-    const first = run();
-    assert.equal(first.status, 0, first.stderr);
-    const dest = path.join(home, '.claude', 'localai-chat');
-    for (const f of ['bridge.mjs', 'cli.mjs', 'hook.py', 'localai-chat']) assert.ok(fs.existsSync(path.join(dest, f)), f);
-    assert.ok(fs.statSync(path.join(dest, 'localai-chat')).mode & 0o100);
-    assert.ok(fs.statSync(path.join(dest, 'run')).isDirectory());
-    assert.equal(fs.readlinkSync(path.join(home, '.local', 'bin', 'localai-chat')), path.join(dest, 'localai-chat'));
-    const key = fs.readFileSync(path.join(dest, 'mac.key'), 'utf8');
-    assert.match(key, /^[0-9a-f]{64}$/);
-    assert.equal(fs.statSync(path.join(dest, 'mac.key')).mode & 0o777, 0o600);
-    assert.equal(fs.readFileSync(`${log}.stdin`, 'utf8'), crypto.createHash('sha256').update(key).digest('hex'));
-    assert.equal(fs.readFileSync(log, 'utf8').trim(), `${HASH_PUSH}\n${CA_FETCH}`);
-    assert.ok(fs.existsSync(path.join(dest, 'relay.mjs')));
-    assert.match(first.stdout, /source ~\/\.zshrc/); assert.match(first.stdout, /localai-chat status/); assert.match(first.stdout, /claude-chat --resume/);
-
-    const second = run();
-    assert.equal(second.status, 0, second.stderr);
-    assert.equal(fs.readFileSync(path.join(dest, 'mac.key'), 'utf8'), key);
-
-    const settings = JSON.parse(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8'));
-    assert.deepEqual(settings.statusLine, original.statusLine);
-    assert.deepEqual(settings.hooks.PostToolUse, original.hooks.PostToolUse);
-    assert.deepEqual(settings.hooks.SessionStart[0], original.hooks.SessionStart[0]);
-    for (const event of ['SessionStart', 'UserPromptSubmit', 'Stop']) {
-      const ours = settings.hooks[event].flatMap(g => g.hooks).filter(h => h.command === CMD);
-      assert.equal(ours.length, 1, event);
-      assert.equal(ours[0].async, true); assert.equal(ours[0].timeout, 10);
-    }
-    assert.equal(settings.hooks.SessionStart.length, 2);
-    const backups = fs.readdirSync(path.join(home, '.claude')).filter(n => n.startsWith('settings.json.bak-localai-chat-'));
-    assert.ok(backups.length >= 1);
-    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, '.claude', backups.sort()[0]), 'utf8')), original);
-    const zshrc = fs.readFileSync(path.join(home, '.zshrc'), 'utf8');
-    assert.equal(zshrc.split('# >>> localai-chat >>>').length - 1, 1);
-    assert.match(zshrc, /claude-chat\(\) \{ LOCALAI_CHAT=1 claude "\$@"; \}/);
-  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
-});
-
-test('install.sh reports a failed hash push, keeps the key, leaves settings alone, and a re-run completes', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-install-fail-'));
-  try {
-    const home = path.join(tmp, 'home'), stubs = path.join(tmp, 'stubs');
-    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
-    fs.mkdirSync(stubs);
-    const settingsPath = path.join(home, '.claude', 'settings.json');
-    const before = JSON.stringify({ hooks: {} }, null, 2);
-    fs.writeFileSync(settingsPath, before);
-    const log = path.join(tmp, 'ssh.log');
-    const stub = path.join(stubs, 'ssh');
-    fs.writeFileSync(stub, '#!/bin/sh\ncat > /dev/null\nexit 255\n', { mode: 0o755 });
-    const run = () => spawnSync('bash', [INSTALL], { env: { ...process.env, HOME: home, PATH: `${stubs}:${process.env.PATH}`, LOCALAI_HTTPS_URL: NO_HTTPS }, encoding: 'utf8' });
-    const keyPath = path.join(home, '.claude', 'localai-chat', 'mac.key');
-
-    const failed = run();
-    assert.notEqual(failed.status, 0);
-    assert.match(failed.stderr, /install\.sh: created .*mac\.key but could not push its hash to the appliance \(ssh windows-ai failed\)\. Fix ssh access and re-run install\.sh/);
-    const key = fs.readFileSync(keyPath, 'utf8');
-    assert.match(key, /^[0-9a-f]{64}$/);
-    assert.equal(fs.readFileSync(settingsPath, 'utf8'), before);
-
-    writeSshStub(stub, log, path.join(tmp, 'no-ca.pem'));
-    const ok = run();
-    assert.equal(ok.status, 0, ok.stderr);
-    assert.equal(fs.readFileSync(keyPath, 'utf8'), key);
-    assert.equal(fs.readFileSync(`${log}.stdin`, 'utf8'), crypto.createHash('sha256').update(key).digest('hex'));
-    assert.ok(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks.Stop);
-  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
-});
-
 // ---- HTTPS: the CA comes over ssh (authenticated), is checked, and the relay is probed with it -----------------------
 function sandbox(t) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-install-tls-'));
@@ -164,46 +81,47 @@ test('install.sh fetches the CA over ssh, verifies HTTPS with it, and writes con
   assert.match(r.stdout, new RegExp(`Relay: ${url.replace(/[.]/g, '\\.')} \\(HTTPS, verified with the LocalAI CA\\)`));
 });
 
-test('install.sh keeps plain HTTP, with a warning, when HTTPS is unreachable or not trusted with the CA', { skip: tlsSkip }, async (t) => {
+test('install.sh stops, writing no config, when HTTPS is unreachable or not trusted with the CA', { skip: tlsSkip }, async (t) => {
   const url = await httpsRelay(t, tls);
   for (const [name, env, pem] of [['unreachable', {}, tls.caPem], ['wrong CA', { LOCALAI_HTTPS_URL: url }, fs.readFileSync(tls.otherCaPath, 'utf8')]]) {
     const s = sandbox(t);
     fs.writeFileSync(s.caOut, pem);
     const r = await runInstall(s.home, s.stubs, env);
-    assert.equal(r.status, 0, `${name}: ${r.stderr}`);
-    assert.match(r.stderr, /install\.sh: warning: HTTPS at https:\/\/127\.0\.0\.1:\d+ is not reachable or not trusted with the LocalAI CA; using plain HTTP \(http:\/\/10\.0\.0\.21:3080\)/, name);
-    const caPath = path.join(s.dest, 'localai-ca.crt');
-    assert.deepEqual(readConfig(s.home), { url: 'http://10.0.0.21:3080', ca: caPath }, name);
+    assert.notEqual(r.status, 0, name);
+    assert.match(r.stderr, /install\.sh: error: HTTPS at https:\/\/127\.0\.0\.1:\d+ is not reachable or not trusted with the LocalAI CA\. .*left unchanged/, name);
+    assert.equal(fs.existsSync(path.join(s.dest, 'config.json')), false, name);
+    assert.equal(fs.existsSync(path.join(s.dest, 'localai-ca.crt')), false, name);
+    assert.deepEqual(fs.readdirSync(s.dest).filter((n) => n.startsWith('localai-ca.')), [], `${name}: temp CA removed`);
   }
 });
 
-test('install.sh rejects a CA that is not a PEM certificate, or that ssh cannot fetch, and keeps plain HTTP', { skip: tlsSkip }, async (t) => {
+test('install.sh rejects a CA that is not a PEM certificate, or that ssh cannot fetch', { skip: tlsSkip }, async (t) => {
   const url = await httpsRelay(t, tls);
   for (const [name, content] of [['garbage', 'The system cannot find the path specified.\r\n'], ['missing', null]]) {
     const s = sandbox(t);
     if (content !== null) fs.writeFileSync(s.caOut, content);
     const r = await runInstall(s.home, s.stubs, { LOCALAI_HTTPS_URL: url });
-    assert.equal(r.status, 0, `${name}: ${r.stderr}`);
-    assert.match(r.stderr, /install\.sh: warning: could not get a valid LocalAI CA certificate over ssh/, name);
-    assert.match(r.stderr, /using plain HTTP \(http:\/\/10\.0\.0\.21:3080\)/, name);
+    assert.notEqual(r.status, 0, name);
+    assert.match(r.stderr, /install\.sh: error: could not get a valid LocalAI CA certificate over ssh/, name);
     assert.equal(fs.existsSync(path.join(s.dest, 'localai-ca.crt')), false, name);
-    assert.deepEqual(readConfig(s.home), { url: 'http://10.0.0.21:3080' }, name);
+    assert.equal(fs.existsSync(path.join(s.dest, 'config.json')), false, name);
   }
 });
 
-test('install.sh re-run replaces a stale CA and switches an http config to HTTPS', { skip: tlsSkip }, async (t) => {
+test('install.sh re-run replaces a stale CA and moves an old plain-HTTP config to HTTPS', { skip: tlsSkip }, async (t) => {
   const s = sandbox(t);
   const url = await httpsRelay(t, tls);
-  fs.writeFileSync(s.caOut, 'not a cert');
-  assert.equal((await runInstall(s.home, s.stubs, { LOCALAI_HTTPS_URL: url })).status, 0);
-  assert.equal(readConfig(s.home).url, 'http://10.0.0.21:3080');
+  fs.mkdirSync(s.dest, { recursive: true });
+  fs.writeFileSync(path.join(s.dest, 'config.json'), JSON.stringify({ url: 'http://10.0.0.21:3080' }));
+  fs.writeFileSync(path.join(s.dest, 'localai-ca.crt'), 'stale');
   fs.writeFileSync(s.caOut, tls.caPem);
   const r = await runInstall(s.home, s.stubs, { LOCALAI_HTTPS_URL: url });
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(readConfig(s.home), { url, ca: path.join(s.dest, 'localai-ca.crt') });
+  assert.equal(fs.readFileSync(path.join(s.dest, 'localai-ca.crt'), 'utf8'), tls.caPem);
 });
 
-test('install.sh never quietly downgrades a working HTTPS config; --allow-http does', { skip: tlsSkip }, async (t) => {
+test('install.sh leaves a working HTTPS config and its CA untouched when HTTPS cannot be set up now', { skip: tlsSkip }, async (t) => {
   const url = await httpsRelay(t, tls);
   const failures = [
     ['CA fetch fails', (s) => fs.rmSync(s.caOut, { force: true }), { LOCALAI_HTTPS_URL: url }],
@@ -221,20 +139,102 @@ test('install.sh never quietly downgrades a working HTTPS config; --allow-http d
 
     const refused = await runInstall(s.home, s.stubs, env);
     assert.notEqual(refused.status, 0, name);
-    assert.match(refused.stderr, /install\.sh: error: .*config\.json uses HTTPS.*--allow-http/, name);
+    assert.match(refused.stderr, /install\.sh: error: .*config\.json and .*localai-ca\.crt are left unchanged/, name);
     assert.equal(fs.readFileSync(configPath, 'utf8'), config, `${name}: config untouched`);
     assert.equal(fs.readFileSync(caPath, 'utf8'), ca, `${name}: CA untouched`);
     assert.deepEqual(fs.readdirSync(s.dest).filter((n) => n.startsWith('localai-ca.') && n !== 'localai-ca.crt'), [], `${name}: temp CA removed`);
-
-    const downgraded = await runInstall(s.home, s.stubs, env, ['--allow-http']);
-    assert.equal(downgraded.status, 0, `${name}: ${downgraded.stderr}`);
-    assert.match(downgraded.stderr, /warning: .*using plain HTTP/, name);
-    assert.equal(readConfig(s.home).url, 'http://10.0.0.21:3080', name);
   }
+});
+
+test('install.sh installs files, key, hash push, hooks and shell function, idempotently', { skip: tlsSkip }, async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-install-'));
+  try {
+    const home = path.join(tmp, 'home'), stubs = path.join(tmp, 'stubs');
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.mkdirSync(path.join(home, '.local', 'bin'), { recursive: true });
+    fs.mkdirSync(stubs);
+    const other = { type: 'command', command: '/opt/homebrew/bin/python3 -I ~/.claude/hooks/localai-progress.py', async: true, timeout: 10 };
+    const original = { statusLine: { type: 'command', command: 'x' }, hooks: { SessionStart: [{ hooks: [other] }], PostToolUse: [{ matcher: '*', hooks: [other] }] } };
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify(original, null, 2));
+    const log = path.join(tmp, 'ssh.log'), ca = path.join(tmp, 'ca.pem');
+    fs.writeFileSync(ca, tls.caPem);
+    writeSshStub(path.join(stubs, 'ssh'), log, ca);
+    const url = await httpsRelay(t, tls);
+    const run = () => runInstall(home, stubs, { LOCALAI_HTTPS_URL: url });
+
+    const first = await run();
+    assert.equal(first.status, 0, first.stderr);
+    const dest = path.join(home, '.claude', 'localai-chat');
+    for (const f of ['bridge.mjs', 'cli.mjs', 'hook.py', 'localai-chat']) assert.ok(fs.existsSync(path.join(dest, f)), f);
+    assert.ok(fs.statSync(path.join(dest, 'localai-chat')).mode & 0o100);
+    assert.ok(fs.statSync(path.join(dest, 'run')).isDirectory());
+    assert.equal(fs.readlinkSync(path.join(home, '.local', 'bin', 'localai-chat')), path.join(dest, 'localai-chat'));
+    const key = fs.readFileSync(path.join(dest, 'mac.key'), 'utf8');
+    assert.match(key, /^[0-9a-f]{64}$/);
+    assert.equal(fs.statSync(path.join(dest, 'mac.key')).mode & 0o777, 0o600);
+    assert.equal(fs.readFileSync(`${log}.stdin`, 'utf8'), crypto.createHash('sha256').update(key).digest('hex'));
+    assert.equal(fs.readFileSync(log, 'utf8').trim(), `${HASH_PUSH}\n${CA_FETCH}`);
+    assert.ok(fs.existsSync(path.join(dest, 'relay.mjs')));
+    assert.match(first.stdout, /source ~\/\.zshrc/); assert.match(first.stdout, /localai-chat status/); assert.match(first.stdout, /claude-chat --resume/);
+
+    const second = await run();
+    assert.equal(second.status, 0, second.stderr);
+    assert.equal(fs.readFileSync(path.join(dest, 'mac.key'), 'utf8'), key);
+
+    const settings = JSON.parse(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8'));
+    assert.deepEqual(settings.statusLine, original.statusLine);
+    assert.deepEqual(settings.hooks.PostToolUse, original.hooks.PostToolUse);
+    assert.deepEqual(settings.hooks.SessionStart[0], original.hooks.SessionStart[0]);
+    for (const event of ['SessionStart', 'UserPromptSubmit', 'Stop']) {
+      const ours = settings.hooks[event].flatMap(g => g.hooks).filter(h => h.command === CMD);
+      assert.equal(ours.length, 1, event);
+      assert.equal(ours[0].async, true); assert.equal(ours[0].timeout, 10);
+    }
+    assert.equal(settings.hooks.SessionStart.length, 2);
+    const backups = fs.readdirSync(path.join(home, '.claude')).filter(n => n.startsWith('settings.json.bak-localai-chat-'));
+    assert.ok(backups.length >= 1);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, '.claude', backups.sort()[0]), 'utf8')), original);
+    const zshrc = fs.readFileSync(path.join(home, '.zshrc'), 'utf8');
+    assert.equal(zshrc.split('# >>> localai-chat >>>').length - 1, 1);
+    assert.match(zshrc, /claude-chat\(\) \{ LOCALAI_CHAT=1 claude "\$@"; \}/);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('install.sh reports a failed hash push, keeps the key, leaves settings alone, and a re-run completes', { skip: tlsSkip }, async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-install-fail-'));
+  try {
+    const home = path.join(tmp, 'home'), stubs = path.join(tmp, 'stubs');
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.mkdirSync(stubs);
+    const settingsPath = path.join(home, '.claude', 'settings.json');
+    const before = JSON.stringify({ hooks: {} }, null, 2);
+    fs.writeFileSync(settingsPath, before);
+    const log = path.join(tmp, 'ssh.log'), ca = path.join(tmp, 'ca.pem');
+    fs.writeFileSync(ca, tls.caPem);
+    const stub = path.join(stubs, 'ssh');
+    fs.writeFileSync(stub, '#!/bin/sh\ncat > /dev/null\nexit 255\n', { mode: 0o755 });
+    const url = await httpsRelay(t, tls);
+    const run = () => runInstall(home, stubs, { LOCALAI_HTTPS_URL: url });
+    const keyPath = path.join(home, '.claude', 'localai-chat', 'mac.key');
+
+    const failed = await run();
+    assert.notEqual(failed.status, 0);
+    assert.match(failed.stderr, /install\.sh: created .*mac\.key but could not push its hash to the appliance \(ssh windows-ai failed\)\. Fix ssh access and re-run install\.sh/);
+    const key = fs.readFileSync(keyPath, 'utf8');
+    assert.match(key, /^[0-9a-f]{64}$/);
+    assert.equal(fs.readFileSync(settingsPath, 'utf8'), before);
+
+    writeSshStub(stub, log, ca);
+    const ok = await run();
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.equal(fs.readFileSync(keyPath, 'utf8'), key);
+    assert.equal(fs.readFileSync(`${log}.stdin`, 'utf8'), crypto.createHash('sha256').update(key).digest('hex'));
+    assert.ok(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).hooks.Stop);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
 test('install.sh rejects unknown arguments', () => {
   const r = spawnSync('bash', [INSTALL, '--bogus'], { env: { ...process.env, HOME: '/nonexistent-home' }, encoding: 'utf8' });
   assert.notEqual(r.status, 0);
-  assert.match(r.stderr, /usage: install\.sh \[--allow-http\]/);
+  assert.match(r.stderr, /usage: install\.sh$/m);
 });
