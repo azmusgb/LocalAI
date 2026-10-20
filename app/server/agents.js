@@ -167,7 +167,7 @@ function createAgents(ctx) {
   let specialistOrchestrator=null;
   // The missions' model queue, made here rather than in the orchestrator so GET /api/world can say how many turns are
   // running and waiting without creating the orchestrator.
-  const missionModelQueue=require('../agent-runtime').createModelQueue({concurrency:MISSION_MODEL_CONCURRENCY||1});
+  const missionModelQueue=require('../agent-runtime').createModelQueue({concurrency:Number.isSafeInteger(MISSION_MODEL_CONCURRENCY)&&MISSION_MODEL_CONCURRENCY>0?MISSION_MODEL_CONCURRENCY:1});
   function getSpecialistOrchestrator(){
    if(specialistOrchestrator)return specialistOrchestrator;
    specialistOrchestrator=require('../agent-orchestrator')({
