@@ -886,6 +886,7 @@ async function apiVoiceHome(req, res) {
   if (!found) return json(res, 400, { error: "Couldn't find that place." });
   const home = { place: found.name, lat: found.lat, lon: found.lon, timeZone: found.timeZone };
   storage.writeSetting('voice-home', home);
+  feedWeather = { at: 0, text: null }; // the display's weather card follows the new place at once
   json(res, 200, home);
 }
 
