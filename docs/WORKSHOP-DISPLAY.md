@@ -50,6 +50,7 @@ Services card --GET /api/workshop/status--> appliance --GET /hardware/health (4 
 appliance poller (only with a token) --GET /api/status/lite, Authorization: Bearer … (every 30 s, 4 s limit)--> display
 Show sign-in code --POST /api/workshop/portal-code--> appliance (only with the code key) --GET /api/portal-code, Authorization: Bearer … (4 s limit)--> display
 Home --GET /api/workshop/status?part=printer--> appliance (the poller's last read; nothing is sent to the display)
+Agent World --GET /api/world--> appliance --GET /hardware/health (at most once a minute, 4 s limit)--> display
 Open Workshop portal: a plain link, opened by the browser in a new tab --> http://10.0.0.124/ (the display itself)
 ```
 
@@ -65,6 +66,13 @@ display that is off, refuses the connection, sends something that isn't JSON or 
 Local AI sends the display **only three requests, all `GET`**: `/hardware/health`, with the status token
 `/api/status/lite`, and with the code key, only when you tap Show sign-in code, `/api/portal-code`.
 It never sends `POST`, never calls a control route, and never sends the portal's `X-BambuHelper-Client` header.
+
+**Agent World** (`GET /api/world`, `app/world.js`) adds no new request. Its kiosk billboard asks `/hardware/health` **at
+most once a minute** while Agent World is open: one request at a time, however many tabs poll, and a slow or failing
+display is not asked again sooner (the minute counts from when a request starts). Nothing is asked while Agent World is
+closed. The printer and the firmware version it shows come from the poller's last `/api/status/lite` read (only the
+`firmware.version` field, when it is a short plain version such as `12.1.0`), so they add nothing either. The answer
+holds no token and no address. `tests/world.test.cjs` enforces the limit.
 
 ## Local AI cards (for the display's idle screen)
 

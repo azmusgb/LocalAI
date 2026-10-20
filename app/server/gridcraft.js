@@ -30,6 +30,18 @@ function createGridcraft(ctx) {
       bridgeFailure(res, e);
     }
   }
+  // For Agent World (GET /api/world, app/world.js caches it 15 s): bridge is whether the host bridge answered ok, excel
+  // whether GridCraft (Excel) is open there, null when the bridge didn't say. Never throws; nothing else is passed on.
+  async function bridgeHealth() {
+    try {
+      const r = await bridgeFetch('/health', { cache: 'no-store' }, 4000);
+      const data = await bridgeJson(r, {});
+      const ok = r.ok && data?.ok === true;
+      return { bridge: ok, excel: ok ? data.gridcraftConnected === true : null };
+    } catch {
+      return { bridge: false, excel: null };
+    }
+  }
   // A request's record: what was asked, in which mode, and what it changed (the agent's journal), so the page can show the
   // changes and the owner can keep or discard a Review request later, also from another device.
   const GRIDCRAFT_RUN_PREFIX = 'gridcraft:run:';
@@ -274,7 +286,7 @@ function createGridcraft(ctx) {
     recordActivity('workshop', 'Workshop sign-in code shown', 'Services › Workshop display');
     send(200, { code: r.code, address });
   }
-  return { gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftProgress, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopPortalCode, apiWorkshopStatus };
+  return { bridgeHealth, gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftProgress, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopPortalCode, apiWorkshopStatus };
 }
 
 module.exports = { createGridcraft };

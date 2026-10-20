@@ -8,8 +8,9 @@ function createAgents(ctx) {
   // What a restart would interrupt now. The host's auto-deploy holds an update while this says busy (docs/DEPLOY.md).
   // The orchestrator is only asked once something has created it: before that nothing of its can be running, and
   // creating it here would settle records from before the restart as a side effect.
+  function busyNow(){return busy.activeWork({runs:['queued','running','streaming'].flatMap(status=>runLedger.list({status,all:true})),missions:specialistOrchestrator?specialistOrchestrator.missions(200):[],specialists:specialistOrchestrator?specialistOrchestrator.runs(200):[],inFlight:inFlight.list()})}
   function apiBusy(req,res){
-    try{json(res,200,busy.activeWork({runs:['queued','running','streaming'].flatMap(status=>runLedger.list({status,all:true})),missions:specialistOrchestrator?specialistOrchestrator.missions(200):[],specialists:specialistOrchestrator?specialistOrchestrator.runs(200):[],inFlight:inFlight.list()}))}
+    try{json(res,200,busyNow())}
     catch(e){json(res,500,{error:String(e.message||e)})}
   }
   async function runLocalModel(prompt, system='You are a concise local AI assistant.', timeoutMs=180000, model=MODEL){
@@ -164,6 +165,9 @@ function createAgents(ctx) {
     const modelStep=plan.find(x=>x.kind==='model'); if(modelStep)modelStep.state='running'; const answer=await runLocalModel(`${goal}${context}`,'You are an execution agent inside a private local appliance. Use available context, state uncertainties, and return a concrete result.'); if(modelStep)modelStep.state='complete'; const compose=plan.find(x=>x.kind==='compose'); if(compose)compose.state='complete'; return {plan,answer,sources};
   }
   let specialistOrchestrator=null;
+  // The missions' model queue, made here rather than in the orchestrator so GET /api/world can say how many turns are
+  // running and waiting without creating the orchestrator.
+  const missionModelQueue=require('../agent-runtime').createModelQueue({concurrency:Number.isSafeInteger(MISSION_MODEL_CONCURRENCY)&&MISSION_MODEL_CONCURRENCY>0?MISSION_MODEL_CONCURRENCY:1});
   function getSpecialistOrchestrator(){
    if(specialistOrchestrator)return specialistOrchestrator;
    specialistOrchestrator=require('../agent-orchestrator')({
@@ -174,7 +178,7 @@ function createAgents(ctx) {
     // an opening-evidence budget that keeps the first prompt to about a minute of reading.
     runAgentTurn:require('../agent-runtime').createOllamaTurn({ollamaUrl:OLLAMA_URL,numCtx:MISSION_NUM_CTX,keepAlive:TEXT_KEEP_ALIVE}),
     agentLimits:{maxContextChars:Math.floor((MISSION_NUM_CTX-MISSION_ANSWER_RESERVE)*3.5)},
-    numCtx:MISSION_NUM_CTX,evidenceTokens:MISSION_EVIDENCE_TOKENS,modelConcurrency:MISSION_MODEL_CONCURRENCY,
+    numCtx:MISSION_NUM_CTX,evidenceTokens:MISSION_EVIDENCE_TOKENS,modelConcurrency:MISSION_MODEL_CONCURRENCY,modelQueue:missionModelQueue,
     groundedTimeoutMs:MISSION_TIMEOUT_MS,coordinatorTimeoutMs:MISSION_TIMEOUT_MS
    });
    return specialistOrchestrator;
@@ -228,7 +232,7 @@ function createAgents(ctx) {
       json(res,200,{goal,plan,approval});
     }catch(e){storageError(res,e,400)}
   }
-  return { apiAgentCatalog, apiAgentDispatch, apiAgentMission, apiAgentMissionEvents, apiAgentMissionStart, apiAgentMissions, apiAgentModels, apiAgentPlan, apiAgentRun, apiAgents, apiBusy, apiSpecialistRun, runEngineeringPlannerModel, runLocalModel, startMissionRun };
+  return { busyNow, missionModelQueue, apiAgentCatalog, apiAgentDispatch, apiAgentMission, apiAgentMissionEvents, apiAgentMissionStart, apiAgentMissions, apiAgentModels, apiAgentPlan, apiAgentRun, apiAgents, apiBusy, apiSpecialistRun, runEngineeringPlannerModel, runLocalModel, startMissionRun };
 }
 
 module.exports = { createAgents };
