@@ -29,3 +29,16 @@ test('the service worker precaches every front-end module', () => {
   const cached = new Set([...shell[1].matchAll(/'\/([^']+\.js)'/g)].map(m => m[1]));
   assert.deepEqual(modules.filter(f => !cached.has(f)), []);
 });
+
+// Agent World's on-demand modules (app/public/aw/*.js) are not in index.html: ui.js loads the ones in AW_MODS the first
+// time the city is on screen, and the service worker precaches them so the city works offline too.
+test('every Agent World on-demand module is in the loader and precached, and none is in index.html', () => {
+  const aw = fs.readdirSync(path.join(pub, 'aw')).filter(f => f.endsWith('.js')).map(f => f.slice(0, -3)).sort();
+  const ui = fs.readFileSync(path.join(pub, 'ui.js'), 'utf8'), list = ui.match(/AW_MODS=\[([^\]]*)\]/);
+  assert.ok(list, 'ui.js defines AW_MODS');
+  assert.deepEqual([...list[1].matchAll(/'([^']+)'/g)].map(m => m[1]).sort(), aw);
+  const sw = fs.readFileSync(path.join(pub, 'sw.js'), 'utf8'), shell = sw.match(/const SHELL=\[([^\]]*)\]/)[1];
+  assert.deepEqual(aw.filter(m => !shell.includes(`'/aw/${m}.js'`)), []);
+  const html = fs.readFileSync(path.join(pub, 'index.html'), 'utf8');
+  assert.deepEqual(aw.filter(m => html.includes(`/aw/${m}.js`)), []);
+});

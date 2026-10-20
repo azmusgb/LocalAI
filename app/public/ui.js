@@ -1135,6 +1135,8 @@ let demo={active:false,running:false,paused:false,stage:0,speed:1,lastAdvance:0,
 const REPLAY_KEY='localai.agentworld.replay.v2';
 let replay={frames:[],active:false,index:0,playing:false,lastStep:0,speed:1,sourceMissionId:''};
 let celebrationUntil=0,focusId='',notes=[];
+// Layers that on-demand modules add (see addLayer), and the modules: /aw/<name>.js, fetched once the city is first on screen.
+const layers=[],AW_MODS=['kit'];let awMods=false;
 // Camera: the map box's CSS size, device pixels per CSS pixel (capped at 2), and `base`, the scale at zoom 1, which
 // covers the box with the city at any aspect ratio (a phone shows a tall slice, a desktop nearly all of it). Pans are
 // CSS pixels; zoom is a multiple of base. The static ground is drawn once into groundCache and copied each frame.
@@ -1193,7 +1195,7 @@ function buildRoads(){
  reach.clear();const q=[[13,13]];while(q.length){const[x,y]=q.pop(),k=key(x,y);if(reach.has(k)||blocked(x,y))continue;reach.add(k);q.push([x+1,y],[x-1,y],[x,y+1],[x,y-1])}
 }
 function blocked(x,y){
- if(x<1||y<1||x>=COLS-1||y>=ROWS-1)return true;
+ if(x<1||y<1||x>=COLS-1||y>=ROWS-1||reserved(x,y))return true;
  for(const d of Object.values(DISTRICTS))if(x>=d.x-1&&x<d.x+d.w+1&&y>=d.y-1&&y<d.y+d.h+1)return true;
  return!roads.has(key(x,y))
 }
@@ -1334,6 +1336,7 @@ let externalFocus=false;
 function syncSelection(){
  if(!root)return;const h=$('#awcSelection');h.dataset.empty=String(!selected);if(!selected){h.innerHTML='<span>Select a worker or building</span><small>Inspect district state and focus the camera.</small>';return}
  if(selected.type==='agent'){const a=agents.get(selected.id);if(!a)return;const A=window.LocalAIAgentWords,w=(current?.workers||[]).find(q=>(q.id||q.agentId)===a.id)||a;h.innerHTML=`<strong>${esc(A?A.workerName(w):a.name)}</strong><small>${esc(A?A.stateBadge(a.state).label+' · '+A.workerRole(w):a.state)}</small>`;if(!externalFocus)window.dispatchEvent(new CustomEvent('localai:agentworld-select',{detail:{workerId:a.id}}))}
+ else if(selected.l)h.innerHTML=`<strong>${esc(selected.it.label)}</strong><small>${esc(selected.it.detail||'')}</small>`;
  else{const d=DISTRICTS[selected.id],workers=[...agents.values()].filter(a=>a.zone===selected.id);h.innerHTML=`<strong>${esc(d.name)}</strong><small>${workers.length?workers.map(a=>esc(a.name)).join(', '):'No workers in district'}</small>`}
 }
 // The pan that keeps the city covering the box at zoom z (centred on an axis where the city is the smaller).
@@ -1360,10 +1363,11 @@ function resize(){
 function paint(){if(ctx&&cam.w&&!raf)draw(now())}
 function hitAt(x,y){
  for(const a of agents.values())if(Math.hypot(x-a.x,y-a.y+28*(WS-1))<27*WS)return{type:'agent',id:a.id};
+ for(const l of layers){let it=null;try{it=l.hit?.(x,y)}catch{}if(it)return{type:'layer',id:it.id,l,it}}
  for(const[id,d]of Object.entries(DISTRICTS))if(x>=d.x*T&&x<=(d.x+d.w)*T&&y>=d.y*T&&y<=(d.y+d.h)*T)return{type:'district',id};
  return null
 }
-function selectAt(e){const p=screenPoint(e);selected=hitAt(p.x,p.y);syncSelection();if(selected?.type==='district'){const d=DISTRICTS[selected.id];focusPoint((d.x+d.w/2)*T,(d.y+d.h/2)*T,1.65)}}
+function selectAt(e){const p=screenPoint(e);selected=hitAt(p.x,p.y);syncSelection();if(selected?.l)try{selected.l.open?.(selected.it)}catch{}if(selected?.type==='district'){const d=DISTRICTS[selected.id];focusPoint((d.x+d.w/2)*T,(d.y+d.h/2)*T,1.65)}}
 function updateHover(e){
  if(drag||pointers.size>1)return;const p=screenPoint(e),hit=hitAt(p.x,p.y);hovered=hit;const tip=$('#awcTooltip');if(!tip)return;
  if(!hit||hit.type!=='agent'){tip.hidden=true;return}
@@ -1417,6 +1421,7 @@ function mount(){
  window.addEventListener('localai:agentworld-focus',e=>{externalFocus=true;try{focusWorker(e.detail?.workerId)}finally{externalFocus=false}});
  if('ResizeObserver' in window)new ResizeObserver(resize).observe($('.awc__mapWrap',root));window.addEventListener('resize',resize);
  window.LocalAIAgentWorld={camera:()=>({zoom:view.targetZoom,panX:view.targetPanX,panY:view.targetPanY,shown:{zoom:view.zoom,panX:view.panX,panY:view.panY},...cam}),avatar,following:()=>display.follow,follow:on=>toggleFollow(on),demo:()=>{startDemo();syncDemoControls()},demoStep:()=>stepDemo(),busy:()=>demo.active||replay.active,demoing:()=>demo.active,demoStory:()=>demo.active?{...demoMission(),timeline:demo.log.slice()}:null,live:()=>{if(demo.active)returnLive()},display:()=>({...display}),view:k=>k==='speed'?cycleReplaySpeed():k==='theater'?toggleExpanded():k==='fit'?(userCamera(),fitWorld()):toggleDisplay(k),walking:()=>[...agents.values()].filter(workerIsMoving).length,names:()=>[...agents.values()].map(a=>a.name),
+  addLayer,grid:{w:COLS,h:ROWS,tile:T},
   moments:()=>({flags:[...agents.values()].filter(a=>a.state==='complete').map(a=>a.id),warnings:[...agents.values()].filter(a=>a.state==='error'||a.state==='blocked').map(a=>a.id),fireworks:celebrationUntil>now()})};
  // __awcSim (tests): put a worker somewhere still, or a car somewhere on its street, in world pixels.
  try{if(localStorage.getItem('localai.debug')==='1'){window.__awcLayout=layout;window.__awcSim={sky(u){skyU=u},put(id,x,y){const a=agents.get(id);if(a){a.x=a.tx=x;a.y=a.ty=y;a.path=[];a.pathI=0;a.onSite=false}},car(i,x,y){const c=traffic[i];if(c){c.x=x;c.y=y;c.go=1}},
@@ -1478,6 +1483,22 @@ function pathPoly(points,fill){ctx.fillStyle=fill;ctx.beginPath();ctx.moveTo(poi
 // stays crisp at any zoom and only a handful of font strings are ever parsed.
 let fk=1;const fonts={},font=n=>fonts[n]||(fonts[n]='800 '+n+'px ui-monospace,monospace');
 function txt(t,x,y,c='#d9e7f4',size=11,align='center'){ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle=c;ctx.font=font(Math.max(1,Math.round(size*fk)));ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillText(t,Math.round(cam.dpr*view.panX+x*fk),Math.round(cam.dpr*view.panY+y*fk));ctx.restore()}
+// ---- Layers ---------------------------------------------------------------------------------------------------
+// LocalAIAgentWorld.addLayer({reserve,ground,draw,hit,rows,open}) for the on-demand modules: see app/public/aw/kit.js.
+const reserved=(x,y)=>layers.some(l=>l.reserve?.some(r=>x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h)),env=()=>({night:display.night,reduced});
+function eachLayer(f){for(const l of layers){ctx.save();try{f(l)}catch{}ctx.restore()}}
+function layerSig(){let s='';for(const l of layers)if(l.ground)try{s+='|'+l.ground.sig()}catch{}return s}
+function reLayer(l){if(l.reserve?.length){buildRoads();plantScenery();flowPaths.clear()}syncLayerRows();paint()}
+function addLayer(l){layers.push(l);reLayer(l);return{refresh(){syncLayerRows();paint()},remove(){const i=layers.indexOf(l);if(i>=0){layers.splice(i,1);reLayer(l)}}}}
+function loadMods(){if(awMods)return;awMods=true;for(const m of AW_MODS){const s=document.createElement('script');s.src='/aw/'+m+'.js';s.async=false;document.head.append(s)}}
+function syncLayerRows(){
+ const crew=$('#awcRoster')?.closest('.aw-crew'),rows=[];if(!crew)return;let s=$('#awServices');
+ layers.forEach((l,i)=>{let r=[];try{r=l.rows?.()||[]}catch{}for(const it of r)rows.push({l,it,k:i+':'+it.id})});
+ if(!s){if(!rows.length)return;s=document.createElement('section');s.className='aw-crew';s.id='awServices';s.setAttribute('aria-labelledby','awServicesTitle');s.innerHTML='<h2 id="awServicesTitle" class="aw-h">City services</h2><div id="awcLayerRows" class="aw-crew__rows" role="list"></div>';crew.after(s)}
+ const list=$('#awcLayerRows',s),had=document.activeElement?.dataset?.awcLayer;s.hidden=!rows.length;
+ list.innerHTML=rows.map(r=>`<div role="listitem"><button type="button" class="awc__rosterItem" data-awc-layer="${esc(r.k)}"><span class="awc__rosterText"><strong>${esc(r.it.label)}</strong><span>${esc(r.it.detail||'')}</span></span></button></div>`).join('');
+ list.querySelectorAll('button').forEach((b,i)=>{b.onclick=()=>{try{rows[i].l.open?.(rows[i].it)}catch{}};if(had&&b.dataset.awcLayer===had)b.focus()})
+}
 // ---- Ground ----------------------------------------------------------------------------------------------------
 // Everything that doesn't move is drawn once into groundCache (per scale and day/night): grass, water, streets with
 // sidewalks and zebra crossings, lamp posts (lit at night), benches and planters. Only the trees are drawn each frame,
@@ -1488,15 +1509,15 @@ let trees=[],lamps=[];
 function plantScenery(){
  trees=[];lamps=[];
  for(let y=3;y<ROWS;y++)for(let x=1;x<COLS-1;x++){
-  if(roads.has(key(x,y))||inDistrict(x,y,1))continue;const h=wh(x,y,7)%100,near=[[1,0],[-1,0],[0,1],[0,-1]].some(([a,b])=>roads.has(key(x+a,y+b)));
+  if(roads.has(key(x,y))||inDistrict(x,y,1)||reserved(x,y))continue;const h=wh(x,y,7)%100,near=[[1,0],[-1,0],[0,1],[0,-1]].some(([a,b])=>roads.has(key(x+a,y+b)));
   if(h<(near?12:46))trees.push([(x+.5)*T+(h%7)*2-6,(y+.5)*T+(h%5)*2-4,h%3,h<20])
  }
- roads.forEach(k=>{const[x,y]=k.split(',').map(Number);if((x+y)%5)return;for(const[a,b]of[[0,-1],[-1,0]])if(!roads.has(key(x+a,y+b))&&!inDistrict(x+a,y+b)){lamps.push(a?[x*T-4,(y+.5)*T]:[(x+.5)*T,y*T-4]);break}})
+ roads.forEach(k=>{const[x,y]=k.split(',').map(Number);if((x+y)%5)return;for(const[a,b]of[[0,-1],[-1,0]])if(!roads.has(key(x+a,y+b))&&!inDistrict(x+a,y+b)&&!reserved(x+a,y+b)){lamps.push(a?[x*T-4,(y+.5)*T]:[(x+.5)*T,y*T-4]);break}})
 }
 // The ground is cached at 1× or 2× the world's size (2× once the city is drawn bigger than 1.2 device pixels per world
 // pixel) and copied each frame: nearest-neighbour when enlarged, so the pixel art stays crisp.
 function drawGround(ts){
- const q=sc(view.zoom)*cam.dpr>1.2?2:1,k=q+(display.night?'n':'d');
+ const q=sc(view.zoom)*cam.dpr>1.2?2:1,k=q+(display.night?'n':'d')+layerSig();
  if(groundKey!==k){const c=groundCache||document.createElement('canvas'),g=(c.width=W*q,c.height=H*q,c.getContext('2d'));if(g){const prev=ctx;ctx=g;ctx.setTransform(q,0,0,q,0,0);drawGroundStatic();ctx=prev;groundCache=c;groundKey=k}}
  if(groundKey===k){ctx.imageSmoothingEnabled=sc(view.zoom)*cam.dpr<q;ctx.drawImage(groundCache,0,0,W,H);ctx.imageSmoothingEnabled=false}else drawGroundStatic();
  for(const[x,y,s,b]of trees)drawTree(x,y,ts,s,b)
@@ -1528,6 +1549,7 @@ function drawGroundStatic(){
  for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,0,true);if(N)spill(id+'g',d,.16,N)}
  // lamp posts: a pool of light under each at night
  for(const[x,y]of lamps){if(N){const g=ctx.createRadialGradient(x,y+2,2,x,y+2,30);g.addColorStop(0,'rgba(255,214,140,.32)');g.addColorStop(1,'rgba(255,214,140,0)');ctx.fillStyle=g;ctx.fillRect(x-30,y-28,60,60)}px(x+1,y-1,4,2,'rgba(0,0,0,.3)');px(x-1,y-20,2,20,'#3a434b');px(x-1,y-20,7,2,'#3a434b');px(x+3,y-19,4,3,N?'#fff1c2':'#c9d2da');if(N){const b=ctx.createRadialGradient(x+5,y-17,0,x+5,y-17,9);b.addColorStop(0,'rgba(255,236,180,.55)');b.addColorStop(1,'rgba(255,236,180,0)');ctx.fillStyle=b;ctx.fillRect(x-4,y-26,18,18)}}
+ eachLayer(l=>l.ground?.paint(ctx,env()));
  light()
 }
 // Trees: three shapes in two sizes, drawn once per shape into a sprite (with the shadow) and swayed a pixel.
@@ -2039,7 +2061,7 @@ function drawArcs(ts){
  ctx.restore();arcs=arcs.filter(r=>ts-r.t<2900)
 }
 function draw(ts){
- if(!ctx||!cam.w)return;const s=sc(view.zoom);fk=s*cam.dpr;ctx.setTransform(cam.dpr,0,0,cam.dpr,0,0);ctx.clearRect(0,0,cam.w,cam.h);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(s,s);drawGround(ts);ctx.imageSmoothingEnabled=false;drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,ts);drawBuilding(id,d,ts);drawInterior(id,d,ts);drawWorksite(id,d,ts)}drawAmbient(ts);drawFlows(ts);layoutSigns();drawAgents(ts);drawArcs(ts);drawMoments(ts);drawCommandCelebration(ts);drawBirds(ts);drawClouds(ts);drawSigns();ctx.restore();
+ if(!ctx||!cam.w)return;const s=sc(view.zoom);fk=s*cam.dpr;ctx.setTransform(cam.dpr,0,0,cam.dpr,0,0);ctx.clearRect(0,0,cam.w,cam.h);ctx.save();ctx.translate(view.panX,view.panY);ctx.scale(s,s);drawGround(ts);ctx.imageSmoothingEnabled=false;drawTraffic();for(const[id,d]of Object.entries(DISTRICTS)){drawDistrictScene(id,d,ts);drawBuilding(id,d,ts);drawInterior(id,d,ts);drawWorksite(id,d,ts)}eachLayer(l=>l.draw?.(ctx,ts,env()));drawAmbient(ts);drawFlows(ts);layoutSigns();drawAgents(ts);drawArcs(ts);drawMoments(ts);drawCommandCelebration(ts);drawBirds(ts);drawClouds(ts);drawSigns();ctx.restore();
  // last: moving the sky dirties style, and a canvas font set after that would recalculate it mid-frame
  syncSky(ts)
 }
@@ -2053,7 +2075,7 @@ function stop(){if(raf){cancelAnimationFrame(raf);raf=0}last=0}
 function loop(ts){raf=0;if(!canAnimate()){last=0;return}const dt=last?Math.min(.05,(ts-last)/1000||0):0;last=ts;update(dt,ts);draw(ts);raf=requestAnimationFrame(loop)}
 function start(){
  if(canvas&&observed!==canvas&&'IntersectionObserver' in window){io?.disconnect();onScreen=false;observed=canvas;io=new IntersectionObserver(entries=>{onScreen=entries[entries.length-1].isIntersecting;onScreen?start():stop()});io.observe(canvas)}
- if(!raf&&canAnimate())raf=requestAnimationFrame(loop)
+ if(!raf&&canAnimate()){loadMods();raf=requestAnimationFrame(loop)}
 }
 document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
 async function bootstrap(){try{const r=await fetch('/api/agents/missions'),j=await r.json(),items=j.items||j.missions||[],active=items.find(m=>m.status==='running')||items[0];if(active){applyMission(active);connectSSE();return}}catch{}try{const r=await fetch('/api/engineering/runs'),j=await r.json(),runs=j.items||[],active=runs.find(x=>x.status==='running')||runs[0];if(active)applyEngineering(active)}catch{}idleCrew();connectSSE()}

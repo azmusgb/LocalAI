@@ -67,7 +67,13 @@ const KB = 1024;
 // main measured 276.3 KB; this 277.3 KB.
 // 2026-10-19: 278 → 280 KB for sign-in's report-only step: signin-report.js (1.1 KB, Health's list of callers that would
 // be refused), its card (index.html +0.1 KB) and the cookie renewal on load (app.js +0.05 KB). 279.2 KB measured.
-const TOTAL = 280 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// 2026-10-19: 280 → 281 KB for #350, #351 and #353 together (280.3 KB measured on main 335d452): Home's watchdog rows
+// (+0.1 KB) and the 3-line loader for Agent World watch mode (+0.3 KB); watch mode itself loads on first use.
+// 2026-10-19: 281 → 282 KB (and ui.js 110 → 111 KB) for Agent World's layer hook: LocalAIAgentWorld.addLayer (reserved
+// tiles, ground painted into the cache by state, per-frame overlays, taps, the City services list) and the loader that
+// fetches /aw/*.js the first time the city is on screen. Those modules are not in the shell and have their own budget
+// below, so the landmarks, Claude Yard and worker talk never add to every page load (ui.js +1.0 KB; 281.3 KB measured).
+const TOTAL = 282 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
 // tab rows (234.9 KB measured).
@@ -84,7 +90,7 @@ const TOTAL = 280 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // and its four rules: app.css +62 bytes, index.html +48 bytes; main had 4 and 16 bytes left). spreadsheets.js +0.4 KB.
 // 2026-10-19: ui.js 109 → 110 KB for spreadsheet requests in Work: their rows and #run links open Spreadsheets (+0.1 KB;
 // main had 44 bytes left).
-const PER_FILE = { 'ui.js': 110 * KB, 'components.js': 11 * KB, 'app.css': 42 * KB, 'app.js': 36 * KB, 'index.html': 14 * KB, 'home.js': 11 * KB };
+const PER_FILE = { 'ui.js': 111 * KB, 'components.js': 11 * KB, 'app.css': 42 * KB, 'app.js': 36 * KB, 'index.html': 14 * KB, 'home.js': 11 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
@@ -101,6 +107,18 @@ test('the app shell stays within its total download budget (gzipped)', () => {
 test('each shell file stays within its own budget (gzipped)', () => {
   const over = Object.entries(sizes).filter(([f, n]) => n > (PER_FILE[f] ?? OTHER)).map(([f, n]) => `${f}: ${kb(n)} > ${kb(PER_FILE[f] ?? OTHER)}`);
   assert.deepEqual(over, []);
+});
+
+// Agent World's on-demand modules (app/public/aw/*.js): fetched by ui.js only once the city is on screen, so they stay
+// out of the shell's budget and have their own: 12 KB in all and 4 KB each, gzipped.
+const AW = fs.readdirSync(path.join(pub, 'aw')).filter(f => f.endsWith('.js')).map(f => 'aw/' + f);
+const awSizes = Object.fromEntries(AW.map(f => [f, gz(f)]));
+test("Agent World's on-demand modules stay within their own budget (gzipped)", () => {
+  assert.ok(AW.length >= 1, 'app/public/aw has its modules');
+  const total = Object.values(awSizes).reduce((a, b) => a + b, 0);
+  assert.ok(total <= 12 * KB, `on-demand modules are ${kb(total)} gzipped, over 12 KB: ${Object.entries(awSizes).map(([f, n]) => `${f} ${kb(n)}`).join(', ')}`);
+  assert.deepEqual(Object.entries(awSizes).filter(([, n]) => n > 4 * KB).map(([f, n]) => `${f}: ${kb(n)} > 4.0 KB`), []);
+  assert.deepEqual(AW.filter(f => f in sizes), [], 'no on-demand module is loaded by the shell');
 });
 
 test('the budget covers the files the shell really loads', () => {
