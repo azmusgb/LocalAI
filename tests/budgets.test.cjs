@@ -71,7 +71,9 @@ const KB = 1024;
 // tiles, ground painted into the cache by state, per-frame overlays, taps, the City services list) and the loader that
 // fetches /aw/*.js the first time the city is on screen. Those modules are not in the shell and have their own budget
 // below, so the landmarks, Claude Yard and worker talk never add to every page load (ui.js +1.0 KB; 280.7 KB measured).
-const TOTAL = 281 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// 2026-10-19: 281 → 282 KB: main already measured 280.3 KB, over its own 280, after Agent World watch mode (#351) and
+// the display feed (#352); with the layer hook it is 281.3 KB (ui.js 110.8 KB).
+const TOTAL = 282 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
 // tab rows (234.9 KB measured).
