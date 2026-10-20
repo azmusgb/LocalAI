@@ -466,6 +466,17 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         });
       });
 
+    // Watchdog findings (app/watchdog.js): disks, the Mac, the Workshop display and printer.
+    (Array.isArray(snapshot?.watch) ? snapshot.watch : []).forEach((item) => {
+      items.push({
+        severity: item.severity === 'high' ? 'critical' : 'warning',
+        title: item.title,
+        detail: item.detail,
+        action: 'Open Health',
+        view: 'status'
+      });
+    });
+
     const models = snapshot?.models;
     if (healthy(snapshot, 'ollama') && models?.available === false) {
       items.push({
