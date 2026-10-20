@@ -123,7 +123,8 @@ Anything else gets `400`.
 
 ## Feed v2, the long poll, messages, approvals and the heartbeat (Workshop OS 12.6)
 
-All of these are signed in by the display key (`X-LocalAI-Display-Key`) and by nothing else on its behalf.
+All of these, the feed, the ask buttons and `/api/images/view` (the pictures) are what the display key signs in
+(`X-LocalAI-Display-Key`); it signs in nothing else.
 
 - **Feed v2.** `GET /api/display/feed` answers `{v: 2, at, cards, images, messages}`. Each card also has `id` (the same
   while it means the same thing), `at` (epoch seconds, when known) and `ask` (the question a tap asks). New kinds:
