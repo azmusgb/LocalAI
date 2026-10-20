@@ -57,3 +57,23 @@ test('GET /api/display/feed answers cards with no model and no setup', { timeout
   assert.equal(feed.cards[0].kind, 'needs');
   for (const c of feed.cards) { assert.ok([...c.title].length <= 24); assert.ok([...c.text].length <= 90); }
 });
+
+test('GET /api/display/ask answers the three fixed questions, and refuses others', { timeout: 30000 }, async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-ask-'));
+  const dead = 'http://127.0.0.1:9';
+  const { child, ready } = spawnAppServer({ env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: dead, SEARXNG_URL: dead, COMFY_URL: dead, N8N_URL: dead, PROXY_URL: dead, MAC_AI_HOME_URL: dead, MAC_DSH_URL: dead } });
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+  const base = await ready;
+  for (const q of ['needs', 'running', 'health']) {
+    const r = await fetch(`${base}/api/display/ask?q=${q}`);
+    assert.equal(r.status, 200, q);
+    const j = await r.json();
+    assert.equal(j.question, q);
+    assert.ok(j.answer.length > 5 && [...j.answer].length <= 200, q);
+  }
+  assert.equal((await (await fetch(`${base}/api/display/ask?q=running`)).json()).answer, 'Nothing is running right now.');
+  assert.equal((await fetch(`${base}/api/display/ask?q=delete-everything`)).status, 400);
+});
