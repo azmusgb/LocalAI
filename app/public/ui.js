@@ -2968,7 +2968,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
       return `<article class="ux-int-card" data-tier="${item.tier}" aria-labelledby="ux-int-v2-${item.id}">
         <div class="ux-int-card-head"><div><div class="ux-int-name" id="ux-int-v2-${item.id}">${item.name}</div><div class="ux-int-decision" data-integration-decision="${item.id}">${item.decision}</div></div>${tierBadge(item.tier)}</div>
         <p data-integration-summary="${item.id}">${item.summary}</p>
-        <div class="ux-int-guidance">${item.guidance}</div>${item.id === 'workshop' ? `<div class="ux-int-guidance" data-workshop-printer hidden></div>${CODE_HTML}` : ''}
+        <div class="ux-int-guidance">${item.guidance}</div>${item.id === 'workshop' ? `<div class="ux-int-guidance" data-workshop-printer hidden></div>${CODE_HTML}${PAIR_HTML}` : ''}
         <div class="ux-int-card-foot">${live}<div class="ux-int-actions">${actions}</div></div>
       </article>`;
     }).join('');
@@ -2977,6 +2977,41 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     q('[data-workshop-code-show]', holder)?.addEventListener('click', showCode);
     q('[data-workshop-code-copy]', holder)?.addEventListener('click', copyCode);
     q('[data-workshop-code-hide]', holder)?.addEventListener('click', hideCode);
+    q('[data-workshop-pair]', holder)?.addEventListener('click', startPair);
+  }
+
+  // Workshop display › Pair display: a 6-digit code for 10 minutes, typed on the display's touchscreen (Local AI tab ›
+  // Local AI connection). Pairing gives the display a new key; the box says when it is done.
+  const PAIR_HTML = `<div class="ux-ws-code" data-workshop-pair-box>
+    <button class="btn-outline ux-int-action" type="button" data-workshop-pair>Pair display</button>
+    <div class="ux-ws-code-box" data-workshop-pair-code hidden><span class="ux-ws-code-label">On the display: Local AI tab › Local AI connection › type this code · 10 minutes</span><output class="ux-ws-code-value" data-workshop-pair-value></output></div>
+    <p class="ux-ws-code-msg" data-workshop-pair-msg role="status" aria-live="polite"></p></div>`;
+  let pairTimer = 0;
+  async function startPair() {
+    const button = q('[data-workshop-pair]'), msg = q('[data-workshop-pair-msg]'), box = q('[data-workshop-pair-code]'), value = q('[data-workshop-pair-value]');
+    if (!button || button.disabled) return;
+    button.disabled = true;
+    msg.textContent = '';
+    clearInterval(pairTimer);
+    try {
+      const before = (await (await fetch('/api/display/pair/status', { cache: 'no-store' })).json().catch(() => ({}))).pairedAt || null;
+      const r = await fetch('/api/display/pair/start', { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !/^\d{6}$/.test(d.code || '')) throw new Error(d.error || "Local AI couldn't start pairing.");
+      value.textContent = `${d.code.slice(0, 3)} ${d.code.slice(3)}`;
+      value.setAttribute('aria-label', `Pairing code ${[...d.code].join(' ')}`);
+      box.hidden = false;
+      button.textContent = 'New code';
+      pairTimer = window.setInterval(async () => {
+        const st = await (await fetch('/api/display/pair/status', { cache: 'no-store' })).json().catch(() => ({}));
+        if (st.pairedAt && st.pairedAt !== before) { clearInterval(pairTimer); box.hidden = true; value.textContent = ''; msg.textContent = 'Paired. The display is connected to Local AI.'; button.textContent = 'Pair display'; }
+        else if (!st.pending) { clearInterval(pairTimer); box.hidden = true; value.textContent = ''; msg.textContent = 'The code ran out. Pair again when you are at the display.'; button.textContent = 'Pair display'; }
+      }, 3000);
+    } catch (error) {
+      msg.textContent = error.message || String(error);
+    } finally {
+      button.disabled = false;
+    }
   }
 
   // Workshop display › Show sign-in code (the display's code key stays on the appliance). Each tap asks the appliance,

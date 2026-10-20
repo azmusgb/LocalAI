@@ -147,6 +147,19 @@ All of these, the feed, the ask buttons and `/api/images/view` (the pictures) ar
 - **Heartbeat.** `POST /api/display/heartbeat {version, sourceSha, uptimeS, rssi, heapFree, psramFree, camera}`
   every few minutes; `GET /api/watch` shows the last one as `display`.
 
+## Pairing (Workshop OS 12.7)
+
+Instead of the Mac's `set-key.sh` and `configure_localai_feed.py`: in Local AI, **Services › Workshop display › Pair
+display** shows a 6-digit code for 10 minutes. On the display, **Local AI tab › Local AI connection**, type it.
+
+1. The display fetches Local AI's CA over plain HTTP (`http://<address>/localai-ca.crt`).
+2. It sends `POST /api/display/pair {code}` over HTTPS, pinned to that CA and the name `localai.home.arpa`.
+3. Local AI answers `{key, tlsName}` with a new display key and keeps only its SHA-256, so the old key stops working.
+
+Five wrong codes end the attempt; one code is open at a time. `/api/display/pair` is open (the display has no key
+yet); starting pairing (`POST /api/display/pair/start`) and `GET /api/display/pair/status` are for someone signed in.
+The activity log says "Workshop display paired". The Mac's Keychain copy of the old key is then out of date.
+
 ## Printer status (read-only token)
 
 With Workshop OS 12.1.0 on the display, Home can show one line while a print runs or has stopped with an error, for

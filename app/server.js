@@ -99,6 +99,11 @@ const watchdog = require('./watchdog').createWatchdog({
     { path: DATA_DIR, name: 'data', label: 'Local AI data' }
   ]
 });
+// Pairing the Workshop display from its touchscreen (app/display-pairing.js).
+const displayPairing = require('./display-pairing').createDisplayPairing({
+  dataDir: DATA_DIR, tlsName: process.env.LOCALAI_NAME || 'localai.home.arpa',
+  onPaired: () => recordActivity('display', 'Workshop display paired', 'A new display key replaced the old one.')
+});
 // The Workshop display's messages (app/display-messages.js): the notification kinds the owner picked also show there.
 const displayMessages = require('./display-messages').createDisplayMessages({ storage, now: clockNow });
 {
@@ -693,6 +698,15 @@ async function displayFeedNow() {
   const feed = displayFeed.buildFeed({ needs, watch: watchdog.list(), running, done: displayDoneRuns(2 * 3600 * 1000), weather: await feedWeatherText(), images, disk });
   feed.messages = displayMessages.recent();
   return feed;
+}
+// POST /api/display/pair/start (signed in): a 6-digit code for 10 minutes; GET /api/display/pair/status; POST
+// /api/display/pair {code} from the display (open: it has no key yet), which answers {key, tlsName}.
+async function apiDisplayPair(req, res, p) {
+  try {
+    if (p === '/api/display/pair/start') return json(res, 200, displayPairing.start());
+    if (p === '/api/display/pair/status') return json(res, 200, displayPairing.status());
+    json(res, 200, displayPairing.pair(await readBody(req, 1024)));
+  } catch (e) { json(res, e.statusCode || 400, { error: String(e.message || e) }); }
 }
 // POST /api/display/notify {title, text, tone?, chime?, action?}: a banner on the Workshop display (app/display-messages.js).
 async function apiDisplayNotify(req, res) {
@@ -1829,6 +1843,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/display/ask') return await apiDisplayAsk(req,res,urlObj);
     if (req.method === 'GET' && p === '/api/display/events') return await apiDisplayEvents(req,res,urlObj);
     if (req.method === 'POST' && p === '/api/display/notify') return await apiDisplayNotify(req,res);
+    if ((req.method === 'POST' && (p === '/api/display/pair' || p === '/api/display/pair/start')) || (req.method === 'GET' && p === '/api/display/pair/status')) return await apiDisplayPair(req,res,p);
     if (req.method === 'GET' && p === '/api/display/approvals') return await apiDisplayApprovals(req,res);
     if (req.method === 'POST' && p === '/api/display/approvals/decide') return await apiDisplayApprovalDecide(req,res);
     if (req.method === 'POST' && p === '/api/display/heartbeat') return await apiDisplayHeartbeat(req,res);
