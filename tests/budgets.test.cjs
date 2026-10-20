@@ -90,7 +90,9 @@ const TOTAL = 282 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // and its four rules: app.css +62 bytes, index.html +48 bytes; main had 4 and 16 bytes left). spreadsheets.js +0.4 KB.
 // 2026-10-19: ui.js 109 → 110 KB for spreadsheet requests in Work: their rows and #run links open Spreadsheets (+0.1 KB;
 // main had 44 bytes left).
-const PER_FILE = { 'ui.js': 111 * KB, 'components.js': 11 * KB, 'app.css': 42 * KB, 'app.js': 36 * KB, 'index.html': 14 * KB, 'home.js': 11 * KB };
+// 2026-10-20: ui.js 111 → 112 KB for pairing the Workshop display from Services (Pair display: the code box and its
+// status poll, +0.3 KB; 111.2 KB measured).
+const PER_FILE = { 'ui.js': 112 * KB, 'components.js': 11 * KB, 'app.css': 42 * KB, 'app.js': 36 * KB, 'index.html': 14 * KB, 'home.js': 11 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;

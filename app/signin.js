@@ -8,7 +8,7 @@
 // before it is paired (A2). Pages and static files are not checked: the pairing screen has to load.
 // routeKeys: { path: req => bool } signs in a caller for that one path only (the Workshop display's feed key).
 
-const OPEN = new Set(['/healthz', '/api/claude/chat/pair-request', '/api/claude/chat/pair-status', '/api/claude/chat/whoami']);
+const OPEN = new Set(['/healthz', '/api/claude/chat/pair-request', '/api/claude/chat/pair-status', '/api/claude/chat/whoami', '/api/display/pair']);
 const KEEP = 50; // callers listed
 const SAVE_MS = 30000;
 const REPORT_KEY = 'signin/report';
