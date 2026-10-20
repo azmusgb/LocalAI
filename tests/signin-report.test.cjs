@@ -80,3 +80,24 @@ test('callers are named by what they run on', () => {
   assert.equal(kindOf('curl/8.7.1'), 'Script');
   assert.equal(kindOf(''), 'No browser');
 });
+
+test('the Workshop display key signs in GET /api/display/feed only', { timeout: 30000 }, async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-signin-display-'));
+  const DKEY = 'wsd_' + 'a'.repeat(48);
+  fs.writeFileSync(path.join(dataDir, 'workshop-display-key.sha256'), crypto.createHash('sha256').update(DKEY).digest('hex'));
+  const off = 'http://127.0.0.1:9';
+  const { child, ready } = spawnAppServer({ env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off, GRIDCRAFT_URL: off } });
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+  const base = await ready;
+  const display = (extra = {}) => viaCaddy('10.0.0.124', 'ESP32HTTPClient', extra);
+  assert.equal((await fetch(`${base}/api/display/feed`, { headers: display({ 'X-LocalAI-Display-Key': DKEY }) })).status, 200);
+  // The same key on another route is not signed in, and a wrong key on the feed isn't either.
+  await fetch(`${base}/api/runs?limit=1`, { headers: display({ 'X-LocalAI-Display-Key': DKEY }) });
+  await fetch(`${base}/api/display/feed`, { headers: display({ 'X-LocalAI-Display-Key': 'wsd_wrong' }) });
+  const report = await (await fetch(`${base}/api/signin/report`)).json();
+  assert.deepEqual(report.callers.map(c => [c.kind, c.count]), [['Workshop display', 2]]);
+  assert.deepEqual(report.callers[0].lastPath, '/api/display/feed');
+});

@@ -85,8 +85,16 @@ Format rules:
 - `tone` is one of `ok`, `attention`, `warning`, `busy` or `info`.
 - `imageUrl` asks ComfyUI for a JPEG (`preview=jpeg;80`), because the display decodes only JPEG. It's full size, so the display scales it down while decoding.
 
-Like `/api/glance` it needs no sign-in on the home network, uses no model, and answers in well under a second (the
-weather has a 3 s limit). This is the one request that goes the other way, from the display to Local AI. The display
+It uses no model and answers in well under a second (the weather has a 3 s limit).
+
+**Display key.** The display signs in for this route alone with its own key, sent as `X-LocalAI-Display-Key`, so its
+idle screen keeps working when sign-in starts refusing unsigned callers. The key is good for nothing else.
+- `host/workshop-display/set-key.sh` (on the Mac) makes the key and keeps it in the login Keychain (`localai-display-key`).
+- The script writes only the key's SHA-256 to the appliance (`/data/workshop-display-key.sha256`, over ssh). `--new`
+  replaces the key.
+- The display gets the key from its portal setting (Workshop OS 12.3.10 and later).
+- Until a key is set, the route still answers, because sign-in only reports for now. Health › Sign-in lists the display as
+  "Workshop display". This is the one request that goes the other way, from the display to Local AI. The display
 reaches it through the HTTPS front, `https://10.0.0.21`, and checks the certificate against Local AI's CA.
 
 ## Printer status (read-only token)
