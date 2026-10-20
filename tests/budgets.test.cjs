@@ -67,12 +67,12 @@ const KB = 1024;
 // main measured 276.3 KB; this 277.3 KB.
 // 2026-10-19: 278 → 280 KB for sign-in's report-only step: signin-report.js (1.1 KB, Health's list of callers that would
 // be refused), its card (index.html +0.1 KB) and the cookie renewal on load (app.js +0.05 KB). 279.2 KB measured.
-// 2026-10-19: 280 → 281 KB (and ui.js 110 → 111 KB) for Agent World's layer hook: LocalAIAgentWorld.addLayer (reserved
+// 2026-10-19: 280 → 281 KB for #350, #351 and #353 together (280.3 KB measured on main 335d452): Home's watchdog rows
+// (+0.1 KB) and the 3-line loader for Agent World watch mode (+0.3 KB); watch mode itself loads on first use.
+// 2026-10-19: 281 → 282 KB (and ui.js 110 → 111 KB) for Agent World's layer hook: LocalAIAgentWorld.addLayer (reserved
 // tiles, ground painted into the cache by state, per-frame overlays, taps, the City services list) and the loader that
 // fetches /aw/*.js the first time the city is on screen. Those modules are not in the shell and have their own budget
-// below, so the landmarks, Claude Yard and worker talk never add to every page load (ui.js +1.0 KB; 280.7 KB measured).
-// 2026-10-19: 281 → 282 KB: main already measured 280.3 KB, over its own 280, after Agent World watch mode (#351) and
-// the display feed (#352); with the layer hook it is 281.3 KB (ui.js 110.8 KB).
+// below, so the landmarks, Claude Yard and worker talk never add to every page load (ui.js +1.0 KB; 281.3 KB measured).
 const TOTAL = 282 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
