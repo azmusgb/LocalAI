@@ -35,6 +35,14 @@ test('text is cut to what fits a 480x320 card', () => {
   assert.ok(c.text.endsWith('…'));
 });
 
+test('the image card says when it was made, when known', () => {
+  const at = 1792500000;
+  const withAt = buildFeed({ needs: { count: 0 }, image: { title: 'A fox', imageUrl: '/api/images/view?filename=a.png', at } });
+  assert.equal(withAt.cards.find((c) => c.kind === 'image').at, at);
+  const without = buildFeed({ needs: { count: 0 }, image: { title: 'A fox', imageUrl: '/api/images/view?filename=a.png' } });
+  assert.equal('at' in without.cards.find((c) => c.kind === 'image'), false);
+});
+
 test('image links ask ComfyUI for a JPEG; anything else is refused', () => {
   assert.equal(jpegUrl('/api/images/view?filename=a.png&subfolder=&type=output'), '/api/images/view?filename=a.png&subfolder=&type=output&preview=jpeg%3B80');
   assert.equal(jpegUrl('https://evil.example/x.png'), null);
