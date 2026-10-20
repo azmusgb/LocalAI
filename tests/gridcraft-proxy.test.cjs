@@ -214,6 +214,7 @@ test('a GridCraft request that takes longer than fetch allows still gets its ans
   await new Promise(r => setTimeout(r, 50));
   const down = await (await post('/api/gridcraft/run', { prompt: 'x', mode: 'read' })).json();
   assert.match(down.error, /^GridCraft bridge unavailable/);
+  assert.deepEqual((await (await fetch(`${base}/api/gridcraft/runs`)).json()).items.map(x => x.status), ['done'], 'a request that never reached the bridge leaves no record');
   assert.doesNotMatch(down.error, /fetch failed|Ollama/);
 });
 

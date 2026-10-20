@@ -99,6 +99,8 @@ function createGridcraft(ctx) {
       if (ok) recordActivity('gridcraft', 'GridCraft request', prompt.slice(0, 180), { durationSec: data.durationSec, mode });
       json(res, r.status, { ok, answer: run.answer, ...(ok ? {} : { error: data.error, reason: data.reason }), durationSec: data.durationSec, run });
     } catch (e) {
+      // The bridge wasn't there at all: the request never ran, so it leaves no record.
+      if (e?.code === 'MODEL_UNREACHABLE') { storage.deleteSetting(GRIDCRAFT_RUN_PREFIX + pending.id); recorded = true; }
       bridgeFailure(res, e);
     } finally {
       // The bridge never answered (time-out, connection lost): the request may still have changed the workbook.
