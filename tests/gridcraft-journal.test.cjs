@@ -181,6 +181,43 @@ async def scenario(name):
         except O.OpError as e: dirty = [e.status, str(e)]
         return {'clean': clean, 'dirty': dirty}
 
+    if name == 'session':
+        import contextlib, time
+        opened, mode = [], {'fail': None, 'hang': False}
+        @contextlib.asynccontextmanager
+        async def open_client():
+            if mode['fail'] == 'connect': raise OSError('control port refused')
+            opened.append(1)
+            class Client:
+                async def call_tool(self, tool, args):
+                    if mode['hang']: await asyncio.sleep(10)
+                    if mode['fail'] == 'before' and tool == 'inspect_workbook': raise BrokenPipeError('pipe closed')
+                    if mode['fail'] == 'after' and tool == 'set_cell':
+                        await f.call(tool, args); raise BrokenPipeError('pipe closed')
+                    return await f.call(tool, args)
+            yield Client()
+        session = O.Session(open_client, idle=0.3)
+        def go(op, req, timeout=5):
+            try: return ['ok', session.run(op, req, timeout)]
+            except O.OpError as e: return ['OpError', e.status]
+            except (O.Retry, O.Lost, TimeoutError) as e: return [type(e).__name__]
+        out = {}
+        out['view'] = go('workbook', {})[0]
+        out['edit'] = go('set_cell', {'sheet': 'Sales', 'cell': 'B2', 'input': '7'})[0]
+        out['missing'] = go('workbook', {'sheet': 'Nope'})
+        out['bad'] = go('set_cell', {'sheet': 'Sales', 'cell': 'b2', 'input': '7'})
+        out['reused'] = len(opened)
+        mode['fail'] = 'before'; out['before'] = go('workbook', {})
+        mode['fail'] = 'after'; out['after'] = go('set_cell', {'sheet': 'Sales', 'cell': 'B3', 'input': '8'})
+        mode['fail'] = 'connect'; out['connect'] = go('workbook', {})
+        mode['fail'] = None; out['again'] = go('workbook', {})[0]
+        out['opened'] = len(opened)
+        time.sleep(0.6); go('workbook', {}); out['after_idle'] = len(opened)
+        mode['hang'] = True; out['hang'] = go('workbook', {}, timeout=0.3)
+        mode['hang'] = False; out['recovered'] = go('workbook', {})[0]; out['last'] = len(opened)
+        out['folder'] = 'items' in session.run('workbooks', {}, 5)
+        return out
+
 class BigFake(Fake):
     async def call(self, name, args):
         if name == 'inspect_workbook':
@@ -317,4 +354,23 @@ test('opening another workbook waits until the open one has no unsaved changes',
   const { 'open-dirty': r } = run('open-dirty');
   assert.deepEqual(r.clean, { file: 'Budget.xlsx' });
   assert.deepEqual(r.dirty, [409, 'The open workbook has unsaved changes. Keep or discard them first, then open another workbook.']);
+});
+
+test('the bridge keeps one GridCraft connection for ops, and never repeats an op that may have changed the workbook', { skip, timeout: 30000 }, () => {
+  const { session: r } = run('session');
+  assert.equal(r.view, 'ok');
+  assert.equal(r.edit, 'ok');
+  assert.deepEqual(r.missing, ['OpError', 404]);
+  assert.deepEqual(r.bad, ['OpError', 400], 'a bad cell is refused before GridCraft is asked');
+  assert.equal(r.reused, 1, 'one connection for every op so far');
+  assert.deepEqual(r.before, ['Retry'], 'broken before any write: safe to run again');
+  assert.deepEqual(r.after, ['Lost'], 'broken after the write: never run twice');
+  assert.deepEqual(r.connect, ['Retry']);
+  assert.equal(r.again, 'ok');
+  assert.equal(r.opened, 3, 'a new connection after each failure');
+  assert.equal(r.after_idle, 4, 'an idle connection is closed and opened again');
+  assert.deepEqual(r.hang, ['TimeoutError']);
+  assert.equal(r.recovered, 'ok', 'a hung connection is dropped and the next op gets a new one');
+  assert.equal(r.last, 5);
+  assert.equal(r.folder, true, 'listing the folder needs no connection');
 });

@@ -43,8 +43,12 @@ Apply relied on the model choosing to save. Now the agent saves after an Apply r
 and no save. An Apply request that failed or was stopped with unsaved changes waits for Keep or Discard like a Review
 request. Opening another workbook is refused while the open one has unsaved changes.
 
-## Later (from the same critique)
+## Next PR (from the same critique)
 
-- One persistent GridCraft MCP connection in the bridge for grid views and cell edits.
-- Drop "calculate" and "make" from the agent's action words, and skip the completion check for read-style questions.
-- Send each tool result to the model once, capped in size.
+5. **One kept GridCraft connection for ops.** `gridcraft_ops.Session` keeps one MCP connection in the bridge for grid
+   views, cell edits, Keep, Discard and Open. An op whose connection broke before it changed anything runs again as
+   its own process; one that broke after a change answers 502 and never runs twice.
+6. **Questions skip the change check.** "calculate" is no longer an action word, and a request that opens like a
+   question ("What…", "How many…") gets no ACTION COMPLETION CHECK turn. "make" stays: "make a chart" is a change.
+7. **Tool results reach the model once, cut to size.** The structured copy only, at most 6,000 characters with a note
+   to read less; the answer check still reads the full result.

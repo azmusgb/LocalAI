@@ -61,16 +61,45 @@ CORE_TOOL_NAMES = {
 }
 
 
+# "calculate" is not here: a total or average is worked out with evaluate_formula and stated, not written.
 ACTION_WORDS = (
     "create", "add", "write", "set", "change", "update", "modify", "format",
     "insert", "delete", "remove", "rename", "move", "copy", "sort", "filter",
-    "calculate", "populate", "fill", "clear", "save", "make"
+    "populate", "fill", "clear", "save", "make"
 )
+# A request that opens like a question ("What is the total of sales?", "How many rows have a sale?") asks for an
+# answer even when a word like "sales" or "set" appears in it. "Can you add…" is a request to change, so can, could
+# and would are not here.
+QUESTION_START = re.compile(r"^\s*(what|what's|whats|how|which|who|when|where|why|is|are|does|do|did|has|have)\b", re.I)
 
 
 def looks_like_action_request(text: str) -> bool:
+    if QUESTION_START.match(text or ""):
+        return False
     lowered = text.lower()
     return any(re.search(rf"\b{re.escape(word)}\b", lowered) for word in ACTION_WORDS)
+
+
+# What a tool result costs the model: the structured copy GridCraft sends is usually its text block again, so the model
+# gets one of them, cut at this length (about 1,700 tokens; the fast model's window is 4,096).
+MAX_TOOL_RESULT_CHARS = 6000
+
+
+def model_text(result_text: str, limit: int = MAX_TOOL_RESULT_CHARS) -> str:
+    """The tool result as the model sees it: one copy of the data, cut with a note when it is too long. The full result
+    still goes to the answer check (Reads)."""
+    try:
+        data = json.loads(result_text)
+    except ValueError:
+        data = None
+    if isinstance(data, dict) and data.get("structured_content") is not None and data.get("content"):
+        data = {k: v for k, v in data.items() if k != "content"}
+        result_text = json.dumps(data, ensure_ascii=False, default=str)
+    if len(result_text) <= limit:
+        return result_text
+    more = len(result_text) - limit
+    return (result_text[:limit] + f" … [cut: {more} more characters. Read a smaller range, or use evaluate_formula for "
+            "totals and counts.]")
 
 
 SYSTEM_PROMPT = """You are a local spreadsheet agent controlling GridCraft through MCP tools.
@@ -488,7 +517,7 @@ async def run_agent_turn(
                 {
                     "role": "tool",
                     "tool_call_id": call.id,
-                    "content": result_text,
+                    "content": model_text(result_text),
                 }
             )
 

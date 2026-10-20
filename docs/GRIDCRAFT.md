@@ -91,6 +91,8 @@ Bridge environment (`host/gridcraft-bridge.py`):
 | `GRIDCRAFT_WORKBOOKS_DIR` | the folder of `GRIDCRAFT_WORKBOOK` | Folder the Spreadsheets workbook menu lists and opens from (no subfolders) |
 | `GRIDCRAFT_RUN_TIMEOUT` | `300` (seconds) | Per-request limit; the agent stops itself 30 s before it (`--time-limit`), the appliance waits 330 s |
 | `GRIDCRAFT_ALLOWED_ORIGINS` | `http://10.0.0.21:3080,http://127.0.0.1:3080,http://localhost:3080` | CORS allow-list |
+| `GRIDCRAFT_OPS_SESSION` | `1` | `0` runs every op (below) as its own process instead of on one kept GridCraft connection |
+| `GRIDCRAFT_BRIDGE_RELOAD` | `1` | The bridge checks its code (`gridcraft-bridge.py`, `gridcraft_ops.py`, `gridcraft_journal.py`) every `GRIDCRAFT_BRIDGE_RELOAD_EVERY` seconds (60) and, once a deploy changed it and no request is running, starts its new version itself; `0` turns that off |
 | `GRIDCRAFT_BRIDGE_LOG` | unset (stdout) | Log file, rotated at 2 MB × 3; the installer sets `gridcraft-bridge.log` |
 
 Startup crashes land in `gridcraft-bridge.crash.log` next to the log.
@@ -149,7 +151,11 @@ tool result marked `ERROR` marks its step failed. Only the newest request is kep
 stay until the next request starts. The Spreadsheets page polls it every 1.5 s while a request runs and lists the
 newest six steps under "GridCraft is working on it".
 
-Without a model, through `host/gridcraft-agent/gridcraft_ops.py`:
+Without a model, through `host/gridcraft-agent/gridcraft_ops.py`. The bridge keeps one GridCraft connection open for
+these (`gridcraft_ops.Session`, closed after 2 idle minutes or a failed call), so a grid view or cell edit no longer
+starts a Python process and a `gridcraft-cli` process each time. When that connection fails before an op changed
+anything, the op runs again as its own process, as before; when it fails after a change, the op answers 502 and is
+never run twice. A bridge Python without the agent's packages, or `GRIDCRAFT_OPS_SESSION=0`, uses a process per op.
 
 - `GET /workbook?sheet=&range=`: title, file name (never the host path), unsaved flag, sheets, and up to 100 rows by 40
   columns of the chosen sheet as display text (`values`), formulas (`formulas`) and computed values (`raw`).
@@ -213,6 +219,11 @@ not listening, the bridge launches it with `WGPU_BACKEND=vulkan` and the configu
 `sales` sample if the workbook does not exist), then runs the
 agent once with `--once`. The agent's model choice, including the switch to the 32k-context model for long
 requests, is described in the [agent README](../host/gridcraft-agent/README.md).
+
+Deploys update `C:\LocalAI\repo` and never restart the bridge. The agent and the ops helper run from the repo for
+each request, so they change with the deploy; the bridge itself restarts on its own (above) since 20 Oct 2026. A
+bridge started before then needs one restart to get that: sign out and in on the PC, or re-run the installer.
+`GET /health` reports `code` (a hash of the bridge's code) and `startedAt`.
 
 ## Security boundary
 
