@@ -99,6 +99,12 @@ const watchdog = require('./watchdog').createWatchdog({
     { path: DATA_DIR, name: 'data', label: 'Local AI data' }
   ]
 });
+// The Workshop display's messages (app/display-messages.js): the notification kinds the owner picked also show there.
+const displayMessages = require('./display-messages').createDisplayMessages({ storage, now: clockNow });
+{
+  const notifyPhones = notifier.notify;
+  notifier.notify = event => { displayMessages.fromNotification(event); return notifyPhones(event); };
+}
 // LOCALAI_NOTIFY_LOG (tests only): also append each notify() call as a JSON line to this file.
 if (process.env.LOCALAI_NOTIFY_LOG) {
   const realNotify = notifier.notify;
@@ -115,6 +121,10 @@ const displayKey = require('./route-keys').createRouteKey({ dataDir: DATA_DIR, f
 const signIn = require('./signin').createSignIn({ storage, signedIn: req => !!claudeChat.deviceFor(req) || claudeChat.macAuthorized(req), routeKeys: {
   '/api/display/feed': req => displayKey.authorized(req),
   '/api/display/ask': req => displayKey.authorized(req),
+  '/api/display/events': req => displayKey.authorized(req),
+  '/api/display/approvals': req => displayKey.authorized(req),
+  '/api/display/approvals/decide': req => displayKey.authorized(req),
+  '/api/display/heartbeat': req => displayKey.authorized(req),
   // The feed's latest-image card links here; the display fetches the JPEG with its key.
   '/api/images/view': req => displayKey.authorized(req)
 } });
@@ -660,17 +670,106 @@ async function feedWeatherText() {
   feedWeather = { at: Date.now(), text };
   return text;
 }
-async function apiDisplayFeed(req, res) {
+// Runs the Workshop display shows as finished: not images (they have their own card), at least 30 s long (as phone
+// notifications), finished within `windowMs`, newest first.
+function displayDoneRuns(windowMs) {
+  const since = Date.now() - windowMs;
+  return ['completed', 'failed'].flatMap(status => runLedger.list({ status, limit: 30 }))
+    .filter(r => r.type !== 'image' && Date.parse(r.finishedAt || '') >= since && Date.parse(r.finishedAt) - Date.parse(r.startedAt || r.createdAt) >= 30000)
+    .sort((x, y) => Date.parse(y.finishedAt) - Date.parse(x.finishedAt));
+}
+async function displayFeedNow() {
+  const snapshot = await getCapabilitiesSnapshot();
+  const health = glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION });
+  const home = homeNeedsYou();
+  const running = ['running', 'streaming'].flatMap(status => runLedger.list({ status, limit: 20 }));
+  const needs = glance.needsYouSummary({ approvals: home.approvals.length, failed: home.failed.length }, health);
+  const images = runLedger.list({ type: 'image', status: 'completed', limit: 12 })
+    .filter(r => r.output?.images?.[0]?.imageUrl).slice(0, 6)
+    .map(r => { const t = Date.parse(r.finishedAt || r.updatedAt || ''); return { title: r.title, imageUrl: displayFeed.jpegUrl(r.output.images[0].imageUrl), at: Number.isFinite(t) ? Math.floor(t / 1000) : undefined }; })
+    .filter(i => i.imageUrl);
+  const disks = watchdog.summary().hostDisks || [];
+  const disk = disks.filter(d => d.totalBytes > 0).sort((x, y) => x.freeBytes / x.totalBytes - y.freeBytes / y.totalBytes)[0] || null;
+  const feed = displayFeed.buildFeed({ needs, watch: watchdog.list(), running, done: displayDoneRuns(2 * 3600 * 1000), weather: await feedWeatherText(), images, disk });
+  feed.messages = displayMessages.recent();
+  return feed;
+}
+// POST /api/display/notify {title, text, tone?, chime?, action?}: a banner on the Workshop display (app/display-messages.js).
+async function apiDisplayNotify(req, res) {
   try {
-    const snapshot = await getCapabilitiesSnapshot();
-    const health = glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION });
-    const home = homeNeedsYou();
-    const running = ['running', 'streaming'].flatMap(status => runLedger.list({ status, limit: 20 }));
-    const needs = glance.needsYouSummary({ approvals: home.approvals.length, failed: home.failed.length }, health);
-    const img = runLedger.list({ type: 'image', status: 'completed', limit: 5 }).find(r => r.output?.images?.[0]?.imageUrl);
-    const madeAt = Date.parse(img?.finishedAt || img?.updatedAt || '');
-    const image = img ? { title: img.title, imageUrl: displayFeed.jpegUrl(img.output.images[0].imageUrl), at: Number.isFinite(madeAt) ? Math.floor(madeAt / 1000) : undefined } : null;
-    json(res, 200, displayFeed.buildFeed({ needs, watch: watchdog.list(), running, weather: await feedWeatherText(), image }));
+    const m = displayMessages.post(await readBody(req), 'api');
+    json(res, 200, { ok: true, seq: m.seq });
+  } catch (e) { json(res, e.statusCode || 400, { error: String(e.message || e) }); }
+}
+// GET/POST /api/display/alerts: which notification kinds also show on the display, the chime, and its quiet hours.
+async function apiDisplayAlerts(req, res) {
+  try {
+    if (req.method === 'POST') return json(res, 200, displayMessages.updateSettings(await readBody(req)));
+    json(res, 200, { ...displayMessages.settings(), kindsAvailable: require('./display-messages').KINDS });
+  } catch (e) { json(res, 400, { error: String(e.message || e) }); }
+}
+// Approvals on the Workshop display (docs/WORKSHOP-DISPLAY.md › Approvals): it lists what waits, and may decide only
+// an approval at or below the risk the owner allows there (setting display:approvals, {maxRisk: none|low|medium};
+// low by default). A change waiting on its approval (code, deploys) is never decided from the display. Every decision
+// is in the activity log as the Workshop display's.
+const RISKS = ['none', 'low', 'medium'];
+const displayMaxRisk = () => { const r = storage.readSetting('display:approvals', null)?.maxRisk; return RISKS.includes(r) ? r : 'low'; };
+const displayMayDecide = a => a.status === 'pending' && !a.meta?.changeId && displayMaxRisk() !== 'none' && RISKS.indexOf(a.risk || 'medium') > 0 && RISKS.indexOf(a.risk || 'medium') <= RISKS.indexOf(displayMaxRisk());
+async function apiDisplayApprovals(req, res) {
+  try {
+    const items = homeNeedsYou().approvals.slice(0, 8).map(a => ({
+      id: a.id, title: displayFeed.cut(String(a.threadTitle || a.title || 'Approval').replace(/\s+chg-\d+-[0-9a-f]+$/, ''), 60),
+      risk: a.risk || (a.status === 'awaiting_approval' ? 'high' : 'medium'), at: Math.floor(Date.parse(a.createdAt || a.updatedAt || '') / 1000) || undefined,
+      decidable: a.status === 'pending' && displayMayDecide(a)
+    }));
+    json(res, 200, { items, maxRisk: displayMaxRisk() });
+  } catch (e) { json(res, 500, { error: String(e.message || e) }); }
+}
+async function apiDisplayApprovalDecide(req, res) {
+  try {
+    const b = await readBody(req);
+    if (!['approved', 'rejected'].includes(b?.decision)) return json(res, 400, { error: 'decision must be approved or rejected' });
+    const items = approvalStore();
+    const i = items.findIndex(x => x.id === b.id);
+    if (i < 0) return json(res, 404, { error: 'Approval not found' });
+    if (!displayMayDecide(items[i])) return json(res, 403, { error: 'Decide this one on your phone or in Local AI' });
+    items[i].status = b.decision;
+    items[i].updatedAt = nowIso();
+    items[i].meta = { ...items[i].meta, decidedBy: 'Workshop display' };
+    saveStore(APPROVALS_STORE, items, 500);
+    recordActivity('approval', `Approval ${b.decision} on the Workshop display`, items[i].title, { approvalId: items[i].id, by: 'Workshop display' });
+    json(res, 200, { ok: true, status: items[i].status });
+  } catch (e) { json(res, 400, { error: String(e.message || e) }); }
+}
+// POST /api/display/heartbeat: the display's own state every few minutes (version, uptime, Wi-Fi, memory, camera), for
+// GET /api/watch's display section. Unknown fields are dropped.
+async function apiDisplayHeartbeat(req, res) {
+  try {
+    const b = await readBody(req, 4096);
+    const num = v => (Number.isFinite(v) ? v : null);
+    const beat = { at: new Date(clockNow()).toISOString(), version: String(b.version || '').slice(0, 24), sourceSha: String(b.sourceSha || '').slice(0, 40), uptimeS: num(b.uptimeS), rssi: num(b.rssi), heapFree: num(b.heapFree), psramFree: num(b.psramFree), camera: String(b.camera || '').slice(0, 24) };
+    storage.writeSetting('display:heartbeat', beat);
+    json(res, 200, { ok: true });
+  } catch (e) { json(res, 400, { error: String(e.message || e) }); }
+}
+async function apiDisplayFeed(req, res) {
+  try { json(res, 200, await displayFeedNow()); } catch (e) { json(res, 500, { error: String(e.message || e) }); }
+}
+
+// GET /api/display/events?since=<sig>: the display's long poll (Workshop OS 12.6). Answers {sig} at once when the
+// feed's cards are not the ones `since` describes, else when they change, else after 25 s; the display then fetches
+// the feed. The signature leaves out the times, so "12 min ago" ticking over is not news.
+async function apiDisplayEvents(req, res, urlObj) {
+  const since = String(urlObj.searchParams.get('since') || '').slice(0, 64);
+  const deadline = Date.now() + 25000;
+  let closed = false;
+  res.on('close', () => { closed = true; }); // the display gave up (or asked something else)
+  try {
+    for (;;) {
+      const sig = displayFeed.signature(await displayFeedNow());
+      if (sig !== since || Date.now() >= deadline || closed) return closed ? undefined : json(res, 200, { sig, changed: sig !== since });
+      await new Promise(r => setTimeout(r, 1500));
+    }
   } catch (e) { json(res, 500, { error: String(e.message || e) }); }
 }
 
@@ -692,7 +791,14 @@ async function apiDisplayAsk(req, res, urlObj) {
       const health = glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION });
       const watch = watchdog.list();
       answer = health.speech + (watch.length ? ` Also: ${watch.map(w => w.title).join('; ')}.` : '');
-    } else return json(res, 400, { error: 'q must be needs, running or health' });
+    } else if (q === 'today') {
+      const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+      answer = displayFeed.todaySentence(displayDoneRuns(Date.now() - midnight.getTime()).filter(r => r.status === 'completed'));
+    } else if (q === 'next') {
+      answer = displayFeed.nextSentence({ approvals: homeNeedsYou().approvals.map(a => ({ title: String(a.threadTitle || a.title || '').replace(/\s+chg-\d+-[0-9a-f]+$/, '') || 'approval' })), queued: runLedger.list({ status: 'queued', limit: 20 }) });
+    } else if (q === 'weather') {
+      answer = (await feedWeatherText()) || 'Weather needs your home location: set it in Local AI under Health, Home location.';
+    } else return json(res, 400, { error: 'q must be needs, running, health, today, next or weather' });
     json(res, 200, { question: q, answer: displayFeed.cut(answer, 200) });
   } catch (e) { json(res, 500, { error: String(e.message || e) }); }
 }
@@ -1718,9 +1824,15 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/claude/priorities') return await apiClaudePriorities(req,res,urlObj);
     if (req.method === 'POST' && p === '/api/claude/events') return await apiClaudeEvents(req,res);
     if (req.method === 'POST' && p === '/api/watch/heartbeat') return await apiWatchHeartbeat(req,res);
-    if (req.method === 'GET' && p === '/api/watch') return json(res, 200, watchdog.summary());
+    if (req.method === 'GET' && p === '/api/watch') return json(res, 200, { ...watchdog.summary(), display: storage.readSetting('display:heartbeat', null) });
     if (req.method === 'GET' && p === '/api/display/feed') return await apiDisplayFeed(req,res);
     if (req.method === 'GET' && p === '/api/display/ask') return await apiDisplayAsk(req,res,urlObj);
+    if (req.method === 'GET' && p === '/api/display/events') return await apiDisplayEvents(req,res,urlObj);
+    if (req.method === 'POST' && p === '/api/display/notify') return await apiDisplayNotify(req,res);
+    if (req.method === 'GET' && p === '/api/display/approvals') return await apiDisplayApprovals(req,res);
+    if (req.method === 'POST' && p === '/api/display/approvals/decide') return await apiDisplayApprovalDecide(req,res);
+    if (req.method === 'POST' && p === '/api/display/heartbeat') return await apiDisplayHeartbeat(req,res);
+    if ((req.method === 'GET' || req.method === 'POST') && p === '/api/display/alerts') return await apiDisplayAlerts(req,res);
     if (req.method === 'POST' && p === '/api/claude/findings') return await apiClaudeFindings(req,res);
     if (req.method === 'POST' && p === '/api/claude/findings/vote') return await apiClaudeVote(req,res);
     if (req.method === 'POST' && p === '/api/claude/findings/decision') return await apiClaudeDecision(req,res);

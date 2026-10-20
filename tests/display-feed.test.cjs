@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { once } = require('node:events');
-const { buildFeed, jpegUrl } = require('../app/display-feed');
+const { buildFeed, jpegUrl, todaySentence, nextSentence } = require('../app/display-feed');
 const { spawnAppServer } = require('./spawn-server.cjs');
 
 test('nothing to report is one All clear card', () => {
@@ -43,6 +43,42 @@ test('the image card says when it was made, when known', () => {
   assert.equal('at' in without.cards.find((c) => c.kind === 'image'), false);
 });
 
+test('feed v2: every card has an id and the question a tap asks; finished work, the gallery and the fullest disk', () => {
+  const now = Date.parse('2026-10-20T14:00:00Z');
+  const f = buildFeed({
+    now,
+    needs: { count: 0 },
+    done: [{ id: 'r1', title: 'Research NAS drives\nmore', status: 'completed', finishedAt: '2026-10-20T13:48:00Z' }],
+    images: [{ title: 'A fox', imageUrl: '/api/images/view?filename=fox.png', at: 1792500000 }, { title: 'A cat', imageUrl: '/api/images/view?filename=cat.png' }],
+    disk: { label: 'C:', freeBytes: 80e9, totalBytes: 1000e9 }
+  });
+  assert.equal(f.v, 2);
+  assert.deepEqual(f.cards.map((c) => [c.kind, c.ask ?? null]), [['needs', 'needs'], ['done', 'today'], ['image', null], ['disk', 'health']]);
+  assert.ok(f.cards.every((c) => c.id && c.id.length <= 48));
+  assert.equal(f.cards[1].text, 'Research NAS drives · 12 min ago');
+  assert.equal(f.cards[2].id, 'image-1792500000');
+  assert.equal(f.cards[3].tone, 'attention');
+  assert.equal(f.cards[3].percent, 92);
+  assert.deepEqual(f.images.map((i) => i.title), ['A fox', 'A cat']);
+  assert.equal('at' in f.images[1], false);
+  const failed = buildFeed({ now, needs: { count: 0 }, done: [{ id: 'r2', title: 'Build', status: 'failed', finishedAt: '2026-10-20T13:00:00Z' }] });
+  assert.deepEqual([failed.cards[1].title, failed.cards[1].tone], ["Didn't finish", 'warning']);
+});
+
+test('the signature ignores times and "ago" words, and changes with the cards', () => {
+  const { signature } = require('../app/display-feed');
+  const base = { needs: { count: 0 }, done: [{ id: 'r', title: 'T', status: 'completed', finishedAt: '2026-10-20T13:48:00Z' }] };
+  assert.equal(signature(buildFeed({ ...base, now: Date.parse('2026-10-20T14:00:00Z') })), signature(buildFeed({ ...base, now: Date.parse('2026-10-20T14:30:00Z') })));
+  assert.notEqual(signature(buildFeed(base)), signature(buildFeed({ ...base, needs: { count: 1, speech: 'Needs you: 1 approval.' } })));
+});
+
+test('ask answers for today and next, with no model', () => {
+  assert.equal(todaySentence([]), 'Nothing has finished yet today.');
+  assert.equal(todaySentence([{ title: 'A' }, { title: 'B' }]), '2 things finished today: A; B.');
+  assert.equal(nextSentence({}), 'Nothing is waiting on you or queued.');
+  assert.equal(nextSentence({ approvals: [{ title: 'Deploy' }], queued: [{ title: 'Render' }, { title: 'X' }] }), 'An approval waits: Deploy. 2 queued: Render; X.');
+});
+
 test('image links ask ComfyUI for a JPEG; anything else is refused', () => {
   assert.equal(jpegUrl('/api/images/view?filename=a.png&subfolder=&type=output'), '/api/images/view?filename=a.png&subfolder=&type=output&preview=jpeg%3B80');
   assert.equal(jpegUrl('https://evil.example/x.png'), null);
@@ -66,7 +102,7 @@ test('GET /api/display/feed answers cards with no model and no setup', { timeout
   for (const c of feed.cards) { assert.ok([...c.title].length <= 24); assert.ok([...c.text].length <= 90); }
 });
 
-test('GET /api/display/ask answers the three fixed questions, and refuses others', { timeout: 30000 }, async (t) => {
+test('GET /api/display/ask answers the six fixed questions, and refuses others', { timeout: 30000 }, async (t) => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-ask-'));
   const dead = 'http://127.0.0.1:9';
   const { child, ready } = spawnAppServer({ env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: dead, SEARXNG_URL: dead, COMFY_URL: dead, N8N_URL: dead, PROXY_URL: dead, MAC_AI_HOME_URL: dead, MAC_DSH_URL: dead } });
@@ -75,7 +111,7 @@ test('GET /api/display/ask answers the three fixed questions, and refuses others
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
   const base = await ready;
-  for (const q of ['needs', 'running', 'health']) {
+  for (const q of ['needs', 'running', 'health', 'today', 'next', 'weather']) {
     const r = await fetch(`${base}/api/display/ask?q=${q}`);
     assert.equal(r.status, 200, q);
     const j = await r.json();
@@ -84,4 +120,32 @@ test('GET /api/display/ask answers the three fixed questions, and refuses others
   }
   assert.equal((await (await fetch(`${base}/api/display/ask?q=running`)).json()).answer, 'Nothing is running right now.');
   assert.equal((await fetch(`${base}/api/display/ask?q=delete-everything`)).status, 400);
+  // The long poll answers at once when the display's signature is old, with the current one.
+  const ev = await (await fetch(`${base}/api/display/events?since=old`)).json();
+  assert.equal(ev.changed, true);
+  assert.match(ev.sig, /^[0-9a-f]{16}$/);
+  // A message posted for the display is in the feed, and changes the long poll's signature.
+  const posted = await fetch(`${base}/api/display/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Render done', text: 'The fox', action: { type: 'show', page: 'image' } }) });
+  assert.equal(posted.status, 200);
+  const feed = await (await fetch(`${base}/api/display/feed`)).json();
+  assert.deepEqual(feed.messages.map((m) => [m.title, m.action.page]), [['Render done', 'image']]);
+  assert.equal((await (await fetch(`${base}/api/display/events?since=${ev.sig}`)).json()).changed, true);
+  assert.equal((await fetch(`${base}/api/display/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'no title' }) })).status, 400);
+
+  // Approvals: the display may decide a low-risk one, never a higher one.
+  const post = (path, body) => fetch(`${base}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const low = (await (await post('/api/approvals/create', { title: 'Restart the n8n container', risk: 'low' })).json()).item;
+  const high = (await (await post('/api/approvals/create', { title: 'Delete old backups', risk: 'high' })).json()).item;
+  assert.ok(low && high, "approvals were created"); {
+    const list = (await (await fetch(`${base}/api/display/approvals`)).json()).items;
+    assert.equal(list.find((a) => a.id === low.id).decidable, true);
+    assert.equal(list.find((a) => a.id === high.id).decidable, false);
+    assert.equal((await post('/api/display/approvals/decide', { id: high.id, decision: 'approved' })).status, 403);
+    const ok = await post('/api/display/approvals/decide', { id: low.id, decision: 'approved' });
+    assert.equal(ok.status, 200);
+    assert.equal((await ok.json()).status, 'approved');
+  }
+  assert.equal((await post('/api/display/heartbeat', { version: '12.6.0', uptimeS: 42, rssi: -55, extra: 'dropped' })).status, 200);
+  const watch = await (await fetch(`${base}/api/watch`)).json();
+  assert.deepEqual([watch.display.version, watch.display.uptimeS, 'extra' in watch.display], ['12.6.0', 42, false]);
 });
