@@ -636,6 +636,36 @@ function homeNeedsYou() {
   return { approvals: [...awaiting, ...approvals], failed };
 }
 
+// Cards for the Workshop display's idle screen (app/display-feed.js, docs/WORKSHOP-DISPLAY.md › Local AI cards).
+// No model calls; the weather is the home location's, cached for 15 minutes.
+const displayFeed = require('./display-feed');
+let feedWeather = { at: 0, text: null };
+async function feedWeatherText() {
+  if (Date.now() - feedWeather.at < 15 * 60 * 1000) return feedWeather.text;
+  const home = voiceHome();
+  let text = null;
+  if (Number.isFinite(home.lat) && Number.isFinite(home.lon)) {
+    try {
+      const f = await Promise.race([weather.forecast(home.lat, home.lon, { timeZone: home.timeZone }), new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 3000))]);
+      text = weather.weatherSentence(f, { when: 'now', place: home.place }) || null;
+    } catch { text = feedWeather.text; }
+  }
+  feedWeather = { at: Date.now(), text };
+  return text;
+}
+async function apiDisplayFeed(req, res) {
+  try {
+    const snapshot = await getCapabilitiesSnapshot();
+    const health = glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION });
+    const home = homeNeedsYou();
+    const running = ['running', 'streaming'].flatMap(status => runLedger.list({ status, limit: 20 }));
+    const needs = glance.needsYouSummary({ approvals: home.approvals.length, failed: home.failed.length }, health);
+    const img = runLedger.list({ type: 'image', status: 'completed', limit: 5 }).find(r => r.output?.images?.[0]?.imageUrl);
+    const image = img ? { title: img.title, imageUrl: displayFeed.jpegUrl(img.output.images[0].imageUrl) } : null;
+    json(res, 200, displayFeed.buildFeed({ needs, watch: watchdog.list(), running, weather: await feedWeatherText(), image }));
+  } catch (e) { json(res, 500, { error: String(e.message || e) }); }
+}
+
 // The Mac's watcher (host/mac-watch) reports its disk and the camera bridge every few minutes, with the Mac key.
 async function apiWatchHeartbeat(req, res) {
   if (!claudeChat.macAuthorized(req)) return json(res, 401, { error: 'Unauthorized' });
@@ -1651,6 +1681,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/claude/events') return await apiClaudeEvents(req,res);
     if (req.method === 'POST' && p === '/api/watch/heartbeat') return await apiWatchHeartbeat(req,res);
     if (req.method === 'GET' && p === '/api/watch') return json(res, 200, watchdog.summary());
+    if (req.method === 'GET' && p === '/api/display/feed') return await apiDisplayFeed(req,res);
     if (req.method === 'POST' && p === '/api/claude/findings') return await apiClaudeFindings(req,res);
     if (req.method === 'POST' && p === '/api/claude/findings/vote') return await apiClaudeVote(req,res);
     if (req.method === 'POST' && p === '/api/claude/findings/decision') return await apiClaudeDecision(req,res);
