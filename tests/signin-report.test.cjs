@@ -81,7 +81,7 @@ test('callers are named by what they run on', () => {
   assert.equal(kindOf(''), 'No browser');
 });
 
-test('the Workshop display key signs in GET /api/display/feed only', { timeout: 30000 }, async t => {
+test('the Workshop display key signs in the display feed, ask and image routes only', { timeout: 30000 }, async t => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-signin-display-'));
   const DKEY = 'wsd_' + 'a'.repeat(48);
   fs.writeFileSync(path.join(dataDir, 'workshop-display-key.sha256'), crypto.createHash('sha256').update(DKEY).digest('hex'));
@@ -95,6 +95,7 @@ test('the Workshop display key signs in GET /api/display/feed only', { timeout: 
   const display = (extra = {}) => viaCaddy('10.0.0.124', 'ESP32HTTPClient', extra);
   assert.equal((await fetch(`${base}/api/display/feed`, { headers: display({ 'X-LocalAI-Display-Key': DKEY }) })).status, 200);
   // The same key on another route is not signed in, and a wrong key on the feed isn't either.
+  assert.equal((await fetch(`${base}/api/display/ask?q=health`, { headers: display({ 'X-LocalAI-Display-Key': DKEY }) })).status, 200);
   await fetch(`${base}/api/runs?limit=1`, { headers: display({ 'X-LocalAI-Display-Key': DKEY }) });
   await fetch(`${base}/api/display/feed`, { headers: display({ 'X-LocalAI-Display-Key': 'wsd_wrong' }) });
   const report = await (await fetch(`${base}/api/signin/report`)).json();

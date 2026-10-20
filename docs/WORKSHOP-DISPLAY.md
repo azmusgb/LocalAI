@@ -105,6 +105,20 @@ idle screen keeps working when sign-in starts refusing unsigned callers. The key
   "Workshop display". This is the one request that goes the other way, from the display to Local AI. The display
 reaches it through the HTTPS front, `https://10.0.0.21`, and checks the certificate against Local AI's CA.
 
+## Ask buttons
+
+`GET /api/display/ask?q=needs|running|health` answers the Workshop display's three ask buttons in one or two
+sentences (at most 200 characters), with no model:
+
+| `q` | Answer |
+|---|---|
+| `needs` | What needs you, by name, as Siri says it. |
+| `running` | What Local AI is working on (up to three), or that nothing is running. |
+| `health` | Whether its services are up, plus any watchdog problems. |
+
+Anything else gets `400`. The display key signs the display in for this route, the feed, and
+`/api/images/view` (the feed's latest-image card links there). It signs in nothing else.
+
 ## Printer status (read-only token)
 
 With Workshop OS 12.1.0 on the display, Home can show one line while a print runs or has stopped with an error, for

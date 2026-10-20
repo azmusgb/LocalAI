@@ -112,7 +112,12 @@ const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir:
 // Sign-in, report-only for now (app/signin.js): who would be refused is listed on Health; nothing is blocked.
 // The Workshop display's key (X-LocalAI-Display-Key) signs it in for its feed only; host/workshop-display/set-key.sh sets it.
 const displayKey = require('./route-keys').createRouteKey({ dataDir: DATA_DIR, file: 'workshop-display-key.sha256', header: 'x-localai-display-key' });
-const signIn = require('./signin').createSignIn({ storage, signedIn: req => !!claudeChat.deviceFor(req) || claudeChat.macAuthorized(req), routeKeys: { '/api/display/feed': req => displayKey.authorized(req) } });
+const signIn = require('./signin').createSignIn({ storage, signedIn: req => !!claudeChat.deviceFor(req) || claudeChat.macAuthorized(req), routeKeys: {
+  '/api/display/feed': req => displayKey.authorized(req),
+  '/api/display/ask': req => displayKey.authorized(req),
+  // The feed's latest-image card links here; the display fetches the JPEG with its key.
+  '/api/images/view': req => displayKey.authorized(req)
+} });
 
 
 
@@ -665,6 +670,29 @@ async function apiDisplayFeed(req, res) {
     const img = runLedger.list({ type: 'image', status: 'completed', limit: 5 }).find(r => r.output?.images?.[0]?.imageUrl);
     const image = img ? { title: img.title, imageUrl: displayFeed.jpegUrl(img.output.images[0].imageUrl) } : null;
     json(res, 200, displayFeed.buildFeed({ needs, watch: watchdog.list(), running, weather: await feedWeatherText(), image }));
+  } catch (e) { json(res, 500, { error: String(e.message || e) }); }
+}
+
+// The Workshop display's ask buttons (docs/WORKSHOP-DISPLAY.md › Ask buttons): a fixed question, a short answer, no
+// model. needs: what Home's Needs you lists, by name; running: what Local AI is doing; health: services and the
+// watchdog's problems.
+async function apiDisplayAsk(req, res, urlObj) {
+  const q = urlObj.searchParams.get('q');
+  try {
+    let answer;
+    if (q === 'needs') answer = await voiceNeedsSentence();
+    else if (q === 'running') {
+      const running = ['running', 'streaming'].flatMap(status => runLedger.list({ status, limit: 20 }));
+      answer = running.length
+        ? `${running.length === 1 ? 'Working on' : `${running.length} things running:`} ${running.slice(0, 3).map(r => String(r.title || 'a run').split('\n')[0].trim().slice(0, 60)).join('; ')}${running.length > 3 ? '; …' : ''}.`
+        : 'Nothing is running right now.';
+    } else if (q === 'health') {
+      const snapshot = await getCapabilitiesSnapshot();
+      const health = glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION });
+      const watch = watchdog.list();
+      answer = health.speech + (watch.length ? ` Also: ${watch.map(w => w.title).join('; ')}.` : '');
+    } else return json(res, 400, { error: 'q must be needs, running or health' });
+    json(res, 200, { question: q, answer: displayFeed.cut(answer, 200) });
   } catch (e) { json(res, 500, { error: String(e.message || e) }); }
 }
 
@@ -1691,6 +1719,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/watch/heartbeat') return await apiWatchHeartbeat(req,res);
     if (req.method === 'GET' && p === '/api/watch') return json(res, 200, watchdog.summary());
     if (req.method === 'GET' && p === '/api/display/feed') return await apiDisplayFeed(req,res);
+    if (req.method === 'GET' && p === '/api/display/ask') return await apiDisplayAsk(req,res,urlObj);
     if (req.method === 'POST' && p === '/api/claude/findings') return await apiClaudeFindings(req,res);
     if (req.method === 'POST' && p === '/api/claude/findings/vote') return await apiClaudeVote(req,res);
     if (req.method === 'POST' && p === '/api/claude/findings/decision') return await apiClaudeDecision(req,res);
