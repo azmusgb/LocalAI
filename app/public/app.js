@@ -938,6 +938,6 @@ window.LocalAIOpen=function(url){
 (()=>{
   const open=new URLSearchParams(location.search).get('open');
   // The page wires up showView during start-up, so wait for it (up to 5 s).
-  if(open){history.replaceState(null,'','/');let tries=0;const go=()=>{if(typeof window.showView==='function'&&(!open.startsWith('run:')||window.LocalAIRuns))window.LocalAIOpen('/?open='+encodeURIComponent(open));else if(tries++<50)setTimeout(go,100)};go()}
+  if(open){history.replaceState(null,'',/[?&]watch=1\b/.test(location.search)?'/?watch=1':'/');let tries=0;const go=()=>{if(typeof window.showView==='function'&&(!open.startsWith('run:')||window.LocalAIRuns))window.LocalAIOpen('/?open='+encodeURIComponent(open));else if(tries++<50)setTimeout(go,100)};go()}
   navigator.serviceWorker?.addEventListener?.('message',e=>{if(e.data?.type==='localai-open')window.LocalAIOpen(e.data.url)});
 })();
