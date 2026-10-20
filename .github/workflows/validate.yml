@@ -79,7 +79,7 @@ jobs:
       - name: Browser acceptance
         run: |
           mkdir -p /tmp/localai-data
-          DATA_DIR=/tmp/localai-data PORT=3080 node app/server.js >/tmp/localai-server.log 2>&1 &
+          LOCALAI_WORKSHOP_URL="${LOCALAI_WORKSHOP_URL:-http://127.0.0.1:9}" DATA_DIR=/tmp/localai-data PORT=3080 node app/server.js >/tmp/localai-server.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 

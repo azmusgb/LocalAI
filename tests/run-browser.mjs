@@ -10,10 +10,13 @@ const dir = dirname(fileURLToPath(import.meta.url));
 const only = process.argv.slice(2);
 const suites = readdirSync(dir).filter(f => f.endsWith('-ui.mjs') && (!only.length || only.some(o => f.includes(o)))).sort();
 const failed = [];
+// Suites that start their own server pass this environment on. Default the Workshop display address to a dead
+// loopback port so no test server ever contacts the owner's real display; a value you set yourself is kept.
+const env = { ...process.env, LOCALAI_WORKSHOP_URL: process.env.LOCALAI_WORKSHOP_URL || 'http://127.0.0.1:9' };
 for (const suite of suites) {
   console.log(`\n=== ${suite}`);
   const started = Date.now();
-  const r = spawnSync(process.execPath, [join(dir, suite)], { stdio: 'inherit', env: process.env });
+  const r = spawnSync(process.execPath, [join(dir, suite)], { stdio: 'inherit', env });
   console.log(`--- ${suite}: ${r.status === 0 ? 'passed' : 'FAILED'} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   if (r.status !== 0) failed.push(suite);
 }

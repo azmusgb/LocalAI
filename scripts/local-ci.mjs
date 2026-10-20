@@ -138,7 +138,7 @@ async function browserSuites() {
   const data = fs.mkdtempSync(path.join(work, 'data-'));
   const port = await freePort();
   say(`\n=== Browser acceptance (${DRY ? 'dry run, no server' : `fresh server on port ${port}`})`);
-  const server = DRY ? null : track(spawn(process.execPath, ['app/server.js'], { cwd: dir, env: { ...process.env, DATA_DIR: data, WORKSPACE_ROOT: data, PORT: String(port) }, detached: true }));
+  const server = DRY ? null : track(spawn(process.execPath, ['app/server.js'], { cwd: dir, env: { ...process.env, LOCALAI_WORKSHOP_URL: process.env.LOCALAI_WORKSHOP_URL || 'http://127.0.0.1:9', DATA_DIR: data, WORKSPACE_ROOT: data, PORT: String(port) }, detached: true }));
   if (server) { const serverLog = fs.createWriteStream(path.join(work, 'server.log')); server.stdout.pipe(serverLog); server.stderr.pipe(serverLog); }
   const none = { ok: false, passed: 0, total: 0, retried: [], failing: [] };
   try {

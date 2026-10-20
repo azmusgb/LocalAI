@@ -7,7 +7,7 @@ container `local-ai-appliance` on a Windows host, UI on port 3080. Docs index: `
 
 - `npm test`: all `tests/*.test.cjs` (`node --test`). Needs nothing running. Run it before every PR.
 - Browser tests need a server. Use a throwaway one on a spare port, wait for it, test, stop it:
-  `d=$(mktemp -d); DATA_DIR=$d WORKSPACE_ROOT=$d PORT=3180 node app/server.js > "$d/log" 2>&1 & pid=$!`,
+  `d=$(mktemp -d); LOCALAI_WORKSHOP_URL=http://127.0.0.1:9 DATA_DIR=$d WORKSPACE_ROOT=$d PORT=3180 node app/server.js > "$d/log" 2>&1 & pid=$!`,
   `until curl -fs http://127.0.0.1:3180/healthz >/dev/null; do sleep 1; done`,
   `LOCALAI_URL=http://127.0.0.1:3180 npm run test:browser` (all `tests/*-ui.mjs`; `node tests/run-browser.mjs <name>`
   for some), then `kill $pid`.

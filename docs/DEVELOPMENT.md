@@ -99,11 +99,16 @@ in a checkout, else `APP_VERSION` (`appVersion` in `app/release.js`). Features a
 Browser tests against a disposable server on a spare port:
 
 ```sh
-d=$(mktemp -d); DATA_DIR=$d WORKSPACE_ROOT=$d PORT=3180 node app/server.js > "$d/server.log" 2>&1 & pid=$!
+d=$(mktemp -d); LOCALAI_WORKSHOP_URL=http://127.0.0.1:9 DATA_DIR=$d WORKSPACE_ROOT=$d PORT=3180 node app/server.js > "$d/server.log" 2>&1 & pid=$!
 until curl -fs http://127.0.0.1:3180/healthz >/dev/null; do sleep 1; done
 LOCALAI_URL=http://127.0.0.1:3180 npm run test:browser
 kill $pid
 ```
+
+`LOCALAI_WORKSHOP_URL=http://127.0.0.1:9` keeps the test server away from the owner's real Workshop display (the
+default, `http://10.0.0.124`): suites that open Services or Agent World without mocking it would otherwise send it
+real requests. Port 9 on loopback refuses at once, so the Workshop card just reads as offline. Servers the tests start
+themselves (`spawnAppServer()`, `tests/run-browser.mjs`, `npm run ci`) already default to it unless you set one.
 
 Use a fresh `DATA_DIR`: the scripts write data (for example Claude board findings and paired chat devices). `tests/claude-chat-ui.mjs`
 ignores `LOCALAI_URL` and starts its own server. Run some suites with `node tests/run-browser.mjs images claude` (names are matched as substrings), or one
