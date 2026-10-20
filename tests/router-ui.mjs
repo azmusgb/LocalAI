@@ -128,6 +128,33 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
     await page.context().close();
   });
 
+  // Closing a sheet pops its history entry with history.back(), which lands a few ms later. A page opened in that gap (Escape
+  // on a sheet, then Home) must stay open: the late back() used to land on the page under the sheet, and its hashchange
+  // reopened that page.
+  for (const [how, nav, view, hash] of [
+    ['showView from code', () => window.showView('home'), 'home', '#home'],
+    ['a tab (go)', () => LocalAIRouter.go('#library'), 'library', '#library'],
+    ['a hidden page (open)', () => LocalAIRouter.open('ask'), 'ask', '#ask']]) {
+    await check(`${tag}: ${how} right after a sheet closes keeps the new page`, async () => {
+      const page = await open(viewport, '#work');
+      await page.waitForSelector('#work.active', T);
+      await page.evaluate(() => LocalAIRouter.open('agents'));
+      await page.waitForSelector('#agents.active', T);
+      await page.evaluate(() => { window.__release = LocalAIUI.sheetHistory(document.createElement('div'), () => {}); });
+      await page.waitForFunction(() => !!history.state?.localaiSheet, null, T);
+      await page.evaluate(go => { window.__release(); (0, eval)(`(${go})`)(); }, nav.toString());
+      await page.waitForTimeout(700); // past the pop's own 500 ms fallback
+      assert.equal(await page.evaluate(() => document.querySelector('.view.active')?.id), view);
+      assert.equal(await page.evaluate(() => location.hash), hash);
+      assert.equal(await page.evaluate(() => history.state?.localaiSheet ?? null), null, 'the sheet entry is gone');
+      if (how !== 'showView from code') { // real navigation: Back returns to the page under the sheet
+        await page.evaluate(() => history.back());
+        await page.waitForSelector('#agents.active', T);
+      }
+      await page.context().close();
+    });
+  }
+
   await check(`${tag}: a page opened while a run is open shows the page and Back leaves it`, async () => {
     const page = await open(viewport, '#home');
     await page.evaluate(() => LocalAIRouter.go('#run/missing-run'));
