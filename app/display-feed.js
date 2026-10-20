@@ -46,7 +46,7 @@ function buildFeed({ needs, watch = [], running = [], done = [], weather = null,
   // What Plex on the Pi is playing: the title, how far in, paused, and where.
   const play = pi?.playing?.[0];
   if (play) {
-    const bits = [play.title, play.progress != null && `${play.progress}%`, play.state === 'paused' && 'paused', play.where].filter(Boolean);
+    const bits = [play.title, play.state === 'paused' ? 'paused' : play.minutesLeft != null ? `${play.minutesLeft} min left` : play.progress != null && `${play.progress}%`, play.where].filter(Boolean);
     const more = pi.playing.length > 1 ? ` · ${pi.playing.length - 1} more` : '';
     add('playing', `playing-${play.title}`, 'Now playing', bits.join(' · ') + more, { tone: 'busy', ...(play.progress != null ? { percent: play.progress } : {}) });
   }
@@ -57,7 +57,9 @@ function buildFeed({ needs, watch = [], running = [], done = [], weather = null,
     add('done', `done-${fin.id || fin.title}`, failed ? 'Didn\'t finish' : 'Finished', `${String(fin.title || 'A run').split('\n')[0]}${at ? ` · ${ago(at, now)}` : ''}`, { tone: failed ? 'warning' : 'ok', at });
   }
   if (weather) add('weather', 'weather', 'Weather', weather, { tone: 'info' });
-  const pics = (images || (image ? [image] : [])).filter((i) => i?.imageUrl).slice(0, 6);
+  // While something plays, its poster leads the pictures (the display opens it from the Now playing card).
+  const posterPic = play?.poster ? [{ title: `Now playing · ${play.title}`, imageUrl: '/api/display/poster?n=0', at: Math.floor(now / 1000) }] : [];
+  const pics = [...posterPic, ...(images || (image ? [image] : []))].filter((i) => i?.imageUrl).slice(0, 6);
   if (pics.length) add('image', `image-${pics[0].at || (pics[0].imageUrl.match(/filename=([^&]+)/) || [])[1] || 'latest'}`, 'Latest image', pics[0].title || 'An image', { imageUrl: pics[0].imageUrl, tone: 'info', at: pics[0].at });
   if (disk && disk.totalBytes > 0) {
     const used = 1 - disk.freeBytes / disk.totalBytes;

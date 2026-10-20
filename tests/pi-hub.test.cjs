@@ -7,7 +7,11 @@ const { buildFeed } = require('../app/display-feed');
 
 test('playing items of any reasonable shape become a title, progress, state and where', () => {
   assert.deepEqual(playingItem('Arrival'), { title: 'Arrival' });
-  assert.deepEqual(playingItem({ title: 'Arrival', progress: 42.4, state: 'Paused', player: 'Living Room TV' }), { title: 'Arrival', progress: 42, state: 'paused', where: 'Living Room TV' });
+  assert.deepEqual(playingItem({ title: 'Arrival', progress: 42.4, state: 'Paused', player: 'Living Room TV' }), { title: 'Arrival', progress: 42, state: 'paused', where: 'Living Room TV', minutesLeft: null, poster: null });
+  // The hub's committed shape (pi-hub tests/test_evolve.py).
+  const hub = playingItem({ title: 'Severance: Woe\'s Hollow', show: 'Severance', year: null, kind: 'episode', who: 'bill', device: 'Living Room', state: 'playing', progress: 61, minutes_left: 19, poster: '/api/now/poster/0.jpg' });
+  assert.deepEqual([hub.where, hub.minutesLeft, hub.poster], ['Living Room', 19, '/api/now/poster/0.jpg']);
+  assert.equal(playingItem({ title: 'x', poster: 'http://evil/x.jpg' }).poster, null);
   assert.equal(playingItem({ show: 'Severance', episode: 'S2 · E3', percent: 0.5 }).progress, 50);
   assert.equal(playingItem({ show: 'Severance', episode: 'S2 · E3' }).title, 'Severance · S2 · E3');
   assert.equal(playingItem({}), null);
@@ -22,9 +26,13 @@ test('the hub summary keeps up to 3 playing and 2 issues; odd answers give nothi
 });
 
 test('the display feed shows Now playing and the Pi issue', () => {
-  const pi = summarize({ issues: [{ tone: 'bad', what: 'Movies drive', say: 'It dropped out.' }], movies: { playing: [{ title: 'Arrival', progress: 42, player: 'TV' }, 'Other'] } });
-  const cards = buildFeed({ needs: { count: 0 }, pi }).cards;
-  assert.deepEqual(cards.map(c => c.kind), ['needs', 'home', 'playing']);
+  const pi = summarize({ issues: [{ tone: 'bad', what: 'Movies drive', say: 'It dropped out.' }], movies: { playing: [{ title: 'Arrival', progress: 42, device: 'TV', poster: '/api/now/poster/0.jpg' }, 'Other'] } });
+  const feed = buildFeed({ needs: { count: 0 }, pi, images: [{ title: 'A fox', imageUrl: '/api/images/view?filename=a.png' }] });
+  const cards = feed.cards;
+  assert.deepEqual(feed.images.map(i => i.imageUrl), ['/api/display/poster?n=0', '/api/images/view?filename=a.png'], 'the poster leads the pictures');
+  assert.equal(buildFeed({ needs: { count: 0 }, pi: summarize({ movies: { playing: [{ title: 'A', state: 'paused', minutes_left: 5 }] } }) }).cards[1].text, 'A · paused');
+  assert.equal(buildFeed({ needs: { count: 0 }, pi: summarize({ movies: { playing: [{ title: 'A', minutes_left: 5 }] } }) }).cards[1].text, 'A · 5 min left');
+  assert.deepEqual(cards.map(c => c.kind), ['needs', 'home', 'playing', 'image']);
   assert.equal(cards[1].title, 'Pi: Movies drive');
   assert.equal(cards[1].tone, 'attention');
   assert.equal(cards[2].text, 'Arrival · 42% · TV · 1 more');

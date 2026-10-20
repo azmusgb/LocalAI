@@ -1,4 +1,7 @@
 'use strict';
+// The hub's shape (pi-hub tests/test_evolve.py): movies.playing is null or up to 6 {title, show, year, kind, who, device,
+// state: playing|paused|buffering, progress 0-100, minutes_left, poster: "/api/now/poster/<n>.jpg"|null};
+// issues[] is {tone: bad|warn, what, say}.
 // The Raspberry Pi's hub (another appliance on the home network: Plex, Homebridge, the camera bridge) answers
 // GET /api/now with a summary for screens, no key needed. Local AI reads it once a minute at most for the Workshop
 // display's cards: what Plex is playing, and the hub's own issues (docs/WORKSHOP-DISPLAY.md › Pi hub cards).
@@ -14,11 +17,15 @@ function playingItem(p) {
   const title = str(p.title || p.name || p.show || p.grandparentTitle);
   if (!title) return null;
   const pct = Number(p.progress ?? p.percent ?? p.progressPercent);
+  const left = Number(p.minutes_left);
   return {
     title: p.episode ? `${title} · ${str(p.episode, 40)}` : title,
     progress: Number.isFinite(pct) ? Math.max(0, Math.min(100, Math.round(pct <= 1 && pct > 0 && !Number.isInteger(pct) ? pct * 100 : pct))) : null,
     state: str(p.state || p.status, 12).toLowerCase() || null,
-    where: str(p.player || p.device || p.where || p.user, 30) || null
+    where: str(p.device || p.player || p.where || p.who || p.user, 30) || null,
+    minutesLeft: Number.isFinite(left) && left >= 0 ? Math.round(left) : null,
+    // The hub serves the poster itself (baseline JPEG, at most 300x450); Local AI passes it on to the display.
+    poster: typeof p.poster === 'string' && /^\/api\/now\/poster\/\d+\.jpg$/.test(p.poster) ? p.poster : null
   };
 }
 
@@ -44,7 +51,17 @@ function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.30
     cache = { at: now(), value };
     return value;
   }
-  return { read };
+  // The poster of playing item `n` (a JPEG), or null.
+  async function poster(n) {
+    if (off || !Number.isInteger(n) || n < 0 || n > 5) return null;
+    try {
+      const r = await fetchImpl(new URL(`/api/now/poster/${n}.jpg`, url), { signal: AbortSignal.timeout(TIMEOUT_MS) });
+      if (!r.ok || !/^image\/jpeg/.test(r.headers.get('content-type') || '')) return null;
+      const buf = Buffer.from(await r.arrayBuffer());
+      return buf.length > 4 && buf.length <= 400 * 1024 ? buf : null;
+    } catch { return null; }
+  }
+  return { read, poster };
 }
 
 module.exports = { createPiHub, summarize, playingItem };
