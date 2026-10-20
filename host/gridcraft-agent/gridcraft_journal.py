@@ -5,6 +5,7 @@ client is passed in, so tests drive it with a fake.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from typing import Any, Awaitable, Callable
@@ -23,12 +24,42 @@ ONE_STEP_TOOLS = frozenset({"set_cell", "write_range", "sort_range", "create_tab
 
 MAX_JOURNAL_CELLS = 2000
 UNDO_TOP = 5
+# A workbook larger than this gets no fingerprint, and Discard falls back to the undo labels alone.
+FINGERPRINT_CELLS = 50000
 WINDOW_ROWS = 100
 WINDOW_COLS = 40
 
 
 class ToolRefused(Exception):
     pass
+
+
+# execute_command runs any GridCraft command (list_commands, probed on the host 2026-10-20: about 340). Saving goes
+# through save_workbook (journaled, and refused in Review) and a request stays on the open workbook, so these are
+# refused in every mode: whole areas that work on files, windows or scripts; single commands that read files or the
+# network, use the PC's clipboard, or move GridCraft's undo history under the journal (which counts undo steps); and,
+# for commands GridCraft adds later, any name with a file word in it.
+FILE_COMMAND_WORDS = frozenset({"save", "saveas", "open", "close", "new", "export", "import", "print", "quit", "exit",
+                                "load", "reload", "revert", "recent", "script", "macro", "macros"})
+FILE_COMMAND_AREAS = frozenset({"file", "app", "application", "window", "workbook", "automate"})
+BLOCKED_COMMANDS = frozenset({
+    "link.open", "insert.picture", "data.fromtextcsv", "data.getdata", "data.queriesconnections", "data.refreshall",
+    "pivot.refresh", "pivot.changesource", "edit.undo", "edit.redo", "edit.copy", "edit.cut", "edit.paste",
+    "edit.pastespecial", "edit.clearclipboard", "view.newwindow", "view.hidewindow", "view.unhidewindow",
+    "view.switchwindows", "view.arrangeall", "review.protectsheet", "review.unprotectsheet", "review.protectworkbook",
+})
+
+
+def command_words(command: str) -> list[str]:
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", command or "")
+    return [w for w in re.split(r"[^A-Za-z0-9]+", spaced.lower()) if w]
+
+
+def file_command(command: Any) -> bool:
+    words = command_words(str(command or ""))
+    joined = "".join(words)
+    return bool(words) and (str(command).strip().lower() in BLOCKED_COMMANDS or words[0] in FILE_COMMAND_AREAS
+                            or any(w in FILE_COMMAND_WORDS for w in words) or "saveas" in joined)
 
 
 def allowed_tools(mode: str, names: set[str]) -> set[str]:
@@ -146,6 +177,44 @@ def undo_top_matches(current: list[str], expected: list[str]) -> bool:
     return bool(expected) and current[:len(expected)] == list(expected)
 
 
+# ---- Fingerprint ----
+
+async def fingerprint(call: Callable[[str, dict[str, Any]], Awaitable[Any]], info: dict[str, Any] | None = None) -> str | None:
+    """A hash of every sheet's cells (formulas as typed) and the visible undo list. Undo labels alone are generic
+    ("Enter Cell"), so a cell typed in GridCraft after a request can leave them unchanged; the cells cannot. None when
+    the workbook is larger than FINGERPRINT_CELLS or can't be read."""
+    if info is None:
+        try:
+            info = payload(await call("inspect_workbook", {}))
+        except Exception:
+            return None
+    if not isinstance(info, dict):
+        return None
+    sheets = info.get("sheets") or []
+    total = 0
+    for s in sheets:
+        b = parse_range(s.get("usedRange") or "")
+        total += (b[2] - b[0] + 1) * (b[3] - b[1] + 1) if b else 0
+    if total > FINGERPRINT_CELLS:
+        return None
+    h = hashlib.sha256()
+    h.update(json.dumps({"path": info.get("path"), "undo": list(info.get("undo") or [])}, sort_keys=True, default=str).encode())
+    for s in sheets:
+        name, used = s.get("name"), s.get("usedRange")
+        values = None
+        if used:
+            try:
+                result = await call("read_range", {"sheet": name, "range": used, "formulas": True})
+            except Exception:
+                return None
+            data = payload(result)
+            if is_error(result) or not isinstance(data, dict):
+                return None
+            values = data.get("values")
+        h.update(json.dumps([name, used, values], default=str).encode())
+    return h.hexdigest()[:32]
+
+
 # ---- Tool results ----
 
 def payload(result: Any) -> Any:
@@ -190,10 +259,14 @@ def describe(name: str, args: dict[str, Any], data: Any) -> str:
 class Journal:
     """Wraps a GridCraft MCP client: refuses tools the mode doesn't allow and records what writes changed."""
 
-    def __init__(self, mode: str, call: Callable[[str, dict[str, Any]], Awaitable[Any]], allowed: set[str]):
+    def __init__(self, mode: str, call: Callable[[str, dict[str, Any]], Awaitable[Any]], allowed: set[str],
+                 on_entry: Callable[[dict[str, Any]], None] | None = None):
         self.mode = mode
         self._call = call
         self.allowed = allowed
+        # Told about each write as it starts ({"pending": tool}) and as it is recorded ({"edit"|"change", "steps"}),
+        # so a request stopped from outside still leaves a record of what it changed (gridcraft-bridge.py).
+        self.on_entry = on_entry
         self.edits: list[dict[str, Any]] = []
         self.changes: list[dict[str, Any]] = []
         self.undo_steps = 0
@@ -227,8 +300,16 @@ class Journal:
                                   "Do not try to save; finish the request and describe what changed.")
             raise ToolRefused(f"{name} is not available in {MODE_LABELS.get(self.mode, self.mode)} mode. "
                               "Use only the tools you were given.")
+        if name == "execute_command" and file_command(args.get("command")):
+            raise ToolRefused(f"The command {args.get('command')} is not available to requests (files, windows, scripts, "
+                              "the clipboard and undo history are off limits): stay on the open workbook"
+                              + (" and use save_workbook to save." if "save_workbook" in self.allowed else "."))
+        if name == "save_workbook" and args.get("path"):
+            # save_workbook takes a destination path: a request saves the open workbook to its own file only.
+            raise ToolRefused("save_workbook saves the open workbook to its own file: call it without a path.")
         if not is_write(name):
             return await self._call(name, args)
+        self._tell({"pending": name})
 
         target = write_target(name, args)
         size = 0
@@ -241,6 +322,7 @@ class Journal:
 
         result = await self._call(name, args)
         if is_error(result):
+            self._tell({"settled": name})  # GridCraft refused it: nothing changed
             return result
         data = payload(result)
 
@@ -268,6 +350,7 @@ class Journal:
             else:
                 entry["truncated"] = True
             self.edits.append(entry)
+            self._tell({"edit": entry, "steps": steps, "saved": self.saved})
         else:
             sheet, rng = split_sheet(str(args.get("range") or args.get("cell") or ""))
             change = {"tool": name, "summary": describe(name, args, data)}
@@ -276,7 +359,15 @@ class Journal:
             if rng:
                 change["range"] = rng
             self.changes.append(change)
+            self._tell({"change": change, "steps": steps, "saved": self.saved})
         return result
+
+    def _tell(self, entry: dict[str, Any]) -> None:
+        if self.on_entry:
+            try:
+                self.on_entry(entry)
+            except Exception:  # the record printed at the end is the one that counts
+                pass
 
     async def finish(self) -> dict[str, Any]:
         info: Any = None
@@ -285,6 +376,8 @@ class Journal:
         except Exception:
             pass
         info = info if isinstance(info, dict) else {}
+        # Only a request that left something to undo needs one: Discard compares it before undoing.
+        prints = await fingerprint(self._call, info) if self.undo_steps > 0 and info else None
         return {
             "mode": self.mode,
             "edits": self.edits,
@@ -293,4 +386,5 @@ class Journal:
             "undoTop": list(info.get("undo") or [])[:UNDO_TOP],
             "dirty": info.get("dirty"),
             "saved": self.saved,
+            "fingerprint": prints,
         }

@@ -11,7 +11,7 @@ const EXAMPLES=[
  'Check the workbook for empty cells or errors in formulas and tell me where they are.'
 ];
 const MODES={read:'Looks and answers. It cannot change anything.',review:'Makes the changes in GridCraft without saving. You keep or discard them.',apply:'Makes the changes and saves the workbook.'};
-const STATUS={review:'Waiting for review',kept:'Kept',discarded:'Discarded',applied:'Applied',done:'No changes',failed:'Failed'};
+const STATUS={running:'Running',review:'Waiting for review',kept:'Kept',discarded:'Discarded',applied:'Applied',done:'No changes',failed:'Failed'};
 const PAGE=100;
 const st={busy:false,timer:0,poll:0,started:0,mode:'review',book:null,sheet:'',top:1,runs:[],run:null,sel:null,formulas:false,books:[],edit:null,saving:false,stale:false,editSheet:null};
 const phone=()=>matchMedia('(max-width:640px)').matches;
@@ -81,14 +81,15 @@ function showRun(run){
  st.run=run;
  if(!run){$('sheetsChanges').hidden=true;$('sheetsReview').hidden=true;$('sheetsRun').classList.add('btn-primary');$('sheetsRun').classList.remove('btn-outline');return}
  $('sheetsResultTitle').textContent=run.kind==='edit'?run.prompt:run.prompt?`“${run.prompt.length>90?run.prompt.slice(0,90)+'…':run.prompt}”`:'Answer';
- show(run.status==='failed'?'error':'done',run.answer||run.error||'Done.',{retry:run.status==='failed'});
+ if(run.status==='running')show('working','GridCraft is still working on this request.');
+ else show(run.status==='failed'?'error':'done',run.answer||run.error||'Done.',{retry:run.status==='failed'});
  $('sheetsResult').dataset.status=run.status;
  const changes=changesHtml(run);$('sheetsChanges').innerHTML=changes;$('sheetsChanges').hidden=!changes;
  const review=run.status==='review',latest=st.runs[0]?.id===run.id;
- $('sheetsReview').hidden=!review;$('sheetsDiscard').hidden=!latest;
+ $('sheetsReview').hidden=!review;$('sheetsDiscard').hidden=!latest||!!run.uncertain;
  // One blue action per page: while a request waits for review, deciding is the next step, not another run.
  $('sheetsRun').classList.toggle('btn-primary',!review);$('sheetsRun').classList.toggle('btn-outline',review);
- $('sheetsReviewNote').textContent=review?(latest?'These changes are in GridCraft but not saved yet.':'Only the latest request can be undone. Keep changes saves everything in the workbook.'):'';
+ $('sheetsReviewNote').textContent=review?(run.uncertain?'This request was stopped in the middle of a change, so it can\'t be undone from here. Keep saves it as it is.':latest?'These changes are in GridCraft but not saved yet.':'Only the latest request can be undone. Keep changes saves everything in the workbook.'):'';
  renderHistory();renderGrid();
 }
 

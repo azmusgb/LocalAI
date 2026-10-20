@@ -1,7 +1,7 @@
 """Workbook operations the bridge runs without a model: show the workbook, keep (save) or discard (undo) a request,
 list the workbooks in the GridCraft folder and open one of them, and change one cell by hand (set_cell).
 
-Usage: python gridcraft_ops.py workbook|keep|discard|workbooks|open|set_cell < request.json  ->  one JSON object on stdout.
+Usage: python gridcraft_ops.py workbook|keep|discard|workbooks|open|set_cell|state < request.json  ->  one JSON object on stdout.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
 from typing import Any, Awaitable, Callable
 
-from gridcraft_journal import UNDO_TOP, Journal, clamp_range, is_error, payload, undo_top_matches, window_range
+from gridcraft_journal import UNDO_TOP, Journal, clamp_range, fingerprint, is_error, payload, undo_top_matches, window_range
 
 DEFAULT_GRIDCRAFT_CLI = r"C:\Program Files\GridCraft\gridcraft-cli.exe"
 Call = Callable[[str, dict[str, Any]], Awaitable[Any]]
@@ -102,8 +102,17 @@ async def discard(call: Call, req: dict[str, Any]) -> dict[str, Any]:
         raise OpError("steps must be a whole number from 1 to 1000", 400)
     if not isinstance(expected, list) or not expected:
         raise OpError("undoTop is required", 400)
+    prints = req.get("fingerprint")
+    if prints is not None and not isinstance(prints, str):
+        raise OpError("fingerprint must be text", 400)
     info = await _json(call, "inspect_workbook", {})
-    if not undo_top_matches(list(info.get("undo") or []), expected):
+    changed = not undo_top_matches(list(info.get("undo") or []), expected)
+    # The undo labels are generic ("Enter Cell"), so a cell typed in GridCraft since can leave them as they were; the
+    # fingerprint of every cell can't. A workbook too large to fingerprint (None now) keeps the label check alone.
+    if not changed and prints:
+        now = await fingerprint(call, info)
+        changed = now is not None and now != prints
+    if changed:
         raise OpError("The workbook changed in GridCraft after this request, so undoing it could remove other work.", 409)
     await _json(call, "undo", {"steps": steps})
     info = await _json(call, "inspect_workbook", {})
@@ -155,6 +164,10 @@ async def workbooks(call: Call | None, req: dict[str, Any]) -> dict[str, Any]:
 
 async def open_book(call: Call, req: dict[str, Any]) -> dict[str, Any]:
     name = workbook_name(req.get("name"))
+    # Opening replaces the workbook: unsaved changes would be lost, or GridCraft would stop on a save dialog on the PC.
+    info = await _json(call, "inspect_workbook", {})
+    if info.get("dirty"):
+        raise OpError("The open workbook has unsaved changes. Keep or discard them first, then open another workbook.", 409)
     await _json(call, "open_workbook", {"path": os.path.join(str(workbooks_dir()), name)})
     return {"file": name}
 
@@ -194,15 +207,24 @@ async def set_cell(call: Call, req: dict[str, Any]) -> dict[str, Any]:
     if not any(s.get("name") == sheet for s in info.get("sheets") or []):
         raise OpError(f"No sheet named {sheet}", 404)
     undo_before = list(info.get("undo") or [])[:UNDO_TOP]
+    prints_before = await fingerprint(call, info)
     journal = Journal("review", call, {"set_cell"})
     result = await journal.call("set_cell", {"cell": qualified(sheet, cell), "input": text})
     if is_error(result):
         reason = next((getattr(b, "text", "") for b in getattr(result, "content", None) or []), "")
         raise OpError(reason or "GridCraft did not change the cell", 400)
-    return {"journal": await journal.finish(), "undoBefore": undo_before}
+    return {"journal": await journal.finish(), "undoBefore": undo_before, "fingerprintBefore": prints_before}
 
 
-OPS = {"workbook": workbook, "keep": keep, "discard": discard, "workbooks": workbooks, "open": open_book, "set_cell": set_cell}
+async def state(call: Call, req: dict[str, Any]) -> dict[str, Any]:
+    """Where the workbook stands now: for a request the bridge had to stop, whose agent never printed its journal."""
+    info = await _json(call, "inspect_workbook", {})
+    return {"undoTop": list(info.get("undo") or [])[:UNDO_TOP], "dirty": info.get("dirty"),
+            "fingerprint": await fingerprint(call, info)}
+
+
+OPS = {"workbook": workbook, "keep": keep, "discard": discard, "workbooks": workbooks, "open": open_book, "set_cell": set_cell,
+       "state": state}
 NO_GRIDCRAFT = {"workbooks"}  # reads the folder only
 
 

@@ -89,7 +89,7 @@ Bridge environment (`host/gridcraft-bridge.py`):
 | `GRIDCRAFT_EXE` | `C:\Program Files\GridCraft\gridcraft.exe` | GridCraft executable launched when not running |
 | `GRIDCRAFT_WORKBOOK` | `%USERPROFILE%\Documents\GridCraft\Quarterly-Sales-Dashboard.xlsx` | Workbook opened at launch |
 | `GRIDCRAFT_WORKBOOKS_DIR` | the folder of `GRIDCRAFT_WORKBOOK` | Folder the Spreadsheets workbook menu lists and opens from (no subfolders) |
-| `GRIDCRAFT_RUN_TIMEOUT` | `300` (seconds) | Per-request limit; the appliance waits 330 s |
+| `GRIDCRAFT_RUN_TIMEOUT` | `300` (seconds) | Per-request limit; the agent stops itself 30 s before it (`--time-limit`), the appliance waits 330 s |
 | `GRIDCRAFT_ALLOWED_ORIGINS` | `http://10.0.0.21:3080,http://127.0.0.1:3080,http://localhost:3080` | CORS allow-list |
 | `GRIDCRAFT_BRIDGE_LOG` | unset (stdout) | Log file, rotated at 2 MB × 3; the installer sets `gridcraft-bridge.log` |
 
@@ -113,12 +113,27 @@ appliance proxies it as `GET /api/gridcraft/health`.
 |---|---|---|
 | `read` | `inspect_workbook`, `read_range`, `get_cell`, `evaluate_formula`, `list_functions` | never |
 | `review` | the core tools without `save_workbook`, `open_workbook`, `new_workbook` | never; the owner keeps or discards |
-| `apply` | the core tools | when the agent saves |
+| `apply` | the core tools | when it finishes: the agent saves if the model didn't. Changes a failed or stopped request left unsaved wait for Keep or Discard |
 
-The agent refuses any other tool itself (`host/gridcraft-agent/gridcraft_journal.py`), and records what each write
+The agent refuses any other tool itself (`host/gridcraft-agent/gridcraft_journal.py`). In every mode it also refuses
+`save_workbook` with a `path` (saving elsewhere), and an `execute_command` that reaches past the open workbook: the
+`file.`, `app.`, `window.` and `automate.` commands, opening links, importing or refreshing outside data, pictures from
+files, the PC's clipboard, undo and redo (the journal counts undo steps), window and protection commands, and any
+command whose name has a file word in it (`save`, `open`, `export`, `print`, `script`, `macro` …). The list comes from
+GridCraft's `list_commands` on the host (20 Oct 2026); `gridcraft_journal.BLOCKED_COMMANDS` holds it. A request stays
+on the open workbook and saves only through `save_workbook`. It records what each write
 changed: `set_cell` and `write_range` cell by cell (before, after, computed after; 2,000 cells per request), other
 writes as one line, and the number of GridCraft undo steps the request made. It prints that journal as one
-`[journal] {...}` line on stderr, also when the request fails, and `/run` returns it as `journal`.
+`[journal] {...}` line on stderr, also when the request fails, and `/run` returns it as `journal`. A request that left
+something to undo also gets a `fingerprint`: a hash of every sheet's cells and the visible undo list (none for a
+workbook over 50,000 cells).
+
+**Stopping a request.** The agent stops itself between tool calls at its time limit, so it still prints its journal. In
+case it is stuck in GridCraft itself, it also prints each write as it starts and as it is recorded
+(`[journal-entry] {...}` lines); when the bridge has to kill it at `GRIDCRAFT_RUN_TIMEOUT`, `/run` answers 504 with the
+journal built from those lines (`partial: true`) and the workbook's undo list and fingerprint as they are now. A write
+that started and never got its record makes it `uncertain: true`: Discard then refuses, since it can't know how many
+steps to undo.
 
 Answers state the values they found. The model is told to compute totals, averages and counts with
 `evaluate_formula` (for example `=SUM(Sales!D2:D17)`), which every mode offers, instead of writing a formula into the
@@ -139,23 +154,28 @@ Without a model, through `host/gridcraft-agent/gridcraft_ops.py`:
 - `GET /workbook?sheet=&range=`: title, file name (never the host path), unsaved flag, sheets, and up to 100 rows by 40
   columns of the chosen sheet as display text (`values`), formulas (`formulas`) and computed values (`raw`).
 - `POST /keep`: saves the workbook.
-- `POST /discard {"steps":N,"undoTop":[...]}`: undoes `N` steps, but only if GridCraft's newest undo labels still
-  equal `undoTop` (otherwise 409: something else changed the workbook since).
+- `POST /discard {"steps":N,"undoTop":[...],"fingerprint":"..."}`: undoes `N` steps, but only if GridCraft's newest
+  undo labels still equal `undoTop` and, when given, the workbook's fingerprint still equals `fingerprint` (otherwise
+  409: something else changed the workbook since). The labels alone are generic ("Enter Cell"), so a cell typed in
+  GridCraft after the request could leave them unchanged.
 - `GET /workbooks`: the `.xlsx .xlsm .xls .csv .ods` files directly in `GRIDCRAFT_WORKBOOKS_DIR` (name, size, modified;
   never a path). Doesn't need GridCraft running.
 - `POST /open {"name":"Budget.xlsx"}`: opens that file from the folder (GridCraft `open_workbook`), replacing the open
   workbook. Only a bare file name: a path separator, `:`, `..` or another extension gets 400, a file not in the folder
-  404.
+  404, and 409 while the open workbook has unsaved changes.
 - `POST /cell {"sheet":"Sales","cell":"B7","input":"=B5*2"}`: the `set_cell` op, a cell changed by hand in the grid. It
   checks the input (cell `^[A-Z]{1,3}[1-9][0-9]{0,6}$`, sheet name 1 to 100 characters without control characters,
   input text up to 8,192 characters, empty clears the cell; otherwise 400, an unknown sheet 404), then calls GridCraft
   MCP `set_cell {cell:"Sales!B7", input}` (a sheet name that needs it is quoted: `'Q1 Sales'!B7`) through the same
   journal as a Review request. It never saves. It returns `journal` (the before → after edit, `undoSteps`, `undoTop`)
-  and `undoBefore`, the newest 5 undo labels before the edit.
+  and `undoBefore`, the newest 5 undo labels before the edit, and `fingerprintBefore`, the workbook's fingerprint before it.
 
 Keep, discard, open and cell edits wait for no running request (409; open says "GridCraft is busy with a request", a
 cell edit "GridCraft is busy with a request. Change the cell when it finishes."). The appliance
-stores each request as a settings row `gridcraft:run:<id>` (50 kept) and adds these routes:
+stores each request as a settings row `gridcraft:run:<id>` (50 kept) from the moment it starts (status `running`), so
+a request is never lost: one the bridge refused is removed, one the bridge never answered ends `failed` ("what this
+request changed is unknown"), and one still `running` when LocalAI starts ends `failed` ("LocalAI restarted while this
+request ran"). It adds these routes:
 
 | Appliance route | Bridge | Notes |
 |---|---|---|
@@ -174,13 +194,14 @@ stores each request as a settings row `gridcraft:run:<id>` (50 kept) and adds th
 ("Waiting for review"), titled `Direct edit: Sales!B7`, with its journal entry and undo step count, whatever mode the
 page is in. Keep and Discard work on it exactly as on a Review request. An edit joins the newest record instead when
 that record is a Direct edit still waiting for review and the bridge's `undoBefore` equals its `undoTop` (nothing else
-changed the workbook in between): its steps add up, `undoTop` becomes the newest, and a cell changed twice keeps its
+changed the workbook in between) and, when both are known, its `fingerprintBefore` equals that record's
+`fingerprint`: its steps add up, `undoTop` becomes the newest, and a cell changed twice keeps its
 first before. Otherwise the edit starts a record of its own, and as always only the newest can be discarded. One cell
 edit at a time (409 "Another cell change is still being made"); while a request runs, the bridge's 409 is passed on.
 
 **In Work.** Every request record is also a Work run (`app/server/runs.js`, id `legacy-gridcraft:<id>`, type
-`spreadsheet`, the Spreadsheets icon), from the same `gridcraft:run:*` rows, so nothing is copied. A request waiting
-for review is `awaiting_approval`: Work shows it as Ready to review, with a Review button, and Home's Needs you lists it.
+`spreadsheet`, the Spreadsheets icon), from the same `gridcraft:run:*` rows, so nothing is copied. A running
+request is `running`. A request waiting for review is `awaiting_approval`: Work shows it as Ready to review, with a Review button, and Home's Needs you lists it.
 Kept, applied and no-change requests are `completed`, discarded ones `cancelled`, and failed ones `failed`. Opening one,
 from Work, Needs you or a `#run/legacy-gridcraft:…` link, goes to Spreadsheets, where Keep and Discard are. Like other
 runs managed on their own page, it can't be deleted, filed or retried from Work.

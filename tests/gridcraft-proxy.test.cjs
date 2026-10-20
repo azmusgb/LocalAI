@@ -214,6 +214,7 @@ test('a GridCraft request that takes longer than fetch allows still gets its ans
   await new Promise(r => setTimeout(r, 50));
   const down = await (await post('/api/gridcraft/run', { prompt: 'x', mode: 'read' })).json();
   assert.match(down.error, /^GridCraft bridge unavailable/);
+  assert.deepEqual((await (await fetch(`${base}/api/gridcraft/runs`)).json()).items.map(x => x.status), ['done'], 'a request that never reached the bridge leaves no record');
   assert.doesNotMatch(down.error, /fetch failed|Ollama/);
 });
 
@@ -304,4 +305,111 @@ test('a cell changed by hand is forwarded as set_cell and waits for review as a 
   assert.deepEqual(kept.runs, [first.id]);
   assert.deepEqual((await (await fetch(`${base}/api/gridcraft/runs`)).json()).items.map(x => [x.kind, x.status]), [['edit', 'discarded'], ['edit', 'kept']]);
   assert.equal(seen.filter(x => x.url === '/keep').length, 1, 'only Keep saved');
+});
+
+test('a request is recorded while it runs; unsaved or stopped changes wait for review; Discard checks the fingerprint', { timeout: 60000 }, async t => {
+  // A stand-in bridge: each prompt names what the request did.
+  const seen = [];
+  let release = null;
+  const edit = { tool: 'set_cell', sheet: 'Sales', range: 'B2', before: [[1]], after: [['2']], afterValues: [['2']] };
+  const bridge = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      seen.push({ url: req.url, body });
+      const reply = (status, value) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)); };
+      if (req.url === '/run') {
+        const { prompt, mode } = JSON.parse(body);
+        const journal = extra => ({ mode, edits: [edit], changes: [], undoSteps: 1, undoTop: ['Enter Cell'], saved: false, ...extra });
+        if (prompt === 'hold') { release = () => reply(200, { ok: true, answer: 'held', journal: journal({ fingerprint: 'fp-held' }) }); return; }
+        if (prompt === 'busy') return reply(409, { ok: false, error: 'Another GridCraft request is already running' });
+        if (prompt === 'drop') return req.socket.destroy();
+        if (prompt === 'unsaved') return reply(200, { ok: true, answer: 'added', journal: journal() });
+        if (prompt === 'saved') return reply(200, { ok: true, answer: 'added and saved', journal: journal({ saved: true }) });
+        if (prompt === 'stopped') return reply(504, { ok: false, error: 'GridCraft request exceeded 300s', journal: journal({ partial: true, uncertain: true }) });
+        if (prompt === 'printed') return reply(200, { ok: true, answer: 'changed', journal: journal({ fingerprint: 'fp-1' }) });
+      }
+      if (req.url === '/cell') {
+        // The undo labels match the last edit's, but the cells don't: someone typed in GridCraft in between.
+        const n = seen.filter(x => x.url === '/cell').length;
+        return reply(200, { ok: true, undoBefore: ['Enter Cell'], fingerprintBefore: n === 1 ? 'fp-start' : 'fp-typed', journal: { mode: 'review', edits: [{ ...edit, range: n === 1 ? 'C1' : 'C2' }], changes: [], undoSteps: 1, undoTop: ['Enter Cell'], saved: false, fingerprint: `fp-cell-${n}` } });
+      }
+      if (req.url === '/discard') return reply(200, { ok: true, dirty: false });
+      if (req.url === '/keep') return reply(200, { ok: true, dirty: false });
+      reply(404, {});
+    });
+  });
+  bridge.listen(0, '127.0.0.1');
+  await once(bridge, 'listening');
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-gridcraft-record-'));
+  const off = 'http://127.0.0.1:9';
+  const env = { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, GRIDCRAFT_URL: `http://127.0.0.1:${bridge.address().port}`, OLLAMA_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off };
+  const stop = async child => { if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; } };
+  let server = spawnAppServer({ env });
+  t.after(async () => {
+    await stop(server.child);
+    bridge.closeAllConnections(); bridge.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+  let base = await server.ready;
+  const post = (p, body) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const runs = async () => (await (await fetch(`${base}/api/gridcraft/runs`)).json()).items;
+  const ask = async (prompt, mode = 'review') => (await (await post('/api/gridcraft/run', { prompt, mode })).json()).run;
+
+  // While a request runs, its record is there (Work shows it running), and it ends as what the bridge said.
+  const held = post('/api/gridcraft/run', { prompt: 'hold', mode: 'review' });
+  for (let i = 0; i < 100 && !release; i++) await new Promise(r => setTimeout(r, 50));
+  assert.deepEqual((await runs()).map(r => [r.prompt, r.status]), [['hold', 'running']]);
+  const work = await (await fetch(`${base}/api/runs?limit=50`)).json();
+  assert.equal((work.items || work.runs || []).find(r => r.id?.startsWith('legacy-gridcraft:'))?.status, 'running');
+  release();
+  const done = (await (await held).json()).run;
+  assert.deepEqual([done.status, done.fingerprint], ['review', 'fp-held']);
+  assert.equal((await runs()).length, 1, 'the same record, finished');
+
+  assert.equal((await post('/api/gridcraft/run', { prompt: 'busy' })).status, 409);
+  assert.equal((await runs()).length, 1, 'a request the bridge refused leaves no record');
+  await post(`/api/gridcraft/runs/${done.id}/keep`, {});
+
+  const lost = await post('/api/gridcraft/run', { prompt: 'drop' });
+  assert.equal(lost.status, 502);
+  assert.deepEqual((await runs()).slice(0, 1).map(r => [r.prompt, r.status]), [['drop', 'failed']]);
+  assert.match((await runs())[0].error, /did not answer, so what this request changed is unknown/);
+
+  assert.equal((await ask('saved', 'apply')).status, 'applied');
+  const unsaved = await ask('unsaved', 'apply');
+  assert.equal(unsaved.status, 'review', 'an Apply request that changed the workbook without saving waits for Keep or Discard');
+  await post(`/api/gridcraft/runs/${unsaved.id}/keep`, {});
+
+  const stopped = await ask('stopped');
+  assert.deepEqual([stopped.status, stopped.uncertain], ['review', true], 'a stopped request with a partial journal waits for review');
+  const before = seen.length;
+  const refused = await post(`/api/gridcraft/runs/${stopped.id}/discard`, {});
+  assert.equal(refused.status, 409);
+  assert.match((await refused.json()).error, /stopped in the middle of a change/);
+  assert.equal(seen.length, before, 'an uncertain request is never undone by guesswork');
+  await post(`/api/gridcraft/runs/${stopped.id}/keep`, {});
+
+  const printed = await ask('printed');
+  assert.equal((await post(`/api/gridcraft/runs/${printed.id}/discard`, {})).status, 200);
+  assert.deepEqual(JSON.parse(seen.at(-1).body), { steps: 1, undoTop: ['Enter Cell'], fingerprint: 'fp-1' }, 'Discard sends the fingerprint the request left');
+
+  // Same undo labels, different cells: the second hand edit starts its own review instead of joining the first.
+  const c1 = (await (await post('/api/gridcraft/cell', { sheet: 'Sales', cell: 'C1', input: '2' })).json()).run;
+  const c2 = (await (await post('/api/gridcraft/cell', { sheet: 'Sales', cell: 'C2', input: '2' })).json()).run;
+  assert.notEqual(c2.id, c1.id);
+  assert.equal(c2.fingerprint, 'fp-cell-2');
+  await post(`/api/gridcraft/runs/${c2.id}/keep`, {});
+
+  // LocalAI restarts while a request runs: the record says so instead of running forever.
+  release = null;
+  post('/api/gridcraft/run', { prompt: 'hold', mode: 'review' }).catch(() => {});
+  for (let i = 0; i < 100 && !release; i++) await new Promise(r => setTimeout(r, 50));
+  await stop(server.child);
+  server = spawnAppServer({ env });
+  base = await server.ready;
+  const after = (await runs())[0];
+  assert.deepEqual([after.prompt, after.status], ['hold', 'failed']);
+  assert.match(after.error, /LocalAI restarted while this request ran/);
+  release();
 });

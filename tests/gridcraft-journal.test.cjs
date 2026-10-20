@@ -63,6 +63,8 @@ class Fake:
             del self.undo[:args['steps']]; return Result({'undone': 'x'})
         if name == 'save_workbook':
             self.saved = True; return Result({'saved': True})
+        if name == 'open_workbook':
+            return Result({'opened': args['path']})
         return Result(error='unknown tool ' + name)
 
 async def scenario(name):
@@ -128,7 +130,65 @@ async def scenario(name):
                 'longest': len(O.cell_edit({'sheet': 'x' * 100, 'cell': 'XFD1048576', 'input': 'x' * 8192})[2]),
                 'qualified': [O.qualified('Sales', 'B2'), O.qualified('Q1 Sales', 'B2'), O.qualified("Bob's", 'A1'), O.qualified('2024', 'A1')]}
 
+    if name == 'typed-between':
+        # A Review request changes B2; then someone types C9 in GridCraft, which adds the same generic label on top of
+        # a list of the same labels: the visible undo list looks exactly as the request left it.
+        f.undo = ['Enter Cell'] * 25
+        j = J.Journal('review', f.call, {'set_cell'})
+        await j.call('set_cell', {'cell': 'B2', 'input': '5'})
+        info = await j.finish()
+        f.cells[('Sales', 'C9')] = 'typed'; f.undo.insert(0, 'Enter Cell')
+        labels_only = await O.discard(f.call, {'steps': 1, 'undoTop': info['undoTop']})
+        f.undo.insert(0, 'Enter Cell')  # put the step back for the second try
+        try: await O.discard(f.call, {'steps': 1, 'undoTop': info['undoTop'], 'fingerprint': info['fingerprint']}); checked = None
+        except O.OpError as e: checked = [e.status, str(e)]
+        # Nothing typed in between: the fingerprint matches and Discard undoes the request.
+        g = Fake(); k = J.Journal('review', g.call, {'set_cell'})
+        await k.call('set_cell', {'cell': 'B2', 'input': '5'})
+        same = await k.finish()
+        clean = await O.discard(g.call, {'steps': 1, 'undoTop': same['undoTop'], 'fingerprint': same['fingerprint']})
+        state = await O.state(g.call, {})
+        read_only = await J.Journal('read', g.call, {'read_range'}).finish()
+        return {'labels_only': labels_only, 'checked': checked, 'clean': clean, 'print': info['fingerprint'], 'cells': g.cells.get(('Sales', 'B2')),
+                'state': state, 'read_print': read_only['fingerprint'], 'big': await J.fingerprint(BigFake().call)}
+    if name == 'file-commands':
+        out = {}
+        for mode in ('review', 'apply'):
+            j = J.Journal(mode, f.call, J.allowed_tools(mode, {'execute_command', 'save_workbook'}))
+            for command in ('file.save', 'file.saveAs', 'saveAs', 'workbook.close', 'app.quit', 'file.open', 'export.pdf', 'file.saveBytes', 'link.open',
+                            'data.fromTextCsv', 'edit.undo', 'edit.paste', 'automate.runScript', 'view.macros', 'Edit.Redo',
+                            'sheet.activate', 'rows.insert', 'home.bold', 'cell.set', 'home.insertRows', 'data.sort', 'insert.chart'):
+                try: await j.call('execute_command', {'command': command, 'params': {}}); out[f'{mode} {command}'] = 'ran'
+                except J.ToolRefused as e: out[f'{mode} {command}'] = 'refused: ' + str(e)
+        j = J.Journal('apply', f.call, {'save_workbook'})
+        try: await j.call('save_workbook', {'path': 'C:/elsewhere.xlsx'}); out['save elsewhere'] = 'ran'
+        except J.ToolRefused as e: out['save elsewhere'] = 'refused: ' + str(e)
+        out['saved'] = f.saved
+        return out
+    if name == 'entries':
+        told = []
+        j = J.Journal('review', f.call, {'set_cell', 'format_range'}, told.append)
+        await j.call('set_cell', {'cell': 'B2', 'input': '5'})
+        await j.call('set_cell', {'cell': 'Nope!A1', 'input': '1'})
+        await j.call('format_range', {'range': 'B2', 'bold': True})
+        return [sorted(k for k in e if k != 'saved') + [e.get('steps')] for e in told]
+    if name == 'open-dirty':
+        import os, tempfile
+        d = tempfile.mkdtemp(); open(os.path.join(d, 'Budget.xlsx'), 'w').close(); os.environ['GRIDCRAFT_WORKBOOKS_DIR'] = d
+        clean = await O.open_book(f.call, {'name': 'Budget.xlsx'})
+        f.undo.insert(0, 'Enter Cell')
+        try: await O.open_book(f.call, {'name': 'Budget.xlsx'}); dirty = None
+        except O.OpError as e: dirty = [e.status, str(e)]
+        return {'clean': clean, 'dirty': dirty}
+
+class BigFake(Fake):
+    async def call(self, name, args):
+        if name == 'inspect_workbook':
+            return Result({'undo': [], 'sheets': [{'name': 'Big', 'usedRange': 'A1:Z5000'}]})
+        return await super().call(name, args)
+
 pure = {
+    'words': [J.command_words('file.saveAs'), J.command_words('rows.insert')],
     'delta': [J.undo_delta(['a', 'b'], ['x', 'a', 'b']), J.undo_delta(['a'] * 20, ['n', 'm'] + ['a'] * 18), J.undo_delta([], ['x', 'y']), J.undo_delta(['a', 'b'], ['a', 'b'])],
     'target': [J.write_target('write_range', {'range': "'My Sheet'!B3", 'values': [[1, 2, 3], [4]]}), J.write_target('set_cell', {'cell': 'AA10'}), J.write_target('write_range', {'range': 'B3', 'values': []})],
     'window': [J.window_range('B2:I17'), J.window_range('A1:AZ250'), J.window_range(None)],
@@ -221,4 +281,40 @@ test('A cell changed by hand is journaled like a Review request, never saved, an
   assert.deepEqual(r.missing, [404, 'No sheet named Nope', ['inspect_workbook']], 'an unknown sheet is never written');
   assert.equal(r.longest, 8192);
   assert.deepEqual(r.qualified, ['Sales!B2', "'Q1 Sales'!B2", "'Bob''s'!A1", "'2024'!A1"]);
+});
+
+test('Discard refuses once a cell was typed in GridCraft, even when the undo labels look the same', { skip }, () => {
+  const { 'typed-between': r } = run('typed-between');
+  assert.equal(r.labels_only.undone, 1, 'the undo labels alone could not tell (why the fingerprint exists)');
+  assert.deepEqual(r.checked, [409, 'The workbook changed in GridCraft after this request, so undoing it could remove other work.']);
+  assert.match(r.print, /^[0-9a-f]{32}$/);
+  assert.deepEqual(r.clean, { dirty: false, undone: 1 });
+  assert.equal(r.state.fingerprint.length, 32);
+  assert.deepEqual(r.state.undoTop, ['Older', 'Older', 'Older', 'Older', 'Older']);
+  assert.equal(r.read_print, null, 'a request that left nothing to undo needs no fingerprint');
+  assert.equal(r.big, null, 'a workbook too large to fingerprint falls back to the labels');
+});
+
+test('execute_command may not reach files, windows, scripts, the clipboard or undo history, and nothing saves elsewhere', { skip }, () => {
+  const { 'file-commands': r, pure } = run('file-commands');
+  assert.deepEqual(pure.words, [['file', 'save', 'as'], ['rows', 'insert']]);
+  for (const mode of ['review', 'apply']) {
+    for (const c of ['file.save', 'file.saveAs', 'saveAs', 'workbook.close', 'app.quit', 'file.open', 'export.pdf', 'file.saveBytes', 'link.open', 'data.fromTextCsv', 'edit.undo', 'edit.paste', 'automate.runScript', 'view.macros', 'Edit.Redo']) assert.match(r[`${mode} ${c}`], /^refused: The command .* is not available to requests/, `${mode} ${c}`);
+    for (const c of ['sheet.activate', 'rows.insert', 'home.bold', 'cell.set', 'home.insertRows', 'data.sort', 'insert.chart']) assert.equal(r[`${mode} ${c}`], 'ran', `${mode} ${c}`);
+  }
+  assert.match(r['apply file.save'], /use save_workbook to save/);
+  assert.doesNotMatch(r['review file.save'], /save_workbook/, 'Review is not told to save');
+  assert.match(r['save elsewhere'], /^refused: save_workbook saves the open workbook to its own file/);
+  assert.equal(r.saved, false);
+});
+
+test('each write is announced as it starts and as it is recorded, so a stopped request leaves a record', { skip }, () => {
+  const { entries } = run('entries');
+  assert.deepEqual(entries, [['pending', null], ['edit', 'steps', 1], ['pending', null], ['settled', null], ['pending', null], ['change', 'steps', 2]]);
+});
+
+test('opening another workbook waits until the open one has no unsaved changes', { skip }, () => {
+  const { 'open-dirty': r } = run('open-dirty');
+  assert.deepEqual(r.clean, { file: 'Budget.xlsx' });
+  assert.deepEqual(r.dirty, [409, 'The open workbook has unsaved changes. Keep or discard them first, then open another workbook.']);
 });

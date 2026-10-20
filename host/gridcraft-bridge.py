@@ -257,9 +257,23 @@ def _pump(stream, sink: list, on_line=None) -> None:
     stream.close()
 
 
+class AgentTimedOut(Exception):
+    # The agent ran past RUN_TIMEOUT and was killed; stderr is what it wrote until then (its journal entries).
+    def __init__(self, stderr: str):
+        super().__init__(f'GridCraft request exceeded {RUN_TIMEOUT}s')
+        self.stderr = stderr
+
+
+def agent_time_limit() -> int:
+    # The agent stops itself this long before the bridge would kill it, between tool calls, so it still prints its
+    # journal; the kill at RUN_TIMEOUT is only for an agent stuck in GridCraft itself.
+    return max(30, RUN_TIMEOUT - 30)
+
+
 def run_agent(prompt: str, mode: str = 'apply') -> subprocess.CompletedProcess:
     # '--once=<prompt>' keeps argparse from reading a prompt that starts with '-' as an option.
-    args = [str(PYTHON), str(AGENT), '--model', MODEL, '--mode', mode, f'--once={prompt}']
+    args = [str(PYTHON), str(AGENT), '--model', MODEL, '--mode', mode, '--time-limit', str(agent_time_limit()),
+            f'--once={prompt}']
     proc = subprocess.Popen(
         args,
         cwd=str(PROJECT_DIR),
@@ -288,13 +302,14 @@ def run_agent(prompt: str, mode: str = 'apply') -> subprocess.CompletedProcess:
             proc.kill()
         for reader in readers:
             reader.join(timeout=10)
-        raise
+        raise AgentTimedOut(''.join(err)) from None
     for reader in readers:
         reader.join(timeout=10)
     return subprocess.CompletedProcess(args, proc.returncode, ''.join(out), ''.join(err))
 
 
 JOURNAL_PREFIX = '[journal] '
+ENTRY_PREFIX = '[journal-entry] '
 
 
 def parse_journal(stderr: str) -> dict | None:
@@ -309,8 +324,42 @@ def parse_journal(stderr: str) -> dict | None:
     return None
 
 
+def partial_journal(stderr: str, mode: str) -> dict | None:
+    # The journal of a request that was killed before it printed its own: the agent prints each write as it starts
+    # ({"pending"}) and as it is recorded ({"edit"} or {"change"}, with its undo steps). A write that started and never
+    # got its record leaves the undo count unknown: uncertain, so Discard won't guess.
+    edits, changes, steps, saved, pending, uncertain = [], [], 0, False, None, False
+    for line in (stderr or '').splitlines():
+        if not line.startswith(ENTRY_PREFIX):
+            continue
+        try:
+            entry = json.loads(line[len(ENTRY_PREFIX):])
+        except ValueError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        if 'pending' in entry:
+            uncertain = uncertain or pending is not None
+            pending = entry['pending']
+            continue
+        pending = None
+        if 'settled' in entry:
+            continue
+        if isinstance(entry.get('edit'), dict):
+            edits.append(entry['edit'])
+        elif isinstance(entry.get('change'), dict):
+            changes.append(entry['change'])
+        steps += int(entry.get('steps') or 0)
+        saved = saved or entry.get('saved') is True
+    uncertain = uncertain or pending is not None
+    if not (edits or changes or uncertain):
+        return None
+    return {'mode': mode, 'edits': edits, 'changes': changes, 'undoSteps': steps, 'undoTop': [], 'saved': saved,
+            'partial': True, 'uncertain': uncertain}
+
+
 def without_journal(text: str) -> str:
-    return '\n'.join(x for x in (text or '').splitlines() if not x.startswith(JOURNAL_PREFIX))
+    return '\n'.join(x for x in (text or '').splitlines() if not x.startswith((JOURNAL_PREFIX, ENTRY_PREFIX)))
 
 
 def failure_reason(stdout: str, stderr: str) -> str:
@@ -448,7 +497,7 @@ class Handler(BaseHTTPRequestHandler):
                     op, 'A GridCraft request is running; try again when it finishes')
                 return self._json(409, {'ok': False, 'error': busy})
             try:
-                keys = {'discard': ('steps', 'undoTop'), 'open': ('name',), 'set_cell': ('sheet', 'cell', 'input')}.get(op, ())
+                keys = {'discard': ('steps', 'undoTop', 'fingerprint'), 'open': ('name',), 'set_cell': ('sheet', 'cell', 'input')}.get(op, ())
                 return self._json(*run_ops(op, {k: payload.get(k) for k in keys}))
             finally:
                 run_lock.release()
@@ -495,9 +544,18 @@ class Handler(BaseHTTPRequestHandler):
                 'mode': mode,
                 'journal': journal,
             })
-        except subprocess.TimeoutExpired:
+        except AgentTimedOut as exc:
             log.warning('Agent timed out after %ss', RUN_TIMEOUT)
-            return self._json(504, {'ok': False, 'error': f'GridCraft request exceeded {RUN_TIMEOUT}s'})
+            journal = partial_journal(exc.stderr, mode)
+            if journal:
+                # Where the workbook stands now, so Keep and Discard can work on what the request got done.
+                status, now = run_ops('state', {})
+                if status == 200:
+                    journal.update(undoTop=now.get('undoTop') or [], dirty=now.get('dirty'), fingerprint=now.get('fingerprint'))
+                else:
+                    journal['uncertain'] = True
+            return self._json(504, {'ok': False, 'error': f'GridCraft request exceeded {RUN_TIMEOUT}s', 'mode': mode,
+                                    'journal': journal})
         except Exception as exc:
             return self._json(500, {'ok': False, 'error': f'Bridge failed to run the agent: {type(exc).__name__}: {exc}'})
         finally:

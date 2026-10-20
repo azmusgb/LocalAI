@@ -55,6 +55,8 @@ test('the bridge passes the mode, returns the journal, and runs workbook, keep, 
   fs.writeFileSync(path.join(dir, 'agent.py'), `import sys, json, time
 mode = sys.argv[sys.argv.index('--mode') + 1]
 if sys.argv[-1] == '--once=slow': time.sleep(1.5)
+if sys.argv[-1] == '--once=limit':
+    print('[agent] model returned final text.'); print('limit ' + sys.argv[sys.argv.index('--time-limit') + 1]); sys.exit(0)
 if sys.argv[-1] == '--once=steps':
     for line in ['[agent] model turn 1 ...', '[agent] tool call: read_range {"range": "Sales!A1:D4"}', '[agent] tool result: read_range -> {}',
                  '[agent] tool call: set_cell {"cell": "B7", "sheet": "Sales", "input": "5"}', '[agent] tool result: set_cell -> ERROR no such sheet']:
@@ -87,12 +89,13 @@ else:
   assert.deepEqual(review.journal, { mode: 'review', edits: [], undoSteps: 0 });
   assert.equal((await (await post('/run', { prompt: 'x' })).json()).mode, 'apply', 'an older appliance that sends no mode gets the old behavior');
   assert.equal((await post('/run', { prompt: 'x', mode: 'admin' })).status, 400);
+  assert.equal((await (await post('/run', { prompt: 'limit', mode: 'read' })).json()).answer, 'limit 270', 'the agent stops itself 30 s before the bridge would kill it');
 
   const wb = await (await fetch(base + '/workbook?sheet=Sales&range=A1:C3&path=C:/x')).json();
   assert.deepEqual(wb, { ok: true, op: 'workbook', req: { sheet: 'Sales', range: 'A1:C3' } }, 'only sheet and range are passed on');
   assert.deepEqual((await (await post('/keep', { anything: 1 })).json()).req, {});
   const ok = await post('/discard', { steps: 2, undoTop: ['Enter Cell'], extra: 1 });
-  assert.deepEqual((await ok.json()).req, { steps: 2, undoTop: ['Enter Cell'] });
+  assert.deepEqual((await ok.json()).req, { steps: 2, undoTop: ['Enter Cell'], fingerprint: null });
   const conflict = await post('/discard', { steps: 2, undoTop: ['Bold'] });
   assert.equal(conflict.status, 409);
   assert.deepEqual(await conflict.json(), { ok: false, error: 'The workbook changed' });
@@ -139,7 +142,11 @@ sys.path.insert(0, os.path.dirname(sys.argv[1]))
 spec = importlib.util.spec_from_file_location('ops', sys.argv[1])
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 calls = []
+class Clean:  # inspect_workbook of a workbook with nothing unsaved
+    is_error = False
+    content = [type('B', (), {'text': json.dumps({'dirty': False})})()]
 async def call(name, args):
+    if name == 'inspect_workbook': return Clean()
     calls.append([name, args])
     return {}
 out = {'list': asyncio.run(m.workbooks(None, {})), 'names': {}}
@@ -172,4 +179,54 @@ test('the bridge task runs with normal rights, not elevated', () => {
   const installer = fs.readFileSync(path.resolve(__dirname, '../deploy/Install-GridCraft-Bridge.ps1'), 'utf8');
   assert.match(installer, /New-ScheduledTaskPrincipal [^\n]*-RunLevel Limited/);
   assert.doesNotMatch(installer, /-RunLevel Highest/);
+});
+
+test('a request the bridge has to kill still returns what it changed, and how the workbook stands', { skip: !python && 'no python', timeout: 30000 }, async t => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const net = require('node:net');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gridcraft-kill-'));
+  // An agent stuck in GridCraft: it records one edit, starts another write, and never returns.
+  fs.writeFileSync(path.join(dir, 'agent.py'), `import sys, json, time
+def entry(e): print('[journal-entry] ' + json.dumps(e), file=sys.stderr, flush=True)
+entry({'pending': 'set_cell'})
+entry({'edit': {'tool': 'set_cell', 'sheet': 'Sales', 'range': 'B2', 'before': [[1]], 'after': [['5']]}, 'steps': 1, 'saved': False})
+entry({'pending': 'write_range'})
+time.sleep(30)
+`);
+  fs.writeFileSync(path.join(dir, 'gridcraft_ops.py'), `import sys, json
+print(json.dumps({'ok': True, 'undoTop': ['Set Values', 'Enter Cell'], 'dirty': True, 'fingerprint': 'f' * 32}))
+`);
+  const control = net.createServer(s => s.end()).listen(0, '127.0.0.1');
+  await once(control, 'listening');
+  const port = await new Promise(res => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
+  const child = spawn(python, ['-I', bridge], { env: { ...process.env, GRIDCRAFT_RUN_TIMEOUT: '2', GRIDCRAFT_BRIDGE_PORT: String(port), GRIDCRAFT_CONTROL_PORT: String(control.address().port), GRIDCRAFT_AGENT_PYTHON: spawnSync(python, ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).stdout.trim(), GRIDCRAFT_AGENT_SCRIPT: path.join(dir, 'agent.py'), GRIDCRAFT_AGENT_DIR: dir } });
+  let log = ''; child.stderr.on('data', c => log += c); child.stdout.on('data', c => log += c);
+  t.after(() => { child.kill(); control.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${port}`;
+  for (let i = 0; ; i++) { try { await fetch(base + '/health'); break; } catch { if (i > 100) throw new Error(log); await new Promise(r => setTimeout(r, 100)); } }
+  const r = await fetch(base + '/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: 'x', mode: 'review' }) });
+  assert.equal(r.status, 504);
+  const data = await r.json();
+  assert.equal(data.error, 'GridCraft request exceeded 2s');
+  assert.deepEqual(data.journal, {
+    mode: 'review', edits: [{ tool: 'set_cell', sheet: 'Sales', range: 'B2', before: [[1]], after: [['5']] }], changes: [], undoSteps: 1,
+    undoTop: ['Set Values', 'Enter Cell'], saved: false, partial: true, uncertain: true, dirty: true, fingerprint: 'f'.repeat(32)
+  }, 'the recorded edit, the write left unfinished (uncertain), and where the workbook stands now');
+});
+
+test('a partial journal is built from the entries the agent printed', { skip: !python && 'no python' }, () => {
+  const code = `import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location('bridge', sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+E = lambda e: '[journal-entry] ' + json.dumps(e)
+done = '\\n'.join([E({'pending': 'set_cell'}), E({'edit': {'range': 'B2'}, 'steps': 1, 'saved': False}), E({'pending': 'format_range'}), E({'change': {'summary': 'Bold'}, 'steps': 2, 'saved': False}), E({'pending': 'set_cell'}), E({'settled': 'set_cell'}), 'noise'])
+print(json.dumps([m.partial_journal(done, 'review'), m.partial_journal('', 'review'), m.partial_journal(E({'pending': 'save_workbook'}), 'apply'), m.without_journal(done)]))`;
+  const r = spawnSync(python, ['-I', '-c', code, bridge], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const [done, none, pending, rest] = JSON.parse(r.stdout);
+  assert.deepEqual(done, { mode: 'review', edits: [{ range: 'B2' }], changes: [{ summary: 'Bold' }], undoSteps: 3, undoTop: [], saved: false, partial: true, uncertain: false });
+  assert.equal(none, null, 'nothing written, nothing to review');
+  assert.equal(pending.uncertain, true, 'a write that never got its record');
+  assert.equal(rest, 'noise');
 });

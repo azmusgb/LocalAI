@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sys
+import time
 from typing import Any
 
 from mcp import Client, StdioServerParameters
@@ -24,6 +25,26 @@ DEFAULT_LONG_CONTEXT_AT = 3500
 DEFAULT_GRIDCRAFT_CLI = r"C:\Program Files\GridCraft\gridcraft-cli.exe"
 DEFAULT_GRIDCRAFT_PORT = 7979
 MAX_TOOL_ROUNDS = 12
+
+
+class TimeLimit(RuntimeError):
+    pass
+
+
+async def model_call(models: dict[str, Any], create: Any) -> Any:
+    # A model call never runs past the request's time limit (--time-limit), so the agent stops between tool calls and
+    # still prints its journal, instead of the bridge killing it in the middle of a change.
+    deadline = models.get("deadline")
+    if not deadline:
+        return await create
+    left = deadline - time.monotonic()
+    if left <= 0:
+        create.close()
+        raise TimeLimit("Stopped at the request's time limit.")
+    try:
+        return await asyncio.wait_for(create, left)
+    except asyncio.TimeoutError:
+        raise TimeLimit("Stopped at the request's time limit while the model was still answering.") from None
 
 
 CORE_TOOL_NAMES = {
@@ -137,6 +158,12 @@ def parse_args() -> argparse.Namespace:
         choices=MODES,
         default=os.environ.get("GRIDCRAFT_MODE", "apply"),
         help="read: no changes; review: changes but never saves (the owner keeps or discards them); apply: changes and saves.",
+    )
+    parser.add_argument(
+        "--time-limit",
+        type=float,
+        default=float(os.environ.get("GRIDCRAFT_TIME_LIMIT") or 0),
+        help="Seconds a --once request may take; it stops between tool calls once they are up (0: no limit).",
     )
     parser.add_argument(
         "--list-tools",
@@ -275,6 +302,18 @@ async def verify_ollama(client: AsyncOpenAI, model: str) -> set[str]:
     return available
 
 
+async def save_applied(journal: Journal) -> Any:
+    """Apply means change and save: when the model changed the workbook but didn't save, save it, so nothing waits
+    unsaved in GridCraft for a later Keep or Open to sweep up. Only after a request that finished: a failed one is not
+    saved half done, and the appliance offers Keep or Discard for it."""
+    if journal.mode != "apply" or journal.undo_steps <= 0 or journal.saved or "save_workbook" not in journal.allowed:
+        return None
+    result = await journal.call("save_workbook", {})
+    print(f"[agent] saved the workbook for the request: {summarize_tool_result('save_workbook', tool_result_to_text(result))}",
+          file=sys.stderr, flush=True)  # stdout after the final marker is the answer
+    return result
+
+
 async def list_all_tools(mcp_client: Client) -> list[Any]:
     tools: list[Any] = []
     cursor: str | None = None
@@ -304,13 +343,13 @@ async def run_agent_turn(
 
     for round_index in range(1, MAX_TOOL_ROUNDS + 1):
         print(f"[agent] model turn {round_index} ...", flush=True)
-        response = await llm.chat.completions.create(
+        response = await model_call(models, llm.chat.completions.create(
             model=models["current"],
             messages=history,
             tools=openai_tools,
             tool_choice="auto",
             temperature=0.1,
-        )
+        ))
 
         if not response.choices:
             raise RuntimeError("Ollama returned no completion choices.")
@@ -321,13 +360,13 @@ async def run_agent_turn(
         if long_model and models["current"] != long_model and prompt_tokens >= models["long_at"]:
             print(f"[agent] prompt is {prompt_tokens} tokens; switching to {long_model}.", flush=True)
             models["current"] = long_model
-            response = await llm.chat.completions.create(
+            response = await model_call(models, llm.chat.completions.create(
                 model=long_model,
                 messages=history,
                 tools=openai_tools,
                 tool_choice="auto",
                 temperature=0.1,
-            )
+            ))
             if not response.choices:
                 raise RuntimeError("Ollama returned no completion choices.")
 
@@ -369,11 +408,11 @@ async def run_agent_turn(
 
             async def ask_without_tools(prompt: str) -> str:
                 # One short turn with no tools: the question, the values read, and the request to state them.
-                response = await llm.chat.completions.create(
+                response = await model_call(models, llm.chat.completions.create(
                     model=models["current"],
                     messages=[history[0], {"role": "user", "content": f"Question: {user_text}\n\n{prompt}"}],
                     temperature=0.1,
-                )
+                ))
                 return (response.choices[0].message.content or "") if response.choices else ""
 
             answer = await check_answer(final_text, user_text, reads, ask_without_tools)
@@ -484,7 +523,8 @@ async def async_main() -> int:
         print(f"Note: long-context model '{long_model}' is not installed; long workbooks may be truncated.")
         long_model = None
     # Shared across turns: once a conversation needs the long model it keeps using it.
-    models = {"current": args.model, "long": long_model, "long_at": args.long_context_at}
+    models = {"current": args.model, "long": long_model, "long_at": args.long_context_at,
+              "deadline": time.monotonic() + args.time_limit if args.time_limit > 0 else None}
 
     mcp_args = ["mcp"]
     if args.headless:
@@ -547,7 +587,10 @@ async def async_main() -> int:
             history: list[dict[str, Any]] = [
                 {"role": "system", "content": SYSTEM_PROMPT + MODE_PROMPTS[args.mode]}
             ]
-            journal = Journal(args.mode, mcp_client.call_tool, allowed)
+            def print_entry(entry: dict[str, Any]) -> None:
+                print("[journal-entry] " + json.dumps(entry, ensure_ascii=False, default=str), file=sys.stderr, flush=True)
+
+            journal = Journal(args.mode, mcp_client.call_tool, allowed, print_entry if args.once else None)
 
             if args.once:
                 # Report agent failures as such; the outer handler is only for MCP connection problems.
@@ -555,6 +598,7 @@ async def async_main() -> int:
                     answer = await run_agent_turn(
                         llm, journal, openai_tools, history, args.once, models
                     )
+                    await save_applied(journal)
                 except Exception as exc:
                     print(f"ERROR: Agent request failed: {type(exc).__name__}: {exc}", file=sys.stderr)
                     return 6
