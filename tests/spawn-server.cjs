@@ -11,10 +11,13 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const APP = path.resolve(__dirname, '../app');
+// Test servers must never reach the owner's real Workshop display (the app's default LOCALAI_WORKSHOP_URL). Port 9
+// (discard) on loopback refuses at once, so the Workshop card simply reads as offline. A caller's own value wins.
+const SAFE_WORKSHOP_URL = 'http://127.0.0.1:9';
 
 function spawnAppServer({ appDir = APP, env = {}, timeoutMs = 15000 } = {}) {
   const child = spawn(process.execPath, [path.join(appDir, 'server.js')], {
-    env: { ...process.env, ...env, PORT: '0' },
+    env: { ...process.env, LOCALAI_WORKSHOP_URL: process.env.LOCALAI_WORKSHOP_URL || SAFE_WORKSHOP_URL, ...env, PORT: '0' },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   let out = '';
@@ -36,4 +39,4 @@ function spawnAppServer({ appDir = APP, env = {}, timeoutMs = 15000 } = {}) {
   return { child, ready };
 }
 
-module.exports = { spawnAppServer };
+module.exports = { spawnAppServer, SAFE_WORKSHOP_URL };
