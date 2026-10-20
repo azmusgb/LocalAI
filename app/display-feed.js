@@ -15,7 +15,7 @@ const firstSentence = (s) => String(s || '').split(/(?<=[.!?])\s+/)[0] || '';
 //
 // Feed v2 (Workshop OS 12.6): every card has an id (stable while it means the same thing, so the display can tell a
 // new card), at (epoch seconds, when known) and ask (the question the display asks when the card is tapped).
-const ASK = { needs: 'needs', watch: 'health', running: 'running', done: 'today', weather: 'weather', image: null, disk: 'health' };
+const ASK = { needs: 'needs', watch: 'health', running: 'running', done: 'today', weather: 'weather', image: null, disk: 'health', playing: null, home: null };
 const sec = (iso) => { const t = Date.parse(iso || ''); return Number.isFinite(t) ? Math.floor(t / 1000) : undefined; };
 const ago = (atSec, now) => {
   const s = Math.max(0, Math.floor(now / 1000) - atSec);
@@ -23,7 +23,7 @@ const ago = (atSec, now) => {
 };
 const gb = (n) => `${Math.round(n / 1e9)} GB`;
 
-function buildFeed({ needs, watch = [], running = [], done = [], weather = null, image = null, images = null, disk = null, now = Date.now() }) {
+function buildFeed({ needs, watch = [], running = [], done = [], weather = null, image = null, images = null, disk = null, pi = null, now = Date.now() }) {
   const cards = [];
   const add = (kind, id, title, text, extra = {}) => {
     const c = card(kind, title, text, extra);
@@ -36,10 +36,19 @@ function buildFeed({ needs, watch = [], running = [], done = [], weather = null,
     needs?.count ? firstSentence(needs.speech).replace(/^Needs you:\s*/, '') : 'Nothing needs you right now.',
     { count: needs?.count || 0, tone: needs?.count ? 'attention' : 'ok' });
   for (const w of watch.slice(0, 2)) add('watch', `watch-${w.id || w.title}`, w.severity === 'high' ? 'Heads up' : 'Worth a look', w.title, { tone: w.severity === 'high' ? 'attention' : 'warning', at: sec(w.since) });
+  // The Pi hub's own issues (app/pi-hub.js), as "Pi: <what>".
+  for (const i of (pi?.issues || []).slice(0, 1)) add('home', `home-${i.what}`, `Pi: ${i.what}`, i.say || 'Needs a look.', { tone: i.tone === 'bad' ? 'attention' : 'warning' });
   if (running.length) {
     const top = running[0];
     const more = running.length > 1 ? ` · ${running.length - 1} more` : '';
     add('running', `running-${top.id || top.title}`, 'Working on', `${top.title || 'A run'}${more}`, { count: running.length, tone: 'busy', at: sec(top.startedAt || top.createdAt) });
+  }
+  // What Plex on the Pi is playing: the title, how far in, paused, and where.
+  const play = pi?.playing?.[0];
+  if (play) {
+    const bits = [play.title, play.progress != null && `${play.progress}%`, play.state === 'paused' && 'paused', play.where].filter(Boolean);
+    const more = pi.playing.length > 1 ? ` · ${pi.playing.length - 1} more` : '';
+    add('playing', `playing-${play.title}`, 'Now playing', bits.join(' · ') + more, { tone: 'busy', ...(play.progress != null ? { percent: play.progress } : {}) });
   }
   const fin = done[0];
   if (fin) {

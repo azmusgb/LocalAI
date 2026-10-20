@@ -99,6 +99,8 @@ const watchdog = require('./watchdog').createWatchdog({
     { path: DATA_DIR, name: 'data', label: 'Local AI data' }
   ]
 });
+// The Raspberry Pi's hub (app/pi-hub.js): Plex's now playing and the hub's issues, for the display's cards.
+const piHub = require('./pi-hub').createPiHub();
 // Pairing the Workshop display from its touchscreen (app/display-pairing.js).
 const displayPairing = require('./display-pairing').createDisplayPairing({
   dataDir: DATA_DIR, tlsName: process.env.LOCALAI_NAME || 'localai.home.arpa',
@@ -695,7 +697,7 @@ async function displayFeedNow() {
     .filter(i => i.imageUrl);
   const disks = watchdog.summary().hostDisks || [];
   const disk = disks.filter(d => d.totalBytes > 0).sort((x, y) => x.freeBytes / x.totalBytes - y.freeBytes / y.totalBytes)[0] || null;
-  const feed = displayFeed.buildFeed({ needs, watch: watchdog.list(), running, done: displayDoneRuns(2 * 3600 * 1000), weather: await feedWeatherText(), images, disk });
+  const feed = displayFeed.buildFeed({ needs, watch: watchdog.list(), running, done: displayDoneRuns(2 * 3600 * 1000), weather: await feedWeatherText(), images, disk, pi: await piHub.read() });
   feed.messages = displayMessages.recent();
   return feed;
 }
