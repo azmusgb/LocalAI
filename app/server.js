@@ -99,6 +99,8 @@ const watchdog = require('./watchdog').createWatchdog({
     { path: DATA_DIR, name: 'data', label: 'Local AI data' }
   ]
 });
+// The Raspberry Pi's hub (app/pi-hub.js): Plex's now playing and the hub's issues, for the display's cards.
+const piHub = require('./pi-hub').createPiHub();
 // Pairing the Workshop display from its touchscreen (app/display-pairing.js).
 const displayPairing = require('./display-pairing').createDisplayPairing({
   dataDir: DATA_DIR, tlsName: process.env.LOCALAI_NAME || 'localai.home.arpa',
@@ -130,6 +132,7 @@ const signIn = require('./signin').createSignIn({ storage, signedIn: req => !!cl
   '/api/display/approvals': req => displayKey.authorized(req),
   '/api/display/approvals/decide': req => displayKey.authorized(req),
   '/api/display/heartbeat': req => displayKey.authorized(req),
+  '/api/display/poster': req => displayKey.authorized(req),
   // The feed's latest-image card links here; the display fetches the JPEG with its key.
   '/api/images/view': req => displayKey.authorized(req)
 } });
@@ -695,7 +698,7 @@ async function displayFeedNow() {
     .filter(i => i.imageUrl);
   const disks = watchdog.summary().hostDisks || [];
   const disk = disks.filter(d => d.totalBytes > 0).sort((x, y) => x.freeBytes / x.totalBytes - y.freeBytes / y.totalBytes)[0] || null;
-  const feed = displayFeed.buildFeed({ needs, watch: watchdog.list(), running, done: displayDoneRuns(2 * 3600 * 1000), weather: await feedWeatherText(), images, disk });
+  const feed = displayFeed.buildFeed({ needs, watch: watchdog.list(), running, done: displayDoneRuns(2 * 3600 * 1000), weather: await feedWeatherText(), images, disk, pi: await piHub.read() });
   feed.messages = displayMessages.recent();
   return feed;
 }
@@ -1843,6 +1846,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/display/feed') return await apiDisplayFeed(req,res);
     if (req.method === 'GET' && p === '/api/display/ask') return await apiDisplayAsk(req,res,urlObj);
     if (req.method === 'GET' && p === '/api/display/events') return await apiDisplayEvents(req,res,urlObj);
+    if (req.method === 'GET' && p === '/api/display/poster') {
+      const jpg = await piHub.poster(Number(urlObj.searchParams.get('n') ?? 0));
+      if (!jpg) return json(res, 404, { error: 'Nothing is playing' });
+      res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': jpg.length, 'Cache-Control': 'private, max-age=60' });
+      return res.end(jpg);
+    }
     if (req.method === 'POST' && p === '/api/display/notify') return await apiDisplayNotify(req,res);
     if ((req.method === 'POST' && (p === '/api/display/pair' || p === '/api/display/pair/start')) || (req.method === 'GET' && p === '/api/display/pair/status')) return await apiDisplayPair(req,res,p);
     if (req.method === 'GET' && p === '/api/display/approvals') return await apiDisplayApprovals(req,res);

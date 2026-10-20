@@ -147,6 +147,13 @@ All of these, the feed, the ask buttons and `/api/images/view` (the pictures) ar
 - **Heartbeat.** `POST /api/display/heartbeat {version, sourceSha, uptimeS, rssi, heapFree, psramFree, camera}`
   every few minutes; `GET /api/watch` shows the last one as `display`.
 
+## Pi hub cards
+
+The Raspberry Pi's hub answers `GET http://10.0.0.30/api/now` with a summary, no key needed (`LOCALAI_PI_HUB_URL`
+changes the address; `off` turns it off). Local AI reads it at most once a minute (3 s limit) for two feed cards:
+`playing` ("Now playing", the title, how far in, paused, and where, from Plex on the Pi) and `home` (the hub's first
+issue, "Pi: <what>", e.g. "Pi: Movies drive · It dropped out…"). When the hub doesn't answer, neither card shows.
+
 ## Pairing (Workshop OS 12.7)
 
 Instead of the Mac's `set-key.sh` and `configure_localai_feed.py`: in Local AI, **Services › Workshop display › Pair
