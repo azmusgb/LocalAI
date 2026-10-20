@@ -2957,21 +2957,30 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     return `<button class="btn-outline ux-int-action" type="button" data-integration-view="${action.view}">${action.label}</button>`;
   }
 
+  // Three groups: what works here now, what could be added, and outside websites; only the first has live status.
+  const GROUPS = [['Working here', 'On this computer and your network, checked live.'], ['Could add', 'Not set up yet: what each would do.'], ['Outside websites', 'Links out; nothing to connect.']];
+  const groupOf = item => item.source ? 0 : ['huggingface', 'photopea', 'languagetool'].includes(item.id) ? 2 : 1;
   function renderCards() {
     const holder = q('#uxIntegrationCardsV2');
     if (!holder) return;
-    holder.innerHTML = INTEGRATIONS.map(item => {
+    const card = item => {
       const actions = item.actions.map(action => actionHtml(item, action)).join('');
-      const live = item.source
-        ? `<span class="ux-int-live" data-integration-source-v2="${item.source}"><span class="dot"></span> Checking</span>`
-        : '<span class="ux-int-live neutral"><span class="dot"></span> Not verified</span>';
-      return `<article class="ux-int-card" data-tier="${item.tier}" aria-labelledby="ux-int-v2-${item.id}">
+      const live = item.source ? `<span class="ux-int-live" data-integration-source-v2="${item.source}"><span class="dot"></span> Checking</span>` : '';
+      const ws = item.id === 'workshop';
+      return `<article class="ux-int-card${ws ? ' ux-int-wide' : ''}" data-tier="${item.tier}" aria-labelledby="ux-int-v2-${item.id}">
         <div class="ux-int-card-head"><div><div class="ux-int-name" id="ux-int-v2-${item.id}">${item.name}</div><div class="ux-int-decision" data-integration-decision="${item.id}">${item.decision}</div></div>${tierBadge(item.tier)}</div>
         <p data-integration-summary="${item.id}">${item.summary}</p>
-        <div class="ux-int-guidance">${item.guidance}</div>${item.id === 'workshop' ? `<div class="ux-int-guidance" data-workshop-printer hidden></div>${CODE_HTML}${PAIR_HTML}` : ''}
+        <div class="ux-int-guidance">${item.guidance}</div>${ws ? `<div class="ux-int-facts" data-workshop-facts hidden></div><div class="ux-int-guidance" data-workshop-printer hidden></div><div class="ux-ws-tools">${CODE_HTML}${PAIR_HTML}</div>` : ''}
         <div class="ux-int-card-foot">${live}<div class="ux-int-actions">${actions}</div></div>
       </article>`;
+    };
+    // What works here is open; the ideas and the outside websites fold away, with a count.
+    holder.innerHTML = GROUPS.map(([title, note], g) => {
+      const items = INTEGRATIONS.filter(i => groupOf(i) === g), grid = `<div class="ux-int-grid">${items.map(card).join('')}</div>`;
+      return g ? `<details class="ux-int-group compact"><summary><h3>${title}</h3><span class="ux-int-group-note">${note} · ${items.length} ${g === 1 ? 'ideas' : 'sites'}</span></summary>${grid}</details>`
+        : `<section class="ux-int-group"><h3>${title}</h3><p class="ux-int-group-note">${note}</p>${grid}</section>`;
     }).join('');
+    workshopFacts();
     qa('[data-integration-view]', holder).forEach(button => button.addEventListener('click', () => navigate(button.dataset.integrationView)));
     qa('[data-integration-post]', holder).forEach(button => button.addEventListener('click', () => postAction(button)));
     q('[data-workshop-code-show]', holder)?.addEventListener('click', showCode);
@@ -3133,6 +3142,15 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     box.textContent = words; box.hidden = !words;
   }
 
+  // The display's own report (its heartbeat, in GET /api/watch): version, uptime, Wi-Fi and when it last checked in.
+  async function workshopFacts() {
+    const d = (await fetch('/api/watch', { cache: 'no-store' }).then(r => r.json()).catch(() => ({}))).display, box = q('[data-workshop-facts]');
+    if (!box || !d?.at) return;
+    const ago = Math.max(0, Math.round((Date.now() - Date.parse(d.at)) / 60000)), up = d.uptimeS || 0;
+    box.textContent = [`Workshop OS ${d.version || '?'}`, `up ${up >= 86400 ? Math.floor(up / 86400) + ' d' : up >= 3600 ? Math.floor(up / 3600) + ' h' : Math.floor(up / 60) + ' min'}`, d.rssi != null && `Wi-Fi ${d.rssi} dBm`, ago ? `checked in ${ago} min ago` : 'checked in just now'].filter(Boolean).join(' · ');
+    box.hidden = false;
+  }
+
   function updateWorkshop(status) {
     const url = typeof status?.portalUrl === 'string' && /^https?:\/\//.test(status.portalUrl) ? status.portalUrl : '';
     const link = q('[data-integration-portal="workshop"]');
@@ -3249,7 +3267,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     section.innerHTML = `
       <div class="topbar"><div><h1>Services</h1><p class="sub">What Local AI connects to, how each one is doing, and what each one is for.</p></div><button class="btn-outline" type="button" id="uxIntegrationRefreshV2" aria-busy="false">Check again</button></div>
       <div class="card ux-int-hero ux-int-v2"><div><h2>Connected services</h2><p id="uxIntegrationStatusSummaryV2" role="status" aria-live="polite">Checking local services…</p><span id="uxIntegrationLastCheckedV2" class="ux-int-checked"></span></div><div class="ux-int-metrics"><div><b id="uxIntegrationNativeCountV2">—</b><span>core services healthy</span></div><div><b id="uxIntegrationMediaStateV2">—</b><span>image and media</span></div><div><b>Opt-in</b><span>cloud and outside services</span></div></div></div>
-      <div class="section-head ux-int-section-head"><div><h2>What each one does</h2><p>What it is for here, and whether it is ready.</p></div></div><div id="uxIntegrationCardsV2" class="ux-int-grid"></div>
+      <div class="section-head ux-int-section-head"><div><h2>What each one does</h2></div></div><div id="uxIntegrationCardsV2" class="ux-int-grid"></div>
       <details class="ux-int-about"><summary>How services are chosen</summary><div class="card ux-int-policy"><div><h2>What gets built in</h2></div><div class="ux-int-policy-grid"><div><strong>1. On this computer first</strong><span>Ollama, n8n and ComfyUI do the work by default, so nothing leaves your network.</span></div><div><strong>2. One service per job</strong><span>No second chat, automation or image service that would split your history in two.</span></div><div><strong>3. A connection has to be worth it</strong><span>Penpot and Obsidian would share real designs and notes with Local AI, not just open another tab.</span></div><div><strong>4. The cloud only when you choose it</strong><span>Accounts and uploads to outside services happen only when you set them up yourself.</span></div></div></div>
       <div class="card ux-int-research"><div><h2>Safeguards</h2></div><div class="ux-int-research-grid"><div><strong>n8n security check</strong><span>Run it after you connect an account, add a community add-on or a public webhook. It checks accounts, data, files and add-ons.</span><a data-external="true" href="https://docs.n8n.io/hosting/securing/security-audit/" target="_blank" rel="noopener noreferrer" aria-label="n8n security check guidance (opens external site)">Official guidance ↗</a></div><div><strong>ComfyUI add-ons</strong><span>Some add-ons only work in ComfyUI's own window, not when Local AI asks for an image. Check before you rely on one.</span><a data-external="true" href="https://docs.comfy.org/custom-nodes/overview" target="_blank" rel="noopener noreferrer" aria-label="ComfyUI add-on guidance (opens external site)">Add-on guidance ↗</a></div><div><strong>Penpot on your own server</strong><span>Penpot can run at home and let Local AI read and update designs. Its access key is a password and never goes into the page.</span><a data-external="true" href="https://help.penpot.app/mcp/" target="_blank" rel="noopener noreferrer" aria-label="Penpot connection guidance (opens external site)">Penpot guide ↗</a></div></div></div>
       <div class="card ux-int-next"><div><h2>Planned next</h2></div><div class="ux-int-next-grid"><div><b>Shipped</b><strong>Live n8n and ComfyUI health</strong><span>This page checks both every time you open it.</span></div><div><b>Next</b><strong>Video and talking portraits</strong><span>Show Stable Video Diffusion and SadTalker as ready once their models are installed in ComfyUI.</span></div><div><b>Next</b><strong>Obsidian notes as Sources</strong><span>Pick a notes folder and add its files to a project's Sources, each with where it came from.</span></div><div><b>Opt-in</b><strong>Penpot connection</strong><span>Connect your own Penpot without its access key ever reaching the browser.</span></div></div></div>

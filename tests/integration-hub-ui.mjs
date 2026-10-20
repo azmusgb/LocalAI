@@ -149,13 +149,23 @@ await check('the Workshop display card: a 401 reads as online with its own sign-
   assert.equal(await line.isVisible(), false);
 });
 
+await check('services are grouped: what works here is open, ideas and outside websites fold away', async () => {
+  const groups = page.locator('#uxIntegrationCardsV2 .ux-int-group');
+  assert.deepEqual(await groups.locator('h3').allInnerTexts(), ['Working here', 'Could add', 'Outside websites']);
+  assert.equal(await page.locator('#uxIntegrationCardsV2 details.ux-int-group[open]').count(), 0);
+  assert.ok(await page.locator('#uxIntegrationCardsV2 section.ux-int-group .ux-int-card', { hasText: 'Workshop display' }).isVisible());
+  // Open the folded groups the way a person would, for the checks below.
+  for (const summary of await page.locator('#uxIntegrationCardsV2 details.ux-int-group > summary').all()) await summary.click();
+});
+
 await check('unverified media extensions do not pretend to be installed', async () => {
   const svd = page.locator('.ux-int-card', { hasText: 'Stable Video Diffusion' });
   const sad = page.locator('.ux-int-card', { hasText: 'SadTalker' });
   assert.match(await svd.innerText(), /Not set up/i);
-  assert.match(await svd.innerText(), /Not verified/i);
   assert.match(await sad.innerText(), /Not set up/i);
-  assert.match(await sad.innerText(), /Not verified/i);
+  // No live status: nothing is checked for what isn't set up.
+  assert.equal(await svd.locator('.ux-int-live').count(), 0);
+  assert.equal(await sad.locator('.ux-int-live').count(), 0);
 });
 
 await check('research-backed safeguards are visible and actionable', async () => {
