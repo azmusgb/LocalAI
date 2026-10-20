@@ -48,13 +48,22 @@ function createGridcraft(ctx) {
   const GRIDCRAFT_MODES = new Set(['read', 'review', 'apply']);
   const GRIDCRAFT_KEEP_RUNS = 50;
   function gridcraftRunStatus(ok, mode, journal) {
-    const changed = !!journal && ((journal.edits || []).length > 0 || (journal.changes || []).length > 0 || journal.undoSteps > 0);
+    const changed = !!journal && ((journal.edits || []).length > 0 || (journal.changes || []).length > 0 || journal.undoSteps > 0 || journal.uncertain === true);
     if (mode === 'review' && changed) return 'review'; // also after a failure: whatever it changed can still be discarded
+    // Apply saves when it finishes; changes it left unsaved (it failed or was stopped, or the save failed) wait for
+    // Keep or Discard like a Review request's, instead of sitting in GridCraft for a later Keep or Open to sweep up.
+    if (mode === 'apply' && changed && journal.saved !== true) return 'review';
     if (!ok) return 'failed';
     return mode === 'apply' && changed ? 'applied' : 'done';
   }
   function gridcraftRuns(limit = 30) { return storage.listSettings(GRIDCRAFT_RUN_PREFIX, { limit }); }
   function saveGridcraftRun(run) { storage.writeSetting(GRIDCRAFT_RUN_PREFIX + run.id, run); }
+  // A request is recorded when it starts, so one cut short by a LocalAI restart still shows; at start-up any record
+  // still running is one of those. Its changes, if any, are in GridCraft without a journal, so it can't be discarded.
+  const GRIDCRAFT_LOST = 'LocalAI restarted while this request ran, so what it changed is unknown. Look at the workbook before you keep anything.';
+  try {
+    for (const run of storage.listSettings(GRIDCRAFT_RUN_PREFIX, { where: { status: 'running' } })) saveGridcraftRun({ ...run, status: 'failed', error: GRIDCRAFT_LOST, updatedAt: new Date().toISOString() });
+  } catch { /* read-only storage: nothing to tidy */ }
   async function apiGridcraftRun(req, res) {
     // Same rules the bridge applies to browsers: same-origin only, JSON only.
     if (!sameOriginJson(req, res)) return;
@@ -63,27 +72,39 @@ function createGridcraft(ctx) {
     const prompt = String(b.prompt || ''), mode = b.mode === undefined ? 'review' : String(b.mode);
     if (!GRIDCRAFT_MODES.has(mode)) return json(res, 400, { ok: false, error: 'mode must be read, review or apply' });
     const untrack = inFlight.track('gridcraft', 'GridCraft: ' + prompt);
+    const started = new Date().toISOString();
+    const pending = { id: makeId('gc'), prompt: prompt.slice(0, 2000), mode, status: 'running', answer: '', error: '', edits: [], changes: [], undoSteps: 0, undoTop: [], saved: false, createdAt: started, updatedAt: started };
+    saveGridcraftRun(pending);
+    let recorded = false;
     try {
       const r = await bridgeFetch('/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, mode }) }, GRIDCRAFT_RUN_TIMEOUT_MS);
       const data = await bridgeJson(r, { ok: false, error: `Bridge returned HTTP ${r.status}` });
       const ok = r.ok && data.ok === true, journal = data.journal && typeof data.journal === 'object' ? data.journal : null;
       // A request the bridge refused before running (busy, bad prompt) changed nothing and isn't worth a record.
-      if (!ok && !journal && r.status !== 500 && r.status !== 504) return json(res, r.status, { ok: false, error: data.error, reason: data.reason });
-      const now = new Date().toISOString();
+      if (!ok && !journal && r.status !== 500 && r.status !== 504) {
+        storage.deleteSetting(GRIDCRAFT_RUN_PREFIX + pending.id); recorded = true;
+        return json(res, r.status, { ok: false, error: data.error, reason: data.reason });
+      }
       const run = {
-        id: makeId('gc'), prompt: prompt.slice(0, 2000), mode, status: gridcraftRunStatus(ok, mode, journal),
+        ...pending, status: gridcraftRunStatus(ok, mode, journal),
         answer: ok ? String(data.answer || '') : '', error: ok ? '' : [data.error, data.reason].filter(Boolean).join(': '),
         edits: journal?.edits || [], changes: journal?.changes || [], undoSteps: Number(journal?.undoSteps) || 0,
         undoTop: Array.isArray(journal?.undoTop) ? journal.undoTop : [], saved: journal?.saved === true,
-        durationSec: data.durationSec, createdAt: now, updatedAt: now
+        ...(typeof journal?.fingerprint === 'string' ? { fingerprint: journal.fingerprint } : {}),
+        ...(journal?.uncertain === true ? { uncertain: true } : {}),
+        durationSec: data.durationSec, updatedAt: new Date().toISOString()
       };
-      saveGridcraftRun(run);
+      saveGridcraftRun(run); recorded = true;
       storage.pruneSettings(GRIDCRAFT_RUN_PREFIX, GRIDCRAFT_KEEP_RUNS);
       if (ok) recordActivity('gridcraft', 'GridCraft request', prompt.slice(0, 180), { durationSec: data.durationSec, mode });
       json(res, r.status, { ok, answer: run.answer, ...(ok ? {} : { error: data.error, reason: data.reason }), durationSec: data.durationSec, run });
     } catch (e) {
       bridgeFailure(res, e);
-    } finally { untrack(); }
+    } finally {
+      // The bridge never answered (time-out, connection lost): the request may still have changed the workbook.
+      if (!recorded) saveGridcraftRun({ ...pending, status: 'failed', error: 'GridCraft did not answer, so what this request changed is unknown. Look at the workbook before you keep anything.', updatedAt: new Date().toISOString() });
+      untrack();
+    }
   }
   async function apiGridcraftRuns(req, res) { json(res, 200, { items: gridcraftRuns() }); }
   async function apiGridcraftWorkbook(req, res, urlObj) {
@@ -185,18 +206,23 @@ function createGridcraft(ctx) {
       const steps = Number(journal.undoSteps) || 0, undoTop = Array.isArray(journal.undoTop) ? journal.undoTop : [];
       const now = new Date().toISOString(), where = `${sheet}!${cell}`;
       const last = gridcraftRuns(1)[0];
-      const join = last?.kind === 'edit' && last.status === 'review' && sameList(data.undoBefore, last.undoTop);
+      // The undo labels are generic, so a cell typed in GridCraft between the two edits can leave them as they were:
+      // the fingerprint of every cell before this edit must also be the one the last edit left.
+      const samePrint = !last?.fingerprint || !data.fingerprintBefore || data.fingerprintBefore === last.fingerprint;
+      const join = last?.kind === 'edit' && last.status === 'review' && sameList(data.undoBefore, last.undoTop) && samePrint;
+      const prints = typeof journal.fingerprint === 'string' ? { fingerprint: journal.fingerprint } : {};
       let run;
       if (join) {
         const cells = [...new Set([...(last.cells || []), where])];
         run = {
           ...last, cells, edits: mergeCellEdits(last.edits || [], edits), changes: [...(last.changes || []), ...changes],
-          undoSteps: (Number(last.undoSteps) || 0) + steps, undoTop, prompt: gridcraftEditTitle(cells), answer: gridcraftEditAnswer(cells), updatedAt: now
+          undoSteps: (Number(last.undoSteps) || 0) + steps, undoTop, ...prints, prompt: gridcraftEditTitle(cells), answer: gridcraftEditAnswer(cells), updatedAt: now
         };
+        if (!prints.fingerprint) delete run.fingerprint;
       } else {
         run = {
           id: makeId('gc'), kind: 'edit', cells: [where], prompt: gridcraftEditTitle([where]), mode: 'review', status: steps > 0 ? 'review' : 'done',
-          answer: gridcraftEditAnswer([where]), error: '', edits, changes, undoSteps: steps, undoTop, saved: false,
+          answer: gridcraftEditAnswer([where]), error: '', edits, changes, undoSteps: steps, undoTop, ...prints, saved: false,
           durationSec: Math.round((Date.now() - started) / 10) / 100, createdAt: now, updatedAt: now
         };
       }
@@ -218,10 +244,11 @@ function createGridcraft(ctx) {
     if (run.status !== 'review') return json(res, 409, { ok: false, error: 'This request is not waiting for review' });
     // GridCraft's undo is one line: only the newest request's changes are on top of it.
     if (action === 'discard' && gridcraftRuns(1)[0]?.id !== id) return json(res, 409, { ok: false, error: 'Only the latest request can be undone' });
+    if (action === 'discard' && run.uncertain) return json(res, 409, { ok: false, error: 'This request was stopped in the middle of a change, so Discard can\'t tell exactly what to undo. Keep saves it as it is; to throw it away, close the workbook in GridCraft without saving.' });
     let r = { ok: true }, data = { ok: true };
     try {
       if (action === 'keep' || run.undoSteps > 0) {
-        r = await bridgeFetch(`/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action === 'discard' ? { steps: run.undoSteps, undoTop: run.undoTop } : {}) }, 65000);
+        r = await bridgeFetch(`/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action === 'discard' ? { steps: run.undoSteps, undoTop: run.undoTop, ...(run.fingerprint ? { fingerprint: run.fingerprint } : {}) } : {}) }, 65000);
         data = await bridgeJson(r, { ok: false, error: `Bridge returned HTTP ${r.status}` });
       }
     } catch (e) { return bridgeFailure(res, e); }

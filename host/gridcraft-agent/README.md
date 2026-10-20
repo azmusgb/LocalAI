@@ -47,6 +47,7 @@ $py = "$env:USERPROFILE\gridcraft-local-ai\.venv\Scripts\python.exe"
 | `--headless` | | off | Use GridCraft's in-process engine instead of the open GUI |
 | `--workbook`, `--sample` | | | Workbook path or sample name, headless mode only |
 | `--once` | | | Run one request and exit |
+| `--time-limit` | `GRIDCRAFT_TIME_LIMIT` | `0` (none) | Seconds a `--once` request may take; it stops between tool calls (the bridge passes its limit less 30 s) |
 | `--list-tools` | | | Print the MCP tools offered to the model and exit |
 | `--all-tools` | | off | Offer every GridCraft tool instead of the compact core set |
 

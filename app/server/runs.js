@@ -85,7 +85,7 @@ function createRuns(ctx) {
     }
     // Spreadsheet requests (GridCraft's own records, app/server/gridcraft.js): one waiting for Keep or Discard is waiting
     // on the owner, so Work and Needs you show it; opening it goes to Spreadsheets, where Keep and Discard are.
-    const GRIDCRAFT_STATUS = { review: 'awaiting_approval', failed: 'failed', discarded: 'cancelled' };
+    const GRIDCRAFT_STATUS = { running: 'running', review: 'awaiting_approval', failed: 'failed', discarded: 'cancelled' };
     for (const run of gridcraftRuns(50)) {
       const status = GRIDCRAFT_STATUS[run.status] || 'completed';
       items.push({
@@ -97,7 +97,7 @@ function createRuns(ctx) {
         createdAt: run.createdAt || null,
         startedAt: run.createdAt || null,
         updatedAt: run.updatedAt || run.createdAt || null,
-        finishedAt: status === 'awaiting_approval' ? null : (run.updatedAt || run.createdAt || null),
+        finishedAt: status === 'awaiting_approval' || status === 'running' ? null : (run.updatedAt || run.createdAt || null),
         summary: String(run.answer || run.error || '').slice(0, 1200),
         input: { prompt: String(run.prompt || '').slice(0, 4000), mode: run.mode || '' },
         output: run.answer ? { text: String(run.answer).slice(0, 4000) } : null,
