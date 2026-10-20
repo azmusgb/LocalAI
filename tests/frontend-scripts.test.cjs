@@ -11,10 +11,15 @@ const pub = path.join(__dirname, '..', 'app', 'public');
 const NOT_PAGE_SCRIPTS = new Set(['sw.js']);
 const modules = fs.readdirSync(pub).filter(f => f.endsWith('.js') && !NOT_PAGE_SCRIPTS.has(f));
 
+// Loaded on first use by ui.js, not on every page load (still precached by the service worker).
+const ON_DEMAND = new Set(['agent-world-watch.js']);
+
 test('index.html loads every front-end module', () => {
   const html = fs.readFileSync(path.join(pub, 'index.html'), 'utf8');
   const loaded = new Set([...html.matchAll(/<script[^>]*\ssrc="\/([^"]+\.js)"/g)].map(m => m[1]));
-  assert.deepEqual(modules.filter(f => !loaded.has(f)), []);
+  assert.deepEqual(modules.filter(f => !loaded.has(f) && !ON_DEMAND.has(f)), []);
+  const ui = fs.readFileSync(path.join(pub, 'ui.js'), 'utf8');
+  for (const f of ON_DEMAND) assert.ok(ui.includes(`'/${f}'`), `ui.js loads ${f} on demand`);
 });
 
 test('the service worker precaches every front-end module', () => {

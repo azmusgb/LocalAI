@@ -89,6 +89,16 @@ const notifier = notifyLib.createNotifier({
   storage, sendPush: pushLib.sendPush, vapid: pushLib.loadOrCreateVapid(storage),
   subject: process.env.VAPID_SUBJECT || 'https://github.com/azmusgb/LocalAI'
 });
+// Watchdog (app/watchdog.js, docs/WATCHDOG.md): disks, the Mac's heartbeat, the display and printer; one push per problem.
+const watchdog = require('./watchdog').createWatchdog({
+  storage, now: clockNow,
+  notify: event => notifier.notify(event),
+  printer: () => workshopPrinter.current(),
+  hostPaths: [
+    { path: '/workspace/projects', name: 'windows', label: 'Windows' },
+    { path: DATA_DIR, name: 'data', label: 'Local AI data' }
+  ]
+});
 // LOCALAI_NOTIFY_LOG (tests only): also append each notify() call as a JSON line to this file.
 if (process.env.LOCALAI_NOTIFY_LOG) {
   const realNotify = notifier.notify;
@@ -606,7 +616,8 @@ async function getCapabilitiesSnapshot(force = false) {
     changes: { pending: changes.filter(x => ['planned','patch_failed','validation_failed','staged','awaiting_approval','approved','apply_requested'].includes(x.status)).length },
     issues: { open: issues.filter(x => x.status === 'open').length },
     engineering: { active: engineeringRuns.filter(x => x.status === 'running').length, awaitingApproval: engineeringRuns.filter(x => x.status === 'awaiting_approval').length },
-    powershell: { configured: !!POWERSHELL_BRIDGE_TOKEN, localOnly: true, localPort: LOCAL_UI_PORT || listenPort() }
+    powershell: { configured: !!POWERSHELL_BRIDGE_TOKEN, localOnly: true, localPort: LOCAL_UI_PORT || listenPort() },
+    watch: watchdog.list()
   };
   capabilityCache = { value: snapshot, expiresAt: Date.now() + CAPABILITY_CACHE_MS };
   return snapshot;
@@ -625,6 +636,43 @@ function homeNeedsYou() {
   return { approvals: [...awaiting, ...approvals], failed };
 }
 
+// Cards for the Workshop display's idle screen (app/display-feed.js, docs/WORKSHOP-DISPLAY.md › Local AI cards).
+// No model calls; the weather is the home location's, cached for 15 minutes.
+const displayFeed = require('./display-feed');
+let feedWeather = { at: 0, text: null };
+async function feedWeatherText() {
+  if (Date.now() - feedWeather.at < 15 * 60 * 1000) return feedWeather.text;
+  const home = voiceHome();
+  let text = null;
+  if (Number.isFinite(home.lat) && Number.isFinite(home.lon)) {
+    try {
+      const f = await Promise.race([weather.forecast(home.lat, home.lon, { timeZone: home.timeZone }), new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 3000))]);
+      text = weather.weatherSentence(f, { when: 'now', place: home.place }) || null;
+    } catch { text = feedWeather.text; }
+  }
+  feedWeather = { at: Date.now(), text };
+  return text;
+}
+async function apiDisplayFeed(req, res) {
+  try {
+    const snapshot = await getCapabilitiesSnapshot();
+    const health = glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION });
+    const home = homeNeedsYou();
+    const running = ['running', 'streaming'].flatMap(status => runLedger.list({ status, limit: 20 }));
+    const needs = glance.needsYouSummary({ approvals: home.approvals.length, failed: home.failed.length }, health);
+    const img = runLedger.list({ type: 'image', status: 'completed', limit: 5 }).find(r => r.output?.images?.[0]?.imageUrl);
+    const image = img ? { title: img.title, imageUrl: displayFeed.jpegUrl(img.output.images[0].imageUrl) } : null;
+    json(res, 200, displayFeed.buildFeed({ needs, watch: watchdog.list(), running, weather: await feedWeatherText(), image }));
+  } catch (e) { json(res, 500, { error: String(e.message || e) }); }
+}
+
+// The Mac's watcher (host/mac-watch) reports its disk and the camera bridge every few minutes, with the Mac key.
+async function apiWatchHeartbeat(req, res) {
+  if (!claudeChat.macAuthorized(req)) return json(res, 401, { error: 'Unauthorized' });
+  const body = await readBody(req);
+  json(res, 200, { ok: true, heartbeat: watchdog.heartbeat(body) });
+}
+
 // Spoken summaries for Siri Shortcuts (docs/APPLE-WATCH.md). ?topic=health for "Is Local AI OK?", otherwise
 // "What needs me?". ?format=text returns just the sentence, which a shortcut can speak without parsing JSON.
 async function apiGlance(req, res, urlObj) {
@@ -634,10 +682,12 @@ async function apiGlance(req, res, urlObj) {
     const home = homeNeedsYou();
     const running = ['running', 'streaming'].reduce((n, status) => n + runLedger.list({ status, limit: 200 }).length, 0);
     const needs = glance.needsYouSummary({ approvals: home.approvals.length, failed: home.failed.length, running }, health);
+    const watch = watchdog.list();
+    if (watch.length) needs.speech += ` Also: ${watch.map(w => w.title).join('; ')}.`;
     const topic = urlObj.searchParams.get('topic') === 'health' ? 'health' : 'needs';
     const speech = topic === 'health' ? health.speech : needs.speech;
     if (urlObj.searchParams.get('format') === 'text') return text(res, 200, speech, 'text/plain; charset=utf-8', { 'Cache-Control': 'no-store' });
-    json(res, 200, { topic, speech, needsYou: { count: needs.count, items: needs.items }, health: { ok: health.ok, down: health.down, total: health.total }, version: APP_VERSION });
+    json(res, 200, { topic, speech, needsYou: { count: needs.count, items: needs.items }, health: { ok: health.ok, down: health.down, total: health.total }, watch, version: APP_VERSION });
   } catch (e) { storageError(res, e, 500); }
 }
 
@@ -1629,6 +1679,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/claude/board') return await apiClaudeBoard(req,res,urlObj);
     if (req.method === 'GET' && p === '/api/claude/priorities') return await apiClaudePriorities(req,res,urlObj);
     if (req.method === 'POST' && p === '/api/claude/events') return await apiClaudeEvents(req,res);
+    if (req.method === 'POST' && p === '/api/watch/heartbeat') return await apiWatchHeartbeat(req,res);
+    if (req.method === 'GET' && p === '/api/watch') return json(res, 200, watchdog.summary());
+    if (req.method === 'GET' && p === '/api/display/feed') return await apiDisplayFeed(req,res);
     if (req.method === 'POST' && p === '/api/claude/findings') return await apiClaudeFindings(req,res);
     if (req.method === 'POST' && p === '/api/claude/findings/vote') return await apiClaudeVote(req,res);
     if (req.method === 'POST' && p === '/api/claude/findings/decision') return await apiClaudeDecision(req,res);
@@ -1742,6 +1795,7 @@ try { runImproveReconcile({ startup: true }); } catch (e) { console.error(`${now
 // Health is checked on its own every minute, so an outage reaches the phone (Down/Recovered) even with no page open.
 const HEALTH_TICK_MS = Math.max(200, Number(process.env.HEALTH_TICK_MS) || 60000);
 setInterval(() => { getStatusAndRecordTransition().catch(() => {}); }, HEALTH_TICK_MS).unref();
+setInterval(() => { try { watchdog.tick(); } catch (e) { console.error(`${nowIso()} Watchdog tick failed:`, e); } }, HEALTH_TICK_MS).unref();
 repairGarbledTextOnce();
 try { repairRunTextOnce(); } catch (e) { console.error(`${nowIso()} Run text repair failed:`, e); }
 try { repairImageSummariesOnce(); } catch (e) { console.error(`${nowIso()} Image summary repair failed:`, e); }
