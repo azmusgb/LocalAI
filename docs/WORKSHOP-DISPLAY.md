@@ -107,7 +107,7 @@ reaches it through the HTTPS front, `https://10.0.0.21`, and checks the certific
 
 ## Ask buttons
 
-`GET /api/display/ask?q=needs|running|health` answers the Workshop display's three ask buttons in one or two
+`GET /api/display/ask?q=needs|running|health|today|next|weather` answers the Workshop display's ask buttons in one or two
 sentences (at most 200 characters), with no model:
 
 | `q` | Answer |
@@ -115,9 +115,36 @@ sentences (at most 200 characters), with no model:
 | `needs` | What needs you, by name, as Siri says it. |
 | `running` | What Local AI is working on (up to three), or that nothing is running. |
 | `health` | Whether its services are up, plus any watchdog problems. |
+| `today` | What finished since midnight (up to three), or that nothing has yet. |
+| `next` | Approvals waiting and work queued, or that nothing is. |
+| `weather` | The weather at the home location, or how to set it (Health › Home location). |
 
-Anything else gets `400`. The display key signs the display in for this route, the feed, and
-`/api/images/view` (the feed's latest-image card links there). It signs in nothing else.
+Anything else gets `400`.
+
+## Feed v2, the long poll, messages, approvals and the heartbeat (Workshop OS 12.6)
+
+All of these are signed in by the display key (`X-LocalAI-Display-Key`) and by nothing else on its behalf.
+
+- **Feed v2.** `GET /api/display/feed` answers `{v: 2, at, cards, images, messages}`. Each card also has `id` (the same
+  while it means the same thing), `at` (epoch seconds, when known) and `ask` (the question a tap asks). New kinds:
+  `done` (the latest run of 30 s or more that finished in the last 2 hours: "Finished" or "Didn't finish"), `disk`
+  (the fullest of Local AI's disks, with `percent`). `images` is the last 6 pictures, `{title, imageUrl, at}`.
+- **Long poll.** `GET /api/display/events?since=<sig>` answers `{sig, changed}` at once when the cards (or messages)
+  are not the ones `sig` describes, else when they change, else after 25 s. The display fetches the feed when
+  `changed` is true, so news shows within about 2 s. Times and "… ago" words are not part of `sig`.
+- **Messages.** A banner on the display, with an optional chime and one action: `{type: "timer", minutes: 1-240}` or
+  `{type: "show", page: "localai"|"image"|"camera"|"printer"}`. They come from `POST /api/display/notify`
+  `{title, text?, tone?, chime?, action?}` (at most 6 a minute; for n8n, the Mac or anyone signed in) and from the
+  phone notification kinds picked in `GET/POST /api/display/alerts` (`{kinds, chime, quiet: {on, start, end}}`; all
+  four kinds and 22:00–07:00 by default). In quiet hours a banner still shows but only a failure chimes. Messages
+  are in the feed's `messages` for 15 minutes; each `seq` only grows, and the display shows those it hasn't shown.
+  Nothing connects to the display: it pulls.
+- **Approvals.** `GET /api/display/approvals` lists what waits (up to 8) with `decidable`.
+  `POST /api/display/approvals/decide {id, decision: approved|rejected}` decides only an approval at or below the
+  risk allowed on the display (setting `display:approvals`, `{maxRisk: none|low|medium}`, `low` by default); a
+  change waiting on its approval (code, deploys) never. The activity log says "on the Workshop display".
+- **Heartbeat.** `POST /api/display/heartbeat {version, sourceSha, uptimeS, rssi, heapFree, psramFree, camera}`
+  every few minutes; `GET /api/watch` shows the last one as `display`.
 
 ## Printer status (read-only token)
 
