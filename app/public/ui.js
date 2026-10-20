@@ -2054,6 +2054,12 @@ document.addEventListener('localai:engineering-run',e=>applyEngineering(e.detail
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{mount();drawMinimap()},{once:true});else{mount();drawMinimap()}
 })();
 
+// ==== agent-world-watch loader ====
+// Loads /agent-world-watch.js on first use (⋯ › Watch mode or ?watch=1); a tap in Agent World preloads it.
+(function(){let p;const L=()=>p||(p=new Promise((y,n)=>{const s=document.createElement('script');s.src='/agent-world-watch.js';s.onload=y;s.onerror=()=>{p=null;n()};document.head.append(s)})),W=o=>L().then(()=>window.LocalAIAgentWorldWatch.start(o)).catch(()=>{});
+document.addEventListener('pointerdown',e=>{if(e.target.closest('#agents'))L().catch(()=>{})},{passive:true});document.addEventListener('click',e=>{if(e.target.closest('[data-aw-menu="watch"]'))W()});
+if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),800)})();
+
 // ==== claude-board.js ====
 (() => {
   'use strict';
