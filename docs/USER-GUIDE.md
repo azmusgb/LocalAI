@@ -102,6 +102,21 @@ World.
 A mission goal that asks to change Local AI itself (in Agent World or Home) offers **Hand to Claude** first, since
 Claude Code reviews the code and opens a tested pull request; **Start a mission anyway** still starts it.
 
+### Watch mode
+
+Agent World can be a screen you leave on, such as a TV or a spare tablet. In Agent World, open **⋯ › Watch mode**.
+
+- The city fills the screen and follows whoever is working.
+- A caption at the bottom says what the team is doing.
+- When nothing is running, the last mission replays every 2 minutes.
+- A soft chime marks a mission starting, finishing or needing you. **Sound on** turns it off.
+- The screen stays awake.
+- The pointer hides when you don't move it.
+
+**Exit watch mode** or Esc goes back. For a screen that should start in watch mode, open
+`https://10.0.0.21/?open=agents&watch=1`. It starts without full screen, because a browser only allows full screen
+after a tap, but the city still fills the window.
+
 ## Projects: what you keep
 
 The Projects tab opens on your projects. Its tabs:

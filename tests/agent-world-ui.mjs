@@ -259,7 +259,7 @@ async function withMission(contextOpts, mission) {
     await page.locator('#awMoreBtn').click();
     const menu = page.locator('#awMenu');
     await menu.waitFor({ state: 'visible' });
-    assert.deepEqual(await menu.locator('[data-aw-menu]:visible').allInnerTexts(), ['Start a new mission', 'Watch the replay', 'Open in Work', 'Copy result', 'All missions']);
+    assert.deepEqual(await menu.locator('[data-aw-menu]:visible').allInnerTexts(), ['Start a new mission', 'Watch the replay', 'Watch mode', 'Open in Work', 'Copy result', 'All missions']);
     await page.keyboard.press('ArrowDown');
     assert.equal(await page.evaluate(() => document.activeElement.dataset.awMenu), 'replay');
     await page.keyboard.press('Escape');

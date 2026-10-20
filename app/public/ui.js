@@ -466,6 +466,17 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         });
       });
 
+    // Watchdog findings (app/watchdog.js): disks, the Mac, the Workshop display and printer.
+    (Array.isArray(snapshot?.watch) ? snapshot.watch : []).forEach((item) => {
+      items.push({
+        severity: item.severity === 'high' ? 'critical' : 'warning',
+        title: item.title,
+        detail: item.detail,
+        action: 'Open Health',
+        view: 'status'
+      });
+    });
+
     const models = snapshot?.models;
     if (healthy(snapshot, 'ollama') && models?.available === false) {
       items.push({
@@ -2075,6 +2086,12 @@ function connectSSE(){if(unsubscribeSSE)return;try{unsubscribeSSE=missionStream.
 document.addEventListener('localai:engineering-run',e=>applyEngineering(e.detail?.run||e.detail));window.addEventListener('localai:agentworld-start',()=>{const d=DISTRICTS.command;focusPoint((d.x+d.w/2)*T,(d.y+d.h/2)*T,1.6)});window.addEventListener('localai:agentworld-mission',e=>{if(e.detail?.mission&&!replay.active)applyMission(e.detail.mission)});window.addEventListener('localai:agentworld-replay-mission',e=>{const m=e.detail?.mission;if(m){loadMissionReplay(m);if((m.timeline||[]).length>1){applyReplayFrame(0);if(e.detail.play&&!replay.playing)toggleReplay()}}});
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{mount();drawMinimap()},{once:true});else{mount();drawMinimap()}
 })();
+
+// ==== agent-world-watch loader ====
+// Loads /agent-world-watch.js on first use (⋯ › Watch mode or ?watch=1); a tap in Agent World preloads it.
+(function(){let p;const L=()=>p||(p=new Promise((y,n)=>{const s=document.createElement('script');s.src='/agent-world-watch.js';s.onload=y;s.onerror=()=>{p=null;n()};document.head.append(s)})),W=o=>L().then(()=>window.LocalAIAgentWorldWatch.start(o)).catch(()=>{});
+document.addEventListener('pointerdown',e=>{if(e.target.closest('#agents'))L().catch(()=>{})},{passive:true});document.addEventListener('click',e=>{if(e.target.closest('[data-aw-menu="watch"]'))W()});
+if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),800)})();
 
 // ==== claude-board.js ====
 (() => {

@@ -74,6 +74,29 @@ closed. The printer and the firmware version it shows come from the poller's las
 `firmware.version` field, when it is a short plain version such as `12.1.0`), so they add nothing either. The answer
 holds no token and no address. `tests/world.test.cjs` enforces the limit.
 
+## Local AI cards (for the display's idle screen)
+
+`GET /api/display/feed` gives the display a few short cards to show while the printer is idle:
+- **Needs you** (or **All clear**);
+- up to two watchdog problems ([Watchdog](WATCHDOG.md));
+- what Local AI is working on;
+- the weather at the home location (Health › Home location), cached for 15 minutes;
+- the latest image.
+
+```json
+{"at":"…","cards":[{"kind":"needs","title":"Needs you","text":"1 approval and 1 failed run.","count":2,"tone":"attention"},
+ {"kind":"image","title":"Latest image","text":"A red fox","imageUrl":"/api/images/view?…&preview=jpeg%3B80","tone":"info"}]}
+```
+
+Format rules:
+- A title is at most 24 characters and a line at most 90, which is what fits a 480×320 card.
+- `tone` is one of `ok`, `attention`, `warning`, `busy` or `info`.
+- `imageUrl` asks ComfyUI for a JPEG (`preview=jpeg;80`), because the display decodes only JPEG. It's full size, so the display scales it down while decoding.
+
+Like `/api/glance` it needs no sign-in on the home network, uses no model, and answers in well under a second (the
+weather has a 3 s limit). This is the one request that goes the other way, from the display to Local AI. The display
+reaches it through the HTTPS front, `https://10.0.0.21`, and checks the certificate against Local AI's CA.
+
 ## Printer status (read-only token)
 
 With Workshop OS 12.1.0 on the display, Home can show one line while a print runs or has stopped with an error, for

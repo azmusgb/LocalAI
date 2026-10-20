@@ -5,7 +5,11 @@
 (function(root){'use strict';
 const INTENTS={ask:{mode:'ask'},create:{mode:'create'},agents:{kind:'missions'}};
 const REG=()=>root.LocalAIViews,runHandlers=[];
-let ready=false,applying=false,runOpen=null;
+let ready=false,applying=false,runOpen=null,lastShown=null;
+// A closing sheet pops its own history entry with history.back(), which lands a few ms later (LocalAIUI.afterSheetPop).
+// Every history move here waits for that: one made in the gap is undone when the back() lands on the page under the sheet,
+// and its hashchange reopens that page (Escape on Agent World's start sheet, then Home, showed Agent World again).
+const afterPop=fn=>{const w=root.LocalAIUI?.afterSheetPop;if(typeof w==='function')w(fn);else fn()};
 function parse(hash=location.hash){
  const raw=String(hash||'').replace(/^#\/?/,''),i=raw.indexOf('?'),path=i<0?raw:raw.slice(0,i),query=new URLSearchParams(i<0?'':raw.slice(i+1)),m=/^run\/(.+)$/.exec(path);
  if(m)return{page:'run',runId:decodeURIComponent(m[1]),query};
@@ -36,22 +40,28 @@ function apply(){
 const sheetOnTop=()=>{const s=history.state&&history.state.localaiSheet;return !!s&&!!root.LocalAIUI?.sheetLive?.(s)};
 function go(path,{replace=false}={}){
  const h=String(path).startsWith('#')?String(path):'#'+path;
- if(replace||sheetOnTop()){put(h);apply()}else if(h===location.hash)apply();else location.hash=h; // hashchange then applies it
+ afterPop(()=>{if(replace||sheetOnTop()){put(h);apply()}else if(h===location.hash)apply();else location.hash=h}); // hashchange then applies it
 }
 // A person opened page `id` (a link, a row, ⌘K): push it so Back returns. A hidden page (Agent World, Chat…) is pushed with its own
 // state, which is how apply() tells it from the alias a typed URL means. Opening one while a run is open closes the run first (apply does).
 function open(id){
  const V=REG(),h='#'+id;
- if(V?.view(id)?.domain==='hidden'&&document.getElementById(id)){
+ if(V?.view(id)?.domain==='hidden'&&document.getElementById(id))afterPop(()=>{
   if(location.hash!==h||history.state?.localaiPage!==id)history[sheetOnTop()?'replaceState':'pushState']({localaiPage:id},'',location.pathname+location.search+h);
   apply();
- }else go(h);
+ });
+ else go(h);
 }
 // Called by showView after it shows a page: keep the hash honest without adding history entries.
+// Written after a closing sheet's back() lands, and only if no other page was shown meanwhile.
 function shown(id){
+ lastShown=id;
  if(!ready||applying)return;
- const V=REG(),p=parse().page,hidden=V?.view(id)?.domain==='hidden';
- if(hidden?p!==id:p!==id&&V?.resolve(p)!==V?.resolve(id))put('#'+id,hidden?{localaiPage:id}:null);
+ afterPop(()=>{
+  if(lastShown!==id)return;
+  const V=REG(),p=parse().page,hidden=V?.view(id)?.domain==='hidden';
+  if(hidden?p!==id:p!==id&&V?.resolve(p)!==V?.resolve(id))put('#'+id,hidden?{localaiPage:id}:null);
+ });
 }
 // app.js calls start() right after it publishes window.showView (which waits on the release config).
 function start(){
