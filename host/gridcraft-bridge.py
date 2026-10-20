@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import logging
 import logging.handlers
@@ -374,6 +375,34 @@ def failure_reason(stdout: str, stderr: str) -> str:
     return ''
 
 
+# Ops run in this process on one GridCraft connection kept open (gridcraft_ops.Session) when the bridge's Python has
+# the agent's packages (the installer runs it from the agent's venv); otherwise, or when that connection fails before
+# changing anything, each op runs as its own process as before. GRIDCRAFT_OPS_SESSION=0 turns the session off.
+_session_lock = threading.Lock()
+_session = None  # a Session, False when unavailable, None until first use
+
+
+def ops_session():
+    global _session
+    with _session_lock:
+        if _session is None:
+            _session = False
+            if os.environ.get('GRIDCRAFT_OPS_SESSION', '1') != '0' and OPS.exists() and importlib.util.find_spec('mcp'):
+                try:
+                    import sys
+                    sys.path.insert(0, str(OPS.parent))
+                    spec = importlib.util.spec_from_file_location('gridcraft_ops', OPS)
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    if hasattr(module, 'Session'):
+                        os.environ.update(GRIDCRAFT_PORT=str(CONTROL_PORT), GRIDCRAFT_WORKBOOKS_DIR=str(WORKBOOKS_DIR))
+                        _session = (module, module.Session())
+                        log.info('GridCraft ops use one kept connection')
+                except Exception:
+                    log.exception('GridCraft ops session unavailable; each op runs as its own process')
+        return _session or None
+
+
 def run_ops(op: str, payload: dict, gridcraft: bool = True) -> tuple[int, dict]:
     # Workbook view, keep, discard, open and cell edits: gridcraft_ops.py talks to GridCraft directly, no model. JSON in, JSON out.
     # gridcraft=False for listing the folder, which doesn't need GridCraft running.
@@ -381,6 +410,22 @@ def run_ops(op: str, payload: dict, gridcraft: bool = True) -> tuple[int, dict]:
         return 503, {'ok': False, 'error': 'GridCraft local agent is not installed'}
     if gridcraft and not ensure_gridcraft():
         return 503, {'ok': False, 'error': f'GridCraft control port {CONTROL_PORT} is unavailable'}
+    session = ops_session()
+    if session:
+        module, runner = session
+        try:
+            return 200, {'ok': True, **runner.run(op, payload, OPS_TIMEOUT)}
+        except module.OpError as exc:
+            return exc.status, {'ok': False, 'error': str(exc)}
+        except module.Lost as exc:
+            log.warning('GridCraft connection lost during %s: %s', op, exc)
+            return 502, {'ok': False, 'error': 'The connection to GridCraft broke during the change. Look at the workbook before you try again.'}
+        except TimeoutError:
+            return 504, {'ok': False, 'error': f'GridCraft did not answer within {OPS_TIMEOUT}s'}
+        except module.Retry as exc:
+            log.info('GridCraft connection failed before %s changed anything (%s); running it on its own', op, exc)
+        except Exception:
+            log.exception('GridCraft op %s failed in the kept connection; running it on its own', op)
     try:
         proc = subprocess.run(
             [str(PYTHON), str(OPS), op], input=json.dumps(payload), capture_output=True, text=True,

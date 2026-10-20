@@ -51,6 +51,10 @@ $py = "$env:USERPROFILE\gridcraft-local-ai\.venv\Scripts\python.exe"
 | `--list-tools` | | | Print the MCP tools offered to the model and exit |
 | `--all-tools` | | off | Offer every GridCraft tool instead of the compact core set |
 
+Tool results: the model gets one copy of each (GridCraft's structured result, not its text block again), cut at 6,000
+characters with a note to read a smaller range; the answer check still sees all of it. A request that opens like a
+question ("What is…", "How many…") skips the action completion check.
+
 Long workbooks: the bridge runs the fast `qwen3:4b-instruct` (4096-token window). When a request's prompt
 reaches 3500 tokens, the agent redoes that turn on `qwen3:4b-instruct-32k` and stays on it for the rest of the
 request, so Ollama never silently drops the start of the conversation. If the 32k model isn't installed, the

@@ -230,3 +230,39 @@ print(json.dumps([m.partial_journal(done, 'review'), m.partial_journal('', 'revi
   assert.equal(pending.uncertain, true, 'a write that never got its record');
   assert.equal(rest, 'noise');
 });
+
+test('ops go through the kept connection, fall back to their own process only when nothing changed', { skip: !python && 'no python' }, () => {
+  const code = `import importlib.util, json, sys, types, tempfile, os
+spec = importlib.util.spec_from_file_location('bridge', sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+d = tempfile.mkdtemp()
+for f in ('python', 'gridcraft_ops.py'): open(os.path.join(d, f), 'w').close()
+m.PYTHON = m.Path(d, 'python'); m.OPS = m.Path(d, 'gridcraft_ops.py'); m.ensure_gridcraft = lambda: True
+class OpError(Exception):
+    def __init__(self, msg, status): super().__init__(msg); self.status = status
+class Retry(Exception): pass
+class Lost(Exception): pass
+mod = types.SimpleNamespace(OpError=OpError, Retry=Retry, Lost=Lost)
+class Runner:
+    def run(self, op, req, timeout):
+        if op == 'ok': return {'op': op, 'req': req}
+        raise {'missing': OpError('No sheet named X', 404), 'retry': Retry('pipe'), 'lost': Lost('pipe'), 'slow': TimeoutError('x')}[op]
+m._session = (mod, Runner())
+fallback = []
+def proc(*a, **k):
+    fallback.append(a[0][2]); return types.SimpleNamespace(stdout=json.dumps({'ok': True, 'via': 'process'}), stderr='')
+m.subprocess.run = proc
+out = {op: m.run_ops(op, {'a': 1}) for op in ('ok', 'missing', 'retry', 'lost', 'slow')}
+out['fallback'] = fallback
+print(json.dumps(out))`;
+  const r = spawnSync(python, ['-I', '-c', code, bridge], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.deepEqual(out.ok, [200, { ok: true, op: 'ok', req: { a: 1 } }]);
+  assert.deepEqual(out.missing, [404, { ok: false, error: 'No sheet named X' }]);
+  assert.deepEqual(out.retry, [200, { ok: true, via: 'process' }], 'nothing changed yet: run again on its own');
+  assert.equal(out.lost[0], 502);
+  assert.match(out.lost[1].error, /broke during the change/);
+  assert.equal(out.slow[0], 504);
+  assert.deepEqual(out.fallback, ['retry'], 'only the op that changed nothing ran again');
+});
