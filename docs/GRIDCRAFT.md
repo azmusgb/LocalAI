@@ -115,10 +115,13 @@ appliance proxies it as `GET /api/gridcraft/health`.
 | `review` | the core tools without `save_workbook`, `open_workbook`, `new_workbook` | never; the owner keeps or discards |
 | `apply` | the core tools | when it finishes: the agent saves if the model didn't. Changes a failed or stopped request left unsaved wait for Keep or Discard |
 
-The agent refuses any other tool itself (`host/gridcraft-agent/gridcraft_journal.py`). It also refuses an
-`execute_command` whose command works on files (its name has `save`, `open`, `close`, `new`, `export`, `import`, `print`,
-`quit`, `exit` and the like, or starts with `file.`, `app.`, `window.` or `workbook.`) in every mode: a request stays on
-the open workbook and saves only through `save_workbook`. It records what each write
+The agent refuses any other tool itself (`host/gridcraft-agent/gridcraft_journal.py`). In every mode it also refuses
+`save_workbook` with a `path` (saving elsewhere), and an `execute_command` that reaches past the open workbook: the
+`file.`, `app.`, `window.` and `automate.` commands, opening links, importing or refreshing outside data, pictures from
+files, the PC's clipboard, undo and redo (the journal counts undo steps), window and protection commands, and any
+command whose name has a file word in it (`save`, `open`, `export`, `print`, `script`, `macro` …). The list comes from
+GridCraft's `list_commands` on the host (20 Oct 2026); `gridcraft_journal.BLOCKED_COMMANDS` holds it. A request stays
+on the open workbook and saves only through `save_workbook`. It records what each write
 changed: `set_cell` and `write_range` cell by cell (before, after, computed after; 2,000 cells per request), other
 writes as one line, and the number of GridCraft undo steps the request made. It prints that journal as one
 `[journal] {...}` line on stderr, also when the request fails, and `/run` returns it as `journal`. A request that left

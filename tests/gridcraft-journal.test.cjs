@@ -155,9 +155,14 @@ async def scenario(name):
         out = {}
         for mode in ('review', 'apply'):
             j = J.Journal(mode, f.call, J.allowed_tools(mode, {'execute_command', 'save_workbook'}))
-            for command in ('file.save', 'file.saveAs', 'saveAs', 'workbook.close', 'app.quit', 'file.open', 'export.pdf', 'sheet.activate', 'rows.insert', 'home.bold'):
+            for command in ('file.save', 'file.saveAs', 'saveAs', 'workbook.close', 'app.quit', 'file.open', 'export.pdf', 'file.saveBytes', 'link.open',
+                            'data.fromTextCsv', 'edit.undo', 'edit.paste', 'automate.runScript', 'view.macros', 'Edit.Redo',
+                            'sheet.activate', 'rows.insert', 'home.bold', 'cell.set', 'home.insertRows', 'data.sort', 'insert.chart'):
                 try: await j.call('execute_command', {'command': command, 'params': {}}); out[f'{mode} {command}'] = 'ran'
                 except J.ToolRefused as e: out[f'{mode} {command}'] = 'refused: ' + str(e)
+        j = J.Journal('apply', f.call, {'save_workbook'})
+        try: await j.call('save_workbook', {'path': 'C:/elsewhere.xlsx'}); out['save elsewhere'] = 'ran'
+        except J.ToolRefused as e: out['save elsewhere'] = 'refused: ' + str(e)
         out['saved'] = f.saved
         return out
     if name == 'entries':
@@ -290,15 +295,16 @@ test('Discard refuses once a cell was typed in GridCraft, even when the undo lab
   assert.equal(r.big, null, 'a workbook too large to fingerprint falls back to the labels');
 });
 
-test('execute_command may not save, open, close or export a file in Review or Apply', { skip }, () => {
+test('execute_command may not reach files, windows, scripts, the clipboard or undo history, and nothing saves elsewhere', { skip }, () => {
   const { 'file-commands': r, pure } = run('file-commands');
   assert.deepEqual(pure.words, [['file', 'save', 'as'], ['rows', 'insert']]);
   for (const mode of ['review', 'apply']) {
-    for (const c of ['file.save', 'file.saveAs', 'saveAs', 'workbook.close', 'app.quit', 'file.open', 'export.pdf']) assert.match(r[`${mode} ${c}`], /^refused: The command .* works on files/, `${mode} ${c}`);
-    for (const c of ['sheet.activate', 'rows.insert', 'home.bold']) assert.equal(r[`${mode} ${c}`], 'ran', `${mode} ${c}`);
+    for (const c of ['file.save', 'file.saveAs', 'saveAs', 'workbook.close', 'app.quit', 'file.open', 'export.pdf', 'file.saveBytes', 'link.open', 'data.fromTextCsv', 'edit.undo', 'edit.paste', 'automate.runScript', 'view.macros', 'Edit.Redo']) assert.match(r[`${mode} ${c}`], /^refused: The command .* is not available to requests/, `${mode} ${c}`);
+    for (const c of ['sheet.activate', 'rows.insert', 'home.bold', 'cell.set', 'home.insertRows', 'data.sort', 'insert.chart']) assert.equal(r[`${mode} ${c}`], 'ran', `${mode} ${c}`);
   }
   assert.match(r['apply file.save'], /use save_workbook to save/);
   assert.doesNotMatch(r['review file.save'], /save_workbook/, 'Review is not told to save');
+  assert.match(r['save elsewhere'], /^refused: save_workbook saves the open workbook to its own file/);
   assert.equal(r.saved, false);
 });
 

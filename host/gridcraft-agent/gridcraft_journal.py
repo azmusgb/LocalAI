@@ -34,12 +34,20 @@ class ToolRefused(Exception):
     pass
 
 
-# execute_command runs any GridCraft command, including ones that save, open or close a file. Saving goes through
-# save_workbook (journaled, and refused in Review) and a request stays on the open workbook, so commands that name a
-# file action are refused in every mode. Matched on the words of the command name: file.saveAs, workbook.close, app.quit.
+# execute_command runs any GridCraft command (list_commands, probed on the host 2026-10-20: about 340). Saving goes
+# through save_workbook (journaled, and refused in Review) and a request stays on the open workbook, so these are
+# refused in every mode: whole areas that work on files, windows or scripts; single commands that read files or the
+# network, use the PC's clipboard, or move GridCraft's undo history under the journal (which counts undo steps); and,
+# for commands GridCraft adds later, any name with a file word in it.
 FILE_COMMAND_WORDS = frozenset({"save", "saveas", "open", "close", "new", "export", "import", "print", "quit", "exit",
-                                "load", "reload", "revert", "recent"})
-FILE_COMMAND_AREAS = frozenset({"file", "app", "application", "window", "workbook"})
+                                "load", "reload", "revert", "recent", "script", "macro", "macros"})
+FILE_COMMAND_AREAS = frozenset({"file", "app", "application", "window", "workbook", "automate"})
+BLOCKED_COMMANDS = frozenset({
+    "link.open", "insert.picture", "data.fromtextcsv", "data.getdata", "data.queriesconnections", "data.refreshall",
+    "pivot.refresh", "pivot.changesource", "edit.undo", "edit.redo", "edit.copy", "edit.cut", "edit.paste",
+    "edit.pastespecial", "edit.clearclipboard", "view.newwindow", "view.hidewindow", "view.unhidewindow",
+    "view.switchwindows", "view.arrangeall", "review.protectsheet", "review.unprotectsheet", "review.protectworkbook",
+})
 
 
 def command_words(command: str) -> list[str]:
@@ -50,8 +58,8 @@ def command_words(command: str) -> list[str]:
 def file_command(command: Any) -> bool:
     words = command_words(str(command or ""))
     joined = "".join(words)
-    return bool(words) and (words[0] in FILE_COMMAND_AREAS or any(w in FILE_COMMAND_WORDS for w in words)
-                            or "saveas" in joined)
+    return bool(words) and (str(command).strip().lower() in BLOCKED_COMMANDS or words[0] in FILE_COMMAND_AREAS
+                            or any(w in FILE_COMMAND_WORDS for w in words) or "saveas" in joined)
 
 
 def allowed_tools(mode: str, names: set[str]) -> set[str]:
@@ -293,8 +301,12 @@ class Journal:
             raise ToolRefused(f"{name} is not available in {MODE_LABELS.get(self.mode, self.mode)} mode. "
                               "Use only the tools you were given.")
         if name == "execute_command" and file_command(args.get("command")):
-            raise ToolRefused(f"The command {args.get('command')} works on files, which requests may not do: "
-                              "stay on the open workbook" + (" and use save_workbook to save." if "save_workbook" in self.allowed else "."))
+            raise ToolRefused(f"The command {args.get('command')} is not available to requests (files, windows, scripts, "
+                              "the clipboard and undo history are off limits): stay on the open workbook"
+                              + (" and use save_workbook to save." if "save_workbook" in self.allowed else "."))
+        if name == "save_workbook" and args.get("path"):
+            # save_workbook takes a destination path: a request saves the open workbook to its own file only.
+            raise ToolRefused("save_workbook saves the open workbook to its own file: call it without a path.")
         if not is_write(name):
             return await self._call(name, args)
         self._tell({"pending": name})

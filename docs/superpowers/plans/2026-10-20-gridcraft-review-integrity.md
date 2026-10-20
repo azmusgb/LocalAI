@@ -32,10 +32,10 @@ discard.
 ## 3. Requests can't reach files through execute_command
 
 Review blocked `save_workbook`, `open_workbook` and `new_workbook` by name, but `execute_command` runs any GridCraft
-command. The journal now refuses a command that names a file action (save, open, close, new, export, quit and similar,
-or a `file.`/`app.`/`window.`/`workbook.` command) in every mode. GridCraft's command list was not probed for this
-change (SSH to the host was refused on 2026-10-20); check `--list-tools` / `list_commands` on the host and widen the
-words if a file command slips through.
+command (about 340, listed with `list_commands` on the host on 2026-10-20). The journal now refuses, in every mode, the
+`file.`/`app.`/`window.`/`automate.` areas, the single commands that open links, import or refresh outside data, insert
+pictures, use the clipboard, undo or redo, or touch windows and protection, and any command whose name has a file word.
+`save_workbook` with a `path` (save elsewhere) is refused too.
 
 ## 4. Apply never leaves changes unsaved
 
