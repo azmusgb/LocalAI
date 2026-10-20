@@ -237,10 +237,13 @@ function createImages(ctx) {
   async function apiImageView(req, res, urlObj) {
     try {
       const u = new URL(`${COMFY_URL}/view`);
+      // preview=jpeg;<quality> asks ComfyUI for a JPEG (the Workshop display decodes JPEG only).
       for (const key of ['filename', 'subfolder', 'type']) {
         const value = urlObj.searchParams.get(key);
         if (value !== null) u.searchParams.set(key, value);
       }
+      const preview = urlObj.searchParams.get('preview');
+      if (preview && /^(jpeg|webp);\d{1,3}$/.test(preview)) u.searchParams.set('preview', preview);
       const r = await fetchWithTimeout(u.toString(), {}, 15000);
       if (!r.ok) throw new Error(`Image retrieval HTTP ${r.status}`);
       const contentType = r.headers.get('content-type') || 'image/png';
