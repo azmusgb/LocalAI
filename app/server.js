@@ -668,7 +668,8 @@ async function apiDisplayFeed(req, res) {
     const running = ['running', 'streaming'].flatMap(status => runLedger.list({ status, limit: 20 }));
     const needs = glance.needsYouSummary({ approvals: home.approvals.length, failed: home.failed.length }, health);
     const img = runLedger.list({ type: 'image', status: 'completed', limit: 5 }).find(r => r.output?.images?.[0]?.imageUrl);
-    const image = img ? { title: img.title, imageUrl: displayFeed.jpegUrl(img.output.images[0].imageUrl) } : null;
+    const madeAt = Date.parse(img?.finishedAt || img?.updatedAt || '');
+    const image = img ? { title: img.title, imageUrl: displayFeed.jpegUrl(img.output.images[0].imageUrl), at: Number.isFinite(madeAt) ? Math.floor(madeAt / 1000) : undefined } : null;
     json(res, 200, displayFeed.buildFeed({ needs, watch: watchdog.list(), running, weather: await feedWeatherText(), image }));
   } catch (e) { json(res, 500, { error: String(e.message || e) }); }
 }

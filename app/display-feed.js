@@ -8,7 +8,7 @@ const card = (kind, title, text, extra = {}) => ({ kind, title: cut(title, 24), 
 const firstSentence = (s) => String(s || '').split(/(?<=[.!?])\s+/)[0] || '';
 
 // needs: {count, speech} from glance.needsYouSummary; watch: watchdog findings; running: runs (newest first);
-// weather: a sentence or null; image: {title, imageUrl} or null.
+// weather: a sentence or null; image: {title, imageUrl, at} or null (at: when it was made, epoch seconds).
 function buildFeed({ needs, watch = [], running = [], weather = null, image = null, now = Date.now() }) {
   const cards = [];
   cards.push(needs?.count
@@ -21,7 +21,7 @@ function buildFeed({ needs, watch = [], running = [], weather = null, image = nu
     cards.push(card('running', 'Working on', `${top.title || 'A run'}${more}`, { count: running.length, tone: 'busy' }));
   }
   if (weather) cards.push(card('weather', 'Weather', weather, { tone: 'info' }));
-  if (image?.imageUrl) cards.push(card('image', 'Latest image', image.title || 'An image', { imageUrl: image.imageUrl, tone: 'info' }));
+  if (image?.imageUrl) cards.push(card('image', 'Latest image', image.title || 'An image', { imageUrl: image.imageUrl, tone: 'info', ...(Number.isFinite(image.at) ? { at: image.at } : {}) }));
   return { at: new Date(now).toISOString(), cards };
 }
 

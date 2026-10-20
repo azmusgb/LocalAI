@@ -85,13 +85,13 @@ holds no token and no address. `tests/world.test.cjs` enforces the limit.
 
 ```json
 {"at":"…","cards":[{"kind":"needs","title":"Needs you","text":"1 approval and 1 failed run.","count":2,"tone":"attention"},
- {"kind":"image","title":"Latest image","text":"A red fox","imageUrl":"/api/images/view?…&preview=jpeg%3B80","tone":"info"}]}
+ {"kind":"image","title":"Latest image","text":"A red fox","imageUrl":"/api/images/view?…&preview=jpeg%3B80","tone":"info","at":1792500000}]}
 ```
 
 Format rules:
 - A title is at most 24 characters and a line at most 90, which is what fits a 480×320 card.
 - `tone` is one of `ok`, `attention`, `warning`, `busy` or `info`.
-- `imageUrl` asks ComfyUI for a JPEG (`preview=jpeg;80`), because the display decodes only JPEG. It's full size, so the display scales it down while decoding.
+- `imageUrl` asks ComfyUI for a JPEG (`preview=jpeg;80`), because the display decodes only JPEG. It's full size, so the display scales it down while decoding. `at` is when the image was made (epoch seconds), so the display can say "12 min ago".
 
 It uses no model and answers in well under a second (the weather has a 3 s limit).
 
