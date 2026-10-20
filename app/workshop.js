@@ -129,15 +129,21 @@ function printerSummary(d) {
   };
 }
 
-// One read. Never throws, and never puts the token (or anything from the request) in what it returns.
-async function readPrinter({ url, token, fetchImpl = modelFetchWithTimeout, timeoutMs = TIMEOUT_MS }) {
+// The display's firmware version from the same answer (firmware.version, e.g. "12.1.0"), only when it is a short plain
+// version: Agent World's kiosk shows it. Nothing else under firmware (its source commit) is kept.
+const FIRMWARE = /^[\w.-]{1,24}$/;
+const firmwareOf = d => (typeof d?.firmware?.version === 'string' && FIRMWARE.test(d.firmware.version) ? d.firmware.version : null);
+
+// One read. Never throws, and never puts the token (or anything from the request) in what it returns. withFirmware adds
+// firmware (firmwareOf) to an ok answer.
+async function readPrinter({ url, token, fetchImpl = modelFetchWithTimeout, timeoutMs = TIMEOUT_MS, withFirmware = false }) {
   try {
     const r = await fetchImpl(`${url}${LITE_PATH}`, { method: 'GET', headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } }, timeoutMs);
     const access = r.status === 200 ? 'ok' : r.status === 401 ? 'refused' : r.status === 404 ? 'unsupported' : r.status === 429 ? 'busy' : 'offline';
     if (access !== 'ok') { await r.body?.cancel().catch(() => {}); return { ...UNKNOWN_PRINTER, access }; }
     const d = JSON.parse(await readCapped(r, MAX_BODY));
     if (!d || typeof d !== 'object' || Array.isArray(d)) return { ...UNKNOWN_PRINTER, access: 'offline' };
-    return { ...printerSummary(d), access: 'ok' };
+    return { ...printerSummary(d), access: 'ok', ...(withFirmware ? { firmware: firmwareOf(d) } : {}) };
   } catch {
     return { ...UNKNOWN_PRINTER, access: 'offline' };
   }
@@ -158,8 +164,10 @@ function createPrinterPoller({ url = portalUrl(), token = process.env.LOCALAI_WO
   let busy = 0;
   let timer = null;
   let stopped = true;
+  let firmware = null; // from the last ok answer
   async function poll() {
-    const r = await readPrinter({ url, token: secret, fetchImpl, timeoutMs });
+    const { firmware: fw, ...r } = await readPrinter({ url, token: secret, fetchImpl, timeoutMs, withFirmware: true });
+    if (r.access === 'ok') firmware = fw ?? null;
     if (r.access === 'busy') {
       if (++busy >= BUSY_MISSES) last = { ...r, seenAt: last?.seenAt ?? null };
       return pollMs;
@@ -186,6 +194,8 @@ function createPrinterPoller({ url = portalUrl(), token = process.env.LOCALAI_WO
       if (last.access === 'ok' && !(age <= staleMs)) return { ...UNKNOWN_PRINTER, access: 'stale', seenAt: last.seenAt };
       return { ...last };
     },
+    // The firmware version the display last reported with an ok answer, or null; never a request of its own.
+    firmware: () => firmware,
     poll: () => (enabled ? poll() : Promise.resolve(null)),
     start() { if (enabled && stopped) { stopped = false; loop(); } return this; },
     stop() { stopped = true; clearTimeout(timer); timer = null; }
@@ -269,4 +279,4 @@ function createPortalCodeGate({ read = readPortalCode, now = () => Date.now(), g
   };
 }
 
-module.exports = { DEFAULT_URL, STALE_MS, CODE_GAP_MS, CODE_REFUSED_HOLD_MS, CODE_BUSY_HOLD_MS, createPortalCodeGate, TIMEOUT_MS, POLL_MS, HEALTH_PATH, LITE_PATH, CODE_PATH, CODE_WORDS, portalUrl, workshopStatus, printerSummary, readPrinter, createPrinterPoller, codeToken, readPortalCode };
+module.exports = { FIRMWARE, firmwareOf, DEFAULT_URL, STALE_MS, CODE_GAP_MS, CODE_REFUSED_HOLD_MS, CODE_BUSY_HOLD_MS, createPortalCodeGate, TIMEOUT_MS, POLL_MS, HEALTH_PATH, LITE_PATH, CODE_PATH, CODE_WORDS, portalUrl, workshopStatus, printerSummary, readPrinter, createPrinterPoller, codeToken, readPortalCode };
