@@ -92,6 +92,7 @@ Bridge environment (`host/gridcraft-bridge.py`):
 | `GRIDCRAFT_RUN_TIMEOUT` | `300` (seconds) | Per-request limit; the agent stops itself 30 s before it (`--time-limit`), the appliance waits 330 s |
 | `GRIDCRAFT_ALLOWED_ORIGINS` | `http://10.0.0.21:3080,http://127.0.0.1:3080,http://localhost:3080` | CORS allow-list |
 | `GRIDCRAFT_OPS_SESSION` | `1` | `0` runs every op (below) as its own process instead of on one kept GridCraft connection |
+| `GRIDCRAFT_BRIDGE_RELOAD` | `1` | The bridge checks its code (`gridcraft-bridge.py`, `gridcraft_ops.py`, `gridcraft_journal.py`) every `GRIDCRAFT_BRIDGE_RELOAD_EVERY` seconds (60) and, once a deploy changed it and no request is running, starts its new version itself; `0` turns that off |
 | `GRIDCRAFT_BRIDGE_LOG` | unset (stdout) | Log file, rotated at 2 MB × 3; the installer sets `gridcraft-bridge.log` |
 
 Startup crashes land in `gridcraft-bridge.crash.log` next to the log.
@@ -218,6 +219,11 @@ not listening, the bridge launches it with `WGPU_BACKEND=vulkan` and the configu
 `sales` sample if the workbook does not exist), then runs the
 agent once with `--once`. The agent's model choice, including the switch to the 32k-context model for long
 requests, is described in the [agent README](../host/gridcraft-agent/README.md).
+
+Deploys update `C:\LocalAI\repo` and never restart the bridge. The agent and the ops helper run from the repo for
+each request, so they change with the deploy; the bridge itself restarts on its own (above) since 20 Oct 2026. A
+bridge started before then needs one restart to get that: sign out and in on the PC, or re-run the installer.
+`GET /health` reports `code` (a hash of the bridge's code) and `startedAt`.
 
 ## Security boundary
 

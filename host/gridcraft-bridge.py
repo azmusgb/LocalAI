@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import logging
@@ -8,6 +9,7 @@ import os
 import re
 import socket
 import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -389,7 +391,6 @@ def ops_session():
             _session = False
             if os.environ.get('GRIDCRAFT_OPS_SESSION', '1') != '0' and OPS.exists() and importlib.util.find_spec('mcp'):
                 try:
-                    import sys
                     sys.path.insert(0, str(OPS.parent))
                     spec = importlib.util.spec_from_file_location('gridcraft_ops', OPS)
                     module = importlib.util.module_from_spec(spec)
@@ -506,6 +507,9 @@ class Handler(BaseHTTPRequestHandler):
             'agent': str(AGENT),
             'workbook': str(WORKBOOK),
             'workbooksDir': str(WORKBOOKS_DIR),
+            'code': CODE,
+            'startedAt': STARTED_AT,
+            'pid': os.getpid(),
         })
 
     def do_POST(self):
@@ -611,10 +615,78 @@ class Handler(BaseHTTPRequestHandler):
         log.info('%s - %s', self.client_address[0], fmt % args)
 
 
-if __name__ == '__main__':
-    log.info('GridCraft bridge listening on %s:%s', HOST, PORT)
+# Deploys update C:\LocalAI\repo but never restart this process, and it imports the ops and journal modules (the kept
+# connection). It watches its own code and, when an update changed it and nothing is running, starts itself again:
+# the new process gets the port once this one has closed it. GRIDCRAFT_BRIDGE_RELOAD=0 turns that off;
+# GRIDCRAFT_BRIDGE_RELOAD_EVERY sets how often it looks (seconds).
+def code_files() -> list:
+    return [Path(__file__).resolve(), OPS, AGENT.parent / 'gridcraft_journal.py']
+
+
+def code_hash() -> str:
+    h = hashlib.sha256()
+    for path in code_files():
+        try:
+            h.update(path.read_bytes())
+        except OSError:
+            h.update(b'-')
+    return h.hexdigest()[:16]
+
+
+CODE = code_hash()
+STARTED_AT = round(time.time(), 1)
+
+
+def restart_command() -> list:
+    return [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]]
+
+
+restarting = threading.Event()
+
+
+def watch_code(server, every: float) -> None:
+    while True:
+        time.sleep(every)
+        if code_hash() == CODE or not run_lock.acquire(blocking=False):
+            continue  # unchanged, or a request is running: look again later
+        log.info('Bridge code changed; starting the new version')
+        restarting.set()  # serve() returns once the server stops: it waits here instead of ending the process
+        try:
+            server.shutdown()
+            server.server_close()
+            crash = Path(_log_path).with_suffix('.crash.log') if _log_path else None
+            out = open(crash, 'ab') if crash else subprocess.DEVNULL
+            subprocess.Popen(restart_command(), stdin=subprocess.DEVNULL, stdout=out, stderr=out, cwd=os.getcwd(),
+                             creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0) | getattr(subprocess, 'DETACHED_PROCESS', 0))
+        except Exception:
+            log.exception('Could not start the new bridge; this one stops so the scheduled task can')
+        finally:
+            for handler in log.handlers:
+                handler.flush()
+            os._exit(0)
+
+
+def serve() -> None:
+    log.info('GridCraft bridge listening on %s:%s (code %s)', HOST, PORT, CODE)
     log.info('Agent: %s', AGENT)
     log.info('Workbook: %s', WORKBOOK)
-    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    server = None
+    for attempt in range(40):  # a bridge that just restarted itself may still hold the port for a moment
+        try:
+            server = ThreadingHTTPServer((HOST, PORT), Handler)
+            break
+        except OSError:
+            if attempt == 39:
+                raise
+            time.sleep(0.25)
     server.handle_error = lambda request, client_address: log.exception('Request from %s failed', client_address[0])
+    if os.environ.get('GRIDCRAFT_BRIDGE_RELOAD', '1') != '0':
+        every = float(os.environ.get('GRIDCRAFT_BRIDGE_RELOAD_EVERY') or 60)
+        threading.Thread(target=watch_code, args=(server, every), daemon=True, name='code-watch').start()
     server.serve_forever()
+    while restarting.is_set():
+        time.sleep(1)  # the watcher starts the new bridge and ends this process
+
+
+if __name__ == '__main__':
+    serve()
