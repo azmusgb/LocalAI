@@ -18,10 +18,14 @@ const SALES = {
   formulas: [['Region', 'Q1', 'Q2', 'Total'], ['North', 48200, 51340, '=B2+C2'], ['South', 39150, 37980, '=B3+C3']],
   raw: [['Region', 'Q1', 'Q2', 'Total'], ['North', 48200, 51340, 99540], ['South', 39150, 37980, 77130]]
 };
+const colNum = s => [...s].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+const colName = n => { let s = ''; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = (n - r - 1) / 26; } return s; };
 function notes(range) {
-  const [a, b] = range.split(':'), r1 = +a.slice(1), r2 = +b.slice(1);
-  const rows = Array.from({ length: r2 - r1 + 1 }, (_, i) => [`Note ${r1 + i}`]);
-  return { ...SALES, sheet: 'Notes', usedRange: 'A1:A250', range, truncated: r2 < 250, values: rows, formulas: rows, raw: rows };
+  const [, c1s, r1s, c2s, r2s] = /^([A-Z]+)(\d+):([A-Z]+)(\d+)$/.exec(range);
+  const r1 = +r1s, r2 = +r2s, c1 = colNum(c1s), c2 = colNum(c2s);
+  const rows = Array.from({ length: r2 - r1 + 1 }, (_, i) => Array.from({ length: c2 - c1 + 1 }, (__, j) => c1 + j === 1 ? `Note ${r1 + i}` : `${colName(c1 + j)}${r1 + i}`));
+  const usedRange = c2 > 1 ? 'A1:AZ250' : 'A1:A250';
+  return { ...SALES, sheet: 'Notes', usedRange, range, truncated: r2 < 250 || c2 < colNum(usedRange.split(':')[1].replace(/\d+/g, '')), values: rows, formulas: rows, raw: rows };
 }
 
 async function open(options) {
@@ -126,15 +130,48 @@ for (const [name, options] of [['computer', { viewport: { width: 1280, height: 9
     assert.equal(await page.locator('#sheetsPrompt').inputValue(), 'Sales!C2 ');
   });
 
-  await check(`${name}: another sheet pages through its rows`, async () => {
+  await check(`${name}: another sheet pages through its rows and columns, and Go to jumps to a cell or range`, async () => {
     await page.locator('#sheetsTabs [data-sheet="Notes"]').click();
     await page.locator('#sheetsGrid td[data-cell="A100"]').waitFor();
     assert.match(await page.locator('#sheetsPagerText').innerText(), /Rows 1–100 of 250/);
+    assert.equal(await page.locator('#sheetsColPager').isHidden(), true, 'one column needs no column pager');
     await page.locator('[data-sheets-page="1"]').click();
     await page.locator('#sheetsGrid td[data-cell="A101"]').waitFor();
     assert.ok(calls.workbook.some(q => q.includes('range=A101%3AA200')));
-    await page.locator('#sheetsTabs [data-sheet="Sales"]').click();
+    // Go to a range on the current sheet:
+    await page.locator('#sheetsGoInput').fill('A50:A55');
+    await page.locator('#sheetsGo button[type="submit"]').click();
+    await page.locator('#sheetsGrid td[data-cell="A50"]').waitFor();
+    assert.ok(calls.workbook.some(q => q.includes('range=A50%3AA55')));
+    assert.equal(await page.locator('#sheetsCellRef').innerText(), 'Notes!A50');
+    // Go to a cell past column 40 (AN) on row 105: pages to rows 101–200 and columns AO–AZ:
+    await page.locator('#sheetsGoInput').fill('AZ105');
+    await page.locator('#sheetsGo button[type="submit"]').click();
+    await page.locator('#sheetsGrid td[data-cell="AZ105"]').waitFor();
+    assert.ok(calls.workbook.some(q => q.includes('range=AO101%3AAZ200')));
+    assert.equal(await page.locator('#sheetsCellRef').innerText(), 'Notes!AZ105');
+    assert.equal(await page.locator('#sheetsCellValue').innerText(), 'AZ105');
+    assert.match(await page.locator('#sheetsPagerText').innerText(), /Columns AO–AZ of AZ/);
+    assert.equal(await page.locator('#sheetsColPager').isVisible(), true);
+    await page.locator('[data-sheets-cols="-1"]').click();
+    await page.locator('#sheetsGrid td[data-cell="AN101"]').waitFor();
+    assert.match(await page.locator('#sheetsPagerText').innerText(), /Columns A–AN of AZ/);
+    await page.locator('[data-sheets-cols="1"]').click();
+    await page.locator('#sheetsGrid td[data-cell="AZ105"]').waitFor();
+    // Invalid Go to input and unknown sheet say why:
+    await page.locator('#sheetsGoInput').fill('not-a-cell');
+    await page.locator('#sheetsGo button[type="submit"]').click();
+    await page.locator('#sheetsGoError').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#sheetsGoError').innerText(), /Enter a cell like B12/);
+    await page.locator('#sheetsGoInput').fill('Missing!A1');
+    await page.locator('#sheetsGo button[type="submit"]').click();
+    assert.match(await page.locator('#sheetsGoError').innerText(), /No sheet named Missing/);
+    // Qualified sheet!cell switches sheets and clears the error:
+    await page.locator('#sheetsGoInput').fill('Sales!D3');
+    await page.locator('#sheetsGo button[type="submit"]').click();
     await page.locator('#sheetsGrid td[data-cell="D3"]').waitFor();
+    assert.equal(await page.locator('#sheetsCellRef').innerText(), 'Sales!D3');
+    assert.equal(await page.locator('#sheetsGoError').isHidden(), true);
   });
 
   await check(`${name}: Read only sends its mode and shows the answer`, async () => {

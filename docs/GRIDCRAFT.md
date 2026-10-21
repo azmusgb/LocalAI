@@ -158,7 +158,9 @@ anything, the op runs again as its own process, as before; when it fails after a
 never run twice. A bridge Python without the agent's packages, or `GRIDCRAFT_OPS_SESSION=0`, uses a process per op.
 
 - `GET /workbook?sheet=&range=`: title, file name (never the host path), unsaved flag, sheets, and up to 100 rows by 40
-  columns of the chosen sheet as display text (`values`), formulas (`formulas`) and computed values (`raw`).
+  columns of the chosen sheet as display text (`values`), formulas (`formulas`) and computed values (`raw`). On sheets
+  larger than 100 rows or 40 columns, the page offers **Previous/Next rows** and **Previous/Next columns**, and **Go to**
+  jumps to any cell (`B12`, `Notes!A220`, `AZ5`) or range (`A50:D80`).
 - `POST /keep`: saves the workbook.
 - `POST /discard {"steps":N,"undoTop":[...],"fingerprint":"..."}`: undoes `N` steps, but only if GridCraft's newest
   undo labels still equal `undoTop` and, when given, the workbook's fingerprint still equals `fingerprint` (otherwise

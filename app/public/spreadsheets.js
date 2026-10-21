@@ -12,15 +12,16 @@ const EXAMPLES=[
 ];
 const MODES={read:'Looks and answers. It cannot change anything.',review:'Makes the changes in GridCraft without saving. You keep or discard them.',apply:'Makes the changes and saves the workbook.'};
 const STATUS={running:'Running',review:'Waiting for review',kept:'Kept',discarded:'Discarded',applied:'Applied',done:'No changes',failed:'Failed'};
-const PAGE=100;
-const st={busy:false,timer:0,poll:0,started:0,mode:'review',book:null,sheet:'',top:1,runs:[],run:null,sel:null,formulas:false,books:[],edit:null,saving:false,stale:false,editSheet:null};
+const PAGE=100,COLS=40;
+const st={busy:false,timer:0,poll:0,started:0,mode:'review',book:null,sheet:'',top:1,left:1,runs:[],run:null,sel:null,formulas:false,books:[],edit:null,saving:false,stale:false,editSheet:null};
 const phone=()=>matchMedia('(max-width:640px)').matches;
 const active=()=>$('spreadsheets')?.classList.contains('active');
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const show1=v=>v==null?'':typeof v==='object'?(v.error||JSON.stringify(v)):String(v);
 const col=n=>{let s='';while(n>0){const r=(n-1)%26;s=String.fromCharCode(65+r)+s;n=(n-r-1)/26}return s};
 const num=c=>[...c.toUpperCase()].reduce((n,ch)=>n*26+ch.charCodeAt(0)-64,0);
-function bounds(rng){const m=/^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$/i.exec(String(rng||''));if(!m)return null;return{r1:+m[2],c1:num(m[1]),r2:+(m[4]||m[2]),c2:num(m[3]||m[1])}}
+function bounds(rng){const m=/^\$?([A-Z]{1,3})\$?([1-9]\d{0,6})(?::\$?([A-Z]{1,3})\$?([1-9]\d{0,6}))?$/i.exec(String(rng||'').trim());if(!m)return null;const r1=+m[2],c1=num(m[1]),r2=+(m[4]||m[2]),c2=num(m[3]||m[1]);return{r1:Math.min(r1,r2),c1:Math.min(c1,c2),r2:Math.max(r1,r2),c2:Math.max(c1,c2)}}
+function splitRef(raw){const s=String(raw||'').trim();if(!s)return null;const i=s.lastIndexOf('!'),sh=i<0?'':s.slice(0,i).replace(/^'(.*)'$/,'$1').replace(/''/g,"'").trim(),rest=i<0?s:s.slice(i+1).trim(),b=bounds(rest);return b?{sheet:sh||st.sheet,b,isRange:rest.includes(':')}:null}
 const store={get(k){try{return localStorage.getItem(k)}catch{return null}},set(k,v){try{localStorage.setItem(k,v)}catch{}}};
 
 function setStatus(state,text){const s=$('sheetsStatus');s.dataset.state=state;s.querySelector('span:last-child').textContent=text}
@@ -107,17 +108,19 @@ async function loadRuns(){
 }
 
 // ---- Workbook ----
+function goError(text){const el=$('sheetsGoError');if(el){el.textContent=text;el.hidden=!text}}
 function emptyGrid(text){$('sheetsGrid').innerHTML='';$('sheetsGridEmpty').hidden=false;$('sheetsGridEmpty').textContent=text;$('sheetsPager').hidden=true}
-async function loadBook(sheet=st.sheet,top=st.top){
+async function loadBook(sheet=st.sheet,top=st.top,left=st.left,want=null){
  const q=new URLSearchParams();
  if(sheet)q.set('sheet',sheet);
- const used=st.book?.sheets?.find(s=>s.name===sheet)?.usedRange,u=bounds(used);
- if(u&&top>1)q.set('range',`A${top}:${col(Math.min(u.c2,40))}${Math.min(u.r2,top+PAGE-1)}`);
+ const used=(sheet===st.book?.sheet&&st.book?.usedRange)||st.book?.sheets?.find(s=>s.name===sheet)?.usedRange,u=bounds(used);
+ if(want?.isRange)q.set('range',`${col(left)}${top}:${col(Math.min(want.c2,left+COLS-1))}${Math.min(want.r2,top+PAGE-1)}`);
+ else if(u&&(top>1||left>1||(want&&(want.r2>u.r2||want.c2>u.c2))))q.set('range',`${col(left)}${top}:${col(Math.min(Math.max(u.c2,want?.c2||left),left+COLS-1))}${Math.min(Math.max(u.r2,want?.r2||top),top+PAGE-1)}`);
  if(!st.book)emptyGrid('Opening the workbook…');
  try{
   const r=await fetch(`${API}/workbook?${q}`,{cache:'no-store',signal:AbortSignal.timeout(70000)}),data=await r.json();
   if(!r.ok||!data.ok)throw new Error(data.error||`HTTP ${r.status}`);
-  st.book=data;st.sheet=data.sheet||'';st.top=bounds(data.range)?.r1||1;
+  const b=bounds(data.range);st.book=data;st.sheet=data.sheet||'';st.top=b?.r1||1;st.left=b?.c1||1;
  }catch(e){
   if(!st.book)emptyGrid(`The workbook can't be shown: ${e.message||e}. Check that GridCraft is open on the Windows computer, then choose Refresh.`);
   return;
@@ -151,12 +154,15 @@ function renderGrid(){
  const focused=grid.contains(document.activeElement); // a re-render keeps keyboard focus on the selected cell
  grid.innerHTML=html+'</tbody>';
  if(!grid.querySelector('[tabindex="0"]'))grid.querySelector('td')?.setAttribute('tabindex','0');
- const total=u?u.r2:range.r2,cols=u?u.c2:range.c2;
- $('sheetsRange').textContent=`${b.sheet}, rows ${range.r1}–${range.r2} of ${total}${cols>range.c2?`, first ${range.c2} of ${cols} columns`:''}`;
- $('sheetsPager').hidden=!(range.r1>1||range.r2<total);
- $('sheetsPagerText').textContent=`Rows ${range.r1}–${range.r2} of ${total}`;
+ const total=Math.max(u?u.r2:0,range.r2),cols=Math.max(u?u.c2:0,range.c2),rowsPaged=range.r1>1||range.r2<total,colsPaged=range.c1>1||range.c2<cols;
+ $('sheetsRange').textContent=`${b.sheet}, rows ${range.r1}–${range.r2} of ${total}${colsPaged?`, columns ${col(range.c1)}–${col(range.c2)} of ${col(cols)}`:''}`;
+ $('sheetsPager').hidden=!(rowsPaged||colsPaged);
+ $('sheetsRowPager').hidden=!rowsPaged;$('sheetsColPager').hidden=!colsPaged;
+ $('sheetsPagerText').textContent=[rowsPaged&&`Rows ${range.r1}–${range.r2} of ${total}`,colsPaged&&`Columns ${col(range.c1)}–${col(range.c2)} of ${col(cols)}`].filter(Boolean).join(' · ');
  $('sheetsPager').querySelector('[data-sheets-page="-1"]').disabled=range.r1<=1;
  $('sheetsPager').querySelector('[data-sheets-page="1"]').disabled=range.r2>=total;
+ $('sheetsPager').querySelector('[data-sheets-cols="-1"]').disabled=range.c1<=1;
+ $('sheetsPager').querySelector('[data-sheets-cols="1"]').disabled=range.c2>=cols;
  if(st.sel)showCell(st.sel,false);
  if(focused)grid.querySelector('td[tabindex="0"]')?.focus({preventScroll:true});
 }
@@ -177,9 +183,14 @@ function showCell(ref,focus=true){
  if(ch)$('sheetsCellChange').textContent=`Changed by this request: ${show1(ch.before)||'empty'} → ${show1(ch.after)||'empty'}`;
 }
 async function goto(sheet,ref){
- const r=bounds(ref)?.r1||1;st.sel=ref;
- if(sheet!==st.sheet||r<st.top||r>=st.top+PAGE)await loadBook(sheet,Math.floor((r-1)/PAGE)*PAGE+1);
- showCell(ref);
+ const p=splitRef(sheet&&ref?`${sheet}!${ref}`:ref||sheet);
+ if(!p){goError('Enter a cell like B12 or a range like A1:D20.');return}
+ if(st.book?.sheets?.length&&!st.book.sheets.some(s=>s.name===p.sheet)){goError(`No sheet named ${p.sheet}.`);return}
+ goError('');
+ const b=p.b,sel=`${col(b.c1)}${b.r1}`,cur=bounds(st.book?.range);st.sel=sel;
+ if(p.isRange)await loadBook(p.sheet,b.r1,b.c1,{...b,isRange:true});
+ else if(p.sheet!==st.sheet||!cur||b.r1<cur.r1||b.r1>cur.r2||b.c1<cur.c1||b.c1>cur.c2)await loadBook(p.sheet,Math.floor((b.r1-1)/PAGE)*PAGE+1,Math.floor((b.c1-1)/COLS)*COLS+1,b);
+ showCell(sel);
  $('sheetsBook').scrollIntoView({block:'nearest',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
 }
 function gridKeys(e){
@@ -297,7 +308,7 @@ async function openBook(){
   const r=await fetch(`${API}/open`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
   const data=await r.json().catch(()=>({}));
   if(!r.ok||!data.ok)throw new Error(data.error||`HTTP ${r.status}`);
-  st.book=null;st.sheet='';st.sel=null;st.top=1;$('sheetsCell').hidden=true;
+  st.book=null;st.sheet='';st.sel=null;st.top=1;st.left=1;$('sheetsCell').hidden=true;goError('');
   await loadBook();
   root.LocalAIUI?.toast?.(`Opened ${name}`);
  }catch(e){
@@ -375,11 +386,12 @@ function init(){
  $('sheetsPrompt').addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter')run()});
  $('sheetsKeep').addEventListener('click',()=>decide('keep'));
  $('sheetsDiscard').addEventListener('click',()=>decide('discard'));
- $('sheetsRefresh').addEventListener('click',refresh);
+ $('sheetsRefresh').addEventListener('click',()=>{goError('');refresh()});
  $('sheetsBooks').addEventListener('change',openBook);
+ $('sheetsGo').addEventListener('submit',e=>{e.preventDefault();goto('',$('sheetsGoInput').value)});
  $('sheetsFormulas').addEventListener('click',e=>{st.formulas=!st.formulas;e.currentTarget.setAttribute('aria-pressed',st.formulas);renderGrid()});
- $('sheetsTabs').addEventListener('click',e=>{const b=e.target.closest('[data-sheet]');if(b&&b.dataset.sheet!==st.sheet){st.sel=null;$('sheetsCell').hidden=true;loadBook(b.dataset.sheet,1)}});
- $('sheetsPager').addEventListener('click',e=>{const b=e.target.closest('[data-sheets-page]');if(b)loadBook(st.sheet,Math.max(1,st.top+PAGE*+b.dataset.sheetsPage))});
+ $('sheetsTabs').addEventListener('click',e=>{const b=e.target.closest('[data-sheet]');if(b&&b.dataset.sheet!==st.sheet){st.sel=null;$('sheetsCell').hidden=true;goError('');loadBook(b.dataset.sheet,1,1)}});
+ $('sheetsPager').addEventListener('click',e=>{const r=e.target.closest('[data-sheets-page]'),c=e.target.closest('[data-sheets-cols]');if(r)loadBook(st.sheet,Math.max(1,st.top+PAGE*+r.dataset.sheetsPage),st.left);else if(c)loadBook(st.sheet,st.top,Math.max(1,st.left+COLS*+c.dataset.sheetsCols))});
  // A tap or click selects a cell; one on the cell already selected (or a double-click) changes it.
  $('sheetsGrid').addEventListener('click',e=>{const td=e.target.closest('td[data-cell]');if(!td||st.edit)return;if(st.sel===td.dataset.cell&&!$('sheetsCell').hidden&&e.detail<2)startEdit(td.dataset.cell);else showCell(td.dataset.cell)});
  $('sheetsGrid').addEventListener('dblclick',e=>{const td=e.target.closest('td[data-cell]');if(td&&!st.edit)startEdit(td.dataset.cell)});
