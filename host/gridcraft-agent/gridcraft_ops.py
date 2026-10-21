@@ -1,11 +1,12 @@
 """Workbook operations the bridge runs without a model: show the workbook, keep (save) or discard (undo) a request,
-list the workbooks in the GridCraft folder and open one of them, and change one cell by hand (set_cell).
+list the workbooks in the GridCraft folder, open, create, upload or download one of them, and change one cell by hand (set_cell).
 
-Usage: python gridcraft_ops.py workbook|keep|discard|workbooks|open|set_cell|state < request.json  ->  one JSON object on stdout.
+Usage: python gridcraft_ops.py workbook|keep|discard|workbooks|open|new|upload|download|set_cell|state < request.json  ->  one JSON object on stdout.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
 import concurrent.futures
 import contextlib
 import json
@@ -175,6 +176,79 @@ async def open_book(call: Call, req: dict[str, Any]) -> dict[str, Any]:
     return {"file": name}
 
 
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+XLSX_MAGIC = b"PK\x03\x04"
+
+
+def new_workbook_name(name: Any) -> str:
+    """A bare .xlsx file name that is not yet in the GridCraft folder, or OpError."""
+    if not isinstance(name, str) or not name.strip() or len(name) > 255 or any(ord(c) < 32 for c in name):
+        raise OpError("Choose a .xlsx file name", 400)
+    if any(c in name for c in "/\\:\0") or ".." in name or name.startswith("~$"):
+        raise OpError("A workbook is named by its file name only, not a path", 400)
+    if not name.lower().endswith(".xlsx") or len(name.strip()) <= 5:
+        raise OpError("Workbook files created or uploaded here must be .xlsx files", 400)
+    if (workbooks_dir() / name).exists():
+        raise OpError(f"{name} already exists in the GridCraft folder", 409)
+    return name
+
+
+def upload_check(req: dict[str, Any]) -> tuple[str, bytes]:
+    name = new_workbook_name(req.get("name"))
+    raw = req.get("data")
+    if not isinstance(raw, str) or not raw.strip():
+        raise OpError("Choose a .xlsx file to upload", 400)
+    try:
+        content = base64.b64decode(raw, validate=True)
+    except Exception:
+        raise OpError("Invalid workbook file", 400) from None
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise OpError("Workbook files can be at most 10 MB", 413)
+    if not content.startswith(XLSX_MAGIC):
+        raise OpError("Only .xlsx workbook files can be uploaded", 400)
+    return name, content
+
+
+async def new_book(call: Call, req: dict[str, Any]) -> dict[str, Any]:
+    name = new_workbook_name(req.get("name"))
+    info = await _json(call, "inspect_workbook", {})
+    if info.get("dirty"):
+        raise OpError("The open workbook has unsaved changes. Keep or discard them first, then start a new workbook.", 409)
+    workbooks_dir().mkdir(parents=True, exist_ok=True)
+    await _json(call, "new_workbook", {})
+    await _json(call, "save_workbook", {"path": os.path.join(str(workbooks_dir()), name)})
+    return {"file": name}
+
+
+async def upload_book(call: Call, req: dict[str, Any]) -> dict[str, Any]:
+    name, content = upload_check(req)
+    info = await _json(call, "inspect_workbook", {})
+    if info.get("dirty"):
+        raise OpError("The open workbook has unsaved changes. Keep or discard them first, then upload a workbook.", 409)
+    folder = workbooks_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / name
+    target.write_bytes(content)
+    try:
+        await _json(call, "open_workbook", {"path": os.path.join(str(folder), name)})
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+    return {"file": name, "size": len(content)}
+
+
+async def download_book(call: Call | None, req: dict[str, Any]) -> dict[str, Any]:
+    raw = req.get("name")
+    if not raw and call is not None:
+        info = await _json(call, "inspect_workbook", {})
+        raw = PureWindowsPath(info["path"]).name if info.get("path") else ""
+        if not raw:
+            raise OpError("This workbook has not been saved to a file yet", 404)
+    name = workbook_name(raw)
+    data = (workbooks_dir() / name).read_bytes()
+    return {"file": name, "size": len(data), "data": base64.b64encode(data).decode("ascii")}
+
+
 # A cell the owner changes by hand: one cell, A1 style, upper case (the page always sends it so); GridCraft's own limits
 # on a sheet name and on what a cell holds are wider, these are what the page needs.
 CELL_REF = re.compile(r"^[A-Z]{1,3}[1-9][0-9]{0,6}$")
@@ -226,16 +300,26 @@ async def state(call: Call, req: dict[str, Any]) -> dict[str, Any]:
             "fingerprint": await fingerprint(call, info)}
 
 
-OPS = {"workbook": workbook, "keep": keep, "discard": discard, "workbooks": workbooks, "open": open_book, "set_cell": set_cell,
-       "state": state}
+OPS = {"workbook": workbook, "keep": keep, "discard": discard, "workbooks": workbooks, "open": open_book,
+       "new": new_book, "upload": upload_book, "download": download_book, "set_cell": set_cell, "state": state}
 NO_GRIDCRAFT = {"workbooks"}  # reads the folder only
+
+
+def needs_gridcraft(op: str, req: dict[str, Any]) -> bool:
+    return op not in NO_GRIDCRAFT and not (op == "download" and req.get("name") is not None)
 
 
 def check(op: str, req: dict[str, Any]) -> None:
     """Refuse a bad request before anything connects to GridCraft."""
     if op == "open":
         workbook_name(req.get("name"))
-    if op == "set_cell":
+    elif op == "new":
+        new_workbook_name(req.get("name"))
+    elif op == "upload":
+        upload_check(req)
+    elif op == "download" and req.get("name") is not None:
+        workbook_name(req.get("name"))
+    elif op == "set_cell":
         cell_edit(req)
 
 
@@ -249,9 +333,9 @@ def connect(port: Any = None) -> Any:
 
 
 async def run(op: str, req: dict[str, Any]) -> dict[str, Any]:
-    if op in NO_GRIDCRAFT:
-        return await OPS[op](None, req)
     check(op, req)
+    if not needs_gridcraft(op, req):
+        return await OPS[op](None, req)
     async with connect() as client:
         return await OPS[op](client.call_tool, req)
 
@@ -326,9 +410,9 @@ class Session:
         """The op's result; OpError as the ops raise it; Retry when nothing was changed and a new connection (or the
         one-process path) can safely run it again; Lost when the workbook may have changed; TimeoutError when GridCraft
         did not answer (the connection is dropped)."""
-        if op in NO_GRIDCRAFT:
-            return asyncio.run_coroutine_threadsafe(OPS[op](None, req), self._loop).result(timeout)
         check(op, req)
+        if not needs_gridcraft(op, req):
+            return asyncio.run_coroutine_threadsafe(OPS[op](None, req), self._loop).result(timeout)
         fut: concurrent.futures.Future = concurrent.futures.Future()
         wrote = [False]
         self._loop.call_soon_threadsafe(self._queue.put_nowait, (op, req, fut, wrote))

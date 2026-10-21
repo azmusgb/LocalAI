@@ -495,6 +495,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(*run_ops('workbook', query))
         if url.path == '/workbooks':
             return self._json(*run_ops('workbooks', {}, gridcraft=False))
+        if url.path == '/download':
+            query = {k: v[0] for k, v in parse_qs(url.query).items() if k == 'name' and v}
+            return self._json(*run_ops('download', query, gridcraft='name' not in query))
         if url.path == '/progress':
             return self._json(200, {'ok': True, **progress_snapshot()})
         if url.path != '/health':
@@ -513,7 +516,7 @@ class Handler(BaseHTTPRequestHandler):
         })
 
     def do_POST(self):
-        if self.path not in ('/run', '/keep', '/discard', '/open', '/cell', '/artcraft/open'):
+        if self.path not in ('/run', '/keep', '/discard', '/open', '/new', '/upload', '/cell', '/artcraft/open'):
             return self._json(404, {'ok': False, 'error': 'Not found'})
         # CORS only hides responses; it does not stop a page on another site from firing a simple POST.
         # Require an allowed Origin when a browser sends one, and a JSON content type (which forces a preflight).
@@ -529,24 +532,30 @@ class Handler(BaseHTTPRequestHandler):
                 log.warning('Could not open ArtCraft: %s', exc)
                 return self._json(500, {'ok': False, 'error': f'Could not open ArtCraft: {exc}'})
         try:
-            length = min(int(self.headers.get('Content-Length', '0')), 1024 * 1024)
-            payload = json.loads(self.rfile.read(length) or b'{}')
+            max_body = 15 * 1024 * 1024 if self.path == '/upload' else 1024 * 1024
+            raw_len = int(self.headers.get('Content-Length', '0'))
+            if raw_len > max_body:
+                return self._json(413, {'ok': False, 'error': 'Workbook files can be at most 10 MB' if self.path == '/upload' else 'Request is too large'})
+            payload = json.loads(self.rfile.read(raw_len) or b'{}')
             if not isinstance(payload, dict):
                 raise ValueError('expected a JSON object')
             prompt = str(payload.get('prompt', '')).strip()
         except Exception as exc:
             return self._json(400, {'ok': False, 'error': f'Invalid request: {exc}'})
         if self.path != '/run':
-            # Keep, discard, open and a cell edit change the workbook, so they wait for no one: a running request gets
-            # 409 like a second run.
+            # Keep, discard, open, new, upload and a cell edit change the workbook, so they wait for no one: a running
+            # request gets 409 like a second run.
             op = {'/cell': 'set_cell'}.get(self.path, self.path.strip('/'))
             if not run_lock.acquire(blocking=False):
                 busy = {'open': 'GridCraft is busy with a request',
+                        'new': 'GridCraft is busy with a request',
+                        'upload': 'GridCraft is busy with a request',
                         'set_cell': 'GridCraft is busy with a request. Change the cell when it finishes.'}.get(
                     op, 'A GridCraft request is running; try again when it finishes')
                 return self._json(409, {'ok': False, 'error': busy})
             try:
-                keys = {'discard': ('steps', 'undoTop', 'fingerprint'), 'open': ('name',), 'set_cell': ('sheet', 'cell', 'input')}.get(op, ())
+                keys = {'discard': ('steps', 'undoTop', 'fingerprint'), 'open': ('name',), 'new': ('name',),
+                        'upload': ('name', 'data'), 'set_cell': ('sheet', 'cell', 'input')}.get(op, ())
                 return self._json(*run_ops(op, {k: payload.get(k) for k in keys}))
             finally:
                 run_lock.release()

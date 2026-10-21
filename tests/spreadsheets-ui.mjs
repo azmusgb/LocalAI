@@ -30,16 +30,43 @@ function notes(range) {
 
 async function open(options) {
   const page = await browser.newPage({ serviceWorkers: 'block', ...options });
-  const calls = { runs: [], workbook: [], keep: 0, discard: 0, open: [], cell: [] };
+  const calls = { runs: [], workbook: [], keep: 0, discard: 0, open: [], new: [], upload: [], download: [], cell: [] };
   const book = { file: SALES.file, dirty: false, busy: false, edited: {} }; // what GridCraft has open; edited: cells changed by hand
-  let runs = [];
-  await page.route(u => u.pathname === '/api/gridcraft/workbooks', r => r.fulfill({ json: { ok: true, items: [SALES.file, 'Budget.xlsx', 'Inventory.csv'].map(name => ({ name, size: 2048, modified: '2026-10-17T09:00:00+00:00' })) } }));
+  let runs = [], files = [SALES.file, 'Budget.xlsx', 'Inventory.csv'];
+  await page.route(u => u.pathname === '/api/gridcraft/workbooks', r => r.fulfill({ json: { ok: true, items: files.map(name => ({ name, size: 2048, modified: '2026-10-17T09:00:00+00:00' })) } }));
   await page.route(u => u.pathname === '/api/gridcraft/open', r => {
     const { name } = JSON.parse(r.request().postData());
     calls.open.push(name);
     if (runs.some(x => x.status === 'review')) return r.fulfill({ status: 409, json: { ok: false, error: 'A request is waiting for review. Keep or discard its changes first, then open another workbook.' } });
     Object.assign(book, { file: name, dirty: false });
     return r.fulfill({ json: { ok: true, file: name } });
+  });
+  await page.route(u => u.pathname === '/api/gridcraft/new', r => {
+    const { name } = JSON.parse(r.request().postData());
+    calls.new.push(name);
+    if (files.includes(name)) return r.fulfill({ status: 409, json: { ok: false, error: `${name} already exists in the GridCraft folder` } });
+    files = [...files, name].sort();
+    Object.assign(book, { file: name, dirty: false });
+    return r.fulfill({ json: { ok: true, file: name } });
+  });
+  await page.route(u => u.pathname === '/api/gridcraft/upload', r => {
+    const { name, data } = JSON.parse(r.request().postData());
+    calls.upload.push({ name, data });
+    files = [...files, name].sort();
+    Object.assign(book, { file: name, dirty: false });
+    return r.fulfill({ json: { ok: true, file: name, size: Buffer.from(data, 'base64').length } });
+  });
+  await page.context().route(u => u.pathname === '/api/gridcraft/download', r => {
+    const name = new URL(r.request().url()).searchParams.get('name') || book.file;
+    calls.download.push(name);
+    return r.fulfill({
+      status: 200,
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="${name}"`
+      },
+      body: Buffer.from('504b030414000000', 'hex')
+    });
   });
   await page.route(u => u.pathname === '/api/gridcraft/health', r => r.fulfill({ json: { ok: true, gridcraftConnected: true, model: 'qwen3:4b-instruct' } }));
   await page.route(u => u.pathname === '/api/gridcraft/workbook', r => {
@@ -256,6 +283,41 @@ for (const [name, options] of [['computer', { viewport: { width: 1280, height: 9
     assert.equal(calls.workbook.at(-1), '', 'the new workbook opens on its own first sheet');
     assert.equal(await menu.inputValue(), 'Budget.xlsx');
     assert.equal(await page.locator('#sheetsTabs [aria-selected="true"]').innerText(), 'Sales');
+  });
+
+  await check(`${name}: New workbook, Upload and Download manage workbook files`, async () => {
+    for (const sel of ['#sheetsNew', '#sheetsUpload', '#sheetsDownload']) {
+      const b = await page.locator(sel).boundingBox();
+      assert.ok(b.height >= 44 && b.width >= 44, `${sel} is ${Math.round(b.width)}x${Math.round(b.height)}`);
+    }
+    assert.match(await page.locator('#sheetsDownload').getAttribute('href'), /\/api\/gridcraft\/download\?name=Budget\.xlsx$/);
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('#sheetsDownload').click()]);
+    assert.equal(dl.suggestedFilename(), 'Budget.xlsx');
+    assert.match(dl.url(), /\/api\/gridcraft\/download\?name=Budget\.xlsx$/);
+    // New workbook adds .xlsx if omitted and opens the created file:
+    await page.locator('#sheetsNew').click();
+    const ask = page.locator('dialog.ask-sheet');
+    await ask.waitFor({ state: 'visible' });
+    await ask.locator('input').fill('Forecast-2027');
+    await ask.locator('.ask-sheet__ok').click();
+    await page.waitForFunction(() => document.querySelector('#sheetsTitle')?.textContent === 'Forecast-2027');
+    assert.deepEqual(calls.new, ['Forecast-2027.xlsx']);
+    assert.equal(await page.locator('#sheetsBooks').inputValue(), 'Forecast-2027.xlsx');
+    assert.match(await page.locator('#sheetsDownload').getAttribute('href'), /name=Forecast-2027\.xlsx$/);
+    // Upload an .xlsx file from the phone or computer:
+    const xlsxBuf = Buffer.from('504b030414000000', 'hex');
+    await page.locator('#sheetsUploadInput').setInputFiles({
+      name: 'Phone-Report.xlsx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer: xlsxBuf
+    });
+    await page.waitForFunction(() => document.querySelector('#sheetsTitle')?.textContent === 'Phone-Report');
+    assert.deepEqual(calls.upload, [{ name: 'Phone-Report.xlsx', data: xlsxBuf.toString('base64') }]);
+    assert.equal(await page.locator('#sheetsBooks').inputValue(), 'Phone-Report.xlsx');
+    // Return to Budget.xlsx for subsequent checks:
+    await page.locator('#sheetsBooks').selectOption('Budget.xlsx');
+    await page.waitForFunction(() => document.querySelector('#sheetsTitle')?.textContent === 'Budget');
+    calls.open = ['Budget.xlsx'];
   });
 
   await check(`${name}: with unsaved changes it asks first, and Cancel opens nothing`, async () => {

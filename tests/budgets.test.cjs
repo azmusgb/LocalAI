@@ -77,7 +77,9 @@ const KB = 1024;
 // Workshop display's own report on its card (ui.js +0.6 KB, app.css +0.1 KB; 282.6 KB measured).
 // 2026-10-21: 283 → 284 KB for Spreadsheets larger sheets: column paging beyond 40 columns and Go to a cell or range
 // (spreadsheets.js +0.6 KB, index.html +0.1 KB, app.css +0.05 KB; 283.6 KB measured).
-const TOTAL = 284 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// 2026-10-21: 284 → 285 KB (and spreadsheets.js its own 11 KB) for Spreadsheets workbook files: New workbook, Upload
+// an .xlsx from the phone, and Download a copy (spreadsheets.js +0.5 KB, index.html +0.08 KB; 284.2 KB measured).
+const TOTAL = 285 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
 // tab rows (234.9 KB measured).
@@ -96,7 +98,7 @@ const TOTAL = 284 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // main had 44 bytes left).
 // 2026-10-20: ui.js 111 → 112 KB for pairing the Workshop display from Services (Pair display: the code box and its
 // status poll, +0.3 KB; 111.2 KB measured).
-const PER_FILE = { 'ui.js': 112 * KB, 'components.js': 11 * KB, 'app.css': 42 * KB, 'app.js': 36 * KB, 'index.html': 14 * KB, 'home.js': 11 * KB };
+const PER_FILE = { 'ui.js': 112 * KB, 'components.js': 11 * KB, 'app.css': 42 * KB, 'app.js': 36 * KB, 'index.html': 14 * KB, 'home.js': 11 * KB, 'spreadsheets.js': 11 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;

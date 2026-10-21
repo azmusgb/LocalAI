@@ -122,7 +122,16 @@ function createGridcraft(ctx) {
   // The workbook menu: files directly in the GridCraft folder on the host, by bare name. The bridge checks the name again
   // against the folder; this check keeps paths and odd names from ever reaching it.
   const GRIDCRAFT_BOOK = /^[^\\/:\0]{1,251}\.(xlsx|xlsm|xls|csv|ods)$/i;
-  const gridcraftBookName = v => typeof v === 'string' && v.trim() && GRIDCRAFT_BOOK.test(v) && !v.includes('..') ? v : '';
+  const gridcraftBookName = v => typeof v === 'string' && v.trim() && GRIDCRAFT_BOOK.test(v) && !v.includes('..') && !v.startsWith('~$') && ![...v].some(c => c.charCodeAt(0) < 32) ? v : '';
+  const gridcraftXlsxName = v => { const n = gridcraftBookName(v); return n && /\.xlsx$/i.test(n) && n.trim().length > 5 ? n : ''; };
+  const GRIDCRAFT_MAX_UPLOAD = 10 * 1024 * 1024;
+  const GRIDCRAFT_MIME = {
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12',
+    xls: 'application/vnd.ms-excel',
+    csv: 'text/csv; charset=utf-8',
+    ods: 'application/vnd.oasis.opendocument.spreadsheet'
+  };
   async function apiGridcraftWorkbooks(req, res) {
     try {
       const r = await bridgeFetch('/workbooks', { cache: 'no-store' }, 15000);
@@ -163,6 +172,70 @@ function createGridcraft(ctx) {
       if (!r.ok || data.ok !== true) return json(res, r.ok ? 502 : r.status, { ok: false, error: data.error || 'GridCraft did not open it' });
       recordActivity('gridcraft', 'GridCraft workbook opened', name);
       json(res, 200, { ok: true, file: name });
+    } catch (e) {
+      bridgeFailure(res, e);
+    }
+  }
+  async function apiGridcraftNew(req, res) {
+    if (!sameOriginJson(req, res)) return;
+    let b;
+    try { b = await readBody(req, 4096); } catch (e) { return json(res, 400, { ok: false, error: e.message }); }
+    const raw = typeof b?.name === 'string' ? b.name.trim() : '';
+    const candidate = raw && !/\.[a-z0-9]+$/i.test(raw) ? `${raw}.xlsx` : raw;
+    const name = gridcraftXlsxName(candidate);
+    if (!name) return json(res, 400, { ok: false, error: 'Enter a .xlsx file name like Budget-2027.xlsx' });
+    if (gridcraftRuns(GRIDCRAFT_KEEP_RUNS).some(x => x.status === 'review')) return json(res, 409, { ok: false, error: 'A request is waiting for review. Keep or discard its changes first, then start a new workbook.' });
+    try {
+      const r = await bridgeFetch('/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }, 65000);
+      const data = await bridgeJson(r, { ok: false, error: `Bridge returned HTTP ${r.status}` });
+      if (!r.ok || data.ok !== true) return json(res, r.ok ? 502 : r.status, { ok: false, error: data.error || 'GridCraft did not create the workbook' });
+      recordActivity('gridcraft', 'GridCraft workbook created', name);
+      json(res, 200, { ok: true, file: name });
+    } catch (e) {
+      bridgeFailure(res, e);
+    }
+  }
+  async function apiGridcraftUpload(req, res) {
+    if (!sameOriginJson(req, res)) return;
+    let b;
+    try { b = await readBody(req, 15 * 1024 * 1024); } catch (e) { return json(res, /too large/i.test(e.message) ? 413 : 400, { ok: false, error: /too large/i.test(e.message) ? 'Workbook files can be at most 10 MB' : e.message }); }
+    const name = gridcraftXlsxName(b?.name);
+    if (!name) return json(res, 400, { ok: false, error: 'Choose a .xlsx workbook file to upload' });
+    const raw = typeof b?.data === 'string' ? b.data.trim() : '';
+    if (!raw || !/^[A-Za-z0-9+/=\s]+$/.test(raw)) return json(res, 400, { ok: false, error: 'Choose a .xlsx workbook file to upload' });
+    const buf = Buffer.from(raw, 'base64');
+    if (buf.length > GRIDCRAFT_MAX_UPLOAD) return json(res, 413, { ok: false, error: 'Workbook files can be at most 10 MB' });
+    if (buf.length < 4 || buf[0] !== 0x50 || buf[1] !== 0x4b || buf[2] !== 0x03 || buf[3] !== 0x04) return json(res, 400, { ok: false, error: 'Only .xlsx workbook files can be uploaded' });
+    if (gridcraftRuns(GRIDCRAFT_KEEP_RUNS).some(x => x.status === 'review')) return json(res, 409, { ok: false, error: 'A request is waiting for review. Keep or discard its changes first, then upload a workbook.' });
+    try {
+      const r = await bridgeFetch('/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, data: buf.toString('base64') }) }, 65000);
+      const data = await bridgeJson(r, { ok: false, error: `Bridge returned HTTP ${r.status}` });
+      if (!r.ok || data.ok !== true) return json(res, r.ok ? 502 : r.status, { ok: false, error: data.error || 'GridCraft did not open the uploaded workbook' });
+      recordActivity('gridcraft', 'GridCraft workbook uploaded', name);
+      json(res, 200, { ok: true, file: name, size: buf.length });
+    } catch (e) {
+      bridgeFailure(res, e);
+    }
+  }
+  async function apiGridcraftDownload(req, res, urlObj) {
+    const wanted = urlObj.searchParams.get('name');
+    if (wanted !== null && !gridcraftBookName(wanted)) return json(res, 400, { ok: false, error: 'Choose a workbook file from the GridCraft folder' });
+    const q = wanted ? `?name=${encodeURIComponent(wanted)}` : '';
+    try {
+      const r = await bridgeFetch(`/download${q}`, { cache: 'no-store' }, 65000);
+      const data = await bridgeJson(r, { ok: false, error: `Bridge returned HTTP ${r.status}` });
+      if (!r.ok || data.ok !== true) return json(res, r.ok ? 502 : r.status, { ok: false, error: data.error || 'GridCraft did not send the workbook' });
+      const file = gridcraftBookName(data.file || wanted || '');
+      if (!file || typeof data.data !== 'string') return json(res, 502, { ok: false, error: 'GridCraft did not send a valid workbook file' });
+      const buf = Buffer.from(data.data, 'base64');
+      const ext = file.split('.').pop().toLowerCase();
+      res.writeHead(200, {
+        'Content-Type': GRIDCRAFT_MIME[ext] || 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${file.replace(/["\\]/g, '_')}"`,
+        'Content-Length': String(buf.length),
+        'Cache-Control': 'no-store'
+      });
+      res.end(buf);
     } catch (e) {
       bridgeFailure(res, e);
     }
@@ -315,7 +388,7 @@ function createGridcraft(ctx) {
     recordActivity('workshop', 'Workshop sign-in code shown', 'Services › Workshop display');
     send(200, { code: r.code, address });
   }
-  return { bridgeHealth, gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftHealth, apiGridcraftOpen, apiGridcraftProgress, apiGridcraftRun, apiGridcraftRuns, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopPortalCode, apiWorkshopStatus };
+  return { bridgeHealth, gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftDownload, apiGridcraftHealth, apiGridcraftNew, apiGridcraftOpen, apiGridcraftProgress, apiGridcraftRun, apiGridcraftRuns, apiGridcraftUpload, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopPortalCode, apiWorkshopStatus };
 }
 
 module.exports = { createGridcraft };
