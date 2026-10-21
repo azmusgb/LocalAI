@@ -343,6 +343,19 @@ async def save_applied(journal: Journal) -> Any:
     return result
 
 
+def select_tools(all_tools: list[Any], mode: str, everything: bool = False) -> tuple[list[Any], set[str]]:
+    """The tools a request in `mode` is offered, and the names it may call."""
+    tools = all_tools if everything else [tool for tool in all_tools if tool.name in CORE_TOOL_NAMES]
+    # Read only mode takes every read tool GridCraft has (list_functions is not in the core set).
+    pool = all_tools if mode == "read" else tools
+    allowed = allowed_tools(mode, {tool.name for tool in pool})
+    return [tool for tool in pool if tool.name in allowed], allowed
+
+
+def system_prompt(mode: str) -> str:
+    return SYSTEM_PROMPT + MODE_PROMPTS[mode]
+
+
 async def list_all_tools(mcp_client: Client) -> list[Any]:
     tools: list[Any] = []
     cursor: str | None = None
@@ -584,17 +597,8 @@ async def async_main() -> int:
                 print("ERROR: GridCraft MCP reported no tools.", file=sys.stderr)
                 return 4
 
-            if args.all_tools:
-                tools = all_tools
-                tool_profile = "all"
-            else:
-                tools = [tool for tool in all_tools if tool.name in CORE_TOOL_NAMES]
-                tool_profile = "core"
-            # Read only mode takes every read tool GridCraft has (list_functions is not in the core set).
-            pool = all_tools if args.mode == "read" else tools
-            allowed = allowed_tools(args.mode, {tool.name for tool in pool})
-            tools = [tool for tool in pool if tool.name in allowed]
-            tool_profile += f", {args.mode}"
+            tools, allowed = select_tools(all_tools, args.mode, args.all_tools)
+            tool_profile = ("all" if args.all_tools else "core") + f", {args.mode}"
 
             if not tools:
                 print("ERROR: No GridCraft tools matched the selected tool profile.", file=sys.stderr)
@@ -614,7 +618,7 @@ async def async_main() -> int:
 
             openai_tools = [mcp_tool_to_openai(tool) for tool in tools]
             history: list[dict[str, Any]] = [
-                {"role": "system", "content": SYSTEM_PROMPT + MODE_PROMPTS[args.mode]}
+                {"role": "system", "content": system_prompt(args.mode)}
             ]
             def print_entry(entry: dict[str, Any]) -> None:
                 print("[journal-entry] " + json.dumps(entry, ensure_ascii=False, default=str), file=sys.stderr, flush=True)
