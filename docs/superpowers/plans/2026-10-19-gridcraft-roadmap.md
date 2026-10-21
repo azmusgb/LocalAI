@@ -20,9 +20,13 @@ hand, answers that state their numbers, and requests up to five minutes (`docs/G
 
 ## Next
 
-4. **Measure before changing the model.** About 20 real spreadsheet tasks with known answers (the owner names the
-   kinds of task), scored automatically against `qwen3:4b-instruct` and one or two larger models the PC can run.
-   Switch only on a clear gain.
+4. **Measure before changing the model.** 20 tasks in `host/gridcraft-agent/eval/tasks.json` (12 questions, 8 changes on
+   a fresh headless copy of GridCraft's `sales` sample), scored by `host/gridcraft-agent/gridcraft_eval.py`:
+
+   | Model | Passed | Questions (12) | Changes (8) | Speed (median / slowest) | Verdict |
+   |---|---|---|---|---|---|
+   | `qwen3:4b-instruct` (current) | **14 / 20** | 9 / 12 | 5 / 8 | 9.6 s / 56.3 s | **Keep.** Missed `avg-q3`, `lowest-q2`, `max-quarter`, and three cell-address edits (`north-q1`, `q1-total-formula`, `review-south-q3`) where row/column counting shifted by one. |
+   | `qwen2.5-coder:7b-16k` | **0 / 20** | 0 / 12 | 0 / 8 | 3.1 s / 16.4 s | **Do not switch.** Called 0 tools across all 20 tasks. |
 5. **Larger sheets.** Scroll or page beyond 100 rows × 40 columns, and "Go to" a range or cell.
 6. **Workbook files.** New workbook, upload an `.xlsx` from the phone, and download a copy.
 

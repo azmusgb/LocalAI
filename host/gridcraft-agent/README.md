@@ -59,3 +59,17 @@ Long workbooks: the bridge runs the fast `qwen3:4b-instruct` (4096-token window)
 reaches 3500 tokens, the agent redoes that turn on `qwen3:4b-instruct-32k` and stays on it for the rest of the
 request, so Ollama never silently drops the start of the conversation. If the 32k model isn't installed, the
 agent says so and keeps the fast one.
+
+## Measuring models
+
+`gridcraft_eval.py` runs the 20 tasks in `eval/tasks.json` (12 questions with known answers, 8 changes with known
+results) on a fresh headless copy of GridCraft's `sales` sample, through the same agent loop, tools and modes the bridge
+uses, and scores the answer and the cells left behind. Nothing opens on screen and no file is written.
+
+```powershell
+& $py C:\LocalAI\repo\host\gridcraft-agent\gridcraft_eval.py --models qwen3:4b-instruct,qwen2.5-coder:7b-16k --out $env:TEMP\gridcraft-eval.json
+```
+
+`--tasks id,id` runs some; `--time-limit` (240 s) is per task. Results of runs so far are in
+`docs/superpowers/plans/2026-10-19-gridcraft-roadmap.md` (item 4).
+

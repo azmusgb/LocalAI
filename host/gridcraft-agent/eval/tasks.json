@@ -1,0 +1,25 @@
+{
+  "about": "Spreadsheet tasks with known answers on GridCraft's 'sales' sample (Sales!B4:I11: six regions x Q1-Q4, Total, Growth). gridcraft_eval.py runs each on a fresh copy. answer_numbers: each inner list is one number the answer must state, any of its forms (rounding to what the answer wrote is fine). answer_any: the answer must contain one of these. cells: computed values after the request. formulas: cells that must hold a formula. change_summary: a pattern one of the journal's other changes must match.",
+  "tasks": [
+    {"id": "sum-q1", "kind": "read", "mode": "read", "prompt": "What is the total of Q1 sales across all regions?", "answer_numbers": [[304820]]},
+    {"id": "best-region", "kind": "read", "mode": "read", "prompt": "Which region had the highest annual total, and how much was it?", "answer_any": ["Online"], "answer_numbers": [[362100]]},
+    {"id": "north-q4", "kind": "read", "mode": "read", "prompt": "What were North's Q4 sales?", "answer_numbers": [[61870]]},
+    {"id": "avg-q3", "kind": "read", "mode": "read", "prompt": "What is the average Q3 figure across the six regions?", "answer_numbers": [[59165]]},
+    {"id": "count-regions", "kind": "read", "mode": "read", "prompt": "How many regions are in the sales table, not counting the Total row?", "answer_numbers": [[6]]},
+    {"id": "west-growth", "kind": "read", "mode": "read", "prompt": "By what percentage did West grow from Q1 to Q4?", "answer_numbers": [[25.19, 0.2519]]},
+    {"id": "lowest-q2", "kind": "read", "mode": "read", "prompt": "Which region had the lowest Q2 sales?", "answer_any": ["Central"]},
+    {"id": "east-minus-south", "kind": "read", "mode": "read", "prompt": "How much higher was East's annual total than South's?", "answer_numbers": [[70270]]},
+    {"id": "north-south-q4", "kind": "read", "mode": "read", "prompt": "What is the combined Q4 total of North and South?", "answer_numbers": [[106990]]},
+    {"id": "cell-c14", "kind": "read", "mode": "read", "prompt": "What does cell C14 on the Sales sheet show?", "answer_any": ["Online"]},
+    {"id": "max-quarter", "kind": "read", "mode": "read", "prompt": "What was the single largest quarterly figure in the table, and which region was it?", "answer_any": ["Online"], "answer_numbers": [[112840]]},
+    {"id": "online-share", "kind": "read", "mode": "read", "prompt": "What share of the annual total came from Online?", "answer_numbers": [[26.21, 0.2621]]},
+    {"id": "text-k1", "kind": "change", "mode": "apply", "prompt": "Put the text Reviewed in cell K1 of the Sales sheet.", "cells": {"Sales!K1": "Reviewed"}},
+    {"id": "north-q1", "kind": "change", "mode": "apply", "prompt": "Change North's Q1 figure to 50000.", "cells": {"Sales!C5": 50000, "Sales!G5": 219220}},
+    {"id": "target-row", "kind": "change", "mode": "apply", "prompt": "In B19 write the label Target, and in C19 the number 400000.", "cells": {"Sales!B19": "Target", "Sales!C19": 400000}},
+    {"id": "q4-minus-q1", "kind": "change", "mode": "apply", "prompt": "In J5:J10, put each region's Q4 minus its Q1.", "cells": {"Sales!J5": 13670, "Sales!J6": 5970, "Sales!J7": 8180, "Sales!J8": 15370, "Sales!J9": 7770, "Sales!J10": 40430}},
+    {"id": "bold-header", "kind": "change", "mode": "apply", "prompt": "Make the header row B4:I4 bold.", "change_summary": "(?i)bold"},
+    {"id": "q1-total-formula", "kind": "change", "mode": "apply", "prompt": "In B20 write Q1 total, and in C20 a formula that adds up the six regions' Q1 figures.", "cells": {"Sales!B20": "Q1 total", "Sales!C20": 304820}, "formulas": ["Sales!C20"]},
+    {"id": "clear-c17", "kind": "change", "mode": "apply", "prompt": "Clear cell C17 on the Sales sheet.", "cells": {"Sales!C17": null}},
+    {"id": "review-south-q3", "kind": "change", "mode": "review", "prompt": "Set South's Q3 sales to 43000.", "cells": {"Sales!E6": 43000}}
+  ]
+}
