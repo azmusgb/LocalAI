@@ -104,11 +104,16 @@ else:
   assert.equal(books.op, 'workbooks');
   assert.equal(books.dir, path.join(dir, 'Books'), 'the folder is the one GRIDCRAFT_WORKBOOK is in');
   assert.deepEqual((await (await post('/open', { name: 'Budget.xlsx', path: 'C:/x' })).json()).req, { name: 'Budget.xlsx' }, 'only the name is passed on');
+  assert.deepEqual((await (await post('/new', { name: 'Fresh.xlsx', path: 'C:/x' })).json()), { ok: true, op: 'new', req: { name: 'Fresh.xlsx' } });
+  assert.deepEqual((await (await post('/upload', { name: 'Phone.xlsx', data: 'UEsDBAo=', path: 'C:/x' })).json()), { ok: true, op: 'upload', req: { name: 'Phone.xlsx', data: 'UEsDBAo=' } });
+  assert.deepEqual((await (await fetch(base + '/download?name=Budget.xlsx&path=C:/x')).json()), { ok: true, op: 'download', req: { name: 'Budget.xlsx' } });
   const slow = post('/run', { prompt: 'slow', mode: 'read' });
   await new Promise(r => setTimeout(r, 400));
   const busy = await post('/open', { name: 'Budget.xlsx' });
   assert.equal(busy.status, 409);
   assert.equal((await busy.json()).error, 'GridCraft is busy with a request');
+  assert.equal((await post('/new', { name: 'Fresh.xlsx' })).status, 409);
+  assert.equal((await post('/upload', { name: 'Phone.xlsx', data: 'UEsDBAo=' })).status, 409);
   const busyCell = await post('/cell', { sheet: 'Sales', cell: 'B2', input: '5' });
   assert.equal(busyCell.status, 409, 'a cell edit waits for no request');
   assert.match((await busyCell.json()).error, /busy with a request\. Change the cell when it finishes/);
@@ -171,6 +176,86 @@ print(json.dumps(out))`;
       '..': 400, 'a..b.xlsx': 400, 'notes.txt': 400, Budget: 400, 'Missing.xlsx': 404, 'Folder.xlsx': 404, '~$Budget.xlsx': 400, '': 400, None: 400,
     });
     assert.deepEqual(out.calls, ['Budget.xlsx', 'data.csv', 'Old.XLS'].map(n => ['open_workbook', { path: path.join(dir, n) }]), 'GridCraft is asked to open the file in the folder, and only for a good name');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('new_book, upload_book and download_book validate names, content and dirty state in the GridCraft folder', { skip: !python && 'no python' }, () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gridcraft-files-'));
+  const xlsxBytes = Buffer.from('504b0304140000000000', 'hex');
+  fs.writeFileSync(path.join(dir, 'Existing.xlsx'), xlsxBytes);
+  const code = `import asyncio, base64, importlib.util, json, os, sys
+sys.path.insert(0, os.path.dirname(sys.argv[1]))
+spec = importlib.util.spec_from_file_location('ops', sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+calls = []
+dirty = False
+fail_open = False
+class Res:
+    def __init__(self, d, err=False):
+        self.is_error = err
+        self.content = [type('B', (), {'text': d if isinstance(d, str) else json.dumps(d)})()]
+async def call(name, args):
+    if name == 'inspect_workbook':
+        return Res({'dirty': dirty, 'path': os.path.join(os.environ['GRIDCRAFT_WORKBOOKS_DIR'], 'Existing.xlsx')})
+    calls.append([name, args])
+    if name == 'open_workbook' and fail_open:
+        return Res('corrupt file', err=True)
+    return Res({})
+def try_op(fn, req, use_call=True):
+    try: return asyncio.run(fn(call if use_call else None, req))
+    except m.OpError as e: return {'status': e.status, 'error': str(e)}
+good_b64 = base64.b64encode(b'PK\\x03\\x04workbook-bytes').decode('ascii')
+bad_b64 = base64.b64encode(b'not-a-zip').decode('ascii')
+out = {
+    'new_ok': try_op(m.new_book, {'name': 'Fresh.xlsx'}),
+    'new_exists': try_op(m.new_book, {'name': 'Existing.xlsx'}),
+    'new_csv': try_op(m.new_book, {'name': 'Fresh.csv'}),
+    'new_path': try_op(m.new_book, {'name': '../Fresh.xlsx'}),
+    'upload_ok': try_op(m.upload_book, {'name': 'Uploaded.xlsx', 'data': good_b64}),
+    'upload_exists': try_op(m.upload_book, {'name': 'Existing.xlsx', 'data': good_b64}),
+    'upload_not_zip': try_op(m.upload_book, {'name': 'Bad.xlsx', 'data': bad_b64}),
+    'upload_path': try_op(m.upload_book, {'name': 'sub/Bad.xlsx', 'data': good_b64}),
+    'download_named': try_op(m.download_book, {'name': 'Uploaded.xlsx'}, use_call=False),
+    'download_active': try_op(m.download_book, {}),
+    'download_missing': try_op(m.download_book, {'name': 'Nope.xlsx'}, use_call=False),
+    'download_path': try_op(m.download_book, {'name': '../Existing.xlsx'}, use_call=False),
+}
+dirty = True
+out['new_dirty'] = try_op(m.new_book, {'name': 'Another.xlsx'})
+out['upload_dirty'] = try_op(m.upload_book, {'name': 'Another.xlsx', 'data': good_b64})
+dirty = False; fail_open = True
+out['upload_failed_open'] = try_op(m.upload_book, {'name': 'Broken.xlsx', 'data': good_b64})
+out['broken_exists'] = os.path.exists(os.path.join(os.environ['GRIDCRAFT_WORKBOOKS_DIR'], 'Broken.xlsx'))
+out['calls'] = calls
+print(json.dumps(out))`;
+  try {
+    const r = spawnSync(python, ['-I', '-c', code, path.resolve(__dirname, '../host/gridcraft-agent/gridcraft_ops.py')], { encoding: 'utf8', env: { ...process.env, GRIDCRAFT_WORKBOOKS_DIR: dir } });
+    assert.equal(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assert.deepEqual(out.new_ok, { file: 'Fresh.xlsx' });
+    assert.equal(out.new_exists.status, 409);
+    assert.equal(out.new_csv.status, 400);
+    assert.equal(out.new_path.status, 400);
+    assert.deepEqual(out.upload_ok, { file: 'Uploaded.xlsx', size: 18 });
+    assert.equal(out.upload_exists.status, 409);
+    assert.equal(out.upload_not_zip.status, 400);
+    assert.equal(out.upload_path.status, 400);
+    assert.equal(out.new_dirty.status, 409);
+    assert.equal(out.upload_dirty.status, 409);
+    assert.equal(out.upload_failed_open.status, 500);
+    assert.equal(out.broken_exists, false, 'a file GridCraft could not open is removed from the folder');
+    assert.equal(Buffer.from(out.download_named.data, 'base64').toString(), 'PK\x03\x04workbook-bytes');
+    assert.equal(out.download_active.file, 'Existing.xlsx');
+    assert.equal(out.download_missing.status, 404);
+    assert.equal(out.download_path.status, 400);
+    assert.deepEqual(out.calls, [
+      ['new_workbook', {}],
+      ['save_workbook', { path: path.join(dir, 'Fresh.xlsx') }],
+      ['open_workbook', { path: path.join(dir, 'Uploaded.xlsx') }],
+      ['open_workbook', { path: path.join(dir, 'Broken.xlsx') }],
+    ]);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

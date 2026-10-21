@@ -31,6 +31,20 @@ test('GridCraft is reached through the appliance, not directly from the browser'
         if (JSON.parse(body).name === 'Gone.xlsx') { res.statusCode = 404; return res.end(JSON.stringify({ ok: false, error: 'Gone.xlsx is not in the GridCraft folder' })); }
         return res.end(JSON.stringify({ ok: true, file: JSON.parse(body).name }));
       }
+      if (req.url === '/new') {
+        if (JSON.parse(body).name === 'Budget.xlsx') { res.statusCode = 409; return res.end(JSON.stringify({ ok: false, error: 'Budget.xlsx already exists in the GridCraft folder' })); }
+        return res.end(JSON.stringify({ ok: true, file: JSON.parse(body).name }));
+      }
+      if (req.url === '/upload') {
+        const { name, data } = JSON.parse(body);
+        return res.end(JSON.stringify({ ok: true, file: name, size: Buffer.from(data, 'base64').length }));
+      }
+      if (/^\/download(\?|$)/.test(req.url)) {
+        const name = new URL(req.url, 'http://x').searchParams.get('name') || 'Q.xlsx';
+        if (name === 'Gone.xlsx') { res.statusCode = 404; return res.end(JSON.stringify({ ok: false, error: 'Gone.xlsx is not in the GridCraft folder' })); }
+        const bytes = Buffer.from('504b030414000000', 'hex');
+        return res.end(JSON.stringify({ ok: true, file: name, size: bytes.length, data: bytes.toString('base64') }));
+      }
       if (req.url === '/progress') return res.end(JSON.stringify({ ok: true, running: true, startedAt: 1, turn: 2, workbook: 'C:\\Users\\someone\\Book.xlsx', steps: [{ tool: 'read_range', text: 'Reading Sales!A1:D4', at: 1, args: { path: 'C:\\x' } }, { tool: 'set_cell', text: 'Changing Sales!B7', failed: true }] }));
       if (req.url === '/keep') return res.end(JSON.stringify({ ok: true, dirty: false }));
       if (req.url === '/discard') {
@@ -93,6 +107,8 @@ test('GridCraft is reached through the appliance, not directly from the browser'
   assert.equal(waiting.status, 409, 'opening another workbook would strand the requests waiting for review');
   assert.match((await waiting.json()).error, /waiting for review/);
   assert.equal(seen.some(x => x.url === '/open'), false);
+  assert.equal((await post('/api/gridcraft/new', { name: 'Fresh.xlsx' })).status, 409);
+  assert.equal((await post('/api/gridcraft/upload', { name: 'Fresh.xlsx', data: Buffer.from('504b03041400', 'hex').toString('base64') })).status, 409);
 
   const runs = (await (await fetch(`${base}/api/gridcraft/runs`)).json()).items;
   assert.deepEqual(runs.map(x => x.status), ['review', 'done', 'review'], 'newest first');
@@ -135,6 +151,33 @@ test('GridCraft is reached through the appliance, not directly from the browser'
   assert.equal(gone.status, 404);
   assert.match((await gone.json()).error, /not in the GridCraft folder/);
   assert.equal(seen.filter(x => x.url === '/open').length, 2, 'refused names never reach the bridge');
+
+  // New workbook, upload .xlsx, and download a copy:
+  const created = await post('/api/gridcraft/new', { name: 'Budget-2027', extra: 1 });
+  assert.equal(created.status, 200);
+  assert.deepEqual(await created.json(), { ok: true, file: 'Budget-2027.xlsx' }, 'adds .xlsx when omitted');
+  assert.deepEqual(JSON.parse(seen.find(x => x.url === '/new').body), { name: 'Budget-2027.xlsx' });
+  assert.equal((await post('/api/gridcraft/new', { name: 'Budget.xlsx' })).status, 409, 'existing file returns 409');
+  for (const name of ['../New.xlsx', 'sub/New.xlsx', 'notes.csv', '~$lock.xlsx', '.xlsx', '']) {
+    assert.equal((await post('/api/gridcraft/new', { name })).status, 400, `new refuses ${JSON.stringify(name)}`);
+  }
+
+  const xlsxB64 = Buffer.from('504b030414000000', 'hex').toString('base64');
+  const uploaded = await post('/api/gridcraft/upload', { name: 'From-Phone.xlsx', data: xlsxB64, path: 'C:\\x' });
+  assert.equal(uploaded.status, 200);
+  assert.deepEqual(await uploaded.json(), { ok: true, file: 'From-Phone.xlsx', size: 8 });
+  assert.deepEqual(JSON.parse(seen.find(x => x.url === '/upload').body), { name: 'From-Phone.xlsx', data: xlsxB64 });
+  assert.equal((await post('/api/gridcraft/upload', { name: 'From-Phone.xlsx', data: Buffer.from('not-a-zip').toString('base64') })).status, 400, 'non-zip rejected');
+  assert.equal((await post('/api/gridcraft/upload', { name: '../From-Phone.xlsx', data: xlsxB64 })).status, 400);
+  assert.equal((await post('/api/gridcraft/upload', { name: 'macro.xlsm', data: xlsxB64 })).status, 400, 'only .xlsx uploads');
+
+  const dl = await fetch(`${base}/api/gridcraft/download?name=Budget.xlsx`);
+  assert.equal(dl.status, 200);
+  assert.equal(dl.headers.get('content-disposition'), 'attachment; filename="Budget.xlsx"');
+  assert.equal(dl.headers.get('content-type'), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  assert.equal(Buffer.from(await dl.arrayBuffer()).toString('hex'), '504b030414000000');
+  assert.equal((await fetch(`${base}/api/gridcraft/download?name=../Budget.xlsx`)).status, 400);
+  assert.equal((await fetch(`${base}/api/gridcraft/download?name=Gone.xlsx`)).status, 404);
 
   const wb = await (await fetch(`${base}/api/gridcraft/workbook?sheet=Sales&other=1`)).json();
   assert.deepEqual(wb, { ok: true, file: 'Q.xlsx', sheet: 'Sales' });

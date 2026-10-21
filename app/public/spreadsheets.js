@@ -131,6 +131,7 @@ function renderBook(){
  const b=st.book;if(!b)return;
  $('sheetsTitle').textContent=b.title||b.file||'Workbook';
  $('sheetsDirty').hidden=!b.dirty;
+ const dl=$('sheetsDownload');if(dl){dl.href=b.file?`${API}/download?name=${encodeURIComponent(b.file)}`:`${API}/download`;dl.download=b.file||'workbook.xlsx'}
  renderBooks();
  $('sheetsTabs').innerHTML=(b.sheets||[]).map(s=>`<button type="button" role="tab" class="ux-tab${s.name===b.sheet?' active':''}" aria-selected="${s.name===b.sheet}" data-sheet="${esc(s.name)}">${esc(s.name)}</button>`).join('');
  renderGrid();
@@ -295,27 +296,47 @@ function renderBooks(){
  sel.innerHTML=names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
  sel.value=cur;sel.hidden=names.length<2; // nothing else to open
 }
-async function openBook(){
- const sel=$('sheetsBooks'),name=sel.value,cur=st.book?.file||'';
- if(!name||name===cur)return;
- if(st.book?.dirty){
-  const effect=`${cur} has unsaved changes in GridCraft. Open ${name} anyway? The changes stay in GridCraft's undo history only until it's closed.`;
-  const ask=root.LocalAIUI?.ask,ok=ask?(await ask({title:`Open ${name}?`,effect,confirmLabel:'Open anyway'})).ok:root.confirm(effect);
-  if(!ok){sel.value=cur;return}
- }
- sel.disabled=true;$('sheetsRange').textContent=`Opening ${name}…`;
+async function confirmDirty(title,verb,label){
+ if(!st.book?.dirty)return true;
+ const cur=st.book.file||'The open workbook',effect=`${cur} has unsaved changes in GridCraft. ${verb} anyway? The changes stay in GridCraft's undo history only until it's closed.`;
+ const ask=root.LocalAIUI?.ask;return ask?(await ask({title,effect,confirmLabel:label})).ok:root.confirm(effect);
+}
+async function switchBook(ep,body,working,done,failed){
+ const sel=$('sheetsBooks'),cur=st.book?.file||'';
+ sel.disabled=true;$('sheetsRange').textContent=working;
  try{
-  const r=await fetch(`${API}/open`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+  const r=await fetch(`${API}/${ep}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await r.json().catch(()=>({}));
   if(!r.ok||!data.ok)throw new Error(data.error||`HTTP ${r.status}`);
   st.book=null;st.sheet='';st.sel=null;st.top=1;st.left=1;$('sheetsCell').hidden=true;goError('');
+  if(ep!=='open')await loadBooks();
   await loadBook();
-  root.LocalAIUI?.toast?.(`Opened ${name}`);
+  root.LocalAIUI?.toast?.(done);
  }catch(e){
   sel.value=cur;renderGrid();
-  $('sheetsResultTitle').textContent=`${name} didn't open`;$('sheetsResult').dataset.status='';$('sheetsElapsed').textContent='';
+  $('sheetsResultTitle').textContent=failed;$('sheetsResult').dataset.status='';$('sheetsElapsed').textContent='';
   show('error',e.message||String(e));
  }finally{sel.disabled=false}
+}
+async function openBook(){
+ const sel=$('sheetsBooks'),name=sel.value,cur=st.book?.file||'';
+ if(!name||name===cur)return;
+ if(!await confirmDirty(`Open ${name}?`,`Open ${name}`,'Open anyway')){sel.value=cur;return}
+ await switchBook('open',{name},`Opening ${name}…`,`Opened ${name}`,`${name} didn't open`);
+}
+async function newBook(){
+ const cur=st.book?.file||'The open workbook',effect=st.book?.dirty?`${cur} has unsaved changes in GridCraft. Starting a new workbook leaves them in GridCraft's undo history only until it's closed.`:'Creates a blank .xlsx workbook in the GridCraft folder and opens it.';
+ const ask=root.LocalAIUI?.ask,ans=ask?await ask({title:'New workbook',effect,confirmLabel:'Create workbook',input:{label:'File name',placeholder:'Budget-2027.xlsx'}}):{ok:true,value:root.prompt('File name:')||''};
+ if(!ans.ok||!ans.value)return;
+ const raw=ans.value.trim(),name=/\.[a-z0-9]+$/i.test(raw)?raw:`${raw}.xlsx`;
+ await switchBook('new',{name},`Creating ${name}…`,`Created ${name}`,`${name} wasn't created`);
+}
+async function uploadBook(e){
+ const f=e.target.files?.[0];e.target.value='';if(!f)return;
+ if(!await confirmDirty(`Upload ${f.name}?`,`Upload and open ${f.name}`,'Upload anyway'))return;
+ const buf=new Uint8Array(await f.arrayBuffer());let bin='';
+ for(let i=0;i<buf.length;i+=8192)bin+=String.fromCharCode(...buf.subarray(i,i+8192));
+ await switchBook('upload',{name:f.name,data:btoa(bin)},`Uploading ${f.name}…`,`Uploaded ${f.name}`,`${f.name} wasn't uploaded`);
 }
 
 // ---- Run, keep, discard ----
@@ -388,6 +409,9 @@ function init(){
  $('sheetsDiscard').addEventListener('click',()=>decide('discard'));
  $('sheetsRefresh').addEventListener('click',()=>{goError('');refresh()});
  $('sheetsBooks').addEventListener('change',openBook);
+ $('sheetsNew').addEventListener('click',newBook);
+ $('sheetsUpload').addEventListener('click',()=>$('sheetsUploadInput').click());
+ $('sheetsUploadInput').addEventListener('change',uploadBook);
  $('sheetsGo').addEventListener('submit',e=>{e.preventDefault();goto('',$('sheetsGoInput').value)});
  $('sheetsFormulas').addEventListener('click',e=>{st.formulas=!st.formulas;e.currentTarget.setAttribute('aria-pressed',st.formulas);renderGrid()});
  $('sheetsTabs').addEventListener('click',e=>{const b=e.target.closest('[data-sheet]');if(b&&b.dataset.sheet!==st.sheet){st.sel=null;$('sheetsCell').hidden=true;goError('');loadBook(b.dataset.sheet,1,1)}});

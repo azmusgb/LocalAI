@@ -171,6 +171,15 @@ never run twice. A bridge Python without the agent's packages, or `GRIDCRAFT_OPS
 - `POST /open {"name":"Budget.xlsx"}`: opens that file from the folder (GridCraft `open_workbook`), replacing the open
   workbook. Only a bare file name: a path separator, `:`, `..` or another extension gets 400, a file not in the folder
   404, and 409 while the open workbook has unsaved changes.
+- `POST /new {"name":"Budget-2027.xlsx"}`: creates a new workbook in GridCraft (`new_workbook`) and saves it in
+  `GRIDCRAFT_WORKBOOKS_DIR` (`save_workbook {"path": ...}`). Refuses paths, `..`, non-`.xlsx` names (400), an existing
+  file in the folder (409), or an open workbook with unsaved changes (409).
+- `POST /upload {"name":"Phone-Report.xlsx","data":"<base64>"}`: writes a new `.xlsx` file (up to 10 MB, verified by its
+  `PK\x03\x04` ZIP signature) into `GRIDCRAFT_WORKBOOKS_DIR` and opens it in GridCraft (`open_workbook`). Refuses
+  overwriting an existing file (409) or replacing an open workbook with unsaved changes (409), and removes the file if
+  GridCraft could not open it.
+- `GET /download?name=Budget.xlsx`: reads the named workbook (or the open workbook when `name` is omitted) from
+  `GRIDCRAFT_WORKBOOKS_DIR` so the appliance can stream it as an attachment download.
 - `POST /cell {"sheet":"Sales","cell":"B7","input":"=B5*2"}`: the `set_cell` op, a cell changed by hand in the grid. It
   checks the input (cell `^[A-Z]{1,3}[1-9][0-9]{0,6}$`, sheet name 1 to 100 characters without control characters,
   input text up to 8,192 characters, empty clears the cell; otherwise 400, an unknown sheet 404), then calls GridCraft
@@ -196,6 +205,9 @@ request ran"). It adds these routes:
 | `GET /api/gridcraft/workbooks` | `GET /workbooks` | names, sizes and dates only |
 | `GET /api/gridcraft/progress` | `GET /progress` | `running`, `turn` and each step's `tool`, `text` and `failed` only |
 | `POST /api/gridcraft/open` | `POST /open` | checks the name the same way; 409 while any request waits for review, since opening another workbook would leave its Keep and Discard meaning nothing |
+| `POST /api/gridcraft/new` | `POST /new` | creates and opens a new `.xlsx` workbook in the GridCraft folder (adds `.xlsx` when omitted); 409 while a request waits for review or if the file already exists |
+| `POST /api/gridcraft/upload` | `POST /upload` | uploads a `.xlsx` file (up to 10 MB, `PK\x03\x04` signature) into the GridCraft folder and opens it; 409 while a request waits for review or if the file already exists |
+| `GET /api/gridcraft/download` | `GET /download` | downloads a copy of the workbook (`Content-Disposition: attachment; filename="..."`, `Cache-Control: no-store`) |
 | `POST /api/gridcraft/cell` | `POST /cell` | `{sheet, cell, input}`, checked the same way (400) before it reaches the bridge; records a Direct edit (below) |
 
 **Direct edits.** A cell changed by hand becomes a request record with `kind: "edit"`, mode `review`, status `review`

@@ -29,7 +29,8 @@ hand, answers that state their numbers, and requests up to five minutes (`docs/G
    | `qwen2.5-coder:7b-16k` | **0 / 20** | 0 / 12 | 0 / 8 | 3.1 s / 16.4 s | **Do not switch.** Called 0 tools across all 20 tasks. |
 5. **Larger sheets.** Scroll or page beyond 100 rows × 40 columns (`Previous/Next rows` and `Previous/Next columns`),
    and **Go to** a cell (`B12`, `Notes!A220`, `AZ5`) or range (`A50:D80`).
-6. **Workbook files.** New workbook, upload an `.xlsx` from the phone, and download a copy.
+6. **Workbook files.** New workbook (`POST /api/gridcraft/new`), upload an `.xlsx` from the phone
+   (`POST /api/gridcraft/upload`), and download a copy (`GET /api/gridcraft/download`).
 
 ## Later
 
