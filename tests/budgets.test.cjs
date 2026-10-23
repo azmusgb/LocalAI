@@ -79,7 +79,8 @@ const KB = 1024;
 // (spreadsheets.js +0.6 KB, index.html +0.1 KB, app.css +0.05 KB; 283.6 KB measured).
 // 2026-10-21: 284 → 285 KB (and spreadsheets.js its own 11 KB) for Spreadsheets workbook files: New workbook, Upload
 // an .xlsx from the phone, and Download a copy (spreadsheets.js +0.5 KB, index.html +0.08 KB; 284.2 KB measured).
-const TOTAL = 285 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// 2026-10-23: 285 → 288 KB for the Universal Suite Navigation bar (<appliance-nav>, +2.3 KB gzipped).
+const TOTAL = 288 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
 // tab rows (234.9 KB measured).
