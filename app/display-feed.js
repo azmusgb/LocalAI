@@ -15,7 +15,7 @@ const firstSentence = (s) => String(s || '').split(/(?<=[.!?])\s+/)[0] || '';
 //
 // Feed v2 (Workshop OS 12.6): every card has an id (stable while it means the same thing, so the display can tell a
 // new card), at (epoch seconds, when known) and ask (the question the display asks when the card is tapped).
-const ASK = { needs: 'needs', watch: 'health', running: 'running', done: 'today', weather: 'weather', image: null, disk: 'health', playing: null, home: null };
+const ASK = { needs: 'needs', watch: 'health', running: 'running', done: 'today', weather: 'weather', image: null, disk: 'health', playing: null, home: null, materials: 'health' };
 const sec = (iso) => { const t = Date.parse(iso || ''); return Number.isFinite(t) ? Math.floor(t / 1000) : undefined; };
 const ago = (atSec, now) => {
   const s = Math.max(0, Math.floor(now / 1000) - atSec);
@@ -23,7 +23,7 @@ const ago = (atSec, now) => {
 };
 const gb = (n) => `${Math.round(n / 1e9)} GB`;
 
-function buildFeed({ needs, watch = [], running = [], done = [], weather = null, image = null, images = null, disk = null, pi = null, now = Date.now() }) {
+function buildFeed({ needs, watch = [], running = [], done = [], weather = null, image = null, images = null, disk = null, pi = null, materials = null, now = Date.now() }) {
   const cards = [];
   const add = (kind, id, title, text, extra = {}) => {
     const c = card(kind, title, text, extra);
@@ -64,6 +64,15 @@ function buildFeed({ needs, watch = [], running = [], done = [], weather = null,
   if (disk && disk.totalBytes > 0) {
     const used = 1 - disk.freeBytes / disk.totalBytes;
     add('disk', `disk-${disk.label}`, 'Disk', `${disk.label} · ${gb(disk.freeBytes)} free of ${gb(disk.totalBytes)}`, { tone: used >= 0.9 ? 'attention' : used >= 0.8 ? 'warning' : 'info', percent: Math.round(used * 100) });
+  }
+  // LocalAI Materials: active spools and inventory metrics
+  if (materials?.summary) {
+    const s = materials.summary;
+    const tone = s.low > 0 ? 'warning' : s.unknown > 0 ? 'info' : 'ok';
+    const text = s.low > 0 ? (materials.status || `${s.low} spool${s.low > 1 ? 's' : ''} low`)
+      : s.loaded > 0 ? `${s.loaded} spools loaded · ${s.spools} in inventory`
+      : `${s.spools} spools in stock`;
+    add('materials', `materials-${s.low ? 'low' : 'ok'}`, 'Materials', text, { tone });
   }
   const feed = { v: 2, at: new Date(now).toISOString(), cards };
   if (pics.length) feed.images = pics.map((i) => ({ title: cut(i.title || 'An image', 90), imageUrl: i.imageUrl, ...(Number.isFinite(i.at) ? { at: i.at } : {}) }));

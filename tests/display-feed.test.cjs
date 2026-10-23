@@ -85,6 +85,33 @@ test('image links ask ComfyUI for a JPEG; anything else is refused', () => {
   assert.equal(jpegUrl(null), null);
 });
 
+test('materials inventory facts become a materials card with tone and ask', () => {
+  const lowFeed = buildFeed({
+    needs: { count: 0 },
+    materials: {
+      summary: { spools: 12, loaded: 4, low: 1, unknown: 0, queue: 1 },
+      status: '1 spool low: Bambu PLA Basic'
+    }
+  });
+  const lowCard = lowFeed.cards.find(c => c.kind === 'materials');
+  assert.ok(lowCard);
+  assert.equal(lowCard.tone, 'warning');
+  assert.equal(lowCard.title, 'Materials');
+  assert.equal(lowCard.text, '1 spool low: Bambu PLA Basic');
+  assert.equal(lowCard.ask, 'health');
+
+  const healthyFeed = buildFeed({
+    needs: { count: 0 },
+    materials: {
+      summary: { spools: 12, loaded: 4, low: 0, unknown: 0, queue: 0 }
+    }
+  });
+  const healthyCard = healthyFeed.cards.find(c => c.kind === 'materials');
+  assert.ok(healthyCard);
+  assert.equal(healthyCard.tone, 'ok');
+  assert.equal(healthyCard.text, '4 spools loaded · 12 in inventory');
+});
+
 test('GET /api/display/feed answers cards with no model and no setup', { timeout: 30000 }, async (t) => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-feed-'));
   const dead = 'http://127.0.0.1:9';

@@ -100,6 +100,8 @@ const watchdog = require('./watchdog').createWatchdog({
 });
 // The Raspberry Pi's hub (app/pi-hub.js): Plex's now playing and the hub's issues, for the display's cards.
 const piHub = require('./pi-hub').createPiHub();
+// LocalAI Materials client (app/materials.js): active spool & inventory metrics for display feed.
+const materialsClient = require('./materials').createMaterialsClient();
 // Pairing the Workshop display from its touchscreen (app/display-pairing.js).
 const displayPairing = require('./display-pairing').createDisplayPairing({
   dataDir: DATA_DIR, tlsName: process.env.LOCALAI_NAME || 'localai.home.arpa',
