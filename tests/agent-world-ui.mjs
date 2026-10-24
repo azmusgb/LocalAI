@@ -284,7 +284,7 @@ async function withMission(contextOpts, mission) {
 {
   const { context, page, errors } = await withMission({ viewport: { width: 900, height: 1100 } }, FAILED);
   await check('900px: the rail is under the city, crew beside the story', async () => {
-    const city = await page.locator('.aw-city').boundingBox(), crew = await page.locator('.aw-crew').boundingBox(), story = await page.locator('.aw-story-box').boundingBox();
+    const city = await page.locator('.aw-city').boundingBox(), crew = await page.locator('.aw-crew:not(#awServices)').boundingBox(), story = await page.locator('.aw-story-box').boundingBox();
     assert.ok(crew.y >= city.y + city.height, 'crew under the city');
     assert.ok(story.x > crew.x + crew.width - 2 && Math.abs(story.y - crew.y) < 4, 'story beside the crew');
   });

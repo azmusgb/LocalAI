@@ -1906,6 +1906,8 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .awc__rosterItem.running{border-color:rgba(255,178,36,.45);box-shadow:inset 3px 0 0 var(--ds-progress)}
 .awc__rosterItem:is(.error,.blocked){border-color:rgba(255,107,107,.45);box-shadow:inset 3px 0 0 var(--ds-bad)}
 .awc__rosterText{display:grid;gap:1px;min-width:0}
+/* City services rows (#awcLayerRows) have no avatar or badge: the text takes the whole row. */
+#awcLayerRows .awc__rosterItem{grid-template-columns:minmax(0,1fr);padding-left:12px}
 .awc__rosterText>*{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .awc__rosterText strong{font-size:14px;font-weight:650}
 .awc__rosterText small{font-size:12px;color:var(--ds-muted)}
@@ -2024,6 +2026,8 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 @media(min-width:761px) and (max-width:1023px){
   .aw-sheet__body{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
   .aw-sheet__body>:not(.aw-crew,.aw-story-box){grid-column:1/-1}
+  /* City services (a second .aw-crew, added by the layers) goes under both, so the story stays beside the crew. */
+  .aw-sheet__body>#awServices{grid-column:1/-1;order:1}
 }
 @media(max-width:760px){
   .aw-head{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}

@@ -1136,7 +1136,7 @@ const REPLAY_KEY='localai.agentworld.replay.v2';
 let replay={frames:[],active:false,index:0,playing:false,lastStep:0,speed:1,sourceMissionId:''};
 let celebrationUntil=0,focusId='',notes=[];
 // Layers that on-demand modules add (see addLayer), and the modules: /aw/<name>.js, fetched once the city is first on screen.
-const layers=[],AW_MODS=['kit'];let awMods=false;
+const layers=[],AW_MODS=['kit','landmarks'];let awMods=false;
 // Camera: the map box's CSS size, device pixels per CSS pixel (capped at 2), and `base`, the scale at zoom 1, which
 // covers the box with the city at any aspect ratio (a phone shows a tall slice, a desktop nearly all of it). Pans are
 // CSS pixels; zoom is a multiple of base. The static ground is drawn once into groundCache and copied each frame.
