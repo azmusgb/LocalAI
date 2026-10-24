@@ -196,3 +196,13 @@ test('a conflict with the newer main blocks the merge', async () => {
   assert.equal(c.description, 'main moved; re-check failed: conflicts with the newer main');
   assert.match(c.comment, /merge `main` into the branch/);
 });
+
+test('ship moves release only to a merge commit whose tree is the one it tested', async () => {
+  const { releaseDecision, RELEASE_BRANCH } = await lib();
+  const a = 'a'.repeat(40), b = 'b'.repeat(40);
+  assert.equal(RELEASE_BRANCH, 'release');
+  assert.deepEqual(releaseDecision({ testedTree: a, mergedTree: a }), { advance: true });
+  assert.equal(releaseDecision({ testedTree: a, mergedTree: b }).advance, false);
+  assert.match(releaseDecision({ testedTree: a, mergedTree: b }).reason, /did not test/);
+  assert.equal(releaseDecision({ testedTree: '', mergedTree: a }).advance, false);
+});

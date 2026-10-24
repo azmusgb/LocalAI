@@ -23,7 +23,10 @@ container `local-ai-appliance` on a Windows host, UI on port 3080. Docs index: `
    the PR merged with `main` in a throwaway worktree (all of `validate.yml`, browser suites included, ~15 min) and
    posts a `local-ci` check to the PR. Merge only on a green `local-ci`. Runs on one machine queue (the PR shows
    "Queued behind PR #N"), so start yours and let it wait; never kill another session's run.
-2. Merge. The host's `LocalAI Safe Deploy` task deploys `main` within about 5 minutes and rolls back by itself.
+2. Merge with `npm run ship -- <PR number>` (local CI, then merge, then it moves `release` to the merge commit). The
+   host's `LocalAI Safe Deploy` task deploys **`release`**, not `main`, within about 5 minutes and rolls back by itself.
+   Never push to `main` or `release` directly; `.githooks/pre-push` refuses it, and a commit on `main` that ship didn't
+   release never deploys.
 3. Confirm: `curl -s https://10.0.0.21/healthz` (10.0.0.21 is the owner's appliance on their LAN; the Mac trusts its
    CA, else add `--cacert ~/.claude/localai-chat/localai-ca.crt`) → `releaseCommit` equals the merge SHA. Deploy output
    contains fake `DEPLOYED: aaaa…` lines from contract tests; trust only `/healthz`.

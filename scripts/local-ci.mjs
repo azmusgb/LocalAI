@@ -6,7 +6,8 @@
 //   npm run ci -- 195 --no-post  same, without posting
 //   npm run ci                   test the current checkout as it is (never posts)
 //   npm run ship -- 195          same as ci -- 195, then merges the PR if it's green (only the commit that was tested),
-//                                after re-checking it against main if main moved during the run (see below)
+//                                after re-checking it against main if main moved during the run (see below), and
+//                                moves the `release` branch, which is what the host deploys, to the merge commit
 //
 // A PR is tested in a throwaway worktree (its head merged with origin/main, as GitHub's pull_request runs do), so
 // your own checkout is never touched. The log is kept in the system temp folder and its path printed at the end.
@@ -40,7 +41,7 @@ import path from 'node:path';
 import net from 'node:net';
 import crypto from 'node:crypto';
 import { failingUnitTests, failedBrowserSuites, browserSuiteCounts, suitesToRetry, ciSummary, failureComment, retryComment,
-  releaseNoteAdvice, RELEASE_NOTE_MARKER, shipMergeArgs, shipNextStep, recheckOutcome } from './local-ci-lib.mjs';
+  releaseNoteAdvice, RELEASE_NOTE_MARKER, shipMergeArgs, shipNextStep, recheckOutcome, releaseDecision, RELEASE_BRANCH } from './local-ci-lib.mjs';
 
 const args = process.argv.slice(2);
 const pr = args.find(a => /^\d+$/.test(a));
@@ -292,8 +293,25 @@ async function shipAfterGreen() {
     tested = latest;
   }
   if (DRY) { say(`(dry run) would merge${pr ? `: gh ${shipMergeArgs(pr, sha).join(' ')}` : ' (no PR number, so nothing to merge)'}`); return true; }
-  try { gh(...shipMergeArgs(pr, sha)); say(`Merged PR #${pr} (${sha.slice(0, 7)}).`); return true; }
+  try { gh(...shipMergeArgs(pr, sha)); say(`Merged PR #${pr} (${sha.slice(0, 7)}).`); }
   catch (e) { say(`Not merged: ${String(e.stderr || e.message).trim().split('\n')[0]} (was something pushed after the test started?)`); return false; }
+  advanceRelease();
+  return true;
+}
+
+// Moves `release`, the branch the host deploys, to the merge commit when its tree is the one just tested. Never fails
+// the ship: when it doesn't move, the host keeps running the previous release and says so in the Inbox.
+function advanceRelease() {
+  try {
+    git('fetch', '-q', 'origin', baseRef);
+    const merged = git('rev-parse', `origin/${baseRef}`);
+    const testedTree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: dir, encoding: 'utf8' }).trim();
+    const decision = releaseDecision({ testedTree, mergedTree: git('rev-parse', `${merged}^{tree}`) });
+    if (!decision.advance) { say(`Release not moved: ${decision.reason}.`); return; }
+    // LOCALAI_SHIP lets the push past .githooks/pre-push, which refuses pushes to main and release otherwise.
+    execFileSync('git', ['push', '-q', 'origin', `${merged}:refs/heads/${RELEASE_BRANCH}`], { cwd: repoRoot, stdio: 'pipe', env: { ...process.env, LOCALAI_SHIP: '1' } });
+    say(`Release moved to ${merged.slice(0, 7)}; the host deploys it within about 5 minutes.`);
+  } catch (e) { say(`Release not moved: ${String(e.stderr || e.message).trim().split('\n')[0]}`); }
 }
 
 let ok = false;

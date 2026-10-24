@@ -23,10 +23,17 @@ Data must stay on a mount outside `/app`; promotion replaces `/app` wholesale.
 
 ## The normal path: merge and wait
 
-1. Open a pull request. The CI workflows that apply must pass ([Development › CI](DEVELOPMENT.md#ci));
-   docs-only PRs run none.
-2. Merge to `main`.
-3. Within about five minutes the `LocalAI Safe Deploy` task picks the commit up, certifies it and promotes it.
+1. Open a pull request.
+2. Merge it with `npm run ship -- <PR>` on the Mac. Ship runs local CI on the PR merged with `main`, merges it only
+   when green, and then moves the **`release`** branch to the merge commit, if that commit holds exactly the tree it
+   tested.
+3. Within about five minutes the `LocalAI Safe Deploy` task picks up `release`, certifies it and promotes it.
+
+The host deploys only `release`, never `main`. A commit pushed straight to `main`, or a PR merged on GitHub without
+ship, stays undeployed. The Inbox says so once ("2 commits on main not deployed yet"), and the next shipped PR
+carries them, tested with it. `.githooks/pre-push`, turned on by `npm ci`, refuses `git push` to `main` or `release`
+from the Mac. `LOCALAI_SHIP=1 git push …` overrides it deliberately, for example to move `release` back to an earlier
+commit.
 4. Confirm the running release:
 
    ```sh
@@ -64,8 +71,10 @@ The Inbox gets a notice when a release goes live or a deploy fails.
 
 The `LocalAI Safe Deploy` scheduled task runs `deploy\Run-LocalAI-AutoDeploy.ps1` every five minutes. Each run:
 
-1. Fast-forwards `C:\LocalAI\repo` with `git pull --ff-only origin main`, but only when the target is
-   `origin/main` and the checkout has no local changes, so the deploy scripts themselves stay current.
+1. Fetches and, when the checkout has no local changes, moves `C:\LocalAI\repo` to `origin/release`
+   (`git checkout -B release origin/release`). The deploy scripts that run are the shipped release's, never an
+   unchecked `main`'s. A task still registered with `-TargetRef origin/main` is treated as `origin/release`. When
+   `main` is ahead of `release`, it tells the Inbox once per `main` commit.
 2. Starts any stopped Local AI services (see [After a Windows restart](#after-a-windows-restart)).
 3. When the target commit isn't the one running, waits for running work (see [Updates wait for running
    work](#updates-wait-for-running-work)).
