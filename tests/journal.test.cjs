@@ -149,7 +149,7 @@ test('redact covers quoted values, URL credentials and Basic auth, and leaves or
     assert.doesNotMatch(redact(c), /s3cr3t|czNjcjN0|pass"|value here/, c);
   }
   assert.equal(redact('PASSWORD=s3cr3t'), 'PASSWORD=[redacted]');
-  for (const c of ['githubtoken=s3cr3t', 'dbpassword: s3cr3t', '_token=s3cr3t', '2fa_secret=s3cr3t', `${'x'.repeat(70)}_API_KEY=s3cr3t`]) assert.doesNotMatch(redact(c), /s3cr3t/, c);
+  for (const c of ['githubtoken=s3cr3t', 'dbpassword: s3cr3t', '_token=s3cr3t', '2fa_secret=s3cr3t', `${'x'.repeat(70)}_API_KEY=s3cr3t`, `${'y-'.repeat(200)}token=s3cr3t`]) assert.doesNotMatch(redact(c), /s3cr3t/, c);
   assert.equal(redact('monkey: banana'), 'monkey: banana');
   assert.equal(redact('turkey=roast'), 'turkey=roast');
 });

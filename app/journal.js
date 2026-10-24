@@ -34,7 +34,7 @@ function redact(text, max = Infinity) {
     .replace(/\b(?:gh[pousr]_[A-Za-z0-9]{16,}|sk-[A-Za-z0-9_-]{16,}|xox[abpr]-[A-Za-z0-9-]{8,}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+)/g, '[redacted]')
     .replace(/(\/\/[^/\s:@]{1,100}:)[^@\s/]{1,200}@/g, '$1[redacted]@')
     .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, '$1 [redacted]')
-    .replace(/(["']?)(?<![\w-])([\w-]{1,200})\1(\s*[=:]\s*)("[^"\n]*"|'[^'\n]*'|[^\s"',;}]+)/g,
+    .replace(/(["']?)(?<![\w-])([\w-]+)\1(\s*[=:]\s*)("[^"\n]*"|'[^'\n]*'|[^\s"',;}]+)/g,
       (m, q, name, sep) => (isSecretName(name) ? `${q}${name}${q}${sep}[redacted]` : m));
 }
 
