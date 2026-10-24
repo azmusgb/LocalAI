@@ -24,13 +24,13 @@ const SCHEMA = `
 
 // Secrets never reach the journal: private key blocks, long hex (keys, tokens), well-known token shapes, bearer
 // tokens and name=value / "name": "value" pairs whose name ends in key, token, password, secret or similar.
-function redact(text) {
-  return String(text ?? '')
+function redact(text, max = Infinity) {
+  return String(text ?? '').slice(0, max)
     .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[redacted]')
     .replace(/\b[0-9a-f]{40,}\b/gi, '[redacted]')
     .replace(/\b(?:gh[pousr]_[A-Za-z0-9]{16,}|sk-[A-Za-z0-9_-]{16,}|xox[abpr]-[A-Za-z0-9-]{8,}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+)/g, '[redacted]')
     .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
-    .replace(/([\w-]*(?:api[_-]?key|key|token|password|passwd|secret)["']?)(\s*[=:]\s*)["']?[^\s"',;}]+/gi, '$1$2[redacted]');
+    .replace(/\b([\w-]{0,40}?(?:api[_-]?key|key|token|password|passwd|secret)["']?)(\s*[=:]\s*)["']?[^\s"',;}]+/gi, '$1$2[redacted]');
 }
 
 const STOP = new Set('what when where which who whom how did does do i me my mine the a an of to in on at for from was were is are be been have has had long many much any anything something that this it its and or not did'.split(' '));
@@ -85,8 +85,8 @@ function createJournal({ db, now = Date.now, timeZone = 'UTC', log = console.err
       if (tomb.get(ref)) return null;
       const atMs = Date.parse(e.at);
       const at = new Date(Number.isFinite(atMs) ? atMs : now()).toISOString();
-      const title = redact(String(e.title ?? '').replace(/\s+/g, ' ').trim()).slice(0, TITLE_MAX) || 'Untitled';
-      const body = redact(e.body).slice(0, BODY_MAX);
+      const title = redact(String(e.title ?? '').slice(0, TITLE_MAX * 2).replace(/\s+/g, ' ').trim()).slice(0, TITLE_MAX) || 'Untitled';
+      const body = redact(e.body, BODY_MAX * 2).slice(0, BODY_MAX);
       const link = typeof e.link === 'string' && e.link ? e.link.slice(0, 300) : null;
       let meta = '{}';
       try { meta = JSON.stringify(e.meta && typeof e.meta === 'object' ? e.meta : {}); if (meta.length > 8192) meta = '{}'; } catch {}

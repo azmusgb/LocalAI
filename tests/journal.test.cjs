@@ -92,6 +92,13 @@ test('redact covers JSON, prefixed names and well-known token shapes', () => {
   assert.equal(redact('the key to a good print is a clean bed'), 'the key to a good print is a clean bed');
 });
 
+test('redact stays fast on long input', () => {
+  const t = Date.now();
+  redact('x'.repeat(200000));
+  redact('a-'.repeat(100000));
+  assert.ok(Date.now() - t < 300, `took ${Date.now() - t} ms`);
+});
+
 test('ftsQuery quotes words and prefixes the last', () => {
   assert.equal(ftsQuery('What did I print, brack'), '"print" "brack"*');
   assert.equal(ftsQuery('the a of'), '');
