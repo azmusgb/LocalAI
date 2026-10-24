@@ -28,47 +28,49 @@ class ApplianceNav extends HTMLElement {
     ApplianceSound.play(kind);
   }
 
+  // Where each app lives. The hub is this appliance (Caddy on 443, also over Tailscale); port 3080 answers on
+  // the Windows host only, so it is never linked. Materials is the hosted PWA; Terminal is the workshop display.
+  static get homes() {
+    return {
+      hub: 'https://10.0.0.21/',
+      terminal: 'http://10.0.0.124/',
+      materials: 'https://filamentinventory.netlify.app/',
+    };
+  }
+
   get currentApp() {
     const attr = this.getAttribute('current');
     if (attr) return attr.toLowerCase();
     const host = window.location.hostname;
-    const port = window.location.port;
     if (host === '10.0.0.124' || host.includes('workshop') || host.includes('bambuhelper')) return 'terminal';
-    if (port === '3000' || window.location.pathname.startsWith('/materials')) return 'materials';
+    if (host.includes('filamentinventory') || window.location.pathname.startsWith('/materials')) return 'materials';
     return 'hub';
   }
 
-  get hubUrl() {
-    return this.getAttribute('hub-url') || (window.location.hostname === '10.0.0.21' && window.location.port === '3080' ? '/' : 'http://10.0.0.21:3080');
+  // The app you're in links to its own root, so the hub works the same on the LAN and over Tailscale.
+  linkFor(app) {
+    return this.getAttribute(`${app}-url`) || (this.currentApp === app ? '/' : ApplianceNav.homes[app]);
   }
 
-  get terminalUrl() {
-    return this.getAttribute('terminal-url') || (window.location.hostname === '10.0.0.124' ? '/' : 'http://10.0.0.124');
-  }
+  get hubUrl() { return this.linkFor('hub'); }
 
-  get materialsUrl() {
-    return this.getAttribute('materials-url') || (window.location.port === '3000' ? '/' : 'http://10.0.0.21:3000');
-  }
+  get terminalUrl() { return this.linkFor('terminal'); }
 
+  get materialsUrl() { return this.linkFor('materials'); }
+
+  // Only the hub has a health check to ask; the other apps show no status rather than a guess.
   async checkHealth() {
     const dot = this.shadowRoot.getElementById('lan-dot');
     const label = this.shadowRoot.getElementById('lan-label');
     if (!dot || !label) return;
-
-    try {
-      // Lightweight check to current host
-      const res = await fetch('/api/healthz', { method: 'HEAD', cache: 'no-store', signal: AbortSignal.timeout(2500) }).catch(() => null);
-      if (res && res.ok) {
-        dot.className = 'dot online';
-        label.textContent = 'LAN Online';
-      } else {
-        dot.className = 'dot standby';
-        label.textContent = 'LAN Active';
-      }
-    } catch {
-      dot.className = 'dot standby';
-      label.textContent = 'LAN Active';
+    if (this.currentApp !== 'hub') {
+      dot.parentElement.style.display = "none";
+      return;
     }
+    const res = await fetch('/healthz', { cache: 'no-store', signal: AbortSignal.timeout(2500) }).catch(() => null);
+    const ok = Boolean(res && res.ok);
+    dot.className = ok ? 'dot online' : 'dot standby';
+    label.textContent = ok ? 'Online' : 'Not answering';
   }
 
   render() {
@@ -256,8 +258,8 @@ class ApplianceNav extends HTMLElement {
         </nav>
 
         <div class="status-section">
-          <span class="dot online" id="lan-dot"></span>
-          <span id="lan-label">LAN Online</span>
+          <span class="dot standby" id="lan-dot"></span>
+          <span id="lan-label">Checking…</span>
         </div>
       </div>
     `;
