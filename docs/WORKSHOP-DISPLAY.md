@@ -154,6 +154,23 @@ changes the address; `off` turns it off). Local AI reads it at most once a minut
 `playing` ("Now playing", the title, how far in, paused, and where, from Plex on the Pi) and `home` (the hub's first
 issue, "Pi: <what>", e.g. "Pi: Movies drive · It dropped out…"). When the hub doesn't answer, neither card shows.
 
+## Materials card (spools in Bambuddy)
+
+Since 24 Oct 2026 the household's spools are in Bambuddy, the Bambu printer manager in Docker on the Pi; it reads the
+AMS and takes each print's filament off its spool. (The old Filament Inventory web app is retired.) Local AI reads
+`GET http://10.0.0.30:8000/api/v1/inventory/spools` and `/api/v1/inventory/assignments`, with no key on the LAN, at
+most once a minute (3 s limit). `LOCALAI_MATERIALS_URL` changes the address; `off` turns it off. `app/materials.js` builds one
+`materials` card:
+
+- a spool is low when what's left is at or under its own Bambuddy threshold, or 15% of its label weight, and only
+  once it has a reading (a print, a scale weight or an AMS tray); a spool that was never weighed counts as unknown,
+  not low;
+- with a low spool: tone warning, "Grey PLA · 100 g left · 1 more low". The display's Home then shows it on the
+  house card;
+- otherwise "6 spools · 2 in the AMS": tone ok, or info while some spools are unknown.
+
+When Bambuddy doesn't answer, no card shows.
+
 ## Pairing (Workshop OS 12.7)
 
 Instead of the Mac's `set-key.sh` and `configure_localai_feed.py`: in Local AI, **Services › Workshop display › Pair
