@@ -62,6 +62,29 @@ test('requests without a device are counted by caller, never refused; the host, 
   assert.deepEqual((await (await fetch(`${base}/api/signin/report`)).json()).callers, []);
 });
 
+test('routes that run code, write files or approve changes refuse a caller without a device', { timeout: 30000 }, async t => {
+  const base = await start(t);
+  const cookie = await pair(base);
+  const post = (route, headers, body = {}) => fetch(`${base}${route}`, { method: 'POST', headers: { ...JSONH, ...headers }, body: JSON.stringify(body) });
+  const lan = viaCaddy('10.0.0.37', IPHONE);
+  for (const [method, route] of [['POST', '/api/workbench/command'], ['POST', '/api/workbench/write'], ['GET', '/api/workbench/tree'],
+    ['POST', '/api/computer/batch'], ['POST', '/api/browser/fetch'], ['GET', '/api/changes'], ['POST', '/api/changes/approve'],
+    ['POST', '/api/approvals/decide'], ['POST', '/api/notifications/system'], ['POST', '/api/signin/report/clear']]) {
+    const r = method === 'GET' ? await fetch(`${base}${route}`, { headers: lan }) : await post(route, lan);
+    assert.equal(r.status, 401, `${method} ${route} without a device`);
+    assert.deepEqual(await r.json(), { error: 'Sign in on this device first: pair it under Build › Claude Code.', signIn: true });
+  }
+  // The same request is let through for a paired device, the Mac key and the host itself; other routes stay report-only.
+  assert.notEqual((await fetch(`${base}/api/workbench/tree`, { headers: viaCaddy('10.0.0.40', IPHONE, { Cookie: cookie }) })).status, 401);
+  assert.notEqual((await fetch(`${base}/api/changes`, { headers: viaCaddy('10.0.0.5', 'python-urllib/3.14', { 'X-LocalAI-Mac-Key': KEY }) })).status, 401);
+  assert.notEqual((await fetch(`${base}/api/changes`)).status, 401);
+  assert.equal((await fetch(`${base}/api/runs?limit=1`, { headers: lan })).status, 200);
+  const report = await (await fetch(`${base}/api/signin/report`)).json();
+  assert.equal(report.mode, 'report');
+  assert.ok(report.guarded.some(g => g.includes('workbench')));
+  assert.ok(report.callers.some(c => c.ip === '10.0.0.37' && c.count >= 11), 'refused requests are still listed');
+});
+
 test('whoami renews a paired device cookie for all of Local AI; an unpaired one gets nothing', { timeout: 30000 }, async t => {
   const base = await start(t);
   const cookie = await pair(base);
@@ -101,4 +124,17 @@ test('the Workshop display key signs in the display feed, ask and image routes o
   const report = await (await fetch(`${base}/api/signin/report`)).json();
   assert.deepEqual(report.callers.map(c => [c.kind, c.count]), [['Workshop display', 2]]);
   assert.deepEqual(report.callers[0].lastPath, '/api/display/feed');
+});
+
+test('LOCALAI_SIGN_IN=required refuses every API route that is not open; report mode only the guarded ones', () => {
+  const { createSignIn } = require('../app/signin');
+  const storage = { readSetting: () => null, writeSetting: () => {} };
+  const req = p => ({ headers: { 'x-forwarded-for': '10.0.0.37', 'user-agent': IPHONE }, method: 'GET', url: p });
+  for (const [required, route, blocked] of [[false, '/api/runs', false], [false, '/api/workbench/tree', true], [true, '/api/runs', true],
+    [true, '/healthz', false], [true, '/api/claude/chat/pair-request', false], [true, '/', false]]) {
+    const s = createSignIn({ storage, signedIn: () => false, required });
+    assert.equal(s.blocks(s.check(req(route), route), route), blocked, `${required ? 'required' : 'report'} ${route}`);
+  }
+  const s = createSignIn({ storage, signedIn: () => true, required: true });
+  assert.equal(s.blocks(s.check(req('/api/workbench/tree'), '/api/workbench/tree'), '/api/workbench/tree'), false);
 });
