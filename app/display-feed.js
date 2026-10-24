@@ -65,13 +65,14 @@ function buildFeed({ needs, watch = [], running = [], done = [], weather = null,
     const used = 1 - disk.freeBytes / disk.totalBytes;
     add('disk', `disk-${disk.label}`, 'Disk', `${disk.label} · ${gb(disk.freeBytes)} free of ${gb(disk.totalBytes)}`, { tone: used >= 0.9 ? 'attention' : used >= 0.8 ? 'warning' : 'info', percent: Math.round(used * 100) });
   }
-  // LocalAI Materials: active spools and inventory metrics
+  // Materials: the spools in Bambuddy on the Pi (app/materials.js)
   if (materials?.summary) {
     const s = materials.summary;
     const tone = s.low > 0 ? 'warning' : s.unknown > 0 ? 'info' : 'ok';
-    const text = s.low > 0 ? (materials.status || `${s.low} spool${s.low > 1 ? 's' : ''} low`)
+    // Bambuddy's summary (app/materials.js) words its own status; the counts are the fallback.
+    const text = materials.status || (s.low > 0 ? `${s.low} spool${s.low > 1 ? 's' : ''} low`
       : s.loaded > 0 ? `${s.loaded} spools loaded · ${s.spools} in inventory`
-      : `${s.spools} spools in stock`;
+      : `${s.spools} spools in stock`);
     add('materials', `materials-${s.low ? 'low' : 'ok'}`, 'Materials', text, { tone });
   }
   const feed = { v: 2, at: new Date(now).toISOString(), cards };
