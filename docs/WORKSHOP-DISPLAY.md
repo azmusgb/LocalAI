@@ -171,6 +171,16 @@ most once a minute (3 s limit). `LOCALAI_MATERIALS_URL` changes the address; `of
 
 When Bambuddy doesn't answer, no card shows.
 
+## Clear plate (through Local AI to Bambuddy)
+
+The display's Clear plate (dismissing a finished or failed print) calls `POST /api/display/printer/clear` with its display
+key. Local AI then posts `clear-plate` and `hms/clear` for printer 1 (`LOCALAI_BAMBUDDY_PRINTER`) to Bambuddy
+(`LOCALAI_BAMBUDDY_URL`, default `http://10.0.0.30:8000`). It sends `LOCALAI_BAMBUDDY_CONTROL_KEY`, a Bambuddy API key
+with "Control printer" only, as `X-API-Key`. The route is refused (401) without the display key or a signed-in device in
+every sign-in mode, because it acts on the printer. The answer says how each step went: `ok`, `refused` (Bambuddy
+turned the key down), `no answer` or `HTTP <code>`. Each call is recorded in Activity. Both Bambuddy keys are passed to
+the container from `stack.env` (`deploy/stack/compose.yml`); a change there needs `docker compose up -d`.
+
 ## Pairing (Workshop OS 12.7)
 
 Instead of the Mac's `set-key.sh` and `configure_localai_feed.py`: in Local AI, **Services › Workshop display › Pair
