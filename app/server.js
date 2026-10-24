@@ -977,6 +977,10 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`${new Date().toISOString()} Local AI Appliance v${APP_VERSION} listening on 0.0.0.0:${server.address().port}`);
   recordActivity('system', 'Appliance started', `Local AI Appliance v${APP_VERSION} is ready.`);
   workshopPrinter.start();
+  // Past work into the journal, once; resumable, so a restart mid-way continues (app/journal-import.js).
+  setTimeout(() => require('./journal-import').importAll({ storage, journal, runLedger })
+    .then(r => { if (r.added) console.log(`${nowIso()} Journal import added ${r.added} entries`); })
+    .catch(e => console.error(`${nowIso()} Journal import failed:`, e)), 5000).unref?.();
 });
 const localUiServer = LOCAL_UI_PORT && LOCAL_UI_PORT !== PORT ? http.createServer((req, res) => server.emit('request', req, res)) : null;
 localUiServer?.listen(LOCAL_UI_PORT, '0.0.0.0', () => console.log(`${new Date().toISOString()} Host-only tools listening on 0.0.0.0:${LOCAL_UI_PORT}`));
