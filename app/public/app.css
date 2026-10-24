@@ -2196,6 +2196,8 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .aw-empty__actions{display:flex;flex-wrap:wrap;justify-content:center;gap:10px}
 .aw-empty__actions button{min-height:44px}
 @media(max-width:760px){.aw-empty{bottom:var(--aw-peek)}}
+/* Wider screens: the card sits bottom-left, so the idle city's Command Center stays in view. */
+@media(min-width:761px){.aw-empty{place-items:end start}}
 .agent-inline-notice[hidden]{display:none}
 
 /* Agent World: notes float over the city's top-left for 4 s; the ⋯ menu's View group. */
@@ -2244,8 +2246,10 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
   .aw-sheet__scrub .awc__scrub:not(.is-active) .awc__scrubHead{display:none}
   .aw-sheet__scrub #awcReplayLabel{max-width:none}
 }
-.awc__demoChip{position:absolute;left:50%;top:12px;z-index:4;transform:translateX(-50%);min-height:44px;padding:0 16px;border:1px solid rgba(255,178,36,.55);border-radius:999px;background:rgba(10,17,28,.92);color:var(--aw-amber);font:inherit;font-weight:600;cursor:pointer}
+.awc__demoChip{position:absolute;left:12px;top:12px;z-index:4;min-height:44px;padding:0 16px;border:1px solid rgba(255,178,36,.55);border-radius:999px;background:rgba(10,17,28,.92);color:var(--aw-amber);font:inherit;font-weight:600;cursor:pointer}
 .awc__demoChip[hidden]{display:none}
+/* The demo chip heads the top-left stack; the event toasts sit under it instead of beneath it. */
+.awc:has(.awc__demoChip:not([hidden])) .awc__toasts{top:64px}
 .aw-results__body{display:grid;gap:8px}
 .aw-results__body:focus{outline:none}
 .aw-results__body h3{margin:10px 0 0;font-size:var(--ds-fs-2)}

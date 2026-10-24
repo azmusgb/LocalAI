@@ -1948,7 +1948,7 @@ function layoutSigns(){
  L={signs:[],bubbles:[]};if(!display.labels)return;
  for(const[id,d]of Object.entries(DISTRICTS)){
   const f=districtFlags(id),lvl=buildLevel(id),x=d.x*T,y=d.y*T,nw=tw(d.name,9)+16,n={x:x+2,y:y-12,w:nw,h:14,text:d.name,c:f.bad?'#ffb0b0':f.active?'#fff':'#c6d4e1',accent:d.accent};L.signs.push(n);
-  if(f.workers.length&&(lvl<.995||f.bad)){const t=Math.round(lvl*100)+'%',w=tw(t,8)+14,rx=x+d.w*T+12-w,fits=rx>=n.x+nw+4;L.signs.push({pill:1,x:fits?rx:n.x,y:fits?y-11:y-27,w,h:12,text:t,pct:lvl,bad:f.bad})}
+  if(f.workers.length&&!f.done&&(lvl<.995||f.bad)){const t=Math.round(lvl*100)+'%',w=tw(t,8)+14,rx=x+d.w*T+12-w,fits=rx>=n.x+nw+4;L.signs.push({pill:1,x:fits?rx:n.x,y:fits?y-11:y-27,w,h:12,text:t,pct:lvl,bad:f.bad})}
  }
 }
 // A sign over a worker (one walking along the roof behind it) is see-through for as long as they overlap.
