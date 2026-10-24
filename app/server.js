@@ -120,7 +120,13 @@ if (process.env.LOCALAI_NOTIFY_LOG) {
 }
 // Work with no record while it runs (a GridCraft request, an automation): GET /api/busy lists it.
 const inFlight = busy.createInFlight();
-const runLedger = new RunLedger({ storage, onTransition: (run, previous) => { const e = notifyLib.runEvent(run, previous); if (e) notifier.notify(e); } });
+// The journal (app/journal.js): one searchable record of what happens; finished runs are recorded as they end.
+const journal = require('./journal').createJournal({ db: storage.db, now: clockNow, timeZone: process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
+const journalRecorders = require('./journal-recorders');
+const runLedger = new RunLedger({ storage, onTransition: (run, previous) => {
+  const e = notifyLib.runEvent(run, previous); if (e) notifier.notify(e);
+  const entry = journalRecorders.runEntry(run); if (entry) journal.record(entry);
+} });
 const activeRunControllers = new Map();
 const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody });
 // Sign-in, report-only for now (app/signin.js): who would be refused is listed on Health; nothing is blocked.
