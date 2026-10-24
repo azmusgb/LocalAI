@@ -306,7 +306,7 @@ function advanceRelease() {
     git('fetch', '-q', 'origin', baseRef);
     const merged = git('rev-parse', `origin/${baseRef}`);
     const testedTree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: dir, encoding: 'utf8' }).trim();
-    const decision = releaseDecision({ testedTree, mergedTree: git('rev-parse', `${merged}^{tree}`) });
+    const decision = releaseDecision({ base: baseRef, testedTree, mergedTree: git('rev-parse', `${merged}^{tree}`) });
     if (!decision.advance) { say(`Release not moved: ${decision.reason}.`); return; }
     // LOCALAI_SHIP lets the push past .githooks/pre-push, which refuses pushes to main and release otherwise.
     execFileSync('git', ['push', '-q', 'origin', `${merged}:refs/heads/${RELEASE_BRANCH}`], { cwd: repoRoot, stdio: 'pipe', env: { ...process.env, LOCALAI_SHIP: '1' } });

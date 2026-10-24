@@ -205,4 +205,5 @@ test('ship moves release only to a merge commit whose tree is the one it tested'
   assert.equal(releaseDecision({ testedTree: a, mergedTree: b }).advance, false);
   assert.match(releaseDecision({ testedTree: a, mergedTree: b }).reason, /did not test/);
   assert.equal(releaseDecision({ testedTree: '', mergedTree: a }).advance, false);
+  assert.deepEqual(releaseDecision({ base: 'feat/x', testedTree: a, mergedTree: a }), { advance: false, reason: 'the PR merged into feat/x, not main' });
 });
