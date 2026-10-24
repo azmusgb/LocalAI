@@ -8,8 +8,10 @@ const { runEntry } = require('./journal-recorders');
 
 const IMPORT_KEY = 'journal-import-v1';
 const STAGES = ['runs', 'conversations', 'library', 'missions', 'approvals', 'changes', 'activity'];
-// Activity that runs, approvals and changes already cover.
-const ACTIVITY_COVERED = new Set(['image', 'chat', 'research', 'approval', 'change', 'mission', 'agent', 'run']);
+// Activity left out: what runs, approvals and changes already cover, and boot/health noise (spec non-goals).
+const ACTIVITY_SKIPPED = new Set(['image', 'chat', 'research', 'approval', 'change', 'mission', 'agent', 'run', 'system', 'health', 'monitor', 'watchdog', 'status']);
+// Host commands are kept by title only.
+const ACTIVITY_TITLE_ONLY = new Set(['workbench', 'powershell']);
 const str = v => (typeof v === 'string' ? v.trim() : '');
 const when = x => x?.finishedAt || x?.appliedAt || x?.updatedAt || x?.createdAt || x?.at || x?.startedAt;
 const titleOf = x => str(x?.title) || str(x?.name) || str(x?.goal);
@@ -63,8 +65,8 @@ async function importAll({ storage, journal, runLedger, batch = 200, pause = () 
       ? { at: when(a), source: 'approval', kind: a.status, title: titleOf(a), body: str(a.detail), ref: `approval:${a.id}:${a.status}`, meta: { approvalId: a.id } } : null),
     changes: c => (['applied', 'deployed', 'shipped'].includes(c.status)
       ? { at: when(c), source: 'change', kind: c.status, title: titleOf(c) || str(c.summary), body: str(c.summary), ref: `change:${c.id}:${c.status}`, meta: { changeId: c.id } } : null),
-    activity: x => (ACTIVITY_COVERED.has(x.type) ? null
-      : { at: when(x), source: 'activity', kind: str(x.type) || 'activity', title: titleOf(x), body: str(x.detail), ref: `activity:${x.id}`, meta: {} })
+    activity: x => (ACTIVITY_SKIPPED.has(x.type) ? null
+      : { at: when(x), source: 'activity', kind: str(x.type) || 'activity', title: titleOf(x), body: ACTIVITY_TITLE_ONLY.has(x.type) ? '' : str(x.detail), ref: `activity:${x.id}`, meta: {} })
   };
   const collection = { conversations: 'conversations', library: 'library', missions: 'missions', approvals: 'approvals', changes: 'changes', activity: 'activity' };
 

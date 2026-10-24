@@ -107,3 +107,17 @@ test('a short run title does not hide unrelated chats', async () => {
   assert.equal(journal.search({ q: 'PLA dry' }).items.length, 1);
   storage.close();
 });
+
+test('boot and health noise is left out, and host commands keep their title only', async () => {
+  const { storage, runLedger, journal } = seeded();
+  storage.put('activity', { id: 'act-boot', type: 'system', title: 'Appliance started', detail: 'v2.0.1 is ready', at: '2026-10-14T10:00:00.000Z' });
+  storage.put('activity', { id: 'act-wb', type: 'workbench', title: 'Approved command executed', detail: 'Remove-Item C:\\secret-path -Recurse', at: '2026-10-14T10:00:00.000Z' });
+  storage.put('activity', { id: 'act-ps', type: 'powershell', title: 'PowerShell job approved', detail: 'ps-123', at: '2026-10-14T10:00:00.000Z' });
+  await importAll({ storage, journal, runLedger });
+  assert.equal(journal.search({ q: 'Appliance started' }).items.length, 0);
+  const wb = journal.search({ q: 'Approved command executed' }).items[0];
+  assert.equal(wb.body, '');
+  assert.equal(journal.search({ q: 'secret path' }).items.length, 0);
+  assert.equal(journal.search({ q: 'PowerShell job approved' }).items[0].body, '');
+  storage.close();
+});
