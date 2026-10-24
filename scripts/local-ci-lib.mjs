@@ -117,3 +117,16 @@ export function recheckOutcome({ base = 'main', conflict = false, failedSteps = 
   }
   return { ok: false, state: 'failure', description, comment: lines.join('\n') };
 }
+
+// The host deploys only the `release` branch (deploy/Run-LocalAI-AutoDeploy.ps1), and only ship moves it: to the merge
+// commit, when that commit holds exactly the tree ship just tested. A commit pushed straight to main, or merged on
+// GitHub without ship, never reaches it. Returns whether to move release and, when not, why.
+export const RELEASE_BRANCH = 'release';
+// Only a PR into main may move release (a PR into another branch merges there, not into what main ships). The push is
+// a plain fast-forward, so git itself refuses a release commit that doesn't descend from the current one.
+export function releaseDecision({ base = 'main', testedTree, mergedTree }) {
+  if (base !== 'main') return { advance: false, reason: `the PR merged into ${base}, not main` };
+  if (!/^[0-9a-f]{40}$/.test(String(testedTree)) || !/^[0-9a-f]{40}$/.test(String(mergedTree))) return { advance: false, reason: 'could not read the tested or merged tree' };
+  if (testedTree !== mergedTree) return { advance: false, reason: 'main holds something the run did not test (it moved during the merge); ship the next PR, or run ship again' };
+  return { advance: true };
+}

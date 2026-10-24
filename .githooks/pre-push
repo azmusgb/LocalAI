@@ -1,0 +1,13 @@
+#!/bin/sh
+# Refuses pushes to main and release from this clone. main changes through pull requests; release, the branch the host
+# deploys, moves only when `npm run ship` has tested the merge (scripts/local-ci.mjs sets LOCALAI_SHIP=1 for that push).
+# `npm ci` turns this hook on (package.json "prepare"). To override once on purpose: LOCALAI_SHIP=1 git push ...
+[ "$LOCALAI_SHIP" = "1" ] && exit 0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/release)
+      echo "pre-push: not pushing to ${remote_ref#refs/heads/}. Open a pull request and merge it with: npm run ship -- <PR>" >&2
+      exit 1 ;;
+  esac
+done
+exit 0
