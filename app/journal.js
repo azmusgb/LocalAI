@@ -22,13 +22,15 @@ const SCHEMA = `
   CREATE TRIGGER IF NOT EXISTS journal_ad AFTER DELETE ON journal BEGIN
     INSERT INTO journal_fts(journal_fts, rowid, title, body) VALUES ('delete', old.seq, old.title, old.body); END;`;
 
-// Secrets never reach the journal: private key blocks, long hex (keys, tokens), bearer tokens and key=value pairs.
+// Secrets never reach the journal: private key blocks, long hex (keys, tokens), well-known token shapes, bearer
+// tokens and name=value / "name": "value" pairs whose name ends in key, token, password, secret or similar.
 function redact(text) {
   return String(text ?? '')
     .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[redacted]')
     .replace(/\b[0-9a-f]{40,}\b/gi, '[redacted]')
+    .replace(/\b(?:gh[pousr]_[A-Za-z0-9]{16,}|sk-[A-Za-z0-9_-]{16,}|xox[abpr]-[A-Za-z0-9-]{8,}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+)/g, '[redacted]')
     .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
-    .replace(/\b(api[_-]?key|key|token|password|passwd|secret)(\s*[=:]\s*)["']?[^\s"',;]+/gi, '$1$2[redacted]');
+    .replace(/([\w-]*(?:api[_-]?key|key|token|password|passwd|secret)["']?)(\s*[=:]\s*)["']?[^\s"',;}]+/gi, '$1$2[redacted]');
 }
 
 const STOP = new Set('what when where which who whom how did does do i me my mine the a an of to in on at for from was were is are be been have has had long many much any anything something that this it its and or not did'.split(' '));

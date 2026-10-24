@@ -82,6 +82,16 @@ test('redact hides secrets, and record redacts and cuts to size', () => {
   storage.close();
 });
 
+test('redact covers JSON, prefixed names and well-known token shapes', () => {
+  const cases = [
+    '{"apiKey": "s3cr3tvalue"}', "{'client_secret':'s3cr3tvalue'}", 'OPENAI_API_KEY=s3cr3tvalue', 'X-Auth-Token: s3cr3tvalue',
+    'ghp_s3cr3tvalue0123456789', 'sk-s3cr3tvalue0123456789', 'xoxb-1234-s3cr3tvalue', 'AKIAS3CR3TVALUE12345',
+    'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.s3cr3tvalue_sig'
+  ];
+  for (const c of cases) assert.doesNotMatch(redact(c), /s3cr3tvalue|S3CR3TVALUE/, c);
+  assert.equal(redact('the key to a good print is a clean bed'), 'the key to a good print is a clean bed');
+});
+
 test('ftsQuery quotes words and prefixes the last', () => {
   assert.equal(ftsQuery('What did I print, brack'), '"print" "brack"*');
   assert.equal(ftsQuery('the a of'), '');
