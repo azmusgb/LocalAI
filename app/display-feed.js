@@ -32,8 +32,12 @@ function buildFeed({ needs, watch = [], running = [], done = [], weather = null,
     if (ASK[kind]) c.ask = ASK[kind];
     cards.push(c);
   };
-  add('needs', needs?.count ? `needs-${needs.count}` : 'needs-0', needs?.count ? 'Needs you' : 'All clear',
-    needs?.count ? firstSentence(needs.speech).replace(/^Needs you:\s*/, '') : 'Nothing needs you right now.',
+  // "All clear" only when nothing else on the feed is a problem. The needs card counts approvals and replies, so beside
+  // a problem card (a full disk, the Pi, a low spool) it says just that, instead of contradicting it.
+  const used = disk && disk.totalBytes > 0 ? 1 - disk.freeBytes / disk.totalBytes : 0;
+  const problems = watch.length > 0 || (pi?.issues || []).length > 0 || used >= 0.8 || (materials?.summary?.low || 0) > 0;
+  add('needs', needs?.count ? `needs-${needs.count}` : 'needs-0', needs?.count ? 'Needs you' : problems ? 'No approvals' : 'All clear',
+    needs?.count ? firstSentence(needs.speech).replace(/^Needs you:\s*/, '') : problems ? 'Nothing is waiting for your answer.' : 'Nothing needs you right now.',
     { count: needs?.count || 0, tone: needs?.count ? 'attention' : 'ok' });
   for (const w of watch.slice(0, 2)) add('watch', `watch-${w.id || w.title}`, w.severity === 'high' ? 'Heads up' : 'Worth a look', w.title, { tone: w.severity === 'high' ? 'attention' : 'warning', at: sec(w.since) });
   // The Pi hub's own issues (app/pi-hub.js), as "Pi: <what>".

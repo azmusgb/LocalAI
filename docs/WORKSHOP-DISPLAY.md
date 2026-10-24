@@ -77,7 +77,7 @@ holds no token and no address. `tests/world.test.cjs` enforces the limit.
 ## Local AI cards (for the display's idle screen)
 
 `GET /api/display/feed` gives the display a few short cards to show while the printer is idle:
-- **Needs you** (or **All clear**);
+- **Needs you** (or **All clear**; when another card is a problem, such as a watchdog finding, the Pi, a disk 80% full or a low spool, it says **No approvals** instead, so it doesn't contradict that card);
 - up to two watchdog problems ([Watchdog](WATCHDOG.md));
 - what Local AI is working on;
 - the weather at the home location (Health › Home location), cached for 15 minutes;
@@ -159,7 +159,8 @@ issue, "Pi: <what>", e.g. "Pi: Movies drive · It dropped out…"). When the hub
 Since 24 Oct 2026 the household's spools are in Bambuddy, the Bambu printer manager in Docker on the Pi; it reads the
 AMS and takes each print's filament off its spool. (The old Filament Inventory web app is retired.) Local AI reads
 `GET http://10.0.0.30:8000/api/v1/inventory/spools` and `/api/v1/inventory/assignments`, with no key on the LAN, at
-most once a minute (3 s limit). `LOCALAI_MATERIALS_URL` changes the address; `off` turns it off. `app/materials.js` builds one
+most once a minute (3 s limit). `LOCALAI_MATERIALS_URL` changes the address; `off` turns it off. Once Bambuddy's sign-in
+is on, set `LOCALAI_MATERIALS_KEY` to a Bambuddy API key with "Read status" only (sent as `X-API-Key`). `app/materials.js` builds one
 `materials` card:
 
 - a spool is low when what's left is at or under its own Bambuddy threshold, or 15% of its label weight, and only

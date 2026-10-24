@@ -5,6 +5,7 @@
 // Local AI reads GET /api/v1/inventory/spools and /api/v1/inventory/assignments (no key on the LAN) once a minute at
 // most, for the Workshop display's Materials card (app/display-feed.js).
 // LOCALAI_MATERIALS_URL sets Bambuddy's address (default http://10.0.0.30:8000); "off" turns it off. Never throws.
+// LOCALAI_MATERIALS_KEY: a Bambuddy API key with "Read status" only, sent as X-API-Key; needed once Bambuddy's sign-in is on.
 
 const CACHE_MS = 60 * 1000;
 const TIMEOUT_MS = 3000;
@@ -49,12 +50,12 @@ function summarize(spools, assignments = []) {
   };
 }
 
-function createMaterialsClient({ url = process.env.LOCALAI_MATERIALS_URL || 'http://10.0.0.30:8000', fetchImpl = fetch, now = Date.now } = {}) {
+function createMaterialsClient({ url = process.env.LOCALAI_MATERIALS_URL || 'http://10.0.0.30:8000', key = process.env.LOCALAI_MATERIALS_KEY || '', fetchImpl = fetch, now = Date.now } = {}) {
   const off = !url || url === 'off';
   let cache = { at: -Infinity, value: null };
 
   async function getJson(path) {
-    const r = await fetchImpl(new URL(path, url), { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const r = await fetchImpl(new URL(path, url), { signal: AbortSignal.timeout(TIMEOUT_MS), ...(key ? { headers: { 'X-API-Key': key } } : {}) });
     return r.ok ? r.json() : null;
   }
 
