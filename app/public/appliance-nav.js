@@ -6,11 +6,6 @@
  * across LocalAI Hub, LocalAI Terminal (Workshop OS), and LocalAI Materials (Filament Inventory).
  */
 class ApplianceNav extends HTMLElement {
-  constructor() {
-    super();
-    this.attachShadow({ mode: 'open' });
-  }
-
   static get observedAttributes() {
     return ['current', 'hub-url', 'terminal-url', 'materials-url'];
   }
@@ -19,7 +14,10 @@ class ApplianceNav extends HTMLElement {
     this.render();
   }
 
+  // The host is the landmark, so the brand and status sit inside it for screen readers.
   connectedCallback() {
+    if (!this.hasAttribute('role')) this.setAttribute('role', 'navigation');
+    if (!this.hasAttribute('aria-label')) this.setAttribute('aria-label', 'LocalAI apps');
     this.render();
     this.checkHealth();
   }
@@ -60,8 +58,8 @@ class ApplianceNav extends HTMLElement {
 
   // Only the hub has a health check to ask; the other apps show no status rather than a guess.
   async checkHealth() {
-    const dot = this.shadowRoot.getElementById('lan-dot');
-    const label = this.shadowRoot.getElementById('lan-label');
+    const dot = this.querySelector('#an-lan-dot');
+    const label = this.querySelector('#an-lan-label');
     if (!dot || !label) return;
     if (this.currentApp !== 'hub') {
       dot.parentElement.style.display = "none";
@@ -69,15 +67,15 @@ class ApplianceNav extends HTMLElement {
     }
     const res = await fetch('/healthz', { cache: 'no-store', signal: AbortSignal.timeout(2500) }).catch(() => null);
     const ok = Boolean(res && res.ok);
-    dot.className = ok ? 'dot online' : 'dot standby';
+    dot.className = ok ? 'an-dot an-online' : 'an-dot an-standby';
     label.textContent = ok ? 'Online' : 'Not answering';
   }
 
   render() {
     const cur = this.currentApp;
-    this.shadowRoot.innerHTML = `
+    this.innerHTML = `
       <style>
-        :host {
+        appliance-nav {
           display: block;
           font-family: Figtree, system-ui, -apple-system, sans-serif;
           background: #0a111c;
@@ -90,7 +88,7 @@ class ApplianceNav extends HTMLElement {
           top: 0;
         }
 
-        .bar {
+        appliance-nav .an-bar {
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -100,14 +98,14 @@ class ApplianceNav extends HTMLElement {
           gap: 12px;
         }
 
-        .brand-section {
+        appliance-nav .an-brand-section {
           display: flex;
           align-items: center;
           gap: 10px;
           flex-shrink: 0;
         }
 
-        .brand-mark {
+        appliance-nav .an-brand-mark {
           width: 24px;
           height: 24px;
           border-radius: 6px;
@@ -117,7 +115,7 @@ class ApplianceNav extends HTMLElement {
           box-shadow: 0 4px 12px rgba(111, 132, 255, 0.28);
         }
 
-        .brand-title {
+        appliance-nav .an-brand-title {
           font-weight: 700;
           letter-spacing: -0.01em;
           color: #eaf0f8;
@@ -126,7 +124,7 @@ class ApplianceNav extends HTMLElement {
           gap: 6px;
         }
 
-        .brand-pill {
+        appliance-nav .an-brand-pill {
           font-size: 10px;
           font-weight: 700;
           text-transform: uppercase;
@@ -138,7 +136,7 @@ class ApplianceNav extends HTMLElement {
           border: 1px solid #1f2c42;
         }
 
-        .links {
+        appliance-nav .an-links {
           display: flex;
           align-items: center;
           gap: 6px;
@@ -146,11 +144,11 @@ class ApplianceNav extends HTMLElement {
           scrollbar-width: none;
         }
 
-        .links::-webkit-scrollbar {
+        appliance-nav .an-links::-webkit-scrollbar {
           display: none;
         }
 
-        .nav-item {
+        appliance-nav .an-nav-item {
           display: inline-flex;
           align-items: center;
           gap: 6px;
@@ -164,20 +162,25 @@ class ApplianceNav extends HTMLElement {
           white-space: nowrap;
         }
 
-        .nav-item:hover {
+        appliance-nav .an-nav-item:hover {
           color: #eaf0f8;
           background: #121b2b;
           border-color: #1b2740;
         }
 
-        .nav-item.active {
+        appliance-nav .an-nav-item:focus-visible {
+          outline: 2px solid #6cb6ff;
+          outline-offset: 2px;
+        }
+
+        appliance-nav .an-nav-item.an-active {
           color: #6cb6ff;
           background: #172238;
           border-color: #2d4a6d;
           font-weight: 600;
         }
 
-        .nav-item svg {
+        appliance-nav .an-nav-item svg {
           width: 14px;
           height: 14px;
           stroke: currentColor;
@@ -187,7 +190,7 @@ class ApplianceNav extends HTMLElement {
           stroke-linejoin: round;
         }
 
-        .status-section {
+        appliance-nav .an-status-section {
           display: flex;
           align-items: center;
           gap: 6px;
@@ -196,7 +199,7 @@ class ApplianceNav extends HTMLElement {
           color: #8698b1;
         }
 
-        .dot {
+        appliance-nav .an-dot {
           width: 7px;
           height: 7px;
           border-radius: 50%;
@@ -204,62 +207,74 @@ class ApplianceNav extends HTMLElement {
           display: inline-block;
         }
 
-        .dot.online {
+        appliance-nav .an-dot.an-online {
           background: #3ed598;
           box-shadow: 0 0 0 3px rgba(62, 213, 152, 0.2);
         }
 
-        .dot.standby {
+        appliance-nav .an-dot.an-standby {
           background: #6cb6ff;
         }
 
+        /* The hub's sidebar and context bar stick to the top themselves, so in the hub the bar scrolls away. */
+        appliance-nav[current="hub"] {
+          position: relative;
+        }
+
+        /* On a phone the hub's own shell owns the top of the screen (notch, header, tab bar). */
+        @media (max-width: 760px) {
+          appliance-nav[current="hub"] {
+            display: none;
+          }
+        }
+
         @media (max-width: 640px) {
-          .brand-title span:not(.brand-pill) {
+          appliance-nav .an-brand-title span:not(.an-brand-pill) {
             display: none;
           }
-          .status-section {
+          appliance-nav .an-status-section {
             display: none;
           }
-          .bar {
+          appliance-nav .an-bar {
             padding: 6px 10px;
           }
         }
       </style>
 
-      <div class="bar">
-        <div class="brand-section">
-          <div class="brand-mark" aria-hidden="true">
+      <div class="an-bar">
+        <div class="an-brand-section">
+          <div class="an-brand-mark" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none">
               <path d="M5 12c2.6-5.6 11.4-5.6 14 0-2.6 5.6-11.4 5.6-14 0Z" stroke="#04111f" stroke-width="2.2"/>
               <circle cx="12" cy="12" r="2.2" fill="#04111f"/>
             </svg>
           </div>
-          <div class="brand-title">
+          <div class="an-brand-title">
             <span>LocalAI</span>
-            <span class="brand-pill">Suite</span>
+            <span class="an-brand-pill">Suite</span>
           </div>
         </div>
 
-        <nav class="links">
-          <a href="${this.hubUrl}" class="nav-item ${cur === 'hub' ? 'active' : ''}" id="link-hub">
+        <div class="an-links">
+          <a href="${this.hubUrl}" class="an-nav-item ${cur === 'hub' ? 'an-active' : ''}" id="an-link-hub">
             <svg viewBox="0 0 24 24"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"/><path d="M19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8z"/></svg>
             <span>Hub</span>
           </a>
 
-          <a href="${this.terminalUrl}" class="nav-item ${cur === 'terminal' ? 'active' : ''}" id="link-terminal">
+          <a href="${this.terminalUrl}" class="an-nav-item ${cur === 'terminal' ? 'an-active' : ''}" id="an-link-terminal">
             <svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="m7.5 9.5 3 2.5-3 2.5"/><path d="M13 15h4"/></svg>
             <span>Terminal</span>
           </a>
 
-          <a href="${this.materialsUrl}" class="nav-item ${cur === 'materials' ? 'active' : ''}" id="link-materials">
+          <a href="${this.materialsUrl}" class="an-nav-item ${cur === 'materials' ? 'an-active' : ''}" id="an-link-materials">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 3v5M12 16v5"/></svg>
             <span>Materials</span>
           </a>
-        </nav>
+        </div>
 
-        <div class="status-section">
-          <span class="dot standby" id="lan-dot"></span>
-          <span id="lan-label">Checking…</span>
+        <div class="an-status-section">
+          <span class="an-dot an-standby" id="an-lan-dot"></span>
+          <span id="an-lan-label">Checking…</span>
         </div>
       </div>
     `;
