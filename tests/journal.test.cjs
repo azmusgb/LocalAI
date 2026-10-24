@@ -133,3 +133,32 @@ test('an unchanged Storage still opens a database that has journal tables (rollb
   assert.equal(again.status().schemaVersion, 1);
   again.close();
 });
+
+test('paging keeps entries that share a time', () => {
+  const { journal, storage } = open();
+  for (let i = 0; i < 5; i++) journal.record(entry({ ref: `same${i}`, title: `T${i}` }));
+  const seen = [];
+  let page = journal.search({ limit: 2 });
+  for (let guard = 0; guard < 5; guard++) { seen.push(...page.items.map(x => x.title)); if (!page.next) break; page = journal.search({ limit: 2, before: page.next }); }
+  assert.deepEqual(seen, ['T4', 'T3', 'T2', 'T1', 'T0']);
+  storage.close();
+});
+
+test('redact covers quoted values, URL credentials and Basic auth, and leaves ordinary words', () => {
+  for (const c of ['password = "my s3cr3t pass"', 'https://bob:s3cr3t@host/x', 'Authorization: Basic czNjcjN0OnBhc3M=', "secret: 's3cr3t value here'"]) {
+    assert.doesNotMatch(redact(c), /s3cr3t|czNjcjN0|pass"|value here/, c);
+  }
+  assert.equal(redact('PASSWORD=s3cr3t'), 'PASSWORD=[redacted]');
+  assert.equal(redact('monkey: banana'), 'monkey: banana');
+  assert.equal(redact('turkey=roast'), 'turkey=roast');
+});
+
+test('a database that cannot hold the journal gives a journal that does nothing', () => {
+  const logged = [];
+  const journal = createJournal({ db: { exec() { throw new Error('no such module: fts5'); }, prepare() { throw new Error('x'); } }, log: (...a) => logged.push(a) });
+  assert.equal(journal.disabled, true);
+  assert.equal(journal.record(entry()), null);
+  assert.deepEqual(journal.search({ q: 'x' }), { items: [], next: null });
+  assert.equal(journal.remove('j-1'), false);
+  assert.equal(logged.length, 1);
+});

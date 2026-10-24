@@ -20,13 +20,27 @@ async function importAll({ storage, journal, runLedger, batch = 200, pause = () 
   if (progress.done) return { added: 0, done: true };
   let added = 0;
   const add = entry => { if (entry && journal.record(entry)) added++; };
-  // A chat or mission that a run entry already holds (within a day, same opening words) is not imported again.
+  // A chat or mission that a run entry already holds (within a day, same opening words) is not imported again. The
+  // run titles are indexed once by UTC day, so each check is a few comparisons, not a query.
   const norm = t => String(t || '').replace(/\s+/g, ' ').replace(/…$/, '').trim().toLowerCase();
+  let runIndex = null;
   const runHas = (at, title) => {
     const t = Date.parse(at), head = norm(title);
     if (!Number.isFinite(t) || !head) return false;
-    return journal.search({ sources: ['run'], from: new Date(t - 86400000).toISOString(), to: new Date(t + 86400000).toISOString(), limit: 200 })
-      .items.some(x => { const r = norm(x.title); return !!r && (head.startsWith(r) || r.startsWith(head)); });
+    if (!runIndex) {
+      runIndex = new Map();
+      for (const r of journal.runTitles()) {
+        const day = String(r.at).slice(0, 10);
+        if (!runIndex.has(day)) runIndex.set(day, []);
+        runIndex.get(day).push({ t: Date.parse(r.at), title: norm(r.title) });
+      }
+    }
+    const same = r => r.title === head || (Math.min(r.title.length, head.length) >= 12 && (head.startsWith(r.title) || r.title.startsWith(head)));
+    for (const d of [-1, 0, 1]) {
+      const list = runIndex.get(new Date(t + d * 86400000).toISOString().slice(0, 10)) || [];
+      if (list.some(r => Math.abs(r.t - t) <= 86400000 && same(r))) return true;
+    }
+    return false;
   };
   const builders = {
     runs: r => runEntry(r),
@@ -57,16 +71,18 @@ async function importAll({ storage, journal, runLedger, batch = 200, pause = () 
   for (let s = Math.max(0, STAGES.indexOf(progress.stage)); s < STAGES.length; s++) {
     const stage = STAGES[s];
     let offset = stage === progress.stage ? progress.offset || 0 : 0;
+    // A conversation holds many turns, so fewer of them go in one transaction.
+    const size = stage === 'conversations' ? Math.max(1, Math.floor(batch / 20)) : batch;
     // Runs come from the ledger (oldest last); everything else pages through its collection.
     const all = stage === 'runs' ? runLedger.list({ all: true }) : null;
     for (;;) {
-      const items = all ? all.slice(offset, offset + batch) : storage.list(collection[stage], { limit: batch, offset });
+      const items = all ? all.slice(offset, offset + size) : storage.list(collection[stage], { limit: size, offset });
       if (!items.length) break;
       storage.transaction(() => { for (const item of items) [].concat(builders[stage](item) || []).forEach(add); });
       offset += items.length;
       storage.writeSetting(IMPORT_KEY, { done: false, stage, offset });
       await pause();
-      if (items.length < batch) break;
+      if (items.length < size) break;
     }
   }
   storage.writeSetting(IMPORT_KEY, { done: true, stage: null, offset: 0, finishedAt: new Date().toISOString(), added });

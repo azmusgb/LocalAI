@@ -78,3 +78,32 @@ test('a chat that a run already recorded is not imported twice', async () => {
   assert.equal(journal.search({ q: 'PLA dry' }).items.length, 1);
   storage.close();
 });
+
+test('a big chat history never blocks the server for long', async () => {
+  const { storage, runLedger, journal } = seeded();
+  for (let i = 0; i < 250; i++) { const r = runLedger.create({ type: 'chat', title: `Run question ${i}` }); runLedger.complete(r.id, { output: { text: 'x'.repeat(2000) } }); }
+  const now = new Date().toISOString();
+  for (let c = 0; c < 100; c++) {
+    const messages = [];
+    for (let i = 0; i < 50; i++) messages.push({ role: 'user', content: `Chat ${c} turn ${i}`, createdAt: now }, { role: 'assistant', content: 'y'.repeat(500) });
+    storage.put('conversations', { id: `big-${c}`, title: `Big ${c}`, createdAt: now, messages });
+  }
+  let last = Date.now(), worst = 0;
+  await importAll({ storage, journal, runLedger, pause: async () => { worst = Math.max(worst, Date.now() - last); await new Promise(r => setImmediate(r)); last = Date.now(); } });
+  assert.ok(worst < 400, `blocked ${worst} ms`);
+  assert.equal(journal.search({ q: 'turn', limit: 200 }).items.length, 200);
+  storage.close();
+});
+
+test('a short run title does not hide unrelated chats', async () => {
+  const { storage, runLedger, journal } = seeded();
+  const r = runLedger.create({ type: 'chat', title: 'hi' });
+  runLedger.complete(r.id, { output: { text: 'hello' } });
+  const conv = storage.get('conversations', 'chat-1');
+  conv.messages[0].content = 'hi there, how dry should PLA be?';
+  conv.messages[0].createdAt = runLedger.get(r.id).finishedAt;
+  storage.put('conversations', conv);
+  await importAll({ storage, journal, runLedger });
+  assert.equal(journal.search({ q: 'PLA dry' }).items.length, 1);
+  storage.close();
+});

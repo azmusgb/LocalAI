@@ -22,15 +22,19 @@ const SCHEMA = `
   CREATE TRIGGER IF NOT EXISTS journal_ad AFTER DELETE ON journal BEGIN
     INSERT INTO journal_fts(journal_fts, rowid, title, body) VALUES ('delete', old.seq, old.title, old.body); END;`;
 
-// Secrets never reach the journal: private key blocks, long hex (keys, tokens), well-known token shapes, bearer
-// tokens and name=value / "name": "value" pairs whose name ends in key, token, password, secret or similar.
+// Secrets never reach the journal: private key blocks, long hex (keys, tokens), well-known token shapes, URL
+// credentials, Bearer/Basic auth, and name=value / "name": "value" pairs whose name is a key, token, password or secret
+// (OPENAI_API_KEY, apiKey, X-Auth-Token, client_secret; not monkey or turkey). Quoted values are hidden whole.
+const isSecretName = n => /(?:^|[_-])(?:api[_-]?key|key|token|password|passwd|pwd|secret|auth)$/.test(n.toLowerCase()) || /[a-z0-9](?:Key|Token|Password|Secret)$/.test(n);
 function redact(text, max = Infinity) {
   return String(text ?? '').slice(0, max)
     .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[redacted]')
     .replace(/\b[0-9a-f]{40,}\b/gi, '[redacted]')
     .replace(/\b(?:gh[pousr]_[A-Za-z0-9]{16,}|sk-[A-Za-z0-9_-]{16,}|xox[abpr]-[A-Za-z0-9-]{8,}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+)/g, '[redacted]')
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
-    .replace(/\b([\w-]{0,40}?(?:api[_-]?key|key|token|password|passwd|secret)["']?)(\s*[=:]\s*)["']?[^\s"',;}]+/gi, '$1$2[redacted]');
+    .replace(/(\/\/[^/\s:@]{1,100}:)[^@\s/]{1,200}@/g, '$1[redacted]@')
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, '$1 [redacted]')
+    .replace(/(["']?)\b([A-Za-z][\w-]{0,59})\1(\s*[=:]\s*)("[^"\n]*"|'[^'\n]*'|[^\s"',;}]+)/g,
+      (m, q, name, sep) => (isSecretName(name) ? `${q}${name}${q}${sep}[redacted]` : m));
 }
 
 const STOP = new Set('what when where which who whom how did does do i me my mine the a an of to in on at for from was were is are be been have has had long many much any anything something that this it its and or not did'.split(' '));
@@ -65,9 +69,17 @@ const DATE_WORDS = new RegExp(String.raw`\s*\b(?:(?:on|in|during|from|for)\s+)?(
 
 function createJournal({ db, now = Date.now, timeZone = 'UTC', log = console.error } = {}) {
   if (!db || typeof db.exec !== 'function') throw new TypeError('db is required');
-  db.exec(SCHEMA);
-  const insert = db.prepare('INSERT INTO journal (id, at, day, source, kind, title, body, link, ref, meta) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(ref) DO NOTHING');
-  const tomb = db.prepare('SELECT 1 FROM journal_deleted WHERE ref = ?');
+  let insert, tomb;
+  try {
+    db.exec(SCHEMA);
+    insert = db.prepare('INSERT INTO journal (id, at, day, source, kind, title, body, link, ref, meta) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(ref) DO NOTHING');
+    tomb = db.prepare('SELECT 1 FROM journal_deleted WHERE ref = ?');
+  } catch (error) {
+    // Without the journal Local AI still works; it just remembers nothing.
+    log(`${new Date().toISOString()} Journal unavailable:`, error);
+    const none = () => null;
+    return { disabled: true, record: none, remove: () => false, search: () => ({ items: [], next: null }), get: none, countSince: () => 0, runTitles: () => [], dayOf: iso => String(iso).slice(0, 10), window: text => ({ from: null, to: null, rest: String(text ?? '').trim() }) };
+  }
   let lastMs = 0, seq = 0, lastLog = 0;
 
   const dayOf = iso => { const p = zoneParts(Date.parse(iso), timeZone); return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`; };
@@ -116,7 +128,10 @@ function createJournal({ db, now = Date.now, timeZone = 'UTC', log = console.err
     const iso = v => { const t = Date.parse(v); return v && Number.isFinite(t) ? new Date(t).toISOString() : null; };
     if (iso(from)) { where.push('j.at >= ?'); args.push(iso(from)); }
     if (iso(to)) { where.push('j.at < ?'); args.push(iso(to)); }
-    if (iso(before)) { where.push('j.at < ?'); args.push(iso(before)); }
+    // The cursor is at|seq, so entries sharing a time are never skipped between pages (a bare time also works).
+    const [bAt, bSeq] = String(before || '').split('|');
+    if (iso(bAt) && Number.isSafeInteger(Number(bSeq)) && bSeq !== '') { where.push('(j.at < ? OR (j.at = ? AND j.seq < ?))'); args.push(iso(bAt), iso(bAt), Number(bSeq)); }
+    else if (iso(bAt)) { where.push('j.at < ?'); args.push(iso(bAt)); }
     const src = (Array.isArray(sources) ? sources : []).map(String).filter(Boolean).slice(0, 10);
     if (src.length) { where.push(`j.source IN (${src.map(() => '?').join(',')})`); args.push(...src); }
     let rows;
@@ -130,8 +145,8 @@ function createJournal({ db, now = Date.now, timeZone = 'UTC', log = console.err
       return { items: rows.map(hydrate), next: null };
     }
     rows = db.prepare(`SELECT j.* FROM journal j ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY j.at DESC, j.seq DESC LIMIT ?`).all(...args, n + 1);
-    const items = rows.slice(0, n).map(hydrate);
-    return { items, next: rows.length > n ? items[items.length - 1].at : null };
+    const items = rows.slice(0, n).map(hydrate), last = rows[n - 1];
+    return { items, next: rows.length > n ? `${last.at}|${last.seq}` : null };
   }
 
   // Date words in a question → a [from, to) window in local time, and the question without them.
@@ -166,8 +181,10 @@ function createJournal({ db, now = Date.now, timeZone = 'UTC', log = console.err
   }
 
   const get = id => hydrate(db.prepare('SELECT * FROM journal WHERE id = ?').get(String(id || '')));
+  // Every run entry's time and title, for the import's duplicate check (a few hundred rows; no bodies).
+  const runTitles = () => db.prepare("SELECT at, title FROM journal WHERE source = 'run'").all().map(r => ({ at: r.at, title: r.title }));
   const countSince = iso => db.prepare('SELECT count(*) AS n FROM journal WHERE at >= ?').get(String(iso)).n;
-  return { record, remove, search, get, countSince, dayOf, window };
+  return { record, remove, search, get, countSince, runTitles, dayOf, window };
 }
 
 module.exports = { createJournal, redact, ftsQuery };
