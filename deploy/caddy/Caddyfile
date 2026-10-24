@@ -23,18 +23,6 @@
 (appliance) {
 	import ca_download
 
-	# LocalAI Materials (Filament Inventory)
-	@materials path /materials /materials/*
-	handle @materials {
-		reverse_proxy {$LOCALAI_MATERIALS_PROXY:host.docker.internal:3000}
-	}
-
-	# LocalAI Terminal (Workshop OS Local Portal)
-	@terminal path /terminal /terminal/*
-	handle @terminal {
-		reverse_proxy {$LOCALAI_WORKSHOP_PROXY:10.0.0.124:80}
-	}
-
 	handle {
 		# Streams (chat replies) pass straight through; long image runs have no proxy timeout.
 		# A deploy recreates the appliance; while it is gone its name doesn't resolve ("dial tcp: lookup
