@@ -61,3 +61,11 @@ test('createMaterialsClient gives null when Bambuddy does not answer', async () 
   const client = createMaterialsClient({ url: 'http://127.0.0.1:8000', fetchImpl: async () => { throw new Error('refused'); } });
   assert.equal(await client.read(), null);
 });
+
+test('createMaterialsClient sends the Bambuddy API key when one is set', async () => {
+  const seen = [];
+  const fetchImpl = async (u, o) => { seen.push(o.headers || null); return { ok: true, json: async () => [] }; };
+  await createMaterialsClient({ url: 'http://127.0.0.1:8000', fetchImpl }).read();
+  await createMaterialsClient({ url: 'http://127.0.0.1:8000', key: 'bb_test', fetchImpl }).read();
+  assert.deepEqual(seen, [null, null, { 'X-API-Key': 'bb_test' }, { 'X-API-Key': 'bb_test' }]);
+});
