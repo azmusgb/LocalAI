@@ -25,7 +25,8 @@ const SCHEMA = `
 // Secrets never reach the journal: private key blocks, long hex (keys, tokens), well-known token shapes, URL
 // credentials, Bearer/Basic auth, and name=value / "name": "value" pairs whose name is a key, token, password or secret
 // (OPENAI_API_KEY, apiKey, X-Auth-Token, client_secret; not monkey or turkey). Quoted values are hidden whole.
-const isSecretName = n => /(?:^|[_-])(?:api[_-]?key|key|token|password|passwd|pwd|secret|auth)$/.test(n.toLowerCase()) || /[a-z0-9](?:Key|Token|Password|Secret)$/.test(n);
+// Any name ending in a secret word counts, except ordinary words that happen to end in "key".
+const isSecretName = n => /(?:api[_-]?key|key|token|password|passwd|pwd|secret|auth)$/i.test(n) && !/(?:^|[_-])(?:mon|tur|don|hoc|joc|whis|jer)key$/i.test(n);
 function redact(text, max = Infinity) {
   return String(text ?? '').slice(0, max)
     .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[redacted]')
@@ -33,7 +34,7 @@ function redact(text, max = Infinity) {
     .replace(/\b(?:gh[pousr]_[A-Za-z0-9]{16,}|sk-[A-Za-z0-9_-]{16,}|xox[abpr]-[A-Za-z0-9-]{8,}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+)/g, '[redacted]')
     .replace(/(\/\/[^/\s:@]{1,100}:)[^@\s/]{1,200}@/g, '$1[redacted]@')
     .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, '$1 [redacted]')
-    .replace(/(["']?)\b([A-Za-z][\w-]{0,59})\1(\s*[=:]\s*)("[^"\n]*"|'[^'\n]*'|[^\s"',;}]+)/g,
+    .replace(/(["']?)(?<![\w-])([\w-]{1,200})\1(\s*[=:]\s*)("[^"\n]*"|'[^'\n]*'|[^\s"',;}]+)/g,
       (m, q, name, sep) => (isSecretName(name) ? `${q}${name}${q}${sep}[redacted]` : m));
 }
 
