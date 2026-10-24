@@ -153,10 +153,13 @@ is counted by caller (IP address, device type, last route), and **Health › Sig
 Most routes are still only reported. The routes that run code, write or list the workspace, fetch arbitrary URLs from
 the container, stage or approve changes, decide approvals, or post and clear alerts are **refused** with
 `401 {"error":"Sign in on this device first…","signIn":true}`: `/api/workbench/*`, `/api/computer/*`,
-`/api/browser/fetch`, `/api/http-check`, `/api/repo/inspect`, `/api/changes*`, `/api/approvals/create|decide`,
-`/api/display/approvals/decide` (the display's key still signs it in), `/api/engineering/start`,
-`/api/issues/prepare-change`, `/api/improve/handoff`, `/api/powershell/*`, `/api/notifications/system|seed` and
-`/api/signin/report/clear` (`GUARDED` in `app/signin.js`). Pair a browser under Build › Claude Code to use them.
+`/api/browser/fetch`, `/api/actions/http-check`, `/api/repo/inspect`, `/api/changes*`, `/api/approvals/create|decide`,
+`/api/display/approvals/decide` (the display's key still signs it in), `/api/display/notify`, `/api/engineering/*`,
+`/api/issues/prepare-change`, `/api/improve/handoff`, `/api/powershell/*`, `/api/notifications/system|seed|update` and
+`/api/signin/report/clear` (`GUARDED` in `app/signin.js`); and, for any method but GET, starting agent runs
+(`/api/agents/dispatch|run|missions/start|specialist/run`), GridCraft workbook writes, `/api/knowledge/import`,
+`/api/library/delete`, `/api/items/delete` and `/api/display/alerts` (`GUARDED_WRITES`). Pair a browser under
+Build › Claude Code to use them.
 `LOCALAI_SIGN_IN=required` in `stack.env` refuses every API route that isn't open.
 
 Requests that did not come through Caddy (the host's own port 3080, the Docker network) and the routes a device needs

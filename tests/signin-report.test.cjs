@@ -68,7 +68,8 @@ test('routes that run code, write files or approve changes refuse a caller witho
   const post = (route, headers, body = {}) => fetch(`${base}${route}`, { method: 'POST', headers: { ...JSONH, ...headers }, body: JSON.stringify(body) });
   const lan = viaCaddy('10.0.0.37', IPHONE);
   for (const [method, route] of [['POST', '/api/workbench/command'], ['POST', '/api/workbench/write'], ['GET', '/api/workbench/tree'],
-    ['POST', '/api/computer/batch'], ['POST', '/api/browser/fetch'], ['GET', '/api/changes'], ['POST', '/api/changes/approve'],
+    ['POST', '/api/computer/batch'], ['POST', '/api/browser/fetch'], ['POST', '/api/actions/http-check'], ['POST', '/api/engineering/run'],
+    ['POST', '/api/agents/missions/start'], ['POST', '/api/gridcraft/upload'], ['POST', '/api/display/notify'], ['POST', '/api/notifications/update'], ['GET', '/api/changes'], ['POST', '/api/changes/approve'],
     ['POST', '/api/approvals/decide'], ['POST', '/api/notifications/system'], ['POST', '/api/signin/report/clear']]) {
     const r = method === 'GET' ? await fetch(`${base}${route}`, { headers: lan }) : await post(route, lan);
     assert.equal(r.status, 401, `${method} ${route} without a device`);
@@ -82,7 +83,7 @@ test('routes that run code, write files or approve changes refuse a caller witho
   const report = await (await fetch(`${base}/api/signin/report`)).json();
   assert.equal(report.mode, 'report');
   assert.ok(report.guarded.some(g => g.includes('workbench')));
-  assert.ok(report.callers.some(c => c.ip === '10.0.0.37' && c.count >= 11), 'refused requests are still listed');
+  assert.ok(report.callers.some(c => c.ip === '10.0.0.37' && c.count >= 17), 'refused requests are still listed');
 });
 
 test('whoami renews a paired device cookie for all of Local AI; an unpaired one gets nothing', { timeout: 30000 }, async t => {
@@ -133,8 +134,14 @@ test('LOCALAI_SIGN_IN=required refuses every API route that is not open; report 
   for (const [required, route, blocked] of [[false, '/api/runs', false], [false, '/api/workbench/tree', true], [true, '/api/runs', true],
     [true, '/healthz', false], [true, '/api/claude/chat/pair-request', false], [true, '/', false]]) {
     const s = createSignIn({ storage, signedIn: () => false, required });
-    assert.equal(s.blocks(s.check(req(route), route), route), blocked, `${required ? 'required' : 'report'} ${route}`);
+    assert.equal(s.blocks(s.check(req(route), route), route, 'GET'), blocked, `${required ? 'required' : 'report'} ${route}`);
+  }
+  // Write-only guards: reading GridCraft workbooks or the display's alert settings stays report-only; changing them doesn't.
+  const s0 = createSignIn({ storage, signedIn: () => false, required: false });
+  for (const [method, route, blocked] of [['GET', '/api/display/alerts', false], ['POST', '/api/display/alerts', true],
+    ['GET', '/api/gridcraft/workbooks', false], ['POST', '/api/gridcraft/cell', true], ['POST', '/api/agents/run', true]]) {
+    assert.equal(s0.blocks(s0.check(req(route), route), route, method), blocked, `${method} ${route}`);
   }
   const s = createSignIn({ storage, signedIn: () => true, required: true });
-  assert.equal(s.blocks(s.check(req('/api/workbench/tree'), '/api/workbench/tree'), '/api/workbench/tree'), false);
+  assert.equal(s.blocks(s.check(req('/api/workbench/tree'), '/api/workbench/tree'), '/api/workbench/tree', 'GET'), false);
 });

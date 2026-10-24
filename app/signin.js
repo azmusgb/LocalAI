@@ -13,12 +13,19 @@ const OPEN = new Set(['/healthz', '/api/claude/chat/pair-request', '/api/claude/
 // fetch arbitrary URLs from inside the container, approve or stage changes, or post and clear alerts. Unsigned, any LAN
 // or tailnet device could use them (docs/SECURITY.md). The host's own requests and the display's key still pass.
 const GUARDED = [
-  /^\/api\/workbench\//, /^\/api\/computer\//, /^\/api\/browser\/fetch$/, /^\/api\/http-check$/, /^\/api\/repo\/inspect$/,
+  /^\/api\/workbench\//, /^\/api\/computer\//, /^\/api\/browser\/fetch$/, /^\/api\/actions\/http-check$/, /^\/api\/repo\/inspect$/,
   /^\/api\/changes(\/|$)/, /^\/api\/approvals\/(create|decide)$/, /^\/api\/display\/approvals\/decide$/,
-  /^\/api\/engineering\/start$/, /^\/api\/issues\/prepare-change$/, /^\/api\/improve\/handoff$/, /^\/api\/powershell\//,
-  /^\/api\/notifications\/(system|seed)$/, /^\/api\/signin\/report\/clear$/,
+  /^\/api\/engineering\//, /^\/api\/issues\/prepare-change$/, /^\/api\/improve\/handoff$/, /^\/api\/powershell\//,
+  /^\/api\/notifications\/(system|seed|update)$/, /^\/api\/signin\/report\/clear$/, /^\/api\/display\/notify$/,
 ];
-const guarded = p => GUARDED.some(re => re.test(p));
+// Refused without a device when they change something (any method but GET/HEAD): starting agent runs, writing
+// workbooks through the GridCraft bridge, importing or deleting library data, and the display's alert settings.
+const GUARDED_WRITES = [
+  /^\/api\/agents\/(dispatch|run|missions\/start|specialist\/run)$/, /^\/api\/gridcraft\/(new|cell|upload|run|open|decide)$/,
+  /^\/api\/knowledge\/import$/, /^\/api\/library\/delete$/, /^\/api\/items\/delete$/, /^\/api\/display\/alerts$/,
+];
+const guarded = (p, method = 'POST') => GUARDED.some(re => re.test(p))
+  || (method !== 'GET' && method !== 'HEAD' && GUARDED_WRITES.some(re => re.test(p)));
 const KEEP = 50; // callers listed
 const SAVE_MS = 30000;
 const REPORT_KEY = 'signin/report';
@@ -62,10 +69,10 @@ function createSignIn({ storage, signedIn, routeKeys = {}, required = process.en
     dirty = true; save();
     return 'refused';
   }
-  function blocks(result, p) { return result === 'refused' && (required || guarded(p)); }
+  function blocks(result, p, method) { return result === 'refused' && (required || guarded(p, method)); }
   function apiReport(req, res, json) {
     save(true);
-    json(res, 200, { mode: required ? 'required' : 'report', guarded: GUARDED.map(re => re.source), since: new Date(report.since).toISOString(),
+    json(res, 200, { mode: required ? 'required' : 'report', guarded: GUARDED.map(re => re.source), guardedWrites: GUARDED_WRITES.map(re => re.source), since: new Date(report.since).toISOString(),
       callers: [...report.callers.values()].sort((a, b) => b.lastAt - a.lastAt).slice(0, KEEP)
         .map(c => ({ ip: c.ip, kind: c.kind, count: c.count, firstAt: new Date(c.firstAt).toISOString(), lastAt: new Date(c.lastAt).toISOString(), lastPath: c.lastPath, lastMethod: c.lastMethod })) });
   }

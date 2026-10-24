@@ -677,7 +677,7 @@ const server = http.createServer(async (req, res) => {
   try {
     if (!hostAllowed(req.headers.host, ALLOWED_HOSTS)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 421, { error: 'Unknown host name. Open Local AI by its own address.' }); }
     if (crossSiteRequest(req)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 403, { error: 'Cross-site request blocked' }); }
-    if (signIn.blocks(signIn.check(req, p), p)) { req.resume(); return json(res, 401, { error: 'Sign in on this device first: pair it under Build › Claude Code.', signIn: true }); }
+    if (signIn.blocks(signIn.check(req, p), p, req.method)) { req.resume(); return json(res, 401, { error: 'Sign in on this device first: pair it under Build › Claude Code.', signIn: true }); }
     if (req.method === 'GET' && p === '/api/signin/report') return signIn.apiReport(req, res, json);
     if (req.method === 'POST' && p === '/api/signin/report/clear') { signIn.clear(); return json(res, 200, { ok: true }); }
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 }, addresses: accessAddresses() });
