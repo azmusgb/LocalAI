@@ -146,8 +146,10 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
 
 ## Sign-in (report only, dangerous routes refused)
 
-Every API request that arrives through Caddy (it carries `X-Forwarded-For`) is checked for a paired device's cookie or
-the Mac key (`app/signin.js`; design: `docs/superpowers/specs/2026-10-18-sign-in-design.md`). A request without either
+Every API request is checked for a paired device's cookie or the Mac key, except the host's own: no `X-Forwarded-For`,
+from loopback or the Docker network's gateway (the Windows host's requests arrive through the published port from the
+gateway; `LOCALAI_HOST_ADDRESSES` overrides it). Other containers on the network (n8n, SearXNG, the Ollama proxy) are
+checked like any caller, so a workflow can't use the guarded routes unsigned (`app/signin.js`; design: `docs/superpowers/specs/2026-10-18-sign-in-design.md`). A request without either
 is counted by caller (IP address, device type, last route), and **Health › Sign-in** lists them.
 
 Most routes are still only reported. The routes that run code, write or list the workspace, fetch arbitrary URLs from
