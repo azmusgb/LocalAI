@@ -162,3 +162,13 @@ test('only loopback and the network gateway count as the host; other containers 
   assert.equal(s.blocks(s.check(from('172.20.0.6'), route), route, 'POST'), true);
   assert.equal(s.check(from('172.20.0.1', '10.0.0.37'), route), 'refused', 'through Caddy is never the host');
 });
+
+test('sibling routes are guarded too: the display sign-in code, run control, deletes, memory and models', () => {
+  const { guarded } = require('../app/signin');
+  for (const p of ['/api/workshop/portal-code']) assert.equal(guarded(p, 'GET'), true, p);
+  for (const p of ['/api/runs/retry', '/api/runs/cancel', '/api/runs/update', '/api/knowledge/delete', '/api/conversations/delete',
+    '/api/memory/add', '/api/memory/update', '/api/memory/delete', '/api/models/pull', '/api/models/delete']) {
+    assert.equal(guarded(p, 'POST'), true, p);
+    assert.equal(guarded(p, 'GET'), false, `${p} reads stay report-only`);
+  }
+});

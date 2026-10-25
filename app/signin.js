@@ -17,12 +17,17 @@ const GUARDED = [
   /^\/api\/changes(\/|$)/, /^\/api\/approvals\/(create|decide)$/, /^\/api\/display\/approvals\/decide$/,
   /^\/api\/engineering\//, /^\/api\/issues\/prepare-change$/, /^\/api\/improve\/handoff$/, /^\/api\/powershell\//,
   /^\/api\/notifications\/(system|seed|update)$/, /^\/api\/signin\/report\/clear$/, /^\/api\/display\/notify$/,
+  // It hands out the Workshop display's sign-in code.
+  /^\/api\/workshop\/portal-code$/,
 ];
 // Refused without a device when they change something (any method but GET/HEAD): starting agent runs, writing
 // workbooks through the GridCraft bridge, importing or deleting library data, and the display's alert settings.
 const GUARDED_WRITES = [
   /^\/api\/agents\/(dispatch|run|missions\/start|specialist\/run)$/, /^\/api\/gridcraft\/(new|cell|upload|run|open|decide)$/,
   /^\/api\/knowledge\/import$/, /^\/api\/library\/delete$/, /^\/api\/items\/delete$/, /^\/api\/display\/alerts$/,
+  // Siblings of the above: retrying or cancelling runs, deleting knowledge, chats and memory, pulling or deleting models.
+  /^\/api\/runs\/(retry|cancel|update)$/, /^\/api\/knowledge\/delete$/, /^\/api\/conversations\/delete$/,
+  /^\/api\/memory\/(add|update|delete)$/, /^\/api\/models\/(pull|delete)$/,
 ];
 const guarded = (p, method = 'POST') => GUARDED.some(re => re.test(p))
   || (method !== 'GET' && method !== 'HEAD' && GUARDED_WRITES.some(re => re.test(p)));
