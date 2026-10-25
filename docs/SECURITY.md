@@ -67,7 +67,7 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
 - Phones and browsers pair with a 6-character code (10 minutes, at most 5 pending) that only the Mac can
   approve. The device cookie `localai_chat_device` is HttpOnly, `SameSite=Lax` (a link from a notification still
   carries it; mutating routes have the cross-site guard), path `/` (it is the sign-in for all of Local AI, see
-  [Sign-in](#sign-in-report-only)), valid 180 days and renewed on each app load, and `Secure` when the device paired over HTTPS (a TLS socket or
+  [Sign-in](#sign-in-report-only-dangerous-routes-refused)), valid 180 days and renewed on each app load, and `Secure` when the device paired over HTTPS (a TLS socket or
   `X-Forwarded-Proto: https` from Caddy; `requestIsHttps`); the appliance stores only its hash. Any paired device can
   revoke any device. The header is trusted from any client: spoofing it on the host's port 3080 only makes that client's own
   cookie HTTPS-only.
@@ -144,15 +144,27 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
   certificate at `http://<host>/localai-ca.crt`. Each device trusts the CA once; **Health › Secure connection**
   tells a device whether it is on HTTPS and whether it already trusts the CA. Setup: [Deploy › HTTPS](DEPLOY.md#https-with-caddy).
 
-## Sign-in (report only)
+## Sign-in (report only, dangerous routes refused)
 
 Every API request that arrives through Caddy (it carries `X-Forwarded-For`) is checked for a paired device's cookie or
-the Mac key (`app/signin.js`; design: `docs/superpowers/specs/2026-10-18-sign-in-design.md`). For now nothing is
-refused: a request without either is counted by caller (IP address, device type, last route), and **Health › Sign-in
-(report only)** lists them. Requests that did not come through Caddy (the host's own port 3080, the Docker network) and
-the routes a device needs before it is paired (`/healthz`, `pair-request`, `pair-status`, `whoami`) are not checked;
-pages and static files never are. Switching to refusing is a later change, made once the list holds only callers to
-pair or drop.
+the Mac key (`app/signin.js`; design: `docs/superpowers/specs/2026-10-18-sign-in-design.md`). A request without either
+is counted by caller (IP address, device type, last route), and **Health › Sign-in** lists them.
+
+Most routes are still only reported. The routes that run code, write or list the workspace, fetch arbitrary URLs from
+the container, stage or approve changes, decide approvals, or post and clear alerts are **refused** with
+`401 {"error":"Sign in on this device first…","signIn":true}`: `/api/workbench/*`, `/api/computer/*`,
+`/api/browser/fetch`, `/api/actions/http-check`, `/api/repo/inspect`, `/api/changes*`, `/api/approvals/create|decide`,
+`/api/display/approvals/decide` (the display's key still signs it in), `/api/display/notify`, `/api/engineering/*`,
+`/api/issues/prepare-change`, `/api/improve/handoff`, `/api/powershell/*`, `/api/notifications/system|seed|update` and
+`/api/signin/report/clear` (`GUARDED` in `app/signin.js`); and, for any method but GET, starting agent runs
+(`/api/agents/dispatch|run|missions/start|specialist/run`), GridCraft workbook writes, `/api/knowledge/import`,
+`/api/library/delete`, `/api/items/delete` and `/api/display/alerts` (`GUARDED_WRITES`). Pair a browser under
+Build › Claude Code to use them.
+`LOCALAI_SIGN_IN=required` in `stack.env` refuses every API route that isn't open.
+
+Requests that did not come through Caddy (the host's own port 3080, the Docker network) and the routes a device needs
+before it is paired (`/healthz`, `pair-request`, `pair-status`, `whoami`) are not checked; pages and static files never
+are.
 
 ## Known gaps
 
@@ -160,12 +172,10 @@ pair or drop.
 |---|---|---|
 | GitHub access to this repo means code on the host | The auto-deploy runs `origin/release` and that commit's scripts as the host user. Only `npm run ship` moves `release`, after local CI passed on that exact tree, so a mistaken push to `main` doesn't deploy; but anyone with push access can still move `release` themselves (GitHub branch protection needs a paid plan on a private repo). Protect the GitHub account | `deploy/Run-LocalAI-AutoDeploy.ps1`, `scripts/local-ci.mjs` |
 | Ollama and n8n loopback binding is host configuration | If `OLLAMA_HOST` is unset or n8n is published on all interfaces, the model API or the n8n editor is open to the LAN without auth | [Network exposure](#network-exposure) |
-| No user authentication on port 443 | Anyone on the LAN can read conversations and projects, start runs, edit files under `WORKSPACE_ROOT`, and run `node`/`npm`/`npx` there (code execution inside the container) | `app/server.js` request router |
-| Change requests are unauthenticated | Any LAN client can request a change. A `self` change copies `SELF_APP_ROOT` to `DATA_DIR/change-staging/<id>/app`, applies a model-written patch there and validates it by running `node --check` and starting the staged `server.js` inside the container. Shipping it only hands it to a Claude session as an Improve item; it reaches the live app only as a pull request the owner merges. A `workspace` change, once approved, writes its files into `WORKSPACE_ROOT` | `stageChangeByIdUnlocked`, `validateStagedChange`, `apiChangeRequestApply` in `app/server.js` |
-| Files and Repository write under `WORKSPACE_ROOT` without auth | A LAN user can create or overwrite any file in the mounted workspace and run allow-listed commands there. What `/workspace` is mounted from is set by the container definition, which is not in this repo | `apiWorkbenchWrite`, `apiWorkbenchCommand` in `app/server.js` |
+| Most API routes are report-only | Without a paired device, anyone on the LAN or tailnet can still read conversations and projects and start runs. Code execution, workspace writes, changes and approvals are refused ([Sign-in](#sign-in-report-only-dangerous-routes-refused)); `LOCALAI_SIGN_IN=required` closes the rest | `app/signin.js` |
+| Change requests run model-written patches | Only a paired device, the Mac key or the host can request one (`/api/changes*` is guarded). A `self` change copies `SELF_APP_ROOT` to `DATA_DIR/change-staging/<id>/app`, applies a model-written patch there and validates it by running `node --check` and starting the staged `server.js` inside the container. Shipping it only hands it to a Claude session as an Improve item; it reaches the live app only as a pull request the owner merges. A `workspace` change, once approved, writes its files into `WORKSPACE_ROOT` | `stageChangeByIdUnlocked`, `validateStagedChange`, `apiChangeRequestApply` in `app/server.js` |
 | Chat device cookies paired over plain HTTP lack `Secure` | A device that paired on `http://<host>:3080` (or before this change) keeps a cookie its browser also sends over plain HTTP. Re-pair it on the HTTPS address to get a `Secure` cookie | `app/claude-chat.js` |
 | Claude board endpoints are unauthenticated | Any LAN client can post events and findings, vote, and change finding status | `/api/claude/*` in `app/server.js` |
-| Host notifications endpoint is unauthenticated | Any LAN client can post `deploy`/`backup`/`monitor` notices to the Inbox | `/api/notifications/system` |
 | Nightly backups go to OneDrive | A copy of the whole database leaves the PC | `deploy/Backup-LocalAI-Data.ps1` (`-OffsiteRoot`) |
 | Volume backups hold secrets in plain archives | `C:\LocalAI\backups\volumes` contains Caddy's root key and n8n's credentials with their key; it stays on this PC's disk, and the script refuses a cloud-synced copy location (OneDrive, Dropbox, iCloud, Google Drive) | `deploy/Backup-LocalAI-Data.ps1` (`-VolumeRoot`, `-VolumeCopyRoot`) |
 | `/go/n8n` and `/go/comfy` redirect to ports bound to loopback | They only work on the host itself | `redirectFor` in `app/server.js` |
