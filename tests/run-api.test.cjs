@@ -677,9 +677,9 @@ test('an older specialist run lists in Missions with its whole title', { timeout
   assert.ok(row, JSON.stringify(rows.map(x => x.id)));
   assert.equal(row.title, GOAL);
   // The card shows a readable title (Pi Hub one home, step 4): a goal this long reads "Mission"; run.title keeps it whole.
-  assert.equal(row.card.title, GOAL.length <= 60 ? GOAL : 'Mission');
+  assert.equal(row.card.title, 'Mission');
   assert.equal(row.card.kind, 'agent');
-  assert.equal((await request('/api/runs?id=run-1792022214381-8545b46')).value.item.card.title, GOAL.length <= 60 ? GOAL : 'Mission');
+  assert.equal((await request('/api/runs?id=run-1792022214381-8545b46')).value.item.card.title, 'Mission');
   const a = await request('/api/agents/missions/start', { goal: GOAL, agentIds: ['code_analyst'], async: true });
   assert.equal(a.response.status, 202, JSON.stringify(a.value));
   const run = (await request('/api/runs?id=' + a.value.runId)).value.item;

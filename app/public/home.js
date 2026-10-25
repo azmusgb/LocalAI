@@ -229,9 +229,9 @@ async function viaStarter(name,intent,text,extra,question=text){
  const L=root.LocalAILegacy;
  if(!S||typeof S.start!=='function'){L.open(intent,text);clearInput();return}
  // Try again in the run view sends the same text the same way.
- const pending=root.LocalAIRuns.openPending({kind:intent,title:titleOf(question),retry:()=>send(text,intent)});
+ const pending=root.LocalAIRuns.openPending({kind:intent,title:titleOf(question),retry:()=>send(question,intent)}); // the context is put back on a failure, so Try again adds it once
  clearInput();
- try{await S.start(text,{...extra,pending})}catch(e){pending.fail(e.message);throw e}
+ try{await S.start(text,{...extra,pending,...(question!==text?{title:titleOf(question)}:{})})}catch(e){pending.fail(e.message);throw e}
 }
 async function dispatch(intent,text,route,question=text){
  gateCheck(intent);

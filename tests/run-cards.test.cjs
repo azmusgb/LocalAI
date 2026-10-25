@@ -121,7 +121,10 @@ test('readableTitle never shows a long prompt (one home, step 4)', () => {
   assert.equal(readableTitle({ type: 'chat', title: 'line one\nline two' }), 'Chat');
   assert.equal(readableTitle({ type: 'chat', title: 'x'.repeat(200), meta: { label: 'House question' } }), 'House question');
   assert.equal(readableTitle({ type: 'automation', title: 'Hourly Stack & ComfyUI Health Check' }), 'Hourly Stack & ComfyUI Health Check');
-  assert.equal(readableTitle({ type: 'mission', title: 'y'.repeat(61) }), 'Mission');
+  assert.equal(readableTitle({ type: 'mission', title: 'y'.repeat(73) }), 'Mission');
+  // the server keeps up to 72 characters and ends a cut title with "…": a whole short question stays, a cut prompt doesn't
+  assert.equal(readableTitle({ type: 'chat', title: 'Why does the printer stop at layer 40 when the AMS is on slot 3?' }), 'Why does the printer stop at layer 40 when the AMS is on slot 3?');
+  assert.equal(readableTitle({ type: 'chat', title: 'x'.repeat(68) + '…' }), 'Chat');
   assert.equal(readableTitle({ type: 'research', title: '' }), 'Research');
   assert.equal(runCard({ type: 'image', title: 'z'.repeat(90) }, none).title, 'Image');
   assert.equal(runCard({ type: 'weird', title: 'w'.repeat(90) }, none).title, 'Run');

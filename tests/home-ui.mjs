@@ -134,6 +134,7 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
     assert.equal(await back.getAttribute('href'), 'http://10.0.0.30/');
     const box = await back.boundingBox();
     assert.ok(box.height >= 44, `tap target ${box.height}px`);
+    assert.ok(box.width < 160, `"← Home" is a link, not a full-width strip (${box.width}px)`);
     assert.equal(await page.locator('#homeComposer').isVisible(), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, 'no sideways scroll');
     await page.context().close();
@@ -373,6 +374,30 @@ await check('Pi Hub context: shown as text over the composer, sent once after th
   assert.deepEqual(await page.evaluate(() => window.__titles), ['Why?']);
   assert.equal(await line.isVisible(), false);
   assert.ok(!(await page.evaluate(() => location.href)).includes('context'));
+  await page.context().close();
+});
+
+await check('Pi Hub context: the server gets the question as the title, and Try again sends the context once', async () => {
+  const ctx = 'Pi Hub › Workshop: Printing, 40%';
+  const page = await open(desk, '#ask?context=' + encodeURIComponent(ctx));
+  await page.locator('#homeContext').waitFor({ state: 'visible', ...T });
+  const bodies = [];
+  await page.route(u => u.pathname === '/api/chat/stream', r => { bodies.push(r.request().postDataJSON()); return r.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'No model is loaded' }) }); });
+  await page.evaluate(() => { const o = window.LocalAIRuns.openPending; window.LocalAIRuns.openPending = s => { window.__retry = s.retry; return o(s); }; });
+  await page.locator('#commandInput').fill('Why?');
+  await page.locator('#commandGo').click();
+  await page.waitForFunction(() => typeof window.__retry === 'function', null, T);
+  await page.waitForFunction(n => n === 1, bodies.length, T).catch(() => {});
+  await page.waitForTimeout(300);
+  assert.equal(bodies.length, 1);
+  assert.equal(bodies[0].title, 'Why?');
+  await page.evaluate(() => window.__retry());
+  await page.waitForTimeout(500);
+  assert.equal(bodies.length, 2);
+  assert.equal(bodies[1].title, 'Why?');
+  const prompt = bodies[1].messages.at(-1).content;
+  assert.equal(prompt.split('Context (page facts').length - 1, 1, 'the context goes once: ' + prompt);
+  assert.ok(!(await page.locator('#commandInput').inputValue()).includes('Context'), 'the context never lands in the question box');
   await page.context().close();
 });
 

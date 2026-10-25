@@ -1531,7 +1531,7 @@ body.run-view-open{overflow:hidden}
 
 /* ---- Home: needs you, recent, and a composer at your thumb ---- */
 #home{max-width:720px} /* left-aligned like every page, so content never jumps sideways between pages */
-#home .home-back{display:inline-flex;align-items:center;min-height:44px;padding:0 4px;margin:0 0 2px -4px;color:var(--ds-accent-text);font-size:var(--ds-fs-2);font-weight:600;text-decoration:none;border-radius:var(--ds-r-sm)}#home .home-back:hover{text-decoration:underline}#home .home-back:focus-visible{outline:none;box-shadow:var(--ds-focus)}
+#home .home-back{display:inline-flex;align-self:flex-start;align-items:center;min-height:44px;padding:0 4px;margin:0 0 2px -4px;color:var(--ds-accent-text);font-size:var(--ds-fs-2);font-weight:600;text-decoration:none;border-radius:var(--ds-r-sm)}#home .home-back:hover{text-decoration:underline}#home .home-back:focus-visible{outline:none;box-shadow:var(--ds-focus)}
 #home .home-head{padding:2px 0 0}
 #home .home-head h1{margin:0;font-size:var(--ds-fs-5);line-height:1.2;letter-spacing:-.02em}
 .home-block{margin-top:20px}

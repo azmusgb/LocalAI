@@ -289,8 +289,8 @@ async function submitEngineeringIntent(request,{assistantIndex=null,navigate=fal
 }
 // One streamed chat turn against /api/chat/stream, for any page that shows a chat (the #ask host and the run view).
 // Resolves {runId, content} when the stream ends; rejects on an HTTP or stream error (AbortError when `signal` aborts).
-async function streamChat({messages,webSearch=false,model,threadId,onOpen,onToken,onMeta,onDone,signal}){
-  const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,webSearch,model,threadId}),signal});
+async function streamChat({messages,webSearch=false,model,threadId,title,onOpen,onToken,onMeta,onDone,signal}){
+  const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,webSearch,model,threadId,title}),signal});
   if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||`HTTP ${r.status}`);}
   onOpen?.();
   const reader=r.body.getReader(),decoder=new TextDecoder();
