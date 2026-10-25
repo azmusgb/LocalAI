@@ -62,6 +62,8 @@ catch {
 }
 
 $originMain = Get-GitSha -Repository $Repo -Ref 'origin/main'
+# What the host deploys: release, which only npm run ship moves (Run-LocalAI-AutoDeploy.ps1).
+$originRelease = Get-GitSha -Repository $Repo -Ref 'origin/release'
 $localHead = Get-GitSha -Repository $Repo -Ref 'HEAD'
 $currentCommit = if ($null -ne $state -and $state.PSObject.Properties.Name -contains 'currentCommit') {
     [string]$state.currentCommit
@@ -81,8 +83,8 @@ $deploymentStatus = if ($null -ne $state -and $state.PSObject.Properties.Name -c
 }
 
 $behindOrigin = $null
-if ($currentCommit -and $originMain) {
-    $behindOrigin = $currentCommit -ne $originMain
+if ($currentCommit -and $originRelease) {
+    $behindOrigin = $currentCommit -ne $originRelease
 }
 
 $result = [ordered]@{
@@ -97,6 +99,8 @@ $result = [ordered]@{
     currentCommitShort = Get-ShortSha $currentCommit
     originMain = $originMain
     originMainShort = Get-ShortSha $originMain
+    originRelease = $originRelease
+    originReleaseShort = Get-ShortSha $originRelease
     repoHead = $localHead
     repoHeadShort = Get-ShortSha $localHead
     deploymentBehindOrigin = $behindOrigin

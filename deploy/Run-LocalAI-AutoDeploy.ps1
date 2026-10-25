@@ -1,5 +1,7 @@
 param(
-    [string]$TargetRef = 'origin/main',
+    # The branch the host deploys. Only `npm run ship` moves it, to a merge commit whose exact tree passed local CI
+    # (scripts/local-ci.mjs), so a commit pushed straight to main never deploys.
+    [string]$TargetRef = 'origin/release',
     [string]$Repo = 'C:\LocalAI\repo',
     [string]$StateDir = 'C:\LocalAI\.deploy',
     [string]$Live = 'C:\LocalAI\appliance\app',
@@ -14,7 +16,7 @@ param(
     [string]$StackEnvFile = 'C:\LocalAI\stack\stack.env',
     [string]$StackCompose = (Join-Path $Repo 'deploy\stack\compose.yml')
 )
-# What the 'LocalAI Safe Deploy' task runs every few minutes. Keeps the host checkout current, runs the safe
+# What the 'LocalAI Safe Deploy' task runs every few minutes. Keeps the host checkout on the release branch, runs the safe
 # deploy (certify, promote, health-check, roll back), logs it, and tells the Inbox when something happened:
 # a new release went live, or a deploy failed (once per failing commit, not on every retry). No change = silent.
 # After a healthy deploy, or a quiet run with /healthz OK, it removes stopped migration backups (local-ai-*-pre-*)
@@ -110,10 +112,30 @@ function Invoke-StackRepair {
     }
 }
 
-# The deploy scripts themselves come from this checkout, so fast-forward it when it tracks main and is clean.
-# Otherwise fetch, so the check below sees what the deploy would.
-if ($TargetRef -eq 'origin/main' -and -not (git -C $Repo status --porcelain 2>$null)) { git -C $Repo pull -q --ff-only origin main 2>&1 | Out-Null }
-else { git -C $Repo fetch -q --prune origin 2>&1 | Out-Null }
+# The scheduled task was registered when it deployed main and still passes -TargetRef origin/main; main is now
+# deployed only through release.
+if ($TargetRef -eq 'origin/main') { $TargetRef = 'origin/release' }
+$unreleasedState = Join-Path $StateDir 'auto-deploy-unreleased.txt'
+
+# The deploy scripts themselves come from this checkout, so move it to the deployed branch when it is clean: the
+# scripts that run are the checked release's, never an unchecked main's. Otherwise only fetch.
+git -C $Repo fetch -q --prune origin 2>&1 | Out-Null
+if ($TargetRef -match '^origin/(.+)$' -and -not (git -C $Repo status --porcelain 2>$null)) {
+    git -C $Repo checkout -q -B $Matches[1] $TargetRef 2>&1 | Out-Null
+}
+
+# Commits on main that haven't been through ship don't deploy; say so once per main commit, so they aren't
+# forgotten (a direct push, or a PR merged on GitHub).
+if ($TargetRef -eq 'origin/release') {
+    $mainSha = ([string](git -C $Repo rev-parse --verify 'origin/main^{commit}' 2>$null)).Trim()
+    $ahead = 0; [void][int]::TryParse(([string](git -C $Repo rev-list --count 'origin/release..origin/main' 2>$null)).Trim(), [ref]$ahead)
+    $told = if (Test-Path $unreleasedState) { (Get-Content $unreleasedState -Raw).Trim() } else { '' }
+    if ($ahead -gt 0 -and $mainSha -and $mainSha -ne $told) {
+        $commits = if ($ahead -eq 1) { '1 commit' } else { "$ahead commits" }
+        Notify "$commits on main not deployed yet" "They haven't passed local CI through npm run ship, so the host keeps running the current release. Ship a pull request that includes them: npm run ship -- <PR>." @{ commit = $mainSha; outcome = 'held'; ahead = $ahead }
+        Set-Content -Path $unreleasedState -Value $mainSha
+    } elseif ($ahead -eq 0) { Remove-Item $unreleasedState -ErrorAction SilentlyContinue }
+}
 
 # Before anything else: services a Windows restart left stopped come back even when there is nothing to deploy.
 Invoke-StackRepair

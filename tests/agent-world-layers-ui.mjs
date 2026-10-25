@@ -39,7 +39,7 @@ await check('opening Agent World fetches each on-demand module once', async () =
   await page.waitForFunction(() => !!window.LocalAIAWKit, null, { timeout: 5000 });
   await page.evaluate(() => window.showView('home')); await page.waitForTimeout(200);
   await page.evaluate(() => window.showView('agents')); await page.waitForTimeout(400);
-  assert.deepEqual(awRequests, ['/aw/kit.js']);
+  assert.deepEqual(awRequests, ['/aw/kit.js', '/aw/landmarks.js']);
   assert.equal(await page.evaluate(() => window.LocalAIAWKit.clean('a‮b', 80)), 'a b');
 });
 
@@ -61,6 +61,8 @@ const tilesWalked = () => page.evaluate(zones => {
 const RESERVE = [{ x: 4, y: 10, w: 9, h: 3 }, { x: 13, y: 10, w: 2, h: 3 }];
 const inReserve = k => { const [x, y] = k.split(',').map(Number); return RESERVE.some(r => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h); };
 
+// The shipped landmarks layer would add its own rows and tiles; this test checks the hook alone.
+await page.evaluate(() => window.LocalAIAWLandmarks?.stop());
 const before = await tilesWalked(), treesBefore = (await page.evaluate(() => window.__awcLayout().trees)).length;
 await page.evaluate(reserve => {
   const L = window.__L = { draws: 0, grounds: 0, v: 1, opened: [] }, item = { id: 'yard', label: 'Test yard', detail: 'Nothing here yet' };

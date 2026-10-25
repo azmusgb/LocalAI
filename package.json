@@ -13,7 +13,8 @@
     "ci": "node scripts/local-ci.mjs",
     "ship": "node scripts/local-ci.mjs --merge",
     "lint": "eslint .",
-    "lint:css": "stylelint \"app/public/**/*.css\""
+    "lint:css": "stylelint \"app/public/**/*.css\"",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

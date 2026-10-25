@@ -46,6 +46,8 @@ function New-Fixture {
         # line, and simulated compose failures.
         Stack = [System.Collections.Generic.List[object]]::new(); StackAsArray = $false; ComposeFails = $false; ComposeUpFails = $false
         StackEnv = (Join-Path $root 'stack.env'); StackCompose = (Join-Path $root 'compose.yml')
+        # Auto-deploy's release gate: commits on origin/main not yet on origin/release, and whether the checkout is dirty.
+        Ahead = 0; Dirty = ''
     }
     [System.IO.Directory]::CreateDirectory($fixture.StateDir) | Out-Null
     Write-LocalAI-DeployState (Join-Path $fixture.StateDir 'state.json') ([ordered]@{status='HEALTHY';currentCommit=$oldSha})
@@ -149,6 +151,9 @@ function git {
     $Arguments = [string[]]$args
     $global:LASTEXITCODE=0
     if ($Arguments -contains 'rev-parse') { return $newSha }
+    if ($Arguments -contains 'rev-list') { return [string]$fixture.Ahead }
+    if ($Arguments -contains 'status') { return $fixture.Dirty }
+    if ($Arguments -contains 'checkout' -or $Arguments -contains 'pull') { $fixture.Calls.Add(@('git') + $Arguments) }
     if ($Arguments -contains 'archive') {
         $output = $Arguments[[Array]::IndexOf($Arguments,'-o')+1]
         Set-Content -LiteralPath $output -Value 'fixture archive'
@@ -314,6 +319,26 @@ try {
         $f.RejectAllHealth=$true
         $report = & (Join-Path $repository 'deploy/Get-LocalAI-DeployStatus.ps1') -Repo $f.Repo -StatePath (Join-Path $f.StateDir 'state.json') -AsJson | ConvertFrom-Json
         Assert-True ($report.health -eq 'UNHEALTHY') 'Error JSON reported healthy'
+    }
+    Test-Case 'auto-deploy runs the release branch, never main, and says once when main has unshipped commits' {
+        $f = New-Fixture
+        $f.Ahead = 2
+        Invoke-FixtureAutoDeploy | Out-Null
+        $deploy = @($f.Calls | Where-Object { $_[0] -eq 'auto-deploy' })[0]
+        Assert-True ($deploy[[Array]::IndexOf($deploy, '-TargetRef') + 1] -eq 'origin/release') "Deployed $($deploy -join ' ')"
+        $git = @($f.Calls | Where-Object { $_[0] -eq 'git' })
+        Assert-True (@($git | Where-Object { ($_ -join ' ') -match 'checkout -q -B release origin/release' }).Count -gt 0) "Checkout not moved to release: $(($git | % { $_ -join ' ' }) -join '; ')"
+        Assert-True (-not @($git | Where-Object { $_ -contains 'pull' }).Count) 'Pulled main into the checkout'
+        $held = @($f.Notices | Where-Object { $_.meta.outcome -eq 'held' })
+        Assert-True ($held.Count -eq 1 -and $held[0].title -eq '2 commits on main not deployed yet') "Unexpected notices: $($f.Notices | ConvertTo-Json -Compress)"
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True (@($f.Notices | Where-Object { $_.meta.outcome -eq 'held' }).Count -eq 1) 'Told twice about the same main commit'
+        $f.Ahead = 0
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $f.StateDir 'auto-deploy-unreleased.txt'))) 'Unreleased note left behind'
+        $f2 = New-Fixture; $f2.Dirty = ' M deploy/x.ps1'
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True (-not @($f2.Calls | Where-Object { $_[0] -eq 'git' -and $_ -contains 'checkout' }).Count) 'Moved a dirty checkout'
     }
     Test-Case 'auto-deploy waits while the appliance is busy and records when the hold began' {
         $f = New-Fixture

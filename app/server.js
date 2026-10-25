@@ -102,6 +102,8 @@ const watchdog = require('./watchdog').createWatchdog({
 const piHub = require('./pi-hub').createPiHub();
 // LocalAI Materials client (app/materials.js): active spool & inventory metrics for display feed.
 const materialsClient = require('./materials').createMaterialsClient();
+// The display's Clear plate goes through Local AI to Bambuddy (app/bambuddy-control.js).
+const bambuddyControl = require('./bambuddy-control').createBambuddyControl();
 // Pairing the Workshop display from its touchscreen (app/display-pairing.js).
 const displayPairing = require('./display-pairing').createDisplayPairing({
   dataDir: DATA_DIR, tlsName: process.env.LOCALAI_NAME || 'localai.home.arpa',
@@ -134,6 +136,7 @@ const signIn = require('./signin').createSignIn({ storage, signedIn: req => !!cl
   '/api/display/approvals': req => displayKey.authorized(req),
   '/api/display/approvals/decide': req => displayKey.authorized(req),
   '/api/display/heartbeat': req => displayKey.authorized(req),
+  '/api/display/printer/clear': req => displayKey.authorized(req),
   '/api/display/poster': req => displayKey.authorized(req),
   // The feed's latest-image card links here; the display fetches the JPEG with its key.
   '/api/images/view': req => displayKey.authorized(req)
@@ -669,7 +672,7 @@ const { apiPowerShellApprove, apiPowerShellCancel, apiPowerShellCreate, apiPower
 const { apiAutomationCreate, apiAutomationRun, apiAutomationUpdate, apiAutomations, apiMonitorCreate, apiMonitorRun, apiMonitors, apiMorningBrief, automationSchedulerTick, monitorSchedulerTick } = require('./server/automations').createAutomations({ AUTOMATIONS_STORE, AUTOMATION_RUNS_STORE, MONITORS_STORE, activityStore, addNotification, automationRunStore, automationStore, featureAtLeast, getStatusAndRecordTransition, inFlight, json, makeId, normalizeTitle, notificationStore, nowIso, objectStore, readBody, recordActivity, requireFeature, runLocalModel, saveStore, searxSearch, storageError });
 const { apiRunCancel, apiRunRetry, apiRunUpdate, apiRuns, createChatExecution, needsThreads } = require('./server/runs').createRuns({ AUTOMATION_RUNS_STORE, MODEL, RUNS_STORE, WORK_CHIPS, activeRunControllers, agentRunStore, approvalStore, automationRunStore, changeStore, cleanRunId, effectiveEngineeringRuns, fetchWithTimeout, gridcraftRuns, json, keptMarker, listenPort, needsYou, nowIso, projectStore, readBody, recordActivity, runCard, runLedger, sanitizeMessages, saveStore, seenRuns, storageError, titleFromText, withSeen, workKind });
 const { apiChat, apiChatStream, apiRoute, chatOnce } = require('./server/chat').createChat({ ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone: (...a) => voiceTimeZone(...a) });
-const { apiDisplayAlerts, apiDisplayApprovalDecide, apiDisplayApprovals, apiDisplayAsk, apiDisplayEvents, apiDisplayFeed, apiDisplayHeartbeat, apiDisplayNotify, apiDisplayPair, apiGlance, apiGlanceAsk, apiVoiceHome, apiWatchHeartbeat, voiceTimeZone } = require('./server/voice').createVoice({ APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, json, listenPort, needsThreads, needsYou, notifier, nowIso, piHub, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, storage, storageError, text, voice, voiceFacts, watchdog, weather });
+const { apiDisplayAlerts, apiDisplayApprovalDecide, apiDisplayApprovals, apiDisplayAsk, apiDisplayEvents, apiDisplayFeed, apiDisplayHeartbeat, apiDisplayNotify, apiDisplayPair, apiGlance, apiGlanceAsk, apiVoiceHome, apiWatchHeartbeat, voiceTimeZone } = require('./server/voice').createVoice({ APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, storage, storageError, text, voice, voiceFacts, watchdog, weather });
 const server = http.createServer(async (req, res) => {
   const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const p = urlObj.pathname;
@@ -844,6 +847,14 @@ const server = http.createServer(async (req, res) => {
     if ((req.method === 'POST' && (p === '/api/display/pair' || p === '/api/display/pair/start')) || (req.method === 'GET' && p === '/api/display/pair/status')) return await apiDisplayPair(req,res,p);
     if (req.method === 'GET' && p === '/api/display/approvals') return await apiDisplayApprovals(req,res);
     if (req.method === 'POST' && p === '/api/display/approvals/decide') return await apiDisplayApprovalDecide(req,res);
+    // A printer action: only the display's key or a signed-in device, whatever the sign-in mode.
+    if (req.method === 'POST' && p === '/api/display/printer/clear') {
+      req.resume();
+      if (!displayKey.authorized(req) && !claudeChat.deviceFor(req) && !claudeChat.macAuthorized(req)) return json(res, 401, { error: 'Only the Workshop display or a signed-in device can clear the plate.' });
+      const r = await bambuddyControl.clearPlate();
+      recordActivity('printer', r.ok ? 'Plate cleared from the Workshop display' : 'Clear plate from the Workshop display did not go through', `Bambuddy: plate ${r.plate}, errors ${r.errors}`, { by: 'Workshop display' });
+      return json(res, r.ok ? 200 : 502, r);
+    }
     if (req.method === 'POST' && p === '/api/display/heartbeat') return await apiDisplayHeartbeat(req,res);
     if ((req.method === 'GET' || req.method === 'POST') && p === '/api/display/alerts') return await apiDisplayAlerts(req,res);
     if (req.method === 'POST' && p === '/api/claude/findings') return await apiClaudeFindings(req,res);
