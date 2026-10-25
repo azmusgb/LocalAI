@@ -40,6 +40,8 @@ const VIEWS=[
  {id:'signals',svg:'alert',domain:'improve',section:'Pipeline',label:'Signals',description:'Problems Local AI noticed; serious ones join the Backlog.',aka:['detections','issues','quality signals']},
  // GridCraft on the Windows computer, through the appliance (spreadsheets.js). The old /gridcraft.html page sends you here.
  {id:'spreadsheets',svg:'file',domain:'projects',section:'Keep',parent:'projects',tab:'Spreadsheets',label:'Spreadsheets',description:'Ask for a spreadsheet on the Windows computer to be checked or changed.',aka:['gridcraft','excel','workbook']},
+ // The print lab on the Mac (print-lab repo), read-only here: `lab sync` sends it (app/print-lab.js, print-lab.js).
+ {id:'printLab',svg:'target',domain:'projects',section:'Keep',parent:'projects',tab:'Print lab',label:'Print lab',description:'What the print lab on the Mac is testing, and what needs you.',aka:['print lab','3d printing','experiments','hex tile']},
  {id:'claude',svg:'sparkle',domain:'improve',section:'Pipeline',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
  {id:'workbench',svg:'folder',domain:'system',section:'Tools',dev:true,label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
  {id:'repoTools',svg:'branch',domain:'system',section:'Tools',dev:true,label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},

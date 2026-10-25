@@ -167,7 +167,8 @@ test('sibling routes are guarded too: the display sign-in code, run control, del
   const { guarded } = require('../app/signin');
   for (const p of ['/api/workshop/portal-code']) assert.equal(guarded(p, 'GET'), true, p);
   for (const p of ['/api/runs/retry', '/api/runs/cancel', '/api/runs/update', '/api/knowledge/delete', '/api/conversations/delete',
-    '/api/memory/add', '/api/memory/update', '/api/memory/delete', '/api/models/pull', '/api/models/delete']) {
+    '/api/memory/add', '/api/memory/update', '/api/memory/delete', '/api/models/pull', '/api/models/delete',
+    '/api/lab/hex-tile/sync']) {
     assert.equal(guarded(p, 'POST'), true, p);
     assert.equal(guarded(p, 'GET'), false, `${p} reads stay report-only`);
   }

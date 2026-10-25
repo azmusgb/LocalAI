@@ -89,6 +89,7 @@ for (const [parent, child, childTab, domain, area] of [
   ['projects', 'knowledge', 'Sources', 'projects', 'Projects'],
   ['projects', 'library', 'Library', 'projects', 'Projects'],
   ['projects', 'spreadsheets', 'Spreadsheets', 'projects', 'Projects'],
+  ['projects', 'printLab', 'Print lab', 'projects', 'Projects'],
   ['work', 'automationStudio', 'Automations', 'work', 'Work'],
 ]) {
   await check(`${child} is a tab of ${parent}, in the strip`, async () => {
@@ -168,7 +169,7 @@ await check('the Projects tab lands on Projects, and Library is its Library tab 
   await page.locator('.ux-primary-item[data-domain="projects"]').click();
   await page.waitForSelector('#projects.active');
   assert.equal(await page.evaluate(() => location.hash), '#projects');
-  assert.deepEqual(await stripLabels(), ['Projects', 'Sources', 'Memory', 'Library', 'Spreadsheets']);
+  assert.deepEqual(await stripLabels(), ['Projects', 'Sources', 'Memory', 'Library', 'Spreadsheets', 'Print lab']);
   await page.locator('#uxPageStrip [data-strip-view="library"]').click();
   await page.waitForSelector('#library.active');
   assert.equal(await page.locator('#library h1').innerText(), 'Projects');
@@ -195,7 +196,7 @@ await check('phone: no section menu; the strip lists the pages and tabs of the a
   await mobile.evaluate(() => window.showView('projects'));
   await mobile.waitForSelector('#projects.active');
   assert.equal(await mobile.locator('#uxContextMenu, #uxMobileSheet').count(), 0, 'the ⌄ sheet is gone');
-  assert.deepEqual(await mobile.locator('#uxPageStrip button').allInnerTexts(), ['Projects', 'Sources', 'Memory', 'Library', 'Spreadsheets']);
+  assert.deepEqual(await mobile.locator('#uxPageStrip button').allInnerTexts(), ['Projects', 'Sources', 'Memory', 'Library', 'Spreadsheets', 'Print lab']);
   await mobile.locator('#uxPageStrip [data-strip-view="memory"]').click();
   await mobile.waitForSelector('#memory.active');
   await mobile.evaluate(() => history.back());

@@ -25,7 +25,7 @@ There are five sections. On a phone they are the tabs at the bottom; on a comput
 |---|---|
 | **Home** | Start something, see what needs you, pick up where you left off |
 | **Work** | Everything that is running or done (chats, images, missions, changes), and **Automations**, what runs on a schedule |
-| **Projects** | What you make and keep: your projects with their Sources and Memory, your **Library**, and **Spreadsheets** |
+| **Projects** | What you make and keep: your projects with their Sources and Memory, your **Library**, **Spreadsheets** and the **Print lab** |
 | **Improve** | Changing Local AI itself: ideas, problems it noticed, changes in progress, what shipped |
 | **System** | Health, models, services and the audit log (and the developer tools, when they are on) |
 
@@ -169,6 +169,13 @@ The **Inbox** (the bell at the top) is the history. Approvals still waiting are 
 sheet. After them come open alerts, then **History**: resolved alerts and what you approved or rejected, newest first.
 It keeps alerts you missed while notifications were quiet. The bell shows one number: unread alerts plus approvals
 waiting. Old Approvals links open the Inbox.
+
+## Print lab
+**Projects › Print lab** shows the 3D-print lab that runs on the Mac (the print-lab repo): what needs you (a print to
+judge, a test to approve) with the command to run on the Mac and a Copy button, the open question's time and material
+budget, and every experiment with what was asked and what actually printed, the outcome, and the photos. It is
+read-only: the Mac sends it (`lab sync`, after every `lab` command) and stays the record; verdicts and approvals are
+made on the Mac.
 
 ## Spreadsheets
 **Projects › Spreadsheets** shows the workbook open in GridCraft on the Windows computer and asks GridCraft to check or

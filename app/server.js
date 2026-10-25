@@ -125,6 +125,8 @@ const inFlight = busy.createInFlight();
 const runLedger = new RunLedger({ storage, onTransition: (run, previous) => { const e = notifyLib.runEvent(run, previous); if (e) notifier.notify(e); } });
 const activeRunControllers = new Map();
 const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody });
+// Projects › Print lab: a read-only copy of the Mac's print-lab records; only the Mac (its key) writes.
+const printLab = require('./print-lab').createPrintLab({ storage, dataDir: DATA_DIR, json, macAuthorized: req => claudeChat.macAuthorized(req) });
 // Sign-in (app/signin.js): who would be refused is listed on Health; the routes that run code, write files or approve
 // changes are refused without a device, and LOCALAI_SIGN_IN=required refuses the rest.
 // The Workshop display's key (X-LocalAI-Display-Key) signs it in for its feed only; host/workshop-display/set-key.sh sets it.
@@ -824,6 +826,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/powershell/host/next') return await apiPowerShellHostNext(req,res);
     if (req.method === 'POST' && p === '/api/powershell/host/result') return await apiPowerShellHostResult(req,res);
     if (p.startsWith('/api/claude/chat/') && await claudeChat.handle(req, res, urlObj, p)) return;
+    if (p.startsWith('/api/lab/') && await printLab.handle(req, res, p)) return;
     if (req.method === 'GET' && p === '/api/improve/items') return await apiImproveItems(req,res);
     if (req.method === 'POST' && p === '/api/improve/idea') return await apiImproveIdea(req,res);
     if (req.method === 'POST' && p === '/api/improve/item') return await apiImproveItem(req,res);

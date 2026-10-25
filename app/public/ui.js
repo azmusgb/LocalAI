@@ -2087,6 +2087,9 @@ document.addEventListener('localai:engineering-run',e=>applyEngineering(e.detail
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{mount();drawMinimap()},{once:true});else{mount();drawMinimap()}
 })();
 
+// ==== print-lab loader ====
+// Loads /print-lab.js the first time Projects › Print lab opens: it isn't part of the shell every page load downloads.
+(function(){const s=document.getElementById('printLab');if(!s)return;let p=0;const L=()=>{if(p||!s.classList.contains('active'))return;p=1;const e=document.createElement('script');e.src='/print-lab.js';e.onerror=()=>{p=0};document.head.append(e)};new MutationObserver(L).observe(s,{attributes:true,attributeFilter:['class']});L()})();
 // ==== agent-world-watch loader ====
 // Loads /agent-world-watch.js on first use (⋯ › Watch mode or ?watch=1); a tap in Agent World preloads it.
 (function(){let p;const L=()=>p||(p=new Promise((y,n)=>{const s=document.createElement('script');s.src='/agent-world-watch.js';s.onload=y;s.onerror=()=>{p=null;n()};document.head.append(s)})),W=o=>L().then(()=>window.LocalAIAgentWorldWatch.start(o)).catch(()=>{});
