@@ -80,7 +80,9 @@ const KB = 1024;
 // 2026-10-21: 284 → 285 KB (and spreadsheets.js its own 11 KB) for Spreadsheets workbook files: New workbook, Upload
 // an .xlsx from the phone, and Download a copy (spreadsheets.js +0.5 KB, index.html +0.08 KB; 284.2 KB measured).
 // 2026-10-23: 285 → 288 KB for the Universal Suite Navigation bar (<appliance-nav>, +2.3 KB gzipped).
-const TOTAL = 288 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
+// 2026-10-24: 288 → 290 KB (app.css 43 → 44 KB, ui.js 112 → 113 KB) for Projects › Print lab: its styles (+0.7 KB),
+// its section (+0.1 KB) and the loader that fetches print-lab.js (4.6 KB) only when the page opens (288.9 KB measured).
+const TOTAL = 290 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
 // 2026-10-17: 238 → 236 KB after navigation step 4 removed the desktop page list, the phone section sheet and the in-page
 // tab rows (234.9 KB measured).
@@ -101,7 +103,7 @@ const TOTAL = 288 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // status poll, +0.3 KB; 111.2 KB measured).
 // 2026-10-24: app.css 42 → 43 KB: the suite bar's styles moved there from appliance-nav.js (the hub loads one
 // stylesheet and injects none); the shell total is unchanged.
-const PER_FILE = { 'ui.js': 112 * KB, 'components.js': 11 * KB, 'app.css': 43 * KB, 'app.js': 36 * KB, 'index.html': 14 * KB, 'home.js': 11 * KB, 'spreadsheets.js': 11 * KB };
+const PER_FILE = { 'ui.js': 113 * KB, 'components.js': 11 * KB, 'app.css': 44 * KB, 'app.js': 36 * KB, 'index.html': 14 * KB, 'home.js': 11 * KB, 'spreadsheets.js': 11 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;

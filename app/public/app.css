@@ -2436,3 +2436,213 @@ appliance-nav[current="hub"] {
     display: none;
   }
 }
+
+/* ==== print lab (Projects › Print lab, print-lab.js): the Mac's lab page, read-only ==== */
+.lab-body h2 {
+  font-size: var(--ds-fs-3);
+  margin: 0 0 8px;
+}
+.lab-layout {
+  display: grid;
+  gap: 16px;
+}
+@media (min-width: 960px) {
+  .lab-layout {
+    grid-template-columns: minmax(320px, 380px) 1fr;
+    align-items: start;
+  }
+}
+.lab-synced {
+  margin: 0 0 12px;
+}
+.lab-synced--stale {
+  color: var(--ds-attention-text);
+}
+.lab-problems ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+.lab-needs-card {
+  border-left: 4px solid var(--ds-attention);
+}
+.lab-needs-card .lab-needs {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  list-style: none;
+}
+.lab-needs .list-row {
+  padding: 10px 0;
+  cursor: default;
+}
+.lab-needs .list-row__title,
+.lab-needs .list-row__sub {
+  white-space: normal;
+}
+.lab-needs .list-row__title a {
+  color: var(--ds-text);
+  font-weight: 600;
+}
+.lab-cmd {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+.lab-cmd code {
+  flex: 1;
+  font: var(--ds-fs-1)/1.4 var(--ds-mono);
+  background: var(--ds-surface-2);
+  border-radius: var(--ds-r-sm);
+  padding: 6px 8px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.lab-question h2 {
+  font-size: var(--ds-fs-4);
+  line-height: 1.25;
+  margin: 4px 0 12px;
+}
+.lab-meter {
+  margin: 8px 0;
+}
+.lab-meter__head {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--ds-fs-1);
+  color: var(--ds-soft);
+}
+.lab-meter__track {
+  display: flex;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--ds-surface-2);
+  overflow: hidden;
+  margin-top: 4px;
+}
+.lab-meter__spent {
+  background: var(--ds-accent);
+}
+.lab-meter__next {
+  background: repeating-linear-gradient(135deg, var(--ds-accent) 0 3px, transparent 3px 6px);
+}
+.lab-meter--over .lab-meter__next {
+  background: repeating-linear-gradient(135deg, var(--ds-bad) 0 3px, transparent 3px 6px);
+}
+.lab-stop {
+  margin: 8px 0 0;
+  font-size: var(--ds-fs-1);
+  color: var(--ds-good-text);
+}
+.lab-stop--bad {
+  color: var(--ds-bad-text);
+}
+.lab-stop--attention {
+  color: var(--ds-attention-text);
+}
+.lab-now {
+  border-top: 1px solid var(--ds-line);
+  margin-top: 12px;
+  padding-top: 10px;
+}
+.lab-now a {
+  text-decoration: underline;
+}
+.lab-now__q {
+  margin: 4px 0;
+  font-weight: 600;
+}
+.lab-exp {
+  margin-bottom: 12px;
+}
+.lab-exp__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.lab-exp__id {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.lab-exp h3 {
+  font-size: var(--ds-fs-3);
+  margin: 6px 0 2px;
+}
+.lab-variants {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0;
+  margin: 8px 0;
+}
+.lab-variants li {
+  background: var(--ds-surface-2);
+  border-radius: var(--ds-r-sm);
+  padding: 2px 8px;
+  font-size: var(--ds-fs-1);
+  font-variant-numeric: tabular-nums;
+}
+.lab-verdict {
+  margin: 8px 0 0;
+}
+.lab-shots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+.lab-shots img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--ds-r-sm);
+  border: 1px solid var(--ds-line);
+}
+.lab-shots .lab-shots__first {
+  grid-column: 1 / -1;
+}
+.lab-shots .lab-shots__first img {
+  aspect-ratio: 4 / 3;
+}
+.lab-details {
+  margin-top: 10px;
+}
+.lab-details summary,
+.lab-earlier > summary {
+  cursor: pointer;
+  color: var(--ds-accent-text);
+}
+.lab-details dt {
+  font-weight: 600;
+  font-size: var(--ds-fs-1);
+  margin-top: 6px;
+}
+.lab-details dd {
+  margin: 0;
+  color: var(--ds-muted);
+}
+.lab-details h4 {
+  font-size: var(--ds-fs-1);
+  margin: 10px 0 4px;
+}
+.lab-guards {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--ds-fs-1);
+}
+.lab-guard--bad {
+  color: var(--ds-bad-text);
+}
+.lab-guard--attention {
+  color: var(--ds-attention-text);
+}
+.lab-earlier > summary {
+  font-size: var(--ds-fs-3);
+  font-weight: 600;
+  margin: 16px 0 8px;
+}
