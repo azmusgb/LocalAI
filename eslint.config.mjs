@@ -33,7 +33,8 @@ const correctness = {
 };
 
 export default [
-  { ignores: ['node_modules/**', 'tests/vendor/**', 'tests/visual/**', 'data/**', 'workspace/**', 'reports/**', 'releases/**'] },
+  // app/public/ui is the appliance-ui kit's synced copy: generated, and checked by its own verify.mjs.
+  { ignores: ['node_modules/**', 'app/public/ui/**', 'tests/vendor/**', 'tests/visual/**', 'data/**', 'workspace/**', 'reports/**', 'releases/**'] },
   js.configs.recommended,
   { linterOptions: { reportUnusedDisableDirectives: 'error' } },
   {
