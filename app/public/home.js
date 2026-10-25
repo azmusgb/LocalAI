@@ -285,8 +285,9 @@ async function send(text,m=cur(),{anyway=false}={}){
    if(!await waitAuto(1500)){setMode(LABEL[intent]?intent:'ask');openSheet();return}
   }
   if(!anyway&&(intent==='mission'&&root.LocalAISelfChange?.isSelfChange(text)||intent==='ask'&&route?.intent==='engineering')&&offerClaude(text,intent))return;
-  const ctx=context;if(ctx)dropContext(); // the context goes once, with this question
-  try{await dispatch(intent,root.LocalAIAskContext?root.LocalAIAskContext.withContext(text,ctx):text,route,text)}
+  // Pi Hub's context goes once, with a chat only (see ask-context.js); for anything else it stays on screen, unsent.
+  const C=root.LocalAIAskContext,ctx=C&&C.usesContext(intent)?context:'';if(ctx)dropContext();
+  try{await dispatch(intent,ctx?C.withContext(text,ctx,intent):text,route,text)}
   catch(e){if(ctx&&!context){context=ctx;paintContext()}throw e} // nothing started: keep it for the retry
  }catch(e){
   if(input&&!input.value){input.value=text;grow()} // the text stays so nothing is lost
