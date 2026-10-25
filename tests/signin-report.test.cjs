@@ -145,3 +145,30 @@ test('LOCALAI_SIGN_IN=required refuses every API route that is not open; report 
   const s = createSignIn({ storage, signedIn: () => true, required: true });
   assert.equal(s.blocks(s.check(req('/api/workbench/tree'), '/api/workbench/tree'), '/api/workbench/tree', 'GET'), false);
 });
+
+test('only loopback and the network gateway count as the host; other containers must sign in', () => {
+  const { createSignIn, defaultGateway } = require('../app/signin');
+  const storage = { readSetting: () => null, writeSetting: () => {} };
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const routeFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'route-')), 'route');
+  fs.writeFileSync(routeFile, 'Iface\tDestination\tGateway \tFlags\neth0\t00000000\t010014AC\t0003\neth0\t000014AC\t00000000\t0001\n');
+  assert.equal(defaultGateway(routeFile), '172.20.0.1');
+  const s = createSignIn({ storage, signedIn: () => false, hosts: new Set(['127.0.0.1', '::1', '172.20.0.1']) });
+  const from = (addr, xff) => ({ headers: xff ? { 'x-forwarded-for': xff } : {}, socket: { remoteAddress: addr }, method: 'POST' });
+  const route = '/api/workbench/command';
+  assert.equal(s.check(from('172.20.0.1'), route), 'host', 'the Windows host through the published port');
+  assert.equal(s.check(from('::ffff:127.0.0.1'), route), 'host', 'loopback');
+  assert.equal(s.check(from('172.20.0.6'), route), 'refused', 'n8n on the same network');
+  assert.equal(s.blocks(s.check(from('172.20.0.6'), route), route, 'POST'), true);
+  assert.equal(s.check(from('172.20.0.1', '10.0.0.37'), route), 'refused', 'through Caddy is never the host');
+});
+
+test('sibling routes are guarded too: the display sign-in code, run control, deletes, memory and models', () => {
+  const { guarded } = require('../app/signin');
+  for (const p of ['/api/workshop/portal-code']) assert.equal(guarded(p, 'GET'), true, p);
+  for (const p of ['/api/runs/retry', '/api/runs/cancel', '/api/runs/update', '/api/knowledge/delete', '/api/conversations/delete',
+    '/api/memory/add', '/api/memory/update', '/api/memory/delete', '/api/models/pull', '/api/models/delete']) {
+    assert.equal(guarded(p, 'POST'), true, p);
+    assert.equal(guarded(p, 'GET'), false, `${p} reads stay report-only`);
+  }
+});

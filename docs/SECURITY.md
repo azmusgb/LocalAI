@@ -146,8 +146,10 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
 
 ## Sign-in (report only, dangerous routes refused)
 
-Every API request that arrives through Caddy (it carries `X-Forwarded-For`) is checked for a paired device's cookie or
-the Mac key (`app/signin.js`; design: `docs/superpowers/specs/2026-10-18-sign-in-design.md`). A request without either
+Every API request is checked for a paired device's cookie or the Mac key, except the host's own: no `X-Forwarded-For`,
+from loopback or the Docker network's gateway (the Windows host's requests arrive through the published port from the
+gateway; `LOCALAI_HOST_ADDRESSES` overrides it). Other containers on the network (n8n, SearXNG, the Ollama proxy) are
+checked like any caller, so a workflow can't use the guarded routes unsigned (`app/signin.js`; design: `docs/superpowers/specs/2026-10-18-sign-in-design.md`). A request without either
 is counted by caller (IP address, device type, last route), and **Health › Sign-in** lists them.
 
 Most routes are still only reported. The routes that run code, write or list the workspace, fetch arbitrary URLs from
@@ -156,8 +158,8 @@ the container, stage or approve changes, decide approvals, or post and clear ale
 `/api/browser/fetch`, `/api/actions/http-check`, `/api/repo/inspect`, `/api/changes*`, `/api/approvals/create|decide`,
 `/api/display/approvals/decide` (the display's key still signs it in), `/api/display/notify`, `/api/engineering/*`,
 `/api/issues/prepare-change`, `/api/improve/handoff`, `/api/powershell/*`, `/api/notifications/system|seed|update` and
-`/api/signin/report/clear` (`GUARDED` in `app/signin.js`); and, for any method but GET, starting agent runs
-(`/api/agents/dispatch|run|missions/start|specialist/run`), GridCraft workbook writes, `/api/knowledge/import`,
+`/api/signin/report/clear`, and `/api/workshop/portal-code` (it hands out the display's sign-in code) (`GUARDED` in `app/signin.js`); and, for any method but GET, starting agent runs
+(`/api/agents/dispatch|run|missions/start|specialist/run`), retrying, cancelling or updating runs, GridCraft workbook writes, `/api/knowledge/import|delete`, `/api/conversations/delete`, memory changes, model pulls and deletes,
 `/api/library/delete`, `/api/items/delete` and `/api/display/alerts` (`GUARDED_WRITES`). Pair a browser under
 Build › Claude Code to use them.
 `LOCALAI_SIGN_IN=required` in `stack.env` refuses every API route that isn't open.

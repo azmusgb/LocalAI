@@ -4,7 +4,7 @@
 // request without a device is counted by caller, so Health can list who would be locked out, and only the GUARDED routes
 // below are refused. LOCALAI_SIGN_IN=required in stack.env refuses every API route that isn't open.
 // Signed in: a paired device's cookie (claude-chat.js, A1) or the Mac key (A5). Always allowed: requests that did not
-// come through Caddy (no X-Forwarded-For: the host itself or the Docker network, A4) and the routes a device needs
+// come through Caddy from the host itself (no X-Forwarded-For, from loopback or the network's gateway, A4) and the routes a device needs
 // before it is paired (A2). Pages and static files are not checked: the pairing screen has to load.
 // routeKeys: { path: req => bool } signs in a caller for that one path only (the Workshop display's feed key).
 
@@ -17,12 +17,17 @@ const GUARDED = [
   /^\/api\/changes(\/|$)/, /^\/api\/approvals\/(create|decide)$/, /^\/api\/display\/approvals\/decide$/,
   /^\/api\/engineering\//, /^\/api\/issues\/prepare-change$/, /^\/api\/improve\/handoff$/, /^\/api\/powershell\//,
   /^\/api\/notifications\/(system|seed|update)$/, /^\/api\/signin\/report\/clear$/, /^\/api\/display\/notify$/,
+  // It hands out the Workshop display's sign-in code.
+  /^\/api\/workshop\/portal-code$/,
 ];
 // Refused without a device when they change something (any method but GET/HEAD): starting agent runs, writing
 // workbooks through the GridCraft bridge, importing or deleting library data, and the display's alert settings.
 const GUARDED_WRITES = [
   /^\/api\/agents\/(dispatch|run|missions\/start|specialist\/run)$/, /^\/api\/gridcraft\/(new|cell|upload|run|open|decide)$/,
   /^\/api\/knowledge\/import$/, /^\/api\/library\/delete$/, /^\/api\/items\/delete$/, /^\/api\/display\/alerts$/,
+  // Siblings of the above: retrying or cancelling runs, deleting knowledge, chats and memory, pulling or deleting models.
+  /^\/api\/runs\/(retry|cancel|update)$/, /^\/api\/knowledge\/delete$/, /^\/api\/conversations\/delete$/,
+  /^\/api\/memory\/(add|update|delete)$/, /^\/api\/models\/(pull|delete)$/,
 ];
 const guarded = (p, method = 'POST') => GUARDED.some(re => re.test(p))
   || (method !== 'GET' && method !== 'HEAD' && GUARDED_WRITES.some(re => re.test(p)));
@@ -30,7 +35,28 @@ const KEEP = 50; // callers listed
 const SAVE_MS = 30000;
 const REPORT_KEY = 'signin/report';
 
-function callerIp(req) { return String(req.headers['x-forwarded-for'] || '').split(',')[0].trim(); }
+function callerIp(req) { return String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim(); }
+
+// The host itself (A4): requests that reach the appliance without Caddy (no X-Forwarded-For) from loopback or the
+// container network's gateway, which is the address the Windows host's own requests arrive from through the published
+// port. Not any address without Caddy: n8n, SearXNG and the Ollama proxy share the Docker network and must sign in like
+// everyone else. LOCALAI_HOST_ADDRESSES (comma-separated) overrides the gateway found in /proc/net/route.
+const plain = (a) => String(a || '').replace(/^::ffff:/, '');
+function defaultGateway(routeFile = '/proc/net/route') {
+  try {
+    for (const line of require('node:fs').readFileSync(routeFile, 'utf8').split('\n').slice(1)) {
+      const [, dest, gw] = line.trim().split(/\s+/);
+      if (dest === '00000000' && gw && gw !== '00000000') return gw.match(/../g).reverse().map((h) => parseInt(h, 16)).join('.');
+    }
+  } catch { /* not Linux, or no route table: loopback only */ }
+  return null;
+}
+function hostAddresses(env = process.env, routeFile) {
+  const set = new Set(['127.0.0.1', '::1']);
+  const listed = String(env.LOCALAI_HOST_ADDRESSES || '').split(',').map((a) => a.trim()).filter(Boolean);
+  for (const a of listed.length ? listed : [defaultGateway(routeFile)]) if (a) set.add(plain(a));
+  return set;
+}
 function kindOf(ua) {
   ua = String(ua || '');
   if (/watchOS|Watch\d/.test(ua)) return 'Apple Watch';
@@ -44,7 +70,7 @@ function kindOf(ua) {
   return ua ? 'Other' : 'No browser';
 }
 
-function createSignIn({ storage, signedIn, routeKeys = {}, required = process.env.LOCALAI_SIGN_IN === 'required', now = () => Date.now() }) {
+function createSignIn({ storage, signedIn, routeKeys = {}, required = process.env.LOCALAI_SIGN_IN === 'required', hosts = hostAddresses(), now = () => Date.now() }) {
   const saved = storage.readSetting(REPORT_KEY, null);
   const report = { since: saved?.since || now(), callers: new Map((Array.isArray(saved?.callers) ? saved.callers : []).map(c => [`${c.ip}|${c.kind}`, c])) };
   let dirty = false, lastSave = 0;
@@ -60,7 +86,7 @@ function createSignIn({ storage, signedIn, routeKeys = {}, required = process.en
   // says whether to turn it away.
   function check(req, p) {
     if (!p.startsWith('/api/') && p !== '/healthz') return 'open';
-    if (!req.headers['x-forwarded-for']) return 'host';
+    if (!req.headers['x-forwarded-for'] && hosts.has(plain(req.socket?.remoteAddress))) return 'host';
     if (OPEN.has(p)) return 'open';
     if (signedIn(req) || routeKeys[p]?.(req)) return 'signed-in';
     const ip = callerIp(req) || 'unknown', kind = kindOf(req.headers['user-agent']), key = `${ip}|${kind}`, t = now();
@@ -80,4 +106,4 @@ function createSignIn({ storage, signedIn, routeKeys = {}, required = process.en
   return { check, blocks, apiReport, clear, flush: () => save(true) };
 }
 
-module.exports = { createSignIn, kindOf, guarded, OPEN };
+module.exports = { createSignIn, kindOf, guarded, hostAddresses, defaultGateway, OPEN };
