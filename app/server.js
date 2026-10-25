@@ -102,6 +102,8 @@ const watchdog = require('./watchdog').createWatchdog({
 const piHub = require('./pi-hub').createPiHub();
 // LocalAI Materials client (app/materials.js): active spool & inventory metrics for display feed.
 const materialsClient = require('./materials').createMaterialsClient();
+// The display's Clear plate goes through Local AI to Bambuddy (app/bambuddy-control.js).
+const bambuddyControl = require('./bambuddy-control').createBambuddyControl();
 // Pairing the Workshop display from its touchscreen (app/display-pairing.js).
 const displayPairing = require('./display-pairing').createDisplayPairing({
   dataDir: DATA_DIR, tlsName: process.env.LOCALAI_NAME || 'localai.home.arpa',
@@ -133,6 +135,7 @@ const signIn = require('./signin').createSignIn({ storage, signedIn: req => !!cl
   '/api/display/approvals': req => displayKey.authorized(req),
   '/api/display/approvals/decide': req => displayKey.authorized(req),
   '/api/display/heartbeat': req => displayKey.authorized(req),
+  '/api/display/printer/clear': req => displayKey.authorized(req),
   '/api/display/poster': req => displayKey.authorized(req),
   // The feed's latest-image card links here; the display fetches the JPEG with its key.
   '/api/images/view': req => displayKey.authorized(req)
@@ -843,6 +846,14 @@ const server = http.createServer(async (req, res) => {
     if ((req.method === 'POST' && (p === '/api/display/pair' || p === '/api/display/pair/start')) || (req.method === 'GET' && p === '/api/display/pair/status')) return await apiDisplayPair(req,res,p);
     if (req.method === 'GET' && p === '/api/display/approvals') return await apiDisplayApprovals(req,res);
     if (req.method === 'POST' && p === '/api/display/approvals/decide') return await apiDisplayApprovalDecide(req,res);
+    // A printer action: only the display's key or a signed-in device, whatever the sign-in mode.
+    if (req.method === 'POST' && p === '/api/display/printer/clear') {
+      req.resume();
+      if (!displayKey.authorized(req) && !claudeChat.deviceFor(req) && !claudeChat.macAuthorized(req)) return json(res, 401, { error: 'Only the Workshop display or a signed-in device can clear the plate.' });
+      const r = await bambuddyControl.clearPlate();
+      recordActivity('printer', r.ok ? 'Plate cleared from the Workshop display' : 'Clear plate from the Workshop display did not go through', `Bambuddy: plate ${r.plate}, errors ${r.errors}`, { by: 'Workshop display' });
+      return json(res, r.ok ? 200 : 502, r);
+    }
     if (req.method === 'POST' && p === '/api/display/heartbeat') return await apiDisplayHeartbeat(req,res);
     if ((req.method === 'GET' || req.method === 'POST') && p === '/api/display/alerts') return await apiDisplayAlerts(req,res);
     if (req.method === 'POST' && p === '/api/claude/findings') return await apiClaudeFindings(req,res);
