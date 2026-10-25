@@ -2556,6 +2556,7 @@ appliance-nav[current="hub"] {
 }
 .lab-exp {
   margin-bottom: 12px;
+  scroll-margin-top: 72px;
 }
 .lab-exp__head {
   display: flex;
@@ -2608,6 +2609,7 @@ appliance-nav[current="hub"] {
 }
 .lab-shots .lab-shots__first img {
   aspect-ratio: 4 / 3;
+  max-height: 420px;
 }
 .lab-details {
   margin-top: 10px;
