@@ -122,7 +122,13 @@ if (process.env.LOCALAI_NOTIFY_LOG) {
 }
 // Work with no record while it runs (a GridCraft request, an automation): GET /api/busy lists it.
 const inFlight = busy.createInFlight();
-const runLedger = new RunLedger({ storage, onTransition: (run, previous) => { const e = notifyLib.runEvent(run, previous); if (e) notifier.notify(e); } });
+// The journal (app/journal.js): one searchable record of what happens; finished runs are recorded as they end.
+const journal = require('./journal').createJournal({ db: storage.db, now: clockNow, timeZone: process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
+const journalRecorders = require('./journal-recorders');
+const runLedger = new RunLedger({ storage, onTransition: (run, previous) => {
+  const e = notifyLib.runEvent(run, previous); if (e) notifier.notify(e);
+  const entry = journalRecorders.runEntry(run); if (entry) journal.record(entry);
+} });
 const activeRunControllers = new Map();
 const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody });
 // Projects › Print lab: a read-only copy of the Mac's print-lab records; only the Mac (its key) writes.
@@ -654,6 +660,7 @@ const { bridgeHealth, gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGrid
 // changes.js takes addNotification from here and this takes these two back from it: called, never at load, so
 // they are looked up when called (the server split, step 6).
 const { addNotification, apiApprovalCreate, apiApprovalDecide, apiApprovals, apiNotificationSeed, apiNotificationSystem, apiNotificationUpdate, apiNotifications, approvalStore, notificationStore, resolveDeployFailures } = require('./server/notifications').createNotifications({ APPROVALS_STORE, NOTIFICATIONS_STORE, changeStore: (...a) => changeStore(...a), decideChange: (...a) => decideChange(...a), hostDetail, isInfoNotice, json, makeId, normalizeTitle, notifier, notifyLib, nowIso, objectStore, prependRecord, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
+const { apiJournal, apiJournalDelete } = require('./server/journal').createJournalRoutes({ journal, json, readBody, storageError });
 const { accessAddresses, apiAccess, apiPush, apiReleases, recordReleaseHistory } = require('./server/push').createPush({ APP_VERSION, json, notifier, nowIso, pushLib, readBody, release, resolveDeployFailures, storage, storageError });
 const { apiBrowserFetch, apiComputerBatch, apiHttpCheck, apiRepoInspect, apiWorkbenchCommand, apiWorkbenchDiff, apiWorkbenchRead, apiWorkbenchSearch, apiWorkbenchTree, apiWorkbenchWrite, childEnv, safeWorkspacePath, simpleDiff, workspaceRel } = require('./server/workbench').createWorkbench({ URL, WORKSPACE_ROOT, fetchWithTimeout, fs, json, path, readBody, recordActivity, requireFeature, spawn, storageError });
 const { apiConversationDelete, apiConversationSave, apiConversations, apiKnowledge, apiKnowledgeDelete, apiKnowledgeImport, apiKnowledgeSearch, apiMemory, apiMemoryAdd, apiMemoryDelete, apiMemoryUpdate, apiProjectIntelligence, apiProjects, apiProjectsCreate, apiProjectsUpdate, knowledgeScore, knowledgeStore, projectStore } = require('./server/projects').createProjects({ CONVERSATIONS_STORE, KNOWLEDGE_STORE, MEMORY_STORE, PROJECTS_STORE, json, makeId, normalizeTitle, nowIso, objectStore, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
@@ -688,6 +695,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 }, addresses: accessAddresses() });
     if (req.method === 'GET' && p === '/api/busy') return apiBusy(req, res);
     if (req.method === 'GET' && p === '/api/world') return await world.api(req, res);
+    if (req.method === 'GET' && p === '/api/journal') return await apiJournal(req, res, urlObj);
+    if (req.method === 'POST' && p === '/api/journal/delete') return await apiJournalDelete(req, res);
     if (req.method === 'GET' && p === '/api/releases') return await apiReleases(req, res);
     if (req.method === 'GET' && p === '/api/access') return await apiAccess(req, res);
     if (req.method === 'GET' && p === '/api/glance') return await apiGlance(req, res, urlObj);
@@ -986,6 +995,10 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`${new Date().toISOString()} Local AI Appliance v${APP_VERSION} listening on 0.0.0.0:${server.address().port}`);
   recordActivity('system', 'Appliance started', `Local AI Appliance v${APP_VERSION} is ready.`);
   workshopPrinter.start();
+  // Past work into the journal, once; resumable, so a restart mid-way continues (app/journal-import.js).
+  setTimeout(() => require('./journal-import').importAll({ storage, journal, runLedger })
+    .then(r => { if (r.added) console.log(`${nowIso()} Journal import added ${r.added} entries`); })
+    .catch(e => console.error(`${nowIso()} Journal import failed:`, e)), 5000).unref?.();
 });
 const localUiServer = LOCAL_UI_PORT && LOCAL_UI_PORT !== PORT ? http.createServer((req, res) => server.emit('request', req, res)) : null;
 localUiServer?.listen(LOCAL_UI_PORT, '0.0.0.0', () => console.log(`${new Date().toISOString()} Host-only tools listening on 0.0.0.0:${LOCAL_UI_PORT}`));
