@@ -212,14 +212,14 @@
   // Home starts a chat here: a new thread, streamed into the run view. pending.resolve(runId) fires on the stream's meta
   // event, as soon as the run exists. A failure before that fails the pending view and throws so Home keeps the text.
   window.LocalAIChat = {
-    async start(text, { research = false, pending, model } = {}) {
+    async start(text, { research = false, pending, model, title } = {}) {
       const threadId = core().newThreadId(), c = controllerFor(threadId);
       const live = c.live = { prompt: text, text: '', runId: '', streaming: true, err: '', controller: new AbortController() };
       let resolved = false;
       const resolve = id => { if (id && !resolved) { resolved = true; live.runId = id; pending?.resolve(id); } };
       try {
         const r = await core().streamChat({
-          messages: [{ role: 'user', content: text }], webSearch: !!research, model: model || undefined, threadId, signal: live.controller.signal,
+          messages: [{ role: 'user', content: text }], webSearch: !!research, model: model || undefined, threadId, title: title || undefined, signal: live.controller.signal,
           onMeta: d => resolve(d.runId), onToken: t => { live.text += t; schedule(c); }
         });
         resolve(r.runId);

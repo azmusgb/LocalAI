@@ -167,6 +167,16 @@ test('update rejects unknown project, bad ids and legacy runs', { timeout: 30000
   assert.equal(legacy.value.error, 'This run is managed by its own page and cannot be filed yet');
 });
 
+test('a chat started with a title lists under that title, and its prompt is never the card title', { timeout: 30000 }, async t => {
+  const { request } = await startServer(t);
+  const long = "You are the voice of a family's home hub on a Raspberry Pi. Answer the question in one to three short sentences.";
+  const a = await request('/api/chat', { messages: [{ role: 'user', content: long }], title: 'House question' });
+  const b = await request('/api/chat', { messages: [{ role: 'user', content: long }] });
+  const one = id => request(`/api/runs?id=${encodeURIComponent(id)}`).then(r => r.value.item);
+  assert.equal((await one(a.value.runId)).card.title, 'House question');
+  assert.equal((await one(b.value.runId)).card.title, 'Chat');
+});
+
 test('chat turns share a thread', { timeout: 30000 }, async t => {
   const { request } = await startServer(t);
   const msg = [{ role: 'user', content: 'hi' }];
@@ -666,9 +676,10 @@ test('an older specialist run lists in Missions with its whole title', { timeout
   const row = rows.find(x => x.id === 'run-1792022214381-8545b46');
   assert.ok(row, JSON.stringify(rows.map(x => x.id)));
   assert.equal(row.title, GOAL);
-  assert.equal(row.card.title, GOAL);
+  // The card shows a readable title (Pi Hub one home, step 4): a goal this long reads "Mission"; run.title keeps it whole.
+  assert.equal(row.card.title, 'Mission');
   assert.equal(row.card.kind, 'agent');
-  assert.equal((await request('/api/runs?id=run-1792022214381-8545b46')).value.item.card.title, GOAL);
+  assert.equal((await request('/api/runs?id=run-1792022214381-8545b46')).value.item.card.title, 'Mission');
   const a = await request('/api/agents/missions/start', { goal: GOAL, agentIds: ['code_analyst'], async: true });
   assert.equal(a.response.status, 202, JSON.stringify(a.value));
   const run = (await request('/api/runs?id=' + a.value.runId)).value.item;

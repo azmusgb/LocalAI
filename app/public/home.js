@@ -162,8 +162,7 @@ function recentRow(it,onOpen=openRun){
  if(it.status==='awaiting_approval')row.querySelector('.run-card__bar')?.remove(); // waiting on you is not progress
  return row;
 }
-// ---- Printer: one calm line while a print runs or stops with an error (Workshop display's read-only token) ----
-// The appliance polls the display; ?part=printer answers from its last read, so Home never sends the display anything.
+// ---- Printer words (Services › Workshop display uses them). Home itself shows no printer: Pi Hub does (one home, step 4). ----
 // Nothing shows when the printer is idle, cancelled (stopped on purpose) or unknown, or when no token is set (printer: null).
 const span=m=>m<60?`${m} min`:`${Math.floor(m/60)} h${m%60?` ${m%60} min`:''}`;
 function printerWords(p){
@@ -174,17 +173,6 @@ function printerWords(p){
  if(p.state==='error')return `Printer · Stopped with an error${p.errorCode?` (${p.errorCode})`:''}`;
  return '';
 }
-function paintPrinter(p){
- const sec=$('homePrinter'),box=$('homePrinterLine');if(!sec||!box)return;
- const words=printerWords(p);sec.hidden=!words;if(!words){box.replaceChildren();return}
- const kit=root.LocalAIKit,row=document.createElement('button');
- row.type='button';row.className='list-row home-attn';row.dataset.printerState=p.state;
- row.innerHTML=`<span class="list-row__icon">${kit?kit.icon(p.state==='error'?'alert':'clock'):''}</span><span class="list-row__main"><span class="list-row__title">${esc(words)}</span></span>`;
- row.setAttribute('aria-label',`${words}. Open Workshop display in Services`);
- row.addEventListener('click',()=>root.LocalAIRouter.open('integrations?card=workshop'));
- box.replaceChildren(row);
-}
-const loadPrinter=()=>root.LocalAIUI.fetchJson('/api/workshop/status?part=printer',{cache:'no-store'}).then(d=>paintPrinter(d?.printer),()=>{});
 // Recent leaves out what Needs you already shows (the same run, or another card for the same thread): one row per thing.
 let lastRecent=null;
 const threadKey=r=>r.threadId||r.id;
@@ -218,7 +206,7 @@ function refresh(){
  const first=!loaded;
  const recent=first?root.LocalAIUI.loadInto(box,()=>root.LocalAIUI.fetchJson(recentUrl,{cache:'no-store'}),{what:'your recent work',empty:'Nothing yet. Ask a question or make an image below.',render:paintRecent}).then(()=>{loaded=true},()=>{})
   :root.LocalAIUI.fetchJson(recentUrl,{cache:'no-store'}).then(d=>{if(!paintRecent(box,d))box.innerHTML='<div class="state-empty empty-state">Nothing yet. Ask a question or make an image below.</div>'}).catch(()=>{});
- return inflight=Promise.all([recent,loadNeeds(),loadPrinter()]).finally(()=>{inflight=null});
+ return inflight=Promise.all([recent,loadNeeds()]).finally(()=>{inflight=null});
 }
 function schedule(){clearTimeout(timer);timer=setTimeout(()=>{if(active()&&!document.hidden)refresh().then(schedule);else schedule()},30000)}
 
@@ -236,16 +224,16 @@ function gateCheck(intent){
 }
 const titleOf=t=>String(t).replace(/\s+/g,' ').trim().slice(0,80);
 // Start a run through the page that owns it. The run view opens first ("Starting…"), then the starter fills it in.
-async function viaStarter(name,intent,text,extra){
+async function viaStarter(name,intent,text,extra,question=text){
  const S=root[name];
  const L=root.LocalAILegacy;
  if(!S||typeof S.start!=='function'){L.open(intent,text);clearInput();return}
  // Try again in the run view sends the same text the same way.
- const pending=root.LocalAIRuns.openPending({kind:intent,title:titleOf(text),retry:()=>send(text,intent)});
+ const pending=root.LocalAIRuns.openPending({kind:intent,title:titleOf(question),retry:()=>send(question,intent)}); // the context is put back on a failure, so Try again adds it once
  clearInput();
- try{await S.start(text,{...extra,pending})}catch(e){pending.fail(e.message);throw e}
+ try{await S.start(text,{...extra,pending,...(question!==text?{title:titleOf(question)}:{})})}catch(e){pending.fail(e.message);throw e}
 }
-async function dispatch(intent,text,route){
+async function dispatch(intent,text,route,question=text){
  gateCheck(intent);
  const L=root.LocalAILegacy;
  if(intent==='engineering'&&root.LocalAIImprove?.openIdea){
@@ -258,9 +246,9 @@ async function dispatch(intent,text,route){
   const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);
   if(!data.run?.id)throw new Error('The change did not start. Try again.');
   openRun({id:'legacy-engineering:'+data.run.id});clearInput();
- }else if(intent==='ask'||intent==='research')await viaStarter('LocalAIChat',intent,text,{research:intent==='research',model:options.model});
- else if(intent==='create')await viaStarter('LocalAIImages','create',text,{engine:options.engine,aspect:options.aspect,style:options.style});
- else if(intent==='mission')await viaStarter('LocalAIMissions','mission',text,{agentIds:options.agentIds?.length?options.agentIds:undefined,webSearch:options.missionWeb===true});else if(intent==='automate'){L.open('automate',text);clearInput()}
+ }else if(intent==='ask'||intent==='research')await viaStarter('LocalAIChat',intent,text,{research:intent==='research',model:options.model},question);
+ else if(intent==='create')await viaStarter('LocalAIImages','create',text,{engine:options.engine,aspect:options.aspect,style:options.style},question);
+ else if(intent==='mission')await viaStarter('LocalAIMissions','mission',text,{agentIds:options.agentIds?.length?options.agentIds:undefined,webSearch:options.missionWeb===true},question);else if(intent==='automate'){L.open('automate',text);clearInput()}
  else throw new Error('Choose a mode and try again.');
 }
 let autoWait=null;
@@ -285,7 +273,10 @@ async function send(text,m=cur(),{anyway=false}={}){
    if(!await waitAuto(1500)){setMode(LABEL[intent]?intent:'ask');openSheet();return}
   }
   if(!anyway&&(intent==='mission'&&root.LocalAISelfChange?.isSelfChange(text)||intent==='ask'&&route?.intent==='engineering')&&offerClaude(text,intent))return;
-  await dispatch(intent,text,route);
+  // Pi Hub's context goes once, with a chat only (see ask-context.js); for anything else it stays on screen, unsent.
+  const C=root.LocalAIAskContext,ctx=C&&C.usesContext(intent)?context:'';if(ctx)dropContext();
+  try{await dispatch(intent,ctx?C.withContext(text,ctx,intent):text,route,text)}
+  catch(e){if(ctx&&!context){context=ctx;paintContext()}throw e} // nothing started: keep it for the retry
  }catch(e){
   if(input&&!input.value){input.value=text;grow()} // the text stays so nothing is lost
   setError(e.message||'Something went wrong. Try again.');
@@ -295,7 +286,17 @@ async function send(text,m=cur(),{anyway=false}={}){
 // ---- wiring ----
 function fromHash(){const R=root.LocalAIRouter;if(!R)return;const cur=R.current(),m=cur.query.get('mode')||R.intentFor(cur.page).mode;if(m&&LABEL[m])setMode(m)}
 function onHomeHash(){const p=root.LocalAIRouter?.current().page;return !p||p==='home'||root.LocalAIViews?.resolve(p)==='home'}
-function activate(){fromHash();greet();if(root.LocalAIUI)refresh().then(schedule)}
+// ---- Pi Hub's context (#ask?context=…): plain text over the composer, sent once after the next question ----
+let context='';
+function paintContext(){const box=$('homeContext'),t=$('homeContextText');if(!box||!t)return;box.hidden=!context;t.textContent=context?'Context: '+context:''}
+function dropContext(){
+ context='';paintContext();
+ const h=location.hash,i=h.indexOf('?');if(i<0)return;
+ const q=new URLSearchParams(h.slice(i+1));if(!q.has('context'))return;q.delete('context');
+ history.replaceState(history.state,'',location.pathname+location.search+h.slice(0,i)+(q.toString()?'?'+q:''));
+}
+function contextFromHash(){const C=root.LocalAIAskContext,R=root.LocalAIRouter;if(!C||!R)return;const c=C.clean(R.current().query.get('context'));if(c){context=c;paintContext()}}
+function activate(){fromHash();contextFromHash();greet();const b=$('homeBack');if(b&&root.LocalAIAskContext)b.href=root.LocalAIAskContext.homeUrl(location.hostname);if(root.LocalAIUI)refresh().then(schedule)}
 function dockToNav(){
  // On phones the composer sits exactly on the tab bar, whatever its height is. While the owner types, the tab bar
  // steps aside (body.home-typing, see app.css) and the composer sits on the keyboard: iOS keeps innerHeight and only
@@ -316,6 +317,7 @@ function init(){
  new MutationObserver(()=>{paintChip();if(stale&&!document.body.classList.contains('run-view-open'))paintNeeds()}).observe(document.body,{attributes:true,attributeFilter:['class']}); // developer tools toggled; a run view closed
  $('homeModeChip').addEventListener('click',()=>autoWait?autoWait.cancel():openSheet());
  $('commandGo').addEventListener('click',()=>send($('commandInput').value));
+ $('homeContextClear')?.addEventListener('click',()=>{dropContext();$('commandInput')?.focus()});
  $('commandInput').addEventListener('input',()=>{grow();dockToNav();root.LocalAISelfChange?.hide($('homeSelfChange'))});
  $('commandInput').addEventListener('focus',()=>typing(true));
  $('commandInput').addEventListener('blur',()=>typing(false));

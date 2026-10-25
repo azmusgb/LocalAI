@@ -26,6 +26,17 @@ function fileStats(change) {
     return { path: f.path, added, removed };
   });
 }
+// Recent and Work show a readable title, never a long prompt (Pi Hub one home, step 4): a label the caller gave
+// (meta.label, from /api/chat's `title`), else the run's own title when the server kept it whole (one line; titleFromText
+// keeps up to 72 characters and ends a cut one with "…"), else the kind's name. run.title itself is unchanged, so Needs you still groups repeats by it.
+const KIND_NAMES = Object.freeze({ chat: 'Chat', research: 'Research', image: 'Image', agent: 'Mission', spreadsheet: 'Spreadsheet', engineering: 'Change', automation: 'Automation', other: 'Run' });
+function readableTitle(run) {
+  const type = LEGACY_TYPES[run?.type] || run?.type, kind = Object.prototype.hasOwnProperty.call(KIND_NAMES, type) ? type : 'other';
+  const label = typeof run?.meta?.label === 'string' ? run.meta.label.trim().slice(0, 80) : '';
+  if (label) return label;
+  const title = typeof run?.title === 'string' ? run.title.trim() : '';
+  return title && title.length <= 72 && !title.endsWith('…') && !/[\r\n]/.test(title) ? title : KIND_NAMES[kind];
+}
 function runCard(run, { approvalFor, changeFor } = {}) {
   run = run || {};
   const type = LEGACY_TYPES[run.type] || run.type; // older mission and specialist runs are agent runs
@@ -46,6 +57,6 @@ function runCard(run, { approvalFor, changeFor } = {}) {
   const action = { label: run.status === 'awaiting_approval' ? 'Review' : run.status === 'failed' && run.retryable ? 'Retry' : 'Open' };
   let approval = null;
   if (approvalFor) { const a = approvalFor(run); if (a) approval = { id: a.id, title: a.title, detail: a.detail, risk: a.risk } }
-  return { kind, icon, title: run.title || run.id || '', summary, badge: badge(run.status), preview, action, approval, view };
+  return { kind, icon, title: readableTitle(run), summary, badge: badge(run.status), preview, action, approval, view };
 }
-module.exports = { runCard, STATUS, workKind, WORK_CHIPS };
+module.exports = { runCard, readableTitle, STATUS, workKind, WORK_CHIPS };

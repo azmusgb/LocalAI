@@ -3183,7 +3183,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
           : { state: 'NEUTRAL', label: 'Not answering' });
   }
 
-  // Home's printer line opens #integrations?card=workshop: bring that card into view.
+  // #integrations?card=workshop (a link to the Workshop display's card) brings that card into view.
   function showCard() {
     const id = window.LocalAIRouter?.current().query.get('card');
     const card = id && q(`#ux-int-v2-${CSS.escape(id)}`)?.closest('.ux-int-card');
