@@ -8,6 +8,7 @@ function createRuns(ctx) {
   function createChatExecution(body,streaming){
     const messages=sanitizeMessages(body?.messages);const prompt=[...messages].reverse().find(m=>m.role==='user')?.content||'Chat';
     const model=typeof body?.model==='string'&&body.model.trim()?body.model.trim():MODEL;
+    // eslint-disable-next-line no-control-regex -- control characters are what it removes
     const label=typeof body?.title==='string'?body.title.replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,80):''; // the caller's name for it in Recent ("House question")
     const retryBody={messages,model,webSearch:body?.webSearch===true,threadId:cleanRunId(body?.threadId)||undefined,brief:body?.brief===true||undefined,title:label||undefined};
     return runLedger.create({type:body?.webSearch===true?'research':'chat',title:label||titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true,...(label?{label}:{}),...(body?.voice===true||body?.voiceRun===true?{voice:true}:{})}});

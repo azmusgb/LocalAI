@@ -5,6 +5,7 @@
 const MAX=300;
 // Plain text only: control characters out, whitespace collapsed, at most 300 characters ("…" when cut).
 function clean(raw){
+ // eslint-disable-next-line no-control-regex -- control characters are what it removes
  const t=String(raw??'').replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ').trim();
  return t.length>MAX?t.slice(0,MAX-1)+'…':t;
 }
