@@ -236,16 +236,16 @@ function gateCheck(intent){
 }
 const titleOf=t=>String(t).replace(/\s+/g,' ').trim().slice(0,80);
 // Start a run through the page that owns it. The run view opens first ("Starting…"), then the starter fills it in.
-async function viaStarter(name,intent,text,extra){
+async function viaStarter(name,intent,text,extra,question=text){
  const S=root[name];
  const L=root.LocalAILegacy;
  if(!S||typeof S.start!=='function'){L.open(intent,text);clearInput();return}
  // Try again in the run view sends the same text the same way.
- const pending=root.LocalAIRuns.openPending({kind:intent,title:titleOf(text),retry:()=>send(text,intent)});
+ const pending=root.LocalAIRuns.openPending({kind:intent,title:titleOf(question),retry:()=>send(text,intent)});
  clearInput();
  try{await S.start(text,{...extra,pending})}catch(e){pending.fail(e.message);throw e}
 }
-async function dispatch(intent,text,route){
+async function dispatch(intent,text,route,question=text){
  gateCheck(intent);
  const L=root.LocalAILegacy;
  if(intent==='engineering'&&root.LocalAIImprove?.openIdea){
@@ -258,9 +258,9 @@ async function dispatch(intent,text,route){
   const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);
   if(!data.run?.id)throw new Error('The change did not start. Try again.');
   openRun({id:'legacy-engineering:'+data.run.id});clearInput();
- }else if(intent==='ask'||intent==='research')await viaStarter('LocalAIChat',intent,text,{research:intent==='research',model:options.model});
- else if(intent==='create')await viaStarter('LocalAIImages','create',text,{engine:options.engine,aspect:options.aspect,style:options.style});
- else if(intent==='mission')await viaStarter('LocalAIMissions','mission',text,{agentIds:options.agentIds?.length?options.agentIds:undefined,webSearch:options.missionWeb===true});else if(intent==='automate'){L.open('automate',text);clearInput()}
+ }else if(intent==='ask'||intent==='research')await viaStarter('LocalAIChat',intent,text,{research:intent==='research',model:options.model},question);
+ else if(intent==='create')await viaStarter('LocalAIImages','create',text,{engine:options.engine,aspect:options.aspect,style:options.style},question);
+ else if(intent==='mission')await viaStarter('LocalAIMissions','mission',text,{agentIds:options.agentIds?.length?options.agentIds:undefined,webSearch:options.missionWeb===true},question);else if(intent==='automate'){L.open('automate',text);clearInput()}
  else throw new Error('Choose a mode and try again.');
 }
 let autoWait=null;
@@ -285,7 +285,9 @@ async function send(text,m=cur(),{anyway=false}={}){
    if(!await waitAuto(1500)){setMode(LABEL[intent]?intent:'ask');openSheet();return}
   }
   if(!anyway&&(intent==='mission'&&root.LocalAISelfChange?.isSelfChange(text)||intent==='ask'&&route?.intent==='engineering')&&offerClaude(text,intent))return;
-  await dispatch(intent,text,route);
+  const ctx=context;if(ctx)dropContext(); // the context goes once, with this question
+  try{await dispatch(intent,root.LocalAIAskContext?root.LocalAIAskContext.withContext(text,ctx):text,route,text)}
+  catch(e){if(ctx&&!context){context=ctx;paintContext()}throw e} // nothing started: keep it for the retry
  }catch(e){
   if(input&&!input.value){input.value=text;grow()} // the text stays so nothing is lost
   setError(e.message||'Something went wrong. Try again.');
@@ -295,7 +297,17 @@ async function send(text,m=cur(),{anyway=false}={}){
 // ---- wiring ----
 function fromHash(){const R=root.LocalAIRouter;if(!R)return;const cur=R.current(),m=cur.query.get('mode')||R.intentFor(cur.page).mode;if(m&&LABEL[m])setMode(m)}
 function onHomeHash(){const p=root.LocalAIRouter?.current().page;return !p||p==='home'||root.LocalAIViews?.resolve(p)==='home'}
-function activate(){fromHash();greet();if(root.LocalAIUI)refresh().then(schedule)}
+// ---- Pi Hub's context (#ask?context=…): plain text over the composer, sent once after the next question ----
+let context='';
+function paintContext(){const box=$('homeContext'),t=$('homeContextText');if(!box||!t)return;box.hidden=!context;t.textContent=context?'Context: '+context:''}
+function dropContext(){
+ context='';paintContext();
+ const h=location.hash,i=h.indexOf('?');if(i<0)return;
+ const q=new URLSearchParams(h.slice(i+1));if(!q.has('context'))return;q.delete('context');
+ history.replaceState(history.state,'',location.pathname+location.search+h.slice(0,i)+(q.toString()?'?'+q:''));
+}
+function contextFromHash(){const C=root.LocalAIAskContext,R=root.LocalAIRouter;if(!C||!R)return;const c=C.clean(R.current().query.get('context'));if(c){context=c;paintContext()}}
+function activate(){fromHash();contextFromHash();greet();if(root.LocalAIUI)refresh().then(schedule)}
 function dockToNav(){
  // On phones the composer sits exactly on the tab bar, whatever its height is. While the owner types, the tab bar
  // steps aside (body.home-typing, see app.css) and the composer sits on the keyboard: iOS keeps innerHeight and only
@@ -316,6 +328,7 @@ function init(){
  new MutationObserver(()=>{paintChip();if(stale&&!document.body.classList.contains('run-view-open'))paintNeeds()}).observe(document.body,{attributes:true,attributeFilter:['class']}); // developer tools toggled; a run view closed
  $('homeModeChip').addEventListener('click',()=>autoWait?autoWait.cancel():openSheet());
  $('commandGo').addEventListener('click',()=>send($('commandInput').value));
+ $('homeContextClear')?.addEventListener('click',()=>{dropContext();$('commandInput')?.focus()});
  $('commandInput').addEventListener('input',()=>{grow();dockToNav();root.LocalAISelfChange?.hide($('homeSelfChange'))});
  $('commandInput').addEventListener('focus',()=>typing(true));
  $('commandInput').addEventListener('blur',()=>typing(false));

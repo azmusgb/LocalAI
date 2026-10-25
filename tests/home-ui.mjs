@@ -385,6 +385,43 @@ await check('#ask and #create land on Home with the chip showing Chat and Image'
   await a.context().close(); await c.context().close();
 });
 
+// Pi Hub's Assistant button: #ask?context=<page and facts>. The context shows as plain text over the composer and goes
+// once, after the next question; the question alone is the run's title.
+await check('Pi Hub context: shown as text over the composer, sent once after the question, then gone from the address', async () => {
+  const ctx = 'Pi Hub › Workshop: <img src=x onerror="window.__x=1"> Printing, 40%';
+  const page = await open(desk, '#ask?context=' + encodeURIComponent(ctx));
+  await page.waitForSelector('#home.active', T);
+  const line = page.locator('#homeContext');
+  await line.waitFor({ state: 'visible', ...T });
+  assert.equal((await page.locator('#homeContextText').textContent()), 'Context: ' + ctx);
+  assert.equal(await line.locator('img').count(), 0, 'never parsed as markup');
+  assert.equal(await page.evaluate(() => window.__x), undefined);
+  assert.equal((await page.locator('#homeModeChip').innerText()).trim(), 'Chat ▾');
+  await page.evaluate(() => { window.__starts = []; window.__titles = []; const o = window.LocalAIRuns.openPending; window.LocalAIRuns.openPending = s => { window.__titles.push(s.title); return o(s); }; window.LocalAIChat = { start: async (t, o) => { window.__starts.push(t); o.pending.resolve('run-1'); } }; });
+  await page.locator('#commandInput').fill('Why?');
+  await page.locator('#commandGo').click();
+  await page.waitForFunction(() => window.__starts.length === 1, null, T);
+  assert.deepEqual(await page.evaluate(() => window.__starts), ['Why?\n\nContext: ' + ctx]);
+  assert.deepEqual(await page.evaluate(() => window.__titles), ['Why?']);
+  assert.equal(await line.isVisible(), false);
+  assert.ok(!(await page.evaluate(() => location.href)).includes('context'));
+  await page.context().close();
+});
+
+await check('Pi Hub context: × removes it without sending; a long one is cut to 300 characters', async () => {
+  const page = await open(phone, '#ask?context=' + encodeURIComponent('y'.repeat(900)));
+  await page.locator('#homeContext').waitFor({ state: 'visible', ...T });
+  const text = await page.locator('#homeContextText').textContent();
+  assert.equal(text.length, 'Context: '.length + 300);
+  assert.ok(text.endsWith('…'));
+  await page.locator('#homeContextClear').click();
+  assert.equal(await page.locator('#homeContext').isVisible(), false);
+  assert.ok(!(await page.evaluate(() => location.href)).includes('context'));
+  await page.reload(); await page.waitForSelector('#home.active', T);
+  assert.equal(await page.locator('#homeContext').isVisible(), false, 'a reload does not bring it back');
+  await page.context().close();
+});
+
 // Change Local AI asks every time: Add to backlog (saved, nothing starts) or Start now (planned, follow it in In progress).
 async function ideaStub(page, reply) {
   page.ideas = [];
