@@ -176,3 +176,14 @@ test('GET /api/display/ask answers the six fixed questions, and refuses others',
   const watch = await (await fetch(`${base}/api/watch`)).json();
   assert.deepEqual([watch.display.version, watch.display.uptimeS, 'extra' in watch.display], ['12.6.0', 42, false]);
 });
+
+test('beside a problem the needs card says No approvals, not All clear', () => {
+  const clear = buildFeed({ needs: { count: 0 } }).cards[0];
+  assert.equal(clear.title, 'All clear');
+  const f = buildFeed({ needs: { count: 0 }, watch: [{ id: 'mac-disk', title: 'Mac disk is 92% full', severity: 'medium' }] });
+  assert.equal(f.cards[0].title, 'No approvals');
+  assert.equal(f.cards[0].text, 'Nothing is waiting for your answer.');
+  assert.equal(f.cards[0].tone, 'ok');
+  assert.equal(buildFeed({ needs: { count: 0 }, materials: { summary: { spools: 3, loaded: 0, low: 1, unknown: 0, queue: 0 }, status: 'Grey PLA · 100 g left' } }).cards[0].title, 'No approvals');
+  assert.equal(buildFeed({ needs: { count: 2, speech: 'Needs you: two approvals.' }, watch: [{ id: 'x', title: 'y' }] }).cards[0].title, 'Needs you');
+});

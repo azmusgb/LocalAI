@@ -2,7 +2,7 @@
 param(
     [switch]$CheckOnly,
     [switch]$SkipFetch,
-    [string]$TargetRef = 'origin/main',
+    [string]$TargetRef = 'origin/release',
     [string]$Repo = 'C:\LocalAI\repo',
     [string]$Live = 'C:\LocalAI\appliance\app',
     [string]$Releases = 'C:\LocalAI\releases',

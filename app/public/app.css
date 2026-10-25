@@ -1906,6 +1906,8 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .awc__rosterItem.running{border-color:rgba(255,178,36,.45);box-shadow:inset 3px 0 0 var(--ds-progress)}
 .awc__rosterItem:is(.error,.blocked){border-color:rgba(255,107,107,.45);box-shadow:inset 3px 0 0 var(--ds-bad)}
 .awc__rosterText{display:grid;gap:1px;min-width:0}
+/* City services rows (#awcLayerRows) have no avatar or badge: the text takes the whole row. */
+#awcLayerRows .awc__rosterItem{grid-template-columns:minmax(0,1fr);padding-left:12px}
 .awc__rosterText>*{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .awc__rosterText strong{font-size:14px;font-weight:650}
 .awc__rosterText small{font-size:12px;color:var(--ds-muted)}
@@ -2024,6 +2026,8 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 @media(min-width:761px) and (max-width:1023px){
   .aw-sheet__body{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
   .aw-sheet__body>:not(.aw-crew,.aw-story-box){grid-column:1/-1}
+  /* City services (a second .aw-crew, added by the layers) goes under both, so the story stays beside the crew. */
+  .aw-sheet__body>#awServices{grid-column:1/-1;order:1}
 }
 @media(max-width:760px){
   .aw-head{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
@@ -2196,6 +2200,8 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .aw-empty__actions{display:flex;flex-wrap:wrap;justify-content:center;gap:10px}
 .aw-empty__actions button{min-height:44px}
 @media(max-width:760px){.aw-empty{bottom:var(--aw-peek)}}
+/* Wider screens: the card sits bottom-left, so the idle city's Command Center stays in view. */
+@media(min-width:761px){.aw-empty{place-items:end start}}
 .agent-inline-notice[hidden]{display:none}
 
 /* Agent World: notes float over the city's top-left for 4 s; the ⋯ menu's View group. */
@@ -2244,8 +2250,10 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
   .aw-sheet__scrub .awc__scrub:not(.is-active) .awc__scrubHead{display:none}
   .aw-sheet__scrub #awcReplayLabel{max-width:none}
 }
-.awc__demoChip{position:absolute;left:50%;top:12px;z-index:4;transform:translateX(-50%);min-height:44px;padding:0 16px;border:1px solid rgba(255,178,36,.55);border-radius:999px;background:rgba(10,17,28,.92);color:var(--aw-amber);font:inherit;font-weight:600;cursor:pointer}
+.awc__demoChip{position:absolute;left:12px;top:12px;z-index:4;min-height:44px;padding:0 16px;border:1px solid rgba(255,178,36,.55);border-radius:999px;background:rgba(10,17,28,.92);color:var(--aw-amber);font:inherit;font-weight:600;cursor:pointer}
 .awc__demoChip[hidden]{display:none}
+/* The demo chip heads the top-left stack; the event toasts sit under it instead of beneath it. */
+.awc:has(.awc__demoChip:not([hidden])) .awc__toasts{top:64px}
 .aw-results__body{display:grid;gap:8px}
 .aw-results__body:focus{outline:none}
 .aw-results__body h3{margin:10px 0 0;font-size:var(--ds-fs-2)}
@@ -2274,3 +2282,157 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 #uxIntegrationCardsV2{display:block}.ux-int-group{margin-top:18px}.ux-int-group>h3{margin:0;font-size:var(--ds-fs-2)}.ux-int-group-note{margin:2px 0 10px;color:var(--ds-muted);font-size:var(--ds-fs-1)}#integrations[data-integration-v2="true"] .ux-int-group.compact .ux-int-card{min-height:0}.ux-int-group.compact .ux-int-grid{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}.ux-int-wide{grid-column:span 2}.ux-int-facts{margin-top:10px;color:var(--ds-good-text,#62dea0);font-size:var(--ds-fs-1)}.ux-ws-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;margin-top:10px}
 details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:12px 14px;border:1px solid var(--ux-line);border-radius:var(--ds-r-lg);cursor:pointer;list-style:none}details.ux-int-group>summary::after{content:"+";margin-left:auto;color:var(--ds-muted)}details.ux-int-group[open]>summary{margin-bottom:10px}details.ux-int-group[open]>summary::after{content:"\2212"}
 @media(max-width:760px){.ux-int-wide{grid-column:auto}}
+
+/* Suite bar (<appliance-nav>, app/public/appliance-nav.js): links to the other LocalAI apps, above the shell. */
+appliance-nav {
+  display: block;
+  font-family: Figtree, system-ui, -apple-system, sans-serif;
+  background: #0a111c;
+  border-bottom: 1px solid #1b2740;
+  color: #eaf0f8;
+  font-size: var(--ds-fs-1);
+  user-select: none;
+  z-index: 1000;
+  position: sticky;
+  top: 0;
+}
+
+appliance-nav .an-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+  gap: 12px;
+}
+
+appliance-nav .an-brand-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+appliance-nav .an-brand-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--ds-r-sm);
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, #a9c4ff, #7f89ff);
+  box-shadow: 0 4px 12px rgba(111, 132, 255, 0.28);
+}
+
+appliance-nav .an-brand-title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #eaf0f8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+appliance-nav .an-brand-pill {
+  font-size: var(--ds-fs-badge);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #172238;
+  color: #6cb6ff;
+  border: 1px solid #1f2c42;
+}
+
+appliance-nav .an-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+appliance-nav .an-links::-webkit-scrollbar {
+  display: none;
+}
+
+appliance-nav .an-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: var(--ds-r-sm);
+  color: #93a4bc;
+  text-decoration: none;
+  font-weight: 550;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+appliance-nav .an-nav-item:hover {
+  color: #eaf0f8;
+  background: #121b2b;
+  border-color: #1b2740;
+}
+
+appliance-nav .an-nav-item:focus-visible {
+  outline: 2px solid #6cb6ff;
+  outline-offset: 2px;
+}
+
+appliance-nav .an-nav-item.an-active {
+  color: #6cb6ff;
+  background: #172238;
+  border-color: #2d4a6d;
+  font-weight: 600;
+}
+
+appliance-nav .an-nav-item svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+appliance-nav .an-status-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: var(--ds-fs-badge);
+  color: #8698b1;
+}
+
+appliance-nav .an-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #8698b1;
+  display: inline-block;
+}
+
+appliance-nav .an-dot.an-online {
+  background: #3ed598;
+  box-shadow: 0 0 0 3px rgba(62, 213, 152, 0.2);
+}
+
+appliance-nav .an-dot.an-standby {
+  background: #6cb6ff;
+}
+
+/* The hub's sidebar and context bar stick to the top themselves, so in the hub the bar scrolls away. */
+appliance-nav[current="hub"] {
+  position: relative;
+}
+
+/* On a phone the hub's own shell owns the top of the screen (notch, header, tab bar). */
+@media (max-width: 760px) {
+  appliance-nav[current="hub"] {
+    display: none;
+  }
+}

@@ -6,8 +6,8 @@ param(
     [switch]$Uninstall,
     [switch]$ValidateOnly,
     [switch]$StartNow,
-    # What to deploy: origin/main today; a release ref once releases are tagged.
-    [string]$TargetRef = 'origin/main'
+    # What to deploy: the release branch, which only npm run ship moves (scripts/local-ci.mjs).
+    [string]$TargetRef = 'origin/release'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -81,9 +81,9 @@ $settings = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
 
 $description = if ($ValidateOnly) {
-    'Hidden LocalAI candidate certification from origin/main. Production is not modified.'
+    'Hidden LocalAI candidate certification from origin/release. Production is not modified.'
 } else {
-    'Hidden LocalAI safe deployment from origin/main with candidate validation, health check, and rollback.'
+    'Hidden LocalAI safe deployment from origin/release with candidate validation, health check, and rollback.'
 }
 
 Register-ScheduledTask `

@@ -91,6 +91,10 @@ services:
       # The display's sign-in code token (Local Portal › More › Sign-in code access, wsc_…). Empty means no Show sign-in
       # code button. A secret: it lives only in stack.env.
       LOCALAI_WORKSHOP_CODE_TOKEN: ${LOCALAI_WORKSHOP_CODE_TOKEN:-}
+      # Bambuddy API keys (Bambuddy on the Pi, Settings > API keys), needed once its sign-in is on. Secrets: only in stack.env.
+      # "Read status" only, for the display's Materials card; "Control printer" only, for its Clear plate.
+      LOCALAI_MATERIALS_KEY: ${LOCALAI_MATERIALS_KEY:-}
+      LOCALAI_BAMBUDDY_CONTROL_KEY: ${LOCALAI_BAMBUDDY_CONTROL_KEY:-}
       POWERSHELL_UI_TOKEN: ${POWERSHELL_UI_TOKEN:?set in stack.env}
       POWERSHELL_BRIDGE_TOKEN: ${POWERSHELL_BRIDGE_TOKEN:?set in stack.env}
     volumes:

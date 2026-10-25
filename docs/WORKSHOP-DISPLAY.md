@@ -77,7 +77,7 @@ holds no token and no address. `tests/world.test.cjs` enforces the limit.
 ## Local AI cards (for the display's idle screen)
 
 `GET /api/display/feed` gives the display a few short cards to show while the printer is idle:
-- **Needs you** (or **All clear**);
+- **Needs you** (or **All clear**; when another card is a problem, such as a watchdog finding, the Pi, a disk 80% full or a low spool, it says **No approvals** instead, so it doesn't contradict that card);
 - up to two watchdog problems ([Watchdog](WATCHDOG.md));
 - what Local AI is working on;
 - the weather at the home location (Health › Home location), cached for 15 minutes;
@@ -153,6 +153,34 @@ The Raspberry Pi's hub answers `GET http://10.0.0.30/api/now` with a summary, no
 changes the address; `off` turns it off). Local AI reads it at most once a minute (3 s limit) for two feed cards:
 `playing` ("Now playing", the title, how far in, paused, and where, from Plex on the Pi) and `home` (the hub's first
 issue, "Pi: <what>", e.g. "Pi: Movies drive · It dropped out…"). When the hub doesn't answer, neither card shows.
+
+## Materials card (spools in Bambuddy)
+
+Since 24 Oct 2026 the household's spools are in Bambuddy, the Bambu printer manager in Docker on the Pi; it reads the
+AMS and takes each print's filament off its spool. (The old Filament Inventory web app is retired.) Local AI reads
+`GET http://10.0.0.30:8000/api/v1/inventory/spools` and `/api/v1/inventory/assignments`, with no key on the LAN, at
+most once a minute (3 s limit). `LOCALAI_MATERIALS_URL` changes the address; `off` turns it off. Once Bambuddy's sign-in
+is on, set `LOCALAI_MATERIALS_KEY` to a Bambuddy API key with "Read status" only (sent as `X-API-Key`). `app/materials.js` builds one
+`materials` card:
+
+- a spool is low when what's left is at or under its own Bambuddy threshold, or 15% of its label weight, and only
+  once it has a reading (a print, a scale weight or an AMS tray); a spool that was never weighed counts as unknown,
+  not low;
+- with a low spool: tone warning, "Grey PLA · 100 g left · 1 more low". The display's Home then shows it on the
+  house card;
+- otherwise "6 spools · 2 in the AMS": tone ok, or info while some spools are unknown.
+
+When Bambuddy doesn't answer, no card shows.
+
+## Clear plate (through Local AI to Bambuddy)
+
+The display's Clear plate (dismissing a finished or failed print) calls `POST /api/display/printer/clear` with its display
+key. Local AI then posts `clear-plate` and `hms/clear` for printer 1 (`LOCALAI_BAMBUDDY_PRINTER`) to Bambuddy
+(`LOCALAI_BAMBUDDY_URL`, default `http://10.0.0.30:8000`). It sends `LOCALAI_BAMBUDDY_CONTROL_KEY`, a Bambuddy API key
+with "Control printer" only, as `X-API-Key`. The route is refused (401) without the display key or a signed-in device in
+every sign-in mode, because it acts on the printer. The answer says how each step went: `ok`, `refused` (Bambuddy
+turned the key down), `no answer` or `HTTP <code>`. Each call is recorded in Activity. Both Bambuddy keys are passed to
+the container from `stack.env` (`deploy/stack/compose.yml`); a change there needs `docker compose up -d`.
 
 ## Pairing (Workshop OS 12.7)
 
