@@ -162,8 +162,7 @@ function recentRow(it,onOpen=openRun){
  if(it.status==='awaiting_approval')row.querySelector('.run-card__bar')?.remove(); // waiting on you is not progress
  return row;
 }
-// ---- Printer: one calm line while a print runs or stops with an error (Workshop display's read-only token) ----
-// The appliance polls the display; ?part=printer answers from its last read, so Home never sends the display anything.
+// ---- Printer words (Services › Workshop display uses them). Home itself shows no printer: Pi Hub does (one home, step 4). ----
 // Nothing shows when the printer is idle, cancelled (stopped on purpose) or unknown, or when no token is set (printer: null).
 const span=m=>m<60?`${m} min`:`${Math.floor(m/60)} h${m%60?` ${m%60} min`:''}`;
 function printerWords(p){
@@ -174,17 +173,6 @@ function printerWords(p){
  if(p.state==='error')return `Printer · Stopped with an error${p.errorCode?` (${p.errorCode})`:''}`;
  return '';
 }
-function paintPrinter(p){
- const sec=$('homePrinter'),box=$('homePrinterLine');if(!sec||!box)return;
- const words=printerWords(p);sec.hidden=!words;if(!words){box.replaceChildren();return}
- const kit=root.LocalAIKit,row=document.createElement('button');
- row.type='button';row.className='list-row home-attn';row.dataset.printerState=p.state;
- row.innerHTML=`<span class="list-row__icon">${kit?kit.icon(p.state==='error'?'alert':'clock'):''}</span><span class="list-row__main"><span class="list-row__title">${esc(words)}</span></span>`;
- row.setAttribute('aria-label',`${words}. Open Workshop display in Services`);
- row.addEventListener('click',()=>root.LocalAIRouter.open('integrations?card=workshop'));
- box.replaceChildren(row);
-}
-const loadPrinter=()=>root.LocalAIUI.fetchJson('/api/workshop/status?part=printer',{cache:'no-store'}).then(d=>paintPrinter(d?.printer),()=>{});
 // Recent leaves out what Needs you already shows (the same run, or another card for the same thread): one row per thing.
 let lastRecent=null;
 const threadKey=r=>r.threadId||r.id;
@@ -218,7 +206,7 @@ function refresh(){
  const first=!loaded;
  const recent=first?root.LocalAIUI.loadInto(box,()=>root.LocalAIUI.fetchJson(recentUrl,{cache:'no-store'}),{what:'your recent work',empty:'Nothing yet. Ask a question or make an image below.',render:paintRecent}).then(()=>{loaded=true},()=>{})
   :root.LocalAIUI.fetchJson(recentUrl,{cache:'no-store'}).then(d=>{if(!paintRecent(box,d))box.innerHTML='<div class="state-empty empty-state">Nothing yet. Ask a question or make an image below.</div>'}).catch(()=>{});
- return inflight=Promise.all([recent,loadNeeds(),loadPrinter()]).finally(()=>{inflight=null});
+ return inflight=Promise.all([recent,loadNeeds()]).finally(()=>{inflight=null});
 }
 function schedule(){clearTimeout(timer);timer=setTimeout(()=>{if(active()&&!document.hidden)refresh().then(schedule);else schedule()},30000)}
 
@@ -308,7 +296,7 @@ function dropContext(){
  history.replaceState(history.state,'',location.pathname+location.search+h.slice(0,i)+(q.toString()?'?'+q:''));
 }
 function contextFromHash(){const C=root.LocalAIAskContext,R=root.LocalAIRouter;if(!C||!R)return;const c=C.clean(R.current().query.get('context'));if(c){context=c;paintContext()}}
-function activate(){fromHash();contextFromHash();greet();if(root.LocalAIUI)refresh().then(schedule)}
+function activate(){fromHash();contextFromHash();greet();const b=$('homeBack');if(b&&root.LocalAIAskContext)b.href=root.LocalAIAskContext.homeUrl(location.hostname);if(root.LocalAIUI)refresh().then(schedule)}
 function dockToNav(){
  // On phones the composer sits exactly on the tab bar, whatever its height is. While the owner types, the tab bar
  // steps aside (body.home-typing, see app.css) and the composer sits on the keyboard: iOS keeps innerHeight and only

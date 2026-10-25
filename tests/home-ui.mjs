@@ -119,58 +119,26 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
   });
 }
 
-// The Workshop display's printer line: one row while a print runs or has stopped with an error; nothing otherwise.
-const PRINTER = (state, o = {}) => ({ state, progress: null, minutesLeft: null, errorCode: null, access: 'ok', seenAt: new Date().toISOString(), ...o });
+// One home, step 4: Local AI opens on the Assistant. The printer lives on Pi Hub now, and "← Home" goes back to it
+// in place of the old Hub/Terminal/Materials bar.
 for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
-  await check(`${tag}: the printer line shows while printing, fits, and opens Services › Workshop display`, async () => {
-    const page = await open(vp, '#home', { printer: PRINTER('printing', { progress: 42, minutesLeft: 70 }) });
-    const row = page.locator('#homePrinter [data-printer-state]');
-    await row.waitFor({ state: 'visible', ...T });
-    assert.equal(await row.locator('.list-row__title').innerText(), 'Printer · 42% · 1 h 10 min left');
-    assert.ok(page.printerAsks.includes('?part=printer'), `Home asks for the printer part only (asked: ${page.printerAsks.join()})`);
-    const box = await row.boundingBox(), width = await page.evaluate(() => document.documentElement.clientWidth);
-    assert.ok(box.x >= 0 && box.x + box.width <= width + 1, `row ${box.x}+${box.width} within ${width}`);
+  await check(`${tag}: Home is the Assistant: no printer line, no suite bar, "← Home" to Pi Hub`, async () => {
+    const page = await open(vp, '#home', { printer: { state: 'printing', progress: 42, minutesLeft: 70, errorCode: null, access: 'ok', seenAt: new Date().toISOString() } });
+    await page.waitForSelector('#homeRecent2 .run-card', T);
+    assert.equal(await page.locator('appliance-nav').count(), 0, 'no suite bar');
+    assert.equal(await page.locator('#homePrinter').count(), 0, 'no printer line');
+    assert.ok(!page.printerAsks.includes('?part=printer'), 'Home never asks for the printer line (Services still checks the display)');
+    const back = page.locator('#homeBack');
+    await back.waitFor({ state: 'visible', ...T });
+    assert.equal((await back.innerText()).trim(), '← Home');
+    assert.equal(await back.getAttribute('href'), 'http://10.0.0.30/');
+    const box = await back.boundingBox();
     assert.ok(box.height >= 44, `tap target ${box.height}px`);
+    assert.equal(await page.locator('#homeComposer').isVisible(), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, 'no sideways scroll');
-    await row.click();
-    await page.waitForSelector('#integrations.active', T);
-    assert.equal(await page.evaluate(() => location.hash), '#integrations?card=workshop');
-    await page.waitForFunction(() => document.activeElement?.matches('.ux-int-card') && /Workshop display/.test(document.activeElement.textContent), null, T);
-    await page.goBack();
-    await page.waitForSelector('#home.active', T);
     await page.context().close();
   });
 }
-
-await check('the printer line: paused and error words; hidden when cancelled (stopped on purpose), ended without a code, idle, unknown, busy, stale, refused or no token, and it follows the poll', async () => {
-  const page = await open(phone, '#home', { printer: PRINTER('paused', { progress: 42, minutesLeft: 70 }) });
-  const sec = page.locator('#homePrinter'), title = page.locator('#homePrinter .list-row__title');
-  await sec.waitFor({ state: 'visible', ...T });
-  assert.equal(await title.innerText(), 'Printer · Paused · 42%');
-  const show = async (printer, words) => {
-    page.printer = printer;
-    await page.evaluate(() => window.LocalAIHome.refresh());
-    if (words) { await page.waitForFunction(w => document.querySelector('#homePrinter .list-row__title')?.textContent === w, words, T); assert.equal(await sec.isVisible(), true); }
-    else { await page.waitForFunction(() => document.getElementById('homePrinter').hidden, null, T); assert.equal(await page.locator('#homePrinter [data-printer-state]').count(), 0); }
-  };
-  await show(PRINTER('error', { errorCode: '0700_8010' }), 'Printer · Stopped with an error (0700_8010)');
-  await show(PRINTER('error'), 'Printer · Stopped with an error');
-  await show(PRINTER('printing', { minutesLeft: 41 }), 'Printer · Printing · 41 min left');
-  await show(PRINTER('printing', { progress: 99, minutesLeft: 60 }), 'Printer · 99% · 1 h left');
-  for (const p of [PRINTER('cancelled'), PRINTER('ended'), PRINTER('idle'), PRINTER('unknown'), { ...PRINTER('unknown'), access: 'refused' }, { ...PRINTER('unknown'), access: 'offline' }, { ...PRINTER('unknown'), access: 'busy' }, { ...PRINTER('unknown'), access: 'stale' }, null]) await show(p, '');
-  await show(PRINTER('printing', { progress: 5 }), 'Printer · 5%');
-  await page.context().close();
-});
-
-await check('no token set: the real appliance answers printer null and Home shows no printer line', async () => {
-  const page = await open(desk, '#home');
-  await page.waitForSelector('#homeRecent2 .run-card', T);
-  const answer = await page.evaluate(() => fetch('/api/workshop/status?part=printer').then(r => r.json()));
-  assert.deepEqual(answer, { printer: null });
-  await page.waitForTimeout(300);
-  assert.equal(await page.locator('#homePrinter').isVisible(), false);
-  await page.context().close();
-});
 
 await check('Needs you drops a failed run once a newer run in the same thread succeeded', async () => {
   // The failed turn finished failing after the retry had already succeeded (updatedAt is later), but the retry is the newer turn.
@@ -788,14 +756,9 @@ async function trackSeen(page) {
   });
 }
 for (const [tag, vp] of [['390', phone], ['desktop', desk]]) {
-  await check(`${tag}: the printer line sits above Needs you, which shows 3 rows, repeats as one row, and See all 6`, async () => {
-    const page = await open(vp, '#home', { all: pile, printer: PRINTER('printing', { progress: 14, minutesLeft: 390 }) });
+  await check(`${tag}: Needs you shows 3 rows, repeats as one row, and See all 6`, async () => {
+    const page = await open(vp, '#home', { all: pile });
     await page.waitForSelector('#homeNeedsYou .home-needs-all', T);
-    await page.locator('#homePrinter [data-printer-state]').waitFor({ state: 'visible', ...T });
-    assert.equal(await page.locator('#homePrinter .list-row__title').innerText(), 'Printer · 14% · 6 h 30 min left');
-    const printerBox = await page.locator('#homePrinter').boundingBox(), needsBox = await page.locator('#homeNeedsYou').boundingBox();
-    assert.ok(printerBox.y + printerBox.height <= needsBox.y + 1, `printer ${printerBox.y} above Needs you ${needsBox.y}`);
-    assert.ok(printerBox.y + printerBox.height <= vp.height, 'the printer line is on the first screen');
     const rows = page.locator('#homeNeedsList > *');
     assert.equal(await rows.count(), 4, '3 rows and See all');
     assert.deepEqual((await titles(page, '#homeNeedsList')), ['Fix the login bug', POLISH, 'Chat', 'See all 6']);
