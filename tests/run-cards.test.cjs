@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { runCard } = require('../app/run-cards');
+const { runCard, readableTitle } = require('../app/run-cards');
 
 const none = { approvalFor: () => null };
 
@@ -113,4 +113,16 @@ test('a finished engineering run with no files has no preview line; only a runni
   for (const status of ['running', 'queued']) {
     assert.deepEqual(runCard({ id: 'e4', type: 'engineering', status, meta: {} }).preview, { type: 'diff', changeId: null, files: null }, status);
   }
+});
+
+test('readableTitle never shows a long prompt (one home, step 4)', () => {
+  assert.equal(readableTitle({ type: 'chat', title: "You are the voice of a family's home hub on a Raspberry Pi. Answer th…" }), 'Chat');
+  assert.equal(readableTitle({ type: 'chat', title: 'Plan the garden' }), 'Plan the garden');
+  assert.equal(readableTitle({ type: 'chat', title: 'line one\nline two' }), 'Chat');
+  assert.equal(readableTitle({ type: 'chat', title: 'x'.repeat(200), meta: { label: 'House question' } }), 'House question');
+  assert.equal(readableTitle({ type: 'automation', title: 'Hourly Stack & ComfyUI Health Check' }), 'Hourly Stack & ComfyUI Health Check');
+  assert.equal(readableTitle({ type: 'mission', title: 'y'.repeat(61) }), 'Mission');
+  assert.equal(readableTitle({ type: 'research', title: '' }), 'Research');
+  assert.equal(runCard({ type: 'image', title: 'z'.repeat(90) }, none).title, 'Image');
+  assert.equal(runCard({ type: 'weird', title: 'w'.repeat(90) }, none).title, 'Run');
 });
