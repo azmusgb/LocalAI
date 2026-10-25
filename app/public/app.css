@@ -761,12 +761,12 @@ details.disclosure{margin-top:12px;border-top:1px solid var(--ds-line);padding-t
 :root{
   --ux-content-max:1500px;
   color-scheme:dark;
-  --ds-bg:#0a111c;--ds-bg-2:#0c1828;--ds-surface:#121b2b;--ds-surface-2:#172238;--ds-surface-3:#182b45;
-  --ds-line:#1b2740;--ds-line-2:#2d4a6d;--ds-line-card:#1f2c42;--ds-line-input:#263552;
-  --ds-text:#eaf0f8;--ds-soft:#c3d3e3;--ds-muted:#93a4bc;--ds-faint:#8698b1;
-  --ds-accent:#6cb6ff;--ds-accent-text:#7cc0ff;--ds-accent-ink:#04111f;--ds-accent-soft:rgba(108,182,255,.14);
-  --ds-progress:#ffb224;--ds-attention:#ffb224;--ds-attention-text:#ffc352;
-  --ds-good:#3ed598;--ds-good-text:#5be0a8;--ds-bad:#ff6b6b;--ds-bad-text:#ff8a8a;--ds-violet:#a99cff;
+  --ds-bg:#0b1118;--ds-bg-2:#0c1828;--ds-surface:#121a24;--ds-surface-2:#1a2431;--ds-surface-3:#182b45;
+  --ds-line:#1f2a38;--ds-line-2:#2e3d50;--ds-line-card:#1f2c42;--ds-line-input:#5b6c82;
+  --ds-text:#e9eef4;--ds-soft:#c3d3e3;--ds-muted:#93a1b3;--ds-faint:#8698b1;
+  --ds-accent:#5ab4ff;--ds-accent-text:#7cc4ff;--ds-accent-ink:#03111f;--ds-accent-soft:rgba(90,180,255,.14);
+  --ds-progress:#ffb224;--ds-attention:#f5b03d;--ds-attention-text:#ffc352;
+  --ds-good:#3ecf8e;--ds-good-text:#5be0a8;--ds-bad:#ff6b63;--ds-bad-text:#ff8a8a;--ds-violet:#a99cff;
   /* Type: five steps (E6). 13 px is the floor for secondary text; only badges and pills go smaller. Form fields on a
      phone use --ds-fs-input (16 px), the size iOS needs so focusing one does not zoom the page. */
   --ds-fs-1:13px;--ds-fs-2:15px;--ds-fs-3:17px;--ds-fs-4:22px;--ds-fs-5:28px;--ds-fs-badge:11px;--ds-fs-input:16px;
