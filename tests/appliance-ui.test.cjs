@@ -60,3 +60,11 @@ test('print-lab commands break between words, chips fade at the edge, Signals sa
   assert.ok(css.includes('.work-chips.ux-tabs{mask-image:linear-gradient(90deg,#000calc(100%-28px),transparent)'));
   assert.ok(read('improve.js').includes('Press Run checks to look for some now.'));
 });
+
+// Look review: Inbox cards sat inside another card (a double border); every audit entry carried a full "Open run" button.
+test('Inbox is one layer of cards and the audit log opens runs from a small link', () => {
+  const css = read('app.css').replace(/\s+/g, '');
+  assert.ok(css.includes('#inbox>.card{background:transparent;border:0;padding:0;box-shadow:none;'));
+  assert.match(read('app.js'), /<button class="link-btn" type="button" data-open-run=/);
+  assert.ok(css.includes('.link-btn{'));
+});
