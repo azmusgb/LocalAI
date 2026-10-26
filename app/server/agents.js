@@ -4,7 +4,7 @@
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
 function createAgents(ctx) {
-  const { APPROVALS_STORE, APP_DIR, DATA_DIR, ENGINEERING_MODEL_TIMEOUT_MS, LARGE_ANSWER_RESERVE, MISSION_ANSWER_RESERVE, MISSION_EVIDENCE_TOKENS, MISSION_MODEL_CONCURRENCY, MISSION_NUM_CTX, MISSION_TIMEOUT_MS, MODEL, OLLAMA_URL, RUNS_STORE, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, TEXT_NUM_CTX_LARGE, URL, activeRunControllers, addNotification, agentRunStore, approvalStore, busy, fetchWithTimeout, fitMessages, inFlight, json, knowledgeScore, knowledgeStore, makeId, modelFetchWithTimeout, nowIso, plainText, readBody, recordActivity, requireFeature, runLedger, saveStore, searxSearch, storage, storageError, titleFromText } = ctx;
+  const { APPROVALS_STORE, APP_DIR, DATA_DIR, ENGINEERING_MODEL_TIMEOUT_MS, LARGE_ANSWER_RESERVE, MISSION_ANSWER_RESERVE, MISSION_EVIDENCE_TOKENS, MISSION_MODEL_CONCURRENCY, MISSION_NUM_CTX, MISSION_TIMEOUT_MS, MODEL, OLLAMA_URL, RUNS_STORE, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, TEXT_NUM_CTX_LARGE, URL, activeRunControllers, coordinator, addNotification, agentRunStore, approvalStore, busy, fetchWithTimeout, fitMessages, inFlight, json, knowledgeScore, knowledgeStore, makeId, modelFetchWithTimeout, nowIso, plainText, readBody, recordActivity, requireFeature, runLedger, saveStore, searxSearch, storage, storageError, titleFromText } = ctx;
   // What a restart would interrupt now. The host's auto-deploy holds an update while this says busy (docs/DEPLOY.md).
   // The orchestrator is only asked once something has created it: before that nothing of its can be running, and
   // creating it here would settle records from before the restart as a side effect.
@@ -171,7 +171,7 @@ function createAgents(ctx) {
   function getSpecialistOrchestrator(){
    if(specialistOrchestrator)return specialistOrchestrator;
    specialistOrchestrator=require('../agent-orchestrator')({
-    dataDir:DATA_DIR,storage,ollamaUrl:OLLAMA_URL,defaultModel:MODEL,fetchWithTimeout,runLocalModel,
+    dataDir:DATA_DIR,storage,ollamaUrl:OLLAMA_URL,defaultModel:MODEL,fetchWithTimeout,runLocalModel,coordinator,
     knowledgeStore,knowledgeScore,searxSearch,recordActivity,
     projectRoot:APP_DIR,
     // Mission turns use a context sized to fit the GPU (text-context.js MISSION_NUM_CTX), one model turn at a time, and
@@ -192,7 +192,7 @@ function createAgents(ctx) {
   // Every mission is a ledger run from the first moment, however it was started, so Work › Missions lists it.
   // async:true answers 202 at once; without it (Agent World) the reply waits for the mission. The run follows the mission's own events.
   // Mission statuses: running | complete | needs_attention | error (the last two end the run failed).
-  function startMissionRun(goal,projectId,ids,allowWeb=false,workerModel=''){
+  function startMissionRun(goal,projectId,ids,allowWeb=false,workerModel='',{voice=false}={}){
     const orch=getSpecialistOrchestrator();
     const run=runLedger.create({type:'agent',title:titleFromText(goal,'Mission'),input:{goal:goal.slice(0,4000),projectId,agentIds:ids||[],webSearch:allowWeb,...(workerModel?{workerModel}:{})},projectId,meta:{},cancellable:true});
     runLedger.start(run.id,'Mission started');
@@ -203,11 +203,11 @@ function createAgents(ctx) {
       const ws=m.workers||[],done=ws.filter(w=>w.state==='complete').length,pct=ws.length?Math.max(5,Math.min(95,Math.round(done/ws.length*100))):5;
       if(m.status==='running'){const sig=pct+':'+done;if(sig===last)return;last=sig;runLedger.update(run.id,{status:'running',progress:pct},'Mission progress: '+done+' of '+ws.length+' steps');return}
       ended=true;off();activeRunControllers.delete(run.id);
-      if(m.status==='complete')runLedger.complete(run.id,{summary:String(m.answer||'Mission complete').replace(/\s+/g,' ').trim().slice(0,600),output:{missionId:m.id,outcome:m.status,...(m.note?{note:String(m.note).slice(0,200)}:{})},meta:{missionId:m.id}});
+      if(m.status==='complete')runLedger.complete(run.id,{summary:String(m.answer||'Mission complete').replace(/\s+/g,' ').trim().slice(0,600),output:{missionId:m.id,outcome:m.status,...(m.note?{note:String(m.note).slice(0,200)}:{})},meta:{missionId:m.id,...(m.route?{route:m.route}:{})}});
       else runLedger.update(run.id,{status:'failed',error:String(m.error||'The mission needs attention.').slice(0,8000),output:{missionId:m.id,outcome:m.status},meta:{missionId:m.id}},'Mission '+m.status);
     };
     // `done` settles with the mission (or its error) for callers that wait for it; the run records the outcome either way.
-    const done=orch.mission(goal,projectId,ids,{signal:controller.signal,allowWeb,workerModel,onCreated:m=>{missionId=m.id;orch.events.on('mission',apply);off=()=>orch.events.off('mission',apply);runLedger.update(run.id,{meta:{missionId:m.id}},'Mission created')}})
+    const done=orch.mission(goal,projectId,ids,{signal:controller.signal,allowWeb,workerModel,voice,onCreated:m=>{missionId=m.id;orch.events.on('mission',apply);off=()=>orch.events.off('mission',apply);runLedger.update(run.id,{meta:{missionId:m.id}},'Mission created')}})
       .then(m=>{apply(m);return m},e=>{activeRunControllers.delete(run.id);if(!ended){ended=true;off();runLedger.fail(run.id,e)}throw e});
     done.catch(()=>{});
     return {run,done};

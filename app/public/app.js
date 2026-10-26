@@ -287,10 +287,9 @@ async function submitEngineeringIntent(request,{assistantIndex=null,navigate=fal
   if(msg&&state.messages.includes(msg)){msg.content=engineeringRunText(run);msg.streaming=true;renderMessages()}
   pollEngineeringIntent(run.id,msg);return run;
 }
-// One streamed chat turn against /api/chat/stream, for any page that shows a chat (the #ask host and the run view).
-// Resolves {runId, content} when the stream ends; rejects on an HTTP or stream error (AbortError when `signal` aborts).
-async function streamChat({messages,webSearch=false,model,threadId,title,onOpen,onToken,onMeta,onDone,signal}){
-  const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,webSearch,model,threadId,title}),signal});
+// One streamed /api/chat/stream turn (#ask, the run view): {runId, content}; rejects on errors. bigger/keepLocal: Home's toggles.
+async function streamChat({messages,webSearch=false,model,threadId,title,bigger,keepLocal,onOpen,onToken,onMeta,onDone,signal}){
+  const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,webSearch,model,threadId,title,bigger,keepLocal}),signal});
   if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||`HTTP ${r.status}`);}
   onOpen?.();
   const reader=r.body.getReader(),decoder=new TextDecoder();

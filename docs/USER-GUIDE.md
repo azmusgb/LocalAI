@@ -53,6 +53,29 @@ Type in the box at the bottom of Home and send. The chip next to it picks what k
 
 What you send opens where you are and keeps running if you leave; it is always in **Work**.
 
+### Cloud models: where an answer comes from
+
+Everything runs on this computer until you switch on **Use cloud models for work that isn't private** under
+**System › Models › Cloud models**. That card also lists each cloud service (Groq, Cerebras): whether its key is set,
+how many times it was used today, its last problem, and "Resting until …" when it reached its free limit. Below them,
+**What runs where** shows each kind of work and where it may run. Keys live in `stack.env` on the PC; the page only
+says whether one is set. Changing the switch needs a signed-in device.
+
+With cloud models on, two toggles appear under the box on Home (for Chat, Research and Auto):
+
+- **Use a bigger model**: send this chat to a cloud model if it isn't private. A plain chat stays on this computer
+  without it.
+- **Keep on this PC**: this request stays on this computer, whatever it is.
+
+They apply to the next thing you send, then switch off again. Anything about health, money or identity, House
+questions, voice, files and photos, your workspace and documents, and questions about Local AI's own keys or setup
+always stay on this computer. Research, change plans for Local AI's own code and mission summaries may use a cloud
+model when nothing in them is private. If a cloud model is busy or fails, this computer answers instead.
+
+Every answer says where it came from: **Answered by Llama 3.3 70B · Groq** or **Answered on this PC**, with the
+reason, under the answer and on its card in Work. Each cloud call is listed in the Audit log (which service, which
+model, how much text; never the text itself).
+
 Ask the chat about Local AI itself (where image models go, how to reach it away from home, how updates work, where a
 page is) and it answers from this appliance's own setup: its addresses, its folders and its page names.
 

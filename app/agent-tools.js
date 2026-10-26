@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const { constants } = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
+const { cloudSafePath } = require('./model-coordinator');
 
 function evidenceRecord(source, text, extra = {}) {
   const id = 'E-' + createHash('sha256').update(source + '\n' + text).digest('hex').slice(0, 16);
@@ -72,12 +73,14 @@ async function findInProject(projectRoot, query, scope, maxChars) {
       if (files.length >= FIND_MAX_FILES) { complete = false; return; }
       if (deniedPart(e.name)) continue;
       const childRel = rel ? rel + '/' + e.name : e.name;
+      // Files whose names say they hold a secret are never searched (app/model-coordinator.js cloudSafePath).
+      if (e.isFile() && !cloudSafePath(childRel)) continue;
       if (e.isDirectory()) await walk(path.join(dir, e.name), childRel);
       else if (e.isFile() && allowedExtension.test(e.name)) files.push(childRel);
     }
   };
   const top = await fs.lstat(start);
-  if (top.isFile()) { checkFileName(startRel); files.push(startRel); } else if (top.isDirectory()) await walk(start, startRel); else throw new Error('Only regular files and folders may be searched');
+  if (top.isFile()) { checkFileName(startRel); if (cloudSafePath(startRel)) files.push(startRel); } else if (top.isDirectory()) await walk(start, startRel); else throw new Error('Only regular files and folders may be searched');
   const hits = [], perFile = new Map();let bytes = 0, searched = 0;
   for (const rel of files) {
     let text;
@@ -98,7 +101,7 @@ async function findInProject(projectRoot, query, scope, maxChars) {
   const build = count => {
     const matches = ranked.slice(0, count).map(({ path: p, line, text }) => ({ path: p, line, text }));
     const evidenceText = hits.length ? matches.map(m => `${m.path}:${m.line}: ${m.text}`).join('\n') : `No line contains ${terms.map(t => '"' + t + '"').join(' or ')} in ${where} (${searched} files searched${complete ? '' : ', search stopped early'}).`;
-    const evidence = [evidenceRecord(`find:${query}${scope ? ' in ' + scope : ''}`, evidenceText, { kind: 'search', title: `find_in_project "${query}"`, query, scope: scope || '', matches: hits.length, complete })];
+    const evidence = [evidenceRecord(`find:${query}${scope ? ' in ' + scope : ''}`, evidenceText, { kind: 'search', title: `find_in_project "${query}"`, query, scope: scope || '', matches: hits.length, complete, files: [...perFile.keys()] })];
     const data = { query, path: scope || '', terms, filesSearched: searched, totalMatches: hits.length, matches, files: [...perFile].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([p, c]) => ({ path: p, count: c })), evidenceId: evidence[0].id };
     if (!complete) data.complete = false;
     if (!hits.length) data.note = complete ? `Nothing found: no line in ${where} contains ${terms.join(' or ')}. You may say it was not found by this search, citing [${evidence[0].id}].` : 'Nothing found, but the search stopped early; narrow it with path before saying anything is absent.';

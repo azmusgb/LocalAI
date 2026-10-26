@@ -7,12 +7,12 @@
 
 // Kinds of work, and whether each may ever leave the PC. `chat` only with "Use a bigger model" (bigger: true).
 const KINDS = Object.freeze({
-  quick: { cloud: false, label: 'Quick jobs: titles, intent, voice, image prompts' },
-  chat: { cloud: 'bigger', label: 'Ask: on this PC unless you choose "Use a bigger model"' },
-  research: { cloud: true, label: 'Research about public topics' },
-  plan: { cloud: true, label: 'Change planning and mission summaries' },
-  code: { cloud: true, label: "Code changes to Local AI's own code" },
-  mission: { cloud: false, label: 'Mission steps' },
+  quick: { cloud: false, label: 'Quick jobs: titles, intent, voice, image prompts', where: 'Always on this PC' },
+  chat: { cloud: 'bigger', label: 'Ask: on this PC unless you choose "Use a bigger model"', where: 'On this PC, unless you tap "Use a bigger model" and it isn\'t private' },
+  research: { cloud: true, label: 'Research about public topics', where: 'A cloud model when it isn\'t private, else this PC' },
+  plan: { cloud: true, label: 'Change planning and mission summaries', where: "A cloud model for Local AI's own code when it isn't private, else this PC" },
+  code: { cloud: true, label: "Code changes to Local AI's own code", where: "A cloud code model for Local AI's own code when it isn't private, else this PC" },
+  mission: { cloud: false, label: 'Mission steps', where: 'Always on this PC' },
 });
 
 // The cloud models per role, in the order tried. Env overrides change a model without code.
@@ -27,7 +27,7 @@ const PERSONAL = /\b(medic(al|ine|ation)s?|dose|dosage|prescription|diagnos\w*|s
 
 function personal(text) { return PERSONAL.test(String(text || '')); }
 
-// route({kind, text, voice, house, attachments, keepLocal, bigger, model, cloud, keys, parked, env, localModel, now})
+// route({kind, text, voice, house, attachments, keepLocal, stay, bigger, model, cloud, keys, parked, env, localModel, now})
 // → {class: 'private'|'shareable', why, order: [{provider, model}]}
 function route(req = {}) {
   const local = { provider: 'ollama', model: req.model || req.localModel };
@@ -37,6 +37,7 @@ function route(req = {}) {
     : req.voice ? 'Voice and Siri stay on this PC'
     : req.house ? 'House questions stay on this PC'
     : req.attachments ? 'Files and photos stay on this PC'
+    : typeof req.stay === 'string' && req.stay ? req.stay
     : personal(req.text) ? 'It looks personal (health, money or identity)'
     : KINDS[kind].cloud === false ? 'This kind of work stays on this PC'
     : KINDS[kind].cloud === 'bigger' && !req.bigger ? 'Ask stays on this PC unless you choose a bigger model'
@@ -50,9 +51,29 @@ function route(req = {}) {
   return { class: 'shareable', why: cloud.length ? `Not private: ${KINDS[kind].label.toLowerCase()}` : 'No cloud model available right now', order: [...cloud, local] };
 }
 
-// The read-only routing table for the Models page.
-function table() {
-  return Object.entries(KINDS).map(([kind, k]) => ({ kind, label: k.label, cloud: k.cloud !== false }));
+// Reasons that come from the request itself (voice, House, files, "Keep on this PC", personal words, a caller's own
+// reason) hold for the rest of its conversation: a follow-up doesn't resend those markers. A kind's default ("Ask stays
+// on this PC unless …"), a model picked by hand, cloud switched off or unavailable don't.
+const NOT_STICKY = new Set(['You picked this model', 'This kind of work stays on this PC', 'Ask stays on this PC unless you choose a bigger model']);
+function stickyPrivate(r) {
+  return !!r && typeof r === 'object' && r.class === 'private' && typeof r.why === 'string' && r.why !== '' && !NOT_STICKY.has(r.why);
 }
 
-module.exports = { route, table, personal, KINDS, CLOUD };
+// The read-only routing table for the Models page.
+function table() {
+  return Object.entries(KINDS).map(([kind, k]) => ({ kind, label: k.label, where: k.where, cloud: k.cloud !== false }));
+}
+
+// Where an answer came from, for run cards and pages: "Answered by Llama 3.3 70B · Groq" or "Answered on this PC".
+const PROVIDER_NAMES = Object.freeze({ groq: 'Groq', cerebras: 'Cerebras' });
+const MODEL_NAMES = [[/^llama-3\.3-70b(-versatile)?$/, 'Llama 3.3 70B'], [/^(openai\/)?gpt-oss-120b$/, 'GPT-OSS 120B']];
+function label(used) {
+  if (!used || typeof used !== 'object') return '';
+  if (used.provider === 'ollama') return 'Answered on this PC';
+  const provider = Object.prototype.hasOwnProperty.call(PROVIDER_NAMES, used.provider) ? PROVIDER_NAMES[used.provider] : '';
+  if (!provider) return '';
+  const model = String(used.model || '').slice(0, 60), named = MODEL_NAMES.find(([re]) => re.test(model));
+  return `Answered by ${named ? named[1] : model || 'a cloud model'} · ${provider}`;
+}
+
+module.exports = { route, table, label, personal, stickyPrivate, KINDS, CLOUD };
