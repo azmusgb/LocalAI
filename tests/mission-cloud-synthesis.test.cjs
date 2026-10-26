@@ -44,7 +44,7 @@ test('cloud on: the summary comes from Groq; the workers still ran on this PC', 
   const m = await orchestrator.mission('Review the models page code', '', ['code_analyst']);
   assert.equal(m.status, 'complete');
   assert.match(m.answer, /Summary from Groq/);
-  assert.deepEqual([m.route.provider, m.route.model, m.route.class], ['groq', 'llama-3.3-70b-versatile', 'shareable']);
+  assert.deepEqual([m.route.provider, m.route.model, m.route.class], ['groq', 'openai/gpt-oss-120b', 'shareable']);
   assert.equal(coordinatorCalls(local).length, 0);
   assert.ok(local.length >= 1, 'the worker ran locally');
   // The cloud got the goal and the findings, no tool list or evidence index.

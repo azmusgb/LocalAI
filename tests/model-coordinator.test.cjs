@@ -30,7 +30,7 @@ test('cloud on: the first cloud model answers, and says where it ran', async () 
   const r = c.route({ kind: 'plan', text: 'Plan a change to the Models page' });
   const out = await c.run(r, msgs, { kind: 'plan' });
   assert.equal(out.content, 'From the cloud');
-  assert.deepEqual([out.used.provider, out.used.model, out.used.class], ['groq', 'llama-3.3-70b-versatile', 'shareable']);
+  assert.deepEqual([out.used.provider, out.used.model, out.used.class], ['groq', 'openai/gpt-oss-120b', 'shareable']);
   assert.equal(calls.length, 1);
   // One Activity line per cloud call: provider, model, kind and size, never the text.
   const sent = activity.find(a => a[1] === 'Sent to a cloud model');

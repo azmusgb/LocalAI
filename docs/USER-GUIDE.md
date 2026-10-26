@@ -72,7 +72,7 @@ questions, voice, files and photos, your workspace and documents, and questions 
 always stay on this computer. Research, change plans for Local AI's own code and mission summaries may use a cloud
 model when nothing in them is private. If a cloud model is busy or fails, this computer answers instead.
 
-Every answer says where it came from: **Answered by Llama 3.3 70B · Groq** or **Answered on this PC**, with the
+Every answer says where it came from: **Answered by GPT-OSS 120B · Groq** or **Answered on this PC**, with the
 reason, under the answer and on its card in Work. Each cloud call is listed in the Audit log (which service, which
 model, how much text; never the text itself).
 
