@@ -45,6 +45,28 @@ const CAMERA_WORDS = {
 
 const key = (project, part) => `${PREFIX}${project}:${part}`;
 
+// The Workshop display's Print lab card (docs/WORKSHOP-DISPLAY.md), from the stored index and live(index): while the
+// one printing experiment's run is on the printer, "Lab · E-021" (busy); once the printer says it finished (idle,
+// stopped or ended: the Print lab page's Judge it rule, app/public/print-lab.js FINISHED) and there is no verdict,
+// "Judge E-021" (attention, ask lab-judge, with the run) for 24 h after the run's end (its estimated end, else its
+// start). Two printing: none. Text from the Mac is passed on as strings only; the feed cuts it.
+const FINISHED = new Set(['idle', 'cancelled', 'ended']);
+const JUDGE_FOR_MS = 24 * 3600 * 1000;
+const text = v => (typeof v === 'string' ? v : '');
+function labCards(index, l, nowMs = Date.now()) {
+  if (!l || l.conflict || typeof l.experiment !== 'string') return [];
+  const x = (Array.isArray(index?.experiments) ? index.experiments : []).find(e => e && e.id === l.experiment);
+  if (!x || x.status !== 'printing') return [];
+  const run = text(l.run) || text(x.run);
+  const ref = run || x.id;
+  if (!FINISHED.has(l.state)) return [{ kind: 'lab', id: `lab-${ref}`, title: `Lab · ${x.id}`, text: text(x.judge_on) || text(x.question_text), tone: 'busy' }];
+  if (x.verdict || x.owner_verdict) return [];
+  const started = (Array.isArray(x.runs) ? x.runs : []).filter(r => r && (!run || r.id === run)).map(r => Date.parse(r.started_at)).pop();
+  const end = Number.isFinite(Date.parse(x.due_at)) ? Date.parse(x.due_at) : started;
+  if (Number.isFinite(end) && nowMs - end > JUDGE_FOR_MS) return [];
+  return [{ kind: 'lab', id: `judge-${ref}`, title: `Judge ${x.id}`, text: `Look at: ${text(x.judge_on) || 'the face'}`, tone: 'attention', ask: 'lab-judge', ...(run ? { run } : {}) }];
+}
+
 function readRaw(req, maxBytes) {
   return new Promise((resolve, reject) => {
     let total = 0, tooLarge = false;
@@ -164,6 +186,13 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
   function liveSummary(project) {
     const l = live(storage.readSetting(key(project, 'index'), null));
     return l && !l.conflict ? { experiment: l.experiment, state: l.state, progress: l.progress, minutesLeft: l.minutesLeft, finishAt: l.finishAt } : null;
+  }
+
+  // The display feed's Print lab card across all projects: none when more than one experiment prints anywhere.
+  function feedCards() {
+    const found = projects().map(name => storage.readSetting(key(name, 'index'), null)).map(ix => ({ ix, l: live(ix) })).filter(p => p.l);
+    if (found.length !== 1 || found[0].l.conflict) return [];
+    return labCards(found[0].ix, found[0].l, clock());
   }
 
   // At most `limit` bytes of an answer, else null (and the rest is not read).
@@ -403,7 +432,7 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
     return true;
   }
 
-  return { handle, sync };
+  return { handle, sync, feedCards };
 }
 
-module.exports = { createPrintLab, SCHEMA };
+module.exports = { createPrintLab, labCards, SCHEMA };

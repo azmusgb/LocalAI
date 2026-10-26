@@ -5,7 +5,7 @@
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
 function createVoice(ctx) {
-  const { APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, storage, storageError, text, voice, voiceFacts, watchdog, weather } = ctx;
+  const { APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, printLab, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, storage, storageError, text, voice, voiceFacts, watchdog, weather } = ctx;
 
   // What Home lists under Needs you (app/public/home.js, loadNeeds and paintNeeds), for Siri and the Watch to say the
   // same: the runs app/public/needs-you.js picks (a waiting approval; a failure that is unseen, under a day old, not
@@ -57,7 +57,11 @@ function createVoice(ctx) {
       .filter(i => i.imageUrl);
     const disks = watchdog.summary().hostDisks || [];
     const disk = disks.filter(d => d.totalBytes > 0).sort((x, y) => x.freeBytes / x.totalBytes - y.freeBytes / y.totalBytes)[0] || null;
-    const feed = displayFeed.buildFeed({ needs, watch: watchdog.list(), running, done: displayDoneRuns(2 * 3600 * 1000), weather: await feedWeatherText(), images, disk, pi: await piHub.read(), materials: await materialsClient.read() });
+    // The Pi hub's summary and its "Needs you" list are read side by side, so a slow hub costs one 3 s wait, not two.
+    const [pi, piNeeds] = await Promise.all([piHub.read(), piHub.needs ? piHub.needs() : null]);
+    let lab = [];
+    try { lab = printLab?.feedCards?.() || []; } catch { lab = []; }
+    const feed = displayFeed.buildFeed({ needs, piNeeds, lab, watch: watchdog.list(), running, done: displayDoneRuns(2 * 3600 * 1000), weather: await feedWeatherText(), images, disk, pi, materials: await materialsClient.read() });
     feed.messages = displayMessages.recent();
     return feed;
   }

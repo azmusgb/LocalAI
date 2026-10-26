@@ -52,3 +52,19 @@ test('the hub is read at most once a minute, and a failure is quiet', async () =
   assert.equal(await down.read(), null);
   assert.equal(await createPiHub({ url: 'off' }).read(), null);
 });
+
+test('needs: the hub list is read at most every 30 s, plain strings only, and a failure is quiet (null)', async () => {
+  let t = 0, calls = 0, url;
+  const hub = createPiHub({ url: 'http://pi', now: () => t, fetchImpl: async (u) => { calls++; url = String(u); return { ok: true, json: async () => ({ count: 1, items: [{ id: 'pi:disk', source: 'pi', tone: 'bad', title: 'Disk', detail: 'Full', link: '/x' }, 7], unread: 0 }) }; } });
+  assert.deepEqual(await hub.needs(), { items: [{ id: 'pi:disk', source: 'pi', tone: 'bad', title: 'Disk', detail: 'Full' }] });
+  assert.equal(url, 'http://pi/api/needs');
+  await hub.needs();
+  assert.equal(calls, 1);
+  t += 31000;
+  await hub.needs();
+  assert.equal(calls, 2);
+  assert.equal(await createPiHub({ url: 'http://pi', fetchImpl: async () => { throw new Error('down'); } }).needs(), null);
+  assert.equal(await createPiHub({ url: 'http://pi', fetchImpl: async () => ({ ok: false }) }).needs(), null);
+  assert.equal(await createPiHub({ url: 'http://pi', fetchImpl: async () => ({ ok: true, json: async () => ({ items: 'no' }) }) }).needs(), null);
+  assert.equal(await createPiHub({ url: 'off' }).needs(), null);
+});

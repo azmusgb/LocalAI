@@ -187,3 +187,64 @@ test('beside a problem the needs card says No approvals, not All clear', () => {
   assert.equal(buildFeed({ needs: { count: 0 }, materials: { summary: { spools: 3, loaded: 0, low: 1, unknown: 0, queue: 0 }, status: 'Grey PLA · 100 g left' } }).cards[0].title, 'No approvals');
   assert.equal(buildFeed({ needs: { count: 2, speech: 'Needs you: two approvals.' }, watch: [{ id: 'x', title: 'y' }] }).cards[0].title, 'Needs you');
 });
+
+// Pi Hub's one "Needs you" list (GET /api/needs, built by the hub) rides along as feed.needs: the same list on every
+// screen, cut to what the display shows (title 28, detail 112) and at most 6. It never becomes cards.
+test('needs from Pi Hub are cut and capped at 6', () => {
+  const items = Array.from({ length: 8 }, (_, i) => ({ id: `pi:thing-${i}`, source: 'pi', tone: i ? 'warn' : 'bad', title: `T${i} ${'x'.repeat(40)}`, detail: 'd'.repeat(200), link: 'http://10.0.0.30/' }));
+  const f = buildFeed({ needs: { count: 0 }, piNeeds: { count: 8, items, unread: 0 } });
+  assert.equal(f.v, 2);
+  assert.equal(f.needs.length, 6);
+  assert.deepEqual(Object.keys(f.needs[0]).sort(), ['detail', 'id', 'source', 'title', 'tone']);
+  assert.deepEqual([f.needs[0].id, f.needs[0].tone, f.needs[0].source], ['pi:thing-0', 'bad', 'pi']);
+  assert.equal([...f.needs[0].title].length, 28);
+  assert.ok(f.needs[0].title.endsWith('…'));
+  assert.equal([...f.needs[0].detail].length, 112);
+  assert.ok(f.cards.every((c) => !String(c.id).startsWith('pi:')), 'needs never become cards');
+  // Only strings pass; an item without an id or a title is left out, and an unknown tone is warn.
+  const odd = buildFeed({ needs: { count: 0 }, piNeeds: { items: [{ id: 'a', tone: 'boom', title: 'A', detail: null }, { id: 'b', title: { x: 1 } }, null, { tone: 'bad', title: 'no id' }, 'str'] } });
+  assert.deepEqual(odd.needs, [{ id: 'a', source: '', tone: 'warn', title: 'A', detail: '' }]);
+  // The hub answered with nothing: an empty list. The hub is down: no needs at all.
+  assert.deepEqual(buildFeed({ needs: { count: 0 }, piNeeds: { count: 0, items: [] } }).needs, []);
+  assert.equal('needs' in buildFeed({ needs: { count: 0 }, piNeeds: null }), false);
+  // A change in the list is news for the display's long poll.
+  const { signature } = require('../app/display-feed');
+  assert.notEqual(signature(f), signature(buildFeed({ needs: { count: 0 }, piNeeds: { items: items.slice(1) } })));
+});
+
+test('needs: a slow Pi Hub is left out, and the feed still answers in time', { timeout: 30000 }, async (t) => {
+  const http = require('node:http');
+  const slow = http.createServer((req, res) => { setTimeout(() => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"count":0,"items":[]}'); }, 5000); });
+  await new Promise((r) => slow.listen(0, '127.0.0.1', r));
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-feed-'));
+  const dead = 'http://127.0.0.1:9';
+  const { child, ready } = spawnAppServer({ env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: dead, SEARXNG_URL: dead, COMFY_URL: dead, N8N_URL: dead, PROXY_URL: dead, MAC_AI_HOME_URL: dead, MAC_DSH_URL: dead, LOCALAI_BAMBUDDY_URL: 'off', LOCALAI_PI_HUB_URL: `http://127.0.0.1:${slow.address().port}` } });
+  t.after(async () => {
+    slow.closeAllConnections(); slow.close();
+    if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+  const base = await ready;
+  const started = Date.now();
+  const r = await fetch(`${base}/api/display/feed`);
+  const took = Date.now() - started;
+  assert.equal(r.status, 200);
+  const feed = await r.json();
+  assert.ok(took < 3500, `feed took ${took} ms`);
+  assert.equal('needs' in feed, false);
+  assert.equal(feed.cards[0].kind, 'needs');
+});
+
+// Print lab cards (app/print-lab.js labCards) go in after the needs card, cut like the others.
+test('lab cards sit after the needs card; a judge card is not All clear', () => {
+  const lab = [{ kind: 'lab', id: 'judge-PR-021-01', title: 'Judge E-021', text: `Look at: ${'the seam '.repeat(20)}`, tone: 'attention', ask: 'lab-judge', run: 'PR-021-01' }];
+  const f = buildFeed({ needs: { count: 0 }, weather: 'Sunny.', lab });
+  assert.deepEqual(f.cards.map((c) => c.kind), ['needs', 'lab', 'weather']);
+  assert.equal(f.cards[0].title, 'No approvals');
+  const j = f.cards[1];
+  assert.deepEqual([j.id, j.title, j.tone, j.ask, j.run], ['judge-PR-021-01', 'Judge E-021', 'attention', 'lab-judge', 'PR-021-01']);
+  assert.equal([...j.text].length, 90);
+  const busy = buildFeed({ needs: { count: 0 }, lab: [{ kind: 'lab', id: 'lab-PR-021-01', title: 'Lab · E-021', text: 'The seam', tone: 'busy' }] });
+  assert.equal(busy.cards[0].title, 'All clear');
+  assert.equal('ask' in busy.cards[1], false);
+});
