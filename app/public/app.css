@@ -2501,6 +2501,173 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
   font-weight: 600;
   margin: 16px 0 8px;
 }
-
-/* Phone: the Work filter chips scroll sideways; fade the edge so the cut-off chip reads as "more this way" (look review). */
-@media (max-width:700px){.work-chips.ux-tabs{mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent);-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent)}}
+.lab-light-hint {
+  margin: 8px 0 0;
+  font-size: var(--ds-fs-1);
+  color: var(--ds-muted);
+}
+.lab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.lab-requests {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+.lab-request {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--ds-fs-1);
+}
+.lab-sheet {
+  box-sizing: border-box;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  border: 1px solid var(--ds-line-2);
+  border-radius: var(--ds-r-lg);
+  background: var(--ds-surface);
+  color: var(--ds-text);
+  font-family: var(--ds-font);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  overflow: auto;
+}
+.lab-sheet::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+.lab-sheet__form {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  margin: 0;
+}
+.lab-sheet__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.lab-sheet__title {
+  margin: 0;
+  font-size: var(--ds-fs-4);
+  line-height: 1.25;
+  font-weight: 700;
+}
+.lab-sheet__hint {
+  margin: 0;
+  font-size: var(--ds-fs-1);
+  color: var(--ds-soft);
+}
+.lab-sheet__body {
+  display: grid;
+  gap: 12px;
+}
+.lab-verdict-row {
+  border: 1px solid var(--ds-line);
+  border-radius: var(--ds-r-md);
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+  background: var(--ds-surface-2);
+}
+.lab-verdict-row.lab-row--missing {
+  border-color: var(--ds-attention);
+}
+.lab-verdict-row__title {
+  font-weight: 600;
+  font-size: var(--ds-fs-2);
+}
+.lab-verdict-criterion {
+  display: grid;
+  gap: 4px;
+}
+.lab-verdict-criterion__label {
+  font-size: var(--ds-fs-1);
+  color: var(--ds-muted);
+}
+.lab-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.lab-chip {
+  padding: 4px 10px;
+  font-size: var(--ds-fs-1);
+  border-radius: var(--ds-r-sm);
+  cursor: pointer;
+}
+.lab-chip[aria-checked="true"] {
+  border-color: var(--ds-accent);
+  background: var(--ds-accent-soft);
+  color: var(--ds-accent-text);
+}
+.lab-sheet__section {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--ds-line);
+  padding-top: 10px;
+}
+.lab-sheet__field {
+  display: grid;
+  gap: 4px;
+  font-size: var(--ds-fs-1);
+  color: var(--ds-soft);
+}
+.lab-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--ds-fs-2);
+  cursor: pointer;
+}
+.lab-sheet__status {
+  margin: 0;
+  font-size: var(--ds-fs-1);
+  color: var(--ds-soft);
+}
+.lab-sheet__error {
+  margin: 0;
+  font-size: var(--ds-fs-1);
+  color: var(--ds-bad-text);
+}
+.lab-sheet__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.lab-photo-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--ds-line);
+}
+.lab-photo-thumb {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: var(--ds-r-sm);
+  border: 1px solid var(--ds-line);
+}
+.lab-photo-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+@media (max-width: 640px) {
+  .lab-sheet {
+    width: 100%;
+    max-width: 100%;
+    margin: auto 0 0;
+    border-radius: var(--ds-r-lg) var(--ds-r-lg) 0 0;
+    border-bottom: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}

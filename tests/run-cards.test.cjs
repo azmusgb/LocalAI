@@ -115,17 +115,25 @@ test('a finished engineering run with no files has no preview line; only a runni
   }
 });
 
-test('readableTitle never shows a long prompt (one home, step 4)', () => {
+test('readableTitle: a label, else the whole title, else its first words cut at a word, never an instruction prompt', () => {
+  // Instructions (a prompt that starts "You are …", like the hub's House questions before they carried a label) never show.
   assert.equal(readableTitle({ type: 'chat', title: "You are the voice of a family's home hub on a Raspberry Pi. Answer th…" }), 'Chat');
   assert.equal(readableTitle({ type: 'chat', title: 'Plan the garden' }), 'Plan the garden');
-  assert.equal(readableTitle({ type: 'chat', title: 'line one\nline two' }), 'Chat');
   assert.equal(readableTitle({ type: 'chat', title: 'x'.repeat(200), meta: { label: 'House question' } }), 'House question');
   assert.equal(readableTitle({ type: 'automation', title: 'Hourly Stack & ComfyUI Health Check' }), 'Hourly Stack & ComfyUI Health Check');
-  assert.equal(readableTitle({ type: 'mission', title: 'y'.repeat(73) }), 'Mission');
-  // the server keeps up to 72 characters and ends a cut title with "…": a whole short question stays, a cut prompt doesn't
   assert.equal(readableTitle({ type: 'chat', title: 'Why does the printer stop at layer 40 when the AMS is on slot 3?' }), 'Why does the printer stop at layer 40 when the AMS is on slot 3?');
-  assert.equal(readableTitle({ type: 'chat', title: 'x'.repeat(68) + '…' }), 'Chat');
   assert.equal(readableTitle({ type: 'research', title: '' }), 'Research');
-  assert.equal(runCard({ type: 'image', title: 'z'.repeat(90) }, none).title, 'Image');
-  assert.equal(runCard({ type: 'weird', title: 'w'.repeat(90) }, none).title, 'Run');
+  // A long first message: the server keeps 69 characters and adds "…"; Recent shows its first words, cut at a word.
+  const asked = "What's the best way to dry PETG before printing it on the X2D with the AMS loaded?";
+  const server = asked.slice(0, 69).trim() + '…';
+  const t = readableTitle({ type: 'chat', title: server });
+  assert.equal(t, "What's the best way to dry PETG before printing it on the X2D with…");
+  assert.ok(t.length <= 72 && asked.startsWith(t.slice(0, -1)) && asked[t.length - 1] === ' ', t);
+  assert.equal(readableTitle({ type: 'chat', title: 'line one\nline two' }), 'line one…');
+  assert.equal(readableTitle({ type: 'agent', title: 'Tidy the workshop inventory, then ' + 'y'.repeat(60) }), 'Tidy the workshop inventory, then…');
+  // One long word has no word break to cut at: it is cut where it is.
+  const long = readableTitle({ type: 'chat', title: 'x'.repeat(69) + '…' });
+  assert.ok(long.endsWith('…') && long.length <= 72, long);
+  assert.equal(runCard({ type: 'image', title: 'A red fox in the snow at dusk, watercolour, soft light, wide shot, ' + 'z'.repeat(40) }, none).title,
+    'A red fox in the snow at dusk, watercolour, soft light, wide shot…');
 });
