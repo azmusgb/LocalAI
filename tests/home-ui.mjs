@@ -96,7 +96,7 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
     const page = await open(vp, '#home');
     await page.waitForSelector('#homeRecent2 .run-card', T);
     assert.equal(await page.locator('#homeRecent2 .run-card').count(), 6);
-    assert.ok(page.calls.some(u => u.searchParams.get('limit') === '6'), page.calls.map(u => u.search).join());
+    assert.ok(page.calls.some(u => u.searchParams.get('limit') === '30'), page.calls.map(u => u.search).join());  // 30, folded to six (needs-you.js recent)
     const xs = await page.locator('#homeRecent2 .list-row__title').evaluateAll(e => [...new Set(e.map(x => Math.round(x.getBoundingClientRect().left)))]);
     assert.equal(xs.length, 1, 'titles start at ' + xs.join());
     const see = page.locator('#homeSeeAll');

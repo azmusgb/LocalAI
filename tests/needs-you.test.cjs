@@ -95,3 +95,14 @@ test('seen is kept on the server, and Work\'s Needs you filter matches Home\'s r
   assert.equal((await post('/api/items/delete', { items: [{ kind: 'thread', id: c }] })).status, 200);
   assert.deepEqual(await needs(), []);
 });
+
+// Home's Recent: an hourly automation used to fill all six rows. Its repeats fold into its newest run.
+test('recent folds repeats of one automation into its newest run and leaves out what Needs you shows', () => {
+  const auto = (id, ageH, o = {}) => ({ ...run('automation', 'Hourly Stack & ComfyUI Health Check', ageH * HOUR, { id, status: 'completed', ...o }), meta: { automationId: 'auto-1' } });
+  const items = [auto('a1', 1), run('chat', 'What is on tonight', 1.5 * HOUR, { id: 'c1', status: 'completed' }), auto('a2', 2), auto('a3', 3),
+    run('image', 'A fox', 4 * HOUR, { id: 'i1', status: 'completed' }), auto('a4', 4), run('agent', 'Weekly report', 5 * HOUR, { id: 'needs1' }),
+    { ...run('automation', 'Nightly backup', 6 * HOUR, { id: 'b1', status: 'completed' }), meta: { automationId: 'auto-2' } }];
+  assert.deepEqual(ids(N.recent(items, [{ id: 'needs1' }])), ['a1', 'c1', 'i1', 'b1']);
+  assert.equal(N.recent(items, [], 2).length, 2);
+  assert.deepEqual(ids(N.recent([], [])), []);
+});
