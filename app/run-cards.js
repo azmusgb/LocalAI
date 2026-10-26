@@ -47,6 +47,8 @@ function readableTitle(run) {
   const label = typeof run?.meta?.label === 'string' ? run.meta.label.trim().slice(0, 80) : '';
   if (label) return label;
   const title = typeof run?.title === 'string' ? run.title.trim() : '';
+  // Pi Hub's Ask sent its prompt as the message until it labelled its runs (one home, step 4): name those for what they are.
+  if (/^you are the voice of a family's home hub\b/i.test(title)) return 'House question';
   if (!title || /^you are\b/i.test(title)) return KIND_NAMES[kind];
   return firstWords(title);
 }
