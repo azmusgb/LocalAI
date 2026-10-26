@@ -122,3 +122,13 @@ test('the cloud gets the conversation, not the appliance snapshot', async t => {
   const sent = JSON.stringify(groq.calls[0].body.messages);
   assert.ok(!sent.includes('RUNTIME CAPABILITY SNAPSHOT'), sent.slice(0, 300));
 });
+
+test('an earlier turn about Local AI keeps the follow-up on this PC', async t => {
+  const { call, groq } = await start(t);
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  const r = await call('/api/chat', { bigger: true, messages: [
+    { role: 'user', content: 'What models does Local AI have installed?' }, { role: 'assistant', content: 'qwen3 and gemma3, on 10.0.0.21.' },
+    { role: 'user', content: 'Compare those to Llama 3.3 70B for writing.' }] });
+  assert.equal(r.value.route.provider, 'ollama');
+  assert.equal(groq.calls.length, 0);
+});

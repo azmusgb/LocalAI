@@ -85,13 +85,13 @@ function createChat(ctx) {
     if (asked && isAboutLocalAi(asked.content)) capabilityContext = [capabilityContext, aboutApplianceBlock({ addresses: accessAddresses() })].filter(Boolean).join('\n\n');
     // The coordinator (app/model-router.js): which model answers. Private work, and everything while cloud is off, stays
     // here. The guard reads everything that would be sent: every turn of the conversation and the research sources.
-    // Questions about Local AI itself stay here too (their answer needs the appliance's own details).
+    // A conversation that touches Local AI itself, in any turn, stays here too (it carries the appliance's own details).
     const sent = [...messages.map(m => m.content), researchContext].join('\n');
     const route = modelRouter.route({
       kind: body.webSearch === true ? 'research' : 'chat', text: sent, model: picked,
       voice: body.voice === true || body.brief === true || body.voiceRun === true, house: body.title === 'House question',
       attachments: (Array.isArray(body.images) && body.images.length) || messages.some(m => Array.isArray(m.images) && m.images.length),
-      keepLocal: body.keepLocal === true || Boolean(asked && isAboutLocalAi(asked.content)), bigger: body.bigger === true,
+      keepLocal: body.keepLocal === true || messages.some(m => isAboutLocalAi(m.content)), bigger: body.bigger === true,
       cloud: routingSetting().cloud === true, keys: cloudModels.keys(), parked: cloudModels.parked(), env: process.env, localModel: model
     });
     return { model, route, messages, sources, researchContext, capabilityContext, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
