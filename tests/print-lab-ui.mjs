@@ -48,8 +48,11 @@ const index = {
       ],
       needs: { id: 'E-008', urgency: 0, action: 'Judge the print', why: 'Look at: top edge.', command: 'uv run lab exp verdict E-008 --rank A --note "what you see"' }
     }),
+    exp('E-009', 'printing', { judge_on: 'both fronts', due_at: new Date(Date.now() + 90 * 60e3).toISOString(),
+      needs: { id: 'E-009', urgency: 0, action: 'Judge the print', due_at: new Date(Date.now() + 90 * 60e3).toISOString(), why: 'Printing until about 11:55 (estimate). Then look at: both fronts. Photos help.', command: 'uv run lab exp verdict E-009 --accept "yes|no" --note "what you see"' } }),
+    exp('E-007', 'answered', { test_kind: 'full_part', verdict: { kind: 'acceptance', good_enough: true, defects: ['separation very hard'], note: 'faces good', at: new Date(Date.now() - 3600e3).toISOString() } }),
     exp('E-006', 'needs_approval', { check: { status: 'needs_approval', guards: [{ code: 'per_test_time', ok: false, result: 'needs_approval', message: '248.7 / 45 min per test' }] }, needs: { id: 'E-006', urgency: 2, action: 'Approve or drop', why: '248.7 / 45 min per test', command: 'uv run lab exp approve E-006 --reason "..."' } }),
-    exp('E-004', 'answered', { outcome: 'refuted', validity: { status: 'valid', reasons: [{ code: 'cross_plate_by_design', status: 'valid' }] }, verdict: { kind: 'ranking', note: 'they look good', at: '2026-10-24T23:14:18Z' }, photos: [{ run: 'PR-004-01', path: 'photos/PR-004-1.jpg', sha256: sha }] })
+    exp('E-004', 'answered', { outcome: 'refuted', validity: { status: 'valid', reasons: [{ code: 'cross_plate_by_design', status: 'valid' }] }, verdict: { kind: 'ranking', note: 'they look good', at: '2026-09-24T23:14:18Z' }, photos: [{ run: 'PR-004-01', path: 'photos/PR-004-1.jpg', sha256: sha }] })
   ],
   needs: [], problems: [], records: { 'E-004': { type: 'experiment', file: 'experiments/E-004.json', sha256: 'a'.repeat(64), payload: { id: 'E-004' } } }
 };
@@ -87,10 +90,21 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
 
   await check(`${name}: Needs you comes first, most urgent first, each with its command and Copy`, async () => {
     const rows = await page.locator('.lab-needs .list-row__title').allInnerTexts();
-    assert.deepEqual(rows, ['Judge the print · E-008', 'Approve or drop · E-006']);
+    assert.deepEqual(rows, ['Judge the print · E-008', 'Printing · E-009', 'Approve or drop · E-006']);
     assert.equal(await page.locator('.lab-needs code').first().innerText(), 'uv run lab exp verdict E-008 --rank A --note "what you see"');
-    assert.equal(await page.locator('.lab-needs .lab-copy').count(), 2);
+    assert.equal(await page.locator('.lab-needs .lab-copy').count(), 2);  // none for the print still running
     assert.equal(await page.locator('#printLab h1').innerText(), 'Projects');
+  });
+  await check(`${name}: a print still running says when it's due instead of asking for a verdict`, async () => {
+    const row = page.locator('.lab-needs .list-row').filter({ hasText: 'E-009' });
+    assert.match(await row.innerText(), /Done about \d\d:\d\d \(estimate\)\. Then look at: both fronts\./);
+    assert.equal(await row.locator('code').count(), 0);
+  });
+  await check(`${name}: a result from the last few days stays out of Earlier, with Accepted and its defects`, async () => {
+    assert.equal(await page.locator('.lab-earlier #lab-E-007').count(), 0);
+    const card = await page.locator('#lab-E-007').innerText();
+    assert.match(card, /Accepted/);
+    assert.match(card, /Defects: separation very hard/);
   });
   await check(`${name}: the question shows its budget, what the next test adds and that it continues`, async () => {
     const q = await page.locator('.lab-question').innerText();
@@ -222,6 +236,16 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
     await img.scrollIntoViewIfNeeded();
     assert.equal(await img.evaluate(i => i.complete && i.naturalWidth), 1);
     assert.match(await page.locator('#lab-E-004').innerText(), /Prediction refuted[\s\S]*Fair comparison/);
+  });
+  await check(`${name}: How the lab works is folded, and opens to the ten steps, the rules and where things live`, async () => {
+    const guide = page.locator('#printLabGuide');
+    assert.equal(await guide.getAttribute('open'), null);
+    await guide.locator('summary').click();
+    assert.equal(await guide.getAttribute('open'), '');
+    assert.deepEqual(await guide.locator('.lab-guide__flow > li > b').allInnerTexts(),
+      ['Question', 'Plan', 'Build', 'Check', 'Approval, if needed', 'Send', 'Start', 'Photos', 'Verdict', 'Outcome']);
+    assert.match(await guide.innerText(), /One factor per experiment[\s\S]*Asked for vs what printed[\s\S]*Mac[\s\S]*Local AI[\s\S]*Phone/);
+    assert.match(await guide.innerText(), /lab exp send/);
   });
   await check(`${name}: axe finds nothing on the page`, async () => {
     await addAxe(page, axePath);

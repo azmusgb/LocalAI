@@ -391,11 +391,18 @@ function meter(label,spent,next,total,unit){
  return `<div class="lab-meter${over?' lab-meter--over':''}"><div class="lab-meter__head"><span>${esc(label)}</span><span>${n(spent)} / ${n(total)} ${unit}</span></div>`
   +`<div class="lab-meter__track" role="img" aria-label="${n(spent)} of ${n(total)} ${unit} used${next?`, the next test adds ${n(next)}`:''}"><span class="lab-meter__spent" style="width:${a.toFixed(1)}%"></span><span class="lab-meter__next" style="width:${b.toFixed(1)}%"></span></div></div>`;
 }
+const clock=iso=>new Date(iso).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});
+// A print still on the printer isn't ready to judge: until its estimated end it says when, and offers no command.
+function needView(x,byId){
+ const look=`Look at: ${byId[x.id]?.judge_on||'the face'}. Photos help.`;
+ if(x.due_at&&Date.now()<new Date(x.due_at))return {action:'Printing',why:`Done about ${clock(x.due_at)} (estimate). Then l${look.slice(1)}`,command:null};
+ return {action:x.action,why:x.due_at?look:x.why,command:x.command};
+}
 function needsHtml(ix,byId){
  if(!ix.needs.length)return '<p class="empty-state">Nothing needs you right now.</p>';
- return `<ul class="list-group lab-needs">${ix.needs.map(x=>`<li class="list-row"><div class="list-row__main"><div class="list-row__title"><a href="#printLab?e=${esc(x.id)}" data-lab-open="${esc(x.id)}">${esc(x.action)} · ${esc(x.id)}</a></div>`
+ return `<ul class="list-group lab-needs">${ix.needs.map(n=>{const x={...n,...needView(n,byId)};return `<li class="list-row"><div class="list-row__main"><div class="list-row__title"><a href="#printLab?e=${esc(x.id)}" data-lab-open="${esc(x.id)}">${esc(x.action)} · ${esc(x.id)}</a></div>`
   +`<div class="list-row__sub">${esc(byId[x.id]?.question_text)}</div><div class="list-row__sub">${esc(x.why)}</div>`
-  +`<div class="lab-cmd"><code>${esc(x.command)}</code><button type="button" class="btn-outline lab-copy" data-copy="${esc(x.command)}" aria-label="Copy the command for ${esc(x.id)}">Copy</button></div></div></li>`).join('')}</ul>`;
+  +(x.command?`<div class="lab-cmd"><code>${esc(x.command)}</code><button type="button" class="btn-outline lab-copy" data-copy="${esc(x.command)}" aria-label="Copy the command for ${esc(x.id)}">Copy</button></div>`:'')+'</div></li>'}).join('')}</ul>`;
 }
 function questionHtml(q,byId){
  const s=q.spent,b=q.budget,nx=q.next,st=q.stop,ev=q.evidence;
@@ -411,6 +418,7 @@ function photoUrl(project,p){return `/api/lab/${encodeURIComponent(project)}/pho
 function experimentHtml(x,project,requests=currentRequests){
  const f=x.factor||{},b=[badge(STATUS[x.status]||[x.status,'neutral'])];
  if(x.outcome){b.push(badge(OUTCOME[x.outcome]||[x.outcome,'neutral']));if(x.validity)b.push(badge(VALIDITY[x.validity.status]||[x.validity.status,'neutral']))}
+ if(x.verdict&&x.verdict.kind==='acceptance')b.push(badge(x.verdict.good_enough?['Accepted','good']:['Not good enough','bad']));
  const meta=[(x.test_kind||'').replace(/_/g,' '),f.name?`${f.name.replace(/_/g,' ')}: ${(f.values||[]).map(value).join(' vs ')}`:'',x.provenance!=='prospective'?x.provenance:''].filter(Boolean).join(' · ');
  const vars=x.variants.map(v=>{const u=v.unit?` ${v.unit}`:'',name=v.tab||v.id;return `<li>${esc(name)}: ${v.realized!=null&&v.as_asked===false?`${esc(value(v.requested))} asked, ${n(v.realized)} printed${esc(u)}`:`${esc(v.realized!=null?n(v.realized):value(v.requested))}${esc(u)}`}</li>`}).join('');
  const cost=[x.estimate&&`estimated ${n(x.estimate.minutes)} min, ${n(x.estimate.g)} g`,x.usage&&`used ${n(x.usage.minutes)} min, ${n(x.usage.g)} g`,x.layer_time_median_s&&`${n(x.layer_time_median_s)} s per layer`].filter(Boolean).join(', ');
@@ -433,13 +441,16 @@ function experimentHtml(x,project,requests=currentRequests){
  return `<article class="card lab-exp" id="lab-${esc(x.id)}"><header class="lab-exp__head"><span class="lab-exp__id">${esc(x.id)}</span>${b.join('')}</header><h3>${esc(x.question_text)}</h3><p class="meta">${esc(meta)}</p>`
   +(vars?`<ul class="lab-variants">${vars}</ul>`:'')+(cost?`<p class="meta">${esc(cost)}</p>`:'')+(why?`<p class="meta">Why: ${esc(why)}</p>`:'')
   +(said?`<p class="lab-verdict">Your verdict: ${esc(said)} <span class="meta">${esc(when(v.at))}</span></p>`:'')
+  +(v&&v.defects&&v.defects.length?`<p class="meta lab-defects">Defects: ${esc(v.defects.join('; '))}</p>`:'')
   +actions
   +(shots?`<div class="lab-shots">${shots}</div>`:'')
   +`<details class="lab-details" data-lab-details="${esc(x.id)}"><summary>Details</summary><dl>${dl}</dl>${guards?`<h4>Last check (${esc(String(x.check.status||'').replace(/_/g,' '))})</h4><ul class="lab-guards">${guards}</ul>`:''}</details></article>`;
 }
 function render(data,requests=currentRequests){
  const ix=data.index,meta=data.meta||{},byId=Object.fromEntries(ix.experiments.map(x=>[x.id,x]));
- const open=ix.questions.filter(q=>!['answered','stopped'].includes(q.status)),active=ix.experiments.filter(x=>!DONE.has(x.status)),earlier=ix.experiments.filter(x=>DONE.has(x.status));
+ const open=ix.questions.filter(q=>!['answered','stopped'].includes(q.status)),recent=x=>x.status==='answered'&&x.verdict&&Date.now()-new Date(x.verdict.at)<3*864e5;
+ // Answered in the last three days stays in view: the newest result is what the owner comes to check.
+ const active=ix.experiments.filter(x=>!DONE.has(x.status)||recent(x)),earlier=ix.experiments.filter(x=>DONE.has(x.status)&&!recent(x));
  const stale=meta.synced_at&&Date.now()-new Date(meta.synced_at)>2*3600e3;
  return `<p class="meta lab-synced${stale?' lab-synced--stale':''}">Synced from the Mac ${esc(ago(meta.synced_at))}${stale?'. The Mac may be asleep.':''}</p>`
   +(ix.problems.length?`<div class="banner lab-problems" role="alert"><strong>Records the Mac can't read</strong><ul>${ix.problems.map(p=>`<li><b>${esc(p.file)}</b> ${esc(p.error)}</li>`).join('')}</ul></div>`:'')
