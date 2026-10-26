@@ -17,7 +17,7 @@ const KINDS = Object.freeze({
 
 // The cloud models per role, in the order tried. Env overrides change a model without code.
 const CLOUD = Object.freeze({
-  reasoner: [['groq', 'LOCALAI_GROQ_REASONER', 'llama-3.3-70b-versatile'], ['cerebras', 'LOCALAI_CEREBRAS_REASONER', 'llama-3.3-70b']],
+  reasoner: [['groq', 'LOCALAI_GROQ_REASONER', 'openai/gpt-oss-120b'], ['cerebras', 'LOCALAI_CEREBRAS_REASONER', 'llama-3.3-70b']],
   coder: [['groq', 'LOCALAI_GROQ_CODER', 'openai/gpt-oss-120b'], ['cerebras', 'LOCALAI_CEREBRAS_CODER', 'gpt-oss-120b']],
 });
 
@@ -64,7 +64,7 @@ function table() {
   return Object.entries(KINDS).map(([kind, k]) => ({ kind, label: k.label, where: k.where, cloud: k.cloud !== false }));
 }
 
-// Where an answer came from, for run cards and pages: "Answered by Llama 3.3 70B · Groq" or "Answered on this PC".
+// Where an answer came from, for run cards and pages: "Answered by GPT-OSS 120B · Groq" or "Answered on this PC".
 const PROVIDER_NAMES = Object.freeze({ groq: 'Groq', cerebras: 'Cerebras' });
 const MODEL_NAMES = [[/^llama-3\.3-70b(-versatile)?$/, 'Llama 3.3 70B'], [/^(openai\/)?gpt-oss-120b$/, 'GPT-OSS 120B']];
 function label(used) {

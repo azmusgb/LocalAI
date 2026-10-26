@@ -61,7 +61,7 @@ test('switched on: a shareable request goes to Groq and the run says so', async 
   assert.equal((await call('/api/models/routing', { cloud: true }, 'PUT')).value.cloud, true);
   const r = await call('/api/chat', research('Compare PETG and ASA for outdoor parts'));
   assert.equal(r.value.message.content, 'Answered by Groq');
-  assert.deepEqual([r.value.route.provider, r.value.route.model], ['groq', 'llama-3.3-70b-versatile']);
+  assert.deepEqual([r.value.route.provider, r.value.route.model], ['groq', 'openai/gpt-oss-120b']);
   assert.equal(groq.calls[0].auth, 'Bearer gsk_test_secret');
   const run = (await call(`/api/runs?id=${encodeURIComponent(r.value.runId)}`)).value.item;
   assert.equal(run.meta.route.provider, 'groq');
@@ -168,7 +168,7 @@ test('planner, cloud on: Local AI\'s own code is planned in the cloud, without s
   await call('/api/models/routing', { cloud: true }, 'PUT');
   const r = await call('/api/changes/plan', { request: 'Make the models page clearer', target: 'self' });
   assert.equal(r.value.item.summary, 'Planned in the cloud');
-  assert.deepEqual([r.value.item.route.provider, r.value.item.route.model], ['groq', 'llama-3.3-70b-versatile']);
+  assert.deepEqual([r.value.item.route.provider, r.value.item.route.model], ['groq', 'openai/gpt-oss-120b']);
   const sent = JSON.stringify(groq.calls[0].body.messages);
   assert.match(sent, /models page/);
   for (const bad of ['models-page-secret-value', 'stack.env', '10.0.0.21', 'gsk_test_secret', 'models-host.md', 'WIN-HOST']) assert.ok(!sent.includes(bad), bad);

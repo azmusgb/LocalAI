@@ -14,7 +14,7 @@ test('shareable research with cloud on: Groq, then Cerebras, then this PC', () =
   assert.equal(r.class, 'shareable');
   assert.deepEqual(providers(r), ['groq', 'cerebras', 'ollama']);
   assert.equal(r.order.at(-1).model, 'qwen3:4b-instruct-32k');
-  assert.equal(r.order[0].model, 'llama-3.3-70b-versatile');
+  assert.equal(r.order[0].model, 'openai/gpt-oss-120b');
 });
 
 test('code goes to the cloud coder first', () => {
