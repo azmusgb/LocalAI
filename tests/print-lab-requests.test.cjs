@@ -464,3 +464,13 @@ test('an oversized or endless camera answer is cut off, never buffered whole', a
   assert.ok(cancelled, 'the stream is cancelled once it passes the cap');
   assert.ok(pulled <= 3 * 1024 * 1024, `read ${pulled} bytes`);
 });
+
+test("each photo carries its tab from the experiment's record, so the page can pair photos by tab", async t => {
+  const { lab, call } = harness(t);
+  const sha1 = '1'.repeat(64), sha2 = '2'.repeat(64);
+  const ix = labIndex([{ id: 'E-020', status: 'printing', run: 'PR-020-01', photos: [{ run: 'PR-020-01', sha256: sha1 }, { run: 'PR-020-01', sha256: sha2 }] }]);
+  ix.records = { 'E-020': { type: 'experiment', file: 'experiments/E-020.json', sha256: 'a'.repeat(64), payload: { id: 'E-020', print_runs: [{ id: 'PR-020-01', photos: [{ sha256: sha1, tab: '12A' }, { sha256: sha2 }, { sha256: 'x', tab: '<b>' }] }] } } };
+  assert.equal(lab.sync('hex-tile', ix)[0], 200);
+  const r = await call('GET', '/api/lab/hex-tile');
+  assert.deepEqual(r.body.index.experiments[0].photos.map(p => p.tab ?? null), ['12A', null]);
+});

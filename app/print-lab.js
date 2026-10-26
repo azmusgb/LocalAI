@@ -136,6 +136,21 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
       errorCode: state === 'error' && typeof p.errorCode === 'string' ? p.errorCode : null
     };
   }
+  // The index lists photos without their tab; the experiment's own record has it (lab photos add --tab). Copied onto each
+  // photo (a short plain tab name only) so the page can pair photos by tab. Nothing stored changes.
+  function withTabs(project, index) {
+    if (!Array.isArray(index?.experiments)) return index;
+    const experiments = index.experiments.map(x => {
+      if (!x || !Array.isArray(x.photos) || !x.photos.length || !ID_RE.test(String(x.id))) return x;
+      const runs = storage.readSetting(key(project, `record:${x.id}`), null)?.payload?.print_runs;
+      const tabs = new Map();
+      for (const r of Array.isArray(runs) ? runs : []) for (const ph of Array.isArray(r?.photos) ? r.photos : []) {
+        if (ph && typeof ph.sha256 === 'string' && typeof ph.tab === 'string' && /^[\w.-]{1,16}$/.test(ph.tab)) tabs.set(ph.sha256, ph.tab);
+      }
+      return tabs.size ? { ...x, photos: x.photos.map(ph => (tabs.has(ph?.sha256) ? { ...ph, tab: tabs.get(ph.sha256) } : ph)) } : x;
+    });
+    return { ...index, experiments };
+  }
   function liveSummary(project) {
     const l = live(storage.readSetting(key(project, 'index'), null));
     return l && !l.conflict ? { experiment: l.experiment, state: l.state, progress: l.progress, minutesLeft: l.minutesLeft, finishAt: l.finishAt } : null;
@@ -203,7 +218,7 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
       if (!part && req.method === 'GET') {
         const index = storage.readSetting(key(project, 'index'), null);
         if (!index) json(res, 404, { error: 'No lab data yet. Run `lab sync` on the Mac.' });
-        else json(res, 200, { meta: storage.readSetting(key(project, 'meta'), {}), index, live: live(index) });
+        else json(res, 200, { meta: storage.readSetting(key(project, 'meta'), {}), index: withTabs(project, index), live: live(index) });
         return true;
       }
       if (part === 'sync' && req.method === 'POST') {
