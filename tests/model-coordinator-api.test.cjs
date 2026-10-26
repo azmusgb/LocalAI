@@ -40,7 +40,7 @@ async function start(t, groqHandler, { env = {}, local = 'Answered on this PC', 
     return { status: r.status, value: await r.json() };
   };
   const stream = async (p, body) => (await fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).text();
-  return { call, stream, ollama, groq };
+  return { call, stream, ollama, groq, base };
 }
 const research = q => ({ messages: [{ role: 'user', content: q }], webSearch: false, bigger: true });
 
@@ -233,4 +233,18 @@ test('planner, cloud on: an engineering request that carries the conversation st
   assert.ok(r.status < 300, JSON.stringify(r.value));
   for (let i = 0; i < 30; i++) { const runs = (await call('/api/engineering/runs')).value; if (JSON.stringify(runs).includes('planned')) break; await new Promise(res => setTimeout(res, 100)); }
   assert.equal(groq.calls.length, 0);
+});
+
+// Step 3: the switch is a guarded write. Another device that isn't signed in can't turn cloud models on.
+test('the cloud switch: another device that is not signed in is refused; reading it is fine and carries no key', async t => {
+  const { guarded } = require('../app/signin');
+  assert.equal(guarded('/api/models/routing', 'PUT'), true);
+  assert.equal(guarded('/api/models/routing', 'GET'), false);
+  const { call, base } = await start(t);
+  const r = await fetch(base + '/api/models/routing', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '10.0.0.37' }, body: JSON.stringify({ cloud: true }) });
+  assert.equal(r.status, 401);
+  const read = (await call('/api/models/routing')).value;
+  assert.equal(read.cloud, false);
+  assert.ok(Array.isArray(read.table) && read.table.every(x => x.where));
+  assert.ok(!JSON.stringify(read).includes('gsk_test_secret'));
 });
