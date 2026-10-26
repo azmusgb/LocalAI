@@ -2674,3 +2674,119 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 
 /* Phone: the Work filter chips scroll sideways; fade the edge so the cut-off chip reads as "more this way" (look review). */
 @media (max-width:700px){.work-chips.ux-tabs{mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent);-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent)}}
+
+/* ==== print lab: How the lab works (index.html #printLabGuide, static, folded) ==== */
+.lab-guide {
+  margin-top: 16px;
+}
+.lab-guide > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--ds-accent-text);
+}
+.lab-guide[open] > summary {
+  margin-bottom: 8px;
+}
+.lab-guide h3 {
+  font-size: var(--ds-fs-2);
+  margin: 16px 0 8px;
+}
+.lab-guide p {
+  max-width: 68ch;
+}
+.lab-guide__flow {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: lab-step;
+}
+.lab-guide__flow li {
+  counter-increment: lab-step;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--ds-line);
+  border-left: 3px solid var(--ds-accent);
+  border-radius: var(--ds-r-md);
+  background: var(--ds-surface-2);
+}
+.lab-guide__flow li.lab-guide__you {
+  border-left-color: var(--ds-attention);
+}
+.lab-guide__flow b::before {
+  content: counter(lab-step) ". ";
+  color: var(--ds-muted);
+  font-weight: 500;
+}
+.lab-guide__flow span {
+  color: var(--ds-muted);
+  font-size: var(--ds-fs-1);
+}
+.lab-guide__flow code {
+  align-self: flex-start;
+  font-family: var(--ds-mono);
+  font-size: var(--ds-fs-1);
+  overflow-wrap: anywhere;
+}
+.lab-guide__rules {
+  display: grid;
+  grid-template-columns: minmax(0, 14em) minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+}
+.lab-guide__rules dt {
+  font-weight: 600;
+}
+.lab-guide__rules dd {
+  margin: 0;
+  color: var(--ds-muted);
+}
+@media (max-width: 640px) {
+  .lab-guide__rules {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lab-guide__rules dd {
+    margin-bottom: 6px;
+  }
+}
+.lab-guide__arch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.lab-guide__arch > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--ds-line);
+  border-radius: var(--ds-r-md);
+  background: var(--ds-surface-2);
+}
+.lab-guide__arch > div:first-child {
+  border-color: var(--ds-accent);
+}
+.lab-guide__arch span {
+  color: var(--ds-muted);
+  font-size: var(--ds-fs-1);
+}
+.lab-guide__arrow {
+  align-self: center;
+  color: var(--ds-muted);
+}
+@media (max-width: 640px) {
+  .lab-guide__arch {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lab-guide__arrow {
+    transform: rotate(90deg);
+    justify-self: center;
+  }
+}

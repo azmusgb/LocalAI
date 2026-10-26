@@ -223,6 +223,16 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
     assert.equal(await img.evaluate(i => i.complete && i.naturalWidth), 1);
     assert.match(await page.locator('#lab-E-004').innerText(), /Prediction refuted[\s\S]*Fair comparison/);
   });
+  await check(`${name}: How the lab works is folded, and opens to the ten steps, the rules and where things live`, async () => {
+    const guide = page.locator('#printLabGuide');
+    assert.equal(await guide.getAttribute('open'), null);
+    await guide.locator('summary').click();
+    assert.equal(await guide.getAttribute('open'), '');
+    assert.deepEqual(await guide.locator('.lab-guide__flow > li > b').allInnerTexts(),
+      ['Question', 'Plan', 'Build', 'Check', 'Approval, if needed', 'Send', 'Start', 'Photos', 'Verdict', 'Outcome']);
+    assert.match(await guide.innerText(), /One factor per experiment[\s\S]*Asked for vs what printed[\s\S]*Mac[\s\S]*Local AI[\s\S]*Phone/);
+    assert.match(await guide.innerText(), /lab exp send/);
+  });
   await check(`${name}: axe finds nothing on the page`, async () => {
     await addAxe(page, axePath);
     const v = await page.evaluate(tags => window.axe.run(document.getElementById('printLab'), { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations'] }).then(r => r.violations.map(x => `${x.id}: ${x.nodes.map(n => n.target.join(' ')).join(', ')}`)), TAGS);
