@@ -5,6 +5,7 @@
 // what this code uses from the rest of the server.
 const { secretish } = require('../model-coordinator');
 const { stickyPrivate } = require('../model-router');
+const { cleanId } = require('../run-ledger');
 // Pi Hub's page facts, as ask-context.js appends them: they describe the household's pages, so the chat stays here.
 const HUB_CONTEXT = /\n---\nContext \(page facts from a link/;
 // The home hub's prompt (Pi Hub's House questions), as app/run-cards.js readableTitle knows it.
@@ -98,8 +99,11 @@ function createChat(ctx) {
     // Privacy belongs to the conversation: a follow-up or a retry resends the turns without their markers (voice, House,
     // files, "Keep on this PC", a system message), so an earlier turn that was private for a reason of its own keeps
     // every later turn of the thread here. Judged on the server from the runs it recorded; the client's flags don't count.
-    const threadId = typeof body.threadId === 'string' ? body.threadId.slice(0, 120) : '';
-    const keptBefore = threadId && runLedger.list({ threadId, all: true }).some(r => stickyPrivate(r.meta?.privacy) || stickyPrivate(r.meta?.route) || r.meta?.voice === true);
+    // The lookup uses the ledger's own id rule (cleanId): a threadId it would not keep as it is can't find its earlier
+    // runs, so it keeps the request here rather than failing open.
+    const askedThread = body.threadId === undefined || body.threadId === null || body.threadId === '' ? '' : body.threadId;
+    const threadId = askedThread ? cleanId(askedThread) : '';
+    const keptBefore = (askedThread && threadId !== askedThread) || (threadId && runLedger.list({ threadId, all: true }).some(r => stickyPrivate(r.meta?.privacy) || stickyPrivate(r.meta?.route) || r.meta?.voice === true));
     const sent = [...messages.map(m => m.content), researchContext].join('\n');
     const route = coordinator.route({
       kind: body.webSearch === true ? 'research' : 'chat', text: sent, model: picked,

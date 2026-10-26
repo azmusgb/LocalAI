@@ -342,3 +342,19 @@ test('planner, cloud on: a cloud plan that touches a file it was not shown is no
   assert.equal(r.value.item.summary, 'Planned on this PC');
   assert.equal(r.value.item.route.provider, 'ollama');
 });
+
+// Review of #402: the thread lookup uses the ledger's own id rule. A threadId the ledger would not keep as it is (so
+// its earlier runs can't be found by it) keeps the request here rather than failing open.
+test('a follow-up whose threadId the ledger would not keep as it is stays on this PC', async t => {
+  const { call, groq } = await start(t);
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  for (const thread of ['thr private 1', 'thr/private', 'x'.repeat(100)]) {
+    await call('/api/chat', { keepLocal: true, messages: [{ role: 'user', content: 'Compare PETG and ASA' }], threadId: thread });
+    const r = await call('/api/chat', { bigger: true, threadId: thread, messages: [{ role: 'user', content: 'Compare PETG and ASA' }, { role: 'assistant', content: 'x' }, { role: 'user', content: 'More detail please' }] });
+    assert.equal(r.value.route.provider, 'ollama', thread.slice(0, 20));
+  }
+  assert.equal(groq.calls.length, 0);
+  // A well-formed threadId is unaffected.
+  const ok = await call('/api/chat', { bigger: true, threadId: 'thr-fine-1', messages: [{ role: 'user', content: 'Compare PETG and ASA' }] });
+  assert.equal(ok.value.route.provider, 'groq');
+});
