@@ -5,7 +5,8 @@
 // whole projection (schema print-lab-index/1); one older than the last stored is refused, records are upserted by
 // id and skipped when their sha256 is unchanged, and records the Mac no longer has are removed.
 // Photos are stored once each under DATA_DIR/print-lab/<project>/photos/<sha256>.jpg.
-// Requests and incoming photos are sent by paired phones and picked up by the Mac (`lab pull`): verdict and photos, and
+// Requests and incoming photos are sent by paired phones (and a verdict by the Workshop display, app/display-lab.js) and
+// picked up by the Mac (`lab pull`): verdict and photos, and
 // the page's buttons start (It's printing now), approve and abandon (Drop). Local AI only queues them; the Mac applies
 // each once with the CLI's own functions and posts the result back.
 // The project also carries `live`: the Workshop printer's state for the one experiment that is printing, and
@@ -148,6 +149,50 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
     return [200, { ok: true, upserted, removed, unchanged }];
   }
 
+  // Queues one request for the Mac (lab pull) and answers [status, body]. Used by the phone's POST
+  // /api/lab/<project>/requests and the Workshop display's verdict route (app/display-lab.js), so both queue the same
+  // thing under the same limits: 4 KB, 20 pending, an id sent twice is one request. `from` is who sent it: a device id,
+  // or 'display'.
+  function queueRequest(project, data, from) {
+    if (Buffer.byteLength(JSON.stringify(data ?? null)) > MAX_REQUEST) return [413, { error: 'Too large for the print lab.' }];
+    const { id, kind, experiment, run, run_seen: runSeen, payload } = data || {};
+    const acting = ACT_KINDS.includes(kind);
+    if (!REQUEST_ID_RE.test(id || '')) return [422, { error: 'Request id must look like rq-0123456789abcdef' }];
+    if (kind !== 'verdict' && kind !== 'photos' && !acting) return [422, { error: 'kind must be verdict, photos, start, approve or abandon' }];
+    if (!(acting ? /^E-\d{1,6}$/ : EXPERIMENT_ID_RE).test(experiment || '')) return [422, { error: 'Invalid experiment id' }];
+    if (!acting && !RUN_ID_RE.test(run || '')) return [422, { error: 'Invalid run id' }];
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return [422, { error: 'payload must be an object' }];
+    const problem = acting ? actProblem(kind, payload, runSeen) : kind === 'photos' ? photosProblem(payload) : null;
+    if (problem) return [422, { error: problem }];
+
+    const existing = storage.readSetting(key(project, `request:${id}`), null);
+    if (existing) return [200, { ok: true, id, status: existing.status }];
+
+    const allReqs = storage.listSettings(key(project, 'request:'));
+    const pending = allReqs.filter(r => r.status === 'pending');
+    if (pending.length >= MAX_PENDING) return [429, { error: "The Mac hasn't picked up the last 20 requests. Check that the Mac is awake." }];
+
+    // The buttons' requests are about the experiment, not a run: lab pull refuses any run that isn't a print run id.
+    const item = {
+      id,
+      kind,
+      experiment,
+      run: acting ? null : run,
+      ...(kind === 'start' ? { run_seen: runSeen ?? null } : {}),
+      payload: kind === 'start' ? { tapped_at: payload.tapped_at }
+        : kind === 'abandon' ? { reason: payload.reason.trim() }
+          : kind === 'approve' ? { reason: payload.reason.trim(), build_seen: payload.build_seen, reasons_seen: payload.reasons_seen }
+            : payload,
+      status: 'pending',
+      message: null,
+      at: now(),
+      by: from
+    };
+    storage.writeSetting(key(project, `request:${id}`), item);
+    return [200, { ok: true, id, status: 'pending' }];
+  }
+  const requestsFor = project => storage.listSettings(key(project, 'request:'));
+
   function havePhotos(project) {
     try { return fs.readdirSync(photoDir(project)).filter(f => /^[0-9a-f]{64}\.jpg$/.test(f)).map(f => f.slice(0, 64)); } catch { return []; }
   }
@@ -189,10 +234,24 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
   }
 
   // The display feed's Print lab card across all projects: none when more than one experiment prints anywhere.
+  function printingNow() {
+    const found = projects().map(name => ({ name, ix: storage.readSetting(key(name, 'index'), null) })).map(p => ({ ...p, l: live(p.ix) })).filter(p => p.l);
+    return found.length === 1 && !found[0].l.conflict ? found[0] : null;
+  }
   function feedCards() {
-    const found = projects().map(name => storage.readSetting(key(name, 'index'), null)).map(ix => ({ ix, l: live(ix) })).filter(p => p.l);
-    if (found.length !== 1 || found[0].l.conflict) return [];
-    return labCards(found[0].ix, found[0].l, clock());
+    const p = printingNow();
+    return p ? labCards(p.ix, p.l, clock()) : [];
+  }
+  // What the display's Judge it sheet judges (app/display-lab.js): the run of the judge card labCards makes, also once a
+  // verdict has arrived (so the sheet can show it and Change it), with the experiment's stored record. Else null.
+  function judgeTarget() {
+    const p = printingNow();
+    if (!p) return null;
+    const x = p.ix.experiments.find(e => e && e.id === p.l.experiment);
+    const unjudged = { ...p.ix, experiments: p.ix.experiments.map(e => (e === x ? { ...e, verdict: null, owner_verdict: null } : e)) };
+    const card = labCards(unjudged, p.l, clock()).find(c => c.ask === 'lab-judge');
+    if (!card || !card.run) return null;
+    return { project: p.name, experiment: x, run: card.run, record: storage.readSetting(key(p.name, `record:${x.id}`), null)?.payload || null };
   }
 
   // At most `limit` bytes of an answer, else null (and the rest is not read).
@@ -327,47 +386,8 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
         let data;
         try { data = JSON.parse((await readRaw(req, MAX_REQUEST)).toString('utf8')); }
         catch (e) { if (e.statusCode) throw e; json(res, 400, { error: 'Invalid JSON request body' }); return true; }
-        const { id, kind, experiment, run, run_seen: runSeen, payload } = data || {};
-        const acting = ACT_KINDS.includes(kind);
-        if (!REQUEST_ID_RE.test(id || '')) { json(res, 422, { error: 'Request id must look like rq-0123456789abcdef' }); return true; }
-        if (kind !== 'verdict' && kind !== 'photos' && !acting) { json(res, 422, { error: 'kind must be verdict, photos, start, approve or abandon' }); return true; }
-        if (!(acting ? /^E-\d{1,6}$/ : EXPERIMENT_ID_RE).test(experiment || '')) { json(res, 422, { error: 'Invalid experiment id' }); return true; }
-        if (!acting && !RUN_ID_RE.test(run || '')) { json(res, 422, { error: 'Invalid run id' }); return true; }
-        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) { json(res, 422, { error: 'payload must be an object' }); return true; }
-        const problem = acting ? actProblem(kind, payload, runSeen) : kind === 'photos' ? photosProblem(payload) : null;
-        if (problem) { json(res, 422, { error: problem }); return true; }
-
-        const existing = storage.readSetting(key(project, `request:${id}`), null);
-        if (existing) {
-          json(res, 200, { ok: true, id, status: existing.status });
-          return true;
-        }
-
-        const allReqs = storage.listSettings(key(project, 'request:'));
-        const pending = allReqs.filter(r => r.status === 'pending');
-        if (pending.length >= MAX_PENDING) {
-          json(res, 429, { error: "The Mac hasn't picked up the last 20 requests. Check that the Mac is awake." });
-          return true;
-        }
-
-        // The buttons' requests are about the experiment, not a run: lab pull refuses any run that isn't a print run id.
-        const item = {
-          id,
-          kind,
-          experiment,
-          run: acting ? null : run,
-          ...(kind === 'start' ? { run_seen: runSeen ?? null } : {}),
-          payload: kind === 'start' ? { tapped_at: payload.tapped_at }
-            : kind === 'abandon' ? { reason: payload.reason.trim() }
-              : kind === 'approve' ? { reason: payload.reason.trim(), build_seen: payload.build_seen, reasons_seen: payload.reasons_seen }
-                : payload,
-          status: 'pending',
-          message: null,
-          at: now(),
-          by: dev.id || dev
-        };
-        storage.writeSetting(key(project, `request:${id}`), item);
-        json(res, 200, { ok: true, id, status: 'pending' });
+        const [status, body] = queueRequest(project, data, dev.id || dev);
+        json(res, status, body);
         return true;
       }
       if (part === 'requests' && !arg && req.method === 'GET') {
@@ -432,7 +452,7 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
     return true;
   }
 
-  return { handle, sync, feedCards };
+  return { handle, sync, feedCards, judgeTarget, queueRequest, requestsFor };
 }
 
 module.exports = { createPrintLab, labCards, SCHEMA };

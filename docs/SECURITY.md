@@ -161,7 +161,7 @@ Most routes are still only reported. The routes that run code, write or list the
 the container, stage or approve changes, decide approvals, or post and clear alerts are **refused** with
 `401 {"error":"Sign in on this device first…","signIn":true}`: `/api/workbench/*`, `/api/computer/*`,
 `/api/browser/fetch`, `/api/actions/http-check`, `/api/repo/inspect`, `/api/changes*`, `/api/approvals/create|decide`,
-`/api/display/approvals/decide` (the display's key still signs it in), `/api/display/notify`, `/api/engineering/*`,
+`/api/display/approvals/decide` and `/api/display/lab/verdict` (the display's key still signs them in), `/api/display/notify`, `/api/engineering/*`,
 `/api/issues/prepare-change`, `/api/improve/handoff`, `/api/powershell/*`, `/api/notifications/system|seed|update` and
 `/api/signin/report/clear`, and `/api/workshop/portal-code` (it hands out the display's sign-in code) (`GUARDED` in `app/signin.js`); and, for any method but GET, starting agent runs
 (`/api/agents/dispatch|run|missions/start|specialist/run`), retrying, cancelling or updating runs, GridCraft workbook writes, `/api/knowledge/import|delete`, `/api/conversations/delete`, memory changes, model pulls and deletes,

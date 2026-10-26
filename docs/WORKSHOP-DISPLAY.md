@@ -95,6 +95,37 @@ Format rules:
 
 It uses no model and answers in well under a second (the weather has a 3 s limit).
 
+**Needs you list (`needs`).** The feed also carries Pi Hub's one "Needs you" list, the same list in the same order on
+every screen: `needs: [{id, tone, title, detail, source}]`, from the hub's `GET /api/needs` (read at most every 30 s,
+3 s limit). At most 6 items, title cut to 24 and detail to 90 like the cards, `tone` one of `bad`, `attention` or
+`warn`. `id` stays the same while the item means the same thing (`printer:plate`, `localai:approval:<id>`), so screens
+can match and clear one item. When the hub doesn't answer, `needs` is left out and the display shows its cards.
+
+**Print lab card (`lab`).** Built from the print-lab records the Mac syncs (Projects › Print lab), when exactly one
+experiment is printing (two printing: no card):
+- while its run is on the printer: `Lab · E-021`, the text is what to judge on, tone `busy`;
+- once the printer says it finished and no verdict has come: `Judge E-021`, `Look at: <what to judge on>`, tone
+  `attention`, `ask: "lab-judge"` and `run` (e.g. `PR-021-01`). It leaves when the verdict arrives, or 24 h after the
+  run's end.
+
+**Judge it on the display.** The same Judge it sheet as the phone, stepped one strip per screen. Both routes take the
+display key only (`X-LocalAI-Display-Key`; 401 without it), and the verdict route is refused without it whatever the
+sign-in mode (`GUARDED`).
+- `GET /api/display/lab/judge?run=PR-021-01` answers the sheet for the judge card's run, from the experiment's record:
+  `{experiment, run, judgeOn, tabs: ["21A", …], criteria: [{key, label, choices}], judged: {at, by}|null,
+  pending: {id, status, message}|null}`. `judged` is the verdict the Mac has (its `at` and `by`), else a verdict
+  request still waiting (`by` is `display` or `phone`); `pending` is the newest verdict request for the run
+  (`pending`, `applied`, `refused` with the Mac's words, or `duplicate`). A test without criteria answers
+  `{experiment, run, judgeOn, phoneOnly: true, reason}`: it is judged on the phone.
+- `POST /api/display/lab/verdict {run, requestId, grades: {tab: {criterion: choice|null}}, inconclusive: <reason>|null,
+  replace}` queues the very `verdict` request the phone sends (`lighting: "diagnostic"`, `note: null`) for `lab pull`
+  on the Mac, under the same limits: 4 KB, 20 waiting (429), and a `requestId` (`rq-` and 16 hex digits) sent twice is
+  one request. It answers `202 {id, status: "pending"}`. Every strip and criterion must be the record's and every
+  choice one of the criterion's (`null` is "–", not judged); without an inconclusive reason every strip is graded on
+  every criterion (400 otherwise). `replace: true` is Change it. When `run` is no longer the judge card's run (a new
+  run, or nothing to judge) it answers `409 {"error": "This print has changed. Open it again."}`; an experiment
+  without criteria is 409 too.
+
 **Display key.** The display signs in for this route alone with its own key, sent as `X-LocalAI-Display-Key`, so its
 idle screen keeps working when sign-in starts refusing unsigned callers. The key is good for nothing else.
 - `host/workshop-display/set-key.sh` (on the Mac) makes the key and keeps it in the login Keychain (`localai-display-key`).
@@ -123,7 +154,7 @@ Anything else gets `400`.
 
 ## Feed v2, the long poll, messages, approvals and the heartbeat (Workshop OS 12.6)
 
-All of these, the feed, the ask buttons and `/api/images/view` (the pictures) are what the display key signs in
+All of these, the feed, the ask buttons, the Judge it routes and `/api/images/view` (the pictures) are what the display key signs in
 (`X-LocalAI-Display-Key`); it signs in nothing else.
 
 - **Feed v2.** `GET /api/display/feed` answers `{v: 2, at, cards, images, messages}`. Each card also has `id` (the same

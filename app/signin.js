@@ -14,7 +14,7 @@ const OPEN = new Set(['/healthz', '/api/claude/chat/pair-request', '/api/claude/
 // or tailnet device could use them (docs/SECURITY.md). The host's own requests and the display's key still pass.
 const GUARDED = [
   /^\/api\/workbench\//, /^\/api\/computer\//, /^\/api\/browser\/fetch$/, /^\/api\/actions\/http-check$/, /^\/api\/repo\/inspect$/,
-  /^\/api\/changes(\/|$)/, /^\/api\/approvals\/(create|decide)$/, /^\/api\/display\/approvals\/decide$/,
+  /^\/api\/changes(\/|$)/, /^\/api\/approvals\/(create|decide)$/, /^\/api\/display\/approvals\/decide$/, /^\/api\/display\/lab\/verdict$/,
   /^\/api\/engineering\//, /^\/api\/issues\/prepare-change$/, /^\/api\/improve\/handoff$/, /^\/api\/powershell\//,
   /^\/api\/notifications\/(system|seed|update)$/, /^\/api\/signin\/report\/clear$/, /^\/api\/display\/notify$/,
   // It hands out the Workshop display's sign-in code.
