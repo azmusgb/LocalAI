@@ -34,7 +34,8 @@ const GUARD_CODE_RE = /^[a-z][a-z0-9_]{0,39}$/;
 // The Pi's camera bridge (it stays open for the Workshop display) and the Pi hub, which says why there is no picture.
 const CAMERA_URL = 'http://10.0.0.30:8091/x2d/frame.jpg';
 const CAMERA_TIMEOUT_MS = 3000;
-const MAX_FRAME = 2 * 1024 * 1024;
+const MAX_FRAME = 2 * 1024 * 1024; // read as a stream and cut off past this: a huge or endless answer is never held
+const MAX_REASON_ANSWER = 4 * 1024; // the hub's /api/camera answer is about 200 bytes
 const CAMERA_REASONS = new Set(['liveview_off', 'printer_unreachable']);
 const CAMERA_WORDS = {
   liveview_off: 'No picture: LAN Only Liveview is off on the X2D.',
@@ -74,6 +75,15 @@ function actProblem(kind, payload, runSeen) {
     if (typeof payload.build_seen !== 'string' || !BUILD_ID_RE.test(payload.build_seen)) return 'build_seen must be a build id';
     if (!Array.isArray(payload.reasons_seen) || payload.reasons_seen.length > 30 || !payload.reasons_seen.every(c => typeof c === 'string' && GUARD_CODE_RE.test(c))) return 'reasons_seen must be a list of guard codes';
   }
+  return null;
+}
+
+// What is wrong with a photos request, or null: each photo is named by its sha256 (the clean-up after it is applied
+// deletes incoming/<sha256>.jpg, so nothing else may reach a path) with a short plain tab or none.
+function photosProblem(payload) {
+  const list = payload.photos;
+  if (!Array.isArray(list) || !list.length || list.length > 50) return 'photos must list 1 to 50 photos';
+  if (!list.every(p => p && typeof p === 'object' && SHA_RE.test(p.sha256 || '') && (p.tab == null || (typeof p.tab === 'string' && /^[\w.-]{1,16}$/.test(p.tab))))) return 'Each photo needs its sha256 and at most a short tab name.';
   return null;
 }
 
@@ -156,10 +166,9 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
     return l && !l.conflict ? { experiment: l.experiment, state: l.state, progress: l.progress, minutesLeft: l.minutesLeft, finishAt: l.finishAt } : null;
   }
 
-  // The frame, read as a stream with a running count: null (and the stream cancelled) once it passes MAX_FRAME, so a
-  // huge or endless answer is never held whole.
-  async function readFrame(r) {
-    if (Number(r.headers.get('content-length')) > MAX_FRAME) { await r.body?.cancel?.().catch(() => {}); return null; }
+  // At most `limit` bytes of an answer, else null (and the rest is not read).
+  async function readCapped(r, limit) {
+    if (Number(r.headers.get('content-length')) > limit) { await r.body?.cancel?.().catch(() => {}); return null; }
     const reader = r.body?.getReader();
     if (!reader) return null;
     const chunks = [];
@@ -168,11 +177,12 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
       const { done, value } = await reader.read();
       if (done) break;
       size += value.length;
-      if (size > MAX_FRAME) { await reader.cancel().catch(() => {}); return null; }
+      if (size > limit) { await reader.cancel().catch(() => {}); return null; }
       chunks.push(value);
     }
     return Buffer.concat(chunks);
   }
+  const readFrame = r => readCapped(r, MAX_FRAME);
 
   // One snapshot from the camera bridge, within cameraTimeoutMs in all. No redirects are followed and only a JPEG of
   // at most MAX_FRAME is passed on. When there is none, the Pi hub's reason (if it answers in the time left) says why.
@@ -183,7 +193,7 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
       if (r.ok && /^image\/jpeg/i.test(r.headers.get('content-type') || '')) {
         const body = await readFrame(r);
         if (body && body[0] === 0xff && body[1] === 0xd8) {
-          res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': body.length, 'Cache-Control': 'no-store' });
+          res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': body.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
           res.end(body);
           return;
         }
@@ -193,7 +203,8 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
     if (piHubUrl && piHubUrl !== 'off' && !signal.aborted) {
       try {
         const r = await fetchImpl(new URL('/api/camera', piHubUrl).href, { signal, redirect: 'error', headers: { Accept: 'application/json' } });
-        const d = r.ok ? await r.json() : null;
+        const raw = r.ok ? await readCapped(r, MAX_REASON_ANSWER) : null;
+        const d = raw ? JSON.parse(raw.toString('utf8')) : null;
         if (d && CAMERA_REASONS.has(d.reason)) reason = d.reason;
       } catch {}
     }
@@ -294,7 +305,7 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
         if (!(acting ? /^E-\d{1,6}$/ : EXPERIMENT_ID_RE).test(experiment || '')) { json(res, 422, { error: 'Invalid experiment id' }); return true; }
         if (!acting && !RUN_ID_RE.test(run || '')) { json(res, 422, { error: 'Invalid run id' }); return true; }
         if (!payload || typeof payload !== 'object' || Array.isArray(payload)) { json(res, 422, { error: 'payload must be an object' }); return true; }
-        const problem = acting ? actProblem(kind, payload, runSeen) : null;
+        const problem = acting ? actProblem(kind, payload, runSeen) : kind === 'photos' ? photosProblem(payload) : null;
         if (problem) { json(res, 422, { error: problem }); return true; }
 
         const existing = storage.readSetting(key(project, `request:${id}`), null);
@@ -356,6 +367,7 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
       if (part === 'requests' && arg && sub === 'result' && req.method === 'POST') {
         if (!macAuthorized(req)) { req.resume(); json(res, 401, { error: 'Only the Mac writes request results.' }); return true; }
         const reqId = arg;
+        if (!REQUEST_ID_RE.test(reqId)) { req.resume(); json(res, 404, { error: 'No such request.' }); return true; }
         let body;
         try { body = JSON.parse((await readRaw(req, MAX_REQUEST)).toString('utf8')); }
         catch (e) { if (e.statusCode) throw e; json(res, 400, { error: 'Invalid JSON request body' }); return true; }
@@ -375,7 +387,7 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
         storage.writeSetting(key(project, `request:${reqId}`), item);
         if (status === 'applied' && item.kind === 'photos' && item.payload && Array.isArray(item.payload.photos)) {
           for (const p of item.payload.photos) {
-            if (p && p.sha256) {
+            if (p && SHA_RE.test(p.sha256 || '')) {
               try { fs.unlinkSync(path.join(incomingDir(project), `${p.sha256}.jpg`)); } catch {}
             }
           }

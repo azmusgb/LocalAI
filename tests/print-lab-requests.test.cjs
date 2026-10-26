@@ -474,3 +474,39 @@ test("each photo carries its tab from the experiment's record, so the page can p
   const r = await call('GET', '/api/lab/hex-tile');
   assert.deepEqual(r.body.index.experiments[0].photos.map(p => p.tab ?? null), ['12A', null]);
 });
+
+test('a photos request names only sha256 photos with short tabs, so its clean-up never leaves incoming/', async t => {
+  const { call, dataDir } = harness(t);
+  const victim = path.join(dataDir, 'print-lab', 'hex-tile', 'keep.jpg');
+  fs.mkdirSync(path.dirname(victim), { recursive: true });
+  fs.writeFileSync(victim, 'x');
+  const bad = [
+    { photos: [{ sha256: '../keep', tab: '12A' }] },
+    { photos: [{ sha256: 'a'.repeat(64), tab: '<img src=x>' }] },
+    { photos: 'x' },
+    { photos: Array.from({ length: 51 }, () => ({ sha256: 'a'.repeat(64) })) }
+  ];
+  let n = 0;
+  for (const payload of bad) {
+    const r = await call('POST', '/api/lab/hex-tile/requests', { body: { id: `rq-d${String(++n).padStart(15, '0')}`, kind: 'photos', experiment: 'E-001', run: 'PR-001-01', payload } });
+    assert.equal(r.status, 422, JSON.stringify(payload).slice(0, 60));
+  }
+  const ok = await call('POST', '/api/lab/hex-tile/requests', { body: { id: 'rq-d000000000000099', kind: 'photos', experiment: 'E-001', run: 'PR-001-01', payload: { run: 'PR-001-01', photos: [{ sha256: 'a'.repeat(64), tab: null }, { sha256: 'b'.repeat(64), tab: '12B' }] } } });
+  assert.equal(ok.status, 200);
+  assert.ok(fs.existsSync(victim));
+});
+
+test('a result names a request by its id shape only', async t => {
+  const { call } = harness(t);
+  const r = await call('POST', '/api/lab/hex-tile/requests/..%2Fmeta/result', { asMac: true, body: { status: 'applied' } });
+  assert.equal(r.status, 404);
+});
+
+test("the Pi hub's no-picture answer is read up to a small cap", async t => {
+  const fetchImpl = async url => String(url).endsWith('/frame.jpg') ? reply(503, 'x', 'text/plain')
+    : new Response(JSON.stringify({ reason: 'liveview_off', pad: 'x'.repeat(64 * 1024) }), { status: 200, headers: { 'content-type': 'application/json' } });
+  const { call } = harness(t, { cameraUrl: 'http://10.0.0.30:8091/x2d/frame.jpg', piHubUrl: 'http://10.0.0.30', fetchImpl });
+  const r = await call('GET', '/api/lab/camera.jpg');
+  assert.equal(r.status, 503);
+  assert.equal(r.body.reason, 'no_picture', 'an oversized answer is not parsed');
+});

@@ -463,7 +463,8 @@ async function startPrint(btn){
  try{await sendAct('start',x.id,{tapped_at:new Date().toISOString()},{run_seen:x.run||null})}
  catch(err){btn.disabled=false;setStatus(document.querySelector(`[data-act-status="${CSS.escape(x.id)}"]`),err.message,true)}
 }
-function openSheet(sheet){if(!sheet.open){if(root.LocalAIUI?.showSheet)root.LocalAIUI.showSheet(sheet);else sheet.showModal()}}
+// onClosed runs when the sheet closes (components.js owns the close event).
+function openSheet(sheet,onClosed){if(!sheet.open){if(root.LocalAIUI?.showSheet)root.LocalAIUI.showSheet(sheet,onClosed);else sheet.showModal()}}
 // Approve: the guards being approved and the build they bind to come from the experiment's record (its last build's
 // check); the Mac refuses if either changed since.
 async function openApprove(id){
@@ -473,8 +474,8 @@ async function openApprove(id){
  const list=document.getElementById('labApproveGuards'),reason=document.getElementById('labApproveReason'),hint=document.getElementById('labApproveHint');
  list.replaceChildren();reason.value='';hint.textContent='Reading what this approval covers…';
  setStatus(document.getElementById('labApproveStatus'),'');setStatus(document.getElementById('labApproveError'),'',true);
- validateApprove();openSheet(sheet);
  const ctx=approveCtx;
+ validateApprove();openSheet(sheet,()=>{if(approveCtx===ctx)approveCtx=null});
  try{
   const r=await root.LocalAIUI.fetchJson(`/api/lab/${encodeURIComponent(currentProject)}/record/${encodeURIComponent(id)}`);
   const b=(r.payload?.builds||[]).slice(-1)[0],guards=(b?.check?.guards||[]).filter(g=>g&&!g.ok&&g.result==='needs_approval');
@@ -496,11 +497,11 @@ async function sendApprove(){
 // Drop closes the experiment, so it needs a reason and a second tap.
 function openDrop(id){
  const sheet=document.getElementById('labDropSheet');if(!sheet)return;
- dropCtx={id,armed:false,reqId:null};
+ const ctx=dropCtx={id,armed:false,reqId:null};
  document.getElementById('labDropTitle').textContent=`Drop · ${id}`;
  document.getElementById('labDropReason').value='';
  setStatus(document.getElementById('labDropStatus'),'');setStatus(document.getElementById('labDropError'),'',true);
- armDrop(false);openSheet(sheet);
+ armDrop(false);openSheet(sheet,()=>{if(dropCtx===ctx)dropCtx=null});
 }
 function armDrop(on){
  if(!dropCtx)return;dropCtx.armed=on;
@@ -829,14 +830,12 @@ function init(){
    if(e.target.closest('#labApproveCancel')){approveSheet.close();return}
    if(e.target.closest('#labApproveSend'))sendApprove();
  });
- approveSheet?.addEventListener('close',()=>{approveCtx=null});
  document.getElementById('labApproveReason')?.addEventListener('input',validateApprove);
  const dropSheet=document.getElementById('labDropSheet');
  dropSheet?.addEventListener('click',e=>{
    if(e.target.closest('#labDropCancel')){dropSheet.close();return}
    if(e.target.closest('#labDropSend'))sendDrop();
  });
- dropSheet?.addEventListener('close',()=>{dropCtx=null});
  document.getElementById('labDropReason')?.addEventListener('input',()=>armDrop(false));
  document.addEventListener('visibilitychange',()=>{if(document.hidden)camStop();else camShot()});
 
