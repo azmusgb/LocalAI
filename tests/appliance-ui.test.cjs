@@ -35,3 +35,28 @@ test('no old navy shades in the app chrome', () => {
   // Faint text is the kit's muted at 90% over the page: neutral, and 4.5:1 on the page, a card, the well and a tab.
   assert.ok(css.includes('--ds-faint:#8593a4'), '--ds-faint is #8593a4');
 });
+
+// Fresh look review, 25 Oct: the last colours from before the kit (the lavender logo tile, a periwinkle blue, a navy
+// glow, a cyan progress bar, dim nav labels) are gone from the app's own styles.
+test('no off-palette colours left in the app chrome', () => {
+  const css = read('app.css').replace(/\s+/g, '');
+  const old = ['#99c7ff', '#8b75ff', '#a9c4ff', '#7f89ff', 'rgba(111,132,255', 'rgba(121,169,255', '#b9d2ff', '#9fc1ff',
+    '#c8b5ff', 'rgba(169,140,255', 'rgba(75,120,210', '#55dff1', '#758398', '#8090a5'];
+  assert.deepEqual(old.filter(c => css.includes(c)), []);
+});
+
+// Look review: on Services, a printer error on the Workshop display card was plain grey next to a green "Online".
+test('a printer error on the Services card is marked as one', () => {
+  const ui = read('ui.js'), css = read('app.css').replace(/\s+/g, '');
+  assert.match(ui, /box\.dataset\.tone = p\?\.state === 'error' \? 'bad'/);
+  assert.ok(css.includes('.ux-int-guidance[data-tone="bad"]{border-left-color:var(--ds-bad);color:var(--ds-text)'));
+});
+
+// Look review: print-lab commands broke inside "--grade"; phone filter chips cut off with no cue; awkward Signals copy.
+test('print-lab commands break between words, chips fade at the edge, Signals says what to do', () => {
+  const css = read('app.css').replace(/\s+/g, '');
+  const cmd = css.slice(css.indexOf('.lab-cmdcode{'), css.indexOf('}', css.indexOf('.lab-cmdcode{')));
+  assert.ok(!cmd.includes('overflow-wrap:anywhere') && cmd.includes('overflow-wrap:break-word'), cmd);
+  assert.ok(css.includes('.work-chips.ux-tabs{mask-image:linear-gradient(90deg,#000calc(100%-28px),transparent)'));
+  assert.ok(read('improve.js').includes('Press Run checks to look for some now.'));
+});

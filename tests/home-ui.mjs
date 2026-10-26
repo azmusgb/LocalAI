@@ -130,7 +130,7 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
     assert.ok(!page.printerAsks.includes('?part=printer'), 'Home never asks for the printer line (Services still checks the display)');
     const back = page.locator('#homeBack');
     await back.waitFor({ state: 'visible', ...T });
-    assert.equal((await back.innerText()).trim(), '← Home');
+    assert.equal((await back.innerText()).trim(), '← Pi Hub');  // "← Home" on Local AI's own Home page read as going nowhere (look review)
     assert.equal(await back.getAttribute('href'), 'http://10.0.0.30/');
     const box = await back.boundingBox();
     assert.ok(box.height >= 44, `tap target ${box.height}px`);
