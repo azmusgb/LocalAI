@@ -22,6 +22,8 @@
     const mark = document.createComment('borrowed:' + (node.id || 'node')); node.replaceWith(mark); into.appendChild(node);
     ctx.onCleanup(() => { if (mark.isConnected) mark.replaceWith(node); else node.remove(); });
   };
+  // "Answered by <Model> · <Provider>" or "Answered on this PC", and why, from the run's card (app/run-cards.js).
+  RB.routeText = run => { const r = run?.card?.route; return r?.text ? r.text + (r.why ? '. ' + r.why + '.' : '') : ''; };
   RB.json = async (url) => { const r = await fetch(url, { cache: 'no-store', headers: { Accept: 'application/json' } }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`); return j; };
   // Phones: the on-screen keyboard shrinks the visual viewport but not always the layout one. Publish its height and top
   // so a docked body (the chat reply box) can follow it; CSS reads --run-vvh / --run-vvt and falls back to 100dvh.
@@ -81,7 +83,7 @@
       else if (r.status === 'cancelled' && !answer) { answer = 'Stopped.'; kind = 'error'; }
       else if (!answer) { answer = 'Thinking…'; kind = 'wait'; }
       else if (lv?.streaming) kind = 'live';
-      out.push({ key: r.id, prompt, answer, kind, lost, sources: Array.isArray(o?.sources) ? o.sources : [] });
+      out.push({ key: r.id, prompt, answer, kind, lost, sources: Array.isArray(o?.sources) ? o.sources : [], route: RB.routeText(r) });
     }
     if (live && !(live.runId && runs.some(r => r.id === live.runId))) out.push({ key: 'live', prompt: live.prompt, answer: live.text || (live.err ? '' : 'Thinking…'), kind: live.err ? 'error' : live.text ? 'live' : 'wait', sources: [] });
     return out;
@@ -108,6 +110,8 @@
         const text = who === 'user' ? t.prompt : t.answer, cls = `chat-turn chat-turn--${who}${who === 'assistant' && t.kind ? ' chat-turn--' + t.kind : ''}`;
         if (n.className !== cls) n.className = cls;
         if (n.dataset.text !== text) { n.dataset.text = text; n.textContent = text; }
+        // Where the answer came from, under it: "Answered by Llama 3.3 70B · Groq. Not private: …" (the model coordinator).
+        if (who === 'assistant') { const want = t.route || '', rt = n.querySelector('.run-route'); if ((rt?.textContent || '') !== want) { rt?.remove(); if (want) n.appendChild(h('p', 'run-route', want)); } }
         if (who === 'assistant') { n.dataset.srcs = ''; const ul = t.sources.length ? sourceLinks(t.sources) : null; const sig = ul ? ul.textContent : ''; if (n.dataset.srcSig !== sig) { n.dataset.srcSig = sig; n.querySelector('.chat-turn__sources')?.remove(); if (ul) n.appendChild(ul); } }
         rows.push(n);
       }
@@ -212,14 +216,15 @@
   // Home starts a chat here: a new thread, streamed into the run view. pending.resolve(runId) fires on the stream's meta
   // event, as soon as the run exists. A failure before that fails the pending view and throws so Home keeps the text.
   window.LocalAIChat = {
-    async start(text, { research = false, pending, model, title } = {}) {
+    // bigger / keepLocal: Home's "Use a bigger model" and "Keep on this PC" (the model coordinator), for this one send.
+    async start(text, { research = false, pending, model, title, bigger, keepLocal } = {}) {
       const threadId = core().newThreadId(), c = controllerFor(threadId);
       const live = c.live = { prompt: text, text: '', runId: '', streaming: true, err: '', controller: new AbortController() };
       let resolved = false;
       const resolve = id => { if (id && !resolved) { resolved = true; live.runId = id; pending?.resolve(id); } };
       try {
         const r = await core().streamChat({
-          messages: [{ role: 'user', content: text }], webSearch: !!research, model: model || undefined, threadId, title: title || undefined, signal: live.controller.signal,
+          messages: [{ role: 'user', content: text }], webSearch: !!research, model: model || undefined, threadId, title: title || undefined, bigger: bigger === true || undefined, keepLocal: keepLocal === true || undefined, signal: live.controller.signal,
           onMeta: d => resolve(d.runId), onToken: t => { live.text += t; schedule(c); }
         });
         resolve(r.runId);

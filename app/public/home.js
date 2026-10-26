@@ -21,7 +21,7 @@ let syncing=false;
 function setMode(m,{persist=true}={}){
  if(!LABEL[m]||!allowed(m))return;
  mode=m;if(persist)store.set(MODE_KEY,m);
- clearTimeout(flash);paintChip();
+ clearTimeout(flash);paintChip();paintRoute();
  if(syncing)return;syncing=true; // keep the hidden buttons (state.mode, the gate, first-run samples) in step
  try{const b=document.querySelector(`.mode[data-mode="${m}"]`);if(b&&!b.classList.contains('active'))b.click()}finally{syncing=false}
 }
@@ -217,7 +217,13 @@ function greet(){const h=new Date().getHours(),g=$('homeGreeting');if(g)g.textCo
 function setError(msg){const e=$('homeComposerError');if(!e)return;e.textContent=msg||'';e.hidden=!msg}
 function busy(on){sending=on;const b=$('commandGo');if(b)b.disabled=on}
 const grow=()=>{const t=$('commandInput');if(!t)return;t.style.height='auto';t.style.height=Math.min(t.scrollHeight,140)+'px'};
-function clearInput(){const t=$('commandInput');if(t){t.value='';grow()}}
+// "Use a bigger model" / "Keep on this PC": shown while cloud models are switched on (Models), for a Chat or Research;
+// they go with the next send only, then reset.
+let cloudOn=false;
+const flag=id=>!!$(id)?.checked;
+function paintRoute(){const b=$('homeRoute');if(b)b.hidden=!(cloudOn&&['auto','ask','research'].includes(cur()))}
+function loadRoute(){root.LocalAIUI?.fetchJson('/api/models/routing',{cache:'no-store'}).then(j=>{cloudOn=j.cloud===true;paintRoute()},()=>{})}
+function clearInput(){const t=$('commandInput');if(t){t.value='';grow()}for(const id of ['homeBigger','homeKeepLocal']){const c=$(id);if(c)c.checked=false}}
 function gateCheck(intent){
  const b=document.querySelector(`.mode[data-mode="${intent}"]`);
  if(b?.disabled)throw new Error(String(b.title||'').replace(/^Unavailable:\s*/,'')||'That is not available right now.');
@@ -246,7 +252,7 @@ async function dispatch(intent,text,route,question=text){
   const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);
   if(!data.run?.id)throw new Error('The change did not start. Try again.');
   openRun({id:'legacy-engineering:'+data.run.id});clearInput();
- }else if(intent==='ask'||intent==='research')await viaStarter('LocalAIChat',intent,text,{research:intent==='research',model:options.model},question);
+ }else if(intent==='ask'||intent==='research')await viaStarter('LocalAIChat',intent,text,{research:intent==='research',model:options.model,bigger:flag('homeBigger'),keepLocal:flag('homeKeepLocal')},question);
  else if(intent==='create')await viaStarter('LocalAIImages','create',text,{engine:options.engine,aspect:options.aspect,style:options.style},question);
  else if(intent==='mission')await viaStarter('LocalAIMissions','mission',text,{agentIds:options.agentIds?.length?options.agentIds:undefined,webSearch:options.missionWeb===true},question);else if(intent==='automate'){L.open('automate',text);clearInput()}
  else throw new Error('Choose a mode and try again.');
@@ -296,7 +302,7 @@ function dropContext(){
  history.replaceState(history.state,'',location.pathname+location.search+h.slice(0,i)+(q.toString()?'?'+q:''));
 }
 function contextFromHash(){const C=root.LocalAIAskContext,R=root.LocalAIRouter;if(!C||!R)return;const c=C.clean(R.current().query.get('context'));if(c){context=c;paintContext()}}
-function activate(){fromHash();contextFromHash();greet();const b=$('homeBack');if(b&&root.LocalAIAskContext)b.href=root.LocalAIAskContext.homeUrl(location.hostname);if(root.LocalAIUI)refresh().then(schedule)}
+function activate(){fromHash();contextFromHash();greet();loadRoute();const b=$('homeBack');if(b&&root.LocalAIAskContext)b.href=root.LocalAIAskContext.homeUrl(location.hostname);if(root.LocalAIUI)refresh().then(schedule)}
 function dockToNav(){
  // On phones the composer sits exactly on the tab bar, whatever its height is. While the owner types, the tab bar
  // steps aside (body.home-typing, see app.css) and the composer sits on the keyboard: iOS keeps innerHeight and only
@@ -318,6 +324,7 @@ function init(){
  $('homeModeChip').addEventListener('click',()=>autoWait?autoWait.cancel():openSheet());
  $('commandGo').addEventListener('click',()=>send($('commandInput').value));
  $('homeContextClear')?.addEventListener('click',()=>{dropContext();$('commandInput')?.focus()});
+ $('homeRoute')?.addEventListener('change',e=>{const o=$(e.target.id==='homeBigger'?'homeKeepLocal':'homeBigger');if(e.target.checked&&o)o.checked=false}); // one or the other
  $('commandInput').addEventListener('input',()=>{grow();dockToNav();root.LocalAISelfChange?.hide($('homeSelfChange'))});
  $('commandInput').addEventListener('focus',()=>typing(true));
  $('commandInput').addEventListener('blur',()=>typing(false));

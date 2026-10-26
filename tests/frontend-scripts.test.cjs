@@ -12,7 +12,7 @@ const NOT_PAGE_SCRIPTS = new Set(['sw.js']);
 const modules = fs.readdirSync(pub).filter(f => f.endsWith('.js') && !NOT_PAGE_SCRIPTS.has(f));
 
 // Loaded on first use by ui.js, not on every page load (still precached by the service worker).
-const ON_DEMAND = new Set(['agent-world-watch.js', 'print-lab.js']);
+const ON_DEMAND = new Set(['agent-world-watch.js', 'print-lab.js', 'model-routing.js']);
 
 test('index.html loads every front-end module', () => {
   const html = fs.readFileSync(path.join(pub, 'index.html'), 'utf8');

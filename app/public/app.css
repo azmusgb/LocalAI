@@ -1584,6 +1584,9 @@ body.run-view-open{overflow:hidden}
 .home-sheet__group legend{padding:0;margin-bottom:4px;color:var(--ds-soft);font-size:var(--ds-fs-2);font-weight:600}
 .home-check{display:flex;align-items:center;gap:10px;min-height:44px;color:var(--ds-text);font-size:var(--ds-fs-2)}
 .home-check input{width:20px;height:20px;flex:none}
+.model-routing-list{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:8px}.model-routing-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}.model-routing-row .meta{flex-basis:100%;font-size:var(--ds-fs-2)}
+.model-routing-table{width:100%;font-size:var(--ds-fs-2)}.model-routing-table th,.model-routing-table td{padding:8px 6px;text-align:left;vertical-align:top;border-top:1px solid var(--ds-line-2)}
+.home-route{display:flex;flex-wrap:wrap;gap:0 16px;padding:2px 4px 0}.home-route[hidden]{display:none}
 /* The view-in animation holds a transform, which would make the docked composer position against Home, not the screen. */
 @media(max-width:760px){body.ux-v3 #home{animation:none}}
 /* Chat and research body of the run view (run-bodies.js): the thread's turns, with the reply box docked at the bottom.
@@ -1601,6 +1604,7 @@ body.run-view-open{overflow:hidden}
 .chat-turn--error{border-color:var(--ds-bad);color:var(--ds-bad-text)}
 .chat-turn__sources{list-style:none;margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--ds-line-2);display:grid;gap:2px;font-size:var(--ds-fs-2);white-space:normal}
 .chat-turn__sources li{min-height:24px}
+.run-route{margin:6px 0 0;font-size:var(--ds-fs-1);color:var(--ds-muted);white-space:normal}
 .chat-turn__sources a{color:var(--ds-accent);text-decoration:underline}
 .chat-body__error{margin:0 0 8px;padding:10px 12px;border:1px solid var(--ds-bad);border-radius:var(--ds-r-md);background:var(--ds-surface-2);color:var(--ds-bad-text);font-size:var(--ds-fs-2);overflow-wrap:anywhere}
 .chat-body__error[hidden]{display:none}

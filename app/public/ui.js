@@ -337,6 +337,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
           <button id="modelRuntimeRefresh" class="btn-outline" type="button">Refresh</button>
         </div>
         <div id="modelRuntimeSummary" class="model-runtime-summary" aria-live="polite"></div>
+        <div id="modelRouting" class="card" style="margin-top:12px"><div class="empty-state">Loading cloud model settings…</div></div>
         <div class="card model-download" style="margin-top:12px">
           <div class="section-head"><div><h2>Download a model</h2><p>From the Ollama library, stored on the Windows host. A 4B model is about 2.5 GB.</p></div></div>
           <form id="modelPullForm" class="model-pull-form">
@@ -2088,6 +2089,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 // ==== print-lab loader ====
+// Loads /model-routing.js (Models › Cloud models) the first time Models opens; the section itself is made by ui.js.
+(function(){let p=0;const L=()=>{const s=document.getElementById('models');if(p||!s||!s.classList.contains('active'))return;p=1;const e=document.createElement('script');e.src='/model-routing.js';e.onerror=()=>{p=0};document.head.append(e)};new MutationObserver(L).observe(document.querySelector('main')||document.body,{attributes:true,subtree:true,attributeFilter:['class']});L()})();
 // Loads /print-lab.js the first time Projects › Print lab opens: it isn't part of the shell every page load downloads.
 (function(){const s=document.getElementById('printLab');if(!s)return;let p=0;const L=()=>{if(p||!s.classList.contains('active'))return;p=1;const e=document.createElement('script');e.src='/print-lab.js';e.onerror=()=>{p=0};document.head.append(e)};new MutationObserver(L).observe(s,{attributes:true,attributeFilter:['class']});L()})();
 // ==== agent-world-watch loader ====
@@ -3515,7 +3518,9 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     const vh = document.createElement('div'); vh.className = 'run-view-head';
     const badge = card?.badge || kit?.statusBadge(run.status) || { label: statusLabel(run.status), tone: 'neutral' };
     const chip = document.createElement('span'); chip.className = `badge badge--${badge.tone}`; chip.textContent = badge.label;
-    vh.appendChild(chip); drawer.appendChild(vh);
+    vh.appendChild(chip);
+    { const route = window.LocalAIRunBodies?.routeText?.(run); if (route) { const s = document.createElement('span'); s.className = 'run-route'; s.textContent = route; vh.appendChild(s); } }
+    drawer.appendChild(vh);
     if (active(run)) {
       const pct = Math.max(0, Math.min(100, Number(run.progress) || 0));
       const bar = document.createElement('div'); bar.className = 'run-card__bar run-view-bar'; bar.setAttribute('role', 'progressbar'); bar.setAttribute('aria-label', 'Progress');
