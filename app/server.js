@@ -149,6 +149,8 @@ const printLab = require('./print-lab').createPrintLab({ storage, dataDir: DATA_
 // changes are refused without a device, and LOCALAI_SIGN_IN=required refuses the rest.
 // The Workshop display's key (X-LocalAI-Display-Key) signs it in for its feed only; host/workshop-display/set-key.sh sets it.
 const displayKey = require('./route-keys').createRouteKey({ dataDir: DATA_DIR, file: 'workshop-display-key.sha256', header: 'x-localai-display-key' });
+// The display's Judge it sheet (app/display-lab.js): the phone's verdict request, queued from the display's key alone.
+const displayLab = require('./display-lab').createDisplayLab({ labStore: printLab, json, authorized: req => displayKey.authorized(req) });
 const signIn = require('./signin').createSignIn({ storage, signedIn: req => !!claudeChat.deviceFor(req) || claudeChat.macAuthorized(req), routeKeys: {
   '/api/display/feed': req => displayKey.authorized(req),
   '/api/display/ask': req => displayKey.authorized(req),
@@ -158,6 +160,8 @@ const signIn = require('./signin').createSignIn({ storage, signedIn: req => !!cl
   '/api/display/heartbeat': req => displayKey.authorized(req),
   '/api/display/printer/clear': req => displayKey.authorized(req),
   '/api/display/poster': req => displayKey.authorized(req),
+  '/api/display/lab/judge': req => displayKey.authorized(req),
+  '/api/display/lab/verdict': req => displayKey.authorized(req),
   // The feed's latest-image card links here; the display fetches the JPEG with its key.
   '/api/images/view': req => displayKey.authorized(req)
 } });
@@ -879,6 +883,8 @@ const server = http.createServer(async (req, res) => {
     if ((req.method === 'POST' && (p === '/api/display/pair' || p === '/api/display/pair/start')) || (req.method === 'GET' && p === '/api/display/pair/status')) return await apiDisplayPair(req,res,p);
     if (req.method === 'GET' && p === '/api/display/approvals') return await apiDisplayApprovals(req,res);
     if (req.method === 'POST' && p === '/api/display/approvals/decide') return await apiDisplayApprovalDecide(req,res);
+    if (req.method === 'GET' && p === '/api/display/lab/judge') return await displayLab.judge(req,res,urlObj);
+    if (req.method === 'POST' && p === '/api/display/lab/verdict') return await displayLab.verdict(req,res);
     // A printer action: only the display's key or a signed-in device, whatever the sign-in mode.
     if (req.method === 'POST' && p === '/api/display/printer/clear') {
       req.resume();

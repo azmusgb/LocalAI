@@ -9,6 +9,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { once } = require('node:events');
 const { spawnAppServer } = require('./spawn-server.cjs');
+const { createPrintLab, labCards } = require('../app/print-lab');
 
 const KEY = 'test-mac-key-print-lab';
 let child, dataDir, base;
@@ -85,4 +86,61 @@ test('photos go up once by their sha256, must be JPEGs that match it, and come b
 test('a push over 4 MB is refused', async () => {
   const big = index('2026-10-25T05:00:00Z', {}, { pad: 'x'.repeat(4.5 * 1024 * 1024) });
   assert.equal((await call('POST', '/api/lab/hex-tile/sync', big, MAC)).status, 413);
+});
+
+// ---- Print lab cards on the Workshop display (labCards; the feed adds them after its needs card) ----
+const NOW = Date.parse('2026-10-26T12:00:00Z');
+const exp = (extra = {}) => ({ id: 'E-021', status: 'printing', question_text: 'Does a 0.2 mm seam gap hide the join?', judge_on: 'the seam on the top face', run: 'PR-021-01', runs: [{ id: 'PR-021-01', started_at: '2026-10-26T09:00:00Z' }], due_at: '2026-10-26T11:00:00Z', verdict: null, ...extra });
+const ixOf = (...experiments) => ({ experiments });
+const liveOf = (state, x = exp()) => ({ experiment: x.id, run: x.run, state, progress: null, minutesLeft: null, finishAt: null, errorCode: null });
+
+test('printing lab run → busy lab card', () => {
+  const x = exp();
+  assert.deepEqual(labCards(ixOf(x), liveOf('printing'), NOW), [{ kind: 'lab', id: 'lab-PR-021-01', title: 'Lab · E-021', text: 'the seam on the top face', tone: 'busy' }]);
+  // No judge_on: the question. Paused or not known yet is still on the printer.
+  assert.equal(labCards(ixOf(exp({ judge_on: null })), liveOf('paused'), NOW)[0].text, 'Does a 0.2 mm seam gap hide the join?');
+  assert.equal(labCards(ixOf(x), liveOf('unknown'), NOW)[0].tone, 'busy');
+  assert.deepEqual(labCards(ixOf(x), null, NOW), []);
+});
+
+test('finished, no verdict → judge card with run', () => {
+  for (const state of ['idle', 'cancelled', 'ended']) {
+    assert.deepEqual(labCards(ixOf(exp()), liveOf(state), NOW), [{ kind: 'lab', id: 'judge-PR-021-01', title: 'Judge E-021', text: 'Look at: the seam on the top face', tone: 'attention', ask: 'lab-judge', run: 'PR-021-01' }], state);
+  }
+  // The printer's word beats the estimate: finished early still asks to judge. No judge_on: the face.
+  assert.equal(labCards(ixOf(exp({ due_at: '2026-10-26T15:00:00Z', judge_on: '' })), liveOf('idle'), NOW)[0].text, 'Look at: the face');
+});
+
+test('verdict arrived → no judge card', () => {
+  assert.deepEqual(labCards(ixOf(exp({ verdict: { kind: 'rank', at: '2026-10-26T11:30:00Z' } })), liveOf('idle'), NOW), []);
+  assert.deepEqual(labCards(ixOf(exp({ owner_verdict: { kind: 'rank' } })), liveOf('idle'), NOW), []);
+});
+
+test('judge card gone after 24 h', () => {
+  const x = exp();
+  assert.equal(labCards(ixOf(x), liveOf('idle'), Date.parse('2026-10-27T10:59:00Z')).length, 1);
+  assert.deepEqual(labCards(ixOf(x), liveOf('idle'), Date.parse('2026-10-27T11:01:00Z')), []);
+  // No estimate: 24 h from the run's start.
+  const noDue = exp({ due_at: null });
+  assert.equal(labCards(ixOf(noDue), liveOf('idle'), Date.parse('2026-10-27T08:59:00Z')).length, 1);
+  assert.deepEqual(labCards(ixOf(noDue), liveOf('idle'), Date.parse('2026-10-27T09:01:00Z')), []);
+});
+
+test('two printing, no lab card', () => {
+  assert.deepEqual(labCards(ixOf(exp(), exp({ id: 'E-022', run: 'PR-022-01' })), { conflict: true }, NOW), []);
+  // Through the store: two printing in one project, or one in each of two projects.
+  const rows = new Map();
+  const storage = {
+    readSetting: (k, d) => (rows.has(k) ? rows.get(k) : d), writeSetting: (k, v) => rows.set(k, v), deleteSetting: k => rows.delete(k),
+    listSettings: pre => [...rows].filter(([k]) => k.startsWith(pre)).map(([, v]) => v), transaction: fn => fn()
+  };
+  const lab = createPrintLab({ storage, dataDir: os.tmpdir(), json: () => {}, macAuthorized: () => true, clock: () => NOW, printer: () => ({ state: 'printing', progress: 40, minutesLeft: 30 }) });
+  const push = (project, at, ...experiments) => assert.equal(lab.sync(project, { schema: 'print-lab-index/1', project, generated_at: at, fingerprint: at, experiments, records: {} })[0], 200);
+  push('hex-tile', '2026-10-26T10:00:00Z', exp());
+  assert.deepEqual(lab.feedCards().map(c => c.id), ['lab-PR-021-01']);
+  push('hex-tile', '2026-10-26T10:01:00Z', exp(), exp({ id: 'E-022', run: 'PR-022-01' }));
+  assert.deepEqual(lab.feedCards(), []);
+  push('hex-tile', '2026-10-26T10:02:00Z', exp());
+  push('other', '2026-10-26T10:02:00Z', exp({ id: 'E-030', run: 'PR-030-01' }));
+  assert.deepEqual(lab.feedCards(), []);
 });

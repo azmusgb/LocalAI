@@ -15,7 +15,7 @@ const firstSentence = (s) => String(s || '').split(/(?<=[.!?])\s+/)[0] || '';
 //
 // Feed v2 (Workshop OS 12.6): every card has an id (stable while it means the same thing, so the display can tell a
 // new card), at (epoch seconds, when known) and ask (the question the display asks when the card is tapped).
-const ASK = { needs: 'needs', watch: 'health', running: 'running', done: 'today', weather: 'weather', image: null, disk: 'health', playing: null, home: null, materials: 'health' };
+const ASK = { lab: null, needs: 'needs', watch: 'health', running: 'running', done: 'today', weather: 'weather', image: null, disk: 'health', playing: null, home: null, materials: 'health' };
 const sec = (iso) => { const t = Date.parse(iso || ''); return Number.isFinite(t) ? Math.floor(t / 1000) : undefined; };
 const ago = (atSec, now) => {
   const s = Math.max(0, Math.floor(now / 1000) - atSec);
@@ -23,7 +23,20 @@ const ago = (atSec, now) => {
 };
 const gb = (n) => `${Math.round(n / 1e9)} GB`;
 
-function buildFeed({ needs, watch = [], running = [], done = [], weather = null, image = null, images = null, disk = null, pi = null, materials = null, now = Date.now() }) {
+// piNeeds: Pi Hub's one "Needs you" list ({items}, app/pi-hub.js needs()), or null when the hub didn't answer. It goes
+// out as feed.needs [{id, tone, title, detail, source}], at most 6, title cut to 24 and detail to 90 like the cards
+// (a cut title plus its 3-byte … fits the display's 28-byte buffer), in the hub's order; it never becomes cards (the hub reads the cards, so that would loop). lab: the Print lab
+// cards (app/print-lab.js labCards), after the needs card.
+const NEED_TONES = new Set(['bad', 'attention', 'warn']);
+const str = (v) => (typeof v === 'string' ? v : '');
+function needsOf(piNeeds) {
+  if (!piNeeds || !Array.isArray(piNeeds.items)) return null;
+  return piNeeds.items.filter((i) => i && typeof i === 'object' && str(i.id) && str(i.title)).slice(0, 6).map((i) => ({
+    id: cut(i.id, 64), tone: NEED_TONES.has(i.tone) ? i.tone : 'warn', title: cut(i.title, 24), detail: cut(str(i.detail), 90), source: cut(str(i.source), 24)
+  }));
+}
+
+function buildFeed({ needs, piNeeds = null, lab = [], watch = [], running = [], done = [], weather = null, image = null, images = null, disk = null, pi = null, materials = null, now = Date.now() }) {
   const cards = [];
   const add = (kind, id, title, text, extra = {}) => {
     const c = card(kind, title, text, extra);
@@ -35,10 +48,14 @@ function buildFeed({ needs, watch = [], running = [], done = [], weather = null,
   // "All clear" only when nothing else on the feed is a problem. The needs card counts approvals and replies, so beside
   // a problem card (a full disk, the Pi, a low spool) it says just that, instead of contradicting it.
   const used = disk && disk.totalBytes > 0 ? 1 - disk.freeBytes / disk.totalBytes : 0;
-  const problems = watch.length > 0 || (pi?.issues || []).length > 0 || used >= 0.8 || (materials?.summary?.low || 0) > 0;
+  const problems = watch.length > 0 || lab.some((l) => l.tone === 'attention') || (pi?.issues || []).length > 0 || used >= 0.8 || (materials?.summary?.low || 0) > 0;
   add('needs', needs?.count ? `needs-${needs.count}` : 'needs-0', needs?.count ? 'Needs you' : problems ? 'No approvals' : 'All clear',
     needs?.count ? firstSentence(needs.speech).replace(/^Needs you:\s*/, '') : problems ? 'Nothing is waiting for your answer.' : 'Nothing needs you right now.',
     { count: needs?.count || 0, tone: needs?.count ? 'attention' : 'ok' });
+  // Print lab: Lab · E-021 while it prints, then Judge E-021 until a verdict (or 24 h). Only these fields, as strings.
+  for (const l of (Array.isArray(lab) ? lab : []).slice(0, 1)) {
+    add('lab', l.id, l.title, l.text, { tone: l.tone === 'attention' ? 'attention' : 'busy', ...(l.ask === 'lab-judge' ? { ask: 'lab-judge' } : {}), ...(typeof l.run === 'string' && l.run ? { run: l.run.slice(0, 24) } : {}) });
+  }
   for (const w of watch.slice(0, 2)) add('watch', `watch-${w.id || w.title}`, w.severity === 'high' ? 'Heads up' : 'Worth a look', w.title, { tone: w.severity === 'high' ? 'attention' : 'warning', at: sec(w.since) });
   // The Pi hub's own issues (app/pi-hub.js), as "Pi: <what>".
   for (const i of (pi?.issues || []).slice(0, 1)) add('home', `home-${i.what}`, `Pi: ${i.what}`, i.say || 'Needs a look.', { tone: i.tone === 'bad' ? 'attention' : 'warning' });
@@ -80,6 +97,8 @@ function buildFeed({ needs, watch = [], running = [], done = [], weather = null,
     add('materials', `materials-${s.low ? 'low' : 'ok'}`, 'Materials', text, { tone });
   }
   const feed = { v: 2, at: new Date(now).toISOString(), cards };
+  const needList = needsOf(piNeeds);
+  if (needList) feed.needs = needList;
   if (pics.length) feed.images = pics.map((i) => ({ title: cut(i.title || 'An image', 90), imageUrl: i.imageUrl, ...(Number.isFinite(i.at) ? { at: i.at } : {}) }));
   return feed;
 }
@@ -111,6 +130,7 @@ function signature(feed) {
   const parts = (feed.cards || []).map((c) => [c.kind, c.id, c.tone, c.count ?? '', c.kind === 'done' ? '' : c.text].join('|'));
   for (const i of feed.images || []) parts.push(i.imageUrl);
   for (const m of feed.messages || []) parts.push(`m${m.seq}`);
+  for (const n of feed.needs || []) parts.push(`n${n.id}|${n.tone}|${n.title}|${n.detail}`);
   return crypto.createHash('sha256').update(parts.join('\n')).digest('hex').slice(0, 16);
 }
 
