@@ -94,3 +94,31 @@ test('streaming chat: a cloud answer arrives whole, with the route in the meta e
   assert.match(sse, /event: token\ndata: \{"text":"Answered by Groq"\}/);
   assert.match(sse, /event: done/);
 });
+
+// Security review of #398: the guard reads everything that would be sent, and the cloud never gets the appliance's
+// own details (the capability snapshot, addresses).
+test('an earlier personal turn keeps the whole conversation on this PC', async t => {
+  const { call, groq } = await start(t);
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  const r = await call('/api/chat', { bigger: true, messages: [
+    { role: 'user', content: 'I take lisinopril for my blood pressure.' }, { role: 'assistant', content: 'Noted.' },
+    { role: 'user', content: 'Which outdoor sports suit me?' }] });
+  assert.equal(r.value.route.provider, 'ollama');
+  assert.equal(groq.calls.length, 0);
+});
+
+test('questions about Local AI itself stay on this PC', async t => {
+  const { call, groq } = await start(t);
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  const r = await call('/api/chat', research('What models does Local AI have installed?'));
+  assert.equal(r.value.route.provider, 'ollama');
+  assert.equal(groq.calls.length, 0);
+});
+
+test('the cloud gets the conversation, not the appliance snapshot', async t => {
+  const { call, groq } = await start(t);
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  await call('/api/chat', research('Compare PETG and ASA for outdoor parts'));
+  const sent = JSON.stringify(groq.calls[0].body.messages);
+  assert.ok(!sent.includes('RUNTIME CAPABILITY SNAPSHOT'), sent.slice(0, 300));
+});

@@ -33,6 +33,15 @@ function createChat(ctx) {
     return fitMessages([system, ...sources, ...prep.messages], { numCtx: TEXT_NUM_CTX, reserve: ANSWER_RESERVE });
   }
 
+  // What a cloud model is sent: the conversation and its public sources, never the appliance's own snapshot or facts.
+  function cloudMessages(prep) {
+    const system = systemPrompt('', '', prep.brief, '', prep.sourceHost);
+    const sources = prep.researchContext
+      ? [{ role: 'system', kind: 'sources', content: `Current metasearch results are below. Use them when relevant and cite source numbers like [1].\n\n${prep.researchContext}` }]
+      : [];
+    return fitMessages([system, ...sources, ...prep.messages], { numCtx: TEXT_NUM_CTX, reserve: ANSWER_RESERVE }).map(({ kind, ...m }) => m);
+  }
+
   async function prepareChat(body, signal = null) {
     const throwIfAborted = () => {
       if (!signal?.aborted) return;
@@ -45,15 +54,6 @@ function createChat(ctx) {
     const model = picked || MODEL;
     const messages = sanitizeMessages(body.messages);
     if (!messages.length) throw new Error('messages[] is required');
-    // The coordinator (app/model-router.js): which model answers. Private work, and everything while cloud is off, stays here.
-    const askedText = [...messages].reverse().find(m => m.role === 'user')?.content || '';
-    const route = modelRouter.route({
-      kind: body.webSearch === true ? 'research' : 'chat', text: askedText, model: picked,
-      voice: body.voice === true || body.brief === true || body.voiceRun === true, house: body.title === 'House question',
-      attachments: (Array.isArray(body.images) && body.images.length) || messages.some(m => Array.isArray(m.images) && m.images.length),
-      keepLocal: body.keepLocal === true, bigger: body.bigger === true,
-      cloud: routingSetting().cloud === true, keys: cloudModels.keys(), parked: cloudModels.parked(), env: process.env, localModel: model
-    });
 
     let sources = [];
     let researchContext = '';
@@ -83,6 +83,17 @@ function createChat(ctx) {
     // Questions about Local AI itself also get the "About this appliance" facts (where things run and live, addresses, updates).
     const asked = [...messages].reverse().find(m => m.role === 'user');
     if (asked && isAboutLocalAi(asked.content)) capabilityContext = [capabilityContext, aboutApplianceBlock({ addresses: accessAddresses() })].filter(Boolean).join('\n\n');
+    // The coordinator (app/model-router.js): which model answers. Private work, and everything while cloud is off, stays
+    // here. The guard reads everything that would be sent: every turn of the conversation and the research sources.
+    // Questions about Local AI itself stay here too (their answer needs the appliance's own details).
+    const sent = [...messages.map(m => m.content), researchContext].join('\n');
+    const route = modelRouter.route({
+      kind: body.webSearch === true ? 'research' : 'chat', text: sent, model: picked,
+      voice: body.voice === true || body.brief === true || body.voiceRun === true, house: body.title === 'House question',
+      attachments: (Array.isArray(body.images) && body.images.length) || messages.some(m => Array.isArray(m.images) && m.images.length),
+      keepLocal: body.keepLocal === true || Boolean(asked && isAboutLocalAi(asked.content)), bigger: body.bigger === true,
+      cloud: routingSetting().cloud === true, keys: cloudModels.keys(), parked: cloudModels.parked(), env: process.env, localModel: model
+    });
     return { model, route, messages, sources, researchContext, capabilityContext, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
   }
 
@@ -92,7 +103,7 @@ function createChat(ctx) {
     for (const c of prep.route.order) {
       if (c.provider === 'ollama') break;
       try {
-        const out = await cloudModels.chat({ provider: c.provider, model: c.model, messages: chatMessages(prep) });
+        const out = await cloudModels.chat({ provider: c.provider, model: c.model, messages: cloudMessages(prep) });
         if (out.content) return { content: out.content, used: { provider: c.provider, model: c.model, class: prep.route.class, why: prep.route.why } };
       } catch (e) { recordActivity('model', 'Cloud model unavailable', String(e.message || e).slice(0, 180), { provider: c.provider, model: c.model }); }
     }
