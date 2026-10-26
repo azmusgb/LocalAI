@@ -97,3 +97,15 @@ test('label: "Answered by <Model> · <Provider>" or "Answered on this PC"', () =
   assert.equal(R.label(null), '');
   assert.equal(R.label({ provider: 'evil', model: 'x' }), '');
 });
+
+// Review of #402: a private reason that belongs to the request (not to its kind) holds for the rest of the conversation.
+test('stickyPrivate: request reasons stick to a conversation, kind defaults and a picked model do not', () => {
+  for (const p of [{ voice: true }, { house: true }, { attachments: 1 }, { keepLocal: true }, { text: 'my insulin dose' }, { stay: 'Requests with their own instructions stay on this PC' }])
+    assert.equal(R.stickyPrivate(R.route({ ...base, kind: 'chat', bigger: true, ...p })), true, JSON.stringify(p));
+  for (const r of [R.route({ ...base, kind: 'chat' }), R.route({ ...base, kind: 'quick' }), R.route({ ...base, model: 'gemma3:4b' }), R.route({ ...base, cloud: false }), R.route(base)])
+    assert.equal(R.stickyPrivate(r), false, r.why);
+  // Runs recorded before `sticky` existed (#398) are judged by their reason.
+  assert.equal(R.stickyPrivate({ class: 'private', why: 'Voice and Siri stay on this PC' }), true);
+  assert.equal(R.stickyPrivate({ class: 'private', why: 'Ask stays on this PC unless you choose a bigger model' }), false);
+  assert.equal(R.stickyPrivate(null), false);
+});

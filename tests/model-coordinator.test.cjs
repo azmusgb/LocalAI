@@ -90,3 +90,22 @@ test('local(): the record for an answer from this PC', () => {
   const r = c.route({ kind: 'plan', text: 'x' });
   assert.deepEqual(c.local(r, 'qwen'), { provider: 'ollama', model: 'qwen', class: r.class, why: r.why });
 });
+
+// Review of #402: more redaction; the Activity line comes before the send and a logging failure never resends.
+test('redaction also covers home paths, UNC shares, home.arpa and tailnet names, IPv6 local addresses and extra secrets', () => {
+  const out = redact('see ~/notes/plan.md and \\\\nas\\share\\x.txt, pihub.home.arpa, mac.tail1234.ts.net, fd12:3456:789a::1, fe80::1 and approval-value-xyz', { }, ['approval-value-xyz']);
+  for (const bad of ['~/notes', 'nas\\share', 'pihub.home.arpa', 'tail1234.ts.net', 'fd12:3456', 'fe80::1', 'approval-value-xyz']) assert.ok(!out.includes(bad), `${bad} in ${out}`);
+});
+
+test('the Activity line is written before each cloud call, failures included; a logging error never sends to the next provider', async () => {
+  const { c, calls, activity } = setup({ answer: () => new Error('Groq: timed out') });
+  await c.run(c.route({ kind: 'plan', text: 'x' }), msgs, { kind: 'plan' });
+  assert.equal(activity.filter(a => a[1] === 'Sent to a cloud model').length, 2);
+  const calls2 = [];
+  const cloudModels = { keys: () => ({ groq: true, cerebras: true }), parked: () => ({}), chat: async req => { calls2.push(req); return { content: 'ok' }; } };
+  const c2 = createCoordinator({ modelRouter, cloudModels, routingSetting: () => ({ cloud: true }), recordActivity: () => { throw new Error('log full'); }, env: {} });
+  const out = await c2.run(c2.route({ kind: 'plan', text: 'x' }), msgs, { kind: 'plan' });
+  assert.equal(out.used.provider, 'groq');
+  assert.equal(calls2.length, 1);
+  void calls;
+});

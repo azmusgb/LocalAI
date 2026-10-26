@@ -3,6 +3,7 @@
 // Runs: the unified list (with older agent, automation and engineering runs), cancel, filing and retry.
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
+const { stickyPrivate } = require('../model-router');
 function createRuns(ctx) {
   const { AUTOMATION_RUNS_STORE, MODEL, RUNS_STORE, WORK_CHIPS, activeRunControllers, agentRunStore, approvalStore, automationRunStore, changeStore, cleanRunId, effectiveEngineeringRuns, fetchWithTimeout, gridcraftRuns, json, keptMarker, listenPort, needsYou, nowIso, projectStore, readBody, recordActivity, runCard, runLedger, sanitizeMessages, saveStore, seenRuns, storageError, titleFromText, withSeen, workKind } = ctx;
   function createChatExecution(body,streaming){
@@ -10,7 +11,9 @@ function createRuns(ctx) {
     const model=typeof body?.model==='string'&&body.model.trim()?body.model.trim():MODEL;
     // eslint-disable-next-line no-control-regex -- control characters are what it removes
     const label=typeof body?.title==='string'?body.title.replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,80):''; // the caller's name for it in Recent ("House question")
-    const retryBody={messages,model,webSearch:body?.webSearch===true,threadId:cleanRunId(body?.threadId)||undefined,brief:body?.brief===true||undefined,title:label||undefined};
+    const retryBody={messages,model,webSearch:body?.webSearch===true,threadId:cleanRunId(body?.threadId)||undefined,brief:body?.brief===true||undefined,title:label||undefined,
+      // What kept the first send here goes with the retry too (images are not resent: they keep it here instead).
+      voice:body?.voice===true||undefined,voiceRun:body?.voiceRun===true||undefined,keepLocal:body?.keepLocal===true||(Array.isArray(body?.images)&&body.images.length>0)||undefined,bigger:body?.bigger===true||undefined};
     return runLedger.create({type:body?.webSearch===true?'research':'chat',title:label||titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true,...(label?{label}:{}),...(body?.voice===true||body?.voiceRun===true?{voice:true}:{})}});
   }
   function normalizedExecutionStatus(value){
@@ -224,7 +227,8 @@ function createRuns(ctx) {
       const response = await fetchWithTimeout(`http://127.0.0.1:${listenPort()}${replay.path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(replay.body || {})
+        // A chat that was private for a reason of its own stays private when retried, in the same conversation.
+        body: JSON.stringify(replay.path === '/api/chat' && parent ? { ...(replay.body || {}), threadId: (replay.body || {}).threadId || parent.threadId || undefined, ...(stickyPrivate(parent.meta?.privacy) || stickyPrivate(parent.meta?.route) || parent.meta?.voice === true ? { keepLocal: true } : {}) } : (replay.body || {}))
       }, 900000);
       const raw = await response.text();
       let result;

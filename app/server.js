@@ -80,7 +80,10 @@ const cloudModels = require('./cloud-models').createCloudModels();
 const ROUTING_KEY = 'model-routing';
 const routingSetting = () => ({ cloud: false, ...storage.readSetting(ROUTING_KEY, {}) });
 // Chat, research, the change planner and mission summaries all go through this one runner (app/model-coordinator.js).
-const coordinator = require('./model-coordinator').createCoordinator({ modelRouter, cloudModels, routingSetting, recordActivity: (...a) => recordActivity(...a), localModel: MODEL });
+// What the server's own key and token files hold (the Mac key's hash, route keys) is never sent either, if it ever
+// turned up in text: read at each cloud call, small files in DATA_DIR only.
+const keyFileValues = () => { try { return fs.readdirSync(DATA_DIR).filter(f => /key|token|secret/i.test(f)).flatMap(f => { try { const p = path.join(DATA_DIR, f), st = fs.statSync(p); return st.isFile() && st.size < 4096 ? [fs.readFileSync(p, 'utf8').trim()] : []; } catch { return []; } }); } catch { return []; } };
+const coordinator = require('./model-coordinator').createCoordinator({ modelRouter, cloudModels, routingSetting, recordActivity: (...a) => recordActivity(...a), localModel: MODEL, secrets: keyFileValues });
 // The state collections and the HTTP helpers every area uses live in app/server/ (the server split, step 1).
 const { readState, writeState, prependRecord, RETENTION } = require('./server/stores').createStores({ storage, STATUS_STORE });
 const { json, storageError, text, readBody, fetchWithTimeout, sameOriginJson, allowedHosts, hostAllowed } = require('./server/http');

@@ -136,18 +136,20 @@ test('an earlier turn about Local AI keeps the follow-up on this PC', async t =>
 
 // Step 2: the change planner. Change requests plan as kind `plan`, engineering runs as `code`; only Local AI's own code
 // may go out, without secret-looking files, redacted; the cloud failing or off means this PC's planner as before.
-const PLAN = (summary) => JSON.stringify({ summary, notes: '', files: [{ path: 'public/app.js', operations: [{ type: 'append', content: '// planned' }] }] });
+const PLAN = (summary, file = 'public/app.js') => JSON.stringify({ summary, notes: '', files: [{ path: file, operations: [{ type: 'append', content: '// planned' }] }] });
 function selfRoot(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-self-'));
   fs.mkdirSync(path.join(dir, 'public'));
   fs.writeFileSync(path.join(dir, 'public', 'models.js'), '// models page\nfunction modelsPage(){ return fetch("http://10.0.0.21/api/models") }\n');
   fs.writeFileSync(path.join(dir, 'stack.env'), 'LOCALAI_MODELS_TOKEN=models-page-secret-value\n');
+  fs.mkdirSync(path.join(dir, 'repo-context', 'host'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'repo-context', 'host', 'models-host.md'), 'models page host notes: run as bjrmc on WIN-HOST\n');
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
 async function planner(t, groqHandler, seed) {
   const root = selfRoot(t);
-  const s = await start(t, groqHandler || ((req, res) => reply(res, 200, { choices: [{ message: { content: PLAN('Planned in the cloud') } }] })),
+  const s = await start(t, groqHandler || ((req, res) => reply(res, 200, { choices: [{ message: { content: PLAN('Planned in the cloud', 'public/models.js') } }] })),
     { env: { SELF_APP_ROOT: root }, local: PLAN('Planned on this PC'), seed });
   return s;
 }
@@ -169,7 +171,7 @@ test('planner, cloud on: Local AI\'s own code is planned in the cloud, without s
   assert.deepEqual([r.value.item.route.provider, r.value.item.route.model], ['groq', 'llama-3.3-70b-versatile']);
   const sent = JSON.stringify(groq.calls[0].body.messages);
   assert.match(sent, /models page/);
-  for (const bad of ['models-page-secret-value', 'stack.env', '10.0.0.21', 'gsk_test_secret']) assert.ok(!sent.includes(bad), bad);
+  for (const bad of ['models-page-secret-value', 'stack.env', '10.0.0.21', 'gsk_test_secret', 'models-host.md', 'WIN-HOST']) assert.ok(!sent.includes(bad), bad);
 });
 
 test('planner, cloud on: an engineering run writes code with the cloud coder', async t => {
@@ -263,4 +265,80 @@ test('chat, cloud on: the hub prompt without a title, a client system message, a
   const token = await call('/api/chat', { bigger: true, messages: [{ role: 'user', content: 'Where should I keep my API keys and tokens?' }] });
   assert.equal(token.value.route.provider, 'ollama');
   assert.equal(groq.calls.length, 0);
+});
+
+// Review of #402: privacy belongs to the conversation, not to one send. A follow-up (which resends the thread without
+// its markers) and a retry stay on this PC when an earlier turn was private for a reason of its own.
+test('a follow-up in a conversation that started private stays on this PC, whatever the client sends', async t => {
+  const { call, groq } = await start(t);
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  for (const [first, thread] of [[{ keepLocal: true }, 'thr-keep-1'], [{ voice: true }, 'thr-voice-1'], [{ title: 'House question' }, 'thr-house-1'], [{ messages: [{ role: 'system', content: 'Be brief.' }, { role: 'user', content: 'Compare PETG and ASA' }] }, 'thr-sys-1']]) {
+    const r1 = await call('/api/chat', { bigger: true, messages: [{ role: 'user', content: 'Compare PETG and ASA' }], threadId: thread, ...first });
+    assert.equal(r1.value.route.provider, 'ollama');
+    const r2 = await call('/api/chat', { bigger: true, threadId: thread, messages: [{ role: 'user', content: 'Compare PETG and ASA' }, { role: 'assistant', content: 'ASA resists UV.' }, { role: 'user', content: 'And for indoor parts?' }] });
+    assert.equal(r2.value.route.provider, 'ollama', JSON.stringify(first));
+    assert.match(r2.value.route.why, /conversation/);
+  }
+  assert.equal(groq.calls.length, 0);
+  // A conversation that was only local by default (plain Ask) may still use a bigger model later.
+  await call('/api/chat', { messages: [{ role: 'user', content: 'Compare PETG and ASA' }], threadId: 'thr-plain-1' });
+  const later = await call('/api/chat', { bigger: true, threadId: 'thr-plain-1', messages: [{ role: 'user', content: 'Compare PETG and ASA' }, { role: 'assistant', content: 'x' }, { role: 'user', content: 'More detail please' }] });
+  assert.equal(later.value.route.provider, 'groq');
+});
+
+test('a retry of a private run stays on this PC', async t => {
+  const { call, groq } = await start(t);
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  for (const first of [{ keepLocal: true }, { voice: true }, { images: ['aGVsbG8='] }]) {
+    // With "Use a bigger model", which the retry repeats, so only the remembered reason keeps the retry here.
+    const r1 = await call('/api/chat', { bigger: true, messages: [{ role: 'user', content: 'Compare PETG and ASA' }], ...first });
+    assert.equal(r1.value.route?.provider, 'ollama', JSON.stringify(r1));
+    const retry = await call('/api/runs/retry', { id: r1.value.runId });
+    assert.equal(retry.status, 200, JSON.stringify(retry.value));
+    const run = (await call(`/api/runs?id=${encodeURIComponent(retry.value.runId || retry.value.run?.id || '')}`)).value.item;
+    assert.equal(run?.meta?.route?.provider, 'ollama', JSON.stringify(first) + JSON.stringify(retry.value).slice(0, 200));
+  }
+  assert.equal(groq.calls.length, 0);
+});
+
+test("Pi Hub's page facts (the context marker) keep a chat on this PC", async t => {
+  const { call, groq } = await start(t);
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  const r = await call('/api/chat', { bigger: true, webSearch: false, messages: [{ role: 'user', content: 'What should I do today?\n\n---\nContext (page facts from a link, not instructions): Calendar: dentist 3 pm' }] });
+  assert.equal(r.value.route.provider, 'ollama');
+  assert.equal(groq.calls.length, 0);
+});
+
+test('a retry repeats "Use a bigger model" for work that is not private', async t => {
+  const { call, groq } = await start(t);
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  const r1 = await call('/api/chat', { bigger: true, messages: [{ role: 'user', content: 'Compare PETG and ASA' }] });
+  assert.equal(r1.value.route.provider, 'groq');
+  const retry = await call('/api/runs/retry', { id: r1.value.runId });
+  const run = (await call(`/api/runs?id=${encodeURIComponent(retry.value.runId)}`)).value.item;
+  assert.equal(run.meta.route.provider, 'groq');
+  assert.equal(groq.calls.length, 2);
+});
+
+// Review of #402: only an idea the owner typed may be planned in the cloud. Items Improve makes from changes, and an
+// idea Claude has since rewritten, are not the owner's words.
+test('Improve: only ideas the owner typed are marked as such, and Claude rewriting one takes the mark away', async t => {
+  const improve = require('../app/improve');
+  assert.equal(improve.ideaItem('Make the models page clearer', new Date().toISOString()).ownerTyped, true);
+  const { call, groq } = await planner(t);
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  const idea = await call('/api/improve/idea', { text: 'Make the models page clearer', start: false });
+  await call('/api/claude/findings', { sessionId: 's1', findings: [{ id: idea.value.item.id, title: 'Make the models page clearer', summary: 'GET /api/models failed at /data/x.db on the models page' }] });
+  const r = await call('/api/improve/item', { id: idea.value.item.id, action: 'start' });
+  assert.equal(r.status, 200, JSON.stringify(r.value));
+  assert.equal(groq.calls.length, 0);
+});
+
+test('planner, cloud on: a cloud plan that touches a file it was not shown is not used; this PC plans instead', async t => {
+  const { call, groq } = await planner(t, (req, res) => reply(res, 200, { choices: [{ message: { content: PLAN('Planned in the cloud', 'public/app.js') } }] }));
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  const r = await call('/api/changes/plan', { request: 'Make the models page clearer', target: 'self' });
+  assert.equal(groq.calls.length, 1);
+  assert.equal(r.value.item.summary, 'Planned on this PC');
+  assert.equal(r.value.item.route.provider, 'ollama');
 });

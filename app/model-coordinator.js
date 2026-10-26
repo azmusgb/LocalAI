@@ -18,6 +18,10 @@ const REDACTIONS = [
   [/\b(?:gsk|csk|ghp|gho|ghs|ghu|github_pat|sk|pk|rk|xox[abpr]|hf|glpat)[-_][A-Za-z0-9_-]{8,}/g, '[secret]'],
   [/\bBearer\s+[^\s"',;]+/gi, 'Bearer [secret]'],
   [/\b[A-Za-z]:\\[^\s"'`<>|]*/g, '[path]'],
+  [/\\\\[A-Za-z0-9._$-]+\\[^\s"'`<>|]*/g, '[path]'],
+  [/(^|[\s"'`(=:[,])~\/[^\s"'`)<>\],]*/g, '$1[path]'],
+  [/\b(?:[a-z0-9-]+\.)+(?:home\.arpa|ts\.net|local|lan)\b/gi, '[host]'],
+  [/\b(?:f[cd][0-9a-f]{2}|fe80):[0-9a-f:]*[0-9a-f]\b/gi, '[address]'],
   [/(^|[\s"'`(=:[,])\/(?:Users|home|root|data|app|var|etc|opt|srv|mnt|tmp|private|Volumes|workspace|run|proc)\b[^\s"'`)<>\],]*/g, '$1[path]'],
   [/\b(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01])|169\.254|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7]))\.\d{1,3}\.\d{1,3}\b/g, '[address]'],
   [/\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/g, '[email]'],
@@ -27,8 +31,9 @@ const REDACTIONS = [
 const KEY_SHAPED = /\b(?:gsk|csk|ghp|gho|ghs|ghu|github_pat|sk|pk|rk|xox[abpr]|hf|glpat)[-_][A-Za-z0-9_-]{8,}|\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/;
 function secretish(text) { const t = String(text || ''); return SECRETISH.test(t) || KEY_SHAPED.test(t); }
 function cloudSafePath(rel) { return !SECRET_FILE.test(String(rel || '').replace(/\\/g, '/')); }
-function redact(text, env = process.env) {
+function redact(text, env = process.env, extra = []) {
   let t = String(text ?? '');
+  for (const v of extra || []) { const value = String(v ?? '').trim(); if (value.length >= 6) t = t.split(value).join('[secret]'); }
   for (const [k, v] of Object.entries(env || {})) {
     const value = String(v ?? '').trim();
     if (SECRET_ENV.test(k) && value.length >= 6) t = t.split(value).join('[secret]');
@@ -37,7 +42,10 @@ function redact(text, env = process.env) {
   return t;
 }
 
-function createCoordinator({ modelRouter, cloudModels, routingSetting, recordActivity = () => {}, env = process.env, localModel = '' }) {
+// secrets(): extra values never to send (what the server read from its key files); read at each call.
+function createCoordinator({ modelRouter, cloudModels, routingSetting, recordActivity = () => {}, env = process.env, localModel = '', secrets = () => [] }) {
+  const log = (...a) => { try { recordActivity(...a); } catch { /* a log that fails never changes what is sent */ } };
+  const extra = () => { try { return secrets() || []; } catch { return []; } };
   function route(req = {}) {
     return modelRouter.route({
       ...req, cloud: routingSetting().cloud === true, keys: cloudModels.keys(), parked: cloudModels.parked(), env,
@@ -49,20 +57,19 @@ function createCoordinator({ modelRouter, cloudModels, routingSetting, recordAct
   async function run(r, messages, { kind = 'plan', maxTokens } = {}) {
     const candidates = (r?.order || []).filter(c => c.provider !== 'ollama');
     if (!candidates.length || r.class !== 'shareable' || routingSetting().cloud !== true) return null;
-    const out = (Array.isArray(messages) ? messages : []).map(m => ({ role: m.role, content: redact(m.content, env) }));
+    const hidden = extra(), out = (Array.isArray(messages) ? messages : []).map(m => ({ role: m.role, content: redact(m.content, env, hidden) }));
     const chars = out.reduce((n, m) => n + m.content.length, 0);
     for (const c of candidates) {
-      try {
-        const answer = await cloudModels.chat({ provider: c.provider, model: c.model, messages: out, ...(maxTokens ? { maxTokens } : {}) });
-        recordActivity('model', 'Sent to a cloud model', `${modelRouter.label(c).replace(/^Answered by /, '')} · ${kind} · ${chars.toLocaleString('en-US')} characters`, { provider: c.provider, model: c.model, kind, chars });
-        if (answer?.content) return { content: answer.content, used: { provider: c.provider, model: c.model, class: r.class, why: r.why } };
-      } catch (e) {
-        recordActivity('model', 'Cloud model unavailable', redact(String(e?.message || e), env).slice(0, 180), { provider: c.provider, model: c.model, kind });
-      }
+      // Logged before the send, so a timeout or a server error still shows that text went out.
+      log('model', 'Sent to a cloud model', `${modelRouter.label(c).replace(/^Answered by /, '')} · ${kind} · ${chars.toLocaleString('en-US')} characters`, { provider: c.provider, model: c.model, kind, chars });
+      let answer = null;
+      try { answer = await cloudModels.chat({ provider: c.provider, model: c.model, messages: out, ...(maxTokens ? { maxTokens } : {}) }); }
+      catch (e) { log('model', 'Cloud model unavailable', redact(String(e?.message || e), env, hidden).slice(0, 180), { provider: c.provider, model: c.model, kind }); continue; }
+      if (answer?.content) return { content: answer.content, used: { provider: c.provider, model: c.model, class: r.class, why: r.why } };
     }
     return null;
   }
-  return { route, run, local, redact: t => redact(t, env) };
+  return { route, run, local, redact: t => redact(t, env, extra()) };
 }
 
 module.exports = { createCoordinator, redact, secretish, cloudSafePath };

@@ -113,10 +113,13 @@ function createChanges(ctx) {
   async function generatePatchPlan(request,targetRoot,{kind='plan',stay=''}={}){
     const files=changeContextFiles(targetRoot,request),context=joinContext(files);
     const system=`You are the Patch Intelligence planner inside Local AI. Return JSON only. You may modify only files shown in context. Produce minimal, source-aware patches. For JavaScript named functions, strongly prefer replace_function or insert_after_function instead of replacing large exact strings. Use exact replace only for small unique snippets copied verbatim from context. Never append executable statements outside a valid function merely to satisfy a request. Never invent shell commands. Never add fake validation code, hard-coded PASS values, or validators that simply return true; the existing staging validator is the source of truth. Keep browser-only APIs (document, window, localStorage, client state) out of server.js. Keep Node-only APIs (fs, process.env, require) out of public/app.js. Do not bypass approval, staging, backups, rollback, or the self-update host. Schema: {"summary":"...","notes":"...","files":[{"path":"relative/path","operations":[{"type":"replace_function","name":"functionName","content":"complete function declaration"},{"type":"insert_after_function","name":"functionName","content":"new declaration(s)"},{"type":"insert_after_text","anchor":"EXACT small anchor","content":"text"},{"type":"replace_between_markers","startMarker":"...","endMarker":"...","content":"replacement between markers"},{"type":"replace_regex","pattern":"...","flags":"m","replacement":"literal replacement"},{"type":"replace","find":"EXACT existing text","replace":"replacement text"},{"type":"create","content":"full new file"}]}]}. If context is insufficient, return files:[] and explain why.`;
-    const self=path.resolve(String(targetRoot||''))===path.resolve(SELF_APP_ROOT),cloudContext=joinContext(files.filter(f=>cloudSafePath(f.rel)));
+    const self=path.resolve(String(targetRoot||''))===path.resolve(SELF_APP_ROOT),cloudFiles=files.filter(f=>cloudSafePath(f.rel)&&!/^repo-context\/host\//.test(f.rel)),cloudContext=joinContext(cloudFiles);
     const route=coordinator.route({kind,text:`${request}\n${cloudContext}`,stay:!self?'Your workspace files stay on this PC':stay?String(stay):secretish(request)?"Local AI's own keys, passwords and setup stay on this PC":''});
     const cloud=await coordinator.run(route,[{role:'system',content:system},{role:'user',content:`CHANGE REQUEST:\n${request}\n\nAVAILABLE SOURCE CONTEXT:\n${cloudContext}`}],{kind,maxTokens:8000});
-    if(cloud){try{return {...normalizePatchPlan(extractJsonObject(cloud.content)),route:cloud.used}}catch{recordActivity('model','Cloud plan unreadable','Planning on this PC instead.',{provider:cloud.used.provider,model:cloud.used.model,kind})}}
+    // A cloud plan may only touch files it was shown (the host's notes under repo-context/host/ are never shown).
+    if(cloud){const shown=new Set(cloudFiles.map(f=>f.rel));let plan=null;try{plan=normalizePatchPlan(extractJsonObject(cloud.content))}catch{}
+      if(plan&&plan.files.every(f=>shown.has(f.path)))return {...plan,route:cloud.used};
+      recordActivity('model',plan?'Cloud plan touched files it was not shown':'Cloud plan unreadable','Planning on this PC instead.',{provider:cloud.used.provider,model:cloud.used.model,kind})}
     const raw=await runEngineeringPlannerModel(`CHANGE REQUEST:\n${request}\n\nAVAILABLE SOURCE CONTEXT:\n${context}`,system,ENGINEERING_MODEL_TIMEOUT_MS);
     return {...normalizePatchPlan(extractJsonObject(raw)),route:coordinator.local(route,MODEL)};
   }
@@ -620,7 +623,7 @@ function createChanges(ctx) {
   function improveChangeRequest(f){return [f.title,f.summary,f.fix].filter(Boolean).join('\n\n')}
   // Only the owner's own ideas may be planned by a cloud model; Signals and Claude's findings carry text Local AI or
   // Claude wrote (runtime detail, file paths), so they stay here.
-  const improveStay=f=>f.source==='idea'?'':'Problems Local AI or Claude wrote up stay on this PC';
+  const improveStay=f=>f.source==='idea'&&f.ownerTyped===true?'':'Problems Local AI or Claude wrote up stay on this PC';
   // Changes past approval are being shipped (a pull request for self changes); Improve must not retire them.
   const IMPROVE_LOCKED_CHANGE=['approved','apply_requested'];
   // Retires a change Improve no longer wants (rejected), and its pending approval with it.
@@ -766,7 +769,7 @@ function createChanges(ctx) {
     try{const b=await readBody(req,1024*1024);const list=Array.isArray(b.findings)?b.findings.slice(0,300):[b];const at=nowIso();const saved=[],fresh=[];
       storage.transaction(()=>{if(b.sessionId)claudeSaveSession(b,at);for(const raw of list){const id=claudeSlug(raw.id,'');const prev=id?storage.readSetting(CLAUDE_FINDING_PREFIX+id,null):null;
         // signal-* and idea-* ids are Improve's: Claude may update those items, never create them.
-        if(/^(signal|idea)-/.test(id)&&!prev)continue;const f=claudeNormalizeFinding({...raw,sessionId:raw.sessionId||b.sessionId},prev,at);storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);saved.push(f);if(!prev&&f.status==='proposed')fresh.push(f)}});
+        if(/^(signal|idea)-/.test(id)&&!prev)continue;const f=claudeNormalizeFinding({...raw,sessionId:raw.sessionId||b.sessionId},prev,at);delete f.ownerTyped;/* Claude's words now, not only the owner's */storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);saved.push(f);if(!prev&&f.status==='proposed')fresh.push(f)}});
       // A new finding waiting for the owner's decision reaches the phone; re-posts of the same id don't.
       for(const f of fresh)notifier.notify({kind:'needs-you',title:'Claude needs your decision',body:f.title,url:'/?open=backlog',tag:`finding:${f.id}`});
       json(res,201,{ok:true,items:claudeRanked(saved)})}catch(e){storageError(res,e,400)}

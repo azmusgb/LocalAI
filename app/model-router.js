@@ -51,6 +51,14 @@ function route(req = {}) {
   return { class: 'shareable', why: cloud.length ? `Not private: ${KINDS[kind].label.toLowerCase()}` : 'No cloud model available right now', order: [...cloud, local] };
 }
 
+// Reasons that come from the request itself (voice, House, files, "Keep on this PC", personal words, a caller's own
+// reason) hold for the rest of its conversation: a follow-up doesn't resend those markers. A kind's default ("Ask stays
+// on this PC unless …"), a model picked by hand, cloud switched off or unavailable don't.
+const NOT_STICKY = new Set(['You picked this model', 'This kind of work stays on this PC', 'Ask stays on this PC unless you choose a bigger model']);
+function stickyPrivate(r) {
+  return !!r && typeof r === 'object' && r.class === 'private' && typeof r.why === 'string' && r.why !== '' && !NOT_STICKY.has(r.why);
+}
+
 // The read-only routing table for the Models page.
 function table() {
   return Object.entries(KINDS).map(([kind, k]) => ({ kind, label: k.label, where: k.where, cloud: k.cloud !== false }));
@@ -68,4 +76,4 @@ function label(used) {
   return `Answered by ${named ? named[1] : model || 'a cloud model'} · ${provider}`;
 }
 
-module.exports = { route, table, label, personal, KINDS, CLOUD };
+module.exports = { route, table, label, personal, stickyPrivate, KINDS, CLOUD };
