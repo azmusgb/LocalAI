@@ -301,7 +301,7 @@ function createVoice(ctx) {
     if (action === 'mission') {
       if (!subject) return 'What should the mission do?';
       if (!featureAtLeast(4)) return "Missions aren't available on this Local AI.";
-      startMissionRun(subject, '', undefined);
+      startMissionRun(subject, '', undefined, false, '', { voice: true });
       return `Started a mission: ${subject}.`;
     }
     // research: a full answer for the app, not a spoken one; the notification carries its start.

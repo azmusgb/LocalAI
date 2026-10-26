@@ -3,8 +3,15 @@
 // Chat (/api/chat, /api/chat/stream), prompt construction and intent routing (/api/route).
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
+const { secretish } = require('../model-coordinator');
+const { stickyPrivate } = require('../model-router');
+const { cleanId } = require('../run-ledger');
+// Pi Hub's page facts, as ask-context.js appends them: they describe the household's pages, so the chat stays here.
+const HUB_CONTEXT = /\n---\nContext \(page facts from a link/;
+// The home hub's prompt (Pi Hub's House questions), as app/run-cards.js readableTitle knows it.
+const HUB_PROMPT = /^you are the voice of a family's home hub\b/i;
 function createChat(ctx) {
-  const { ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, cloudModels, modelRouter, routingSetting, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone } = ctx;
+  const { ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, coordinator, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone } = ctx;
 
   function systemPrompt(researchContext = '', capabilityContext = '', brief = false, facts = '', sourceHost = '') {
     return {
@@ -86,13 +93,26 @@ function createChat(ctx) {
     // The coordinator (app/model-router.js): which model answers. Private work, and everything while cloud is off, stays
     // here. The guard reads everything that would be sent: every turn of the conversation and the research sources.
     // A conversation that touches Local AI itself, in any turn, stays here too (it carries the appliance's own details).
+    // House questions are known by the hub's prompt too (a caller may leave out the title); a request that brings its own
+    // system message, or text that looks like a key or is about keys, passwords or setup, stays here (secretish).
+    const raw = Array.isArray(body.messages) ? body.messages.filter(m => m && typeof m === 'object') : [];
+    // Privacy belongs to the conversation: a follow-up or a retry resends the turns without their markers (voice, House,
+    // files, "Keep on this PC", a system message), so an earlier turn that was private for a reason of its own keeps
+    // every later turn of the thread here. Judged on the server from the runs it recorded; the client's flags don't count.
+    // The lookup uses the ledger's own id rule (cleanId): a threadId it would not keep as it is can't find its earlier
+    // runs, so it keeps the request here rather than failing open.
+    const askedThread = body.threadId === undefined || body.threadId === null || body.threadId === '' ? '' : body.threadId;
+    const threadId = askedThread ? cleanId(askedThread) : '';
+    const keptBefore = (askedThread && threadId !== askedThread) || (threadId && runLedger.list({ threadId, all: true }).some(r => stickyPrivate(r.meta?.privacy) || stickyPrivate(r.meta?.route) || r.meta?.voice === true));
     const sent = [...messages.map(m => m.content), researchContext].join('\n');
-    const route = modelRouter.route({
+    const route = coordinator.route({
       kind: body.webSearch === true ? 'research' : 'chat', text: sent, model: picked,
-      voice: body.voice === true || body.brief === true || body.voiceRun === true, house: body.title === 'House question',
-      attachments: (Array.isArray(body.images) && body.images.length) || messages.some(m => Array.isArray(m.images) && m.images.length),
-      keepLocal: body.keepLocal === true || messages.some(m => isAboutLocalAi(m.content)), bigger: body.bigger === true,
-      cloud: routingSetting().cloud === true, keys: cloudModels.keys(), parked: cloudModels.parked(), env: process.env, localModel: model
+      voice: body.voice === true || body.brief === true || body.voiceRun === true,
+      house: body.title === 'House question' || raw.some(m => HUB_PROMPT.test(String(m.content || '').trim()) || HUB_CONTEXT.test(String(m.content || ''))),
+      attachments: (Array.isArray(body.images) && body.images.length) || raw.some(m => Array.isArray(m.images) && m.images.length),
+      keepLocal: body.keepLocal === true || messages.some(m => isAboutLocalAi(m.content)),
+      stay: keptBefore ? 'This conversation was kept on this PC' : raw.some(m => m.role === 'system') ? 'Requests with their own instructions stay on this PC' : secretish(sent) ? 'Keys, passwords and setup stay on this PC' : '',
+      bigger: body.bigger === true, localModel: model
     });
     return { model, route, messages, sources, researchContext, capabilityContext, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
   }
@@ -100,14 +120,7 @@ function createChat(ctx) {
   // The cloud candidates in the route, in order; the first answer wins. null = none answered (or none allowed): the
   // caller goes on to this PC's model, so a request never fails only because the cloud did.
   async function cloudAnswer(prep) {
-    for (const c of prep.route.order) {
-      if (c.provider === 'ollama') break;
-      try {
-        const out = await cloudModels.chat({ provider: c.provider, model: c.model, messages: cloudMessages(prep) });
-        if (out.content) return { content: out.content, used: { provider: c.provider, model: c.model, class: prep.route.class, why: prep.route.why } };
-      } catch (e) { recordActivity('model', 'Cloud model unavailable', String(e.message || e).slice(0, 180), { provider: c.provider, model: c.model }); }
-    }
-    return null;
+    return coordinator.run(prep.route, cloudMessages(prep), { kind: prep.researchContext ? 'research' : 'chat' });
   }
   const usedLocal = prep => ({ provider: 'ollama', model: prep.model, class: prep.route.class, why: prep.route.why });
 
@@ -123,6 +136,7 @@ function createChat(ctx) {
       execution = createChatExecution(body, false);
       runLedger.start(execution.id, body.webSearch === true ? 'Research run started' : 'Chat run started');
       const prep = await prepareChat(body);
+      runLedger.update(execution.id, { meta: { privacy: { class: prep.route.class, why: prep.route.why } } });
       const started = Date.now();
       const cloud = await cloudAnswer(prep);
       let content, used;
@@ -210,6 +224,7 @@ function createChat(ctx) {
       });
 
       const prep = await prepareChat(body, controller.signal);
+      runLedger.update(execution.id, { meta: { privacy: { class: prep.route.class, why: prep.route.why } } });
       if (controller.signal.aborted || runLedger.get(execution.id)?.status === 'cancelled') {
         throw new Error('Run cancelled');
       }

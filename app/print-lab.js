@@ -5,7 +5,11 @@
 // whole projection (schema print-lab-index/1); one older than the last stored is refused, records are upserted by
 // id and skipped when their sha256 is unchanged, and records the Mac no longer has are removed.
 // Photos are stored once each under DATA_DIR/print-lab/<project>/photos/<sha256>.jpg.
-// Requests and incoming photos are sent by paired phones and picked up by the Mac (`lab pull`).
+// Requests and incoming photos are sent by paired phones and picked up by the Mac (`lab pull`): verdict and photos, and
+// the page's buttons start (It's printing now), approve and abandon (Drop). Local AI only queues them; the Mac applies
+// each once with the CLI's own functions and posts the result back.
+// The project also carries `live`: the Workshop printer's state for the one experiment that is printing, and
+// GET /api/lab/camera.jpg passes on one snapshot from the Pi's camera bridge (paired devices only).
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -23,6 +27,21 @@ const MAX_PHOTO = 8 * 1024 * 1024;
 const MAX_REQUEST = 4 * 1024;
 const MAX_RECORDS = 2000;
 const MAX_PENDING = 20;
+const MAX_REASON = 500;
+const ACT_KINDS = ['start', 'approve', 'abandon'];
+const BUILD_ID_RE = /^[A-Z]{1,4}-\d{1,6}-\d{1,4}$/;
+const GUARD_CODE_RE = /^[a-z][a-z0-9_]{0,39}$/;
+// The Pi's camera bridge (it stays open for the Workshop display) and the Pi hub, which says why there is no picture.
+const CAMERA_URL = 'http://10.0.0.30:8091/x2d/frame.jpg';
+const CAMERA_TIMEOUT_MS = 3000;
+const MAX_FRAME = 2 * 1024 * 1024; // read as a stream and cut off past this: a huge or endless answer is never held
+const MAX_REASON_ANSWER = 4 * 1024; // the hub's /api/camera answer is about 200 bytes
+const CAMERA_REASONS = new Set(['liveview_off', 'printer_unreachable']);
+const CAMERA_WORDS = {
+  liveview_off: 'No picture: LAN Only Liveview is off on the X2D.',
+  printer_unreachable: "No picture: the printer isn't answering on the network.",
+  no_picture: "No picture: the camera isn't sending one right now."
+};
 
 const key = (project, part) => `${PREFIX}${project}:${part}`;
 
@@ -41,7 +60,34 @@ function readRaw(req, maxBytes) {
   });
 }
 
-function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () => null, now = () => new Date().toISOString() }) {
+// What is wrong with a start / approve / abandon request, or null. Only the fields lab pull reads pass, and only in the
+// shapes it expects; the reason is the owner's own words and is shown back only as text.
+function actProblem(kind, payload, runSeen) {
+  const reason = typeof payload.reason === 'string' ? payload.reason.trim() : '';
+  if (kind === 'start') {
+    if (typeof payload.tapped_at !== 'string' || payload.tapped_at.length > 40 || !Number.isFinite(Date.parse(payload.tapped_at))) return 'tapped_at must be a date';
+    if (runSeen !== null && runSeen !== undefined && !RUN_ID_RE.test(String(runSeen))) return 'Invalid run id';
+    return null;
+  }
+  if (!reason) return kind === 'abandon' ? 'Dropping needs a reason.' : 'Approving needs a reason.';
+  if ([...reason].length > MAX_REASON) return `Keep the reason to ${MAX_REASON} characters.`;
+  if (kind === 'approve') {
+    if (typeof payload.build_seen !== 'string' || !BUILD_ID_RE.test(payload.build_seen)) return 'build_seen must be a build id';
+    if (!Array.isArray(payload.reasons_seen) || payload.reasons_seen.length > 30 || !payload.reasons_seen.every(c => typeof c === 'string' && GUARD_CODE_RE.test(c))) return 'reasons_seen must be a list of guard codes';
+  }
+  return null;
+}
+
+// What is wrong with a photos request, or null: each photo is named by its sha256 (the clean-up after it is applied
+// deletes incoming/<sha256>.jpg, so nothing else may reach a path) with a short plain tab or none.
+function photosProblem(payload) {
+  const list = payload.photos;
+  if (!Array.isArray(list) || !list.length || list.length > 50) return 'photos must list 1 to 50 photos';
+  if (!list.every(p => p && typeof p === 'object' && SHA_RE.test(p.sha256 || '') && (p.tab == null || (typeof p.tab === 'string' && /^[\w.-]{1,16}$/.test(p.tab))))) return 'Each photo needs its sha256 and at most a short tab name.';
+  return null;
+}
+
+function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () => null, now = () => new Date().toISOString(), clock = () => Date.now(), printer = () => null, cameraUrl = process.env.LOCALAI_LAB_CAMERA_URL || CAMERA_URL, piHubUrl = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.30', cameraTimeoutMs = CAMERA_TIMEOUT_MS, fetchImpl = (...a) => fetch(...a) }) {
   const photoDir = project => path.join(dataDir, 'print-lab', project, 'photos');
   const incomingDir = project => path.join(dataDir, 'print-lab', project, 'incoming');
   const projects = () => storage.readSetting(`${PREFIX}projects`, { names: [] }).names;
@@ -84,11 +130,97 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
     try { return fs.readdirSync(photoDir(project)).filter(f => /^[0-9a-f]{64}\.jpg$/.test(f)).map(f => f.slice(0, 64)); } catch { return []; }
   }
 
+  // The printer as it is now, for the one experiment whose latest run is printing. Two printing: no guess, only the
+  // conflict. The printer's state comes from the Workshop display's poller (app/workshop.js); null when not set up.
+  function live(index) {
+    const printing = (Array.isArray(index?.experiments) ? index.experiments : []).filter(x => x && x.status === 'printing');
+    if (!printing.length) return null;
+    if (printing.length > 1) return { conflict: true };
+    const x = printing[0], p = printer() || {};
+    const state = typeof p.state === 'string' ? p.state : 'unknown';
+    const minutesLeft = Number.isSafeInteger(p.minutesLeft) ? p.minutesLeft : null;
+    return {
+      experiment: x.id, run: typeof x.run === 'string' ? x.run : null, state,
+      progress: Number.isSafeInteger(p.progress) ? p.progress : null, minutesLeft,
+      finishAt: state === 'printing' && minutesLeft !== null ? new Date(clock() + minutesLeft * 60000).toISOString() : null,
+      errorCode: state === 'error' && typeof p.errorCode === 'string' ? p.errorCode : null
+    };
+  }
+  // The index lists photos without their tab; the experiment's own record has it (lab photos add --tab). Copied onto each
+  // photo (a short plain tab name only) so the page can pair photos by tab. Nothing stored changes.
+  function withTabs(project, index) {
+    if (!Array.isArray(index?.experiments)) return index;
+    const experiments = index.experiments.map(x => {
+      if (!x || !Array.isArray(x.photos) || !x.photos.length || !ID_RE.test(String(x.id))) return x;
+      const runs = storage.readSetting(key(project, `record:${x.id}`), null)?.payload?.print_runs;
+      const tabs = new Map();
+      for (const r of Array.isArray(runs) ? runs : []) for (const ph of Array.isArray(r?.photos) ? r.photos : []) {
+        if (ph && typeof ph.sha256 === 'string' && typeof ph.tab === 'string' && /^[\w.-]{1,16}$/.test(ph.tab)) tabs.set(ph.sha256, ph.tab);
+      }
+      return tabs.size ? { ...x, photos: x.photos.map(ph => (tabs.has(ph?.sha256) ? { ...ph, tab: tabs.get(ph.sha256) } : ph)) } : x;
+    });
+    return { ...index, experiments };
+  }
+  function liveSummary(project) {
+    const l = live(storage.readSetting(key(project, 'index'), null));
+    return l && !l.conflict ? { experiment: l.experiment, state: l.state, progress: l.progress, minutesLeft: l.minutesLeft, finishAt: l.finishAt } : null;
+  }
+
+  // At most `limit` bytes of an answer, else null (and the rest is not read).
+  async function readCapped(r, limit) {
+    if (Number(r.headers.get('content-length')) > limit) { await r.body?.cancel?.().catch(() => {}); return null; }
+    const reader = r.body?.getReader();
+    if (!reader) return null;
+    const chunks = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > limit) { await reader.cancel().catch(() => {}); return null; }
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks);
+  }
+  const readFrame = r => readCapped(r, MAX_FRAME);
+
+  // One snapshot from the camera bridge, within cameraTimeoutMs in all. No redirects are followed and only a JPEG of
+  // at most MAX_FRAME is passed on. When there is none, the Pi hub's reason (if it answers in the time left) says why.
+  async function camera(res) {
+    const signal = AbortSignal.timeout(cameraTimeoutMs);
+    try {
+      const r = await fetchImpl(cameraUrl, { signal, redirect: 'error', headers: { Accept: 'image/jpeg' } });
+      if (r.ok && /^image\/jpeg/i.test(r.headers.get('content-type') || '')) {
+        const body = await readFrame(r);
+        if (body && body[0] === 0xff && body[1] === 0xd8) {
+          res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': body.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+          res.end(body);
+          return;
+        }
+      } else await r.body?.cancel?.().catch(() => {});
+    } catch {}
+    let reason = 'no_picture';
+    if (piHubUrl && piHubUrl !== 'off' && !signal.aborted) {
+      try {
+        const r = await fetchImpl(new URL('/api/camera', piHubUrl).href, { signal, redirect: 'error', headers: { Accept: 'application/json' } });
+        const raw = r.ok ? await readCapped(r, MAX_REASON_ANSWER) : null;
+        const d = raw ? JSON.parse(raw.toString('utf8')) : null;
+        if (d && CAMERA_REASONS.has(d.reason)) reason = d.reason;
+      } catch {}
+    }
+    json(res, 503, { reason, error: CAMERA_WORDS[reason] });
+  }
+
   // true when it answered.
   async function handle(req, res, p) {
     const m = /^\/api\/lab\/([a-z0-9-]{1,40})(?:\/(sync|photos|photo|record|requests|incoming)(?:\/([^/]+)(?:\/([^/]+))?)?)?$/.exec(p);
     if (p === '/api/lab/projects' && req.method === 'GET') {
-      json(res, 200, { projects: projects().map(name => ({ name, ...storage.readSetting(key(name, 'meta'), {}) })) });
+      json(res, 200, { projects: projects().map(name => ({ name, ...storage.readSetting(key(name, 'meta'), {}), live: liveSummary(name) })) });
+      return true;
+    }
+    if (p === '/api/lab/camera.jpg' && req.method === 'GET') {
+      if (!deviceFor(req) && !macAuthorized(req)) { json(res, 401, { error: "This phone isn't paired with Local AI. Pair it in Settings › Devices." }); return true; }
+      await camera(res);
       return true;
     }
     if (!m || !m[1] || !PROJECT_RE.test(m[1])) return false;
@@ -97,7 +229,7 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
       if (!part && req.method === 'GET') {
         const index = storage.readSetting(key(project, 'index'), null);
         if (!index) json(res, 404, { error: 'No lab data yet. Run `lab sync` on the Mac.' });
-        else json(res, 200, { meta: storage.readSetting(key(project, 'meta'), {}), index });
+        else json(res, 200, { meta: storage.readSetting(key(project, 'meta'), {}), index: withTabs(project, index), live: live(index) });
         return true;
       }
       if (part === 'sync' && req.method === 'POST') {
@@ -166,12 +298,15 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
         let data;
         try { data = JSON.parse((await readRaw(req, MAX_REQUEST)).toString('utf8')); }
         catch (e) { if (e.statusCode) throw e; json(res, 400, { error: 'Invalid JSON request body' }); return true; }
-        const { id, kind, experiment, run, payload } = data || {};
+        const { id, kind, experiment, run, run_seen: runSeen, payload } = data || {};
+        const acting = ACT_KINDS.includes(kind);
         if (!REQUEST_ID_RE.test(id || '')) { json(res, 422, { error: 'Request id must look like rq-0123456789abcdef' }); return true; }
-        if (kind !== 'verdict' && kind !== 'photos') { json(res, 422, { error: 'kind must be verdict or photos' }); return true; }
-        if (!EXPERIMENT_ID_RE.test(experiment || '')) { json(res, 422, { error: 'Invalid experiment id' }); return true; }
-        if (!RUN_ID_RE.test(run || '')) { json(res, 422, { error: 'Invalid run id' }); return true; }
+        if (kind !== 'verdict' && kind !== 'photos' && !acting) { json(res, 422, { error: 'kind must be verdict, photos, start, approve or abandon' }); return true; }
+        if (!(acting ? /^E-\d{1,6}$/ : EXPERIMENT_ID_RE).test(experiment || '')) { json(res, 422, { error: 'Invalid experiment id' }); return true; }
+        if (!acting && !RUN_ID_RE.test(run || '')) { json(res, 422, { error: 'Invalid run id' }); return true; }
         if (!payload || typeof payload !== 'object' || Array.isArray(payload)) { json(res, 422, { error: 'payload must be an object' }); return true; }
+        const problem = acting ? actProblem(kind, payload, runSeen) : kind === 'photos' ? photosProblem(payload) : null;
+        if (problem) { json(res, 422, { error: problem }); return true; }
 
         const existing = storage.readSetting(key(project, `request:${id}`), null);
         if (existing) {
@@ -186,12 +321,17 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
           return true;
         }
 
+        // The buttons' requests are about the experiment, not a run: lab pull refuses any run that isn't a print run id.
         const item = {
           id,
           kind,
           experiment,
-          run,
-          payload,
+          run: acting ? null : run,
+          ...(kind === 'start' ? { run_seen: runSeen ?? null } : {}),
+          payload: kind === 'start' ? { tapped_at: payload.tapped_at }
+            : kind === 'abandon' ? { reason: payload.reason.trim() }
+              : kind === 'approve' ? { reason: payload.reason.trim(), build_seen: payload.build_seen, reasons_seen: payload.reasons_seen }
+                : payload,
           status: 'pending',
           message: null,
           at: now(),
@@ -227,6 +367,7 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
       if (part === 'requests' && arg && sub === 'result' && req.method === 'POST') {
         if (!macAuthorized(req)) { req.resume(); json(res, 401, { error: 'Only the Mac writes request results.' }); return true; }
         const reqId = arg;
+        if (!REQUEST_ID_RE.test(reqId)) { req.resume(); json(res, 404, { error: 'No such request.' }); return true; }
         let body;
         try { body = JSON.parse((await readRaw(req, MAX_REQUEST)).toString('utf8')); }
         catch (e) { if (e.statusCode) throw e; json(res, 400, { error: 'Invalid JSON request body' }); return true; }
@@ -246,7 +387,7 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
         storage.writeSetting(key(project, `request:${reqId}`), item);
         if (status === 'applied' && item.kind === 'photos' && item.payload && Array.isArray(item.payload.photos)) {
           for (const p of item.payload.photos) {
-            if (p && p.sha256) {
+            if (p && SHA_RE.test(p.sha256 || '')) {
               try { fs.unlinkSync(path.join(incomingDir(project), `${p.sha256}.jpg`)); } catch {}
             }
           }

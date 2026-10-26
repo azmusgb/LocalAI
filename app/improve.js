@@ -67,7 +67,9 @@ function ideaItem(text, at) {
   if (!body) return null;
   return {
     id: `idea-${Date.parse(at) || Date.now()}-${crypto.randomBytes(2).toString('hex')}`,
-    source: 'idea', status: 'approved', severity: 'medium', category: 'idea',
+    // ownerTyped: the owner's own words (New idea, Hand to Claude). Only such an item may be planned by a cloud model
+    // (app/server/changes.js improveStay); items made from changes, Signals or Claude's findings never carry it.
+    source: 'idea', status: 'approved', severity: 'medium', category: 'idea', ownerTyped: true,
     title: clip(titleLine(body), 120), summary: clip(body, 2000), createdAt: at, updatedAt: at
   };
 }

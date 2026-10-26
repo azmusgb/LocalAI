@@ -144,3 +144,18 @@ test('an unlabelled House question from Pi Hub reads "House question"', () => {
   assert.equal(readableTitle({ type: 'chat', title: "You are the voice of a family's home hub on a Raspberry Pi. Answer th…" }), 'House question');
   assert.equal(readableTitle({ type: 'chat', title: 'You are a helpful assistant. Summarise this.' }), 'Chat');
 });
+
+// The model coordinator, step 3: every run says where its answer came from (meta.route), with the reason.
+test('a run card says where the answer came from', () => {
+  const { runCard } = require('../app/run-cards');
+  const cloud = runCard({ type: 'research', status: 'completed', meta: { route: { provider: 'groq', model: 'llama-3.3-70b-versatile', class: 'shareable', why: 'Not private: research about public topics' } } });
+  assert.deepEqual(cloud.route, { text: 'Answered by Llama 3.3 70B · Groq', why: 'Not private: research about public topics' });
+  const local = runCard({ type: 'chat', status: 'completed', meta: { route: { provider: 'ollama', model: 'qwen3', class: 'private', why: 'It looks personal (health, money or identity)' } } });
+  assert.equal(local.route.text, 'Answered on this PC');
+  const mission = runCard({ type: 'agent', status: 'completed', meta: { missionId: 'm1', route: { provider: 'cerebras', model: 'llama-3.3-70b', why: 'x' } } });
+  assert.equal(mission.route.text, 'Answered by Llama 3.3 70B · Cerebras');
+  const change = runCard({ type: 'engineering', status: 'completed', meta: { changeId: 'chg-1' } }, { changeFor: () => ({ id: 'chg-1', files: [], route: { provider: 'groq', model: 'openai/gpt-oss-120b', why: 'y' } }) });
+  assert.equal(change.route.text, 'Answered by GPT-OSS 120B · Groq');
+  assert.equal(runCard({ type: 'chat', status: 'completed', meta: {} }).route, null, 'older runs say nothing');
+  assert.equal(runCard({ type: 'chat', status: 'completed', meta: { route: 'groq' } }).route, null);
+});
