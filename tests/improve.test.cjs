@@ -162,3 +162,14 @@ test('Move to top never lowers an item that is already on top', () => {
   const top = { id: 'a', base: 50, priorityBoost: 20 }, open = [top, { id: 'b', base: 30 }];
   assert.equal(imp.moveToTopBoost(top, open, scoreOf), 20);
 });
+
+// Look review, 25 Oct: two backlog items read "## Overall assessment". A title is plain words: no markdown heading marks
+// or emphasis, and a bare heading line gives way to the first real line under it.
+test('backlog titles are plain words', () => {
+  assert.equal(imp.plainTitle('## Overall assessment'), 'Overall assessment');
+  assert.equal(imp.plainTitle('**Fix** the `printer` card'), 'Fix the printer card');
+  assert.equal(imp.plainTitle('#175 squash dropped the handler'), '#175 squash dropped the handler');
+  assert.equal(imp.ideaItem('## Overall assessment\n\nThe Home page needs a clearer printer card.', AT).title, 'The Home page needs a clearer printer card.');
+  assert.equal(imp.ideaItem('## Printer card\n', AT).title, 'Printer card');
+  assert.equal(imp.changeTitle({ summary: '', request: '# Make Recent shorter\nDetails…' }), 'Make Recent shorter');
+});

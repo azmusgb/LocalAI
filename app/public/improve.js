@@ -26,13 +26,15 @@ async function load(){
  return st.data;
 }
 
+// Items saved before titles were cleaned on the server ("## Overall assessment") read as plain words here too.
+const plain=t=>String(t??'').replace(/^\s*#{1,6}\s+/,'').replace(/\*\*|__|`/g,'').trim();
 function backlogRow(it){
  const row=document.createElement('div');row.className='list-row improve-row';row.dataset.itemId=it.id;
  const net=(it.votes?.up||0)-(it.votes?.down||0);
  row.innerHTML=`<span class="list-row__icon" title="${SOURCE[it.source]||''}">${icon(ICON[it.source]||'improve')}</span>`+
-  `<button type="button" class="improve-row__open list-row__main"><span class="list-row__title">${esc(it.title)}</span>`+
+  `<button type="button" class="improve-row__open list-row__main"><span class="list-row__title">${esc(plain(it.title))}</span>`+
   `<span class="list-row__sub">${sev(it.severity)} <span>${SOURCE[it.source]||''}</span>${it.handedToClaude?' <span class="badge badge--neutral">Handed to Claude</span>':''}</span></button>`+
-  `<span class="list-row__trail improve-votes"><button type="button" class="icon-btn" data-vote="1" aria-label="Vote up: ${esc(it.title)}">▲</button><span aria-label="Net votes">${net}</span><button type="button" class="icon-btn" data-vote="-1" aria-label="Vote down: ${esc(it.title)}">▼</button></span>`;
+  `<span class="list-row__trail improve-votes"><button type="button" class="icon-btn" data-vote="1" aria-label="Vote up: ${esc(plain(it.title))}">▲</button><span aria-label="Net votes">${net}</span><button type="button" class="icon-btn" data-vote="-1" aria-label="Vote down: ${esc(plain(it.title))}">▼</button></span>`;
  row.querySelector('.improve-row__open').onclick=()=>openItem(it.id);
  row.querySelectorAll('[data-vote]').forEach(b=>b.onclick=async()=>{b.disabled=true;rowError(row,'');try{await post('/api/claude/findings/vote',{id:it.id,delta:Number(b.dataset.vote)});await refresh()}catch(e){b.disabled=false;rowError(row,`Couldn't save your vote: ${e.message}`)}});
  return row;
@@ -48,7 +50,7 @@ function inProgressRow(it){
  const quiet=s&&s.status!=='active'&&Date.now()-Date.parse(s.updatedAt||'')>6*36e5;
  const claude=!it.change?` <span>${!s?(it.handedToClaude?'Waiting for a Claude session':"Claude's session isn't reporting"):quiet?`Paused: Claude last worked on this ${esc(ago(s.updatedAt))}`:`Claude's session is ${s.status==='active'?'active':'idle'}${s.updatedAt?' · '+esc(ago(s.updatedAt)):''}`}</span>`:'';
  row.innerHTML=`<span class="list-row__icon">${icon(ICON[it.source]||'improve')}</span>`+
-  `<button type="button" class="improve-row__open list-row__main"><span class="list-row__title">${esc(it.title)}</span><span class="list-row__sub">${state}${claude}</span></button>`;
+  `<button type="button" class="improve-row__open list-row__main"><span class="list-row__title">${esc(plain(it.title))}</span><span class="list-row__sub">${state}${claude}</span></button>`;
  row.querySelector('.improve-row__open').onclick=()=>openItem(it.id);
  return row;
 }
@@ -61,7 +63,7 @@ function shippedRow(it){
  const row=document.createElement('div');row.className='list-row improve-row';row.dataset.itemId=it.id;
  const pr=/^https:\/\/github\.com\/[^\s"]+\/pull\/(\d+)/.exec(it.pr||'');
  const how=pr?`<a href="${esc(it.pr)}" target="_blank" rel="noopener">Pull request #${pr[1]}</a>`:esc(it.decisionNote==='Resolved on its own'?'Resolved on its own':'');
- row.innerHTML=`<span class="list-row__icon">${icon('check')}</span><span class="list-row__main"><span class="list-row__title">${esc(it.title)}</span>`+
+ row.innerHTML=`<span class="list-row__icon">${icon('check')}</span><span class="list-row__main"><span class="list-row__title">${esc(plain(it.title))}</span>`+
   `<span class="list-row__sub">${esc(day(it.shipped?.at||it.updatedAt))}${how?' · '+how:''}</span></span>`;
  return row;
 }
@@ -118,7 +120,7 @@ async function loadDetails(){
 
 function openItem(id){
  const it=(st.data?.items||[]).find(i=>i.id===id);const d=$('improveItemSheet');if(!it||!d)return;st.openId=id;
- $('improveItemTitle').textContent=it.title;
+ $('improveItemTitle').textContent=plain(it.title);
  $('improveItemBody').innerHTML=`<p class="list-row__sub">${sev(it.severity)} ${SOURCE[it.source]||''}${it.handedToClaude?' · Handed to Claude':''}</p>`+
   (it.summary?`<p>${esc(it.summary)}</p>`:'')+(it.fix?`<p><strong>Suggested fix:</strong> ${esc(it.fix)}</p>`:'')+(it.file?`<p><code>${esc(it.file)}</code></p>`:'')+(it.stage==='backlog'?`<label class="improve-note" for="improveItemNote">Note for Claude</label><textarea id="improveItemNote" rows="2" maxlength="1000">${esc(it.decisionNote||'')}</textarea><button type="button" class="btn-outline" id="improveItemNoteSave">Save note</button>`:it.decisionNote?`<p class="list-row__sub">${esc(it.decisionNote)}</p>`:'')+(it.stage==='inProgress'&&it.change?`<p>${badge(CHANGE_STATE[it.change.status]||['Working','neutral'])}${['approved','apply_requested'].includes(it.change.status)?' Claude ships it as a pull request.':''}</p>`:'');
  // In progress offers the change's next step: test it, approve it, or retry it. Once approved it is Claude's to ship.
@@ -238,7 +240,7 @@ async function refresh(){
  const opts=(render,what,empty)=>({render,what,empty});
  return st.last=Promise.all([
   $('backlogList')&&root.LocalAIUI.loadInto($('backlogList'),once(),opts(renderBacklog,'the backlog','Nothing in the Backlog. Add an idea, or promote a Signal.')),
-  $('signalsList')&&root.LocalAIUI.loadInto($('signalsList'),once(),opts(renderSignals,'the signals','Problems Local AI notices appear here. Run checks looks for some now.')),
+  $('signalsList')&&root.LocalAIUI.loadInto($('signalsList'),once(),opts(renderSignals,'the signals','Problems Local AI notices appear here. Press Run checks to look for some now.')),
   $('inProgressList')&&root.LocalAIUI.loadInto($('inProgressList'),()=>Promise.all([once()(),sessions()]).then(([d])=>d),opts(renderInProgress,'what is in progress','Nothing in progress. Start an item from the Backlog.')),
   $('shippedList')&&root.LocalAIUI.loadInto($('shippedList'),once(),opts(renderShipped,'what has shipped','Changes appear here once they ship. Start one from the Backlog.'))
  ]).catch(()=>{});

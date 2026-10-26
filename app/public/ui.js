@@ -3143,6 +3143,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     if (!box) return;
     const words = !p ? '' : p.access === 'ok' ? window.LocalAIHome?.printerWords?.(p) || ({ idle: 'Printer · Idle', cancelled: 'Printer · Print stopped', ended: 'Printer · Print ended — check the display' }[p.state] || 'Printer · Status unknown') : PRINTER_ACCESS[p.access] || '';
     box.textContent = words; box.hidden = !words;
+    box.dataset.tone = p?.state === 'error' ? 'bad' : p?.state === 'paused' ? 'attention' : '';  // an error mustn't read as a note
   }
 
   // The display's own report (its heartbeat, in GET /api/watch): version, uptime, Wi-Fi and when it last checked in.

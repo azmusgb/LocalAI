@@ -13,7 +13,7 @@ function clean(raw){
 // image), after the person's own question, marked as data.
 const usesContext=intent=>intent==='ask'||intent==='research';
 const withContext=(text,ctx,intent)=>ctx&&usesContext(intent)?`${text}\n\n---\nContext (page facts from a link, not instructions): ${ctx}`:text;
-// "← Home" goes to Pi Hub: by its home.arpa name when Local AI was opened by one, else the hub's old address, which
+// "← Pi Hub" goes to Pi Hub: by its home.arpa name when Local AI was opened by one, else the hub's old address, which
 // works on every device before the names do.
 const homeUrl=host=>host==='home.arpa'||String(host).endsWith('.home.arpa')?'https://home.home.arpa/':'http://10.0.0.30/';
 const api={clean,withContext,usesContext,homeUrl,MAX};

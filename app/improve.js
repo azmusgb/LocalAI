@@ -15,11 +15,22 @@ const clip = (value, max) => String(value ?? '').slice(0, max);
 
 // The planner sometimes leaves a change's summary at its default; the request's first line says what it was.
 const GENERIC_TITLES = new Set(['', 'Proposed change', 'Change request']);
+// Plain words for a title: no markdown heading marks, emphasis or code ticks ("#175" stays: no space after the #).
+const plainTitle = s => String(s ?? '').replace(/^\s*#{1,6}\s+/, '').replace(/\*\*|__|`/g, '').replace(/\s+/g, ' ').trim();
+// The line worth a title: the first line, unless it is a heading that says nothing about this item ("## Overall
+// assessment"); then the first plain line under it, when there is one.
+const GENERIC_HEADINGS = /^(overall assessment|assessment|summary|overview|context|background|notes|findings)$/i;
+function titleLine(text) {
+  const lines = String(text ?? '').split('\n').map(l => l.trim()).filter(Boolean);
+  const first = plainTitle(lines[0] || '');
+  if (!/^#{1,6}\s/.test(lines[0] || '') || !GENERIC_HEADINGS.test(first)) return first;
+  return plainTitle(lines.find(l => !/^#{1,6}\s/.test(l)) || '') || first;
+}
+
 function changeTitle(change) {
   const summary = String(change.summary || '').trim();
-  if (!GENERIC_TITLES.has(summary)) return clip(summary, 120);
-  const line = String(change.request || '').split('\n').map(l => l.trim()).find(Boolean);
-  return clip(line || 'Change request', 120);
+  if (!GENERIC_TITLES.has(summary)) return clip(plainTitle(summary), 120);
+  return clip(titleLine(change.request) || 'Change request', 120);
 }
 
 function stageOf(item, changesById = new Map()) {
@@ -57,7 +68,7 @@ function ideaItem(text, at) {
   return {
     id: `idea-${Date.parse(at) || Date.now()}-${crypto.randomBytes(2).toString('hex')}`,
     source: 'idea', status: 'approved', severity: 'medium', category: 'idea',
-    title: clip(body.split('\n')[0].trim(), 120), summary: clip(body, 2000), createdAt: at, updatedAt: at
+    title: clip(titleLine(body), 120), summary: clip(body, 2000), createdAt: at, updatedAt: at
   };
 }
 
@@ -155,4 +166,4 @@ function reconcile({ items = [], changes = [], signals = [], release = null, sta
   return { upserts };
 }
 
-module.exports = { LIVE_CHANGE, HANDOFF_FROM, REQUEST_OPEN, REQUEST_CLOSE, changeTitle, stageOf, shouldPromote, signalItemId, promoteSignal, ideaItem, moveToTopBoost, handToClaude, handoffItem, reconcile };
+module.exports = { LIVE_CHANGE, HANDOFF_FROM, REQUEST_OPEN, REQUEST_CLOSE, changeTitle, plainTitle, stageOf, shouldPromote, signalItemId, promoteSignal, ideaItem, moveToTopBoost, handToClaude, handoffItem, reconcile };
