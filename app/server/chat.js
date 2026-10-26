@@ -4,7 +4,7 @@
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
 function createChat(ctx) {
-  const { ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone } = ctx;
+  const { ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, cloudModels, modelRouter, routingSetting, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone } = ctx;
 
   function systemPrompt(researchContext = '', capabilityContext = '', brief = false, facts = '', sourceHost = '') {
     return {
@@ -41,9 +41,19 @@ function createChat(ctx) {
       throw error;
     };
     throwIfAborted();
-    const model = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : MODEL;
+    const picked = typeof body.model === 'string' && body.model.trim() && body.model.trim() !== MODEL ? body.model.trim() : '';
+    const model = picked || MODEL;
     const messages = sanitizeMessages(body.messages);
     if (!messages.length) throw new Error('messages[] is required');
+    // The coordinator (app/model-router.js): which model answers. Private work, and everything while cloud is off, stays here.
+    const askedText = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+    const route = modelRouter.route({
+      kind: body.webSearch === true ? 'research' : 'chat', text: askedText, model: picked,
+      voice: body.voice === true || body.brief === true || body.voiceRun === true, house: body.title === 'House question',
+      attachments: (Array.isArray(body.images) && body.images.length) || messages.some(m => Array.isArray(m.images) && m.images.length),
+      keepLocal: body.keepLocal === true, bigger: body.bigger === true,
+      cloud: routingSetting().cloud === true, keys: cloudModels.keys(), parked: cloudModels.parked(), env: process.env, localModel: model
+    });
 
     let sources = [];
     let researchContext = '';
@@ -73,8 +83,22 @@ function createChat(ctx) {
     // Questions about Local AI itself also get the "About this appliance" facts (where things run and live, addresses, updates).
     const asked = [...messages].reverse().find(m => m.role === 'user');
     if (asked && isAboutLocalAi(asked.content)) capabilityContext = [capabilityContext, aboutApplianceBlock({ addresses: accessAddresses() })].filter(Boolean).join('\n\n');
-    return { model, messages, sources, researchContext, capabilityContext, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
+    return { model, route, messages, sources, researchContext, capabilityContext, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
   }
+
+  // The cloud candidates in the route, in order; the first answer wins. null = none answered (or none allowed): the
+  // caller goes on to this PC's model, so a request never fails only because the cloud did.
+  async function cloudAnswer(prep) {
+    for (const c of prep.route.order) {
+      if (c.provider === 'ollama') break;
+      try {
+        const out = await cloudModels.chat({ provider: c.provider, model: c.model, messages: chatMessages(prep) });
+        if (out.content) return { content: out.content, used: { provider: c.provider, model: c.model, class: prep.route.class, why: prep.route.why } };
+      } catch (e) { recordActivity('model', 'Cloud model unavailable', String(e.message || e).slice(0, 180), { provider: c.provider, model: c.model }); }
+    }
+    return null;
+  }
+  const usedLocal = prep => ({ provider: 'ollama', model: prep.model, class: prep.route.class, why: prep.route.why });
 
   async function apiChat(req, res) {
     try { json(res, 200, await chatOnce(await readBody(req))); }
@@ -89,23 +113,28 @@ function createChat(ctx) {
       runLedger.start(execution.id, body.webSearch === true ? 'Research run started' : 'Chat run started');
       const prep = await prepareChat(body);
       const started = Date.now();
+      const cloud = await cloudAnswer(prep);
+      let content, used;
+      if (cloud) ({ content, used } = cloud);
+      else {
+        const r = await modelFetchWithTimeout(`${OLLAMA_URL}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: prep.model,
+            messages: chatMessages(prep),
+            stream: false,
+            keep_alive: TEXT_KEEP_ALIVE,
+            options: { num_ctx: TEXT_NUM_CTX }
+          })
+        }, CHAT_MODEL_TIMEOUT_MS);
 
-      const r = await modelFetchWithTimeout(`${OLLAMA_URL}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: prep.model,
-          messages: chatMessages(prep),
-          stream: false,
-          keep_alive: TEXT_KEEP_ALIVE,
-          options: { num_ctx: TEXT_NUM_CTX }
-        })
-      }, CHAT_MODEL_TIMEOUT_MS);
-
-      const raw = await r.text();
-      if (!r.ok) throw new Error(`Intelligence service HTTP ${r.status}: ${raw.slice(0, 500)}`);
-      const j = JSON.parse(raw);
-      const content = j?.message?.content || '';
+        const raw = await r.text();
+        if (!r.ok) throw new Error(`Intelligence service HTTP ${r.status}: ${raw.slice(0, 500)}`);
+        const j = JSON.parse(raw);
+        content = j?.message?.content || '';
+        used = usedLocal(prep);
+      }
       const elapsedMs = Date.now() - started;
       const lastUser = [...prep.messages].reverse().find(m => m.role === 'user');
 
@@ -113,25 +142,26 @@ function createChat(ctx) {
         body.webSearch === true ? 'research' : 'chat',
         body.webSearch === true ? 'Researched with AI' : 'Asked AI',
         (lastUser?.content || '').slice(0, 180),
-        { model: prep.model, elapsedMs, sources: prep.sources.length, runId: execution.id }
+        { model: used.model, provider: used.provider, elapsedMs, sources: prep.sources.length, runId: execution.id }
       );
       const artifact = recordTurnArtifact(
         content.slice(0, 420),
-        { model: prep.model, elapsedMs, sources: prep.sources.length, runId: execution.id },
+        { model: used.model, elapsedMs, sources: prep.sources.length, runId: execution.id },
         { prompt: lastUser?.content || '', response: content.slice(0, 40000), sources: prep.sources },
         execution
       );
       runLedger.complete(execution.id, {
         summary: content.slice(0, 420),
-        output: { text: content.slice(0, 40000), model: prep.model, elapsedMs, sources: prep.sources },
+        output: { text: content.slice(0, 40000), model: used.model, elapsedMs, sources: prep.sources },
         artifactIds: artifact?.id ? [artifact.id] : [],
-        meta: { model: prep.model, elapsedMs, sources: prep.sources.length, ...(body.voice === true || body.voiceRun === true ? { voice: true } : {}) }
+        meta: { model: used.model, route: used, elapsedMs, sources: prep.sources.length, ...(body.voice === true || body.voiceRun === true ? { voice: true } : {}) }
       });
       keepLongAnswer(execution.id, content.slice(0, 40000));
 
       return {
         message: { role: 'assistant', content },
-        model: prep.model,
+        model: used.model,
+        route: used,
         elapsedMs,
         sources: prep.sources,
         runId: execution.id
@@ -186,53 +216,60 @@ function createChat(ctx) {
         res.write(`data: ${JSON.stringify(data)}\n\n`);
       };
 
-      send('meta', { model: prep.model, sources: prep.sources, runId: execution.id });
-
-      armIdle();
-      // modelFetch: no 300 s limit on Ollama's first byte while it reads a long prompt behind other work.
-      const upstream = await modelFetch(`${OLLAMA_URL}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          model: prep.model,
-          messages: chatMessages(prep),
-          stream: true,
-          keep_alive: TEXT_KEEP_ALIVE,
-          options: { num_ctx: TEXT_NUM_CTX }
-        })
-      });
-
-      if (!upstream.ok || !upstream.body) {
-        const raw = await upstream.text();
-        throw new Error(`Intelligence service HTTP ${upstream.status}: ${raw.slice(0, 500)}`);
-      }
-
-      runLedger.stream(execution.id, 'Streaming model output');
-      const reader = upstream.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
+      // A cloud answer (when the route allows one) arrives whole; this PC's model streams as before.
+      const cloud = await cloudAnswer(prep);
+      const used = cloud ? cloud.used : usedLocal(prep);
+      send('meta', { model: used.model, route: used, sources: prep.sources, runId: execution.id });
       let full = '';
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+      if (cloud) {
+        full = cloud.content;
+        send('token', { text: full });
+      } else {
         armIdle();
-        buffer += decoder.decode(value, { stream: true });
+        // modelFetch: no 300 s limit on Ollama's first byte while it reads a long prompt behind other work.
+        const upstream = await modelFetch(`${OLLAMA_URL}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: prep.model,
+            messages: chatMessages(prep),
+            stream: true,
+            keep_alive: TEXT_KEEP_ALIVE,
+            options: { num_ctx: TEXT_NUM_CTX }
+          })
+        });
+
+        if (!upstream.ok || !upstream.body) {
+          const raw = await upstream.text();
+          throw new Error(`Intelligence service HTTP ${upstream.status}: ${raw.slice(0, 500)}`);
+        }
+
+        runLedger.stream(execution.id, 'Streaming model output');
+        const reader = upstream.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
 
         while (true) {
-          const nl = buffer.indexOf('\n');
-          if (nl < 0) break;
-          const line = buffer.slice(0, nl).trim();
-          buffer = buffer.slice(nl + 1);
-          if (!line) continue;
+          const { value, done } = await reader.read();
+          if (done) break;
+          armIdle();
+          buffer += decoder.decode(value, { stream: true });
 
-          let item;
-          try { item = JSON.parse(line); } catch { continue; }
-          const chunk = item?.message?.content || '';
-          if (chunk) {
-            full += chunk;
-            send('token', { text: chunk });
+          while (true) {
+            const nl = buffer.indexOf('\n');
+            if (nl < 0) break;
+            const line = buffer.slice(0, nl).trim();
+            buffer = buffer.slice(nl + 1);
+            if (!line) continue;
+
+            let item;
+            try { item = JSON.parse(line); } catch { continue; }
+            const chunk = item?.message?.content || '';
+            if (chunk) {
+              full += chunk;
+              send('token', { text: chunk });
+            }
           }
         }
       }
@@ -243,23 +280,23 @@ function createChat(ctx) {
         body.webSearch === true ? 'research' : 'chat',
         body.webSearch === true ? 'Researched with AI' : 'Asked AI',
         (lastUser?.content || '').slice(0, 180),
-        { model: prep.model, elapsedMs, sources: prep.sources.length, runId: execution.id }
+        { model: used.model, provider: used.provider, elapsedMs, sources: prep.sources.length, runId: execution.id }
       );
       const artifact = recordTurnArtifact(
         full.slice(0, 420),
-        { model: prep.model, elapsedMs, sources: prep.sources.length, runId: execution.id },
+        { model: used.model, elapsedMs, sources: prep.sources.length, runId: execution.id },
         { prompt: lastUser?.content || '', response: full.slice(0, 40000), sources: prep.sources },
         execution
       );
       runLedger.complete(execution.id, {
         summary: full.slice(0, 420),
-        output: { text: full.slice(0, 40000), model: prep.model, elapsedMs, sources: prep.sources },
+        output: { text: full.slice(0, 40000), model: used.model, elapsedMs, sources: prep.sources },
         artifactIds: artifact?.id ? [artifact.id] : [],
-        meta: { model: prep.model, elapsedMs, sources: prep.sources.length }
+        meta: { model: used.model, route: used, elapsedMs, sources: prep.sources.length }
       });
       keepLongAnswer(execution.id, full.slice(0, 40000));
 
-      send('done', { elapsedMs, model: prep.model, sources: prep.sources, runId: execution.id });
+      send('done', { elapsedMs, model: used.model, route: used, sources: prep.sources, runId: execution.id });
       res.end();
     } catch (e) {
       const current = execution ? runLedger.get(execution.id) : null;

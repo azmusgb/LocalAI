@@ -20,7 +20,8 @@ own improvements.
 - Agent World is a way to work, not only to watch.
 - Each morning the backlog holds a few concrete, local-model proposals drawn from real signals.
 
-**Not goals:** cloud models or services (everything runs on the PC, the Pi or the display); multi-user features;
+**Not goals:** cloud models or services (everything runs on the PC, the Pi or the display; **changed 26 Oct 2026**
+by the model coordinator design: cloud models for non-private work, only when switched on); multi-user features;
 starting prints, merges or host changes without the owner's approval; a headless Claude runner (earlier decision —
 "Hand to Claude" stays passive).
 

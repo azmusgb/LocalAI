@@ -95,6 +95,9 @@ services:
       # "Read status" only, for the display's Materials card; "Control printer" only, for its Clear plate.
       LOCALAI_MATERIALS_KEY: ${LOCALAI_MATERIALS_KEY:-}
       LOCALAI_BAMBUDDY_CONTROL_KEY: ${LOCALAI_BAMBUDDY_CONTROL_KEY:-}
+      # Model coordinator: free cloud models for non-private work, used only when the owner switches cloud on.
+      LOCALAI_GROQ_API_KEY: ${LOCALAI_GROQ_API_KEY:-}
+      LOCALAI_CEREBRAS_API_KEY: ${LOCALAI_CEREBRAS_API_KEY:-}
       POWERSHELL_UI_TOKEN: ${POWERSHELL_UI_TOKEN:?set in stack.env}
       POWERSHELL_BRIDGE_TOKEN: ${POWERSHELL_BRIDGE_TOKEN:?set in stack.env}
     volumes:
