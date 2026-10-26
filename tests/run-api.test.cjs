@@ -172,9 +172,12 @@ test('a chat started with a title lists under that title, and its prompt is neve
   const long = "You are the voice of a family's home hub on a Raspberry Pi. Answer the question in one to three short sentences.";
   const a = await request('/api/chat', { messages: [{ role: 'user', content: long }], title: 'House question' });
   const b = await request('/api/chat', { messages: [{ role: 'user', content: long }] });
+  const c = await request('/api/chat', { messages: [{ role: 'user', content: 'You are a careful reviewer. ' + 'x'.repeat(80) }] });
   const one = id => request(`/api/runs?id=${encodeURIComponent(id)}`).then(r => r.value.item);
   assert.equal((await one(a.value.runId)).card.title, 'House question');
-  assert.equal((await one(b.value.runId)).card.title, 'Chat');
+  // the hub's prompt without a label (its runs from before step 4) still reads as a House question
+  assert.equal((await one(b.value.runId)).card.title, 'House question');
+  assert.equal((await one(c.value.runId)).card.title, 'Chat');
 });
 
 test('chat turns share a thread', { timeout: 30000 }, async t => {
