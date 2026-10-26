@@ -44,14 +44,15 @@ function harness(t, { printer = { state: 'idle' } } = {}) {
   const storage = new Storage({ dataDir });
   t.after(() => { storage.close?.(); fs.rmSync(dataDir, { recursive: true, force: true }); });
   const json = (res, status, body) => { res.status = status; res.body = body; };
-  const lab = createPrintLab({ storage, dataDir, json, macAuthorized: req => Boolean(req.mac), deviceFor: req => req.device || null, now: () => NOW, clock: () => Date.parse(NOW), printer: () => printer });
+  let clockMs = Date.parse(NOW);
+  const lab = createPrintLab({ storage, dataDir, json, macAuthorized: req => Boolean(req.mac), deviceFor: req => req.device || null, now: () => NOW, clock: () => clockMs, printer: () => printer });
   const display = createDisplayLab({ labStore: lab, json, authorized: req => req.displayKey === true });
   const judge = async (run = RUN, { key = true } = {}) => { const res = fakeRes(); await display.judge(fakeReq('GET', `/api/display/lab/judge?run=${run}`, undefined, { displayKey: key }), res, new URL(`http://x/api/display/lab/judge?run=${run}`)); return res; };
   const verdict = async (body, { key = true } = {}) => { const res = fakeRes(); await display.verdict(fakeReq('POST', '/api/display/lab/verdict', body, { displayKey: key }), res); return res; };
   const phone = async body => { const res = fakeRes(); await lab.handle(fakeReq('POST', '/api/lab/hex-tile/requests', body, { device: { id: 'dev-phone-1' } }), res, '/api/lab/hex-tile/requests'); return res; };
   const pending = async () => { const res = fakeRes(); await lab.handle(fakeReq('GET', '/api/lab/hex-tile/requests?status=pending', undefined, { mac: true }), res, '/api/lab/hex-tile/requests'); return res.body.items; };
   const sync = ix => assert.equal(lab.sync('hex-tile', ix)[0], 200);
-  return { lab, judge, verdict, phone, pending, sync };
+  return { lab, judge, verdict, phone, pending, sync, advance: ms => { clockMs += ms; } };
 }
 
 test('display key required', async t => {
@@ -173,6 +174,59 @@ test('same requestId twice → one request', async t => {
   assert.equal(again.status, 202);
   assert.deepEqual(again.body, { id: 'rq-0000000000000005', status: 'pending' });
   assert.equal((await h.pending()).length, 1);
+});
+
+// After the Mac applies the verdict, lab pull syncs and the experiment is answered: the judge card is gone, but the
+// display that just sent the verdict still opens the sheet (and shows Done) for 24 h after its request.
+const applied = async (h, id) => {
+  const res = fakeRes();
+  await h.lab.handle(fakeReq('POST', `/api/lab/hex-tile/requests/${id}/result`, { status: 'applied', message: 'Recorded.' }, { mac: true }), res, `/api/lab/hex-tile/requests/${id}/result`);
+  assert.equal(res.status, 200);
+};
+const answeredIndex = () => index(indexExp({ status: 'answered', verdict: { at: '2026-10-26T12:05:00Z', by: 'owner' } }), record({ verdict: { at: '2026-10-26T12:05:00Z', by: 'owner' } }));
+
+test('judge after the verdict is applied and synced → 200 with pending applied', async t => {
+  const h = harness(t);
+  h.sync(index());
+  const id = 'rq-00000000000000b1';
+  assert.equal((await h.verdict({ run: RUN, requestId: id, grades: GRADES, inconclusive: null })).status, 202);
+  await applied(h, id);
+  h.sync(answeredIndex());
+  const j = await h.judge();
+  assert.equal(j.status, 200);
+  assert.deepEqual(j.body, { experiment: 'E-021', run: RUN, judgeOn: 'the seam on the top face', tabs: ['21A', '21B'], criteria: CRITERIA,
+    judged: { at: '2026-10-26T12:05:00Z', by: 'owner' }, pending: { id, status: 'applied', message: 'Recorded.' } });
+});
+
+test('the same requestId resent after the card moved → 202 with the stored status, nothing new queued', async t => {
+  const h = harness(t);
+  h.sync(index());
+  const id = 'rq-00000000000000b2';
+  const body = { run: RUN, requestId: id, grades: GRADES, inconclusive: null };
+  assert.equal((await h.verdict(body)).status, 202);
+  await applied(h, id);
+  h.sync(answeredIndex());
+  const again = await h.verdict(body);
+  assert.equal(again.status, 202);
+  assert.deepEqual(again.body, { id, status: 'applied' });
+  // Another id for that run is a new verdict on a print that moved on: refused.
+  assert.equal((await h.verdict({ ...body, requestId: 'rq-00000000000000b3' })).status, 409);
+  assert.deepEqual(await h.pending(), []);
+});
+
+test('a run with no verdict request in the last 24 h → 409', async t => {
+  const h = harness(t);
+  h.sync(answeredIndex());
+  assert.equal((await h.judge(RUN)).status, 409);
+  assert.equal((await h.judge('PR-099-01')).status, 409);
+  assert.equal((await h.verdict({ run: 'PR-099-01', requestId: 'rq-00000000000000b4', grades: GRADES, inconclusive: null })).status, 409);
+  // A request older than 24 h no longer counts.
+  const old = harness(t);
+  old.sync(index());
+  assert.equal((await old.verdict({ run: RUN, requestId: 'rq-00000000000000b5', grades: GRADES, inconclusive: null })).status, 202);
+  old.sync(answeredIndex());
+  old.advance(25 * 3600 * 1000);
+  assert.equal((await old.judge(RUN)).status, 409);
 });
 
 test('20 pending → 429', async t => {

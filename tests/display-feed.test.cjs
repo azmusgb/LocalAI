@@ -195,6 +195,7 @@ test('needs from Pi Hub are cut and capped at 6', () => {
   const f = buildFeed({ needs: { count: 0 }, piNeeds: { count: 8, items, unread: 0 } });
   assert.equal(f.v, 2);
   assert.equal(f.needs.length, 6);
+  assert.equal(f.needsCount, 8, "needsCount is Pi Hub's count, for +N more");
   assert.deepEqual(Object.keys(f.needs[0]).sort(), ['detail', 'id', 'source', 'title', 'tone']);
   assert.deepEqual([f.needs[0].id, f.needs[0].tone, f.needs[0].source], ['pi:thing-0', 'bad', 'pi']);
   assert.equal([...f.needs[0].title].length, 24);
@@ -207,16 +208,22 @@ test('needs from Pi Hub are cut and capped at 6', () => {
   // The hub answered with nothing: an empty list. The hub is down: no needs at all.
   assert.deepEqual(buildFeed({ needs: { count: 0 }, piNeeds: { count: 0, items: [] } }).needs, []);
   assert.equal('needs' in buildFeed({ needs: { count: 0 }, piNeeds: null }), false);
+  assert.equal('needsCount' in buildFeed({ needs: { count: 0 }, piNeeds: null }), false);
+  assert.equal(buildFeed({ needs: { count: 0 }, piNeeds: { items: items.slice(0, 2) } }).needsCount, 2, 'no count: the items');
   // A change in the list is news for the display's long poll.
   const { signature } = require('../app/display-feed');
   assert.notEqual(signature(f), signature(buildFeed({ needs: { count: 0 }, piNeeds: { items: items.slice(1) } })));
+  assert.notEqual(signature(f), signature(buildFeed({ needs: { count: 0 }, piNeeds: { count: 9, items } })), 'a new count is news');
 });
 
 test('needs: a slow Pi Hub is left out, and the feed still answers in time', { timeout: 30000 }, async (t) => {
   const http = require('node:http');
+  const crypto = require('node:crypto');
   const slow = http.createServer((req, res) => { setTimeout(() => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"count":0,"items":[]}'); }, 5000); });
   await new Promise((r) => slow.listen(0, '127.0.0.1', r));
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-feed-'));
+  const key = 'wsd_' + 's'.repeat(48);
+  fs.writeFileSync(path.join(dataDir, 'workshop-display-key.sha256'), crypto.createHash('sha256').update(key).digest('hex'));
   const dead = 'http://127.0.0.1:9';
   const { child, ready } = spawnAppServer({ env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: dead, SEARXNG_URL: dead, COMFY_URL: dead, N8N_URL: dead, PROXY_URL: dead, MAC_AI_HOME_URL: dead, MAC_DSH_URL: dead, LOCALAI_BAMBUDDY_URL: 'off', LOCALAI_PI_HUB_URL: `http://127.0.0.1:${slow.address().port}` } });
   t.after(async () => {
@@ -226,13 +233,51 @@ test('needs: a slow Pi Hub is left out, and the feed still answers in time', { t
   });
   const base = await ready;
   const started = Date.now();
-  const r = await fetch(`${base}/api/display/feed`);
+  const r = await fetch(`${base}/api/display/feed`, { headers: { 'X-LocalAI-Display-Key': key } });
   const took = Date.now() - started;
   assert.equal(r.status, 200);
   const feed = await r.json();
   assert.ok(took < 3500, `feed took ${took} ms`);
   assert.equal('needs' in feed, false);
   assert.equal(feed.cards[0].kind, 'needs');
+});
+
+// Pi Hub reads this feed (without a key) to build its Needs you list, and the feed reads Pi Hub's list: only the
+// display (its key) gets `needs`, so Pi Hub's read never starts a needs fetch, and one fetch at a time serves the rest.
+test('needs: only the display key gets them; Pi Hub\'s unkeyed read makes no /api/needs call; ten at once make one', { timeout: 30000 }, async (t) => {
+  const http = require('node:http');
+  const crypto = require('node:crypto');
+  let needsCalls = 0;
+  const hub = http.createServer((req, res) => {
+    if (req.url === '/api/needs') {
+      needsCalls++;
+      return setTimeout(() => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ count: 11, items: [{ id: 'pi:disk', tone: 'bad', title: 'Disk', detail: 'Full' }], unread: 0 })); }, 300);
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{}');
+  });
+  await new Promise((r) => hub.listen(0, '127.0.0.1', r));
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-feed-'));
+  const key = 'wsd_' + 'n'.repeat(48);
+  fs.writeFileSync(path.join(dataDir, 'workshop-display-key.sha256'), crypto.createHash('sha256').update(key).digest('hex'));
+  const dead = 'http://127.0.0.1:9';
+  const { child, ready } = spawnAppServer({ env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: dead, SEARXNG_URL: dead, COMFY_URL: dead, N8N_URL: dead, PROXY_URL: dead, MAC_AI_HOME_URL: dead, MAC_DSH_URL: dead, LOCALAI_BAMBUDDY_URL: 'off', LOCALAI_PI_HUB_URL: `http://127.0.0.1:${hub.address().port}` } });
+  t.after(async () => {
+    hub.closeAllConnections(); hub.close();
+    if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+  const base = await ready;
+  const unkeyed = await (await fetch(`${base}/api/display/feed`)).json();
+  assert.equal(needsCalls, 0, 'an unkeyed feed read never fetches the needs');
+  assert.equal('needs' in unkeyed, false);
+  assert.equal('needsCount' in unkeyed, false);
+  const keyed = () => fetch(`${base}/api/display/feed`, { headers: { 'X-LocalAI-Display-Key': key } }).then((r) => r.json());
+  await Promise.all(Array.from({ length: 10 }, keyed));
+  assert.equal(needsCalls, 1, 'ten keyed feeds at once with the cache expired: one /api/needs call');
+  const feed = await keyed();
+  assert.deepEqual(feed.needs.map((n) => n.id), ['pi:disk']);
+  assert.equal(feed.needsCount, 11);
+  assert.equal(needsCalls, 1, 'then cached');
 });
 
 // Print lab cards (app/print-lab.js labCards) go in after the needs card, cut like the others.

@@ -5,7 +5,7 @@
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
 function createVoice(ctx) {
-  const { APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, printLab, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, storage, storageError, text, voice, voiceFacts, watchdog, weather } = ctx;
+  const { APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayAuthorized, displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, printLab, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, storage, storageError, text, voice, voiceFacts, watchdog, weather } = ctx;
 
   // What Home lists under Needs you (app/public/home.js, loadNeeds and paintNeeds), for Siri and the Watch to say the
   // same: the runs app/public/needs-you.js picks (a waiting approval; a failure that is unseen, under a day old, not
@@ -45,7 +45,9 @@ function createVoice(ctx) {
       .filter(r => r.type !== 'image' && Date.parse(r.finishedAt || '') >= since && Date.parse(r.finishedAt) - Date.parse(r.startedAt || r.createdAt) >= 30000)
       .sort((x, y) => Date.parse(y.finishedAt) - Date.parse(x.finishedAt));
   }
-  async function displayFeedNow() {
+  // withNeeds: Pi Hub's Needs you list goes only to the display (its key). Pi Hub builds that list from this very feed
+  // (read without a key), so fetching it for Pi Hub's read would send the hub a request that reads the feed again.
+  async function displayFeedNow({ withNeeds = false } = {}) {
     const snapshot = await getCapabilitiesSnapshot();
     const health = glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION });
     const home = homeNeedsYou();
@@ -58,7 +60,7 @@ function createVoice(ctx) {
     const disks = watchdog.summary().hostDisks || [];
     const disk = disks.filter(d => d.totalBytes > 0).sort((x, y) => x.freeBytes / x.totalBytes - y.freeBytes / y.totalBytes)[0] || null;
     // The Pi hub's summary and its "Needs you" list are read side by side, so a slow hub costs one 3 s wait, not two.
-    const [pi, piNeeds] = await Promise.all([piHub.read(), piHub.needs ? piHub.needs() : null]);
+    const [pi, piNeeds] = await Promise.all([piHub.read(), withNeeds && piHub.needs ? piHub.needs() : null]);
     let lab = [];
     try { lab = printLab?.feedCards?.() || []; } catch { lab = []; }
     const feed = displayFeed.buildFeed({ needs, piNeeds, lab, watch: watchdog.list(), running, done: displayDoneRuns(2 * 3600 * 1000), weather: await feedWeatherText(), images, disk, pi, materials: await materialsClient.read() });
@@ -133,7 +135,7 @@ function createVoice(ctx) {
     } catch (e) { json(res, 400, { error: String(e.message || e) }); }
   }
   async function apiDisplayFeed(req, res) {
-    try { json(res, 200, await displayFeedNow()); } catch (e) { json(res, 500, { error: String(e.message || e) }); }
+    try { json(res, 200, await displayFeedNow({ withNeeds: displayAuthorized(req) })); } catch (e) { json(res, 500, { error: String(e.message || e) }); }
   }
 
   // GET /api/display/events?since=<sig>: the display's long poll (Workshop OS 12.6). Answers {sig} at once when the
@@ -144,9 +146,10 @@ function createVoice(ctx) {
     const deadline = Date.now() + 25000;
     let closed = false;
     res.on('close', () => { closed = true; }); // the display gave up (or asked something else)
+    const withNeeds = displayAuthorized(req);
     try {
       for (;;) {
-        const sig = displayFeed.signature(await displayFeedNow());
+        const sig = displayFeed.signature(await displayFeedNow({ withNeeds }));
         if (sig !== since || Date.now() >= deadline || closed) return closed ? undefined : json(res, 200, { sig, changed: sig !== since });
         await new Promise(r => setTimeout(r, 1500));
       }

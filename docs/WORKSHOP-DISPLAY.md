@@ -100,6 +100,10 @@ every screen: `needs: [{id, tone, title, detail, source}]`, from the hub's `GET 
 3 s limit). At most 6 items, title cut to 24 and detail to 90 like the cards, `tone` one of `bad`, `attention` or
 `warn`. `id` stays the same while the item means the same thing (`printer:plate`, `localai:approval:<id>`), so screens
 can match and clear one item. When the hub doesn't answer, `needs` is left out and the display shows its cards.
+Beside it, `needsCount` is the hub's own total (its `count`), so "+N more" counts what the hub has, not the 6 sent.
+Only the display gets `needs` and `needsCount` (a call with `X-LocalAI-Display-Key`): Pi Hub builds its list from this
+feed, read without a key, so that read never asks Pi Hub for its list back. One `/api/needs` fetch is out at a time;
+callers meanwhile get the last list (or none).
 
 **Print lab card (`lab`).** Built from the print-lab records the Mac syncs (Projects › Print lab), when exactly one
 experiment is printing (two printing: no card):
@@ -125,6 +129,11 @@ sign-in mode (`GUARDED`).
   every criterion (400 otherwise). `replace: true` is Change it. When `run` is no longer the judge card's run (a new
   run, or nothing to judge) it answers `409 {"error": "This print has changed. Open it again."}`; an experiment
   without criteria is 409 too.
+- After the card has gone: once the Mac applies the verdict, `lab pull` syncs and the experiment is answered, so there
+  is no judge card. For 24 h after a verdict request for exactly that run, the judge route still answers `200` with the
+  sheet from the experiment's record, `pending` the newest such request (e.g. `applied`, so the display shows Done)
+  and `judged` from the record; the verdict route answers a `requestId` it already has for that run with
+  `202 {id, status}` (the stored status; nothing new is queued). Any other run, or a new `requestId`, is `409`.
 
 **Display key.** The display signs in for this route alone with its own key, sent as `X-LocalAI-Display-Key`, so its
 idle screen keeps working when sign-in starts refusing unsigned callers. The key is good for nothing else.

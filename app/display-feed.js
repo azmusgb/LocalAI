@@ -23,10 +23,11 @@ const ago = (atSec, now) => {
 };
 const gb = (n) => `${Math.round(n / 1e9)} GB`;
 
-// piNeeds: Pi Hub's one "Needs you" list ({items}, app/pi-hub.js needs()), or null when the hub didn't answer. It goes
+// piNeeds: Pi Hub's one "Needs you" list ({count, items}, app/pi-hub.js needs()), or null when the hub didn't answer
+// or the caller isn't the display (Pi Hub reads this feed itself, without a key: app/server/voice.js). It goes
 // out as feed.needs [{id, tone, title, detail, source}], at most 6, title cut to 24 and detail to 90 like the cards
 // (a cut title plus its 3-byte … fits the display's 28-byte buffer), in the hub's order; it never becomes cards (the hub reads the cards, so that would loop). lab: the Print lab
-// cards (app/print-lab.js labCards), after the needs card.
+// cards (app/print-lab.js labCards), after the needs card. needsCount is the hub's count beside it.
 const NEED_TONES = new Set(['bad', 'attention', 'warn']);
 const str = (v) => (typeof v === 'string' ? v : '');
 function needsOf(piNeeds) {
@@ -98,7 +99,11 @@ function buildFeed({ needs, piNeeds = null, lab = [], watch = [], running = [], 
   }
   const feed = { v: 2, at: new Date(now).toISOString(), cards };
   const needList = needsOf(piNeeds);
-  if (needList) feed.needs = needList;
+  if (needList) {
+    feed.needs = needList;
+    // Pi Hub's total, for the display's "+N more" (the list itself stops at 6).
+    feed.needsCount = Number.isSafeInteger(piNeeds.count) && piNeeds.count >= 0 ? piNeeds.count : needList.length;
+  }
   if (pics.length) feed.images = pics.map((i) => ({ title: cut(i.title || 'An image', 90), imageUrl: i.imageUrl, ...(Number.isFinite(i.at) ? { at: i.at } : {}) }));
   return feed;
 }
@@ -131,6 +136,7 @@ function signature(feed) {
   for (const i of feed.images || []) parts.push(i.imageUrl);
   for (const m of feed.messages || []) parts.push(`m${m.seq}`);
   for (const n of feed.needs || []) parts.push(`n${n.id}|${n.tone}|${n.title}|${n.detail}`);
+  if (feed.needsCount !== undefined) parts.push(`nc${feed.needsCount}`);
   return crypto.createHash('sha256').update(parts.join('\n')).digest('hex').slice(0, 16);
 }
 
