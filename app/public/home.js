@@ -102,6 +102,14 @@ function infoRow(title,sub,label,tone,go){
  return row;
 }
 const attentionRow=a=>infoRow(a.title,a.detail,'Fix','bad',()=>root.LocalAIRouter.open(a.view||'status'));
+// One of Pi Hub's items (needs-you.js hubRows): the words every screen shows; it opens on Pi Hub, or here for Local AI's
+// own lab and watch items. Local AI's badges have no amber: warn shows neutral.
+const HUB_WHERE={printLab:'Print lab',status:'Health'};
+function hubRow(h){
+ const go=h.open.view?()=>root.LocalAIRouter.open(h.open.view):()=>location.assign((root.LocalAIAskContext?.homeUrl(location.hostname)||'http://10.0.0.30/')+h.open.hub.slice(1));
+ const row=infoRow(h.title,h.detail,h.open.view?HUB_WHERE[h.open.view]:'Pi Hub',h.tone==='warn'?'neutral':h.tone,go);
+ row.dataset.hubNeed=h.id;return row;
+}
 // A pending approval that is not itself a run: open its run when one exists, else decide it here in the approval sheet
 // (one queue, D8). After a decision Needs you reloads and focus moves to the next approval, or the one before, or the next
 // thing on Home.
@@ -116,15 +124,16 @@ async function decideHere(a){
  const sec=$('homeNeedsYou'),first=sec&&!sec.hidden?$('homeNeedsList')?.querySelector('button'):null;
  root.LocalAIUI.refocus(a.id,{within:'#homeNeedsList',key:'approvalId',next,prev,fallback:first||$('homeRecentTitle')});
 }
-let needs=[],approvals=[],newSignals=0;
+let needs=[],approvals=[],newSignals=0,hubItems=null;
 // Another device on plain HTTP can't use voice, notifications or Add to Home Screen; point it at the setup until it opts out there.
 const onPlainHttp=()=>location.protocol==='http:'&&!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
 const secureNudge=()=>{if(!onPlainHttp())return false;try{return localStorage.getItem('localai.secureNudge.off')!=='1'}catch{return true}};
 const secureRow=()=>infoRow('Use the secure address on this device','Voice, notifications and adding Local AI to your Home Screen need it. Setup takes about a minute.','Set up','attention',()=>root.LocalAIRouter.open('status?secure=1'));
 // Serious Signals promoted into the Backlog in the last day, waiting for a decision.
 const signalsRow=n=>infoRow(`${n} new signal${n===1?'':'s'} in your backlog`,'Problems Local AI noticed. Start, defer or reject them.','Review','attention',()=>root.LocalAIRouter.open('backlog'));
-// What asks for a decision, a fix or a setup step always shows. Failures fill the list up to CAP rows, newest first, one
-// row per goal ("Failed ×5"); the rest are behind "See all N", which opens Work's Needs you filter.
+// What asks for a decision, a fix or a setup step always shows, with Pi Hub's other items (the one list every screen
+// shows), bad first, then attention, then warn. Failures fill the list up to CAP rows, newest first, one row per goal
+// ("Failed ×5"); the rest are behind "See all N", which opens Work's Needs you filter.
 const CAP=3;
 function seeAllRow(n){
  const row=document.createElement('button');row.type='button';row.className='list-row home-attn home-needs-all';
@@ -148,7 +157,9 @@ function paintNeeds(){
  // While Get started is on the page its step 1 already covers stopped services; the same news is not repeated as "Fix" rows.
  const serviceRows=document.getElementById('firstRun')?[]:attention.map(attentionRow);
  const failed=root.LocalAINeedsYou.group(needs.filter(r=>r.status==='failed'));
- const act=[...needs.filter(r=>r.status!=='failed').map(r=>recentRow(r)),...approvals.map(x=>approvalRow(x.a,x.run)),...serviceRows,...(newSignals?[signalsRow(newSignals)]:[]),...(secureNudge()?[secureRow()]:[])];
+ const N=root.LocalAINeedsYou,at=row=>({tone:'attention',row});
+ const act=N.byTone([...needs.filter(r=>r.status!=='failed').map(r=>at(recentRow(r))),...approvals.map(x=>at(approvalRow(x.a,x.run))),...serviceRows.map(row=>({tone:'bad',row})),
+  ...(newSignals?[at(signalsRow(newSignals))]:[]),...(secureNudge()?[at(secureRow())]:[]),...N.hubRows(hubItems).map(h=>({tone:h.tone,row:hubRow(h)}))]).map(x=>x.row);
  const n=act.length+failed.length,room=act.length+failed.length>CAP?Math.max(0,CAP-act.length):failed.length;
  box.replaceChildren(...act,...failed.slice(0,room).map(failedRow),...(room<failed.length?[seeAllRow(n)]:[]));
  $('homeNeedsCount').textContent=n?'· '+n:'';
@@ -186,7 +197,8 @@ function paintRecent(box,data){
 }
 const recentUrl='/api/runs?threads=1&limit=30';  // enough to fill six rows after folding an hourly automation
 async function loadNeeds(){
- const [d,p,imp]=await Promise.allSettled([root.LocalAIUI.fetchJson('/api/runs?limit=120',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/approvals',{cache:'no-store'}),devOn()?root.LocalAIUI.fetchJson('/api/improve/items',{cache:'no-store'}):Promise.resolve({items:[]})]);
+ const [d,p,imp,hub]=await Promise.allSettled([root.LocalAIUI.fetchJson('/api/runs?limit=120',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/approvals',{cache:'no-store'}),devOn()?root.LocalAIUI.fetchJson('/api/improve/items',{cache:'no-store'}):Promise.resolve({items:[]}),root.LocalAIUI.fetchJson('/api/home/hub-needs',{cache:'no-store'})]);
+ hubItems=hub.status==='fulfilled'?hub.value.items:null;  // Pi Hub not answering: only Local AI's own rows
  if(imp.status==='fulfilled'){const day=Date.now()-864e5;newSignals=(imp.value.items||[]).filter(i=>i.source==='signal'&&i.status==='proposed'&&i.stage==='backlog'&&Date.parse(i.createdAt)>day).length}
  const runs=d.status==='fulfilled'?d.value.items||[]:null;
  if(runs)needs=root.LocalAINeedsYou.pick(runs);

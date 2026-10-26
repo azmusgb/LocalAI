@@ -38,12 +38,14 @@ const needs = () => [
 ];
 // Stubs: `threads` answers /api/runs?threads=1, `all` answers the plain /api/runs list, `engineering` the start endpoint.
 let capabilities = () => ({ services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' });
-async function open(viewport, hash, { threads = six, all = needs, engineering = null, storage = {}, caps = null, approvals = [], activity = [], route = null, improve = null, printer = undefined } = {}) {
+async function open(viewport, hash, { threads = six, all = needs, engineering = null, storage = {}, caps = null, approvals = [], activity = [], route = null, improve = null, printer = undefined, hubNeeds = null } = {}) {
   capabilities = caps || (() => ({ services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' }));
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.devTools': '1', 'localai.firstRun.done': '1', ...storage });
   const page = await ctx.newPage({ serviceWorkers: 'block' });
   await ctx.route(u => u.pathname === '/api/approvals', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: approvals }) }));
+  // Pi Hub's Needs you list through Local AI; null (the hub not answering) unless a test gives one, so the real hub never shows.
+  await ctx.route(u => u.pathname === '/api/home/hub-needs', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: hubNeeds }) }));
   await ctx.route(u => u.pathname === '/api/activity', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: activity }) }));
   if (route) await ctx.route(u => u.pathname === '/api/route', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(route) }));
   // Improve items stubbed before the page loads, so Home's first load can't land late with the real server's answer.
@@ -150,6 +152,39 @@ await check('Needs you drops a failed run once a newer run in the same thread su
   const page = await open(desk, '#home', { all: () => [failed, retry, other] });
   await page.waitForSelector('#homeNeedsYou .run-card', T);
   assert.deepEqual(await titles(page, '#homeNeedsYou'), ['Different thread failed']);
+  await page.context().close();
+});
+
+await check('Needs you also lists Pi Hub\'s items in Pi Hub\'s words, bad first, without the hub\'s summary of Local AI\'s own rows', async () => {
+  const approvals = [{ id: 'ap-1', status: 'pending', title: 'Approve the update', detail: 'A change waits for you' }];
+  const hubNeeds = [
+    { id: 'localai:needs-1', source: 'Local AI', tone: 'attention', title: 'Needs you', detail: '1 approval', link: '' },
+    { id: 'localai:watch-mac-disk', source: 'Local AI', tone: 'warn', title: 'Worth a look', detail: 'Mac disk is 94% full', link: '' },
+    { id: 'printer:plate', source: 'Printer', tone: 'attention', title: 'Clear the plate', detail: 'Finished hex-tile E-022', link: '/workshop' },
+    { id: 'pi:disk', source: 'Pi', tone: 'bad', title: 'Pi disk is full', detail: 'Free some space', link: '/pi' }];
+  const page = await open(desk, '#home', { all: () => [], approvals, hubNeeds });
+  await page.waitForSelector('#homeNeedsList [data-hub-need="pi:disk"]', T);
+  const rows = await page.$$eval('#homeNeedsList > .home-attn', els => els.map(e => e.querySelector('.list-row__title')?.textContent));
+  assert.deepEqual(rows, ['Pi disk is full', 'Approve the update', 'Clear the plate', 'Worth a look']);
+  assert.equal(await page.locator('#homeNeedsList [data-hub-need="localai:needs-1"]').count(), 0, 'the summary line is not repeated');
+  assert.equal(await page.textContent('#homeNeedsCount'), '· 4');
+  assert.equal(await page.textContent('[data-hub-need="printer:plate"] .list-row__sub'), 'Finished hex-tile E-022');
+  assert.equal(await page.textContent('[data-hub-need="localai:watch-mac-disk"] .badge'), 'Health');
+  // A Pi Hub row opens Pi Hub at its page.
+  let went = '';
+  await page.route(u => u.hostname === '10.0.0.30', r => { went = r.request().url(); return r.fulfill({ contentType: 'text/html', body: '<title>Pi Hub</title>' }); });
+  await page.click('[data-hub-need="printer:plate"]');
+  await page.waitForURL('http://10.0.0.30/workshop', T);
+  assert.equal(went, 'http://10.0.0.30/workshop');
+  await page.context().close();
+});
+
+await check('Needs you shows only Local AI\'s own rows when Pi Hub doesn\'t answer', async () => {
+  const approvals = [{ id: 'ap-1', status: 'pending', title: 'Approve the update', detail: 'A change waits for you' }];
+  const page = await open(desk, '#home', { all: () => [], approvals, hubNeeds: null });
+  await page.waitForSelector('#homeNeedsList [data-approval-id="ap-1"]', T);
+  assert.equal(await page.locator('#homeNeedsList [data-hub-need]').count(), 0);
+  assert.equal(await page.textContent('#homeNeedsCount'), '· 1');
   await page.context().close();
 });
 

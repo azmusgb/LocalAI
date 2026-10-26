@@ -106,3 +106,30 @@ test('recent folds repeats of one automation into its newest run and leaves out 
   assert.equal(N.recent(items, [], 2).length, 2);
   assert.deepEqual(ids(N.recent([], [])), []);
 });
+
+// Home's Needs you also lists Pi Hub's items that aren't Local AI's own rows (one list on every screen).
+test('hubRows: everything but the summary of Local AI\'s own rows, with where each opens', () => {
+  const items = [
+    { id: 'printer:plate', source: 'Printer', tone: 'attention', title: 'Clear the plate', detail: 'Finished E-022', link: '/workshop' },
+    { id: 'localai:needs-2', source: 'Local AI', tone: 'attention', title: 'Needs you', detail: '2 approvals' },
+    { id: 'localai:watch-mac-disk', source: 'Local AI', tone: 'warn', title: 'Worth a look', detail: 'Mac disk is 94% full', link: '' },
+    { id: 'localai:judge-PR-022-01', source: 'Local AI', tone: 'attention', title: 'Judge E-022', detail: 'Look at: ridges' },
+    { id: 'localai:lab-PR-022-01', source: 'Local AI', tone: 'busy', title: 'Lab · E-022', detail: '' },
+    { id: 'pi:disk', source: 'Pi', tone: 'bad', title: 'Pi disk is full', detail: '', link: '/pi' },
+    { id: 'pi:odd', source: 'Pi', tone: 'weird', title: 'Odd', detail: '' },
+    { id: '', title: 'no id' }, null];
+  const rows = N.hubRows(items);
+  assert.deepEqual(rows.map(r => r.id), ['printer:plate', 'localai:watch-mac-disk', 'localai:judge-PR-022-01', 'localai:lab-PR-022-01', 'pi:disk', 'pi:odd']);
+  assert.deepEqual(rows.map(r => r.tone), ['attention', 'warn', 'attention', 'warn', 'bad', 'warn'], 'only bad, attention and warn; anything else is warn');
+  assert.deepEqual(rows.map(r => r.open), [{ hub: '/workshop' }, { view: 'status' }, { view: 'printLab' }, { view: 'printLab' }, { hub: '/pi' }, { hub: '/' }]);
+  assert.equal(rows[0].title, 'Clear the plate');
+  assert.equal(rows[0].detail, 'Finished E-022');
+  assert.deepEqual(N.hubRows(null), []);
+  assert.deepEqual(N.hubRows('no'), []);
+});
+
+test('byTone: bad, then attention, then warn; the same tone keeps its order', () => {
+  const list = [{ k: 1, tone: 'warn' }, { k: 2, tone: 'attention' }, { k: 3, tone: 'bad' }, { k: 4, tone: 'attention' }, { k: 5, tone: 'bad' }];
+  assert.deepEqual(N.byTone(list).map(x => x.k), [3, 5, 2, 4, 1]);
+  assert.deepEqual(list.map(x => x.k), [1, 2, 3, 4, 5], 'the input is left as it was');
+});
