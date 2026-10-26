@@ -315,6 +315,7 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
   await check(`${name}: verdict sheet has rows and chips; Send stays disabled until complete`, async () => {
     await page.locator('#lab-E-008 .lab-record-verdict').click();
     await page.waitForSelector('#labVerdictSheet[open]');
+    await page.locator('#labVerdictLighting').selectOption('diagnostic');  // the light is never assumed
     const send = page.locator('#labVerdictSend');
     assert.equal(await send.isDisabled(), true);
 
@@ -336,6 +337,7 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
     await page.waitForSelector('#printLab.active .lab-needs-card');
     await page.locator('#lab-E-008 .lab-record-verdict').click();
     await page.waitForSelector('#labVerdictSheet[open]');
+    await page.locator('#labVerdictLighting').selectOption('diagnostic');  // the light is never assumed
     assert.equal(await page.locator('.lab-verdict-row[data-tab="12A"] button[data-choice="clean"]').getAttribute('aria-checked'), 'true');
     assert.equal(await page.locator('#labVerdictSend').isDisabled(), false);
     await page.locator('#labVerdictCancel').click();
@@ -343,6 +345,7 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
   await check(`${name}: sending verdict shows Waiting for the Mac, then Recorded when applied; – means not judged`, async () => {
     await page.locator('#lab-E-008 .lab-record-verdict').click();
     await page.waitForSelector('#labVerdictSheet[open]');
+    await page.locator('#labVerdictLighting').selectOption('diagnostic');  // the light is never assumed
     await page.locator('.lab-verdict-row[data-tab="12B"] button[data-criterion="apart"][data-choice="–"]').click();
     assert.equal(await page.locator('#labVerdictSend').isDisabled(), false);
     await page.locator('#labVerdictSend').click();
@@ -369,6 +372,7 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
   await check(`${name}: refusal containing already has a verdict offers Replace verdict`, async () => {
     await page.locator('#lab-E-008 .lab-record-verdict').click();
     await page.waitForSelector('#labVerdictSheet[open]');
+    await page.locator('#labVerdictLighting').selectOption('diagnostic');  // the light is never assumed
     await page.locator('.lab-verdict-row[data-tab="12A"] button[data-choice="clean"]').click();
     await page.locator('.lab-verdict-row[data-tab="12A"] button[data-choice="no"]').click();
     await page.locator('.lab-verdict-row[data-tab="12B"] button[data-choice="clean"]').click();
@@ -438,6 +442,72 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
       ['Question', 'Plan', 'Build', 'Check', 'Approval, if needed', 'Send', 'Start', 'Photos', 'Verdict', 'Outcome']);
     assert.match(await guide.innerText(), /One factor per experiment[\s\S]*Asked for vs what printed[\s\S]*Mac[\s\S]*Local AI[\s\S]*Phone/);
     assert.match(await guide.innerText(), /lab exp send/);
+  });
+  await check(`${name}: the verdict sheet starts with no light chosen and won't send without one`, async () => {
+    await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith('printLab:draft:')) localStorage.removeItem(k); });
+    await page.locator('#lab-E-008 .lab-record-verdict').click();
+    await page.waitForSelector('#labVerdictSheet[open]');
+    assert.equal(await page.locator('#labVerdictLighting').inputValue(), '');
+    for (const tab of ['12A', '12B']) for (const c of ['clean', 'yes']) await page.locator(`.lab-verdict-row[data-tab="${tab}"] button[data-choice="${c}"]`).click();
+    assert.equal(await page.locator('#labVerdictSend').isDisabled(), true);
+    await page.locator('#labVerdictLighting').selectOption('room');
+    assert.equal(await page.locator('#labVerdictSend').isDisabled(), false);
+    await page.locator('#labVerdictCancel').click();
+  });
+  await check(`${name}: Record what happened asks only each subject's own questions, with nothing chosen`, async () => {
+    await page.locator('#lab-E-007 .lab-observe').click();
+    await page.waitForSelector('#labObserveSheet[open] [data-subject="pair"]');
+    assert.equal(await page.locator('#labObserveSheet input[type=radio]:checked').count(), 0);
+    assert.equal(await page.locator('#labObserveSend').isDisabled(), true);
+    assert.deepEqual(await page.locator('[data-subject="pair"] fieldset legend').allInnerTexts(), ['Separation', 'Overall']);
+    assert.deepEqual(await page.locator('[data-subject="tile1"] fieldset legend').allInnerTexts(), ['Which side', 'Face', 'Back', 'Mounting']);
+    assert.match(await page.locator('#labObserveMissing').innerText(), /Which part/);
+  });
+  await check(`${name}: "Doesn't apply" needs a reason, and the draft survives a reload`, async () => {
+    const pick = (q, v) => page.locator(`#labObserveSheet [data-q="${q}"] input[value="${v}"]`).check();
+    await pick('variant', 'E-007-A'); await pick('identified', 'confirmed');
+    await pick('pair.separation', 'not_applicable');
+    await pick('pair.acceptance', 'accepted_with_defects');
+    for (const t of ['tile1', 'tile2']) { await pick(`${t}.side`, t === 'tile1' ? 'left' : 'right'); await pick(`${t}.face`, 'clean'); await pick(`${t}.backing`, 'not_assessed'); await pick(`${t}.mounting`, 'unknown'); }
+    await pick('light', 'room');
+    assert.equal(await page.locator('#labObserveSend').isDisabled(), true);
+    assert.match(await page.locator('#labObserveMissing').innerText(), /why separation doesn't apply/);
+    await page.locator('#labObserveSheet [data-note-input="pair.separation"]').fill('the pair broke on the plate');
+    assert.equal(await page.locator('#labObserveSend').isDisabled(), false);
+    await page.reload();
+    await page.waitForSelector('#printLab.active .lab-needs-card');
+    await page.locator('#lab-E-007 .lab-observe').click();
+    await page.waitForSelector('#labObserveSheet[open] [data-subject="pair"]');
+    assert.equal(await page.locator('#labObserveSheet [data-q="pair.separation"] input[value="not_applicable"]').isChecked(), true);
+    assert.equal(await page.locator('#labObserveSend').isDisabled(), false);
+  });
+  await check(`${name}: sending makes one request with complete snapshots; Recorded when the Mac applies it`, async () => {
+    await page.locator('#labObserveSend').click();
+    await page.waitForFunction(() => /Waiting for the Mac/.test(document.getElementById('labObserveStatus')?.textContent || ''));
+    const { items } = await (await fetch(`${base}/api/lab/hex-tile/requests?status=pending`, { headers: { 'X-LocalAI-Mac-Key': KEY } })).json();
+    const reqs = items.filter(i => i.kind === 'observation');
+    assert.equal(reqs.length, 1);
+    const snaps = reqs[0].payload.snapshots;
+    assert.deepEqual(snaps.map(s => s.subject.kind), ['pair', 'tile', 'tile']);
+    assert.deepEqual(Object.keys(snaps[0].outcomes).sort(), ['acceptance', 'separation']);
+    assert.deepEqual(Object.keys(snaps[1].outcomes).sort(), ['acceptance', 'backing', 'face', 'mounting']);
+    assert.deepEqual(snaps[0].outcomes.separation, { status: 'not_applicable', value: null, note: 'the pair broke on the plate' });
+    assert.deepEqual(snaps[1].outcomes.acceptance, { status: 'not_assessed', value: null, note: null });
+    assert.equal(snaps[1].subject.tile, 'left');
+    assert.equal(snaps[0].viewing.light, 'room');
+    assert.equal(snaps[0].source.kind, 'owner_report');
+    await answer(reqs[0].id, 'applied', 'Recorded OBS-0001, OBS-0002, OBS-0003');
+    await page.waitForFunction(() => /Recorded/.test(document.getElementById('labObserveStatus')?.textContent || ''));
+    assert.equal(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('printLab:observe:')).length), 0);
+    await page.locator('#labObserveClose').click();
+  });
+  await check(`${name}: the Record what happened sheet passes axe`, async () => {
+    await page.locator('#lab-E-007 .lab-observe').click();
+    await page.waitForSelector('#labObserveSheet[open] [data-subject="pair"]');
+    await addAxe(page, axePath);
+    const r = await page.evaluate(async () => await window.axe.run(document.getElementById('labObserveSheet'), { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa'] } }));
+    assert.deepEqual(r.violations.map(v => v.id), []);
+    await page.locator('#labObserveClose').click();
   });
   await check(`${name}: axe finds nothing on the page`, async () => {
     await addAxe(page, axePath);

@@ -2091,9 +2091,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // ==== print-lab loader ====
 // Loads /model-routing.js (Models › Cloud models) the first time Models opens; the section itself is made by ui.js.
 (function(){let p=0;const L=()=>{const s=document.getElementById('models');if(p||!s||!s.classList.contains('active'))return;p=1;const e=document.createElement('script');e.src='/model-routing.js';e.onerror=()=>{p=0};document.head.append(e)};new MutationObserver(L).observe(document.querySelector('main')||document.body,{attributes:true,subtree:true,attributeFilter:['class']});L()})();
-// Loads /print-lab.js, its explainer /print-lab-guide.js and its photo viewer /print-lab-photos.js, the first time Projects › Print lab opens: neither is part
+// Loads /print-lab.js, its explainer /print-lab-guide.js, its photo viewer /print-lab-photos.js and the Record what happened form /print-lab-observe.js, the first time Projects › Print lab opens: neither is part
 // of the shell every page load downloads.
-(function(){const s=document.getElementById('printLab');if(!s)return;let p=0;const L=()=>{if(p||!s.classList.contains('active'))return;p=1;for(const f of ['/print-lab.js','/print-lab-guide.js','/print-lab-photos.js']){const e=document.createElement('script');e.src=f;e.onerror=()=>{p=0};document.head.append(e)}};new MutationObserver(L).observe(s,{attributes:true,attributeFilter:['class']});L()})();
+(function(){const s=document.getElementById('printLab');if(!s)return;let p=0;const L=()=>{if(p||!s.classList.contains('active'))return;p=1;for(const f of ['/print-lab.js','/print-lab-guide.js','/print-lab-photos.js','/print-lab-observe.js']){const e=document.createElement('script');e.src=f;e.onerror=()=>{p=0};document.head.append(e)}};new MutationObserver(L).observe(s,{attributes:true,attributeFilter:['class']});L()})();
 // ==== agent-world-watch loader ====
 // Loads /agent-world-watch.js on first use (⋯ › Watch mode or ?watch=1); a tap in Agent World preloads it.
 (function(){let p;const L=()=>p||(p=new Promise((y,n)=>{const s=document.createElement('script');s.src='/agent-world-watch.js';s.onload=y;s.onerror=()=>{p=null;n()};document.head.append(s)})),W=o=>L().then(()=>window.LocalAIAgentWorldWatch.start(o)).catch(()=>{});
