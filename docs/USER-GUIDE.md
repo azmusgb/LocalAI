@@ -1,7 +1,10 @@
 # Using Local AI
 
-Local AI is your own AI assistant, running on your computer at home. Nothing you type goes to an outside AI
-service unless you choose a cloud fallback. This guide covers everyday use on a phone or a computer. Setting it up
+Local AI is your own AI assistant, running on your computer at home. Everything runs on that computer unless
+you switch on cloud models (Models page): then only work that isn't private (research on public topics, code
+changes to Local AI, a chat you send with "Use a bigger model") may go to Groq or Cerebras, and every answer says
+which model gave it. House questions, voice, files, photos and anything about health, money or identity always stay
+on the computer. This guide covers everyday use on a phone or a computer. Setting it up
 and looking after it is in the [admin guide](ADMIN-GUIDE.md).
 
 ## Open it

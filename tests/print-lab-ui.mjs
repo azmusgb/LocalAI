@@ -73,9 +73,9 @@ const index = {
       needs: { id: 'E-008', urgency: 0, action: 'Judge the print', why: 'Look at: top edge.', command: 'uv run lab exp verdict E-008 --rank A --note "what you see"' }
     }),
     exp('E-009', 'approved', { needs: { id: 'E-009', urgency: 1, action: 'Send it to the printer', why: 'Approved; then record that it started.', command: 'uv run lab exp start E-009' } }),
-    exp('E-007', 'answered', { run: 'PR-007-01', runs: [{ id: 'PR-007-01', started_at: '2026-10-24T10:00:00Z' }], verdict: { kind: 'acceptance', good_enough: true, at: '2026-10-24T20:00:00Z' }, photos: [{ run: 'PR-007-01', path: 'photos/PR-007-01-1.jpg', sha256: shaOf(e7) }] }),
+    exp('E-007', 'answered', { test_kind: 'full_part', run: 'PR-007-01', runs: [{ id: 'PR-007-01', started_at: '2026-10-24T10:00:00Z' }], verdict: { kind: 'acceptance', good_enough: true, defects: ['separation very hard'], note: 'faces good', at: new Date(Date.now() - 3600e3).toISOString() }, photos: [{ run: 'PR-007-01', path: 'photos/PR-007-01-1.jpg', sha256: shaOf(e7) }] }),
     exp('E-006', 'needs_approval', { check: { status: 'needs_approval', guards: [{ code: 'per_test_time', ok: false, result: 'needs_approval', message: '248.7 / 45 min per test' }] }, needs: { id: 'E-006', urgency: 2, action: 'Approve or drop', why: '248.7 / 45 min per test', command: 'uv run lab exp approve E-006 --reason "..."' } }),
-    exp('E-004', 'answered', { run: 'PR-004-01', runs: [{ id: 'PR-004-01', started_at: '2026-10-23T10:00:00Z' }], outcome: 'refuted', validity: { status: 'valid', reasons: [{ code: 'cross_plate_by_design', status: 'valid' }] }, verdict: { kind: 'ranking', note: 'they look good', at: '2026-10-24T23:14:18Z' }, photos: [{ run: 'PR-004-01', path: 'photos/PR-004-1.jpg', sha256: sha }] })
+    exp('E-004', 'answered', { run: 'PR-004-01', runs: [{ id: 'PR-004-01', started_at: '2026-10-23T10:00:00Z' }], outcome: 'refuted', validity: { status: 'valid', reasons: [{ code: 'cross_plate_by_design', status: 'valid' }] }, verdict: { kind: 'ranking', note: 'they look good', at: '2026-09-24T23:14:18Z' }, photos: [{ run: 'PR-004-01', path: 'photos/PR-004-1.jpg', sha256: sha }] })
   ],
   needs: [], problems: [], records: {
     'E-004': { type: 'experiment', file: 'experiments/E-004.json', sha256: 'a'.repeat(64), payload: { id: 'E-004' } },
@@ -130,6 +130,36 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
     assert.equal(await page.locator('.lab-needs code').first().textContent(), 'uv run lab exp verdict E-008 --rank A --note "what you see"');
     assert.equal(await page.locator('.lab-needs .lab-copy').count(), 3);
     assert.equal(await page.locator('#printLab h1').innerText(), 'Projects');
+  });
+  await check(`${name}: a print still running says when it's due instead of asking for a verdict, until the printer says it's done`, async () => {
+    // E-008's need with an estimated end 90 min away (lab sync sends due_at while a print runs).
+    const due = new Date(Date.now() + 90 * 60e3).toISOString();
+    const tweak = state => async route => { const r = await route.fetch(); const d = await r.json();
+      d.index.needs = d.index.needs.map(n => (n.id === 'E-008' ? { ...n, due_at: due } : n)); d.live = { ...d.live, state };
+      await route.fulfill({ response: r, json: d }); };
+    const row = () => page.locator('.lab-needs .list-row').filter({ has: page.locator('[data-lab-open="E-008"]') });
+    await page.route('**/api/lab/hex-tile', tweak('printing'));
+    await page.reload();
+    await page.waitForSelector('#printLab.active .lab-needs-card');
+    assert.equal(await row().locator('.list-row__title').innerText(), 'Printing · E-008');
+    assert.match(await row().innerText(), /Done about \d\d:\d\d \(estimate\)\. Then look at: top edge: no ripples; the pair snaps apart by hand\./);
+    assert.equal(await row().locator('code').count(), 0);
+    assert.equal(await row().locator('.lab-acts button').count(), 0);
+    await page.unroute('**/api/lab/hex-tile');
+    await page.route('**/api/lab/hex-tile', tweak('idle'));
+    await page.reload();
+    await page.waitForSelector('#printLab.active .lab-needs-card');
+    assert.equal(await row().locator('.list-row__title').innerText(), 'Judge the print · E-008');
+    assert.deepEqual(await row().locator('.lab-acts button').allInnerTexts(), ['Judge it', 'Add photos']);
+    await page.unroute('**/api/lab/hex-tile');
+    await page.reload();
+    await page.waitForSelector('#printLab.active .lab-needs-card');
+  });
+  await check(`${name}: a result from the last few days stays out of Earlier, with Accepted and its defects`, async () => {
+    assert.equal(await page.locator('.lab-earlier #lab-E-007').count(), 0);
+    const card = await page.locator('#lab-E-007').innerText();
+    assert.match(card, /Accepted/);
+    assert.match(card, /Defects: separation very hard/);
   });
   await check(`${name}: the question shows its budget, what the next test adds and that it continues`, async () => {
     const q = await page.locator('.lab-question').innerText();
@@ -235,9 +265,10 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
   });
   await check(`${name}: with a picture from the bridge, the snapshot shows`, async () => {
     cam.on = true;
-    await page.reload();
-    await page.waitForFunction(() => { const i = document.querySelector('#lab-E-008 .lab-cam__img'); return i && !i.hidden && i.complete && i.naturalWidth === 1; });
-    cam.on = false;
+    try {
+      await page.goto(`${base}/#printLab`, { waitUntil: 'load' });
+      await page.waitForFunction(() => { const i = document.querySelector('#lab-E-008 .lab-cam__img'); return i && !i.hidden && i.complete && i.naturalWidth === 1; });
+    } finally { cam.on = false; }
   });
   await check(`${name}: thumbnails (6 and +2), the viewer with arrows, and Compare against the last good-enough run`, async () => {
     const thumbs = page.locator('#lab-E-008 .lab-thumbs .lab-thumb');

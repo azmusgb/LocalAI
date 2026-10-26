@@ -117,7 +117,7 @@ test('a finished engineering run with no files has no preview line; only a runni
 
 test('readableTitle: a label, else the whole title, else its first words cut at a word, never an instruction prompt', () => {
   // Instructions (a prompt that starts "You are …", like the hub's House questions before they carried a label) never show.
-  assert.equal(readableTitle({ type: 'chat', title: "You are the voice of a family's home hub on a Raspberry Pi. Answer th…" }), 'Chat');
+  assert.equal(readableTitle({ type: 'chat', title: 'You are a careful reviewer. Check th…' }), 'Chat');
   assert.equal(readableTitle({ type: 'chat', title: 'Plan the garden' }), 'Plan the garden');
   assert.equal(readableTitle({ type: 'chat', title: 'x'.repeat(200), meta: { label: 'House question' } }), 'House question');
   assert.equal(readableTitle({ type: 'automation', title: 'Hourly Stack & ComfyUI Health Check' }), 'Hourly Stack & ComfyUI Health Check');
@@ -136,4 +136,11 @@ test('readableTitle: a label, else the whole title, else its first words cut at 
   assert.ok(long.endsWith('…') && long.length <= 72, long);
   assert.equal(runCard({ type: 'image', title: 'A red fox in the snow at dusk, watercolour, soft light, wide shot, ' + 'z'.repeat(40) }, none).title,
     'A red fox in the snow at dusk, watercolour, soft light, wide shot…');
+});
+
+// Pi Hub's House questions from before they carried a label: their stored title is the hub's prompt. Shown as what
+// they are, without touching the stored runs.
+test('an unlabelled House question from Pi Hub reads "House question"', () => {
+  assert.equal(readableTitle({ type: 'chat', title: "You are the voice of a family's home hub on a Raspberry Pi. Answer th…" }), 'House question');
+  assert.equal(readableTitle({ type: 'chat', title: 'You are a helpful assistant. Summarise this.' }), 'Chat');
 });

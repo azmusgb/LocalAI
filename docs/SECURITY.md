@@ -106,6 +106,11 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
 - **Child process environment.** Commands the app spawns get its environment minus any variable whose name
   matches `TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY|CREDENTIAL` (`childEnv` in `app/server.js`;
   `tests/security-contract.test.cjs`).
+- **Cloud models.** Off until the owner switches them on (`PUT /api/models/routing`, a guarded write). Then only work the
+  coordinator classes as not private goes to Groq or Cerebras (`app/model-router.js`: House questions, voice, files,
+  photos and health/money/identity words always stay local), with this PC's model as the last resort. The keys
+  (`LOCALAI_GROQ_API_KEY`, `LOCALAI_CEREBRAS_API_KEY`) come from `stack.env`, are filtered from child processes by the
+  rule above, and are scrubbed from every error and status (`app/cloud-models.js`; `tests/cloud-models.test.cjs`).
 - **File access.** Files and Repository paths are resolved inside `WORKSPACE_ROOT` (`safeWorkspacePath`); writes
   and commands need `approved: true` in the request body. That flag is a confirmation step, not authentication.
   Commands are limited to `node`, `npm`, `npx`, `git`, `python3` and `pytest`, run without a shell, with a

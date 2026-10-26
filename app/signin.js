@@ -27,7 +27,7 @@ const GUARDED_WRITES = [
   /^\/api\/knowledge\/import$/, /^\/api\/library\/delete$/, /^\/api\/items\/delete$/, /^\/api\/display\/alerts$/,
   // Siblings of the above: retrying or cancelling runs, deleting knowledge, chats and memory, pulling or deleting models.
   /^\/api\/runs\/(retry|cancel|update)$/, /^\/api\/knowledge\/delete$/, /^\/api\/conversations\/delete$/,
-  /^\/api\/memory\/(add|update|delete)$/, /^\/api\/models\/(pull|delete)$/,
+  /^\/api\/memory\/(add|update|delete)$/, /^\/api\/models\/(pull|delete|routing)$/,
   // The print lab's sync and photo uploads: only the Mac writes them (app/print-lab.js also checks its key).
   /^\/api\/lab\//,
 ];

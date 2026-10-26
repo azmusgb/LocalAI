@@ -61,7 +61,7 @@ function renderAgentMap(phase = 'idle') {
     return `<div class="agent-node ${cls}"><span class="agent-pulse"></span><div class="kicker">${esc(s[0])}</div><strong>${esc(s[1])}</strong><span>${esc(s[2])}</span></div>`;
   }).join('');
 }
-function activityHtml(item){const run=item.meta?.runId?`<button class="btn-outline activity-run" type="button" data-open-run="${esc(item.meta.runId)}">Open run</button>`:'';return `<div class="activity-item"><div class="activity-icon">${window.LocalAIKit?.icon(ACTIVITY_ICON[item.type]||'history')||''}</div><div><div class="activity-title">${esc(item.title)}</div><div class="activity-detail">${esc(item.detail||'')}</div>${run}</div><div class="activity-time">${ago(item.at)}</div></div>`;}
+function activityHtml(item){const run=item.meta?.runId?`<button class="link-btn" type="button" data-open-run="${esc(item.meta.runId)}">Open run</button>`:'';return `<div class="activity-item"><div class="activity-icon">${window.LocalAIKit?.icon(ACTIVITY_ICON[item.type]||'history')||''}</div><div><div class="activity-title">${esc(item.title)}</div><div class="activity-detail">${esc(item.detail||'')}</div>${run}</div><div class="activity-time">${ago(item.at)}</div></div>`;}
 
 // Data loaders for pages whose content is fetched on open. Every route (rail, tabs, mobile sheet, ⌘K) goes through showView.
 const VIEW_LOADERS={inbox:()=>loadInbox(),memory:()=>loadMemory(),powershell:()=>loadPowerShellJobs()};
