@@ -32,6 +32,17 @@ function group(runs){
  }
  return out;
 }
+// Home's Recent, newest first: leaves out what Needs you shows (the same run or thread), and folds repeats of one
+// automation (an hourly check) into its newest run, so one schedule can't fill the list. At most n rows.
+function recent(items,shown,n=6){
+ const key=r=>r.threadId||r.id,skip=new Set((shown||[]).map(key)),seen=new Set(),out=[];
+ for(const r of items||[]){
+  if(!r||skip.has(key(r)))continue;
+  const a=r.meta?.automationId;if(a){if(seen.has(a))continue;seen.add(a)}
+  out.push(r);if(out.length>=n)break;
+ }
+ return out;
+}
 // Opening a failed run (here, or from Work, on any device) marks it seen; once per run per page load.
 const posted=new Set();
 function markSeen(ids){
@@ -39,6 +50,6 @@ function markSeen(ids){
  fresh.forEach(id=>posted.add(id));
  return fetch('/api/runs/seen',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:fresh})}).then(r=>r.ok,()=>false).then(ok=>{if(!ok)fresh.forEach(id=>posted.delete(id));return ok});
 }
-const api={pick,group,markSeen,goal,DAY};
+const api={pick,group,recent,markSeen,goal,DAY};
 if(typeof module==='object'&&module.exports)module.exports=api;else root.LocalAINeedsYou=api;
 })(typeof window!=='undefined'?window:globalThis);

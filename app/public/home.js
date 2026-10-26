@@ -173,18 +173,18 @@ function printerWords(p){
  if(p.state==='error')return `Printer · Stopped with an error${p.errorCode?` (${p.errorCode})`:''}`;
  return '';
 }
-// Recent leaves out what Needs you already shows (the same run, or another card for the same thread): one row per thing.
+// Recent leaves out what Needs you already shows (the same run, or another card for the same thread) and folds an
+// automation's repeats into its newest run (needs-you.js recent): one row per thing.
 let lastRecent=null;
-const threadKey=r=>r.threadId||r.id;
 function paintRecent(box,data){
  lastRecent={box,data};
- const shown=new Set(needs.map(threadKey)),all=(data.items||[]).slice(0,6),items=all.filter(r=>!shown.has(threadKey(r)));
+ const all=data.items||[],items=root.LocalAINeedsYou.recent(all,needs,6);
  if(!all.length)return false;
  if(!items.length){box.innerHTML='<div class="state-empty empty-state">Everything recent is in Needs you, above.</div>';return true}
  box.replaceChildren(...items.map(r=>recentRow(r)));
  return true;
 }
-const recentUrl='/api/runs?threads=1&limit=6';
+const recentUrl='/api/runs?threads=1&limit=30';  // enough to fill six rows after folding an hourly automation
 async function loadNeeds(){
  const [d,p,imp]=await Promise.allSettled([root.LocalAIUI.fetchJson('/api/runs?limit=120',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/approvals',{cache:'no-store'}),devOn()?root.LocalAIUI.fetchJson('/api/improve/items',{cache:'no-store'}):Promise.resolve({items:[]})]);
  if(imp.status==='fulfilled'){const day=Date.now()-864e5;newSignals=(imp.value.items||[]).filter(i=>i.source==='signal'&&i.status==='proposed'&&i.stage==='backlog'&&Date.parse(i.createdAt)>day).length}
