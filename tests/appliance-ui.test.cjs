@@ -21,6 +21,17 @@ test('the design tokens carry the kit\'s dark colours', () => {
   const css = read('app.css').replace(/\s+/g, '');
   for (const [ds, ui] of [['bg', 'bg'], ['surface', 'surface'], ['surface-2', 'surface2'], ['line', 'line'], ['line-2', 'line2'],
     ['line-input', 'fieldLine'], ['text', 'text'], ['muted', 'muted'], ['accent', 'accent'], ['accent-text', 'accentText'],
-    ['accent-ink', 'onAccent'], ['accent-soft', 'accentSoft'], ['good', 'ok'], ['bad', 'bad'], ['attention', 'warn']])
+    ['accent-ink', 'onAccent'], ['accent-soft', 'accentSoft'], ['good', 'ok'], ['bad', 'bad'], ['attention', 'warn'],
+    ['bg-2', 'bar'], ['surface-3', 'line'], ['line-card', 'line']])
     assert.ok(css.includes(`--ds-${ds}:${kit[ui].dark}`), `--ds-${ds} should be the kit's ${ui} (${kit[ui].dark})`);
+});
+
+// The navy shades from before the kit are gone from the app's chrome (the canvas's own night palette, --aw-*, stays).
+test('no old navy shades in the app chrome', () => {
+  const css = read('app.css').replace(/\s+/g, '');
+  const old = ['#0c1828', '#182b45', '#1f2c42', '#8698b1', '#293348', '#aebdd0', '#778597', '#0a0d12', '#090c10',
+    'rgba(9,11,15,', 'rgba(7,11,17,', 'rgba(7,10,15,', 'rgba(9,14,22,', 'rgba(4,8,14,'];
+  assert.deepEqual(old.filter(c => css.includes(c)), []);
+  // Faint text is the kit's muted at 90% over the page: neutral, and 4.5:1 on the page, a card, the well and a tab.
+  assert.ok(css.includes('--ds-faint:#8593a4'), '--ds-faint is #8593a4');
 });
