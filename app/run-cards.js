@@ -1,6 +1,7 @@
 'use strict';
 // Every run describes itself as a card (icon, preview, badge, action) so the UI only renders. Pure: no I/O; lookups are injected.
 // STATUS mirrors LocalAIKit.statusBadge in public/ui.js: keep the two tables identical.
+const { label: routeLabel } = require('./model-router');
 const STATUS = Object.freeze({awaiting_approval:['Ready to review','accent'],ready:['Ready to review','accent'],needs_attention:['Needs a look','attention'],applied:['Done','good'],completed:['Done','good'],answered:['Done','good'],running:['Running','accent'],failed:['Failed','bad'],error:['Failed','bad'],validation_failed:['Needs a look','bad'],patch_failed:['Needs a look','bad'],rejected:['Rejected','neutral'],cancelled:['Cancelled','neutral'],queued:['Queued','neutral'],down:['Down','bad'],healthy:['Healthy','good'],optional_offline:['Offline','neutral']});
 const KINDS = Object.freeze({chat:['compose','ask'],research:['globe','ask'],image:['image','create'],agent:['automate','agents'],automation:['refresh','automationStudio'],engineering:['build','changes'],spreadsheet:['file','spreadsheets']});
 const LEGACY_TYPES = Object.freeze({mission:'agent',specialist:'agent'});
@@ -72,6 +73,12 @@ function runCard(run, { approvalFor, changeFor } = {}) {
   const action = { label: run.status === 'awaiting_approval' ? 'Review' : run.status === 'failed' && run.retryable ? 'Retry' : 'Open' };
   let approval = null;
   if (approvalFor) { const a = approvalFor(run); if (a) approval = { id: a.id, title: a.title, detail: a.detail, risk: a.risk } }
-  return { kind, icon, title: readableTitle(run), summary, badge: badge(run.status), preview, action, approval, view };
+  // Where the answer came from (the model coordinator): "Answered by Llama 3.3 70B · Groq" or "Answered on this PC", and
+  // why. A change's route lives on the change. Older runs carry none and say nothing.
+  let used = meta.route;
+  if (!used && kind === 'engineering' && meta.changeId && changeFor) used = changeFor(meta.changeId)?.route;
+  const text = used && typeof used === 'object' ? routeLabel(used) : '';
+  const route = text ? { text, why: typeof used.why === 'string' ? used.why.slice(0, 160) : '' } : null;
+  return { kind, icon, title: readableTitle(run), summary, badge: badge(run.status), preview, action, approval, view, route };
 }
 module.exports = { runCard, readableTitle, STATUS, workKind, WORK_CHIPS };

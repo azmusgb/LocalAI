@@ -1584,6 +1584,9 @@ body.run-view-open{overflow:hidden}
 .home-sheet__group legend{padding:0;margin-bottom:4px;color:var(--ds-soft);font-size:var(--ds-fs-2);font-weight:600}
 .home-check{display:flex;align-items:center;gap:10px;min-height:44px;color:var(--ds-text);font-size:var(--ds-fs-2)}
 .home-check input{width:20px;height:20px;flex:none}
+.model-routing-list{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:8px}.model-routing-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}.model-routing-row .meta{flex-basis:100%;font-size:var(--ds-fs-2)}
+.model-routing-table{width:100%;font-size:var(--ds-fs-2)}.model-routing-table th,.model-routing-table td{padding:8px 6px;text-align:left;vertical-align:top;border-top:1px solid var(--ds-line-2)}
+.home-route{display:flex;flex-wrap:wrap;gap:0 16px;padding:2px 4px 0}.home-route[hidden]{display:none}
 /* The view-in animation holds a transform, which would make the docked composer position against Home, not the screen. */
 @media(max-width:760px){body.ux-v3 #home{animation:none}}
 /* Chat and research body of the run view (run-bodies.js): the thread's turns, with the reply box docked at the bottom.
@@ -1601,6 +1604,7 @@ body.run-view-open{overflow:hidden}
 .chat-turn--error{border-color:var(--ds-bad);color:var(--ds-bad-text)}
 .chat-turn__sources{list-style:none;margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--ds-line-2);display:grid;gap:2px;font-size:var(--ds-fs-2);white-space:normal}
 .chat-turn__sources li{min-height:24px}
+.run-route{margin:6px 0 0;font-size:var(--ds-fs-1);color:var(--ds-muted);white-space:normal}
 .chat-turn__sources a{color:var(--ds-accent);text-decoration:underline}
 .chat-body__error{margin:0 0 8px;padding:10px 12px;border:1px solid var(--ds-bad);border-radius:var(--ds-r-md);background:var(--ds-surface-2);color:var(--ds-bad-text);font-size:var(--ds-fs-2);overflow-wrap:anywhere}
 .chat-body__error[hidden]{display:none}
@@ -2808,3 +2812,120 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 .link-btn:hover { color: var(--ds-text); }
 .link-btn:focus-visible { outline: var(--ds-ring); outline-offset: 2px; border-radius: var(--ds-r-sm); }
 .activity-item .link-btn { margin-top: 4px; }
+
+/* ==== print lab: How the lab works (index.html #printLabGuide, static, folded) ==== */
+.lab-guide {
+  margin-top: 16px;
+}
+.lab-guide > summary {
+  padding-block: 11px; /* a 44px tap target (tap-targets-ui.mjs) */
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--ds-accent-text);
+}
+.lab-guide[open] > summary {
+  margin-bottom: 8px;
+}
+.lab-guide h3 {
+  font-size: var(--ds-fs-2);
+  margin: 16px 0 8px;
+}
+.lab-guide p {
+  max-width: 68ch;
+}
+.lab-guide__flow {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: lab-step;
+}
+.lab-guide__flow li {
+  counter-increment: lab-step;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--ds-line);
+  border-left: 3px solid var(--ds-accent);
+  border-radius: var(--ds-r-md);
+  background: var(--ds-surface-2);
+}
+.lab-guide__flow li.lab-guide__you {
+  border-left-color: var(--ds-attention);
+}
+.lab-guide__flow b::before {
+  content: counter(lab-step) ". ";
+  color: var(--ds-muted);
+  font-weight: 500;
+}
+.lab-guide__flow span {
+  color: var(--ds-muted);
+  font-size: var(--ds-fs-1);
+}
+.lab-guide__flow code {
+  align-self: flex-start;
+  font-family: var(--ds-mono);
+  font-size: var(--ds-fs-1);
+  overflow-wrap: anywhere;
+}
+.lab-guide__rules {
+  display: grid;
+  grid-template-columns: minmax(0, 14em) minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+}
+.lab-guide__rules dt {
+  font-weight: 600;
+}
+.lab-guide__rules dd {
+  margin: 0;
+  color: var(--ds-muted);
+}
+@media (max-width: 640px) {
+  .lab-guide__rules {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lab-guide__rules dd {
+    margin-bottom: 6px;
+  }
+}
+.lab-guide__arch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.lab-guide__arch > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--ds-line);
+  border-radius: var(--ds-r-md);
+  background: var(--ds-surface-2);
+}
+.lab-guide__arch > div:first-child {
+  border-color: var(--ds-accent);
+}
+.lab-guide__arch span {
+  color: var(--ds-muted);
+  font-size: var(--ds-fs-1);
+}
+.lab-guide__arrow {
+  align-self: center;
+  color: var(--ds-muted);
+}
+@media (max-width: 640px) {
+  .lab-guide__arch {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lab-guide__arrow {
+    transform: rotate(90deg);
+    justify-self: center;
+  }
+}

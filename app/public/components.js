@@ -110,6 +110,7 @@
     const main=document.createElement('div');main.className='list-row__main run-card__main';
     const title=document.createElement('div');title.className='list-row__title';title.textContent=c.title||'Untitled run';main.appendChild(title);
     if(c.summary){const sub=document.createElement('div');sub.className='list-row__sub';sub.textContent=c.summary;main.appendChild(sub)}
+    if(c.route&&c.route.text){const rt=document.createElement('div');rt.className='list-row__sub';rt.textContent=c.route.text;main.appendChild(rt)}
     // The summary shows once: a preview that repeats it (or extends a truncated copy of it) is dropped.
     const plain=t=>String(t||'').replace(/(\.\.\.|…)\s*$/,'').replace(/\s+/g,' ').trim(),pt=plain(c.preview&&c.preview.text),sm=plain(c.summary),dup=pt&&sm&&(pt===sm||pt.startsWith(sm)||sm.startsWith(pt));
     const pv=dup?null:runPreview(c.preview);if(pv)main.appendChild(pv);

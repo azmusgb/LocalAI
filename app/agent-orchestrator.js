@@ -5,6 +5,18 @@ const createMissionEvidence=require('./mission-evidence'),{fitEvidence,evidenceT
 const {missionNote}=require('./public/agent-world-words');
 const {ANSWER_FORMAT,polishAnswer}=require('./mission-answer');
 const {createResearchTools,evidenceRecord,tool,objectArgs,stringArg}=require('./agent-tools');
+const {secretish,cloudSafePath}=require('./model-coordinator');
+// Evidence known to be public: web results, and Local AI's own code (opening sources, files read, searches) minus files
+// whose names say they hold a secret. Anything else (a document from the knowledge store, an unknown kind) is not.
+const repoPath=p=>typeof p==='string'&&p.length>0&&!/^[a-z][a-z0-9+.-]*:/i.test(p)&&!p.startsWith('/')&&!p.split('/').includes('..')&&cloudSafePath(p);
+function publicEvidence(r){
+ if(r.kind==='web')return /^https?:\/\//i.test(String(r.source||''));
+ if(r.kind==='source')return repoPath(String(r.source||''));
+ if(r.kind==='file'){const m=/^project:(.+?)#L\d+-L\d+$/.exec(String(r.source||''));return !!m&&repoPath(m[1])}
+ // A search counts by every file it matched (the excerpt may be cut); no list, or a cut excerpt, fails closed.
+ if(r.kind==='search')return Array.isArray(r.files)&&!r.excerptTruncated&&r.files.every(repoPath);
+ return false;
+}
 module.exports=function createAgentOrchestrator(deps={}){
  const {dataDir,ollamaUrl,defaultModel,fetchWithTimeout,runLocalModel,knowledgeStore,knowledgeScore,searxSearch,recordActivity}=deps;
  const catalog=JSON.parse(fs.readFileSync(path.join(__dirname,'specialist-agents.json'),'utf8')).agents;
@@ -234,8 +246,20 @@ module.exports=function createAgentOrchestrator(deps={}){
     const missing=m.workers.filter(w=>w.state==='blocked'&&!results.some(r=>r.agentId===w.id)).map(w=>'## '+w.name+' (missing: did not run because a prerequisite stopped)');
     const gaps=results.some(r=>!usable(r)||r.partial)||missing.length?'NOTE: Some specialist work is partial or missing (marked below). Write the answer from what exists, and say plainly which parts are missing.\n\n':'';
     const coordinatorModel=(await routeModel(goal+' synthesis')).model,joined=gaps+[...results.map(r=>'## '+r.agentName+(!usable(r)?' (missing: stopped without findings)':r.partial?' (partial findings'+(r.status!=='complete'?': stopped before writing up':': cites no evidence')+')':'')+(r.citationWarning&&!r.partial?' (citation warning: '+r.citationWarning+')':'')+'\n'+String(r.answer||r.notes||r.error||'').slice(0,perResult)),...missing].join('\n\n');
+    const synthPrompt='Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nSynthesize only claims grounded in the specialist evidence. Preserve source labels. Reject invented product behavior, metrics, dates, screens, users, or defects. Clearly distinguish observed evidence from recommendations and identify remaining evidence gaps once. '+COORDINATOR_ABSENCE_RULE+' '+ANSWER_FORMAT,synthSystem='You are the mission coordinator for the Local AI Appliance. Produce an actionable, source-grounded synthesis; never substitute a generic consumer AI product.';
+    // The model coordinator (app/model-coordinator.js): the summary may come from a cloud model (kind `plan`) from the goal
+    // and the specialist outputs only, as one prompt: no tools, no evidence index. Default local: only when every worker
+    // read nothing but public evidence (publicEvidence: web results, Local AI's own code) and nothing in the goal or the
+    // findings looks secret or personal. A project mission or a voice mission stays here too. Cloud off,
+    // private, or a cloud failure: the Coordinator on this PC, as before. The mission says where it ran (m.route).
+    const co=deps.coordinator,route=co?co.route({kind:'plan',text:goal+'\n'+joined,voice:opts.voice===true,stay:projectId||!results.every(r=>(r.evidenceRecords||[]).every(publicEvidence))?'Missions that read your documents or files stay on this PC':secretish(goal+'\n'+joined)?"Local AI's own keys, passwords and setup stay on this PC":'',localModel:coordinatorModel}):null;
+    const cloud=route?await co.run(route,[{role:'system',content:synthSystem},{role:'user',content:synthPrompt}],{kind:'plan',maxTokens:4000}):null;
+    opts.signal?.throwIfAborted();
+    if(cloud){m.answer=cloud.content;m.coordinatorModel=cloud.used.model;m.route=cloud.used}
+    else{
     m.answer=typeof deps.runAgentTurn==='function'?await coordinate(m,goal,projectId,coordinatorModel,joined,opts).catch(e=>{if(e.code!=='MODEL_NO_TOOLS')throw e;m.toolFallback=e.message;return null}):null;
-    if(m.answer===null)m.answer=await runModelReliable('Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nSynthesize only claims grounded in the specialist evidence. Preserve source labels. Reject invented product behavior, metrics, dates, screens, users, or defects. Clearly distinguish observed evidence from recommendations and identify remaining evidence gaps once. '+COORDINATOR_ABSENCE_RULE+' '+ANSWER_FORMAT,'You are the mission coordinator for the Local AI Appliance. Produce an actionable, source-grounded synthesis; never substitute a generic consumer AI product.',coordinatorTimeoutMs,coordinatorModel);m.coordinatorModel=coordinatorModel;
+    if(m.answer===null)m.answer=await runModelReliable(synthPrompt,synthSystem,coordinatorTimeoutMs,coordinatorModel);m.coordinatorModel=coordinatorModel;if(route)m.route=co.local(route,coordinatorModel);
+    }
     // The answer tidied (mission-answer.js: no process talk, Markdown or emoji, "missing" things the evidence names
     // rewritten as present, repeated gaps once, a length cap), then absence the workers never searched for is marked
     // "not checked" with a caveat line (mission-evidence.js checkAbsenceClaims). The Coordinator's own words stay in
