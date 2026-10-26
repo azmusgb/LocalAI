@@ -9,7 +9,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const PUBLIC = path.join(__dirname, '..', 'app', 'public');
-const BG = '#0a111c';
+const BG = JSON.parse(fs.readFileSync(path.join(PUBLIC, 'ui', 'tokens.json'), 'utf8')).color.bg.dark; // the kit's dark canvas (Pi Hub one home, step 5)
 const html = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(PUBLIC, 'manifest.json'), 'utf8'));
 const meta = name => { const m = html.match(new RegExp(`<meta\\s+name="${name}"\\s+content="([^"]*)"`, 'i')); return m && m[1]; };
