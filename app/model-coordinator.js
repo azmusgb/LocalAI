@@ -23,7 +23,9 @@ const REDACTIONS = [
   [/\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/g, '[email]'],
 ];
 
-function secretish(text) { return SECRETISH.test(String(text || '')); }
+// Key-shaped strings and bearer tokens count too: a finding that quotes one stays here.
+const KEY_SHAPED = /\b(?:gsk|csk|ghp|gho|ghs|ghu|github_pat|sk|pk|rk|xox[abpr]|hf|glpat)[-_][A-Za-z0-9_-]{8,}|\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/;
+function secretish(text) { const t = String(text || ''); return SECRETISH.test(t) || KEY_SHAPED.test(t); }
 function cloudSafePath(rel) { return !SECRET_FILE.test(String(rel || '').replace(/\\/g, '/')); }
 function redact(text, env = process.env) {
   let t = String(text ?? '');

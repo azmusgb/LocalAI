@@ -56,7 +56,7 @@ test('cloud on: the summary comes from Groq; the workers still ran on this PC', 
 test('cloud on: project missions, voice missions, secrets and personal findings stay on this PC', async t => {
   const { orchestrator, sent } = fixture(t, { worker: p => /reminder/.test(p) ? 'They take blood pressure medication [app/server.js]' : 'Grounded finding [app/server.js]' });
   const project = await orchestrator.mission('Review the kitchen plans', 'p1', ['code_analyst']);
-  assert.equal(project.route.provider, 'ollama'); assert.match(project.route.why, /project/i);
+  assert.equal(project.route.provider, 'ollama'); assert.match(project.route.why, /documents/i);
   const voice = await orchestrator.mission('Review the models page code', '', ['code_analyst'], { voice: true });
   assert.equal(voice.route.provider, 'ollama');
   const secret = await orchestrator.mission('Where is the Groq API key stored', '', ['code_analyst']);
@@ -73,4 +73,54 @@ test('cloud on but failing: the Coordinator on this PC writes the summary', asyn
   assert.match(m.answer, /Summary on this PC/);
   assert.equal(m.route.provider, 'ollama');
   assert.equal(coordinatorCalls(local).length, 1);
+});
+
+// Security review: the summary may go out only when everything the workers read is known to be public (web results,
+// Local AI's own code) and nothing in their findings looks secret or personal. Default local.
+function tooled(t, { tool, args, finding = 'Found it' } = {}) {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-mission-tools-'));
+  const sent = [];
+  const cloudModels = { keys: () => ({ groq: true }), parked: () => ({}), chat: async req => { sent.push(req); return { content: 'Summary from Groq' }; } };
+  const coordinator = createCoordinator({ modelRouter, cloudModels, routingSetting: () => ({ cloud: true }), recordActivity: () => {}, env: {}, localModel: 'test-model' });
+  const runAgentTurn = async ({ messages }) => {
+    if (/mission coordinator/.test(messages[0].content)) return { role: 'assistant', content: 'Summary on this PC' };
+    const result = [...messages].reverse().find(m => m.role === 'tool');
+    if (!result) return { role: 'assistant', content: '', tool_calls: [{ function: { name: tool, arguments: args } }] };
+    const id = (result.content.match(/E-[a-f0-9]{16}/) || [])[0];
+    return { role: 'assistant', content: `${finding} [${id}]` };
+  };
+  const orchestrator = createOrchestrator({
+    dataDir, ollamaUrl: 'http://unused.invalid', defaultModel: 'test-model', coordinator, runAgentTurn,
+    knowledgeStore: () => [{ id: 'k-unfiled', projectId: '', name: 'Kitchen notes', chunks: ['kitchen renovation budget notes'] }],
+    searxSearch: async () => [{ url: 'https://example.com/petg', title: 'PETG vs ASA', content: 'ASA resists UV better than PETG.' }],
+    fetchWithTimeout: async () => ({ ok: true, json: async () => ({ models: [{ name: 'test-model' }] }) }),
+    runLocalModel: async () => 'Summary on this PC',
+  });
+  t.after(() => { orchestrator.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  return { orchestrator, sent };
+}
+
+test('a mission without a project whose worker read your documents makes no cloud call', async t => {
+  const { orchestrator, sent } = tooled(t, { tool: 'search_project_knowledge', args: { query: 'kitchen' } });
+  const m = await orchestrator.mission('Review the kitchen notes', '', ['code_analyst']);
+  assert.equal(m.status, 'complete', m.error);
+  assert.ok(m.results[0].evidenceRecords.some(r => r.kind === 'knowledge'), 'the worker read a document');
+  assert.equal(sent.length, 0);
+  assert.equal(m.route.provider, 'ollama');
+  assert.match(m.route.why, /documents or files/);
+});
+
+test('a worker finding that holds a secret-looking string makes no cloud call', async t => {
+  const { orchestrator, sent } = tooled(t, { tool: 'search_web', args: { query: 'PETG ASA' }, finding: 'The header was Authorization: Bearer gsk_abcdefghijklmnop' });
+  const m = await orchestrator.mission('Compare PETG and ASA for outdoor parts', '', ['code_analyst'], { allowWeb: true });
+  assert.equal(sent.length, 0);
+  assert.equal(m.route.provider, 'ollama');
+});
+
+test('a mission that read only the web and Local AI\'s own code may be summarised in the cloud', async t => {
+  const { orchestrator, sent } = tooled(t, { tool: 'search_web', args: { query: 'PETG ASA' }, finding: 'ASA resists UV better' });
+  const m = await orchestrator.mission('Compare PETG and ASA for outdoor parts', '', ['code_analyst'], { allowWeb: true });
+  assert.equal(m.status, 'complete', m.error);
+  assert.equal(sent.length, 1);
+  assert.equal(m.route.provider, 'groq');
 });
