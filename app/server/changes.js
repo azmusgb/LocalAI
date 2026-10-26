@@ -106,13 +106,15 @@ function createChanges(ctx) {
   }
   // The model coordinator (app/model-coordinator.js): Change requests plan as kind `plan`, engineering runs (code) as
   // `code`. Only Local AI's own code may go to a cloud model, without files whose names say they hold a secret, redacted,
-  // and only when nothing in it looks personal and the request isn't about Local AI's keys, passwords or setup. Cloud
+  // and only when nothing in it looks personal and the request isn't about Local AI's keys, passwords or setup. Only a
+  // request the owner typed may go out: callers whose request carries anything else (a health check's issue detail,
+  // an Improve item Local AI or Claude wrote, a retry carrying error output) pass `stay`, a reason it stays here. Cloud
   // off, private, or a cloud failure or unreadable plan: this PC's planner, as before. The plan says where it ran (route).
-  async function generatePatchPlan(request,targetRoot,{kind='plan'}={}){
+  async function generatePatchPlan(request,targetRoot,{kind='plan',stay=''}={}){
     const files=changeContextFiles(targetRoot,request),context=joinContext(files);
     const system=`You are the Patch Intelligence planner inside Local AI. Return JSON only. You may modify only files shown in context. Produce minimal, source-aware patches. For JavaScript named functions, strongly prefer replace_function or insert_after_function instead of replacing large exact strings. Use exact replace only for small unique snippets copied verbatim from context. Never append executable statements outside a valid function merely to satisfy a request. Never invent shell commands. Never add fake validation code, hard-coded PASS values, or validators that simply return true; the existing staging validator is the source of truth. Keep browser-only APIs (document, window, localStorage, client state) out of server.js. Keep Node-only APIs (fs, process.env, require) out of public/app.js. Do not bypass approval, staging, backups, rollback, or the self-update host. Schema: {"summary":"...","notes":"...","files":[{"path":"relative/path","operations":[{"type":"replace_function","name":"functionName","content":"complete function declaration"},{"type":"insert_after_function","name":"functionName","content":"new declaration(s)"},{"type":"insert_after_text","anchor":"EXACT small anchor","content":"text"},{"type":"replace_between_markers","startMarker":"...","endMarker":"...","content":"replacement between markers"},{"type":"replace_regex","pattern":"...","flags":"m","replacement":"literal replacement"},{"type":"replace","find":"EXACT existing text","replace":"replacement text"},{"type":"create","content":"full new file"}]}]}. If context is insufficient, return files:[] and explain why.`;
     const self=path.resolve(String(targetRoot||''))===path.resolve(SELF_APP_ROOT),cloudContext=joinContext(files.filter(f=>cloudSafePath(f.rel)));
-    const route=coordinator.route({kind,text:`${request}\n${cloudContext}`,stay:!self?'Your workspace files stay on this PC':secretish(request)?"Local AI's own keys, passwords and setup stay on this PC":''});
+    const route=coordinator.route({kind,text:`${request}\n${cloudContext}`,stay:!self?'Your workspace files stay on this PC':stay?String(stay):secretish(request)?"Local AI's own keys, passwords and setup stay on this PC":''});
     const cloud=await coordinator.run(route,[{role:'system',content:system},{role:'user',content:`CHANGE REQUEST:\n${request}\n\nAVAILABLE SOURCE CONTEXT:\n${cloudContext}`}],{kind,maxTokens:8000});
     if(cloud){try{return {...normalizePatchPlan(extractJsonObject(cloud.content)),route:cloud.used}}catch{recordActivity('model','Cloud plan unreadable','Planning on this PC instead.',{provider:cloud.used.provider,model:cloud.used.model,kind})}}
     const raw=await runEngineeringPlannerModel(`CHANGE REQUEST:\n${request}\n\nAVAILABLE SOURCE CONTEXT:\n${context}`,system,ENGINEERING_MODEL_TIMEOUT_MS);
@@ -381,9 +383,9 @@ function createChanges(ctx) {
   }
   // Plans a change request. With itemId, links that Improve item in the same transaction, before the save runs
   // reconcile, so the new change is never mistaken for an unlinked one.
-  async function planChange({request,target:rawTarget,root},{itemId}={}){
+  async function planChange({request,target:rawTarget,root},{itemId,stay=''}={}){
     const target=rawTarget==='workspace'?'workspace':'self';const rootRel=String(root||'').trim();const targetRoot=target==='self'?SELF_APP_ROOT:safeWorkspacePath(rootRel);
-    const plan=await generatePatchPlan(request,targetRoot);
+    const plan=await generatePatchPlan(request,targetRoot,{stay});
     const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:plan.notes,files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[],route:plan.route};
     storage.transaction(()=>{
       if(itemId){const key=CLAUDE_FINDING_PREFIX+itemId,f=storage.readSetting(key,null);if(f)storage.writeSetting(key,{...f,changeId:item.id,status:'approved',updatedAt:nowIso()})}
@@ -427,8 +429,9 @@ function createChanges(ctx) {
   function engineeringRunStore(){return objectStore(ENGINEERING_RUNS_STORE)}
   function saveEngineeringRuns(items){saveStore(ENGINEERING_RUNS_STORE,items,300)}
   function engineeringStep(run,name,state='pending',detail=''){const item={name,state,detail:String(detail||'').slice(0,6000),at:nowIso()};run.steps.push(item);run.updatedAt=nowIso();return item}
-  function createEngineeringChange(request,target,rootRel,runId,attempt){
-    const targetRoot=target==='self'?SELF_APP_ROOT:safeWorkspacePath(rootRel);return generatePatchPlan(request,targetRoot,{kind:'code'}).then(plan=>{const changes=changeStore();const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:`Engineering run ${runId}, attempt ${attempt}. ${plan.notes||''}`.trim(),files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[],sourceEngineeringRunId:runId,engineeringAttempt:attempt,route:plan.route};changes.unshift(item);saveChanges(changes);return item})
+  // stay: a retry whose request carries the last attempt's error output or validation log stays here.
+  function createEngineeringChange(request,target,rootRel,runId,attempt,stay=''){
+    const targetRoot=target==='self'?SELF_APP_ROOT:safeWorkspacePath(rootRel);return generatePatchPlan(request,targetRoot,{kind:'code',stay}).then(plan=>{const changes=changeStore();const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:`Engineering run ${runId}, attempt ${attempt}. ${plan.notes||''}`.trim(),files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[],sourceEngineeringRunId:runId,engineeringAttempt:attempt,route:plan.route};changes.unshift(item);saveChanges(changes);return item})
   }
   async function internalStageChange(changeId){return await stageChangeById(changeId)}
   function effectiveEngineeringRun(run,changesById){
@@ -533,7 +536,7 @@ function createChanges(ctx) {
     for(let attempt=1;attempt<=run.maxAttempts;attempt++){
       run.attempt=attempt;const planStep=engineeringStep(run,`Attempt ${attempt}: plan`,'running');refreshEngineeringRun(run);
       let change;
-      try{change=await createEngineeringChange(workingRequest,run.target,run.target==='self'&&run.root==='app'?'repos':run.root,run.id,attempt)}catch(e){lastError=String(e.message||e);planStep.state='error';planStep.detail=lastError;refreshEngineeringRun(run);if(attempt<run.maxAttempts){workingRequest=`${run.request}\n\nPrevious planning attempt failed. Retry with a smaller source-aware patch. Failure:\n${lastError}`;engineeringStep(run,`Attempt ${attempt}: repair feedback`,'complete',lastError);refreshEngineeringRun(run);continue}break}
+      try{change=await createEngineeringChange(workingRequest,run.target,run.target==='self'&&run.root==='app'?'repos':run.root,run.id,attempt,workingRequest!==run.request?'Retries that carry error output stay on this PC':/RECENT CONVERSATION CONTEXT:/.test(run.request)?'Requests that carry a conversation stay on this PC':'')}catch(e){lastError=String(e.message||e);planStep.state='error';planStep.detail=lastError;refreshEngineeringRun(run);if(attempt<run.maxAttempts){workingRequest=`${run.request}\n\nPrevious planning attempt failed. Retry with a smaller source-aware patch. Failure:\n${lastError}`;engineeringStep(run,`Attempt ${attempt}: repair feedback`,'complete',lastError);refreshEngineeringRun(run);continue}break}
       run.changeIds.push(change.id);planStep.state=change.files.length?'complete':'error';planStep.detail=change.files.length?`${change.files.length} file(s) planned`:'No patch operations produced';refreshEngineeringRun(run);
       if(!change.files.length){lastError='Patch planner produced no patch operations';if(attempt<run.maxAttempts){workingRequest=`${run.request}\n\nThe previous planner produced no usable operations. Inspect the supplied source and produce a minimal source-aware patch using replace_function/insert_after_function where possible.`;engineeringStep(run,`Attempt ${attempt}: repair feedback`,'complete',lastError);refreshEngineeringRun(run);continue}break}
       const st=engineeringStep(run,`Attempt ${attempt}: stage + validate`,'running');refreshEngineeringRun(run);let staged;
@@ -615,6 +618,9 @@ function createChanges(ctx) {
     return moved;
   }
   function improveChangeRequest(f){return [f.title,f.summary,f.fix].filter(Boolean).join('\n\n')}
+  // Only the owner's own ideas may be planned by a cloud model; Signals and Claude's findings carry text Local AI or
+  // Claude wrote (runtime detail, file paths), so they stay here.
+  const improveStay=f=>f.source==='idea'?'':'Problems Local AI or Claude wrote up stay on this PC';
   // Changes past approval are being shipped (a pull request for self changes); Improve must not retire them.
   const IMPROVE_LOCKED_CHANGE=['approved','apply_requested'];
   // Retires a change Improve no longer wants (rejected), and its pending approval with it.
@@ -637,7 +643,7 @@ function createChanges(ctx) {
       storage.writeSetting(CLAUDE_FINDING_PREFIX+item.id,{sessionId:'owner',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...item});
       if(b.start!==true)return json(res,201,{item});
       // The idea is saved either way; if planning fails, say so and let the owner retry from the Backlog.
-      try{const change=await planChange({request:improveChangeRequest(item),target:'self'},{itemId:item.id});json(res,201,{item:improveRead(item.id),change:publicChange(change)})}
+      try{const change=await planChange({request:improveChangeRequest(item),target:'self'},{itemId:item.id,stay:improveStay(item)});json(res,201,{item:improveRead(item.id),change:publicChange(change)})}
       catch(e){json(res,201,{item:improveRead(item.id),error:`Saved to your backlog, but planning failed: ${e.message}`})}}catch(e){storageError(res,e,500)}
   }
   // Hand to Claude from where the owner asked (Home, Agent World, New idea): a request to change Local AI itself goes to
@@ -673,7 +679,7 @@ function createChanges(ctx) {
           const failed=live&&['patch_failed','validation_failed'].includes(change.status);
           if(live&&!(b.action==='retry'&&failed))return json(res,409,{error:'A change for this item is already running.'});
           if(failed)improveRetireChange(change.id);
-          await planChange({request:improveChangeRequest(f),target:'self'},{itemId:f.id});return json(res,200,{item:improveRead(f.id)});
+          await planChange({request:improveChangeRequest(f),target:'self'},{itemId:f.id,stay:improveStay(f)});return json(res,200,{item:improveRead(f.id)});
         }
         case 'handToClaude':return json(res,200,{item:improveWrite({...f,...improve.handToClaude(f,at)})});
         case 'moveToTop':{const open=claudeFindings().filter(x=>!['fixed','rejected','deferred'].includes(x.status));return json(res,200,{item:improveWrite({...f,priorityBoost:improve.moveToTopBoost(f,open,claudeScore)})})}

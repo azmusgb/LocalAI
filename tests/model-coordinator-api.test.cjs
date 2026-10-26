@@ -19,7 +19,7 @@ async function server(t, handler) {
 }
 const reply = (res, code, body) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
 
-async function start(t, groqHandler, { env = {}, local = 'Answered on this PC' } = {}) {
+async function start(t, groqHandler, { env = {}, local = 'Answered on this PC', seed } = {}) {
   const ollama = await server(t, (req, res) => {
     if (req.url === '/api/tags') return reply(res, 200, { models: [{ name: 'test-model' }] });
     if (req.url === '/api/ps') return reply(res, 200, { models: [] });
@@ -27,6 +27,7 @@ async function start(t, groqHandler, { env = {}, local = 'Answered on this PC' }
   });
   const groq = await server(t, groqHandler || ((req, res) => reply(res, 200, { choices: [{ message: { content: 'Answered by Groq' } }] })));
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-route-'));
+  if (seed) { const { Storage } = require('../app/storage'); const st = new Storage({ dataDir }); seed(st); st.close?.(); }
   const { child, ready } = spawnAppServer({ env: {
     DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: ollama.url, MODEL: 'test-model', SEARXNG_URL: 'http://127.0.0.1:9',
     COMFY_URL: 'http://127.0.0.1:9', N8N_URL: 'http://127.0.0.1:9', PROXY_URL: 'http://127.0.0.1:9',
@@ -144,10 +145,10 @@ function selfRoot(t) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
-async function planner(t, groqHandler) {
+async function planner(t, groqHandler, seed) {
   const root = selfRoot(t);
   const s = await start(t, groqHandler || ((req, res) => reply(res, 200, { choices: [{ message: { content: PLAN('Planned in the cloud') } }] })),
-    { env: { SELF_APP_ROOT: root }, local: PLAN('Planned on this PC') });
+    { env: { SELF_APP_ROOT: root }, local: PLAN('Planned on this PC'), seed });
   return s;
 }
 
@@ -199,4 +200,37 @@ test('planner, cloud on but failing: planned on this PC', async t => {
   const r = await call('/api/changes/plan', { request: 'Make the models page clearer', target: 'self' });
   assert.equal(r.value.item.summary, 'Planned on this PC');
   assert.equal(r.value.item.route.provider, 'ollama');
+});
+
+// Security review: only plans whose whole input is what the owner typed plus Local AI's own code may go out. A health
+// check's issue (runtime detail: paths, logs, host names), an Improve item Local AI or Claude wrote, and an engineering
+// retry carrying error output all stay here.
+test('planner, cloud on: a health-check issue is planned on this PC', async t => {
+  const { call, groq } = await planner(t, null, s => s.put('issues', { id: 'iss-1', name: 'Models page slow', severity: 'medium', detail: 'GET /api/models took 9 s on models page at /data/runs.db', status: 'open', createdAt: '2026-10-26T00:00:00Z', updatedAt: '2026-10-26T00:00:00Z' }, 0));
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  const r = await call('/api/issues/prepare-change', { id: 'iss-1' });
+  assert.equal(r.status, 201, JSON.stringify(r.value));
+  assert.equal(r.value.item.route.provider, 'ollama');
+  assert.equal(groq.calls.length, 0);
+});
+
+test('planner, cloud on: an Improve item Claude wrote is planned on this PC; the owner\'s own idea may go out', async t => {
+  const { call, groq } = await planner(t);
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  await call('/api/claude/findings', { sessionId: 's1', findings: [{ id: 'f-models', title: 'Models page clarity', category: 'ux', severity: 'low', summary: 'The models page is unclear', status: 'approved' }] });
+  const claude = await call('/api/improve/item', { id: 'f-models', action: 'start' });
+  assert.equal(claude.status, 200, JSON.stringify(claude.value));
+  assert.equal(groq.calls.length, 0);
+  const idea = await call('/api/improve/idea', { text: 'Make the models page clearer', start: true });
+  assert.equal(idea.value.change?.route?.provider, 'groq', JSON.stringify(idea.value));
+});
+
+test('planner, cloud on: an engineering request that carries the conversation stays on this PC', async t => {
+  const { call, groq } = await planner(t);
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  const request = 'Continue and implement this Local AI self-change: the models page\n\nThe user\'s continuation command is: do it\n\nRECENT CONVERSATION CONTEXT:\nassistant: Local AI runs qwen3 on the models page';
+  const r = await call('/api/engineering/start', { request, target: 'self', root: 'app', maxAttempts: 1 });
+  assert.ok(r.status < 300, JSON.stringify(r.value));
+  for (let i = 0; i < 30; i++) { const runs = (await call('/api/engineering/runs')).value; if (JSON.stringify(runs).includes('planned')) break; await new Promise(res => setTimeout(res, 100)); }
+  assert.equal(groq.calls.length, 0);
 });
