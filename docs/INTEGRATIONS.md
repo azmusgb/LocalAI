@@ -45,4 +45,7 @@ MCP guide: <https://help.penpot.app/mcp/>
 4. **Opt-in:** Server-side Penpot MCP connector for self-hosted design workspaces.
 5. **Optional:** Local LanguageTool service for deterministic grammar/style QA.
 
-Cloud providers remain explicit fallbacks only after a concrete local capability or quality gap is documented. Local AI must never silently upload local artifacts or enroll cloud credentials.
+Cloud models follow the model coordinator (`docs/superpowers/specs/2026-10-26-model-coordinator-design.md`): off
+until the owner switches them on; then only work that isn't private may use Groq or Cerebras (free tiers, US
+companies, API data not used for training), always with this PC's model as the last resort. Local AI never uploads
+local artifacts, never enrolls cloud credentials itself (the owner makes the keys), and every cloud answer says so.

@@ -73,6 +73,12 @@ const APP_VERSION = /-stage$/.test(process.env.APP_VERSION || '') ? process.env.
 // The app folder (server.js's own): area modules in app/server/ get it as APP_DIR instead of their own __dirname.
 const APP_DIR = __dirname;
 const storage = new Storage({ dataDir: DATA_DIR });
+// The model coordinator (docs/superpowers/specs/2026-10-26-model-coordinator-design.md): local by default; free US cloud
+// models only for work that isn't private, only when the owner switches cloud on (Models page, settings key below).
+const modelRouter = require('./model-router');
+const cloudModels = require('./cloud-models').createCloudModels();
+const ROUTING_KEY = 'model-routing';
+const routingSetting = () => ({ cloud: false, ...storage.readSetting(ROUTING_KEY, {}) });
 // The state collections and the HTTP helpers every area uses live in app/server/ (the server split, step 1).
 const { readState, writeState, prependRecord, RETENTION } = require('./server/stores').createStores({ storage, STATUS_STORE });
 const { json, storageError, text, readBody, fetchWithTimeout, sameOriginJson, allowedHosts, hostAllowed } = require('./server/http');
@@ -680,7 +686,7 @@ const { apiConfig, redirectFor, serveStatic } = require('./server/web').createWe
 const { apiPowerShellApprove, apiPowerShellCancel, apiPowerShellCreate, apiPowerShellHostNext, apiPowerShellHostResult, apiPowerShellJobs, apiPowerShellRequestRun } = require('./server/powershell').createPowerShell({ LOCAL_UI_PORT, POWERSHELL_BRIDGE_TOKEN, POWERSHELL_UI_TOKEN, json, listenPort, makeId, nowIso, objectStore, readBody, recordActivity, requireFeature, saveStore, storageError });
 const { apiAutomationCreate, apiAutomationRun, apiAutomationUpdate, apiAutomations, apiMonitorCreate, apiMonitorRun, apiMonitors, apiMorningBrief, automationSchedulerTick, monitorSchedulerTick } = require('./server/automations').createAutomations({ AUTOMATIONS_STORE, AUTOMATION_RUNS_STORE, MONITORS_STORE, activityStore, addNotification, automationRunStore, automationStore, featureAtLeast, getStatusAndRecordTransition, inFlight, json, makeId, normalizeTitle, notificationStore, nowIso, objectStore, readBody, recordActivity, requireFeature, runLocalModel, saveStore, searxSearch, storageError });
 const { apiRunCancel, apiRunRetry, apiRunUpdate, apiRuns, createChatExecution, needsThreads } = require('./server/runs').createRuns({ AUTOMATION_RUNS_STORE, MODEL, RUNS_STORE, WORK_CHIPS, activeRunControllers, agentRunStore, approvalStore, automationRunStore, changeStore, cleanRunId, effectiveEngineeringRuns, fetchWithTimeout, gridcraftRuns, json, keptMarker, listenPort, needsYou, nowIso, projectStore, readBody, recordActivity, runCard, runLedger, sanitizeMessages, saveStore, seenRuns, storageError, titleFromText, withSeen, workKind });
-const { apiChat, apiChatStream, apiRoute, chatOnce } = require('./server/chat').createChat({ ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone: (...a) => voiceTimeZone(...a) });
+const { apiChat, apiChatStream, apiRoute, chatOnce } = require('./server/chat').createChat({ ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, cloudModels, modelRouter, routingSetting, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone: (...a) => voiceTimeZone(...a) });
 const { apiDisplayAlerts, apiDisplayApprovalDecide, apiDisplayApprovals, apiDisplayAsk, apiDisplayEvents, apiDisplayFeed, apiDisplayHeartbeat, apiDisplayNotify, apiDisplayPair, apiGlance, apiGlanceAsk, apiVoiceHome, apiWatchHeartbeat, voiceTimeZone } = require('./server/voice').createVoice({ APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, storage, storageError, text, voice, voiceFacts, watchdog, weather });
 const server = http.createServer(async (req, res) => {
   const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -706,6 +712,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/storage/status') return json(res, 200, storage.status());
     if (req.method === 'GET' && p === '/api/status') return await apiStatus(req, res);
     if (req.method === 'GET' && p === '/api/models') return await apiModels(req, res);
+    if (p === '/api/models/routing' && req.method === 'GET') return json(res, 200, { ...routingSetting(), providers: cloudModels.status(), table: modelRouter.table() });
+    if (p === '/api/models/routing' && req.method === 'PUT') {
+      const b = await readBody(req);
+      if (typeof b.cloud !== 'boolean') return json(res, 400, { error: 'Send {"cloud": true} or {"cloud": false}.' });
+      storage.writeSetting(ROUTING_KEY, { cloud: b.cloud, at: new Date().toISOString() });
+      recordActivity('model', b.cloud ? 'Cloud models switched on' : 'Cloud models switched off', b.cloud ? 'Work that isn\'t private may use Groq or Cerebras.' : 'Everything runs on this PC.', {});
+      return json(res, 200, { ...routingSetting(), providers: cloudModels.status(), table: modelRouter.table() });
+    }
     if (req.method === 'GET' && p === '/api/models/pulls') return await apiModelPulls(req, res);
     if (req.method === 'POST' && p === '/api/models/pull') return await apiModelPull(req, res);
     if (req.method === 'POST' && p === '/api/models/pull/cancel') return await apiModelPullCancel(req, res);
