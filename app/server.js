@@ -137,8 +137,9 @@ const runLedger = new RunLedger({ storage, onTransition: (run, previous) => {
 } });
 const activeRunControllers = new Map();
 const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody });
-// Projects › Print lab: a read-only copy of the Mac's print-lab records; only the Mac (its key) writes.
-const printLab = require('./print-lab').createPrintLab({ storage, dataDir: DATA_DIR, json, macAuthorized: req => claudeChat.macAuthorized(req), deviceFor: req => claudeChat.deviceFor(req) });
+// Projects › Print lab: a read-only copy of the Mac's print-lab records; only the Mac (its key) writes. The live print
+// block reads the Workshop printer's last polled state; it never asks the display itself.
+const printLab = require('./print-lab').createPrintLab({ storage, dataDir: DATA_DIR, json, macAuthorized: req => claudeChat.macAuthorized(req), deviceFor: req => claudeChat.deviceFor(req), printer: () => workshopPrinter.current() });
 // Sign-in (app/signin.js): who would be refused is listed on Health; the routes that run code, write files or approve
 // changes are refused without a device, and LOCALAI_SIGN_IN=required refuses the rest.
 // The Workshop display's key (X-LocalAI-Display-Key) signs it in for its feed only; host/workshop-display/set-key.sh sets it.
