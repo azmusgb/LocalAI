@@ -3,6 +3,9 @@
 // Chat (/api/chat, /api/chat/stream), prompt construction and intent routing (/api/route).
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
+const { secretish } = require('../model-coordinator');
+// The home hub's prompt (Pi Hub's House questions), as app/run-cards.js readableTitle knows it.
+const HUB_PROMPT = /^you are the voice of a family's home hub\b/i;
 function createChat(ctx) {
   const { ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, coordinator, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone } = ctx;
 
@@ -86,12 +89,18 @@ function createChat(ctx) {
     // The coordinator (app/model-router.js): which model answers. Private work, and everything while cloud is off, stays
     // here. The guard reads everything that would be sent: every turn of the conversation and the research sources.
     // A conversation that touches Local AI itself, in any turn, stays here too (it carries the appliance's own details).
+    // House questions are known by the hub's prompt too (a caller may leave out the title); a request that brings its own
+    // system message, or text that looks like a key or is about keys, passwords or setup, stays here (secretish).
+    const raw = Array.isArray(body.messages) ? body.messages.filter(m => m && typeof m === 'object') : [];
     const sent = [...messages.map(m => m.content), researchContext].join('\n');
     const route = coordinator.route({
       kind: body.webSearch === true ? 'research' : 'chat', text: sent, model: picked,
-      voice: body.voice === true || body.brief === true || body.voiceRun === true, house: body.title === 'House question',
-      attachments: (Array.isArray(body.images) && body.images.length) || messages.some(m => Array.isArray(m.images) && m.images.length),
-      keepLocal: body.keepLocal === true || messages.some(m => isAboutLocalAi(m.content)), bigger: body.bigger === true, localModel: model
+      voice: body.voice === true || body.brief === true || body.voiceRun === true,
+      house: body.title === 'House question' || raw.some(m => HUB_PROMPT.test(String(m.content || '').trim())),
+      attachments: (Array.isArray(body.images) && body.images.length) || raw.some(m => Array.isArray(m.images) && m.images.length),
+      keepLocal: body.keepLocal === true || messages.some(m => isAboutLocalAi(m.content)),
+      stay: raw.some(m => m.role === 'system') ? 'Requests with their own instructions stay on this PC' : secretish(sent) ? 'Keys, passwords and setup stay on this PC' : '',
+      bigger: body.bigger === true, localModel: model
     });
     return { model, route, messages, sources, researchContext, capabilityContext, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
   }

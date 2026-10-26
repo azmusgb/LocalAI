@@ -248,3 +248,19 @@ test('the cloud switch: another device that is not signed in is refused; reading
   assert.ok(Array.isArray(read.table) && read.table.every(x => x.where));
   assert.ok(!JSON.stringify(read).includes('gsk_test_secret'));
 });
+
+// Security review: House questions are known by their prompt too, not only by a title the caller may leave out; a
+// request that carries its own system message stays here; a chat that looks like it holds a secret stays here.
+test('chat, cloud on: the hub prompt without a title, a client system message, and secret-looking text stay on this PC', async t => {
+  const { call, groq } = await start(t);
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  const hub = await call('/api/chat', { bigger: true, messages: [{ role: 'user', content: "You are the voice of a family's home hub. Answer briefly: what's for dinner ideas?" }] });
+  assert.equal(hub.value.route.provider, 'ollama');
+  const sys = await call('/api/chat', { bigger: true, messages: [{ role: 'system', content: 'Be brief.' }, { role: 'user', content: 'Compare PETG and ASA for outdoor parts' }] });
+  assert.equal(sys.value.route.provider, 'ollama');
+  const secret = await call('/api/chat', { bigger: true, messages: [{ role: 'user', content: 'Why does Authorization: Bearer gsk_abcdefghijklmnop fail?' }] });
+  assert.equal(secret.value.route.provider, 'ollama');
+  const token = await call('/api/chat', { bigger: true, messages: [{ role: 'user', content: 'Where should I keep my API keys and tokens?' }] });
+  assert.equal(token.value.route.provider, 'ollama');
+  assert.equal(groq.calls.length, 0);
+});
