@@ -5,6 +5,7 @@ const createMissionEvidence=require('./mission-evidence'),{fitEvidence,evidenceT
 const {missionNote}=require('./public/agent-world-words');
 const {ANSWER_FORMAT,polishAnswer}=require('./mission-answer');
 const {createResearchTools,evidenceRecord,tool,objectArgs,stringArg}=require('./agent-tools');
+const {secretish}=require('./model-coordinator');
 module.exports=function createAgentOrchestrator(deps={}){
  const {dataDir,ollamaUrl,defaultModel,fetchWithTimeout,runLocalModel,knowledgeStore,knowledgeScore,searxSearch,recordActivity}=deps;
  const catalog=JSON.parse(fs.readFileSync(path.join(__dirname,'specialist-agents.json'),'utf8')).agents;
@@ -234,8 +235,19 @@ module.exports=function createAgentOrchestrator(deps={}){
     const missing=m.workers.filter(w=>w.state==='blocked'&&!results.some(r=>r.agentId===w.id)).map(w=>'## '+w.name+' (missing: did not run because a prerequisite stopped)');
     const gaps=results.some(r=>!usable(r)||r.partial)||missing.length?'NOTE: Some specialist work is partial or missing (marked below). Write the answer from what exists, and say plainly which parts are missing.\n\n':'';
     const coordinatorModel=(await routeModel(goal+' synthesis')).model,joined=gaps+[...results.map(r=>'## '+r.agentName+(!usable(r)?' (missing: stopped without findings)':r.partial?' (partial findings'+(r.status!=='complete'?': stopped before writing up':': cites no evidence')+')':'')+(r.citationWarning&&!r.partial?' (citation warning: '+r.citationWarning+')':'')+'\n'+String(r.answer||r.notes||r.error||'').slice(0,perResult)),...missing].join('\n\n');
+    const synthPrompt='Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nSynthesize only claims grounded in the specialist evidence. Preserve source labels. Reject invented product behavior, metrics, dates, screens, users, or defects. Clearly distinguish observed evidence from recommendations and identify remaining evidence gaps once. '+COORDINATOR_ABSENCE_RULE+' '+ANSWER_FORMAT,synthSystem='You are the mission coordinator for the Local AI Appliance. Produce an actionable, source-grounded synthesis; never substitute a generic consumer AI product.';
+    // The model coordinator (app/model-coordinator.js): the summary may come from a cloud model (kind `plan`) from the goal
+    // and the specialist outputs only, as one prompt: no tools, no evidence index. A mission that read a project's
+    // documents, a voice mission, a goal about Local AI's keys or setup, or anything personal stays here. Cloud off,
+    // private, or a cloud failure: the Coordinator on this PC, as before. The mission says where it ran (m.route).
+    const co=deps.coordinator,route=co?co.route({kind:'plan',text:goal+'\n'+joined,voice:opts.voice===true,stay:projectId?"Missions that read a project's documents stay on this PC":secretish(goal)?"Local AI's own keys, passwords and setup stay on this PC":'',localModel:coordinatorModel}):null;
+    const cloud=route?await co.run(route,[{role:'system',content:synthSystem},{role:'user',content:synthPrompt}],{kind:'plan',maxTokens:4000}):null;
+    opts.signal?.throwIfAborted();
+    if(cloud){m.answer=cloud.content;m.coordinatorModel=cloud.used.model;m.route=cloud.used}
+    else{
     m.answer=typeof deps.runAgentTurn==='function'?await coordinate(m,goal,projectId,coordinatorModel,joined,opts).catch(e=>{if(e.code!=='MODEL_NO_TOOLS')throw e;m.toolFallback=e.message;return null}):null;
-    if(m.answer===null)m.answer=await runModelReliable('Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nSynthesize only claims grounded in the specialist evidence. Preserve source labels. Reject invented product behavior, metrics, dates, screens, users, or defects. Clearly distinguish observed evidence from recommendations and identify remaining evidence gaps once. '+COORDINATOR_ABSENCE_RULE+' '+ANSWER_FORMAT,'You are the mission coordinator for the Local AI Appliance. Produce an actionable, source-grounded synthesis; never substitute a generic consumer AI product.',coordinatorTimeoutMs,coordinatorModel);m.coordinatorModel=coordinatorModel;
+    if(m.answer===null)m.answer=await runModelReliable(synthPrompt,synthSystem,coordinatorTimeoutMs,coordinatorModel);m.coordinatorModel=coordinatorModel;if(route)m.route=co.local(route,coordinatorModel);
+    }
     // The answer tidied (mission-answer.js: no process talk, Markdown or emoji, "missing" things the evidence names
     // rewritten as present, repeated gaps once, a length cap), then absence the workers never searched for is marked
     // "not checked" with a caveat line (mission-evidence.js checkAbsenceClaims). The Coordinator's own words stay in
