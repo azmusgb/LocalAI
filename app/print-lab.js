@@ -253,6 +253,24 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
     if (!card || !card.run) return null;
     return { project: p.name, experiment: x, run: card.run, record: storage.readSetting(key(p.name, `record:${x.id}`), null)?.payload || null };
   }
+  // The display's sheet after the judge card left (app/display-lab.js): once the Mac applies a verdict, lab pull syncs
+  // and the experiment is answered, so judgeTarget finds nothing. For 24 h after a verdict request for exactly this
+  // run, this is that run's experiment with its stored record and the run's verdict requests (newest first). Else null.
+  function recentVerdict(run) {
+    if (!RUN_ID_RE.test(String(run || ''))) return null;
+    const since = clock() - JUDGE_FOR_MS;
+    for (const name of projects()) {
+      const reqs = requestsFor(name)
+        .filter(r => r && r.kind === 'verdict' && r.run === run && Date.parse(r.at) >= since)
+        .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+      if (!reqs.length) continue;
+      const id = reqs[0].experiment;
+      const ix = storage.readSetting(key(name, 'index'), null);
+      const x = (Array.isArray(ix?.experiments) ? ix.experiments : []).find(e => e && e.id === id) || { id };
+      return { project: name, experiment: x, run, record: storage.readSetting(key(name, `record:${id}`), null)?.payload || null, requests: reqs.filter(r => r.experiment === id) };
+    }
+    return null;
+  }
 
   // At most `limit` bytes of an answer, else null (and the rest is not read).
   async function readCapped(r, limit) {
@@ -452,7 +470,7 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
     return true;
   }
 
-  return { handle, sync, feedCards, judgeTarget, queueRequest, requestsFor };
+  return { handle, sync, feedCards, judgeTarget, recentVerdict, queueRequest, requestsFor };
 }
 
 module.exports = { createPrintLab, labCards, SCHEMA };

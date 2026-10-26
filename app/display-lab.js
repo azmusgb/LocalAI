@@ -4,10 +4,13 @@
 // (app/public/print-lab.js), stepped one strip per screen on the display. Both routes need the display key.
 // GET /api/display/lab/judge?run=<id>: the sheet for the run on the judge card (labStore.judgeTarget), built from the
 //   experiment's stored record: its strips (variant tabs) and criteria. An experiment without criteria is judged on
-//   the phone only, as on the Print lab page.
+//   the phone only, as on the Print lab page. Once the card has gone (the Mac applied the verdict and lab pull synced),
+//   a run with a verdict request in the last 24 h still gets its sheet, with that request as `pending` (so the display
+//   shows Done, not an error); any other run is 409.
 // POST /api/display/lab/verdict {run, requestId, grades, inconclusive, replace}: checks the run is still the judge
 //   card's and the grades against the record, then queues the very request the phone sends (labStore.queueRequest),
-//   with lighting "diagnostic" (the phone's default) and no note. The Mac applies it with lab pull.
+//   with lighting "diagnostic" (the phone's default) and no note. The Mac applies it with lab pull. A requestId sent
+//   again after the card moved answers the stored request's status (202), as long as it is that run's (same 24 h).
 // Everything from the record is the Mac's data, passed on as strings only.
 
 const MAX_BODY = 4 * 1024;
@@ -72,16 +75,19 @@ function createDisplayLab({ labStore, json, authorized = () => false }) {
     .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
   // The target for `run`, or null when the judge card is gone or names another run.
   const targetFor = run => { const t = labStore.judgeTarget(); return t && RUN_RE.test(String(run || '')) && t.run === run ? t : null; };
+  // The card has gone, but this run had a verdict request in the last 24 h (labStore.recentVerdict), or null.
+  const recentFor = run => (RUN_RE.test(String(run || '')) && labStore.recentVerdict ? labStore.recentVerdict(run) : null);
 
   async function judge(req, res, url) {
     if (!authorized(req)) return json(res, 401, { error: UNPAIRED });
-    const t = targetFor(url.searchParams.get('run'));
+    const run = url.searchParams.get('run');
+    const t = targetFor(run) || recentFor(run);
     if (!t) return json(res, 409, { error: MOVED });
     const base = { experiment: t.experiment.id, run: t.run, judgeOn: str(t.record?.judge_on) ? t.record.judge_on : (str(t.experiment.judge_on) ? t.experiment.judge_on : '') };
     const sheet = sheetOf(t.record);
     if (!sheet.criteria.length || !sheet.tabs.length) return json(res, 200, { ...base, phoneOnly: true, reason: PHONE_ONLY });
-    const reqs = verdictRequests(t);
-    const v = t.experiment.verdict || t.experiment.owner_verdict;
+    const reqs = t.requests || verdictRequests(t);
+    const v = t.experiment.verdict || t.experiment.owner_verdict || t.record?.verdict || t.record?.owner_verdict;
     const waiting = reqs.find(r => r.status === 'pending');
     const judged = plainObject(v) ? { at: str(v.at) ? v.at : null, by: str(v.by) ? v.by : null }
       : waiting ? { at: waiting.at, by: waiting.by === 'display' ? 'display' : 'phone' } : null;
@@ -97,7 +103,11 @@ function createDisplayLab({ labStore, json, authorized = () => false }) {
     try { data = JSON.parse(raw.toString('utf8')); } catch { return json(res, 400, { error: 'Invalid JSON request body' }); }
     if (!plainObject(data)) return json(res, 400, { error: 'Send {run, requestId, grades, inconclusive}.' });
     const t = targetFor(data.run);
-    if (!t) return json(res, 409, { error: MOVED });
+    if (!t) {
+      // Sent again after the card moved: the stored request's status, nothing new.
+      const sent = recentFor(data.run)?.requests.find(r => r.id === data.requestId);
+      return sent ? json(res, 202, { id: sent.id, status: sent.status }) : json(res, 409, { error: MOVED });
+    }
     const sheet = sheetOf(t.record);
     if (!sheet.criteria.length || !sheet.tabs.length) return json(res, 409, { error: PHONE_ONLY });
     let inconclusive = null;

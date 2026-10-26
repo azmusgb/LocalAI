@@ -129,6 +129,11 @@ sign-in mode (`GUARDED`).
   every criterion (400 otherwise). `replace: true` is Change it. When `run` is no longer the judge card's run (a new
   run, or nothing to judge) it answers `409 {"error": "This print has changed. Open it again."}`; an experiment
   without criteria is 409 too.
+- After the card has gone: once the Mac applies the verdict, `lab pull` syncs and the experiment is answered, so there
+  is no judge card. For 24 h after a verdict request for exactly that run, the judge route still answers `200` with the
+  sheet from the experiment's record, `pending` the newest such request (e.g. `applied`, so the display shows Done)
+  and `judged` from the record; the verdict route answers a `requestId` it already has for that run with
+  `202 {id, status}` (the stored status; nothing new is queued). Any other run, or a new `requestId`, is `409`.
 
 **Display key.** The display signs in for this route alone with its own key, sent as `X-LocalAI-Display-Key`, so its
 idle screen keeps working when sign-in starts refusing unsigned callers. The key is good for nothing else.
