@@ -2680,6 +2680,7 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
   margin-top: 16px;
 }
 .lab-guide > summary {
+  padding-block: 11px; /* a 44px tap target (tap-targets-ui.mjs) */
   cursor: pointer;
   font-weight: 600;
   color: var(--ds-accent-text);
