@@ -36,7 +36,18 @@ const index = {
   schema: 'print-lab-index/1', project: 'hex-tile', generated_at: new Date().toISOString(), fingerprint: 'f'.repeat(64),
   questions: [{ id: 'Q-002', question: 'Is v58 good enough on a full tile?', status: 'active', budget: { minutes: 480, g: 300, test_minutes: 45, test_g: 25 }, spent: { minutes: 99.4, g: 29.1 }, next: { id: 'E-006', minutes: 248.7, g: 76.4 }, stop: { kind: null, text: 'continue' }, streak: 0, evidence: { informative: 1, uninformative: 0 }, experiments: ['E-004', 'E-006', 'E-008'], plans: [], answered: 1 }],
   experiments: [
-    exp('E-008', 'printing', { needs: { id: 'E-008', urgency: 0, action: 'Judge the print', why: 'Look at: top edge.', command: 'uv run lab exp verdict E-008 --rank A --note "what you see"' } }),
+    exp('E-008', 'printing', {
+      criteria: [
+        { key: 'print', label: 'Printed cleanly?', choices: ['clean', 'flawed', 'failed'] },
+        { key: 'apart', label: 'Twists apart by hand?', choices: ['yes', 'hard', 'no'] }
+      ],
+      run: 'PR-008-01',
+      variants: [
+        { id: 'E-008-A', tab: '12A', requested: 250, realized: 147, as_asked: false, unit: 'mm/s' },
+        { id: 'E-008-B', tab: '12B', requested: 80, realized: 80, as_asked: true, unit: 'mm/s' }
+      ],
+      needs: { id: 'E-008', urgency: 0, action: 'Judge the print', why: 'Look at: top edge.', command: 'uv run lab exp verdict E-008 --rank A --note "what you see"' }
+    }),
     exp('E-006', 'needs_approval', { check: { status: 'needs_approval', guards: [{ code: 'per_test_time', ok: false, result: 'needs_approval', message: '248.7 / 45 min per test' }] }, needs: { id: 'E-006', urgency: 2, action: 'Approve or drop', why: '248.7 / 45 min per test', command: 'uv run lab exp approve E-006 --reason "..."' } }),
     exp('E-004', 'answered', { outcome: 'refuted', validity: { status: 'valid', reasons: [{ code: 'cross_plate_by_design', status: 'valid' }] }, verdict: { kind: 'ranking', note: 'they look good', at: '2026-10-24T23:14:18Z' }, photos: [{ run: 'PR-004-01', path: 'photos/PR-004-1.jpg', sha256: sha }] })
   ],
@@ -50,8 +61,26 @@ assert.equal(sync.status, 200);
 
 const browser = await chromium.launch();
 const errors = [];
+
+// Pair a device for phone tests
+const pairRes = await fetch(`${base}/api/claude/chat/pair-request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+const { id: pairId, code } = await pairRes.json();
+await fetch(`${base}/api/claude/chat/pair/approve`, {
+  method: 'POST',
+  headers: { 'X-LocalAI-Mac-Key': KEY, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ code, name: 'Test Device' })
+});
+const statusRes = await fetch(`${base}/api/claude/chat/pair-status?id=${pairId}`);
+const rawCookie = statusRes.headers.get('set-cookie') || '';
+const [nameVal] = rawCookie.split(';');
+const eqIdx = nameVal.indexOf('=');
+const cookieName = nameVal.slice(0, eqIdx).trim();
+const cookieVal = nameVal.slice(eqIdx + 1).trim();
+
 for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['desktop', { width: 1440, height: 900 }]]) {
-  const page = await browser.newPage({ viewport, colorScheme: 'dark' });
+  const context = await browser.newContext({ viewport, colorScheme: 'dark' });
+  await context.addCookies([{ name: cookieName, value: cookieVal, url: base }]);
+  const page = await context.newPage();
   page.on('pageerror', e => errors.push(`${name}: ${e.message}`));
   await page.goto(`${base}/#printLab`);
   await page.waitForSelector('#printLab.active .lab-needs-card');
@@ -70,9 +99,116 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
     assert.match(q, /Continue/);
   });
   await check(`${name}: cards show requested vs printed, and finished work is folded under Earlier`, async () => {
-    assert.match(await page.locator('#lab-E-008').innerText(), /5A: 250 asked, 147 printed mm\/s/);
+    assert.match(await page.locator('#lab-E-008').innerText(), /12A: 250 asked, 147 printed mm\/s/);
     assert.equal(await page.locator('.lab-earlier').getAttribute('open'), null);
     assert.equal(await page.locator('.lab-earlier #lab-E-004').count(), 1);
+  });
+  await check(`${name}: printing card with criteria shows Add photos and Record verdict, and the light hint`, async () => {
+    const card = page.locator('#lab-E-008');
+    assert.equal(await card.locator('.lab-add-photos').count(), 1);
+    assert.equal(await card.locator('.lab-record-verdict').count(), 1);
+    assert.match(await card.locator('.lab-light-hint').innerText(), /Raking light from one side/);
+  });
+  await check(`${name}: verdict sheet has rows and chips; Send stays disabled until complete`, async () => {
+    await page.locator('#lab-E-008 .lab-record-verdict').click();
+    await page.waitForSelector('#labVerdictSheet[open]');
+    const send = page.locator('#labVerdictSend');
+    assert.equal(await send.isDisabled(), true);
+
+    // Pick for 12A only
+    await page.locator('.lab-verdict-row[data-tab="12A"] button[data-choice="clean"]').click();
+    await page.locator('.lab-verdict-row[data-tab="12A"] button[data-choice="no"]').click();
+    assert.equal(await send.isDisabled(), true);
+
+    // Complete 12B
+    await page.locator('.lab-verdict-row[data-tab="12B"] button[data-choice="clean"]').click();
+    await page.locator('.lab-verdict-row[data-tab="12B"] button[data-choice="yes"]').click();
+    assert.equal(await send.isDisabled(), false);
+
+    // Close sheet
+    await page.locator('#labVerdictCancel').click();
+  });
+  await check(`${name}: an unsent draft survives a reload`, async () => {
+    await page.reload();
+    await page.waitForSelector('#printLab.active .lab-needs-card');
+    await page.locator('#lab-E-008 .lab-record-verdict').click();
+    await page.waitForSelector('#labVerdictSheet[open]');
+    assert.equal(await page.locator('.lab-verdict-row[data-tab="12A"] button[data-choice="clean"]').getAttribute('aria-checked'), 'true');
+    assert.equal(await page.locator('#labVerdictSend').isDisabled(), false);
+    await page.locator('#labVerdictCancel').click();
+  });
+  await check(`${name}: sending verdict shows Waiting for the Mac, then Recorded when applied`, async () => {
+    await page.locator('#lab-E-008 .lab-record-verdict').click();
+    await page.waitForSelector('#labVerdictSheet[open]');
+    await page.locator('#labVerdictSend').click();
+    const status = page.locator('#labVerdictStatus');
+    await status.waitFor();
+    assert.match(await status.innerText(), /Waiting for the Mac/);
+
+    // Mac fetches pending and applies it
+    const listRes = await fetch(`${base}/api/lab/hex-tile/requests?status=pending`, { headers: { 'X-LocalAI-Mac-Key': KEY } });
+    const { items } = await listRes.json();
+    const vReq = items.find(i => i.kind === 'verdict');
+    assert.ok(vReq);
+    await fetch(`${base}/api/lab/hex-tile/requests/${vReq.id}/result`, {
+      method: 'POST',
+      headers: { 'X-LocalAI-Mac-Key': KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'applied', message: 'E-008 answered' })
+    });
+
+    // Sheet notices applied on next poll
+    await page.waitForFunction(() => /Recorded/.test(document.getElementById('labVerdictStatus')?.textContent || ''));
+    await page.locator('#labVerdictCancel').click();
+  });
+  await check(`${name}: refusal containing already has a verdict offers Replace verdict`, async () => {
+    await page.locator('#lab-E-008 .lab-record-verdict').click();
+    await page.waitForSelector('#labVerdictSheet[open]');
+    await page.locator('.lab-verdict-row[data-tab="12A"] button[data-choice="clean"]').click();
+    await page.locator('.lab-verdict-row[data-tab="12A"] button[data-choice="no"]').click();
+    await page.locator('.lab-verdict-row[data-tab="12B"] button[data-choice="clean"]').click();
+    await page.locator('.lab-verdict-row[data-tab="12B"] button[data-choice="yes"]').click();
+    await page.locator('#labVerdictSend').click();
+
+    const listRes = await fetch(`${base}/api/lab/hex-tile/requests?status=pending`, { headers: { 'X-LocalAI-Mac-Key': KEY } });
+    const { items } = await listRes.json();
+    const vReq = items.find(i => i.kind === 'verdict');
+    assert.ok(vReq);
+    await fetch(`${base}/api/lab/hex-tile/requests/${vReq.id}/result`, {
+      method: 'POST',
+      headers: { 'X-LocalAI-Mac-Key': KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'refused', message: 'E-008 already has a verdict. Use --replace to change it; the old one is kept.' })
+    });
+
+    await page.waitForSelector('#labVerdictReplace:not([hidden])');
+    assert.match(await page.locator('#labVerdictError').innerText(), /already has a verdict/);
+    await page.locator('#labVerdictCancel').click();
+  });
+  await check(`${name}: selecting two images shows thumbnails with tab chips, Send photos PUTs incoming and POSTs request`, async () => {
+    const testFile1 = path.join(dataDir, 'test1.jpg');
+    const testFile2 = path.join(dataDir, 'test2.jpg');
+    fs.writeFileSync(testFile1, jpg);
+    fs.writeFileSync(testFile2, jpg);
+
+    const fileInput = page.locator('#lab-E-008 input[type="file"]');
+    await fileInput.setInputFiles([testFile1, testFile2]);
+    await page.waitForSelector('#labPhotosSheet[open]');
+
+    const rows = page.locator('.lab-photo-row');
+    assert.equal(await rows.count(), 2);
+    assert.equal(await rows.nth(0).locator('button[data-tab]').count(), 2);
+    await rows.nth(0).locator('button[data-tab="12A"]').click();
+    await rows.nth(1).locator('button[data-tab="12B"]').click();
+
+    await page.locator('#labPhotosSend').click();
+    await page.waitForSelector('#labPhotosSheet:not([open])', { state: 'attached' });
+
+    const listRes = await fetch(`${base}/api/lab/hex-tile/requests?status=pending`, { headers: { 'X-LocalAI-Mac-Key': KEY } });
+    const { items } = await listRes.json();
+    const photoReq = items.find(i => i.kind === 'photos');
+    assert.ok(photoReq);
+    assert.equal(photoReq.payload.photos[0].tab, '12A');
+    assert.equal(photoReq.payload.photos[1].tab, '12B');
+    await page.waitForFunction(() => /Photos/.test(document.getElementById('lab-E-008')?.textContent || ''));
   });
   await check(`${name}: a Needs-you link opens that experiment's details`, async () => {
     await page.locator('[data-lab-open="E-006"]').first().click();
