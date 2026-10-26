@@ -72,3 +72,28 @@ test('the routing table names each kind and where it may run', () => {
   const t = R.table();
   assert.ok(t.find(x => x.kind === 'research' && x.cloud) && t.find(x => x.kind === 'quick' && !x.cloud));
 });
+
+// Steps 2 and 3: a caller's own reason to stay here; the Models page's words; "Answered by".
+test('stay: a caller\'s reason keeps the work on this PC, with that reason', () => {
+  for (const kind of ['research', 'plan', 'code']) {
+    const r = R.route({ ...base, kind, stay: 'Your workspace files stay on this PC' });
+    assert.deepEqual(providers(r), ['ollama']);
+    assert.equal(r.class, 'private');
+    assert.equal(r.why, 'Your workspace files stay on this PC');
+  }
+});
+
+test('every routing table row says where that work runs, in plain words', () => {
+  for (const row of R.table()) assert.ok(typeof row.where === 'string' && row.where.length > 10, row.kind);
+  assert.match(R.table().find(x => x.kind === 'quick').where, /this PC/);
+});
+
+test('label: "Answered by <Model> · <Provider>" or "Answered on this PC"', () => {
+  assert.equal(R.label({ provider: 'groq', model: 'llama-3.3-70b-versatile' }), 'Answered by Llama 3.3 70B · Groq');
+  assert.equal(R.label({ provider: 'cerebras', model: 'llama-3.3-70b' }), 'Answered by Llama 3.3 70B · Cerebras');
+  assert.equal(R.label({ provider: 'groq', model: 'openai/gpt-oss-120b' }), 'Answered by GPT-OSS 120B · Groq');
+  assert.equal(R.label({ provider: 'groq', model: 'llama-4-scout' }), 'Answered by llama-4-scout · Groq');
+  assert.equal(R.label({ provider: 'ollama', model: 'qwen3:4b' }), 'Answered on this PC');
+  assert.equal(R.label(null), '');
+  assert.equal(R.label({ provider: 'evil', model: 'x' }), '');
+});

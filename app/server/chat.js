@@ -4,7 +4,7 @@
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
 function createChat(ctx) {
-  const { ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, cloudModels, modelRouter, routingSetting, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone } = ctx;
+  const { ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, coordinator, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone } = ctx;
 
   function systemPrompt(researchContext = '', capabilityContext = '', brief = false, facts = '', sourceHost = '') {
     return {
@@ -87,12 +87,11 @@ function createChat(ctx) {
     // here. The guard reads everything that would be sent: every turn of the conversation and the research sources.
     // A conversation that touches Local AI itself, in any turn, stays here too (it carries the appliance's own details).
     const sent = [...messages.map(m => m.content), researchContext].join('\n');
-    const route = modelRouter.route({
+    const route = coordinator.route({
       kind: body.webSearch === true ? 'research' : 'chat', text: sent, model: picked,
       voice: body.voice === true || body.brief === true || body.voiceRun === true, house: body.title === 'House question',
       attachments: (Array.isArray(body.images) && body.images.length) || messages.some(m => Array.isArray(m.images) && m.images.length),
-      keepLocal: body.keepLocal === true || messages.some(m => isAboutLocalAi(m.content)), bigger: body.bigger === true,
-      cloud: routingSetting().cloud === true, keys: cloudModels.keys(), parked: cloudModels.parked(), env: process.env, localModel: model
+      keepLocal: body.keepLocal === true || messages.some(m => isAboutLocalAi(m.content)), bigger: body.bigger === true, localModel: model
     });
     return { model, route, messages, sources, researchContext, capabilityContext, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
   }
@@ -100,14 +99,7 @@ function createChat(ctx) {
   // The cloud candidates in the route, in order; the first answer wins. null = none answered (or none allowed): the
   // caller goes on to this PC's model, so a request never fails only because the cloud did.
   async function cloudAnswer(prep) {
-    for (const c of prep.route.order) {
-      if (c.provider === 'ollama') break;
-      try {
-        const out = await cloudModels.chat({ provider: c.provider, model: c.model, messages: cloudMessages(prep) });
-        if (out.content) return { content: out.content, used: { provider: c.provider, model: c.model, class: prep.route.class, why: prep.route.why } };
-      } catch (e) { recordActivity('model', 'Cloud model unavailable', String(e.message || e).slice(0, 180), { provider: c.provider, model: c.model }); }
-    }
-    return null;
+    return coordinator.run(prep.route, cloudMessages(prep), { kind: prep.researchContext ? 'research' : 'chat' });
   }
   const usedLocal = prep => ({ provider: 'ollama', model: prep.model, class: prep.route.class, why: prep.route.why });
 
