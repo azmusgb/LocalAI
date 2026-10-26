@@ -871,6 +871,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/watch/heartbeat') return await apiWatchHeartbeat(req,res);
     if (req.method === 'GET' && p === '/api/watch') return json(res, 200, { ...watchdog.summary(), display: storage.readSetting('display:heartbeat', null) });
     if (req.method === 'GET' && p === '/api/display/feed') return await apiDisplayFeed(req,res);
+    // Home's Needs you: Pi Hub's one list (the display's cached fetch), or items null when the hub doesn't answer.
+    if (req.method === 'GET' && p === '/api/home/hub-needs') { const hub = await piHub.needs(); return json(res, 200, { items: hub ? hub.items : null }); }
     if (req.method === 'GET' && p === '/api/display/ask') return await apiDisplayAsk(req,res,urlObj);
     if (req.method === 'GET' && p === '/api/display/events') return await apiDisplayEvents(req,res,urlObj);
     if (req.method === 'GET' && p === '/api/display/poster') {

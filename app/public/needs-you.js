@@ -50,6 +50,21 @@ function markSeen(ids){
  fresh.forEach(id=>posted.add(id));
  return fetch('/api/runs/seen',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:fresh})}).then(r=>r.ok,()=>false).then(ok=>{if(!ok)fresh.forEach(id=>posted.delete(id));return ok});
 }
-const api={pick,group,recent,markSeen,goal,DAY};
+// Pi Hub's one "Needs you" list (/api/home/hub-needs) on Home: every item but localai:needs-<n>, the hub's one-line
+// summary of the approvals and failures Home already lists as its own rows. Each row says where it opens: Local AI's
+// own lab and watch items open here (Print lab, Health); the rest open on Pi Hub at the item's path.
+const TONES=new Set(['bad','attention','warn']);
+const text=v=>typeof v==='string'?v:'';
+function hubRows(items){
+ if(!Array.isArray(items))return [];
+ return items.filter(i=>i&&typeof i==='object'&&text(i.id)&&text(i.title)&&!/^localai:needs-/.test(i.id)).map(i=>{
+  const id=i.id,lab=/^localai:(judge|lab)-/.test(id);
+  return {id,title:i.title,detail:text(i.detail),tone:TONES.has(i.tone)?i.tone:'warn',open:lab?{view:'printLab'}:/^localai:/.test(id)?{view:'status'}:{hub:text(i.link)||'/'}};
+ });
+}
+// Bad first, then attention, then warn (Pi Hub's order); the same tone keeps its order.
+const RANK={bad:0,attention:1,warn:2};
+const byTone=list=>list.map((x,i)=>[x,i]).sort((a,b)=>(RANK[a[0].tone]??2)-(RANK[b[0].tone]??2)||a[1]-b[1]).map(p=>p[0]);
+const api={pick,group,recent,markSeen,goal,hubRows,byTone,DAY};
 if(typeof module==='object'&&module.exports)module.exports=api;else root.LocalAINeedsYou=api;
 })(typeof window!=='undefined'?window:globalThis);
