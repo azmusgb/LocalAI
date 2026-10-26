@@ -10,7 +10,7 @@ const { Readable } = require('node:stream');
 const { Storage } = require('../app/storage');
 const { createPrintLab } = require('../app/print-lab');
 
-function harness(t) {
+function harness(t, opts = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-lab-req-'));
   const storage = new Storage({ dataDir });
   t.after(() => { storage.close?.(); fs.rmSync(dataDir, { recursive: true, force: true }); });
@@ -30,7 +30,8 @@ function harness(t) {
     json,
     macAuthorized: req => Boolean(req.mac || mac),
     deviceFor: req => req.device !== undefined ? req.device : device,
-    now: () => '2026-10-25T12:00:00.000Z'
+    now: () => '2026-10-25T12:00:00.000Z',
+    ...opts
   });
 
   const call = async (method, p, { body, asMac = false, dev, headers = {} } = {}) => {
@@ -295,4 +296,150 @@ test('the existing sync and photo routes still need the Mac key', async t => {
   });
   assert.equal(rPhoto.status, 401);
   assert.match(rPhoto.body.error, /Only the Mac/);
+});
+
+// ---- the page's buttons: start, approve, abandon (print-lab lab/pull.py applies them) ----
+const act = (id, kind, payload, extra = {}) => ({ id, kind, experiment: 'E-020', payload, ...extra });
+
+test('start, approve and abandon are queued with no run, and the Mac sees exactly what lab pull reads', async t => {
+  const { call } = harness(t);
+  const tapped = '2026-10-25T11:58:00.000Z';
+  const s = await call('POST', '/api/lab/hex-tile/requests', { body: act('rq-a000000000000001', 'start', { tapped_at: tapped }, { run_seen: null }) });
+  assert.equal(s.status, 200, JSON.stringify(s.body));
+  const a = await call('POST', '/api/lab/hex-tile/requests', { body: act('rq-a000000000000002', 'approve', { reason: 'worth 85 min over', build_seen: 'BLD-020-01', reasons_seen: ['auto_stopped', 'full_part_required'] }) });
+  assert.equal(a.status, 200, JSON.stringify(a.body));
+  const d = await call('POST', '/api/lab/hex-tile/requests', { body: act('rq-a000000000000003', 'abandon', { reason: 'the strip came loose' }) });
+  assert.equal(d.status, 200, JSON.stringify(d.body));
+  const s2 = await call('POST', '/api/lab/hex-tile/requests', { body: act('rq-a000000000000004', 'start', { tapped_at: tapped }, { run_seen: 'PR-019-01' }) });
+  assert.equal(s2.status, 200, JSON.stringify(s2.body));
+
+  const { body } = await call('GET', '/api/lab/hex-tile/requests?status=pending', { asMac: true });
+  const by = Object.fromEntries(body.items.map(i => [i.id, i]));
+  assert.equal(by['rq-a000000000000001'].run, null, 'no run: lab pull refuses a run id that is not PR-nnn-nn');
+  assert.equal(by['rq-a000000000000001'].run_seen, null);
+  assert.deepEqual(by['rq-a000000000000001'].payload, { tapped_at: tapped });
+  assert.equal(by['rq-a000000000000004'].run_seen, 'PR-019-01');
+  assert.deepEqual(by['rq-a000000000000002'].payload, { reason: 'worth 85 min over', build_seen: 'BLD-020-01', reasons_seen: ['auto_stopped', 'full_part_required'] });
+  assert.deepEqual(by['rq-a000000000000003'].payload, { reason: 'the strip came loose' });
+});
+
+test('abandon and approve need a reason of at most 500 characters; start needs a tap time; ids are checked', async t => {
+  const { call } = harness(t);
+  const bad = [
+    act('rq-b000000000000001', 'abandon', {}),
+    act('rq-b000000000000002', 'abandon', { reason: '   ' }),
+    act('rq-b000000000000003', 'abandon', { reason: 'x'.repeat(501) }),
+    act('rq-b000000000000004', 'approve', { build_seen: 'BLD-020-01', reasons_seen: [] }),
+    act('rq-b000000000000005', 'approve', { reason: 'ok', build_seen: 'BLD-020-01', reasons_seen: 'auto_stopped' }),
+    act('rq-b000000000000006', 'approve', { reason: 'ok', build_seen: '../../x', reasons_seen: [] }),
+    act('rq-b000000000000007', 'approve', { reason: 'ok', build_seen: 'BLD-020-01', reasons_seen: ['<img>'] }),
+    act('rq-b000000000000008', 'start', { tapped_at: 'yesterday' }),
+    act('rq-b000000000000009', 'start', { tapped_at: '2026-10-25T11:58:00Z' }, { run_seen: '../PR-1' }),
+    act('rq-b000000000000010', 'start', { tapped_at: '2026-10-25T11:58:00Z' }, { experiment: 'Q-003' })
+  ];
+  for (const body of bad) {
+    const r = await call('POST', '/api/lab/hex-tile/requests', { body });
+    assert.equal(r.status, 422, `${body.id}: ${JSON.stringify(r.body)}`);
+  }
+  const ok = await call('POST', '/api/lab/hex-tile/requests', { body: act('rq-b000000000000011', 'abandon', { reason: 'x'.repeat(500) }) });
+  assert.equal(ok.status, 200);
+  const big = await call('POST', '/api/lab/hex-tile/requests', { body: act('rq-b000000000000012', 'abandon', { reason: 'é'.repeat(2100) }) });
+  assert.equal(big.status, 413, 'the 4 KB limit still applies first');
+  const noRun = await call('POST', '/api/lab/hex-tile/requests', { body: { id: 'rq-b000000000000013', kind: 'verdict', experiment: 'E-020', payload: {} } });
+  assert.equal(noRun.status, 422, 'a verdict still names its run');
+});
+
+test('the new kinds count toward the 20-pending limit', async t => {
+  const { call } = harness(t);
+  for (let i = 1; i <= 20; i++) {
+    const r = await call('POST', '/api/lab/hex-tile/requests', { body: act(`rq-c${String(i).padStart(15, '0')}`, 'abandon', { reason: 'r' }) });
+    assert.equal(r.status, 200);
+  }
+  const r21 = await call('POST', '/api/lab/hex-tile/requests', { body: act('rq-c000000000000021', 'start', { tapped_at: '2026-10-25T11:58:00Z' }) });
+  assert.equal(r21.status, 429);
+});
+
+// ---- the live printer block ----
+const labIndex = experiments => ({ schema: 'print-lab-index/1', project: 'hex-tile', generated_at: '2026-10-25T11:00:00Z', fingerprint: crypto.createHash('sha256').update(JSON.stringify(experiments)).digest('hex'), questions: [], experiments, needs: [], problems: [], records: {} });
+const labExp = (id, status, run = null) => ({ id, status, run, photos: [] });
+
+test('the project carries the live print for the one experiment that is printing', async t => {
+  let printer = { state: 'printing', progress: 42, minutesLeft: 95, errorCode: null, access: 'ok' };
+  const { lab, call } = harness(t, { printer: () => printer, clock: () => Date.parse('2026-10-25T12:00:00Z') });
+  assert.equal(lab.sync('hex-tile', labIndex([labExp('E-020', 'printing', 'PR-020-01'), labExp('E-019', 'approved')]))[0], 200);
+  let r = await call('GET', '/api/lab/hex-tile');
+  assert.deepEqual(r.body.live, { experiment: 'E-020', run: 'PR-020-01', state: 'printing', progress: 42, minutesLeft: 95, finishAt: '2026-10-25T13:35:00.000Z', errorCode: null });
+  const list = await call('GET', '/api/lab/projects');
+  assert.deepEqual(list.body.projects[0].live, { experiment: 'E-020', state: 'printing', progress: 42, minutesLeft: 95, finishAt: '2026-10-25T13:35:00.000Z' });
+
+  printer = { state: 'error', progress: null, minutesLeft: null, errorCode: '0700_8010', access: 'ok' };
+  r = await call('GET', '/api/lab/hex-tile');
+  assert.equal(r.body.live.state, 'error');
+  assert.equal(r.body.live.errorCode, '0700_8010');
+  assert.equal(r.body.live.finishAt, null);
+
+  printer = null; // the display's status token isn't set up
+  r = await call('GET', '/api/lab/hex-tile');
+  assert.equal(r.body.live.state, 'unknown');
+});
+
+test('two experiments printing: no live match, only the conflict; none printing: live is null', async t => {
+  const { lab, call } = harness(t, { printer: () => ({ state: 'printing', progress: 10, minutesLeft: 5, access: 'ok' }) });
+  lab.sync('hex-tile', labIndex([labExp('E-020', 'printing', 'PR-020-01'), labExp('E-019', 'printing', 'PR-019-01')]));
+  let r = await call('GET', '/api/lab/hex-tile');
+  assert.deepEqual(r.body.live, { conflict: true });
+  assert.equal((await call('GET', '/api/lab/projects')).body.projects[0].live, null);
+  lab.sync('hex-tile', { ...labIndex([labExp('E-020', 'answered', 'PR-020-01')]), generated_at: '2026-10-25T11:30:00Z' });
+  r = await call('GET', '/api/lab/hex-tile');
+  assert.equal(r.body.live, null);
+});
+
+// ---- the camera snapshot (GET /api/lab/camera.jpg) ----
+const JPG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 0xff, 0xd9]);
+const reply = (status, body, type = 'image/jpeg') => new Response(body, { status, headers: { 'content-type': type } });
+
+test('the camera snapshot is passed through from the bridge for a paired phone, never cached', async t => {
+  const seen = [];
+  const { call } = harness(t, { cameraUrl: 'http://10.0.0.30:8091/x2d/frame.jpg', fetchImpl: async (url, init) => { seen.push([String(url), init.redirect]); return reply(200, JPG); } });
+  const r = await call('GET', '/api/lab/camera.jpg');
+  assert.equal(r.status, 200);
+  assert.equal(r.headers['Content-Type'], 'image/jpeg');
+  assert.match(r.headers['Cache-Control'], /no-store/);
+  assert.ok(Buffer.from(r.body).equals(JPG));
+  assert.deepEqual(seen, [['http://10.0.0.30:8091/x2d/frame.jpg', 'error']], 'no redirects are followed');
+  const noPhone = await call('GET', '/api/lab/camera.jpg', { dev: null });
+  assert.equal(noPhone.status, 401);
+});
+
+test('no picture: 503 with the Pi hub\'s reason, or a plain one when the hub is quiet too', async t => {
+  const hub = { reason: 'liveview_off' };
+  const fetchImpl = async url => {
+    if (String(url).endsWith('/x2d/frame.jpg')) return reply(503, 'no frame', 'text/plain');
+    if (String(url) === 'http://10.0.0.30/api/camera') return hub.reason ? reply(200, JSON.stringify({ ok: false, reason: hub.reason }), 'application/json') : reply(500, 'x', 'text/plain');
+    throw new Error(`unexpected ${url}`);
+  };
+  const { call } = harness(t, { cameraUrl: 'http://10.0.0.30:8091/x2d/frame.jpg', piHubUrl: 'http://10.0.0.30', fetchImpl });
+  let r = await call('GET', '/api/lab/camera.jpg');
+  assert.equal(r.status, 503);
+  assert.equal(r.body.reason, 'liveview_off');
+  hub.reason = 'printer_unreachable';
+  assert.equal((await call('GET', '/api/lab/camera.jpg')).body.reason, 'printer_unreachable');
+  hub.reason = '<script>';
+  assert.equal((await call('GET', '/api/lab/camera.jpg')).body.reason, 'no_picture', 'only known reasons pass');
+  hub.reason = null;
+  assert.equal((await call('GET', '/api/lab/camera.jpg')).body.reason, 'no_picture');
+});
+
+test('a slow or odd bridge: 503 within the time limit; a non-JPEG is not passed on', async t => {
+  const hang = (url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason)));
+  const { call } = harness(t, { cameraUrl: 'http://10.0.0.30:8091/x2d/frame.jpg', piHubUrl: 'http://10.0.0.30', cameraTimeoutMs: 150, fetchImpl: hang });
+  const t0 = Date.now();
+  const r = await call('GET', '/api/lab/camera.jpg');
+  assert.equal(r.status, 503);
+  assert.ok(Date.now() - t0 < 1000, `answered in ${Date.now() - t0} ms`);
+  assert.equal(r.body.reason, 'no_picture');
+
+  const { call: call2 } = harness(t, { cameraUrl: 'http://10.0.0.30:8091/x2d/frame.jpg', piHubUrl: 'off', fetchImpl: async () => reply(200, '<html>hi</html>', 'text/html') });
+  const r2 = await call2('GET', '/api/lab/camera.jpg');
+  assert.equal(r2.status, 503);
 });
