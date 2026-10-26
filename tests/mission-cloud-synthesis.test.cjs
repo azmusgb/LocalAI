@@ -77,7 +77,7 @@ test('cloud on but failing: the Coordinator on this PC writes the summary', asyn
 
 // Security review: the summary may go out only when everything the workers read is known to be public (web results,
 // Local AI's own code) and nothing in their findings looks secret or personal. Default local.
-function tooled(t, { tool, args, finding = 'Found it' } = {}) {
+function tooled(t, { tool, args, finding = 'Found it', projectRoot } = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-mission-tools-'));
   const sent = [];
   const cloudModels = { keys: () => ({ groq: true }), parked: () => ({}), chat: async req => { sent.push(req); return { content: 'Summary from Groq' }; } };
@@ -90,7 +90,7 @@ function tooled(t, { tool, args, finding = 'Found it' } = {}) {
     return { role: 'assistant', content: `${finding} [${id}]` };
   };
   const orchestrator = createOrchestrator({
-    dataDir, ollamaUrl: 'http://unused.invalid', defaultModel: 'test-model', coordinator, runAgentTurn,
+    dataDir, ollamaUrl: 'http://unused.invalid', defaultModel: 'test-model', coordinator, runAgentTurn, ...(projectRoot ? { projectRoot } : {}),
     knowledgeStore: () => [{ id: 'k-unfiled', projectId: '', name: 'Kitchen notes', chunks: ['kitchen renovation budget notes'] }],
     searxSearch: async () => [{ url: 'https://example.com/petg', title: 'PETG vs ASA', content: 'ASA resists UV better than PETG.' }],
     fetchWithTimeout: async () => ({ ok: true, json: async () => ({ models: [{ name: 'test-model' }] }) }),
@@ -123,4 +123,34 @@ test('a mission that read only the web and Local AI\'s own code may be summarise
   assert.equal(m.status, 'complete', m.error);
   assert.equal(sent.length, 1);
   assert.equal(m.route.provider, 'groq');
+});
+
+// Security review: a search is judged by every file it matched, not by its (possibly cut) excerpt, and searches never
+// read files whose names say they hold a secret.
+function searchRoot(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-search-'));
+  fs.mkdirSync(path.join(root, 'public'));
+  fs.writeFileSync(path.join(root, 'public', 'zebra.js'), Array.from({ length: 60 }, (_, i) => `const zebraStripe${i} = 'zebra stripe number ${i} for the page';`).join('\n'));
+  fs.writeFileSync(path.join(root, 'zz-api-key.txt'), 'zebra gsk_live_abcdefghijklmnop');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  return root;
+}
+
+test('find_in_project skips secret files and records every file it matched', async t => {
+  const { createResearchTools } = require('../app/agent-tools');
+  const tools = createResearchTools({ projectRoot: searchRoot(t) });
+  const find = tools.find(x => x.name === 'find_in_project');
+  const out = await find.execute({ query: 'zebra' }, {});
+  const rec = out.evidence[0];
+  assert.deepEqual(rec.files, ['app/public/zebra.js']);
+  assert.ok(!JSON.stringify(out).includes('gsk_live'));
+});
+
+test('a search whose excerpt was cut, or that has no file list, keeps the summary on this PC', async t => {
+  const { orchestrator, sent } = tooled(t, { tool: 'find_in_project', args: { query: 'zebra' }, finding: 'Zebra stripes found', projectRoot: searchRoot(t) });
+  const m = await orchestrator.mission('Review the zebra page', '', ['code_analyst']);
+  assert.equal(m.status, 'complete', m.error);
+  assert.ok(m.results[0].evidenceRecords.some(r => r.kind === 'search' && r.excerptTruncated), 'the excerpt was cut');
+  assert.equal(sent.length, 0);
+  assert.equal(m.route.provider, 'ollama');
 });

@@ -13,7 +13,8 @@ function publicEvidence(r){
  if(r.kind==='web')return /^https?:\/\//i.test(String(r.source||''));
  if(r.kind==='source')return repoPath(String(r.source||''));
  if(r.kind==='file'){const m=/^project:(.+?)#L\d+-L\d+$/.exec(String(r.source||''));return !!m&&repoPath(m[1])}
- if(r.kind==='search')return String(r.excerpt||'').split('\n').every(l=>/^No line contains /.test(l)||(()=>{const m=/^([^:\s]+):\d+: /.exec(l);return !!m&&repoPath(m[1])})());
+ // A search counts by every file it matched (the excerpt may be cut); no list, or a cut excerpt, fails closed.
+ if(r.kind==='search')return Array.isArray(r.files)&&!r.excerptTruncated&&r.files.every(repoPath);
  return false;
 }
 module.exports=function createAgentOrchestrator(deps={}){
