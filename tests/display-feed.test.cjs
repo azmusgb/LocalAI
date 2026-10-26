@@ -189,7 +189,7 @@ test('beside a problem the needs card says No approvals, not All clear', () => {
 });
 
 // Pi Hub's one "Needs you" list (GET /api/needs, built by the hub) rides along as feed.needs: the same list on every
-// screen, cut to what the display shows (title 28, detail 112) and at most 6. It never becomes cards.
+// screen, cut like the cards (title 24, detail 90: the display's 28-byte buffers hold a cut title and its 3-byte …) and at most 6. It never becomes cards.
 test('needs from Pi Hub are cut and capped at 6', () => {
   const items = Array.from({ length: 8 }, (_, i) => ({ id: `pi:thing-${i}`, source: 'pi', tone: i ? 'warn' : 'bad', title: `T${i} ${'x'.repeat(40)}`, detail: 'd'.repeat(200), link: 'http://10.0.0.30/' }));
   const f = buildFeed({ needs: { count: 0 }, piNeeds: { count: 8, items, unread: 0 } });
@@ -197,9 +197,9 @@ test('needs from Pi Hub are cut and capped at 6', () => {
   assert.equal(f.needs.length, 6);
   assert.deepEqual(Object.keys(f.needs[0]).sort(), ['detail', 'id', 'source', 'title', 'tone']);
   assert.deepEqual([f.needs[0].id, f.needs[0].tone, f.needs[0].source], ['pi:thing-0', 'bad', 'pi']);
-  assert.equal([...f.needs[0].title].length, 28);
+  assert.equal([...f.needs[0].title].length, 24);
   assert.ok(f.needs[0].title.endsWith('…'));
-  assert.equal([...f.needs[0].detail].length, 112);
+  assert.equal([...f.needs[0].detail].length, 90);
   assert.ok(f.cards.every((c) => !String(c.id).startsWith('pi:')), 'needs never become cards');
   // Only strings pass; an item without an id or a title is left out, and an unknown tone is warn.
   const odd = buildFeed({ needs: { count: 0 }, piNeeds: { items: [{ id: 'a', tone: 'boom', title: 'A', detail: null }, { id: 'b', title: { x: 1 } }, null, { tone: 'bad', title: 'no id' }, 'str'] } });

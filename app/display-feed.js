@@ -24,15 +24,15 @@ const ago = (atSec, now) => {
 const gb = (n) => `${Math.round(n / 1e9)} GB`;
 
 // piNeeds: Pi Hub's one "Needs you" list ({items}, app/pi-hub.js needs()), or null when the hub didn't answer. It goes
-// out as feed.needs [{id, tone, title, detail, source}], at most 6, title cut to 28 and detail to 112 (what the display
-// shows), in the hub's order; it never becomes cards (the hub reads the cards, so that would loop). lab: the Print lab
+// out as feed.needs [{id, tone, title, detail, source}], at most 6, title cut to 24 and detail to 90 like the cards
+// (a cut title plus its 3-byte … fits the display's 28-byte buffer), in the hub's order; it never becomes cards (the hub reads the cards, so that would loop). lab: the Print lab
 // cards (app/print-lab.js labCards), after the needs card.
 const NEED_TONES = new Set(['bad', 'attention', 'warn']);
 const str = (v) => (typeof v === 'string' ? v : '');
 function needsOf(piNeeds) {
   if (!piNeeds || !Array.isArray(piNeeds.items)) return null;
   return piNeeds.items.filter((i) => i && typeof i === 'object' && str(i.id) && str(i.title)).slice(0, 6).map((i) => ({
-    id: cut(i.id, 64), tone: NEED_TONES.has(i.tone) ? i.tone : 'warn', title: cut(i.title, 28), detail: cut(str(i.detail), 112), source: cut(str(i.source), 24)
+    id: cut(i.id, 64), tone: NEED_TONES.has(i.tone) ? i.tone : 'warn', title: cut(i.title, 24), detail: cut(str(i.detail), 90), source: cut(str(i.source), 24)
   }));
 }
 
