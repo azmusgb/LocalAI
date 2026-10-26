@@ -3,8 +3,9 @@
 // Changing Local AI itself: change requests (plan, stage in a copy, validate, approve, ship as a PR), engineering runs, Improve (Backlog to Shipped) and the Claude board. One module because these call each other.
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
+const { cloudSafePath, secretish } = require('../model-coordinator');
 function createChanges(ctx) {
-  const { APPROVALS_STORE, APP_VERSION, DATA_DIR, ENGINEERING_MODEL_TIMEOUT_MS, SELF_APP_ROOT, addNotification, approvalStore, childEnv, fetchWithTimeout, fs, improve, issueStore, json, makeId, notifier, nowIso, objectStore, path, plainText, readBody, recordActivity, release, requireFeature, runEngineeringPlannerModel, safeWorkspacePath, sameOriginJson, saveIssues, saveStore, simpleDiff, spawn, storage, storageError, workspaceRel } = ctx;
+  const { APPROVALS_STORE, APP_VERSION, DATA_DIR, ENGINEERING_MODEL_TIMEOUT_MS, SELF_APP_ROOT, addNotification, approvalStore, childEnv, coordinator, MODEL, fetchWithTimeout, fs, improve, issueStore, json, makeId, notifier, nowIso, objectStore, path, plainText, readBody, recordActivity, release, requireFeature, runEngineeringPlannerModel, safeWorkspacePath, sameOriginJson, saveIssues, saveStore, simpleDiff, spawn, storage, storageError, workspaceRel } = ctx;
   // ===== END PRODUCT EVOLUTION PLATFORM ======================================
 
 
@@ -73,9 +74,10 @@ function createChanges(ctx) {
     if(idx<0) return txt.slice(0,max);
     const start=Math.max(0,idx-Math.floor(max/3)); return txt.slice(start,start+max);
   }
-  function buildChangeContext(rootDir,request){
-    return candidateTextFiles(rootDir,request).map(f=>`FILE: ${f.rel}\n---\n${excerptForRequest(f.txt,request)}\n---`).join('\n\n').slice(0,70000);
+  function changeContextFiles(rootDir,request){
+    return candidateTextFiles(rootDir,request).map(f=>({rel:f.rel,text:`FILE: ${f.rel}\n---\n${excerptForRequest(f.txt,request)}\n---`}));
   }
+  const joinContext=files=>files.map(f=>f.text).join('\n\n').slice(0,70000);
   function extractJsonObject(raw){
     const text=String(raw||'').trim().replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,'');
     try{return JSON.parse(text)}catch{}
@@ -102,11 +104,19 @@ function createChanges(ctx) {
     }
     return {summary:String(plan?.summary||'Proposed change').slice(0,1200),notes:String(plan?.notes||'').slice(0,5000),files:out};
   }
-  async function generatePatchPlan(request,targetRoot){
-    const context=buildChangeContext(targetRoot,request);
+  // The model coordinator (app/model-coordinator.js): Change requests plan as kind `plan`, engineering runs (code) as
+  // `code`. Only Local AI's own code may go to a cloud model, without files whose names say they hold a secret, redacted,
+  // and only when nothing in it looks personal and the request isn't about Local AI's keys, passwords or setup. Cloud
+  // off, private, or a cloud failure or unreadable plan: this PC's planner, as before. The plan says where it ran (route).
+  async function generatePatchPlan(request,targetRoot,{kind='plan'}={}){
+    const files=changeContextFiles(targetRoot,request),context=joinContext(files);
     const system=`You are the Patch Intelligence planner inside Local AI. Return JSON only. You may modify only files shown in context. Produce minimal, source-aware patches. For JavaScript named functions, strongly prefer replace_function or insert_after_function instead of replacing large exact strings. Use exact replace only for small unique snippets copied verbatim from context. Never append executable statements outside a valid function merely to satisfy a request. Never invent shell commands. Never add fake validation code, hard-coded PASS values, or validators that simply return true; the existing staging validator is the source of truth. Keep browser-only APIs (document, window, localStorage, client state) out of server.js. Keep Node-only APIs (fs, process.env, require) out of public/app.js. Do not bypass approval, staging, backups, rollback, or the self-update host. Schema: {"summary":"...","notes":"...","files":[{"path":"relative/path","operations":[{"type":"replace_function","name":"functionName","content":"complete function declaration"},{"type":"insert_after_function","name":"functionName","content":"new declaration(s)"},{"type":"insert_after_text","anchor":"EXACT small anchor","content":"text"},{"type":"replace_between_markers","startMarker":"...","endMarker":"...","content":"replacement between markers"},{"type":"replace_regex","pattern":"...","flags":"m","replacement":"literal replacement"},{"type":"replace","find":"EXACT existing text","replace":"replacement text"},{"type":"create","content":"full new file"}]}]}. If context is insufficient, return files:[] and explain why.`;
+    const self=path.resolve(String(targetRoot||''))===path.resolve(SELF_APP_ROOT),cloudContext=joinContext(files.filter(f=>cloudSafePath(f.rel)));
+    const route=coordinator.route({kind,text:`${request}\n${cloudContext}`,stay:!self?'Your workspace files stay on this PC':secretish(request)?"Local AI's own keys, passwords and setup stay on this PC":''});
+    const cloud=await coordinator.run(route,[{role:'system',content:system},{role:'user',content:`CHANGE REQUEST:\n${request}\n\nAVAILABLE SOURCE CONTEXT:\n${cloudContext}`}],{kind,maxTokens:8000});
+    if(cloud){try{return {...normalizePatchPlan(extractJsonObject(cloud.content)),route:cloud.used}}catch{recordActivity('model','Cloud plan unreadable','Planning on this PC instead.',{provider:cloud.used.provider,model:cloud.used.model,kind})}}
     const raw=await runEngineeringPlannerModel(`CHANGE REQUEST:\n${request}\n\nAVAILABLE SOURCE CONTEXT:\n${context}`,system,ENGINEERING_MODEL_TIMEOUT_MS);
-    return normalizePatchPlan(extractJsonObject(raw));
+    return {...normalizePatchPlan(extractJsonObject(raw)),route:coordinator.local(route,MODEL)};
   }
   function findFunctionRange(textValue,name){
     const safe=safeIdentifier(name); if(!safe) throw new Error(`Invalid function name: ${name}`);
@@ -374,7 +384,7 @@ function createChanges(ctx) {
   async function planChange({request,target:rawTarget,root},{itemId}={}){
     const target=rawTarget==='workspace'?'workspace':'self';const rootRel=String(root||'').trim();const targetRoot=target==='self'?SELF_APP_ROOT:safeWorkspacePath(rootRel);
     const plan=await generatePatchPlan(request,targetRoot);
-    const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:plan.notes,files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[]};
+    const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:plan.notes,files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[],route:plan.route};
     storage.transaction(()=>{
       if(itemId){const key=CLAUDE_FINDING_PREFIX+itemId,f=storage.readSetting(key,null);if(f)storage.writeSetting(key,{...f,changeId:item.id,status:'approved',updatedAt:nowIso()})}
       const items=changeStore();items.unshift(item);saveChanges(items);
@@ -418,7 +428,7 @@ function createChanges(ctx) {
   function saveEngineeringRuns(items){saveStore(ENGINEERING_RUNS_STORE,items,300)}
   function engineeringStep(run,name,state='pending',detail=''){const item={name,state,detail:String(detail||'').slice(0,6000),at:nowIso()};run.steps.push(item);run.updatedAt=nowIso();return item}
   function createEngineeringChange(request,target,rootRel,runId,attempt){
-    const targetRoot=target==='self'?SELF_APP_ROOT:safeWorkspacePath(rootRel);return generatePatchPlan(request,targetRoot).then(plan=>{const changes=changeStore();const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:`Engineering run ${runId}, attempt ${attempt}. ${plan.notes||''}`.trim(),files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[],sourceEngineeringRunId:runId,engineeringAttempt:attempt};changes.unshift(item);saveChanges(changes);return item})
+    const targetRoot=target==='self'?SELF_APP_ROOT:safeWorkspacePath(rootRel);return generatePatchPlan(request,targetRoot,{kind:'code'}).then(plan=>{const changes=changeStore();const item={id:makeId('chg'),target,root:target==='self'?'app':rootRel,request,summary:plan.summary,notes:`Engineering run ${runId}, attempt ${attempt}. ${plan.notes||''}`.trim(),files:plan.files,status:plan.files.length?'planned':'needs_context',createdAt:nowIso(),updatedAt:nowIso(),validation:null,diffs:[],sourceEngineeringRunId:runId,engineeringAttempt:attempt,route:plan.route};changes.unshift(item);saveChanges(changes);return item})
   }
   async function internalStageChange(changeId){return await stageChangeById(changeId)}
   function effectiveEngineeringRun(run,changesById){
