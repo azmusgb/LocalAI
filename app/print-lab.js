@@ -141,6 +141,24 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
     return l && !l.conflict ? { experiment: l.experiment, state: l.state, progress: l.progress, minutesLeft: l.minutesLeft, finishAt: l.finishAt } : null;
   }
 
+  // The frame, read as a stream with a running count: null (and the stream cancelled) once it passes MAX_FRAME, so a
+  // huge or endless answer is never held whole.
+  async function readFrame(r) {
+    if (Number(r.headers.get('content-length')) > MAX_FRAME) { await r.body?.cancel?.().catch(() => {}); return null; }
+    const reader = r.body?.getReader();
+    if (!reader) return null;
+    const chunks = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > MAX_FRAME) { await reader.cancel().catch(() => {}); return null; }
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks);
+  }
+
   // One snapshot from the camera bridge, within cameraTimeoutMs in all. No redirects are followed and only a JPEG of
   // at most MAX_FRAME is passed on. When there is none, the Pi hub's reason (if it answers in the time left) says why.
   async function camera(res) {
@@ -148,8 +166,8 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
     try {
       const r = await fetchImpl(cameraUrl, { signal, redirect: 'error', headers: { Accept: 'image/jpeg' } });
       if (r.ok && /^image\/jpeg/i.test(r.headers.get('content-type') || '')) {
-        const body = Buffer.from(await r.arrayBuffer());
-        if (body.length <= MAX_FRAME && body[0] === 0xff && body[1] === 0xd8) {
+        const body = await readFrame(r);
+        if (body && body[0] === 0xff && body[1] === 0xd8) {
           res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': body.length, 'Cache-Control': 'no-store' });
           res.end(body);
           return;

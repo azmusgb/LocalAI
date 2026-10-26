@@ -443,3 +443,24 @@ test('a slow or odd bridge: 503 within the time limit; a non-JPEG is not passed 
   const r2 = await call2('GET', '/api/lab/camera.jpg');
   assert.equal(r2.status, 503);
 });
+
+test('an oversized or endless camera answer is cut off, never buffered whole', async t => {
+  const big = Buffer.alloc(3 * 1024 * 1024, 0xff); big[1] = 0xd8;
+  const withLength = async () => new Response(big, { status: 200, headers: { 'content-type': 'image/jpeg', 'content-length': String(big.length) } });
+  const { call } = harness(t, { cameraUrl: 'http://10.0.0.30:8091/x2d/frame.jpg', piHubUrl: 'off', fetchImpl: withLength });
+  const r = await call('GET', '/api/lab/camera.jpg');
+  assert.equal(r.status, 503);
+  assert.equal(r.body.reason, 'no_picture');
+
+  let pulled = 0, cancelled = false;
+  const endless = async () => new Response(new ReadableStream({
+    start(c) { c.enqueue(new Uint8Array([0xff, 0xd8])); },
+    pull(c) { pulled += 64 * 1024; if (pulled > 64 * 1024 * 1024) { c.close(); return; } c.enqueue(new Uint8Array(64 * 1024)); },
+    cancel() { cancelled = true; }
+  }), { status: 200, headers: { 'content-type': 'image/jpeg' } });
+  const { call: call2 } = harness(t, { cameraUrl: 'http://10.0.0.30:8091/x2d/frame.jpg', piHubUrl: 'off', fetchImpl: endless });
+  const r2 = await call2('GET', '/api/lab/camera.jpg');
+  assert.equal(r2.status, 503);
+  assert.ok(cancelled, 'the stream is cancelled once it passes the cap');
+  assert.ok(pulled <= 3 * 1024 * 1024, `read ${pulled} bytes`);
+});
