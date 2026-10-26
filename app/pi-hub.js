@@ -39,14 +39,16 @@ function summarize(d) {
 
 // The hub's one "Needs you" list (GET /api/needs: {count, items:[{id, source, tone, title, detail, link}], unread}),
 // built by the hub from its own issues, Local AI's attention cards and the printer. Untrusted text: only strings pass,
-// an item needs an id and a title, and the link is left out. The display feed cuts and caps it (app/display-feed.js).
+// an item needs an id and a title, and the link is left out. count is the hub's own total (the display's "+N more"),
+// else the number of items. The display feed cuts and caps it (app/display-feed.js).
 const plain = (v, n) => (typeof v === 'string' ? str(v, n) : '');
 function needsList(d) {
   if (!Array.isArray(d?.items)) return null;
   const items = d.items.filter(i => i && typeof i === 'object')
     .map(i => ({ id: plain(i.id, 64), source: plain(i.source, 24), tone: plain(i.tone, 12), title: plain(i.title, 80), detail: plain(i.detail, 200) }))
-    .filter(i => i.id && i.title).slice(0, 20);
-  return { items };
+    .filter(i => i.id && i.title);
+  const count = Number.isSafeInteger(d.count) && d.count >= 0 ? d.count : items.length;
+  return { count, items: items.slice(0, 20) };
 }
 
 function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.30', fetchImpl = fetch, now = Date.now } = {}) {
@@ -63,18 +65,25 @@ function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.30
     cache = { at: now(), value };
     return value;
   }
-  // The hub's "Needs you" list ({items}) at most every 30 s; null when it is off, down or slow (3 s).
-  let needsCache = { at: -Infinity, value: null };
+  // The hub's "Needs you" list ({count, items}) at most every 30 s; null when it is off, down or slow (3 s). One fetch
+  // at a time: while one is out, callers get the last value (or null) at once. The hub's /api/needs reads Local AI's
+  // feed, so a second fetch here could start a request chain between the two (the feed fetches needs only for the
+  // display's key, which the hub doesn't send; this is the second guard).
+  let needsCache = { at: -Infinity, value: null }, needsInFlight = null;
   async function needs() {
     if (off) return null;
     if (now() - needsCache.at < NEEDS_CACHE_MS) return needsCache.value;
-    let value = null;
-    try {
-      const r = await fetchImpl(new URL('/api/needs', url), { signal: AbortSignal.timeout(TIMEOUT_MS), headers: { Accept: 'application/json' } });
-      if (r.ok) value = needsList(await r.json());
-    } catch { value = null; }
-    needsCache = { at: now(), value };
-    return value;
+    if (needsInFlight) return needsCache.value;
+    needsInFlight = (async () => {
+      let value = null;
+      try {
+        const r = await fetchImpl(new URL('/api/needs', url), { signal: AbortSignal.timeout(TIMEOUT_MS), headers: { Accept: 'application/json' } });
+        if (r.ok) value = needsList(await r.json());
+      } catch { value = null; }
+      needsCache = { at: now(), value };
+      return value;
+    })().finally(() => { needsInFlight = null; });
+    return needsInFlight;
   }
   // The poster of playing item `n` (a JPEG), or null.
   async function poster(n) {

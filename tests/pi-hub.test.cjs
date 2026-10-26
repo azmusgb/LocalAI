@@ -56,7 +56,7 @@ test('the hub is read at most once a minute, and a failure is quiet', async () =
 test('needs: the hub list is read at most every 30 s, plain strings only, and a failure is quiet (null)', async () => {
   let t = 0, calls = 0, url;
   const hub = createPiHub({ url: 'http://pi', now: () => t, fetchImpl: async (u) => { calls++; url = String(u); return { ok: true, json: async () => ({ count: 1, items: [{ id: 'pi:disk', source: 'pi', tone: 'bad', title: 'Disk', detail: 'Full', link: '/x' }, 7], unread: 0 }) }; } });
-  assert.deepEqual(await hub.needs(), { items: [{ id: 'pi:disk', source: 'pi', tone: 'bad', title: 'Disk', detail: 'Full' }] });
+  assert.deepEqual(await hub.needs(), { count: 1, items: [{ id: 'pi:disk', source: 'pi', tone: 'bad', title: 'Disk', detail: 'Full' }] });
   assert.equal(url, 'http://pi/api/needs');
   await hub.needs();
   assert.equal(calls, 1);
@@ -67,4 +67,33 @@ test('needs: the hub list is read at most every 30 s, plain strings only, and a 
   assert.equal(await createPiHub({ url: 'http://pi', fetchImpl: async () => ({ ok: false }) }).needs(), null);
   assert.equal(await createPiHub({ url: 'http://pi', fetchImpl: async () => ({ ok: true, json: async () => ({ items: 'no' }) }) }).needs(), null);
   assert.equal(await createPiHub({ url: 'off' }).needs(), null);
+});
+
+// Local AI's feed reads Pi Hub's needs, and Pi Hub's needs read Local AI's feed: a second fetch while one is out would
+// start a request chain between the two. While one fetch is in progress, callers get the last value (or null) at once.
+test('needs: one fetch at a time; callers meanwhile get the last value (or null) at once', async () => {
+  let t = 0, calls = 0, release;
+  const hub = createPiHub({ url: 'http://pi', now: () => t, fetchImpl: async () => {
+    calls++;
+    await new Promise((r) => { release = r; });
+    return { ok: true, json: async () => ({ count: 9, items: [{ id: 'a', title: 'A' }] }) };
+  } });
+  const first = hub.needs();
+  const others = await Promise.all(Array.from({ length: 9 }, () => hub.needs()));
+  assert.deepEqual(others, Array(9).fill(null), 'no last value yet: null');
+  assert.equal(calls, 1);
+  release();
+  assert.deepEqual(await first, { count: 9, items: [{ id: 'a', source: '', tone: '', title: 'A', detail: '' }] });
+  t += 31000;
+  const again = hub.needs();
+  assert.equal((await hub.needs()).count, 9, 'the last value while the next fetch is out');
+  assert.equal(calls, 2);
+  release();
+  await again;
+});
+
+test('needs: the hub\'s count passes on; without one it is the number of items', async () => {
+  const hub = (body) => createPiHub({ url: 'http://pi', fetchImpl: async () => ({ ok: true, json: async () => body }) });
+  assert.equal((await hub({ count: 14, items: [{ id: 'a', title: 'A' }] }).needs()).count, 14);
+  assert.equal((await hub({ count: 'x', items: [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }] }).needs()).count, 2);
 });

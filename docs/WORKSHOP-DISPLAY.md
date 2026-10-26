@@ -100,6 +100,10 @@ every screen: `needs: [{id, tone, title, detail, source}]`, from the hub's `GET 
 3 s limit). At most 6 items, title cut to 24 and detail to 90 like the cards, `tone` one of `bad`, `attention` or
 `warn`. `id` stays the same while the item means the same thing (`printer:plate`, `localai:approval:<id>`), so screens
 can match and clear one item. When the hub doesn't answer, `needs` is left out and the display shows its cards.
+Beside it, `needsCount` is the hub's own total (its `count`), so "+N more" counts what the hub has, not the 6 sent.
+Only the display gets `needs` and `needsCount` (a call with `X-LocalAI-Display-Key`): Pi Hub builds its list from this
+feed, read without a key, so that read never asks Pi Hub for its list back. One `/api/needs` fetch is out at a time;
+callers meanwhile get the last list (or none).
 
 **Print lab card (`lab`).** Built from the print-lab records the Mac syncs (Projects › Print lab), when exactly one
 experiment is printing (two printing: no card):
