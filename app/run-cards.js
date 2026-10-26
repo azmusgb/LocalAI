@@ -27,15 +27,28 @@ function fileStats(change) {
   });
 }
 // Recent and Work show a readable title, never a long prompt (Pi Hub one home, step 4): a label the caller gave
-// (meta.label, from /api/chat's `title`), else the run's own title when the server kept it whole (one line; titleFromText
-// keeps up to 72 characters and ends a cut one with "…"), else the kind's name. run.title itself is unchanged, so Needs you still groups repeats by it.
+// (meta.label, from /api/chat's `title`), else the run's own title when it is whole (one line, up to 72 characters),
+// else its first words cut at a word with "…" (titleFromText keeps 69 characters of a long first message and adds "…").
+// A title that is an instruction ("You are …", e.g. the hub's House questions from before they carried a label) shows
+// the kind's name instead. run.title itself is unchanged, so Needs you still groups repeats by it.
 const KIND_NAMES = Object.freeze({ chat: 'Chat', research: 'Research', image: 'Image', agent: 'Mission', spreadsheet: 'Spreadsheet', engineering: 'Change', automation: 'Automation', other: 'Run' });
+const TITLE_MAX = 72;
+function firstWords(title) {
+  const lines = title.split(/[\r\n]+/), first = lines[0].replace(/\s+/g, ' ').trim();
+  let t = first.replace(/\s*…$/, '');
+  if (lines.length === 1 && !first.endsWith('…') && t.length <= TITLE_MAX) return t;
+  if (t.length > TITLE_MAX - 1) t = t.slice(0, TITLE_MAX - 1);
+  const space = t.lastIndexOf(' ');
+  if (space >= 20) t = t.slice(0, space);  // the last word may be cut: drop it (a single long word stays as it is)
+  return t.replace(/[\s,;:.\-–—]+$/, '') + '…';
+}
 function readableTitle(run) {
   const type = LEGACY_TYPES[run?.type] || run?.type, kind = Object.prototype.hasOwnProperty.call(KIND_NAMES, type) ? type : 'other';
   const label = typeof run?.meta?.label === 'string' ? run.meta.label.trim().slice(0, 80) : '';
   if (label) return label;
   const title = typeof run?.title === 'string' ? run.title.trim() : '';
-  return title && title.length <= 72 && !title.endsWith('…') && !/[\r\n]/.test(title) ? title : KIND_NAMES[kind];
+  if (!title || /^you are\b/i.test(title)) return KIND_NAMES[kind];
+  return firstWords(title);
 }
 function runCard(run, { approvalFor, changeFor } = {}) {
   run = run || {};
