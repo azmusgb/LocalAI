@@ -26,6 +26,27 @@ const RUN_ID_RE = /^[A-Z]{1,4}-\d{1,6}(-\d{2})?$/;
 const MAX_SYNC = 4 * 1024 * 1024;
 const MAX_PHOTO = 8 * 1024 * 1024;
 const MAX_REQUEST = 4 * 1024;
+// A phone observation session (Record what happened) carries several complete snapshots, so it gets more room.
+const MAX_OBS_REQUEST = 16 * 1024;
+const OBS_KINDS = ['observation', 'observation_correction'];
+const OBS_ID_RE = /^OBS-\d{4,}$/;
+
+// Shape checks only: the Mac (lab pull) checks every field against the spec and refuses what doesn't fit.
+function obsProblem(kind, payload) {
+  const isSnap = x => x && typeof x === 'object' && !Array.isArray(x) && x.subject && typeof x.subject === 'object'
+    && x.outcomes && typeof x.outcomes === 'object' && x.source && typeof x.source === 'object';
+  if (kind === 'observation') {
+    const s = payload.snapshots;
+    if (!Array.isArray(s) || s.length < 1 || s.length > 8) return 'An observation session has 1 to 8 snapshots.';
+    if (!s.every(isSnap)) return 'Each snapshot has a subject, outcomes and a source.';
+    return null;
+  }
+  if (!OBS_ID_RE.test(payload.observation || '')) return 'The observation id looks like OBS-0001.';
+  if (!Number.isSafeInteger(payload.expected_rev) || payload.expected_rev < 1) return 'expected_rev is the revision you corrected.';
+  if (!isSnap(payload.snapshot)) return 'A correction carries a complete snapshot.';
+  if (typeof payload.reason !== 'string' || !payload.reason.trim() || payload.reason.length > 500) return 'A correction needs a reason of at most 500 characters.';
+  return null;
+}
 const MAX_RECORDS = 2000;
 const MAX_PENDING = 20;
 const MAX_REASON = 500;
@@ -154,15 +175,19 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
   // thing under the same limits: 4 KB, 20 pending, an id sent twice is one request. `from` is who sent it: a device id,
   // or 'display'.
   function queueRequest(project, data, from) {
-    if (Buffer.byteLength(JSON.stringify(data ?? null)) > MAX_REQUEST) return [413, { error: 'Too large for the print lab.' }];
+    const observing = OBS_KINDS.includes((data || {}).kind);
+    if (Buffer.byteLength(JSON.stringify(data ?? null)) > (observing ? MAX_OBS_REQUEST : MAX_REQUEST)) return [413, { error: 'Too large for the print lab.' }];
     const { id, kind, experiment, run, run_seen: runSeen, payload } = data || {};
     const acting = ACT_KINDS.includes(kind);
+    // What the owner saw is recorded as the owner's report only from their paired phone, never from the display.
+    if (observing && from === 'display') return [403, { error: 'Observations come from a paired phone.' }];
     if (!REQUEST_ID_RE.test(id || '')) return [422, { error: 'Request id must look like rq-0123456789abcdef' }];
-    if (kind !== 'verdict' && kind !== 'photos' && !acting) return [422, { error: 'kind must be verdict, photos, start, approve or abandon' }];
+    if (kind !== 'verdict' && kind !== 'photos' && !acting && !observing) return [422, { error: 'kind must be verdict, photos, start, approve, abandon, observation or observation_correction' }];
     if (!(acting ? /^E-\d{1,6}$/ : EXPERIMENT_ID_RE).test(experiment || '')) return [422, { error: 'Invalid experiment id' }];
     if (!acting && !RUN_ID_RE.test(run || '')) return [422, { error: 'Invalid run id' }];
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return [422, { error: 'payload must be an object' }];
-    const problem = acting ? actProblem(kind, payload, runSeen) : kind === 'photos' ? photosProblem(payload) : null;
+    const problem = acting ? actProblem(kind, payload, runSeen) : kind === 'photos' ? photosProblem(payload)
+      : observing ? obsProblem(kind, payload) : null;
     if (problem) return [422, { error: problem }];
 
     const existing = storage.readSetting(key(project, `request:${id}`), null);
@@ -402,7 +427,7 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
         const dev = deviceFor(req);
         if (!dev) { req.resume(); json(res, 401, { error: "This phone isn't paired with Local AI. Pair it in Settings › Devices." }); return true; }
         let data;
-        try { data = JSON.parse((await readRaw(req, MAX_REQUEST)).toString('utf8')); }
+        try { data = JSON.parse((await readRaw(req, MAX_OBS_REQUEST)).toString('utf8')); }
         catch (e) { if (e.statusCode) throw e; json(res, 400, { error: 'Invalid JSON request body' }); return true; }
         const [status, body] = queueRequest(project, data, dev.id || dev);
         json(res, status, body);

@@ -114,7 +114,9 @@ function validateVerdict(){
       row.classList.remove('lab-row--missing');
     }
   });
-  sendBtn.disabled=!allComplete;
+  // The light is never assumed: only the diagnostic light can support or refute a prediction, so it's asked for.
+  const light=document.getElementById('labVerdictLighting')?.value;
+  sendBtn.disabled=!allComplete||!light;
 }
 
 function saveVerdictDraft(){
@@ -123,7 +125,7 @@ function saveVerdictDraft(){
     grades:{},
     inconclusive:Boolean(document.getElementById('labVerdictInconclusiveToggle')?.checked),
     inconclusiveReason:document.getElementById('labVerdictInconclusiveReason')?.value||'',
-    lighting:document.getElementById('labVerdictLighting')?.value||'diagnostic',
+    lighting:document.getElementById('labVerdictLighting')?.value||'',
     note:document.getElementById('labVerdictNote')?.value||''
   };
   document.querySelectorAll('#labVerdictBody .lab-verdict-row').forEach(row=>{
@@ -160,7 +162,7 @@ function openVerdictSheet(exp){
     return `<div class="lab-verdict-row" data-tab="${esc(tab)}"><div class="lab-verdict-row__title">Strip ${esc(tab)}</div>${critRows}</div>`;
   }).join('');
 
-  let draft={grades:{},inconclusive:false,inconclusiveReason:'',lighting:'diagnostic',note:''};
+  let draft={grades:{},inconclusive:false,inconclusiveReason:'',lighting:'',note:''};
   try{
     const saved=localStorage.getItem('printLab:draft:'+exp.id);
     if(saved)draft=Object.assign(draft,JSON.parse(saved));
@@ -181,7 +183,7 @@ function openVerdictSheet(exp){
   if(incReason)incReason.value=draft.inconclusiveReason||'';
 
   const lightingSelect=document.getElementById('labVerdictLighting');
-  if(lightingSelect)lightingSelect.value=draft.lighting||'diagnostic';
+  if(lightingSelect)lightingSelect.value=draft.lighting||'';
   const noteInput=document.getElementById('labVerdictNote');
   if(noteInput)noteInput.value=draft.note||'';
 
@@ -273,7 +275,7 @@ async function sendVerdict(isReplace=false){
   for(const [tab,crits] of Object.entries(draft.grades||{}))grades[tab]=Object.fromEntries(Object.entries(crits||{}).map(([k,v])=>[k,v==='–'?null:v]));
   const payload={
     grades,
-    lighting:draft.lighting||'diagnostic',
+    lighting:draft.lighting||null,
     note:draft.note||null,
     inconclusive:draft.inconclusive?(draft.inconclusiveReason||'unspecified'):null,
     replace:Boolean(isReplace)
@@ -603,9 +605,13 @@ function experimentHtml(x,project,requests=currentRequests){
    const addBtn=`<button type="button" class="btn-outline lab-add-photos" data-exp="${esc(x.id)}">Add photos</button><input type="file" accept="image/*" multiple class="visually-hidden" aria-label="Add photos for ${esc(x.id)}" data-exp="${esc(x.id)}">`;
    const done=live&&FINISHED.has(live.state);
    const verdictBtn=(x.criteria&&x.criteria.length)?`<button type="button" class="${done?'btn-primary':'btn-outline'} lab-record-verdict" data-exp="${esc(x.id)}">Judge it</button>`:'';
+   const observeBtn=x.run?`<button type="button" class="btn-outline lab-observe" data-exp="${esc(x.id)}" data-project="${esc(currentProject)}">Record what happened</button>`:'';
    const expReqs=(requests||[]).filter(r=>r.experiment===x.id);
    const reqsHtml=`<div class="lab-requests" id="lab-requests-${esc(x.id)}" aria-live="polite">${renderRequestsList(expReqs)}</div>`;
-   actions=`${hint}<div class="lab-actions">${verdictBtn}${addBtn}</div>${reqsHtml}`;
+   actions=`${hint}<div class="lab-actions">${verdictBtn}${observeBtn}${addBtn}</div>${reqsHtml}`;
+ }else if(x.run&&x.status==='answered'){
+   // A judged print can still get what you saw on each tile and the pair (it doesn't change the verdict).
+   actions=`<div class="lab-actions"><button type="button" class="btn-outline lab-observe" data-exp="${esc(x.id)}" data-project="${esc(currentProject)}">Record what happened</button></div>`;
  }
 
  return `<article class="card lab-exp" id="lab-${esc(x.id)}"><header class="lab-exp__head"><span class="lab-exp__id">${esc(x.id)}</span>${b.join('')}</header><h3>${esc(x.question_text)}</h3><p class="meta">${esc(meta)}</p>`
@@ -676,7 +682,8 @@ function sheetsHtml(){
       <div class="lab-sheet__field">
         <label for="labVerdictLighting">Light used</label>
         <select id="labVerdictLighting">
-          <option value="diagnostic" selected>Diagnostic (raking light from one side)</option>
+          <option value="" selected disabled>Choose the light you looked under</option>
+          <option value="diagnostic">Diagnostic (raking light from one side)</option>
           <option value="room">Room light</option>
           <option value="installed">Installed (where the tile will live)</option>
         </select>
@@ -837,7 +844,7 @@ function init(){
      });
    }
    const lightingSelect=document.getElementById('labVerdictLighting');
-   if(lightingSelect)lightingSelect.addEventListener('change',saveVerdictDraft);
+   if(lightingSelect)lightingSelect.addEventListener('change',()=>{saveVerdictDraft();validateVerdict();});
    const noteInput=document.getElementById('labVerdictNote');
    if(noteInput)noteInput.addEventListener('input',saveVerdictDraft);
  }

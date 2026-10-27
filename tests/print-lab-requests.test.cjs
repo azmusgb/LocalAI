@@ -510,3 +510,45 @@ test("the Pi hub's no-picture answer is read up to a small cap", async t => {
   assert.equal(r.status, 503);
   assert.equal(r.body.reason, 'no_picture', 'an oversized answer is not parsed');
 });
+
+// ---- observations (print-lab spec 2026-10-26-observation-records-design rev 2) ----------------------------------
+
+const snapshot = (kind = 'pair') => ({
+  subject: { kind, experiment: 'E-023', run: 'PR-023-01', build: 'BLD-023-01', variant: 'E-023-A', label: '23A', tile: null, identified: 'confirmed', note: null },
+  viewing: { light: 'room' },
+  outcomes: { separation: { status: 'assessed', value: 'effort', note: null }, acceptance: { status: 'not_assessed', value: null, note: null } },
+  source: { kind: 'owner_report', words: 'twisted apart', evidence: [], occurred_at: null, attributed_by: 'phone_session' }
+});
+
+test('a phone observation session is queued with its snapshots, up to 16 KB', async t => {
+  const { call } = harness(t);
+  const ok = await call('POST', '/api/lab/hex-tile/requests', {
+    body: { id: 'rq-0000000000000a01', kind: 'observation', experiment: 'E-023', run: 'PR-023-01', payload: { snapshots: [snapshot(), snapshot('tile'), snapshot('tile')] } }
+  });
+  assert.equal(ok.status, 200);
+  const pending = await call('GET', '/api/lab/hex-tile/requests?status=pending', { asMac: true });
+  const item = pending.body.items.find(i => i.id === 'rq-0000000000000a01');
+  assert.equal(item.kind, 'observation');
+  assert.equal(item.payload.snapshots.length, 3);
+  const big = await call('POST', '/api/lab/hex-tile/requests', {
+    body: { id: 'rq-0000000000000a02', kind: 'observation', experiment: 'E-023', run: 'PR-023-01', payload: { snapshots: [{ ...snapshot(), source: { ...snapshot().source, words: 'x'.repeat(17 * 1024) } }] } }
+  });
+  assert.equal(big.status, 413);
+});
+
+test('observation payloads are checked: snapshots, correction ids, revisions and reasons', async t => {
+  const { call } = harness(t);
+  const post = (id, kind, payload) => call('POST', '/api/lab/hex-tile/requests', { body: { id, kind, experiment: 'E-023', run: 'PR-023-01', payload } });
+  assert.equal((await post('rq-0000000000000b01', 'observation', { snapshots: [] })).status, 422);
+  assert.equal((await post('rq-0000000000000b02', 'observation', { snapshots: [{ subject: 'x' }] })).status, 422);
+  assert.equal((await post('rq-0000000000000b03', 'observation_correction', { observation: '../x', expected_rev: 1, snapshot: snapshot(), reason: 'r' })).status, 422);
+  assert.equal((await post('rq-0000000000000b04', 'observation_correction', { observation: 'OBS-0001', expected_rev: 0, snapshot: snapshot(), reason: 'r' })).status, 422);
+  assert.equal((await post('rq-0000000000000b05', 'observation_correction', { observation: 'OBS-0001', expected_rev: 1, snapshot: snapshot(), reason: ' ' })).status, 422);
+  assert.equal((await post('rq-0000000000000b06', 'observation_correction', { observation: 'OBS-0001', expected_rev: 1, snapshot: snapshot(), reason: 'misread' })).status, 200);
+});
+
+test("observations come from a paired phone, not the Workshop display", async t => {
+  const { lab } = harness(t);
+  const [status] = lab.queueRequest('hex-tile', { id: 'rq-0000000000000c01', kind: 'observation', experiment: 'E-023', run: 'PR-023-01', payload: { snapshots: [snapshot()] } }, 'display');
+  assert.equal(status, 403);
+});
