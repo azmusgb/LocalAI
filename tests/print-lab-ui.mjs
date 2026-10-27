@@ -98,6 +98,17 @@ const answer = (id, status, message) => fetch(`${base}/api/lab/hex-tile/requests
 const sync = await fetch(`${base}/api/lab/hex-tile/sync`, { method: 'POST', headers: { 'X-LocalAI-Mac-Key': KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(index) });
 assert.equal(sync.status, 200);
 
+// A later push from the Mac: the fixture, changed by `edit`, with a newer time and fingerprint.
+let pushes = 0;
+async function pushIndex(edit) {
+  const ix = structuredClone(index);
+  edit(ix);
+  ix.generated_at = new Date(Date.now() + ++pushes * 1000).toISOString();
+  ix.fingerprint = crypto.createHash('sha256').update(JSON.stringify(ix.experiments) + pushes).digest('hex');
+  const r = await fetch(`${base}/api/lab/hex-tile/sync`, { method: 'POST', headers: { 'X-LocalAI-Mac-Key': KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(ix) });
+  assert.equal(r.status, 200);
+}
+
 const browser = await chromium.launch();
 const errors = [];
 
@@ -524,6 +535,33 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
     await wipe.locator('input[type="range"]').fill('20');
     assert.equal(await wipe.evaluate(el => el.style.getPropertyValue('--cut')), '20%');
     assert.equal(await e4.locator('.lab-wipe').count(), 0);
+  });
+  await check(`${name}: a sync while the page is open shows up within 5 s, without a reload, keeping scroll and open sections`, async () => {
+    await page.evaluate(() => { window.__noReload = true; document.querySelector('#lab-earlier').open = true; document.querySelector('#lab-d-E-004').open = true; });
+    await page.locator('#lab-E-004').scrollIntoViewIfNeeded();
+    const y = await page.evaluate(() => scrollY);
+    await pushIndex(ix => { ix.experiments.find(x => x.id === 'E-004').finding = 'clean up to 60 now'; });
+    await page.waitForFunction(() => /clean up to 60 now/.test(document.querySelector('#lab-E-004')?.innerText || ''), null, { timeout: 5000 });
+    assert.equal(await page.evaluate(() => window.__noReload), true);
+    assert.equal(await page.evaluate(() => scrollY), y);
+    assert.equal(await page.locator('#lab-d-E-004').getAttribute('open'), '');
+    assert.equal(await page.locator('#lab-earlier').getAttribute('open'), '');
+    await pushIndex(() => {});  // back to the fixture for the checks that follow
+    await page.waitForFunction(() => /clean up to 40, faint at 80/.test(document.querySelector('#lab-E-004')?.innerText || ''), null, { timeout: 5000 });
+  });
+  await check(`${name}: an update waits while a sheet is open and keeps what was typed, then shows on close`, async () => {
+    await page.locator('#lab-E-008 .lab-record-verdict').click();
+    await page.waitForSelector('#labVerdictSheet[open]');
+    await page.locator('#labVerdictNote').fill('half a thought');
+    await pushIndex(ix => { ix.experiments.find(x => x.id === 'E-004').finding = 'held for the sheet'; });
+    await page.waitForTimeout(4000);
+    assert.equal(await page.locator('#labVerdictSheet').getAttribute('open'), '');
+    assert.equal(await page.locator('#labVerdictNote').inputValue(), 'half a thought');
+    assert.doesNotMatch(await page.locator('#lab-E-004').innerText(), /held for the sheet/);
+    await page.locator('#labVerdictCancel').click();
+    await page.waitForFunction(() => /held for the sheet/.test(document.querySelector('#lab-E-004')?.innerText || ''), null, { timeout: 5000 });
+    await pushIndex(() => {});
+    await page.waitForFunction(() => /clean up to 40, faint at 80/.test(document.querySelector('#lab-E-004')?.innerText || ''), null, { timeout: 5000 });
   });
   await check(`${name}: axe finds nothing on the page`, async () => {
     await addAxe(page, axePath);

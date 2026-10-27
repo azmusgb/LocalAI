@@ -2415,6 +2415,15 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
   margin-bottom: 12px;
   scroll-margin-top: 72px;
 }
+.lab-exp.lab-changed {
+  box-shadow: 0 0 0 2px var(--ds-accent);
+  transition: box-shadow .4s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lab-exp.lab-changed {
+    transition: none;
+  }
+}
 .lab-exp[style*="--spine"] {
   border-left: 6px solid var(--spine);
 }

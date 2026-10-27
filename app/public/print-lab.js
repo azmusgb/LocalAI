@@ -433,7 +433,7 @@ function needsHtml(ix,byId){
   const cmd=x.command?`<div class="lab-cmd"><code>${esc(x.command)}</code><button type="button" class="btn-outline lab-copy" data-copy="${esc(x.command)}" aria-label="Copy the command for ${esc(x.id)}">Copy</button></div>`:'',acts=actButtons(x,byId[x.id]);
   return `<li class="list-row"><div class="list-row__main"><div class="list-row__title"><a href="#printLab?e=${esc(x.id)}" data-lab-open="${esc(x.id)}">${esc(x.action)} · ${esc(x.id)}</a></div>`
   +`<div class="list-row__sub">${esc(byId[x.id]?.question_text)}</div><div class="list-row__sub">${esc(x.why)}</div>`
-  +(acts?`<div class="lab-acts">${acts}</div>${x.action==='Send it to the printer'?`<p class="meta">Only once it's actually printing.</p>`:''}<p class="lab-act-status" data-act-status="${esc(x.id)}" role="status"></p>${cmd?`<details class="lab-mac"><summary>Run it on the Mac instead</summary>${cmd}</details>`:''}`:cmd)
+  +(acts?`<div class="lab-acts">${acts}</div>${x.action==='Send it to the printer'?`<p class="meta">Only once it's actually printing.</p>`:''}<p class="lab-act-status" data-act-status="${esc(x.id)}" role="status"></p>${cmd?`<details class="lab-mac" id="lab-mac-${esc(x.id)}"><summary>Run it on the Mac instead</summary>${cmd}</details>`:''}`:cmd)
   +'</div></li>'}).join('')}</ul>`;
 }
 
@@ -621,20 +621,25 @@ function experimentHtml(x,project,requests=currentRequests,byId={},colours={}){
   +(live?liveHtml(live):'')+actions
   +(Ev?Ev.wipeHtml(x,byId,p=>`/api/lab/${encodeURIComponent(project)}/photo/${p.sha256}.jpg`):'')
   +(shots?`<div class="lab-photos" data-lab-photos="${esc(x.id)}"></div>`:'')
-  +`<details class="lab-details" data-lab-details="${esc(x.id)}"><summary>Details</summary><dl>${dl}</dl>${guards?`<h4>Last check (${esc(String(x.check.status||'').replace(/_/g,' '))})</h4><ul class="lab-guards">${guards}</ul>`:''}</details></article>`;
+  +`<details class="lab-details" id="lab-d-${esc(x.id)}" data-lab-details="${esc(x.id)}"><summary>Details</summary><dl>${dl}</dl>${guards?`<h4>Last check (${esc(String(x.check.status||'').replace(/_/g,' '))})</h4><ul class="lab-guards">${guards}</ul>`:''}</details></article>`;
+}
+let unreachable=false;
+function syncLine(meta){
+ if(unreachable)return `<p class="meta lab-synced lab-synced--stale">Can't reach Local AI</p>`;
+ const stale=meta.synced_at&&Date.now()-new Date(meta.synced_at)>2*3600e3;
+ return `<p class="meta lab-synced${stale?' lab-synced--stale':''}">Synced from the Mac ${esc(ago(meta.synced_at))}${stale?'. The Mac may be asleep.':''}</p>`;
 }
 function render(data,requests=currentRequests){
  const ix=data.index,meta=data.meta||{},byId=Object.fromEntries(ix.experiments.map(x=>[x.id,x]));
  const open=ix.questions.filter(q=>!['answered','stopped'].includes(q.status)),recent=x=>x.status==='answered'&&x.verdict&&Date.now()-new Date(x.verdict.at)<3*864e5;
  // Answered in the last three days stays in view: the newest result is what the owner comes to check.
  const active=ix.experiments.filter(x=>!DONE.has(x.status)||recent(x)),earlier=ix.experiments.filter(x=>DONE.has(x.status)&&!recent(x));
- const stale=meta.synced_at&&Date.now()-new Date(meta.synced_at)>2*3600e3;
- return `<p class="meta lab-synced${stale?' lab-synced--stale':''}">Synced from the Mac ${esc(ago(meta.synced_at))}${stale?'. The Mac may be asleep.':''}</p>`
+ return syncLine(meta)
   +(ix.problems.length?`<div class="banner lab-problems" role="alert"><strong>Records the Mac can't read</strong><ul>${ix.problems.map(p=>`<li><b>${esc(p.file)}</b> ${esc(p.error)}</li>`).join('')}</ul></div>`:'')
   +`<div class="lab-layout"><div class="lab-side"><section class="card lab-needs-card"><h2>Needs you</h2>${needsHtml(ix,byId)}</section>`
   +(open.map(q=>questionHtml(q,byId)).join('')||'<section class="card"><div class="empty-state"><div class="empty-state__title">No open question.</div><div>Start one on the Mac with lab question new.</div></div></section>')
   +`</div><div class="lab-notebook"><h2>Notebook</h2>${liveData&&liveData.conflict?`<p class="banner banner--attention lab-conflict" role="status">Two runs say they're printing; check the Mac.</p>`:''}${active.map(x=>experimentHtml(x,ix.project,requests,byId,ix.colours)).join('')||'<p class="empty-state">No open experiments.</p>'}`
-  +(earlier.length?`<details class="lab-earlier"><summary>Earlier (${earlier.length})</summary>${earlier.map(x=>experimentHtml(x,ix.project,requests,byId,ix.colours)).join('')}</details>`:'')+'</div></div>';
+  +(earlier.length?`<details class="lab-earlier" id="lab-earlier"><summary>Earlier (${earlier.length})</summary>${earlier.map(x=>experimentHtml(x,ix.project,requests,byId,ix.colours)).join('')}</details>`:'')+'</div></div>';
 }
 function openExperiment(id){
  const card=document.getElementById(`lab-${id}`);if(!card)return;
@@ -642,22 +647,59 @@ function openExperiment(id){
  const d=card.querySelector('.lab-details');if(d)d.open=true;
  card.scrollIntoView({block:'start'});card.setAttribute('tabindex','-1');card.focus({preventScroll:true});
 }
+async function load(){
+ const UI=root.LocalAIUI;
+ const {projects}=await UI.fetchJson('/api/lab/projects');
+ if(!projects.length)return null;
+ const pName=projects[0].name;
+ currentProject=pName;
+ const [labData,reqData]=await Promise.all([
+   UI.fetchJson(`/api/lab/${encodeURIComponent(pName)}`),
+   fetch(`/api/lab/${encodeURIComponent(pName)}/requests`).then(r=>r.ok?r.json():{items:[]}).catch(()=>({items:[]}))
+ ]);
+ currentRequests=(reqData&&reqData.items)||[];
+ currentData=labData;
+ liveData=labData&&labData.live||null;
+ return labData;
+}
+function paint(c,data){c.innerHTML=render(data,currentRequests);root.LocalAIPrintLabPhotos?.mount(data);updateActStatuses();ensureActPoll();camTick=0;camShot()}
 async function refresh(){
  const box=document.getElementById('printLabBody'),UI=root.LocalAIUI;if(!box||!UI)return;
- await UI.loadInto(box,async()=>{
-  const {projects}=await UI.fetchJson('/api/lab/projects');
-  if(!projects.length)return null;
-  const pName=projects[0].name;
-  currentProject=pName;
-  const [labData,reqData]=await Promise.all([
-    UI.fetchJson(`/api/lab/${encodeURIComponent(pName)}`),
-    fetch(`/api/lab/${encodeURIComponent(pName)}/requests`).then(r=>r.ok?r.json():{items:[]}).catch(()=>({items:[]}))
-  ]);
-  currentRequests=(reqData&&reqData.items)||[];
-  currentData=labData;
-  liveData=labData&&labData.live||null;
-  return labData;
- },{what:'the print lab',empty:'No lab data yet. Run lab sync on the Mac.',render:(c,data)=>{if(!data)return false;c.innerHTML=render(data,currentRequests);root.LocalAIPrintLabPhotos?.mount(data);updateActStatuses();ensureActPoll();camTick=0;camShot();const e=new URLSearchParams(location.hash.split('?')[1]||'').get('e');if(e)openExperiment(e)}}).catch(()=>{});
+ await UI.loadInto(box,load,{what:'the print lab',empty:'No lab data yet. Run lab sync on the Mac.',render:(c,data)=>{if(!data)return false;paint(c,data);const e=new URLSearchParams(location.hash.split('?')[1]||'').get('e');if(e)openExperiment(e)}}).catch(()=>{});
+}
+// The watcher's re-render: no loading state, scroll, open sections and focus kept, and not read out (the body is a
+// live region; a page that changes every few seconds must not talk). Cards whose experiment changed light up briefly.
+async function quietRefresh(){
+ const box=document.getElementById('printLabBody'),R=root.LocalAIPrintLabRefresh;if(!box||!R)return;
+ const was=Object.fromEntries(((currentData&&currentData.index&&currentData.index.experiments)||[]).map(x=>[x.id,JSON.stringify(x)]));
+ const data=await load();if(!data)return;
+ const snap=R.snapshot(box);
+ box.setAttribute('aria-live','off');
+ paint(box,data);
+ R.restore(box,snap);
+ setTimeout(()=>box.setAttribute('aria-live','polite'),1000);
+ for(const x of data.index.experiments){
+  if(!(x.id in was)||was[x.id]===JSON.stringify(x))continue;
+  const card=document.getElementById(`lab-${x.id}`);if(card){card.classList.add('lab-changed');setTimeout(()=>card.classList.remove('lab-changed'),2000)}
+ }
+}
+function startWatch(sec){
+ const R=root.LocalAIPrintLabRefresh,UI=root.LocalAIUI;if(!R||!UI)return null;
+ // Busy = a sheet or the photo viewer is open, or the owner is typing in the print lab (a slider or checkbox isn't typing).
+ const typing=el=>el&&(el.tagName==='TEXTAREA'||el.tagName==='SELECT'||(el.tagName==='INPUT'&&/^(text|search|number|email|url|tel|password)$/.test(el.type)));
+ const busy=()=>!!document.querySelector('dialog[open]')||(sec.contains(document.activeElement)&&typing(document.activeElement));
+ const w=R.watch({
+  check:async()=>{const {projects}=await UI.fetchJson('/api/lab/projects');const p=projects.find(x=>x.name===currentProject)||projects[0];return p?p.fingerprint||null:null},
+  apply:quietRefresh,
+  isActive:()=>sec.classList.contains('active')&&document.visibilityState==='visible'&&navigator.onLine!==false,
+  isBusy:busy,
+  onFailures:n=>{const was=unreachable;unreachable=n>=3;if(was===unreachable)return;const line=document.querySelector('#printLabBody .lab-synced');if(line&&currentData)line.outerHTML=syncLine(currentData.meta||{})}
+ });
+ // A held update is applied on the next check after the sheet closes (within 3 s) or at once when the field loses
+ // focus; coming back to the tab checks at once.
+ sec.addEventListener('focusout',()=>setTimeout(()=>{if(!busy())w.poke()},0));
+ document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')w.poke()});
+ return w;
 }
 
 function sheetsHtml(){
@@ -890,7 +932,8 @@ function init(){
  }
 
  const active=()=>sec.classList.contains('active');let was=active();
- new MutationObserver(()=>{const now=active();if(now&&!was)refresh();if(!now)camStop();was=now}).observe(sec,{attributes:true,attributeFilter:['class']});
+ const watcher=startWatch(sec);
+ new MutationObserver(()=>{const now=active();if(now&&!was){refresh();watcher?.poke()}if(!now)camStop();was=now}).observe(sec,{attributes:true,attributeFilter:['class']});
  if(was)refresh();
 }
 root.LocalAIPrintLab={render,refresh,data:()=>currentData};

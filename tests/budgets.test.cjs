@@ -82,7 +82,8 @@ const KB = 1024;
 // 2026-10-23: 285 → 288 KB for the Universal Suite Navigation bar (<appliance-nav>, +2.3 KB gzipped).
 // 2026-10-24: 288 → 290 KB (app.css 43 → 44 KB, ui.js 112 → 113 KB) for Projects › Print lab: its styles (+0.7 KB),
 // its section (+0.1 KB) and the loader that fetches print-lab.js (4.6 KB) only when the page opens (288.9 KB measured).
-const TOTAL = 291 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
+// 2026-10-27: 291 → 292 KB for the print lab page's own styles above (app.css +0.35 KB; its scripts load on demand).
+const TOTAL = 292 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
 // 2026-10-17: +1 KB: main was 41 bytes over after the navigation PRs (#270), and showSheet (components.js) adds 0.15 KB.
@@ -105,9 +106,11 @@ const TOTAL = 291 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // status poll, +0.3 KB; 111.2 KB measured).
 // 2026-10-24: app.css 42 → 43 KB: the suite bar's styles moved there from appliance-nav.js (the hub loads one
 // stylesheet and injects none); the shell total is unchanged.
+// 2026-10-27: app.css 45 → 46 KB for the print lab page taking over from the Mac's page.html: spool colour edge and dot,
+// plans, AI readings, the reference wipe and the changed-card highlight (+0.35 KB; 45.3 KB measured).
 // 2026-10-26: app.css 44 → 45 KB for the print lab page's buttons, live print, camera, thumbnails, viewer, Compare and
 // checklist (+0.8 KB, less the retired .lab-shots rules); their scripts load on demand and stay out of the shell.
-const PER_FILE = { 'ui.js': 113 * KB, 'components.js': 11 * KB, 'app.css': 45 * KB, 'app.js': 36 * KB, 'index.html': 14 * KB, 'home.js': 11 * KB, 'spreadsheets.js': 11 * KB };
+const PER_FILE = { 'ui.js': 113 * KB, 'components.js': 11 * KB, 'app.css': 46 * KB, 'app.js': 36 * KB, 'index.html': 14 * KB, 'home.js': 11 * KB, 'spreadsheets.js': 11 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
