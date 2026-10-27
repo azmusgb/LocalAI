@@ -65,6 +65,8 @@ async function stubData(page) {
   const json = (route, body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
   await page.route(u => u.pathname === '/api/runs', route => { const id = new URL(route.request().url()).searchParams.get('id'); return id ? json(route, { item: RUNS.find(r => r.id === id) }) : json(route, { items: RUNS, summary: {} }); });
   await page.route(u => u.pathname === '/api/library', route => json(route, { items: LIBRARY }));
+  // Pi Hub's Needs you list: none, so a server that can reach a real hub draws the same Home as the baseline.
+  await page.route(u => u.pathname === '/api/home/hub-needs', route => json(route, { items: null }));
   await page.route('**/api/claude/board*', async route => {
     // The page can move on mid-request (connection reset); drop that request instead of crashing the suite.
     const res = await route.fetch().catch(() => null); if (!res) return route.abort().catch(() => {});

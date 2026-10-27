@@ -280,6 +280,40 @@ test('needs: only the display key gets them; Pi Hub\'s unkeyed read makes no /ap
   assert.equal(needsCalls, 1, 'then cached');
 });
 
+// Home's Needs you reads Pi Hub's list through Local AI (the browser can't reach the hub): the same cached, one-at-a-time
+// fetch the display uses; null when the hub doesn't answer, so Home shows only its own rows.
+test('home hub-needs: Pi Hub\'s items with their links; null when the hub is down', { timeout: 30000 }, async (t) => {
+  const http = require('node:http');
+  let needsCalls = 0;
+  const hub = http.createServer((req, res) => {
+    if (req.url === '/api/needs') {
+      needsCalls++;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ count: 2, items: [{ id: 'printer:plate', source: 'Printer', tone: 'attention', title: 'Clear the plate', detail: 'Finished', link: '/workshop' },
+        { id: 'localai:watch-mac-disk', source: 'Local AI', tone: 'warn', title: 'Worth a look', detail: 'Mac disk is 94% full', link: 'tool:assistant' }] }));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{}');
+  });
+  await new Promise((r) => hub.listen(0, '127.0.0.1', r));
+  const dirs = [fs.mkdtempSync(path.join(os.tmpdir(), 'localai-hubneeds-')), fs.mkdtempSync(path.join(os.tmpdir(), 'localai-hubneeds-'))];
+  const dead = 'http://127.0.0.1:9';
+  const env = { OLLAMA_URL: dead, SEARXNG_URL: dead, COMFY_URL: dead, N8N_URL: dead, PROXY_URL: dead, MAC_AI_HOME_URL: dead, MAC_DSH_URL: dead, LOCALAI_BAMBUDDY_URL: 'off' };
+  const up = spawnAppServer({ env: { ...env, DATA_DIR: dirs[0], WORKSPACE_ROOT: dirs[0], LOCALAI_PI_HUB_URL: `http://127.0.0.1:${hub.address().port}` } });
+  const down = spawnAppServer({ env: { ...env, DATA_DIR: dirs[1], WORKSPACE_ROOT: dirs[1], LOCALAI_PI_HUB_URL: dead } });
+  t.after(async () => {
+    hub.closeAllConnections(); hub.close();
+    for (const { child } of [up, down]) if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
+    for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
+  });
+  const base = await up.ready;
+  const got = await (await fetch(`${base}/api/home/hub-needs`)).json();
+  assert.deepEqual(got.items.map((i) => [i.id, i.tone, i.title, i.link]), [['printer:plate', 'attention', 'Clear the plate', '/workshop'], ['localai:watch-mac-disk', 'warn', 'Worth a look', '']]);
+  await fetch(`${base}/api/home/hub-needs`);
+  assert.equal(needsCalls, 1, 'cached like the display\'s');
+  const none = await (await fetch(`${await down.ready}/api/home/hub-needs`)).json();
+  assert.equal(none.items, null);
+});
+
 // Print lab cards (app/print-lab.js labCards) go in after the needs card, cut like the others.
 test('lab cards sit after the needs card; a judge card is not All clear', () => {
   const lab = [{ kind: 'lab', id: 'judge-PR-021-01', title: 'Judge E-021', text: `Look at: ${'the seam '.repeat(20)}`, tone: 'attention', ask: 'lab-judge', run: 'PR-021-01' }];

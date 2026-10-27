@@ -90,6 +90,12 @@ wait behind **See all**, which opens Work's **Needs you** filter. Repeated failu
 day after it failed, or when you retry it or run the same goal again (if that fails too, the new failure shows
 instead); it always stays in Work. Approvals stay until you decide them.
 
+Needs you also lists the rest of the house's one list, the same items in the same words as Pi Hub, the wall and the
+Workshop display: the printer ("Clear the plate"), the Pi, the print lab ("Judge E-022") and Local AI's own warnings
+("Worth a look"). They are in the same order, problems first, then what is waiting on you, then things worth a look.
+A printer or Pi item opens on Pi Hub; a lab item opens Projects › Print lab; a warning opens Health. When Pi Hub isn't
+answering, Needs you shows only Local AI's own rows.
+
 ## Images
 
 Pick **Image** on Home (or open **Images** with ⌘K) and describe the picture. Three engines run on the computer's own

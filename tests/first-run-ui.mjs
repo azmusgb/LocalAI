@@ -37,7 +37,8 @@ await check('while Get started shows, Needs you lists no service rows', async ()
   if (!expectCard) return;
   await page.waitForFunction(() => window.LocalAIHome && document.querySelector('#firstRun'));
   await page.waitForTimeout(300);
-  assert.equal(await page.locator('#homeNeedsList .home-attn').count(), 0);
+  // Pi Hub's items (data-hub-need) aren't service rows; a server that can reach a real hub may list them.
+  assert.equal(await page.locator('#homeNeedsList .home-attn:not([data-hub-need])').count(), 0);
 });
 await check('a sample task that cannot start says what Chat needs; step 3 is done only once a run opens', async () => {
   if (!expectCard) return;

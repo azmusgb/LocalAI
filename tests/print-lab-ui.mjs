@@ -58,6 +58,7 @@ const index = {
   questions: [{ id: 'Q-002', question: 'Is v58 good enough on a full tile?', status: 'active', budget: { minutes: 480, g: 300, test_minutes: 45, test_g: 25 }, spent: { minutes: 99.4, g: 29.1 }, next: { id: 'E-006', minutes: 248.7, g: 76.4 }, stop: { kind: null, text: 'continue' }, streak: 0, evidence: { informative: 1, uninformative: 0 }, experiments: ['E-004', 'E-006', 'E-008'], plans: [{ after: 'E-008', if: 'the top edge is clean', next: 'a full tile on terracotta' }], answered: 1 }],
   experiments: [
     exp('E-008', 'printing', {
+      reserved: { minutes: 99.4, g: 29.1 },
       criteria: [
         { key: 'print', label: 'Printed cleanly?', choices: ['clean', 'flawed', 'failed'] },
         { key: 'apart', label: 'Twists apart by hand?', choices: ['yes', 'hard', 'no'] }
@@ -73,7 +74,7 @@ const index = {
       needs: { id: 'E-008', urgency: 0, action: 'Judge the print', why: 'Look at: top edge.', command: 'uv run lab exp verdict E-008 --rank A --note "what you see"' }
     }),
     exp('E-009', 'approved', { needs: { id: 'E-009', urgency: 1, action: 'Send it to the printer', why: 'Approved; then record that it started.', command: 'uv run lab exp start E-009' } }),
-    exp('E-007', 'answered', { test_kind: 'full_part', filament: 'Kexcelled Light Matte Terracotta PLA', reference_variants: ['E-004-A'], run: 'PR-007-01', runs: [{ id: 'PR-007-01', started_at: '2026-10-24T10:00:00Z' }], verdict: { kind: 'acceptance', good_enough: true, defects: ['separation very hard'], note: 'faces good', at: new Date(Date.now() - 3600e3).toISOString() }, photos: [{ run: 'PR-007-01', path: 'photos/PR-007-01-1.jpg', sha256: shaOf(e7) }] }),
+    exp('E-007', 'answered', { test_kind: 'full_part', filament: 'Kexcelled Light Matte Terracotta PLA', reference_variants: ['E-004-A'], usage: { minutes: 263.1, g: 86.2, minutes_source: 'observed', g_source: 'estimate' }, run: 'PR-007-01', runs: [{ id: 'PR-007-01', started_at: '2026-10-24T10:00:00Z' }], verdict: { kind: 'acceptance', good_enough: true, defects: ['separation very hard'], note: 'faces good', at: new Date(Date.now() - 3600e3).toISOString() }, photos: [{ run: 'PR-007-01', path: 'photos/PR-007-01-1.jpg', sha256: shaOf(e7) }] }),
     exp('E-006', 'needs_approval', { check: { status: 'needs_approval', guards: [{ code: 'per_test_time', ok: false, result: 'needs_approval', message: '248.7 / 45 min per test' }] }, needs: { id: 'E-006', urgency: 2, action: 'Approve or drop', why: '248.7 / 45 min per test', command: 'uv run lab exp approve E-006 --reason "..."' } }),
     exp('E-004', 'answered', { variants: [{ id: 'E-004-A', tab: '40', requested: 40, realized: 40, as_asked: true, unit: 'mm/s', grade: 'clean' }, { id: 'E-004-B', tab: '80', requested: 80, realized: 80, as_asked: true, unit: 'mm/s', grade: 'faint' }], finding: 'clean up to 40, faint at 80', ai_observations: [{ confidence: 0.834, confirmed: false, assessment: 'Faint banding on the 80 strip.' }], run: 'PR-004-01', runs: [{ id: 'PR-004-01', started_at: '2026-10-23T10:00:00Z' }], outcome: 'refuted', validity: { status: 'valid', reasons: [{ code: 'cross_plate_by_design', status: 'valid' }] }, verdict: { kind: 'ranking', note: 'they look good', at: '2026-09-24T23:14:18Z' }, photos: [{ run: 'PR-004-01', path: 'photos/PR-004-1.jpg', sha256: sha }] })
   ],
@@ -169,6 +170,9 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
   await check(`${name}: a result from the last few days stays out of Earlier, with Accepted and its defects`, async () => {
     assert.equal(await page.locator('.lab-earlier #lab-E-007').count(), 0);
     const card = await page.locator('#lab-E-007').innerText();
+    const cost = await page.locator('#lab-E-007').textContent();
+    assert.match(cost, /used 263\.1 min, 86\.2 g \(estimated\)/);  // grams fell back to the slicer estimate
+    assert.match(await page.locator('#lab-E-008').textContent(), /reserved 99\.4 min, 29\.1 g while it prints/);
     assert.match(card, /Accepted/);
     assert.match(card, /Defects: separation very hard/);
   });

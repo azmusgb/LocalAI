@@ -9,6 +9,8 @@
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const n=x=>x===null||x===undefined?'–':String(Math.round(Number(x)*10)/10);
 const STATUS={planned:['Planned','neutral'],built:['Built','neutral'],build_failed:['Build failed','bad'],ready:['Ready to print','accent'],needs_approval:['Needs your approval','attention'],approved:['Approved','accent'],printing:['Printing','attention'],answered:['Answered','good'],abandoned:['Abandoned','neutral']};
+// How a usage figure was arrived at (page.json usage.minutes_source / g_source); 'observed' is shown bare.
+const USAGE_SOURCE={estimate:'estimated',scaled_estimate:'estimated, partial print',mixed:'partly estimated',none:'no build to estimate from'};
 const OUTCOME={supported:['Prediction supported','good'],refuted:['Prediction refuted','accent'],unresolved:['Unresolved','neutral'],inconclusive:['Inconclusive','neutral']};
 const VALIDITY={valid:['Fair comparison','good'],confounded:['Confounded','bad'],unknown:["Can't tell if fair",'attention']};
 const REASONS={witness_abnormal:'the witness wall printed abnormally',witness_inconclusive:"the witness wall couldn't be judged",anchor_shifted:'the control reprint came out different',anchor_inconclusive:"the control reprint couldn't be judged",layer_time_mismatch:'the plates spent different time per layer',reference_not_printed:'the reference was never printed',reference_unmeasurable:"the reference plate can't be measured",cross_plate_no_anchor:'compared across plates with no control reprint',cross_plate_by_design:'separate plates are the factor being tested',production_mismatch:'this plate differs from how the tile will be printed'};
@@ -589,7 +591,8 @@ function experimentHtml(x,project,requests=currentRequests,byId={},colours={}){
  if(x.verdict&&x.verdict.kind==='acceptance')b.push(badge(x.verdict.good_enough?['Accepted','good']:['Not good enough','bad']));
  const meta=[(x.test_kind||'').replace(/_/g,' '),f.name?`${f.name.replace(/_/g,' ')}: ${(f.values||[]).map(value).join(' vs ')}`:'',x.provenance!=='prospective'?x.provenance:''].filter(Boolean).join(' · ');
  const vars=x.variants.map(v=>{const u=v.unit?` ${v.unit}`:'',name=v.tab||v.id;return `<li>${esc(name)}: ${v.realized!=null&&v.as_asked===false?`${esc(value(v.requested))} asked, ${n(v.realized)} printed${esc(u)}`:`${esc(v.realized!=null?n(v.realized):value(v.requested))}${esc(u)}`}${Ev?Ev.gradeText(v):''}</li>`}).join('');
- const cost=[x.estimate&&`estimated ${n(x.estimate.minutes)} min, ${n(x.estimate.g)} g`,x.usage&&`used ${n(x.usage.minutes)} min, ${n(x.usage.g)} g`,x.layer_time_median_s&&`${n(x.layer_time_median_s)} s per layer`].filter(Boolean).join(', ');
+ const qty=(v,unit,src)=>`${n(v)} ${unit}${src&&src!=='observed'?` (${USAGE_SOURCE[src]||'estimated'})`:''}`;
+ const cost=[x.estimate&&`estimated ${n(x.estimate.minutes)} min, ${n(x.estimate.g)} g`,x.usage&&`used ${qty(x.usage.minutes,'min',x.usage.minutes_source)}, ${qty(x.usage.g,'g',x.usage.g_source)}`,x.reserved&&`reserved ${n(x.reserved.minutes)} min, ${n(x.reserved.g)} g while it prints`,x.layer_time_median_s&&`${n(x.layer_time_median_s)} s per layer`].filter(Boolean).join(', ');
  const why=x.outcome&&x.validity?x.validity.reasons.map(r=>REASONS[r.code]||r.code).join('; '):'';
  const v=x.verdict,said=v&&(v.note||(v.kind==='acceptance'?(v.good_enough?'good enough':'not good enough'):v.kind));
  const shots=x.photos.some(p=>p.sha256);
