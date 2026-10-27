@@ -130,3 +130,25 @@ export function releaseDecision({ base = 'main', testedTree, mergedTree }) {
   if (testedTree !== mergedTree) return { advance: false, reason: 'main holds something the run did not test (it moved during the merge); ship the next PR, or run ship again' };
   return { advance: true };
 }
+
+// PRs merged on GitHub without ship (26 Oct: #407 and #408) land on main untested and never deploy; the next ship
+// tests and releases them with its own PR. mergedPrs reads `git log --first-parent --merges --format='%H %P|%s'
+// origin/release..origin/main` (newest first) into [{pr, merge, head}], oldest first; the head is the merge's second
+// parent, where ship posts its local-ci status.
+export function mergedPrs(out) {
+  const found = [];
+  for (const line of String(out || '').split('\n')) {
+    const m = /^([0-9a-f]{40}) [0-9a-f]{40} ([0-9a-f]{40})\|Merge pull request #(\d+) /.exec(line);
+    if (m) found.push({ pr: Number(m[3]), merge: m[1], head: m[2] });
+  }
+  return found.reverse();
+}
+// The line a run prints first when main holds PRs without a green local-ci (other than the one it tests), or null.
+export function unshippedNote(merges, pr, releasing) {
+  const prs = merges.filter(m => !m.green && m.pr !== Number(pr)).map(m => `#${m.pr}`);
+  if (!prs.length) return null;
+  const one = prs.length === 1, list = one ? prs[0] : `${prs.slice(0, -1).join(', ')} and ${prs[prs.length - 1]}`;
+  return `Note: ${list} ${one ? 'is' : 'are'} on main but ${one ? 'was' : 'were'} never shipped (merged on GitHub without local CI). `
+    + `This run tests ${one ? 'it' : 'them'} with PR #${pr}${releasing ? ` and releases ${one ? 'it' : 'them'} too` : ''}; `
+    + `if it fails, check whether the failure comes from ${one ? 'it' : 'them'}.`;
+}

@@ -207,3 +207,29 @@ test('ship moves release only to a merge commit whose tree is the one it tested'
   assert.equal(releaseDecision({ testedTree: '', mergedTree: a }).advance, false);
   assert.deepEqual(releaseDecision({ base: 'feat/x', testedTree: a, mergedTree: a }), { advance: false, reason: 'the PR merged into feat/x, not main' });
 });
+
+// A PR merged on GitHub without ship lands on main untested and never deploys; the next ship tests and releases it
+// along with its own PR, and says so first, so a red run isn't blamed on the wrong PR.
+test('mergedPrs reads the PR merges on main that release does not have yet, oldest first', async () => {
+  const { mergedPrs } = await lib();
+  const a = 'a'.repeat(40), b = 'b'.repeat(40), c = 'c'.repeat(40), d = 'd'.repeat(40), e = 'e'.repeat(40);
+  const out = [
+    `${c} ${a} ${d}|Merge pull request #408 from azmusgb/feat/home-needs-pi`,
+    `${a} ${e} ${b}|Merge pull request #407 from azmusgb/fix/lab-usage-labels`,
+    `${e} ${a}|Merge branch 'main' into x`,
+  ].join('\n');
+  assert.deepEqual(mergedPrs(out), [{ pr: 407, merge: a, head: b }, { pr: 408, merge: c, head: d }]);
+  assert.deepEqual(mergedPrs(''), []);
+});
+
+test('unshippedNote names PRs merged without a green local-ci, never the one being shipped', async () => {
+  const { unshippedNote } = await lib();
+  assert.equal(unshippedNote([], 409, true), null);
+  assert.equal(unshippedNote([{ pr: 406, green: true }], 409, true), null);
+  assert.equal(unshippedNote([{ pr: 409, green: false }], 409, true), null);
+  assert.equal(unshippedNote([{ pr: 407, green: false }, { pr: 408, green: false }, { pr: 406, green: true }], 409, true),
+    'Note: #407 and #408 are on main but were never shipped (merged on GitHub without local CI). This run tests them with PR #409 and releases them too; if it fails, check whether the failure comes from them.');
+  assert.equal(unshippedNote([{ pr: 407, green: false }], 409, false),
+    'Note: #407 is on main but was never shipped (merged on GitHub without local CI). This run tests it with PR #409; if it fails, check whether the failure comes from it.');
+  assert.equal(unshippedNote([{ pr: 1, green: false }, { pr: 2, green: false }, { pr: 3, green: false }], 9, true).slice(0, 26), 'Note: #1, #2 and #3 are on');
+});
