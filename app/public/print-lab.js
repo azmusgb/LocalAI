@@ -627,10 +627,19 @@ function experimentHtml(x,project,requests=currentRequests,byId={},colours={}){
   +`<details class="lab-details" id="lab-d-${esc(x.id)}" data-lab-details="${esc(x.id)}"><summary>Details</summary><dl>${dl}</dl>${guards?`<h4>Last check (${esc(String(x.check.status||'').replace(/_/g,' '))})</h4><ul class="lab-guards">${guards}</ul>`:''}</details></article>`;
 }
 let unreachable=false;
-function syncLine(meta){
- if(unreachable)return `<p class="meta lab-synced lab-synced--stale">Can't reach Local AI</p>`;
- const stale=meta.synced_at&&Date.now()-new Date(meta.synced_at)>2*3600e3;
- return `<p class="meta lab-synced${stale?' lab-synced--stale':''}">Synced from the Mac ${esc(ago(meta.synced_at))}${stale?'. The Mac may be asleep.':''}</p>`;
+function syncState(meta){
+ if(unreachable)return {stale:true,text:"Can't reach Local AI"};
+ const stale=!!(meta.synced_at&&Date.now()-new Date(meta.synced_at)>2*3600e3);
+ return {stale,text:`Synced from the Mac ${ago(meta.synced_at)}${stale?'. The Mac may be asleep.':''}`};
+}
+// The line keeps time on a page left open (the watcher updates it on every check); aria-live off so its ticking isn't
+// read out from inside the body's live region.
+function syncLine(meta){const {stale,text}=syncState(meta);return `<p class="meta lab-synced${stale?' lab-synced--stale':''}" aria-live="off">${esc(text)}</p>`}
+function updateSyncLine(){
+ const line=document.querySelector('#printLabBody .lab-synced');if(!line||!currentData)return;
+ const {stale,text}=syncState(currentData.meta||{});
+ if(line.textContent!==text)line.textContent=text;
+ line.classList.toggle('lab-synced--stale',stale);
 }
 function render(data,requests=currentRequests){
  const ix=data.index,meta=data.meta||{},byId=Object.fromEntries(ix.experiments.map(x=>[x.id,x]));
@@ -692,11 +701,15 @@ function startWatch(sec){
  const typing=el=>el&&(el.tagName==='TEXTAREA'||el.tagName==='SELECT'||(el.tagName==='INPUT'&&/^(text|search|number|email|url|tel|password)$/.test(el.type)));
  const busy=()=>!!document.querySelector('dialog[open]')||(sec.contains(document.activeElement)&&typing(document.activeElement));
  const w=R.watch({
-  check:async()=>{const {projects}=await UI.fetchJson('/api/lab/projects');const p=projects.find(x=>x.name===currentProject)||projects[0];return p?p.fingerprint||null:null},
+  check:async()=>{
+   const {projects}=await UI.fetchJson('/api/lab/projects');const p=projects.find(x=>x.name===currentProject)||projects[0];
+   if(p&&currentData&&p.name===currentProject){currentData.meta={...(currentData.meta||{}),synced_at:p.synced_at};updateSyncLine()}
+   return p?p.fingerprint||null:null;
+  },
   apply:quietRefresh,
   isActive:()=>sec.classList.contains('active')&&document.visibilityState==='visible'&&navigator.onLine!==false,
   isBusy:busy,
-  onFailures:n=>{const was=unreachable;unreachable=n>=3;if(was===unreachable)return;const line=document.querySelector('#printLabBody .lab-synced');if(line&&currentData)line.outerHTML=syncLine(currentData.meta||{})}
+  onFailures:n=>{const was=unreachable;unreachable=n>=3;if(was!==unreachable)updateSyncLine()}
  });
  // A held update is applied on the next check after the sheet closes (within 3 s) or at once when the field loses
  // focus; coming back to the tab checks at once.

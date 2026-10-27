@@ -553,6 +553,35 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
     await pushIndex(() => {});  // back to the fixture for the checks that follow
     await page.waitForFunction(() => /clean up to 40, faint at 80/.test(document.querySelector('#lab-E-004')?.innerText || ''), null, { timeout: 5000 });
   });
+  await check(`${name}: the card being read stays put when Needs you changes above it`, async () => {
+    await page.evaluate(() => { document.querySelector('#lab-earlier').open = true; });
+    await page.evaluate(() => { const r = document.querySelector('#lab-E-004').getBoundingClientRect(); scrollBy(0, r.top - 120); });
+    const top = await page.evaluate(() => Math.round(document.querySelector('#lab-E-004').getBoundingClientRect().top));
+    await pushIndex(ix => { ix.needs = ix.needs.slice(1); ix.experiments.find(x => x.id === 'E-004').finding = 'needs changed above'; });
+    await page.waitForFunction(() => /needs changed above/.test(document.querySelector('#lab-E-004')?.innerText || ''), null, { timeout: 5000 });
+    const after = await page.evaluate(() => Math.round(document.querySelector('#lab-E-004').getBoundingClientRect().top));
+    assert.ok(Math.abs(after - top) <= 2, `E-004 moved from ${top} to ${after}`);
+    await pushIndex(() => {});
+    await page.waitForFunction(() => /clean up to 40, faint at 80/.test(document.querySelector('#lab-E-004')?.innerText || ''), null, { timeout: 5000 });
+  });
+  await check(`${name}: keyboard focus on a control survives an update`, async () => {
+    await page.locator('.lab-needs .lab-drop').focus();
+    const want = await page.evaluate(() => document.activeElement.matches('.lab-drop') && document.activeElement.dataset.exp);
+    assert.equal(want, 'E-006', 'Drop has focus before the update');
+    await pushIndex(ix => { ix.experiments.find(x => x.id === 'E-004').finding = 'focus kept'; });
+    await page.waitForFunction(() => /focus kept/.test(document.querySelector('#lab-E-004')?.innerText || ''), null, { timeout: 5000 });
+    assert.equal(await page.evaluate(() => document.activeElement.matches('.lab-needs .lab-drop') && document.activeElement.dataset.exp), want);
+    await page.evaluate(() => document.activeElement.blur());
+    await pushIndex(() => {});
+    await page.waitForFunction(() => /clean up to 40, faint at 80/.test(document.querySelector('#lab-E-004')?.innerText || ''), null, { timeout: 5000 });
+  });
+  await check(`${name}: the sync line keeps time on a page left open`, async () => {
+    const old = new Date(Date.now() - 3 * 3600e3).toISOString();
+    await page.route('**/api/lab/projects', async route => { const r = await route.fetch(); const d = await r.json(); d.projects = d.projects.map(p => ({ ...p, synced_at: old })); await route.fulfill({ response: r, json: d }); });
+    await page.waitForFunction(() => /The Mac may be asleep/.test(document.querySelector('#printLabBody .lab-synced')?.textContent || ''), null, { timeout: 5000 });
+    await page.unroute('**/api/lab/projects');
+    await page.waitForFunction(() => !/The Mac may be asleep/.test(document.querySelector('#printLabBody .lab-synced')?.textContent || ''), null, { timeout: 5000 });
+  });
   await check(`${name}: an update waits while a sheet is open and keeps what was typed, then shows on close`, async () => {
     await page.locator('#lab-E-008 .lab-record-verdict').click();
     await page.waitForSelector('#labVerdictSheet[open]');

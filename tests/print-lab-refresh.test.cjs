@@ -96,12 +96,18 @@ test('stop ends the checks', async () => {
   assert.equal(seen.checks, 1);
 });
 
+test('the first project to arrive is applied (no project yet is not a baseline)', async () => {
+  const { c, seen } = harness([null, null, 'a', 'a']);
+  for (let k = 0; k < 4; k++) await c.tick();
+  assert.equal(seen.applied, 1);
+});
+
 test('quiet render keeps scroll and open details', () => {
   const opened = [];
   const details = id => ({ id, set open(v) { if (v) opened.push(id); } });
-  const before = { querySelectorAll: () => [details('lab-d-E-004'), details('lab-earlier')], ownerDocument: { activeElement: { id: 'labCopy-E-008' }, defaultView: { scrollY: 640 } } };
+  const before = { querySelectorAll: sel => (sel === 'details[open]' ? [details('lab-d-E-004'), details('lab-earlier')] : []), ownerDocument: { activeElement: { id: 'labCopy-E-008' }, defaultView: { scrollY: 640 } } };
   const snap = R.snapshot(before);
-  assert.deepEqual(JSON.parse(JSON.stringify(snap)), { scrollY: 640, open: ['lab-d-E-004', 'lab-earlier'], focusId: 'labCopy-E-008' });
+  assert.deepEqual(JSON.parse(JSON.stringify(snap)), { scrollY: 640, open: ['lab-d-E-004', 'lab-earlier'], focusId: 'labCopy-E-008', focus: null, anchor: null });
   let scrolled = null, focused = null;
   const byId = { 'lab-d-E-004': details('lab-d-E-004'), 'lab-earlier': details('lab-earlier'), 'labCopy-E-008': { focus: o => { focused = o; } } };
   const after = { querySelector: sel => byId[sel.replace(/^#/, '').replace(/\\/g, '')] || null, ownerDocument: { defaultView: { scrollTo: (x, y) => { scrolled = y; } } } };
