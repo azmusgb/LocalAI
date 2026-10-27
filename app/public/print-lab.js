@@ -20,6 +20,22 @@ const value=v=>Array.isArray(v)?[...new Set(v.map(String))].join('/'):typeof v==
 const when=iso=>{const d=new Date(iso);return isNaN(d)?'':d.toLocaleString(undefined,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})};
 const ago=iso=>{const m=Math.round((Date.now()-new Date(iso))/60000);return !isFinite(m)?'':m<1?'just now':m<60?`${m} min ago`:m<1440?`${Math.round(m/60)} h ago`:`${Math.round(m/1440)} days ago`};
 
+// Bambuddy's print for a run, and the prints made outside the lab (page.json runs[].print, entered_on_mac, outside).
+const BAMBU='https://bambuddy.home.arpa/';
+const bambuLink=id=>id==null?'':`<a href="${BAMBU}" target="_blank" rel="noopener">from Bambuddy print #${esc(id)} ↗</a>`;
+function runLines(runs){
+ return (runs||[]).map(r=>{
+  const p=r.print;if(!p&&!r.entered_on_mac)return '';
+  const word=p?esc(p.status_word)+(p.failed_at_estimate!=null?` at ~${Math.round(p.failed_at_estimate*100)} % (estimate)`:'')+(p.failure_reason?` (${esc(p.failure_reason)})`:''):'';
+  const parts=[runs.length>1?esc(r.id):'',word,p&&p.minutes!=null?dur(Math.round(p.minutes)):'',p&&p.grams!=null?`${Math.round(p.grams)} g`:'',p?bambuLink(p.id):'',r.entered_on_mac?'entered on the Mac':''].filter(Boolean);
+  return `<p class="meta lab-print">${parts.join(' · ')}</p>`;
+ }).join('');
+}
+function outsideHtml(list){
+ if(!Array.isArray(list)||!list.length)return '';
+ return `<section class="card lab-outside"><h2>Outside the lab</h2>${list.map(o=>`<p class="meta">${[esc(o.name||`Print #${o.print}`),esc(o.status_word),esc(when(o.started)),bambuLink(o.print)].filter(Boolean).join(' · ')}</p>`).join('')}</section>`;
+}
+
 let currentProject='';
 let currentData=null;
 let currentRequests=[];
@@ -617,7 +633,7 @@ function experimentHtml(x,project,requests=currentRequests,byId={},colours={}){
 
  const spine=Ev?Ev.spoolColour(x.filament,colours):'';
  return `<article class="card lab-exp" id="lab-${esc(x.id)}"${spine?` style="--spine:${spine}"`:''}><header class="lab-exp__head">${spine?`<span class="lab-swatch" aria-hidden="true"></span>`:''}<span class="lab-exp__id">${esc(x.id)}</span>${b.join('')}</header><h3>${esc(x.question_text)}</h3><p class="meta">${esc(meta)}</p>`
-  +(vars?`<ul class="lab-variants">${vars}</ul>`:'')+(cost?`<p class="meta">${esc(cost)}</p>`:'')+(why?`<p class="meta">Why: ${esc(why)}</p>`:'')
+  +(vars?`<ul class="lab-variants">${vars}</ul>`:'')+(cost?`<p class="meta">${esc(cost)}</p>`:'')+runLines(x.runs)+(why?`<p class="meta">Why: ${esc(why)}</p>`:'')
   +(said?`<p class="lab-verdict">Your verdict: ${esc(said)} <span class="meta">${esc(when(v.at))}</span></p>`:'')
   +(v&&v.defects&&v.defects.length?`<p class="meta lab-defects">Defects: ${esc(v.defects.join('; '))}</p>`:'')
   +(Ev?Ev.findingHtml(x)+Ev.aiHtml(x):'')
@@ -651,7 +667,7 @@ function render(data,requests=currentRequests){
   +`<div class="lab-layout"><div class="lab-side"><section class="card lab-needs-card"><h2>Needs you</h2>${needsHtml(ix,byId)}</section>`
   +(open.map(q=>questionHtml(q,byId)).join('')||'<section class="card"><div class="empty-state"><div class="empty-state__title">No open question.</div><div>Start one on the Mac with lab question new.</div></div></section>')
   +`</div><div class="lab-notebook"><h2>Notebook</h2>${liveData&&liveData.conflict?`<p class="banner banner--attention lab-conflict" role="status">Two runs say they're printing; check the Mac.</p>`:''}${active.map(x=>experimentHtml(x,ix.project,requests,byId,ix.colours)).join('')||'<p class="empty-state">No open experiments.</p>'}`
-  +(earlier.length?`<details class="lab-earlier" id="lab-earlier"><summary>Earlier (${earlier.length})</summary>${earlier.map(x=>experimentHtml(x,ix.project,requests,byId,ix.colours)).join('')}</details>`:'')+'</div></div>';
+  +(earlier.length?`<details class="lab-earlier" id="lab-earlier"><summary>Earlier (${earlier.length})</summary>${earlier.map(x=>experimentHtml(x,ix.project,requests,byId,ix.colours)).join('')}</details>`:'')+outsideHtml(ix.outside)+'</div></div>';
 }
 function openExperiment(id){
  const card=document.getElementById(`lab-${id}`);if(!card)return;
