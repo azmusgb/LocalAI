@@ -144,8 +144,12 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
     const records = ix.records && typeof ix.records === 'object' ? ix.records : {};
     const ids = Object.keys(records);
     if (ids.length > MAX_RECORDS || ids.some(id => !ID_RE.test(id))) return [422, { error: 'Record ids must look like E-001 or Q-001.' }];
+    // The Mac's spool colours (name → hex, from Bambuddy); anything else is dropped. The page checks each hex. They are
+    // part of the stored fingerprint, so a push that only changes colours is stored and open pages refresh.
+    const c = ix.colours, colours = c && typeof c === 'object' && !Array.isArray(c) && Object.values(c).every(v => typeof v === 'string') ? c : {};
+    const fingerprint = Object.keys(colours).length ? `${ix.fingerprint}:${crypto.createHash('sha256').update(JSON.stringify(Object.entries(colours).sort())).digest('hex').slice(0, 16)}` : ix.fingerprint;
     const meta = storage.readSetting(key(project, 'meta'), null);
-    if (meta && meta.fingerprint === ix.fingerprint) {
+    if (meta && meta.fingerprint === fingerprint) {
       storage.writeSetting(key(project, 'meta'), { ...meta, synced_at: now() });
       return [200, { ok: true, upserted: 0, removed: 0, unchanged: ids.length }];
     }
@@ -163,8 +167,8 @@ function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () 
         if (!(old.id in records)) { storage.deleteSetting(key(project, `record:${old.id}`)); removed++; }
       }
       const { records: _drop, colours: _c, ...index } = ix;
-      storage.writeSetting(key(project, 'index'), index);
-      storage.writeSetting(key(project, 'meta'), { generated_at: ix.generated_at, fingerprint: ix.fingerprint, synced_at: now(), counts: { records: ids.length, experiments: (ix.experiments || []).length } });
+      storage.writeSetting(key(project, 'index'), { ...index, colours });
+      storage.writeSetting(key(project, 'meta'), { generated_at: ix.generated_at, fingerprint, synced_at: now(), counts: { records: ids.length, experiments: (ix.experiments || []).length } });
       if (!projects().includes(project)) storage.writeSetting(`${PREFIX}projects`, { names: [...projects(), project].sort() });
     });
     return [200, { ok: true, upserted, removed, unchanged }];
