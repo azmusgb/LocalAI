@@ -41,7 +41,8 @@ import path from 'node:path';
 import net from 'node:net';
 import crypto from 'node:crypto';
 import { failingUnitTests, failedBrowserSuites, browserSuiteCounts, suitesToRetry, ciSummary, failureComment, retryComment,
-  releaseNoteAdvice, RELEASE_NOTE_MARKER, shipMergeArgs, shipNextStep, recheckOutcome, releaseDecision, RELEASE_BRANCH } from './local-ci-lib.mjs';
+  releaseNoteAdvice, RELEASE_NOTE_MARKER, shipMergeArgs, shipNextStep, recheckOutcome, releaseDecision, RELEASE_BRANCH,
+  mergedPrs, unshippedNote } from './local-ci-lib.mjs';
 
 const args = process.argv.slice(2);
 const pr = args.find(a => /^\d+$/.test(a));
@@ -212,6 +213,7 @@ async function main() {
     await status('pending', 'Running on ' + os.hostname());
     // The main this run tests: the ship re-check compares against it. (Fetched before the queue, so a wait counts too.)
     testedBase = git('rev-parse', `origin/${head.baseRefName}`);
+    noticeUnshipped();
     try { execFileSync('git', ['merge', '-q', '--no-edit', `origin/${head.baseRefName}`], { cwd: dir, stdio: 'pipe' }); }
     catch { say(`--- Merge with ${head.baseRefName}: FAILED (conflicts; merge main into the branch first)`); await status('failure', `Conflicts with ${head.baseRefName}`); return false; }
     try { fs.symlinkSync(ciDeps(dir), path.join(dir, 'node_modules')); }
@@ -297,6 +299,22 @@ async function shipAfterGreen() {
   catch (e) { say(`Not merged: ${String(e.stderr || e.message).trim().split('\n')[0]} (was something pushed after the test started?)`); return false; }
   advanceRelease();
   return true;
+}
+
+// Says first when main holds PRs merged without ship (no green local-ci on their head): this run tests them too, and a
+// ship releases them. Never fails the run.
+function noticeUnshipped() {
+  if (DRY || baseRef !== 'main') return;
+  try {
+    git('fetch', '-q', 'origin', RELEASE_BRANCH);
+    const merges = mergedPrs(git('log', '--first-parent', '--merges', '--format=%H %P|%s', `origin/${RELEASE_BRANCH}..${testedBase}`));
+    for (const m of merges) {
+      try { m.green = gh('api', `repos/{owner}/{repo}/commits/${m.head}/status`, '-q', '.statuses[]|select(.context=="local-ci")|.state').split('\n').includes('success'); }
+      catch { m.green = true; }  // can't tell: say nothing about it
+    }
+    const note = unshippedNote(merges, pr, ship);
+    if (note) say(note);
+  } catch (e) { say(`(couldn't check main for unshipped merges: ${String(e.message).split('\n')[0]})`); }
 }
 
 // Moves `release`, the branch the host deploys, to the merge commit when its tree is the one just tested. Never fails
