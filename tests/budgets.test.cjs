@@ -107,9 +107,11 @@ const TOTAL = 292 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // status poll, +0.3 KB; 111.2 KB measured).
 // 2026-10-24: app.css 42 → 43 KB: the suite bar's styles moved there from appliance-nav.js (the hub loads one
 // stylesheet and injects none); the shell total is unchanged.
+// 2026-10-27: app.css 45 → 46 KB for the print lab page taking over from the Mac's page.html: spool colour edge and dot,
+// plans, AI readings, the reference wipe and the changed-card highlight (+0.35 KB; 45.3 KB measured).
 // 2026-10-26: app.css 44 → 45 KB for the print lab page's buttons, live print, camera, thumbnails, viewer, Compare and
 // checklist (+0.8 KB, less the retired .lab-shots rules); their scripts load on demand and stay out of the shell.
-const PER_FILE = { 'ui.js': 113 * KB, 'components.js': 11 * KB, 'app.css': 45 * KB, 'app.js': 36 * KB, 'index.html': 14 * KB, 'home.js': 12 * KB, 'spreadsheets.js': 11 * KB };
+const PER_FILE = { 'ui.js': 113 * KB, 'components.js': 11 * KB, 'app.css': 46 * KB, 'app.js': 36 * KB, 'index.html': 14 * KB, 'home.js': 12 * KB, 'spreadsheets.js': 11 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;

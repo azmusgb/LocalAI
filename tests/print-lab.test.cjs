@@ -64,6 +64,17 @@ test('a push is stored, re-pushing is a no-op, an older push is refused and gone
   assert.deepEqual((await call('GET', '/api/lab/projects')).body.projects.map(p => p.name), ['hex-tile']);
 });
 
+test('a push keeps its spool colours', async () => {
+  let r = await call('POST', '/api/lab/hex-tile/sync', { ...index('2026-10-25T03:10:00Z', {}), colours: { terracotta: '#c0623a' } }, MAC);
+  assert.equal(r.status, 200);
+  assert.deepEqual((await call('GET', '/api/lab/hex-tile')).body.index.colours, { terracotta: '#c0623a' });
+  r = await call('POST', '/api/lab/hex-tile/sync', { ...index('2026-10-25T03:20:00Z', {}), colours: 'x' }, MAC);
+  assert.equal(r.status, 200);
+  assert.deepEqual((await call('GET', '/api/lab/hex-tile')).body.index.colours, {});
+  r = await call('POST', '/api/lab/hex-tile/sync', { ...index('2026-10-25T03:30:00Z', {}), colours: { red: 7 } }, MAC);
+  assert.deepEqual((await call('GET', '/api/lab/hex-tile')).body.index.colours, {});
+});
+
 test('a push with the wrong schema or project is refused', async () => {
   assert.equal((await call('POST', '/api/lab/hex-tile/sync', { ...index('2026-10-25T04:00:00Z', {}), schema: 'v0' }, MAC)).status, 422);
   assert.equal((await call('POST', '/api/lab/hex-tile/sync', { ...index('2026-10-25T04:00:00Z', {}), project: 'other' }, MAC)).status, 422);

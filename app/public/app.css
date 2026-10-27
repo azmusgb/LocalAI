@@ -2415,6 +2415,91 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
   margin-bottom: 12px;
   scroll-margin-top: 72px;
 }
+.lab-exp.lab-changed {
+  box-shadow: 0 0 0 2px var(--ds-accent);
+  transition: box-shadow .4s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lab-exp.lab-changed {
+    transition: none;
+  }
+}
+.lab-exp[style*="--spine"] {
+  border-left: 6px solid var(--spine);
+}
+.lab-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--spine);
+  border: 1px solid var(--ds-line);
+}
+.lab-plans {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ds-muted);
+}
+.lab-ai {
+  font-size: var(--ds-fs-1);
+  color: var(--ds-muted);
+  border-left: 3px solid var(--ds-line);
+  padding-left: 8px;
+}
+.lab-wipe {
+  position: relative;
+  margin: 10px 0 0;
+  border-radius: var(--ds-r-md);
+  overflow: hidden;
+  border: 1px solid var(--ds-line);
+}
+.lab-wipe img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+.lab-wipe .lab-wipe__after {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  clip-path: inset(0 0 0 var(--cut));
+}
+.lab-wipe input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: ew-resize;
+  margin: 0;
+}
+.lab-wipe input:focus-visible + figcaption {
+  outline: 2px solid var(--ds-accent);
+}
+.lab-wipe::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--cut);
+  width: 3px;
+  margin-left: -1px;
+  background: #fff;
+  pointer-events: none;
+}
+.lab-wipe figcaption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 10px;
+  font-size: var(--ds-fs-1);
+  color: #fff;
+  text-shadow: 0 1px 3px #000;
+  pointer-events: none;
+}
 .lab-exp__head {
   display: flex;
   flex-wrap: wrap;
