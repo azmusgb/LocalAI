@@ -55,7 +55,7 @@ const exp = (id, status, extra = {}) => ({ id, question: 'Q-002', status, proven
 const e8 = Array.from({ length: 8 }, (_, i) => photoBytes(i)), e7 = photoBytes(20);
 const index = {
   schema: 'print-lab-index/1', project: 'hex-tile', generated_at: new Date().toISOString(), fingerprint: 'f'.repeat(64),
-  questions: [{ id: 'Q-002', question: 'Is v58 good enough on a full tile?', status: 'active', budget: { minutes: 480, g: 300, test_minutes: 45, test_g: 25 }, spent: { minutes: 99.4, g: 29.1 }, next: { id: 'E-006', minutes: 248.7, g: 76.4 }, stop: { kind: null, text: 'continue' }, streak: 0, evidence: { informative: 1, uninformative: 0 }, experiments: ['E-004', 'E-006', 'E-008'], plans: [], answered: 1 }],
+  questions: [{ id: 'Q-002', question: 'Is v58 good enough on a full tile?', status: 'active', budget: { minutes: 480, g: 300, test_minutes: 45, test_g: 25 }, spent: { minutes: 99.4, g: 29.1 }, next: { id: 'E-006', minutes: 248.7, g: 76.4 }, stop: { kind: null, text: 'continue' }, streak: 0, evidence: { informative: 1, uninformative: 0 }, experiments: ['E-004', 'E-006', 'E-008'], plans: [{ after: 'E-008', if: 'the top edge is clean', next: 'a full tile on terracotta' }], answered: 1 }],
   experiments: [
     exp('E-008', 'printing', {
       criteria: [
@@ -73,11 +73,11 @@ const index = {
       needs: { id: 'E-008', urgency: 0, action: 'Judge the print', why: 'Look at: top edge.', command: 'uv run lab exp verdict E-008 --rank A --note "what you see"' }
     }),
     exp('E-009', 'approved', { needs: { id: 'E-009', urgency: 1, action: 'Send it to the printer', why: 'Approved; then record that it started.', command: 'uv run lab exp start E-009' } }),
-    exp('E-007', 'answered', { test_kind: 'full_part', run: 'PR-007-01', runs: [{ id: 'PR-007-01', started_at: '2026-10-24T10:00:00Z' }], verdict: { kind: 'acceptance', good_enough: true, defects: ['separation very hard'], note: 'faces good', at: new Date(Date.now() - 3600e3).toISOString() }, photos: [{ run: 'PR-007-01', path: 'photos/PR-007-01-1.jpg', sha256: shaOf(e7) }] }),
+    exp('E-007', 'answered', { test_kind: 'full_part', filament: 'Kexcelled Light Matte Terracotta PLA', reference_variants: ['E-004-A'], run: 'PR-007-01', runs: [{ id: 'PR-007-01', started_at: '2026-10-24T10:00:00Z' }], verdict: { kind: 'acceptance', good_enough: true, defects: ['separation very hard'], note: 'faces good', at: new Date(Date.now() - 3600e3).toISOString() }, photos: [{ run: 'PR-007-01', path: 'photos/PR-007-01-1.jpg', sha256: shaOf(e7) }] }),
     exp('E-006', 'needs_approval', { check: { status: 'needs_approval', guards: [{ code: 'per_test_time', ok: false, result: 'needs_approval', message: '248.7 / 45 min per test' }] }, needs: { id: 'E-006', urgency: 2, action: 'Approve or drop', why: '248.7 / 45 min per test', command: 'uv run lab exp approve E-006 --reason "..."' } }),
-    exp('E-004', 'answered', { run: 'PR-004-01', runs: [{ id: 'PR-004-01', started_at: '2026-10-23T10:00:00Z' }], outcome: 'refuted', validity: { status: 'valid', reasons: [{ code: 'cross_plate_by_design', status: 'valid' }] }, verdict: { kind: 'ranking', note: 'they look good', at: '2026-09-24T23:14:18Z' }, photos: [{ run: 'PR-004-01', path: 'photos/PR-004-1.jpg', sha256: sha }] })
+    exp('E-004', 'answered', { variants: [{ id: 'E-004-A', tab: '40', requested: 40, realized: 40, as_asked: true, unit: 'mm/s', grade: 'clean' }, { id: 'E-004-B', tab: '80', requested: 80, realized: 80, as_asked: true, unit: 'mm/s', grade: 'faint' }], finding: 'clean up to 40, faint at 80', ai_observations: [{ confidence: 0.834, confirmed: false, assessment: 'Faint banding on the 80 strip.' }], run: 'PR-004-01', runs: [{ id: 'PR-004-01', started_at: '2026-10-23T10:00:00Z' }], outcome: 'refuted', validity: { status: 'valid', reasons: [{ code: 'cross_plate_by_design', status: 'valid' }] }, verdict: { kind: 'ranking', note: 'they look good', at: '2026-09-24T23:14:18Z' }, photos: [{ run: 'PR-004-01', path: 'photos/PR-004-1.jpg', sha256: sha }] })
   ],
-  needs: [], problems: [], records: {
+  needs: [], problems: [], colours: { terracotta: '#c0623a', 'light matte terracotta': '#d08a6a' }, records: {
     'E-004': { type: 'experiment', file: 'experiments/E-004.json', sha256: 'a'.repeat(64), payload: { id: 'E-004' } },
     'E-006': { type: 'experiment', file: 'experiments/E-006.json', sha256: 'b'.repeat(64), payload: { id: 'E-006', builds: [{ id: 'BLD-006-01', ok: true, check: { status: 'needs_approval', guards: [{ code: 'owner_stopped', ok: true, result: 'blocked', message: 'question active' }, { code: 'per_test_time', ok: false, result: 'needs_approval', message: '248.7 / 45 min per test' }] } }] } },
     'E-007': { type: 'experiment', file: 'experiments/E-007.json', sha256: 'c'.repeat(64), payload: { id: 'E-007', print_runs: [{ id: 'PR-007-01', photos: [{ sha256: shaOf(e7), tab: '12A' }] }] } },
@@ -508,6 +508,22 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
     const r = await page.evaluate(async () => await window.axe.run(document.getElementById('labObserveSheet'), { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa'] } }));
     assert.deepEqual(r.violations.map(v => v.id), []);
     await page.locator('#labObserveClose').click();
+  });
+  await check(`${name}: what only the Mac's page showed is here: spool colour, plans, grades, finding, AI reading, wipe`, async () => {
+    await page.evaluate(() => { const d = document.querySelector('#printLab .lab-earlier'); if (d) d.open = true; });
+    const e7 = page.locator('#lab-E-007'), e4 = page.locator('#lab-E-004');
+    assert.equal(await e7.evaluate(el => el.style.getPropertyValue('--spine')), '#d08a6a');
+    assert.equal(await e7.locator('.lab-swatch').count(), 1);
+    assert.equal(await page.locator('#lab-E-006').evaluate(el => el.style.getPropertyValue('--spine')), '#8698b1');
+    assert.match(await page.locator('.lab-question').innerText(), /After E-008, if the top edge is clean: a full tile on terracotta/);
+    assert.deepEqual(await e4.locator('.lab-variants li').allInnerTexts(), ['40: 40 mm/s · clean', '80: 80 mm/s · faint']);
+    assert.match(await e4.innerText(), /Finding: clean up to 40, faint at 80/);
+    assert.match(await e4.innerText(), /AI reading \(83% sure, unconfirmed\): Faint banding on the 80 strip\./);
+    const wipe = e7.locator('.lab-wipe');
+    assert.equal(await wipe.locator('input[type="range"]').getAttribute('aria-label'), 'Drag between E-004 and E-007');
+    await wipe.locator('input[type="range"]').fill('20');
+    assert.equal(await wipe.evaluate(el => el.style.getPropertyValue('--cut')), '20%');
+    assert.equal(await e4.locator('.lab-wipe').count(), 0);
   });
   await check(`${name}: axe finds nothing on the page`, async () => {
     await addAxe(page, axePath);

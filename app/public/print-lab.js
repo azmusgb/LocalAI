@@ -579,15 +579,16 @@ function questionHtml(q,byId){
  return `<section class="card lab-question"><p class="meta">${esc(q.id)} · ${q.answered} of ${q.experiments.length} answered · ${ev.informative} informative, ${ev.uninformative} not</p><h2>${esc(q.question)}</h2>`
   +meter('Time',s.minutes,nx&&nx.minutes,b.minutes,'min')+meter('Material',s.g,nx&&nx.g,b.g,'g')
   +(nx?`<p class="meta">${esc(nx.id)} would add ${n(nx.minutes)} min, ${n(nx.g)} g</p>`:'')+stop
+  +(root.LocalAIPrintLabEvidence?.plansHtml(q)||'')
   +(cur?`<div class="lab-now"><p class="meta"><a href="#printLab?e=${esc(cur.id)}" data-lab-open="${esc(cur.id)}">${esc(cur.id)}</a> ${badge(STATUS[cur.status]||[cur.status,'neutral'])}</p><p class="lab-now__q">${esc(cur.question_text)}</p>${cur.why_this_test?`<p class="meta"><b>Why this test?</b> ${esc(cur.why_this_test)}</p>`:''}</div>`:'')
   +'</section>';
 }
-function experimentHtml(x,project,requests=currentRequests){
- const f=x.factor||{},b=[badge(STATUS[x.status]||[x.status,'neutral'])];
+function experimentHtml(x,project,requests=currentRequests,byId={},colours={}){
+ const Ev=root.LocalAIPrintLabEvidence,f=x.factor||{},b=[badge(STATUS[x.status]||[x.status,'neutral'])];
  if(x.outcome){b.push(badge(OUTCOME[x.outcome]||[x.outcome,'neutral']));if(x.validity)b.push(badge(VALIDITY[x.validity.status]||[x.validity.status,'neutral']))}
  if(x.verdict&&x.verdict.kind==='acceptance')b.push(badge(x.verdict.good_enough?['Accepted','good']:['Not good enough','bad']));
  const meta=[(x.test_kind||'').replace(/_/g,' '),f.name?`${f.name.replace(/_/g,' ')}: ${(f.values||[]).map(value).join(' vs ')}`:'',x.provenance!=='prospective'?x.provenance:''].filter(Boolean).join(' · ');
- const vars=x.variants.map(v=>{const u=v.unit?` ${v.unit}`:'',name=v.tab||v.id;return `<li>${esc(name)}: ${v.realized!=null&&v.as_asked===false?`${esc(value(v.requested))} asked, ${n(v.realized)} printed${esc(u)}`:`${esc(v.realized!=null?n(v.realized):value(v.requested))}${esc(u)}`}</li>`}).join('');
+ const vars=x.variants.map(v=>{const u=v.unit?` ${v.unit}`:'',name=v.tab||v.id;return `<li>${esc(name)}: ${v.realized!=null&&v.as_asked===false?`${esc(value(v.requested))} asked, ${n(v.realized)} printed${esc(u)}`:`${esc(v.realized!=null?n(v.realized):value(v.requested))}${esc(u)}`}${Ev?Ev.gradeText(v):''}</li>`}).join('');
  const cost=[x.estimate&&`estimated ${n(x.estimate.minutes)} min, ${n(x.estimate.g)} g`,x.usage&&`used ${n(x.usage.minutes)} min, ${n(x.usage.g)} g`,x.layer_time_median_s&&`${n(x.layer_time_median_s)} s per layer`].filter(Boolean).join(', ');
  const why=x.outcome&&x.validity?x.validity.reasons.map(r=>REASONS[r.code]||r.code).join('; '):'';
  const v=x.verdict,said=v&&(v.note||(v.kind==='acceptance'?(v.good_enough?'good enough':'not good enough'):v.kind));
@@ -611,11 +612,14 @@ function experimentHtml(x,project,requests=currentRequests){
    actions=`<div class="lab-actions"><button type="button" class="btn-outline lab-observe" data-exp="${esc(x.id)}" data-project="${esc(currentProject)}">Record what happened</button></div>`;
  }
 
- return `<article class="card lab-exp" id="lab-${esc(x.id)}"><header class="lab-exp__head"><span class="lab-exp__id">${esc(x.id)}</span>${b.join('')}</header><h3>${esc(x.question_text)}</h3><p class="meta">${esc(meta)}</p>`
+ const spine=Ev?Ev.spoolColour(x.filament,colours):'';
+ return `<article class="card lab-exp" id="lab-${esc(x.id)}"${spine?` style="--spine:${spine}"`:''}><header class="lab-exp__head">${spine?`<span class="lab-swatch" aria-hidden="true"></span>`:''}<span class="lab-exp__id">${esc(x.id)}</span>${b.join('')}</header><h3>${esc(x.question_text)}</h3><p class="meta">${esc(meta)}</p>`
   +(vars?`<ul class="lab-variants">${vars}</ul>`:'')+(cost?`<p class="meta">${esc(cost)}</p>`:'')+(why?`<p class="meta">Why: ${esc(why)}</p>`:'')
   +(said?`<p class="lab-verdict">Your verdict: ${esc(said)} <span class="meta">${esc(when(v.at))}</span></p>`:'')
   +(v&&v.defects&&v.defects.length?`<p class="meta lab-defects">Defects: ${esc(v.defects.join('; '))}</p>`:'')
+  +(Ev?Ev.findingHtml(x)+Ev.aiHtml(x):'')
   +(live?liveHtml(live):'')+actions
+  +(Ev?Ev.wipeHtml(x,byId,p=>`/api/lab/${encodeURIComponent(project)}/photo/${p.sha256}.jpg`):'')
   +(shots?`<div class="lab-photos" data-lab-photos="${esc(x.id)}"></div>`:'')
   +`<details class="lab-details" data-lab-details="${esc(x.id)}"><summary>Details</summary><dl>${dl}</dl>${guards?`<h4>Last check (${esc(String(x.check.status||'').replace(/_/g,' '))})</h4><ul class="lab-guards">${guards}</ul>`:''}</details></article>`;
 }
@@ -629,8 +633,8 @@ function render(data,requests=currentRequests){
   +(ix.problems.length?`<div class="banner lab-problems" role="alert"><strong>Records the Mac can't read</strong><ul>${ix.problems.map(p=>`<li><b>${esc(p.file)}</b> ${esc(p.error)}</li>`).join('')}</ul></div>`:'')
   +`<div class="lab-layout"><div class="lab-side"><section class="card lab-needs-card"><h2>Needs you</h2>${needsHtml(ix,byId)}</section>`
   +(open.map(q=>questionHtml(q,byId)).join('')||'<section class="card"><div class="empty-state"><div class="empty-state__title">No open question.</div><div>Start one on the Mac with lab question new.</div></div></section>')
-  +`</div><div class="lab-notebook"><h2>Notebook</h2>${liveData&&liveData.conflict?`<p class="banner banner--attention lab-conflict" role="status">Two runs say they're printing; check the Mac.</p>`:''}${active.map(x=>experimentHtml(x,ix.project,requests)).join('')||'<p class="empty-state">No open experiments.</p>'}`
-  +(earlier.length?`<details class="lab-earlier"><summary>Earlier (${earlier.length})</summary>${earlier.map(x=>experimentHtml(x,ix.project,requests)).join('')}</details>`:'')+'</div></div>';
+  +`</div><div class="lab-notebook"><h2>Notebook</h2>${liveData&&liveData.conflict?`<p class="banner banner--attention lab-conflict" role="status">Two runs say they're printing; check the Mac.</p>`:''}${active.map(x=>experimentHtml(x,ix.project,requests,byId,ix.colours)).join('')||'<p class="empty-state">No open experiments.</p>'}`
+  +(earlier.length?`<details class="lab-earlier"><summary>Earlier (${earlier.length})</summary>${earlier.map(x=>experimentHtml(x,ix.project,requests,byId,ix.colours)).join('')}</details>`:'')+'</div></div>';
 }
 function openExperiment(id){
  const card=document.getElementById(`lab-${id}`);if(!card)return;
@@ -787,6 +791,9 @@ function init(){
     return;
   }
  });
+
+ // The reference wipe: dragging moves the cut between the reference's photo and this test's.
+ sec.addEventListener('input',e=>{const r=e.target.closest('.lab-wipe input[type="range"]');if(r)r.parentNode.style.setProperty('--cut',`${r.value}%`)});
 
  sec.addEventListener('change',e=>{
    const fileInput=e.target.closest('input[type="file"][data-exp]');
