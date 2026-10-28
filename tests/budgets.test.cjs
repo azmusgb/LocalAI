@@ -85,7 +85,8 @@ const KB = 1024;
 // 2026-10-28: 293 → 296 KB (and home.js 12 → 13 KB) for Needs you drawn by the kit's renderer, as Pi Hub's is: /ui/needs.css (0.7 KB gzipped)
 // and /ui/needs.js (1.9 KB) are the one kit sheet and script Local AI loads, plus home.js's items and click routing (295.9 KB measured).
 // 2026-10-27: 292 → 293 KB for Print lab GUI Figma quick wins (observation 3x2 matrix, mobile sheet drag handle, 14px progress track, spool spine contrast clamp)
-const TOTAL = 296 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
+// 2026-10-28: 296 → 297 KB headroom after rebasing on #417 (Print lab Phase 3); the shell was 53 B over at 296.
+const TOTAL = 297 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
 // 2026-10-26: 291 → 292 KB (and home.js 11 → 12 KB) for one Needs you on every screen: Home also lists Pi Hub's items

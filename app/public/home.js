@@ -123,7 +123,7 @@ async function decideHere(a){
  const sec=$('homeNeedsYou'),first=sec&&!sec.hidden?$('homeNeedsList')?.querySelector('a[href]'):null;
  root.LocalAIUI.refocus(a.id,{within:'#homeNeedsList',key:'approvalId',next,prev,fallback:first||$('homeRecentTitle')});
 }
-let needs=[],approvals=[],newSignals=0,hubItems=null;
+let needs=[],approvals=[],newSignals=0,hubItems=null,needsKitMissing=false;
 // Another device on plain HTTP can't use voice, notifications or Add to Home Screen; point it at the setup until it opts out there.
 const onPlainHttp=()=>location.protocol==='http:'&&!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
 const secureNudge=()=>{if(!onPlainHttp())return false;try{return localStorage.getItem('localai.secureNudge.off')!=='1'}catch{return true}};
@@ -175,6 +175,7 @@ function paintNeeds(){
  const entries=[...act,...failed.map(failedRow)],shown=act.length+room;
  bindNeeds(box);
  if(!entries.length){box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
+ if(!root.ApplianceNeeds){if(!needsKitMissing){needsKitMissing=true;console.warn('Needs you: /ui/needs.js did not load; the section stays hidden')}box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
  const ul=root.ApplianceNeeds.renderList(entries.map(e=>e.item),{resolve,here:new URL(location.href),self:'Local AI',max:shown,more:{href:'#work?kind=needs',label:`See all ${n}`}});
  [...ul.querySelectorAll('.ui-need')].forEach((li,i)=>{const e=entries[i];Object.assign(li.dataset,e.data);if(e.go)rowGo.set(li,e.go)});
  box.replaceChildren(ul);
