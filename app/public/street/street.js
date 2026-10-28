@@ -1,6 +1,7 @@
 // Main Street: window.LocalAIStreet. home.js loads street/*.js (its STREET_MODS) the first time Home shows the street.
 // Each building file registers one def: {id, width, state(world), stillKey?(state), drawStill(ctx, state, env),
-// drawLive(ctx, state, t, env), animates?(state), chip(state) -> {title, detail, tone}, roof?, open?(item), item?(state), stamp?(state)}. animates
+// drawLive(ctx, state, t, env), animates?(state), chip(state) -> {title, detail, tone}, roof?, open?(item), item?(state), stamp?(state),
+// beacon?: {x, y}} (where traffic.js hangs the needs-you light; default {x: width - 22, y: 200}). animates
 // says whether drawLive moves for that state (a def without it counts as moving); when it is false drawLive must draw
 // the same at any t. width is in scene units; the
 // scene is 360 units tall with the ground line at y = 300, and a building draws in its own box x in [0, width]. env is
@@ -22,14 +23,14 @@ const byId=new Map();let ver=0;
 function register(def){if(!def||typeof def.id!=='string'||!def.id)throw new TypeError('a street def needs an id');byId.set(def.id,def);ver++;return def}
 function defs(){return ORDER.filter(id=>byId.has(id)).map(id=>byId.get(id))}
 const H=360,GAP=24,PAD=24,SLOT=200,FRAME=1000/30-1,QUIET=10000,WAIT=8000,MIN_GAP=2000;
-let seen=false;const states=new Map(),keys=new Map(),mounts=new Set(),warned=new Set();
+let seen=false,lastW=null;const states=new Map(),keys=new Map(),mounts=new Set(),warned=new Set();
 const st={frames:0,avg:0,stills:0};
 function warnOnce(id,what,e){if(warned.has(id))return;warned.add(id);console.warn('Main Street: '+id+' '+what+' failed',e)}
 function stillKey(d,s){try{return d.stillKey?String(d.stillKey(s)):''}catch(e){warnOnce(d.id,'stillKey',e);return''}}
 function stamp(d,s){try{return d.stamp?String(d.stamp(s)):''}catch(e){warnOnce(d.id,'stamp',e);return''}}
 // The world changed: new states, the buildings whose picture changed, then every mount repaints.
 function setWorld(w){
- seen=true;const changed=[];
+ seen=true;lastW=w;const changed=[];
  for(const d of defs()){
   try{states.set(d.id,d.state(w))}catch(e){warnOnce(d.id,'state',e);if(!states.has(d.id))states.set(d.id,{})}
   const k=stillKey(d,states.get(d.id));if(keys.has(d.id)&&keys.get(d.id)!==k)changed.push(d.id);keys.set(d.id,k);
@@ -68,7 +69,7 @@ function sync(){const a=shown();if(a&&!was)poll();was=a}
 function onVis(){sync()}
 function start(){if(timer)return;timer=setInterval(()=>{if(shown())poll()},10000);root.document.addEventListener('visibilitychange',onVis)}
 function stop(){clearInterval(timer);clearTimeout(later);timer=later=0;was=false;root.document.removeEventListener('visibilitychange',onVis)}
-function stats(){const T=root.LocalAIStreetTraffic;return{frames:st.frames,avgMs:Math.round(st.avg*1000)/1000,stills:st.stills,...(T?T.stats():{cars:0,beacons:0,stalled:0})}}
+function stats(){const T=root.LocalAIStreetTraffic;return{frames:st.frames,avgMs:Math.round(st.avg*1000)/1000,stills:st.stills,...(T?T.stats():{cars:0,beacons:0,stalled:0,beaconAt:[]})}}
 
 // What a building's chip opens: its def's item for the state (null for a def with none, or one that throws).
 function itemOf(d){try{return d.item&&d.item(states.get(d.id)||{})||null}catch(e){warnOnce(d.id,'item',e);return null}}
@@ -204,7 +205,7 @@ function mount(el,opts){
   else if(!f&&sc){sc.remove();sc=null}
  }
  const inst={world:onWorld,stale:onStale,on:()=>!dead&&(box.hidden?visible(el):inView)};mounts.add(inst);
- if(seen)onWorld([]);onStale(failed);start();sync();
+ if(seen)onWorld([],lastW);onStale(failed);start();sync();
  return{destroy(){
   if(dead)return;dead=true;mounts.delete(inst);if(!mounts.size)stop();if(raf)root.cancelAnimationFrame(raf);raf=0;onUp();
   if(ro)ro.disconnect();if(io)io.disconnect();T&&T.destroy();doc.removeEventListener('visibilitychange',onVis);if(mq)mq.removeEventListener('change',onMotion);box.remove();

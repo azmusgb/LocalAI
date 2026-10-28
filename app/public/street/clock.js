@@ -112,6 +112,7 @@ function drawLive(c,s,t){
  c.restore();
 }
 // The still's stamp: a quiet tower's hour, so its hands are redrawn within the hour without a still-key change.
-const def=Object.assign(B,{drawStill,drawLive,lights:()=>[],stamp:s=>B.animates(s)||s.down?'':String(now().getHours())});
+// The needs-you beacon (street traffic) hangs on the shaft's edge beside the clock face (the default would float off the tower).
+const def=Object.assign(B,{drawStill,drawLive,lights:()=>[],beacon:{x:108,y:205},stamp:s=>B.animates(s)||s.down?'':String(now().getHours())});
 if(typeof module==='object'&&module.exports)module.exports=Object.assign(def,{setNow:f=>{now=f||(()=>new Date())}});else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

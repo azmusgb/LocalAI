@@ -180,12 +180,14 @@ function car(c,x,y,o){
   c.strokeStyle=P.steel3;c.lineWidth=1;c.beginPath();for(let i=0;i<3;i++){const a=(o.wheel||0)+i*T/3;c.moveTo(wx,10);c.lineTo(wx+Math.cos(a)*5.5,10+Math.sin(a)*5.5)}c.stroke()}
  c.restore();
 }
-// A roof beacon standing on (x, y): a steel base and an amber dome (o.color) with glass light; o.glow 0..1 its halo and rays.
+// A warning light on a wall bracket (Main Street's needs-you beacon), its bracket plate fixed to the façade at (x, y): a
+// steel plate and arm holding an amber dome (o.color) with glass light; o.glow 0..1 its halo and side rays.
 function beacon(c,x,y,o){
- o=o||{};const g=o.glow||0,col=o.color||'#ffb02e';c.save();steel(c,x-9,y-5,18,5);
- c.fillStyle=lin(c,x-7,0,x+7,0,[[0,rgba(col,.75)],[.4,P.lamp],[1,col]]);c.beginPath();c.moveTo(x-7,y-5);c.lineTo(x-7,y-13);c.arc(x,y-13,7,Math.PI,0);c.lineTo(x+7,y-5);c.closePath();c.fill();
- glass(c,x-7,y-20,14,15);box(c,x-8,y-7,16,2,P.steel2,1);
- if(g>0){glow(c,x,y-6,40,22,col,.6*g);rays(c,[[[x-4,y-14],[x-40,y-26],[x-40,y-8]],[[x+4,y-14],[x+40,y-26],[x+40,y-8]]],col,.3*g)}
+ o=o||{};const g=o.glow||0,col=o.color||'#ffb02e',d=y-15;c.save();softShadow(c,x+2,y+4,6,3);
+ box(c,x-4,y-3,8,14,P.steel3,2);c.fillStyle=P.steel1;c.fillRect(x-.8,y,1.6,1.6);c.fillRect(x-.8,y+7,1.6,1.6);steel(c,x-1.6,d,3.2,y-d);steel(c,x-10,d-1,20,5);
+ c.fillStyle=lin(c,x-8,0,x+8,0,[[0,rgba(col,.75)],[.4,P.lamp],[1,col]]);c.beginPath();c.moveTo(x-8,d-1);c.lineTo(x-8,d-8);c.arc(x,d-8,8,Math.PI,0);c.lineTo(x+8,d-1);c.closePath();c.fill();
+ glass(c,x-8,d-16,16,15);box(c,x-9,d-5,18,2,P.steel2,1);
+ if(g>0){glow(c,x,d-7,40,26,col,.6*g);rays(c,[[[x-5,d-9],[x-44,d-22],[x-44,d+4]],[[x+5,d-9],[x+44,d-22],[x+44,d+4]]],col,.3*g)}
  c.restore();
 }
 // A texture helper (brick, corrugated…) laid at half scale in a scene rect: bricks and ribs as dense as the art bar's.

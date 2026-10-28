@@ -88,6 +88,7 @@ function people(c,s,t){
  c.restore();
 }
 // The live layer moves only while chats run; a chat that only needs you is still (its amber bubble is in the still).
-const def=Object.assign(B,{drawStill,drawLive});
+// The needs-you beacon (street traffic) hangs on the side wall beside the door, clear of the awning and the wall lamp.
+const def=Object.assign(B,{drawStill,drawLive,beacon:{x:219,y:258}});
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

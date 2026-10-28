@@ -80,6 +80,7 @@ function drawLive(c,s,t){
 }
 // Only working moves (the dim office's clerk is in the still).
 const animates=s=>!s.down&&s.working;
-const def={id:'sheets',width:220,state,stillKey,chip,drawStill,drawLive,animates};
+// The needs-you beacon (street traffic) hangs on the pilaster beside the glass doors.
+const def={id:'sheets',width:220,state,stillKey,chip,drawStill,drawLive,animates,beacon:{x:191,y:262}};
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

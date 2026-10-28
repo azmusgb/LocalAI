@@ -534,7 +534,7 @@ await check("a session's title, markup or right-to-left, never reaches the page"
   assert.equal(await page.evaluate(() => typeof window.__y), 'undefined');
 });
 
-// Traffic: a beacon on the roof of a building that needs you, a stalled car with its hazards on in front of one with a
+// Traffic: a beacon on the façade of a building that needs you, a stalled car with its hazards on in front of one with a
 // failure (each pulses 60 s per ask id, then stays steady), and a car that drives off the end of the street when a run
 // finishes (only between two worlds the strip was on screen for; never under reduced motion).
 const ask = (key, o) => ({ ...QUIET, street: { ...QUIET.street, [key]: src(o) } });
@@ -565,9 +565,21 @@ await check('a flood of asks shows one beacon and one stalled car per building',
   const many = n => Array.from({ length: 10 }, (_, i) => job(n + i));
   const street = Object.fromEntries(Object.keys(QUIET.street).map((k, i) => [k, src({ needsYou: many(i * 100), failedUnseen: many(i * 100 + 50) })]));
   const page = await fresh({ viewport: { width: 2560, height: 1440 }, world: { ...QUIET, street } });
+  await page.evaluate(w => { window.__w = w; }, { ...QUIET, street });
   await page.waitForTimeout(300);
   const s = await stats(page), n = Object.keys(street).length;
   assert.deepEqual([s.beacons, s.stalled, s.cars], [n, n, 0]);
+  // Each beacon hangs at its def's anchor (else width - 22, 200), on the façade below its chip, where the chip can't cover it.
+  const r = await page.evaluate(at => {
+    const box = window.__el.querySelector('.street'), top = box.getBoundingClientRect().top, z = box.querySelector('canvas').clientHeight / 360;
+    return at.map(([id, x, y]) => {
+      const d = window.LocalAIStreet.defs().find(d => d.id === id), want = d.beacon || { x: d.width - 22, y: 200 };
+      const chip = [...box.querySelectorAll('.street-chip')].find(b => b.textContent.startsWith(d.chip(d.state(window.__w)).title));
+      return { id, ok: x === want.x && y === want.y, clear: chip.getBoundingClientRect().bottom - top < (y - 34) * z };
+    });
+  }, s.beaconAt);
+  assert.equal(r.length, n);
+  for (const b of r) assert.deepEqual(b, { id: b.id, ok: true, clear: true });
   assert.deepEqual(page.errors, []);
 });
 
