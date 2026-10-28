@@ -701,7 +701,7 @@ function experimentHtml(x,project,requests=currentRequests,byId={},colours={}){
   +(live?liveHtml(live):'')+actions
   +(Ev?Ev.wipeHtml(x,byId,p=>`/api/lab/${encodeURIComponent(project)}/photo/${p.sha256}.jpg`):'')
   +(shots?`<div class="lab-photos" data-lab-photos="${esc(x.id)}"></div>`:'')
-  +`<details class="lab-details" id="lab-d-${esc(x.id)}" data-lab-details="${esc(x.id)}"><summary>Details</summary><dl>${dl}</dl>${guards?`<h4>Last check (${esc(String(x.check.status||'').replace(/_/g,' '))})</h4><ul class="lab-guards">${guards}</ul>`:''}</details></article>`;
+  +`<details class="lab-details" id="lab-d-${esc(x.id)}" data-lab-details="${esc(x.id)}"><summary>Details</summary><dl>${dl}</dl>${guards?`<h4>Last check (${esc(String(x.check.status||'').replace(/_/g,' '))})</h4><ul class="lab-guards">${guards}</ul>`:''}${Ev?Ev.reconHtml(x):''}</details></article>`;
 }
 let unreachable=false;
 function syncState(meta){

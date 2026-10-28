@@ -1,7 +1,7 @@
 // Projects › Print lab: what only the Mac's own page (print-lab lab/page.py, retired) showed, in the same words: the
 // spool colour (Bambuddy's colour names, sent by lab sync), a question's plans, each strip's grade, a sweep's finding,
-// AI readings and the wipe between a test's first photo and its reference's. Loaded before print-lab.js (ui.js), which
-// calls these while it renders; every value from the Mac is escaped, and a colour is used only if it is #rrggbb.
+// AI readings, the reference wipe, and parameter reconciliation (Requested vs Sliced vs Observed). Loaded before
+// print-lab.js (ui.js), which calls these while it renders; every value from the Mac is escaped, and a colour is used only if it is #rrggbb.
 (function(root){'use strict';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const NEUTRAL='#8698b1',HEX=/^#[0-9a-fA-F]{6}$/;
@@ -31,5 +31,53 @@ function wipeHtml(x,byId,photoSrc){
   +`<input type="range" min="0" max="100" value="50" aria-label="Drag between ${esc(ref.id)} and ${esc(x.id)}">`
   +`<figcaption><span>${esc(ref.id)}</span><span>${esc(x.id)}</span></figcaption></figure>`;
 }
-root.LocalAIPrintLabEvidence={spoolColour,plansHtml,gradeText,findingHtml,aiHtml,wipeHtml,NEUTRAL};
+const fmt=x=>x==null?'—':typeof x==='number'?String(Math.round(x*10)/10):String(x);
+function observedHtml(x,v){
+ if(v&&v.grade){
+  const g=String(v.grade).toLowerCase();
+  const tone=g==='clean'?'good':(g==='faint'?'attention':'neutral');
+  return `<span class="badge badge--${tone}">${esc(v.grade)}</span>`;
+ }
+ const obs=(x.observations||[]).find(o=>o&&o.subject&&(o.subject.variant===v.id||o.group===v.tab));
+ if(obs&&obs.outcomes){
+  const summary=Object.entries(obs.outcomes).map(([k,val])=>{
+   const s=val&&typeof val==='object'?(val.value||val.status||''):String(val);
+   return `${k}: ${s}`;
+  }).filter(s=>!s.endsWith(': ')).join(' · ');
+  if(summary)return esc(summary);
+ }
+ if(x.verdict){
+  if(x.verdict.good_enough===true){
+   return `<span class="badge badge--good">Accepted</span>`+(x.verdict.defects&&x.verdict.defects.length?` <span class="meta">(${esc(x.verdict.defects.join('; '))})</span>`:'');
+  }
+  if(x.verdict.good_enough===false){
+   return `<span class="badge badge--bad">Not good enough</span>`+(x.verdict.defects&&x.verdict.defects.length?` <span class="meta">(${esc(x.verdict.defects.join('; '))})</span>`:'');
+  }
+  if(x.verdict.note)return esc(x.verdict.note);
+  if(x.verdict.kind)return esc(x.verdict.kind);
+ }
+ if(x.finding)return esc(x.finding);
+ if(x.ai_observations&&x.ai_observations.length){
+  const ai=(x.ai_observations||[]).find(o=>o.variant===v.id)||x.ai_observations[0];
+  if(ai&&ai.assessment)return `<span class="meta">AI: ${esc(ai.assessment)}</span>`;
+ }
+ if(x.status==='printing')return '<span class="meta">Pending inspection</span>';
+ return '—';
+}
+function reconHtml(x){
+ if(!x||!x.variants||!x.variants.length)return '';
+ const rows=x.variants.map(v=>{
+  const u=v.unit?` ${v.unit}`:'';
+  const varCol=v.tab&&v.id&&v.tab!==v.id?`<strong>${esc(v.tab)}</strong> <span class="meta">(${esc(v.id)})</span>`:`<strong>${esc(v.id||v.tab||'—')}</strong>`;
+  const req=v.requested!=null?`${esc(fmt(v.requested))}${esc(u)}`:'—';
+  let sliced=v.realized!=null?`${esc(fmt(v.realized))}${esc(u)}`:'—';
+  if(v.realized!=null&&v.as_asked===false){
+   sliced+=` <span class="badge badge--attention" title="Clamped by volumetric flow limit or acceleration cap">Capped</span>`;
+  }
+  const obs=observedHtml(x,v);
+  return `<tr><td>${varCol}</td><td>${req}</td><td>${sliced}</td><td>${obs}</td></tr>`;
+ }).join('');
+ return `<div class="lab-recon"><h4>Parameter reconciliation</h4><div class="lab-recon__scroll"><table class="lab-recon__table"><thead><tr><th scope="col">Variant</th><th scope="col">Requested</th><th scope="col">Sliced</th><th scope="col">Observed</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+root.LocalAIPrintLabEvidence={spoolColour,plansHtml,gradeText,findingHtml,aiHtml,wipeHtml,reconHtml,NEUTRAL};
 })(window);
