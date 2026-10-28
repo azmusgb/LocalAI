@@ -3066,3 +3066,14 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 .lab-obs .lab-obs__opt input:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
 .lab-obs textarea,.lab-obs input[type="text"]{min-height:44px}
 .lab-obs a[data-goto]{text-decoration:underline;text-underline-offset:2px}
+/* Main Street (street/street.js): the strip scrolls sideways, its canvas sticks in view, chips sit on the roofs. */
+.street{position:relative;height:160px;overflow:auto hidden;scrollbar-width:none;overscroll-behavior-x:contain;user-select:none;border-radius:var(--ds-r-lg);background:#a9cdee}
+.street__canvas{position:sticky;left:0;display:block;width:100%;height:100%}
+.street__chips{position:absolute;top:0;bottom:0;left:0;pointer-events:none}
+.street-chip{position:absolute;transform:translateX(-50%);display:grid;padding:2px 8px;border:1px solid var(--ds-line-2);border-radius:var(--ds-r-md);background:rgba(14,21,30,.84);color:var(--ds-text);font-size:var(--ds-fs-1);line-height:1.15;max-width:200px;pointer-events:auto}.street-chip:focus-visible{outline:var(--ds-ring)}
+.street-chip span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.street-chip span+span{color:var(--ds-muted);white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.street-chip--busy{border-color:var(--ds-good)}.street-chip--attention{border-color:var(--ds-attention)}.street-chip--down{border-color:var(--ds-bad)}.street-chip--quiet{opacity:.85}
+.street.is-stale .street__canvas{opacity:.55}.street-chip--stale{position:sticky;left:8px;top:4px;width:max-content;transform:none;border-color:var(--ds-attention)}
+@media(max-width:760px){.street{height:132px}}
+@media(pointer:coarse){.street-chip{min-height:44px;align-content:center}}
+.home-street .street{margin-top:20px;border:1px solid var(--ds-line);mask-image:linear-gradient(90deg,#000 calc(100% - 24px),transparent)}

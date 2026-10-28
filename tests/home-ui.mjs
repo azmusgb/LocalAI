@@ -38,7 +38,7 @@ const needs = () => [
 ];
 // Stubs: `threads` answers /api/runs?threads=1, `all` answers the plain /api/runs list, `engineering` the start endpoint.
 let capabilities = () => ({ services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' });
-async function open(viewport, hash, { threads = six, all = needs, engineering = null, storage = {}, caps = null, approvals = [], activity = [], route = null, improve = null, printer = undefined, hubNeeds = null } = {}) {
+async function open(viewport, hash, { threads = six, all = needs, engineering = null, storage = {}, caps = null, approvals = [], activity = [], route = null, improve = null, printer = undefined, hubNeeds = null, world = null, clock = false, worldCalls = null } = {}) {
   capabilities = caps || (() => ({ services: ['ollama', 'search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' }));
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.devTools': '1', 'localai.firstRun.done': '1', ...storage });
@@ -47,6 +47,8 @@ async function open(viewport, hash, { threads = six, all = needs, engineering = 
   // Pi Hub's Needs you list through Local AI; null (the hub not answering) unless a test gives one, so the real hub never shows.
   await ctx.route(u => u.pathname === '/api/home/hub-needs', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: hubNeeds }) }));
   await ctx.route(u => u.pathname === '/api/activity', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: activity }) }));
+  if (world === 'hang') await ctx.route(u => u.pathname === '/api/world', () => {}); // never answers
+  else if (world) await ctx.route(u => u.pathname === '/api/world', r => { if (worldCalls) worldCalls.n++; return r.fulfill({ contentType: 'application/json', body: JSON.stringify(world) }); });
   if (route) await ctx.route(u => u.pathname === '/api/route', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(route) }));
   // Improve items stubbed before the page loads, so Home's first load can't land late with the real server's answer.
   if (improve) await ctx.route(u => u.pathname === '/api/improve/items', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(improve) }));
@@ -71,10 +73,21 @@ async function open(viewport, hash, { threads = six, all = needs, engineering = 
     const res = await engineering(page);
     r.fulfill({ status: res.status || 202, contentType: 'application/json', body: JSON.stringify(res.body) });
   });
+  if (clock) await page.clock.install();
   await page.goto(base + '/' + hash, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.showView === 'function' && window.LocalAIRouter && window.LocalAIHome && location.hash, null, { timeout: 8000 });
   return page;
 }
+const src = o => ({ running: [], waiting: 0, needsYou: [], failedUnseen: [], recent: [], ...o });
+const WORLD = {
+  schema: 1,
+  models: { loaded: [{ name: 'qwen3:4b-instruct-32k', sizeMb: 3100, vramMb: 3100 }], queue: { active: 1, waiting: 2 }, busy: { total: 1, kinds: { chat: 1 } } },
+  printer: { setUp: true, access: 'ok', state: 'printing', progress: 62, minutesLeft: 41, errorCode: null },
+  sheets: { bridge: true, excel: true, inFlight: 1 },
+  kiosk: { setUp: true, online: true, signIn: true, firmware: '12.8.0' },
+  crews: null,
+  street: { chat: src({ running: [{ id: 'j1', title: 'Job 1', status: 'running', startedAt: Date.now() - 60000 }] }), images: src(), missions: src(), garage: src(), sheets: src(), clock: src() }
+};
 const desk = { width: 1280, height: 860 }, phone = { width: 390, height: 844 };
 const titles = (page, sel) => page.locator(`${sel} .list-row__title`).allInnerTexts();
 
@@ -867,6 +880,94 @@ for (const [tag, vp] of [['390', phone], ['desktop', desk]]) {
     await page.context().close();
   });
 }
+
+await check('Home shows Main Street once the world answers', async () => {
+  const page = await open(desk, '#home', { world: WORLD });
+  await page.waitForSelector('#homeStreet .street:not([hidden])', T);
+  assert.equal(await page.locator('#homeStreet').isVisible(), true);
+  assert.equal(await page.locator('#homeStreet .street-chip:not(.street-chip--stale)').count(), 6);
+  assert.equal(await page.locator('#homeStreetMount .street').count(), 1);
+  await page.context().close();
+});
+
+await check('Home takes no room for the street until a world answers, and does not mount it twice', async () => {
+  const page = await open(phone, '#home', { world: 'hang' });
+  await page.waitForFunction(() => document.querySelector('#homeStreetMount .street'), null, T);
+  const box = await page.locator('#homeStreet').boundingBox();
+  assert.ok(!box || box.height === 0, 'the section is empty and flat: ' + JSON.stringify(box));
+  assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('homeStreet')).borderTopWidth), '0px');
+  await page.evaluate(() => { window.LocalAIHome.activate(); window.LocalAIHome.activate(); });
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('#homeStreetMount .street').count(), 1, 'one street after repeat activations');
+  await page.context().close();
+});
+
+await check('tapping a building opens Agent World', async () => {
+  const page = await open(desk, '#home', { world: WORLD });
+  await page.waitForSelector('#homeStreet .street:not([hidden])', T);
+  await page.locator('#homeStreet .street-chip', { hasText: 'Model Foundry' }).click();
+  await page.waitForFunction(() => location.hash === '#agents', null, T);
+  await page.context().close();
+});
+
+await check("a long title doesn't widen Home", async () => {
+  const world = { ...WORLD, models: { ...WORLD.models, loaded: [{ name: 'm'.repeat(300), sizeMb: 1, vramMb: 1 }] } };
+  const page = await open(phone, '#home', { world });
+  await page.waitForSelector('#homeStreet .street:not([hidden])', T);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no sideways scroll');
+  await page.context().close();
+});
+
+const inside = page => page.evaluate(() => { const s = document.querySelector('#homeStreet .street').getBoundingClientRect(); return [...document.querySelectorAll('#homeStreet .street-chip')].map(c => { const r = c.getBoundingClientRect(); const d = c.querySelector('span+span'), lh = parseFloat(getComputedStyle(d).lineHeight) || parseFloat(getComputedStyle(d).fontSize) * 1.15; return { t: c.textContent, top: r.top - s.top, bottom: s.bottom - r.bottom, lines: Math.round(d.getBoundingClientRect().height / lh) }; }); });
+const worldWith = name => ({ ...WORLD, models: { ...WORLD.models, loaded: [{ name, sizeMb: 1, vramMb: 1 }] } });
+
+await check('every chip stays inside the strip, with a long model name and with the busy world', async () => {
+  for (const [vp, w] of [[{ width: 1280, height: 800 }, WORLD], [{ width: 1280, height: 800 }, worldWith('m'.repeat(300))], [phone, worldWith('m'.repeat(300))]]) {
+    const page = await open(vp, '#home', { world: w });
+    await page.waitForSelector('#homeStreet .street:not([hidden])', T);
+    await page.waitForTimeout(300);
+    for (const c of await inside(page)) { assert.ok(c.top >= 0 && c.bottom >= 0, `${vp.width}: "${c.t}" top ${c.top} bottom ${c.bottom}`); assert.ok(c.lines <= 2, `${vp.width}: "${c.t}" detail is ${c.lines} lines`); }
+    await page.context().close();
+  }
+});
+
+await check('the first world brings the busy building that is off to the right into view', async () => {
+  const world = { ...WORLD, printer: null, sheets: null, kiosk: null, street: { ...WORLD.street, chat: src() } }; // only the Foundry is busy
+  const page = await open({ width: 1280, height: 800 }, '#home', { world });
+  await page.waitForSelector('#homeStreet .street:not([hidden])', T);
+  await page.waitForTimeout(300);
+  const r = await page.evaluate(() => { const s = document.querySelector('#homeStreet .street'), c = [...s.querySelectorAll('.street-chip')].find(x => /Foundry/.test(x.getAttribute('aria-label'))).getBoundingClientRect(), b = s.getBoundingClientRect(); return { l: c.left - b.left, r: b.right - c.right, scrolled: s.scrollLeft }; });
+  assert.ok(r.scrolled > 0 && r.l >= 0 && r.r >= 0, JSON.stringify(r));
+  await page.context().close();
+});
+
+await check('leaving Home stops /api/world requests', async () => {
+  const worldCalls = { n: 0 };
+  const page = await open(desk, '#home', { world: WORLD, clock: true, worldCalls });
+  await page.waitForSelector('#homeStreet .street:not([hidden])', T);
+  const n0 = worldCalls.n;
+  await page.clock.fastForward(10500); await page.waitForTimeout(300);
+  assert.ok(worldCalls.n > n0, 'polls while Home is shown');
+  await page.evaluate(() => window.LocalAIRouter.go('#status'));
+  await page.waitForFunction(() => !document.getElementById('home').classList.contains('active'), null, T);
+  await page.waitForTimeout(300);
+  const n1 = worldCalls.n;
+  await page.clock.fastForward(30000); await page.waitForTimeout(300);
+  assert.equal(worldCalls.n, n1, 'no more polls on another page');
+  await page.context().close();
+});
+
+await check('a hostile model name shows as plain text in the Home chip', async () => {
+  for (const name of ['<img src=x onerror=window.__x=1>', '\u202Eevil\u202C \u05E9\u05DC\u05D5\u05DD']) {
+    const page = await open(desk, '#home', { world: worldWith(name) });
+    await page.waitForSelector('#homeStreet .street:not([hidden])', T);
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator('#homeStreet .street img').count(), 0);
+    assert.equal(await page.evaluate(() => window.__x), undefined);
+    assert.ok((await page.locator('#homeStreet .street-chip', { hasText: 'Foundry' }).getAttribute('aria-label')).includes(name.slice(0, 8)), 'the name is text');
+    await page.context().close();
+  }
+});
 
 await check('approvals always show, however many; failures wait behind See all', async () => {
   const approvals = [1, 2, 3, 4].map(i => ({ id: 'apr_' + i, status: 'pending', title: 'Decide thing ' + i, detail: 'Needs a yes' }));

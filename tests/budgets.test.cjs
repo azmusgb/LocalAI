@@ -83,7 +83,9 @@ const KB = 1024;
 // 2026-10-24: 288 → 290 KB (app.css 43 → 44 KB, ui.js 112 → 113 KB) for Projects › Print lab: its styles (+0.7 KB),
 // its section (+0.1 KB) and the loader that fetches print-lab.js (4.6 KB) only when the page opens (288.9 KB measured).
 // 2026-10-27: 292 → 293 KB for Print lab GUI Figma quick wins (observation 3x2 matrix, mobile sheet drag handle, 14px progress track, spool spine contrast clamp)
-const TOTAL = 293 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
+// 2026-10-28: 293 → 294 KB when Agent World's Main Street strip on Home (#homeStreet markup, its .home-street/.street-chip
+// styles and home.js's one mount call, +0.4 KB) met Print lab phase 3 (#417): each fit alone, together 293.2 KB.
+const TOTAL = 294 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
 // 2026-10-26: 291 → 292 KB (and home.js 11 → 12 KB) for one Needs you on every screen: Home also lists Pi Hub's items
@@ -141,6 +143,22 @@ test("Agent World's on-demand modules stay within their own budget (gzipped)", (
   assert.ok(total <= 12 * KB, `on-demand modules are ${kb(total)} gzipped, over 12 KB: ${Object.entries(awSizes).map(([f, n]) => `${f} ${kb(n)}`).join(', ')}`);
   assert.deepEqual(Object.entries(awSizes).filter(([, n]) => n > 4 * KB).map(([f, n]) => `${f}: ${kb(n)} > 4.0 KB`), []);
   assert.deepEqual(AW.filter(f => f in sizes), [], 'no on-demand module is loaded by the shell');
+});
+
+// Main Street's modules (app/public/street/*.js): fetched by home.js only when Home shows the street, so they stay out
+// of the shell's budget and have their own: 48 KB in all and 8 KB each, gzipped. The street is drawn in code at the art
+// bar (docs/superpowers/specs/assets/2026-10-27-agent-world-art-bar.html): rounded bricks with highlights, steel and
+// glass gradients, light rays, glow, soft shadows, workers with props, smoke and fire, for ten buildings with a scene of
+// the work inside each. Vector art at that level is several times the size of the old city's landmarks, hence 48 KB.
+// art.js keeps that cost shared: reusable helpers with parameters, never per-building code.
+const STREET = fs.readdirSync(path.join(pub, 'street')).filter(f => f.endsWith('.js')).map(f => 'street/' + f);
+const streetSizes = Object.fromEntries(STREET.map(f => [f, gz(f)]));
+test('Main Street modules stay within their own budget (gzipped)', () => {
+  assert.ok(STREET.length >= 1, 'app/public/street has its modules');
+  const total = Object.values(streetSizes).reduce((a, b) => a + b, 0);
+  assert.ok(total <= 48 * KB, `Main Street modules are ${kb(total)} gzipped, over 48 KB: ${Object.entries(streetSizes).map(([f, n]) => `${f} ${kb(n)}`).join(', ')}`);
+  assert.deepEqual(Object.entries(streetSizes).filter(([, n]) => n > 8 * KB).map(([f, n]) => `${f}: ${kb(n)} > 8.0 KB`), []);
+  assert.deepEqual(STREET.filter(f => f in sizes), [], 'no Main Street module is loaded by the shell');
 });
 
 test('the budget covers the files the shell really loads', () => {
