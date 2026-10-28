@@ -25,6 +25,9 @@ for (const [id, name] of [['chat', 'Chat Café'], ['images', 'Image Studio']]) {
     const down = d.state({ street: null });
     assert.equal(down.down, true);
     assert.deepEqual(d.chip(down), { title: name, detail: 'Not answering', tone: 'down' });
+    // Chat/Images detail is built from counts only (a 300-character title can't reach it), so the cut is unreachable: it stays short.
+    const huge = d.state({ street: street({ [id]: src({ running: [item(1)], waiting: 1e300, needsYou: [item(2)] }) }) });
+    assert.ok(d.chip(huge).detail.length <= 60);
     assert.notEqual(d.stillKey(busy), d.stillKey(quiet));
     assert.notEqual(d.stillKey(down), d.stillKey(quiet));
     assert.equal(typeof d.drawStill, 'function'); assert.equal(typeof d.drawLive, 'function');
@@ -46,6 +49,8 @@ test('sheets: state and chip', () => {
   assert.equal(down.down, true);
   assert.deepEqual(d.chip(down), { title: 'Spreadsheets Office', detail: 'Not answering', tone: 'down' });
   assert.equal(d.state({ sheets: null, street: null }).down, true);
+  // Fixed copy only ('Working', 'Ready', 'Excel not open'): a 300-character value cannot reach the detail, so '…' is unreachable.
+  assert.ok(d.chip(mk({ bridge: true, excel: false, inFlight: 0 }, street({ sheets: src({ running: [item(1)] }) }))).detail.length <= 60);
   assert.notEqual(d.stillKey(busy), d.stillKey(quiet));
 });
 
@@ -87,7 +92,12 @@ test('workshop: state and chip', () => {
   assert.equal(d.state({ printer: null }).down, true);
   assert.notEqual(d.stillKey(busy), d.stillKey(quiet));
   assert.equal(d.stillKey(p({ state: 'printing', progress: 10 })), d.stillKey(p({ state: 'printing', progress: 90 })));
-  assert.equal(d.chip(p({ state: 'printing', progress: 5, minutesLeft: 'y'.repeat(300) })).detail.length <= 60, true);
+  fits(d.chip(p({ state: 'printing', progress: 5, minutesLeft: 'y'.repeat(300) })));
+  const paused = p({ state: 'paused', progress: 30 });
+  assert.deepEqual(d.chip(paused), { title: 'Workshop Garage', detail: 'Paused · 30%', tone: 'quiet' });
+  assert.equal(d.chip(p({ state: 'paused' })).detail, 'Paused');
+  assert.equal(d.stillKey(paused), d.stillKey(busy));
+  for (const st of ['cancelled', 'ended']) assert.equal(d.chip(p({ state: st })).detail, 'Idle');
 });
 
 test('kiosk: state and chip', () => {

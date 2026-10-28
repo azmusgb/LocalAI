@@ -8,7 +8,7 @@ function state(world){
  return{setUp,state:p.state||null,progress:p.progress??null,minutesLeft:p.minutesLeft??null,error:p.state==='error',down:setUp&&p.access!=='ok'};
 }
 // The still shows the door (up while printing), lit or unlit, and down. Never the progress.
-function stillKey(s){return s.down?'down':s.state==='printing'?'up':s.setUp?'unlit':'off'}
+function stillKey(s){return s.down?'down':s.state==='printing'||s.state==='paused'?'up':s.setUp?'unlit':'off'}
 function chip(s){
  const title='Workshop Garage';
  if(s.down)return{title,detail:'Not answering',tone:'down'};
@@ -18,6 +18,7 @@ function chip(s){
   const d=['Printing'];if(s.progress!=null)d.push(s.progress+'%');if(s.minutesLeft!=null)d.push(s.minutesLeft+' min left');
   return{title,detail:cut(d.join(' · ')),tone:'busy'};
  }
+ if(s.state==='paused')return{title,detail:'Paused'+(s.progress!=null?' · '+s.progress+'%':''),tone:'quiet'};
  return{title,detail:'Idle',tone:'quiet'};
 }
 const def={id:'workshop',width:260,state,stillKey,chip,drawStill(){},drawLive(){}};
