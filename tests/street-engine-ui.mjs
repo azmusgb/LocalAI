@@ -317,6 +317,25 @@ await check('the scroller is a labelled region', async () => {
   assert.deepEqual(await page.evaluate(() => { const s = window.__el.querySelector('.street'); return [s.getAttribute('role'), s.getAttribute('aria-label')]; }), ['region', 'Agent World street']);
 });
 
+await check('a street on a display:none page is not polled or drawn, and wakes when the page shows', async () => {
+  const s = stub(); const page = await fresh({ world: null, clock: true, route: s.route });
+  await page.evaluate(() => window.__street.destroy());
+  await page.evaluate(() => { const p = document.createElement('div'); p.style.display = 'none'; document.body.append(p); const el = document.createElement('div'); p.append(el); window.__p = p; window.__q = el; window.__s2 = window.LocalAIStreet.mount(el, { mode: 'strip' }); });
+  const n = s.n;
+  await page.clock.runFor(30000); await new Promise(r => setTimeout(r, 300));
+  assert.equal(s.n, n, 'no requests with no world yet');
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), BUSY);
+  const f = (await stats(page)).frames;
+  await page.clock.runFor(30000); await new Promise(r => setTimeout(r, 300));
+  assert.equal(s.n, n, 'no requests after a world');
+  assert.equal((await stats(page)).frames, f, 'no frames');
+  await page.evaluate(() => { window.__p.style.display = 'block'; });
+  await step(page, s);
+  assert.ok(s.n > n, 'requests resume within one tick');
+  await page.clock.runFor(500);
+  await page.waitForFunction(f => window.LocalAIStreet.stats().frames > f, f, { timeout: 3000 });
+});
+
 for (const c of contexts) await c.close();
 await browser.close();
 if (failures.length) { console.error(`\n${failures.length} failed:\n` + failures.join('\n')); process.exit(1); }

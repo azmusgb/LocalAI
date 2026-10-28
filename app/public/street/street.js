@@ -34,6 +34,8 @@ function setWorld(w){
 // a strip coming on screen or the page becoming visible polls at once). Only a good answer (ok, JSON, schema 1) goes to
 // setWorld; any other answer marks every strip stale until the next good one.
 let timer=0,busy=false,was=false,failed=false;
+// A node is rendered unless it or an ancestor is display:none (Home's view is, while another page is open).
+const visible=n=>n.checkVisibility?n.checkVisibility():n.offsetParent!==null;
 const live=()=>{for(const m of mounts)if(m.on())return true;return false};
 const shown=()=>{const d=root.document;return !!d&&!d.hidden&&d.visibilityState!=='hidden'&&live()};
 function paintStale(){for(const m of mounts)m.stale(failed)}
@@ -128,11 +130,10 @@ function mount(el,opts){
  function tick(now){raf=0;if(!running())return;raf=root.requestAnimationFrame(tick);if(now-last<FRAME)return;last=now;draw(now-t0)}
  function kick(){if(running()&&!raf)raf=root.requestAnimationFrame(tick)}
  function redraw(){if(reduce())draw(0);else kick()}
- // A new world: unhide on the first (counting it as on screen until the observer says otherwise: a hidden box reports no
- // intersection), redraw the chips, and bring a changed building into view unless the person
+ // A new world: unhide on the first (on screen if it is rendered at all; the observer takes over), redraw the chips, and bring a changed building into view unless the person
  // scrolled lately.
  function onWorld(changed){
-  if(dead)return;if(box.hidden){box.hidden=false;inView=true;resize()}else{if(ver!==sig)layout();paintChips();for(const d of list)still(d);redraw()}
+  if(dead)return;if(box.hidden){box.hidden=false;inView=visible(box);resize()}else{if(ver!==sig)layout();paintChips();for(const d of list)still(d);redraw()}
   const id=changed.find(i=>xs.has(i));if(!id||fits()||Date.now()-userAt<QUIET)return;
   const d=byId.get(id),l=xs.get(id),r=l+d.width*zoom,vw=box.clientWidth;
   if(l>=box.scrollLeft&&r<=box.scrollLeft+vw)return;
@@ -156,7 +157,8 @@ function mount(el,opts){
  box.addEventListener('wheel',onWheel,{passive:false});box.addEventListener('pointerdown',onDown);box.addEventListener('click',onClick,true);
  box.addEventListener('touchstart',touched,{passive:true});box.addEventListener('keydown',touched);box.addEventListener('scroll',onScroll,{passive:true});
  doc.addEventListener('visibilitychange',onVis);if(mq)mq.addEventListener('change',onMotion);
- const ro=root.ResizeObserver?new ResizeObserver(()=>resize()):null;if(ro)ro.observe(box);
+ const ro=root.ResizeObserver?new ResizeObserver(()=>{if(!dead&&!box.hidden&&!cv.width&&box.clientWidth)inView=true;// first rendered (its page just showed); the observer corrects
+  resize();sync()}):null;if(ro)ro.observe(box);
  const io=root.IntersectionObserver?new IntersectionObserver(es=>{inView=es[es.length-1].isIntersecting;kick();sync()}):null;if(io)io.observe(box);else inView=true;
  // The stale chip is one extra chip, first in the layer, that sticks to the left edge of the view.
  let sc=null;
@@ -165,7 +167,7 @@ function mount(el,opts){
   if(f&&!sc){sc=doc.createElement('div');sc.className='street-chip street-chip--stale';sc.setAttribute('role','status');sc.textContent="Can't reach LocalAI, retrying";chipsEl.prepend(sc)}
   else if(!f&&sc){sc.remove();sc=null}
  }
- const inst={world:onWorld,stale:onStale,on:()=>!dead&&(inView||box.hidden)};mounts.add(inst);
+ const inst={world:onWorld,stale:onStale,on:()=>!dead&&(box.hidden?visible(el):inView)};mounts.add(inst);
  if(seen)onWorld([]);onStale(failed);start();sync();
  return{destroy(){
   if(dead)return;dead=true;mounts.delete(inst);if(!mounts.size)stop();if(raf)root.cancelAnimationFrame(raf);raf=0;onUp();
