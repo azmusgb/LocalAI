@@ -320,7 +320,7 @@ await check('the scroller is a labelled region', async () => {
 await check('a street on a display:none page is not polled or drawn, and wakes when the page shows', async () => {
   const s = stub(); const page = await fresh({ world: null, clock: true, route: s.route });
   await page.evaluate(() => window.__street.destroy());
-  await page.evaluate(() => { const p = document.createElement('div'); p.style.display = 'none'; document.body.append(p); const el = document.createElement('div'); p.append(el); window.__p = p; window.__q = el; window.__s2 = window.LocalAIStreet.mount(el, { mode: 'strip' }); });
+  await page.evaluate(() => { const p = document.createElement('div'); p.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0'; document.body.append(p); const el = document.createElement('div'); p.append(el); window.__p = p; window.__q = el; window.__s2 = window.LocalAIStreet.mount(el, { mode: 'strip' }); });
   const n = s.n;
   await page.clock.runFor(30000); await new Promise(r => setTimeout(r, 300));
   assert.equal(s.n, n, 'no requests with no world yet');
@@ -332,6 +332,24 @@ await check('a street on a display:none page is not polled or drawn, and wakes w
   await page.evaluate(() => { window.__p.style.display = 'block'; });
   await step(page, s);
   assert.ok(s.n > n, 'requests resume within one tick');
+  await page.clock.runFor(500);
+  await page.waitForFunction(f => window.LocalAIStreet.stats().frames > f, f, { timeout: 3000 });
+});
+
+await check('a street shown below the fold is not polled or drawn until scrolled into view', async () => {
+  const s = stub(); const page = await fresh({ world: null, clock: true, route: s.route });
+  await page.evaluate(() => window.__street.destroy());
+  await page.evaluate(() => { const p = document.createElement('div'); p.style.display = 'none'; const sp = document.createElement('div'); sp.style.height = '3000px'; const el = document.createElement('div'); p.append(sp, el); document.body.append(p); window.__p = p; window.__q = el; window.LocalAIStreet.mount(el, { mode: 'strip' }); });
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), BUSY);
+  await page.evaluate(() => { window.__p.style.display = 'block'; });
+  await page.clock.runFor(100); await new Promise(r => setTimeout(r, 300));
+  const n = s.n, f = (await stats(page)).frames;
+  await page.clock.runFor(30000); await new Promise(r => setTimeout(r, 300));
+  assert.equal(s.n, n, 'no requests below the fold');
+  assert.equal((await stats(page)).frames, f, 'no frames below the fold');
+  await page.evaluate(() => window.__q.scrollIntoView());
+  await step(page, s);
+  assert.ok(s.n > n, 'requests resume once in view');
   await page.clock.runFor(500);
   await page.waitForFunction(f => window.LocalAIStreet.stats().frames > f, f, { timeout: 3000 });
 });

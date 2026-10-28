@@ -36,6 +36,7 @@ function setWorld(w){
 let timer=0,busy=false,was=false,failed=false;
 // A node is rendered unless it or an ancestor is display:none (Home's view is, while another page is open).
 const visible=n=>n.checkVisibility?n.checkVisibility():n.offsetParent!==null;
+const onScreen=n=>{if(!visible(n))return false;const r=n.getBoundingClientRect();return r.bottom>0&&r.right>0&&r.top<root.innerHeight&&r.left<root.innerWidth&&r.width>0};
 const live=()=>{for(const m of mounts)if(m.on())return true;return false};
 const shown=()=>{const d=root.document;return !!d&&!d.hidden&&d.visibilityState!=='hidden'&&live()};
 function paintStale(){for(const m of mounts)m.stale(failed)}
@@ -133,7 +134,7 @@ function mount(el,opts){
  // A new world: unhide on the first (on screen if it is rendered at all; the observer takes over), redraw the chips, and bring a changed building into view unless the person
  // scrolled lately.
  function onWorld(changed){
-  if(dead)return;if(box.hidden){box.hidden=false;inView=visible(box);resize()}else{if(ver!==sig)layout();paintChips();for(const d of list)still(d);redraw()}
+  if(dead)return;if(box.hidden){box.hidden=false;inView=onScreen(box);resize()}else{if(ver!==sig)layout();paintChips();for(const d of list)still(d);redraw()}
   const id=changed.find(i=>xs.has(i));if(!id||fits()||Date.now()-userAt<QUIET)return;
   const d=byId.get(id),l=xs.get(id),r=l+d.width*zoom,vw=box.clientWidth;
   if(l>=box.scrollLeft&&r<=box.scrollLeft+vw)return;
@@ -157,7 +158,7 @@ function mount(el,opts){
  box.addEventListener('wheel',onWheel,{passive:false});box.addEventListener('pointerdown',onDown);box.addEventListener('click',onClick,true);
  box.addEventListener('touchstart',touched,{passive:true});box.addEventListener('keydown',touched);box.addEventListener('scroll',onScroll,{passive:true});
  doc.addEventListener('visibilitychange',onVis);if(mq)mq.addEventListener('change',onMotion);
- const ro=root.ResizeObserver?new ResizeObserver(()=>{if(!dead&&!box.hidden&&!cv.width&&box.clientWidth)inView=true;// first rendered (its page just showed); the observer corrects
+ const ro=root.ResizeObserver?new ResizeObserver(()=>{if(!dead&&!box.hidden&&!cv.width&&box.clientWidth)inView=onScreen(box);// first rendered (its page just showed); the observer corrects
   resize();sync()}):null;if(ro)ro.observe(box);
  const io=root.IntersectionObserver?new IntersectionObserver(es=>{inView=es[es.length-1].isIntersecting;kick();sync()}):null;if(io)io.observe(box);else inView=true;
  // The stale chip is one extra chip, first in the layer, that sticks to the left edge of the view.
