@@ -81,6 +81,8 @@ function drawLive(c,s,t){
  A.rays(c,[[[100,140],[124,140],[96,290],[60,290]],[[60,140],[76,140],[50,290],[30,290]]],P.ray,.16*(1-.4*(.5-.5*Math.cos(TAU*t/3000))));
  c.restore();panes(c);c.restore();
 }
-const def={id:'images',width:240,state,stillKey,chip,drawStill,drawLive};
+// The live layer moves only while the room is lit (people at work, or someone waiting on you).
+const animates=s=>!s.down&&lit(s);
+const def={id:'images',width:240,state,stillKey,chip,drawStill,drawLive,animates};
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

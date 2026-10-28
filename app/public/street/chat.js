@@ -97,6 +97,8 @@ function drawLive(c,s,t){
   A.box(c,-7,-7,14,14,'#ffc640',7);c.shadowColor='transparent';c.fillStyle='#7a3a10';c.fillRect(-4,-1.1,8,2.2);c.fillRect(-1.1,-4,2.2,8);c.restore()}
  c.restore();
 }
-const def={id:'chat',width:240,state,stillKey,chip,drawStill,drawLive};
+// The live layer moves only while the room is lit (people at work, or someone waiting on you).
+const animates=s=>!s.down&&lit(s);
+const def={id:'chat',width:240,state,stillKey,chip,drawStill,drawLive,animates};
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

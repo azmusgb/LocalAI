@@ -3,7 +3,8 @@
 // (its ground line 452 lands on 300) and art() applies the same map for paths. Textures, people and crates are drawn in
 // scene units (bricks and ribs at half size, as dense as the art bar's) so the Foundry matches its neighbours.
 // Busy: the furnace burns, the crucible sways and pours, one crate per queued job (up to 4) waits on the belt, light
-// falls through the hall, smoke leaves the chimney and the worker stands in the lit door. Quiet: all of it cold and still.
+// falls through the hall, smoke leaves the chimney and the worker stands in the lit door. Quiet: all of it cold and still, the worker
+// standing still in the door (animates is false).
 // Down: windows and door boarded, no light. drawStill draws what doesn't move; drawLive (t in ms) draws the rest.
 (function(root){'use strict';
 const cut=s=>s.length>60?s.slice(0,59)+'…':s;
@@ -132,9 +133,9 @@ function drawLive(c,s,t){
   A.glow(c,X(666),303,30,5,P.spill,.35*f);A.glow(c,X(330),303,70,6,P.spill,.22*f);
   A.smoke(c,X(645),Y(76),t/1000);A.smoke(c,X(642),Y(78),t/1000+2.1);
  }
- A.person(c,X(664),300,{prop:'clipboard',scale:.56,pose:.04*Math.sin(t/700)});
+ A.person(c,X(664),300,{prop:'clipboard',scale:.56,pose:on?.04*Math.sin(t/700):0});// a quiet worker stands still
  c.restore();
 }
-const def={id:'foundry',width:320,state,stillKey,chip,drawStill,drawLive};
+const def={id:'foundry',width:320,state,stillKey,chip,drawStill,drawLive,animates:busy};
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

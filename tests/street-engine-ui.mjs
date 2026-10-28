@@ -21,6 +21,16 @@ const BUSY = {
   crews: null,
   street: { chat: src({ running: [job(1), job(2)], waiting: 1 }), images: src({ running: [job(3)] }), missions: src(), garage: src(), sheets: src({ running: [job(4)] }), clock: src() }
 };
+// Every building at rest: nothing on the street moves (an online kiosk breathes, so it is not set up here).
+const QUIET = {
+  schema: 1,
+  models: { loaded: [], queue: { active: 0, waiting: 0 }, busy: { total: 0, kinds: {} } },
+  printer: { setUp: true, access: 'ok', state: 'idle', progress: null, minutesLeft: null, errorCode: null },
+  sheets: { bridge: true, excel: true, inFlight: 0 },
+  kiosk: { setUp: false, online: null, signIn: null, firmware: null },
+  crews: null,
+  street: { chat: src(), images: src(), missions: src(), garage: src(), sheets: src(), clock: src() }
+};
 const TITLES = ['Chat Café', 'Image Studio', 'Spreadsheets Office', 'Model Foundry', 'Workshop Garage', 'Kiosk Billboard'];
 
 const contexts = [];
@@ -65,8 +75,8 @@ await check('six chips in street order with the right words', async () => {
   assert.equal(t.length, 6, `six chips: ${JSON.stringify(t)}`);
   TITLES.forEach((title, i) => assert.ok(t[i].startsWith(title), `chip ${i} starts with ${title}: ${t[i]}`));
   assert.ok(t[3].includes('qwen3:4b-instruct-32k loaded · 2 waiting'), t[3]);
-  const chip = await page.evaluate(() => { const b = window.__el.querySelectorAll('.street-chip')[3]; return { tag: b.tagName, type: b.type, label: b.getAttribute('aria-label'), busy: b.classList.contains('street-chip--busy') }; });
-  assert.deepEqual(chip, { tag: 'BUTTON', type: 'button', label: 'Model Foundry: qwen3:4b-instruct-32k loaded · 2 waiting', busy: true });
+  const chip = await page.evaluate(() => { const b = window.__el.querySelectorAll('.street-chip')[3]; return { tag: b.tagName, type: b.type, label: b.getAttribute('aria-label'), busy: b.classList.contains('street-chip--busy'), desc: b.getAttribute('aria-description'), title: b.title }; });
+  assert.deepEqual(chip, { tag: 'BUTTON', type: 'button', label: 'Model Foundry: qwen3:4b-instruct-32k loaded · 2 waiting', busy: true, desc: 'Opens Agent World', title: 'Opens Agent World' });
   await page.evaluate(() => window.__el.querySelectorAll('.street-chip')[3].click());
   assert.deepEqual(await page.evaluate(() => window.__opened), ['foundry'], 'a chip opens its building');
   assert.deepEqual(page.errors, []);
@@ -132,13 +142,23 @@ await check('the street fits on a desktop and scrolls on a phone, and a change b
   const r = await phone.evaluate(() => { const s = window.__el.querySelector('.street'), k = [...s.querySelectorAll('.street-chip')].pop(); const a = s.getBoundingClientRect(), b = k.getBoundingClientRect(); return { left: s.scrollLeft, inView: b.left >= a.left - 1 && b.right <= a.right + 1 }; });
   assert.ok(r.left > left0 && r.inView, `the kiosk scrolled into view: ${JSON.stringify(r)}`);
   // Once the person scrolls, a change leaves the camera alone for a while.
-  await phone.evaluate(() => { const s = window.__el.querySelector('.street'); s.dispatchEvent(new WheelEvent('wheel', { deltaY: -2000, bubbles: true, cancelable: true })); });
+  await phone.evaluate(() => { const s = window.__el.querySelector('.street'); s.dispatchEvent(new WheelEvent('wheel', { deltaY: -2000, shiftKey: true, bubbles: true, cancelable: true })); });
   await phone.waitForTimeout(100);
   const left1 = await phone.evaluate(() => window.__el.querySelector('.street').scrollLeft);
-  assert.ok(left1 < r.left, `the wheel scrolled the street: ${left1}`);
+  assert.ok(left1 < r.left, `shift+wheel scrolled the street: ${left1}`);
   await phone.evaluate(w => window.LocalAIStreet.setWorld(w), BUSY);
   await phone.waitForTimeout(100);
   assert.equal(await phone.evaluate(() => window.__el.querySelector('.street').scrollLeft), left1, 'the camera stays where the person put it');
+});
+
+await check('a plain vertical wheel over a narrow street scrolls the page, not the street', async () => {
+  const page = await fresh({ viewport: { width: 390, height: 844 }, reduced: true });
+  const r = await page.evaluate(() => {
+    const s = window.__el.querySelector('.street'), left = s.scrollLeft, out = [];
+    for (const deltaY of [300, -300]) { const e = new WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true }); s.dispatchEvent(e); out.push(e.defaultPrevented); }
+    return { wide: s.scrollWidth > s.clientWidth, same: s.scrollLeft === left, prevented: out };
+  });
+  assert.deepEqual(r, { wide: true, same: true, prevented: [false, false] });
 });
 
 await check('a mouse drag scrolls a narrow street and does not open a chip; a plain click does', async () => {
@@ -185,6 +205,29 @@ await check('the loop holds to 30 fps', async () => {
   await page.waitForTimeout(2000);
   const n = (await stats(page)).frames - f0;
   assert.ok(n >= 40 && n <= 64, `about 60 frames in 2 s: ${n}`);
+});
+
+await check('a quiet street draws once and stops; a busy one runs; quiet to busy starts it again', async () => {
+  const page = await fresh({ world: QUIET });
+  await page.waitForTimeout(300);
+  const f0 = (await stats(page)).frames;
+  assert.ok(f0 >= 1, 'a frame was drawn');
+  await page.waitForTimeout(1000);
+  assert.equal((await stats(page)).frames, f0, 'no frames while nothing moves');
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), BUSY);
+  await page.waitForTimeout(1000);
+  const f1 = (await stats(page)).frames;
+  assert.ok(f1 - f0 >= 15, `a busy street runs again: ${f1 - f0}`);
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), QUIET);
+  await page.waitForTimeout(300);
+  const f2 = (await stats(page)).frames;
+  await page.waitForTimeout(1000);
+  assert.equal((await stats(page)).frames, f2, 'stops again once all is quiet');
+  // One busy building is enough, and an online kiosk's glow counts.
+  await page.evaluate(w => window.LocalAIStreet.setWorld({ ...w, kiosk: { setUp: true, online: true, signIn: true, firmware: '1' } }), QUIET);
+  await page.waitForTimeout(1000);
+  assert.ok((await stats(page)).frames - f2 >= 15, 'the online kiosk breathes');
+  assert.deepEqual(page.errors, []);
 });
 
 await check('reduced motion draws once, then stops', async () => {
@@ -289,6 +332,32 @@ await check('bad answers keep the last picture and say so', async () => {
   await until(page, () => !window.__el.querySelector('.street.is-stale'), 'a good answer to clear it');
   assert.equal(await page.evaluate(() => window.__el.querySelectorAll('.street-chip--stale').length), 0, 'the stale chip goes');
   assert.equal(await page.evaluate(() => getComputedStyle(window.__el.querySelector('.street__canvas')).opacity), '1');
+});
+
+await check('a request that hangs past 8 s is a failure: stale, and the next poll still runs', async () => {
+  // Real time (no fake clock): the timeout is AbortSignal.timeout's, which a fake clock does not drive.
+  let n = 0; const page = await fresh({ route: () => { n++; } }); // never answers
+  await page.waitForTimeout(6000);
+  assert.equal(await page.evaluate(() => !!window.__el.querySelector('.street.is-stale')), false, 'not stale before the timeout');
+  await until(page, () => !!window.__el.querySelector('.street.is-stale'), 'the timeout to mark it stale');
+  const r = await page.evaluate(() => [...window.__el.querySelectorAll('.street-chip--stale')].map(b => b.textContent));
+  assert.deepEqual(r, [STALE]);
+  for (let i = 0; i < 60 && n < 2; i++) await page.waitForTimeout(100);
+  assert.ok(n >= 2, `the poller is not stuck busy: ${n} requests`);
+});
+
+await check('coming back on screen within 2 s of a poll waits out the gap', async () => {
+  const s = stub(); const page = await fresh({ world: null, clock: true, route: s.route });
+  await until(page, () => !window.__el.querySelector('.street').hidden, 'the first world');
+  await step(page, s);
+  const n = s.n;
+  const vis = h => page.evaluate(h => { for (const k of ['hidden', 'visibilityState']) Object.defineProperty(document, k, { configurable: true, get: () => k === 'hidden' ? h : (h ? 'hidden' : 'visible') }); document.dispatchEvent(new Event('visibilitychange')); }, h);
+  await vis(true); await vis(false);
+  await new Promise(r => setTimeout(r, 300));
+  assert.equal(s.n, n, 'no request at once, the last was just now');
+  await page.clock.runFor(2100);
+  for (let i = 0; i < 100 && s.n === n; i++) await new Promise(r => setTimeout(r, 20));
+  assert.equal(s.n, n + 1, 'one request once the gap is up');
 });
 
 await check('nothing shows before the first answer', async () => {

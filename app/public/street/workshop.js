@@ -3,8 +3,8 @@
 // small window over an oil drum and a beacon on the parapet. state/chip/stillKey are pure.
 // Printing: the door is rolled up, the work light is on, the print head runs along its gantry over a part that grows with
 // progress, the bar on the door's housing fills to state.progress, and a mechanic stands in the opening. Paused: door up,
-// printer visible, head parked, the bar still, no work light. Error: door shut, the red beacon flashes. Idle: shut and
-// dark. Not set up: shut, padlocked, lamp off. Down: door and window boarded, no light.
+// printer visible, head parked, the bar still, no work light. Error: door shut, the red beacon flashes. Idle (and
+// Checking…, before the first read): shut and dark. Not set up: shut, padlocked, lamp off. Down: door and window boarded, no light.
 // drawStill draws what doesn't move (it never shows progress); drawLive (t in ms) draws the rest.
 (function(root){'use strict';
 const cut=s=>s.length>60?s.slice(0,59)+'…':s;
@@ -12,7 +12,9 @@ function state(world){
  const p=world&&world.printer;
  if(!p)return{setUp:false,state:null,progress:null,minutesLeft:null,error:false,down:true};
  const setUp=!!p.setUp;
- return{setUp,state:p.state||null,progress:p.progress??null,minutesLeft:p.minutesLeft??null,error:p.state==='error',down:setUp&&p.access!=='ok'};
+ // access null: set up, but the poller hasn't read the printer yet; checking, not down.
+ const checking=setUp&&p.access==null;
+ return{setUp,checking,state:p.state||null,progress:p.progress??null,minutesLeft:p.minutesLeft??null,error:p.state==='error',down:setUp&&!checking&&p.access!=='ok'};
 }
 // The still shows the door (up while printing), lit or unlit, and down. Never the progress.
 function stillKey(s){return s.down?'down':s.state==='printing'||s.state==='paused'?'up':s.setUp?'unlit':'off'}
@@ -20,6 +22,7 @@ function chip(s){
  const title='Workshop Garage';
  if(s.down)return{title,detail:'Not answering',tone:'down'};
  if(!s.setUp)return{title,detail:'Not set up',tone:'quiet'};
+ if(s.checking)return{title,detail:'Checking…',tone:'quiet'};
  if(s.error)return{title,detail:'Error',tone:'attention'};
  if(s.state==='printing'){
   const d=['Printing'];if(s.progress!=null)d.push(s.progress+'%');if(s.minutesLeft!=null)d.push(s.minutesLeft+' min left');
@@ -87,6 +90,8 @@ function drawLive(c,s,t){
  }
  c.restore();
 }
-const def={id:'workshop',width:260,state,stillKey,chip,drawStill,drawLive};
+// Printing (the head runs) and an error (the beacon flashes) move; paused, idle and the rest are still.
+const animates=s=>!s.down&&(s.state==='printing'||s.error);
+const def={id:'workshop',width:260,state,stillKey,chip,drawStill,drawLive,animates};
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

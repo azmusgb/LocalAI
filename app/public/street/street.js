@@ -1,25 +1,29 @@
 // Main Street: window.LocalAIStreet. home.js loads street/*.js (its STREET_MODS) the first time Home shows the street.
 // Each building file registers one def: {id, width, state(world), stillKey?(state), drawStill(ctx, state, env),
-// drawLive(ctx, state, t, env), chip(state) -> {title, detail, tone}, roof?, open?(item)}. width is in scene units; the
+// drawLive(ctx, state, t, env), animates?(state), chip(state) -> {title, detail, tone}, roof?, open?(item)}. animates
+// says whether drawLive moves for that state (a def without it counts as moving); when it is false drawLive must draw
+// the same at any t. width is in scene units; the
 // scene is 360 units tall with the ground line at y = 300, and a building draws in its own box x in [0, width]. env is
 // {night, reduced, zoom, dpr}. Buildings stand left to right in ORDER, 24 units apart; a key with no def is skipped.
 // The engine: mount(el, {mode:'strip', onOpen(id)}) -> {destroy()} draws the street on one canvas. The .street box is
-// the horizontal scroller (native swipe on a phone; drag and wheel on a desktop) and the canvas is sticky inside it, so
+// the horizontal scroller (native swipe on a phone; drag, shift+wheel and a trackpad's sideways swipe on a desktop; a
+// plain vertical wheel is left to the page) and the canvas is sticky inside it, so
 // the camera is its scrollLeft. Each frame draws the sky, the far city (with
 // parallax), the sidewalk and the road, then each building's cached still and its drawLive. Stills are one offscreen
 // canvas per building, keyed id|zoom|dpr|night|stillKey. The loop runs on rAF at up to 30 fps while the strip is on
-// screen, the page visible and motion allowed; under reduced motion one frame (t = 0) is drawn per world or resize.
+// screen, the page visible, motion allowed and some building in view animates; otherwise it draws one frame and stops
+// (a world, resize, scroll or the strip showing again restarts it). Under reduced motion one frame (t = 0) is drawn per
+// world or resize.
 // A shared poller (below) feeds setWorld from /api/world. setWorld(world) recomputes each state and the chips (and unhides the strip); stats() is a test and perf hook.
 (function(root){'use strict';
 const ORDER=Object.freeze(['chat','images','missions','garage','sheets','clock','foundry','workshop','kiosk','yard']);
 const byId=new Map();let ver=0;
 function register(def){if(!def||typeof def.id!=='string'||!def.id)throw new TypeError('a street def needs an id');byId.set(def.id,def);ver++;return def}
 function defs(){return ORDER.filter(id=>byId.has(id)).map(id=>byId.get(id))}
-const H=360,GAP=24,PAD=24,SLOT=200,FRAME=1000/30-1,QUIET=10000;
+const H=360,GAP=24,PAD=24,SLOT=200,FRAME=1000/30-1,QUIET=10000,WAIT=8000,MIN_GAP=2000,HINT='Opens Agent World';
 let seen=false;const states=new Map(),keys=new Map(),mounts=new Set(),warned=new Set();
 const st={frames:0,avg:0,stills:0};
 function warnOnce(id,what,e){if(warned.has(id))return;warned.add(id);console.warn('Main Street: '+id+' '+what+' failed',e)}
-const reduce=()=>!!(root.matchMedia&&root.matchMedia('(prefers-reduced-motion: reduce)').matches);
 function stillKey(d,s){try{return d.stillKey?String(d.stillKey(s)):''}catch(e){warnOnce(d.id,'stillKey',e);return''}}
 // The world changed: new states, the buildings whose picture changed, then every mount repaints.
 function setWorld(w){
@@ -30,37 +34,48 @@ function setWorld(w){
  }
  for(const m of mounts)m.world(changed);
 }
-// The shared poller: one /api/world request every 10 s while some strip is on screen and the page visible (one at a time;
-// a strip coming on screen or the page becoming visible polls at once). Only a good answer (ok, JSON, schema 1) goes to
-// setWorld; any other answer marks every strip stale until the next good one.
-let timer=0,busy=false,was=false,failed=false;
+// The shared poller: one /api/world request every 10 s while some strip is on screen and the page visible (one at a time,
+// at least 2 s apart; a strip coming on screen or the page becoming visible polls at once, or when the 2 s are up). Only
+// a good answer (ok, JSON, schema 1) within 8 s goes to setWorld; any other answer, or none in 8 s, marks every strip
+// stale until the next good one.
+let timer=0,busy=false,was=false,failed=false,lastAt=-Infinity,later=0;
 // A node is rendered unless it or an ancestor is display:none (Home's view is, while another page is open).
 const visible=n=>n.checkVisibility?n.checkVisibility():n.offsetParent!==null;
 const onScreen=n=>{if(!visible(n))return false;const r=n.getBoundingClientRect();return r.bottom>0&&r.right>0&&r.top<root.innerHeight&&r.left<root.innerWidth&&r.width>0};
 const live=()=>{for(const m of mounts)if(m.on())return true;return false};
 const shown=()=>{const d=root.document;return !!d&&!d.hidden&&d.visibilityState!=='hidden'&&live()};
 function paintStale(){for(const m of mounts)m.stale(failed)}
+// An abort signal that fires after ms (AbortSignal.timeout where there is one) and a cleanup for the fallback's timer.
+function deadline(ms){
+ if(typeof AbortSignal!=='undefined'&&AbortSignal.timeout)return{signal:AbortSignal.timeout(ms),done(){}};
+ if(typeof AbortController==='undefined')return{signal:undefined,done(){}};
+ const a=new AbortController(),t=setTimeout(()=>a.abort(),ms);return{signal:a.signal,done(){clearTimeout(t)}};
+}
 async function poll(){
- if(busy)return;busy=true;
+ if(busy)return;const wait=lastAt+MIN_GAP-Date.now();
+ if(wait>0){if(!later)later=setTimeout(()=>{later=0;if(shown())poll()},wait);return}
+ busy=true;lastAt=Date.now();const dl=deadline(WAIT);
  try{
-  const r=await fetch('/api/world',{cache:'no-cache',credentials:'same-origin'});if(!r.ok)throw 0;
+  const r=await fetch('/api/world',{cache:'no-cache',credentials:'same-origin',signal:dl.signal});if(!r.ok)throw 0;
   const w=await r.json();if(!w||w.schema!==1)throw 0;
   failed=false;setWorld(w);
  }catch(e){failed=true}
- busy=false;paintStale();
+ dl.done();busy=false;paintStale();
 }
 function sync(){const a=shown();if(a&&!was)poll();was=a}
 function onVis(){sync()}
 function start(){if(timer)return;timer=setInterval(()=>{if(shown())poll()},10000);root.document.addEventListener('visibilitychange',onVis)}
-function stop(){clearInterval(timer);timer=0;was=false;root.document.removeEventListener('visibilitychange',onVis)}
+function stop(){clearInterval(timer);clearTimeout(later);timer=later=0;was=false;root.document.removeEventListener('visibilitychange',onVis)}
 function stats(){return{frames:st.frames,avgMs:Math.round(st.avg*1000)/1000,stills:st.stills}}
 
+function animates(d,s){try{return d.animates?!!d.animates(s):typeof d.drawLive==='function'}catch(e){warnOnce(d.id,'animates',e);return true}}
 function mount(el,opts){
  opts=opts||{};const A=root.LocalAIStreetArt,doc=el.ownerDocument;
  const box=doc.createElement('div'),cv=doc.createElement('canvas'),chipsEl=doc.createElement('div');
  box.className='street';box.setAttribute('role','region');box.setAttribute('aria-label','Agent World street');cv.className='street__canvas';cv.setAttribute('aria-hidden','true');chipsEl.className='street__chips';box.hidden=true;box.append(cv,chipsEl);el.append(box);
- const c=cv.getContext('2d'),mq=root.matchMedia?root.matchMedia('(prefers-reduced-motion: reduce)'):null;
- let list=[],xs=new Map(),zoom=1,dpr=1,streetW=0,inView=false,raf=0,last=0,userAt=-Infinity,dead=false,drag=null,sig=-1;
+ const c=cv.getContext('2d'),mq=root.matchMedia?root.matchMedia('(prefers-reduced-motion: reduce)'):null,reduce=()=>!!(mq&&mq.matches);
+ // moving: some building drawn in the last frame animates (true until a frame says otherwise).
+ let list=[],xs=new Map(),zoom=1,dpr=1,streetW=0,inView=false,raf=0,last=0,userAt=-Infinity,dead=false,drag=null,sig=-1,moving=true;
  const t0=performance.now(),stills=new Map(),chips=new Map();
  const fits=()=>streetW<=box.clientWidth+1;
  // Buildings left to right, each centred in a slot at least SLOT CSS px wide so its chip has room; when the street
@@ -76,7 +91,7 @@ function mount(el,opts){
   for(const [id,b] of chips)if(!byId.has(id)||!xs.has(id)){b.remove();chips.delete(id)}
   for(const d of list){
    let b=chips.get(d.id);
-   if(!b){b=doc.createElement('button');b.type='button';b.append(doc.createElement('span'),doc.createElement('span'));b.addEventListener('click',()=>opts.onOpen&&opts.onOpen(d.id));chips.set(d.id,b)}
+   if(!b){b=doc.createElement('button');b.type='button';b.append(doc.createElement('span'),doc.createElement('span'));b.title=HINT;b.setAttribute('aria-description',HINT);b.addEventListener('click',()=>opts.onOpen&&opts.onOpen(d.id));chips.set(d.id,b)}
    chipsEl.append(b);// keeps DOM order = street order
    b.style.left=xs.get(d.id)+d.width*zoom/2+'px';
   }
@@ -118,18 +133,22 @@ function mount(el,opts){
    c.fillStyle=g;c.fillRect(0,0,vw,300);
    for(const [k,L] of [[.5,0],[.25,1]]){c.save();c.translate(-x0*(1-k),0);A.skyline(c,x0*(1-k),vw,L);c.restore()}
    c.save();c.translate(-x0,0);A.sidewalk(c,x0,vw);A.road(c,x0,vw);c.restore()}
+  let mv=false;
   for(const d of list){
    const dx=Math.round((xs.get(d.id)-box.scrollLeft)*dpr),sc=still(d);
    if(dx>cv.width||dx+sc.width<0)continue;
+   if(!mv&&animates(d,states.get(d.id)||{}))mv=true;
    c.setTransform(1,0,0,1,0,0);c.drawImage(sc,dx,0);c.save();c.setTransform(S,0,0,S,dx,0);
    try{d.drawLive(c,states.get(d.id)||{},t,e)}catch(err){warnOnce(d.id,'drawLive',err)}
    c.restore();
   }
-  st.frames++;const ms=performance.now()-a;st.avg=st.frames>1?st.avg*.9+ms*.1:ms;
+  moving=mv;st.frames++;const ms=performance.now()-a;st.avg=st.frames>1?st.avg*.9+ms*.1:ms;
  }
- const running=()=>!dead&&!box.hidden&&inView&&doc.visibilityState!=='hidden'&&!reduce();
+ const running=()=>!dead&&!box.hidden&&inView&&doc.visibilityState!=='hidden'&&!reduce()&&moving;
  function tick(now){raf=0;if(!running())return;raf=root.requestAnimationFrame(tick);if(now-last<FRAME)return;last=now;draw(now-t0)}
- function kick(){if(running()&&!raf)raf=root.requestAnimationFrame(tick)}
+ // Something may have changed: run at least one more frame, which decides whether the loop keeps going.
+ const go=()=>{if(running()&&!raf)raf=root.requestAnimationFrame(tick)};
+ function kick(){moving=true;go()}
  function redraw(){if(reduce())draw(0);else kick()}
  // A new world: unhide on the first (on screen if it is rendered at all; the observer takes over), redraw the chips, and bring a changed building into view unless the person
  // scrolled lately.
@@ -146,10 +165,11 @@ function mount(el,opts){
   box.scrollTo({left:Math.max(0,(l+r-vw)/2),behavior:reduce()?'auto':'smooth'});
  }
  const touched=()=>{userAt=Date.now()};
+ // A plain vertical wheel scrolls the page (never prevented); a trackpad's sideways swipe scrolls the street natively;
+ // shift+wheel turns a vertical wheel sideways.
  function onWheel(e){
-  if(fits())return;touched();const k=e.deltaMode===1?16:e.deltaMode===2?box.clientWidth:1;
-  if(Math.abs(e.deltaX)>Math.abs(e.deltaY))return;// a trackpad's sideways swipe scrolls natively
-  const to=Math.max(0,Math.min(box.scrollWidth-box.clientWidth,box.scrollLeft+e.deltaY*k));
+  if(fits())return;const side=Math.abs(e.deltaX)>Math.abs(e.deltaY);if(!side&&!e.shiftKey)return;touched();if(side)return;
+  const k=e.deltaMode===1?16:e.deltaMode===2?box.clientWidth:1,to=Math.max(0,Math.min(box.scrollWidth-box.clientWidth,box.scrollLeft+e.deltaY*k));
   if(to!==box.scrollLeft){e.preventDefault();box.scrollLeft=to}
  }
  function onDown(e){drag=null;if(e.pointerType!=='mouse'||e.button!==0||fits())return;touched();drag={x:e.clientX,left:box.scrollLeft,moved:false};root.addEventListener('pointermove',onMove);root.addEventListener('pointerup',onUp)}
@@ -158,7 +178,7 @@ function mount(el,opts){
  // The click that ends a drag is eaten (a later press starts a new drag; a keyboard click has detail 0 and goes through).
  function onClick(e){if(drag&&drag.moved&&e.detail){e.preventDefault();e.stopPropagation()}drag=null}
  // Scrolling repaints at once so the canvas keeps up with the chips; the loop then waits a frame.
- function onScroll(){if(box.hidden)return;last=performance.now();draw(running()?last-t0:0)}
+ function onScroll(){if(box.hidden)return;last=performance.now();draw(reduce()?0:last-t0);go()}// go: the loop resumes if a moving building scrolled into view
  const onVis=()=>kick(),onMotion=()=>redraw();
  box.addEventListener('wheel',onWheel,{passive:false});box.addEventListener('pointerdown',onDown);box.addEventListener('click',onClick,true);
  box.addEventListener('touchstart',touched,{passive:true});box.addEventListener('keydown',touched);box.addEventListener('scroll',onScroll,{passive:true});

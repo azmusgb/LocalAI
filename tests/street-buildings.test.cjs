@@ -89,6 +89,12 @@ test('workshop: state and chip', () => {
   const down = p({ access: 'denied' });
   assert.equal(down.down, true);
   assert.deepEqual(d.chip(down), { title: 'Workshop Garage', detail: 'Not answering', tone: 'down' });
+  // Set up but not read yet (the poller's first look is pending): checking, not down, and not boarded.
+  const checking = p({ access: null });
+  assert.equal(checking.down, false);
+  assert.deepEqual(d.chip(checking), { title: 'Workshop Garage', detail: 'Checking…', tone: 'quiet' });
+  assert.notEqual(d.stillKey(checking), 'down');
+  for (const a of ['denied', 'unreachable', 'error', '', false]) assert.equal(p({ access: a }).down, true, `access ${JSON.stringify(a)} stays down`);
   assert.equal(d.state({ printer: null }).down, true);
   assert.notEqual(d.stillKey(busy), d.stillKey(quiet));
   assert.equal(d.stillKey(p({ state: 'printing', progress: 10 })), d.stillKey(p({ state: 'printing', progress: 90 })));
@@ -117,3 +123,30 @@ test('kiosk: state and chip', () => {
   fits(d.chip(k({ firmware: LONG })));
   assert.notEqual(d.stillKey(on), d.stillKey(off));
 });
+
+// animates(state): each building says whether its live layer moves. The engine stops its loop when no building on view
+// animates, so a building that says false must draw the same live frame at any t.
+const kit = require('./street-draw-kit.cjs');
+const pr = o => ({ printer: Object.assign({ setUp: true, access: 'ok', state: 'idle', progress: null, minutesLeft: null, errorCode: null }, o) });
+const ANIM = {
+  chat: [[{ street: street({ chat: src({ running: [item(1)] }) }) }, true], [{ street: street({ chat: src({ needsYou: [item(1)] }) }) }, true], [{ street: street() }, false], [{ street: null }, false]],
+  images: [[{ street: street({ images: src({ running: [item(1)] }) }) }, true], [{ street: street() }, false], [{ street: null }, false]],
+  sheets: [[{ sheets: { bridge: true, excel: true, inFlight: 1 }, street: street() }, true], [{ sheets: { bridge: true, excel: true, inFlight: 0 }, street: street() }, false], [{ sheets: { bridge: true, excel: false, inFlight: 0 }, street: street() }, false], [{ sheets: null, street: null }, false]],
+  foundry: [[{ models: { loaded: [{ name: 'm' }], queue: { waiting: 2 } } }, true], [{ models: { loaded: [], queue: { waiting: 0 } } }, false], [{ models: null }, false]],
+  workshop: [[pr({ state: 'printing', progress: 40 }), true], [pr({ state: 'error' }), true], [pr({}), false], [pr({ state: 'paused', progress: 30 }), false], [pr({ access: null }), false], [pr({ setUp: false, access: null }), false], [pr({ access: 'denied' }), false], [{ printer: null }, false]],
+  kiosk: [[{ kiosk: { setUp: true, online: true, firmware: '1' } }, true], [{ kiosk: { setUp: false, online: null } }, false], [{ kiosk: { setUp: true, online: false } }, false], [{ kiosk: null }, false]],
+};
+for (const [id, cases] of Object.entries(ANIM)) {
+  test(id + ': animates(state) is declared, and a still building draws the same live frame at any t', () => {
+    const d = load(id);
+    assert.equal(typeof d.animates, 'function', id + ' declares animates');
+    for (const [w, want] of cases) {
+      const s = d.state(w);
+      assert.equal(d.animates(s), want, id + ' ' + JSON.stringify(w).slice(0, 120));
+      if (want) continue;
+      const frame = t => { const r = kit.draw(d, w, t); return JSON.stringify([r.liveRec.args, r.liveRec.sets]); };
+      assert.equal(frame(0), frame(12345), id + ' is still at any t: ' + JSON.stringify(w).slice(0, 120));
+      assert.equal(frame(0), frame(777), id + ' is still at any t');
+    }
+  });
+}

@@ -76,6 +76,8 @@ function drawLive(c,s,t){
  c.fillStyle='#4f8a55';for(let r=0;r<4;r++)c.fillRect(74,249+r*4.4,6+((r*7+tick)%5)*4,2);A.glow(c,86,256,22,16,'#bff0c8',.35);
  c.restore();
 }
-const def={id:'sheets',width:220,state,stillKey,chip,drawStill,drawLive};
+// Only working moves (the dim office's clerk is in the still).
+const animates=s=>!s.down&&s.working;
+const def={id:'sheets',width:220,state,stillKey,chip,drawStill,drawLive,animates};
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

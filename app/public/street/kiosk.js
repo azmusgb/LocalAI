@@ -55,6 +55,7 @@ function drawLive(c,s,t){
  c.fillStyle=A.grad(c,0,y-10,0,y+10,'rgba(255,255,255,0)','rgba(255,255,255,.16)');c.fillRect(SX,y-10,SW,20);c.restore();
  c.fillStyle=Math.floor(t/800)%2?'#5bd37a':'#2a5a3a';c.beginPath();c.arc(20,280,1.8,0,TAU);c.fill();
 }
-const def={id:'kiosk',width:140,state,stillKey,chip,drawStill,drawLive};
+// Online breathes (a slow glow, a sheen, the blinking cabinet light), so it animates; dark or down is still.
+const def={id:'kiosk',width:140,state,stillKey,chip,drawStill,drawLive,animates:on};
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);
