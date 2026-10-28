@@ -139,6 +139,10 @@ function drawLive(c,s,t){
 }
 // At night: the door lamp; with a model loaded, the hall's window and the furnace spilling out of the door.
 const lights=s=>s.down||s.hidden?[]:[C.lamp(X(590),Y(262)),...busy(s)?[C.light('window','#ffb04a',WIN),C.light('glow','#f0682a',[X(618),Y(308),96*KX,144*KY])]:[]];
-const def={id:'foundry',width:320,state,stillKey,chip,drawStill,drawLive,animates:busy,lights};
+const panel=(s,w)=>{const l=(w&&w.models&&Array.isArray(w.models.loaded)?w.models.loaded:[]).filter(m=>m&&typeof m==='object'),n=s.queued,
+ rows=l.slice(0,n>0?5:6).map(m=>({id:null,title:cut(String(m.name??''),80),note:(Number.isFinite(m.sizeMb)?m.sizeMb:0)+' MB'}));
+ if(n>0)rows.push({id:null,title:'Queue: '+n+' waiting',note:''});
+ return C.panelOf(chip(s),rows,{label:'Open Models',to:'#models'})};
+const def={panel,id:'foundry',width:320,state,stillKey,chip,drawStill,drawLive,animates:busy,lights};
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

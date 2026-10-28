@@ -7,7 +7,7 @@
 // drawStill draws what doesn't move; drawLive (t in ms) draws the mechanic, the sparks and the cue.
 (function(root){'use strict';
 const C=typeof module==='object'&&module.exports?require('./common.js'):root.LocalAIStreetCommon;
-const B=C.runsBuilding({id:'garage',key:'garage',title:'Repair Garage',width:240,roof:160});
+const B=C.runsBuilding({id:'garage',key:'garage',title:'Repair Garage',width:240,roof:160,open:{label:'Open In progress',to:'#inProgress'}});
 const lit=s=>s.running+s.more>0||s.needsYou>0;
 const TAU=Math.PI*2,K=()=>root.LocalAIStreetArt;
 const CAR='#3f7fc4',HAZ='#e05a2a',SIGN='#2d3a2a',SPARK='#fff3b0',BY=196,BH=104,BAYS=[18,120],BW=90,MX=56,MK=.48;

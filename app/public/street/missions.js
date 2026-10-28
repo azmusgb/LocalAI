@@ -8,7 +8,7 @@
 // drawStill draws what doesn't move; drawLive (t in ms) draws the people, the radar sweep and the antenna light.
 (function(root){'use strict';
 const C=typeof module==='object'&&module.exports?require('./common.js'):root.LocalAIStreetCommon;
-const B=C.runsBuilding({id:'missions',key:'missions',title:'Missions HQ',width:260,roof:90});
+const B=C.runsBuilding({id:'missions',key:'missions',title:'Missions HQ',width:260,roof:90,open:{label:'Open the mission',to:'#agents?mission=latest'},mission:true});
 const lit=s=>s.running+s.more>0||s.needsYou>0;
 const TAU=Math.PI*2,K=()=>root.LocalAIStreetArt;
 const BLUE='#1f4f8a',STRIPE='#2a5d9e',MULL='#173b66',CYAN='#5fd4ff',BEACON='#ff4d3d',RX=150,RY=124,AX=242,AY=36,LAMPS=[17,223],LY=122;

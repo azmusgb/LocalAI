@@ -95,6 +95,7 @@ function drawLive(c,s,t){
 const animates=s=>!s.down&&(s.state==='printing'||s.error);
 // At night: the lamp over the door (off, as by day, until the printer is set up); while the door is up, the shop, the small window and the sign's red neon.
 const lights=s=>s.down||s.hidden||!s.setUp?[]:[C.lamp(184,192),...up(s)?[C.light('window','#ffb04a',[DX,DY,DW,DH]),C.light('window','#ffcf8a',[187,203,32,28]),C.light('glow','#ff5a4a',[102,132,46,20])]:[]];
-const def={id:'workshop',width:260,state,stillKey,chip,drawStill,drawLive,animates,lights};
+const panel=s=>C.panelOf(chip(s),[],{label:'Open Pi Hub',to:'http://10.0.0.30/'});
+const def={panel,id:'workshop',width:260,state,stillKey,chip,drawStill,drawLive,animates,lights};
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

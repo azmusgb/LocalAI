@@ -59,6 +59,7 @@ function drawLive(c,s,t){
 // Online breathes (a slow glow, a sheen, the blinking cabinet light), so it animates; dark or down is still.
 // At night, only while online: the two flood lamps and the screen (not set up or down, it stands dark).
 const lights=s=>on(s)&&!s.hidden?[C.lamp(30,111),C.lamp(90,111),C.light('window','#7fd3ff',[SX,SY,SW,SH])]:[];
-const def={id:'kiosk',width:140,state,stillKey,chip,drawStill,drawLive,animates:on,lights};
+const panel=s=>C.panelOf(chip(s),[],{label:'Open Workshop display',to:'#integrations?card=workshop'});
+const def={panel,id:'kiosk',width:140,state,stillKey,chip,drawStill,drawLive,animates:on,lights};
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

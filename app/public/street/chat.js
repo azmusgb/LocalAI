@@ -6,7 +6,7 @@
 // drawStill draws what doesn't move; drawLive (t in ms) draws the people, bubbles and badge, then the glass over them.
 (function(root){'use strict';
 const C=typeof module==='object'&&module.exports?require('./common.js'):root.LocalAIStreetCommon;
-const B=C.runsBuilding({id:'chat',key:'chat',title:'Chat Café',width:240});
+const B=C.runsBuilding({id:'chat',key:'chat',title:'Chat Café',width:240,open:{label:'Open Chat',to:'#ask'}});
 const lit=s=>s.running+s.more>0||s.needsYou>0;
 const TAU=Math.PI*2,K=()=>root.LocalAIStreetArt;
 const TRIM='#2f5a48',WX=20,WY=206,WW=120,WH=84;

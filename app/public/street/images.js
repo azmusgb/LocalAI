@@ -6,7 +6,7 @@
 // and door boarded, no light. drawStill draws what doesn't move; drawLive (t in ms) draws the painting, painter and light.
 (function(root){'use strict';
 const C=typeof module==='object'&&module.exports?require('./common.js'):root.LocalAIStreetCommon;
-const B=C.runsBuilding({id:'images',key:'images',title:'Image Studio',width:240});
+const B=C.runsBuilding({id:'images',key:'images',title:'Image Studio',width:240,open:{label:'Open Images',to:'#create'}});
 const lit=s=>s.running+s.more>0||s.needsYou>0;
 const TAU=Math.PI*2,K=()=>root.LocalAIStreetArt;
 const WX=30,WY=140,WW=100,WH=150,CX=64,CY=206,CW=44,CH=42;

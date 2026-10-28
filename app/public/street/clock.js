@@ -9,7 +9,7 @@
 // drawStill draws what doesn't move; drawLive (t in ms) draws the hands, the bell and the cue.
 (function(root){'use strict';
 const C=typeof module==='object'&&module.exports?require('./common.js'):root.LocalAIStreetCommon;
-const B=C.runsBuilding({id:'clock',key:'clock',title:'Clock Tower',width:140,roof:60});
+const B=C.runsBuilding({id:'clock',key:'clock',title:'Clock Tower',width:140,roof:60,open:{label:'Open Automations',to:'#automationStudio'}});
 const lit=s=>s.running+s.more>0||s.needsYou>0;
 const TAU=Math.PI*2,K=()=>root.LocalAIStreetArt;
 const ST=['#d8c8a6','#cfbd98','#e0d1b2','#c8b48e'],MORTAR='#a8977a',QUOIN='#ece0c4',COPPER='#3f8f7c',GILT='#d9b45a',BRONZE='#c08a3e',FACE='#f6eed6',INK='#262a31';
