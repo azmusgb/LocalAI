@@ -160,7 +160,7 @@ test("Agent World's on-demand modules stay within their own budget (gzipped)", (
 // art.js keeps that cost shared: reusable helpers with parameters, never per-building code.
 // 2026-10-28: 48 → 60 KB for PR 3: ten buildings, cars and night at the art bar, and common.js's shared helpers. On demand, not shell.
 // 2026-10-28: 60 → 72 KB, and street.js's own cap 8 → 10 KB (it is the engine), for PR 4's full-page street: mode 'full',
-// focus with its spotlight and phone snapping (street.js 7.7 → 9.1 KB; 60.1 KB measured), with room for the page's panels. On demand, not shell.
+// focus with its spotlight and phone snapping (street.js 7.7 → 9.1 KB; 58.9 KB measured), with room for the page's panels. On demand, not shell.
 const STREET = fs.readdirSync(path.join(pub, 'street')).filter(f => f.endsWith('.js')).map(f => 'street/' + f);
 const streetSizes = Object.fromEntries(STREET.map(f => [f, gz(f)]));
 test('Main Street modules stay within their own budget (gzipped)', () => {
