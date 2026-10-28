@@ -142,16 +142,25 @@ const runLedger = new RunLedger({ storage, onTransition: (run, previous) => {
 } });
 const activeRunControllers = new Map();
 const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody });
+const hostAddrs = require('./signin').hostAddresses();
+const isHostReq = req => !req.headers['x-forwarded-for'] && hostAddrs.has(String(req.socket?.remoteAddress || '').replace(/^::ffff:/, ''));
 // Projects › Print lab: a read-only copy of the Mac's print-lab records; only the Mac (its key) writes. The live print
 // block reads the Workshop printer's last polled state; it never asks the display itself.
-const printLab = require('./print-lab').createPrintLab({ storage, dataDir: DATA_DIR, json, macAuthorized: req => claudeChat.macAuthorized(req), deviceFor: req => claudeChat.deviceFor(req), printer: () => workshopPrinter.current() });
+const printLab = require('./print-lab').createPrintLab({
+  storage,
+  dataDir: DATA_DIR,
+  json,
+  macAuthorized: req => claudeChat.macAuthorized(req),
+  deviceFor: req => claudeChat.deviceFor(req) || (isHostReq(req) ? { id: 'dev-mac-local', name: 'Mac' } : null),
+  printer: () => workshopPrinter.current()
+});
 // Sign-in (app/signin.js): who would be refused is listed on Health; the routes that run code, write files or approve
 // changes are refused without a device, and LOCALAI_SIGN_IN=required refuses the rest.
 // The Workshop display's key (X-LocalAI-Display-Key) signs it in for its feed only; host/workshop-display/set-key.sh sets it.
 const displayKey = require('./route-keys').createRouteKey({ dataDir: DATA_DIR, file: 'workshop-display-key.sha256', header: 'x-localai-display-key' });
 // The display's Judge it sheet (app/display-lab.js): the phone's verdict request, queued from the display's key alone.
 const displayLab = require('./display-lab').createDisplayLab({ labStore: printLab, json, authorized: req => displayKey.authorized(req) });
-const signIn = require('./signin').createSignIn({ storage, signedIn: req => !!claudeChat.deviceFor(req) || claudeChat.macAuthorized(req), routeKeys: {
+const signIn = require('./signin').createSignIn({ storage, signedIn: req => !!claudeChat.deviceFor(req) || claudeChat.macAuthorized(req) || isHostReq(req), routeKeys: {
   '/api/display/feed': req => displayKey.authorized(req),
   '/api/display/ask': req => displayKey.authorized(req),
   '/api/display/events': req => displayKey.authorized(req),
