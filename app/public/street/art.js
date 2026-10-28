@@ -107,7 +107,7 @@ function crate(c,x,y,s){
 function smoke(c,x,y,t){
  c.save();const cols=[P.smoke0,P.smoke1,'#e6e9ee'];
  for(let i=0;i<3;i++){const p=(((t||0)/4.2+i/3)%1+1)%1,r=11*(.5+1.6*p),px=x+16*p,py=y-60*p,g=c.createRadialGradient(px,py,0,px,py,r);
-  g.addColorStop(0,rgba(cols[i],.75*(1-p)));g.addColorStop(1,rgba(cols[i],0));c.fillStyle=g;c.beginPath();c.arc(px,py,r,0,Math.PI*2);c.fill()}
+  g.addColorStop(0,rgba(cols[i],.85*(1-p)));g.addColorStop(.45,rgba(cols[i],.7*(1-p)));g.addColorStop(1,rgba(cols[i],0));c.fillStyle=g;c.beginPath();c.arc(px,py,r,0,Math.PI*2);c.fill()}
  c.restore();
 }
 // Fire in a box (a furnace mouth, a forge): the art bar's furnace gradient, flickering, with flame tongues on top.
