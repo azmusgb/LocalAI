@@ -1520,7 +1520,7 @@ body.run-view-open{overflow:hidden}
 .work-more[hidden],.work-more button[hidden]{display:none}
 /* The whole row is the tap target: the title is a button whose hit area stretches over the row. Review and Retry stay small buttons above it. */
 .work-list .run-card,#home .run-card{position:relative}
-.work-open{display:block;min-height:24px;max-width:100%;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;white-space:normal;overflow-wrap:anywhere}
+.work-open{display:block;min-height:24px;max-width:100%;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
 .work-open::after{content:"";position:absolute;inset:0}
 .work-open:focus-visible{outline:none}
 .work-open:focus-visible::after{outline:var(--ds-ring);outline-offset:-2px;border-radius:var(--ds-r-md)}
@@ -3076,4 +3076,4 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 .street.is-stale .street__canvas{opacity:.55}.street-chip--stale{position:sticky;left:8px;top:4px;width:max-content;transform:none;border-color:var(--ds-attention)}
 @media(max-width:760px){.street{height:132px}}
 @media(pointer:coarse){.street-chip{min-height:44px;align-content:center}}
-.home-street .street{margin-top:20px;border:1px solid var(--ds-line)}
+.home-street .street{margin-top:20px;border:1px solid var(--ds-line);mask-image:linear-gradient(90deg,#000 calc(100% - 24px),transparent)}

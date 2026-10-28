@@ -133,8 +133,13 @@ function mount(el,opts){
  function redraw(){if(reduce())draw(0);else kick()}
  // A new world: unhide on the first (on screen if it is rendered at all; the observer takes over), redraw the chips, and bring a changed building into view unless the person
  // scrolled lately.
+ // The first world: a street wider than the strip opens on the first building that needs you, else the first busy one.
+ function firstLook(){
+  if(fits())return;const tone=t=>list.find(d=>chips.get(d.id)?.classList.contains('street-chip--'+t)),d=tone('attention')||tone('busy');if(!d)return;
+  const l=xs.get(d.id),r=l+d.width*zoom,vw=box.clientWidth;if(r>vw)box.scrollTo({left:Math.max(0,(l+r-vw)/2),behavior:'instant'});
+ }
  function onWorld(changed){
-  if(dead)return;if(box.hidden){box.hidden=false;inView=onScreen(box);resize()}else{if(ver!==sig)layout();paintChips();for(const d of list)still(d);redraw()}
+  if(dead)return;if(box.hidden){box.hidden=false;inView=onScreen(box);resize();firstLook()}else{if(ver!==sig)layout();paintChips();for(const d of list)still(d);redraw()}
   const id=changed.find(i=>xs.has(i));if(!id||fits()||Date.now()-userAt<QUIET)return;
   const d=byId.get(id),l=xs.get(id),r=l+d.width*zoom,vw=box.clientWidth;
   if(l>=box.scrollLeft&&r<=box.scrollLeft+vw)return;
