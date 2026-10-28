@@ -56,7 +56,7 @@ export default [
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: 'script',
-      globals: { ...globals.browser, ...localAIGlobals, module: 'readonly' },
+      globals: { ...globals.browser, ...localAIGlobals, module: 'readonly', require: 'readonly' },
     },
     rules: correctness,
   },

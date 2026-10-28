@@ -6,22 +6,24 @@
 // sits in a lit office at a dim screen, nothing moves. Quiet: dark and empty. Down: windows and door boarded, no light.
 // drawStill draws what doesn't move (the clerk included); drawLive (t in ms) draws the cells, the typing arm and the rows.
 (function(root){'use strict';
-const cut=s=>s.length>60?s.slice(0,59)+'…':s;
+const C=typeof module==='object'&&module.exports?require('./common.js'):root.LocalAIStreetCommon;
+const cut=C.cut;
 const tri=v=>typeof v==='boolean'?v:null;
 const dimLit=s=>!s.down&&!s.working&&s.bridge===true&&s.excel===false;
 function state(world){
  const w=world&&world.sheets,bridge=w?tri(w.bridge):null,excel=w?tri(w.excel):null;
- const run=((world&&world.street&&world.street.sheets&&world.street.sheets.running)||[]).length;
- return{working:((w&&w.inFlight)||0)>0||run>0,bridge,excel,down:bridge===null};
+ const sw=(world&&world.street&&world.street.sheets)||{},run=(sw.running||[]).length,a=C.asks(sw);
+ return{working:((w&&w.inFlight)||0)>0||run>0,bridge,excel,needsYou:a.needsYou,failed:a.failed,down:bridge===null};
 }
 // 'dim': the bridge is up but Excel is shut, so the office is lit and the clerk sits at a dim screen.
 function stillKey(s){return s.down?'down':s.working?'lit':dimLit(s)?'dim':'unlit'}
 function chip(s){
  const title='Spreadsheets Office';
  if(s.down)return{title,detail:'Not answering',tone:'down'};
- if(s.working)return{title,detail:'Working',tone:'busy'};
- if(s.bridge===true&&s.excel===false)return{title,detail:cut('Excel not open'),tone:'quiet'};
- return{title,detail:'Ready',tone:'quiet'};
+ const base=s.working?'Working':s.bridge===true&&s.excel===false?'Excel not open':'Ready',d=[base];
+ if(s.needsYou>0)d.push(s.needsYou+' need you');
+ if(s.failed>0)d.push(s.failed+' failed');
+ return{title,detail:cut(d.join(' · ')),tone:s.needsYou>0||s.failed>0?'attention':s.working?'busy':'quiet'};
 }
 const K=()=>root.LocalAIStreetArt,TAU=Math.PI*2;
 const RX=22,RY=122,RW=160,RH=66,CC=6,CR=3,GX=22,GY=214,GW=98,GH=74,WALL='#e6d6b8';

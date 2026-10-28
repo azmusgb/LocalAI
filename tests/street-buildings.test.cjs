@@ -15,11 +15,11 @@ for (const [id, name] of [['chat', 'Chat Café'], ['images', 'Image Studio']]) {
     const d = load(id);
     assert.equal(d.id, id); assert.equal(d.width, 240);
     const busy = d.state({ street: street({ [id]: src({ running: [item(1), item(2), item(3)], waiting: 47 }) }) });
-    assert.deepEqual(busy, { running: 3, more: 47, needsYou: 0, failed: 0, down: false });
+    assert.deepEqual(busy, { running: 3, more: 47, needsYou: 0, failed: 0, first: null, firstRun: item(1), down: false });
     assert.deepEqual(d.chip(busy), { title: name, detail: '50 running', tone: 'busy' });
     const need = d.state({ street: street({ [id]: src({ running: [item(1)], needsYou: [item(2), item(3)], failedUnseen: [item(4)] }) }) });
     assert.equal(need.failed, 1);
-    assert.deepEqual(d.chip(need), { title: name, detail: '1 running · 2 need you', tone: 'attention' });
+    assert.deepEqual(d.chip(need), { title: name, detail: '1 running · 2 need you · 1 failed', tone: 'attention' });
     const quiet = d.state({ street: street() });
     assert.deepEqual(d.chip(quiet), { title: name, detail: 'Quiet', tone: 'quiet' });
     const down = d.state({ street: null });
@@ -39,8 +39,11 @@ test('sheets: state and chip', () => {
   assert.equal(d.width, 220);
   const mk = (sheets, st) => d.state({ sheets, street: st || street() });
   const busy = mk({ bridge: true, excel: true, inFlight: 1 });
-  assert.deepEqual(busy, { working: true, bridge: true, excel: true, down: false });
+  assert.deepEqual(busy, { working: true, bridge: true, excel: true, needsYou: 0, failed: 0, down: false });
   assert.equal(d.chip(busy).detail, 'Working');
+  const asks = mk({ bridge: true, excel: true, inFlight: 0 }, street({ sheets: src({ needsYou: [item(1)], failedUnseen: [item(2)] }) }));
+  assert.deepEqual(d.chip(asks), { title: 'Spreadsheets Office', detail: 'Ready · 1 need you · 1 failed', tone: 'attention' });
+  assert.deepEqual(d.chip(mk({ bridge: true, excel: true, inFlight: 1 }, street({ sheets: src({ failedUnseen: [item(2)] }) }))), { title: 'Spreadsheets Office', detail: 'Working · 1 failed', tone: 'attention' });
   assert.equal(mk({ bridge: true, excel: true, inFlight: 0 }, street({ sheets: src({ running: [item(1)] }) })).working, true);
   const quiet = mk({ bridge: true, excel: true, inFlight: 0 });
   assert.deepEqual(d.chip(quiet), { title: 'Spreadsheets Office', detail: 'Ready', tone: 'quiet' });

@@ -7,7 +7,8 @@
 // Checking…, before the first read): shut and dark. Not set up: shut, padlocked, lamp off. Down: door and window boarded, no light.
 // drawStill draws what doesn't move (it never shows progress); drawLive (t in ms) draws the rest.
 (function(root){'use strict';
-const cut=s=>s.length>60?s.slice(0,59)+'…':s;
+const C=typeof module==='object'&&module.exports?require('./common.js'):root.LocalAIStreetCommon;
+const cut=C.cut;
 function state(world){
  const p=world&&world.printer;
  if(!p)return{setUp:false,state:null,progress:null,minutesLeft:null,error:false,down:true};

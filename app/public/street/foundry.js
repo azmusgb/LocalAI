@@ -7,7 +7,8 @@
 // standing still in the door (animates is false).
 // Down: windows and door boarded, no light. drawStill draws what doesn't move; drawLive (t in ms) draws the rest.
 (function(root){'use strict';
-const cut=s=>s.length>60?s.slice(0,59)+'…':s;
+const C=typeof module==='object'&&module.exports?require('./common.js'):root.LocalAIStreetCommon;
+const cut=C.cut;
 function state(world){
  const m=world&&world.models,list=m&&Array.isArray(m.loaded)?m.loaded:null;
  if(!list)return{model:null,loaded:0,queued:(m&&m.queue&&m.queue.waiting)||0,down:true};

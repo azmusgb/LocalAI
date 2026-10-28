@@ -5,24 +5,9 @@
 // strokes it, and light falls from the skylights. Quiet: dark, the canvas under a dust sheet, no painter. Down: window
 // and door boarded, no light. drawStill draws what doesn't move; drawLive (t in ms) draws the painting, painter and light.
 (function(root){'use strict';
-const cut=s=>s.length>60?s.slice(0,59)+'…':s;
-const n=v=>Number.isFinite(v)&&v>0?Math.floor(v):0;
-function state(world){
- const src=world&&world.street;if(!src)return{running:0,more:0,needsYou:0,failed:0,down:true};
- const s=src.images||{};
- return{running:Math.min(3,(s.running||[]).length),more:n(s.waiting),needsYou:(s.needsYou||[]).length,failed:(s.failedUnseen||[]).length,down:false};
-}
+const C=typeof module==='object'&&module.exports?require('./common.js'):root.LocalAIStreetCommon;
+const B=C.runsBuilding({id:'images',key:'images',title:'Image Studio',width:240});
 const lit=s=>s.running+s.more>0||s.needsYou>0;
-function stillKey(s){return(s.down?'down':lit(s)?'lit':'unlit')}
-function chip(s){
- const title='Image Studio';
- if(s.down)return{title,detail:'Not answering',tone:'down'};
- if(!lit(s))return{title,detail:'Quiet',tone:'quiet'};
- const total=s.running+s.more;
- let d=total>0?total+' running':'';
- if(s.needsYou>0)d+=(d?' · ':'')+s.needsYou+' need you';
- return{title,detail:cut(d),tone:s.needsYou>0?'attention':'busy'};
-}
 const TAU=Math.PI*2,K=()=>root.LocalAIStreetArt;
 const WX=30,WY=140,WW=100,WH=150,CX=64,CY=206,CW=44,CH=42;
 const BANDS=['#7fc4f0','#f6d27a','#e98a5a','#6aaa6e','#3f7a4c'];
@@ -82,7 +67,6 @@ function drawLive(c,s,t){
  c.restore();panes(c);c.restore();
 }
 // The live layer moves only while the room is lit (people at work, or someone waiting on you).
-const animates=s=>!s.down&&lit(s);
-const def={id:'images',width:240,state,stillKey,chip,drawStill,drawLive,animates};
+const def=Object.assign(B,{drawStill,drawLive});
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

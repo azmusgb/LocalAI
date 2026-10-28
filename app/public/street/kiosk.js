@@ -4,7 +4,8 @@
 // runs down it), the lamps are lit and the cabinet's light blinks green. Not set up: the screen dark, lamps off, still.
 // Down: the screen dark and boarded, no light. drawStill draws what doesn't move; drawLive (t in ms) the glow.
 (function(root){'use strict';
-const cut=s=>s.length>60?s.slice(0,59)+'…':s;
+const C=typeof module==='object'&&module.exports?require('./common.js'):root.LocalAIStreetCommon;
+const cut=C.cut;
 function state(world){
  const k=world&&world.kiosk;
  if(!k)return{setUp:false,online:null,firmware:null,down:true};
