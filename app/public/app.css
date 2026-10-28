@@ -2770,6 +2770,22 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 .lab-compare__cols{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .lab-compare__cell{overflow:hidden;display:grid;place-items:center;aspect-ratio:4/3;border-radius:var(--ds-r-sm);background:var(--ds-surface-2)}
 @media (max-width: 640px) {
+  .lab-thumbs {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding: 2px 0 6px;
+    gap: 6px;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  }
+  .lab-thumbs::-webkit-scrollbar { display: none; }
+  .lab-thumb {
+    flex: 0 0 88px;
+    scroll-snap-align: start;
+  }
   .lab-sheet {
     width: 100%;
     max-width: 100%;

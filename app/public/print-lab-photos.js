@@ -41,12 +41,25 @@ function checklistHtml(x){
  return `<fieldset class="lab-checklist__set"><legend>Before you judge</legend>${items.map((t,i)=>`<label class="lab-checkbox-label"><input type="checkbox" data-tick="${esc(x.id)}" data-i="${i}"${on.includes(i)?' checked':''}><span>${esc(t)}</span></label>`).join('')}</fieldset>`;
 }
 
-// Zoom and pan on the images under `area`: double-tap or double-click toggles 2.5x, two fingers pinch, one drags while
-// zoomed. Every image imgs() returns moves together (Compare's linked zoom). onSwipe(+1|-1) for a sideways swipe.
+// Zoom and pan on the images under `area`: double-tap or double-click toggles 1:1 pixel inspection crop, two fingers
+// pinch, one drags while zoomed. Every image imgs() returns moves together (Compare's linked zoom). onSwipe(+1|-1) for
+// a sideways swipe.
 function zoomable(area,imgs,onSwipe){
  const z={s:1,x:0,y:0},pts=new Map();let pinch=null,start=null,last=0,kind='';
- const apply=()=>{if(z.s<=1){z.s=1;z.x=0;z.y=0}for(const i of imgs())i.style.transform=`translate(${z.x}px,${z.y}px) scale(${z.s})`};
- const toggle=()=>{z.s=z.s>1?1:2.5;z.x=0;z.y=0;apply()};
+ const apply=anim=>{if(z.s<=1){z.s=1;z.x=0;z.y=0}for(const i of imgs()){i.style.transition=anim?'transform .18s ease-out':'none';i.style.transform=`translate(${z.x}px,${z.y}px) scale(${z.s})`}};
+ const toggle=(target,tx,ty)=>{
+  if(z.s>1){z.s=1;z.x=0;z.y=0;apply(true);return}
+  const img=target||imgs()[0];
+  const nat=img&&img.naturalWidth&&img.clientWidth?(img.naturalWidth/img.clientWidth):2.5;
+  const targetS=Math.min(6,Math.max(2,nat));
+  z.s=targetS;
+  if(tx!=null&&ty!=null&&img){
+   const r=img.getBoundingClientRect();
+   z.x=(r.left+r.width/2-tx)*(targetS-1);
+   z.y=(r.top+r.height/2-ty)*(targetS-1);
+  }else{z.x=0;z.y=0}
+  apply(true);
+ };
  area.addEventListener('pointerdown',e=>{
   if(e.target.tagName!=='IMG')return;kind=e.pointerType;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(pts.size===2){const [a,b]=[...pts.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1,s:z.s};start=null}
@@ -54,8 +67,8 @@ function zoomable(area,imgs,onSwipe){
  });
  area.addEventListener('pointermove',e=>{
   if(!pts.has(e.pointerId))return;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
-  if(pinch&&pts.size===2){const [a,b]=[...pts.values()];z.s=Math.min(5,Math.max(1,pinch.s*Math.hypot(a.x-b.x,a.y-b.y)/pinch.d));apply()}
-  else if(start&&z.s>1){z.x=start.zx+e.clientX-start.x;z.y=start.zy+e.clientY-start.y;apply()}
+  if(pinch&&pts.size===2){const [a,b]=[...pts.values()];z.s=Math.min(5,Math.max(1,pinch.s*Math.hypot(a.x-b.x,a.y-b.y)/pinch.d));apply(false)}
+  else if(start&&z.s>1){z.x=start.zx+e.clientX-start.x;z.y=start.zy+e.clientY-start.y;apply(false)}
  });
  const end=e=>{
   if(!pts.delete(e.pointerId))return;
@@ -63,11 +76,11 @@ function zoomable(area,imgs,onSwipe){
   if(!start||e.type==='pointercancel'){start=null;return}
   const dx=e.clientX-start.x,dy=e.clientY-start.y;start=null;
   if(z.s===1&&onSwipe&&Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)){onSwipe(dx<0?1:-1);return}
-  if(e.pointerType==='touch'&&Math.hypot(dx,dy)<10){const t=Date.now();if(t-last<300){toggle();last=0}else last=t}
+  if(e.pointerType==='touch'&&Math.hypot(dx,dy)<10){const t=Date.now();if(t-last<300){toggle(e.target,e.clientX,e.clientY);last=0}else last=t}
  };
  area.addEventListener('pointerup',end);area.addEventListener('pointercancel',end);
- area.addEventListener('dblclick',e=>{if(e.target.tagName==='IMG'&&kind!=='touch')toggle()});
- return {reset(){z.s=1;apply()}};
+ area.addEventListener('dblclick',e=>{if(e.target.tagName==='IMG'&&kind!=='touch')toggle(e.target,e.clientX,e.clientY)});
+ return {reset(){z.s=1;apply(false)}};
 }
 
 const sec=()=>document.getElementById('printLab');
