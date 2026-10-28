@@ -448,6 +448,129 @@ await check('390px: mission mode cold, ← Street in the sheet’s peek goes to 
   await page.context().close();
 });
 
+// Carried from Task 4 (a): watch mode ends when the person leaves #agents for another page, not only on the street.
+await check('Watch mode, then another page: watch ends, full screen ends, the old city sleeps and stops asking for missions', async () => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' });
+  await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  await countCity(context);
+  const page = await context.newPage(); page.errors = []; page.on('pageerror', e => page.errors.push(e.message));
+  await page.clock.install();
+  await page.route('**/api/world', json(WORLD));
+  await missions(page);
+  let asks = 0; page.on('request', r => { if (new URL(r.url()).pathname === '/api/agents/missions') asks++; });
+  await page.goto(base + '/#agents?mission=latest', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector(mission + ' #awcCanvas', T);
+  await page.locator('#awMoreBtn').click();
+  await page.locator('[data-aw-menu="watch"]').click();
+  await page.waitForFunction(() => window.LocalAIAgentWorldWatch?.active() && !!document.querySelector('.awc-v3.is-expanded'), null, T);
+  await page.evaluate(() => window.LocalAIRouter.go('#status'));
+  await page.waitForSelector('#status.active', T);
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => window.LocalAIAgentWorldWatch.active()), false, 'watch mode ended');
+  assert.equal(await page.locator('.awc-v3.is-expanded').count(), 0, 'full screen ended');
+  assert.equal(await page.locator('#awcCanvas').isVisible(), false, 'the old city is off screen');
+  const b = await page.evaluate(() => window.__cityDraws); await page.waitForTimeout(1500);
+  assert.equal(await page.evaluate(() => window.__cityDraws), b, 'the old city draws nothing');
+  const a = asks; await page.clock.runFor(30000); await page.waitForTimeout(300);
+  assert.equal(asks, a, 'no mission polling off the page');
+  assert.deepEqual(page.errors, []);
+  await context.close();
+});
+
+// Carried from Task 4 (b): back in mission mode with the same mission, the city has its size (not 0, not stale).
+const citySize = page => page.evaluate(() => { const c = document.getElementById('awcCanvas'), w = c.parentElement, d = Math.min(2, devicePixelRatio || 1); return { w: c.width, h: c.height, want: [Math.round(w.clientWidth * d), Math.round(w.clientHeight * d)] }; });
+for (const demo of [false, true]) {
+  await check(`mission → street → the same mission${demo ? ' (a demo playing)' : ''}: the city is sized to its box`, async () => {
+    const page = await open('#agents?mission=latest');
+    await missions(page);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector(mission + ' #awcCanvas', T);
+    if (demo) await page.evaluate(() => window.LocalAIAgentWorld.demo());
+    await page.waitForFunction(() => document.getElementById('awcCanvas').width > 0, null, T);
+    await page.locator('#awToStreet').click();
+    await page.waitForSelector(street, T);
+    await page.setViewportSize({ width: 1280, height: 860 }); // the box changes size while the city is away
+    await page.waitForTimeout(300);
+    await page.evaluate(() => window.LocalAIStreetPage.toMission('latest'));
+    await page.waitForSelector(mission + ' #awcCanvas', T);
+    await page.waitForTimeout(500);
+    const s = await citySize(page);
+    assert.ok(s.w > 0 && s.h > 0, JSON.stringify(s));
+    assert.deepEqual([s.w, s.h], s.want, JSON.stringify(s));
+    assert.deepEqual(page.errors, []);
+    await page.context().close();
+  });
+}
+
+// Carried from Task 3 (d): in street mode the sheet describes the place, in mission mode the mission.
+await check('390px: the sheet says building details on the street and mission details in mission mode; raised, the peek does not repeat the title', async () => {
+  const page = await open('#agents?place=chat', { viewport: { width: 390, height: 844 } });
+  await missions(page);
+  await page.waitForSelector(street, T);
+  await page.waitForFunction(() => document.getElementById('awSheetStatus').textContent.startsWith('Chat Café: '), null, T);
+  assert.equal(await page.locator('#awSheet').getAttribute('aria-label'), 'Building details');
+  assert.equal(await page.locator('#awSheetHandle').getAttribute('aria-label'), 'Show building details');
+  await page.locator('#awSheetHandle').click();
+  await page.waitForFunction(() => document.getElementById('awSheet').dataset.snap === 'half', null, T);
+  assert.equal(await page.locator('#awSheetHandle').getAttribute('aria-label'), 'Show less');
+  await page.waitForTimeout(200);
+  const peek = await page.locator('#awSheetStatus').textContent();
+  assert.ok(!peek.includes('Chat Café'), `the peek repeats the panel's title: ${peek}`);
+  assert.equal(await page.locator('#awPlace h2').textContent(), 'Chat Café');
+  await page.locator('#awSheetHandle').click();
+  await page.waitForFunction(() => document.getElementById('awSheet').dataset.snap === 'full', null, T);
+  await page.waitForTimeout(400);
+  await page.locator('#awSheetHandle').click();
+  await page.waitForFunction(() => document.getElementById('awSheet').dataset.snap === 'peek', null, T);
+  await page.waitForFunction(() => document.getElementById('awSheetHandle').getAttribute('aria-label') === 'Show building details', null, T);
+  await page.waitForFunction(() => document.getElementById('awSheetStatus').textContent.startsWith('Chat Café: '), null, T);
+  await page.evaluate(() => window.LocalAIStreetPage.toMission('latest'));
+  await page.waitForSelector(mission, T);
+  assert.equal(await page.locator('#awSheet').getAttribute('aria-label'), 'Mission details');
+  assert.equal(await page.locator('#awSheetHandle').getAttribute('aria-label'), 'Show mission details');
+  await page.locator('#awPeekStreet').click();
+  await page.waitForSelector(street, T);
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('#awSheet').getAttribute('data-snap'), 'peek', '← Street does not raise the sheet');
+  assert.equal(await page.locator('#awSheet').getAttribute('aria-label'), 'Building details');
+  assert.equal(await page.locator('#awSheetHandle').getAttribute('aria-label'), 'Show building details');
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});
+
+// Phone swipes (plan Review Focus 3): a vertical swipe over the street is the page's or the sheet's, never the street's;
+// a horizontal one, a brisk flick that flings on, moves exactly one building (without scroll-snap-stop it flew past four).
+await check('390px touch: a vertical swipe over the street does not move the street; a horizontal flick moves exactly one building', async () => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+  await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  const page = await context.newPage(); page.errors = []; page.on('pageerror', e => page.errors.push(e.message));
+  await page.route('**/api/world', json(WORLD));
+  await page.goto(base + '/#agents?place=chat', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector(street, T);
+  await page.waitForFunction(() => document.getElementById('awSheetStatus').textContent.startsWith('Chat Café: '), null, T);
+  await page.waitForTimeout(600);
+  const box = await page.locator('#awStreetMount .street').boundingBox();
+  const cdp = await context.newCDPSession(page);
+  // dx, dy: how far the finger moves (CDP's gesture distances are the finger's); the fling after it is kept.
+  const swipe = async (dx, dy) => {
+    await cdp.send('Input.synthesizeScrollGesture', { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2), xDistance: dx, yDistance: dy, speed: 3000, preventFling: false, gestureSourceType: 'touch' });
+    await page.waitForTimeout(1500);
+  };
+  const ta = await page.evaluate(() => getComputedStyle(document.querySelector('#awStreetMount .street')).touchAction);
+  assert.ok(['auto', 'manipulation'].includes(ta) || ta.includes('pan-y'), `the street leaves vertical pans to the page: touch-action ${ta}`);
+  const left0 = await page.evaluate(() => document.querySelector('#awStreetMount .street').scrollLeft);
+  await swipe(0, -220);
+  assert.equal(await page.evaluate(() => document.querySelector('#awStreetMount .street').scrollLeft), left0, 'a vertical swipe leaves the street where it was');
+  assert.equal(await page.evaluate(() => location.hash), '#agents?place=chat');
+  for (const [dx, id] of [[-200, 'images'], [-200, 'missions'], [200, 'images'], [200, 'chat']]) { // finger right to left: the next building
+    await swipe(dx, 0);
+    assert.equal(await page.evaluate(() => location.hash), '#agents?place=' + id);
+    assert.ok(await centred(page, id) < 4, id + ' is centred');
+  }
+  assert.deepEqual(page.errors, []);
+  await context.close();
+});
+
 await browser.close();
 if (failures.length) { console.error(`\n${failures.length} failed:\n` + failures.join('\n')); process.exit(1); }
 console.log('\nstreet-page: all passed');

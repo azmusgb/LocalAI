@@ -27,7 +27,7 @@ const VIEWS=[
  // Library is a tab of Projects: what you kept, as opposed to Work (everything you did). Old #library links open it.
 // Automations is a tab of Work (scheduled work) and Spreadsheets a tab of Projects (making things): navigation spec, step 3.
  {id:'library',svg:'library',domain:'projects',section:'Keep',parent:'projects',tab:'Library',label:'Library',description:'Everything you kept: chats, research and images.',aka:['everything you kept','kept']},
- {id:'agents',svg:'target',domain:'hidden',section:'Agents',label:'Missions',description:'Give a goal; specialist agents work it live.',aka:['agents','agent operations']},
+ {id:'agents',svg:'target',domain:'hidden',section:'Agents',label:'Agent World',description:'Main Street: what each part of Local AI is doing, and your missions.',aka:['missions','agents','agent operations','main street']},
  {id:'status',svg:'health',domain:'system',section:'Health',label:'Health',description:'Whether Local AI is working, and which optional services are up.',aka:['status','system status']},
  {id:'models',svg:'model',domain:'system',section:'Health',label:'Models',description:"Installed models and what's loaded now."},
  {id:'integrations',svg:'plug',domain:'system',section:'Health',label:'Services',description:'What Local AI connects to, and whether each one is ready.',aka:['integrations','bridges','tools']},

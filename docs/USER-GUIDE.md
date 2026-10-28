@@ -131,6 +131,14 @@ Library item that later replies update. Tap it again to take it out of Library; 
 **Missions** is the history of every mission, however you started it, each listed once; tap one to open it in Agent
 World.
 
+### Agent World
+
+Agent World is Main Street: one building for each part of Local AI (Chat Café, Image Studio, Missions HQ, the Repair
+Garage and the rest), each showing its work through the windows. Tap a building to bring it close and see what's in it
+beside the street (in the sheet under it on a phone): what needs you, what failed, what's running, and a link to open
+it. On a phone the street shows one building at a time; swipe sideways for the next. Missions HQ, a mission's row, or
+starting a mission opens that mission's own view; **← Street** comes back.
+
 A mission goal that asks to change Local AI itself (in Agent World or Home) offers **Hand to Claude** first, since
 Claude Code reviews the code and opens a tested pull request; **Start a mission anyway** still starts it.
 

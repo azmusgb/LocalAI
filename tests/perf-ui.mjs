@@ -98,6 +98,29 @@ await check('Main Street strip with the flood of asks at night stays within its 
   await ctx.close();
 });
 
+// Agent World's page is the full street (PR 4): the same flood at night, the whole page street, at a 1440 px desktop and
+// at a 390 px phone with a 3x screen, a building focused. Same budget: under 8 ms a frame.
+for (const [label, vp, dpr] of [['1440px', { width: 1440, height: 900 }, 1], ['390px (3x)', { width: 390, height: 844 }, 3]]) {
+  await check(`Agent World street at ${label} with the flood of asks at night stays within its frame budget`, async () => {
+    const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: dpr, serviceWorkers: 'block' });
+    await ctx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); localStorage.setItem('localai.devTools', '1'); } catch {} });
+    await ctx.route(u => u.pathname === '/api/world', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(FLOOD) }));
+    const page = await ctx.newPage();
+    await page.clock.setFixedTime(new Date(2026, 9, 28, 21, 0));
+    await page.goto(base + '/#agents?place=images', { waitUntil: 'domcontentloaded' });
+    const cdp = await ctx.newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: SLOWDOWN });
+    await page.waitForSelector('#agents[data-aw-mode="street"] #awStreetMount .street:not([hidden])', { timeout: 10000 });
+    await page.waitForTimeout(3000);
+    const s = await page.evaluate(() => window.LocalAIStreet.stats());
+    assert.equal(s.night, true, 'the street is at night');
+    assert.ok(s.frames > 0, 'the street drew frames');
+    assert.ok(s.avgMs < 8, `avg frame ${s.avgMs} ms over ${s.frames} frames`);
+    console.log(`  Agent World street ${label}: ${s.frames} frames, avg ${s.avgMs} ms at ${SLOWDOWN}x slowdown, ${s.beacons} beacons, ${s.stalled} stalled`);
+    await ctx.close();
+  });
+}
+
 await browser.close();
 if (failures.length) { console.error(`\n${failures.length} performance check(s) failed`); process.exit(1); }
 console.log('\nAll performance checks passed');

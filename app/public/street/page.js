@@ -5,7 +5,8 @@
 //   the sheet on a phone) shows the focused building's panel(state, world), re-rendered with each world: title, status, its
 //   rows (a row with an id opens its run, or for Missions HQ its mission) and its Open link. app.css hides the mission parts.
 // - mission: today's page (ui.js), handed over through window.LocalAIMissionView.show(id) (renders it fresh; 'latest' is
-//   loadHistory's pick) / hide() (lowers the sheet, ends watch mode and full screen, so the old city sleeps).
+//   loadHistory's pick) / hide() (lowers the sheet, ends watch mode and full screen, so the old city sleeps; called on the way to the street and
+//   when #agents is left for another page). The sheet is 'Building details' on the street, 'Mission details' in mission mode.
 //   Missions HQ's chip and its rows go there with a push (Back returns to the street); #awToStreet comes back.
 // In street mode the header (#awTitle, #awStatus) and the phone's peek (#awSheetStatus) say the street's words. What the
 // mission code writes there meanwhile is kept aside (a MutationObserver puts the street's words back) and put back in
@@ -32,10 +33,12 @@ function guard(){
 }
 function restore(){for(const id in kept){const el=$(id);if(el)el.innerHTML=kept[id]}kept={};wrote={}}
 const add=(p,tag,cls,text)=>{const e=doc.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=String(text);p.append(e);return e};
+const raised=()=>($('awSheet')?.dataset.snap||'peek')!=='peek';
 function render(){
  if(mode!=='street')return;
  const p=fid?panelOf(fid):null,st=summary();
- want={awTitle:'Agent World',awStatus:st,awSheetStatus:p?p.title+': '+p.status:st};guard();
+ // A raised sheet shows the panel's own title just below, so the peek then says the street's summary.
+ want={awTitle:'Agent World',awStatus:st,awSheetStatus:p&&!raised()?p.title+': '+p.status:st};guard();
  const el=$('awPlace'),sig=fid+JSON.stringify(p);if(!el||sig===seen)return;seen=sig;el.replaceChildren();
  if(!p){add(el,'p','aw-place__status','Tap a building to see what’s inside.');return}
  add(el,'h2','',p.title);add(el,'p','aw-place__status',p.status);
@@ -50,20 +53,36 @@ function render(){
  }
 }
 function pick(id){fid=id;h.focus(id);history.replaceState(history.state,'',location.pathname+location.search+'#agents?place='+encodeURIComponent(id));render()}
+// The sheet (and its handle, which ui.js relabels as it moves) names what it holds: a building, or the mission.
+// Each is set only when it differs: setting an attribute to its own value still wakes the observers below.
+const attr=(el,v)=>{if(el&&el.getAttribute('aria-label')!==v)el.setAttribute('aria-label',v)};
+function labels(){
+ const st=mode==='street',hd=$('awSheetHandle'),l=hd?.getAttribute('aria-label');
+ attr($('awSheet'),st?'Building details':'Mission details');
+ if(l&&/^Show (mission|building) details$/.test(l))attr(hd,st?'Show building details':'Show mission details');
+}
 function mountOnce(){
  if(h)return;
  h=S().mount($('awStreetMount'),{mode:'full',onOpen:id=>id==='missions'?toMission('latest'):pick(id),onFocus:id=>{if(id!==fid)pick(id)},onWorld:w=>{world=w;render()}});
  mo=new MutationObserver(guard);for(const id of HEAD){const el=$(id);if(el)mo.observe(el,{childList:true,characterData:true,subtree:true})}
 }
+// Once: the handle's label and the sheet's snap (the peek's words) as ui.js changes them, and #agents being left. Leaving
+// it from mission mode for another page ends watch mode and full screen too, so the old city sleeps off the page.
+function watchOnce(){
+ if(watchOnce.on)return;watchOnce.on=1;
+ new MutationObserver(()=>{labels();render()}).observe($('awSheet'),{attributes:true,attributeFilter:['data-snap'],subtree:false});
+ new MutationObserver(labels).observe($('awSheetHandle'),{attributes:true,attributeFilter:['aria-label']});
+ new MutationObserver(()=>{if(mode==='mission'&&!$('agents').classList.contains('active'))MV()?.hide()}).observe($('agents'),{attributes:true,attributeFilter:['class']});
+}
 // On a phone the header (and #awToStreet) is off screen: the sheet's peek gets its own ← Street in mission mode.
 function peekStreet(){
  const r=doc.querySelector('#awSheet .aw-sheet__peek');if(!r||$('awPeekStreet'))return;
- const b=doc.createElement('button');b.type='button';b.id='awPeekStreet';b.className='btn-outline aw-sheet__action';b.textContent='← Street';b.addEventListener('click',toStreet);r.prepend(b);
+ const b=doc.createElement('button');b.type='button';b.id='awPeekStreet';b.className='btn-outline aw-sheet__action';b.textContent='← Street';b.addEventListener('click',e=>{e.stopPropagation();toStreet()});r.prepend(b);// not the peek's own tap, which raises the sheet
 }
 function set(m){
  const pg=$('agents');if(!pg)return false;peekStreet();if(mode==='street'&&m!=='street')restore();mode=m;pg.dataset.awMode=m;
  for(const [id,on] of [['awStreetMount',m==='street'],['awPlace',m==='street'],['awToStreet',m==='mission'],['awPeekStreet',m==='mission']]){const e=$(id);if(e)e.hidden=!on}
- return true;
+ if($('awSheet')&&$('awSheetHandle'))watchOnce();labels();return true;
 }
 function enter(q){
  q=q||new URLSearchParams();const m=q.get('mission');

@@ -85,6 +85,14 @@ test('every registered view has a page, and every nav button is registered', () 
   }
 });
 
+// Ruling Q9 (PR 4): Agent World is Main Street, so the page is named Agent World; its old names still find it.
+test('the agents page is named Agent World and keeps its old names', () => {
+  const v = registry.view('agents');
+  assert.equal(v.label, 'Agent World');
+  for (const a of ['missions', 'agents']) assert.ok(v.aka.includes(a), a);
+  assert.match(html, /data-view="agents">Agent World<\/button>/);
+});
+
 // Agent World (agents) titles itself with the mission's goal (design 2026-10-17-agent-world); its nav label still matches.
 const GOAL_HEADING = new Set(['agents']);
 test('page headings and nav labels match the registry', () => {

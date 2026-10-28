@@ -1014,6 +1014,46 @@ await check('leaving Home stops /api/world requests', async () => {
   await page.context().close();
 });
 
+// Both mounts (plan Review Focus 5): Home's strip and Agent World's street share one poller, and only the mount on
+// screen draws. Over 30 s of fake time on each page, /api/world is asked at the one-poller rate (every 10 s, plus the
+// first ask when a page shows); the canvas of the mount off screen gets no drawing at all.
+await check('Home → #agents → Home: one /api/world poller, and only the visible street draws', async () => {
+  const worldCalls = { n: 0 };
+  const page = await open(desk, '#home', { world: WORLD, clock: true, worldCalls });
+  await page.context().addInitScript(() => {
+    window.__draws = { home: 0, page: 0 }; const P = CanvasRenderingContext2D.prototype;
+    for (const k of ['drawImage', 'fillRect', 'clearRect', 'fill', 'stroke']) { const f = P[k]; P[k] = function (...a) { const c = this.canvas; if (c && c.closest) { if (c.closest('#homeStreetMount')) window.__draws.home++; else if (c.closest('#awStreetMount')) window.__draws.page++; } return f.apply(this, a); }; }
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#homeStreet .street:not([hidden])', T);
+  const draws = () => page.evaluate(() => ({ ...window.__draws }));
+  // 30 s on a page in three 10 s steps: the poller's interval fires once per step.
+  const thirty = async () => { const n = worldCalls.n; for (let i = 0; i < 3; i++) { await page.clock.fastForward(10000); await page.waitForTimeout(200); } return worldCalls.n - n; };
+  // A second of frames: the off-screen mount's canvas gets nothing; the shown one draws at most one loop's worth.
+  const second = async () => { const a = await draws(); await page.clock.runFor(1000); await page.waitForTimeout(100); const b = await draws(); return { home: b.home - a.home, page: b.page - a.page }; };
+  await page.waitForTimeout(500);
+  let n = await thirty();
+  assert.ok(n >= 2 && n <= 4, `Home: ${n} /api/world asks in 30 s`);
+  await page.evaluate(() => window.LocalAIRouter.open('agents')); // a typed #agents is Work › Missions; the app's own way in is the street
+  await page.waitForSelector('#agents[data-aw-mode="street"] #awStreetMount .street:not([hidden])', T);
+  await page.waitForTimeout(500);
+  n = await thirty();
+  assert.ok(n >= 2 && n <= 4, `#agents: ${n} /api/world asks in 30 s`);
+  let d = await second();
+  assert.equal(d.home, 0, 'Home’s strip draws nothing on #agents');
+  assert.ok(d.page > 0, 'the page street draws');
+  await page.evaluate(() => window.LocalAIRouter.go('#home'));
+  await page.waitForSelector('#home.active #homeStreet .street:not([hidden])', T);
+  await page.waitForTimeout(500);
+  n = await thirty();
+  assert.ok(n >= 2 && n <= 4, `Home again: ${n} /api/world asks in 30 s`);
+  d = await second();
+  assert.equal(d.page, 0, 'the page street draws nothing on Home');
+  assert.ok(d.home > 0, 'Home’s strip draws');
+  console.log(`  last 30 s on Home: ${n} asks; a second of frames: home ${d.home} draws, page ${d.page}`);
+  await page.context().close();
+});
+
 await check('a hostile model name shows as plain text in the Home chip', async () => {
   for (const name of ['<img src=x onerror=window.__x=1>', '\u202Eevil\u202C \u05E9\u05DC\u05D5\u05DD']) {
     const page = await open(desk, '#home', { world: worldWith(name) });

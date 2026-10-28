@@ -189,7 +189,8 @@ await check('canvas follows size and DPR', async () => {
   const phone = await fresh({ viewport: { width: 390, height: 844 }, dpr: 3 });
   await phone.waitForTimeout(100);
   const p = await phone.evaluate(() => { const s = window.__el.querySelector('.street'), c = s.querySelector('canvas'); return { w: c.width, cw: c.clientWidth, h: c.height, ch: c.clientHeight, sw: s.scrollWidth, scw: s.clientWidth }; });
-  assert.equal(p.w, p.cw * 3); assert.equal(p.ch, 132); assert.equal(p.h, 132 * 3);
+  // A 3x screen paints at 2x at most (PR 4: the full street at 3x was 60 ms a frame under the perf test's slowdown).
+  assert.equal(p.w, p.cw * 2); assert.equal(p.ch, 132); assert.equal(p.h, 132 * 2);
   assert.ok(p.sw > p.scw, `the street scrolls on a phone: ${p.sw} > ${p.scw}`);
 });
 

@@ -26,7 +26,7 @@ await page.waitForSelector('.ux-primary-rail');
 await page.waitForFunction(() => typeof window.showView === 'function');
 
 // Navigation spec step 4: the rail picks the area; the page strip under the top bar lists its pages; the top bar names
-// the area (a page without a strip, such as Missions, names itself).
+// the area (a page without a strip, such as Agent World, names itself).
 const stripLabels = () => page.locator('#uxPageStrip button').allInnerTexts();
 const crumbOf = async pg => (await pg.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').trim();
 const crumb = () => crumbOf(page);
@@ -63,12 +63,12 @@ await check('retired pages are gone and their addresses land on Signals, In prog
   await ctx.close();
 });
 
-// A hidden page that remains (Missions, Chat, Images) names itself in the top bar and lights the area that owns it.
+// A hidden page that remains (Agent World, Chat, Images) names itself in the top bar and lights the area that owns it.
 await check('a hidden page names itself in the top bar and lights the area that owns it', async () => {
   await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
   await page.waitForSelector('#agents.active');
-  await page.waitForFunction(() => document.querySelector('#uxContextView')?.textContent === 'Missions');
-  assert.equal(await crumb(), 'Missions');
+  await page.waitForFunction(() => document.querySelector('#uxContextView')?.textContent === 'Agent World');
+  assert.equal(await crumb(), 'Agent World');
   assert.equal(await page.locator('.ux-primary-item[data-domain="work"]').getAttribute('aria-current'), 'true');
   assert.equal(await page.locator('#uxPageStrip').isVisible(), false);
   await page.evaluate(() => window.showView('ask'));

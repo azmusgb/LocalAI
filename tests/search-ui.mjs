@@ -73,7 +73,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
   await check(`${w}px: hidden and retired pages are not offered; their old names find the page that replaced them`, async () => {
     await open(page);
     const offered = await items(page);
-    for (const label of ['Chat', 'Images', 'Missions', 'Runs', 'Change requests', 'Issues', 'Quality signals']) assert.ok(!offered.includes(label), `${label} offered: ${offered}`);
+    for (const label of ['Chat', 'Images', 'Agent World', 'Missions', 'Runs', 'Change requests', 'Issues', 'Quality signals']) assert.ok(!offered.includes(label), `${label} offered: ${offered}`);
     for (const [typed, label] of [['change requests', 'In progress'], ['quality', 'Signals'], ['missions', 'Work']]) {
       await page.locator('#cmdkInput').fill(typed);
       assert.ok((await items(page)).includes(label), `"${typed}" offers ${label}: ${await items(page)}`);

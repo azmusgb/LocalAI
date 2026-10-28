@@ -55,6 +55,7 @@ function setWorld(w){
 // stale until the next good one.
 let timer=0,busy=false,was=false,failed=false,lastAt=-Infinity,later=0;
 // A node is rendered unless it or an ancestor is display:none (Home's view is, while another page is open).
+const DPR=()=>Math.min(2,root.devicePixelRatio||1);
 const visible=n=>n.checkVisibility?n.checkVisibility():n.offsetParent!==null;
 const onScreen=n=>{if(!visible(n))return false;const r=n.getBoundingClientRect();return r.bottom>0&&r.right>0&&r.top<root.innerHeight&&r.left<root.innerWidth&&r.width>0};
 const live=()=>{for(const m of mounts)if(m.on())return true;return false};
@@ -108,7 +109,7 @@ function mount(el,opts){
   const pl=ep(list[0]),need=pl+ep(list[n-1])+list.reduce((a,d)=>a+slot(d),0)+gap*Math.max(0,n-1),spare=Math.max(0,vw-need);
   let x=n>1?pl:pl+spare/2;
   for(const m of chipsEl.querySelectorAll('.street__snap'))m.remove();
-  for(const d of list){xs.set(d.id,x+(slot(d)-d.width*zoom)/2);if(sn){const m=doc.createElement('i');m.className='street__snap';m.setAttribute('aria-hidden','true');m.style.left=x+'px';m.style.width=slot(d)+'px';chipsEl.append(m)}x+=slot(d)+gap+(n>1?spare/(n-1):0)}
+  for(const d of list){xs.set(d.id,x+(slot(d)-d.width*zoom)/2);if(sn){const m=doc.createElement('i');m.className='street__snap';m.setAttribute('aria-hidden','true');m.style.left=x+'px';m.style.scrollSnapStop='always';m.style.width=slot(d)+'px';chipsEl.append(m)}x+=slot(d)+gap+(n>1?spare/(n-1):0)}
   streetW=need;chipsEl.style.width=Math.max(vw,need)+'px';
   for(const [id,b] of chips)if(!byId.has(id)||!xs.has(id)){b.remove();chips.delete(id)}
   for(const d of list){
@@ -140,16 +141,17 @@ function mount(el,opts){
   stills.set(d.id,{key,cv:sc,lit});st.stills++;return sc;
  }
  const env=()=>({night:nt,reduced:reduce(),zoom,dpr});
+ // The canvas paints at most at 2x (as the old city does): a 3x phone's full street was 60 ms a frame at 4x slowdown, 2x is under 8.
  // A new size or DPR (a ResizeObserver call with neither changed is ignored): canvas, layout, chips, stills, a frame.
  let sized='';
  function resize(){
-  if(dead||box.hidden)return;dpr=root.devicePixelRatio||1;
+  if(dead||box.hidden)return;dpr=DPR();
   const w=Math.round(box.clientWidth*dpr),h=Math.round(cv.clientHeight*dpr),now=[w,h,dpr].join();if(now===sized)return;sized=now;
   if(cv.width!==w)cv.width=w;if(cv.height!==h)cv.height=h;
   const ch=cv.clientHeight||160;zoom=full?Math.min(2,Math.max(.8,ch/H)):ch/H;oy=ch-H*zoom;layout();paintChips();for(const d of list)still(d);if(fid)centre(fid,'instant');redraw();
  }
  function draw(t){
-  if(dead||box.hidden||!cv.width)return;if((root.devicePixelRatio||1)!==dpr)return resize();
+  if(dead||box.hidden||!cv.width)return;if(DPR()!==dpr)return resize();
   if(shape()!==sig){layout();paintChips()}
   const a=performance.now(),S=zoom*dpr,vw=cv.width/S,x0=box.scrollLeft/zoom,e=env(),Y=Math.round(oy*dpr);
   if(Y>0&&A){c.setTransform(1,0,0,1,0,0);c.fillStyle=nt?'#060a1c':A.palette.sky0;c.fillRect(0,0,cv.width,Y)}
