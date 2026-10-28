@@ -28,7 +28,7 @@ function chip(s){
  if(s.state==='paused')return{title,detail:'Paused'+(s.progress!=null?' · '+s.progress+'%':''),tone:'quiet'};
  return{title,detail:'Idle',tone:'quiet'};
 }
-const K=()=>root.LocalAIStreetArt,TAU=Math.PI*2;
+const K=()=>root.LocalAIStreetArt;
 const DX=30,DY=192,DW=140,DH=108,BED=254,BX=40,BW=120;
 const up=s=>!s.down&&(s.state==='printing'||s.state==='paused');
 const pct=s=>Math.max(0,Math.min(100,+s.progress||0))/100;
