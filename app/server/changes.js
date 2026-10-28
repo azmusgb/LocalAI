@@ -748,6 +748,7 @@ function createChanges(ctx) {
     }
     return live.sort((a,b)=>(a.state==='working'?0:1)-(b.state==='working'?0:1)||b.at.localeCompare(a.at));
   }
+  const claudeLiveNow=()=>claudeLive(storage.listSettings(CLAUDE_SESSION_PREFIX),storage.listSettings(CLAUDE_EVENT_PREFIX,{limit:CLAUDE_LIVE_SCAN_EVENTS}),Date.now());
   async function apiClaudeBoard(req,res,urlObj){
     const sessionId=urlObj.searchParams.get('session')||'';const limit=Math.max(1,Math.min(500,Number(urlObj.searchParams.get('events'))||150));
     const sessions=storage.listSettings(CLAUDE_SESSION_PREFIX).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
@@ -807,7 +808,7 @@ function createChanges(ctx) {
     const open=claudeRanked(claudeFindings()).filter(f=>!['fixed','rejected','deferred'].includes(f.status));
     json(res,200,{generatedAt:nowIso(),items:open.slice(0,Math.max(1,Math.min(200,Number(urlObj.searchParams.get('limit'))||50))).map(({id,rank,score,title,category,severity,status,votes,file,fix,decisionNote})=>({id,rank,score,title,category,severity,status,votes,file,fix,decisionNote}))});
   }
-  return { apiChangeApprove, apiChangeCapabilities, apiChangeDeployResult, apiChangePlan, apiChangeRequestApply, apiChangeStage, apiChanges, apiClaudeBoard, apiClaudeDecision, apiClaudeEvents, apiClaudeFindings, apiClaudePriorities, apiClaudeVote, apiEngineeringRun, apiEngineeringRuns, apiEngineeringStart, apiImproveHandoff, apiImproveIdea, apiImproveItem, apiImproveItems, apiImproveSignal, changeStore, claudeFindings, decideChange, duplicateHtmlIds, duplicateTopLevelFunctions, effectiveEngineeringRuns, engineeringRunStore, generatePatchPlan, publicChange, retireChangesOfClosedItems, runImproveReconcile, runProcess, saveChanges, shipQueuedSelfChanges };
+  return { claudeLiveNow, apiChangeApprove, apiChangeCapabilities, apiChangeDeployResult, apiChangePlan, apiChangeRequestApply, apiChangeStage, apiChanges, apiClaudeBoard, apiClaudeDecision, apiClaudeEvents, apiClaudeFindings, apiClaudePriorities, apiClaudeVote, apiEngineeringRun, apiEngineeringRuns, apiEngineeringStart, apiImproveHandoff, apiImproveIdea, apiImproveItem, apiImproveItems, apiImproveSignal, changeStore, claudeFindings, decideChange, duplicateHtmlIds, duplicateTopLevelFunctions, effectiveEngineeringRuns, engineeringRunStore, generatePatchPlan, publicChange, retireChangesOfClosedItems, runImproveReconcile, runProcess, saveChanges, shipQueuedSelfChanges };
 }
 
 module.exports = { createChanges };
