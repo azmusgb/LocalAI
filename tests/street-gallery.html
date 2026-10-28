@@ -23,6 +23,7 @@
 <script src="../app/public/street/kiosk.js"></script>
 <script src="../app/public/street/missions.js"></script>
 <script src="../app/public/street/garage.js"></script>
+<script src="../app/public/street/clock.js"></script>
 <script>
 (function(){'use strict';
 const A=window.LocalAIStreetArt,P=A.palette,q=new URLSearchParams(location.search);
@@ -35,7 +36,7 @@ const WORLDS={
   printer:{setUp:true,access:'ok',state:'printing',progress:42,minutesLeft:37},
   sheets:{bridge:true,excel:true,inFlight:1},kiosk:{setUp:true,online:true,showing:'weather'},
   street:street({chat:src({running:[job(1),job(2)],waiting:1}),images:src({running:[job(3)]}),sheets:src({running:[job(4)]}),
-   missions:src({running:[job(5),job(6),job(7)]}),garage:src({running:[job(8)]})})},
+   missions:src({running:[job(5),job(6),job(7)]}),garage:src({running:[job(8)]}),clock:src({running:[job(9)]})})},
  quiet:{schema:1,models:{loaded:[],queue:{active:0,waiting:0},busy:false},printer:{setUp:true,access:'ok',state:'idle'},
   sheets:{bridge:true,excel:true,inFlight:0},kiosk:{online:true},street:street()},
  down:{schema:1,models:{loaded:null,queue:null},printer:{setUp:true,access:'unreachable',state:null},
@@ -48,9 +49,9 @@ Object.assign(WORLDS,{
  unset:v({printer:{setUp:false},kiosk:{setUp:false}}),offline:v({kiosk:{setUp:true,online:false}}),
  noexcel:v({sheets:{bridge:true,excel:false,inFlight:0},street:street()}),
  crowd:v({street:street({chat:src({running:[job(1),job(2),job(3)],waiting:4,needsYou:[job(5)]}),images:src({running:[job(3),job(6)],waiting:2,needsYou:[job(7)]}),
-  missions:src({running:[job(1),job(2),job(3)],waiting:2,needsYou:[job(5)]}),garage:src({running:[job(4)],waiting:3,needsYou:[job(6)]})})}),
- asks:v({street:street({chat:src({needsYou:[job(5)]}),images:src({needsYou:[job(7)]}),missions:src({needsYou:[job(8)]}),garage:src({needsYou:[job(9)]})})})});
-const EXTRA={chat:['crowd','asks'],images:['crowd','asks'],missions:['crowd','asks'],garage:['crowd','asks'],sheets:['noexcel'],workshop:['paused','error','unset'],kiosk:['offline','unset']};
+  missions:src({running:[job(1),job(2),job(3)],waiting:2,needsYou:[job(5)]}),garage:src({running:[job(4)],waiting:3,needsYou:[job(6)]}),clock:src({running:[job(2)],needsYou:[job(8)]})})}),
+ asks:v({street:street({chat:src({needsYou:[job(5)]}),images:src({needsYou:[job(7)]}),missions:src({needsYou:[job(8)]}),garage:src({needsYou:[job(9)]}),clock:src({needsYou:[job(4)]})})})});
+const EXTRA={chat:['crowd','asks'],images:['crowd','asks'],missions:['crowd','asks'],garage:['crowd','asks'],clock:['crowd','asks'],sheets:['noexcel'],workshop:['paused','error','unset'],kiosk:['offline','unset']};
 const all=window.LocalAIStreet.defs(),want=q.get('ids')?q.get('ids').split(','):all.map(d=>d.id);
 const defs=all.filter(d=>want.includes(d.id)),dpr=window.devicePixelRatio||1,PAD=40,H=360,fixedT=q.has('t')?+q.get('t'):null;
 // The street around a building, as the engine will draw it (sky, far city with haze, sidewalk, curb, road).
