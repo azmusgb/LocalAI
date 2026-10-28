@@ -88,7 +88,7 @@ function setupMenu(){const btn=$('awMoreBtn'),menu=$('awMenu');if(!btn||!menu)re
  const open=()=>{menu.hidden=false;document.addEventListener('pointerdown',outside);btn.setAttribute('aria-expanded','true');items()[0]?.focus()};
  window.LocalAIAgentMenu={toggle:()=>menu.hidden?open():close()};btn.onclick=()=>menu.hidden?open():close();
  menu.addEventListener('keydown',e=>{const l=items(),i=l.indexOf(document.activeElement);if(e.key==='Escape'){e.preventDefault();close()}else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();l[(i+(e.key==='ArrowDown'?1:-1)+l.length)%l.length]?.focus()}else if(e.key==='Tab')close(false)});
- menu.addEventListener('click',async e=>{const v=e.target.closest('[data-aw-view]');if(v){const k=v.dataset.awView;if(k==='theater'||k==='fit')close(false);window.LocalAIAgentWorld?.view?.(k);return}const b=e.target.closest('[data-aw-menu]');if(!b)return;close(false);const m=currentMission,a=b.dataset.awMenu;if(/^(replay|demo|watch)$/.test(a))toMission(a==='replay'&&m?.id);
+ menu.addEventListener('click',async e=>{const v=e.target.closest('[data-aw-view]');if(v){const k=v.dataset.awView;if(k==='theater'||k==='fit')close(false);window.LocalAIAgentWorld?.view?.(k);return}const b=e.target.closest('[data-aw-menu]');if(!b)return;close(false);const m=currentMission,a=b.dataset.awMenu;if(/^(replay|demo|watch)$/.test(a))toMission(a==='replay'&&m?.id,$('agents').dataset.awMode==='mission');
   if(a==='new')doPrimary('start');
   else if(a==='replay'&&m)window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:m,play:true}}));
   else if(a==='all')window.LocalAIRouter?.go('#work?kind=missions');
@@ -113,8 +113,8 @@ function renderResults(){const el=$('agentResultBody'),A=window.LocalAIAgentWord
  <h3>Sources</h3>${src.length?`<ul class="aw-results__sources">${src.map(e=>`<li>${link(e)}</li>`).join('')}</ul>`:'<p class="aw-results__none">No sources were used.</p>'}
  <details class="aw-results__dev" data-dev-only><summary>Routing</summary><pre class="agent-result-pre">${m.routing?esc(JSON.stringify(m.routing,null,2)):'No routing recorded.'}</pre></details>`}
 // History lives in Work › Missions; this page only needs the missions to pick the one to show.
-// Mission mode (street/page.js): #agents?mission=<id|latest>, pushed; show() renders it fresh (latest: loadHistory's pick).
-const toMission=id=>window.LocalAIRouter?.go('#agents?mission='+encodeURIComponent(id||'latest'));
+// Mission mode: street/page.js.
+const toMission=(id,replace)=>window.LocalAIRouter?.go('#agents?mission='+encodeURIComponent(id||'latest'),{replace});
 async function loadHistory(){try{const j=await req('/api/agents/missions');history=j.items||j.missions||[];if(!currentMission){const m=history.find(m=>m.status==='running')||history[0];if(m)renderMission(m);else renderHead(null)}}catch(e){notice('error','Couldn’t load the missions: '+e.message)}}
 // Start: the plan is checked first (so a bad goal is said in the sheet), then the mission starts; the sheet closes,
 // the camera flies to Command Center and the city wakes. A failure stays in the sheet (or a toast, from Try again).
@@ -170,7 +170,7 @@ function setupSheet(){
  new MutationObserver(()=>{if(!page.classList.contains('active')&&snap!=='peek'){const r=releaseSheet;releaseSheet=null;setSnap('peek',{fromBack:true});r?.()}else if(page.classList.contains('active'))measure()}).observe(page,{attributes:true,attributeFilter:['class']});
  phone.addEventListener?.('change',()=>setSnap('peek'));window.addEventListener('resize',measure);measure();setSnap('peek')
 }
-window.LocalAIMissionView={async show(id){setSnap('peek');await loadHistory();if(id==='latest')id=(history.find(m=>m.status==='running')||history[0])?.id;const h=history.find(m=>m.id===id);if(id&&!demoing())h&&id===currentMission?.id?renderMission(h):await window.LocalAIMissions.show(id,{replay:false});requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')))},hide(){setSnap('peek')}};
+window.LocalAIMissionView={async show(id){setSnap('peek');await loadHistory();if(id==='latest')id=(history.find(m=>m.status==='running')||history[0])?.id;const h=history.find(m=>m.id===id);if(id&&!demoing())h&&id===currentMission?.id?renderMission(h):await window.LocalAIMissions.show(id,{replay:false})},hide(){setSnap('peek');window.LocalAIAgentWorldWatch?.stop();if(document.querySelector('.awc-v3.is-expanded'))window.LocalAIAgentWorld?.view('theater')}};
 window.addEventListener('localai:agentworld-select',e=>{if(e.detail?.workerId)selectWorker(e.detail.workerId)});
 window.LocalAISpecialists={init,preview,renderMission};
 // Home starts a mission here: 202 {runId} comes back at once and the run view follows the mission. A failure fails the pending view and throws.
@@ -1099,11 +1099,11 @@ const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=((
  // held open on every page keeps phones' connections awake and the page from ever going network-idle. Each (re)open
  // calls subscribers' onOpen, so they refetch what happened while it was closed.
  const subs=new Set();let es=null;
- const wanted=()=>document.visibilityState==='visible'&&!!document.querySelector('#agents.active:not([data-aw-mode=street])');
+ const wanted=()=>document.visibilityState==='visible'&&!!document.querySelector('#agents.active');
  function open(){if(es)return;const s=new EventSource('/api/agents/missions/events');es=s;s.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}for(const x of[...subs])try{x.onMessage?.(m)}catch{}};s.onopen=()=>{for(const x of[...subs])try{x.onOpen?.()}catch{}};s.onerror=e=>{for(const x of[...subs])try{x.onError?.(e)}catch{}}}
  function close(){if(!es)return;es.close();es=null}
  function sync(){if(subs.size&&wanted())open();else close()}
- function watch(){const v=document.getElementById('agents');if(v)new MutationObserver(sync).observe(v,{attributes:true,attributeFilter:['class','data-aw-mode']});document.addEventListener('visibilitychange',sync);sync()}
+ function watch(){const v=document.getElementById('agents');if(v)new MutationObserver(sync).observe(v,{attributes:true,attributeFilter:['class']});document.addEventListener('visibilitychange',sync);sync()}
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',watch,{once:true});else watch();
  return{subscribe(onMessage,onError,onOpen){const sub={onMessage,onError,onOpen};subs.add(sub);try{sync()}catch(e){subs.delete(sub);throw e}return()=>{subs.delete(sub);sync()}},isOpen:()=>!!es}})());
 

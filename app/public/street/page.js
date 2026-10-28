@@ -4,7 +4,8 @@
 //   focuses its building and puts it in the URL (replace); a phone's swipe does the same through onFocus. #awPlace (the rail;
 //   the sheet on a phone) shows the focused building's panel(state, world), re-rendered with each world: title, status, its
 //   rows (a row with an id opens its run, or for Missions HQ its mission) and its Open link. app.css hides the mission parts.
-// - mission: today's page (ui.js), handed over through window.LocalAIMissionView.show(id) / hide() once ui.js has them.
+// - mission: today's page (ui.js), handed over through window.LocalAIMissionView.show(id) (renders it fresh; 'latest' is
+//   loadHistory's pick) / hide() (lowers the sheet, ends watch mode and full screen, so the old city sleeps).
 //   Missions HQ's chip and its rows go there with a push (Back returns to the street); #awToStreet comes back.
 // In street mode the header (#awTitle, #awStatus) and the phone's peek (#awSheetStatus) say the street's words. What the
 // mission code writes there meanwhile is kept aside (a MutationObserver puts the street's words back) and put back in
@@ -54,9 +55,14 @@ function mountOnce(){
  h=S().mount($('awStreetMount'),{mode:'full',onOpen:id=>id==='missions'?toMission('latest'):pick(id),onFocus:id=>{if(id!==fid)pick(id)},onWorld:w=>{world=w;render()}});
  mo=new MutationObserver(guard);for(const id of HEAD){const el=$(id);if(el)mo.observe(el,{childList:true,characterData:true,subtree:true})}
 }
+// On a phone the header (and #awToStreet) is off screen: the sheet's peek gets its own ← Street in mission mode.
+function peekStreet(){
+ const r=doc.querySelector('#awSheet .aw-sheet__peek');if(!r||$('awPeekStreet'))return;
+ const b=doc.createElement('button');b.type='button';b.id='awPeekStreet';b.className='btn-outline aw-sheet__action';b.textContent='← Street';b.addEventListener('click',toStreet);r.prepend(b);
+}
 function set(m){
- const pg=$('agents');if(!pg)return false;if(mode==='street'&&m!=='street')restore();mode=m;pg.dataset.awMode=m;
- for(const [id,on] of [['awStreetMount',m==='street'],['awPlace',m==='street'],['awToStreet',m==='mission']]){const e=$(id);if(e)e.hidden=!on}
+ const pg=$('agents');if(!pg)return false;peekStreet();if(mode==='street'&&m!=='street')restore();mode=m;pg.dataset.awMode=m;
+ for(const [id,on] of [['awStreetMount',m==='street'],['awPlace',m==='street'],['awToStreet',m==='mission'],['awPeekStreet',m==='mission']]){const e=$(id);if(e)e.hidden=!on}
  return true;
 }
 function enter(q){

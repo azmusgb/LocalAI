@@ -185,7 +185,9 @@ await check("the mission code's header words wait for mission mode and come back
   await page.evaluate(() => window.LocalAIStreetPage.toMission('latest'));
   await page.waitForSelector('#agents[data-aw-mode="mission"]', T);
   await page.waitForFunction(() => document.getElementById('awTitle').textContent === 'Fix the phone screens', null, T);
-  assert.notEqual(await page.locator('#awStatus').textContent(), words);
+  const own = await page.evaluate(() => window.LocalAIAgentWords.statusSentence({ id: 'm-1', goal: 'Fix the phone screens', status: 'running', workers: [], results: [], timeline: [] }).text);
+  await page.waitForFunction(t => document.getElementById('awStatus').textContent === t, own, T);
+  assert.notEqual(own, words);
   assert.deepEqual(page.errors, []);
   await page.context().close();
 });
@@ -372,6 +374,78 @@ await check('on the street the old city draws nothing; in mission mode it does',
   assert.equal(await page.evaluate(() => window.LocalAIMissionStream?.isOpen()), false, 'no mission stream on the street');
   assert.deepEqual(page.errors, []);
   await context.close();
+});
+
+await check('Watch mode (full screen) then Back: the street, the old city asleep, one /api/world poller; Watch replaced the entry', async () => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' });
+  await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  await countCity(context);
+  const page = await context.newPage(); page.errors = []; page.on('pageerror', e => page.errors.push(e.message));
+  await page.clock.install();
+  let worlds = 0;
+  await page.route('**/api/world', r => { worlds++; return json(WORLD)(r); });
+  await missions(page);
+  await page.goto(base + '/#agents?place=chat', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector(street, T);
+  await page.evaluate(() => window.LocalAIStreetPage.toMission('latest'));
+  await page.waitForSelector(mission + ' #awcCanvas', T);
+  const len = await page.evaluate(() => history.length);
+  await page.locator('#awMoreBtn').click();
+  await page.locator('[data-aw-menu="watch"]').click();
+  await page.waitForFunction(() => window.LocalAIAgentWorldWatch?.active() && !!document.querySelector('.awc-v3.is-expanded'), null, T);
+  assert.equal(await page.evaluate(() => history.length), len, 'Watch replaced the mission entry');
+  assert.equal(await page.evaluate(() => location.hash), '#agents?mission=latest');
+  await page.evaluate(() => history.back());
+  await page.waitForSelector(street, T);
+  assert.equal(await page.evaluate(() => location.hash), '#agents?place=chat');
+  assert.equal(await page.evaluate(() => window.LocalAIAgentWorldWatch.active()), false, 'watch mode ended');
+  assert.equal(await page.locator('.awc-v3.is-expanded').count(), 0, 'full screen ended');
+  assert.equal(await page.locator('#awcCanvas').isVisible(), false);
+  await page.waitForTimeout(300);
+  const b = await page.evaluate(() => window.__cityDraws); await page.waitForTimeout(1500);
+  assert.equal(await page.evaluate(() => window.__cityDraws), b, 'the old city draws nothing');
+  const w = worlds; await page.clock.runFor(30000); await page.waitForTimeout(300);
+  assert.ok(worlds - w <= 4, `${worlds - w} /api/world requests in 30 s: one poller makes 3`);
+  assert.deepEqual(page.errors, []);
+  await context.close();
+});
+
+await check('Replay from ⋯ in mission mode replaces the entry: Back goes straight to the street', async () => {
+  const done = { ...M_OLD, timeline: [{ at: at(8990), type: 'mission-start', workers: M_OLD.workers }, { at: at(8000), type: 'mission-complete', status: 'complete', workers: M_OLD.workers }] };
+  const page = await open('#agents?place=chat');
+  await missions(page, [done]);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector(street, T);
+  await page.evaluate(() => window.LocalAIStreetPage.toMission('latest'));
+  await page.waitForSelector(mission, T);
+  await page.waitForFunction(() => document.getElementById('agentMissionHeadline').textContent === 'Write the spring newsletter', null, T);
+  const len = await page.evaluate(() => history.length);
+  await page.locator('#awMoreBtn').click();
+  await page.locator('[data-aw-menu="replay"]').click();
+  await page.waitForFunction(() => location.hash === '#agents?mission=m-old', null, T);
+  assert.equal(await page.evaluate(() => history.length), len, 'replaced, not pushed');
+  await page.evaluate(() => history.back());
+  await page.waitForSelector(street, T);
+  assert.equal(await page.evaluate(() => location.hash), '#agents?place=chat');
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
+});
+
+await check('390px: mission mode cold, ← Street in the sheet’s peek goes to the street', async () => {
+  const page = await open('#agents?mission=latest', { viewport: { width: 390, height: 844 } });
+  await missions(page);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector(mission, T);
+  const b = page.locator('#awPeekStreet');
+  await b.waitFor({ state: 'visible', ...T });
+  const box = await b.boundingBox();
+  assert.ok(box && box.y >= 0 && box.y + box.height <= 844 && box.x >= 0 && box.x + box.width <= 390, JSON.stringify(box));
+  await b.click();
+  await page.waitForSelector(street, T);
+  assert.equal(await page.evaluate(() => location.hash), '#agents');
+  assert.equal(await b.isVisible(), false);
+  assert.deepEqual(page.errors, []);
+  await page.context().close();
 });
 
 await browser.close();

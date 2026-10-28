@@ -19,7 +19,7 @@ const MISSION = {
   results: [], timeline: []
 };
 
-async function open(path) {
+async function open(path, { go = true } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); localStorage.setItem('localai.devTools', '0'); } catch {} });
   const page = await context.newPage();
@@ -27,7 +27,8 @@ async function open(path) {
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [MISSION] }) }));
   await page.goto(base + path, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.showView === 'function');
-  await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
+  // ?open=agents&watch=1 gets there by itself (street/page.js opens mission mode for watch mode).
+  if (go) await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
   await page.waitForSelector('#agents.active #awcCanvas');
   return { page, context, errors };
 }
@@ -61,8 +62,9 @@ await check('⋯ › Watch mode fills the window, captions the mission, and Exit
 });
 
 await check('?watch=1 starts watch mode by itself', async () => {
-  const { page, context, errors } = await open('/?open=agents&watch=1');
+  const { page, context, errors } = await open('/?open=agents&watch=1', { go: false });
   await page.waitForFunction(() => window.LocalAIAgentWorldWatch?.active(), null, { timeout: 8000 });
+  assert.equal(await page.evaluate(() => location.hash), '#agents?mission=latest');
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !window.LocalAIAgentWorldWatch.active());
   assert.deepEqual(errors, []);
