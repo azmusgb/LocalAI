@@ -17,7 +17,8 @@ function plansHtml(q){
  const rows=((q&&q.plans)||[]).map(p=>`<li>After ${esc(p.after)}, if ${esc(p.if)}: ${esc(p.next)}</li>`).join('');
  return rows?`<h3 class="label">Plans</h3><ul class="lab-plans">${rows}</ul>`:'';
 }
-const gradeText=v=>v&&v.grade?` · ${esc(v.grade)}`:'';
+const plain=v=>v==null?'':Array.isArray(v)?v.map(plain).filter(Boolean).join(', '):typeof v==='object'?Object.entries(v).map(([k,x])=>[k,plain(x)]).filter(([,x])=>x!=='').map(([k,x])=>`${k} ${x}`).join(' · '):String(v);
+const gradeText=v=>v&&v.grade?` · ${esc(plain(v.grade))}`:'';
 const findingHtml=x=>x&&x.finding?`<p class="lab-verdict">Finding: ${esc(x.finding)}</p>`:'';
 const aiHtml=x=>((x&&x.ai_observations)||[]).map(o=>`<p class="lab-ai">AI reading (${Math.round((o.confidence||0)*100)}% sure${o.confirmed?'':', unconfirmed'}): ${esc(o.assessment)}</p>`).join('');
 // This test's first photo over its reference's (the experiment named before a reference variant's last "-");
@@ -34,9 +35,10 @@ function wipeHtml(x,byId,photoSrc){
 const fmt=x=>x==null?'—':typeof x==='number'?String(Math.round(x*10)/10):String(x);
 function observedHtml(x,v){
  if(v&&v.grade){
-  const g=String(v.grade).toLowerCase();
-  const tone=g==='clean'?'good':(g==='faint'?'attention':'neutral');
-  return `<span class="badge badge--${tone}">${esc(v.grade)}</span>`;
+  const g=plain(v.grade);
+  const gl=g.toLowerCase();
+  const tone=gl==='clean'?'good':(gl==='faint'?'attention':'neutral');
+  return `<span class="badge badge--${tone}">${esc(g)}</span>`;
  }
  const obs=(x.observations||[]).find(o=>o&&o.subject&&(o.subject.variant===v.id||o.group===v.tab));
  if(obs&&obs.outcomes){
@@ -79,5 +81,5 @@ function reconHtml(x){
  }).join('');
  return `<div class="lab-recon"><h4>Parameter reconciliation</h4><div class="lab-recon__scroll"><table class="lab-recon__table"><thead><tr><th scope="col">Variant</th><th scope="col">Requested</th><th scope="col">Sliced</th><th scope="col">Observed</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
-root.LocalAIPrintLabEvidence={spoolColour,plansHtml,gradeText,findingHtml,aiHtml,wipeHtml,reconHtml,NEUTRAL};
+root.LocalAIPrintLabEvidence={spoolColour,plansHtml,gradeText,findingHtml,aiHtml,wipeHtml,reconHtml,plain,observedHtml,NEUTRAL};
 })(window);
