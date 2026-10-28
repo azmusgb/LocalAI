@@ -918,7 +918,7 @@ await check("a long title doesn't widen Home", async () => {
   await page.context().close();
 });
 
-const inside = page => page.evaluate(() => { const s = document.querySelector('#homeStreet .street').getBoundingClientRect(); return [...document.querySelectorAll('#homeStreet .street-chip')].map(c => { const r = c.getBoundingClientRect(); return { t: c.textContent, top: r.top - s.top, bottom: s.bottom - r.bottom }; }); });
+const inside = page => page.evaluate(() => { const s = document.querySelector('#homeStreet .street').getBoundingClientRect(); return [...document.querySelectorAll('#homeStreet .street-chip')].map(c => { const r = c.getBoundingClientRect(); const d = c.querySelector('span+span'), lh = parseFloat(getComputedStyle(d).lineHeight) || parseFloat(getComputedStyle(d).fontSize) * 1.15; return { t: c.textContent, top: r.top - s.top, bottom: s.bottom - r.bottom, lines: Math.round(d.getBoundingClientRect().height / lh) }; }); });
 const worldWith = name => ({ ...WORLD, models: { ...WORLD.models, loaded: [{ name, sizeMb: 1, vramMb: 1 }] } });
 
 await check('every chip stays inside the strip, with a long model name and with the busy world', async () => {
@@ -926,7 +926,7 @@ await check('every chip stays inside the strip, with a long model name and with 
     const page = await open(vp, '#home', { world: w });
     await page.waitForSelector('#homeStreet .street:not([hidden])', T);
     await page.waitForTimeout(300);
-    for (const c of await inside(page)) assert.ok(c.top >= 0 && c.bottom >= 0, `${vp.width}: "${c.t}" top ${c.top} bottom ${c.bottom}`);
+    for (const c of await inside(page)) { assert.ok(c.top >= 0 && c.bottom >= 0, `${vp.width}: "${c.t}" top ${c.top} bottom ${c.bottom}`); assert.ok(c.lines <= 2, `${vp.width}: "${c.t}" detail is ${c.lines} lines`); }
     await page.context().close();
   }
 });
