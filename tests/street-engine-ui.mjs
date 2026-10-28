@@ -161,11 +161,13 @@ await check('canvas follows size and DPR', async () => {
 });
 
 await check('the street fits on a desktop and scrolls on a phone, and a change brings its building into view', async () => {
-  // A desktop as wide as the street needs (the chips' layer is that wide when it overflows) shows it all, however many stand.
+  // A wide desktop shows the whole street; at 1280 the street (each building in a slot at least 200 px wide) scrolls.
+  const wide = await fresh({ viewport: { width: 2560, height: 1440 } });
+  const [ws, wc] = await wide.evaluate(() => { const s = window.__el.querySelector('.street'); return [s.scrollWidth, s.clientWidth]; });
+  assert.ok(ws <= wc, `fits at 2560: ${ws} <= ${wc}`);
   const page = await fresh();
-  const need = await page.evaluate(() => Math.ceil(parseFloat(window.__el.querySelector('.street__chips').style.width)));
-  await page.setViewportSize({ width: Math.max(1280, need + 2), height: 800 }); await page.waitForTimeout(100);
-  assert.deepEqual(await page.evaluate(() => { const s = window.__el.querySelector('.street'); return [s.scrollWidth <= s.clientWidth, s.clientWidth >= 1280]; }), [true, true], `fits on a desktop ${need} wide`);
+  const [ns, nc] = await page.evaluate(() => { const s = window.__el.querySelector('.street'); return [s.scrollWidth, s.clientWidth]; });
+  assert.ok(ns > nc, `scrolls at 1280: ${ns} > ${nc}`);
   const phone = await fresh({ viewport: { width: 390, height: 844 }, reduced: true });
   const left0 = await phone.evaluate(() => window.__el.querySelector('.street').scrollLeft);
   await phone.evaluate(w => window.LocalAIStreet.setWorld({ ...w, kiosk: { setUp: false } }), BUSY);
@@ -213,20 +215,25 @@ await check("one broken building doesn't stop the street", async () => {
   const page = await fresh();
   await page.evaluate(w => {
     window.__warns = []; const warn = console.warn; console.warn = (...a) => { window.__warns.push(a.map(String).join(' ')); warn.apply(console, a); };
-    window.LocalAIStreet.register({ id: 'yard', width: 100, state: () => ({}), chip: () => ({ title: 'Y', detail: 'y', tone: 'quiet' }), drawStill() {}, drawLive() { throw new Error('boom'); } });
+    // The engine stands only the ids in its ORDER, so the broken def stands in for the Clock Tower (restored below).
+    window.__clock = window.LocalAIStreet.defs().find(d => d.id === 'clock');
+    window.LocalAIStreet.register({ id: 'clock', width: 100, state: () => ({}), chip: () => ({ title: 'Y', detail: 'y', tone: 'quiet' }), drawStill() {}, drawLive() { throw new Error('boom'); } });
     window.LocalAIStreet.setWorld(w);
-    const s = window.__el.querySelector('.street'); s.scrollLeft = s.scrollWidth; // the yard stands at the far end
+    const s = window.__el.querySelector('.street'), y = [...s.querySelectorAll('.street-chip')].find(b => b.textContent === 'Yy');
+    s.scrollLeft = parseFloat(y.style.left) - s.clientWidth / 2; // the broken one in view, so its drawLive runs
   }, BUSY);
   const f0 = (await stats(page)).frames;
   await page.waitForTimeout(1200);
   const f1 = (await stats(page)).frames;
   assert.ok(f1 - f0 >= 20, `about 30 frames ran: ${f1 - f0}`);
   const t = await chipTexts(page);
-  assert.equal(t.length, (await standing(page, BUSY)).length); inOrder(t); assert.equal(t[t.length - 1], 'Yy', 'the broken building keeps its chip');
+  assert.equal(t.length, (await standing(page, BUSY)).length); inOrder(t); assert.ok(t.includes('Yy'), 'the broken building keeps its chip');
   await page.waitForTimeout(300);
   assert.ok((await stats(page)).frames > f1, 'frames keep rising');
   const warns = await page.evaluate(() => window.__warns);
-  assert.equal(warns.length, 1, JSON.stringify(warns)); assert.ok(warns[0].includes('yard'), warns[0]);
+  assert.equal(warns.length, 1, JSON.stringify(warns)); assert.ok(warns[0].includes('clock'), warns[0]);
+  await page.evaluate(w => { window.LocalAIStreet.register(window.__clock); window.LocalAIStreet.setWorld(w); }, BUSY);
+  assert.ok((await chipTexts(page)).some(x => x.startsWith('Clock Tower')), 'the Clock Tower is back');
   assert.deepEqual(page.errors, []);
 });
 
