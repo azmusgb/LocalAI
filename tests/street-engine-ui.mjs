@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 
 // Main Street's engine (app/public/street/street.js): mount(el, {mode:'strip'}) draws the buildings on one canvas with
 // cached stills, a 30 fps loop that runs only on screen, and one chip button per building. Each check mounts a fresh
-// strip on the app page (#home) and feeds it a world with setWorld; nothing here polls /api/world.
+// strip on the app page (#home) and feeds it a world with setWorld; /api/world is routed to hang unless a check gives
+// its own route (the shared poller, below, would otherwise overwrite the worlds the checks set).
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch({ headless: true });
 const failures = [];
@@ -25,12 +26,14 @@ const TITLES = ['Chat Café', 'Image Studio', 'Spreadsheets Office', 'Model Foun
 const contexts = [];
 // A fresh page with the street's modules loaded and a strip mounted in a fixed box at the top (in view). window.__el is
 // the mount element, window.__opened the ids onOpen got. setWorld(world) runs unless world is null.
-async function fresh({ viewport = { width: 1280, height: 800 }, dpr = 1, world = BUSY, reduced = false } = {}) {
+async function fresh({ viewport = { width: 1280, height: 800 }, dpr = 1, world = BUSY, reduced = false, clock = false, route = () => {} } = {}) {
   const context = await browser.newContext({ viewport, deviceScaleFactor: dpr, serviceWorkers: 'block', reducedMotion: reduced ? 'reduce' : 'no-preference' });
   contexts.push(context);
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
   const page = await context.newPage();
   page.errors = [];
+  await page.route('**/api/world', route);
+  if (clock) await page.clock.install();
   page.on('pageerror', e => page.errors.push(e.message));
   await page.goto(base + '/#home', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.LocalAIStreetLoad === 'function');
@@ -42,9 +45,10 @@ async function fresh({ viewport = { width: 1280, height: 800 }, dpr = 1, world =
     window.__street = window.LocalAIStreet.mount(el, { mode: 'strip', onOpen: id => window.__opened.push(id) });
     if (world) window.LocalAIStreet.setWorld(world);
   }, world);
+  if (clock) await page.clock.pauseAt(new Date(Date.now() + 1000));
   return page;
 }
-const chipTexts = page => page.evaluate(() => [...window.__el.querySelectorAll('.street-chip')].map(b => b.textContent));
+const chipTexts = page => page.evaluate(() => [...window.__el.querySelectorAll('.street-chip:not(.street-chip--stale)')].map(b => b.textContent));
 const stats = page => page.evaluate(() => window.LocalAIStreet.stats());
 
 await check('the strip stays hidden until the first world, and shows its canvas and chips after', async () => {
@@ -218,6 +222,99 @@ await check('destroy removes the strip and stops drawing', async () => {
   await page.waitForTimeout(500);
   assert.equal((await stats(page)).frames, f0);
   assert.equal(await page.evaluate(() => window.__el.querySelector('.street')), null);
+});
+
+// The shared poller: one fetch of /api/world every 10 s while a strip is on screen and the page visible. A fake clock
+// moves time; each step waits for the request to land.
+const STALE = "Can't reach LocalAI, retrying";
+function stub() {
+  const s = { mode: 'ok', n: 0, world: BUSY };
+  s.route = route => {
+    s.n++;
+    if (s.mode === 'ok') return route.fulfill({ json: s.world });
+    if (s.mode === '500') return route.fulfill({ status: 500, body: 'no' });
+    if (s.mode === 'abort') return route.abort();
+    if (s.mode === 'badjson') return route.fulfill({ status: 200, contentType: 'application/json', body: '{' });
+    if (s.mode === 'schema2') return route.fulfill({ json: { schema: 2 } });
+  };
+  return s;
+}
+async function step(page, s) {
+  const n = s.n; await page.clock.runFor(10000);
+  for (let i = 0; i < 100 && s.n === n; i++) await new Promise(r => setTimeout(r, 20));
+  await new Promise(r => setTimeout(r, 100));
+}
+async function until(page, fn, what) { try { await page.waitForFunction(fn, null, { timeout: 3000 }); } catch { throw new Error('timed out waiting for ' + what); } }
+
+await check('polls every 10 s only while visible', async () => {
+  const s = stub(); const page = await fresh({ world: null, clock: true, route: s.route });
+  await until(page, () => !window.__el.querySelector('.street').hidden, 'the first world');
+  assert.equal(s.n, 1, 'one request at once');
+  for (let i = 0; i < 3; i++) await step(page, s);
+  assert.equal(s.n, 4, 'the first plus three in 30 s');
+  await page.evaluate(() => { for (const k of ['hidden', 'visibilityState']) Object.defineProperty(document, k, { configurable: true, get: () => k === 'hidden' ? true : 'hidden' }); document.dispatchEvent(new Event('visibilitychange')); });
+  await page.clock.runFor(30000); await new Promise(r => setTimeout(r, 300));
+  assert.equal(s.n, 4, 'no requests while hidden');
+  await page.evaluate(() => { for (const k of ['hidden', 'visibilityState']) Object.defineProperty(document, k, { configurable: true, get: () => k === 'hidden' ? false : 'visible' }); document.dispatchEvent(new Event('visibilitychange')); });
+  for (let i = 0; i < 100 && s.n === 4; i++) await new Promise(r => setTimeout(r, 20));
+  assert.equal(s.n, 5, 'one request at once when visible again');
+});
+
+await check('a street scrolled off screen is not polled; destroying the last mount stops the poller', async () => {
+  const s = stub(); const page = await fresh({ world: null, clock: true, route: s.route });
+  await until(page, () => !window.__el.querySelector('.street').hidden, 'the first world');
+  await page.evaluate(() => { window.__el.style.marginTop = '5000px'; });
+  await page.waitForTimeout(300);
+  const n = s.n; await page.clock.runFor(30000); await new Promise(r => setTimeout(r, 300));
+  assert.equal(s.n, n, 'no requests off screen');
+  await page.evaluate(() => window.__street.destroy());
+  await page.clock.runFor(30000); await new Promise(r => setTimeout(r, 300));
+  assert.equal(s.n, n, 'none after the last destroy');
+});
+
+await check('bad answers keep the last picture and say so', async () => {
+  const s = stub(); const page = await fresh({ world: null, clock: true, route: s.route });
+  await until(page, () => !window.__el.querySelector('.street').hidden, 'the first world');
+  const good = await chipTexts(page);
+  assert.equal(good.length, 6);
+  assert.equal(await page.evaluate(() => window.__el.querySelectorAll('.street-chip--stale').length), 0, 'no stale chip at first');
+  for (const mode of ['500', 'abort', 'badjson', 'schema2']) {
+    s.mode = mode; await step(page, s);
+    await until(page, () => !!window.__el.querySelector('.street.is-stale'), mode + ' to mark it stale');
+    const r = await page.evaluate(() => ({ stale: [...window.__el.querySelectorAll('.street-chip--stale')].map(b => b.textContent), op: getComputedStyle(window.__el.querySelector('.street__canvas')).opacity, hidden: window.__el.querySelector('.street').hidden }));
+    assert.deepEqual(r, { stale: [STALE], op: '0.55', hidden: false }, mode);
+    assert.deepEqual(await chipTexts(page), good, mode + ' keeps the last chips');
+  }
+  s.mode = 'ok'; await step(page, s);
+  await until(page, () => !window.__el.querySelector('.street.is-stale'), 'a good answer to clear it');
+  assert.equal(await page.evaluate(() => window.__el.querySelectorAll('.street-chip--stale').length), 0, 'the stale chip goes');
+  assert.equal(await page.evaluate(() => getComputedStyle(window.__el.querySelector('.street__canvas')).opacity), '1');
+});
+
+await check('nothing shows before the first answer', async () => {
+  const page = await fresh({ world: null });
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(() => ({ hidden: window.__el.querySelector('.street').hidden, chips: window.__el.querySelectorAll('.street-chip').length }));
+  assert.deepEqual(r, { hidden: true, chips: 0 });
+});
+
+await check('a failure before the first answer keeps the strip hidden, and a second mount shows stale too', async () => {
+  const s = stub(); s.mode = '500'; const page = await fresh({ world: null, clock: true, route: s.route });
+  await new Promise(r => setTimeout(r, 300));
+  assert.equal(await page.evaluate(() => window.__el.querySelector('.street').hidden), true);
+  s.mode = 'ok'; await step(page, s);
+  await until(page, () => !window.__el.querySelector('.street').hidden, 'the first good world');
+  s.mode = '500'; await step(page, s);
+  await until(page, () => !!window.__el.querySelector('.street.is-stale'), 'stale');
+  await page.evaluate(() => { const el = document.createElement('div'); document.body.append(el); window.__second = el; window.LocalAIStreet.mount(el, { mode: 'strip' }); });
+  await new Promise(r => setTimeout(r, 200));
+  const r = await page.evaluate(() => ({ cls: window.__second.querySelector('.street').className, chips: [...window.__second.querySelectorAll('.street-chip--stale')].map(b => b.textContent) }));
+  assert.ok(r.cls.includes('is-stale'), r.cls); assert.deepEqual(r.chips, [STALE]);
+});
+
+await check('the scroller is a labelled region', async () => {
+  const page = await fresh();
+  assert.deepEqual(await page.evaluate(() => { const s = window.__el.querySelector('.street'); return [s.getAttribute('role'), s.getAttribute('aria-label')]; }), ['region', 'Agent World street']);
 });
 
 for (const c of contexts) await c.close();

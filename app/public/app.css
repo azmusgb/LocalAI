@@ -3073,5 +3073,5 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 .street-chip{position:absolute;transform:translateX(-50%);display:grid;padding:2px 8px;border:1px solid var(--ds-line-2);border-radius:var(--ds-r-md);background:rgba(14,21,30,.84);color:var(--ds-text);font-size:var(--ds-fs-1);line-height:1.15;max-width:200px;pointer-events:auto}.street-chip:focus-visible{outline:var(--ds-ring)}
 .street-chip span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.street-chip span+span{color:var(--ds-muted);white-space:normal;overflow-wrap:anywhere}
 .street-chip--busy{border-color:var(--ds-good)}.street-chip--attention{border-color:var(--ds-attention)}.street-chip--down{border-color:var(--ds-bad)}.street-chip--quiet{opacity:.85}
-.street.is-stale .street__canvas{filter:saturate(.35) brightness(.85)}
+.street.is-stale .street__canvas{opacity:.55}.street-chip--stale{position:sticky;left:8px;top:4px;width:max-content;transform:none;border-color:var(--ds-attention)}
 @media(max-width:760px){.street{height:132px}}
