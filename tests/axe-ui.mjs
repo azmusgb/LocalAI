@@ -191,6 +191,12 @@ for (const [dname, device] of DEVICES.filter(([n]) => !process.env.AXE_DEVICE ||
     await check(`axe: ${s.name} at ${dname}, ${scheme}`, async () => {
       await s.go(page);
       await page.waitForTimeout(700);
+      // Home's last row, "See all", sits under the sticky composer on a screen this tall when several things need you (a stopped
+      // service each, an approval, Pi Hub's items); a person scrolls to it, so this check does too.
+      if (s.name === 'home') {
+        await page.evaluate(() => document.querySelector('#homeNeedsList .ui-needs__more a')?.scrollIntoView({ block: 'center' }));
+        await page.waitForTimeout(300);
+      }
       const v = await markAllowed(page, await axe(page));
       const touch = dname === '1440' ? [] : await smallTargets(page);
       const symbols = await symbolNames(page);

@@ -26,6 +26,27 @@ test('the design tokens carry the kit\'s dark colours', () => {
     assert.ok(css.includes(`--ds-${ds}:${kit[ui].dark}`), `--ds-${ds} should be the kit's ${ui} (${kit[ui].dark})`);
 });
 
+// needs.css (the kit's Needs you rows) is the one kit sheet Local AI loads, and it reads --ui-* names. app.css aliases every one
+// of them onto its own values; each must exist and equal the kit's dark value (a font stack only has to start with the same face).
+test('every --ui-* name needs.css reads is aliased to the kit\'s dark value', () => {
+  const norm = v => v.replace(/\s+/g, '').replace(/,/g, ', ').replace(/, /g, ',');
+  const kitRoot = read('ui/tokens.css').split('\n').find(l => l.startsWith(':root{'));
+  const kit = Object.fromEntries([...kitRoot.matchAll(/--ui-([a-z0-9-]+):([^;]+);/g)].map(m => [m[1], norm(m[2])]));
+  const css = read('app.css');
+  const decl = name => { const m = css.match(new RegExp('(?:^|[;{\\s])' + name + ':([^;}]+)[;}]')); return m && norm(m[1]); };
+  const resolve = v => { for (let i = 0; i < 5; i++) { const m = /^var\((--[a-z0-9-]+)\)$/.exec(v); if (!m) break; v = decl(m[1]); } return v; };
+  const used = [...new Set([...read('ui/needs.css').matchAll(/var\(--ui-([a-z0-9-]+)/g)].map(m => m[1]))];
+  assert.ok(used.length >= 11, 'needs.css reads ' + used.join(', '));
+  for (const n of used) {
+    const got = decl('--ui-' + n);
+    assert.ok(got, `--ui-${n} is not defined in app.css`);
+    const v = resolve(got);
+    if (n === 'fs-1') assert.equal(v, '13px', 'the small text keeps the app\'s 13px floor (the kit says ' + kit[n] + ')');
+    else if (n === 'font') assert.equal(v.split(',')[0], kit.font.split(',')[0]);
+    else assert.equal(v, kit[n], `--ui-${n} should be the kit's ${kit[n]}`);
+  }
+});
+
 // The navy shades from before the kit are gone from the app's chrome (the canvas's own night palette, --aw-*, stays).
 test('no old navy shades in the app chrome', () => {
   const css = read('app.css').replace(/\s+/g, '');

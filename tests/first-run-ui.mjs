@@ -38,7 +38,7 @@ await check('while Get started shows, Needs you lists no service rows', async ()
   await page.waitForFunction(() => window.LocalAIHome && document.querySelector('#firstRun'));
   await page.waitForTimeout(300);
   // Pi Hub's items (data-hub-need) aren't service rows; a server that can reach a real hub may list them.
-  assert.equal(await page.locator('#homeNeedsList .home-attn:not([data-hub-need])').count(), 0);
+  assert.equal(await page.locator('#homeNeedsList .ui-need:not([data-hub-need])').count(), 0);
 });
 await check('a sample task that cannot start says what Chat needs; step 3 is done only once a run opens', async () => {
   if (!expectCard) return;
@@ -99,7 +99,7 @@ await check('dismissing Get started keeps it hidden after reload', async () => {
   await page.locator('#firstRun .first-run-foot [data-first-run-dismiss]').click();
   assert.equal(await page.locator('#firstRun').count(), 0);
   // With Get started gone, Needs you takes over the service rows.
-  if (coreDown.length) await page.waitForFunction(() => document.querySelectorAll('#homeNeedsList .home-attn').length > 0);
+  if (coreDown.length) await page.waitForFunction(() => document.querySelectorAll('#homeNeedsList .ui-need').length > 0);
   await page.reload({ waitUntil: 'networkidle' });
   await page.waitForTimeout(500);
   assert.equal(await page.locator('#firstRun').count(), 0);
