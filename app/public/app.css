@@ -3113,5 +3113,5 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 @media(max-width:760px){.street{height:132px}}
 @media(pointer:coarse){.street-chip{min-height:44px;align-content:center}}
 .home-street .street{margin-top:20px;border:1px solid var(--ds-line);mask-image:linear-gradient(90deg,#000 calc(100% - 24px),transparent)}
-.street.street--full{height:100%;min-height:300px}.street__snap{position:absolute;top:0;bottom:0;scroll-snap-align:center}
+.street.street--full{height:100%;min-height:300px}.street--full .street-chip{font-size:var(--ds-fs-2);max-width:260px;padding:3px 10px}.street__snap{position:absolute;top:0;bottom:0;scroll-snap-align:center}
 @media(max-width:760px){.street--full{scroll-snap-type:x mandatory}}

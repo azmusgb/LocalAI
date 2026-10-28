@@ -828,6 +828,8 @@ await check('a phone snaps one building at a time, and a swipe that settles on t
   await page.evaluate(w => { window.__w = w; }, BUSY);
   const r = await page.evaluate(() => { const s = window.__el.querySelector('.street'); return { snap: getComputedStyle(s).scrollSnapType, w: s.clientWidth }; });
   assert.ok(r.snap.includes('x'), r.snap);
+  const marks = await page.evaluate(() => [...window.__el.querySelectorAll('.street__snap')].map(m => m.getAttribute('aria-hidden')));
+  assert.deepEqual(marks, (await standing(page, BUSY)).map(() => 'true'), 'one hidden snap marker per building');
   await page.evaluate(() => window.__street.focus('images'));
   assert.ok(await centred(page, 'images') < 4, 'images centred');
   const next = await page.evaluate(w => { const ids = window.LocalAIStreet.defs().filter(d => !d.state(w).hidden).map(d => d.id); return ids[ids.indexOf('images') + 1]; }, BUSY);
@@ -856,6 +858,33 @@ await check('a quiet full street with a focus draws nothing per frame, and the r
   const after = await lum(page, 10, 10);
   assert.ok(after < before * 0.9 && after > before * 0.75, `the sky away from the focus is dimmed 15%: ${before} -> ${after}`);
   assert.deepEqual(page.errors, []);
+});
+
+await check('full mode at 1440: the first and last buildings centre, the chips are larger and none is cut, and an id not standing is ignored', async () => {
+  const page = await fresh({ viewport: { width: 1440, height: 900 }, full: 520, reduced: true });
+  await page.evaluate(w => { window.__w = w; }, BUSY);
+  const ids = await page.evaluate(w => window.LocalAIStreet.defs().filter(d => !d.state(w).hidden).map(d => d.id), BUSY);
+  for (const id of [ids[0], ids[ids.length - 1]]) {
+    await page.evaluate(id => window.__street.focus(id), id);
+    const off = await centreOff(page, id);
+    assert.ok(off < 4, `${id} centred: ${off}`);
+  }
+  const r = await page.evaluate(() => {
+    const s = window.__el.querySelector('.street'), chips = [...s.querySelectorAll('.street-chip')], boxes = chips.map(b => b.getBoundingClientRect());
+    return { cut: [...s.querySelectorAll('.street-chip span')].filter(e => e.scrollWidth > e.clientWidth).map(e => e.textContent), overlap: boxes.some((b, i) => i && b.left < boxes[i - 1].right),
+      size: parseFloat(getComputedStyle(chips[0]).fontSize), max: getComputedStyle(chips[0]).maxWidth, marks: s.querySelectorAll('.street__snap').length };
+  });
+  assert.deepEqual(r.cut, []); assert.equal(r.overlap, false, 'chips do not overlap');
+  assert.equal(r.max, '260px'); assert.equal(r.marks, 0, 'no snap markers off a phone');
+  const strip = await fresh({ viewport: { width: 1440, height: 900 } });
+  const small = await strip.evaluate(() => parseFloat(getComputedStyle(window.__el.querySelector('.street-chip')).fontSize));
+  assert.ok(r.size > small, `full chips are larger: ${r.size} > ${small}`);
+  const last = ids[ids.length - 1];
+  for (const bad of ['nope', ...(await page.evaluate(w => window.LocalAIStreet.defs().filter(d => d.state(w).hidden).map(d => d.id), BUSY))]) {
+    await page.evaluate(id => window.__street.focus(id), bad);
+    assert.equal(await page.evaluate(() => window.__street.focused()), last, `focus('${bad}') is ignored`);
+  }
+  assert.deepEqual([page.errors, strip.errors], [[], []]);
 });
 
 for (const c of contexts) await c.close();

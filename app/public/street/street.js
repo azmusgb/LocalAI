@@ -22,8 +22,8 @@
 // the far city faded, then over everything its dim wash and, added, each light layer and the traffic's glows. stats().night is the street's own night (what it draws), not the clock's.
 // mount(el, {mode:'full', onOpen, onFocus(id)}) is the full-page street: as tall as el (at least 300 CSS px), zoom =
 // height/360 within 0.8-2, the scene standing on the canvas's bottom (sky above when it is taller). On a phone (max-width
-// 760px) each slot is at least the box's width and a snap point (.street__snap markers in the chips layer; the CSS snaps
-// x mandatory). The handle's focus(id|null) centres a building (smooth; instant under reduced motion) and marks it: a soft
+// 760px) each slot is at least the box's width and a snap point (elsewhere the ends are padded so any building can be centred) (.street__snap markers in the chips layer; the CSS snaps
+// x mandatory). The handle's focus(id|null) (an id not standing is ignored) centres a building (smooth; instant under reduced motion) and marks it: a soft
 // spotlight on the ground under it and a 15% dim over the rest, faded in per frame for FADE ms, then one cached layer
 // drawn with each frame (so a quiet focused street draws nothing per frame); focused() is its id. onFocus(id) is called
 // when the person's scroll settles on a phone with another building centred (never for the engine's own scrolls).
@@ -102,11 +102,12 @@ function mount(el,opts){
  const stand=()=>defs().filter(d=>!(states.get(d.id)||{}).hidden),shape=()=>ver+':'+stand().map(d=>d.id);
  function layout(){
   list=stand();sig=shape();xs=new Map();
-  const vw=box.clientWidth,pad=PAD*zoom,gap=GAP*zoom,n=list.length,slot=d=>Math.max(d.width*zoom,SLOT,snap()?vw:0);
-  const need=2*pad+list.reduce((a,d)=>a+slot(d),0)+gap*Math.max(0,n-1),spare=Math.max(0,vw-need);
-  let x=n>1?pad:pad+spare/2;
+  // Full mode: slots at least 280 px (its chips are larger) and ends padded so the first and last buildings can be centred.
+  const vw=box.clientWidth,pad=PAD*zoom,gap=GAP*zoom,n=list.length,sn=snap(),slot=d=>Math.max(d.width*zoom,full?280:SLOT,sn?vw:0),ep=d=>full&&d?Math.max(pad,(vw-slot(d))/2):pad;
+  const pl=ep(list[0]),need=pl+ep(list[n-1])+list.reduce((a,d)=>a+slot(d),0)+gap*Math.max(0,n-1),spare=Math.max(0,vw-need);
+  let x=n>1?pl:pl+spare/2;
   for(const m of chipsEl.querySelectorAll('.street__snap'))m.remove();
-  for(const d of list){xs.set(d.id,x+(slot(d)-d.width*zoom)/2);if(full){const m=doc.createElement('i');m.className='street__snap';m.style.left=x+'px';m.style.width=slot(d)+'px';chipsEl.append(m)}x+=slot(d)+gap+(n>1?spare/(n-1):0)}
+  for(const d of list){xs.set(d.id,x+(slot(d)-d.width*zoom)/2);if(sn){const m=doc.createElement('i');m.className='street__snap';m.setAttribute('aria-hidden','true');m.style.left=x+'px';m.style.width=slot(d)+'px';chipsEl.append(m)}x+=slot(d)+gap+(n>1?spare/(n-1):0)}
   streetW=need;chipsEl.style.width=Math.max(vw,need)+'px';
   for(const [id,b] of chips)if(!byId.has(id)||!xs.has(id)){b.remove();chips.delete(id)}
   for(const d of list){
@@ -186,7 +187,7 @@ function mount(el,opts){
  // Centres building id (auto: the scroll is the engine's, not the person's, so its settling calls no onFocus).
  function centre(id,how){const d=byId.get(id);if(!d||!xs.has(id))return;auto=true;box.scrollTo({left:Math.max(0,xs.get(id)+d.width*zoom/2-box.clientWidth/2),behavior:how})}
  function focus(id){
-  id=id||null;if(id!==fid){fid=id;fAt=performance.now()}if(fid)centre(fid,reduce()?'instant':'smooth');if(!box.hidden)redraw();
+  id=id||null;if(id&&!stand().some(d=>d.id===id))return;if(id!==fid){fid=id;fAt=performance.now()}if(fid)centre(fid,reduce()?'instant':'smooth');if(!box.hidden)redraw();
  }
  // A scroll settled: on a phone, the person's own scroll that centres another building focuses it and tells the page.
  function settled(){
