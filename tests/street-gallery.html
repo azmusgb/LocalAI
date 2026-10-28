@@ -24,34 +24,37 @@
 <script src="../app/public/street/missions.js"></script>
 <script src="../app/public/street/garage.js"></script>
 <script src="../app/public/street/clock.js"></script>
+<script src="../app/public/street/yard.js"></script>
 <script>
 (function(){'use strict';
 const A=window.LocalAIStreetArt,P=A.palette,q=new URLSearchParams(location.search);
 const src=o=>Object.assign({running:[],waiting:0,needsYou:[],failedUnseen:[],recent:[]},o);
+const crew=(i,state)=>({id:'c'+i,title:'Session '+i,state:state||'working',lastAction:'Edit app.js'});
 const job=(i,title)=>({id:'j'+i,title:title||'Job '+i,status:'running',startedAt:Date.now()-60000*i});
 const street=o=>Object.assign({chat:src(),images:src(),missions:src(),garage:src(),sheets:src(),clock:src()},o);
 // Stub /api/world answers. Busy matches the art bar (qwen3:14b loaded, 2 waiting).
 const WORLDS={
  busy:{schema:1,models:{loaded:[{name:'qwen3:14b',sizeMb:9300,vramMb:11000}],queue:{active:1,waiting:2},busy:true},
   printer:{setUp:true,access:'ok',state:'printing',progress:42,minutesLeft:37},
-  sheets:{bridge:true,excel:true,inFlight:1},kiosk:{setUp:true,online:true,showing:'weather'},
+  sheets:{bridge:true,excel:true,inFlight:1},kiosk:{setUp:true,online:true,showing:'weather'},crews:[crew(1),crew(2),crew(3,'waiting')],
   street:street({chat:src({running:[job(1),job(2)],waiting:1}),images:src({running:[job(3)]}),sheets:src({running:[job(4)]}),
    missions:src({running:[job(5),job(6),job(7)]}),garage:src({running:[job(8)]}),clock:src({running:[job(9)]})})},
  quiet:{schema:1,models:{loaded:[],queue:{active:0,waiting:0},busy:false},printer:{setUp:true,access:'ok',state:'idle'},
-  sheets:{bridge:true,excel:true,inFlight:0},kiosk:{online:true},street:street()},
+  sheets:{bridge:true,excel:true,inFlight:0},kiosk:{online:true},crews:[],street:street()},
  down:{schema:1,models:{loaded:null,queue:null},printer:{setUp:true,access:'unreachable',state:null},
-  sheets:{bridge:null,excel:null,inFlight:0},kiosk:null,street:null}
+  sheets:{bridge:null,excel:null,inFlight:0},kiosk:null,crews:null,street:null}
 };
 // The other states worth a look, each the busy world with one slice changed, shown in a row under a building's three.
 const B=WORLDS.busy,v=o=>Object.assign({},B,o);
 Object.assign(WORLDS,{
  paused:v({printer:{setUp:true,access:'ok',state:'paused',progress:42}}),error:v({printer:{setUp:true,access:'ok',state:'error'}}),
  unset:v({printer:{setUp:false},kiosk:{setUp:false}}),offline:v({kiosk:{setUp:true,online:false}}),
+ waiting:v({crews:[crew(1,'waiting'),crew(2,'waiting')]}),
  noexcel:v({sheets:{bridge:true,excel:false,inFlight:0},street:street()}),
  crowd:v({street:street({chat:src({running:[job(1),job(2),job(3)],waiting:4,needsYou:[job(5)]}),images:src({running:[job(3),job(6)],waiting:2,needsYou:[job(7)]}),
-  missions:src({running:[job(1),job(2),job(3)],waiting:2,needsYou:[job(5)]}),garage:src({running:[job(4)],waiting:3,needsYou:[job(6)]}),clock:src({running:[job(2)],needsYou:[job(8)]})})}),
+  missions:src({running:[job(1),job(2),job(3)],waiting:2,needsYou:[job(5)]}),garage:src({running:[job(4)],waiting:3,needsYou:[job(6)]}),clock:src({running:[job(2)],needsYou:[job(8)]})}),crews:[crew(1),crew(2,'waiting'),crew(3),crew(4,'waiting'),crew(5)]}),
  asks:v({street:street({chat:src({needsYou:[job(5)]}),images:src({needsYou:[job(7)]}),missions:src({needsYou:[job(8)]}),garage:src({needsYou:[job(9)]}),clock:src({needsYou:[job(4)]})})})});
-const EXTRA={chat:['crowd','asks'],images:['crowd','asks'],missions:['crowd','asks'],garage:['crowd','asks'],clock:['crowd','asks'],sheets:['noexcel'],workshop:['paused','error','unset'],kiosk:['offline','unset']};
+const EXTRA={chat:['crowd','asks'],images:['crowd','asks'],missions:['crowd','asks'],garage:['crowd','asks'],clock:['crowd','asks'],sheets:['noexcel'],yard:['waiting','crowd'],workshop:['paused','error','unset'],kiosk:['offline','unset']};
 const all=window.LocalAIStreet.defs(),want=q.get('ids')?q.get('ids').split(','):all.map(d=>d.id);
 const defs=all.filter(d=>want.includes(d.id)),dpr=window.devicePixelRatio||1,PAD=40,H=360,fixedT=q.has('t')?+q.get('t'):null;
 // The street around a building, as the engine will draw it (sky, far city with haze, sidewalk, curb, road).

@@ -128,6 +128,21 @@ test('kiosk: state and chip', () => {
   assert.notEqual(d.stillKey(on), d.stillKey(off));
 });
 
+// The Claude Yard isn't a work building: its chip counts Claude sessions (world.crews), never lists them.
+test('yard: state and chip', () => {
+  const d = load('yard');
+  assert.equal(d.width, 260); assert.equal(d.roof, 180);
+  const crews = (w, q, title) => ({ crews: [...Array.from({ length: w }, (_, i) => ({ id: 'k' + i, title: title || 'S' + i, state: 'working' })), ...Array.from({ length: q }, (_, i) => ({ id: 'q' + i, title: title || 'Q' + i, state: 'waiting' }))] });
+  for (const [w, q, detail, tone] of [[2, 1, '2 working · 1 waiting', 'busy'], [1, 0, '1 working', 'busy'], [0, 3, '3 waiting', 'quiet'], [0, 0, 'No sessions', 'quiet']])
+    assert.deepEqual(d.chip(d.state(crews(w, q))), { title: 'Claude Yard', detail, tone }, `${w} working, ${q} waiting`);
+  assert.deepEqual(d.chip(d.state({ crews: null })), { title: 'Claude Yard', detail: 'No sessions', tone: 'quiet' });
+  const c = d.chip(d.state(crews(1, 1, LONG)));
+  assert.ok(!c.detail.includes('xxx') && !c.title.includes('xxx'), 'a session title never reaches the chip');
+  assert.ok(c.detail.length <= 60);
+  assert.equal(d.item(d.state(crews(1, 0))), null);
+  assert.notEqual(d.stillKey(d.state(crews(1, 0))), d.stillKey(d.state(crews(0, 0))));
+});
+
 // animates(state): each building says whether its live layer moves. The engine stops its loop when no building on view
 // animates, so a building that says false must draw the same live frame at any t.
 const kit = require('./street-draw-kit.cjs');
@@ -141,6 +156,7 @@ const ANIM = {
   sheets: [[{ sheets: { bridge: true, excel: true, inFlight: 1 }, street: street() }, true], [{ sheets: { bridge: true, excel: true, inFlight: 0 }, street: street() }, false], [{ sheets: { bridge: true, excel: false, inFlight: 0 }, street: street() }, false], [{ sheets: null, street: null }, false]],
   foundry: [[{ models: { loaded: [{ name: 'm' }], queue: { waiting: 2 } } }, true], [{ models: { loaded: [], queue: { waiting: 0 } } }, false], [{ models: null }, false]],
   workshop: [[pr({ state: 'printing', progress: 40 }), true], [pr({ state: 'error' }), true], [pr({}), false], [pr({ state: 'paused', progress: 30 }), false], [pr({ access: null }), false], [pr({ setUp: false, access: null }), false], [pr({ access: 'denied' }), false], [{ printer: null }, false]],
+  yard: [[{ crews: [{ id: 'a', title: 'A', state: 'working' }] }, true], [{ crews: [{ id: 'a', title: 'A', state: 'waiting' }] }, false], [{ crews: [] }, false], [{ crews: null }, false]],
   kiosk: [[{ kiosk: { setUp: true, online: true, firmware: '1' } }, true], [{ kiosk: { setUp: false, online: null } }, false], [{ kiosk: { setUp: true, online: false } }, false], [{ kiosk: null }, false]],
 };
 for (const [id, cases] of Object.entries(ANIM)) {

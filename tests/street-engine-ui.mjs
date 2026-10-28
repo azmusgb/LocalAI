@@ -498,6 +498,35 @@ await check('a hidden building has no chip, the next one moves left, and unhidin
   assert.deepEqual(page.errors, []);
 });
 
+// The Claude Yard: on the street only while the developer tools are on; it counts the sessions and never shows a title.
+const CREWS = [{ id: 'k1', title: 'Fix the build', state: 'working', lastAction: 'Edit' }, { id: 'k2', title: 'Docs', state: 'working', lastAction: 'Read' }, { id: 'k3', title: 'Plan', state: 'waiting', lastAction: 'Ask' }];
+const yardChip = page => page.evaluate(() => [...window.__el.querySelectorAll('.street-chip')].map(b => b.textContent).find(t => t.startsWith('Claude Yard')) || null);
+await check('the Claude Yard is off the street while the developer tools are off, and on it once they are on', async () => {
+  const page = await fresh({ world: null });
+  await page.evaluate(w => { document.body.classList.add('dev-tools-off'); window.LocalAIStreet.setWorld(w); }, { ...BUSY, crews: CREWS });
+  assert.equal(await yardChip(page), null, 'no yard chip');
+  await page.evaluate(w => { document.body.classList.remove('dev-tools-off'); window.LocalAIStreet.setWorld(w); }, { ...BUSY, crews: CREWS });
+  assert.equal(await yardChip(page), 'Claude Yard2 working · 1 waiting');
+  assert.equal(await page.evaluate(() => { const b = [...window.__el.querySelectorAll('.street-chip')].pop(); b.click(); return [b.title, window.__opened.at(-1)]; }).then(r => r.join()), 'Opens Agent World,yard');
+  await page.evaluate(w => { document.body.classList.add('dev-tools-off'); window.LocalAIStreet.setWorld(w); }, { ...BUSY, crews: CREWS });
+  assert.equal(await yardChip(page), null, 'gone again');
+  assert.deepEqual(page.errors, []);
+});
+
+await check("a session's title, markup or right-to-left, never reaches the page", async () => {
+  const evil = '<img src=x onerror=window.__y=1>', rtl = '\u202Eשלום\u202C';
+  const page = await fresh({ world: null });
+  await page.evaluate(w => { document.body.classList.remove('dev-tools-off'); window.LocalAIStreet.setWorld(w); },
+    { ...BUSY, crews: [{ id: 'e1', title: evil, state: 'working', lastAction: evil }, { id: 'e2', title: rtl, state: 'waiting', lastAction: rtl }] });
+  await page.waitForTimeout(200);
+  const t = await yardChip(page);
+  assert.equal(t, 'Claude Yard1 working · 1 waiting');
+  const all = await page.evaluate(() => window.__el.textContent + [...window.__el.querySelectorAll('[aria-label],[title]')].map(b => b.getAttribute('aria-label') + b.title).join());
+  assert.ok(!all.includes(evil) && !all.includes(rtl) && !all.includes('שלום'), 'no title in the strip');
+  assert.equal(await page.evaluate(() => window.__el.querySelector('img')), null);
+  assert.equal(await page.evaluate(() => typeof window.__y), 'undefined');
+});
+
 for (const c of contexts) await c.close();
 await browser.close();
 if (failures.length) { console.error(`\n${failures.length} failed:\n` + failures.join('\n')); process.exit(1); }
