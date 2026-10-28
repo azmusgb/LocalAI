@@ -15,15 +15,17 @@ function state(world){
  const setUp=!!p.setUp;
  // access null: set up, but the poller hasn't read the printer yet; checking, not down.
  const checking=setUp&&p.access==null;
- return{setUp,checking,state:p.state||null,progress:p.progress??null,minutesLeft:p.minutesLeft??null,error:p.state==='error',down:setUp&&!checking&&p.access!=='ok'};
+ return{setUp,checking,...(p.access==='stale'?{stale:true}:{}),...(p.needsPlateClear===true?{needsPlateClear:true}:{}),state:p.state||null,progress:p.progress??null,minutesLeft:p.minutesLeft??null,error:p.state==='error',down:setUp&&!checking&&p.access!=='ok'};
 }
 // The still shows the door (up while printing), lit or unlit, and down. Never the progress.
 function stillKey(s){return s.down?'down':s.state==='printing'||s.state==='paused'?'up':s.setUp?'unlit':'off'}
 function chip(s){
  const title='Workshop Garage';
+ if(s.stale)return{title,detail:'Reading expired',tone:'down'};
  if(s.down)return{title,detail:'Not answering',tone:'down'};
  if(!s.setUp)return{title,detail:'Not set up',tone:'quiet'};
  if(s.checking)return{title,detail:'Checking…',tone:'quiet'};
+ if(s.needsPlateClear)return{title,detail:s.error?'Print stopped · check plate':'Done · clear the plate',tone:'attention'};
  if(s.error)return{title,detail:'Error',tone:'attention'};
  if(s.state==='printing'){
   const d=['Printing'];if(s.progress!=null)d.push(s.progress+'%');if(s.minutesLeft!=null)d.push(s.minutesLeft+' min left');

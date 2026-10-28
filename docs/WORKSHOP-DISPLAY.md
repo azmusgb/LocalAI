@@ -67,12 +67,10 @@ Local AI sends the display **only three requests, all `GET`**: `/hardware/health
 `/api/status/lite`, and with the code key, only when you tap Show sign-in code, `/api/portal-code`.
 It never sends `POST`, never calls a control route, and never sends the portal's `X-BambuHelper-Client` header.
 
-**Agent World** (`GET /api/world`, `app/world.js`) adds no new request. Its kiosk billboard asks `/hardware/health` **at
+**Agent World** (`GET /api/world`, `app/world.js`) adds no printer-status request to the display. Its kiosk billboard asks `/hardware/health` **at
 most once a minute** while Agent World is open: one request at a time, however many tabs poll, and a slow or failing
 display is not asked again sooner (the minute counts from when a request starts). Nothing is asked while Agent World is
-closed. The printer and the firmware version it shows come from the poller's last `/api/status/lite` read (only the
-`firmware.version` field, when it is a short plain version such as `12.1.0`), so they add nothing either. The answer
-holds no token and no address. `tests/world.test.cjs` enforces the limit.
+closed. Its printer state comes from Pi Hub's Bambuddy-backed `/api/records`, cached for 15 seconds and checked against the original reading time (90 seconds maximum). An unavailable or stale reading stays unknown rather than falling back to the display. Firmware still comes from the poller's last `/api/status/lite` read (`firmware.version` only). The answer holds no token and no address. `tests/world.test.cjs` enforces the limit.
 
 ## Local AI cards (for the display's idle screen)
 
@@ -101,8 +99,8 @@ every screen: `needs: [{id, tone, title, detail, source}]`, from the hub's `GET 
 `warn`. `id` stays the same while the item means the same thing (`printer:plate`, `localai:approval:<id>`), so screens
 can match and clear one item. When the hub doesn't answer, `needs` is left out and the display shows its cards.
 Beside it, `needsCount` is the hub's own total (its `count`), so "+N more" counts what the hub has, not the 6 sent.
-Only the display gets `needs` and `needsCount` (a call with `X-LocalAI-Display-Key`): Pi Hub builds its list from this
-feed, read without a key, so that read never asks Pi Hub for its list back. One `/api/needs` fetch is out at a time;
+Only the display gets `needs` and `needsCount` (a call with `X-LocalAI-Display-Key`). Pi Hub reads LocalAI’s own
+`/api/attention` endpoint to build the list, rather than reading this aggregate presentation feed. One `/api/needs` fetch is out at a time;
 callers meanwhile get the last list (or none).
 
 **Print lab card (`lab`).** Built from the print-lab records the Mac syncs (Projects › Print lab), when exactly one
@@ -381,3 +379,14 @@ sign-in of its own (see [Security](SECURITY.md#known-gaps)), every request would
 rather than the display's, and a cookie for the display would end up scoped to Local AI. So Local AI only reads the
 health answer (and, with the token, the read-only status) and links to the display; signing in and every printer
 action stay on the display's own page.
+
+
+## Shared household attention and command feedback
+
+Pi Hub reads LocalAI's own `/api/attention` endpoint, then builds the household `/api/needs` list. It does not read
+the aggregate display feed back into that list. See [Household system](HOUSEHOLD-SYSTEM.md) for deployment order.
+
+Clear plate stops after a failed plate confirmation; it never clears the printer error list in that case. An accepted
+confirmation with a failed error-clear step remains accepted and posts **Check printer errors** through the display's
+existing message channel. Complete success posts **Plate confirmed**; a failed confirmation posts **Plate not confirmed**.
+These banners are quiet and best effort. They report the service outcome, not a physical inspection of the plate.

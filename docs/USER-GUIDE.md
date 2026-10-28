@@ -140,7 +140,9 @@ Agent World can be a screen you leave on, such as a TV or a spare tablet. In Age
 
 - The city fills the screen and follows whoever is working.
 - A caption at the bottom says what the team is doing.
-- When nothing is running, the last mission replays every 2 minutes.
+- Chats, images, changes, automations and Claude sessions also count as live work; the caption names them even without a mission.
+- Approvals and unseen failures say what needs you. An unavailable source says so.
+- When the live work and mission sources confirm nothing is active or waiting, the last mission replays every 2 minutes, labelled as a replay.
 - A soft chime marks a mission starting, finishing or needing you. **Sound on** turns it off.
 - The screen stays awake.
 - The pointer hides when you don't move it.

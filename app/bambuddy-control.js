@@ -30,15 +30,23 @@ function createBambuddyControl({
     }
   }
 
-  // { ok, plate, errors }: ok when both steps went through.
+  // { ok, plate, errors }: the plate is cleared even if clearing its error list fails.
+  // Match Pi Hub: never clear errors after a refused/failed plate action.
   async function clearPlate() {
     if (off) return { ok: false, plate: 'off', errors: 'off' };
     const plate = await post(`/api/v1/printers/${printer}/clear-plate`);
-    const errors = await post(`/api/v1/printers/${printer}/hms/clear`);
-    return { ok: plate === 'ok' && errors === 'ok', plate, errors };
+    const errors = plate === 'ok' ? await post(`/api/v1/printers/${printer}/hms/clear`) : 'skipped';
+    return { ok: plate === 'ok', plate, errors };
   }
 
   return { clearPlate };
 }
 
-module.exports = { createBambuddyControl };
+// The firmware's existing message channel supplies visible completion feedback without a firmware update.
+function clearPlateMessage(result) {
+  if (!result.ok) return { title: 'Plate not confirmed', text: 'The confirmation did not go through. Check the printer before trying again.', tone: 'warning' };
+  if (result.errors !== 'ok') return { title: 'Check printer errors', text: 'Plate confirmed. The printer error list did not clear; check its screen.', tone: 'warning' };
+  return { title: 'Plate confirmed', text: 'Bambuddy accepted the plate confirmation.', tone: 'ok' };
+}
+
+module.exports = { createBambuddyControl, clearPlateMessage };

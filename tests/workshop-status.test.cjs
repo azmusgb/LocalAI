@@ -129,7 +129,7 @@ test('GET /api/workshop/status through the appliance: online, extra fields dropp
   const online = await fetch(`${base}/api/workshop/status`, { headers: { Cookie: 'portal_session=abc', Authorization: 'Bearer x' } });
   assert.equal(online.status, 200);
   const body = await online.json();
-  assert.deepEqual(body, { online: true, board: HEALTH.board, panel: HEALTH.panel, screen: 6, touchscreenConfigured: true, signIn: false, portalUrl: device.url, printer: null, codeAccess: false });
+  assert.deepEqual(body, { online: true, board: HEALTH.board, panel: HEALTH.panel, screen: 6, touchscreenConfigured: true, signIn: false, portalUrl: device.url, printer: null, codeAccess: false, camera: { available: false, reason: 'offline', endpoint: '/api/workshop/camera' } });
   assert.deepEqual(device.seen.map(x => `${x.method} ${x.url}`), ['GET /hardware/health']);
   assert.equal(device.seen[0].headers.cookie, undefined, 'nothing from the request reaches the display');
   assert.equal(device.seen[0].headers.authorization, undefined);
@@ -159,7 +159,7 @@ test('GET /api/workshop/status through the appliance: online, extra fields dropp
 
   await device.close();
   const down = await (await fetch(`${base}/api/workshop/status`)).json();
-  assert.deepEqual(down, { online: false, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: null, portalUrl: device.url, printer: null, codeAccess: false });
+  assert.deepEqual(down, { online: false, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: null, portalUrl: device.url, printer: null, codeAccess: false, camera: { available: false, reason: 'offline', endpoint: '/api/workshop/camera' } });
 });
 
 test('the card links to the display itself and asks only the appliance for status', () => {
@@ -330,7 +330,7 @@ test('GET /api/workshop/status with a token: printer summary, sign-in from the t
   const printer = { state: 'printing', progress: 42, minutesLeft: 70, errorCode: null, access: 'ok' };
   const full = await get('/api/workshop/status');
   assert.equal(full.status, 200);
-  assert.deepEqual({ ...full.body, printer: { ...full.body.printer, seenAt: null } }, { online: true, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: true, portalUrl: device.url, printer: { ...printer, seenAt: null }, codeAccess: false });
+  assert.deepEqual({ ...full.body, printer: { ...full.body.printer, seenAt: null } }, { online: true, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: true, portalUrl: device.url, printer: { ...printer, seenAt: null }, codeAccess: false, camera: { available: false, reason: 'offline', endpoint: '/api/workshop/camera' } });
   assert.match(full.body.printer.seenAt, /^\d{4}-\d\d-\d\dT/);
 
   const before = device.seen.length;
@@ -593,4 +593,10 @@ test('the code token stays out of child processes, the repo and the browser; the
   const sw = fs.readFileSync(path.resolve(__dirname, '../app/public/sw.js'), 'utf8');
   assert.match(sw, /if\(req\.method!=='GET'\)return;/, 'the service worker leaves POSTs alone');
   assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)\)return;/, 'and never caches /api/');
+});
+
+
+test('camera health sources can be isolated from household hardware', async () => {
+  assert.deepEqual(await workshop.cameraStatus({ sources: [], fetchImpl: async () => assert.fail('camera probe') }),
+    { available: false, source: null, reason: 'offline' });
 });

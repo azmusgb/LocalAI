@@ -5,7 +5,8 @@
 // every building full and six crews. The page polls it only
 // while Agent World is on screen, one request at a time. Every source is cached here, so however many tabs poll:
 //   models   Ollama GET /api/ps at most once every 10 s, plus the mission model queue and what is running (both in memory);
-//   printer  the Workshop poller's last read (app/workshop.js): no request of its own to the display;
+//   printer  Pi Hub's designated Bambuddy record (app/pi-hub.js), cached 15 s with a 90 s source-age limit;
+//            without a household adapter, an injected Workshop poller remains available for isolated consumers;
 //   sheets   the GridCraft bridge's /health at most once every 15 s, plus GridCraft requests in flight;
 //   kiosk    the display's GET /hardware/health at most once a minute (counted from when a request starts, so a slow or
 //            failing display isn't asked again sooner), and the firmware version from the poller's last ok answer;
@@ -14,7 +15,7 @@
 //   crews    the live Claude sessions (claudeLive), at most 6, read at most once every 5 s; null when the board can't say.
 // A read that is already under way is shared, never doubled. A source that is down or not set up says so with null
 // (never 0, [] or a stale value shown as current). Nothing secret is in the answer: no token, no address, no host path.
-// The answer has no timestamps, so its ETag changes only when what it says changes, and a poll that changes nothing is
+// Printer seenAt preserves the original source time; its ETag changes when the reading changes. A poll that changes nothing is
 // a 304.
 const crypto = require('node:crypto');
 const { buildStreet, crewList } = require('./world-street');
@@ -61,6 +62,7 @@ function createWorld({
   ollamaUrl, fetchImpl,
   modelQueue = () => null, // () => {active, waiting} | null
   busy = () => null, // () => busy.activeWork(...) | null
+  printerRecord = null, // async () => Pi Hub's authoritative printer summary; null on an unavailable read
   printer = null, // the Workshop poller (createPrinterPoller): current(), firmware(), enabled
   bridgeHealth = async () => null, // () => {bridge, excel}
   gridcraftInFlight = () => 0,
@@ -91,7 +93,15 @@ function createWorld({
       busy: b ? { total: Array.isArray(b.active) ? b.active.length : 0, kinds } : null
     };
   }
-  function printerPart() {
+  async function printerPart() {
+    if (printerRecord) {
+      try {
+        const p = await printerRecord();
+        if (p) return p;
+      } catch { /* the household source is unavailable */ }
+      return { setUp: true, access: 'offline', state: null, progress: null, minutesLeft: null,
+        errorCode: null, source: 'bambuddy', via: 'pi-hub', seenAt: null };
+    }
     const setUp = !!printer?.enabled;
     let p = null;
     try { p = setUp ? printer.current() : null; } catch {}
@@ -125,8 +135,8 @@ function createWorld({
   }
 
   async function summary() {
-    const [list, health, k, st, cr] = await Promise.all([loaded(), sheets(), kioskPart(), street(), crewPart()]);
-    return { schema: 1, models: models(list), printer: printerPart(), sheets: sheetsPart(health), kiosk: k, street: st, crews: cr };
+    const [list, health, k, st, cr, p] = await Promise.all([loaded(), sheets(), kioskPart(), street(), crewPart(), printerPart()]);
+    return { schema: 1, models: models(list), printer: p, sheets: sheetsPart(health), kiosk: k, street: st, crews: cr };
   }
 
   async function api(req, res) {

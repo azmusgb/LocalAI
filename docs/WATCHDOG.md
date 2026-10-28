@@ -9,7 +9,7 @@ last 2 minutes before it counts, so one slow check never notifies anyone. When i
 |---|---|---|---|
 | A disk is 90% full or has under 15 GB free (Windows, Local AI's data, the Mac) | the appliance; the Mac's watcher for the Mac | yes | **Needs you**, after quiet hours |
 | The Workshop display hasn't answered for 10 minutes | the printer status poller (`app/workshop.js`) | yes | **Needs you**, after quiet hours |
-| The printer stopped with an error | the printer status poller | yes | **Failed**, even in quiet hours |
+| The printer stopped with an error | the printer status poller | yes | none: Pi Hub sends urgent print failures |
 | A print finished on its own | the printer status poller | no | **Finished** |
 | The printer camera bridge isn't running on the Mac | the Mac's watcher | yes | **Needs you**, after quiet hours |
 | The Mac hasn't checked in for 15 minutes | the appliance | yes | none: a Mac sleeps every night |

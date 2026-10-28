@@ -134,6 +134,17 @@ function createVoice(ctx) {
       json(res, 200, { ok: true });
     } catch (e) { json(res, 400, { error: String(e.message || e) }); }
   }
+  // Pi Hub consumes only Local AI's own attention. No household fetch, model call, weather or inventory read:
+  // the aggregate list must never become its own input through the display feed.
+  async function apiAttention(req, res) {
+    try {
+      const home = homeNeedsYou();
+      const needs = glance.needsYouSummary({ approvals: home.approvals.length, failed: home.failed.length });
+      const feed = displayFeed.buildFeed({ needs, watch: watchdog.list() });
+      json(res, 200, { schema: 1, source: 'localai', at: feed.at, cards: feed.cards });
+    } catch (e) { json(res, 500, { error: String(e.message || e) }); }
+  }
+
   async function apiDisplayFeed(req, res) {
     try { json(res, 200, await displayFeedNow({ withNeeds: displayAuthorized(req) })); } catch (e) { json(res, 500, { error: String(e.message || e) }); }
   }
@@ -394,7 +405,7 @@ function createVoice(ctx) {
     } catch (e) { say(e.statusCode === 413 ? 413 : 503, e.statusCode === 413 ? 'That was too long for me.' : VOICE_DOWN); }
   }
 
-  return { apiDisplayAlerts, apiDisplayApprovalDecide, apiDisplayApprovals, apiDisplayAsk, apiDisplayEvents, apiDisplayFeed, apiDisplayHeartbeat, apiDisplayNotify, apiDisplayPair, apiGlance, apiGlanceAsk, apiVoiceHome, apiWatchHeartbeat, voiceTimeZone };
+  return { apiAttention, apiDisplayAlerts, apiDisplayApprovalDecide, apiDisplayApprovals, apiDisplayAsk, apiDisplayEvents, apiDisplayFeed, apiDisplayHeartbeat, apiDisplayNotify, apiDisplayPair, apiGlance, apiGlanceAsk, apiVoiceHome, apiWatchHeartbeat, voiceTimeZone };
 }
 
 module.exports = { createVoice };

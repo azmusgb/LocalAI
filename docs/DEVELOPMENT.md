@@ -234,3 +234,9 @@ Use `--ds-*` tokens for new styles and the `LocalAIKit` helpers (`ui-kit` sectio
 - **Workflow:** branch, pull request, CI green (the workflows that apply), merge; then follow
   [Deploy › The normal path](DEPLOY.md#the-normal-path-merge-and-wait).
 - Design specs and plans for larger changes go in `docs/superpowers/specs/` and `docs/superpowers/plans/`.
+
+
+Household integration tests default Pi Hub, inventory, Bambuddy and camera probes to off in `spawn-server.cjs`;
+explicit test stand-ins override those defaults. `LOCALAI_WORKSHOP_CAMERA_PROBES=off` disables camera health probes
+for an isolated preview. Production keeps the existing probes unless explicitly disabled. Never run a synthetic
+printer-control test against the default household addresses.
