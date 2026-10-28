@@ -187,6 +187,16 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
     assert.equal(await page.locator('.lab-earlier').getAttribute('open'), null);
     assert.equal(await page.locator('.lab-earlier #lab-E-004').count(), 1);
   });
+  await check(`${name}: experiment details show parameter reconciliation table with capped volumetric flow`, async () => {
+    const details = page.locator('#lab-E-008 .lab-details');
+    await details.locator('summary').click();
+    assert.equal(await details.locator('.lab-recon__table').count(), 1);
+    const tableText = await details.locator('.lab-recon__table').innerText();
+    assert.match(tableText, /12A[\s\S]*250 mm\/s[\s\S]*147 mm\/s[\s\S]*Capped/);
+    assert.match(tableText, /12B[\s\S]*80 mm\/s[\s\S]*80 mm\/s/);
+    await shot(page, `recon-table-${name.toLowerCase()}.png`);
+    await details.locator('summary').click();
+  });
   await check(`${name}: each Needs you item has its button; the command waits under Run it on the Mac instead`, async () => {
     const row = id => page.locator('.lab-needs .list-row').filter({ has: page.locator(`[data-lab-open="${id}"]`) });
     assert.deepEqual(await row('E-008').locator('.lab-acts button').allInnerTexts(), ['Judge it', 'Add photos']);

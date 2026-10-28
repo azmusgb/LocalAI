@@ -2568,6 +2568,39 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 .lab-guard--attention {
   color: var(--ds-attention-text);
 }
+.lab-recon {
+  margin-top: 10px;
+}
+.lab-recon__scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.lab-recon__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ds-fs-1);
+  text-align: left;
+  line-height: 1.4;
+}
+.lab-recon__table th,
+.lab-recon__table td {
+  padding: 5px 6px;
+  border-top: 1px solid var(--ds-line-2);
+  vertical-align: top;
+}
+.lab-recon__table th {
+  color: var(--ds-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lab-recon__table td:first-child,
+.lab-recon__table th:first-child {
+  padding-left: 0;
+}
+.lab-recon__table td:last-child,
+.lab-recon__table th:last-child {
+  padding-right: 0;
+}
 .lab-earlier > summary {
   font-size: var(--ds-fs-3);
   font-weight: 600;

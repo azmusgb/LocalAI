@@ -79,8 +79,10 @@ flowchart LR
    - Dual-tab selector to compare identical plate positions (e.g. `Run 008-01 Tab 5A` vs `Run 007-01 Tab 5A`).
 2. **Interactive Wipe Curtain Slider**:
    - Implement an interactive drag handle on `.lab-wipe` (currently static side-by-side or stacked) allowing users to wipe between the reference specimen and current print.
-3. **Parameter Reconciliation Table**:
-   - Three-column visual breakdown: **Requested** vs **Sliced** vs **Observed** (e.g., speed `250 mm/s` requested → `147 mm/s` realized due to volumetric flow limit).
+3. **Parameter Reconciliation Table** (Completed & Shipped):
+   - Four-column visual breakdown: **Variant**, **Requested**, **Sliced**, and **Observed**.
+   - Accurately highlights when the slicer clamped settings below requested values (e.g., inner wall speed `250 mm/s` requested → `147 mm/s` realized due to volumetric flow limit) with an attention-toned `<span class="badge badge--attention">Capped</span>` badge.
+   - Observed column displays physical evidence verdicts (`Accepted`, `Not good enough`, specific defects, strip grades, or `Pending inspection` during printing). Responsive scrollable table (`.lab-recon__scroll`) works smoothly on both 390px mobile viewports and 1440px desktop cards.
 4. **AI Observation Confidence Badges**:
    - Display AI detection confidence (`94% clean`, `83% faint banding`) with visual hierarchy distinguishing confirmed observations from pending review items.
 
