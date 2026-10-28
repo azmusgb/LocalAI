@@ -4,7 +4,8 @@
 // runs down it), the lamps are lit and the cabinet's light blinks green. Not set up: the screen dark, lamps off, still.
 // Down: the screen dark and boarded, no light. drawStill draws what doesn't move; drawLive (t in ms) the glow.
 (function(root){'use strict';
-const cut=s=>s.length>60?s.slice(0,59)+'…':s;
+const C=typeof module==='object'&&module.exports?require('./common.js'):root.LocalAIStreetCommon;
+const cut=C.cut;
 function state(world){
  const k=world&&world.kiosk;
  if(!k)return{setUp:false,online:null,firmware:null,down:true};
@@ -56,6 +57,8 @@ function drawLive(c,s,t){
  c.fillStyle=Math.floor(t/800)%2?'#5bd37a':'#2a5a3a';c.beginPath();c.arc(20,280,1.8,0,TAU);c.fill();
 }
 // Online breathes (a slow glow, a sheen, the blinking cabinet light), so it animates; dark or down is still.
-const def={id:'kiosk',width:140,state,stillKey,chip,drawStill,drawLive,animates:on};
+// At night, only while online: the two flood lamps and the screen (not set up or down, it stands dark).
+const lights=s=>on(s)&&!s.hidden?[C.lamp(30,111),C.lamp(90,111),C.light('window','#7fd3ff',[SX,SY,SW,SH])]:[];
+const def={id:'kiosk',width:140,state,stillKey,chip,drawStill,drawLive,animates:on,lights};
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

@@ -44,6 +44,11 @@ export default [
     rules: correctness,
   },
   {
+    // Main Street's building files load common.js with require() under Node (their CommonJS tail), and with a global in the browser.
+    files: ['app/public/street/*.js'],
+    languageOptions: { globals: { require: 'readonly' } },
+  },
+  {
     files: ['**/*.mjs'],
     languageOptions: { ecmaVersion: 2024, sourceType: 'module', globals: { ...globals.node } },
     rules: correctness,

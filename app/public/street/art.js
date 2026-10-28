@@ -3,7 +3,7 @@
 // lifted from that file's SVG. Each helper only draws: it takes (ctx, ...) in scene units, keeps no state, and leaves
 // the context as it found it (save/restore). The scene is 360 units tall and the ground line is y = 300; a building
 // draws in its own box. Everything is vector at full resolution: never pixelated, never smoothing turned off.
-// Budget: tests/budgets.test.cjs (street/*.js 48 KB in all, 8 KB each, gzipped), so keep helpers generic and add
+// Budget: tests/budgets.test.cjs (street/*.js 60 KB in all, 8 KB each, gzipped), so keep helpers generic and add
 // parameters rather than per-building code.
 (function(root){'use strict';
 const P=Object.freeze({
@@ -15,11 +15,12 @@ const P=Object.freeze({
  spill:'#ffb04a',molten0:'#fff2b0',molten1:'#ff8a2a',pour:'#ffcf6a',ray:'#ffd38a',lamp:'#fff4cc',
  crate0:'#e2ad6e',crate1:'#a5723e',crateLine:'#7a5228',belt:'#2b2f36',
  walk0:'#c4c9d1',walk1:'#9aa1ac',joint:'#8a919c',curb:'#e3e6ea',road0:'#4a5361',road1:'#363d48',lane:'#f2d67a',
- pants:'#2f3a52',vest:'#ff7e46',stripe:'#f3e45a',skin:'#e9b88f',hat:'#ffc640',brim:'#e3a51b',paper:'#d9e1ea',ink:'#7a8696',
+ pants:'#2f3a52',vest:'#ff7e46',stripe:'#f3e45a',skin:'#e9b88f',hat:'#ffc640',brim:'#e3a51b',cue:'#ffc640',paper:'#d9e1ea',ink:'#7a8696',
  smoke0:'#f1f3f6',smoke1:'#d3d8df',bush0:'#4f8a55',bush1:'#5f9e64',bush2:'#6aaa6e',pole:'#3a404a'});
 // Brick tones: [mortar, long brick, short brick, second short, second long, highlight]. red and side are the art bar's.
 const TONES={red:['#8f3a46','#b4505e','#a44654','#a94a58','#bb5866','#d77b88'],side:['#5e222c','#76303b','#6c2b35','#702e38','#7a333e','#8c4450'],
- sand:['#a0825e','#cfae84','#c19f76','#c6a47b','#d6b68c','#ead2ae'],slate:['#4c5868','#6d7a8c','#64717f','#687586','#748294','#97a5b6']};
+ sand:['#a0825e','#cfae84','#c19f76','#c6a47b','#d6b68c','#ead2ae'],slate:['#4c5868','#6d7a8c','#64717f','#687586','#748294','#97a5b6'],
+ stone:['#8f8a82','#c9c3b8','#bcb6ab','#c2bcb1','#d1cbc0','#ece8e0'],clay:['#6e3f27','#a86440','#99583a','#9f5e3c','#b26e48','#d0926a']};
 const ROAD=327,CURB=322,GROUND=300;
 function rgba(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16},${n>>8&255},${n&255},${a})`}
 function rr(c,x,y,w,h,r){if(c.roundRect)c.roundRect(x,y,w,h,r);else c.rect(x,y,w,h)}
@@ -117,6 +118,13 @@ function lamp(c,x,y,on){
  c.save();box(c,x-1,y-10,2,10,P.frame);c.fillStyle=P.frame;poly(c,[[x-4.5,y],[x+4.5,y],[x+2.5,y-4],[x-2.5,y-4]]);c.fill();
  c.fillStyle=on?P.lamp:'#5b6170';c.beginPath();c.ellipse(x,y,3.4,1.2,0,0,Math.PI*2);c.fill();if(on)glow(c,x,y+2,9,6,P.lamp,.45);c.restore();
 }
+// A needs-you cue over (x, y): an amber speech bubble with an "!", scaled by k (1 by default). Steady unless the caller
+// varies k, so it can sit in a still.
+function cue(c,x,y,k){
+ c.save();c.translate(x,y);if(k&&k!==1)c.scale(k,k);c.shadowColor='rgba(0,0,0,.3)';c.shadowBlur=2;box(c,-8,-9,16,14,P.cue,6);
+ poly(c,[[-5,4],[0,4],[-7,10]]);c.fill();c.shadowColor='transparent';c.fillStyle='#7a3a10';c.fillRect(-1.3,-6.5,2.6,5.5);
+ c.beginPath();c.arc(0,1.4,1.4,0,Math.PI*2);c.fill();c.restore();
+}
 // A crate s units wide: the art bar's warm wood gradient and its cross battens.
 function crate(c,x,y,s){
  c.save();const h=s*.93,k=s/30;box(c,x,y,s,h,lin(c,0,y,0,y+h,[[0,P.crate0],[1,P.crate1]]),3*k);
@@ -159,10 +167,33 @@ function skyline(c,x,w,layer){
   c.rect(i*step+(step-bw)*r,top,bw,GROUND-top)}
  c.fill();if(L){c.fillStyle=lin(c,0,140,0,GROUND,[[0,rgba('#9fbfdf',0)],[1,rgba(P.haze,.85)]]);c.fillRect(x,140,w,GROUND-140)}c.restore();
 }
+// A car, nose right, its middle at (x, y) and its wheels on y + 14 (the Repair Garage's car on the street): body,
+// cabin glass, lamps, wheels turned by o.wheel radians. o.hazard 0..1 lights the amber corner lamps and their glow.
+function car(c,x,y,o){
+ o=o||{};const h=o.hazard||0,T=Math.PI*2;c.save();softShadow(c,x,y+14,40,5);c.translate(x,y);
+ c.fillStyle=o.color||'#3a7bd5';poly(c,[[-36,9],[-36,-1],[-24,-4],[-16,-17],[12,-17],[22,-4],[35,-2],[36,9]]);c.fill();
+ c.fillStyle=lin(c,0,-17,0,9,[[0,'rgba(255,255,255,.3)'],[1,'rgba(0,0,0,.25)']]);c.fill();
+ c.fillStyle='rgba(205,230,245,.85)';poly(c,[[-14,-14],[-3,-14],[-3,-5],[-21,-5]]);c.fill();poly(c,[[0,-14],[11,-14],[18,-5],[0,-5]]);c.fill();
+ c.fillStyle='#ffe9a8';c.fillRect(32,0,4,3);c.fillStyle='#1d2a3c';c.fillRect(-2,-4,1,12);
+ for(const k of [-1,1]){const lx=k*34.5;c.fillStyle=h>0?rgba(P.hat,.5+.5*h):'#c9772a';c.fillRect(lx-1.5,-1,3,3);if(h>0)glow(c,lx,.5,12,8,'#ffb02e',.75*h)}
+ for(const wx of [-22,22]){c.fillStyle='#1e2024';c.beginPath();c.arc(wx,10,7,0,T);c.fill();c.fillStyle=P.steel1;c.beginPath();c.arc(wx,10,3,0,T);c.fill();
+  c.strokeStyle=P.steel3;c.lineWidth=1;c.beginPath();for(let i=0;i<3;i++){const a=(o.wheel||0)+i*T/3;c.moveTo(wx,10);c.lineTo(wx+Math.cos(a)*5.5,10+Math.sin(a)*5.5)}c.stroke()}
+ c.restore();
+}
+// A warning light on a wall bracket (Main Street's needs-you beacon), its bracket plate fixed to the façade at (x, y): a
+// steel plate and arm holding an amber dome (o.color) with glass light; o.glow 0..1 its halo and side rays.
+function beacon(c,x,y,o){
+ o=o||{};const g=o.glow||0,col=o.color||'#ffb02e',d=y-15;c.save();softShadow(c,x+2,y+4,6,3);
+ box(c,x-4,y-3,8,14,P.steel3,2);c.fillStyle=P.steel1;c.fillRect(x-.8,y,1.6,1.6);c.fillRect(x-.8,y+7,1.6,1.6);steel(c,x-1.6,d,3.2,y-d);steel(c,x-10,d-1,20,5);
+ c.fillStyle=lin(c,x-8,0,x+8,0,[[0,rgba(col,.75)],[.4,P.lamp],[1,col]]);c.beginPath();c.moveTo(x-8,d-1);c.lineTo(x-8,d-8);c.arc(x,d-8,8,Math.PI,0);c.lineTo(x+8,d-1);c.closePath();c.fill();
+ glass(c,x-8,d-16,16,15);box(c,x-9,d-5,18,2,P.steel2,1);
+ if(g>0){glow(c,x,d-7,40,26,col,.6*g);rays(c,[[[x-5,d-9],[x-44,d-22],[x-44,d+4]],[[x+5,d-9],[x+44,d-22],[x+44,d+4]]],col,.3*g)}
+ c.restore();
+}
 // A texture helper (brick, corrugated…) laid at half scale in a scene rect: bricks and ribs as dense as the art bar's.
 function tex(c,fn,x,y,w,h,o){c.save();c.scale(.5,.5);fn(c,x*2,y*2,w*2,h*2,o&&o.skew?{...o,skew:o.skew*2}:o);c.restore()}
 const grad=(c,x0,y0,x1,y1,a,b)=>lin(c,x0,y0,x1,y1,[[0,a],[1,b]]);
-const api={palette:P,box,poly,grad,tex,brick,brickSide,corrugated,steel,glass,glow,rays,softShadow,person,plank,boards,lamp,crate,smoke,fire,sidewalk,road,skyline};
+const api={palette:P,box,poly,grad,tex,brick,brickSide,corrugated,steel,glass,glow,rays,softShadow,person,plank,boards,lamp,cue,crate,car,beacon,smoke,fire,sidewalk,road,skyline};
 root.LocalAIStreetArt=api;
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

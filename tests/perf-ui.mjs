@@ -69,6 +69,35 @@ await check('Main Street strip stays within its frame budget', async () => {
   await ctx.close();
 });
 
+// The flood (plan Review Focus 1) at night: 10 asks and 10 failures in every street key, every other building busy and
+// the Yard's crews at work, at 21:00 local time, so every frame draws the night pass (sky, wash, light layers) on top of
+// the beacons, hazards and moving buildings. Same budget: under 8 ms a frame at 390 px with a 3x screen.
+const many = (k, status) => Array.from({ length: 10 }, (_, i) => ({ id: `${k}-${status}-${i}`, title: 'Job ' + i, status, startedAt: Date.now() - 60000 }));
+const FLOOD = {
+  ...BUSY,
+  crews: [{ id: 'k1', title: 'Fix the build', state: 'working', lastAction: 'Edit' }, { id: 'k2', title: 'Docs', state: 'working', lastAction: 'Read' }, { id: 'k3', title: 'Plan', state: 'waiting', lastAction: 'Ask' }],
+  street: Object.fromEntries(['chat', 'images', 'missions', 'garage', 'sheets', 'clock'].map(k => [k, { running: [{ id: k + '-r', title: 'Job', status: 'running', startedAt: Date.now() - 60000 }], waiting: 1, needsYou: many(k, 'awaiting_approval'), failedUnseen: many(k, 'failed'), recent: [] }]))
+};
+await check('Main Street strip with the flood of asks at night stays within its frame budget', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, serviceWorkers: 'block' });
+  await ctx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); localStorage.setItem('localai.devTools', '1'); } catch {} });
+  await ctx.route(u => u.pathname === '/api/world', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(FLOOD) }));
+  const page = await ctx.newPage();
+  await page.clock.setFixedTime(new Date(2026, 9, 28, 21, 0));
+  await page.goto(base + '/#home', { waitUntil: 'domcontentloaded' });
+  const cdp = await ctx.newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: SLOWDOWN });
+  await page.waitForSelector('#homeStreet .street:not([hidden])', { timeout: 10000 });
+  await page.waitForTimeout(3000);
+  const s = await page.evaluate(() => window.LocalAIStreet.stats());
+  assert.equal(s.night, true, 'the street is at night');
+  assert.ok(s.beacons >= 1 && s.stalled >= 1, `the buildings in view show their asks: beacons ${s.beacons}, stalled ${s.stalled}`);
+  assert.ok(s.frames > 0, 'the street drew frames');
+  assert.ok(s.avgMs < 8, `avg frame ${s.avgMs} ms over ${s.frames} frames`);
+  console.log(`  Main Street flood at night: ${s.frames} frames, avg ${s.avgMs} ms at ${SLOWDOWN}x slowdown, ${s.beacons} beacons, ${s.stalled} stalled`);
+  await ctx.close();
+});
+
 await browser.close();
 if (failures.length) { console.error(`\n${failures.length} performance check(s) failed`); process.exit(1); }
 console.log('\nAll performance checks passed');

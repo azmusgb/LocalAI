@@ -21,8 +21,9 @@ test('busy: a figure per running chat, up to 3; a waiting one adds the badge, no
 
 test('a chat that needs you shows a figure with an amber bubble even with none running', () => {
   const r = draw(chat, world(0, 0, 1));
-  assert.equal(r.live.person, 1);
-  assert.ok(fills(r.liveRec).includes('#ffc640'), 'the amber bubble');
+  assert.equal(r.still.person, 1, 'the figure is in the still');
+  assert.ok(fills(r.stillRec).includes('#ffc640'), 'the amber bubble is in the still');
+  assert.deepEqual(r.live, {}); assert.deepEqual(r.liveRec.log, [], 'a needs-you-only live frame is empty');
 });
 
 test('quiet and down: no one, no light; down is boarded', () => {
@@ -55,4 +56,12 @@ test('a busy frame draws only what moves', () => {
   assert.equal(r.live.brick || 0, 0); assert.equal(r.live.glow || 0, 0); assert.equal(r.live.rays || 0, 0);
   assert.equal(r.still.person || 0, 0, 'people are not in the still');
   assert.ok(art.palette.lamp);
+});
+
+test('stills are cached by stillKey: busy and needs-you-only keys differ, and only the ask still holds the cue', () => {
+  const busy = draw(chat, world(1)), ask = draw(chat, world(0, 0, 1)), both = draw(chat, world(1, 0, 1));
+  assert.notEqual(chat.stillKey(busy.s), chat.stillKey(ask.s));
+  assert.equal(chat.stillKey(both.s), chat.stillKey(busy.s), 'running with asks is the busy still');
+  assert.equal(ask.still.person, 1); assert.ok(fills(ask.stillRec).includes('#ffc640'), 'the ask still has the cue');
+  for (const r of [busy, both]) { assert.equal(r.still.person, undefined, 'a busy still has no static people'); assert.ok(!fills(r.stillRec).includes('#ffc640')); }
 });

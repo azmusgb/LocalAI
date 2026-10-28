@@ -10,16 +10,17 @@ const src = o => Object.assign({ running: [], waiting: 0, needsYou: [], failedUn
 const street = o => ({ chat: src(), images: src(), missions: src(), garage: src(), sheets: src(), clock: src(), ...o });
 const fits = c => { assert.ok(c.detail.length <= 60); assert.ok(c.detail.endsWith('…')); };
 
-for (const [id, name] of [['chat', 'Chat Café'], ['images', 'Image Studio']]) {
+for (const [id, name, width, roof] of [['chat', 'Chat Café', 240], ['images', 'Image Studio', 240], ['missions', 'Missions HQ', 260, 90], ['garage', 'Repair Garage', 240, 160], ['clock', 'Clock Tower', 140, 60]]) {
   test(id + ': state and chip', () => {
     const d = load(id);
-    assert.equal(d.id, id); assert.equal(d.width, 240);
+    assert.equal(d.id, id); assert.equal(d.width, width);
+    if (roof) { assert.equal(d.roof, roof); assert.equal(typeof d.lights, 'function'); } // lights: street-night.test.cjs
     const busy = d.state({ street: street({ [id]: src({ running: [item(1), item(2), item(3)], waiting: 47 }) }) });
-    assert.deepEqual(busy, { running: 3, more: 47, needsYou: 0, failed: 0, down: false });
+    assert.deepEqual(busy, { running: 3, more: 47, needsYou: 0, failed: 0, first: null, firstRun: item(1), down: false });
     assert.deepEqual(d.chip(busy), { title: name, detail: '50 running', tone: 'busy' });
     const need = d.state({ street: street({ [id]: src({ running: [item(1)], needsYou: [item(2), item(3)], failedUnseen: [item(4)] }) }) });
     assert.equal(need.failed, 1);
-    assert.deepEqual(d.chip(need), { title: name, detail: '1 running · 2 need you', tone: 'attention' });
+    assert.deepEqual(d.chip(need), { title: name, detail: '1 running · 2 need you · 1 failed', tone: 'attention' });
     const quiet = d.state({ street: street() });
     assert.deepEqual(d.chip(quiet), { title: name, detail: 'Quiet', tone: 'quiet' });
     const down = d.state({ street: null });
@@ -38,9 +39,17 @@ test('sheets: state and chip', () => {
   const d = load('sheets');
   assert.equal(d.width, 220);
   const mk = (sheets, st) => d.state({ sheets, street: st || street() });
+  const quiet0 = () => mk({ bridge: true, excel: true, inFlight: 0 });
   const busy = mk({ bridge: true, excel: true, inFlight: 1 });
-  assert.deepEqual(busy, { working: true, bridge: true, excel: true, down: false });
+  assert.deepEqual(busy, { working: true, bridge: true, excel: true, needsYou: 0, failed: 0, first: null, down: false });
   assert.equal(d.chip(busy).detail, 'Working');
+  const asks = mk({ bridge: true, excel: true, inFlight: 0 }, street({ sheets: src({ needsYou: [item(1)], failedUnseen: [item(2)] }) }));
+  assert.deepEqual(d.chip(asks), { title: 'Spreadsheets Office', detail: 'Ready · 1 need you · 1 failed', tone: 'attention' });
+  // first: the ask the engine's beacon and stalled car key their pulse on (needs you before a failure); not in the still key.
+  assert.deepEqual(asks.first, item(1));
+  assert.deepEqual(mk({ bridge: true, excel: true, inFlight: 0 }, street({ sheets: src({ failedUnseen: [item(2)] }) })).first, item(2));
+  assert.equal(d.stillKey(asks), d.stillKey(quiet0()));
+  assert.deepEqual(d.chip(mk({ bridge: true, excel: true, inFlight: 1 }, street({ sheets: src({ failedUnseen: [item(2)] }) }))), { title: 'Spreadsheets Office', detail: 'Working · 1 failed', tone: 'attention' });
   assert.equal(mk({ bridge: true, excel: true, inFlight: 0 }, street({ sheets: src({ running: [item(1)] }) })).working, true);
   const quiet = mk({ bridge: true, excel: true, inFlight: 0 });
   assert.deepEqual(d.chip(quiet), { title: 'Spreadsheets Office', detail: 'Ready', tone: 'quiet' });
@@ -124,16 +133,35 @@ test('kiosk: state and chip', () => {
   assert.notEqual(d.stillKey(on), d.stillKey(off));
 });
 
+// The Claude Yard isn't a work building: its chip counts Claude sessions (world.crews), never lists them.
+test('yard: state and chip', () => {
+  const d = load('yard');
+  assert.equal(d.width, 260); assert.equal(d.roof, 180);
+  const crews = (w, q, title) => ({ crews: [...Array.from({ length: w }, (_, i) => ({ id: 'k' + i, title: title || 'S' + i, state: 'working' })), ...Array.from({ length: q }, (_, i) => ({ id: 'q' + i, title: title || 'Q' + i, state: 'waiting' }))] });
+  for (const [w, q, detail, tone] of [[2, 1, '2 working · 1 waiting', 'busy'], [1, 0, '1 working', 'busy'], [0, 3, '3 waiting', 'quiet'], [0, 0, 'No sessions', 'quiet']])
+    assert.deepEqual(d.chip(d.state(crews(w, q))), { title: 'Claude Yard', detail, tone }, `${w} working, ${q} waiting`);
+  assert.deepEqual(d.chip(d.state({ crews: null })), { title: 'Claude Yard', detail: 'No sessions', tone: 'quiet' });
+  const c = d.chip(d.state(crews(1, 1, LONG)));
+  assert.ok(!c.detail.includes('xxx') && !c.title.includes('xxx'), 'a session title never reaches the chip');
+  assert.ok(c.detail.length <= 60);
+  assert.equal(d.item(d.state(crews(1, 0))), null);
+  assert.notEqual(d.stillKey(d.state(crews(1, 0))), d.stillKey(d.state(crews(0, 0))));
+});
+
 // animates(state): each building says whether its live layer moves. The engine stops its loop when no building on view
 // animates, so a building that says false must draw the same live frame at any t.
 const kit = require('./street-draw-kit.cjs');
 const pr = o => ({ printer: Object.assign({ setUp: true, access: 'ok', state: 'idle', progress: null, minutesLeft: null, errorCode: null }, o) });
 const ANIM = {
-  chat: [[{ street: street({ chat: src({ running: [item(1)] }) }) }, true], [{ street: street({ chat: src({ needsYou: [item(1)] }) }) }, true], [{ street: street() }, false], [{ street: null }, false]],
+  chat: [[{ street: street({ chat: src({ running: [item(1)] }) }) }, true], [{ street: street({ chat: src({ needsYou: [item(1)] }) }) }, false], [{ street: street() }, false], [{ street: null }, false]],
   images: [[{ street: street({ images: src({ running: [item(1)] }) }) }, true], [{ street: street() }, false], [{ street: null }, false]],
+  missions: [[{ street: street({ missions: src({ running: [item(1)] }) }) }, true], [{ street: street({ missions: src({ waiting: 2 }) }) }, true], [{ street: street({ missions: src({ needsYou: [item(1)] }) }) }, false], [{ street: street() }, false], [{ street: null }, false]],
+  garage: [[{ street: street({ garage: src({ running: [item(1)] }) }) }, true], [{ street: street({ garage: src({ needsYou: [item(1)] }) }) }, false], [{ street: street() }, false], [{ street: null }, false]],
+  clock: [[{ street: street({ clock: src({ running: [item(1)] }) }) }, true], [{ street: street({ clock: src({ needsYou: [item(1)] }) }) }, false], [{ street: street() }, false], [{ street: null }, false]],
   sheets: [[{ sheets: { bridge: true, excel: true, inFlight: 1 }, street: street() }, true], [{ sheets: { bridge: true, excel: true, inFlight: 0 }, street: street() }, false], [{ sheets: { bridge: true, excel: false, inFlight: 0 }, street: street() }, false], [{ sheets: null, street: null }, false]],
   foundry: [[{ models: { loaded: [{ name: 'm' }], queue: { waiting: 2 } } }, true], [{ models: { loaded: [], queue: { waiting: 0 } } }, false], [{ models: null }, false]],
   workshop: [[pr({ state: 'printing', progress: 40 }), true], [pr({ state: 'error' }), true], [pr({}), false], [pr({ state: 'paused', progress: 30 }), false], [pr({ access: null }), false], [pr({ setUp: false, access: null }), false], [pr({ access: 'denied' }), false], [{ printer: null }, false]],
+  yard: [[{ crews: [{ id: 'a', title: 'A', state: 'working' }] }, true], [{ crews: [{ id: 'a', title: 'A', state: 'waiting' }] }, false], [{ crews: [] }, false], [{ crews: null }, false]],
   kiosk: [[{ kiosk: { setUp: true, online: true, firmware: '1' } }, true], [{ kiosk: { setUp: false, online: null } }, false], [{ kiosk: { setUp: true, online: false } }, false], [{ kiosk: null }, false]],
 };
 for (const [id, cases] of Object.entries(ANIM)) {

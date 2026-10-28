@@ -67,6 +67,10 @@ function callAll(ctx, t) {
   A.lamp(ctx, 20, 40, true);
   A.lamp(ctx, 20, 40, false);
   A.person(ctx, 40, 300, { prop: 'brush', reach: [4, -6], tip: '#ff0000' });
+  A.car(ctx, 100, 318, { color: '#3a7bd5', hazard: t % 1, wheel: t * 3 });
+  A.car(ctx, 100, 336, {});
+  A.beacon(ctx, 120, 106, { glow: t % 1, color: '#ffb02e' });
+  A.beacon(ctx, 120, 106, {});
 }
 
 test('every helper draws without throwing', () => {
@@ -104,4 +108,19 @@ test('person draws every prop', () => {
     counts[p] = log.length;
   }
   for (const p of ['clipboard', 'wrench', 'tablet', 'hammer', 'brush']) assert.ok(counts[p] > counts.null, `${p} draws more than no prop`);
+});
+
+// The street's traffic: a car (nose right, y its middle, wheels on y + 14) whose hazard lamps glow with hazard 0..1 and
+// whose wheels turn by wheel radians, and a roof beacon standing on y whose halo grows with glow 0..1.
+test('car and beacon draw, and their lights follow hazard and glow', () => {
+  const lights = (fn, o) => { const { ctx, log } = fakeCtx(); fn(ctx, 100, 300, o); return log.filter(m => m === 'createRadialGradient').length; };
+  assert.ok(lights(A.car, { hazard: 1 }) > lights(A.car, { hazard: 0 }), 'hazard lamps glow when on');
+  assert.ok(lights(A.beacon, { glow: 1 }) > lights(A.beacon, { glow: 0 }), 'the beacon has a halo when it glows');
+  for (const fn of [A.car, A.beacon]) {
+    const { ctx, log, sets } = fakeCtx();
+    fn(ctx, 0, 0, { color: '#c0392b', hazard: 0.5, glow: 0.5, wheel: 1 });
+    assert.ok(log.includes('fill'));
+    assert.equal(log.filter(m => m === 'save').length, log.filter(m => m === 'restore').length);
+    assert.deepEqual(sets.filter(([k, v]) => k === 'imageSmoothingEnabled' && v === false), []);
+  }
 });

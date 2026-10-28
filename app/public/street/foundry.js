@@ -7,7 +7,8 @@
 // standing still in the door (animates is false).
 // Down: windows and door boarded, no light. drawStill draws what doesn't move; drawLive (t in ms) draws the rest.
 (function(root){'use strict';
-const cut=s=>s.length>60?s.slice(0,59)+'…':s;
+const C=typeof module==='object'&&module.exports?require('./common.js'):root.LocalAIStreetCommon;
+const cut=C.cut;
 function state(world){
  const m=world&&world.models,list=m&&Array.isArray(m.loaded)?m.loaded:null;
  if(!list)return{model:null,loaded:0,queued:(m&&m.queue&&m.queue.waiting)||0,down:true};
@@ -136,6 +137,8 @@ function drawLive(c,s,t){
  A.person(c,X(664),300,{prop:'clipboard',scale:.56,pose:on?.04*Math.sin(t/700):0});// a quiet worker stands still
  c.restore();
 }
-const def={id:'foundry',width:320,state,stillKey,chip,drawStill,drawLive,animates:busy};
+// At night: the door lamp; with a model loaded, the hall's window and the furnace spilling out of the door.
+const lights=s=>s.down||s.hidden?[]:[C.lamp(X(590),Y(262)),...busy(s)?[C.light('window','#ffb04a',WIN),C.light('glow','#f0682a',[X(618),Y(308),96*KX,144*KY])]:[]];
+const def={id:'foundry',width:320,state,stillKey,chip,drawStill,drawLive,animates:busy,lights};
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);
