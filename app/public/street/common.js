@@ -31,6 +31,10 @@ function runsBuilding({id,key,title,width,roof}){
  const animates=s=>!s.down&&s.running+s.more>0;
  return{id,width,roof,state,stillKey,chip,animates,item};
 }
-const api={cut,count,asks,runsBuilding};
+// Night lights (night.js; a def's lights(state)): a wall lamp's bulb at (x, y) as art.js lamp hangs it, and any light
+// over a rect [x, y, w, h] in building coordinates.
+const lamp=(x,y)=>({x:x-4,y:y-2,w:8,h:4,color:'#fff4cc',kind:'lamp'});
+const light=(kind,color,[x,y,w,h])=>({x,y,w,h,color,kind});
+const api={cut,count,asks,runsBuilding,lamp,light};
 if(typeof module==='object'&&module.exports)module.exports=api;else root.LocalAIStreetCommon=api;
 })(typeof window!=='undefined'?window:globalThis);

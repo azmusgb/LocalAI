@@ -81,6 +81,8 @@ function drawLive(c,s,t){
 // Only working moves (the dim office's clerk is in the still).
 const animates=s=>!s.down&&s.working;
 // The needs-you beacon (street traffic) hangs on the pilaster beside the glass doors.
-const def={id:'sheets',width:220,state,stillKey,chip,drawStill,drawLive,animates,beacon:{x:191,y:262}};
+// At night: the door lamp; while the office is lit (working, or Excel shut), its two windows.
+const lights=s=>s.down||s.hidden?[]:[C.lamp(126,232),...s.working||dimLit(s)?[C.light('window','#ffd59a',[RX,RY,RW,RH]),C.light('window','#ffd59a',[GX,GY,GW,GH])]:[]];
+const def={id:'sheets',width:220,state,stillKey,chip,drawStill,drawLive,animates,lights,beacon:{x:191,y:262}};
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

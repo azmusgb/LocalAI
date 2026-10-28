@@ -1,7 +1,8 @@
 // Main Street: window.LocalAIStreet. home.js loads street/*.js (its STREET_MODS) the first time Home shows the street.
 // Each building file registers one def: {id, width, state(world), stillKey?(state), drawStill(ctx, state, env),
 // drawLive(ctx, state, t, env), animates?(state), chip(state) -> {title, detail, tone}, roof?, open?(item), item?(state), stamp?(state),
-// beacon?: {x, y}} (where traffic.js hangs the needs-you light; default {x: width - 22, y: 200}). animates
+// beacon?: {x, y}, lights?(state)} (beacon: where traffic.js hangs the needs-you light, default {x: width - 22, y: 200};
+// lights: what glows at night, night.js). animates
 // says whether drawLive moves for that state (a def without it counts as moving); when it is false drawLive must draw
 // the same at any t. width is in scene units; the
 // scene is 360 units tall with the ground line at y = 300, and a building draws in its own box x in [0, width]. env is
@@ -16,6 +17,9 @@
 // screen, the page visible, motion allowed and some building in view animates; otherwise it draws one frame and stops
 // (a world, resize, scroll or the strip showing again restarts it). Under reduced motion one frame (t = 0) is drawn per
 // world or resize.
+// Night (night.js, when loaded): env.night is 19:00-07:00, read on mount and watched (one shared timer); a change re-keys
+// every still and redraws once. A night still also caches the building's light layer; a night frame draws night.js's sky,
+// the far city faded, then over everything its dim wash and, added, each light layer and the traffic's glows.
 // A chip click calls onOpen(def.id, def.item?.(state) ?? null); a state with hidden:true takes its building off the street (layout, drawing, chip) until a world shows it again. A shared poller (below) feeds setWorld from /api/world. setWorld(world) recomputes each state and the chips (and unhides the strip); stats() is a test and perf hook.
 (function(root){'use strict';
 const ORDER=Object.freeze(['chat','images','missions','garage','sheets','clock','foundry','workshop','kiosk','yard']);
@@ -69,18 +73,18 @@ function sync(){const a=shown();if(a&&!was)poll();was=a}
 function onVis(){sync()}
 function start(){if(timer)return;timer=setInterval(()=>{if(shown())poll()},10000);root.document.addEventListener('visibilitychange',onVis)}
 function stop(){clearInterval(timer);clearTimeout(later);timer=later=0;was=false;root.document.removeEventListener('visibilitychange',onVis)}
-function stats(){const T=root.LocalAIStreetTraffic;return{frames:st.frames,avgMs:Math.round(st.avg*1000)/1000,stills:st.stills,...(T?T.stats():{cars:0,beacons:0,stalled:0,beaconAt:[]})}}
+function stats(){const T=root.LocalAIStreetTraffic,N=root.LocalAIStreetNight;return{frames:st.frames,avgMs:Math.round(st.avg*1000)/1000,stills:st.stills,night:!!N&&N.isNight(),...(T?T.stats():{cars:0,beacons:0,stalled:0,beaconAt:[]})}}
 
 // What a building's chip opens: its def's item for the state (null for a def with none, or one that throws).
 function itemOf(d){try{return d.item&&d.item(states.get(d.id)||{})||null}catch(e){warnOnce(d.id,'item',e);return null}}
 function animates(d,s){try{return d.animates?!!d.animates(s):typeof d.drawLive==='function'}catch(e){warnOnce(d.id,'animates',e);return true}}
 function mount(el,opts){
- opts=opts||{};const A=root.LocalAIStreetArt,doc=el.ownerDocument;
+ opts=opts||{};const A=root.LocalAIStreetArt,N=root.LocalAIStreetNight,doc=el.ownerDocument;
  const box=doc.createElement('div'),cv=doc.createElement('canvas'),chipsEl=doc.createElement('div');
  box.className='street';box.setAttribute('role','region');box.setAttribute('aria-label','Agent World street');cv.className='street__canvas';cv.setAttribute('aria-hidden','true');chipsEl.className='street__chips';box.hidden=true;box.append(cv,chipsEl);el.append(box);
  const c=cv.getContext('2d'),mq=root.matchMedia?root.matchMedia('(prefers-reduced-motion: reduce)'):null,reduce=()=>!!(mq&&mq.matches);
  // moving: some building drawn in the last frame animates (true until a frame says otherwise).
- let list=[],xs=new Map(),zoom=1,dpr=1,streetW=0,inView=false,raf=0,last=0,userAt=-Infinity,dead=false,drag=null,sig='',moving=true;
+ let list=[],xs=new Map(),zoom=1,dpr=1,streetW=0,inView=false,raf=0,last=0,userAt=-Infinity,dead=false,drag=null,sig='',moving=true,nt=!!N&&N.now();
  const t0=performance.now(),stills=new Map(),chips=new Map(),T=root.LocalAIStreetTraffic?.make(),at=()=>list.map(d=>({d,s:states.get(d.id)||{},x:xs.get(d.id)/zoom}));
  const fits=()=>streetW<=box.clientWidth+1;
  // Buildings left to right, each centred in a slot at least SLOT CSS px wide so its chip has room; when the street
@@ -117,14 +121,15 @@ function mount(el,opts){
  }
  // A building's still: rebuilt only when its key changes (a new picture, zoom, DPR or night).
  function still(d){
-  const s=states.get(d.id)||{},key=[d.id,zoom,dpr,false,stillKey(d,s),stamp(d,s)].join('|'),o=stills.get(d.id);
+  const s=states.get(d.id)||{},key=[d.id,zoom,dpr,nt,stillKey(d,s),stamp(d,s)].join('|'),o=stills.get(d.id);
   if(o&&o.key===key)return o.cv;
   const sc=(o&&o.cv)||doc.createElement('canvas');sc.width=Math.ceil(d.width*zoom*dpr);sc.height=Math.round(H*zoom*dpr);
   const g=sc.getContext('2d');g.setTransform(zoom*dpr,0,0,zoom*dpr,0,0);
   try{d.drawStill(g,s,env())}catch(e){warnOnce(d.id,'drawStill',e)}
-  stills.set(d.id,{key,cv:sc});st.stills++;return sc;
+  let lit=null;if(nt)try{lit=N.layer(doc,d,s,zoom,dpr,o&&o.lit&&o.lit.cv)}catch(e){warnOnce(d.id,'lights',e)}
+  stills.set(d.id,{key,cv:sc,lit});st.stills++;return sc;
  }
- const env=()=>({night:false,reduced:reduce(),zoom,dpr});
+ const env=()=>({night:nt,reduced:reduce(),zoom,dpr});
  // A new size or DPR (a ResizeObserver call with neither changed is ignored): canvas, layout, chips, stills, a frame.
  let sized='';
  function resize(){
@@ -138,9 +143,9 @@ function mount(el,opts){
   if(shape()!==sig){layout();paintChips()}
   const a=performance.now(),S=zoom*dpr,vw=cv.width/S,x0=box.scrollLeft/zoom,e=env();
   c.setTransform(S,0,0,S,0,0);
-  if(A){const P=A.palette,g=c.createLinearGradient(0,0,0,300);g.addColorStop(0,P.sky0);g.addColorStop(.6,P.sky1);g.addColorStop(1,P.sky2);
-   c.fillStyle=g;c.fillRect(0,0,vw,300);
-   for(const [k,L] of [[.5,0],[.25,1]]){c.save();c.translate(-x0*(1-k),0);A.skyline(c,x0*(1-k),vw,L);c.restore()}
+  if(A){if(nt)N.sky(c,x0,vw);else{const P=A.palette,g=c.createLinearGradient(0,0,0,300);g.addColorStop(0,P.sky0);g.addColorStop(.6,P.sky1);g.addColorStop(1,P.sky2);
+   c.fillStyle=g;c.fillRect(0,0,vw,300)}
+   c.globalAlpha=nt?.3:1;for(const [k,L] of [[.5,0],[.25,1]]){c.save();c.translate(-x0*(1-k),0);A.skyline(c,x0*(1-k),vw,L);c.restore()}c.globalAlpha=1;
    c.save();c.translate(-x0,0);A.sidewalk(c,x0,vw);A.road(c,x0,vw);c.restore()}
   let mv=false;
   for(const d of list){
@@ -152,6 +157,9 @@ function mount(el,opts){
    c.restore();
   }
   if(T){c.setTransform(S,0,0,S,-x0*S,0);if(T.draw(c,at(),x0,vw,Math.max(streetW,box.clientWidth)/zoom,reduce()))mv=true}
+  if(nt){c.setTransform(S,0,0,S,0,0);N.dim(c,vw);c.globalCompositeOperation='lighter';c.setTransform(1,0,0,1,0,0);
+   for(const d of list){const l=stills.get(d.id)?.lit,dx=Math.round((xs.get(d.id)-box.scrollLeft)*dpr)-(l?l.off:0);if(l&&dx<cv.width&&dx+l.cv.width>0)c.drawImage(l.cv,dx,0)}
+   if(T){c.setTransform(S,0,0,S,-x0*S,0);N.glows(c,T.lit())}c.globalCompositeOperation='source-over'}
   moving=mv;st.frames++;const ms=performance.now()-a;st.avg=st.frames>1?st.avg*.9+ms*.1:ms;
  }
  const running=()=>!dead&&!box.hidden&&inView&&doc.visibilityState!=='hidden'&&!reduce()&&moving;
@@ -205,10 +213,11 @@ function mount(el,opts){
   else if(!f&&sc){sc.remove();sc=null}
  }
  const inst={world:onWorld,stale:onStale,on:()=>!dead&&(box.hidden?visible(el):inView)};mounts.add(inst);
+ const unwatch=N&&N.watch(v=>{if(dead)return;nt=v;if(!box.hidden){for(const d of list)still(d);redraw()}});
  if(seen)onWorld([],lastW);onStale(failed);start();sync();
  return{destroy(){
   if(dead)return;dead=true;mounts.delete(inst);if(!mounts.size)stop();if(raf)root.cancelAnimationFrame(raf);raf=0;onUp();
-  if(ro)ro.disconnect();if(io)io.disconnect();T&&T.destroy();doc.removeEventListener('visibilitychange',onVis);if(mq)mq.removeEventListener('change',onMotion);box.remove();
+  if(ro)ro.disconnect();if(io)io.disconnect();unwatch&&unwatch();T&&T.destroy();doc.removeEventListener('visibilitychange',onVis);if(mq)mq.removeEventListener('change',onMotion);box.remove();
  }};
 }
 // Home's strip: mounted once into #homeStreetMount (repeat calls do nothing); a building opens its run, else the old Agent World.

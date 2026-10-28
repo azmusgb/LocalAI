@@ -67,6 +67,8 @@ function drawLive(c,s,t){
  c.restore();panes(c);c.restore();
 }
 // The live layer moves only while images run; a job that only needs you leaves the room lit and the painter still (the still).
-const def=Object.assign(B,{drawStill,drawLive});
+// At night: the lamp; lit, the arched window, the round window and the skylights.
+const lights=s=>s.down||s.hidden?[]:[C.lamp(138,214),...lit(s)?[C.light('window','#fff1d6',[WX,WY,WW,WH]),C.light('window','#fff1d6',[154,166,20,20]),C.light('glow','#ffd38a',[12,60,184,38])]:[]];
+const def=Object.assign(B,{drawStill,drawLive,lights});
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

@@ -42,7 +42,9 @@ const chipOf = (t, title) => t.find(x => x.startsWith(title)) || '';
 const contexts = [];
 // A fresh page with the street's modules loaded and a strip mounted in a fixed box at the top (in view). window.__el is
 // the mount element, window.__opened the ids onOpen got. setWorld(world) runs unless world is null.
-async function fresh({ viewport = { width: 1280, height: 800 }, dpr = 1, world = BUSY, reduced = false, clock = false, route = () => {} } = {}) {
+// fixed: a local Date the page's clock reads (timers run in real time); at: a fake clock installed at that Date (timers move
+// only with page.clock.runFor and in real time).
+async function fresh({ viewport = { width: 1280, height: 800 }, dpr = 1, world = BUSY, reduced = false, clock = false, fixed = null, at = null, route = () => {} } = {}) {
   const context = await browser.newContext({ viewport, deviceScaleFactor: dpr, serviceWorkers: 'block', reducedMotion: reduced ? 'reduce' : 'no-preference' });
   contexts.push(context);
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
@@ -50,6 +52,8 @@ async function fresh({ viewport = { width: 1280, height: 800 }, dpr = 1, world =
   page.errors = [];
   await page.route('**/api/world', route);
   if (clock) await page.clock.install();
+  if (at) await page.clock.install({ time: at });
+  if (fixed) await page.clock.setFixedTime(fixed);
   page.on('pageerror', e => page.errors.push(e.message));
   await page.goto(base + '/#status', { waitUntil: 'domcontentloaded' }); // off Home: Home mounts its own strip
   await page.waitForFunction(() => typeof window.LocalAIStreetLoad === 'function');
@@ -641,6 +645,56 @@ await check('a hidden building has no beacon or stalled car', async () => {
   await page.waitForTimeout(200);
   const s = await stats(page);
   assert.deepEqual([s.beacons, s.stalled], [0, 0]);
+});
+
+// Night (street/night.js): 19:00 to 07:00 local time, one shared timer checks once a minute; the street darkens, the sky
+// has stars, and lit buildings glow onto the wet road.
+const local = (h, m, s = 0) => new Date(2026, 9, 28, h, m, s);
+// The canvas's mean colour (r + g + b) over a CSS-pixel box.
+const lum = (page, x, y, w = 4, h = 4) => page.evaluate(([x, y, w, h]) => { const cv = window.__el.querySelector('canvas'), k = cv.width / cv.clientWidth, d = cv.getContext('2d').getImageData(Math.round(x * k), Math.round(y * k), Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))).data; let t = 0; for (let i = 0; i < d.length; i += 4) t += d[i] + d[i + 1] + d[i + 2]; return t / (d.length / 4); }, [x, y, w, h]);
+
+await check('night falls at 19:00: every still rebuilds once and the sky darkens', async () => {
+  const page = await fresh({ world: QUIET, at: local(18, 59, 30) });
+  await page.waitForTimeout(300);
+  const a = await stats(page), sky0 = await lum(page, 8, 8), n = (await standing(page, QUIET)).length;
+  assert.equal(a.night, false, 'day at 18:59:30');
+  await page.clock.runFor(60000); await page.waitForTimeout(300);
+  const b = await stats(page), sky1 = await lum(page, 8, 8);
+  assert.equal(b.night, true, 'night at 19:00:30');
+  assert.equal(b.stills - a.stills, n, `each still once: ${b.stills - a.stills} for ${n} buildings`);
+  assert.ok(sky1 < sky0 - 100, `the sky darkens: ${sky0} -> ${sky1}`);
+  await page.clock.runFor(60000); await page.waitForTimeout(200);
+  assert.equal((await stats(page)).stills, b.stills, 'nothing more a minute later');
+  assert.deepEqual(page.errors, []);
+});
+
+await check('a quiet street at night draws nothing per frame', async () => {
+  const page = await fresh({ world: QUIET, fixed: local(21, 0) });
+  await page.waitForTimeout(400);
+  assert.equal((await stats(page)).night, true);
+  const f = (await stats(page)).frames, px = await page.evaluate(() => window.__el.querySelector('canvas').toDataURL());
+  await page.waitForTimeout(1000);
+  assert.equal((await stats(page)).frames, f, 'no frames');
+  assert.equal(await page.evaluate(() => window.__el.querySelector('canvas').toDataURL()), px, 'the same picture');
+  assert.deepEqual(page.errors, []);
+});
+
+await check("a busy window's glow lights the road under it at night", async () => {
+  const road = async page => {
+    await page.waitForTimeout(400);
+    // Chat Café's window is centred 40 units left of the building's middle (its chip's middle); the road is y 327-360.
+    return page.evaluate(() => { const cv = window.__el.querySelector('canvas'), b = [...window.__el.querySelectorAll('.street-chip')].find(x => x.textContent.startsWith('Chat Café')).getBoundingClientRect(), z = cv.clientHeight / 360;
+      return { x: b.left + b.width / 2 - cv.getBoundingClientRect().left - 40 * z, y: 334 * z, h: 20 * z }; });
+  };
+  const day = await fresh({ fixed: local(12, 0) }), night = await fresh({ fixed: local(21, 0) });
+  const p = await road(day), q = await road(night);
+  const d = await lum(day, p.x - 4, p.y, 8, p.h), n = await lum(night, q.x - 4, q.y, 8, q.h);
+  assert.ok(n > d + 20, `the road under the lit window is brighter at night: day ${d}, night ${n}`);
+  // And a quiet building's road stays darker at night than by day.
+  const qd = await fresh({ world: QUIET, fixed: local(12, 0) }), qn = await fresh({ world: QUIET, fixed: local(21, 0) });
+  const r = await road(qd), s = await road(qn);
+  assert.ok(await lum(qn, s.x - 4, s.y, 8, s.h) < await lum(qd, r.x - 4, r.y, 8, r.h), 'quiet: darker at night');
+  assert.deepEqual([day.errors, night.errors], [[], []]);
 });
 
 for (const c of contexts) await c.close();

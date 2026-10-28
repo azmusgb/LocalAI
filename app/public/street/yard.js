@@ -102,6 +102,11 @@ function drawLive(c,s,t){
   const n=((t/90+i*5)%28)|0,len=Math.min(n,16);c.fillStyle=TEXT;c.fillRect(x0+15,TOP-9.5,len,1.4);if((t/400|0)%2===0){c.fillStyle=CARET;c.fillRect(x0+15.6+len,TOP-10.2,1.6,2.8)}});
  c.restore();
 }
-const def={id:'yard',width:260,roof:180,state,chip,stillKey,stamp,animates,item:()=>null,drawStill,drawLive,lights:()=>[]};
+// At night: four bulbs on the string; each laptop in use.
+function lights(s){
+ if(s.hidden||s.down)return[];const Q=(u,a,b,m)=>(1-u)*(1-u)*a+2*u*(1-u)*m+u*u*b;
+ return[...[2,5,9,12].map(i=>C.lamp(Q(i/14,12,248,130),Q(i/14,220,220,238)+2.4)),...XS.filter((x,i)=>s.sessions[i]).map(x=>C.light('window','#ffd9c2',[x+12,TOP-22,24,19.4]))];
+}
+const def={id:'yard',width:260,roof:180,state,chip,stillKey,stamp,animates,item:()=>null,drawStill,drawLive,lights};
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

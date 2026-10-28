@@ -14,10 +14,10 @@ const world = (running, waiting = 0, needsYou = 0) => ({ street: { garage: {
 const CAR = '#3f7fc4', SPARK = '#fff3b0', AMBER = '#ffc640';
 const sparks = r => r.liveRec.sets.some(([k, v]) => (k === 'fillStyle' || k === 'strokeStyle') && v === SPARK);
 
-test('setup: Repair Garage, 240 wide, roof line at 160, no lights yet', () => {
+test('setup: Repair Garage, 240 wide, roof line at 160', () => {
   assert.equal(garage.id, 'garage'); assert.equal(garage.width, 240); assert.equal(garage.roof, 160);
   assert.equal(garage.chip(garage.state(world(1))).title, 'Repair Garage');
-  assert.deepEqual(garage.lights(garage.state(world(1))), []);
+  assert.equal(typeof garage.lights, 'function'); // its lights: street-night.test.cjs
 });
 
 test('busy: the car is up on the lift in the open bay and the mechanic works under it', () => {

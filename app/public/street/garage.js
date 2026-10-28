@@ -78,6 +78,8 @@ function drawLive(c,s,t){
   for(let i=0;i<7;i++){const a=.4+i*.38,r0=2+10*p,r1=r0+3;c.moveTo(sx+Math.cos(a)*r0,sy+Math.sin(a)*r0+6*p*p);c.lineTo(sx+Math.cos(a)*r1,sy+Math.sin(a)*r1+6*p*p)}c.stroke()}
  c.restore();
 }
-const def=Object.assign(B,{drawStill,drawLive,lights:()=>[]});
+// At night: the pier lamp; lit, the open bay and the sign in green neon.
+const lights=s=>s.down||s.hidden?[]:[C.lamp(114,214),...lit(s)?[C.light('window','#ffcf8a',[BAYS[0],BY,BW,BH]),C.light('glow','#6dff9a',[66,124,96,26])]:[]];
+const def=Object.assign(B,{drawStill,drawLive,lights});
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

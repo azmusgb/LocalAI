@@ -22,10 +22,10 @@ const hands = rec => { const h = turns(rec, true); return h.length ? h.slice(-2)
 const near = (a, b) => Math.abs(((a - b) % TAU + TAU + Math.PI) % TAU - Math.PI) < 1e-6;
 const bellAngle = rec => turns(rec, false)[0];
 
-test('setup: Clock Tower, 140 wide, roof line at 60, no lights yet, a clock that reads the real time', () => {
+test('setup: Clock Tower, 140 wide, roof line at 60, a clock that reads the real time', () => {
   assert.equal(clock.id, 'clock'); assert.equal(clock.width, 140); assert.equal(clock.roof, 60);
   assert.equal(clock.chip(clock.state(world(1))).title, 'Clock Tower');
-  assert.deepEqual(clock.lights(clock.state(world(1))), []);
+  assert.equal(typeof clock.lights, 'function'); // its lights: street-night.test.cjs
   assert.equal(clock.now, undefined, 'no clock on the def');
 });
 

@@ -13,11 +13,11 @@ const crew = (i, state = 'working', title) => ({ id: 'c' + i, title: title || 'S
 const world = (working, waiting = 0) => ({ crews: [...Array.from({ length: working }, (_, i) => crew(i)), ...Array.from({ length: waiting }, (_, i) => crew(10 + i, 'waiting'))] });
 const ORANGE = '#d97757', BADGE = '#b5513a', SCREEN = '#1f1b19';
 
-test('setup: Claude Yard, 260 wide, roof line at 180, no lights yet, a tap always opens Agent World', () => {
+test('setup: Claude Yard, 260 wide, roof line at 180, a tap always opens Agent World', () => {
   assert.equal(yard.id, 'yard'); assert.equal(yard.width, 260); assert.equal(yard.roof, 180);
   const s = yard.state(world(2, 1));
   assert.equal(yard.chip(s).title, 'Claude Yard');
-  assert.deepEqual(yard.lights(s), []);
+  assert.equal(typeof yard.lights, 'function'); // its lights: street-night.test.cjs
   assert.equal(yard.item(s), null); assert.equal(yard.item(yard.state(world(0))), null);
 });
 

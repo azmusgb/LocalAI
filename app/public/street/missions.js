@@ -104,6 +104,8 @@ function drawLive(c,s,t){
   A.glow(c,AX,AY-1,12,12,BEACON,.55);for(const x of LAMPS)A.glow(c,x,LY,16,16,BEACON,.6)}
  c.restore();
 }
-const def=Object.assign(B,{drawStill,drawLive,lights:()=>[]});
+// At night: the badge over the canopy; lit, the command band in cyan and every office and lobby window.
+const lights=s=>s.down||s.hidden?[]:[{...C.lamp(118,224),x:111,y:217,w:14,h:14,color:'#ffd56a'},...lit(s)?[C.light('window','#5fd4ff',BAND[0]),...OFF.map(r=>C.light('window','#ffd9a0',r)),...LOBBY.slice(0,2).map(r=>C.light('window','#ffe2b0',r))]:[]];
+const def=Object.assign(B,{drawStill,drawLive,lights});
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

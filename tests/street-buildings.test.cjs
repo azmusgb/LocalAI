@@ -14,7 +14,7 @@ for (const [id, name, width, roof] of [['chat', 'Chat Café', 240], ['images', '
   test(id + ': state and chip', () => {
     const d = load(id);
     assert.equal(d.id, id); assert.equal(d.width, width);
-    if (roof) { assert.equal(d.roof, roof); assert.deepEqual(d.lights(d.state({ street: street() })), []); }
+    if (roof) { assert.equal(d.roof, roof); assert.equal(typeof d.lights, 'function'); } // lights: street-night.test.cjs
     const busy = d.state({ street: street({ [id]: src({ running: [item(1), item(2), item(3)], waiting: 47 }) }) });
     assert.deepEqual(busy, { running: 3, more: 47, needsYou: 0, failed: 0, first: null, firstRun: item(1), down: false });
     assert.deepEqual(d.chip(busy), { title: name, detail: '50 running', tone: 'busy' });

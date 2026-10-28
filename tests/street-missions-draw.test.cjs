@@ -13,10 +13,10 @@ const world = (running, waiting = 0, needsYou = 0) => ({ street: { missions: {
   running: Array.from({ length: running }, (_, i) => job(i)), waiting, needsYou: Array.from({ length: needsYou }, (_, i) => job(9 + i)), failedUnseen: [] } } });
 const BEACON = '#ff4d3d', AMBER = '#ffc640';
 
-test('setup: Missions HQ, 260 wide, roof line at 90, no lights yet', () => {
+test('setup: Missions HQ, 260 wide, roof line at 90', () => {
   assert.equal(missions.id, 'missions'); assert.equal(missions.width, 260); assert.equal(missions.roof, 90);
   assert.equal(missions.chip(missions.state(world(2))).title, 'Missions HQ');
-  assert.deepEqual(missions.lights(missions.state(world(2))), []);
+  assert.equal(typeof missions.lights, 'function'); // its lights: street-night.test.cjs
 });
 
 test('busy: a figure per running mission, up to 3, each on its own floor and moving', () => {
