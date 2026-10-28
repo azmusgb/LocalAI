@@ -723,11 +723,20 @@ function render(data,requests=currentRequests){
  const open=ix.questions.filter(q=>!['answered','stopped'].includes(q.status)),recent=x=>x.status==='answered'&&x.verdict&&Date.now()-new Date(x.verdict.at)<3*864e5;
  // Answered in the last three days stays in view: the newest result is what the owner comes to check.
  const active=ix.experiments.filter(x=>!DONE.has(x.status)||recent(x)),earlier=ix.experiments.filter(x=>DONE.has(x.status)&&!recent(x));
+ const needsCount=(ix.needs||[]).length;
+ const jumps=[
+  needsCount?`<a href="#lab-sec-needs" class="lab-jump__chip">Needs you <span class="badge badge--attention">${needsCount}</span></a>`:'',
+  open.length?`<a href="#lab-sec-questions" class="lab-jump__chip">Questions (${open.length})</a>`:'',
+  active.length?`<a href="#lab-sec-notebook" class="lab-jump__chip">Notebook (${active.length})</a>`:'',
+  earlier.length?`<a href="#lab-earlier" class="lab-jump__chip">Earlier (${earlier.length})</a>`:''
+ ].filter(Boolean).join('');
+ const jumpNav=jumps?`<nav class="lab-jump" aria-label="Jump to section">${jumps}</nav>`:'';
  return syncLine(meta)
   +(ix.problems.length?`<div class="banner lab-problems" role="alert"><strong>Records the Mac can't read</strong><ul>${ix.problems.map(p=>`<li><b>${esc(p.file)}</b> ${esc(p.error)}</li>`).join('')}</ul></div>`:'')
-  +`<div class="lab-layout"><div class="lab-side"><section class="card lab-needs-card"><h2>Needs you</h2>${needsHtml(ix,byId)}</section>`
-  +(open.map(q=>questionHtml(q,byId)).join('')||'<section class="card"><div class="empty-state"><div class="empty-state__title">No open question.</div><div>Start one on the Mac with lab question new.</div></div></section>')
-  +`</div><div class="lab-notebook"><h2>Notebook</h2>${liveData&&liveData.conflict?`<p class="banner banner--attention lab-conflict" role="status">Two runs say they're printing; check the Mac.</p>`:''}${active.map(x=>experimentHtml(x,ix.project,requests,byId,ix.colours)).join('')||'<p class="empty-state">No open experiments.</p>'}`
+  +jumpNav
+  +`<div class="lab-layout"><div class="lab-side"><section class="card lab-needs-card" id="lab-sec-needs"><h2>Needs you</h2>${needsHtml(ix,byId)}</section>`
+  +`<div class="lab-questions" id="lab-sec-questions">${open.map(q=>questionHtml(q,byId)).join('')||'<section class="card"><div class="empty-state"><div class="empty-state__title">No open question.</div><div>Start one on the Mac with lab question new.</div></div></section>'}</div>`
+  +`</div><div class="lab-notebook" id="lab-sec-notebook"><h2>Notebook</h2>${liveData&&liveData.conflict?`<p class="banner banner--attention lab-conflict" role="status">Two runs say they're printing; check the Mac.</p>`:''}${active.map(x=>experimentHtml(x,ix.project,requests,byId,ix.colours)).join('')||'<p class="empty-state">No open experiments.</p>'}`
   +(earlier.length?`<details class="lab-earlier" id="lab-earlier"><summary>Earlier (${earlier.length})</summary>${earlier.map(x=>experimentHtml(x,ix.project,requests,byId,ix.colours)).join('')}</details>`:'')+outsideHtml(ix.outside)+'</div></div>';
 }
 function openExperiment(id){
@@ -900,6 +909,13 @@ function init(){
  }
 
  sec.addEventListener('click',e=>{
+  const j=e.target.closest('.lab-jump__chip');
+  if(j&&j.getAttribute('href')?.startsWith('#lab-')){
+    e.preventDefault();
+    const id=j.getAttribute('href').slice(1),el=document.getElementById(id);
+    if(el){if(el.tagName==='DETAILS')el.open=true;el.scrollIntoView({behavior:'smooth',block:'start'})}
+    return;
+  }
   const c=e.target.closest('[data-copy]');
   if(c){const t=c.dataset.copy,done=()=>root.LocalAIUI?.toast?.('Copied. Paste it in Terminal on the Mac.');
    if(navigator.clipboard&&root.isSecureContext)navigator.clipboard.writeText(t).then(done,()=>{});else{const code=c.previousElementSibling;const r=document.createRange();r.selectNodeContents(code);const s=getSelection();s.removeAllRanges();s.addRange(r)}return}
