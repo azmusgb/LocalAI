@@ -12,7 +12,7 @@
 // plain vertical wheel is left to the page) and the canvas is sticky inside it, so
 // the camera is its scrollLeft. Each frame draws the sky, the far city (with
 // parallax), the sidewalk and the road, then each building's cached still and its drawLive. Stills are one offscreen
-// canvas per building, keyed id|zoom|dpr|night|stillKey|stamp; stamp (a clock's hour) redraws a still without counting as a
+// canvas per building, keyed id|zoom|dpr|night|stillKey|stamp; stamp (a clock's 5-minute step) redraws a still without counting as a
 // change, so it never moves the camera. The loop runs on rAF at up to 30 fps while the strip is on
 // screen, the page visible, motion allowed and some building in view animates; otherwise it draws one frame and stops
 // (a world, resize, scroll or the strip showing again restarts it). Under reduced motion one frame (t = 0) is drawn per
@@ -37,7 +37,7 @@ function setWorld(w){
  seen=true;lastW=w;const changed=[];
  for(const d of defs()){
   try{states.set(d.id,d.state(w))}catch(e){warnOnce(d.id,'state',e);if(!states.has(d.id))states.set(d.id,{})}
-  const k=stillKey(d,states.get(d.id));if(keys.has(d.id)&&keys.get(d.id)!==k)changed.push(d.id);keys.set(d.id,k);
+  const k=stillKey(d,states.get(d.id));const o=keys.get(d.id);if(keys.has(d.id)&&o!==k&&o!=='hidden'&&k!=='hidden')changed.push(d.id);keys.set(d.id,k);
  }
  for(const m of mounts)m.world(changed,w);
 }

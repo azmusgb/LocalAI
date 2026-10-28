@@ -15,10 +15,11 @@ const WORLDS = {
   chat: runs('chat'), images: runs('images'), missions: runs('missions'), garage: runs('garage'), clock: runs('clock'),
   sheets: { down: {}, quiet: { sheets: { bridge: true, excel: true, inFlight: 0 }, street: street() }, busy: { sheets: { bridge: true, excel: true, inFlight: 1 }, street: street() } },
   foundry: { down: {}, quiet: { models: { loaded: [], queue: { waiting: 0 } } }, busy: { models: { loaded: [{ name: 'qwen3' }], queue: { waiting: 1 } } } },
-  workshop: { down: { printer: { setUp: true, access: 'denied', state: 'idle' } }, quiet: { printer: { setUp: true, access: 'ok', state: 'idle' } }, busy: { printer: { setUp: true, access: 'ok', state: 'printing', progress: 40 } } },
+  workshop: { down: { printer: { setUp: true, access: 'denied', state: 'idle' } }, quiet: { printer: { setUp: true, access: 'ok', state: 'idle' } }, off: { printer: { setUp: false } }, busy: { printer: { setUp: true, access: 'ok', state: 'printing', progress: 40 } } },
   // The kiosk has no quiet state: not set up it stands dark (no flood lamps); set up and online it is lit.
   kiosk: { down: { kiosk: { setUp: true, online: false } }, off: { kiosk: { setUp: false } }, busy: { kiosk: { setUp: true, online: true, firmware: '12.8.0' } } },
-  yard: { quiet: { crews: [] }, busy: { crews: [{ id: 'a', title: 'A', state: 'working' }, { id: 'b', title: 'B', state: 'waiting' }] } },
+  // An empty yard has its bulbs off, as in the day art: no quiet state, nothing lit.
+  yard: { off: { crews: [] }, busy: { crews: [{ id: 'a', title: 'A', state: 'working' }, { id: 'b', title: 'B', state: 'waiting' }] } },
 };
 const KINDS = new Set(['window', 'lamp', 'glow']);
 
@@ -29,7 +30,7 @@ for (const [id, w] of Object.entries(WORLDS)) {
     const at = world => d.lights(d.state(world));
     const down = w.down ? at(w.down) : d.lights({ ...d.state(w.busy), hidden: true });
     assert.deepEqual(down, [], 'none when down or hidden');
-    if (w.off) assert.deepEqual(at(w.off), [], 'none when not set up');
+    if (w.off) assert.deepEqual(at(w.off), [], 'none when not set up (or, for the yard, empty)');
     const quiet = w.quiet ? at(w.quiet) : [], busy = at(w.busy);
     if (w.quiet) assert.ok(quiet.some(l => l.kind === 'lamp'), `a lamp when quiet: ${JSON.stringify(quiet)}`);
     else assert.ok(busy.some(l => l.kind === 'lamp'), `a lamp when lit: ${JSON.stringify(busy)}`);

@@ -111,10 +111,10 @@ function drawLive(c,s,t){
  if(s.needsYou>0)A.cue(c,90,122,.9);
  c.restore();
 }
-// The still's stamp: a quiet tower's hour, so its hands are redrawn within the hour without a still-key change.
+// The still's stamp: a quiet tower's hour and 5-minute step, so its hands are redrawn every 5 minutes without a still-key change.
 // The needs-you beacon (street traffic) hangs on the shaft's edge beside the clock face (the default would float off the tower).
 // At night: the two lamps at the door; lit, the clock face and the belfry.
 const lights=s=>s.down||s.hidden?[]:[C.lamp(44,268),C.lamp(92,268),...lit(s)?[C.light('window','#fff4cc',[FX-FR,FY-FR,2*FR,2*FR]),C.light('window','#ffd38a',OP)]:[]];
-const def=Object.assign(B,{drawStill,drawLive,lights,beacon:{x:108,y:205},stamp:s=>B.animates(s)||s.down?'':String(now().getHours())});
+const def=Object.assign(B,{drawStill,drawLive,lights,beacon:{x:108,y:205},stamp:s=>B.animates(s)||s.down?'':`${now().getHours()}:${Math.floor(now().getMinutes()/5)}`});
 if(typeof module==='object'&&module.exports)module.exports=Object.assign(def,{setNow:f=>{now=f||(()=>new Date())}});else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

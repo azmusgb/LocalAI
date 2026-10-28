@@ -70,11 +70,14 @@ test('quiet: still hands at the time of the rebuild, a still bell, no glow, noth
 });
 
 // The engine caches a still by its stillKey and stamp; only the stillKey counts as a change (one that moves the camera).
-test('stamp: a quiet tower stamps its still with the hour, so the hands are redrawn within the hour; busy and down do not', () => {
+test('stamp: a quiet tower stamps its still with the hour and five-minute step, so the hands are redrawn every 5 minutes; busy and down do not', () => {
   at(3, 59); const a = clock.stamp(clock.state(world(0)));
   at(4, 0); const b = clock.stamp(clock.state(world(0)));
-  assert.equal(a, '3'); assert.equal(b, '4');
-  assert.equal(clock.stamp(clock.state(world(0, 0, 1))), '4', 'needs you only: still hands too');
+  at(4, 4); const b2 = clock.stamp(clock.state(world(0)));
+  at(4, 5); const c = clock.stamp(clock.state(world(0)));
+  assert.equal(a, '3:11'); assert.equal(b, '4:0'); assert.equal(b2, '4:0', 'same 5 minutes: same stamp'); assert.equal(c, '4:1');
+  at(4, 0);
+  assert.equal(clock.stamp(clock.state(world(0, 0, 1))), '4:0', 'needs you only: still hands too');
   assert.equal(clock.stamp(clock.state(world(1))), '', 'busy: the hands are live');
   assert.equal(clock.stamp(clock.state({ street: null })), '', 'down: no hands');
 });

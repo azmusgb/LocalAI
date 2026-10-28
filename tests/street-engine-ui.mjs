@@ -163,6 +163,22 @@ await check('a new stamp rebuilds a still without moving the camera', async () =
   assert.deepEqual(page.errors, []);
 });
 
+// Toggling the developer tools hides or shows the Claude Yard: a stillKey to or from 'hidden' is not a change, so the camera stays.
+await check('a building appearing or disappearing (stillKey hidden) does not move the camera', async () => {
+  const page = await fresh({ viewport: { width: 390, height: 844 }, reduced: true });
+  const reg = () => page.evaluate(w => { window.__h = true; window.LocalAIStreet.register({ id: 'yard', width: 100, state: () => ({ hidden: window.__h }), stillKey: s => s.hidden ? 'hidden' : 'idle', chip: () => ({ title: 'Y', detail: 'y', tone: 'quiet' }), drawStill() {}, drawLive() {}, animates: () => false }); window.LocalAIStreet.setWorld(w); window.__el.querySelector('.street').scrollLeft = 0; }, BUSY);
+  await reg(); await page.waitForTimeout(100);
+  const left = () => page.evaluate(() => window.__el.querySelector('.street').scrollLeft);
+  assert.equal(await left(), 0);
+  await page.evaluate(w => { window.__h = false; window.LocalAIStreet.setWorld(w); }, BUSY);
+  await page.waitForTimeout(400);
+  assert.equal(await left(), 0, 'shown: the camera did not move');
+  await page.evaluate(w => { window.__el.querySelector('.street').scrollLeft = 0; window.__h = true; window.LocalAIStreet.setWorld(w); }, BUSY);
+  await page.waitForTimeout(400);
+  assert.equal(await left(), 0, 'hidden: the camera did not move');
+  assert.deepEqual(page.errors, []);
+});
+
 await check('canvas follows size and DPR', async () => {
   const page = await fresh();
   const r = await page.evaluate(() => { const c = window.__el.querySelector('canvas'); return { w: c.width, cw: c.clientWidth, h: c.height, ch: c.clientHeight }; });
@@ -507,6 +523,26 @@ await check('a chip opens its building\'s run, else Agent World, and its hint sa
   // the hint follows the item as the world changes
   await page.evaluate(w => window.LocalAIStreet.setWorld(w), QUIET);
   assert.equal(await page.evaluate(() => window.__home.querySelectorAll('.street-chip')[0].title), 'Opens Agent World');
+});
+
+await check('a sheets chip with a needs-you item opens that run', async () => {
+  const w = { ...QUIET, street: { ...QUIET.street, sheets: src({ needsYou: [{ id: 's9', title: 'Sheet', status: 'needs_you', startedAt: Date.now() }] }) } };
+  const page = await fresh({ world: w });
+  await page.evaluate(() => {
+    window.__shown = null; window.__go = [];
+    window.LocalAIRuns = { show: id => { window.__shown = id; } };
+    window.LocalAIRouter = { go: h => window.__go.push(h) };
+    const old = document.getElementById('homeStreetMount'); if (old) old.id = 'homeStreetMountOld';
+    window.__home = document.body.appendChild(document.createElement('div')); window.__home.id = 'homeStreetMount';
+    window.LocalAIStreet.mountHome();
+  });
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), w);
+  const chip = () => page.evaluate(() => { const b = [...window.__home.querySelectorAll('.street-chip')].find(x => x.textContent.startsWith('Spreadsheets')); return { title: b.title, aria: b.getAttribute('aria-description') }; });
+  assert.deepEqual(await chip(), { title: 'Opens this run', aria: 'Opens this run' });
+  await page.evaluate(() => [...window.__home.querySelectorAll('.street-chip')].find(x => x.textContent.startsWith('Spreadsheets')).click());
+  assert.equal(await page.evaluate(() => window.__shown), 's9');
+  assert.deepEqual(await page.evaluate(() => window.__go), []);
+  assert.deepEqual(page.errors, []);
 });
 
 await check('a hidden building has no chip, the next one moves left, and unhiding restores it', async () => {

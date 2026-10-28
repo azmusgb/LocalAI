@@ -58,3 +58,10 @@ test('a busy frame draws only what moves', () => {
   for (const col of ['#6f4a2a', '#d8f2dc']) assert.ok(!fills(r.liveRec).includes(col), `no desk or screen repaint (${col})`);
   assert.equal(r.live.steel || 0, 0); assert.equal(r.live.lamp || 0, 0); assert.equal(r.live.person || 0, 0); assert.equal(r.live.box || 0, 0);
 });
+
+test('item: the first needs-you run opens that run; none otherwise', () => {
+  const src = o => ({ running: [], waiting: 0, needsYou: [], failedUnseen: [], recent: [], ...o });
+  const w = { sheets: { bridge: true, excel: true, inFlight: 0 }, street: { sheets: src({ needsYou: [{ id: 's9', title: 'T', status: 'needs_you' }] }) } };
+  assert.equal(sheets.item(sheets.state(w)).id, 's9');
+  assert.equal(sheets.item(sheets.state(world(true, true, 0))), null);
+});
