@@ -75,3 +75,14 @@ test('crewList caps at 6 and trims', () => {
   }
   assert.equal(out[1].state, 'waiting');
 });
+
+test('a malformed run keeps a string id and a null startedAt; a run with no id is dropped', () => {
+  const s = buildStreet([run(42, 'chat', 'running', { createdAt: 12345 }), run(undefined, 'chat', 'running'), run('', 'chat', 'running'), run(null, 'chat', 'queued')], { now });
+  assert.deepEqual(s.chat.running, [{ id: '42', title: s.chat.running[0].title, status: 'running', startedAt: null }]);
+  assert.equal(s.chat.waiting, 0);
+});
+
+test('crewList skips empty entries', () => {
+  const out = crewList([null, undefined, 0, { id: 'a', title: 't', state: 'working', lastEvent: 'Edit' }]);
+  assert.deepEqual(out, [{ id: 'a', title: 't', state: 'working', lastAction: 'Edit' }]);
+});

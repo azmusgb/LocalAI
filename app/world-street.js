@@ -1,6 +1,7 @@
 'use strict';
 
-// Agent World's Main Street: the run ledger boiled down to one small summary per building (chat, images, missions,
+// Agent World's Main Street: every kind of run (the ledger plus the engineering, automation and spreadsheet stores, as
+// Work and Home see them) boiled down to one small summary per building (chat, images, missions,
 // garage, sheets, clock). A pure function: GET /api/world (app/world.js) passes in the recent runs and reads nothing
 // itself, so the answer depends only on its input and the `now` it is given.
 //   running       up to 3 runs in progress (running or streaming), newest first; the rest count into `waiting`;
@@ -8,7 +9,8 @@
 //   needsYou      up to 3 approvals the person must decide, from the same pick() Home's "Needs you" uses;
 //   failedUnseen  up to 3 failures pick() still lists (not opened, under a day old, not answered by a retry);
 //   recent        the last 3 finished runs (completed, failed or cancelled), newest first.
-// An item is only {id, title, status, startedAt}; the title is the readable title cut to 80 characters.
+// An item is only {id, title, status, startedAt}: the id as a string (a run with no id is left out), the readable title
+// cut to 80 characters, startedAt the run's createdAt or null.
 // crewList() does the same for Claude crew sessions (claudeLive()'s lastEvent becomes lastAction): at most 6, text cut to 80 characters.
 const { readableTitle } = require('./run-cards');
 const { pick } = require('./public/needs-you');
@@ -30,11 +32,12 @@ function streetKey(run) {
   return typeof type === 'string' && Object.prototype.hasOwnProperty.call(KEYS, type) ? KEYS[type] : null;
 }
 
-const item = (r) => ({ id: r.id, title: readableTitle(r).slice(0, TEXT_MAX), status: r.status, startedAt: r.createdAt });
+const item = (r) => ({ id: String(r.id), title: readableTitle(r).slice(0, TEXT_MAX), status: r.status, startedAt: typeof r.createdAt === 'string' ? r.createdAt : null });
+const hasId = (r) => r.id !== undefined && r.id !== null && r.id !== '';
 
 function buildStreet(runs, { now = Date.now() } = {}) {
   const street = Object.fromEntries(STREET_KEYS.map((k) => [k, { running: [], waiting: 0, needsYou: [], failedUnseen: [], recent: [] }]));
-  const list = (Array.isArray(runs) ? runs : []).filter((r) => r && streetKey(r));
+  const list = (Array.isArray(runs) ? runs : []).filter((r) => r && hasId(r) && streetKey(r));
   const active = {};
   const finished = {};
   for (const r of list) {
@@ -59,7 +62,7 @@ function buildStreet(runs, { now = Date.now() } = {}) {
 }
 
 function crewList(live) {
-  return (Array.isArray(live) ? live : []).slice(0, MAX_CREW).map((s) => ({
+  return (Array.isArray(live) ? live : []).filter(Boolean).slice(0, MAX_CREW).map((s) => ({
     id: s.id, title: cut(s.title), state: s.state === 'waiting' ? 'waiting' : 'working', lastAction: cut(s.lastEvent),
   }));
 }

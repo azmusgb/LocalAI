@@ -85,6 +85,39 @@ test('street comes from the ledger, read at most once per LEDGER_MS', async () =
   assert.equal(n, 2);
 });
 
+test('crews are read at most once per LEDGER_MS too', async () => {
+  let n = 0;
+  const { world, clock } = fakeWorld({ crews: () => { n++; return SESSIONS; } });
+  await world.summary(); const s = await world.summary();
+  assert.equal(n, 1);
+  assert.equal(s.crews.length, 2);
+  clock.t += LEDGER_MS; await world.summary();
+  assert.equal(n, 2);
+});
+
+test('a flood: every building at its caps with 80-character titles and 6 crews stays within 17 KB', async () => {
+  const types = ['chat', 'image', 'agent', 'engineering', 'spreadsheet', 'automation'];
+  const at = new Date(1e6 - 60000).toISOString(), long = n => `${n}-${'w'.repeat(200)}`;
+  const runs = [];
+  for (const type of types) {
+    for (let i = 0; i < 10; i++) {
+      // ids as long as real ones: legacy-engineering:eng-mv8rra3x-77ea11 is 38 characters, a ledger id 25
+      for (const status of ['running', 'queued', 'awaiting_approval', 'failed', 'completed']) runs.push({ id: `legacy-engineering:${type.slice(0, 4)}-${status.slice(0, 4)}-${i}-mv8rra3x`, type, status, title: long(`${type} ${status} ${i}`), meta: { label: long(`${type} ${status} ${i}`) }, createdAt: at, updatedAt: at, finishedAt: at });
+    }
+  }
+  const crews = Array.from({ length: 10 }, (_, i) => ({ id: `0f6c2a1e-7b3d-4c59-9e21-5a8d3b7c${String(i).padStart(4, '0')}` /* a Claude session id */, title: 't'.repeat(200), state: 'working', lastEvent: 'e'.repeat(200) }));
+  const { world } = fakeWorld({ runs: () => runs, crews: () => crews });
+  const s = await world.summary();
+  for (const k of Object.keys(s.street)) {
+    const b = s.street[k];
+    assert.deepEqual([b.running.length, b.needsYou.length, b.failedUnseen.length, b.recent.length], [3, 3, 3, 3], k);
+    assert.ok([...b.running, ...b.recent].every(x => x.title.length === 80), k);
+  }
+  assert.equal(s.crews.length, 6);
+  const size = JSON.stringify(s).length;
+  assert.ok(size <= 17 * 1024, `${size} bytes`);
+});
+
 test('street is null when the ledger throws, and the rest still answers', async () => {
   const { world } = fakeWorld({ runs: () => { throw new Error('x'); } });
   const s = await world.summary();
@@ -277,6 +310,31 @@ test('GET /api/world through the appliance: the display sees one health GET a mi
   // read-only: nothing else answers there
   const post = await fetch(`${base}/api/world`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   assert.notEqual(post.status, 200);
+});
+
+// Engineering, automation and spreadsheet runs live in their own stores, not the run ledger; Work and Home merge them in
+// (app/server/runs.js unifiedRunItems), and so must Main Street, or the garage, the clock and the sheets office stay empty.
+test('GET /api/world: Main Street shows engineering, automation and spreadsheet runs from their own stores', { timeout: 30000 }, async t => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-world-street-'));
+  const at = new Date(Date.now() - 60000).toISOString(), done = new Date(Date.now() - 30000).toISOString();
+  const { Storage } = require('../app/storage');
+  const storage = new Storage({ dataDir });
+  storage.put('engineeringRuns', { id: 'eng-1', request: 'Add a dark mode toggle', target: 'self', status: 'awaiting_approval', createdAt: at, updatedAt: at, steps: [] });
+  storage.put('automationRuns', { id: 'auto-1', automationId: 'a1', name: 'Morning check', status: 'complete', startedAt: at, finishedAt: done, output: 'ok' });
+  storage.writeSetting('gridcraft:run:gc-1', { id: 'gc-1', prompt: 'Total column B', status: 'review', createdAt: at, updatedAt: at });
+  storage.close?.();
+  const off = 'http://127.0.0.1:9';
+  const { child, ready } = spawnAppServer({ env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: off, GRIDCRAFT_URL: off, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off } });
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) { const exited = once(child, 'exit'); child.kill('SIGTERM'); await exited; }
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+  const base = await ready;
+  const { street } = await (await fetch(`${base}/api/world`)).json();
+  assert.deepEqual(street.garage.needsYou.map(x => x.id), ['legacy-engineering:eng-1'], JSON.stringify(street.garage));
+  assert.equal(street.garage.needsYou[0].title, 'Add a dark mode toggle');
+  assert.deepEqual(street.clock.recent.map(x => x.id), ['legacy-automation:auto-1'], JSON.stringify(street.clock));
+  assert.deepEqual(street.sheets.needsYou.map(x => x.id), ['legacy-gridcraft:gc-1'], JSON.stringify(street.sheets)); // waiting for Keep or Discard
 });
 
 test('the poller keeps the firmware version from an ok answer only, and readPrinter adds it only when asked', async () => {

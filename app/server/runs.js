@@ -188,6 +188,8 @@ function createRuns(ctx) {
     const byCreate=(a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))||String(b.id).localeCompare(String(a.id));
     return needsYou.pick(all).map(x=>({...x,title:x.threadTitle||x.title,turns:turns.get(x.threadId||x.id)||1})).filter(x=>!before||byCreate(x,before)>0).sort(byCreate);
   }
+  // Agent World's Main Street (app/world-street.js): the same runs Home's Needs you reads, older stores included.
+  function streetRuns(){return unifiedRunItems(500).map(withSeen(seenRuns()))}
   async function apiRuns(req,res,urlObj){
     try{const id=String(urlObj.searchParams.get('id')||'');const pid=String(urlObj.searchParams.get('projectId')||''),tid=String(urlObj.searchParams.get('threadId')||''),threads=urlObj.searchParams.get('threads')==='1';const kind=String(urlObj.searchParams.get('kind')||'');if(kind&&kind!=='all'&&kind!=='needs'&&!WORK_CHIPS.includes(kind))return json(res,400,{error:'Unknown kind'});const beforeId=String(urlObj.searchParams.get('before')||'');let before=null;if(beforeId){if(!cleanRunId(beforeId))return json(res,400,{error:'Invalid run id'});const ref=runLedger.get(beforeId)||legacyUnifiedRuns().find(x=>x.id===beforeId);if(!ref)return json(res,404,{error:'Run not found'});before={createdAt:ref.createdAt,id:ref.id}}const seen=withSeen(seenRuns());let items=kind==='needs'?needsThreads(before):unifiedRunItems(urlObj.searchParams.get('limit')||120,{projectId:pid,threadId:tid,threads,before,kind:threads&&kind!=='all'?kind:''}).map(seen);const pending=approvalStore().filter(a=>a.status==='pending'),changes=changeStore();const cardOpts={approvalFor:r=>r.meta?.changeId&&pending.find(a=>a.meta?.changeId===r.meta.changeId)||null,changeFor:cid=>changes.find(c=>c.id===cid)||null},mark=keptMarker();if(id){const item=items.find(x=>x.id===id)||runLedger.get(id)||(id.startsWith('legacy-')?legacyUnifiedRuns().find(x=>x.id===id):null);if(!item)return json(res,404,{error:'Run not found'});return json(res,200,{item:{...mark(seen(item)),card:runCard(item,cardOpts)}})}const status=String(urlObj.searchParams.get('status')||''),type=String(urlObj.searchParams.get('type')||'');if(status)items=items.filter(x=>x.status===status);if(type)items=items.filter(x=>x.type===type);items=items.map(x=>({...mark(x),card:runCard(x,cardOpts)}));json(res,200,{items,summary:{total:items.length,active:items.filter(x=>['queued','running','streaming','awaiting_approval'].includes(x.status)).length,failed:items.filter(x=>x.status==='failed').length,awaitingApproval:items.filter(x=>x.status==='awaiting_approval').length}})}catch(e){storageError(res,e,500)}
   }
@@ -266,7 +268,7 @@ function createRuns(ctx) {
       storageError(res, e, 500);
     }
   }
-  return { apiRunCancel, apiRunRetry, apiRunUpdate, apiRuns, createChatExecution, needsThreads };
+  return { apiRunCancel, apiRunRetry, apiRunUpdate, apiRuns, createChatExecution, needsThreads, streetRuns };
 }
 
 module.exports = { createRuns };

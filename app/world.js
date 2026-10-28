@@ -1,15 +1,17 @@
 'use strict';
 
 // GET /api/world: Agent World's one read-only summary of the services around the city (the landmarks: the Model
-// Foundry, the Workshop garage, the Spreadsheets office and the kiosk billboard), about 1-3 KB. The page polls it only
+// Foundry, the Workshop garage, the Spreadsheets office and the kiosk billboard), usually 1-3 KB and at most about 17 KB with
+// every building full and six crews. The page polls it only
 // while Agent World is on screen, one request at a time. Every source is cached here, so however many tabs poll:
 //   models   Ollama GET /api/ps at most once every 10 s, plus the mission model queue and what is running (both in memory);
 //   printer  the Workshop poller's last read (app/workshop.js): no request of its own to the display;
 //   sheets   the GridCraft bridge's /health at most once every 15 s, plus GridCraft requests in flight;
 //   kiosk    the display's GET /hardware/health at most once a minute (counted from when a request starts, so a slow or
 //            failing display isn't asked again sooner), and the firmware version from the poller's last ok answer;
-//   street   the run ledger boiled down per building (app/world-street.js), read at most once every 5 s; null if the ledger fails;
-//   crews    the live Claude sessions (claudeLive), at most 6; null when the board can't say.
+//   street   every kind of run (Work's list: the ledger plus the engineering, automation and spreadsheet stores) boiled
+//            down per building (app/world-street.js), read at most once every 5 s; null if the read fails;
+//   crews    the live Claude sessions (claudeLive), at most 6, read at most once every 5 s; null when the board can't say.
 // A read that is already under way is shared, never doubled. A source that is down or not set up says so with null
 // (never 0, [] or a stale value shown as current). Nothing secret is in the answer: no token, no address, no host path.
 // The answer has no timestamps, so its ETag changes only when what it says changes, and a poll that changes nothing is
@@ -64,7 +66,7 @@ function createWorld({
   gridcraftInFlight = () => 0,
   kioskUrl = () => null, // () => the display's address (workshop.portalUrl()) or null when not set up
   kioskHealth = async () => null, // (url) => workshop.workshopStatus({url})
-  runs = () => [], // () => recent public runs with seenAt merged
+  runs = () => [], // () => Work's runs (ledger and older stores) with seenAt merged
   crews = () => null, // () => claudeLive(...) output | null
   now = () => Date.now()
 } = {}) {
@@ -72,6 +74,7 @@ function createWorld({
   const sheets = cached(() => bridgeHealth(), SHEETS_MS, now);
   const street = cached(() => buildStreet(runs(), { now: now() }), LEDGER_MS, now);
   const kiosk = cached(() => kioskHealth(kioskUrl()), KIOSK_MS, now);
+  const crewPart = cached(() => { const live = crews(); return live ? crewList(live) : null; }, LEDGER_MS, now);
 
   function models(list) {
     let q = null, b = null;
@@ -107,9 +110,6 @@ function createWorld({
     try { n = int(gridcraftInFlight()); } catch {}
     return { bridge: typeof h?.bridge === 'boolean' ? h.bridge : null, excel: h?.bridge === true && typeof h.excel === 'boolean' ? h.excel : null, inFlight: n };
   }
-  function crewPart() {
-    try { const live = crews(); return live ? crewList(live) : null; } catch { return null; }
-  }
   async function kioskPart() {
     let url = null;
     try { url = kioskUrl(); } catch {}
@@ -125,8 +125,8 @@ function createWorld({
   }
 
   async function summary() {
-    const [list, health, k, st] = await Promise.all([loaded(), sheets(), kioskPart(), street()]);
-    return { schema: 1, models: models(list), printer: printerPart(), sheets: sheetsPart(health), kiosk: k, street: st, crews: crewPart() };
+    const [list, health, k, st, cr] = await Promise.all([loaded(), sheets(), kioskPart(), street(), crewPart()]);
+    return { schema: 1, models: models(list), printer: printerPart(), sheets: sheetsPart(health), kiosk: k, street: st, crews: cr };
   }
 
   async function api(req, res) {
