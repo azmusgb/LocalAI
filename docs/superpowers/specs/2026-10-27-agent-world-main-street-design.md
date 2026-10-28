@@ -5,8 +5,8 @@ best things, using the right logic", and later "I need ideas on the look".
 **Replaces:** the layout and renderer of `2026-10-17-agent-world-design.md` (the top-down city) and most of
 `2026-10-24-agent-world-round-2-design.md` (see "What happens to round 2" below). The story words of the 17 Oct spec
 (`agent-world-words.js`) stay.
-**Mockups:** brainstorm screens in `.superpowers/brainstorm/` (git-ignored): `home-strip-look.html`,
-`full-street-cutaway.html`, `art-wow.html` (the art bar).
+**Mockups:** `assets/2026-10-27-agent-world-home-strip.html`, `assets/2026-10-27-agent-world-full-street.html`,
+`assets/2026-10-27-agent-world-art-bar.html` (the art bar; open it in a browser).
 
 ## Where it stands (`main` c708173)
 
@@ -35,7 +35,7 @@ building, one floor per step of its plan.
 ## Look
 
 - **The art is detailed vector art drawn in code, at full screen resolution, never pixelated.** The bar is
-  `art-wow.html`:
+  `assets/2026-10-27-agent-world-art-bar.html`:
   - **Depth:** a hazy far city, buildings with a side wall and a roof, then the sidewalk, curb and road, then
     foreground plants. The layers move at different speeds (parallax).
   - **Materials:** brick, corrugated metal, steel and glass, each looking different, with reflections.
@@ -130,7 +130,8 @@ Rules:
   - Items are `{id, title, status, startedAt}`. Titles come from `readableTitle`.
   - Built from the run ledger with the same `workKind` mapping as Work, plus approvals for `needsYou` and
     `/api/runs/seen` state for `failedUnseen`.
-- **`crews`** is filled from the Claude board's live sessions, and only when developer tools are on.
+- **`crews`** is filled from the Claude board's live sessions. Developer tools is a browser setting the server can't
+  see, so the street hides the Claude Yard when the page has `dev-tools-off`.
   - Each crew item is `{id, title, lastAction}`, already cleaned by `clean()`.
 - **Existing rules kept:**
   - Each source is cached (the ledger read at most once every 5 s).
@@ -151,8 +152,8 @@ Rules:
 ## Testing
 
 - **Unit (`tests/*.test.cjs`):**
-  - The `street` builder: the kind mapping, the caps, needs-you, failed-unseen, null sources, the developer-tools gate
-    on `crews`, ETag stability.
+  - The `street` builder: the kind mapping, the caps, needs-you, failed-unseen, null sources, `crews` shape and caps, ETag
+    stability.
   - Each building's `state()` and `chip()` as table tests.
 - **Browser (`tests/*-ui.mjs`):**
   - The Home strip renders, and a tap opens `#agents` on the right building.

@@ -1,0 +1,168 @@
+<style>
+  @keyframes smoke{0%{transform:translate(0,0) scale(.5);opacity:.75}100%{transform:translate(30px,-110px) scale(2.1);opacity:0}}
+  @keyframes flick{0%,100%{opacity:1}35%{opacity:.86}70%{opacity:.95}}
+  @keyframes pour{0%{stroke-dashoffset:0}100%{stroke-dashoffset:-40}}
+  @keyframes belt{from{transform:translateX(0)}to{transform:translateX(-120px)}}
+  @keyframes cloud{from{transform:translateX(0)}to{transform:translateX(60px)}}
+  @keyframes sway{50%{transform:rotate(-6deg)}}
+  @keyframes rays{50%{opacity:.55}}
+  .smk{animation:smoke 4.2s ease-out infinite;transform-box:fill-box;transform-origin:center}
+  .smk.b{animation-delay:1.4s}.smk.c{animation-delay:2.8s}
+  .flick{animation:flick 1.7s ease-in-out infinite}
+  .pour{stroke-dasharray:6 4;animation:pour .6s linear infinite}
+  .belt{animation:belt 6s linear infinite}
+  .cloud{animation:cloud 30s ease-in-out infinite alternate}
+  .sway{animation:sway 1.2s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 100%}
+  .rays{animation:rays 3s ease-in-out infinite}
+  @media (prefers-reduced-motion:reduce){.smk,.flick,.pour,.belt,.cloud,.sway,.rays{animation:none}}
+  .stage{position:relative;border-radius:14px;overflow:hidden;border:1px solid #23324a}
+  .stage svg{display:block;width:100%;height:auto}
+  .chip{position:absolute;display:flex;align-items:center;gap:10px;padding:8px 12px 8px 10px;border-radius:12px;
+        background:rgba(14,22,38,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+        border:1px solid rgba(255,255,255,.12);box-shadow:0 8px 24px rgba(0,0,0,.35);color:#eef3fb;font:500 13px/1.25 system-ui,-apple-system,sans-serif}
+  .chip small{display:block;color:#a9b8cf;font-weight:400;font-size:12px}
+  .chip .dot{width:9px;height:9px;border-radius:50%;background:#ff9a3c;box-shadow:0 0 0 4px rgba(255,154,60,.22)}
+  .notes{font-size:13px;line-height:1.6;opacity:.9;margin-top:1rem}
+  .notes li{margin:.25rem 0}
+</style>
+
+<h2>Pushing for more: depth, materials, light, and labels you can read</h2>
+<p class="subtitle">The Foundry again, aiming for "wow". The building has depth, and you can see inside to the actual work. Metal, glass and brick each look different. The light is soft and the shadows are real. Labels are crisp app UI floating over the art, not text painted into it.</p>
+
+<div class="stage">
+<svg viewBox="0 0 960 560" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5f9bd8"/><stop offset=".6" stop-color="#a9cdee"/><stop offset="1" stop-color="#f3dcc0"/></linearGradient>
+    <linearGradient id="haze" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9fbfdf" stop-opacity="0"/><stop offset="1" stop-color="#e9d6c4" stop-opacity=".85"/></linearGradient>
+    <pattern id="brick" width="28" height="14" patternUnits="userSpaceOnUse">
+      <rect width="28" height="14" fill="#8f3a46"/>
+      <rect x=".6" y=".6" width="18.8" height="5.8" rx="1.2" fill="#b4505e"/><rect x="20.6" y=".6" width="6.8" height="5.8" rx="1.2" fill="#a44654"/>
+      <rect x=".6" y="7.6" width="6.8" height="5.8" rx="1.2" fill="#a94a58"/><rect x="8.6" y="7.6" width="18.8" height="5.8" rx="1.2" fill="#bb5866"/>
+      <rect x="2" y="1.4" width="9" height="1.2" rx=".6" fill="#d77b88" opacity=".55"/><rect x="11" y="8.4" width="8" height="1.2" rx=".6" fill="#d77b88" opacity=".45"/>
+    </pattern>
+    <pattern id="brickSide" width="28" height="14" patternUnits="userSpaceOnUse">
+      <rect width="28" height="14" fill="#5e222c"/>
+      <rect x=".6" y=".6" width="18.8" height="5.8" rx="1.2" fill="#76303b"/><rect x="8.6" y="7.6" width="18.8" height="5.8" rx="1.2" fill="#7a333e"/>
+    </pattern>
+    <pattern id="corr" width="10" height="40" patternUnits="userSpaceOnUse">
+      <rect width="10" height="40" fill="#6f7c8e"/><rect width="4" height="40" fill="#9aa7b8"/><rect x="4" width="1.5" height="40" fill="#c8d2de"/>
+    </pattern>
+    <linearGradient id="wallLight" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".22"/></linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".35"/><stop offset=".25" stop-color="#fff" stop-opacity="0"/><stop offset=".55" stop-color="#fff" stop-opacity=".12"/><stop offset=".62" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="interior" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a1418"/><stop offset="1" stop-color="#4a1f1a"/></linearGradient>
+    <radialGradient id="furnace" cx=".5" cy=".6" r=".65"><stop offset="0" stop-color="#fff7d6"/><stop offset=".35" stop-color="#ffc24d"/><stop offset=".75" stop-color="#f0682a"/><stop offset="1" stop-color="#8a2a14"/></radialGradient>
+    <radialGradient id="spill" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ffb04a" stop-opacity=".55"/><stop offset="1" stop-color="#ffb04a" stop-opacity="0"/></radialGradient>
+    <linearGradient id="molten" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff2b0"/><stop offset="1" stop-color="#ff8a2a"/></linearGradient>
+    <linearGradient id="steel" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4a5260"/><stop offset=".4" stop-color="#a5afbd"/><stop offset=".6" stop-color="#7d8796"/><stop offset="1" stop-color="#3c434f"/></linearGradient>
+    <linearGradient id="crate" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e2ad6e"/><stop offset="1" stop-color="#a5723e"/></linearGradient>
+    <linearGradient id="walk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c4c9d1"/><stop offset="1" stop-color="#9aa1ac"/></linearGradient>
+    <linearGradient id="road" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a5361"/><stop offset="1" stop-color="#363d48"/></linearGradient>
+    <linearGradient id="raysG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd38a" stop-opacity=".5"/><stop offset="1" stop-color="#ffd38a" stop-opacity="0"/></linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="6"/></filter>
+    <filter id="soft2" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.2"/></filter>
+    <filter id="smokeF" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4"/></filter>
+  </defs>
+
+  <!-- sky + far city with atmospheric haze -->
+  <rect width="960" height="560" fill="url(#sky)"/>
+  <g class="cloud" opacity=".9"><ellipse cx="160" cy="90" rx="90" ry="22" fill="#fff"/><ellipse cx="210" cy="78" rx="60" ry="24" fill="#fff"/><ellipse cx="120" cy="84" rx="40" ry="16" fill="#fff"/></g>
+  <g class="cloud" opacity=".7" style="animation-delay:-12s"><ellipse cx="760" cy="70" rx="70" ry="16" fill="#fff"/><ellipse cx="800" cy="62" rx="44" ry="16" fill="#fff"/></g>
+  <g fill="#7f97b4"><rect x="0" y="250" width="70" height="170"/><rect x="80" y="210" width="50" height="210"/><rect x="140" y="270" width="80" height="150"/><rect x="720" y="230" width="60" height="190"/><rect x="790" y="270" width="90" height="150"/><rect x="890" y="240" width="70" height="180"/></g>
+  <g fill="#93a9c2"><rect x="30" y="300" width="60" height="120"/><rect x="760" y="300" width="70" height="120"/><rect x="860" y="310" width="80" height="110"/></g>
+  <rect y="200" width="960" height="230" fill="url(#haze)"/>
+
+  <!-- chimney (behind roof) -->
+  <rect x="620" y="96" width="50" height="190" fill="url(#brick)"/><rect x="620" y="96" width="50" height="190" fill="url(#wallLight)"/>
+  <rect x="670" y="104" width="14" height="182" fill="url(#brickSide)"/>
+  <rect x="612" y="86" width="74" height="14" rx="3" fill="url(#steel)"/>
+  <g filter="url(#smokeF)">
+    <circle class="smk" cx="645" cy="70" r="20" fill="#e6e9ee"/><circle class="smk b" cx="650" cy="70" r="18" fill="#d3d8df"/><circle class="smk c" cx="640" cy="70" r="22" fill="#f1f3f6"/>
+  </g>
+
+  <!-- ground shadow under building -->
+  <ellipse cx="480" cy="452" rx="330" ry="18" fill="#000" opacity=".25" filter="url(#soft)"/>
+
+  <!-- side wall (depth) -->
+  <polygon points="760,196 812,176 812,440 760,452" fill="url(#brickSide)"/>
+  <polygon points="760,196 812,176 812,440 760,452" fill="#000" opacity=".12"/>
+  <!-- roof: corrugated metal with depth -->
+  <polygon points="150,200 480,124 812,176 760,200" fill="#59657a"/>
+  <polygon points="140,204 470,128 770,204" fill="url(#corr)"/>
+  <polygon points="140,204 470,128 470,136 160,204" fill="#fff" opacity=".18"/>
+  <rect x="134" y="200" width="642" height="9" rx="2" fill="url(#steel)"/>
+  <!-- front wall -->
+  <rect x="160" y="208" width="600" height="244" fill="url(#brick)"/>
+  <rect x="160" y="208" width="600" height="244" fill="url(#wallLight)"/>
+  <!-- steel lintel + pilasters -->
+  <rect x="160" y="208" width="600" height="14" fill="url(#steel)"/>
+  <rect x="160" y="208" width="14" height="244" fill="url(#steel)"/><rect x="746" y="208" width="14" height="244" fill="url(#steel)"/>
+
+  <!-- big window: see inside -->
+  <rect x="196" y="238" width="380" height="196" rx="4" fill="#2d3138"/>
+  <rect x="204" y="246" width="364" height="180" fill="url(#interior)"/>
+  <!-- interior: furnace -->
+  <ellipse class="flick" cx="300" cy="350" rx="140" ry="90" fill="url(#spill)"/>
+  <path d="M236 426 V320 Q236 280 290 280 Q344 280 344 320 V426 Z" fill="#3b2a2a"/>
+  <path d="M252 426 V330 Q252 300 290 300 Q328 300 328 330 V426 Z" fill="url(#furnace)" class="flick"/>
+  <rect x="236" y="276" width="108" height="10" rx="3" fill="url(#steel)"/>
+  <!-- crucible pouring -->
+  <g class="sway"><path d="M372 300 h46 l-6 34 h-34 z" fill="#5a606c"/><rect x="368" y="296" width="54" height="7" rx="3" fill="url(#steel)"/><ellipse cx="395" cy="300" rx="22" ry="4" fill="url(#molten)"/></g>
+  <line x1="392" y1="334" x2="392" y2="384" stroke="#ffcf6a" stroke-width="5" stroke-linecap="round" class="pour"/>
+  <rect x="368" y="384" width="52" height="20" rx="3" fill="#3a3f48"/><ellipse cx="394" cy="386" rx="22" ry="4" fill="url(#molten)" class="flick"/>
+  <!-- conveyor: queue -->
+  <rect x="436" y="398" width="132" height="8" rx="4" fill="#2b2f36"/>
+  <g fill="#555c68"><circle cx="446" cy="408" r="4"/><circle cx="476" cy="408" r="4"/><circle cx="506" cy="408" r="4"/><circle cx="536" cy="408" r="4"/><circle cx="560" cy="408" r="4"/></g>
+  <g><rect x="470" y="370" width="30" height="28" rx="3" fill="url(#crate)"/><path d="M470 384h30M485 370v28" stroke="#7a5228" stroke-width="2"/></g>
+  <g><rect x="512" y="370" width="30" height="28" rx="3" fill="url(#crate)"/><path d="M512 384h30M527 370v28" stroke="#7a5228" stroke-width="2"/></g>
+  <!-- volumetric light rays in the hall -->
+  <g class="rays" opacity=".35"><polygon points="300,250 340,250 420,426 330,426" fill="url(#raysG)"/><polygon points="420,250 446,250 520,426 460,426" fill="url(#raysG)"/></g>
+  <!-- window frame + mullions + glass reflection -->
+  <g stroke="#2d3138" stroke-width="7"><line x1="331" y1="246" x2="331" y2="426"/><line x1="450" y1="246" x2="450" y2="426"/><line x1="204" y1="336" x2="568" y2="336"/></g>
+  <rect x="204" y="246" width="364" height="180" fill="url(#glass)"/>
+  <rect x="196" y="434" width="380" height="8" rx="2" fill="url(#steel)"/>
+
+  <!-- door with worker -->
+  <rect x="610" y="300" width="112" height="152" rx="4" fill="#2a2d33"/>
+  <rect x="618" y="308" width="96" height="144" fill="#5a2a1e"/>
+  <rect x="618" y="308" width="96" height="144" fill="url(#spill)" class="flick" opacity=".7"/>
+  <g fill="#3a3f48" opacity=".9"><rect x="618" y="308" width="96" height="6"/><rect x="618" y="324" width="96" height="3"/></g>
+  <!-- worker figure with proportions -->
+  <ellipse cx="664" cy="452" rx="26" ry="5" fill="#000" opacity=".3" filter="url(#soft2)"/>
+  <path d="M652 450 l2 -34 h8 l1 34 z M666 450 l1 -34 h8 l1 34 z" fill="#2f3a52"/>
+  <path d="M648 418 q0 -40 16 -40 h4 q16 0 16 40 z" fill="#ff7e46"/>
+  <rect x="650" y="390" width="32" height="5" fill="#f3e45a" opacity=".9"/>
+  <circle cx="666" cy="368" r="12" fill="#e9b88f"/>
+  <path d="M652 366 q14 -20 28 0 z" fill="#ffc640"/><rect x="649" y="364" width="34" height="5" rx="2.5" fill="#e3a51b"/>
+  <path d="M682 396 l20 -10" stroke="#e9b88f" stroke-width="7" stroke-linecap="round"/>
+  <rect x="696" y="372" width="18" height="24" rx="3" fill="#d9e1ea"/><rect x="699" y="376" width="12" height="2" fill="#7a8696"/><rect x="699" y="381" width="9" height="2" fill="#7a8696"/>
+
+  <!-- wall lamp -->
+  <rect x="588" y="262" width="4" height="22" fill="#2d3138"/><path d="M580 262 h20 l-4 -10 h-12 z" fill="#2d3138"/><ellipse cx="590" cy="262" rx="7" ry="2" fill="#fff4cc"/>
+
+  <!-- sidewalk + curb + road -->
+  <rect y="452" width="960" height="34" fill="url(#walk)"/>
+  <g stroke="#8a919c" stroke-width="1.2"><line x1="120" y1="452" x2="110" y2="486"/><line x1="240" y1="452" x2="230" y2="486"/><line x1="360" y1="452" x2="350" y2="486"/><line x1="480" y1="452" x2="470" y2="486"/><line x1="600" y1="452" x2="590" y2="486"/><line x1="720" y1="452" x2="710" y2="486"/><line x1="840" y1="452" x2="830" y2="486"/></g>
+  <rect y="486" width="960" height="8" fill="#e3e6ea"/><rect y="494" width="960" height="66" fill="url(#road)"/>
+  <g fill="#f2d67a"><rect x="30" y="524" width="60" height="5" rx="2"/><rect x="190" y="524" width="60" height="5" rx="2"/><rect x="350" y="524" width="60" height="5" rx="2"/><rect x="510" y="524" width="60" height="5" rx="2"/><rect x="670" y="524" width="60" height="5" rx="2"/><rect x="830" y="524" width="60" height="5" rx="2"/></g>
+  <!-- street lamp -->
+  <rect x="860" y="290" width="8" height="196" fill="#3a404a"/><path d="M864 296 q0 -24 30 -24 h10" stroke="#3a404a" stroke-width="6" fill="none"/><path d="M896 266 h22 l-4 12 h-14 z" fill="#3a404a"/>
+  <!-- foreground bush -->
+  <g><ellipse cx="90" cy="452" rx="56" ry="26" fill="#4f8a55"/><ellipse cx="62" cy="446" rx="30" ry="20" fill="#5f9e64"/><ellipse cx="114" cy="440" rx="26" ry="18" fill="#6aaa6e"/><ellipse cx="100" cy="434" rx="10" ry="5" fill="#9fd29e" opacity=".6"/></g>
+</svg>
+<div class="chip" style="left:3%;top:4%"><span class="dot"></span><div>Model Foundry<small>qwen3:14b loaded · 2 waiting</small></div></div>
+<div class="chip" style="right:3%;top:4%"><div>Mission "Audit Inbox"<small>using the model now</small></div></div>
+</div>
+
+<ul class="notes">
+  <li><b>Readable:</b> the art shows <i>that</i> something is happening (the furnace pours, crates ride the conveyor). Crisp UI chips say <i>what</i>: the name, the state, the count. Text is never painted into the picture, so it's sharp at any size and works with screen readers.</li>
+  <li><b>Depth:</b> a hazy far city behind, a side wall and a corrugated roof, a sidewalk with a curb and the road in front, and a bush in the foreground. On the full page these layers drift at different speeds as the camera moves (parallax).</li>
+  <li><b>Materials and light:</b> brick, steel, glass with reflections, light rays in the hall, the furnace glow spilling onto the floor, soft shadows under everything.</li>
+  <li><b>Inside each building there's a scene of the actual work.</b> The queue is crates on a belt, the model is the metal being poured, the worker at the door holds a clipboard.</li>
+  <li><b>Honest cost:</b> this is about what hand-written vector art can reach. For more than this (painterly texture, true realism), I'd move to illustrated image layers made outside the code, with the motion and light still driven by code on top.</li>
+</ul>
+
+<div class="options" style="margin-top:1rem">
+  <div class="option" data-choice="yes" onclick="toggleSelect(this)"><div class="letter">✓</div><div class="content"><h3>Yes, this is the bar</h3><p>Vector art drawn in code at this level, UI chips for labels</p></div></div>
+  <div class="option" data-choice="painted" onclick="toggleSelect(this)"><div class="letter">★</div><div class="content"><h3>Go further: illustrated image layers</h3><p>Painted or rendered art made outside the code, animated on top</p></div></div>
+  <div class="option" data-choice="tweak" onclick="toggleSelect(this)"><div class="letter">~</div><div class="content"><h3>Closer, but…</h3><p>Tell me what in the terminal</p></div></div>
+</div>
