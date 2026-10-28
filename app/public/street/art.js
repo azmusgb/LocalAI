@@ -19,7 +19,8 @@ const P=Object.freeze({
  smoke0:'#f1f3f6',smoke1:'#d3d8df',bush0:'#4f8a55',bush1:'#5f9e64',bush2:'#6aaa6e',pole:'#3a404a'});
 // Brick tones: [mortar, long brick, short brick, second short, second long, highlight]. red and side are the art bar's.
 const TONES={red:['#8f3a46','#b4505e','#a44654','#a94a58','#bb5866','#d77b88'],side:['#5e222c','#76303b','#6c2b35','#702e38','#7a333e','#8c4450'],
- sand:['#a0825e','#cfae84','#c19f76','#c6a47b','#d6b68c','#ead2ae'],slate:['#4c5868','#6d7a8c','#64717f','#687586','#748294','#97a5b6']};
+ sand:['#a0825e','#cfae84','#c19f76','#c6a47b','#d6b68c','#ead2ae'],slate:['#4c5868','#6d7a8c','#64717f','#687586','#748294','#97a5b6'],
+ stone:['#8f8a82','#c9c3b8','#bcb6ab','#c2bcb1','#d1cbc0','#ece8e0'],clay:['#6e3f27','#a86440','#99583a','#9f5e3c','#b26e48','#d0926a']};
 const ROAD=327,CURB=322,GROUND=300;
 function rgba(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16},${n>>8&255},${n&255},${a})`}
 function rr(c,x,y,w,h,r){if(c.roundRect)c.roundRect(x,y,w,h,r);else c.rect(x,y,w,h)}
@@ -117,6 +118,13 @@ function lamp(c,x,y,on){
  c.save();box(c,x-1,y-10,2,10,P.frame);c.fillStyle=P.frame;poly(c,[[x-4.5,y],[x+4.5,y],[x+2.5,y-4],[x-2.5,y-4]]);c.fill();
  c.fillStyle=on?P.lamp:'#5b6170';c.beginPath();c.ellipse(x,y,3.4,1.2,0,0,Math.PI*2);c.fill();if(on)glow(c,x,y+2,9,6,P.lamp,.45);c.restore();
 }
+// A needs-you cue over (x, y): an amber speech bubble with an "!", scaled by k (1 by default). Steady unless the caller
+// varies k, so it can sit in a still.
+function cue(c,x,y,k){
+ c.save();c.translate(x,y);if(k&&k!==1)c.scale(k,k);c.shadowColor='rgba(0,0,0,.3)';c.shadowBlur=2;box(c,-8,-9,16,14,P.hat,6);
+ poly(c,[[-5,4],[0,4],[-7,10]]);c.fill();c.shadowColor='transparent';c.fillStyle='#7a3a10';c.fillRect(-1.3,-6.5,2.6,5.5);
+ c.beginPath();c.arc(0,1.4,1.4,0,Math.PI*2);c.fill();c.restore();
+}
 // A crate s units wide: the art bar's warm wood gradient and its cross battens.
 function crate(c,x,y,s){
  c.save();const h=s*.93,k=s/30;box(c,x,y,s,h,lin(c,0,y,0,y+h,[[0,P.crate0],[1,P.crate1]]),3*k);
@@ -162,7 +170,7 @@ function skyline(c,x,w,layer){
 // A texture helper (brick, corrugated…) laid at half scale in a scene rect: bricks and ribs as dense as the art bar's.
 function tex(c,fn,x,y,w,h,o){c.save();c.scale(.5,.5);fn(c,x*2,y*2,w*2,h*2,o&&o.skew?{...o,skew:o.skew*2}:o);c.restore()}
 const grad=(c,x0,y0,x1,y1,a,b)=>lin(c,x0,y0,x1,y1,[[0,a],[1,b]]);
-const api={palette:P,box,poly,grad,tex,brick,brickSide,corrugated,steel,glass,glow,rays,softShadow,person,plank,boards,lamp,crate,smoke,fire,sidewalk,road,skyline};
+const api={palette:P,box,poly,grad,tex,brick,brickSide,corrugated,steel,glass,glow,rays,softShadow,person,plank,boards,lamp,cue,crate,smoke,fire,sidewalk,road,skyline};
 root.LocalAIStreetArt=api;
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);
