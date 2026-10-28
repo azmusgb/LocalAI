@@ -1,11 +1,11 @@
 // Main Street: window.LocalAIStreet. home.js loads street/*.js (its STREET_MODS) the first time Home shows the street.
 // Each building file registers one def: {id, width, state(world), stillKey?(state), drawStill(ctx, state, env),
-// drawLive(ctx, state, t, env), animates?(state), chip(state) -> {title, detail, tone}, roof?, open?(item)}. animates
+// drawLive(ctx, state, t, env), animates?(state), chip(state) -> {title, detail, tone}, roof?, open?(item), item?(state)}. animates
 // says whether drawLive moves for that state (a def without it counts as moving); when it is false drawLive must draw
 // the same at any t. width is in scene units; the
 // scene is 360 units tall with the ground line at y = 300, and a building draws in its own box x in [0, width]. env is
 // {night, reduced, zoom, dpr}. Buildings stand left to right in ORDER, 24 units apart; a key with no def is skipped.
-// The engine: mount(el, {mode:'strip', onOpen(id)}) -> {destroy()} draws the street on one canvas. The .street box is
+// The engine: mount(el, {mode:'strip', onOpen(id, item)}) -> {destroy()} draws the street on one canvas. The .street box is
 // the horizontal scroller (native swipe on a phone; drag, shift+wheel and a trackpad's sideways swipe on a desktop; a
 // plain vertical wheel is left to the page) and the canvas is sticky inside it, so
 // the camera is its scrollLeft. Each frame draws the sky, the far city (with
@@ -14,13 +14,13 @@
 // screen, the page visible, motion allowed and some building in view animates; otherwise it draws one frame and stops
 // (a world, resize, scroll or the strip showing again restarts it). Under reduced motion one frame (t = 0) is drawn per
 // world or resize.
-// A shared poller (below) feeds setWorld from /api/world. setWorld(world) recomputes each state and the chips (and unhides the strip); stats() is a test and perf hook.
+// A chip click calls onOpen(def.id, def.item?.(state) ?? null); a state with hidden:true takes its building off the street (layout, drawing, chip) until a world shows it again. A shared poller (below) feeds setWorld from /api/world. setWorld(world) recomputes each state and the chips (and unhides the strip); stats() is a test and perf hook.
 (function(root){'use strict';
 const ORDER=Object.freeze(['chat','images','missions','garage','sheets','clock','foundry','workshop','kiosk','yard']);
 const byId=new Map();let ver=0;
 function register(def){if(!def||typeof def.id!=='string'||!def.id)throw new TypeError('a street def needs an id');byId.set(def.id,def);ver++;return def}
 function defs(){return ORDER.filter(id=>byId.has(id)).map(id=>byId.get(id))}
-const H=360,GAP=24,PAD=24,SLOT=200,FRAME=1000/30-1,QUIET=10000,WAIT=8000,MIN_GAP=2000,HINT='Opens Agent World';
+const H=360,GAP=24,PAD=24,SLOT=200,FRAME=1000/30-1,QUIET=10000,WAIT=8000,MIN_GAP=2000;
 let seen=false;const states=new Map(),keys=new Map(),mounts=new Set(),warned=new Set();
 const st={frames:0,avg:0,stills:0};
 function warnOnce(id,what,e){if(warned.has(id))return;warned.add(id);console.warn('Main Street: '+id+' '+what+' failed',e)}
@@ -68,6 +68,8 @@ function start(){if(timer)return;timer=setInterval(()=>{if(shown())poll()},10000
 function stop(){clearInterval(timer);clearTimeout(later);timer=later=0;was=false;root.document.removeEventListener('visibilitychange',onVis)}
 function stats(){return{frames:st.frames,avgMs:Math.round(st.avg*1000)/1000,stills:st.stills}}
 
+// What a building's chip opens: its def's item for the state (null for a def with none, or one that throws).
+function itemOf(d){try{return d.item&&d.item(states.get(d.id)||{})||null}catch(e){warnOnce(d.id,'item',e);return null}}
 function animates(d,s){try{return d.animates?!!d.animates(s):typeof d.drawLive==='function'}catch(e){warnOnce(d.id,'animates',e);return true}}
 function mount(el,opts){
  opts=opts||{};const A=root.LocalAIStreetArt,doc=el.ownerDocument;
@@ -75,14 +77,17 @@ function mount(el,opts){
  box.className='street';box.setAttribute('role','region');box.setAttribute('aria-label','Agent World street');cv.className='street__canvas';cv.setAttribute('aria-hidden','true');chipsEl.className='street__chips';box.hidden=true;box.append(cv,chipsEl);el.append(box);
  const c=cv.getContext('2d'),mq=root.matchMedia?root.matchMedia('(prefers-reduced-motion: reduce)'):null,reduce=()=>!!(mq&&mq.matches);
  // moving: some building drawn in the last frame animates (true until a frame says otherwise).
- let list=[],xs=new Map(),zoom=1,dpr=1,streetW=0,inView=false,raf=0,last=0,userAt=-Infinity,dead=false,drag=null,sig=-1,moving=true;
+ let list=[],xs=new Map(),zoom=1,dpr=1,streetW=0,inView=false,raf=0,last=0,userAt=-Infinity,dead=false,drag=null,sig='',moving=true;
  const t0=performance.now(),stills=new Map(),chips=new Map();
  const fits=()=>streetW<=box.clientWidth+1;
  // Buildings left to right, each centred in a slot at least SLOT CSS px wide so its chip has room; when the street
  // fits, the spare width goes into the gaps so it fills the strip. xs holds each building's left edge in CSS px from
  // the street's start; the chips' layer is as wide as the street (or the box, when it fits).
+ // The buildings standing now: a state with hidden:true leaves the street (its still stays cached). shape() names the
+ // set, so a building hiding or showing re-flows the layout.
+ const stand=()=>defs().filter(d=>!(states.get(d.id)||{}).hidden),shape=()=>ver+':'+stand().map(d=>d.id);
  function layout(){
-  list=defs();sig=ver;xs=new Map();
+  list=stand();sig=shape();xs=new Map();
   const vw=box.clientWidth,pad=PAD*zoom,gap=GAP*zoom,n=list.length,slot=d=>Math.max(d.width*zoom,SLOT);
   const need=2*pad+list.reduce((a,d)=>a+slot(d),0)+gap*Math.max(0,n-1),spare=Math.max(0,vw-need);
   let x=n>1?pad:pad+spare/2;
@@ -91,7 +96,7 @@ function mount(el,opts){
   for(const [id,b] of chips)if(!byId.has(id)||!xs.has(id)){b.remove();chips.delete(id)}
   for(const d of list){
    let b=chips.get(d.id);
-   if(!b){b=doc.createElement('button');b.type='button';b.append(doc.createElement('span'),doc.createElement('span'));b.title=HINT;b.setAttribute('aria-description',HINT);b.addEventListener('click',()=>opts.onOpen&&opts.onOpen(d.id));chips.set(d.id,b)}
+   if(!b){b=doc.createElement('button');b.type='button';b.append(doc.createElement('span'),doc.createElement('span'));b.addEventListener('click',()=>opts.onOpen&&opts.onOpen(d.id,itemOf(d)));chips.set(d.id,b)}
    chipsEl.append(b);// keeps DOM order = street order
    b.style.left=xs.get(d.id)+d.width*zoom/2+'px';
   }
@@ -101,6 +106,7 @@ function mount(el,opts){
    const b=chips.get(d.id);let ch;try{ch=d.chip(states.get(d.id)||{})}catch(e){warnOnce(d.id,'chip',e);continue}
    const title=String(ch.title||d.id),detail=String(ch.detail||''),[a,z]=b.children;
    if(a.textContent!==title)a.textContent=title;if(z.textContent!==detail)z.textContent=detail;
+   const hint=itemOf(d)?'Opens this run':'Opens Agent World';if(b.title!==hint){b.title=hint;b.setAttribute('aria-description',hint)}
    b.setAttribute('aria-label',title+': '+detail);b.className='street-chip street-chip--'+(ch.tone||'quiet');
    // On the roof line, but never above the strip's top (a long detail wraps to a second line).
    const base=(H-(d.roof||120))*zoom+4;b.style.bottom=base+'px';const over=2-b.offsetTop;if(over>0)b.style.bottom=base-over+'px';
@@ -126,7 +132,7 @@ function mount(el,opts){
  }
  function draw(t){
   if(dead||box.hidden||!cv.width)return;if((root.devicePixelRatio||1)!==dpr)return resize();
-  if(ver!==sig){layout();paintChips()}
+  if(shape()!==sig){layout();paintChips()}
   const a=performance.now(),S=zoom*dpr,vw=cv.width/S,x0=box.scrollLeft/zoom,e=env();
   c.setTransform(S,0,0,S,0,0);
   if(A){const P=A.palette,g=c.createLinearGradient(0,0,0,300);g.addColorStop(0,P.sky0);g.addColorStop(.6,P.sky1);g.addColorStop(1,P.sky2);
@@ -158,7 +164,7 @@ function mount(el,opts){
   const l=xs.get(d.id),r=l+d.width*zoom,vw=box.clientWidth;if(r>vw)box.scrollTo({left:Math.max(0,(l+r-vw)/2),behavior:'instant'});
  }
  function onWorld(changed){
-  if(dead)return;if(box.hidden){box.hidden=false;inView=onScreen(box);resize();firstLook()}else{if(ver!==sig)layout();paintChips();for(const d of list)still(d);redraw()}
+  if(dead)return;if(box.hidden){box.hidden=false;inView=onScreen(box);resize();firstLook()}else{if(shape()!==sig)layout();paintChips();for(const d of list)still(d);redraw()}
   const id=changed.find(i=>xs.has(i));if(!id||fits()||Date.now()-userAt<QUIET)return;
   const d=byId.get(id),l=xs.get(id),r=l+d.width*zoom,vw=box.clientWidth;
   if(l>=box.scrollLeft&&r<=box.scrollLeft+vw)return;
@@ -200,9 +206,9 @@ function mount(el,opts){
   if(ro)ro.disconnect();if(io)io.disconnect();doc.removeEventListener('visibilitychange',onVis);if(mq)mq.removeEventListener('change',onMotion);box.remove();
  }};
 }
-// Home's strip: mounted once into #homeStreetMount (repeat calls do nothing); a building opens the old Agent World.
+// Home's strip: mounted once into #homeStreetMount (repeat calls do nothing); a building opens its run, else the old Agent World.
 let home=null;
-function mountHome(){const el=root.document.getElementById('homeStreetMount');if(!el||home&&home.el===el)return;home={el,m:mount(el,{mode:'strip',onOpen:()=>root.LocalAIRouter.go('#agents')})}}
+function mountHome(){const el=root.document.getElementById('homeStreetMount');if(!el||home&&home.el===el)return;home={el,m:mount(el,{mode:'strip',onOpen:(id,item)=>item&&root.LocalAIRuns&&root.LocalAIRuns.show?root.LocalAIRuns.show(item.id):root.LocalAIRouter.go('#agents')})}}
 const api=root.LocalAIStreet=Object.assign(root.LocalAIStreet||{},{register,ORDER,defs,mount,mountHome,setWorld,stats});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

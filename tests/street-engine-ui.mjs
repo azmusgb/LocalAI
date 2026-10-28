@@ -423,6 +423,50 @@ await check('a street shown below the fold is not polled or drawn until scrolled
   await page.waitForFunction(f => window.LocalAIStreet.stats().frames > f, f, { timeout: 3000 });
 });
 
+// A chip with something specific opens that run; the rest open Agent World. A hidden building leaves the street.
+await check('a chip opens its building\'s run, else Agent World, and its hint says which', async () => {
+  const w = { ...BUSY, street: { ...BUSY.street, chat: src({ needsYou: [{ id: 'r1', title: 'Ask', status: 'needs_you', startedAt: Date.now() }] }), images: src() } };
+  const page = await fresh({ world: w });
+  await page.evaluate(() => {
+    window.__shown = null; window.__go = [];
+    window.LocalAIRuns = { show: id => { window.__shown = id; } };
+    window.LocalAIRouter = { go: h => window.__go.push(h) };
+    window.__calls = [];
+    const old = document.getElementById('homeStreetMount'); if (old) old.id = 'homeStreetMountOld';
+    window.__home = document.body.appendChild(document.createElement('div')); window.__home.id = 'homeStreetMount';
+    window.LocalAIStreet.mountHome();
+    window.__m2 = window.LocalAIStreet.mount(window.__el.appendChild(document.createElement('div')), { mode: 'strip', onOpen: (id, item) => window.__calls.push([id, item && item.id]) });
+  });
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), w);
+  const hints = await page.evaluate(() => { const h = window.__home.querySelectorAll('.street-chip'); return [h[0].title, h[0].getAttribute('aria-description'), h[1].title]; });
+  assert.deepEqual(hints, ['Opens this run', 'Opens this run', 'Opens Agent World']);
+  await page.evaluate(() => window.__home.querySelectorAll('.street-chip')[0].click());
+  assert.equal(await page.evaluate(() => window.__shown), 'r1');
+  await page.evaluate(() => window.__home.querySelectorAll('.street-chip')[1].click());
+  assert.deepEqual(await page.evaluate(() => window.__go), ['#agents']);
+  await page.evaluate(() => { const c = window.__el.querySelectorAll('.street')[1].querySelectorAll('.street-chip'); c[0].click(); c[1].click(); });
+  assert.deepEqual(await page.evaluate(() => window.__calls), [['chat', 'r1'], ['images', null]]);
+  // the hint follows the item as the world changes
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), QUIET);
+  assert.equal(await page.evaluate(() => window.__home.querySelectorAll('.street-chip')[0].title), 'Opens Agent World');
+});
+
+await check('a hidden building has no chip, the next one moves left, and unhiding restores it', async () => {
+  const page = await fresh();
+  const lefts = () => page.evaluate(() => [...window.__el.querySelectorAll('.street-chip')].map(b => [b.textContent.slice(0, 6), Math.round(b.getBoundingClientRect().left)]));
+  await page.evaluate(w => { window.__hide = false; window.LocalAIStreet.register({ id: 'images', width: 100, state: () => ({ hidden: window.__hide }), chip: () => ({ title: 'Hid', detail: 'x', tone: 'quiet' }), drawStill() {}, drawLive() {}, animates: () => false }); window.LocalAIStreet.setWorld(w); }, BUSY);
+  const shown = await lefts();
+  assert.equal(shown.length, 6); assert.ok(shown.some(c => c[0].startsWith('Hid')));
+  await page.evaluate(w => { window.__hide = true; window.LocalAIStreet.setWorld(w); }, BUSY);
+  const hid = await lefts();
+  assert.equal(hid.length, 5); assert.ok(!hid.some(c => c[0].startsWith('Hid')));
+  const at = (l, t) => l.find(c => c[0].startsWith(t))[1];
+  assert.ok(at(hid, 'Spread') < at(shown, 'Spread'), `moved left: ${at(hid, 'Spread')} < ${at(shown, 'Spread')}`);
+  await page.evaluate(w => { window.__hide = false; window.LocalAIStreet.setWorld(w); }, BUSY);
+  assert.deepEqual(await lefts(), shown);
+  assert.deepEqual(page.errors, []);
+});
+
 for (const c of contexts) await c.close();
 await browser.close();
 if (failures.length) { console.error(`\n${failures.length} failed:\n` + failures.join('\n')); process.exit(1); }
