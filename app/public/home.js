@@ -331,7 +331,7 @@ function dropContext(){
  history.replaceState(history.state,'',location.pathname+location.search+h.slice(0,i)+(q.toString()?'?'+q:''));
 }
 function contextFromHash(){const C=root.LocalAIAskContext,R=root.LocalAIRouter;if(!C||!R)return;const c=C.clean(R.current().query.get('context'));if(c){context=c;paintContext()}}
-function activate(){fromHash();contextFromHash();greet();loadRoute();const b=$('homeBack');if(b&&root.LocalAIAskContext)b.href=root.LocalAIAskContext.homeUrl(location.hostname);if(root.LocalAIUI)refresh().then(schedule)}
+function activate(){fromHash();contextFromHash();greet();loadRoute();const b=$('homeBack');if(b&&root.LocalAIAskContext)b.href=root.LocalAIAskContext.homeUrl(location.hostname);if(root.LocalAIUI)refresh().then(schedule);streetUp()}
 function dockToNav(){
  // On phones the composer sits exactly on the tab bar, whatever its height is. While the owner types, the tab bar
  // steps aside (body.home-typing, see app.css) and the composer sits on the keyboard: iOS keeps innerHeight and only
@@ -370,6 +370,16 @@ function init(){
  if(active()&&onHomeHash())setTimeout(activate,0);
 }
 addEventListener('localai:first-run',paintNeeds); // Get started appeared or was dismissed: decide again who shows the service rows
+// Main Street (street/*.js) loads on demand, never with the shell (tests/budgets.test.cjs gives it its own budget), in
+// order. LocalAIStreetLoad() resolves once all of STREET_MODS have run, rejects if one fails (a later call tries again).
+const STREET_MODS=['art','street','chat','images','sheets','foundry','workshop','kiosk'];let streetLoad=null;
+function loadStreet(){
+ if(streetLoad)return streetLoad;const added=[];
+ streetLoad=Promise.all(STREET_MODS.map(m=>new Promise((ok,no)=>{const s=document.createElement('script');s.src='/street/'+m+'.js';s.async=false;s.onload=()=>ok();s.onerror=()=>no(new Error('Main Street could not load '+m+'.js'));added.push(s);document.head.append(s)}))).then(()=>{},e=>{streetLoad=null;added.forEach(s=>s.remove());throw e});
+ return streetLoad;
+}
+root.LocalAIStreetLoad=loadStreet;
+let warned=0;function streetUp(){loadStreet().then(()=>root.LocalAIStreet.mountHome(),e=>{if(!warned++)console.warn(e.message)})}
 root.LocalAIHome={send,activate,refresh,mode:()=>cur(),setMode,printerWords,
  // ui.js hands over the critical items of the capability check (a stopped service, an unreachable registry).
  setAttention(items){attention=(items||[]).filter(a=>a&&a.severity==='critical');paintNeeds()}};

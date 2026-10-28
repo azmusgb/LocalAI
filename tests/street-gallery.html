@@ -1,0 +1,103 @@
+<!doctype html>
+<!-- Main Street gallery (dev only, not served): each building busy, quiet and down, side by side at zoom 1 and at the strip's zoom (0.44), on the
+     street the engine will draw around it (sky, far city, sidewalk, road, a bush in front), plus the busy one large to
+     compare with the art bar. Open it from disk. ?ids=foundry,workshop picks buildings (default: every registered one),
+     ?t=1234 freezes time (ms) for screenshots, ?big=0 hides the large one, ?street=0.44 shows the whole street per state. window.gallery.time(id, n) measures drawLive. -->
+<html lang="en"><head><meta charset="utf-8"><title>Main Street gallery</title>
+<style>
+ body{margin:0;padding:16px;background:#0e1626;color:#c9d4e6;font:13px/1.4 system-ui,sans-serif}
+ h2{font-size:14px;font-weight:600;margin:14px 0 6px}
+ .row{display:flex;gap:12px;flex-wrap:wrap}
+ figure{margin:0}figcaption{opacity:.75;margin-top:4px}
+ canvas{display:block;border-radius:10px;border:1px solid #23324a}
+</style></head><body>
+<div id="out"></div>
+<script src="../app/public/street/art.js"></script>
+<script src="../app/public/street/street.js"></script>
+<script src="../app/public/street/chat.js"></script>
+<script src="../app/public/street/images.js"></script>
+<script src="../app/public/street/sheets.js"></script>
+<script src="../app/public/street/foundry.js"></script>
+<script src="../app/public/street/workshop.js"></script>
+<script src="../app/public/street/kiosk.js"></script>
+<script>
+(function(){'use strict';
+const A=window.LocalAIStreetArt,P=A.palette,q=new URLSearchParams(location.search);
+const src=o=>Object.assign({running:[],waiting:0,needsYou:[],failedUnseen:[],recent:[]},o);
+const job=(i,title)=>({id:'j'+i,title:title||'Job '+i,status:'running',startedAt:Date.now()-60000*i});
+const street=o=>Object.assign({chat:src(),images:src(),missions:src(),garage:src(),sheets:src(),clock:src()},o);
+// Stub /api/world answers. Busy matches the art bar (qwen3:14b loaded, 2 waiting).
+const WORLDS={
+ busy:{schema:1,models:{loaded:[{name:'qwen3:14b',sizeMb:9300,vramMb:11000}],queue:{active:1,waiting:2},busy:true},
+  printer:{setUp:true,access:'ok',state:'printing',progress:42,minutesLeft:37},
+  sheets:{bridge:true,excel:true,inFlight:1},kiosk:{setUp:true,online:true,showing:'weather'},
+  street:street({chat:src({running:[job(1),job(2)],waiting:1}),images:src({running:[job(3)]}),sheets:src({running:[job(4)]})})},
+ quiet:{schema:1,models:{loaded:[],queue:{active:0,waiting:0},busy:false},printer:{setUp:true,access:'ok',state:'idle'},
+  sheets:{bridge:true,excel:true,inFlight:0},kiosk:{online:true},street:street()},
+ down:{schema:1,models:{loaded:null,queue:null},printer:{setUp:true,access:'unreachable',state:null},
+  sheets:{bridge:null,excel:null,inFlight:0},kiosk:null,street:null}
+};
+// The other states worth a look, each the busy world with one slice changed, shown in a row under a building's three.
+const B=WORLDS.busy,v=o=>Object.assign({},B,o);
+Object.assign(WORLDS,{
+ paused:v({printer:{setUp:true,access:'ok',state:'paused',progress:42}}),error:v({printer:{setUp:true,access:'ok',state:'error'}}),
+ unset:v({printer:{setUp:false},kiosk:{setUp:false}}),offline:v({kiosk:{setUp:true,online:false}}),
+ noexcel:v({sheets:{bridge:true,excel:false,inFlight:0},street:street()}),
+ crowd:v({street:street({chat:src({running:[job(1),job(2),job(3)],waiting:4,needsYou:[job(5)]}),images:src({running:[job(3),job(6)],waiting:2,needsYou:[job(7)]})})}),
+ asks:v({street:street({chat:src({needsYou:[job(5)]}),images:src({needsYou:[job(7)]})})})});
+const EXTRA={chat:['crowd','asks'],images:['crowd','asks'],sheets:['noexcel'],workshop:['paused','error','unset'],kiosk:['offline','unset']};
+const all=window.LocalAIStreet.defs(),want=q.get('ids')?q.get('ids').split(','):all.map(d=>d.id);
+const defs=all.filter(d=>want.includes(d.id)),dpr=window.devicePixelRatio||1,PAD=40,H=360,fixedT=q.has('t')?+q.get('t'):null;
+// The street around a building, as the engine will draw it (sky, far city with haze, sidewalk, curb, road).
+function scenery(c,w){
+ c.fillStyle=(g=>(g.addColorStop(0,P.sky0),g.addColorStop(.6,P.sky1),g.addColorStop(1,P.sky2),g))(c.createLinearGradient(0,0,0,300));c.fillRect(0,0,w,300);
+ c.fillStyle='rgba(255,255,255,.85)';for(const [x,y,rx,ry] of [[60,46,46,11],[86,40,30,12],[40,43,20,8],[w-70,36,36,8],[w-50,32,22,8]]){c.beginPath();c.ellipse(x,y,rx,ry,0,0,7);c.fill()}
+ A.skyline(c,0,w,0);A.skyline(c,0,w,1);A.sidewalk(c,0,w);A.road(c,0,w);
+}
+function bush(c,x){for(const [dx,dy,rx,ry,col] of [[0,301,28,13,P.bush0],[-14,298,15,10,P.bush1],[12,295,13,9,P.bush2]]){c.fillStyle=col;c.beginPath();c.ellipse(x+dx,dy,rx,ry,0,0,7);c.fill()}}
+const panels=[];
+function panel(parent,def,name,zoom){
+ const w=def.width+PAD*2,cv=document.createElement('canvas');cv.style.width=w*zoom+'px';cv.style.height=H*zoom+'px';
+ cv.width=Math.round(w*zoom*dpr);cv.height=Math.round(H*zoom*dpr);
+ const fig=document.createElement('figure'),cap=document.createElement('figcaption'),st=def.state(WORLDS[name]),ch=def.chip(st);
+ cap.textContent=`${name} · ${ch.title}: ${ch.detail}`;fig.append(cv,cap);parent.append(fig);
+ // The still, cached in its own canvas as the engine will.
+ const still=document.createElement('canvas');still.width=cv.width;still.height=cv.height;const sc=still.getContext('2d');
+ sc.scale(zoom*dpr,zoom*dpr);scenery(sc,w);sc.translate(PAD,0);def.drawStill(sc,st,{night:false,reduced:false,zoom,dpr});
+ const p={def,name,zoom,st,cv,c:cv.getContext('2d'),still,w};panels.push(p);return p;
+}
+function frame(p,t){
+ const {c}=p;c.setTransform(1,0,0,1,0,0);c.drawImage(p.still,0,0);c.setTransform(p.zoom*dpr,0,0,p.zoom*dpr,0,0);
+ if(p.street){p.draw(c,t);return}
+ c.save();c.translate(PAD,0);p.def.drawLive(c,p.st,t,{night:false,reduced:false,zoom:p.zoom,dpr});c.restore();bush(c,22);
+}
+const out=document.getElementById('out'),newRow=()=>{const r=document.createElement('div');r.className='row';r.style.marginTop='12px';out.append(r);return r};
+// ?street=0.44 lays every building out as the strip does (24 units apart), one canvas per state, at that zoom.
+const SZ=q.has('street')?+q.get('street')||.44:0;
+function streetPanel(parent,name){
+ const xs=[];let x=PAD;for(const d of defs){xs.push(x);x+=d.width+24}const w=x-24+PAD,z=SZ;
+ const cv=document.createElement('canvas');cv.style.width=w*z+'px';cv.style.height=H*z+'px';cv.width=Math.round(w*z*dpr);cv.height=Math.round(H*z*dpr);
+ const fig=document.createElement('figure'),cap=document.createElement('figcaption');cap.textContent=name+' · the street at zoom '+z;fig.append(cv,cap);parent.append(fig);
+ const still=document.createElement('canvas');still.width=cv.width;still.height=cv.height;const sc=still.getContext('2d');sc.scale(z*dpr,z*dpr);scenery(sc,w);
+ const sts=defs.map(d=>d.state(WORLDS[name]));defs.forEach((d,i)=>{sc.save();sc.translate(xs[i],0);d.drawStill(sc,sts[i],{night:false,reduced:false,zoom:z,dpr});sc.restore()});
+ panels.push({street:true,cv,c:cv.getContext('2d'),still,zoom:z,draw(c,t){defs.forEach((d,i)=>{c.save();c.translate(xs[i],0);d.drawLive(c,sts[i],t,{night:false,reduced:false,zoom:z,dpr});c.restore()})}});
+}
+if(SZ)for(const n of ['busy','quiet','down'])streetPanel(newRow(),n);
+for(const d of SZ?[]:defs){
+ const h=document.createElement('h2');h.textContent=d.id;out.append(h);const row=document.createElement('div');row.className='row';out.append(row);
+ for(const n of ['busy','quiet','down'])panel(row,d,n,1);
+ const r1=document.createElement('div');r1.className='row';r1.style.marginTop='12px';out.append(r1);for(const n of ['busy','quiet','down'])panel(r1,d,n,.44);
+ if(EXTRA[d.id]){const r=newRow();for(const n of EXTRA[d.id])panel(r,d,n,1)}
+ if(q.get('big')!=='0'){const r2=document.createElement('div');r2.className='row';r2.style.marginTop='12px';out.append(r2);panel(r2,d,'busy',2.2)}
+}
+const t0=performance.now();
+function loop(){const t=fixedT??performance.now()-t0;for(const p of panels)frame(p,t);if(fixedT==null)requestAnimationFrame(loop)}
+loop();
+// Frame cost: n drawLive calls on a zoom 1 busy panel (the GPU flush at the end is counted too).
+window.gallery={panels,time(id,n){n=n||120;const p=panels.find(x=>x.def&&x.def.id===id&&x.name==='busy'&&x.zoom===1);const c=p.c,ms=[];
+ const t1=performance.now();for(let i=0;i<n;i++){const a=performance.now();c.setTransform(dpr,0,0,dpr,PAD*dpr,0);p.def.drawLive(c,p.st,i*33,{night:false,reduced:false,zoom:1,dpr});ms.push(performance.now()-a)}
+ c.getImageData(0,0,1,1);const total=performance.now()-t1;return{mean:ms.reduce((a,b)=>a+b,0)/n,max:Math.max(...ms),meanWithFlush:total/n}}};
+window.galleryReady=true;
+})();
+</script>
+</body></html>

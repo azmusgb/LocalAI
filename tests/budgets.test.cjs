@@ -85,7 +85,11 @@ const KB = 1024;
 // 2026-10-28: 293 → 296 KB (and home.js 12 → 13 KB) for Needs you drawn by the kit's renderer, as Pi Hub's is: /ui/needs.css (0.7 KB gzipped)
 // and /ui/needs.js (1.9 KB) are the one kit sheet and script Local AI loads, plus home.js's items and click routing (295.9 KB measured).
 // 2026-10-27: 292 → 293 KB for Print lab GUI Figma quick wins (observation 3x2 matrix, mobile sheet drag handle, 14px progress track, spool spine contrast clamp)
-// 2026-10-28: 296 → 297 KB headroom after rebasing on #417 (Print lab Phase 3); the shell was 53 B over at 296.
+// 2026-10-28: 293 → 294 KB when Agent World's Main Street strip on Home (#homeStreet markup, its .home-street/.street-chip
+// styles and home.js's one mount call, +0.4 KB) met Print lab phase 3 (#417): each fit alone, together 293.2 KB.
+// 2026-10-28: 294 → 297 KB merging Needs you (kit renderer) with Main Street on Home: the kit's needs.css + needs.js and home.js's
+// items add 2.7 KB to the 294 KB that Main Street (#419) and Print lab phase 3 (#417) need together.
+// app.css 46 → 47 KB: the kit's --ui-* aliases (Needs you) met Main Street's strip styles.
 const TOTAL = 297 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
@@ -115,7 +119,7 @@ const TOTAL = 297 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // plans, AI readings, the reference wipe and the changed-card highlight (+0.35 KB; 45.3 KB measured).
 // 2026-10-26: app.css 44 → 45 KB for the print lab page's buttons, live print, camera, thumbnails, viewer, Compare and
 // checklist (+0.8 KB, less the retired .lab-shots rules); their scripts load on demand and stay out of the shell.
-const PER_FILE = { 'ui.js': 113 * KB, 'components.js': 11 * KB, 'app.css': 46 * KB, 'app.js': 36 * KB, 'index.html': 14 * KB, 'home.js': 13 * KB, 'spreadsheets.js': 11 * KB };
+const PER_FILE = { 'ui.js': 113 * KB, 'components.js': 11 * KB, 'app.css': 47 * KB, 'app.js': 36 * KB, 'index.html': 14 * KB, 'home.js': 13 * KB, 'spreadsheets.js': 11 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
@@ -144,6 +148,22 @@ test("Agent World's on-demand modules stay within their own budget (gzipped)", (
   assert.ok(total <= 12 * KB, `on-demand modules are ${kb(total)} gzipped, over 12 KB: ${Object.entries(awSizes).map(([f, n]) => `${f} ${kb(n)}`).join(', ')}`);
   assert.deepEqual(Object.entries(awSizes).filter(([, n]) => n > 4 * KB).map(([f, n]) => `${f}: ${kb(n)} > 4.0 KB`), []);
   assert.deepEqual(AW.filter(f => f in sizes), [], 'no on-demand module is loaded by the shell');
+});
+
+// Main Street's modules (app/public/street/*.js): fetched by home.js only when Home shows the street, so they stay out
+// of the shell's budget and have their own: 48 KB in all and 8 KB each, gzipped. The street is drawn in code at the art
+// bar (docs/superpowers/specs/assets/2026-10-27-agent-world-art-bar.html): rounded bricks with highlights, steel and
+// glass gradients, light rays, glow, soft shadows, workers with props, smoke and fire, for ten buildings with a scene of
+// the work inside each. Vector art at that level is several times the size of the old city's landmarks, hence 48 KB.
+// art.js keeps that cost shared: reusable helpers with parameters, never per-building code.
+const STREET = fs.readdirSync(path.join(pub, 'street')).filter(f => f.endsWith('.js')).map(f => 'street/' + f);
+const streetSizes = Object.fromEntries(STREET.map(f => [f, gz(f)]));
+test('Main Street modules stay within their own budget (gzipped)', () => {
+  assert.ok(STREET.length >= 1, 'app/public/street has its modules');
+  const total = Object.values(streetSizes).reduce((a, b) => a + b, 0);
+  assert.ok(total <= 48 * KB, `Main Street modules are ${kb(total)} gzipped, over 48 KB: ${Object.entries(streetSizes).map(([f, n]) => `${f} ${kb(n)}`).join(', ')}`);
+  assert.deepEqual(Object.entries(streetSizes).filter(([, n]) => n > 8 * KB).map(([f, n]) => `${f}: ${kb(n)} > 8.0 KB`), []);
+  assert.deepEqual(STREET.filter(f => f in sizes), [], 'no Main Street module is loaded by the shell');
 });
 
 test('the budget covers the files the shell really loads', () => {

@@ -39,7 +39,8 @@ const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [MISSION] }) }));
 await page.route(u => u.pathname === '/api/world', r => { worldCalls++; return r.fulfill({ contentType: 'application/json', body: JSON.stringify(answer) }); });
-await page.goto(base + '/', { waitUntil: 'networkidle' });
+// Start off Home: Home's own street strip polls /api/world while it is on screen.
+await page.goto(base + '/#status', { waitUntil: 'networkidle' });
 await page.waitForFunction(() => typeof window.showView === 'function' && window.LocalAIAgentWorld?.addLayer);
 
 await check('the city off screen never asks for /api/world', async () => {
