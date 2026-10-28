@@ -195,7 +195,7 @@ test('a second bridge for the same session exits at once while the first is aliv
   const home = makeHome(t);
   const first = startBridge(t, { relay, sock: inbox.sock, home });
   const pidfile = path.join(home, 'run', `${SID}.pid`);
-  await until(() => fs.existsSync(pidfile), 'pidfile');
+  await until(() => { try { return fs.readFileSync(pidfile, 'utf8').trim() === String(first.proc.pid); } catch { return false; } }, 'pidfile with pid');
   assert.equal(fs.readFileSync(pidfile, 'utf8').trim(), String(first.proc.pid));
   const second = startBridge(t, { relay, sock: inbox.sock, home });
   assert.equal(await exitsWithin(second, 3000, 'second'), 0);
