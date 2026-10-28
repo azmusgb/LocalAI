@@ -19,7 +19,9 @@ test('busy: the painter paints and the canvas fills band by band over 6 s', () =
   assert.equal(bands(draw(images, world(1), 0)), 1, 'blank at the start of the cycle (only the brush tip carries colour)');
   assert.equal(bands(draw(images, world(1), 1500)), 2);
   assert.equal(bands(draw(images, world(1), 5900)), 5, 'full by the end');
-  assert.equal(draw(images, world(0, 0, 1)).live.person, 1, 'a job that needs you keeps the studio lit');
+  const ask = draw(images, world(0, 0, 1));
+  assert.deepEqual(ask.liveRec.log, [], 'a needs-you-only live frame is empty');
+  assert.equal(images.stillKey(ask.s), 'lit', 'the studio stays lit in the still');
 });
 
 test('quiet and down: no painter, no light; down is boarded', () => {

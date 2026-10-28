@@ -21,8 +21,9 @@ test('busy: a figure per running chat, up to 3; a waiting one adds the badge, no
 
 test('a chat that needs you shows a figure with an amber bubble even with none running', () => {
   const r = draw(chat, world(0, 0, 1));
-  assert.equal(r.live.person, 1);
-  assert.ok(fills(r.liveRec).includes('#ffc640'), 'the amber bubble');
+  assert.equal(r.still.person, 1, 'the figure is in the still');
+  assert.ok(fills(r.stillRec).includes('#ffc640'), 'the amber bubble is in the still');
+  assert.deepEqual(r.live, {}); assert.deepEqual(r.liveRec.log, [], 'a needs-you-only live frame is empty');
 });
 
 test('quiet and down: no one, no light; down is boarded', () => {

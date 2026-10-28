@@ -26,7 +26,8 @@ function runsBuilding({id,key,title,width,roof}){
   return{title,detail:cut(d.join(' · ')),tone:s.needsYou>0||s.failed>0?'attention':'busy'};
  }
  const item=s=>s.first||s.firstRun||null;
- const animates=s=>!s.down&&lit(s);
+ // A building that only needs you is still: its cue is in the still, and the beacon carries attention.
+ const animates=s=>!s.down&&s.running+s.more>0;
  return{id,width,roof,state,stillKey,chip,animates,item};
 }
 const api={cut,count,asks,runsBuilding};

@@ -60,6 +60,7 @@ function drawStill(c,s){
  c.fillStyle=A.grad(c,0,180,0,206,'rgba(255,255,255,.22)','rgba(0,0,0,.25)');c.fillRect(8,176,206,32);c.restore();
  A.steel(c,12,177,198,4);
  if(dn){A.boards(c,WX,WY,WW,WH);A.boards(c,157,210,36,90)}
+ if(s.needsYou>0&&!B.animates(s))people(c,s,0);
  c.restore();
 }
 // A speech bubble over (x, y): white with three typing dots, or amber with an "!" when a chat needs you.
@@ -73,16 +74,20 @@ function bubble(c,x,y,t,i,ask){
 }
 const FOLK=[['#3aa0a8','#e9b88f'],['#8e5bb5','#8d5a3b'],['#e3a51b','#c68a5e']];
 function drawLive(c,s,t){
- const A=K();if(!A||s.down||!lit(s))return;t=t||0;const n=Math.min(3,Math.max(s.running,s.needsYou>0?1:0));c.save();
+ if(!B.animates(s))return;const A=K();if(!A)return;people(c,s,t||0);
+ if(s.more>0){c.save();c.translate(190,214);const k=1+.06*Math.sin(t/400);c.scale(k,k);c.shadowColor='rgba(0,0,0,.35)';c.shadowBlur=2;
+  A.box(c,-7,-7,14,14,'#ffc640',7);c.shadowColor='transparent';c.fillStyle='#7a3a10';c.fillRect(-4,-1.1,8,2.2);c.fillRect(-1.1,-4,2.2,8);c.restore()}
+}
+// The people and their bubbles in the window: live while chats run, and in the still (t = 0) when a chat only needs you.
+function people(c,s,t){
+ const A=K(),n=Math.min(3,Math.max(s.running,s.needsYou>0?1:0));c.save();
  c.save();clipWin(c);
  for(let i=0;i<n;i++){const x=40+i*34,[v,sk]=FOLK[i];A.person(c,x,300,{vest:v,skin:sk,hat:null,scale:.5,pose:.03*Math.sin(t/900+i*2)})}
  for(let i=0;i<n;i++)bubble(c,54+i*34,WY+31+1.2*Math.sin(t/700+i),t,i,s.needsYou>0&&i===n-1);
  panes(c);c.restore();
- if(s.more>0){c.save();c.translate(190,214);const k=1+.06*Math.sin(t/400);c.scale(k,k);c.shadowColor='rgba(0,0,0,.35)';c.shadowBlur=2;
-  A.box(c,-7,-7,14,14,'#ffc640',7);c.shadowColor='transparent';c.fillStyle='#7a3a10';c.fillRect(-4,-1.1,8,2.2);c.fillRect(-1.1,-4,2.2,8);c.restore()}
  c.restore();
 }
-// The live layer moves only while the room is lit (people at work, or someone waiting on you).
+// The live layer moves only while chats run; a chat that only needs you is still (its amber bubble is in the still).
 const def=Object.assign(B,{drawStill,drawLive});
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

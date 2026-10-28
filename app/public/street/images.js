@@ -56,7 +56,7 @@ function drawStill(c,s){
  c.restore();
 }
 function drawLive(c,s,t){
- const A=K();if(!A||s.down||!lit(s))return;t=t||0;const P=A.palette;c.save();clipWin(c);
+ const A=K();if(!A||!B.animates(s))return;t=t||0;const P=A.palette;c.save();clipWin(c);
  // The canvas fills band by band over 6 s, holds a moment, and starts again.
  const p=(t%6000)/6000*1.2,h=CH/BANDS.length;
  BANDS.forEach((col,i)=>{const f=Math.max(0,Math.min(1,p*BANDS.length-i));if(f>0){c.fillStyle=col;c.fillRect(CX,CY+i*h,CW*f,h+.3)}});
@@ -66,7 +66,7 @@ function drawLive(c,s,t){
  A.rays(c,[[[100,140],[124,140],[96,290],[60,290]],[[60,140],[76,140],[50,290],[30,290]]],P.ray,.16*(1-.4*(.5-.5*Math.cos(TAU*t/3000))));
  c.restore();panes(c);c.restore();
 }
-// The live layer moves only while the room is lit (people at work, or someone waiting on you).
+// The live layer moves only while images run; a job that only needs you leaves the room lit and the painter still (the still).
 const def=Object.assign(B,{drawStill,drawLive});
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

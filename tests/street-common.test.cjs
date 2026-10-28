@@ -66,6 +66,7 @@ test('runsBuilding: stillKey, item and animates', () => {
   assert.equal(B.animates(st()), false);
   assert.equal(B.animates(st({ running: [item(1)] })), true);
   assert.equal(B.animates(st({ waiting: 2 })), true);
+  assert.equal(B.animates(st({ needsYou: [item(1)] })), false, 'needs-you-only is static');
   assert.equal(B.animates(B.state({ street: null })), false);
 });
 

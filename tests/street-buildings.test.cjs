@@ -132,7 +132,7 @@ test('kiosk: state and chip', () => {
 const kit = require('./street-draw-kit.cjs');
 const pr = o => ({ printer: Object.assign({ setUp: true, access: 'ok', state: 'idle', progress: null, minutesLeft: null, errorCode: null }, o) });
 const ANIM = {
-  chat: [[{ street: street({ chat: src({ running: [item(1)] }) }) }, true], [{ street: street({ chat: src({ needsYou: [item(1)] }) }) }, true], [{ street: street() }, false], [{ street: null }, false]],
+  chat: [[{ street: street({ chat: src({ running: [item(1)] }) }) }, true], [{ street: street({ chat: src({ needsYou: [item(1)] }) }) }, false], [{ street: street() }, false], [{ street: null }, false]],
   images: [[{ street: street({ images: src({ running: [item(1)] }) }) }, true], [{ street: street() }, false], [{ street: null }, false]],
   sheets: [[{ sheets: { bridge: true, excel: true, inFlight: 1 }, street: street() }, true], [{ sheets: { bridge: true, excel: true, inFlight: 0 }, street: street() }, false], [{ sheets: { bridge: true, excel: false, inFlight: 0 }, street: street() }, false], [{ sheets: null, street: null }, false]],
   foundry: [[{ models: { loaded: [{ name: 'm' }], queue: { waiting: 2 } } }, true], [{ models: { loaded: [], queue: { waiting: 0 } } }, false], [{ models: null }, false]],
