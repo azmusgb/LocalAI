@@ -76,12 +76,12 @@ async function open(viewport, hash, { threads = six, all = needs, engineering = 
   return page;
 }
 const desk = { width: 1280, height: 860 }, phone = { width: 390, height: 844 };
-const titles = (page, sel) => page.locator(`${sel} .list-row__title`).allInnerTexts();
+const titles = (page, sel) => page.locator(`${sel} .list-row__title, ${sel} .ui-need__title, ${sel} .ui-needs__more a`).allInnerTexts();
 
 for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
   await check(`${tag}: Needs you lists the approval and today's failure, not a 3 day old one`, async () => {
     const page = await open(vp, '#home');
-    await page.waitForSelector('#homeNeedsYou .run-card', T);
+    await page.waitForSelector('#homeNeedsYou .ui-need', T);
     assert.deepEqual((await titles(page, '#homeNeedsYou')).sort(), ['Fix the login bug', 'Weekly report mission']);
     await page.context().close();
   });
@@ -150,7 +150,7 @@ await check('Needs you drops a failed run once a newer run in the same thread su
   const retry = item('chat', 'Question one again', HOUR, { threadId: 't-same' });
   const other = item('chat', 'Different thread failed', 2 * HOUR, { threadId: 't-other', status: 'failed' });
   const page = await open(desk, '#home', { all: () => [failed, retry, other] });
-  await page.waitForSelector('#homeNeedsYou .run-card', T);
+  await page.waitForSelector('#homeNeedsYou .ui-need', T);
   assert.deepEqual(await titles(page, '#homeNeedsYou'), ['Different thread failed']);
   await page.context().close();
 });
@@ -163,26 +163,37 @@ await check('Needs you also lists Pi Hub\'s items in Pi Hub\'s words, bad first,
     { id: 'printer:plate', source: 'Printer', tone: 'attention', title: 'Clear the plate', detail: 'Finished hex-tile E-022', link: '/workshop' },
     { id: 'pi:disk', source: 'Pi', tone: 'bad', title: 'Pi disk is full', detail: 'Free some space', link: '/pi' }];
   const page = await open(desk, '#home', { all: () => [], approvals, hubNeeds });
-  await page.waitForSelector('#homeNeedsList [data-hub-need="pi:disk"]', T);
-  const rows = await page.$$eval('#homeNeedsList > .home-attn', els => els.map(e => e.querySelector('.list-row__title')?.textContent));
+  await page.waitForSelector('#homeNeedsList .ui-need[data-hub-need="pi:disk"]', T);
+  const rows = await page.$$eval('#homeNeedsList .ui-need', els => els.map(e => e.querySelector('.ui-need__title')?.textContent));
   assert.deepEqual(rows, ['Pi disk is full', 'Approve the update', 'Clear the plate', 'Worth a look']);
   assert.equal(await page.locator('#homeNeedsList [data-hub-need="localai:needs-1"]').count(), 0, 'the summary line is not repeated');
   assert.equal(await page.textContent('#homeNeedsCount'), '· 4');
-  assert.equal(await page.textContent('[data-hub-need="printer:plate"] .list-row__sub'), 'Finished hex-tile E-022');
-  assert.equal(await page.textContent('[data-hub-need="localai:watch-mac-disk"] .badge'), 'Health');
-  // A Pi Hub row opens Pi Hub at its page.
+  assert.equal(await page.textContent('[data-hub-need="printer:plate"] .ui-need__detail'), 'Finished hex-tile E-022');
+  assert.equal(await page.textContent('[data-hub-need="localai:watch-mac-disk"] .ui-need__meta'), 'Health');
+  assert.equal(await page.textContent('[data-hub-need="printer:plate"] .ui-need__meta'), 'Pi Hub');
+  assert.equal(await page.locator('[data-approval-id="ap-1"] .ui-need__meta').count(), 0, "Local AI's own rows carry no source line");
+  // Pi Hub's rows leave the app: a link to the hub with an arrow, opened in a new tab. Local AI's rows stay in the app.
+  assert.equal(await page.getAttribute('[data-hub-need="printer:plate"] a', 'href'), 'http://10.0.0.30/workshop');
+  assert.equal(await page.getAttribute('[data-hub-need="printer:plate"] a', 'target'), '_blank');
+  assert.equal(await page.textContent('[data-hub-need="printer:plate"] .ui-need__action'), '↗');
+  assert.equal(await page.getAttribute('[data-hub-need="localai:watch-mac-disk"] a', 'target'), null);
   let went = '';
-  await page.route(u => u.hostname === '10.0.0.30', r => { went = r.request().url(); return r.fulfill({ contentType: 'text/html', body: '<title>Pi Hub</title>' }); });
-  await page.click('[data-hub-need="printer:plate"]');
-  await page.waitForURL('http://10.0.0.30/workshop', T);
+  await page.context().route(u => u.hostname === '10.0.0.30', r => { went = r.request().url(); return r.fulfill({ contentType: 'text/html', body: '<title>Pi Hub</title>' }); });
+  const [hub] = await Promise.all([page.waitForEvent('popup'), page.click('[data-hub-need="printer:plate"] a')]);
+  await hub.waitForURL('http://10.0.0.30/workshop', T);
   assert.equal(went, 'http://10.0.0.30/workshop');
+  assert.equal(page.url().includes('10.0.0.30'), false, 'Home stays open');
+  // A Local AI row routes inside the app as it always did.
+  await page.click('[data-hub-need="localai:watch-mac-disk"] a');
+  await page.waitForSelector('#status.active', T);
+  assert.equal(await page.evaluate(() => location.hash), '#status');
   await page.context().close();
 });
 
 await check('Needs you shows only Local AI\'s own rows when Pi Hub doesn\'t answer', async () => {
   const approvals = [{ id: 'ap-1', status: 'pending', title: 'Approve the update', detail: 'A change waits for you' }];
   const page = await open(desk, '#home', { all: () => [], approvals, hubNeeds: null });
-  await page.waitForSelector('#homeNeedsList [data-approval-id="ap-1"]', T);
+  await page.waitForSelector('#homeNeedsList .ui-need[data-approval-id="ap-1"]', T);
   assert.equal(await page.locator('#homeNeedsList [data-hub-need]').count(), 0);
   assert.equal(await page.textContent('#homeNeedsCount'), '· 1');
   await page.context().close();
@@ -193,7 +204,7 @@ await check('Recent and Needs you show a run summary once, not again as preview 
   const a = dup('Meaning of life'), f = dup('Failed meaning', { status: 'failed' });
   const page = await open(desk, '#home', { threads: () => [a], all: () => [a, f] });
   await page.waitForSelector('#homeRecent2 .run-card', T);
-  await page.waitForSelector('#homeNeedsYou .run-card', T);
+  await page.waitForSelector('#homeNeedsYou .ui-need', T);
   for (const sel of ['#homeRecent2', '#homeNeedsYou']) { const t = await page.locator(sel).innerText(); assert.equal(t.split('The answer is forty-two').length - 1, 1, sel + ': ' + t); }
   await page.context().close();
 });
@@ -203,7 +214,7 @@ await check('a run shown in Needs you is not repeated in Recent', async () => {
   const waiting = item('engineering', 'Fix the login bug', 10 * 60e3, { status: 'awaiting_approval' });
   const fine = item('chat', 'Plan the garden', 5 * 60e3);
   const page = await open(desk, '#home', { threads: () => [waiting, fine, failed], all: () => [waiting, fine, failed] });
-  await page.waitForSelector('#homeNeedsYou .run-card', T);
+  await page.waitForSelector('#homeNeedsYou .ui-need', T);
   await page.waitForSelector('#homeRecent2 .run-card', T);
   await page.waitForTimeout(300);
   assert.deepEqual((await titles(page, '#homeNeedsYou')).sort(), ['Fix the login bug', 'Weekly report mission']);
@@ -214,9 +225,9 @@ await check('a run shown in Needs you is not repeated in Recent', async () => {
 await check('Needs you rows that open another page push it, so Back returns to Home', async () => {
   const caps = () => ({ services: [{ name: 'ollama', label: 'Intelligence', state: 'DOWN', required: true, impact: 'Chat is unavailable.' }, ...['search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true }))], models: { defaultInstalled: true }, images: { available: true } });
   const page = await open(desk, '#home', { caps, all: () => [], approvals: [{ id: 'apr_x', status: 'pending', title: 'Run the thing', detail: 'Needs a yes' }] });
-  await page.waitForSelector('#homeNeedsYou .home-attn', T);
+  await page.waitForSelector('#homeNeedsYou .ui-need', T);
   for (const [text, id] of [['Intelligence is down', 'status']]) {
-    await page.locator('#homeNeedsYou .home-attn', { hasText: text }).click();
+    await page.locator('#homeNeedsYou .ui-need', { hasText: text }).click();
     await page.waitForSelector(`#${id}.active`, T);
     assert.equal(await page.evaluate(() => location.hash), '#' + id);
     await page.evaluate(() => history.back());
@@ -236,8 +247,8 @@ await check('an approval opens in a sheet on Home with its full detail; Approve 
   const decided = [];
   await page.context().route(u => u.pathname === '/api/approvals/decide', r => { const b = r.request().postDataJSON(); decided.push(b); approvals.find(a => a.id === b.id).status = b.decision; r.fulfill({ contentType: 'application/json', body: JSON.stringify({ item: approvals.find(a => a.id === b.id) }) }); });
   const errors = []; page.on('pageerror', e => errors.push(e.message));
-  await page.waitForSelector('#homeNeedsYou .home-attn', T);
-  await page.locator('#homeNeedsYou .home-attn', { hasText: 'Run npm install' }).click();
+  await page.waitForSelector('#homeNeedsYou .ui-need', T);
+  await page.locator('#homeNeedsYou .ui-need', { hasText: 'Run npm install' }).click();
   const sheet = page.locator('#approvalSheet[open]');
   await sheet.waitFor(T);
   assert.equal(await page.evaluate(() => location.hash), '#home');
@@ -254,7 +265,7 @@ await check('an approval opens in a sheet on Home with its full detail; Approve 
   assert.match(await page.evaluate(() => document.activeElement?.textContent || ''), /Run npm install/);
   assert.deepEqual(decided, []);
   // Open again and approve.
-  await page.locator('#homeNeedsYou .home-attn', { hasText: 'Run npm install' }).click();
+  await page.locator('#homeNeedsYou .ui-need', { hasText: 'Run npm install' }).click();
   await sheet.waitFor(T);
   await page.getByRole('button', { name: 'Approve: Run npm install' }).click();
   await page.waitForFunction(() => /^Approved/.test(document.getElementById('toast')?.textContent || ''), null, T);
@@ -264,7 +275,7 @@ await check('an approval opens in a sheet on Home with its full detail; Approve 
   await page.waitForFunction(() => /Apply change/.test(document.activeElement?.textContent || ''), null, T);
   assert.equal(await page.evaluate(() => location.hash), '#home');
   // Reject the last one: Needs you empties and focus lands on something on Home, not the page body.
-  await page.locator('#homeNeedsYou .home-attn', { hasText: 'Apply change' }).click();
+  await page.locator('#homeNeedsYou .ui-need', { hasText: 'Apply change' }).click();
   await sheet.waitFor(T);
   await page.getByRole('button', { name: 'Reject: Apply change' }).click();
   await page.waitForFunction(() => /^Rejected/.test(document.getElementById('toast')?.textContent || ''), null, T);
@@ -306,7 +317,7 @@ await check('Back closes the mode sheet and stays on Home; closing the sheet its
 await check('a stopped core service shows in Needs you, and the capability strip is not on Home', async () => {
   const caps = () => ({ services: [{ name: 'ollama', label: 'Intelligence', state: 'DOWN', required: true, impact: 'Chat is unavailable.' }, ...['search', 'comfy', 'n8n'].map(name => ({ name, label: name, state: 'HEALTHY', required: true }))], models: { defaultInstalled: true }, images: { available: true } });
   const page = await open(desk, '#home', { caps, all: () => [] });
-  await page.waitForSelector('#homeNeedsYou .home-attn', T);
+  await page.waitForSelector('#homeNeedsYou .ui-need', T);
   assert.match(await page.locator('#homeNeedsYou').innerText(), /Intelligence is down/);
   assert.equal(await page.locator('#truthAttention').isVisible(), false);
   await page.context().close();
@@ -501,7 +512,7 @@ await check('Needs you: new serious Signals in the Backlog show as one row that 
   const page = await open(desk, '#home', { all: () => [], improve: { items: ctxItems, signals: [] } });
   await page.waitForFunction(() => /2 new signals in your backlog/.test(document.getElementById('homeNeedsList')?.textContent || ''), null, T);
   assert.doesNotMatch(await page.locator('#homeNeedsYou').innerText(), /unfinished/);
-  await page.locator('#homeNeedsList .home-attn', { hasText: 'new signals' }).click();
+  await page.locator('#homeNeedsList .ui-need', { hasText: 'new signals' }).click();
   await page.waitForFunction(() => location.hash === '#backlog', null, T);
   await page.context().close();
 });
@@ -609,12 +620,12 @@ await check('a pending approval that is not a run shows in Needs you, and a dupl
     { id: 'ap3', status: 'approved', title: 'Old one', detail: '', risk: 'low', meta: {} }
   ];
   const page = await open(desk, '#home', { all: () => [awaiting], approvals });
-  await page.waitForSelector('#homeNeedsYou .home-attn', T);
+  await page.waitForSelector('#homeNeedsYou .ui-need', T);
   const t = await page.locator('#homeNeedsYou').innerText();
   assert.match(t, /Run npm install in repos\/site/);
   assert.doesNotMatch(t, /Apply change chg-1|Old one/);
-  assert.equal(await page.locator('#homeNeedsYou .list-row').count(), 2);
-  await page.locator('#homeNeedsYou .home-attn').click();
+  assert.equal(await page.locator('#homeNeedsYou .ui-need').count(), 2);
+  await page.locator('#homeNeedsYou .ui-need[data-approval-id="ap1"]').click();
   await page.waitForSelector('#approvalSheet[open]', T); // decided here, in the sheet (D8)
   assert.equal(await page.evaluate(() => location.hash), '#home');
   await page.context().close();
@@ -818,15 +829,15 @@ async function trackSeen(page) {
 for (const [tag, vp] of [['390', phone], ['desktop', desk]]) {
   await check(`${tag}: Needs you shows 3 rows, repeats as one row, and See all 6`, async () => {
     const page = await open(vp, '#home', { all: pile });
-    await page.waitForSelector('#homeNeedsYou .home-needs-all', T);
-    const rows = page.locator('#homeNeedsList > *');
+    await page.waitForSelector('#homeNeedsYou .ui-needs__more', T);
+    const rows = page.locator('#homeNeedsList .ui-needs > *');
     assert.equal(await rows.count(), 4, '3 rows and See all');
     assert.deepEqual((await titles(page, '#homeNeedsList')), ['Fix the login bug', POLISH, 'Chat', 'See all 6']);
     assert.equal(await page.locator('#homeNeedsCount').innerText(), '· 6');
     const group = page.locator('#homeNeedsList [data-needs-count="5"]');
     assert.match(await group.innerText(), /Failed ×5/);
     assert.match(await page.locator('#homeNeedsList [data-needs-count="2"]').innerText(), /Chat[\s\S]*Failed ×2/);
-    const all = page.locator('#homeNeedsList .home-needs-all'), box = await all.boundingBox();
+    const all = page.locator('#homeNeedsList .ui-needs__more a'), box = await all.boundingBox();
     assert.ok(box.height >= 44, `See all tap target ${box.height}px`);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, 'no sideways scroll');
     await all.click();
@@ -843,7 +854,7 @@ for (const [tag, vp] of [['390', phone], ['desktop', desk]]) {
     const recent = item('agent', 'Failed this morning', 23 * HOUR, { status: 'failed' });
     const settled = item('agent', POLISH, 3 * HOUR, { status: 'failed' }), later = item('agent', POLISH, HOUR);
     const page = await open(vp, '#home', { all: () => [old, recent, settled, later] });
-    await page.waitForSelector('#homeNeedsYou .run-card', T);
+    await page.waitForSelector('#homeNeedsYou .ui-need', T);
     assert.deepEqual(await titles(page, '#homeNeedsList'), ['Failed this morning']);
     await page.context().close();
   });
@@ -871,7 +882,7 @@ for (const [tag, vp] of [['390', phone], ['desktop', desk]]) {
 await check('approvals always show, however many; failures wait behind See all', async () => {
   const approvals = [1, 2, 3, 4].map(i => ({ id: 'apr_' + i, status: 'pending', title: 'Decide thing ' + i, detail: 'Needs a yes' }));
   const page = await open(phone, '#home', { all: pile, approvals });
-  await page.waitForSelector('#homeNeedsList .home-needs-all', T);
+  await page.waitForSelector('#homeNeedsList .ui-needs__more a', T);
   const t = await titles(page, '#homeNeedsList');
   assert.deepEqual(t, ['Fix the login bug', 'Decide thing 1', 'Decide thing 2', 'Decide thing 3', 'Decide thing 4', 'See all 10']);
   await page.context().close();
@@ -881,7 +892,7 @@ await check('opening a failed run from anywhere (the run view) marks it seen onc
   const failed = item('agent', 'Weekly report mission', HOUR, { status: 'failed' }), fine = item('chat', 'Fine chat', HOUR);
   const page = await open(desk, '#home', { all: () => [failed, fine] });
   await trackSeen(page);
-  await page.waitForSelector('#homeNeedsYou .run-card', T);
+  await page.waitForSelector('#homeNeedsYou .ui-need', T);
   await page.evaluate(id => window.LocalAIRuns.show(id), fine.id);
   await page.waitForFunction(() => document.body.classList.contains('run-view-open'), null, T);
   await page.waitForTimeout(300);

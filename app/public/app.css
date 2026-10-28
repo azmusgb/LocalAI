@@ -789,6 +789,11 @@ details.disclosure{margin-top:12px;border-top:1px solid var(--ds-line);padding-t
   --ux-accent:var(--ds-accent);--ux-accent-2:var(--ds-violet);--ux-good:var(--ds-good);--ux-warn:var(--ds-progress);--ux-bad:var(--ds-bad);
   --ux-radius:var(--ds-r-md);--ux-radius-lg:var(--ds-r-lg);
 }
+/* The kit's Needs you rows (/ui/needs.css, the only kit sheet Local AI loads) read --ui-* names: each is an alias of a value
+   above that equals the kit's dark one (tests/appliance-ui.test.cjs checks every name needs.css reads). Sizes are the kit's own, except
+   the small source line, which keeps Local AI's 13 px floor (the kit's is 12 px). */
+:root{--ui-bad:var(--ds-bad);--ui-warn:var(--ds-attention);--ui-muted:var(--ds-muted);--ui-text:var(--ds-text);--ui-line:var(--ds-line);--ui-surface:var(--ds-surface);
+  --ui-font:var(--ds-font);--ui-r-3:var(--ds-r-md);--ui-fs-1:var(--ds-fs-1);--ui-fs-2:13px;--ui-space:4px}
 /* Agent World uses the same palette */
 .awc-v3,.aw-page{--aw-ground:var(--ds-bg);--aw-panel:var(--ds-surface);--aw-panel2:var(--ds-surface-2);--aw-line:var(--ds-line);--aw-line2:var(--ds-line-2);
   --aw-text:var(--ds-text);--aw-muted:var(--ds-muted);--aw-faint:var(--ds-faint);--aw-amber:var(--ds-progress);--aw-green:var(--ds-good);--aw-red:var(--ds-bad);--aw-blue:var(--ds-accent)}
@@ -1544,9 +1549,7 @@ body.run-view-open{overflow:hidden}
 .home-link:hover{text-decoration:underline}
 #home .run-card{align-items:center;padding:12px 16px}
 #home .run-card .list-row__trail{padding-top:0}
-#home .home-attn{cursor:pointer}
-#home .home-attn:focus-visible{outline:var(--ds-ring);outline-offset:-2px}
-#home .home-needs-all .list-row__title{color:var(--ds-accent-text);font-weight:600}
+#home .ui-need__link:focus-visible,#home .ui-needs__more a:focus-visible{outline:var(--ds-ring);outline-offset:-2px}
 #home #homeRecent2 .empty-state,#home #homeNeedsList .empty-state{padding:20px 16px;color:var(--ds-muted);text-align:center}
 #home #truthAttention,#home .home-run-center{display:none!important}
 #home:has(#firstRun) #homeRecentSection{display:none}

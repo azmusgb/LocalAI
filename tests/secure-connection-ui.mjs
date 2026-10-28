@@ -54,7 +54,7 @@ await phoneCtx.addInitScript(() => { try { localStorage.setItem('localai.firstRu
 const phone = await phoneCtx.newPage();
 await phone.goto(`http://${name}:${base.port}/#home`, { waitUntil: 'load' });
 await phone.waitForFunction(() => typeof window.showView === 'function');
-const nudge = phone.locator('#homeNeedsList .home-attn', { hasText: 'Use the secure address on this device' });
+const nudge = phone.locator('#homeNeedsList .ui-need', { hasText: 'Use the secure address on this device' });
 
 await check('phone on plain HTTP: Home asks to use the secure address', async () => {
   await nudge.waitFor({ state: 'visible', timeout: 8000 });
@@ -130,7 +130,7 @@ await local.goto(`${base.origin}/#home`, { waitUntil: 'load' });
 await check('the computer itself (localhost) gets no Home reminder', async () => {
   await local.waitForFunction(() => typeof window.showView === 'function');
   await local.waitForTimeout(1200);
-  assert.equal(await local.locator('#homeNeedsList .home-attn', { hasText: 'secure address' }).count(), 0);
+  assert.equal(await local.locator('#homeNeedsList .ui-need', { hasText: 'secure address' }).count(), 0);
 });
 await local.close();
 

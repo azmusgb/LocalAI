@@ -94,62 +94,72 @@ function openSheet(){const d=sheet();if(d.open){paintModes();paintOptions();retu
 // ---- Needs you and Recent ----
 // The runs module opens the run on top of Home, so Back returns here.
 const openRun=it=>root.LocalAIRuns?root.LocalAIRuns.show(it.id):root.LocalAIRouter?.go('#run/'+encodeURIComponent(it.id));
-function infoRow(title,sub,label,tone,go){
- const kit=root.LocalAIKit,row=document.createElement('button');
- row.type='button';row.className='list-row home-attn';
- row.innerHTML=`<span class="list-row__icon">${kit?kit.icon('system'):''}</span><span class="list-row__main"><span class="list-row__title">${esc(title)}</span><span class="list-row__sub">${esc(sub)}</span></span><span class="list-row__trail"><span class="badge badge--${tone}">${esc(label)}</span></span>`;
- row.addEventListener('click',go);
- return row;
-}
-const attentionRow=a=>infoRow(a.title,a.detail,'Fix','bad',()=>root.LocalAIRouter.open(a.view||'status'));
+// Needs you is drawn by the kit (ApplianceNeeds.renderList, the same rows as Pi Hub's). Each entry is {tone, item, go?, data?}:
+// the kit item {id, source, tone, title, detail, link}, what a click runs (the row is a link; Local AI routes it, see bindNeeds),
+// and data-* for the row. `#…` links are Local AI's own pages; hub:<path> is Pi Hub's, resolved below, and leaves the app.
+const need=(tone,id,title,detail,link,go,data={})=>({tone,item:{id,source:'Local AI',tone,title,detail,link},go,data});
+const attentionRow=a=>need('bad','attn:'+(a.view||'status')+':'+a.title,a.title,a.detail,'#'+(a.view||'status'),()=>root.LocalAIRouter.open(a.view||'status'));
 // One of Pi Hub's items (needs-you.js hubRows): the words every screen shows; it opens on Pi Hub, or here for Local AI's
 // own lab and watch items. Local AI's badges have no amber: warn shows neutral.
 const HUB_WHERE={printLab:'Print lab',status:'Health'};
-function hubRow(h){
- const go=h.open.view?()=>root.LocalAIRouter.open(h.open.view):()=>location.assign((root.LocalAIAskContext?.homeUrl(location.hostname)||'http://10.0.0.30/')+h.open.hub.slice(1));
- const row=infoRow(h.title,h.detail,h.open.view?HUB_WHERE[h.open.view]:'Pi Hub',h.tone==='warn'?'neutral':h.tone,go);
- row.dataset.hubNeed=h.id;return row;
-}
+const hubRow=h=>{
+ const where=h.open.view?HUB_WHERE[h.open.view]:'Pi Hub';
+ const e=need(h.tone,h.id,h.title,h.detail,h.open.view?'#'+h.open.view:'hub:'+h.open.hub,h.open.view?()=>root.LocalAIRouter.open(h.open.view):null,{hubNeed:h.id});
+ e.item.source=where;return e;
+};
+// The kit keeps a link only if it is on this origin or was made here: hub:<path> becomes Pi Hub's address (a path on that host
+// whatever the item says), and anything else the kit decides on its own.
+const resolve=l=>/^hub:/.test(l)?(root.LocalAIAskContext?.homeUrl(location.hostname)||'http://10.0.0.30/')+l.slice(4).replace(/^\/+/,''):l;
 // A pending approval that is not itself a run: open its run when one exists, else decide it here in the approval sheet
 // (one queue, D8). After a decision Needs you reloads and focus moves to the next approval, or the one before, or the next
 // thing on Home.
 function approvalRow(a,run){
- const row=infoRow(String(a.title||'').replace(/\s+chg-\d+-[0-9a-f]+$/,'')||'Approval needed',a.detail||'Waiting for your decision','Review','attention',()=>run?openRun(run):decideHere(a));
- row.dataset.approvalId=a.id;return row;
+ return need('attention','approval:'+a.id,String(a.title||'').replace(/\s+chg-\d+-[0-9a-f]+$/,'')||'Approval needed',a.detail||'Waiting for your decision',run?'#run/'+encodeURIComponent(run.id):'#home',()=>run?openRun(run):decideHere(a),{approvalId:a.id});
 }
 async function decideHere(a){
  const ids=approvals.map(x=>x.a.id),i=ids.indexOf(a.id),next=ids[i+1],prev=i>0?ids[i-1]:null;
  if(!await root.LocalAIUI.approvalSheet(a))return;
  await loadNeeds();
- const sec=$('homeNeedsYou'),first=sec&&!sec.hidden?$('homeNeedsList')?.querySelector('button'):null;
+ const sec=$('homeNeedsYou'),first=sec&&!sec.hidden?$('homeNeedsList')?.querySelector('a[href]'):null;
  root.LocalAIUI.refocus(a.id,{within:'#homeNeedsList',key:'approvalId',next,prev,fallback:first||$('homeRecentTitle')});
 }
 let needs=[],approvals=[],newSignals=0,hubItems=null;
 // Another device on plain HTTP can't use voice, notifications or Add to Home Screen; point it at the setup until it opts out there.
 const onPlainHttp=()=>location.protocol==='http:'&&!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
 const secureNudge=()=>{if(!onPlainHttp())return false;try{return localStorage.getItem('localai.secureNudge.off')!=='1'}catch{return true}};
-const secureRow=()=>infoRow('Use the secure address on this device','Voice, notifications and adding Local AI to your Home Screen need it. Setup takes about a minute.','Set up','attention',()=>root.LocalAIRouter.open('status?secure=1'));
+const secureRow=()=>need('attention','secure','Use the secure address on this device','Voice, notifications and adding Local AI to your Home Screen need it. Setup takes about a minute.','#status?secure=1',()=>root.LocalAIRouter.open('status?secure=1'));
 // Serious Signals promoted into the Backlog in the last day, waiting for a decision.
-const signalsRow=n=>infoRow(`${n} new signal${n===1?'':'s'} in your backlog`,'Problems Local AI noticed. Start, defer or reject them.','Review','attention',()=>root.LocalAIRouter.open('backlog'));
+const signalsRow=n=>need('attention','signals',`${n} new signal${n===1?'':'s'} in your backlog`,'Problems Local AI noticed. Start, defer or reject them.','#backlog',()=>root.LocalAIRouter.open('backlog'));
 // What asks for a decision, a fix or a setup step always shows, with Pi Hub's other items (the one list every screen
 // shows), bad first, then attention, then warn. Failures fill the list up to CAP rows, newest first, one row per goal
 // ("Failed ×5"); the rest are behind "See all N", which opens Work's Needs you filter.
 const CAP=3;
-function seeAllRow(n){
- const row=document.createElement('button');row.type='button';row.className='list-row home-attn home-needs-all';
- row.innerHTML=`<span class="list-row__main"><span class="list-row__title">See all ${n}</span></span><span class="list-row__trail" aria-hidden="true">›</span>`;
- row.setAttribute('aria-label',`See all ${n} in Work`);
- row.addEventListener('click',()=>root.LocalAIRouter?.go('#work?kind=needs'));
- return row;
+// A run (approval waiting, or failures) as a kit item: its card's title, then its badge and summary.
+function runEntry(it,tone,go,data={}){
+ const n=it.turns||1,c=it.card||{};
+ const sum=c.kind==='chat'&&n>1?`Chat · ${n} turns`:(c.summary||(c.preview&&c.preview.type==='text'?c.preview.text:'')||'');
+ const detail=[c.badge?.label,sum].filter(Boolean).join(' · ')||(tone==='bad'?'Failed':'Waiting for you');
+ return need(tone,'run:'+it.id,c.title||it.title||'Run',detail,'#run/'+encodeURIComponent(it.id),go,data);
 }
 // Opening a failure marks it (and the repeats on its row) seen on the server: it leaves Needs you on every device. The row
 // goes once the run view closes, so nothing moves under the open run.
 let stale=false;
 function failedRow(g){
  const n=g.runs.length,it=n>1&&g.run.card?{...g.run,card:{...g.run.card,badge:{tone:'bad',...g.run.card?.badge,label:`Failed ×${n}`}}}:g.run;
- const row=recentRow(it,r=>{const ids=new Set(g.runs.map(x=>x.id));root.LocalAINeedsYou.markSeen([...ids]);needs=needs.filter(x=>!ids.has(x.id));stale=true;openRun(r)});
- if(n>1)row.dataset.needsCount=n;
- return row;
+ return runEntry(it,'bad',()=>{const ids=new Set(g.runs.map(x=>x.id));root.LocalAINeedsYou.markSeen([...ids]);needs=needs.filter(x=>!ids.has(x.id));stale=true;openRun(g.run)},n>1?{needsCount:n}:{});
+}
+// A row is a link, so it opens in a tab with a modifier key; a plain click runs the row's own action (or routes its #hash the way a
+// Local AI link always has). Pi Hub's rows are external links: the kit opens them in a new tab.
+const rowGo=new WeakMap();
+function bindNeeds(box){
+ if(box.dataset.bound)return;box.dataset.bound='1';
+ box.addEventListener('click',e=>{
+  if(e.defaultPrevented||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||!root.LocalAIRouter)return;
+  const a=e.target.closest('a[href]');if(!a||a.target==='_blank')return;
+  const u=new URL(a.href);if(u.origin!==location.origin||!u.hash)return;
+  e.preventDefault();const go=rowGo.get(a.closest('.ui-need'));
+  if(go)go();else root.LocalAIRouter.go(u.hash);
+ });
 }
 function paintNeeds(){
  const box=$('homeNeedsList'),sec=$('homeNeedsYou');if(!box||!sec)return;
@@ -157,11 +167,17 @@ function paintNeeds(){
  // While Get started is on the page its step 1 already covers stopped services; the same news is not repeated as "Fix" rows.
  const serviceRows=document.getElementById('firstRun')?[]:attention.map(attentionRow);
  const failed=root.LocalAINeedsYou.group(needs.filter(r=>r.status==='failed'));
- const N=root.LocalAINeedsYou,at=row=>({tone:'attention',row});
- const act=N.byTone([...needs.filter(r=>r.status!=='failed').map(r=>at(recentRow(r))),...approvals.map(x=>at(approvalRow(x.a,x.run))),...serviceRows.map(row=>({tone:'bad',row})),
-  ...(newSignals?[at(signalsRow(newSignals))]:[]),...(secureNudge()?[at(secureRow())]:[]),...N.hubRows(hubItems).map(h=>({tone:h.tone,row:hubRow(h)}))]).map(x=>x.row);
+ const N=root.LocalAINeedsYou;
+ const act=N.byTone([...needs.filter(r=>r.status!=='failed').map(r=>runEntry(r,'attention',()=>openRun(r))),...approvals.map(x=>approvalRow(x.a,x.run)),...serviceRows,
+  ...(newSignals?[signalsRow(newSignals)]:[]),...(secureNudge()?[secureRow()]:[]),...N.hubRows(hubItems).map(hubRow)]);
  const n=act.length+failed.length,room=act.length+failed.length>CAP?Math.max(0,CAP-act.length):failed.length;
- box.replaceChildren(...act,...failed.slice(0,room).map(failedRow),...(room<failed.length?[seeAllRow(n)]:[]));
+ // Everything that asks for a decision shows and failures fill up to CAP; max shows that many, and the kit adds "See all N" for the rest.
+ const entries=[...act,...failed.map(failedRow)],shown=act.length+room;
+ bindNeeds(box);
+ if(!entries.length){box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
+ const ul=root.ApplianceNeeds.renderList(entries.map(e=>e.item),{resolve,here:new URL(location.href),self:'Local AI',max:shown,more:{href:'#work?kind=needs',label:`See all ${n}`}});
+ [...ul.querySelectorAll('.ui-need')].forEach((li,i)=>{const e=entries[i];Object.assign(li.dataset,e.data);if(e.go)rowGo.set(li,e.go)});
+ box.replaceChildren(ul);
  $('homeNeedsCount').textContent=n?'· '+n:'';
  sec.hidden=!n;
 }

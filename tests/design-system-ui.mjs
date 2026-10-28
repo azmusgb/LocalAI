@@ -38,7 +38,7 @@ await check('primary actions use the accent, not white', async () => {
 });
 await check('one stylesheet, nothing injected at runtime', async () => {
   const sheets = await page.evaluate(() => [...document.querySelectorAll('link[rel=stylesheet],style')].map(e => e.getAttribute('href') || 'inline <style>'));
-  assert.deepEqual(sheets, ['/app.css']);
+  assert.deepEqual(sheets, ['/app.css', '/ui/needs.css']); // the kit's Needs you rows are the one extra sheet
 });
 await page.close();
 
