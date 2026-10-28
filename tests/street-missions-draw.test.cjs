@@ -33,6 +33,16 @@ test('busy: the antenna light blinks; it is never lit in the still', () => {
   assert.ok(!fills(on.stillRec).includes(BEACON));
 });
 
+// The engine's chip sits over the roof line (y 90) at the building's centre, so the busy signal must blink below it and
+// the antenna stand at the roof's far end.
+test('busy: status lamps below the roof line blink with the antenna, which stands at the far end of the roof', () => {
+  const lamps = r => r.liveRec.args.filter(([k, x, y, rad]) => k === 'arc' && y > 90 && rad === 3.5);
+  assert.equal(lamps(draw(missions, world(1), 100)).length, 2, 'two lamps lit below the roof line');
+  assert.equal(lamps(draw(missions, world(1), 1000)).length, 0, 'and dark half the cycle');
+  const ant = draw(missions, world(1), 100).liveRec.args.filter(([k, x, y, rad]) => k === 'arc' && y < 90 && rad === 2.6);
+  assert.ok(ant.length > 0 && ant.every(([, x]) => x >= 236), 'the antenna light is at the roof\'s far end');
+});
+
 test('a mission that needs you: lit and still, a figure with an amber cue in the still, an empty live frame', () => {
   const r = draw(missions, world(0, 0, 1));
   assert.equal(missions.stillKey(r.s), 'ask');

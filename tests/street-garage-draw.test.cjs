@@ -43,7 +43,8 @@ test('a job that needs you: lit and still, the mechanic with an amber cue in the
   assert.ok(!fills(both.stillRec).includes(AMBER)); assert.ok(fills(both.liveRec).includes(AMBER));
 });
 
-test('quiet and down: both bays shut and dark, no one; down is boarded with no light at all', () => {
+// The pier lamp's glow is drawn inside art.js (lamp), so the glow counts below only cover what garage.js draws itself.
+test('quiet: both bays shut, no car, no one, no glow or rays of its own, nothing moves; down: boarded, no radial gradient at all', () => {
   for (const t of [0, 500, 77777]) {
     const q = draw(garage, world(0), t);
     assert.equal(q.calls.person || 0, 0); assert.equal(q.calls.glow || 0, 0); assert.equal(q.calls.rays || 0, 0);

@@ -15,7 +15,7 @@ const P=Object.freeze({
  spill:'#ffb04a',molten0:'#fff2b0',molten1:'#ff8a2a',pour:'#ffcf6a',ray:'#ffd38a',lamp:'#fff4cc',
  crate0:'#e2ad6e',crate1:'#a5723e',crateLine:'#7a5228',belt:'#2b2f36',
  walk0:'#c4c9d1',walk1:'#9aa1ac',joint:'#8a919c',curb:'#e3e6ea',road0:'#4a5361',road1:'#363d48',lane:'#f2d67a',
- pants:'#2f3a52',vest:'#ff7e46',stripe:'#f3e45a',skin:'#e9b88f',hat:'#ffc640',brim:'#e3a51b',paper:'#d9e1ea',ink:'#7a8696',
+ pants:'#2f3a52',vest:'#ff7e46',stripe:'#f3e45a',skin:'#e9b88f',hat:'#ffc640',brim:'#e3a51b',cue:'#ffc640',paper:'#d9e1ea',ink:'#7a8696',
  smoke0:'#f1f3f6',smoke1:'#d3d8df',bush0:'#4f8a55',bush1:'#5f9e64',bush2:'#6aaa6e',pole:'#3a404a'});
 // Brick tones: [mortar, long brick, short brick, second short, second long, highlight]. red and side are the art bar's.
 const TONES={red:['#8f3a46','#b4505e','#a44654','#a94a58','#bb5866','#d77b88'],side:['#5e222c','#76303b','#6c2b35','#702e38','#7a333e','#8c4450'],
@@ -121,7 +121,7 @@ function lamp(c,x,y,on){
 // A needs-you cue over (x, y): an amber speech bubble with an "!", scaled by k (1 by default). Steady unless the caller
 // varies k, so it can sit in a still.
 function cue(c,x,y,k){
- c.save();c.translate(x,y);if(k&&k!==1)c.scale(k,k);c.shadowColor='rgba(0,0,0,.3)';c.shadowBlur=2;box(c,-8,-9,16,14,P.hat,6);
+ c.save();c.translate(x,y);if(k&&k!==1)c.scale(k,k);c.shadowColor='rgba(0,0,0,.3)';c.shadowBlur=2;box(c,-8,-9,16,14,P.cue,6);
  poly(c,[[-5,4],[0,4],[-7,10]]);c.fill();c.shadowColor='transparent';c.fillStyle='#7a3a10';c.fillRect(-1.3,-6.5,2.6,5.5);
  c.beginPath();c.arc(0,1.4,1.4,0,Math.PI*2);c.fill();c.restore();
 }

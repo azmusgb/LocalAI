@@ -3,7 +3,7 @@
 // a console inside), offices on the floor below, a lobby storefront with a blue canopy and the HQ's badge, and on the roof
 // a dish, a plant box and a lattice antenna. Storefront only, no cutaway. state/chip/stillKey are pure (common.js).
 // Busy: every floor is lit, a figure per running mission (up to 3) walks its own floor from window to window, the radar
-// sweeps and the antenna's light blinks; an amber "!" rides the top figure when a mission needs you. Needs you only: lit
+// sweeps and the antenna's light and the band's two status lamps blink; an amber "!" rides the top figure when a mission needs you. Needs you only: lit
 // and still, one figure in the command band under the "!". Quiet: dark floors, antenna light off. Down: boarded, no light.
 // drawStill draws what doesn't move; drawLive (t in ms) draws the people, the radar sweep and the antenna light.
 (function(root){'use strict';
@@ -11,7 +11,7 @@ const C=typeof module==='object'&&module.exports?require('./common.js'):root.Loc
 const B=C.runsBuilding({id:'missions',key:'missions',title:'Missions HQ',width:260,roof:90});
 const lit=s=>s.running+s.more>0||s.needsYou>0;
 const TAU=Math.PI*2,K=()=>root.LocalAIStreetArt;
-const BLUE='#1f4f8a',STRIPE='#2a5d9e',MULL='#173b66',CYAN='#5fd4ff',BEACON='#ff4d3d',RX=150,RY=124,AX=200,AY=31;
+const BLUE='#1f4f8a',STRIPE='#2a5d9e',MULL='#173b66',CYAN='#5fd4ff',BEACON='#ff4d3d',RX=150,RY=124,AX=242,AY=36,LAMPS=[17,223],LY=122;
 // The glass of each floor: the command band, the four office windows, the lobby's two windows and its door leaves.
 const BAND=[[20,107,200,42]],OFF=[20,72,124,176].map(x=>[x,170,44,44]),LOBBY=[[18,242,78,50],[140,242,78,50],[106,244,12,52],[120,244,12,52]];
 const FLOORS=[{r:BAND,y:149,x0:30,x1:210,k:.34},{r:OFF,y:213,x0:26,x1:214,k:.34},{r:LOBBY,y:292,x0:26,x1:210,k:.4}];
@@ -28,17 +28,18 @@ function room(c,[x,y,w,h],on,dn,a,b){c.fillStyle=K().grad(c,0,y,0,y+h,on?a:dn?'#
 function drawStill(c,s){
  const A=K();if(!A)return;const P=A.palette,on=lit(s),dn=s.down;c.save();
  A.softShadow(c,124,302,118,8);
- // The roof seen from just above, then what stands on it: the dish, the plant box and the lattice antenna (its light dark).
+ // The roof seen from just above, then what stands on it: the dish and the plant box (the antenna stands at the far end).
  A.poly(c,[[6,90],[232,90],[250,81],[24,81]]);c.fillStyle=A.grad(c,0,81,0,90,'#6d6a72','#4d4a55');c.fill();
  A.box(c,49,76,4,12,P.steel3);c.save();c.translate(51,72);c.rotate(-.5);c.fillStyle=A.grad(c,-10,0,10,0,'#eef1f5','#a9b2bf');c.beginPath();c.ellipse(0,0,11,5,0,0,Math.PI);c.fill();
  c.strokeStyle=P.steel3;c.lineWidth=1;c.beginPath();c.moveTo(0,0);c.lineTo(0,-8);c.stroke();c.restore();
  A.steel(c,96,74,44,14);c.fillStyle='rgba(30,34,40,.55)';for(let i=0;i<5;i++)c.fillRect(101+i*7,77,4,8);
- c.strokeStyle=P.steel2;c.lineWidth=1.3;c.beginPath();c.moveTo(AX-7,88);c.lineTo(AX,AY+4);c.lineTo(AX+7,88);
- for(let y=80;y>AY+10;y-=10){const k=(88-y)/(88-AY-4)*7;c.moveTo(AX-7+k,y);c.lineTo(AX+7-k,y-5)}c.stroke();
- A.box(c,AX-3,AY-1,6,5,P.frame,1);c.fillStyle=dn?'#3a2a2a':'#5a2a2a';c.beginPath();c.arc(AX,AY-1,2.6,0,TAU);c.fill();
  // The side wall turning away, the stone front and its cornice.
  A.tex(c,A.brickSide,230,92,20,208,{skew:9,tone:'stone'});A.tex(c,A.brick,10,96,220,204,{tone:'stone'});
  A.steel(c,6,88,228,8);c.fillStyle='rgba(0,0,0,.18)';c.fillRect(10,96,220,2);
+ // The lattice antenna on the far end of the roof, clear of the chip that sits over the roof line; its light is dark here.
+ c.strokeStyle=P.steel2;c.lineWidth=1.3;c.beginPath();c.moveTo(AX-5,87);c.lineTo(AX,AY+4);c.lineTo(AX+5,85);
+ for(let y=79;y>AY+10;y-=9){const k=(86-y)/(86-AY-4)*5;c.moveTo(AX-5+k,y);c.lineTo(AX+5-k,y-4)}c.stroke();
+ A.box(c,AX-3,AY-1,6,5,P.frame,1);c.fillStyle=dn?'#3a2a2a':'#5a2a2a';c.beginPath();c.arc(AX,AY-1,2.6,0,TAU);c.fill();
  // The command band: blue-framed glass; inside, the world map and the radar over the console.
  A.box(c,14,102,212,52,BLUE,3);c.save();clip(c,BAND);room(c,BAND[0],on,dn,'#12305a','#1d4f86');
  if(on)A.glow(c,120,128,96,24,CYAN,.22);
@@ -50,6 +51,9 @@ function drawStill(c,s){
  A.box(c,24,140,192,9,on?'#0d1c30':'#101318',1);
  if(on){for(let i=0;i<16;i++){c.fillStyle=i%5===2?'#ffc24d':i%3?'#7fe0a8':CYAN;c.fillRect(30+i*11.6,143,3,1.6)}}
  c.restore();panes(c,0);
+ // Two status lamps on the band's side frames, well below the roof line (a chip clamped to the top of a phone's strip
+ // reaches about y 104): dark here, blinking while busy.
+ for(const x of LAMPS){A.box(c,x-4.5,LY-7,9,14,P.frame,2);c.fillStyle=dn?'#3a2a2a':'#5a2a2a';c.beginPath();c.arc(x,LY,3.5,0,TAU);c.fill()}
  // A blue stripe under the band, then the office floor: four windows on a stone sill.
  c.fillStyle=STRIPE;c.fillRect(10,157,220,3);
  OFF.forEach((r,i)=>{const [x,y,w,h]=r;A.box(c,x-2.5,y-2.5,w+5,h+5,P.frame,1.5);c.save();clip(c,[r]);room(c,r,on,dn,'#f4e2c2','#c99a62');
@@ -95,7 +99,9 @@ function drawLive(c,s,t){
  c.beginPath();c.moveTo(RX,RY);c.arc(RX,RY,9,a-.9,a);c.closePath();c.fill();c.restore();
  if(s.running===0)panes(c,0);
  people(c,s,t);
- if(t%1600<800){c.fillStyle=BEACON;c.beginPath();c.arc(AX,AY-1,2.6,0,TAU);c.fill();A.glow(c,AX,AY-1,12,12,BEACON,.55)}
+ // The antenna light and the band's status lamps blink together; the lamps are the signal the chip never covers.
+ if(t%1600<800){c.fillStyle=BEACON;c.beginPath();c.arc(AX,AY-1,2.6,0,TAU);for(const x of LAMPS){c.moveTo(x+3.5,LY);c.arc(x,LY,3.5,0,TAU)}c.fill();
+  A.glow(c,AX,AY-1,12,12,BEACON,.55);for(const x of LAMPS)A.glow(c,x,LY,16,16,BEACON,.6)}
  c.restore();
 }
 const def=Object.assign(B,{drawStill,drawLive,lights:()=>[]});
