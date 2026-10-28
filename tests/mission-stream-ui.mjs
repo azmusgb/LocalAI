@@ -9,7 +9,7 @@ let calls = 0;
 await page.route('**/api/agents/missions/events*', route => (++calls === 1 ? route.abort('connectionreset') : route.continue()));
 await page.goto(base, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => typeof window.showView === 'function');
-await page.evaluate(() => window.showView('agents'));
+await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
 let failed = false;
 try {
   await page.waitForFunction(() => /reconnecting/.test(document.getElementById('agentInlineNotice')?.textContent || '') && !document.getElementById('agentInlineNotice').hidden, null, { timeout: 15000 });

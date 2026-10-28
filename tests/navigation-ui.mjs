@@ -65,7 +65,7 @@ await check('retired pages are gone and their addresses land on Signals, In prog
 
 // A hidden page that remains (Missions, Chat, Images) names itself in the top bar and lights the area that owns it.
 await check('a hidden page names itself in the top bar and lights the area that owns it', async () => {
-  await page.evaluate(() => window.showView('agents'));
+  await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
   await page.waitForSelector('#agents.active');
   await page.waitForFunction(() => document.querySelector('#uxContextView')?.textContent === 'Missions');
   assert.equal(await crumb(), 'Missions');

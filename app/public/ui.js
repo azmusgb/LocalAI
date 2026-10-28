@@ -21,11 +21,11 @@ const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=((
  // held open on every page keeps phones' connections awake and the page from ever going network-idle. Each (re)open
  // calls subscribers' onOpen, so they refetch what happened while it was closed.
  const subs=new Set();let es=null;
- const wanted=()=>document.visibilityState==='visible'&&!!document.querySelector('#agents.active');
+ const wanted=()=>document.visibilityState==='visible'&&!!document.querySelector('#agents.active:not([data-aw-mode=street])');
  function open(){if(es)return;const s=new EventSource('/api/agents/missions/events');es=s;s.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}for(const x of[...subs])try{x.onMessage?.(m)}catch{}};s.onopen=()=>{for(const x of[...subs])try{x.onOpen?.()}catch{}};s.onerror=e=>{for(const x of[...subs])try{x.onError?.(e)}catch{}}}
  function close(){if(!es)return;es.close();es=null}
  function sync(){if(subs.size&&wanted())open();else close()}
- function watch(){const v=document.getElementById('agents');if(v)new MutationObserver(sync).observe(v,{attributes:true,attributeFilter:['class']});document.addEventListener('visibilitychange',sync);sync()}
+ function watch(){const v=document.getElementById('agents');if(v)new MutationObserver(sync).observe(v,{attributes:true,attributeFilter:['class','data-aw-mode']});document.addEventListener('visibilitychange',sync);sync()}
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',watch,{once:true});else watch();
  return{subscribe(onMessage,onError,onOpen){const sub={onMessage,onError,onOpen};subs.add(sub);try{sync()}catch(e){subs.delete(sub);throw e}return()=>{subs.delete(sub);sync()}},isOpen:()=>!!es}})());
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -88,7 +88,7 @@ function setupMenu(){const btn=$('awMoreBtn'),menu=$('awMenu');if(!btn||!menu)re
  const open=()=>{menu.hidden=false;document.addEventListener('pointerdown',outside);btn.setAttribute('aria-expanded','true');items()[0]?.focus()};
  window.LocalAIAgentMenu={toggle:()=>menu.hidden?open():close()};btn.onclick=()=>menu.hidden?open():close();
  menu.addEventListener('keydown',e=>{const l=items(),i=l.indexOf(document.activeElement);if(e.key==='Escape'){e.preventDefault();close()}else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();l[(i+(e.key==='ArrowDown'?1:-1)+l.length)%l.length]?.focus()}else if(e.key==='Tab')close(false)});
- menu.addEventListener('click',async e=>{const v=e.target.closest('[data-aw-view]');if(v){const k=v.dataset.awView;if(k==='theater'||k==='fit')close(false);window.LocalAIAgentWorld?.view?.(k);return}const b=e.target.closest('[data-aw-menu]');if(!b)return;close(false);const m=currentMission,a=b.dataset.awMenu;
+ menu.addEventListener('click',async e=>{const v=e.target.closest('[data-aw-view]');if(v){const k=v.dataset.awView;if(k==='theater'||k==='fit')close(false);window.LocalAIAgentWorld?.view?.(k);return}const b=e.target.closest('[data-aw-menu]');if(!b)return;close(false);const m=currentMission,a=b.dataset.awMenu;if(/^(replay|demo|watch)$/.test(a))toMission(a==='replay'&&m?.id);
   if(a==='new')doPrimary('start');
   else if(a==='replay'&&m)window.dispatchEvent(new CustomEvent('localai:agentworld-replay-mission',{detail:{mission:m,play:true}}));
   else if(a==='all')window.LocalAIRouter?.go('#work?kind=missions');
@@ -113,12 +113,14 @@ function renderResults(){const el=$('agentResultBody'),A=window.LocalAIAgentWord
  <h3>Sources</h3>${src.length?`<ul class="aw-results__sources">${src.map(e=>`<li>${link(e)}</li>`).join('')}</ul>`:'<p class="aw-results__none">No sources were used.</p>'}
  <details class="aw-results__dev" data-dev-only><summary>Routing</summary><pre class="agent-result-pre">${m.routing?esc(JSON.stringify(m.routing,null,2)):'No routing recorded.'}</pre></details>`}
 // History lives in Work › Missions; this page only needs the missions to pick the one to show.
+// Mission mode (street/page.js): #agents?mission=<id|latest>, pushed; show() renders it fresh (latest: loadHistory's pick).
+const toMission=id=>window.LocalAIRouter?.go('#agents?mission='+encodeURIComponent(id||'latest'));
 async function loadHistory(){try{const j=await req('/api/agents/missions');history=j.items||j.missions||[];if(!currentMission){const m=history.find(m=>m.status==='running')||history[0];if(m)renderMission(m);else renderHead(null)}}catch(e){notice('error','Couldn’t load the missions: '+e.message)}}
 // Start: the plan is checked first (so a bad goal is said in the sheet), then the mission starts; the sheet closes,
 // the camera flies to Command Center and the city wakes. A failure stays in the sheet (or a toast, from Try again).
 // A start from the sheet ends a demo first, so no real mission starts while the demo is shown.
 async function startMission(e){const given=e?.goal?e:null;if(given&&demoing())return;const goal=given?.goal||$('agentGoal')?.value.trim(),open=$('awStart')?.open;if(!goal){notice('error','Say what the team should do first.');$('agentGoal')?.focus();return}window.LocalAIAgentWorld?.live?.();let body=given;if(!body){body={goal,projectId:$('agentProject')?.value||''};const ids=manualIds();if($('agentWebSearch')?.checked)body.webSearch=true;if(ids?.length)body.agentIds=ids;const wm=workerModel();if(wm)body.workerModel=wm}const b=$('missionRunBtn');if(b){b.disabled=true;b.textContent='Starting…'}clearNotice();
- try{if(!given)await preview();const j=await req('/api/agents/missions/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});closeStart();if(j.mission){currentMission=null;renderMission(j.mission);window.dispatchEvent(new CustomEvent('localai:agentworld-mission',{detail:{mission:j.mission}}))}window.dispatchEvent(new Event('localai:agentworld-start'));window.LocalAIUI?.toast?.('The team is on it');loadHistory()}
+ try{if(!given)await preview();const j=await req('/api/agents/missions/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});closeStart();if(j.mission){currentMission=null;renderMission(j.mission);window.dispatchEvent(new CustomEvent('localai:agentworld-mission',{detail:{mission:j.mission}}))}window.dispatchEvent(new Event('localai:agentworld-start'));window.LocalAIUI?.toast?.('The team is on it');loadHistory();toMission(j.mission?.id)}
  catch(e){if(open)notice('error','Couldn’t start the mission: '+e.message);else window.LocalAIUI?.toast?.('Couldn’t start the mission: '+e.message)}finally{if(b){b.disabled=false;b.textContent='Start'}}}
 // The start sheet: one text box, the team in words as you type, two plain options, Advanced only with developer tools.
 // Closed, focus goes back to whatever opened it, again once the sheet's history.back() has landed.
@@ -168,6 +170,7 @@ function setupSheet(){
  new MutationObserver(()=>{if(!page.classList.contains('active')&&snap!=='peek'){const r=releaseSheet;releaseSheet=null;setSnap('peek',{fromBack:true});r?.()}else if(page.classList.contains('active'))measure()}).observe(page,{attributes:true,attributeFilter:['class']});
  phone.addEventListener?.('change',()=>setSnap('peek'));window.addEventListener('resize',measure);measure();setSnap('peek')
 }
+window.LocalAIMissionView={async show(id){setSnap('peek');await loadHistory();if(id==='latest')id=(history.find(m=>m.status==='running')||history[0])?.id;const h=history.find(m=>m.id===id);if(id&&!demoing())h&&id===currentMission?.id?renderMission(h):await window.LocalAIMissions.show(id,{replay:false});requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')))},hide(){setSnap('peek')}};
 window.addEventListener('localai:agentworld-select',e=>{if(e.detail?.workerId)selectWorker(e.detail.workerId)});
 window.LocalAISpecialists={init,preview,renderMission};
 // Home starts a mission here: 202 {runId} comes back at once and the run view follows the mission. A failure fails the pending view and throws.
@@ -1096,11 +1099,11 @@ const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=((
  // held open on every page keeps phones' connections awake and the page from ever going network-idle. Each (re)open
  // calls subscribers' onOpen, so they refetch what happened while it was closed.
  const subs=new Set();let es=null;
- const wanted=()=>document.visibilityState==='visible'&&!!document.querySelector('#agents.active');
+ const wanted=()=>document.visibilityState==='visible'&&!!document.querySelector('#agents.active:not([data-aw-mode=street])');
  function open(){if(es)return;const s=new EventSource('/api/agents/missions/events');es=s;s.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}for(const x of[...subs])try{x.onMessage?.(m)}catch{}};s.onopen=()=>{for(const x of[...subs])try{x.onOpen?.()}catch{}};s.onerror=e=>{for(const x of[...subs])try{x.onError?.(e)}catch{}}}
  function close(){if(!es)return;es.close();es=null}
  function sync(){if(subs.size&&wanted())open();else close()}
- function watch(){const v=document.getElementById('agents');if(v)new MutationObserver(sync).observe(v,{attributes:true,attributeFilter:['class']});document.addEventListener('visibilitychange',sync);sync()}
+ function watch(){const v=document.getElementById('agents');if(v)new MutationObserver(sync).observe(v,{attributes:true,attributeFilter:['class','data-aw-mode']});document.addEventListener('visibilitychange',sync);sync()}
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',watch,{once:true});else watch();
  return{subscribe(onMessage,onError,onOpen){const sub={onMessage,onError,onOpen};subs.add(sub);try{sync()}catch(e){subs.delete(sub);throw e}return()=>{subs.delete(sub);sync()}},isOpen:()=>!!es}})());
 

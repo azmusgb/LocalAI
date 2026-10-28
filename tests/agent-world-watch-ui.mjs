@@ -27,7 +27,7 @@ async function open(path) {
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [MISSION] }) }));
   await page.goto(base + path, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.showView === 'function');
-  await page.evaluate(() => window.showView('agents'));
+  await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
   await page.waitForSelector('#agents.active #awcCanvas');
   return { page, context, errors };
 }

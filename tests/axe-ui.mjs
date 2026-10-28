@@ -179,7 +179,7 @@ for (const [dname, device] of DEVICES.filter(([n]) => !process.env.AXE_DEVICE ||
   const views = await page.evaluate(() => window.LocalAIViews.VIEWS.map(v => v.id));
   const states = [...views.map(id => ({ name: id, go: p => p.evaluate(v => window.showView(v), id) })),
     // Agent World with the mission sheet raised on a phone (the crew list, story and result are in it), and the run view.
-    { name: 'agents (done mission)', go: async p => { await p.evaluate(() => window.showView('agents')); await p.evaluate(() => window.LocalAIMissions.show('mission-axe-0', { replay: false })); if (dname !== '1440') await p.locator('#awSheetHandle').click(); } },
+    { name: 'agents (done mission)', go: async p => { await p.evaluate(() => window.LocalAIRouter.go('#agents?mission=mission-axe-0')); await p.waitForFunction(() => document.getElementById('agentMissionHeadline')?.textContent !== 'No active mission'); if (dname !== '1440') await p.locator('#awSheetHandle').click(); } },
     { name: 'run view (mission)', go: p => p.evaluate(() => window.LocalAIRuns.show('run-axe-m')) },
     // What opens over a page: Agent World's ⋯ menu, its start sheet, Home's mode sheet and the ⌘K palette.
     // The ⋯ button is desktop only; the start sheet opens through the menu's own handler on both.

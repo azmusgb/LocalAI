@@ -75,7 +75,9 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
 
 await check('Agent World result: headed sections in order; Routing only with developer tools', async () => {
   const page = await stubbed({ width: 1280, height: 860 });
-  await page.evaluate(() => window.showView('agents'));
+  await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
+  await page.waitForSelector('#agents[data-aw-mode="mission"]');
+  await page.waitForTimeout(500);
   await page.evaluate(m => window.LocalAISpecialists.renderMission(m), { id: 'm-a11y', goal: 'A goal', status: 'complete', answer: 'The summary.', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), workers: [{ id: 'router', name: 'Mission Router', state: 'complete' }], results: [] });
   await page.waitForFunction(() => document.querySelectorAll('#agentResultBody h3').length === 3);
   assert.deepEqual(await page.locator('#agentResultBody h3').allInnerTexts(), ['Summary', 'What each worker found', 'Sources']);

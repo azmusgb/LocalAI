@@ -34,7 +34,7 @@ async function seeded(context) {
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [MISSION] }) }));
   await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.showView === 'function');
-  await page.evaluate(() => window.showView('agents'));
+  await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
   await page.waitForSelector('#agents.active #awcCanvas');
   await page.waitForFunction(() => document.querySelector('#awcRoster [data-awc-roster]'));
   return { page, errors };
@@ -151,6 +151,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
     await page.locator('#workOpenAgentWorld').click();
     await page.waitForSelector('#agents.active');
     await page.waitForSelector('#agentWorldCityMount .awc');
+    assert.equal(await page.evaluate(() => location.hash), '#agents?mission=latest'); // mission mode, on the latest
     assert.equal(await page.evaluate(() => history.length), before + 1); // pushed: Back returns to Work
     await page.evaluate(() => history.back());
     await page.waitForSelector('#work.active');
@@ -192,7 +193,7 @@ async function withMission(contextOpts, mission) {
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [mission] }) }));
   await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.showView === 'function');
-  await page.evaluate(() => window.showView('agents'));
+  await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
   await page.waitForFunction(g => document.getElementById('awTitle')?.textContent === g, mission.goal);
   return { context, page, errors };
 }
@@ -324,7 +325,7 @@ async function emptyPage(contextOpts) {
   await page.route(u => u.pathname === '/api/agents/missions/start', r => { sent.push(r.request().postDataJSON()); r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"stubbed"}' }); });
   await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.showView === 'function');
-  await page.evaluate(() => window.showView('agents'));
+  await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
   await page.waitForSelector('#agents.active #awcCanvas');
   return { context, page, errors, sent };
 }
@@ -523,7 +524,7 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [PAIR()] }) }));
   await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.showView === 'function');
-  await page.evaluate(() => window.showView('agents'));
+  await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
   await page.waitForFunction(() => window.__awcLayout?.().workers.length === 3 && window.__awcLayout().workers.every(w => w.frame !== undefined));
   await page.evaluate(() => { window.LocalAIAgentWorld.follow(false); window.LocalAIAgentWorld.view('fit'); });
   if (label === '1440px') {
@@ -569,7 +570,7 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
     const page = await context.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [CROWD] }) }));
     await page.goto(base + '/', { waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => typeof window.showView === 'function');
-    await page.evaluate(() => window.showView('agents')); await page.waitForFunction(() => window.__awcLayout?.().workers.length === 8); return { page, errors }; })();
+    await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest')); await page.waitForFunction(() => window.__awcLayout?.().workers.length === 8); return { page, errors }; })();
   await check('1440px: no name tag or bubble covers a district sign or another bubble', async () => {
     await page.evaluate(() => window.LocalAIAgentWorld.follow(false));
     await page.waitForFunction(() => window.__awcLayout().workers.every(w => !w.moving), null, { timeout: 20000 });
@@ -610,7 +611,7 @@ async function cityWithFlow(opts) {
   const page = await context.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [FLOW()] }) }));
   await page.goto(base + '/', { waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => typeof window.showView === 'function');
-  await page.evaluate(() => window.showView('agents')); await page.waitForFunction(() => window.__awcLayout?.().workers.length === 6);
+  await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest')); await page.waitForFunction(() => window.__awcLayout?.().workers.length === 6);
   await page.evaluate(() => { window.LocalAIAgentWorld.follow(false); window.LocalAIAgentWorld.view('fit'); });
   await page.waitForFunction(() => window.__awcLayout().workers.every(w => !w.moving), null, { timeout: 20000 });
   await page.waitForTimeout(400);
@@ -1188,7 +1189,7 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: '{"items":[]}' }));
   await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.showView === 'function');
-  await page.evaluate(() => window.showView('agents'));
+  await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
   await page.waitForSelector('#agents.active #awcCanvas');
   await page.evaluate(() => { window.LocalAIAgentWorld.follow(false); window.LocalAIAgentWorld.view('fit'); });
   await check(`${label}: the sky layers lie over the city, hidden from screen readers and taps, and follow the camera`, async () => {

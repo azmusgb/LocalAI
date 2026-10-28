@@ -32,13 +32,13 @@ await check('the on-demand modules are not fetched while the city is off screen'
   assert.equal(await page.evaluate(() => !!window.LocalAIAWKit), false);
 });
 
-await page.evaluate(() => window.showView('agents'));
+await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
 await page.waitForFunction(() => window.__awcLayout?.().workers.length === 3);
 
 await check('opening Agent World fetches each on-demand module once', async () => {
   await page.waitForFunction(() => !!window.LocalAIAWKit, null, { timeout: 5000 });
   await page.evaluate(() => window.showView('home')); await page.waitForTimeout(200);
-  await page.evaluate(() => window.showView('agents')); await page.waitForTimeout(400);
+  await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest')); await page.waitForTimeout(400);
   assert.deepEqual(awRequests, ['/aw/kit.js', '/aw/landmarks.js']);
   assert.equal(await page.evaluate(() => window.LocalAIAWKit.clean('a‮b', 80)), 'a b');
 });

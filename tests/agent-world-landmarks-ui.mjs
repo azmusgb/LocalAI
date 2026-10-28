@@ -48,7 +48,7 @@ await check('the city off screen never asks for /api/world', async () => {
   assert.equal(worldCalls, 0);
 });
 
-await page.evaluate(() => window.showView('agents'));
+await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
 await page.waitForFunction(() => !!window.LocalAIAWLandmarks?.state(), null, { timeout: 8000 });
 const rowText = () => page.locator('#awcLayerRows').innerText();
 
@@ -62,7 +62,7 @@ await check('busy: each place is a City services row that says what it is doing'
 await check('a row opens the page that deals with it', async () => {
   await page.locator('#awcLayerRows button', { hasText: 'Spreadsheets office' }).click();
   await page.waitForFunction(() => document.querySelector('#spreadsheets')?.classList.contains('active'));
-  await page.evaluate(() => window.showView('agents'));
+  await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
   await page.waitForFunction(() => document.querySelectorAll('#awcLayerRows button').length === 4);
 });
 
@@ -75,7 +75,7 @@ await check('tapping the garage on the map opens Services', async () => {
   });
   await page.mouse.click(pt.x, pt.y);
   await page.waitForFunction(() => document.querySelector('#integrations')?.classList.contains('active'), null, { timeout: 4000 });
-  await page.evaluate(() => window.showView('agents'));
+  await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
   await page.waitForFunction(() => document.querySelectorAll('#awcLayerRows button').length === 4);
 });
 

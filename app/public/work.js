@@ -164,7 +164,7 @@ function init(){
  $('workSelect').addEventListener('click',()=>setSelecting(!st.selecting));
  $('workSelectDone').addEventListener('click',()=>setSelecting(false));
  $('workDeleteSelected').addEventListener('click',deletePicked);
- $('workOpenAgentWorld')?.addEventListener('click',()=>window.LocalAIRouter?.open('agents'));
+ $('workOpenAgentWorld')?.addEventListener('click',()=>window.LocalAIRouter?.go('#agents?mission=latest'));
  setKind(KINDS.includes(store.get())?store.get():'all',{mirror:false,remember:false});
  let was=active();
  new MutationObserver(()=>{const now=active();if(now&&!was)activate();was=now}).observe(sec,{attributes:true,attributeFilter:['class']});

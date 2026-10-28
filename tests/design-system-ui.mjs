@@ -31,7 +31,8 @@ await check('no visible text under 13px outside badges, on owner pages', async (
   assert.deepEqual([...new Set(small)], []);
 });
 await check('primary actions use the accent, not white', async () => {
-  await page.evaluate(() => window.showView('agents'));
+  await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
+  await page.waitForSelector('#agents.active[data-aw-mode="mission"]');
   const colors = await page.evaluate(() => [...document.querySelectorAll('.btn.primary,.btn-primary,.go')].filter(b => b.offsetParent).map(b => getComputedStyle(b).backgroundColor));
   assert.ok(colors.length > 0);
   for (const c of colors) assert.notEqual(c, 'rgb(238, 244, 255)', 'white primary button');

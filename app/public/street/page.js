@@ -13,6 +13,8 @@
 const doc=root.document,$=id=>doc.getElementById(id),S=()=>root.LocalAIStreet,R=()=>root.LocalAIRouter,MV=()=>root.LocalAIMissionView;
 const HEAD=['awTitle','awStatus','awSheetStatus'];
 let mode=null,h=null,fid=null,world=null,want={},wrote={},kept={},seen=null,mo=null;
+// /?watch=1 (watch mode, which stays on the old city) opens mission mode the first time #agents shows.
+let watch=/[?&]watch=1\b/.test(root.location?.search||'');
 const def=id=>S().defs().find(d=>d.id===id);
 function stateOf(d){try{return d.state(world)||{}}catch{return{}}}
 function panelOf(id){const d=def(id);if(!d||!d.panel)return null;try{return d.panel(stateOf(d),world)}catch(e){console.warn('Main Street: '+id+' panel failed',e);return null}}
@@ -59,9 +61,11 @@ function set(m){
 }
 function enter(q){
  q=q||new URLSearchParams();const m=q.get('mission');
+ if(watch){watch=false;if(!m){R()?.go('#agents?mission=latest',{replace:true});return}}
  if(m){if(set('mission'))MV()?.show(m);return}
  const was=mode;if(!set('street'))return;if(was!=='street')MV()?.hide();
- mountOnce();const p=q.get('place');if(p&&S().defs().some(d=>d.id===p)){fid=p;h.focus(p)}seen=null;render();
+ // A bare #agents (← Street, Back) has no building focused, whatever was before.
+ mountOnce();const p=q.get('place'),f=p&&S().defs().some(d=>d.id===p)?p:null;if(f||fid){fid=f;h.focus(f)}seen=null;render();
 }
 // Pushed through the router, which then shows #agents again and calls enter with the new query.
 function toMission(id){R()?.go('#agents?mission='+encodeURIComponent(id||'latest'))}

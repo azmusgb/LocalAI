@@ -217,16 +217,32 @@ const AGENT_STATES = {
   done: [{ ...A_BASE, id: 'm-done', status: 'complete', finishedAt: ago(60), answer: 'Three fixes for the phone screens, in order of impact.', workers: A_W('complete', 'complete'), results: [{ agentId: 'ux_analyst', agentName: 'UX Analyst', status: 'complete', answer: 'Three things to fix.' }], timeline: [...A_TL, { at: ago(60), type: 'mission-complete', status: 'complete', workers: A_W('complete', 'complete') }] }]
 };
 const AGENT_VIEWPORTS = VIEWPORTS;
-async function shoot(viewport, view, missions, ready) {
+// Agent World's street mode (street/page.js), the page's default since PR 4, on a fixed world: a running chat, a model
+// loaded, the printer idle. The agents-* shots above are its mission mode (#agents?mission=latest).
+const S_SRC = o => ({ running: [], waiting: 0, needsYou: [], failedUnseen: [], recent: [], ...o });
+const STREET_WORLD = {
+  schema: 1,
+  models: { loaded: [{ name: 'qwen3:4b-instruct-32k', sizeMb: 3100, vramMb: 3100 }], queue: { active: 1, waiting: 0 }, busy: { total: 1, kinds: { chat: 1 } } },
+  printer: { setUp: true, access: 'ok', state: 'idle', progress: null, minutesLeft: null, errorCode: null },
+  sheets: { bridge: true, excel: true, inFlight: 0 },
+  kiosk: { setUp: false, online: null, signIn: null, firmware: null },
+  crews: null,
+  street: { chat: S_SRC({ running: [{ id: 'run-2', title: 'Plan the vegetable garden', status: 'running', startedAt: NOW - 60000 }] }), images: S_SRC(), missions: S_SRC(), garage: S_SRC(), sheets: S_SRC(), clock: S_SRC() }
+};
+async function shoot(viewport, view, missions, ready, street) {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.mobile, hasTouch: viewport.mobile, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: 'dark', locale: 'en-US', timezoneId: 'America/New_York' });
   await ctx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); sessionStorage.setItem('localai.httpsTrusted', '0'); } catch {} });
   const page = await ctx.newPage();
   await page.clock.setFixedTime(NOW);
   await stubData(page);
   if (ready) await stubPages(page);
+  if (street) await page.route(u => u.pathname === '/api/world', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(STREET_WORLD) }));
   if (missions) await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: missions }) }));
-  await page.goto(`${base}/#${missions ? 'home' : view}`, { waitUntil: 'networkidle' });
-  if (missions) await page.evaluate(() => window.showView('agents'));
+  await page.goto(`${base}/#${missions || street ? 'home' : view}`, { waitUntil: 'networkidle' });
+  if (missions) await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
+  if (missions) await page.waitForSelector('#agents.active[data-aw-mode="mission"]');
+  if (street) await page.evaluate(() => window.LocalAIRouter.open('agents'));
+  if (street) await page.waitForFunction(() => document.querySelector('#agents.active[data-aw-mode="street"] #awStreetMount .street-chip') && /busy|need you|All quiet/.test(document.getElementById('awStatus').textContent));
   await page.waitForFunction(v => typeof window.showView === 'function' && document.querySelector(`#${v}.active, .view.active`), view);
   if (ready) await page.locator(ready).first().waitFor({ timeout: 8000 });
   await page.evaluate(() => document.fonts.ready);
@@ -265,12 +281,13 @@ try {
   fs.rmSync(results, { recursive: true, force: true });
   const shots = [...VIEWPORTS.flatMap(viewport => PAGES.map(view => ({ name: `${view}-${viewport.name}`, viewport, view }))),
     ...AGENT_VIEWPORTS.flatMap(viewport => Object.entries(AGENT_STATES).map(([state, missions]) => ({ name: `agents-${state}-${viewport.name}`, viewport, view: 'agents', missions }))),
+    ...AGENT_VIEWPORTS.map(viewport => ({ name: `agents-street-${viewport.name}`, viewport, view: 'agents', street: true })),
     ...MORE_VIEWPORTS.flatMap(viewport => Object.entries(MORE_PAGES).map(([view, ready]) => ({ name: `${view}-${viewport.name}`, viewport, view, ready })))];
   {
-    for (const { name, viewport, view, missions, ready } of shots) {
+    for (const { name, viewport, view, missions, ready, street } of shots) {
       const file = path.join(dir, `${name}.png`);
       try {
-        const shot = await shoot(viewport, view, missions, ready);
+        const shot = await shoot(viewport, view, missions, ready, street);
         if (UPDATE || !fs.existsSync(file)) {
           fs.writeFileSync(file, shot);
           notes.push(`${UPDATE ? 'updated' : 'new baseline'}: ${path.relative(process.cwd(), file)}`);

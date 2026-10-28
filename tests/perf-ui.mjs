@@ -19,7 +19,7 @@ for (const [label, opts] of [['390px', { viewport: { width: 390, height: 844 } }
   await check(`Agent World demo at ${label}: p95 frame <= ${P95_MS} ms and no frame over ${LONGEST_MS} ms at ${SLOWDOWN}x CPU slowdown`, async () => {
     const page = await browser.newPage(opts);
     await page.goto(base + '/', { waitUntil: 'networkidle' });
-    await page.evaluate(() => window.showView('agents'));
+    await page.evaluate(() => window.LocalAIRouter.go('#agents?mission=latest'));
     await page.waitForSelector('#awcCanvas');
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: SLOWDOWN });

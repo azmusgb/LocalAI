@@ -19,7 +19,7 @@ page.on('dialog',async d=>{dialogs++;await d.dismiss()});
 await page.goto(base,{waitUntil:'domcontentloaded'});
 await page.waitForSelector('.ux-primary-rail');
 await page.waitForFunction(()=>typeof window.showView==='function');
-await page.evaluate(()=>window.showView('agents'));
+await page.evaluate(()=>window.LocalAIRouter.go('#agents?mission=latest'));
 await page.waitForSelector('#agents.active');
 
 await check('system capability health distinguishes optional companions',async()=>{
@@ -31,7 +31,7 @@ await check('system capability health distinguishes optional companions',async()
   const optional=page.locator('#serviceList .service-card.OPTIONAL_OFFLINE');
   if(await optional.count()) assert.match(await optional.first().innerText(),/Optional · Offline|Core Local AI remains available/i);
   assert.match(await page.locator('#status').innerText(),/Core services determine appliance health/i);
-  await page.evaluate(()=>window.showView('agents'));
+  await page.evaluate(()=>window.LocalAIRouter.go('#agents?mission=latest'));
   await page.waitForSelector('#agents.active');
 });
 await check('desktop navigation architecture',async()=>{
@@ -44,7 +44,7 @@ await check('contextual navigation switches domains',async()=>{
   await page.locator('.ux-primary-item[data-domain="projects"]').click();
   await page.waitForSelector('#projects.active');
   assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(),'Projects');
-  await page.evaluate(()=>window.showView('agents'));
+  await page.evaluate(()=>window.LocalAIRouter.go('#agents?mission=latest'));
   await page.waitForSelector('#agents.active');
   assert.equal(await page.locator('.ux-primary-item[data-domain="work"]').getAttribute('aria-current'),'true');
 });
@@ -263,7 +263,7 @@ await mobile.goto(base,{waitUntil:'domcontentloaded'});
 await mobile.waitForSelector('#uxMobileNav');
 // The tab bar can render before app.js has defined showView.
 await mobile.waitForFunction(()=>typeof window.showView==='function');
-await mobile.evaluate(()=>window.showView('agents'));
+await mobile.evaluate(()=>window.LocalAIRouter.go('#agents?mission=latest'));
 await mobile.waitForSelector('#agents.active');
 await mobile.waitForSelector('#agentWorldCityMount .awc');
 
@@ -310,7 +310,7 @@ await check('the mission strip and Agent World show the same mission while the s
   await pg.goto(base,{waitUntil:'domcontentloaded'});
   await pg.waitForSelector('.ux-primary-rail');
   await pg.waitForFunction(()=>typeof window.showView==='function');
-  await pg.evaluate(()=>window.showView('agents'));
+  await pg.evaluate(()=>window.LocalAIRouter.go('#agents?mission=latest'));
   await pg.waitForSelector('#agents.active');
   await pg.waitForFunction(g=>document.getElementById('awTitle')?.textContent===g,goal,{timeout:10000});
   await pg.waitForFunction(g=>document.getElementById('agentMissionHeadline')?.textContent===g,goal,{timeout:3000});
