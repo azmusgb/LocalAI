@@ -70,6 +70,18 @@ async function fresh({ viewport = { width: 1280, height: 800 }, dpr = 1, world =
 }
 const chipTexts = page => page.evaluate(() => [...window.__el.querySelectorAll('.street-chip:not(.street-chip--stale)')].map(b => b.textContent));
 const stats = page => page.evaluate(() => window.LocalAIStreet.stats());
+// Timing checks must hold on a loaded machine (local CI runs every browser suite at once), so none counts a minimum of
+// frames in a wall-clock window. rise(page, from, by) waits (up to 10 s) for the frame count to pass from + by;
+// settle(page) waits until no frame has been drawn for 500 ms (up to 10 s) and returns the count.
+async function rise(page, from, by, what) {
+  try { await page.waitForFunction(([f, b]) => window.LocalAIStreet.stats().frames - f >= b, [from, by], { timeout: 10000 }); }
+  catch { throw new Error(`${what}: frames rose by ${(await stats(page)).frames - from}, not ${by}`); }
+}
+async function settle(page) {
+  let f = (await stats(page)).frames;
+  for (let i = 0; i < 20; i++) { await page.waitForTimeout(500); const g = (await stats(page)).frames; if (g === f) return g; f = g; }
+  throw new Error('the loop never stopped: ' + f);
+}
 
 await check('the strip stays hidden until the first world, and shows its canvas and chips after', async () => {
   const page = await fresh({ world: null });
@@ -227,9 +239,8 @@ await check("one broken building doesn't stop the street", async () => {
     s.scrollLeft = parseFloat(y.style.left) - s.clientWidth / 2; // the broken one in view, so its drawLive runs
   }, BUSY);
   const f0 = (await stats(page)).frames;
-  await page.waitForTimeout(1200);
+  await rise(page, f0, 20, 'the loop runs on');
   const f1 = (await stats(page)).frames;
-  assert.ok(f1 - f0 >= 20, `about 30 frames ran: ${f1 - f0}`);
   const t = await chipTexts(page);
   assert.equal(t.length, (await standing(page, BUSY)).length); inOrder(t); assert.ok(t.includes('Yy'), 'the broken building keeps its chip');
   await page.waitForTimeout(300);
@@ -241,34 +252,39 @@ await check("one broken building doesn't stop the street", async () => {
   assert.deepEqual(page.errors, []);
 });
 
+// The cap, measured on the page's fake clock (its requestAnimationFrame fires every 16 ms of fake time, so the count
+// doesn't depend on machine load): 30 fps over 16 ms ticks is a frame every third tick, about 41 in 2 s; an uncapped loop
+// would draw 125 and a 60 fps one 125. In real time, load only lowers the count, so there the cap is an upper bound.
 await check('the loop holds to 30 fps', async () => {
-  const page = await fresh();
+  const page = await fresh({ clock: true });
+  await page.waitForTimeout(300);
   const f0 = (await stats(page)).frames;
-  await page.waitForTimeout(2000);
+  await page.waitForTimeout(500);
+  assert.equal((await stats(page)).frames, f0, 'no frames while the clock stands still');
+  await page.clock.runFor(2000);
   const n = (await stats(page)).frames - f0;
-  assert.ok(n >= 40 && n <= 64, `about 60 frames in 2 s: ${n}`);
+  assert.ok(n >= 35 && n <= 61, `at most 30 fps, and the loop keeps up, in 2 s of page time: ${n}`);
+  const real = await fresh(), r0 = (await stats(real)).frames;
+  await real.waitForTimeout(2000);
+  const m = (await stats(real)).frames - r0;
+  assert.ok(m >= 1 && m <= 64, `no more than 30 fps in 2 s of real time: ${m}`);
 });
 
 await check('a quiet street draws once and stops; a busy one runs; quiet to busy starts it again', async () => {
   const page = await fresh({ world: QUIET });
-  await page.waitForTimeout(300);
-  const f0 = (await stats(page)).frames;
+  const f0 = await settle(page);
   assert.ok(f0 >= 1, 'a frame was drawn');
   await page.waitForTimeout(1000);
   assert.equal((await stats(page)).frames, f0, 'no frames while nothing moves');
   await page.evaluate(w => window.LocalAIStreet.setWorld(w), BUSY);
-  await page.waitForTimeout(1000);
-  const f1 = (await stats(page)).frames;
-  assert.ok(f1 - f0 >= 15, `a busy street runs again: ${f1 - f0}`);
+  await rise(page, f0, 15, 'a busy street runs again');
   await page.evaluate(w => window.LocalAIStreet.setWorld(w), QUIET);
-  await page.waitForTimeout(300);
-  const f2 = (await stats(page)).frames;
+  const f2 = await settle(page);
   await page.waitForTimeout(1000);
   assert.equal((await stats(page)).frames, f2, 'stops again once all is quiet');
   // One busy building is enough, and an online kiosk's glow counts.
   await page.evaluate(w => window.LocalAIStreet.setWorld({ ...w, kiosk: { setUp: true, online: true, signIn: true, firmware: '1' } }), QUIET);
-  await page.waitForTimeout(1000);
-  assert.ok((await stats(page)).frames - f2 >= 15, 'the online kiosk breathes');
+  await rise(page, f2, 15, 'the online kiosk breathes');
   assert.deepEqual(page.errors, []);
 });
 
@@ -668,11 +684,29 @@ await check('night falls at 19:00: every still rebuilds once and the sky darkens
   assert.deepEqual(page.errors, []);
 });
 
+// stats().night is what the street draws (the mount's night), not the clock's; a page coming back to the front checks
+// the clock at once, so a tab left in the background overnight doesn't wait up to a minute.
+await check("stats().night is the street's own; coming back visible rechecks the clock at once", async () => {
+  const page = await fresh({ world: QUIET, at: local(18, 59, 30) });
+  await page.waitForTimeout(300);
+  const a = await stats(page);
+  assert.equal(a.night, false, 'day at 18:59:30');
+  await page.clock.setSystemTime(local(19, 0, 10)); // the clock moves on; the minute timer hasn't fired
+  assert.equal(await page.evaluate(() => window.LocalAIStreetNight.isNight()), true, 'the clock says night');
+  assert.equal((await stats(page)).night, false, 'the street still draws day');
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await page.waitForTimeout(300);
+  const b = await stats(page);
+  assert.equal(b.night, true, 'night on coming back');
+  assert.equal(b.stills - a.stills, (await standing(page, QUIET)).length, 'each still rebuilt once');
+  assert.deepEqual(page.errors, []);
+});
+
 await check('a quiet street at night draws nothing per frame', async () => {
   const page = await fresh({ world: QUIET, fixed: local(21, 0) });
   await page.waitForTimeout(400);
   assert.equal((await stats(page)).night, true);
-  const f = (await stats(page)).frames, px = await page.evaluate(() => window.__el.querySelector('canvas').toDataURL());
+  const f = await settle(page), px = await page.evaluate(() => window.__el.querySelector('canvas').toDataURL());
   await page.waitForTimeout(1000);
   assert.equal((await stats(page)).frames, f, 'no frames');
   assert.equal(await page.evaluate(() => window.__el.querySelector('canvas').toDataURL()), px, 'the same picture');

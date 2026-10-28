@@ -905,6 +905,48 @@ await check('Home takes no room for the street until a world answers, and does n
   await page.context().close();
 });
 
+// Every building on the street busy at once, the Claude Yard's crews included: Home's strip stands all ten, in the
+// street's ORDER; with the developer tools off the Yard stays off the street.
+const job = (id, o) => ({ id, title: 'Job ' + id, status: 'running', startedAt: Date.now() - 60000, ...o });
+const ALL_BUSY = {
+  ...WORLD,
+  crews: [{ id: 'k1', title: 'Fix the build', state: 'working', lastAction: 'Edit' }, { id: 'k2', title: 'Plan', state: 'waiting', lastAction: 'Ask' }],
+  street: Object.fromEntries(['chat', 'images', 'missions', 'garage', 'sheets', 'clock'].map(k => [k, src({ running: [job(k + '1')] })]))
+};
+for (const [devTools, n] of [['1', 10], ['0', 9]]) {
+  await check(`with every building busy, Home's strip has ${n} chips in street order (developer tools ${devTools === '1' ? 'on' : 'off'})`, async () => {
+    const page = await open(desk, '#home', { world: ALL_BUSY, storage: { 'localai.devTools': devTools } });
+    await page.waitForSelector('#homeStreet .street:not([hidden])', T);
+    await page.waitForTimeout(200);
+    const r = await page.evaluate(w => {
+      const S = window.LocalAIStreet, ids = S.defs().map(d => d.id);
+      const want = S.defs().filter(d => !d.state(w).hidden).map(d => ({ id: d.id, title: d.chip(d.state(w)).title }));
+      const chips = [...document.querySelectorAll('#homeStreet .street-chip:not(.street-chip--stale)')].map(b => b.getAttribute('aria-label'));
+      return { order: [...S.ORDER], ids, want, chips, off: document.body.classList.contains('dev-tools-off') };
+    }, ALL_BUSY);
+    assert.deepEqual(r.ids, r.order, 'all ten buildings are registered, in ORDER');
+    assert.equal(r.off, devTools === '0');
+    assert.equal(r.chips.length, n, JSON.stringify(r.chips));
+    assert.deepEqual(r.want.map(x => x.id), r.order.filter(id => devTools === '1' || id !== 'yard'));
+    r.want.forEach((x, i) => assert.ok(r.chips[i].startsWith(x.title + ':'), `chip ${i} is ${x.title}: ${r.chips[i]}`));
+    assert.ok(r.chips.every(c => !/Not set up|Can't/.test(c)), 'every building busy: ' + JSON.stringify(r.chips));
+    await page.context().close();
+  });
+}
+
+await check('a building that needs you opens that run (LocalAIRuns.show) on real Home', async () => {
+  const world = { ...WORLD, street: { ...WORLD.street, images: src({ needsYou: [job('img-ask-1', { status: 'awaiting_approval', title: 'A red fox at dusk' })] }) } };
+  const page = await open(desk, '#home', { world });
+  await page.waitForSelector('#homeStreet .street:not([hidden])', T);
+  await page.evaluate(() => { window.__shown = []; const show = window.LocalAIRuns.show; window.LocalAIRuns.show = (...a) => { window.__shown.push(a); return show.apply(window.LocalAIRuns, a); }; });
+  const chip = page.locator('#homeStreet .street-chip', { hasText: 'Image Studio' });
+  assert.equal(await chip.getAttribute('title'), 'Opens this run');
+  await chip.click();
+  assert.deepEqual(await page.evaluate(() => window.__shown), [['img-ask-1']]);
+  assert.notEqual(await page.evaluate(() => location.hash), '#agents', 'not Agent World');
+  await page.context().close();
+});
+
 await check('tapping a building opens Agent World', async () => {
   const page = await open(desk, '#home', { world: WORLD });
   await page.waitForSelector('#homeStreet .street:not([hidden])', T);

@@ -32,6 +32,11 @@ test('a completed run drives off; failed and cancelled ones do not; at most thre
   m.world(w1, list(w1, defs), true, false); m.world(w3, list(w3, defs), true, false);
   assert.equal(traffic.stats().cars, 3, 'capped at three (x never ran here, so it sends none)');
   T = 4001; assert.equal(traffic.stats().cars, 0, 'gone after 4 s');
+  // Five runs finishing in one world, from an empty street: the cap drops the last two.
+  const w4 = world({ chat: src({ recent: [done('a'), done('b'), done('c'), done('d')] }), images: src({ recent: [done('f')] }) });
+  m.world(w1, list(w1, defs), true, false); m.world(w4, list(w4, defs), true, false);
+  assert.equal(traffic.stats().cars, 3, 'five finished at once, capped at three');
+  T = 8002; assert.equal(traffic.stats().cars, 0, 'gone after 4 s');
   m.destroy();
 });
 

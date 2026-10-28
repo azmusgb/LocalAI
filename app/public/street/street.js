@@ -17,9 +17,9 @@
 // screen, the page visible, motion allowed and some building in view animates; otherwise it draws one frame and stops
 // (a world, resize, scroll or the strip showing again restarts it). Under reduced motion one frame (t = 0) is drawn per
 // world or resize.
-// Night (night.js, when loaded): env.night is 19:00-07:00, read on mount and watched (one shared timer); a change re-keys
+// Night (night.js, when loaded): env.night is 19:00-07:00, read on mount, watched (one shared timer) and checked again when the page comes back visible; a change re-keys
 // every still and redraws once. A night still also caches the building's light layer; a night frame draws night.js's sky,
-// the far city faded, then over everything its dim wash and, added, each light layer and the traffic's glows.
+// the far city faded, then over everything its dim wash and, added, each light layer and the traffic's glows. stats().night is the street's own night (what it draws), not the clock's.
 // A chip click calls onOpen(def.id, def.item?.(state) ?? null); a state with hidden:true takes its building off the street (layout, drawing, chip) until a world shows it again. A shared poller (below) feeds setWorld from /api/world. setWorld(world) recomputes each state and the chips (and unhides the strip); stats() is a test and perf hook.
 (function(root){'use strict';
 const ORDER=Object.freeze(['chat','images','missions','garage','sheets','clock','foundry','workshop','kiosk','yard']);
@@ -28,7 +28,7 @@ function register(def){if(!def||typeof def.id!=='string'||!def.id)throw new Type
 function defs(){return ORDER.filter(id=>byId.has(id)).map(id=>byId.get(id))}
 const H=360,GAP=24,PAD=24,SLOT=200,FRAME=1000/30-1,QUIET=10000,WAIT=8000,MIN_GAP=2000;
 let seen=false,lastW=null;const states=new Map(),keys=new Map(),mounts=new Set(),warned=new Set();
-const st={frames:0,avg:0,stills:0};
+const st={frames:0,avg:0,stills:0,night:false};
 function warnOnce(id,what,e){if(warned.has(id))return;warned.add(id);console.warn('Main Street: '+id+' '+what+' failed',e)}
 function stillKey(d,s){try{return d.stillKey?String(d.stillKey(s)):''}catch(e){warnOnce(d.id,'stillKey',e);return''}}
 function stamp(d,s){try{return d.stamp?String(d.stamp(s)):''}catch(e){warnOnce(d.id,'stamp',e);return''}}
@@ -73,7 +73,7 @@ function sync(){const a=shown();if(a&&!was)poll();was=a}
 function onVis(){sync()}
 function start(){if(timer)return;timer=setInterval(()=>{if(shown())poll()},10000);root.document.addEventListener('visibilitychange',onVis)}
 function stop(){clearInterval(timer);clearTimeout(later);timer=later=0;was=false;root.document.removeEventListener('visibilitychange',onVis)}
-function stats(){const T=root.LocalAIStreetTraffic,N=root.LocalAIStreetNight;return{frames:st.frames,avgMs:Math.round(st.avg*1000)/1000,stills:st.stills,night:!!N&&N.isNight(),...(T?T.stats():{cars:0,beacons:0,stalled:0,beaconAt:[]})}}
+function stats(){const T=root.LocalAIStreetTraffic;return{frames:st.frames,avgMs:Math.round(st.avg*1000)/1000,stills:st.stills,night:st.night,...(T?T.stats():{cars:0,beacons:0,stalled:0,beaconAt:[]})}}
 
 // What a building's chip opens: its def's item for the state (null for a def with none, or one that throws).
 function itemOf(d){try{return d.item&&d.item(states.get(d.id)||{})||null}catch(e){warnOnce(d.id,'item',e);return null}}
@@ -84,7 +84,7 @@ function mount(el,opts){
  box.className='street';box.setAttribute('role','region');box.setAttribute('aria-label','Agent World street');cv.className='street__canvas';cv.setAttribute('aria-hidden','true');chipsEl.className='street__chips';box.hidden=true;box.append(cv,chipsEl);el.append(box);
  const c=cv.getContext('2d'),mq=root.matchMedia?root.matchMedia('(prefers-reduced-motion: reduce)'):null,reduce=()=>!!(mq&&mq.matches);
  // moving: some building drawn in the last frame animates (true until a frame says otherwise).
- let list=[],xs=new Map(),zoom=1,dpr=1,streetW=0,inView=false,raf=0,last=0,userAt=-Infinity,dead=false,drag=null,sig='',moving=true,nt=!!N&&N.now();
+ let list=[],xs=new Map(),zoom=1,dpr=1,streetW=0,inView=false,raf=0,last=0,userAt=-Infinity,dead=false,drag=null,sig='',moving=true,nt=st.night=!!N&&N.now();
  const t0=performance.now(),stills=new Map(),chips=new Map(),T=root.LocalAIStreetTraffic?.make(),at=()=>list.map(d=>({d,s:states.get(d.id)||{},x:xs.get(d.id)/zoom}));
  const fits=()=>streetW<=box.clientWidth+1;
  // Buildings left to right, each centred in a slot at least SLOT CSS px wide so its chip has room; when the street
@@ -198,7 +198,7 @@ function mount(el,opts){
  function onClick(e){if(drag&&drag.moved&&e.detail){e.preventDefault();e.stopPropagation()}drag=null}
  // Scrolling repaints at once so the canvas keeps up with the chips; the loop then waits a frame.
  function onScroll(){if(box.hidden)return;last=performance.now();draw(reduce()?0:last-t0);go()}// go: the loop resumes if a moving building scrolled into view
- const onVis=()=>kick(),onMotion=()=>redraw();
+ const onVis=()=>{if(N&&doc.visibilityState!=='hidden')N.now();kick()},onMotion=()=>redraw();
  box.addEventListener('wheel',onWheel,{passive:false});box.addEventListener('pointerdown',onDown);box.addEventListener('click',onClick,true);
  box.addEventListener('touchstart',touched,{passive:true});box.addEventListener('keydown',touched);box.addEventListener('scroll',onScroll,{passive:true});
  doc.addEventListener('visibilitychange',onVis);if(mq)mq.addEventListener('change',onMotion);
@@ -213,7 +213,7 @@ function mount(el,opts){
   else if(!f&&sc){sc.remove();sc=null}
  }
  const inst={world:onWorld,stale:onStale,on:()=>!dead&&(box.hidden?visible(el):inView)};mounts.add(inst);
- const unwatch=N&&N.watch(v=>{if(dead)return;nt=v;if(!box.hidden){for(const d of list)still(d);redraw()}});
+ const unwatch=N&&N.watch(v=>{if(dead)return;nt=st.night=v;if(!box.hidden){for(const d of list)still(d);redraw()}});
  if(seen)onWorld([],lastW);onStale(failed);start();sync();
  return{destroy(){
   if(dead)return;dead=true;mounts.delete(inst);if(!mounts.size)stop();if(raf)root.cancelAnimationFrame(raf);raf=0;onUp();

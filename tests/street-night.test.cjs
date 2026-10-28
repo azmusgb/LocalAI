@@ -1,6 +1,6 @@
 'use strict';
 // Main Street at night (app/public/street/night.js and each building's lights(state)): every building lists its lights in
-// its own box; a down or hidden building has none, a quiet one keeps its lamps lit, and a busy one lights its windows too.
+// its own box; a down or hidden building has none (nor a kiosk that isn't set up), a quiet one keeps its lamps lit, and a busy one lights its windows too.
 // And the night clock: 19:00 to 07:00 local time.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,7 +16,8 @@ const WORLDS = {
   sheets: { down: {}, quiet: { sheets: { bridge: true, excel: true, inFlight: 0 }, street: street() }, busy: { sheets: { bridge: true, excel: true, inFlight: 1 }, street: street() } },
   foundry: { down: {}, quiet: { models: { loaded: [], queue: { waiting: 0 } } }, busy: { models: { loaded: [{ name: 'qwen3' }], queue: { waiting: 1 } } } },
   workshop: { down: { printer: { setUp: true, access: 'denied', state: 'idle' } }, quiet: { printer: { setUp: true, access: 'ok', state: 'idle' } }, busy: { printer: { setUp: true, access: 'ok', state: 'printing', progress: 40 } } },
-  kiosk: { down: { kiosk: { setUp: true, online: false } }, quiet: { kiosk: { setUp: false } }, busy: { kiosk: { setUp: true, online: true, firmware: '12.8.0' } } },
+  // The kiosk has no quiet state: not set up it stands dark (no flood lamps); set up and online it is lit.
+  kiosk: { down: { kiosk: { setUp: true, online: false } }, off: { kiosk: { setUp: false } }, busy: { kiosk: { setUp: true, online: true, firmware: '12.8.0' } } },
   yard: { quiet: { crews: [] }, busy: { crews: [{ id: 'a', title: 'A', state: 'working' }, { id: 'b', title: 'B', state: 'waiting' }] } },
 };
 const KINDS = new Set(['window', 'lamp', 'glow']);
@@ -28,8 +29,10 @@ for (const [id, w] of Object.entries(WORLDS)) {
     const at = world => d.lights(d.state(world));
     const down = w.down ? at(w.down) : d.lights({ ...d.state(w.busy), hidden: true });
     assert.deepEqual(down, [], 'none when down or hidden');
-    const quiet = at(w.quiet), busy = at(w.busy);
-    assert.ok(quiet.some(l => l.kind === 'lamp'), `a lamp when quiet: ${JSON.stringify(quiet)}`);
+    if (w.off) assert.deepEqual(at(w.off), [], 'none when not set up');
+    const quiet = w.quiet ? at(w.quiet) : [], busy = at(w.busy);
+    if (w.quiet) assert.ok(quiet.some(l => l.kind === 'lamp'), `a lamp when quiet: ${JSON.stringify(quiet)}`);
+    else assert.ok(busy.some(l => l.kind === 'lamp'), `a lamp when lit: ${JSON.stringify(busy)}`);
     assert.ok(busy.length > quiet.length, `more when busy: ${busy.length} > ${quiet.length}`);
     assert.ok(busy.some(l => l.kind === 'window'), 'a lit window when busy');
     if (w.ask) assert.ok(at(w.ask).some(l => l.kind === 'window'), 'a window when it needs you');

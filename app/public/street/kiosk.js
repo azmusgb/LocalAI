@@ -57,8 +57,8 @@ function drawLive(c,s,t){
  c.fillStyle=Math.floor(t/800)%2?'#5bd37a':'#2a5a3a';c.beginPath();c.arc(20,280,1.8,0,TAU);c.fill();
 }
 // Online breathes (a slow glow, a sheen, the blinking cabinet light), so it animates; dark or down is still.
-// At night: the two flood lamps; online, the screen.
-const lights=s=>s.down||s.hidden?[]:[C.lamp(30,111),C.lamp(90,111),...on(s)?[C.light('window','#7fd3ff',[SX,SY,SW,SH])]:[]];
+// At night, only while online: the two flood lamps and the screen (not set up or down, it stands dark).
+const lights=s=>on(s)&&!s.hidden?[C.lamp(30,111),C.lamp(90,111),C.light('window','#7fd3ff',[SX,SY,SW,SH])]:[];
 const def={id:'kiosk',width:140,state,stillKey,chip,drawStill,drawLive,animates:on,lights};
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);
