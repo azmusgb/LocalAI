@@ -119,6 +119,25 @@ await check('stills rebuild only when the picture changes', async () => {
   assert.equal((await stats(page)).stills, s0 + 1, 'the Foundry went dark');
 });
 
+// A def's stamp (the Clock Tower's hour) is part of its still's cache key only: a new stamp rebuilds the still but is not
+// a change, so the camera stays put on a street that scrolls.
+await check('a new stamp rebuilds a still without moving the camera', async () => {
+  const page = await fresh({ viewport: { width: 390, height: 844 }, reduced: true });
+  await page.evaluate(w => { window.__stamp = '3'; window.LocalAIStreet.register({ id: 'yard', width: 100, state: () => ({}), stillKey: () => 'same', stamp: () => window.__stamp, chip: () => ({ title: 'Y', detail: 'y', tone: 'quiet' }), drawStill() {}, drawLive() {}, animates: () => false }); window.LocalAIStreet.setWorld(w); window.__el.querySelector('.street').scrollLeft = 0; }, BUSY);
+  await page.waitForTimeout(100);
+  const at = () => page.evaluate(() => { const s = window.__el.querySelector('.street'); return { left: s.scrollLeft, fits: s.scrollWidth <= s.clientWidth, stills: window.LocalAIStreet.stats().stills }; });
+  const a = await at();
+  assert.equal(a.fits, false, 'the street scrolls');
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), BUSY);
+  assert.equal((await at()).stills, a.stills, 'the same stamp: no rebuild');
+  await page.evaluate(w => { window.__stamp = '4'; window.LocalAIStreet.setWorld(w); }, BUSY);
+  await page.waitForTimeout(400);
+  const b = await at();
+  assert.equal(b.stills, a.stills + 1, 'a new stamp: one rebuild');
+  assert.equal(b.left, a.left, 'the camera did not move');
+  assert.deepEqual(page.errors, []);
+});
+
 await check('canvas follows size and DPR', async () => {
   const page = await fresh();
   const r = await page.evaluate(() => { const c = window.__el.querySelector('canvas'); return { w: c.width, cw: c.clientWidth, h: c.height, ch: c.clientHeight }; });

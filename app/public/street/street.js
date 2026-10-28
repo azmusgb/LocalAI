@@ -1,6 +1,6 @@
 // Main Street: window.LocalAIStreet. home.js loads street/*.js (its STREET_MODS) the first time Home shows the street.
 // Each building file registers one def: {id, width, state(world), stillKey?(state), drawStill(ctx, state, env),
-// drawLive(ctx, state, t, env), animates?(state), chip(state) -> {title, detail, tone}, roof?, open?(item), item?(state)}. animates
+// drawLive(ctx, state, t, env), animates?(state), chip(state) -> {title, detail, tone}, roof?, open?(item), item?(state), stamp?(state)}. animates
 // says whether drawLive moves for that state (a def without it counts as moving); when it is false drawLive must draw
 // the same at any t. width is in scene units; the
 // scene is 360 units tall with the ground line at y = 300, and a building draws in its own box x in [0, width]. env is
@@ -10,7 +10,8 @@
 // plain vertical wheel is left to the page) and the canvas is sticky inside it, so
 // the camera is its scrollLeft. Each frame draws the sky, the far city (with
 // parallax), the sidewalk and the road, then each building's cached still and its drawLive. Stills are one offscreen
-// canvas per building, keyed id|zoom|dpr|night|stillKey. The loop runs on rAF at up to 30 fps while the strip is on
+// canvas per building, keyed id|zoom|dpr|night|stillKey|stamp; stamp (a clock's hour) redraws a still without counting as a
+// change, so it never moves the camera. The loop runs on rAF at up to 30 fps while the strip is on
 // screen, the page visible, motion allowed and some building in view animates; otherwise it draws one frame and stops
 // (a world, resize, scroll or the strip showing again restarts it). Under reduced motion one frame (t = 0) is drawn per
 // world or resize.
@@ -25,6 +26,7 @@ let seen=false;const states=new Map(),keys=new Map(),mounts=new Set(),warned=new
 const st={frames:0,avg:0,stills:0};
 function warnOnce(id,what,e){if(warned.has(id))return;warned.add(id);console.warn('Main Street: '+id+' '+what+' failed',e)}
 function stillKey(d,s){try{return d.stillKey?String(d.stillKey(s)):''}catch(e){warnOnce(d.id,'stillKey',e);return''}}
+function stamp(d,s){try{return d.stamp?String(d.stamp(s)):''}catch(e){warnOnce(d.id,'stamp',e);return''}}
 // The world changed: new states, the buildings whose picture changed, then every mount repaints.
 function setWorld(w){
  seen=true;const changed=[];
@@ -114,7 +116,7 @@ function mount(el,opts){
  }
  // A building's still: rebuilt only when its key changes (a new picture, zoom, DPR or night).
  function still(d){
-  const s=states.get(d.id)||{},key=[d.id,zoom,dpr,false,stillKey(d,s)].join('|'),o=stills.get(d.id);
+  const s=states.get(d.id)||{},key=[d.id,zoom,dpr,false,stillKey(d,s),stamp(d,s)].join('|'),o=stills.get(d.id);
   if(o&&o.key===key)return o.cv;
   const sc=(o&&o.cv)||doc.createElement('canvas');sc.width=Math.ceil(d.width*zoom*dpr);sc.height=Math.round(H*zoom*dpr);
   const g=sc.getContext('2d');g.setTransform(zoom*dpr,0,0,zoom*dpr,0,0);

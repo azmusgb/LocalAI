@@ -2,10 +2,10 @@
 // a narrow tower of honey ashlar with quoined corners, a verdigris spire with a gilt weathervane, an open belfry with its
 // bronze bell, a big gilt-ringed clock face low enough to read under the strip's chip, an arched oak door between two
 // lamps, and buttresses at its foot. state/chip/stillKey are pure (common.js). The hands read the real local time
-// (def.now). Busy: the face glows, the minute hand sweeps a full turn back to the real minute every few seconds and the
+// (now(), a test seam). Busy: the face glows, the minute hand sweeps a full turn back to the real minute every few seconds and the
 // bell swings and rings; an amber "!" by the bell when an automation needs you. Needs you only: lit and still, the
 // hands and the cue in the still. Quiet: the face by daylight, still hands at the time the still was drawn (it may be up
-// to an hour stale: a quiet tower never wakes the loop). Down: a boarded belfry and a dark face, no hands.
+// to an hour stale: a quiet tower never wakes the loop; stamp, the hour, rebuilds its still on the next world or redraw). Down: a boarded belfry and a dark face, no hands.
 // drawStill draws what doesn't move; drawLive (t in ms) draws the hands, the bell and the cue.
 (function(root){'use strict';
 const C=typeof module==='object'&&module.exports?require('./common.js'):root.LocalAIStreetCommon;
@@ -13,6 +13,7 @@ const B=C.runsBuilding({id:'clock',key:'clock',title:'Clock Tower',width:140,roo
 const lit=s=>s.running+s.more>0||s.needsYou>0;
 const TAU=Math.PI*2,K=()=>root.LocalAIStreetArt;
 const ST=['#d8c8a6','#cfbd98','#e0d1b2','#c8b48e'],MORTAR='#a8977a',QUOIN='#ece0c4',COPPER='#3f8f7c',GILT='#d9b45a',BRONZE='#c08a3e',FACE='#f6eed6',INK='#262a31';
+let now=()=>new Date();
 const FX=68,FY=190,FR=25,PX=68,PY=112,OP=[48,104,40,42],SWEEP=1200,CYCLE=3600;
 // Ashlar: courses 8 units tall, blocks 18 wide, half-bond, four tones by position, a lit top edge, the wall light.
 function ashlar(c,x,y,w,h,shade){
@@ -77,7 +78,7 @@ function drawStill(c,s){
  for(let i=0;i<12;i++){const a=TAU*i/12,q=i%3===0,r0=q?17:19.5;c.lineWidth=q?2.2:1.2;c.beginPath();c.moveTo(FX+Math.sin(a)*r0,FY-Math.cos(a)*r0);c.lineTo(FX+Math.sin(a)*23,FY-Math.cos(a)*23);c.stroke()}
  c.fillStyle=dn?'#45474d':INK;c.beginPath();for(let i=0;i<60;i++)if(i%5){const a=TAU*i/60;c.rect(FX+Math.sin(a)*23-.4,FY-Math.cos(a)*23-.4,.8,.8)}c.fill();
  if(!dn){c.fillStyle='rgba(255,255,255,.22)';c.beginPath();c.ellipse(FX-8,FY-11,12,5,-.5,0,TAU);c.fill()}
- if(!dn&&quiet)hands(c,B.now(),0);
+ if(!dn&&quiet)hands(c,now(),0);
  // A slit window under the face, the door between two lamps, its step, and the buttresses at the tower's foot.
  A.box(c,65,232,6,10,on?'#ffd38a':'#2a2624',3);
  A.box(c,53,256,30,44,QUOIN,1);arch(c,56,258,24,42);c.fillStyle=A.grad(c,0,258,0,300,'#7a4a2a','#4a2a18');c.fill();
@@ -106,10 +107,11 @@ function drawLive(c,s,t){
  if(ring>0){const d=Math.sign(w);c.strokeStyle='rgba(255,236,190,.9)';c.lineWidth=1.2;c.lineCap='round';c.globalAlpha=ring;c.beginPath();
   for(const r of [5,9]){const cx=PX+d*(ow/2+4),a0=d>0?-.7:Math.PI-.7;c.moveTo(cx+Math.cos(a0)*r,PY+14+Math.sin(a0)*r);c.arc(cx,PY+14,r,a0,a0+1.4)}c.stroke();c.globalAlpha=1}
  const p=(t%CYCLE)/SWEEP,e=p<1?(p<.5?2*p*p:1-(2-2*p)**2/2):0;
- hands(c,B.now(),TAU*e);
+ hands(c,now(),TAU*e);
  if(s.needsYou>0)A.cue(c,90,122,.9);
  c.restore();
 }
-const def=Object.assign(B,{drawStill,drawLive,lights:()=>[],now:()=>new Date()});
-if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
+// The still's stamp: a quiet tower's hour, so its hands are redrawn within the hour without a still-key change.
+const def=Object.assign(B,{drawStill,drawLive,lights:()=>[],stamp:s=>B.animates(s)||s.down?'':String(now().getHours())});
+if(typeof module==='object'&&module.exports)module.exports=Object.assign(def,{setNow:f=>{now=f||(()=>new Date())}});else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

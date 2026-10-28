@@ -1,6 +1,6 @@
 'use strict';
 // The Clock Tower's drawing (app/public/street/clock.js) against a recording fake 2D context: hands on the real local
-// time (clock.now, pinned here), the minute hand sweeping and the bell swinging only while busy, still hands and a still
+// time (pinned here with clock.setNow, a CommonJS-only test seam), the minute hand sweeping and the bell swinging only while busy, still hands and a still
 // bell when quiet, a boarded belfry and a dark face when down, and only what moves drawn each frame. How it looks is
 // checked by eye in tests/street-gallery.html.
 const test = require('node:test');
@@ -13,9 +13,8 @@ const job = i => ({ id: 'c' + i, title: 'Automation ' + i, status: 'running' });
 const world = (running, waiting = 0, needsYou = 0) => ({ street: { clock: {
   running: Array.from({ length: running }, (_, i) => job(i)), waiting, needsYou: Array.from({ length: needsYou }, (_, i) => job(9 + i)), failedUnseen: [] } } });
 const BRONZE = '#c08a3e', FACE = '#f6eed6', AMBER = '#ffc640', TAU = Math.PI * 2;
-const realNow = clock.now;
-const at = (h, m) => { clock.now = () => new Date(2026, 9, 28, h, m, 0); };
-test.afterEach(() => { clock.now = realNow; });
+const at = (h, m) => clock.setNow(() => new Date(2026, 9, 28, h, m, 0));
+test.afterEach(() => clock.setNow(null));
 // Each hand is drawn as translate(face centre) then rotate(angle), hour hand first; the face sits below the belfry
 // (y > 150) and the bell hangs in it (translate to its pivot, y < 150, then rotate).
 const turns = (rec, below) => rec.args.filter((a, i) => a[0] === 'rotate' && rec.args[i - 1]?.[0] === 'translate' && (rec.args[i - 1][2] > 150) === below).map(a => a[1]);
@@ -27,7 +26,7 @@ test('setup: Clock Tower, 140 wide, roof line at 60, no lights yet, a clock that
   assert.equal(clock.id, 'clock'); assert.equal(clock.width, 140); assert.equal(clock.roof, 60);
   assert.equal(clock.chip(clock.state(world(1))).title, 'Clock Tower');
   assert.deepEqual(clock.lights(clock.state(world(1))), []);
-  assert.equal(typeof realNow, 'function'); assert.ok(realNow() instanceof Date);
+  assert.equal(clock.now, undefined, 'no clock on the def');
 });
 
 test('busy: the hands and the bell are in the live frame only, the hands read the real time between sweeps', () => {
@@ -68,6 +67,16 @@ test('quiet: still hands at the time of the rebuild, a still bell, no glow, noth
   const [h, m] = hands(draw(clock, world(0)).stillRec);
   assert.ok(near(h, TAU * 9.25 / 12) && near(m, TAU / 4), 'a later rebuild shows the later time');
   assert.equal(clock.stillKey(clock.state(world(0))), 'unlit', 'the key does not depend on the time');
+});
+
+// The engine caches a still by its stillKey and stamp; only the stillKey counts as a change (one that moves the camera).
+test('stamp: a quiet tower stamps its still with the hour, so the hands are redrawn within the hour; busy and down do not', () => {
+  at(3, 59); const a = clock.stamp(clock.state(world(0)));
+  at(4, 0); const b = clock.stamp(clock.state(world(0)));
+  assert.equal(a, '3'); assert.equal(b, '4');
+  assert.equal(clock.stamp(clock.state(world(0, 0, 1))), '4', 'needs you only: still hands too');
+  assert.equal(clock.stamp(clock.state(world(1))), '', 'busy: the hands are live');
+  assert.equal(clock.stamp(clock.state({ street: null })), '', 'down: no hands');
 });
 
 test('an automation that needs you: lit and still, hands and the cue in the still, an empty live frame', () => {
