@@ -5,11 +5,11 @@
 // itself, so the answer depends only on its input and the `now` it is given.
 //   running       up to 3 runs in progress (running or streaming), newest first; the rest count into `waiting`;
 //   waiting       queued runs plus running past the cap of 3;
-//   needsYou      approvals the person must decide, from the same pick() Home's "Needs you" uses;
-//   failedUnseen  failures pick() still lists (not opened, under a day old, not answered by a retry);
+//   needsYou      up to 3 approvals the person must decide, from the same pick() Home's "Needs you" uses;
+//   failedUnseen  up to 3 failures pick() still lists (not opened, under a day old, not answered by a retry);
 //   recent        the last 3 finished runs (completed, failed or cancelled), newest first.
 // An item is only {id, title, status, startedAt}; the title is the readable title cut to 80 characters.
-// crewList() does the same for Claude crew sessions: at most 6, text cut to 80 characters.
+// crewList() does the same for Claude crew sessions (claudeLive()'s lastEvent becomes lastAction): at most 6, text cut to 80 characters.
 const { readableTitle } = require('./run-cards');
 const { pick } = require('./public/needs-you');
 
@@ -17,6 +17,7 @@ const STREET_KEYS = ['chat', 'images', 'missions', 'garage', 'sheets', 'clock'];
 const KEYS = { chat: 'chat', research: 'chat', image: 'images', agent: 'missions', mission: 'missions', specialist: 'missions', engineering: 'garage', spreadsheet: 'sheets', automation: 'clock' };
 const MAX_RUNNING = 3;
 const MAX_RECENT = 3;
+const MAX_ASKS = 3;
 const MAX_CREW = 6;
 const TEXT_MAX = 80;
 const FINISHED = new Set(['completed', 'failed', 'cancelled']);
@@ -51,15 +52,15 @@ function buildStreet(runs, { now = Date.now() } = {}) {
   }
   for (const r of pick(list, { now })) {
     const b = street[streetKey(r)];
-    if (r.status === 'awaiting_approval') b.needsYou.push(item(r));
-    else if (r.status === 'failed') b.failedUnseen.push(item(r));
+    if (r.status === 'awaiting_approval' && b.needsYou.length < MAX_ASKS) b.needsYou.push(item(r));
+    else if (r.status === 'failed' && b.failedUnseen.length < MAX_ASKS) b.failedUnseen.push(item(r));
   }
   return street;
 }
 
 function crewList(live) {
   return (Array.isArray(live) ? live : []).slice(0, MAX_CREW).map((s) => ({
-    id: s.id, title: cut(s.title), state: s.state === 'waiting' ? 'waiting' : 'working', lastAction: cut(s.lastAction),
+    id: s.id, title: cut(s.title), state: s.state === 'waiting' ? 'waiting' : 'working', lastAction: cut(s.lastEvent),
   }));
 }
 

@@ -34,6 +34,14 @@ test('buildStreet lists approvals and unseen failures per building', () => {
   assert.deepEqual(seen.images.failedUnseen, []);
 });
 
+test('buildStreet caps needsYou and failedUnseen at 3 per building', () => {
+  const runs = [];
+  for (let i = 0; i < 5; i++) runs.push(run('p' + i, 'engineering', 'awaiting_approval', { createdAt: iso(100 - i) }), run('f' + i, 'engineering', 'failed', { title: 'goal ' + i, createdAt: iso(100 - i), finishedAt: iso(30 - i) }));
+  const g = buildStreet(runs, { now }).garage;
+  assert.equal(g.needsYou.length, 3);
+  assert.equal(g.failedUnseen.length, 3);
+});
+
 test('buildStreet recent is the last 3 finished, newest first', () => {
   const runs = [1, 2, 3, 4, 5].map((n) => run('c' + n, 'chat', 'completed', { createdAt: iso(100 - n), finishedAt: iso(50 - n) }));
   runs.push(run('x', 'chat', 'cancelled', { createdAt: iso(200), finishedAt: iso(300) }));
@@ -46,7 +54,7 @@ test('items carry exactly id, title, status, startedAt', () => {
   assert.equal(s.chat.running[0].startedAt, iso(10));
 });
 
-test('titles are readableTitle cut to 80', () => {
+test('titles are readableTitle (which already caps at 80)', () => {
   const s = buildStreet([run('a', 'chat', 'running', { meta: { label: 'é'.repeat(300) } })], { now });
   assert.equal(s.chat.running[0].title.length, 80);
 });
@@ -57,7 +65,7 @@ test('every key is present when there are no runs', () => {
 });
 
 test('crewList caps at 6 and trims', () => {
-  const live = Array.from({ length: 9 }, (_, i) => ({ id: 's' + i, title: 't'.repeat(200), state: i % 2 ? 'waiting' : 'working', lastAction: 'a'.repeat(200), extra: 1 }));
+  const live = Array.from({ length: 9 }, (_, i) => ({ id: 's' + i, title: 't'.repeat(200), state: i % 2 ? 'waiting' : 'working', lastEvent: 'a'.repeat(200), at: 1, extra: 1 }));
   const out = crewList(live);
   assert.equal(out.length, 6);
   for (const c of out) {
