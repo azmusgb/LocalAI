@@ -59,6 +59,14 @@ function callAll(ctx, t) {
   A.road(ctx, 0, 400);
   A.skyline(ctx, 0, 400, 0);
   A.skyline(ctx, 0, 400, 1);
+  A.brickSide(ctx, 0, 0, 30, 80, { skew: 6, tone: 'sand' });
+  A.tex(ctx, A.brick, 0, 0, 60, 40, { tone: 'slate' });
+  A.plank(ctx, 0, 0, 40, 10, 6);
+  A.boards(ctx, 0, 0, 120, 60);
+  A.boards(ctx, 0, 0, 30, 80);
+  A.lamp(ctx, 20, 40, true);
+  A.lamp(ctx, 20, 40, false);
+  A.person(ctx, 40, 300, { prop: 'brush', reach: [4, -6], tip: '#ff0000' });
 }
 
 test('every helper draws without throwing', () => {
@@ -75,21 +83,21 @@ test('every helper draws without throwing', () => {
 test('helpers leave the context as they found it (save and restore balance)', () => {
   const { ctx, log } = fakeCtx();
   callAll(ctx, 1.2);
-  for (const p of ['clipboard', 'wrench', 'tablet', 'hammer', null]) A.person(ctx, 0, 300, { prop: p });
+  for (const p of ['clipboard', 'wrench', 'tablet', 'hammer', 'brush', null]) A.person(ctx, 0, 300, { prop: p });
   assert.equal(log.filter(m => m === 'save').length, log.filter(m => m === 'restore').length);
 });
 
 test('art never turns off smoothing', () => {
   const { ctx, sets } = fakeCtx();
   callAll(ctx, 2);
-  for (const p of ['clipboard', 'wrench', 'tablet', 'hammer', null]) A.person(ctx, 0, 300, { prop: p, pose: 1 });
+  for (const p of ['clipboard', 'wrench', 'tablet', 'hammer', 'brush', null]) A.person(ctx, 0, 300, { prop: p, pose: 1 });
   assert.deepEqual(sets.filter(([k, v]) => k === 'imageSmoothingEnabled' && v === false), []);
   assert.ok(!/imageSmoothingEnabled\s*=\s*(false|0)/.test(src), 'art.js never sets imageSmoothingEnabled false');
 });
 
 test('person draws every prop', () => {
   const counts = {};
-  for (const p of ['clipboard', 'wrench', 'tablet', 'hammer', null]) {
+  for (const p of ['clipboard', 'wrench', 'tablet', 'hammer', 'brush', null]) {
     const { ctx, log } = fakeCtx();
     A.person(ctx, 0, 300, { prop: p, vest: '#ff7e46', hat: '#ffc640', skin: '#e9b88f', pose: 0.5 });
     assert.ok(log.includes('fill'), `person with ${p} fills`);

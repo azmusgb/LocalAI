@@ -39,9 +39,10 @@ function bricks(c,x,y,w,h,t,light){
 }
 function brick(c,x,y,w,h,o){const tone=(o&&o.tone)||'red';if(tone==='side')return brickSide(c,x,y,w,h);bricks(c,x,y,w,h,TONES[tone]||TONES.red,true)}
 // A side wall in shade. With {skew} its far edge rises (a wall turning away), as the art bar's Foundry side wall does.
+// {tone} lays that brick in shade instead of the red side's.
 function brickSide(c,x,y,w,h,o){
- const s=(o&&o.skew)||0;c.save();poly(c,[[x,y],[x+w,y-s],[x+w,y+h-s*.6],[x,y+h]]);c.clip();
- bricks(c,x,y-s,w,h+s,TONES.side,false);c.fillStyle='rgba(0,0,0,.12)';c.fillRect(x,y-s,w,h+s);c.restore();
+ const s=(o&&o.skew)||0,t=o&&TONES[o.tone];c.save();poly(c,[[x,y],[x+w,y-s],[x+w,y+h-s*.6],[x,y+h]]);c.clip();
+ bricks(c,x,y-s,w,h+s,t||TONES.side,false);c.fillStyle=t?'rgba(20,10,20,.38)':'rgba(0,0,0,.12)';c.fillRect(x,y-s,w,h+s);c.restore();
 }
 // Corrugated metal: 10-unit ribs with a lit crest, and a bright edge along the top.
 function corrugated(c,x,y,w,h){
@@ -73,12 +74,14 @@ function softShadow(c,cx,cy,rx,ry){
 }
 
 // A worker, feet at (x, y), drawn from the art bar's figure (95 units tall there; o.scale 0.55 by default). pose 0..1
-// is the walk cycle: legs and the free arm swing. The prop is held in the raised right hand.
+// is the walk cycle: legs and the free arm swing. The prop is held in the raised right hand; o.reach [dx,dy] moves that
+// hand (a painter's stroke), and a brush's tip takes o.tip.
 const PROPS={
  clipboard(c){box(c,-6,-14,18,24,P.paper,3);c.fillStyle=P.ink;c.fillRect(-3,-10,12,2);c.fillRect(-3,-5,9,2);c.fillRect(-3,0,11,2);c.fillStyle=P.steel2;c.fillRect(-1,-16,8,3)},
  wrench(c){c.save();c.rotate(-.7);c.fillStyle=lin(c,0,-4,0,4,[[0,P.steel1],[1,P.steel3]]);c.beginPath();rr(c,-2,-2.5,26,5,2.5);c.fill();
   c.beginPath();c.arc(26,0,6,0,Math.PI*2);c.fill();c.fillStyle=P.dark;c.beginPath();c.rect(26,-2.2,8,4.4);c.fill();c.restore()},
  tablet(c){box(c,-8,-16,22,30,P.frame,3);box(c,-5.5,-13.5,17,25,lin(c,0,-13,0,12,[[0,'#7fd3ff'],[1,'#3a7bd5']]),1.5);c.fillStyle='rgba(255,255,255,.35)';c.fillRect(-3,-10,10,2);c.fillRect(-3,-5,7,2)},
+ brush(c,o){c.save();c.rotate(-.4);box(c,-2,-1.5,24,3,'#a5723e',1.5);box(c,20,-2.5,6,5,P.steel2,1);c.fillStyle=o.tip||'#4a7bd0';c.beginPath();c.ellipse(29,0,4,2.6,0,0,Math.PI*2);c.fill();c.restore()},
  hammer(c){c.save();c.rotate(-.5);box(c,-2,-2,30,4.5,lin(c,0,-2,0,3,[[0,'#b07a46'],[1,'#7a5228']]),2);box(c,24,-9,9,18,lin(c,24,0,33,0,[[0,P.steel1],[1,P.steel3]]),2);c.restore()}
 };
 function person(c,x,y,o){
@@ -90,12 +93,29 @@ function person(c,x,y,o){
  c.fillStyle=lin(c,-16,0,20,0,[[0,'rgba(255,255,255,.14)'],[.5,'rgba(255,255,255,0)'],[1,'rgba(0,0,0,.18)']]);c.fill();
  c.fillStyle=rgba(P.stripe,.9);c.fillRect(-14,-60,32,5);
  c.strokeStyle=skin;c.lineWidth=7;c.lineCap='round';c.beginPath();c.moveTo(-12,-56);c.lineTo(-16+sw*5,-36);c.stroke();
- c.beginPath();c.moveTo(18,-54);if(prop)c.lineTo(38,-64);else c.lineTo(22-sw*5,-36);c.stroke();
+ const hx=38+(o.reach?o.reach[0]:0),hy=-64+(o.reach?o.reach[1]:0);c.beginPath();c.moveTo(18,-54);if(prop)c.lineTo(hx,hy);else c.lineTo(22-sw*5,-36);c.stroke();
  c.fillStyle=skin;c.beginPath();c.arc(2,-82,12,0,Math.PI*2);c.fill();c.fillStyle='rgba(0,0,0,.12)';c.beginPath();c.arc(5,-80,10,-.6,1.9);c.fill();
  if(hat){c.fillStyle=hat;c.beginPath();c.moveTo(-12,-84);c.quadraticCurveTo(2,-104,16,-84);c.closePath();c.fill();box(c,-15,-86,34,5,hat,2.5);c.fillStyle='rgba(0,0,0,.14)';c.fillRect(-15,-83,34,2)}
  else{c.fillStyle='#3b2a22';c.beginPath();c.arc(2,-86,11,Math.PI,0);c.fill()}
- if(prop){c.translate(38,-64);prop(c)}
+ if(prop){c.translate(hx,hy);prop(c,o)}
  c.restore();
+}
+// A board nailed across from (x0,y0) to (x1,y1), w units wide, with its shadow and nails.
+function plank(c,x0,y0,x1,y1,w){
+ const len=Math.hypot(x1-x0,y1-y0);c.save();c.translate(x0,y0);c.rotate(Math.atan2(y1-y0,x1-x0));
+ c.shadowColor='rgba(0,0,0,.4)';c.shadowBlur=2;c.shadowOffsetY=1;box(c,-2,-w/2,len+4,w,lin(c,0,-w/2,0,w/2,[[0,'#b48858'],[1,'#6f4a2a']]),1);c.shadowColor='transparent';
+ c.fillStyle='rgba(60,36,18,.45)';c.fillRect(-2,-.4,len+4,.8);c.fillStyle=P.steel3;c.beginPath();
+ for(const nx of [2,len-2]){c.moveTo(nx+.9,-w/4);c.arc(nx,-w/4,.9,0,Math.PI*2);c.moveTo(nx+.9,w/4);c.arc(nx,w/4,.9,0,Math.PI*2)}c.fill();c.restore();
+}
+// An opening boarded up: a board across the top and bottom, and an X (wide openings get a board through the middle too).
+function boards(c,x,y,w,h){
+ const b=Math.max(4,Math.min(8,Math.min(w,h)*.14));plank(c,x-2,y+b,x+w+2,y+b*.6,b);plank(c,x-2,y+h-b,x+w+2,y+h-b*1.4,b);
+ if(w>h*1.4)plank(c,x-2,y+h/2+1,x+w+2,y+h/2-1,b);plank(c,x+2,y+h-2,x+w-2,y+2,b*.9);plank(c,x+2,y+2,x+w-2,y+h-2,b*.9);
+}
+// A wall lamp: a bracket hanging a shade at (x, y); on, its bulb glows.
+function lamp(c,x,y,on){
+ c.save();box(c,x-1,y-10,2,10,P.frame);c.fillStyle=P.frame;poly(c,[[x-4.5,y],[x+4.5,y],[x+2.5,y-4],[x-2.5,y-4]]);c.fill();
+ c.fillStyle=on?P.lamp:'#5b6170';c.beginPath();c.ellipse(x,y,3.4,1.2,0,0,Math.PI*2);c.fill();if(on)glow(c,x,y+2,9,6,P.lamp,.45);c.restore();
 }
 // A crate s units wide: the art bar's warm wood gradient and its cross battens.
 function crate(c,x,y,s){
@@ -139,7 +159,10 @@ function skyline(c,x,w,layer){
   c.rect(i*step+(step-bw)*r,top,bw,GROUND-top)}
  c.fill();if(L){c.fillStyle=lin(c,0,140,0,GROUND,[[0,rgba('#9fbfdf',0)],[1,rgba(P.haze,.85)]]);c.fillRect(x,140,w,GROUND-140)}c.restore();
 }
-const api={palette:P,brick,brickSide,corrugated,steel,glass,glow,rays,softShadow,person,crate,smoke,fire,sidewalk,road,skyline};
+// A texture helper (brick, corrugated…) laid at half scale in a scene rect: bricks and ribs as dense as the art bar's.
+function tex(c,fn,x,y,w,h,o){c.save();c.scale(.5,.5);fn(c,x*2,y*2,w*2,h*2,o&&o.skew?{...o,skew:o.skew*2}:o);c.restore()}
+const grad=(c,x0,y0,x1,y1,a,b)=>lin(c,x0,y0,x1,y1,[[0,a],[1,b]]);
+const api={palette:P,box,poly,grad,tex,brick,brickSide,corrugated,steel,glass,glow,rays,softShadow,person,plank,boards,lamp,crate,smoke,fire,sidewalk,road,skyline};
 root.LocalAIStreetArt=api;
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);
