@@ -353,6 +353,15 @@ function init(){
  if(active()&&onHomeHash())setTimeout(activate,0);
 }
 addEventListener('localai:first-run',paintNeeds); // Get started appeared or was dismissed: decide again who shows the service rows
+// Main Street (street/*.js) loads on demand, never with the shell (tests/budgets.test.cjs gives it its own budget), in
+// order. LocalAIStreetLoad() resolves once all of STREET_MODS have run, rejects if one fails (a later call tries again).
+const STREET_MODS=['art','street'];let streetLoad=null;
+function loadStreet(){
+ if(streetLoad)return streetLoad;const added=[];
+ streetLoad=Promise.all(STREET_MODS.map(m=>new Promise((ok,no)=>{const s=document.createElement('script');s.src='/street/'+m+'.js';s.async=false;s.onload=()=>ok();s.onerror=()=>no(new Error('Main Street could not load '+m+'.js'));added.push(s);document.head.append(s)}))).then(()=>{},e=>{streetLoad=null;added.forEach(s=>s.remove());throw e});
+ return streetLoad;
+}
+root.LocalAIStreetLoad=loadStreet;
 root.LocalAIHome={send,activate,refresh,mode:()=>cur(),setMode,printerWords,
  // ui.js hands over the critical items of the capability check (a stopped service, an unreachable registry).
  setAttention(items){attention=(items||[]).filter(a=>a&&a.severity==='critical');paintNeeds()}};

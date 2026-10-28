@@ -143,6 +143,22 @@ test("Agent World's on-demand modules stay within their own budget (gzipped)", (
   assert.deepEqual(AW.filter(f => f in sizes), [], 'no on-demand module is loaded by the shell');
 });
 
+// Main Street's modules (app/public/street/*.js): fetched by home.js only when Home shows the street, so they stay out
+// of the shell's budget and have their own: 48 KB in all and 8 KB each, gzipped. The street is drawn in code at the art
+// bar (docs/superpowers/specs/assets/2026-10-27-agent-world-art-bar.html): rounded bricks with highlights, steel and
+// glass gradients, light rays, glow, soft shadows, workers with props, smoke and fire, for ten buildings with a scene of
+// the work inside each. Vector art at that level is several times the size of the old city's landmarks, hence 48 KB.
+// art.js keeps that cost shared: reusable helpers with parameters, never per-building code.
+const STREET = fs.readdirSync(path.join(pub, 'street')).filter(f => f.endsWith('.js')).map(f => 'street/' + f);
+const streetSizes = Object.fromEntries(STREET.map(f => [f, gz(f)]));
+test('Main Street modules stay within their own budget (gzipped)', () => {
+  assert.ok(STREET.length >= 1, 'app/public/street has its modules');
+  const total = Object.values(streetSizes).reduce((a, b) => a + b, 0);
+  assert.ok(total <= 48 * KB, `Main Street modules are ${kb(total)} gzipped, over 48 KB: ${Object.entries(streetSizes).map(([f, n]) => `${f} ${kb(n)}`).join(', ')}`);
+  assert.deepEqual(Object.entries(streetSizes).filter(([, n]) => n > 8 * KB).map(([f, n]) => `${f}: ${kb(n)} > 8.0 KB`), []);
+  assert.deepEqual(STREET.filter(f => f in sizes), [], 'no Main Street module is loaded by the shell');
+});
+
 test('the budget covers the files the shell really loads', () => {
   for (const f of ['ui.js', 'app.js', 'app.css']) assert.ok(f in sizes, `${f} is loaded by index.html`);
 });

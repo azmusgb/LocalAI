@@ -42,3 +42,16 @@ test('every Agent World on-demand module is in the loader and precached, and non
   const html = fs.readFileSync(path.join(pub, 'index.html'), 'utf8');
   assert.deepEqual(aw.filter(m => html.includes(`/aw/${m}.js`)), []);
 });
+
+// Main Street's modules (app/public/street/*.js) are not in index.html either: home.js loads the ones in STREET_MODS when
+// Home shows the street, and the service worker precaches them so the street works offline too.
+test('every Main Street module is in the loader and precached, and none is in index.html', () => {
+  const st = fs.readdirSync(path.join(pub, 'street')).filter(f => f.endsWith('.js')).map(f => f.slice(0, -3)).sort();
+  const home = fs.readFileSync(path.join(pub, 'home.js'), 'utf8'), list = home.match(/STREET_MODS=\[([^\]]*)\]/);
+  assert.ok(list, 'home.js defines STREET_MODS');
+  assert.deepEqual([...list[1].matchAll(/'([^']+)'/g)].map(m => m[1]).sort(), st);
+  const sw = fs.readFileSync(path.join(pub, 'sw.js'), 'utf8'), shell = sw.match(/const SHELL=\[([^\]]*)\]/)[1];
+  assert.deepEqual(st.filter(m => !shell.includes(`'/street/${m}.js'`)), []);
+  const html = fs.readFileSync(path.join(pub, 'index.html'), 'utf8');
+  assert.deepEqual(st.filter(m => html.includes(`/street/${m}.js`)), []);
+});
