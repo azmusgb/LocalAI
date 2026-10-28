@@ -68,6 +68,21 @@ await check('six chips in street order with the right words', async () => {
   assert.deepEqual(page.errors, []);
 });
 
+await check('chips have room: no chip text is cut at 1280, and the buildings spread across the strip', async () => {
+  const page = await fresh();
+  const r = await page.evaluate(() => {
+    const s = window.__el.querySelector('.street'), a = s.getBoundingClientRect(), chips = [...s.querySelectorAll('.street-chip')];
+    const cut = [...s.querySelectorAll('.street-chip span')].filter(e => e.scrollWidth > e.clientWidth).map(e => e.textContent);
+    const boxes = chips.map(b => b.getBoundingClientRect());
+    const overlap = boxes.some((b, i) => i && b.left < boxes[i - 1].right);
+    return { cut, overlap, first: boxes[0].left - a.left, last: a.right - boxes[boxes.length - 1].right, label: s.getAttribute('aria-label'), hidden: s.querySelector('canvas').getAttribute('aria-hidden') };
+  });
+  assert.deepEqual(r.cut, [], `no chip text cut: ${JSON.stringify(r.cut)}`);
+  assert.equal(r.overlap, false, 'chips do not overlap');
+  assert.ok(r.first < 120 && r.last < 120, `the street fills the strip: ${r.first}, ${r.last}`);
+  assert.equal(r.label, 'Agent World street'); assert.equal(r.hidden, 'true');
+});
+
 await check('a title with HTML is text', async () => {
   const evil = '<img src=x onerror=window.__x=1>';
   const page = await fresh({ world: { ...BUSY, models: { ...BUSY.models, loaded: [{ name: evil }] } } });
@@ -124,12 +139,13 @@ await check('the street fits on a desktop and scrolls on a phone, and a change b
 
 await check('a mouse drag scrolls a narrow street and does not open a chip; a plain click does', async () => {
   const page = await fresh({ viewport: { width: 500, height: 600 } });
-  const box = await page.locator('.street').boundingBox();
+  await page.evaluate(() => { window.__el.id = 'streetMount'; });
+  const box = await page.locator('#streetMount .street').boundingBox();
   await page.mouse.move(box.x + 400, box.y + 120); await page.mouse.down();
   await page.mouse.move(box.x + 200, box.y + 120, { steps: 5 }); await page.mouse.up();
   const r = await page.evaluate(() => { const s = window.__el.querySelector('.street'); return [s.scrollLeft, s.scrollWidth - s.clientWidth]; });
-  assert.ok(r[1] > 40 && r[0] === r[1], `dragged to the end: ${r}`);
-  const chip = page.locator('.street-chip', { hasText: 'Model Foundry' });
+  assert.ok(Math.abs(r[0] - 200) <= 1 && r[1] > 200, `dragged 200 px: ${r}`);
+  const chip = page.locator('#streetMount .street-chip', { hasText: 'Model Foundry' });
   const c = await chip.boundingBox();
   await page.mouse.move(c.x + 10, c.y + 10); await page.mouse.down();
   await page.mouse.move(c.x + 60, c.y + 10, { steps: 4 }); await page.mouse.up();
@@ -144,6 +160,7 @@ await check("one broken building doesn't stop the street", async () => {
     window.__warns = []; const warn = console.warn; console.warn = (...a) => { window.__warns.push(a.map(String).join(' ')); warn.apply(console, a); };
     window.LocalAIStreet.register({ id: 'yard', width: 100, state: () => ({}), chip: () => ({ title: 'Y', detail: 'y', tone: 'quiet' }), drawStill() {}, drawLive() { throw new Error('boom'); } });
     window.LocalAIStreet.setWorld(w);
+    const s = window.__el.querySelector('.street'); s.scrollLeft = s.scrollWidth; // the yard stands at the far end
   }, BUSY);
   const f0 = (await stats(page)).frames;
   await page.waitForTimeout(1200);
