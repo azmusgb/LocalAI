@@ -29,12 +29,16 @@ test('quiet and down: no one, no light; down is boarded', () => {
   for (const t of [0, 500, 77777]) {
     const q = draw(chat, world(0), t);
     assert.equal(q.calls.person || 0, 0); assert.equal(q.calls.rays || 0, 0);
-    assert.equal(q.calls.glow || 0, 0, 'only the wall lamp is lit'); assert.equal(q.still.lamp, 1);
+    assert.equal(q.calls.glow || 0, 0); assert.equal(q.still.lamp, 1);
+    // The kit's glow inside lamp() isn't counted above, so count every radial gradient: the wall lamp's is the only light.
+    assert.equal(q.stillRec.log.filter(m => m === 'createRadialGradient').length, 1, 'only the wall lamp is lit');
+    assert.deepEqual(q.liveRec.log, [], 'nothing moves');
   }
   const d = draw(chat, { street: null });
   assert.ok(d.s.down);
   assert.equal(d.calls.person || 0, 0); assert.equal(d.calls.glow || 0, 0); assert.equal(d.calls.rays || 0, 0);
   assert.ok(d.still.boards >= 2, 'window and door boarded');
+  assert.equal(d.stillRec.log.filter(m => m === 'createRadialGradient').length, 0, 'not even the lamp');
 });
 
 test('balanced save/restore, finite numbers, smoothing never off', () => {

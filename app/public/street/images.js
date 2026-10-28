@@ -56,8 +56,8 @@ function drawStill(c,s){
  for(const [x,y,w,h,a,b] of [[108,166,18,14,'#e98a5a','#7fc4f0'],[38,170,14,18,'#6aaa6e','#f6d27a']]){A.box(c,x-1.5,y-1.5,w+3,h+3,'#7a5228');
   c.fillStyle=on?A.grad(c,x,y,x,y+h,b,a):'#4a4650';c.fillRect(x,y,w,h)}
  c.strokeStyle='#8a5e34';c.lineWidth=3;c.lineCap='round';c.beginPath();c.moveTo(72,290);c.lineTo(86,196);c.moveTo(100,290);c.lineTo(86,196);c.moveTo(86,200);c.lineTo(88,290);c.stroke();
- A.box(c,CX-3,CY+CH,CW+6,3,'#6f4a2a');A.box(c,CX,CY,CW,CH,'#fbf8f2',1);
- if(!on){c.fillStyle=dn?'#3c3a3e':'#8d8678';c.beginPath();c.moveTo(CX-3,CY+CH+2);c.quadraticCurveTo(CX+4,CY-6,CX+22,CY-4);c.quadraticCurveTo(CX+42,CY-6,CX+CW+3,CY+CH+2);
+ A.box(c,CX-3,CY+CH,CW+6,3,'#6f4a2a');A.box(c,CX,CY,CW,CH,on?'#fbf8f2':dn?'#2a282e':'#5e5a54',1);
+ if(!on){c.fillStyle=dn?'#3c3a3e':'#8d8678';c.beginPath();c.moveTo(CX-3,CY+CH+2);c.lineTo(CX-3,CY-1);c.quadraticCurveTo(CX+4,CY-8,CX+22,CY-6);c.quadraticCurveTo(CX+42,CY-8,CX+CW+3,CY-1);c.lineTo(CX+CW+3,CY+CH+2);
   for(let i=4;i>=0;i--)c.lineTo(CX+i*CW/4,CY+CH+(i%2?5:1));c.fill()}
  c.restore();panes(c);A.steel(c,24,290,112,5);
  // The plum door under a round window, and the lamp between them and the arch.

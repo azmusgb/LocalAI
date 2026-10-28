@@ -1,8 +1,8 @@
 'use strict';
 // The Spreadsheets Office's drawing (app/public/street/sheets.js) against a recording fake 2D context: cells tick and the
-// clerk types while working; with the bridge up and Excel shut the clerk sits in a lit office at a dim screen and nothing
-// moves; quiet is dark and empty; down is boarded with no light; only what moves (or what the still can't know) is drawn
-// each frame. How it looks is checked by eye in tests/street-gallery.html.
+// clerk types while working; with the bridge up and Excel shut (its own 'dim' still) the clerk sits in a lit office at a
+// dim screen and nothing is drawn each frame; quiet is dark and empty; down is boarded with no light; only what moves is
+// drawn each frame. How it looks is checked by eye in tests/street-gallery.html.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -14,19 +14,23 @@ const cells = r => r.liveRec.sets.filter(([k, v]) => k === 'fillStyle' && (v ===
 
 test('working: the clerk types at a bright screen and cells light in turn', () => {
   const r = draw(sheets, world(true, true, 1));
-  assert.equal(r.live.person, 1);
-  assert.ok(fills(r.liveRec).includes('#d8f2dc'), 'a bright screen');
+  assert.equal(r.still.person, 1, 'the clerk sits in the lit still');
+  assert.ok(fills(r.stillRec).includes('#d8f2dc'), 'a bright screen');
+  assert.ok(r.liveRec.log.includes('stroke'), 'the forearm types');
   assert.equal(cells(draw(sheets, world(true, true, 1), 0)), 0, 'the sheet starts empty');
   assert.equal(cells(draw(sheets, world(true, true, 1), 350 * 4)), 4, 'four cells after four ticks');
   assert.equal(cells(draw(sheets, world(true, true, 1), 350 * 12)), 10, 'all ten, then it clears');
 });
 
-test('bridge up, Excel shut: lit, a dim screen, nothing moves', () => {
-  const a = draw(sheets, world(true, false, 0), 100), b = draw(sheets, world(true, false, 0), 5000);
-  assert.equal(a.live.person, 1); assert.equal(a.live.glow, 1);
-  assert.ok(fills(a.liveRec).includes('#2c4a3a') && !fills(a.liveRec).includes('#d8f2dc'), 'a dim screen');
-  assert.equal(cells(a), 0);
-  assert.deepEqual(a.liveRec.args, b.liveRec.args, 'the same frame at any time');
+test('bridge up, Excel shut: its own still, lit with the clerk at a dim screen; nothing drawn each frame', () => {
+  const s = sheets.state(world(true, false, 0));
+  assert.equal(sheets.stillKey(s), 'dim');
+  assert.notEqual(sheets.stillKey(s), sheets.stillKey(sheets.state(world(true, true, 0))));
+  const r = draw(sheets, world(true, false, 0), 100);
+  assert.equal(r.still.person, 1);
+  assert.ok(fills(r.stillRec).includes('#2c4a3a') && !fills(r.stillRec).includes('#d8f2dc'), 'a dim screen');
+  assert.ok(stops(r.stillRec).includes('#f2e2c2'), 'a lit office');
+  for (const t of [0, 100, 5000]) assert.deepEqual(draw(sheets, world(true, false, 0), t).liveRec.log, []);
 });
 
 test('quiet and down: no one, no light; down is boarded', () => {
@@ -51,5 +55,6 @@ test('a busy frame draws only what moves', () => {
     assert.ok(!fills(r.liveRec).includes(col), `a busy frame does not repaint ${col}`);
   }
   assert.ok(stops(r.stillRec).includes('#f2e2c2') && !stops(r.liveRec).includes('#f2e2c2'), 'the office is in the still only');
-  assert.equal(r.live.steel || 0, 0); assert.equal(r.live.lamp || 0, 0); assert.equal(r.still.person || 0, 0);
+  for (const col of ['#6f4a2a', '#d8f2dc']) assert.ok(!fills(r.liveRec).includes(col), `no desk or screen repaint (${col})`);
+  assert.equal(r.live.steel || 0, 0); assert.equal(r.live.lamp || 0, 0); assert.equal(r.live.person || 0, 0); assert.equal(r.live.box || 0, 0);
 });

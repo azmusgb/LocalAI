@@ -103,5 +103,5 @@ test('person draws every prop', () => {
     assert.ok(log.includes('fill'), `person with ${p} fills`);
     counts[p] = log.length;
   }
-  for (const p of ['clipboard', 'wrench', 'tablet', 'hammer']) assert.ok(counts[p] > counts.null, `${p} draws more than no prop`);
+  for (const p of ['clipboard', 'wrench', 'tablet', 'hammer', 'brush']) assert.ok(counts[p] > counts.null, `${p} draws more than no prop`);
 });
