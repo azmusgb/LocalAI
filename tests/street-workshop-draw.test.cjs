@@ -14,7 +14,7 @@ const norm = rec => rec.sets.map(([k, v]) => [k, typeof v === 'object' ? 'gradie
 const printing = (progress = 42) => world({ state: 'printing', progress, minutesLeft: 10 });
 // The bar's fill: the fillRect right after the bar colour is set.
 function bar(r) {
-  const { log, sets } = r.liveRec;
+  const { sets } = r.liveRec;
   const i = sets.findIndex(([k, v]) => k === 'fillStyle' && (v === '#5bd37a' || v === '#e3a51b'));
   return i < 0 ? null : sets[i][1];
 }

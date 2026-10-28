@@ -59,7 +59,7 @@ async function poll(){
   const r=await fetch('/api/world',{cache:'no-cache',credentials:'same-origin',signal:dl.signal});if(!r.ok)throw 0;
   const w=await r.json();if(!w||w.schema!==1)throw 0;
   failed=false;setWorld(w);
- }catch(e){failed=true}
+ }catch{failed=true}
  dl.done();busy=false;paintStale();
 }
 function sync(){const a=shown();if(a&&!was)poll();was=a}
