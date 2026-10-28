@@ -12,13 +12,14 @@ globalThis.Path2D = globalThis.Path2D || class Path2D { constructor(d) { this.d 
 
 function fakeCtx() {
   const log = [], sets = [], props = {};
-  const grad = () => ({ addColorStop() {} });
+  const grad = () => ({ addColorStop(o, c) { log.push('stop:' + c); } });
   const ctx = new Proxy(props, {
     get(t, k) {
       if (k in t) return t[k];
       if (typeof k !== 'string') return undefined;
       return (...a) => {
         log.push(k);
+        if (k === 'fill' && a[0] && a[0].d) log.push('fillPath:' + a[0].d);
         for (const v of a) if (typeof v === 'number') assert.ok(Number.isFinite(v), `${k} got a finite number`);
         if (k === 'createLinearGradient' || k === 'createRadialGradient') return grad();
         if (k === 'getTransform') return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
@@ -70,4 +71,24 @@ test('balanced save/restore, finite numbers, smoothing never off', () => {
     assert.equal(log.filter(m => m === 'save').length, log.filter(m => m === 'restore').length);
     assert.deepEqual(sets.filter(([k, v]) => k === 'imageSmoothingEnabled' && !v), []);
   }
+});
+
+// The still is cached per stillKey and only what moves is drawn each frame (the engine's contract): a busy frame never
+// repaints the hall's room, the furnace's brick body, the mould or the belt and its rollers.
+test('a busy frame draws only what moves', () => {
+  const s = foundry.state(busy(2)), env = { night: false, reduced: false, zoom: 1, dpr: 2 };
+  const still = fakeCtx(), live = fakeCtx();
+  foundry.drawStill(still.ctx, s, env);
+  foundry.drawLive(live.ctx, s, 900, env);
+  const P = art.palette, fills = r => r.sets.filter(([k]) => k === 'fillStyle').map(([, v]) => v);
+  const statics = [P.belt, '#555c68', '#3a3f48', '#3b2a2a'];
+  for (const col of statics) {
+    assert.ok(fills(still).includes(col), `the still paints ${col}`);
+    assert.ok(!fills(live).includes(col), `a busy frame does not repaint ${col}`);
+  }
+  assert.ok(still.log.includes('stop:' + P.interior0), 'the still paints the hall');
+  assert.ok(!live.log.includes('stop:' + P.interior0), 'a busy frame does not repaint the hall');
+  assert.ok(!live.log.some(m => m.startsWith('fillPath:M236')), 'a busy frame does not repaint the furnace body');
+  assert.ok(!still.log.includes('stop:' + P.furnace0), 'the fire is not in the still');
+  assert.ok(live.log.includes('stop:' + P.furnace0), 'the fire burns each frame');
 });
