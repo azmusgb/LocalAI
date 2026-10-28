@@ -44,7 +44,8 @@ const contexts = [];
 // the mount element, window.__opened the ids onOpen got. setWorld(world) runs unless world is null.
 // fixed: a local Date the page's clock reads (timers run in real time); at: a fake clock installed at that Date (timers move
 // only with page.clock.runFor and in real time).
-async function fresh({ viewport = { width: 1280, height: 800 }, dpr = 1, world = BUSY, reduced = false, clock = false, fixed = null, at = null, route = () => {} } = {}) {
+// full: a container that many px tall mounted in mode 'full' (window.__focus collects the ids onFocus got).
+async function fresh({ viewport = { width: 1280, height: 800 }, dpr = 1, world = BUSY, reduced = false, clock = false, fixed = null, at = null, route = () => {}, full = 0 } = {}) {
   const context = await browser.newContext({ viewport, deviceScaleFactor: dpr, serviceWorkers: 'block', reducedMotion: reduced ? 'reduce' : 'no-preference' });
   contexts.push(context);
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
@@ -57,14 +58,14 @@ async function fresh({ viewport = { width: 1280, height: 800 }, dpr = 1, world =
   page.on('pageerror', e => page.errors.push(e.message));
   await page.goto(base + '/#status', { waitUntil: 'domcontentloaded' }); // off Home: Home mounts its own strip
   await page.waitForFunction(() => typeof window.LocalAIStreetLoad === 'function');
-  await page.evaluate(async world => {
+  await page.evaluate(async ([world, full]) => {
     await window.LocalAIStreetLoad();
     const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999';
-    window.__el = document.body.appendChild(el); window.__opened = [];
-    window.__street = window.LocalAIStreet.mount(el, { mode: 'strip', onOpen: id => window.__opened.push(id) });
+    el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999' + (full ? ';height:' + full + 'px' : '');
+    window.__el = document.body.appendChild(el); window.__opened = []; window.__focus = [];
+    window.__street = window.LocalAIStreet.mount(el, { mode: full ? 'full' : 'strip', onOpen: id => window.__opened.push(id), onFocus: id => window.__focus.push(id) });
     if (world) window.LocalAIStreet.setWorld(world);
-  }, world);
+  }, [world, full]);
   if (clock) await page.clock.pauseAt(new Date(Date.now() + 1000));
   return page;
 }
@@ -765,6 +766,96 @@ await check("a busy window's glow lights the road under it at night", async () =
   const r = await road(qd), s = await road(qn);
   assert.ok(await lum(qn, s.x - 4, s.y, 8, s.h) < await lum(qd, r.x - 4, r.y, 8, r.h), 'quiet: darker at night');
   assert.deepEqual([day.errors, night.errors], [[], []]);
+});
+
+// The full-page street (mode 'full'): as tall as its container, zoom = height / 360 (0.8 to 2), and focus(id).
+// centreOff(page, id): how far building id's centre (its chip's) is from the box's centre, in CSS px.
+const centreOff = (page, id) => page.evaluate(id => { const s = window.__el.querySelector('.street'), d = window.LocalAIStreet.defs().find(x => x.id === id), t = d.chip(d.state(window.__w || {})).title;
+  const b = [...s.querySelectorAll('.street-chip')].find(x => x.textContent.startsWith(t)).getBoundingClientRect(), a = s.getBoundingClientRect(); return Math.abs(b.left + b.width / 2 - (a.left + a.width / 2)); }, id);
+// centred(page, id): waits (up to 10 s: a smooth scroll can start late on a loaded machine) for building id to be centred
+// within 4 px, then for the scroll to hold still for 300 ms; returns how far off it ended.
+async function centred(page, id) {
+  for (let i = 0; i < 50 && await centreOff(page, id) >= 4; i++) await page.waitForTimeout(200);
+  let l = -1;
+  for (let i = 0; i < 30; i++) { const m = await page.evaluate(() => window.__el.querySelector('.street').scrollLeft); if (m === l) break; l = m; await page.waitForTimeout(300); }
+  return centreOff(page, id);
+}
+
+await check('full mode: as tall as its container, zoom = height / 360', async () => {
+  const page = await fresh({ full: 480 });
+  const r = await page.evaluate(() => { const s = window.__el.querySelector('.street'), c = s.querySelector('canvas'), d = window.LocalAIStreet.defs().find(x => x.id === 'foundry');
+    const b = [...s.querySelectorAll('.street-chip')].find(x => x.textContent.startsWith('Model Foundry'));
+    return { h: c.clientHeight, ch: c.height, zoom: (parseFloat(b.style.bottom) - 4) / (360 - (d.roof || 120)) }; });
+  assert.equal(r.h, 480); assert.equal(r.ch, 480);
+  assert.ok(Math.abs(r.zoom - 480 / 360) < 0.01, `zoom ${r.zoom}`);
+  const low = await fresh({ full: 200 });
+  assert.equal(await low.evaluate(() => window.__el.querySelector('canvas').clientHeight), 300, 'at least 300 px tall');
+  assert.deepEqual([page.errors, low.errors], [[], []]);
+});
+
+await check('focus centres a building and marks it; refocusing redraws no still', async () => {
+  const page = await fresh({ full: 480 });
+  await page.evaluate(w => { window.__w = w; }, BUSY);
+  await page.evaluate(() => window.__street.focus('foundry'));
+  const off = await centred(page, 'foundry');
+  assert.ok(off < 4, `centred: ${off}`);
+  assert.equal(await page.evaluate(() => window.__street.focused()), 'foundry');
+  const s0 = (await stats(page)).stills;
+  await page.evaluate(() => window.__street.focus('foundry'));
+  await centred(page, 'foundry');
+  assert.equal((await stats(page)).stills, s0, 'no still redrawn');
+  await page.evaluate(() => window.__street.focus(null));
+  assert.equal(await page.evaluate(() => window.__street.focused()), null);
+  assert.deepEqual(await page.evaluate(() => window.__focus), [], 'onFocus is not called for a programmatic focus');
+  assert.deepEqual(page.errors, []);
+});
+
+await check('reduced motion: focus is instant', async () => {
+  const page = await fresh({ full: 480, reduced: true });
+  await page.evaluate(w => { window.__w = w; }, BUSY);
+  const off = await page.evaluate(() => { window.__street.focus('foundry'); const s = window.__el.querySelector('.street'), b = [...s.querySelectorAll('.street-chip')].find(x => x.textContent.startsWith('Model Foundry')).getBoundingClientRect(), a = s.getBoundingClientRect(); return Math.abs(b.left + b.width / 2 - (a.left + a.width / 2)); });
+  assert.ok(off < 4, `centred at once: ${off}`);
+  // A focus before the first world is kept: the street opens centred on it.
+  const early = await fresh({ full: 480, reduced: true, world: null });
+  await early.evaluate(w => { window.__w = w; window.__street.focus('foundry'); window.LocalAIStreet.setWorld(w); }, BUSY);
+  const o2 = await centreOff(early, 'foundry');
+  assert.ok(o2 < 4, `opens on the focus: ${o2}`);
+  assert.equal(await early.evaluate(() => window.__street.focused()), 'foundry');
+});
+
+await check('a phone snaps one building at a time, and a swipe that settles on the next one calls onFocus', async () => {
+  const page = await fresh({ viewport: { width: 390, height: 844 }, full: 520 });
+  await page.evaluate(w => { window.__w = w; }, BUSY);
+  const r = await page.evaluate(() => { const s = window.__el.querySelector('.street'); return { snap: getComputedStyle(s).scrollSnapType, w: s.clientWidth }; });
+  assert.ok(r.snap.includes('x'), r.snap);
+  await page.evaluate(() => window.__street.focus('images'));
+  assert.ok(await centred(page, 'images') < 4, 'images centred');
+  const next = await page.evaluate(w => { const ids = window.LocalAIStreet.defs().filter(d => !d.state(w).hidden).map(d => d.id); return ids[ids.indexOf('images') + 1]; }, BUSY);
+  const box = await page.locator('.street').last().boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(r.w, 0);
+  const off = await centred(page, next);
+  assert.ok(off < 4, `${next} centred: ${off}`);
+  await page.waitForTimeout(300);
+  assert.deepEqual(await page.evaluate(() => window.__focus), [next]);
+  assert.equal(await page.evaluate(() => window.__street.focused()), next);
+  assert.deepEqual(page.errors, []);
+});
+
+await check('a quiet full street with a focus draws nothing per frame, and the rest of the street is dimmed', async () => {
+  const page = await fresh({ full: 480, world: QUIET, fixed: local(12, 0) });
+  await page.evaluate(w => { window.__w = w; }, QUIET);
+  await settle(page);
+  const before = await lum(page, 10, 10);
+  await page.evaluate(() => window.__street.focus('foundry'));
+  await centred(page, 'foundry');
+  const f = await settle(page), px = await page.evaluate(() => window.__el.querySelector('canvas').toDataURL());
+  await page.waitForTimeout(1000);
+  assert.equal((await stats(page)).frames, f, 'no frames');
+  assert.equal(await page.evaluate(() => window.__el.querySelector('canvas').toDataURL()), px, 'the same picture');
+  const after = await lum(page, 10, 10);
+  assert.ok(after < before * 0.9 && after > before * 0.75, `the sky away from the focus is dimmed 15%: ${before} -> ${after}`);
+  assert.deepEqual(page.errors, []);
 });
 
 for (const c of contexts) await c.close();

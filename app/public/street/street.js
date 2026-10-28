@@ -20,13 +20,20 @@
 // Night (night.js, when loaded): env.night is 19:00-07:00, read on mount, watched (one shared timer) and checked again when the page comes back visible; a change re-keys
 // every still and redraws once. A night still also caches the building's light layer; a night frame draws night.js's sky,
 // the far city faded, then over everything its dim wash and, added, each light layer and the traffic's glows. stats().night is the street's own night (what it draws), not the clock's.
+// mount(el, {mode:'full', onOpen, onFocus(id)}) is the full-page street: as tall as el (at least 300 CSS px), zoom =
+// height/360 within 0.8-2, the scene standing on the canvas's bottom (sky above when it is taller). On a phone (max-width
+// 760px) each slot is at least the box's width and a snap point (.street__snap markers in the chips layer; the CSS snaps
+// x mandatory). The handle's focus(id|null) centres a building (smooth; instant under reduced motion) and marks it: a soft
+// spotlight on the ground under it and a 15% dim over the rest, faded in per frame for FADE ms, then one cached layer
+// drawn with each frame (so a quiet focused street draws nothing per frame); focused() is its id. onFocus(id) is called
+// when the person's scroll settles on a phone with another building centred (never for the engine's own scrolls).
 // A chip click calls onOpen(def.id, def.item?.(state) ?? null); a state with hidden:true takes its building off the street (layout, drawing, chip) until a world shows it again. A shared poller (below) feeds setWorld from /api/world. setWorld(world) recomputes each state and the chips (and unhides the strip); stats() is a test and perf hook.
 (function(root){'use strict';
 const ORDER=Object.freeze(['chat','images','missions','garage','sheets','clock','foundry','workshop','kiosk','yard']);
 const byId=new Map();let ver=0;
 function register(def){if(!def||typeof def.id!=='string'||!def.id)throw new TypeError('a street def needs an id');byId.set(def.id,def);ver++;return def}
 function defs(){return ORDER.filter(id=>byId.has(id)).map(id=>byId.get(id))}
-const H=360,GAP=24,PAD=24,SLOT=200,FRAME=1000/30-1,QUIET=10000,WAIT=8000,MIN_GAP=2000;
+const H=360,GAP=24,PAD=24,SLOT=200,FADE=300,FRAME=1000/30-1,QUIET=10000,WAIT=8000,MIN_GAP=2000;
 let seen=false,lastW=null;const states=new Map(),keys=new Map(),mounts=new Set(),warned=new Set();
 const st={frames:0,avg:0,stills:0,night:false};
 function warnOnce(id,what,e){if(warned.has(id))return;warned.add(id);console.warn('Main Street: '+id+' '+what+' failed',e)}
@@ -81,10 +88,10 @@ function animates(d,s){try{return d.animates?!!d.animates(s):typeof d.drawLive==
 function mount(el,opts){
  opts=opts||{};const A=root.LocalAIStreetArt,N=root.LocalAIStreetNight,doc=el.ownerDocument;
  const box=doc.createElement('div'),cv=doc.createElement('canvas'),chipsEl=doc.createElement('div');
- box.className='street';box.setAttribute('role','region');box.setAttribute('aria-label','Agent World street');cv.className='street__canvas';cv.setAttribute('aria-hidden','true');chipsEl.className='street__chips';box.hidden=true;box.append(cv,chipsEl);el.append(box);
- const c=cv.getContext('2d'),mq=root.matchMedia?root.matchMedia('(prefers-reduced-motion: reduce)'):null,reduce=()=>!!(mq&&mq.matches);
+ const full=opts.mode==='full';box.className=full?'street street--full':'street';box.setAttribute('role','region');box.setAttribute('aria-label','Agent World street');cv.className='street__canvas';cv.setAttribute('aria-hidden','true');chipsEl.className='street__chips';box.hidden=true;box.append(cv,chipsEl);el.append(box);
+ const c=cv.getContext('2d'),mq=root.matchMedia?root.matchMedia('(prefers-reduced-motion: reduce)'):null,reduce=()=>!!(mq&&mq.matches),pq=full&&root.matchMedia?root.matchMedia('(max-width: 760px)'):null,snap=()=>!!(pq&&pq.matches);
  // moving: some building drawn in the last frame animates (true until a frame says otherwise).
- let list=[],xs=new Map(),zoom=1,dpr=1,streetW=0,inView=false,raf=0,last=0,userAt=-Infinity,dead=false,drag=null,sig='',moving=true,nt=st.night=!!N&&N.now();
+ let list=[],xs=new Map(),zoom=1,dpr=1,streetW=0,inView=false,raf=0,last=0,userAt=-Infinity,dead=false,drag=null,sig='',moving=true,oy=0,fid=null,fAt=0,fl=null,auto=false,se=0,nt=st.night=!!N&&N.now();
  const t0=performance.now(),stills=new Map(),chips=new Map(),T=root.LocalAIStreetTraffic?.make(),at=()=>list.map(d=>({d,s:states.get(d.id)||{},x:xs.get(d.id)/zoom}));
  const fits=()=>streetW<=box.clientWidth+1;
  // Buildings left to right, each centred in a slot at least SLOT CSS px wide so its chip has room; when the street
@@ -95,10 +102,11 @@ function mount(el,opts){
  const stand=()=>defs().filter(d=>!(states.get(d.id)||{}).hidden),shape=()=>ver+':'+stand().map(d=>d.id);
  function layout(){
   list=stand();sig=shape();xs=new Map();
-  const vw=box.clientWidth,pad=PAD*zoom,gap=GAP*zoom,n=list.length,slot=d=>Math.max(d.width*zoom,SLOT);
+  const vw=box.clientWidth,pad=PAD*zoom,gap=GAP*zoom,n=list.length,slot=d=>Math.max(d.width*zoom,SLOT,snap()?vw:0);
   const need=2*pad+list.reduce((a,d)=>a+slot(d),0)+gap*Math.max(0,n-1),spare=Math.max(0,vw-need);
   let x=n>1?pad:pad+spare/2;
-  for(const d of list){xs.set(d.id,x+(slot(d)-d.width*zoom)/2);x+=slot(d)+gap+(n>1?spare/(n-1):0)}
+  for(const m of chipsEl.querySelectorAll('.street__snap'))m.remove();
+  for(const d of list){xs.set(d.id,x+(slot(d)-d.width*zoom)/2);if(full){const m=doc.createElement('i');m.className='street__snap';m.style.left=x+'px';m.style.width=slot(d)+'px';chipsEl.append(m)}x+=slot(d)+gap+(n>1?spare/(n-1):0)}
   streetW=need;chipsEl.style.width=Math.max(vw,need)+'px';
   for(const [id,b] of chips)if(!byId.has(id)||!xs.has(id)){b.remove();chips.delete(id)}
   for(const d of list){
@@ -136,13 +144,14 @@ function mount(el,opts){
   if(dead||box.hidden)return;dpr=root.devicePixelRatio||1;
   const w=Math.round(box.clientWidth*dpr),h=Math.round(cv.clientHeight*dpr),now=[w,h,dpr].join();if(now===sized)return;sized=now;
   if(cv.width!==w)cv.width=w;if(cv.height!==h)cv.height=h;
-  zoom=(cv.clientHeight||160)/H;layout();paintChips();for(const d of list)still(d);redraw();
+  const ch=cv.clientHeight||160;zoom=full?Math.min(2,Math.max(.8,ch/H)):ch/H;oy=ch-H*zoom;layout();paintChips();for(const d of list)still(d);if(fid)centre(fid,'instant');redraw();
  }
  function draw(t){
   if(dead||box.hidden||!cv.width)return;if((root.devicePixelRatio||1)!==dpr)return resize();
   if(shape()!==sig){layout();paintChips()}
-  const a=performance.now(),S=zoom*dpr,vw=cv.width/S,x0=box.scrollLeft/zoom,e=env();
-  c.setTransform(S,0,0,S,0,0);
+  const a=performance.now(),S=zoom*dpr,vw=cv.width/S,x0=box.scrollLeft/zoom,e=env(),Y=Math.round(oy*dpr);
+  if(Y>0&&A){c.setTransform(1,0,0,1,0,0);c.fillStyle=nt?'#060a1c':A.palette.sky0;c.fillRect(0,0,cv.width,Y)}
+  c.setTransform(S,0,0,S,0,Y);
   if(A){if(nt)N.sky(c,x0,vw);else{const P=A.palette,g=c.createLinearGradient(0,0,0,300);g.addColorStop(0,P.sky0);g.addColorStop(.6,P.sky1);g.addColorStop(1,P.sky2);
    c.fillStyle=g;c.fillRect(0,0,vw,300)}
    c.globalAlpha=nt?.3:1;for(const [k,L] of [[.5,0],[.25,1]]){c.save();c.translate(-x0*(1-k),0);A.skyline(c,x0*(1-k),vw,L);c.restore()}c.globalAlpha=1;
@@ -152,15 +161,38 @@ function mount(el,opts){
    const dx=Math.round((xs.get(d.id)-box.scrollLeft)*dpr),sc=still(d);
    if(dx>cv.width||dx+sc.width<0)continue;
    if(!mv&&animates(d,states.get(d.id)||{}))mv=true;
-   c.setTransform(1,0,0,1,0,0);c.drawImage(sc,dx,0);c.save();c.setTransform(S,0,0,S,dx,0);
+   c.setTransform(1,0,0,1,0,0);c.drawImage(sc,dx,Y);c.save();c.setTransform(S,0,0,S,dx,Y);
    try{d.drawLive(c,states.get(d.id)||{},t,e)}catch(err){warnOnce(d.id,'drawLive',err)}
    c.restore();
   }
-  if(T){c.setTransform(S,0,0,S,-x0*S,0);if(T.draw(c,at(),x0,vw,Math.max(streetW,box.clientWidth)/zoom,reduce()))mv=true}
-  if(nt){c.setTransform(S,0,0,S,0,0);N.dim(c,vw);c.globalCompositeOperation='lighter';c.setTransform(1,0,0,1,0,0);
-   for(const d of list){const l=stills.get(d.id)?.lit,dx=Math.round((xs.get(d.id)-box.scrollLeft)*dpr)-(l?l.off:0);if(l&&dx<cv.width&&dx+l.cv.width>0)c.drawImage(l.cv,dx,0)}
-   if(T){c.setTransform(S,0,0,S,-x0*S,0);N.glows(c,T.lit())}c.globalCompositeOperation='source-over'}
+  if(T){c.setTransform(S,0,0,S,-x0*S,Y);if(T.draw(c,at(),x0,vw,Math.max(streetW,box.clientWidth)/zoom,reduce()))mv=true}
+  if(nt){c.setTransform(S,0,0,S,0,Y);N.dim(c,vw);c.globalCompositeOperation='lighter';c.setTransform(1,0,0,1,0,0);
+   for(const d of list){const l=stills.get(d.id)?.lit,dx=Math.round((xs.get(d.id)-box.scrollLeft)*dpr)-(l?l.off:0);if(l&&dx<cv.width&&dx+l.cv.width>0)c.drawImage(l.cv,dx,Y)}
+   if(T){c.setTransform(S,0,0,S,-x0*S,Y);N.glows(c,T.lit())}c.globalCompositeOperation='source-over'}
+  if(fid&&xs.has(fid)){const L=focusLayer(),fx=Math.round((xs.get(fid)-GAP*zoom-box.scrollLeft)*dpr),r=fx+L.width,fa=reduce()?1:Math.min(1,(performance.now()-fAt)/FADE);
+   if(fa<1)mv=true;c.setTransform(1,0,0,1,0,0);c.globalAlpha=fa;c.fillStyle='rgba(0,0,0,.15)';if(fx>0)c.fillRect(0,0,fx,cv.height);if(r<cv.width)c.fillRect(r,0,cv.width-r,cv.height);c.drawImage(L,fx,0);c.globalAlpha=1}
   moving=mv;st.frames++;const ms=performance.now()-a;st.avg=st.frames>1?st.avg*.9+ms*.1:ms;
+ }
+ // The focus mark, cached per building, zoom, DPR and height: GAP units each side of the building fade from the 15% dim to
+ // none, and a warm elliptical spotlight lies on the ground under it.
+ function focusLayer(){
+  const d=byId.get(fid),key=[fid,zoom,dpr,cv.height].join();if(fl&&fl.key===key)return fl.cv;
+  const L=doc.createElement('canvas'),w=d.width+2*GAP,g=L.getContext('2d');L.width=Math.ceil(w*zoom*dpr);L.height=cv.height;
+  const h=g.createLinearGradient(0,0,L.width,0);for(const [k,o] of [[0,.15],[.3,0],[.7,0],[1,.15]])h.addColorStop(k,'rgba(0,0,0,'+o+')');g.fillStyle=h;g.fillRect(0,0,L.width,L.height);
+  const rx=d.width*.62,r=g.createRadialGradient(0,0,0,0,0,rx);g.setTransform(zoom*dpr,0,0,zoom*dpr*14/rx,(w/2)*zoom*dpr,oy*dpr+306*zoom*dpr);
+  r.addColorStop(0,'rgba(255,232,160,.5)');r.addColorStop(.5,'rgba(255,232,160,.2)');r.addColorStop(1,'rgba(255,232,160,0)');g.fillStyle=r;g.beginPath();g.arc(0,0,rx,0,7);g.fill();
+  fl={key,cv:L};return L;
+ }
+ // Centres building id (auto: the scroll is the engine's, not the person's, so its settling calls no onFocus).
+ function centre(id,how){const d=byId.get(id);if(!d||!xs.has(id))return;auto=true;box.scrollTo({left:Math.max(0,xs.get(id)+d.width*zoom/2-box.clientWidth/2),behavior:how})}
+ function focus(id){
+  id=id||null;if(id!==fid){fid=id;fAt=performance.now()}if(fid)centre(fid,reduce()?'instant':'smooth');if(!box.hidden)redraw();
+ }
+ // A scroll settled: on a phone, the person's own scroll that centres another building focuses it and tells the page.
+ function settled(){
+  const a=auto;auto=false;if(a||!snap()||box.hidden)return;const m=box.scrollLeft+box.clientWidth/2;let id=null,b=Infinity;
+  for(const d of list){const k=Math.abs(xs.get(d.id)+d.width*zoom/2-m);if(k<b){b=k;id=d.id}}
+  if(id&&id!==fid){fid=id;fAt=performance.now();redraw();opts.onFocus&&opts.onFocus(id)}
  }
  const running=()=>!dead&&!box.hidden&&inView&&doc.visibilityState!=='hidden'&&!reduce()&&moving;
  function tick(now){raf=0;if(!running())return;raf=root.requestAnimationFrame(tick);if(now-last<FRAME)return;last=now;draw(now-t0)}
@@ -170,20 +202,21 @@ function mount(el,opts){
  function redraw(){if(reduce())draw(0);else kick()}
  // A new world: unhide on the first (on screen if it is rendered at all; the observer takes over), redraw the chips, and bring a changed building into view unless the person
  // scrolled lately.
- // The first world: a street wider than the strip opens on the first building that needs you, else the first busy one.
+ // The first world: a street wider than the strip opens on the first building that needs you, else the first busy one
+ // (unless a focus came first: resize() centres that).
  function firstLook(){
-  if(fits())return;const tone=t=>list.find(d=>chips.get(d.id)?.classList.contains('street-chip--'+t)),d=tone('attention')||tone('busy');if(!d)return;
-  const l=xs.get(d.id),r=l+d.width*zoom,vw=box.clientWidth;if(r>vw)box.scrollTo({left:Math.max(0,(l+r-vw)/2),behavior:'instant'});
+  if(fits()||fid)return;const tone=t=>list.find(d=>chips.get(d.id)?.classList.contains('street-chip--'+t)),d=tone('attention')||tone('busy');if(!d)return;
+  const l=xs.get(d.id),r=l+d.width*zoom,vw=box.clientWidth;if(r>vw&&(auto=true))box.scrollTo({left:Math.max(0,(l+r-vw)/2),behavior:'instant'});
  }
  function onWorld(changed,w){
   if(dead)return;if(box.hidden){box.hidden=false;inView=onScreen(box);resize();firstLook()}else{if(shape()!==sig)layout();paintChips();for(const d of list)still(d);redraw()}
   T&&T.world(w,at(),onScreen(box)&&doc.visibilityState!=='hidden',reduce());
-  const id=changed.find(i=>xs.has(i));if(!id||fits()||Date.now()-userAt<QUIET)return;
+  const id=changed.find(i=>xs.has(i));if(!id||fid||fits()||Date.now()-userAt<QUIET)return;
   const d=byId.get(id),l=xs.get(id),r=l+d.width*zoom,vw=box.clientWidth;
   if(l>=box.scrollLeft&&r<=box.scrollLeft+vw)return;
-  box.scrollTo({left:Math.max(0,(l+r-vw)/2),behavior:reduce()?'auto':'smooth'});
+  auto=true;box.scrollTo({left:Math.max(0,(l+r-vw)/2),behavior:reduce()?'auto':'smooth'});
  }
- const touched=()=>{userAt=Date.now()};
+ const touched=()=>{userAt=Date.now();auto=false};
  // A plain vertical wheel scrolls the page (never prevented); a trackpad's sideways swipe scrolls the street natively;
  // shift+wheel turns a vertical wheel sideways.
  function onWheel(e){
@@ -197,8 +230,9 @@ function mount(el,opts){
  // The click that ends a drag is eaten (a later press starts a new drag; a keyboard click has detail 0 and goes through).
  function onClick(e){if(drag&&drag.moved&&e.detail){e.preventDefault();e.stopPropagation()}drag=null}
  // Scrolling repaints at once so the canvas keeps up with the chips; the loop then waits a frame.
- function onScroll(){if(box.hidden)return;last=performance.now();draw(reduce()?0:last-t0);go()}// go: the loop resumes if a moving building scrolled into view
+ function onScroll(){if(box.hidden)return;last=performance.now();draw(reduce()?0:last-t0);go();if(!end){clearTimeout(se);se=setTimeout(settled,150)}}// go: the loop resumes if a moving building scrolled into view
  const onVis=()=>{if(N&&doc.visibilityState!=='hidden')N.now();kick()},onMotion=()=>redraw();
+ const end='onscrollend' in box;if(end)box.addEventListener('scrollend',settled);
  box.addEventListener('wheel',onWheel,{passive:false});box.addEventListener('pointerdown',onDown);box.addEventListener('click',onClick,true);
  box.addEventListener('touchstart',touched,{passive:true});box.addEventListener('keydown',touched);box.addEventListener('scroll',onScroll,{passive:true});
  doc.addEventListener('visibilitychange',onVis);if(mq)mq.addEventListener('change',onMotion);
@@ -215,8 +249,8 @@ function mount(el,opts){
  const inst={world:onWorld,stale:onStale,on:()=>!dead&&(box.hidden?visible(el):inView)};mounts.add(inst);
  const unwatch=N&&N.watch(v=>{if(dead)return;nt=st.night=v;if(!box.hidden){for(const d of list)still(d);redraw()}});
  if(seen)onWorld([],lastW);onStale(failed);start();sync();
- return{destroy(){
-  if(dead)return;dead=true;mounts.delete(inst);if(!mounts.size)stop();if(raf)root.cancelAnimationFrame(raf);raf=0;onUp();
+ return{focus,focused:()=>fid,destroy(){
+  if(dead)return;dead=true;clearTimeout(se);mounts.delete(inst);if(!mounts.size)stop();if(raf)root.cancelAnimationFrame(raf);raf=0;onUp();
   if(ro)ro.disconnect();if(io)io.disconnect();unwatch&&unwatch();T&&T.destroy();doc.removeEventListener('visibilitychange',onVis);if(mq)mq.removeEventListener('change',onMotion);box.remove();
  }};
 }
