@@ -27,7 +27,8 @@ function apply(){
  const V=REG();if(!V||typeof root.showView!=='function')return;
  if(!V.view(cur.page)){const d=V.DOMAINS.find(x=>x.id===cur.page),t=d?d.defaultView:'home';put('#'+t);cur.page=t} // a domain id (#improve, #system) opens its first page
  // A hidden page (Runs, Missions…) that showView put in history keeps its own page when Back returns to it; a typed #runs still means Work.
- if(history.state?.localaiPage===cur.page&&V.view(cur.page).domain==='hidden'&&document.getElementById(cur.page)){applying=true;try{root.showView(cur.page)}finally{applying=false}return}
+ // #agents?place=… and #agents?mission=… are Agent World's own (street.js, street/page.js); a bare typed #agents still means Work › Missions.
+ if((history.state?.localaiPage===cur.page||cur.page==='agents'&&['place','mission'].some(k=>cur.query.has(k)))&&V.view(cur.page).domain==='hidden'&&document.getElementById(cur.page)){applying=true;try{root.showView(cur.page)}finally{applying=false}return}
  const target=V.resolve(cur.page),intent=INTENTS[cur.page];
  if(target!==cur.page||intent){ // an old id: rewrite the hash to the page that owns it, keeping what it meant
   const q=new URLSearchParams(cur.query);for(const [k,v] of Object.entries(intent||{}))if(!q.has(k))q.set(k,v);
@@ -56,6 +57,8 @@ function open(id){
 // Written after a closing sheet's back() lands, and only if no other page was shown meanwhile.
 function shown(id){
  lastShown=id;
+ // Agent World is the street (street/page.js, loaded on demand); it reads the mode and building from the hash.
+ if(id==='agents')root.LocalAIStreetLoad?.().then(()=>{const c=parse();root.LocalAIStreetPage.enter(c.page==='agents'?c.query:new URLSearchParams())}).catch(e=>console.warn(e));
  if(!ready||applying)return;
  afterPop(()=>{
   if(lastShown!==id)return;

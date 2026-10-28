@@ -518,7 +518,7 @@ await check('a chip opens its building\'s run, else Agent World, and its hint sa
   await page.evaluate(() => window.__home.querySelectorAll('.street-chip')[0].click());
   assert.equal(await page.evaluate(() => window.__shown), 'r1');
   await page.evaluate(() => window.__home.querySelectorAll('.street-chip')[1].click());
-  assert.deepEqual(await page.evaluate(() => window.__go), ['#agents']);
+  assert.deepEqual(await page.evaluate(() => window.__go), ['#agents?place=images'], "Agent World's street, on that building");
   await page.evaluate(() => { const c = window.__el.querySelectorAll('.street')[1].querySelectorAll('.street-chip'); c[0].click(); c[1].click(); });
   assert.deepEqual(await page.evaluate(() => window.__calls), [['chat', 'r1'], ['images', null]]);
   // the hint follows the item as the world changes

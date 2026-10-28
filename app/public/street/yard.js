@@ -107,7 +107,7 @@ function lights(s){
  if(s.hidden||s.down||!s.sessions.length)return[];const Q=(u,a,b,m)=>(1-u)*(1-u)*a+2*u*(1-u)*m+u*u*b;
  return[...[2,5,9,12].map(i=>C.lamp(Q(i/14,12,248,130),Q(i/14,220,220,238)+2.4)),...XS.filter((x,i)=>s.sessions[i]).map(x=>C.light('window','#ffd9c2',[x+12,TOP-22,24,19.4]))];
 }
-const panel=(s,w)=>C.panelOf(chip(s),(Array.isArray(w&&w.crews)?w.crews:[]).filter(x=>x&&typeof x==='object').slice(0,6).map(x=>({id:null,title:C.cut(String(x.title??''),80),note:x.state==='waiting'?'Waiting':'Working'})),{label:'Open Claude Code',to:'#claude'});
+const panel=(s,w)=>C.panelOf(chip(s),(Array.isArray(w&&w.crews)?w.crews:[]).filter(x=>x&&typeof x==='object').sort((a,b)=>(a.state==='waiting')-(b.state==='waiting')).slice(0,6).map(x=>({id:null,title:C.cut(String(x.title??''),80),note:x.state==='waiting'?'Waiting':'Working'})),{label:'Open Claude Code',to:'#claude'});
 const def={panel,id:'yard',width:260,roof:180,state,chip,stillKey,stamp,animates,item:()=>null,drawStill,drawLive,lights};
 if(typeof module==='object'&&module.exports)module.exports=def;else root.LocalAIStreet?.register(def);
 })(typeof window!=='undefined'?window:globalThis);

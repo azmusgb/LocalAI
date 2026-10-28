@@ -958,11 +958,12 @@ await check('a building that needs you opens that run (LocalAIRuns.show) on real
   await page.context().close();
 });
 
-await check('tapping a building opens Agent World', async () => {
+await check("tapping a building opens Agent World's street on it", async () => {
   const page = await open(desk, '#home', { world: WORLD });
   await page.waitForSelector('#homeStreet .street:not([hidden])', T);
   await page.locator('#homeStreet .street-chip', { hasText: 'Model Foundry' }).click();
-  await page.waitForFunction(() => location.hash === '#agents', null, T);
+  await page.waitForFunction(() => location.hash === '#agents?place=foundry', null, T);
+  await page.waitForSelector('#agents.active[data-aw-mode="street"]', T);
   await page.context().close();
 });
 

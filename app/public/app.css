@@ -3115,3 +3115,11 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 .home-street .street{margin-top:20px;border:1px solid var(--ds-line);mask-image:linear-gradient(90deg,#000 calc(100% - 24px),transparent)}
 .street.street--full{height:100%;min-height:300px}.street--full .street-chip{font-size:var(--ds-fs-2);max-width:260px;padding:3px 10px}.street__snap{position:absolute;top:0;bottom:0;scroll-snap-align:center}
 @media(max-width:760px){.street--full{scroll-snap-type:x mandatory}}
+/* Agent World's street mode (street/page.js): the full street is the stage and the focused building's panel is the rail
+   (the sheet on a phone); the mission parts wait for mission mode. */
+.aw-page[data-aw-mode="street"] :is(#agentWorldCityMount,.agent-mission-strip,.aw-crew,.aw-story-box,.agent-ops,#agentInspector,#awEmpty,#awPrimary,#awRetry,#awSheetScrub,#awSheetAvatars,#awPeekAction,#awPeekRetry){display:none}
+.aw-street{height:min(64vh,560px)}
+.aw-place{display:grid;align-content:start;gap:8px;min-width:0}.aw-place h2{margin:0;font-size:var(--ds-fs-3)}.aw-place__status{margin:0;color:var(--ds-soft)}
+.aw-place__rows{display:grid;gap:6px}.aw-place__row{display:grid;gap:2px;width:100%;min-width:0;min-height:44px;padding:8px 12px;border:1px solid var(--ds-line);border-radius:var(--ds-r-md);background:var(--ds-surface);color:var(--ds-text);text-align:left;font:inherit}
+button.aw-place__row{cursor:pointer}button.aw-place__row:hover{background:var(--ds-surface-2)}.aw-place__row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.aw-place__row small{color:var(--ds-muted)}.aw-place__open{justify-self:start}
+@media(max-width:760px){#agents .aw-street{height:calc(100% - var(--aw-peek))}}

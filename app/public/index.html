@@ -114,6 +114,7 @@
 <div class="topbar aw-head">
   <div class="aw-head__text"><h1 id="awTitle">Agent World</h1><p id="awStatus" class="aw-head__status">Give your team a goal</p></div>
   <div class="aw-head__actions">
+    <button type="button" id="awToStreet" class="btn-outline" hidden>← Street</button>
     <button type="button" id="awPrimary" class="btn-primary" data-action="start">Start a mission</button>
     <button type="button" id="awRetry" class="btn-outline" hidden>Retry mission</button>
     <button type="button" id="awMoreBtn" class="btn-outline aw-head__more" aria-haspopup="true" aria-expanded="false" aria-controls="awMenu" aria-label="More"><svg class="icon" aria-hidden="true"><use href="#i-more"/></svg></button>
@@ -138,7 +139,7 @@
 </div>
 <!-- Agent World: the city is the page. Desktop: a rail beside it; phone: a bottom sheet over it (peek, half, full). -->
 <div class="aw-stage">
-  <div class="aw-city"><div id="agentWorldCityMount"></div>
+  <div class="aw-city"><div id="agentWorldCityMount"></div><div id="awStreetMount" class="aw-street" hidden></div>
     <div id="awEmpty" class="aw-empty" hidden><div class="aw-empty__card"><h2>Give your team a goal</h2><p>Say what you want done. A team picks it up, and you watch them work here.</p><div class="aw-empty__actions"><button type="button" id="awEmptyStart" class="btn-primary">Start a mission</button><button type="button" id="awEmptyDemo" class="btn-outline">Try a demo mission</button></div></div></div>
   </div>
   <section id="awSheet" class="aw-sheet" data-snap="peek" aria-label="Mission details">
@@ -149,6 +150,7 @@
       <div class="aw-sheet__peek"><p id="awSheetStatus" class="aw-sheet__status">Give your team a goal</p><div id="awSheetAvatars" class="aw-sheet__avatars" aria-hidden="true"></div><button type="button" id="awPeekAction" class="btn-primary aw-sheet__action" data-action="start">Start a mission</button><button type="button" id="awPeekRetry" class="btn-outline aw-sheet__action aw-sheet__retry" aria-label="Retry mission" hidden>Retry</button></div>
     </div>
     <div id="awSheetBody" class="aw-sheet__body">
+      <section id="awPlace" class="aw-place" aria-live="polite" hidden></section>
       <div class="agent-mission-strip">
         <div><h2 id="agentMissionHeadline">No active mission</h2><small id="agentMissionMeta">Start a mission or select one from history.</small></div>
         <div class="agent-mission-progress" role="progressbar" aria-label="Mission progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="agentMissionProgress"></span></div>

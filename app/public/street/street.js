@@ -27,6 +27,7 @@
 // spotlight on the ground under it and a 15% dim over the rest, faded in per frame for FADE ms, then one cached layer
 // drawn with each frame (so a quiet focused street draws nothing per frame); focused() is its id. onFocus(id) is called
 // when the person's scroll settles on a phone with another building centred (never for the engine's own scrolls).
+// onWorld(world), any mode: called with each world the mount draws (street/page.js renders its panel from it).
 // A chip click calls onOpen(def.id, def.item?.(state) ?? null); a state with hidden:true takes its building off the street (layout, drawing, chip) until a world shows it again. A shared poller (below) feeds setWorld from /api/world. setWorld(world) recomputes each state and the chips (and unhides the strip); stats() is a test and perf hook.
 (function(root){'use strict';
 const ORDER=Object.freeze(['chat','images','missions','garage','sheets','clock','foundry','workshop','kiosk','yard']);
@@ -189,9 +190,10 @@ function mount(el,opts){
  function focus(id){
   id=id||null;if(id&&!stand().some(d=>d.id===id))return;if(id!==fid){fid=id;fAt=performance.now()}if(fid)centre(fid,reduce()?'instant':'smooth');if(!box.hidden)redraw();
  }
- // A scroll settled: on a phone, the person's own scroll that centres another building focuses it and tells the page.
+ // A scroll settled: on a phone, the person's own scroll (they touched the street lately; a snap after a layout is not theirs)
+// that centres another building focuses it and tells the page.
  function settled(){
-  const a=auto;auto=false;if(a||!snap()||box.hidden)return;const m=box.scrollLeft+box.clientWidth/2;let id=null,b=Infinity;
+  const a=auto;auto=false;if(a||!snap()||box.hidden||Date.now()-userAt>QUIET)return;const m=box.scrollLeft+box.clientWidth/2;let id=null,b=Infinity;
   for(const d of list){const k=Math.abs(xs.get(d.id)+d.width*zoom/2-m);if(k<b){b=k;id=d.id}}
   if(id&&id!==fid){fid=id;fAt=performance.now();redraw();opts.onFocus&&opts.onFocus(id)}
  }
@@ -211,7 +213,7 @@ function mount(el,opts){
  }
  function onWorld(changed,w){
   if(dead)return;if(box.hidden){box.hidden=false;inView=onScreen(box);resize();firstLook()}else{if(shape()!==sig)layout();paintChips();for(const d of list)still(d);redraw()}
-  T&&T.world(w,at(),onScreen(box)&&doc.visibilityState!=='hidden',reduce());
+  T&&T.world(w,at(),onScreen(box)&&doc.visibilityState!=='hidden',reduce());opts.onWorld&&opts.onWorld(w);
   const id=changed.find(i=>xs.has(i));if(!id||fid||fits()||Date.now()-userAt<QUIET)return;
   const d=byId.get(id),l=xs.get(id),r=l+d.width*zoom,vw=box.clientWidth;
   if(l>=box.scrollLeft&&r<=box.scrollLeft+vw)return;
@@ -255,9 +257,9 @@ function mount(el,opts){
   if(ro)ro.disconnect();if(io)io.disconnect();unwatch&&unwatch();T&&T.destroy();doc.removeEventListener('visibilitychange',onVis);if(mq)mq.removeEventListener('change',onMotion);box.remove();
  }};
 }
-// Home's strip: mounted once into #homeStreetMount (repeat calls do nothing); a building opens its run, else the old Agent World.
+// Home's strip: mounted once into #homeStreetMount (repeat calls do nothing); a building opens its run, else Agent World's street on it (#agents?place=<id>).
 let home=null;
-function mountHome(){const el=root.document.getElementById('homeStreetMount');if(!el||home&&home.el===el)return;home={el,m:mount(el,{mode:'strip',onOpen:(id,item)=>item&&root.LocalAIRuns&&root.LocalAIRuns.show?root.LocalAIRuns.show(item.id):root.LocalAIRouter.go('#agents')})}}
+function mountHome(){const el=root.document.getElementById('homeStreetMount');if(!el||home&&home.el===el)return;home={el,m:mount(el,{mode:'strip',onOpen:(id,item)=>item&&root.LocalAIRuns&&root.LocalAIRuns.show?root.LocalAIRuns.show(item.id):root.LocalAIRouter.go('#agents?place='+id)})}}
 const api=root.LocalAIStreet=Object.assign(root.LocalAIStreet||{},{register,ORDER,defs,mount,mountHome,setWorld,stats});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

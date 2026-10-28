@@ -66,13 +66,14 @@ test('workshop and kiosk: status only', () => {
   assert.equal(P(k, {}).tone, 'down');
 });
 
-test('yard: a row per session', () => {
+test('yard: a row per session, working ones first (as they sit at the tables)', () => {
   const d = load('yard');
   const crews = Array.from({ length: 8 }, (_, i) => ({ id: 's' + i, title: i === 0 ? LONG : 'job ' + i, state: i % 2 ? 'waiting' : 'working', lastAction: '' }));
   const p = P(d, { crews });
   assert.equal(p.rows.length, 6);
   assert.deepEqual(p.rows[0], { id: null, title: 'x'.repeat(79) + '…', note: 'Working' });
-  assert.equal(p.rows[1].note, 'Waiting');
+  assert.deepEqual(p.rows.map(r => r.note), ['Working', 'Working', 'Working', 'Working', 'Waiting', 'Waiting']);
+  assert.deepEqual(p.rows.slice(1, 5).map(r => r.title), ['job 2', 'job 4', 'job 6', 'job 1'], 'stable within each state');
   assert.deepEqual(p.open, { label: 'Open Claude Code', to: '#claude' });
   assert.deepEqual(P(d, { crews: [] }).rows, []); assert.deepEqual(P(d, { crews: null }).rows, []);
   assert.equal(P(d, { crews: [] }).status, 'No sessions');
