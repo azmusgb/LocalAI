@@ -32,6 +32,8 @@ test('plans read as on the Mac', () => {
 
 test('grade and finding', () => {
   assert.equal(E.gradeText({ grade: 'faint' }), ' · faint');
+  assert.equal(E.gradeText({ grade: { print: 'clean', apart: 'no' } }), ' · print clean · apart no');
+  assert.equal(E.gradeText({ grade: { print: 'failed', apart: null } }), ' · print failed');
   assert.equal(E.gradeText({}), '');
   assert.match(E.findingHtml({ finding: 'clean up to 60' }), /Finding: clean up to 60/);
   assert.equal(E.findingHtml({}), '');
