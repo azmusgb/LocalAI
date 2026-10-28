@@ -885,7 +885,10 @@ await check('Home shows Main Street once the world answers', async () => {
   const page = await open(desk, '#home', { world: WORLD });
   await page.waitForSelector('#homeStreet .street:not([hidden])', T);
   assert.equal(await page.locator('#homeStreet').isVisible(), true);
-  assert.equal(await page.locator('#homeStreet .street-chip:not(.street-chip--stale)').count(), 6);
+  // A chip per building standing for this world (the street grows, so the count comes from the registered defs).
+  const want = await page.evaluate(w => window.LocalAIStreet.defs().filter(d => !d.state(w).hidden).length, WORLD);
+  assert.ok(want >= 6, 'at least the first six stand: ' + want);
+  assert.equal(await page.locator('#homeStreet .street-chip:not(.street-chip--stale)').count(), want);
   assert.equal(await page.locator('#homeStreetMount .street').count(), 1);
   await page.context().close();
 });

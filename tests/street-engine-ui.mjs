@@ -32,6 +32,12 @@ const QUIET = {
   street: { chat: src(), images: src(), missions: src(), garage: src(), sheets: src(), clock: src() }
 };
 const TITLES = ['Chat Café', 'Image Studio', 'Spreadsheets Office', 'Model Foundry', 'Workshop Garage', 'Kiosk Billboard'];
+// The street grows building by building, so the checks never hard-code how many stand: standing(page, world) is the
+// titles of the buildings the registered defs put on the street for a world (hidden ones left out), in street order,
+// and inOrder(texts) checks the first six still stand among them in their order.
+const standing = (page, world) => page.evaluate(w => window.LocalAIStreet.defs().filter(d => !d.state(w).hidden).map(d => d.chip(d.state(w)).title), world);
+const inOrder = t => { let at = -1; for (const title of TITLES) { const i = t.findIndex((x, j) => j > at && x.startsWith(title)); assert.ok(i > at, `${title} stands after the one before: ${JSON.stringify(t)}`); at = i; } };
+const chipOf = (t, title) => t.find(x => x.startsWith(title)) || '';
 
 const contexts = [];
 // A fresh page with the street's modules loaded and a strip mounted in a fixed box at the top (in view). window.__el is
@@ -69,15 +75,18 @@ await check('the strip stays hidden until the first world, and shows its canvas 
   assert.deepEqual(r, { hidden: false, h: 160, chips: true });
 });
 
-await check('six chips in street order with the right words', async () => {
+await check('a chip per building in street order with the right words', async () => {
   const page = await fresh();
-  const t = await chipTexts(page);
-  assert.equal(t.length, 6, `six chips: ${JSON.stringify(t)}`);
-  TITLES.forEach((title, i) => assert.ok(t[i].startsWith(title), `chip ${i} starts with ${title}: ${t[i]}`));
-  assert.ok(t[3].includes('qwen3:4b-instruct-32k loaded · 2 waiting'), t[3]);
-  const chip = await page.evaluate(() => { const b = window.__el.querySelectorAll('.street-chip')[3]; return { tag: b.tagName, type: b.type, label: b.getAttribute('aria-label'), busy: b.classList.contains('street-chip--busy'), desc: b.getAttribute('aria-description'), title: b.title }; });
+  const t = await chipTexts(page), want = await standing(page, BUSY);
+  assert.ok(want.length >= TITLES.length, JSON.stringify(want));
+  assert.equal(t.length, want.length, `a chip per building: ${JSON.stringify(t)}`);
+  want.forEach((title, i) => assert.ok(t[i].startsWith(title), `chip ${i} starts with ${title}: ${t[i]}`));
+  inOrder(t);
+  const f = t.findIndex(x => x.startsWith('Model Foundry'));
+  assert.ok(t[f].includes('qwen3:4b-instruct-32k loaded · 2 waiting'), t[f]);
+  const chip = await page.evaluate(f => { const b = window.__el.querySelectorAll('.street-chip')[f]; return { tag: b.tagName, type: b.type, label: b.getAttribute('aria-label'), busy: b.classList.contains('street-chip--busy'), desc: b.getAttribute('aria-description'), title: b.title }; }, f);
   assert.deepEqual(chip, { tag: 'BUTTON', type: 'button', label: 'Model Foundry: qwen3:4b-instruct-32k loaded · 2 waiting', busy: true, desc: 'Opens Agent World', title: 'Opens Agent World' });
-  await page.evaluate(() => window.__el.querySelectorAll('.street-chip')[3].click());
+  await page.evaluate(f => window.__el.querySelectorAll('.street-chip')[f].click(), f);
   assert.deepEqual(await page.evaluate(() => window.__opened), ['foundry'], 'a chip opens its building');
   assert.deepEqual(page.errors, []);
 });
@@ -102,7 +111,7 @@ await check('a title with HTML is text', async () => {
   const page = await fresh({ world: { ...BUSY, models: { ...BUSY.models, loaded: [{ name: evil }] } } });
   await page.waitForTimeout(200);
   const t = await chipTexts(page);
-  assert.ok(t[3].includes(evil + ' loaded'), t[3]);
+  assert.ok(chipOf(t, 'Model Foundry').includes(evil + ' loaded'), JSON.stringify(t));
   assert.equal(await page.evaluate(() => window.__el.querySelector('.street__chips img')), null, 'no element made from the name');
   assert.equal(await page.evaluate(() => typeof window.__x), 'undefined');
 });
@@ -152,13 +161,16 @@ await check('canvas follows size and DPR', async () => {
 });
 
 await check('the street fits on a desktop and scrolls on a phone, and a change brings its building into view', async () => {
+  // A desktop as wide as the street needs (the chips' layer is that wide when it overflows) shows it all, however many stand.
   const page = await fresh();
-  assert.deepEqual(await page.evaluate(() => { const s = window.__el.querySelector('.street'); return s.scrollWidth <= s.clientWidth; }), true, 'fits at 1280');
+  const need = await page.evaluate(() => Math.ceil(parseFloat(window.__el.querySelector('.street__chips').style.width)));
+  await page.setViewportSize({ width: Math.max(1280, need + 2), height: 800 }); await page.waitForTimeout(100);
+  assert.deepEqual(await page.evaluate(() => { const s = window.__el.querySelector('.street'); return [s.scrollWidth <= s.clientWidth, s.clientWidth >= 1280]; }), [true, true], `fits on a desktop ${need} wide`);
   const phone = await fresh({ viewport: { width: 390, height: 844 }, reduced: true });
   const left0 = await phone.evaluate(() => window.__el.querySelector('.street').scrollLeft);
   await phone.evaluate(w => window.LocalAIStreet.setWorld({ ...w, kiosk: { setUp: false } }), BUSY);
   await phone.waitForTimeout(100);
-  const r = await phone.evaluate(() => { const s = window.__el.querySelector('.street'), k = [...s.querySelectorAll('.street-chip')].pop(); const a = s.getBoundingClientRect(), b = k.getBoundingClientRect(); return { left: s.scrollLeft, inView: b.left >= a.left - 1 && b.right <= a.right + 1 }; });
+  const r = await phone.evaluate(() => { const s = window.__el.querySelector('.street'), k = [...s.querySelectorAll('.street-chip')].find(b => b.textContent.startsWith('Kiosk')); const a = s.getBoundingClientRect(), b = k.getBoundingClientRect(); return { left: s.scrollLeft, inView: b.left >= a.left - 1 && b.right <= a.right + 1 }; });
   assert.ok(r.left > left0 && r.inView, `the kiosk scrolled into view: ${JSON.stringify(r)}`);
   // Once the person scrolls, a change leaves the camera alone for a while.
   await phone.evaluate(() => { const s = window.__el.querySelector('.street'); s.dispatchEvent(new WheelEvent('wheel', { deltaY: -2000, shiftKey: true, bubbles: true, cancelable: true })); });
@@ -210,7 +222,7 @@ await check("one broken building doesn't stop the street", async () => {
   const f1 = (await stats(page)).frames;
   assert.ok(f1 - f0 >= 20, `about 30 frames ran: ${f1 - f0}`);
   const t = await chipTexts(page);
-  assert.equal(t.length, 7); TITLES.forEach((title, i) => assert.ok(t[i].startsWith(title)));
+  assert.equal(t.length, (await standing(page, BUSY)).length); inOrder(t); assert.equal(t[t.length - 1], 'Yy', 'the broken building keeps its chip');
   await page.waitForTimeout(300);
   assert.ok((await stats(page)).frames > f1, 'frames keep rising');
   const warns = await page.evaluate(() => window.__warns);
@@ -338,7 +350,7 @@ await check('bad answers keep the last picture and say so', async () => {
   const s = stub(); const page = await fresh({ world: null, clock: true, route: s.route });
   await until(page, () => !window.__el.querySelector('.street').hidden, 'the first world');
   const good = await chipTexts(page);
-  assert.equal(good.length, 6);
+  assert.equal(good.length, (await standing(page, BUSY)).length); inOrder(good);
   assert.equal(await page.evaluate(() => window.__el.querySelectorAll('.street-chip--stale').length), 0, 'no stale chip at first');
   for (const mode of ['500', 'abort', 'badjson', 'schema2']) {
     s.mode = mode; await step(page, s);
@@ -474,11 +486,11 @@ await check('a hidden building has no chip, the next one moves left, and unhidin
   const page = await fresh();
   const lefts = () => page.evaluate(() => [...window.__el.querySelectorAll('.street-chip')].map(b => [b.textContent.slice(0, 6), Math.round(b.getBoundingClientRect().left)]));
   await page.evaluate(w => { window.__hide = false; window.LocalAIStreet.register({ id: 'images', width: 100, state: () => ({ hidden: window.__hide }), chip: () => ({ title: 'Hid', detail: 'x', tone: 'quiet' }), drawStill() {}, drawLive() {}, animates: () => false }); window.LocalAIStreet.setWorld(w); }, BUSY);
-  const shown = await lefts();
-  assert.equal(shown.length, 6); assert.ok(shown.some(c => c[0].startsWith('Hid')));
+  const shown = await lefts(), n = (await standing(page, BUSY)).length;
+  assert.equal(shown.length, n); assert.ok(shown.some(c => c[0].startsWith('Hid')));
   await page.evaluate(w => { window.__hide = true; window.LocalAIStreet.setWorld(w); }, BUSY);
   const hid = await lefts();
-  assert.equal(hid.length, 5); assert.ok(!hid.some(c => c[0].startsWith('Hid')));
+  assert.equal(hid.length, n - 1); assert.ok(!hid.some(c => c[0].startsWith('Hid')));
   const at = (l, t) => l.find(c => c[0].startsWith(t))[1];
   assert.ok(at(hid, 'Spread') < at(shown, 'Spread'), `moved left: ${at(hid, 'Spread')} < ${at(shown, 'Spread')}`);
   await page.evaluate(w => { window.__hide = false; window.LocalAIStreet.setWorld(w); }, BUSY);
