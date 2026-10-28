@@ -33,6 +33,16 @@ test('state: counts, at most 3 sessions shown (working first), the rest as more;
   }
 });
 
+test('a session keeps its seat and its look as it switches between working and waiting', () => {
+  const a = yard.state({ crews: [crew('a'), crew('b'), crew('c', 'waiting')] }), b = yard.state({ crews: [crew('a', 'waiting'), crew('b'), crew('c')] });
+  assert.deepEqual(a.sessions.map(x => x.id), ['ca', 'cb', 'cc']); assert.deepEqual(b.sessions.map(x => x.id), ['ca', 'cb', 'cc']);
+  assert.deepEqual(a.sessions.map(x => x.state), ['working', 'working', 'waiting']); assert.deepEqual(b.sessions.map(x => x.state), ['waiting', 'working', 'working']);
+  assert.equal(yard.stamp(a).replace(/[kq]/g, ''), yard.stamp(b).replace(/[kq]/g, ''), 'skins follow the sessions');
+  // Working sessions are still picked first when there are more than three.
+  const c = yard.state({ crews: [crew('a', 'waiting'), crew('b', 'waiting'), crew('c', 'waiting'), crew('d')] });
+  assert.ok(c.sessions.some(x => x.id === 'cd')); assert.equal(c.more, 1);
+});
+
 test('hidden while developer tools are off', () => {
   const had = Object.prototype.hasOwnProperty.call(globalThis, 'document'), old = globalThis.document;
   try {
@@ -48,8 +58,10 @@ test('stillKey and stamp: busy or idle, and the stamp names each shown session a
   assert.equal(yard.stillKey(yard.state(world(1))), 'busy');
   assert.equal(yard.stillKey(yard.state(world(0, 2))), 'busy', 'waiting sessions still sit at open laptops');
   assert.equal(yard.stillKey(yard.state(world(0))), 'idle');
-  assert.equal(yard.stamp(yard.state(world(2, 1))), 'kkq');
-  assert.equal(yard.stamp(yard.state(world(1, 3))), 'kqq+');
+  const seats = w => yard.stamp(yard.state(w)).replace(/\d/g, '');
+  assert.equal(seats(world(2, 1)), 'kkq');
+  assert.equal(seats(world(1, 3)), 'kqq+');
+  assert.match(yard.stamp(yard.state(world(2, 1))), /^(k[0-2]){2}q[0-2]$/, 'each seat names its skin too');
   assert.equal(yard.stamp(yard.state(world(0))), '');
   assert.equal(yard.animates(yard.state(world(1))), true);
   assert.equal(yard.animates(yard.state(world(0, 2))), false);

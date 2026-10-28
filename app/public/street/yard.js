@@ -2,7 +2,8 @@
 // a fenced work yard under a striped canopy in Claude orange and cream with the spark on its gable, a timber fence at
 // the back, pickets at the front corners, a string of festoon bulbs and three trestle tables with laptops. Not a work
 // building: state counts the Claude sessions on the board (world.crews, at most 6; null when it can't be read, which
-// reads as "No sessions", never boarded). Up to 3 sessions sit at the tables, working ones first, each a worker in
+// reads as "No sessions", never boarded). Up to 3 sessions sit at the tables (working ones are picked first; seats go by
+// session id, so a session keeps its seat as it switches between working and waiting), each a worker in
 // Claude orange at an open laptop; a '+' badge on the post when there are more. A working session types (its forearms
 // and the line on its screen move); a waiting one sits still. No sessions: an empty yard, the laptops shut, the bulbs
 // off. Hidden while the developer tools are off (body.dev-tools-off). A tap always opens Agent World (no per-session link).
@@ -19,7 +20,7 @@ function state(world){
  const k=Array.isArray(world&&world.crews)?world.crews.filter(x=>x&&typeof x==='object'):[];
  const on=k.filter(x=>x.state!=='waiting'),all=on.concat(k.filter(x=>x.state==='waiting'));
  return{hidden,working:on.length,waiting:all.length-on.length,
-  sessions:all.slice(0,3).map(x=>({id:String(x.id??''),title:String(x.title??''),state:x.state==='waiting'?'waiting':'working'})),more:Math.max(0,all.length-3),down:false};
+  sessions:all.slice(0,3).map(x=>({id:String(x.id??''),title:String(x.title??''),state:x.state==='waiting'?'waiting':'working'})).sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0),more:Math.max(0,all.length-3),down:false};
 }
 // Counts only: a session's title never reaches the chip.
 function chip(s){
@@ -27,8 +28,10 @@ function chip(s){
  return{title:TITLE,detail:C.cut(d.join(' · ')||'No sessions'),tone:s.working>0?'busy':'quiet'};
 }
 const stillKey=s=>s.hidden?'hidden':s.sessions.length?'busy':'idle';
-// Who sits where (k working, q waiting) and the badge: part of the still's cache key, never a change by itself.
-const stamp=s=>s.hidden?'':s.sessions.map(x=>x.state==='working'?'k':'q').join('')+(s.more>0?'+':'');
+// A worker's skin follows their session, not the seat.
+const skin=id=>{let h=0;for(let i=0;i<id.length;i++)h=(h*31+id.charCodeAt(i))>>>0;return h%SKIN.length};
+// Who sits where (k working, q waiting, with their skin) and the badge: part of the still's cache key, never a change by itself.
+const stamp=s=>s.hidden?'':s.sessions.map(x=>(x.state==='working'?'k':'q')+skin(x.id)).join('')+(s.more>0?'+':'');
 const animates=s=>!s.hidden&&s.working>0;
 // The back fence: dog-eared timber boards in three weathered tones, their gaps and two rails.
 function fence(c){
@@ -83,7 +86,7 @@ function drawStill(c,s){
  A.steel(c,8,206,5,94);A.steel(c,247,206,5,94);
  bulbs(c,on);canopy(c);
  // The tables: a worker (waiting ones with their hands resting on the keys) behind each laptop in use, the rest shut.
- XS.forEach((x0,i)=>{const w=s.sessions[i];if(w)A.person(c,x0,300,{vest:ORANGE,hat:null,skin:SKIN[i],scale:.55});table(c,x0);laptop(c,x0,!!w);if(w&&w.state==='waiting')arms(c,x0,SKIN[i],0,0)});
+ XS.forEach((x0,i)=>{const w=s.sessions[i];const k=w?SKIN[skin(w.id)]:'';if(w)A.person(c,x0,300,{vest:ORANGE,hat:null,skin:k,scale:.55});table(c,x0);laptop(c,x0,!!w);if(w&&w.state==='waiting')arms(c,x0,k,0,0)});
  if(on)A.glow(c,130,301,110,6,P.spill,.18);
  // Pickets at the front corners, and the '+' badge on the right post when more sessions wait their turn.
  for(const x0 of [0,244]){c.fillStyle=PICKET;c.beginPath();for(let x=x0+1;x<x0+16;x+=5){c.moveTo(x,300);c.lineTo(x,270);c.lineTo(x+1.75,267);c.lineTo(x+3.5,270);c.lineTo(x+3.5,300);c.closePath()}c.fill();
@@ -95,7 +98,7 @@ function drawStill(c,s){
 function drawLive(c,s,t){
  if(!animates(s))return;const A=K();if(!A)return;t=t||0;c.save();
  XS.forEach((x0,i)=>{const w=s.sessions[i];if(!w||w.state!=='working')return;const p=t/85+i*1.7;
-  arms(c,x0,SKIN[i],2.2*Math.max(0,Math.sin(p)),2.2*Math.max(0,-Math.sin(p)));
+  arms(c,x0,SKIN[skin(w.id)],2.2*Math.max(0,Math.sin(p)),2.2*Math.max(0,-Math.sin(p)));
   const n=((t/90+i*5)%28)|0,len=Math.min(n,16);c.fillStyle=TEXT;c.fillRect(x0+15,TOP-9.5,len,1.4);if((t/400|0)%2===0){c.fillStyle=CARET;c.fillRect(x0+15.6+len,TOP-10.2,1.6,2.8)}});
  c.restore();
 }
