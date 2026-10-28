@@ -101,13 +101,21 @@ function openViewer(x,i){
 }
 
 // ---- Compare ----
-let cmp=null,cmpZoom=null;
+let cmp=null,cmpZoom=null,cmpMode='split';
 function compareEl(){
- const d=dialog('labCompare',`<dialog id="labCompare" class="lab-compare" aria-labelledby="labCompareTitle"><div class="lab-compare__head"><h2 id="labCompareTitle" class="lab-sheet__title">Compare</h2><button type="button" class="btn-outline" id="labCompareClose">Close</button></div><div class="lab-compare__pick"><label class="lab-sheet__field">Left<select data-side="0"></select></label><label class="lab-sheet__field">Right<select data-side="1"></select></label></div><div class="lab-compare__body"></div><p class="lab-sheet__hint">Pinch or double-tap to zoom; both sides move together.</p></dialog>`);
+ const d=dialog('labCompare',`<dialog id="labCompare" class="lab-compare" aria-labelledby="labCompareTitle"><div class="lab-compare__head"><h2 id="labCompareTitle" class="lab-sheet__title">Compare</h2><div class="lab-compare__modes" role="radiogroup" aria-label="Compare mode"><button type="button" class="btn-subtle" data-cmp-mode="split" aria-pressed="true">Side by side</button><button type="button" class="btn-subtle" data-cmp-mode="wipe" aria-pressed="false">Curtain slider</button></div><button type="button" class="btn-outline" id="labCompareClose">Close</button></div><div class="lab-compare__pick"><label class="lab-sheet__field">Left<select data-side="0"></select></label><label class="lab-sheet__field">Right<select data-side="1"></select></label></div><div class="lab-compare__body"></div><p class="lab-sheet__hint">Pinch or double-tap to zoom; drag slider in curtain mode.</p></dialog>`);
  if(!cmpZoom){
   const body=d.querySelector('.lab-compare__body');
   cmpZoom=zoomable(body,()=>body.querySelectorAll('img'));
-  d.addEventListener('click',e=>{if(e.target.closest('#labCompareClose'))d.close()});
+  d.addEventListener('click',e=>{
+   if(e.target.closest('#labCompareClose'))d.close();
+   const m=e.target.closest('[data-cmp-mode]');
+   if(m&&cmp){cmpMode=m.dataset.cmpMode;drawCompare()}
+  });
+  d.addEventListener('input',e=>{
+   const r=e.target.closest('.lab-wipe input[type="range"]');
+   if(r)r.parentNode.style.setProperty('--cut',`${r.value}%`);
+  });
   d.addEventListener('change',e=>{const s=e.target.closest('select[data-side]');if(s&&cmp){cmp.sides[Number(s.dataset.side)]=s.value;drawCompare()}});
  }
  return d;
@@ -118,15 +126,28 @@ function drawCompare(){
   sel.replaceChildren(...cmp.runs.map(r=>{const o=document.createElement('option');o.value=r.run;o.textContent=`${r.run} · ${r.x.id}${r.good?' · good enough':''}`;return o}));
   sel.value=cmp.sides[Number(sel.dataset.side)];
  });
+ d.querySelectorAll('[data-cmp-mode]').forEach(b=>{
+  b.setAttribute('aria-pressed',String(b.dataset.cmpMode===cmpMode));
+ });
  const [a,b]=cmp.sides.map(r=>(by[r]||{photos:[]}).photos),tabs=[...new Set([...a,...b].map(p=>p.tab||''))];
  const cell=p=>`<div class="lab-compare__cell">${p?`<img src="${url(p)}" alt="${esc(label(p))}">`:'<span class="meta">No photo</span>'}</div>`;
  const rows=[];
  for(const t of tabs){
   const l=a.filter(p=>(p.tab||'')===t),r=b.filter(p=>(p.tab||'')===t);
-  for(let i=0;i<Math.max(l.length,r.length);i++)rows.push(`<div class="lab-compare__pair"><p class="lab-compare__tab">${esc(t||'No tab')}</p><div class="lab-compare__cols">${cell(l[i])}${cell(r[i])}</div></div>`);
+  for(let i=0;i<Math.max(l.length,r.length);i++){
+   if(cmpMode==='wipe'&&l[i]&&r[i]){
+    rows.push(`<div class="lab-compare__pair"><p class="lab-compare__tab">${esc(t||'No tab')}</p>`
+     +`<figure class="lab-wipe" style="--cut:50%"><img src="${url(l[i])}" alt="${esc(label(l[i]))}">`
+     +`<img class="lab-wipe__after" src="${url(r[i])}" alt="${esc(label(r[i]))}">`
+     +`<input type="range" min="0" max="100" value="50" aria-label="Slide between ${esc(label(l[i]))} and ${esc(label(r[i]))}">`
+     +`<figcaption><span>${esc(l[i].run)}</span><span>${esc(r[i].run)}</span></figcaption></figure></div>`);
+   }else{
+    rows.push(`<div class="lab-compare__pair"><p class="lab-compare__tab">${esc(t||'No tab')}</p><div class="lab-compare__cols">${cell(l[i])}${cell(r[i])}</div></div>`);
+   }
+  }
  }
  d.querySelector('.lab-compare__body').innerHTML=rows.join('');
- cmpZoom.reset();
+ if(cmpMode==='split')cmpZoom.reset();
 }
 function openCompare(x){
  const runs=runsOf(x.question),mine=runs.filter(r=>r.x===x);if(!mine.length||runs.length<2)return;

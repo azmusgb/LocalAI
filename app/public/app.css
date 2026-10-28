@@ -2726,6 +2726,11 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
   align-items: center;
 }
 /* print lab: the buttons on Needs you, the live print and camera (print-lab.js), photos (print-lab-photos.js) */
+.lab-jump{display:flex;gap:6px;overflow-x:auto;padding:4px 0 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.lab-jump::-webkit-scrollbar{display:none}
+.lab-jump__chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;min-height:36px;border-radius:999px;background:var(--ds-surface-2);border:1px solid var(--ds-line);color:var(--ds-text);font-size:var(--ds-fs-1);font-weight:500;text-decoration:none;white-space:nowrap;flex:none}
+.lab-jump__chip:active{background:var(--ds-accent-soft);border-color:var(--ds-accent)}
+@media (min-width: 641px){.lab-jump{display:none}}
 .lab-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .lab-act-status{margin:6px 0 0;font-size:var(--ds-fs-1);color:var(--ds-soft);overflow-wrap:anywhere}
 .lab-act-status:empty{display:none}
@@ -2734,6 +2739,7 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 .lab-mac>summary{cursor:pointer;color:var(--ds-accent-text);padding-block:12px}
 .lab-live{margin-top:10px;display:grid;gap:8px}
 .lab-live__state{margin:0;font-variant-numeric:tabular-nums}
+.lab-live__hms{margin:2px 0 0;font-size:var(--ds-fs-1);color:var(--ds-warning,#f59e0b);line-height:1.3}
 .lab-live__bar{height:14px;border-radius:999px;background:var(--ds-surface-2);overflow:hidden}
 .lab-live__bar>span{display:block;height:100%;background:var(--ds-accent);border-radius:999px}
 .lab-cam{margin:0;display:grid;gap:4px}
@@ -2754,6 +2760,9 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 .lab-viewer__cap{margin:0;text-align:center}
 .lab-viewer__nav,.lab-compare__head,.lab-compare__pick{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap}
 .lab-compare__head{justify-content:space-between;margin-bottom:8px}
+.lab-compare__modes{display:inline-flex;gap:4px;background:var(--ds-surface-2);padding:2px;border-radius:var(--ds-r-sm);border:1px solid var(--ds-line)}
+.lab-compare__modes button{padding:4px 8px;min-height:30px;font-size:var(--ds-fs-1);border:0;border-radius:var(--ds-r-sm);background:transparent;color:var(--ds-muted);cursor:pointer}
+.lab-compare__modes button[aria-pressed="true"]{background:var(--ds-surface);color:var(--ds-text);font-weight:600}
 .lab-compare__pick{justify-content:stretch}
 .lab-compare__pick>label{flex:1}
 .lab-compare__body{display:grid;gap:10px;margin-top:10px;touch-action:none}
@@ -3032,10 +3041,11 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 .lab-obs .lab-obs__q{border:0;margin:0;padding:0;display:grid;gap:6px}
 .lab-obs .lab-obs__q legend{font-size:var(--ds-fs-1);color:var(--ds-muted);padding:0;margin-bottom:2px}
 .lab-obs .lab-obs__opts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
-.lab-obs [data-q="variant"] .lab-obs__opts{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}
-.lab-obs [data-q="identified"] .lab-obs__opts,.lab-obs [data-q="light"] .lab-obs__opts{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+.lab-obs [data-q="variant"] .lab-obs__opts{grid-template-columns:repeat(2,minmax(0,1fr))}
+.lab-obs [data-q="identified"] .lab-obs__opts{grid-template-columns:1fr}
+.lab-obs [data-q="light"] .lab-obs__opts{grid-template-columns:repeat(auto-fit,minmax(100px,1fr))}
 .lab-obs .lab-obs__opt{box-sizing:border-box;display:flex;align-items:center;gap:6px;min-height:44px;padding:6px 8px;border:1px solid var(--ds-line);border-radius:var(--ds-r-sm);background:var(--ds-surface-2);font-size:var(--ds-fs-1);line-height:1.25;cursor:pointer}
-.lab-obs .lab-obs__opt input{flex:none;margin:0}
+.lab-obs .lab-obs__opt input{width:18px;height:18px;flex:0 0 18px;margin:0;padding:0}
 .lab-obs .lab-obs__opt:has(input:checked){border-color:var(--ds-accent);background:var(--ds-accent-soft);color:var(--ds-accent-text)}
 .lab-obs .lab-obs__opt input:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
 .lab-obs textarea,.lab-obs input[type="text"]{min-height:44px}

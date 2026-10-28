@@ -550,13 +550,74 @@ async function sendDrop(){
 
 // ---- the print as it happens: the printer's state (Local AI's Workshop poller) and a camera snapshot ----
 const dur=m=>m>=60?`${Math.floor(m/60)} h ${m%60} min`:`${m} min`;
+const HMS_WORDS={
+ '0C008043':'Build plate marker not detected: check plate alignment on heatbed',
+ '0C008009':'Build plate marker not detected: check plate position',
+ '0C008001':'First layer defects detected by Micro Lidar',
+ '0C00C003':'Possible first layer defects detected',
+ '0C00C004':'Possible spaghetti failure detected: check bed adhesion',
+ '0C008005':'Purged filament pile-up in waste chute: clear chute',
+ '0C00C006':'Waste chute may be clogged with purge filament',
+ '0C00402C':'Device data link error: reboot printer',
+ '0C00402D':'Toolhead camera error: reboot printer',
+ '03004000':'Z axis homing failed: check bed lead screws',
+ '03004001':'Nozzle cooling timeout before homing',
+ '03004002':'Auto bed leveling failed: clean nozzle tip',
+ '03004005':'Hotend cooling fan speed abnormal',
+ '03004006':'Nozzle is clogged: check extruder and filament path',
+ '03004008':'AMS failed to change filament',
+ '0300400C':'Task was canceled',
+ '03008000':'Printing paused for unknown reason',
+ '03008001':'Printing paused by user',
+ '03008002':'First layer defects detected by Micro Lidar',
+ '03008003':'Spaghetti defect detected by AI monitoring',
+ '03008004':'Filament ran out: load new spool',
+ '03008005':'Toolhead front cover fell off: remount cover',
+ '03008006':'Build plate marker not detected: verify plate alignment',
+ '03008007':'Unfinished print recovered after power loss',
+ '03008008':'Nozzle temperature malfunction: check heater cartridge',
+ '03008009':'Heatbed temperature malfunction: check bed thermistor',
+ '0300800A':'Filament pile-up in waste chute: clear chute',
+ '0300800B':'Cutter stuck: check cutter handle and sensor lever',
+ '0300800C':'Lost motion steps / axis obstruction detected',
+ '0300800D':'Extruder abnormal extrusion: check nozzle temperature',
+ '0300800F':'Chamber door is open',
+ '03008010':'Hotend cooling fan abnormal',
+ '03008011':'Build plate type does not match sliced file',
+ '03008013':'Printing paused by pause command in G-code',
+ '03008014':'Nozzle covered in filament or build plate misplaced',
+ '03008016':'Nozzle clogged with filament',
+ '03008017':'Foreign object detected on heatbed: clear plate',
+ '03008019':'Build plate not detected on heatbed',
+ '05004001':'Cloud connection failed',
+ '05004003':'G-code file parse error',
+ '0500400E':'Printing was cancelled',
+ '07004001':'AMS assist motor overload',
+ '07008001':'AMS slot 1 filament ran out',
+ '07008002':'AMS filament retracted abnormally',
+ '07008003':'AMS feed assist motor stuck',
+ '07008010':'AMS failed to pull back filament from toolhead',
+ '07008011':'AMS filament buffer signal abnormal'
+};
+function hmsText(code){
+ if(!code)return null;
+ const c=String(code).replace(/[^0-9A-Fa-f]/g,'').toUpperCase();
+ if(HMS_WORDS[c])return HMS_WORDS[c];
+ if(c.startsWith('0C'))return 'Vision / camera / lidar scanning anomaly';
+ if(c.startsWith('03'))return 'Toolhead / motion / extrusion anomaly';
+ if(c.startsWith('07'))return 'AMS filament feed anomaly';
+ if(c.startsWith('05'))return 'System / print job communication anomaly';
+ return 'Check printer screen for instructions';
+}
 function liveNow(l){
  const word=l.state==='error'?`Stopped with an error${l.errorCode?' '+l.errorCode:''}`:(STATE_WORDS[l.state]||STATE_WORDS.unknown);
  const pct=Number.isInteger(l.progress)?Math.max(0,Math.min(100,l.progress)):null,parts=[`<b>${esc(word)}</b>`];
  if(pct!==null)parts.push(`${pct}%`);
  if(Number.isInteger(l.minutesLeft))parts.push(`${esc(dur(l.minutesLeft))} left`);
  const end=l.finishAt&&new Date(l.finishAt);if(end&&!isNaN(end))parts.push(`done about ${esc(end.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))}`);
+ const hms=l.state==='error'?(l.errorCode?hmsText(l.errorCode):'Check printer screen for instructions'):null;
  return `<div class="lab-live__now"><p class="lab-live__state">${parts.join(' · ')}</p>`
+  +(hms?`<p class="lab-live__hms meta">${l.errorCode?`<b>HMS ${esc(l.errorCode)}:</b> `:''}${esc(hms)}</p>`:'')
   +(pct!==null?`<div class="lab-live__bar" role="progressbar" aria-label="Print progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${pct}%"></span></div>`:'')+'</div>';
 }
 const liveHtml=l=>`<div class="lab-live">${liveNow(l)}<figure class="lab-cam"><img class="lab-cam__img" alt="The printer's camera, a new picture every 10 seconds" hidden><figcaption class="lab-cam__why">Getting a picture…</figcaption></figure></div>`;
@@ -662,11 +723,20 @@ function render(data,requests=currentRequests){
  const open=ix.questions.filter(q=>!['answered','stopped'].includes(q.status)),recent=x=>x.status==='answered'&&x.verdict&&Date.now()-new Date(x.verdict.at)<3*864e5;
  // Answered in the last three days stays in view: the newest result is what the owner comes to check.
  const active=ix.experiments.filter(x=>!DONE.has(x.status)||recent(x)),earlier=ix.experiments.filter(x=>DONE.has(x.status)&&!recent(x));
+ const needsCount=(ix.needs||[]).length;
+ const jumps=[
+  needsCount?`<a href="#lab-sec-needs" class="lab-jump__chip">Needs you <span class="badge badge--attention">${needsCount}</span></a>`:'',
+  open.length?`<a href="#lab-sec-questions" class="lab-jump__chip">Questions (${open.length})</a>`:'',
+  active.length?`<a href="#lab-sec-notebook" class="lab-jump__chip">Notebook (${active.length})</a>`:'',
+  earlier.length?`<a href="#lab-earlier" class="lab-jump__chip">Earlier (${earlier.length})</a>`:''
+ ].filter(Boolean).join('');
+ const jumpNav=jumps?`<nav class="lab-jump" aria-label="Jump to section">${jumps}</nav>`:'';
  return syncLine(meta)
   +(ix.problems.length?`<div class="banner lab-problems" role="alert"><strong>Records the Mac can't read</strong><ul>${ix.problems.map(p=>`<li><b>${esc(p.file)}</b> ${esc(p.error)}</li>`).join('')}</ul></div>`:'')
-  +`<div class="lab-layout"><div class="lab-side"><section class="card lab-needs-card"><h2>Needs you</h2>${needsHtml(ix,byId)}</section>`
-  +(open.map(q=>questionHtml(q,byId)).join('')||'<section class="card"><div class="empty-state"><div class="empty-state__title">No open question.</div><div>Start one on the Mac with lab question new.</div></div></section>')
-  +`</div><div class="lab-notebook"><h2>Notebook</h2>${liveData&&liveData.conflict?`<p class="banner banner--attention lab-conflict" role="status">Two runs say they're printing; check the Mac.</p>`:''}${active.map(x=>experimentHtml(x,ix.project,requests,byId,ix.colours)).join('')||'<p class="empty-state">No open experiments.</p>'}`
+  +jumpNav
+  +`<div class="lab-layout"><div class="lab-side"><section class="card lab-needs-card" id="lab-sec-needs"><h2>Needs you</h2>${needsHtml(ix,byId)}</section>`
+  +`<div class="lab-questions" id="lab-sec-questions">${open.map(q=>questionHtml(q,byId)).join('')||'<section class="card"><div class="empty-state"><div class="empty-state__title">No open question.</div><div>Start one on the Mac with lab question new.</div></div></section>'}</div>`
+  +`</div><div class="lab-notebook" id="lab-sec-notebook"><h2>Notebook</h2>${liveData&&liveData.conflict?`<p class="banner banner--attention lab-conflict" role="status">Two runs say they're printing; check the Mac.</p>`:''}${active.map(x=>experimentHtml(x,ix.project,requests,byId,ix.colours)).join('')||'<p class="empty-state">No open experiments.</p>'}`
   +(earlier.length?`<details class="lab-earlier" id="lab-earlier"><summary>Earlier (${earlier.length})</summary>${earlier.map(x=>experimentHtml(x,ix.project,requests,byId,ix.colours)).join('')}</details>`:'')+outsideHtml(ix.outside)+'</div></div>';
 }
 function openExperiment(id){
@@ -839,6 +909,13 @@ function init(){
  }
 
  sec.addEventListener('click',e=>{
+  const j=e.target.closest('.lab-jump__chip');
+  if(j&&j.getAttribute('href')?.startsWith('#lab-')){
+    e.preventDefault();
+    const id=j.getAttribute('href').slice(1),el=document.getElementById(id);
+    if(el){if(el.tagName==='DETAILS')el.open=true;el.scrollIntoView({behavior:'smooth',block:'start'})}
+    return;
+  }
   const c=e.target.closest('[data-copy]');
   if(c){const t=c.dataset.copy,done=()=>root.LocalAIUI?.toast?.('Copied. Paste it in Terminal on the Mac.');
    if(navigator.clipboard&&root.isSecureContext)navigator.clipboard.writeText(t).then(done,()=>{});else{const code=c.previousElementSibling;const r=document.createRange();r.selectNodeContents(code);const s=getSelection();s.removeAllRanges();s.addRange(r)}return}
