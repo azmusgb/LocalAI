@@ -10,7 +10,7 @@ const src = o => Object.assign({ running: [], waiting: 0, needsYou: [], failedUn
 const street = o => ({ chat: src(), images: src(), missions: src(), garage: src(), sheets: src(), clock: src(), ...o });
 const fits = c => { assert.ok(c.detail.length <= 60); assert.ok(c.detail.endsWith('…')); };
 
-for (const [id, name, width, roof] of [['chat', 'Chat Café', 240], ['images', 'Image Studio', 240], ['missions', 'Missions HQ', 260, 90]]) {
+for (const [id, name, width, roof] of [['chat', 'Chat Café', 240], ['images', 'Image Studio', 240], ['missions', 'Missions HQ', 260, 90], ['garage', 'Repair Garage', 240, 160]]) {
   test(id + ': state and chip', () => {
     const d = load(id);
     assert.equal(d.id, id); assert.equal(d.width, width);
@@ -136,6 +136,7 @@ const ANIM = {
   chat: [[{ street: street({ chat: src({ running: [item(1)] }) }) }, true], [{ street: street({ chat: src({ needsYou: [item(1)] }) }) }, false], [{ street: street() }, false], [{ street: null }, false]],
   images: [[{ street: street({ images: src({ running: [item(1)] }) }) }, true], [{ street: street() }, false], [{ street: null }, false]],
   missions: [[{ street: street({ missions: src({ running: [item(1)] }) }) }, true], [{ street: street({ missions: src({ waiting: 2 }) }) }, true], [{ street: street({ missions: src({ needsYou: [item(1)] }) }) }, false], [{ street: street() }, false], [{ street: null }, false]],
+  garage: [[{ street: street({ garage: src({ running: [item(1)] }) }) }, true], [{ street: street({ garage: src({ needsYou: [item(1)] }) }) }, false], [{ street: street() }, false], [{ street: null }, false]],
   sheets: [[{ sheets: { bridge: true, excel: true, inFlight: 1 }, street: street() }, true], [{ sheets: { bridge: true, excel: true, inFlight: 0 }, street: street() }, false], [{ sheets: { bridge: true, excel: false, inFlight: 0 }, street: street() }, false], [{ sheets: null, street: null }, false]],
   foundry: [[{ models: { loaded: [{ name: 'm' }], queue: { waiting: 2 } } }, true], [{ models: { loaded: [], queue: { waiting: 0 } } }, false], [{ models: null }, false]],
   workshop: [[pr({ state: 'printing', progress: 40 }), true], [pr({ state: 'error' }), true], [pr({}), false], [pr({ state: 'paused', progress: 30 }), false], [pr({ access: null }), false], [pr({ setUp: false, access: null }), false], [pr({ access: 'denied' }), false], [{ printer: null }, false]],
