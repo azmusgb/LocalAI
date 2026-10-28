@@ -39,11 +39,16 @@ test('sheets: state and chip', () => {
   const d = load('sheets');
   assert.equal(d.width, 220);
   const mk = (sheets, st) => d.state({ sheets, street: st || street() });
+  const quiet0 = () => mk({ bridge: true, excel: true, inFlight: 0 });
   const busy = mk({ bridge: true, excel: true, inFlight: 1 });
-  assert.deepEqual(busy, { working: true, bridge: true, excel: true, needsYou: 0, failed: 0, down: false });
+  assert.deepEqual(busy, { working: true, bridge: true, excel: true, needsYou: 0, failed: 0, first: null, down: false });
   assert.equal(d.chip(busy).detail, 'Working');
   const asks = mk({ bridge: true, excel: true, inFlight: 0 }, street({ sheets: src({ needsYou: [item(1)], failedUnseen: [item(2)] }) }));
   assert.deepEqual(d.chip(asks), { title: 'Spreadsheets Office', detail: 'Ready · 1 need you · 1 failed', tone: 'attention' });
+  // first: the ask the engine's beacon and stalled car key their pulse on (needs you before a failure); not in the still key.
+  assert.deepEqual(asks.first, item(1));
+  assert.deepEqual(mk({ bridge: true, excel: true, inFlight: 0 }, street({ sheets: src({ failedUnseen: [item(2)] }) })).first, item(2));
+  assert.equal(d.stillKey(asks), d.stillKey(quiet0()));
   assert.deepEqual(d.chip(mk({ bridge: true, excel: true, inFlight: 1 }, street({ sheets: src({ failedUnseen: [item(2)] }) }))), { title: 'Spreadsheets Office', detail: 'Working · 1 failed', tone: 'attention' });
   assert.equal(mk({ bridge: true, excel: true, inFlight: 0 }, street({ sheets: src({ running: [item(1)] }) })).working, true);
   const quiet = mk({ bridge: true, excel: true, inFlight: 0 });

@@ -534,6 +534,103 @@ await check("a session's title, markup or right-to-left, never reaches the page"
   assert.equal(await page.evaluate(() => typeof window.__y), 'undefined');
 });
 
+// Traffic: a beacon on the roof of a building that needs you, a stalled car with its hazards on in front of one with a
+// failure (each pulses 60 s per ask id, then stays steady), and a car that drives off the end of the street when a run
+// finishes (only between two worlds the strip was on screen for; never under reduced motion).
+const ask = (key, o) => ({ ...QUIET, street: { ...QUIET.street, [key]: src(o) } });
+const RUN = ask('chat', { running: [job(1)] }), DONE = ask('chat', { recent: [{ ...job(1), status: 'completed' }] });
+await check('a beacon pulses for 60 s on a building that needs you, then stands steady', async () => {
+  const page = await fresh({ world: ask('chat', { needsYou: [job(7)] }), clock: true });
+  await page.clock.runFor(1000);
+  const s0 = await stats(page);
+  assert.equal(s0.beacons, 1, 'one beacon');
+  await page.clock.runFor(1000);
+  assert.ok((await stats(page)).frames > s0.frames, 'it pulses');
+  await page.clock.runFor(61000);
+  const f = (await stats(page)).frames;
+  await page.clock.runFor(2000);
+  const s1 = await stats(page);
+  assert.equal(s1.frames, f, 'steady after 60 s: no frames');
+  assert.equal(s1.beacons, 1, 'still drawn');
+  // A new ask on the same building pulses again; a failure there too parks a car with its hazards on.
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), ask('chat', { needsYou: [job(8)], failedUnseen: [job(9)] }));
+  await page.clock.runFor(1000);
+  const s2 = await stats(page);
+  assert.ok(s2.frames > f + 1, 'a new ask pulses again');
+  assert.deepEqual([s2.beacons, s2.stalled], [1, 1]);
+  assert.deepEqual(page.errors, []);
+});
+
+await check('a flood of asks shows one beacon and one stalled car per building', async () => {
+  const many = n => Array.from({ length: 10 }, (_, i) => job(n + i));
+  const street = Object.fromEntries(Object.keys(QUIET.street).map((k, i) => [k, src({ needsYou: many(i * 100), failedUnseen: many(i * 100 + 50) })]));
+  const page = await fresh({ viewport: { width: 2560, height: 1440 }, world: { ...QUIET, street } });
+  await page.waitForTimeout(300);
+  const s = await stats(page), n = Object.keys(street).length;
+  assert.deepEqual([s.beacons, s.stalled, s.cars], [n, n, 0]);
+  assert.deepEqual(page.errors, []);
+});
+
+await check('a run that finishes drives a car off the street in 4 s', async () => {
+  const page = await fresh({ world: RUN });
+  await page.waitForTimeout(200);
+  assert.equal((await stats(page)).cars, 0);
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), DONE);
+  assert.equal((await stats(page)).cars, 1, 'a car pulls out');
+  const f = (await stats(page)).frames;
+  await page.waitForFunction(f => window.LocalAIStreet.stats().frames > f + 5, f, { timeout: 3000 }); // it moves
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), DONE);
+  assert.equal((await stats(page)).cars, 1, 'the same world again sends no second car');
+  await page.waitForTimeout(4000);
+  assert.equal((await stats(page)).cars, 0, 'gone after 4 s');
+  // At most three at once.
+  const run = ask('images', { running: [job(1), job(2), job(3)] }), r2 = { ...run, street: { ...run.street, chat: src({ running: [job(4), job(5)] }) } };
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), r2);
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), { ...QUIET, street: { ...QUIET.street, images: src({ recent: [1, 2, 3].map(i => ({ ...job(i), status: 'completed' })) }), chat: src({ recent: [4, 5].map(i => ({ ...job(i), status: 'completed' })) }) } });
+  assert.equal((await stats(page)).cars, 3, 'three at most');
+  // A failed or cancelled run sends no car.
+  await page.waitForTimeout(4500);
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), RUN);
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), ask('chat', { recent: [{ ...job(1), status: 'failed' }] }));
+  assert.equal((await stats(page)).cars, 0, 'no car for a failure');
+  assert.deepEqual(page.errors, []);
+});
+
+await check('no burst of cars after the strip comes back: a world while hidden resets the baseline', async () => {
+  const page = await fresh({ world: RUN });
+  await page.evaluate(w => { window.__el.style.display = 'none'; window.LocalAIStreet.setWorld(w); }, DONE);
+  await page.evaluate(() => { window.__el.style.display = ''; });
+  await page.waitForTimeout(200);
+  assert.equal((await stats(page)).cars, 0, 'finished while hidden');
+  // Hidden for the first world and shown for the second: no car either.
+  await page.evaluate(w => { window.__el.style.display = 'none'; window.LocalAIStreet.setWorld(w); }, RUN);
+  await page.evaluate(w => { window.__el.style.display = ''; window.LocalAIStreet.setWorld(w); }, DONE);
+  assert.equal((await stats(page)).cars, 0, 'hidden for the run');
+  // Off screen counts as hidden.
+  await page.evaluate(w => { window.__el.style.marginTop = '5000px'; window.LocalAIStreet.setWorld(w); }, RUN);
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), DONE);
+  assert.equal((await stats(page)).cars, 0, 'off screen');
+  assert.deepEqual(page.errors, []);
+});
+
+await check('reduced motion: no cars, and the beacon and hazards are drawn steady', async () => {
+  const page = await fresh({ world: RUN, reduced: true });
+  await page.evaluate(w => window.LocalAIStreet.setWorld(w), { ...DONE, street: { ...DONE.street, chat: src({ ...DONE.street.chat, needsYou: [job(7)], failedUnseen: [job(8)] }) } });
+  const s = await stats(page);
+  assert.deepEqual([s.cars, s.beacons, s.stalled], [0, 1, 1]);
+  await page.waitForTimeout(500);
+  assert.equal((await stats(page)).frames, s.frames, 'no frames: steady');
+  assert.deepEqual(page.errors, []);
+});
+
+await check('a hidden building has no beacon or stalled car', async () => {
+  const page = await fresh({ world: null });
+  await page.evaluate(w => { window.LocalAIStreet.register({ ...window.LocalAIStreet.defs().find(d => d.id === 'clock'), state: () => ({ hidden: true, needsYou: 1, failed: 1, first: { id: 'x' } }) }); window.LocalAIStreet.setWorld(w); }, QUIET);
+  await page.waitForTimeout(200);
+  const s = await stats(page);
+  assert.deepEqual([s.beacons, s.stalled], [0, 0]);
+});
+
 for (const c of contexts) await c.close();
 await browser.close();
 if (failures.length) { console.error(`\n${failures.length} failed:\n` + failures.join('\n')); process.exit(1); }

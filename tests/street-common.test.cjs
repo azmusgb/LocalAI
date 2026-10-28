@@ -72,7 +72,7 @@ test('runsBuilding: stillKey, item and animates', () => {
 });
 
 test('every building file declares animates', () => {
-  const files = fs.readdirSync(dir).filter(f => f.endsWith('.js') && !['art.js', 'street.js', 'common.js'].includes(f));
+  const files = fs.readdirSync(dir).filter(f => f.endsWith('.js') && !['art.js', 'street.js', 'common.js', 'traffic.js'].includes(f));
   assert.ok(files.length >= 6);
   for (const f of files) assert.equal(typeof require(path.join(dir, f)).animates, 'function', f);
 });

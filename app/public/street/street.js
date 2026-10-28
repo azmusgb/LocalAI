@@ -34,7 +34,7 @@ function setWorld(w){
   try{states.set(d.id,d.state(w))}catch(e){warnOnce(d.id,'state',e);if(!states.has(d.id))states.set(d.id,{})}
   const k=stillKey(d,states.get(d.id));if(keys.has(d.id)&&keys.get(d.id)!==k)changed.push(d.id);keys.set(d.id,k);
  }
- for(const m of mounts)m.world(changed);
+ for(const m of mounts)m.world(changed,w);
 }
 // The shared poller: one /api/world request every 10 s while some strip is on screen and the page visible (one at a time,
 // at least 2 s apart; a strip coming on screen or the page becoming visible polls at once, or when the 2 s are up). Only
@@ -68,7 +68,7 @@ function sync(){const a=shown();if(a&&!was)poll();was=a}
 function onVis(){sync()}
 function start(){if(timer)return;timer=setInterval(()=>{if(shown())poll()},10000);root.document.addEventListener('visibilitychange',onVis)}
 function stop(){clearInterval(timer);clearTimeout(later);timer=later=0;was=false;root.document.removeEventListener('visibilitychange',onVis)}
-function stats(){return{frames:st.frames,avgMs:Math.round(st.avg*1000)/1000,stills:st.stills}}
+function stats(){const T=root.LocalAIStreetTraffic;return{frames:st.frames,avgMs:Math.round(st.avg*1000)/1000,stills:st.stills,...(T?T.stats():{cars:0,beacons:0,stalled:0})}}
 
 // What a building's chip opens: its def's item for the state (null for a def with none, or one that throws).
 function itemOf(d){try{return d.item&&d.item(states.get(d.id)||{})||null}catch(e){warnOnce(d.id,'item',e);return null}}
@@ -80,7 +80,7 @@ function mount(el,opts){
  const c=cv.getContext('2d'),mq=root.matchMedia?root.matchMedia('(prefers-reduced-motion: reduce)'):null,reduce=()=>!!(mq&&mq.matches);
  // moving: some building drawn in the last frame animates (true until a frame says otherwise).
  let list=[],xs=new Map(),zoom=1,dpr=1,streetW=0,inView=false,raf=0,last=0,userAt=-Infinity,dead=false,drag=null,sig='',moving=true;
- const t0=performance.now(),stills=new Map(),chips=new Map();
+ const t0=performance.now(),stills=new Map(),chips=new Map(),T=root.LocalAIStreetTraffic?.make(),at=()=>list.map(d=>({d,s:states.get(d.id)||{},x:xs.get(d.id)/zoom}));
  const fits=()=>streetW<=box.clientWidth+1;
  // Buildings left to right, each centred in a slot at least SLOT CSS px wide so its chip has room; when the street
  // fits, the spare width goes into the gaps so it fills the strip. xs holds each building's left edge in CSS px from
@@ -150,6 +150,7 @@ function mount(el,opts){
    try{d.drawLive(c,states.get(d.id)||{},t,e)}catch(err){warnOnce(d.id,'drawLive',err)}
    c.restore();
   }
+  if(T){c.setTransform(S,0,0,S,-x0*S,0);if(T.draw(c,at(),x0,vw,Math.max(streetW,box.clientWidth)/zoom,reduce()))mv=true}
   moving=mv;st.frames++;const ms=performance.now()-a;st.avg=st.frames>1?st.avg*.9+ms*.1:ms;
  }
  const running=()=>!dead&&!box.hidden&&inView&&doc.visibilityState!=='hidden'&&!reduce()&&moving;
@@ -165,8 +166,9 @@ function mount(el,opts){
   if(fits())return;const tone=t=>list.find(d=>chips.get(d.id)?.classList.contains('street-chip--'+t)),d=tone('attention')||tone('busy');if(!d)return;
   const l=xs.get(d.id),r=l+d.width*zoom,vw=box.clientWidth;if(r>vw)box.scrollTo({left:Math.max(0,(l+r-vw)/2),behavior:'instant'});
  }
- function onWorld(changed){
+ function onWorld(changed,w){
   if(dead)return;if(box.hidden){box.hidden=false;inView=onScreen(box);resize();firstLook()}else{if(shape()!==sig)layout();paintChips();for(const d of list)still(d);redraw()}
+  T&&T.world(w,at(),onScreen(box)&&doc.visibilityState!=='hidden',reduce());
   const id=changed.find(i=>xs.has(i));if(!id||fits()||Date.now()-userAt<QUIET)return;
   const d=byId.get(id),l=xs.get(id),r=l+d.width*zoom,vw=box.clientWidth;
   if(l>=box.scrollLeft&&r<=box.scrollLeft+vw)return;
@@ -205,7 +207,7 @@ function mount(el,opts){
  if(seen)onWorld([]);onStale(failed);start();sync();
  return{destroy(){
   if(dead)return;dead=true;mounts.delete(inst);if(!mounts.size)stop();if(raf)root.cancelAnimationFrame(raf);raf=0;onUp();
-  if(ro)ro.disconnect();if(io)io.disconnect();doc.removeEventListener('visibilitychange',onVis);if(mq)mq.removeEventListener('change',onMotion);box.remove();
+  if(ro)ro.disconnect();if(io)io.disconnect();T&&T.destroy();doc.removeEventListener('visibilitychange',onVis);if(mq)mq.removeEventListener('change',onMotion);box.remove();
  }};
 }
 // Home's strip: mounted once into #homeStreetMount (repeat calls do nothing); a building opens its run, else the old Agent World.

@@ -13,7 +13,7 @@ const dimLit=s=>!s.down&&!s.working&&s.bridge===true&&s.excel===false;
 function state(world){
  const w=world&&world.sheets,bridge=w?tri(w.bridge):null,excel=w?tri(w.excel):null;
  const sw=(world&&world.street&&world.street.sheets)||{},run=(sw.running||[]).length,a=C.asks(sw);
- return{working:((w&&w.inFlight)||0)>0||run>0,bridge,excel,needsYou:a.needsYou,failed:a.failed,down:bridge===null};
+ return{working:((w&&w.inFlight)||0)>0||run>0,bridge,excel,needsYou:a.needsYou,failed:a.failed,first:a.first,down:bridge===null};
 }
 // 'dim': the bridge is up but Excel is shut, so the office is lit and the clerk sits at a dim screen.
 function stillKey(s){return s.down?'down':s.working?'lit':dimLit(s)?'dim':'unlit'}
