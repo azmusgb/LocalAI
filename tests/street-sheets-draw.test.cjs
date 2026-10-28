@@ -26,7 +26,7 @@ test('bridge up, Excel shut: lit, a dim screen, nothing moves', () => {
   assert.equal(a.live.person, 1); assert.equal(a.live.glow, 1);
   assert.ok(fills(a.liveRec).includes('#2c4a3a') && !fills(a.liveRec).includes('#d8f2dc'), 'a dim screen');
   assert.equal(cells(a), 0);
-  assert.deepEqual(a.liveRec.log, b.liveRec.log, 'the same frame at any time');
+  assert.deepEqual(a.liveRec.args, b.liveRec.args, 'the same frame at any time');
 });
 
 test('quiet and down: no one, no light; down is boarded', () => {

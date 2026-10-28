@@ -1,5 +1,5 @@
 'use strict';
-// Shared by the tests/street-*-draw.test.cjs files: a recording fake 2D context, and draw(def, world, t), which draws a
+// Shared by the tests/street-*-draw.test.cjs files: a recording fake 2D context (method names, property sets, numeric args), and draw(def, world, t), which draws a
 // building's still and one live frame with the art kit's helpers counted. Not a test file itself (no .test.cjs).
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -9,14 +9,14 @@ globalThis.Path2D = globalThis.Path2D || class Path2D { constructor(d) { this.d 
 const env = { night: false, reduced: false, zoom: 1, dpr: 2 };
 
 function fakeCtx() {
-  const log = [], sets = [], props = {};
+  const log = [], sets = [], args = [], props = {};
   const grad = () => ({ addColorStop(o, c) { log.push('stop:' + c); } });
   const ctx = new Proxy(props, {
     get(t, k) {
       if (k in t) return t[k];
       if (typeof k !== 'string') return undefined;
       return (...a) => {
-        log.push(k);
+        log.push(k); args.push([k, ...a.filter(v => typeof v === 'number')]);
         if (k === 'fill' && a[0] && a[0].d) log.push('fillPath:' + a[0].d);
         for (const v of a) if (typeof v === 'number') assert.ok(Number.isFinite(v), `${k} got a finite number`);
         if (k === 'createLinearGradient' || k === 'createRadialGradient') return grad();
@@ -26,7 +26,7 @@ function fakeCtx() {
     },
     set(t, k, v) { sets.push([k, v]); t[k] = v; return true; },
   });
-  return { ctx, log, sets };
+  return { ctx, log, sets, args };
 }
 
 // calls: art helper counts over still + live; still: counts after the still; live: counts in the live frame only.
