@@ -15,7 +15,8 @@ function runsBuilding({id,key,title,width,roof}){
   const s=top[key]||{},a=asks(s),run=s.running||[];
   return{running:Math.min(3,run.length),more:count(s.waiting),needsYou:a.needsYou,failed:a.failed,first:a.first,firstRun:run[0]||null,down:false};
  }
- const stillKey=s=>s.down?'down':lit(s)?'lit':'unlit';
+ // 'ask' (needs you, nothing running) is its own still: it carries the cue, and the engine caches stills by this key.
+ const stillKey=s=>s.down?'down':!s.down&&s.running+s.more===0&&s.needsYou>0?'ask':lit(s)?'lit':'unlit';
  function chip(s){
   if(s.down)return{title,detail:'Not answering',tone:'down'};
   if(!lit(s)&&!s.failed)return{title,detail:'Quiet',tone:'quiet'};

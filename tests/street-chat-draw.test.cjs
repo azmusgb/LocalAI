@@ -57,3 +57,11 @@ test('a busy frame draws only what moves', () => {
   assert.equal(r.still.person || 0, 0, 'people are not in the still');
   assert.ok(art.palette.lamp);
 });
+
+test('stills are cached by stillKey: busy and needs-you-only keys differ, and only the ask still holds the cue', () => {
+  const busy = draw(chat, world(1)), ask = draw(chat, world(0, 0, 1)), both = draw(chat, world(1, 0, 1));
+  assert.notEqual(chat.stillKey(busy.s), chat.stillKey(ask.s));
+  assert.equal(chat.stillKey(both.s), chat.stillKey(busy.s), 'running with asks is the busy still');
+  assert.equal(ask.still.person, 1); assert.ok(fills(ask.stillRec).includes('#ffc640'), 'the ask still has the cue');
+  for (const r of [busy, both]) { assert.equal(r.still.person, undefined, 'a busy still has no static people'); assert.ok(!fills(r.stillRec).includes('#ffc640')); }
+});

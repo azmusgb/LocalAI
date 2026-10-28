@@ -60,7 +60,7 @@ function drawStill(c,s){
  c.fillStyle=A.grad(c,0,180,0,206,'rgba(255,255,255,.22)','rgba(0,0,0,.25)');c.fillRect(8,176,206,32);c.restore();
  A.steel(c,12,177,198,4);
  if(dn){A.boards(c,WX,WY,WW,WH);A.boards(c,157,210,36,90)}
- if(s.needsYou>0&&!B.animates(s))people(c,s,0);
+ if(B.stillKey(s)==='ask')people(c,s,0);
  c.restore();
 }
 // A speech bubble over (x, y): white with three typing dots, or amber with an "!" when a chat needs you.

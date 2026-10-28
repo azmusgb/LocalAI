@@ -57,7 +57,8 @@ test('runsBuilding: stillKey, item and animates', () => {
   assert.equal(B.stillKey(B.state({ street: null })), 'down');
   assert.equal(B.stillKey(st()), 'unlit');
   assert.equal(B.stillKey(st({ running: [item(1)] })), 'lit');
-  assert.equal(B.stillKey(st({ needsYou: [item(1)] })), 'lit');
+  assert.equal(B.stillKey(st({ needsYou: [item(1)] })), 'ask');
+  assert.equal(B.stillKey(st({ running: [item(1)], needsYou: [item(1)] })), 'lit');
   assert.equal(B.stillKey(st({ failedUnseen: [item(1)] })), 'unlit');
   assert.equal(B.item(st()), null);
   assert.deepEqual(B.item(st({ running: [item(1)] })), item(1));
