@@ -175,6 +175,9 @@ function mount(el,opts){
   if(ro)ro.disconnect();if(io)io.disconnect();doc.removeEventListener('visibilitychange',onVis);if(mq)mq.removeEventListener('change',onMotion);box.remove();
  }};
 }
-const api=root.LocalAIStreet=Object.assign(root.LocalAIStreet||{},{register,ORDER,defs,mount,setWorld,stats});
+// Home's strip: mounted once into #homeStreetMount (repeat calls do nothing); a building opens the old Agent World.
+let home=null;
+function mountHome(){const el=root.document.getElementById('homeStreetMount');if(!el||home&&home.el===el)return;home={el,m:mount(el,{mode:'strip',onOpen:()=>root.LocalAIRouter.go('#agents')})}}
+const api=root.LocalAIStreet=Object.assign(root.LocalAIStreet||{},{register,ORDER,defs,mount,mountHome,setWorld,stats});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

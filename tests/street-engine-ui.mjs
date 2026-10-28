@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 // Main Street's engine (app/public/street/street.js): mount(el, {mode:'strip'}) draws the buildings on one canvas with
 // cached stills, a 30 fps loop that runs only on screen, and one chip button per building. Each check mounts a fresh
-// strip on the app page (#home) and feeds it a world with setWorld; /api/world is routed to hang unless a check gives
+// strip on the app page (opened on Health, so Home's own strip is not mounted) and feeds it a world with setWorld; /api/world is routed to hang unless a check gives
 // its own route (the shared poller, below, would otherwise overwrite the worlds the checks set).
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch({ headless: true });
@@ -35,7 +35,7 @@ async function fresh({ viewport = { width: 1280, height: 800 }, dpr = 1, world =
   await page.route('**/api/world', route);
   if (clock) await page.clock.install();
   page.on('pageerror', e => page.errors.push(e.message));
-  await page.goto(base + '/#home', { waitUntil: 'domcontentloaded' });
+  await page.goto(base + '/#status', { waitUntil: 'domcontentloaded' }); // off Home: Home mounts its own strip
   await page.waitForFunction(() => typeof window.LocalAIStreetLoad === 'function');
   await page.evaluate(async world => {
     await window.LocalAIStreetLoad();

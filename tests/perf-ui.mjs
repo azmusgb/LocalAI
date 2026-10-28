@@ -41,6 +41,34 @@ for (const [label, opts] of [['390px', { viewport: { width: 390, height: 844 } }
   });
 }
 
+// Main Street's strip on Home: with the CPU throttled the way the checks above do it, the engine's own frame timer
+// (stats().avgMs, the mean cost of a frame it draws) stays under 8 ms at a 390 px phone with a 3x screen.
+const BUSY = {
+  schema: 1,
+  models: { loaded: [{ name: 'qwen3:4b-instruct-32k', sizeMb: 3100, vramMb: 3100 }], queue: { active: 1, waiting: 2 }, busy: { total: 1, kinds: { chat: 1 } } },
+  printer: { setUp: true, access: 'ok', state: 'printing', progress: 62, minutesLeft: 41, errorCode: null },
+  sheets: { bridge: true, excel: true, inFlight: 1 },
+  kiosk: { setUp: true, online: true, signIn: true, firmware: '12.8.0' },
+  crews: null,
+  street: Object.fromEntries(['chat', 'images', 'missions', 'garage', 'sheets', 'clock'].map(k => [k, { running: k === 'chat' || k === 'images' ? [{ id: 'j' + k, title: 'Job', status: 'running', startedAt: Date.now() - 60000 }] : [], waiting: 0, needsYou: [], failedUnseen: [], recent: [] }]))
+};
+await check('Main Street strip stays within its frame budget', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, serviceWorkers: 'block' });
+  await ctx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  await ctx.route(u => u.pathname === '/api/world', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(BUSY) }));
+  const page = await ctx.newPage();
+  await page.goto(base + '/#home', { waitUntil: 'domcontentloaded' });
+  const cdp = await ctx.newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: SLOWDOWN });
+  await page.waitForSelector('#homeStreet .street:not([hidden])', { timeout: 10000 });
+  await page.waitForTimeout(3000);
+  const s = await page.evaluate(() => window.LocalAIStreet.stats());
+  assert.ok(s.frames > 0, 'the street drew frames');
+  assert.ok(s.avgMs < 8, `avg frame ${s.avgMs} ms over ${s.frames} frames`);
+  console.log(`  Main Street: ${s.frames} frames, avg ${s.avgMs} ms at ${SLOWDOWN}x slowdown`);
+  await ctx.close();
+});
+
 await browser.close();
 if (failures.length) { console.error(`\n${failures.length} performance check(s) failed`); process.exit(1); }
 console.log('\nAll performance checks passed');

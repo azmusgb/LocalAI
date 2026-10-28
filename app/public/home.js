@@ -314,7 +314,7 @@ function dropContext(){
  history.replaceState(history.state,'',location.pathname+location.search+h.slice(0,i)+(q.toString()?'?'+q:''));
 }
 function contextFromHash(){const C=root.LocalAIAskContext,R=root.LocalAIRouter;if(!C||!R)return;const c=C.clean(R.current().query.get('context'));if(c){context=c;paintContext()}}
-function activate(){fromHash();contextFromHash();greet();loadRoute();const b=$('homeBack');if(b&&root.LocalAIAskContext)b.href=root.LocalAIAskContext.homeUrl(location.hostname);if(root.LocalAIUI)refresh().then(schedule)}
+function activate(){fromHash();contextFromHash();greet();loadRoute();const b=$('homeBack');if(b&&root.LocalAIAskContext)b.href=root.LocalAIAskContext.homeUrl(location.hostname);if(root.LocalAIUI)refresh().then(schedule);streetUp()}
 function dockToNav(){
  // On phones the composer sits exactly on the tab bar, whatever its height is. While the owner types, the tab bar
  // steps aside (body.home-typing, see app.css) and the composer sits on the keyboard: iOS keeps innerHeight and only
@@ -362,6 +362,7 @@ function loadStreet(){
  return streetLoad;
 }
 root.LocalAIStreetLoad=loadStreet;
+let warned=0;function streetUp(){loadStreet().then(()=>root.LocalAIStreet.mountHome(),e=>{if(!warned++)console.warn(e.message)})}
 root.LocalAIHome={send,activate,refresh,mode:()=>cur(),setMode,printerWords,
  // ui.js hands over the critical items of the capability check (a stopped service, an unreachable registry).
  setAttention(items){attention=(items||[]).filter(a=>a&&a.severity==='critical');paintNeeds()}};
