@@ -21,7 +21,9 @@ let world=null,busy=false,timer=0,layer=null;
 function pct(n){return Number.isFinite(n)?Math.max(0,Math.min(100,Math.round(n))):null}
 function printerSay(p){
  if(!p?.setUp)return['Not set up','Add the Workshop display in Services'];
+ if(p.access==='stale')return['Reading expired','Waiting for a fresh printer reading from Pi Hub'];
  if(!p.state||p.access&&p.access!=='ok')return['Not answering','The printer isn’t reporting right now'];
+ if(p.needsPlateClear===true)return[p.state==='error'?'Print stopped':'Print finished','Check and clear the plate'];
  if(p.state==='error')return['Needs attention',p.errorCode?'Error '+clean(p.errorCode,24):'Check the printer’s screen'];
  if(p.state==='printing'||p.state==='paused'){const n=pct(p.progress),m=p.minutesLeft;return[p.state==='paused'?'Paused':'Printing',(n!=null?n+'%':'')+(Number.isFinite(m)?' · '+m+' min left':'')]}
  return['Idle','Ready for the next print'];
@@ -65,7 +67,7 @@ function block(ctx,q,roof,wall,side,roofH){
  box(ctx,'rgba(0,0,0,.3)',q.x-2,q.y+q.h-4,q.w+10,4);
 }
 function garage(ctx,e){
- const q=px(GARAGE),p=world?.printer,[s]=printerSay(p),on=s==='Printing'||s==='Paused',dark=s==='Not set up'||s==='Not answering';
+ const q=px(GARAGE),p=world?.printer,[s]=printerSay(p),on=s==='Printing'||s==='Paused',dark=s==='Not set up'||s==='Not answering'||s==='Reading expired';
  block(ctx,q,dark?'#343b45':'#5d6b7d',dark?'#20262e':'#353f4c',dark?'#1a1f26':'#262e38',30);
  for(let i=0;i<4;i++)box(ctx,dark?'#2b323b':'#6f7e91',q.x+8+i*30,q.y+8,20,14);
  const dx=q.x+20,dw=q.w-40,dy=q.y+44,dh=q.h-48;
@@ -94,7 +96,7 @@ function crates(ctx){
  const n=Math.min(4,world?.models?.queue?.waiting||0),q=px(FOUNDRY);
  for(let i=0;i<n;i++){const x=q.x+14+i*14,y=q.y+4;box(ctx,'#9a6b3a',x,y,11,9);box(ctx,'#c08a4e',x,y,11,3)}
 }
-function sig(){if(!world)return'none';const p=world.printer||{};return[modelSay(world.models)[0],world.models?.queue?.waiting||0,p.state,p.access,pct(p.progress),sheetSay(world.sheets)[0],kioskSay(world.kiosk).join()].join('|')}
+function sig(){if(!world)return'none';const p=world.printer||{};return[modelSay(world.models)[0],world.models?.queue?.waiting||0,p.state,p.access,p.needsPlateClear,pct(p.progress),sheetSay(world.sheets)[0],kioskSay(world.kiosk).join()].join('|')}
 
 function draw(ctx,ts,e){
  if(!world)return;

@@ -115,6 +115,18 @@ await check('a printer error names the code', async () => {
   await page.waitForFunction(() => document.querySelector('#awcLayerRows')?.innerText.includes('Needs attention · Error 0300_4001'));
 });
 
+await check('expired telemetry is not a current printer state', async () => {
+  answer = { ...BUSY, printer: { setUp: true, access: 'stale', state: null, progress: null, via: 'pi-hub' } };
+  await page.evaluate(() => window.LocalAIAWLandmarks.poll());
+  await page.waitForFunction(() => document.querySelector('#awcLayerRows')?.innerText.includes('Reading expired'));
+});
+
+await check('a finished print still asks for its plate confirmation', async () => {
+  answer = { ...BUSY, printer: { setUp: true, access: 'ok', state: 'idle', needsPlateClear: true, via: 'pi-hub' } };
+  await page.evaluate(() => window.LocalAIAWLandmarks.poll());
+  await page.waitForFunction(() => document.querySelector('#awcLayerRows')?.innerText.includes('Print finished · Check and clear the plate'));
+});
+
 await check('reduced motion keeps drawing without errors', async () => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.waitForTimeout(500);

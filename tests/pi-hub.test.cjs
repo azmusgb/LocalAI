@@ -104,3 +104,51 @@ test('needs: an item keeps only a plain path on the hub as its link', async () =
   const hub = createPiHub({ url: 'http://pi', fetchImpl: async () => ({ ok: true, json: async () => ({ count: 6, items }) }) });
   assert.deepEqual((await hub.needs()).items.map(i => i.link), ['/workshop', '', '', '', '', '']);
 });
+
+
+const { printerRecord } = require('../app/pi-hub');
+const printerBody = (over = {}) => ({ records: [{ id: 'printer', source: 'bambuddy', as_of: 1000, state: 'printing',
+  stale: false, detail: { progress: 42, minutes_left: 12, token: 'must-not-leak' }, ...over }] });
+
+test('printer: designated household record, bounded fields, source time and no source secrets', () => {
+  const p = printerRecord(printerBody(), 1010000);
+  assert.deepEqual(p, { setUp: true, access: 'ok', state: 'printing', progress: 42, minutesLeft: 12,
+    errorCode: null, source: 'bambuddy', via: 'pi-hub', seenAt: '1970-01-01T00:16:40.000Z' });
+  assert.equal(JSON.stringify(p).includes('must-not-leak'), false);
+  for (const [state, expected] of [['paused', 'paused'], ['finished', 'idle'], ['failed', 'error'], ['idle', 'idle']]) {
+    assert.equal(printerRecord(printerBody({ state }), 1010000).state, expected);
+  }
+  for (const body of [null, {}, { records: 'bad' }, printerBody({ source: 'pi_status' }), printerBody({ as_of: '1000' }),
+    printerBody({ as_of: Infinity }), printerBody({ as_of: 1e30 })]) assert.equal(printerRecord(body, 1010000), null);
+  for (const over of [{ stale: true }, { as_of: 900 }, { as_of: 1016 }]) {
+    const stale = printerRecord(printerBody(over), 1010000);
+    assert.equal(stale.access, 'stale');
+    assert.equal(stale.state, null); assert.equal(stale.progress, null); assert.equal(stale.minutesLeft, null);
+  }
+  assert.equal(printerRecord(printerBody({ state: 'finished' }), 1010000).needsPlateClear, true);
+  assert.equal(printerRecord(printerBody({ state: 'finished', stale: true }), 1010000).needsPlateClear, undefined);
+  assert.equal(printerRecord(printerBody({ detail: { progress: 101, minutes_left: -1 } }), 1010000).progress, null);
+});
+
+test('printer: concurrent reads share one fetch; cached source expires even while hub still answers', async () => {
+  let t = 1080000, calls = 0, release;
+  const gate = new Promise(r => { release = r; });
+  const hub = createPiHub({ url: 'http://pi', now: () => t, fetchImpl: async url => {
+    calls++; assert.equal(String(url), 'http://pi/api/records'); await gate;
+    return { ok: true, json: async () => printerBody() };
+  } });
+  const reads = Promise.all(Array.from({ length: 10 }, () => hub.printer()));
+  assert.equal(calls, 1); release();
+  assert.ok((await reads).every(p => p.access === 'ok'));
+  t += 11000;
+  assert.equal((await hub.printer()).access, 'stale');
+  assert.equal(calls, 1, 'a cached fetch never resets the source confirmation time');
+  t += 5000; await hub.printer(); assert.equal(calls, 2);
+});
+
+test('printer: unavailable or disabled hub gives null and failures are cached', async () => {
+  let calls = 0;
+  const hub = createPiHub({ url: 'http://pi', fetchImpl: async () => { calls++; throw new Error('down'); } });
+  assert.equal(await hub.printer(), null); assert.equal(await hub.printer(), null); assert.equal(calls, 1);
+  assert.equal(await createPiHub({ url: 'off', fetchImpl: () => assert.fail('disabled') }).printer(), null);
+});

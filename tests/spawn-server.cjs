@@ -12,12 +12,13 @@ const { spawn } = require('node:child_process');
 
 const APP = path.resolve(__dirname, '../app');
 // Test servers must never reach the owner's real Workshop display (the app's default LOCALAI_WORKSHOP_URL). Port 9
-// (discard) on loopback refuses at once, so the Workshop card simply reads as offline. A caller's own value wins.
+// (discard) on loopback refuses at once, so the Workshop card simply reads as offline. Household clients and camera
+// probes default to off as well. Synthetic stand-ins passed in env explicitly override these test defaults.
 const SAFE_WORKSHOP_URL = 'http://127.0.0.1:9';
 
 function spawnAppServer({ appDir = APP, env = {}, timeoutMs = 15000 } = {}) {
   const child = spawn(process.execPath, [path.join(appDir, 'server.js')], {
-    env: { ...process.env, LOCALAI_WORKSHOP_URL: process.env.LOCALAI_WORKSHOP_URL || SAFE_WORKSHOP_URL, ...env, PORT: '0' },
+    env: { ...process.env, LOCALAI_PI_HUB_URL: 'off', LOCALAI_MATERIALS_URL: 'off', LOCALAI_BAMBUDDY_URL: 'off', LOCALAI_WORKSHOP_CAMERA_PROBES: 'off', LOCALAI_WORKSHOP_URL: process.env.LOCALAI_WORKSHOP_URL || SAFE_WORKSHOP_URL, ...env, PORT: '0' },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   let out = '';

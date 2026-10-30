@@ -369,8 +369,35 @@ function createGridcraft(ctx) {
     if (urlObj.searchParams.get('part') === 'printer') return json(res, 200, { printer });
     const status = await workshop.workshopStatus();
     if (printer?.access === 'ok') status.signIn = true; // the token only exists on firmware that has the sign-in
+    const cam = await workshop.cameraStatus();
     // codeAccess: whether the card offers Show sign-in code (LOCALAI_WORKSHOP_CODE_TOKEN set); never the token itself.
-    json(res, 200, { ...status, printer, codeAccess: Boolean(status.portalUrl && workshop.codeToken()) });
+    json(res, 200, {
+      ...status,
+      printer,
+      codeAccess: Boolean(status.portalUrl && workshop.codeToken()),
+      camera: { available: cam.available, reason: cam.reason, endpoint: '/api/workshop/camera' }
+    });
+  }
+
+  // Services › Workshop display › Camera: stream live JPEG frames from the Pi / Mac chamber camera bridge
+  async function apiWorkshopCamera(req, res) {
+    const frame = await workshop.fetchCameraFrame();
+    if (!frame.ok) {
+      res.writeHead(503, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Retry-After': '5'
+      });
+      return res.end(JSON.stringify({ error: 'Chamber camera frame unavailable' }));
+    }
+    res.writeHead(200, {
+      'Content-Type': frame.contentType || 'image/jpeg',
+      'Content-Length': String(frame.buffer.length),
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      'Pragma': 'no-cache',
+      'X-Camera-Source': frame.source
+    });
+    res.end(frame.buffer);
   }
   // Services › Workshop display › Show sign-in code: reads the display's current portal sign-in code with the code token,
   // on demand (through workshopCode: one request at a time, at most one every 5 s, none for minutes after a 401 or 429),
@@ -388,7 +415,7 @@ function createGridcraft(ctx) {
     recordActivity('workshop', 'Workshop sign-in code shown', 'Services › Workshop display');
     send(200, { code: r.code, address });
   }
-  return { bridgeHealth, gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftDownload, apiGridcraftHealth, apiGridcraftNew, apiGridcraftOpen, apiGridcraftProgress, apiGridcraftRun, apiGridcraftRuns, apiGridcraftUpload, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopPortalCode, apiWorkshopStatus };
+  return { bridgeHealth, gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftDownload, apiGridcraftHealth, apiGridcraftNew, apiGridcraftOpen, apiGridcraftProgress, apiGridcraftRun, apiGridcraftRuns, apiGridcraftUpload, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopCamera, apiWorkshopPortalCode, apiWorkshopStatus };
 }
 
 module.exports = { createGridcraft };

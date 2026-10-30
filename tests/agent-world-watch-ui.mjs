@@ -19,12 +19,13 @@ const MISSION = {
   results: [], timeline: []
 };
 
-async function open(path) {
+async function open(path, { missions = [MISSION], world = null, worldStatus = 200 } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); localStorage.setItem('localai.devTools', '0'); } catch {} });
   const page = await context.newPage();
   const errors = []; page.on('pageerror', e => errors.push(e.message));
-  await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [MISSION] }) }));
+  await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: missions }) }));
+  await page.route(u => u.pathname === '/api/world', r => r.fulfill({ status: worldStatus, contentType: 'application/json', body: JSON.stringify(world || { street: { images: { running: [], waiting: 0, needsYou: [], failedUnseen: [], recent: [] } }, crews: [] }) }));
   await page.goto(base + path, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.showView === 'function');
   await page.evaluate(() => window.showView('agents'));
@@ -65,6 +66,20 @@ await check('?watch=1 starts watch mode by itself', async () => {
   await page.waitForFunction(() => window.LocalAIAgentWorldWatch?.active(), null, { timeout: 8000 });
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !window.LocalAIAgentWorldWatch.active());
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+const work = (entry) => ({ street: { images: { running: [], waiting: 0, needsYou: [], failedUnseen: [], recent: [], ...entry } }, crews: [] });
+for (const [label, answer, status, expected] of [
+  ['an image running without a mission', work({ running: [{ title: 'Render wall panel' }] }), 200, 'Working on: Render wall panel'],
+  ['an approval waiting without a mission', work({ needsYou: [{ title: 'Approve next experiment' }] }), 200, 'Needs you: Approve next experiment'],
+  ['an unavailable work source', null, 503, 'Live work status is unavailable']
+]) await check(label + ' has an honest live caption and no idle replay', async () => {
+  const { page, context, errors } = await open('/?open=agents&watch=1', { missions: [], world: answer, worldStatus: status });
+  await page.waitForFunction(text => document.querySelector('.aw-watch__status')?.textContent.includes(text), expected);
+  assert.equal(await page.locator('.aw-watch__title').textContent(), 'Agent World · Live');
+  assert.ok(!(await page.locator('.aw-watch__status').textContent()).includes('Replay'));
   assert.deepEqual(errors, []);
   await context.close();
 });

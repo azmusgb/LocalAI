@@ -279,4 +279,109 @@ function createPortalCodeGate({ read = readPortalCode, now = () => Date.now(), g
   };
 }
 
-module.exports = { FIRMWARE, firmwareOf, DEFAULT_URL, STALE_MS, CODE_GAP_MS, CODE_REFUSED_HOLD_MS, CODE_BUSY_HOLD_MS, createPortalCodeGate, TIMEOUT_MS, POLL_MS, HEALTH_PATH, LITE_PATH, CODE_PATH, CODE_WORDS, portalUrl, workshopStatus, printerSummary, readPrinter, createPrinterPoller, codeToken, readPortalCode };
+// ---- Chamber Camera streaming & bridge ----
+const DEFAULT_CAMERA_URL = 'http://10.0.0.30/api/camera.jpg';
+const MAX_CAMERA_BYTES = 512 * 1024;
+
+function cameraUrl(raw = process.env.LOCALAI_WORKSHOP_CAMERA_URL) {
+  const text = String(raw ?? '').trim() || DEFAULT_CAMERA_URL;
+  let u;
+  try { u = new URL(text); } catch { return null; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  if (u.username || u.password) return null;
+  const host = u.hostname.toLowerCase();
+  const lan = privateIpv4(host) || /^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+local$/.test(host);
+  return lan ? u.href : null;
+}
+
+function cameraSources(primary = cameraUrl()) {
+  const out = [];
+  if (primary) out.push(primary);
+  const fallbacks = [
+    'http://10.0.0.30/api/camera.jpg',
+    'http://10.0.0.30:8091/x2d/frame.jpg',
+    'http://10.0.0.16:8091/x2d/frame.jpg',
+    'http://127.0.0.1:8091/x2d/frame.jpg'
+  ];
+  for (const f of fallbacks) {
+    if (!out.includes(f)) out.push(f);
+  }
+  return out;
+}
+
+async function fetchCameraFrame({
+  url = cameraUrl(),
+  sources = null,
+  fetchImpl = modelFetchWithTimeout,
+  timeoutMs = 3000,
+  maxBytes = MAX_CAMERA_BYTES
+} = {}) {
+  const list = sources || cameraSources(url);
+  for (const src of list) {
+    try {
+      const r = await fetchImpl(src, { method: 'GET', headers: { Accept: 'image/jpeg' } }, timeoutMs);
+      if (r.status === 200) {
+        const ct = r.headers.get('content-type') || 'image/jpeg';
+        const reader = r.body?.getReader();
+        if (!reader) continue;
+        const chunks = [];
+        let size = 0;
+        let oversized = false;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          size += value.length;
+          if (size > maxBytes) {
+            await reader.cancel().catch(() => {});
+            oversized = true;
+            break;
+          }
+          chunks.push(value);
+        }
+        if (oversized || chunks.length === 0) continue;
+        const buf = Buffer.concat(chunks);
+        if (buf.length >= 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+          return { ok: true, source: src, buffer: buf, contentType: ct };
+        }
+      } else {
+        await r.body?.cancel().catch(() => {});
+      }
+    } catch {}
+  }
+  return { ok: false, status: 503 };
+}
+
+async function cameraStatus({
+  sources = null,
+  fetchImpl = modelFetchWithTimeout,
+  timeoutMs = 1500
+} = {}) {
+  const healthUrls = sources || (process.env.LOCALAI_WORKSHOP_CAMERA_PROBES === 'off' ? [] : [
+    'http://10.0.0.30/api/camera',
+    'http://10.0.0.16:8091/x2d/health.json',
+    'http://127.0.0.1:8091/x2d/health.json'
+  ]);
+  for (const hu of healthUrls) {
+    try {
+      const r = await fetchImpl(hu, { method: 'GET', headers: { Accept: 'application/json' } }, timeoutMs);
+      if (r.ok) {
+        const d = JSON.parse(await readCapped(r, 4096));
+        if (d && typeof d === 'object') {
+          return {
+            available: Boolean(d.ok || d.fresh),
+            source: d.source || null,
+            reason: d.reason || null
+          };
+        }
+      }
+    } catch {}
+  }
+  return { available: false, source: null, reason: 'offline' };
+}
+
+module.exports = {
+  FIRMWARE, firmwareOf, DEFAULT_URL, DEFAULT_CAMERA_URL, STALE_MS, CODE_GAP_MS, CODE_REFUSED_HOLD_MS, CODE_BUSY_HOLD_MS,
+  createPortalCodeGate, TIMEOUT_MS, POLL_MS, HEALTH_PATH, LITE_PATH, CODE_PATH, CODE_WORDS,
+  portalUrl, cameraUrl, cameraSources, fetchCameraFrame, cameraStatus,
+  workshopStatus, printerSummary, readPrinter, createPrinterPoller, codeToken, readPortalCode
+};

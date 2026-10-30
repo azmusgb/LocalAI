@@ -178,3 +178,12 @@ for (const [id, cases] of Object.entries(ANIM)) {
     }
   });
 }
+
+
+test('workshop distinguishes expired readings and a finished print waiting for plate confirmation', () => {
+  const d = load('workshop');
+  assert.deepEqual(d.chip(d.state({ printer: { setUp: true, access: 'stale', state: null } })),
+    { title: 'Workshop Garage', detail: 'Reading expired', tone: 'down' });
+  assert.deepEqual(d.chip(d.state({ printer: { setUp: true, access: 'ok', state: 'idle', needsPlateClear: true } })),
+    { title: 'Workshop Garage', detail: 'Done · clear the plate', tone: 'attention' });
+});

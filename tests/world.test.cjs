@@ -251,6 +251,7 @@ async function standIns() {
   const seen = { device: [], ollama: [], bridge: [] };
   const serve = (list, handler) => { const s = http.createServer((req, res) => { list.push(`${req.method} ${req.url}`); res.setHeader('Content-Type', 'application/json'); handler(req, res); }); s.listen(0, '127.0.0.1'); return s; };
   const device = serve(seen.device, (req, res) => {
+    if (req.url === '/api/records') return res.end(JSON.stringify({ records: [{ id: 'printer', source: 'bambuddy', state: 'paused', as_of: Math.floor(Date.now() / 1000), stale: false, detail: { progress: 32, minutes_left: 12 } }] }));
     if (req.url === '/api/status/lite') return req.headers.authorization === `Bearer ${TOKEN}` ? res.end(JSON.stringify(LITE)) : (res.statusCode = 401, res.end('{}'));
     if (req.url === '/hardware/health') { res.statusCode = 401; return res.end('{"error":"sign in"}'); }
     res.statusCode = 404; res.end('{}');
@@ -267,7 +268,7 @@ test('GET /api/world through the appliance: the display sees one health GET a mi
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-world-'));
   const off = 'http://127.0.0.1:9';
   const { child, ready } = spawnAppServer({
-    env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, LOCALAI_WORKSHOP_URL: fake.urls.device, LOCALAI_WORKSHOP_STATUS_TOKEN: TOKEN, LOCALAI_WORKSHOP_CODE_TOKEN: 'wsc_QRSTUVWXYZ23456789ABCDEFGH', GRIDCRAFT_URL: fake.urls.bridge, OLLAMA_URL: fake.urls.ollama, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off }
+    env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, LOCALAI_PI_HUB_URL: fake.urls.device, LOCALAI_WORKSHOP_URL: fake.urls.device, LOCALAI_WORKSHOP_STATUS_TOKEN: TOKEN, LOCALAI_WORKSHOP_CODE_TOKEN: 'wsc_QRSTUVWXYZ23456789ABCDEFGH', GRIDCRAFT_URL: fake.urls.bridge, OLLAMA_URL: fake.urls.ollama, SEARXNG_URL: off, COMFY_URL: off, N8N_URL: off, PROXY_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off }
   });
   t.after(async () => {
     if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
@@ -286,7 +287,8 @@ test('GET /api/world through the appliance: the display sees one health GET a mi
   assert.deepEqual(Object.keys(body), ['schema', 'models', 'printer', 'sheets', 'kiosk', 'street', 'crews']);
   assert.deepEqual(body.models.loaded.map(m => m.name), ['qwen3:4b-instruct-32k', 'nomic-embed-text:latest']);
   assert.deepEqual(body.models.queue, { active: 0, waiting: 0 });
-  assert.deepEqual(body.printer, { setUp: true, access: 'ok', state: 'printing', progress: 42, minutesLeft: 65, errorCode: null });
+  assert.deepEqual(body.printer, { setUp: true, access: 'ok', state: 'paused', progress: 32, minutesLeft: 12, errorCode: null, source: 'bambuddy', via: 'pi-hub', seenAt: body.printer.seenAt });
+  assert.ok(Number.isFinite(Date.parse(body.printer.seenAt)));
   assert.deepEqual(body.sheets, { bridge: true, excel: false, inFlight: 0 });
   assert.deepEqual(body.kiosk, { setUp: true, online: true, signIn: true, firmware: '12.1.0' });
   assert.deepEqual(Object.keys(body.street), ['chat', 'images', 'missions', 'garage', 'sheets', 'clock']);
@@ -300,7 +302,8 @@ test('GET /api/world through the appliance: the display sees one health GET a mi
   const again = await fetch(`${base}/api/world`, { headers: { 'If-None-Match': etag } });
   assert.equal(again.status, 304);
   assert.equal(healthGets(), 1, 'one health GET for seven polls');
-  assert.deepEqual(fake.seen.device.slice(before).filter(x => x !== 'GET /api/status/lite'), ['GET /hardware/health'], 'nothing else is sent to the display');
+  assert.equal(fake.seen.device.filter(x => x === 'GET /api/records').length, 1, 'one household record fetch for seven polls');
+  assert.deepEqual(fake.seen.device.slice(before).filter(x => !['GET /api/status/lite', 'GET /api/records'].includes(x)), ['GET /hardware/health'], 'nothing else is sent to the display');
   assert.equal(fake.seen.ollama.filter(x => x === 'GET /api/ps').length, 1);
   assert.equal(fake.seen.bridge.filter(x => x === 'GET /health').length, 1);
 
@@ -350,4 +353,17 @@ test('the poller keeps the firmware version from an ok answer only, and readPrin
   answer = LITE; await p.poll(); answer = 500; await p.poll();
   assert.equal(p.firmware(), '12.1.0', 'an error answer leaves the last version');
   assert.equal('firmware' in await workshop.readPrinter({ url: 'http://10.0.0.124', token: TOKEN, fetchImpl: async () => ok(LITE) }), false);
+});
+
+
+test('household printer authority wins over a disagreeing display and is never silently replaced', async () => {
+  const authority = { setUp: true, access: 'ok', state: 'paused', progress: 32, minutesLeft: 10,
+    errorCode: null, source: 'bambuddy', via: 'pi-hub', seenAt: '2026-10-28T12:00:00Z' };
+  const w = fakeWorld({ printerRecord: async () => authority });
+  assert.deepEqual((await w.world.summary()).printer, authority);
+  for (const printerRecord of [async () => null, async () => { throw new Error('down'); }]) {
+    const p = (await fakeWorld({ printerRecord }).world.summary()).printer;
+    assert.equal(p.state, null); assert.equal(p.progress, null); assert.equal(p.access, 'offline');
+    assert.equal(p.via, 'pi-hub');
+  }
 });

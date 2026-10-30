@@ -24,6 +24,8 @@ Start with the [project README](../README.md) for what LocalAI is.
 
 ## Components
 
+- [Household system](HOUSEHOLD-SYSTEM.md): ownership, Agent World, shared facts and attention, display command feedback, and the next cross-system experiment workflow.
+
 - [Claude chat](CLAUDE-CHAT.md): chat with a running Claude Code session on the Mac from the Claude Code page.
 - [Apple Watch and Siri](APPLE-WATCH.md): the "Ask Local AI" Siri Shortcut for an iPhone or watch: what needs you, health, time, weather, news, and starting work by voice.
 - [GridCraft](GRIDCRAFT.md): the GridCraft page, its Windows bridge and agent.

@@ -681,7 +681,7 @@ function crossSiteRequest(req) {
   return !sameHost(parsed.protocol, parsed.host, req.headers.host) && !sameHost(parsed.protocol, parsed.host, forwarded);
 }
 // The server's areas (app/server/*.js), each given what it uses; a module comes after those it takes names from.
-const { bridgeHealth, gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftDownload, apiGridcraftHealth, apiGridcraftNew, apiGridcraftOpen, apiGridcraftProgress, apiGridcraftRun, apiGridcraftRuns, apiGridcraftUpload, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopPortalCode, apiWorkshopStatus } = require('./server/gridcraft').createGridcraft({ GRIDCRAFT_RUN_TIMEOUT_MS, GRIDCRAFT_URL, inFlight, json, makeId, modelFetchWithTimeout, readBody, recordActivity, sameOriginJson, storage, workshop, workshopCode, workshopPrinter });
+const { bridgeHealth, gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftDownload, apiGridcraftHealth, apiGridcraftNew, apiGridcraftOpen, apiGridcraftProgress, apiGridcraftRun, apiGridcraftRuns, apiGridcraftUpload, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopCamera, apiWorkshopPortalCode, apiWorkshopStatus } = require('./server/gridcraft').createGridcraft({ GRIDCRAFT_RUN_TIMEOUT_MS, GRIDCRAFT_URL, inFlight, json, makeId, modelFetchWithTimeout, readBody, recordActivity, sameOriginJson, storage, workshop, workshopCode, workshopPrinter });
 // changes.js takes addNotification from here and this takes these two back from it: called, never at load, so
 // they are looked up when called (the server split, step 6).
 const { addNotification, apiApprovalCreate, apiApprovalDecide, apiApprovals, apiNotificationSeed, apiNotificationSystem, apiNotificationUpdate, apiNotifications, approvalStore, notificationStore, resolveDeployFailures } = require('./server/notifications').createNotifications({ APPROVALS_STORE, NOTIFICATIONS_STORE, changeStore: (...a) => changeStore(...a), decideChange: (...a) => decideChange(...a), hostDetail, isInfoNotice, json, makeId, normalizeTitle, notifier, notifyLib, nowIso, objectStore, prependRecord, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
@@ -696,7 +696,7 @@ const { apiIssuePrepareChange, apiIssueUpdate, apiIssues, apiIssuesScan, apiQual
 const { busyNow, missionModelQueue, apiAgentCatalog, apiAgentDispatch, apiAgentMission, apiAgentMissionEvents, apiAgentMissionStart, apiAgentMissions, apiAgentModels, apiAgentPlan, apiAgentRun, apiAgents, apiBusy, apiSpecialistRun, runEngineeringPlannerModel, runLocalModel, startMissionRun } = require('./server/agents').createAgents({ APPROVALS_STORE, APP_DIR, DATA_DIR, ENGINEERING_MODEL_TIMEOUT_MS, LARGE_ANSWER_RESERVE, MISSION_ANSWER_RESERVE, MISSION_EVIDENCE_TOKENS, MISSION_MODEL_CONCURRENCY, MISSION_NUM_CTX, MISSION_TIMEOUT_MS, MODEL, OLLAMA_URL, RUNS_STORE, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, TEXT_NUM_CTX_LARGE, URL, activeRunControllers, coordinator, addNotification, agentRunStore, approvalStore, busy, fetchWithTimeout, fitMessages, inFlight, json, knowledgeScore, knowledgeStore, makeId, modelFetchWithTimeout, nowIso, plainText, readBody, recordActivity, requireFeature, runLedger, saveStore, searxSearch, storage, storageError, titleFromText });
 // GET /api/world: Agent World's summary of the models, the printer, Spreadsheets and the Workshop display (app/world.js).
 const world = require('./world').createWorld({
-  ollamaUrl: OLLAMA_URL, fetchImpl: fetchWithTimeout, modelQueue: () => missionModelQueue, busy: busyNow, printer: workshopPrinter,
+  ollamaUrl: OLLAMA_URL, fetchImpl: fetchWithTimeout, modelQueue: () => missionModelQueue, busy: busyNow, printer: workshopPrinter, printerRecord: () => piHub.printer(),
   bridgeHealth, gridcraftInFlight: () => inFlight.list().filter(w => w.kind === 'gridcraft').length,
   kioskUrl: () => workshop.portalUrl(), kioskHealth: url => workshop.workshopStatus({ url }),
   runs: () => streetRuns(), crews: () => claudeLiveNow() // both declared below; called only per request
@@ -707,7 +707,7 @@ const { apiPowerShellApprove, apiPowerShellCancel, apiPowerShellCreate, apiPower
 const { apiAutomationCreate, apiAutomationRun, apiAutomationUpdate, apiAutomations, apiMonitorCreate, apiMonitorRun, apiMonitors, apiMorningBrief, automationSchedulerTick, monitorSchedulerTick } = require('./server/automations').createAutomations({ AUTOMATIONS_STORE, AUTOMATION_RUNS_STORE, MONITORS_STORE, activityStore, addNotification, automationRunStore, automationStore, featureAtLeast, getStatusAndRecordTransition, inFlight, json, makeId, normalizeTitle, notificationStore, nowIso, objectStore, readBody, recordActivity, requireFeature, runLocalModel, saveStore, searxSearch, storageError });
 const { apiRunCancel, apiRunRetry, apiRunUpdate, apiRuns, createChatExecution, needsThreads, streetRuns } = require('./server/runs').createRuns({ AUTOMATION_RUNS_STORE, MODEL, RUNS_STORE, WORK_CHIPS, activeRunControllers, agentRunStore, approvalStore, automationRunStore, changeStore, cleanRunId, effectiveEngineeringRuns, fetchWithTimeout, gridcraftRuns, json, keptMarker, listenPort, needsYou, nowIso, projectStore, readBody, recordActivity, runCard, runLedger, sanitizeMessages, saveStore, seenRuns, storageError, titleFromText, withSeen, workKind });
 const { apiChat, apiChatStream, apiRoute, chatOnce } = require('./server/chat').createChat({ ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, coordinator, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone: (...a) => voiceTimeZone(...a) });
-const { apiDisplayAlerts, apiDisplayApprovalDecide, apiDisplayApprovals, apiDisplayAsk, apiDisplayEvents, apiDisplayFeed, apiDisplayHeartbeat, apiDisplayNotify, apiDisplayPair, apiGlance, apiGlanceAsk, apiVoiceHome, apiWatchHeartbeat, voiceTimeZone } = require('./server/voice').createVoice({ APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayAuthorized: req => displayKey.authorized(req), displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, printLab, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, storage, storageError, text, voice, voiceFacts, watchdog, weather });
+const { apiAttention, apiDisplayAlerts, apiDisplayApprovalDecide, apiDisplayApprovals, apiDisplayAsk, apiDisplayEvents, apiDisplayFeed, apiDisplayHeartbeat, apiDisplayNotify, apiDisplayPair, apiGlance, apiGlanceAsk, apiVoiceHome, apiWatchHeartbeat, voiceTimeZone } = require('./server/voice').createVoice({ APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayAuthorized: req => displayKey.authorized(req), displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, printLab, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, storage, storageError, text, voice, voiceFacts, watchdog, weather });
 const server = http.createServer(async (req, res) => {
   const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const p = urlObj.pathname;
@@ -777,6 +777,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/artcraft/status') return await apiArtcraftStatus(req, res);
     if (req.method === 'POST' && p === '/api/artcraft/open') return await apiArtcraftOpen(req, res);
     if (req.method === 'GET' && p === '/api/workshop/status') return await apiWorkshopStatus(req, res, urlObj);
+    if (req.method === 'GET' && (p === '/api/workshop/camera' || p === '/api/workshop/camera.jpg')) return await apiWorkshopCamera(req, res);
     if (req.method === 'POST' && p === '/api/workshop/portal-code') return await apiWorkshopPortalCode(req, res);
 
     // cumulative release features
@@ -880,6 +881,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/claude/events') return await apiClaudeEvents(req,res);
     if (req.method === 'POST' && p === '/api/watch/heartbeat') return await apiWatchHeartbeat(req,res);
     if (req.method === 'GET' && p === '/api/watch') return json(res, 200, { ...watchdog.summary(), display: storage.readSetting('display:heartbeat', null) });
+    if (req.method === 'GET' && p === '/api/attention') return await apiAttention(req,res);
     if (req.method === 'GET' && p === '/api/display/feed') return await apiDisplayFeed(req,res);
     // Home's Needs you: Pi Hub's one list (the display's cached fetch), or items null when the hub doesn't answer.
     if (req.method === 'GET' && p === '/api/home/hub-needs') { const hub = await piHub.needs(); return json(res, 200, { items: hub ? hub.items : null }); }
@@ -902,6 +904,7 @@ const server = http.createServer(async (req, res) => {
       req.resume();
       if (!displayKey.authorized(req) && !claudeChat.deviceFor(req) && !claudeChat.macAuthorized(req)) return json(res, 401, { error: 'Only the Workshop display or a signed-in device can clear the plate.' });
       const r = await bambuddyControl.clearPlate();
+      try { displayMessages.post({ ...require('./bambuddy-control').clearPlateMessage(r), chime: false, action: { type: 'show', page: 'printer' } }, 'printer-control'); } catch { /* feedback must not retry or undo an accepted command */ }
       recordActivity('printer', r.ok ? 'Plate cleared from the Workshop display' : 'Clear plate from the Workshop display did not go through', `Bambuddy: plate ${r.plate}, errors ${r.errors}`, { by: 'Workshop display' });
       return json(res, r.ok ? 200 : 502, r);
     }

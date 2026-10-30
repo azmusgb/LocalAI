@@ -61,7 +61,8 @@ function evaluate({ now, mac, hostDisks = [], printer, startedAt = now, limits =
       out.push({ id: 'display-offline', severity: 'high', push: 'needs-you', title: "The Workshop display isn't answering", detail: 'Printer status stops reaching Local AI until it is back on Wi-Fi.' });
     }
     if (printer.state === 'error') {
-      out.push({ id: 'printer-error', severity: 'high', push: 'failed', title: 'The printer stopped with an error', detail: printer.errorCode ? `Error ${printer.errorCode}. Check the printer.` : 'Check the printer.' });
+      // Listed on Home, but not pushed from Local AI: Pi Hub (hub/urgent.py) is the one sender for print failures.
+      out.push({ id: 'printer-error', severity: 'high', push: null, title: 'The printer stopped with an error', detail: printer.errorCode ? `Error ${printer.errorCode}. Check the printer.` : 'Check the printer.' });
     }
   }
   return out;

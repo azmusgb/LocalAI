@@ -53,6 +53,29 @@ function needsList(d) {
   return { count, items: items.slice(0, 20) };
 }
 
+// The household's designated printer record comes from Bambuddy through Pi Hub. Validate source time even
+// after a cache hit: a responsive hub must not make an old printer reading current. Never fall back to a
+// different authority when the hub is unavailable. Only these fields leave the adapter.
+const PRINTER_CACHE_MS = 15000, PRINTER_MAX_AGE_MS = 90000;
+const PRINTER_STATES = { printing: 'printing', paused: 'paused', finished: 'idle', failed: 'error', idle: 'idle' };
+function printerRecord(body, now = Date.now()) {
+  if (!Array.isArray(body?.records)) return null;
+  const r = body.records.find(r => r?.id === 'printer');
+  if (!r || r.source !== 'bambuddy' || typeof r.as_of !== 'number' || !Number.isFinite(r.as_of) || r.as_of < 0 || r.as_of > 8.64e12) return null;
+  const age = now - r.as_of * 1000;
+  const stale = r.stale === true || age > PRINTER_MAX_AGE_MS || age < -5000;
+  const state = !stale && Object.hasOwn(PRINTER_STATES, r.state) ? PRINTER_STATES[r.state] : null;
+  const d = r.detail || {};
+  const integer = (v, max) => Number.isSafeInteger(v) && v >= 0 && v <= max ? v : null;
+  const running = state === 'printing' || state === 'paused';
+  return {
+    setUp: true, access: stale ? 'stale' : state ? 'ok' : 'offline', state,
+    progress: running ? integer(d.progress, 100) : null,
+    minutesLeft: running ? integer(d.minutes_left, 100000) : null,
+    errorCode: null, ...(!stale && ['finished', 'failed'].includes(r.state) ? { needsPlateClear: true } : {}), source: 'bambuddy', via: 'pi-hub', seenAt: new Date(r.as_of * 1000).toISOString()
+  };
+}
+
 function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.30', fetchImpl = fetch, now = Date.now } = {}) {
   const off = !url || url === 'off';
   let cache = { at: -Infinity, value: null };
@@ -70,7 +93,7 @@ function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.30
   // The hub's "Needs you" list ({count, items}) at most every 30 s; null when it is off, down or slow (3 s). One fetch
   // at a time: while one is out, callers get the last value (or null) at once. The hub's /api/needs reads Local AI's
   // feed, so a second fetch here could start a request chain between the two (the feed fetches needs only for the
-  // display's key, which the hub doesn't send; this is the second guard).
+  // display's key, which the hub doesn't send; this also guards older hub versions). New hubs read /api/attention.
   let needsCache = { at: -Infinity, value: null }, needsInFlight = null;
   async function needs() {
     if (off) return null;
@@ -87,6 +110,24 @@ function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.30
     })().finally(() => { needsInFlight = null; });
     return needsInFlight;
   }
+  let printerCache = { at: -Infinity, body: null }, printerInFlight = null;
+  async function printer() {
+    if (off) return null;
+    if (now() - printerCache.at >= PRINTER_CACHE_MS) {
+      if (!printerInFlight) {
+        printerInFlight = (async () => {
+          let body = null;
+          try {
+            const r = await fetchImpl(new URL('/api/records', url), { signal: AbortSignal.timeout(TIMEOUT_MS), headers: { Accept: 'application/json' } });
+            if (r.ok) body = await r.json();
+          } catch { body = null; }
+          printerCache = { at: now(), body };
+        })().finally(() => { printerInFlight = null; });
+      }
+      await printerInFlight;
+    }
+    return printerRecord(printerCache.body, now());
+  }
   // The poster of playing item `n` (a JPEG), or null.
   async function poster(n) {
     if (off || !Number.isInteger(n) || n < 0 || n > 5) return null;
@@ -97,7 +138,7 @@ function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.30
       return buf.length > 4 && buf.length <= 400 * 1024 ? buf : null;
     } catch { return null; }
   }
-  return { read, needs, poster };
+  return { read, needs, poster, printer };
 }
 
-module.exports = { createPiHub, summarize, playingItem, needsList };
+module.exports = { createPiHub, summarize, playingItem, needsList, printerRecord };
