@@ -9,7 +9,7 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const { once } = require('node:events');
 const { spawnAppServer } = require('./spawn-server.cjs');
-const { createBambuddyControl, clearPlateMessage } = require('../app/bambuddy-control');
+const { createBambuddyControl, clearPlateMessage, plateClearRefusal } = require('../app/bambuddy-control');
 
 test('clearPlate posts clear-plate and hms/clear with the control key, and reports each step', async () => {
   const calls = [];
@@ -26,7 +26,13 @@ test('clearPlate posts clear-plate and hms/clear with the control key, and repor
 
 test('POST /api/display/printer/clear needs the display key and reaches Bambuddy', { timeout: 30000 }, async (t) => {
   const seen = [];
-  const bambuddy = http.createServer((req, res) => { seen.push([req.method, req.url, req.headers['x-api-key']]); res.end('{}'); });
+  let status = { connected: true, state: 'FINISH', awaiting_plate_clear: true }, holdClear = null;
+  const bambuddy = http.createServer(async (req, res) => {
+    seen.push([req.method, req.url, req.headers['x-api-key']]);
+    if (req.method === 'GET') return res.end(JSON.stringify(status));
+    if (holdClear && req.url.endsWith('/clear-plate')) await holdClear;
+    res.end('{}');
+  });
   bambuddy.listen(0, '127.0.0.1');
   await once(bambuddy, 'listening');
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-clear-'));
@@ -52,7 +58,48 @@ test('POST /api/display/printer/clear needs the display key and reaches Bambuddy
   const r = await post({ 'X-LocalAI-Display-Key': key });
   assert.equal(r.status, 200);
   assert.deepEqual(await r.json(), { ok: true, plate: 'ok', errors: 'ok' });
-  assert.deepEqual(seen, [['POST', '/api/v1/printers/1/clear-plate', 'bb_ctl'], ['POST', '/api/v1/printers/1/hms/clear', 'bb_ctl']]);
+  assert.deepEqual(seen, [['GET', '/api/v1/printers/1/status', 'bb_ctl'], ['POST', '/api/v1/printers/1/clear-plate', 'bb_ctl'], ['POST', '/api/v1/printers/1/hms/clear', 'bb_ctl']]);
+
+  // Not waiting for a clear (printing, or a finished print whose plate was already cleared): 409, nothing posted.
+  for (const s of [{ connected: true, state: 'RUNNING', awaiting_plate_clear: false }, { connected: true, state: 'FINISH', awaiting_plate_clear: false }, { connected: false, state: 'FINISH', awaiting_plate_clear: true }]) {
+    status = s; seen.length = 0;
+    const refused = await post({ 'X-LocalAI-Display-Key': key });
+    assert.equal(refused.status, 409, JSON.stringify(s));
+    assert.match((await refused.json()).error, /plate|printer/i);
+    assert.deepEqual(seen.map(c => c[0]), ['GET'], 'a refused clear never posts to Bambuddy');
+  }
+  status = { connected: true, state: 'FAILED', awaiting_plate_clear: true };
+
+  // Two overlapping requests: the second is refused and only one clear reaches Bambuddy.
+  seen.length = 0;
+  let release; holdClear = new Promise(r => { release = r; });
+  const first = post({ 'X-LocalAI-Display-Key': key });
+  while (!seen.some(c => c[1].endsWith('/clear-plate'))) await new Promise(r => setTimeout(r, 10));
+  const second = await post({ 'X-LocalAI-Display-Key': key });
+  assert.equal(second.status, 409);
+  assert.deepEqual(await second.json(), { error: 'Already clearing' });
+  release(); holdClear = null;
+  assert.equal((await first).status, 200);
+  assert.equal(seen.filter(c => c[1].endsWith('/clear-plate')).length, 1);
+  // The guard is released afterwards.
+  seen.length = 0;
+  assert.equal((await post({ 'X-LocalAI-Display-Key': key })).status, 200);
+});
+
+test('status() reads Bambuddy and plateClearRefusal allows only a finished or failed print awaiting a clear', async () => {
+  const body = { connected: true, state: 'finish', awaiting_plate_clear: true };
+  const calls = [];
+  const control = createBambuddyControl({ url: 'http://bambuddy.test', key: 'ctl', statusKey: 'rd', printer: 3, fetchImpl: async (u, o) => { calls.push([new URL(u).pathname, o.headers['X-API-Key'], !!o.signal]); return { ok: true, status: 200, json: async () => body }; } });
+  assert.deepEqual(await control.status(), { ok: true, state: 'FINISH', awaitingPlateClear: true, connected: true });
+  assert.deepEqual(calls, [['/api/v1/printers/3/status', 'rd', true]]);
+  assert.equal(plateClearRefusal(await control.status()), null);
+  assert.equal(plateClearRefusal({ ok: true, state: 'FAILED', awaitingPlateClear: true, connected: true }), null);
+  for (const s of [{ ok: true, state: 'RUNNING', awaitingPlateClear: false, connected: true }, { ok: true, state: 'PAUSE', awaitingPlateClear: true, connected: true }, { ok: true, state: 'IDLE', awaitingPlateClear: false, connected: true }, { ok: true, state: 'FINISH', awaitingPlateClear: false, connected: true }, { ok: true, state: 'FINISH', awaitingPlateClear: true, connected: false }, { ok: false, reason: 'no answer' }, null]) {
+    assert.equal(typeof plateClearRefusal(s), 'string', JSON.stringify(s));
+  }
+  assert.deepEqual(await createBambuddyControl({ url: 'off' }).status(), { ok: false, reason: 'off' });
+  assert.deepEqual(await createBambuddyControl({ url: 'http://x.test', fetchImpl: async () => { throw new Error('t'); } }).status(), { ok: false, reason: 'no answer' });
+  assert.deepEqual(await createBambuddyControl({ url: 'http://x.test', fetchImpl: async () => ({ ok: false, status: 403 }) }).status(), { ok: false, reason: 'refused' });
 });
 
 

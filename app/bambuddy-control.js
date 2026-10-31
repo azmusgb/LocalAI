@@ -13,6 +13,8 @@ function createBambuddyControl({
   url = process.env.LOCALAI_BAMBUDDY_URL || 'http://10.0.0.30:8000',
   key = process.env.LOCALAI_BAMBUDDY_CONTROL_KEY || '',
   printer = Number(process.env.LOCALAI_BAMBUDDY_PRINTER) || 1,
+  // Reading the printer's state needs "Read status"; falls back to the materials key, then the control key.
+  statusKey = process.env.LOCALAI_BAMBUDDY_STATUS_KEY || process.env.LOCALAI_MATERIALS_KEY || key,
   fetchImpl = fetch
 } = {}) {
   const off = !url || url === 'off';
@@ -39,7 +41,34 @@ function createBambuddyControl({
     return { ok: plate === 'ok', plate, errors };
   }
 
-  return { clearPlate };
+  // { ok: true, state, awaitingPlateClear, connected } from Bambuddy's own printer status (the same fields Pi Hub
+  // reads), or { ok: false, reason } when it is off, refused or doesn't answer within the short timeout.
+  async function status() {
+    if (off) return { ok: false, reason: 'off' };
+    try {
+      const r = await fetchImpl(new URL(`/api/v1/printers/${printer}/status`, url), {
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+        headers: { Accept: 'application/json', ...(statusKey ? { 'X-API-Key': statusKey } : {}) }
+      });
+      if (!r.ok) return { ok: false, reason: r.status === 401 || r.status === 403 ? 'refused' : `HTTP ${r.status}` };
+      const body = await r.json();
+      if (!body || typeof body !== 'object') return { ok: false, reason: 'unreadable' };
+      return { ok: true, state: String(body.state || '').toUpperCase(), awaitingPlateClear: body.awaiting_plate_clear === true, connected: body.connected !== false };
+    } catch {
+      return { ok: false, reason: 'no answer' };
+    }
+  }
+
+  return { clearPlate, status };
+}
+
+// Clearing is only for a finished or failed print that is waiting for it (Pi Hub offers Clear on the same rule).
+// Returns null when allowed, else a plain sentence for the person pressing the button.
+function plateClearRefusal(status) {
+  if (!status || !status.ok) return 'Could not read the printer\'s state, so the plate was not cleared. Check the printer and try again.';
+  if (!status.connected) return 'The printer is offline, so the plate was not cleared.';
+  if (['FINISH', 'FAILED'].includes(status.state) && status.awaitingPlateClear) return null;
+  return 'The printer is not waiting for the plate to be cleared (it must be finished or failed first).';
 }
 
 // The firmware's existing message channel supplies visible completion feedback without a firmware update.
@@ -49,4 +78,4 @@ function clearPlateMessage(result) {
   return { title: 'Plate confirmed', text: 'Bambuddy accepted the plate confirmation.', tone: 'ok' };
 }
 
-module.exports = { createBambuddyControl, clearPlateMessage };
+module.exports = { createBambuddyControl, clearPlateMessage, plateClearRefusal };
