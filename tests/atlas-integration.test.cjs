@@ -53,7 +53,9 @@ test('native Architecture workspace is wired into the website contract', () => {
   const server = fs.readFileSync(path.join(ROOT, 'app/server.js'), 'utf8');
   assert.match(html, /id="architecture" class="view architecture-view"/);
   assert.match(html, /src="\/architecture\.js"/);
-  assert.match(html, /href="\/architecture\.css"/);
+  // Styles live in app.css (one stylesheet: design-system-ui.mjs); no separate sheet.
+  assert.doesNotMatch(html, /href="\/architecture\.css"/);
+  assert.match(fs.readFileSync(path.join(ROOT, 'app/public/app.css'), 'utf8'), /==== System Atlas \(System › Architecture/);
   assert.match(registry, /id:'architecture'/);
   assert.match(server, /require\('\.\/server\/atlas'\)/);
   assert.match(server, /p\.startsWith\('\/api\/atlas\/'\)/);
@@ -76,7 +78,7 @@ test('Architecture section lives inside main and its assets are offline-shell ma
   );
 
   assert.match(sw, /['"]\/architecture\.js['"]/);
-  assert.match(sw, /['"]\/architecture\.css['"]/);
-  assert.match(sw, /const CACHE='[^']*atlas1'/);
+  assert.doesNotMatch(sw, /['"]\/architecture\.css['"]/);
+  assert.match(sw, /const CACHE='[^']*atlas1[^']*'/);
 });
 
