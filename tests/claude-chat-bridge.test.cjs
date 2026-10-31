@@ -87,8 +87,21 @@ async function fakeRelay(t, { tls = null } = {}) {
   return state;
 }
 
+function ipcEndpoint(prefix = 'cb') {
+  const id = `${prefix}-${process.pid}-${crypto.randomBytes(6).toString('hex')}`;
+
+  return process.platform === 'win32'
+    ? `\\\\.\\pipe\\${id}`
+    : path.join(os.tmpdir(), `${id}.sock`);
+}
+
+function removeIpcEndpoint(endpoint) {
+  if (process.platform === 'win32') return;
+  try { fs.unlinkSync(endpoint); } catch {}
+}
+
 async function fakeInbox(t) {
-  const sock = path.join(os.tmpdir(), `cb${process.pid}${Math.random().toString(36).slice(2, 6)}.sock`);
+  const sock = ipcEndpoint('cb');
   const conns = [];
   const server = net.createServer((c) => {
     const rec = { at: Date.now(), data: '', closed: false };
@@ -100,7 +113,7 @@ async function fakeInbox(t) {
   await new Promise((r) => server.listen(sock, r));
   let closed = false;
   const close = () => new Promise((r) => { if (closed) return r(); closed = true; server.close(() => r()); });
-  t.after(async () => { await close(); try { fs.unlinkSync(sock); } catch {} });
+  t.after(async () => { await close(); removeIpcEndpoint(sock); });
   return { sock, conns, close, lines: (i) => conns[i].data.split('\n').filter(Boolean).map((l) => JSON.parse(l)) };
 }
 
@@ -213,8 +226,15 @@ test('one bridge per messaging socket: a bridge for a new session on the same so
   await until(() => relay.requests.some((r) => r.url.includes('sessionId=sess-A')), 'A polls');
 
   const b = startBridge(t, { relay, sock: inbox.sock, home, sid: 'sess-B' });
-  assert.equal(await exitsWithin(a, 4000, 'old bridge A'), 0);
-  assert.ok(!fs.existsSync(path.join(home, 'run', 'sess-A.pid')), 'A removed its pidfile');
+  const aExit = await exitsWithin(a, 4000, 'old bridge A');
+
+  if (process.platform === 'win32') {
+    assert.notEqual(aExit, null, 'Windows replacement terminated old bridge A');
+  } else {
+    assert.equal(aExit, 0);
+  }
+
+  assert.ok(!fs.existsSync(path.join(home, 'run', 'sess-A.pid')), 'A pidfile was removed');
   await until(() => readLock(home, inbox.sock)?.pid === b.proc.pid, 'lock held by B');
   assert.deepEqual(readLock(home, inbox.sock), { pid: b.proc.pid, sessionId: 'sess-B' });
   await until(() => relay.requests.some((r) => r.url === '/api/claude/chat/announce' && r.body.sessionId === 'sess-B'), 'B announces');
@@ -240,8 +260,15 @@ test('a lock left by a dead bridge is cleared and taken; the lock is removed on 
   const b = startBridge(t, { relay, sock: inbox.sock, home });
   await until(() => readLock(home, inbox.sock)?.pid === b.proc.pid, 'lock taken over');
   b.proc.kill('SIGTERM');
-  assert.equal(await exitsWithin(b, 3000, 'SIGTERM'), 0);
-  assert.ok(!fs.existsSync(lockPath(home, inbox.sock)));
+  const exitCode = await exitsWithin(b, 3000, 'SIGTERM');
+
+  if (process.platform === 'win32') {
+    assert.equal(exitCode, null);
+    assert.equal(b.proc.signalCode, 'SIGTERM');
+  } else {
+    assert.equal(exitCode, 0);
+    assert.ok(!fs.existsSync(lockPath(home, inbox.sock)));
+  }
 });
 
 test('exits and removes its pidfile when the socket path disappears', async (t) => {
@@ -253,7 +280,7 @@ test('exits and removes its pidfile when the socket path disappears', async (t) 
   await until(() => fs.existsSync(pidfile), 'pidfile');
   await until(() => relay.requests.some((r) => r.url.startsWith('/api/claude/chat/inbox')), 'first poll');
   await inbox.close();
-  try { fs.unlinkSync(inbox.sock); } catch {}
+  removeIpcEndpoint(inbox.sock);
   assert.equal(await exitsWithin(b, 5000, 'socket gone'), 0);
   assert.ok(!fs.existsSync(pidfile));
 });
@@ -272,8 +299,8 @@ test('relay returns 500 twice, then recovers: the queued message is still inject
 });
 
 async function staleSocket(t) {
-  const sock = path.join(os.tmpdir(), `cbs${process.pid}${Math.random().toString(36).slice(2, 6)}.sock`);
-  t.after(() => { try { fs.unlinkSync(sock); } catch {} });
+  const sock = ipcEndpoint('cbs');
+  t.after(() => removeIpcEndpoint(sock));
   // A stale socket file: exists, but nothing listens (ECONNREFUSED on macOS and Linux).
   const dead = spawn('node', ['-e', `require('net').createServer().listen(process.argv[1], () => console.log('up'))`, sock], { stdio: ['ignore', 'pipe', 'ignore'] });
   t.after(() => dead.kill('SIGKILL'));
@@ -284,7 +311,7 @@ async function staleSocket(t) {
   return sock;
 }
 
-test('a stale socket (listener killed, file left behind) with nothing queued: the bridge exits after 3 refused connects and removes its pidfile', async (t) => {
+test('a stale socket (listener killed, file left behind) with nothing queued: the bridge exits after 3 refused connects and removes its pidfile', { skip: process.platform === 'win32' ? 'stale Unix-domain socket files do not exist for Windows named pipes' : false }, async (t) => {
   const relay = await fakeRelay(t);
   const home = makeHome(t);
   const sock = await staleSocket(t);
@@ -297,8 +324,8 @@ test('a stale socket (listener killed, file left behind) with nothing queued: th
 test('an injection that fails while the socket accepts connections is retried (3 tries), logged as lost, and the bridge keeps delivering', async (t) => {
   const relay = await fakeRelay(t);
   const home = makeHome(t);
-  const sock = path.join(os.tmpdir(), `cbl${process.pid}${Math.random().toString(36).slice(2, 6)}.sock`);
-  t.after(() => { try { fs.unlinkSync(sock); } catch {} });
+  const sock = ipcEndpoint('cbl');
+  t.after(() => removeIpcEndpoint(sock));
   // Accepts every connection but never reads: connect succeeds, the large write cannot complete.
   const held = [];
   const stuck = net.createServer((c) => { c.pause(); c.on('error', () => {}); held.push(c); });
@@ -316,7 +343,7 @@ test('an injection that fails while the socket accepts connections is retried (3
 
   // Swap in a normal listener; the next message is delivered.
   await closeStuck();
-  try { fs.unlinkSync(sock); } catch {}
+  removeIpcEndpoint(sock);
   let got = '';
   const live = net.createServer((c) => { c.on('data', (d) => { got += d; }); c.on('error', () => {}); });
   await new Promise((r) => live.listen(sock, r));

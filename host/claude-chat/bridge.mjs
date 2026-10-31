@@ -18,6 +18,20 @@ const BACKOFF_MAX = 30000;
 const WRITE_TIMEOUT = Number(process.env.LOCALAI_CHAT_WRITE_TIMEOUT_MS ?? 5000);
 const RETRY_GAP = Math.min(500, INJECT_GAP);
 
+const WINDOWS_PIPE_PREFIX = '\\\\.\\pipe\\';
+
+function isWindowsPipe(socket) {
+  return process.platform === 'win32' &&
+    socket.startsWith(WINDOWS_PIPE_PREFIX);
+}
+
+function socketEndpointPresent(socket) {
+  // Unix-domain sockets are filesystem entries. Windows named pipes are not.
+  // Named-pipe reachability is established by the connection attempt.
+  return isWindowsPipe(socket) || fs.existsSync(socket);
+}
+
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const logFile = path.join(HOME, 'bridge.log');
 function log(msg) {
@@ -50,6 +64,30 @@ function alive(pid) {
   try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
 }
 
+function removePidFilesOwnedBy(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return;
+
+  let entries = [];
+  try {
+    entries = fs.readdirSync(runDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.pid')) continue;
+
+    const file = path.join(runDir, entry.name);
+    try {
+      if (fs.readFileSync(file, 'utf8').trim() === String(pid)) {
+        fs.unlinkSync(file);
+      }
+    } catch {
+      // The file may have disappeared or changed during replacement.
+    }
+  }
+}
+
 // Take the socket lock atomically ('wx'). A live holder for this session wins (we exit); a live holder for another
 // session on this socket is the bridge of a cleared conversation and is told to stop; a dead or unreadable lock is cleared.
 async function takeSocketLock() {
@@ -64,9 +102,18 @@ async function takeSocketLock() {
       if (lock.sessionId === sessionId) process.exit(0);
       log(`replacing bridge ${lock.pid} for session ${lock.sessionId} on this socket`);
       try { process.kill(lock.pid, 'SIGTERM'); } catch { /* gone */ }
-      const end = Date.now() + 2000;
+
+      let end = Date.now() + 2000;
       while (alive(lock.pid) && Date.now() < end) await sleep(50);
-      if (alive(lock.pid)) { try { process.kill(lock.pid, 'SIGKILL'); } catch { /* gone */ } }
+
+      if (alive(lock.pid)) {
+        try { process.kill(lock.pid, 'SIGKILL'); } catch { /* gone */ }
+
+        end = Date.now() + 1000;
+        while (alive(lock.pid) && Date.now() < end) await sleep(25);
+      }
+
+      if (!alive(lock.pid)) removePidFilesOwnedBy(lock.pid);
     }
     // Clear the stale lock, but only if it still names the holder we examined.
     try { if (readLock()?.pid === lock.pid) fs.unlinkSync(lockFile); } catch { /* raced; retry */ }
@@ -144,7 +191,7 @@ let lastInject = 0;
 
 async function inject(item) {
   for (let attempt = 1; attempt <= 3; attempt++) {
-    if (!fs.existsSync(SOCKET)) { log('socket gone; exiting'); quit(0); }
+    if (!socketEndpointPresent(SOCKET)) { log('socket gone; exiting'); quit(0); }
     const wait = lastInject + INJECT_GAP - Date.now();
     if (wait > 0) await sleep(wait);
     const err = await writeSocket(item);
@@ -191,7 +238,7 @@ async function main() {
   let backoff = BACKOFF_START;
   let announced = false;
   for (;;) {
-    if (!fs.existsSync(SOCKET)) { log('socket gone; exiting'); quit(0); }
+    if (!socketEndpointPresent(SOCKET)) { log('socket gone; exiting'); quit(0); }
     await probe();
     try {
       if (!announced) { await announce(); announced = true; log('announced'); }

@@ -12,13 +12,18 @@
 //
 // Any other checkpoint stays usable through the standard checkpoint graph ("custom").
 
+const IMAGE_PROFILE_SCHEMA_VERSION = 1;
+const IMAGE_WORKFLOW_VERSION = '2026-10-31.1';
+
 const ENGINES = {
   fast: {
+    profileId: 'sd15-fast', profileVersion: IMAGE_PROFILE_SCHEMA_VERSION, workflowVersion: IMAGE_WORKFLOW_VERSION,
     label: 'Fast', model: 'Stable Diffusion 1.5', family: 'sd15', base: 512, steps: 25, cfg: 7, sampler: 'dpmpp_2m', scheduler: 'karras',
     negative: 'blurry, low quality, distorted, deformed, extra fingers, text, watermark',
     blurb: 'Quick drafts and illustrations.'
   },
   quality: {
+    profileId: 'sdxl-lightning', profileVersion: IMAGE_PROFILE_SCHEMA_VERSION, workflowVersion: IMAGE_WORKFLOW_VERSION,
     label: 'Quality', model: 'SDXL Lightning', family: 'sdxl', base: 1024, steps: 6, cfg: 2, sampler: 'dpmpp_sde', scheduler: 'karras',
     negative: 'blurry, low quality, distorted, watermark',
     blurb: 'Detailed, high-resolution images.'
@@ -26,12 +31,14 @@ const ENGINES = {
   // Z-Image Turbo and FLUX schnell are distilled to run at cfg 1, where the sampler ignores the negative
   // prompt entirely, so `usesNegative: false` drops a style's "avoid" words instead of pretending to apply them.
   best: {
+    profileId: 'z-image-turbo', profileVersion: IMAGE_PROFILE_SCHEMA_VERSION, workflowVersion: IMAGE_WORKFLOW_VERSION,
     label: 'Best', model: 'Z-Image Turbo', family: 'zimage', base: 1024, steps: 8, cfg: 1, sampler: 'res_multistep', scheduler: 'simple',
     shift: 3, negative: '', usesNegative: false,
     blurb: 'Most detailed and realistic; follows long prompts and can draw text.'
   },
   // "Best" when Z-Image Turbo isn't installed.
   bestFlux: {
+    profileId: 'flux1-schnell', profileVersion: IMAGE_PROFILE_SCHEMA_VERSION, workflowVersion: IMAGE_WORKFLOW_VERSION,
     label: 'Best', model: 'FLUX.1 schnell', family: 'flux', base: 1024, steps: 4, cfg: 1, sampler: 'euler', scheduler: 'simple',
     negative: '', usesNegative: false,
     blurb: 'Follows long prompts closely and can draw readable text.'
@@ -131,7 +138,23 @@ function sizeFor(engine, aspect, width, height) {
 //   source  { image, mask? }: names of files already uploaded to ComfyUI's input folder. Without a mask the
 //           whole picture is redrawn at strength `denoise`; with one, only the white area is, and everything
 //           outside it is copied back from the original pixel for pixel.
+function validateEngineProfile(engine) {
+  if (!engine || typeof engine !== 'object') throw new Error('Image engine profile is required');
+  const files = engine.files || {};
+  if (engine.family === 'zimage') {
+    if (!files.unet || !/z[_-]?image.*turbo/i.test(files.unet)) throw new Error('Z-Image profile requires a Z-Image Turbo diffusion model');
+    if (!files.textEncoder || !/qwen[_-]?3[_-]?4b/i.test(files.textEncoder)) throw new Error('Z-Image profile requires the Qwen3 4B text encoder');
+    if (!files.vae) throw new Error('Z-Image profile requires a VAE');
+  } else if (engine.family === 'flux') {
+    if (!files.unet || !files.t5 || !files.clipL || !files.vae) throw new Error('FLUX profile is incomplete');
+  } else if (!files.checkpoint) {
+    throw new Error(`${engine.family || 'Checkpoint'} profile requires a checkpoint`);
+  }
+  return engine;
+}
+
 function buildWorkflow(engine, { prompt, negativePrompt, width, height, steps, cfg, seed, upscaler, batch = 1, source = null, denoise = 1 }) {
+  validateEngineProfile(engine);
   const sampler = { seed, steps, cfg, sampler_name: engine.sampler, scheduler: engine.scheduler, denoise: source ? denoise : 1 };
   const flux = engine.family === 'flux';
   let graph, vae, model = ['1', 0];
@@ -230,4 +253,4 @@ function runSummary({ count, width, height, engine, editing, preview }) {
   return `${what} ${editing ? 'edited' : 'made'} with ${engine} · ${width} × ${height}`;
 }
 
-module.exports = { runSummary, previewSettings, previewable, PREVIEW, ENGINES, ASPECTS, STYLES, applyStyle, batchesFor, inferCheckpointFamily, discoverEngines, customEngine, sizeFor, buildWorkflow };
+module.exports = { IMAGE_PROFILE_SCHEMA_VERSION, IMAGE_WORKFLOW_VERSION, validateEngineProfile, runSummary, previewSettings, previewable, PREVIEW, ENGINES, ASPECTS, STYLES, applyStyle, batchesFor, inferCheckpointFamily, discoverEngines, customEngine, sizeFor, buildWorkflow };

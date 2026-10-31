@@ -97,7 +97,11 @@ test('find_in_project returns lines with numbers, inside the allowed roots only'
   write(root, 'repo-context/docs/CITY.md', '# City\n\nThe crane lifts beams.\n');
   for (const hidden of ['data/state.json', '.git/crane.js', 'node_modules/x/crane.js', 'secrets/crane.md', 'public/crane.bin']) write(root, hidden, 'drawCrane crane');
   write(outside, 'crane.js', 'function drawCrane(){} // outside');
-  fs.symlinkSync(outside, path.join(root, 'public', 'linked'));
+  fs.symlinkSync(
+    outside,
+    path.join(root, 'public', 'linked'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
   const find = createResearchTools({ projectRoot: root }).find(x => x.name === 'find_in_project');
   assert.ok(find, 'the tool is offered');
   assert.deepEqual(find.definition.function.parameters.required, ['query']);
@@ -154,7 +158,7 @@ async function fakeOllama(t, reply) {
   return { url: `http://127.0.0.1:${server.address().port}`, requests };
 }
 async function missionFixture(t, reply) {
-  const dataDir = tmp(t, 'localai-absence-mission-');
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-absence-mission-'));
   const root = tmp(t, 'localai-absence-project-');
   write(root, 'public/ui.js', bundle().text);
   const fake = await fakeOllama(t, reply);
@@ -164,7 +168,15 @@ async function missionFixture(t, reply) {
     runLocalModel: async () => { throw new Error('unused'); },
     runAgentTurn: createOllamaTurn({ ollamaUrl: fake.url }), agentLimits: { maxTurns: 3 },
   });
-  t.after(() => orchestrator.close());
+  t.after(() => {
+    orchestrator.close();
+    fs.rmSync(dataDir, {
+      recursive: true,
+      force: true,
+      maxRetries: process.platform === 'win32' ? 5 : 0,
+      retryDelay: process.platform === 'win32' ? 50 : 0,
+    });
+  });
   return { orchestrator, fake };
 }
 const isCoordinator = body => body.messages[0].content.startsWith('You are the mission coordinator');

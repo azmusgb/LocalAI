@@ -12,6 +12,7 @@ const { once } = require('node:events');
 const { makeTlsFixture, OPENSSL_MISSING } = require('./tls-fixture.cjs');
 
 const CLI = path.resolve(__dirname, '../host/claude-chat/localai-chat');
+const CLI_JS = path.resolve(__dirname, '../host/claude-chat/cli.mjs');
 let server, base, home, handler, calls = [];
 
 before(async () => {
@@ -37,10 +38,26 @@ before(async () => {
 after(() => { server.close(); fs.rmSync(home, { recursive: true, force: true }); });
 
 function run(args, env = {}) {
-  return new Promise(resolve => {
-    const c = spawn(CLI, args, { env: { ...process.env, LOCALAI_CHAT_HOME: home, LOCALAI_URL: base, ...env } });
+  return new Promise((resolve, reject) => {
+    const command = process.platform === 'win32' ? process.execPath : CLI;
+    const commandArgs = process.platform === 'win32'
+      ? [CLI_JS, ...args]
+      : args;
+
+    const c = spawn(command, commandArgs, {
+      env: {
+        ...process.env,
+        LOCALAI_CHAT_HOME: home,
+        LOCALAI_URL: base,
+        ...env,
+      },
+    });
+
     let out = '', err = '';
-    c.stdout.on('data', d => out += d); c.stderr.on('data', d => err += d);
+
+    c.stdout.on('data', d => out += d);
+    c.stderr.on('data', d => err += d);
+    c.on('error', reject);
     c.on('close', code => resolve({ code, out, err }));
   });
 }

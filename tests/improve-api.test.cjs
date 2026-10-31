@@ -10,6 +10,50 @@ const { once } = require('node:events');
 const { Storage } = require('../app/storage');
 const { spawnAppServer } = require('./spawn-server.cjs');
 
+async function stopChild(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+
+  await new Promise((resolve, reject) => {
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.removeListener('exit', finish);
+      reject(new Error(`child ${child.pid || 'unknown'} did not exit after kill()`));
+    }, 5000);
+    timer.unref?.();
+
+    child.once('exit', finish);
+
+    try {
+      if (!child.kill()) finish();
+    } catch (error) {
+      child.removeListener('exit', finish);
+      clearTimeout(timer);
+      reject(error);
+    }
+  });
+}
+
+function removeTree(dir) {
+  fs.rmSync(dir, {
+    recursive: true,
+    force: true,
+    ...(process.platform === 'win32'
+      ? { maxRetries: 5, retryDelay: 50 }
+      : {}),
+  });
+}
+
+
 const APP = path.resolve(__dirname, '../app');
 const dataDirs = new Map(); // base URL → that server's DATA_DIR
 const RELEASE = { commit: 'a'.repeat(40), version: '2.0.300', deployedAt: '2026-10-15T20:00:00.000Z' };
@@ -25,7 +69,11 @@ async function startServer(t, { seed, release, ollama } = {}) {
     fs.writeFileSync(path.join(appDir, 'release.json'), JSON.stringify(release));
   }
   const { child, ready } = spawnAppServer({ appDir, env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: ollama || 'http://127.0.0.1:9' } });
-  t.after(() => { child.kill(); fs.rmSync(dataDir, { recursive: true, force: true }); if (release) fs.rmSync(path.dirname(appDir), { recursive: true, force: true }); });
+  t.after(async () => {
+    await stopChild(child);
+    removeTree(dataDir);
+    if (release) removeTree(path.dirname(appDir));
+  });
   const base = await ready;
   dataDirs.set(base, dataDir);
   return base;
@@ -228,8 +276,11 @@ test('a rejected signal item stays rejected on a large board', { timeout: 60000 
   } });
   await post(base, '/api/issues/scan', {});
   const store = new Storage({ dataDir: dataDirs.get(base), readOnly: true });
-  t.after(() => store.close?.());
-  assert.equal(store.readSetting('claude-finding/signal-i-r', null).status, 'rejected');
+  try {
+    assert.equal(store.readSetting('claude-finding/signal-i-r', null).status, 'rejected');
+  } finally {
+    store.close?.();
+  }
 });
 
 

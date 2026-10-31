@@ -10,6 +10,49 @@ const { isSelfChange } = require('../app/public/self-change.js');
 const imp = require('../app/improve.js');
 const { spawnAppServer } = require('./spawn-server.cjs');
 
+async function stopChild(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+
+  await new Promise((resolve, reject) => {
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.removeListener('exit', finish);
+      reject(new Error(`child ${child.pid || 'unknown'} did not exit after kill()`));
+    }, 5000);
+    timer.unref?.();
+
+    child.once('exit', finish);
+
+    try {
+      if (!child.kill()) finish();
+    } catch (error) {
+      child.removeListener('exit', finish);
+      clearTimeout(timer);
+      reject(error);
+    }
+  });
+}
+
+function removeTree(dir) {
+  fs.rmSync(dir, {
+    recursive: true,
+    force: true,
+    ...(process.platform === 'win32'
+      ? { maxRetries: 5, retryDelay: 50 }
+      : {}),
+  });
+}
+
 const AT = '2026-10-18T12:00:00.000Z';
 
 test('isSelfChange spots requests to change Local AI itself', () => {
@@ -87,7 +130,10 @@ test('handoffItem on an existing item keeps its boost and the owner note, and na
 async function startServer(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-handoff-'));
   const { child, ready } = spawnAppServer({ env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: 'http://127.0.0.1:9' } });
-  t.after(() => { child.kill(); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  t.after(async () => {
+    await stopChild(child);
+    removeTree(dataDir);
+  });
   return ready;
 }
 const post = (base, p, body) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(async r => ({ status: r.status, body: await r.json() }));

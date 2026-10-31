@@ -120,6 +120,77 @@ def start_bridge(session_id, cwd):
                      close_fds=True)
 
 
+def pid_alive(pid):
+    """Return whether pid is still running without sending it a signal.
+
+    On POSIX, signal 0 is a non-destructive existence probe. On Windows,
+    os.kill(pid, 0) calls TerminateProcess, so use the Win32 query APIs
+    instead.
+    """
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+
+    if os.name != 'nt':
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        ERROR_ACCESS_DENIED = 5
+
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+
+        open_process = kernel32.OpenProcess
+        open_process.argtypes = [
+            wintypes.DWORD,
+            wintypes.BOOL,
+            wintypes.DWORD,
+        ]
+        open_process.restype = wintypes.HANDLE
+
+        get_exit_code = kernel32.GetExitCodeProcess
+        get_exit_code.argtypes = [
+            wintypes.HANDLE,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        get_exit_code.restype = wintypes.BOOL
+
+        close_handle = kernel32.CloseHandle
+        close_handle.argtypes = [wintypes.HANDLE]
+        close_handle.restype = wintypes.BOOL
+
+        handle = open_process(
+            PROCESS_QUERY_LIMITED_INFORMATION,
+            False,
+            pid,
+        )
+
+        if not handle:
+            # Access denied means the process exists but Windows will not
+            # grant us a query handle. Treat that as alive.
+            return ctypes.get_last_error() == ERROR_ACCESS_DENIED
+
+        try:
+            exit_code = wintypes.DWORD()
+
+            if not get_exit_code(handle, ctypes.byref(exit_code)):
+                return False
+
+            return exit_code.value == STILL_ACTIVE
+        finally:
+            close_handle(handle)
+
+    except Exception:
+        return False
+
+
 def bridge_alive(session_id):
     """True when a live bridge for this session holds the lock for the session's current messaging socket.
     Unknown socket: True (nothing to check against, so nothing is started)."""
@@ -133,8 +204,7 @@ def bridge_alive(session_id):
         pid = int(held.get('pid') or 0)
         if held.get('sessionId') != session_id or pid <= 0:
             return False
-        os.kill(pid, 0)
-        return True
+        return pid_alive(pid)
     except (OSError, ValueError, TypeError, AttributeError):
         return False
 
