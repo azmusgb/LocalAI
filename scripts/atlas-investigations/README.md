@@ -23,7 +23,17 @@ This is a transitional, fail-closed installer for the native Local AI System Atl
 
 The Windows Ollama server may continue binding with `OLLAMA_HOST=0.0.0.0:11434` for Docker reachability. Atlas overrides only the Goose child-process client environment to `ATLAS_GOOSE_OLLAMA_HOST`, defaulting to `http://127.0.0.1:11434`. This avoids treating a server bind address as a client destination.
 
+Goose discovery supports `ATLAS_GOOSE_BIN`, normal `PATH` lookup, and the Local AI tool location `C:\LocalAI\tools\goose\goose.exe` when running on Windows.
+
 Goose execution defaults to a 420-second timeout (`ATLAS_GOOSE_TIMEOUT_SECONDS`, clamped to 30–900 seconds). The Local AI Atlas facade allows 450 seconds for the Goose request while retaining shorter timeouts for ordinary read APIs.
+
+Each investigation is intentionally stateless (`--no-session`) and does not inherit the user's normal extension profile (`--no-profile`). It loads only the bundled Developer extension needed for repository inspection, runs with `GOOSE_MODE=smart_approve`, limits turns and repeated identical tool calls, and is instructed to remain read-only. This narrows the tool surface while still allowing source inspection.
+
+## Evidence budget
+
+Atlas does not send an unbounded graph snapshot to Goose. `ATLAS_GOOSE_EVIDENCE_MAX_CHARS` defaults to 36,000 serialized characters (clamped to 12,000–90,000). The selected node is preserved while lower-priority arrays are reduced deterministically when needed. Every report records available-vs-included evidence counts and whether truncation occurred.
+
+This is deliberate: increasing the Ollama context window is not treated as a substitute for bounded evidence selection.
 
 ## UI
 
@@ -45,7 +55,7 @@ No `MutationObserver` is used.
 
 1. verifies the current native Atlas integration exists;
 2. backs up every file it will touch;
-3. applies surgical/idempotent Python patches;
+3. applies surgical/idempotent Python patches plus the execution/context hardening layer;
 4. runs Atlas self-test, Node syntax checks, focused tests, and scoped `git diff --check`;
 5. only after validation, promotes the relevant Local AI app files;
 6. restarts the appliance and Atlas Intelligence;
