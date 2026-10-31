@@ -134,7 +134,11 @@ test('the file tool reads only permitted files inside the project root', async t
   fs.writeFileSync(path.join(root, 'server.js'), 'line one\nline two\n');
   fs.mkdirSync(path.join(root, 'data'));
   fs.writeFileSync(path.join(root, 'data', 'state.json'), '{}');
-  fs.symlinkSync(path.join(os.tmpdir()), path.join(root, 'escape'));
+  fs.symlinkSync(
+    path.join(os.tmpdir()),
+    path.join(root, 'escape'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
   const read = createResearchTools({ projectRoot: root }).find(x => x.name === 'read_project_file');
   const ok = await read.execute({ path: 'server.js', start_line: 2, max_lines: 1 });
   assert.equal(ok.data.content, 'line two');

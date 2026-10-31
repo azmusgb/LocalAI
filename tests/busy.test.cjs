@@ -13,6 +13,50 @@ const { RunLedger } = require('../app/run-ledger');
 const { activeWork, createInFlight, STALE_MS } = require('../app/busy');
 const { spawnAppServer } = require('./spawn-server.cjs');
 
+async function stopChild(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+
+  await new Promise((resolve, reject) => {
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.removeListener('exit', finish);
+      reject(new Error(`child ${child.pid || 'unknown'} did not exit after kill()`));
+    }, 5000);
+    timer.unref?.();
+
+    child.once('exit', finish);
+
+    try {
+      if (!child.kill()) finish();
+    } catch (error) {
+      child.removeListener('exit', finish);
+      clearTimeout(timer);
+      reject(error);
+    }
+  });
+}
+
+function removeTree(dir) {
+  fs.rmSync(dir, {
+    recursive: true,
+    force: true,
+    ...(process.platform === 'win32'
+      ? { maxRetries: 5, retryDelay: 50 }
+      : {}),
+  });
+}
+
+
 function ledger(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-busy-'));
   const storage = new Storage({ dataDir });
@@ -93,7 +137,12 @@ test('GET /api/busy answers idle, then lists a GridCraft request while it is in 
   bridge.listen(0, '127.0.0.1');
   await once(bridge, 'listening');
   const { child, ready } = spawnAppServer({ env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, GRIDCRAFT_URL: `http://127.0.0.1:${bridge.address().port}`, OLLAMA_URL: 'http://127.0.0.1:9' } });
-  t.after(() => { release(); child.kill(); bridge.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  t.after(async () => {
+    release();
+    await stopChild(child);
+    await new Promise(resolve => bridge.close(() => resolve()));
+    removeTree(dataDir);
+  });
   const base = await ready;
 
   const idle = await (await fetch(base + '/api/busy')).json();

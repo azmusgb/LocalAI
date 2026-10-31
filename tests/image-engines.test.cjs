@@ -191,3 +191,20 @@ test('Best preview: 512 square or the shape scaled into 576, 6 steps, and the gr
   assert.deepEqual(preview[13], fullGraph[13]);
   assert.equal(e.runSummary({ count: 1, width: 512, height: 512, engine: 'Best', preview: true }), 'Preview made with Best · 512 × 512');
 });
+
+test('profile validation rejects incompatible Z-Image text encoders and records workflow provenance', () => {
+  const best = e.discoverEngines(zimage).engines[0];
+  assert.equal(best.profileId, 'z-image-turbo');
+  assert.equal(best.profileVersion, e.IMAGE_PROFILE_SCHEMA_VERSION);
+  assert.equal(best.workflowVersion, e.IMAGE_WORKFLOW_VERSION);
+  assert.doesNotThrow(() => e.validateEngineProfile(best));
+
+  const broken = {
+    ...best,
+    files: { ...best.files, textEncoder: 'clip_l.safetensors' }
+  };
+  assert.throws(
+    () => e.buildWorkflow(broken, { prompt: 'x', width: 1024, height: 1024, steps: 8, cfg: 1, seed: 1 }),
+    /Qwen3 4B text encoder/
+  );
+});

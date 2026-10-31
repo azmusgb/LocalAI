@@ -11,6 +11,8 @@ const { makeTlsFixture, OPENSSL_MISSING } = require('./tls-fixture.cjs');
 
 const HOOK = path.join(__dirname, '..', 'host', 'claude-chat', 'hook.py');
 const SID = '0123456789abcdef-session';
+const PYTHON = process.env.LOCALAI_TEST_PYTHON
+  || (process.platform === 'win32' ? 'python' : 'python3');
 
 async function relay(t, { tls = null } = {}) {
   const requests = [];
@@ -25,8 +27,40 @@ async function relay(t, { tls = null } = {}) {
   };
   const server = tls ? https.createServer({ key: tls.key, cert: tls.cert }, listener) : http.createServer(listener);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  const handle = { requests, url: `${tls ? 'https' : 'http'}://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => { server.close(r); server.closeAllConnections?.(); }) };
-  if (t) t.after(() => handle.close());
+  const handle = {
+    requests,
+    url: `${tls ? 'https' : 'http'}://127.0.0.1:${server.address().port}`,
+    close: async () => {
+      if (!server.listening) return;
+
+      await new Promise((resolve, reject) => {
+        let settled = false;
+
+        const finish = (error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') reject(error);
+          else resolve();
+        };
+
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          reject(new Error('test relay did not close within 2 seconds'));
+        }, 2000);
+
+        server.close(finish);
+        server.closeIdleConnections?.();
+        server.closeAllConnections?.();
+      });
+    },
+  };
+
+  if (t) t.after(async () => {
+    await handle.close();
+  });
+
   return handle;
 }
 
@@ -36,7 +70,8 @@ function setup({ key = true } = {}) {
   fs.mkdirSync(home);
   if (key) fs.writeFileSync(path.join(home, 'mac.key'), 'secret-key\n');
   const out = path.join(dir, 'bridge-argv.json');
-  const bridge = `python3 -I -c 'import sys,json;open(sys.argv[1],"w").write(json.dumps(sys.argv[2:]))' ${out}`;
+  const bridgeOut = out.replaceAll('\\', '/');
+  const bridge = `${PYTHON} -X utf8 -I -c 'import sys,json;open(sys.argv[1],"w",encoding="utf-8").write(json.dumps(sys.argv[2:]))' "${bridgeOut}"`;
   return { dir, home, out, bridge };
 }
 
@@ -45,7 +80,9 @@ function runHook(input, env, hook = HOOK) {
     const started = Date.now();
     let done = false;
     const finish = (v) => { if (done) return; done = true; clearTimeout(timer); resolve({ ms: Date.now() - started, ...v }); };
-    const child = spawn('python3', ['-I', hook], { env: { PATH: process.env.PATH, ...env } });
+    const child = spawn(PYTHON, ['-X', 'utf8', '-I', hook], {
+      env: { PATH: process.env.PATH, ...env },
+    });
     const timer = setTimeout(() => { child.kill('SIGKILL'); finish({ code: null }); }, 8000);
     child.stdin.on('error', () => {});
     child.on('error', (error) => finish({ code: null, error }));

@@ -62,7 +62,10 @@ function createImages(ctx) {
       } catch {}
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
-    throw new Error('Image generation timed out');
+    const error = new Error(`Image generation timed out after ${Math.round(timeoutMs / 1000)} seconds`);
+    error.code = 'COMFY_TIMEOUT';
+    error.promptId = promptId;
+    throw error;
   }
   // Rewrites a short idea into a detailed image prompt with the local language model, then unloads that model
   // so the image model has the GPU to itself (they share 6 GB of VRAM).
@@ -106,9 +109,24 @@ function createImages(ctx) {
     if (!queued.ok) throw new Error(`Image queue HTTP ${queued.status}: ${qraw.slice(0, 500)}`);
     const q = JSON.parse(qraw);
     if (!q.prompt_id) throw new Error('Image service did not return a prompt ID');
-    const history = await pollComfyHistory(q.prompt_id, timeoutMs);
+    let history;
+    try {
+      history = await pollComfyHistory(q.prompt_id, timeoutMs);
+    } catch (e) {
+      if (e?.code === 'COMFY_TIMEOUT') {
+        // Image graphs are serialized below, so this interrupt is scoped to Local AI's one active graph.
+        try { await fetchWithTimeout(`${COMFY_URL}/interrupt`, { method: 'POST' }, 7000); } catch {}
+      }
+      throw e;
+    }
     const failure = history.status?.status_str === 'error' ? (history.status.messages || []).find(m => m[0] === 'execution_error')?.[1] : null;
-    if (failure) throw new Error(`ComfyUI: ${failure.exception_message || failure.exception_type || 'execution error'}`.slice(0, 500));
+    if (failure) {
+      const error = new Error(`ComfyUI ${failure.node_type ? `${failure.node_type} ` : ''}${failure.node_id !== undefined ? `node ${failure.node_id}: ` : ''}${failure.exception_message || failure.exception_type || 'execution error'}`.slice(0, 1000));
+      error.code = 'COMFY_EXECUTION_ERROR';
+      error.promptId = q.prompt_id;
+      error.comfy = { promptId: q.prompt_id, nodeId: failure.node_id ?? null, nodeType: failure.node_type ?? null, exceptionType: failure.exception_type ?? null, exceptionMessage: failure.exception_message ?? null };
+      throw error;
+    }
     const outputs = history.outputs || {};
     const images = outputs?.['9']?.images || Object.values(outputs).flatMap(x => Array.isArray(x?.images) ? x.images : []);
     if (!images.length) throw new Error('Image generation completed without an output image');
@@ -116,6 +134,19 @@ function createImages(ctx) {
   }
   // Fire-and-forget: loads the chat model into the GPU. Failures are ignored.
   function warmText() { warmTextModel({ url: OLLAMA_URL, model: MODEL }); }
+  // ComfyUI has a global interrupt endpoint and this appliance has one 6 GB GPU. Serialize graph execution so a
+  // timeout interrupt cannot kill a different Local AI image request and large image models never execute concurrently.
+  let comfyGraphTail = Promise.resolve();
+  async function withComfyGraphLease(work) {
+    const previous = comfyGraphTail;
+    let release;
+    comfyGraphTail = new Promise(resolve => { release = resolve; });
+    await previous.catch(() => {});
+    try { return await work(); }
+    finally { release(); }
+  }
+  const runSerializedComfyGraph = (workflow, timeoutMs) => withComfyGraphLease(() => runComfyGraph(workflow, timeoutMs));
+
   // Images and text take turns on the 6 GB GPU: the chat model unloads while ComfyUI works and reloads after the last image job.
   let imageJobsActive = 0;
   async function apiGenerateImage(req, res) {
@@ -194,7 +225,7 @@ function createImages(ctx) {
       let n = 0;
       for (const batch of imageEngines.batchesFor(engine, count)) {
         const workflow = imageEngines.buildWorkflow(engine, { prompt: styled.prompt, negativePrompt: styled.negative, width, height, steps, cfg, seed: seed + n, upscaler, batch, source, denoise: strength });
-        const run = await runComfyGraph(workflow, timeoutMs);
+        const run = await runSerializedComfyGraph(workflow, timeoutMs);
         // ComfyUI gives each image in a batch the batch seed plus its index.
         run.images.forEach((img, i) => results.push({ img, seed: seed + n + i, promptId: run.promptId }));
         n += batch;
@@ -202,7 +233,7 @@ function createImages(ctx) {
       }
       const elapsedMs = Date.now() - started;
       const outW = upscaler ? width * 2 : width, outH = upscaler ? height * 2 : height;
-      const common = { engine: engine.id, engineLabel: engine.label, checkpoint, family: engine.family, style, width: outW, height: outH, steps, cfg, upscaled: !!upscaler, edited: editing, elapsedMs, ...(preview ? { preview: true } : {}), ...(fromPreview ? { previewOf: fromPreview.id } : {}) };
+      const common = { engine: engine.id, engineLabel: engine.label, profileId: engine.profileId || engine.id, profileVersion: engine.profileVersion || null, workflowVersion: engine.workflowVersion || null, checkpoint, family: engine.family, style, width: outW, height: outH, steps, cfg, upscaled: !!upscaler, edited: editing, elapsedMs, ...(preview ? { preview: true } : {}), ...(fromPreview ? { previewOf: fromPreview.id } : {}) };
       const images = results.map(({ img, seed: s }) => ({ imageUrl: `/api/images/view?${new URLSearchParams({ filename: img.filename, subfolder: img.subfolder || '', type: img.type || 'output' })}`, seed: s }));
 
       // A preview stays out of Library (it is in Work) unless the owner keeps it; the full picture arrives as usual.
@@ -218,7 +249,7 @@ function createImages(ctx) {
         summary: imageEngines.runSummary({ count: images.length, width: outW, height: outH, engine: engine.label, editing, preview }),
         output: { ...common, images },
         artifactIds,
-        meta: { promptId: results[0].promptId, checkpoint, elapsedMs }
+        meta: { promptId: results[0].promptId, checkpoint, elapsedMs, profileId: engine.profileId || engine.id, profileVersion: engine.profileVersion || null, workflowVersion: engine.workflowVersion || null, textEncoder: engine.files.textEncoder || engine.files.t5 || null, vae: engine.files.vae || null, sampler: engine.sampler, scheduler: engine.scheduler }
       });
       // A preview has its own estimate: its minute must not make the full picture look quick.
       if (!upscaler && !enhance && !editing && count === 1) IMAGE_ESTIMATES[`${engine.id}:${engine.family}${preview ? ':preview' : ''}`] = Math.round(elapsedMs / 1000);
