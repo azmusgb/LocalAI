@@ -160,8 +160,21 @@ function renderDomainMap(){
   }).join('');
   svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
   svg.innerHTML=`<g class="atlas-edges">${lineHtml}</g><g>${nodeHtml}</g>`;
+  domainList(domains.slice(0,16));
   $('atlasMapTitle').textContent='System domains';
   $('atlasMapHint').textContent='Select a domain or search for a module to focus the dependency map.';
+}
+
+// The phone's version of the domain map: one 44 px button per domain (the diagram's boxes would be too small to tap).
+function domainList(domains){
+  let list=$('atlasDomainList');
+  if(!list){
+    list=document.createElement('ul');list.id='atlasDomainList';list.className='atlas-domain-list';list.setAttribute('aria-label','System domains');
+    $('atlasMap').closest('.atlas-map-wrap').after(list);
+    list.addEventListener('click',e=>{const d=e.target.closest('[data-atlas-domain]');if(d)openDomain(d);});
+  }
+  $('atlasMap').closest('.atlas-map-wrap').classList.toggle('atlas-has-list',domains.length>0);
+  list.innerHTML=domains.map(d=>`<li><button type="button" data-atlas-domain="${esc(d.id)}">${esc(d.id)} <span>${d.count} modules · risk ${d.risk}${d.changed?` · ${d.changed} changed`:''}</span></button></li>`).join('');
 }
 
 function renderFocusedMap(){
@@ -197,6 +210,8 @@ function renderFocusedMap(){
   }).join('');
   svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
   svg.innerHTML=`<g>${edgeHtml}</g><g>${nodeHtml}</g>`;
+  $('atlasMap').closest('.atlas-map-wrap').classList.remove('atlas-has-list');
+  if($('atlasDomainList'))$('atlasDomainList').innerHTML='';
   $('atlasMapTitle').textContent=center.label||center.id;
   $('atlasMapHint').textContent=`${left.length} visible dependents · ${right.length} visible dependencies`;
 }

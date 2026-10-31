@@ -3434,5 +3434,18 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 #architecture #atlasMap{min-width:0}
 @media (max-width: 1100px){
   #architecture .atlas-grid{grid-template-columns:minmax(0,1fr)}
-  #architecture .atlas-inspector{width:auto}
+  /* One column: the inspector grows with its content; the desktop sticky panel squeezed its body to 20 px and
+     clipped the Ask button to a 30 px sliver. */
+  #architecture .atlas-inspector{width:auto;display:block;height:auto;max-height:none;overflow:visible}
+  #architecture .atlas-inspector-body{height:auto;max-height:none;overflow:visible}
 }
+/* On a phone the domain diagram's boxes would shrink below a 44 px target: the same domains show as a list of buttons. */
+#architecture .atlas-domain-list{display:none;list-style:none;margin:0;padding:var(--ds-space-2,8px) 14px 12px;gap:var(--ds-space-2,8px)}
+#architecture .atlas-domain-list button{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;min-height:44px;padding:0 12px;border:1px solid var(--ds-line,#243140);border-radius:var(--ds-r-sm);color:var(--ds-text,#eef4fb);background:transparent;font-size:var(--ds-fs-1);text-align:left;cursor:pointer}
+#architecture .atlas-domain-list button span{color:var(--ds-muted,#8793a6)}
+@media (max-width: 700px){
+  #architecture .atlas-map-wrap.atlas-has-list{display:none}
+  #architecture .atlas-domain-list:not(:empty){display:grid}
+}
+#architecture .atlas-domain-node:focus-visible rect,#architecture .atlas-file-node:focus-visible rect{stroke:var(--ds-accent,#57ddff);stroke-width:3}
+#architecture .atlas-domain-node:focus-visible,#architecture .atlas-file-node:focus-visible{outline:2px solid var(--ds-accent,#57ddff);outline-offset:3px}
