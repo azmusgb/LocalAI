@@ -7,19 +7,23 @@ const path = require('node:path');
 const ROOT = path.resolve(__dirname, '..');
 const read = rel => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
-test('Atlas Intelligence executes Goose and owns read-only investigation artifacts', () => {
+test('Atlas Intelligence executes bounded read-only Goose investigations', () => {
   const py = read('atlas_intelligence.py');
   assert.match(py, /atlas-investigations-v1/);
+  assert.match(py, /atlas-investigation-hardening-v2/);
   assert.match(py, /"--no-session"/);
   assert.match(py, /"--no-profile"/);
   assert.match(py, /"--with-builtin"/);
   assert.match(py, /"developer"/);
+  assert.match(py, /"--system"/);
+  assert.match(py, /Read-only architecture investigation/);
   assert.match(py, /GOOSE_MODE.*smart_approve/);
   assert.match(py, /ATLAS_GOOSE_BIN/);
   assert.match(py, /ATLAS_GOOSE_OLLAMA_HOST/);
   assert.match(py, /ATLAS_GOOSE_TIMEOUT_SECONDS/);
-  assert.match(py, /ATLAS_GOOSE_EVIDENCE_MAX_CHARS/);
-  assert.match(py, /def _investigation_evidence_context/);
+  assert.match(py, /ATLAS_MODEL_EVIDENCE_MAX_CHARS/);
+  assert.match(py, /ATLAS_OLLAMA_TIMEOUT_SECONDS/);
+  assert.match(py, /def _bounded_model_evidence/);
   assert.match(py, /def list_investigations/);
   assert.match(py, /def read_investigation/);
 });
@@ -43,6 +47,8 @@ test('Architecture has a native investigation viewer without MutationObserver fe
   assert.match(css, /prefers-reduced-motion:reduce/);
   assert.match(css, /max-width:820px/);
   assert.match(css, /max-width:560px/);
+  assert.match(css, /max-height:420px/);
+  assert.match(css, /min-width:420px/);
 });
 
 test('Investigation assets are in the page and offline shell', () => {
