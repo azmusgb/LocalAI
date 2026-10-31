@@ -80,7 +80,8 @@ def write(path: Path, text: str, nl: str, bom: bool):
 js, js_nl, js_bom = read(js_path)
 normalized = js.replace('\r\n', '\n')
 
-# The first UI patch was browser-only and broke tests that require() this file in Node.
+# v1 was appended as browser-only code; make it safe for atlas-integration.test.cjs,
+# which intentionally require()s architecture.js under Node.
 old_boot = """  if (document.readyState === 'loading') {
     document.addEventListener(
       'DOMContentLoaded',
@@ -113,7 +114,7 @@ if 'atlas-ui-normalization-v1' in normalized and "if (typeof document !== 'undef
 
 v2 = r'''
 /* atlas-ui-normalization-v2-goose1
- * UI-only normalization for the native Architecture workspace.
+ * Native Local AI Architecture normalization.
  * Atlas determines facts; Ollama interprets facts; Goose investigates facts.
  */
 ;(() => {
@@ -134,22 +135,27 @@ v2 = r'''
     if (!strip) return;
     const ids = [...strip.querySelectorAll('[data-strip-view]')].map(x => x.dataset.stripView).filter(Boolean);
     if (!ids.some(id => systemViews.has(id))) return;
-    let b = strip.querySelector('[data-strip-view="architecture"]');
-    if (!b) {
-      b = document.createElement('button');
-      b.type = 'button';
-      b.dataset.stripView = 'architecture';
-      b.textContent = 'Architecture';
-      b.addEventListener('click', goArchitecture);
+
+    let button = strip.querySelector('[data-strip-view="architecture"]');
+    if (!button) {
+      button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.stripView = 'architecture';
+      button.textContent = 'Architecture';
+      button.setAttribute('aria-label', 'Architecture');
+      button.addEventListener('click', goArchitecture);
       const services = strip.querySelector('[data-strip-view="integrations"]');
-      if (services?.nextSibling) strip.insertBefore(b, services.nextSibling);
-      else strip.appendChild(b);
+      if (services?.nextSibling) strip.insertBefore(button, services.nextSibling);
+      else strip.appendChild(button);
     }
+
     if (active()) {
-      strip.querySelectorAll('[aria-current="page"]').forEach(x => x.removeAttribute('aria-current'));
-      b.setAttribute('aria-current', 'page');
+      strip.querySelectorAll('[aria-current="page"]').forEach(x => {
+        if (x !== button) x.removeAttribute('aria-current');
+      });
+      button.setAttribute('aria-current', 'page');
     } else {
-      b.removeAttribute('aria-current');
+      button.removeAttribute('aria-current');
     }
   }
 
@@ -169,18 +175,19 @@ v2 = r'''
   }
 
   async function post(endpoint, body) {
-    const r = await fetch(endpoint, {
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {'content-type':'application/json','accept':'application/json'},
       body: JSON.stringify(body)
     });
-    let j = {};
-    try { j = await r.json(); } catch { j = {error:`HTTP ${r.status} without JSON`}; }
-    if (!r.ok) {
-      const detail = j?.error?.message || j?.error?.detail || j?.error || j?.message || `HTTP ${r.status}`;
+    let payload = {};
+    try { payload = await response.json(); }
+    catch { payload = {error:`HTTP ${response.status} without JSON`}; }
+    if (!response.ok) {
+      const detail = payload?.error?.message || payload?.error?.detail || payload?.error || payload?.message || `HTTP ${response.status}`;
       throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
     }
-    return j;
+    return payload;
   }
 
   function ensureComposer() {
@@ -197,10 +204,9 @@ v2 = r'''
     const inspector = textarea.closest('aside, [class*="inspector"], [class*="detail"], [class*="panel"], [class*="card"]');
     inspector?.classList.add('atlas-inspector-v2');
 
-    let dock = composer.querySelector('.atlas-action-dock-v2');
-    if (dock) return;
+    if (composer.querySelector('.atlas-action-dock-v2')) return;
 
-    dock = document.createElement('div');
+    const dock = document.createElement('div');
     dock.className = 'atlas-action-dock-v2';
     dock.dataset.atlasV2 = '1';
 
@@ -208,11 +214,13 @@ v2 = r'''
     ask.type = 'button';
     ask.className = 'btn-primary atlas-v2-ask';
     ask.textContent = 'Ask Atlas';
+    ask.setAttribute('aria-label', 'Ask Atlas using the selected local Ollama model');
 
     const goose = document.createElement('button');
     goose.type = 'button';
     goose.className = 'atlas-v2-goose';
     goose.textContent = 'Goose brief';
+    goose.setAttribute('aria-label', 'Investigate the selected Atlas context with Goose');
 
     const hint = document.createElement('span');
     hint.className = 'atlas-v2-hint';
@@ -228,20 +236,22 @@ v2 = r'''
     textarea.insertAdjacentElement('afterend', dock);
     dock.insertAdjacentElement('afterend', output);
 
-    const buildBody = (allowDefault) => {
+    const bodyFor = (allowDefault) => {
       const question = textarea.value.trim();
       const node = nodeFrom(inspector || root);
       const model = String((inspector || root).querySelector('select')?.value || '').trim();
       const body = {};
       if (question) body.question = question;
-      else if (allowDefault) body.question = node ? `Investigate ${node}. Produce a concise engineering brief with evidence, likely failure modes, and the next verification steps.` : 'Investigate the current Atlas context and produce a concise engineering brief with evidence and next verification steps.';
+      else if (allowDefault) body.question = node
+        ? `Investigate ${node}. Produce a concise engineering brief with evidence, likely failure modes, and the next verification steps.`
+        : 'Investigate the current Atlas context and produce a concise engineering brief with evidence and next verification steps.';
       if (node) body.node = node;
       if (model && !/^auto\b/i.test(model)) body.model = model;
       return body;
     };
 
-    const run = async (kind) => {
-      const body = buildBody(kind === 'goose');
+    const run = async kind => {
+      const body = bodyFor(kind === 'goose');
       if (!body.question) {
         output.hidden = false;
         output.dataset.state = 'error';
@@ -249,35 +259,38 @@ v2 = r'''
         textarea.focus();
         return;
       }
-      ask.disabled = goose.disabled = true;
+
+      ask.disabled = true;
+      goose.disabled = true;
       output.hidden = false;
       output.dataset.state = 'loading';
       output.textContent = kind === 'goose' ? 'Starting Goose investigation…' : 'Asking Atlas…';
+
       try {
         const endpoint = kind === 'goose' ? '/api/atlas/goose' : '/api/atlas/ask';
-        const result = await post(endpoint, body);
+        const payload = await post(endpoint, body);
         output.dataset.state = 'success';
-        output.textContent = answerText(result) || (kind === 'goose' ? 'Goose completed without returning text.' : 'Atlas returned no text.');
-      } catch (e) {
+        output.textContent = answerText(payload) || (kind === 'goose' ? 'Goose completed without returning text.' : 'Atlas returned no text.');
+      } catch (error) {
         output.dataset.state = 'error';
-        output.textContent = e?.message || `${kind === 'goose' ? 'Goose' : 'Atlas'} request failed.`;
+        output.textContent = error?.message || `${kind === 'goose' ? 'Goose' : 'Atlas'} request failed.`;
       } finally {
-        ask.disabled = goose.disabled = false;
+        ask.disabled = false;
+        goose.disabled = false;
       }
     };
 
     ask.addEventListener('click', () => run('ask'));
     goose.addEventListener('click', () => run('goose'));
 
-    // v1 already owns the keyboard shortcut when present. Bind it only for installations without v1.
-    if (!document.documentElement.innerHTML.includes('atlas-ui-normalization-v1')) {
-      textarea.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-          e.preventDefault();
-          run('ask');
-        }
-      });
-    }
+    // Capture phase intentionally wins over the anonymous v1 keydown handler, preventing duplicate POSTs.
+    textarea.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        run('ask');
+      }
+    }, true);
   }
 
   function normalizeLayout() {
@@ -290,7 +303,7 @@ v2 = r'''
       const visible = [...parent.children].filter(x => !x.hidden);
       if (parent.getBoundingClientRect().width >= 850 && visible.length >= 2 && visible.length <= 4) {
         parent.classList.add('atlas-grid-v2');
-        break;
+        return;
       }
       parent = parent.parentElement;
     }
@@ -304,8 +317,12 @@ v2 = r'''
 
   function boot() {
     normalize();
-    new MutationObserver(() => queueMicrotask(normalize)).observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:['class']});
+    const strip = document.getElementById('uxPageStrip');
+    if (strip) new MutationObserver(() => queueMicrotask(normalize)).observe(strip, {childList:true});
+    const root = page();
+    if (root) new MutationObserver(() => queueMicrotask(normalize)).observe(root, {attributes:true, attributeFilter:['class'], childList:true, subtree:true});
     window.addEventListener('hashchange', () => setTimeout(normalize, 0));
+    document.addEventListener('localai:viewchange', () => setTimeout(normalize, 0));
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once:true});
@@ -330,11 +347,13 @@ if 'atlas-ui-normalization-v2-goose1' not in css:
 #architecture .atlas-grid-v2>*{min-width:0}
 #architecture .atlas-inspector-v2{position:sticky!important;top:116px;align-self:start;max-height:calc(100vh - 136px);overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
 #architecture .atlas-composer-v2{position:sticky;bottom:0;z-index:8;margin-top:14px;padding:12px 0 4px;background:linear-gradient(to bottom,transparent,var(--bg,#0b1118) 18px)}
+#architecture .atlas-submit-row,#architecture .atlas-answer{display:none!important}
 #architecture .atlas-action-dock-v2{display:flex;align-items:center;gap:8px;margin-top:10px}
 #architecture .atlas-action-dock-v2 button{min-height:44px;padding:0 14px}
 #architecture .atlas-v2-goose{border:1px solid var(--line,rgba(255,255,255,.16));border-radius:9px;background:var(--panel,rgba(255,255,255,.04));color:inherit;font:inherit;cursor:pointer}
 #architecture .atlas-v2-hint{margin-left:auto;color:var(--muted,#8b98aa);font-size:12px;white-space:nowrap}
 #architecture .atlas-v2-output{margin-top:10px;padding:12px 14px;border:1px solid var(--line,rgba(255,255,255,.12));border-radius:10px;background:var(--panel,rgba(255,255,255,.03));white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;max-height:320px;overflow:auto}
+#architecture .atlas-v2-output[data-state="loading"]{color:var(--muted,#8b98aa)}
 #architecture .atlas-v2-output[data-state="error"]{border-color:color-mix(in srgb,var(--bad,#ff6b6b) 45%,var(--line,rgba(255,255,255,.12)))}
 #architecture .atlas-v2-output[data-state="success"]{border-color:color-mix(in srgb,var(--good,#65d6a5) 40%,var(--line,rgba(255,255,255,.12)))}
 #architecture .atlas-action-dock-v2 button:focus-visible,#uxPageStrip [data-strip-view="architecture"]:focus-visible{outline:2px solid currentColor;outline-offset:2px}
@@ -349,19 +368,19 @@ else:
     print('INFO: Atlas v2 CSS already present')
 
 sw, sw_nl, sw_bom = read(sw_path)
-m = re.search(r"(const\s+CACHE\s*=\s*['\"])([^'\"]+)(['\"])", sw)
-if not m:
+match = re.search(r"(const\s+CACHE\s*=\s*['\"])([^'\"]+)(['\"])", sw)
+if not match:
     raise SystemExit('ERROR: service-worker CACHE declaration not found')
-cache = m.group(2)
+cache = match.group(2)
 if 'atlasui3-goose1' not in cache:
     updated = re.sub(r'-atlasui\d+(?:-goose\d+)?$', '', cache) + '-atlasui3-goose1'
-    sw = sw[:m.start(2)] + updated + sw[m.end(2):]
+    sw = sw[:match.start(2)] + updated + sw[match.end(2):]
     write(sw_path, sw, sw_nl, sw_bom)
     print(f'PASS: service-worker cache bumped to {updated}')
 else:
     print('INFO: service-worker cache already current')
 
-test = r'''\'use strict\';
+test = r'''"use strict";
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -372,11 +391,12 @@ const read = rel => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 test('Architecture UI is Node-safe and exposes Ask Atlas + Goose', () => {
   const js = read('app/public/architecture.js');
   assert.match(js, /atlas-ui-normalization-v2-goose1/);
-  assert.match(js, /typeof document !== 'undefined'|typeof document === 'undefined'/);
+  assert.match(js, /typeof document/);
   assert.match(js, /Ask Atlas/);
   assert.match(js, /Goose brief/);
   assert.match(js, /\/api\/atlas\/ask/);
   assert.match(js, /\/api\/atlas\/goose/);
+  assert.match(js, /stopImmediatePropagation/);
 });
 
 test('Architecture UI keeps a stable responsive inspector and visible action dock', () => {
@@ -392,7 +412,6 @@ test('Architecture UI keeps a stable responsive inspector and visible action doc
 test('Architecture remains a System navigation destination', () => {
   const js = read('app/public/architecture.js');
   assert.match(js, /data-strip-view/);
-  assert.match(js, /architecture/);
   assert.match(js, /aria-current/);
 });
 
@@ -428,10 +447,10 @@ finally {
 
 $Goose = Get-Command goose -ErrorAction SilentlyContinue
 if ($Goose) {
-    Write-Host "Goose CLI    READY ($($Goose.Source))"
+    Write-Host "Goose CLI     READY ($($Goose.Source))"
 }
 else {
-    Write-Warning 'Goose CLI is not on this PowerShell PATH. The UI action is installed; Atlas will report Goose unavailable until the CLI is installed/visible to the Atlas process.'
+    Write-Warning 'Goose CLI is not on this PowerShell PATH. The Goose button is installed; Atlas will report Goose unavailable until the CLI is installed and visible to the Atlas process.'
 }
 
 if ($NoPromote) {
@@ -445,12 +464,13 @@ if (-not (Test-Path -LiteralPath $LiveRoot)) {
 
 Write-Host "`n=== Promote validated UI ===" -ForegroundColor Cyan
 $LiveBackup = "C:\LocalAI\.deploy\atlas-ui-repair-$Stamp"
-New-Item -ItemType Directory -Force -Path (Join-Path $LiveBackup 'live\public') | Out-Null
+$LiveBackupPublic = Join-Path $LiveBackup 'live\public'
+New-Item -ItemType Directory -Force -Path $LiveBackupPublic | Out-Null
 
 foreach ($name in @('architecture.js','architecture.css','sw.js')) {
     $source = Join-Path $LiveRoot "public\$name"
     if (Test-Path -LiteralPath $source) {
-        Copy-Item -LiteralPath $source -Destination (Join-Path $LiveBackup "live\public\$name") -Force
+        Copy-Item -LiteralPath $source -Destination (Join-Path $LiveBackupPublic $name) -Force
     }
 }
 
@@ -486,16 +506,16 @@ Write-Host 'Appliance     READY'
 if ($LASTEXITCODE -ne 0) { throw 'Container does not see the repaired Atlas assets.' }
 Write-Host 'Container     READY'
 
-$directJs = & curl.exe -fsS http://127.0.0.1:3080/architecture.js
+$directJs = (& curl.exe -fsS http://127.0.0.1:3080/architecture.js) -join "`n"
 if ($LASTEXITCODE -ne 0 -or $directJs -notmatch 'atlas-ui-normalization-v2-goose1') { throw 'Direct appliance architecture.js is stale.' }
 Write-Host 'Direct HTTP   READY'
 
-$httpsJs = & curl.exe -kfsS https://localai.home.arpa/architecture.js
-$httpsCss = & curl.exe -kfsS https://localai.home.arpa/architecture.css
-$httpsSw = & curl.exe -kfsS https://localai.home.arpa/sw.js
+$httpsJs = (& curl.exe -kfsS https://localai.home.arpa/architecture.js) -join "`n"
 if ($LASTEXITCODE -ne 0 -or $httpsJs -notmatch 'atlas-ui-normalization-v2-goose1') { throw 'HTTPS architecture.js is stale.' }
-if ($httpsCss -notmatch 'atlas-ui-normalization-v2-goose1') { throw 'HTTPS architecture.css is stale.' }
-if ($httpsSw -notmatch 'atlasui3-goose1') { throw 'HTTPS service worker is stale.' }
+$httpsCss = (& curl.exe -kfsS https://localai.home.arpa/architecture.css) -join "`n"
+if ($LASTEXITCODE -ne 0 -or $httpsCss -notmatch 'atlas-ui-normalization-v2-goose1') { throw 'HTTPS architecture.css is stale.' }
+$httpsSw = (& curl.exe -kfsS https://localai.home.arpa/sw.js) -join "`n"
+if ($LASTEXITCODE -ne 0 -or $httpsSw -notmatch 'atlasui3-goose1') { throw 'HTTPS service worker is stale.' }
 Write-Host 'HTTPS         READY'
 
 Write-Host "`n=========================================" -ForegroundColor Green
