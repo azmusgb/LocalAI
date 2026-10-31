@@ -115,6 +115,8 @@ const piHub = require('./pi-hub').createPiHub();
 const materialsClient = require('./materials').createMaterialsClient();
 // The display's Clear plate goes through Local AI to Bambuddy (app/bambuddy-control.js).
 const bambuddyControl = require('./bambuddy-control').createBambuddyControl();
+const { plateClearRefusal, clearPlateMessage } = require('./bambuddy-control');
+let plateClearing = false; // an overlapping clear-plate request is refused while one is in flight
 // Pairing the Workshop display from its touchscreen (app/display-pairing.js).
 const displayPairing = require('./display-pairing').createDisplayPairing({
   dataDir: DATA_DIR, tlsName: process.env.LOCALAI_NAME || 'localai.home.arpa',
@@ -905,8 +907,17 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/display/printer/clear') {
       req.resume();
       if (!displayKey.authorized(req) && !claudeChat.deviceFor(req) && !claudeChat.macAuthorized(req)) return json(res, 401, { error: 'Only the Workshop display or a signed-in device can clear the plate.' });
-      const r = await bambuddyControl.clearPlate();
-      try { displayMessages.post({ ...require('./bambuddy-control').clearPlateMessage(r), chime: false, action: { type: 'show', page: 'printer' } }, 'printer-control'); } catch { /* feedback must not retry or undo an accepted command */ }
+      // One clear at a time, and only while the printer is finished or failed and waiting for it (as Pi Hub does).
+      if (plateClearing) return json(res, 409, { error: 'Already clearing' });
+      plateClearing = true;
+      let r;
+      try {
+        const state = await bambuddyControl.status();
+        const refusal = state.reason === 'off' ? null : plateClearRefusal(state);
+        if (refusal) return json(res, 409, { error: refusal });
+        r = await bambuddyControl.clearPlate();
+      } finally { plateClearing = false; }
+      try { displayMessages.post({ ...clearPlateMessage(r), chime: false, action: { type: 'show', page: 'printer' } }, 'printer-control'); } catch { /* feedback must not retry or undo an accepted command */ }
       recordActivity('printer', r.ok ? 'Plate cleared from the Workshop display' : 'Clear plate from the Workshop display did not go through', `Bambuddy: plate ${r.plate}, errors ${r.errors}`, { by: 'Workshop display' });
       return json(res, r.ok ? 200 : 502, r);
     }

@@ -51,3 +51,47 @@ test('three missed runs show one "isn\'t answering" notice, then one "back" noti
   server.close();
   assert.match(back.stdout, /Local AI is back/);
 });
+
+test('a 5xx from a live proxy counts as a miss; a 4xx counts as answered', { skip: !python, timeout: 60000 }, async () => {
+  let code = 502;
+  const server = http.createServer((req, res) => { req.resume(); req.on('end', () => { res.statusCode = code; res.end('{}'); }); });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const dir = home();
+    const outs = [];
+    for (let i = 0; i < 3; i++) outs.push(await run(dir, url));
+    assert.deepEqual(outs.map((o) => o.stdout.includes("Local AI isn't answering")), [false, false, true]);
+    assert.match(outs[0].stderr, /HTTP 502/);
+    code = 401;
+    const answered = await run(dir, url);
+    assert.match(answered.stdout, /Local AI is back/);
+    assert.match(answered.stderr, /HTTP 401/);
+    const state = JSON.parse(fs.readFileSync(path.join(dir, 'Library', 'Application Support', 'LocalAI', 'mac-watch.json'), 'utf8'));
+    assert.equal(state.misses, 0);
+  } finally { server.close(); }
+});
+
+test('a missing CA file for an https URL is reported on stderr', { skip: !python, timeout: 30000 }, async () => {
+  const dir = home();
+  const out = await run(dir, 'https://127.0.0.1:9');
+  assert.match(out.stderr, /CA file not found/);
+  assert.equal(out.status, 0);
+});
+
+test('an osascript failure or timeout still saves state', { skip: !python, timeout: 60000 }, async () => {
+  const dir = home();
+  const bin = path.join(dir, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'osascript'), '#!/bin/sh\nexit 3\n', { mode: 0o755 });
+  // Real notifications (no MAC_WATCH_PRINT_NOTICES), with the failing osascript first on PATH.
+  const env = { HOME: dir, PATH: `${bin}:${process.env.PATH}`, LOCALAI_URL: 'http://127.0.0.1:9' };
+  const last = [];
+  for (let i = 0; i < 3; i++) last[0] = await new Promise((resolve) => execFile(python, ['-I', SCRIPT], { env, encoding: 'utf8', timeout: 30000 }, (error, stdout, stderr) => resolve({ status: error ? error.code ?? 1 : 0, stderr })));
+  assert.equal(last[0].status, 0);
+  assert.match(last[0].stderr, /notification failed/);
+  const stateFile = path.join(dir, 'Library', 'Application Support', 'LocalAI', 'mac-watch.json');
+  const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  assert.equal(state.misses, 3);
+  assert.equal(state.notified, true);
+});

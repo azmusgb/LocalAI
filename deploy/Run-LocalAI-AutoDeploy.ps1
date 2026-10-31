@@ -146,6 +146,18 @@ $target = $target.Trim()
 $running = Get-RunningCommit
 $stopped = $null
 $stoppedNote = $null
+# A deploy that failed rolled back, so the running commit is the old one and every poll would see the same target as
+# new. Skip a target that already failed (failState holds its 12-character SHA); a newer release commit still deploys.
+if ($target -and $target -ne $running -and (Test-Path $failState)) {
+    $failedSha = (Get-Content $failState -Raw).Trim()
+    $targetShort = $target.Substring(0, [Math]::Min(12, $target.Length))
+    if ($failedSha -and $failedSha -eq $targetShort) {
+        $line = "Skipping ${targetShort}: failed before; waiting for a new release"
+        Write-Output $line
+        Write-AutoDeployLog ($started.ToString('s') + ' exit=0 ' + $targetShort + ' ' + $line) $null
+        exit 0
+    }
+}
 if ($target -and $target -ne $running) {
     # Something new to deploy. Wait while the appliance is running work a restart would stop.
     $busy = Get-ApplianceBusy

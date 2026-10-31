@@ -220,6 +220,11 @@ every sign-in mode, because it acts on the printer. The answer says how each ste
 turned the key down), `no answer` or `HTTP <code>`. Each call is recorded in Activity. Both Bambuddy keys are passed to
 the container from `stack.env` (`deploy/stack/compose.yml`); a change there needs `docker compose up -d`.
 
+Before posting, Local AI reads `GET /api/v1/printers/<n>/status` (5 s timeout; key `LOCALAI_BAMBUDDY_STATUS_KEY`, else
+`LOCALAI_MATERIALS_KEY`, else the control key) and answers 409 with a plain message unless the printer is connected, in
+`FINISH` or `FAILED`, and `awaiting_plate_clear` is true (Pi Hub's rule). A second request while one is in flight gets
+409 "Already clearing".
+
 ## Pairing (Workshop OS 12.7)
 
 Instead of the Mac's `set-key.sh` and `configure_localai_feed.py`: in Local AI, **Services › Workshop display › Pair
