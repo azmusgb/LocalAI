@@ -93,12 +93,14 @@ function showView(id){
   if(!$(id))return;
   if(state.view==='ask' && id!=='ask' && state.chatPhase==='streaming') abortStream('Stream stopped when leaving Ask');
   const first=!state.viewShown,from=document.activeElement;state.viewShown=true;
+  if(state.view==='deployments'&&id!=='deployments')window.LocalAIDeployments?.deactivate();
   state.view=id;qsa('.view').forEach(x=>x.classList.toggle('active',x.id===id));
   document.title=window.LocalAIViews?.title(id)||'Local AI';
   announcePage(id,first,from);qsa('.navbtn').forEach(x=>x.classList.toggle('active',x.dataset.view===id));
   if(id==='library')loadLibrary(); if(id==='activity')loadActivity(); if(id==='create')loadCheckpoints();
   window.scrollTo({top:0,behavior:'instant'});
   if(id==='home')window.LocalAIHome?.activate();
+  if(id==='deployments')window.LocalAIDeployments?.activate();
 
   if(id==='projects') loadProjects?.().catch(()=>{});
   if(id==='knowledge') loadKnowledge?.().catch(()=>{});
@@ -940,3 +942,4 @@ window.LocalAIOpen=function(url){
   if(open){history.replaceState(null,'',/[?&]watch=1\b/.test(location.search)?'/?watch=1':'/');let tries=0;const go=()=>{if(typeof window.showView==='function'&&(!open.startsWith('run:')||window.LocalAIRuns))window.LocalAIOpen('/?open='+encodeURIComponent(open));else if(tries++<50)setTimeout(go,100)};go()}
   navigator.serviceWorker?.addEventListener?.('message',e=>{if(e.data?.type==='localai-open')window.LocalAIOpen(e.data.url)});
 })();
+
