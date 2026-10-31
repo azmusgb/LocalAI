@@ -66,7 +66,12 @@ def notify(title, text):
         print(f"NOTICE {title}: {text}")
         return
     script = f'display notification {json.dumps(text)} with title {json.dumps(title)}'
-    subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10)
+    try:
+        out = subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10)
+        if out.returncode != 0:
+            print(f"mac-watch: notification failed (osascript exit {out.returncode})", file=sys.stderr)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"mac-watch: notification failed ({type(e).__name__})", file=sys.stderr)
 
 
 def main():
@@ -83,14 +88,24 @@ def main():
     body = json.dumps({"name": os.uname().nodename.split(".")[0], "disk": disk(), "bridge": bridge()}).encode()
     req = urllib.request.Request(url.rstrip("/") + "/api/watch/heartbeat", data=body, method="POST",
                                  headers={"Content-Type": "application/json", "X-LocalAI-Mac-Key": key})
-    ctx = ssl.create_default_context(cafile=ca) if url.startswith("https://") and os.path.exists(ca) else None
+    ctx = None
+    if url.startswith("https://"):
+        if os.path.exists(ca):
+            ctx = ssl.create_default_context(cafile=ca)
+        else:
+            print(f"mac-watch: CA file not found at {ca}; HTTPS verification will fail. Run host/claude-chat/install.sh", file=sys.stderr)
     state = load_json(STATE, {"misses": 0, "notified": False})
     try:
         with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
             ok = resp.status == 200
     except urllib.error.HTTPError as e:
-        ok = True  # the appliance answered; a 401 is a key problem, not an outage
-        print(f"mac-watch: heartbeat refused (HTTP {e.code})", file=sys.stderr)
+        if e.code >= 500:
+            # A live proxy (Caddy) answers 502/503/504 while the appliance behind it is down: that is an outage.
+            ok = False
+            print(f"mac-watch: appliance not answering behind the proxy (HTTP {e.code})", file=sys.stderr)
+        else:
+            ok = True  # the appliance answered; a 401 is a key problem, not an outage
+            print(f"mac-watch: heartbeat refused (HTTP {e.code})", file=sys.stderr)
     except (urllib.error.URLError, OSError):
         ok = False
 
