@@ -3,20 +3,35 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-MARKER = "atlas-investigation-hardening-v1"
-BUDGET_MARKER = "atlas-investigation-context-budget-v1"
+MARKER = "atlas-investigation-hardening-v2"
+BUDGET_MARKER = "atlas-model-evidence-budget-v1"
 
-BUDGET_BLOCK = r'''# atlas-investigation-context-budget-v1
-def _goose_evidence_max_chars() -> int:
+BUDGET_BLOCK = r'''# atlas-model-evidence-budget-v1
+def _model_evidence_max_chars() -> int:
     raw = os.environ.get(
-        "ATLAS_GOOSE_EVIDENCE_MAX_CHARS",
-        "36000",
+        "ATLAS_MODEL_EVIDENCE_MAX_CHARS",
+        os.environ.get(
+            "ATLAS_GOOSE_EVIDENCE_MAX_CHARS",
+            "36000",
+        ),
     ).strip()
     try:
         value = int(raw)
     except ValueError:
         value = 36000
     return max(12000, min(value, 90000))
+
+
+def _ollama_timeout_seconds() -> float:
+    raw = os.environ.get(
+        "ATLAS_OLLAMA_TIMEOUT_SECONDS",
+        "240",
+    ).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 240
+    return float(max(30, min(value, 300)))
 
 
 def _bounded_selected_node(value: Any, per_list: int = 8) -> Any:
@@ -31,7 +46,44 @@ def _bounded_selected_node(value: Any, per_list: int = 8) -> Any:
     return result
 
 
-def _investigation_evidence_context(
+def _bounded_json_value(
+    value: Any,
+    *,
+    string_limit: int = 1200,
+    list_limit: int = 8,
+    depth: int = 0,
+) -> Any:
+    if depth > 8:
+        text = str(value)
+        return text[:string_limit]
+    if isinstance(value, str):
+        if len(value) <= string_limit:
+            return value
+        return value[:string_limit] + "…[truncated]"
+    if isinstance(value, list):
+        return [
+            _bounded_json_value(
+                item,
+                string_limit=string_limit,
+                list_limit=list_limit,
+                depth=depth + 1,
+            )
+            for item in value[:list_limit]
+        ]
+    if isinstance(value, dict):
+        return {
+            str(key): _bounded_json_value(
+                item,
+                string_limit=string_limit,
+                list_limit=list_limit,
+                depth=depth + 1,
+            )
+            for key, item in value.items()
+        }
+    return value
+
+
+def _bounded_model_evidence(
     graph: dict[str, Any],
     findings: list[dict[str, Any]],
     question: str,
@@ -74,16 +126,23 @@ def _investigation_evidence_context(
             8,
         )
 
-    max_chars = _goose_evidence_max_chars()
+    max_chars = _model_evidence_max_chars()
     result["evidenceBudget"] = {
         "maxSerializedChars": max_chars,
         "available": available,
         "included": {},
         "truncated": False,
+        "serializedChars": 0,
     }
 
     def encoded_length() -> int:
-        return len(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+        return len(
+            json.dumps(
+                result,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        )
 
     trim_order = [
         "changedNodes",
@@ -110,29 +169,69 @@ def _investigation_evidence_context(
             3,
         )
 
-    # Final defensive bound. This path should be rare, but it prevents an
-    # unexpectedly verbose finding or node from defeating the model budget.
     if encoded_length() > max_chars:
-        for key in trim_order:
-            values = result.get(key)
-            if isinstance(values, list):
-                result[key] = values[:1]
-        result["selectedNode"] = _bounded_selected_node(
-            result.get("selectedNode"),
-            1,
+        compacted = _bounded_json_value(
+            {
+                key: value
+                for key, value in result.items()
+                if key != "evidenceBudget"
+            },
+            string_limit=800,
+            list_limit=4,
         )
+        result = dict(compacted) if isinstance(compacted, dict) else {"atlasStats": {}}
+        result["evidenceBudget"] = {
+            "maxSerializedChars": max_chars,
+            "available": available,
+            "included": {},
+            "truncated": True,
+            "serializedChars": 0,
+        }
+
+    if encoded_length() > max_chars:
+        result = {
+            "atlasStats": _bounded_json_value(
+                full.get("atlasStats", {}),
+                string_limit=400,
+                list_limit=2,
+            ),
+            "selectedNode": _bounded_json_value(
+                _bounded_selected_node(full.get("selectedNode"), 1),
+                string_limit=400,
+                list_limit=2,
+            ) if "selectedNode" in full else None,
+            "topFindings": _bounded_json_value(
+                full.get("topFindings", [])[:1],
+                string_limit=400,
+                list_limit=2,
+            ),
+            "matchingNodes": _bounded_json_value(
+                full.get("matchingNodes", [])[:1],
+                string_limit=400,
+                list_limit=2,
+            ),
+            "evidenceBudget": {
+                "maxSerializedChars": max_chars,
+                "available": available,
+                "included": {},
+                "truncated": True,
+                "serializedChars": 0,
+            },
+        }
 
     included = {
         key: len(result.get(key, []))
         for key in caps
         if isinstance(result.get(key), list)
     }
-    result["evidenceBudget"]["included"] = included
-    result["evidenceBudget"]["serializedChars"] = encoded_length()
-    result["evidenceBudget"]["truncated"] = any(
+    budget = result["evidenceBudget"]
+    budget["included"] = included
+    budget["truncated"] = bool(budget.get("truncated")) or any(
         included.get(key, 0) < available.get(key, 0)
         for key in caps
     )
+    budget["serializedChars"] = encoded_length()
+    budget["serializedChars"] = encoded_length()
     return result
 '''
 
@@ -157,6 +256,32 @@ def write_text(path: Path, text: str, newline: str, bom: bool):
     path.write_bytes(raw)
 
 
+def _replace_evidence_call(text: str, function_name: str, next_function: str) -> str:
+    start = text.find(f"def {function_name}(")
+    end = text.find(f"\ndef {next_function}", start)
+    if start < 0 or end < 0:
+        raise RuntimeError(f"Could not isolate {function_name} for evidence budgeting.")
+    block = text[start:end]
+    old = '''    evidence = build_evidence_context(
+        graph,
+        findings,
+        question,
+        selected_node=selected_node,
+    )'''
+    new = '''    evidence = _bounded_model_evidence(
+        graph,
+        findings,
+        question,
+        selected_node=selected_node,
+    )'''
+    if new in block:
+        return text
+    if old not in block:
+        raise RuntimeError(f"Could not locate evidence builder call inside {function_name}.")
+    block = block.replace(old, new, 1)
+    return text[:start] + block + text[end:]
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: harden.py REPO_ROOT")
@@ -173,35 +298,28 @@ def main() -> int:
         if at < 0:
             raise RuntimeError("Could not locate build_goose_brief for context budgeting.")
         text = text[:at] + BUDGET_BLOCK.rstrip() + "\n\n\n" + text[at:]
-        print("PASS: deterministic Goose evidence budget added")
+        print("PASS: deterministic model evidence budget added")
     else:
-        print("INFO: Goose evidence budget already present")
+        print("INFO: model evidence budget already present")
 
-    old_evidence = '''    evidence = build_evidence_context(
-        graph,
-        findings,
-        question,
-        selected_node=selected_node,
-    )'''
-    new_evidence = '''    evidence = _investigation_evidence_context(
-        graph,
-        findings,
-        question,
-        selected_node=selected_node,
-    )'''
-    build_at = text.find("def build_goose_brief(")
-    next_def = text.find("\ndef ollama_status", build_at)
-    if build_at < 0 or next_def < 0:
-        raise RuntimeError("Could not isolate build_goose_brief for evidence replacement.")
-    build_block = text[build_at:next_def]
-    if new_evidence not in build_block:
-        if old_evidence not in build_block:
-            raise RuntimeError("Could not locate Goose evidence builder call.")
-        build_block = build_block.replace(old_evidence, new_evidence, 1)
-        text = text[:build_at] + build_block + text[next_def:]
+    before = text
+    text = _replace_evidence_call(text, "ask_ollama", "goose_status")
+    if text != before:
+        print("PASS: Ask Atlas now uses bounded deterministic evidence")
+    before = text
+    text = _replace_evidence_call(text, "build_goose_brief", "ollama_status")
+    if text != before:
         print("PASS: Goose now uses bounded deterministic evidence")
-    else:
-        print("INFO: Goose already uses bounded deterministic evidence")
+
+    ask_at = text.find("def ask_ollama(")
+    ask_end = text.find("\ndef goose_status", ask_at)
+    ask_block = text[ask_at:ask_end]
+    if "timeout=_ollama_timeout_seconds()" not in ask_block:
+        if "timeout=120.0" not in ask_block:
+            raise RuntimeError("Could not locate Ask Atlas Ollama timeout.")
+        ask_block = ask_block.replace("timeout=120.0", "timeout=_ollama_timeout_seconds()", 1)
+        text = text[:ask_at] + ask_block + text[ask_end:]
+        print("PASS: Ask Atlas Ollama timeout is configurable and bounded")
 
     if "ATLAS_GOOSE_BIN" not in text:
         old = '    executable = shutil.which("goose")\n\n    if executable is None:'
@@ -216,7 +334,7 @@ def main() -> int:
         if old not in text:
             raise RuntimeError("Could not locate goose_status executable discovery.")
         text = text.replace(old, new, 1)
-        print("PASS: Goose discovery now supports ATLAS_GOOSE_BIN and C:\\LocalAI\\tools fallback")
+        print("PASS: Goose discovery supports ATLAS_GOOSE_BIN and C:\\LocalAI\\tools fallback")
     else:
         print("INFO: explicit Goose binary discovery already present")
 
@@ -229,7 +347,7 @@ def main() -> int:
         if env_anchor not in text:
             raise RuntimeError("Could not locate Goose child environment return.")
         text = text.replace(env_anchor, replacement, 1)
-        print("PASS: Goose child runs in smart-approval mode with bounded turns")
+        print("PASS: Goose child uses smart approval and bounded turns")
 
     old_command = '[executable, "run", "--text", prompt]'
     new_command = '''[
@@ -243,6 +361,13 @@ def main() -> int:
                 os.environ.get("ATLAS_GOOSE_MAX_TURNS", "24"),
                 "--max-tool-repetitions",
                 "3",
+                "--system",
+                (
+                    "Read-only architecture investigation. Never write, edit, "
+                    "delete, rename, create, install, commit, or change "
+                    "configuration. Use tools only to inspect existing "
+                    "repository evidence."
+                ),
                 "--text",
                 prompt,
             ]'''
@@ -250,7 +375,9 @@ def main() -> int:
         if old_command not in text:
             raise RuntimeError("Could not locate Goose run command for restricted profile.")
         text = text.replace(old_command, new_command, 1)
-        print("PASS: Goose run is stateless and limited to the Developer builtin")
+        print("PASS: Goose run is stateless, restricted-profile, and system-prompted read-only")
+    elif '"--system"' not in text:
+        raise RuntimeError("Restricted Goose command exists without the required read-only system instruction.")
     else:
         print("INFO: restricted Goose run command already present")
 
