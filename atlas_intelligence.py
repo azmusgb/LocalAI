@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import hmac
+import http.client
 import json
 import os
 import re
@@ -20,7 +22,8 @@ from urllib.request import Request, urlopen
 
 
 ROOT = Path(__file__).resolve().parent
-ATLAS_HTML = ROOT / "system-atlas.html"
+# quick_arch.py writes the graph here (a folder, so the container's read-only mount sees each rebuild).
+ATLAS_HTML = Path(os.environ.get("ATLAS_GRAPH") or (ROOT / ".atlas" / "graph" / "system-atlas.html"))
 INVESTIGATION_DIR = ROOT / ".atlas" / "investigations"
 
 DEFAULT_HOST = "127.0.0.1"
@@ -37,6 +40,21 @@ DEFAULT_OLLAMA_MODEL = os.environ.get(
 ).strip()
 
 MAX_BODY_BYTES = 64 * 1024
+
+# Who may call the service. Host names it answers to (a DNS-rebinding page arrives with its own name, so it is
+# refused); ATLAS_ALLOWED_HOSTS adds more, comma-separated. ATLAS_TOKEN, when set, is a secret only Local AI's proxy
+# sends (X-Atlas-Token) and every POST must carry it.
+ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]", "host.docker.internal"} | {
+    h.strip().lower() for h in os.environ.get("ATLAS_ALLOWED_HOSTS", "").split(",") if h.strip()
+}
+ATLAS_TOKEN = os.environ.get("ATLAS_TOKEN", "").strip()
+
+
+def host_name(value: str) -> str:
+    value = (value or "").strip().lower()
+    if value.startswith("["):
+        return value.split("]", 1)[0] + "]"
+    return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
 MAX_QUESTION_CHARS = 6000
 ATLAS_INTELLIGENCE_VERSION = "1.1"
 
@@ -1060,6 +1078,14 @@ def request_json(
     except URLError as error:
         raise AtlasError(
             f"Unable to reach {url}: {error.reason}",
+            status=HTTPStatus.BAD_GATEWAY,
+            code="upstream_unavailable",
+        ) from error
+
+    # A stalled or dropped read (a model still loading) is the same as unreachable: the caller degrades.
+    except (TimeoutError, OSError, http.client.HTTPException) as error:
+        raise AtlasError(
+            f"No complete answer from {url}: {error}",
             status=HTTPStatus.BAD_GATEWAY,
             code="upstream_unavailable",
         ) from error
@@ -2797,8 +2823,26 @@ class AtlasHandler(
             status=HTTPStatus.INTERNAL_SERVER_ERROR,
         )
 
+    def check_caller(self, post: bool) -> None:
+        """Refuse what a browser page elsewhere could send: an unknown Host (DNS rebinding), a foreign Origin, a POST
+        that isn't JSON (a CORS 'simple' request), or a POST without the proxy's token when one is configured."""
+        host = host_name(self.headers.get("Host", ""))
+        if host not in ALLOWED_HOSTS:
+            raise AtlasError("Unknown Host.", status=HTTPStatus.FORBIDDEN, code="forbidden_host")
+        origin = self.headers.get("Origin")
+        if origin is not None and host_name(urlparse(origin).netloc) != host:
+            raise AtlasError("Cross-origin request refused.", status=HTTPStatus.FORBIDDEN, code="forbidden_origin")
+        if post:
+            kind = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+            if kind != "application/json":
+                raise AtlasError("POST must be application/json.", status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                                 code="unsupported_media_type")
+            if ATLAS_TOKEN and not hmac.compare_digest(self.headers.get("X-Atlas-Token", ""), ATLAS_TOKEN):
+                raise AtlasError("Missing or wrong Atlas token.", status=HTTPStatus.UNAUTHORIZED, code="unauthorized")
+
     def do_GET(self) -> None:
         try:
+            self.check_caller(post=False)
             self._do_get()
         except Exception as error:
             self.handle_error(error)
@@ -2920,6 +2964,7 @@ class AtlasHandler(
 
     def do_POST(self) -> None:
         try:
+            self.check_caller(post=True)
             self._do_post()
         except Exception as error:
             self.handle_error(error)

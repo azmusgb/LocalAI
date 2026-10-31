@@ -40,3 +40,7 @@ tests/visual/*/__results__/
 
 # Docs and host scripts the deploy copies in for missions (app/mission-evidence.js)
 app/repo-context/
+
+# System Atlas: generated graph, backups and Goose briefs (quick_arch.py, atlas_intelligence.py)
+.atlas/
+/system-atlas.html

@@ -30,6 +30,8 @@ const GUARDED_WRITES = [
   /^\/api\/memory\/(add|update|delete)$/, /^\/api\/models\/(pull|delete|routing)$/,
   // The print lab's sync and photo uploads: only the Mac writes them (app/print-lab.js also checks its key).
   /^\/api\/lab\//,
+  // System Atlas: asking runs a local model for minutes; a Goose brief writes a file on the PC.
+  /^\/api\/atlas\/(ask|goose)$/,
 ];
 const guarded = (p, method = 'POST') => GUARDED.some(re => re.test(p))
   || (method !== 'GET' && method !== 'HEAD' && GUARDED_WRITES.some(re => re.test(p)));

@@ -276,7 +276,13 @@ async function refresh(){
     state.graph=graph;state.summary=summary;
     renderKpis();providerBadge();renderMap();renderFindings();renderSearchResults();
     if(state.selected)await selectNode(state.selected);
-    status(summary._error?`Static Atlas is available; intelligence service is offline: ${summary._error}`:'Atlas evidence is current.','ok');
+    // Say plainly when the diagram is old, partial or missing its change data, rather than looking complete.
+    const caveats=[];
+    if(graph.stale)caveats.push('showing the last good graph; the newest copy could not be read');
+    if(graph.stats?.truncated)caveats.push(`only the first ${graph.stats.maxFiles} files were scanned`);
+    if(graph.stats?.gitError)caveats.push('changed files are unknown (git failed)');
+    if(summary._error)caveats.push(`intelligence service is offline: ${summary._error}`);
+    status(caveats.length?`Atlas: ${caveats.join('; ')}.`:'Atlas evidence is current.',caveats.length?'warn':'ok');
   }catch(error){
     if(state.active)status(error.name==='AbortError'?'Architecture refresh timed out.':error.message,'error');
   }finally{state.loading=false;setBusy(false);}
@@ -324,12 +330,30 @@ $('atlasRefresh').addEventListener('click',()=>void refresh());
 $('atlasNodeSearch').addEventListener('input',renderSearchResults);
 $('atlasSearchResults').addEventListener('click',e=>{const b=e.target.closest('[data-atlas-node]');if(b){$('atlasSearchResults').hidden=true;void selectNode(b.dataset.atlasNode);}});
 $('atlasFindingList').addEventListener('click',e=>{const b=e.target.closest('[data-atlas-node]');if(b)void selectNode(b.dataset.atlasNode);});
+function openDomain(d){$('atlasNodeSearch').value=d.dataset.atlasDomain;renderSearchResults();$('atlasNodeSearch').focus();}
 $('atlasMap').addEventListener('click',e=>{
   const n=e.target.closest('[data-atlas-node]');if(n)return void selectNode(n.dataset.atlasNode);
-  const d=e.target.closest('[data-atlas-domain]');if(d){$('atlasNodeSearch').value=d.dataset.atlasDomain;renderSearchResults();$('atlasNodeSearch').focus();}
+  const d=e.target.closest('[data-atlas-domain]');if(d)openDomain(d);
 });
-$('atlasMap').addEventListener('keydown',e=>{if(e.key!=='Enter'&&e.key!==' ')return;const n=e.target.closest('[data-atlas-node]');if(n){e.preventDefault();void selectNode(n.dataset.atlasNode);}});
-for(const b of page.querySelectorAll('[data-atlas-mode]'))b.addEventListener('click',()=>{state.mode=b.dataset.atlasMode;renderModes();});
+// Domain boxes and file nodes are both role="button": Enter and Space open them, as a click does.
+$('atlasMap').addEventListener('keydown',e=>{
+  if(e.key!=='Enter'&&e.key!==' ')return;
+  const n=e.target.closest('[data-atlas-node]');if(n){e.preventDefault();return void selectNode(n.dataset.atlasNode);}
+  const d=e.target.closest('[data-atlas-domain]');if(d){e.preventDefault();openDomain(d);}
+});
+// The lens tabs: one tab stop, arrow keys (and Home/End) move between them, as a tablist should.
+const modeTabs=[...page.querySelectorAll('[data-atlas-mode]')];
+function chooseMode(b){state.mode=b.dataset.atlasMode;renderModes();for(const t of modeTabs)t.tabIndex=t===b?0:-1;}
+for(const b of modeTabs){
+  b.tabIndex=b.classList.contains('active')?0:-1;
+  b.addEventListener('click',()=>chooseMode(b));
+  b.addEventListener('keydown',e=>{
+    const i=modeTabs.indexOf(b),last=modeTabs.length-1;
+    const to={ArrowRight:i===last?0:i+1,ArrowLeft:i===0?last:i-1,Home:0,End:last}[e.key];
+    if(to===undefined)return;
+    e.preventDefault();chooseMode(modeTabs[to]);modeTabs[to].focus();
+  });
+}
 $('atlasModel').addEventListener('change',e=>{state.model=e.target.value;localStorage.setItem('localai.atlas.model',state.model);});
 $('atlasAsk').addEventListener('click',()=>void askAtlas());
 $('atlasGoose').addEventListener('click',()=>void gooseBrief());

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import subprocess
 import webbrowser
@@ -11,7 +12,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
-OUTPUT = ROOT / "system-atlas.html"
+# A folder of its own: the appliance container mounts it read-only, and a folder mount sees each atomic rebuild.
+OUTPUT = Path(os.environ.get("ATLAS_OUTPUT") or (ROOT / ".atlas" / "graph" / "system-atlas.html"))
 
 SOURCE_EXTENSIONS = {
     ".py",
@@ -35,9 +37,15 @@ IGNORE_DIRS = {
     ".next",
     ".venv",
     "venv",
+    ".atlas",  # its own backups and briefs: scanning them doubles modules like app/server.js
+    ".claude",
+    ".worktrees",
 }
 
 MAX_FILES = 900
+
+# What the last scan could not see, reported in the graph's stats so a partial diagram says so.
+SCAN: dict = {"truncated": False, "gitError": None}
 
 JS_IMPORT_RE = re.compile(
     r"""
@@ -103,29 +111,20 @@ def rel(path: Path) -> str:
 
 
 def collect_files() -> list[Path]:
-    files: list[Path] = []
+    """Source files under ROOT in a stable order. Ignored folders are pruned before descending, symlinks are never
+    followed (they can point outside the repo), and SCAN["truncated"] says when MAX_FILES cut the list short."""
+    root = ROOT.resolve()
+    found: list[Path] = []
+    for current, dirs, names in os.walk(root, followlinks=False):
+        dirs[:] = sorted(d for d in dirs if d not in IGNORE_DIRS and not (Path(current) / d).is_symlink())
+        for name in sorted(names):
+            path = Path(current) / name
+            if path.suffix.lower() in SOURCE_EXTENSIONS and not path.is_symlink() and path.is_file():
+                found.append(path)
+    found.sort(key=lambda p: p.relative_to(root).as_posix())
+    SCAN["truncated"] = len(found) > MAX_FILES
+    return found[:MAX_FILES]
 
-    for path in ROOT.rglob("*"):
-        if not path.is_file():
-            continue
-
-        try:
-            relative = path.relative_to(ROOT)
-        except ValueError:
-            continue
-
-        if any(part in IGNORE_DIRS for part in relative.parts):
-            continue
-
-        if path.suffix.lower() not in SOURCE_EXTENSIONS:
-            continue
-
-        files.append(path.resolve())
-
-        if len(files) >= MAX_FILES:
-            break
-
-    return sorted(files)
 
 
 def resolve_js_import(
@@ -140,9 +139,10 @@ def resolve_js_import(
 
     possibilities: list[Path] = [candidate]
 
-    if not candidate.suffix:
+    # './foo' and './foo.service' (a suffix that isn't a source extension) both get each source extension added.
+    if candidate.suffix.lower() not in SOURCE_EXTENSIONS:
         possibilities.extend(
-            candidate.with_suffix(extension)
+            candidate.with_name(candidate.name + extension)
             for extension in SOURCE_EXTENSIONS
         )
 
@@ -209,55 +209,43 @@ def parse_python(
             source,
             filename=str(path),
         )
-    except (OSError, SyntaxError):
+    except (OSError, SyntaxError, ValueError):
         return set()
 
     dependencies: set[Path] = set()
 
+    def link(candidates: list[Path]) -> None:
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            if resolved in known:
+                dependencies.add(resolved)
+
+    def submodules(base: Path, names) -> list[Path]:
+        # 'from pkg import sub': each imported name may be a module of its own.
+        return [p for a in names if a.name != "*" for p in (base / f"{a.name}.py", base / a.name / "__init__.py")]
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                for candidate in module_candidates(
-                    alias.name
-                ):
-                    resolved = candidate.resolve()
-
-                    if resolved in known:
-                        dependencies.add(resolved)
-
+                link(module_candidates(alias.name))
         elif isinstance(node, ast.ImportFrom):
             if node.level:
                 base = path.parent
-
-                for _ in range(
-                    max(0, node.level - 1)
-                ):
+                for _ in range(max(0, node.level - 1)):
                     base = base.parent
-
                 if node.module:
-                    base = base.joinpath(
-                        *node.module.split(".")
-                    )
-
-                for candidate in (
-                    base.with_suffix(".py"),
-                    base / "__init__.py",
-                ):
-                    resolved = candidate.resolve()
-
-                    if resolved in known:
-                        dependencies.add(resolved)
-
+                    base = base.joinpath(*node.module.split("."))
+                    link([base.with_suffix(".py"), base / "__init__.py"])
+                else:
+                    # 'from . import x' names the package itself, never a same-named sibling module.
+                    link([base / "__init__.py"])
+                link(submodules(base, node.names))
             elif node.module:
-                for candidate in module_candidates(
-                    node.module
-                ):
-                    resolved = candidate.resolve()
-
-                    if resolved in known:
-                        dependencies.add(resolved)
+                link(module_candidates(node.module))
+                link(submodules(ROOT.joinpath(*node.module.split(".")), node.names))
 
     return dependencies
+
 
 
 # ---------------------------------------------------------------------------
@@ -363,14 +351,13 @@ def domain_sort_key(domain: str) -> int:
 
 
 def changed_files() -> set[str]:
+    """Paths git reports as changed, relative to ROOT. A git failure is recorded in SCAN["gitError"] (and the graph's
+    stats), so the page can say "changes unknown" instead of "nothing changed"."""
+    SCAN["gitError"] = None
     try:
         result = subprocess.run(
-            [
-                "git",
-                "status",
-                "--porcelain=v1",
-                "--untracked-files=all",
-            ],
+            # -z: paths unquoted and NUL-separated, so spaces and non-ASCII names match the scanned files.
+            ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--", "."],
             cwd=ROOT,
             check=False,
             capture_output=True,
@@ -379,33 +366,36 @@ def changed_files() -> set[str]:
             errors="replace",
             timeout=10,
         )
-    except (
-        OSError,
-        subprocess.SubprocessError,
-    ):
+        prefix = subprocess.run(
+            ["git", "rev-parse", "--show-prefix"],
+            cwd=ROOT, check=False, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError) as error:
+        SCAN["gitError"] = f"git did not run: {error}"[:300]
         return set()
-
     if result.returncode != 0:
+        SCAN["gitError"] = (result.stderr.strip() or f"git exited {result.returncode}")[:300]
         return set()
 
     changed: set[str] = set()
-
-    for line in result.stdout.splitlines():
-        if len(line) < 4:
+    entries = result.stdout.split("\0")
+    i = 0
+    while i < len(entries):
+        entry = entries[i]
+        i += 1
+        if len(entry) < 4:
             continue
-
-        value = line[3:].strip()
-
-        if " -> " in value:
-            value = value.split(" -> ", 1)[1]
-
-        value = value.strip('"')
+        status, value = entry[:2], entry[3:]
+        if "R" in status or "C" in status:
+            i += 1  # -z puts a rename's old path in the next field
         value = value.replace("\\", "/")
-
+        # Porcelain paths are relative to the repository top; the graph's are relative to ROOT.
+        if prefix and value.startswith(prefix):
+            value = value[len(prefix):]
         if value:
             changed.add(value)
-
     return changed
+
 
 
 # ---------------------------------------------------------------------------
@@ -930,6 +920,9 @@ def build_graph(files: list[Path]) -> dict:
             changed_nodes
         ),
         "testedProduction": tested_nodes,
+        "truncated": SCAN["truncated"],
+        "maxFiles": MAX_FILES,
+        "gitError": SCAN["gitError"],
         "coverageRatio": round(
             (
                 tested_nodes
@@ -5019,11 +5012,28 @@ def build_html(graph: dict) -> str:
         ensure_ascii=False,
         separators=(",", ":"),
     )
+    # Safe inside <script>: no path can close the tag, open a comment or end a JS line early.
+    for char, escaped in (("<", "\\u003c"), (">", "\\u003e"), ("&", "\\u0026"),
+                          ("\u2028", "\\u2028"), ("\u2029", "\\u2029")):
+        payload = payload.replace(char, escaped)
 
     return HTML.replace(
         "__GRAPH_JSON__",
         payload,
     )
+
+
+def write_output(target: Path, html: str) -> None:
+    """Write beside the target, then rename over it: a reader never sees half a graph."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(html, encoding="utf-8")
+        os.replace(tmp, target)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
 
 
 def main() -> None:
@@ -5048,10 +5058,7 @@ def main() -> None:
 
     graph = build_graph(files)
 
-    OUTPUT.write_text(
-        build_html(graph),
-        encoding="utf-8",
-    )
+    write_output(OUTPUT, build_html(graph))
 
     stats = graph["stats"]
 

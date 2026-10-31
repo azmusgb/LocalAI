@@ -9,7 +9,15 @@ const path = require('node:path');
 
 const DEFAULT_ATLAS_URL = 'http://127.0.0.1:8765';
 const MAX_BODY = 64 * 1024;
-const GRAPH_PATH = path.resolve(__dirname, '..', '..', 'system-atlas.html');
+// quick_arch.py writes the graph into its own folder; the container mounts that folder (a file mount would never see
+// a rebuild, which replaces the file). Outside the container, the repo's copy.
+const GRAPH_PATH = [
+  process.env.LOCALAI_ATLAS_GRAPH,
+  '/atlas-graph/system-atlas.html',
+  path.resolve(__dirname, '..', '..', '.atlas', 'graph', 'system-atlas.html'),
+].find((p) => p && fs.existsSync(path.dirname(p))) || '/atlas-graph/system-atlas.html';
+// The container reaches the host's service by this name; it is the host, not some other machine.
+const HOST_GATEWAY = 'host.docker.internal';
 
 function normalizeAtlasBaseUrl(value, { allowRemote = false } = {}) {
   const raw = String(value || DEFAULT_ATLAS_URL).trim();
@@ -19,7 +27,7 @@ function normalizeAtlasBaseUrl(value, { allowRemote = false } = {}) {
   }
   if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Atlas Intelligence URL must use HTTP or HTTPS.');
   const host = parsed.hostname.toLowerCase();
-  const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
+  const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]' || host === HOST_GATEWAY;
   if (!loopback && !allowRemote) {
     throw new Error('Atlas Intelligence must remain on loopback unless LOCALAI_ATLAS_ALLOW_REMOTE=1 is set.');
   }
@@ -64,13 +72,20 @@ function extractAtlasGraph(html) {
 function createGraphReader(graphPath = GRAPH_PATH) {
   let cache = null;
   let cachedMtime = -1;
+  // A graph that can't be read or parsed (mid-rebuild, or a generator crash) keeps the last good copy, marked stale;
+  // only a graph never read is an error.
   return function readGraph() {
-    const stat = fs.statSync(graphPath);
-    if (cache && stat.mtimeMs === cachedMtime) return cache;
-    const html = fs.readFileSync(graphPath, 'utf8');
-    cache = extractAtlasGraph(html);
-    cachedMtime = stat.mtimeMs;
-    return cache;
+    try {
+      const stat = fs.statSync(graphPath);
+      if (cache && stat.mtimeMs === cachedMtime) return cache;
+      const html = fs.readFileSync(graphPath, 'utf8');
+      cache = extractAtlasGraph(html);
+      cachedMtime = stat.mtimeMs;
+      return cache;
+    } catch (error) {
+      if (cache) return { ...cache, stale: true, staleReason: String(error?.message || error).slice(0, 200) };
+      throw error;
+    }
   };
 }
 
@@ -85,6 +100,7 @@ function createAtlas(ctx = {}) {
     { allowRemote: ctx.allowRemote === true || process.env.LOCALAI_ATLAS_ALLOW_REMOTE === '1' }
   );
   const readGraph = createGraphReader(ctx.graphPath || GRAPH_PATH);
+  const atlasToken = String(ctx.atlasToken ?? process.env.LOCALAI_ATLAS_TOKEN ?? '').trim();
 
   const upstream = new Map([
     ['/api/atlas/health', '/health'],
@@ -104,7 +120,9 @@ function createAtlas(ctx = {}) {
       nodes: graph.nodes,
       edges: graph.edges,
       changedNodes: graph.changedNodes || [],
-      highestRisk: graph.highestRisk || []
+      highestRisk: graph.highestRisk || [],
+      stale: graph.stale === true,
+      staleReason: graph.staleReason || null
     };
   }
 
@@ -121,6 +139,8 @@ function createAtlas(ctx = {}) {
       method: req.method,
       headers: { Accept: 'application/json' }
     };
+    // The service accepts POSTs only with this secret (ATLAS_TOKEN there), so nothing but this proxy can start a run.
+    if (atlasToken) options.headers['X-Atlas-Token'] = atlasToken;
     if (req.method === 'POST') {
       const body = await readBody(req, MAX_BODY);
       options.headers['Content-Type'] = 'application/json';

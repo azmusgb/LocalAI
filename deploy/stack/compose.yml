@@ -84,8 +84,12 @@ services:
       LOCALAI_HOST_IP: ${LOCALAI_HOST_IP:-}
       # System Atlas runs as a Windows-host service. The appliance reaches it
       # only through Docker's host gateway; browsers never connect to port 8765.
+      # host.docker.internal counts as the host itself, so the loopback rule stays on (no ALLOW_REMOTE needed).
       LOCALAI_ATLAS_URL: ${LOCALAI_ATLAS_URL:-http://host.docker.internal:8765}
-      LOCALAI_ATLAS_ALLOW_REMOTE: ${LOCALAI_ATLAS_ALLOW_REMOTE:-1}
+      LOCALAI_ATLAS_ALLOW_REMOTE: ${LOCALAI_ATLAS_ALLOW_REMOTE:-0}
+      # The same secret as the service's ATLAS_TOKEN: only this proxy can start a model run or write a brief.
+      LOCALAI_ATLAS_TOKEN: ${LOCALAI_ATLAS_TOKEN:-}
+      LOCALAI_ATLAS_GRAPH: /atlas-graph/system-atlas.html
       # Services › Workshop display: the touchscreen beside the printer (docs/WORKSHOP-DISPLAY.md). Empty means the
       # default, http://10.0.0.124; only an http(s) address on the home network or a .local name is used.
       LOCALAI_WORKSHOP_URL: ${LOCALAI_WORKSHOP_URL:-}
@@ -107,8 +111,8 @@ services:
     volumes:
       # The deploy (deploy\Deploy-LocalAI.ps1) replaces this folder; the container only reads it.
       - ${LOCALAI_ROOT:-C:/LocalAI}/appliance/app:/app:ro
-      # Deterministic System Atlas graph generated from the current Local AI repo.
-      - ${LOCALAI_ROOT:-C:/LocalAI}/repo/system-atlas.html:/system-atlas.html:ro
+      # The System Atlas graph's folder (quick_arch.py replaces the file on each rebuild; a folder mount sees that).
+      - ${LOCALAI_ROOT:-C:/LocalAI}/repo/.atlas/graph:/atlas-graph:ro
       - appliance-data:/data
       - ${LOCALAI_ROOT:-C:/LocalAI}/reports:/reports:ro
       - C:/Projects:/workspace/projects
