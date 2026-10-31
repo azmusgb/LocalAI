@@ -1,0 +1,187 @@
+'use strict';
+
+// Local AI System Atlas native web integration.
+// The browser talks only to Local AI. This facade keeps Atlas Intelligence on
+// loopback, exposes the deterministic graph even when the Python service is
+// unavailable, and preserves upstream HTTP status for evidence-bounded errors.
+const fs = require('node:fs');
+const path = require('node:path');
+
+const DEFAULT_ATLAS_URL = 'http://127.0.0.1:8765';
+const MAX_BODY = 64 * 1024;
+const GRAPH_PATH = path.resolve(__dirname, '..', '..', 'system-atlas.html');
+
+function normalizeAtlasBaseUrl(value, { allowRemote = false } = {}) {
+  const raw = String(value || DEFAULT_ATLAS_URL).trim();
+  let parsed;
+  try { parsed = new URL(raw); } catch {
+    throw new Error(`Invalid Atlas Intelligence URL: ${raw}`);
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Atlas Intelligence URL must use HTTP or HTTPS.');
+  const host = parsed.hostname.toLowerCase();
+  const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
+  if (!loopback && !allowRemote) {
+    throw new Error('Atlas Intelligence must remain on loopback unless LOCALAI_ATLAS_ALLOW_REMOTE=1 is set.');
+  }
+  return parsed.origin;
+}
+
+function extractAtlasGraph(html) {
+  const marker = 'const DATA = ';
+  const markerAt = String(html).indexOf(marker);
+  if (markerAt < 0) throw new Error('system-atlas.html does not contain its DATA graph.');
+  let start = markerAt + marker.length;
+  while (/\s/.test(html[start] || '')) start += 1;
+  if (html[start] !== '{') throw new Error('Atlas DATA graph does not begin with an object.');
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < html.length; i += 1) {
+    const ch = html[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        const parsed = JSON.parse(html.slice(start, i + 1));
+        if (!parsed || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
+          throw new Error('Atlas DATA graph is missing nodes or edges.');
+        }
+        return parsed;
+      }
+    }
+  }
+  throw new Error('Atlas DATA graph is unterminated.');
+}
+
+function createGraphReader(graphPath = GRAPH_PATH) {
+  let cache = null;
+  let cachedMtime = -1;
+  return function readGraph() {
+    const stat = fs.statSync(graphPath);
+    if (cache && stat.mtimeMs === cachedMtime) return cache;
+    const html = fs.readFileSync(graphPath, 'utf8');
+    cache = extractAtlasGraph(html);
+    cachedMtime = stat.mtimeMs;
+    return cache;
+  };
+}
+
+function createAtlas(ctx = {}) {
+  const { json, readBody, fetchWithTimeout } = ctx;
+  if (typeof json !== 'function' || typeof readBody !== 'function' || typeof fetchWithTimeout !== 'function') {
+    throw new TypeError('createAtlas requires json, readBody and fetchWithTimeout.');
+  }
+
+  const atlasUrl = normalizeAtlasBaseUrl(
+    ctx.atlasUrl || process.env.LOCALAI_ATLAS_URL || DEFAULT_ATLAS_URL,
+    { allowRemote: ctx.allowRemote === true || process.env.LOCALAI_ATLAS_ALLOW_REMOTE === '1' }
+  );
+  const readGraph = createGraphReader(ctx.graphPath || GRAPH_PATH);
+
+  const upstream = new Map([
+    ['/api/atlas/health', '/health'],
+    ['/api/atlas/summary', '/api/atlas/summary'],
+    ['/api/atlas/findings', '/api/atlas/findings'],
+    ['/api/atlas/node', '/api/atlas/node'],
+    ['/api/atlas/ask', '/api/atlas/ask'],
+    ['/api/atlas/goose', '/api/atlas/goose']
+  ]);
+
+  function graphResponse() {
+    const graph = readGraph();
+    return {
+      generatedAt: graph.generatedAt || null,
+      stats: graph.stats || {},
+      domains: graph.domains || [],
+      nodes: graph.nodes,
+      edges: graph.edges,
+      changedNodes: graph.changedNodes || [],
+      highestRisk: graph.highestRisk || []
+    };
+  }
+
+  async function proxy(req, res, localPath) {
+    const targetPath = upstream.get(localPath);
+    if (!targetPath) return json(res, 404, { error: { code: 'atlas_route_not_found', message: 'Atlas route not found.' } });
+
+    const requestUrl = new URL(req.url || localPath, 'http://localai.invalid');
+    const query = req.method === 'GET' ? requestUrl.search : '';
+    const isAsk = localPath === '/api/atlas/ask';
+    const timeoutMs = isAsk ? 315000 : 10000;
+
+    const options = {
+      method: req.method,
+      headers: { Accept: 'application/json' }
+    };
+    if (req.method === 'POST') {
+      const body = await readBody(req, MAX_BODY);
+      options.headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(body || {});
+    }
+
+    let response;
+    try {
+      response = await fetchWithTimeout(`${atlasUrl}${targetPath}${query}`, options, timeoutMs);
+    } catch (error) {
+      return json(res, 502, {
+        error: {
+          code: 'atlas_unavailable',
+          message: 'Atlas Intelligence is unavailable.',
+          detail: String(error?.message || error).slice(0, 300)
+        }
+      });
+    }
+
+    const raw = await response.text();
+    let payload;
+    try {
+      payload = raw ? JSON.parse(raw) : {};
+    } catch {
+      payload = {
+        error: {
+          code: 'atlas_invalid_response',
+          message: 'Atlas Intelligence returned a non-JSON response.',
+          detail: raw.slice(0, 300)
+        }
+      };
+    }
+    return json(res, response.status, payload);
+  }
+
+  async function apiAtlas(req, res, p) {
+    if (req.method === 'GET' && p === '/api/atlas/graph') {
+      try {
+        return json(res, 200, graphResponse());
+      } catch (error) {
+        return json(res, 503, {
+          error: {
+            code: 'atlas_graph_unavailable',
+            message: 'System Atlas graph is unavailable.',
+            detail: String(error?.message || error).slice(0, 300)
+          }
+        });
+      }
+    }
+    if (!upstream.has(p)) return json(res, 404, { error: { code: 'atlas_route_not_found', message: 'Atlas route not found.' } });
+    if (req.method !== 'GET' && req.method !== 'POST') return json(res, 405, { error: { code: 'method_not_allowed', message: 'Method not allowed.' } });
+    if (req.method === 'POST' && !['/api/atlas/ask', '/api/atlas/goose'].includes(p)) {
+      return json(res, 405, { error: { code: 'method_not_allowed', message: 'Method not allowed.' } });
+    }
+    if (req.method === 'GET' && ['/api/atlas/ask', '/api/atlas/goose'].includes(p)) {
+      return json(res, 405, { error: { code: 'method_not_allowed', message: 'Method not allowed.' } });
+    }
+    return proxy(req, res, p);
+  }
+
+  return { apiAtlas, atlasUrl, graphResponse };
+}
+
+module.exports = { createAtlas, extractAtlasGraph, normalizeAtlasBaseUrl };

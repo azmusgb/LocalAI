@@ -82,6 +82,10 @@ services:
       LOCALAI_REMOTE_NAME: ${LOCALAI_REMOTE_NAME:-}
       # With LOCALAI_REMOTE_NAME, the addresses a phone is offered when the one it uses can't be reached (/healthz).
       LOCALAI_HOST_IP: ${LOCALAI_HOST_IP:-}
+      # System Atlas runs as a Windows-host service. The appliance reaches it
+      # only through Docker's host gateway; browsers never connect to port 8765.
+      LOCALAI_ATLAS_URL: ${LOCALAI_ATLAS_URL:-http://host.docker.internal:8765}
+      LOCALAI_ATLAS_ALLOW_REMOTE: ${LOCALAI_ATLAS_ALLOW_REMOTE:-1}
       # Services › Workshop display: the touchscreen beside the printer (docs/WORKSHOP-DISPLAY.md). Empty means the
       # default, http://10.0.0.124; only an http(s) address on the home network or a .local name is used.
       LOCALAI_WORKSHOP_URL: ${LOCALAI_WORKSHOP_URL:-}
@@ -103,6 +107,8 @@ services:
     volumes:
       # The deploy (deploy\Deploy-LocalAI.ps1) replaces this folder; the container only reads it.
       - ${LOCALAI_ROOT:-C:/LocalAI}/appliance/app:/app:ro
+      # Deterministic System Atlas graph generated from the current Local AI repo.
+      - ${LOCALAI_ROOT:-C:/LocalAI}/repo/system-atlas.html:/system-atlas.html:ro
       - appliance-data:/data
       - ${LOCALAI_ROOT:-C:/LocalAI}/reports:/reports:ro
       - C:/Projects:/workspace/projects
