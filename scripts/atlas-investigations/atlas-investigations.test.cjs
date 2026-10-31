@@ -10,9 +10,16 @@ const read = rel => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 test('Atlas Intelligence executes Goose and owns read-only investigation artifacts', () => {
   const py = read('atlas_intelligence.py');
   assert.match(py, /atlas-investigations-v1/);
-  assert.match(py, /\[executable,\s*"run",\s*"--text",\s*prompt\]/s);
+  assert.match(py, /"--no-session"/);
+  assert.match(py, /"--no-profile"/);
+  assert.match(py, /"--with-builtin"/);
+  assert.match(py, /"developer"/);
+  assert.match(py, /GOOSE_MODE.*smart_approve/);
+  assert.match(py, /ATLAS_GOOSE_BIN/);
   assert.match(py, /ATLAS_GOOSE_OLLAMA_HOST/);
   assert.match(py, /ATLAS_GOOSE_TIMEOUT_SECONDS/);
+  assert.match(py, /ATLAS_GOOSE_EVIDENCE_MAX_CHARS/);
+  assert.match(py, /def _investigation_evidence_context/);
   assert.match(py, /def list_investigations/);
   assert.match(py, /def read_investigation/);
 });
