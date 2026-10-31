@@ -20,7 +20,9 @@ test('Atlas investigation installer payload is complete and read-only by design'
   assert.match(patch, /\/api\/atlas\/investigation/);
   assert.match(patch, /450000/);
   assert.match(harden, /ATLAS_GOOSE_BIN/);
-  assert.match(harden, /ATLAS_GOOSE_EVIDENCE_MAX_CHARS/);
+  assert.match(harden, /ATLAS_MODEL_EVIDENCE_MAX_CHARS/);
+  assert.match(harden, /ATLAS_OLLAMA_TIMEOUT_SECONDS/);
+  assert.match(harden, /_bounded_model_evidence/);
   assert.match(harden, /GOOSE_MODE.*smart_approve/);
   assert.match(harden, /--no-session/);
   assert.match(harden, /--no-profile/);
@@ -28,6 +30,8 @@ test('Atlas investigation installer payload is complete and read-only by design'
   assert.match(harden, /developer/);
   assert.match(harden, /--max-turns/);
   assert.match(harden, /--max-tool-repetitions/);
+  assert.match(harden, /--system/);
+  assert.match(harden, /Read-only architecture investigation/);
 });
 
 test('viewer is accessible, responsive, safe-rendered, and has no MutationObserver', () => {
@@ -38,10 +42,13 @@ test('viewer is accessible, responsive, safe-rendered, and has no MutationObserv
   assert.match(js, /textContent/);
   assert.match(js, /\/api\/knowledge\/import/);
   assert.match(js, /capture:true/);
+  assert.match(js, /aria-pressed/);
   assert.match(css, /:focus-visible/);
   assert.match(css, /prefers-reduced-motion:reduce/);
   assert.match(css, /max-width:820px/);
   assert.match(css, /max-width:560px/);
+  assert.match(css, /max-height:420px/);
+  assert.match(css, /min-width:420px/);
 });
 
 test('installer is fail-closed before live promotion', () => {
