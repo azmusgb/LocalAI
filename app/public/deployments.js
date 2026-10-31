@@ -115,4 +115,5 @@ $('deploymentSearch').addEventListener('input',filter);
 $('deploymentEvidence').addEventListener('change',filter);
 $('deploymentRows').addEventListener('click',event=>{const button=event.target.closest('[data-deployment]');if(!button)return;state.selected=button.dataset.deployment;render();page.querySelector(`[data-deployment="${state.selected}"]`)?.focus();});
 root.LocalAIDeployments={activate,deactivate};
+if(page.classList.contains('active'))activate();  // loaded on demand: the page may already be open
 })(typeof window==='undefined'?globalThis:window);

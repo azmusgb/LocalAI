@@ -280,7 +280,7 @@ await mobile.close();
 // Developer tools off (a new install): System's menu, the page strip and the phone sheet hold the owner's pages only.
 // The developer pages still open by address, and the switch brings them back.
 const OWNER_SYSTEM = ['Health', 'Models', 'Services', 'Audit log']; // Automations is in Work, Spreadsheets in Projects (navigation step 3)
-const DEV_SYSTEM = ['Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows']; // Claude Code is in Improve (N2)
+const DEV_SYSTEM = ['Architecture', 'Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows']; // Claude Code is in Improve (N2)
 await check('developer tools off: System lists the owner pages only; a developer page still opens by address', async () => {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
   await ctx.addInitScript(() => { localStorage.setItem('localai.devTools', '0'); localStorage.setItem('localai.firstRun.done', '1'); });

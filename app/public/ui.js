@@ -2095,6 +2095,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // of the shell every page load downloads. /print-lab-evidence.js and /print-lab-refresh.js come first and they run in
 // list order (async off), because print-lab.js uses them as it renders and starts.
 (function(){const s=document.getElementById('printLab');if(!s)return;let p=0;const L=()=>{if(p||!s.classList.contains('active'))return;p=1;for(const f of ['/print-lab-evidence.js','/print-lab-refresh.js','/print-lab.js','/print-lab-guide.js','/print-lab-photos.js','/print-lab-observe.js']){const e=document.createElement('script');e.src=f;e.async=false;e.onerror=()=>{p=0};document.head.append(e)}};new MutationObserver(L).observe(s,{attributes:true,attributeFilter:['class']});L()})();
+// Loads /deployments.js and /architecture.js (System Atlas) the first time their developer page opens, as Print lab's
+// scripts do: neither is part of the shell every page load downloads. Each starts itself when it arrives on an open page.
+for(const [id,src] of [['deployments','/deployments.js'],['architecture','/architecture.js']])(function(){const s=document.getElementById(id);if(!s)return;let p=0;const L=()=>{if(p||!s.classList.contains('active'))return;p=1;const e=document.createElement('script');e.src=src;e.onerror=()=>{p=0;e.remove()};document.head.append(e)};new MutationObserver(L).observe(s,{attributes:true,attributeFilter:['class']});L()})();
 // ==== agent-world-watch loader ====
 // Loads /agent-world-watch.js on first use (⋯ › Watch mode or ?watch=1); a tap in Agent World preloads it.
 (function(){let p;const L=()=>p||(p=new Promise((y,n)=>{const s=document.createElement('script');s.src='/agent-world-watch.js';s.onload=y;s.onerror=()=>{p=null;n()};document.head.append(s)})),W=o=>L().then(()=>window.LocalAIAgentWorldWatch.start(o)).catch(()=>{});

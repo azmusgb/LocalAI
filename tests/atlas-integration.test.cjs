@@ -52,8 +52,11 @@ test('native Architecture workspace is wired into the website contract', () => {
   const registry = fs.readFileSync(path.join(ROOT, 'app/public/view-registry.js'), 'utf8');
   const server = fs.readFileSync(path.join(ROOT, 'app/server.js'), 'utf8');
   assert.match(html, /id="architecture" class="view architecture-view"/);
-  assert.match(html, /src="\/architecture\.js"/);
-  assert.match(html, /href="\/architecture\.css"/);
+  // The Atlas is a developer page: its script loads the first time the page opens (ui.js) and its styles live in app.css.
+  assert.doesNotMatch(html, /src="\/architecture\.js"/);
+  assert.match(fs.readFileSync(path.join(ROOT, 'app/public/ui.js'), 'utf8'), /\['architecture','\/architecture\.js'\]/);
+  assert.match(fs.readFileSync(path.join(ROOT, 'app/public/app.css'), 'utf8'), /#architecture \.atlas-/);
+  assert.match(registry, /id:'architecture',[^}]*dev:true/);
   assert.match(registry, /id:'architecture'/);
   assert.match(server, /require\('\.\/server\/atlas'\)/);
   assert.match(server, /p\.startsWith\('\/api\/atlas\/'\)/);
@@ -76,7 +79,6 @@ test('Architecture section lives inside main and its assets are offline-shell ma
   );
 
   assert.match(sw, /['"]\/architecture\.js['"]/);
-  assert.match(sw, /['"]\/architecture\.css['"]/);
-  assert.match(sw, /const CACHE='[^']*atlas1'/);
+  assert.match(sw, /const CACHE='[^']*atlas\d+'/);
 });
 

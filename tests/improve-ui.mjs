@@ -369,8 +369,8 @@ await check('the old pages land in Improve: #changes and #engineering on In prog
   }
 });
 
-await check('Improve has five tabs, Claude Code last, and the Claude Code page shows no second priorities list', async () => {
-  assert.deepEqual(await page.evaluate(() => window.LocalAIViews.sections('improve').flatMap(s => s.views)), ['backlog', 'inProgress', 'shipped', 'signals', 'claude']);
+await check('Improve has six tabs, Claude Code last, and the Claude Code page shows no second priorities list', async () => {
+  assert.deepEqual(await page.evaluate(() => window.LocalAIViews.sections('improve').flatMap(s => s.views)), ['backlog', 'inProgress', 'deployments', 'shipped', 'signals', 'claude']);
   assert.equal(await page.evaluate(() => window.LocalAIViews.view('claude').domain), 'improve');
   await page.evaluate(() => window.showView('claude'));
   await page.waitForSelector('#claude.active');
