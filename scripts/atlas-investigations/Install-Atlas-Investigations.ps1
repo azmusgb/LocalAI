@@ -26,7 +26,7 @@ foreach ($relative in $Required) {
     $path = Join-Path $RepoRoot $relative
     if (-not (Test-Path -LiteralPath $path)) { throw "Required current Atlas integration file is missing: $path" }
 }
-foreach ($payload in @('patch.py','atlas-investigations.js','atlas-investigations.css','atlas-investigations.test.cjs')) {
+foreach ($payload in @('patch.py','harden.py','atlas-investigations.js','atlas-investigations.css','atlas-investigations.test.cjs')) {
     $path = Join-Path $PayloadRoot $payload
     if (-not (Test-Path -LiteralPath $path)) { throw "Installer payload is incomplete: $path" }
 }
@@ -51,6 +51,8 @@ Write-Host "Repo backup: $Backup"
 Write-Host "`n=== Patch Atlas Investigations v1 ===" -ForegroundColor Cyan
 & $Python (Join-Path $PayloadRoot 'patch.py') $RepoRoot $PayloadRoot
 if ($LASTEXITCODE -ne 0) { throw 'Atlas Investigations patch failed. Live files were not changed.' }
+& $Python (Join-Path $PayloadRoot 'harden.py') $RepoRoot
+if ($LASTEXITCODE -ne 0) { throw 'Atlas Investigations hardening failed. Live files were not changed.' }
 
 Write-Host "`n=== Validate source ===" -ForegroundColor Cyan
 Push-Location $RepoRoot
