@@ -37,7 +37,7 @@ const VIEWS=[
  {id:'actions',svg:'globe',short:'Browser',domain:'system',section:'Automations',dev:true,label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
  {id:'backlog',svg:'improve',domain:'improve',section:'Pipeline',label:'Backlog',description:'One ranked list of what could change in Local AI.',aka:['improve','ideas','priorities']},
  {id:'inProgress',svg:'build',domain:'improve',section:'Pipeline',label:'In progress',description:'Changes being planned, tested or waiting for your OK.',aka:['running changes','change requests','changes','engineer']},
- {id:'deployments',svg:'branch',domain:'improve',section:'Pipeline',label:'Deployments',description:'Reported revisions, artifact evidence and release verification across workstreams.',aka:['deployment','promotion','release evidence']},
+ {id:'deployments',svg:'branch',domain:'improve',section:'Pipeline',label:'Deployments',description:'Reported revisions, build evidence and release checks across workstreams.',aka:['deployment','promotion','release evidence']},
  {id:'shipped',svg:'check',domain:'improve',section:'Pipeline',label:'Shipped',description:'What changed, release by release.',aka:['done','released']},
  {id:'signals',svg:'alert',domain:'improve',section:'Pipeline',label:'Signals',description:'Problems Local AI noticed; serious ones join the Backlog.',aka:['detections','issues','quality signals']},
  // GridCraft on the Windows computer, through the appliance (spreadsheets.js). The old /gridcraft.html page sends you here.
