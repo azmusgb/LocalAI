@@ -41,7 +41,7 @@ function New-Fixture {
         # Auto-deploy: what GET /api/busy answers ($null with BusyFails = no answer), and the Inbox notices sent.
         Busy = $null; BusyFails = $false; BusyAsked = 0; Notices = [System.Collections.Generic.List[object]]::new()
         # Backup tidy: the containers `docker ps -a` lists (New-FixtureContainer), and simulated docker failures.
-        Containers = [System.Collections.Generic.List[object]]::new(); PsFails = $false; RmFails = @(); NoChange = $false
+        Containers = [System.Collections.Generic.List[object]]::new(); PsFails = $false; RmFails = @(); NoChange = $false; DeployFails = $false
         # Stack repair: what `docker compose ps -a` lists (New-FixtureStack), printed as a JSON array or one object per
         # line, and simulated compose failures.
         Stack = [System.Collections.Generic.List[object]]::new(); StackAsArray = $false; ComposeFails = $false; ComposeUpFails = $false
@@ -187,6 +187,7 @@ function Invoke-FixtureDeploy([switch]$CheckOnly) {
 function powershell.exe {
     $fixture.Calls.Add(@('auto-deploy') + [string[]]$args)
     $global:LASTEXITCODE = 0
+    if ($fixture.DeployFails) { $global:LASTEXITCODE = 1; return 'Candidate health check failed; rolled back to the previous release' }
     if ($fixture.NoChange) { return "NO CHANGE: $($newSha.Substring(0,12)) is running and healthy." }
     Write-LocalAI-DeployState (Join-Path $fixture.Live 'release.json') ([ordered]@{commit=$newSha;version='2.0.1';notes=@()})
     "DEPLOYED: $newSha"
@@ -339,6 +340,27 @@ try {
         $f2 = New-Fixture; $f2.Dirty = ' M deploy/x.ps1'
         Invoke-FixtureAutoDeploy | Out-Null
         Assert-True (-not @($f2.Calls | Where-Object { $_[0] -eq 'git' -and $_ -contains 'checkout' }).Count) 'Moved a dirty checkout'
+    }
+    Test-Case 'auto-deploy does not retry a commit that already failed, but still deploys a new one' {
+        $f = New-Fixture
+        $f.DeployFails = $true
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ($LASTEXITCODE -eq 1 -and (Get-AutoDeployCount) -eq 1) 'The failed deploy did not run once with a failing exit code'
+        Assert-True (@($f.Notices | Where-Object { $_.meta.outcome -eq 'failed' }).Count -eq 1) 'No failure notice'
+        # Same commit on the next polls: no deploy, no new notice, exit 0.
+        $said = Invoke-FixtureAutoDeploy
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ($LASTEXITCODE -eq 0 -and (Get-AutoDeployCount) -eq 1) "Retried the failed commit ($(Get-AutoDeployCount) deploys)"
+        Assert-True ("$said" -match "Skipping $($newSha.Substring(0,12)): failed before; waiting for a new release") "Skip not reported: $said"
+        Assert-True (@($f.Notices | Where-Object { $_.meta.outcome -eq 'failed' }).Count -eq 1) 'Notified again for the same failure'
+        Assert-True ((Get-Content -LiteralPath (Join-Path $f.StateDir 'auto-deploy.log') -Raw) -match 'Skipping .* failed before') 'Skip not logged'
+        # A different release commit deploys, and a success clears the state.
+        $originalSha = $script:newSha
+        $script:newSha = 'cccccccccccccccccccccccccccccccccccccccc'
+        $f.DeployFails = $false
+        try { Invoke-FixtureAutoDeploy | Out-Null } finally { $script:newSha = $originalSha }
+        Assert-True ((Get-AutoDeployCount) -eq 2 -and $LASTEXITCODE -eq 0) 'A new release commit did not deploy'
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $f.StateDir 'auto-deploy-last-failure.txt'))) 'Failure state kept after a successful deploy'
     }
     Test-Case 'auto-deploy waits while the appliance is busy and records when the hold began' {
         $f = New-Fixture
