@@ -372,13 +372,13 @@ await check('phone: with the keyboard up the composer sits on the keyboard and t
   await page.context().close();
 });
 
-await check('desktop: the composer is at the foot of a centred column no wider than 720 px', async () => {
+await check('desktop: the composer is at the foot of a column no wider than 960 px', async () => {
   const page = await open(desk, '#home');
   await page.waitForSelector('#homeRecent2 .run-card', T);
   const b = await page.locator('#homeComposer').boundingBox();
-  assert.ok(b.width <= 721 && b.width > 300, `width ${b.width}`);
+  assert.ok(b.width <= 961 && b.width > 300, `width ${b.width}`);
   const main = await page.locator('#main-content, main').first().boundingBox();
-  assert.ok(b.x > main.x + 20, 'column is centred, not flush left');
+  assert.ok(b.x >= main.x, 'column starts inside the content area');
   assert.ok(b.y + b.height <= 860 && b.y > 400, `composer at ${b.y}`);
   await page.context().close();
 });
@@ -1054,8 +1054,8 @@ await check('opening a failed run from anywhere (the run view) marks it seen onc
 });
 
 // Look review: sentence-case labels, a clamped Needs you detail with its full text, a hint under each routing option,
-// a centred column on a wide screen, and "← Pi Hub" in the header of every top-level view.
-await check('Home polish: sentence-case labels, clamped detail with a title, routing hints, centred column', async () => {
+// a column that fills an iPad in landscape, and "← Pi Hub" in the header of every top-level view.
+await check('Home polish: sentence-case labels, clamped detail with a title, routing hints, width', async () => {
   const long = 'This mission could not finish because the specialist ran out of time while checking the sources. '.repeat(4);
   const page = await open({ width: 1000, height: 760 }, '#home', { all: () => needs().map(r => r.status === 'failed' ? { ...r, card: { ...r.card, summary: long } } : r) });
   await page.waitForSelector('#homeNeedsYou .ui-need', T);
@@ -1067,7 +1067,7 @@ await check('Home polish: sentence-case labels, clamped detail with a title, rou
     assert.ok((await page.locator('#' + hint).innerText()).trim().length > 8, `${id} has a hint`);
   }
   const box = await page.locator('#home').boundingBox(), main = await page.locator('main').boundingBox();
-  assert.ok(Math.abs((box.x - main.x) - (main.x + main.width - box.x - box.width)) < 40, 'Home is centred in the content area');
+  assert.ok(box.width >= main.width - 100, `Home fills the content area on an iPad in landscape (${box.width} of ${main.width})`);
   await page.context().close();
 });
 await check('Home: a clamped Needs you detail keeps its full text as the title', async () => {

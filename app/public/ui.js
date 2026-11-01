@@ -1005,26 +1005,43 @@ const headerActions=new Map();
 function syncHeaderAction(view){const b=q('#uxHeaderAction');if(!b)return;const a=headerActions.get(REG.view(view||activeView())?.id||view||activeView());b.hidden=!a;q('#uxContextBar')?.classList.toggle('ux-context-has-action',!!a);if(!a){b.onclick=null;return}b.innerHTML=icon(a.icon,'ux-ico');b.setAttribute('aria-label',a.label);b.onclick=a.onClick}
 window.LocalAIShell={setAction(view,action){headerActions.set(view,action);syncHeaderAction()},clearAction(view){headerActions.delete(view);syncHeaderAction()}};
 function greeting(){const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'}
+let lastAdvanced=''; // the Advanced page last open, so its tab returns there
 function buildPageStrip(){
  const bar=q('#uxContextBar');if(!bar||q('#uxPageStrip'))return;
  const strip=document.createElement('nav');strip.id='uxPageStrip';strip.className='ux-page-strip';strip.setAttribute('aria-label','Pages in this section');
  bar.after(strip);
  strip.addEventListener('scroll',()=>fadeStrip(strip),{passive:true});window.addEventListener('resize',()=>fadeStrip(strip),{passive:true});
- strip.addEventListener('click',e=>{const b=e.target.closest('[data-strip-view]');if(b)navigate(b.dataset.stripView)});
+ strip.addEventListener('click',e=>{const b=e.target.closest('[data-strip-view]');if(!b)return;const v=b.dataset.stripView,adv=(strip.dataset.advanced||'').split(',').filter(Boolean);navigate(v==='advanced'?(adv.includes(lastAdvanced)?lastAdvanced:adv[0]):v)});
 }
 // One strip for the area, on phones and desktops (navigation spec N5): its pages, and a page's tabs in place of the
 // page (Projects › Library, Work › Automations).
 function renderPageStrip(d,page,view){
  const strip=q('#uxPageStrip');if(!strip)return;
- const views=listedGroups(d).flatMap(g=>g.views).flatMap(v=>{const t=REG.tabs(v);return t.length?t.map(x=>x.id):[v]});
- const current=REG.view(view)?.id;if(views.includes(current))page=current;
- const key=d.id+'|'+views.join(',');
- if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=views.map(v=>'<button type="button" data-strip-view="'+v+'" title="'+REG.description(v).replace(/"/g,'&quot;')+'">'+(REG.view(v)?.tab||REG.view(v)?.short||labelForView(v))+'</button>').join('');}
+ const all=listedGroups(d).flatMap(g=>g.views).flatMap(v=>{const t=REG.tabs(v);return t.length?t.map(x=>x.id):[v]});
+ // Developer pages marked `advanced` share one "Advanced" tab; its own strip below lists them, and each keeps its address.
+ const adv=all.filter(v=>REG.view(v)?.advanced),views=adv.length?[...all.filter(v=>!REG.view(v)?.advanced),'advanced']:all;
+ const current=REG.view(view)?.id;
+ if(adv.includes(current)){page='advanced';lastAdvanced=current}
+ else if(all.includes(current))page=current;
+ const key=d.id+'|'+views.join(',')+'|'+adv.join(',');
+ const label=v=>v==='advanced'?REG.ADVANCED_LABEL:(REG.view(v)?.tab||REG.view(v)?.short||labelForView(v));
+ const desc=v=>v==='advanced'?'Developer tools: '+adv.map(labelForView).join(', '):REG.description(v);
+ const buttons=ids=>ids.map(v=>'<button type="button" data-strip-view="'+v+'" title="'+desc(v).replace(/"/g,'&quot;')+'">'+label(v)+'</button>').join('');
+ if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=buttons(views);strip.dataset.advanced=adv.join(',')}
  // Home's only other page, Inbox, already has a button in the top bar; a hidden page (Missions, Chat) is none of these.
  strip.hidden=views.length<2||d.id==='home'||REG.view(view)?.domain==='hidden';
  qa('[data-strip-view]',strip).forEach(b=>{const on=b.dataset.stripView===page;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
+ // The Advanced tab's own strip shows only while one of its pages is open.
+ let sub=q('#uxAdvancedStrip');
+ if(!sub){sub=document.createElement('nav');sub.id='uxAdvancedStrip';sub.className='ux-page-strip ux-sub-strip';sub.setAttribute('aria-label','Advanced tools');strip.after(sub);
+  sub.addEventListener('click',e=>{const b=e.target.closest('[data-strip-view]');if(b)navigate(b.dataset.stripView)});sub.addEventListener('scroll',()=>fadeStrip(sub),{passive:true})}
+ const showSub=adv.includes(current)&&!strip.hidden;
+ if(showSub&&sub.dataset.key!==adv.join(',')){sub.dataset.key=adv.join(',');sub.innerHTML=buttons(adv)}
+ sub.hidden=!showSub;
+ if(showSub)qa('[data-strip-view]',sub).forEach(b=>{const on=b.dataset.stripView===current;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
  revealActive(strip);
  fadeStrip(strip);
+ if(showSub){revealActive(sub);fadeStrip(sub)}
 }
 // An overflowing strip scrolls so the open tab is fully in view and the first tab shown starts at the edge: a label is
 // never cut mid-word on the left, and the fade on the right says there are more.

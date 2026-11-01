@@ -1144,6 +1144,7 @@ body.ux-v3 .ux-nav-shell{grid-template-columns:76px}
 .ux-page-strip{display:none;align-items:center;gap:22px;overflow-x:auto;scrollbar-width:none;margin:-8px 0 16px;padding:0;border-bottom:1px solid var(--ds-line);scroll-snap-type:x proximity}
 .ux-page-strip::-webkit-scrollbar{display:none} /* a swipe stops at a tab, not mid-word */
 .ux-page-strip[hidden]{display:none!important}
+.ux-sub-strip{margin-top:-8px;position:static!important;gap:18px;height:auto!important}.ux-sub-strip button{font-size:var(--ds-fs-1)!important}
 /* Underlined page names, as on the phone: one look for moving between pages, boxed controls are filters. */
 .ux-page-strip button{scroll-snap-align:start;flex:none;border:0;background:transparent;color:var(--ds-faint);border-radius:0;min-height:44px;padding:0;font-size:var(--ds-fs-2);font-weight:500;white-space:nowrap;cursor:pointer}
 .ux-page-strip button:hover{color:var(--ds-text)}
@@ -1530,7 +1531,7 @@ body.run-view-open{overflow:hidden}
 @media(max-width:760px){.work-secondary{min-height:44px}#work{padding-inline:3px}}
 
 /* ---- Home: needs you, recent, and a composer at your thumb ---- */
-#home{max-width:720px;margin-inline:auto} /* a centred reading column: on a wide screen the right half is not left empty */
+#home{max-width:960px} /* left-aligned like every page (content starts at the same x); wide enough to fill an iPad in landscape, capped so rows stay readable */
 #home .home-head{padding:2px 0 0}
 #home .home-head h1{margin:0;font-size:var(--ds-fs-5);line-height:1.2;letter-spacing:-.02em}
 .home-block{margin-top:20px}
