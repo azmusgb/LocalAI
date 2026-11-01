@@ -6,7 +6,8 @@ $TaskName = 'LocalAI Nightly Backup'
 if ($Uninstall) { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue; Write-Host "Removed $TaskName"; exit 0 }
 $script = Join-Path $RepoRoot 'deploy\Backup-LocalAI-Data.ps1'
 if (-not (Test-Path $script)) { throw "Backup script not found: $script" }
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`""
+# conhost --headless: no console window at all (-WindowStyle Hidden still flashes one before PowerShell hides it).
+$action = New-ScheduledTaskAction -Execute 'conhost.exe' -Argument "--headless powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`""
 $trigger = New-ScheduledTaskTrigger -Daily -At $At
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 1)

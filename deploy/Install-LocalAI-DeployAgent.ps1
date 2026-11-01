@@ -63,12 +63,13 @@ if (-not $Install) {
     Write-Host "Task:     $TaskName"
     Write-Host "Mode:     $mode"
     Write-Host "Interval: every $EveryMinutes minute(s)"
-    Write-Host "Command:  $PowerShellExe $argumentLine"
+    Write-Host "Command:  conhost.exe --headless `"$PowerShellExe`" $argumentLine"
     Write-Host 'Use -Install when ready, or -Install -ValidateOnly to schedule certification without promotion.'
     return
 }
 
-$action = New-ScheduledTaskAction -Execute $PowerShellExe -Argument $argumentLine
+# conhost --headless: no console window at all (-WindowStyle Hidden still flashes one before PowerShell hides it).
+$action = New-ScheduledTaskAction -Execute 'conhost.exe' -Argument "--headless `"$PowerShellExe`" $argumentLine"
 $trigger = New-ScheduledTaskTrigger `
     -Once `
     -At (Get-Date).AddMinutes(1) `
