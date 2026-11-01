@@ -150,6 +150,21 @@ function Copy-LocalAI-RepoContext([string]$Candidate) {
         Copy-Item -LiteralPath $source -Destination (Join-Path $context $part) -Recurse -Force
     }
 }
+# The PowerShell host runs its own copy of its script (installed by Enable-LocalAI-PowerShellHost.ps1), so a release
+# brings that copy up to date. Only where the host is installed; a failure warns and never fails the deploy.
+function Update-LocalAI-PowerShellHost([string]$Candidate, [string]$HostRoot) {
+    $installed = Join-Path $HostRoot 'Run-LocalAI-PowerShellHost.ps1'
+    $source = Join-Path $Candidate 'host/powershell-bridge/Run-LocalAI-PowerShellHost.ps1'
+    if (-not (Test-Path -LiteralPath $installed) -or -not (Test-Path -LiteralPath $source)) { return }
+    try {
+        if ((Get-FileHash -LiteralPath $installed).Hash -eq (Get-FileHash -LiteralPath $source).Hash) { return }
+        # Copy beside it, then swap, so the host's next run never reads a half-written script.
+        $next = "$installed.next"
+        Copy-Item -LiteralPath $source -Destination $next -Force
+        Move-Item -LiteralPath $next -Destination $installed -Force
+        Write-Host 'PowerShell host script updated to this release.'
+    } catch { Write-Warning "PowerShell host script not updated: $($_.Exception.Message)" }
+}
 function Copy-LocalAI-AppTree([string]$From, [string]$To, [switch]$Replace) {
     if (-not (Test-Path -LiteralPath (Join-Path $From 'server.js'))) { throw "Application source missing: $From" }
     if (Test-Path -LiteralPath $To) {

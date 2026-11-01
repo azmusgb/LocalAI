@@ -181,7 +181,7 @@ function Invoke-RestMethod {
     return [pscustomobject]@{status=$status;releaseCommit=$commit;storage=[pscustomobject]@{engine=$(if(Test-Path -LiteralPath (Join-Path $fixture.Live 'storage.js')){'sqlite'}else{'json'});schemaVersion=1}}
 }
 function Invoke-FixtureDeploy([switch]$CheckOnly) {
-    & (Join-Path $repository 'deploy/Deploy-LocalAI.ps1') -Repo $fixture.Repo -Live $fixture.Live -Releases $fixture.Releases -StateDir $fixture.StateDir -Container 'fixture-appliance' -HealthUrl 'http://fixture/healthz' -SkipFetch -CheckOnly:$CheckOnly
+    & (Join-Path $repository 'deploy/Deploy-LocalAI.ps1') -Repo $fixture.Repo -Live $fixture.Live -Releases $fixture.Releases -StateDir $fixture.StateDir -Container 'fixture-appliance' -HealthUrl 'http://fixture/healthz' -SkipFetch -CheckOnly:$CheckOnly -PowerShellHost (Join-Path $fixture.Root 'powershell-bridge')
 }
 # The auto-deploy's child Windows PowerShell running Deploy-LocalAI.ps1.
 function powershell.exe {
@@ -262,6 +262,25 @@ try {
         Assert-True (@($f.Calls | Where-Object { $_ -contains 'preflight' }).Count -eq 2) 'Stopped-data recheck was omitted'
         # Missions read docs/ and host/ from inside the app tree (app/mission-evidence.js).
         Assert-True ((Test-Path -LiteralPath (Join-Path $f.Live 'repo-context/docs/GRIDCRAFT.md')) -and (Test-Path -LiteralPath (Join-Path $f.Live 'repo-context/host/gridcraft-bridge.py'))) 'Docs and host scripts did not ship with the app'
+    }
+    Test-Case 'a healthy deploy updates the installed PowerShell host script, a failed one and an uninstalled host do not' {
+        $f = New-Fixture
+        [System.IO.Directory]::CreateDirectory((Join-Path $f.Repo 'host/powershell-bridge')) | Out-Null
+        Set-Content -LiteralPath (Join-Path $f.Repo 'host/powershell-bridge/Run-LocalAI-PowerShellHost.ps1') -Value 'new host'
+        Invoke-FixtureDeploy
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $f.Root 'powershell-bridge'))) 'Deploy installed a host that was never enabled'
+        $f = New-Fixture; $f.RejectNewRelease=$true
+        [System.IO.Directory]::CreateDirectory((Join-Path $f.Repo 'host/powershell-bridge')) | Out-Null
+        Set-Content -LiteralPath (Join-Path $f.Repo 'host/powershell-bridge/Run-LocalAI-PowerShellHost.ps1') -Value 'new host'
+        $installed = Join-Path $f.Root 'powershell-bridge/Run-LocalAI-PowerShellHost.ps1'
+        [System.IO.Directory]::CreateDirectory((Split-Path $installed)) | Out-Null
+        Set-Content -LiteralPath $installed -Value 'old host'
+        Assert-Throws { Invoke-FixtureDeploy } 'previous live application restored'
+        Assert-True ((Get-Content -LiteralPath $installed -Raw) -match 'old host') 'A rolled-back deploy changed the host script'
+        $f.RejectNewRelease=$false
+        Invoke-FixtureDeploy
+        Assert-True ((Get-Content -LiteralPath $installed -Raw) -match 'new host') 'Host script was not updated'
+        Assert-True (-not (Test-Path -LiteralPath "$installed.next")) 'Temporary copy left behind'
     }
     Test-Case 'failed candidate health restores old code and exports SQLite before JSON rollback' {
         $f = New-Fixture; $f.RejectNewRelease=$true

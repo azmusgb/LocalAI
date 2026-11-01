@@ -57,7 +57,8 @@ export default [
     // Browser scripts. Classic <script>s, so each file is a script; app/public/ui.js is a bundle whose
     // `// ==== name.js ====` sections are each wrapped in their own (() => { ... })() and so already have their own
     // scope (a name declared in one section is undefined in the next, and no-undef reports it).
-    files: ['app/public/*.js', 'app/public/aw/*.js', 'app/public/street/*.js'],
+    // scripts/atlas-investigations/*.js is a browser script its installer adds to the page.
+    files: ['app/public/*.js', 'app/public/aw/*.js', 'app/public/street/*.js', 'scripts/atlas-investigations/*.js'],
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: 'script',
