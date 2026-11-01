@@ -20,7 +20,9 @@ if(-not(Test-Path $approvalKeyFile)){
 }
 
 $actionArgs='-NoProfile -ExecutionPolicy Bypass -File "{0}" -Port {1}' -f $helper,$Port
-$action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $actionArgs
+# conhost --headless starts PowerShell with no console window; the task runs every minute in the owner's session,
+# so a plain powershell.exe would flash a black window each time.
+$action=New-ScheduledTaskAction -Execute 'conhost.exe' -Argument ('--headless powershell.exe '+$actionArgs)
 $trigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(20) -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration (New-TimeSpan -Days 3650)
 $principal=New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Description 'Executes explicitly approved Local AI PowerShell Workbench jobs as the logged-on user at limited privilege.' -Force | Out-Null
