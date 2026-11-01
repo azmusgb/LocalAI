@@ -152,3 +152,13 @@ test('printer: unavailable or disabled hub gives null and failures are cached', 
   assert.equal(await hub.printer(), null); assert.equal(await hub.printer(), null); assert.equal(calls, 1);
   assert.equal(await createPiHub({ url: 'off', fetchImpl: () => assert.fail('disabled') }).printer(), null);
 });
+
+test('needs: a long detail is cut at a word with an ellipsis, never mid-word', () => {
+  const { needsList } = require('../app/pi-hub');
+  const long = 'Look at the band first, then the wall and the channel features: no disturbance, curling, nozzle marks, spaghetti, or adhesion problems. '.repeat(6).trim();
+  const [item] = needsList({ items: [{ id: 'a', title: 'T', detail: long }] }).items;
+  assert.ok(item.detail.length <= 400 && item.detail.endsWith('…'), item.detail.slice(-30));
+  const kept = item.detail.slice(0, -1);
+  assert.ok(long.startsWith(kept) && long[kept.length] === ' ', 'cut at a word boundary');
+  assert.equal(needsList({ items: [{ id: 'a', title: 'T', detail: 'Short.' }] }).items[0].detail, 'Short.');
+});
