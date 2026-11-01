@@ -246,13 +246,13 @@ function greet(){const h=new Date().getHours(),g=$('homeGreeting');if(g)g.textCo
 function setError(msg){const e=$('homeComposerError');if(!e)return;e.textContent=msg||'';e.hidden=!msg}
 function busy(on){sending=on;const b=$('commandGo');if(b)b.disabled=on}
 const grow=()=>{const t=$('commandInput');if(!t)return;t.style.height='auto';t.style.height=Math.min(t.scrollHeight,140)+'px'};
-// "Use a bigger model" / "Keep on this PC": shown while cloud models are switched on (Models), for a Chat or Research;
-// they go with the next send only, then reset.
+// "Use a bigger model" / "Keep on this PC": shown while cloud models are switched on (Models), for a Chat or Research,
+// once there is something typed (an idle composer stays one row on a phone); they go with the next send only, then reset.
 let cloudOn=false;
 const flag=id=>!!$(id)?.checked;
-function paintRoute(){const b=$('homeRoute');if(b)b.hidden=!(cloudOn&&['auto','ask','research'].includes(cur()))}
+function paintRoute(){const b=$('homeRoute');if(b)b.hidden=!(cloudOn&&['auto','ask','research'].includes(cur())&&!!$('commandInput')?.value.trim())}
 function loadRoute(){root.LocalAIUI?.fetchJson('/api/models/routing',{cache:'no-store'}).then(j=>{cloudOn=j.cloud===true;paintRoute()},()=>{})}
-function clearInput(){const t=$('commandInput');if(t){t.value='';grow()}for(const id of ['homeBigger','homeKeepLocal']){const c=$(id);if(c)c.checked=false}}
+function clearInput(){const t=$('commandInput');if(t){t.value='';grow()}for(const id of ['homeBigger','homeKeepLocal']){const c=$(id);if(c)c.checked=false}paintRoute()}
 function gateCheck(intent){
  const b=document.querySelector(`.mode[data-mode="${intent}"]`);
  if(b?.disabled)throw new Error(String(b.title||'').replace(/^Unavailable:\s*/,'')||'That is not available right now.');
@@ -313,7 +313,7 @@ async function send(text,m=cur(),{anyway=false}={}){
   try{await dispatch(intent,ctx?C.withContext(text,ctx,intent):text,route,text)}
   catch(e){if(ctx&&!context){context=ctx;paintContext()}throw e} // nothing started: keep it for the retry
  }catch(e){
-  if(input&&!input.value){input.value=text;grow()} // the text stays so nothing is lost
+  if(input&&!input.value){input.value=text;grow();paintRoute()} // the text stays so nothing is lost
   setError(e.message||'Something went wrong. Try again.');
  }finally{busy(false)}
 }
@@ -323,14 +323,15 @@ function fromHash(){const R=root.LocalAIRouter;if(!R)return;const cur=R.current(
 function onHomeHash(){const p=root.LocalAIRouter?.current().page;return !p||p==='home'||root.LocalAIViews?.resolve(p)==='home'}
 // ---- Pi Hub's context (#ask?context=…): plain text over the composer, sent once after the next question ----
 let context='';
-function paintContext(){const box=$('homeContext'),t=$('homeContextText');if(!box||!t)return;box.hidden=!context;t.textContent=context?'Context: '+context:''}
+function paintContext(){const box=$('homeContext'),t=$('homeContextText');if(!box||!t)return;box.hidden=!context;t.textContent=context?'Context: '+context:'';t.title=context}
 function dropContext(){
  context='';paintContext();
  const h=location.hash,i=h.indexOf('?');if(i<0)return;
  const q=new URLSearchParams(h.slice(i+1));if(!q.has('context'))return;q.delete('context');
  history.replaceState(history.state,'',location.pathname+location.search+h.slice(0,i)+(q.toString()?'?'+q:''));
 }
-function contextFromHash(){const C=root.LocalAIAskContext,R=root.LocalAIRouter;if(!C||!R)return;const c=C.clean(R.current().query.get('context'));if(c){context=c;paintContext()}}
+// A context that only names the page it came from ("Pi Hub › More") tells the model nothing: it is dropped, unseen.
+function contextFromHash(){const C=root.LocalAIAskContext,R=root.LocalAIRouter;if(!C||!R)return;const c=C.clean(R.current().query.get('context'));if(c&&C.informative(c)){context=c;paintContext()}else if(c)dropContext()}
 function activate(){fromHash();contextFromHash();greet();loadRoute();if(root.LocalAIUI)refresh().then(schedule);streetUp()}
 function dockToNav(){
  // On phones the composer sits exactly on the tab bar, whatever its height is. While the owner types, the tab bar
@@ -354,7 +355,7 @@ function init(){
  $('commandGo').addEventListener('click',()=>send($('commandInput').value));
  $('homeContextClear')?.addEventListener('click',()=>{dropContext();$('commandInput')?.focus()});
  $('homeRoute')?.addEventListener('change',e=>{const o=$(e.target.id==='homeBigger'?'homeKeepLocal':'homeBigger');if(e.target.checked&&o)o.checked=false}); // one or the other
- $('commandInput').addEventListener('input',()=>{grow();dockToNav();root.LocalAISelfChange?.hide($('homeSelfChange'))});
+ $('commandInput').addEventListener('input',()=>{grow();paintRoute();dockToNav();root.LocalAISelfChange?.hide($('homeSelfChange'))});
  $('commandInput').addEventListener('focus',()=>typing(true));
  $('commandInput').addEventListener('blur',()=>typing(false));
  $('homeSeeAll').addEventListener('click',()=>root.LocalAIRouter?.go('#work'));

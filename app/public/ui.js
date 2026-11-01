@@ -183,6 +183,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
 
   const isPhone = () => window.matchMedia('(max-width: 760px)').matches;
   const TRUTH_REFRESH_MS = 30000;
+  const TRUTH_RETRY_MS = 5000;
   let truthRefreshTimer = 0;
   let lastTruthSnapshot = null;
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
@@ -574,7 +575,8 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     list.replaceChildren();
 
     if (loadError) {
-      window.LocalAIHome?.setAttention([{ severity: 'critical', title: 'Status unavailable', detail: 'Local AI could not check what is working right now.', action: 'Open Health', view: 'status' }]);
+      const since = truthFailedAt ? ` since ${truthFailedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : '';
+      window.LocalAIHome?.setAttention([{ severity: 'critical', title: 'Status unavailable', detail: `Local AI could not check what is working${since}. It keeps trying.`, action: 'Open Health', view: 'status' }]);
       surface.hidden = false;
       surface.dataset.state = 'attention';
       summary.textContent = 'Local AI could not check what is working right now. Everything else still works.';
@@ -859,7 +861,12 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
   }
   window.LocalAIModels = { startPull: startModelPull, pollPulls: pollModelPulls };
 
+  // One failed check is often a blip (a restart on the way, a dropped request): look again shortly before saying so.
+  let truthFailures = 0;
+  let truthRetry = null;
+  let truthFailedAt = null;
   async function refreshTruthLayer() {
+    clearTimeout(truthRetry);
     try {
       const response = await fetch('/api/capabilities', {
         method: 'GET',
@@ -872,8 +879,15 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       applyCapabilityGates(snapshot);
       renderModelsSurface(snapshot.models || {});
       renderAttention(snapshot);
+      truthFailures = 0;
       window.dispatchEvent(new CustomEvent('localai:truth-updated', { detail: snapshot }));
     } catch (error) {
+      truthFailures += 1;
+      if (truthFailures === 1) {
+        truthFailedAt = new Date();
+        truthRetry = setTimeout(refreshTruthLayer, TRUTH_RETRY_MS);
+        return;
+      }
       document.querySelectorAll('[data-truth-disabled="true"]').forEach((control) => {
         setTruthAvailability(control, true, '');
       });
