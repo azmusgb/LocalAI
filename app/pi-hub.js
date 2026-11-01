@@ -47,7 +47,7 @@ function cutWords(v, n) {
   const t = typeof v === 'string' ? str(v, 4000) : '';
   if (t.length <= n) return t;
   const head = t.slice(0, n - 1), space = head.lastIndexOf(' ');
-  return (space >= n * 0.6 ? head.slice(0, space) : head).replace(/[\s,;:.\-]+$/, '') + '…';
+  return (space >= n * 0.6 ? head.slice(0, space) : head).replace(/[\s,;:.-]+$/, '') + '…';
 }
 // A need's link: a plain path on the hub ("/workshop"), else '' (the hub's root). Never another site or scheme.
 const hubPath = (v) => (typeof v === 'string' && /^\/(?!\/)[A-Za-z0-9/_-]{0,63}$/.test(v) ? v : '');
