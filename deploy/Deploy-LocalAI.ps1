@@ -8,7 +8,8 @@ param(
     [string]$Releases = 'C:\LocalAI\releases',
     [string]$StateDir = 'C:\LocalAI\.deploy',
     [string]$Container = 'local-ai-appliance',
-    [string]$HealthUrl = 'http://127.0.0.1:3080/healthz'
+    [string]$HealthUrl = 'http://127.0.0.1:3080/healthz',
+    [string]$PowerShellHost = 'C:\LocalAI\powershell-bridge'
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Deployment-LocalAI.ps1')
@@ -79,6 +80,7 @@ try {
             rollbackSnapshot = $backup; rollbackSnapshotCommit = $previous; dataBackupName = $dataBackupName
         })
         Write-Host "DEPLOYED: $($sha.Substring(0,12)) is healthy and reports the expected release." -ForegroundColor Green
+        Update-LocalAI-PowerShellHost -Candidate $candidate -HostRoot $PowerShellHost
     } catch {
         $failure = $_.Exception.Message
         try {
