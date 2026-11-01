@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const http = require('node:http');
 const { once } = require('node:events');
 const { spawnAppServer } = require('./spawn-server.cjs');
 const { buildFeed, aiCards } = require('../app/display-feed');
@@ -87,4 +88,28 @@ test('an empty LOCALAI_HUB_KEY_SHA256 refuses every key', () => {
     assert.equal(hubKey.authorized({ headers: { 'x-localai-hub-key': 'k' } }), true);
     assert.equal(hubKey.authorized({ headers: { 'x-localai-hub-key': 'j' } }), false);
   } finally { if (saved === undefined) delete process.env.LOCALAI_HUB_KEY_SHA256; else process.env.LOCALAI_HUB_KEY_SHA256 = saved; }
+});
+
+test('ai-cards never calls Pi Hub, Bambuddy or the lab camera (it has a 3 s budget)', { timeout: 30000 }, async (t) => {
+  const hits = [];
+  const fake = http.createServer((req, res) => { hits.push(req.url); res.end('{}'); });
+  fake.listen(0, '127.0.0.1');
+  await once(fake, 'listening');
+  const fakeUrl = `http://127.0.0.1:${fake.address().port}`;
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-hub-fast-'));
+  const key = 'hub_' + 'd'.repeat(40);
+  const dead = 'http://127.0.0.1:9';
+  const { child, ready } = spawnAppServer({ env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: dead, SEARXNG_URL: dead, COMFY_URL: dead, N8N_URL: dead, PROXY_URL: dead, MAC_AI_HOME_URL: dead, MAC_DSH_URL: dead,
+    LOCALAI_PI_HUB_URL: fakeUrl, LOCALAI_MATERIALS_URL: fakeUrl, LOCALAI_BAMBUDDY_URL: fakeUrl, LOCALAI_LAB_CAMERA_URL: fakeUrl,
+    LOCALAI_HUB_KEY_SHA256: crypto.createHash('sha256').update(key).digest('hex') } });
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
+    fake.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+  const base = await ready;
+  hits.length = 0; // start-up may probe; only the route's own calls count
+  const r = await fetch(`${base}/api/display/ai-cards`, { headers: { 'X-LocalAI-Hub-Key': key } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(hits, [], 'ai-cards must not reach Pi Hub, Bambuddy or the camera');
 });

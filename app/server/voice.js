@@ -47,7 +47,7 @@ function createVoice(ctx) {
   }
   // withNeeds: Pi Hub's Needs you list goes only to the display (its key). Pi Hub builds that list from this very feed
   // (read without a key), so fetching it for Pi Hub's read would send the hub a request that reads the feed again.
-  async function displayFeedNow({ withNeeds = false } = {}) {
+  async function displayFeedNow({ withNeeds = false, aiOnly = false } = {}) {
     const snapshot = await getCapabilitiesSnapshot();
     const health = glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION });
     const home = homeNeedsYou();
@@ -60,10 +60,11 @@ function createVoice(ctx) {
     const disks = watchdog.summary().hostDisks || [];
     const disk = disks.filter(d => d.totalBytes > 0).sort((x, y) => x.freeBytes / x.totalBytes - y.freeBytes / y.totalBytes)[0] || null;
     // The Pi hub's summary and its "Needs you" list are read side by side, so a slow hub costs one 3 s wait, not two.
-    const [pi, piNeeds] = await Promise.all([piHub.read(), withNeeds && piHub.needs ? piHub.needs() : null]);
+    // aiOnly (Pi Hub's ai-cards): nothing here calls Pi Hub, Bambuddy or the weather service, which Pi Hub owns.
+    const [pi, piNeeds] = aiOnly ? [null, null] : await Promise.all([piHub.read(), withNeeds && piHub.needs ? piHub.needs() : null]);
     let lab = [];
-    try { lab = printLab?.feedCards?.() || []; } catch { lab = []; }
-    const feed = displayFeed.buildFeed({ needs, piNeeds, lab, watch: watchdog.list(), running, done: displayDoneRuns(2 * 3600 * 1000), weather: await feedWeatherText(), images, disk, pi, materials: await materialsClient.read() });
+    if (!aiOnly) try { lab = printLab?.feedCards?.() || []; } catch { lab = []; }
+    const feed = displayFeed.buildFeed({ needs, piNeeds, lab, watch: watchdog.list(), running, done: displayDoneRuns(2 * 3600 * 1000), weather: aiOnly ? null : await feedWeatherText(), images, disk, pi, materials: aiOnly ? null : await materialsClient.read() });
     feed.messages = displayMessages.recent();
     return feed;
   }
@@ -149,7 +150,7 @@ function createVoice(ctx) {
   // host's loopback passes sign-in, so the key is checked here too.
   async function apiDisplayAiCards(req, res) {
     if (!hubAuthorized(req)) return json(res, 401, { error: 'Pi Hub key required.' });
-    try { json(res, 200, displayFeed.aiCards(await displayFeedNow({ withNeeds: false }))); } catch (e) { json(res, 500, { error: String(e.message || e) }); }
+    try { json(res, 200, displayFeed.aiCards(await displayFeedNow({ aiOnly: true }))); } catch (e) { json(res, 500, { error: String(e.message || e) }); }
   }
 
   async function apiDisplayFeed(req, res) {
