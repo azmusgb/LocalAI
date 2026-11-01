@@ -1104,6 +1104,46 @@ for (const [tag, vp] of [['390x844', phone], ['1280x860', desk]]) {
   });
 }
 
+// A context that only names the Pi Hub page ("Pi Hub › More") says nothing: it never shows and leaves the address.
+await check('Pi Hub context: a page name with no facts is dropped', async () => {
+  const page = await open(desk, '#ask?context=' + encodeURIComponent('Pi Hub › More'));
+  await page.waitForSelector('#home.active', T);
+  await page.waitForTimeout(400);
+  assert.equal(await page.locator('#homeContext').isVisible(), false);
+  assert.ok(!(await page.evaluate(() => location.href)).includes('context'));
+  await page.context().close();
+});
+
+// One failed capability check is a blip: Needs you stays quiet until the quick retry fails too, and then says since when.
+await check('Status unavailable: only after the retry fails too', async () => {
+  const page = await open(desk, '#home');
+  await page.waitForSelector('#home.active', T);
+  let asks = 0;
+  await page.route(u => u.pathname === '/api/capabilities', r => { asks++; return r.fulfill({ status: 502, contentType: 'application/json', body: '{}' }); });
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await page.waitForTimeout(1500);
+  assert.equal(await page.getByText('Status unavailable').count(), 0, 'one failure says nothing');
+  await page.getByText('Status unavailable').first().waitFor({ state: 'attached', timeout: 9000 });
+  assert.ok(asks >= 2, `looked again before saying so (${asks})`);
+  assert.match(await page.locator('#homeNeedsYou').innerText(), /since \d/);
+  await page.context().close();
+});
+
+// An idle composer on a phone is one row: the cloud toggles wait for something typed.
+await check('Home composer: the routing toggles appear only once something is typed', async () => {
+  const page = await open(phone, '#home');
+  await page.route(u => u.pathname === '/api/models/routing', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ cloud: true }) }));
+  await page.evaluate(() => window.LocalAIHome.activate());
+  await page.waitForSelector('#home.active', T);
+  await page.waitForTimeout(400);
+  assert.equal(await page.locator('#homeRoute').isVisible(), false, 'idle: one row');
+  await page.locator('#commandInput').fill('Compare PETG and ASA');
+  await page.locator('#homeRoute').waitFor({ state: 'visible', ...T });
+  await page.locator('#commandInput').fill('');
+  await page.locator('#homeRoute').waitFor({ state: 'hidden', ...T });
+  await page.context().close();
+});
+
 await browser.close();
 if (failures.length) { console.error('\n' + failures.length + ' failed:\n- ' + failures.join('\n- ')); process.exit(1); }
 console.log('\nAll Home checks passed');

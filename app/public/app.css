@@ -1566,6 +1566,9 @@ body.run-view-open{overflow:hidden}
  .home-composer{position:fixed;left:8px;right:8px;bottom:var(--home-dock,calc(76px + env(safe-area-inset-bottom)));z-index:55;padding:16px 0 6px;background:linear-gradient(180deg,transparent,var(--ds-bg) 16px)}
  /* the shell's own header already greets you on phones; Home keeps its heading for screen readers */
  #home .home-composer textarea.command{min-height:48px;padding:4px;line-height:20px}
+ /* a link's context is one line on a phone (its full text is the title), so the composer stays small */
+ .home-context{align-items:center;padding:2px 2px 2px 12px;margin-bottom:6px}
+ .home-context__text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
  #home .home-head{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 }
 .home-sheet{overflow:auto}

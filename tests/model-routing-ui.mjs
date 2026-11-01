@@ -76,8 +76,12 @@ try {
       assert.equal((await (await fetch(base + '/api/models/routing')).json()).cloud, true);
     });
 
-    await check(`${name}: with cloud on, Home offers the two toggles; one at a time; they go with one send, then reset`, async () => {
+    await check(`${name}: with cloud on, Home offers the two toggles once something is typed; one at a time; they go with one send, then reset`, async () => {
       await page.evaluate(() => window.LocalAIRouter.go('#home'));
+      await page.waitForSelector('#homeComposer');
+      await page.waitForTimeout(300);
+      assert.equal(await page.locator('#homeRoute').isVisible(), false, 'an idle composer is one row');
+      await page.fill('#commandInput', 'Compare PETG and ASA for outdoor parts');
       await page.waitForSelector('#homeRoute:not([hidden])');
       await page.locator('label[for="homeBigger"]').click();
       await page.locator('label[for="homeKeepLocal"]').click();
