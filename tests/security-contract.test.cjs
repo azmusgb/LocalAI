@@ -32,6 +32,15 @@ test('PowerShell jobs need a signature that only the Windows host verifies', () 
   assert.match(hostRunner, /localai-ps-v1/);
 });
 
+test('the Windows host runs each signed PowerShell job once, from its own ledger, and stops the whole tree on timeout', () => {
+  assert.match(hostRunner, /ran-jobs\.txt/);
+  const check = hostRunner.indexOf('Test-JobAlreadyRan ([string]$job.id)');
+  const record = hostRunner.indexOf('Add-RanJob ([string]$job.id)');
+  const start = hostRunner.indexOf("Start-Process -FilePath 'powershell.exe'");
+  assert.ok(hostRunner.indexOf('Test-JobSignature $job') < check && check < record && record < start, 'signature, then the ledger check, then the record, then the run');
+  assert.match(hostRunner, /taskkill\.exe \/PID \$proc\.Id \/T \/F/);
+});
+
 test('GridCraft bridge rejects cross-site and non-JSON posts and runs the agent in UTF-8', () => {
   assert.match(bridge, /Origin not allowed/);
   assert.match(bridge, /Content-Type must be application\/json/);

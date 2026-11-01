@@ -39,6 +39,22 @@ function Test-JobSignature {
 }
 $base = "http://127.0.0.1:$Port"
 
+# The ids of every job this host has started, kept here and never in the container. A signature proves the operator
+# approved a job, not how often: without this, a container that rewrote its own queue could hand back an old signed
+# job and have it run again. A job runs once; running it again means queueing a new one, which gets a new id.
+$ranFile = Join-Path $bridgeRoot 'ran-jobs.txt'
+function Test-JobAlreadyRan {
+    param([string]$Id)
+    if (-not (Test-Path $ranFile)) { return $false }
+    foreach ($line in [System.IO.File]::ReadAllLines($ranFile)) { if ($line.Split("`t")[0] -ceq $Id) { return $true } }
+    return $false
+}
+function Add-RanJob {
+    param([string]$Id)
+    # No BOM (Add-Content -Encoding UTF8 writes one), so the first line's id matches like every other.
+    [System.IO.File]::AppendAllText($ranFile, ("{0}`t{1}`r`n" -f $Id, (Get-Date).ToString('o')), (New-Object System.Text.UTF8Encoding($false)))
+}
+
 function Invoke-BridgePost {
     param([string]$Path, [hashtable]$Body)
     # UTF-8 bytes: a string body goes out as ISO-8859-1 in Windows PowerShell and loses any non-Latin-1 output.
@@ -81,6 +97,8 @@ for ($n = 0; $n -lt $MaxJobs; $n++) {
 
     try {
         if (-not (Test-JobSignature $job)) { throw 'Rejected: the approval signature does not match this job. Re-queue it from the Workbench with the key in approval-key.txt.' }
+        if ([string]$job.id -notmatch '^[A-Za-z0-9_-]{1,80}$') { throw 'Rejected: the job id is not one the Workbench makes.' }
+        if (Test-JobAlreadyRan ([string]$job.id)) { throw 'Refused: this job already ran on this host. A job runs once; queue a new one from the Workbench to run it again.' }
         $cwd = Test-AllowedWorkingDirectory ([string]$job.cwd)
         if (-not (Test-Path $cwd)) { throw "Working directory does not exist: $cwd" }
 
@@ -89,10 +107,13 @@ for ($n = 0; $n -lt $MaxJobs; $n++) {
         Remove-Item $outFile,$errFile -Force -ErrorAction SilentlyContinue
 
         $argLine = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$scriptFile`""
+        Add-RanJob ([string]$job.id)  # before it starts: a runner that dies mid-job must not run it again next time
         $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList $argLine -WorkingDirectory $cwd -RedirectStandardOutput $outFile -RedirectStandardError $errFile -PassThru -WindowStyle Hidden
         $timeoutMs = [Math]::Max(5000, [Math]::Min(600000, [int]$job.timeoutSec * 1000))
         if (-not $proc.WaitForExit($timeoutMs)) {
-            try { $proc.Kill() } catch {}
+            # The whole tree: Kill() stops only powershell.exe and leaves anything the script started still running.
+            & taskkill.exe /PID $proc.Id /T /F 2>&1 | Out-Null
+            try { if (-not $proc.HasExited) { $proc.Kill() } } catch {}
             $exitCode = 124
             $stderr = "PowerShell job exceeded timeout of $($job.timeoutSec) seconds."
         }
