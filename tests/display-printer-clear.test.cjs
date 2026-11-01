@@ -24,15 +24,9 @@ test('clearPlate posts clear-plate and hms/clear with the control key, and repor
   assert.equal((await down.clearPlate()).plate, 'no answer');
 });
 
-test('POST /api/display/printer/clear needs the display key and reaches Bambuddy', { timeout: 30000 }, async (t) => {
+test('POST /api/display/printer/clear is retired: 410 with or without the key, and nothing reaches Bambuddy', { timeout: 30000 }, async (t) => {
   const seen = [];
-  let status = { connected: true, state: 'FINISH', awaiting_plate_clear: true }, holdClear = null;
-  const bambuddy = http.createServer(async (req, res) => {
-    seen.push([req.method, req.url, req.headers['x-api-key']]);
-    if (req.method === 'GET') return res.end(JSON.stringify(status));
-    if (holdClear && req.url.endsWith('/clear-plate')) await holdClear;
-    res.end('{}');
-  });
+  const bambuddy = http.createServer((req, res) => { seen.push([req.method, req.url]); res.end(JSON.stringify({ connected: true, state: 'FINISH', awaiting_plate_clear: true })); });
   bambuddy.listen(0, '127.0.0.1');
   await once(bambuddy, 'listening');
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-clear-'));
@@ -51,39 +45,12 @@ test('POST /api/display/printer/clear needs the display key and reaches Bambuddy
   assert.equal(attention.status, 200);
   assert.equal((await attention.json()).source, 'localai');
   assert.equal(seen.length, 0, 'own attention never contacts Bambuddy');
-  const post = (headers = {}) => fetch(`${base}/api/display/printer/clear`, { method: 'POST', headers });
-  assert.equal((await post()).status, 401);
-  assert.equal((await post({ 'X-LocalAI-Display-Key': 'wsd_' + 'b'.repeat(48) })).status, 401);
-  assert.equal(seen.length, 0, 'nothing reaches Bambuddy without the key');
-  const r = await post({ 'X-LocalAI-Display-Key': key });
-  assert.equal(r.status, 200);
-  assert.deepEqual(await r.json(), { ok: true, plate: 'ok', errors: 'ok' });
-  assert.deepEqual(seen, [['GET', '/api/v1/printers/1/status', 'bb_ctl'], ['POST', '/api/v1/printers/1/clear-plate', 'bb_ctl'], ['POST', '/api/v1/printers/1/hms/clear', 'bb_ctl']]);
-
-  // Not waiting for a clear (printing, or a finished print whose plate was already cleared): 409, nothing posted.
-  for (const s of [{ connected: true, state: 'RUNNING', awaiting_plate_clear: false }, { connected: true, state: 'FINISH', awaiting_plate_clear: false }, { connected: false, state: 'FINISH', awaiting_plate_clear: true }]) {
-    status = s; seen.length = 0;
-    const refused = await post({ 'X-LocalAI-Display-Key': key });
-    assert.equal(refused.status, 409, JSON.stringify(s));
-    assert.match((await refused.json()).error, /plate|printer/i);
-    assert.deepEqual(seen.map(c => c[0]), ['GET'], 'a refused clear never posts to Bambuddy');
+  for (const headers of [{}, { 'X-LocalAI-Display-Key': key }]) {
+    const r = await fetch(`${base}/api/display/printer/clear`, { method: 'POST', headers });
+    assert.equal(r.status, 410);
+    assert.equal((await r.json()).error, 'This display uses Pi Hub');
   }
-  status = { connected: true, state: 'FAILED', awaiting_plate_clear: true };
-
-  // Two overlapping requests: the second is refused and only one clear reaches Bambuddy.
-  seen.length = 0;
-  let release; holdClear = new Promise(r => { release = r; });
-  const first = post({ 'X-LocalAI-Display-Key': key });
-  while (!seen.some(c => c[1].endsWith('/clear-plate'))) await new Promise(r => setTimeout(r, 10));
-  const second = await post({ 'X-LocalAI-Display-Key': key });
-  assert.equal(second.status, 409);
-  assert.deepEqual(await second.json(), { error: 'Already clearing' });
-  release(); holdClear = null;
-  assert.equal((await first).status, 200);
-  assert.equal(seen.filter(c => c[1].endsWith('/clear-plate')).length, 1);
-  // The guard is released afterwards.
-  seen.length = 0;
-  assert.equal((await post({ 'X-LocalAI-Display-Key': key })).status, 200);
+  assert.equal(seen.length, 0, 'a retired clear never reaches Bambuddy');
 });
 
 test('status() reads Bambuddy and plateClearRefusal allows only a finished or failed print awaiting a clear', async () => {
