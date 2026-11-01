@@ -365,3 +365,19 @@ test('deciding a change\'s approval from Approvals or the run view decides the c
   // Approvals that aren't for a change behave as before.
   assert.equal((await post(base, '/api/approvals/decide', { id: 'appr-x', decision: 'approved' })).body.item.status, 'approved');
 });
+
+// Look review, 1 Nov: two backlog rows read "Overall assessment". The same words from the same source within minutes are one item.
+test('the same idea twice within minutes is one backlog item; a finding without an id repeats into the first', { timeout: 30000 }, async t => {
+  const base = await startServer(t);
+  const a = await post(base, '/api/improve/idea', { text: '## Overall assessment\nThe Home page needs a clearer printer card.' });
+  const b = await post(base, '/api/improve/idea', { text: '## Overall assessment\nThe Home page needs a clearer printer card.' });
+  assert.deepEqual([a.status, b.status, b.body.item.id], [201, 200, a.body.item.id]);
+  const f1 = await post(base, '/api/claude/findings', { sessionId: 's', findings: [{ title: '## Overall assessment', summary: 'first' }] });
+  const f2 = await post(base, '/api/claude/findings', { sessionId: 's', findings: [{ title: 'Overall assessment', summary: 'second' }] });
+  assert.equal(f1.body.items[0].id, f2.body.items[0].id);
+  // An id means "this one": two ids with one title stay two items, and a different source never merges.
+  await post(base, '/api/claude/findings', { sessionId: 's', findings: [{ id: 'k1', title: 'Same words' }, { id: 'k2', title: 'Same words' }] });
+  const all = await items(base);
+  assert.equal(all.filter(i => i.title === 'Same words').length, 2);
+  assert.equal(all.filter(i => /^(## )?Overall assessment$|^The Home page needs/.test(i.title)).length, 2, 'one idea and one Claude finding');
+});

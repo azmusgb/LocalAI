@@ -31,7 +31,8 @@ const plain=t=>String(t??'').replace(/^\s*#{1,6}\s+/,'').replace(/\*\*|__|`/g,''
 function backlogRow(it){
  const row=document.createElement('div');row.className='list-row improve-row';row.dataset.itemId=it.id;
  const net=(it.votes?.up||0)-(it.votes?.down||0);
- row.innerHTML=`<span class="list-row__icon" title="${SOURCE[it.source]||''}">${icon(ICON[it.source]||'improve')}</span>`+
+ // The source is written in the row ("From Claude"), so the icon is decoration for a screen reader; its title explains it on hover.
+ row.innerHTML=`<span class="list-row__icon" title="${SOURCE[it.source]||''}" aria-hidden="true">${icon(ICON[it.source]||'improve')}</span>`+
   `<button type="button" class="improve-row__open list-row__main"><span class="list-row__title">${esc(plain(it.title))}</span>`+
   `<span class="list-row__sub">${sev(it.severity)} <span>${SOURCE[it.source]||''}</span>${it.handedToClaude?' <span class="badge badge--neutral">Handed to Claude</span>':''}</span></button>`+
   `<span class="list-row__trail improve-votes"><button type="button" class="icon-btn" data-vote="1" aria-label="Vote up: ${esc(plain(it.title))}">▲</button><span aria-label="Net votes">${net}</span><button type="button" class="icon-btn" data-vote="-1" aria-label="Vote down: ${esc(plain(it.title))}">▼</button></span>`;
@@ -49,7 +50,7 @@ function inProgressRow(it){
  // The session's state, not its latest step: one session holds many items, so its step would repeat on each of them.
  const quiet=s&&s.status!=='active'&&Date.now()-Date.parse(s.updatedAt||'')>6*36e5;
  const claude=!it.change?` <span>${!s?(it.handedToClaude?'Waiting for a Claude session':"Claude's session isn't reporting"):quiet?`Paused: Claude last worked on this ${esc(ago(s.updatedAt))}`:`Claude's session is ${s.status==='active'?'active':'idle'}${s.updatedAt?' · '+esc(ago(s.updatedAt)):''}`}</span>`:'';
- row.innerHTML=`<span class="list-row__icon">${icon(ICON[it.source]||'improve')}</span>`+
+ row.innerHTML=`<span class="list-row__icon" title="${SOURCE[it.source]||''}" role="img" aria-label="${SOURCE[it.source]||'Change'}">${icon(ICON[it.source]||'improve')}</span>`+
   `<button type="button" class="improve-row__open list-row__main"><span class="list-row__title">${esc(plain(it.title))}</span><span class="list-row__sub">${state}${claude}</span></button>`;
  row.querySelector('.improve-row__open').onclick=()=>openItem(it.id);
  return row;
