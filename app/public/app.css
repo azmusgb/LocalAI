@@ -1705,6 +1705,7 @@ input::placeholder,textarea::placeholder{color:var(--ds-faint);font-weight:400}
 /* Approvals: resolved items folded below the waiting ones; Audit log: Clear sits under the list (appended; nothing above edited). */
 .activity-foot{display:flex;justify-content:flex-end;margin-top:12px}
 /* Projects with none yet: one empty state instead of zero tiles and an empty detail pane (appended; nothing above edited). */
+#projects .projects-summary{margin:-6px 0 14px}
 #projects.projects-empty #projectMetrics,#projects.projects-empty .split>.card:has(#projectDetail){display:none}
 #projects.projects-empty .split{grid-template-columns:minmax(0,1fr)}
 /* Library on a phone: one column so titles have room, wrapping to two lines (appended; nothing above edited). */
