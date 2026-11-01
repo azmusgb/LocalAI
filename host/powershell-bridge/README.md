@@ -36,7 +36,9 @@ The task, `Local AI PowerShell Host`, runs `Run-LocalAI-PowerShellHost.ps1 -Port
 logged-on user at limited privilege. Each run polls `/api/powershell/host/next` up to five times
 (`-MaxJobs`), checks the signature and that the working directory is under `C:\Projects`, `C:\repos` or
 `C:\LocalAI`, runs the job, and posts the result to `/api/powershell/host/result`.
-`Run-LocalAI-PowerShellHost-Hidden.vbs` runs the same command once without a console window.
+The task starts it through `Run-LocalAI-PowerShellHost-Hidden.vbs` (`wscript.exe`), which runs the script beside it
+with no console window; `powershell.exe` started straight from the task flashed a window every minute. After
+updating from a release that registered `powershell.exe`, run `Enable-LocalAI-PowerShellHost.ps1` once more.
 
 ## Using the Workbench
 
