@@ -143,7 +143,7 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
     assert.equal(await page.locator('appliance-nav').count(), 0, 'no suite bar');
     assert.equal(await page.locator('#homePrinter').count(), 0, 'no printer line');
     assert.ok(!page.printerAsks.includes('?part=printer'), 'Home never asks for the printer line (Services still checks the display)');
-    const back = page.locator('#homeBack');
+    const back = page.locator('#uxPiHubLink');
     await back.waitFor({ state: 'visible', ...T });
     assert.equal((await back.innerText()).trim(), '← Pi Hub');  // "← Home" on Local AI's own Home page read as going nowhere (look review)
     assert.equal(await back.getAttribute('href'), 'http://10.0.0.30/');
@@ -1050,6 +1050,43 @@ await check('opening a failed run from anywhere (the run view) marks it seen onc
   for (let i = 0; i < 30 && !page.seen.length; i++) await page.waitForTimeout(100);
   await page.waitForTimeout(300); // and only once, though the run view polls
   assert.deepEqual(page.seen, [[failed.id]]);
+  await page.context().close();
+});
+
+// Look review: sentence-case labels, a clamped Needs you detail with its full text, a hint under each routing option,
+// a centred column on a wide screen, and "← Pi Hub" in the header of every top-level view.
+await check('Home polish: sentence-case labels, clamped detail with a title, routing hints, centred column', async () => {
+  const long = 'This mission could not finish because the specialist ran out of time while checking the sources. '.repeat(4);
+  const page = await open({ width: 1000, height: 760 }, '#home', { all: () => needs().map(r => r.status === 'failed' ? { ...r, card: { ...r.card, summary: long } } : r) });
+  await page.waitForSelector('#homeNeedsYou .ui-need', T);
+  for (const id of ['homeNeedsTitle', 'homeRecentTitle']) assert.equal(await page.locator('#' + id).evaluate(e => getComputedStyle(e).textTransform), 'none', id);
+  const detail = page.locator('#homeNeedsYou .ui-need__detail').first();
+  assert.equal(await detail.evaluate(e => getComputedStyle(e).webkitLineClamp), '3');
+  for (const id of ['homeBigger', 'homeKeepLocal']) {
+    const hint = await page.locator('#' + id).getAttribute('aria-describedby');
+    assert.ok((await page.locator('#' + hint).innerText()).trim().length > 8, `${id} has a hint`);
+  }
+  const box = await page.locator('#home').boundingBox(), main = await page.locator('main').boundingBox();
+  assert.ok(Math.abs((box.x - main.x) - (main.x + main.width - box.x - box.width)) < 40, 'Home is centred in the content area');
+  await page.context().close();
+});
+await check('Home: a clamped Needs you detail keeps its full text as the title', async () => {
+  const long = 'The mission stopped before the sources were checked, and the specialist never answered. '.repeat(4).trim();
+  const page = await open(desk, '#home', { all: () => needs().map(r => r.status === 'failed' ? { ...r, card: { ...r.card, summary: long } } : r) });
+  await page.waitForSelector('#homeNeedsYou .ui-need', T);
+  const titles = await page.locator('#homeNeedsYou .ui-need__detail').evaluateAll(els => els.map(e => e.title));
+  assert.ok(titles.some(t => t.includes(long)), 'the full text is on the row');
+  await page.context().close();
+});
+await check('"← Pi Hub" is in the header of every top-level view', async () => {
+  const page = await open(desk, '#home');
+  for (const hash of ['#home', '#work', '#projects', '#backlog', '#status']) {
+    await page.evaluate(h => { location.hash = h; }, hash);
+    await page.waitForFunction(h => location.hash.startsWith(h), hash, T);
+    const link = page.locator('#uxContextBar #uxPiHubLink');
+    await link.waitFor({ state: 'visible', ...T });
+    assert.equal((await link.innerText()).trim(), '← Pi Hub', hash);
+  }
   await page.context().close();
 });
 
