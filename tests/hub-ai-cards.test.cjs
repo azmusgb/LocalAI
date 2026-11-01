@@ -37,7 +37,7 @@ test('aiCards keeps only AI kinds and turns needs into approvals', () => {
   assert.equal(aiCards({ at: 'x', cards: [] }).approvals.count, 0);
 });
 
-test('the hub key opens ai-cards, approvals, decide, ask and images/view and nothing else', { timeout: 30000 }, async (t) => {
+test('the hub key opens ai-cards, approvals, decide, ask, images/view and Pi Hub\'s reads and nothing else', { timeout: 30000 }, async (t) => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-hub-'));
   const key = 'hub_' + 'c'.repeat(40);
   const dead = 'http://127.0.0.1:9';
@@ -71,6 +71,11 @@ test('the hub key opens ai-cards, approvals, decide, ask and images/view and not
   assert.equal((await get('/api/display/ask?q=running', forwarded)).status, 401);
   assert.notEqual((await get('/api/images/view?filename=a.png', { ...forwarded, ...H })).status, 401);
   assert.equal((await get('/api/images/view?filename=a.png', forwarded)).status, 401);
+  // Pi Hub's own reads and its house question.
+  for (const [p, m] of [['/api/world', 'GET'], ['/api/attention', 'GET'], ['/api/lab/projects', 'GET'], ['/api/chat', 'POST']]) {
+    assert.notEqual((await get(p, { ...forwarded, ...H }, m)).status, 401, p);
+    assert.equal((await get(p, forwarded, m)).status, 401, p);
+  }
   // Nothing else: not the changes API, not the display's feed or heartbeat.
   for (const [p, m] of [['/api/changes', 'GET'], ['/api/display/feed', 'GET'], ['/api/display/heartbeat', 'POST'], ['/api/display/printer/clear', 'POST']]) {
     assert.equal((await get(p, { ...forwarded, ...H }, m)).status, 401, p);
