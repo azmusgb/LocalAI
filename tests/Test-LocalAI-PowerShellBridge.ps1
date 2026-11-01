@@ -68,6 +68,9 @@ try {
     $good = Queue "Write-Output '$text'; Write-Output (Get-Location).Path" 30
     $tampered = Queue "Write-Output 'what the approver saw'" 30 "Write-Output 'something else'"
     $slow = Queue 'Start-Sleep -Seconds 30' 5
+    # A container that rewrote its own queue could hand back a job the host already ran: the host's ledger says no.
+    $replayed = Queue "Write-Output 'ran twice'" 30
+    [IO.File]::WriteAllText((Join-Path $bridge 'ran-jobs.txt'), "$replayed`t2026-01-01T00:00:00`r`n", (New-Object Text.UTF8Encoding($false)))
 
     Check 'the appliance refuses a working folder outside the allowed roots' {
         $refused = $false
@@ -98,6 +101,17 @@ try {
         $j = Job $slow
         Assert-Equal $j.exitCode 124 'exit code'
         Assert-Equal $j.status 'failed' 'status'
+    }
+    Check 'a job id the host has already run is refused, not run again' {
+        $j = Job $replayed
+        Assert-Equal $j.status 'failed' 'status'
+        if ([string]$j.stderr -notmatch 'already ran on this host') { throw "stderr: $($j.stderr)" }
+        if ([string]$j.stdout) { throw "it ran: $($j.stdout)" }
+    }
+    Check 'the jobs it ran are in its ledger, once each' {
+        $ids = @([IO.File]::ReadAllLines((Join-Path $bridge 'ran-jobs.txt')) | ForEach-Object { $_.Split("`t")[0] })
+        foreach ($ran in @($good, $slow)) { Assert-Equal @($ids | Where-Object { $_ -eq $ran }).Count 1 "ledger entries for $ran" }
+        Assert-Equal @($ids | Where-Object { $_ -eq $tampered }).Count 0 'ledger entries for the refused job'
     }
     Check 'nothing is left queued' {
         $next = Invoke-RestMethod -Uri "$base/api/powershell/host/next" -Headers @{ Authorization = "Bearer $bridgeToken" }
