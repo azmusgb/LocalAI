@@ -177,7 +177,12 @@ const signIn = require('./signin').createSignIn({ storage, signedIn: req => !!cl
   '/api/display/lab/judge': req => displayKey.authorized(req),
   '/api/display/lab/verdict': req => displayKey.authorized(req),
   // The feed's latest-image card links here; the display fetches the JPEG with its key.
-  '/api/images/view': req => displayKey.authorized(req) || hubKey.authorized(req)
+  '/api/images/view': req => displayKey.authorized(req) || hubKey.authorized(req),
+  // Pi Hub's own reads (its Agents tile, Needs you and print lab line) and its house question.
+  '/api/world': req => hubKey.authorized(req),
+  '/api/attention': req => hubKey.authorized(req),
+  '/api/lab/projects': req => hubKey.authorized(req),
+  '/api/chat': req => hubKey.authorized(req)
 } });
 
 
