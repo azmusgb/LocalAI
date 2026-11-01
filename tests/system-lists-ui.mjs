@@ -72,6 +72,24 @@ await check('Health: the Notifications card comes after the Appliance summary', 
 // list and says the check couldn't be made.
 const healthy = { overall: 'HEALTHY', checkedAt: new Date().toISOString(), services: [{ name: 'ollama', label: 'Intelligence', state: 'HEALTHY', required: true }, { name: 'comfy', label: 'Images', state: 'HEALTHY', required: false }] };
 const checkAgain = async () => { await page.evaluate(() => document.getElementById('statusRetryBtn').click()); await page.waitForFunction(() => document.getElementById('statusRetryBtn').textContent === 'Check again'); };
+await check('Health: a Down service shows no "Slow" time, a slow one that answers does', async () => {
+  const slow = { overall: 'DOWN', checkedAt: new Date().toISOString(), services: [
+    { name: 'ollama', label: 'Intelligence', state: 'DOWN', required: true, latencyMs: 3000 },
+    { name: 'search', label: 'Search', state: 'DEGRADED', required: true, latencyMs: 3000 },
+    { name: 'comfy', label: 'Images', state: 'HEALTHY', required: true, latencyMs: 2500 },
+    { name: 'n8n', label: 'Automations', state: 'DOWN', required: false, latencyMs: 4000 }] };
+  await page.route('**/api/status', r => r.fulfill({ json: slow }));
+  await page.evaluate(() => window.showView('status'));
+  await checkAgain();
+  const rows = await page.locator('#serviceList .service-card').evaluateAll(els => els.map(e => e.innerText.replace(/\s+/g, ' ')));
+  assert.equal(rows.length, 4);
+  assert.ok(/Down/.test(rows[0]) && !/Slow/.test(rows[0]), rows[0]);
+  assert.ok(/Slow · 3\.0 s/.test(rows[1]), rows[1]);
+  assert.ok(/Slow · 2\.5 s/.test(rows[2]), rows[2]);
+  assert.ok(!/Slow/.test(rows[3]), rows[3]);
+  await page.unroute('**/api/status');
+});
+
 await check('Health: a failed status check says so and keeps the last known services', async () => {
   await page.route('**/api/status', r => r.fulfill({ json: healthy }));
   await page.evaluate(() => window.showView('status'));
@@ -154,6 +172,20 @@ await check('Projects: with no projects there is one empty state, not zero tiles
   assert.equal(await page.locator('#projectMetrics').isVisible(), false);
   assert.equal(await page.locator('#projectDetail').isVisible(), false);
   assert.doesNotMatch(await page.locator('#projects').innerText(), /workspace/i);
+});
+
+await check('Projects: one summary line under the heading, and 1 reads singular everywhere', async () => {
+  const proj = (id, c, k, a) => ({ id, name: 'P' + id, description: '', pinned: false, counts: { conversations: c, knowledge: k, artifacts: a } });
+  await page.route('**/api/projects', r => r.fulfill({ json: { items: [proj('a', 1, 1, 0), proj('b', 2, 0, 3)] } }));
+  await page.evaluate(() => window.showView('projects'));
+  await page.waitForFunction(() => /conversation/.test(document.getElementById('projectList').textContent));
+  assert.equal((await page.locator('#projectMetrics').innerText()).trim(), '2 projects · 3 conversations · 1 source · 3 kept');
+  assert.equal(await page.locator('#projectMetrics .metric').count(), 0, 'no tiles');
+  const rows = await page.locator('#projectList .item-card small').allInnerTexts();
+  assert.deepEqual(rows, ['1 conversation · 1 source · 0 kept', '2 conversations · 0 sources · 3 kept']);
+  await page.route('**/api/projects', r => r.fulfill({ json: { items: [proj('c', 1, 1, 1)] } }));
+  await page.evaluate(() => window.showView('home')); await page.evaluate(() => window.showView('projects'));
+  await page.waitForFunction(() => /^1 project ·/.test(document.getElementById('projectMetrics').textContent));
 });
 
 await check('Empty states say what appears and how (E3): Automations, Sources, Library, Signals without an empty Latest checks', async () => {

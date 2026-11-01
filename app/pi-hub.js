@@ -42,12 +42,19 @@ function summarize(d) {
 // an item needs an id and a title, and the link is left out. count is the hub's own total (the display's "+N more"),
 // else the number of items. The display feed cuts and caps it (app/display-feed.js).
 const plain = (v, n) => (typeof v === 'string' ? str(v, n) : '');
+// A long sentence is cut at a word with an ellipsis, never in the middle of one ("... or adhe").
+function cutWords(v, n) {
+  const t = typeof v === 'string' ? str(v, 4000) : '';
+  if (t.length <= n) return t;
+  const head = t.slice(0, n - 1), space = head.lastIndexOf(' ');
+  return (space >= n * 0.6 ? head.slice(0, space) : head).replace(/[\s,;:.-]+$/, '') + '…';
+}
 // A need's link: a plain path on the hub ("/workshop"), else '' (the hub's root). Never another site or scheme.
 const hubPath = (v) => (typeof v === 'string' && /^\/(?!\/)[A-Za-z0-9/_-]{0,63}$/.test(v) ? v : '');
 function needsList(d) {
   if (!Array.isArray(d?.items)) return null;
   const items = d.items.filter(i => i && typeof i === 'object')
-    .map(i => ({ id: plain(i.id, 64), source: plain(i.source, 24), tone: plain(i.tone, 12), title: plain(i.title, 80), detail: plain(i.detail, 200), link: hubPath(i.link) }))
+    .map(i => ({ id: plain(i.id, 64), source: plain(i.source, 24), tone: plain(i.tone, 12), title: plain(i.title, 80), detail: cutWords(i.detail, 400), link: hubPath(i.link) }))
     .filter(i => i.id && i.title);
   const count = Number.isSafeInteger(d.count) && d.count >= 0 ? d.count : items.length;
   return { count, items: items.slice(0, 20) };

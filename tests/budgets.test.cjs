@@ -124,7 +124,9 @@ const TOTAL = 315 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // plans, AI readings, the reference wipe and the changed-card highlight (+0.35 KB; 45.3 KB measured).
 // 2026-10-26: app.css 44 → 45 KB for the print lab page's buttons, live print, camera, thumbnails, viewer, Compare and
 // checklist (+0.8 KB, less the retired .lab-shots rules); their scripts load on demand and stay out of the shell.
-const PER_FILE = { 'ui.js': 113 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 36 * KB, 'index.html': 16 * KB, 'home.js': 13 * KB, 'spreadsheets.js': 11 * KB };
+// 2026-11-01: ui.js 113 → 114 KB (System's Advanced tab: the sub strip and its click handler, the Pi Hub link in the header) and
+// app.js 36 → 37 KB (singular counts and the Projects summary line replacing four tiles), from the UI critique pass.
+const PER_FILE = { 'ui.js': 114 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 37 * KB, 'index.html': 16 * KB, 'home.js': 13 * KB, 'spreadsheets.js': 11 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;

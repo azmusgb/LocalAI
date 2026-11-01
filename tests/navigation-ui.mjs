@@ -28,7 +28,7 @@ await page.waitForFunction(() => typeof window.showView === 'function');
 // Navigation spec step 4: the rail picks the area; the page strip under the top bar lists its pages; the top bar names
 // the area (a page without a strip, such as Missions, names itself).
 const stripLabels = () => page.locator('#uxPageStrip button').allInnerTexts();
-const crumbOf = async pg => (await pg.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').trim();
+const crumbOf = async pg => (await pg.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').replace(/^← Pi Hub ?/, '').trim(); // "← Pi Hub" is in the bar of every page; this reads the rest
 const crumb = () => crumbOf(page);
 
 await check('home has one command surface and a short breadcrumb', async () => {
@@ -38,6 +38,28 @@ await check('home has one command surface and a short breadcrumb', async () => {
   assert.equal(await page.locator('#commandInput').getAttribute('placeholder'), 'Ask anything, or describe a task…');
   assert.equal(await page.locator('#uxPageStrip').isVisible(), false, 'Home has no page strip');
   assert.doesNotMatch(await crumb(), /Local AI \//, 'no breadcrumb');
+});
+
+// System keeps Health, Models, Services and Audit log in its strip; the six developer pages sit under one Advanced tab,
+// and each still opens from its own address with Advanced lit and its own page marked in the strip below.
+await check('System: developer pages are grouped under Advanced and every address still opens', async () => {
+  await page.locator('.ux-primary-item[data-domain="system"]').click();
+  await page.waitForSelector('#status.active');
+  assert.deepEqual(await stripLabels(), ['Health', 'Models', 'Services', 'Audit log', 'Advanced']);
+  assert.equal(await page.locator('#uxAdvancedStrip').isVisible(), false, 'no sub strip on Health');
+  for (const [hash, label] of [['architecture', 'Architecture'], ['automations', 'n8n'], ['actions', 'Browser'], ['workbench', 'Files'], ['repoTools', 'Repository'], ['powershell', 'PowerShell']]) {
+    await page.evaluate(h => { location.hash = '#' + h; }, hash);
+    await page.waitForSelector(`#${hash}.active`, { timeout: 5000 });
+    assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Advanced', hash);
+    assert.deepEqual(await page.locator('#uxAdvancedStrip button').allInnerTexts(), ['Architecture', 'n8n', 'Browser', 'Files', 'Repository', 'PowerShell']);
+    assert.equal(await page.locator('#uxAdvancedStrip [aria-current="page"]').innerText(), label, hash);
+  }
+  await page.locator('#uxPageStrip [data-strip-view="status"]').click();
+  await page.waitForSelector('#status.active', { timeout: 5000 });
+  await page.locator('#uxPageStrip [data-strip-view="advanced"]').click();
+  await page.waitForSelector('#powershell.active', { timeout: 5000 });  // back to the one last open
+  await page.locator('#uxAdvancedStrip [data-strip-view="repoTools"]').click();
+  await page.waitForSelector('#repoTools.active', { timeout: 5000 });
 });
 
 // The legacy pages are retired (owner decision D4): their addresses land on the page that replaced them.
@@ -300,7 +322,10 @@ await check('developer tools off: System lists the owner pages only; a developer
   await pg.locator('.dev-tools-pref input').check();
   await pg.waitForFunction(() => !document.body.classList.contains('dev-tools-off'));
   const all = await pg.locator('#uxPageStrip button').allInnerTexts();
-  assert.equal(all.length, OWNER_SYSTEM.length + DEV_SYSTEM.length, `strip with the switch on: ${all}`);
+  assert.deepEqual(all, [...OWNER_SYSTEM, 'Advanced'], 'with the switch on, the developer pages sit under one Advanced tab');
+  await pg.evaluate(() => { location.hash = '#architecture'; });
+  await pg.waitForSelector('#architecture.active');
+  assert.equal(await pg.locator('#uxAdvancedStrip button').count(), DEV_SYSTEM.length);
   // Switching it off while on a developer page returns to Home.
   await pg.evaluate(() => window.showView('workbench'));
   await pg.waitForSelector('#workbench.active');

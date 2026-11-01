@@ -177,7 +177,7 @@ function paintNeeds(){
  if(!entries.length){box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
  if(!root.ApplianceNeeds){if(!needsKitMissing){needsKitMissing=true;console.warn('Needs you: /ui/needs.js did not load; the section stays hidden')}box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
  const ul=root.ApplianceNeeds.renderList(entries.map(e=>e.item),{resolve,here:new URL(location.href),self:'Local AI',max:shown,more:{href:'#work?kind=needs',label:`See all ${n}`}});
- [...ul.querySelectorAll('.ui-need')].forEach((li,i)=>{const e=entries[i];Object.assign(li.dataset,e.data);if(e.go)rowGo.set(li,e.go)});
+ [...ul.querySelectorAll('.ui-need')].forEach((li,i)=>{const e=entries[i];Object.assign(li.dataset,e.data);if(e.go)rowGo.set(li,e.go);const d=li.querySelector('.ui-need__detail');if(d&&e.item.detail)d.title=e.item.detail}); // the clamped detail keeps its full text on hover and long-press
  box.replaceChildren(ul);
  $('homeNeedsCount').textContent=n?'· '+n:'';
  sec.hidden=!n;
@@ -331,7 +331,7 @@ function dropContext(){
  history.replaceState(history.state,'',location.pathname+location.search+h.slice(0,i)+(q.toString()?'?'+q:''));
 }
 function contextFromHash(){const C=root.LocalAIAskContext,R=root.LocalAIRouter;if(!C||!R)return;const c=C.clean(R.current().query.get('context'));if(c){context=c;paintContext()}}
-function activate(){fromHash();contextFromHash();greet();loadRoute();const b=$('homeBack');if(b&&root.LocalAIAskContext)b.href=root.LocalAIAskContext.homeUrl(location.hostname);if(root.LocalAIUI)refresh().then(schedule);streetUp()}
+function activate(){fromHash();contextFromHash();greet();loadRoute();if(root.LocalAIUI)refresh().then(schedule);streetUp()}
 function dockToNav(){
  // On phones the composer sits exactly on the tab bar, whatever its height is. While the owner types, the tab bar
  // steps aside (body.home-typing, see app.css) and the composer sits on the keyboard: iOS keeps innerHeight and only

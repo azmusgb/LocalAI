@@ -74,6 +74,16 @@ function ideaItem(text, at) {
   };
 }
 
+// The same words from the same source a moment ago are the same item filed twice (a double tap, a re-run that lost its
+// id), not a second idea: returns that open item. Only items still waiting (not yet planned, decided or closed) count.
+const DUPLICATE_WINDOW_MS = 10 * 60 * 1000;
+function recentDuplicate(items, candidate, at, windowMs = DUPLICATE_WINDOW_MS) {
+  const key = t => plainTitle(t).toLowerCase(), source = candidate?.source || 'claude', title = key(candidate?.title), now = Date.parse(at) || Date.now();
+  if (!title) return null;
+  return (items || []).find(f => f && key(f.title) === title && (f.source || 'claude') === source && ['proposed', 'approved'].includes(f.status) && !f.changeId
+    && now - (Date.parse(f.createdAt) || 0) <= windowMs && now >= (Date.parse(f.createdAt) || 0)) || null;
+}
+
 function moveToTopBoost(item, openItems, scoreOf) {
   const others = openItems.filter(o => o.id !== item.id);
   const top = others.length ? Math.max(...others.map(scoreOf)) : scoreOf(item);
@@ -168,4 +178,4 @@ function reconcile({ items = [], changes = [], signals = [], release = null, sta
   return { upserts };
 }
 
-module.exports = { LIVE_CHANGE, HANDOFF_FROM, REQUEST_OPEN, REQUEST_CLOSE, changeTitle, plainTitle, stageOf, shouldPromote, signalItemId, promoteSignal, ideaItem, moveToTopBoost, handToClaude, handoffItem, reconcile };
+module.exports = { LIVE_CHANGE, HANDOFF_FROM, REQUEST_OPEN, REQUEST_CLOSE, changeTitle, plainTitle, stageOf, shouldPromote, signalItemId, promoteSignal, ideaItem, recentDuplicate, moveToTopBoost, handToClaude, handoffItem, reconcile };

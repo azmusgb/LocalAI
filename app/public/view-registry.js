@@ -5,6 +5,7 @@
 // `tab` is the label a page uses in its parent's tab strip (the parent's own tab included).
 // A domain's `icon` and a view's `svg` name symbols in the index.html sprite; every menu draws them from here.
 // `dev` marks a developer page: the rail, page strip, phone sheet and ⌘K leave it out while Developer tools (Health) is off.
+// `advanced` groups a developer page under the System page strip's one "Advanced" tab (ui.js renderPageStrip); each keeps its own address.
 // Its address still opens it. Improve and its pages are always shown: the owner runs that pipeline (N1).
 (function(root){'use strict';
 const DOMAINS=[
@@ -31,10 +32,10 @@ const VIEWS=[
  {id:'status',svg:'health',domain:'system',section:'Health',label:'Health',description:'Whether Local AI is working, and which optional services are up.',aka:['status','system status']},
  {id:'models',svg:'model',domain:'system',section:'Health',label:'Models',description:"Installed models and what's loaded now."},
  {id:'integrations',svg:'plug',domain:'system',section:'Health',label:'Services',description:'What Local AI connects to, and whether each one is ready.',aka:['integrations','bridges','tools']},
- {id:'architecture',svg:'flow',domain:'system',section:'Health',dev:true,label:'Architecture',description:'System Atlas: topology, changes, risk, evidence and local architecture intelligence.',aka:['atlas','system atlas','dependencies','architecture atlas']},
+ {id:'architecture',svg:'flow',domain:'system',section:'Health',dev:true,advanced:true,label:'Architecture',description:'System Atlas: topology, changes, risk, evidence and local architecture intelligence.',aka:['atlas','system atlas','dependencies','architecture atlas']},
  {id:'automationStudio',svg:'clock',domain:'work',section:'Work',parent:'work',tab:'Automations',label:'Automations',description:'Scheduled prompts and research, health checks and the morning brief.',aka:['studio','automation studio','monitors','morning brief','health check']},
- {id:'automations',svg:'flow',short:'n8n',domain:'system',section:'Automations',dev:true,label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
- {id:'actions',svg:'globe',short:'Browser',domain:'system',section:'Automations',dev:true,label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
+ {id:'automations',svg:'flow',short:'n8n',domain:'system',section:'Automations',dev:true,advanced:true,label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
+ {id:'actions',svg:'globe',short:'Browser',domain:'system',section:'Automations',dev:true,advanced:true,label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
  {id:'backlog',svg:'improve',domain:'improve',section:'Pipeline',label:'Backlog',description:'One ranked list of what could change in Local AI.',aka:['improve','ideas','priorities']},
  {id:'inProgress',svg:'build',domain:'improve',section:'Pipeline',label:'In progress',description:'Changes being planned, tested or waiting for your OK.',aka:['running changes','change requests','changes','engineer']},
  {id:'deployments',svg:'branch',domain:'improve',section:'Pipeline',label:'Deployments',description:'Reported revisions, build evidence and release checks across workstreams.',aka:['deployment','promotion','release evidence']},
@@ -45,9 +46,9 @@ const VIEWS=[
  // The print lab on Pi Hub (pi-hub repo): `lab sync` sends it there.
  {id:'printLab',svg:'target',domain:'projects',section:'Keep',parent:'projects',tab:'Print lab',label:'Print lab',description:'The print lab on Pi Hub: what it is testing, and what needs you.',aka:['print lab','3d printing','experiments','hex tile']},
  {id:'claude',svg:'sparkle',domain:'improve',section:'Pipeline',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
- {id:'workbench',svg:'folder',domain:'system',section:'Tools',dev:true,label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
- {id:'repoTools',svg:'branch',domain:'system',section:'Tools',dev:true,label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},
- {id:'powershell',svg:'terminal',domain:'system',section:'Tools',dev:true,label:'PowerShell',description:'Approval-gated scripts on the Windows host.',aka:['powershell workbench']},
+ {id:'workbench',svg:'folder',domain:'system',section:'Tools',dev:true,advanced:true,label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
+ {id:'repoTools',svg:'branch',domain:'system',section:'Tools',dev:true,advanced:true,label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},
+ {id:'powershell',svg:'terminal',domain:'system',section:'Tools',dev:true,advanced:true,label:'PowerShell',description:'Approval-gated scripts on the Windows host.',aka:['powershell workbench']},
  {id:'activity',svg:'history',domain:'system',section:'History',label:'Audit log',description:'What happened on the appliance, and when.',aka:['activity']},
  {id:'runs',svg:'work',domain:'hidden',section:'History',label:'Runs',description:'Every run, live, with cancel and retry.'}
 ];
@@ -71,7 +72,8 @@ function sections(domainId){
 }
 // The browser tab's title for a page (E8): "Work · Local AI"; a tab of a page by its tab label ("Library · Local AI").
 function title(id){const v=view(id);if(!v||v.id==='home')return 'Local AI';return `${v.parent?(v.tab||v.label):v.label} · Local AI`}
-const api={DOMAINS,VIEWS,ALIASES,resolve,view,page,tabs,sections,title,label:id=>byId.get(id)?.label||id,description:id=>byId.get(id)?.description||''};
+const ADVANCED_LABEL='Advanced';
+const api={DOMAINS,VIEWS,ADVANCED_LABEL,ALIASES,resolve,view,page,tabs,sections,title,label:id=>byId.get(id)?.label||id,description:id=>byId.get(id)?.description||''};
 if(typeof module==='object'&&module.exports)module.exports=api;else root.LocalAIViews=api;
 })(typeof window!=='undefined'?window:globalThis);
 

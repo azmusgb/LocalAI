@@ -642,9 +642,11 @@ function createChanges(ctx) {
       json(res,200,{items,signals:issueStore().slice(0,250)})}catch(e){storageError(res,e,500)}
   }
   async function apiImproveIdea(req,res){
-    try{const b=await readBody(req,512*1024);const item=improve.ideaItem(b.text,nowIso());if(!item)return json(res,400,{error:'Describe the change first.'});
-      storage.writeSetting(CLAUDE_FINDING_PREFIX+item.id,{sessionId:'owner',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...item});
-      if(b.start!==true)return json(res,201,{item});
+    try{const b=await readBody(req,512*1024);const made=improve.ideaItem(b.text,nowIso());if(!made)return json(res,400,{error:'Describe the change first.'});
+      // The same idea again within minutes (a double tap) is the one item, not a second row.
+      const again=improve.recentDuplicate(claudeFindings(),made,made.createdAt),item=again||made;
+      if(!again)storage.writeSetting(CLAUDE_FINDING_PREFIX+item.id,{sessionId:'owner',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...item});
+      if(b.start!==true)return json(res,again?200:201,{item});
       // The idea is saved either way; if planning fails, say so and let the owner retry from the Backlog.
       try{const change=await planChange({request:improveChangeRequest(item),target:'self'},{itemId:item.id,stay:improveStay(item)});json(res,201,{item:improveRead(item.id),change:publicChange(change)})}
       catch(e){json(res,201,{item:improveRead(item.id),error:`Saved to your backlog, but planning failed: ${e.message}`})}}catch(e){storageError(res,e,500)}
@@ -770,7 +772,10 @@ function createChanges(ctx) {
     try{const b=await readBody(req,1024*1024);const list=Array.isArray(b.findings)?b.findings.slice(0,300):[b];const at=nowIso();const saved=[],fresh=[];
       storage.transaction(()=>{if(b.sessionId)claudeSaveSession(b,at);for(const raw of list){const id=claudeSlug(raw.id,'');const prev=id?storage.readSetting(CLAUDE_FINDING_PREFIX+id,null):null;
         // signal-* and idea-* ids are Improve's: Claude may update those items, never create them.
-        if(/^(signal|idea)-/.test(id)&&!prev)continue;const f=claudeNormalizeFinding({...raw,sessionId:raw.sessionId||b.sessionId},prev,at);delete f.ownerTyped;/* Claude's words now, not only the owner's */storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);saved.push(f);if(!prev&&f.status==='proposed')fresh.push(f)}});
+        if(/^(signal|idea)-/.test(id)&&!prev)continue;
+        // A new finding with no id that repeats one filed minutes ago (same title) updates that one; a finding with an id is matched by it.
+        const dupe=!prev&&!id?improve.recentDuplicate(claudeFindings(),{title:raw.title,source:'claude'},at):null;
+        const f=claudeNormalizeFinding({...raw,id:dupe?dupe.id:raw.id,sessionId:raw.sessionId||b.sessionId},prev||dupe,at);delete f.ownerTyped;/* Claude's words now, not only the owner's */storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);saved.push(f);if(!prev&&!dupe&&f.status==='proposed')fresh.push(f)}});
       // A new finding waiting for the owner's decision reaches the phone; re-posts of the same id don't.
       for(const f of fresh)notifier.notify({kind:'needs-you',title:'Claude needs your decision',body:f.title,url:'/?open=backlog',tag:`finding:${f.id}`});
       json(res,201,{ok:true,items:claudeRanked(saved)})}catch(e){storageError(res,e,400)}

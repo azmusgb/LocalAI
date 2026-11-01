@@ -50,7 +50,7 @@ await check('desktop: one rail and one strip on every page; the top bar names th
   await page.waitForSelector('#work.active', T);
   await page.waitForTimeout(300);
   const left = () => page.evaluate(() => document.querySelector('main').getBoundingClientRect().left);
-  const area = async () => (await page.locator('#uxContextBar .ux-context-left').innerText()).replace(/\s+/g, ' ').trim();
+  const area = async () => (await page.locator('#uxContextBar .ux-context-left').innerText()).replace(/\s+/g, ' ').replace(/^← Pi Hub ?/, '').trim(); // the Pi Hub link is in every bar
   const x = await left();
   assert.ok(x < 120, `main starts at ${x}px, beside the 76px rail`);
   assert.equal(await area(), 'Work');
@@ -64,9 +64,9 @@ await check('desktop: one rail and one strip on every page; the top bar names th
   await page.context().close();
 });
 
-await check('phone: the System tab strip scrolls, fades at the overflowing edge, and keeps the open tab in view', async () => {
-  const page = await open(phone, '#status');
-  await page.waitForSelector('#status.active', T);
+await check('phone: the Improve tab strip scrolls, fades at the overflowing edge, and keeps the open tab in view', async () => {
+  const page = await open(phone, '#backlog');
+  await page.waitForSelector('#backlog.active', T);
   const strip = page.locator('#uxPageStrip');
   await strip.waitFor({ state: 'visible', timeout: 6000 });
   const info = () => strip.evaluate(e => ({ sw: e.scrollWidth, cw: e.clientWidth, left: e.scrollLeft, start: e.dataset.fadeStart, end: e.dataset.fadeEnd, mask: getComputedStyle(e).maskImage || getComputedStyle(e).webkitMaskImage }));
@@ -78,8 +78,8 @@ await check('phone: the System tab strip scrolls, fades at the overflowing edge,
   await page.waitForFunction(() => document.getElementById('uxPageStrip').dataset.fadeEnd === 'false', null, T);
   i = await info();
   assert.equal(i.start, 'true');
-  await page.evaluate(() => LocalAIRouter.go('#activity'));
-  await page.waitForSelector('#activity.active', T);
+  await page.evaluate(() => LocalAIRouter.go('#claude'));
+  await page.waitForSelector('#claude.active', T);
   await page.waitForTimeout(300);
   const vis = await page.evaluate(() => { const s = document.getElementById('uxPageStrip'), b = s.querySelector('[aria-current="page"]'), sr = s.getBoundingClientRect(), br = b.getBoundingClientRect(); return br.left >= sr.left - 1 && br.right <= sr.right + 1; });
   assert.ok(vis, 'the open tab is fully inside the strip');

@@ -15,6 +15,13 @@ function badge(status) {
   const raw = String(status ?? '').trim().replace(/[_-]+/g, ' ');
   return { label: raw ? raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase() : 'Unknown', tone: 'neutral' };
 }
+// A health check that ran to the end but reported a service DOWN (or DEGRADED) is not "Done": its summary starts
+// "Overall: DOWN. ...". Only a finished automation run is read this way; the run's status stays what it was.
+function outcomeBadge(run, kind, summary) {
+  if (kind !== 'automation' || !['completed', 'complete', 'answered', 'applied'].includes(String(run.status ?? '').trim().toLowerCase())) return null;
+  const m = /^\s*Overall:\s*(DOWN|DEGRADED)\b/i.exec(summary);
+  return m ? { label: 'Found problems', tone: m[1].toUpperCase() === 'DOWN' ? 'bad' : 'attention' } : null;
+}
 // Diff stat per file, never the patch: count +/- lines of the staged diff, else estimate from the planned operations.
 const nl = t => typeof t === 'string' && t ? t.split('\n').length : 0;
 function fileStats(change) {
@@ -79,6 +86,6 @@ function runCard(run, { approvalFor, changeFor } = {}) {
   if (!used && kind === 'engineering' && meta.changeId && changeFor) used = changeFor(meta.changeId)?.route;
   const text = used && typeof used === 'object' ? routeLabel(used) : '';
   const route = text ? { text, why: typeof used.why === 'string' ? used.why.slice(0, 160) : '' } : null;
-  return { kind, icon, title: readableTitle(run), summary, badge: badge(run.status), preview, action, approval, view, route };
+  return { kind, icon, title: readableTitle(run), summary, badge: outcomeBadge(run, kind, summary) || badge(run.status), preview, action, approval, view, route };
 }
 module.exports = { runCard, readableTitle, STATUS, workKind, WORK_CHIPS };

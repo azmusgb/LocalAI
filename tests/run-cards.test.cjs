@@ -26,6 +26,16 @@ test('image runs preview the first image', () => {
   assert.equal(c.view, 'create');
 });
 
+test('a finished health check that reports a problem is not Done', () => {
+  const run = (summary, status = 'completed') => runCard({ id: 'legacy-automation:2', type: 'automation', status, summary }, none).badge;
+  assert.deepEqual(run('Overall: DOWN. Ollama: DOWN; ComfyUI: HEALTHY'), { label: 'Found problems', tone: 'bad' });
+  assert.deepEqual(run('Overall: DEGRADED. Ollama: DEGRADED'), { label: 'Found problems', tone: 'attention' });
+  assert.deepEqual(run('Overall: HEALTHY. Ollama: HEALTHY'), { label: 'Done', tone: 'good' });
+  assert.deepEqual(run('Overall: DOWN. Ollama: DOWN', 'failed'), { label: 'Failed', tone: 'bad' });
+  // Only automations are read this way: a chat that quotes the words stays Done.
+  assert.deepEqual(runCard({ id: 'c1', type: 'chat', status: 'completed', summary: 'Overall: DOWN' }, none).badge, { label: 'Done', tone: 'good' });
+});
+
 test('agent and automation runs', () => {
   const a = runCard({ id: 'legacy-agent:1', type: 'agent', status: 'completed', summary: 'Do a thing' }, none);
   assert.equal(a.icon, 'automate');
