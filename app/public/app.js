@@ -596,8 +596,9 @@ function serviceDescription(s){
   if(s.required===false)return `${what} Optional: Local AI works without it.`.trim();
   return `${what} ${s.state==='DEGRADED'?'Answering slowly or with errors.':'Not answering right now.'} ${todo}`.trim();
 }
-// Response time is shown only when it's slow enough to notice.
-const slowNote=ms=>Number.isFinite(ms)&&ms>=2000?`Slow · ${(ms/1000).toFixed(1)} s`:'';
+// Response time is shown only when it's slow enough to notice, and only for a service that answered: a Down or
+// offline one has no response time to speak of ("Down" and "Slow · 3.0 s" together contradict each other).
+const slowNote=s=>{const ms=s?.latencyMs;return Number.isFinite(ms)&&ms>=2000&&['HEALTHY','DEGRADED'].includes(serviceDisplayState(s))?`Slow · ${(ms/1000).toFixed(1)} s`:''};
 let statusRefreshing=false,statusLastOk='';
 const clock=d=>d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'});
 async function refreshStatus(force=false){
@@ -623,7 +624,7 @@ async function refreshStatus(force=false){
     $('statusSummary').innerHTML=`<span class="dot ${overall}"></span> ${coreBad.length?`${coreBad.length} core service${coreBad.length===1?' needs':'s need'} attention`:optionalBad.length?`Core ready · ${optionalBad.length} optional service${optionalBad.length===1?'':'s'} off`:'Everything is ready'}`;
     statusLastOk=j.checkedAt?clock(new Date(j.checkedAt)):clock(new Date());
     const checked=$('statusCheckedAt');if(checked)checked.textContent=`Checked ${statusLastOk}`;
-    $('serviceList').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);return `<div class="service service-card ${st}"><div class="service-copy"><strong>${esc(s.label)}</strong><small>${esc(serviceDescription(s))}</small></div><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">${esc(slowNote(s.latencyMs))}</span></div>`}).join('');
+    $('serviceList').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);return `<div class="service service-card ${st}"><div class="service-copy"><strong>${esc(s.label)}</strong><small>${esc(serviceDescription(s))}</small></div><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">${esc(slowNote(s))}</span></div>`}).join('');
     $('technicalStatus').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);const err=s.error?` · ${esc(s.error)}`:'';return `<div class="service"><span>${esc(s.name)} · ${s.required===false?'optional companion':'core'}<small class="service-tech-note">${esc(s.impact||'')}${err}</small></span><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">HTTP ${s.statusCode??'—'}</span></div>`}).join('');
     const c=j.certification||{};const res=String(c.result||'').toUpperCase(),word={PASS:'Passed',WARN:'Passed with warnings',FAIL:'Failed'}[res]||human(c.result||'Unknown'),tone={PASS:'HEALTHY',WARN:'DEGRADED',FAIL:'DOWN'}[res]||'DEGRADED';$('certBox').innerHTML=c.available?`<span class="dot ${tone}"></span> ${esc(word)}${c.modifiedAt?` · ${esc(new Date(c.modifiedAt).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}`:''}`:'<span class="dot DEGRADED"></span> No check on record';
   }catch(e){

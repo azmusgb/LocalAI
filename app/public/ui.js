@@ -4295,7 +4295,7 @@ let me=null;
 async function render(card){
  me=null;
  if(!isSecureContext){say(card,`<p>Notifications need the secure address. Open <a href="https://${location.hostname}/">https://${location.hostname}/</a> (set up the certificate under Secure connection first).</p>`);return}
- if(isIOS&&!standalone()){say(card,'<p><b>Add Local AI to your Home Screen.</b> In Safari tap Share › Add to Home Screen, then open Local AI from its new icon and come back here. iPhone shows notifications only for Home Screen apps.</p>');return}
+ if(isIOS&&!standalone()){say(card,'<p><b>Add Local AI to your Home Screen.</b> In Safari tap Share › Add to Home Screen, then open Local AI from its new icon and come back here. iPhone and iPad show notifications only for Home Screen apps.</p>');return}
  if(!supported()){say(card,'<p>This browser can\'t receive notifications.</p>');return}
  let sub;
  try{sub=await subscription()}catch{say(card,'<p><b>Local AI\'s background service didn\'t start</b>, so this device can\'t receive notifications yet. Reload Local AI and try again.</p>');return}
