@@ -93,6 +93,9 @@ services:
       # Services › Workshop display: the touchscreen beside the printer (docs/WORKSHOP-DISPLAY.md). Empty means the
       # default, http://10.0.0.124; only an http(s) address on the home network or a .local name is used.
       LOCALAI_WORKSHOP_URL: ${LOCALAI_WORKSHOP_URL:-}
+      # SHA-256 (hex) of Pi Hub's service key (X-LocalAI-Hub-Key): opens GET /api/display/ai-cards and the display's approvals,
+      # ask and image routes for Pi Hub. Empty means Pi Hub is refused. Only the hash lives in stack.env.
+      LOCALAI_HUB_KEY_SHA256: ${LOCALAI_HUB_KEY_SHA256:-}
       # The display's read-only printer-status token (Local Portal › More › Read-only status access). Empty means no
       # printer line. A secret: it lives only in stack.env.
       LOCALAI_WORKSHOP_STATUS_TOKEN: ${LOCALAI_WORKSHOP_STATUS_TOKEN:-}

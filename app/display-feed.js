@@ -140,4 +140,19 @@ function signature(feed) {
   return crypto.createHash('sha256').update(parts.join('\n')).digest('hex').slice(0, 16);
 }
 
-module.exports = { signature, buildFeed, jpegUrl, cut, todaySentence, nextSentence };
+// What Pi Hub takes from Local AI (GET /api/display/ai-cards): the AI kinds only, with the needs card as the approvals
+// count. lab, home, playing, materials, weather and the hub's needs list are Pi Hub's own.
+const AI_KINDS = new Set(['watch', 'running', 'done', 'image', 'disk']);
+function aiCards(feed) {
+  const cards = feed.cards || [];
+  const needs = cards.find((c) => c.kind === 'needs');
+  return {
+    v: 2, at: feed.at,
+    cards: cards.filter((c) => AI_KINDS.has(c.kind)),
+    approvals: { count: needs?.count || 0, speech: needs?.text || '' },
+    images: feed.images || [],
+    messages: feed.messages || []
+  };
+}
+
+module.exports = { aiCards, signature, buildFeed, jpegUrl, cut, todaySentence, nextSentence };

@@ -395,3 +395,10 @@ Clear plate stops after a failed plate confirmation; it never clears the printer
 confirmation with a failed error-clear step remains accepted and posts **Check printer errors** through the display's
 existing message channel. Complete success posts **Plate confirmed**; a failed confirmation posts **Plate not confirmed**.
 These banners are quiet and best effort. They report the service outcome, not a physical inspection of the plate.
+
+## Pi Hub
+
+Pi Hub is the display's backend: it calls Local AI server to server and forwards approvals, ask and images for the display. It signs in with its own key, `X-LocalAI-Hub-Key`; the appliance keeps only the SHA-256 (hex) in `LOCALAI_HUB_KEY_SHA256` (stack.env). Empty means Pi Hub is refused.
+
+- `GET /api/display/ai-cards` (hub key only) answers `{v: 2, at, cards, approvals: {count, speech}, images, messages}`: the `watch`, `running`, `done`, `image` and `disk` cards of the display feed. The Needs card becomes `approvals`; `lab`, `home`, `playing`, `materials`, `weather` and the hub's own needs list are left to Pi Hub.
+- The hub key is also accepted on `/api/display/approvals`, `/api/display/approvals/decide`, `/api/display/ask` and `/api/images/view`, and nowhere else.

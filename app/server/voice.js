@@ -5,7 +5,7 @@
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
 function createVoice(ctx) {
-  const { APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayAuthorized, displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, printLab, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, storage, storageError, text, voice, voiceFacts, watchdog, weather } = ctx;
+  const { APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayAuthorized, hubAuthorized, displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, printLab, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, storage, storageError, text, voice, voiceFacts, watchdog, weather } = ctx;
 
   // What Home lists under Needs you (app/public/home.js, loadNeeds and paintNeeds), for Siri and the Watch to say the
   // same: the runs app/public/needs-you.js picks (a waiting approval; a failure that is unseen, under a day old, not
@@ -143,6 +143,13 @@ function createVoice(ctx) {
       const feed = displayFeed.buildFeed({ needs, watch: watchdog.list() });
       json(res, 200, { schema: 1, source: 'localai', at: feed.at, cards: feed.cards });
     } catch (e) { json(res, 500, { error: String(e.message || e) }); }
+  }
+
+  // GET /api/display/ai-cards (Pi Hub's key only): the AI cards of the feed below, for Pi Hub's own display feed. The
+  // host's loopback passes sign-in, so the key is checked here too.
+  async function apiDisplayAiCards(req, res) {
+    if (!hubAuthorized(req)) return json(res, 401, { error: 'Pi Hub key required.' });
+    try { json(res, 200, displayFeed.aiCards(await displayFeedNow({ withNeeds: false }))); } catch (e) { json(res, 500, { error: String(e.message || e) }); }
   }
 
   async function apiDisplayFeed(req, res) {
@@ -405,7 +412,7 @@ function createVoice(ctx) {
     } catch (e) { say(e.statusCode === 413 ? 413 : 503, e.statusCode === 413 ? 'That was too long for me.' : VOICE_DOWN); }
   }
 
-  return { apiAttention, apiDisplayAlerts, apiDisplayApprovalDecide, apiDisplayApprovals, apiDisplayAsk, apiDisplayEvents, apiDisplayFeed, apiDisplayHeartbeat, apiDisplayNotify, apiDisplayPair, apiGlance, apiGlanceAsk, apiVoiceHome, apiWatchHeartbeat, voiceTimeZone };
+  return { apiAttention, apiDisplayAiCards, apiDisplayAlerts, apiDisplayApprovalDecide, apiDisplayApprovals, apiDisplayAsk, apiDisplayEvents, apiDisplayFeed, apiDisplayHeartbeat, apiDisplayNotify, apiDisplayPair, apiGlance, apiGlanceAsk, apiVoiceHome, apiWatchHeartbeat, voiceTimeZone };
 }
 
 module.exports = { createVoice };

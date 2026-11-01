@@ -162,19 +162,22 @@ const printLab = require('./print-lab').createPrintLab({
 const displayKey = require('./route-keys').createRouteKey({ dataDir: DATA_DIR, file: 'workshop-display-key.sha256', header: 'x-localai-display-key' });
 // The display's Judge it sheet (app/display-lab.js): the phone's verdict request, queued from the display's key alone.
 const displayLab = require('./display-lab').createDisplayLab({ labStore: printLab, json, authorized: req => displayKey.authorized(req) });
+// Pi Hub's service key (X-LocalAI-Hub-Key, app/hub-key.js): the AI cards, and what the display's key opens, for Pi Hub.
+const hubKey = require('./hub-key');
 const signIn = require('./signin').createSignIn({ storage, signedIn: req => !!claudeChat.deviceFor(req) || claudeChat.macAuthorized(req) || isHostReq(req), routeKeys: {
   '/api/display/feed': req => displayKey.authorized(req),
-  '/api/display/ask': req => displayKey.authorized(req),
+  '/api/display/ai-cards': req => hubKey.authorized(req),
+  '/api/display/ask': req => displayKey.authorized(req) || hubKey.authorized(req),
   '/api/display/events': req => displayKey.authorized(req),
-  '/api/display/approvals': req => displayKey.authorized(req),
-  '/api/display/approvals/decide': req => displayKey.authorized(req),
+  '/api/display/approvals': req => displayKey.authorized(req) || hubKey.authorized(req),
+  '/api/display/approvals/decide': req => displayKey.authorized(req) || hubKey.authorized(req),
   '/api/display/heartbeat': req => displayKey.authorized(req),
   '/api/display/printer/clear': req => displayKey.authorized(req),
   '/api/display/poster': req => displayKey.authorized(req),
   '/api/display/lab/judge': req => displayKey.authorized(req),
   '/api/display/lab/verdict': req => displayKey.authorized(req),
   // The feed's latest-image card links here; the display fetches the JPEG with its key.
-  '/api/images/view': req => displayKey.authorized(req)
+  '/api/images/view': req => displayKey.authorized(req) || hubKey.authorized(req)
 } });
 
 
@@ -710,7 +713,7 @@ const { apiPowerShellApprove, apiPowerShellCancel, apiPowerShellCreate, apiPower
 const { apiAutomationCreate, apiAutomationRun, apiAutomationUpdate, apiAutomations, apiMonitorCreate, apiMonitorRun, apiMonitors, apiMorningBrief, automationSchedulerTick, monitorSchedulerTick } = require('./server/automations').createAutomations({ AUTOMATIONS_STORE, AUTOMATION_RUNS_STORE, MONITORS_STORE, activityStore, addNotification, automationRunStore, automationStore, featureAtLeast, getStatusAndRecordTransition, inFlight, json, makeId, normalizeTitle, notificationStore, nowIso, objectStore, readBody, recordActivity, requireFeature, runLocalModel, saveStore, searxSearch, storageError });
 const { apiRunCancel, apiRunRetry, apiRunUpdate, apiRuns, createChatExecution, needsThreads, streetRuns } = require('./server/runs').createRuns({ AUTOMATION_RUNS_STORE, MODEL, RUNS_STORE, WORK_CHIPS, activeRunControllers, agentRunStore, approvalStore, automationRunStore, changeStore, cleanRunId, effectiveEngineeringRuns, fetchWithTimeout, gridcraftRuns, json, keptMarker, listenPort, needsYou, nowIso, projectStore, readBody, recordActivity, runCard, runLedger, sanitizeMessages, saveStore, seenRuns, storageError, titleFromText, withSeen, workKind });
 const { apiChat, apiChatStream, apiRoute, chatOnce } = require('./server/chat').createChat({ ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, coordinator, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone: (...a) => voiceTimeZone(...a) });
-const { apiAttention, apiDisplayAlerts, apiDisplayApprovalDecide, apiDisplayApprovals, apiDisplayAsk, apiDisplayEvents, apiDisplayFeed, apiDisplayHeartbeat, apiDisplayNotify, apiDisplayPair, apiGlance, apiGlanceAsk, apiVoiceHome, apiWatchHeartbeat, voiceTimeZone } = require('./server/voice').createVoice({ APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayAuthorized: req => displayKey.authorized(req), displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, printLab, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, storage, storageError, text, voice, voiceFacts, watchdog, weather });
+const { apiAttention, apiDisplayAiCards, apiDisplayAlerts, apiDisplayApprovalDecide, apiDisplayApprovals, apiDisplayAsk, apiDisplayEvents, apiDisplayFeed, apiDisplayHeartbeat, apiDisplayNotify, apiDisplayPair, apiGlance, apiGlanceAsk, apiVoiceHome, apiWatchHeartbeat, voiceTimeZone } = require('./server/voice').createVoice({ APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayAuthorized: req => displayKey.authorized(req), hubAuthorized: req => hubKey.authorized(req), displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, printLab, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, storage, storageError, text, voice, voiceFacts, watchdog, weather });
 const server = http.createServer(async (req, res) => {
   const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const p = urlObj.pathname;
@@ -887,6 +890,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/watch') return json(res, 200, { ...watchdog.summary(), display: storage.readSetting('display:heartbeat', null) });
     if (req.method === 'GET' && p === '/api/attention') return await apiAttention(req,res);
     if (req.method === 'GET' && p === '/api/display/feed') return await apiDisplayFeed(req,res);
+    if (req.method === 'GET' && p === '/api/display/ai-cards') return await apiDisplayAiCards(req,res);
     // Home's Needs you: Pi Hub's one list (the display's cached fetch), or items null when the hub doesn't answer.
     if (req.method === 'GET' && p === '/api/home/hub-needs') { const hub = await piHub.needs(); return json(res, 200, { items: hub ? hub.items : null }); }
     if (req.method === 'GET' && p === '/api/display/ask') return await apiDisplayAsk(req,res,urlObj);
