@@ -64,7 +64,7 @@ await check('desktop: one rail and one strip on every page; the top bar names th
   await page.context().close();
 });
 
-await check('phone: the Improve tab strip scrolls (System's is short now: its developer pages sit under Advanced), fades at the overflowing edge, and keeps the open tab in view', async () => {
+await check('phone: the Improve tab strip scrolls, fades at the overflowing edge, and keeps the open tab in view', async () => {
   const page = await open(phone, '#backlog');
   await page.waitForSelector('#backlog.active', T);
   const strip = page.locator('#uxPageStrip');
