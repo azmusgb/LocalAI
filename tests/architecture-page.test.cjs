@@ -66,3 +66,10 @@ test('the map sizes to its rows, and the page copy is plain', () => {
   assert.match(html, /data-atlas-mode="architecture">Structure<\/button>/);
   assert.match(html, /<button id="atlasMapBack" class="btn-outline" type="button" hidden>/);
 });
+
+test('live follow-ups: a late snapshot list still picks the newest commit, and a short map sits at the top', () => {
+  const js = fs.readFileSync(path.join(ROOT, 'app/public/architecture.js'), 'utf8');
+  assert.match(js, /if\(state\.repo!=='localai'&&!state\.commit\)state\.commit=rows\[0\]\?\.commit\|\|'';/);
+  const html = fs.readFileSync(path.join(ROOT, 'app/public/index.html'), 'utf8');
+  assert.match(html, /<svg id="atlasMap"[^>]*preserveAspectRatio="xMidYMin meet"/);
+});
