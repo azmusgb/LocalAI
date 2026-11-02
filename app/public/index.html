@@ -251,7 +251,9 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
   <div class="atlas-source" role="group" aria-label="Which graph to show">
     <div class="atlas-source-field"><label for="atlasRepo">Repository</label><select id="atlasRepo"><option value="localai">Local AI</option></select></div>
     <div class="atlas-source-field"><label for="atlasCommit">Commit</label><select id="atlasCommit"><option value="">Latest scan</option></select></div>
+    <button id="atlasSnapshotNow" class="btn-outline" type="button">Snapshot now</button>
     <p id="atlasSourceNote" class="atlas-source-note"></p>
+    <p id="atlasSnapshotState" class="atlas-snapshot-state" role="status" aria-live="polite" hidden></p>
   </div>
 
   <div class="atlas-kpis" aria-label="Architecture summary">
