@@ -140,7 +140,7 @@ for (const [parent, child, childTab, domain, area] of [
 }
 
 // Deployments merged into Shipped (2 Nov): the old address opens Shipped, whose Running now card names the revision the
-// appliance reports (or says it has none) and says what is not connected.
+// appliance reports (or says it has none) and links every part's deploys to Pi Hub's Versions (platform step 4).
 await check('#deployments opens Shipped, with Running now above the releases', async () => {
   await page.evaluate(() => { location.hash = '#deployments'; });
   await page.waitForSelector('#shipped.active', { timeout: 5000 });
@@ -149,7 +149,11 @@ await check('#deployments opens Shipped, with Running now above the releases', a
   assert.equal(await card.locator('h2').innerText(), 'Running now');
   await page.waitForFunction(() => !/Checking/.test(document.querySelector('#shippedNow [data-dep-line]').textContent), null, { timeout: 10000 });
   assert.match(await card.innerText(), /reported by the appliance|has not reported a revision/);
-  assert.match(await card.innerText(), /No deployment feed yet for Workshop OS/);
+  assert.doesNotMatch(await card.innerText(), /No deployment feed yet/);
+  const versions = card.locator('a[data-dep-versions]');
+  assert.equal(await versions.innerText(), 'Pi Hub › Versions');
+  assert.match(await versions.getAttribute('href'), /^(https:\/\/hub\.rahe-home\.duckdns\.org|http:\/\/10\.0\.0\.30)\/versions$/);
+  assert.equal(await versions.getAttribute('rel'), 'noopener');
   assert.ok(await page.evaluate(() => { const c = document.getElementById('shippedNow'), l = document.getElementById('shippedList'); return !!(c.compareDocumentPosition(l) & Node.DOCUMENT_POSITION_FOLLOWING); }), 'Running now comes before the releases');
 });
 
