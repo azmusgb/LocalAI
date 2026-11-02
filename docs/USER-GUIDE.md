@@ -30,7 +30,7 @@ There are five sections. On a phone they are the tabs at the bottom; on a comput
 | **Work** | Everything that is running or done (chats, images, missions, changes), and **Automations**, what runs on a schedule |
 | **Projects** | What you make and keep: your projects with their Sources and Memory, your **Library**, **Spreadsheets** and the **Print lab** |
 | **Improve** | Changing Local AI itself: ideas, problems it noticed, changes in progress, what shipped |
-| **System** | Health, models, services and the audit log (and the developer tools, when they are on) |
+| **System** | Health, models, services, settings and the audit log (and the developer tools, when they are on) |
 
 To jump anywhere, press **⌘K** on a computer or tap the **magnifier** on a phone, then type a page name. If no page
 matches, **Search your work for …** looks through your chats, images and runs.
@@ -280,7 +280,7 @@ advanced workflows. Old Monitors links open this page.
 
 ## Notifications
 
-On an iPhone, open Local AI from the Home Screen, then **System › Health › Notifications › Allow notifications**, and
+On an iPhone, open Local AI from the Home Screen, then **System › Settings › Notifications › Allow notifications**, and
 **Send a test**. Choose which kinds you want (Needs you, Failed, Down and recovered, Finished) and your quiet hours.
 During quiet hours (10 PM to 7 AM by default) only failures and outages get through.
 
@@ -291,7 +291,7 @@ or have it start an image, research or a mission. Follow-ups such as "and tomorr
 Approvals are never given by voice; they stay on the phone. Setup and everything you can say: [Apple Watch and
 Siri](APPLE-WATCH.md).
 
-For weather, set your home location in **System › Health › Home location**.
+For weather, set your home location in **System › Settings › Home location**.
 
 ## Chat with Claude Code
 
@@ -300,7 +300,7 @@ be paired first, once. See [Claude chat](CLAUDE-CHAT.md).
 
 ## Developer tools
 
-**System › Health › Show developer tools** adds **Change Local AI** to Home's choices, and the developer pages
+**System › Settings › Show developer tools** adds **Change Local AI** to Home's choices, and the developer pages
 under System: **Files**, **Repository**, **PowerShell**, **Browser & computer** and **n8n workflows**. It also shows Models' runtime tile and Health's **Advanced service
 details**. Off, all of these are hidden from the menu, the page strip and search; a page's address still opens it.
 Everything else works the same. The setting is kept per device.

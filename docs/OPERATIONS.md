@@ -176,7 +176,7 @@ decides; design: `docs/superpowers/specs/2026-10-15-notifications-design.md`). M
 the device; the appliance contacts only Apple, Google and Mozilla push services.
 
 **Turn on, iPhone:** trust the Local AI certificate (Health › Secure connection), open `https://<host>` in Safari,
-Share › Add to Home Screen, open Local AI from the Home Screen, then Health › Notifications › Allow notifications,
+Share › Add to Home Screen, open Local AI from the Home Screen, then Settings › Notifications › Allow notifications,
 and Send a test. iPhone delivers web push only to Home Screen apps.
 
 | Kind | When |

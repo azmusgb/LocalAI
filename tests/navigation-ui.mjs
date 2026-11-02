@@ -45,7 +45,7 @@ await check('home has one command surface and a short breadcrumb', async () => {
 await check('System: developer pages are grouped under Advanced and every address still opens', async () => {
   await page.locator('.ux-primary-item[data-domain="system"]').click();
   await page.waitForSelector('#status.active');
-  assert.deepEqual(await stripLabels(), ['Health', 'Models', 'Services', 'Audit log', 'Advanced']);
+  assert.deepEqual(await stripLabels(), ['Health', 'Models', 'Services', 'Settings', 'Audit log', 'Advanced']);
   assert.equal(await page.locator('#uxAdvancedStrip').isVisible(), false, 'no sub strip on Health');
   for (const [hash, label] of [['architecture', 'Architecture'], ['automations', 'n8n'], ['actions', 'Browser'], ['workbench', 'Files'], ['repoTools', 'Repository'], ['powershell', 'PowerShell']]) {
     await page.evaluate(h => { location.hash = '#' + h; }, hash);
@@ -301,7 +301,7 @@ await mobile.close();
 
 // Developer tools off (a new install): System's menu, the page strip and the phone sheet hold the owner's pages only.
 // The developer pages still open by address, and the switch brings them back.
-const OWNER_SYSTEM = ['Health', 'Models', 'Services', 'Audit log']; // Automations is in Work, Spreadsheets in Projects (navigation step 3)
+const OWNER_SYSTEM = ['Health', 'Models', 'Services', 'Settings', 'Audit log']; // Automations is in Work, Spreadsheets in Projects (navigation step 3)
 const DEV_SYSTEM = ['Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows', 'Architecture'];  // Architecture (System Atlas) since 31 Oct 2026 // Claude Code is in Improve (N2)
 await check('developer tools off: System lists the owner pages only; a developer page still opens by address', async () => {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
@@ -318,7 +318,7 @@ await check('developer tools off: System lists the owner pages only; a developer
   assert.equal(await crumbOf(pg), 'System');
   assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), OWNER_SYSTEM, 'the open developer page does not add itself to the strip');
   // The switch brings every developer page back, in place.
-  await pg.evaluate(() => window.showView('status'));
+  await pg.evaluate(() => window.showView('settings'));
   await pg.locator('.dev-tools-pref input').check();
   await pg.waitForFunction(() => !document.body.classList.contains('dev-tools-off'));
   const all = await pg.locator('#uxPageStrip button').allInnerTexts();

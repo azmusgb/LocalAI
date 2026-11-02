@@ -201,7 +201,7 @@ await check('shell: many page tabs scroll on a 320px phone and the active one is
 });
 
 await check('shell: with Developer tools off the tab bar still has five equal items', async () => {
-  await shell.evaluate(() => window.showView('status'));
+  await shell.evaluate(() => window.showView('settings'));
   await shell.locator('.dev-tools-pref input').uncheck();
   const widths = await shell.evaluate(() => [...document.querySelectorAll('#uxMobileNav [data-domain]')].map(b => b.getBoundingClientRect().width).filter(w => w > 0));
   assert.equal(widths.length, 5);

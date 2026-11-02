@@ -40,8 +40,8 @@ await check('the setup steps are folded and the card sits below the service list
     return !!(services.compareDocumentPosition(document.querySelector('.secure-card')) & Node.DOCUMENT_POSITION_FOLLOWING);
   });
   assert.ok(below, 'secure card should follow the service list');
-  const order = await page.evaluate(() => [...document.querySelectorAll('#status > *, #status > .two > *')].filter(e => e.getBoundingClientRect().height > 0).map(e => e.id || e.className.split(' ').find(c => /status-overview|whatsnew|secure|dev-tools/.test(c)) || (e.querySelector('#serviceList') ? 'services' : '')).filter(Boolean));
-  assert.ok(order.indexOf('services') >= 0 && order.indexOf('services') < order.indexOf('whatsNew'), `What's new should follow the health results: ${order}`);
+  // Health is only health now: settings and release notes live on Settings and Shipped (navigation update, 2 Nov).
+  assert.equal(await page.locator('#status .notify-card, #status .dev-tools-pref, #status .voice-home-pref, #status #whatsNew, #status #signinList').count(), 0);
   await page.locator('.secure-setup > summary').click();
   assert.equal(await page.locator('.secure-steps').isVisible(), true);
 });

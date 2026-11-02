@@ -96,7 +96,7 @@ await check('developer tools off: ⌘K does not offer Files but does offer Claud
   for (const label of ['Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows']) assert.ok(!offered.includes(label), `${label} offered with developer tools off: ${offered}`);
   assert.ok(offered.includes('Health') && offered.includes('Models') && offered.includes('Claude Code'), `owner pages offered: ${offered}`);
   await page.keyboard.press('Escape');
-  await page.evaluate(() => window.showView('status'));
+  await page.evaluate(() => window.showView('settings'));
   await page.locator('.dev-tools-pref input').check();
   await page.waitForFunction(() => !document.body.classList.contains('dev-tools-off'));
   await open(page);

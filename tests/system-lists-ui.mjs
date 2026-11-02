@@ -62,10 +62,13 @@ await check('Audit log: Clear user activity is not in the page header, and shows
   await page.unroute('**/api/activity');
 });
 
-await check('Health: the Notifications card comes after the Appliance summary', async () => {
-  await page.evaluate(() => window.showView('status'));
-  await page.waitForSelector('#status #notifications', { state: 'attached' });
-  assert.equal(await page.evaluate(() => !!(document.getElementById('statusSummary').compareDocumentPosition(document.getElementById('notifications')) & Node.DOCUMENT_POSITION_FOLLOWING)), true);
+await check('Settings: Notifications comes first, then Sign-in, Developer tools and Home location; Health has none of them', async () => {
+  await page.evaluate(() => window.showView('settings'));
+  await page.waitForSelector('#settings.active #notifications', { state: 'attached' });
+  await page.waitForSelector('#settings .voice-home-pref', { state: 'attached' });
+  const order = await page.evaluate(() => [...document.querySelectorAll('#settings > .card')].map(e => e.id || (e.querySelector('#signinList') ? 'signin' : e.className.split(' ')[0])));
+  assert.deepEqual(order, ['notifications', 'signin', 'dev-tools-pref', 'voice-home-pref']);
+  assert.equal(await page.locator('#status #notifications, #status .dev-tools-pref, #status .voice-home-pref, #status #signinList').count(), 0);
 });
 
 // Health must not say "ready" when the check itself failed: a 500 or an answer without services keeps the last known

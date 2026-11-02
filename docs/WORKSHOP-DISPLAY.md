@@ -78,7 +78,7 @@ closed. Its printer state comes from Pi Hub's Bambuddy-backed `/api/records`, ca
 - **Needs you** (or **All clear**; when another card is a problem, such as a watchdog finding, the Pi, a disk 80% full or a low spool, it says **No approvals** instead, so it doesn't contradict that card);
 - up to two watchdog problems ([Watchdog](WATCHDOG.md));
 - what Local AI is working on;
-- the weather at the home location (Health › Home location), cached for 15 minutes;
+- the weather at the home location (Settings › Home location), cached for 15 minutes;
 - the latest image.
 
 ```json
@@ -139,7 +139,7 @@ idle screen keeps working when sign-in starts refusing unsigned callers. The key
 - The script writes only the key's SHA-256 to the appliance (`/data/workshop-display-key.sha256`, over ssh). `--new`
   replaces the key.
 - The display gets the key from its portal setting (Workshop OS 12.3.10 and later).
-- Until a key is set, the route still answers, because sign-in only reports for now. Health › Sign-in lists the display as
+- Until a key is set, the route still answers, because sign-in only reports for now. Settings › Sign-in lists the display as
   "Workshop display". This is the one request that goes the other way, from the display to Local AI. The display
 reaches it through the HTTPS front, `https://10.0.0.21`, and checks the certificate against Local AI's CA.
 
@@ -155,7 +155,7 @@ sentences (at most 200 characters), with no model:
 | `health` | Whether its services are up, plus any watchdog problems. |
 | `today` | What finished since midnight (up to three), or that nothing has yet. |
 | `next` | Approvals waiting and work queued, or that nothing is. |
-| `weather` | The weather at the home location, or how to set it (Health › Home location). |
+| `weather` | The weather at the home location, or how to set it (Settings › Home location). |
 
 Anything else gets `400`.
 

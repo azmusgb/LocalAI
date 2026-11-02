@@ -6,7 +6,7 @@ research. It answers in one or two short sentences within 8 seconds, or tells yo
 phone. LocalAI has no watch app; the shortcut calls one endpoint and speaks what comes back.
 
 Notifications (finished, failed, waiting for approval, and answers handed off from Siri) reach the watch on their own:
-once they are on in Health › Notifications on the iPhone, iOS mirrors them to the watch while the phone is locked.
+once they are on in Settings › Notifications on the iPhone, iOS mirrors them to the watch while the phone is locked.
 
 ## Address to use
 
@@ -75,7 +75,7 @@ Notifications.
 
 ### Home location
 
-When the shortcut sends no location, weather is for your home location. Set it on Health: **Home location: Not set**
+When the shortcut sends no location, weather is for your home location. Set it on System › Settings: **Home location: Not set**
 › **Change…**, then type a place such as "Phoenix, AZ". Until it is set, weather without a location answers "Set your
 home location on Local AI's Health page." Only the coordinates or the place name leave the appliance (to Open-Meteo,
 which needs no account).

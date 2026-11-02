@@ -74,8 +74,8 @@ await check('Improve is shown while Developer tools is off; the engineering mode
   assert.equal(await page.locator('.mode[data-mode="engineering"]').isVisible(), false);
 });
 await check('switching Developer tools on in Health is remembered', async () => {
-  await page.evaluate(() => window.showView('status'));
-  await page.waitForSelector('#status.active .dev-tools-pref input');
+  await page.evaluate(() => window.showView('settings'));
+  await page.waitForSelector('#settings.active .dev-tools-pref input');
   assert.match(await page.locator('.dev-tools-pref').innerText(), /Adds the developer tools: Files, Repository, PowerShell, Browser & computer, n8n workflows/);
   await page.locator('.dev-tools-pref input').check();
   assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), true);
@@ -89,7 +89,7 @@ await check('Health shows the secure-connection card (the host itself counts as 
   assert.equal(await page.locator('.secure-card').getAttribute('data-state'), 'good');
 });
 await check('switching it off keeps Improve', async () => {
-  await page.evaluate(() => window.showView('status'));
+  await page.evaluate(() => window.showView('settings'));
   await page.locator('.dev-tools-pref input').uncheck();
   assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), true);
 });

@@ -17,8 +17,8 @@ async function open(options) {
   await page.addInitScript(() => { localStorage.setItem('localai.firstRun.done', '1'); });
   await page.route(u => u.pathname === '/api/signin/report', r => r.fulfill({ json: { mode: 'report', since: ago(600), callers } }));
   await page.route(u => u.pathname === '/api/signin/report/clear', r => { callers = []; return r.fulfill({ json: { ok: true } }); });
-  await page.goto(base + '/#status', { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('#status.active');
+  await page.goto(base + '/#settings', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#settings.active');
   return page;
 }
 

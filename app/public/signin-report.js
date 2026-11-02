@@ -1,4 +1,4 @@
-// Health › Sign-in (report only): who reached Local AI's API without a paired device or the Mac key (app/signin.js).
+// Settings › Sign-in (report only): who reached Local AI's API without a paired device or the Mac key (app/signin.js).
 // Nothing is blocked yet; this list is how the owner finds callers to pair or allow before sign-in is switched on.
 (function(root){'use strict';
 const $=id=>document.getElementById(id);
@@ -20,7 +20,7 @@ async function clear(){
  try{await fetch('/api/signin/report/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});await load()}finally{b.disabled=false}
 }
 function init(){
- const sec=$('status');if(!sec||!$('signinList'))return;
+ const sec=$('settings');if(!sec||!$('signinList'))return;
  $('signinClear').addEventListener('click',clear);
  let was=false;new MutationObserver(()=>{const now=sec.classList.contains('active');if(now&&!was)load();was=now}).observe(sec,{attributes:true,attributeFilter:['class']});
  if(sec.classList.contains('active')){was=true;load()}
