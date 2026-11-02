@@ -7,6 +7,7 @@
 // `short` is a page's label in a page strip when its full one would push the strip past a phone's width.
 // `tool` puts a card for the page on System › Tools (navigation update, 2 Nov: always shown, no switch). A System tool has
 // no strip tab of its own: while it is open, the strip lights Tools. Architecture is also Improve's Atlas tab.
+// `owner` is the area a hidden page lights while open, when its address must keep opening the page itself (no alias).
 (function(root){'use strict';
 const DOMAINS=[
  {id:'home',label:'Home',icon:'home',tagline:'What needs you',defaultView:'home'},
@@ -26,7 +27,7 @@ const VIEWS=[
  {id:'knowledge',svg:'sources',domain:'projects',section:'Keep',parent:'projects',tab:'Sources',label:'Sources',description:'Files and notes the assistant can search.',aka:['knowledge']},
  {id:'memory',svg:'memory',domain:'projects',section:'Keep',parent:'projects',tab:'Memory',label:'Memory',description:'Facts the assistant keeps about each project.',aka:['project memory']},
  // Library is a tab of Projects: what you kept, as opposed to Work (everything you did). Old #library links open it.
-// Automations is a tab of Work (scheduled work) and Spreadsheets a tab of Projects (making things): navigation spec, step 3.
+// Automations is a tab of Work (scheduled work): navigation spec, step 3. Projects holds only what you keep (2 Nov, D4).
  {id:'library',svg:'library',domain:'projects',section:'Keep',parent:'projects',tab:'Library',label:'Library',description:'Everything you kept: chats, research and images.',aka:['everything you kept','kept']},
  {id:'agents',svg:'target',domain:'hidden',section:'Agents',label:'Missions',description:'Give a goal; specialist agents work it live.',aka:['agents','agent operations']},
  {id:'status',svg:'health',domain:'system',section:'Health',label:'Health',description:'Whether Local AI is working, and which optional services are up.',aka:['status','system status']},
@@ -39,9 +40,11 @@ const VIEWS=[
  {id:'shipped',svg:'check',domain:'improve',section:'Pipeline',label:'Shipped',description:'What changed, release by release.',aka:['done','released']},
  {id:'signals',svg:'alert',domain:'improve',section:'Pipeline',label:'Signals',description:'Problems Local AI noticed; serious ones join the Backlog.',aka:['detections','issues','quality signals']},
  // GridCraft on the Windows computer, through the appliance (spreadsheets.js). The old /gridcraft.html page sends you here.
- {id:'spreadsheets',svg:'file',domain:'projects',section:'Keep',parent:'projects',tab:'Spreadsheets',label:'Spreadsheets',description:'Ask for a spreadsheet on the Windows computer to be checked or changed.',aka:['gridcraft','excel','workbook']},
- // The print lab on Pi Hub (pi-hub repo): `lab sync` sends it there.
- {id:'printLab',svg:'target',domain:'projects',section:'Keep',parent:'projects',tab:'Print lab',label:'Print lab',description:'The print lab on Pi Hub: what it is testing, and what needs you.',aka:['print lab','3d printing','experiments','hex tile']},
+ // A Work kind since 2 Nov (D4): the Spreadsheets chip in Work and the Spreadsheet mode on Home lead here.
+ {id:'spreadsheets',svg:'file',domain:'hidden',owner:'work',section:'Make',label:'Spreadsheets',description:'Ask for a spreadsheet on the Windows computer to be checked or changed.',aka:['gridcraft','excel','workbook']},
+ // The print lab on Pi Hub (pi-hub repo): `lab sync` sends it there. Unlisted since 2 Nov (D4): Home links Pi Hub's own
+ // /lab, and lab items in Needs you still open this copy until the owner retires it (Pi Hub print-lab design, L9).
+ {id:'printLab',svg:'target',domain:'hidden',owner:'home',section:'Make',label:'Print lab',description:'The print lab on Pi Hub: what it is testing, and what needs you.',aka:['print lab','3d printing','experiments','hex tile']},
  {id:'claude',svg:'sparkle',short:'Claude',domain:'improve',section:'Pipeline',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
  {id:'architecture',svg:'flow',short:'Atlas',domain:'improve',section:'Pipeline',tool:true,label:'Architecture',description:'System Atlas: topology, changes, risk, evidence and local architecture intelligence.',aka:['atlas','system atlas','dependencies','architecture atlas']},
  {id:'workbench',svg:'folder',domain:'system',section:'Tools',tool:true,label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},

@@ -138,7 +138,7 @@ test('tabs belong to a top-level page in the same domain', () => {
   assert.equal(registry.resolve('approvals'), 'inbox');
   assert.equal(registry.view('approvals').id, 'inbox');
   assert.notEqual(registry.view('inbox').tab, 'Alerts');
-  assert.deepEqual(registry.tabs('projects').map(v => v.id), ['projects', 'knowledge', 'memory', 'library', 'spreadsheets', 'printLab']);
+  assert.deepEqual(registry.tabs('projects').map(v => v.id), ['projects', 'knowledge', 'memory', 'library']);  // Spreadsheets and Print lab left Projects (2 Nov, D4)
   assert.deepEqual(registry.tabs('work').map(v => v.id), ['work', 'automationStudio'], 'Automations is scheduled work');
   assert.deepEqual(registry.tabs('claude'), []);
 });

@@ -21,11 +21,11 @@ function isAboutLocalAi(text) {
   return ABOUT.some(re => re.test(t));
 }
 
-// "Projects › Spreadsheets": a page by its section and, for a tab, its parent's tab strip.
+// "Library in Projects": a page by its section and, for a tab, its parent's tab strip; an unlisted page by its owner's.
 function whereIs(id) {
   const v = registry.view(id);
   if (!v) return '';
-  const domain = registry.DOMAINS.find(d => d.id === v.domain);
+  const domain = registry.DOMAINS.find(d => d.id === (v.domain === 'hidden' ? v.owner : v.domain));
   const name = v.parent ? (v.tab || v.label) : v.label;
   return domain && domain.label !== name ? `${name} in ${domain.label}` : name;
 }

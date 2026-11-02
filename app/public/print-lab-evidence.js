@@ -1,4 +1,4 @@
-// Projects › Print lab: what only the Mac's own page (print-lab lab/page.py, retired) showed, in the same words: the
+// Print lab: what only the Mac's own page (print-lab lab/page.py, retired) showed, in the same words: the
 // spool colour (Bambuddy's colour names, sent by lab sync), a question's plans, each strip's grade, a sweep's finding,
 // AI readings, the reference wipe, and parameter reconciliation (Requested vs Sliced vs Observed). Loaded before
 // print-lab.js (ui.js), which calls these while it renders; every value from the Mac is escaped, and a colour is used only if it is #rrggbb.

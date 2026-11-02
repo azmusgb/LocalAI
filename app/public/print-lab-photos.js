@@ -1,4 +1,4 @@
-// Projects › Print lab: photos at the centre of judging. Thumbnails on each notebook item (up to 6, then "+n", grouped by
+// Print lab: photos at the centre of judging. Thumbnails on each notebook item (up to 6, then "+n", grouped by
 // tab), a full-screen viewer (swipe or arrow keys, pinch or double-tap zoom), Compare (two runs of the same question side
 // by side, paired by tab, zoom and pan linked; by default the last "good enough" run, else the previous one) and the
 // judging checklist (ticks kept on this device only: a memory aid, not a record). Loaded with print-lab.js (ui.js);

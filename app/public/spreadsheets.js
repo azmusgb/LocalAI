@@ -1,4 +1,4 @@
-// Projects › Spreadsheets: see the workbook open in GridCraft on the Windows computer, ask for it to be read or changed,
+// Spreadsheets (a Work kind; Home's Spreadsheet mode sends here): see the workbook open in GridCraft on the Windows computer, ask for it to be read or changed,
 // and keep or discard what a Review request changed. The appliance proxies the host bridge (/api/gridcraft), so the
 // bridge port never has to be open to the network. One request at a time.
 // A cell can also be changed by hand (tap the selected cell, double-click, Enter, F2 or just type; a sheet on phones).
@@ -431,4 +431,6 @@ function init(){
  if(was)refresh();
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+// Home's Spreadsheet mode: the text becomes this page's request, run in the mode chosen here (Review unless changed).
+root.LocalAISheets={ask(text){const p=$('spreadsheets')&&$('sheetsPrompt');if(!p)return false;p.value=String(text||'');run();return true}};
 })(window);

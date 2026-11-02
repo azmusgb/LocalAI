@@ -27,8 +27,8 @@ There are five sections. On a phone they are the tabs at the bottom; on a comput
 | Section | What it's for |
 |---|---|
 | **Home** | Start something, see what needs you, pick up where you left off |
-| **Work** | Everything that is running or done (chats, images, missions, changes), and **Automations**, what runs on a schedule |
-| **Projects** | What you make and keep: your projects with their Sources and Memory, your **Library**, **Spreadsheets** and the **Print lab** |
+| **Work** | Everything that is running or done (chats, images, missions, spreadsheet requests, changes), and **Automations**, what runs on a schedule |
+| **Projects** | What you keep: your projects with their Sources and Memory, and your **Library** |
 | **Improve** | Changing Local AI itself: ideas, problems it noticed, changes in progress, what shipped |
 | **System** | Health, models, services, tools, settings and the audit log |
 
@@ -47,6 +47,7 @@ Type in the box at the bottom of Home and send. The chip next to it picks what k
 | **Chat** | A conversation with your local models |
 | **Research** | Searches the web first, then answers with its sources |
 | **Image** | Makes a picture |
+| **Spreadsheet** | Asks GridCraft about the workbook open on the Windows computer, on the Spreadsheets page |
 | **Mission** | Gives a goal to a team of specialist agents that work on it together |
 | **Automate** | Sets up a task that runs on a schedule |
 | **Change Local AI** | Asks for a change to Local AI itself (see Improve) |
@@ -93,7 +94,7 @@ instead); it always stays in Work. Approvals stay until you decide them.
 Needs you also lists the rest of the house's one list, the same items in the same words as Pi Hub, the wall and the
 Workshop display: the printer ("Clear the plate"), the Pi, the print lab ("Judge E-022") and Local AI's own warnings
 ("Worth a look"). They are in the same order, problems first, then what is waiting on you, then things worth a look.
-A printer or Pi item opens on Pi Hub; a lab item opens Projects › Print lab; a warning opens Health. When Pi Hub isn't
+A printer or Pi item opens on Pi Hub; a lab item opens Print lab; a warning opens Health. When Pi Hub isn't
 answering, Needs you shows only Local AI's own rows.
 
 ## Images
@@ -207,14 +208,16 @@ It keeps alerts you missed while notifications were quiet. The bell shows one nu
 waiting. Old Approvals links open the Inbox.
 
 ## Print lab
-**Projects › Print lab** shows the 3D-print lab that runs on the Mac (the print-lab repo): what needs you (a print to
+Pi Hub has its own print lab page: **On Pi Hub › Print lab** on Home opens it. Local AI keeps its copy, reached from a lab
+item in **Needs you** or by searching (⌘K) for Print lab, until it is retired. **Print lab** shows the 3D-print lab that runs on the Mac (the print-lab repo): what needs you (a print to
 judge, a test to approve) with the command to run on the Mac and a Copy button, the open question's time and material
 budget, and every experiment with what was asked and what actually printed, the outcome, and the photos. It is
 read-only: the Mac sends it (`lab sync`, after every `lab` command) and stays the record; verdicts and approvals are
 made on the Mac.
 
 ## Spreadsheets
-**Projects › Spreadsheets** shows the workbook open in GridCraft on the Windows computer and asks GridCraft to check or
+**Spreadsheets** is a kind of work: choose **Spreadsheet** as Home's mode to send a request there, and the **Spreadsheets**
+chip in Work lists every request. The page (also in search, ⌘K) shows the workbook open in GridCraft on the Windows computer and asks GridCraft to check or
 change it. Pick a sheet tab to see its cells; tap a cell for its value and formula, and **Ask about this cell** to put its
 address in your request. **Show formulas** shows formula text in the grid. Long sheets page by 100 rows.
 

@@ -24,7 +24,7 @@ test('the block is short, factual and uses the live addresses and view-registry 
   assert.match(block, /https:\/\/pc\.tail1234\.ts\.net/);
   assert.match(block, /one icon that works everywhere/i);
   assert.match(block, /45 minutes/);
-  assert.match(block, /Spreadsheets in Projects/);
+  assert.match(block, /Spreadsheets in Work/);
   assert.match(block, /Automations in Work/);
   assert.match(block, /Services in System/);
   const none = aboutApplianceBlock({ addresses: [] });

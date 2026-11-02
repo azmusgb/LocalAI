@@ -1,4 +1,4 @@
-// Projects › Print lab: the page updates itself after each `lab` command. Every `lab` command pushes to Local AI in the
+// Print lab: the page updates itself after each `lab` command. Every `lab` command pushes to Local AI in the
 // background; watch() asks for the sync fingerprint every 3 s while the page is on screen and applies a new one once,
 // never while a sheet or field is in use (it waits, then applies). snapshot()/restore() keep the scroll position, the
 // open <details> and focus across a quiet re-render. Loaded before print-lab.js (ui.js), which wires it in init().

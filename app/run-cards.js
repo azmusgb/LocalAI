@@ -6,8 +6,8 @@ const STATUS = Object.freeze({awaiting_approval:['Ready to review','accent'],rea
 const KINDS = Object.freeze({chat:['compose','ask'],research:['globe','ask'],image:['image','create'],agent:['automate','agents'],automation:['refresh','automationStudio'],engineering:['build','changes'],spreadsheet:['file','spreadsheets']});
 const LEGACY_TYPES = Object.freeze({mission:'agent',specialist:'agent'});
 // Work's filter chips: which chip a run belongs to. GET /api/runs?kind= filters by it; anything not listed (automation too) is "other".
-const WORK_KINDS = Object.freeze({chat:'chats',research:'chats',image:'images',agent:'missions',engineering:'changes'});
-const WORK_CHIPS = Object.freeze(['chats','images','missions','changes','other']);
+const WORK_KINDS = Object.freeze({chat:'chats',research:'chats',image:'images',agent:'missions',spreadsheet:'sheets',engineering:'changes'});
+const WORK_CHIPS = Object.freeze(['chats','images','missions','sheets','changes','other']);
 const workKind = run => { const t = LEGACY_TYPES[run?.type] || run?.type; return Object.prototype.hasOwnProperty.call(WORK_KINDS, t) ? WORK_KINDS[t] : 'other'; };
 function badge(status) {
   const key = String(status ?? '').trim().toLowerCase(), hit = Object.prototype.hasOwnProperty.call(STATUS, key) ? STATUS[key] : null;

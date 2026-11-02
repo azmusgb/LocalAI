@@ -1,6 +1,6 @@
 'use strict';
 
-// Print lab (Projects › Print lab): a read-only copy of the Mac's print-lab records (print-lab repo, `lab sync`).
+// Print lab: a read-only copy of the Mac's print-lab records (print-lab repo, `lab sync`).
 // The Mac is the record: only it writes (X-LocalAI-Mac-Key), and nothing here changes what it sent. Each push is the
 // whole projection (schema print-lab-index/1); one older than the last stored is refused, records are upserted by
 // id and skipped when their sha256 is unchanged, and records the Mac no longer has are removed.

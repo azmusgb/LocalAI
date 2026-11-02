@@ -1326,9 +1326,10 @@ body.ux-v3 .ux-nav-shell{grid-template-columns:76px}
   body.ux-v3 .ux-context-inbox[data-empty="true"] b{display:none}
   body.ux-v3 .ux-context-search:active,body.ux-v3 .ux-context-inbox:active,body.ux-v3 .ux-context-action:active{background:var(--ds-surface)}
 
-  /* Pages in the section: underline tabs under the header; they scroll sideways when there are many. */
-  body.ux-v3 .ux-page-strip{gap:22px;height:44px;margin:0 -13px 14px;padding:0 18px;border-bottom:1px solid var(--ds-line);scroll-padding:0 18px;position:sticky;top:calc(52px + env(safe-area-inset-top));z-index:44;background:var(--ds-bg);align-items:stretch}
-  body.ux-v3 .ux-page-strip button{min-height:44px;height:44px;padding:0;border:0;border-radius:0;background:transparent;color:var(--ds-faint);font-size:var(--ds-fs-2);font-weight:500}
+  /* Pages in the section: underline tabs under the header. Compact on a phone (13 px labels, 16 px gaps; owner, 2 Nov) so
+     six tabs fit at 390 px; they still scroll sideways if a strip ever grows past that. */
+  body.ux-v3 .ux-page-strip{gap:16px;height:44px;margin:0 -13px 14px;padding:0 16px;border-bottom:1px solid var(--ds-line);scroll-padding:0 16px;position:sticky;top:calc(52px + env(safe-area-inset-top));z-index:44;background:var(--ds-bg);align-items:stretch}
+  body.ux-v3 .ux-page-strip button{min-height:44px;height:44px;padding:0;border:0;border-radius:0;background:transparent;color:var(--ds-faint);font-size:var(--ds-fs-1);font-weight:500}
   body.ux-v3 .ux-page-strip button.active{background:transparent;color:var(--ds-text);font-weight:650;box-shadow:inset 0 -2px 0 var(--ds-accent)}
 
   /* Page headings: the header and tabs already name the page. The page's own actions stay. */
@@ -2042,7 +2043,7 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
   /* The peek row carries the page's one action on a phone; the header's copy (off screen) would be a second. */
   #agents #awPrimary{display:none}
 }
-/* Projects › Spreadsheets (spreadsheets.js): the workbook grid is the page's one loud element; changed cells carry the
+/* Spreadsheets (spreadsheets.js): the workbook grid is the page's one loud element; changed cells carry the
    review state (amber waiting, green kept), everything else stays in the card kit. */
 .sheets-head-pills{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .sheets-status[data-state="ready"] .dot{background:var(--ds-good)}
@@ -2284,7 +2285,7 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:12px 14px;border:1px solid var(--ux-line);border-radius:var(--ds-r-lg);cursor:pointer;list-style:none}details.ux-int-group>summary::after{content:"+";margin-left:auto;color:var(--ds-muted)}details.ux-int-group[open]>summary{margin-bottom:10px}details.ux-int-group[open]>summary::after{content:"\2212"}
 @media(max-width:760px){.ux-int-wide{grid-column:auto}}
 
-/* ==== print lab (Projects › Print lab, print-lab.js): the Mac's lab page, read-only ==== */
+/* ==== print lab (Print lab, print-lab.js): the Mac's lab page, read-only ==== */
 .lab-body h2 {
   font-size: var(--ds-fs-3);
   margin: 0 0 8px;
@@ -3491,3 +3492,9 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 .tool-card:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
 .tool-card__icon{color:var(--ds-muted)}.tool-card__icon .icon{width:22px;height:22px}
 .tool-card span:last-child{display:grid;gap:3px;font-size:var(--ds-fs-2)}.tool-card small{color:var(--ds-muted);font-size:var(--ds-fs-1)}
+/* Home › On Pi Hub: one quiet line of links to Pi Hub's own pages (Print lab, 2 Nov). */
+.home-hub-links{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:0 0 16px;padding:0}
+.home-hub-links .home-label{margin:0}
+.home-hub-links a{display:inline-flex;align-items:center;gap:4px;min-height:44px;color:var(--ds-text);font-size:var(--ds-fs-2);text-decoration:none}
+.home-hub-links a:hover{text-decoration:underline}
+.home-hub-links a:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px;border-radius:var(--ds-r-sm)}

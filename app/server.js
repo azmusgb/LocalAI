@@ -146,7 +146,7 @@ const activeRunControllers = new Map();
 const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody });
 const hostAddrs = require('./signin').hostAddresses();
 const isHostReq = req => !req.headers['x-forwarded-for'] && hostAddrs.has(String(req.socket?.remoteAddress || '').replace(/^::ffff:/, ''));
-// Projects › Print lab: a read-only copy of the Mac's print-lab records; only the Mac (its key) writes. The live print
+// Print lab: a read-only copy of the Mac's print-lab records; only the Mac (its key) writes. The live print
 // block reads the Workshop printer's last polled state; it never asks the display itself.
 const printLab = require('./print-lab').createPrintLab({
   storage,
