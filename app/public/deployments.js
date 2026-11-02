@@ -32,87 +32,58 @@ function gates(record){
   ['Physical Acceptance',record.id==='workshop'?'unknown':'na',record.id==='workshop'?'Requires device candidate and physical checklist.':'Not applicable to this software workstream.']
  ];
 }
-function filterRecords(rows, query='', evidence='all'){
- const q=String(query).trim().toLowerCase();
- return rows.filter(r=>(evidence==='all'||r.evidence===evidence)&&[r.name,r.environment,r.sourceSha,r.deployedSha].filter(Boolean).join(' ').toLowerCase().includes(q));
-}
-if(typeof module==='object'&&module.exports){module.exports={sha,records,gates,filterRecords,MAX_AGE_MS};return;}
-const page=document.getElementById('deployments');if(!page)return;
-const $=id=>document.getElementById(id);
-const state={health:null,observedAt:null,selected:'localai',active:false,request:null,timer:null,expired:false};
+if(typeof module==='object'&&module.exports){module.exports={sha,records,gates,MAX_AGE_MS};return;}
+// Improve › Shipped › Running now (Deployments merged into Shipped, 2 Nov): the revision the appliance reports, how fresh
+// that report is, and plainly what is not connected. It refreshes while Shipped is open and goes stale after MAX_AGE_MS.
+const host=document.getElementById('shipped');if(!host)return;
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const labels={fresh:'Current report',stale:'Stale report',unavailable:'Unavailable',unconnected:'Not connected'};
-function rows(){return records(state.health,state.observedAt);}
-function short(value){return value?value.slice(0,7):'Unknown';}
-function render(){
- const all=rows(),visible=filterRecords(all,$('deploymentSearch').value,$('deploymentEvidence').value);
- $('deploymentReported').textContent=all.filter(r=>r.evidence==='fresh'&&r.deployedSha).length;
- $('deploymentMissing').textContent=all.filter(r=>r.evidence!=='fresh'||!r.deployedSha).length;
- $('deploymentCount').textContent=`${visible.length} of ${all.length} workstreams`;
- $('deploymentRows').innerHTML=visible.map(r=>`<tr class="${r.id===state.selected?'dep-selected':''}"><th scope="row"><button type="button" class="dep-select" data-deployment="${r.id}" aria-pressed="${r.id===state.selected}">${escape(r.name)}</button></th><td>${escape(r.environment)}</td><td><code>${short(r.sourceSha)}</code></td><td><code title="${escape(r.deployedSha||'No deployed revision evidence')}">${short(r.deployedSha)}</code></td><td><span class="dep-status dep-${r.evidence}">${labels[r.evidence]}</span></td><td>${r.runtime}</td></tr>`).join('');
- $('deploymentEmpty').hidden=visible.length>0;
- const selected=visible.find(r=>r.id===state.selected);
- $('deploymentDetail').hidden=!selected;
- $('deploymentRail').hidden=!selected;
- if(!selected)return;
- $('deploymentSelectedName').textContent=selected.name;
- $('deploymentEnvironment').textContent=selected.environment;
- $('deploymentIdentity').innerHTML=[
-  ['Source SHA','Unknown — source feed not connected'],['Merged SHA','Unknown — merge feed not connected'],
-  ['Reported deployed SHA',selected.deployedSha||'Unknown — no revision reported'],
-  ['Artifact identity / SHA-256','Unknown — artifact evidence not connected'],
-  ['Observed at',Number.isFinite(selected.observedAt)?new Date(selected.observedAt).toLocaleString():'Never'],
-  ['Evidence source',selected.id==='localai'?'/healthz · '+labels[selected.evidence]:'Deployment feed not connected']
- ].map(([label,value])=>`<dt>${escape(label)}</dt><dd>${escape(value)}</dd>`).join('');
- $('deploymentGates').innerHTML=gates(selected).map(([label,status,detail])=>`<li><span class="dep-gate-icon dep-${status}" aria-hidden="true">${status==='na'?'—':'○'}</span><div><strong>${label}</strong><span>${escape(detail)}</span></div><span class="dep-gate-label">${status==='reported'?'Reported':status==='na'?'N/A':'Unknown'}</span></li>`).join('');
- $('deploymentWarning').textContent=selected.evidence==='stale'?'This report has expired. Refresh before making a deployment decision.':'Source revision and artifact evidence are missing. Promotion readiness cannot be determined.';
- $('deploymentNextTitle').textContent=selected.id==='localai'?'Inspect release evidence':'Connect deployment evidence';
- $('deploymentNextText').textContent=selected.id==='localai'?'Check appliance health and release history. A reported commit does not establish CI, artifact identity, or runtime acceptance.':`Connect an authoritative deployment feed for ${selected.name}, including environment, exact revision, artifact digest and verification evidence.`;
- $('deploymentPrimary').href=selected.id==='localai'?'#status':'#integrations';
- $('deploymentPrimary').textContent=selected.id==='localai'?'Open System Health':'Open Services';
- $('deploymentLocalLinks').hidden=selected.id!=='localai';
- $('deploymentLinksNote').hidden=selected.id==='localai';
+const state={health:null,observedAt:null,active:false,request:null,timer:null,expired:false,error:''};
+let card=null;
+function mount(){
+ if(card)return card;
+ card=document.createElement('section');card.id='shippedNow';card.className='card dep-now';card.setAttribute('aria-labelledby','shippedNowTitle');
+ card.innerHTML='<div class="dep-now__head"><h2 id="shippedNowTitle">Running now</h2><button type="button" class="btn-outline" data-dep-refresh>Refresh</button></div><p class="dep-now__line" data-dep-line aria-live="polite"></p><p class="dep-now__note" data-dep-gates></p><p class="dep-now__note" data-dep-others></p>';
+ const list=document.getElementById('shippedList');if(list)list.before(card);else host.appendChild(card); // just above the releases, under What's new
+ card.querySelector('[data-dep-refresh]').addEventListener('click',()=>void refresh());
+ return card;
 }
-function status(message){$('deploymentStatus').textContent=message;}
+function render(){
+ const c=mount(),[local,...others]=records(state.health,state.observedAt),deployed=gates(local).find(g=>g[0]==='Deployed');
+ c.dataset.evidence=local.evidence;
+ const when=Number.isFinite(local.observedAt)?new Date(local.observedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
+ c.querySelector('[data-dep-line]').innerHTML=local.deployedSha
+  ?`Local AI <code title="${escape(local.deployedSha)}">${escape(local.deployedSha.slice(0,7))}</code>, reported by the appliance${when?' at '+escape(when):''}.${local.evidence==='stale'?' This report is old: refresh it.':''}`
+  :escape(state.request?'Checking what the appliance runs…':state.error||'The appliance has not reported a revision.');
+ c.querySelector('[data-dep-gates]').textContent=deployed[1]==='reported'?'A reported revision is not proof of CI, the artifact or runtime checks; those are not connected yet.':'No current report: CI, artifact and runtime checks are not connected either.';
+ c.querySelector('[data-dep-others]').textContent='No deployment feed yet for '+others.map(r=>r.name).join(', ')+'.';
+ c.querySelector('[data-dep-refresh]').disabled=!!state.request;
+}
 async function refresh(){
  if(state.request)return;
- const controller=new AbortController();state.request=controller;
+ const controller=new AbortController();state.request=controller;state.error='';render();
  const timeout=setTimeout(()=>controller.abort(),8000);
- $('deploymentRefresh').disabled=true;page.setAttribute('aria-busy','true');status('Checking appliance deployment evidence…');
  try{
   const response=await fetch('/healthz',{cache:'no-store',signal:controller.signal,headers:{Accept:'application/json'}});
-  if(!response.ok)throw new Error(response.status===401||response.status===403?'Access denied. Sign in and retry.':`Health endpoint returned HTTP ${response.status}.`);
+  if(!response.ok)throw new Error(response.status===401||response.status===403?'Access denied. Sign in and refresh.':`The appliance answered HTTP ${response.status}.`);
   const health=await response.json();
-  if(health?.status!=='ok'||health?.appliance!=='Local AI')throw new Error('Health endpoint returned an unrecognized response.');
+  if(health?.status!=='ok'||health?.appliance!=='Local AI')throw new Error('The appliance sent an answer this page does not recognise.');
   if(!state.active||state.request!==controller)return;
   state.health=health;state.observedAt=Date.now();state.expired=false;
-  status('Appliance report refreshed. Other workstreams have no deployment feed.');
  }catch(error){
   if(!state.active||state.request!==controller)return;
-  // Preserve the last revision as explicitly stale, never as fresh success after failure.
+  // Keep the last revision, marked stale, never as a fresh success after a failure.
   if(state.health)state.observedAt=Math.min(state.observedAt,Date.now()-MAX_AGE_MS-1);
-  status((error.name==='AbortError'?'Request timed out. Retry when the appliance is available.':error.message)+(state.health?' Last report retained as stale.':''));
+  state.error=error.name==='AbortError'?'The appliance did not answer in time. Refresh to try again.':error.message;
  }finally{
   clearTimeout(timeout);
-  if(state.request===controller){state.request=null;$('deploymentRefresh').disabled=false;page.setAttribute('aria-busy','false');if(state.active)render();}
+  if(state.request===controller){state.request=null;if(state.active)render()}
  }
 }
 function activate(){
  state.active=true;render();void refresh();
  clearInterval(state.timer);
- state.timer=setInterval(()=>{
-  if(state.active&&!state.expired&&Number.isFinite(state.observedAt)&&Date.now()-state.observedAt>MAX_AGE_MS){
-   state.expired=true;const focused=document.activeElement?.dataset?.deployment;render();
-   if(focused)page.querySelector(`[data-deployment="${focused}"]`)?.focus();
-   status('Deployment report is stale. Refresh to obtain current evidence.');
-  }
- },1000);
+ state.timer=setInterval(()=>{if(state.active&&!state.expired&&Number.isFinite(state.observedAt)&&Date.now()-state.observedAt>MAX_AGE_MS){state.expired=true;render()}},1000);
 }
-function deactivate(){state.active=false;state.request?.abort();state.request=null;clearInterval(state.timer);state.timer=null;}
-$('deploymentRefresh').addEventListener('click',()=>void refresh());
-function filter(){const visible=filterRecords(rows(),$('deploymentSearch').value,$('deploymentEvidence').value);if(!visible.some(r=>r.id===state.selected))state.selected=visible[0]?.id||null;render();}
-$('deploymentSearch').addEventListener('input',filter);
-$('deploymentEvidence').addEventListener('change',filter);
-$('deploymentRows').addEventListener('click',event=>{const button=event.target.closest('[data-deployment]');if(!button)return;state.selected=button.dataset.deployment;render();page.querySelector(`[data-deployment="${state.selected}"]`)?.focus();});
+function deactivate(){state.active=false;state.request?.abort();state.request=null;clearInterval(state.timer);state.timer=null}
 root.LocalAIDeployments={activate,deactivate};
 })(typeof window==='undefined'?globalThis:window);

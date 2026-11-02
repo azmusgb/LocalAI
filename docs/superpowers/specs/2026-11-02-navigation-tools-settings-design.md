@@ -71,6 +71,18 @@ Registry edits first (N4: no element ids change; old ids stay as aliases), each 
 Each PR updates the navigation, router, mobile, first-run and visual suites it touches, and regenerates visual
 baselines only for pages whose navigation changed.
 
+## Owner decisions during delivery (2 Nov 2026)
+
+- **Phone strips:** the short labels were not enough (System needed 454 px, Improve 435 px at 390 px). The phone strip
+  is compact instead: 13 px labels and 16 px gaps, phones only (#457).
+- **Print lab:** it leaves every menu, and Home links Pi Hub's `/lab`. Local AI's copy stays at `#printLab`, and lab
+  items in Needs you still open it, until it is retired under Pi Hub's print-lab design (L9). `#printLab` does not
+  resolve to Home until then (#457).
+- **The bell** opens Home at Needs you, and its badge is Needs you's number. **History** beside that heading opens the
+  Inbox (#458).
+
+Delivered: step 1 #455, step 2 #456, step 3 #457, step 4 #458.
+
 ## Acceptance
 
 - On a 390 px phone, no page strip has a tab off-screen.

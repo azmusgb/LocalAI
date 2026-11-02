@@ -163,11 +163,12 @@ await check('shell: the icon sprite takes no space above the app', async () => {
   assert.equal(await shell.evaluate(() => Math.round(document.querySelector('.app').getBoundingClientRect().top + window.scrollY)), 0);
 });
 
-await check('shell: the inbox bell names its count', async () => {
-  await shell.evaluate(() => window.dispatchEvent(new CustomEvent('localai:inbox-count', { detail: { unread: 3, pending: 1 } })));
-  assert.equal(await shell.locator('#uxInboxBtn').getAttribute('aria-label'), 'Inbox, 1 approval and 3 alerts waiting');
+// The bell's number is Needs you's (home.js sends it from any page; navigation update, 2 Nov).
+await check('shell: the bell names what needs you', async () => {
+  await shell.evaluate(() => window.dispatchEvent(new CustomEvent('localai:needs-count', { detail: { n: 4 } })));
+  assert.equal(await shell.locator('#uxInboxBtn').getAttribute('aria-label'), 'Needs you, 4 waiting');
   assert.equal(await shell.locator('#uxInboxCount').innerText(), '4');
-  await shell.evaluate(() => window.dispatchEvent(new CustomEvent('localai:inbox-count', { detail: { unread: 0, pending: 0 } })));
+  await shell.evaluate(() => window.dispatchEvent(new CustomEvent('localai:needs-count', { detail: { n: 0 } })));
   assert.equal(await shell.locator('#uxInboxBtn').isVisible(), true, 'the bell stays on phones at zero');
   assert.equal(await shell.locator('#uxInboxCount').isVisible(), false, 'no badge at zero');
 });

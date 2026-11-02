@@ -171,6 +171,7 @@ function paintNeeds(){
  // Everything that asks for a decision shows and failures fill up to CAP; max shows that many, and the kit adds "See all N" for the rest.
  const entries=[...act,...failed.map(failedRow)],shown=act.length+room;
  bindNeeds(box);
+ root.dispatchEvent(new CustomEvent('localai:needs-count',{detail:{n}})); // the bell in the header shows this number on every page
  if(!entries.length){box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
  if(!root.ApplianceNeeds){if(!needsKitMissing){needsKitMissing=true;console.warn('Needs you: /ui/needs.js did not load; the section stays hidden')}box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
  const ul=root.ApplianceNeeds.renderList(entries.map(e=>e.item),{resolve,here:new URL(location.href),self:'Local AI',max:shown,more:{href:'#work?kind=needs',label:`See all ${n}`}});
@@ -235,6 +236,8 @@ function refresh(){
  return inflight=Promise.all([recent,loadNeeds()]).finally(()=>{inflight=null});
 }
 function schedule(){clearTimeout(timer);timer=setTimeout(()=>{if(active()&&!document.hidden)refresh().then(schedule);else schedule()},30000)}
+// Off Home the bell still needs Needs you's number: the same load, once a minute while the page is visible.
+let away=0;function watchAway(){clearTimeout(away);away=setTimeout(()=>{(!active()&&!document.hidden?loadNeeds().catch(()=>{}):Promise.resolve()).then(watchAway)},60000)}
 
 // ---- greeting ----
 function greet(){const h=new Date().getHours(),g=$('homeGreeting');if(g)g.textContent=h<5?'Still up?':h<12?'Good morning':h<18?'Good afternoon':'Good evening'}
@@ -349,6 +352,8 @@ function typing(on){document.body.classList.toggle('home-typing',on);dockToNav()
 function init(){
  if(!$('homeComposer'))return;
  paintChip();greet();
+ if(!(active()&&onHomeHash()))loadNeeds().catch(()=>{});watchAway(); // Home loads its own on activate
+ $('homeHistory')?.addEventListener('click',()=>root.LocalAIRouter?.go('#inbox'));
  {const lab=$('homeHubLab');if(lab)lab.href=resolve('hub:lab')} // Pi Hub's own print lab (2 Nov, D4), at Pi Hub's address for this name
  new MutationObserver(()=>{paintChip();if(stale&&!document.body.classList.contains('run-view-open'))paintNeeds()}).observe(document.body,{attributes:true,attributeFilter:['class']}); // a run view closed
  $('homeModeChip').addEventListener('click',()=>autoWait?autoWait.cancel():openSheet());

@@ -64,14 +64,15 @@ await check('desktop: one rail and one strip on every page; the top bar names th
   await page.context().close();
 });
 
-await check('phone: the Improve tab strip scrolls, fades at the overflowing edge, and keeps the open tab in view', async () => {
-  const page = await open(phone, '#backlog');
+// Improve's six tabs fit at 390 px since 2 Nov (compact strip); a 320 px phone still scrolls them.
+await check('small phone: the Improve tab strip scrolls, fades at the overflowing edge, and keeps the open tab in view', async () => {
+  const page = await open({ width: 320, height: 640 }, '#backlog');
   await page.waitForSelector('#backlog.active', T);
   const strip = page.locator('#uxPageStrip');
   await strip.waitFor({ state: 'visible', timeout: 6000 });
   const info = () => strip.evaluate(e => ({ sw: e.scrollWidth, cw: e.clientWidth, left: e.scrollLeft, start: e.dataset.fadeStart, end: e.dataset.fadeEnd, mask: getComputedStyle(e).maskImage || getComputedStyle(e).webkitMaskImage }));
   let i = await info();
-  assert.ok(i.sw > i.cw + 40, 'the strip overflows');
+  assert.ok(i.sw > i.cw + 20, 'the strip overflows');
   assert.equal(i.end, 'true'); assert.notEqual(i.start, 'true');
   assert.ok(i.mask && i.mask !== 'none', 'a fade is drawn at the cut-off edge: ' + i.mask);
   await strip.evaluate(e => { e.scrollLeft = e.scrollWidth; });
