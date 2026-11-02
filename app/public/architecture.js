@@ -517,6 +517,8 @@ async function refresh(){
     const rows=state.snapshots.get(state.repo);
     let retired=false;
     if(state.commit&&!rows.some(r=>r.commit===state.commit)){state.commit=rows[0]?.commit||'';retired=true;}
+    // A repository chosen before its list arrived (or while the list was unavailable) gets its newest snapshot now.
+    if(state.repo!=='localai'&&!state.commit)state.commit=rows[0]?.commit||'';
     renderPicker();
     if(state.repo!=='localai'&&!state.commit){
       clearGraph(`No snapshots of ${repoLabel(state.repo)} yet`,'Use Snapshot now to take the first one.');
