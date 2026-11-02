@@ -1,7 +1,7 @@
 # Navigation: tools, settings and two overflowing strips
 
-Date: 2026-11-02. Status: proposed, waiting for the owner. Amends `2026-10-17-navigation-structure-design.md`
-(five areas, one page strip). Nothing here changes before the owner approves it.
+Date: 2026-11-02. Status: approved by the owner ("approve", 2 Nov 2026), D1-D4 as recommended. Amends `2026-10-17-navigation-structure-design.md`
+(five areas, one page strip).
 
 ## What the walk-through found (live 2.0.1187, `9054281`; desktop 1440 px, phone 390 px)
 
