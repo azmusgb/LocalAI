@@ -1,6 +1,6 @@
 # Atlas for every repository: plan
 
-Date: 2026-11-01 · Status: proposed, for the owner's review · Implements: platform baseline (pi-hub `2355701`)
+Date: 2026-11-01 · Status: decisions made by the owner on 1 Nov 2026 (below) · Implements: platform baseline (pi-hub `2355701`)
 section 6.4 and migration step 10. Documentation only.
 
 ## What the baseline asks for (6.4)
@@ -61,35 +61,38 @@ unchanged.
    - A repository and commit picker on the Architecture page, defaulting to LocalAI's newest.
    - States for loading, no snapshots yet, stale (with the commit's time), error and long lists.
    - The domain map and file view are unchanged.
-   - Findings, Ask and Goose stay LocalAI-only and say so for other repositories (decision 3).
+   - Findings, Ask and Goose follow the chosen snapshot once PR 5 lands. Until then they show "Graph only for this
+     repository" for other repositories.
 4. **Manual button: "Snapshot now".**
    - `POST /api/atlas/snapshot {repo, ref}` goes through the existing token-protected proxy to `atlas_intelligence.py`
      on the host. The host fetches the repository's mirror (`C:\LocalAI\atlas-repos\<repo>.git`, bare, fetch-only),
      resolves the ref and runs step 1.
    - One run at a time. A queued or running state shows on the page.
    - Retention: the newest 5 snapshots per repository (decision 2).
-5. **Release trigger (after baseline step 3).** When the PC is awake, LocalAI reads Pi Hub's `release:<target>`
+5. **Intelligence on the chosen snapshot.** `atlas_intelligence.py` takes an optional `repo` and `commit` on
+   summary, findings, node, ask and goose. It loads that snapshot's `graph.json` instead of the single graph, and it
+   answers questions from the snapshot's clean copy (re-exported with `git archive`, read-only), never from a working
+   tree. The server passes both values through the proxy after the same allow-list check as PR 2. Without them, it
+   behaves as today.
+6. **Release trigger (after baseline step 3).** When the PC is awake, LocalAI reads Pi Hub's `release:<target>`
    records every few minutes and snapshots any live commit it has not seen. On waking, the first read catches up.
    Pi Hub's System › Versions links each row to `#architecture?repo=<r>&commit=<sha>`. That link is a pi-hub PR.
 
-## Decisions for the owner
+## Decisions (owner, 1 Nov 2026)
 
-1. **How the PC reads the other repositories.** The choice is:
-   - **(recommended)** one read-only deploy key per repository, added to each repository on GitHub and kept in the
-     PC's SSH config like `github-localai`; or
-   - one fine-grained token with read-only Contents access to the listed repositories.
-
-   Either way, nothing on the PC can push.
-2. **Repository list and retention.** Proposed: pi-hub, LocalAI, print-lab, bambuhelper-smart-display (firmware),
-   home-mcp, netmon and appliance-ui, with 5 snapshots each.
-3. **Intelligence for other repositories.** Findings, Ask and Goose read one graph today. Extending them to a
-   chosen snapshot is a separate, later PR. Until then the page says "Graph only for this repository".
+1. **Access: read-only deploy keys**, one per repository. Each is added on GitHub as read-only and kept in the
+   PC's SSH config under its own host alias (like `github-localai`). Nothing on the PC can push. The keys are created
+   and added before PR 4. That is a trust change, so the owner confirms it when it happens.
+2. **Repositories: the core three first:** pi-hub, LocalAI and print-lab, with the newest 5 snapshots each. The
+   others (bambuhelper-smart-display, home-mcp, netmon, appliance-ui) are added later. Adding one is a config change
+   plus one deploy key.
+3. **Intelligence: included in this plan** as PR 5.
 
 ## Acceptance (whole plan)
 
-- The Architecture page offers every listed repository. Each shows a graph at a named commit, generated from a clean
+- The Architecture page offers pi-hub, LocalAI and print-lab. Each shows a graph at a named commit, generated from a clean
   copy. The PC's deploy checkout stays clean throughout.
-- "Snapshot now" on any repository produces a new snapshot within a few minutes. Running it twice queues the second
+- "Snapshot now" on any repository produces a new snapshot within a few minutes. Findings and Ask then answer about that snapshot. Running it twice queues the second
   run rather than running both at once.
 - After step 3: a release to any target appears as a snapshot without anyone pressing a button, including after the
   PC wakes from sleep.
