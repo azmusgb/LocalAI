@@ -1,4 +1,4 @@
-// First run: the Get started card on Home, and the Developer tools preference that hides the Build domain.
+// First run: the Get started card on Home, and no developer-tools switch to find (navigation update, 2 Nov).
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 
@@ -8,7 +8,7 @@ let failed = 0;
 async function check(name, fn) { try { await fn(); console.log('PASS', name) } catch (e) { failed++; console.log('FAIL', name, e.message) } }
 
 const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
-// Start as a new user: no saved choices, Developer tools off.
+// Start as a new user: no saved choices (an old developer-tools choice of off changes nothing).
 await context.addInitScript(() => { if (!sessionStorage.getItem('seeded')) { localStorage.clear(); localStorage.setItem('localai.devTools', '0'); sessionStorage.setItem('seeded', '1') } });
 const page = await context.newPage({ serviceWorkers: 'block' });
 const errors = [];
@@ -69,29 +69,20 @@ await check('Health: a stopped core service says what to do about it', async () 
   assert.doesNotMatch(await page.locator('#serviceList').innerText(), /capability/i);
   await page.evaluate(() => window.showView('home'));
 });
-await check('Improve is shown while Developer tools is off; the engineering mode is not', async () => {
+// No developer-tools switch (2 Nov): a new install sees Improve and Tools, and Settings has no switch to find.
+await check('a new install sees Improve and System › Tools, and Settings has no developer-tools switch', async () => {
   assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), true);
-  assert.equal(await page.locator('.mode[data-mode="engineering"]').isVisible(), false);
-});
-await check('switching Developer tools on in Health is remembered', async () => {
+  await page.evaluate(() => window.showView('tools'));
+  await page.waitForSelector('#tools.active #toolsCards .tool-card');
+  assert.equal(await page.locator('#toolsCards .tool-card').count(), 6);
   await page.evaluate(() => window.showView('settings'));
-  await page.waitForSelector('#settings.active .dev-tools-pref input');
-  assert.match(await page.locator('.dev-tools-pref').innerText(), /Adds the developer tools: Files, Repository, PowerShell, Browser & computer, n8n workflows/);
-  await page.locator('.dev-tools-pref input').check();
-  assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), true);
-  assert.equal(await page.evaluate(() => localStorage.getItem('localai.devTools')), '1');
-  await page.reload({ waitUntil: 'networkidle' });
-  assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), true);
+  await page.waitForSelector('#settings.active');
+  assert.equal(await page.locator('.dev-tools-pref').count(), 0);
 });
 await check('Health shows the secure-connection card (the host itself counts as secure)', async () => {
   await page.evaluate(() => window.showView('status'));
   await page.waitForSelector('#status.active .secure-card[data-state]');
   assert.equal(await page.locator('.secure-card').getAttribute('data-state'), 'good');
-});
-await check('switching it off keeps Improve', async () => {
-  await page.evaluate(() => window.showView('settings'));
-  await page.locator('.dev-tools-pref input').uncheck();
-  assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), true);
 });
 await check('dismissing Get started keeps it hidden after reload', async () => {
   if (!expectCard) return;

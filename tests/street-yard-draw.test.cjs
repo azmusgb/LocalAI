@@ -43,14 +43,13 @@ test('a session keeps its seat and its look as it switches between working and w
   assert.ok(c.sessions.some(x => x.id === 'cd')); assert.equal(c.more, 1);
 });
 
-test('hidden while developer tools are off', () => {
+// The developer-tools switch is gone (navigation update, 2 Nov): the yard always stands, whatever the page's classes.
+test('never hidden', () => {
   const had = Object.prototype.hasOwnProperty.call(globalThis, 'document'), old = globalThis.document;
   try {
     globalThis.document = { body: { classList: { contains: c => c === 'dev-tools-off' } } };
     const s = yard.state(world(1));
-    assert.equal(s.hidden, true); assert.equal(yard.stillKey(s), 'hidden'); assert.equal(yard.animates(s), false);
-    globalThis.document = { body: { classList: { contains: () => false } } };
-    assert.equal(yard.state(world(1)).hidden, false);
+    assert.equal(s.hidden, false); assert.notEqual(yard.stillKey(s), 'hidden'); assert.equal(yard.animates(s), true);
   } finally { if (had) globalThis.document = old; else delete globalThis.document; }
 });
 

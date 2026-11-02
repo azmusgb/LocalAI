@@ -30,7 +30,7 @@ There are five sections. On a phone they are the tabs at the bottom; on a comput
 | **Work** | Everything that is running or done (chats, images, missions, changes), and **Automations**, what runs on a schedule |
 | **Projects** | What you make and keep: your projects with their Sources and Memory, your **Library**, **Spreadsheets** and the **Print lab** |
 | **Improve** | Changing Local AI itself: ideas, problems it noticed, changes in progress, what shipped |
-| **System** | Health, models, services, settings and the audit log (and the developer tools, when they are on) |
+| **System** | Health, models, services, tools, settings and the audit log |
 
 To jump anywhere, press **⌘K** on a computer or tap the **magnifier** on a phone, then type a page name. If no page
 matches, **Search your work for …** looks through your chats, images and runs.
@@ -49,7 +49,7 @@ Type in the box at the bottom of Home and send. The chip next to it picks what k
 | **Image** | Makes a picture |
 | **Mission** | Gives a goal to a team of specialist agents that work on it together |
 | **Automate** | Sets up a task that runs on a schedule |
-| **Change Local AI** | Asks for a change to Local AI itself (shown only with developer tools on; see Improve) |
+| **Change Local AI** | Asks for a change to Local AI itself (see Improve) |
 
 What you send opens where you are and keeps running if you leave; it is always in **Work**.
 
@@ -189,10 +189,12 @@ findings from Claude Code sessions.
   or **Start now**. Anything handed to Claude waits in **In progress** for the next Claude Code session.
 - **Signals:** problems Local AI noticed on its own. Serious ones (high severity, or seen three or more times) join
   the Backlog by themselves; **Promote** adds any other, **Dismiss** drops it.
-- **In progress:** changes being planned, tested or waiting for your OK. Open one for its next step:
+- **In progress** (**Doing** in the page strip): changes being planned, tested or waiting for your OK. Open one for its next step:
   **Test the change**, **Approve** (after a confirmation), or **Retry** if it failed. **See the changes** shows the
   difference. **Back to backlog** or **Discard** stops it.
 - **Shipped:** what changed, release by release, with a link to each change.
+- **Atlas:** the System Atlas (Architecture): how the code fits together, recent changes, risk and evidence. It is
+  also a card on **System › Tools**.
 
 ## Approvals and alerts
 
@@ -298,12 +300,12 @@ For weather, set your home location in **System › Settings › Home location**
 **Improve › Claude Code** lets you message a Claude Code session running on the Mac, and watch it work. A phone has to
 be paired first, once. See [Claude chat](CLAUDE-CHAT.md).
 
-## Developer tools
+## Tools
 
-**System › Settings › Show developer tools** adds **Change Local AI** to Home's choices, and the developer pages
-under System: **Files**, **Repository**, **PowerShell**, **Browser & computer** and **n8n workflows**. It also shows Models' runtime tile and Health's **Advanced service
-details**. Off, all of these are hidden from the menu, the page strip and search; a page's address still opens it.
-Everything else works the same. The setting is kept per device.
+**System › Tools** has one card for each tool: **Files**, **Repository**, **PowerShell**, **Browser & computer**,
+**n8n workflows** and **Architecture** (the System Atlas). A card opens the tool at its own address, and while a tool
+is open the page strip lights **Tools**. Architecture is also a tab in Improve, labelled **Atlas**. Tools are always
+shown; there is no switch. Search (⌘K) finds every tool by name.
 
 In a mission's start sheet, **Advanced › Workers' model** runs every worker on one installed model instead of **Automatic**; the team lead still picks its own.
 

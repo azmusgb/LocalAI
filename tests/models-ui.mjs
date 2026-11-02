@@ -43,19 +43,16 @@ await check('the default model cannot be removed', async () => {
   const r = await fetch(base + '/api/models/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: model }) });
   assert.equal(r.status, 409);
 });
-// The runtime tile ("Loaded list": Live / Unavailable) is diagnostic: it shows only with developer tools on.
-await check('the runtime tile shows only with developer tools on', async () => {
+// The runtime tile ("Loaded list": Live / Unavailable) is always shown: the developer-tools switch is gone (2 Nov).
+await check('the runtime tile is shown', async () => {
   await page.evaluate(() => window.showView('models'));
   await page.waitForSelector('#modelRuntimeSummary .model-runtime-metric');
   const visibleLabels = () => page.locator('#modelRuntimeSummary .model-runtime-metric span').evaluateAll(es => es.filter(e => e.getClientRects().length).map(e => e.textContent.trim()));
-  await page.evaluate(() => document.body.classList.add('dev-tools-off'));
-  assert.deepEqual(await visibleLabels(), ['Configured default', 'Installed', 'Loaded now']);
-  await page.evaluate(() => document.body.classList.remove('dev-tools-off'));
   assert.deepEqual(await visibleLabels(), ['Configured default', 'Installed', 'Loaded now', 'Loaded list']);
 });
 // An installed model's card: family, size and "Model size" are for the owner; quantization, file format and the
-// memory rows (VRAM resident, Context, Unload target) are diagnostic, shown only with developer tools on (critique §3.4).
-await check('a model card shows quantization, format and memory details only with developer tools on', async () => {
+// memory rows (VRAM resident, Context, Unload target) follow, always shown since the developer-tools switch went (2 Nov).
+await check('a model card shows family, size, quantization, format and memory details', async () => {
   const MODELS = { available: true, runtimeAvailable: true, default: 'qwen3:4b', defaultInstalled: true, installedCount: 1, loadedCount: 1,
     installed: [{ name: 'qwen3:4b', loaded: true, sizeBytes: 2.5e9, details: { family: 'qwen3', parameterSize: '4.0B', quantizationLevel: 'Q4_K_M', format: 'gguf' },
       runtime: { name: 'qwen3:4b', sizeVramBytes: 3.9e9, contextLength: 32768, expiresAt: new Date(Date.now() + 3e5).toISOString() } }],
@@ -73,10 +70,6 @@ await check('a model card shows quantization, format and memory details only wit
     await p.waitForSelector('#modelRuntimeList .model-runtime-card');
     // One evaluate on the live DOM: the list is redrawn when the status poll comes back, so a held card can go stale.
     const seen = () => p.evaluate(() => [...document.querySelectorAll('#modelRuntimeList .model-runtime-card .model-runtime-meta .badge, #modelRuntimeList .model-runtime-card .model-runtime-detail > span')].filter(e => e.getClientRects().length).map(e => e.textContent.trim()));
-    await p.evaluate(() => document.body.classList.add('dev-tools-off'));
-    assert.deepEqual(await seen(), ['qwen3', '4.0B', 'Model size']);
-    assert.doesNotMatch(await p.locator('#modelRuntimeList').innerText(), /Q4_K_M|gguf|VRAM|Unload target/);
-    await p.evaluate(() => document.body.classList.remove('dev-tools-off'));
     assert.deepEqual(await seen(), ['qwen3', '4.0B', 'Q4_K_M', 'gguf', 'Model size', 'VRAM resident', 'Context', 'Unload target']);
   } finally { await p.close(); }
 });

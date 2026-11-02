@@ -8,14 +8,9 @@ const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch({ headless: true });
 const failures = [];
 async function check(name, fn) { try { await fn(); console.log('PASS', name); } catch (e) { failures.push(`${name}: ${e.message}`); console.error('FAIL', name, e.message); } }
-// Developer tools start on for a browser with no saved choice once the server has developer history (changes,
-// engineering runs or Claude board findings, which other suites leave behind), so every page here starts with them
-// off, as on a new install; checks that need them turn them on themselves.
-const newContext = async opts => {
-  const context = await browser.newContext(opts);
-  await context.addInitScript(() => { try { localStorage.setItem('localai.devTools', '0'); } catch {} });
-  return context;
-};
+// No developer-tools switch since 2 Nov: model, scores, Routing, Advanced and the demo are always there, kept closed
+// or under their own headings so the owner's words lead.
+const newContext = opts => browser.newContext(opts);
 
 const now = Date.now(), at = s => new Date(now - s * 1000).toISOString();
 const MISSION = {
@@ -233,14 +228,14 @@ async function withMission(contextOpts, mission) {
     assert.equal(await page.locator('#agentMissionHistory a').getAttribute('href'), '#work?kind=missions');
     assert.equal(await page.locator('#agentHistorySearch').count(), 0);
   });
-  await check('1440px: a crew row opens the worker card: why it stopped and Try again; developer details hidden', async () => {
+  await check('1440px: a crew row opens the worker card: why it stopped and Try again; model and scores below', async () => {
     await page.locator('#awcRoster [data-awc-roster="ux_analyst"]').click();
     const card = page.locator('#agentInspector');
     await card.waitFor({ state: 'visible' });
     const text = await card.innerText();
     assert.match(text, /UX Analyst/); assert.match(text, /Reviews screens for usability/); assert.match(text, /Stopped: the model didn’t answer/);
     await card.locator('#agentRetryBtn').waitFor({ state: 'visible' });
-    assert.equal(await card.locator('[data-dev-only]').isVisible(), false, 'model and scores only with developer tools');
+    assert.equal(await card.locator('.aw-worker__dev').isVisible(), true, 'model and scores under the story');
     await page.locator('#awWorkerClose').click();
     await card.waitFor({ state: 'hidden' });
     assert.equal(await page.evaluate(() => document.activeElement?.dataset.awcRoster), 'ux_analyst', 'focus returns to the crew row');
@@ -259,7 +254,7 @@ async function withMission(contextOpts, mission) {
     await page.locator('#awMoreBtn').click();
     const menu = page.locator('#awMenu');
     await menu.waitFor({ state: 'visible' });
-    assert.deepEqual(await menu.locator('[data-aw-menu]:visible').allInnerTexts(), ['Start a new mission', 'Watch the replay', 'Watch mode', 'Open in Work', 'Copy result', 'All missions']);
+    assert.deepEqual(await menu.locator('[data-aw-menu]:visible').allInnerTexts(), ['Start a new mission', 'Watch the replay', 'Watch mode', 'Open in Work', 'Copy result', 'All missions', 'Try a demo mission']);
     await page.keyboard.press('ArrowDown');
     assert.equal(await page.evaluate(() => document.activeElement.dataset.awMenu), 'replay');
     await page.keyboard.press('Escape');
@@ -311,7 +306,7 @@ async function withMission(contextOpts, mission) {
   await context.close();
 }
 
-// Start a mission (design PR 3): one sheet, the team in words as you type, Advanced only with developer tools; the
+// Start a mission (design PR 3): one sheet, the team in words as you type, Advanced closed below them; the
 // empty city invites a goal and offers a demo.
 async function emptyPage(contextOpts) {
   const context = await newContext({ serviceWorkers: 'block', ...contextOpts });
@@ -346,7 +341,8 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
     await page.locator('#agentGoal').fill('Check the phone screens for problems');
     await page.locator('#awTeam').getByText('A UX Analyst will review screens for usability; a Coordinator will put everyone’s findings together.').waitFor();
     assert.equal(await page.locator('#awTeam img').count(), 2, 'a portrait per worker');
-    assert.equal(await sheet.locator('#agentAdvancedPanel, #agentAdvancedToggle').first().isVisible(), false, 'Advanced only with developer tools');
+    assert.equal(await sheet.locator('#agentAdvancedToggle').isVisible(), true, 'Advanced is offered');
+    assert.equal(await sheet.locator('#agentAdvancedPanel').isVisible(), false, 'Advanced starts closed');
     assert.match(await sheet.innerText(), /Let the team search the web/);
   });
   await check(`${label}: Start sends the goal and the choices`, async () => {
@@ -436,8 +432,7 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
     await page.waitForFunction(() => window.LocalAIAgentWorld.camera().zoom > 1.2);
     assert.equal(await page.locator('#awTitle').innerText(), 'Fly test');
   });
-  await check('1440px: Advanced shows with developer tools on', async () => {
-    await page.evaluate(() => document.body.classList.remove('dev-tools-off'));
+  await check('1440px: Advanced shows in the start sheet', async () => {
     await page.locator('#awPrimary').click().catch(() => {});
     await page.evaluate(() => window.LocalAIAgentStart.open());
     await page.locator('#agentAdvancedToggle').waitFor({ state: 'visible' });
@@ -765,15 +760,14 @@ const panCity = async page => {
     assert.equal(await page.evaluate(() => window.LocalAIAgentWorld.following()), true);
     await page.locator('#awPrimary').waitFor({ state: 'hidden' });
   });
-  await check('1440px: developer tools off: no Mission Router anywhere, no scores in the worker card', async () => {
-    assert.equal(await page.evaluate(() => document.body.classList.contains('dev-tools-off')), true);
+  await check('1440px: no Mission Router anywhere; the team lead is the Team lead', async () => {
     assert.equal(await page.evaluate(() => document.documentElement.outerHTML.includes('Mission Router')), false, 'not in the DOM');
     const names = await page.evaluate(() => window.LocalAIAgentWorld.names());
     assert.ok(names.includes('Team lead') && !names.includes('Mission Router'), 'city labels: ' + names.join(', '));
     await page.locator('#awcRoster [data-awc-roster="router"]').click();
     const card = page.locator('#agentInspector');
     await card.waitFor({ state: 'visible' });
-    assert.doesNotMatch(await card.innerText(), /Skill fit|Model fit|Grounding|Fallback|Assignment rationale|Model\b/);
+    assert.doesNotMatch(await card.innerText(), /Mission Router/);
     assert.match(await card.innerText(), /Team lead/);
   });
   await check('1440px: no script errors (live review)', async () => assert.deepEqual(errors, []));
@@ -821,25 +815,23 @@ const DEV_WORDS = /Synthesis|Evidence|Routing|Mission Router|Capability|Groundin
     const city = await page.locator('.awc__mapWrap').boundingBox(), s = await scrub.boundingBox();
     assert.ok(s.y >= city.y + city.height - 1, 'under the city');
   });
-  await check('1440px: replay speed is in ⋯ › View; the demo only with developer tools', async () => {
+  await check('1440px: replay speed is in ⋯ › View, beside the demo', async () => {
     await page.locator('#awMoreBtn').click();
     await page.locator('#awMenu [data-aw-view="speed"]').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#awMenu [data-aw-menu="demo"]').isVisible(), false);
+    assert.equal(await page.locator('#awMenu [data-aw-menu="demo"]').isVisible(), true);
     await page.keyboard.press('Escape');
   });
-  await check('1440px: no developer words on the page with developer tools off', async () => {
-    const text = await page.locator('#agents').innerText();
+  await check('1440px: no developer words on the page outside Routing and the worker details', async () => {
+    const text = await page.evaluate(() => { const c = document.querySelector('#agents').cloneNode(true); c.querySelectorAll('.aw-results__dev, .aw-worker__dev').forEach(e => e.remove()); document.body.appendChild(c); c.id = 'agentsCopy'; const t = c.innerText; c.remove(); return t; });
     assert.doesNotMatch(text, DEV_WORDS);
   });
-  await check('1440px: with developer tools on, Routing and the demo appear', async () => {
-    await page.evaluate(() => document.body.classList.remove('dev-tools-off'));
+  await check('1440px: Routing and the demo are there', async () => {
     await page.locator('#agentResultBody details', { hasText: 'Routing' }).waitFor({ state: 'visible' });
     await page.locator('#awMoreBtn').click();
     await page.locator('#awMenu [data-aw-menu="demo"]').click();
     await page.locator('#awcLiveBtn').waitFor({ state: 'visible' });
     await page.locator('#awcLiveBtn').click();
     await page.locator('#awcLiveBtn').waitFor({ state: 'hidden' });
-    await page.evaluate(() => document.body.classList.add('dev-tools-off'));
   });
   await check('1440px: no script errors (results)', async () => assert.deepEqual(errors, []));
   await context.close();

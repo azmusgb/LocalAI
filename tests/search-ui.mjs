@@ -84,24 +84,20 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
   await check(`${w}px: no script errors`, async () => assert.deepEqual(errors, []));
   await page.close();
 }
-// Developer tools off: ⌘K offers the owner's pages only; the switch brings the developer pages back.
-await check('developer tools off: ⌘K does not offer Files but does offer Claude Code (Improve); on, it offers Files', async () => {
+// No developer-tools switch (2 Nov): ⌘K offers every tool, the owner's pages and Tools itself, with nothing switched on.
+await check('⌘K offers every tool, Tools and the owner pages without any switch', async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = []; page.on('pageerror', e => errors.push(e.message));
-  await page.addInitScript(() => { try { localStorage.setItem('localai.devTools', '0'); localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  await page.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
   await page.goto(base + '/#home', { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => typeof window.showView === 'function' && document.querySelector('#uxCommandBtn') && document.body.classList.contains('dev-tools-off'));
+  await page.waitForFunction(() => typeof window.showView === 'function' && document.querySelector('#uxCommandBtn'));
   await open(page);
   const offered = await items(page);
-  for (const label of ['Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows']) assert.ok(!offered.includes(label), `${label} offered with developer tools off: ${offered}`);
-  assert.ok(offered.includes('Health') && offered.includes('Models') && offered.includes('Claude Code'), `owner pages offered: ${offered}`);
-  await page.keyboard.press('Escape');
-  await page.evaluate(() => window.showView('settings'));
-  await page.locator('.dev-tools-pref input').check();
-  await page.waitForFunction(() => !document.body.classList.contains('dev-tools-off'));
-  await open(page);
-  await page.locator('#cmdkInput').fill('files');
-  assert.ok((await items(page)).includes('Files'), `Files offered with developer tools on: ${await items(page)}`);
+  assert.ok(offered.includes('Health') && offered.includes('Models') && offered.includes('Claude Code') && offered.includes('Tools'), `owner pages offered: ${offered}`);
+  for (const [term, label] of [['files', 'Files'], ['repository', 'Repository'], ['powershell', 'PowerShell'], ['browser', 'Browser & computer'], ['n8n', 'n8n workflows'], ['atlas', 'Architecture']]) {
+    await page.locator('#cmdkInput').fill(term);
+    assert.ok((await items(page)).includes(label), `${label} offered for "${term}": ${await items(page)}`);
+  }
   await page.keyboard.press('Escape');
   assert.deepEqual(errors, []);
   await page.close();
