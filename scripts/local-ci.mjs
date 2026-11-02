@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Local CI: runs what .github/workflows/validate.yml runs, on this machine, and posts the result to the pull request
-// as a "local-ci" commit status (statuses aren't billed, so this works while GitHub Actions can't start).
+// Local CI: the repository's only CI. Runs the checks on this machine and posts the result to the pull request
+// as a "local-ci" commit status.
 //
 //   npm run ci -- 195            test PR #195 merged with the latest main, post pending, then success or failure
 //   npm run ci -- 195 --no-post  same, without posting

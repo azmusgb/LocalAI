@@ -140,15 +140,13 @@ New `tests/*.test.cjs` and `tests/*-ui.mjs` files are picked up automatically by
 
 ## CI
 
-**While GitHub Actions can't start (account billing), the three workflows below are disabled and PRs are checked
-locally:** `npm run ci -- <PR number>` (`scripts/local-ci.mjs`) runs every `validate.yml` step on the PR merged with
-`main`, in a throwaway worktree, against a fresh server on a free port, and posts a `local-ci` commit status (pending,
+**There are no GitHub Actions workflows; PRs are checked locally:** `npm run ci -- <PR number>`
+(`scripts/local-ci.mjs`) runs the steps below on the PR merged with `main`, in a throwaway worktree, against a fresh server on a free port, and posts a `local-ci` commit status (pending,
 then success or failure) to the PR. `--no-post` skips posting; with no PR number it tests the current checkout and
 never posts. `npm run ship -- <PR number>` (`--merge`) does the same and then, only on green, merges with
 `gh pr merge --match-head-commit <tested sha>`, so a commit pushed after the run started can't land untested. Runs queue one at a time per machine (a lock in the temp folder; a dead owner's lock is taken over), and
 a stopped run (Ctrl-C, SIGTERM) kills its test processes, marks the PR "Stopped before it finished", removes its
-worktree and releases the lock. The log path is printed at the end. Re-enable Actions with
-`gh workflow enable <name> -R azmusgb/LocalAI`. The tree under test gets its own locked dependencies (devDependencies included), installed once per `package-lock.json` into `~/.cache/localai-ci/` and reused, so the eslint and stylelint tests run instead of skipping.
+worktree and releases the lock. The log path is printed at the end. The tree under test gets its own locked dependencies (devDependencies included), installed once per `package-lock.json` into `~/.cache/localai-ci/` and reused, so the eslint and stylelint tests run instead of skipping.
 
 A red run also leaves one PR comment naming the failed steps, the failing unit tests (first ten, parsed from the
 `✖` lines) and any browser suite that failed twice. A browser suite that fails is rerun once on its own
@@ -173,16 +171,13 @@ runs with stand-ins (main "moves" once; `LOCALAI_CI_MAIN_MOVED=0`, `LOCALAI_CI_R
 between ship's last fetch and its own merge, or one made without ship; GitHub can't make a merge conditional on
 `main`'s commit.
 
-CI runs on pull requests only (plus schedules and manual runs); nothing runs after a merge, because the
-auto-deploy certifies `main` itself before promoting it. A newer push to a PR cancels its older run.
+Local CI steps, in order: `node --check` on every `app/*.js`, `app/public/*.js`, `tests/*.mjs`, `tests/*.cjs`;
+`npm test`; Python syntax; with `pwsh`, PowerShell syntax and `Test-LocalAI-Candidate.ps1 -LocalNode`; no private keys
+under `app/`; then a fresh server on a free port and `npm run test:browser`. Nothing runs after a merge, because the
+auto-deploy certifies `main` itself before promoting it.
 
-| Workflow (job) | Runs when | Runs on | Steps |
-|---|---|---|---|
-| `validate.yml` (`validate`) | every PR except ones that only change `**/*.md` or `docs/**`; on demand | Ubuntu, Node 22 | `npm ci`; `node --check` on every `app/*.js`, `app/public/*.js`, `tests/*.mjs`, `tests/*.cjs`; `npm test`; Python and PowerShell syntax; no private keys under `app/`; `Test-LocalAI-Candidate.ps1 -LocalNode`; Chromium; start the server (`DATA_DIR=/tmp/localai-data PORT=3080`) and `npm run test:browser`. The server log is uploaded on failure |
-| `storage.yml` (`storage-compatibility`) | PRs touching `app/storage*.js`, `app/release.js`, `app/run-ledger.js`, `app/agent-orchestrator.js`, their tests or `package*.json`; weekly; on demand | PRs: Ubuntu, Node 22.13.0. Weekly and on demand: Ubuntu and Windows × Node 22.13.0 and 24 | `release`, `storage`, `storage-api`, `agent-orchestrator` and `run-ledger` tests |
-| `windows-contracts.yml` (`deployment-contracts`) | PRs touching `deploy/**`, `host/**/*.ps1` or `tests/*.ps1`; weekly; on demand | Windows | `tests/Test-LocalAI-DeployContracts.ps1` on PowerShell 7 and Windows PowerShell 5.1 |
-
-A docs-only PR runs no checks.
+Not covered by local CI: Windows PowerShell 5.1 and Windows-only Node runs. For a change to `deploy/**` or host
+PowerShell, run `tests\Test-LocalAI-DeployContracts.ps1` under `powershell` on the PC before shipping.
 
 ### Deploy check in `npm test`
 

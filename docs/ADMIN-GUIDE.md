@@ -30,8 +30,7 @@ Manual deploys and rollback: [Deploy](DEPLOY.md).
 
 ## Check a change before merging (local CI)
 
-GitHub Actions can't start jobs on this account (billing), so the `validate`, `storage` and `windows-contracts`
-workflows are disabled. Checks run on the Mac instead:
+There are no GitHub Actions workflows. Checks run on the Mac instead:
 
 ```sh
 npm run ci -- <PR number>
@@ -58,8 +57,6 @@ the safe way to merge.
   (titles become release notes); it never turns the check red.
 - One run at a time per machine. A second run waits, and its PR shows "Queued behind PR #N".
 - Ctrl-C stops a run cleanly: the PR is marked "Stopped before it finished" and nothing is left running.
-- When GitHub billing works again: `gh workflow enable validate -R azmusgb/LocalAI` (and `storage`,
-  `windows-contracts`).
 
 More: [Development › CI](DEVELOPMENT.md#ci).
 
