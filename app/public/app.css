@@ -3207,6 +3207,15 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 #architecture .atlas-status[data-tone="ok"]{color:var(--atlas-green)}
 #architecture .atlas-status[data-tone="warn"]{color:var(--atlas-amber)}
 #architecture .atlas-status[data-tone="error"]{color:var(--atlas-red)}
+/* The repository and commit picker (Atlas plan PR 3): native selects, wrapping on a phone. */
+#architecture .atlas-source{display:flex;flex-wrap:wrap;align-items:flex-end;gap:var(--ds-space-2,8px) 14px;margin:0 0 14px}
+#architecture .atlas-source-field{display:grid;gap:5px;min-width:0;max-width:100%}
+#architecture .atlas-source-field label{color:var(--ds-muted,#8793a6);font-size:var(--ds-fs-1)}
+#architecture .atlas-source-field select{min-height:44px;max-width:100%;padding:0 9px;border:1px solid var(--ds-line,#243140);border-radius:var(--ds-r-sm);color:var(--ds-text,#eef4fb);background:var(--ds-surface,#111925)}
+#architecture .atlas-source-field select:disabled,#architecture .atlas-inspector :disabled{opacity:.55;cursor:not-allowed}
+#architecture .atlas-source-note{flex:1 1 220px;margin:0;padding-bottom:12px;color:var(--ds-muted,#8793a6);font-size:var(--ds-fs-1);overflow-wrap:anywhere}
+#architecture .atlas-source-note[data-tone="warn"]{color:var(--atlas-amber)}
+#architecture .atlas-graph-only{margin:10px 0 0;color:var(--ds-muted,#8793a6);font-size:var(--ds-fs-1)}
 #architecture .atlas-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
 #architecture .atlas-kpi{padding:13px 14px;border:1px solid var(--ds-line,#243140);border-radius:var(--ds-r-md);background:linear-gradient(180deg,color-mix(in srgb,var(--ds-surface,#111925) 97%,white 3%),var(--ds-surface,#111925))}
 #architecture .atlas-kpi span{display:block;color:var(--ds-muted,#7c899b);font-size:var(--ds-fs-badge);text-transform:uppercase;letter-spacing:.08em}

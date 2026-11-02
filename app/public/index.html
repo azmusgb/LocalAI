@@ -248,6 +248,12 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
 
   <div id="atlasWebStatus" class="atlas-status" role="status" aria-live="polite">Open Architecture to load Atlas evidence.</div>
 
+  <div class="atlas-source" role="group" aria-label="Which graph to show">
+    <div class="atlas-source-field"><label for="atlasRepo">Repository</label><select id="atlasRepo"><option value="localai">Local AI</option></select></div>
+    <div class="atlas-source-field"><label for="atlasCommit">Commit</label><select id="atlasCommit"><option value="">Latest scan</option></select></div>
+    <p id="atlasSourceNote" class="atlas-source-note"></p>
+  </div>
+
   <div class="atlas-kpis" aria-label="Architecture summary">
     <div class="atlas-kpi"><span>Production modules</span><strong id="atlasKpiFiles">—</strong></div>
     <div class="atlas-kpi"><span>Relationships</span><strong id="atlasKpiRelations">—</strong></div>
@@ -314,6 +320,7 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
           <button type="button" data-atlas-question="What is the practical blast radius of changing this node?">Blast radius</button>
         </div>
 
+        <p id="atlasGraphOnly" class="atlas-graph-only" hidden></p>
         <label class="visually-hidden" for="atlasQuestion">Ask Atlas</label>
         <textarea id="atlasQuestion" placeholder="Ask about this node or the current architecture evidence…"></textarea>
         <div class="atlas-actions">
