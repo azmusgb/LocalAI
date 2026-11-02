@@ -78,6 +78,17 @@ unchanged.
    records every few minutes and snapshots any live commit it has not seen. On waking, the first read catches up.
    Pi Hub's System › Versions links each row to `#architecture?repo=<r>&commit=<sha>`. That link is a pi-hub PR.
 
+## Status (1 Nov 2026)
+
+| PR | State |
+|---|---|
+| 1. Generator | Merged, #444 |
+| 2. Server | Merged, #445 |
+| 3. Page picker | Merged, #446; page review fixes followed in #447 |
+| 4. Snapshot now | Next. The read-only deploy keys for pi-hub and print-lab are on the PC (`github-atlas-pihub`, `github-atlas-printlab`) |
+| 5. Intelligence on a snapshot | Not started |
+| 6. Release trigger | Waits for baseline step 3 |
+
 ## Decisions (owner, 1 Nov 2026)
 
 1. **Access: read-only deploy keys**, one per repository. Each is added on GitHub as read-only and kept in the
