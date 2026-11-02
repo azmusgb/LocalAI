@@ -95,7 +95,9 @@ const KB = 1024;
 // 2026-10-31: 298 → 315 KB and index.html 14 → 16 KB for System › Deployments (#425) and System › Architecture
 // (#428: architecture.js 4.3 KB, architecture.css 3.3 KB, their markup), merged without ship; 313.3 KB measured.
 // 2026-10-31: app.css 47 → 51 KB: the Deployments and Architecture styles moved into it (one stylesheet).
-const TOTAL = 315 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
+// 2026-11-01: 315 → 317 KB for the Architecture page's repository and commit picker (Atlas plan PR 3: architecture.js
+// +1.9 KB, its markup and styles +0.3 KB; 316.6 KB measured).
+const TOTAL = 317 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
 // 2026-10-26: 291 → 292 KB (and home.js 11 → 12 KB) for one Needs you on every screen: Home also lists Pi Hub's items

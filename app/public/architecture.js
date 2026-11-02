@@ -55,8 +55,51 @@ function domainSummary(graph) {
   };
 }
 
+// The repository and commit picker (plan PR 3). Commit "" is Local AI's latest scan: the one graph the intelligence
+// service reads. Every other choice is a kept snapshot, at most five per repository, newest first as the server sends.
+const repoNames={localai:'Local AI','pi-hub':'Pi Hub','print-lab':'Print lab'};
+const repoLabel=repo=>repoNames[repo]||String(repo);
+
+function snapshotChoices(list){
+  const repos=['localai',...(Array.isArray(list?.repos)?list.repos.map(String).filter(r=>r!=='localai'):[])];
+  const byRepo=new Map(repos.map(r=>[r,[]]));
+  for(const row of Array.isArray(list?.snapshots)?list.snapshots:[]){
+    if(byRepo.has(row?.repo)&&/^[0-9a-f]{40}$/.test(String(row.commit)))byRepo.get(row.repo).push(row);
+  }
+  return byRepo;
+}
+
+function ago(iso,now=Date.now()){
+  const t=Date.parse(iso||'');
+  if(!Number.isFinite(t))return '';
+  const minutes=Math.max(0,Math.round((now-t)/60000));
+  if(minutes<1)return 'just now';
+  if(minutes<60)return `${minutes} min ago`;
+  const hours=Math.round(minutes/60);
+  return hours<48?`${hours} h ago`:`${Math.round(hours/24)} days ago`;
+}
+
+function commitLabel(row,newest,now=Date.now()){
+  const when=ago(row.committedAt,now);
+  return `${row.commit.slice(0,7)}${when?` · ${when}`:''}${newest?' (newest)':''}`;
+}
+
+// What the chosen snapshot is, and whether a newer one of the same repository exists.
+function snapshotNote(row,rows,now=Date.now()){
+  if(!row)return {text:'',stale:false};
+  const when=ago(row.committedAt,now);
+  const newest=rows[0];
+  const stale=!!newest&&newest.commit!==row.commit;
+  const parts=[`Commit ${row.commit.slice(0,7)}`,when?`committed ${when}`:'commit time unknown'];
+  if(stale)parts.push(`a newer snapshot exists (${newest.commit.slice(0,7)})`);
+  return {text:parts.join(' · '),stale};
+}
+
 exported.aggregateFindings = aggregateFindings;
 exported.domainSummary = domainSummary;
+exported.snapshotChoices = snapshotChoices;
+exported.commitLabel = commitLabel;
+exported.snapshotNote = snapshotNote;
 if(typeof module==='object'&&module.exports){module.exports=exported;return;}
 
 const page=document.getElementById('architecture');
@@ -64,9 +107,12 @@ if(!page)return;
 const $=id=>document.getElementById(id);
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const state={
-  active:false,loading:false,summary:null,graph:null,selected:null,details:null,
-  mode:'architecture',model:localStorage.getItem('localai.atlas.model')||'',request:null
+  active:false,summary:null,graph:null,selected:null,details:null,
+  mode:'architecture',model:localStorage.getItem('localai.atlas.model')||'',request:null,
+  repo:'localai',commit:'',snapshots:null,seq:0
 };
+// Only Local AI's latest scan has findings, Ask and Goose (until plan PR 5); a snapshot shows its graph alone.
+const live=()=>state.repo==='localai'&&!state.commit;
 
 function status(text,tone='neutral'){
   const el=$('atlasWebStatus');
@@ -113,7 +159,7 @@ function renderKpis(){
   $('atlasKpiFiles').textContent=stats.productionFiles??stats.files??'—';
   $('atlasKpiRelations').textContent=stats.relationships??state.graph?.edges?.length??'—';
   $('atlasKpiChanged').textContent=stats.changed??productionNodes(state.graph).filter(n=>n.changed).length??'—';
-  $('atlasKpiFindings').textContent=groups.length||'0';
+  $('atlasKpiFindings').textContent=state.summary?(groups.length||'0'):'—';
 }
 
 function riskText(node){
@@ -218,7 +264,16 @@ function renderFocusedMap(){
 
 function renderMap(){state.selected?renderFocusedMap():renderDomainMap();}
 
+function graphOnlyText(){
+  return `Graph only for this ${state.repo==='localai'?'snapshot':'repository'}. Findings, Ask and Goose cover Local AI's latest scan for now.`;
+}
+
 function renderFindings(){
+  if(!live()){
+    $('atlasFindingCount').textContent='';
+    $('atlasFindingList').innerHTML=`<div class="atlas-empty">${esc(graphOnlyText())}</div>`;
+    return;
+  }
   const groups=aggregateFindings(state.summary?.findings||[]);
   let shown=groups;
   if(state.mode==='changes'){
@@ -261,12 +316,16 @@ function renderInspector(){
 async function selectNode(id){
   state.selected=id;
   renderMap();
+  // The intelligence service knows only Local AI's latest scan: a snapshot's node comes from its own graph.
+  if(!live()){state.details=productionNodes(state.graph).find(n=>n.id===id)||null;renderInspector();return;}
+  const seq=state.seq;
   try{
     state.details=await getJson(`/api/atlas/node?path=${encodeURIComponent(id)}`,{timeout:12000});
   }catch(error){
     state.details=productionNodes(state.graph).find(n=>n.id===id)||null;
     status(`Node loaded from static graph; intelligence detail unavailable: ${error.message}`,'warn');
   }
+  if(seq!==state.seq)return;  // the page moved to another graph meanwhile
   renderInspector();
 }
 
@@ -279,28 +338,89 @@ function renderModes(){
   renderFindings();renderSearchResults();
 }
 
+function renderPicker(){
+  const repos=[...state.snapshots.keys()];
+  const rows=state.snapshots.get(state.repo)||[];
+  $('atlasRepo').innerHTML=repos.map(r=>`<option value="${esc(r)}">${esc(repoLabel(r))}</option>`).join('');
+  $('atlasRepo').value=state.repo;
+  const options=rows.map((r,i)=>`<option value="${esc(r.commit)}">${esc(commitLabel(r,i===0))}</option>`);
+  if(state.repo==='localai')options.unshift('<option value="">Latest scan</option>');
+  const commit=$('atlasCommit');
+  commit.innerHTML=options.join('')||'<option value="">No snapshots yet</option>';
+  commit.disabled=!options.length;
+  commit.value=state.commit;
+  const note=state.commit?snapshotNote(rows.find(r=>r.commit===state.commit),rows):
+    {text:state.repo==='localai'?'The deploy checkout, as last scanned.':'',stale:false};
+  $('atlasSourceNote').textContent=note.text;
+  $('atlasSourceNote').dataset.tone=note.stale?'warn':'';
+  const off=!live();
+  $('atlasGraphOnly').hidden=!off;
+  $('atlasGraphOnly').textContent=off?graphOnlyText():'';
+  for(const el of [$('atlasAsk'),$('atlasGoose'),$('atlasModel'),$('atlasQuestion'),...page.querySelectorAll('[data-atlas-question]')])el.disabled=off;
+}
+
+function clearGraph(title,hint){
+  state.graph=null;state.summary=null;state.selected=null;state.details=null;
+  $('atlasMap').innerHTML='';
+  $('atlasMap').closest('.atlas-map-wrap').classList.remove('atlas-has-list');
+  if($('atlasDomainList'))$('atlasDomainList').innerHTML='';
+  $('atlasMapTitle').textContent=title;
+  $('atlasMapHint').textContent=hint;
+  for(const id of ['atlasKpiFiles','atlasKpiRelations','atlasKpiChanged','atlasKpiFindings'])$(id).textContent='—';
+  $('atlasNodeSearch').value='';renderSearchResults();
+  $('atlasAnswer').hidden=true;
+  renderInspector();renderFindings();
+}
+
 async function refresh(){
-  if(state.loading)return;
-  state.loading=true;setBusy(true);status('Refreshing deterministic architecture evidence…');
+  // A newer refresh (another repository or commit chosen meanwhile) supersedes this one: its results are dropped.
+  const seq=++state.seq;
+  setBusy(true);status(`Loading ${repoLabel(state.repo)}…`);
   try{
+    const listed=await getJson('/api/atlas/snapshots',{timeout:12000}).catch(error=>({_error:error.message}));
+    if(seq!==state.seq||!state.active)return;
+    if(!listed._error||!state.snapshots)state.snapshots=snapshotChoices(listed._error?null:listed);
+    if(!state.snapshots.has(state.repo)){state.repo='localai';state.commit='';}
+    // Only the newest five per repository are kept: a commit retired since it was chosen falls back to the newest.
+    const rows=state.snapshots.get(state.repo);
+    let retired=false;
+    if(state.commit&&!rows.some(r=>r.commit===state.commit)){state.commit=rows[0]?.commit||'';retired=true;}
+    renderPicker();
+    if(state.repo!=='localai'&&!state.commit){
+      clearGraph(`No snapshots of ${repoLabel(state.repo)} yet`,'Its architecture shows here once a snapshot has been taken.');
+      status(listed._error?`The snapshot list is unavailable: ${listed._error}`:`No snapshots of ${repoLabel(state.repo)} yet.`,listed._error?'error':'neutral');
+      return;
+    }
+    const url=live()?'/api/atlas/graph':`/api/atlas/graph?repo=${encodeURIComponent(state.repo)}&commit=${encodeURIComponent(state.commit)}`;
     const [graph,summary]=await Promise.all([
-      getJson('/api/atlas/graph',{timeout:12000}),
-      getJson('/api/atlas/summary',{timeout:12000}).catch(error=>({providers:{},findings:[],_error:error.message}))
+      getJson(url,{timeout:12000}),
+      live()?getJson('/api/atlas/summary',{timeout:12000}).catch(error=>({providers:{},findings:[],_error:error.message})):null
     ]);
-    if(!state.active)return;
+    if(seq!==state.seq||!state.active)return;
     state.graph=graph;state.summary=summary;
-    renderKpis();providerBadge();renderMap();renderFindings();renderSearchResults();
+    renderKpis();if(summary)providerBadge();renderMap();renderFindings();renderSearchResults();
     if(state.selected)await selectNode(state.selected);
+    if(seq!==state.seq)return;
     // Say plainly when the diagram is old, partial or missing its change data, rather than looking complete.
     const caveats=[];
+    if(retired)caveats.push('the chosen commit is no longer kept, so this is the newest snapshot');
+    if(listed._error)caveats.push(`the snapshot list is unavailable: ${listed._error}`);
     if(graph.stale)caveats.push('showing the last good graph; the newest copy could not be read');
     if(graph.stats?.truncated)caveats.push(`only the first ${graph.stats.maxFiles} files were scanned`);
     if(graph.stats?.gitError)caveats.push('changed files are unknown (git failed)');
-    if(summary._error)caveats.push(`intelligence service is offline: ${summary._error}`);
+    if(summary?._error)caveats.push(`intelligence service is offline: ${summary._error}`);
     status(caveats.length?`Atlas: ${caveats.join('; ')}.`:'Atlas evidence is current.',caveats.length?'warn':'ok');
   }catch(error){
-    if(state.active)status(error.name==='AbortError'?'Architecture refresh timed out.':error.message,'error');
-  }finally{state.loading=false;setBusy(false);}
+    if(seq!==state.seq||!state.active)return;
+    if(!state.graph)clearGraph(`${repoLabel(state.repo)} could not be loaded`,'Try Refresh evidence, or choose another commit.');
+    status(error.name==='AbortError'?'Architecture refresh timed out.':error.message,'error');
+  }finally{if(seq===state.seq)setBusy(false);}
+}
+
+function chooseSource(repo,commit){
+  state.repo=repo;state.commit=commit;
+  clearGraph('Loading…','');
+  void refresh();
 }
 
 async function askAtlas(question){
@@ -342,6 +462,11 @@ function activate(){
 function deactivate(){state.active=false;state.request?.abort?.();state.request=null;}
 
 $('atlasRefresh').addEventListener('click',()=>void refresh());
+$('atlasRepo').addEventListener('change',e=>{
+  const repo=e.target.value;
+  chooseSource(repo,repo==='localai'?'':(state.snapshots?.get(repo)?.[0]?.commit||''));
+});
+$('atlasCommit').addEventListener('change',e=>chooseSource(state.repo,e.target.value));
 $('atlasNodeSearch').addEventListener('input',renderSearchResults);
 $('atlasSearchResults').addEventListener('click',e=>{const b=e.target.closest('[data-atlas-node]');if(b){$('atlasSearchResults').hidden=true;void selectNode(b.dataset.atlasNode);}});
 $('atlasFindingList').addEventListener('click',e=>{const b=e.target.closest('[data-atlas-node]');if(b)void selectNode(b.dataset.atlasNode);});
