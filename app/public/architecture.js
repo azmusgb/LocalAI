@@ -127,7 +127,18 @@ function findingReason(group){
   return titles.join(' · ')||'No detail returned';
 }
 
+// "Snapshot now" (plan PR 4): one line for a job the PC is running or has finished.
+function snapshotStateText(job){
+  if(!job)return '';
+  const name=repoLabel(job.repo);
+  if(job.state==='queued')return `A snapshot of ${name} is queued…`;
+  if(job.state==='running')return `Taking a snapshot of ${name} at ${job.ref}…`;
+  if(job.state==='done')return `The snapshot of ${name} at ${String(job.commit||'').slice(0,7)} is ready.`;
+  return `The snapshot of ${name} failed: ${job.error||'no reason given'}`;
+}
+
 exported.aggregateFindings = aggregateFindings;
+exported.snapshotStateText = snapshotStateText;
 exported.plural = plural;
 exported.orderDomains = orderDomains;
 exported.scanFreshness = scanFreshness;
@@ -508,7 +519,7 @@ async function refresh(){
     if(state.commit&&!rows.some(r=>r.commit===state.commit)){state.commit=rows[0]?.commit||'';retired=true;}
     renderPicker();
     if(state.repo!=='localai'&&!state.commit){
-      clearGraph(`No snapshots of ${repoLabel(state.repo)} yet`,'Its architecture shows here once a snapshot has been taken.');
+      clearGraph(`No snapshots of ${repoLabel(state.repo)} yet`,'Use Snapshot now to take the first one.');
       status(listed._error?`The snapshot list is unavailable: ${listed._error}`:`No snapshots of ${repoLabel(state.repo)} yet.`,listed._error?'error':'neutral');
       return;
     }
@@ -540,6 +551,51 @@ async function refresh(){
     if(!state.graph)clearGraph(`${repoLabel(state.repo)} could not be loaded`,'Try Refresh evidence, or choose another commit.');
     status(error.name==='AbortError'?'Architecture refresh timed out.':error.message,'error');
   }finally{if(seq===state.seq)setBusy(false);}
+}
+
+const snapshotRun={job:null,timer:null};
+const inFlight=job=>!!job&&(job.state==='queued'||job.state==='running');
+
+function showSnapshotState(job,text,tone){
+  const el=$('atlasSnapshotState');
+  el.textContent=text??snapshotStateText(job);
+  el.hidden=!el.textContent;
+  el.dataset.tone=tone??(job?.state==='failed'?'error':job?.state==='done'?'ok':'');
+  $('atlasSnapshotNow').disabled=inFlight(job);
+}
+
+// Ask the PC to fetch the chosen repository's main and scan it. Signed-in only; one run at a time on the PC.
+async function snapshotNow(){
+  $('atlasSnapshotNow').disabled=true;
+  try{
+    const {job}=await getJson('/api/atlas/snapshot',{method:'POST',timeout:15000,headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({repo:state.repo,ref:'main'})});
+    snapshotRun.job=job;showSnapshotState(job);pollSnapshot();
+  }catch(error){
+    const signIn=/\b401\b|sign.?in/i.test(error.message);
+    showSnapshotState(null,signIn?'Sign in to take a snapshot.':`The snapshot could not start: ${error.message}`,'error');
+  }
+}
+
+function pollSnapshot(){
+  clearTimeout(snapshotRun.timer);
+  if(!inFlight(snapshotRun.job))return;
+  snapshotRun.timer=setTimeout(async()=>{
+    if(!state.active)return;
+    let status;
+    try{status=await getJson('/api/atlas/snapshot',{timeout:8000});}catch{return pollSnapshot();}
+    const id=snapshotRun.job?.id;
+    const job=[status.running,...(status.queued||[]),...(status.recent||[])].find(j=>j&&j.id===id);
+    if(!job){
+      snapshotRun.job=null;
+      return showSnapshotState(null,'The snapshot service restarted before this snapshot finished; try again.','warn');
+    }
+    snapshotRun.job=job;showSnapshotState(job);
+    if(inFlight(job))return pollSnapshot();
+    // Done: the list gains the new commit; on the same repository, show it.
+    if(job.state==='done'&&job.repo===state.repo)state.commit=job.commit;
+    if(job.state==='done')void refresh();
+  },3000);
 }
 
 function chooseSource(repo,commit){
@@ -583,8 +639,9 @@ function activate(){
   if(state.active)return;
   state.active=true;
   if(!state.graph)void refresh();
+  pollSnapshot();
 }
-function deactivate(){state.active=false;state.request?.abort?.();state.request=null;}
+function deactivate(){state.active=false;state.request?.abort?.();state.request=null;clearTimeout(snapshotRun.timer);}
 
 $('atlasRefresh').addEventListener('click',()=>void refresh());
 $('atlasRepo').addEventListener('change',e=>{
@@ -592,6 +649,7 @@ $('atlasRepo').addEventListener('change',e=>{
   chooseSource(repo,repo==='localai'?'':(state.snapshots?.get(repo)?.[0]?.commit||''));
 });
 $('atlasCommit').addEventListener('change',e=>chooseSource(state.repo,e.target.value));
+$('atlasSnapshotNow').addEventListener('click',()=>void snapshotNow());
 $('atlasNodeSearch').addEventListener('input',renderSearchResults);
 $('atlasSearchResults').addEventListener('click',e=>{const b=e.target.closest('[data-atlas-node]');if(b){$('atlasSearchResults').hidden=true;void selectNode(b.dataset.atlasNode,{reveal:true});}});
 $('atlasFindingList').addEventListener('click',e=>{const b=e.target.closest('[data-atlas-node]');if(b)void selectNode(b.dataset.atlasNode,{reveal:true});});

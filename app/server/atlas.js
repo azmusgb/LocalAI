@@ -173,7 +173,8 @@ function createAtlas(ctx = {}) {
     ['/api/atlas/findings', '/api/atlas/findings'],
     ['/api/atlas/node', '/api/atlas/node'],
     ['/api/atlas/ask', '/api/atlas/ask'],
-    ['/api/atlas/goose', '/api/atlas/goose']
+    ['/api/atlas/goose', '/api/atlas/goose'],
+    ['/api/atlas/snapshot', '/api/atlas/snapshot']
   ]);
 
   function shape(graph) {
@@ -302,7 +303,7 @@ function createAtlas(ctx = {}) {
     }
     if (!upstream.has(p)) return json(res, 404, { error: { code: 'atlas_route_not_found', message: 'Atlas route not found.' } });
     if (req.method !== 'GET' && req.method !== 'POST') return json(res, 405, { error: { code: 'method_not_allowed', message: 'Method not allowed.' } });
-    if (req.method === 'POST' && !['/api/atlas/ask', '/api/atlas/goose'].includes(p)) {
+    if (req.method === 'POST' && !['/api/atlas/ask', '/api/atlas/goose', '/api/atlas/snapshot'].includes(p)) {
       return json(res, 405, { error: { code: 'method_not_allowed', message: 'Method not allowed.' } });
     }
     if (req.method === 'GET' && ['/api/atlas/ask', '/api/atlas/goose'].includes(p)) {

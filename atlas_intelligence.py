@@ -20,6 +20,10 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
+# atlas_snapshot_runner.py sits beside this file; loaded by path (tests, python -I) its folder isn't on sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from atlas_snapshot_runner import SnapshotRequestError, SnapshotRunner  # noqa: E402
+
 
 ROOT = Path(__file__).resolve().parent
 # quick_arch.py writes the graph here (a folder, so the container's read-only mount sees each rebuild).
@@ -2867,6 +2871,11 @@ class AtlasHandler(
             )
             return
 
+        # "Snapshot now" (plan PR 4): what is running, waiting and recently finished. Needs no graph.
+        if path == "/api/atlas/snapshot":
+            self.send_json(self.server.snapshot_runner.status())
+            return
+
         if path == "/health":
             self.send_json(
                 {
@@ -2975,6 +2984,14 @@ class AtlasHandler(
         )
 
         body = self.read_json_body()
+
+        if parsed.path == "/api/atlas/snapshot":
+            try:
+                job = self.server.snapshot_runner.request(body.get("repo"), body.get("ref") or "main")
+            except SnapshotRequestError as error:
+                raise AtlasError(str(error), status=error.status, code=error.code) from error
+            self.send_json({"job": job}, status=HTTPStatus.ACCEPTED)
+            return
 
         _, graph, findings = (
             self.atlas_state.snapshot()
@@ -3234,6 +3251,7 @@ def main() -> int:
     )
 
     server.atlas_state = state
+    server.snapshot_runner = SnapshotRunner()
 
     url = (
         f"http://{args.host}:"

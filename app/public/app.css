@@ -3215,6 +3215,11 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 #architecture .atlas-source-field select:disabled,#architecture .atlas-inspector :disabled{opacity:.55;cursor:not-allowed}
 #architecture .atlas-source-note{flex:1 1 220px;margin:0;padding-bottom:12px;color:var(--ds-muted,#8793a6);font-size:var(--ds-fs-1);overflow-wrap:anywhere}
 #architecture .atlas-source-note[data-tone="warn"]{color:var(--atlas-amber)}
+#architecture #atlasSnapshotNow{min-height:44px}
+#architecture .atlas-snapshot-state{flex:1 0 100%;margin:0;color:var(--ds-muted,#8793a6);font-size:var(--ds-fs-1)}
+#architecture .atlas-snapshot-state[data-tone="ok"]{color:var(--atlas-green)}
+#architecture .atlas-snapshot-state[data-tone="warn"]{color:var(--atlas-amber)}
+#architecture .atlas-snapshot-state[data-tone="error"]{color:var(--atlas-red)}
 #architecture .atlas-card-head #atlasMapBack{flex:0 0 auto;min-height:44px}
 /* When a pick brings the inspector into view on one column, keep its head clear of the sticky page header. */
 #architecture .atlas-inspector{scroll-margin-top:120px}
