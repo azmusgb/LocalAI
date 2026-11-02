@@ -142,6 +142,14 @@ test('--queue-release adds an installer report; a bad commit queues nothing', { 
   assert.equal(outboxOf(dir).length, 1);
 });
 
+test('--queue-release print-lab is a lab-pull report', { skip: !python, timeout: 30000 }, async () => {
+  const dir = home();
+  assert.equal((await runWith(dir, 'http://127.0.0.1:9', ['--queue-release', 'print-lab', A, '1'])).status, 0);
+  const [r] = outboxOf(dir);
+  assert.deepEqual([r.target, r.commit, r.mechanism, r.dirty, r.message],
+    ['print-lab', A, 'lab-pull', true, 'running uncommitted changes']);
+});
+
 test('test_outbox_flush_drops_on_201: sent oldest first with the deploy key, then the outbox is empty', { skip: !python, timeout: 30000 }, async (t) => {
   const dir = home(); keychain(dir);
   const hub = await hubServer(t, [201, 201]);
