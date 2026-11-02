@@ -263,8 +263,9 @@ await check('Shipped: each release is one card of rows, all the same height with
   const h = id => page.locator(`#shippedList [data-item-id="${id}"]`).evaluate(r => r.getBoundingClientRect().height - parseFloat(getComputedStyle(r).borderTopWidth));   // a row after another has a 1px divider
   const [withPr, resolved, plain] = [await h('claude-new'), await h('signal-gone'), await h('claude-old')];
   assert.ok(Math.abs(withPr - resolved) < 1 && Math.abs(withPr - plain) < 1, `rows are ${withPr}, ${resolved} and ${plain}px`);
-  // The link is the whole row to tap.
-  const hit = await page.locator('#shippedList [data-item-id="claude-new"]').evaluate(r => { const b = r.getBoundingClientRect(); return document.elementFromPoint(b.right - 8, b.top + b.height / 2)?.closest('a')?.href || ''; });
+  // The link is the whole row to tap. Running now sits above the releases, so bring the row into view first.
+  await page.locator('#shippedList [data-item-id="claude-new"]').evaluate(r => r.scrollIntoView({ block: 'center' }));  // clear of the phone tab bar
+  const hit = await page.locator('#shippedList [data-item-id="claude-new"]').evaluate(r => { const b = r.getBoundingClientRect(), e = document.elementFromPoint(b.right - 8, b.top + b.height / 2); return e?.closest('a')?.href || ''; });
   assert.equal(hit, 'https://github.com/azmusgb/LocalAI/pull/150');
 });
 
@@ -369,8 +370,8 @@ await check('the old pages land in Improve: #changes and #engineering on In prog
   }
 });
 
-await check('Improve has its tabs (Deployments after In progress, 31 Oct 2026; Architecture last as Atlas, 2 Nov), and the Claude Code page shows no second priorities list', async () => {
-  assert.deepEqual(await page.evaluate(() => window.LocalAIViews.sections('improve').flatMap(s => s.views)), ['backlog', 'inProgress', 'deployments', 'shipped', 'signals', 'claude', 'architecture']);
+await check('Improve has its tabs (Deployments merged into Shipped and Architecture last as Atlas, 2 Nov), and the Claude Code page shows no second priorities list', async () => {
+  assert.deepEqual(await page.evaluate(() => window.LocalAIViews.sections('improve').flatMap(s => s.views)), ['backlog', 'inProgress', 'shipped', 'signals', 'claude', 'architecture']);
   assert.equal(await page.evaluate(() => window.LocalAIViews.view('claude').domain), 'improve');
   await page.evaluate(() => window.showView('claude'));
   await page.waitForSelector('#claude.active');

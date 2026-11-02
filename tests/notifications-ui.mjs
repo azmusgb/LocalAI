@@ -183,22 +183,22 @@ await check('two approvals and no alerts: the Inbox lists them and opens the she
   assert.deepEqual(await waiting.locator('li button').evaluateAll((bs) => bs.map((b) => b.getAttribute('aria-label') || b.textContent)), ['Review: Run npm install', 'Review: Apply change']);
   assert.doesNotMatch(await page.locator('#inboxList').innerText(), /Nothing needs you/);
   assert.equal(await page.locator('#inboxUnread').innerText(), '2 approvals waiting', 'the pill uses the same words as the heading');
-  assert.equal(await page.locator('#uxInboxCount').innerText(), '2');
   // History holds what was decided.
   const history = page.locator('#inboxList details.inbox-resolved');
   assert.match(await history.locator('summary').innerText(), /History \(1\)/);
   assert.match(await history.evaluate((d) => d.textContent), /Old request[\s\S]*Rejected/);
-  // Review opens the one approval sheet; deciding there updates the Inbox and the bell.
+  // Review opens the one approval sheet; deciding there updates the Inbox.
   await page.getByRole('button', { name: 'Review: Run npm install' }).click();
   await page.waitForSelector('#approvalSheet[open]');
   await page.getByRole('button', { name: 'Approve: Run npm install' }).click();
   await page.waitForFunction(() => /^Approved/.test(document.getElementById('toast').textContent));
-  await page.waitForFunction(() => document.getElementById('uxInboxCount').textContent === '1');
   await page.waitForFunction(() => /1 approval waiting/.test(document.getElementById('inboxList').textContent));
   await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Review: Apply change', null, { timeout: 4000 });
-  // The bell opens the Inbox.
-  await page.evaluate(() => window.showView('home'));
+  // The bell opens Home at Needs you (2 Nov); History there opens the Inbox.
+  await page.evaluate(() => window.showView('inbox'));
   await page.locator('#uxInboxBtn').click();
+  await page.waitForSelector('#home.active');
+  await page.locator('#homeHistory').click();
   await page.waitForSelector('#inbox.active');
   assert.deepEqual(errors, []);
   await context.close();

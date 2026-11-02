@@ -61,7 +61,7 @@ await check('System: Tools lists every tool, each opens at its address with Tool
   await page.waitForSelector('#architecture.active', { timeout: 5000 });
   assert.equal(await crumbOf(page), 'Improve');
   assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Atlas');
-  assert.deepEqual(await stripLabels(), ['Backlog', 'Doing', 'Deployments', 'Shipped', 'Signals', 'Claude', 'Atlas']);
+  assert.deepEqual(await stripLabels(), ['Backlog', 'Doing', 'Shipped', 'Signals', 'Claude', 'Atlas']);
 });
 
 // The legacy pages are retired (owner decision D4): their addresses land on the page that replaced them.
@@ -139,34 +139,41 @@ for (const [parent, child, childTab, domain, area] of [
   });
 }
 
-await check('top bar shows one Inbox count and opens the Inbox', async () => {
-  // Stub the two sources so the real loaders produce known counts.
-  const counts = { unread: 0, pending: 2 };
-  await page.route('**/api/notifications', route => route.fulfill({ json: { items: [], unread: counts.unread } }));
-  await page.route('**/api/approvals', route => route.fulfill({ json: { items: Array.from({ length: counts.pending }, (_, i) => ({ id: `a${i}`, status: 'pending', title: 'Approve change', createdAt: new Date().toISOString() })) } }));
-  const refresh = async () => {
-    const loaded = Promise.all(['/api/notifications', '/api/approvals'].map(u => page.waitForResponse(r => r.url().includes(u))));
-    await page.evaluate(() => window.showView('inbox'));
-    await loaded;
-    await page.evaluate(() => window.showView('home'));
-  };
+// Deployments merged into Shipped (2 Nov): the old address opens Shipped, whose Running now card names the revision the
+// appliance reports (or says it has none) and says what is not connected.
+await check('#deployments opens Shipped, with Running now above the releases', async () => {
+  await page.evaluate(() => { location.hash = '#deployments'; });
+  await page.waitForSelector('#shipped.active', { timeout: 5000 });
+  const card = page.locator('#shipped #shippedNow');
+  await card.waitFor();
+  assert.equal(await card.locator('h2').innerText(), 'Running now');
+  await page.waitForFunction(() => !/Checking/.test(document.querySelector('#shippedNow [data-dep-line]').textContent), null, { timeout: 10000 });
+  assert.match(await card.innerText(), /reported by the appliance|has not reported a revision/);
+  assert.match(await card.innerText(), /No deployment feed yet for Workshop OS/);
+  assert.ok(await page.evaluate(() => { const c = document.getElementById('shippedNow'), l = document.getElementById('shippedList'); return !!(c.compareDocumentPosition(l) & Node.DOCUMENT_POSITION_FOLLOWING); }), 'Running now comes before the releases');
+});
+
+// The bell (navigation update, 2 Nov): on every page, desktop too, its number is Home's "Needs you · N", and it opens Home
+// at Needs you. History beside that heading opens the Inbox.
+await check('the bell shows Needs you\'s number on every page and opens Home at Needs you', async () => {
+  // Two approvals waiting, so Needs you has rows whatever else the server holds.
+  await page.route('**/api/approvals', route => route.fulfill({ json: { items: [0, 1].map(i => ({ id: `bell${i}`, status: 'pending', title: 'Approve change', createdAt: new Date().toISOString() })) } }));
   try {
-    await refresh();
-    await page.waitForFunction(() => document.querySelector('#uxInboxCount')?.textContent === '2');
-    await page.locator('#uxInboxBtn').click();
-    await page.waitForSelector('#inbox.active');
-    counts.unread = 3;
-    await refresh();
-    await page.waitForFunction(() => document.querySelector('#uxInboxCount')?.textContent === '5');
-    await page.locator('#uxInboxBtn').click();
-    await page.waitForSelector('#inbox.active');
-    counts.unread = 0; counts.pending = 0;
-    await refresh();
-    await page.waitForFunction(() => document.querySelector('#uxInboxBtn')?.hidden === true);
-  } finally {
-    await page.unroute('**/api/notifications');
-    await page.unroute('**/api/approvals');
+  await page.evaluate(() => window.showView('home'));
+  await page.evaluate(() => window.LocalAIHome.refresh());
+  const n = await page.evaluate(() => document.querySelector('#homeNeedsCount').textContent.replace(/\D/g, ''));
+  assert.ok(Number(n) >= 2, `Needs you counts the approvals: ${n}`);
+  for (const view of ['home', 'status', 'backlog', 'work']) {
+    await page.evaluate(v => window.showView(v), view);
+    assert.equal(await page.locator('#uxInboxBtn').isVisible(), true, `bell on ${view}`);
+    assert.equal(await page.locator('#uxInboxCount').innerText(), n, `bell number on ${view}`);
   }
+  await page.locator('#uxInboxBtn').click();
+  await page.waitForSelector('#home.active');
+  await page.waitForFunction(() => document.activeElement?.id === 'homeNeedsTitle', null, { timeout: 4000 });
+  await page.locator('#homeHistory').click();
+  await page.waitForSelector('#inbox.active');
+  } finally { await page.unroute('**/api/approvals'); }
 });
 
 await check('GridCraft is reachable from Services, and opens System › Spreadsheets', async () => {
@@ -329,12 +336,12 @@ await check('phone, a new install: System shows Tools with no switch, and every 
   await ctx.close();
 });
 // Acceptance (2 Nov): at 390 px no page strip has a tab off-screen. The phone strip is compact (13 px, 16 px gaps; owner,
-// 2 Nov). Improve joins this list when Deployments merges into Shipped (step 4).
-await check('phone 390: the System and Projects strips have every tab on screen', async () => {
+// 2 Nov). Improve fits since Deployments merged into Shipped (step 4).
+await check('phone 390: the System, Projects and Improve strips have every tab on screen', async () => {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   await ctx.addInitScript(() => { localStorage.setItem('localai.firstRun.done', '1'); });
   const pg = await ctx.newPage();
-  for (const view of ['status', 'projects']) {
+  for (const view of ['status', 'projects', 'backlog']) {
     await pg.goto(base + '/#' + view, { waitUntil: 'domcontentloaded' });
     await pg.waitForSelector(`#${view}.active`);
     await pg.waitForTimeout(200);

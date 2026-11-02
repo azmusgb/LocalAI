@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {records,gates,filterRecords,sha,MAX_AGE_MS}=require('../app/public/deployments');
+const {records,gates,sha,MAX_AGE_MS}=require('../app/public/deployments');
 const commit='a'.repeat(40);
 const health={status:'ok',appliance:'Local AI',releaseCommit:commit};
 test('only a valid appliance report supplies a revision; never borrows it for another workstream',()=>{
@@ -28,11 +28,4 @@ test('malformed health and non-exact SHAs stay unknown',()=>{
  for(const value of [null,123,'abcdef0','<script>','a'.repeat(41)])assert.equal(sha(value),null);
  assert.equal(sha('A'.repeat(40)),commit);
  assert.equal(gates(records({...health,releaseCommit:'bad'},1000,2000)[0]).find(g=>g[0]==='Deployed')[1],'unknown');
-});
-test('filters are case insensitive, search revisions and return a real empty result',()=>{
- const rows=records(health,1000,2000);
- assert.equal(filterRecords(rows,'workshop')[0].id,'workshop');
- assert.equal(filterRecords(rows,'AAAAAAA')[0].id,'localai');
- assert.equal(filterRecords(rows,'','unconnected').length,5);
- assert.deepEqual(filterRecords(rows,'no-match'),[]);
 });

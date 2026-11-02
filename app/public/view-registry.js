@@ -36,7 +36,6 @@ const VIEWS=[
  {id:'automationStudio',svg:'clock',domain:'work',section:'Work',parent:'work',tab:'Automations',label:'Automations',description:'Scheduled prompts and research, health checks and the morning brief.',aka:['studio','automation studio','monitors','morning brief','health check']},
  {id:'backlog',svg:'improve',domain:'improve',section:'Pipeline',label:'Backlog',description:'One ranked list of what could change in Local AI.',aka:['improve','ideas','priorities']},
  {id:'inProgress',svg:'build',short:'Doing',domain:'improve',section:'Pipeline',label:'In progress',description:'Changes being planned, tested or waiting for your OK.',aka:['running changes','change requests','changes','engineer']},
- {id:'deployments',svg:'branch',domain:'improve',section:'Pipeline',label:'Deployments',description:'Reported revisions, build evidence and release checks across workstreams.',aka:['deployment','promotion','release evidence']},
  {id:'shipped',svg:'check',domain:'improve',section:'Pipeline',label:'Shipped',description:'What changed, release by release.',aka:['done','released']},
  {id:'signals',svg:'alert',domain:'improve',section:'Pipeline',label:'Signals',description:'Problems Local AI noticed; serious ones join the Backlog.',aka:['detections','issues','quality signals']},
  // GridCraft on the Windows computer, through the appliance (spreadsheets.js). The old /gridcraft.html page sends you here.
@@ -63,7 +62,8 @@ const VIEWS=[
 // `runs`, `agents`, `ask` and `create` keep their own hidden pages for code and ⌘K; a URL resolves them to the page that now owns them.
 // Improve's four stages replaced Change requests, Issues and Quality signals: old links land on the stage that shows them.
 // Monitors folded into Automations as its Health check and Morning brief kinds (D9).
-const ALIASES={approvals:'inbox',operations:'automationStudio',engineering:'inProgress',changes:'inProgress',issues:'signals',quality:'signals',runs:'work',agents:'work',ask:'home',create:'home'};
+// Deployments merged into Shipped (2 Nov): its Running now card is the release evidence.
+const ALIASES={deployments:'shipped',approvals:'inbox',operations:'automationStudio',engineering:'inProgress',changes:'inProgress',issues:'signals',quality:'signals',runs:'work',agents:'work',ask:'home',create:'home'};
 const byId=new Map(VIEWS.map(v=>[v.id,v]));
 function resolve(id){return ALIASES[id]||id}
 // A view that still has its own page (hidden ones) wins over its alias.

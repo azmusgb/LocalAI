@@ -193,7 +193,8 @@ findings from Claude Code sessions.
 - **In progress** (**Doing** in the page strip): changes being planned, tested or waiting for your OK. Open one for its next step:
   **Test the change**, **Approve** (after a confirmation), or **Retry** if it failed. **See the changes** shows the
   difference. **Back to backlog** or **Discard** stops it.
-- **Shipped:** what changed, release by release, with a link to each change.
+- **Shipped:** what changed, release by release, with a link to each change. **Running now**, above the releases, says which
+  revision the appliance reports it runs (old Deployments links open here) and what evidence is not connected yet.
 - **Atlas:** the System Atlas (Architecture): how the code fits together, recent changes, risk and evidence. It is
   also a card on **System › Tools**.
 
@@ -202,10 +203,11 @@ findings from Claude Code sessions.
 Some actions wait for your OK before they change anything: scripts on the Windows computer, file edits, applying a
 change. You decide them in **Needs you** on Home: tap one, read what it will do, then **Approve** or **Reject**.
 
-The **Inbox** (the bell at the top) is the history. Approvals still waiting are listed first, and **Review** opens the same
-sheet. After them come open alerts, then **History**: resolved alerts and what you approved or rejected, newest first.
-It keeps alerts you missed while notifications were quiet. The bell shows one number: unread alerts plus approvals
-waiting. Old Approvals links open the Inbox.
+The bell at the top of every page shows how many things are in **Needs you**, the same number as Home's heading, and
+opens Home there. The **Inbox** (**History** beside the Needs you heading, or search) is the history. Approvals still
+waiting are listed first, and **Review** opens the same sheet. After them come open alerts, then resolved alerts and what
+you approved or rejected, newest first. It keeps alerts you missed while notifications were quiet. Old Approvals links
+open the Inbox.
 
 ## Print lab
 Pi Hub has its own print lab page: **On Pi Hub › Print lab** on Home opens it. Local AI keeps its copy, reached from a lab

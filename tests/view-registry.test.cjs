@@ -120,10 +120,10 @@ test('Tools lists the tools, System ones first, and nothing is hidden behind a s
   assert.deepEqual(registry.sections('system').map(s => s.label), ['Health', 'Tools', 'Settings', 'History']);
 });
 
-// Improve keeps six tabs plus Deployments until it joins Shipped (step 4); short labels keep them on a phone (D3).
+// Improve has six tabs once Deployments joined Shipped (step 4); short labels keep them on a phone (D3).
 test('Improve tabs use short strip labels', () => {
   const strip = registry.sections('improve').flatMap(s => s.views).map(id => registry.view(id).short || registry.label(id));
-  assert.deepEqual(strip, ['Backlog', 'Doing', 'Deployments', 'Shipped', 'Signals', 'Claude', 'Atlas']);
+  assert.deepEqual(strip, ['Backlog', 'Doing', 'Shipped', 'Signals', 'Claude', 'Atlas']);
 });
 
 test('tabs belong to a top-level page in the same domain', () => {
