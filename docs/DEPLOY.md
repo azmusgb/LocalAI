@@ -232,6 +232,17 @@ release once at startup (`release:history:*` settings, last 50) and serves them 
 What's new lists them, and the first page load after an update says "Updated to …". The Inbox notice names the
 version and the changes.
 
+**Pi Hub's record (platform step 3).** Pi Hub's `release:localai` record is the canonical "what is live" for Local AI,
+shown on Pi Hub's System › Versions. Safe Deploy writes it:
+- `deploy\Send-LocalAI-ReleaseReport.ps1` queues a report after each deploy: `deployed`, or `failed` / `rolled-back`
+  from `state.json`. It posts reports to `https://hub.rahe-home.duckdns.org/api/releases/localai` with the deploy key in
+  `C:\LocalAI\stack\pi-hub-deploy.key`.
+- Reports Pi Hub hasn't taken wait in `C:\LocalAI\.deploy\release-outbox.json` and go again on every run, oldest first.
+- It never fails a deploy.
+- The key is made from the Mac by pi-hub's `deploy/deploy-key.sh localai`, which places it without showing it. Until
+  then, reports wait.
+- Pi Hub checks the record against `/healthz` `releaseCommit` and marks a mismatch as drift.
+
 ## Manual deploys
 
 ```powershell

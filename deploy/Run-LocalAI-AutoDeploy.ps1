@@ -49,6 +49,20 @@ function Write-AutoDeployLog([string[]]$summary, $runOutput) {
     if ($null -eq $runOutput) { $runOutput = @(if ($marker -ge 0 -and $marker -lt $lines.Count - 1) { $lines[($marker + 1)..($lines.Count - 1)] }) }
     Set-Content -Path $log -Value (@($history) + @($summary) + '--- last run ---' + @($runOutput)) -Encoding UTF8
 }
+# Pi Hub's release:localai record (platform step 3): Send-LocalAI-ReleaseReport.ps1 queues a report and sends the outbox.
+# It never fails the run; its one-line answers go to the output.
+function Send-ReleaseReport([hashtable]$params) {
+    $script = Join-Path $Repo 'deploy\Send-LocalAI-ReleaseReport.ps1'
+    if (-not (Test-Path $script)) { return }
+    try { & $script @params -StateDir $StateDir | ForEach-Object { Write-Output "$_" } } catch { Write-Output "release report: $($_.Exception.Message)" }
+}
+# The deploy's result for the report: what state.json says after a failed deploy (Deploy-LocalAI.ps1 writes it).
+function Get-FailedReport([string]$attempted) {
+    $state = try { Get-Content (Join-Path $StateDir 'state.json') -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $null }
+    $running = if ($state.currentCommit) { [string]$state.currentCommit } else { '' }
+    $result = if ($state.status -eq 'ROLLED_BACK' -and $running) { 'rolled-back' } else { 'failed' }
+    return @{ Action = 'Queue'; Commit = $attempted; Result = $result; Running = $running; Head = $attempted }
+}
 # The commit the appliance runs: its release.json, else the deploy state.
 function Get-RunningCommit {
     foreach ($source in @(@{ Path = (Join-Path $Live 'release.json'); Field = 'commit' }, @{ Path = (Join-Path $StateDir 'state.json'); Field = 'currentCommit' })) {
@@ -139,6 +153,8 @@ if ($TargetRef -eq 'origin/release') {
 
 # Before anything else: services a Windows restart left stopped come back even when there is nothing to deploy.
 Invoke-StackRepair
+# Release reports Pi Hub hasn't taken yet go again now (platform step 3: release:localai on Pi Hub).
+Send-ReleaseReport @{ Action = 'Flush' }
 
 $started = Get-Date
 $target = [string](git -C $Repo rev-parse --verify "$TargetRef^{commit}" 2>$null)
@@ -203,6 +219,7 @@ if ($code -eq 0 -and $last -like 'DEPLOYED:*') {
               elseif ($notes.Count -eq 1) { $notes[0] }
               else { [string](git -C $Repo log -1 --format=%s $sha 2>$null) }
     Notify "Local AI updated to $name" $detail @{ commit = $sha.Trim(); version = "$($release.version)"; outcome = 'deployed' }
+    Send-ReleaseReport @{ Action = 'Queue'; Commit = $sha.Trim(); Result = 'deployed'; Head = $sha.Trim(); Message = 'Certified, promoted and healthy.' }
     Remove-Item $failState -ErrorAction SilentlyContinue
     if (Test-ApplianceHealthy) { Invoke-BackupTidy }
 } elseif ($code -eq 0 -and $last -like 'NO CHANGE:*') {
@@ -214,6 +231,11 @@ if ($code -eq 0 -and $last -like 'DEPLOYED:*') {
         $cause = ($output | Where-Object { $_ -match 'failed|Exception|Cannot|rolled|restored' -and $_ -notmatch '^\s*System\.Management\.Automation\.RemoteException\s*$' } | Select-Object -Last 3) -join "`n"
         if (-not $cause) { $cause = "The deploy log on the host has the details: $log" }
         Notify 'An automatic update failed' ("The previous release is still running. Commit $short.`n" + $cause) @{ commit = "$sha".Trim(); outcome = 'failed'; log = $log }
+        if ("$sha".Trim()) {
+            $report = Get-FailedReport "$sha".Trim()
+            $report.Message = 'The automatic update failed; the deploy log on the host has the details.'
+            Send-ReleaseReport $report
+        }
         Set-Content -Path $failState -Value $short
     }
 }
