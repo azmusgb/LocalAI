@@ -6,6 +6,10 @@
 2. Local AI runs on the Windows computer, so it can't report that computer going away. When the appliance hasn't
    answered for three runs in a row (about 15 minutes), this shows a Mac notification once, and another when it is
    back.
+3. Sends the Mac agents' release reports (platform step 3: Pi Hub's release:mac-watch and release:x2d-bridge-mac) that
+   their installers queued in release-outbox.json, oldest first, with the mac deploy key from the login Keychain
+   (service pi-hub-deploy-key, put there by pi-hub's deploy/deploy-key.sh mac). A report Pi Hub didn't take waits for
+   the next run; one it refuses as invalid (400) is dropped.
 
 Standard library only. Never prints or logs the key.
 """
@@ -24,6 +28,9 @@ CHAT_DIR = os.path.join(HOME, ".claude", "localai-chat")
 STATE = os.path.join(HOME, "Library", "Application Support", "LocalAI", "mac-watch.json")
 BRIDGE_LABEL = "com.bambuhelper.x2d-camera-bridge"
 OUTAGE_RUNS = 3
+OUTBOX = os.path.join(CHAT_DIR, "release-outbox.json")
+RELEASE_TARGETS = ("mac-watch", "x2d-bridge-mac")
+OUTBOX_KEEP = 20
 
 
 def load_json(path, default):
@@ -74,7 +81,90 @@ def notify(title, text):
         print(f"mac-watch: notification failed ({type(e).__name__})", file=sys.stderr)
 
 
+def write_outbox(items):
+    if not items:
+        try:
+            os.remove(OUTBOX)
+        except FileNotFoundError:
+            pass
+        return
+    os.makedirs(CHAT_DIR, exist_ok=True)
+    tmp = OUTBOX + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(items[-OUTBOX_KEEP:], f)
+    os.replace(tmp, OUTBOX)
+
+
+def queue_release(target, commit, dirty, message=""):
+    """An installer's report for Pi Hub, added to the outbox (sent by the next run). Returns an error, or None."""
+    if target not in RELEASE_TARGETS:
+        return f"not a Mac agent: {target}"
+    commit = (commit or "").lower()
+    if not (7 <= len(commit) <= 40 and all(c in "0123456789abcdef" for c in commit)):
+        return "no commit: install from a git checkout"
+    report = {"target": target, "commit": commit, "result": "deployed", "mechanism": "mac-install",
+              "at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()), "dirty": dirty,
+              "message": (message or ("installed from uncommitted changes" if dirty else ""))[:200]}
+    items = load_json(OUTBOX, [])
+    write_outbox((items if isinstance(items, list) else []) + [report])
+    return None
+
+
+def deploy_key():
+    """The mac deploy key from the login Keychain, or None. Never printed."""
+    try:
+        out = subprocess.run(["security", "find-generic-password", "-a", "pi-hub", "-s", "pi-hub-deploy-key", "-w"],
+                             capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if out.returncode != 0:
+        return None
+    return out.stdout.strip() or None
+
+
+def flush_releases(hub):
+    """Sends the outbox oldest first; stops at the first report Pi Hub didn't take, keeping it and the rest."""
+    items = load_json(OUTBOX, [])
+    if not isinstance(items, list) or not items:
+        return
+    key = deploy_key()
+    if not key:
+        print(f"mac-watch: no deploy key in the Keychain yet; {len(items)} release report(s) waiting", file=sys.stderr)
+        return
+    left = []
+    for i, item in enumerate(items):
+        target = item.get("target") if isinstance(item, dict) else None
+        if target not in RELEASE_TARGETS:
+            continue
+        body = json.dumps({k: v for k, v in item.items() if k != "target"}).encode()
+        req = urllib.request.Request(f"{hub.rstrip('/')}/api/releases/{target}", data=body, method="POST",
+                                     headers={"Content-Type": "application/json", "X-Hub-Deploy-Key": key})
+        try:
+            with urllib.request.urlopen(req, timeout=15):
+                pass
+            print(f"mac-watch: release report {target} {item.get('commit', '')[:7]} taken")
+        except urllib.error.HTTPError as e:
+            if e.code == 400:
+                print(f"mac-watch: release report {target} refused as invalid; dropped", file=sys.stderr)
+                continue
+            print(f"mac-watch: Pi Hub didn't take the release report (HTTP {e.code}); kept", file=sys.stderr)
+            left = items[i:]
+            break
+        except (urllib.error.URLError, OSError):
+            print("mac-watch: Pi Hub isn't answering; release report kept", file=sys.stderr)
+            left = items[i:]
+            break
+    write_outbox(left)
+
+
 def main():
+    if sys.argv[1:2] == ["--queue-release"]:
+        target, commit, dirty = (sys.argv[2:5] + ["", "", ""])[:3]
+        error = queue_release(target, commit, dirty == "1")
+        if error:
+            print(f"mac-watch: {error}; no release report", file=sys.stderr)
+            return 1
+        return 0
     config = load_json(os.path.join(CHAT_DIR, "config.json"), {})
     url = os.environ.get("LOCALAI_URL") or config.get("url") or "https://10.0.0.21"
     ca = config.get("ca") or os.path.join(CHAT_DIR, "localai-ca.crt")
@@ -119,6 +209,10 @@ def main():
             notify("Local AI isn't answering", "The Windows computer may be off, asleep or off the network.")
             state["notified"] = True
     save_state(state)
+    try:
+        flush_releases(os.environ.get("PI_HUB_URL") or config.get("hub") or "https://hub.rahe-home.duckdns.org")
+    except Exception as e:  # a release report never fails the watchdog
+        print(f"mac-watch: release reports skipped ({type(e).__name__})", file=sys.stderr)
     return 0
 
 

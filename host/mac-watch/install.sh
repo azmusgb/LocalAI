@@ -41,5 +41,11 @@ cat >"$PLIST" <<PLIST
 PLIST
 plutil -lint "$PLIST" >/dev/null
 launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+# release:mac-watch (platform step 3): queue this install's report before the first run, which sends it to Pi Hub.
+REPO="$(cd "$SRC/../.." && pwd)"
+DIRTY=0
+[ -z "$(git -C "$REPO" status --porcelain -- host/mac-watch 2>/dev/null)" ] || DIRTY=1
+"$PYTHON" -I "$DEST/mac-watch.py" --queue-release mac-watch "$(git -C "$REPO" rev-parse HEAD 2>/dev/null || true)" "$DIRTY" ||
+  echo "install.sh: no release report for this install" >&2
 launchctl bootstrap "$DOMAIN" "$PLIST"
 echo "Installed $LABEL (every 5 min; log $LOG)"

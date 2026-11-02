@@ -95,3 +95,96 @@ test('an osascript failure or timeout still saves state', { skip: !python, timeo
   assert.equal(state.misses, 3);
   assert.equal(state.notified, true);
 });
+
+// Release reports (platform step 3): installers queue them, each run sends them to Pi Hub with the mac deploy key.
+const DEPLOY_KEY = 'd'.repeat(64);
+const A = 'a'.repeat(40), B = 'b'.repeat(40);
+function keychain(dir, key = DEPLOY_KEY) {  // a stand-in for macOS `security`, so the test never reads the real Keychain
+  const bin = path.join(dir, 'bin');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.writeFileSync(path.join(bin, 'security'), key ? `#!/bin/sh\necho ${key}\n` : '#!/bin/sh\nexit 44\n', { mode: 0o755 });
+  return bin;
+}
+const runWith = (dir, url, args = [], extra = {}) => new Promise((resolve) => {
+  execFile(python, ['-I', SCRIPT, ...args], {
+    env: { HOME: dir, PATH: `${path.join(dir, 'bin')}:${process.env.PATH}`, LOCALAI_URL: url, PI_HUB_URL: url, MAC_WATCH_PRINT_NOTICES: '1', ...extra },
+    encoding: 'utf8', timeout: 30000,
+  }, (error, stdout, stderr) => resolve({ status: error ? error.code ?? 1 : 0, stdout, stderr }));
+});
+const outboxOf = (dir) => { try { return JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'localai-chat', 'release-outbox.json'), 'utf8')); } catch { return []; } };
+async function hubServer(t, statuses) {
+  const got = [];
+  const server = http.createServer((req, res) => {
+    let b = ''; req.on('data', (c) => (b += c));
+    req.on('end', () => {
+      if (req.url.startsWith('/api/releases/')) {
+        got.push({ url: req.url, key: req.headers['x-hub-deploy-key'], body: JSON.parse(b) });
+        res.statusCode = statuses.length ? statuses.shift() : 200;
+      }
+      res.end('{}');
+    });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  t.after(() => server.close());
+  return { got, url: `http://127.0.0.1:${server.address().port}` };
+}
+
+test('--queue-release adds an installer report; a bad commit queues nothing', { skip: !python, timeout: 30000 }, async () => {
+  const dir = home();
+  assert.equal((await runWith(dir, 'http://127.0.0.1:9', ['--queue-release', 'mac-watch', A, '1'])).status, 0);
+  const [r] = outboxOf(dir);
+  assert.deepEqual([r.target, r.commit, r.result, r.mechanism, r.dirty, r.message],
+    ['mac-watch', A, 'deployed', 'mac-install', true, 'installed from uncommitted changes']);
+  assert.match(r.at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00$/);
+  const bad = await runWith(dir, 'http://127.0.0.1:9', ['--queue-release', 'x2d-bridge-mac', 'nope', '0']);
+  assert.equal(bad.status, 1);
+  assert.equal((await runWith(dir, 'http://127.0.0.1:9', ['--queue-release', 'pi-hub', A, '0'])).status, 1);
+  assert.equal(outboxOf(dir).length, 1);
+});
+
+test('test_outbox_flush_drops_on_201: sent oldest first with the deploy key, then the outbox is empty', { skip: !python, timeout: 30000 }, async (t) => {
+  const dir = home(); keychain(dir);
+  const hub = await hubServer(t, [201, 201]);
+  await runWith(dir, hub.url, ['--queue-release', 'mac-watch', A, '0']);
+  await runWith(dir, hub.url, ['--queue-release', 'x2d-bridge-mac', B, '0']);
+  const out = await runWith(dir, hub.url);
+  assert.equal(out.status, 0, out.stderr);
+  assert.deepEqual(hub.got.map((g) => [g.url, g.body.commit]), [['/api/releases/mac-watch', A], ['/api/releases/x2d-bridge-mac', B]]);
+  assert.equal(hub.got[0].key, DEPLOY_KEY);
+  assert.ok(!('target' in hub.got[0].body));
+  assert.deepEqual(outboxOf(dir), []);
+  assert.ok(!(out.stdout + out.stderr).includes(DEPLOY_KEY), 'never prints the key');
+});
+
+test('test_outbox_flush_keeps_on_error: a 5xx or no answer keeps that report and the rest', { skip: !python, timeout: 60000 }, async (t) => {
+  const dir = home(); keychain(dir);
+  const hub = await hubServer(t, [503]);
+  await runWith(dir, hub.url, ['--queue-release', 'mac-watch', A, '0']);
+  await runWith(dir, hub.url, ['--queue-release', 'x2d-bridge-mac', B, '0']);
+  await runWith(dir, hub.url);
+  assert.equal(hub.got.length, 1, 'stops at the first report Pi Hub did not take');
+  assert.deepEqual(outboxOf(dir).map((r) => r.commit), [A, B]);
+  await runWith(dir, hub.url, [], { PI_HUB_URL: 'http://127.0.0.1:9' });
+  assert.deepEqual(outboxOf(dir).map((r) => r.commit), [A, B]);
+  await runWith(dir, hub.url);
+  assert.deepEqual(outboxOf(dir), []);
+});
+
+test('a report Pi Hub refuses as invalid (400) is dropped; with no key yet, nothing is sent', { skip: !python, timeout: 60000 }, async (t) => {
+  const dir = home(); keychain(dir, '');
+  const hub = await hubServer(t, [400]);
+  await runWith(dir, hub.url, ['--queue-release', 'mac-watch', A, '0']);
+  const waiting = await runWith(dir, hub.url);
+  assert.match(waiting.stderr, /no deploy key in the Keychain yet; 1 release report/);
+  assert.equal(hub.got.length, 0);
+  keychain(dir);
+  await runWith(dir, hub.url);
+  assert.equal(hub.got.length, 1);
+  assert.deepEqual(outboxOf(dir), []);
+});
+
+test('install.sh queues its report before the first run', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'host', 'mac-watch', 'install.sh'), 'utf8');
+  assert.match(src, /--queue-release mac-watch/);
+  assert.ok(src.indexOf('--queue-release') < src.indexOf('launchctl bootstrap'));
+});

@@ -31,6 +31,13 @@ can say so.
   `host/claude-chat/install.sh`.
 - When three reports in a row get no answer, it shows a Mac notification once. It shows another when Local AI answers
   again.
+- It sends the Mac agents' release reports to Pi Hub (platform step 3: `release:mac-watch` and
+  `release:x2d-bridge-mac` on System › Versions). Each installer (`host/mac-watch/install.sh` and bambuhelper's
+  `tools/install_x2d_bridge_agent.sh`) queues one in `~/.claude/localai-chat/release-outbox.json`, with the commit it
+  installed from and whether the agent's files had uncommitted changes. Each run posts them to
+  `https://hub.rahe-home.duckdns.org/api/releases/<target>` with the `mac` deploy key from the login Keychain
+  (service `pi-hub-deploy-key`, from pi-hub's `deploy/deploy-key.sh mac`). A report Pi Hub doesn't take waits for the
+  next run. A report it refuses as invalid is dropped.
 
 Install it once: run `host/claude-chat/install.sh` first, then
 
