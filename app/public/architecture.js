@@ -160,6 +160,9 @@ const state={
 };
 // Only Local AI's latest scan has findings, Ask and Goose (until plan PR 5); a snapshot shows its graph alone.
 const live=()=>state.repo==='localai'&&!state.commit;
+// Intelligence about the chosen snapshot (plan PR 5); with neither, the latest scan.
+const scope=()=>live()?{}:{repo:state.repo,commit:state.commit};
+const scoped=url=>live()?url:`${url}${url.includes('?')?'&':'?'}repo=${encodeURIComponent(state.repo)}&commit=${encodeURIComponent(state.commit)}`;
 
 function status(text,tone='neutral'){
   const el=$('atlasWebStatus');
@@ -360,15 +363,11 @@ function renderFocusedMap(){
 
 function renderMap(){state.selected?renderFocusedMap():state.domain?renderDomainFocus():renderDomainMap();}
 
-function graphOnlyText(){
-  return `Graph only for this ${state.repo==='localai'?'snapshot':'repository'}. Findings, Ask and Goose cover Local AI's latest scan for now.`;
-}
-
 function renderFindings(){
   const changedNodes=productionNodes(state.graph).filter(n=>n.changed);
-  if(!live()){
-    // A snapshot has no findings yet, but it does know what changed since the snapshot before it.
-    if(state.mode==='changes'&&state.graph){
+  if(!live()&&state.mode==='changes'){
+    // A snapshot knows what changed since the snapshot before it: list every changed module, with or without findings.
+    if(state.graph){
       const since=state.graph.snapshot?.changedSince;
       $('atlasFindingCount').textContent=plural(changedNodes.length,'module');
       $('atlasFindingList').innerHTML=changedNodes.length?changedNodes.slice(0,40).map(n=>`
@@ -377,10 +376,7 @@ function renderFindings(){
           <span class="atlas-finding-copy"><strong>${esc(n.id)}</strong><small>${esc(n.domain||'')} · risk ${Number(n.risk)||0}</small></span>
         </button>`).join(''):
         `<div class="atlas-empty">${since?`Nothing changed since ${esc(String(since).slice(0,7))}.`:'This is the first snapshot of this repository, so there is nothing earlier to compare with.'}</div>`;
-      return;
     }
-    $('atlasFindingCount').textContent='';
-    $('atlasFindingList').innerHTML=`<div class="atlas-empty">${esc(graphOnlyText())}</div>`;
     return;
   }
   const groups=aggregateFindings(state.summary?.findings||[]);
@@ -428,9 +424,9 @@ function renderInspector(){
     '<li class="atlas-muted">No enhanced test evidence returned for this node.</li>';
 }
 
-// Ask, Goose and the model need Local AI's latest scan; the quick questions are about a module, so they also need one.
+// Ask, Goose and the model need a graph; the quick questions are about a module, so they also need one.
 function renderAskControls(){
-  const off=!live();
+  const off=!state.graph;
   for(const el of [$('atlasAsk'),$('atlasGoose'),$('atlasModel'),$('atlasQuestion')])el.disabled=off;
   for(const el of page.querySelectorAll('[data-atlas-question]'))el.disabled=off||!state.selected;
 }
@@ -446,11 +442,9 @@ function revealInspector(){
 async function selectNode(id,{reveal=false}={}){
   state.selected=id;
   renderMap();
-  // The intelligence service knows only Local AI's latest scan: a snapshot's node comes from its own graph.
-  if(!live()){state.details=productionNodes(state.graph).find(n=>n.id===id)||null;renderInspector();if(reveal)revealInspector();return;}
   const seq=state.seq;
   try{
-    state.details=await getJson(`/api/atlas/node?path=${encodeURIComponent(id)}`,{timeout:12000});
+    state.details=await getJson(scoped(`/api/atlas/node?path=${encodeURIComponent(id)}`),{timeout:live()?12000:62000});
   }catch(error){
     state.details=productionNodes(state.graph).find(n=>n.id===id)||null;
     status(`Node loaded from static graph; intelligence detail unavailable: ${error.message}`,'warn');
@@ -484,9 +478,6 @@ function renderPicker(){
     {text:state.repo==='localai'?'The deploy checkout, as last scanned.':'',stale:false};
   $('atlasSourceNote').textContent=note.text;
   $('atlasSourceNote').dataset.tone=note.stale?'warn':'';
-  const off=!live();
-  $('atlasGraphOnly').hidden=!off;
-  $('atlasGraphOnly').textContent=off?graphOnlyText():'';
   renderAskControls();
 }
 
@@ -528,7 +519,7 @@ async function refresh(){
     const url=live()?'/api/atlas/graph':`/api/atlas/graph?repo=${encodeURIComponent(state.repo)}&commit=${encodeURIComponent(state.commit)}`;
     const [graph,summary,releases]=await Promise.all([
       getJson(url,{timeout:12000}),
-      live()?getJson('/api/atlas/summary',{timeout:12000}).catch(error=>({providers:{},findings:[],_error:error.message})):null,
+      getJson(scoped('/api/atlas/summary'),{timeout:live()?12000:62000}).catch(error=>({providers:{},findings:[],_error:error.message})),
       live()?getJson('/api/releases',{timeout:8000}).catch(()=>null):null
     ]);
     if(seq!==state.seq||!state.active)return;
@@ -544,6 +535,7 @@ async function refresh(){
     if(graph.stats?.truncated)caveats.push(`only the first ${graph.stats.maxFiles} files were scanned`);
     if(graph.stats?.gitError)caveats.push('changed files are unknown (git failed)');
     if(summary?._error)caveats.push(`intelligence service is offline: ${summary._error}`);
+    if(summary?.snapshot?.reason)caveats.push(`findings use the graph only, because ${summary.snapshot.reason}`);
     // Say how old the scan is; the latest scan is only re-run by hand, so it can predate the running release.
     const fresh=live()?scanFreshness(graph.generatedAt,releases?.current?.deployedAt):
       {text:`Snapshot scanned ${ago(graph.generatedAt)||'at an unknown time'}.`,stale:false};
@@ -615,7 +607,7 @@ async function askAtlas(question){
   try{
     const payload=await getJson('/api/atlas/ask',{
       method:'POST',timeout:310000,headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({question:q,node:state.selected||undefined,model:state.model||undefined})
+      body:JSON.stringify({...scope(),question:q,node:state.selected||undefined,model:state.model||undefined})
     });
     box.dataset.tone='ok';
     box.textContent=`${payload.answer||'No answer returned.'}\n\nModel: ${payload.model||'unknown'}${state.selected?`\nNode: ${state.selected}`:''}`;
@@ -629,8 +621,8 @@ async function gooseBrief(){
   const box=$('atlasAnswer');box.hidden=false;box.dataset.tone='loading';box.textContent='Preparing read-only Goose investigation brief…';
   try{
     const payload=await getJson('/api/atlas/goose',{
-      method:'POST',timeout:15000,headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({question:q,node:state.selected||undefined})
+      method:'POST',timeout:live()?15000:62000,headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({...scope(),question:q,node:state.selected||undefined})
     });
     box.dataset.tone='ok';
     box.textContent=`Read-only investigation brief created:\n${payload.briefPath||'Atlas investigation directory'}\n\n${payload.goose?.available?'Goose CLI detected.':'Goose is not on PATH; the brief is still ready for later investigation.'}`;

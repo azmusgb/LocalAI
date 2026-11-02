@@ -3225,7 +3225,6 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 #architecture .atlas-inspector{scroll-margin-top:120px}
 #architecture #atlasMapTitle:focus{outline:none}
 #architecture #atlasMapTitle:focus-visible,#architecture #atlasSelectedPath:focus-visible{outline:2px solid currentColor;outline-offset:2px}
-#architecture .atlas-graph-only{margin:10px 0 0;color:var(--ds-muted,#8793a6);font-size:var(--ds-fs-1)}
 #architecture .atlas-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
 #architecture .atlas-kpi{padding:13px 14px;border:1px solid var(--ds-line,#343b38);border-radius:var(--ds-r-md);background:linear-gradient(180deg,color-mix(in srgb,var(--ds-surface,#111925) 97%,white 3%),var(--ds-surface,#111925))}
 #architecture .atlas-kpi span{display:block;color:var(--ds-muted,#7c899b);font-size:var(--ds-fs-badge);text-transform:uppercase;letter-spacing:.08em}

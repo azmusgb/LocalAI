@@ -3,12 +3,14 @@ from __future__ import annotations
 import argparse
 import hmac
 import http.client
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import threading
 import webbrowser
 from datetime import datetime, timezone
@@ -22,13 +24,21 @@ from urllib.request import Request, urlopen
 
 # atlas_snapshot_runner.py sits beside this file; loaded by path (tests, python -I) its folder isn't on sys.path.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from atlas_snapshot_runner import SnapshotRequestError, SnapshotRunner  # noqa: E402
+from atlas_snapshot_runner import MIRRORS, SnapshotRequestError, SnapshotRunner  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parent
 # quick_arch.py writes the graph here (a folder, so the container's read-only mount sees each rebuild).
 ATLAS_HTML = Path(os.environ.get("ATLAS_GRAPH") or (ROOT / ".atlas" / "graph" / "system-atlas.html"))
 INVESTIGATION_DIR = ROOT / ".atlas" / "investigations"
+# Snapshots (plan PR 5): quick_arch.py writes <SNAPSHOTS>/<repo>/<commit>/graph.json. Questions about one are answered
+# from a clean copy of its commit under <TREES>, beside the deploy checkout and never inside it.
+SNAPSHOTS = Path(os.environ.get("ATLAS_SNAPSHOTS") or (ROOT / ".atlas" / "snapshots"))
+TREES = Path(os.environ.get("ATLAS_TREES") or (ROOT.parent / "atlas-trees"))
+SNAPSHOT_REPO = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+FULL_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+KEEP_TREES = 3
+TREE_DONE = ".atlas-tree-complete"
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -234,14 +244,15 @@ def _test_aliases(node_id: str) -> list[str]:
 def _test_evidence_signature(
     production_nodes: list[str],
     test_nodes: list[str],
+    root: Path | None = ROOT,
 ) -> tuple[Any, ...]:
     files: list[tuple[str, int, int]] = []
 
     for test_id in test_nodes:
-        test_path = ROOT / Path(test_id)
-
         try:
-            stat = test_path.stat()
+            if root is None:
+                raise OSError("no source")
+            stat = (root / Path(test_id)).stat()
             files.append(
                 (
                     test_id,
@@ -253,6 +264,7 @@ def _test_evidence_signature(
             files.append((test_id, -1, -1))
 
     return (
+        str(root),
         tuple(production_nodes),
         tuple(files),
     )
@@ -260,6 +272,7 @@ def _test_evidence_signature(
 
 def detect_test_evidence(
     graph: dict[str, Any],
+    root: Path | None = ROOT,
 ) -> dict[str, list[dict[str, str]]]:
     """Detect deterministic test evidence beyond direct static imports.
 
@@ -287,6 +300,7 @@ def detect_test_evidence(
     cache_key = _test_evidence_signature(
         production_nodes,
         test_nodes,
+        root,
     )
 
     global _TEST_EVIDENCE_CACHE_KEY
@@ -313,10 +327,11 @@ def detect_test_evidence(
         )
 
     for test_id in test_nodes:
-        test_path = ROOT / Path(test_id)
+        # Without a copy of the source, only the graph's names and paths count as evidence.
+        test_path = root / Path(test_id) if root is not None else None
         text = ""
 
-        if test_path.is_file():
+        if test_path is not None and test_path.is_file():
             try:
                 text = test_path.read_text(
                     encoding="utf-8",
@@ -419,9 +434,10 @@ def effective_test_signal(
 
 def build_findings(
     graph: dict[str, Any],
+    root: Path | None = ROOT,
 ) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
-    evidence_map = detect_test_evidence(graph)
+    evidence_map = detect_test_evidence(graph, root)
 
     for node in graph.get("nodes", []):
         if not isinstance(node, dict):
@@ -641,9 +657,10 @@ def build_findings(
 def aggregate_findings(
     graph: dict[str, Any],
     findings: list[dict[str, Any]],
+    root: Path | None = ROOT,
 ) -> list[dict[str, Any]]:
     nodes = node_index(graph)
-    evidence_map = detect_test_evidence(graph)
+    evidence_map = detect_test_evidence(graph, root)
     grouped: dict[str, dict[str, Any]] = {}
 
     for item in findings:
@@ -804,6 +821,7 @@ def get_node_details(
     graph: dict[str, Any],
     findings: list[dict[str, Any]],
     node_id: str,
+    root: Path | None = ROOT,
 ) -> dict[str, Any] | None:
     nodes = node_index(graph)
     node = nodes.get(node_id)
@@ -812,7 +830,7 @@ def get_node_details(
         return None
 
     outgoing, incoming = edge_indexes(graph)
-    evidence_map = detect_test_evidence(graph)
+    evidence_map = detect_test_evidence(graph, root)
 
     return {
         "node": compact_node(
@@ -954,8 +972,9 @@ def build_evidence_context(
     question: str,
     *,
     selected_node: str | None = None,
+    root: Path | None = ROOT,
 ) -> dict[str, Any]:
-    evidence_map = detect_test_evidence(graph)
+    evidence_map = detect_test_evidence(graph, root)
     nodes = node_index(graph)
 
     def enriched(
@@ -985,6 +1004,7 @@ def build_evidence_context(
         "findingGroups": aggregate_findings(
             graph,
             findings,
+            root,
         )[:12],
         "matchingNodes": [
             enriched(nodes[str(item.get("id"))])
@@ -1014,6 +1034,7 @@ def build_evidence_context(
             graph,
             findings,
             selected_node,
+            root,
         )
 
         if details is not None:
@@ -1199,6 +1220,8 @@ def ask_ollama(
     selected_node: str | None = None,
     requested_model: str | None = None,
     base_url: str = DEFAULT_OLLAMA_URL,
+    root: Path | None = ROOT,
+    scope: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     models = ollama_models(base_url)
 
@@ -1212,10 +1235,12 @@ def ask_ollama(
         findings,
         question,
         selected_node=selected_node,
+        root=root,
     )
 
     user_prompt = (
-        f"QUESTION:\n{question}\n\n"
+        (f"REPOSITORY: {scope['repo']} at commit {scope['commit']}\n\n" if scope else "")
+        + f"QUESTION:\n{question}\n\n"
         "ATLAS EVIDENCE:\n"
         + json.dumps(
             evidence,
@@ -1346,17 +1371,33 @@ def build_goose_brief(
     findings: list[dict[str, Any]],
     question: str,
     selected_node: str | None = None,
+    root: Path | None = ROOT,
+    scope: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     evidence = build_evidence_context(
         graph,
         findings,
         question,
         selected_node=selected_node,
+        root=root,
     )
+
+    if scope is None:
+        subject = "You are investigating the Local AI repository."
+    elif root is not None:
+        subject = (
+            f"You are investigating the {scope['repo']} repository at commit {scope['commit']}.\n"
+            f"Its source is the clean copy at `{root}`. Read files there only, never in any other checkout."
+        )
+    else:
+        subject = (
+            f"You are investigating the {scope['repo']} repository at commit {scope['commit']}.\n"
+            f"Its source is not available on this PC ({scope.get('reason')}); work from the Atlas evidence below."
+        )
 
     prompt = f"""# Atlas Investigation
 
-You are investigating the Local AI repository.
+{subject}
 
 ## Operating mode
 
@@ -2595,13 +2636,122 @@ def instrument_html(html: str) -> str:
     return html
 
 
+def snapshot_git_dir(repo: str, mirrors: Path = MIRRORS) -> Path | None:
+    """Where a snapshot's commit can be read: the repository's fetch-only mirror, or for Local AI its own .git."""
+    for candidate in (mirrors / f"{repo}.git", ROOT / ".git" if repo == "localai" else None):
+        if candidate is not None and candidate.is_dir():
+            return candidate
+    return None
+
+
+def export_tree(git_dir: Path, commit: str, target: Path) -> None:
+    """A clean copy of one commit: git archive, unpacked with tarfile's "data" filter, which refuses absolute paths,
+    links out of the folder and special files. Unpacked beside the target and renamed, so a half copy is never used."""
+    result = subprocess.run(
+        ["git", f"--git-dir={git_dir}", "archive", "--format=tar", commit],
+        check=False, capture_output=True, timeout=300, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.decode("utf-8", "replace").strip()[:240] or "git archive failed")
+    partial = target.with_name(target.name + ".partial")
+    shutil.rmtree(partial, ignore_errors=True)
+    partial.mkdir(parents=True)
+    try:
+        with tarfile.open(fileobj=io.BytesIO(result.stdout)) as tar:
+            tar.extractall(partial, filter="data")
+        (partial / TREE_DONE).write_text(commit, encoding="utf-8")
+        partial.rename(target)
+    finally:
+        shutil.rmtree(partial, ignore_errors=True)
+
+
+class SnapshotTrees:
+    """Clean copies of snapshot commits, made on first use and kept for the newest KEEP_TREES used."""
+
+    def __init__(self, trees: Path = TREES, mirrors: Path = MIRRORS, keep: int = KEEP_TREES) -> None:
+        self.trees = Path(trees)
+        self.mirrors = Path(mirrors)
+        self.keep = keep
+        self._lock = threading.Lock()
+
+    def get(self, repo: str, commit: str) -> tuple[Path | None, str | None]:
+        """The copy's folder, or None and the reason there is none. Never raises for a missing source."""
+        with self._lock:
+            target = self.trees / repo / commit
+            if not (target / TREE_DONE).is_file():
+                git_dir = snapshot_git_dir(repo, self.mirrors)
+                if git_dir is None:
+                    return None, f"there is no mirror of {repo} on this PC"
+                shutil.rmtree(target, ignore_errors=True)
+                try:
+                    export_tree(git_dir, commit, target)
+                except (OSError, RuntimeError, subprocess.SubprocessError, tarfile.TarError) as error:
+                    return None, f"the commit could not be copied: {str(error)[:200]}"
+            os.utime(target / TREE_DONE)
+            self._prune()
+            return target, None
+
+    def _prune(self) -> None:
+        done = sorted(self.trees.glob(f"*/*/{TREE_DONE}"), key=lambda m: m.stat().st_mtime, reverse=True)
+        for marker in done[self.keep:]:
+            shutil.rmtree(marker.parent, ignore_errors=True)
+
+
 class AtlasState:
     def __init__(
         self,
         html_path: Path,
+        snapshots: Path = SNAPSHOTS,
+        trees: SnapshotTrees | None = None,
     ) -> None:
         self.html_path = html_path
+        self.snapshots = Path(snapshots)
+        self.trees = trees if trees is not None else SnapshotTrees()
         self._lock = threading.Lock()
+        self._scoped: dict[tuple[str, str], tuple[tuple[int, int, str], dict[str, Any], list[dict[str, Any]]]] = {}
+
+    def for_snapshot(
+        self,
+        repo: Any,
+        commit: Any,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]], Path | None, dict[str, Any]]:
+        """One snapshot's graph and findings, read from its own graph.json and a clean copy of its commit.
+
+        Only a well-formed repository name and a full commit reach the file system; the app has already matched
+        both against its snapshot list."""
+        repo = str(repo or "").strip().lower()
+        commit = str(commit or "").strip().lower()
+        if not SNAPSHOT_REPO.match(repo) or not FULL_COMMIT.match(commit):
+            raise AtlasError("A snapshot is a repository name and a full 40-character commit.",
+                             code="atlas_snapshot_query")
+        graph_file = self.snapshots / repo / commit / "graph.json"
+        try:
+            stat = graph_file.stat()
+        except OSError:
+            raise AtlasError(f"There is no snapshot of {repo} at {commit[:7]}.", status=HTTPStatus.NOT_FOUND,
+                             code="atlas_snapshot_missing") from None
+        root, reason = self.trees.get(repo, commit)
+        key = (stat.st_mtime_ns, stat.st_size, str(root))
+        with self._lock:
+            hit = self._scoped.get((repo, commit))
+            if hit is None or hit[0] != key:
+                try:
+                    graph = json.loads(graph_file.read_text(encoding="utf-8"))
+                except (OSError, ValueError) as error:
+                    raise AtlasError(f"That snapshot could not be read: {error}",
+                                     status=HTTPStatus.INTERNAL_SERVER_ERROR, code="atlas_snapshot_invalid") from error
+                if not isinstance(graph, dict) or not isinstance(graph.get("nodes"), list) \
+                        or not isinstance(graph.get("edges"), list):
+                    raise AtlasError("The snapshot graph is missing nodes or edges.",
+                                     status=HTTPStatus.INTERNAL_SERVER_ERROR, code="atlas_snapshot_invalid")
+                hit = (key, graph, build_findings(graph, root))
+                self._scoped[(repo, commit)] = hit
+                while len(self._scoped) > KEEP_TREES:
+                    self._scoped.pop(next(iter(self._scoped)))
+        scope = {"repo": repo, "commit": commit, "source": "available" if root is not None else "unavailable"}
+        if reason:
+            scope["reason"] = reason
+        return hit[1], hit[2], root, scope
 
     def snapshot(
         self,
@@ -2844,6 +2994,23 @@ class AtlasHandler(
             if ATLAS_TOKEN and not hmac.compare_digest(self.headers.get("X-Atlas-Token", ""), ATLAS_TOKEN):
                 raise AtlasError("Missing or wrong Atlas token.", status=HTTPStatus.UNAUTHORIZED, code="unauthorized")
 
+    def scoped(
+        self,
+        query: dict[str, list[Any]],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]], Path | None, dict[str, Any] | None]:
+        """The chosen snapshot (repo and commit), or with neither the latest scan of the deploy checkout."""
+        repo = (query.get("repo") or [""])[0]
+        commit = (query.get("commit") or [""])[0]
+        if repo or commit:
+            if not (repo and commit):
+                raise AtlasError("Give both repo and commit, or neither.", code="atlas_snapshot_query")
+            # A snapshot's first question writes a clean copy of its commit, so even a GET needs the app's token.
+            if ATLAS_TOKEN and not hmac.compare_digest(self.headers.get("X-Atlas-Token", ""), ATLAS_TOKEN):
+                raise AtlasError("Missing or wrong Atlas token.", status=HTTPStatus.UNAUTHORIZED, code="unauthorized")
+            return self.atlas_state.for_snapshot(repo, commit)
+        _, graph, findings = self.atlas_state.snapshot()
+        return graph, findings, ROOT, None
+
     def do_GET(self) -> None:
         try:
             self.check_caller(post=False)
@@ -2890,15 +3057,12 @@ class AtlasHandler(
             )
             return
 
-        html, graph, findings = (
-            self.atlas_state.snapshot()
-        )
-
-        del html
+        graph, findings, root, scope = self.scoped(parse_qs(parsed.query))
 
         if path == "/api/atlas/summary":
             self.send_json(
                 {
+                    **({"snapshot": scope} if scope else {}),
                     "stats": graph.get(
                         "stats",
                         {},
@@ -2907,6 +3071,7 @@ class AtlasHandler(
                     "findingGroups": aggregate_findings(
                         graph,
                         findings,
+                        root,
                     )[:20],
                     "providers": {
                         "ollama": ollama_status(),
@@ -2919,6 +3084,7 @@ class AtlasHandler(
         if path == "/api/atlas/findings":
             self.send_json(
                 {
+                    **({"snapshot": scope} if scope else {}),
                     "count": len(
                         findings
                     ),
@@ -2926,6 +3092,7 @@ class AtlasHandler(
                     "groups": aggregate_findings(
                         graph,
                         findings,
+                        root,
                     ),
                 }
             )
@@ -2953,6 +3120,7 @@ class AtlasHandler(
                 graph,
                 findings,
                 node_id,
+                root,
             )
 
             if details is None:
@@ -2962,7 +3130,7 @@ class AtlasHandler(
                     code="node_not_found",
                 )
 
-            self.send_json(details)
+            self.send_json({**details, "snapshot": scope} if scope else details)
             return
 
         raise AtlasError(
@@ -2993,8 +3161,8 @@ class AtlasHandler(
             self.send_json({"job": job}, status=HTTPStatus.ACCEPTED)
             return
 
-        _, graph, findings = (
-            self.atlas_state.snapshot()
+        graph, findings, root, scope = self.scoped(
+            {key: [body.get(key)] for key in ("repo", "commit") if body.get(key)}
         )
 
         question = str(
@@ -3048,9 +3216,11 @@ class AtlasHandler(
                 question=question,
                 selected_node=selected_node,
                 requested_model=requested_model,
+                root=root,
+                scope=scope,
             )
 
-            self.send_json(result)
+            self.send_json({**result, "snapshot": scope} if scope else result)
             return
 
         if parsed.path == "/api/atlas/goose":
@@ -3059,9 +3229,11 @@ class AtlasHandler(
                 findings=findings,
                 question=question,
                 selected_node=selected_node,
+                root=root,
+                scope=scope,
             )
 
-            self.send_json(result)
+            self.send_json({**result, "snapshot": scope} if scope else result)
             return
 
         raise AtlasError(
