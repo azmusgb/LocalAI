@@ -4142,7 +4142,7 @@ async function mountHomeLocation(){
   }catch(e){note.textContent=e.message}
  });
 }
-// Show diagnostic details (default on): Models' runtime tile, quantization and memory rows; Health's Advanced
+// Show diagnostic details (default on): Models' loaded-list tile, quantization and memory rows; Health's Advanced
 // service details; Agent World's Advanced, demo, worker scores and Routing. Off sets body.diagnostics-off,
 // which hides everything marked data-diagnostic. Saved per browser.
 function applyDiagnostics(on){
@@ -4152,7 +4152,7 @@ function applyDiagnostics(on){
 function mountDiagnostics(){
  const settings=q('#settings');if(!settings||q('.diag-pref',settings))return;
  const row=document.createElement('label');row.className='diag-pref card';
- row.innerHTML='<input type="checkbox" data-diagnostics-toggle><span><strong>Show diagnostic details</strong><small>Models\' runtime details, Health\'s Advanced service details, and Agent World\'s Advanced options, routing and demo.</small></span>';
+ row.innerHTML='<input type="checkbox" data-diagnostics-toggle><span><strong>Show diagnostic details</strong><small>Technical details in Models and Health, and Agent World\'s Advanced options, routing and demo mission.</small></span>';
  settings.appendChild(row);
  const box=q('input',row);box.checked=!document.body.classList.contains('diagnostics-off');
  box.addEventListener('change',()=>{pref.set(DIAG_KEY,box.checked?'1':'0');applyDiagnostics(box.checked)});
