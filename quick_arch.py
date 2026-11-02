@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import argparse
 import ast
+import io
 import json
 import os
 import re
+import shutil
 import subprocess
+import tarfile
+import tempfile
 import webbrowser
 from collections import Counter, defaultdict, deque
 from datetime import datetime, timezone
@@ -14,6 +19,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 # A folder of its own: the appliance container mounts it read-only, and a folder mount sees each atomic rebuild.
 OUTPUT = Path(os.environ.get("ATLAS_OUTPUT") or (ROOT / ".atlas" / "graph" / "system-atlas.html"))
+# Snapshots (platform baseline 6.4): one repository at one commit, scanned from a clean copy made with git archive,
+# never a working tree. Each lands in <SNAPSHOTS>/<repo>/<commit>/graph.json and is listed in <SNAPSHOTS>/index.json.
+SNAPSHOTS = Path(os.environ.get("ATLAS_SNAPSHOTS") or (ROOT / ".atlas" / "snapshots"))
+KEEP_SNAPSHOTS = 5
+REPO_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+# Set by main() for a snapshot run: repo, gitDir, commit, committedAt, changedSince.
+SNAPSHOT: dict = {}
 
 SOURCE_EXTENSIONS = {
     ".py",
@@ -253,9 +265,44 @@ def parse_python(
 # ---------------------------------------------------------------------------
 
 
+# Domains for repositories other than Local AI, first match wins; each uses the DOMAIN_ORDER names. Anything
+# unmatched falls to the shared rules in classify_other.
+REPO_DOMAINS: dict[str, list[tuple[str, str]]] = {
+    "pi-hub": [
+        ("hub/static/", "UI"),
+        ("hub/app.py", "Platform"),
+        ("hub/lab", "Workshop"), ("hub/printer", "Workshop"), ("hub/bambuddy", "Workshop"),
+        ("hub/filament", "Workshop"), ("hub/display", "Workshop"),
+        ("hub/db.py", "Data"), ("hub/records", "Data"),
+        ("hub/", "API"),
+    ],
+    "print-lab": [
+        ("lab/page", "UI"),
+        ("lab/cli", "Platform"),
+        ("lab/printer", "Workshop"), ("lab/bambuddy", "Workshop"), ("lab/sync", "Workshop"), ("lab/pull", "Workshop"),
+        ("lab/records", "Data"), ("lab/history", "Data"), ("lab/index", "Data"),
+        ("lab/", "Core"),
+    ],
+}
+
+
+def classify_other(repo: str, p: str) -> str:
+    for prefix, domain in REPO_DOMAINS.get(repo, []):
+        if p.startswith(prefix):
+            return domain
+    for prefix, domain in (("tests/", "Tests"), ("test/", "Tests"), ("docs/", "Docs"), ("deploy/", "Runtime"),
+                           ("scripts/", "Tooling"), ("tools/", "Tooling")):
+        if p.startswith(prefix):
+            return domain
+    return "Root"
+
+
 def classify(path: Path) -> str:
     p = rel(path).lower()
     name = path.name.lower()
+
+    if SNAPSHOT and SNAPSHOT["repo"] != "localai":
+        return classify_other(SNAPSHOT["repo"], p)
 
     if p.startswith("tests/"):
         return "Tests"
@@ -354,6 +401,8 @@ def changed_files() -> set[str]:
     """Paths git reports as changed, relative to ROOT. A git failure is recorded in SCAN["gitError"] (and the graph's
     stats), so the page can say "changes unknown" instead of "nothing changed"."""
     SCAN["gitError"] = None
+    if SNAPSHOT:
+        return snapshot_changed_files()
     try:
         result = subprocess.run(
             # -z: paths unquoted and NUL-separated, so spaces and non-ASCII names match the scanned files.
@@ -396,6 +445,74 @@ def changed_files() -> set[str]:
             changed.add(value)
     return changed
 
+
+
+def git(git_dir: str, *args: str, binary: bool = False, timeout: int = 60):
+    """Run git against a repository's git folder (a bare mirror or a .git); raise with git's own message on failure."""
+    result = subprocess.run(["git", f"--git-dir={git_dir}", *args], check=False, capture_output=True, timeout=timeout,
+                            **({} if binary else {"text": True, "encoding": "utf-8", "errors": "replace"}))
+    if result.returncode != 0:
+        err = result.stderr.decode("utf-8", "replace") if binary else result.stderr
+        raise RuntimeError(f"git {args[0]} failed: {err.strip()[:300]}")
+    return result.stdout
+
+
+def snapshot_changed_files() -> set[str]:
+    """In a snapshot, "changed" means changed since this repository's previous snapshot. The first snapshot has none."""
+    prev = SNAPSHOT.get("changedSince")
+    if not prev:
+        return set()
+    try:
+        out = git(SNAPSHOT["gitDir"], "diff", "--name-only", "-z", prev, SNAPSHOT["commit"])
+    except (OSError, subprocess.SubprocessError, RuntimeError) as error:
+        SCAN["gitError"] = str(error)[:300]
+        return set()
+    return {name.replace("\\", "/") for name in out.split("\0") if name}
+
+
+def export_commit(git_dir: str, commit: str, target: Path) -> None:
+    """A clean copy of one commit: git archive, unpacked with tarfile's "data" filter, which refuses absolute paths,
+    links out of the folder and special files."""
+    data = git(git_dir, "archive", "--format=tar", commit, binary=True, timeout=300)
+    with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+        tar.extractall(target, filter="data")
+
+
+def read_index() -> dict:
+    try:
+        index = json.loads((SNAPSHOTS / "index.json").read_text(encoding="utf-8"))
+        if isinstance(index, dict) and isinstance(index.get("snapshots"), list):
+            return index
+    except (OSError, ValueError):
+        pass
+    return {"snapshots": []}
+
+
+def previous_snapshot(repo: str, commit: str) -> str | None:
+    rows = [r for r in read_index()["snapshots"] if r.get("repo") == repo and r.get("commit") != commit]
+    rows.sort(key=lambda r: r.get("generatedAt") or "")
+    return rows[-1]["commit"] if rows else None
+
+
+def record_snapshot(graph: dict) -> Path:
+    """Write the graph and update the index atomically, keeping the newest KEEP_SNAPSHOTS per repository."""
+    repo, commit = SNAPSHOT["repo"], SNAPSHOT["commit"]
+    target = SNAPSHOTS / repo / commit / "graph.json"
+    write_output(target, json.dumps(graph, ensure_ascii=False, separators=(",", ":")))
+    index = read_index()
+    rows = [r for r in index["snapshots"] if not (r.get("repo") == repo and r.get("commit") == commit)]
+    rows.append({"repo": repo, "commit": commit, "committedAt": SNAPSHOT["committedAt"],
+                 "generatedAt": graph["generatedAt"], "changedSince": SNAPSHOT.get("changedSince"),
+                 "stats": {k: graph["stats"].get(k) for k in ("files", "productionFiles", "tests", "relationships",
+                                                               "changed", "truncated")}})
+    mine = sorted((r for r in rows if r.get("repo") == repo), key=lambda r: r.get("generatedAt") or "", reverse=True)
+    dropped = {r["commit"] for r in mine[KEEP_SNAPSHOTS:]}
+    rows = [r for r in rows if not (r.get("repo") == repo and r.get("commit") in dropped)]
+    rows.sort(key=lambda r: (r.get("repo") or "", r.get("generatedAt") or ""))
+    write_output(SNAPSHOTS / "index.json", json.dumps({"snapshots": rows}, ensure_ascii=False, indent=1))
+    for old in dropped:
+        shutil.rmtree(SNAPSHOTS / repo / old, ignore_errors=True)
+    return target
 
 
 # ---------------------------------------------------------------------------
@@ -936,7 +1053,7 @@ def build_graph(files: list[Path]) -> dict:
     }
 
     return {
-        "root": str(ROOT),
+        "root": f"{SNAPSHOT['repo']}@{SNAPSHOT['commit']}" if SNAPSHOT else str(ROOT),
         "generatedAt": datetime.now(
             timezone.utc
         ).isoformat(),
@@ -5036,7 +5153,46 @@ def write_output(target: Path, html: str) -> None:
 
 
 
+def snapshot_main(repo: str, git_dir: str, ref: str) -> None:
+    """One repository at one commit, from a clean copy; the deploy checkout and the single graph are never touched."""
+    global ROOT
+    repo = repo.strip().lower()
+    if not REPO_NAME.match(repo):
+        raise SystemExit(f"Not a repository name: {repo!r}")
+    commit = git(git_dir, "rev-parse", "--verify", f"{ref}^{{commit}}").strip()
+    work = Path(tempfile.mkdtemp(prefix=f"atlas-{repo}-")).resolve()
+    try:
+        export_commit(git_dir, commit, work)
+        SNAPSHOT.clear()
+        SNAPSHOT.update(repo=repo, gitDir=git_dir, commit=commit,
+                        committedAt=git(git_dir, "log", "-1", "--format=%cI", commit).strip(),
+                        changedSince=previous_snapshot(repo, commit))
+        ROOT = work
+        files = collect_files()
+        if not files:
+            raise SystemExit(f"No supported source files in {repo} at {commit[:10]}.")
+        graph = build_graph(files)
+        graph["snapshot"] = {k: SNAPSHOT[k] for k in ("repo", "commit", "committedAt", "changedSince")}
+        target = record_snapshot(graph)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    print(f"Snapshot   : {repo} @ {commit[:10]} ({graph['stats']['files']} files)")
+    print(f"Created    : {target}")
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="System Atlas: the module graph of a repository.")
+    parser.add_argument("--repo", help="snapshot mode: the repository's name, e.g. pi-hub")
+    parser.add_argument("--git-dir", help="snapshot mode: its git folder (a bare mirror or a .git)")
+    parser.add_argument("--commit", help="snapshot mode: the commit, branch or tag to map")
+    args = parser.parse_args()
+    given = [a is not None for a in (args.repo, args.git_dir, args.commit)]
+    if any(given):
+        if not all(given):
+            parser.error("--repo, --git-dir and --commit go together")
+        snapshot_main(args.repo, args.git_dir, args.commit)
+        return
+
     print()
     print(
         "LOCAL AI · SYSTEM ATLAS"
