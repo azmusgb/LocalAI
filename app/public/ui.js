@@ -36,7 +36,7 @@ function humanState(s){return ({pending:'Waiting',running:'Running',complete:'Co
 function cards(){const el=$('specialistRegistry');if(!el)return;el.innerHTML=catalog.filter(a=>!a.infrastructure).map(a=>`<button class="agent-card ${a.id===selected?'active':''}" data-spec="${esc(a.id)}"><span class="agent-card__icon">${esc((a.name||a.id)[0])}</span><span><strong>${esc(a.name)}</strong><small>${esc(a.description)}</small><span class="agent-meta">${(a.capabilities||[]).slice(0,4).map(x=>`<span class="statuschip">${esc(x)}</span>`).join('')}</span></span></button>`).join('');el.querySelectorAll('[data-spec]').forEach(b=>b.onclick=()=>{selected=b.dataset.spec;cards();updateDirectActionLabel()})}
 function updateDirectActionLabel(){const a=catalog.find(x=>x.id===selected);const b=$('specialistRunBtn');if(b)b.textContent='Run '+(a?.name||'specialist')}
 // Workers' model: an installed model every specialist in the mission uses; empty is Automatic.
-function workerModel(){return $('agentWorkerModel')?.value||''}
+function workerModel(){if(document.body.classList.contains('diagnostics-off'))return'';return $('agentWorkerModel')?.value||''} // hidden with Advanced: never send an unseen choice
 let workerModelsLoaded=false;
 async function loadWorkerModels(){const sel=$('agentWorkerModel');if(!sel||workerModelsLoaded)return;try{const items=(await req('/api/agents/models')).items||[];const keep=sel.value;sel.innerHTML='<option value="">Automatic</option>'+items.map(m=>`<option value="${esc(m.name)}">${esc(m.name)}</option>`).join('');sel.value=items.some(m=>m.name===keep)?keep:'';workerModelsLoaded=true}catch{}}
 function manualIds(){return $('manualRouteToggle')?.checked?[...document.querySelectorAll('[data-mission-agent]:checked')].map(x=>x.value):undefined}
@@ -57,7 +57,7 @@ function renderInspector(){const el=$('agentInspector'),A=window.LocalAIAgentWor
  el.innerHTML=`<div class="aw-worker__head"><img class="awc__avatar" src="${window.LocalAIAgentWorld?.avatar?.(w)||''}" alt="" width="48" height="48"><div><h2 id="awWorkerName">${esc(A.workerName(w))}</h2><p>${esc(A.workerRole(w))}</p></div><span class="badge badge--${b.tone}">${esc(b.label)}</span><button type="button" class="aw-worker__close" id="awWorkerClose" aria-label="Close ${esc(A.workerName(w))}">×</button></div>
  <p class="aw-worker__now${bad?' is-bad':''}">${esc(A.workerStep(w,m))}</p>${bad?`<div class="aw-worker__fix"><span>${w.state==='error'?'Trying again runs the mission again from the start.':'It starts when the workers before it finish.'}</span>${w.state==='error'&&!demoing()?'<button type="button" class="btn-primary" id="agentRetryBtn">Try again</button>':''}</div>`:''}
  ${out?`<details class="aw-worker__out"${out.length<600?' open':''}><summary>What ${esc(A.workerName(w))} found${src?` · ${src} source${src===1?'':'s'}`:''}</summary><div class="aw-worker__text">${esc(out)}</div></details>`:''}
- <dl class="aw-worker__dev"><dt>Model</dt><dd>${esc(w.model||r?.model||'Automatic')}</dd><dt>Skill fit</dt><dd>${rm.capabilityScore??'—'}%</dd><dt>Model fit</dt><dd>${rm.modelScore??'—'}%</dd><dt>Grounding</dt><dd>${rm.groundingRequired===false?'Not required':'Required'}</dd><dt>Fallback</dt><dd>${esc(rm.retryPolicy?.fallbackAgentId||'None')}</dd>${w.reason?`<dt>Assignment rationale</dt><dd>${esc(w.reason)}</dd>`:''}</dl>`;
+ <dl class="aw-worker__dev" data-diagnostic><dt>Model</dt><dd>${esc(w.model||r?.model||'Automatic')}</dd><dt>Skill fit</dt><dd>${rm.capabilityScore??'—'}%</dd><dt>Model fit</dt><dd>${rm.modelScore??'—'}%</dd><dt>Grounding</dt><dd>${rm.groundingRequired===false?'Not required':'Required'}</dd><dt>Fallback</dt><dd>${esc(rm.retryPolicy?.fallbackAgentId||'None')}</dd>${w.reason?`<dt>Assignment rationale</dt><dd>${esc(w.reason)}</dd>`:''}</dl>`;
  $('awWorkerClose').onclick=()=>{activeInspectorId='';renderInspector();refocusCrew(w.id)};const t=$('agentRetryBtn');if(t)t.onclick=retryMission}
 function refocusCrew(id){window.LocalAIUI?.refocus?.(id,{within:'#awcRoster',key:'awcRoster',control:':scope'})||document.querySelector(`#awcRoster [data-awc-roster="${CSS.escape(id)}"]`)?.focus()}
 function missionSummary(m){const done=(m.workers||[]).filter(w=>w.state==='complete').length,total=(m.workers||[]).length;return {done,total,percent:total?Math.round(done/total*100):0}}
@@ -111,7 +111,7 @@ function renderResults(){const el=$('agentResultBody'),A=window.LocalAIAgentWord
  el.innerHTML=`<h3>Summary</h3>${m.answer?`<div class="aw-results__text">${esc(m.answer)}</div>`:`<p class="aw-results__none">${esc(A.summaryWhy(m))}</p>`}
  <h3>What each worker found</h3>${rs.length?rs.map(r=>{const w={id:r.agentId,name:r.agentName},b=A.stateBadge(r.partial?'partial':r.status);return `<details class="aw-results__worker"><summary><img class="awc__avatar" src="${pic(r)}" alt="" width="28" height="28"><span>${esc(A.workerName(w))}</span><span class="badge badge--${b.tone}">${esc(b.label)}</span></summary><div class="aw-results__text">${esc(r.answer||(r.partial&&r.notes?'Partial notes (it stopped before writing up):\n'+r.notes:'')||(r.status==='error'?A.workerStep({id:r.agentId,state:'error',error:r.error,errorCode:r.errorCode},m):'Nothing yet.'))}</div></details>`}).join(''):'<p class="aw-results__none">Nothing yet.</p>'}
  <h3>Sources</h3>${src.length?`<ul class="aw-results__sources">${src.map(e=>`<li>${link(e)}</li>`).join('')}</ul>`:'<p class="aw-results__none">No sources were used.</p>'}
- <details class="aw-results__dev"><summary>Routing</summary><pre class="agent-result-pre">${m.routing?esc(JSON.stringify(m.routing,null,2)):'No routing recorded.'}</pre></details>`}
+ <details class="aw-results__dev" data-diagnostic><summary>Routing</summary><pre class="agent-result-pre">${m.routing?esc(JSON.stringify(m.routing,null,2)):'No routing recorded.'}</pre></details>`}
 // History lives in Work › Missions; this page only needs the missions to pick the one to show.
 async function loadHistory(){try{const j=await req('/api/agents/missions');history=j.items||j.missions||[];if(!currentMission){const m=history.find(m=>m.status==='running')||history[0];if(m)renderMission(m);else renderHead(null)}}catch(e){notice('error','Couldn’t load the missions: '+e.message)}}
 // Start: the plan is checked first (so a bad goal is said in the sheet), then the mission starts; the sheet closes,
@@ -658,7 +658,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       <div class="model-runtime-metric"><strong title="${esc(configured)}">${esc(configured)}</strong><span>Configured default</span></div>
       <div class="model-runtime-metric"><strong>${Number(models?.installedCount ?? installed.length)}</strong><span>Installed</span></div>
       <div class="model-runtime-metric"><strong>${Number(models?.loadedCount ?? loaded.length)}</strong><span>Loaded now</span></div>
-      <div class="model-runtime-metric"><strong>${runtimeLabel}</strong><span>Loaded list</span></div>`;
+      <div class="model-runtime-metric" data-diagnostic><strong>${runtimeLabel}</strong><span>Loaded list</span></div>`;
 
     if (models?.available === false) {
       list.innerHTML = `<div class="model-runtime-note model-runtime-error"><strong>Model list unavailable</strong><div style="margin-top:4px">${esc(models.runtimeError || 'Could not read the list of models from Ollama.')}</div></div>`;
@@ -688,12 +688,14 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         const meta = document.createElement('div');
         meta.className = 'model-runtime-meta';
         const detail = item.details || {};
+        // Quantization, file format and the memory rows are diagnostic (Settings › Show diagnostic details).
         [detail.family, detail.parameterSize, detail.quantizationLevel, detail.format]
-          .forEach((value) => {
+          .forEach((value, i) => {
             if (!value) return;
             const chip = document.createElement('span');
             chip.className = 'badge';
             chip.textContent = value;
+            if (i > 1) chip.dataset.diagnostic = '';
             meta.appendChild(chip);
           });
 
@@ -708,6 +710,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         rows.forEach(([label, value]) => {
           const cell = document.createElement('div');
           cell.className = 'model-runtime-detail';
+          if (label !== 'Model size') cell.dataset.diagnostic = '';
           const key = document.createElement('span');
           key.textContent = label;
           const val = document.createElement('b');
@@ -4052,10 +4055,10 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 // ==== first-run.js ====
-// "Get started" on Home for a new install, and the Home location setting.
+// "Get started" on Home for a new install, and the Home location and diagnostic-details settings.
 (()=>{'use strict';
 const q=(s,r=document)=>r.querySelector(s);
-const DONE_KEY='localai.firstRun.done';
+const DONE_KEY='localai.firstRun.done',DIAG_KEY='localai.diagnostics';
 const pref={get(k){try{return localStorage.getItem(k)}catch{return null}},set(k,v){try{localStorage.setItem(k,v)}catch{}}};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function getJson(url){const r=await fetch(url,{cache:'no-store'});return r.json()}
@@ -4139,8 +4142,23 @@ async function mountHomeLocation(){
   }catch(e){note.textContent=e.message}
  });
 }
-function init(){mountHomeLocation();mountFirstRun()}
-window.LocalAIFirstRun={DONE_KEY};
+// Show diagnostic details (default on): Models' loaded-list tile, quantization and memory rows; Health's Advanced
+// service details; Agent World's Advanced, demo, worker scores and Routing. Off sets body.diagnostics-off,
+// which hides everything marked data-diagnostic. Saved per browser.
+function applyDiagnostics(on){
+ document.body.classList.toggle('diagnostics-off',!on);
+ document.querySelectorAll('[data-diagnostics-toggle]').forEach(i=>{i.checked=on});
+}
+function mountDiagnostics(){
+ const settings=q('#settings');if(!settings||q('.diag-pref',settings))return;
+ const row=document.createElement('label');row.className='diag-pref card';
+ row.innerHTML='<input type="checkbox" data-diagnostics-toggle><span><strong>Show diagnostic details</strong><small>Technical details in Models and Health, and Agent World\'s Advanced options, routing and demo mission.</small></span>';
+ settings.appendChild(row);
+ const box=q('input',row);box.checked=!document.body.classList.contains('diagnostics-off');
+ box.addEventListener('change',()=>{pref.set(DIAG_KEY,box.checked?'1':'0');applyDiagnostics(box.checked)});
+}
+function init(){applyDiagnostics(pref.get(DIAG_KEY)!=='0');mountHomeLocation();mountDiagnostics();mountFirstRun()}
+window.LocalAIFirstRun={DONE_KEY,DIAG_KEY,applyDiagnostics};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
 

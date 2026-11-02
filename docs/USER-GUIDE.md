@@ -314,6 +314,10 @@ shown; there is no switch. Search (⌘K) finds every tool by name.
 
 In a mission's start sheet, **Advanced › Workers' model** runs every worker on one installed model instead of **Automatic**; the team lead still picks its own.
 
+**System › Settings › Show diagnostic details** (on by default) controls the technical detail: Models' loaded-list tile,
+quantization and memory rows; Health's **Advanced service details**; and Agent World's **Advanced** options, worker
+scores, **Routing** and demo mission. Turn it off for a quieter view. The choice is kept in this browser.
+
 ## Glossary
 
 Local AI uses one word for each thing, everywhere. If you meet one of the words in the last column, it is an old name

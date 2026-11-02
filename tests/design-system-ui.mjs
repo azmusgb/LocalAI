@@ -26,7 +26,7 @@ await check('no visible text under 13px outside badges, on owner pages', async (
   for (const v of views) {
     if (v === 'agents' || !await page.evaluate(v => { if (!document.getElementById(v)) return false; window.showView(v); return true }, v)) continue;
     await page.waitForTimeout(250);
-    for (const t of await page.evaluate(() => [...document.querySelectorAll('main .view.active *, .ux-shell *')].filter(el => el.offsetParent && !el.closest('.badge,.pill,.statuschip,kbd,.awc,#agents,[data-dev-only],svg') && [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(el).fontSize) < 12.5).map(el => `${String(el.className || el.tagName).slice(0, 40)} ${getComputedStyle(el).fontSize}`))) small.push(`${v}: ${t}`);
+    for (const t of await page.evaluate(() => [...document.querySelectorAll('main .view.active *, .ux-shell *')].filter(el => el.offsetParent && !el.closest('.badge,.pill,.statuschip,kbd,.awc,#agents,[data-diagnostic],svg') && [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(el).fontSize) < 12.5).map(el => `${String(el.className || el.tagName).slice(0, 40)} ${getComputedStyle(el).fontSize}`))) small.push(`${v}: ${t}`);
   }
   assert.deepEqual([...new Set(small)], []);
 });

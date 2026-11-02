@@ -67,7 +67,7 @@ await check('Settings: Notifications comes first, then Sign-in and Home location
   await page.waitForSelector('#settings.active #notifications', { state: 'attached' });
   await page.waitForSelector('#settings .voice-home-pref', { state: 'attached' });
   const order = await page.evaluate(() => [...document.querySelectorAll('#settings > .card')].map(e => e.id || (e.querySelector('#signinList') ? 'signin' : e.className.split(' ')[0])));
-  assert.deepEqual(order, ['notifications', 'signin', 'voice-home-pref']);
+  assert.deepEqual(order, ['notifications', 'signin', 'voice-home-pref', 'diag-pref']);
   assert.equal(await page.locator('#status #notifications, #status .voice-home-pref, #status #signinList').count(), 0);
 });
 
