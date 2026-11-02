@@ -28,6 +28,8 @@ const SNAPSHOTS_PATH = [
 // Only these repositories are served, whatever the folder holds (plan decision 2: the core three first).
 const DEFAULT_REPOS = ['localai', 'pi-hub', 'print-lab'];
 const COMMIT = /^[0-9a-f]{7,40}$/;
+// These answer about the latest scan, or with repo and commit about one snapshot.
+const SCOPED = new Set(['/api/atlas/summary', '/api/atlas/findings', '/api/atlas/node', '/api/atlas/ask', '/api/atlas/goose']);
 
 function normalizeAtlasBaseUrl(value, { allowRemote = false } = {}) {
   const raw = String(value || DEFAULT_ATLAS_URL).trim();
@@ -196,12 +198,14 @@ function createAtlas(ctx = {}) {
     return shape(readGraph());
   }
 
+  function notFound(res, found) {
+    const status = found.error === 'atlas_snapshot_missing' || found.error === 'atlas_repo_unknown' ? 404 : 400;
+    return json(res, status, { error: { code: found.error, message: found.message } });
+  }
+
   function snapshotGraph(res, repo, commit) {
     const found = snapshots.find(repo, commit);
-    if (found.error) {
-      const status = found.error === 'atlas_snapshot_missing' || found.error === 'atlas_repo_unknown' ? 404 : 400;
-      return json(res, status, { error: { code: found.error, message: found.message } });
-    }
+    if (found.error) return notFound(res, found);
     try {
       return json(res, 200, shape(snapshots.graph(found.row)));
     } catch (error) {
@@ -220,9 +224,39 @@ function createAtlas(ctx = {}) {
     if (!targetPath) return json(res, 404, { error: { code: 'atlas_route_not_found', message: 'Atlas route not found.' } });
 
     const requestUrl = new URL(req.url || localPath, 'http://localai.invalid');
-    const query = req.method === 'GET' ? requestUrl.search : '';
+    const params = req.method === 'GET' ? requestUrl.searchParams : new URLSearchParams();
+    let body = null;
+    if (req.method === 'POST') {
+      const raw = await readBody(req, MAX_BODY);
+      body = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    }
+    // Plan PR 5: intelligence about one snapshot. The repository and commit are matched against the snapshot list,
+    // as for its graph, and only the listed repository and full commit go on to the service.
+    let scoped = false;
+    if (SCOPED.has(localPath)) {
+      const given = body || Object.fromEntries(params);
+      const repo = String(given.repo || '').trim().toLowerCase();
+      const commit = String(given.commit || '').trim().toLowerCase();
+      if (repo || commit) {
+        if (!repo || !commit) {
+          return json(res, 400, { error: { code: 'atlas_snapshot_query', message: 'Give both repo and commit, or neither.' } });
+        }
+        const found = snapshots.find(repo, commit);
+        if (found.error) return notFound(res, found);
+        if (body) body = { ...body, repo: found.row.repo, commit: found.row.commit };
+        else { params.set('repo', found.row.repo); params.set('commit', found.row.commit); }
+        scoped = true;
+      } else if (body) {
+        delete body.repo; delete body.commit;
+      } else {
+        params.delete('repo'); params.delete('commit');
+      }
+    }
+    const search = params.toString();
+    const query = search ? `?${search}` : '';
     const isAsk = localPath === '/api/atlas/ask';
-    const timeoutMs = isAsk ? 315000 : 10000;
+    // A snapshot's first question makes a clean copy of its commit, which can take longer than a cached answer.
+    const timeoutMs = isAsk ? 315000 : scoped ? 60000 : 10000;
 
     const options = {
       method: req.method,
@@ -230,10 +264,9 @@ function createAtlas(ctx = {}) {
     };
     // The service accepts POSTs only with this secret (ATLAS_TOKEN there), so nothing but this proxy can start a run.
     if (atlasToken) options.headers['X-Atlas-Token'] = atlasToken;
-    if (req.method === 'POST') {
-      const body = await readBody(req, MAX_BODY);
+    if (body) {
       options.headers['Content-Type'] = 'application/json';
-      options.body = JSON.stringify(body || {});
+      options.body = JSON.stringify(body);
     }
 
     let response;

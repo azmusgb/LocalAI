@@ -85,8 +85,8 @@ unchanged.
 | 1. Generator | Merged, #444 |
 | 2. Server | Merged, #445 |
 | 3. Page picker | Merged, #446; page review fixes followed in #447 |
-| 4. Snapshot now | Next. The read-only deploy keys for pi-hub and print-lab are on the PC (`github-atlas-pihub`, `github-atlas-printlab`) |
-| 5. Intelligence on a snapshot | Not started |
+| 4. Snapshot now | Merged, #449; picker follow-ups in #451 |
+| 5. Intelligence on a snapshot | In review. Clean copies live in `C:\LocalAI\atlas-trees` (newest 3 used); without a mirror, findings use the graph only and the page says why |
 | 6. Release trigger | Waits for baseline step 3 |
 
 ## Decisions (owner, 1 Nov 2026)

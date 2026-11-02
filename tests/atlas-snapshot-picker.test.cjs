@@ -55,10 +55,11 @@ test('the picker is labelled native selects, and the page reads snapshots by rep
     assert.match(html, new RegExp(`<label for="${id}">[^<]+</label><select id="${id}">`), id);
   }
   assert.match(html, /id="atlasSourceNote"/);
-  assert.match(html, /id="atlasGraphOnly"[^>]*hidden/);
   const js = fs.readFileSync(path.join(ROOT, 'app/public/architecture.js'), 'utf8');
   assert.match(js, /\/api\/atlas\/snapshots/);
   assert.match(js, /\/api\/atlas\/graph\?repo=\$\{encodeURIComponent\(state\.repo\)\}&commit=\$\{encodeURIComponent\(state\.commit\)\}/);
-  // A snapshot never asks the intelligence service, which knows only Local AI's latest scan.
-  assert.match(js, /if\(!live\(\)\)\{state\.details=/);
+  // Findings, the node, Ask and Goose follow the chosen snapshot (plan PR 5).
+  assert.match(js, /scoped\('\/api\/atlas\/summary'\)/);
+  assert.match(js, /scoped\(`\/api\/atlas\/node\?path=/);
+  assert.equal((js.match(/\.\.\.scope\(\)/g) || []).length, 2);
 });
