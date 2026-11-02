@@ -116,6 +116,8 @@ services:
       - ${LOCALAI_ROOT:-C:/LocalAI}/appliance/app:/app:ro
       # The System Atlas graph's folder (quick_arch.py replaces the file on each rebuild; a folder mount sees that).
       - ${LOCALAI_ROOT:-C:/LocalAI}/repo/.atlas/graph:/atlas-graph:ro
+      # Atlas snapshots, one per repository and commit (quick_arch.py --repo/--git-dir/--commit).
+      - ${LOCALAI_ROOT:-C:/LocalAI}/repo/.atlas/snapshots:/atlas-snapshots:ro
       - appliance-data:/data
       - ${LOCALAI_ROOT:-C:/LocalAI}/reports:/reports:ro
       - C:/Projects:/workspace/projects

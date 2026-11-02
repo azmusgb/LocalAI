@@ -18,6 +18,16 @@ const GRAPH_PATH = [
 ].find((p) => p && fs.existsSync(path.dirname(p))) || '/atlas-graph/system-atlas.html';
 // The container reaches the host's service by this name; it is the host, not some other machine.
 const HOST_GATEWAY = 'host.docker.internal';
+// Snapshots (platform baseline 6.4): quick_arch.py --repo/--git-dir/--commit writes <repo>/<commit>/graph.json and
+// index.json here. The container mounts the folder read-only.
+const SNAPSHOTS_PATH = [
+  process.env.LOCALAI_ATLAS_SNAPSHOTS,
+  '/atlas-snapshots',
+  path.resolve(__dirname, '..', '..', '.atlas', 'snapshots'),
+].find((p) => p && fs.existsSync(p)) || '/atlas-snapshots';
+// Only these repositories are served, whatever the folder holds (plan decision 2: the core three first).
+const DEFAULT_REPOS = ['localai', 'pi-hub', 'print-lab'];
+const COMMIT = /^[0-9a-f]{7,40}$/;
 
 function normalizeAtlasBaseUrl(value, { allowRemote = false } = {}) {
   const raw = String(value || DEFAULT_ATLAS_URL).trim();
@@ -89,6 +99,59 @@ function createGraphReader(graphPath = GRAPH_PATH) {
   };
 }
 
+// The snapshot index and one snapshot's graph, each re-read only when its file changes. Nothing outside
+// <dir>/<allowed repo>/<full commit from the index>/graph.json is ever opened.
+function createSnapshotReader(dir = SNAPSHOTS_PATH, repos = DEFAULT_REPOS) {
+  const allowed = new Set(repos);
+  let index = null;
+  let indexMtime = -1;
+  const graphs = new Map();
+
+  function rows() {
+    const file = path.join(dir, 'index.json');
+    let stat;
+    try { stat = fs.statSync(file); } catch { index = null; indexMtime = -1; return []; }
+    if (!index || stat.mtimeMs !== indexMtime) {
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+      index = (Array.isArray(parsed?.snapshots) ? parsed.snapshots : [])
+        .filter((r) => r && allowed.has(r.repo) && typeof r.commit === 'string' && /^[0-9a-f]{40}$/.test(r.commit));
+      indexMtime = stat.mtimeMs;
+    }
+    return index;
+  }
+
+  function list() {
+    const snapshots = rows().slice().sort((a, b) => String(b.generatedAt || '').localeCompare(String(a.generatedAt || '')));
+    return { repos: [...allowed], snapshots };
+  }
+
+  // A full or abbreviated commit, matched against the index; an abbreviation must match exactly one snapshot.
+  function find(repo, commit) {
+    if (!allowed.has(repo)) return { error: 'atlas_repo_unknown', message: `No snapshots are kept for ${repo}.` };
+    if (!COMMIT.test(commit)) return { error: 'atlas_commit_invalid', message: 'A commit is 7-40 hexadecimal characters.' };
+    const matches = rows().filter((r) => r.repo === repo && r.commit.startsWith(commit));
+    if (matches.length === 1) return { row: matches[0] };
+    if (matches.length > 1) return { error: 'atlas_commit_ambiguous', message: 'That abbreviation matches more than one snapshot.' };
+    return { error: 'atlas_snapshot_missing', message: `There is no snapshot of ${repo} at ${commit}.` };
+  }
+
+  function graph(row) {
+    const file = path.join(dir, row.repo, row.commit, 'graph.json');
+    const stat = fs.statSync(file);
+    const hit = graphs.get(file);
+    if (hit && hit.mtime === stat.mtimeMs) return hit.graph;
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!parsed || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
+      throw new Error('The snapshot graph is missing nodes or edges.');
+    }
+    graphs.set(file, { mtime: stat.mtimeMs, graph: parsed });
+    if (graphs.size > 20) graphs.delete(graphs.keys().next().value);
+    return parsed;
+  }
+
+  return { list, find, graph };
+}
+
 function createAtlas(ctx = {}) {
   const { json, readBody, fetchWithTimeout } = ctx;
   if (typeof json !== 'function' || typeof readBody !== 'function' || typeof fetchWithTimeout !== 'function') {
@@ -100,6 +163,8 @@ function createAtlas(ctx = {}) {
     { allowRemote: ctx.allowRemote === true || process.env.LOCALAI_ATLAS_ALLOW_REMOTE === '1' }
   );
   const readGraph = createGraphReader(ctx.graphPath || GRAPH_PATH);
+  const repos = String(ctx.repos ?? process.env.LOCALAI_ATLAS_REPOS ?? '').split(',').map((r) => r.trim()).filter(Boolean);
+  const snapshots = createSnapshotReader(ctx.snapshotsPath || SNAPSHOTS_PATH, repos.length ? repos : DEFAULT_REPOS);
   const atlasToken = String(ctx.atlasToken ?? process.env.LOCALAI_ATLAS_TOKEN ?? '').trim();
 
   const upstream = new Map([
@@ -111,8 +176,7 @@ function createAtlas(ctx = {}) {
     ['/api/atlas/goose', '/api/atlas/goose']
   ]);
 
-  function graphResponse() {
-    const graph = readGraph();
+  function shape(graph) {
     return {
       generatedAt: graph.generatedAt || null,
       stats: graph.stats || {},
@@ -122,8 +186,32 @@ function createAtlas(ctx = {}) {
       changedNodes: graph.changedNodes || [],
       highestRisk: graph.highestRisk || [],
       stale: graph.stale === true,
-      staleReason: graph.staleReason || null
+      staleReason: graph.staleReason || null,
+      snapshot: graph.snapshot || null
     };
+  }
+
+  function graphResponse() {
+    return shape(readGraph());
+  }
+
+  function snapshotGraph(res, repo, commit) {
+    const found = snapshots.find(repo, commit);
+    if (found.error) {
+      const status = found.error === 'atlas_snapshot_missing' || found.error === 'atlas_repo_unknown' ? 404 : 400;
+      return json(res, status, { error: { code: found.error, message: found.message } });
+    }
+    try {
+      return json(res, 200, shape(snapshots.graph(found.row)));
+    } catch (error) {
+      return json(res, 503, {
+        error: {
+          code: 'atlas_snapshot_unavailable',
+          message: 'That snapshot could not be read.',
+          detail: String(error?.message || error).slice(0, 300)
+        }
+      });
+    }
   }
 
   async function proxy(req, res, localPath) {
@@ -177,7 +265,29 @@ function createAtlas(ctx = {}) {
   }
 
   async function apiAtlas(req, res, p) {
+    if (req.method === 'GET' && p === '/api/atlas/snapshots') {
+      try {
+        return json(res, 200, snapshots.list());
+      } catch (error) {
+        return json(res, 503, {
+          error: {
+            code: 'atlas_snapshots_unavailable',
+            message: 'The snapshot list could not be read.',
+            detail: String(error?.message || error).slice(0, 300)
+          }
+        });
+      }
+    }
     if (req.method === 'GET' && p === '/api/atlas/graph') {
+      const query = new URL(req.url || p, 'http://localai.invalid').searchParams;
+      const repo = (query.get('repo') || '').trim().toLowerCase();
+      const commit = (query.get('commit') || '').trim().toLowerCase();
+      if (repo || commit) {
+        if (!repo || !commit) {
+          return json(res, 400, { error: { code: 'atlas_snapshot_query', message: 'Give both repo and commit, or neither.' } });
+        }
+        return snapshotGraph(res, repo, commit);
+      }
       try {
         return json(res, 200, graphResponse());
       } catch (error) {
@@ -204,4 +314,4 @@ function createAtlas(ctx = {}) {
   return { apiAtlas, atlasUrl, graphResponse };
 }
 
-module.exports = { createAtlas, extractAtlasGraph, normalizeAtlasBaseUrl };
+module.exports = { createAtlas, createSnapshotReader, extractAtlasGraph, normalizeAtlasBaseUrl };
