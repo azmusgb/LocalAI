@@ -237,7 +237,7 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
   <div class="topbar">
     <div>
       <h1>Architecture</h1>
-      <p class="sub">System Atlas: deterministic topology, change exposure, risk, evidence and local architecture intelligence.</p>
+      <p class="sub">How the code fits together, what changed, and where the risk is.</p>
     </div>
     <div class="atlas-top-actions">
       <span id="atlasOllamaState" class="atlas-provider">Ollama · checking</span>
@@ -246,7 +246,7 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
     </div>
   </div>
 
-  <div id="atlasWebStatus" class="atlas-status" role="status" aria-live="polite">Open Architecture to load Atlas evidence.</div>
+  <div id="atlasWebStatus" class="atlas-status" role="status" aria-live="polite">Open Architecture to load the map.</div>
 
   <div class="atlas-source" role="group" aria-label="Which graph to show">
     <div class="atlas-source-field"><label for="atlasRepo">Repository</label><select id="atlasRepo"><option value="localai">Local AI</option></select></div>
@@ -262,7 +262,7 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
   </div>
 
   <div class="atlas-modebar" role="tablist" aria-label="Architecture lens">
-    <button type="button" class="active" role="tab" aria-selected="true" data-atlas-mode="architecture">Architecture</button>
+    <button type="button" class="active" role="tab" aria-selected="true" data-atlas-mode="architecture">Structure</button>
     <button type="button" role="tab" aria-selected="false" data-atlas-mode="changes">Changes</button>
     <button type="button" role="tab" aria-selected="false" data-atlas-mode="risk">Risk</button>
     <button type="button" role="tab" aria-selected="false" data-atlas-mode="evidence">Evidence</button>
@@ -277,7 +277,8 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
           <div id="atlasSearchResults" class="atlas-search-results" hidden></div>
         </div>
         <div class="atlas-card-head">
-          <div><h2 id="atlasMapTitle">System domains</h2><p id="atlasMapHint">Select a domain or search for a module.</p></div>
+          <div><h2 id="atlasMapTitle" tabindex="-1">System domains</h2><p id="atlasMapHint">Select a domain or search for a module.</p></div>
+          <button id="atlasMapBack" class="btn-outline" type="button" hidden>All domains</button>
         </div>
         <div class="atlas-map-wrap">
           <svg id="atlasMap" role="group" aria-label="System Atlas architecture map"></svg>
@@ -286,7 +287,7 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
 
       <section class="atlas-card" aria-labelledby="atlasFindingsTitle">
         <div class="atlas-card-head">
-          <div><h2 id="atlasFindingsTitle">Deterministic findings</h2><p>Atlas facts first; model interpretation stays separate.</p></div>
+          <div><h2 id="atlasFindingsTitle">Findings</h2><p>Rule-based checks of the code. Ask gives a model's reading separately.</p></div>
           <span id="atlasFindingCount">0 modules</span>
         </div>
         <div id="atlasFindingList" class="atlas-findings"></div>
@@ -295,10 +296,10 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
 
     <aside class="atlas-inspector" aria-label="Atlas inspector">
       <div class="atlas-inspector-head">
-        <div class="atlas-eyebrow">Evidence-bounded architecture analyst</div>
-        <div id="atlasSelectedEmpty" class="atlas-selected-meta">Select a module to inspect its blast radius and evidence.</div>
+        <div class="atlas-eyebrow">Inspector</div>
+        <div id="atlasSelectedEmpty" class="atlas-selected-meta">Select a module to see what uses it and its test evidence.</div>
         <div id="atlasSelectedBody" hidden>
-          <div id="atlasSelectedPath" class="atlas-selected-path"></div>
+          <div id="atlasSelectedPath" class="atlas-selected-path" tabindex="-1"></div>
           <div id="atlasSelectedMeta" class="atlas-selected-meta"></div>
         </div>
       </div>

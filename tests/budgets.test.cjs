@@ -97,7 +97,9 @@ const KB = 1024;
 // 2026-10-31: app.css 47 → 51 KB: the Deployments and Architecture styles moved into it (one stylesheet).
 // 2026-11-01: 315 → 317 KB for the Architecture page's repository and commit picker (Atlas plan PR 3: architecture.js
 // +1.9 KB, its markup and styles +0.3 KB; 316.6 KB measured).
-const TOTAL = 317 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
+// 2026-11-01: 317 → 320 KB and architecture.js 10 → 12 KB for the Architecture page review fixes: a map ordered by
+// dependency with sized arrows, a domain view, freshness against the running release, and finding reasons (+2.4 KB).
+const TOTAL = 320 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
 // 2026-10-26: 291 → 292 KB (and home.js 11 → 12 KB) for one Needs you on every screen: Home also lists Pi Hub's items
@@ -128,7 +130,7 @@ const TOTAL = 317 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spre
 // checklist (+0.8 KB, less the retired .lab-shots rules); their scripts load on demand and stay out of the shell.
 // 2026-11-01: ui.js 113 → 114 KB (System's Advanced tab: the sub strip and its click handler, the Pi Hub link in the header) and
 // app.js 36 → 37 KB (singular counts and the Projects summary line replacing four tiles), from the UI critique pass.
-const PER_FILE = { 'ui.js': 114 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 37 * KB, 'index.html': 16 * KB, 'home.js': 13 * KB, 'spreadsheets.js': 11 * KB };
+const PER_FILE = { 'ui.js': 114 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 37 * KB, 'index.html': 16 * KB, 'home.js': 13 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 12 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
