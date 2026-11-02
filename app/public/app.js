@@ -861,9 +861,7 @@ function commandPalette(){
   list.setAttribute('role','listbox');
   function select(i){active=Math.max(0,Math.min(shown.length-1,i));list.querySelectorAll('[role=option]').forEach((b,n)=>{b.setAttribute('aria-selected',String(n===active));b.classList.toggle('active',n===active)});const b=list.querySelectorAll('[role=option]')[active];if(b){input.setAttribute('aria-activedescendant',b.id);b.scrollIntoView({block:'nearest'})}}
   function render(){
-    // A developer page (registry `dev`) is offered only while Developer tools (Health) is on, like the menus.
-    const devOff=document.body.classList.contains('dev-tools-off');
-    const q=input.value.trim().toLowerCase();shown=actions.filter(a=>$(a.id)&&a.terms.includes(q)&&!(devOff&&R.view(a.id)?.dev));
+    const q=input.value.trim().toLowerCase();shown=actions.filter(a=>$(a.id)&&a.terms.includes(q));
     const groups=!q&&phone()?likely(shown):null;if(groups)shown=groups.flatMap(g=>g.items);
     const opt=(a,n)=>`<button type="button" id="cmdk-opt-${n}" role="option" class="cmdk-item" data-cmd-view="${esc(a.id)}">${esc(a.label)}</button>`;
     let n=0;

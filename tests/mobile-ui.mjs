@@ -200,14 +200,10 @@ await check('shell: many page tabs scroll on a 320px phone and the active one is
   await shell.setViewportSize({ width: 390, height: 844 });
 });
 
-await check('shell: with Developer tools off the tab bar still has five equal items', async () => {
-  await shell.evaluate(() => window.showView('settings'));
-  await shell.locator('.dev-tools-pref input').uncheck();
+await check('shell: the tab bar has five equal items', async () => {
   const widths = await shell.evaluate(() => [...document.querySelectorAll('#uxMobileNav [data-domain]')].map(b => b.getBoundingClientRect().width).filter(w => w > 0));
   assert.equal(widths.length, 5);
   assert.ok(Math.max(...widths) - Math.min(...widths) < 1, `unequal widths ${widths}`);
-  await shell.locator('.dev-tools-pref input').check();
-  assert.equal(await shell.evaluate(() => [...document.querySelectorAll('#uxMobileNav [data-domain]')].filter(b => b.getBoundingClientRect().width > 0).length), 5);
 });
 await check('shell: tab-bar icons come from the registry', async () => {
   const items = await shell.evaluate(() => {

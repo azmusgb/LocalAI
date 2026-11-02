@@ -110,13 +110,20 @@ test('navigation surfaces read from the registry instead of their own lists', ()
   assert.match(sw, /'\/view-registry\.js'/);
 });
 
-// Developer tools (the Health switch) hide the pages whose first screen is for a developer: the registry says
-// which, so the rail, the page strip, the phone sheet and ⌘K all agree and a future developer page gets it for free.
-test('the developer pages carry the dev flag and nothing else does', () => {
-  const dev = registry.VIEWS.filter(v => v.dev).map(v => v.id).sort();
-  assert.deepEqual(dev, ['actions', 'architecture', 'automations', 'powershell', 'repoTools', 'workbench']);  // System Atlas: a developer tool (31 Oct 2026)
+// System › Tools (navigation update, 2 Nov): one page of cards, always shown, no switch. The registry says which pages
+// have a card, so the strip, the phone sheet and ⌘K agree and a future tool gets it for free.
+test('Tools lists the tools, System ones first, and nothing is hidden behind a switch', () => {
+  assert.deepEqual(registry.tools().map(v => v.id), ['workbench', 'repoTools', 'powershell', 'actions', 'automations', 'architecture']);
+  assert.ok(!registry.VIEWS.some(v => 'dev' in v || 'advanced' in v), 'no developer-only or Advanced pages remain');
+  assert.equal(registry.view('architecture').domain, 'improve', 'Architecture is an Improve tab, Atlas (D3)');
   assert.equal(registry.view('claude').domain, 'improve', 'Claude Code is an ordinary Improve page (N2)');
-  for (const v of registry.VIEWS.filter(x => x.dev)) assert.equal(v.domain, 'system', `${v.id} is a System page`);
+  assert.deepEqual(registry.sections('system').map(s => s.label), ['Health', 'Tools', 'Settings', 'History']);
+});
+
+// Improve keeps six tabs plus Deployments until it joins Shipped (step 4); short labels keep them on a phone (D3).
+test('Improve tabs use short strip labels', () => {
+  const strip = registry.sections('improve').flatMap(s => s.views).map(id => registry.view(id).short || registry.label(id));
+  assert.deepEqual(strip, ['Backlog', 'Doing', 'Deployments', 'Shipped', 'Signals', 'Claude', 'Atlas']);
 });
 
 test('tabs belong to a top-level page in the same domain', () => {

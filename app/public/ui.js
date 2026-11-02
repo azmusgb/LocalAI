@@ -35,8 +35,8 @@ function clearNotice(){const el=$('agentInlineNotice');if(el)el.hidden=true}
 function humanState(s){return ({pending:'Waiting',running:'Running',complete:'Complete',error:'Needs attention',blocked:'Blocked',needs_attention:'Needs attention',awaiting_approval:'Awaiting approval',apply_requested:'Deployment queued',applied:'Applied'})[s]||String(s||'Unknown').replaceAll('_',' ')}
 function cards(){const el=$('specialistRegistry');if(!el)return;el.innerHTML=catalog.filter(a=>!a.infrastructure).map(a=>`<button class="agent-card ${a.id===selected?'active':''}" data-spec="${esc(a.id)}"><span class="agent-card__icon">${esc((a.name||a.id)[0])}</span><span><strong>${esc(a.name)}</strong><small>${esc(a.description)}</small><span class="agent-meta">${(a.capabilities||[]).slice(0,4).map(x=>`<span class="statuschip">${esc(x)}</span>`).join('')}</span></span></button>`).join('');el.querySelectorAll('[data-spec]').forEach(b=>b.onclick=()=>{selected=b.dataset.spec;cards();updateDirectActionLabel()})}
 function updateDirectActionLabel(){const a=catalog.find(x=>x.id===selected);const b=$('specialistRunBtn');if(b)b.textContent='Run '+(a?.name||'specialist')}
-// Workers' model (developer tools only): an installed model every specialist in the mission uses; empty is Automatic.
-function workerModel(){if(document.body.classList.contains('dev-tools-off'))return'';return $('agentWorkerModel')?.value||''}
+// Workers' model: an installed model every specialist in the mission uses; empty is Automatic.
+function workerModel(){return $('agentWorkerModel')?.value||''}
 let workerModelsLoaded=false;
 async function loadWorkerModels(){const sel=$('agentWorkerModel');if(!sel||workerModelsLoaded)return;try{const items=(await req('/api/agents/models')).items||[];const keep=sel.value;sel.innerHTML='<option value="">Automatic</option>'+items.map(m=>`<option value="${esc(m.name)}">${esc(m.name)}</option>`).join('');sel.value=items.some(m=>m.name===keep)?keep:'';workerModelsLoaded=true}catch{}}
 function manualIds(){return $('manualRouteToggle')?.checked?[...document.querySelectorAll('[data-mission-agent]:checked')].map(x=>x.value):undefined}
@@ -51,13 +51,13 @@ function renderTimeline(m){const el=$('agentTimeline'),A=window.LocalAIAgentWord
 function resultForWorker(id){return demoing()?null:currentMission?.results?.find(r=>r.agentId===id)||null}
 function selectWorker(id){activeInspectorId=id;renderInspector();if(phone.matches&&snap==='peek')setSnap('half');window.dispatchEvent(new CustomEvent('localai:agentworld-focus',{detail:{workerId:id}}))}
 // The worker card: who they are, what they are doing, what they found so far and, if stuck, why and Try again. Model,
-// scores and routing are developer details (data-dev-only: shown only with developer tools on).
+// scores and routing are details under the card.
 function renderInspector(){const el=$('agentInspector'),A=window.LocalAIAgentWords,m=window.LocalAIAgentWorld?.demoStory?.()||currentMission;if(!el||!A)return;const w=(m?.workers||[]).find(x=>x.id===activeInspectorId);el.hidden=!w;if(!w){el.innerHTML='';return}
  const r=resultForWorker(w.id),rm=w.routingMeta||{},b=A.stateBadge(w.state),bad=w.state==='error'||w.state==='blocked',out=String(r?.answer||''),src=(r?.evidenceRecords||[]).length||(r?.evidence||[]).length;
  el.innerHTML=`<div class="aw-worker__head"><img class="awc__avatar" src="${window.LocalAIAgentWorld?.avatar?.(w)||''}" alt="" width="48" height="48"><div><h2 id="awWorkerName">${esc(A.workerName(w))}</h2><p>${esc(A.workerRole(w))}</p></div><span class="badge badge--${b.tone}">${esc(b.label)}</span><button type="button" class="aw-worker__close" id="awWorkerClose" aria-label="Close ${esc(A.workerName(w))}">×</button></div>
  <p class="aw-worker__now${bad?' is-bad':''}">${esc(A.workerStep(w,m))}</p>${bad?`<div class="aw-worker__fix"><span>${w.state==='error'?'Trying again runs the mission again from the start.':'It starts when the workers before it finish.'}</span>${w.state==='error'&&!demoing()?'<button type="button" class="btn-primary" id="agentRetryBtn">Try again</button>':''}</div>`:''}
  ${out?`<details class="aw-worker__out"${out.length<600?' open':''}><summary>What ${esc(A.workerName(w))} found${src?` · ${src} source${src===1?'':'s'}`:''}</summary><div class="aw-worker__text">${esc(out)}</div></details>`:''}
- <dl class="aw-worker__dev" data-dev-only><dt>Model</dt><dd>${esc(w.model||r?.model||'Automatic')}</dd><dt>Skill fit</dt><dd>${rm.capabilityScore??'—'}%</dd><dt>Model fit</dt><dd>${rm.modelScore??'—'}%</dd><dt>Grounding</dt><dd>${rm.groundingRequired===false?'Not required':'Required'}</dd><dt>Fallback</dt><dd>${esc(rm.retryPolicy?.fallbackAgentId||'None')}</dd>${w.reason?`<dt>Assignment rationale</dt><dd>${esc(w.reason)}</dd>`:''}</dl>`;
+ <dl class="aw-worker__dev"><dt>Model</dt><dd>${esc(w.model||r?.model||'Automatic')}</dd><dt>Skill fit</dt><dd>${rm.capabilityScore??'—'}%</dd><dt>Model fit</dt><dd>${rm.modelScore??'—'}%</dd><dt>Grounding</dt><dd>${rm.groundingRequired===false?'Not required':'Required'}</dd><dt>Fallback</dt><dd>${esc(rm.retryPolicy?.fallbackAgentId||'None')}</dd>${w.reason?`<dt>Assignment rationale</dt><dd>${esc(w.reason)}</dd>`:''}</dl>`;
  $('awWorkerClose').onclick=()=>{activeInspectorId='';renderInspector();refocusCrew(w.id)};const t=$('agentRetryBtn');if(t)t.onclick=retryMission}
 function refocusCrew(id){window.LocalAIUI?.refocus?.(id,{within:'#awcRoster',key:'awcRoster',control:':scope'})||document.querySelector(`#awcRoster [data-awc-roster="${CSS.escape(id)}"]`)?.focus()}
 function missionSummary(m){const done=(m.workers||[]).filter(w=>w.state==='complete').length,total=(m.workers||[]).length;return {done,total,percent:total?Math.round(done/total*100):0}}
@@ -111,7 +111,7 @@ function renderResults(){const el=$('agentResultBody'),A=window.LocalAIAgentWord
  el.innerHTML=`<h3>Summary</h3>${m.answer?`<div class="aw-results__text">${esc(m.answer)}</div>`:`<p class="aw-results__none">${esc(A.summaryWhy(m))}</p>`}
  <h3>What each worker found</h3>${rs.length?rs.map(r=>{const w={id:r.agentId,name:r.agentName},b=A.stateBadge(r.partial?'partial':r.status);return `<details class="aw-results__worker"><summary><img class="awc__avatar" src="${pic(r)}" alt="" width="28" height="28"><span>${esc(A.workerName(w))}</span><span class="badge badge--${b.tone}">${esc(b.label)}</span></summary><div class="aw-results__text">${esc(r.answer||(r.partial&&r.notes?'Partial notes (it stopped before writing up):\n'+r.notes:'')||(r.status==='error'?A.workerStep({id:r.agentId,state:'error',error:r.error,errorCode:r.errorCode},m):'Nothing yet.'))}</div></details>`}).join(''):'<p class="aw-results__none">Nothing yet.</p>'}
  <h3>Sources</h3>${src.length?`<ul class="aw-results__sources">${src.map(e=>`<li>${link(e)}</li>`).join('')}</ul>`:'<p class="aw-results__none">No sources were used.</p>'}
- <details class="aw-results__dev" data-dev-only><summary>Routing</summary><pre class="agent-result-pre">${m.routing?esc(JSON.stringify(m.routing,null,2)):'No routing recorded.'}</pre></details>`}
+ <details class="aw-results__dev"><summary>Routing</summary><pre class="agent-result-pre">${m.routing?esc(JSON.stringify(m.routing,null,2)):'No routing recorded.'}</pre></details>`}
 // History lives in Work › Missions; this page only needs the missions to pick the one to show.
 async function loadHistory(){try{const j=await req('/api/agents/missions');history=j.items||j.missions||[];if(!currentMission){const m=history.find(m=>m.status==='running')||history[0];if(m)renderMission(m);else renderHead(null)}}catch(e){notice('error','Couldn’t load the missions: '+e.message)}}
 // Start: the plan is checked first (so a bad goal is said in the sheet), then the mission starts; the sheet closes,
@@ -120,7 +120,7 @@ async function loadHistory(){try{const j=await req('/api/agents/missions');histo
 async function startMission(e){const given=e?.goal?e:null;if(given&&demoing())return;const goal=given?.goal||$('agentGoal')?.value.trim(),open=$('awStart')?.open;if(!goal){notice('error','Say what the team should do first.');$('agentGoal')?.focus();return}window.LocalAIAgentWorld?.live?.();let body=given;if(!body){body={goal,projectId:$('agentProject')?.value||''};const ids=manualIds();if($('agentWebSearch')?.checked)body.webSearch=true;if(ids?.length)body.agentIds=ids;const wm=workerModel();if(wm)body.workerModel=wm}const b=$('missionRunBtn');if(b){b.disabled=true;b.textContent='Starting…'}clearNotice();
  try{if(!given)await preview();const j=await req('/api/agents/missions/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});closeStart();if(j.mission){currentMission=null;renderMission(j.mission);window.dispatchEvent(new CustomEvent('localai:agentworld-mission',{detail:{mission:j.mission}}))}window.dispatchEvent(new Event('localai:agentworld-start'));window.LocalAIUI?.toast?.('The team is on it');loadHistory()}
  catch(e){if(open)notice('error','Couldn’t start the mission: '+e.message);else window.LocalAIUI?.toast?.('Couldn’t start the mission: '+e.message)}finally{if(b){b.disabled=false;b.textContent='Start'}}}
-// The start sheet: one text box, the team in words as you type, two plain options, Advanced only with developer tools.
+// The start sheet: one text box, the team in words as you type, two plain options, and Advanced.
 // Closed, focus goes back to whatever opened it, again once the sheet's history.back() has landed.
 let teamTimer=0,teamFor='';
 function openStart(){const d=$('awStart');if(!d||d.open)return;const o=document.activeElement;clearNotice();
@@ -658,7 +658,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       <div class="model-runtime-metric"><strong title="${esc(configured)}">${esc(configured)}</strong><span>Configured default</span></div>
       <div class="model-runtime-metric"><strong>${Number(models?.installedCount ?? installed.length)}</strong><span>Installed</span></div>
       <div class="model-runtime-metric"><strong>${Number(models?.loadedCount ?? loaded.length)}</strong><span>Loaded now</span></div>
-      <div class="model-runtime-metric" data-dev-only><strong>${runtimeLabel}</strong><span>Loaded list</span></div>`;
+      <div class="model-runtime-metric"><strong>${runtimeLabel}</strong><span>Loaded list</span></div>`;
 
     if (models?.available === false) {
       list.innerHTML = `<div class="model-runtime-note model-runtime-error"><strong>Model list unavailable</strong><div style="margin-top:4px">${esc(models.runtimeError || 'Could not read the list of models from Ollama.')}</div></div>`;
@@ -688,14 +688,12 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         const meta = document.createElement('div');
         meta.className = 'model-runtime-meta';
         const detail = item.details || {};
-        // Quantization, file format and the memory rows are diagnostic: developer tools only (critique §3.4, D6).
         [detail.family, detail.parameterSize, detail.quantizationLevel, detail.format]
-          .forEach((value, i) => {
+          .forEach((value) => {
             if (!value) return;
             const chip = document.createElement('span');
             chip.className = 'badge';
             chip.textContent = value;
-            if (i > 1) chip.dataset.devOnly = '';
             meta.appendChild(chip);
           });
 
@@ -710,7 +708,6 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         rows.forEach(([label, value]) => {
           const cell = document.createElement('div');
           cell.className = 'model-runtime-detail';
-          if (label !== 'Model size') cell.dataset.devOnly = '';
           const key = document.createElement('span');
           key.textContent = label;
           const val = document.createElement('b');
@@ -938,10 +935,10 @@ let allButtons=new Map();
 const icon=(name,cls)=>window.LocalAIKit?.icon(name,cls)||'';
 
 function viewButton(view){return allButtons.get(view)||q('.navbtn[data-view="'+view+'"]')}
-// Developer pages (registry `dev`) leave every menu while Developer tools (Health) is off; their addresses still work.
-const devOff=()=>document.body.classList.contains('dev-tools-off');
-const listed=view=>!!viewButton(view)&&!(REG.view(view)?.dev&&devOff());
-// A domain's groups with the pages a menu may list right now; a group left empty (Tools, with the switch off) is dropped.
+// A System tool (registry `tool`) is a card on Tools, not a menu entry of its own; its address still opens it.
+const underTools=view=>{const v=REG.view(view);return !!v?.tool&&v.domain==='system'};
+const listed=view=>!!viewButton(view)&&!underTools(view);
+// A domain's groups with the pages a menu may list; a group left empty is dropped.
 const listedGroups=d=>d.groups.map(g=>({label:g.label,views:g.views.filter(listed)})).filter(g=>g.views.length);
 // A hidden page (chat, images, missions, runs) lights up the page that owns it.
 function domainForView(view){let id=REG.view(view)?.domain;if(id==='hidden')id=REG.view(REG.resolve(view))?.domain;return DOMAINS.find(d=>d.id===id)||DOMAINS[0]}
@@ -1019,43 +1016,31 @@ const headerActions=new Map();
 function syncHeaderAction(view){const b=q('#uxHeaderAction');if(!b)return;const a=headerActions.get(REG.view(view||activeView())?.id||view||activeView());b.hidden=!a;q('#uxContextBar')?.classList.toggle('ux-context-has-action',!!a);if(!a){b.onclick=null;return}b.innerHTML=icon(a.icon,'ux-ico');b.setAttribute('aria-label',a.label);b.onclick=a.onClick}
 window.LocalAIShell={setAction(view,action){headerActions.set(view,action);syncHeaderAction()},clearAction(view){headerActions.delete(view);syncHeaderAction()}};
 function greeting(){const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'}
-let lastAdvanced=''; // the Advanced page last open, so its tab returns there
 function buildPageStrip(){
  const bar=q('#uxContextBar');if(!bar||q('#uxPageStrip'))return;
  const strip=document.createElement('nav');strip.id='uxPageStrip';strip.className='ux-page-strip';strip.setAttribute('aria-label','Pages in this section');
  bar.after(strip);
  strip.addEventListener('scroll',()=>fadeStrip(strip),{passive:true});window.addEventListener('resize',()=>fadeStrip(strip),{passive:true});
- strip.addEventListener('click',e=>{const b=e.target.closest('[data-strip-view]');if(!b)return;const v=b.dataset.stripView,adv=(strip.dataset.advanced||'').split(',').filter(Boolean);navigate(v==='advanced'?(adv.includes(lastAdvanced)?lastAdvanced:adv[0]):v)});
+ strip.addEventListener('click',e=>{const b=e.target.closest('[data-strip-view]');if(b)navigate(b.dataset.stripView)});
 }
 // One strip for the area, on phones and desktops (navigation spec N5): its pages, and a page's tabs in place of the
 // page (Projects › Library, Work › Automations).
 function renderPageStrip(d,page,view){
  const strip=q('#uxPageStrip');if(!strip)return;
  const all=listedGroups(d).flatMap(g=>g.views).flatMap(v=>{const t=REG.tabs(v);return t.length?t.map(x=>x.id):[v]});
- // Developer pages marked `advanced` share one "Advanced" tab; its own strip below lists them, and each keeps its address.
- const adv=all.filter(v=>REG.view(v)?.advanced),views=adv.length?[...all.filter(v=>!REG.view(v)?.advanced),'advanced']:all;
- const current=REG.view(view)?.id;
- if(adv.includes(current)){page='advanced';lastAdvanced=current}
+ const views=all,current=REG.view(view)?.id;
+ // A System tool (Files, PowerShell, …) lights Tools, where its card is.
+ if(underTools(current))page='tools';
  else if(all.includes(current))page=current;
- const key=d.id+'|'+views.join(',')+'|'+adv.join(',');
- const label=v=>v==='advanced'?REG.ADVANCED_LABEL:(REG.view(v)?.tab||REG.view(v)?.short||labelForView(v));
- const desc=v=>v==='advanced'?'Developer tools: '+adv.map(labelForView).join(', '):REG.description(v);
- const buttons=ids=>ids.map(v=>'<button type="button" data-strip-view="'+v+'" title="'+desc(v).replace(/"/g,'&quot;')+'">'+label(v)+'</button>').join('');
- if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=buttons(views);strip.dataset.advanced=adv.join(',')}
+ const key=d.id+'|'+views.join(',');
+ const label=v=>REG.view(v)?.tab||REG.view(v)?.short||labelForView(v);
+ const buttons=ids=>ids.map(v=>'<button type="button" data-strip-view="'+v+'" title="'+REG.description(v).replace(/"/g,'&quot;')+'">'+label(v)+'</button>').join('');
+ if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=buttons(views)}
  // Home's only other page, Inbox, already has a button in the top bar; a hidden page (Missions, Chat) is none of these.
  strip.hidden=views.length<2||d.id==='home'||REG.view(view)?.domain==='hidden';
  qa('[data-strip-view]',strip).forEach(b=>{const on=b.dataset.stripView===page;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
- // The Advanced tab's own strip shows only while one of its pages is open.
- let sub=q('#uxAdvancedStrip');
- if(!sub){sub=document.createElement('nav');sub.id='uxAdvancedStrip';sub.className='ux-page-strip ux-sub-strip';sub.setAttribute('aria-label','Advanced tools');strip.after(sub);
-  sub.addEventListener('click',e=>{const b=e.target.closest('[data-strip-view]');if(b)navigate(b.dataset.stripView)});sub.addEventListener('scroll',()=>fadeStrip(sub),{passive:true})}
- const showSub=adv.includes(current)&&!strip.hidden;
- if(showSub&&sub.dataset.key!==adv.join(',')){sub.dataset.key=adv.join(',');sub.innerHTML=buttons(adv)}
- sub.hidden=!showSub;
- if(showSub)qa('[data-strip-view]',sub).forEach(b=>{const on=b.dataset.stripView===current;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
  revealActive(strip);
  fadeStrip(strip);
- if(showSub){revealActive(sub);fadeStrip(sub)}
 }
 // An overflowing strip scrolls so the open tab is fully in view and the first tab shown starts at the edge: a label is
 // never cut mid-word on the left, and the fade on the right says there are more.
@@ -1085,8 +1070,7 @@ function sync(forced){
 }
 // Mid-switch no page is active for a moment; syncing then would take it for Home and hide the strip under the focus.
 function observeViews(){const views=qa('.view');if(!views.length)return;const mo=new MutationObserver(()=>{if(q('.view.active'))sync()});views.forEach(v=>mo.observe(v,{attributes:true,attributeFilter:['class']}));
- // The Developer tools switch (first-run.js) toggles body.dev-tools-off: the menus redraw with or without the developer pages.
- let dev=devOff();new MutationObserver(()=>{if(devOff()===dev)return;dev=devOff();sync()}).observe(document.body,{attributes:true,attributeFilter:['class']});document.addEventListener('click',e=>{const b=e.target.closest?.('.navbtn[data-view]');if(b)requestAnimationFrame(()=>sync(b.dataset.view))})}
+ document.addEventListener('click',e=>{const b=e.target.closest?.('.navbtn[data-view]');if(b)requestAnimationFrame(()=>sync(b.dataset.view))})}
 // An error box shown for a field marks that field invalid and describes it with the box; hidden again, it lets go.
 // The boxes are drawn by their own pages (home.js, Models, improve.js); this follows their `hidden` attribute.
 const ERROR_FIELDS={homeComposerError:'commandInput',modelPullError:'modelPullName',improveIdeaError:'improveIdeaText',improveItemError:'improveItemSheet'};
@@ -4056,40 +4040,27 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
   phone.addEventListener('change', () => observers.forEach((_, list) => apply(list)));
 })();
 
-// ==== first-run.js ====
-// "Get started" on Home for a new install, and the Developer tools preference that adds the developer pages.
+// ==== tools-page.js ====
+// System › Tools (navigation update, 2 Nov): one card per tool, always shown. Each opens the tool at its own address.
 (()=>{'use strict';
-const q=(s,r=document)=>r.querySelector(s),qa=(s,r=document)=>[...r.querySelectorAll(s)];
-const DEV_KEY='localai.devTools',DONE_KEY='localai.firstRun.done';
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function mount(){
+ const host=document.querySelector('#toolsCards'),R=window.LocalAIViews;if(!host||!R||host.childElementCount)return;
+ host.innerHTML=R.tools().map(v=>`<a class="tool-card card" href="#${v.id}" data-tool="${v.id}"><span class="tool-card__icon" aria-hidden="true">${window.LocalAIKit?.icon(v.svg)||''}</span><span><strong>${esc(v.label)}</strong><small>${esc(v.description)}${v.domain==='system'?'':` Also in ${esc(R.DOMAINS.find(d=>d.id===v.domain)?.label||'')} as ${esc(v.short||v.label)}.`}</small></span></a>`).join('');
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();
+})();
+
+// ==== first-run.js ====
+// "Get started" on Home for a new install, and the Home location setting.
+(()=>{'use strict';
+const q=(s,r=document)=>r.querySelector(s);
+const DONE_KEY='localai.firstRun.done';
 const pref={get(k){try{return localStorage.getItem(k)}catch{return null}},set(k,v){try{localStorage.setItem(k,v)}catch{}}};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function getJson(url){const r=await fetch(url,{cache:'no-store'});return r.json()}
 let config=null;
 async function loadConfig(){if(!config)config=await getJson('/api/config').catch(()=>({}));return config}
-
-// Developer tools: the developer pages (registry `dev`: Files, Repository, PowerShell, Browser & computer,
-// n8n workflows), plus the diagnostic tiles marked data-dev-only. An install that has used them
-// starts with them shown; a new one starts with them hidden. The choice is remembered per browser.
-function applyDevTools(on,fromToggle=false){
- document.body.classList.toggle('dev-tools-off',!on);
- qa('[data-dev-tools-toggle]').forEach(i=>{i.checked=on});
- const active=q('.view.active')?.id;
- const v=window.LocalAIViews?.view(active);
- if(fromToggle&&!on&&v?.dev&&typeof window.showView==='function')window.showView('home');
-}
-async function initDevTools(){
- const saved=pref.get(DEV_KEY);
- if(saved!==null)return applyDevTools(saved==='1');
- applyDevTools(!!(await loadConfig()).developerHistory);
-}
-function mountDevToolsToggle(){
- const status=q('#settings');if(!status||q('.dev-tools-pref',status))return;
- const row=document.createElement('label');row.className='dev-tools-pref card';
- row.innerHTML='<input type="checkbox" data-dev-tools-toggle><span><strong>Show developer tools</strong><small>Adds the developer tools: Files, Repository, PowerShell, Browser &amp; computer, n8n workflows.</small></span>';
- status.appendChild(row);
- row.querySelector('input').addEventListener('change',e=>{pref.set(DEV_KEY,e.target.checked?'1':'0');applyDevTools(e.target.checked,true)});
- row.querySelector('input').checked=!document.body.classList.contains('dev-tools-off');
-}
 
 // Get started: shown until dismissed, and only while something is missing (no model yet, or nothing made yet).
 const SAMPLES=[
@@ -4125,7 +4096,7 @@ async function mountFirstRun(){
  const card=document.createElement('section');card.id='firstRun';card.className='first-run card';card.setAttribute('aria-labelledby','firstRunTitle');
  card.innerHTML=`<div class="first-run-head"><div><h2 id="firstRunTitle">Get started</h2><p>Two checks, then try a first task. Everything runs on this computer.</p></div><button type="button" class="icon-btn" data-first-run-dismiss aria-label="Hide Get started">×</button></div>
  <ol class="first-run-steps">${stepHtml('service','Local AI is running')}${stepHtml('model','A language model is installed')}<li data-step="try" data-state="todo"><span class="first-run-mark" aria-hidden="true"></span><div><strong>Try a first task</strong><div class="first-run-detail">Pick one. It runs right here, and the result is in Work. Tap ☆ Keep to keep it in your Library.</div><div class="first-run-samples">${SAMPLES.map((s,i)=>`<button type="button" class="btn-outline" data-sample="${i}"><span>${esc(s.label)}</span><small>${esc(s.text)}</small></button>`).join('')}</div></div></li></ol>
- <div class="first-run-foot"><span class="meta">Developer tools are ${document.body.classList.contains('dev-tools-off')?'hidden':'shown'}. Change this in <a href="#" data-goto="status">Health</a>.</span><button type="button" class="btn-outline" data-first-run-dismiss>I'm set up, hide this</button></div>`;
+ <div class="first-run-foot"><span class="meta">Settings, Tools and Health are under <a href="#" data-goto="settings">System</a>.</span><button type="button" class="btn-outline" data-first-run-dismiss>I'm set up, hide this</button></div>`;
  hero.before(card) // Get started takes Recent's place while it shows;
  window.dispatchEvent(new CustomEvent('localai:first-run')); // Home may have painted its rows already
  // Step 3 is done when a run really opens (the pending run gets its id), not when a sample is tapped: a send that fails is no first task.
@@ -4168,8 +4139,8 @@ async function mountHomeLocation(){
   }catch(e){note.textContent=e.message}
  });
 }
-function init(){initDevTools().then(()=>{mountDevToolsToggle();mountHomeLocation()});mountFirstRun()}
-window.LocalAIFirstRun={applyDevTools,DEV_KEY,DONE_KEY};
+function init(){mountHomeLocation();mountFirstRun()}
+window.LocalAIFirstRun={DONE_KEY};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
 
@@ -4248,7 +4219,7 @@ function focusSetup(card){
  d.open=true;card.scrollIntoView({block:'start',behavior:'smooth'});
 }
 // Below the service list: what's running comes first; this is setup advice.
-function mount(){const status=q('#status');if(!status)return;let card=q('.secure-card',status);if(!card){card=document.createElement('section');card.className='card secure-card';const services=q('#serviceList',status)?.closest('.card');(services||q('.dev-tools-pref',status)||q('.topbar',status))?.after(card)}if(card.dataset.rendered){focusSetup(card);return}card.dataset.rendered='1';render(card)}
+function mount(){const status=q('#status');if(!status)return;let card=q('.secure-card',status);if(!card){card=document.createElement('section');card.className='card secure-card';const services=q('#serviceList',status)?.closest('.card');(services||q('.topbar',status))?.after(card)}if(card.dataset.rendered){focusSetup(card);return}card.dataset.rendered='1';render(card)}
 // Render (and so probe) only once Health is on screen.
 function watch(){const status=q('#status');if(!status)return;const go=()=>{if(status.classList.contains('active'))mount()};go();new MutationObserver(go).observe(status,{attributes:true,attributeFilter:['class']})}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(watch,0),{once:true});else setTimeout(watch,0);

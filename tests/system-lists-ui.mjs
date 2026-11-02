@@ -62,13 +62,13 @@ await check('Audit log: Clear user activity is not in the page header, and shows
   await page.unroute('**/api/activity');
 });
 
-await check('Settings: Notifications comes first, then Sign-in, Developer tools and Home location; Health has none of them', async () => {
+await check('Settings: Notifications comes first, then Sign-in and Home location; Health has none of them', async () => {
   await page.evaluate(() => window.showView('settings'));
   await page.waitForSelector('#settings.active #notifications', { state: 'attached' });
   await page.waitForSelector('#settings .voice-home-pref', { state: 'attached' });
   const order = await page.evaluate(() => [...document.querySelectorAll('#settings > .card')].map(e => e.id || (e.querySelector('#signinList') ? 'signin' : e.className.split(' ')[0])));
-  assert.deepEqual(order, ['notifications', 'signin', 'dev-tools-pref', 'voice-home-pref']);
-  assert.equal(await page.locator('#status #notifications, #status .dev-tools-pref, #status .voice-home-pref, #status #signinList').count(), 0);
+  assert.deepEqual(order, ['notifications', 'signin', 'voice-home-pref']);
+  assert.equal(await page.locator('#status #notifications, #status .voice-home-pref, #status #signinList').count(), 0);
 });
 
 // Health must not say "ready" when the check itself failed: a 500 or an answer without services keeps the last known
@@ -209,15 +209,12 @@ await check('Empty states say what appears and how (E3): Automations, Sources, L
   for (const u of ['**/api/automations', '**/api/monitors', '**/api/library', '**/api/quality']) await page.unroute(u);
 });
 
-// Health's technical detail (probe names, HTTP results) is for a developer: it shows only with developer tools on.
-await check('Health: Advanced service details shows only with developer tools on', async () => {
+// Health's technical detail (probe names, HTTP results) sits closed under Advanced service details, always there.
+await check('Health: Advanced service details is shown', async () => {
   await page.evaluate(() => window.showView('status'));
   await page.waitForSelector('#status.active #technicalStatus', { state: 'attached' });
   const details = page.locator('#status details:has(#technicalStatus)');
-  await page.evaluate(() => document.body.classList.add('dev-tools-off'));
-  assert.equal(await details.isVisible(), false, 'hidden with developer tools off');
-  await page.evaluate(() => document.body.classList.remove('dev-tools-off'));
-  assert.equal(await details.isVisible(), true, 'shown with developer tools on');
+  assert.equal(await details.isVisible(), true);
 });
 
 // One Automations page (D9): Monitors folded in as the kinds Health check and Morning brief; "Open n8n" stays a button.

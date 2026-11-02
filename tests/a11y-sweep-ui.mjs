@@ -37,9 +37,7 @@ const RELEASES = { current: { version: '2.0.400', commit: 'a'.repeat(40), deploy
 
 async function stubbed(viewport) {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
-  // Developer tools off, as on a new install: with no saved choice they start on once the server has developer history
-  // (changes, engineering runs, Claude board findings), which other suites leave behind.
-  await ctx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); localStorage.setItem('localai.devTools', '0'); } catch {} });
+  await ctx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
   const page = await ctx.newPage();
   const json = (route, body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
   await page.route('**/api/claude/board*', async route => {
@@ -73,13 +71,15 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
   await page.context().close();
 }
 
-await check('Agent World result: headed sections in order; Routing only with developer tools', async () => {
+await check('Agent World result: headed sections in order; Routing closed below them', async () => {
   const page = await stubbed({ width: 1280, height: 860 });
   await page.evaluate(() => window.showView('agents'));
   await page.evaluate(m => window.LocalAISpecialists.renderMission(m), { id: 'm-a11y', goal: 'A goal', status: 'complete', answer: 'The summary.', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), workers: [{ id: 'router', name: 'Mission Router', state: 'complete' }], results: [] });
   await page.waitForFunction(() => document.querySelectorAll('#agentResultBody h3').length === 3);
   assert.deepEqual(await page.locator('#agentResultBody h3').allInnerTexts(), ['Summary', 'What each worker found', 'Sources']);
-  assert.equal(await page.locator('#agentResultBody details', { hasText: 'Routing' }).isVisible(), false);
+  const routing = page.locator('#agentResultBody details', { hasText: 'Routing' });
+  assert.equal(await routing.isVisible(), true);
+  assert.equal(await routing.evaluate(d => d.open), false, 'Routing starts closed');
   await page.context().close();
 });
 

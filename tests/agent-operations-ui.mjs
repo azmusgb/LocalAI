@@ -108,13 +108,12 @@ await check('Agent World full screen and follow controls',async()=>{
   await page.keyboard.press('Escape');
   assert.ok(!(await page.locator('.awc-v3').getAttribute('class')).includes('is-expanded'));
 });
-await check('advanced routing collapsed by default (developer tools)',async()=>{
-  await page.evaluate(()=>document.body.classList.remove('dev-tools-off'));
+await check('advanced routing collapsed by default',async()=>{
   await page.evaluate(()=>window.LocalAIAgentStart.open());
   assert.equal(await page.locator('#agentAdvancedPanel').isVisible(),false);
   await page.locator('#agentAdvancedToggle').click();
   assert.equal(await page.locator('#agentAdvancedPanel').isVisible(),true);
-  await page.locator('#agentAdvancedToggle').click();await page.evaluate(()=>document.body.classList.add('dev-tools-off'));
+  await page.locator('#agentAdvancedToggle').click();
   await page.keyboard.press('Escape');await page.locator('#awStart').waitFor({state:'hidden'});
 });
 await check('the story and the worker card replace the timeline and inspector',async()=>{
@@ -153,17 +152,15 @@ await check('the web-search choice reaches the mission request',async()=>{
    assert.equal(bodies[1].webSearch,undefined);
   }finally{await page.unroute(isDispatch);await page.unroute(isStart);await page.locator('#agentGoal').fill('');await page.keyboard.press('Escape')}
 });
-await check('the workers\' model select shows only with developer tools and reaches the mission request',async()=>{
+await check('the workers\' model select sits under Advanced and reaches the mission request',async()=>{
   const CODER='qwen2.5-coder:7b-16k',bodies=[],isDispatch=u=>u.pathname==='/api/agents/dispatch',isStart=u=>u.pathname==='/api/agents/missions/start',isModels=u=>u.pathname==='/api/agents/models';
   await page.route(isModels,r=>r.fulfill({contentType:'application/json',body:JSON.stringify({items:[{name:'qwen3:4b-instruct-32k'},{name:CODER}]})}));
   await page.route(isDispatch,r=>r.fulfill({contentType:'application/json',body:JSON.stringify({routing:{mode:'auto',workers:[],selectedAgentIds:[],inventory:[]}})}));
   await page.route(isStart,r=>{bodies.push(r.request().postDataJSON());r.fulfill({status:500,contentType:'application/json',body:JSON.stringify({error:'stubbed'})})});
   const sent=async n=>{for(let i=0;i<60&&bodies.length<n;i++)await page.waitForTimeout(100);assert.equal(bodies.length,n)};
   try{
-   await page.evaluate(()=>document.body.classList.add('dev-tools-off'));
    await page.evaluate(()=>window.LocalAIAgentStart.open());
-   assert.equal(await page.locator('#agentWorkerModel').isVisible(),false,'hidden with developer tools off');
-   await page.evaluate(()=>document.body.classList.remove('dev-tools-off'));
+   assert.equal(await page.locator('#agentWorkerModel').isVisible(),false,'closed under Advanced');
    await page.locator('#agentAdvancedToggle').click();
    await page.locator('#agentWorkerModel').waitFor({state:'visible'});
    await page.waitForFunction(n=>[...document.querySelectorAll('#agentWorkerModel option')].some(o=>o.value===n),CODER);
@@ -176,15 +173,10 @@ await check('the workers\' model select shows only with developer tools and reac
    await page.locator('#missionRunBtn').click();
    await sent(2);
    assert.equal(bodies[1].workerModel,CODER);
-   await page.evaluate(()=>document.body.classList.add('dev-tools-off'));
-   await page.locator('#missionRunBtn').click();
-   await sent(3);
-   assert.equal(bodies[2].workerModel,undefined,'not sent with developer tools off');
   }finally{
    await page.unroute(isModels);await page.unroute(isDispatch);await page.unroute(isStart);
-   await page.evaluate(()=>{const s=document.getElementById('agentWorkerModel');if(s)s.value='';document.body.classList.remove('dev-tools-off')});
+   await page.evaluate(()=>{const s=document.getElementById('agentWorkerModel');if(s)s.value=''});
    if(await page.locator('#agentAdvancedPanel').isVisible())await page.locator('#agentAdvancedToggle').click();
-   await page.evaluate(()=>document.body.classList.add('dev-tools-off'));
    await page.locator('#agentGoal').fill('');await page.keyboard.press('Escape')}
 });
 await check('the demo runs and stops from its chip',async()=>{

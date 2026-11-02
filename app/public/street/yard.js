@@ -6,7 +6,7 @@
 // session id, so a session keeps its seat as it switches between working and waiting), each a worker in
 // Claude orange at an open laptop; a '+' badge on the post when there are more. A working session types (its forearms
 // and the line on its screen move); a waiting one sits still. No sessions: an empty yard, the laptops shut, the bulbs
-// off. Hidden while the developer tools are off (body.dev-tools-off). A tap always opens Agent World (no per-session link).
+// off. A tap always opens Agent World (no per-session link).
 // drawStill draws what doesn't move (the workers and their laptops too: stamp names who sits where, so a change redraws
 // the still without moving the camera); drawLive (t in ms) draws only the typing forearms and their screens' lines.
 (function(root){'use strict';
@@ -16,10 +16,9 @@ const ORANGE='#d97757',CREAM='#f6eee3',UNDER='#6e3a2a',BOARD=['#b89c74','#a88c66
  BADGE='#b5513a',SCREEN='#1f1b19',TEXT='#f0dcc8',CARET='#f4a582',PICKET='#efe9df';
 const XS=[40,118,196],TOP=276,SKIN=['#e9b88f','#c68a5e','#f1c9a5'];
 function state(world){
- const hidden=!!root.document?.body?.classList.contains('dev-tools-off');
  const k=Array.isArray(world&&world.crews)?world.crews.filter(x=>x&&typeof x==='object'):[];
  const on=k.filter(x=>x.state!=='waiting'),all=on.concat(k.filter(x=>x.state==='waiting'));
- return{hidden,working:on.length,waiting:all.length-on.length,
+ return{hidden:false,working:on.length,waiting:all.length-on.length,
   sessions:all.slice(0,3).map(x=>({id:String(x.id??''),title:String(x.title??''),state:x.state==='waiting'?'waiting':'working'})).sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0),more:Math.max(0,all.length-3),down:false};
 }
 // Counts only: a session's title never reaches the chip.

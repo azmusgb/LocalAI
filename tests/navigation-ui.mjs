@@ -17,7 +17,6 @@ async function check(name, fn) {
 
 const page = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
 // These checks cover the Build domain, which a fresh install hides until Developer tools is switched on.
-await page.addInitScript(() => localStorage.setItem('localai.devTools', '1'));
 const pageErrors = [];
 page.on('pageerror', e => pageErrors.push(e.message));
 await page.goto(base, { waitUntil: 'domcontentloaded' });
@@ -40,32 +39,35 @@ await check('home has one command surface and a short breadcrumb', async () => {
   assert.doesNotMatch(await crumb(), /Local AI \//, 'no breadcrumb');
 });
 
-// System keeps Health, Models, Services and Audit log in its strip; the six developer pages sit under one Advanced tab,
-// and each still opens from its own address with Advanced lit and its own page marked in the strip below.
-await check('System: developer pages are grouped under Advanced and every address still opens', async () => {
+// System's strip is Health · Models · Services · Tools · Settings · Audit log (navigation update, 2 Nov). Tools is one
+// page of cards; each System tool opens at its own address with Tools lit. Architecture is Improve's Atlas tab.
+await check('System: Tools lists every tool, each opens at its address with Tools lit; Architecture is Improve › Atlas', async () => {
   await page.locator('.ux-primary-item[data-domain="system"]').click();
   await page.waitForSelector('#status.active');
-  assert.deepEqual(await stripLabels(), ['Health', 'Models', 'Services', 'Settings', 'Audit log', 'Advanced']);
-  assert.equal(await page.locator('#uxAdvancedStrip').isVisible(), false, 'no sub strip on Health');
-  for (const [hash, label] of [['architecture', 'Architecture'], ['automations', 'n8n'], ['actions', 'Browser'], ['workbench', 'Files'], ['repoTools', 'Repository'], ['powershell', 'PowerShell']]) {
+  assert.deepEqual(await stripLabels(), ['Health', 'Models', 'Services', 'Tools', 'Settings', 'Audit log']);
+  assert.equal(await page.locator('#uxAdvancedStrip').count(), 0, 'no second strip');
+  await page.locator('#uxPageStrip [data-strip-view="tools"]').click();
+  await page.waitForSelector('#tools.active', { timeout: 5000 });
+  assert.deepEqual(await page.locator('#toolsCards .tool-card strong').allInnerTexts(), ['Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows', 'Architecture']);
+  for (const hash of ['workbench', 'repoTools', 'powershell', 'actions', 'automations']) {
     await page.evaluate(h => { location.hash = '#' + h; }, hash);
     await page.waitForSelector(`#${hash}.active`, { timeout: 5000 });
-    assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Advanced', hash);
-    assert.deepEqual(await page.locator('#uxAdvancedStrip button').allInnerTexts(), ['Architecture', 'n8n', 'Browser', 'Files', 'Repository', 'PowerShell']);
-    assert.equal(await page.locator('#uxAdvancedStrip [aria-current="page"]').innerText(), label, hash);
+    assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Tools', hash);
+    assert.deepEqual(await stripLabels(), ['Health', 'Models', 'Services', 'Tools', 'Settings', 'Audit log'], `${hash} adds no tab`);
   }
-  await page.locator('#uxPageStrip [data-strip-view="status"]').click();
-  await page.waitForSelector('#status.active', { timeout: 5000 });
-  await page.locator('#uxPageStrip [data-strip-view="advanced"]').click();
-  await page.waitForSelector('#powershell.active', { timeout: 5000 });  // back to the one last open
-  await page.locator('#uxAdvancedStrip [data-strip-view="repoTools"]').click();
-  await page.waitForSelector('#repoTools.active', { timeout: 5000 });
+  await page.evaluate(() => { location.hash = '#tools'; });
+  await page.waitForSelector('#tools.active', { timeout: 5000 });
+  await page.locator('#toolsCards [data-tool="architecture"]').click();
+  await page.waitForSelector('#architecture.active', { timeout: 5000 });
+  assert.equal(await crumbOf(page), 'Improve');
+  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Atlas');
+  assert.deepEqual(await stripLabels(), ['Backlog', 'Doing', 'Deployments', 'Shipped', 'Signals', 'Claude', 'Atlas']);
 });
 
 // The legacy pages are retired (owner decision D4): their addresses land on the page that replaced them.
 await check('retired pages are gone and their addresses land on Signals, In progress and Work', async () => {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
-  await ctx.addInitScript(() => { localStorage.setItem('localai.devTools', '1'); localStorage.setItem('localai.firstRun.done', '1'); });
+  await ctx.addInitScript(() => { localStorage.setItem('localai.firstRun.done', '1'); });
   const pg = await ctx.newPage();
   const errs = [], missing = [];
   pg.on('pageerror', e => errs.push(e.message));
@@ -209,7 +211,6 @@ await check('no script errors while navigating', async () => {
 await page.close();
 
 const mobile = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
-await mobile.addInitScript(() => localStorage.setItem('localai.devTools', '1'));
 await mobile.goto(base, { waitUntil: 'domcontentloaded' });
 await mobile.waitForSelector('#uxMobileNav');
 await mobile.waitForFunction(() => typeof window.showView === 'function');
@@ -299,49 +300,23 @@ await check('chat threadId survives a reload and changes after New conversation'
 });
 await mobile.close();
 
-// Developer tools off (a new install): System's menu, the page strip and the phone sheet hold the owner's pages only.
-// The developer pages still open by address, and the switch brings them back.
-const OWNER_SYSTEM = ['Health', 'Models', 'Services', 'Settings', 'Audit log']; // Automations is in Work, Spreadsheets in Projects (navigation step 3)
-const DEV_SYSTEM = ['Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows', 'Architecture'];  // Architecture (System Atlas) since 31 Oct 2026 // Claude Code is in Improve (N2)
-await check('developer tools off: System lists the owner pages only; a developer page still opens by address', async () => {
-  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
-  await ctx.addInitScript(() => { localStorage.setItem('localai.devTools', '0'); localStorage.setItem('localai.firstRun.done', '1'); });
+// No switch (D1): a new install sees the same System strip and Tools page as any other, on a phone too. The strip still
+// scrolls at 390 px (Audit log past the edge, with the fade); fitting it is an open decision on the 2 Nov spec.
+await check('phone, a new install: System shows Tools with no switch, and every System tab is reachable', async () => {
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await ctx.addInitScript(() => { localStorage.removeItem('localai.devTools'); localStorage.setItem('localai.firstRun.done', '1'); });
   const pg = await ctx.newPage();
   const errs = []; pg.on('pageerror', e => errs.push(e.message));
   await pg.goto(base + '/#status', { waitUntil: 'domcontentloaded' });
-  await pg.waitForFunction(() => typeof window.showView === 'function' && document.body.classList.contains('dev-tools-off'));
+  await pg.waitForFunction(() => typeof window.showView === 'function');
   await pg.waitForSelector('#status.active');
-  assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), OWNER_SYSTEM);
-  // Deep links keep working, as Improve's do.
-  await pg.evaluate(() => { location.hash = '#powershell'; });
-  await pg.waitForSelector('#powershell.active');
-  assert.equal(await crumbOf(pg), 'System');
-  assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), OWNER_SYSTEM, 'the open developer page does not add itself to the strip');
-  // The switch brings every developer page back, in place.
-  await pg.evaluate(() => window.showView('settings'));
-  await pg.locator('.dev-tools-pref input').check();
-  await pg.waitForFunction(() => !document.body.classList.contains('dev-tools-off'));
-  const all = await pg.locator('#uxPageStrip button').allInnerTexts();
-  assert.deepEqual(all, [...OWNER_SYSTEM, 'Advanced'], 'with the switch on, the developer pages sit under one Advanced tab');
-  await pg.evaluate(() => { location.hash = '#architecture'; });
-  await pg.waitForSelector('#architecture.active');
-  assert.equal(await pg.locator('#uxAdvancedStrip button').count(), DEV_SYSTEM.length);
-  // Switching it off while on a developer page returns to Home.
-  await pg.evaluate(() => window.showView('workbench'));
-  await pg.waitForSelector('#workbench.active');
-  await pg.evaluate(() => document.querySelector('.dev-tools-pref input').click());
-  await pg.waitForSelector('#home.active');
+  assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), ['Health', 'Models', 'Services', 'Tools', 'Settings', 'Audit log']);
+  await pg.locator('#uxPageStrip [data-strip-view="activity"]').click();
+  await pg.waitForSelector('#activity.active');
+  await pg.locator('#uxPageStrip [data-strip-view="tools"]').click();
+  await pg.waitForSelector('#tools.active #toolsCards .tool-card');
+  assert.equal(await pg.locator('.dev-tools-pref, [data-dev-tools-toggle]').count(), 0, 'no developer-tools switch');
   assert.deepEqual(errs, []);
-  await ctx.close();
-});
-await check('phone, developer tools off: the page strip lists the owner pages only', async () => {
-  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
-  await ctx.addInitScript(() => { localStorage.setItem('localai.devTools', '0'); localStorage.setItem('localai.firstRun.done', '1'); });
-  const pg = await ctx.newPage();
-  await pg.goto(base + '/#status', { waitUntil: 'domcontentloaded' });
-  await pg.waitForFunction(() => typeof window.showView === 'function' && document.body.classList.contains('dev-tools-off'));
-  await pg.waitForSelector('#status.active');
-  assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), OWNER_SYSTEM);
   await ctx.close();
 });
 await browser.close();

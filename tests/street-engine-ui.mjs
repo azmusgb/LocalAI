@@ -163,7 +163,7 @@ await check('a new stamp rebuilds a still without moving the camera', async () =
   assert.deepEqual(page.errors, []);
 });
 
-// Toggling the developer tools hides or shows the Claude Yard: a stillKey to or from 'hidden' is not a change, so the camera stays.
+// A building can hide itself (state().hidden): a stillKey to or from 'hidden' is not a change, so the camera stays.
 await check('a building appearing or disappearing (stillKey hidden) does not move the camera', async () => {
   const page = await fresh({ viewport: { width: 390, height: 844 }, reduced: true });
   const reg = () => page.evaluate(w => { window.__h = true; window.LocalAIStreet.register({ id: 'yard', width: 100, state: () => ({ hidden: window.__h }), stillKey: s => s.hidden ? 'hidden' : 'idle', chip: () => ({ title: 'Y', detail: 'y', tone: 'quiet' }), drawStill() {}, drawLive() {}, animates: () => false }); window.LocalAIStreet.setWorld(w); window.__el.querySelector('.street').scrollLeft = 0; }, BUSY);
@@ -561,25 +561,21 @@ await check('a hidden building has no chip, the next one moves left, and unhidin
   assert.deepEqual(page.errors, []);
 });
 
-// The Claude Yard: on the street only while the developer tools are on; it counts the sessions and never shows a title.
+// The Claude Yard: always on the street (no developer-tools switch since 2 Nov); it counts the sessions and never shows a title.
 const CREWS = [{ id: 'k1', title: 'Fix the build', state: 'working', lastAction: 'Edit' }, { id: 'k2', title: 'Docs', state: 'working', lastAction: 'Read' }, { id: 'k3', title: 'Plan', state: 'waiting', lastAction: 'Ask' }];
 const yardChip = page => page.evaluate(() => [...window.__el.querySelectorAll('.street-chip')].map(b => b.textContent).find(t => t.startsWith('Claude Yard')) || null);
-await check('the Claude Yard is off the street while the developer tools are off, and on it once they are on', async () => {
+await check('the Claude Yard is on the street, even with the old dev-tools-off class, and opens Agent World', async () => {
   const page = await fresh({ world: null });
   await page.evaluate(w => { document.body.classList.add('dev-tools-off'); window.LocalAIStreet.setWorld(w); }, { ...BUSY, crews: CREWS });
-  assert.equal(await yardChip(page), null, 'no yard chip');
-  await page.evaluate(w => { document.body.classList.remove('dev-tools-off'); window.LocalAIStreet.setWorld(w); }, { ...BUSY, crews: CREWS });
   assert.equal(await yardChip(page), 'Claude Yard2 working · 1 waiting');
   assert.equal(await page.evaluate(() => { const b = [...window.__el.querySelectorAll('.street-chip')].pop(); b.click(); return [b.title, window.__opened.at(-1)]; }).then(r => r.join()), 'Opens Agent World,yard');
-  await page.evaluate(w => { document.body.classList.add('dev-tools-off'); window.LocalAIStreet.setWorld(w); }, { ...BUSY, crews: CREWS });
-  assert.equal(await yardChip(page), null, 'gone again');
   assert.deepEqual(page.errors, []);
 });
 
 await check("a session's title, markup or right-to-left, never reaches the page", async () => {
   const evil = '<img src=x onerror=window.__y=1>', rtl = '\u202Eשלום\u202C';
   const page = await fresh({ world: null });
-  await page.evaluate(w => { document.body.classList.remove('dev-tools-off'); window.LocalAIStreet.setWorld(w); },
+  await page.evaluate(w => { window.LocalAIStreet.setWorld(w); },
     { ...BUSY, crews: [{ id: 'e1', title: evil, state: 'working', lastAction: evil }, { id: 'e2', title: rtl, state: 'waiting', lastAction: rtl }] });
   await page.waitForTimeout(200);
   const t = await yardChip(page);

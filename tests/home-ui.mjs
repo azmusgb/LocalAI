@@ -728,18 +728,13 @@ await check('Mission mode sends the chosen specialists and the web-search choice
   await web.context().close();
 });
 
-await check('Developer tools off: no Change Local AI mode, and Auto never routes to engineering', async () => {
-  const page = await open(desk, '#home', { storage: { 'localai.devTools': '0' }, route: { intent: 'engineering', confidence: 0.95 }, engineering: async () => ({ body: { run: { id: 'e1' } } }) });
+// The developer-tools switch is gone (2 Nov): a browser that once switched it off still offers Change Local AI.
+await check('an old developer-tools choice hides nothing: Change Local AI is offered', async () => {
+  const page = await open(desk, '#home', { storage: { 'localai.devTools': '0' } });
   await page.waitForSelector('#homeRecent2 .run-card', T);
-  await page.evaluate(() => { window.__starts = []; window.LocalAIChat = { start: async (t, o) => { window.__starts.push(t); o.pending.resolve('run-1'); } }; });
   await page.locator('#homeModeChip').click(); await page.waitForSelector('#homeModeSheet[open]', T);
-  assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').evaluateAll(b => b.map(x => x.dataset.homeMode)), ['automate', 'mission', 'create', 'research', 'ask', 'auto']);
-  await page.locator('#homeModeSheet .home-sheet__done').click();
-  await page.locator('#commandInput').fill('Change the login page'); await page.locator('#commandGo').click();
-  // A change to Local AI itself offers Claude Code first; Ask anyway sends it to Chat.
-  await page.locator('#homeSelfChange').getByRole('button', { name: 'Ask anyway' }).click(T);
-  await page.waitForFunction(() => window.__starts.length === 1, null, T);
-  assert.deepEqual(page.started, []);
+  assert.ok((await page.locator('#homeModeSheet [data-home-mode]').evaluateAll(b => b.map(x => x.dataset.homeMode))).includes('engineering'));
+  assert.equal(await page.evaluate(() => document.body.classList.contains('dev-tools-off')), false);
   await page.context().close();
 });
 
@@ -797,13 +792,6 @@ await check('Change Local AI: the sheet\'s Hand to Claude hands it over from Hom
   assert.deepEqual(page.ideas, []);
   assert.equal(await page.locator('#commandInput').inputValue(), '');
   await page.waitForFunction(() => /Handed to Claude Code/.test(document.getElementById('toast')?.textContent || ''), null, T);
-  await page.context().close();
-});
-
-await check('Developer tools off: a remembered Change Local AI mode falls back to Auto', async () => {
-  const page = await open(desk, '#home', { storage: { 'localai.devTools': '0', 'localai.home.mode': 'engineering' } });
-  await page.waitForSelector('#homeRecent2 .run-card', T);
-  assert.equal((await page.locator('#homeModeChip').innerText()).trim(), 'Auto ▾');
   await page.context().close();
 });
 
@@ -917,15 +905,16 @@ await check('Home takes no room for the street until a world answers, and does n
 });
 
 // Every building on the street busy at once, the Claude Yard's crews included: Home's strip stands all ten, in the
-// street's ORDER; with the developer tools off the Yard stays off the street.
+// street's ORDER, the Yard always among them (no developer-tools switch since 2 Nov, even for an old choice).
 const job = (id, o) => ({ id, title: 'Job ' + id, status: 'running', startedAt: Date.now() - 60000, ...o });
 const ALL_BUSY = {
   ...WORLD,
   crews: [{ id: 'k1', title: 'Fix the build', state: 'working', lastAction: 'Edit' }, { id: 'k2', title: 'Plan', state: 'waiting', lastAction: 'Ask' }],
   street: Object.fromEntries(['chat', 'images', 'missions', 'garage', 'sheets', 'clock'].map(k => [k, src({ running: [job(k + '1')] })]))
 };
-for (const [devTools, n] of [['1', 10], ['0', 9]]) {
-  await check(`with every building busy, Home's strip has ${n} chips in street order (developer tools ${devTools === '1' ? 'on' : 'off'})`, async () => {
+for (const devTools of ['1', '0']) {
+  const n = 10;
+  await check(`with every building busy, Home's strip has ${n} chips in street order (old developer-tools choice ${devTools})`, async () => {
     const page = await open(desk, '#home', { world: ALL_BUSY, storage: { 'localai.devTools': devTools } });
     await page.waitForSelector('#homeStreet .street:not([hidden])', T);
     await page.waitForTimeout(200);
@@ -936,9 +925,9 @@ for (const [devTools, n] of [['1', 10], ['0', 9]]) {
       return { order: [...S.ORDER], ids, want, chips, off: document.body.classList.contains('dev-tools-off') };
     }, ALL_BUSY);
     assert.deepEqual(r.ids, r.order, 'all ten buildings are registered, in ORDER');
-    assert.equal(r.off, devTools === '0');
+    assert.equal(r.off, false);
     assert.equal(r.chips.length, n, JSON.stringify(r.chips));
-    assert.deepEqual(r.want.map(x => x.id), r.order.filter(id => devTools === '1' || id !== 'yard'));
+    assert.deepEqual(r.want.map(x => x.id), r.order);
     r.want.forEach((x, i) => assert.ok(r.chips[i].startsWith(x.title + ':'), `chip ${i} is ${x.title}: ${r.chips[i]}`));
     assert.ok(r.chips.every(c => !/Not set up|Can't/.test(c)), 'every building busy: ' + JSON.stringify(r.chips));
     await page.context().close();

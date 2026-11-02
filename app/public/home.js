@@ -10,16 +10,13 @@ const store={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:
 let mode=LABEL[store.get(MODE_KEY)]?store.get(MODE_KEY):'auto',options={},sending=false,flash=0,attention=[],timer=0,loaded=false;
 try{options=JSON.parse(store.get(OPT_KEY)||'{}')||{}}catch{}
 const active=()=>$('home')?.classList.contains('active');
-// With developer tools off, changing Local AI is not offered: a remembered or routed 'engineering' means Auto / Chat.
-const devOn=()=>!document.body.classList.contains('dev-tools-off');
-const allowed=m=>m!=='engineering'||devOn();
 
 // ---- the mode chip and its sheet ----
-const cur=()=>allowed(mode)?mode:'auto';
+const cur=()=>mode;
 function paintChip(text){const c=$('homeModeChip');if(!c)return;const t=text||LABEL[cur()]+' ▾';c.textContent=t;c.setAttribute('aria-label',`Mode: ${LABEL[cur()]}. Change mode`)}
 let syncing=false;
 function setMode(m,{persist=true}={}){
- if(!LABEL[m]||!allowed(m))return;
+ if(!LABEL[m])return;
  mode=m;if(persist)store.set(MODE_KEY,m);
  clearTimeout(flash);paintChip();paintRoute();
  if(syncing)return;syncing=true; // keep the hidden buttons (state.mode, the gate, first-run samples) in step
@@ -80,10 +77,10 @@ function sheet(){
 // One column of rows on the bottom edge: the current mode is the lowest row, nearest the thumb, with Auto and Chat just
 // above it. The order is set as the sheet opens and stays put while it is open, so a row never moves under a finger.
 let order=null;
-const ordered=()=>{const c=cur();return [...MODES.filter(m=>allowed(m[0])&&m[0]!==c).reverse(),MODES.find(m=>m[0]===c)]};
+const ordered=()=>{const c=cur();return [...MODES.filter(m=>m[0]!==c).reverse(),MODES.find(m=>m[0]===c)]};
 function paintModes(){
  const box=sheet().querySelector('.home-modes');
- box.innerHTML=(order||ordered()).filter(m=>allowed(m[0])).map(([id,label,hint])=>{
+ box.innerHTML=(order||ordered()).map(([id,label,hint])=>{
   const gate=document.querySelector(`.mode[data-mode="${id}"]`),off=!!gate?.disabled,why=off?String(gate.title||'').replace(/^Unavailable:\s*/,''):'';
   return `<button type="button" role="radio" class="home-mode" data-home-mode="${id}" aria-checked="${id===cur()}" tabindex="${id===cur()?0:-1}"${off?' disabled':''}><b>${esc(label)}</b><span>${esc(off&&why?'Not available: '+why:hint)}</span></button>`}).join('');
 }
@@ -214,7 +211,7 @@ function paintRecent(box,data){
 }
 const recentUrl='/api/runs?threads=1&limit=30';  // enough to fill six rows after folding an hourly automation
 async function loadNeeds(){
- const [d,p,imp,hub]=await Promise.allSettled([root.LocalAIUI.fetchJson('/api/runs?limit=120',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/approvals',{cache:'no-store'}),devOn()?root.LocalAIUI.fetchJson('/api/improve/items',{cache:'no-store'}):Promise.resolve({items:[]}),root.LocalAIUI.fetchJson('/api/home/hub-needs',{cache:'no-store'})]);
+ const [d,p,imp,hub]=await Promise.allSettled([root.LocalAIUI.fetchJson('/api/runs?limit=120',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/approvals',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/improve/items',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/home/hub-needs',{cache:'no-store'})]);
  hubItems=hub.status==='fulfilled'?hub.value.items:null;  // Pi Hub not answering: only Local AI's own rows
  if(imp.status==='fulfilled'){const day=Date.now()-864e5;newSignals=(imp.value.items||[]).filter(i=>i.source==='signal'&&i.status==='proposed'&&i.stage==='backlog'&&Date.parse(i.createdAt)>day).length}
  const runs=d.status==='fulfilled'?d.value.items||[]:null;
@@ -288,7 +285,7 @@ async function dispatch(intent,text,route,question=text){
 }
 let autoWait=null;
 function waitAuto(ms){return new Promise(res=>{const t=setTimeout(()=>{autoWait=null;res(true)},ms);autoWait={cancel:()=>{clearTimeout(t);autoWait=null;res(false)}}})}
-// A mission (or, with developer tools off, a chat) asking to change Local AI itself: offer Claude Code first, once.
+// A mission asking to change Local AI itself: offer Claude Code first, once.
 // Either answer is one tap; the text stays in the box until it is handed over or sent.
 function offerClaude(text,intent){
  const SC=root.LocalAISelfChange,box=$('homeSelfChange');if(!SC||!box)return false;
@@ -302,7 +299,7 @@ async function send(text,m=cur(),{anyway=false}={}){
  try{
   let intent=m,route=null;
   if(m==='auto'){
-   route=await root.LocalAILegacy.resolveIntentRequest(text,'auto');intent=route.intent||'ask';if(!allowed(intent))intent='ask'; // Auto never starts a change with developer tools off: Chat answers instead
+   route=await root.LocalAILegacy.resolveIntentRequest(text,'auto');intent=route.intent||'ask';
    paintChip('→ '+(LABEL[intent]||intent));clearTimeout(flash);flash=setTimeout(()=>paintChip(),1500);
    // A tap on the chip within the window changes the mode instead: nothing starts and the text stays.
    if(!await waitAuto(1500)){setMode(LABEL[intent]?intent:'ask');openSheet();return}
@@ -350,7 +347,7 @@ function typing(on){document.body.classList.toggle('home-typing',on);dockToNav()
 function init(){
  if(!$('homeComposer'))return;
  paintChip();greet();
- new MutationObserver(()=>{paintChip();if(stale&&!document.body.classList.contains('run-view-open'))paintNeeds()}).observe(document.body,{attributes:true,attributeFilter:['class']}); // developer tools toggled; a run view closed
+ new MutationObserver(()=>{paintChip();if(stale&&!document.body.classList.contains('run-view-open'))paintNeeds()}).observe(document.body,{attributes:true,attributeFilter:['class']}); // a run view closed
  $('homeModeChip').addEventListener('click',()=>autoWait?autoWait.cancel():openSheet());
  $('commandGo').addEventListener('click',()=>send($('commandInput').value));
  $('homeContextClear')?.addEventListener('click',()=>{dropContext();$('commandInput')?.focus()});
