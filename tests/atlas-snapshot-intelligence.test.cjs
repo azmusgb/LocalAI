@@ -204,3 +204,23 @@ for c in ${JSON.stringify(commits)}:
 print(json.dumps(sorted(p.name for p in (pathlib.Path(${JSON.stringify(f.trees)}) / 'pi-hub').iterdir())))`);
   assert.deepEqual(out, commits.slice(1).sort());
 });
+
+test('a scoped GET needs the app token, because its first call writes a clean copy', { skip: !PY }, () => {
+  const out = py(`
+import os, threading, urllib.request, urllib.error
+m.ATLAS_TOKEN = 'secret-for-test'
+srv = m.ThreadingHTTPServer(('127.0.0.1', 0), m.AtlasHandler)
+srv.atlas_state = m.AtlasState(m.ATLAS_HTML, snapshots=pathlib.Path(${JSON.stringify(fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-none-')))}))
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+base = f'http://127.0.0.1:{srv.server_address[1]}'
+def call(p, headers=None):
+    try:
+        with urllib.request.urlopen(urllib.request.Request(base + p, headers=headers or {}), timeout=5) as r: return r.status
+    except urllib.error.HTTPError as e: return e.code
+q = '/api/atlas/summary?repo=pi-hub&commit=' + 'a' * 40
+res = {'noToken': call(q), 'wrongToken': call(q, {'X-Atlas-Token': 'nope'}),
+       'token': call(q, {'X-Atlas-Token': 'secret-for-test'})}
+srv.shutdown()
+print(json.dumps(res))`);
+  assert.deepEqual(out, { noToken: 401, wrongToken: 401, token: 404 });
+});

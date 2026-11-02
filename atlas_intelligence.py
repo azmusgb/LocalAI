@@ -3004,6 +3004,9 @@ class AtlasHandler(
         if repo or commit:
             if not (repo and commit):
                 raise AtlasError("Give both repo and commit, or neither.", code="atlas_snapshot_query")
+            # A snapshot's first question writes a clean copy of its commit, so even a GET needs the app's token.
+            if ATLAS_TOKEN and not hmac.compare_digest(self.headers.get("X-Atlas-Token", ""), ATLAS_TOKEN):
+                raise AtlasError("Missing or wrong Atlas token.", status=HTTPStatus.UNAUTHORIZED, code="unauthorized")
             return self.atlas_state.for_snapshot(repo, commit)
         _, graph, findings = self.atlas_state.snapshot()
         return graph, findings, ROOT, None
