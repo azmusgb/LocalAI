@@ -534,7 +534,7 @@ function imageEditPayload(){if(!imageUi.edit)return {};const {w,h,marked}=imageU
   return out}
 (()=>{const c=$('imageMaskCanvas');let drawing=false,lastPt=null;
   const pt=e=>{const r=c.getBoundingClientRect();return [(e.clientX-r.left)*c.width/r.width,(e.clientY-r.top)*c.height/r.height]};
-  const paint=p=>{const ctx=c.getContext('2d'),size=Number($('imageBrush').value)*c.width/Math.max(1,c.getBoundingClientRect().width);ctx.strokeStyle=ctx.fillStyle='rgba(92,184,255,.55)';ctx.lineWidth=size;ctx.lineCap='round';ctx.globalCompositeOperation='source-over';
+  const paint=p=>{const ctx=c.getContext('2d'),size=Number($('imageBrush').value)*c.width/Math.max(1,c.getBoundingClientRect().width);ctx.strokeStyle=ctx.fillStyle='rgba(63,193,201,.55)';ctx.lineWidth=size;ctx.lineCap='round';ctx.globalCompositeOperation='source-over';
     ctx.beginPath();if(lastPt){ctx.moveTo(...lastPt);ctx.lineTo(...p);ctx.stroke()}else{ctx.arc(p[0],p[1],size/2,0,Math.PI*2);ctx.fill()}lastPt=p;if(imageUi.edit&&!imageUi.edit.marked){imageUi.edit.marked=true;$('imageEditHint').textContent='Only the painted area will change. Keep painting, or Clear marks to redraw everything.'}};
   c.addEventListener('pointerdown',e=>{if(!imageUi.edit)return;drawing=true;lastPt=null;c.setPointerCapture(e.pointerId);paint(pt(e));e.preventDefault()});
   c.addEventListener('pointermove',e=>{if(drawing)paint(pt(e))});

@@ -47,13 +47,13 @@ const origin = new URL(base).origin;
 const requested = [];
 foundation.on('request', r => requested.push(r.url()));
 await foundation.goto(base, { waitUntil: 'networkidle' });
-await check('font is Figtree from /fonts and no cross-origin requests', async () => {
+await check('font is Archivo from /fonts and no cross-origin requests', async () => {
   const foreign = requested.filter(u => /^https?:/.test(u) && new URL(u).origin !== origin);
   assert.deepEqual(foreign, []);
-  assert.ok(await foundation.evaluate(async () => { await document.fonts.load('16px Figtree'); return document.fonts.check('16px Figtree') }), 'Figtree not loaded');
-  assert.ok(requested.some(u => u.includes('/fonts/figtree-latin-wght-normal.woff2')), 'font not fetched from /fonts');
+  assert.ok(await foundation.evaluate(async () => { await document.fonts.load('16px Archivo'); return document.fonts.check('16px Archivo') }), 'Archivo not loaded');
+  assert.ok(requested.some(u => u.includes('/fonts/archivo-latin-ui.woff2')), 'font not fetched from /fonts');
   const family = await foundation.evaluate(() => getComputedStyle(document.body).fontFamily);
-  assert.match(family, /^"?Figtree/);
+  assert.match(family, /^"?Archivo/);
 });
 await check('icon sprite has every named symbol', async () => {
   const names = 'home workspace automate build system search bell chevron-down chevron-right send globe compose refresh image plus check x'.split(' ');

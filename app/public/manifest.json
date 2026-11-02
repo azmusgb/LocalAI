@@ -3,8 +3,8 @@
   "short_name": "Local AI",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0b1118",
-  "theme_color": "#0b1118",
+  "background_color": "#1a1d1c",
+  "theme_color": "#1a1d1c",
   "description": "Private local AI workspace",
   "icons": [
     {
