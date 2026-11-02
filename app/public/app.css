@@ -3344,6 +3344,7 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 .dep-now__line{margin:0;font-size:var(--ds-fs-2)}
 .dep-now__line code{font-size:var(--ds-fs-2)}
 .dep-now__note{margin:0;color:var(--ds-muted);font-size:var(--ds-fs-1)}
+.dep-now__note a{text-decoration:underline;text-underline-offset:2px} /* a link in running text needs more than colour (axe link-in-text-block) */
 .dep-now[data-evidence="stale"] .dep-now__line,.dep-now[data-evidence="unavailable"] .dep-now__line{color:var(--ds-muted)}
 /* Settings › Show diagnostic details (first-run.js). Off sets body.diagnostics-off. */
 body.diagnostics-off [data-diagnostic]{display:none!important}

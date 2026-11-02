@@ -36,26 +36,29 @@ if(typeof module==='object'&&module.exports){module.exports={sha,records,gates,M
 // Improve › Shipped › Running now (Deployments merged into Shipped, 2 Nov): the revision the appliance reports, how fresh
 // that report is, and plainly what is not connected. It refreshes while Shipped is open and goes stale after MAX_AGE_MS.
 const host=document.getElementById('shipped');if(!host)return;
+// Platform step 4: what is live on every part of the platform (this appliance included) is Pi Hub's System › Versions,
+// written by each part's own deploy. This card keeps only what the appliance itself reports, and links there.
+const versionsUrl=host=>(String(host).endsWith('.rahe-home.duckdns.org')?'https://hub.rahe-home.duckdns.org/':'http://10.0.0.30/')+'versions';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const state={health:null,observedAt:null,active:false,request:null,timer:null,expired:false,error:''};
 let card=null;
 function mount(){
  if(card)return card;
  card=document.createElement('section');card.id='shippedNow';card.className='card dep-now';card.setAttribute('aria-labelledby','shippedNowTitle');
- card.innerHTML='<div class="dep-now__head"><h2 id="shippedNowTitle">Running now</h2><button type="button" class="btn-outline" data-dep-refresh>Refresh</button></div><p class="dep-now__line" data-dep-line aria-live="polite"></p><p class="dep-now__note" data-dep-gates></p><p class="dep-now__note" data-dep-others></p>';
+ card.innerHTML='<div class="dep-now__head"><h2 id="shippedNowTitle">Running now</h2><button type="button" class="btn-outline" data-dep-refresh>Refresh</button></div><p class="dep-now__line" data-dep-line aria-live="polite"></p><p class="dep-now__note" data-dep-gates></p><p class="dep-now__note" data-dep-others>Deploys of every part, this one included, are on <a data-dep-versions target="_blank" rel="noopener">Pi Hub › Versions</a>.</p>';
  const list=document.getElementById('shippedList');if(list)list.before(card);else host.appendChild(card); // just above the releases, under What's new
+ card.querySelector('[data-dep-versions]').href=versionsUrl(location.hostname);
  card.querySelector('[data-dep-refresh]').addEventListener('click',()=>void refresh());
  return card;
 }
 function render(){
- const c=mount(),[local,...others]=records(state.health,state.observedAt),deployed=gates(local).find(g=>g[0]==='Deployed');
+ const c=mount(),[local]=records(state.health,state.observedAt),deployed=gates(local).find(g=>g[0]==='Deployed');
  c.dataset.evidence=local.evidence;
  const when=Number.isFinite(local.observedAt)?new Date(local.observedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
  c.querySelector('[data-dep-line]').innerHTML=local.deployedSha
   ?`Local AI <code title="${escape(local.deployedSha)}">${escape(local.deployedSha.slice(0,7))}</code>, reported by the appliance${when?' at '+escape(when):''}.${local.evidence==='stale'?' This report is old: refresh it.':''}`
   :escape(state.request?'Checking what the appliance runs…':state.error||'The appliance has not reported a revision.');
- c.querySelector('[data-dep-gates]').textContent=deployed[1]==='reported'?'A reported revision is not proof of CI, the artifact or runtime checks; those are not connected yet.':'No current report: CI, artifact and runtime checks are not connected either.';
- c.querySelector('[data-dep-others]').textContent='No deployment feed yet for '+others.map(r=>r.name).join(', ')+'.';
+ c.querySelector('[data-dep-gates]').textContent=deployed[1]==='reported'?'This is the revision the appliance reports. Its deploy record (certified, promoted, rolled back) is on Versions.':'No current report from the appliance. Its last deploy is on Versions.';
  c.querySelector('[data-dep-refresh]').disabled=!!state.request;
 }
 async function refresh(){
