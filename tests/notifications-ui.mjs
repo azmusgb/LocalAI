@@ -46,8 +46,8 @@ async function openHealth(opts, devices = []) {
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
   const calls = await fakeApi(page, devices);
   await page.goto(base, { waitUntil: 'networkidle' });
-  await page.evaluate(() => window.showView('status'));
-  await page.waitForSelector('#notifications .notify-body *');
+  await page.evaluate(() => window.showView('settings'));
+  await page.waitForSelector('#settings.active #notifications .notify-body *');
   return { page, calls, errors, context };
 }
 

@@ -155,7 +155,7 @@ Every API request is checked for a paired device's cookie or the Mac key, except
 from loopback or the Docker network's gateway (the Windows host's requests arrive through the published port from the
 gateway; `LOCALAI_HOST_ADDRESSES` overrides it). Other containers on the network (n8n, SearXNG, the Ollama proxy) are
 checked like any caller, so a workflow can't use the guarded routes unsigned (`app/signin.js`; design: `docs/superpowers/specs/2026-10-18-sign-in-design.md`). A request without either
-is counted by caller (IP address, device type, last route), and **Health › Sign-in** lists them.
+is counted by caller (IP address, device type, last route), and **Settings › Sign-in** lists them.
 
 Most routes are still only reported. The routes that run code, write or list the workspace, fetch arbitrary URLs from
 the container, stage or approve changes, decide approvals, or post and clear alerts are **refused** with

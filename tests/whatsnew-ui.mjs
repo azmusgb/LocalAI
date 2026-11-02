@@ -24,8 +24,8 @@ await check('first visit: no update notice, version remembered', async () => {
   assert.equal(await page.evaluate(() => localStorage.getItem('localai.seenVersion')), '2.0.204');
 });
 await check('What\'s new lists releases, their changes and PR links', async () => {
-  await page.evaluate(() => window.showView('status'));
-  await page.waitForSelector('#whatsNew .whatsnew-release');
+  await page.evaluate(() => window.showView('shipped'));
+  await page.waitForSelector('#shipped.active #whatsNew .whatsnew-release');
   assert.match(await page.locator('#whatsNew').innerText(), /Version 2\.0\.204/);
   assert.deepEqual(await page.locator('#whatsNew .whatsnew-release[open] li').allInnerTexts(), ['Inbox: quieter badge #92', 'No PR here']);
   assert.equal(await page.locator('#whatsNew a[href$="/pull/92"]').count(), 1);
@@ -37,7 +37,7 @@ await check('after an update: one notice that opens What\'s new, not repeated', 
   await page.waitForSelector('#toast.whatsnew-toast.show');
   assert.match(await page.locator('#toast').innerText(), /Updated to 2\.0\.210/);
   await page.click('.whatsnew-open');
-  await page.waitForSelector('#status.active');
+  await page.waitForSelector('#shipped.active');
   await page.reload({ waitUntil: 'networkidle' });
   await page.waitForTimeout(400);
   assert.equal(await page.locator('#toast.whatsnew-toast.show').count(), 0);
@@ -58,7 +58,7 @@ await check('opening What\'s new from the notice also clears it', async () => {
   await page.reload({ waitUntil: 'networkidle' });
   await page.waitForSelector('#toast.whatsnew-toast.show');
   await page.click('.whatsnew-open');
-  await page.waitForSelector('#status.active');
+  await page.waitForSelector('#shipped.active');
   assert.equal(await page.locator('#toast button').count(), 0);
 });
 await check('no script errors', async () => assert.deepEqual(errors, []));

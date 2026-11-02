@@ -49,6 +49,8 @@ const VIEWS=[
  {id:'workbench',svg:'folder',domain:'system',section:'Tools',dev:true,advanced:true,label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
  {id:'repoTools',svg:'branch',domain:'system',section:'Tools',dev:true,advanced:true,label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},
  {id:'powershell',svg:'terminal',domain:'system',section:'Tools',dev:true,advanced:true,label:'PowerShell',description:'Approval-gated scripts on the Windows host.',aka:['powershell workbench']},
+ // Settings left Health (navigation update, 2 Nov): Health is only whether things work.
+ {id:'settings',svg:'settings',domain:'system',section:'Settings',label:'Settings',description:'Notifications, sign-in, home location and developer tools.',aka:['preferences','notifications','home location','sign-in','developer tools']},
  {id:'activity',svg:'history',domain:'system',section:'History',label:'Audit log',description:'What happened on the appliance, and when.',aka:['activity']},
  {id:'runs',svg:'work',domain:'hidden',section:'History',label:'Runs',description:'Every run, live, with cancel and retry.'}
 ];

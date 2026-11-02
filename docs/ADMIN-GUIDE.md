@@ -90,7 +90,7 @@ to restore: [Operations › Backups](OPERATIONS.md#backups) and [Restore](OPERAT
    on the home Wi-Fi only; away from home its saved copy checks the Tailscale address and, if it answers, switches
    there after 2 s (**Cancel** stays put, then it offers **Open over Tailscale**). **Health › Secure connection** lists
    both addresses.
-3. Notifications: from the Home Screen app, **System › Health › Notifications › Allow notifications**. Notifications
+3. Notifications: from the Home Screen app, **System › Settings › Notifications › Allow notifications**. Notifications
    belong to the icon they were allowed from, so allow them again after switching icons.
 
 HTTPS and the certificate: [Deploy › HTTPS with Caddy](DEPLOY.md#https-with-caddy).

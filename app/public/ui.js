@@ -4083,10 +4083,10 @@ async function initDevTools(){
  applyDevTools(!!(await loadConfig()).developerHistory);
 }
 function mountDevToolsToggle(){
- const status=q('#status');if(!status||q('.dev-tools-pref',status))return;
+ const status=q('#settings');if(!status||q('.dev-tools-pref',status))return;
  const row=document.createElement('label');row.className='dev-tools-pref card';
  row.innerHTML='<input type="checkbox" data-dev-tools-toggle><span><strong>Show developer tools</strong><small>Adds the developer tools: Files, Repository, PowerShell, Browser &amp; computer, n8n workflows.</small></span>';
- status.appendChild(row); // a setting, so it follows the health results
+ status.appendChild(row);
  row.querySelector('input').addEventListener('change',e=>{pref.set(DEV_KEY,e.target.checked?'1':'0');applyDevTools(e.target.checked,true)});
  row.querySelector('input').checked=!document.body.classList.contains('dev-tools-off');
 }
@@ -4150,10 +4150,10 @@ async function mountFirstRun(){
 }
 // Home location: where "what's the weather" is answered when Siri sends no location (Shortcuts asks on the phone).
 async function mountHomeLocation(){
- const status=q('#status');if(!status||q('.voice-home-pref',status))return;
+ const status=q('#settings');if(!status||q('.voice-home-pref',status))return;
  const row=document.createElement('div');row.className='voice-home-pref card';
  row.innerHTML='<span><strong data-voice-home-label>Home location</strong><small data-voice-home-note>Used for spoken weather when your phone does not share where it is.</small></span><button type="button" class="btn-outline">Change…</button>';
- (q('.dev-tools-pref',status)||status).after(row);
+ status.appendChild(row);
  const label=q('[data-voice-home-label]',row),note=q('[data-voice-home-note]',row);
  const show=h=>{label.textContent='Home location: '+(h&&h.place?h.place:'Not set')};
  show(await getJson('/api/voice/home').catch(()=>({})));
@@ -4255,7 +4255,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 // ==== whats-new.js ====
-// Health › What's new: the running version and the merged changes in each recent release (from /api/releases),
+// Shipped › What's new: the running version and the merged changes in each recent release (from /api/releases),
 // plus a one-time notice after an update. The deploy records release notes (deploy/Deployment-LocalAI.ps1).
 (()=>{'use strict';
 const q=(s,r=document)=>r.querySelector(s);
@@ -4272,9 +4272,9 @@ function render(card){
  card.innerHTML=`<div class="section-head"><div><h2>What's new</h2><p>Version <b>${esc(current.version)}</b>${current.deployedAt?` · updated ${esc(when(current.deployedAt))}`:''}${current.commit?` · <code>${esc(current.commit.slice(0,10))}</code>`:''}</p></div></div>
  ${list.length?`<div class="whatsnew-list">${list.map((r,i)=>`<details class="whatsnew-release"${i===0?' open':''}><summary><b>${esc(r.version)}</b><span>${esc(when(r.deployedAt))} · ${r.notes?.length||0} change${r.notes?.length===1?'':'s'}</span></summary>${r.notes?.length?`<ul>${r.notes.map(note).join('')}</ul>`:'<p class="meta">No change list was recorded for this release.</p>'}</details>`).join('')}</div>`:'<p class="meta">Release notes appear here after the next update.</p>'}`;
 }
-function mount(){const status=q('#status');if(!status||q('.whatsnew-card',status))return;const card=document.createElement('section');card.className='card whatsnew-card';card.id='whatsNew';
- // After the health results (the services card), like the Secure connection card: what's running comes first.
- (q('#serviceList',status)?.closest('.card')||q('.dev-tools-pref',status)||q('.topbar',status))?.after(card);render(card)}
+function mount(){const shipped=q('#shipped');if(!shipped||q('.whatsnew-card',shipped))return;const card=document.createElement('section');card.className='card whatsnew-card';card.id='whatsNew';
+ // Shipped lists what changed: each release's notes first, then the changes that came through Improve.
+ q('.topbar',shipped)?.after(card);render(card)}
 // After an update, say so once, and let the notice open What's new.
 function announce(){
  const v=data?.current?.version,seen=pref.get();if(!v)return;pref.set(v);
@@ -4283,7 +4283,7 @@ function announce(){
  const box=document.createElement('span');box.className='whatsnew-toast__body';
  box.innerHTML=`<span>Updated to ${esc(v)}.</span> <button type="button" class="whatsnew-open">See what's new</button><button type="button" class="whatsnew-dismiss" aria-label="Dismiss">×</button>`;
  const UI=window.LocalAIUI,t=UI?.toast?UI.toast(box,{ms:0}):null;if(!t)return;t.classList.add('whatsnew-toast');
- box.querySelector('.whatsnew-open').onclick=()=>{UI.hideToast();window.LocalAIRouter?.open('status');setTimeout(()=>q('#whatsNew')?.scrollIntoView({block:'start'}),100)};
+ box.querySelector('.whatsnew-open').onclick=()=>{UI.hideToast();window.LocalAIRouter?.open('shipped');setTimeout(()=>q('#whatsNew')?.scrollIntoView({block:'start'}),100)};
  box.querySelector('.whatsnew-dismiss').onclick=()=>UI.hideToast();
 }
 async function start(){await load();mount();announce()}
@@ -4291,7 +4291,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 // ==== notifications.js ====
-// Health › Notifications: turns phone notifications on for this device and sets what it gets (Web Push;
+// Settings › Notifications: turns phone notifications on for this device and sets what it gets (Web Push;
 // app/push.js sends, app/notify.js decides). On iPhone, Apple allows push only from the Home Screen app, over HTTPS
 // with the Local AI certificate trusted.
 (()=>{'use strict';
@@ -4338,7 +4338,7 @@ async function render(card){
 }
 async function allow(card){
  const perm=await Notification.requestPermission();
- if(perm!=='granted'){status(card,'Notifications are blocked. Allow them for Local AI in Settings › Notifications, then try again.');return}
+ if(perm!=='granted'){status(card,'Notifications are blocked. Allow them for Local AI in the phone or browser notification settings, then try again.');return}
  const reg=await workerReady();
  const old=await reg.pushManager.getSubscription();if(old)await old.unsubscribe().catch(()=>{});
  const {publicKey}=await (await fetch('/api/push/key',{cache:'no-store'})).json();
@@ -4348,11 +4348,11 @@ async function allow(card){
 }
 async function save(card,patch){if(!me)return;const {device}=await post('/api/push/devices/update',{id:me.id,...patch});me=device;status(card,'Saved.')}
 function mount(){
- const host=q('#status');if(!host||q('.notify-card',host))return;
+ const host=q('#settings');if(!host||q('.notify-card',host))return;
  const card=document.createElement('section');card.className='card notify-card';card.id='notifications';
  card.innerHTML='<h2>Notifications</h2><div class="notify-body"></div><p class="notify-status meta" role="status"></p>';
- // Below the Appliance summary, so health comes first and the notifications offer second.
- (q(':scope > .two',host)||q('.secure-card',host)||q('.topbar',host))?.after(card);
+ // First on Settings: how Local AI reaches you.
+ q('.topbar',host)?.after(card);
  card.addEventListener('click',async e=>{
   const rename=e.target.closest('[data-notify-rename]');
   if(rename){const li=rename.closest('li'),b=q('b',li);li.querySelector('.notify-device-actions').innerHTML=`<input class="notify-rename" maxlength="40" value="${esc(b.textContent)}" aria-label="Device name"><button type="button" class="btn-primary" data-notify-rename-save="${esc(rename.dataset.notifyRename)}">Save</button>`;q('.notify-rename',li).focus();return}

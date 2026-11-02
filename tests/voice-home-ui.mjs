@@ -23,8 +23,8 @@ await page.route('**/api/voice/home', route => {
 });
 await page.goto(base, { waitUntil: 'load' });
 await page.waitForFunction(() => typeof window.showView === 'function');
-await page.evaluate(() => window.showView('status'));
-await page.waitForSelector('#status.active .voice-home-pref');
+await page.evaluate(() => window.showView('settings'));
+await page.waitForSelector('#settings.active .voice-home-pref');
 
 await check('an unset home location says so', async () => {
   await page.waitForFunction(() => /Home location: Not set/.test(document.querySelector('.voice-home-pref')?.textContent || ''));
