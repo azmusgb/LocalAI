@@ -350,6 +350,36 @@ await check('phone 390: the System, Projects and Improve strips have every tab o
   }
   await ctx.close();
 });
+// Owner, 2 Nov: diagnostic details are a preference (Settings › Show diagnostic details), on by default, kept per browser.
+await check('Settings: Show diagnostic details is on by default; off hides Health and Agent World diagnostics and survives a reload', async () => {
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 1000 } });
+  await ctx.addInitScript(() => { localStorage.setItem('localai.firstRun.done', '1'); });
+  const pg = await ctx.newPage();
+  const errs = []; pg.on('pageerror', e => errs.push(e.message));
+  await pg.goto(base + '/#settings', { waitUntil: 'domcontentloaded' });
+  await pg.waitForSelector('#settings.active .diag-pref');
+  const box = pg.locator('#settings [data-diagnostics-toggle]');
+  assert.equal(await box.isChecked(), true, 'on by default');
+  await pg.goto(base + '/#status', { waitUntil: 'domcontentloaded' });
+  await pg.waitForSelector('#status.active');
+  assert.equal(await pg.locator('#status details[data-diagnostic]').isVisible(), true, 'Advanced service details shown');
+  await pg.goto(base + '/#settings', { waitUntil: 'domcontentloaded' });
+  await pg.waitForSelector('#settings.active .diag-pref');
+  await pg.locator('#settings .diag-pref').click();
+  assert.equal(await box.isChecked(), false);
+  assert.equal(await pg.evaluate(() => [document.body.classList.contains('diagnostics-off'), localStorage.getItem('localai.diagnostics')].join()), 'true,0');
+  await pg.reload({ waitUntil: 'domcontentloaded' });
+  await pg.waitForSelector('#settings.active .diag-pref');
+  assert.equal(await pg.locator('#settings [data-diagnostics-toggle]').isChecked(), false, 'kept after reload');
+  await pg.goto(base + '/#status', { waitUntil: 'domcontentloaded' });
+  await pg.waitForSelector('#status.active');
+  assert.equal(await pg.locator('#status details[data-diagnostic]').isVisible(), false, 'Advanced service details hidden');
+  assert.equal(await pg.locator('#serviceList').isVisible(), true, 'services still shown');
+  assert.equal(await pg.locator('.aw-start__dev').evaluate(el => getComputedStyle(el).display), 'none', 'Agent World Advanced hidden');
+  assert.equal(await pg.locator('[data-aw-menu="demo"]').evaluate(el => getComputedStyle(el).display), 'none', 'demo hidden');
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});
 await browser.close();
 
 if (failures.length) {
