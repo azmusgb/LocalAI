@@ -3,7 +3,7 @@
 (function(root){'use strict';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const MODES=[['auto','Auto','Picks for you'],['ask','Chat','Ask a question'],['research','Research','Search the web first'],['create','Image','Make pictures'],['mission','Mission','Give the team a goal'],['automate','Automate','Set up a task'],['engineering','Change Local AI','Always asks you first']];
+const MODES=[['auto','Auto','Picks for you'],['ask','Chat','Ask a question'],['research','Research','Search the web first'],['create','Image','Make pictures'],['spreadsheet','Spreadsheet','Ask about the open workbook'],['mission','Mission','Give the team a goal'],['automate','Automate','Set up a task'],['engineering','Change Local AI','Always asks you first']];
 const LABEL=Object.fromEntries(MODES.map(m=>[m[0],m[1]]));
 const MODE_KEY='localai.home.mode',OPT_KEY='localai.home.options';
 const store={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}}};
@@ -280,6 +280,8 @@ async function dispatch(intent,text,route,question=text){
   openRun({id:'legacy-engineering:'+data.run.id});clearInput();
  }else if(intent==='ask'||intent==='research')await viaStarter('LocalAIChat',intent,text,{research:intent==='research',model:options.model,bigger:flag('homeBigger'),keepLocal:flag('homeKeepLocal')},question);
  else if(intent==='create')await viaStarter('LocalAIImages','create',text,{engine:options.engine,aspect:options.aspect,style:options.style},question);
+ // Spreadsheet (a Work kind, 2 Nov): the request runs on the Spreadsheets page, where the workbook and Keep / Discard are.
+ else if(intent==='spreadsheet'){if(!root.LocalAISheets)throw new Error('Spreadsheets is not available right now.');root.LocalAIRouter.open('spreadsheets');root.LocalAISheets.ask(text);clearInput()}
  else if(intent==='mission')await viaStarter('LocalAIMissions','mission',text,{agentIds:options.agentIds?.length?options.agentIds:undefined,webSearch:options.missionWeb===true},question);else if(intent==='automate'){L.open('automate',text);clearInput()}
  else throw new Error('Choose a mode and try again.');
 }
@@ -347,6 +349,7 @@ function typing(on){document.body.classList.toggle('home-typing',on);dockToNav()
 function init(){
  if(!$('homeComposer'))return;
  paintChip();greet();
+ {const lab=$('homeHubLab');if(lab)lab.href=resolve('hub:lab')} // Pi Hub's own print lab (2 Nov, D4), at Pi Hub's address for this name
  new MutationObserver(()=>{paintChip();if(stale&&!document.body.classList.contains('run-view-open'))paintNeeds()}).observe(document.body,{attributes:true,attributeFilter:['class']}); // a run view closed
  $('homeModeChip').addEventListener('click',()=>autoWait?autoWait.cancel():openSheet());
  $('commandGo').addEventListener('click',()=>send($('commandInput').value));

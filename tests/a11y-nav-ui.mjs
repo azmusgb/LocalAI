@@ -50,9 +50,9 @@ await check('the page strip is one navigation landmark, each page one Tab stop, 
   const strip = page.locator('nav#uxPageStrip[aria-label="Pages in this section"]');
   assert.equal(await strip.count(), 1);
   const buttons = strip.locator('button');
-  assert.deepEqual(await buttons.allInnerTexts(), ['Projects', 'Sources', 'Memory', 'Library', 'Spreadsheets', 'Print lab']);
-  assert.deepEqual(await buttons.evaluateAll(bs => bs.map(b => b.tabIndex)), [0, 0, 0, 0, 0, 0]);
-  assert.deepEqual(await buttons.evaluateAll(bs => bs.map(b => b.getAttribute('aria-current'))), ['page', null, null, null, null, null]);
+  assert.deepEqual(await buttons.allInnerTexts(), ['Projects', 'Sources', 'Memory', 'Library']);
+  assert.deepEqual(await buttons.evaluateAll(bs => bs.map(b => b.tabIndex)), [0, 0, 0, 0]);
+  assert.deepEqual(await buttons.evaluateAll(bs => bs.map(b => b.getAttribute('aria-current'))), ['page', null, null, null]);
   await buttons.nth(1).focus(); await page.keyboard.press('Enter');
   await page.waitForSelector('#knowledge.active');
   assert.equal(await strip.locator('[aria-current="page"]').innerText(), 'Sources');

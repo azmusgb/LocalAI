@@ -111,9 +111,9 @@ test('legacy mission and specialist runs are agent cards', () => {
 test('workKind maps a run to its Work chip, older mission and specialist runs to missions', () => {
   const { workKind, WORK_CHIPS } = require('../app/run-cards');
   const k = type => workKind({ type });
-  assert.deepEqual(['chat', 'research', 'image', 'agent', 'mission', 'specialist', 'engineering', 'automation', 'odd', undefined].map(k),
-    ['chats', 'chats', 'images', 'missions', 'missions', 'missions', 'changes', 'other', 'other', 'other']);
-  assert.deepEqual([...WORK_CHIPS], ['chats', 'images', 'missions', 'changes', 'other']);
+  assert.deepEqual(['chat', 'research', 'image', 'agent', 'mission', 'specialist', 'spreadsheet', 'engineering', 'automation', 'odd', undefined].map(k),
+    ['chats', 'chats', 'images', 'missions', 'missions', 'missions', 'sheets', 'changes', 'other', 'other', 'other']);
+  assert.deepEqual([...WORK_CHIPS], ['chats', 'images', 'missions', 'sheets', 'changes', 'other']);  // Spreadsheets became a Work kind (2 Nov, D4)
 });
 
 test('a finished engineering run with no files has no preview line; only a running one is "being prepared"', () => {

@@ -852,9 +852,9 @@ async function cancelPowerShellJob(id){try{await powerShellPost('/api/powershell
 function commandPalette(){
   const el=$('cmdk');if(!el)return;
   const input=$('cmdkInput'),list=$('cmdkList'),R=window.LocalAIViews;
-  // Labels and old names (aka) come from view-registry.js so renamed pages stay findable. Only pages with a menu
-  // entry are offered: a hidden one (Chat, Images, Missions, Runs) is reached from the page that owns it.
-  const actions=window.LocalAIViews.VIEWS.filter(v=>v.domain!=='hidden')
+  // Labels and old names (aka) come from view-registry.js so renamed pages stay findable. Pages with a menu entry are
+  // offered, and unlisted ones with an `owner` (Spreadsheets, Print lab); Chat, Images, Missions and Runs are not.
+  const actions=window.LocalAIViews.VIEWS.filter(v=>v.domain!=='hidden'||v.owner)
     .map(v=>({label:v.label,id:v.id,terms:[v.label,...(v.aka||[])].join(' ').toLowerCase()}));
   let shown=[],active=0,opener=null;
   input.setAttribute('role','combobox');input.setAttribute('aria-controls','cmdkList');input.setAttribute('aria-expanded','false');

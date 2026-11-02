@@ -2,9 +2,9 @@
 // run-cards.js), so an older mission is reachable however many chats came since; search works on the loaded rows.
 // Show more pages by `before` within the kind; the list refreshes itself while something runs and a row updates in place.
 (function(root){'use strict';
-const $=id=>document.getElementById(id),PAGE=60,KEY='localai.work.kind',KINDS=['all','needs','chats','images','missions','changes','other'];
+const $=id=>document.getElementById(id),PAGE=60,KEY='localai.work.kind',KINDS=['all','needs','chats','images','missions','sheets','changes','other'];
 const GROUPS=['Today','Yesterday','Earlier this week','Older'],LIVE=new Set(['queued','running','streaming']);
-const key=it=>it.threadId||it.id,NONE={needs:'Nothing needs you.',chats:'No chats yet.',images:'No images yet.',missions:'No missions yet.',changes:'No changes yet.',other:'Nothing else yet.'};
+const key=it=>it.threadId||it.id,NONE={needs:'Nothing needs you.',chats:'No chats yet.',images:'No images yet.',missions:'No missions yet.',sheets:'No spreadsheet requests yet.',changes:'No changes yet.',other:'Nothing else yet.'};
 // Threads sort and page by their latest run's (createdAt, id), newest first, the same key the server's `before` uses.
 const newest=(a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))||String(b.id).localeCompare(String(a.id));
 const store={get:()=>{try{return localStorage.getItem(KEY)}catch{return null}},set:v=>{try{localStorage.setItem(KEY,v)}catch{}}};

@@ -383,14 +383,14 @@ await check('desktop: the composer is at the foot of a column no wider than 960 
   await page.context().close();
 });
 
-await check('the mode chip opens a sheet with seven modes, and Image persists across a reload', async () => {
+await check('the mode chip opens a sheet with eight modes, and Image persists across a reload', async () => {
   const page = await open(desk, '#home');
   const chip = page.locator('#homeModeChip');
   assert.equal((await chip.innerText()).trim(), 'Auto ▾');
   await chip.click();
   await page.waitForSelector('#homeModeSheet[open]', T);
-  assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').evaluateAll(b => b.map(x => x.dataset.homeMode)), ['engineering', 'automate', 'mission', 'create', 'research', 'ask', 'auto'], 'the current mode (Auto) is the lowest row, nearest the thumb');
-  assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').allInnerTexts().then(a => a.map(s => s.trim().split('\n')[0])), ['Change Local AI', 'Automate', 'Mission', 'Image', 'Research', 'Chat', 'Auto']);
+  assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').evaluateAll(b => b.map(x => x.dataset.homeMode)), ['engineering', 'automate', 'mission', 'spreadsheet', 'create', 'research', 'ask', 'auto'], 'the current mode (Auto) is the lowest row, nearest the thumb');
+  assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').allInnerTexts().then(a => a.map(s => s.trim().split('\n')[0])), ['Change Local AI', 'Automate', 'Mission', 'Spreadsheet', 'Image', 'Research', 'Chat', 'Auto']);
   await page.locator('#homeModeSheet [data-home-mode="create"]').click();
   await page.waitForSelector('#homeModeSheet[open]', { state: 'detached', timeout: 1500 }).catch(() => {});
   if (await page.locator('#homeModeSheet[open]').count()) await page.locator('#homeModeSheet .home-sheet__done').click();

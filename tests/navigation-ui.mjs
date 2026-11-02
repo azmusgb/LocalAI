@@ -109,11 +109,21 @@ await check('opening a page loads its data even without a nav button click', asy
   await waitForNotifications;
 });
 
+// Spreadsheets (a Work kind) and Print lab (Pi Hub's, kept here until retired) left Projects (2 Nov, D4): each opens by
+// its address and ⌘K, lights the area that owns it, names itself in the top bar and shows no strip.
+for (const [id, domain, label] of [['spreadsheets', 'work', 'Spreadsheets'], ['printLab', 'home', 'Print lab']]) {
+  await check(`${id} opens by address, lights ${domain} and names itself`, async () => {
+    await page.evaluate(h => { location.hash = '#' + h; }, id);
+    await page.waitForSelector(`#${id}.active`, { timeout: 5000 });
+    assert.equal(await page.locator(`.ux-primary-item[data-domain="${domain}"]`).getAttribute('aria-current'), 'true');
+    assert.equal(await page.locator('#uxContextView').innerText(), label);
+    assert.equal(await page.locator('#uxPageStrip').isVisible(), false, 'no strip');
+    assert.equal(await page.locator(`#${id} h1`).innerText(), label);
+  });
+}
 for (const [parent, child, childTab, domain, area] of [
   ['projects', 'knowledge', 'Sources', 'projects', 'Projects'],
   ['projects', 'library', 'Library', 'projects', 'Projects'],
-  ['projects', 'spreadsheets', 'Spreadsheets', 'projects', 'Projects'],
-  ['projects', 'printLab', 'Print lab', 'projects', 'Projects'],
   ['work', 'automationStudio', 'Automations', 'work', 'Work'],
 ]) {
   await check(`${child} is a tab of ${parent}, in the strip`, async () => {
@@ -193,7 +203,7 @@ await check('the Projects tab lands on Projects, and Library is its Library tab 
   await page.locator('.ux-primary-item[data-domain="projects"]').click();
   await page.waitForSelector('#projects.active');
   assert.equal(await page.evaluate(() => location.hash), '#projects');
-  assert.deepEqual(await stripLabels(), ['Projects', 'Sources', 'Memory', 'Library', 'Spreadsheets', 'Print lab']);
+  assert.deepEqual(await stripLabels(), ['Projects', 'Sources', 'Memory', 'Library']);
   await page.locator('#uxPageStrip [data-strip-view="library"]').click();
   await page.waitForSelector('#library.active');
   assert.equal(await page.locator('#library h1').innerText(), 'Projects');
@@ -219,7 +229,7 @@ await check('phone: no section menu; the strip lists the pages and tabs of the a
   await mobile.evaluate(() => window.showView('projects'));
   await mobile.waitForSelector('#projects.active');
   assert.equal(await mobile.locator('#uxContextMenu, #uxMobileSheet').count(), 0, 'the ⌄ sheet is gone');
-  assert.deepEqual(await mobile.locator('#uxPageStrip button').allInnerTexts(), ['Projects', 'Sources', 'Memory', 'Library', 'Spreadsheets', 'Print lab']);
+  assert.deepEqual(await mobile.locator('#uxPageStrip button').allInnerTexts(), ['Projects', 'Sources', 'Memory', 'Library']);
   await mobile.locator('#uxPageStrip [data-strip-view="memory"]').click();
   await mobile.waitForSelector('#memory.active');
   await mobile.evaluate(() => history.back());
@@ -300,8 +310,7 @@ await check('chat threadId survives a reload and changes after New conversation'
 });
 await mobile.close();
 
-// No switch (D1): a new install sees the same System strip and Tools page as any other, on a phone too. The strip still
-// scrolls at 390 px (Audit log past the edge, with the fade); fitting it is an open decision on the 2 Nov spec.
+// No switch (D1): a new install sees the same System strip and Tools page as any other, on a phone too.
 await check('phone, a new install: System shows Tools with no switch, and every System tab is reachable', async () => {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   await ctx.addInitScript(() => { localStorage.removeItem('localai.devTools'); localStorage.setItem('localai.firstRun.done', '1'); });
@@ -317,6 +326,21 @@ await check('phone, a new install: System shows Tools with no switch, and every 
   await pg.waitForSelector('#tools.active #toolsCards .tool-card');
   assert.equal(await pg.locator('.dev-tools-pref, [data-dev-tools-toggle]').count(), 0, 'no developer-tools switch');
   assert.deepEqual(errs, []);
+  await ctx.close();
+});
+// Acceptance (2 Nov): at 390 px no page strip has a tab off-screen. The phone strip is compact (13 px, 16 px gaps; owner,
+// 2 Nov). Improve joins this list when Deployments merges into Shipped (step 4).
+await check('phone 390: the System and Projects strips have every tab on screen', async () => {
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await ctx.addInitScript(() => { localStorage.setItem('localai.firstRun.done', '1'); });
+  const pg = await ctx.newPage();
+  for (const view of ['status', 'projects']) {
+    await pg.goto(base + '/#' + view, { waitUntil: 'domcontentloaded' });
+    await pg.waitForSelector(`#${view}.active`);
+    await pg.waitForTimeout(200);
+    const off = await pg.evaluate(() => { const s = document.querySelector('#uxPageStrip').getBoundingClientRect(); return [...document.querySelectorAll('#uxPageStrip button')].filter(b => { const r = b.getBoundingClientRect(); return r.left < s.left - 1 || r.right > s.right + 1; }).map(b => b.textContent); });
+    assert.deepEqual(off, [], `${view}: tabs off-screen`);
+  }
   await ctx.close();
 });
 await browser.close();

@@ -941,7 +941,7 @@ const listed=view=>!!viewButton(view)&&!underTools(view);
 // A domain's groups with the pages a menu may list; a group left empty is dropped.
 const listedGroups=d=>d.groups.map(g=>({label:g.label,views:g.views.filter(listed)})).filter(g=>g.views.length);
 // A hidden page (chat, images, missions, runs) lights up the page that owns it.
-function domainForView(view){let id=REG.view(view)?.domain;if(id==='hidden')id=REG.view(REG.resolve(view))?.domain;return DOMAINS.find(d=>d.id===id)||DOMAINS[0]}
+function domainForView(view){const v=REG.view(view);let id=v?.domain;if(id==='hidden')id=v.owner||REG.view(REG.resolve(view))?.domain;return DOMAINS.find(d=>d.id===id)||DOMAINS[0]}
 // Tabs share their parent's nav entry and breadcrumb.
 function pageForView(view){return REG.page(view)?.id||view}
 // The menu entry a view lights: its page, or for a hidden page (Missions, Chat, Images) the page that owns it.
@@ -2108,7 +2108,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // ==== print-lab loader ====
 // Loads /model-routing.js (Models › Cloud models) the first time Models opens; the section itself is made by ui.js.
 (function(){let p=0;const L=()=>{const s=document.getElementById('models');if(p||!s||!s.classList.contains('active'))return;p=1;const e=document.createElement('script');e.src='/model-routing.js';e.onerror=()=>{p=0};document.head.append(e)};new MutationObserver(L).observe(document.querySelector('main')||document.body,{attributes:true,subtree:true,attributeFilter:['class']});L()})();
-// Loads /print-lab.js, its explainer /print-lab-guide.js, its photo viewer /print-lab-photos.js and the Record what happened form /print-lab-observe.js, the first time Projects › Print lab opens: neither is part
+// Loads /print-lab.js, its explainer /print-lab-guide.js, its photo viewer /print-lab-photos.js and the Record what happened form /print-lab-observe.js, the first time Print lab opens: neither is part
 // of the shell every page load downloads. /print-lab-evidence.js and /print-lab-refresh.js come first and they run in
 // list order (async off), because print-lab.js uses them as it renders and starts.
 (function(){const s=document.getElementById('printLab');if(!s)return;let p=0;const L=()=>{if(p||!s.classList.contains('active'))return;p=1;for(const f of ['/print-lab-evidence.js','/print-lab-refresh.js','/print-lab.js','/print-lab-guide.js','/print-lab-photos.js','/print-lab-observe.js']){const e=document.createElement('script');e.src=f;e.async=false;e.onerror=()=>{p=0};document.head.append(e)}};new MutationObserver(L).observe(s,{attributes:true,attributeFilter:['class']});L()})();

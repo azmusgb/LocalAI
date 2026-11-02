@@ -118,8 +118,8 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
   await page.goto(`${base}/#printLab`);
   await page.waitForSelector('#printLab.active .lab-redirect-card');
 
-  await check(`${name}: page title is Projects and redirect card points to Pi Hub`, async () => {
-    assert.equal(await page.locator('#printLab h1').innerText(), 'Projects');
+  await check(`${name}: page title is Print lab and redirect card points to Pi Hub`, async () => {
+    assert.equal(await page.locator('#printLab h1').innerText(), 'Print lab');
     assert.equal(await page.locator('.lab-redirect-card h2').innerText(), 'Print lab is on Pi Hub');
     assert.match(await page.locator('.lab-redirect-card p.sub').innerText(), /Testing records, verdicts, and photos now live directly on Pi Hub/);
     const link = page.locator('.lab-redirect-card a.btn-primary');

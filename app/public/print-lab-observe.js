@@ -1,4 +1,4 @@
-// Projects › Print lab: "Record what happened" (Figma board 06), the phone form for observations.
+// Print lab: "Record what happened" (Figma board 06), the phone form for observations.
 // One guided session per printed pair or strip: identify the part, then only the questions that belong to each subject
 // (the pair: separation and overall; each tile: face, back and mounting; a strip: face, separation and overall), then
 // the light. Nothing is preselected; every question also offers "Not looked at", "Couldn't tell" and "Doesn't apply"

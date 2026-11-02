@@ -1,4 +1,4 @@
-// Projects › Print lab: the Mac's print-lab page (app/print-lab.js stores what `lab sync` sends).
+// Print lab (unlisted; lab items in Needs you open it): the Mac's print-lab page (app/print-lab.js stores what `lab sync` sends).
 // Needs you first, each with its button (Judge it, It's printing now, Approve, Drop) and the Mac command folded under
 // "Run it on the Mac instead", then the open question's budget and stop state, then the open experiments, then Earlier.
 // Paired devices send requests to the Mac's pickup queue (lab pull applies them; Local AI never changes a record). The
