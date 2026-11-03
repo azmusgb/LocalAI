@@ -98,7 +98,7 @@ services:
       LOCALAI_HUB_KEY_SHA256: ${LOCALAI_HUB_KEY_SHA256:-}
       # Pi Hub is the one phone channel (platform step 5, D2): phone notices go to its /api/notify/localai with Local AI's
       # deploy key (the one in C:\LocalAI\stack\pi-hub-deploy.key). Empty means Web Push only. A secret: only in stack.env.
-      LOCALAI_PI_HUB_KEY: ${LOCALAI_PI_HUB_KEY:-}
+      LOCALAI_PI_HUB_TOKEN: ${LOCALAI_PI_HUB_TOKEN:-}
       LOCALAI_PI_HUB_URL: ${LOCALAI_PI_HUB_URL:-https://hub.rahe-home.duckdns.org}
       # The display's read-only printer-status token (Local Portal › More › Read-only status access). Empty means no
       # printer line. A secret: it lives only in stack.env.
