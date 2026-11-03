@@ -62,16 +62,23 @@ async function readCapped(response, limit) {
 // What the Services card shows. The object is rebuilt field by field: nothing else the display reports (Wi-Fi
 // strength, memory, printer state) passes through. signIn: false when the health route answered without a sign-in
 // (the firmware of 18 Oct 2026), true when it asked for one (401: the display is up and protected), null when offline.
-async function workshopStatus({ url = portalUrl(), fetchImpl = modelFetchWithTimeout, timeoutMs = TIMEOUT_MS } = {}) {
+async function workshopStatus({ url = portalUrl(), fetchImpl = modelFetchWithTimeout, timeoutMs = TIMEOUT_MS, log = null, clock = Date.now } = {}) {
   const offline = { online: false, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: null, portalUrl: url };
   if (!url) return offline;
+  const start = clock();
+  const [status, why] = await healthCheck(url, fetchImpl, timeoutMs, offline);
+  if (log) noteChange(url, status.online, why, clock() - start, clock(), log);
+  return status;
+}
+
+async function healthCheck(url, fetchImpl, timeoutMs, offline) {
   try {
     const r = await fetchImpl(`${url}${HEALTH_PATH}`, { method: 'GET', headers: { Accept: 'application/json' } }, timeoutMs);
-    if (r.status === 401) { await r.body?.cancel().catch(() => {}); return { ...offline, online: true, signIn: true }; }
-    if (!r.ok) { await r.body?.cancel().catch(() => {}); return offline; }
+    if (r.status === 401) { await r.body?.cancel().catch(() => {}); return [{ ...offline, online: true, signIn: true }, '']; }
+    if (!r.ok) { await r.body?.cancel().catch(() => {}); return [offline, `http ${r.status}`]; }
     const d = JSON.parse(await readCapped(r, MAX_BODY));
-    if (!d || typeof d !== 'object' || Array.isArray(d)) return offline;
-    return {
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return [offline, 'bad answer'];
+    return [{
       online: true,
       board: text(d.board),
       panel: text(d.panel),
@@ -79,10 +86,35 @@ async function workshopStatus({ url = portalUrl(), fetchImpl = modelFetchWithTim
       touchscreenConfigured: typeof d.touchscreenConfigured === 'boolean' ? d.touchscreenConfigured : null,
       signIn: false,
       portalUrl: url
-    };
-  } catch {
-    return offline;
+    }, ''];
+  } catch (e) {
+    return [offline, failureReason(e)];
   }
+}
+
+// Why the display didn't answer, in a few words, for the log line: the PC's side of a dropout. Pi Hub checks the display
+// from the Pi too (its hub/display_watch.py); the two logs side by side say whether the display or this link dropped.
+function failureReason(e) {
+  const code = e?.cause?.code || e?.code || '';
+  if (code === 'MODEL_TIMEOUT' || e?.name === 'TimeoutError' || e?.name === 'AbortError') return 'timeout';
+  if (code === 'ECONNREFUSED') return 'refused';
+  if (code === 'ECONNRESET') return 'reset';
+  if (['EHOSTUNREACH', 'ENETUNREACH', 'ETIMEDOUT', 'EHOSTDOWN', 'ENOTFOUND', 'EAI_AGAIN'].includes(code)) return `unreachable (${code})`;
+  if (e instanceof SyntaxError || /too large/i.test(String(e?.message))) return 'bad answer';
+  return code ? `failed (${code})` : 'failed';
+}
+
+// One log line when the display stops or starts answering, never one per poll. Kept per address. Only the caller that
+// passes log (server.js's minute kiosk check) tracks it, so another caller's look never hides a change. Nothing secret
+// goes in a line: the address and the reason only.
+const lastSeen = new Map(); // url -> { online, since }
+function noteChange(url, online, why, ms, now, log) {
+  const prev = lastSeen.get(url);
+  if (prev && prev.online === online) return;
+  lastSeen.set(url, { online, since: now });
+  if (!prev) return; // the first look after a start sets the baseline
+  if (online) log(`Workshop display: answering again after ${Math.max(1, Math.round((now - prev.since) / 60000))} min (${ms} ms)`);
+  else log(`Workshop display: not answering (${why})`);
 }
 
 // ---- printer status through the read-only token (GET /api/status/lite, firmware 12.1.0) ----
@@ -383,5 +415,5 @@ module.exports = {
   FIRMWARE, firmwareOf, DEFAULT_URL, DEFAULT_CAMERA_URL, STALE_MS, CODE_GAP_MS, CODE_REFUSED_HOLD_MS, CODE_BUSY_HOLD_MS,
   createPortalCodeGate, TIMEOUT_MS, POLL_MS, HEALTH_PATH, LITE_PATH, CODE_PATH, CODE_WORDS,
   portalUrl, cameraUrl, cameraSources, fetchCameraFrame, cameraStatus,
-  workshopStatus, printerSummary, readPrinter, createPrinterPoller, codeToken, readPortalCode
+  workshopStatus, failureReason, printerSummary, readPrinter, createPrinterPoller, codeToken, readPortalCode
 };
