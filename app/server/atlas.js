@@ -345,7 +345,20 @@ function createAtlas(ctx = {}) {
     return proxy(req, res, p);
   }
 
-  return { apiAtlas, atlasUrl, graphResponse };
+  // A snapshot request from inside the app (the release trigger, app/atlas-releases.js): the same service call as the
+  // page's "Snapshot now", with the same token. Resolves { ok, status }; never throws.
+  async function requestSnapshot(repo, ref) {
+    const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
+    if (atlasToken) headers['X-Atlas-Token'] = atlasToken;
+    try {
+      const r = await fetchWithTimeout(`${atlasUrl}/api/atlas/snapshot`, { method: 'POST', headers, body: JSON.stringify({ repo, ref }) }, 10000);
+      return { ok: r.status >= 200 && r.status < 300, status: r.status };
+    } catch {
+      return { ok: false, status: 0 };
+    }
+  }
+
+  return { apiAtlas, atlasUrl, graphResponse, requestSnapshot, snapshots };
 }
 
 module.exports = { createAtlas, createSnapshotReader, extractAtlasGraph, normalizeAtlasBaseUrl };
