@@ -245,10 +245,28 @@ function renderRedirect(box){
  if(!box)return;
  const hash=location.hash||'';
  const searchPart=hash.includes('?')?hash.split('?')[1]:'';
- const expId=new URLSearchParams(searchPart).get('e');
- const hubBase=(location.hostname==='home.arpa'||location.hostname.endsWith('.home.arpa'))?'https://home.home.arpa':'http://10.0.0.30';
- const targetUrl=hubBase+'/lab'+(expId?'?e='+encodeURIComponent(expId):'');
- box.innerHTML=`<div class="card lab-redirect-card"><h2>Print lab is on Pi Hub</h2><p class="sub">Testing records, verdicts, and photos now live directly on Pi Hub so they stay available when this PC is off.</p><div class="actions"><a class="btn-primary" href="${esc(targetUrl)}" target="_blank" rel="noopener">Open Print lab on Pi Hub ↗</a></div></div>`;
+ const params=new URLSearchParams(searchPart);
+ const expId=params.get('e');
+ const proj=params.get('p');
+ const doAction=params.get('do');
+ const hubBase=root.LocalAIAskContext?.homeUrl?.(location.hostname)?.replace(/\/+$/,'')
+   ||(location.hostname.endsWith('.rahe-home.duckdns.org')?'https://hub.rahe-home.duckdns.org':'http://10.0.0.30');
+ const targetParams=new URLSearchParams();
+ if(proj)targetParams.set('p',proj);
+ if(expId)targetParams.set('e',expId);
+ if(doAction)targetParams.set('do',doAction);
+ const qs=targetParams.toString();
+ const targetUrl=hubBase+'/lab'+(qs?'?'+qs:'');
+ 
+ // Automatic redirect when active in view
+ if(location.hash.startsWith('#printLab')||location.hash.startsWith('#/printLab')){
+   try{
+     location.replace(targetUrl);
+     return;
+   }catch{}
+ }
+
+ box.innerHTML=`<div class="card lab-redirect-card"><h2>Print lab is on Pi Hub</h2><p class="sub">Testing records, verdicts, and photos now live directly on Pi Hub so they stay available when this PC is off.</p><div class="actions"><a class="btn-primary" href="${esc(targetUrl)}" rel="noopener">Open Print lab on Pi Hub ↗</a></div></div>`;
 }
 
 async function refresh(){
