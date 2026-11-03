@@ -507,6 +507,8 @@ async function refresh(){
     // Only the newest five per repository are kept: a commit retired since it was chosen falls back to the newest.
     const rows=state.snapshots.get(state.repo);
     let retired=false;
+    // A link may name an abbreviated commit (Pi Hub's Versions): it means the one snapshot it starts.
+    if(state.commit&&state.commit.length<40){const m=rows.filter(r=>r.commit.startsWith(state.commit));if(m.length===1)state.commit=m[0].commit;}
     if(state.commit&&!rows.some(r=>r.commit===state.commit)){state.commit=rows[0]?.commit||'';retired=true;}
     // A repository chosen before its list arrived (or while the list was unavailable) gets its newest snapshot now.
     if(state.repo!=='localai'&&!state.commit)state.commit=rows[0]?.commit||'';
@@ -629,12 +631,24 @@ async function gooseBrief(){
   }catch(error){box.dataset.tone='error';box.textContent=error.message;}
 }
 
+// #architecture?repo=<r>&commit=<sha>, as Pi Hub's Versions links each row ("Architecture at this commit"): that
+// snapshot. Returns true when the hash named one (the refresh then loads it).
+function fromHash(){
+  const raw=String(location.hash||''),i=raw.indexOf('?');
+  if(!/^#\/?architecture\?/.test(raw)||i<0)return false;
+  const q=new URLSearchParams(raw.slice(i+1)),repo=(q.get('repo')||'').toLowerCase(),commit=(q.get('commit')||'').toLowerCase();
+  if(!/^[a-z0-9-]{1,40}$/.test(repo)||!/^[0-9a-f]{7,40}$/.test(commit))return false;
+  if(repo===state.repo&&(state.commit===commit||state.commit.startsWith(commit)))return false;
+  chooseSource(repo,commit);
+  return true;
+}
 function activate(){
   if(state.active)return;
   state.active=true;
-  if(!state.graph)void refresh();
+  if(!fromHash()&&!state.graph)void refresh();
   pollSnapshot();
 }
+root.addEventListener('hashchange',()=>{if(state.active)fromHash();});
 function deactivate(){state.active=false;state.request?.abort?.();state.request=null;clearTimeout(snapshotRun.timer);}
 
 $('atlasRefresh').addEventListener('click',()=>void refresh());

@@ -87,7 +87,7 @@ unchanged.
 | 3. Page picker | Merged, #446; page review fixes followed in #447 |
 | 4. Snapshot now | Merged, #449; picker follow-ups in #451 |
 | 5. Intelligence on a snapshot | In review. Clean copies live in `C:\LocalAI\atlas-trees` (newest 3 used); without a mirror, findings use the graph only and the page says why |
-| 6. Release trigger | Waits for baseline step 3 |
+| 6. Release trigger | In review (step 3 is complete, 2 Nov 2026): `app/atlas-releases.js` reads Pi Hub's `/api/records` every 5 minutes and asks for any live commit not yet snapshotted; the page opens `#architecture?repo=&commit=`. The Versions link is a pi-hub PR |
 
 ## Decisions (owner, 1 Nov 2026)
 
