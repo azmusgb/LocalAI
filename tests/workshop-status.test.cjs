@@ -611,3 +611,28 @@ test('camera health sources can be isolated from household hardware', async () =
   assert.deepEqual(await workshop.cameraStatus({ sources: [], fetchImpl: async () => assert.fail('camera probe') }),
     { available: false, source: null, reason: 'offline' });
 });
+
+test('status: one log line when the display stops or starts answering, with why it failed', async () => {
+  const url = 'http://10.0.0.199';
+  const lines = [];
+  let now = 1_000_000;
+  const ok = async () => new Response(JSON.stringify(HEALTH), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const timeout = async () => { throw Object.assign(new Error('took too long'), { code: 'MODEL_TIMEOUT' }); };
+  const look = fetchImpl => workshop.workshopStatus({ url, fetchImpl, log: l => lines.push(l), clock: () => now });
+  await look(ok); // the baseline: nothing logged
+  await look(ok);
+  now += 60_000; await look(timeout);
+  now += 60_000; await look(timeout);
+  now += 120_000; await look(ok);
+  assert.deepEqual(lines, ['Workshop display: not answering (timeout)', 'Workshop display: answering again after 3 min (0 ms)']);
+});
+
+test('status: failure reasons name the network error', () => {
+  const err = code => Object.assign(new Error('x'), { cause: { code } });
+  assert.equal(workshop.failureReason(Object.assign(new Error('x'), { code: 'MODEL_TIMEOUT' })), 'timeout');
+  assert.equal(workshop.failureReason(err('ECONNREFUSED')), 'refused');
+  assert.equal(workshop.failureReason(err('EHOSTUNREACH')), 'unreachable (EHOSTUNREACH)');
+  assert.equal(workshop.failureReason(err('ECONNRESET')), 'reset');
+  assert.equal(workshop.failureReason(new SyntaxError('bad')), 'bad answer');
+  assert.equal(workshop.failureReason(new Error('odd')), 'failed');
+});
