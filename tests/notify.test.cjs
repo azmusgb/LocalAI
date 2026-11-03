@@ -7,7 +7,7 @@ const flush = () => new Promise((r) => setImmediate(r));
 // 2026-10-15 is EDT (UTC-4): 23:30 local = 03:30Z next day.
 const at = (iso) => Date.parse(iso);
 
-function harness({ startAt = at('2026-10-15T16:00:00Z'), statusFor = {} } = {}) {
+function harness({ startAt = at('2026-10-15T16:00:00Z'), statusFor = {}, sendHub = null } = {}) {
   const settings = new Map();
   const storage = {
     readSetting: (k, f) => (settings.has(k) ? structuredClone(settings.get(k)) : f),
@@ -25,7 +25,7 @@ function harness({ startAt = at('2026-10-15T16:00:00Z'), statusFor = {} } = {}) 
     const status = typeof s === 'function' ? s() : (s || 201);
     return { ok: status < 300, status, gone: status === 404 || status === 410 };
   };
-  const n = createNotifier({ storage, sendPush, vapid: {}, subject: 's', now: () => clock, schedule: (fn, ms) => scheduled.push({ fn, ms }), timeZone: 'America/New_York' });
+  const n = createNotifier({ storage, sendPush, sendHub, vapid: {}, subject: 's', now: () => clock, schedule: (fn, ms) => scheduled.push({ fn, ms }), timeZone: 'America/New_York' });
   const device = (name, patch = {}) => {
     const d = n.subscribe({ endpoint: `https://web.push.apple.com/${name}`, keys: { p256dh: 'p', auth: 'a' } }, name);
     if (Object.keys(patch).length) n.updateDevice(d.id, patch);
@@ -164,3 +164,40 @@ test('answer: inside quiet hours an answer is sent while finished is held', asyn
   h.n.notify(ev('answer')); await flush();
   assert.equal(h.sent.length, 1);
 });
+
+// Platform step 5 (D2): Pi Hub first; Web Push only for an event Pi Hub didn't take.
+test('an event Pi Hub takes is not also sent by Web Push', async () => {
+  const hub = [];
+  const h = harness({ sendHub: async (e) => { hub.push(e); return { ok: true, status: 200 }; } });
+  h.device('phone');
+  h.n.notify(ev('failed', { title: 'Failed', body: 'Run 7' }));
+  await flush(); await flush();
+  assert.deepEqual(hub.map((e) => [e.kind, e.title, e.body, e.tag]), [['failed', 'Failed', 'Run 7', 'failed-tag']]);
+  assert.equal(h.sent.length, 0);
+});
+
+test('an event Pi Hub did not take (or a throw) falls back to Web Push with its rules', async () => {
+  let status = 502;
+  const h = harness({ sendHub: async () => (status === 'throw' ? Promise.reject(new Error('x')) : { ok: false, status }) });
+  h.device('phone');
+  h.n.notify(ev('failed'));
+  await flush(); await flush();
+  assert.equal(h.sent.length, 1);
+  status = 'throw';
+  h.n.notify(ev('service'));
+  await flush(); await flush();
+  assert.equal(h.sent.length, 2);
+  h.n.notify(ev('service'));  // the fallback keeps its own 2-minute repeat rule
+  await flush(); await flush();
+  assert.equal(h.sent.length, 2);
+});
+
+test('a finished run while a page is visible goes nowhere, Pi Hub included', async () => {
+  const hub = [];
+  const h = harness({ sendHub: async (e) => { hub.push(e); return { ok: true, status: 200 }; } });
+  h.n.presence();
+  h.n.notify(ev('finished'));
+  await flush();
+  assert.equal(hub.length, 0);
+});
+

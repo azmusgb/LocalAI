@@ -96,7 +96,7 @@ const voice = require('./voice');
 const { voiceFacts } = require('./voice-context');
 const weather = require('./weather');
 const notifier = notifyLib.createNotifier({
-  storage, sendPush: pushLib.sendPush, vapid: pushLib.loadOrCreateVapid(storage),
+  storage, sendPush: pushLib.sendPush, sendHub: require('./hub-notify').createHubNotify(), vapid: pushLib.loadOrCreateVapid(storage),
   subject: process.env.VAPID_SUBJECT || 'https://github.com/azmusgb/LocalAI'
 });
 // Watchdog (app/watchdog.js, docs/WATCHDOG.md): disks, the Mac's heartbeat, the display and printer; one push per problem.

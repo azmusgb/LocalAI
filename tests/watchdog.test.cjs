@@ -85,7 +85,7 @@ test('a problem notifies once after it settles, and leaves the list when it clea
   assert.equal(sent.length, 1, 'no push when it clears');
 });
 
-test('a print that ends on its own sends one Print finished', () => {
+test('a print that ends on its own sends nothing: Pi Hub already sends Print finished (step 5, D2)', () => {
   let t = T0, printer = { access: 'ok', state: 'printing', seenAt: new Date(T0).toISOString() };
   const sent = [];
   const wd = createWatchdog({ storage: memStorage(), notify: (e) => sent.push(e), now: () => t, printer: () => printer, statfs: statfsOf({}) });
@@ -94,7 +94,7 @@ test('a print that ends on its own sends one Print finished', () => {
   t += 30e3;
   wd.tick();
   wd.tick();
-  assert.deepEqual(sent.map((e) => [e.kind, e.title]), [['finished', 'Print finished']]);
+  assert.deepEqual(sent, []);
 });
 
 test('POST /api/watch/heartbeat needs the Mac key; GET /api/watch shows the Mac', { timeout: 30000 }, async (t) => {
