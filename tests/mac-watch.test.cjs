@@ -15,11 +15,14 @@ function home() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mac-watch-'));
   fs.mkdirSync(path.join(dir, '.claude', 'localai-chat'), { recursive: true });
   fs.writeFileSync(path.join(dir, '.claude', 'localai-chat', 'mac.key'), 'secret-key');
+  // No deploy key until a test gives one (keychain()), so no test reads the real Keychain or reaches the real Pi Hub.
+  fs.mkdirSync(path.join(dir, 'bin'));
+  fs.writeFileSync(path.join(dir, 'bin', 'security'), '#!/bin/sh\nexit 44\n', { mode: 0o755 });
   return dir;
 }
 // Async, so the test's own HTTP server keeps answering while the script runs.
 const run = (dir, url) => new Promise((resolve) => {
-  execFile(python, ['-I', SCRIPT], { env: { HOME: dir, PATH: process.env.PATH, LOCALAI_URL: url, MAC_WATCH_PRINT_NOTICES: '1' }, encoding: 'utf8', timeout: 30000 },
+  execFile(python, ['-I', SCRIPT], { env: { HOME: dir, PATH: `${path.join(dir, 'bin')}:${process.env.PATH}`, LOCALAI_URL: url, PI_HUB_URL: 'http://127.0.0.1:9', MAC_WATCH_PRINT_NOTICES: '1' }, encoding: 'utf8', timeout: 30000 },
     (error, stdout, stderr) => resolve({ status: error ? error.code ?? 1 : 0, stdout, stderr }));
 });
 
@@ -79,21 +82,14 @@ test('a missing CA file for an https URL is reported on stderr', { skip: !python
   assert.equal(out.status, 0);
 });
 
-test('an osascript failure or timeout still saves state', { skip: !python, timeout: 60000 }, async () => {
+test('with Pi Hub unreachable the state is still saved and the notice waits', { skip: !python, timeout: 60000 }, async () => {
   const dir = home();
-  const bin = path.join(dir, 'bin');
-  fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin, 'osascript'), '#!/bin/sh\nexit 3\n', { mode: 0o755 });
-  // Real notifications (no MAC_WATCH_PRINT_NOTICES), with the failing osascript first on PATH.
-  const env = { HOME: dir, PATH: `${bin}:${process.env.PATH}`, LOCALAI_URL: 'http://127.0.0.1:9' };
-  const last = [];
-  for (let i = 0; i < 3; i++) last[0] = await new Promise((resolve) => execFile(python, ['-I', SCRIPT], { env, encoding: 'utf8', timeout: 30000 }, (error, stdout, stderr) => resolve({ status: error ? error.code ?? 1 : 0, stderr })));
-  assert.equal(last[0].status, 0);
-  assert.match(last[0].stderr, /notification failed/);
-  const stateFile = path.join(dir, 'Library', 'Application Support', 'LocalAI', 'mac-watch.json');
-  const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  for (let i = 0; i < 3; i++) await run(dir, 'http://127.0.0.1:9');
+  const state = JSON.parse(fs.readFileSync(path.join(dir, 'Library', 'Application Support', 'LocalAI', 'mac-watch.json'), 'utf8'));
   assert.equal(state.misses, 3);
   assert.equal(state.notified, true);
+  const [n] = noticesOf(dir);
+  assert.deepEqual([n.kind, n.title], ['outage', "Local AI isn't answering"]);
 });
 
 // Release reports (platform step 3): installers queue them, each run sends them to Pi Hub with the mac deploy key.
@@ -111,22 +107,26 @@ const runWith = (dir, url, args = [], extra = {}) => new Promise((resolve) => {
     encoding: 'utf8', timeout: 30000,
   }, (error, stdout, stderr) => resolve({ status: error ? error.code ?? 1 : 0, stdout, stderr }));
 });
+const noticesOf = (dir) => { try { return JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'localai-chat', 'notice-outbox.json'), 'utf8')); } catch { return []; } };
 const outboxOf = (dir) => { try { return JSON.parse(fs.readFileSync(path.join(dir, '.claude', 'localai-chat', 'release-outbox.json'), 'utf8')); } catch { return []; } };
-async function hubServer(t, statuses) {
-  const got = [];
+async function hubServer(t, statuses, noticeStatuses = []) {
+  const got = [], notices = [];
   const server = http.createServer((req, res) => {
     let b = ''; req.on('data', (c) => (b += c));
     req.on('end', () => {
       if (req.url.startsWith('/api/releases/')) {
         got.push({ url: req.url, key: req.headers['x-hub-deploy-key'], body: JSON.parse(b) });
         res.statusCode = statuses.length ? statuses.shift() : 200;
+      } else if (req.url.startsWith('/api/notify/')) {
+        notices.push({ url: req.url, key: req.headers['x-hub-deploy-key'], body: JSON.parse(b) });
+        res.statusCode = noticeStatuses.length ? noticeStatuses.shift() : 200;
       }
       res.end('{}');
     });
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(() => server.close());
-  return { got, url: `http://127.0.0.1:${server.address().port}` };
+  return { got, notices, url: `http://127.0.0.1:${server.address().port}` };
 }
 
 test('--queue-release adds an installer report; a bad commit queues nothing', { skip: !python, timeout: 30000 }, async () => {
@@ -189,6 +189,56 @@ test('a report Pi Hub refuses as invalid (400) is dropped; with no key yet, noth
   await runWith(dir, hub.url);
   assert.equal(hub.got.length, 1);
   assert.deepEqual(outboxOf(dir), []);
+});
+
+// Phone notices (platform step 5, D2): Pi Hub is the one phone channel, so the outage notice posts to it.
+test('an outage and its recovery post to /api/notify/mac-watch with the deploy key', { skip: !python, timeout: 60000 }, async (t) => {
+  const dir = home();
+  keychain(dir);
+  const hub = await hubServer(t, []);
+  const dead = { LOCALAI_URL: 'http://127.0.0.1:9' };
+  for (let i = 0; i < 4; i++) await runWith(dir, hub.url, [], dead);
+  assert.deepEqual(hub.notices.map((n) => [n.url, n.key, n.body.kind, n.body.title]),
+    [['/api/notify/mac-watch', DEPLOY_KEY, 'outage', "Local AI isn't answering"]]);
+  assert.match(hub.notices[0].body.dedupe, /^outage-\d+$/);
+  await runWith(dir, hub.url);  // the fake hub answers the heartbeat too: Local AI is back
+  assert.deepEqual(hub.notices.map((n) => n.body.kind), ['outage', 'back']);
+  assert.deepEqual(noticesOf(dir), []);
+});
+
+test('a notice Pi Hub did not take is kept and sent once on the next run; a 400 is dropped', { skip: !python, timeout: 60000 }, async (t) => {
+  const dir = home();
+  keychain(dir);
+  const hub = await hubServer(t, [], [502, 200]);
+  const dead = { LOCALAI_URL: 'http://127.0.0.1:9' };
+  for (let i = 0; i < 3; i++) await runWith(dir, hub.url, [], dead);
+  assert.equal(noticesOf(dir).length, 1);
+  await runWith(dir, hub.url, [], dead);
+  assert.equal(hub.notices.length, 2);
+  assert.equal(hub.notices[0].body.dedupe, hub.notices[1].body.dedupe);  // the same occurrence, so Pi Hub can dedupe it
+  assert.deepEqual(noticesOf(dir), []);
+  const bad = await hubServer(t, [], [400]);
+  fs.writeFileSync(path.join(dir, '.claude', 'localai-chat', 'notice-outbox.json'),
+    JSON.stringify([{ kind: 'outage', title: 'x', body: '', dedupe: 'outage-1', at: Math.floor(Date.now() / 1000) }]));
+  const out = await runWith(dir, bad.url);
+  assert.match(out.stderr, /refused as invalid; dropped/);
+  assert.deepEqual(noticesOf(dir), []);
+});
+
+test('a notice older than an hour is dropped unsent; with no key one waits', { skip: !python, timeout: 60000 }, async (t) => {
+  const dir = home();
+  const hub = await hubServer(t, []);
+  const now = Math.floor(Date.now() / 1000);
+  fs.writeFileSync(path.join(dir, '.claude', 'localai-chat', 'notice-outbox.json'), JSON.stringify([
+    { kind: 'outage', title: 'old', body: '', dedupe: 'outage-1', at: now - 3700 },
+    { kind: 'back', title: 'new', body: '', dedupe: 'back-2', at: now - 60 }]));
+  const waiting = await runWith(dir, hub.url);
+  assert.match(waiting.stderr, /older than an hour dropped/);
+  assert.match(waiting.stderr, /no deploy key in the Keychain yet; 1 phone notice/);
+  assert.deepEqual(noticesOf(dir).map((n) => n.title), ['new']);
+  keychain(dir);
+  await runWith(dir, hub.url);
+  assert.deepEqual(hub.notices.map((n) => n.body.title), ['new']);
 });
 
 test('install.sh queues its report before the first run', () => {

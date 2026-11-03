@@ -13,7 +13,7 @@ last 2 minutes before it counts, so one slow check never notifies anyone. When i
 | A print finished on its own | the printer status poller | no | **Finished** |
 | The printer camera bridge isn't running on the Mac | the Mac's watcher | yes | **Needs you**, after quiet hours |
 | The Mac hasn't checked in for 15 minutes | the appliance | yes | none: a Mac sleeps every night |
-| Local AI (the Windows computer) isn't answering | the Mac's watcher | n/a | a Mac notification after about 15 minutes, and one when it's back |
+| Local AI (the Windows computer) isn't answering | the Mac's watcher | n/a | a phone notice through Pi Hub after about 15 minutes, and one when it's back |
 
 The last row is the Mac's job because Local AI runs on the Windows computer: when that computer is off, nothing on it
 can say so.
@@ -29,8 +29,10 @@ can say so.
   running, as `POST /api/watch/heartbeat`.
 - It signs the report with the Mac key and checks the appliance's certificate against Local AI's CA. Both come from
   `host/claude-chat/install.sh`.
-- When three reports in a row get no answer, it shows a Mac notification once. It shows another when Local AI answers
-  again.
+- When three reports in a row get no answer, it sends a phone notice once, and another when Local AI answers again.
+  Pi Hub is the one phone channel (platform step 5, D2): the notice goes to `/api/notify/mac-watch` with the `mac`
+  deploy key, and Pi Hub applies its quiet hours (the outage is urgent and goes through; "back" waits). While Pi Hub
+  can't take it, the notice waits in `~/.claude/localai-chat/notice-outbox.json` for the next run, for up to an hour.
 - It sends the Mac agents' release reports to Pi Hub (platform step 3: `release:mac-watch`,
   `release:x2d-bridge-mac` and `release:print-lab` on System › Versions). Each installer (`host/mac-watch/install.sh`
   and bambuhelper's `tools/install_x2d_bridge_agent.sh`) queues one in `~/.claude/localai-chat/release-outbox.json`,

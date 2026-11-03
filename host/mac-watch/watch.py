@@ -4,8 +4,9 @@
 1. Reports this Mac's disk and the printer camera bridge to POST /api/watch/heartbeat, with the Mac key
    (~/.claude/localai-chat/mac.key, set up by host/claude-chat/install.sh) over HTTPS verified by Local AI's CA.
 2. Local AI runs on the Windows computer, so it can't report that computer going away. When the appliance hasn't
-   answered for three runs in a row (about 15 minutes), this shows a Mac notification once, and another when it is
-   back.
+   answered for three runs in a row (about 15 minutes), this sends a phone notice once, and another when it is back.
+   Pi Hub is the one phone channel (platform step 5, D2): the notice goes to its /api/notify/mac-watch with the mac
+   deploy key, waiting in notice-outbox.json while Pi Hub can't take it, for up to an hour.
 3. Sends the Mac agents' release reports (platform step 3: Pi Hub's release:mac-watch, release:x2d-bridge-mac and,
    since amendment A3, release:print-lab) that their installers, or print-lab's lab pull, queued in release-outbox.json, oldest first, with the mac deploy key from the login Keychain
    (service pi-hub-deploy-key, put there by pi-hub's deploy/deploy-key.sh mac). A report Pi Hub didn't take waits for
@@ -32,6 +33,8 @@ OUTBOX = os.path.join(CHAT_DIR, "release-outbox.json")
 # target -> its mechanism: the installers, and print-lab's lab pull (it runs from its checkout, so a new commit is its deploy)
 RELEASE_TARGETS = {"mac-watch": "mac-install", "x2d-bridge-mac": "mac-install", "print-lab": "lab-pull"}
 OUTBOX_KEEP = 20
+NOTICES = os.path.join(CHAT_DIR, "notice-outbox.json")
+NOTICE_MAX_AGE = 3600  # seconds a notice Pi Hub hasn't taken is still worth sending
 
 
 def load_json(path, default):
@@ -69,31 +72,29 @@ def bridge():
     return {"installed": True, "running": "state = running" in out.stdout}
 
 
-def notify(title, text):
+def notify(kind, title, text):
+    """A phone notice for Pi Hub, queued in notice-outbox.json and sent by flush_notices() later in this run. Its dedupe
+    is the occurrence, so a retry after a lost answer isn't a second notice."""
     if os.environ.get("MAC_WATCH_PRINT_NOTICES"):  # tests
         print(f"NOTICE {title}: {text}")
-        return
-    script = f'display notification {json.dumps(text)} with title {json.dumps(title)}'
-    try:
-        out = subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10)
-        if out.returncode != 0:
-            print(f"mac-watch: notification failed (osascript exit {out.returncode})", file=sys.stderr)
-    except (OSError, subprocess.TimeoutExpired) as e:
-        print(f"mac-watch: notification failed ({type(e).__name__})", file=sys.stderr)
+    now = int(time.time())
+    items = load_json(NOTICES, [])
+    write_outbox((items if isinstance(items, list) else []) +
+                 [{"kind": kind, "title": title, "body": text, "dedupe": f"{kind}-{now}", "at": now}], NOTICES)
 
 
-def write_outbox(items):
+def write_outbox(items, path=OUTBOX):
     if not items:
         try:
-            os.remove(OUTBOX)
+            os.remove(path)
         except FileNotFoundError:
             pass
         return
     os.makedirs(CHAT_DIR, exist_ok=True)
-    tmp = OUTBOX + ".tmp"
+    tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(items[-OUTBOX_KEEP:], f)
-    os.replace(tmp, OUTBOX)
+    os.replace(tmp, path)
 
 
 def queue_release(target, commit, dirty, message=""):
@@ -160,6 +161,42 @@ def flush_releases(hub):
     write_outbox(left)
 
 
+def flush_notices(hub, now=None):
+    """Posts the queued phone notices to Pi Hub oldest first; stops at the first one it didn't take, keeping it and the
+    rest. One it refuses as invalid (400), or older than NOTICE_MAX_AGE, is dropped."""
+    items = load_json(NOTICES, [])
+    if not isinstance(items, list) or not items:
+        return
+    now = now or time.time()
+    fresh = [i for i in items if isinstance(i, dict) and now - (i.get("at") or 0) <= NOTICE_MAX_AGE]
+    if len(fresh) < len(items):
+        print(f"mac-watch: {len(items) - len(fresh)} phone notice(s) older than an hour dropped", file=sys.stderr)
+    key = deploy_key() if fresh else None
+    if fresh and not key:
+        print(f"mac-watch: no deploy key in the Keychain yet; {len(fresh)} phone notice(s) waiting", file=sys.stderr)
+    left = fresh if fresh and not key else []
+    for i, item in enumerate(fresh if key else []):
+        body = json.dumps({k: item.get(k) for k in ("kind", "title", "body", "dedupe")}).encode()
+        req = urllib.request.Request(f"{hub.rstrip('/')}/api/notify/mac-watch", data=body, method="POST",
+                                     headers={"Content-Type": "application/json", "X-Hub-Deploy-Key": key})
+        try:
+            with urllib.request.urlopen(req, timeout=15):
+                pass
+            print(f"mac-watch: phone notice \"{item.get('title')}\" taken")
+        except urllib.error.HTTPError as e:
+            if e.code == 400:
+                print("mac-watch: phone notice refused as invalid; dropped", file=sys.stderr)
+                continue
+            print(f"mac-watch: Pi Hub didn't take the phone notice (HTTP {e.code}); kept", file=sys.stderr)
+            left = fresh[i:]
+            break
+        except (urllib.error.URLError, OSError):
+            print("mac-watch: Pi Hub isn't answering; phone notice kept", file=sys.stderr)
+            left = fresh[i:]
+            break
+    write_outbox(left, NOTICES)
+
+
 def main():
     if sys.argv[1:2] == ["--queue-release"]:
         target, commit, dirty = (sys.argv[2:5] + ["", "", ""])[:3]
@@ -204,16 +241,21 @@ def main():
 
     if ok:
         if state.get("notified"):
-            notify("Local AI is back", "The Windows computer is answering again.")
+            notify("back", "Local AI is back", "The Windows computer is answering again.")
         state = {"misses": 0, "notified": False, "lastOkAt": int(time.time())}
     else:
         state["misses"] = int(state.get("misses", 0)) + 1
         if state["misses"] >= OUTAGE_RUNS and not state.get("notified"):
-            notify("Local AI isn't answering", "The Windows computer may be off, asleep or off the network.")
+            notify("outage", "Local AI isn't answering", "The Windows computer may be off, asleep or off the network.")
             state["notified"] = True
     save_state(state)
+    hub = os.environ.get("PI_HUB_URL") or config.get("hub") or "https://hub.rahe-home.duckdns.org"
     try:
-        flush_releases(os.environ.get("PI_HUB_URL") or config.get("hub") or "https://hub.rahe-home.duckdns.org")
+        flush_notices(hub)
+    except Exception as e:  # a phone notice never fails the watchdog
+        print(f"mac-watch: phone notices skipped ({type(e).__name__})", file=sys.stderr)
+    try:
+        flush_releases(hub)
     except Exception as e:  # a release report never fails the watchdog
         print(f"mac-watch: release reports skipped ({type(e).__name__})", file=sys.stderr)
     return 0
