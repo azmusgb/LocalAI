@@ -6,8 +6,8 @@
 2. Local AI runs on the Windows computer, so it can't report that computer going away. When the appliance hasn't
    answered for three runs in a row (about 15 minutes), this shows a Mac notification once, and another when it is
    back.
-3. Sends the Mac agents' release reports (platform step 3: Pi Hub's release:mac-watch and release:x2d-bridge-mac) that
-   their installers queued in release-outbox.json, oldest first, with the mac deploy key from the login Keychain
+3. Sends the Mac agents' release reports (platform step 3: Pi Hub's release:mac-watch, release:x2d-bridge-mac and,
+   since amendment A3, release:print-lab) that their installers, or print-lab's lab pull, queued in release-outbox.json, oldest first, with the mac deploy key from the login Keychain
    (service pi-hub-deploy-key, put there by pi-hub's deploy/deploy-key.sh mac). A report Pi Hub didn't take waits for
    the next run; one it refuses as invalid (400) is dropped.
 
@@ -29,7 +29,8 @@ STATE = os.path.join(HOME, "Library", "Application Support", "LocalAI", "mac-wat
 BRIDGE_LABEL = "com.bambuhelper.x2d-camera-bridge"
 OUTAGE_RUNS = 3
 OUTBOX = os.path.join(CHAT_DIR, "release-outbox.json")
-RELEASE_TARGETS = ("mac-watch", "x2d-bridge-mac")
+# target -> its mechanism: the installers, and print-lab's lab pull (it runs from its checkout, so a new commit is its deploy)
+RELEASE_TARGETS = {"mac-watch": "mac-install", "x2d-bridge-mac": "mac-install", "print-lab": "lab-pull"}
 OUTBOX_KEEP = 20
 
 
@@ -96,15 +97,17 @@ def write_outbox(items):
 
 
 def queue_release(target, commit, dirty, message=""):
-    """An installer's report for Pi Hub, added to the outbox (sent by the next run). Returns an error, or None."""
+    """An installer's (or lab pull's) report for Pi Hub, added to the outbox (sent by the next run). Returns an error,
+    or None."""
     if target not in RELEASE_TARGETS:
         return f"not a Mac agent: {target}"
     commit = (commit or "").lower()
     if not (7 <= len(commit) <= 40 and all(c in "0123456789abcdef" for c in commit)):
         return "no commit: install from a git checkout"
-    report = {"target": target, "commit": commit, "result": "deployed", "mechanism": "mac-install",
+    report = {"target": target, "commit": commit, "result": "deployed", "mechanism": RELEASE_TARGETS[target],
               "at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()), "dirty": dirty,
-              "message": (message or ("installed from uncommitted changes" if dirty else ""))[:200]}
+              "message": (message or (("running" if target == "print-lab" else "installed from") + " uncommitted changes"
+                         if dirty else ""))[:200]}
     items = load_json(OUTBOX, [])
     write_outbox((items if isinstance(items, list) else []) + [report])
     return None
