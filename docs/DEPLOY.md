@@ -180,6 +180,15 @@ Enable-ScheduledTask 'LocalAI Safe Deploy'
 `up -d` recreates only the services whose settings changed; a running mission or image is interrupted, so pick a quiet
 moment. Every service logs to json-file capped at 3 × 10 MB (`x-logging`), and the long-running ones have healthchecks.
 
+## Old releases and snapshots
+
+Each deploy leaves a candidate in `C:\LocalAI\releases\<sha>`, a code snapshot in `C:\LocalAI\.deploy\live-before-<guid>`
+and a database copy in `/data/backups/before-deploy-<guid>.db`. After a healthy deploy the auto-deploy runs
+`deploy\Remove-LocalAI-DeployHistory.ps1`, which keeps the newest 10 of each and always keeps the current, previous
+and rollback releases, the rollback snapshot and the data backup named in `state.json`. It skips while a deploy holds
+the lock or `state.json` is not `HEALTHY`, logs a `prune:` line in `auto-deploy.log`, and never fails the run. Older
+snapshots are gone after that, so `Rollback-LocalAI.ps1 -Snapshot` can reach back about 10 releases.
+
 ## Old backup containers
 
 Migrations keep the container they replace, stopped, for rollback: `local-ai-<name>-pre-compose`

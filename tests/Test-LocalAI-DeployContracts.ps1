@@ -48,6 +48,8 @@ function New-Fixture {
         StackEnv = (Join-Path $root 'stack.env'); StackCompose = (Join-Path $root 'compose.yml')
         # Auto-deploy's release gate: commits on origin/main not yet on origin/release, and whether the checkout is dirty.
         Ahead = 0; Dirty = ''
+        # History prune: the files in the appliance's /data/backups, newest first, and a simulated docker exec failure.
+        DataBackups = [System.Collections.Generic.List[string]]::new(); ExecFails = $false
     }
     [System.IO.Directory]::CreateDirectory($fixture.StateDir) | Out-Null
     Write-LocalAI-DeployState (Join-Path $fixture.StateDir 'state.json') ([ordered]@{status='HEALTHY';currentCommit=$oldSha})
@@ -133,6 +135,13 @@ function docker {
             }
             if ($fixture.Containers.Count -and $Arguments[1] -ne 'fixture-appliance') { $global:LASTEXITCODE = 1; return }
             return @([ordered]@{Image='sha256:existing-image';State=@{Running=$fixture.Running};Config=@{Env=@('DATA_DIR=/data')};Mounts=@(@{Destination='/app'},@{Destination='/data'})}) | ConvertTo-Json -Depth 8 -Compress }
+        'exec' {
+            if ($fixture.ExecFails) { $global:LASTEXITCODE = 1; return }
+            $command = $Arguments[-1]
+            if ($command -like 'ls -1t /data/backups/*') { return @($fixture.DataBackups) }
+            if ($command -match '^cd /data/backups && rm -f -- (.+)$') { foreach ($name in ($Matches[1] -split ' ')) { [void]$fixture.DataBackups.Remove($name) }; return }
+            throw "Unexpected docker exec: $command"
+        }
         'stop' { $fixture.Running=$false; return }
         'start' {
             $e = Get-FixtureStackEntry $Arguments[1]
@@ -193,7 +202,7 @@ function powershell.exe {
     "DEPLOYED: $newSha"
 }
 function Invoke-FixtureAutoDeploy([int]$MaxHoldMinutes = 45) {
-    & (Join-Path $repository 'deploy/Run-LocalAI-AutoDeploy.ps1') -Repo $fixture.Repo -Live $fixture.Live -StateDir $fixture.StateDir -NotifyUrl 'http://fixture/api/notifications/system' -BusyUrl 'http://fixture/api/busy' -HealthUrl 'http://fixture/healthz' -MaxHoldMinutes $MaxHoldMinutes -StackEnvFile $fixture.StackEnv -StackCompose $fixture.StackCompose
+    & (Join-Path $repository 'deploy/Run-LocalAI-AutoDeploy.ps1') -Repo $fixture.Repo -Live $fixture.Live -StateDir $fixture.StateDir -Releases $fixture.Releases -NotifyUrl 'http://fixture/api/notifications/system' -BusyUrl 'http://fixture/api/busy' -HealthUrl 'http://fixture/healthz' -MaxHoldMinutes $MaxHoldMinutes -StackEnvFile $fixture.StackEnv -StackCompose $fixture.StackCompose
 }
 function Get-AutoDeployCount { @($fixture.Calls | Where-Object { $_[0] -eq 'auto-deploy' }).Count }
 function Invoke-FixtureRollback([string]$Snapshot) {
@@ -536,6 +545,75 @@ try {
         Invoke-FixtureAutoDeploy | Out-Null
         Assert-True ((Get-AutoDeployCount) -eq 1 -and -not (Get-FixtureContainer 'local-ai-n8n-pre-lockdown')) 'No tidy after a healthy deploy'
         Assert-True (@($g.Notices | Where-Object { $_.title -eq 'Removed 1 old backup container (a stopped copy from an earlier migration)' }).Count -eq 1) 'Singular notice missing'
+    }
+    Test-Case 'history prune keeps the newest releases, snapshots and data backups plus every rollback target' {
+        $f = New-Fixture
+        $base = (Get-Date).AddDays(-1)
+        foreach ($n in 1..14) {
+            $r = New-Item -ItemType Directory -Force -Path (Join-Path $f.Releases ('{0:d40}' -f $n))
+            $r.LastWriteTime = $base.AddMinutes($n)
+            $s = New-Item -ItemType Directory -Force -Path (Join-Path $f.StateDir ('live-before-{0:d32}' -f $n))
+            $s.LastWriteTime = $base.AddMinutes($n)
+        }
+        foreach ($n in 14..1) { $f.DataBackups.Add(('before-deploy-{0:d32}.db' -f $n)) }
+        $f.DataBackups.Add('nightly.db'); $f.DataBackups.Add('before-deploy-x;rm -rf .db')
+        New-Item -ItemType Directory -Force -Path (Join-Path $f.Releases 'not-a-sha') | Out-Null
+        # Oldest ones are the rollback targets: they must survive.
+        Write-LocalAI-DeployState (Join-Path $f.StateDir 'state.json') ([ordered]@{
+            status = 'HEALTHY'; currentCommit = ('{0:d40}' -f 14); previousCommit = ('{0:d40}' -f 1); rollbackSnapshotCommit = ('{0:d40}' -f 1)
+            rollbackSnapshot = (Join-Path $f.StateDir ('live-before-{0:d32}' -f 2)); dataBackupName = ('before-deploy-{0:d32}.db' -f 3)
+        })
+        Write-LocalAI-DeployState (Join-Path $f.Live 'release.json') ([ordered]@{ commit = ('{0:d40}' -f 2) })
+        $result = & (Join-Path $repository 'deploy/Remove-LocalAI-DeployHistory.ps1') -KeepCount 10 -Releases $f.Releases -StateDir $f.StateDir -Live $f.Live -Container 'fixture-appliance'
+        $releases = @(Get-ChildItem -LiteralPath $f.Releases -Directory | ForEach-Object Name | Sort-Object)
+        $expected = @(@(1, 2) + @(5..14) | ForEach-Object { '{0:d40}' -f $_ }) + 'not-a-sha' | Sort-Object
+        Assert-True (($releases -join ',') -eq ($expected -join ',')) "Releases left: $($releases -join ', ')"
+        $snapshots = @(Get-ChildItem -LiteralPath $f.StateDir -Directory -Filter 'live-before-*' | ForEach-Object Name | Sort-Object)
+        $expected = @(@(2) + @(5..14) | ForEach-Object { 'live-before-{0:d32}' -f $_ }) | Sort-Object
+        Assert-True (($snapshots -join ',') -eq ($expected -join ',')) "Snapshots left: $($snapshots -join ', ')"
+        $backups = @($f.DataBackups | Sort-Object)
+        $expected = @(@(3) + @(5..14) | ForEach-Object { 'before-deploy-{0:d32}.db' -f $_ }) + 'nightly.db' + 'before-deploy-x;rm -rf .db' | Sort-Object
+        Assert-True (($backups -join ',') -eq ($expected -join ',')) "Data backups left: $($backups -join ', ')"
+        Assert-True ($result.Removed.Releases -eq 2 -and $result.Removed.Snapshots -eq 3 -and $result.Removed.DataBackups -eq 3) "Unexpected counts: $($result.Removed | ConvertTo-Json -Compress)"
+        Assert-True ("$($result.Log)" -match 'Removed 2 old releases, 3 app snapshots and 3 pre-deploy data backups') "Not logged: $($result.Log)"
+        # Idempotent.
+        $again = & (Join-Path $repository 'deploy/Remove-LocalAI-DeployHistory.ps1') -KeepCount 10 -Releases $f.Releases -StateDir $f.StateDir -Live $f.Live -Container 'fixture-appliance'
+        Assert-True (($again.Removed.Releases + $again.Removed.Snapshots + $again.Removed.DataBackups) -eq 0 -and @($again.Log).Count -eq 0) "Second run did something: $($again.Log)"
+    }
+    Test-Case 'history prune does nothing during a deploy or when the deploy is not healthy, and never throws' {
+        $f = New-Fixture
+        foreach ($n in 1..12) { New-Item -ItemType Directory -Force -Path (Join-Path $f.Releases ('{0:d40}' -f $n)) | Out-Null }
+        Set-Content -LiteralPath (Join-Path $f.StateDir 'deploy.lock') -Value 'held'
+        $result = & (Join-Path $repository 'deploy/Remove-LocalAI-DeployHistory.ps1') -Releases $f.Releases -StateDir $f.StateDir -Live $f.Live -Container 'fixture-appliance'
+        Assert-True ($result.Removed.Releases -eq 0 -and "$($result.Log)" -match 'holds the lock') "Pruned under the lock: $($result.Log)"
+        Remove-Item -LiteralPath (Join-Path $f.StateDir 'deploy.lock')
+        Write-LocalAI-DeployState (Join-Path $f.StateDir 'state.json') ([ordered]@{ status = 'ROLLED_BACK'; currentCommit = $oldSha })
+        $result = & (Join-Path $repository 'deploy/Remove-LocalAI-DeployHistory.ps1') -Releases $f.Releases -StateDir $f.StateDir -Live $f.Live -Container 'fixture-appliance'
+        Assert-True ($result.Removed.Releases -eq 0 -and "$($result.Log)" -match "'ROLLED_BACK', not HEALTHY") "Pruned after a rollback: $($result.Log)"
+        Assert-True (@(Get-ChildItem -LiteralPath $f.Releases -Directory).Count -eq 12) 'Releases removed while not healthy'
+        # Docker down: folders are still pruned, the data step is skipped with a log line.
+        Write-LocalAI-DeployState (Join-Path $f.StateDir 'state.json') ([ordered]@{ status = 'HEALTHY'; currentCommit = $oldSha })
+        $f.ExecFails = $true
+        $result = & (Join-Path $repository 'deploy/Remove-LocalAI-DeployHistory.ps1') -Releases $f.Releases -StateDir $f.StateDir -Live $f.Live -Container 'fixture-appliance'
+        Assert-True ($result.Removed.Releases -eq 2 -and "$($result.Log)" -match 'Data backup prune skipped') "Unexpected: $($result.Removed | ConvertTo-Json -Compress) $($result.Log)"
+    }
+    Test-Case 'auto-deploy prunes deploy history after a healthy deploy only, and logs it' {
+        $f = New-Fixture
+        foreach ($n in 1..12) { New-Item -ItemType Directory -Force -Path (Join-Path $f.Releases ('{0:d40}' -f $n)) | Out-Null }
+        $f.NoChange = $true
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True (@(Get-ChildItem -LiteralPath $f.Releases -Directory).Count -eq 12) 'Pruned on a quiet run'
+        $f.NoChange = $false
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True (@(Get-ChildItem -LiteralPath $f.Releases -Directory).Count -eq 10) 'Not pruned after a healthy deploy'
+        $log = Get-Content -LiteralPath (Join-Path $f.StateDir 'auto-deploy.log') -Encoding UTF8
+        Assert-True (@($log | Where-Object { $_ -match '^\d{4}-\d\d-\d\dT\S+ prune: Removed 2 old releases' }).Count -eq 1) "Prune not logged: $($log -join "`n")"
+        Assert-True (-not @($f.Notices | Where-Object { $_.title -match 'prune|releases' }).Count) 'Routine prune sent an Inbox notice'
+        $g = New-Fixture; $script:fixture = $g
+        foreach ($n in 1..12) { New-Item -ItemType Directory -Force -Path (Join-Path $g.Releases ('{0:d40}' -f $n)) | Out-Null }
+        $g.DeployFails = $true
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True (@(Get-ChildItem -LiteralPath $g.Releases -Directory).Count -eq 12) 'Pruned after a failed deploy'
     }
     Test-Case 'stack repair does nothing on a host without the compose stack or when every service runs' {
         $f = New-Fixture
