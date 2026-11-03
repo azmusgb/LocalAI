@@ -32,6 +32,7 @@ test('own attention uses Home approval deduplication and watchdog warnings', asy
   });
   assert.equal(status, 200);
   assert.equal(body.cards[0].count, 2, 'the approval represented by a run is counted once');
-  assert.equal(body.cards[1].kind, 'watch'); assert.equal(body.cards[1].text, 'Mac disk is full');
+  // Pi Hub lists the finding itself, not the display's "Heads up" (display-feed.js attentionCards)
+  assert.equal(body.cards[1].kind, 'watch'); assert.equal(body.cards[1].title, 'Mac disk is full');
   assert.ok(body.cards.every(c => c.kind !== 'home'));
 });

@@ -155,4 +155,15 @@ function aiCards(feed) {
   };
 }
 
-module.exports = { aiCards, signature, buildFeed, jpegUrl, cut, todaySentence, nextSentence };
+// Pi Hub's Needs you reads these cards (GET /api/attention) as rows, not as display cards: a watch card there says
+// the finding itself ("Mac disk is 97% full") and why it matters, at Pi Hub's lengths (80 and 200), instead of the
+// display's "Heads up" over a line cut to 90 (2 Nov: Pi Hub listed "Heads up" with nothing to tell the items apart).
+function attentionCards(cards, watch = []) {
+  const byId = new Map((Array.isArray(watch) ? watch : []).map((w) => [String(`watch-${w.id || w.title}`).slice(0, 48), w]));
+  return (Array.isArray(cards) ? cards : []).map((c) => {
+    const w = c?.kind === 'watch' ? byId.get(c.id) : null;
+    return w ? { ...c, title: cut(w.title, 80), text: cut(w.detail || '', 200) } : c;
+  });
+}
+
+module.exports = { aiCards, signature, buildFeed, jpegUrl, cut, todaySentence, nextSentence, attentionCards };

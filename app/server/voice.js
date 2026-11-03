@@ -141,8 +141,9 @@ function createVoice(ctx) {
     try {
       const home = homeNeedsYou();
       const needs = glance.needsYouSummary({ approvals: home.approvals.length, failed: home.failed.length });
-      const feed = displayFeed.buildFeed({ needs, watch: watchdog.list() });
-      json(res, 200, { schema: 1, source: 'localai', at: feed.at, cards: feed.cards });
+      const watch = watchdog.list();
+      const feed = displayFeed.buildFeed({ needs, watch });
+      json(res, 200, { schema: 1, source: 'localai', at: feed.at, cards: displayFeed.attentionCards(feed.cards, watch) });
     } catch (e) { json(res, 500, { error: String(e.message || e) }); }
   }
 

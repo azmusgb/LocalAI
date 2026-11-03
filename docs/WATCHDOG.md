@@ -8,12 +8,14 @@ last 2 minutes before it counts, so one slow check never notifies anyone. When i
 | Problem | Seen by | On Home | Phone notification |
 |---|---|---|---|
 | A disk is 90% full or has under 15 GB free (Windows, Local AI's data, the Mac) | the appliance; the Mac's watcher for the Mac | yes | **Needs you**, after quiet hours |
-| The Workshop display hasn't answered for 10 minutes | the printer status poller (`app/workshop.js`) | yes | **Needs you**, after quiet hours |
-| The printer stopped with an error | the printer status poller | yes | none: Pi Hub sends urgent print failures |
 | A print finished on its own | the printer status poller | no | none: Pi Hub sends Print finished |
 | The printer camera bridge isn't running on the Mac | the Mac's watcher | yes | **Needs you**, after quiet hours |
 | The Mac hasn't checked in for 15 minutes | the appliance | yes | none: a Mac sleeps every night |
 | Local AI (the Windows computer) isn't answering | the Mac's watcher | n/a | a phone notice through Pi Hub after about 15 minutes, and one when it's back |
+
+The Workshop display and the printer are Pi Hub's to watch: Pi Hub is the display's backend and the one sender for
+print problems, so Local AI no longer reports either (2 Nov 2026: its own poll of the display said "isn't answering"
+while Pi Hub had it online).
 
 The last row is the Mac's job because Local AI runs on the Windows computer: when that computer is off, nothing on it
 can say so.
