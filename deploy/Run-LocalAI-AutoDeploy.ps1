@@ -4,6 +4,8 @@ param(
     [string]$TargetRef = 'origin/release',
     [string]$Repo = 'C:\LocalAI\repo',
     [string]$StateDir = 'C:\LocalAI\.deploy',
+    # Extracted candidates; old ones are pruned after a healthy deploy (Remove-LocalAI-DeployHistory.ps1).
+    [string]$Releases = 'C:\LocalAI\releases',
     [string]$Live = 'C:\LocalAI\appliance\app',
     [string]$NotifyUrl = 'http://127.0.0.1:3080/api/notifications/system',
     # Asked before an update restarts the appliance: while something is running the update waits, up to MaxHoldMinutes.
@@ -21,6 +23,8 @@ param(
 # a new release went live, or a deploy failed (once per failing commit, not on every retry). No change = silent.
 # After a healthy deploy, or a quiet run with /healthz OK, it removes stopped migration backups (local-ai-*-pre-*)
 # older than 7 days whose live twin is healthy (Remove-LocalAI-OldBackups.ps1); that step never fails the run.
+# After a healthy deploy it also keeps the newest 10 releases, app snapshots and pre-deploy data backups and removes
+# older ones (Remove-LocalAI-DeployHistory.ps1); that step never fails the run either.
 # Every run first starts compose services a Windows restart left stopped (Repair-LocalAI-Stack.ps1); that step
 # never fails the run either.
 # A new release waits while the appliance is running something a restart would stop (a mission, an image, a chat,
@@ -105,6 +109,17 @@ function Invoke-BackupTidy {
         }
     } catch {
         try { Write-AutoDeployLog ((Get-Date).ToString('s') + ' tidy: failed: ' + $_.Exception.Message) $null } catch { }
+    }
+}
+# Removes old deploy leftovers (releases, app snapshots, pre-deploy data backups) after a healthy deploy. Logs what it
+# did; never fails the deploy and sends no Inbox line (it is routine).
+function Invoke-HistoryPrune {
+    try {
+        $prune = & (Join-Path $PSScriptRoot 'Remove-LocalAI-DeployHistory.ps1') -Releases $Releases -StateDir $StateDir -Live $Live
+        $lines = @($prune.Log | Where-Object { $_ } | ForEach-Object { (Get-Date).ToString('s') + ' prune: ' + $_ })
+        if ($lines.Count) { Write-AutoDeployLog $lines $null }
+    } catch {
+        try { Write-AutoDeployLog ((Get-Date).ToString('s') + ' prune: failed: ' + $_.Exception.Message) $null } catch { }
     }
 }
 # Starts compose services that should be running but are stopped (a Windows restart leaves them Exited: Docker
@@ -221,7 +236,7 @@ if ($code -eq 0 -and $last -like 'DEPLOYED:*') {
     Notify "Local AI updated to $name" $detail @{ commit = $sha.Trim(); version = "$($release.version)"; outcome = 'deployed' }
     Send-ReleaseReport @{ Action = 'Queue'; Commit = $sha.Trim(); Result = 'deployed'; Head = $sha.Trim(); Message = 'Certified, promoted and healthy.' }
     Remove-Item $failState -ErrorAction SilentlyContinue
-    if (Test-ApplianceHealthy) { Invoke-BackupTidy }
+    if (Test-ApplianceHealthy) { Invoke-BackupTidy; Invoke-HistoryPrune }
 } elseif ($code -eq 0 -and $last -like 'NO CHANGE:*') {
     if (Test-ApplianceHealthy) { Invoke-BackupTidy }
 } elseif ($code -ne 0) {
