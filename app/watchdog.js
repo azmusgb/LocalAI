@@ -1,11 +1,12 @@
 'use strict';
 // Watchdog (docs/WATCHDOG.md): spots trouble around Local AI before it breaks something, and tells the owner once
-// per problem. It looks at what the appliance can see itself (its disks, the Workshop display and printer through
-// app/workshop.js) and at what the Mac reports (POST /api/watch/heartbeat: its disk and the camera bridge). A
-// problem must last limits.settleMs before it notifies, so one slow poll never pages anyone, and it notifies once:
-// when it clears it just leaves Home. Each finding says how it is pushed: a printer error is 'failed' (it gets
-// through quiet hours), disks and the display are 'needs-you' (they wait for morning), and a Mac that went quiet
-// is only listed (a Mac sleeps every night). The Windows computer going away can't be seen from here (Local AI
+// per problem. It looks at what the appliance can see itself (its disks) and at what the Mac reports (POST
+// /api/watch/heartbeat: its disk and the camera bridge). A problem must last limits.settleMs before it notifies, so
+// one slow poll never pages anyone, and it notifies once: when it clears it just leaves Home. Disks and the bridge
+// are 'needs-you' (they wait for morning), and a Mac that went quiet is only listed (a Mac sleeps every night).
+// The Workshop display and the printer are Pi Hub's to watch (platform K2/K3: Pi Hub is the display's backend and
+// the one sender; Local AI's attention carries only its own items). On 2 Nov Local AI's own poll of the display
+// missed it for 10 minutes and said "isn't answering" while Pi Hub's connection had it online. The Windows computer going away can't be seen from here (Local AI
 // runs on it), so the Mac side notifies about that itself (host/mac-watch).
 
 const fs = require('node:fs');
@@ -14,7 +15,6 @@ const LIMITS = {
   macSilentMs: 15 * 60 * 1000, // no heartbeat for this long: the Mac (or its watcher) went quiet
   diskPct: 90,                 // a disk this full (percent used) ...
   diskFreeBytes: 15e9,         // ... or with less than this free
-  displayOfflineMs: 10 * 60 * 1000,
   settleMs: 2 * 60 * 1000
 };
 const STATE_KEY = 'watchdog:state';
@@ -37,7 +37,7 @@ function diskFinding(id, where, disk, limits) {
 }
 
 // What is wrong right now, from the latest inputs. Pure: the same inputs give the same findings.
-function evaluate({ now, mac, hostDisks = [], printer, startedAt = now, limits = LIMITS, timeZone }) {
+function evaluate({ now, mac, hostDisks = [], limits = LIMITS, timeZone }) {
   const out = [];
   if (mac?.at) {
     const at = Date.parse(mac.at);
@@ -54,16 +54,6 @@ function evaluate({ now, mac, hostDisks = [], printer, startedAt = now, limits =
   for (const disk of hostDisks) {
     const d = diskFinding(`host-disk:${disk.name}`, disk.label || 'Windows', disk, limits);
     if (d) out.push(d);
-  }
-  if (printer) {
-    const seen = printer.seenAt ? Date.parse(printer.seenAt) : startedAt;
-    if (printer.access === 'offline' && now - seen > limits.displayOfflineMs) {
-      out.push({ id: 'display-offline', severity: 'high', push: 'needs-you', title: "The Workshop display isn't answering", detail: 'Printer status stops reaching Local AI until it is back on Wi-Fi.' });
-    }
-    if (printer.state === 'error') {
-      // Listed on Home, but not pushed from Local AI: Pi Hub (hub/urgent.py) is the one sender for print failures.
-      out.push({ id: 'printer-error', severity: 'high', push: null, title: 'The printer stopped with an error', detail: printer.errorCode ? `Error ${printer.errorCode}. Check the printer.` : 'Check the printer.' });
-    }
   }
   return out;
 }
@@ -95,7 +85,6 @@ function cleanHeartbeat(body, nowIso) {
 }
 
 function createWatchdog({ storage, notify, now = Date.now, limits = LIMITS, hostPaths = [], printer = () => null, statfs, timeZone = process.env.TZ || 'America/New_York' }) {
-  const startedAt = now();
   const state = () => storage.readSetting(STATE_KEY, { active: {}, printerState: null });
 
   function heartbeat(body) {
@@ -108,7 +97,7 @@ function createWatchdog({ storage, notify, now = Date.now, limits = LIMITS, host
   function tick() {
     const t = now();
     const p = printer();
-    const findings = evaluate({ now: t, mac: storage.readSetting(MAC_KEY, null), hostDisks: measureDisks(hostPaths, statfs), printer: p, startedAt, limits, timeZone });
+    const findings = evaluate({ now: t, mac: storage.readSetting(MAC_KEY, null), hostDisks: measureDisks(hostPaths, statfs), limits, timeZone });
     const prev = state();
     const active = {};
     for (const f of findings) {

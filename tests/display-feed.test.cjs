@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { once } = require('node:events');
-const { buildFeed, jpegUrl, todaySentence, nextSentence } = require('../app/display-feed');
+const { buildFeed, jpegUrl, todaySentence, nextSentence, attentionCards } = require('../app/display-feed');
 const { spawnAppServer } = require('./spawn-server.cjs');
 
 test('nothing to report is one All clear card', () => {
@@ -326,4 +326,16 @@ test('lab cards sit after the needs card; a judge card is not All clear', () => 
   const busy = buildFeed({ needs: { count: 0 }, lab: [{ kind: 'lab', id: 'lab-PR-021-01', title: 'Lab · E-021', text: 'The seam', tone: 'busy' }] });
   assert.equal(busy.cards[0].title, 'All clear');
   assert.equal('ask' in busy.cards[1], false);
+});
+
+test('Pi Hub reads watch cards as the finding and why, not "Heads up" (GET /api/attention)', () => {
+  const watch = [{ id: 'mac-disk', severity: 'high', title: 'Mac disk is 97% full', detail: '14 GB free. Builds, updates and images start failing when it runs out.', since: new Date(0).toISOString() }];
+  const feed = buildFeed({ needs: { count: 0 }, watch });
+  const shown = feed.cards.find((c) => c.kind === 'watch');
+  assert.equal(shown.title, 'Heads up');  // the display keeps its short card
+  const card = attentionCards(feed.cards, watch).find((c) => c.kind === 'watch');
+  assert.equal(card.title, 'Mac disk is 97% full');
+  assert.equal(card.text, '14 GB free. Builds, updates and images start failing when it runs out.');
+  assert.equal(card.id, shown.id);
+  assert.deepEqual(attentionCards(null), []);
 });

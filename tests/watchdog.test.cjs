@@ -37,14 +37,10 @@ test('a healthy Mac, roomy disk and a bridge that is not installed find nothing'
   assert.deepEqual(evaluate({ now: T0, mac }), []);
 });
 
-test('the display is offline only after the limit, and a printer error is listed without a push (Pi Hub is the one sender)', () => {
-  const recent = { access: 'offline', seenAt: new Date(T0 - 5 * 60e3).toISOString() };
-  assert.deepEqual(evaluate({ now: T0, printer: recent }), []);
-  const long = { access: 'offline', seenAt: new Date(T0 - 11 * 60e3).toISOString() };
-  assert.equal(evaluate({ now: T0, printer: long })[0].id, 'display-offline');
-  const err = evaluate({ now: T0, printer: { access: 'ok', state: 'error', errorCode: '0700_8010', seenAt: new Date(T0).toISOString() } })[0];
-  assert.equal(err.push, null);
-  assert.match(err.detail, /0700_8010/);
+test('the display and the printer are Pi Hub\'s to watch: no findings from Local AI (platform K2/K3)', () => {
+  const long = { access: 'offline', seenAt: new Date(T0 - 60 * 60e3).toISOString() };
+  assert.deepEqual(evaluate({ now: T0, printer: long }), []);
+  assert.deepEqual(evaluate({ now: T0, printer: { access: 'ok', state: 'error', errorCode: '0700_8010', seenAt: new Date(T0).toISOString() } }), []);
 });
 
 test('bind mounts of one drive count once', () => {
