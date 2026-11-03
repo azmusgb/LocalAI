@@ -240,8 +240,6 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
     </div>
   </div>
 
-  <div id="atlasWebStatus" class="atlas-status" role="status" aria-live="polite">Open Architecture to load the map.</div>
-
   <div class="atlas-source" role="group" aria-label="Which graph to show">
     <div class="atlas-source-field"><label for="atlasRepo">Repository</label><select id="atlasRepo"><option value="localai">Local AI</option></select></div>
     <div class="atlas-source-field"><label for="atlasCommit">Commit</label><select id="atlasCommit"><option value="">Latest scan</option></select></div>
@@ -250,50 +248,52 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
     <p id="atlasSnapshotState" class="atlas-snapshot-state" role="status" aria-live="polite" hidden></p>
   </div>
 
-  <div class="atlas-kpis" aria-label="Architecture summary">
-    <div class="atlas-kpi"><span>Production modules</span><strong id="atlasKpiFiles">—</strong></div>
-    <div class="atlas-kpi"><span>Relationships</span><strong id="atlasKpiRelations">—</strong></div>
-    <div class="atlas-kpi"><span>Changed</span><strong id="atlasKpiChanged">—</strong></div>
-    <div class="atlas-kpi"><span>Finding groups</span><strong id="atlasKpiFindings">—</strong></div>
-  </div>
-
-  <div class="atlas-modebar" role="tablist" aria-label="Architecture lens">
-    <button type="button" class="active" role="tab" aria-selected="true" data-atlas-mode="architecture">Structure</button>
-    <button type="button" role="tab" aria-selected="false" data-atlas-mode="changes">Changes</button>
-    <button type="button" role="tab" aria-selected="false" data-atlas-mode="risk">Risk</button>
-    <button type="button" role="tab" aria-selected="false" data-atlas-mode="evidence">Evidence</button>
-  </div>
+  <div id="atlasWebStatus" class="atlas-status" role="status" aria-live="polite">Open Architecture to load the map.</div>
 
   <div class="atlas-grid">
-    <div class="atlas-main">
-      <section class="atlas-card" aria-labelledby="atlasMapTitle">
+    <section class="atlas-sheet" aria-labelledby="atlasMapTitle">
+      <div class="atlas-sheet-tools">
+        <div class="atlas-modebar" role="tablist" aria-label="Architecture lens">
+          <button type="button" class="active" role="tab" aria-selected="true" data-atlas-mode="architecture">Structure</button>
+          <button type="button" role="tab" aria-selected="false" data-atlas-mode="changes">Changes</button>
+          <button type="button" role="tab" aria-selected="false" data-atlas-mode="risk">Risk</button>
+          <button type="button" role="tab" aria-selected="false" data-atlas-mode="evidence">Evidence</button>
+        </div>
         <div class="atlas-search">
           <label class="visually-hidden" for="atlasNodeSearch">Find an Atlas module</label>
           <input id="atlasNodeSearch" type="search" autocomplete="off" placeholder="Find a module, path or domain…" />
           <div id="atlasSearchResults" class="atlas-search-results" hidden></div>
         </div>
-        <div class="atlas-card-head">
-          <div><h2 id="atlasMapTitle" tabindex="-1">System domains</h2><p id="atlasMapHint">Select a domain or search for a module.</p></div>
-          <button id="atlasMapBack" class="btn-outline" type="button" hidden>All domains</button>
-        </div>
-        <div class="atlas-map-wrap">
-          <svg id="atlasMap" role="group" aria-label="System Atlas architecture map" preserveAspectRatio="xMidYMin meet"></svg>
-        </div>
-      </section>
+      </div>
+      <div class="atlas-sheet-head">
+        <div class="atlas-sheet-title"><h2 id="atlasMapTitle" tabindex="-1">System domains</h2><p id="atlasMapHint"></p></div>
+        <dl class="atlas-readout" aria-label="Architecture summary">
+          <div><dt>Modules</dt><dd id="atlasKpiFiles">—</dd></div>
+          <div><dt>Imports</dt><dd id="atlasKpiRelations">—</dd></div>
+          <div><dt>Changed</dt><dd id="atlasKpiChanged">—</dd></div>
+          <div><dt>Findings</dt><dd id="atlasKpiFindings">—</dd></div>
+        </dl>
+        <button id="atlasMapBack" class="btn-outline" type="button" hidden>All domains</button>
+      </div>
+      <div class="atlas-map-wrap" data-state="loading">
+        <svg id="atlasMap" role="group" aria-label="System Atlas architecture map" preserveAspectRatio="xMidYMin meet"></svg>
+        <p id="atlasMapState" class="atlas-map-state">Reading the graph…</p>
+      </div>
+      <p id="atlasLegend" class="atlas-legend"></p>
 
-      <section class="atlas-card" aria-labelledby="atlasFindingsTitle">
-        <div class="atlas-card-head">
-          <div><h2 id="atlasFindingsTitle">Findings</h2><p>Rule-based checks of the code. Ask gives a model's reading separately.</p></div>
+      <div class="atlas-ledger">
+        <div class="atlas-ledger-head">
+          <h2 id="atlasFindingsTitle">Findings</h2>
           <span id="atlasFindingCount">0 modules</span>
         </div>
+        <p class="atlas-ledger-note">Rule-based checks of the code, numbered as they are pinned on the map. Ask gives a model's reading separately.</p>
         <div id="atlasFindingList" class="atlas-findings"></div>
-      </section>
-    </div>
+      </div>
+    </section>
 
     <aside class="atlas-inspector" aria-label="Atlas inspector">
       <div class="atlas-inspector-head">
-        <div class="atlas-eyebrow">Inspector</div>
-        <div id="atlasSelectedEmpty" class="atlas-selected-meta">Select a module to see what uses it and its test evidence.</div>
+        <div id="atlasSelectedEmpty" class="atlas-selected-empty"><h2>Inspector</h2><p>Select a square on the map, a finding or a search result to see what the module uses, what uses it, and its test evidence.</p></div>
         <div id="atlasSelectedBody" hidden>
           <div id="atlasSelectedPath" class="atlas-selected-path" tabindex="-1"></div>
           <div id="atlasSelectedMeta" class="atlas-selected-meta"></div>
@@ -301,10 +301,12 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
       </div>
       <div class="atlas-inspector-body">
         <div id="atlasNodeStats" class="atlas-node-stats"></div>
+        <div id="atlasNodeLinks" class="atlas-links"></div>
 
-        <div class="atlas-section-label">Test evidence</div>
+        <h3 class="atlas-section-label">Test evidence</h3>
         <ul id="atlasEvidenceList" class="atlas-evidence"><li class="atlas-muted">Select a module.</li></ul>
 
+        <h3 class="atlas-section-label">Ask</h3>
         <div class="atlas-model-row">
           <label for="atlasModel">Local model</label>
           <select id="atlasModel"><option value="">Auto-detect</option></select>
