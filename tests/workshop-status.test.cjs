@@ -367,10 +367,21 @@ test('the token stays out of child processes, the repo and the browser', () => {
   const compose = fs.readFileSync(path.resolve(__dirname, '../deploy/stack/compose.yml'), 'utf8');
   assert.match(compose, /LOCALAI_WORKSHOP_STATUS_TOKEN: \$\{LOCALAI_WORKSHOP_STATUS_TOKEN:-\}/);
   assert.match(fs.readFileSync(path.resolve(__dirname, '../deploy/stack/stack.env.example'), 'utf8'), /^LOCALAI_WORKSHOP_STATUS_TOKEN=$/m);
-  assert.match(fs.readFileSync(path.resolve(__dirname, '../deploy/stack/Export-LocalAI-StackEnv.ps1'), 'utf8'), /'LOCALAI_WORKSHOP_STATUS_TOKEN', 'LOCALAI_WORKSHOP_CODE_TOKEN' \}\)/, 'optional in the export');
+  assert.match(fs.readFileSync(path.resolve(__dirname, '../deploy/stack/Export-LocalAI-StackEnv.ps1'), 'utf8'), /'LOCALAI_WORKSHOP_STATUS_TOKEN', 'LOCALAI_WORKSHOP_CODE_TOKEN'(, '[A-Z_]+')* \}\)/, 'optional in the export');
   const workshopSrc = fs.readFileSync(path.resolve(__dirname, '../app/workshop.js'), 'utf8');
   assert.doesNotMatch(workshopSrc, /console\.|method: '(POST|PUT|PATCH|DELETE)'|X-BambuHelper-Client/i, 'no logging, only GET, no portal shortcut header');
   for (const f of ['ui.js', 'home.js']) assert.doesNotMatch(fs.readFileSync(path.resolve(__dirname, `../app/public/${f}`), 'utf8'), /status\/lite|STATUS_TOKEN|Bearer/, f);
+});
+
+// Pi Hub's key for phone notices (platform step 5, app/hub-notify.js): a TOKEN name, so every secret filter catches it.
+test('the Pi Hub token stays out of child processes and the repo, and is optional', () => {
+  const server = require('./server-source.cjs').serverSource();
+  const secret = new RegExp(/const SECRET_ENV=\/(.+?)\/i;/.exec(server)[1], 'i');
+  assert.ok(secret.test('LOCALAI_PI_HUB_TOKEN'), 'childEnv drops it');
+  assert.match(fs.readFileSync(path.resolve(__dirname, '../app/model-coordinator.js'), 'utf8'), /const SECRET_ENV = \/TOKEN\|/, 'the coordinator redacts it');
+  assert.match(fs.readFileSync(path.resolve(__dirname, '../deploy/stack/compose.yml'), 'utf8'), /LOCALAI_PI_HUB_TOKEN: \$\{LOCALAI_PI_HUB_TOKEN:-\}/);
+  assert.match(fs.readFileSync(path.resolve(__dirname, '../deploy/stack/stack.env.example'), 'utf8'), /^LOCALAI_PI_HUB_TOKEN=$/m);
+  assert.match(fs.readFileSync(path.resolve(__dirname, '../deploy/stack/Export-LocalAI-StackEnv.ps1'), 'utf8'), /'LOCALAI_PI_HUB_TOKEN' \}\)/, 'optional in the export');
 });
 
 
