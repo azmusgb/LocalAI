@@ -121,11 +121,9 @@ function createWatchdog({ storage, notify, now = Date.now, limits = LIMITS, host
       }
       active[f.id] = { since, notified: notified || settled, finding: f };
     }
-    // A print that just finished on its own (not cancelled, not failed).
+    // A print finishing isn't pushed from here: Pi Hub's print_finished rule already sends it, and Pi Hub is the one
+    // phone channel (platform step 5, D2).
     const printerState = p?.state && p.state !== 'unknown' ? p.state : prev.printerState;
-    if (prev.printerState === 'printing' && p?.state === 'ended') {
-      notify({ kind: 'finished', title: 'Print finished', body: 'The plate is ready to take off.', url: '/?open=status', tag: 'watch:print-done' });
-    }
     storage.writeSetting(STATE_KEY, { active, printerState, checkedAt: new Date(t).toISOString() });
     return list();
   }

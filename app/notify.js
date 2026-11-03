@@ -1,6 +1,8 @@
 'use strict';
 // Phone notifications: the devices that subscribed (settings push:device:<id>) and, from Task 4, the rules for
-// what each one gets. Sending goes through app/push.js.
+// what each one gets. Sending goes through app/push.js. Since platform step 5 (D2), each event goes to Pi Hub first
+// (sendHub, app/hub-notify.js), which keeps quiet hours, de-duplication and the cap; Web Push and its rules below are
+// only the fallback for an event Pi Hub didn't take.
 
 const crypto = require('node:crypto');
 
@@ -21,7 +23,7 @@ const DEVICE_PREFIX = 'push:device:';
 const wants = (device, kind) => !!device.kinds?.includes(kind) || (kind === 'answer' && !device.answerSet);
 const publicDevice = ({ keys, answerSet, ...device }) => ({ ...device, kinds: KINDS.filter((k) => wants({ ...device, answerSet }, k)) });
 
-function createNotifier({ storage, sendPush, vapid, subject, now = Date.now, schedule = setTimeout, timeZone = process.env.TZ || 'America/New_York' }) {
+function createNotifier({ storage, sendPush, sendHub = null, vapid, subject, now = Date.now, schedule = setTimeout, timeZone = process.env.TZ || 'America/New_York' }) {
   const all = () => storage.listSettings(DEVICE_PREFIX);
   const save = (device) => storage.writeSetting(DEVICE_PREFIX + device.id, device);
 
@@ -99,6 +101,22 @@ function createNotifier({ storage, sendPush, vapid, subject, now = Date.now, sch
       const payload = { title: cut(event.title || 'Local AI', 60), body: cut(event.body, event.kind === 'answer' ? 180 : 80), url: String(event.url || '/'), tag: String(event.tag || event.kind) };
       const presenceAt = storage.readSetting('push:presence', null)?.at || 0;
       if (event.kind === 'finished' && t - presenceAt < PRESENCE_MS) return;
+      if (sendHub) {
+        Promise.resolve()
+          .then(() => sendHub({ ...payload, kind: event.kind, title: event.title || payload.title, body: event.body ?? payload.body }))
+          .then((r) => { if (!r?.ok) webPush(event, payload, t); }, () => webPush(event, payload, t))
+          .catch(() => {});
+        return;
+      }
+      webPush(event, payload, t);
+    } catch {
+      // A notification must never break what triggered it.
+    }
+  }
+
+  // Today's Web Push to each subscribed device, with its kinds, quiet hours, repeat rule and burst cap.
+  function webPush(event, payload, t) {
+    try {
       if (repeats.size > 500) for (const [k, v] of repeats) if (t - v >= REPEAT_MS) repeats.delete(k);
       const hhmm = localTime(t);
       for (const device of all()) {
