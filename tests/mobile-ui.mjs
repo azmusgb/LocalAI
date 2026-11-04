@@ -22,7 +22,8 @@ page.on('pageerror', e => pageErrors.push(e.message));
 await page.goto(base, { waitUntil: 'domcontentloaded' });
 await page.waitForSelector('#uxMobileNav');
 await page.waitForFunction(() => typeof window.showView === 'function' && window.LocalAIViews);
-const views = await page.evaluate(() => window.LocalAIViews.VIEWS.map(v => v.id));
+// printLab sends the browser to Pi Hub's /lab (step 6, PR 6.4; print-lab-ui checks that): it is no page of Local AI's.
+const views = await page.evaluate(() => window.LocalAIViews.VIEWS.map(v => v.id).filter(id => id !== 'printLab'));
 
 await check('no page scrolls sideways and no form field makes iOS zoom', async () => {
   const problems = [];

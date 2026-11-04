@@ -18,7 +18,8 @@ const { VIEWS } = await (async () => {
   const page = await browser.newPage();
   await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.LocalAIViews);
-  const ids = await page.evaluate(() => window.LocalAIViews.VIEWS.map(v => v.id));
+  // printLab sends the browser to Pi Hub's /lab (step 6, PR 6.4; print-lab-ui checks that): it is no page of Local AI's.
+  const ids = await page.evaluate(() => window.LocalAIViews.VIEWS.map(v => v.id).filter(id => id !== 'printLab'));
   await page.close();
   return { VIEWS: ids };
 })();
