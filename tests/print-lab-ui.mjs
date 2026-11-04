@@ -1,10 +1,6 @@
-// Projects › Print lab: the Mac's lab page, read-only. A throwaway server gets a fixture through the real sync route
-// (with the Mac key), then the page is checked on an iPhone and a desktop: Needs you first with each command and Copy,
-// the question's budget, a link that opens an experiment's details, Earlier folded, photos from the server, and axe.
-// The page's buttons (Judge it, It's printing now, Approve, Drop) queue requests the test answers as the Mac would; a
-// stand-in Workshop display and camera bridge on loopback give the live print block its state and its no-picture
-// reason; thumbnails, the viewer, Compare and the checklist are checked on both sizes.
-// SHOTS=<dir> saves screenshots there.
+// Print lab on Local AI since platform step 6, PR 6.4: the tab sends the browser to Pi Hub's /lab. A throwaway server
+// still gets a fixture through the real sync route (with the Mac key), since /api/lab/* stays until 6.7; then, on an
+// iPhone and a desktop, each Print lab address lands on Pi Hub's /lab with its e, p and do, and Back returns to Local AI.
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -13,17 +9,11 @@ import path from 'node:path';
 import { once } from 'node:events';
 import http from 'node:http';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { addAxe } from './axe-helper.mjs';
 
 const { spawnAppServer } = createRequire(import.meta.url)('./spawn-server.cjs');
-const axePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min.js');
-const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'];
-const shots = process.env.SHOTS || '';
 let failed = 0;
 async function check(name, fn) { try { await fn(); console.log('PASS', name); } catch (e) { failed++; console.log('FAIL', name, e.message); } }
-const shot = async (page, name) => { if (shots) { fs.mkdirSync(shots, { recursive: true }); await page.screenshot({ path: path.join(shots, name), fullPage: true }); } };
 
 const KEY = 'print-lab-ui-key';
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-lab-ui-'));
@@ -110,39 +100,54 @@ const eqIdx = nameVal.indexOf('=');
 const cookieName = nameVal.slice(0, eqIdx).trim();
 const cookieVal = nameVal.slice(eqIdx + 1).trim();
 
+// Platform step 6, PR 6.4: Local AI's Print lab tab sends the browser to Pi Hub's /lab, keeping e, p and do (the plan's
+// acceptance: "#/printLab?e=E-025 lands on Pi Hub's URL with e"). Opened on 127.0.0.1, Local AI's address for the hub is
+// the old one, http://10.0.0.30; the test answers it itself, so nothing leaves this machine.
+const HUB_LAB = /^http:\/\/10\.0\.0\.30\/lab(\?|$)/;
+async function urlBecomes(page, ok, ms = 10000) {
+  for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 100))) if (ok(page.url())) return;
+  throw new Error(`still at ${page.url()}`);
+}
 for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['desktop', { width: 1440, height: 900 }]]) {
   const context = await browser.newContext({ viewport, colorScheme: 'dark' });
   await context.addCookies([{ name: cookieName, value: cookieVal, url: base }]);
+  const hubHits = [];
+  await context.route(u => u.hostname === '10.0.0.30' || u.hostname.endsWith('.rahe-home.duckdns.org'), r => {
+    hubHits.push(r.request().url());
+    return r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Pi Hub lab</title>' });
+  });
   const page = await context.newPage();
   page.on('pageerror', e => errors.push(`${name}: ${e.message}`));
-  await page.goto(`${base}/#printLab`);
-  await page.waitForSelector('#printLab.active .lab-redirect-card');
 
-  await check(`${name}: page title is Print lab and redirect card points to Pi Hub`, async () => {
-    assert.equal(await page.locator('#printLab h1').innerText(), 'Print lab');
-    assert.equal(await page.locator('.lab-redirect-card h2').innerText(), 'Print lab is on Pi Hub');
-    assert.match(await page.locator('.lab-redirect-card p.sub').innerText(), /Testing records, verdicts, and photos now live directly on Pi Hub/);
-    const link = page.locator('.lab-redirect-card a.btn-primary');
-    assert.equal(await link.innerText(), 'Open Print lab on Pi Hub ↗');
-    assert.match(await link.getAttribute('href'), /^https?:\/\/[^/]+\/lab$/);
-    assert.equal(await link.getAttribute('target'), '_blank');
-    assert.equal(await link.getAttribute('rel'), 'noopener');
+  for (const [hash, want] of [
+    ['#printLab', 'http://10.0.0.30/lab'],
+    ['#/printLab?e=E-025', 'http://10.0.0.30/lab?e=E-025'],
+    ['#printLab?p=hex-tile&e=E-023&do=judge', 'http://10.0.0.30/lab?p=hex-tile&e=E-023&do=judge'],
+  ]) {
+    await check(`${name}: ${hash} lands on Pi Hub's ${want.slice(17)}`, async () => {
+      await page.goto(`${base}/${hash}`);
+      await page.waitForURL(HUB_LAB, { timeout: 10000 });
+      assert.equal(page.url(), want);
+      assert.equal(await page.title(), 'Pi Hub lab', 'the stand-in hub answered, not a real one');
+    });
+  }
+
+  await check(`${name}: going back doesn't bounce off the lab again`, async () => {
+    await page.goto(`${base}/#home`);
+    await page.waitForFunction(() => typeof window.showView === 'function');
+    await page.evaluate(() => { location.hash = '#printLab'; });
+    // From inside the app the redirect follows a same-document hash change, which Playwright's navigation waits report
+    // as aborted; the address bar is what counts, so poll it.
+    await urlBecomes(page, u => HUB_LAB.test(u));
+    await page.goBack().catch(() => {});
+    await urlBecomes(page, u => new URL(u).origin === new URL(base).origin);
+    await page.waitForFunction(() => typeof window.showView === 'function');
+    assert.notEqual(new URL(page.url()).hash, '#printLab', 'the replaced entry is gone, so Back is Local AI');
   });
 
-  await check(`${name}: direct link to an experiment preserves query param`, async () => {
-    await page.goto(`${base}/#printLab?e=E-023`);
-    await page.waitForSelector('#printLab.active .lab-redirect-card');
-    const link = page.locator('.lab-redirect-card a.btn-primary');
-    assert.match(await link.getAttribute('href'), /\/lab\?e=E-023$/);
-  });
-
-  await check(`${name}: axe finds nothing on the page`, async () => {
-    await addAxe(page, axePath);
-    const v = await page.evaluate(tags => window.axe.run(document.getElementById('printLab'), { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations'] }).then(r => r.violations.map(x => `${x.id}: ${x.nodes.map(n => n.target.join(' ')).join(', ')}`)), TAGS);
-    assert.deepEqual(v, []);
-  });
-  await shot(page, `print-lab-${name}.png`);
+  assert.ok(hubHits.every(u => HUB_LAB.test(u)), `only Pi Hub's /lab was asked for: ${hubHits.join(', ')}`);
   await page.close();
+  await context.close();
 }
 
 await check('no script errors', async () => assert.deepEqual(errors, []));
