@@ -30,7 +30,7 @@ const VIEWS=[
 // Automations is a tab of Work (scheduled work): navigation spec, step 3. Projects holds only what you keep (2 Nov, D4).
  {id:'library',svg:'library',domain:'projects',section:'Keep',parent:'projects',tab:'Library',label:'Library',description:'Everything you kept: chats, research and images.',aka:['everything you kept','kept']},
  {id:'agents',svg:'target',domain:'hidden',section:'Agents',label:'Missions',description:'Give a goal; specialist agents work it live.',aka:['agents','agent operations']},
- {id:'status',svg:'health',domain:'system',section:'Health',label:'Assistant status',description:'Whether Local AI is working, and which optional services are up.',aka:['status','assistant status','health']},
+ {id:'status',svg:'health',short:'Status',domain:'system',section:'Health',label:'Assistant status',description:'Whether Local AI is working, and which optional services are up.',aka:['status','assistant status','health']},
  {id:'models',svg:'model',domain:'system',section:'Health',label:'Models',description:"Installed models and what's loaded now."},
  {id:'integrations',svg:'plug',domain:'system',section:'Health',label:'Services',description:'What Local AI connects to, and whether each one is ready.',aka:['integrations','bridges','tools']},
  {id:'automationStudio',svg:'clock',domain:'work',section:'Work',parent:'work',tab:'Assistant automations',label:'Assistant automations',description:'Scheduled prompts and research, health checks and the morning brief.',aka:['studio','automation studio','monitors','morning brief','health check','assistant automations']},
