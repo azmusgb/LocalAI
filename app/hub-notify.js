@@ -20,7 +20,7 @@ function clickFor(url, name) {
 // Returns send(event) -> Promise<{ ok, status }>, or null with no key. ok means Pi Hub took it: sent, held for quiet
 // hours, a duplicate, or over its cap (kept in its Alerts history). Never throws.
 function createHubNotify({ key = process.env.LOCALAI_PI_HUB_TOKEN, url = process.env.LOCALAI_PI_HUB_NOTIFY_URL || DEFAULT_HUB,
-  name = process.env.LOCALAI_NAME || 'assistant.rahe-home.duckdns.org', fetchImpl = globalThis.fetch, timeoutMs = 10000 } = {}) {
+  name = process.env.LOCALAI_PUBLIC_HOST || 'assistant.rahe-home.duckdns.org', fetchImpl = globalThis.fetch, timeoutMs = 10000 } = {}) {
   key = String(key || '').trim();
   if (!key || !/^https:\/\//.test(url)) return null;
   const endpoint = `${url.replace(/\/+$/, '')}/api/notify/localai`;

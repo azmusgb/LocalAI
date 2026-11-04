@@ -59,3 +59,11 @@ test('the server answers a rebound name with 421 before any route, and its own n
   const prio = JSON.parse((await request('GET', '/api/claude/priorities', `127.0.0.1:${port}`)).text);
   assert.equal(prio.items.length, 0, 'the refused POST handed nothing to Claude');
 });
+
+test('the app\'s public registry name (LOCALAI_PUBLIC_HOST, default assistant.rahe-home.duckdns.org) is answered; other public names are not', () => {
+  const a = allowedHosts({});
+  assert.equal(hostAllowed('assistant.rahe-home.duckdns.org', a), true);
+  assert.equal(hostAllowed('evil.com', a), false);
+  assert.equal(hostAllowed('pc.rahe-home.duckdns.org', a), false);
+  assert.equal(hostAllowed('pc.rahe-home.duckdns.org', allowedHosts({ LOCALAI_PUBLIC_HOST: 'pc.rahe-home.duckdns.org' })), true);
+});
