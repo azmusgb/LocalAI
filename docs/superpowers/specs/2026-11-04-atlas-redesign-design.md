@@ -111,6 +111,32 @@ Each PR is small and tested first, shipped with `npm run ship`. The page keeps w
 4. **Systems strip and `GET /api/atlas/systems`.** It reads Pi Hub's registry and records, with the cached fallback.
 5. **pi-hub and print-lab rules.** These add FastAPI route extraction and the column rules for each. They depend on the
    deploy keys of plan decision 1.
+6. **Ask: a small packet about the selected module** (`atlas_intelligence.py`). See "What Ask sends the model" below.
+   Tests come first: the packet's size limit, the selected module coming first, the refusal of a model whose context
+   is too small, and compact JSON.
+
+## What Ask sends the model
+
+Measured 4 Nov 2026 against the live graph (31 Oct snapshot, `atlas_intelligence.py` on `5f26d31`):
+
+- Every question sends about 5,400 tokens of evidence. With a module selected it is about 8,600.
+- About 60% of that is the same repo-wide material whatever the question: 16 top findings and 12 finding groups.
+- The selected module comes last, after everything else. That is where a small model is least likely to use it.
+- The request sets no `num_ctx`. The default model, `qwen3:4b-instruct-32k`, has 32,768 tokens, so it fits. The picker
+  also offers `qwen3:4b-instruct-8k` and `qwen3:4b-instruct` (no context set). On those, Ollama silently cuts the
+  prompt, and the system prompt and rules can be the part that is lost.
+
+Target:
+
+1. **Order.** The question comes first, then the selected module with what it uses, what uses it, its tests and its
+   risk parts. After that come only the findings that name that module or its neighbours. Repo-wide findings go in only
+   when no module is selected.
+2. **Size.** Send compact JSON, not indented. Cap the packet at 3,000 tokens for a selected module and 4,000 without
+   one, and drop the lowest-ranked items first. Each answer says what was left out.
+3. **Context.** Send `num_ctx` explicitly. Refuse a model whose context can't hold the system prompt, the packet and a
+   1,000-token answer, and say which model to pick instead.
+4. **Files on demand.** Ask never inlines file contents. Goose opens files when it needs them, read-only, from the
+   snapshot's clean copy (unchanged from plan PR 5).
 
 ## Acceptance
 
@@ -121,6 +147,8 @@ Each PR is small and tested first, shipped with `npm run ship`. The page keeps w
 - No module's risk rises when a test that imports it is added (a unit test proves this).
 - The page reads correctly at 390 px and 1440 px in both themes, with the browser suite and axe clean.
 - A version 1 snapshot still opens.
+- Asking about `app/storage.js` sends at most 3,000 tokens of evidence, with that module first. Choosing an 8k model
+  either fits or gets a clear refusal, never a silently cut prompt.
 
 ## Decisions (recommendations first)
 
