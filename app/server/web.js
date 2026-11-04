@@ -4,7 +4,7 @@
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
 function createWeb(ctx) {
-  const { APP_VERSION, CAPABILITY_CACHE_MS, CHAT_MODEL_TIMEOUT_MS, ENGINEERING_MODEL_TIMEOUT_MS, LOCAL_UI_PORT, MODEL, PUBLIC_DIR, accessAddresses, changeStore, claudeFindings, crypto, engineeringRunStore, fs, json, listenPort, path, release, text } = ctx;
+  const { ALLOWED_HOSTS, APP_VERSION, CAPABILITY_CACHE_MS, CHAT_MODEL_TIMEOUT_MS, ENGINEERING_MODEL_TIMEOUT_MS, LOCAL_UI_PORT, MODEL, PUBLIC_DIR, accessAddresses, changeStore, claudeFindings, crypto, engineeringRunStore, fs, hostAllowed, json, listenPort, path, release, text } = ctx;
   function apiConfig(req, res) {
     json(res, 200, {
       appliance: 'Local AI',
@@ -25,13 +25,14 @@ function createWeb(ctx) {
     });
   }
   // The host a /go/ link points at. Behind the front gate the request's Host is 10.0.0.21 (the gate rewrites it) and the
-  // name the owner typed is in X-Forwarded-Host, so that wins when it is a plain host name; LOCALAI_GO_HOST fixes it.
+  // name the owner typed is in X-Forwarded-Host. That header is the client's to set, so its first value counts only when
+  // it passes the same host check as Host (server/http.js hostAllowed); else Host is used. LOCALAI_GO_HOST overrides both.
   const HOST_NAME = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/;
   function goHost(req) {
     const fixed = String(process.env.LOCALAI_GO_HOST || '').trim();
     if (HOST_NAME.test(fixed)) return fixed;
     const forwarded = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim().replace(/:\d+$/, '');
-    if (HOST_NAME.test(forwarded)) return forwarded;
+    if (HOST_NAME.test(forwarded) && hostAllowed(forwarded, ALLOWED_HOSTS)) return forwarded;
     return (req.headers.host || '').split(':')[0] || '127.0.0.1';
   }
   function redirectFor(req, res, pathname) {

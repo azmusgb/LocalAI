@@ -60,8 +60,22 @@ test('the notifier has its own URL variable; compose never sets the LAN one pi-h
 });
 
 
-test('the default app name is the registry address, not the retired home.arpa name', () => {
-  const src = fs.readFileSync(path.resolve(__dirname, '../app/hub-notify.js'), 'utf8');
-  assert.match(src, /LOCALAI_NAME \|\| 'assistant\.rahe-home\.duckdns\.org'/);
-  assert.doesNotMatch(src, /home\.arpa/);
+test('tap links use LOCALAI_PUBLIC_HOST (default: the registry address) even when LOCALAI_NAME is set', async () => {
+  const saved = { n: process.env.LOCALAI_NAME, p: process.env.LOCALAI_PUBLIC_HOST, k: process.env.LOCALAI_PI_HUB_TOKEN };
+  const send = async (publicHost) => {
+    process.env.LOCALAI_NAME = 'localai.home.arpa'; process.env.LOCALAI_PI_HUB_TOKEN = 'k1';
+    if (publicHost === undefined) delete process.env.LOCALAI_PUBLIC_HOST; else process.env.LOCALAI_PUBLIC_HOST = publicHost;
+    const calls = [];
+    await createHubNotify({ fetchImpl: fakeFetch(200, calls) })({ kind: 'failed', title: 'T', body: 'B', url: '/?open=status' });
+    return calls[0].body.click;
+  };
+  try {
+    assert.equal(await send(undefined), 'https://assistant.rahe-home.duckdns.org/?open=status');
+    assert.equal(await send(''), 'https://assistant.rahe-home.duckdns.org/?open=status', 'empty means the default');
+    assert.equal(await send('other.rahe-home.duckdns.org'), 'https://other.rahe-home.duckdns.org/?open=status');
+  } finally {
+    for (const [k, v] of [['LOCALAI_NAME', saved.n], ['LOCALAI_PUBLIC_HOST', saved.p], ['LOCALAI_PI_HUB_TOKEN', saved.k]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+  const compose = fs.readFileSync(path.resolve(__dirname, '../deploy/stack/compose.yml'), 'utf8');
+  assert.match(compose, /^\s*LOCALAI_PUBLIC_HOST: \$\{LOCALAI_PUBLIC_HOST:-assistant\.rahe-home\.duckdns\.org\}/m, 'compose passes it to the app');
 });

@@ -75,6 +75,8 @@ services:
       MAC_DSH_URL: ${MAC_DSH_URL:-}
       # Caddy's HTTPS name, one of the host names the appliance answers to (the DNS-rebinding guard, app/server/http.js).
       LOCALAI_NAME: ${LOCALAI_NAME:-localai.home.arpa}
+      # The name the front gate serves Local AI on: the host in phone-notice tap links and a name the appliance answers to.
+      LOCALAI_PUBLIC_HOST: ${LOCALAI_PUBLIC_HOST:-assistant.rahe-home.duckdns.org}
       # Optional extra host names to answer to, comma-separated (the guard already takes IP addresses, names without a
       # dot and .local/.home.arpa/.lan names).
       LOCALAI_ALLOWED_HOSTS: ${LOCALAI_ALLOWED_HOSTS:-}

@@ -89,7 +89,7 @@ function sameOriginJson(req, res) {
 //  - an IP address (rebinding needs a name), or a name with no dot (localhost, local-ai-appliance, a PC's name);
 //  - names under suffixes no one can register in public DNS (.localhost, .local, .home.arpa, .test, .invalid,
 //    .internal, .lan);
-//  - the configured names: LOCALAI_NAME (default localai.home.arpa), LOCALAI_HOST_IP, LOCALAI_REMOTE_NAME (the
+//  - the configured names: LOCALAI_NAME (default localai.home.arpa), LOCALAI_PUBLIC_HOST (the registry name the front gate serves it on), LOCALAI_HOST_IP, LOCALAI_REMOTE_NAME (the
 //    Tailscale *.ts.net name) and LOCALAI_ALLOWED_HOSTS (comma-separated extras). Caddy keeps the browser's Host when it
 //    proxies, so its sites (these same names) pass; scripts on the host use 127.0.0.1 or localhost.
 const PRIVATE_SUFFIXES = ['.localhost', '.local', '.home.arpa', '.test', '.invalid', '.internal', '.lan'];
@@ -99,7 +99,7 @@ const hostName = raw => {
   return h.replace(/:\d*$/, '').replace(/\.$/, '');
 };
 function allowedHosts(env = process.env) {
-  const names = [env.LOCALAI_NAME || 'localai.home.arpa', env.LOCALAI_HOST_IP, env.LOCALAI_REMOTE_NAME, ...String(env.LOCALAI_ALLOWED_HOSTS || '').split(',')];
+  const names = [env.LOCALAI_NAME || 'localai.home.arpa', env.LOCALAI_PUBLIC_HOST || 'assistant.rahe-home.duckdns.org', env.LOCALAI_HOST_IP, env.LOCALAI_REMOTE_NAME, ...String(env.LOCALAI_ALLOWED_HOSTS || '').split(',')];
   return new Set(names.map(hostName).filter(Boolean));
 }
 function hostAllowed(rawHost, allowed = allowedHosts()) {
