@@ -146,7 +146,7 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
     const back = page.locator('#uxPiHubLink');
     await back.waitFor({ state: 'visible', ...T });
     assert.equal((await back.innerText()).trim(), '← Home');  // §5 level 0: "← Home" is Pi Hub (step 7, PR 7.7)
-    assert.equal(await back.getAttribute('href'), 'http://10.0.0.30/');
+    assert.equal(await back.getAttribute('href'), 'https://hub.rahe-home.duckdns.org/');
     const box = await back.boundingBox();
     assert.ok(box.height >= 44, `tap target ${box.height}px`);
     assert.ok(box.width < 160, `"← Home" is a link, not a full-width strip (${box.width}px)`);
@@ -186,16 +186,16 @@ await check('Needs you also lists Pi Hub\'s items in Pi Hub\'s words, bad first,
   assert.equal(await page.textContent('[data-hub-need="printer:plate"] .ui-need__meta'), 'Pi Hub');
   assert.equal(await page.locator('[data-approval-id="ap-1"] .ui-need__meta').count(), 0, "Local AI's own rows carry no source line");
   // Pi Hub's rows leave the app: a link to the hub with an arrow, opened in a new tab. Local AI's rows stay in the app.
-  assert.equal(await page.getAttribute('[data-hub-need="printer:plate"] a', 'href'), 'http://10.0.0.30/workshop');
+  assert.equal(await page.getAttribute('[data-hub-need="printer:plate"] a', 'href'), 'https://hub.rahe-home.duckdns.org/workshop');
   assert.equal(await page.getAttribute('[data-hub-need="printer:plate"] a', 'target'), '_blank');
   assert.equal(await page.textContent('[data-hub-need="printer:plate"] .ui-need__action'), '↗');
   assert.equal(await page.getAttribute('[data-hub-need="localai:watch-mac-disk"] a', 'target'), null);
   let went = '';
-  await page.context().route(u => u.hostname === '10.0.0.30', r => { went = r.request().url(); return r.fulfill({ contentType: 'text/html', body: '<title>Pi Hub</title>' }); });
+  await page.context().route(u => u.hostname === 'hub.rahe-home.duckdns.org', r => { went = r.request().url(); return r.fulfill({ contentType: 'text/html', body: '<title>Pi Hub</title>' }); });
   const [hub] = await Promise.all([page.waitForEvent('popup'), page.click('[data-hub-need="printer:plate"] a')]);
-  await hub.waitForURL('http://10.0.0.30/workshop', T);
-  assert.equal(went, 'http://10.0.0.30/workshop');
-  assert.equal(page.url().includes('10.0.0.30'), false, 'Home stays open');
+  await hub.waitForURL('https://hub.rahe-home.duckdns.org/workshop', T);
+  assert.equal(went, 'https://hub.rahe-home.duckdns.org/workshop');
+  assert.equal(page.url().includes('hub.rahe-home.duckdns.org'), false, 'Home stays open');
   // A Local AI row routes inside the app as it always did.
   await page.click('[data-hub-need="localai:watch-mac-disk"] a');
   await page.waitForSelector('#status.active', T);
