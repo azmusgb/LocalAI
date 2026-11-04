@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { addAxe } from './axe-helper.mjs';
 
-const { atlasFixture } = createRequire(import.meta.url)('./atlas-map-fixture.cjs');
+const { atlasFixture, systemsFixture } = createRequire(import.meta.url)('./atlas-map-fixture.cjs');
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const axePath = join(dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min.js');
 const browser = await chromium.launch({ headless: true });
@@ -18,7 +18,7 @@ async function check(name, fn) {
   try { await fn(); console.log('PASS', name); } catch (error) { failures.push(`${name}: ${error.message}`); console.error('FAIL', name, error.message); }
 }
 
-async function open(device, { graph = atlasFixture(), status = 200, scheme = 'dark' } = {}) {
+async function open(device, { graph = atlasFixture(), status = 200, scheme = 'dark', systems = systemsFixture(), systemsStatus = 200 } = {}) {
   const ctx = await browser.newContext({ ...device, serviceWorkers: 'block', colorScheme: scheme, reducedMotion: 'reduce' });
   await ctx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
   const page = await ctx.newPage();
@@ -26,8 +26,9 @@ async function open(device, { graph = atlasFixture(), status = 200, scheme = 'da
   page.on('pageerror', (e) => page.errors.push(e.message));
   const json = (route, body, code = 200) => route.fulfill({ status: code, contentType: 'application/json', body: JSON.stringify(body) });
   await page.route((u) => u.pathname === '/api/atlas/graph', (r) => status === 200 ? json(r, graph) : json(r, { error: { code: 'atlas_graph_unavailable', message: 'System Atlas HTML was not found.' } }, status));
+  await page.route((u) => u.pathname === '/api/atlas/systems', (r) => json(r, systems, systemsStatus));
   await page.route((u) => u.pathname === '/api/atlas/summary', (r) => json(r, { providers: { ollama: { available: false }, goose: { available: false } } }));
-  await page.route((u) => u.pathname === '/api/atlas/snapshots', (r) => json(r, { repos: ['localai'], snapshots: [] }));
+  await page.route((u) => u.pathname === '/api/atlas/snapshots', (r) => json(r, { repos: ['localai', 'pi-hub', 'print-lab'], snapshots: [] }));
   await page.route((u) => u.pathname === '/api/atlas/node', (r) => json(r, { node: { testEvidence: [] } }));
   await page.route((u) => u.pathname === '/api/releases', (r) => json(r, { current: { commit: 'ff9081c', deployedAt: '2026-10-15T00:00:00Z' }, history: [] }));
   await page.goto(`${base}/#home`, { waitUntil: 'domcontentloaded' });
@@ -153,6 +154,27 @@ await check('details that arrive after another module was chosen are not shown f
   await desk.unroute((u) => u.pathname === '/api/atlas/node');
 });
 
+await check('the Systems strip shows each host, its services in one line, and opens a repository on the map', async () => {
+  assert.deepEqual(await desk.locator('#atlasSystemsList .atlas-host h3').evaluateAll((els) => els.map((e) => e.firstChild.textContent)),
+    ['Raspberry Pi', 'Windows PC', 'Mac', 'Devices', 'Off-site']);
+  assert.match(await desk.locator('#atlasSystemsNote').innerText(), /^From Pi Hub, just now\.$/);
+  assert.equal(await desk.locator('[data-host="pi"] .atlas-host-health').innerText(), '1 of 3 need a look: Ad blocking (paused)');
+  assert.equal(await desk.locator('[data-host="pi"] .atlas-host-health').getAttribute('data-tone'), 'warn');
+  assert.match(await desk.locator('[data-atlas-repo="localai"]').innerText(), /mapped · eeeeeee · \d+ days old · live is fffffff/);
+  assert.match(await desk.locator('[data-atlas-repo="print-lab"]').innerText(), /no snapshot yet/);
+  assert.equal(await desk.locator('[data-host="pi"] .atlas-host-target').innerText().then((t) => t.replace(/\s+/g, ' ')), 'netmon 2222222 · not mapped');
+  assert.equal(await desk.locator('[data-host="offsite"] .atlas-host-none').innerText(), 'Nothing deployed here.');
+  assert.equal(await desk.locator('[data-atlas-repo="localai"]').getAttribute('aria-pressed'), 'true');
+  await desk.locator('[data-atlas-repo="print-lab"]').click();
+  await desk.locator('.atlas-map-wrap[data-state="empty"]').waitFor({ timeout: 8000 });
+  assert.match(await desk.locator('#atlasMapTitle').innerText(), /No snapshots of Print lab yet/);
+  assert.equal(await desk.locator('[data-atlas-repo="print-lab"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await desk.locator('[data-atlas-repo="localai"]').getAttribute('aria-pressed'), 'false');
+  await desk.locator('[data-atlas-repo="localai"]').click();
+  await desk.locator('#atlasMap .atlas-row').first().waitFor({ timeout: 8000 });
+  assert.equal(await desk.evaluate(() => document.activeElement.id), 'atlasMapTitle');
+});
+
 await check('no script errors at 1440', async () => assert.deepEqual(desk.errors, []));
 await desk.context().close();
 
@@ -192,6 +214,24 @@ await check('a missing graph says what failed, on the map and in the status line
   assert.deepEqual(missing.errors, []);
 });
 await missing.context().close();
+
+const away = await open({ viewport: { width: 1440, height: 900 } }, { systems: systemsFixture({ source: 'cache' }) });
+await check('when the Pi is away the strip draws its kept copy and says how old it is', async () => {
+  assert.equal(await away.locator('#atlasSystemsNote').innerText(), 'Pi Hub could not be reached (timeout). Showing its list from 2 hours ago.');
+  assert.equal(await away.locator('#atlasSystemsNote').getAttribute('data-tone'), 'warn');
+  assert.equal(await away.locator('#atlasSystemsList .atlas-host').count(), 5);
+});
+await away.context().close();
+
+const noHub = await open({ viewport: { width: 1440, height: 900 } }, { systems: { error: { code: 'atlas_systems_unavailable', message: 'Pi Hub could not be reached (refused).' } }, systemsStatus: 503 });
+await check('with no Pi and no copy the strip says what failed and the map still draws', async () => {
+  await noHub.locator('#atlasSystemsNote[data-tone="error"]').waitFor({ timeout: 8000 });
+  assert.equal(await noHub.locator('#atlasSystemsNote').innerText(), 'Pi Hub could not be reached (refused). The map below still works.');
+  assert.equal(await noHub.locator('#atlasSystemsList').isHidden(), true);
+  assert.ok(await noHub.locator('#atlasMap .atlas-row').count() > 0);
+  assert.deepEqual(noHub.errors, []);
+});
+await noHub.context().close();
 
 await browser.close();
 if (failures.length) { console.error(`\n${failures.length} check(s) failed`); process.exit(1); }

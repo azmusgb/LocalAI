@@ -61,4 +61,28 @@ function atlasFixture({ version = 2 } = {}) {
   };
 }
 
-module.exports = { atlasFixture };
+// What Local AI's /api/atlas/systems answers (Atlas redesign PR 4): five hosts from Pi Hub, Local AI mapped (not at its
+// live commit), Pi Hub mapped, print-lab never snapshotted, one service that needs a look.
+function systemsFixture({ source = 'live' } = {}) {
+  const svc = (id, label, state = 'ok', severity = 'ok') => ({ id, label, state, severity, headline: '', stale: false });
+  const t = (id, label, atlas, commit) => ({ id, label, repo: null, atlas, state: 'live', commit, deployedAt: null, version: null });
+  return {
+    source, error: source === 'cache' ? 'Pi Hub could not be reached (timeout).' : null,
+    fetchedAt: new Date(Date.now() - (source === 'cache' ? 2 * 3600e3 : 10e3)).toISOString(), hubAsOf: null,
+    hosts: [
+      { id: 'pi', label: 'Raspberry Pi', runs: 'Always on', services: [svc('hub', "The hub's sources"), svc('adguard', 'Ad blocking', 'paused', 'attention'), svc('weather', 'Weather')],
+        targets: [t('pi-hub', 'Pi Hub', 'pi-hub', '4'.repeat(40)), t('netmon', 'netmon', null, '2'.repeat(40))],
+        repos: [{ repo: 'pi-hub', label: 'Pi Hub', liveCommit: '4'.repeat(40), snapshot: { commit: '4'.repeat(40), generatedAt: new Date().toISOString() }, atLive: true }] },
+      { id: 'pc', label: 'Windows PC', runs: 'May sleep', services: [svc('local_ai', 'Local AI', 'ready'), svc('pc', 'Windows PC', 'on')],
+        targets: [t('localai', 'Local AI', 'localai', 'f'.repeat(40))],
+        repos: [{ repo: 'localai', label: 'Local AI', liveCommit: 'f'.repeat(40), snapshot: { commit: 'e'.repeat(40), generatedAt: new Date(Date.now() - 4.5 * 86400e3).toISOString() }, atLive: false }] },
+      { id: 'mac', label: 'Mac', runs: 'When it is awake', services: [svc('mac_lab', 'Print lab on the Mac', 'idle')],
+        targets: [t('print-lab', 'Print lab', 'print-lab', '9'.repeat(40))],
+        repos: [{ repo: 'print-lab', label: 'Print lab', liveCommit: '9'.repeat(40), snapshot: null, atLive: false }] },
+      { id: 'devices', label: 'Devices', runs: 'On the home network', services: [svc('printer', 'Bambu X2D', 'idle')], targets: [t('firmware', 'Display firmware', null, '7'.repeat(40))], repos: [] },
+      { id: 'offsite', label: 'Off-site', runs: 'Google Drive, nightly', services: [svc('backups', 'Backups')], targets: [], repos: [] },
+    ],
+  };
+}
+
+module.exports = { atlasFixture, systemsFixture };

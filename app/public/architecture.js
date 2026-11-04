@@ -525,6 +525,7 @@ function clearGraph(title,hint,kind='loading'){
 async function refresh(){
   // A newer refresh (another repository or commit chosen meanwhile) supersedes this one: its results are dropped.
   const seq=++state.seq;
+  page.dispatchEvent(new CustomEvent('atlas:source',{detail:{repo:state.repo,commit:state.commit}}));
   setBusy(true);status(`Loading ${repoLabel(state.repo)}…`);
   try{
     const listed=await getJson('/api/atlas/snapshots',{timeout:12000}).catch(error=>({_error:error.message}));
@@ -691,6 +692,8 @@ const pick=(e,opts)=>{
   return false;
 };
 $('atlasRefresh').addEventListener('click',()=>void refresh());
+// The Systems strip (atlas-systems.js) chooses a repository: its map loads here.
+page.addEventListener('atlas:choose',e=>{const {repo,commit}=e.detail||{};if(typeof repo==='string'&&repo){chooseSource(repo,String(commit||''));$('atlasMapTitle').focus({preventScroll:true});}});
 $('atlasRepo').addEventListener('change',e=>{
   const repo=e.target.value;
   chooseSource(repo,repo==='localai'?'':(state.snapshots?.get(repo)?.[0]?.commit||''));

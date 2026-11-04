@@ -17,7 +17,7 @@ import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 
 const { spawnAppServer } = createRequire(import.meta.url)('./spawn-server.cjs');
-const { atlasFixture } = createRequire(import.meta.url)('./atlas-map-fixture.cjs');
+const { atlasFixture, systemsFixture } = createRequire(import.meta.url)('./atlas-map-fixture.cjs');
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dir = path.join(here, 'visual', process.platform);
@@ -189,6 +189,7 @@ async function stubPages(page) {
   await page.route(u => u.pathname === '/api/gridcraft/runs', route => json(route, { items: SHEET_RUNS }));
   // Architecture: the fixed Atlas graph (tests/atlas-map-fixture.cjs), with Ask and Goose offline.
   await page.route(u => u.pathname === '/api/atlas/graph', route => json(route, atlasFixture()));
+  await page.route(u => u.pathname === '/api/atlas/systems', route => json(route, systemsFixture()));
   await page.route(u => u.pathname === '/api/atlas/summary', route => json(route, { providers: { ollama: { available: false }, goose: { available: false } } }));
   await page.route(u => u.pathname === '/api/atlas/snapshots', route => json(route, { repos: ['localai'], snapshots: [] }));
 }
