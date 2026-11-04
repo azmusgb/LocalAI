@@ -109,9 +109,10 @@ await check('opening a page loads its data even without a nav button click', asy
   await waitForNotifications;
 });
 
-// Spreadsheets (a Work kind) and Print lab (Pi Hub's, kept here until retired) left Projects (2 Nov, D4): each opens by
-// its address and ⌘K, lights the area that owns it, names itself in the top bar and shows no strip.
-for (const [id, domain, label] of [['spreadsheets', 'work', 'Spreadsheets'], ['printLab', 'home', 'Print lab']]) {
+// Spreadsheets (a Work kind) left Projects (2 Nov, D4): it opens by its address and ⌘K, lights the area that owns it,
+// names itself in the top bar and shows no strip. Print lab left too, and since step 6's PR 6.4 its address sends the
+// browser to Pi Hub's /lab (print-lab-ui checks that), so it isn't opened here.
+for (const [id, domain, label] of [['spreadsheets', 'work', 'Spreadsheets']]) {
   await check(`${id} opens by address, lights ${domain} and names itself`, async () => {
     await page.evaluate(h => { location.hash = '#' + h; }, id);
     await page.waitForSelector(`#${id}.active`, { timeout: 5000 });

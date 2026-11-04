@@ -14,7 +14,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
   await page.addInitScript(() => { try { localStorage.setItem('localai.devTools', '1'); } catch {} });
   await page.goto(base + '/#home', { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.showView === 'function');
-  const views = await page.evaluate(() => [...document.querySelectorAll('section.view')].map(s => s.id));
+  // printLab sends the browser to Pi Hub's /lab (step 6, PR 6.4; print-lab-ui checks that): it is no page of Local AI's.
+  const views = await page.evaluate(() => [...document.querySelectorAll('section.view')].map(s => s.id).filter(id => id !== 'printLab'));
   await check(`${viewport.width}px: every page's controls are at least 44px to touch`, async () => {
     const small = [];
     for (const v of views) {
