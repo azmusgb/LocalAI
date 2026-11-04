@@ -6,6 +6,7 @@
 // unavailable, and preserves upstream HTTP status for evidence-bounded errors.
 const fs = require('node:fs');
 const path = require('node:path');
+const { createSystems } = require('./atlas-systems');
 
 const DEFAULT_ATLAS_URL = 'http://127.0.0.1:8765';
 const MAX_BODY = 64 * 1024;
@@ -168,6 +169,8 @@ function createAtlas(ctx = {}) {
   const repos = String(ctx.repos ?? process.env.LOCALAI_ATLAS_REPOS ?? '').split(',').map((r) => r.trim()).filter(Boolean);
   const snapshots = createSnapshotReader(ctx.snapshotsPath || SNAPSHOTS_PATH, repos.length ? repos : DEFAULT_REPOS);
   const atlasToken = String(ctx.atlasToken ?? process.env.LOCALAI_ATLAS_TOKEN ?? '').trim();
+  // What runs where, from Pi Hub (Atlas redesign PR 4), with each repository's newest snapshot.
+  const systems = createSystems({ hubUrl: ctx.hubUrl, fetchWithTimeout, snapshots, cachePath: ctx.systemsCache || null });
 
   const upstream = new Map([
     ['/api/atlas/health', '/health'],
@@ -314,6 +317,10 @@ function createAtlas(ctx = {}) {
           }
         });
       }
+    }
+    if (req.method === 'GET' && p === '/api/atlas/systems') {
+      const { status, body } = await systems.read();
+      return json(res, status, body);
     }
     if (req.method === 'GET' && p === '/api/atlas/graph') {
       const query = new URL(req.url || p, 'http://localai.invalid').searchParams;

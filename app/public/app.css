@@ -2365,6 +2365,34 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 #architecture .atlas-status[data-tone="error"]{color:var(--ds-bad-text)}
 #architecture .atlas-status[data-tone="error"]::before{background:var(--ds-bad)}
 
+/* The Systems strip (Atlas redesign PR 4): one card per host from Pi Hub's list; a repository opens its map. */
+#architecture .atlas-systems{margin:0 0 16px}
+#architecture .atlas-systems-head{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;margin:0 0 8px}
+#architecture .atlas-systems-head h2{margin:0;font-size:var(--ds-fs-2)}
+#architecture .atlas-systems-note{margin:0;color:var(--ds-muted);font-size:var(--ds-fs-1);overflow-wrap:anywhere}
+#architecture .atlas-systems-note[data-tone="warn"]{color:var(--ds-attention-text)}
+#architecture .atlas-systems-note[data-tone="error"]{color:var(--ds-bad-text)}
+#architecture .atlas-systems-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+#architecture .atlas-host{min-width:0;padding:12px;border:1px solid var(--ds-line);border-radius:var(--ds-r-lg);background:var(--ds-surface)}
+#architecture .atlas-host h3{display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;margin:0 0 4px;font-size:var(--ds-fs-2)}
+#architecture .atlas-host h3 small{color:var(--ds-muted);font-size:var(--ds-fs-1);font-weight:400}
+#architecture .atlas-host-health{display:flex;gap:6px;align-items:baseline;margin:0 0 8px;color:var(--ds-muted);font-size:var(--ds-fs-1);overflow-wrap:anywhere}
+#architecture .atlas-host-health::before{content:'';flex:none;width:7px;height:7px;border-radius:50%;background:var(--ds-line-2);transform:translateY(-1px)}
+#architecture .atlas-host-health[data-tone="ok"]::before{background:var(--ds-good)}
+#architecture .atlas-host-health[data-tone="warn"]{color:var(--ds-attention-text)}
+#architecture .atlas-host-health[data-tone="warn"]::before{background:var(--ds-attention)}
+#architecture .atlas-host-health[data-tone="error"]{color:var(--ds-bad-text)}
+#architecture .atlas-host-health[data-tone="error"]::before{background:var(--ds-bad)}
+#architecture .atlas-host-code{display:grid;gap:4px;margin:0;padding:0;list-style:none}
+#architecture .atlas-host-repo,#architecture .atlas-host-target{display:grid;gap:1px;width:100%;min-width:0;text-align:left;font:inherit;font-size:var(--ds-fs-1)}
+#architecture .atlas-host-repo{min-height:44px;padding:5px 8px;border:1px solid var(--ds-line);border-radius:var(--ds-r-md);color:var(--ds-text);background:var(--ds-bg-2);cursor:pointer}
+#architecture .atlas-host-repo:hover{border-color:var(--ds-line-2)}
+#architecture .atlas-host-repo[aria-pressed="true"]{border-color:var(--ds-accent-text);background:var(--ds-surface-3)}
+#architecture .atlas-host-repo span{font-weight:600}
+#architecture .atlas-host-target{padding:3px 9px;color:var(--ds-muted)}
+#architecture .atlas-host small{color:var(--ds-muted);font-size:var(--ds-fs-1);overflow-wrap:anywhere}
+#architecture .atlas-host-none{margin:0;color:var(--ds-muted);font-size:var(--ds-fs-1)}
+
 #architecture .atlas-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,320px);gap:16px;align-items:start;min-width:0}
 #architecture .atlas-sheet,#architecture .atlas-inspector{min-width:0;border:1px solid var(--ds-line);border-radius:var(--ds-r-lg);background:var(--ds-surface)}
 #architecture .atlas-sheet-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px;padding:14px 14px 0}
