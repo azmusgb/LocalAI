@@ -17,6 +17,7 @@ import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 
 const { spawnAppServer } = createRequire(import.meta.url)('./spawn-server.cjs');
+const { atlasFixture } = createRequire(import.meta.url)('./atlas-map-fixture.cjs');
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dir = path.join(here, 'visual', process.platform);
@@ -186,6 +187,10 @@ async function stubPages(page) {
   await page.route(u => u.pathname === '/api/gridcraft/workbooks', route => json(route, { ok: true, items: [SHEET.file, 'Budget.xlsx', 'Inventory.csv'].map(name => ({ name, size: 2048, modified: ago(86400) })) }));
   await page.route(u => u.pathname === '/api/gridcraft/workbook', route => json(route, SHEET));
   await page.route(u => u.pathname === '/api/gridcraft/runs', route => json(route, { items: SHEET_RUNS }));
+  // Architecture: the fixed Atlas graph (tests/atlas-map-fixture.cjs), with Ask and Goose offline.
+  await page.route(u => u.pathname === '/api/atlas/graph', route => json(route, atlasFixture()));
+  await page.route(u => u.pathname === '/api/atlas/summary', route => json(route, { providers: { ollama: { available: false }, goose: { available: false } } }));
+  await page.route(u => u.pathname === '/api/atlas/snapshots', route => json(route, { repos: ['localai'], snapshots: [] }));
 }
 const MORE_PAGES = {
   inbox: '#inboxList .inbox-approval',
@@ -197,7 +202,8 @@ const MORE_PAGES = {
   activity: '#activityList .activity-item',
   knowledge: '#knowledgeList .item-card',
   memory: '#memoryList .memory-card',
-  spreadsheets: '#sheetsGrid td[data-cell="D5"]'
+  spreadsheets: '#sheetsGrid td[data-cell="D5"]',
+  architecture: '#atlasMap .atlas-row'
 };
 const MORE_VIEWPORTS = VIEWPORTS;
 

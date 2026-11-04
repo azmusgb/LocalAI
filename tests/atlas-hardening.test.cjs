@@ -63,10 +63,13 @@ test('a missing graph is a 503 that names the problem, not a crash', async () =>
   assert.equal(sent[0].status, 503);
 });
 
-test('domain boxes on the map open with the keyboard, like file nodes', () => {
+test('module rows and collapsed domains on the map open with the keyboard, as a click does', () => {
   const js = fs.readFileSync(path.join(ROOT, 'app/public/architecture.js'), 'utf8');
-  assert.match(js, /closest\('\[data-atlas-domain\]'\)[\s\S]{0,200}keydown|keydown[\s\S]{0,400}data-atlas-domain/);
-  assert.match(js, /ArrowRight/);  // the lens tabs move with the arrow keys
+  // One handler, pick(), opens a module or a collapsed domain; the map's Enter and Space call it like a click.
+  assert.match(js, /const pick=\(e,opts\)=>\{[\s\S]{0,120}data-atlas-node[\s\S]{0,200}data-atlas-domain/);
+  assert.match(js, /addEventListener\('keydown',e=>\{\s*if\(e\.key!=='Enter'&&e\.key!==' '\)return;[\s\S]{0,200}pick\(e,/);
+  // The lenses are pressed buttons (Atlas redesign spec), not tabs.
+  assert.match(js, /setAttribute\('aria-pressed'/);
 });
 
 // --- Python engines --------------------------------------------------------------------------------------------
