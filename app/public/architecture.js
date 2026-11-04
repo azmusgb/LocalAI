@@ -3,32 +3,10 @@
 'use strict';
 
 const exported = {};
-const severityRank = {critical:0,high:1,medium:2,low:3,info:4};
-
-function aggregateFindings(findings) {
-  const groups = new Map();
-  for (const item of Array.isArray(findings) ? findings : []) {
-    const node = String(item?.node || '').trim();
-    if (!node) continue;
-    let group = groups.get(node);
-    if (!group) {
-      group = {node,domain:item.domain||'',severity:item.severity||'info',signals:[],confidence:0};
-      groups.set(node, group);
-    }
-    group.signals.push(item);
-    if ((severityRank[item.severity] ?? 99) < (severityRank[group.severity] ?? 99)) group.severity = item.severity;
-    group.confidence = Math.max(group.confidence, Number(item.confidence)||0);
-  }
-  return [...groups.values()].sort((a,b)=>
-    (severityRank[a.severity]??99)-(severityRank[b.severity]??99) ||
-    b.signals.length-a.signals.length ||
-    a.node.localeCompare(b.node)
-  );
-}
-
-function productionNodes(graph) {
-  return (graph?.nodes || []).filter(n => n && n.domain !== 'Tests');
-}
+const plural=(n,word)=>`${n} ${word}${n===1?'':'s'}`;
+// The scanner's bands (quick_arch.py risk_level).
+const riskLevel=r=>(r=Number(r)||0)>=70?'critical':r>=48?'high':r>=28?'medium':'low';
+const productionNodes=graph=>(graph?.nodes||[]).filter(n=>n&&n.domain!=='Tests');
 
 function domainSummary(graph) {
   const nodes = productionNodes(graph);
@@ -53,6 +31,161 @@ function domainSummary(graph) {
     domains:[...domains.values()].sort((a,b)=>b.risk-a.risk || b.count-a.count || a.id.localeCompare(b.id)),
     links:[...links].map(([key,count])=>{const [source,target]=key.split('\u0000');return{source,target,count};})
   };
+}
+
+// Callers before what they depend on: domains ordered by how much more they use than they are used.
+function orderDomains(domains,links){
+  const flow=new Map(domains.map(d=>[d.id,{out:0,in:0}]));
+  for(const l of links){
+    if(flow.has(l.source))flow.get(l.source).out+=l.count;
+    if(flow.has(l.target))flow.get(l.target).in+=l.count;
+  }
+  const score=d=>{const f=flow.get(d.id);return (f.out-f.in)/((f.out+f.in)||1);};
+  const linked=d=>{const f=flow.get(d.id);return f.out+f.in>0?0:1;};  // domains with no links go last
+  return [...domains].sort((a,b)=>linked(a)-linked(b)||score(b)-score(a)||b.count-a.count||a.id.localeCompare(b.id));
+}
+
+// The graph as the page uses it: production modules with what they use and what uses them (imports), the browser's
+// HTTP calls kept apart, and the tests that import each module counted rather than drawn. A version 1 snapshot has no
+// link kinds and no reach; a link from a test is still a test, and reach is worked out here.
+function buildModel(graph){
+  const all=new Map((graph?.nodes||[]).filter(n=>n&&n.id).map(n=>[n.id,n]));
+  const nodes=new Map();
+  for(const n of productionNodes(graph))nodes.set(n.id,{...n,domain:String(n.domain||'Other'),uses:new Set(),usedBy:new Set(),
+    httpTo:new Set(),httpFrom:new Set(),tests:[]});
+  const links=[];
+  for(const e of graph?.edges||[]){
+    const kind=e.kind||(all.get(e.source)?.domain==='Tests'?'test':'import');
+    if(kind==='test'){if(nodes.has(e.target)&&!nodes.get(e.target).tests.includes(e.source))nodes.get(e.target).tests.push(e.source);continue;}
+    const a=nodes.get(e.source),b=nodes.get(e.target);
+    if(!a||!b||a===b)continue;
+    if(kind==='http'){a.httpTo.add(b.id);b.httpFrom.add(a.id);}else{a.uses.add(b.id);b.usedBy.add(a.id);}
+    links.push({source:a.id,target:b.id,kind:kind==='http'?'http':'import',paths:e.paths||[]});
+  }
+  for(const n of nodes.values()){
+    if(Number.isFinite(Number(n.reach))&&n.reach!==null&&n.reach!==undefined){n.reach=Number(n.reach);continue;}
+    const seen=new Set(),todo=[n.id];
+    while(todo.length)for(const u of nodes.get(todo.pop()).usedBy)if(u!==n.id&&!seen.has(u)){seen.add(u);todo.push(u);}
+    n.reach=seen.size;
+  }
+  const version=Number(graph?.schemaVersion)||1;
+  return {nodes,links,version,dangling:version>=2&&Array.isArray(graph?.danglingHttp)?graph.danglingHttp:null,graph};
+}
+const testCount=n=>Math.max(Number(n?.testRefs)||0,n?.tests?.length||0);
+
+// Columns run from callers to what they use. Local AI's come from its domains (Atlas redesign spec); another
+// repository's domains go in caller-first order, at most six columns. A domain no rule names joins Shared.
+const LOCALAI_COLUMNS=[
+  {title:'Browser',sub:'What you see',domains:['UI']},
+  {title:'Entry',sub:'Starts everything',domains:['Platform','Runtime','Host','Root','Tooling','Docs']},
+  {title:'Server',sub:'HTTP routes and bridges',domains:['API','Claude','GridCraft']},
+  {title:'Capabilities',sub:'AI, workshop, media',domains:['AI','Workshop','Media']},
+  {title:'Shared',sub:'Used across features',domains:['Core']},
+  {title:'Data',sub:'Where state lives',domains:['Data']},
+];
+function columnsFor(model,repo){
+  const present=new Set([...model.nodes.values()].map(n=>n.domain));
+  if(repo==='localai'){
+    const cols=LOCALAI_COLUMNS.map(c=>({...c,domains:c.domains.filter(d=>present.has(d))}));
+    const named=new Set(LOCALAI_COLUMNS.flatMap(c=>c.domains));
+    cols[4].domains.push(...[...present].filter(d=>!named.has(d)).sort());
+    return cols.filter(c=>c.domains.length);
+  }
+  const {domains,links}=domainSummary({nodes:[...model.nodes.values()],edges:model.links});
+  const ordered=orderDomains(domains,links).map(d=>d.id);
+  const per=Math.max(1,Math.ceil(ordered.length/6)),cols=[];
+  for(let i=0;i<ordered.length;i+=per){const ds=ordered.slice(i,i+per);cols.push({title:ds.join(' · '),sub:'',domains:ds});}
+  return cols;
+}
+
+// Every module is one named row in its column, grouped by domain, riskiest first. Past 400 modules each domain is one
+// row with a count until it is opened.
+const ROW=20,COLW=152,ROWW=144,PADX=10,TOP=52;
+function mapLayout(model,cols,{open=new Set(),row:ROWH=ROW}={}){
+  const collapse=model.nodes.size>400;
+  const rows=[],heads=[];
+  let maxY=TOP;
+  cols.forEach((col,ci)=>{
+    const x=PADX+ci*COLW;
+    let y=TOP;
+    heads.push({kind:'column',x,y:18,text:col.title},{kind:'sub',x,y:34,text:col.sub});
+    for(const d of col.domains){
+      const list=[...model.nodes.values()].filter(n=>n.domain===d).sort((a,b)=>(Number(b.risk)||0)-(Number(a.risk)||0)||a.id.localeCompare(b.id));
+      if(!list.length)continue;
+      heads.push({kind:'domain',x,y:y+11,text:`${d.toUpperCase()} · ${list.length}`});
+      y+=16;
+      if(collapse&&!open.has(d)){rows.push({id:`domain:${d}`,domain:d,collapsed:true,count:list.length,x,y,col:ci,risk:Math.max(...list.map(n=>Number(n.risk)||0))});y+=ROWH;}
+      else for(const n of list){rows.push({id:n.id,domain:d,x,y,col:ci});y+=ROWH;}
+      y+=10;
+    }
+    maxY=Math.max(maxY,y);
+  });
+  return {width:PADX*2+Math.max(1,cols.length)*COLW-(COLW-ROWW),height:maxY+8,rowHeight:ROWH,colWidth:ROWW,rows,heads};
+}
+
+const short=id=>String(id).split('/').pop();
+// Look here first: at most six findings, each a sentence with its reason in plain words.
+function lookHereFirst(model){
+  const all=[...model.nodes.values()],items=[],seen=new Set();
+  const add=(node,level,title,detail)=>{if(!seen.has(node)&&items.length<6){seen.add(node);items.push({node,level,title,detail});}};
+  const bySource=new Map();
+  for(const d of model.dangling||[])if(model.nodes.has(d.source))(bySource.get(d.source)||bySource.set(d.source,[]).get(d.source)).push(d);
+  for(const [source,calls] of [...bySource].slice(0,2)){
+    const more=calls.length>1?` and ${plural(calls.length-1,'other path')}`:'';
+    add(source,'high',`${short(source)} calls ${calls[0].path}${more}, which nothing serves`,
+      `Line ${calls[0].line||'?'} of ${source}. The call fails at run time; add the route or remove the call.`);
+  }
+  const hub=all.reduce((a,b)=>(!a||b.uses.size>a.uses.size?b:a),null);
+  if(hub&&hub.uses.size>=10&&!testCount(hub))add(hub.id,'critical',`${short(hub.id)} wires up ${hub.uses.size} modules and no test imports it`,
+    'This is where they are wired together. A smoke test that loads it would catch a broken import before deploy.');
+  for(const n of all.filter(n=>n.reach>=5).sort((a,b)=>b.reach-a.reach).slice(0,2))
+    add(n.id,riskLevel(n.risk),`${plural(n.reach,'module')} depend on ${short(n.id)}`,
+      `A change here can reach all of them. ${testCount(n)?`${plural(testCount(n),'test')} import it.`:'No test imports it.'}`);
+  for(const n of all.filter(n=>!testCount(n)&&n.usedBy.size>=2).sort((a,b)=>b.usedBy.size-a.usedBy.size).slice(0,2))
+    add(n.id,'high',`${short(n.id)} is shared by ${plural(n.usedBy.size,'module')} and no test imports it`,`In ${n.domain}. Add a test before the next change to it.`);
+  for(const n of all.filter(n=>(Number(n.risk)||0)>=40).sort((a,b)=>b.risk-a.risk))
+    add(n.id,riskLevel(n.risk),`${short(n.id)} is ${riskLevel(n.risk)} risk (${Number(n.risk)||0} of 100)`,whyRanks(n)[0]||'');
+  const calls=model.links.filter(l=>l.kind==='http').reduce((t,l)=>t+(l.paths.length||1),0);
+  const note=model.version<2?'Older snapshot: rescan for HTTP links and for calls nothing serves.':
+    model.dangling&&!model.dangling.length?`Every browser call to /api has a route (${plural(calls,'path')} checked).`:'';
+  return {items,note};
+}
+
+// Why a module ranks where it does: the scanner's risk parts in plain words, or its counts for an older snapshot.
+function whyRanks(n){
+  const p=n.riskParts,out=[],pts=v=>v?` (${v>0?'+':''}${v})`:'',t=testCount(n);
+  if(n.reach)out.push(`${plural(n.reach,'module')} depend on it, directly or not${pts(p?.reach)}.`);
+  if(n.uses.size)out.push(`It imports ${plural(n.uses.size,'module')}${pts(p?.out)}.`);
+  if(n.usedBy.size)out.push(`${plural(n.usedBy.size,'module')} import it directly${pts(p?.in)}.`);
+  if(n.httpFrom.size)out.push(`${plural(n.httpFrom.size,'browser script')} call it over HTTP.`);
+  out.push(t?`${plural(t,'test')} import it${pts(p?.tested)}.`:'No test imports it.');
+  if(n.changed)out.push('It changed since the previous snapshot.');
+  if(!p)out.push('Older snapshot: rescan to see how its score is made up.');
+  return out;
+}
+
+// What each lens paints a row by. The changed lens also draws a dot, so colour is never the only signal.
+function lensBand(n,lens){
+  if(lens==='tests'){const t=testCount(n);return t===0?'critical':t<3?'medium':'low';}
+  if(lens==='reach'){const r=n.reach||0;return r>=20?'critical':r>=8?'high':r>=2?'medium':'low';}
+  if(lens==='changed')return n.changed?'changed':'quiet';
+  return riskLevel(n.risk);
+}
+
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+// One line: the snapshot's date and age, and whether it is the release now running (Local AI only).
+function freshnessLine(graph,release,now=Date.now()){
+  const t=Date.parse(graph?.generatedAt||'');
+  if(!Number.isFinite(t))return {text:'Snapshot time unknown',stale:true};
+  const d=new Date(t),days=Math.max(0,Math.floor((now-t)/86400000));
+  const parts=[`Snapshot ${d.getDate()} ${MONTHS[d.getMonth()]}`,days===0?'today':`${plural(days,'day')} old`];
+  if(!release?.commit)return {text:parts.join(' · '),stale:false};
+  const mine=String(graph.snapshot?.commit||''),live=String(release.commit);
+  const same=mine?mine.startsWith(live)||live.startsWith(mine):t>=Date.parse(release.deployedAt||'');
+  if(same){if(mine)parts.push('the running release');return {text:parts.join(' · '),stale:false};}
+  const older=t<Date.parse(release.deployedAt||'');
+  parts.push(`${older?'older than':'not'} the running release ${live.slice(0,7)}`);
+  return {text:parts.join(' · '),stale:true};
 }
 
 // The repository and commit picker (plan PR 3). Commit "" is Local AI's latest scan: the one graph the intelligence
@@ -95,38 +228,6 @@ function snapshotNote(row,rows,now=Date.now()){
   return {text:parts.join(' · '),stale};
 }
 
-const plural=(n,word)=>`${n} ${word}${n===1?'':'s'}`;
-
-// Callers above what they depend on: domains ordered by how much more they use than they are used (an edge's source
-// uses its target), so most arrows point down the page.
-function orderDomains(domains,links){
-  const flow=new Map(domains.map(d=>[d.id,{out:0,in:0}]));
-  for(const l of links){
-    if(flow.has(l.source))flow.get(l.source).out+=l.count;
-    if(flow.has(l.target))flow.get(l.target).in+=l.count;
-  }
-  const score=d=>{const f=flow.get(d.id);return (f.out-f.in)/((f.out+f.in)||1);};
-  const linked=d=>{const f=flow.get(d.id);return f.out+f.in>0?0:1;};  // domains with no links go last
-  return [...domains].sort((a,b)=>linked(a)-linked(b)||score(b)-score(a)||b.count-a.count||a.id.localeCompare(b.id));
-}
-
-// How old the latest scan is, and whether it predates the release now running (then it may describe other code).
-function scanFreshness(generatedAt,deployedAt,now=Date.now()){
-  const scanned=Date.parse(generatedAt||'');
-  if(!Number.isFinite(scanned))return {text:'Scan time unknown.',stale:true};
-  const deployed=Date.parse(deployedAt||'');
-  if(Number.isFinite(deployed)&&scanned<deployed){
-    return {text:`Scanned ${ago(generatedAt,now)}, before the release deployed ${ago(deployedAt,now)}, so it may not match the running code.`,stale:true};
-  }
-  return {text:`Scanned ${ago(generatedAt,now)}.`,stale:false};
-}
-
-// What a finding group is about, in the rules' own words.
-function findingReason(group){
-  const titles=[...new Set((group?.signals||[]).map(s=>String(s?.title||s?.rule||'').trim()).filter(Boolean))];
-  return titles.join(' · ')||'No detail returned';
-}
-
 // "Snapshot now" (plan PR 4): one line for a job the PC is running or has finished.
 function snapshotStateText(job){
   if(!job)return '';
@@ -137,83 +238,24 @@ function snapshotStateText(job){
   return `The snapshot of ${name} failed: ${job.error||'no reason given'}`;
 }
 
-// The plate (2 Nov 2026): every production module is one square and each domain a block of them, packed in shelves
-// across a sheet of fixed width, in the order given (callers' domains first). Squares never move between lenses; a
-// lens only repaints them. Each block is at least wide enough for its name; a shelf's last block takes up the slack.
-function plateLayout(groups,width=1000){
-  const total=groups.reduce((t,g)=>t+g.nodes.length,0);
-  const gap=12,pad=10,head=32,cg=4;
-  const pitch=Math.max(16,Math.min(36,Math.floor(Math.sqrt(0.3*width*width/Math.max(1,total)))));
-  const minCols=Math.max(2,Math.ceil(110/pitch));
-  const maxRows=Math.max(2,Math.round(Math.sqrt(total)/3));  // flat shelves: a tall one leaves small blocks empty
-  const avail=k=>Math.max(minCols,Math.floor((width-(k-1)*gap-k*(2*pad-cg))/pitch));
-  const need=(shelf,r)=>shelf.reduce((t,g)=>t+Math.max(minCols,Math.ceil(g.nodes.length/r)),0);
-  const rowsFor=shelf=>{for(let r=1;r<=maxRows;r++)if(need(shelf,r)<=avail(shelf.length))return r;return 0;};
-  const shelves=[];
-  for(const g of groups){
-    const last=shelves[shelves.length-1];
-    // A domain small enough for one row joins an earlier shelf it fits without making it taller, rather than a
-    // shelf of its own.
-    const room=g.nodes.length<=minCols&&shelves.find(sh=>{const r=rowsFor([...sh,g]);return r&&r<=rowsFor(sh);});
-    if(room)room.push(g);
-    else if(last&&rowsFor([...last,g]))last.push(g);else shelves.push([g]);
-  }
-  // The sheet never ends on a lone block: one moves down from the shelf above, keeping the order.
-  const end=shelves.length-1;
-  if(end>0&&shelves[end].length===1&&shelves[end-1].length>2){
-    shelves[end].unshift(shelves[end-1].pop());
-    if(!rowsFor(shelves[end]))shelves[end-1].push(shelves[end].shift());
-  }
-  const blocks=[],cells=[];
-  let y=0;
-  for(const shelf of shelves){
-    const k=shelf.length,cols=avail(k);
-    const rows=rowsFor(shelf)||Math.ceil(shelf[0].nodes.length/cols);
-    const c=shelf.map(g=>Math.min(cols,Math.max(minCols,Math.ceil(g.nodes.length/rows))));
-    // Each spare column goes to the tallest block, so the shelf spans the sheet and is as short as it can be.
-    const tall=i=>Math.ceil(shelf[i].nodes.length/c[i]);
-    for(let spare=cols-c.reduce((a,b)=>a+b,0);spare>0;spare--){
-      let t=0;for(let i=1;i<k;i++)if(tall(i)>tall(t)||(tall(i)===tall(t)&&c[i]<c[t]))t=i;  // ties: the narrowest, so slack spreads evenly
-      c[t]++;
-    }
-    const h=head+Math.max(1,...shelf.map((g,i)=>tall(i)))*pitch-cg+pad;
-    let x=0;
-    shelf.forEach((g,i)=>{
-      const w=i===k-1?width-x:2*pad+c[i]*pitch-cg;
-      blocks.push({id:g.id,x,y,w,h});
-      g.nodes.forEach((n,j)=>cells.push({id:n.id,x:x+pad+(j%c[i])*pitch,y:y+head+Math.floor(j/c[i])*pitch}));
-      x+=w+gap;
-    });
-    y+=h+gap;
-  }
-  return {width,height:Math.max(0,y-gap),size:pitch-cg,blocks,cells};
-}
-
-exported.plateLayout = plateLayout;
-exported.aggregateFindings = aggregateFindings;
-exported.snapshotStateText = snapshotStateText;
-exported.plural = plural;
-exported.orderDomains = orderDomains;
-exported.scanFreshness = scanFreshness;
-exported.findingReason = findingReason;
-exported.domainSummary = domainSummary;
-exported.snapshotChoices = snapshotChoices;
-exported.commitLabel = commitLabel;
-exported.snapshotNote = snapshotNote;
+Object.assign(exported,{plural,riskLevel,domainSummary,orderDomains,buildModel,columnsFor,mapLayout,lookHereFirst,whyRanks,
+  lensBand,freshnessLine,snapshotStateText,snapshotChoices,commitLabel,snapshotNote});
 if(typeof module==='object'&&module.exports){module.exports=exported;return;}
 
 const page=document.getElementById('architecture');
 if(!page)return;
 const $=id=>document.getElementById(id);
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const reduceMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+// A row is a 44 px tap target on a touch screen or a phone, and a 20 px line where a pointer is precise.
+const rowHeight=()=>matchMedia('(pointer: coarse), (max-width: 700px)').matches?44:ROW;
 const state={
-  active:false,summary:null,graph:null,selected:null,details:null,
-  mode:'architecture',model:localStorage.getItem('localai.atlas.model')||'',request:null,
-  repo:'localai',commit:'',snapshots:null,seq:0,domain:null,releases:null,view:'plate',places:null,links:null
+  active:false,summary:null,graph:null,model:null,layout:null,selected:null,details:null,
+  lens:'risk',ollamaModel:localStorage.getItem('localai.atlas.model')||'',request:null,
+  repo:'localai',commit:'',snapshots:null,seq:0,releases:null,open:new Set()
 };
-// Only Local AI's latest scan has findings, Ask and Goose (until plan PR 5); a snapshot shows its graph alone.
-const live=()=>state.repo==='localai'&&!state.commit;
 // Intelligence about the chosen snapshot (plan PR 5); with neither, the latest scan.
+const live=()=>state.repo==='localai'&&!state.commit;
 const scope=()=>live()?{}:{repo:state.repo,commit:state.commit};
 const scoped=url=>live()?url:`${url}${url.includes('?')?'&':'?'}repo=${encodeURIComponent(state.repo)}&commit=${encodeURIComponent(state.commit)}`;
 
@@ -247,59 +289,13 @@ function providerBadge(){
   $('atlasOllamaState').dataset.ready=ollama.available?'1':'0';
   $('atlasGooseState').textContent=goose.available?'Goose · ready':'Goose · optional';
   $('atlasGooseState').dataset.ready=goose.available?'1':'0';
-
   const select=$('atlasModel');
   const models=Array.isArray(ollama.models)?ollama.models:[];
-  const chosen=state.model && models.includes(state.model) ? state.model : '';
+  const chosen=state.ollamaModel&&models.includes(state.ollamaModel)?state.ollamaModel:'';
   select.innerHTML=`<option value="">Auto${ollama.defaultModel?` — ${esc(ollama.defaultModel)}`:''}</option>`+
     models.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('');
   select.value=chosen;
 }
-
-function renderKpis(){
-  const stats=state.graph?.stats||state.summary?.stats||{};
-  const groups=aggregateFindings(state.summary?.findings||[]);
-  $('atlasKpiFiles').textContent=stats.productionFiles??stats.files??'—';
-  $('atlasKpiRelations').textContent=stats.relationships??state.graph?.edges?.length??'—';
-  // Production modules, as the Modules count and the plate are (the scan's own count includes tests).
-  $('atlasKpiChanged').textContent=state.graph?productionNodes(state.graph).filter(n=>n.changed).length:stats.changed??'—';
-  $('atlasKpiFindings').textContent=state.summary&&!state.summary._error?String(groups.length):'—';
-}
-
-function riskText(node){
-  const risk=Number(node?.risk)||0;
-  return risk>=70?'Critical':risk>=48?'High':risk>=28?'Medium':'Low';
-}
-
-const matches=(n,q)=>`${n.id} ${n.label||''} ${n.domain||''}`.toLowerCase().includes(q);
-
-function filteredNodes(){
-  let nodes=productionNodes(state.graph);
-  if(state.domain)nodes=nodes.filter(n=>n.domain===state.domain);
-  if(state.mode==='changes')nodes=nodes.filter(n=>n.changed);
-  if(state.mode==='risk')nodes=nodes.filter(n=>(Number(n.risk)||0)>=28).sort((a,b)=>(Number(b.risk)||0)-(Number(a.risk)||0));
-  const q=$('atlasNodeSearch').value.trim().toLowerCase();
-  if(q)nodes=nodes.filter(n=>matches(n,q));
-  return nodes.slice(0,80);
-}
-
-function renderSearchResults(){
-  const q=$('atlasNodeSearch').value.trim();
-  const rows=filteredNodes().slice(0,12);
-  const box=$('atlasSearchResults');
-  box.hidden=!q || !rows.length;
-  box.innerHTML=rows.map(n=>`<button type="button" data-atlas-node="${esc(n.id)}"><span>${esc(n.label||n.id)}</span><small>${esc(n.domain||'')} · risk ${Number(n.risk)||0}</small></button>`).join('');
-  // The map answers too: what matches stays lit, the rest dims.
-  const hits=new Set(q?productionNodes(state.graph).filter(n=>matches(n,q.toLowerCase())).map(n=>n.id):[]);
-  const svg=$('atlasMap');
-  svg.toggleAttribute('data-search',!!q);
-  for(const el of svg.querySelectorAll('[data-atlas-node]'))el.classList.toggle('is-match',hits.has(el.dataset.atlasNode));
-}
-
-const byRisk=(a,b)=>(Number(b.risk)||0)-(Number(a.risk)||0)||a.id.localeCompare(b.id);
-// What a lens paints a square by: risk band, changed, imported by a test. The squares stay put; CSS repaints them.
-const cellData=n=>`data-band="${riskText(n).toLowerCase()}"${n.changed?' data-changed=""':''}${Number(n.testRefs)>0?' data-tested=""':''}`;
-const fit=(text,room)=>text.length>room?`${text.slice(0,Math.max(1,room-1))}…`:text;
 
 function setMapState(kind,text){
   const wrap=$('atlasMap').closest('.atlas-map-wrap');
@@ -308,258 +304,128 @@ function setMapState(kind,text){
   $('atlasMapState').hidden=!text;
 }
 
-const PLATE_HINT='Each square is a module, riskiest first. Domains that call others come first. Select a domain to name its modules, or a square to trace it.';
+const query=()=>$('atlasNodeSearch').value.trim().toLowerCase();
+const matches=(n,q)=>`${n.id} ${n.domain||''}`.toLowerCase().includes(q);
+const fit=(text,room)=>text.length>room?`${text.slice(0,room-1)}…`:text;
+const LEVEL={critical:'Critical',high:'High',medium:'Medium',low:'Low'};
 
-// The whole system on one plate: a block per domain, a square per module, callers' domains first.
-function renderDomainMap(){
-  const svg=$('atlasMap');
-  const {domains,links}=domainSummary(state.graph);
-  const nodes=productionNodes(state.graph);
-  const groups=orderDomains(domains,links).map(d=>({...d,nodes:nodes.filter(n=>String(n.domain||'Other')===d.id).sort(byRisk)}));
-  // Laid out at the sheet's own width (at most 1000), so its text is drawn at true size on a phone too.
-  const wrap=svg.closest('.atlas-map-wrap'),room=wrap.clientWidth-parseFloat(getComputedStyle(wrap).paddingLeft)*2;
-  const plate=plateLayout(groups,room>0?Math.round(Math.max(320,Math.min(1000,room))):1000);
-  state.plateWidth=plate.width;
-  const s=plate.size;
-  state.view='plate';state.links=links;
-  state.places=new Map(plate.cells.map(c=>[c.id,{x:c.x,y:c.y,w:s,h:s}]));
-  const byDomain=new Map(groups.map(g=>[g.id,g]));
-  const blockHtml=plate.blocks.map(b=>{
-    const d=byDomain.get(b.id);
-    return `<g class="atlas-block" data-atlas-domain="${esc(d.id)}" tabindex="0" role="button" aria-label="${esc(d.id)}, ${plural(d.count,'module')}, maximum risk ${d.risk}${d.changed?`, ${d.changed} changed`:''}">
-      <rect class="atlas-block-frame" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="8"></rect>
-      <text class="atlas-block-name" x="${b.x+10}" y="${b.y+20}">${esc(fit(d.id,Math.floor((b.w-44)/8)))}</text>
-      <text class="atlas-block-count" x="${b.x+b.w-10}" y="${b.y+20}" text-anchor="end">${d.count}</text>
-    </g>`;
-  }).join('');
-  const byId=new Map(nodes.map(n=>[n.id,n]));
-  const cellHtml=plate.cells.map(c=>{
-    const n=byId.get(c.id);
-    return `<rect class="atlas-cell" data-atlas-node="${esc(c.id)}" x="${c.x}" y="${c.y}" width="${s}" height="${s}" rx="3" ${cellData(n)}><title>${esc(c.id)} · risk ${Number(n.risk)||0}${n.changed?' · changed':''}</title></rect>`;
-  }).join('');
-  const height=Math.max(plate.height,120);
-  svg.setAttribute('viewBox',`-1 -1 ${plate.width+2} ${height+2}`);
-  svg.innerHTML=`<g class="atlas-blocks">${blockHtml}</g><g class="atlas-cells">${cellHtml}</g><g class="atlas-arcs"></g><g class="atlas-pins"></g>`;
-  mapList(groups.map(d=>({attr:'data-atlas-domain',id:d.id,label:d.id,meta:`${plural(d.count,'module')} · risk ${d.risk}${d.changed?` · ${d.changed} changed`:''}`})),'System domains');
-  $('atlasMapTitle').textContent='System domains';
-  $('atlasMapHint').textContent=groups.length?PLATE_HINT:'';
-  setMapState(groups.length?'':'empty',groups.length?'':'No production modules in this graph.');
-}
-
-// Hovering or focusing a domain block lights what it uses and what uses it. Focus also says so in the hint; hover
-// doesn't, because a re-wrapped hint would move the plate under the pointer.
-function showDomainLinks(id,{say=false}={}){
-  const svg=$('atlasMap');
-  if(state.view!=='plate'||state.selected)return;
-  const links=state.links||[];
-  const uses=new Map(links.filter(l=>l.source===id).map(l=>[l.target,l.count]));
-  const usedBy=new Map(links.filter(l=>l.target===id).map(l=>[l.source,l.count]));
-  for(const b of svg.querySelectorAll('[data-atlas-domain]')){
-    const d=b.dataset.atlasDomain;
-    b.dataset.rel=!id?'':d===id?'self':uses.has(d)?'uses':usedBy.has(d)?'usedby':'none';
+// The map: columns of named rows, links drawn as curves under them (HTTP calls dashed).
+function drawMap(){
+  const svg=$('atlasMap'),m=state.model;
+  if(!m||!m.nodes.size){svg.innerHTML='';state.layout=null;setMapState(m?'empty':'loading',m?'No production modules in this snapshot.':'Reading the graph…');return;}
+  const lay=state.layout=mapLayout(m,columnsFor(m,state.repo),{open:state.open,row:rowHeight()});
+  const H=lay.rowHeight,mid=H/2;
+  const rowOf=new Map();
+  for(const r of lay.rows){if(r.collapsed){for(const n of m.nodes.values())if(n.domain===r.domain)rowOf.set(n.id,r);}else rowOf.set(r.id,r);}
+  const sel=state.selected&&m.nodes.get(state.selected);
+  const near=sel?new Set([sel.id,...sel.uses,...sel.usedBy,...sel.httpTo,...sel.httpFrom]):null;
+  const q=query();
+  const heads=lay.heads.map(h=>`<text class="atlas-${h.kind}" x="${h.x}" y="${h.y}">${esc(fit(h.text,h.kind==='column'?20:24))}</text>`).join('');
+  const drawn=new Set(),edges=[];
+  for(const l of m.links){
+    const a=rowOf.get(l.source),b=rowOf.get(l.target);
+    if(!a||!b||a===b)continue;
+    const key=`${a.id}\u0000${b.id}\u0000${l.kind}`;if(drawn.has(key))continue;drawn.add(key);
+    let cls=`atlas-edge${l.kind==='http'?' atlas-edge--http':''}`;
+    if(sel)cls+=l.source===sel.id?' is-out':l.target===sel.id?' is-in':' is-dim';
+    const y1=a.y+mid-1,y2=b.y+mid-1;
+    let d;
+    if(b.col>a.col){const x1=a.x+ROWW-6,x2=b.x-4,mx=(x1+x2)/2;d=`M${x1} ${y1}C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}`;}
+    else{const lx=Math.min(a.x,b.x)-12;d=`M${a.x-4} ${y1}C${lx} ${y1} ${lx} ${y2} ${b.x-4} ${y2}`;}
+    edges.push(`<path class="${cls}" d="${d}"></path>`);
   }
-  svg.toggleAttribute('data-relating',!!id);
-  if(!say)return;
-  if(!id)return void($('atlasMapHint').textContent=PLATE_HINT);
-  const list=m=>[...m].sort((a,b)=>b[1]-a[1]).map(([d,c])=>`${d} (${c})`).join(', ')||'no other domain';
-  $('atlasMapHint').textContent=`${id} uses ${list(uses)} · used by ${list(usedBy)}.`;
-}
-
-// One domain: its modules named, riskiest first, each with its square from the plate.
-function renderDomainFocus(){
-  const svg=$('atlasMap'),id=state.domain;
-  const {links}=domainSummary(state.graph);
-  const modules=productionNodes(state.graph).filter(n=>n.domain===id).sort(byRisk);
-  if(!modules.length){state.domain=null;renderDomainMap();return;}
-  const shown=modules.slice(0,60);
-  const cols=3,nodeW=316,nodeH=52,gap=12,width=1000;
-  const rows=Math.ceil(shown.length/cols);
-  const height=rows*nodeH+(rows-1)*gap;
-  state.view='domain';
-  state.places=new Map();
-  const nodeHtml=shown.map((n,i)=>{
-    const x=(i%cols)*(nodeW+gap),y=Math.floor(i/cols)*(nodeH+gap);
-    state.places.set(n.id,{x,y,w:nodeW,h:nodeH});
-    return `<g class="atlas-tile" data-atlas-node="${esc(n.id)}" transform="translate(${x} ${y})" tabindex="0" role="button" aria-label="${esc(n.id)}, risk ${Number(n.risk)||0}${n.changed?', changed':''}">
-      <rect class="atlas-tile-frame" width="${nodeW}" height="${nodeH}" rx="8"></rect>
-      <rect class="atlas-cell" x="12" y="14" width="24" height="24" rx="3" ${cellData(n)}></rect>
-      <text x="48" y="23" class="atlas-file-title">${esc(fit(n.label||n.id,32))}</text>
-      <text x="48" y="41" class="atlas-file-meta">${esc(fit(n.id,40))} · risk ${Number(n.risk)||0}${n.changed?' · changed':''}</text>
-    </g>`;
+  const rows=lay.rows.map(r=>{
+    if(r.collapsed)return `<g class="atlas-row atlas-row--domain" data-atlas-domain="${esc(r.domain)}" tabindex="0" role="button" aria-label="${esc(r.domain)}: ${plural(r.count,'module')}, highest risk ${r.risk}. Opens the domain.">
+      <rect class="atlas-hit" x="${r.x-4}" y="${r.y}" width="${ROWW}" height="${H}" rx="3"></rect>
+      <text x="${r.x+4}" y="${r.y+mid+3}">${esc(plural(r.count,'module'))} · open</text></g>`;
+    const n=m.nodes.get(r.id),t=testCount(n);
+    const cls=['atlas-row'];
+    if(sel&&n.id===sel.id)cls.push('is-sel');else if(near&&!near.has(n.id))cls.push('is-dim');
+    if(q&&matches(n,q))cls.push('is-match');else if(q&&!sel)cls.push('is-dim');
+    const bar=Math.max(3,Math.min(24,3+(n.uses.size+n.usedBy.size+n.httpFrom.size)*1.2));
+    return `<g class="${cls.join(' ')}" data-atlas-node="${esc(n.id)}" data-band="${lensBand(n,state.lens)}" tabindex="0" role="button" aria-label="${esc(n.id)}: ${LEVEL[riskLevel(n.risk)]} risk ${Number(n.risk)||0}, ${plural(n.reach,'module')} depend on it, ${plural(t,'test')}${n.changed?', changed':''}">
+      <rect class="atlas-hit" x="${r.x-4}" y="${r.y}" width="${ROWW}" height="${H}" rx="3"></rect>
+      <rect class="atlas-bar" x="${r.x}" y="${r.y+mid-5}" width="${bar.toFixed(1)}" height="8" rx="2"></rect>
+      <text x="${r.x+30}" y="${r.y+mid+3}">${esc(fit(short(n.id),17))}</text>${n.changed?`<circle class="atlas-dot" cx="${r.x+ROWW-12}" cy="${r.y+mid-1}" r="3"></circle>`:''}</g>`;
   }).join('');
-  svg.setAttribute('viewBox',`-1 -1 ${width+2} ${height+2}`);
-  svg.innerHTML=`<g>${nodeHtml}</g><g class="atlas-arcs"></g><g class="atlas-pins"></g>`;
-  mapList(shown.map(n=>({attr:'data-atlas-node',id:n.id,label:n.label||n.id,meta:`risk ${Number(n.risk)||0}${n.changed?' · changed':''}`})),`${id} modules`);
-  const byCount=(a,b)=>b.count-a.count;
-  const usedBy=links.filter(l=>l.target===id).sort(byCount).map(l=>`${l.source} (${l.count})`);
-  const uses=links.filter(l=>l.source===id).sort(byCount).map(l=>`${l.target} (${l.count})`);
-  $('atlasMapTitle').textContent=`${id} · ${plural(modules.length,'module')}`;
-  $('atlasMapHint').textContent=[
-    `Used by ${usedBy.join(', ')||'no other domain'}`,`uses ${uses.join(', ')||'no other domain'}`,
-    modules.length>shown.length?`the ${shown.length} riskiest shown`:''
-  ].filter(Boolean).join(' · ')+'.';
+  svg.setAttribute('width',lay.width);svg.setAttribute('height',lay.height);svg.setAttribute('viewBox',`0 0 ${lay.width} ${lay.height}`);
+  svg.dataset.lens=state.lens;
+  svg.toggleAttribute('data-focus',!!sel);
+  svg.innerHTML=`<g class="atlas-heads">${heads}</g><g class="atlas-edges">${edges.join('')}</g><g class="atlas-rows">${rows}</g>`;
   setMapState('','');
 }
 
-// The phone's version of the map: one 44 px button per block or module (the drawing is too small to tap there).
-function mapList(items,label){
-  let list=$('atlasDomainList');
-  if(!list){
-    list=document.createElement('ul');list.id='atlasDomainList';list.className='atlas-domain-list';
-    $('atlasMap').closest('.atlas-map-wrap').after(list);
-    list.addEventListener('click',e=>{
-      const n=e.target.closest('[data-atlas-node]');if(n)return void selectNode(n.dataset.atlasNode,{reveal:true});
-      const d=e.target.closest('[data-atlas-domain]');if(d)openDomain(d.dataset.atlasDomain);
-    });
-  }
-  list.setAttribute('aria-label',label);
-  $('atlasMap').closest('.atlas-map-wrap').dataset.view=state.view;
-  list.innerHTML=items.map(i=>`<li><button type="button" ${i.attr}="${esc(i.id)}">${esc(i.label)} <span>${esc(i.meta)}</span></button></li>`).join('');
+function renderHeader(){
+  const m=state.model,sel=state.selected&&m?.nodes.get(state.selected);
+  $('atlasMapTitle').textContent=`${repoLabel(state.repo)} · how modules depend on each other`;
+  const http=m?m.links.filter(l=>l.kind==='http').length:0;
+  $('atlasMapHint').textContent=!m?'':sel?`${short(sel.id)} uses ${plural(sel.uses.size,'module')} and ${plural(sel.usedBy.size,'module')} use it.`:
+    `${plural(m.nodes.size,'module')} · ${plural(m.links.length-http,'import')}${m.version>=2?` · ${plural(http,'HTTP link')}`:''}. Callers on the left, what they use on the right.`;
+  $('atlasMapBack').hidden=!sel;
+  $('atlasMapBack').textContent='Clear selection';
 }
 
-// What a module uses and what uses it, production modules only, each once.
-function neighbors(id){
-  const nodes=new Map(productionNodes(state.graph).map(n=>[n.id,n]));
-  const uses=new Map(),usedBy=new Map();
-  for(const e of state.graph?.edges||[]){
-    if(e.source===id&&nodes.has(e.target)&&e.target!==id)uses.set(e.target,nodes.get(e.target));
-    if(e.target===id&&nodes.has(e.source)&&e.source!==id)usedBy.set(e.source,nodes.get(e.source));
-  }
-  return {uses:[...uses.values()].sort(byRisk),usedBy:[...usedBy.values()].sort(byRisk)};
-}
-
-// The chosen module on the map: it and its neighbours stay lit, the rest dims, and a line runs to each neighbour
-// that is drawn here (solid: it uses; faint: uses it).
-function paintSelection(){
-  const svg=$('atlasMap'),id=state.selected;
-  const arcs=svg.querySelector('.atlas-arcs');
-  const node=id&&productionNodes(state.graph).find(n=>n.id===id);
-  svg.toggleAttribute('data-focus',!!node);
-  const {uses,usedBy}=node?neighbors(id):{uses:[],usedBy:[]};
-  const u=new Set(uses.map(n=>n.id)),b=new Set(usedBy.map(n=>n.id));
-  for(const el of svg.querySelectorAll('[data-atlas-node]')){
-    const n=el.dataset.atlasNode;
-    el.classList.toggle('is-selected',n===id);
-    el.classList.toggle('is-uses',u.has(n));
-    el.classList.toggle('is-usedby',b.has(n)&&!u.has(n));
-  }
-  if(!arcs)return;
-  const from=node&&state.places?.get(id);
-  if(!from)return void(arcs.innerHTML='');
-  const mid=p=>[p.x+p.w/2,p.y+p.h/2];
-  const [x1,y1]=mid(from);
-  const line=(n,kind)=>{
-    const to=state.places.get(n.id);if(!to)return '';
-    const [x2,y2]=mid(to),dx=x2-x1,dy=y2-y1,bow=.18;
-    return `<path class="atlas-arc atlas-arc--${kind}" pathLength="1" d="M${x1} ${y1}Q${(x1+x2)/2-dy*bow} ${(y1+y2)/2+dx*bow} ${x2} ${y2}"></path>`;
-  };
-  arcs.innerHTML=usedBy.filter(n=>!u.has(n.id)).map(n=>line(n,'usedby')).join('')+uses.map(n=>line(n,'uses')).join('');
-}
-
-// A resize that changes the sheet's width by much lays the plate out again.
-let resizeTimer=null;
-root.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{
-  if(!state.active||!state.graph||state.view!=='plate')return;
-  const wrap=$('atlasMap').closest('.atlas-map-wrap');
-  if(Math.abs(Math.min(1000,wrap.clientWidth)-(state.plateWidth||0))>48)renderMap();
-},200);});
-
-function renderMap(){
-  state.domain&&!state.selected?renderDomainFocus():renderDomainMap();
-  $('atlasMap').dataset.lens=state.mode;
-  $('atlasMapBack').hidden=!state.domain&&!state.selected;
-  $('atlasMapBack').textContent=state.selected&&state.domain?`Back to ${state.domain}`:state.selected?'Clear selection':'All domains';
-  const picked=state.selected&&productionNodes(state.graph).find(n=>n.id===state.selected);
-  if(picked){
-    const {uses,usedBy}=neighbors(picked.id);
-    $('atlasMapTitle').textContent=picked.label||picked.id;
-    $('atlasMapHint').textContent=`${picked.domain||'Other'} · uses ${plural(uses.length,'module')} · used by ${plural(usedBy.length,'module')}.`;
-  }
-  paintSelection();renderSearchResults();renderFindings();renderLegend();
-}
-
-const key=(cls,text)=>`<span class="atlas-key"><span class="atlas-swatch ${cls}"></span>${esc(text)}</span>`;
+const key=(band,text)=>`<span class="atlas-key"><span class="atlas-swatch" data-band="${band}"></span>${esc(text)}</span>`;
 function renderLegend(){
   const el=$('atlasLegend');
-  if(!state.graph)return void(el.innerHTML='');
-  const since=state.graph.snapshot?.changedSince;
+  if(!state.model)return void(el.innerHTML='');
+  const since=state.graph?.snapshot?.changedSince;
   const parts={
-    architecture:[key('','A module'),key('atlas-swatch--pin','A finding, numbered as listed below')],
-    risk:[key('atlas-band-low','Low'),key('atlas-band-medium','Medium'),key('atlas-band-high','High'),key('atlas-band-critical','Critical risk')],
-    changes:[key('atlas-swatch--changed',since?`Changed since ${String(since).slice(0,7)}`:'Changed'),key('atlas-swatch--dim','Unchanged')],
-    evidence:[key('atlas-swatch--tested','Imported by a test'),key('atlas-swatch--untested','No test imports it')],
-  }[state.mode]||[];
-  if(state.selected)parts.push(key('atlas-swatch--uses','Uses'),key('atlas-swatch--usedby','Used by'));
+    risk:[key('critical','Critical'),key('high','High'),key('medium','Medium'),key('low','Low risk')],
+    tests:[key('critical','No test imports it'),key('medium','1–2 tests'),key('low','3 or more')],
+    reach:[key('critical','20+ depend on it'),key('high','8–19'),key('medium','2–7'),key('low','0–1')],
+    changed:[key('changed',since?`Changed since ${String(since).slice(0,7)} (with a dot)`:'Changed (with a dot)'),key('quiet','Unchanged')],
+  }[state.lens];
+  parts.push('<span class="atlas-key"><span class="atlas-line"></span>imports</span>','<span class="atlas-key"><span class="atlas-line atlas-line--http"></span>HTTP calls</span>');
+  if(state.selected)parts.push('<span class="atlas-key"><span class="atlas-line atlas-line--out"></span>uses</span>','<span class="atlas-key"><span class="atlas-line atlas-line--in"></span>used by</span>');
+  if(state.lens==='changed'&&live()&&![...state.model.nodes.values()].some(n=>n.changed))
+    parts.push('<span class="atlas-key">The latest scan reads the deploy checkout, which has no edits: choose a snapshot to see what changed.</span>');
   el.innerHTML=parts.join('');
 }
 
-// The findings ledger, numbered as the pins on the map. A snapshot's Changes lens lists what changed since the
-// snapshot before it instead.
-function ledger(){
-  if(!state.graph)return {items:[],total:0,empty:'Findings appear once the graph has loaded.'};
-  const changedNodes=productionNodes(state.graph).filter(n=>n.changed);
-  if(!live()&&state.mode==='changes'){
-    const since=state.graph.snapshot?.changedSince;
-    return {title:since?`Changed since ${String(since).slice(0,7)}`:'Changed',items:changedNodes.slice(0,40).map(n=>({node:n.id,severity:'changed',reason:`${n.domain||''} · risk ${Number(n.risk)||0}`})),total:changedNodes.length,
-      empty:since?`Nothing changed since ${String(since).slice(0,7)}.`:'This is the first snapshot of this repository, so there is nothing earlier to compare with.'};
-  }
-  // The latest scan reads the deploy checkout, which has no edits: "changed" only means something for a snapshot.
-  if(state.mode==='changes'&&!changedNodes.length)return {items:[],total:0,empty:'No change data for the latest scan: it reads the deploy checkout, which has no edits. Choose a snapshot to see what changed since the one before it.'};
-  if(state.summary?._error)return {items:[],total:0,empty:'Findings come from Atlas Intelligence, which isn\'t answering; the map above is the graph alone.'};
-  const groups=aggregateFindings(state.summary?.findings||[]);
-  let shown=groups;
-  if(state.mode==='changes'){
-    const changed=new Set(changedNodes.map(n=>n.id));
-    shown=groups.filter(g=>changed.has(g.node));
-  }else if(state.mode==='risk')shown=groups.filter(g=>['critical','high'].includes(g.severity));
-  else if(state.mode==='evidence')shown=groups.filter(g=>g.signals.some(s=>String(s.rule||'').includes('test')));
-  return {items:shown.slice(0,20).map(g=>({node:g.node,severity:g.severity,reason:findingReason(g)})),total:shown.length,empty:'No findings match this lens.'};
-}
-
 function renderFindings(){
-  const {items,total,empty,title='Findings'}=ledger();
-  $('atlasFindingsTitle').textContent=title;
-  $('atlasFindingCount').textContent=plural(total,'module');
-  $('atlasFindingList').innerHTML=items.map((f,i)=>`
-    <button type="button" class="atlas-finding atlas-sev-${esc(f.severity)}" data-atlas-node="${esc(f.node)}">
-      <span class="atlas-finding-n">${i+1}</span>
-      <span class="atlas-finding-copy"><strong>${esc(f.node)}</strong><small><span class="atlas-finding-sev">${esc(f.severity)}</span> · ${esc(f.reason)}</small></span>
-    </button>`).join('')||`<div class="atlas-empty">${esc(empty)}</div>`;
-  const pins=$('atlasMap').querySelector('.atlas-pins');
-  if(pins)pins.innerHTML=items.map((f,i)=>{
-    const p=state.places?.get(f.node);if(!p)return '';
-    return `<g class="atlas-pin atlas-sev-${esc(f.severity)}" transform="translate(${p.x+p.w-2} ${p.y+2})"><circle r="9"></circle><text y="3.5" text-anchor="middle">${i+1}</text></g>`;
-  }).join('');
+  const box=$('atlasFindingList');
+  if(!state.model){box.innerHTML='<p class="atlas-empty">Findings appear once the map has loaded.</p>';$('atlasFindingNote').textContent='';return;}
+  const {items,note}=lookHereFirst(state.model);
+  box.innerHTML=items.map(f=>`<button type="button" class="atlas-finding" data-level="${f.level}" data-atlas-node="${esc(f.node)}">
+    <span class="atlas-finding-level">${LEVEL[f.level]} · ${esc(state.model.nodes.get(f.node)?.domain||'')}</span><strong>${esc(f.title)}</strong><span>${esc(f.detail)}</span></button>`).join('')||
+    '<p class="atlas-empty">Nothing stands out: no module is both widely used and untested.</p>';
+  $('atlasFindingNote').textContent=note;
 }
 
-function nodeFromDetails(payload){
-  if(payload?.node && typeof payload.node==='object')return payload.node;
-  return payload && typeof payload==='object' && payload.id ? payload : null;
-}
+const listOf=(ids,empty,attr='data-atlas-node')=>(ids=[...ids]).length?`<ul>${ids.map(id=>state.model.nodes.get(id)).filter(Boolean)
+  .sort((a,b)=>(Number(b.risk)||0)-(Number(a.risk)||0)||a.id.localeCompare(b.id)).map(n=>
+  `<li><button type="button" ${attr}="${esc(n.id)}" data-band="${lensBand(n,state.lens)}"><span>${esc(n.id)}</span><small>${esc(n.domain)} · risk ${Number(n.risk)||0}</small></button></li>`).join('')}</ul>`:
+  `<p class="atlas-muted">${esc(empty)}</p>`;
+const figs=pairs=>pairs.map(([k,v])=>`<div><strong>${esc(v)}</strong><span>${esc(k)}</span></div>`).join('');
 
 function renderInspector(){
-  const node=nodeFromDetails(state.details) || productionNodes(state.graph).find(n=>n.id===state.selected);
-  $('atlasSelectedEmpty').hidden=!!node;
-  $('atlasSelectedBody').hidden=!node;
+  const m=state.model,n=state.selected&&m?.nodes.get(state.selected);
+  $('atlasSelectedEmpty').hidden=!!n;
+  $('atlasSelectedBody').hidden=!n;
   renderAskControls();
-  if(!node){$('atlasNodeStats').innerHTML='';$('atlasNodeLinks').innerHTML='';
-    $('atlasEvidenceList').innerHTML='<li class="atlas-muted">Select a module.</li>';return;}
-  $('atlasSelectedPath').textContent=node.id;
-  $('atlasSelectedMeta').textContent=`${node.domain||'Unknown'} · ${riskText(node)} risk · score ${Number(node.risk)||0}`;
-  const direct=Number(node.testRefs)||0;
-  const effective=Number(node.effectiveTestSignal ?? state.details?.effectiveTestSignal ?? direct)||0;
-  const evidence=Array.isArray(node.testEvidence)?node.testEvidence:(Array.isArray(state.details?.testEvidence)?state.details.testEvidence:[]);
-  $('atlasNodeStats').innerHTML=[
-    ['Risk',Number(node.risk)||0],['Inbound',Number(node.inbound)||0],['Outbound',Number(node.outbound)||0],
-    ['Test imports',direct],['Test signal',effective],['Changed',node.changed?'Yes':'No']
-  ].map(([k,v])=>`<div><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
-  const {uses,usedBy}=neighbors(node.id);
-  $('atlasNodeLinks').innerHTML=[['Uses',uses,'uses'],['Used by',usedBy,'usedby']].map(([title,list,kind])=>`
-    <div class="atlas-links-group atlas-links--${kind}"><h3 class="atlas-section-label">${title} <span>${list.length}</span></h3>${list.length?
-      `<ul>${list.slice(0,12).map(n=>`<li><button type="button" data-atlas-node="${esc(n.id)}"><span>${esc(n.id)}</span><small>${esc(n.domain||'')} · risk ${Number(n.risk)||0}</small></button></li>`).join('')}</ul>${
-      list.length>12?`<p class="atlas-muted">and ${list.length-12} more</p>`:''}`:'<p class="atlas-muted">None in this graph.</p>'}</div>`).join('');
-  $('atlasEvidenceList').innerHTML=evidence.slice(0,8).map(e=>`<li><code>${esc(e.test||e.path||'')}</code><span>${esc(e.kind||'evidence')}</span></li>`).join('')||
-    '<li class="atlas-muted">No enhanced test evidence returned for this node.</li>';
+  if(!n){
+    const all=m?[...m.nodes.values()]:[];
+    $('atlasNodeStats').innerHTML=m?figs([['modules',all.length],['imports',m.links.filter(l=>l.kind==='import').length],
+      ['HTTP links',m.version>=2?m.links.filter(l=>l.kind==='http').length:'—'],['untested',all.filter(x=>!testCount(x)).length]]):'';
+    for(const id of ['atlasWhy','atlasNodeLinks'])$(id).innerHTML='';
+    $('atlasEvidenceList').innerHTML='';
+    page.querySelector('.atlas-why-head').hidden=page.querySelector('.atlas-tests-head').hidden=true;
+    return;
+  }
+  page.querySelector('.atlas-why-head').hidden=page.querySelector('.atlas-tests-head').hidden=false;
+  const level=riskLevel(n.risk);
+  $('atlasSelectedPath').textContent=short(n.id);
+  $('atlasSelectedMeta').innerHTML=`<code>${esc(n.id)}</code><span>${esc(n.domain)}</span><span class="atlas-chip" data-band="${level}">${LEVEL[level]} risk · ${Number(n.risk)||0}/100</span>${n.changed?'<span class="atlas-chip">Changed</span>':''}`;
+  $('atlasNodeStats').innerHTML=figs([['uses',n.uses.size],['used by',n.usedBy.size],['affected',n.reach],['tests',testCount(n)]]);
+  $('atlasWhy').innerHTML=whyRanks(n).map(s=>`<li>${esc(s)}</li>`).join('');
+  const groups=[['Uses',n.uses,'It imports nothing in this repository.','uses'],['Used by',n.usedBy,'Nothing imports it: an entry point, or loaded by the browser.','usedby']];
+  if(n.httpTo.size)groups.push(['Calls over HTTP',n.httpTo,'','http']);
+  if(n.httpFrom.size)groups.push(['Called over HTTP by',n.httpFrom,'','http']);
+  $('atlasNodeLinks').innerHTML=groups.map(([title,ids,empty,kind])=>`<div class="atlas-links-group atlas-links--${kind}"><h3 class="atlas-section-label">${title} <span>${ids.size}</span></h3>${listOf(ids,empty)}</div>`).join('');
+  const evidence=(Array.isArray(state.details?.node?.testEvidence)?state.details.node.testEvidence:[]).map(e=>e.test||e.path).filter(t=>t&&!n.tests.includes(t));
+  $('atlasEvidenceList').innerHTML=[...n.tests.map(t=>`<li><code>${esc(t)}</code><span>imports it</span></li>`),
+    ...evidence.slice(0,8).map(t=>`<li><code>${esc(t)}</code><span>runs it</span></li>`)].join('')||'<li class="atlas-muted">None.</li>';
 }
 
 // Ask, Goose and the model need a graph; the quick questions are about a module, so they also need one.
@@ -569,38 +435,54 @@ function renderAskControls(){
   for(const el of page.querySelectorAll('[data-atlas-question]'))el.disabled=off||!state.selected;
 }
 
-// On one column the inspector sits far below the map: bring it into view when someone picks a module.
+// Crossing the phone width (or rotating a tablet) changes the row height: draw the map again.
+let resizeTimer=null;
+root.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{
+  if(state.active&&state.layout&&state.layout.rowHeight!==(rowHeight()))drawMap();
+},200);});
+
+function render(){drawMap();renderHeader();renderLegend();renderFindings();renderInspector();renderSearchResults();}
+
+// The chosen row, scrolled into the middle of the map's frame.
+function revealRow(id){
+  const r=state.layout?.rows.find(x=>x.id===id);if(!r)return;
+  const wrap=$('atlasMap').closest('.atlas-map-wrap');
+  wrap.scrollTo({left:Math.max(0,r.x-120),top:Math.max(0,r.y-wrap.clientHeight/2),behavior:reduceMotion()?'auto':'smooth'});
+}
+
+// On one column the inspector sits below the map: bring it into view when someone picks a module there.
 function revealInspector(){
   if(!matchMedia('(max-width: 1100px)').matches)return;
-  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  page.querySelector('.atlas-inspector').scrollIntoView({block:'start',behavior:reduce?'auto':'smooth'});
+  page.querySelector('.atlas-inspector').scrollIntoView({block:'start',behavior:reduceMotion()?'auto':'smooth'});
   $('atlasSelectedPath').focus({preventScroll:true});
 }
 
-async function selectNode(id,{reveal=false}={}){
-  state.selected=id;
-  // A chosen module is traced on the whole plate; Back returns to the domain it was chosen from.
-  renderMap();
-  const seq=state.seq;
-  try{
-    state.details=await getJson(scoped(`/api/atlas/node?path=${encodeURIComponent(id)}`),{timeout:live()?12000:62000});
-  }catch(error){
-    state.details=productionNodes(state.graph).find(n=>n.id===id)||null;
-    status(`Node loaded from static graph; intelligence detail unavailable: ${error.message}`,'warn');
-  }
-  if(seq!==state.seq)return;  // the page moved to another graph meanwhile
-  renderInspector();
+async function selectNode(id,{scroll=false,reveal=false}={}){
+  const n=state.model?.nodes.get(id);
+  if(!n)return;
+  state.selected=id;state.details=null;
+  state.open.add(n.domain);
+  render();
+  if(scroll)revealRow(id);
   if(reveal)revealInspector();
+  const seq=state.seq;
+  try{state.details=await getJson(scoped(`/api/atlas/node?path=${encodeURIComponent(id)}`),{timeout:live()?12000:62000});}
+  catch{state.details=null;}
+  if(seq!==state.seq||state.selected!==id)return;
+  renderInspector();
 }
 
-function renderModes(){
-  for(const b of page.querySelectorAll('[data-atlas-mode]')){
-    const on=b.dataset.atlasMode===state.mode;
-    b.classList.toggle('active',on);
-    b.setAttribute('aria-selected',String(on));
-  }
-  $('atlasMap').dataset.lens=state.mode;
-  renderFindings();renderSearchResults();renderLegend();
+function clearSelection(){state.selected=null;state.details=null;render();}
+
+function renderSearchResults(){
+  const q=query(),box=$('atlasSearchResults');
+  const rows=q&&state.model?[...state.model.nodes.values()].filter(n=>matches(n,q)).slice(0,12):[];
+  box.hidden=!rows.length;
+  box.innerHTML=rows.map(n=>`<button type="button" data-atlas-node="${esc(n.id)}"><span>${esc(n.id)}</span><small>${esc(n.domain)} · risk ${Number(n.risk)||0}</small></button>`).join('');
+}
+
+function renderLenses(){
+  for(const b of page.querySelectorAll('[data-atlas-lens]'))b.setAttribute('aria-pressed',String(b.dataset.atlasLens===state.lens));
 }
 
 function renderPicker(){
@@ -622,18 +504,13 @@ function renderPicker(){
 }
 
 function clearGraph(title,hint,kind='loading'){
-  state.graph=null;state.summary=null;state.selected=null;state.details=null;state.domain=null;state.places=null;
-  $('atlasMapBack').hidden=true;
+  state.graph=null;state.model=null;state.layout=null;state.summary=null;state.selected=null;state.details=null;state.open=new Set();
   $('atlasMap').innerHTML='';
-  if($('atlasDomainList'))$('atlasDomainList').innerHTML='';
   setMapState(kind,kind==='loading'?'Reading the graph…':hint);
-  renderLegend();
+  $('atlasNodeSearch').value='';
+  renderHeader();renderLegend();renderFindings();renderInspector();renderSearchResults();
   $('atlasMapTitle').textContent=title;
-  $('atlasMapHint').textContent=kind==='loading'?hint:'';  // an empty or failed sheet says why on itself
-  for(const id of ['atlasKpiFiles','atlasKpiRelations','atlasKpiChanged','atlasKpiFindings'])$(id).textContent='—';
-  $('atlasNodeSearch').value='';renderSearchResults();
   $('atlasAnswer').hidden=true;
-  renderInspector();renderFindings();
 }
 
 async function refresh(){
@@ -662,31 +539,30 @@ async function refresh(){
     const url=live()?'/api/atlas/graph':`/api/atlas/graph?repo=${encodeURIComponent(state.repo)}&commit=${encodeURIComponent(state.commit)}`;
     const [graph,summary,releases]=await Promise.all([
       getJson(url,{timeout:12000}),
-      getJson(scoped('/api/atlas/summary'),{timeout:live()?12000:62000}).catch(error=>({providers:{},findings:[],_error:error.message})),
-      live()?getJson('/api/releases',{timeout:8000}).catch(()=>null):null
+      getJson(scoped('/api/atlas/summary'),{timeout:live()?12000:62000}).catch(error=>({providers:{},_error:error.message})),
+      state.repo==='localai'?getJson('/api/releases',{timeout:8000}).catch(()=>null):null
     ]);
     if(seq!==state.seq||!state.active)return;
-    state.graph=graph;state.summary=summary;
-    renderKpis();if(summary)providerBadge();renderMap();
+    state.graph=graph;state.summary=summary;state.model=buildModel(graph);
+    if(state.selected&&!state.model.nodes.has(state.selected))state.selected=null;
+    providerBadge();render();
     if(state.selected)await selectNode(state.selected);
     if(seq!==state.seq)return;
-    // Say plainly when the diagram is old, partial or missing its change data, rather than looking complete.
+    // Say plainly when the map is old, partial or missing its change data, rather than looking complete.
     const caveats=[];
     if(retired)caveats.push('the chosen commit is no longer kept, so this is the newest snapshot');
     if(listed._error)caveats.push(`the snapshot list is unavailable: ${listed._error}`);
     if(graph.stale)caveats.push('showing the last good graph; the newest copy could not be read');
     if(graph.stats?.truncated)caveats.push(`only the first ${graph.stats.maxFiles} files were scanned`);
     if(graph.stats?.gitError)caveats.push('changed files are unknown (git failed)');
-    if(summary?._error)caveats.push(`intelligence service is offline: ${summary._error}`);
-    if(summary?.snapshot?.reason)caveats.push(`findings use the graph only, because ${summary.snapshot.reason}`);
-    // Say how old the scan is; the latest scan is only re-run by hand, so it can predate the running release.
-    const fresh=live()?scanFreshness(graph.generatedAt,releases?.current?.deployedAt):
-      {text:`Snapshot scanned ${ago(graph.generatedAt)||'at an unknown time'}.`,stale:false};
-    status(`${fresh.text}${caveats.length?` Also: ${caveats.map(c=>c.replace(/\.+$/,'')).join('; ')}.`:''}`,fresh.stale||caveats.length?'warn':'ok');
+    if(state.model.version<2)caveats.push('older snapshot: rescan for HTTP links');
+    if(summary?._error)caveats.push(`Ask and Goose are offline: ${summary._error}`);
+    const fresh=freshnessLine(graph,state.repo==='localai'?releases?.current:null);
+    status(`${fresh.text}.${caveats.length?` Also: ${caveats.map(c=>c.replace(/\.+$/,'')).join('; ')}.`:''}`,fresh.stale||caveats.length?'warn':'ok');
   }catch(error){
     if(seq!==state.seq||!state.active)return;
-    if(!state.graph)clearGraph(`${repoLabel(state.repo)} could not be loaded`,'The graph could not be read. Try Refresh evidence, or choose another commit.','error');
-    status(error.name==='AbortError'?'Architecture refresh timed out.':error.message,'error');
+    if(!state.graph)clearGraph(`${repoLabel(state.repo)} could not be loaded`,'The graph could not be read. Try Refresh, or choose another commit.','error');
+    status(error.name==='AbortError'?'Loading the map timed out.':error.message,'error');
   }finally{if(seq===state.seq)setBusy(false);}
 }
 
@@ -750,7 +626,7 @@ async function askAtlas(question){
   try{
     const payload=await getJson('/api/atlas/ask',{
       method:'POST',timeout:310000,headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({...scope(),question:q,node:state.selected||undefined,model:state.model||undefined})
+      body:JSON.stringify({...scope(),question:q,node:state.selected||undefined,model:state.ollamaModel||undefined})
     });
     box.dataset.tone='ok';
     box.textContent=`${payload.answer||'No answer returned.'}\n\nModel: ${payload.model||'unknown'}${state.selected?`\nNode: ${state.selected}`:''}`;
@@ -792,6 +668,11 @@ function activate(){
 root.addEventListener('hashchange',()=>{if(state.active)fromHash();});
 function deactivate(){state.active=false;state.request?.abort?.();state.request=null;clearTimeout(snapshotRun.timer);}
 
+const pick=(e,opts)=>{
+  const n=e.target.closest('[data-atlas-node]');if(n){void selectNode(n.dataset.atlasNode,opts);return true;}
+  const d=e.target.closest('[data-atlas-domain]');if(d){state.open.add(d.dataset.atlasDomain);render();return true;}
+  return false;
+};
 $('atlasRefresh').addEventListener('click',()=>void refresh());
 $('atlasRepo').addEventListener('change',e=>{
   const repo=e.target.value;
@@ -799,46 +680,34 @@ $('atlasRepo').addEventListener('change',e=>{
 });
 $('atlasCommit').addEventListener('change',e=>chooseSource(state.repo,e.target.value));
 $('atlasSnapshotNow').addEventListener('click',()=>void snapshotNow());
-$('atlasNodeSearch').addEventListener('input',renderSearchResults);
-$('atlasSearchResults').addEventListener('click',e=>{const b=e.target.closest('[data-atlas-node]');if(b){$('atlasSearchResults').hidden=true;void selectNode(b.dataset.atlasNode,{reveal:true});}});
-$('atlasFindingList').addEventListener('click',e=>{const b=e.target.closest('[data-atlas-node]');if(b)void selectNode(b.dataset.atlasNode,{reveal:true});});
-// Uses and Used by: walk the graph from the inspector, one module to the next.
-$('atlasNodeLinks').addEventListener('click',async e=>{const b=e.target.closest('[data-atlas-node]');if(!b)return;await selectNode(b.dataset.atlasNode);$('atlasSelectedPath').focus();});
-function openDomain(id){state.domain=id;state.selected=null;state.details=null;renderMap();renderInspector();}
-$('atlasMapBack').addEventListener('click',()=>{
-  if(state.selected){state.selected=null;state.details=null;}else state.domain=null;
-  renderMap();renderInspector();
-  $('atlasMapTitle').focus();
+$('atlasNodeSearch').addEventListener('input',()=>{drawMap();renderSearchResults();});
+// Enter picks the first match; Escape clears the search, then the selection.
+$('atlasNodeSearch').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){const first=$('atlasSearchResults').querySelector('[data-atlas-node]');if(first){e.preventDefault();$('atlasSearchResults').hidden=true;void selectNode(first.dataset.atlasNode,{scroll:true});}}
+  if(e.key==='Escape'){e.preventDefault();if(e.target.value){e.target.value='';drawMap();renderSearchResults();}else if(state.selected)clearSelection();}
 });
-$('atlasMap').addEventListener('pointerover',e=>{const d=e.target.closest('[data-atlas-domain]');showDomainLinks(d?d.dataset.atlasDomain:null);});
-$('atlasMap').addEventListener('pointerleave',()=>showDomainLinks(null));
-$('atlasMap').addEventListener('focusin',e=>{const d=e.target.closest('[data-atlas-domain]');showDomainLinks(d?d.dataset.atlasDomain:null,{say:true});});
-$('atlasMap').addEventListener('focusout',e=>{if(!$('atlasMap').contains(e.relatedTarget))showDomainLinks(null,{say:true});});
-$('atlasMap').addEventListener('click',e=>{
-  const n=e.target.closest('[data-atlas-node]');if(n)return void selectNode(n.dataset.atlasNode,{reveal:true});
-  const d=e.target.closest('[data-atlas-domain]');if(d)openDomain(d.dataset.atlasDomain);
-});
-// Domain boxes and file nodes are both role="button": Enter and Space open them, as a click does.
+$('atlasSearchResults').addEventListener('click',e=>{if(pick(e,{scroll:true,reveal:true}))$('atlasSearchResults').hidden=true;});
+$('atlasFindingList').addEventListener('click',e=>pick(e,{scroll:true}));
+$('atlasNodeLinks').addEventListener('click',e=>pick(e,{scroll:true}));
+$('atlasMapBack').addEventListener('click',()=>{clearSelection();$('atlasMapTitle').focus();});
+$('atlasMap').addEventListener('click',e=>pick(e,{reveal:true}));
 $('atlasMap').addEventListener('keydown',e=>{
   if(e.key!=='Enter'&&e.key!==' ')return;
-  // The plate is redrawn around the choice, so focus moves to the inspector's heading for the module.
-  const n=e.target.closest('[data-atlas-node]');if(n){e.preventDefault();return void selectNode(n.dataset.atlasNode,{reveal:true}).then(()=>$('atlasSelectedPath').focus());}
-  const d=e.target.closest('[data-atlas-domain]');if(d){e.preventDefault();openDomain(d.dataset.atlasDomain);}
+  e.preventDefault();
+  const id=e.target.closest('[data-atlas-node]')?.dataset.atlasNode;
+  pick(e,{});
+  // The map was redrawn around the choice: focus returns to the same row.
+  $('atlasMap').querySelector(id?`[data-atlas-node="${CSS.escape(id)}"]`:'.atlas-row')?.focus();
 });
-// The lens tabs: one tab stop, arrow keys (and Home/End) move between them, as a tablist should.
-const modeTabs=[...page.querySelectorAll('[data-atlas-mode]')];
-function chooseMode(b){state.mode=b.dataset.atlasMode;renderModes();for(const t of modeTabs)t.tabIndex=t===b?0:-1;}
-for(const b of modeTabs){
-  b.tabIndex=b.classList.contains('active')?0:-1;
-  b.addEventListener('click',()=>chooseMode(b));
-  b.addEventListener('keydown',e=>{
-    const i=modeTabs.indexOf(b),last=modeTabs.length-1;
-    const to={ArrowRight:i===last?0:i+1,ArrowLeft:i===0?last:i-1,Home:0,End:last}[e.key];
-    if(to===undefined)return;
-    e.preventDefault();chooseMode(modeTabs[to]);modeTabs[to].focus();
-  });
-}
-$('atlasModel').addEventListener('change',e=>{state.model=e.target.value;localStorage.setItem('localai.atlas.model',state.model);});
+for(const b of page.querySelectorAll('[data-atlas-lens]'))b.addEventListener('click',()=>{state.lens=b.dataset.atlasLens;renderLenses();render();});
+// "/" finds a module; Escape leaves the selection. Both only while Architecture is open and nothing else is typed in.
+document.addEventListener('keydown',e=>{
+  if(!state.active||e.defaultPrevented||e.ctrlKey||e.metaKey||e.altKey)return;
+  const typing=/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName||'')||document.activeElement?.isContentEditable;
+  if(e.key==='/'&&!typing){e.preventDefault();$('atlasNodeSearch').focus();}
+  else if(e.key==='Escape'&&!typing&&state.selected)clearSelection();
+});
+$('atlasModel').addEventListener('change',e=>{state.ollamaModel=e.target.value;localStorage.setItem('localai.atlas.model',state.ollamaModel);});
 $('atlasAsk').addEventListener('click',()=>void askAtlas());
 $('atlasGoose').addEventListener('click',()=>void gooseBrief());
 $('atlasQuestion').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();void askAtlas();}});

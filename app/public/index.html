@@ -229,12 +229,12 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
   <div class="topbar">
     <div>
       <h1>Architecture</h1>
-      <p class="sub">How the code fits together, what changed, and where the risk is.</p>
+      <p class="sub">How the code depends on itself, and what to look at first.</p>
     </div>
     <div class="atlas-top-actions">
       <span id="atlasOllamaState" class="atlas-provider">Ollama · checking</span>
       <span id="atlasGooseState" class="atlas-provider">Goose · checking</span>
-      <button id="atlasRefresh" class="btn-outline" type="button">Refresh evidence</button>
+      <button id="atlasRefresh" class="btn-outline" type="button">Refresh</button>
     </div>
   </div>
 
@@ -250,59 +250,52 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
 
   <div class="atlas-grid">
     <section class="atlas-sheet" aria-labelledby="atlasMapTitle">
+      <div class="atlas-sheet-head">
+        <div class="atlas-sheet-title"><h2 id="atlasMapTitle" tabindex="-1">Local AI · how modules depend on each other</h2><p id="atlasMapHint"></p></div>
+        <button id="atlasMapBack" class="btn-outline" type="button" hidden>Clear selection</button>
+      </div>
       <div class="atlas-sheet-tools">
-        <div class="atlas-modebar" role="tablist" aria-label="Architecture lens">
-          <button type="button" class="active" role="tab" aria-selected="true" data-atlas-mode="architecture">Structure</button>
-          <button type="button" role="tab" aria-selected="false" data-atlas-mode="changes">Changes</button>
-          <button type="button" role="tab" aria-selected="false" data-atlas-mode="risk">Risk</button>
-          <button type="button" role="tab" aria-selected="false" data-atlas-mode="evidence">Evidence</button>
+        <div class="atlas-lenses" role="group" aria-label="Colour the map by">
+          <button type="button" data-atlas-lens="risk" aria-pressed="true">Risk</button>
+          <button type="button" data-atlas-lens="tests" aria-pressed="false">Tests</button>
+          <button type="button" data-atlas-lens="reach" aria-pressed="false">Blast radius</button>
+          <button type="button" data-atlas-lens="changed" aria-pressed="false">Changed</button>
         </div>
         <div class="atlas-search">
-          <label class="visually-hidden" for="atlasNodeSearch">Find an Atlas module</label>
-          <input id="atlasNodeSearch" type="search" autocomplete="off" placeholder="Find a module, path or domain…" />
+          <label class="visually-hidden" for="atlasNodeSearch">Find a module</label>
+          <input id="atlasNodeSearch" type="search" autocomplete="off" placeholder="Find a module or path" aria-keyshortcuts="/" />
+          <kbd aria-hidden="true">/</kbd>
           <div id="atlasSearchResults" class="atlas-search-results" hidden></div>
         </div>
       </div>
-      <div class="atlas-sheet-head">
-        <div class="atlas-sheet-title"><h2 id="atlasMapTitle" tabindex="-1">System domains</h2><p id="atlasMapHint"></p></div>
-        <dl class="atlas-readout" aria-label="Architecture summary">
-          <div><dt>Modules</dt><dd id="atlasKpiFiles">—</dd></div>
-          <div><dt>Imports</dt><dd id="atlasKpiRelations">—</dd></div>
-          <div><dt>Changed</dt><dd id="atlasKpiChanged">—</dd></div>
-          <div><dt>Findings</dt><dd id="atlasKpiFindings">—</dd></div>
-        </dl>
-        <button id="atlasMapBack" class="btn-outline" type="button" hidden>All domains</button>
-      </div>
-      <div class="atlas-map-wrap" data-state="loading">
-        <svg id="atlasMap" role="group" aria-label="System Atlas architecture map" preserveAspectRatio="xMidYMin meet"></svg>
+      <p id="atlasLegend" class="atlas-legend"></p>
+      <div class="atlas-map-wrap" data-state="loading" tabindex="-1">
+        <svg id="atlasMap" role="group" aria-label="Dependency map: callers on the left, what they use on the right"></svg>
         <p id="atlasMapState" class="atlas-map-state">Reading the graph…</p>
       </div>
-      <p id="atlasLegend" class="atlas-legend"></p>
 
       <div class="atlas-ledger">
-        <div class="atlas-ledger-head">
-          <h2 id="atlasFindingsTitle">Findings</h2>
-          <span id="atlasFindingCount">0 modules</span>
-        </div>
-        <p class="atlas-ledger-note">Rule-based checks of the code, numbered as they are pinned on the map. Ask gives a model's reading separately.</p>
+        <h2 id="atlasFindingsTitle">Look here first</h2>
         <div id="atlasFindingList" class="atlas-findings"></div>
+        <p id="atlasFindingNote" class="atlas-ledger-note"></p>
       </div>
     </section>
 
     <aside class="atlas-inspector" aria-label="Atlas inspector">
       <div class="atlas-inspector-head">
-        <div id="atlasSelectedEmpty" class="atlas-selected-empty"><h2>Inspector</h2><p>Select a square on the map, a finding or a search result to see what the module uses, what uses it, and its test evidence.</p></div>
+        <div id="atlasSelectedEmpty" class="atlas-selected-empty"><h2>Nothing selected</h2><p>Select a module on the map, a finding or a search result to see what it uses, what uses it, and how far a change would spread.</p></div>
         <div id="atlasSelectedBody" hidden>
-          <div id="atlasSelectedPath" class="atlas-selected-path" tabindex="-1"></div>
+          <h2 id="atlasSelectedPath" class="atlas-selected-path" tabindex="-1"></h2>
           <div id="atlasSelectedMeta" class="atlas-selected-meta"></div>
         </div>
       </div>
       <div class="atlas-inspector-body">
         <div id="atlasNodeStats" class="atlas-node-stats"></div>
+        <h3 class="atlas-section-label atlas-why-head" hidden>Why it ranks here</h3>
+        <ul id="atlasWhy" class="atlas-why"></ul>
         <div id="atlasNodeLinks" class="atlas-links"></div>
-
-        <h3 class="atlas-section-label">Test evidence</h3>
-        <ul id="atlasEvidenceList" class="atlas-evidence"><li class="atlas-muted">Select a module.</li></ul>
+        <h3 class="atlas-section-label atlas-tests-head" hidden>Tests</h3>
+        <ul id="atlasEvidenceList" class="atlas-evidence"></ul>
 
         <h3 class="atlas-section-label">Ask</h3>
         <div class="atlas-model-row">
@@ -318,7 +311,7 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
         </div>
 
         <label class="visually-hidden" for="atlasQuestion">Ask Atlas</label>
-        <textarea id="atlasQuestion" placeholder="Ask about this node or the current architecture evidence…"></textarea>
+        <textarea id="atlasQuestion" placeholder="Ask about this module or the whole map…"></textarea>
         <div class="atlas-actions">
           <button id="atlasAsk" class="btn-primary" type="button">Ask local Ollama</button>
           <button id="atlasGoose" class="btn-outline" type="button">Goose brief</button>

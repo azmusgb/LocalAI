@@ -7,7 +7,7 @@ const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
 const { extractAtlasGraph, normalizeAtlasBaseUrl } = require('../app/server/atlas');
-const { aggregateFindings, domainSummary } = require('../app/public/architecture');
+const { domainSummary } = require('../app/public/architecture');
 
 test('Atlas graph parser extracts deterministic DATA without executing page JavaScript', () => {
   const graph = extractAtlasGraph('<script>const DATA = {"nodes":[{"id":"a","domain":"Core"}],"edges":[],"stats":{"files":1}}; const nope = 1;</script>');
@@ -19,18 +19,6 @@ test('Atlas upstream is loopback by default', () => {
   assert.equal(normalizeAtlasBaseUrl('http://127.0.0.1:8765'), 'http://127.0.0.1:8765');
   assert.throws(() => normalizeAtlasBaseUrl('http://10.0.0.21:8765'), /loopback/);
   assert.equal(normalizeAtlasBaseUrl('http://10.0.0.21:8765', { allowRemote: true }), 'http://10.0.0.21:8765');
-});
-
-test('finding aggregation groups multiple deterministic signals by module', () => {
-  const groups = aggregateFindings([
-    { node:'app/server.js', severity:'critical', confidence:.98, rule:'critical-risk' },
-    { node:'app/server.js', severity:'high', confidence:.99, rule:'high-fanout' },
-    { node:'app/storage.js', severity:'high', confidence:.96, rule:'high-risk' }
-  ]);
-  assert.equal(groups.length, 2);
-  assert.equal(groups[0].node, 'app/server.js');
-  assert.equal(groups[0].signals.length, 2);
-  assert.equal(groups[0].confidence, .99);
 });
 
 test('domain summary excludes tests and aggregates cross-domain edges', () => {

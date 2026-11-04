@@ -181,6 +181,9 @@ function createAtlas(ctx = {}) {
 
   function shape(graph) {
     return {
+      // Scanner v2 (Atlas redesign PR 1): a page tells an older snapshot by its version and lists calls nothing serves.
+      schemaVersion: graph.schemaVersion || 1,
+      danglingHttp: Array.isArray(graph.danglingHttp) ? graph.danglingHttp : null,
       generatedAt: graph.generatedAt || null,
       stats: graph.stats || {},
       domains: graph.domains || [],

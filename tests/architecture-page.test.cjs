@@ -1,111 +1,196 @@
 'use strict';
 
-// The Architecture page's review fixes (1 Nov 2026): an honest freshness line, a map ordered callers-above-callees
-// that fits all its rows, findings that say why, and plain copy.
+// The Architecture page (Atlas redesign spec, PR 3): a map of named modules in columns from callers to what they use,
+// an inspector that says why a module ranks where it does, and at most six findings in plain words. The pure parts
+// are tested here; tests/atlas-map-ui.mjs drives the page in a browser.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
-const { plural, orderDomains, scanFreshness, findingReason, domainSummary, plateLayout } = require('../app/public/architecture.js');
+const page = require('../app/public/architecture.js');
+const { plural, orderDomains, domainSummary, buildModel, columnsFor, mapLayout, lookHereFirst, whyRanks,
+  freshnessLine, lensBand, riskLevel } = page;
 
-const NOW = Date.parse('2026-11-02T03:00:00Z');
+const NOW = Date.parse('2026-11-04T12:00:00Z');
 
-test('counts read as English', () => {
-  assert.equal(plural(1, 'module'), '1 module');
-  assert.equal(plural(0, 'module'), '0 modules');
-  assert.equal(plural(52, 'module'), '52 modules');
-});
-
-test('domains that use others come before the domains they use', () => {
-  const graph = {
+// A small LocalAI-shaped graph: two browser scripts calling the server over HTTP, the server wiring up modules, a
+// shared store with tests, and one browser call nothing serves.
+function graph(extra = {}) {
+  const node = (id, domain, more = {}) => ({ id, label: id.split('/').pop(), domain, risk: 10, testRefs: 0, ...more });
+  return {
+    schemaVersion: 2,
+    generatedAt: '2026-11-03T12:00:00Z',
     nodes: [
-      { id: 'ui.js', domain: 'UI' }, { id: 'api.js', domain: 'API' }, { id: 'db.js', domain: 'Data' },
-      { id: 't.js', domain: 'Tests' },
+      node('app/public/home.js', 'UI'), node('app/public/work.js', 'UI'),
+      node('app/server.js', 'Platform', { risk: 72, riskParts: { reach: 0, out: 72, in: 0, tested: 0 } }),
+      node('app/server/chat.js', 'API'), node('app/agent.js', 'AI'),
+      node('app/notify.js', 'Core', { changed: true }),
+      node('app/storage.js', 'Data', { risk: 21, testRefs: 2, reach: 4, riskParts: { reach: 30, out: 0, in: 9, tested: -18 } }),
+      node('tests/storage.test.cjs', 'Tests'),
     ],
     edges: [
-      { source: 'ui.js', target: 'api.js' }, { source: 'api.js', target: 'db.js' }, { source: 'ui.js', target: 'db.js' },
-      { source: 't.js', target: 'db.js' },
+      { source: 'app/public/home.js', target: 'app/server.js', kind: 'http', paths: ['/api/health'] },
+      { source: 'app/public/work.js', target: 'app/server/chat.js', kind: 'http', paths: ['/api/chat'] },
+      { source: 'app/server.js', target: 'app/server/chat.js', kind: 'import' },
+      { source: 'app/server.js', target: 'app/storage.js', kind: 'import' },
+      { source: 'app/server.js', target: 'app/notify.js', kind: 'import' },
+      { source: 'app/server/chat.js', target: 'app/agent.js', kind: 'import' },
+      { source: 'app/agent.js', target: 'app/storage.js', kind: 'import' },
+      { source: 'app/notify.js', target: 'app/storage.js', kind: 'import' },
+      { source: 'tests/storage.test.cjs', target: 'app/storage.js', kind: 'test' },
     ],
+    danglingHttp: [{ source: 'app/public/work.js', path: '/api/missing', line: 4 }],
+    ...extra,
   };
-  const { domains, links } = domainSummary(graph);
-  assert.deepEqual(orderDomains(domains, links).map((d) => d.id), ['UI', 'API', 'Data']);
-  // Unlinked domains keep a stable order: larger first, then by name.
-  assert.deepEqual(orderDomains([{ id: 'B', count: 1 }, { id: 'A', count: 1 }, { id: 'C', count: 3 }], []).map((d) => d.id), ['C', 'A', 'B']);
+}
+
+test('counts read as English, and risk bands match the scanner', () => {
+  assert.equal(plural(1, 'module'), '1 module');
+  assert.equal(plural(52, 'module'), '52 modules');
+  assert.deepEqual([70, 69, 48, 47, 28, 27, 0].map(riskLevel), ['critical', 'high', 'high', 'medium', 'medium', 'low', 'low']);
 });
 
-test('the scan says how old it is and warns when it predates the running release', () => {
-  assert.deepEqual(scanFreshness('2026-11-02T01:00:00Z', '2026-11-01T20:00:00Z', NOW), { text: 'Scanned 2 h ago.', stale: false });
-  const old = scanFreshness('2026-10-31T23:06:12Z', '2026-11-02T02:48:00Z', NOW);
-  assert.equal(old.stale, true);
-  assert.match(old.text, /^Scanned 28 h ago, before the release deployed 12 min ago/);
-  assert.deepEqual(scanFreshness('2026-11-02T01:00:00Z', null, NOW), { text: 'Scanned 2 h ago.', stale: false });
-  assert.deepEqual(scanFreshness(undefined, null, NOW), { text: 'Scan time unknown.', stale: true });
+test('the model keeps production modules, splits import and HTTP links, and lists the tests that import each', () => {
+  const m = buildModel(graph());
+  assert.ok(!m.nodes.has('tests/storage.test.cjs'), 'tests are counted, not drawn');
+  const store = m.nodes.get('app/storage.js');
+  assert.deepEqual(store.tests, ['tests/storage.test.cjs']);
+  assert.deepEqual([...store.usedBy].sort(), ['app/agent.js', 'app/notify.js', 'app/server.js']);
+  assert.equal(store.reach, 4, "the scanner's reach wins when it sent one");
+  const server = m.nodes.get('app/server.js');
+  assert.deepEqual([...server.httpFrom], ['app/public/home.js']);
+  assert.equal(server.usedBy.size, 0, 'an HTTP call is not an import');
+  assert.equal(m.links.filter((l) => l.kind === 'http').length, 2);
+  assert.equal(m.links.filter((l) => l.kind === 'import').length, 6);
+  // A version 1 snapshot: no kind, no reach. A link from a test is still a test, and reach is worked out here.
+  const v1 = buildModel({ ...graph(), schemaVersion: undefined,
+    edges: graph().edges.filter((e) => e.kind !== 'http').map(({ kind, ...e }) => e),
+    nodes: graph().nodes.map(({ reach, riskParts, ...n }) => n) });
+  assert.equal(v1.version, 1);
+  assert.deepEqual(v1.nodes.get('app/storage.js').tests, ['tests/storage.test.cjs']);
+  assert.equal(v1.nodes.get('app/storage.js').reach, 4, 'agent, notify, chat (through agent) and server');
 });
 
-test('a finding says why, in the rules\' words, without repeating itself', () => {
-  assert.equal(findingReason({ signals: [
-    { title: 'Critical architectural risk' }, { title: 'Large architectural blast radius' }, { title: 'Critical architectural risk' },
-  ] }), 'Critical architectural risk · Large architectural blast radius');
-  assert.equal(findingReason({ signals: [{ rule: 'high-fanout' }] }), 'high-fanout');
-  assert.equal(findingReason({ signals: [] }), 'No detail returned');
-  assert.equal(findingReason(null), 'No detail returned');
+test('columns run from callers to what they use, by the repository\'s own domains', () => {
+  const cols = columnsFor(buildModel(graph()), 'localai');
+  assert.deepEqual(cols.map((c) => c.title), ['Browser', 'Entry', 'Server', 'Capabilities', 'Shared', 'Data']);
+  assert.deepEqual(cols.find((c) => c.title === 'Data').domains, ['Data']);
+  // Another repository: its domains in caller-first order, at most six columns, nothing dropped.
+  const other = { nodes: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((d) => ({ id: `${d}.py`, domain: d })), edges: [] };
+  const oc = columnsFor(buildModel(other), 'pi-hub');
+  assert.ok(oc.length <= 6);
+  assert.deepEqual(oc.flatMap((c) => c.domains).sort(), ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
+  const { domains, links } = domainSummary({ nodes: [{ id: 'u', domain: 'UI' }, { id: 'a', domain: 'API' }], edges: [{ source: 'u', target: 'a' }] });
+  assert.deepEqual(orderDomains(domains, links).map((d) => d.id), ['UI', 'API']);
 });
 
-test('the map sizes to its rows, and the page copy is plain', () => {
-  const js = fs.readFileSync(path.join(ROOT, 'app/public/architecture.js'), 'utf8');
-  assert.doesNotMatch(js, /height=500/);  // the fourth row of domains was cut off at a fixed height
-  assert.match(js, /const height=Math\.max\(plate\.height,120\)/);  // the plate's viewBox is as tall as its shelves
-  assert.doesNotMatch(js, /max confidence|Atlas evidence is current/);
-  assert.match(js, /prefers-reduced-motion: reduce/);
-  const html = fs.readFileSync(path.join(ROOT, 'app/public/index.html'), 'utf8');
-  for (const gone of ['Deterministic findings', 'Evidence-bounded', 'Atlas facts first', 'System Atlas: deterministic']) {
-    assert.ok(!html.includes(gone), gone);
+test('the layout gives every module one row in its column, riskiest first, and nothing overlaps', () => {
+  const m = buildModel(graph());
+  const cols = columnsFor(m, 'localai');
+  const lay = mapLayout(m, cols);
+  assert.equal(lay.rows.length, m.nodes.size);
+  const at = new Map(lay.rows.map((r) => [r.id, r]));
+  assert.ok(at.get('app/public/home.js').x < at.get('app/server.js').x);
+  assert.ok(at.get('app/server.js').x < at.get('app/storage.js').x);
+  const seen = new Set();
+  for (const r of lay.rows) {
+    const key = `${r.x}:${r.y}`;
+    assert.ok(!seen.has(key), `${r.id} overlaps another row`);
+    seen.add(key);
+    assert.ok(r.y + lay.rowHeight <= lay.height && r.x + lay.colWidth <= lay.width);
   }
-  assert.match(html, /data-atlas-mode="architecture">Structure<\/button>/);
+  assert.ok(lay.heads.some((h) => h.kind === 'column' && h.text === 'Browser'));
+  assert.deepEqual(mapLayout(buildModel({ nodes: [], edges: [] }), []).rows, []);
+});
+
+test('past 400 modules each domain is one row until it is opened', () => {
+  const nodes = Array.from({ length: 420 }, (_, i) => ({ id: `app/m${i}.js`, domain: i < 400 ? 'Core' : 'AI' }));
+  const m = buildModel({ nodes, edges: [] });
+  const cols = columnsFor(m, 'localai');
+  const shut = mapLayout(m, cols);
+  assert.deepEqual(shut.rows.map((r) => r.domain).sort(), ['AI', 'Core']);
+  assert.ok(shut.rows.every((r) => r.collapsed && r.count > 0));
+  const open = mapLayout(m, cols, { open: new Set(['AI']) });
+  assert.equal(open.rows.filter((r) => !r.collapsed).length, 20);
+  assert.equal(open.rows.filter((r) => r.collapsed).length, 1);
+});
+
+test('look here first: at most six findings, each a sentence with its reason, and dangling calls first', () => {
+  const m = buildModel(graph());
+  const found = lookHereFirst(m);
+  assert.ok(found.items.length >= 1 && found.items.length <= 6);
+  assert.match(found.items[0].title, /work\.js calls \/api\/missing, which nothing serves/);
+  for (const f of found.items) {
+    assert.ok(m.nodes.has(f.node), f.node);
+    assert.ok(f.title.length > 10 && f.detail.length > 10, JSON.stringify(f));
+    assert.ok(['critical', 'high', 'medium', 'low'].includes(f.level));
+  }
+  assert.equal(new Set(found.items.map((f) => f.node)).size, found.items.length, 'one finding per module');
+  // With every call served, it says so rather than staying silent.
+  const served = lookHereFirst(buildModel(graph({ danglingHttp: [] })));
+  assert.match(served.note, /Every browser call to \/api has a route/);
+  const older = lookHereFirst(buildModel({ ...graph(), schemaVersion: 1, danglingHttp: undefined }));
+  assert.match(older.note, /Older snapshot/);
+});
+
+test('why it ranks here: the score\'s parts in plain words, and counts for an older snapshot', () => {
+  const m = buildModel(graph());
+  const store = whyRanks(m.nodes.get('app/storage.js'));
+  assert.ok(store.some((s) => /depend on it, directly or not/.test(s)), store.join(' | '));
+  assert.ok(store.some((s) => /2 tests import it/.test(s)), store.join(' | '));
+  const server = whyRanks(m.nodes.get('app/server.js'));
+  assert.ok(server.some((s) => /No test imports it/.test(s)));
+  assert.ok(server.some((s) => /imports 3 modules/.test(s)));
+  assert.ok(whyRanks(m.nodes.get('app/notify.js')).some((s) => /changed since the previous snapshot/.test(s)));
+  const old = buildModel({ ...graph(), nodes: graph().nodes.map(({ riskParts, ...n }) => n) });
+  assert.ok(whyRanks(old.nodes.get('app/storage.js')).some((s) => /rescan/i.test(s)));
+});
+
+test('each lens paints a band, and colour is never the only signal for a change', () => {
+  const m = buildModel(graph());
+  const store = m.nodes.get('app/storage.js'), server = m.nodes.get('app/server.js');
+  assert.equal(lensBand(server, 'risk'), 'critical');
+  assert.equal(lensBand(store, 'tests'), 'medium');
+  assert.equal(lensBand(server, 'tests'), 'critical');
+  assert.equal(lensBand(store, 'reach'), 'medium');
+  assert.equal(lensBand(m.nodes.get('app/notify.js'), 'changed'), 'changed');
+  assert.equal(lensBand(store, 'changed'), 'quiet');
+});
+
+test('the freshness line says the snapshot\'s age and whether it matches the running release', () => {
+  const g = { generatedAt: '2026-10-31T12:00:00Z', snapshot: { commit: 'a'.repeat(40) } };
+  const stale = freshnessLine(g, { commit: 'ff9081c0', deployedAt: '2026-11-03T00:00:00Z' }, NOW);
+  assert.equal(stale.stale, true);
+  assert.match(stale.text, /^Snapshot 31 Oct · 4 days old · older than the running release ff9081c$/);
+  const same = freshnessLine({ generatedAt: '2026-11-04T10:00:00Z', snapshot: { commit: 'ff9081c0aaaa' } }, { commit: 'ff9081c0aaaa', deployedAt: '2026-11-03T00:00:00Z' }, NOW);
+  assert.deepEqual(same, { text: 'Snapshot 4 Nov · today · the running release', stale: false });
+  // The latest scan has no commit of its own: a scan newer than the deploy is current, an older one is not.
+  assert.equal(freshnessLine({ generatedAt: '2026-11-04T10:00:00Z' }, { commit: 'ff9081c', deployedAt: '2026-11-03T00:00:00Z' }, NOW).stale, false);
+  assert.equal(freshnessLine({ generatedAt: '2026-11-02T10:00:00Z' }, { commit: 'ff9081c', deployedAt: '2026-11-03T00:00:00Z' }, NOW).stale, true);
+  assert.deepEqual(freshnessLine({}, null, NOW), { text: 'Snapshot time unknown', stale: true });
+  assert.equal(freshnessLine({ generatedAt: '2026-11-01T12:00:00Z' }, null, NOW).text, 'Snapshot 1 Nov · 3 days old');
+});
+
+test('the page keeps its contracts: lenses are pressed buttons, / searches, motion is optional', () => {
+  const html = fs.readFileSync(path.join(ROOT, 'app/public/index.html'), 'utf8');
+  for (const lens of ['risk', 'tests', 'reach', 'changed']) assert.match(html, new RegExp(`data-atlas-lens="${lens}" aria-pressed="(true|false)"`), lens);
   assert.match(html, /<button id="atlasMapBack" class="btn-outline" type="button" hidden>/);
-});
-
-test('live follow-ups: a late snapshot list still picks the newest commit, and a short map sits at the top', () => {
+  assert.match(html, /<svg id="atlasMap"/);
+  assert.match(html, /id="atlasFindingList"/);
+  assert.ok(!html.includes('data-atlas-mode'), 'the plate\'s tabs are gone');
   const js = fs.readFileSync(path.join(ROOT, 'app/public/architecture.js'), 'utf8');
-  assert.match(js, /if\(state\.repo!=='localai'&&!state\.commit\)state\.commit=rows\[0\]\?\.commit\|\|'';/);
-  const html = fs.readFileSync(path.join(ROOT, 'app/public/index.html'), 'utf8');
-  assert.match(html, /<svg id="atlasMap"[^>]*preserveAspectRatio="xMidYMin meet"/);
+  assert.match(js, /prefers-reduced-motion: reduce/);
+  assert.match(js, /e\.key==='\/'/);
+  assert.doesNotMatch(js, /plateLayout/);
+  const css = fs.readFileSync(path.join(ROOT, 'app/public/app.css'), 'utf8');
+  assert.match(css, /#architecture \.atlas-map-wrap\{[^}]*overflow:auto/);
+  assert.doesNotMatch(css, /atlas-block-frame|atlas-cells/);
 });
 
-// The plate (redesign, 2 Nov 2026): one square per module, a block per domain, shelves spanning the sheet.
-test('the plate gives every module one square, inside its domain block, and nothing overlaps', () => {
-  const mods = (d, n) => Array.from({ length: n }, (_, i) => ({ id: `${d}/${i}.js` }));
-  const groups = [['UI', 52], ['Core', 28], ['API', 21], ['AI', 11], ['Data', 7], ['Platform', 1], ['Docs', 1]]
-    .map(([id, n]) => ({ id, nodes: mods(id, n) }));
-  const plate = plateLayout(groups, 1000);
-  assert.equal(plate.cells.length, 121);
-  assert.equal(new Set(plate.cells.map((c) => c.id)).size, 121);
-  assert.equal(plate.blocks.length, groups.length);
-  const inside = (c, b) => c.x >= b.x && c.y >= b.y && c.x + plate.size <= b.x + b.w && c.y + plate.size <= b.y + b.h;
-  for (const g of groups) {
-    const block = plate.blocks.find((b) => b.id === g.id);
-    for (const n of g.nodes) assert.ok(inside(plate.cells.find((c) => c.id === n.id), block), n.id);
-  }
-  for (const a of plate.blocks) {
-    assert.ok(a.x >= 0 && a.x + a.w <= 1000 + 1e-9, `${a.id} stays on the sheet`);
-    for (const b of plate.blocks) {
-      if (a === b) continue;
-      assert.ok(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y, `${a.id} and ${b.id} overlap`);
-    }
-  }
-  // Each shelf spans the sheet: its last block ends at the right edge.
-  const shelves = new Map();
-  for (const b of plate.blocks) shelves.set(b.y, Math.max(shelves.get(b.y) || 0, b.x + b.w));
-  for (const right of shelves.values()) assert.equal(right, 1000);
-  assert.equal(plate.height, Math.max(...plate.blocks.map((b) => b.y + b.h)));
-});
-
-test('the plate copes with nothing, and squares shrink as a repository grows', () => {
-  assert.deepEqual(plateLayout([], 1000), { width: 1000, height: 0, size: 32, blocks: [], cells: [] });
-  const big = plateLayout([{ id: 'A', nodes: Array.from({ length: 900 }, (_, i) => ({ id: String(i) })) }], 1000);
-  assert.equal(big.cells.length, 900);
-  assert.ok(big.size < 20);
-  assert.ok(big.blocks[0].h > 0 && big.blocks[0].w === 1000);
+test('the graph the app serves carries the scanner\'s schema version and dangling calls', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'app/server/atlas.js'), 'utf8');
+  assert.match(src, /schemaVersion: graph\.schemaVersion \|\| 1/);
+  assert.match(src, /danglingHttp: Array\.isArray\(graph\.danglingHttp\) \? graph\.danglingHttp : null/);
 });
