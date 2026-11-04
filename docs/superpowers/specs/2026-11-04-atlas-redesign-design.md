@@ -1,7 +1,7 @@
 # Atlas redesign: a map you can read
 
-Date: 2026-11-04. Status: proposed. The owner approved the direction from the prototype ("love it", 4 Nov 2026); the
-decisions below wait for review. Builds on `docs/superpowers/plans/2026-11-01-atlas-every-repo.md` (snapshots per
+Date: 2026-11-04. Status: approved by the owner ("approve", 4 Nov 2026), decisions 1-4 as recommended. Direction from the prototype ("love it"); the
+decisions are below. Builds on `docs/superpowers/plans/2026-11-01-atlas-every-repo.md` (snapshots per
 repository and commit, PRs 1-6) and replaces the page's "plate" layout (#471). Platform baseline: section 6.4 and
 step 10 (pi-hub `2026-11-01-platform-product-architecture-design.md`).
 
