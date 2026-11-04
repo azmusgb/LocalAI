@@ -30,10 +30,10 @@ const VIEWS=[
 // Automations is a tab of Work (scheduled work): navigation spec, step 3. Projects holds only what you keep (2 Nov, D4).
  {id:'library',svg:'library',domain:'projects',section:'Keep',parent:'projects',tab:'Library',label:'Library',description:'Everything you kept: chats, research and images.',aka:['everything you kept','kept']},
  {id:'agents',svg:'target',domain:'hidden',section:'Agents',label:'Missions',description:'Give a goal; specialist agents work it live.',aka:['agents','agent operations']},
- {id:'status',svg:'health',domain:'system',section:'Health',label:'Health',description:'Whether Local AI is working, and which optional services are up.',aka:['status','system status']},
+ {id:'status',svg:'health',domain:'system',section:'Health',label:'Assistant status',description:'Whether Local AI is working, and which optional services are up.',aka:['status','assistant status','health']},
  {id:'models',svg:'model',domain:'system',section:'Health',label:'Models',description:"Installed models and what's loaded now."},
  {id:'integrations',svg:'plug',domain:'system',section:'Health',label:'Services',description:'What Local AI connects to, and whether each one is ready.',aka:['integrations','bridges','tools']},
- {id:'automationStudio',svg:'clock',domain:'work',section:'Work',parent:'work',tab:'Automations',label:'Automations',description:'Scheduled prompts and research, health checks and the morning brief.',aka:['studio','automation studio','monitors','morning brief','health check']},
+ {id:'automationStudio',svg:'clock',domain:'work',section:'Work',parent:'work',tab:'Assistant automations',label:'Assistant automations',description:'Scheduled prompts and research, health checks and the morning brief.',aka:['studio','automation studio','monitors','morning brief','health check','assistant automations']},
  {id:'backlog',svg:'improve',domain:'improve',section:'Pipeline',label:'Backlog',description:'One ranked list of what could change in Local AI.',aka:['improve','ideas','priorities']},
  {id:'inProgress',svg:'build',short:'Doing',domain:'improve',section:'Pipeline',label:'In progress',description:'Changes being planned, tested or waiting for your OK.',aka:['running changes','change requests','changes','engineer']},
  {id:'shipped',svg:'check',domain:'improve',section:'Pipeline',label:'Shipped',description:'What changed, release by release.',aka:['done','released']},
