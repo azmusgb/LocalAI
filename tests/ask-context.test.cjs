@@ -24,18 +24,23 @@ test('withContext adds the context after the question, marked as page facts, onl
   assert.equal(usesContext('mission'), false);
 });
 
-test('homeUrl takes the hub from the tool registry on a real name, else the old address', async t => {
-  // Before the registry module has run (or in a browser that can't load it), every name gets the old address.
-  assert.equal(homeUrl('assistant.rahe-home.duckdns.org'), 'http://10.0.0.30/');
+test('homeUrl is the hub\'s registry address on every host, never a bare IP', async t => {
   const { REAL, TOOLS, tool, toolUrl, toolsFor } = await import('../app/public/ui/tools.js');
+  // Before the registry module has run (or where it can't load), the same registry address, written down once.
+  assert.equal(homeUrl('assistant.rahe-home.duckdns.org'), 'https://hub.rahe-home.duckdns.org/');
   globalThis.ApplianceTools = { REAL, TOOLS, tool, toolUrl, toolsFor };
   t.after(() => { delete globalThis.ApplianceTools; });
-  assert.equal(homeUrl('assistant.rahe-home.duckdns.org'), toolUrl('hub'));
-  assert.equal(homeUrl('assistant.rahe-home.duckdns.org'), 'https://hub.rahe-home.duckdns.org/');
-  assert.equal(homeUrl('evilrahe-home.duckdns.org'), 'http://10.0.0.30/');
-  assert.equal(homeUrl('assistant.home.arpa'), 'http://10.0.0.30/');
-  assert.equal(homeUrl('10.0.0.21'), 'http://10.0.0.30/');
-  assert.equal(homeUrl('localhost'), 'http://10.0.0.30/');
+  for (const host of ['assistant.rahe-home.duckdns.org', 'evilrahe-home.duckdns.org', 'assistant.home.arpa', 'localai.home.arpa', '10.0.0.21', 'localhost', '', undefined])
+    assert.equal(homeUrl(host), toolUrl('hub'), `host ${host}`);
+  assert.equal(homeUrl('10.0.0.21'), 'https://hub.rahe-home.duckdns.org/');
+});
+
+test('labUrl sends a lab address to Pi Hub\'s /lab, keeping p, e and do and nothing else', () => {
+  const { labUrl } = require('../app/public/ask-context.js');
+  assert.equal(labUrl('10.0.0.21', '#printLab'), 'https://hub.rahe-home.duckdns.org/lab');
+  assert.equal(labUrl('10.0.0.21', '#/printLab?e=E-025'), 'https://hub.rahe-home.duckdns.org/lab?e=E-025');
+  assert.equal(labUrl('x', '#printLab?p=hex-tile&e=E-023&do=judge&evil=1'), 'https://hub.rahe-home.duckdns.org/lab?p=hex-tile&e=E-023&do=judge');
+  assert.equal(labUrl('x', '#printLab?e='), 'https://hub.rahe-home.duckdns.org/lab');
 });
 
 test('informative drops a context that only names the Pi Hub page', () => {

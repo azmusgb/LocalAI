@@ -24,8 +24,18 @@ function createWeb(ctx) {
       }
     });
   }
+  // The host a /go/ link points at. Behind the front gate the request's Host is 10.0.0.21 (the gate rewrites it) and the
+  // name the owner typed is in X-Forwarded-Host, so that wins when it is a plain host name; LOCALAI_GO_HOST fixes it.
+  const HOST_NAME = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/;
+  function goHost(req) {
+    const fixed = String(process.env.LOCALAI_GO_HOST || '').trim();
+    if (HOST_NAME.test(fixed)) return fixed;
+    const forwarded = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim().replace(/:\d+$/, '');
+    if (HOST_NAME.test(forwarded)) return forwarded;
+    return (req.headers.host || '').split(':')[0] || '127.0.0.1';
+  }
   function redirectFor(req, res, pathname) {
-    const host = (req.headers.host || '').split(':')[0] || '127.0.0.1';
+    const host = goHost(req);
     let target;
     if (pathname === '/go/n8n') target = `http://${host}:5678/`;
     else if (pathname === '/go/n8n-assistant') target = `http://${host}:5678/settings/assistant`;

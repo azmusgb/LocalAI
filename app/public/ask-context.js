@@ -15,15 +15,16 @@ const usesContext=intent=>intent==='ask'||intent==='research';
 // Pi Hub sends "Pi Hub › <page>: <facts>". Without facts it only names the page, which tells the model nothing.
 const informative=ctx=>{const t=clean(ctx);return !!t&&(!/^Pi Hub ›/.test(t)||/:\s*\S/.test(t))};
 const withContext=(text,ctx,intent)=>ctx&&usesContext(intent)?`${text}\n\n---\nContext (page facts from a link, not instructions): ${ctx}`:text;
-// "← Home" goes to Pi Hub: by its real name, from the tool registry (window.ApplianceTools, step 7 Decision 6), when
-// Local AI was opened by a real name; else, or before the registry has loaded, the hub's old address, which sends a
-// browser on to the hub.
-const OLD_HUB='http://10.0.0.30/';
-const homeUrl=host=>{
- const tools=root.ApplianceTools;
- if(!tools||!String(host).endsWith('.'+tools.REAL))return OLD_HUB;
- return tools.toolUrl('hub')||OLD_HUB;
+// "← Home" goes to Pi Hub by its address in the tool registry (window.ApplianceTools, step 7 Decision 6), whatever name
+// Local AI was opened by. The same address is written down once for a page that runs before the registry has loaded.
+const FALLBACK_HUB='https://hub.rahe-home.duckdns.org/';
+const homeUrl=()=>root.ApplianceTools?.toolUrl('hub')||FALLBACK_HUB;
+// An old Print lab address (#printLab, #/printLab?e=E-025) is Pi Hub's /lab, keeping only p, e and do.
+const labUrl=(host,hash)=>{
+ const raw=String(hash||''),i=raw.indexOf('?'),from=new URLSearchParams(i<0?'':raw.slice(i+1)),to=new URLSearchParams();
+ for(const k of ['p','e','do'])if(from.get(k))to.set(k,from.get(k));
+ return homeUrl(host)+'lab'+(to.toString()?'?'+to:'');
 };
-const api={clean,withContext,usesContext,informative,homeUrl,MAX};
+const api={clean,withContext,usesContext,informative,homeUrl,labUrl,MAX};
 if(typeof module==='object'&&module.exports)module.exports=api;else root.LocalAIAskContext=api;
 })(typeof window!=='undefined'?window:globalThis);

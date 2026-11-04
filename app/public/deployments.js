@@ -39,7 +39,7 @@ const host=document.getElementById('shipped');if(!host)return;
 // Platform step 4: what is live on every part of the platform (this appliance included) is Pi Hub's System › Versions,
 // written by each part's own deploy. This card keeps only what the appliance itself reports, and links there.
 // Pi Hub's address comes from ask-context.js's homeUrl (the tool registry, step 7 Decision 6).
-const versionsUrl=host=>(root.LocalAIAskContext?.homeUrl(host)||'http://10.0.0.30/')+'versions';
+const versionsUrl=host=>(root.LocalAIAskContext?.homeUrl(host)||'https://hub.rahe-home.duckdns.org/')+'versions';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const state={health:null,observedAt:null,active:false,request:null,timer:null,expired:false,error:''};
 let card=null;

@@ -52,14 +52,16 @@ function markSeen(ids){
 }
 // Pi Hub's one "Needs you" list (/api/home/hub-needs) on Home: every item but localai:needs-<n>, the hub's one-line
 // summary of the approvals and failures Home already lists as its own rows. Each row says where it opens: Local AI's
-// own lab and watch items open here (Print lab, Assistant status); the rest open on Pi Hub at the item's path.
+// own watch items open here (Assistant status); the rest, lab items included, open on Pi Hub at the item's path
+// (a lab item at /lab, with its p, e and do).
 const TONES=new Set(['bad','attention','warn']);
 const text=v=>typeof v==='string'?v:'';
 function hubRows(items){
  if(!Array.isArray(items))return [];
  return items.filter(i=>i&&typeof i==='object'&&text(i.id)&&text(i.title)&&!/^localai:needs-/.test(i.id)).map(i=>{
-  const id=i.id,lab=/^localai:(judge|lab)-/.test(id);
-  return {id,title:i.title,detail:text(i.detail),tone:TONES.has(i.tone)?i.tone:'warn',open:lab?{view:'printLab'}:/^localai:/.test(id)?{view:'status'}:{hub:text(i.link)||'/'}};
+  const id=i.id,lab=/^localai:(judge|lab)-/.test(id),link=text(i.link);
+  const open=lab?{hub:/^\/lab(\?|$)/.test(link)?link:'/lab'}:/^localai:/.test(id)?{view:'status'}:{hub:link||'/'};
+  return {id,title:i.title,detail:text(i.detail),tone:TONES.has(i.tone)?i.tone:'warn',open};
  });
 }
 // Bad first, then attention, then warn (Pi Hub's order); the same tone keeps its order.

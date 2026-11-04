@@ -41,9 +41,6 @@ const VIEWS=[
  // GridCraft on the Windows computer, through the appliance (spreadsheets.js). The old /gridcraft.html page sends you here.
  // A Work kind since 2 Nov (D4): the Spreadsheets chip in Work and the Spreadsheet mode on Home lead here.
  {id:'spreadsheets',svg:'file',domain:'hidden',owner:'work',section:'Make',label:'Spreadsheets',description:'Ask for a spreadsheet on the Windows computer to be checked or changed.',aka:['gridcraft','excel','workbook']},
- // The print lab on Pi Hub (pi-hub repo): `lab sync` sends it there. Unlisted since 2 Nov (D4): Home links Pi Hub's own
- // /lab, and lab items in Needs you still open this copy until the owner retires it (Pi Hub print-lab design, L9).
- {id:'printLab',svg:'target',domain:'hidden',owner:'home',section:'Make',label:'Print lab',description:'The print lab on Pi Hub: what it is testing, and what needs you.',aka:['print lab','3d printing','experiments','hex tile']},
  {id:'claude',svg:'sparkle',short:'Claude',domain:'improve',section:'Pipeline',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
  {id:'architecture',svg:'flow',short:'Atlas',domain:'improve',section:'Pipeline',tool:true,label:'Architecture',description:'System Atlas: topology, changes, risk, evidence and local architecture intelligence.',aka:['atlas','system atlas','dependencies','architecture atlas']},
  {id:'workbench',svg:'folder',domain:'system',section:'Tools',tool:true,label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
