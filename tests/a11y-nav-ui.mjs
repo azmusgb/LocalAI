@@ -27,9 +27,9 @@ await check('the first load leaves focus alone and titles the tab', async () => 
 await check('choosing an area titles the tab and moves focus to that page; the strip keeps focus on itself', async () => {
   const { page, context } = await open();
   await page.click('.ux-primary-item[data-domain="system"]');
-  await page.waitForFunction(() => document.title === 'Health · Local AI');
+  await page.waitForFunction(() => document.title === 'Assistant status · Local AI');
   await page.waitForFunction(() => !!document.activeElement?.closest('#status'), null, { timeout: 2000 }).catch(() => {});
-  assert.equal(await inView(page, 'status'), true, 'focus is on the Health page');
+  assert.equal(await inView(page, 'status'), true, 'focus is on the Assistant status page');
   // The strip is a row of tabs: switching from it keeps focus on it, so the next tab is one key away.
   const models = page.locator('#uxPageStrip [data-strip-view="models"]');
   await models.focus(); await models.press('Enter');
