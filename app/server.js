@@ -165,9 +165,6 @@ const displayKey = require('./route-keys').createRouteKey({ dataDir: DATA_DIR, f
 const displayLab = require('./display-lab').createDisplayLab({ labStore: printLab, json, authorized: req => displayKey.authorized(req) });
 // Pi Hub's service key (X-LocalAI-Hub-Key, app/hub-key.js): the AI cards, and what the display's key opens, for Pi Hub.
 const hubKey = require('./hub-key');
-// Routes only the Workshop display called, retired once it moved to Pi Hub (step 4 of the display-on-Pi-Hub rollout).
-const RETIRED_DISPLAY_ROUTES = new Set(['GET /api/display/feed', 'GET /api/display/events', 'GET /api/display/poster', 'POST /api/display/heartbeat',
-  'GET /api/display/lab/judge', 'POST /api/display/lab/verdict', 'POST /api/display/printer/clear']);
 const signIn = require('./signin').createSignIn({ storage, signedIn: req => !!claudeChat.deviceFor(req) || claudeChat.macAuthorized(req) || isHostReq(req), routeKeys: {
   '/api/display/feed': req => displayKey.authorized(req),
   '/api/display/ai-cards': req => hubKey.authorized(req),
@@ -613,9 +610,6 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/watch/heartbeat') return await apiWatchHeartbeat(req,res);
     if (req.method === 'GET' && p === '/api/watch') return json(res, 200, { ...watchdog.summary(), display: storage.readSetting('display:heartbeat', null) });
     if (req.method === 'GET' && p === '/api/attention') return await apiAttention(req,res);
-    // Display on Pi Hub, step 4: the Workshop display's own routes now live on Pi Hub (docs/WORKSHOP-DISPLAY.md › Retired display routes).
-    // Pairing, notify, alerts, ai-cards, approvals, ask and images/view stay. Revert this change to serve the display again.
-    if (RETIRED_DISPLAY_ROUTES.has(`${req.method} ${p}`)) { req.resume(); return json(res, 410, { error: 'This display uses Pi Hub', retired: true, usePiHub: true }); }
     if (req.method === 'GET' && p === '/api/display/feed') return await apiDisplayFeed(req,res);
     if (req.method === 'GET' && p === '/api/display/ai-cards') return await apiDisplayAiCards(req,res);
     // Home's Needs you: Pi Hub's one list (the display's cached fetch), or items null when the hub doesn't answer.
