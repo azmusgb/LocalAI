@@ -14,7 +14,8 @@ for (const vp of [{ width: 390, height: 844, mobile: true }, { width: 1280, heig
   await page.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
   await page.goto(base + '/#home', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.showView === 'function' && window.LocalAIViews);
-  const ids = await page.evaluate(() => window.LocalAIViews.VIEWS.filter(v => v.id !== 'agents' && document.getElementById(v.id)).map(v => v.id));
+  // printLab sends the browser to Pi Hub's /lab (step 6, PR 6.4; print-lab-ui checks that): it is no page of Local AI's.
+  const ids = await page.evaluate(() => window.LocalAIViews.VIEWS.filter(v => v.id !== 'agents' && v.id !== 'printLab' && document.getElementById(v.id)).map(v => v.id));
   await check(`${vp.width}px: one primary per page, kit buttons 44 px and one size, no old buttons`, async () => {
     const wrong = [];
     for (const id of ids) {

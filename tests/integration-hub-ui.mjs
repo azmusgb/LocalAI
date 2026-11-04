@@ -40,7 +40,7 @@ await check('integration hub is reachable from System', async () => {
   await integrationLink.click();
   await page.waitForSelector('#integrations.active');
   await page.waitForSelector('#integrations[data-integration-v2="true"]');
-  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Services');
+  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Connections');
 });
 
 await check('native Local AI integrations remain first-class', async () => {

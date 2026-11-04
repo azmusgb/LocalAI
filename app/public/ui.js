@@ -438,18 +438,18 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     const automateReady = healthy(snapshot, 'n8n');
 
     // The reason is what the owner reads when a send fails (Home shows it under the composer): the service by its Health name, and where to look.
-    gateMode('ask', intelligenceReady, 'Chat needs Intelligence running. See Health');
+    gateMode('ask', intelligenceReady, 'Chat needs Intelligence running. See Assistant status');
     gateMode('research', researchReady, !intelligenceReady
-      ? 'Research needs Intelligence running. See Health'
-      : 'Research needs Web research running. See Health');
+      ? 'Research needs Intelligence running. See Assistant status'
+      : 'Research needs Web research running. See Assistant status');
     gateMode('create', createReady, healthy(snapshot, 'comfy')
       ? 'Images need a picture model installed. See Models'
-      : 'Images need Image generation running. See Health');
-    gateMode('automate', automateReady, 'Automations need the Automation engine running. See Health');
-    gateMode('engineering', intelligenceReady, 'Changes need Intelligence running. See Health');
+      : 'Images need Image generation running. See Assistant status');
+    gateMode('automate', automateReady, 'Automations need the Automation engine running. See Assistant status');
+    gateMode('engineering', intelligenceReady, 'Changes need Intelligence running. See Assistant status');
 
     const webSearch = document.getElementById('webSearch');
-    if (webSearch) setTruthAvailability(webSearch, healthy(snapshot, 'search'), 'Unavailable: Web research is not running. See Health');
+    if (webSearch) setTruthAvailability(webSearch, healthy(snapshot, 'search'), 'Unavailable: Web research is not running. See Assistant status');
   }
 
   function attentionItems(snapshot) {
@@ -463,7 +463,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
           severity: item.state === 'DOWN' ? 'critical' : 'warning',
           title: `${item.label || item.name || 'Core service'} is ${String(item.state || 'unavailable').toLowerCase()}`,
           detail: item.impact || 'Part of Local AI is affected.',
-          action: 'Open Health',
+          action: 'Open Assistant status',
           view: 'status'
         });
       });
@@ -474,7 +474,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
         severity: item.severity === 'high' ? 'critical' : 'warning',
         title: item.title,
         detail: item.detail,
-        action: 'Open Health',
+        action: 'Open Assistant status',
         view: 'status'
       });
     });
@@ -576,7 +576,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
 
     if (loadError) {
       const since = truthFailedAt ? ` since ${truthFailedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : '';
-      window.LocalAIHome?.setAttention([{ severity: 'critical', title: 'Status unavailable', detail: `Local AI could not check what is working${since}. It keeps trying.`, action: 'Open Health', view: 'status' }]);
+      window.LocalAIHome?.setAttention([{ severity: 'critical', title: 'Status unavailable', detail: `Local AI could not check what is working${since}. It keeps trying.`, action: 'Open Assistant status', view: 'status' }]);
       surface.hidden = false;
       surface.dataset.state = 'attention';
       summary.textContent = 'Local AI could not check what is working right now. Everything else still works.';
@@ -584,11 +584,11 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       const row = document.createElement('div');
       row.className = 'truth-attention-item';
       row.dataset.severity = 'critical';
-      row.innerHTML = '<span class="truth-attention-marker" aria-hidden="true"></span><div class="truth-attention-copy"><strong>Status unavailable</strong><span>Local AI could not check what is working right now. Open Health for details.</span></div>';
+      row.innerHTML = '<span class="truth-attention-marker" aria-hidden="true"></span><div class="truth-attention-copy"><strong>Status unavailable</strong><span>Local AI could not check what is working right now. Open Assistant status for details.</span></div>';
       const action = document.createElement('button');
       action.type = 'button';
       action.className = 'btn-outline truth-attention-action';
-      action.textContent = 'Open Health';
+      action.textContent = 'Open Assistant status';
       action.addEventListener('click', () => navigate('status'));
       row.appendChild(action);
       list.appendChild(row);
@@ -1001,10 +1001,12 @@ function buildDesktopNav(){
 function buildContext(){
  const main=q('main');if(!main||q('#uxContextBar'))return;
  const bar=document.createElement('header');bar.id='uxContextBar';bar.className='ux-context-bar';
- bar.innerHTML='<div class="ux-context-left"><span class="ux-context-brand"><span class="brandmark ux-context-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12c2.6-5.6 11.4-5.6 14 0-2.6 5.6-11.4 5.6-14 0Z" stroke="#0b0d11" stroke-width="2"/><circle cx="12" cy="12" r="2.2" fill="#0b0d11"/></svg></span><span class="ux-context-brand-names"><small id="uxContextGreeting"></small><strong>Local AI</strong></span></span><a class="ux-pihub-link" id="uxPiHubLink" href="http://10.0.0.30/">← Pi Hub</a><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-action icon-btn" type="button" id="uxHeaderAction" hidden></button><button class="ux-context-inbox" type="button" id="uxInboxBtn" data-empty="true" aria-label="Needs you, nothing waiting">'+icon('bell','ux-ico')+'<span>Needs you</span><b id="uxInboxCount">0</b></button><button class="ux-context-search" type="button" id="uxCommandBtn" aria-label="Search commands">'+icon('search','ux-ico')+'<span>Search commands</span><kbd>⌘K</kbd></button></div>';
+ bar.innerHTML='<div class="ux-context-left"><span class="ux-context-brand"><span class="brandmark ux-context-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12c2.6-5.6 11.4-5.6 14 0-2.6 5.6-11.4 5.6-14 0Z" stroke="#0b0d11" stroke-width="2"/><circle cx="12" cy="12" r="2.2" fill="#0b0d11"/></svg></span><span class="ux-context-brand-names"><small id="uxContextGreeting"></small><strong>Local AI</strong></span></span><a class="ux-pihub-link" id="uxPiHubLink" href="http://10.0.0.30/">← Home</a><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-action icon-btn" type="button" id="uxHeaderAction" hidden></button><button class="ux-context-inbox" type="button" id="uxInboxBtn" data-empty="true" aria-label="Needs you, nothing waiting">'+icon('bell','ux-ico')+'<span>Needs you</span><b id="uxInboxCount">0</b></button><button class="ux-context-search" type="button" id="uxCommandBtn" aria-label="Search commands">'+icon('search','ux-ico')+'<span>Search commands</span><kbd>⌘K</kbd></button></div>';
  main.prepend(bar);
- // "← Pi Hub" is in the header of every top-level view, not only Home: Pi Hub's own address when Local AI was opened by a name, else its old one.
+ // "← Home" (Pi Hub, §5 level 0) is in the header of every top-level view: its address from the tool registry when Local AI was opened by a real name, else the old one.
  const hub=q('#uxPiHubLink');if(hub&&window.LocalAIAskContext)hub.href=window.LocalAIAskContext.homeUrl(location.hostname);
+ // Assistant status's "Health ↗": the whole house's Health is Pi Hub's System › Health (D6, §5.6 `status` row).
+ const health=q('#statusHubHealth');if(health&&window.LocalAIAskContext)health.href=window.LocalAIAskContext.homeUrl(location.hostname)+'system';
  q('[data-ux-go="home"]')?.addEventListener('click',()=>navigate('home'));
  q('#uxCommandBtn')?.addEventListener('click',()=>{if(window.LocalAICommand)return window.LocalAICommand.open();const cmd=q('#cmdk');if(cmd){cmd.classList.add('show');cmd.setAttribute('aria-hidden','false');q('#cmdkInput')?.focus()}});
  // The bell (navigation update, 2 Nov): one place on every page, its badge the number Home's Needs you shows (home.js
@@ -2462,7 +2464,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
   };
   const NOT_KEPT = "Your Mac approved the code, but this browser didn't keep the pairing (it may block cookies here). Try again, or use the secure address if it's set up.";
   // Over plain HTTP, the secure address may already work on this device (and may already be paired there). Same probe
-  // and per-tab cache as Health › Secure connection: a no-cors fetch succeeds only if this device trusts the certificate.
+  // and per-tab cache as Assistant status › Secure connection: a no-cors fetch succeeds only if this device trusts the certificate.
   const SECURE_URL = `https://${location.hostname}/`;
   async function secureWorks() {
     try { const seen = sessionStorage.getItem('localai.httpsTrusted'); if (seen) return seen === '1'; } catch {}
@@ -3300,7 +3302,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     if (!section || section.dataset.integrationV2 === 'true') return Boolean(section);
     section.dataset.integrationV2 = 'true';
     section.innerHTML = `
-      <div class="topbar"><div><h1>Services</h1><p class="sub">What Local AI connects to, how each one is doing, and what each one is for.</p></div><button class="btn-outline" type="button" id="uxIntegrationRefreshV2" aria-busy="false">Check again</button></div>
+      <div class="topbar"><div><h1>Connections</h1><p class="sub">What Local AI connects to, how each one is doing, and what each one is for.</p></div><button class="btn-outline" type="button" id="uxIntegrationRefreshV2" aria-busy="false">Check again</button></div>
       <div class="card ux-int-hero ux-int-v2"><div><h2>Connected services</h2><p id="uxIntegrationStatusSummaryV2" role="status" aria-live="polite">Checking local services…</p><span id="uxIntegrationLastCheckedV2" class="ux-int-checked"></span></div><div class="ux-int-metrics"><div><b id="uxIntegrationNativeCountV2">—</b><span>core services healthy</span></div><div><b id="uxIntegrationMediaStateV2">—</b><span>image and media</span></div><div><b>Opt-in</b><span>cloud and outside services</span></div></div></div>
       <div class="section-head ux-int-section-head"><div><h2>What each one does</h2></div></div><div id="uxIntegrationCardsV2" class="ux-int-grid"></div>
       <details class="ux-int-about"><summary>How services are chosen</summary><div class="card ux-int-policy"><div><h2>What gets built in</h2></div><div class="ux-int-policy-grid"><div><strong>1. On this computer first</strong><span>Ollama, n8n and ComfyUI do the work by default, so nothing leaves your network.</span></div><div><strong>2. One service per job</strong><span>No second chat, automation or image service that would split your history in two.</span></div><div><strong>3. A connection has to be worth it</strong><span>Penpot and Obsidian would share real designs and notes with Local AI, not just open another tab.</span></div><div><strong>4. The cloud only when you choose it</strong><span>Accounts and uploads to outside services happen only when you set them up yourself.</span></div></div></div>
@@ -4083,7 +4085,7 @@ async function checkSteps(card){
  const [status,models]=await Promise.all([getJson('/api/status').catch(()=>null),getJson('/api/models').catch(()=>null)]);
  const coreDown=(status?.services||[]).filter(s=>s.required!==false&&s.state==='DOWN');
  if(!status)setStep(card,'service','todo','Local AI did not answer. Check that Docker Desktop is running on the Windows host, then reload this page.');
- else if(coreDown.length)setStep(card,'service','todo',`Running, but ${esc(coreDown.map(s=>s.label||s.name).join(', '))} ${coreDown.length===1?'is':'are'} not answering. <a href="#" data-goto="status">See Health</a>`);
+ else if(coreDown.length)setStep(card,'service','todo',`Running, but ${esc(coreDown.map(s=>s.label||s.name).join(', '))} ${coreDown.length===1?'is':'are'} not answering. <a href="#" data-goto="status">See Assistant status</a>`);
  else setStep(card,'service','done','Running on this computer. Nothing you type leaves it unless you turn on web research.');
  const model=models?.default||config?.model||'the default model';
  if(models?.defaultInstalled)setStep(card,'model','done',`<code>${esc(model)}</code> is installed and ready.`);
@@ -4105,7 +4107,7 @@ async function mountFirstRun(){
  const card=document.createElement('section');card.id='firstRun';card.className='first-run card';card.setAttribute('aria-labelledby','firstRunTitle');
  card.innerHTML=`<div class="first-run-head"><div><h2 id="firstRunTitle">Get started</h2><p>Two checks, then try a first task. Everything runs on this computer.</p></div><button type="button" class="icon-btn" data-first-run-dismiss aria-label="Hide Get started">×</button></div>
  <ol class="first-run-steps">${stepHtml('service','Local AI is running')}${stepHtml('model','A language model is installed')}<li data-step="try" data-state="todo"><span class="first-run-mark" aria-hidden="true"></span><div><strong>Try a first task</strong><div class="first-run-detail">Pick one. It runs right here, and the result is in Work. Tap ☆ Keep to keep it in your Library.</div><div class="first-run-samples">${SAMPLES.map((s,i)=>`<button type="button" class="btn-outline" data-sample="${i}"><span>${esc(s.label)}</span><small>${esc(s.text)}</small></button>`).join('')}</div></div></li></ol>
- <div class="first-run-foot"><span class="meta">Settings, Tools and Health are under <a href="#" data-goto="settings">System</a>.</span><button type="button" class="btn-outline" data-first-run-dismiss>I'm set up, hide this</button></div>`;
+ <div class="first-run-foot"><span class="meta">Settings, Tools and Assistant status are under <a href="#" data-goto="settings">System</a>.</span><button type="button" class="btn-outline" data-first-run-dismiss>I'm set up, hide this</button></div>`;
  hero.before(card) // Get started takes Recent's place while it shows;
  window.dispatchEvent(new CustomEvent('localai:first-run')); // Home may have painted its rows already
  // Step 3 is done when a run really opens (the pending run gets its id), not when a sample is tapped: a send that fails is no first task.
@@ -4158,7 +4160,7 @@ function applyDiagnostics(on){
 function mountDiagnostics(){
  const settings=q('#settings');if(!settings||q('.diag-pref',settings))return;
  const row=document.createElement('label');row.className='diag-pref card';
- row.innerHTML='<input type="checkbox" data-diagnostics-toggle><span><strong>Show diagnostic details</strong><small>Technical details in Models and Health, and Agent World\'s Advanced options, routing and demo mission.</small></span>';
+ row.innerHTML='<input type="checkbox" data-diagnostics-toggle><span><strong>Show diagnostic details</strong><small>Technical details in Models and Assistant status, and Agent World\'s Advanced options, routing and demo mission.</small></span>';
  settings.appendChild(row);
  const box=q('input',row);box.checked=!document.body.classList.contains('diagnostics-off');
  box.addEventListener('change',()=>{pref.set(DIAG_KEY,box.checked?'1':'0');applyDiagnostics(box.checked)});

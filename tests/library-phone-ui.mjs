@@ -1,7 +1,7 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 
-// Library (Projects › Everything you kept): text items are list rows, images are cards; on a phone one column
+// Library (Projects › Library): text items are list rows, images are cards; on a phone one column
 // so titles have room, and the type label in words people use.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch({ headless: true });

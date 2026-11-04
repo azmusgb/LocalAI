@@ -37,7 +37,8 @@ const overflow = page => page.evaluate(() => { const d = document.documentElemen
 for (const size of SIZES) {
   await check(`${size[0]}: no page scrolls sideways`, async () => {
     const { page, context } = await open(size);
-    const ids = await page.evaluate(() => window.LocalAIViews.VIEWS.map(v => v.id));
+    // printLab sends the browser to Pi Hub's /lab (step 6, PR 6.4; print-lab-ui checks that): it is no page of Local AI's.
+    const ids = await page.evaluate(() => window.LocalAIViews.VIEWS.map(v => v.id).filter(id => id !== 'printLab'));
     const wide = [];
     for (const id of ids) {
       await page.evaluate(h => { location.hash = h }, '#' + id);

@@ -176,7 +176,8 @@ const DEVICES = [['1440', { viewport: { width: 1440, height: 900 }, deviceScaleF
 const ONLY = (process.env.AXE_ONLY || '').split(',').filter(Boolean);
 for (const [dname, device] of DEVICES.filter(([n]) => !process.env.AXE_DEVICE || n === process.env.AXE_DEVICE)) for (const scheme of process.env.AXE_SCHEME ? [process.env.AXE_SCHEME] : ['dark', 'light']) {
   const page = await open(device, scheme);
-  const views = await page.evaluate(() => window.LocalAIViews.VIEWS.map(v => v.id));
+  // printLab sends the browser to Pi Hub's /lab (step 6, PR 6.4; print-lab-ui checks that): it is no page of Local AI's.
+  const views = await page.evaluate(() => window.LocalAIViews.VIEWS.map(v => v.id).filter(id => id !== 'printLab'));
   const states = [...views.map(id => ({ name: id, go: p => p.evaluate(v => window.showView(v), id) })),
     // Agent World with the mission sheet raised on a phone (the crew list, story and result are in it), and the run view.
     { name: 'agents (done mission)', go: async p => { await p.evaluate(() => window.showView('agents')); await p.evaluate(() => window.LocalAIMissions.show('mission-axe-0', { replay: false })); if (dname !== '1440') await p.locator('#awSheetHandle').click(); } },

@@ -22,7 +22,8 @@ page.on('pageerror', e => pageErrors.push(e.message));
 await page.goto(base, { waitUntil: 'domcontentloaded' });
 await page.waitForSelector('#uxMobileNav');
 await page.waitForFunction(() => typeof window.showView === 'function' && window.LocalAIViews);
-const views = await page.evaluate(() => window.LocalAIViews.VIEWS.map(v => v.id));
+// printLab sends the browser to Pi Hub's /lab (step 6, PR 6.4; print-lab-ui checks that): it is no page of Local AI's.
+const views = await page.evaluate(() => window.LocalAIViews.VIEWS.map(v => v.id).filter(id => id !== 'printLab'));
 
 await check('no page scrolls sideways and no form field makes iOS zoom', async () => {
   const problems = [];
@@ -89,7 +90,7 @@ await check('chips, filters and tabs are at least 44px tall', async () => {
 await check('home shows the brand and a greeting in the top bar, not a section name', async () => {
   await page.evaluate(() => window.showView('home'));
   await page.waitForTimeout(150);
-  assert.match((await page.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').replace(/ ?← Pi Hub ?/, ' ').trim(), /^Good (morning|afternoon|evening) Local AI$/);
+  assert.match((await page.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').replace(/ ?← Home ?/, ' ').trim(), /^Good (morning|afternoon|evening) Local AI$/);
   assert.equal(await page.locator('#uxContextMenu').isVisible(), false, 'no section menu on Home');
   const search = await page.locator('#uxCommandBtn').boundingBox();
   assert.ok(search.x > 360 / 2, `Search sits at the right with the bell, not beside the brand (x=${search.x})`);

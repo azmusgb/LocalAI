@@ -27,7 +27,7 @@ await page.waitForFunction(() => typeof window.showView === 'function');
 // Navigation spec step 4: the rail picks the area; the page strip under the top bar lists its pages; the top bar names
 // the area (a page without a strip, such as Missions, names itself).
 const stripLabels = () => page.locator('#uxPageStrip button').allInnerTexts();
-const crumbOf = async pg => (await pg.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').replace(/^← Pi Hub ?/, '').trim(); // "← Pi Hub" is in the bar of every page; this reads the rest
+const crumbOf = async pg => (await pg.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').replace(/^← Home ?/, '').trim(); // "← Home" is in the bar of every page; this reads the rest
 const crumb = () => crumbOf(page);
 
 await check('home has one command surface and a short breadcrumb', async () => {
@@ -44,7 +44,7 @@ await check('home has one command surface and a short breadcrumb', async () => {
 await check('System: Tools lists every tool, each opens at its address with Tools lit; Architecture is Improve › Atlas', async () => {
   await page.locator('.ux-primary-item[data-domain="system"]').click();
   await page.waitForSelector('#status.active');
-  assert.deepEqual(await stripLabels(), ['Health', 'Models', 'Services', 'Tools', 'Settings', 'Audit log']);
+  assert.deepEqual(await stripLabels(), ['Status', 'Models', 'Connections', 'Tools', 'Settings', 'Audit log']);
   assert.equal(await page.locator('#uxAdvancedStrip').count(), 0, 'no second strip');
   await page.locator('#uxPageStrip [data-strip-view="tools"]').click();
   await page.waitForSelector('#tools.active', { timeout: 5000 });
@@ -53,7 +53,7 @@ await check('System: Tools lists every tool, each opens at its address with Tool
     await page.evaluate(h => { location.hash = '#' + h; }, hash);
     await page.waitForSelector(`#${hash}.active`, { timeout: 5000 });
     assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Tools', hash);
-    assert.deepEqual(await stripLabels(), ['Health', 'Models', 'Services', 'Tools', 'Settings', 'Audit log'], `${hash} adds no tab`);
+    assert.deepEqual(await stripLabels(), ['Status', 'Models', 'Connections', 'Tools', 'Settings', 'Audit log'], `${hash} adds no tab`);
   }
   await page.evaluate(() => { location.hash = '#tools'; });
   await page.waitForSelector('#tools.active', { timeout: 5000 });
@@ -109,9 +109,10 @@ await check('opening a page loads its data even without a nav button click', asy
   await waitForNotifications;
 });
 
-// Spreadsheets (a Work kind) and Print lab (Pi Hub's, kept here until retired) left Projects (2 Nov, D4): each opens by
-// its address and ⌘K, lights the area that owns it, names itself in the top bar and shows no strip.
-for (const [id, domain, label] of [['spreadsheets', 'work', 'Spreadsheets'], ['printLab', 'home', 'Print lab']]) {
+// Spreadsheets (a Work kind) left Projects (2 Nov, D4): it opens by its address and ⌘K, lights the area that owns it,
+// names itself in the top bar and shows no strip. Print lab left too, and since step 6's PR 6.4 its address sends the
+// browser to Pi Hub's /lab (print-lab-ui checks that), so it isn't opened here.
+for (const [id, domain, label] of [['spreadsheets', 'work', 'Spreadsheets']]) {
   await check(`${id} opens by address, lights ${domain} and names itself`, async () => {
     await page.evaluate(h => { location.hash = '#' + h; }, id);
     await page.waitForSelector(`#${id}.active`, { timeout: 5000 });
@@ -124,7 +125,7 @@ for (const [id, domain, label] of [['spreadsheets', 'work', 'Spreadsheets'], ['p
 for (const [parent, child, childTab, domain, area] of [
   ['projects', 'knowledge', 'Sources', 'projects', 'Projects'],
   ['projects', 'library', 'Library', 'projects', 'Projects'],
-  ['work', 'automationStudio', 'Automations', 'work', 'Work'],
+  ['work', 'automationStudio', 'Assistant automations', 'work', 'Work'],
 ]) {
   await check(`${child} is a tab of ${parent}, in the strip`, async () => {
     await page.locator(`.ux-primary-item[data-domain="${domain}"]`).click();
@@ -202,11 +203,11 @@ await check('the page strip switches pages in the area and marks the open one', 
   await page.evaluate(() => window.showView('models'));
   await page.waitForSelector('#models.active');
   const strip = await stripLabels();
-  assert.ok(strip.includes('Health') && strip.includes('Models'), strip.join(','));
+  assert.ok(strip.includes('Status') && strip.includes('Models'), strip.join(','));
   assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Models');
   await page.locator('#uxPageStrip [data-strip-view="status"]').click();
   await page.waitForSelector('#status.active');
-  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Health');
+  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Status');
   assert.equal(await page.locator('.ux-secondary-nav, #uxSecondaryGroups, .ux-nav-collapse').count(), 0, 'no page list column');
 });
 
@@ -330,7 +331,7 @@ await check('phone, a new install: System shows Tools with no switch, and every 
   await pg.goto(base + '/#status', { waitUntil: 'domcontentloaded' });
   await pg.waitForFunction(() => typeof window.showView === 'function');
   await pg.waitForSelector('#status.active');
-  assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), ['Health', 'Models', 'Services', 'Tools', 'Settings', 'Audit log']);
+  assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), ['Status', 'Models', 'Connections', 'Tools', 'Settings', 'Audit log']);
   await pg.locator('#uxPageStrip [data-strip-view="activity"]').click();
   await pg.waitForSelector('#activity.active');
   await pg.locator('#uxPageStrip [data-strip-view="tools"]').click();

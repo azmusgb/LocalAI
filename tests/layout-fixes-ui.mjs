@@ -50,17 +50,17 @@ await check('desktop: one rail and one strip on every page; the top bar names th
   await page.waitForSelector('#work.active', T);
   await page.waitForTimeout(300);
   const left = () => page.evaluate(() => document.querySelector('main').getBoundingClientRect().left);
-  const area = async () => (await page.locator('#uxContextBar .ux-context-left').innerText()).replace(/\s+/g, ' ').replace(/^← Pi Hub ?/, '').trim(); // the Pi Hub link is in every bar
+  const area = async () => (await page.locator('#uxContextBar .ux-context-left').innerText()).replace(/\s+/g, ' ').replace(/^← Home ?/, '').trim(); // the ← Home link (Pi Hub) is in every bar
   const x = await left();
   assert.ok(x < 120, `main starts at ${x}px, beside the 76px rail`);
   assert.equal(await area(), 'Work');
-  assert.deepEqual(await page.locator('#uxPageStrip button').allInnerTexts(), ['Work', 'Automations']);
+  assert.deepEqual(await page.locator('#uxPageStrip button').allInnerTexts(), ['Work', 'Assistant automations']);
   await page.evaluate(() => LocalAIRouter.go('#status'));
   await page.waitForSelector('#status.active', T);
   await page.waitForTimeout(300);
   assert.equal(await left(), x, 'content starts at the same x in every area');
   assert.equal(await area(), 'System');
-  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Health');
+  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Status');
   await page.context().close();
 });
 

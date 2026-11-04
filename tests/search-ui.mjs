@@ -93,7 +93,7 @@ await check('⌘K offers every tool, Tools and the owner pages without any switc
   await page.waitForFunction(() => typeof window.showView === 'function' && document.querySelector('#uxCommandBtn'));
   await open(page);
   const offered = await items(page);
-  assert.ok(offered.includes('Health') && offered.includes('Models') && offered.includes('Claude Code') && offered.includes('Tools'), `owner pages offered: ${offered}`);
+  assert.ok(offered.includes('Assistant status') && offered.includes('Models') && offered.includes('Claude Code') && offered.includes('Tools'), `owner pages offered: ${offered}`);
   for (const [term, label] of [['files', 'Files'], ['repository', 'Repository'], ['powershell', 'PowerShell'], ['browser', 'Browser & computer'], ['n8n', 'n8n workflows'], ['atlas', 'Architecture']]) {
     await page.locator('#cmdkInput').fill(term);
     assert.ok((await items(page)).includes(label), `${label} offered for "${term}": ${await items(page)}`);

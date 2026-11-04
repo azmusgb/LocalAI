@@ -47,7 +47,7 @@ const GENERIC = new Set(['home', 'work', 'inbox', 'memory', 'library', 'sources'
   'services', 'projects', 'automations', 'activity', 'status', 'knowledge', 'repository', 'actions', 'runs', 'in progress', 'push', 'alert', 'alerts', 'menu', 'rail', 'sheet', 'sheets',
   'shortcut', 'shortcuts', 'voice', 'improve', 'picture', 'pictures', 'crew', 'mission', 'nav', 'tools', 'tool']);
 // Registry aka that name nothing in particular.
-const SKIP = new Set(['ask', 'create', 'overview', 'done', 'released', 'ideas', 'priorities', 'changes', 'engineer', 'kept', 'everything you kept', 'bridges', 'detections', 'issues']);
+const SKIP = new Set(['ask', 'create', 'overview', 'done', 'released', 'ideas', 'priorities', 'changes', 'engineer', 'kept', 'bridges', 'detections', 'issues']);
 const APP_CONTEXT = /\b(?:page|tab|screen|view|views|ui|ux|app|local ?ai|button|card|cards|list|layout|menu|panel|sheet|feature|shows?|display|appliance|nav)\b/i;
 // Filler and request words that say nothing about where in the repo to look.
 const STOP = new Set(('the and for with this that from into local implementation recommendations about what when where which while would could should please make makes made '

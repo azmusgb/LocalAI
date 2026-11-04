@@ -46,7 +46,7 @@ await check('a sample task that cannot start says what Chat needs; step 3 is don
   await page.locator('#firstRun [data-sample="0"]').click();
   if (gated) {
     await page.waitForSelector('#homeComposerError:not([hidden])');
-    assert.equal(await page.locator('#homeComposerError').innerText(), 'Chat needs Intelligence running. See Health');
+    assert.equal(await page.locator('#homeComposerError').innerText(), 'Chat needs Intelligence running. See Assistant status');
     assert.equal(await page.locator('#firstRun [data-step="try"]').getAttribute('data-state'), 'todo', 'a failed send is not a done step');
     // A run opening (the pending run resolves to a real id) is what completes the step.
     await page.evaluate(() => window.LocalAIRuns.openPending({ kind: 'ask', title: 'Q' }).resolve('run_first'));

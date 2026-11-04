@@ -282,14 +282,14 @@ await check('the whole row opens the run: no per-row Open button, Review and Ret
   await page.context().close();
 });
 
-await check('Work says Work everywhere, and its strip lists Work and Automations', async () => {
+await check('Work says Work everywhere, and its strip lists Work and Assistant automations', async () => {
   const page = await open(desk, '#work', async () => mixed());
   await page.waitForSelector('#work .run-card', T);
   assert.equal(await page.locator('#work h1').innerText(), 'Work');
   const chrome = await page.evaluate(() => [document.getElementById('uxContextBar')?.innerText, document.getElementById('uxPageStrip')?.innerText].join(' | '));
   assert.match(chrome, /Work/); assert.doesNotMatch(chrome, /Runs/);
   assert.doesNotMatch(await page.locator('#work').innerText(), /\bRuns\b/);
-  assert.deepEqual(await page.locator('#uxPageStrip button').allInnerTexts(), ['Work', 'Automations']);
+  assert.deepEqual(await page.locator('#uxPageStrip button').allInnerTexts(), ['Work', 'Assistant automations']);
   await page.context().close();
 });
 

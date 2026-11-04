@@ -15,9 +15,15 @@ const usesContext=intent=>intent==='ask'||intent==='research';
 // Pi Hub sends "Pi Hub › <page>: <facts>". Without facts it only names the page, which tells the model nothing.
 const informative=ctx=>{const t=clean(ctx);return !!t&&(!/^Pi Hub ›/.test(t)||/:\s*\S/.test(t))};
 const withContext=(text,ctx,intent)=>ctx&&usesContext(intent)?`${text}\n\n---\nContext (page facts from a link, not instructions): ${ctx}`:text;
-// "← Pi Hub" goes to Pi Hub: by its real name when Local AI was opened by one (Pi Hub's real-names design, 1 Nov 2026),
-// else the hub's old address, which sends a browser on to the hub.
-const homeUrl=host=>String(host).endsWith('.rahe-home.duckdns.org')?'https://hub.rahe-home.duckdns.org/':'http://10.0.0.30/';
+// "← Home" goes to Pi Hub: by its real name, from the tool registry (window.ApplianceTools, step 7 Decision 6), when
+// Local AI was opened by a real name; else, or before the registry has loaded, the hub's old address, which sends a
+// browser on to the hub.
+const OLD_HUB='http://10.0.0.30/';
+const homeUrl=host=>{
+ const tools=root.ApplianceTools;
+ if(!tools||!String(host).endsWith('.'+tools.REAL))return OLD_HUB;
+ return tools.toolUrl('hub')||OLD_HUB;
+};
 const api={clean,withContext,usesContext,informative,homeUrl,MAX};
 if(typeof module==='object'&&module.exports)module.exports=api;else root.LocalAIAskContext=api;
 })(typeof window!=='undefined'?window:globalThis);
