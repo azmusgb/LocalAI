@@ -99,6 +99,16 @@ test('a push over 4 MB is refused', async () => {
   assert.equal((await call('POST', '/api/lab/hex-tile/sync', big, MAC)).status, 413);
 });
 
+test('GET /api/lab-callers reports caller activity for /api/lab/*', async () => {
+  const r = await call('GET', '/api/lab-callers');
+  assert.equal(r.status, 200);
+  assert.ok(r.body.total_callers > 0);
+  assert.ok(Array.isArray(r.body.callers));
+  const syncCaller = r.body.callers.find(c => c.shape === '/api/lab/:project/sync' && c.method === 'POST');
+  assert.ok(syncCaller);
+  assert.equal(syncCaller.caller, 'mac');
+});
+
 // ---- Print lab cards on the Workshop display (labCards; the feed adds them after its needs card) ----
 const NOW = Date.parse('2026-10-26T12:00:00Z');
 const exp = (extra = {}) => ({ id: 'E-021', status: 'printing', question_text: 'Does a 0.2 mm seam gap hide the join?', judge_on: 'the seam on the top face', run: 'PR-021-01', runs: [{ id: 'PR-021-01', started_at: '2026-10-26T09:00:00Z' }], due_at: '2026-10-26T11:00:00Z', verdict: null, ...extra });

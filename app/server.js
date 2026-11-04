@@ -148,6 +148,7 @@ const hostAddrs = require('./signin').hostAddresses();
 const isHostReq = req => !req.headers['x-forwarded-for'] && hostAddrs.has(String(req.socket?.remoteAddress || '').replace(/^::ffff:/, ''));
 // Print lab: a read-only copy of the Mac's print-lab records; only the Mac (its key) writes. The live print
 // block reads the Workshop printer's last polled state; it never asks the display itself.
+const labCallers = require('./lab-callers').createLabCallers({ storage });
 const printLab = require('./print-lab').createPrintLab({
   storage,
   dataDir: DATA_DIR,
@@ -588,7 +589,16 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/powershell/host/next') return await apiPowerShellHostNext(req,res);
     if (req.method === 'POST' && p === '/api/powershell/host/result') return await apiPowerShellHostResult(req,res);
     if (p.startsWith('/api/claude/chat/') && await claudeChat.handle(req, res, urlObj, p)) return;
-    if (p.startsWith('/api/lab/') && await printLab.handle(req, res, p)) return;
+    if (req.method === 'GET' && p === '/api/lab-callers') return json(res, 200, labCallers.report());
+    if (p.startsWith('/api/lab/')) {
+      labCallers.record(req, p, {
+        hubKeyAuthorized: req => hubKey.authorized(req),
+        macAuthorized: req => claudeChat.macAuthorized(req),
+        deviceFor: req => claudeChat.deviceFor(req),
+        isHostReq
+      });
+      if (await printLab.handle(req, res, p)) return;
+    }
     if (req.method === 'GET' && p === '/api/improve/items') return await apiImproveItems(req,res);
     if (req.method === 'POST' && p === '/api/improve/idea') return await apiImproveIdea(req,res);
     if (req.method === 'POST' && p === '/api/improve/item') return await apiImproveItem(req,res);
