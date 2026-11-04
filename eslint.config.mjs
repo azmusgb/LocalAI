@@ -66,7 +66,7 @@ export default [
     },
     rules: correctness,
   },
-  { files: ['app/public/app.js'], languageOptions: { sourceType: 'module' } },
+  { files: ['app/public/app.js', 'app/public/tools-bridge.js'], languageOptions: { sourceType: 'module' } },
   {
     files: ['app/public/sw.js'],
     languageOptions: { globals: { ...globals.serviceworker } },
