@@ -1,4 +1,4 @@
-// Health › What's new and the one-time "Updated to …" notice. /api/releases is mocked.
+// Assistant status › What's new and the one-time "Updated to …" notice. /api/releases is mocked.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 

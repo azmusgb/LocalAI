@@ -145,7 +145,7 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
     assert.ok(!page.printerAsks.includes('?part=printer'), 'Home never asks for the printer line (Services still checks the display)');
     const back = page.locator('#uxPiHubLink');
     await back.waitFor({ state: 'visible', ...T });
-    assert.equal((await back.innerText()).trim(), '← Pi Hub');  // "← Home" on Local AI's own Home page read as going nowhere (look review)
+    assert.equal((await back.innerText()).trim(), '← Home');  // §5 level 0: "← Home" is Pi Hub (step 7, PR 7.7)
     assert.equal(await back.getAttribute('href'), 'http://10.0.0.30/');
     const box = await back.boundingBox();
     assert.ok(box.height >= 44, `tap target ${box.height}px`);
@@ -182,7 +182,7 @@ await check('Needs you also lists Pi Hub\'s items in Pi Hub\'s words, bad first,
   assert.equal(await page.locator('#homeNeedsList [data-hub-need="localai:needs-1"]').count(), 0, 'the summary line is not repeated');
   assert.equal(await page.textContent('#homeNeedsCount'), '· 4');
   assert.equal(await page.textContent('[data-hub-need="printer:plate"] .ui-need__detail'), 'Finished hex-tile E-022');
-  assert.equal(await page.textContent('[data-hub-need="localai:watch-mac-disk"] .ui-need__meta'), 'Health');
+  assert.equal(await page.textContent('[data-hub-need="localai:watch-mac-disk"] .ui-need__meta'), 'Assistant status');
   assert.equal(await page.textContent('[data-hub-need="printer:plate"] .ui-need__meta'), 'Pi Hub');
   assert.equal(await page.locator('[data-approval-id="ap-1"] .ui-need__meta').count(), 0, "Local AI's own rows carry no source line");
   // Pi Hub's rows leave the app: a link to the hub with an arrow, opened in a new tab. Local AI's rows stay in the app.
@@ -390,7 +390,7 @@ await check('the mode chip opens a sheet with eight modes, and Image persists ac
   await chip.click();
   await page.waitForSelector('#homeModeSheet[open]', T);
   assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').evaluateAll(b => b.map(x => x.dataset.homeMode)), ['engineering', 'automate', 'mission', 'spreadsheet', 'create', 'research', 'ask', 'auto'], 'the current mode (Auto) is the lowest row, nearest the thumb');
-  assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').allInnerTexts().then(a => a.map(s => s.trim().split('\n')[0])), ['Change Local AI', 'Automate', 'Mission', 'Spreadsheet', 'Image', 'Research', 'Chat', 'Auto']);
+  assert.deepEqual(await page.locator('#homeModeSheet [data-home-mode]').allInnerTexts().then(a => a.map(s => s.trim().split('\n')[0])), ['Change the assistant', 'Automate', 'Mission', 'Spreadsheet', 'Image', 'Research', 'Chat', 'Auto']);
   await page.locator('#homeModeSheet [data-home-mode="create"]').click();
   await page.waitForSelector('#homeModeSheet[open]', { state: 'detached', timeout: 1500 }).catch(() => {});
   if (await page.locator('#homeModeSheet[open]').count()) await page.locator('#homeModeSheet .home-sheet__done').click();
@@ -474,13 +474,13 @@ await check('Pi Hub context: × removes it without sending; a long one is cut to
   await page.context().close();
 });
 
-// Change Local AI asks every time: Add to backlog (saved, nothing starts) or Start now (planned, follow it in In progress).
+// Change the assistant asks every time: Add to backlog (saved, nothing starts) or Start now (planned, follow it in In progress).
 async function ideaStub(page, reply) {
   page.ideas = [];
   await page.route(u => u.pathname === '/api/improve/idea', async r => { page.ideas.push(r.request().postDataJSON()); const res = await reply(); r.fulfill({ status: res.status || 201, contentType: 'application/json', body: JSON.stringify(res.body) }); });
   await page.route(u => u.pathname === '/api/improve/items', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [], signals: [] }) }));
 }
-await check('Change Local AI: Send asks Add to backlog or Start now; Add to backlog saves it and Home stays as it was', async () => {
+await check('Change the assistant: Send asks Add to backlog or Start now; Add to backlog saves it and Home stays as it was', async () => {
   const page = await open(desk, '#home', { storage: { 'localai.home.mode': 'engineering' }, engineering: async () => ({ body: { run: { id: 'e1' } } }) });
   await ideaStub(page, async () => ({ body: { item: { id: 'idea-1' } } }));
   await page.waitForSelector('#homeRecent2 .run-card', T);
@@ -499,7 +499,7 @@ await check('Change Local AI: Send asks Add to backlog or Start now; Add to back
   await page.context().close();
 });
 
-await check('Change Local AI: Start now plans it and opens In progress; Cancel keeps the text on Home', async () => {
+await check('Change the assistant: Start now plans it and opens In progress; Cancel keeps the text on Home', async () => {
   const page = await open(desk, '#home', { storage: { 'localai.home.mode': 'engineering' } });
   await ideaStub(page, async () => ({ body: { item: { id: 'idea-2' }, change: { id: 'chg-9' } } }));
   await page.waitForSelector('#homeRecent2 .run-card', T);
@@ -728,8 +728,8 @@ await check('Mission mode sends the chosen specialists and the web-search choice
   await web.context().close();
 });
 
-// The developer-tools switch is gone (2 Nov): a browser that once switched it off still offers Change Local AI.
-await check('an old developer-tools choice hides nothing: Change Local AI is offered', async () => {
+// The developer-tools switch is gone (2 Nov): a browser that once switched it off still offers Change the assistant.
+await check('an old developer-tools choice hides nothing: Change the assistant is offered', async () => {
   const page = await open(desk, '#home', { storage: { 'localai.devTools': '0' } });
   await page.waitForSelector('#homeRecent2 .run-card', T);
   await page.locator('#homeModeChip').click(); await page.waitForSelector('#homeModeSheet[open]', T);
@@ -778,7 +778,7 @@ await check('Mission: Start a mission anyway starts it; a plain goal starts with
   assert.equal(await plain.locator('#homeSelfChange').isVisible(), false);
   await plain.context().close();
 });
-await check('Change Local AI: the sheet\'s Hand to Claude hands it over from Home and clears the box', async () => {
+await check('Change the assistant: the sheet\'s Hand to Claude hands it over from Home and clears the box', async () => {
   const page = await open(desk, '#home', { storage: { 'localai.home.mode': 'engineering' } });
   await ideaStub(page, async () => ({ body: { item: { id: 'idea-3' } } }));
   const handed = [];
@@ -1043,7 +1043,7 @@ await check('opening a failed run from anywhere (the run view) marks it seen onc
 });
 
 // Look review: sentence-case labels, a clamped Needs you detail with its full text, a hint under each routing option,
-// a column that fills an iPad in landscape, and "← Pi Hub" in the header of every top-level view.
+// a column that fills an iPad in landscape, and "← Home" in the header of every top-level view.
 await check('Home polish: sentence-case labels, clamped detail with a title, routing hints, width', async () => {
   const long = 'This mission could not finish because the specialist ran out of time while checking the sources. '.repeat(4);
   const page = await open({ width: 1000, height: 760 }, '#home', { all: () => needs().map(r => r.status === 'failed' ? { ...r, card: { ...r.card, summary: long } } : r) });
@@ -1067,14 +1067,14 @@ await check('Home: a clamped Needs you detail keeps its full text as the title',
   assert.ok(titles.some(t => t.includes(long)), 'the full text is on the row');
   await page.context().close();
 });
-await check('"← Pi Hub" is in the header of every top-level view', async () => {
+await check('"← Home" is in the header of every top-level view', async () => {
   const page = await open(desk, '#home');
   for (const hash of ['#home', '#work', '#projects', '#backlog', '#status']) {
     await page.evaluate(h => { location.hash = h; }, hash);
     await page.waitForFunction(h => location.hash.startsWith(h), hash, T);
     const link = page.locator('#uxContextBar #uxPiHubLink');
     await link.waitFor({ state: 'visible', ...T });
-    assert.equal((await link.innerText()).trim(), '← Pi Hub', hash);
+    assert.equal((await link.innerText()).trim(), '← Home', hash);
   }
   await page.context().close();
 });

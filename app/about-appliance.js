@@ -40,7 +40,7 @@ function aboutApplianceBlock({ addresses = [] } = {}) {
     '- Local AI runs in Docker on the owner\'s Windows PC. Text models run in Ollama. Image models run in ComfyUI on that PC, never Ollama: model files go in folders under C:\\Projects\\ComfyHost\\models (SD/SDXL checkpoints in checkpoints; Z-Image Turbo by hand: z_image_turbo_bf16.safetensors in diffusion_models, qwen_3_4b.safetensors in text_encoders, ae.safetensors in vae), then restart ComfyUI. Spreadsheets are read and changed by GridCraft on the PC.',
     `- Reach it: home Wi-Fi ${home || 'address not set up'}; anywhere over Tailscale ${remote || '(Tailscale is not set up)'}.` +
       (remote ? ' For one icon that works everywhere, add Local AI to the Home Screen from the Tailscale address and keep Tailscale on.' : '') +
-      ' Health › Secure connection lists the addresses.',
+      ' Assistant status › Secure connection lists the addresses.',
     '- Updates: a change merged to main deploys by itself within about 5 minutes and rolls back if unhealthy; it waits for running work (chats, images, missions, GridCraft, automations) up to 45 minutes.',
     `- Where things are: ${PLACES.map(whereIs).filter(Boolean).join('; ')}. Chat and Images open from Home.`
   ].join('\n');

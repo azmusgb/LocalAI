@@ -3,7 +3,7 @@
 (function(root){'use strict';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const MODES=[['auto','Auto','Picks for you'],['ask','Chat','Ask a question'],['research','Research','Search the web first'],['create','Image','Make pictures'],['spreadsheet','Spreadsheet','Ask about the open workbook'],['mission','Mission','Give the team a goal'],['automate','Automate','Set up a task'],['engineering','Change Local AI','Always asks you first']];
+const MODES=[['auto','Auto','Picks for you'],['ask','Chat','Ask a question'],['research','Research','Search the web first'],['create','Image','Make pictures'],['spreadsheet','Spreadsheet','Ask about the open workbook'],['mission','Mission','Give the team a goal'],['automate','Automate','Set up a task'],['engineering','Change the assistant','Always asks you first']];
 const LABEL=Object.fromEntries(MODES.map(m=>[m[0],m[1]]));
 const MODE_KEY='localai.home.mode',OPT_KEY='localai.home.options';
 const store={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}}};
@@ -43,7 +43,7 @@ async function paintOptions(){
    const engines=(j.engines||[]).map(e=>({value:e.id,label:e.label})),shapes=(j.aspects||[]).map(a=>({value:a.id,label:a.label})),styles=(j.styles||[]).map(s=>({value:s.id,label:s.label}));
    const val=(k,list,live,def)=>{const v=live||options[k]||def;return list.some(o=>o.value===v)?v:list[0]?.value};
    const cur={engine:val('engine',engines,pick('#imageEngines','data-engine'),j.defaultEngine),aspect:val('aspect',shapes,pick('#imageAspects','data-aspect'),'square'),style:val('style',styles,pick('#imageStyles','data-style'),'none')};
-   box.innerHTML=(engines.length?field('homeOptEngine','Engine',engines,cur.engine):'<p class="home-sheet__note">No image models found. Check Health.</p>')+(shapes.length?field('homeOptShape','Shape',shapes,cur.aspect):'')+(styles.length?field('homeOptStyle','Style',styles,cur.style):'');
+   box.innerHTML=(engines.length?field('homeOptEngine','Engine',engines,cur.engine):'<p class="home-sheet__note">No image models found. Check Assistant status.</p>')+(shapes.length?field('homeOptShape','Shape',shapes,cur.aspect):'')+(styles.length?field('homeOptStyle','Style',styles,cur.style):'');
    for(const [id,key,sel,attr] of [['homeOptEngine','engine','#imageEngines','data-engine'],['homeOptShape','aspect','#imageAspects','data-aspect'],['homeOptStyle','style','#imageStyles','data-style']])
     $(id)?.addEventListener('change',e=>{options[key]=e.target.value;saveOptions();document.querySelector(`${sel} [${attr}="${CSS.escape(e.target.value)}"]`)?.click()});
    Object.assign(options,Object.fromEntries(Object.entries(cur).filter(([,v])=>v)));
@@ -98,7 +98,7 @@ const need=(tone,id,title,detail,link,go,data={})=>({tone,item:{id,source:'Local
 const attentionRow=a=>need('bad','attn:'+(a.view||'status')+':'+a.title,a.title,a.detail,'#'+(a.view||'status'),()=>root.LocalAIRouter.open(a.view||'status'));
 // One of Pi Hub's items (needs-you.js hubRows): the words every screen shows; it opens on Pi Hub, or here for Local AI's
 // own lab and watch items. Local AI's badges have no amber: warn shows neutral.
-const HUB_WHERE={printLab:'Print lab',status:'Health'};
+const HUB_WHERE={printLab:'Print lab',status:'Assistant status'};
 const hubRow=h=>{
  const where=h.open.view?HUB_WHERE[h.open.view]:'Pi Hub';
  const e=need(h.tone,h.id,h.title,h.detail,h.open.view?'#'+h.open.view:'hub:'+h.open.hub,h.open.view?()=>root.LocalAIRouter.open(h.open.view):null,{hubNeed:h.id});
@@ -272,7 +272,7 @@ async function dispatch(intent,text,route,question=text){
  gateCheck(intent);
  const L=root.LocalAILegacy;
  if(intent==='engineering'&&root.LocalAIImprove?.openIdea){
-  // Change Local AI asks each time: Add to backlog, or Start now and follow it in In progress. Closing the sheet keeps the text.
+  // Change the assistant asks each time: Add to backlog, or Start now and follow it in In progress. Closing the sheet keeps the text.
   const r=await root.LocalAIImprove.openIdea(text,{from:'home'});if(!r)return;
   clearInput();if(r.start&&!r.error)root.LocalAIRouter.open('inProgress');
  }else if(intent==='engineering'){

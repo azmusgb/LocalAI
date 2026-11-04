@@ -180,7 +180,7 @@ test('POST /api/improve/handoff: another site cannot hand work to Claude', { tim
   assert.equal((await send({ 'Content-Type': 'application/json' })).status, 200);
 });
 
-test('/api/route sends a request to change an Agent World page to Change Local AI', { timeout: 30000 }, async t => {
+test('/api/route sends a request to change an Agent World page to Change the assistant', { timeout: 30000 }, async t => {
   const base = await startServer(t);
   const route = async text => (await post(base, '/api/route', { text, mode: 'auto' })).body.intent;
   assert.equal(await route('Improve look feel and polish of agent world'), 'engineering');

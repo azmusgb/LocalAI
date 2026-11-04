@@ -620,7 +620,7 @@ test('text-model calls use one 8192 context, stay warm, and take turns with imag
   assert.deepEqual(order, ['unload', 'comfy', 'warm']);
 });
 
-// Legacy runs (old missions, Change Local AI requests) live in their own stores, never in the ledger.
+// Legacy runs (old missions, Change the assistant requests) live in their own stores, never in the ledger.
 const OLD = '2020-01-01T00:00:00.000Z', OLDER = '2019-12-31T00:00:00.000Z';
 const seedLegacy = s => {
   s.put('engineeringRuns', { id: 'eng-old', request: 'Add a dark mode toggle', target: 'self', status: 'completed', createdAt: OLD, updatedAt: OLD, steps: [] });

@@ -117,7 +117,7 @@ test('Tools lists the tools, System ones first, and nothing is hidden behind a s
   assert.ok(!registry.VIEWS.some(v => 'dev' in v || 'advanced' in v), 'no developer-only or Advanced pages remain');
   assert.equal(registry.view('architecture').domain, 'improve', 'Architecture is an Improve tab, Atlas (D3)');
   assert.equal(registry.view('claude').domain, 'improve', 'Claude Code is an ordinary Improve page (N2)');
-  assert.deepEqual(registry.sections('system').map(s => s.label), ['Health', 'Tools', 'Settings', 'History']);
+  assert.deepEqual(registry.sections('system').map(s => s.label), ['Status', 'Tools', 'Settings', 'History']);
 });
 
 // Improve has six tabs once Deployments joined Shipped (step 4); short labels keep them on a phone (D3).

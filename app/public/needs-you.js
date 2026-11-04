@@ -52,7 +52,7 @@ function markSeen(ids){
 }
 // Pi Hub's one "Needs you" list (/api/home/hub-needs) on Home: every item but localai:needs-<n>, the hub's one-line
 // summary of the approvals and failures Home already lists as its own rows. Each row says where it opens: Local AI's
-// own lab and watch items open here (Print lab, Health); the rest open on Pi Hub at the item's path.
+// own lab and watch items open here (Print lab, Assistant status); the rest open on Pi Hub at the item's path.
 const TONES=new Set(['bad','attention','warn']);
 const text=v=>typeof v==='string'?v:'';
 function hubRows(items){

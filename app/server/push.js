@@ -34,7 +34,7 @@ function createPush(ctx) {
     try { resolveDeployFailures(APP_VERSION); } catch (e) { console.error(`${nowIso()} Resolving old update failures failed:`, e); }
     storage.pruneSettings('release:history:', 50);
   }
-  // Addresses a phone can be pointed at (Health › Secure connection). LOCALAI_REMOTE_NAME is the host's Tailscale name;
+  // Addresses a phone can be pointed at (Assistant status › Secure connection). LOCALAI_REMOTE_NAME is the host's Tailscale name;
   // the Caddy placeholder (*.invalid) and anything that isn't a plain host name count as not set.
   function remoteAccessName(raw = process.env.LOCALAI_REMOTE_NAME) {
     const name = String(raw || '').trim().toLowerCase().replace(/\.$/, '');

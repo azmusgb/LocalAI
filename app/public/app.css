@@ -3293,3 +3293,5 @@ body.is-embedded main {
 body.is-embedded .chat-shell {
   min-height: calc(100vh - 80px) !important;
 }
+/* Assistant status's header: Health ↗ (Pi Hub) beside Check again (platform step 7, PR 7.7). */
+.status-head-actions{display:flex;flex-direction:row;gap:8px;align-items:center;flex-wrap:wrap;min-width:0;max-width:100%}

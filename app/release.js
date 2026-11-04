@@ -32,7 +32,7 @@ function appVersion(appRoot, release, env = process.env) {
   } catch {}
   return env.APP_VERSION || '1.18';
 }
-// Health › Last deployment check. A release only goes live after the deploy's candidate checks pass (and rolls back
+// Assistant status › Last deployment check. A release only goes live after the deploy's candidate checks pass (and rolls back
 // otherwise), so the running release is the latest passed check. The optional certification report (REPORT_PATH)
 // is shown only when it is newer than that, e.g. a manual run that found a problem. Nothing writes it on each deploy.
 function deployCheck(report, release) {

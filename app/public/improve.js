@@ -194,7 +194,7 @@ async function itemAction(id,action,btn,then){
 }
 // A sheet that Back closes; closing it any other way pops that history entry again.
 const showSheet=(d,onClosed)=>root.LocalAIUI.showSheet(d,onClosed);
-// Opens the idea sheet, optionally with text (Home's Change Local AI mode). Resolves {start, error?} once saved, {handed}
+// Opens the idea sheet, optionally with text (Home's Change the assistant mode). Resolves {start, error?} once saved, {handed}
 // once handed to Claude, or null if closed unsaved. `from` names where the owner typed it, for Claude.
 function openIdea(text,{from='improve'}={}){st.ideaFrom=from;
  const d=$('improveIdeaSheet');if(!d)return Promise.resolve(null);

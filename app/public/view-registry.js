@@ -13,8 +13,8 @@ const DOMAINS=[
  {id:'home',label:'Home',icon:'home',tagline:'What needs you',defaultView:'home'},
  {id:'work',label:'Work',icon:'work',tagline:'Everything running and done',defaultView:'work'},
  {id:'projects',label:'Projects',icon:'projects',tagline:'Make and keep things',defaultView:'projects'},
- {id:'improve',label:'Improve',icon:'improve',tagline:'Change Local AI itself',defaultView:'backlog'},
- {id:'system',label:'System',icon:'system',tagline:'Health and history',defaultView:'status'}
+ {id:'improve',label:'Improve',icon:'improve',tagline:'Change the assistant itself',defaultView:'backlog'},
+ {id:'system',label:'System',icon:'system',tagline:'Status and history',defaultView:'status'}
 ];
 const VIEWS=[
  {id:'home',svg:'home',domain:'home',section:'Overview',label:'Home',description:'Start something, or pick up where you left off.',aka:['overview']},
@@ -28,11 +28,11 @@ const VIEWS=[
  {id:'memory',svg:'memory',domain:'projects',section:'Keep',parent:'projects',tab:'Memory',label:'Memory',description:'Facts the assistant keeps about each project.',aka:['project memory']},
  // Library is a tab of Projects: what you kept, as opposed to Work (everything you did). Old #library links open it.
 // Automations is a tab of Work (scheduled work): navigation spec, step 3. Projects holds only what you keep (2 Nov, D4).
- {id:'library',svg:'library',domain:'projects',section:'Keep',parent:'projects',tab:'Library',label:'Library',description:'Everything you kept: chats, research and images.',aka:['everything you kept','kept']},
+ {id:'library',svg:'library',domain:'projects',section:'Keep',parent:'projects',tab:'Library',label:'Library',description:'What you kept: chats, research and images.',aka:['kept']},
  {id:'agents',svg:'target',domain:'hidden',section:'Agents',label:'Missions',description:'Give a goal; specialist agents work it live.',aka:['agents','agent operations']},
- {id:'status',svg:'health',short:'Status',domain:'system',section:'Health',label:'Assistant status',description:'Whether Local AI is working, and which optional services are up.',aka:['status','assistant status','health']},
- {id:'models',svg:'model',domain:'system',section:'Health',label:'Models',description:"Installed models and what's loaded now."},
- {id:'integrations',svg:'plug',domain:'system',section:'Health',label:'Services',description:'What Local AI connects to, and whether each one is ready.',aka:['integrations','bridges','tools']},
+ {id:'status',svg:'health',short:'Status',domain:'system',section:'Status',label:'Assistant status',description:'Whether Local AI is working, and which optional services are up.',aka:['status','assistant status','health']},
+ {id:'models',svg:'model',domain:'system',section:'Status',label:'Models',description:"Installed models and what's loaded now."},
+ {id:'integrations',svg:'plug',domain:'system',section:'Status',label:'Connections',description:'What Local AI connects to, and whether each one is ready.',aka:['integrations','services','bridges','tools']},
  {id:'automationStudio',svg:'clock',domain:'work',section:'Work',parent:'work',tab:'Assistant automations',label:'Assistant automations',description:'Scheduled prompts and research, health checks and the morning brief.',aka:['studio','automation studio','monitors','morning brief','health check','assistant automations']},
  {id:'backlog',svg:'improve',domain:'improve',section:'Pipeline',label:'Backlog',description:'One ranked list of what could change in Local AI.',aka:['improve','ideas','priorities']},
  {id:'inProgress',svg:'build',short:'Doing',domain:'improve',section:'Pipeline',label:'In progress',description:'Changes being planned, tested or waiting for your OK.',aka:['running changes','change requests','changes','engineer']},

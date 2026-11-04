@@ -24,7 +24,13 @@ test('withContext adds the context after the question, marked as page facts, onl
   assert.equal(usesContext('mission'), false);
 });
 
-test('homeUrl goes to the hub by its real name or the old address', () => {
+test('homeUrl takes the hub from the tool registry on a real name, else the old address', async t => {
+  // Before the registry module has run (or in a browser that can't load it), every name gets the old address.
+  assert.equal(homeUrl('assistant.rahe-home.duckdns.org'), 'http://10.0.0.30/');
+  const { REAL, TOOLS, tool, toolUrl, toolsFor } = await import('../app/public/ui/tools.js');
+  globalThis.ApplianceTools = { REAL, TOOLS, tool, toolUrl, toolsFor };
+  t.after(() => { delete globalThis.ApplianceTools; });
+  assert.equal(homeUrl('assistant.rahe-home.duckdns.org'), toolUrl('hub'));
   assert.equal(homeUrl('assistant.rahe-home.duckdns.org'), 'https://hub.rahe-home.duckdns.org/');
   assert.equal(homeUrl('evilrahe-home.duckdns.org'), 'http://10.0.0.30/');
   assert.equal(homeUrl('assistant.home.arpa'), 'http://10.0.0.30/');

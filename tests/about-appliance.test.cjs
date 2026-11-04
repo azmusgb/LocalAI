@@ -26,7 +26,7 @@ test('the block is short, factual and uses the live addresses and view-registry 
   assert.match(block, /45 minutes/);
   assert.match(block, /Spreadsheets in Work/);
   assert.match(block, /Assistant automations in Work/);
-  assert.match(block, /Services in System/);
+  assert.match(block, /Connections in System/);
   const none = aboutApplianceBlock({ addresses: [] });
   assert.match(none, /Tailscale is not set up/);
   assert.doesNotMatch(none, /one icon/i, 'no Home Screen advice without a Tailscale address');

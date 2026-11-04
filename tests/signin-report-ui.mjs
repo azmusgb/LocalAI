@@ -1,7 +1,7 @@
 import { chromium, devices } from 'playwright';
 import assert from 'node:assert/strict';
 
-// Health › Sign-in (report only): the callers that would be refused, Clear list, and the empty state. The API is stubbed.
+// Assistant status › Sign-in (report only): the callers that would be refused, Clear list, and the empty state. The API is stubbed.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch({ headless: true });
 const failures = [];

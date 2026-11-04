@@ -250,7 +250,7 @@ function renderRedirect(box){
  const proj=params.get('p');
  const doAction=params.get('do');
  const hubBase=root.LocalAIAskContext?.homeUrl?.(location.hostname)?.replace(/\/+$/,'')
-   ||(location.hostname.endsWith('.rahe-home.duckdns.org')?'https://hub.rahe-home.duckdns.org':'http://10.0.0.30');
+   ||'http://10.0.0.30';
  const targetParams=new URLSearchParams();
  if(proj)targetParams.set('p',proj);
  if(expId)targetParams.set('e',expId);
