@@ -22,9 +22,19 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
-# atlas_snapshot_runner.py sits beside this file; loaded by path (tests, python -I) its folder isn't on sys.path.
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from atlas_snapshot_runner import MIRRORS, SnapshotRequestError, SnapshotRunner  # noqa: E402
+import importlib.util
+
+# atlas_snapshot_runner.py sits beside this file; loaded without mutating sys.path
+_runner_path = Path(__file__).resolve().parent / "atlas_snapshot_runner.py"
+_runner_spec = importlib.util.spec_from_file_location("atlas_snapshot_runner", _runner_path)
+if _runner_spec is None or _runner_spec.loader is None:
+    raise ImportError(f"Cannot load atlas_snapshot_runner from {_runner_path}")
+_runner_module = importlib.util.module_from_spec(_runner_spec)
+sys.modules["atlas_snapshot_runner"] = _runner_module
+_runner_spec.loader.exec_module(_runner_module)
+MIRRORS = _runner_module.MIRRORS
+SnapshotRequestError = _runner_module.SnapshotRequestError
+SnapshotRunner = _runner_module.SnapshotRunner
 
 
 ROOT = Path(__file__).resolve().parent
@@ -91,6 +101,39 @@ BOUNDARY_DOMAINS = {
 }
 
 
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    """Safely coerce value to int, handling float strings ('85.5') and None gracefully."""
+    if value is None:
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        try:
+            return int(float(str(value).strip()))
+        except (ValueError, TypeError):
+            return default
+
+
+def browser_url(host: str, port: int) -> str:
+    """Construct browser-accessible URL: brackets IPv6 literals and rewrites wildcards to 127.0.0.1."""
+    display_host = host.strip() if host else "127.0.0.1"
+    if display_host in {"0.0.0.0", "::", "[::]", ""}:
+        display_host = "127.0.0.1"
+    elif ":" in display_host and not display_host.startswith("["):
+        display_host = f"[{display_host}]"
+    return f"http://{display_host}:{port}/"
+
+
+def _require(condition: bool, message: str) -> None:
+    """Assertion helper that remains active under python -O."""
+    if not condition:
+        raise SystemExit(f"FAIL: {message}")
 class AtlasError(Exception):
     def __init__(
         self,
@@ -426,7 +469,7 @@ def effective_test_signal(
     ],
 ) -> tuple[int, list[dict[str, str]]]:
     node_id = str(node.get("id", ""))
-    direct_refs = int(node.get("testRefs") or 0)
+    direct_refs = _as_int(node.get("testRefs"))
     indirect = evidence_map.get(node_id, [])
 
     return direct_refs + len(indirect), indirect
@@ -449,11 +492,11 @@ def build_findings(
         if not node_id or domain == "Tests":
             continue
 
-        risk = int(node.get("risk") or 0)
-        inbound = int(node.get("inbound") or 0)
-        outbound = int(node.get("outbound") or 0)
-        degree = int(node.get("degree") or 0)
-        direct_test_refs = int(node.get("testRefs") or 0)
+        risk = _as_int(node.get("risk"))
+        inbound = _as_int(node.get("inbound"))
+        outbound = _as_int(node.get("outbound"))
+        degree = _as_int(node.get("degree"))
+        direct_test_refs = _as_int(node.get("testRefs"))
         test_signal, indirect_tests = effective_test_signal(
             node,
             evidence_map,
@@ -631,7 +674,7 @@ def build_findings(
             )
 
     node_risk = {
-        str(node.get("id")): int(node.get("risk") or 0)
+        str(node.get("id")): _as_int(node.get("risk"))
         for node in graph.get("nodes", [])
         if isinstance(node, dict) and node.get("id")
     }
@@ -677,12 +720,10 @@ def aggregate_findings(
                 "node": node_id,
                 "domain": item.get("domain"),
                 "severity": "info",
-                "risk": int(node.get("risk") or 0),
-                "degree": int(node.get("degree") or 0),
-                "outbound": int(node.get("outbound") or 0),
-                "directTestRefs": int(
-                    node.get("testRefs") or 0
-                ),
+                "risk": _as_int(node.get("risk")),
+                "degree": _as_int(node.get("degree")),
+                "outbound": _as_int(node.get("outbound")),
+                "directTestRefs": _as_int(node.get("testRefs")),
                 "testEvidence": evidence_map.get(
                     node_id,
                     [],
@@ -743,8 +784,8 @@ def aggregate_findings(
                 str(group.get("severity")),
                 99,
             ),
-            -int(group.get("risk") or 0),
-            -int(group.get("signalCount") or 0),
+            -_as_int(group.get("risk")),
+            -_as_int(group.get("signalCount")),
             str(group.get("node", "")),
         )
     )
@@ -810,8 +851,7 @@ def compact_node(
     if test_evidence is not None:
         result["testEvidence"] = test_evidence
         result["effectiveTestSignal"] = (
-            int(node.get("testRefs") or 0)
-            + len(test_evidence)
+            _as_int(node.get("testRefs")) + len(test_evidence)
         )
 
     return result
@@ -946,7 +986,7 @@ def matching_nodes(
         scored.append(
             (
                 score,
-                int(node.get("degree") or 0),
+                _as_int(node.get("degree")),
                 node_id,
                 node,
             )
@@ -2799,14 +2839,11 @@ class AtlasHandler(
     def atlas_state(
         self,
     ) -> AtlasState:
-        server = self.server
-
         state = getattr(
-            server,
+            self.server,
             "atlas_state",
             None,
         )
-
         if not isinstance(
             state,
             AtlasState,
@@ -2814,8 +2851,25 @@ class AtlasHandler(
             raise RuntimeError(
                 "Atlas server state is missing."
             )
-
         return state
+
+    @property
+    def snapshot_runner(
+        self,
+    ) -> SnapshotRunner:
+        runner = getattr(
+            self.server,
+            "snapshot_runner",
+            None,
+        )
+        if not isinstance(
+            runner,
+            SnapshotRunner,
+        ):
+            raise RuntimeError(
+                "Atlas snapshot runner is missing."
+            )
+        return runner
 
     def send_json(
         self,
@@ -3040,7 +3094,7 @@ class AtlasHandler(
 
         # "Snapshot now" (plan PR 4): what is running, waiting and recently finished. Needs no graph.
         if path == "/api/atlas/snapshot":
-            self.send_json(self.server.snapshot_runner.status())
+            self.send_json(self.snapshot_runner.status())
             return
 
         if path == "/health":
@@ -3057,9 +3111,8 @@ class AtlasHandler(
             )
             return
 
-        graph, findings, root, scope = self.scoped(parse_qs(parsed.query))
-
         if path == "/api/atlas/summary":
+            graph, findings, root, scope = self.scoped(parse_qs(parsed.query))
             self.send_json(
                 {
                     **({"snapshot": scope} if scope else {}),
@@ -3082,6 +3135,7 @@ class AtlasHandler(
             return
 
         if path == "/api/atlas/findings":
+            graph, findings, root, scope = self.scoped(parse_qs(parsed.query))
             self.send_json(
                 {
                     **({"snapshot": scope} if scope else {}),
@@ -3115,6 +3169,8 @@ class AtlasHandler(
                     "Missing node path.",
                     code="node_path_required",
                 )
+
+            graph, findings, root, scope = self.scoped(query)
 
             details = get_node_details(
                 graph,
@@ -3155,16 +3211,20 @@ class AtlasHandler(
 
         if parsed.path == "/api/atlas/snapshot":
             try:
-                job = self.server.snapshot_runner.request(body.get("repo"), body.get("ref") or "main")
+                job = self.snapshot_runner.request(body.get("repo"), body.get("ref") or "main")
             except SnapshotRequestError as error:
                 raise AtlasError(str(error), status=error.status, code=error.code) from error
             self.send_json({"job": job}, status=HTTPStatus.ACCEPTED)
             return
 
-        graph, findings, root, scope = self.scoped(
-            {key: [body.get(key)] for key in ("repo", "commit") if body.get(key)}
-        )
+        if parsed.path not in {"/api/atlas/ask", "/api/atlas/goose"}:
+            raise AtlasError(
+                f"Route not found: {parsed.path}",
+                status=HTTPStatus.NOT_FOUND,
+                code="not_found",
+            )
 
+        # Validate question first before expensive snapshot materialization
         question = str(
             body.get(
                 "question",
@@ -3186,6 +3246,10 @@ class AtlasHandler(
                 ),
                 code="question_too_long",
             )
+
+        graph, findings, root, scope = self.scoped(
+            {key: [body.get(key)] for key in ("repo", "commit") if body.get(key)}
+        )
 
         selected_node_raw = body.get(
             "node"
@@ -3251,91 +3315,73 @@ class AtlasHTTPServer(
 ):
     daemon_threads = True
     allow_reuse_address = True
+    atlas_state: Optional[AtlasState] = None
+    snapshot_runner: Optional[SnapshotRunner] = None
+
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        RequestHandlerClass: type[BaseHTTPRequestHandler],
+        bind_and_activate: bool = True,
+        atlas_state: Optional[AtlasState] = None,
+        snapshot_runner: Optional[SnapshotRunner] = None,
+    ) -> None:
+        self.atlas_state = atlas_state
+        self.snapshot_runner = snapshot_runner
+        super().__init__(server_address, RequestHandlerClass, bind_and_activate)
 
 
 def self_test() -> None:
+    # Phase 1 unit checks
+    _require(browser_url("0.0.0.0", 8765) == "http://127.0.0.1:8765/", "browser_url wildcard bind rewrite")
+    _require(browser_url("::", 8765) == "http://127.0.0.1:8765/", "browser_url IPv6 wildcard bind rewrite")
+    _require(browser_url("::1", 8765) == "http://[::1]:8765/", "browser_url IPv6 literal bracketing")
+    _require(browser_url("127.0.0.1", 8765) == "http://127.0.0.1:8765/", "browser_url loopback pass-through")
+    _require(_as_int("85.5") == 85, "_as_int float string coercion")
+    _require(_as_int(85.0) == 85, "_as_int float coercion")
+    _require(_as_int("42") == 42, "_as_int int string pass-through")
+    _require(_as_int(None, 10) == 10, "_as_int None fallback")
+    _require(_as_int("invalid", 5) == 5, "_as_int invalid fallback")
+    _require(sys.modules.get("atlas_snapshot_runner") is _runner_module, "atlas_snapshot_runner loaded via spec")
+    if sys.flags.isolated or getattr(sys.flags, "safe_path", False):
+        _require(str(ROOT) not in sys.path[:1], "sys.path isolated under -I")
+
+    test_server = AtlasHTTPServer(("127.0.0.1", 0), AtlasHandler, bind_and_activate=False)
+    _require(test_server.atlas_state is None, "AtlasHTTPServer declares atlas_state")
+    _require(test_server.snapshot_runner is None, "AtlasHTTPServer declares snapshot_runner")
+
     html = load_atlas_html()
     graph = extract_graph(html)
 
-    assert graph["nodes"], (
-        "Atlas has no nodes."
-    )
+    _require(bool(graph["nodes"]), "Atlas has no nodes.")
+    _require(bool(graph["edges"]), "Atlas has no edges.")
 
-    assert graph["edges"], (
-        "Atlas has no edges."
-    )
+    findings = build_findings(graph)
+    _require(bool(findings), "Gap detector produced no findings.")
 
-    findings = build_findings(
-        graph
-    )
-
-    assert findings, (
-        "Gap detector produced no findings."
-    )
-
-    groups = aggregate_findings(
-        graph,
-        findings,
-    )
-
-    assert groups, (
-        "Finding aggregation produced no groups."
-    )
+    groups = aggregate_findings(graph, findings)
+    _require(bool(groups), "Finding aggregation produced no groups.")
 
     server_group = next(
-        (
-            group
-            for group in groups
-            if group.get("node")
-            == "app/server.js"
-        ),
+        (group for group in groups if group.get("node") == "app/server.js"),
         None,
     )
+    _require(server_group is not None, "app/server.js finding group missing")
+    _require(_as_int(server_group.get("signalCount", 0)) >= 2, "app/server.js signalCount >= 2")
 
-    assert server_group is not None
-    assert (
-        int(
-            server_group.get(
-                "signalCount",
-                0,
-            )
-        )
-        >= 2
-    )
+    indexed = node_index(graph)
+    _require("app/server.js" in indexed, "Expected app/server.js in Atlas.")
 
-    indexed = node_index(
-        graph
-    )
-
-    assert "app/server.js" in indexed, (
-        "Expected app/server.js in Atlas."
-    )
-
-    server_details = get_node_details(
-        graph,
-        findings,
-        "app/server.js",
-    )
-
-    assert server_details is not None
-    assert (
-        server_details["node"][
-            "outbound"
-        ]
-        >= 1
-    )
+    server_details = get_node_details(graph, findings, "app/server.js")
+    _require(server_details is not None, "server_details missing")
+    _require(server_details["node"]["outbound"] >= 1, "app/server.js outbound >= 1")
 
     page = instrument_html(html)
-
-    assert (
-        "atlas-intelligence-script"
-        in page
-    )
-
-    assert "Ask Atlas" in page
-    assert "atlasAiModel" in page
-    assert "atlasAiContext" in page
-    assert "findingGroups" in page
+    _require("atlas-intelligence-script" in page, "atlas-intelligence-script marker missing")
+    _require("Ask Atlas" in page, "Ask Atlas UI missing")
+    _require("atlasAiModel" in page, "atlasAiModel input missing")
+    _require("atlasAiContext" in page, "atlasAiContext input missing")
+    _require("findingGroups" in page, "findingGroups data missing")
 
     print(
         "PASS: System Atlas graph parsed"
@@ -3420,15 +3466,11 @@ def main() -> int:
             args.port,
         ),
         AtlasHandler,
+        atlas_state=state,
+        snapshot_runner=SnapshotRunner(),
     )
 
-    server.atlas_state = state
-    server.snapshot_runner = SnapshotRunner()
-
-    url = (
-        f"http://{args.host}:"
-        f"{args.port}/"
-    )
+    url = browser_url(args.host, args.port)
 
     print()
     print(
