@@ -625,6 +625,255 @@ def build_story(
     }
 
 
+# ---------------------------------------------------------------------------
+# HTTP links (graph schema 2): browser modules to the server modules that serve their paths
+# ---------------------------------------------------------------------------
+#
+# LocalAI rules only: browser = app/public/**/*.js(m); server = app/server.js and app/server/*.js. Matching rules:
+#  * Browser side: every string literal that starts "/api/" (fetch, api(), EventSource, anything else). The query
+#    (?..) and fragment are dropped. A literal cut by "${" (template), followed by "+" (concatenation) or ending in
+#    "/" is "dynamic": only its prefix is known. Lines that are comments are skipped.
+#  * Server side, a route is only a literal the server compares the request path with: `=== '/api/x'` (either
+#    side), `case '/api/x':`, an object key `'/api/x':`, a table row `['/api/x', ...]`, `['/api/x', ...].includes(p)` (exact), `startsWith('/api/x/')`
+#    (prefix) and a regex literal `/^\/api\/x\/(\w+)\/keep$/` (pattern: a segment with regex syntax is a "*"
+#    wildcard). Literals a server only sends or returns (`fetch('/api/x')`, `endpoint: '/api/x'`) are not routes, and
+#    a prefix of "/api/" alone is ignored because it would serve every path. Routes built from variables or
+#    constants are not seen, so a path served that way is reported dangling (documented, not guessed).
+#  * A path matches the longest route that fits: exact (or pattern, by segments) for a complete path, a prefix
+#    route for any path starting with it. A dynamic path is covered by a prefix route that starts it, else by the
+#    routes that extend it. Ties go to app/server.js (the router), then to the path name. A path no route fits is
+#    "dangling"; a dynamic path is dangling only when no route could still complete it.
+
+HTTP_BROWSER_RE = re.compile(r"""(['"`])(/api/[^\n]*?)\1""")
+HTTP_CONST_RE = re.compile(r"""\b([A-Za-z_$][\w$]*)\s*=(?![=>])\s*(['"`])(/api/[\w./~%:@-]*)\2""")
+HTTP_PATH_CHARS = re.compile(r"^/api/[\w.~%:@/*-]*")
+SERVER_EXACT_RE = [
+    re.compile(r"""={2,3}\s*(['"`])(/api/[^'"`\n]*)\1"""),
+    re.compile(r"""(['"`])(/api/[^'"`\n]*)\1\s*={2,3}"""),
+    re.compile(r"""\bcase\s+(['"`])(/api/[^'"`\n]*)\1\s*:"""),
+    re.compile(r"""^\s*(['"`])(/api/[^'"`\n]*)\1\s*:"""),
+    re.compile(r"""^\s*\[\s*(['"`])(/api/[^'"`\n]*)\1\s*,"""),  # a route table row: ['/api/x', handler]
+]
+SERVER_PREFIX_RE = re.compile(r"""\.startsWith\(\s*(['"`])(/api/[^'"`\n]*)\1""")
+SERVER_LIST_RE = re.compile(r"""\[([^\]\n]*)\]\s*\.includes\(""")
+SERVER_LITERAL_RE = re.compile(r"""(['"`])(/api/[^'"`\n]*)\1""")
+
+
+def is_comment_line(line: str) -> bool:
+    return line.lstrip().startswith(("//", "/*", "*"))
+
+
+def http_browser_files(files: list[Path]) -> list[Path]:
+    out = []
+    for path in files:
+        parts = path.relative_to(ROOT).parts
+        if path.suffix.lower() in (".js", ".mjs") and len(parts) > 2 and parts[:2] == ("app", "public"):
+            out.append(path)
+    return out
+
+
+def http_server_files(files: list[Path]) -> list[Path]:
+    out = []
+    for path in files:
+        parts = path.relative_to(ROOT).parts
+        if path.suffix.lower() == ".js" and (parts == ("app", "server.js") or (len(parts) == 3 and parts[:2] == ("app", "server"))):
+            out.append(path)
+    return out
+
+
+def clean_route(path: str) -> str:
+    return re.split(r"[?#]", path, maxsplit=1)[0].strip()
+
+
+def regex_route(source: str) -> str | None:
+    """A /^\\/api\\/x\\/(\\w+)$/ regex body to a path with "*" for each segment that uses regex syntax, or None."""
+    body = source.replace("\\/", "/")
+    body = re.sub(r"\(\?:\\\?\|\$\)$", "", body)  # an optional query tail: (?:\?|$)
+    body = body.rstrip("$")
+    segments = []
+    for seg in body.split("/"):
+        if re.search(r"[()\[\]{}+*?|\\^$]", seg):
+            segments.append("*")
+        else:
+            segments.append(seg)
+    path = "/".join(segments)
+    return path if path.startswith("/api/") and len(path) > len("/api/") and path != "/api/*" else None
+
+
+def server_regex_literals(line: str) -> list[str]:
+    """Bodies of regex literals that start /^\\/api\\/ (scanned to the first unescaped slash outside a class)."""
+    found = []
+    start = 0
+    marker = "/^\\/api\\/"
+    while (at := line.find(marker, start)) != -1:
+        i, in_class = at + 1, False
+        while i < len(line):
+            ch = line[i]
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == "[":
+                in_class = True
+            elif ch == "]":
+                in_class = False
+            elif ch == "/" and not in_class:
+                break
+            i += 1
+        body = line[at + 2:i]
+        route = regex_route(body)
+        if route:
+            found.append(route)
+        start = max(i, at + len(marker))
+    return found
+
+
+def collect_server_routes(files: list[Path]) -> list[dict]:
+    routes: dict[tuple[str, str, str], dict] = {}
+
+    def add(path: str, match: str, module: str, line: int) -> None:
+        path = clean_route(path)
+        if len(path) <= len("/api/"):
+            return  # "/api/" alone would claim every path
+        routes.setdefault((path, match, module), {"path": path, "match": match, "module": module, "line": line})
+
+    for file in http_server_files(files):
+        module = rel(file)
+        try:
+            lines = file.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except OSError:
+            continue
+        for number, line in enumerate(lines, 1):
+            if is_comment_line(line):
+                continue
+            for rx in SERVER_EXACT_RE:
+                for m in rx.finditer(line):
+                    add(m.group(2), "exact", module, number)
+            for m in SERVER_PREFIX_RE.finditer(line):
+                add(m.group(2), "prefix", module, number)
+            for m in SERVER_LIST_RE.finditer(line):
+                for lit in SERVER_LITERAL_RE.finditer(m.group(1)):
+                    add(lit.group(2), "exact", module, number)
+            for route in server_regex_literals(line):
+                add(route, "pattern" if "*" in route else "exact", module, number)
+    return sorted(routes.values(), key=lambda r: (r["path"], r["match"], r["module"]))
+
+
+def browser_path(raw: str, after: str, base: bool = False) -> tuple[str, bool] | None:
+    """(path, dynamic) for the text of a browser literal that starts "/api/", or None when it is not a usable path.
+    `after` is the code following the literal; `base` is a literal kept in a constant that other code extends."""
+    m = HTTP_PATH_CHARS.match(raw)
+    path = m.group(0) if m else ""
+    rest = raw[len(path):]
+    dynamic = base
+    if rest.startswith(("?", "#")):
+        pass
+    elif rest.startswith("$") or path.endswith("/"):
+        dynamic = True
+    elif rest == "" and re.match(r"\s*\+", after):
+        dynamic = True
+    if len(path) <= len("/api/") or "*" in path:
+        return None
+    return path, dynamic
+
+
+def collect_browser_paths(files: list[Path]) -> list[dict]:
+    found: dict[tuple[str, str, bool], dict] = {}
+    for file in http_browser_files(files):
+        source = rel(file)
+        try:
+            lines = file.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except OSError:
+            continue
+        # A path kept in a constant (API = '/api/gridcraft') is a base: `${API}/runs` and API + '/runs' extend it,
+        # and the constant itself only says "starts with", so it is dynamic.
+        bases = {m.group(1): m.group(3) for line in lines if not is_comment_line(line)
+                 for m in HTTP_CONST_RE.finditer(line)}
+
+        def add(entry: tuple[str, bool] | None, number: int) -> None:
+            if entry:
+                found.setdefault((source, entry[0], entry[1]), {"source": source, "path": entry[0], "dynamic": entry[1], "line": number})
+
+        for number, line in enumerate(lines, 1):
+            if is_comment_line(line):
+                continue
+            for m in HTTP_BROWSER_RE.finditer(line):
+                is_base = any(c.start(2) == m.start(1) for c in HTTP_CONST_RE.finditer(line))
+                add(browser_path(m.group(2), line[m.end():], base=is_base), number)
+            for name, base in bases.items():
+                for m in re.finditer(r"`\$\{" + re.escape(name) + r"\}([^`\n]*)`", line):
+                    add(browser_path(base + m.group(1), ""), number)
+                for m in re.finditer(r"\b" + re.escape(name) + r"\s*\+\s*(['\"`])(.*?)\1", line):
+                    add(browser_path(base + m.group(2), line[m.end():]), number)
+    return list(found.values())
+
+
+def segments_fit(route_path: str, path: str, dynamic: bool) -> bool:
+    """Does a pattern route (with "*" segments) fit the path, or still fit it once a dynamic path is completed?"""
+    want = route_path.split("/")
+    have = path.split("/")
+    if dynamic:
+        if path.endswith("/"):
+            have = have[:-1]  # the trailing empty segment is the part still to come
+        elif len(have) > len(want):
+            return False
+        else:
+            tail = have[-1]
+            have = have[:-1]
+            if len(have) >= len(want) or not (want[len(have)] == "*" or want[len(have)].startswith(tail)):
+                return False
+        return len(have) < len(want) and all(w == "*" or w == h for w, h in zip(want, have))
+    return len(want) == len(have) and all(w == "*" or w == h for w, h in zip(want, have))
+
+
+def route_order(route: dict) -> tuple:
+    return (-len(route["path"].replace("*", "")), route["match"] != "exact", route["module"] != "app/server.js", route["module"])
+
+
+def match_http_path(path: str, dynamic: bool, routes: list[dict]) -> list[dict]:
+    """The routes serving this browser path, best first: the owner(s) of the longest fit (see the rules above)."""
+    covering = []
+    for r in routes:
+        if r["match"] == "prefix":
+            if path.startswith(r["path"]):
+                covering.append(r)
+        elif "*" in r["path"]:
+            if segments_fit(r["path"], path, dynamic):
+                covering.append(r)
+        elif not dynamic and path == r["path"]:
+            covering.append(r)
+    if not dynamic:
+        return sorted(covering, key=route_order)[:1]
+    # A dynamic path: the longest prefix route that starts it; else the routes that extend it, any of which may serve it.
+    prefixed = sorted((r for r in covering if r["match"] == "prefix"), key=route_order)
+    if prefixed:
+        return prefixed[:1]
+    extending = [r for r in routes if r["match"] != "prefix" and "*" not in r["path"] and r["path"].startswith(path)]
+    return sorted(covering + [r for r in extending if r not in covering], key=route_order)
+
+
+def scan_http(files: list[Path]) -> tuple[list[dict], list[dict], list[dict]]:
+    """(http edges, dangling browser paths, server routes) for the repository, or nothing if it has no such layout."""
+    routes = collect_server_routes(files)
+    browser = collect_browser_paths(files)
+    node_ids = {rel(f) for f in files}
+    links: dict[tuple[str, str], set[str]] = {}
+    dangling = []
+    for entry in browser:
+        owners = match_http_path(entry["path"], entry["dynamic"], routes)
+        if not owners:
+            dangling.append({"source": entry["source"], "path": entry["path"], "line": entry["line"]})
+            continue
+        for owner in {o["module"] for o in owners}:
+            if owner in node_ids and owner != entry["source"]:
+                links.setdefault((entry["source"], owner), set()).add(entry["path"])
+    edges = [
+        {"source": s, "target": t, "kind": "http", "paths": sorted(paths)}
+        for (s, t), paths in sorted(links.items())
+    ]
+    dangling.sort(key=lambda d: (d["source"], d["path"], d["line"]))
+    return edges, dangling, [{k: r[k] for k in ("path", "match", "module")} for r in routes]
+
+
 def build_graph(files: list[Path]) -> dict:
     known = {
         path.resolve()
@@ -677,8 +926,14 @@ def build_graph(files: list[Path]) -> dict:
                 {
                     "source": source_id,
                     "target": target_id,
+                    # An edge from a test is a test link (kept apart so a page can count tests without drawing them).
+                    "kind": "test" if file_domains.get(source) == "Tests" else "import",
                 }
             )
+
+    # HTTP links are added to the graph's edges at the end. Everything below (counts, risk, domain links, the
+    # relationship total) is computed from the import and test edges only, so schema 2 changes no score.
+    http_edges, dangling_http, http_routes = scan_http(files)
 
     git_changed = changed_files()
 
@@ -1052,13 +1307,19 @@ def build_graph(files: list[Path]) -> dict:
         ),
     }
 
+    stats["httpLinks"] = len(http_edges)
+    stats["danglingHttp"] = len(dangling_http)
+
     return {
+        "schemaVersion": 2,
         "root": f"{SNAPSHOT['repo']}@{SNAPSHOT['commit']}" if SNAPSHOT else str(ROOT),
         "generatedAt": datetime.now(
             timezone.utc
         ).isoformat(),
         "nodes": nodes,
-        "edges": edges,
+        "edges": edges + http_edges,
+        "danglingHttp": dangling_http,
+        "httpRoutes": http_routes,
         "domains": domains,
         "domainEdges": domain_edges,
         "hotspots": hotspots,
