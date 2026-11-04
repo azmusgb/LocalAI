@@ -119,6 +119,40 @@ await check('a module row opens with the keyboard', async () => {
   assert.equal(await desk.locator('#atlasSelectedPath').innerText(), 'glance.js');
   assert.equal(await desk.evaluate(() => document.activeElement.dataset.atlasNode), 'app/glance.js', 'focus stays on the row');
 });
+await check('the chosen row is pressed, Enter in search closes the results, a finding moves focus to the inspector', async () => {
+  await row(desk, 'app/journal.js').click();
+  assert.equal(await row(desk, 'app/journal.js').getAttribute('aria-pressed'), 'true');
+  assert.equal(await row(desk, 'app/glance.js').getAttribute('aria-pressed'), 'false');
+  await desk.locator('#atlasNodeSearch').fill('storage');
+  await desk.locator('#atlasNodeSearch').press('Enter');
+  assert.equal(await desk.locator('#atlasSearchResults').isHidden(), true, 'the results close after Enter');
+  await desk.locator('[data-atlas-lens="tests"]').click();
+  assert.equal(await desk.locator('#atlasSearchResults').isHidden(), true, 'and stay closed when the map is repainted');
+  await desk.locator('[data-atlas-lens="risk"]').click();
+  await desk.locator('#atlasNodeSearch').fill('');
+  await desk.locator('#atlasFindingList .atlas-finding').first().focus();
+  await desk.keyboard.press('Enter');
+  assert.equal(await desk.evaluate(() => document.activeElement.id), 'atlasSelectedPath');
+  await desk.keyboard.press('Escape');
+  assert.equal(await desk.evaluate(() => document.activeElement.dataset.atlasNode), 'app/public/improve.js', 'Escape returns focus to the row');
+});
+
+await check('details that arrive after another module was chosen are not shown for it', async () => {
+  await desk.route((u) => u.pathname === '/api/atlas/node', async (r) => {
+    const slow = new URL(r.request().url()).searchParams.get('path') === 'app/storage.js';
+    if (slow) await new Promise((res) => setTimeout(res, 800));
+    await r.fulfill({ contentType: 'application/json', body: JSON.stringify({ node: { testEvidence: slow ? [{ test: 'tests/only-storage.test.cjs' }] : [] } }) });
+  });
+  await row(desk, 'app/storage.js').click();
+  await row(desk, 'app/glance.js').click();
+  await desk.waitForTimeout(1200);
+  await desk.locator('[data-atlas-lens="reach"]').click();  // any redraw would show leaked details
+  await desk.locator('[data-atlas-lens="risk"]').click();
+  assert.equal(await desk.locator('#atlasSelectedPath').innerText(), 'glance.js');
+  assert.ok(!(await desk.locator('#architecture .atlas-inspector').innerText()).includes('only-storage'), 'storage.js evidence leaked into glance.js');
+  await desk.unroute((u) => u.pathname === '/api/atlas/node');
+});
+
 await check('no script errors at 1440', async () => assert.deepEqual(desk.errors, []));
 await desk.context().close();
 

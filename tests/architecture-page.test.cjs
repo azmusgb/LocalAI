@@ -73,6 +73,21 @@ test('the model keeps production modules, splits import and HTTP links, and list
   assert.equal(v1.nodes.get('app/storage.js').reach, 4, 'agent, notify, chat (through agent) and server');
 });
 
+test('odd graphs never break the model: no id, no domain, null or duplicate links, unknown ends', () => {
+  const m = buildModel({ schemaVersion: 2, danglingHttp: [null, { source: 'a.js', path: '/api/x' }],
+    nodes: [{ id: 'a.js', domain: 'Core' }, { domain: 'Core' }, null, { id: 'b.js' }],
+    edges: [null, { source: 'a.js', target: 'b.js' }, { source: 'a.js', target: 'b.js', kind: 'import' }, { source: 'a.js', target: 'zzz.js' },
+      { source: 'a.js', target: 'a.js' }] });
+  assert.deepEqual([...m.nodes.keys()].sort(), ['a.js', 'b.js']);
+  assert.equal(m.nodes.get('b.js').domain, 'Other');
+  assert.equal(m.links.length, 1, 'a duplicate link counts once');
+  assert.equal(m.dangling.length, 1);
+  const lay = mapLayout(m, columnsFor(m, 'localai'));
+  assert.equal(lay.rows.length, 2);
+  assert.equal(lookHereFirst(m).items[0].node, 'a.js');
+  assert.equal(lookHereFirst(buildModel({ schemaVersion: 2, danglingHttp: [], nodes: [], edges: [] })).note, '', 'an empty map claims nothing about its calls');
+});
+
 test('columns run from callers to what they use, by the repository\'s own domains', () => {
   const cols = columnsFor(buildModel(graph()), 'localai');
   assert.deepEqual(cols.map((c) => c.title), ['Browser', 'Entry', 'Server', 'Capabilities', 'Shared', 'Data']);

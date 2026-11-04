@@ -6,7 +6,7 @@ const exported = {};
 const plural=(n,word)=>`${n} ${word}${n===1?'':'s'}`;
 // The scanner's bands (quick_arch.py risk_level).
 const riskLevel=r=>(r=Number(r)||0)>=70?'critical':r>=48?'high':r>=28?'medium':'low';
-const productionNodes=graph=>(graph?.nodes||[]).filter(n=>n&&n.domain!=='Tests');
+const productionNodes=graph=>(graph?.nodes||[]).filter(n=>n&&n.id&&n.domain!=='Tests');
 
 function domainSummary(graph) {
   const nodes = productionNodes(graph);
@@ -53,12 +53,16 @@ function buildModel(graph){
   const nodes=new Map();
   for(const n of productionNodes(graph))nodes.set(n.id,{...n,domain:String(n.domain||'Other'),uses:new Set(),usedBy:new Set(),
     httpTo:new Set(),httpFrom:new Set(),tests:[]});
-  const links=[];
+  const links=[],linked=new Set();
   for(const e of graph?.edges||[]){
+    if(!e)continue;
     const kind=e.kind||(all.get(e.source)?.domain==='Tests'?'test':'import');
     if(kind==='test'){if(nodes.has(e.target)&&!nodes.get(e.target).tests.includes(e.source))nodes.get(e.target).tests.push(e.source);continue;}
     const a=nodes.get(e.source),b=nodes.get(e.target);
     if(!a||!b||a===b)continue;
+    const key=`${kind==='http'?'http':'import'}\u0000${a.id}\u0000${b.id}`;
+    if(linked.has(key))continue;  // a link listed twice counts once
+    linked.add(key);
     if(kind==='http'){a.httpTo.add(b.id);b.httpFrom.add(a.id);}else{a.uses.add(b.id);b.usedBy.add(a.id);}
     links.push({source:a.id,target:b.id,kind:kind==='http'?'http':'import',paths:e.paths||[]});
   }
@@ -69,7 +73,7 @@ function buildModel(graph){
     n.reach=seen.size;
   }
   const version=Number(graph?.schemaVersion)||1;
-  return {nodes,links,version,dangling:version>=2&&Array.isArray(graph?.danglingHttp)?graph.danglingHttp:null,graph};
+  return {nodes,links,version,dangling:version>=2&&Array.isArray(graph?.danglingHttp)?graph.danglingHttp.filter(d=>d&&d.source):null,graph};
 }
 const testCount=n=>Math.max(Number(n?.testRefs)||0,n?.tests?.length||0);
 
@@ -147,7 +151,7 @@ function lookHereFirst(model){
     add(n.id,riskLevel(n.risk),`${short(n.id)} is ${riskLevel(n.risk)} risk (${Number(n.risk)||0} of 100)`,whyRanks(n)[0]||'');
   const calls=model.links.filter(l=>l.kind==='http').reduce((t,l)=>t+(l.paths.length||1),0);
   const note=model.version<2?'Older snapshot: rescan for HTTP links and for calls nothing serves.':
-    model.dangling&&!model.dangling.length?`Every browser call to /api has a route (${plural(calls,'path')} checked).`:'';
+    model.dangling&&!model.dangling.length&&calls?`Every browser call to /api has a route (${plural(calls,'path')} checked).`:'';
   return {items,note};
 }
 
@@ -343,7 +347,7 @@ function drawMap(){
     if(sel&&n.id===sel.id)cls.push('is-sel');else if(near&&!near.has(n.id))cls.push('is-dim');
     if(q&&matches(n,q))cls.push('is-match');else if(q&&!sel)cls.push('is-dim');
     const bar=Math.max(3,Math.min(24,3+(n.uses.size+n.usedBy.size+n.httpFrom.size)*1.2));
-    return `<g class="${cls.join(' ')}" data-atlas-node="${esc(n.id)}" data-band="${lensBand(n,state.lens)}" tabindex="0" role="button" aria-label="${esc(n.id)}: ${LEVEL[riskLevel(n.risk)]} risk ${Number(n.risk)||0}, ${plural(n.reach,'module')} depend on it, ${plural(t,'test')}${n.changed?', changed':''}">
+    return `<g class="${cls.join(' ')}" data-atlas-node="${esc(n.id)}" data-band="${lensBand(n,state.lens)}" tabindex="0" role="button" aria-pressed="${!!(sel&&n.id===sel.id)}" aria-label="${esc(n.id)}: ${LEVEL[riskLevel(n.risk)]} risk ${Number(n.risk)||0}, ${plural(n.reach,'module')} depend on it, ${plural(t,'test')}${n.changed?', changed':''}">
       <rect class="atlas-hit" x="${r.x-4}" y="${r.y}" width="${ROWW}" height="${H}" rx="3"></rect>
       <rect class="atlas-bar" x="${r.x}" y="${r.y+mid-5}" width="${bar.toFixed(1)}" height="8" rx="2"></rect>
       <text x="${r.x+30}" y="${r.y+mid+3}">${esc(fit(short(n.id),17))}</text>${n.changed?`<circle class="atlas-dot" cx="${r.x+ROWW-12}" cy="${r.y+mid-1}" r="3"></circle>`:''}</g>`;
@@ -430,7 +434,7 @@ function renderInspector(){
 
 // Ask, Goose and the model need a graph; the quick questions are about a module, so they also need one.
 function renderAskControls(){
-  const off=!state.graph;
+  const off=!state.graph||state.asking;
   for(const el of [$('atlasAsk'),$('atlasGoose'),$('atlasModel'),$('atlasQuestion')])el.disabled=off;
   for(const el of page.querySelectorAll('[data-atlas-question]'))el.disabled=off||!state.selected;
 }
@@ -466,18 +470,23 @@ async function selectNode(id,{scroll=false,reveal=false}={}){
   if(scroll)revealRow(id);
   if(reveal)revealInspector();
   const seq=state.seq;
-  try{state.details=await getJson(scoped(`/api/atlas/node?path=${encodeURIComponent(id)}`),{timeout:live()?12000:62000});}
-  catch{state.details=null;}
+  let details=null;
+  try{details=await getJson(scoped(`/api/atlas/node?path=${encodeURIComponent(id)}`),{timeout:live()?12000:62000});}catch{}
+  // Another module or snapshot chosen meanwhile: these details are not its.
   if(seq!==state.seq||state.selected!==id)return;
+  state.details=details;
   renderInspector();
 }
 
 function clearSelection(){state.selected=null;state.details=null;render();}
+function focusRow(id){($('atlasMap').querySelector(id?`[data-atlas-node="${CSS.escape(id)}"]`:'.atlas-row')||$('atlasMapTitle')).focus();}
+// Escape leaves the selection; when focus was in the inspector (now hidden) it returns to that module's row.
+function leaveSelection(){const id=state.selected;const inside=page.querySelector('.atlas-inspector')?.contains(document.activeElement);clearSelection();if(inside||document.activeElement===document.body)focusRow(id);}
 
 function renderSearchResults(){
   const q=query(),box=$('atlasSearchResults');
   const rows=q&&state.model?[...state.model.nodes.values()].filter(n=>matches(n,q)).slice(0,12):[];
-  box.hidden=!rows.length;
+  box.hidden=!rows.length||state.resultsClosed;
   box.innerHTML=rows.map(n=>`<button type="button" data-atlas-node="${esc(n.id)}"><span>${esc(n.id)}</span><small>${esc(n.domain)} · risk ${Number(n.risk)||0}</small></button>`).join('');
 }
 
@@ -508,7 +517,7 @@ function clearGraph(title,hint,kind='loading'){
   $('atlasMap').innerHTML='';
   setMapState(kind,kind==='loading'?'Reading the graph…':hint);
   $('atlasNodeSearch').value='';
-  renderHeader();renderLegend();renderFindings();renderInspector();renderSearchResults();
+  providerBadge();renderHeader();renderLegend();renderFindings();renderInspector();renderSearchResults();
   $('atlasMapTitle').textContent=title;
   $('atlasAnswer').hidden=true;
 }
@@ -521,7 +530,8 @@ async function refresh(){
     const listed=await getJson('/api/atlas/snapshots',{timeout:12000}).catch(error=>({_error:error.message}));
     if(seq!==state.seq||!state.active)return;
     if(!listed._error||!state.snapshots)state.snapshots=snapshotChoices(listed._error?null:listed);
-    if(!state.snapshots.has(state.repo)){state.repo='localai';state.commit='';}
+    let unknown=null;
+    if(!state.snapshots.has(state.repo)){if(state.repo!=='localai')unknown=state.repo;state.repo='localai';state.commit='';}
     // Only the newest five per repository are kept: a commit retired since it was chosen falls back to the newest.
     const rows=state.snapshots.get(state.repo);
     let retired=false;
@@ -550,6 +560,7 @@ async function refresh(){
     if(seq!==state.seq)return;
     // Say plainly when the map is old, partial or missing its change data, rather than looking complete.
     const caveats=[];
+    if(unknown)caveats.push(`no snapshots of ${unknown} are kept, so this is Local AI`);
     if(retired)caveats.push('the chosen commit is no longer kept, so this is the newest snapshot');
     if(listed._error)caveats.push(`the snapshot list is unavailable: ${listed._error}`);
     if(graph.stale)caveats.push('showing the last good graph; the newest copy could not be read');
@@ -583,7 +594,7 @@ async function snapshotNow(){
   try{
     const {job}=await getJson('/api/atlas/snapshot',{method:'POST',timeout:15000,headers:{'Content-Type':'application/json'},
       body:JSON.stringify({repo:state.repo,ref:'main'})});
-    snapshotRun.job=job;showSnapshotState(job);pollSnapshot();
+    snapshotRun.job=job;snapshotRun.from={repo:state.repo,commit:state.commit};showSnapshotState(job);pollSnapshot();
   }catch(error){
     const signIn=/\b401\b|sign.?in/i.test(error.message);
     showSnapshotState(null,signIn?'Sign in to take a snapshot.':`The snapshot could not start: ${error.message}`,'error');
@@ -606,7 +617,9 @@ function pollSnapshot(){
     snapshotRun.job=job;showSnapshotState(job);
     if(inFlight(job))return pollSnapshot();
     // Done: the list gains the new commit; on the same repository, show it.
-    if(job.state==='done'&&job.repo===state.repo)state.commit=job.commit;
+    // Done: show it, unless another commit was chosen while it ran.
+    const from=snapshotRun.from;
+    if(job.state==='done'&&job.repo===state.repo&&(!from||(from.repo===state.repo&&from.commit===state.commit)))state.commit=job.commit;
     if(job.state==='done')void refresh();
   },3000);
 }
@@ -617,35 +630,39 @@ function chooseSource(repo,commit){
   void refresh();
 }
 
-async function askAtlas(question){
+// One question at a time, about the snapshot on screen: an answer that arrives after another snapshot was chosen is
+// dropped, and it names the module that was asked about, not whatever is selected by then.
+async function askWith(loading,send,show){
+  if(state.asking||!state.graph)return;
+  const seq=state.seq,node=state.selected;
+  state.asking=true;renderAskControls();
+  const box=$('atlasAnswer');box.hidden=false;box.dataset.tone='loading';box.textContent=loading;
+  try{
+    const payload=await send(node);
+    if(seq!==state.seq)return;
+    box.dataset.tone='ok';box.textContent=show(payload,node);
+  }catch(error){
+    if(seq!==state.seq)return;
+    box.dataset.tone='error';box.textContent=error.name==='AbortError'?'The request timed out in the browser.':error.message;
+  }finally{state.asking=false;renderAskControls();}
+}
+
+function askAtlas(question){
   const q=String(question||$('atlasQuestion').value).trim();
   if(!q)return $('atlasQuestion').focus();
   $('atlasQuestion').value=q;
-  $('atlasAsk').disabled=true;$('atlasGoose').disabled=true;
-  const box=$('atlasAnswer');box.hidden=false;box.dataset.tone='loading';box.textContent='Analyzing bounded Atlas evidence…';
-  try{
-    const payload=await getJson('/api/atlas/ask',{
-      method:'POST',timeout:310000,headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({...scope(),question:q,node:state.selected||undefined,model:state.ollamaModel||undefined})
-    });
-    box.dataset.tone='ok';
-    box.textContent=`${payload.answer||'No answer returned.'}\n\nModel: ${payload.model||'unknown'}${state.selected?`\nNode: ${state.selected}`:''}`;
-  }catch(error){
-    box.dataset.tone='error';box.textContent=error.name==='AbortError'?'Atlas analysis exceeded the five-minute browser limit.':error.message;
-  }finally{$('atlasAsk').disabled=false;$('atlasGoose').disabled=false;}
+  return askWith('Analyzing bounded Atlas evidence…',
+    node=>getJson('/api/atlas/ask',{method:'POST',timeout:310000,headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({...scope(),question:q,node:node||undefined,model:state.ollamaModel||undefined})}),
+    (payload,node)=>`${payload.answer||'No answer returned.'}\n\nModel: ${payload.model||'unknown'}${node?`\nNode: ${node}`:''}`);
 }
 
-async function gooseBrief(){
+function gooseBrief(){
   const q=$('atlasQuestion').value.trim()||`Investigate the highest-priority architecture evidence${state.selected?` for ${state.selected}`:''}.`;
-  const box=$('atlasAnswer');box.hidden=false;box.dataset.tone='loading';box.textContent='Preparing read-only Goose investigation brief…';
-  try{
-    const payload=await getJson('/api/atlas/goose',{
-      method:'POST',timeout:live()?15000:62000,headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({...scope(),question:q,node:state.selected||undefined})
-    });
-    box.dataset.tone='ok';
-    box.textContent=`Read-only investigation brief created:\n${payload.briefPath||'Atlas investigation directory'}\n\n${payload.goose?.available?'Goose CLI detected.':'Goose is not on PATH; the brief is still ready for later investigation.'}`;
-  }catch(error){box.dataset.tone='error';box.textContent=error.message;}
+  return askWith('Preparing read-only Goose investigation brief…',
+    node=>getJson('/api/atlas/goose',{method:'POST',timeout:live()?15000:62000,headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({...scope(),question:q,node:node||undefined})}),
+    payload=>`Read-only investigation brief created:\n${payload.briefPath||'Atlas investigation directory'}\n\n${payload.goose?.available?'Goose CLI detected.':'Goose is not on PATH; the brief is still ready for later investigation.'}`);
 }
 
 // #architecture?repo=<r>&commit=<sha>, as Pi Hub's Versions links each row ("Architecture at this commit"): that
@@ -680,24 +697,27 @@ $('atlasRepo').addEventListener('change',e=>{
 });
 $('atlasCommit').addEventListener('change',e=>chooseSource(state.repo,e.target.value));
 $('atlasSnapshotNow').addEventListener('click',()=>void snapshotNow());
-$('atlasNodeSearch').addEventListener('input',()=>{drawMap();renderSearchResults();});
+$('atlasNodeSearch').addEventListener('input',()=>{state.resultsClosed=false;drawMap();renderSearchResults();});
 // Enter picks the first match; Escape clears the search, then the selection.
 $('atlasNodeSearch').addEventListener('keydown',e=>{
-  if(e.key==='Enter'){const first=$('atlasSearchResults').querySelector('[data-atlas-node]');if(first){e.preventDefault();$('atlasSearchResults').hidden=true;void selectNode(first.dataset.atlasNode,{scroll:true});}}
-  if(e.key==='Escape'){e.preventDefault();if(e.target.value){e.target.value='';drawMap();renderSearchResults();}else if(state.selected)clearSelection();}
+  if(e.key==='Enter'){const first=$('atlasSearchResults').querySelector('[data-atlas-node]');if(first){e.preventDefault();state.resultsClosed=true;void selectNode(first.dataset.atlasNode,{scroll:true});}}
+  if(e.key==='Escape'){e.preventDefault();if(e.target.value){e.target.value='';drawMap();renderSearchResults();}else if(state.selected)leaveSelection();}
 });
-$('atlasSearchResults').addEventListener('click',e=>{if(pick(e,{scroll:true,reveal:true}))$('atlasSearchResults').hidden=true;});
-$('atlasFindingList').addEventListener('click',e=>pick(e,{scroll:true}));
-$('atlasNodeLinks').addEventListener('click',e=>pick(e,{scroll:true}));
+$('atlasSearchResults').addEventListener('click',e=>{state.resultsClosed=true;if(!pick(e,{scroll:true,reveal:true}))state.resultsClosed=false;renderSearchResults();});
+// A finding or a link is redrawn when it is chosen: focus moves to the module it named, in the inspector.
+const pickAndFocus=e=>{if(pick(e,{scroll:true}))$('atlasSelectedPath').focus({preventScroll:true});};
+$('atlasFindingList').addEventListener('click',pickAndFocus);
+$('atlasNodeLinks').addEventListener('click',pickAndFocus);
 $('atlasMapBack').addEventListener('click',()=>{clearSelection();$('atlasMapTitle').focus();});
 $('atlasMap').addEventListener('click',e=>pick(e,{reveal:true}));
 $('atlasMap').addEventListener('keydown',e=>{
   if(e.key!=='Enter'&&e.key!==' ')return;
   e.preventDefault();
-  const id=e.target.closest('[data-atlas-node]')?.dataset.atlasNode;
+  const id=e.target.closest('[data-atlas-node]')?.dataset.atlasNode,domain=e.target.closest('[data-atlas-domain]')?.dataset.atlasDomain;
   pick(e,{});
-  // The map was redrawn around the choice: focus returns to the same row.
-  $('atlasMap').querySelector(id?`[data-atlas-node="${CSS.escape(id)}"]`:'.atlas-row')?.focus();
+  // The map was redrawn around the choice: focus returns to the same row, or to the first module of an opened domain.
+  const target=id||state.layout?.rows.find(r=>r.id&&state.model.nodes.get(r.id)?.domain===domain)?.id;
+  focusRow(target);
 });
 for(const b of page.querySelectorAll('[data-atlas-lens]'))b.addEventListener('click',()=>{state.lens=b.dataset.atlasLens;renderLenses();render();});
 // "/" finds a module; Escape leaves the selection. Both only while Architecture is open and nothing else is typed in.
@@ -705,7 +725,7 @@ document.addEventListener('keydown',e=>{
   if(!state.active||e.defaultPrevented||e.ctrlKey||e.metaKey||e.altKey)return;
   const typing=/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName||'')||document.activeElement?.isContentEditable;
   if(e.key==='/'&&!typing){e.preventDefault();$('atlasNodeSearch').focus();}
-  else if(e.key==='Escape'&&!typing&&state.selected)clearSelection();
+  else if(e.key==='Escape'&&!typing&&state.selected)leaveSelection();
 });
 $('atlasModel').addEventListener('change',e=>{state.ollamaModel=e.target.value;localStorage.setItem('localai.atlas.model',state.ollamaModel);});
 $('atlasAsk').addEventListener('click',()=>void askAtlas());
