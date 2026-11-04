@@ -42,8 +42,9 @@ rows = []
 for reach in (0, 1, 3, 10, 40):
     for inbound in (0, 1, 5, 20):
         for outbound in (0, 2, 10, 68):
-            scores = [qa.risk_score(reach=reach, inbound=inbound, outbound=outbound, test_refs=t)["risk"] for t in range(0, 30)]
-            rows.append(scores)
+            scored = [qa.risk_score(reach=reach, inbound=inbound, outbound=outbound, test_refs=t) for t in range(0, 30)]
+            assert all(r["risk"] == sum(r["parts"].values()) <= 100 for r in scored), scored
+            rows.append([r["risk"] for r in scored])
 print(json.dumps(rows))`);
   for (const scores of out) {
     for (let t = 1; t < scores.length; t += 1) assert.ok(scores[t] <= scores[t - 1], `a test raised risk: ${scores}`);
@@ -66,7 +67,7 @@ print(json.dumps(qa.build_graph(qa.collect_files())))`);
     const p = n.riskParts;
     assert.deepEqual(Object.keys(p).sort(), ['in', 'out', 'reach', 'tested']);
     assert.ok(p.reach >= 0 && p.out >= 0 && p.in >= 0 && p.tested <= 0, JSON.stringify(p));
-    assert.equal(n.risk, Math.min(100, p.reach + p.out + p.in) + p.tested, `${n.id} risk is its parts`);
+    assert.equal(n.risk, p.reach + p.out + p.in + p.tested, `${n.id} risk is its parts`);
   }
   assert.ok(a.riskParts.tested < 0, 'the test that imports a.js lowers its risk');
   assert.equal(node('app/b.js').riskParts.tested, 0);

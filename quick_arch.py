@@ -539,16 +539,19 @@ def risk_score(
     outbound: modules it imports. A composition root that wires up 50 or more modules is critical on fan-out alone.
     Each test that imports the module lowers the score, by up to half; tests never raise it.
     """
-    parts = {
-        "reach": round(scaled(reach, 10, 45)),
-        "out": round(scaled(outbound, 50, 70)),
-        "in": round(scaled(inbound, 10, 15)),
+    raw = {
+        "reach": scaled(reach, 10, 45),
+        "out": scaled(outbound, 50, 70),
+        "in": scaled(inbound, 10, 15),
     }
 
-    structure = min(
-        100,
-        parts["reach"] + parts["out"] + parts["in"],
-    )
+    # The parts can reach 130; past 100 they shrink together, so they always add up to the score.
+    shrink = min(1.0, 100 / sum(raw.values())) if sum(raw.values()) else 1.0
+    parts = {key: round(value * shrink) for key, value in raw.items()}
+    largest = max(parts, key=parts.get)
+    parts[largest] -= max(0, sum(parts.values()) - 100)
+
+    structure = sum(parts.values())
 
     kept = 0.5 + 0.5 / (1 + 0.5 * max(0, test_refs))
 
@@ -918,7 +921,7 @@ def build_graph(files: list[Path]) -> dict:
             )
 
     # HTTP links are added to the graph's edges at the end. Everything below (counts, risk, domain links, the
-    # relationship total) is computed from the import and test edges only, so schema 2 changes no score.
+    # relationship total) is computed from the import and test edges only, so HTTP links change no score.
     http_edges, dangling_http, http_routes = scan_http(files)
 
     git_changed = changed_files()
