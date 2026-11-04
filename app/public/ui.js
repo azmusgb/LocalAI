@@ -1103,13 +1103,7 @@ function watchScroll(){
  new MutationObserver(scrollLock).observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']});
  headerLine();
 }
-function init(){
- document.body.classList.add('ux-v3');
- if(window.self!==window.top||new URLSearchParams(location.search).has('embedded')){
-  document.body.classList.add('is-embedded');
- }
- linkErrors();buildIntegrationsView();buildDesktopNav();buildContext();buildPageStrip();buildMobile();observeViews();sync();watchScroll()
-}
+function init(){document.body.classList.add('ux-v3');linkErrors();buildIntegrationsView();buildDesktopNav();buildContext();buildPageStrip();buildMobile();observeViews();sync();watchScroll()}
 if(document.readyState==='complete')init();else window.addEventListener('load',init,{once:true});
 })();
 
