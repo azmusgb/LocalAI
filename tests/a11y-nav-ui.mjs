@@ -144,8 +144,10 @@ await check('⌘K announces how many pages match', async () => {
   await page.waitForFunction(() => document.getElementById('cmdk')?.open === true);
   const status = page.locator('#cmdk [role="status"]');
   assert.equal(await status.count(), 1);
-  const n = await page.locator('#cmdkList [role="option"]').count();
-  assert.equal(await status.textContent(), `${n} pages`);
+  const n = await page.locator('#cmdkList [data-cmd-view]').count();
+  const t = await page.locator('#cmdkList [data-cmd-tool]').count();
+  assert.ok(t > 0, 'the house tools are listed with the pages');
+  assert.equal(await status.textContent(), `${n} pages, ${t} tools`);
   await page.keyboard.type('audit');
   await page.waitForFunction(() => document.querySelector('#cmdk [role="status"]')?.textContent === '1 page');
   await page.keyboard.type('zzz');

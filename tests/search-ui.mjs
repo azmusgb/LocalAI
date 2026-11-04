@@ -46,6 +46,19 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
     await page.waitForFunction(() => !document.querySelector('#cmdk.show'));
   });
 
+  await check(`${w}px: typing a tool's name finds it from the registry, and Enter opens it in a new tab`, async () => {
+    await open(page);
+    await page.locator('#cmdkInput').fill('grafana');
+    const tool = page.locator('#cmdkList [data-cmd-tool="tool:network"]');
+    assert.equal(await tool.count(), 1, 'Grafana is listed');
+    assert.equal(await page.locator('#cmdkList [data-cmd-tool="tool:assistant"]').count(), 0, 'not this app');
+    await page.context().route(/rahe-home\.duckdns\.org/, r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>stand-in</title>' })); // nothing leaves this machine
+    const popup = page.waitForEvent('popup');
+    await page.keyboard.press('Enter');
+    assert.match((await popup).url(), /^https:\/\/network\.rahe-home\.duckdns\.org\//);
+    assert.equal(await page.locator('#cmdk').getAttribute('aria-hidden'), 'true');
+  });
+
   await check(`${w}px: no match says so and offers to search your work`, async () => {
     await open(page);
     await page.locator('#cmdkInput').fill('zzqx');

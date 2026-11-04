@@ -24,6 +24,8 @@ function apply(){
  const cur=parse();
  if(cur.runId){notifyRun(cur.runId);return}
  notifyRun(null);
+ // The Print lab lives on Pi Hub; an old #printLab address (a bookmark, a link) goes there with its p, e and do.
+ if(cur.page==='printLab'&&root.LocalAIAskContext){root.location.replace(root.LocalAIAskContext.labUrl(location.hostname,location.hash));return}
  const V=REG();if(!V||typeof root.showView!=='function')return;
  if(!V.view(cur.page)){const d=V.DOMAINS.find(x=>x.id===cur.page),t=d?d.defaultView:'home';put('#'+t);cur.page=t} // a domain id (#improve, #system) opens its first page
  // A hidden page (Runs, Missions…) that showView put in history keeps its own page when Back returns to it; a typed #runs still means Work.

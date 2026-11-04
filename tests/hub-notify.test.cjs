@@ -1,5 +1,6 @@
 'use strict';
 const test = require('node:test');
+const fs = require('node:fs'), path = require('node:path');
 const assert = require('node:assert/strict');
 const { createHubNotify, clickFor } = require('../app/hub-notify.js');
 
@@ -58,3 +59,9 @@ test('the notifier has its own URL variable; compose never sets the LAN one pi-h
   assert.doesNotMatch(compose, /^\s*LOCALAI_PI_HUB_URL:/m, 'pi-hub.js and print-lab.js keep http://10.0.0.30');
 });
 
+
+test('the default app name is the registry address, not the retired home.arpa name', () => {
+  const src = fs.readFileSync(path.resolve(__dirname, '../app/hub-notify.js'), 'utf8');
+  assert.match(src, /LOCALAI_NAME \|\| 'assistant\.rahe-home\.duckdns\.org'/);
+  assert.doesNotMatch(src, /home\.arpa/);
+});

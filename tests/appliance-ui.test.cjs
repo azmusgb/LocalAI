@@ -74,11 +74,9 @@ test('a printer error on the Services card is marked as one', () => {
   assert.ok(css.includes('.ux-int-guidance[data-tone="bad"]{border-left-color:var(--ds-bad);color:var(--ds-text)'));
 });
 
-// Look review: print-lab commands broke inside "--grade"; phone filter chips cut off with no cue; awkward Signals copy.
-test('print-lab commands break between words, chips fade at the edge, Signals says what to do', () => {
+// Look review: phone filter chips cut off with no cue; awkward Signals copy. (Its print-lab command check went with the lab page, N5.)
+test('chips fade at the edge, Signals says what to do', () => {
   const css = read('app.css').replace(/\s+/g, '');
-  const cmd = css.slice(css.indexOf('.lab-cmdcode{'), css.indexOf('}', css.indexOf('.lab-cmdcode{')));
-  assert.ok(!cmd.includes('overflow-wrap:anywhere') && cmd.includes('overflow-wrap:break-word'), cmd);
   assert.ok(css.includes('.work-chips.ux-tabs{mask-image:linear-gradient(90deg,#000calc(100%-28px),transparent)'));
   assert.ok(read('improve.js').includes('Press Run checks to look for some now.'));
 });

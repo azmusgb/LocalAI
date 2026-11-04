@@ -851,9 +851,14 @@ function commandPalette(){
   const el=$('cmdk');if(!el)return;
   const input=$('cmdkInput'),list=$('cmdkList'),R=window.LocalAIViews;
   // Labels and old names (aka) come from view-registry.js so renamed pages stay findable. Pages with a menu entry are
-  // offered, and unlisted ones with an `owner` (Spreadsheets, Print lab); Chat, Images, Missions and Runs are not.
+  // offered, and unlisted ones with an `owner` (Spreadsheets); Chat, Images, Missions and Runs are not.
   const actions=window.LocalAIViews.VIEWS.filter(v=>v.domain!=='hidden'||v.owner)
     .map(v=>({label:v.label,id:v.id,terms:[v.label,...(v.aka||[])].join(' ').toLowerCase()}));
+  // The house's other tools, from the registry (window.ApplianceTools): each opens on its own address in a new tab. Not this
+  // app (it is the page you are on) and not the display's machine-facing hosts. Pi Hub's own palette lists the same tools.
+  const T=window.ApplianceTools;
+  const tools=(T?.TOOLS||[]).filter(t=>!t.boundary&&t.id!=='assistant'&&T.toolUrl(t.id))
+    .map(t=>({label:t.name,id:'tool:'+t.id,href:T.toolUrl(t.id),terms:[t.name,t.id,t.purpose||''].join(' ').toLowerCase()}));
   let shown=[],active=0,opener=null;
   input.setAttribute('role','combobox');input.setAttribute('aria-controls','cmdkList');input.setAttribute('aria-expanded','false');
   list.setAttribute('role','listbox');
@@ -862,12 +867,15 @@ function commandPalette(){
     const q=input.value.trim().toLowerCase();shown=actions.filter(a=>$(a.id)&&a.terms.includes(q));
     const groups=!q&&phone()?likely(shown):null;if(groups)shown=groups.flatMap(g=>g.items);
     const opt=(a,n)=>`<button type="button" id="cmdk-opt-${n}" role="option" class="cmdk-item" data-cmd-view="${esc(a.id)}">${esc(a.label)}</button>`;
+    const toolOpt=(a,n)=>`<button type="button" id="cmdk-opt-${n}" role="option" class="cmdk-item" data-cmd-tool="${esc(a.id)}">${esc(a.label)} <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></button>`;
+    const pages=shown.length;if(!groups)shown=shown.concat(tools.filter(a=>a.terms.includes(q)));
     let n=0;
     list.innerHTML=groups?groups.map((g,i)=>`<div class="cmdk-group" role="group" aria-labelledby="cmdk-group-${i}"><div class="cmdk-group__label" id="cmdk-group-${i}">${esc(g.label)}</div>${g.items.map(a=>opt(a,n++)).join('')}</div>`).join('')
-      :shown.length?shown.map(opt).join('')
+      :shown.length?shown.map((a,i)=>a.href?toolOpt(a,i):opt(a,i)).join('')
       :`<div class="cmdk-empty"><p>No pages match “${esc(input.value.trim())}”.</p><button type="button" class="btn-outline" data-cmd-work>Search your work for “${esc(input.value.trim())}”</button></div>`;
-    {const n=shown.length,c=$('cmdkCount');if(c)c.textContent=n?`${n} page${n===1?'':'s'}`:'No pages match'} // a screen reader hears the count
+    {const c=$('cmdkCount'),t=shown.length-pages;if(c)c.textContent=shown.length?(pages?`${pages} page${pages===1?'':'s'}`:'')+(pages&&t?', ':'')+(t?`${t} tool${t===1?'':'s'}`:''):'No pages match'} // a screen reader hears the count
     list.querySelectorAll('[data-cmd-view]').forEach(b=>b.onclick=()=>go(b.dataset.cmdView));
+    list.querySelectorAll('[data-cmd-tool]').forEach(b=>b.onclick=()=>go(b.dataset.cmdTool));
     list.querySelector('[data-cmd-work]')?.addEventListener('click',searchWork);
     select(0);
   }
@@ -888,7 +896,7 @@ function commandPalette(){
   const vv=window.visualViewport;
   function dock(){if(!el.classList.contains('show'))return;const kb=vv?Math.max(0,Math.round(innerHeight-vv.height-vv.offsetTop)):0;el.style.setProperty('--cmdk-kb',kb+'px');el.style.setProperty('--cmdk-vh',Math.round(vv?vv.height:innerHeight)+'px')}
   if(vv){vv.addEventListener('resize',dock,{passive:true});vv.addEventListener('scroll',dock,{passive:true})}
-  function go(id){close(false);goTo(id)}
+  function go(id){close(false);const t=tools.find(a=>a.id===id);if(t)window.open(t.href,'_blank','noopener');else goTo(id)}
   // No page matched: look through the owner's own work instead (Work's search box filters the loaded runs).
   function searchWork(){const q=input.value.trim();close(false);goTo('work');
     // Work sets itself up when it becomes the open page; fill its search box after that, not before.

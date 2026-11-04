@@ -113,7 +113,7 @@ test('hubRows: everything but the summary of Local AI\'s own rows, with where ea
     { id: 'printer:plate', source: 'Printer', tone: 'attention', title: 'Clear the plate', detail: 'Finished E-022', link: '/workshop' },
     { id: 'localai:needs-2', source: 'Local AI', tone: 'attention', title: 'Needs you', detail: '2 approvals' },
     { id: 'localai:watch-mac-disk', source: 'Local AI', tone: 'warn', title: 'Worth a look', detail: 'Mac disk is 94% full', link: '' },
-    { id: 'localai:judge-PR-022-01', source: 'Local AI', tone: 'attention', title: 'Judge E-022', detail: 'Look at: ridges' },
+    { id: 'localai:judge-PR-022-01', source: 'Local AI', tone: 'attention', title: 'Judge E-022', detail: 'Look at: ridges', link: '/lab?p=hex-tile&e=E-022&do=judge' },
     { id: 'localai:lab-PR-022-01', source: 'Local AI', tone: 'busy', title: 'Lab · E-022', detail: '' },
     { id: 'pi:disk', source: 'Pi', tone: 'bad', title: 'Pi disk is full', detail: '', link: '/pi' },
     { id: 'pi:odd', source: 'Pi', tone: 'weird', title: 'Odd', detail: '' },
@@ -121,7 +121,7 @@ test('hubRows: everything but the summary of Local AI\'s own rows, with where ea
   const rows = N.hubRows(items);
   assert.deepEqual(rows.map(r => r.id), ['printer:plate', 'localai:watch-mac-disk', 'localai:judge-PR-022-01', 'localai:lab-PR-022-01', 'pi:disk', 'pi:odd']);
   assert.deepEqual(rows.map(r => r.tone), ['attention', 'warn', 'attention', 'warn', 'bad', 'warn'], 'only bad, attention and warn; anything else is warn');
-  assert.deepEqual(rows.map(r => r.open), [{ hub: '/workshop' }, { view: 'status' }, { view: 'printLab' }, { view: 'printLab' }, { hub: '/pi' }, { hub: '/' }]);
+  assert.deepEqual(rows.map(r => r.open), [{ hub: '/workshop' }, { view: 'status' }, { hub: '/lab?p=hex-tile&e=E-022&do=judge' }, { hub: '/lab' }, { hub: '/pi' }, { hub: '/' }]);
   assert.equal(rows[0].title, 'Clear the plate');
   assert.equal(rows[0].detail, 'Finished E-022');
   assert.deepEqual(N.hubRows(null), []);

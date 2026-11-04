@@ -41,10 +41,10 @@ const eqIdx = nameVal.indexOf('=');
 const cookieName = nameVal.slice(0, eqIdx).trim();
 const cookieVal = nameVal.slice(eqIdx + 1).trim();
 
-// Platform step 6, PR 6.4: Local AI's Print lab tab sends the browser to Pi Hub's /lab, keeping e, p and do (the plan's
-// acceptance: "#/printLab?e=E-025 lands on Pi Hub's URL with e"). Opened on 127.0.0.1, Local AI's address for the hub is
-// the old one, http://10.0.0.30; the test answers it itself, so nothing leaves this machine.
-const HUB_LAB = /^http:\/\/10\.0\.0\.30\/lab(\?|$)/;
+// Platform step 6, PR 6.4, then N5 (A6): Local AI has no Print lab of its own. An old #printLab address sends the browser
+// to Pi Hub's /lab, keeping e, p and do ("#/printLab?e=E-025 lands on Pi Hub's URL with e"), at Pi Hub's registry address
+// whatever host Local AI was opened on; the test answers that address itself, so nothing leaves this machine.
+const HUB_LAB = /^https:\/\/hub\.rahe-home\.duckdns\.org\/lab(\?|$)/;
 async function urlBecomes(page, ok, ms = 10000) {
   for (const end = Date.now() + ms; Date.now() < end; await new Promise(r => setTimeout(r, 100))) if (ok(page.url())) return;
   throw new Error(`still at ${page.url()}`);
@@ -64,17 +64,32 @@ for (const [name, viewport] of [['iPhone', { width: 390, height: 844 }], ['deskt
   page.on('pageerror', e => errors.push(`${name}: ${e.message}`));
 
   for (const [hash, want] of [
-    ['#printLab', 'http://10.0.0.30/lab'],
-    ['#/printLab?e=E-025', 'http://10.0.0.30/lab?e=E-025'],
-    ['#printLab?p=hex-tile&e=E-023&do=judge', 'http://10.0.0.30/lab?p=hex-tile&e=E-023&do=judge'],
+    ['#printLab', 'https://hub.rahe-home.duckdns.org/lab'],
+    ['#/printLab?e=E-025', 'https://hub.rahe-home.duckdns.org/lab?e=E-025'],
+    ['#printLab?p=hex-tile&e=E-023&do=judge', 'https://hub.rahe-home.duckdns.org/lab?p=hex-tile&e=E-023&do=judge'],
   ]) {
-    await check(`${name}: ${hash} lands on Pi Hub's ${want.slice(17)}`, async () => {
+    await check(`${name}: ${hash} lands on Pi Hub's ${want.slice(34)}`, async () => {
       await page.goto(`${base}/${hash}`);
       await page.waitForURL(HUB_LAB, { timeout: 10000 });
       assert.equal(page.url(), want);
       assert.equal(await page.title(), 'Pi Hub lab', 'the stand-in hub answered, not a real one');
     });
   }
+
+  await check(`${name}: nothing of the lab is left in Local AI's pages, menus, Home or ⌘K`, async () => {
+    await page.goto(`${base}/#home`);
+    await page.waitForFunction(() => typeof window.showView === 'function');
+    const left = await page.evaluate(() => ({
+      section: !!document.getElementById('printLab'), rail: !!document.querySelector('[data-view="printLab"]'),
+      homeLink: !!document.getElementById('homeHubLab'), registry: window.LocalAIViews.VIEWS.some(v => v.id === 'printLab'),
+    }));
+    assert.deepEqual(left, { section: false, rail: false, homeLink: false, registry: false });
+    await page.keyboard.press('Control+k');
+    await page.waitForFunction(() => document.getElementById('cmdk')?.open === true);
+    await page.fill('#cmdkInput', 'print lab');
+    assert.deepEqual(await page.locator('#cmdkList [role="option"]').allInnerTexts(), [], 'no page called Print lab in ⌘K');
+    await page.keyboard.press('Escape');
+  });
 
   await check(`${name}: going back doesn't bounce off the lab again`, async () => {
     await page.goto(`${base}/#home`);

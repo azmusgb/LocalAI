@@ -98,7 +98,7 @@ const need=(tone,id,title,detail,link,go,data={})=>({tone,item:{id,source:'Local
 const attentionRow=a=>need('bad','attn:'+(a.view||'status')+':'+a.title,a.title,a.detail,'#'+(a.view||'status'),()=>root.LocalAIRouter.open(a.view||'status'));
 // One of Pi Hub's items (needs-you.js hubRows): the words every screen shows; it opens on Pi Hub, or here for Local AI's
 // own lab and watch items. Local AI's badges have no amber: warn shows neutral.
-const HUB_WHERE={printLab:'Print lab',status:'Assistant status'};
+const HUB_WHERE={status:'Assistant status'};
 const hubRow=h=>{
  const where=h.open.view?HUB_WHERE[h.open.view]:'Pi Hub';
  const e=need(h.tone,h.id,h.title,h.detail,h.open.view?'#'+h.open.view:'hub:'+h.open.hub,h.open.view?()=>root.LocalAIRouter.open(h.open.view):null,{hubNeed:h.id});
@@ -106,7 +106,7 @@ const hubRow=h=>{
 };
 // The kit keeps a link only if it is on this origin or was made here: hub:<path> becomes Pi Hub's address (a path on that host
 // whatever the item says), and anything else the kit decides on its own.
-const resolve=l=>/^hub:/.test(l)?(root.LocalAIAskContext?.homeUrl(location.hostname)||'http://10.0.0.30/')+l.slice(4).replace(/^\/+/,''):l;
+const resolve=l=>/^hub:/.test(l)?(root.LocalAIAskContext?.homeUrl(location.hostname)||'https://hub.rahe-home.duckdns.org/')+l.slice(4).replace(/^\/+/,''):l;
 // A pending approval that is not itself a run: open its run when one exists, else decide it here in the approval sheet
 // (one queue, D8). After a decision Needs you reloads and focus moves to the next approval, or the one before, or the next
 // thing on Home.
@@ -354,7 +354,6 @@ function init(){
  paintChip();greet();
  if(!(active()&&onHomeHash()))loadNeeds().catch(()=>{});watchAway(); // Home loads its own on activate
  $('homeHistory')?.addEventListener('click',()=>root.LocalAIRouter?.go('#inbox'));
- {const lab=$('homeHubLab');if(lab)lab.href=resolve('hub:lab')} // Pi Hub's own print lab (2 Nov, D4), at Pi Hub's address for this name
  new MutationObserver(()=>{paintChip();if(stale&&!document.body.classList.contains('run-view-open'))paintNeeds()}).observe(document.body,{attributes:true,attributeFilter:['class']}); // a run view closed
  $('homeModeChip').addEventListener('click',()=>autoWait?autoWait.cancel():openSheet());
  $('commandGo').addEventListener('click',()=>send($('commandInput').value));
