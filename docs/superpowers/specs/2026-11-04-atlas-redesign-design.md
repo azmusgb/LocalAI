@@ -140,8 +140,9 @@ Target:
 
 ## Acceptance
 
-- On the live page, LocalAI's map shows named modules with links, including HTTP links from at least 40 browser
-  modules to their routes.
+- On the live page, LocalAI's map shows named modules with links, including an HTTP link from every browser module
+  that calls the API. PR 1 found 16 such modules (18 links, all 134 paths served) on 4 Nov; the earlier "at least 40"
+  overcounted, because most browser scripts never call the API.
 - Selecting `app/server.js` highlights its 63 imports. Its inspector shows risk, reach and "no tests".
 - The findings name at least one real dangling or untested route, or say there are none.
 - No module's risk rises when a test that imports it is added (a unit test proves this).
