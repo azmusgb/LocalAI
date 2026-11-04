@@ -402,3 +402,18 @@ Pi Hub is the display's backend: it calls Local AI server to server and forwards
 
 - `GET /api/display/ai-cards` (hub key only) answers `{v: 2, at, cards, approvals: {count, speech}, images, messages}`: the `watch`, `running`, `done`, `image` and `disk` cards of the display feed. The Needs card becomes `approvals`; `lab`, `home`, `playing`, `materials`, `weather` and the hub's own needs list are left to Pi Hub. `approvals.count` and `speech` are Local AI's whole needs-you summary (approvals, failed runs, unfinished change requests, Claude findings), not just approvals; `messages` are shared with Pi Hub. The route never calls Pi Hub, Bambuddy or the weather service.
 - The hub key is also accepted on `/api/display/approvals`, `/api/display/approvals/decide`, `/api/display/ask` and `/api/images/view`, and on Pi Hub's own calls (`/api/world`, `/api/attention`, `/api/lab/projects`, and `POST /api/chat` for its house question), and nowhere else. With `LOCALAI_SIGN_IN=required` these need the key.
+
+## Retired display routes
+
+Once the display is paired with Pi Hub (the spec's rollout step 4), Local AI no longer serves it. These routes answer
+`410` with `{"error": "This display uses Pi Hub", "retired": true, "usePiHub": true}`, whatever the key:
+
+- `GET /api/display/feed`, `GET /api/display/events`, `GET /api/display/poster`
+- `POST /api/display/heartbeat` (the `display:heartbeat` record is no longer written; Pi Hub's `workshop_display` record replaces it)
+- `GET /api/display/lab/judge`, `POST /api/display/lab/verdict`
+- `POST /api/display/printer/clear`
+
+Still served: `GET /api/display/ai-cards`, `/api/display/approvals`, `/api/display/approvals/decide`, `/api/display/ask` and
+`/api/images/view` (Pi Hub's key), `POST /api/display/notify` and `/api/display/alerts` (banners reach Pi Hub in the
+ai-cards `messages`), and pairing (`/api/display/pair`, `/pair/start`, `/pair/status`). Rolling the display back to Local AI
+after this change means reverting it; the routes' handlers are unchanged underneath.

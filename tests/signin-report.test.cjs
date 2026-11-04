@@ -117,7 +117,8 @@ test('the Workshop display key signs in the display feed, ask and image routes o
   });
   const base = await ready;
   const display = (extra = {}) => viaCaddy('10.0.0.124', 'ESP32HTTPClient', extra);
-  assert.equal((await fetch(`${base}/api/display/feed`, { headers: display({ 'X-LocalAI-Display-Key': DKEY }) })).status, 200);
+  // The feed is retired (410), but the key still signs the display in for it, which is what the report counts.
+  assert.equal((await fetch(`${base}/api/display/feed`, { headers: display({ 'X-LocalAI-Display-Key': DKEY }) })).status, 410);
   // The same key on another route is not signed in, and a wrong key on the feed isn't either.
   assert.equal((await fetch(`${base}/api/display/ask?q=health`, { headers: display({ 'X-LocalAI-Display-Key': DKEY }) })).status, 200);
   await fetch(`${base}/api/runs?limit=1`, { headers: display({ 'X-LocalAI-Display-Key': DKEY }) });

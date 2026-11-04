@@ -112,7 +112,7 @@ test('materials inventory facts become a materials card with tone and ask', () =
   assert.equal(healthyCard.text, '4 spools loaded · 12 in inventory');
 });
 
-test('GET /api/display/feed answers cards with no model and no setup', { timeout: 30000 }, async (t) => {
+test('the display-only routes answer 410 "This display uses Pi Hub"; pairing, notify, alerts and approvals stay', { timeout: 30000 }, async (t) => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-feed-'));
   const dead = 'http://127.0.0.1:9';
   const { child, ready } = spawnAppServer({ env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: dead, SEARXNG_URL: dead, COMFY_URL: dead, N8N_URL: dead, PROXY_URL: dead, MAC_AI_HOME_URL: dead, MAC_DSH_URL: dead } });
@@ -121,12 +121,18 @@ test('GET /api/display/feed answers cards with no model and no setup', { timeout
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
   const base = await ready;
-  const r = await fetch(`${base}/api/display/feed`);
-  assert.equal(r.status, 200);
-  const feed = await r.json();
-  assert.ok(Date.parse(feed.at));
-  assert.equal(feed.cards[0].kind, 'needs');
-  for (const c of feed.cards) { assert.ok([...c.title].length <= 24); assert.ok([...c.text].length <= 90); }
+  for (const [method, route] of [['GET', '/api/display/feed'], ['GET', '/api/display/events?since=old'], ['GET', '/api/display/poster?n=0'], ['POST', '/api/display/heartbeat'],
+    ['GET', '/api/display/lab/judge?run=PR-021-01'], ['POST', '/api/display/lab/verdict'], ['POST', '/api/display/printer/clear']]) {
+    const r = await fetch(`${base}${route}`, { method, ...(method === 'POST' ? { headers: { 'Content-Type': 'application/json' }, body: '{}' } : {}) });
+    assert.equal(r.status, 410, `${method} ${route}`);
+    assert.deepEqual(await r.json(), { error: 'This display uses Pi Hub', retired: true, usePiHub: true });
+  }
+  // The heartbeat is not recorded any more.
+  assert.equal((await (await fetch(`${base}/api/watch`)).json()).display, null);
+  // Still served: pairing (rollback), the banner channel and its settings.
+  assert.equal((await fetch(`${base}/api/display/pair/status`)).status, 200);
+  assert.equal((await fetch(`${base}/api/display/alerts`)).status, 200);
+  assert.equal((await fetch(`${base}/api/display/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Render done', text: 'The fox' }) })).status, 200);
 });
 
 test('GET /api/display/ask answers the six fixed questions, and refuses others', { timeout: 30000 }, async (t) => {
@@ -147,16 +153,9 @@ test('GET /api/display/ask answers the six fixed questions, and refuses others',
   }
   assert.equal((await (await fetch(`${base}/api/display/ask?q=running`)).json()).answer, 'Nothing is running right now.');
   assert.equal((await fetch(`${base}/api/display/ask?q=delete-everything`)).status, 400);
-  // The long poll answers at once when the display's signature is old, with the current one.
-  const ev = await (await fetch(`${base}/api/display/events?since=old`)).json();
-  assert.equal(ev.changed, true);
-  assert.match(ev.sig, /^[0-9a-f]{16}$/);
-  // A message posted for the display is in the feed, and changes the long poll's signature.
+  // A message posted for the display is accepted (it reaches Pi Hub in the ai-cards messages).
   const posted = await fetch(`${base}/api/display/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Render done', text: 'The fox', action: { type: 'show', page: 'image' } }) });
   assert.equal(posted.status, 200);
-  const feed = await (await fetch(`${base}/api/display/feed`)).json();
-  assert.deepEqual(feed.messages.map((m) => [m.title, m.action.page]), [['Render done', 'image']]);
-  assert.equal((await (await fetch(`${base}/api/display/events?since=${ev.sig}`)).json()).changed, true);
   assert.equal((await fetch(`${base}/api/display/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'no title' }) })).status, 400);
 
   // Approvals: the display may decide a low-risk one, never a higher one.
@@ -172,9 +171,6 @@ test('GET /api/display/ask answers the six fixed questions, and refuses others',
     assert.equal(ok.status, 200);
     assert.equal((await ok.json()).status, 'approved');
   }
-  assert.equal((await post('/api/display/heartbeat', { version: '12.6.0', uptimeS: 42, rssi: -55, extra: 'dropped' })).status, 200);
-  const watch = await (await fetch(`${base}/api/watch`)).json();
-  assert.deepEqual([watch.display.version, watch.display.uptimeS, 'extra' in watch.display], ['12.6.0', 42, false]);
 });
 
 test('beside a problem the needs card says No approvals, not All clear', () => {
@@ -214,70 +210,6 @@ test('needs from Pi Hub are cut and capped at 6', () => {
   const { signature } = require('../app/display-feed');
   assert.notEqual(signature(f), signature(buildFeed({ needs: { count: 0 }, piNeeds: { items: items.slice(1) } })));
   assert.notEqual(signature(f), signature(buildFeed({ needs: { count: 0 }, piNeeds: { count: 9, items } })), 'a new count is news');
-});
-
-test('needs: a slow Pi Hub is left out, and the feed still answers in time', { timeout: 30000 }, async (t) => {
-  const http = require('node:http');
-  const crypto = require('node:crypto');
-  const slow = http.createServer((req, res) => { setTimeout(() => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"count":0,"items":[]}'); }, 5000); });
-  await new Promise((r) => slow.listen(0, '127.0.0.1', r));
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-feed-'));
-  const key = 'wsd_' + 's'.repeat(48);
-  fs.writeFileSync(path.join(dataDir, 'workshop-display-key.sha256'), crypto.createHash('sha256').update(key).digest('hex'));
-  const dead = 'http://127.0.0.1:9';
-  const { child, ready } = spawnAppServer({ env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: dead, SEARXNG_URL: dead, COMFY_URL: dead, N8N_URL: dead, PROXY_URL: dead, MAC_AI_HOME_URL: dead, MAC_DSH_URL: dead, LOCALAI_BAMBUDDY_URL: 'off', LOCALAI_PI_HUB_URL: `http://127.0.0.1:${slow.address().port}` } });
-  t.after(async () => {
-    slow.closeAllConnections(); slow.close();
-    if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
-    fs.rmSync(dataDir, { recursive: true, force: true });
-  });
-  const base = await ready;
-  const started = Date.now();
-  const r = await fetch(`${base}/api/display/feed`, { headers: { 'X-LocalAI-Display-Key': key } });
-  const took = Date.now() - started;
-  assert.equal(r.status, 200);
-  const feed = await r.json();
-  assert.ok(took < 3500, `feed took ${took} ms`);
-  assert.equal('needs' in feed, false);
-  assert.equal(feed.cards[0].kind, 'needs');
-});
-
-// Pi Hub reads this feed (without a key) to build its Needs you list, and the feed reads Pi Hub's list: only the
-// display (its key) gets `needs`, so Pi Hub's read never starts a needs fetch, and one fetch at a time serves the rest.
-test('needs: only the display key gets them; Pi Hub\'s unkeyed read makes no /api/needs call; ten at once make one', { timeout: 30000 }, async (t) => {
-  const http = require('node:http');
-  const crypto = require('node:crypto');
-  let needsCalls = 0;
-  const hub = http.createServer((req, res) => {
-    if (req.url === '/api/needs') {
-      needsCalls++;
-      return setTimeout(() => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ count: 11, items: [{ id: 'pi:disk', tone: 'bad', title: 'Disk', detail: 'Full' }], unread: 0 })); }, 300);
-    }
-    res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{}');
-  });
-  await new Promise((r) => hub.listen(0, '127.0.0.1', r));
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-feed-'));
-  const key = 'wsd_' + 'n'.repeat(48);
-  fs.writeFileSync(path.join(dataDir, 'workshop-display-key.sha256'), crypto.createHash('sha256').update(key).digest('hex'));
-  const dead = 'http://127.0.0.1:9';
-  const { child, ready } = spawnAppServer({ env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: dead, SEARXNG_URL: dead, COMFY_URL: dead, N8N_URL: dead, PROXY_URL: dead, MAC_AI_HOME_URL: dead, MAC_DSH_URL: dead, LOCALAI_BAMBUDDY_URL: 'off', LOCALAI_PI_HUB_URL: `http://127.0.0.1:${hub.address().port}` } });
-  t.after(async () => {
-    hub.closeAllConnections(); hub.close();
-    if (child.exitCode === null && child.signalCode === null) { const done = once(child, 'exit'); child.kill('SIGTERM'); await done; }
-    fs.rmSync(dataDir, { recursive: true, force: true });
-  });
-  const base = await ready;
-  const unkeyed = await (await fetch(`${base}/api/display/feed`)).json();
-  assert.equal(needsCalls, 0, 'an unkeyed feed read never fetches the needs');
-  assert.equal('needs' in unkeyed, false);
-  assert.equal('needsCount' in unkeyed, false);
-  const keyed = () => fetch(`${base}/api/display/feed`, { headers: { 'X-LocalAI-Display-Key': key } }).then((r) => r.json());
-  await Promise.all(Array.from({ length: 10 }, keyed));
-  assert.equal(needsCalls, 1, 'ten keyed feeds at once with the cache expired: one /api/needs call');
-  const feed = await keyed();
-  assert.deepEqual(feed.needs.map((n) => n.id), ['pi:disk']);
-  assert.equal(feed.needsCount, 11);
-  assert.equal(needsCalls, 1, 'then cached');
 });
 
 // Home's Needs you reads Pi Hub's list through Local AI (the browser can't reach the hub): the same cached, one-at-a-time

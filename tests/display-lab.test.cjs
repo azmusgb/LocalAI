@@ -238,7 +238,7 @@ test('20 pending → 429', async t => {
   assert.equal((await h.pending()).length, 20);
 });
 
-test('the routes are wired to the display key', { timeout: 30000 }, async t => {
+test('the judge and verdict routes are retired: 410 with or without the key', { timeout: 30000 }, async t => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-display-lab-srv-'));
   const key = 'wsd_' + 'c'.repeat(48);
   fs.writeFileSync(path.join(dataDir, 'workshop-display-key.sha256'), crypto.createHash('sha256').update(key).digest('hex'));
@@ -251,10 +251,13 @@ test('the routes are wired to the display key', { timeout: 30000 }, async t => {
   const base = await ready;
   // Through Caddy (X-Forwarded-For) so the host's own pass doesn't apply.
   const via = { 'X-Forwarded-For': '10.0.0.99' };
-  assert.equal((await fetch(`${base}/api/display/lab/judge?run=${RUN}`, { headers: via })).status, 401);
   const post = headers => fetch(`${base}/api/display/lab/verdict`, { method: 'POST', headers: { ...via, 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ run: RUN, requestId: 'rq-0000000000000006', grades: GRADES, inconclusive: null }) });
+  for (const headers of [{}, { 'X-LocalAI-Display-Key': key }]) {
+    assert.equal((await fetch(`${base}/api/display/lab/judge?run=${RUN}`, { headers: { ...via, ...headers } })).status, 410);
+  }
+  // A stranger's verdict is still refused by sign-in before it gets that far; the display's key gets the 410.
   assert.equal((await post({})).status, 401);
-  // With the key: nothing is being judged on this empty appliance.
-  assert.equal((await fetch(`${base}/api/display/lab/judge?run=${RUN}`, { headers: { ...via, 'X-LocalAI-Display-Key': key } })).status, 409);
-  assert.equal((await post({ 'X-LocalAI-Display-Key': key })).status, 409);
+  const r = await post({ 'X-LocalAI-Display-Key': key });
+  assert.equal(r.status, 410);
+  assert.equal((await r.json()).error, 'This display uses Pi Hub');
 });
