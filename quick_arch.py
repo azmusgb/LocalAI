@@ -4,6 +4,7 @@ import argparse
 import ast
 import io
 import json
+import math
 import os
 import re
 import shutil
@@ -520,58 +521,43 @@ def record_snapshot(graph: dict) -> Path:
 # ---------------------------------------------------------------------------
 
 
+def scaled(count: int, full: int, points: int) -> float:
+    """Points for a count on a log scale: 0 for none, all of them at `full` or more."""
+    return points * min(1.0, math.log1p(max(0, count)) / math.log1p(full))
+
+
 def risk_score(
     *,
+    reach: int,
     inbound: int,
     outbound: int,
     test_refs: int,
-    changed: bool,
-    domain: str,
-) -> int:
-    degree = inbound + outbound
+) -> dict:
+    """Risk out of 100 and the parts it is made of (Atlas redesign spec, PR 2).
 
-    score = 0.0
+    reach: production modules that depend on this one, directly or not. inbound: production modules that import it.
+    outbound: modules it imports. A composition root that wires up 50 or more modules is critical on fan-out alone.
+    Each test that imports the module lowers the score, by up to half; tests never raise it.
+    """
+    parts = {
+        "reach": round(scaled(reach, 10, 45)),
+        "out": round(scaled(outbound, 50, 70)),
+        "in": round(scaled(inbound, 10, 15)),
+    }
 
-    score += min(
-        42,
-        degree * 2.1,
+    structure = min(
+        100,
+        parts["reach"] + parts["out"] + parts["in"],
     )
 
-    score += min(
-        18,
-        inbound * 1.15,
-    )
+    kept = 0.5 + 0.5 / (1 + 0.5 * max(0, test_refs))
 
-    score += min(
-        12,
-        outbound * 0.7,
-    )
+    parts["tested"] = round(structure * kept) - structure
 
-    if domain in {
-        "Platform",
-        "Data",
-        "AI",
-        "API",
-    }:
-        score += 8
-
-    if changed:
-        score += 16
-
-    if degree >= 3 and test_refs == 0:
-        score += 14
-    elif test_refs == 1:
-        score += 7
-    elif test_refs >= 4:
-        score -= 5
-
-    return max(
-        0,
-        min(
-            100,
-            round(score),
-        ),
-    )
+    return {
+        "risk": structure + parts["tested"],
+        "parts": parts,
+    }
 
 
 def risk_level(score: int) -> str:
@@ -959,6 +945,25 @@ def build_graph(files: list[Path]) -> dict:
                 edge["target"]
             ] += 1
 
+    # Reach and fan-in count production modules only: a test that imports a module lowers its risk, never raises it.
+    production_users: dict[str, set[str]] = {}
+
+    for edge in edges:
+        if edge["kind"] == "import" and file_domains.get((ROOT / edge["target"]).resolve()) != "Tests":
+            production_users.setdefault(edge["target"], set()).add(edge["source"])
+
+    def reach_of(node_id: str) -> int:
+        seen: set[str] = set()
+        todo = [node_id]
+
+        while todo:
+            for user in production_users.get(todo.pop(), ()):
+                if user != node_id and user not in seen:
+                    seen.add(user)
+                    todo.append(user)
+
+        return len(seen)
+
     nodes: list[dict] = []
 
     for path in files:
@@ -975,13 +980,16 @@ def build_graph(files: list[Path]) -> dict:
 
         coverage = test_refs[node_id]
 
-        risk = risk_score(
-            inbound=incoming,
+        reach = reach_of(node_id)
+
+        scored = risk_score(
+            reach=reach,
+            inbound=len(production_users.get(node_id, ())),
             outbound=outgoing,
             test_refs=coverage,
-            changed=changed,
-            domain=domain,
         )
+
+        risk = scored["risk"]
 
         nodes.append(
             {
@@ -995,7 +1003,9 @@ def build_graph(files: list[Path]) -> dict:
                 "degree": incoming + outgoing,
                 "testRefs": coverage,
                 "changed": changed,
+                "reach": reach,
                 "risk": risk,
+                "riskParts": scored["parts"],
                 "riskLevel": risk_level(risk),
             }
         )

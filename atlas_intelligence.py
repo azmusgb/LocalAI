@@ -91,6 +91,21 @@ BOUNDARY_DOMAINS = {
 }
 
 
+def _as_int(value: Any, default: int = 0) -> int:
+    """A graph number as an int: numbers and numeric strings ("85.5" is 85) read the same; anything else is default."""
+    if isinstance(value, bool) or value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        try:
+            return int(float(str(value).strip()))
+        except (TypeError, ValueError, OverflowError):
+            return default
+    except OverflowError:
+        return default
+
+
 class AtlasError(Exception):
     def __init__(
         self,
@@ -426,7 +441,7 @@ def effective_test_signal(
     ],
 ) -> tuple[int, list[dict[str, str]]]:
     node_id = str(node.get("id", ""))
-    direct_refs = int(node.get("testRefs") or 0)
+    direct_refs = _as_int(node.get("testRefs"))
     indirect = evidence_map.get(node_id, [])
 
     return direct_refs + len(indirect), indirect
@@ -449,11 +464,11 @@ def build_findings(
         if not node_id or domain == "Tests":
             continue
 
-        risk = int(node.get("risk") or 0)
-        inbound = int(node.get("inbound") or 0)
-        outbound = int(node.get("outbound") or 0)
-        degree = int(node.get("degree") or 0)
-        direct_test_refs = int(node.get("testRefs") or 0)
+        risk = _as_int(node.get("risk"))
+        inbound = _as_int(node.get("inbound"))
+        outbound = _as_int(node.get("outbound"))
+        degree = _as_int(node.get("degree"))
+        direct_test_refs = _as_int(node.get("testRefs"))
         test_signal, indirect_tests = effective_test_signal(
             node,
             evidence_map,
@@ -631,7 +646,7 @@ def build_findings(
             )
 
     node_risk = {
-        str(node.get("id")): int(node.get("risk") or 0)
+        str(node.get("id")): _as_int(node.get("risk"))
         for node in graph.get("nodes", [])
         if isinstance(node, dict) and node.get("id")
     }
@@ -677,12 +692,10 @@ def aggregate_findings(
                 "node": node_id,
                 "domain": item.get("domain"),
                 "severity": "info",
-                "risk": int(node.get("risk") or 0),
-                "degree": int(node.get("degree") or 0),
-                "outbound": int(node.get("outbound") or 0),
-                "directTestRefs": int(
-                    node.get("testRefs") or 0
-                ),
+                "risk": _as_int(node.get("risk")),
+                "degree": _as_int(node.get("degree")),
+                "outbound": _as_int(node.get("outbound")),
+                "directTestRefs": _as_int(node.get("testRefs")),
                 "testEvidence": evidence_map.get(
                     node_id,
                     [],
@@ -743,8 +756,8 @@ def aggregate_findings(
                 str(group.get("severity")),
                 99,
             ),
-            -int(group.get("risk") or 0),
-            -int(group.get("signalCount") or 0),
+            -_as_int(group.get("risk")),
+            -_as_int(group.get("signalCount")),
             str(group.get("node", "")),
         )
     )
@@ -810,7 +823,7 @@ def compact_node(
     if test_evidence is not None:
         result["testEvidence"] = test_evidence
         result["effectiveTestSignal"] = (
-            int(node.get("testRefs") or 0)
+            _as_int(node.get("testRefs"))
             + len(test_evidence)
         )
 
@@ -946,7 +959,7 @@ def matching_nodes(
         scored.append(
             (
                 score,
-                int(node.get("degree") or 0),
+                _as_int(node.get("degree")),
                 node_id,
                 node,
             )
@@ -3161,10 +3174,14 @@ class AtlasHandler(
             self.send_json({"job": job}, status=HTTPStatus.ACCEPTED)
             return
 
-        graph, findings, root, scope = self.scoped(
-            {key: [body.get(key)] for key in ("repo", "commit") if body.get(key)}
-        )
+        if parsed.path not in {"/api/atlas/ask", "/api/atlas/goose"}:
+            raise AtlasError(
+                f"Route not found: {parsed.path}",
+                status=HTTPStatus.NOT_FOUND,
+                code="not_found",
+            )
 
+        # The question is checked first: loading a snapshot can write a clean copy of its commit.
         question = str(
             body.get(
                 "question",
@@ -3186,6 +3203,10 @@ class AtlasHandler(
                 ),
                 code="question_too_long",
             )
+
+        graph, findings, root, scope = self.scoped(
+            {key: [body.get(key)] for key in ("repo", "commit") if body.get(key)}
+        )
 
         selected_node_raw = body.get(
             "node"
