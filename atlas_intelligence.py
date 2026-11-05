@@ -5,6 +5,7 @@ import hmac
 import http.client
 import io
 import json
+import math
 import os
 import re
 import shutil
@@ -1056,6 +1057,188 @@ def build_evidence_context(
     return context
 
 
+# ---------------------------------------------------------------------------
+# Ask: a small packet about the selected module (Atlas redesign spec, PR 6)
+# ---------------------------------------------------------------------------
+
+ASK_TOKENS_SELECTED = 3000
+ASK_TOKENS_REPO = 4000
+ASK_ANSWER_TOKENS = 1000
+ASK_DEFAULT_CTX = 8192
+ASK_LIST_MAX = 40
+
+
+def estimate_tokens(text: str) -> int:
+    """A deliberately high estimate (3 characters a token): paths and JSON punctuation tokenize worse than prose."""
+    return math.ceil(len(text) / 3)
+
+
+def packet_json(packet: dict[str, Any]) -> str:
+    return json.dumps(packet, ensure_ascii=False, separators=(",", ":"))
+
+
+def _link_kind(edge: dict[str, Any], nodes: dict[str, dict[str, Any]]) -> str:
+    kind = str(edge.get("kind") or "")
+    if kind:
+        return kind
+    # A version 1 graph has no kinds: a link from a test module is a test link.
+    return "test" if nodes.get(str(edge.get("source")), {}).get("domain") == "Tests" else "import"
+
+
+def _fit(items: list[tuple[str, str, Any]], budget: int, shape) -> tuple[dict[str, Any], list[str]]:
+    """Add (section, label, value) items in rank order until the next one would pass the budget; everything from that
+    item on is left out, so the lowest-ranked go first. `shape(sections)` builds the packet in its reading order."""
+    sections: dict[str, list[Any]] = {}
+    cut = len(items)
+    for i, (section, _label, value) in enumerate(items):
+        sections.setdefault(section, []).append(value)
+        if estimate_tokens(packet_json(shape(sections))) > budget:
+            sections[section].pop()
+            cut = i
+            break
+    counts: dict[str, int] = {}
+    for _section, label, _value in items[cut:]:
+        counts[label] = counts.get(label, 0) + 1
+    return shape(sections), [f"{n} {label}" for label, n in counts.items()]
+
+
+def build_ask_packet(
+    graph: dict[str, Any],
+    findings: list[dict[str, Any]],
+    question: str,
+    *,
+    selected_node: str | None = None,
+    root: Path | None = ROOT,
+) -> dict[str, Any]:
+    """{packet, leftOut, tokens}. With a module selected: the module, its neighbours ranked by distance then risk (graph-
+    neighbour retrieval, as in LightRAG's local mode) and only the findings naming them, within 3,000 tokens. With none:
+    what matches the question, then the repo-wide findings and lists, within 4,000."""
+    nodes = node_index(graph)
+    evidence_map = detect_test_evidence(graph, root)
+    severity = lambda f: SEVERITY_RANK.get(str(f.get("severity")), len(SEVERITY_RANK))
+
+    def brief(node: dict[str, Any], **more: Any) -> dict[str, Any]:
+        node_id = str(node.get("id", ""))
+        out = {k: node.get(k) for k in ("id", "domain", "risk", "riskLevel", "testRefs") if node.get(k) is not None}
+        extra = len(evidence_map.get(node_id, []))
+        if extra:
+            out["testEvidence"] = extra
+        return {**out, **more}
+
+    if selected_node and selected_node in nodes:
+        uses: dict[str, None] = {}
+        used_by: dict[str, None] = {}
+        tests: dict[str, None] = {}
+        adjacent: dict[str, set[str]] = {}
+        for edge in graph.get("edges", []):
+            if not isinstance(edge, dict):
+                continue
+            src, dst = str(edge.get("source", "")), str(edge.get("target", ""))
+            if src not in nodes or dst not in nodes or src == dst:
+                continue
+            if _link_kind(edge, nodes) == "test":
+                if dst == selected_node:
+                    tests[src] = None
+                continue
+            adjacent.setdefault(src, set()).add(dst)
+            adjacent.setdefault(dst, set()).add(src)
+            if src == selected_node:
+                uses[dst] = None
+            elif dst == selected_node:
+                used_by[src] = None
+
+        by_risk = lambda ids: sorted(ids, key=lambda i: (-_as_int(nodes[i].get("risk")), i))
+        hop1 = by_risk(set(uses) | set(used_by))
+        seen = {selected_node, *hop1}
+        hop2: dict[str, str] = {}
+        for via in hop1:
+            for other in by_risk(adjacent.get(via, set()) - seen):
+                hop2.setdefault(other, via)
+        hop2_order = by_risk(hop2)
+        rank = {node_id: i for i, node_id in enumerate([selected_node, *hop1, *hop2_order])}
+
+        node = nodes[selected_node]
+        lists = {"uses": by_risk(uses), "usedBy": by_risk(used_by), "tests": sorted(tests)}
+        core = {
+            **brief(node),
+            "label": node.get("label"),
+            "riskParts": node.get("riskParts"),
+            "inbound": node.get("inbound"),
+            "outbound": node.get("outbound"),
+            "changed": node.get("changed"),
+            **{k: v[:ASK_LIST_MAX] for k, v in lists.items()},
+        }
+        core = {k: v for k, v in core.items() if v is not None}
+        trimmed = [f"{len(v) - ASK_LIST_MAX} of {len(v)} in its {k} list" for k, v in lists.items() if len(v) > ASK_LIST_MAX]
+
+        def near(f: dict[str, Any]) -> tuple:
+            return (rank.get(str(f.get("node")), len(rank)), severity(f))
+
+        own = sorted((f for f in findings if f.get("node") == selected_node), key=severity)
+        first = sorted((f for f in findings if f.get("node") in set(hop1)), key=near)
+        second = sorted((f for f in findings if f.get("node") in hop2), key=near)
+        items: list[tuple[str, str, Any]] = [
+            *(("findings", "findings", f) for f in own),
+            *(("findings", "findings", f) for f in first),
+            *(("neighbours", "neighbours", brief(nodes[i], hop=1, via="uses" if i in uses else "usedBy")) for i in hop1),
+            *(("neighbours", "neighbours", brief(nodes[i], hop=2, via=hop2[i])) for i in hop2_order),
+            *(("findings", "findings", f) for f in second),
+        ]
+
+        def shape(sections: dict[str, list[Any]]) -> dict[str, Any]:
+            out: dict[str, Any] = {"selected": core}
+            for key in ("neighbours", "findings"):
+                if sections.get(key):
+                    out[key] = sections[key]
+            return out
+
+        packet, left = _fit(items, ASK_TOKENS_SELECTED, shape)
+        left = trimmed + left
+    else:
+        enriched = lambda n: compact_node(n, test_evidence=evidence_map.get(str(n.get("id", "")), []))
+        items = [
+            *(("matchingNodes", "matching modules", enriched(nodes[str(n.get("id"))]))
+              for n in matching_nodes(graph, question) if str(n.get("id")) in nodes),
+            *(("topFindings", "findings", f) for f in sorted(findings, key=severity)[:16]),
+            *(("findingGroups", "finding groups", g) for g in aggregate_findings(graph, findings, root)[:12]),
+            *(("highestRisk", "high-risk modules", enriched(n)) for n in graph.get("highestRisk", [])[:12] if isinstance(n, dict)),
+            *(("changedNodes", "changed modules", enriched(n)) for n in graph.get("changedNodes", [])[:20] if isinstance(n, dict)),
+        ]
+        stats = graph.get("stats", {})
+
+        def shape(sections: dict[str, list[Any]]) -> dict[str, Any]:
+            out: dict[str, Any] = {k: v for k, v in sections.items() if v}
+            out["atlasStats"] = stats
+            return out
+
+        packet, left = _fit(items, ASK_TOKENS_REPO, shape)
+
+    return {"packet": packet, "leftOut": left, "tokens": estimate_tokens(packet_json(packet))}
+
+
+def model_context(base_url: str, model: str) -> tuple[int | None, int | None]:
+    """(the model's configured num_ctx, its architecture's maximum), either None when Ollama doesn't say."""
+    try:
+        info = request_json(f"{base_url}/api/show", method="POST", payload={"model": model}, timeout=5.0)
+    except AtlasError:
+        return None, None
+    configured = None
+    for line in str(info.get("parameters") or "").splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] == "num_ctx" and parts[1].isdigit():
+            configured = int(parts[1])
+    maximum = next((v for k, v in (info.get("model_info") or {}).items()
+                    if k.endswith(".context_length") and isinstance(v, int)), None)
+    return configured, maximum
+
+
+def ask_context(configured: int | None, maximum: int | None) -> int:
+    """num_ctx to send: the model's own setting (so Ollama never reloads it), else 8,192 within what it supports."""
+    if configured:
+        return configured
+    return min(ASK_DEFAULT_CTX, maximum) if maximum else ASK_DEFAULT_CTX
+
+
 def request_json(
     url: str,
     *,
@@ -1222,6 +1405,8 @@ Rules:
 6. Prefer concrete engineering observations over generic advice.
 7. Do not propose destructive actions.
 8. Keep answers concise unless the question explicitly asks for depth.
+9. The evidence was cut to fit. When "LEFT OUT TO FIT" names something your
+   answer depends on, say so.
 """
 
 
@@ -1243,24 +1428,38 @@ def ask_ollama(
         requested_model,
     )
 
-    evidence = build_evidence_context(
+    built = build_ask_packet(
         graph,
         findings,
         question,
         selected_node=selected_node,
         root=root,
     )
+    evidence = built["packet"]
+    left_out = built["leftOut"]
 
     user_prompt = (
-        (f"REPOSITORY: {scope['repo']} at commit {scope['commit']}\n\n" if scope else "")
-        + f"QUESTION:\n{question}\n\n"
-        "ATLAS EVIDENCE:\n"
-        + json.dumps(
-            evidence,
-            ensure_ascii=False,
-            indent=2,
-        )
+        f"QUESTION:\n{question}\n\n"
+        + (f"REPOSITORY: {scope['repo']} at commit {scope['commit']}\n\n" if scope else "")
+        + f"LEFT OUT TO FIT: {'; '.join(left_out) if left_out else 'nothing'}\n\n"
+        "ATLAS EVIDENCE (compact JSON):\n"
+        + packet_json(evidence)
     )
+
+    # Send num_ctx every time, and refuse rather than let Ollama silently cut the prompt.
+    num_ctx = ask_context(*model_context(base_url, model))
+    needed = estimate_tokens(OLLAMA_SYSTEM_PROMPT) + estimate_tokens(user_prompt) + ASK_ANSWER_TOKENS
+    if needed > num_ctx:
+        # The smallest model that fits, preferring one whose context is set in its Modelfile.
+        others = {m: model_context(base_url, m) for m in models if m != model}
+        fits = sorted((ask_context(*c), c[0] is None, m) for m, c in others.items())
+        better = next((m for ctx, _unset, m in fits if ctx >= needed), None)
+        raise AtlasError(
+            f"{model} holds {num_ctx:,} tokens; this question needs about {needed:,} with its answer."
+            + (f" Pick {better} instead." if better else " No installed model has a large enough context."),
+            status=HTTPStatus.UNPROCESSABLE_ENTITY,
+            code="ollama_context_too_small",
+        )
 
     response = request_json(
         f"{base_url}/api/chat",
@@ -1280,6 +1479,7 @@ def ask_ollama(
             ],
             "options": {
                 "temperature": 0.15,
+                "num_ctx": num_ctx,
             },
         },
         timeout=120.0,
@@ -1305,11 +1505,9 @@ def ask_ollama(
 
     evidence_path_set = {
         str(node.get("id"))
-        for node in evidence.get(
-            "matchingNodes",
-            [],
-        )
-        if node.get("id")
+        for key in ("matchingNodes", "neighbours")
+        for node in evidence.get(key, [])
+        if isinstance(node, dict) and node.get("id")
     }
 
     if selected_node:
@@ -1327,6 +1525,8 @@ def ask_ollama(
         "provider": "ollama",
         "evidencePaths": evidence_paths,
         "evidence": evidence,
+        "leftOut": left_out,
+        "contextTokens": num_ctx,
     }
 
 
