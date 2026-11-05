@@ -61,7 +61,7 @@ function hubRows(items){
  return items.filter(i=>i&&typeof i==='object'&&text(i.id)&&text(i.title)&&!/^localai:needs-/.test(i.id)).map(i=>{
   const id=i.id,lab=/^localai:(judge|lab)-/.test(id),link=text(i.link);
   const open=lab?{hub:/^\/lab(\?|$)/.test(link)?link:'/lab'}:/^localai:/.test(id)?{view:'status'}:{hub:link||'/'};
-  return {id,title:i.title,detail:text(i.detail),tone:TONES.has(i.tone)?i.tone:'warn',open};
+  return {id,title:i.title,detail:text(i.detail),tone:TONES.has(i.tone)?i.tone:'warn',open,action:/^[a-z_]{1,32}$/.test(text(i.action))?i.action:''};
  });
 }
 // Bad first, then attention, then warn (Pi Hub's order); the same tone keeps its order.

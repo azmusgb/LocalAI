@@ -128,6 +128,12 @@ test('hubRows: everything but the summary of Local AI\'s own rows, with where ea
   assert.deepEqual(N.hubRows('no'), []);
 });
 
+test('hubRows keeps the hub\'s verb as a phrase key only (A7 P2), never words', () => {
+  const rows = N.hubRows([{ id: 'pi:net', title: 'Ad blocking', link: '/network', action: 'open_network' },
+    { id: 'pi:x', title: 'X', action: 'Click <b>here</b>' }, { id: 'pi:y', title: 'Y' }]);
+  assert.deepEqual(rows.map(r => r.action), ['open_network', '', '']);
+});
+
 test('byTone: bad, then attention, then warn; the same tone keeps its order', () => {
   const list = [{ k: 1, tone: 'warn' }, { k: 2, tone: 'attention' }, { k: 3, tone: 'bad' }, { k: 4, tone: 'attention' }, { k: 5, tone: 'bad' }];
   assert.deepEqual(N.byTone(list).map(x => x.k), [3, 5, 2, 4, 1]);

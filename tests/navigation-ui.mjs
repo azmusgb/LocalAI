@@ -61,7 +61,7 @@ await check('System: Tools lists every tool, each opens at its address with Tool
   await page.waitForSelector('#architecture.active', { timeout: 5000 });
   assert.equal(await crumbOf(page), 'Improve');
   assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Atlas');
-  assert.deepEqual(await stripLabels(), ['Backlog', 'Doing', 'Shipped', 'Signals', 'Claude', 'Atlas']);
+  assert.deepEqual(await stripLabels(), ['Backlog', 'In progress', 'Shipped', 'Signals', 'Claude', 'Atlas']);
 });
 
 // The legacy pages are retired (owner decision D4): their addresses land on the page that replaced them.

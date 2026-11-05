@@ -15,7 +15,7 @@ function groupOf(it){
  const n=Math.round((d(new Date())-d(t))/864e5);
  return n<=0?0:n===1?1:n<7?2:3;
 }
-const sig=it=>[it.id,it.status,it.progress,it.updatedAt,it.turns,it.kept,it.card?.title,it.card?.summary,it.card?.badge?.label,st.selecting].join('|');
+const sig=it=>[it.id,it.status,it.progress,it.updatedAt,it.turns,it.kept,it.card?.title,it.card?.summary,it.card?.badge?.label,st.selecting,it.repeat?.length].join('|');
 // The server sends one row per thread (its latest run, with `turns`), so each thread lives on exactly one page.
 // `window` (a refresh of the newest page) also drops what that page no longer holds: runs deleted or filed away.
 function merge(list,{older=false,window=false}={}){
@@ -29,9 +29,27 @@ function merge(list,{older=false,window=false}={}){
 // Opening a run goes through the runs module, so Close and Back return to Work.
 const openRun=it=>window.LocalAIRuns?window.LocalAIRuns.show(it.id):window.LocalAIRouter?.go('#run/'+encodeURIComponent(it.id));
 // One card per row: a chat thread's turn count (the card itself shows the summary once), and the row itself opens the run.
+// A7 P6: one automation run again and again in one day group is one row, its newest run, with the count and the time
+// range ("24 times · 1:00 AM–12:00 PM"). Select mode shows every run, so each can still be picked.
+function fold(g){
+ if(st.selecting)return g;
+ const out=[],by=new Map();
+ for(const it of g){
+  const a=it.meta?.automationId;if(!a){out.push(it);continue}
+  const e=by.get(a);if(e){e.repeat.push(it);continue}
+  const n={...it,repeat:[it]};by.set(a,n);out.push(n);
+ }
+ return out;
+}
+const clock=v=>{const d=new Date(v);return isNaN(d)?'':d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})};
+function repeatWords(r){
+ const first=clock(r[r.length-1].createdAt),last=clock(r[0].createdAt);
+ return `${r.length} times`+(first&&last?` · ${first}–${last}`:'');
+}
 function rowFor(it){
  let c=it.card||{};const n=it.turns||1;
  if(c.kind==='chat'&&n>1)c={...c,summary:`Chat · ${n} turns`,preview:c.preview||(c.summary?{type:'text',text:c.summary}:null)};
+ if(it.repeat?.length>1)c={...c,summary:[repeatWords(it.repeat),c.summary].filter(Boolean).join(' · ')};
  // In Select mode a tap picks the row instead of opening it, and the row carries its checkbox.
  const row=window.LocalAIUI.runCard({...it,card:c},{onOpen:x=>st.selecting?pick(key(x),!st.picked.has(key(x))):openRun(x),rowOpen:true});
  const act=row.querySelector('.run-card__action');
@@ -85,10 +103,11 @@ function paint(){
   box.querySelector('button').addEventListener('click',()=>{window.LocalAIRouter?.go('#home');const t=Date.now(),f=()=>{const c=$('commandInput');if($('home')?.classList.contains('active')&&c)c.focus();else if(Date.now()-t<1500)setTimeout(f,40)};f()});
   st.shown='';st.rows.clear();return;
  }
- const by=GROUPS.map(()=>[]);list.forEach(it=>by[groupOf(it)].push(it));
- const layout=by.map((g,i)=>g.length?GROUPS[i]+':'+g.map(x=>x.id).join(','):'').join(';')+'|'+list.length;
+ const by=GROUPS.map(()=>[]);list.forEach(it=>by[groupOf(it)].push(it));by.forEach((g,i)=>{by[i]=fold(g)});
+ const rows=by.flat();
+ const layout=by.map((g,i)=>g.length?GROUPS[i]+':'+g.map(x=>x.id).join(','):'').join(';')+'|'+rows.length;
  if(layout===st.shown&&box.querySelector('.work-group')){ // same rows in the same places: swap only the ones that changed
-  for(const it of list){const old=st.rows.get(it.id),s=sig(it);if(old&&old.sig!==s){const row=rowFor(it);old.el.replaceWith(row);st.rows.set(it.id,{el:row,sig:s})}}
+  for(const it of rows){const old=st.rows.get(it.id),s=sig(it);if(old&&old.sig!==s){const row=rowFor(it);old.el.replaceWith(row);st.rows.set(it.id,{el:row,sig:s})}}
   return;
  }
  const y=window.scrollY;st.rows.clear();box.textContent='';

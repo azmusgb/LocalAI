@@ -37,9 +37,10 @@ function summarize(d) {
   return { playing, issues };
 }
 
-// The hub's one "Needs you" list (GET /api/needs: {count, items:[{id, source, tone, title, detail, link}], unread}),
+// The hub's one "Needs you" list (GET /api/needs: {count, items:[{id, source, tone, title, detail, link, action}], unread}),
 // built by the hub from its own issues, Local AI's attention cards and the printer. Untrusted text: only strings pass,
-// an item needs an id and a title, and the link is left out. count is the hub's own total (the display's "+N more"),
+// an item needs an id and a title, and the link is a hub path. `action` keeps only its phrase key (A7 P2: the kit turns
+// "open_network" into "Open Network"; an unknown key shows no words), never words or a link of its own. count is the hub's own total (the display's "+N more"),
 // else the number of items. The display feed cuts and caps it (app/display-feed.js).
 const plain = (v, n) => (typeof v === 'string' ? str(v, n) : '');
 // A long sentence is cut at a word with an ellipsis, never in the middle of one ("... or adhe").
@@ -51,10 +52,11 @@ function cutWords(v, n) {
 }
 // A need's link: a plain path on the hub ("/workshop"), else '' (the hub's root). Never another site or scheme.
 const hubPath = (v) => (typeof v === 'string' && /^\/(?!\/)[A-Za-z0-9/_-]{0,63}$/.test(v) ? v : '');
+const verbKey = (a) => (a && typeof a === 'object' && typeof a.key === 'string' && /^[a-z_]{1,32}$/.test(a.key) ? a.key : '');
 function needsList(d) {
   if (!Array.isArray(d?.items)) return null;
   const items = d.items.filter(i => i && typeof i === 'object')
-    .map(i => ({ id: plain(i.id, 64), source: plain(i.source, 24), tone: plain(i.tone, 12), title: plain(i.title, 80), detail: cutWords(i.detail, 400), link: hubPath(i.link) }))
+    .map(i => ({ id: plain(i.id, 64), source: plain(i.source, 24), tone: plain(i.tone, 12), title: plain(i.title, 80), detail: cutWords(i.detail, 400), link: hubPath(i.link), action: verbKey(i.action) }))
     .filter(i => i.id && i.title);
   const count = Number.isSafeInteger(d.count) && d.count >= 0 ? d.count : items.length;
   return { count, items: items.slice(0, 20) };

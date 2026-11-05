@@ -81,6 +81,28 @@ try {
     assert.equal(r.strip, false);
     await own.close();
   });
+  // A7 P2 (L2): in the shell a Pi Hub page is a page in the shell, so its Needs-you row opens in the whole window with
+  // no ↗, and says the hub's verb; opened on its own, the same row leaves for Pi Hub in a new tab.
+  await check("Home's Needs you: Pi Hub's rows open in the shell, with the hub's verb and no ↗; on its own, in a new tab", async () => {
+    await context.route(`${AI}/api/home/hub-needs`, route => route.fulfill({ contentType: 'application/json',
+      body: JSON.stringify({ items: [{ id: 'pi:Ad blocking', tone: 'warn', title: 'Ad blocking', detail: 'AdGuard is paused.', link: '/network', action: 'open_network' }] }) }));
+    const row = async f => {
+      await f.waitForSelector('#homeNeedsList [data-hub-need="pi:Ad blocking"] a', { timeout: 15000 });
+      return f.evaluate(() => { const a = document.querySelector('#homeNeedsList [data-hub-need="pi:Ad blocking"] a');
+        return { href: a.href, target: a.target, action: a.querySelector('.ui-need__action')?.textContent, dense: !!a.closest('.ui-needs--dense') }; });
+    };
+    await page.goto(`${HUB}/assistant`);
+    await page.waitForFunction(() => window.got.length > 0, null, { timeout: 15000 });
+    await frame().evaluate(() => window.LocalAIRouter.go('#home', { replace: true }));
+    const r = await row(frame());
+    assert.deepEqual(r, { href: `${HUB}/network`, target: '_top', action: 'Open Network', dense: true });
+    const own = await context.newPage();
+    await own.goto(`${AI}/#home`);
+    const o = await row(own.mainFrame());
+    assert.equal(o.target, '_blank');
+    assert.match(o.action, /^Open Network ↗$/);
+    await own.close();
+  });
 } finally {
   await browser.close();
 }
