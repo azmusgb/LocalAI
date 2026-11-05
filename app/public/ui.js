@@ -62,24 +62,42 @@ function renderInspector(){const el=$('agentInspector'),A=window.LocalAIAgentWor
 function refocusCrew(id){window.LocalAIUI?.refocus?.(id,{within:'#awcRoster',key:'awcRoster',control:':scope'})||document.querySelector(`#awcRoster [data-awc-roster="${CSS.escape(id)}"]`)?.focus()}
 function missionSummary(m){const done=(m.workers||[]).filter(w=>w.state==='complete').length,total=(m.workers||[]).length;return {done,total,percent:total?Math.round(done/total*100):0}}
 function renderMission(m){if(!m)return;currentMission=m;if(m.routing)renderRoute(m.routing);const s=missionSummary(m),A=window.LocalAIAgentWords,st=A?.statusSentence(m),headline=$('agentMissionHeadline'),meta=$('agentMissionMeta'),progress=$('agentMissionProgress');if(headline)headline.textContent=m.goal||'Mission';if(meta)meta.textContent=st?.text||'';if(progress)progress.style.width=s.percent+'%';progress?.parentElement?.setAttribute('aria-valuenow',String(s.percent));renderHead(m);renderTimeline(m);renderInspector();renderResults();clearNotice()}
-// The header: the goal, one sentence and one action for the state the mission is in: Try again (stopped), See the
-// result (done), Watch live (running, camera not following), Start a mission (none). Running with the camera already
-// following needs no loud action: the header shows none and the phone's peek a quiet See the crew, so the collapsed
-// sheet always offers a next step. [action, label, quiet]
-function primaryFor(m){const t=window.LocalAIAgentWords?.statusSentence(m)?.tone||'idle';return t==='attention'?['retry','Retry mission']:t==='done'?['result','See the result']:t==='working'?(window.LocalAIAgentWorld?.following?.()?['crew','See the crew',true]:['watch','Watch live']):['start','Start a mission']}
-function renderHead(m){const A=window.LocalAIAgentWords,st=A?.statusSentence(m||null),title=$('awTitle'),status=$('awStatus'),page=$('agents');if(!st)return;
- // A demo owns the city, crew and story, so the header says it is one (not the real mission's goal and status); the
+// The faceplate (Pi Hub A7 plan, decision 9): the mission's lamp, readout, goal, readings and actions, from
+// LocalAIAgentWords.missionPlate. The phone's peek keeps one action for the state the mission is in: Retry mission
+// (stopped), See the answer (done), Watch live (running, camera not following), New mission (none). Running with the
+// camera already following needs no loud action: the peek offers a quiet See the crew. [action, label, quiet]
+function primaryFor(m){const t=window.LocalAIAgentWords?.statusSentence(m)?.tone||'idle';return t==='attention'?['retry','Retry mission']:t==='done'?['result','See the answer']:t==='working'?(window.LocalAIAgentWorld?.following?.()?['crew','See the crew',true]:['watch','Watch live']):['start','New mission']}
+let historyState='loading';
+function renderPlate(m,demo){const A=window.LocalAIAgentWords,plate=$('awPlate');if(!A||!plate)return;
+ const loading=!m&&!demo&&historyState==='loading';plate.setAttribute('aria-busy',String(loading));if(loading)return;
+ const p=A.missionPlate(m,{demo}),lamp=$('awLamp'),ro=$('awReadout'),cap=$('awTitle'),now=$('awStatus'),dl=$('awReadings');
+ if(lamp){lamp.hidden=!p.lamp;if(p.lamp){lamp.className='ui-chip ui-chip--'+p.lamp.tone;lamp.textContent=p.lamp.word}}
+ if(ro){ro.hidden=!p.readout;ro.innerHTML=p.readout?esc(p.readout.value)+(p.readout.unit?`<span class="ui-readout__unit">${esc(p.readout.unit)}</span>`:''):''}
+ if(cap)cap.textContent=p.caption;
+ if(now){now.hidden=!p.note;now.textContent=p.note||''}
+ if(dl){dl.hidden=!p.readings.length;dl.innerHTML=p.readings.map(r=>`<div><dt>${esc(r.label)}</dt><dd>${esc(r.value)}</dd></div>`).join('')}
+ // Each action has one button: primary first, the rest outlined. Retry waits while it starts.
+ const ids={result:'awPrimary',retry:'awRetry',start:'awNew',demo:'awEmptyDemo'},want=new Map(p.actions.map(x=>[x.id,x]));
+ const first=p.actions.find(x=>x.primary),head=$('awPrimary');
+ for(const [id,el] of Object.entries(ids)){const b=$(el);if(!b||el==='awPrimary')continue;const x=want.get(id);b.hidden=!x||x===first;if(x)b.textContent=x.label}
+ if(head){head.hidden=!first;if(first){head.textContent=first.label;head.dataset.action=first.id}}
+ for(const id of['awPrimary','awRetry']){const b=$(id);if(b&&(id==='awRetry'||b.dataset.action==='retry'))b.disabled=retrying}}
+function renderHead(m){const A=window.LocalAIAgentWords,st=A?.statusSentence(m||null),page=$('agents');if(!st)return;
+ // Answer first once the mission is done; until then it follows the story (A7 plan, decision 9). Only while it is on
+ // this page: Work's run view borrows some sections.
+ const body=$('awSheetBody'),res=body?.querySelector(':scope>.aw-results');if(res){const done=st.tone==='done'&&!window.LocalAIAgentWorld?.demoing?.(),at=done?body.querySelector(':scope>.agent-mission-strip'):body.querySelector(':scope>.aw-all-box');if(at&&(done?at.nextElementSibling!==res:at.previousElementSibling!==res))done?at.after(res):at.before(res)}
+ // A demo owns the city, crew and story, so the faceplate says it is one (not the real mission's goal and status); the
  // Demo · Stop chip is its action. Stopping it renders the real mission again.
- if(window.LocalAIAgentWorld?.demoing?.()){if(title)title.textContent='Demo mission';if(status)status.textContent='A sample run — nothing is sent anywhere';page?.setAttribute('data-aw-state','demo');for(const id of['awPrimary','awRetry','awPeekRetry']){const b=$(id);if(b)b.hidden=true}const e=$('awEmpty');if(e)e.hidden=true;return}
-if(title)title.textContent=m?.goal||'Agent World';if(status){const i=st.label?st.text.indexOf(' · '):-1;status.innerHTML=i>0?`<b>${esc(st.text.slice(0,i))}</b>${esc(st.text.slice(i))}`:esc(st.text)}page?.setAttribute('data-aw-state',st.tone);const empty=$('awEmpty');if(empty&&!m&&!window.LocalAIAgentWorld?.busy?.())empty.hidden=false;else if(empty&&m)empty.hidden=true;
- const [action,label,quiet]=primaryFor(m),head=$('awPrimary'),peek=$('awPeekAction');
- if(head){head.hidden=!!quiet;head.textContent=label;head.dataset.action=action}
- if(peek){peek.hidden=false;peek.textContent=label;peek.dataset.action=action;peek.classList.toggle('btn-primary',!quiet);peek.classList.toggle('btn-outline',!!quiet)}
- // Partly failed (it finished, but a worker stopped or never started): Retry mission beside See the result. A full
- // failure's one action is already Retry mission. Work's run view borrows only the city, so this never doubles its Retry.
- const partly=m?.status==='complete'&&(m.workers||[]).some(w=>(w.state==='error'||w.state==='blocked')&&!/-followup-\d+$/.test(String(w.id||'')));for(const id of['awRetry','awPeekRetry']){const b=$(id);if(b){b.hidden=!partly;b.disabled=retrying}}if(head&&action==='retry')head.disabled=retrying;if(peek&&action==='retry')peek.disabled=retrying;
+ const demo=!!window.LocalAIAgentWorld?.demoing?.();renderPlate(m,demo);
+ if(demo){page?.setAttribute('data-aw-state','demo');for(const id of['awPeekRetry']){const b=$(id);if(b)b.hidden=true}return}
+ page?.setAttribute('data-aw-state',m?st.tone:'idle');
+ const [action,label,quiet]=primaryFor(m),peek=$('awPeekAction');
+ if(peek){peek.hidden=false;peek.textContent=label;peek.dataset.action=action;peek.classList.toggle('btn-primary',!quiet);peek.classList.toggle('btn-outline',!!quiet);if(action==='retry')peek.disabled=retrying}
+ // Partly failed (it finished, but a worker stopped or never started): Retry beside See the answer on the peek. Work's
+ // run view borrows only the city, so this never doubles its Retry.
+ const partly=m?.status==='complete'&&(m.workers||[]).some(w=>(w.state==='error'||w.state==='blocked')&&!/-followup-\d+$/.test(String(w.id||'')));const pr=$('awPeekRetry');if(pr){pr.hidden=!partly;pr.disabled=retrying}
  document.querySelectorAll('[data-aw-menu="copy"],[data-aw-menu="replay"]').forEach(b=>b.disabled=b.dataset.awMenu==='copy'?!m?.answer:!(m?.timeline||[]).length||m?.status==='running')}
-function doPrimary(action){if(action==='retry')return retryMission();else if(action==='result')showResult();else if(action==='watch')window.LocalAIAgentWorld?.follow?.(true);else if(action==='crew'){if(phone.matches)setSnap('half');document.querySelector('#awcRoster [data-awc-roster]')?.focus({preventScroll:phone.matches})}else openStart();renderHead(currentMission)}
+function doPrimary(action){if(action==='retry')return retryMission();else if(action==='result')showResult();else if(action==='demo')window.LocalAIAgentWorld?.demo?.();else if(action==='watch')window.LocalAIAgentWorld?.follow?.(true);else if(action==='crew'){if(phone.matches)setSnap('half');document.querySelector('#awcRoster [data-awc-roster]')?.focus({preventScroll:phone.matches})}else openStart();renderHead(currentMission)}
 function showResult(){const r=document.querySelector('#agents .aw-results');if(phone.matches)setSnap('full');r?.scrollIntoView?.({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});$('agentResultBody')?.focus({preventScroll:true})}
 // ⋯ menu: Start a new mission, Watch the replay, Open in Work, Copy result, All missions.
 function setupMenu(){const btn=$('awMoreBtn'),menu=$('awMenu');if(!btn||!menu)return;const items=()=>[...menu.querySelectorAll('[role^=menuitem]:not(:disabled)')].filter(x=>x.offsetParent);
@@ -94,7 +112,7 @@ function setupMenu(){const btn=$('awMoreBtn'),menu=$('awMenu');if(!btn||!menu)re
   else if(a==='all')window.LocalAIRouter?.go('#work?kind=missions');
   else if(a==='demo')window.LocalAIAgentWorld?.demo?.();
   else if(a==='work'){let id='';try{id=((await req('/api/runs?kind=missions&limit=60')).items||[]).find(x=>(x.meta?.missionId||x.output?.missionId||x.source?.id||x.meta?.sourceId)===m?.id)?.id||''}catch{}if(id&&window.LocalAIRuns)window.LocalAIRuns.show(id);else window.LocalAIRouter?.go('#work?kind=missions')}
-  else if(a==='copy'&&m?.answer){try{await navigator.clipboard.writeText(m.answer);window.LocalAIUI?.toast?.('Result copied')}catch{window.LocalAIUI?.toast?.('Couldn’t copy. Select the summary and copy it instead.')}}});
+  else if(a==='copy'&&m?.answer){try{await navigator.clipboard.writeText(m.answer);window.LocalAIUI?.toast?.('Answer copied')}catch{window.LocalAIUI?.toast?.('Couldn’t copy. Select the answer and copy it instead.')}}});
  window.LocalAIShell?.setAction('agents',{icon:'more',label:'More',onClick:()=>window.LocalAIAgentMenu.toggle()})}
 // Retry runs the same goal again as a new mission (POST /api/agents/missions/start, the start sheet's path); Work's
 // Retry is the run ledger's /api/runs/retry and stays in Work. The buttons wait while it starts.
@@ -113,7 +131,25 @@ function renderResults(){const el=$('agentResultBody'),A=window.LocalAIAgentWord
  <h3>Sources</h3>${src.length?`<ul class="aw-results__sources">${src.map(e=>`<li>${link(e)}</li>`).join('')}</ul>`:'<p class="aw-results__none">No sources were used.</p>'}
  <details class="aw-results__dev" data-diagnostic><summary>Routing</summary><pre class="agent-result-pre">${m.routing?esc(JSON.stringify(m.routing,null,2)):'No routing recorded.'}</pre></details>`}
 // History lives in Work › Missions; this page only needs the missions to pick the one to show.
-async function loadHistory(){try{const j=await req('/api/agents/missions');history=j.items||j.missions||[];if(!currentMission){const m=history.find(m=>m.status==='running')||history[0];if(m)renderMission(m);else renderHead(null)}}catch(e){notice('error','Couldn’t load the missions: '+e.message)}}
+// A down source is never shown as empty (A7 P8): the notice above the faceplate says which one, in the phrase table's
+// words, and the faceplate keeps the mission it last had.
+function pageNotice(key,text){const el=$('awNotice');if(!el)return;const all=pageNotice.on||(pageNotice.on=new Map());if(text)all.set(key,text);else all.delete(key);el.textContent=[...all.values()].join(' ');el.hidden=!all.size}
+async function loadHistory(){try{const j=await req('/api/agents/missions');history=j.items||j.missions||[];historyState='ok';pageNotice('missions','');if(!currentMission){const m=history.find(m=>m.status==='running')||history[0];if(m)renderMission(m);else renderHead(null)}else renderHead(currentMission)}
+ catch{const first=historyState==='loading';historyState=first?'down':historyState;pageNotice('missions',window.ApplianceNeeds?.PHRASES?.source_down?.replace('{name}','The missions list')+(currentMission?'. Showing the mission as it was last seen.':'. Checking again when the page opens.'));if(first&&!currentMission)renderPlateDown()}
+ loadNeedsHere();paintSources()}
+function renderPlateDown(){const plate=$('awPlate');if(!plate)return;plate.setAttribute('aria-busy','false');const lamp=$('awLamp'),ro=$('awReadout'),cap=$('awTitle');if(lamp){lamp.hidden=false;lamp.className='ui-chip ui-chip--unknown';lamp.textContent='Unknown'}if(ro){ro.hidden=true;ro.textContent=''}if(cap)cap.textContent='The missions couldn’t be loaded, so this can’t say whether any are running.';for(const id of['awPrimary','awRetry','awEmptyDemo'])$(id)&&($(id).hidden=true);const n=$('awNew');if(n){n.hidden=false;n.textContent='New mission'}}
+// Needs you here: this page's items from Local AI's Needs you (needs-you.js pick), the missions that stopped and need a
+// look. Drawn by the kit like Home's; hidden when none, and when the list can't be read (the notice says so).
+async function loadNeedsHere(){const sec=$('awNeeds'),box=$('awNeedsList'),N=window.LocalAINeedsYou,K=window.ApplianceNeeds;if(!sec||!box)return;
+ let runs;try{runs=(await req('/api/runs?kind=missions&limit=60')).items||[];pageNotice('runs','')}catch{pageNotice('runs',(K?.PHRASES?.source_down||'{name} isn’t answering').replace('{name}','Work')+', so missions that need you may be missing here.');sec.hidden=true;return}
+ const items=N&&K?N.group(N.pick(runs)).map(g=>{const r=g.run,c=r.card||{},n=g.runs.length;return{id:'run:'+r.id,source:'Local AI',tone:r.status==='failed'?'bad':'attention',title:c.title||r.title||'Mission',detail:[n>1?`Stopped ×${n}`:c.badge?.label,c.summary].filter(Boolean).join(' · ')||'Stopped',link:'#run/'+encodeURIComponent(r.id)}}):[];
+ sec.hidden=!items.length;box.replaceChildren(...(items.length?[K.renderList(items,{here:new URL(location.href),self:'Local AI'})]:[]))}
+// Sources: where this page's facts come from and whether each answered (A7 P1). The city's outside readings (the
+// printer, the workshop display) come from Main Street's world feed.
+function paintSources(){const el=$('awSources');if(!el)return;const on=pageNotice.on||new Map(),chip=(name,state)=>`<span>${esc(name)}: <span class="ui-chip ui-chip--${state==='ok'?'ok':state==='bad'?'bad':'unknown'}">${state==='ok'?'Answering':state==='bad'?'Not answering':'Not read yet'}</span></span>`;
+ const city=window.LocalAIAWLandmarks?.state?.()?'ok':'unknown',seen=s=>historyState==='loading'?'unknown':s;
+ el.innerHTML='Sources: '+chip('Missions',seen(on.has('missions')?'bad':'ok'))+chip('Work',on.has('runs')?'bad':seen('ok'))+chip('The city’s readings',city)}
+
 // Start: the plan is checked first (so a bad goal is said in the sheet), then the mission starts; the sheet closes,
 // the camera flies to Command Center and the city wakes. A failure stays in the sheet (or a toast, from Try again).
 // A start from the sheet ends a demo first, so no real mission starts while the demo is shown.
@@ -133,10 +169,10 @@ function renderTeam(){const g=$('agentGoal')?.value.trim()||'',el=$('awTeam');
  teamTimer=setTimeout(async()=>{let r;try{const body={goal:g},ids=manualIds();if(ids?.length)body.agentIds=ids;r=(await req('/api/agents/dispatch',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})).routing}catch{return}if(($('agentGoal')?.value.trim()||'')!==g)return;teamFor=g;renderRoute(r);
   const p=window.LocalAIAgentWords?.teamPreview(r?.workers||[]);if(!p?.text){el.innerHTML='';return}el.innerHTML='<span class="aw-team__label">Who’s on the team</span><span class="aw-team__faces">'+p.workers.map(w=>'<img class="awc__avatar" src="'+(window.LocalAIAgentWorld?.avatar?.(w)||'')+'" alt="" width="32" height="32">').join('')+'</span><p>'+esc(p.text)+'</p>'},450)}
 function setupStart(){const d=$('awStart');if(!d)return;$('awStartClose').onclick=closeStart;d.addEventListener('click',e=>{if(e.target===d)closeStart()});$('agentGoal')?.addEventListener('input',renderTeam);
- $('awEmptyStart')?.addEventListener('click',openStart);$('awEmptyDemo')?.addEventListener('click',()=>{$('awEmpty').hidden=true;window.LocalAIAgentWorld?.demo?.()});window.LocalAIAgentStart={open:openStart}}
+ $('awNew')?.addEventListener('click',openStart);$('awEmptyDemo')?.addEventListener('click',()=>window.LocalAIAgentWorld?.demo?.());window.LocalAIAgentStart={open:openStart}}
 async function runSpecialist(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter an objective first.');return}const b=$('specialistRunBtn');if(b)b.disabled=true;try{const j=await req('/api/agents/specialist/run',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({agentId:selected,goal,projectId:$('agentProject')?.value||''})});renderRun(j.run)}catch(e){notice('error',e.message)}finally{if(b)b.disabled=false}}
 function setupAdvanced(){const toggle=$('agentAdvancedToggle'),panel=$('agentAdvancedPanel');if(toggle&&panel)toggle.onclick=()=>{const open=panel.hidden;panel.hidden=!open;if(open)loadWorkerModels();toggle.setAttribute('aria-expanded',String(open));toggle.textContent=open?'Hide advanced':'Advanced'};$('manualRouteToggle')?.addEventListener('change',e=>{$('manualRouteOptions').hidden=!e.target.checked})}
-async function init(){if(!$('specialistRegistry'))return;setupSheet();const historyLoaded=loadHistory();try{const j=await req('/api/agents/catalog');catalog=j.items||[];cards();updateDirectActionLabel()}catch(e){notice('error','Couldn’t load the list of workers: '+e.message)}setupAdvanced();setupMenu();setupStart();for(const id of ['awPrimary','awPeekAction'])$(id)?.addEventListener('click',e=>doPrimary(e.currentTarget.dataset.action));for(const id of ['awRetry','awPeekRetry'])$(id)?.addEventListener('click',retryMission);window.addEventListener('localai:agentworld-follow',()=>renderHead(currentMission));window.addEventListener('localai:agentworld-demo',()=>{renderHead(currentMission);renderTimeline(currentMission);renderResults();renderInspector()});$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m)},()=>notice('info','Live mission stream reconnecting…'),()=>{const n=$('agentInlineNotice');if(n&&/reconnecting/.test(n.textContent))clearNotice();loadHistory()})}catch{notice('info','Live mission stream unavailable; history remains accessible.')}}
+async function init(){if(!$('specialistRegistry'))return;setupSheet();const historyLoaded=loadHistory();try{const j=await req('/api/agents/catalog');catalog=j.items||[];cards();updateDirectActionLabel()}catch(e){notice('error','Couldn’t load the list of workers: '+e.message)}setupAdvanced();setupMenu();setupStart();for(const id of ['awPrimary','awPeekAction'])$(id)?.addEventListener('click',e=>doPrimary(e.currentTarget.dataset.action));for(const id of ['awRetry','awPeekRetry'])$(id)?.addEventListener('click',retryMission);window.addEventListener('localai:agentworld-follow',()=>renderHead(currentMission));window.addEventListener('localai:agentworld-services',paintSources);window.addEventListener('localai:agentworld-demo',()=>{renderHead(currentMission);renderTimeline(currentMission);renderResults();renderInspector()});$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m)},()=>pageNotice('feed','The live mission feed isn’t answering. Reconnecting; what is shown may be behind.'),()=>{pageNotice('feed','');loadHistory()})}catch{pageNotice('feed','The live mission feed isn’t available here. Missions show as they were when the page loaded.')}}
 // ---- Phone: everything but the city is a bottom sheet over it, with three snaps ----
 // peek (the status sentence and the crew's portraits), half, full. Drag the top of the sheet, tap the handle to step
 // up, Back to lower it (one history entry while it is up). At peek the body is inert, so focus never lands in what is
@@ -154,7 +190,7 @@ function setupSheet(){
  const s=$('awSheet'),top=s?.querySelector('.aw-sheet__top'),page=$('agents');if(!top)return;let d=null;
  // Capture the pointer only once it moves, so a tap still clicks the handle.
  // The stage sits between the header and the tab bar: measure both (they follow the safe areas).
- const measure=()=>{const b=document.getElementById('uxContextBar')?.getBoundingClientRect().bottom;if(b>0)page.style.setProperty('--aw-top',Math.round(b)+'px');const n=document.getElementById('uxMobileNav')?.getBoundingClientRect();if(n?.height)page.style.setProperty('--aw-bottom',Math.max(0,Math.round(innerHeight-n.top))+'px');if(snap!=='peek')s.style.setProperty('--aw-y',sheetY(s,snap)+'px')};
+ const measure=()=>{const strip=document.getElementById('uxPageStrip'),b=Math.max(document.getElementById('uxContextBar')?.getBoundingClientRect().bottom||0,strip&&!strip.hidden&&strip.offsetParent?strip.getBoundingClientRect().bottom:0);if(b>0)page.style.setProperty('--aw-top',Math.round(b)+'px');const n=document.getElementById('uxMobileNav')?.getBoundingClientRect();if(n?.height)page.style.setProperty('--aw-bottom',Math.max(0,Math.round(innerHeight-n.top))+'px');if(snap!=='peek')s.style.setProperty('--aw-y',sheetY(s,snap)+'px')};
  $('awSheetHandle').addEventListener('click',()=>{if(performance.now()-dragEnd<300)return;setSnap(snap==='peek'?'half':snap==='half'?'full':'peek')});
  s.querySelector('.aw-sheet__peek').addEventListener('click',e=>{if(performance.now()-dragEnd>=300&&snap==='peek'&&!e.target.closest('.aw-sheet__retry'))setSnap('half')});
  top.addEventListener('pointerdown',e=>{if(!phone.matches||e.button>0||e.target.closest?.('.awc__scrub'))return;d={id:e.pointerId,y:e.clientY,t:e.timeStamp,from:sheetY(s,snap),moved:false}});
@@ -1330,7 +1366,7 @@ function demoMission(){
 function applyDemo(){const next=demoMission();if(!demo.active||current?.id!==next.id){agents.clear();artifacts=[];packets=[];sparks=[]}current=next;sourceType='demo';current.workers.forEach(ensureAgent);syncHud();if(next.status==='complete'&&!reduced)celebrate();addEvent('Demo: '+DEMO_STAGES[demo.stage].label);recordReplayFrame('demo-stage-'+demo.stage);
  // The Story's frames: as a real mission's timeline, at seconds since the demo began (an ISO duration, "PT12S").
  const kind=next.status==='complete'?'mission-complete':next.status==='needs_attention'?'mission-attention':'stage';demo.log.push({at:'PT'+Math.round((now()-demo.t0)/1000)+'S',type:demo.log.some(e=>e.type===kind)?'stage':kind,workers:next.workers});demoSaid(true)}
-function startDemo(){document.querySelector('.aw-page')?.classList.add('is-demo');const empty=document.getElementById('awEmpty');if(empty)empty.hidden=true;demo.active=true;demo.running=true;demo.paused=false;demo.stage=0;demo.lastAdvance=demo.t0=now();demo.log=[];applyDemo();fitWorld();syncDemoControls()}
+function startDemo(){document.querySelector('.aw-page')?.classList.add('is-demo');demo.active=true;demo.running=true;demo.paused=false;demo.stage=0;demo.lastAdvance=demo.t0=now();demo.log=[];applyDemo();fitWorld();syncDemoControls()}
 const demoSaid=on=>window.dispatchEvent(new CustomEvent('localai:agentworld-demo',{detail:{active:on}}));
 function stepDemo(){if(!demo.active)startDemo();else{demo.stage=Math.min(DEMO_STAGES.length-1,demo.stage+1);demo.lastAdvance=now();applyDemo();if(demo.stage===DEMO_STAGES.length-1)demo.running=false}syncDemoControls()}
 function returnLive(){const was=demo.active;document.querySelector('.aw-page')?.classList.remove('is-demo');replay.active=false;replay.playing=false;demo.active=false;demo.running=false;demo.paused=false;agents.clear();artifacts=[];packets=[];sparks=[];dust=[];if(liveSnapshot){current=liveSnapshot;sourceType='mission';current.workers.forEach(ensureAgent)}else{current=null;sourceType='idle';idleCrew()}syncHud();syncDemoControls();syncReplay();fitWorld();if(was)demoSaid(false)}
@@ -1341,11 +1377,14 @@ function syncHud(){
 }
 // Crew rows, the accessible equivalent of the city: portrait, name, role in words, state, and what they are doing now.
 // The sheet's peek row shows the same crew as small portraits beside the status sentence.
+// Crew rows put the lamp on the right (A7 P3), in the kit's chip: Working is live, Done ok, Needs you bad, Waiting unknown.
+const CHIP={accent:'live',good:'ok',bad:'bad',neutral:'unknown'};
 function syncRoster(){
  const A=window.LocalAIAgentWords,workers=current?.workers||[],m=current?(current.raw||current):null,h=$('#awcRoster');if(!A)return;
- if(h){h.innerHTML=workers.length?workers.map(w=>{const b=A.stateBadge(w.state);return `<div role="listitem"><button type="button" class="awc__rosterItem ${esc(w.state)}" data-awc-roster="${esc(w.id)}"><img class="awc__avatar" src="${avatar(w)}" alt="" width="40" height="40"><span class="awc__rosterText"><strong>${esc(A.workerName(w))}</strong><small>${esc(A.workerRole(w))}</small><span>${esc(A.workerStep(w,m))}</span></span><em class="badge badge--${b.tone}">${esc(b.label)}</em></button></div>`}).join(''):'<div class="awc__empty" role="listitem">No workers yet.</div>';h.querySelectorAll('[data-awc-roster]').forEach(b=>b.onclick=()=>focusWorker(b.dataset.awcRoster))}
+ if(h){h.innerHTML=workers.length?workers.map(w=>{const b=A.stateBadge(w.state);return `<div role="listitem"><button type="button" class="awc__rosterItem ui-row ui-row--lamp ${esc(w.state)}" data-awc-roster="${esc(w.id)}"><img class="awc__avatar" src="${avatar(w)}" alt="" width="40" height="40"><span class="awc__rosterText"><strong>${esc(A.workerName(w))}</strong><small>${esc(A.workerRole(w))}</small><span>${esc(A.workerStep(w,m))}</span></span><span class="ui-chip ui-chip--${CHIP[b.tone]||'unknown'}">${esc(b.label)}</span></button></div>`}).join(''):'<div class="awc__empty" role="listitem">No workers yet.</div>';h.querySelectorAll('[data-awc-roster]').forEach(b=>b.onclick=()=>focusWorker(b.dataset.awcRoster))}
  const av=$('#awSheetAvatars');if(av)av.innerHTML=workers.map(w=>`<img class="awc__avatar is-${esc(w.state)}" data-worker="${esc(w.id)}" src="${avatar(w)}" alt="" width="30" height="30">`).join('');
- const st=$('#awSheetStatus');if(st){const t=A.statusSentence(m),i=t.label?t.text.indexOf(' · '):-1;st.dataset.tone=t.tone;st.innerHTML=i>0?`<b>${esc(t.text.slice(0,i))}</b>${esc(t.text.slice(i))}`:esc(t.text)}
+ const st=$('#awSheetStatus');if(st){const t0=A.statusSentence(m),t=t0.tone==='attention'?{...t0,text:t0.text.replace(/^Needs you/,'Needs attention')}:t0,i=t.label?t.text.indexOf(' · '):-1; // the faceplate's lamp word, so the peek and the lamp agree
+st.dataset.tone=t.tone;st.innerHTML=i>0?`<b>${esc(t.text.slice(0,i))}</b>${esc(t.text.slice(i))}`:esc(t.text)}
 }
 // A worker's pixel portrait: head and shoulders from the city's own sprite sheet.
 const portraits=new Map();
@@ -1517,9 +1556,11 @@ function loadMods(){if(awMods)return;awMods=true;for(const m of AW_MODS){const s
 function syncLayerRows(){
  const crew=$('#awcRoster')?.closest('.aw-crew'),rows=[];if(!crew)return;let s=$('#awServices');
  layers.forEach((l,i)=>{let r=[];try{r=l.rows?.()||[]}catch{}for(const it of r)rows.push({l,it,k:i+':'+it.id})});
- if(!s){if(!rows.length)return;s=document.createElement('section');s.className='aw-crew';s.id='awServices';s.setAttribute('aria-labelledby','awServicesTitle');s.innerHTML='<h2 id="awServicesTitle" class="aw-h">City services</h2><div id="awcLayerRows" class="aw-crew__rows" role="list"></div>';crew.after(s)}
+ if(!s){if(!rows.length)return;s=document.createElement('section');s.className='ui-section aw-crew aw-services';s.id='awServices';s.setAttribute('aria-labelledby','awServicesTitle');s.innerHTML='<h2 id="awServicesTitle">City services</h2><div id="awcLayerRows" class="aw-crew__rows" role="list"></div>';(crew.parentElement?.querySelector(':scope>.aw-story-box')||crew).after(s)}
  const list=$('#awcLayerRows',s),had=document.activeElement?.dataset?.awcLayer;s.hidden=!rows.length;
- list.innerHTML=rows.map(r=>`<div role="listitem"><button type="button" class="awc__rosterItem" data-awc-layer="${esc(r.k)}"><span class="awc__rosterText"><strong>${esc(r.it.label)}</strong><span>${esc(r.it.detail||'')}</span></span></button></div>`).join('');
+ // A service row: its name and detail on the left, its state on the right (A7 P3). The state is the layer's own word, with
+ // no colour the reading doesn't give.
+ list.innerHTML=rows.map(r=>{const d=String(r.it.detail||''),i=d.indexOf(' · '),state=i>0?d.slice(0,i):d,more=i>0?d.slice(i+3):'';return `<div role="listitem"><button type="button" class="awc__rosterItem ui-row ui-row--lamp" data-awc-layer="${esc(r.k)}"><span class="awc__rosterText"><strong>${esc(r.it.label)}</strong>${more?`<span>${esc(more)}</span>`:''}</span><span class="aw-row__state">${esc(state)}</span></button></div>`}).join('');window.dispatchEvent(new Event('localai:agentworld-services'));
  list.querySelectorAll('button').forEach((b,i)=>{b.onclick=()=>{try{rows[i].l.open?.(rows[i].it)}catch{}};if(had&&b.dataset.awcLayer===had)b.focus()})
 }
 // ---- Ground ----------------------------------------------------------------------------------------------------

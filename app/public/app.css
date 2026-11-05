@@ -374,7 +374,6 @@ summary {
 
 /* ==== agent-specialists.css ==== */
 /* Agent Operations v2 — mission-first control surface */
-.agent-ops{display:grid;gap:14px}
 
 .agent-inline-notice{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--ux-line,var(--line));border-radius:12px;padding:10px 12px;background:#1f2321}.agent-inline-notice>div{display:grid;gap:2px}.agent-inline-notice span{font-size:12px;color:var(--muted)}.agent-inline-notice[data-kind="error"]{border-color:rgba(255,113,128,.35);background:rgba(255,113,128,.05)}.agent-inline-notice[data-kind="success"]{border-color:rgba(98,222,160,.3);background:rgba(98,222,160,.05)}
 .agent-mission-strip{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--ux-line,var(--line));border-radius:12px;background:rgba(255,255,255,.018)}.agent-mission-strip :is(h2,h3){font-size:13px;margin:0 0 2px;letter-spacing:0}.agent-mission-strip small{color:var(--muted)}.agent-mission-progress{width:170px;height:6px;border-radius:99px;background:#2a302d;overflow:hidden}.agent-mission-progress span{display:block;height:100%;width:0;background:linear-gradient(90deg,#7ce3e8,var(--ds-accent),#6ce39a);transition:width .25s ease}
@@ -758,7 +757,7 @@ details.disclosure{margin-top:12px;border-top:1px solid var(--ds-line);padding-t
    Color roles: graphite neutrals (the kit's Faceplate); one teal for anything you can act on; amber means work in progress;
    green done; red needs attention. */
 @font-face{font-family:Archivo;font-style:normal;font-weight:400 750;font-stretch:75% 100%;font-display:swap;src:url(/fonts/archivo-latin-ui.woff2) format('woff2')}
-/* The kit's Needs you rows (/ui/needs.css, the only kit sheet Local AI loads) read --ui-* names: each is an alias of a value
+/* The kit's Needs you rows (/ui/needs.css) and page parts (/ui/components.css), the kit sheets Local AI loads, read --ui-* names: each is an alias of a value
    above that equals the kit's dark one (tests/appliance-ui.test.cjs checks every name needs.css reads). Sizes are the kit's own, except
    the small source line, which keeps Local AI's 13 px floor (the kit's is 12 px). */
 :root{
@@ -791,7 +790,11 @@ details.disclosure{margin-top:12px;border-top:1px solid var(--ds-line);padding-t
   --ux-line:var(--ds-line);--ux-line-strong:var(--ds-line-2);--ux-text:var(--ds-text);--ux-muted:var(--ds-muted);
   --ux-accent:var(--ds-accent);--ux-accent-2:var(--ds-violet);--ux-good:var(--ds-good);--ux-warn:var(--ds-progress);--ux-bad:var(--ds-bad);
   --ux-radius:var(--ds-r-md);--ux-radius-lg:var(--ds-r-lg);--ui-bad:var(--ds-bad);--ui-warn:var(--ds-attention);--ui-muted:var(--ds-muted);--ui-text:var(--ds-text);--ui-line:var(--ds-line);--ui-surface:var(--ds-surface);
-  --ui-font:var(--ds-font);--ui-r-2:var(--ds-r-sm);--ui-fs-1:var(--ds-fs-1);--ui-fs-2:13px;--ui-space:4px;--ux-nav-width:76px}
+  --ui-font:var(--ds-font);--ui-r-2:var(--ds-r-sm);--ui-fs-1:var(--ds-fs-1);--ui-fs-2:13px;--ui-space:4px;--ux-nav-width:76px;
+  /* The kit's page parts (/ui/components.css, since Pi Hub A7 on Agent World) read these too: the kit's dark values. */
+  --ui-bg:var(--ds-bg);--ui-surface-2:var(--ds-surface-2);--ui-line-2:var(--ds-line-2);--ui-field-line:var(--ds-line-input);--ui-accent:var(--ds-accent);
+  --ui-on-accent:var(--ds-accent-ink);--ui-ok:var(--ds-good);--ui-unknown:#b0b8b2;--ui-r-1:4px;--ui-r-3:var(--ds-r-md);
+  --ui-fs-3:14px;--ui-fs-4:16px;--ui-fs-5:20px;--ui-fs-6:26px;--ui-fs-7:34px;--ui-stretch-heading:87.5%;--ui-stretch-readout:75%}
 /* Agent World uses the same palette */
 .awc-v3,.aw-page{--aw-ground:var(--ds-bg);--aw-panel:var(--ds-surface);--aw-panel2:var(--ds-surface-2);--aw-line:var(--ds-line);--aw-line2:var(--ds-line-2);
   --aw-text:var(--ds-text);--aw-muted:var(--ds-muted);--aw-faint:var(--ds-faint);--aw-amber:var(--ds-progress);--aw-green:var(--ds-good);--aw-red:var(--ds-bad);--aw-blue:var(--ds-accent)}
@@ -1890,17 +1893,35 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 /* ==== Agent World page (redesign 2026-10-17; docs/superpowers/specs/2026-10-17-agent-world-design.md) ====
    The city is the page. Desktop: the city beside a rail; tablet: the rail under the city. Phone (≤760px): the city
    fills the screen between the header and the tab bar, and everything else is a bottom sheet over it with three
-   snaps (#awSheet[data-snap]: peek, half, full) that ui.js drives; the page itself never scrolls. */
-.aw-stage{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:14px;align-items:start}
+   snaps (#awSheet[data-snap]: peek, half, full) that ui.js drives; the page itself never scrolls.
+   Since Pi Hub A7 (plan decision 9) the page is the anatomy: head, Work's strip, [notice], the mission as the one
+   faceplate (#awPlate) with the city as its aside, then sections. Desktop: sections under the faceplate. Phone: a
+   compact faceplate above the city, the sections in the sheet. */
+#agents.view.active{display:grid;gap:24px;min-width:0}
+.aw-stage{display:grid;grid-template-columns:minmax(0,1fr);gap:28px;align-items:start;min-width:0}
 .aw-city{min-width:0}
 .aw-sheet{min-width:0}
 .aw-sheet__top{display:none}
 .aw-sheet__body{display:grid;gap:14px;min-width:0}
-@media(min-width:761px){.aw-sheet{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--ds-line-2) transparent}}
-@media(min-width:761px) and (max-width:1023px){.aw-stage{grid-template-columns:minmax(0,1fr)}.aw-sheet{position:static;max-height:none;overflow:visible}}
+.aw-plate.ui-faceplate--aside{grid-template-columns:minmax(0,1fr)}
+@media(min-width:1024px){.aw-plate.ui-faceplate--aside{grid-template-columns:minmax(220px,300px) minmax(0,1fr);align-items:stretch}.aw-plate .ui-faceplate__aside{margin:calc(var(--ui-space)*-5) calc(var(--ui-space)*-5) calc(var(--ui-space)*-5) 0}}
+.aw-plate{overflow:hidden}
+.aw-plate__main{align-content:start}
+.aw-plate .ui-faceplate__readings{flex-direction:column;gap:10px}
+.aw-plate__goal{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.aw-plate__goal .ui-skeleton{width:90%}
+.aw-plate__wait{width:5ch;height:.8em}
+.aw-plate__now{margin:0;color:var(--ds-soft);font-size:var(--ds-fs-2);line-height:1.4}
+.aw-plate__now[hidden],.aw-plate .ui-readout[hidden],.aw-plate dl[hidden]{display:none}
+.aw-plate__actions button{min-height:44px}
+.aw-plate__actions button[hidden]{display:none}
+@media(max-width:1023px){.aw-plate .ui-faceplate__aside{min-width:0;margin:0 calc(var(--ui-space)*-5) calc(var(--ui-space)*-5)}}
+.aw-notice[hidden]{display:none}
+.aw-sheet__body>.ui-section[hidden]{display:none}
+.aw-sources{padding-top:8px}
+.aw-row__state{flex:none;font-size:var(--ds-fs-2);color:var(--ds-soft);text-align:right}
 
 /* Crew: one row per worker, the accessible equivalent of the city. */
-.aw-h{margin:0 0 8px;font-size:var(--ds-fs-1);font-weight:650;color:var(--ds-soft)}
 .aw-crew__rows{display:grid;gap:6px}
 .awc__rosterItem{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:12px;align-items:center;width:100%;min-height:60px;padding:8px 12px 8px 8px;border:1px solid var(--ds-line);border-radius:var(--ds-r-md);background:var(--ds-surface);color:var(--ds-text);text-align:left;font:inherit;cursor:pointer;transition:border-color .15s ease,background .15s ease}
 .awc__rosterItem:hover{background:var(--ds-surface-2);border-color:var(--ds-line-2)}
@@ -1909,7 +1930,12 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .awc__rosterItem:is(.error,.blocked){border-color:rgba(255,107,107,.45);box-shadow:inset 3px 0 0 var(--ds-bad)}
 .awc__rosterText{display:grid;gap:1px;min-width:0}
 /* City services rows (#awcLayerRows) have no avatar or badge: the text takes the whole row. */
-#awcLayerRows .awc__rosterItem{grid-template-columns:minmax(0,1fr);padding-left:12px}
+#awcLayerRows .awc__rosterItem{grid-template-columns:minmax(0,1fr) auto}
+/* Crew and City services are lamp-right rows on the page (A7 P3), not cards: the chip says the state. */
+.aw-crew__rows{gap:0}
+.awc__rosterItem.ui-row{min-height:56px;padding:8px 4px;border:0;border-bottom:1px solid var(--ds-line);border-radius:0;background:transparent;box-shadow:none}
+.awc__rosterItem.ui-row:hover{background:var(--ds-surface)}
+.awc__rosterItem.ui-row>:last-child{margin-left:0}
 .awc__rosterText>*{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .awc__rosterText strong{font-size:14px;font-weight:650}
 .awc__rosterText small{font-size:12px;color:var(--ds-muted)}
@@ -1937,7 +1963,19 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
      the page itself "visible" while all of it is the fixed stage. */
   body.ux-v3 #agents{animation:none;min-height:1px}
   #agents>.topbar{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
-  #agents .aw-stage{position:fixed;left:0;right:0;top:var(--aw-top,56px);bottom:var(--aw-bottom,calc(var(--mobile-nav-height) + env(safe-area-inset-bottom)));z-index:1;display:block;overflow:hidden}
+  #agents .aw-stage{position:fixed;left:0;right:0;top:var(--aw-top,56px);bottom:var(--aw-bottom,calc(var(--mobile-nav-height) + env(safe-area-inset-bottom)));z-index:1;display:flex;flex-direction:column;gap:0;overflow:hidden}
+  /* The compact faceplate: nameplate, lamp and readout on one line, the goal on the next; its actions are the peek's. */
+  #agents .aw-notice{flex:none;border-radius:0;padding:8px 16px;font-size:var(--ds-fs-1)}
+  #agents .aw-plate{flex:1;min-height:0;display:flex;flex-direction:column;gap:0;padding:0;border:0;border-radius:0;background:var(--ds-bg-2)}
+  #agents .aw-plate__main{flex:none;box-sizing:border-box;height:60px;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:center;align-items:center;gap:2px 12px;padding:6px 16px} /* a whole-pixel height keeps the canvas crisp */
+  #agents .aw-plate .ui-faceplate__nameplate{grid-column:1}
+  #agents .aw-plate__readout{grid-column:2;grid-row:1/span 2;font-size:var(--ds-fs-5)}
+  #agents .aw-plate__goal{grid-column:1;-webkit-line-clamp:1;font-size:var(--ds-fs-2)}
+  #agents .aw-plate__now,#agents .aw-plate .ui-faceplate__readings,#agents .aw-plate__actions{display:none}
+  /* No mission yet: the faceplate keeps its demo (New mission is the peek's action). */
+  #agents[data-aw-state="idle"] .aw-plate__main{height:auto}
+  #agents[data-aw-state="idle"] .aw-plate__actions{display:flex;grid-column:1/-1}
+  #agents .aw-plate .ui-faceplate__aside{flex:1;min-height:0;margin:0}
   #agents .aw-city,#agents #agentWorldCityMount{height:100%}
   #agents .awc-v3{height:100%;display:flex;flex-direction:column;border:0;border-radius:0;box-shadow:none}
 
@@ -1966,17 +2004,8 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 }
 @media(prefers-reduced-motion:reduce){.aw-sheet{transition:none}}
 
-/* Header: the goal, one sentence, one action and the ⋯ menu. */
-.aw-head{position:relative;display:flex;align-items:flex-start;gap:16px;margin-bottom:14px}
-.aw-head__text{flex:1;min-width:0}
-.aw-head__text h1{margin:0;font-size:var(--ds-fs-4);line-height:1.25;overflow-wrap:anywhere}
-.aw-head__status{margin:4px 0 0;font-size:var(--ds-fs-2);color:var(--ds-soft)}
-.aw-page[data-aw-state="working"] .aw-head__status b{color:var(--ds-attention-text)}
-.aw-page[data-aw-state="attention"] .aw-head__status b{color:var(--ds-bad-text)}
-.aw-page[data-aw-state="done"] .aw-head__status b{color:var(--ds-good-text)}
-.aw-head__actions{display:flex;gap:8px;flex:none}
-.aw-head__actions>button{min-height:44px}
-.aw-head__more{display:grid;place-items:center;width:44px;padding:0}
+/* Head: Agent World, its purpose, and the ⋯ menu as the head's tool. */
+.aw-head__more{display:grid;place-items:center;width:44px;min-height:44px;padding:0}
 .aw-head__more .icon{width:20px;height:20px}
 .aw-page{--aw-peek:112px;position:relative}
 .aw-menu{position:absolute;right:0;top:56px;z-index:20;display:grid;min-width:220px;padding:6px;border:1px solid var(--ds-line-2);border-radius:var(--ds-r-md);background:var(--ds-surface-2);box-shadow:0 18px 50px rgba(0,0,0,.45)}
@@ -2024,12 +2053,11 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .aw-story__empty{font-size:var(--ds-fs-2);color:var(--ds-muted)}
 .aw-all{display:inline-flex;align-items:center;min-height:44px;color:var(--ds-accent-text);font-weight:600}
 
-/* Tablet: the rail under the city, crew beside the story. */
-@media(min-width:761px) and (max-width:1023px){
-  .aw-sheet__body{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
-  .aw-sheet__body>:not(.aw-crew,.aw-story-box){grid-column:1/-1}
-  /* City services (a second .aw-crew, added by the layers) goes under both, so the story stays beside the crew. */
-  .aw-sheet__body>#awServices{grid-column:1/-1;order:1}
+/* Desktop: the sections under the faceplate, crew beside the story; the rest full width. */
+@media(min-width:761px){
+  .aw-sheet__body{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;gap:28px 32px}
+  .aw-sheet__body>:not(.aw-crew,.aw-story-box,.aw-worker){grid-column:1/-1}
+  .aw-sheet__body>#awServices{grid-column:1/-1}
 }
 @media(max-width:760px){
   .aw-head{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
@@ -2194,16 +2222,7 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 
 /* No mission yet: the city at golden hour invites a goal. */
 .aw-city{position:relative}
-.aw-empty{position:absolute;inset:0;z-index:3;display:grid;place-items:center;padding:16px;pointer-events:none}
-.aw-empty[hidden]{display:none}
-.aw-empty__card{pointer-events:auto;max-width:420px;padding:22px;border:1px solid rgba(255,200,140,.35);border-radius:var(--ds-r-lg);background:rgba(12,20,34,.9);box-shadow:0 20px 60px rgba(0,0,0,.45);text-align:center}
-.aw-empty__card h2{margin:0;font-size:var(--ds-fs-4)}
-.aw-empty__card p{margin:8px 0 16px;color:var(--ds-soft);font-size:var(--ds-fs-2);line-height:1.45}
-.aw-empty__actions{display:flex;flex-wrap:wrap;justify-content:center;gap:10px}
-.aw-empty__actions button{min-height:44px}
-@media(max-width:760px){.aw-empty{bottom:var(--aw-peek)}}
-/* Wider screens: the card sits bottom-left, so the idle city's Command Center stays in view. */
-@media(min-width:761px){.aw-empty{place-items:end start}}
+
 .agent-inline-notice[hidden]{display:none}
 
 /* Agent World: notes float over the city's top-left for 4 s; the ⋯ menu's View group. */

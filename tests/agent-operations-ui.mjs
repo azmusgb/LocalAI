@@ -37,8 +37,10 @@ await check('system capability health distinguishes optional companions',async()
 await check('desktop navigation architecture',async()=>{
   await page.locator('.ux-primary-rail').waitFor({state:'visible'});
   assert.equal(await page.locator('.ux-primary-item').count(),5);
-  assert.equal(await page.locator('.ux-primary-item[data-domain="work"]').getAttribute('aria-current'),'true','Missions lights Work');
-  assert.equal(await page.locator('#uxPageStrip').isVisible(),false,'no page strip over the city');
+  assert.equal(await page.locator('.ux-primary-item[data-domain="work"]').getAttribute('aria-current'),'true','Agent World lights Work');
+  // A Work tab since Pi Hub A7 (plan decision 9): Work's strip shows, with Agent World current.
+  assert.equal(await page.locator('#uxPageStrip').isVisible(),true,'Work\'s strip');
+  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(),'Agent World');
 });
 await check('contextual navigation switches domains',async()=>{
   await page.locator('.ux-primary-item[data-domain="projects"]').click();
@@ -79,8 +81,8 @@ await check('Agent World is mounted',async()=>{
   assert.ok(box&&box.width>0&&box.height>0,'Agent World should render a visible game surface');
 });
 await check('Agent World stage is landscape and full-width',async()=>{
-  const city=await page.locator('.aw-city').boundingBox(),rail=await page.locator('#awSheet').boundingBox();
-  assert.ok(city.width>=2*rail.width,'the city takes the main area; the rail beside it is narrow');
+  const city=await page.locator('.aw-city').boundingBox(),plate=await page.locator('.aw-plate__main').boundingBox();
+  assert.ok(city.width>=2.5*plate.width,'the city takes most of the faceplate; the mission beside it is narrow');
   const map=await page.locator('.awc__mapWrap').boundingBox();
   assert.ok(map&&map.width>map.height,'Game map should be landscape, not a tall portrait strip');
 });
@@ -326,7 +328,9 @@ await check('navigation reaches Missions through Work',async()=>{
     assert.equal(await pg.locator('[data-work-kind="missions"]').getAttribute('aria-checked'),'true'); // Work's chips are one segmented control (E5)
     assert.deepEqual(await pg.locator('#work .run-card').evaluateAll(r=>r.map(x=>x.dataset.kind)),['agent']);
   };
-  const deep=await visit('#agents',{width:1280,height:860});await onlyMissions(deep);await deep.close();
+  // #agents is Agent World again (a Work tab, Pi Hub A7 plan decision 9), not an alias of Work; #work?kind=missions lists them.
+  const deep=await visit('#work?kind=missions',{width:1280,height:860});await onlyMissions(deep);await deep.close();
+  const map=await visit('#agents',{width:1280,height:860});await map.waitForSelector('#agents.active');await map.close();
   for(const viewport of [{width:1280,height:860},{width:390,height:844}]){
     const pg=await visit('',viewport);
     await pg.locator(viewport.width<760?'#uxMobileNav [data-domain="work"]':'.ux-primary-item[data-domain="work"]').click();

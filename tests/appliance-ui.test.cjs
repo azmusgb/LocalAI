@@ -28,14 +28,16 @@ test('the design tokens carry the kit\'s dark colours', () => {
 
 // needs.css (the kit's Needs you rows) is the one kit sheet Local AI loads, and it reads --ui-* names. app.css aliases every one
 // of them onto its own values; each must exist and equal the kit's dark value (a font stack only has to start with the same face).
-test('every --ui-* name needs.css reads is aliased to the kit\'s dark value', () => {
+test('every --ui-* name needs.css and components.css read is aliased to the kit\'s dark value', () => {
   const norm = v => v.replace(/\s+/g, '').replace(/,/g, ', ').replace(/, /g, ',');
   const kitRoot = read('ui/tokens.css').split('\n').find(l => l.startsWith(':root{'));
   const kit = Object.fromEntries([...kitRoot.matchAll(/--ui-([a-z0-9-]+):([^;]+);/g)].map(m => [m[1], norm(m[2])]));
   const css = read('app.css');
   const decl = name => { const m = css.match(new RegExp('(?:^|[;{\\s])' + name + ':([^;}]+)[;}]')); return m && norm(m[1]); };
   const resolve = v => { for (let i = 0; i < 5; i++) { const m = /^var\((--[a-z0-9-]+)\)$/.exec(v); if (!m) break; v = decl(m[1]); } return v; };
-  const used = [...new Set([...read('ui/needs.css').matchAll(/var\(--ui-([a-z0-9-]+)/g)].map(m => m[1]))];
+  // components.css (the page parts, since Agent World's A7 page) reads them too; the names it sets itself (the beam) are its own.
+  const own = new Set([...read('ui/components.css').matchAll(/(?:^|[;{\s])--ui-([a-z0-9-]+):/g)].map(m => m[1]));
+  const used = [...new Set([...(read('ui/needs.css') + read('ui/components.css')).matchAll(/var\(--ui-([a-z0-9-]+)/g)].map(m => m[1]))].filter(n => !own.has(n));
   assert.ok(used.length >= 11, 'needs.css reads ' + used.join(', '));
   for (const n of used) {
     const got = decl('--ui-' + n);

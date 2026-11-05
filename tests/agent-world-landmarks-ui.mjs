@@ -50,7 +50,9 @@ await check('the city off screen never asks for /api/world', async () => {
 
 await page.evaluate(() => window.showView('agents'));
 await page.waitForFunction(() => !!window.LocalAIAWLandmarks?.state(), null, { timeout: 8000 });
-const rowText = () => page.locator('#awcLayerRows').innerText();
+// Each row puts its state on the right (A7 P3): read it back as "state · detail", the layer's own words.
+const ROWS = () => [...document.querySelectorAll('#awcLayerRows button')].map(b => { const st = b.querySelector('.aw-row__state')?.textContent || '', more = b.querySelector('.awc__rosterText > span')?.textContent || ''; return b.querySelector('strong').textContent + '\n' + st + (more ? ' · ' + more : ''); }).join('\n');
+const rowText = () => page.evaluate(ROWS);
 
 await check('busy: each place is a City services row that says what it is doing', async () => {
   await page.waitForFunction(() => document.querySelectorAll('#awcLayerRows button').length === 4);
@@ -98,7 +100,7 @@ await check('no worker route goes through the new buildings', async () => {
 await check('down: the places say so plainly, and an unchanged answer does not refresh the rows', async () => {
   answer = DOWN;
   await page.evaluate(() => window.LocalAIAWLandmarks.poll());
-  await page.waitForFunction(() => document.querySelector('#awcLayerRows')?.innerText.includes('Bridge down'));
+  await page.waitForFunction(() => ([...document.querySelectorAll('#awcLayerRows button')].map(b => { const st = b.querySelector('.aw-row__state')?.textContent || '', more = b.querySelector('.awc__rosterText > span')?.textContent || ''; return b.querySelector('strong').textContent + '\n' + st + (more ? ' · ' + more : ''); }).join('\n')).includes('Bridge down'));
   const t = await rowText();
   for (const want of ['Not answering · The model server didn’t answer', 'Not answering · The printer isn’t reporting right now', 'Bridge down', 'Offline'])
     assert.ok(t.includes(want), `rows say "${want}": ${t}`);
@@ -112,19 +114,19 @@ await check('down: the places say so plainly, and an unchanged answer does not r
 await check('a printer error names the code', async () => {
   answer = ERROR;
   await page.evaluate(() => window.LocalAIAWLandmarks.poll());
-  await page.waitForFunction(() => document.querySelector('#awcLayerRows')?.innerText.includes('Needs attention · Error 0300_4001'));
+  await page.waitForFunction(() => ([...document.querySelectorAll('#awcLayerRows button')].map(b => { const st = b.querySelector('.aw-row__state')?.textContent || '', more = b.querySelector('.awc__rosterText > span')?.textContent || ''; return b.querySelector('strong').textContent + '\n' + st + (more ? ' · ' + more : ''); }).join('\n')).includes('Needs attention · Error 0300_4001'));
 });
 
 await check('expired telemetry is not a current printer state', async () => {
   answer = { ...BUSY, printer: { setUp: true, access: 'stale', state: null, progress: null, via: 'pi-hub' } };
   await page.evaluate(() => window.LocalAIAWLandmarks.poll());
-  await page.waitForFunction(() => document.querySelector('#awcLayerRows')?.innerText.includes('Reading expired'));
+  await page.waitForFunction(() => ([...document.querySelectorAll('#awcLayerRows button')].map(b => { const st = b.querySelector('.aw-row__state')?.textContent || '', more = b.querySelector('.awc__rosterText > span')?.textContent || ''; return b.querySelector('strong').textContent + '\n' + st + (more ? ' · ' + more : ''); }).join('\n')).includes('Reading expired'));
 });
 
 await check('a finished print still asks for its plate confirmation', async () => {
   answer = { ...BUSY, printer: { setUp: true, access: 'ok', state: 'idle', needsPlateClear: true, via: 'pi-hub' } };
   await page.evaluate(() => window.LocalAIAWLandmarks.poll());
-  await page.waitForFunction(() => document.querySelector('#awcLayerRows')?.innerText.includes('Print finished · Check and clear the plate'));
+  await page.waitForFunction(() => ([...document.querySelectorAll('#awcLayerRows button')].map(b => { const st = b.querySelector('.aw-row__state')?.textContent || '', more = b.querySelector('.awc__rosterText > span')?.textContent || ''; return b.querySelector('strong').textContent + '\n' + st + (more ? ' · ' + more : ''); }).join('\n')).includes('Print finished · Check and clear the plate'));
 });
 
 await check('reduced motion keeps drawing without errors', async () => {

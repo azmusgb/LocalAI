@@ -185,7 +185,7 @@ for (const [dname, device] of DEVICES.filter(([n]) => !process.env.AXE_DEVICE ||
     // What opens over a page: Agent World's ⋯ menu, its start sheet, Home's mode sheet and the ⌘K palette.
     // The ⋯ button is desktop only; the start sheet opens through the menu's own handler on both.
     ...(dname === '1440' ? [{ name: 'agents (⋯ menu)', go: async p => { await p.evaluate(() => window.showView('agents')); await p.locator('#awMoreBtn').click(); } }] : []),
-    { name: 'agents (start sheet)', go: async p => { await p.evaluate(() => { window.showView('agents'); document.querySelector('[data-aw-menu="new"]').click(); }); } },
+    { name: 'agents (start sheet)', go: async p => { await p.evaluate(() => { window.showView('agents'); window.LocalAIAgentStart.open(); }); } },
     { name: 'home (mode sheet)', go: async p => { await p.keyboard.press('Escape'); await p.evaluate(() => window.showView('home')); await p.locator('#homeModeChip').click(); } },
     { name: 'command palette', go: async p => { await p.keyboard.press('Escape'); await p.keyboard.press('Control+k'); } }];
   for (const s of states.filter(x => !ONLY.length || ONLY.some(o => x.name.startsWith(o)))) {

@@ -1,7 +1,7 @@
 import { chromium, devices } from 'playwright';
 import assert from 'node:assert/strict';
 
-// Agent World lives on the Missions page, which sub-project 2 hid from the menus. Work › Missions links to it.
+// Agent World is a tab of Work (Pi Hub A7 plan, decision 9); Work › Missions also links to it.
 // Phone: the city fills the screen between the header and the tab bar, everything else is in a bottom sheet, and the
 // page itself never scrolls (design: docs/superpowers/specs/2026-10-17-agent-world-design.md).
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
@@ -141,7 +141,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
     await page.locator('[data-work-kind="missions"]').click();
     await page.locator('#workAgentWorld').waitFor({ state: 'visible' });
   });
-  await check(`${viewport.width}px: Open Agent World opens the Missions page with the world`, async () => {
+  await check(`${viewport.width}px: Open Agent World opens the Agent World tab`, async () => {
     const before = await page.evaluate(() => history.length);
     await page.locator('#workOpenAgentWorld').click();
     await page.waitForSelector('#agents.active');
@@ -193,9 +193,14 @@ async function withMission(contextOpts, mission) {
 }
 {
   const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, FAILED);
-  await check('1440px: the header says what went wrong and offers one action', async () => {
-    assert.match(await page.locator('#awStatus').innerText(), /^Needs you · 1 of 3 done · UX Analyst stopped: the model didn’t answer$/);
+  // Pi Hub A7 plan, decision 9: the page is titled Agent World; the mission is its faceplate.
+  await check('1440px: the faceplate says what went wrong and offers Retry mission first', async () => {
+    assert.equal(await page.locator('#agents h1').innerText(), 'Agent World');
+    assert.equal(await page.locator('#awLamp').innerText(), 'Needs attention');
+    assert.match(await page.locator('#awReadout').innerText(), /^1 of 3\s*done$/);
+    assert.equal(await page.locator('#awStatus').innerText(), 'UX Analyst stopped: the model didn’t answer');
     assert.equal(await page.locator('#awPrimary').innerText(), 'Retry mission');
+    assert.equal(await page.locator('#awNew').innerText(), 'New mission');
     assert.equal(await page.locator('#awRetry').isVisible(), false, 'one Retry mission, not two');
     assert.equal(await page.locator('#agents .pill').count(), 0, 'the Mission-first pill is gone');
   });
@@ -211,10 +216,12 @@ async function withMission(contextOpts, mission) {
     await page.evaluate(m => window.dispatchEvent(new CustomEvent('localai:agentworld-mission', { detail: { mission: m } })), FAILED);
     await page.waitForFunction(() => document.getElementById('awCrewSummary').textContent === '3 workers: 1 done, 2 need you.', null, { timeout: 4000 });
   });
-  await check('1440px: the city fills the main area; the rail beside it is 360 px', async () => {
-    const city = await page.locator('.aw-city').boundingBox(), rail = await page.locator('#awSheet').boundingBox();
-    assert.ok(Math.abs(rail.width - 360) < 2, `rail ${rail.width}`);
-    assert.ok(rail.x >= city.x + city.width, 'rail is to the right of the city');
+  await check('1440px: the city is the faceplate\'s aside; the sections are under it, crew beside the story', async () => {
+    const plate = await page.locator('.aw-plate__main').boundingBox(), city = await page.locator('.aw-city').boundingBox(), crew = await page.locator('.aw-crew:not(#awServices)').boundingBox(), story = await page.locator('.aw-story-box').boundingBox();
+    assert.ok(city.x >= plate.x + plate.width - 1, 'the city is beside the mission');
+    assert.ok(city.width >= 900, `the city keeps most of the width (${city.width})`);
+    assert.ok(crew.y >= city.y + city.height, 'sections under the faceplate');
+    assert.ok(story.x > crew.x + crew.width - 2 && Math.abs(story.y - crew.y) < 4, 'story beside the crew');
     assert.ok((await page.locator('.awc__mapWrap').boundingBox()).height >= 520, 'the city is at least 520 px tall');
   });
   await check('1440px: the story tells the mission in sentences, newest first', async () => {
@@ -254,9 +261,10 @@ async function withMission(contextOpts, mission) {
     await page.locator('#awMoreBtn').click();
     const menu = page.locator('#awMenu');
     await menu.waitFor({ state: 'visible' });
-    assert.deepEqual(await menu.locator('[data-aw-menu]:visible').allInnerTexts(), ['Start a new mission', 'Watch the replay', 'Watch mode', 'Open in Work', 'Copy result', 'All missions', 'Try a demo mission']);
+    assert.deepEqual(await menu.locator('[data-aw-menu]:visible').allInnerTexts(), ['Copy the answer', 'Open in Work', 'All missions', 'Try a demo mission', 'Watch the replay', 'Watch mode']);
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.awMenu), 'work', 'Copy is disabled with no answer: the menu opens on Open in Work');
     await page.keyboard.press('ArrowDown');
-    assert.equal(await page.evaluate(() => document.activeElement.dataset.awMenu), 'replay');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.awMenu), 'all');
     await page.keyboard.press('Escape');
     await menu.waitFor({ state: 'hidden' });
     assert.equal(await page.evaluate(() => document.activeElement.id), 'awMoreBtn');
@@ -269,16 +277,20 @@ async function withMission(contextOpts, mission) {
 }
 {
   const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, DONE);
-  await check('1440px: a finished mission says how long it took and offers the result', async () => {
-    assert.match(await page.locator('#awStatus').innerText(), /^Done in 4 min · 3 workers$/);
-    assert.equal(await page.locator('#awPrimary').innerText(), 'See the result');
+  await check('1440px: a finished mission says how long it took, offers the answer, and puts it first', async () => {
+    assert.equal(await page.locator('#awLamp').innerText(), 'Done');
+    assert.match(await page.locator('#awReadout').innerText(), /^4\s*min$/);
+    assert.equal(await page.locator('#awPrimary').innerText(), 'See the answer');
+    assert.equal(await page.locator('#awReadings').innerText().then(t => /Answered by/.test(t)), false, 'no route recorded: no Answered by line');
+    const order = await page.locator('#awSheetBody > section:not([hidden]) > h2').allInnerTexts();
+    assert.deepEqual(order.slice(0, 3), ['Answer', 'Crew', 'Story']);
   });
   await check('1440px: no script errors (done)', async () => assert.deepEqual(errors, []));
   await context.close();
 }
 {
   const { context, page, errors } = await withMission({ viewport: { width: 900, height: 1100 } }, FAILED);
-  await check('900px: the rail is under the city, crew beside the story', async () => {
+  await check('900px: the sections are under the faceplate, crew beside the story', async () => {
     const city = await page.locator('.aw-city').boundingBox(), crew = await page.locator('.aw-crew:not(#awServices)').boundingBox(), story = await page.locator('.aw-story-box').boundingBox();
     assert.ok(crew.y >= city.y + city.height, 'crew under the city');
     assert.ok(story.x > crew.x + crew.width - 2 && Math.abs(story.y - crew.y) < 4, 'story beside the crew');
@@ -325,15 +337,17 @@ async function emptyPage(contextOpts) {
 }
 for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 } }], ['iPhone 14', (({ defaultBrowserType, ...d }) => d)(devices['iPhone 14'])]]) {
   const { context, page, errors, sent } = await emptyPage(opts);
-  await check(`${label}: with no mission the city invites a goal and offers a demo`, async () => {
-    const empty = page.locator('#awEmpty');
-    await empty.waitFor({ state: 'visible' });
-    assert.match(await empty.innerText(), /Give your team a goal/);
+  // No mission ever: the faceplate says so, with New mission (the peek's action on a phone) and a demo.
+  const startBtn = label === '1440px' ? '#awPrimary' : '#awPeekAction';
+  await check(`${label}: with no mission the faceplate says so and offers New mission and a demo`, async () => {
+    await page.waitForFunction(() => /^No missions yet/.test(document.getElementById('awTitle')?.textContent || ''));
+    assert.equal(await page.locator('#awLamp').isVisible(), false, 'no lamp for a mission that doesn’t exist');
+    assert.equal(await page.locator(startBtn).innerText(), 'New mission');
     await page.locator('#awEmptyDemo').waitFor({ state: 'visible' });
     assert.equal(await page.locator('.agent-compose').isVisible(), false, 'no form on the page itself');
   });
-  await check(`${label}: Start a mission opens the sheet; typing shows the team in words`, async () => {
-    await page.locator('#awEmptyStart').click();
+  await check(`${label}: New mission opens the sheet; typing shows the team in words`, async () => {
+    await page.locator(startBtn).click();
     const sheet = page.locator('#awStart');
     await sheet.waitFor({ state: 'visible' });
     assert.match(await sheet.innerText(), /What should the team do\?/);
@@ -356,25 +370,27 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await check(`${label}: Escape closes the sheet and focus returns`, async () => {
     await page.keyboard.press('Escape');
     await page.locator('#awStart').waitFor({ state: 'hidden' });
-    assert.equal(await page.evaluate(() => document.activeElement.id), 'awEmptyStart');
+    assert.equal(await page.evaluate(() => document.activeElement.id), startBtn.slice(1));
   });
-  await check(`${label}: Try a demo mission runs the city and hides the invitation`, async () => {
+  await check(`${label}: Try a demo mission runs the city, and the faceplate says it is a demo`, async () => {
     await page.locator('#awEmptyDemo').click();
-    await page.locator('#awEmpty').waitFor({ state: 'hidden' });
+    await page.waitForFunction(() => document.getElementById('awLamp')?.textContent === 'Demo');
+    assert.equal(await page.locator('#awEmptyDemo').isVisible(), false);
     await page.waitForFunction(() => document.querySelectorAll('#awcRoster [data-awc-roster]').length >= 3);
   });
   await check(`${label}: no script errors (start)`, async () => assert.deepEqual(errors, []));
   await context.close();
 }
-// The More menu's "Try a demo mission" starts the demo without the card's button; the invitation must still go.
+// A demo started another way (watch mode, a test) still owns the faceplate, and a later refresh doesn't take it back.
 {
   const { context, page, errors } = await emptyPage({ viewport: { width: 1440, height: 900 } });
-  await check('1440px: a demo started from the menu hides the invitation', async () => {
-    await page.locator('#awEmpty').waitFor({ state: 'visible' });
+  await check('1440px: a demo started without the button still owns the faceplate', async () => {
+    await page.locator('#awEmptyDemo').waitFor({ state: 'visible' });
     await page.evaluate(() => window.LocalAIAgentWorld.demo());
-    await page.locator('#awEmpty').waitFor({ state: 'hidden' });
-    await page.waitForTimeout(2500); // a later status refresh must not bring it back while the demo runs
-    assert.equal(await page.locator('#awEmpty').isVisible(), false);
+    await page.waitForFunction(() => document.getElementById('awLamp')?.textContent === 'Demo');
+    await page.waitForTimeout(2500); // a later status refresh must not bring the empty faceplate back while the demo runs
+    assert.equal(await page.locator('#awLamp').innerText(), 'Demo');
+    assert.equal(await page.locator('#awEmptyDemo').isVisible(), false);
     assert.deepEqual(errors, []);
   });
   await context.close();
@@ -386,7 +402,7 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await page.route(u => u.pathname === '/api/improve/handoff', r => { handed.push(r.request().postDataJSON()); r.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ item: { id: 'idea-1' } }) }); });
   const SELF = 'Improve look feel and polish of agent world';
   await check(`${label}: a plain goal gets no suggestion; a goal to change Local AI itself does`, async () => {
-    await page.locator('#awEmptyStart').click();
+    await page.locator(label === '1440px' ? '#awPrimary' : '#awPeekAction').click();
     await page.locator('#awStart').waitFor({ state: 'visible' });
     await page.locator('#agentGoal').fill('plan the vegetable garden');
     await page.waitForTimeout(300);
@@ -747,18 +763,18 @@ const panCity = async page => {
 }
 {
   const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, RUN());
-  await check('1440px running (loaded from history): no Start a mission; Watch live once the camera stops following', async () => {
+  // A7 plan, decision 9: while it runs the faceplate's only action is a quiet New mission; following is the city's own
+  // Follow control, as it always was.
+  await check('1440px running (loaded from history): the faceplate says it is working, with no loud action', async () => {
     await page.waitForFunction(() => window.LocalAIAgentWorld.following());
-    assert.match(await page.locator('#awStatus').innerText(), /^Working · 1 of 3 done/);
-    assert.equal(await page.locator('#awPrimary').isVisible(), false, 'following: no loud action');
-    assert.notEqual(await page.locator('#awPrimary').textContent(), 'Start a mission');
+    assert.equal(await page.locator('#awLamp').innerText(), 'Working');
+    assert.match(await page.locator('#awReadout').innerText(), /^1 of 3\s*done$/);
+    assert.equal(await page.locator('#awPrimary').isVisible(), false, 'no loud action while it runs');
+    assert.equal(await page.locator('#awNew').innerText(), 'New mission');
+    assert.deepEqual(await visiblePrimaries(page), []);
     await panCity(page);
-    await page.locator('#awPrimary').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#awPrimary').innerText(), 'Watch live');
-    assert.deepEqual(await visiblePrimaries(page), ['Watch live']);
-    await page.locator('#awPrimary').click();
-    assert.equal(await page.evaluate(() => window.LocalAIAgentWorld.following()), true);
-    await page.locator('#awPrimary').waitFor({ state: 'hidden' });
+    await page.waitForFunction(() => !window.LocalAIAgentWorld.following());
+    assert.equal(await page.locator('#awPrimary').isVisible(), false, 'Follow is the city’s control, not the faceplate’s');
   });
   await check('1440px: no Mission Router anywhere; the team lead is the Team lead', async () => {
     assert.equal(await page.evaluate(() => document.documentElement.outerHTML.includes('Mission Router')), false, 'not in the DOM');
@@ -778,7 +794,8 @@ const panCity = async page => {
   const m = { ...RUN(), status: 'error', error: reason, workers: [{ id: 'router', name: 'Mission Router', state: 'complete', dependsOn: [] }, { id: 'code_analyst', name: 'Code Analyst', state: 'error', error: reason, dependsOn: ['router'] }, { id: 'synthesis', name: 'Coordinator', state: 'blocked', error: reason, dependsOn: ['code_analyst'] }] };
   const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, m);
   await check('1440px: an interrupted mission reads "was interrupted by an update", whole in the crew row', async () => {
-    assert.equal(await page.locator('#awStatus').innerText(), 'Needs you · 1 of 3 done · Code Analyst was interrupted by an update');
+    assert.equal(await page.locator('#awLamp').innerText(), 'Needs attention');
+    assert.equal(await page.locator('#awStatus').innerText(), 'Code Analyst was interrupted by an update');
     const step = page.locator('#awcRoster [data-awc-roster="code_analyst"] .awc__rosterText span');
     assert.equal(await step.innerText(), 'Interrupted by an update');
     assert.ok(await step.evaluate(e => e.scrollWidth <= e.clientWidth + 1), 'not cut off');
@@ -866,7 +883,7 @@ const DEV_WORDS = /Synthesis|Evidence|Routing|Mission Router|Capability|Groundin
 {
   const { defaultBrowserType, ...device } = devices['iPhone 14'];
   const { context, page, errors } = await withMission(device, DONE2);
-  await check('iPhone 14: See the result raises the sheet to the summary', async () => {
+  await check('iPhone 14: See the answer raises the sheet to the summary', async () => {
     await page.locator('#awPeekAction').click();
     await page.waitForFunction(() => document.getElementById('awSheet').dataset.snap === 'full');
     await page.locator('#agentResultBody h3', { hasText: 'Summary' }).waitFor({ state: 'visible' });
@@ -948,7 +965,7 @@ const tall = async (page, sel) => { const b = await page.locator(sel).boundingBo
     await page.locator('#awcReplayLive').waitFor({ state: 'hidden' });
   });
   await check('1440px: a mission that finished cleanly offers no Retry mission', async () => {
-    assert.equal(await page.locator('#awPrimary').innerText(), 'See the result');
+    assert.equal(await page.locator('#awPrimary').innerText(), 'See the answer');
     assert.equal(await page.locator('#awRetry').isVisible(), false);
   });
   await check('1440px: no script errors (timeline)', async () => assert.deepEqual(errors, []));
@@ -990,7 +1007,7 @@ const tall = async (page, sel) => { const b = await page.locator(sel).boundingBo
 }
 
 // Retry mission next to the city (2026-10-19): a stopped mission's one action is Retry mission; one that finished with a
-// worker stopped offers Retry mission beside See the result (the header, or the peek on a phone). Both start the same
+// worker stopped offers Retry mission beside See the answer (the header, or the peek on a phone). Both start the same
 // goal again through the mission start; Work's run Retry (/api/runs/retry) stays in Work, and the run view borrows only
 // the city, so the two never show together.
 const PARTLY = { ...DONE, id: 'mission-ui-partly', workers: snapW('error', 'complete', { errorCode: 'MODEL_CONNECTION_ERROR' }), results: [{ agentId: 'ux_analyst', agentName: 'UX Analyst', status: 'error', error: 'fetch failed', errorCode: 'MODEL_CONNECTION_ERROR' }] };
@@ -1003,9 +1020,9 @@ const stubStart = async page => {
 };
 {
   const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, PARTLY);
-  await check('1440px: partly failed: Retry mission beside See the result, in the header next to the city', async () => {
-    assert.match(await page.locator('#awStatus').innerText(), /^Done/);
-    assert.equal(await page.locator('#awPrimary').innerText(), 'See the result');
+  await check('1440px: partly failed: Retry mission beside See the answer, on the faceplate next to the city', async () => {
+    assert.equal(await page.locator('#awLamp').innerText(), 'Done');
+    assert.equal(await page.locator('#awPrimary').innerText(), 'See the answer');
     const r = page.locator('#awRetry');
     await r.waitFor({ state: 'visible' });
     assert.equal(await r.innerText(), 'Retry mission');
@@ -1048,21 +1065,21 @@ const stubStart = async page => {
 // while the city, crew and story showed the demo. During a demo the header says so; stopping it brings the real one back.
 {
   const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, PARTLY);
-  await check('1440px: during a demo the header says Demo mission; stopping it restores the real mission', async () => {
+  await check('1440px: during a demo the faceplate says Demo; stopping it restores the real mission', async () => {
     await page.locator('#awRetry').waitFor({ state: 'visible' });
     await page.evaluate(() => window.LocalAIAgentWorld.demo());
-    await page.waitForFunction(() => document.getElementById('awTitle').textContent === 'Demo mission');
-    assert.equal(await page.locator('#awStatus').innerText(), 'A sample run — nothing is sent anywhere');
+    await page.waitForFunction(() => document.getElementById('awLamp').textContent === 'Demo');
+    assert.equal(await page.locator('#awTitle').innerText(), 'A sample run. Nothing is sent anywhere.');
     assert.equal(await page.locator('#agents').getAttribute('data-aw-state'), 'demo');
     assert.equal(await page.locator('#awPrimary').isVisible(), false, 'the real mission’s action is not offered for the demo');
     assert.equal(await page.locator('#awRetry').isVisible(), false, 'no Retry mission for a demo');
     await page.evaluate(() => window.LocalAIAgentWorld.demoStep());
     await page.waitForTimeout(400);
-    assert.equal(await page.locator('#awTitle').innerText(), 'Demo mission', 'still the demo after it moves on');
+    assert.equal(await page.locator('#awLamp').innerText(), 'Demo', 'still the demo after it moves on');
     await page.locator('#awcLiveBtn').click();
     await page.waitForFunction(g => document.getElementById('awTitle').textContent === g, PARTLY.goal);
-    assert.match(await page.locator('#awStatus').innerText(), /^Done in 4 min/);
-    assert.equal(await page.locator('#awPrimary').innerText(), 'See the result');
+    assert.match(await page.locator('#awReadout').innerText(), /^4\s*min$/);
+    assert.equal(await page.locator('#awPrimary').innerText(), 'See the answer');
     await page.locator('#awRetry').waitFor({ state: 'visible' });
   });
   // Review (2026-10-19): the demo used the real workers' ids, so its frames went into the real replay (and its saved
@@ -1075,7 +1092,7 @@ const stubStart = async page => {
     await page.locator('#agentRetryBtn').waitFor({ state: 'visible' });
     const realPanel = await page.locator('#agentInspector').innerHTML();
     await page.evaluate(() => window.LocalAIAgentWorld.demo());
-    await page.waitForFunction(() => document.getElementById('awTitle').textContent === 'Demo mission');
+    await page.waitForFunction(() => document.getElementById('awLamp').textContent === 'Demo');
     for (let i = 0; i < 4; i++) await page.evaluate(() => window.LocalAIAgentWorld.demoStep());
     await select('ux_analyst');
     assert.equal(await page.locator('#agentRetryBtn').count(), 0, 'no Try again for a demo worker');
@@ -1150,14 +1167,14 @@ const stubStart = async page => {
 {
   const { defaultBrowserType, ...device } = devices['iPhone 14'];
   const { context, page, errors } = await withMission(device, PARTLY);
-  await check('iPhone 14: partly failed: the peek has Retry (named Retry mission) beside See the result; it starts the goal again', async () => {
+  await check('iPhone 14: partly failed: the peek has Retry (named Retry mission) beside See the answer; it starts the goal again', async () => {
     const r = page.locator('#awPeekRetry');
     await r.waitFor({ state: 'visible' });
     assert.equal(await r.getAttribute('aria-label'), 'Retry mission');
-    assert.equal(await page.locator('#awPeekAction').innerText(), 'See the result');
+    assert.equal(await page.locator('#awPeekAction').innerText(), 'See the answer');
     await tall(page, '#awPeekRetry');
     const a = await page.locator('#awPeekAction').boundingBox(), b = await r.boundingBox();
-    assert.ok(b.x >= a.x + a.width - 1 && b.x + b.width <= device.viewport.width, 'beside See the result, on screen');
+    assert.ok(b.x >= a.x + a.width - 1 && b.x + b.width <= device.viewport.width, 'beside See the answer, on screen');
     const s = await stubStart(page);
     await r.tap();
     await s.sent();

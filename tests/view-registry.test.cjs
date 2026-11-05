@@ -28,9 +28,14 @@ test('registry has five domains and every view belongs to one', () => {
     assert.ok(v.label && v.description && v.section && v.svg, `${v.id} is missing label, description, section or icon`);
   }
   for (const d of registry.DOMAINS) assert.equal(registry.view(d.defaultView)?.domain, d.id, `${d.id} default view must be in that domain`);
-  for (const id of ['ask', 'create', 'agents', 'runs']) assert.equal(registry.view(id).domain, 'hidden', `${id} has no nav entry`);
+  for (const id of ['ask', 'create', 'runs']) assert.equal(registry.view(id).domain, 'hidden', `${id} has no nav entry`);
   assert.equal(registry.resolve('runs'), 'work');
-  assert.equal(registry.resolve('agents'), 'work');
+  // Agent World is a Work tab with its own address (Pi Hub A7 plan, decision 9): #agents opens the map, not Work.
+  assert.equal(registry.resolve('agents'), 'agents');
+  assert.equal(registry.view('agents').id, 'agents');
+  assert.equal(registry.page('agents').id, 'work');
+  assert.equal(registry.view('agents').tab, 'Agent World');
+  assert.equal(registry.title('agents'), 'Agent World · Local AI');
   assert.equal(registry.resolve('ask'), 'home');
   assert.equal(registry.resolve('create'), 'home');
   // Improve's stages replaced Change requests, Issues and Quality signals.
@@ -85,12 +90,13 @@ test('every registered view has a page, and every nav button is registered', () 
   }
 });
 
-// Agent World (agents) titles itself with the mission's goal (design 2026-10-17-agent-world); its nav label still matches.
-const GOAL_HEADING = new Set(['agents']);
+// Agent World (agents) is a Work tab that titles itself Agent World, not Work: the mission is its faceplate (Pi Hub A7
+// plan, decision 9), and the strip says it is part of Work.
+const OWN_HEADING = new Set(['agents']);
 test('page headings and nav labels match the registry', () => {
   for (const v of registry.VIEWS) {
     if (v.id === 'home' || INJECTED[v.id] || PENDING.has(v.id)) continue;
-    if (GOAL_HEADING.has(v.id)) assert.match(html, new RegExp(`<section id="${v.id}"[^>]*>[\\s\\S]*?<h1 id=`), `#${v.id} has a heading`);
+    if (OWN_HEADING.has(v.id)) assert.match(html, new RegExp(`<section id="${v.id}"[^>]*>[\\s\\S]*?<h1[^>]*>${v.label}</h1>`), `#${v.id} is titled ${v.label}`);
     else {
       const m = html.match(new RegExp(`<section id="${v.id}"[^>]*>[\\s\\S]*?<h1>([^<]*)</h1>`));
       assert.equal(m?.[1], registry.page(v.id).label, `#${v.id} heading`);
@@ -139,7 +145,7 @@ test('tabs belong to a top-level page in the same domain', () => {
   assert.equal(registry.view('approvals').id, 'inbox');
   assert.notEqual(registry.view('inbox').tab, 'Alerts');
   assert.deepEqual(registry.tabs('projects').map(v => v.id), ['projects', 'knowledge', 'memory', 'library']);  // Spreadsheets and Print lab left Projects (2 Nov, D4)
-  assert.deepEqual(registry.tabs('work').map(v => v.id), ['work', 'automationStudio'], 'Automations is scheduled work');
+  assert.deepEqual(registry.tabs('work').map(v => v.id), ['work', 'agents', 'automationStudio'], 'Work · Agent World · Assistant automations');
   assert.deepEqual(registry.tabs('claude'), []);
 });
 

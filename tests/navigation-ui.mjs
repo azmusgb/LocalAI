@@ -87,14 +87,15 @@ await check('retired pages are gone and their addresses land on Signals, In prog
   await ctx.close();
 });
 
-// A hidden page that remains (Missions, Chat, Images) names itself in the top bar and lights the area that owns it.
+// Agent World is a Work tab (Pi Hub A7 plan, decision 9): the top bar names Work, the strip lights Agent World. A hidden
+// page that remains (Chat, Images) names itself in the top bar and lights the area that owns it.
 await check('a hidden page names itself in the top bar and lights the area that owns it', async () => {
   await page.evaluate(() => window.showView('agents'));
   await page.waitForSelector('#agents.active');
-  await page.waitForFunction(() => document.querySelector('#uxContextView')?.textContent === 'Missions');
-  assert.equal(await crumb(), 'Missions');
+  await page.waitForFunction(() => document.querySelector('#uxContextView')?.textContent === 'Work');
   assert.equal(await page.locator('.ux-primary-item[data-domain="work"]').getAttribute('aria-current'), 'true');
-  assert.equal(await page.locator('#uxPageStrip').isVisible(), false);
+  assert.deepEqual(await stripLabels(), ['Work', 'Agent World', 'Assistant automations']);
+  assert.equal(await page.title(), 'Agent World · Local AI');
   await page.evaluate(() => window.showView('ask'));
   await page.waitForSelector('#ask.active');
   await page.waitForFunction(() => document.querySelector('#uxContextView')?.textContent === 'Chat');
