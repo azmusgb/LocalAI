@@ -269,18 +269,28 @@ def parse_python(
 # Domains for repositories other than Local AI, first match wins; each uses the DOMAIN_ORDER names. Anything
 # unmatched falls to the shared rules in classify_other.
 REPO_DOMAINS: dict[str, list[tuple[str, str]]] = {
+    # The Server column is the modules that serve or guard routes (app.py serves most of them but also starts everything, so
+    # it is Platform); a feature module that serves none is Shared (Core), not API.
     "pi-hub": [
         ("hub/static/", "UI"),
         ("hub/app.py", "Platform"),
-        ("hub/lab", "Workshop"), ("hub/printer", "Workshop"), ("hub/bambuddy", "Workshop"),
-        ("hub/filament", "Workshop"), ("hub/display", "Workshop"),
-        ("hub/db.py", "Data"), ("hub/records", "Data"),
-        ("hub/", "API"),
+        ("hub/display_routes", "API"), ("hub/notify_routes", "API"), ("hub/uploads", "API"), ("hub/gate", "API"),
+        ("hub/auth", "API"),
+        ("hub/lab", "Workshop"), ("hub/printer", "Workshop"), ("hub/printing", "Workshop"), ("hub/bambuddy", "Workshop"),
+        ("hub/filament", "Workshop"), ("hub/display", "Workshop"), ("hub/mac_lab", "Workshop"),
+        ("hub/things/printer", "Workshop"), ("hub/things/lab", "Workshop"),
+        ("hub/plex", "Media"), ("hub/movie_night", "Media"),
+        ("hub/db.py", "Data"), ("hub/records", "Data"), ("hub/recorder", "Data"), ("hub/events", "Data"),
+        ("hub/", "Core"),
     ],
+    # A command-line package: the commands start everything (Platform), the print loop and printer talk are the
+    # capability (Workshop), checks and geometry are shared (Core), and records and history are the data.
     "print-lab": [
         ("lab/page", "UI"),
-        ("lab/cli", "Platform"),
-        ("lab/printer", "Workshop"), ("lab/bambuddy", "Workshop"), ("lab/sync", "Workshop"), ("lab/pull", "Workshop"),
+        ("lab/cli", "Platform"), ("lab/observe_cli", "Platform"), ("lab/watch", "Platform"),
+        ("lab/loop/", "Workshop"), ("lab/printer", "Workshop"), ("lab/bambuddy", "Workshop"), ("lab/sync", "Workshop"),
+        ("lab/pull", "Workshop"), ("lab/jobs", "Workshop"), ("lab/runs", "Workshop"), ("lab/production", "Workshop"),
+        ("lab/qualification", "Workshop"),
         ("lab/records", "Data"), ("lab/history", "Data"), ("lab/index", "Data"),
         ("lab/", "Core"),
     ],
@@ -652,20 +662,32 @@ def is_comment_line(line: str) -> bool:
     return line.lstrip().startswith(("//", "/*", "*"))
 
 
+def scan_repo() -> str:
+    return SNAPSHOT["repo"] if SNAPSHOT else "localai"
+
+
+# Pi Hub serves FastAPI from hub/ and its browser scripts live in hub/static. Every other repository is read with
+# Local AI's Node layout (app/public calling app/server.js and app/server/*.js); one without those folders, such as
+# Print lab (a command-line package), simply has no HTTP links.
 def http_browser_files(files: list[Path]) -> list[Path]:
+    base = ("hub", "static") if scan_repo() == "pi-hub" else ("app", "public")
     out = []
     for path in files:
         parts = path.relative_to(ROOT).parts
-        if path.suffix.lower() in (".js", ".mjs") and len(parts) > 2 and parts[:2] == ("app", "public"):
+        if path.suffix.lower() in (".js", ".mjs") and len(parts) > 2 and parts[:2] == base:
             out.append(path)
     return out
 
 
 def http_server_files(files: list[Path]) -> list[Path]:
+    fastapi = scan_repo() == "pi-hub"
     out = []
     for path in files:
         parts = path.relative_to(ROOT).parts
-        if path.suffix.lower() == ".js" and (parts == ("app", "server.js") or (len(parts) == 3 and parts[:2] == ("app", "server"))):
+        if fastapi:
+            if path.suffix.lower() == ".py" and len(parts) > 1 and parts[0] == "hub" and parts[1] != "static":
+                out.append(path)
+        elif path.suffix.lower() == ".js" and (parts == ("app", "server.js") or (len(parts) == 3 and parts[:2] == ("app", "server"))):
             out.append(path)
     return out
 
@@ -716,16 +738,55 @@ def server_regex_literals(line: str) -> list[str]:
     return found
 
 
+FASTAPI_METHODS = {"get", "post", "put", "delete", "patch", "head", "options", "api_route", "websocket"}
+
+
+def fastapi_routes(file: Path) -> list[tuple[str, str, int]]:
+    """(path, match, line) for each FastAPI route a module declares: @app.get("/api/x") or @router.post("/y") under
+    router = APIRouter(prefix="/api/z"). A {param} segment becomes "*"; a trailing {name:path} serves everything below."""
+    try:
+        tree = ast.parse(file.read_text(encoding="utf-8", errors="replace"), filename=str(file))
+    except (OSError, SyntaxError, ValueError):
+        return []
+    prefixes: dict[str, str] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) and getattr(node.value.func, "id", getattr(node.value.func, "attr", "")) == "APIRouter":
+            prefix = next((k.value.value for k in node.value.keywords if k.arg == "prefix" and isinstance(k.value, ast.Constant) and isinstance(k.value.value, str)), "")
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    prefixes[target.id] = prefix
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for deco in node.decorator_list:
+            if not (isinstance(deco, ast.Call) and isinstance(deco.func, ast.Attribute) and deco.func.attr in FASTAPI_METHODS
+                    and isinstance(deco.func.value, ast.Name) and deco.args and isinstance(deco.args[0], ast.Constant)
+                    and isinstance(deco.args[0].value, str)):
+                continue
+            path = prefixes.get(deco.func.value.id, "") + deco.args[0].value
+            if "{" in path and re.search(r"\{[^}]*:path\}$", path):
+                found.append((re.sub(r"\{[^}]*:path\}$", "", path), "prefix", deco.lineno))
+                continue
+            path = re.sub(r"\{[^}/]*\}", "*", path)
+            found.append((path, "pattern" if "*" in path else "exact", deco.lineno))
+    return found
+
+
 def collect_server_routes(files: list[Path]) -> list[dict]:
     routes: dict[tuple[str, str, str], dict] = {}
 
     def add(path: str, match: str, module: str, line: int) -> None:
         path = clean_route(path)
-        if len(path) <= len("/api/"):
-            return  # "/api/" alone would claim every path
+        if not path.startswith("/api/") or len(path) <= len("/api/"):
+            return  # only /api/ is called from the browser; "/api/" alone would claim every path
         routes.setdefault((path, match, module), {"path": path, "match": match, "module": module, "line": line})
 
     for file in http_server_files(files):
+        if file.suffix.lower() == ".py":
+            for path, match, line in fastapi_routes(file):
+                add(path, match, rel(file), line)
+            continue
         module = rel(file)
         try:
             lines = file.read_text(encoding="utf-8", errors="ignore").splitlines()
