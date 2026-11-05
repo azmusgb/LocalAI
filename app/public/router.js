@@ -40,8 +40,13 @@ function apply(){
 // A sheet (LocalAIUI.sheetHistory) has an entry on top of the page's: a link tapped inside it takes that entry over instead of stacking on it.
 // Only a live sheet's entry counts: one left over from before a reload (or reached by Forward) belongs to no sheet.
 const sheetOnTop=()=>{const s=history.state&&history.state.localaiSheet;return !!s&&!!root.LocalAIUI?.sheetLive?.(s)};
+// Framed by Pi Hub (framed.js, A4 requirement 7), every move replaces this entry: Pi Hub's Back leaves the Assistant in
+// one step instead of walking back through its pages. previous() is the page before, for a Close that would go Back.
+const framed=()=>!!root.LocalAIFramed?.active();
+let previous='';
 function go(path,{replace=false}={}){
  const h=String(path).startsWith('#')?String(path):'#'+path;
+ if(framed()){replace=true;if(h!==location.hash)previous=location.hash}
  afterPop(()=>{if(replace||sheetOnTop()){put(h);apply()}else if(h===location.hash)apply();else location.hash=h}); // hashchange then applies it
 }
 // A person opened page `id` (a link, a row, ⌘K): push it so Back returns. A hidden page (Agent World, Chat…) is pushed with its own
@@ -49,7 +54,8 @@ function go(path,{replace=false}={}){
 function open(id){
  const V=REG(),h='#'+id;
  if(V?.view(id)?.domain==='hidden'&&document.getElementById(id))afterPop(()=>{
-  if(location.hash!==h||history.state?.localaiPage!==id)history[sheetOnTop()?'replaceState':'pushState']({localaiPage:id},'',location.pathname+location.search+h);
+  if(framed()&&location.hash!==h)previous=location.hash;
+  if(location.hash!==h||history.state?.localaiPage!==id)history[sheetOnTop()||framed()?'replaceState':'pushState']({localaiPage:id},'',location.pathname+location.search+h);
   apply();
  });
  else go(h);
@@ -73,7 +79,7 @@ function start(){
  root.addEventListener('hashchange',apply);
  apply();
 }
-root.LocalAIRouter={go,open,shown,start,intentFor,
+root.LocalAIRouter={go,open,shown,start,intentFor,previous:()=>previous,
  current:()=>parse(),
  onRun(fn){runHandlers.push(fn);if(ready&&runOpen)Promise.resolve().then(()=>fn(runOpen))}};
 })(window);
