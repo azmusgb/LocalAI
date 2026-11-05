@@ -56,7 +56,7 @@ test('the hub is read at most once a minute, and a failure is quiet', async () =
 test('needs: the hub list is read at most every 30 s, plain strings only, and a failure is quiet (null)', async () => {
   let t = 0, calls = 0, url;
   const hub = createPiHub({ url: 'http://pi', now: () => t, fetchImpl: async (u) => { calls++; url = String(u); return { ok: true, json: async () => ({ count: 1, items: [{ id: 'pi:disk', source: 'pi', tone: 'bad', title: 'Disk', detail: 'Full', link: '/x' }, 7], unread: 0 }) }; } });
-  assert.deepEqual(await hub.needs(), { count: 1, items: [{ id: 'pi:disk', source: 'pi', tone: 'bad', title: 'Disk', detail: 'Full', link: '/x' }] });
+  assert.deepEqual(await hub.needs(), { count: 1, items: [{ id: 'pi:disk', source: 'pi', tone: 'bad', title: 'Disk', detail: 'Full', link: '/x', action: '' }] });
   assert.equal(url, 'http://pi/api/needs');
   await hub.needs();
   assert.equal(calls, 1);
@@ -83,7 +83,7 @@ test('needs: one fetch at a time; callers meanwhile get the last value (or null)
   assert.deepEqual(others, Array(9).fill(null), 'no last value yet: null');
   assert.equal(calls, 1);
   release();
-  assert.deepEqual(await first, { count: 9, items: [{ id: 'a', source: '', tone: '', title: 'A', detail: '', link: '' }] });
+  assert.deepEqual(await first, { count: 9, items: [{ id: 'a', source: '', tone: '', title: 'A', detail: '', link: '', action: '' }] });
   t += 31000;
   const again = hub.needs();
   assert.equal((await hub.needs()).count, 9, 'the last value while the next fetch is out');
@@ -151,6 +151,13 @@ test('printer: unavailable or disabled hub gives null and failures are cached', 
   const hub = createPiHub({ url: 'http://pi', fetchImpl: async () => { calls++; throw new Error('down'); } });
   assert.equal(await hub.printer(), null); assert.equal(await hub.printer(), null); assert.equal(calls, 1);
   assert.equal(await createPiHub({ url: 'off', fetchImpl: () => assert.fail('disabled') }).printer(), null);
+});
+
+test('needs: an item keeps its verb as a phrase key and nothing else (A7 P2)', () => {
+  const { needsList } = require('../app/pi-hub');
+  const items = needsList({ items: [{ id: 'a', title: 'T', link: '/network', action: { key: 'open_network', link: '/network' } },
+    { id: 'b', title: 'T', action: { key: 'Open <script>' } }, { id: 'c', title: 'T', action: 'judge_it' }, { id: 'd', title: 'T' }] }).items;
+  assert.deepEqual(items.map(i => i.action), ['open_network', '', '', '']);
 });
 
 test('needs: a long detail is cut at a word with an ellipsis, never mid-word', () => {

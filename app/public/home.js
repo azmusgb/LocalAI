@@ -99,14 +99,27 @@ const attentionRow=a=>need('bad','attn:'+(a.view||'status')+':'+a.title,a.title,
 // One of Pi Hub's items (needs-you.js hubRows): the words every screen shows; it opens on Pi Hub, or here for Local AI's
 // own lab and watch items. Local AI's badges have no amber: warn shows neutral.
 const HUB_WHERE={status:'Assistant status'};
+// The hub's verb (A7 P2: "Open Network", "Judge it") goes with a row that opens on Pi Hub; the kit says it from its key.
 const hubRow=h=>{
  const where=h.open.view?HUB_WHERE[h.open.view]:'Pi Hub';
  const e=need(h.tone,h.id,h.title,h.detail,h.open.view?'#'+h.open.view:'hub:'+h.open.hub,h.open.view?()=>root.LocalAIRouter.open(h.open.view):null,{hubNeed:h.id});
- e.item.source=where;return e;
+ e.item.source=where;if(h.action&&!h.open.view)e.item.action={key:h.action};return e;
 };
 // The kit keeps a link only if it is on this origin or was made here: hub:<path> becomes Pi Hub's address (a path on that host
 // whatever the item says), and anything else the kit decides on its own.
-const resolve=l=>/^hub:/.test(l)?(root.LocalAIAskContext?.homeUrl(location.hostname)||'https://hub.rahe-home.duckdns.org/')+l.slice(4).replace(/^\/+/,''):l;
+// Framed by Pi Hub (A4), the hub is the page around this one: its address is the frame's parent.
+const hubBase=()=>{const F=root.LocalAIFramed;return F?.active()&&F.origin()?F.origin()+'/':root.LocalAIAskContext?.homeUrl(location.hostname)||'https://hub.rahe-home.duckdns.org/'};
+const resolve=l=>/^hub:/.test(l)?hubBase()+l.slice(4).replace(/^\/+/,''):l;
+// Inside Pi Hub's shell a Pi Hub page is a page in the shell (A7 P2): it opens in the whole window, without ↗.
+function inShell(ul){
+ const F=root.LocalAIFramed;if(!F?.active()||!F.origin())return;
+ for(const a of ul.querySelectorAll('a[target="_blank"]')){
+  let o='';try{o=new URL(a.href).origin}catch{}
+  if(o!==F.origin())continue;
+  a.target='_top';
+  const act=a.querySelector('.ui-need__action');if(act){const t=act.textContent.replace(/\s*↗$/,'');if(t)act.textContent=t;else act.remove()}
+ }
+}
 // A pending approval that is not itself a run: open its run when one exists, else decide it here in the approval sheet
 // (one queue, D8). After a decision Needs you reloads and focus moves to the next approval, or the one before, or the next
 // thing on Home.
@@ -174,7 +187,9 @@ function paintNeeds(){
  root.dispatchEvent(new CustomEvent('localai:needs-count',{detail:{n}})); // the bell in the header shows this number on every page
  if(!entries.length){box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
  if(!root.ApplianceNeeds){if(!needsKitMissing){needsKitMissing=true;console.warn('Needs you: /ui/needs.js did not load; the section stays hidden')}box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
- const ul=root.ApplianceNeeds.renderList(entries.map(e=>e.item),{resolve,here:new URL(location.href),self:'Local AI',max:shown,more:{href:'#work?kind=needs',label:`See all ${n}`}});
+ // Dense on the Assistant's Home (A7 P2): one line a row, the same rows as Pi Hub's.
+ const ul=root.ApplianceNeeds.renderList(entries.map(e=>e.item),{resolve,here:new URL(location.href),self:'Local AI',max:shown,dense:true,more:{href:'#work?kind=needs',label:`See all ${n}`}});
+ inShell(ul);
  [...ul.querySelectorAll('.ui-need')].forEach((li,i)=>{const e=entries[i];Object.assign(li.dataset,e.data);if(e.go)rowGo.set(li,e.go);const d=li.querySelector('.ui-need__detail');if(d&&e.item.detail)d.title=e.item.detail}); // the clamped detail keeps its full text on hover and long-press
  box.replaceChildren(ul);
  $('homeNeedsCount').textContent=n?'· '+n:'';

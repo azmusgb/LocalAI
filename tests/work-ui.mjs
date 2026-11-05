@@ -82,6 +82,21 @@ await check('day groups come in order: Today, Yesterday, Earlier this week, Olde
   await page.context().close();
 });
 
+// A7 P6: the hourly health check is one row a day, its newest run, with the count and the time range; Select shows each.
+await check('an automation run many times in one day is one row with its count and times; Select mode lists each run', async () => {
+  const hourly = h => ({ ...item('automation', 'Hourly health check', h * HOUR, { summary: 'All good' }), meta: { automationId: 'auto-health' } });
+  const page = await open(desk, '#work', async () => [item('chat', 'Plan the garden', 5 * 60e3), ...[1, 2, 3, 4].map(hourly), hourly(30)]);
+  await page.waitForSelector('#work.active .run-card', T);
+  const titles = await rows(page).evaluateAll(r => r.map(x => x.querySelector('.list-row__title, .run-card__title')?.textContent.trim()));
+  assert.deepEqual(titles.filter(t => t === 'Hourly health check').length, 2, 'one row today, one yesterday: ' + titles.join(' | '));
+  const today = page.locator('#work .work-group').first();
+  assert.match(await today.innerText(), /4 times · 8:00\s?AM–11:00\s?AM · All good/);
+  assert.doesNotMatch(await page.locator('#work .work-group').nth(1).innerText(), /times/, 'a single run says nothing about repeats');
+  await page.locator('#workSelect').click();
+  await page.waitForFunction(() => document.querySelectorAll('#work .work-pick').length === 6, null, T);
+  await page.context().close();
+});
+
 await check('chips filter by kind, the hash mirrors the chip, and a reload keeps it', async () => {
   const page = await open(desk, '#work', async () => mixed());
   await page.waitForSelector('#work .run-card', T);
