@@ -101,7 +101,9 @@ const KB = 1024;
 // dependency with sized arrows, a domain view, freshness against the running release, and finding reasons (+2.4 KB).
 // 2026-11-02: 320 → 321 KB for System › Settings (navigation update PR 1): its page markup, nav entry and icon
 // (+0.2 KB); the cards themselves only moved out of Health.
-const TOTAL = 324 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
+// 2026-11-05: 324 → 326 KB for framed.js (Pi Hub A4 step 7a: the Assistant inside Pi Hub's shell, +2.2 KB with the
+// framed CSS); 324.9 KB measured.
+const TOTAL = 326 * KB; // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
 // 2026-10-26: 291 → 292 KB (and home.js 11 → 12 KB) for one Needs you on every screen: Home also lists Pi Hub's items

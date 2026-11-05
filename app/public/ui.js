@@ -3824,6 +3824,8 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     window.LocalAIUI.afterSheetPop(() => {   // after a closing details sheet has popped its own entry
       if (!state.closing) return;   // the pop already closed the view
       if (!(state.inApp || history.state?.localaiRun)) { window.LocalAIRouter.go('#home', { replace: true }); return; }
+      // Framed by Pi Hub, the run replaced the page's entry (router.js), so Back would leave the Assistant: go to the page before.
+      if (window.LocalAIFramed?.active()) { window.LocalAIRouter.go(window.LocalAIRouter.previous?.() || '#home', { replace: true }); return; }
       history.back();
       // Back that lands on this same hash never fires hashchange; never stay stuck: go Home instead.
       clearTimeout(state.closeTimer); state.closeTimer = setTimeout(() => { state.closeTimer = 0; if (state.closing) { state.closing = false; window.LocalAIRouter.go('#home', { replace: true }); } }, 400);
