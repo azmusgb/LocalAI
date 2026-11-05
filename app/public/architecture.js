@@ -77,8 +77,9 @@ function buildModel(graph){
 }
 const testCount=n=>Math.max(Number(n?.testRefs)||0,n?.tests?.length||0);
 
-// Columns run from callers to what they use. Local AI's come from its domains (Atlas redesign spec); another
-// repository's domains go in caller-first order, at most six columns. A domain no rule names joins Shared.
+// Columns run from callers to what they use. Local AI's, Pi Hub's and Print lab's come from their domains (Atlas
+// redesign spec, PRs 3 and 5); another repository's domains go in caller-first order, at most six columns. A domain no
+// rule names joins Shared, and an empty column is left out.
 const LOCALAI_COLUMNS=[
   {title:'Browser',sub:'What you see',domains:['UI']},
   {title:'Entry',sub:'Starts everything',domains:['Platform','Runtime','Host','Root','Tooling','Docs']},
@@ -87,12 +88,32 @@ const LOCALAI_COLUMNS=[
   {title:'Shared',sub:'Used across features',domains:['Core']},
   {title:'Data',sub:'Where state lives',domains:['Data']},
 ];
+const REPO_COLUMNS={
+  localai:LOCALAI_COLUMNS,
+  'pi-hub':[
+    {title:'Browser',sub:'What you see',domains:['UI']},
+    {title:'Entry',sub:'The app and its jobs',domains:['Platform','Runtime','Host','Root','Tooling','Docs']},
+    {title:'Server',sub:'HTTP routes',domains:['API']},
+    {title:'Capabilities',sub:'Workshop and media',domains:['Workshop','Media','AI']},
+    {title:'Shared',sub:'Used across features',domains:['Core']},
+    {title:'Data',sub:'Where state lives',domains:['Data']},
+  ],
+  'print-lab':[
+    {title:'Browser',sub:'The lab page',domains:['UI']},
+    {title:'Entry',sub:'Commands',domains:['Platform','Runtime','Host','Root','Tooling','Docs']},
+    {title:'Server',sub:'HTTP routes',domains:['API']},
+    {title:'Capabilities',sub:'Print loop and printer',domains:['Workshop','AI','Media']},
+    {title:'Shared',sub:'Checks and geometry',domains:['Core']},
+    {title:'Data',sub:'Records and history',domains:['Data']},
+  ],
+};
 function columnsFor(model,repo){
   const present=new Set([...model.nodes.values()].map(n=>n.domain));
-  if(repo==='localai'){
-    const cols=LOCALAI_COLUMNS.map(c=>({...c,domains:c.domains.filter(d=>present.has(d))}));
-    const named=new Set(LOCALAI_COLUMNS.flatMap(c=>c.domains));
-    cols[4].domains.push(...[...present].filter(d=>!named.has(d)).sort());
+  const rules=Object.hasOwn(REPO_COLUMNS,repo)?REPO_COLUMNS[repo]:null;
+  if(rules){
+    const cols=rules.map(c=>({...c,domains:c.domains.filter(d=>present.has(d))}));
+    const named=new Set(rules.flatMap(c=>c.domains));
+    cols.find(c=>c.title==='Shared').domains.push(...[...present].filter(d=>!named.has(d)).sort());
     return cols.filter(c=>c.domains.length);
   }
   const {domains,links}=domainSummary({nodes:[...model.nodes.values()],edges:model.links});
