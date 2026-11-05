@@ -53,7 +53,8 @@ for (const name of ['iPhone 14', 'iPhone SE']) {
     assert.ok(s.painted, 'the canvas is painted');
     assert.ok(s.w >= vw - 1, `the city is full width (${s.w} of ${vw})`);
     assert.ok(s.h >= vh * 0.5, `the city fills the screen (${Math.round(s.h)} of ${vh} tall)`);
-    assert.ok(s.top < 140, `the city starts under the header (top ${Math.round(s.top)})`);
+    // Under the header, Work's tab strip and the compact faceplate (A7 L3): 56 + 40 + 60.
+    assert.ok(s.top < 170, `the city starts under the header, strip and faceplate (top ${Math.round(s.top)})`);
     assert.deepEqual([s.bw, s.bh], s.want, 'canvas backing store matches CSS size x device pixels');
   });
   await check(`${name}: the page is one screen: no page scroll, nothing sideways`, async () => {

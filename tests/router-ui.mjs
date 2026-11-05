@@ -85,11 +85,12 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
     const ask = await open(viewport, '#ask');
     await ask.waitForSelector('#home.active', T);
     assert.equal(await ask.evaluate(() => LocalAIRouter.current().query.get('mode')), 'ask');
+    // Agent World is its own page again, a Work tab (Pi Hub A7 plan, decision 9): #agents opens it, with no intent.
     const agents = await open(viewport, '#agents');
-    await agents.waitForSelector((await workSection(agents)) + '.active', T);
-    assert.equal(await agents.evaluate(() => LocalAIRouter.current().query.get('kind')), 'missions');
-    assert.equal(await agents.evaluate(() => LocalAIRouter.current().page), 'work');
-    assert.deepEqual(await agents.evaluate(() => LocalAIRouter.intentFor('agents')), { kind: 'missions' });
+    await agents.waitForSelector('#agents.active', T);
+    assert.equal(await agents.evaluate(() => LocalAIRouter.current().page), 'agents');
+    assert.equal(await agents.evaluate(() => location.hash), '#agents');
+    assert.deepEqual(await agents.evaluate(() => LocalAIRouter.intentFor('agents')), {});
     assert.deepEqual(await agents.evaluate(() => LocalAIRouter.intentFor('create')), { mode: 'create' });
     await ask.context().close(); await agents.context().close();
   });

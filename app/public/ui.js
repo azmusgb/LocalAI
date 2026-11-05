@@ -190,7 +190,7 @@ function setupSheet(){
  const s=$('awSheet'),top=s?.querySelector('.aw-sheet__top'),page=$('agents');if(!top)return;let d=null;
  // Capture the pointer only once it moves, so a tap still clicks the handle.
  // The stage sits between the header and the tab bar: measure both (they follow the safe areas).
- const measure=()=>{const strip=document.getElementById('uxPageStrip'),b=Math.max(document.getElementById('uxContextBar')?.getBoundingClientRect().bottom||0,strip&&!strip.hidden&&strip.offsetParent?strip.getBoundingClientRect().bottom:0);if(b>0)page.style.setProperty('--aw-top',Math.round(b)+'px');const n=document.getElementById('uxMobileNav')?.getBoundingClientRect();if(n?.height)page.style.setProperty('--aw-bottom',Math.max(0,Math.round(innerHeight-n.top))+'px');if(snap!=='peek')s.style.setProperty('--aw-y',sheetY(s,snap)+'px')};
+ const measure=()=>{const strip=document.getElementById('uxPageStrip'),b=Math.max(document.getElementById('uxContextBar')?.getBoundingClientRect().bottom||0,strip&&!strip.hidden&&strip.getBoundingClientRect().height>0?strip.getBoundingClientRect().bottom:0);if(b>0)page.style.setProperty('--aw-top',Math.round(b)+'px');const n=document.getElementById('uxMobileNav')?.getBoundingClientRect();if(n?.height)page.style.setProperty('--aw-bottom',Math.max(0,Math.round(innerHeight-n.top))+'px');if(snap!=='peek')s.style.setProperty('--aw-y',sheetY(s,snap)+'px')};
  $('awSheetHandle').addEventListener('click',()=>{if(performance.now()-dragEnd<300)return;setSnap(snap==='peek'?'half':snap==='half'?'full':'peek')});
  s.querySelector('.aw-sheet__peek').addEventListener('click',e=>{if(performance.now()-dragEnd>=300&&snap==='peek'&&!e.target.closest('.aw-sheet__retry'))setSnap('half')});
  top.addEventListener('pointerdown',e=>{if(!phone.matches||e.button>0||e.target.closest?.('.awc__scrub'))return;d={id:e.pointerId,y:e.clientY,t:e.timeStamp,from:sheetY(s,snap),moved:false}});
@@ -201,8 +201,11 @@ function setupSheet(){
   setSnap(['full','half','peek'].reduce((a,b)=>Math.abs(sheetY(s,b)-y)<Math.abs(sheetY(s,a)-y)?b:a))};
  top.addEventListener('pointerup',end);top.addEventListener('pointercancel',end);
  // Leaving the page or the phone layout lowers the sheet without a history step.
- new MutationObserver(()=>{if(!page.classList.contains('active')&&snap!=='peek'){const r=releaseSheet;releaseSheet=null;setSnap('peek',{fromBack:true});r?.()}else if(page.classList.contains('active'))measure()}).observe(page,{attributes:true,attributeFilter:['class']});
- phone.addEventListener?.('change',()=>setSnap('peek'));window.addEventListener('resize',measure);measure();setSnap('peek')
+ new MutationObserver(()=>{if(!page.classList.contains('active')&&snap!=='peek'){const r=releaseSheet;releaseSheet=null;setSnap('peek',{fromBack:true});r?.()}else if(page.classList.contains('active')){measure();requestAnimationFrame(measure)}}).observe(page,{attributes:true,attributeFilter:['class']});
+ phone.addEventListener?.('change',()=>setSnap('peek'));window.addEventListener('resize',measure);
+ // Work's strip is drawn (or shown) after the page opens: follow it and the top bar, so the stage always starts under them.
+ if('ResizeObserver' in window){const ro=new ResizeObserver(()=>{if(page.classList.contains('active'))measure()});for(const id of['uxPageStrip','uxContextBar']){const el=document.getElementById(id);if(el)ro.observe(el)}}
+ measure();setSnap('peek')
 }
 window.addEventListener('localai:agentworld-select',e=>{if(e.detail?.workerId)selectWorker(e.detail.workerId)});
 window.LocalAISpecialists={init,preview,renderMission};
