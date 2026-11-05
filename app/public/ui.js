@@ -1044,8 +1044,11 @@ function buildContext(){
  main.prepend(bar);
  // "← Home" (Pi Hub, §5 level 0) is in the header of every top-level view: its address from the tool registry, already in the markup above; this keeps it in step if the registry loaded late.
  const hub=q('#uxPiHubLink');if(hub&&window.LocalAIAskContext)hub.href=window.LocalAIAskContext.homeUrl(location.hostname);
- // Assistant status's "Health ↗": the whole house's Health is Pi Hub's System › Health (D6, §5.6 `status` row).
- const health=q('#statusHubHealth');if(health&&window.LocalAIAskContext)health.href=window.LocalAIAskContext.homeUrl(location.hostname)+'system';
+ // Assistant status's "Open in Pi Hub Health": the whole house's Health is Pi Hub's System › Health (D6, §5.6 `status` row).
+ // In Pi Hub's shell it is a page there: the shell's own origin, the top window, no ↗ (A7 P2).
+ const health=q('#statusHubHealth'),framed=window.LocalAIFramed?.active?.()&&window.LocalAIFramed.origin?.();
+ if(health&&framed){health.href=`${framed}/system`;health.target='_top';health.removeAttribute('rel');health.textContent='Pi Hub Health';health.removeAttribute('aria-label')}
+ else if(health&&window.LocalAIAskContext)health.href=window.LocalAIAskContext.homeUrl(location.hostname)+'system';
  q('[data-ux-go="home"]')?.addEventListener('click',()=>navigate('home'));
  q('#uxCommandBtn')?.addEventListener('click',()=>{if(window.LocalAICommand)return window.LocalAICommand.open();const cmd=q('#cmdk');if(cmd){cmd.classList.add('show');cmd.setAttribute('aria-hidden','false');q('#cmdkInput')?.focus()}});
  // The bell (navigation update, 2 Nov): one place on every page, its badge the number Home's Needs you shows (home.js
@@ -4280,7 +4283,7 @@ function focusSetup(card){
  d.open=true;card.scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
 }
 // Below the service list: what's running comes first; this is setup advice.
-function mount(){const status=q('#status');if(!status)return;let card=q('.secure-card',status);if(!card){card=document.createElement('section');card.className='card secure-card';const services=q('#serviceList',status)?.closest('.card');(services||q('.topbar',status))?.after(card)}if(card.dataset.rendered){focusSetup(card);return}card.dataset.rendered='1';render(card)}
+function mount(){const status=q('#status');if(!status)return;let card=q('.secure-card',status);if(!card){card=document.createElement('section');card.className='ui-section secure-card';const services=q('#serviceList',status)?.closest('.ui-section');(services||q('.ui-page__head',status))?.after(card)}if(card.dataset.rendered){focusSetup(card);return}card.dataset.rendered='1';render(card)}
 // Render (and so probe) only once Health is on screen.
 function watch(){const status=q('#status');if(!status)return;const go=()=>{if(status.classList.contains('active'))mount()};go();new MutationObserver(go).observe(status,{attributes:true,attributeFilter:['class']})}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(watch,0),{once:true});else setTimeout(watch,0);
