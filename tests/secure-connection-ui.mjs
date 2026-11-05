@@ -36,7 +36,7 @@ await check('the setup steps are folded and the card sits below the service list
   assert.equal(await page.locator('.secure-setup').evaluate(d => d.open), false);
   assert.equal(await page.locator('.secure-steps').isVisible(), false);
   const below = await page.evaluate(() => {
-    const services = document.getElementById('serviceList').closest('.card');
+    const services = document.getElementById('serviceList').closest('.ui-section');
     return !!(services.compareDocumentPosition(document.querySelector('.secure-card')) & Node.DOCUMENT_POSITION_FOLLOWING);
   });
   assert.ok(below, 'secure card should follow the service list');

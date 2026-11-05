@@ -98,7 +98,7 @@ test('page headings and nav labels match the registry', () => {
     if (v.id === 'home' || INJECTED[v.id] || PENDING.has(v.id)) continue;
     if (OWN_HEADING.has(v.id)) assert.match(html, new RegExp(`<section id="${v.id}"[^>]*>[\\s\\S]*?<h1[^>]*>${v.label}</h1>`), `#${v.id} is titled ${v.label}`);
     else {
-      const m = html.match(new RegExp(`<section id="${v.id}"[^>]*>[\\s\\S]*?<h1>([^<]*)</h1>`));
+      const m = html.match(new RegExp(`<section id="${v.id}"[^>]*>[\\s\\S]*?<h1[^>]*>([^<]*)</h1>`));
       assert.equal(m?.[1], registry.page(v.id).label, `#${v.id} heading`);
     }
     if (v.parent) continue;

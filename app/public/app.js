@@ -600,6 +600,19 @@ function serviceDescription(s){
 // offline one has no response time to speak of ("Down" and "Slow · 3.0 s" together contradict each other).
 const slowNote=s=>{const ms=s?.latencyMs;return Number.isFinite(ms)&&ms>=2000&&['HEALTHY','DEGRADED'].includes(serviceDisplayState(s))?`Slow · ${(ms/1000).toFixed(1)} s`:''};
 let statusRefreshing=false,statusLastOk='';
+const SERVICE_TONE={HEALTHY:'ok',DEGRADED:'warn',DOWN:'bad',OPTIONAL_OFFLINE:'unknown'};
+// Assistant status's faceplate (A7 P1): the lamp, the one readout (core services up) and nothing guessed.
+function statusPlate([tone,word],readout,unit){
+  const lamp=$('statusLamp');if(lamp){lamp.className=`ui-chip ui-chip--${tone}`;lamp.textContent=word}
+  const r=$('statusReadout');if(r){r.textContent=readout;if(unit){const u=document.createElement('span');u.className='ui-readout__unit';u.textContent=` ${unit}`;r.append(u)}}
+  $('statusPlate')?.setAttribute('aria-busy','false');
+}
+// The sources line: where this page's facts come from and whether that source answered (A7 P1, P8).
+function statusSources(tone,when){
+  const el=$('statusSources');if(!el)return;
+  const word={ok:'Answering',warn:'Updating',bad:'Not answering'}[tone]||'Not read yet';
+  el.innerHTML=`Sources: Local AI's service checks: <span class="ui-chip ui-chip--${tone==='ok'?'ok':tone==='warn'?'warn':'bad'}">${word}</span> ${esc(when)}`;
+}
 const clock=d=>d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'});
 async function refreshStatus(force=false){
   if(document.hidden&&!force)return;
@@ -621,12 +634,17 @@ async function refreshStatus(force=false){
     const optionalBad=j.services.filter(s=>s.required===false&&s.state!=='HEALTHY');
     const friendly=overall==='HEALTHY'?'Healthy':'Attention needed';
     $('homeState').textContent=friendly;
-    $('statusSummary').innerHTML=`<span class="dot ${overall}"></span> ${coreBad.length?`${coreBad.length} core service${coreBad.length===1?' needs':'s need'} attention`:optionalBad.length?`Core ready · ${optionalBad.length} optional service${optionalBad.length===1?'':'s'} off`:'Everything is ready'}`;
+    $('statusSummary').textContent=coreBad.length?`${coreBad.length} core service${coreBad.length===1?' needs':'s need'} attention`:optionalBad.length?`Core ready · ${optionalBad.length} optional service${optionalBad.length===1?'':'s'} off`:'Everything is ready';
+    const core=j.services.filter(s=>s.required!==false),optional=j.services.filter(s=>s.required===false);
+    statusPlate(coreBad.some(s=>s.state==='DOWN')?['bad','Needs attention']:coreBad.length?['warn','Degraded']:['ok','Ready'],`${core.length-coreBad.length} of ${core.length}`,'core services up');
+    const opt=$('statusOptional');if(opt)opt.textContent=optional.length?`${optional.length-optionalBad.length} of ${optional.length} up`:'None';
     statusLastOk=j.checkedAt?clock(new Date(j.checkedAt)):clock(new Date());
     const checked=$('statusCheckedAt');if(checked)checked.textContent=`Checked ${statusLastOk}`;
-    $('serviceList').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);return `<div class="service service-card ${st}"><div class="service-copy"><strong>${esc(s.label)}</strong><small>${esc(serviceDescription(s))}</small></div><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">${esc(slowNote(s))}</span></div>`}).join('');
+    // Rows put the lamp on the right (A7 P3): the service and what it does, then its state and, when slow, how slow.
+    $('serviceList').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s),slow=slowNote(s);return `<li class="ui-row ui-row--lamp service-card ${st}"><div><span class="ui-row__title">${esc(s.label)}</span><span class="ui-row__detail">${esc(serviceDescription(s))}</span></div><span class="ui-chip ui-chip--${SERVICE_TONE[st]||'unknown'}">${esc(serviceStateLabel(s))}</span>${slow?`<span class="ui-row__value">${esc(slow)}</span>`:''}</li>`}).join('');
     $('technicalStatus').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);const err=s.error?` · ${esc(s.error)}`:'';return `<div class="service"><span>${esc(s.name)} · ${s.required===false?'optional companion':'core'}<small class="service-tech-note">${esc(s.impact||'')}${err}</small></span><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">HTTP ${s.statusCode??'—'}</span></div>`}).join('');
-    const c=j.certification||{};const res=String(c.result||'').toUpperCase(),word={PASS:'Passed',WARN:'Passed with warnings',FAIL:'Failed'}[res]||human(c.result||'Unknown'),tone={PASS:'HEALTHY',WARN:'DEGRADED',FAIL:'DOWN'}[res]||'DEGRADED';$('certBox').innerHTML=c.available?`<span class="dot ${tone}"></span> ${esc(word)}${c.modifiedAt?` · ${esc(new Date(c.modifiedAt).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}`:''}`:'<span class="dot DEGRADED"></span> No check on record';
+    const c=j.certification||{};const res=String(c.result||'').toUpperCase(),word={PASS:'Passed',WARN:'Passed with warnings',FAIL:'Failed'}[res]||human(c.result||'Unknown');$('certBox').textContent=c.available?`${word}${c.modifiedAt?` · ${new Date(c.modifiedAt).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}`:''}`:'No check on record';
+    statusSources('ok',`checked ${statusLastOk}`);
   }catch(e){
     // No answer at all (offline, an untrusted certificate, Local AI restarting) is not the same as an answer that
     // couldn't be read; say which.
@@ -634,12 +652,15 @@ async function refreshStatus(force=false){
     const updating=!!(e&&e.updating);
     const why=updating?'Local AI is updating. This checks again in a moment.':e&&e.unreachable?"Can't reach Local AI from this device.":"Local AI answered, but its status couldn't be read.";
     $('homeDot').className=`dot ${updating?'DEGRADED':'DOWN'}`;$('homeState').textContent=updating?'Updating…':'Unavailable';
-    $('statusSummary').innerHTML=updating?'<span class="dot DEGRADED"></span> Local AI is updating…':'<span class="dot DOWN"></span> Couldn\'t check the services. Try again';
+    $('statusSummary').textContent=updating?'Local AI is updating…':e&&e.unreachable?"The Assistant isn't answering. Couldn't check the services. Try again":"Couldn't check the services. Try again";
+    // The readout never shows the last count as current (A7 P8): the list below keeps the last known rows, marked by the error.
+    statusPlate(updating?['warn','Updating']:['unknown',e&&e.unreachable?'Not answering':'Unknown'],'—','');
+    statusSources(updating?'warn':'bad',statusLastOk?`last good check ${statusLastOk}`:'never read');
     if(updating){clearTimeout(state.updatingTimer);state.updatingTimer=setTimeout(()=>refreshStatus(),Math.min(Math.max(e.retryAfter,2),30)*1000)}
     // Say when this attempt was, and when the list below was last right, so an old time never reads as current.
     const checked=$('statusCheckedAt');if(checked)checked.textContent=`Tried ${clock(new Date())}${statusLastOk?` · last good check ${statusLastOk}`:''}`;
     // The last known list stays on the page; the failure sits above it (or alone, when nothing was ever shown).
-    const list=$('serviceList');if(list){list.querySelector('.status-error')?.remove();list.insertAdjacentHTML('afterbegin',`<div class="status-error">${why} <button class="btn-outline" type="button" data-status-retry>Try again</button></div>`);}
+    const list=$('serviceList');if(list){list.querySelector('.status-error')?.remove();list.insertAdjacentHTML('afterbegin',`<li class="status-error">${why} <button class="btn-outline" type="button" data-status-retry>Try again</button></li>`);}
   }finally{
     statusRefreshing=false;if(retry){retry.disabled=false;retry.textContent='Check again';}
     document.querySelectorAll('[data-status-retry]').forEach(b=>b.onclick=()=>refreshStatus(true));

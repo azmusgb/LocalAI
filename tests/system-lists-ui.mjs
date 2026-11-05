@@ -137,6 +137,28 @@ await check('Health: while Local AI restarts for an update, the check says "upda
   await checkAgain();
 });
 
+// A7 P1/P8 (L2b): the faceplate's lamp and readout come from the answer; a failed check never keeps the old count.
+await check('Assistant status: the faceplate reads the core services up, and a failed check shows no count', async () => {
+  const plate = () => page.evaluate(() => ({ lamp: document.getElementById('statusLamp').textContent, tone: document.getElementById('statusLamp').className,
+    readout: document.getElementById('statusReadout').textContent, optional: document.getElementById('statusOptional').textContent,
+    sources: document.getElementById('statusSources').textContent.replace(/\s+/g, ' ') }));
+  await page.route('**/api/status', r => r.fulfill({ json: healthy }));
+  await checkAgain();
+  let p = await plate();
+  assert.equal(p.lamp, 'Ready'); assert.match(p.tone, /ui-chip--ok/);
+  assert.equal(p.readout, '1 of 1 core services up'); assert.equal(p.optional, '1 of 1 up');
+  assert.match(p.sources, /Local AI's service checks: Answering checked /);
+  await page.route('**/api/status', r => r.fulfill({ json: { ...healthy, overall: 'DOWN', services: [{ ...healthy.services[0], state: 'DOWN' }, healthy.services[1]] } }));
+  await checkAgain();
+  p = await plate();
+  assert.equal(p.lamp, 'Needs attention'); assert.equal(p.readout, '0 of 1 core services up');
+  await page.route('**/api/status', r => r.fulfill({ status: 500, json: { error: 'boom' } }));
+  await checkAgain();
+  p = await plate();
+  assert.equal(p.readout, '—'); assert.match(p.tone, /ui-chip--unknown/);
+  assert.match(p.sources, /Not answering last good check /);
+  await page.unroute('**/api/status');
+});
 await check('Health: a failed check says when it was tried and when the list was last right', async () => {
   assert.match(await page.locator('#statusCheckedAt').innerText(), /^Tried \d{1,2}:\d{2}:\d{2}.* · last good check \d{1,2}:\d{2}:\d{2}/);
 });

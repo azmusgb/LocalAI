@@ -103,6 +103,22 @@ try {
     assert.match(o.action, /^Open Network ↗$/);
     await own.close();
   });
+  // A7 P1/P2 (L2b): Assistant status ends with "Open in" Pi Hub Health; in the shell that is a page there (no ↗, the top
+  // window, the shell's own origin); on its own it opens Pi Hub in a new tab.
+  await check('Assistant status: "Open in" Pi Hub Health is a shell page when framed, a new tab on its own', async () => {
+    await page.goto(`${HUB}/assistant`);
+    await page.waitForFunction(() => window.got.length > 0, null, { timeout: 15000 });
+    await frame().evaluate(() => window.LocalAIRouter.go('#status', { replace: true }));
+    const link = f => f.evaluate(() => { const a = document.getElementById('statusHubHealth'); return { href: a.href, target: a.target, text: a.textContent }; });
+    assert.deepEqual(await link(frame()), { href: `${HUB}/system`, target: '_top', text: 'Pi Hub Health' });
+    const own = await context.newPage();
+    await own.goto(`${AI}/#status`);
+    await own.waitForSelector('#statusHubHealth');
+    const o = await link(own.mainFrame());
+    assert.equal(o.target, '_blank');
+    assert.match(o.text, /↗$/);
+    await own.close();
+  });
 } finally {
   await browser.close();
 }
