@@ -54,7 +54,7 @@ await check('desktop: one rail and one strip on every page; the top bar names th
   const x = await left();
   assert.ok(x < 120, `main starts at ${x}px, beside the 76px rail`);
   assert.equal(await area(), 'Work');
-  assert.deepEqual(await page.locator('#uxPageStrip button').allInnerTexts(), ['Work', 'Assistant automations']);
+  assert.deepEqual(await page.locator('#uxPageStrip button').allInnerTexts(), ['Work', 'Agent World', 'Assistant automations']);
   await page.evaluate(() => LocalAIRouter.go('#status'));
   await page.waitForSelector('#status.active', T);
   await page.waitForTimeout(300);

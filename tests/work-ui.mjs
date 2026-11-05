@@ -289,7 +289,7 @@ await check('Work says Work everywhere, and its strip lists Work and Assistant a
   const chrome = await page.evaluate(() => [document.getElementById('uxContextBar')?.innerText, document.getElementById('uxPageStrip')?.innerText].join(' | '));
   assert.match(chrome, /Work/); assert.doesNotMatch(chrome, /Runs/);
   assert.doesNotMatch(await page.locator('#work').innerText(), /\bRuns\b/);
-  assert.deepEqual(await page.locator('#uxPageStrip button').allInnerTexts(), ['Work', 'Assistant automations']);
+  assert.deepEqual(await page.locator('#uxPageStrip button').allInnerTexts(), ['Work', 'Agent World', 'Assistant automations']);
   await page.context().close();
 });
 
@@ -356,8 +356,9 @@ await check('nothing yet: the empty state starts something on Home', async () =>
   await page.context().close();
 });
 
-await check('/#agents lands on the old mission behind 70 chats', async () => {
-  const page = await open(desk, '#agents', paged(chatsAndOldMission()));
+// #agents is Agent World again (Pi Hub A7 plan, decision 9); Work's Missions filter is #work?kind=missions.
+await check('/#work?kind=missions lands on the old mission behind 70 chats', async () => {
+  const page = await open(desk, '#work?kind=missions', paged(chatsAndOldMission()));
   await page.waitForSelector('#work.active .run-card', T);
   assert.equal(await page.evaluate(() => location.hash), '#work?kind=missions');
   assert.deepEqual(await rows(page).locator('.list-row__title').allInnerTexts(), ['The old mission']);
@@ -365,8 +366,8 @@ await check('/#agents lands on the old mission behind 70 chats', async () => {
 });
 
 for (const viewport of [phone, desk]) {
-  await check(`${viewport.width}px: /#agents lands on Work with the Missions chip, only mission rows`, async () => {
-    const page = await open(viewport, '#agents', async () => mixed());
+  await check(`${viewport.width}px: /#work?kind=missions lands on Work with the Missions chip, only mission rows`, async () => {
+    const page = await open(viewport, '#work?kind=missions', async () => mixed());
     await page.waitForSelector('#work.active .run-card', T);
     assert.equal(await page.locator('[data-work-kind="missions"]').getAttribute('aria-checked'), 'true');
     assert.deepEqual(await kinds(page), ['agent']);

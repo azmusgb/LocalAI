@@ -180,7 +180,32 @@ function summaryWhy(m){const all=(m&&m.workers)||[],c=all.find(w=>key(w)==='synt
  if(m&&m.status==='complete')return'No summary: the Coordinator didn’t write one.';
  if(stopped.length)return'No summary: '+names(stopped.map(subject))+' stopped.';
  return'No summary yet: the team is still working.'}
-const api={followupNote,partialNote,missionNote,summaryWhy,changeSentence,stoppedWords,teamPreview,workerName,workerRole,workerStep,stateBadge,statusSentence,storyEvents,groupStory,errorWords,duration};
+// The mission as the page's faceplate (Pi Hub A7 plan, decision 9): nameplate, lamp, one readout, the goal as caption,
+// readings and actions. Pure, like the rest of this file. The lamp's word is the kit's chip; the readout is the workers
+// done while it runs and the time it took once done. "Answered by" is the server's own label (routeText, from the model
+// router); an older mission without one has no such reading, never a guess. opts.demo: a demo owns the page.
+function missionPlate(m,opts){
+ const o=opts||{};
+ if(o.demo)return{lamp:{tone:'unknown',word:'Demo'},readout:null,caption:'A sample run. Nothing is sent anywhere.',readings:[],actions:[]};
+ if(!m)return{lamp:null,readout:null,caption:'No missions yet. Give the team a goal and watch them work it here.',readings:[],actions:[{id:'start',label:'New mission',primary:true},{id:'demo',label:'Try a demo mission'}]};
+ const st=statusSentence(m),all=m.workers||[],done=all.filter(w=>w.state==='complete').length,n=all.filter(w=>!isFollowUp(w)).length;
+ const lamp=st.tone==='attention'?{tone:'bad',word:'Needs attention'}:st.tone==='done'?{tone:'ok',word:'Done'}:{tone:'live',word:'Working'};
+ let readout={value:done+' of '+all.length,unit:'done'};
+ if(st.tone==='done'){const ms=span(m.createdAt,m.finishedAt||m.updatedAt),min=Number.isFinite(ms)&&ms>=0?Math.round(ms/60000):NaN;
+  readout=!Number.isFinite(min)?null:min<1?{value:'<1',unit:'min'}:min<60?{value:String(min),unit:'min'}:{value:Math.floor(min/60)+' h '+String(min%60).padStart(2,'0'),unit:''}}
+ const readings=[];
+ const by=typeof m.routeText==='string'?m.routeText.trim():'';
+ if(by)readings.push({label:'Answered by',value:by==='Answered on this PC'?'This PC':by.replace(/^Answered by /,'')});
+ readings.push({label:'Searched',value:m.policy&&m.policy.allowWeb?'Your projects and the web':'Your projects'});
+ readings.push({label:'Workers',value:String(n)});
+ const actions=[];
+ if(st.tone==='done')actions.push({id:'result',label:'See the answer',primary:true});
+ const partly=m.status==='complete'&&all.some(w=>BAD.has(w.state)&&!isFollowUp(w));
+ if(st.tone==='attention'||partly)actions.push({id:'retry',label:'Retry mission',primary:st.tone==='attention'});
+ actions.push({id:'start',label:'New mission',primary:!actions.some(a=>a.primary)&&st.tone!=='working'});
+ return{lamp,readout,caption:String(m.goal||'').trim()||'Mission',readings,actions,note:st.text.split(' · ').slice(1).filter(x=>!/^\d+ of \d+ done$|^\d+ workers?$|^in /.test(x)).join(' · ').replace(/^./,c=>c.toUpperCase())};
+}
+const api={missionPlate,followupNote,partialNote,missionNote,summaryWhy,changeSentence,stoppedWords,teamPreview,workerName,workerRole,workerStep,stateBadge,statusSentence,storyEvents,groupStory,errorWords,duration};
 root.LocalAIAgentWords=api;
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

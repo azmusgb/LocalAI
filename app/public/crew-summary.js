@@ -10,7 +10,7 @@ function summary(states){
 }
 function sync(){
  const rows=document.getElementById('awcRoster'),out=document.getElementById('awCrewSummary');if(!rows||!out)return;
- const t=summary([...rows.querySelectorAll('.awc__rosterItem')].map(b=>(b.querySelector('.badge')?.textContent||'waiting').trim().toLowerCase()));
+ const t=summary([...rows.querySelectorAll('.awc__rosterItem')].map(b=>(b.querySelector('.ui-chip,.badge')?.textContent||'waiting').trim().toLowerCase()));
  if(out.textContent!==t)out.textContent=t; // same words: say nothing again
 }
 function init(){const rows=document.getElementById('awcRoster');if(!rows)return;new MutationObserver(sync).observe(rows,{childList:true,subtree:true,characterData:true});sync()}

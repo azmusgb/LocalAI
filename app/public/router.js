@@ -3,7 +3,8 @@
 // (replaceState fires no hashchange, so the two cannot loop and Back only follows go() / open() navigation).
 // Anything the person does (a link, a button, a row) navigates with open(id) so Back returns; showView is for code.
 (function(root){'use strict';
-const INTENTS={ask:{mode:'ask'},create:{mode:'create'},agents:{kind:'missions'}};
+// An old id's intent on the page that replaced it. Agent World (agents) is its own page again (Pi Hub A7 plan, decision 9).
+const INTENTS={ask:{mode:'ask'},create:{mode:'create'}};
 const REG=()=>root.LocalAIViews,runHandlers=[];
 let ready=false,applying=false,runOpen=null,lastShown=null;
 // A closing sheet pops its own history entry with history.back(), which lands a few ms later (LocalAIUI.afterSheetPop).
