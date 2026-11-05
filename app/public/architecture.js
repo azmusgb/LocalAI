@@ -655,7 +655,8 @@ function askAtlas(question){
   return askWith('Analyzing bounded Atlas evidence…',
     node=>getJson('/api/atlas/ask',{method:'POST',timeout:310000,headers:{'Content-Type':'application/json'},
       body:JSON.stringify({...scope(),question:q,node:node||undefined,model:state.ollamaModel||undefined})}),
-    (payload,node)=>`${payload.answer||'No answer returned.'}\n\nModel: ${payload.model||'unknown'}${node?`\nNode: ${node}`:''}`);
+    (payload,node)=>`${payload.answer||'No answer returned.'}\n\nModel: ${payload.model||'unknown'}${node?`\nNode: ${node}`:''}`
+      +(Array.isArray(payload.leftOut)?`\nLeft out to fit: ${payload.leftOut.length?payload.leftOut.join('; '):'nothing'}`:''));
 }
 
 function gooseBrief(){
