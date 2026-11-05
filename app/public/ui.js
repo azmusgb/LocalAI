@@ -263,13 +263,13 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     document.querySelectorAll('input, textarea').forEach((input) => {
       input.addEventListener('focus', () => {
         if (!isPhone()) return;
-        window.setTimeout(() => input.scrollIntoView({ block: 'center', behavior: 'smooth' }), 80);
+        window.setTimeout(() => input.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }), 80);
       }, { passive: true });
     });
 
     document.addEventListener('click', (event) => {
       const navButton = event.target.closest?.('.navbtn');
-      if (navButton && isPhone()) window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (navButton && isPhone()) window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     }, { passive: true });
   }
 
@@ -4231,7 +4231,7 @@ async function render(card){
 function focusSetup(card){
  if(new URLSearchParams(location.hash.split('?')[1]||'').get('secure')!=='1')return;
  const d=card.querySelector('.secure-setup')||card.querySelector('.secure-phone');if(!d)return;
- d.open=true;card.scrollIntoView({block:'start',behavior:'smooth'});
+ d.open=true;card.scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
 }
 // Below the service list: what's running comes first; this is setup advice.
 function mount(){const status=q('#status');if(!status)return;let card=q('.secure-card',status);if(!card){card=document.createElement('section');card.className='card secure-card';const services=q('#serviceList',status)?.closest('.card');(services||q('.topbar',status))?.after(card)}if(card.dataset.rendered){focusSetup(card);return}card.dataset.rendered='1';render(card)}
