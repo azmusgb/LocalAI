@@ -2631,3 +2631,8 @@ html.is-framed .ux-page-strip{margin-top:0}
 .work-page.view.active{display:grid;gap:calc(var(--ui-space)*7);min-width:0}
 .work-section__head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:calc(var(--ui-space)*3)}
 .work-section__head h2{margin:0}
+/* Home on the page anatomy (A7 L2b): the Assistant's faceplate with the street as its aside. */
+.home-plate{margin:20px 0 8px}
+@media(min-width:760px){.home-plate.ui-faceplate--aside{grid-template-columns:minmax(200px,260px) minmax(0,1fr);align-items:center}}
+.home-plate .home-street .street{margin-top:0}
+.home-sources{margin:20px 0 0}
