@@ -50,6 +50,8 @@ function New-Fixture {
         Ahead = 0; Dirty = ''
         # History prune: the files in the appliance's /data/backups, newest first, and a simulated docker exec failure.
         DataBackups = [System.Collections.Generic.List[string]]::new(); ExecFails = $false
+        # Host parts: compose's hash for the release and the running container's config-hash label.
+        ComposeHash = ('c' * 64); ConfigHash = ('c' * 64)
     }
     [System.IO.Directory]::CreateDirectory($fixture.StateDir) | Out-Null
     Write-LocalAI-DeployState (Join-Path $fixture.StateDir 'state.json') ([ordered]@{status='HEALTHY';currentCommit=$oldSha})
@@ -90,6 +92,8 @@ function docker {
         'compose' {
             if ($fixture.ComposeFails) { $global:LASTEXITCODE = 1; return 'error during connect: Docker Desktop is not running' }
             $sub = $Arguments[5]
+            # The host-parts check: compose's hash for one service.
+            if ($Arguments -contains '--hash') { return "$($Arguments[-1]) $($fixture.ComposeHash)" }
             if ($Arguments[1] -ne '--env-file' -or $Arguments[2] -ne $fixture.StackEnv -or $Arguments[4] -ne $fixture.StackCompose) { throw "Unexpected compose files: $($Arguments -join ' ')" }
             if ($sub -eq 'config') {
                 $services = [ordered]@{}
@@ -129,6 +133,10 @@ function docker {
         }
         'inspect' {
             $c = Get-FixtureContainer $Arguments[1]
+            if ($Arguments -contains '{{json .Config.Labels}}') {
+                if (-not $c) { $global:LASTEXITCODE = 1; return "Error: No such object: $($Arguments[1])" }
+                return (ConvertTo-Json -Compress -InputObject @{ 'com.docker.compose.project' = 'local-ai'; 'com.docker.compose.config-hash' = $fixture.ConfigHash })
+            }
             if ($c) {
                 $health = if ($c.Health) { @{ Status = $c.Health } } else { $null }
                 return (ConvertTo-Json -Depth 8 -InputObject @([ordered]@{ Id = "id-$($c.Name)"; Name = "/$($c.Name)"; Created = $c.Created; State = [ordered]@{ Status = $c.State; Running = ($c.State -eq 'running'); FinishedAt = $c.FinishedAt; Health = $health }; HostConfig = @{ RestartPolicy = @{ Name = $c.Restart; MaximumRetryCount = 0 } } }))
@@ -734,6 +742,56 @@ try {
             Assert-True (Test-CloudPath $p -Labels @{ G = 'Google Drive' }) "Not refused: $p"
         }
         Assert-True (-not (Test-CloudPath 'D:\Backups' -Labels @{ D = 'Data' })) 'A local disk was refused'
+    }
+    Test-Case 'host parts: the repo list loads, and a broken list is refused' {
+        $parts = Get-LocalAI-HostParts $repository
+        Assert-True ((@($parts).id -join ' ') -eq 'appliance atlas gridcraft-bridge') "Unexpected parts: $(@($parts).id -join ' ')"
+        $dir = Join-Path $temporary 'parts'
+        [System.IO.Directory]::CreateDirectory((Join-Path $dir 'deploy')) | Out-Null
+        $write = { param($json) Set-Content -LiteralPath (Join-Path $dir 'deploy/host-parts.json') -Value $json }
+        & $write '{"parts":[{"id":"a","kind":"scheduled-task","task":"T","paths":["a.py"]},{"id":"a","kind":"scheduled-task","task":"T","paths":["a.py"]}]}'
+        Assert-Throws { Get-LocalAI-HostParts $dir } 'listed twice'
+        & $write '{"parts":[{"id":"a","kind":"service","task":"T"}]}'
+        Assert-Throws { Get-LocalAI-HostParts $dir } 'unknown kind'
+        & $write '{"parts":[{"id":"a","kind":"compose-service","service":"s"}]}'
+        Assert-Throws { Get-LocalAI-HostParts $dir } "needs 'container'"
+    }
+    Test-Case 'host parts: a scheduled task is stale only when a file it runs changed' {
+        $atlas = [pscustomobject]@{ id = 'atlas'; kind = 'scheduled-task'; task = 'LocalAI Atlas'; paths = @('atlas_intelligence.py') }
+        $stale = Test-LocalAI-HostPartStale $atlas $newSha @{ running = $true; startedFrom = $oldSha; changed = @('atlas_intelligence.py') }
+        Assert-True ($stale.state -eq 'stale' -and $stale.reason -match 'Runs bbbbbbb, the release is aaaaaaa; changed: atlas_intelligence.py') "Changed path: $($stale.state) $($stale.reason)"
+        $same = Test-LocalAI-HostPartStale $atlas $newSha @{ running = $true; startedFrom = $oldSha; changed = @() }
+        Assert-True ($same.state -eq 'current') "Unchanged path: $($same.state)"
+        Assert-True ((Test-LocalAI-HostPartStale $atlas $newSha @{ running = $true; startedFrom = $newSha }).state -eq 'current') 'Started from the release'
+        $none = Test-LocalAI-HostPartStale $atlas $newSha @{ running = $true; startedFrom = $null }
+        Assert-True ($none.state -eq 'unknown' -and $none.reason -match 'No record') "No record must be unknown, never current: $($none.state)"
+        Assert-True ((Test-LocalAI-HostPartStale $atlas $newSha @{ running = $true; startedFrom = $oldSha }).state -eq 'unknown') 'A failed git diff must be unknown'
+        Assert-True ((Test-LocalAI-HostPartStale $atlas $newSha @{ running = $false; startedFrom = $newSha }).state -eq 'stopped') 'A stopped task'
+        Assert-True ((Test-LocalAI-HostPartStale $atlas $newSha @{ installed = $false }).state -eq 'not-installed') 'A task not on this host'
+        $bridge = [pscustomobject]@{ id = 'gridcraft-bridge'; kind = 'self-reloading'; task = 'B'; paths = @('host/gridcraft-bridge.py') }
+        Assert-True ((Test-LocalAI-HostPartStale $bridge $newSha @{}).state -eq 'self-reloading') 'A self-reloading part'
+    }
+    Test-Case 'host parts: the commit a task started from comes from the reflog entry in effect when it started' {
+        $reflog = @("$newSha`tHEAD@{2026-11-06T00:27:41-05:00}", "$oldSha`tHEAD@{2026-11-04T09:00:00-05:00}", 'garbage')
+        Assert-True ((Select-LocalAI-CommitAt $reflog ([DateTimeOffset]'2026-11-04T10:33:00-05:00')) -eq $oldSha) 'Started between entries'
+        Assert-True ((Select-LocalAI-CommitAt $reflog ([DateTimeOffset]'2026-11-06T05:30:00Z')) -eq $newSha) 'Started after the newest entry (another zone)'
+        Assert-True ($null -eq (Select-LocalAI-CommitAt $reflog ([DateTimeOffset]'2026-11-01T00:00:00Z'))) 'Started before the reflog reaches back'
+    }
+    Test-Case 'host parts: the container is stale when its config hash differs from the release compose' {
+        $f = New-Fixture
+        New-FixtureContainer 'local-ai-appliance' 'running'
+        $appliance = @(Get-LocalAI-HostParts $repository | Where-Object { $_.id -eq 'appliance' })[0]
+        $equal = Get-LocalAI-HostPartObservation $appliance $repository $newSha $f.StackEnv
+        Assert-True ((Test-LocalAI-HostPartStale $appliance $newSha $equal).state -eq 'current') 'Equal hashes'
+        $f.ConfigHash = 'd' * 64
+        $changed = Test-LocalAI-HostPartStale $appliance $newSha (Get-LocalAI-HostPartObservation $appliance $repository $newSha $f.StackEnv)
+        Assert-True ($changed.state -eq 'stale' -and $changed.reason -match 'recreating it') "Different hashes: $($changed.state)"
+        $f.ComposeFails = $true
+        Assert-True ((Test-LocalAI-HostPartStale $appliance $newSha (Get-LocalAI-HostPartObservation $appliance $repository $newSha $f.StackEnv)).state -eq 'unknown') 'Compose unreadable must be unknown'
+        $f.ComposeFails = $false
+        [void]$f.Containers.Clear()
+        New-FixtureContainer 'other' 'running'
+        Assert-True ((Test-LocalAI-HostPartStale $appliance $newSha (Get-LocalAI-HostPartObservation $appliance $repository $newSha $f.StackEnv)).state -eq 'not-installed') 'No container on this host'
     }
     if ($failures.Count) { throw "$($failures.Count) deployment contract failure(s):`n$($failures -join "`n")" }
     Write-Host "PASS: $passed deployment contracts (native boundaries simulated; actual Docker promotion requires host verification)."

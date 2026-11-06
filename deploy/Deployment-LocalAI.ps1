@@ -175,3 +175,114 @@ function Copy-LocalAI-AppTree([string]$From, [string]$To, [switch]$Replace) {
     robocopy $From $To /MIR /XD node_modules .git data reports logs backups /XF .env '*.log' '*.tmp' '*.bak' | Out-Null
     if ($LASTEXITCODE -gt 7) { throw "Application copy failed: robocopy exit $LASTEXITCODE" }
 }
+
+# The host's long-running parts (deploy/host-parts.json, #450). A deploy replaces the app's files, but these keep
+# running what they started with: the container keeps the environment and mounts it was created with, a scheduled
+# task keeps the code it loaded. These functions say which part runs older code; nothing here restarts anything.
+function Get-LocalAI-HostParts([string]$Repo) {
+    $file = Join-Path $Repo 'deploy/host-parts.json'
+    if (-not (Test-Path -LiteralPath $file)) { throw "Host parts list missing: $file" }
+    $list = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json
+    $seen = @{}
+    foreach ($part in @($list.parts)) {
+        if ([string]$part.id -notmatch '^[a-z][a-z0-9-]*$') { throw "Host part has an invalid id: '$($part.id)'" }
+        if ($seen.ContainsKey($part.id)) { throw "Host part listed twice: $($part.id)" }
+        $seen[$part.id] = $true
+        $need = switch ([string]$part.kind) {
+            'compose-service' { @('service', 'container', 'compose') }
+            'scheduled-task' { @('task', 'paths') }
+            'self-reloading' { @('task', 'paths') }
+            default { throw "Host part $($part.id) has an unknown kind: '$($part.kind)'" }
+        }
+        foreach ($field in $need) { if (-not $part.$field) { throw "Host part $($part.id) needs '$field'" } }
+    }
+    return @($list.parts)
+}
+
+# The commit the checkout held at $At, from `git reflog --date=iso-strict --format=%H%x09%gd` lines (newest first),
+# or $null when the reflog doesn't reach back that far.
+function Select-LocalAI-CommitAt([string[]]$Reflog, [DateTimeOffset]$At) {
+    foreach ($line in $Reflog) {
+        if ("$line" -notmatch '^([a-f0-9]{40})\t\S*@\{([^}]+)\}$') { continue }
+        $when = [DateTimeOffset]::MinValue
+        if (-not [DateTimeOffset]::TryParse($Matches[2], [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::None, [ref]$when)) { continue }
+        if ($when -le $At) { return $Matches[1] }
+    }
+    return $null
+}
+
+# Whether one part runs $Release. $Observed is what was read on this host for it:
+#   installed: $false when the part isn't on this host;
+#   scheduled task: running ($false when stopped), startedFrom (the commit it started from, $null when unknown) and
+#   changed (its paths that differ between that commit and the release; $null when git couldn't say);
+#   compose service: wantHash (compose's hash for the release's compose.yml and stack.env) and runningHash (the
+#   container's com.docker.compose.config-hash label), $null when unread.
+# State is current, stale, unknown (never shown as current), stopped, not-installed or self-reloading.
+function Test-LocalAI-HostPartStale([object]$Part, [string]$Release, [hashtable]$Observed) {
+    $short = { param($sha) if ($sha) { ([string]$sha).Substring(0, [Math]::Min(7, ([string]$sha).Length)) } }
+    $result = { param($state, $reason) [pscustomobject][ordered]@{ id = [string]$Part.id; kind = [string]$Part.kind; state = $state; reason = $reason } }
+    if ($Observed.installed -eq $false) { return & $result 'not-installed' 'Not on this host' }
+    switch ([string]$Part.kind) {
+        'self-reloading' { return & $result 'self-reloading' 'Restarts itself when its code changes' }
+        'scheduled-task' {
+            if ($Observed.running -eq $false) { return & $result 'stopped' "The task $($Part.task) isn't running" }
+            $from = [string]$Observed.startedFrom
+            if (-not $from) { return & $result 'unknown' "No record of the release it started from; a restart runs $(& $short $Release)" }
+            if ($from -eq $Release) { return & $result 'current' "Runs $(& $short $Release)" }
+            if ($null -eq $Observed.changed) { return & $result 'unknown' "Runs $(& $short $from); couldn't compare it with $(& $short $Release)" }
+            $changed = @($Observed.changed | Where-Object { $_ })
+            if ($changed.Count) { return & $result 'stale' "Runs $(& $short $from), the release is $(& $short $Release); changed: $($changed -join ', ')" }
+            return & $result 'current' "Runs $(& $short $from); nothing it runs changed in $(& $short $Release)"
+        }
+        'compose-service' {
+            if (-not $Observed.wantHash -or -not $Observed.runningHash) { return & $result 'unknown' "Couldn't read $($Part.container)'s configuration" }
+            if ($Observed.wantHash -eq $Observed.runningHash) { return & $result 'current' 'Runs the configuration in compose.yml and stack.env' }
+            return & $result 'stale' "$($Part.container) was created from an older compose.yml or stack.env; recreating it picks them up"
+        }
+    }
+}
+
+# Reads what Test-LocalAI-HostPartStale needs for one part, from git, docker and the Task Scheduler. Read only.
+function Get-LocalAI-HostPartObservation([object]$Part, [string]$Repo, [string]$Release, [string]$StackEnvFile) {
+    $observed = @{}
+    $preference = $ErrorActionPreference
+    $encoding = [Console]::OutputEncoding
+    try {
+        # git and docker write to stderr; under Stop that would end the status read.
+        $ErrorActionPreference = 'Continue'
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        if ($Part.kind -eq 'compose-service') {
+            # The labels as JSON: Windows PowerShell 5.1 strips the inner quotes of an `index ... "label"` format.
+            $labels = @(docker inspect $Part.container --format '{{json .Config.Labels}}' 2>&1 | ForEach-Object { "$_" })
+            if ($LASTEXITCODE -ne 0) {
+                if (($labels -join ' ') -match 'No such') { $observed.installed = $false }
+                return $observed
+            }
+            $hashLabel = (($labels -join '') | ConvertFrom-Json).'com.docker.compose.config-hash'
+            if ($hashLabel) { $observed.runningHash = [string]$hashLabel }
+            $hash = @(docker compose --env-file $StackEnvFile -f (Join-Path $Repo $Part.compose) config --hash $Part.service 2>$null | ForEach-Object { "$_" })
+            if ($LASTEXITCODE -eq 0 -and ($hash -join ' ') -match "(?:^|\s)$([regex]::Escape($Part.service))\s+([a-f0-9]{64})") { $observed.wantHash = $Matches[1] }
+            return $observed
+        }
+        $task = if (Get-Command Get-ScheduledTask -ErrorAction SilentlyContinue) { Get-ScheduledTask -TaskName $Part.task -ErrorAction SilentlyContinue } else { $null }
+        if (-not $task) { $observed.installed = $false; return $observed }
+        if ($Part.kind -ne 'scheduled-task') { return $observed }
+        $observed.running = [string]$task.State -eq 'Running'
+        $info = Get-ScheduledTaskInfo -TaskName $Part.task -ErrorAction SilentlyContinue
+        if (-not $info -or -not $info.LastRunTime) { return $observed }
+        $reflog = @(git -C $Repo reflog show --date=iso-strict '--format=%H%x09%gd' HEAD 2>$null | ForEach-Object { "$_" })
+        $observed.startedFrom = Select-LocalAI-CommitAt $reflog ([DateTimeOffset]$info.LastRunTime)
+        if ($observed.startedFrom -and $observed.startedFrom -ne $Release) {
+            $diff = @(git -C $Repo diff --name-only $observed.startedFrom $Release -- @($Part.paths) 2>$null | ForEach-Object { "$_" })
+            # A plain assignment: an `if` expression would turn an empty list (nothing changed) into $null (unknown).
+            if ($LASTEXITCODE -eq 0) { $observed.changed = $diff }
+        }
+        return $observed
+    } catch {
+        return $observed
+    } finally {
+        $ErrorActionPreference = $preference
+        [Console]::OutputEncoding = $encoding
+        $global:LASTEXITCODE = 0
+    }
+}
