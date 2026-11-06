@@ -25,6 +25,21 @@
       throw err;
     });
   }
+  // The page anatomy's parts (Pi Hub A7 P1, P8), filled in place: the faceplate's lamp and its one readout, and the
+  // sources line. tone: ok|warn|bad|unknown. A readout of '—' with no unit is the "can't say" state, never a stale count.
+  function plate(id,{lamp,readout,unit}={}){
+    const el=document.getElementById(id);if(!el)return;
+    const chip=el.querySelector('[data-plate-lamp]');
+    if(chip){chip.hidden=!lamp;if(lamp){chip.className=`ui-chip ui-chip--${lamp[0]}`;chip.textContent=lamp[1]}}
+    const r=el.querySelector('.ui-readout');
+    if(r&&readout!==undefined){r.textContent=String(readout);if(unit){const u=document.createElement('span');u.className='ui-readout__unit';u.textContent=` ${unit}`;r.append(u)}}
+    el.setAttribute('aria-busy','false');
+  }
+  const SOURCE_WORD={ok:'Answering',warn:'Updating',bad:'Not answering'};
+  function sources(id,name,tone,when=''){
+    const el=document.getElementById(id);if(!el)return;
+    el.innerHTML=`Sources: ${esc(name)}: <span class="ui-chip ui-chip--${SOURCE_WORD[tone]?tone:'unknown'}">${SOURCE_WORD[tone]||'Not read yet'}</span>${when?` ${esc(when)}`:''}`;
+  }
   // The one approval sheet for risky actions. ask({title,effect,confirmLabel,tone,typed,input}) -> {ok,value?}.
   // tone: default|danger|host. typed: a word to type before Confirm enables. input: {label,type,placeholder} collects a value.
   // select: {label,options:[{value,label}],value?} replaces input with a chooser; the chosen value comes back in `value`.
@@ -240,7 +255,7 @@
     if(m.target.dataset?.runList||[...m.removedNodes].some(n=>n.classList?.contains('run-card')))boxes.add(m.target);
     for(const n of m.addedNodes){if(n.nodeType!==1)continue;if(n.classList.contains('run-card'))boxes.add(m.target);else n.querySelectorAll('.run-card').forEach(c=>boxes.add(c.parentElement))}}
     boxes.forEach(markRunList)}).observe(document.documentElement,{subtree:true,childList:true});
-  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{approvalSheet,toast,hideToast:()=>{const t=document.getElementById('toast');if(t)hideToast(t)},fetchJson,loadInto,ask,runCard,sheetHistory,showSheet,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
+  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{approvalSheet,plate,sources,toast,hideToast:()=>{const t=document.getElementById('toast');if(t)hideToast(t)},fetchJson,loadInto,ask,runCard,sheetHistory,showSheet,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
 })();
 // Pull to refresh (touch only): on a list page that registered a refresh, a finger pulling down from the very top by
 // more than 64px refreshes the page once; a small status line says "Updating…", then "Updated just now".

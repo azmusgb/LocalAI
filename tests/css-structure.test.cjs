@@ -65,7 +65,8 @@ function classesIn(src) {
   return out;
 }
 const styled = (defined, c) => c.endsWith('*') ? defined.some(d => d.startsWith(c.slice(0, -1))) : defined.includes(c);
-const definedClasses = () => [...new Set([...fs.readFileSync(path.join(PUBLIC, 'app.css'), 'utf8').matchAll(/\.([A-Za-z_][\w-]*)/g)].map(m => m[1]))];
+// The kit's components.css styles its own ui-* classes (appliance-ui, synced); a class either file styles counts.
+const definedClasses = () => [...new Set(['app.css', 'ui/components.css'].flatMap(f => [...fs.readFileSync(path.join(PUBLIC, f), 'utf8').matchAll(/\.([A-Za-z_][\w-]*)/g)].map(m => m[1])))];
 test('every class the new markup creates has a rule in app.css', () => {
   const defined = definedClasses(), missing = [];
   for (const [file, part] of Object.entries(SOURCES)) {
