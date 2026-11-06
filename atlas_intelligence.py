@@ -28,7 +28,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from atlas_snapshot_runner import MIRRORS, SnapshotRequestError, SnapshotRunner  # noqa: E402
 
 
-ROOT = Path(__file__).resolve().parent
+# The Local AI checkout Atlas maps and keeps .atlas/ in. Atlas runs from its own copy of the release (#450), where the
+# deploy writes repo-root.txt naming the checkout; ATLAS_ROOT overrides it. Without either it is this file's folder.
+HERE = Path(__file__).resolve().parent
+_ROOT_FILE = HERE / "repo-root.txt"
+ROOT = Path(os.environ.get("ATLAS_ROOT") or (_ROOT_FILE.read_text(encoding="utf-8").strip() if _ROOT_FILE.is_file() else "") or HERE).resolve()
 # quick_arch.py writes the graph here (a folder, so the container's read-only mount sees each rebuild).
 ATLAS_HTML = Path(os.environ.get("ATLAS_GRAPH") or (ROOT / ".atlas" / "graph" / "system-atlas.html"))
 INVESTIGATION_DIR = ROOT / ".atlas" / "investigations"

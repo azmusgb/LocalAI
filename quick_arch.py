@@ -17,7 +17,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent
+# The Local AI checkout Atlas maps and keeps .atlas/ in. Atlas runs from its own copy of the release (#450), where the
+# deploy writes repo-root.txt naming the checkout; ATLAS_ROOT overrides it. Without either it is this file's folder.
+HERE = Path(__file__).resolve().parent
+_ROOT_FILE = HERE / "repo-root.txt"
+ROOT = Path(os.environ.get("ATLAS_ROOT") or (_ROOT_FILE.read_text(encoding="utf-8").strip() if _ROOT_FILE.is_file() else "") or HERE).resolve()
 # A folder of its own: the appliance container mounts it read-only, and a folder mount sees each atomic rebuild.
 OUTPUT = Path(os.environ.get("ATLAS_OUTPUT") or (ROOT / ".atlas" / "graph" / "system-atlas.html"))
 # Snapshots (platform baseline 6.4): one repository at one commit, scanned from a clean copy made with git archive,

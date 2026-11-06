@@ -19,7 +19,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-ROOT = Path(__file__).resolve().parent
+# The Local AI checkout Atlas maps and keeps .atlas/ in. Atlas runs from its own copy of the release (#450), where the
+# deploy writes repo-root.txt naming the checkout; ATLAS_ROOT overrides it. Without either it is this file's folder.
+HERE = Path(__file__).resolve().parent
+_ROOT_FILE = HERE / "repo-root.txt"
+ROOT = Path(os.environ.get("ATLAS_ROOT") or (_ROOT_FILE.read_text(encoding="utf-8").strip() if _ROOT_FILE.is_file() else "") or HERE).resolve()
 # Beside the deploy checkout (C:\LocalAI\repo -> C:\LocalAI\atlas-repos), never inside it.
 MIRRORS = Path(os.environ.get("ATLAS_MIRRORS") or (ROOT.parent / "atlas-repos"))
 
@@ -69,7 +73,7 @@ class SnapshotRunner:
         self,
         remotes: dict[str, str] | None = None,
         mirrors: Path = MIRRORS,
-        script: Path = ROOT / "quick_arch.py",
+        script: Path = HERE / "quick_arch.py",
         run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
     ) -> None:
         self.remotes = dict(remotes if remotes is not None else remotes_from_env())

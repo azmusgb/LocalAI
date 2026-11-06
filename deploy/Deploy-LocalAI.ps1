@@ -38,7 +38,14 @@ try {
     [System.IO.Directory]::CreateDirectory($candidate) | Out-Null
     $archive = Join-Path $StateDir ('candidate-' + [Guid]::NewGuid().ToString('N') + '.tar')
     try {
-        git -C $Repo archive --format=tar -o $archive $sha app deploy tests docs host
+        # Plus the files of host parts that run from the repo root (Atlas), so they ship and roll back with the release.
+        $rootParts = @()
+        try {
+            $listed = ((git -C $Repo show "${sha}:deploy/host-parts.json" 2>$null) -join "`n") | ConvertFrom-Json
+            $rootParts = @($listed.parts | ForEach-Object { $_.paths } | Where-Object { $_ -and $_ -notmatch '[\\/]' })
+        } catch { $rootParts = @() }
+        $global:LASTEXITCODE = 0
+        git -C $Repo archive --format=tar -o $archive $sha app deploy tests docs host @rootParts
         if ($LASTEXITCODE -ne 0) { throw 'Failed to create candidate archive' }
         tar -xf $archive -C $candidate
         if ($LASTEXITCODE -ne 0) { throw 'Failed to extract candidate archive' }
@@ -74,6 +81,8 @@ try {
         $newContainerStarted = $true
         Start-LocalAI-Container $Container
         if (-not (Wait-LocalAI-Health -HealthUrl $HealthUrl -ExpectedCommit $sha -RequireSqlite)) { throw 'Candidate health/storage/release identity check failed' }
+        # Host parts that run this release's code (Atlas) move with it; one that doesn't come back rolls the app back too.
+        foreach ($line in (Update-LocalAI-HostTasks -Repo $Repo -Source $candidate -Commit $sha)) { Write-Host "Host part $line" }
         Write-LocalAI-DeployState -Path $statePath -State ([ordered]@{
             status = 'HEALTHY'; currentCommit = $sha; previousCommit = $previous
             deployedAt = Get-Date -Format o; source = $TargetRef

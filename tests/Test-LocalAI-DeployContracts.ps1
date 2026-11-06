@@ -52,6 +52,8 @@ function New-Fixture {
         DataBackups = [System.Collections.Generic.List[string]]::new(); ExecFails = $false
         # Host parts: compose's hash for the release and the running container's config-hash label.
         ComposeHash = ('c' * 64); ConfigHash = ('c' * 64)
+        # Host tasks (Atlas): scheduled tasks by name, the paths git says changed, and whether Atlas answers /health.
+        Tasks = @{}; ChangedPaths = @(); AtlasDown = $false; AtlasDownOn = $null
     }
     [System.IO.Directory]::CreateDirectory($fixture.StateDir) | Out-Null
     Write-LocalAI-DeployState (Join-Path $fixture.StateDir 'state.json') ([ordered]@{status='HEALTHY';currentCommit=$oldSha})
@@ -83,6 +85,18 @@ function Add-FixtureStackEntry([string]$Name, [string]$Service, [string]$State, 
 }
 function Get-FixtureStackEntry([string]$Name) { @($fixture.Stack | Where-Object { $_.Name -eq $Name })[0] }
 function Invoke-FixtureRepair { & (Join-Path $repository 'deploy/Repair-LocalAI-Stack.ps1') -EnvFile $fixture.StackEnv -Compose $fixture.StackCompose -HealthUrl 'http://fixture/healthz' }
+# Atlas moved onto its own copy (C:\LocalAI\atlas beside the checkout), running $Commit, with the repo's parts list.
+function New-FixtureAtlas([string]$Commit = $oldSha, [switch]$FromCheckout) {
+    Copy-Item -LiteralPath (Join-Path $repository 'deploy/host-parts.json') -Destination (Join-Path $fixture.Repo 'deploy/host-parts.json')
+    foreach ($name in @('atlas_intelligence.py', 'atlas_snapshot_runner.py', 'quick_arch.py')) { Set-Content -LiteralPath (Join-Path $fixture.Repo $name) -Value "# $name at the candidate" }
+    $atlasHome = Join-Path $fixture.Root 'atlas'
+    $atlas = @(Get-LocalAI-HostParts $fixture.Repo | Where-Object { $_.id -eq 'atlas' })[0]
+    Copy-LocalAI-HostPartFiles $atlas $fixture.Repo $atlasHome $Commit $fixture.Repo
+    foreach ($name in @($atlas.paths)) { Set-Content -LiteralPath (Join-Path $atlasHome $name) -Value "# $name as it runs" }
+    $folder = if ($FromCheckout) { $fixture.Repo } else { $atlasHome }
+    $fixture.Tasks['LocalAI Atlas'] = [pscustomobject]@{ State = 'Running'; Actions = @([pscustomobject]@{ Execute = 'powershell.exe'; Arguments = 'atlas_intelligence.py'; WorkingDirectory = $folder }) }
+    return $atlasHome
+}
 function Get-FixtureContainer([string]$Name) { @($fixture.Containers | Where-Object { $_.Name -eq $Name })[0] }
 function docker {
     $Arguments = [string[]]$args
@@ -167,6 +181,12 @@ function docker {
 function git {
     $Arguments = [string[]]$args
     $global:LASTEXITCODE=0
+    if ($Arguments -contains 'diff') { return @($fixture.ChangedPaths) }
+    if ($Arguments -contains 'show' -and ($Arguments -join ' ') -match 'host-parts\.json') {
+        $listed = Join-Path $fixture.Repo 'deploy/host-parts.json'
+        if (Test-Path -LiteralPath $listed) { return Get-Content -LiteralPath $listed }
+        $global:LASTEXITCODE = 128; return
+    }
     if ($Arguments -contains 'rev-parse') { return $newSha }
     if ($Arguments -contains 'rev-list') { return [string]$fixture.Ahead }
     if ($Arguments -contains 'status') { return $fixture.Dirty }
@@ -180,6 +200,7 @@ function tar {
     $Arguments = [string[]]$args
     $destination = $Arguments[[Array]::IndexOf($Arguments,'-C')+1]
     foreach ($dir in @('app','deploy','tests','docs','host')) { if (Test-Path -LiteralPath (Join-Path $fixture.Repo $dir)) { Copy-Item -LiteralPath (Join-Path $fixture.Repo $dir) -Destination $destination -Recurse } }
+    foreach ($file in @(Get-ChildItem -LiteralPath $fixture.Repo -Filter '*.py' -File)) { Copy-Item -LiteralPath $file.FullName -Destination $destination }
     $global:LASTEXITCODE=0
 }
 function robocopy {
@@ -188,10 +209,19 @@ function robocopy {
     $global:LASTEXITCODE=1
 }
 function Start-Sleep { param([int]$Seconds) }
-function Get-ScheduledTask { param($TaskName, $ErrorAction) return $null }
+function Get-ScheduledTask { param($TaskName, $ErrorAction) if ($fixture -and $fixture.Tasks -and $TaskName) { return $fixture.Tasks[$TaskName] }; return $null }
+# Host tasks: what listens on Atlas's port is its process; stopping it ends the task, Start-ScheduledTask runs it again.
+function Get-NetTCPConnection { param($LocalPort, $State, $ErrorAction) foreach ($t in $fixture.Tasks.Values) { if ($t.State -eq 'Running') { [pscustomobject]@{ OwningProcess = 4242 } } } }
+function Stop-Process { param($Id, [switch]$Force, $ErrorAction) foreach ($t in $fixture.Tasks.Values) { $t.State = 'Ready' }; $fixture.Calls.Add(@('stop-process', "$Id")) }
+function Start-ScheduledTask { param($TaskName) $fixture.Tasks[$TaskName].State = 'Running'; $fixture.Calls.Add(@('start-task', $TaskName, (Read-LocalAI-HostPartCommit (Join-Path $fixture.Root 'atlas')))) }
 function Invoke-RestMethod {
     param($Uri, $TimeoutSec, $Method, $ContentType, $Body, $ErrorAction)
     if ("$Uri" -like '*/api/busy') { $fixture.BusyAsked++; if ($fixture.BusyFails) { throw 'Unable to connect to the remote server' }; return $fixture.Busy }
+    if ("$Uri" -like '*:8765/health') {
+        $runs = Read-LocalAI-HostPartCommit (Join-Path $fixture.Root 'atlas')
+        if ($fixture.AtlasDown -or ($fixture.AtlasDownOn -and $runs -eq $fixture.AtlasDownOn)) { throw 'Unable to connect to the remote server' }
+        return [pscustomobject]@{ ok = $true }
+    }
     if ("$Uri" -like '*/api/notifications/system') { $fixture.Notices.Add(([System.Text.Encoding]::UTF8.GetString($Body) | ConvertFrom-Json)); return }
     $commit = Read-LocalAI-ReleaseCommit $fixture.Live
     $status = if ($fixture.RejectAllHealth -or ($fixture.RejectNewRelease -and $commit -eq $newSha)) { 'error' } else { 'ok' }
@@ -214,7 +244,7 @@ function Invoke-FixtureAutoDeploy([int]$MaxHoldMinutes = 45) {
 }
 function Get-AutoDeployCount { @($fixture.Calls | Where-Object { $_[0] -eq 'auto-deploy' }).Count }
 function Invoke-FixtureRollback([string]$Snapshot) {
-    & (Join-Path $repository 'deploy/Rollback-LocalAI.ps1') -Snapshot $Snapshot -Live $fixture.Live -StateDir $fixture.StateDir -Container 'fixture-appliance' -HealthUrl 'http://fixture/healthz'
+    & (Join-Path $repository 'deploy/Rollback-LocalAI.ps1') -Snapshot $Snapshot -Live $fixture.Live -StateDir $fixture.StateDir -Container 'fixture-appliance' -HealthUrl 'http://fixture/healthz' -Repo $fixture.Repo -Releases $fixture.Releases 3>$null
 }
 
 try {
@@ -792,6 +822,72 @@ try {
         [void]$f.Containers.Clear()
         New-FixtureContainer 'other' 'running'
         Assert-True ((Test-LocalAI-HostPartStale $appliance $newSha (Get-LocalAI-HostPartObservation $appliance $repository $newSha $f.StackEnv)).state -eq 'not-installed') 'No container on this host'
+    }
+    Test-Case 'host tasks: Atlas restarts on the release when a file it runs changed, and keeps the old copy' {
+        $f = New-Fixture; $atlasHome = New-FixtureAtlas; $f.ChangedPaths = @('quick_arch.py')
+        $lines = @(Update-LocalAI-HostTasks -Repo $f.Repo -Source $f.Repo -Commit $newSha)
+        Assert-True ($lines -join ' ' -match 'atlas: restarted on aaaaaaa \(was bbbbbbb\)') "Unexpected: $($lines -join ' | ')"
+        Assert-True ((Read-LocalAI-HostPartCommit $atlasHome) -eq $newSha) 'Home not on the release'
+        Assert-True ((Get-Content (Join-Path $atlasHome 'quick_arch.py') -Raw) -match 'at the candidate') 'Files not replaced'
+        Assert-True ((Get-Content (Join-Path $atlasHome 'repo-root.txt') -Raw) -eq [System.IO.Path]::GetFullPath($f.Repo)) 'repo-root.txt must name the checkout'
+        Assert-True ((Read-LocalAI-HostPartCommit "$atlasHome.previous") -eq $oldSha) 'Previous copy not kept'
+        Assert-True (@($f.Calls | Where-Object { $_[0] -eq 'start-task' -and $_[2] -eq $newSha }).Count -eq 1) 'Atlas was not started on the new copy'
+    }
+    Test-Case 'host tasks: nothing Atlas runs changed, so it is not restarted' {
+        $f = New-Fixture; $atlasHome = New-FixtureAtlas; $f.ChangedPaths = @()
+        $lines = @(Update-LocalAI-HostTasks -Repo $f.Repo -Source $f.Repo -Commit $newSha)
+        Assert-True ($lines -join ' ' -match 'nothing it runs changed') "Unexpected: $($lines -join ' | ')"
+        Assert-True (-not @($f.Calls | Where-Object { $_[0] -in @('stop-process', 'start-task') }).Count) 'Atlas was restarted'
+        Assert-True ((Read-LocalAI-HostPartCommit $atlasHome) -eq $newSha) 'Release not recorded'
+        Assert-True ((Get-Content (Join-Path $atlasHome 'quick_arch.py') -Raw) -match 'as it runs') 'Files were replaced'
+    }
+    Test-Case 'host tasks: Atlas still on the checkout, or not installed, is left alone' {
+        $f = New-Fixture; [void](New-FixtureAtlas -FromCheckout); $f.ChangedPaths = @('quick_arch.py')
+        $lines = @(Update-LocalAI-HostTasks -Repo $f.Repo -Source $f.Repo -Commit $newSha 3>$null)
+        Assert-True ($lines -join ' ' -match 'runs from the checkout; not refreshed') "Unexpected: $($lines -join ' | ')"
+        Assert-True (-not @($f.Calls | Where-Object { $_[0] -in @('stop-process', 'start-task') }).Count) 'Atlas on the checkout was restarted'
+        $f.Tasks.Clear()
+        Assert-True ((@(Update-LocalAI-HostTasks -Repo $f.Repo -Source $f.Repo -Commit $newSha) -join ' ') -match 'atlas: not on this host') 'No task'
+    }
+    Test-Case 'host tasks: Atlas that does not come back gets its previous copy back and the call fails' {
+        $f = New-Fixture; $atlasHome = New-FixtureAtlas; $f.ChangedPaths = @('atlas_intelligence.py'); $f.AtlasDownOn = $newSha
+        Assert-Throws { Update-LocalAI-HostTasks -Repo $f.Repo -Source $f.Repo -Commit $newSha } "atlas didn't come back on aaaaaaa; it runs bbbbbbb again"
+        Assert-True ((Read-LocalAI-HostPartCommit $atlasHome) -eq $oldSha) 'Previous copy not restored'
+        Assert-True ($f.Tasks['LocalAI Atlas'].State -eq 'Running') 'Atlas not started again'
+    }
+    Test-Case 'deploy: Atlas not coming back rolls the release back, app and Atlas' {
+        $f = New-Fixture; $atlasHome = New-FixtureAtlas; $f.ChangedPaths = @('atlas_intelligence.py'); $f.AtlasDownOn = $newSha
+        Assert-Throws { Invoke-FixtureDeploy } "previous live application restored.*atlas didn't come back"
+        $state = Read-LocalAI-DeployState (Join-Path $f.StateDir 'state.json')
+        Assert-True ($state.status -eq 'ROLLED_BACK' -and $state.error -match "atlas didn't come back") "State: $($state.status) $($state.error)"
+        Assert-True ((Get-Content (Join-Path $f.Live 'server.js') -Raw) -match 'legacy source') 'App not restored'
+        Assert-True ((Read-LocalAI-HostPartCommit $atlasHome) -eq $oldSha) 'Atlas not restored'
+    }
+    Test-Case 'deploy: a healthy release moves Atlas with it' {
+        $f = New-Fixture; $atlasHome = New-FixtureAtlas; $f.ChangedPaths = @('atlas_intelligence.py')
+        Invoke-FixtureDeploy | Out-Null
+        Assert-True ((Read-LocalAI-DeployState (Join-Path $f.StateDir 'state.json')).status -eq 'HEALTHY') 'Deploy not healthy'
+        Assert-True ((Read-LocalAI-HostPartCommit $atlasHome) -eq $newSha) 'Atlas not on the release'
+        Assert-True ((Get-Content (Join-Path $atlasHome 'atlas_intelligence.py') -Raw) -match 'at the candidate') 'Atlas runs old files'
+    }
+    Test-Case 'host parts: Atlas on its own copy is judged by that copy' {
+        $f = New-Fixture; [void](New-FixtureAtlas); $f.ChangedPaths = @('quick_arch.py')
+        $atlas = @(Get-LocalAI-HostParts $f.Repo | Where-Object { $_.id -eq 'atlas' })[0]
+        $result = Test-LocalAI-HostPartStale $atlas $newSha (Get-LocalAI-HostPartObservation $atlas $f.Repo $newSha $f.StackEnv)
+        Assert-True ($result.state -eq 'stale' -and $result.reason -match 'Runs bbbbbbb') "Unexpected: $($result.state) $($result.reason)"
+    }
+    Test-Case 'rollback: Atlas goes back with the app, from the restored release folder' {
+        $f = New-Fixture; $atlasHome = New-FixtureAtlas; $f.ChangedPaths = @('atlas_intelligence.py')
+        Invoke-FixtureDeploy | Out-Null
+        $older = Join-Path $f.Releases $oldSha
+        [System.IO.Directory]::CreateDirectory((Join-Path $older 'deploy')) | Out-Null
+        Copy-Item -LiteralPath (Join-Path $f.Repo 'deploy/host-parts.json') -Destination (Join-Path $older 'deploy/host-parts.json')
+        foreach ($name in @('atlas_intelligence.py', 'atlas_snapshot_runner.py', 'quick_arch.py')) { Set-Content -LiteralPath (Join-Path $older $name) -Value "# $name at the older release" }
+        Invoke-FixtureRollback (Read-LocalAI-DeployState (Join-Path $f.StateDir 'state.json')).rollbackSnapshot | Out-Null
+        $state = Read-LocalAI-DeployState (Join-Path $f.StateDir 'state.json')
+        Assert-True ($state.status -eq 'ROLLED_BACK' -and -not $state.hostPartError) "State: $($state.status) $($state.hostPartError)"
+        Assert-True ((Read-LocalAI-HostPartCommit $atlasHome) -eq $oldSha) 'Atlas not rolled back'
+        Assert-True ((Get-Content (Join-Path $atlasHome 'atlas_intelligence.py') -Raw) -match 'older release') 'Atlas runs the newer files'
     }
     if ($failures.Count) { throw "$($failures.Count) deployment contract failure(s):`n$($failures -join "`n")" }
     Write-Host "PASS: $passed deployment contracts (native boundaries simulated; actual Docker promotion requires host verification)."
