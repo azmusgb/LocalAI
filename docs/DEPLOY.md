@@ -13,7 +13,8 @@ a full path.
 |---|---|---|
 | `C:\LocalAI\repo` | Git checkout the deploy scripts run from and fetch into | `Deploy-LocalAI.ps1` (`-Repo`) |
 | `C:\LocalAI\appliance\app` | Live application code, bind-mounted into the container at `/app` | `Deploy-LocalAI.ps1` (`-Live`) |
-| `C:\LocalAI\releases\<sha>` | Extracted candidate per commit (`app`, `deploy`, `tests`) | `Deploy-LocalAI.ps1` (`-Releases`) |
+| `C:\LocalAI\releases\<sha>` | Extracted candidate per commit (`app`, `deploy`, `tests`, and the root files of the [host parts](#host-parts)) | `Deploy-LocalAI.ps1` (`-Releases`) |
+| `C:\LocalAI\atlas` | Atlas's own copy of its release (`release.json` names the commit; `repo-root.txt` points at the checkout for its data), and `atlas.previous`, the copy before | [Host parts](#host-parts) |
 | `C:\LocalAI\.deploy` | `state.json`, `deploy.lock`, pre-deploy code snapshots (`live-before-*`), `auto-deploy.log` | `Deploy-LocalAI.ps1` (`-StateDir`) |
 | `C:\LocalAI\backups` | Nightly database backups and `last-backup.json` | [Operations › Backups](OPERATIONS.md#backups) |
 | `C:\LocalAI\https` | Exported HTTPS root certificate | [HTTPS](#https-with-caddy) |
@@ -61,11 +62,17 @@ The Inbox gets a notice when a release goes live or a deploy fails.
    the database to `/data/backups/before-deploy-<guid>.db`, and repeats the migration preflight with
    writes stopped.
 8. Copies the candidate `app` over `C:\LocalAI\appliance\app`, writes `app\release.json` (SHA, version, time,
-   release notes; see [Versions and release notes](#versions-and-release-notes)), and starts the container.
+   release notes; see [Versions and release notes](#versions-and-release-notes)), and starts the container. If the
+   container's configuration differs from this release's `compose.yml` and `stack.env`, it is recreated instead
+   (`Recreating local-ai-appliance: …` in the log); see [Host parts](#host-parts).
 9. Waits for `/healthz` to report `status: ok`, SQLite storage and the expected `releaseCommit`
    (12 tries, 2 s apart).
-10. On success writes `state.json` with `status: HEALTHY`. On failure restores the snapshot, restarts, and
-    records `ROLLED_BACK` (or `DEPLOY_FAILED_UNCHANGED` if the code was never replaced).
+10. Refreshes the host parts that run from their own copy (Atlas), restarting one only when a file it runs changed
+    (`Host part atlas: restarted on <sha> (was <sha>)`).
+11. On success writes `state.json` with `status: HEALTHY`. On failure (the app's health, or a host part that didn't
+    come back) restores the snapshot, recreates the container from the previous release's configuration if this
+    deploy recreated it, restarts, and records `ROLLED_BACK` with the cause (or `DEPLOY_FAILED_UNCHANGED` if the code
+    was never replaced).
 
 ## Automatic deploys
 
@@ -166,8 +173,9 @@ sets the version). `Install-LocalAI-Stack.ps1 -Adopt` brings them under compose.
 `docker compose --env-file C:\LocalAI\stack\stack.env -f deploy\stack\compose.yml up -d sandbox-api` (after adopting). Finally, give
 n8n's assistant the new key in its sandbox connection settings.
 
-**Applying a `compose.yml` change.** Deploys and repairs never recreate running containers (`--no-recreate`), so a
-change to `compose.yml` (a limit, a healthcheck, a pinned image) waits until it is applied by hand:
+**Applying a `compose.yml` change.** A deploy recreates `local-ai-appliance` by itself when its settings changed (see
+[Host parts](#host-parts)). Repairs never recreate running containers (`--no-recreate`), and deploys don't touch the
+other services, so a change to theirs (a limit, a healthcheck, a pinned image) waits until it is applied by hand:
 
 ```powershell
 Disable-ScheduledTask 'LocalAI Safe Deploy'
@@ -179,6 +187,48 @@ Enable-ScheduledTask 'LocalAI Safe Deploy'
 
 `up -d` recreates only the services whose settings changed; a running mission or image is interrupted, so pick a quiet
 moment. Every service logs to json-file capped at 3 × 10 MB (`x-logging`), and the long-running ones have healthchecks.
+
+## Host parts
+
+A deploy replaces the app's files, but some long-running parts on the host run this repo's code or configuration and
+keep running what they started with. `deploy\host-parts.json` lists them (#450); `tests\host-parts.test.cjs` fails if
+a server in the repo root or `host\` is missing from it.
+
+| Part | Kind | When it restarts |
+|---|---|---|
+| `appliance` (`local-ai-appliance`) | compose service | Every deploy starts it. It is **recreated** from the release's `compose.yml` only when its compose config hash (`com.docker.compose.config-hash`) differs from what this release's `compose.yml` and `stack.env` produce. The page is down for about 20 s either way. |
+| `atlas` (`LocalAI Atlas` task) | scheduled task with its own copy in `C:\LocalAI\atlas` | Only when one of its files (`atlas_intelligence.py`, `atlas_snapshot_runner.py`, `quick_arch.py`) changed between the commit it runs and the new release, or when it isn't running. Otherwise its `release.json` is moved on without a restart. Only the listener on port 8765 is stopped, then the task is started and `/health` must answer `ok` within 60 s. |
+| `gridcraft-bridge` (`LocalAI GridCraft Bridge` task) | self-reloading | Never by a deploy: it restarts itself when its code changes. |
+
+**Seeing what each part runs.** `.\deploy\Get-LocalAI-DeployStatus.ps1` adds one line per part: `current`, `stale`
+(runs older code or configuration, with the reason), `stopped`, `not-installed`, `unknown` (couldn't be read) or
+`self-reloading`. Its JSON form has `parts`, `partsNeedingAttention` and `partsError`.
+
+**If a part won't come back.** A deploy whose Atlas doesn't answer on the new release puts the previous copy
+(`atlas.previous`) back, restarts it, and then fails the whole deploy, so the app rolls back too and `state.json` reads
+`ROLLED_BACK` with the cause (`atlas didn't come back on <sha>; it runs <sha> again`). If the previous copy doesn't
+answer either, the cause says so and Atlas is left not answering. Then:
+
+1. Read `C:\LocalAI\logs\atlas.log` for the error.
+2. Run Atlas from the checkout to get it back while you fix it: `.\deploy\Install-LocalAI-HostTask.ps1 -Part atlas -Undo`
+   (elevated). Its task then runs `C:\LocalAI\repo` again, and deploys warn that it can't be refreshed.
+3. After the fix is released, move it back: `.\deploy\Install-LocalAI-HostTask.ps1 -Part atlas`.
+
+A manual rollback (`Rollback-LocalAI.ps1`) also puts Atlas on the restored release, from `releases\<sha>`; if that
+fails, the rollback still completes and `state.json` records `hostPartError`.
+
+**Adding a part.** Add it to `host-parts.json` with its `kind`, `health` URL and the files it runs (`paths`, relative
+to the repo root). A scheduled task that a deploy should refresh needs a `home` (its folder under `C:\LocalAI`) and a
+command that runs its script by a bare name, not a path in the checkout. Then move it once with
+`Install-LocalAI-HostTask.ps1 -Part <id>` and check `Get-LocalAI-DeployStatus.ps1` shows it `current`.
+
+**Not covered yet:** the other compose services (`local-ai-https`, `local-ai-n8n`,
+`local-ai-ollama-responses-proxy`) are applied by hand as above. ComfyUI and Ollama run outside this repo.
+
+**Acceptance.** Not yet recorded. It needs, seen on the host: a release that changes an Atlas file restarting Atlas on
+the new commit; a deploy after a `compose.yml` change recreating the appliance (its created time and hash change) with
+`/healthz` passing; and, at the owner's call, one test release whose Atlas never answers rolling back to `ROLLED_BACK`
+with the cause. It is recorded here as "Host parts accepted <date>".
 
 ## Old releases and snapshots
 
@@ -294,7 +344,8 @@ A failed deploy rolls back by itself. To roll back a healthy release by hand:
 ```
 
 Rollback takes the deploy lock, stops the container, backs up the database (`/data/backups/before-rollback-<guid>.db`),
-restores the code, starts the container and checks health. Rolling back to a release that predates SQLite
+restores the code, starts the container (recreating it from the restored release's `compose.yml` if its configuration
+differs), checks health, and puts the [host parts](#host-parts) on the restored release. Rolling back to a release that predates SQLite
 first exports the database to JSON; see [Storage › Code rollback across the JSON boundary](STORAGE.md#code-rollback-across-the-json-boundary).
 
 Rolling back code does not roll back data. To return data to an earlier point, restore a backup
