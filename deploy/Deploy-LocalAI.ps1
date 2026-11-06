@@ -9,7 +9,8 @@ param(
     [string]$StateDir = 'C:\LocalAI\.deploy',
     [string]$Container = 'local-ai-appliance',
     [string]$HealthUrl = 'http://127.0.0.1:3080/healthz',
-    [string]$PowerShellHost = 'C:\LocalAI\powershell-bridge'
+    [string]$PowerShellHost = 'C:\LocalAI\powershell-bridge',
+    [string]$StackEnvFile = 'C:\LocalAI\stack\stack.env'
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Deployment-LocalAI.ps1')
@@ -66,6 +67,9 @@ try {
     $dataBackupName = $null
     $codeReplacementStarted = $false
     $newContainerStarted = $false
+    # A container whose compose config differs from this release's is recreated from it, not just started (#450).
+    $recreateFrom = Get-LocalAI-ContainerRecreate -Source $candidate -Release $sha -Container $Container -StackEnvFile $StackEnvFile
+    $recreated = $false
     Stop-LocalAI-Container $Container
     try {
         Copy-LocalAI-AppTree -From $Live -To $backup
@@ -79,7 +83,9 @@ try {
         Copy-LocalAI-AppTree -From (Join-Path $candidate 'app') -To $Live -Replace
         Write-LocalAI-DeployState -Path (Join-Path $Live 'release.json') -State (New-LocalAI-ReleaseInfo -Repo $Repo -Sha $sha -Previous $previous)
         $newContainerStarted = $true
-        Start-LocalAI-Container $Container
+        if ($recreateFrom) { Write-Host "Recreating ${Container}: its configuration differs from this release's compose.yml and stack.env." }
+        $recreated = [bool]$recreateFrom
+        Start-LocalAI-Container $Container -RecreateFrom $recreateFrom -StackEnvFile $StackEnvFile
         if (-not (Wait-LocalAI-Health -HealthUrl $HealthUrl -ExpectedCommit $sha -RequireSqlite)) { throw 'Candidate health/storage/release identity check failed' }
         # Host parts that run this release's code (Atlas) move with it; one that doesn't come back rolls the app back too.
         foreach ($line in (Update-LocalAI-HostTasks -Repo $Repo -Source $candidate -Commit $sha)) { Write-Host "Host part $line" }
@@ -100,7 +106,14 @@ try {
                 }
                 Copy-LocalAI-AppTree -From $backup -To $Live -Replace
             }
-            Start-LocalAI-Container $Container
+            # A container recreated for this release goes back to the previous release's configuration.
+            $restoreFrom = $null
+            if ($recreated -and $previous) {
+                $previousCompose = Join-Path (Join-Path $Releases $previous) 'deploy/stack/compose.yml'
+                if (Test-Path -LiteralPath $previousCompose) { $restoreFrom = $previousCompose }
+                else { Write-Warning "No compose.yml for $previous; $Container keeps this release's configuration" }
+            }
+            Start-LocalAI-Container $Container -RecreateFrom $restoreFrom -StackEnvFile $StackEnvFile
             $requiresSqlite = Test-Path -LiteralPath (Join-Path $Live 'storage.js')
             $expected = if (Test-Path -LiteralPath (Join-Path $Live 'release.json')) { Read-LocalAI-ReleaseCommit $Live } else { $null }
             if (-not (Wait-LocalAI-Health -HealthUrl $HealthUrl -ExpectedCommit $expected -RequireSqlite:$requiresSqlite)) { throw 'Restored application health check failed' }

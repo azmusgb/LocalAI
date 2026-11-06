@@ -54,6 +54,8 @@ function New-Fixture {
         ComposeHash = ('c' * 64); ConfigHash = ('c' * 64)
         # Host tasks (Atlas): scheduled tasks by name, the paths git says changed, and whether Atlas answers /health.
         Tasks = @{}; ChangedPaths = @(); AtlasDown = $false; AtlasDownOn = $null
+        # Appliance recreate: the compose files it was recreated from, and a simulated compose failure.
+        Recreated = [System.Collections.Generic.List[string]]::new(); RecreateFails = $false
     }
     [System.IO.Directory]::CreateDirectory($fixture.StateDir) | Out-Null
     Write-LocalAI-DeployState (Join-Path $fixture.StateDir 'state.json') ([ordered]@{status='HEALTHY';currentCommit=$oldSha})
@@ -97,6 +99,19 @@ function New-FixtureAtlas([string]$Commit = $oldSha, [switch]$FromCheckout) {
     $fixture.Tasks['LocalAI Atlas'] = [pscustomobject]@{ State = 'Running'; Actions = @([pscustomobject]@{ Execute = 'powershell.exe'; Arguments = 'atlas_intelligence.py'; WorkingDirectory = $folder }) }
     return $atlasHome
 }
+# The parts list names this fixture's container, so the deploy compares its compose config hash.
+function Set-FixtureApplianceListed([string]$Commit = '') {
+    $listed = (Get-Content -LiteralPath (Join-Path $repository 'deploy/host-parts.json') -Raw) -replace 'local-ai-appliance', 'fixture-appliance'
+    [System.IO.Directory]::CreateDirectory((Join-Path $fixture.Repo 'deploy/stack')) | Out-Null
+    Set-Content -LiteralPath (Join-Path $fixture.Repo 'deploy/host-parts.json') -Value $listed
+    Set-Content -LiteralPath (Join-Path $fixture.Repo 'deploy/stack/compose.yml') -Value 'name: local-ai'
+    if ($Commit) {
+        $release = Join-Path $fixture.Releases $Commit
+        [System.IO.Directory]::CreateDirectory((Join-Path $release 'deploy/stack')) | Out-Null
+        Set-Content -LiteralPath (Join-Path $release 'deploy/host-parts.json') -Value $listed
+        Set-Content -LiteralPath (Join-Path $release 'deploy/stack/compose.yml') -Value 'name: local-ai'
+    }
+}
 function Get-FixtureContainer([string]$Name) { @($fixture.Containers | Where-Object { $_.Name -eq $Name })[0] }
 function docker {
     $Arguments = [string[]]$args
@@ -108,6 +123,11 @@ function docker {
             $sub = $Arguments[5]
             # The host-parts check: compose's hash for one service.
             if ($Arguments -contains '--hash') { return "$($Arguments[-1]) $($fixture.ComposeHash)" }
+            # The deploy recreating the appliance from a release's compose.yml.
+            if ($Arguments -contains '--force-recreate') {
+                if ($fixture.RecreateFails) { $global:LASTEXITCODE = 1; return 'Error response from daemon: invalid mount config' }
+                $fixture.Recreated.Add($Arguments[4]); $fixture.Running = $true; return 'Container fixture-appliance  Recreated'
+            }
             if ($Arguments[1] -ne '--env-file' -or $Arguments[2] -ne $fixture.StackEnv -or $Arguments[4] -ne $fixture.StackCompose) { throw "Unexpected compose files: $($Arguments -join ' ')" }
             if ($sub -eq 'config') {
                 $services = [ordered]@{}
@@ -148,7 +168,7 @@ function docker {
         'inspect' {
             $c = Get-FixtureContainer $Arguments[1]
             if ($Arguments -contains '{{json .Config.Labels}}') {
-                if (-not $c) { $global:LASTEXITCODE = 1; return "Error: No such object: $($Arguments[1])" }
+                if (-not $c -and $Arguments[1] -ne 'fixture-appliance') { $global:LASTEXITCODE = 1; return "Error: No such object: $($Arguments[1])" }
                 return (ConvertTo-Json -Compress -InputObject @{ 'com.docker.compose.project' = 'local-ai'; 'com.docker.compose.config-hash' = $fixture.ConfigHash })
             }
             if ($c) {
@@ -228,7 +248,7 @@ function Invoke-RestMethod {
     return [pscustomobject]@{status=$status;releaseCommit=$commit;storage=[pscustomobject]@{engine=$(if(Test-Path -LiteralPath (Join-Path $fixture.Live 'storage.js')){'sqlite'}else{'json'});schemaVersion=1}}
 }
 function Invoke-FixtureDeploy([switch]$CheckOnly) {
-    & (Join-Path $repository 'deploy/Deploy-LocalAI.ps1') -Repo $fixture.Repo -Live $fixture.Live -Releases $fixture.Releases -StateDir $fixture.StateDir -Container 'fixture-appliance' -HealthUrl 'http://fixture/healthz' -SkipFetch -CheckOnly:$CheckOnly -PowerShellHost (Join-Path $fixture.Root 'powershell-bridge')
+    & (Join-Path $repository 'deploy/Deploy-LocalAI.ps1') -Repo $fixture.Repo -Live $fixture.Live -Releases $fixture.Releases -StateDir $fixture.StateDir -Container 'fixture-appliance' -HealthUrl 'http://fixture/healthz' -SkipFetch -CheckOnly:$CheckOnly -PowerShellHost (Join-Path $fixture.Root 'powershell-bridge') -StackEnvFile $fixture.StackEnv
 }
 # The auto-deploy's child Windows PowerShell running Deploy-LocalAI.ps1.
 function powershell.exe {
@@ -244,7 +264,7 @@ function Invoke-FixtureAutoDeploy([int]$MaxHoldMinutes = 45) {
 }
 function Get-AutoDeployCount { @($fixture.Calls | Where-Object { $_[0] -eq 'auto-deploy' }).Count }
 function Invoke-FixtureRollback([string]$Snapshot) {
-    & (Join-Path $repository 'deploy/Rollback-LocalAI.ps1') -Snapshot $Snapshot -Live $fixture.Live -StateDir $fixture.StateDir -Container 'fixture-appliance' -HealthUrl 'http://fixture/healthz' -Repo $fixture.Repo -Releases $fixture.Releases 3>$null
+    & (Join-Path $repository 'deploy/Rollback-LocalAI.ps1') -Snapshot $Snapshot -Live $fixture.Live -StateDir $fixture.StateDir -Container 'fixture-appliance' -HealthUrl 'http://fixture/healthz' -Repo $fixture.Repo -Releases $fixture.Releases -StackEnvFile $fixture.StackEnv 3>$null
 }
 
 try {
@@ -888,6 +908,32 @@ try {
         Assert-True ($state.status -eq 'ROLLED_BACK' -and -not $state.hostPartError) "State: $($state.status) $($state.hostPartError)"
         Assert-True ((Read-LocalAI-HostPartCommit $atlasHome) -eq $oldSha) 'Atlas not rolled back'
         Assert-True ((Get-Content (Join-Path $atlasHome 'atlas_intelligence.py') -Raw) -match 'older release') 'Atlas runs the newer files'
+    }
+    Test-Case 'appliance: an unchanged configuration is started, never recreated' {
+        $f = New-Fixture; Set-FixtureApplianceListed
+        Invoke-FixtureDeploy | Out-Null
+        Assert-True ((Read-LocalAI-DeployState (Join-Path $f.StateDir 'state.json')).status -eq 'HEALTHY') 'Deploy not healthy'
+        Assert-True ($f.Recreated.Count -eq 0) "Recreated: $($f.Recreated -join ', ')"
+        Assert-True (@($f.Calls | Where-Object { $_[0] -eq 'start' }).Count -ge 1) 'Not started'
+    }
+    Test-Case 'appliance: a changed configuration is recreated from the release compose.yml' {
+        $f = New-Fixture; Set-FixtureApplianceListed; $f.ConfigHash = 'd' * 64
+        Invoke-FixtureDeploy | Out-Null
+        Assert-True ((Read-LocalAI-DeployState (Join-Path $f.StateDir 'state.json')).status -eq 'HEALTHY') 'Deploy not healthy'
+        Assert-True ($f.Recreated.Count -eq 1 -and $f.Recreated[0] -like (Join-Path (Join-Path $f.Releases $newSha) 'deploy*compose.yml')) "Recreated from: $($f.Recreated -join ', ')"
+    }
+    Test-Case 'appliance: a recreated release that fails goes back to the previous release configuration' {
+        $f = New-Fixture; Set-FixtureApplianceListed -Commit $oldSha; $f.ConfigHash = 'd' * 64; $f.RejectNewRelease = $true
+        Assert-Throws { Invoke-FixtureDeploy } 'previous live application restored'
+        Assert-True ((Read-LocalAI-DeployState (Join-Path $f.StateDir 'state.json')).status -eq 'ROLLED_BACK') 'Not rolled back'
+        Assert-True ($f.Recreated.Count -eq 2 -and $f.Recreated[1] -like (Join-Path (Join-Path $f.Releases $oldSha) 'deploy*compose.yml')) "Recreated from: $($f.Recreated -join ', ')"
+    }
+    Test-Case 'appliance: a failed recreate rolls back, and an unreadable configuration starts it as it is' {
+        $f = New-Fixture; Set-FixtureApplianceListed -Commit $oldSha; $f.ConfigHash = 'd' * 64; $f.RecreateFails = $true
+        Assert-Throws { Invoke-FixtureDeploy } 'Cannot recreate fixture-appliance'
+        $g = New-Fixture; Set-FixtureApplianceListed; $g.ComposeFails = $true
+        Invoke-FixtureDeploy 3>$null | Out-Null
+        Assert-True ((Read-LocalAI-DeployState (Join-Path $g.StateDir 'state.json')).status -eq 'HEALTHY' -and $g.Recreated.Count -eq 0) 'Unknown must start, not recreate'
     }
     if ($failures.Count) { throw "$($failures.Count) deployment contract failure(s):`n$($failures -join "`n")" }
     Write-Host "PASS: $passed deployment contracts (native boundaries simulated; actual Docker promotion requires host verification)."

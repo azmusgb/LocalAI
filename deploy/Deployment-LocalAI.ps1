@@ -415,3 +415,16 @@ function Update-LocalAI-HostTasks([string]$Repo, [string]$Source, [string]$Commi
     }
     return $lines
 }
+
+# The compose.yml to recreate $Container from when its configuration differs from $Release's compose.yml and stack.env
+# (its compose config hash), or $null to start it as it is: equal, not a listed part, or unreadable (warned). Read only;
+# run while the container still exists.
+function Get-LocalAI-ContainerRecreate([string]$Source, [string]$Release, [string]$Container, [string]$StackEnvFile) {
+    if (-not (Test-Path -LiteralPath (Join-Path $Source 'deploy/host-parts.json'))) { return $null }
+    $part = @(Get-LocalAI-HostParts $Source | Where-Object { $_.kind -eq 'compose-service' -and $_.container -eq $Container })[0]
+    if (-not $part) { return $null }
+    $result = Test-LocalAI-HostPartStale $part $Release (Get-LocalAI-HostPartObservation $part $Source $Release $StackEnvFile)
+    if ($result.state -eq 'stale') { return (Join-Path $Source $part.compose) }
+    if ($result.state -ne 'current') { Write-Warning "$($Container): $($result.reason); starting it as it is" }
+    return $null
+}
