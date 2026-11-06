@@ -1703,9 +1703,6 @@ input::placeholder,textarea::placeholder{color:var(--ds-faint);font-weight:400}
 /* Approvals: resolved items folded below the waiting ones; Audit log: Clear sits under the list (appended; nothing above edited). */
 .activity-foot{display:flex;justify-content:flex-end;margin-top:12px}
 /* Projects with none yet: one empty state instead of zero tiles and an empty detail pane (appended; nothing above edited). */
-#projects .projects-summary{margin:6px 0 14px}
-#projects.projects-empty #projectMetrics,#projects.projects-empty .split>.card:has(#projectDetail){display:none}
-#projects.projects-empty .split{grid-template-columns:minmax(0,1fr)}
 /* Library on a phone: one column so titles have room, wrapping to two lines (appended; nothing above edited). */
 @media(max-width:560px){body.ux-v3 .library-grid{grid-template-columns:minmax(0,1fr)}.library-grid .artifact-title{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}}
 .voice-home-pref{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-top:12px}
@@ -2606,7 +2603,7 @@ html.is-framed .ux-framed-strip::-webkit-scrollbar{display:none}
 html.is-framed .ux-page-strip{margin-top:0}
 /* Assistant status on the page anatomy (Pi Hub A7 P1, L2b): the faceplate, lamp-right service rows, the sources line. */
 .status-page>.ui-page__head{margin-bottom:0}
-.status-plate__skeleton{display:inline-block;width:6ch;height:1em}
+.plate-skeleton{display:inline-block;width:6ch;height:1em}
 .status-plate__note,.status-plate__when{margin:0}
 .status-page.view.active{display:grid;gap:calc(var(--ui-space)*7);min-width:0}
 #serviceList{margin:0;padding:0;list-style:none}
@@ -2614,3 +2611,15 @@ html.is-framed .ux-page-strip{margin-top:0}
 .status-services details{margin-top:calc(var(--ui-space)*3)}
 .status-open-in{margin:0;color:var(--ds-muted)}
 .status-page>.ui-sources{margin:0}
+/* Projects on the page anatomy (A7 L2b): rows that open a project as a section under the list. */
+.projects-page.view.active{display:grid;gap:calc(var(--ui-space)*7);min-width:0}
+#projects.projects-empty #projectMetrics{display:none}
+.project-row{width:100%;padding-inline:8px;text-align:left;font:inherit;color:inherit;background:transparent;border:0;border-radius:0;cursor:pointer}
+.project-row:hover{background:var(--ds-surface)}
+.project-row[aria-current="true"]{box-shadow:inset 3px 0 0 var(--ds-accent)}
+.project-row:focus-visible{outline:2px solid var(--ds-accent);outline-offset:-2px}
+.project-detail h2 .ui-chip{vertical-align:middle}
+.project-detail__cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:calc(var(--ui-space)*6)}
+.project-detail h3{margin:0 0 calc(var(--ui-space)*2);font-size:var(--ds-fs-2)}
+.project-detail__actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:calc(var(--ui-space)*4)}
+.project-detail .empty-state{padding:calc(var(--ui-space)*2) 0;text-align:left;color:var(--ds-muted);font-size:var(--ds-fs-2)}

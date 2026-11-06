@@ -148,7 +148,7 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
     assert.equal((await back.innerText()).trim(), '← Home');  // §5 level 0: "← Home" is Pi Hub (step 7, PR 7.7)
     assert.equal(await back.getAttribute('href'), 'https://hub.rahe-home.duckdns.org/');
     const box = await back.boundingBox();
-    assert.ok(box.height >= 44, `tap target ${box.height}px`);
+    assert.ok(Math.round(box.height) >= 44, `tap target ${box.height}px`);  // layout lands on subpixels: 43.99997 is 44
     assert.ok(box.width < 160, `"← Home" is a link, not a full-width strip (${box.width}px)`);
     assert.equal(await page.locator('#homeComposer').isVisible(), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, 'no sideways scroll');
@@ -839,7 +839,7 @@ for (const [tag, vp] of [['390', phone], ['desktop', desk]]) {
     assert.match(await group.innerText(), /Failed ×5/);
     assert.match(await page.locator('#homeNeedsList [data-needs-count="2"]').innerText(), /Chat[\s\S]*Failed ×2/);
     const all = page.locator('#homeNeedsList .ui-needs__more a'), box = await all.boundingBox();
-    assert.ok(box.height >= 44, `See all tap target ${box.height}px`);
+    assert.ok(Math.round(box.height) >= 44, `See all tap target ${box.height}px`);  // a 44px min-height can measure 43.99997
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, 'no sideways scroll');
     await all.click();
     await page.waitForSelector('#work.active', T);
