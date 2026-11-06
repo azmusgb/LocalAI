@@ -6,7 +6,8 @@ param(
     [string]$Container = 'local-ai-appliance',
     [string]$HealthUrl = 'http://127.0.0.1:3080/healthz',
     [string]$Repo = 'C:\LocalAI\repo',
-    [string]$Releases = 'C:\LocalAI\releases'
+    [string]$Releases = 'C:\LocalAI\releases',
+    [string]$StackEnvFile = 'C:\LocalAI\stack\stack.env'
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Deployment-LocalAI.ps1')
@@ -22,6 +23,13 @@ try {
     $fromCommit = Read-LocalAI-ReleaseCommit $Live
     if (-not $fromCommit) { $fromCommit = $state.currentCommit }
     $dataBackupName = $null
+    # The container goes back to the restored release's configuration when it differs (#450).
+    $restoredRelease = if ($restoredCommit) { Join-Path $Releases $restoredCommit } else { $null }
+    $recreateFrom = $null
+    if ($restoredRelease) {
+        try { $recreateFrom = Get-LocalAI-ContainerRecreate -Source $restoredRelease -Release $restoredCommit -Container $Container -StackEnvFile $StackEnvFile }
+        catch { Write-Warning "Container configuration not compared: $($_.Exception.Message)" }
+    }
     Stop-LocalAI-Container $Container
     try {
         if ((Test-Path -LiteralPath (Join-Path $Live 'storage-cli.js')) -and -not (Test-Path -LiteralPath (Join-Path $Snapshot 'storage-cli.js'))) {
@@ -32,7 +40,7 @@ try {
             Invoke-LocalAI-StorageMaintenance -Container $Container -Command backup -OutputName $dataBackupName
         }
         Copy-LocalAI-AppTree -From $Snapshot -To $Live -Replace
-        Start-LocalAI-Container $Container
+        Start-LocalAI-Container $Container -RecreateFrom $recreateFrom -StackEnvFile $StackEnvFile
         $requiresSqlite = Test-Path -LiteralPath (Join-Path $Live 'storage.js')
         $expected = if (Test-Path -LiteralPath (Join-Path $Live 'release.json')) { Read-LocalAI-ReleaseCommit $Live } else { $null }
         if (-not (Wait-LocalAI-Health -HealthUrl $HealthUrl -ExpectedCommit $expected -RequireSqlite:$requiresSqlite)) { throw 'Rollback health/storage/release identity check failed' }
@@ -40,7 +48,6 @@ try {
         # already restored and healthy, so a part that can't follow is reported, not a reason to undo the rollback.
         $hostPartError = $null
         try {
-            $restoredRelease = if ($restoredCommit) { Join-Path $Releases $restoredCommit } else { $null }
             if (-not $restoredRelease -or -not (Test-Path -LiteralPath (Join-Path $restoredRelease 'deploy/host-parts.json'))) {
                 throw "No release folder with host parts for $restoredCommit; host parts stay as they are"
             }

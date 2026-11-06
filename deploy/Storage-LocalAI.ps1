@@ -78,7 +78,14 @@ function Stop-LocalAI-Container([string]$Container) {
     if ($LASTEXITCODE -ne 0) { throw "Cannot stop $Container; application/data were not replaced." }
 }
 
-function Start-LocalAI-Container([string]$Container) {
+# With -RecreateFrom (a release's compose.yml) the container is recreated from it, so a changed environment or mount in
+# compose.yml or stack.env takes effect (#450); a plain start keeps the container as it was created.
+function Start-LocalAI-Container([string]$Container, [string]$RecreateFrom, [string]$StackEnvFile, [string]$Service = 'appliance') {
+    if ($RecreateFrom) {
+        docker compose --env-file $StackEnvFile -f $RecreateFrom up -d --no-deps --force-recreate $Service | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Cannot recreate $Container from $RecreateFrom." }
+        return
+    }
     docker start $Container | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "Cannot start $Container." }
 }
