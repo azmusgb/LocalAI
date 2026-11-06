@@ -13,6 +13,7 @@
       "id": "atlas",
       "kind": "scheduled-task",
       "task": "LocalAI Atlas",
+      "home": "atlas",
       "paths": ["atlas_intelligence.py", "atlas_snapshot_runner.py", "quick_arch.py"],
       "health": "http://127.0.0.1:8765/health"
     },

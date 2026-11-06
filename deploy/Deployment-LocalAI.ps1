@@ -268,15 +268,20 @@ function Get-LocalAI-HostPartObservation([object]$Part, [string]$Repo, [string]$
         if (-not $task) { $observed.installed = $false; return $observed }
         if ($Part.kind -ne 'scheduled-task') { return $observed }
         $observed.running = [string]$task.State -eq 'Running'
+        if ($Part.home) {
+            $partHome = Get-LocalAI-HostPartHome $Part $Repo
+            if (Test-LocalAI-HostTaskInHome $task $partHome) {
+                # Its own copy: the deploy restarts it whenever that copy changes, so the copy's release is what it runs.
+                $observed.startedFrom = Read-LocalAI-HostPartCommit $partHome
+                if ($observed.startedFrom -and $observed.startedFrom -ne $Release) { $observed.changed = Get-LocalAI-ChangedPaths $Repo $observed.startedFrom $Release @($Part.paths) }
+                return $observed
+            }
+        }
         $info = Get-ScheduledTaskInfo -TaskName $Part.task -ErrorAction SilentlyContinue
         if (-not $info -or -not $info.LastRunTime) { return $observed }
         $reflog = @(git -C $Repo reflog show --date=iso-strict '--format=%H%x09%gd' HEAD 2>$null | ForEach-Object { "$_" })
         $observed.startedFrom = Select-LocalAI-CommitAt $reflog ([DateTimeOffset]$info.LastRunTime)
-        if ($observed.startedFrom -and $observed.startedFrom -ne $Release) {
-            $diff = @(git -C $Repo diff --name-only $observed.startedFrom $Release -- @($Part.paths) 2>$null | ForEach-Object { "$_" })
-            # A plain assignment: an `if` expression would turn an empty list (nothing changed) into $null (unknown).
-            if ($LASTEXITCODE -eq 0) { $observed.changed = $diff }
-        }
+        if ($observed.startedFrom -and $observed.startedFrom -ne $Release) { $observed.changed = Get-LocalAI-ChangedPaths $Repo $observed.startedFrom $Release @($Part.paths) }
         return $observed
     } catch {
         return $observed
@@ -285,4 +290,128 @@ function Get-LocalAI-HostPartObservation([object]$Part, [string]$Repo, [string]$
         [Console]::OutputEncoding = $encoding
         $global:LASTEXITCODE = 0
     }
+}
+
+# The paths that differ between two commits, limited to $Paths; $null when git can't say (an unknown commit).
+function Get-LocalAI-ChangedPaths([string]$Repo, [string]$From, [string]$To, [string[]]$Paths) {
+    $preference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $diff = @(git -C $Repo diff --name-only $From $To -- @($Paths) 2>$null | ForEach-Object { "$_" } | Where-Object { $_ })
+        if ($LASTEXITCODE -ne 0) { return $null }
+        return , $diff
+    } catch { return $null }
+    finally { $ErrorActionPreference = $preference; $global:LASTEXITCODE = 0 }
+}
+
+# A scheduled-task part with a `home` runs from its own copy of the release beside the checkout (Atlas: C:\LocalAI\atlas),
+# so its code changes only when a deploy promotes or rolls back, never when Safe Deploy moves the checkout (#450).
+# deploy/Install-LocalAI-HostTask.ps1 moves a task there once.
+function Get-LocalAI-HostPartHome([object]$Part, [string]$Repo) {
+    return Join-Path (Split-Path -Parent ([System.IO.Path]::GetFullPath($Repo))) $Part.home
+}
+function Test-LocalAI-HostTaskInHome([object]$Task, [string]$PartHome) {
+    $dir = [string](@($Task.Actions)[0].WorkingDirectory)
+    if (-not $dir) { return $false }
+    return [System.IO.Path]::GetFullPath($dir).TrimEnd('\', '/') -eq [System.IO.Path]::GetFullPath($PartHome).TrimEnd('\', '/')
+}
+function Read-LocalAI-HostPartCommit([string]$PartHome) {
+    $file = Join-Path $PartHome 'release.json'
+    if (-not (Test-Path -LiteralPath $file)) { return $null }
+    try { $commit = [string](Get-Content -LiteralPath $file -Raw | ConvertFrom-Json).commit } catch { return $null }
+    if ($commit -match '^[a-f0-9]{40}$') { return $commit }
+    return $null
+}
+
+# Fills $To with a part's files from $From (a release folder or the checkout), its release.json and repo-root.txt
+# (the checkout Atlas maps and keeps .atlas/ in).
+function Copy-LocalAI-HostPartFiles([object]$Part, [string]$From, [string]$To, [string]$Commit, [string]$Repo) {
+    if (Test-Path -LiteralPath $To) { Remove-Item -LiteralPath $To -Recurse -Force }
+    [System.IO.Directory]::CreateDirectory($To) | Out-Null
+    foreach ($path in @($Part.paths)) {
+        $source = Join-Path $From $path
+        if (-not (Test-Path -LiteralPath $source)) { throw "$($Part.id): $path is missing from $From" }
+        $target = Join-Path $To $path
+        [System.IO.Directory]::CreateDirectory((Split-Path -Parent $target)) | Out-Null
+        Copy-Item -LiteralPath $source -Destination $target -Force
+    }
+    Write-LocalAI-DeployState -Path (Join-Path $To 'release.json') -State ([ordered]@{ commit = $Commit; part = $Part.id })
+    [System.IO.File]::WriteAllText((Join-Path $To 'repo-root.txt'), [System.IO.Path]::GetFullPath($Repo))
+}
+
+# Stops a task's process by ending only what listens on its health port (the task's wrapper then ends with it), and
+# starts it again through the Task Scheduler. Never anything else on the host.
+function Stop-LocalAI-HostTask([object]$Part) {
+    $port = ([Uri]$Part.health).Port
+    foreach ($listener in @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)) {
+        Stop-Process -Id $listener.OwningProcess -Force -ErrorAction SilentlyContinue
+    }
+    for ($i = 0; $i -lt 20; $i++) {
+        $task = Get-ScheduledTask -TaskName $Part.task -ErrorAction SilentlyContinue
+        if (-not $task -or [string]$task.State -ne 'Running') { return }
+        Start-Sleep -Seconds 1
+    }
+    throw "$($Part.task) is still running after its process was stopped"
+}
+function Start-LocalAI-HostTask([object]$Part) { Start-ScheduledTask -TaskName $Part.task }
+function Wait-LocalAI-HostPartHealth([object]$Part, [int]$Attempts = 30, [int]$DelaySeconds = 2) {
+    for ($attempt = 0; $attempt -lt $Attempts; $attempt++) {
+        try { if ((Invoke-RestMethod -Uri $Part.health -TimeoutSec 5).ok -eq $true) { return $true } } catch { }
+        if ($attempt + 1 -lt $Attempts) { Start-Sleep -Seconds $DelaySeconds }
+    }
+    return $false
+}
+
+# Brings each scheduled-task part that runs from its home to $Commit, from the release folder $Source. When a file it
+# runs changed (or its home has no release yet, or it isn't running) it is stopped, its home swapped for the release's
+# copy, started and checked for up to a minute. A part that doesn't come back gets its previous copy back and is started
+# again, and this throws so the deploy rolls the app back too. A part still running from the checkout is left alone
+# with a warning. Returns one line per part, for the log.
+function Update-LocalAI-HostTasks([string]$Repo, [string]$Source, [string]$Commit) {
+    if (-not (Test-Path -LiteralPath (Join-Path $Source 'deploy/host-parts.json'))) { return @() }
+    $lines = @()
+    foreach ($part in (Get-LocalAI-HostParts $Source)) {
+        if ($part.kind -ne 'scheduled-task' -or -not $part.home) { continue }
+        $task = Get-ScheduledTask -TaskName $part.task -ErrorAction SilentlyContinue
+        if (-not $task) { $lines += "$($part.id): not on this host"; continue }
+        $partHome = Get-LocalAI-HostPartHome $part $Repo
+        if (-not (Test-LocalAI-HostTaskInHome $task $partHome)) {
+            Write-Warning "$($part.id) still runs from the checkout, so a deploy can't refresh or roll it back; move it with deploy/Install-LocalAI-HostTask.ps1 -Part $($part.id)"
+            $lines += "$($part.id): runs from the checkout; not refreshed"
+            continue
+        }
+        $from = Read-LocalAI-HostPartCommit $partHome
+        if ($from -eq $Commit) { $lines += "$($part.id): runs $($Commit.Substring(0, 7))"; continue }
+        # A plain assignment: an `if` expression would turn an empty list (nothing changed) into $null (unknown).
+        $changed = $null
+        if ($from) { $changed = Get-LocalAI-ChangedPaths $Repo $from $Commit @($part.paths) }
+        $running = [string]$task.State -eq 'Running'
+        if ($running -and $null -ne $changed -and $changed.Count -eq 0) {
+            # Same files: record the release without a restart.
+            Write-LocalAI-DeployState -Path (Join-Path $partHome 'release.json') -State ([ordered]@{ commit = $Commit; part = $part.id })
+            $lines += "$($part.id): nothing it runs changed; now $($Commit.Substring(0, 7))"
+            continue
+        }
+        $next = "$partHome.next"
+        $previous = "$partHome.previous"
+        Copy-LocalAI-HostPartFiles $part $Source $next $Commit $Repo
+        Stop-LocalAI-HostTask $part
+        if (Test-Path -LiteralPath $previous) { Remove-Item -LiteralPath $previous -Recurse -Force }
+        if (Test-Path -LiteralPath $partHome) { Move-Item -LiteralPath $partHome -Destination $previous }
+        Move-Item -LiteralPath $next -Destination $partHome
+        Start-LocalAI-HostTask $part
+        if (Wait-LocalAI-HostPartHealth $part) {
+            $lines += "$($part.id): restarted on $($Commit.Substring(0, 7))" + $(if ($from) { " (was $($from.Substring(0, 7)))" } else { '' })
+            continue
+        }
+        $cause = "$($part.id) didn't come back on $($Commit.Substring(0, 7))"
+        Stop-LocalAI-HostTask $part
+        Remove-Item -LiteralPath $partHome -Recurse -Force
+        if (-not (Test-Path -LiteralPath $previous)) { throw "$cause, and it had no previous copy to go back to" }
+        Move-Item -LiteralPath $previous -Destination $partHome
+        Start-LocalAI-HostTask $part
+        if (Wait-LocalAI-HostPartHealth $part) { throw "$cause; it runs $(if ($from) { $from.Substring(0, 7) } else { 'its previous copy' }) again" }
+        throw "$cause, and its previous copy didn't come back either"
+    }
+    return $lines
 }

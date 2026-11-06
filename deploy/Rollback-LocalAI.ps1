@@ -4,7 +4,9 @@ param(
     [string]$Live = 'C:\LocalAI\appliance\app',
     [string]$StateDir = 'C:\LocalAI\.deploy',
     [string]$Container = 'local-ai-appliance',
-    [string]$HealthUrl = 'http://127.0.0.1:3080/healthz'
+    [string]$HealthUrl = 'http://127.0.0.1:3080/healthz',
+    [string]$Repo = 'C:\LocalAI\repo',
+    [string]$Releases = 'C:\LocalAI\releases'
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Deployment-LocalAI.ps1')
@@ -34,10 +36,20 @@ try {
         $requiresSqlite = Test-Path -LiteralPath (Join-Path $Live 'storage.js')
         $expected = if (Test-Path -LiteralPath (Join-Path $Live 'release.json')) { Read-LocalAI-ReleaseCommit $Live } else { $null }
         if (-not (Wait-LocalAI-Health -HealthUrl $HealthUrl -ExpectedCommit $expected -RequireSqlite:$requiresSqlite)) { throw 'Rollback health/storage/release identity check failed' }
+        # Host parts that run from their own copy (Atlas) go back too, from the restored release's folder. The app is
+        # already restored and healthy, so a part that can't follow is reported, not a reason to undo the rollback.
+        $hostPartError = $null
+        try {
+            $restoredRelease = if ($restoredCommit) { Join-Path $Releases $restoredCommit } else { $null }
+            if (-not $restoredRelease -or -not (Test-Path -LiteralPath (Join-Path $restoredRelease 'deploy/host-parts.json'))) {
+                throw "No release folder with host parts for $restoredCommit; host parts stay as they are"
+            }
+            foreach ($line in (Update-LocalAI-HostTasks -Repo $Repo -Source $restoredRelease -Commit $restoredCommit)) { Write-Host "Host part $line" }
+        } catch { $hostPartError = $_.Exception.Message; Write-Warning "Host parts: $hostPartError" }
         Write-LocalAI-DeployState -Path $statePath -State ([ordered]@{
             status = 'ROLLED_BACK'; currentCommit = $restoredCommit; previousCommit = $fromCommit
             rolledBackAt = Get-Date -Format o; rollbackSnapshot = $Snapshot; rollbackSnapshotCommit = $restoredCommit
-            dataBackupName = $dataBackupName
+            dataBackupName = $dataBackupName; hostPartError = $hostPartError
         })
         Write-Host "Rollback completed from $Snapshot" -ForegroundColor Green
     } catch {
