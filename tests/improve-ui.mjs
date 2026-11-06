@@ -55,6 +55,16 @@ const lastPost = () => posts[posts.length - 1];
 // Clicks, then waits for the POST that click sends (the stub records it).
 async function postFrom(click) { const n = posts.length; await click(); for (let i = 0; i < 100 && posts.length === n; i++) await new Promise(r => setTimeout(r, 50)); return lastPost(); }
 
+await check("Backlog's faceplate counts the items, names the top one, and counts them by source", async () => {
+  const n = await page.locator('#backlogList .improve-row').count();
+  assert.equal((await page.locator('#backlogPlate .ui-readout').innerText()).trim(), `${n} ${n === 1 ? 'item' : 'items'}`);
+  const first = (await page.locator('#backlogList .improve-row .list-row__title').first().innerText()).trim();
+  assert.equal(await page.locator('#backlogTop').innerText(), `Top: ${first}`);
+  const counts = await page.locator('#backlogReadings dd').allInnerTexts();
+  assert.equal(counts.reduce((a, c) => a + Number(c), 0), n);
+  assert.match(await page.locator('#backlogSources').innerText(), /Answering/);
+});
+
 await check('Backlog lists only Backlog items, in rank order, with source icons and the Handed badge', async () => {
   const rows = await page.locator('#backlogList .improve-row').evaluateAll(rs => rs.map(r => ({ id: r.dataset.itemId, icon: r.querySelector('.list-row__icon use')?.getAttribute('href'), text: r.textContent })));
   assert.deepEqual(rows.map(r => r.id), ['claude-top', 'idea-sticky', 'signal-issue-1']);
@@ -177,6 +187,9 @@ await check('a failed load shows the error state with Retry, and Retry recovers'
   await page.evaluate(() => window.LocalAIImprove.refresh());
   await page.waitForSelector('#backlogList .state-error');
   assert.match(await page.locator('#backlogList .state-error').innerText(), /Database is busy/);
+  // A7 P8: the faceplate shows no count and the sources line says the board isn't answering.
+  assert.equal((await page.locator('#backlogPlate .ui-readout').innerText()).trim(), '—');
+  assert.match(await page.locator('#backlogSources').innerText(), /Not answering/);
   failItems = false;
   await page.locator('#backlogList .state-error button').click();
   await page.waitForSelector('#backlogList .improve-row');
