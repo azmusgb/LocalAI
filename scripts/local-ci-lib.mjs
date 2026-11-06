@@ -131,6 +131,15 @@ export function releaseDecision({ base = 'main', testedTree, mergedTree }) {
   return { advance: true };
 }
 
+// What a run does with the PR it was given. An open PR is tested merged with main. A PR already merged on GitHub can't be
+// merged again, but ship still owes main a release (5 Nov: #497, #499-#502 merged on GitHub while ship waited): it tests
+// main as it is now and, if green, moves release there; releaseDecision still checks main's tree is the tested one.
+export function prMode({ state, ship, pr }) {
+  if (state === 'OPEN') return { mode: 'pr' };
+  if (state === 'MERGED' && ship) return { mode: 'release-main' };
+  return { mode: 'refuse', reason: `PR #${pr} is ${String(state || 'unknown').toLowerCase()}${state === 'MERGED' ? '; ship it to release main' : ''}` };
+}
+
 // PRs merged on GitHub without ship (26 Oct: #407 and #408) land on main untested and never deploy; the next ship
 // tests and releases them with its own PR. mergedPrs reads `git log --first-parent --merges --format='%H %P|%s'
 // origin/release..origin/main` (newest first) into [{pr, merge, head}], oldest first; the head is the merge's second

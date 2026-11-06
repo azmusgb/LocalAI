@@ -233,3 +233,13 @@ test('unshippedNote names PRs merged without a green local-ci, never the one bei
     'Note: #407 is on main but was never shipped (merged on GitHub without local CI). This run tests it with PR #409; if it fails, check whether the failure comes from it.');
   assert.equal(unshippedNote([{ pr: 1, green: false }, { pr: 2, green: false }, { pr: 3, green: false }], 9, true).slice(0, 26), 'Note: #1, #2 and #3 are on');
 });
+
+// 5 Nov: PRs merged on GitHub while ship waited left main unreleased, and ship refused a merged PR.
+test('prMode: an open PR is tested; a merged one, under ship, tests main to release it; anything else is refused', async () => {
+  const { prMode } = await lib();
+  assert.deepEqual(prMode({ state: 'OPEN', ship: false, pr: '7' }), { mode: 'pr' });
+  assert.deepEqual(prMode({ state: 'OPEN', ship: true, pr: '7' }), { mode: 'pr' });
+  assert.deepEqual(prMode({ state: 'MERGED', ship: true, pr: '7' }), { mode: 'release-main' });
+  assert.deepEqual(prMode({ state: 'MERGED', ship: false, pr: '7' }), { mode: 'refuse', reason: 'PR #7 is merged; ship it to release main' });
+  assert.deepEqual(prMode({ state: 'CLOSED', ship: true, pr: '7' }), { mode: 'refuse', reason: 'PR #7 is closed' });
+});

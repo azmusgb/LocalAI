@@ -42,7 +42,7 @@ import net from 'node:net';
 import crypto from 'node:crypto';
 import { failingUnitTests, failedBrowserSuites, browserSuiteCounts, suitesToRetry, ciSummary, failureComment, retryComment,
   releaseNoteAdvice, RELEASE_NOTE_MARKER, shipMergeArgs, shipNextStep, recheckOutcome, releaseDecision, RELEASE_BRANCH,
-  mergedPrs, unshippedNote } from './local-ci-lib.mjs';
+  mergedPrs, unshippedNote, prMode } from './local-ci-lib.mjs';
 
 const args = process.argv.slice(2);
 const pr = args.find(a => /^\d+$/.test(a));
@@ -57,7 +57,7 @@ const say = line => { console.log(line); log.write(line + '\n'); };
 const git = (...a) => execFileSync('git', a, { cwd: repoRoot, encoding: 'utf8' }).trim();
 const gh = (...a) => execFileSync('gh', a, { cwd: repoRoot, encoding: 'utf8' }).trim();
 
-let dir = repoRoot, sha = null, worktree = null, baseRef = 'main', testedBase = null;
+let dir = repoRoot, sha = null, worktree = null, baseRef = 'main', testedBase = null, releaseOnly = false;
 const hasPwsh = (() => { try { execFileSync('pwsh', ['-v'], { stdio: 'ignore' }); return true; } catch { return false; } })();
 async function status(state, description) {
   if (!post) { if (pr) say(`(not posting) status ${state}: ${description}`); return; }
@@ -200,7 +200,22 @@ function ciDeps(treeDir) {
 async function main() {
   if (pr) {
     const head = JSON.parse(gh('pr', 'view', pr, '--json', 'headRefOid,headRefName,baseRefName,state,title'));
-    if (head.state !== 'OPEN') throw new Error(`PR #${pr} is ${head.state.toLowerCase()}`);
+    const plan = prMode({ state: head.state, ship, pr });
+    if (plan.mode === 'refuse') throw new Error(plan.reason);
+    if (plan.mode === 'release-main') {
+      // Merged on GitHub without ship: test the base branch as it is now, and release it if green (shipAfterGreen).
+      releaseOnly = true; baseRef = head.baseRefName;
+      git('fetch', '-q', 'origin', baseRef);
+      sha = git('rev-parse', `origin/${baseRef}`); testedBase = sha;
+      worktree = path.join(work, 'tree');
+      git('worktree', 'add', '-q', '--detach', worktree, sha);
+      dir = worktree;
+      say(`PR #${pr} is already merged (without ship): testing ${baseRef} @ ${sha.slice(0, 7)} to release it${DRY ? ' [dry run]' : ''}`);
+      await queue();
+      await status('pending', 'Running on ' + os.hostname());
+      try { fs.symlinkSync(ciDeps(dir), path.join(dir, 'node_modules')); }
+      catch (e) { say(`--- Dependencies: FAILED (${String(e.message).split('\n')[0]})`); await status('error', 'Could not install dependencies'); return false; }
+    } else {
     sha = head.headRefOid;
     baseRef = head.baseRefName;
     git('fetch', '-q', 'origin', head.baseRefName, `pull/${pr}/head`);
@@ -218,6 +233,7 @@ async function main() {
     catch { say(`--- Merge with ${head.baseRefName}: FAILED (conflicts; merge main into the branch first)`); await status('failure', `Conflicts with ${head.baseRefName}`); return false; }
     try { fs.symlinkSync(ciDeps(dir), path.join(dir, 'node_modules')); }
     catch (e) { say(`--- Dependencies: FAILED (${String(e.message).split('\n')[0]})`); await status('error', 'Could not install dependencies'); return false; }
+    }
   } else {
     say(`Local CI for the current checkout (${git('rev-parse', '--short', 'HEAD')}); nothing is posted${DRY ? ' [dry run]' : ''}`);
     await queue();
@@ -268,6 +284,14 @@ function mergeNewerBase() {
 }
 async function shipAfterGreen() {
   if (!DRY && !post) { say('Not merged: ship needs a PR number and posting (no --no-post, no dry run).'); return false; }
+  if (releaseOnly) {
+    // Nothing to merge: release the tested main, unless main moved during the run (then it holds untested work).
+    const latest = latestBase();
+    if (!DRY && latest !== testedBase) { say(`Release not moved: ${baseRef} moved during the run (${testedBase.slice(0, 7)} → ${latest.slice(0, 7)}); run ship again.`); return false; }
+    if (DRY) { say(`(dry run) would move ${RELEASE_BRANCH} to ${baseRef}`); return true; }
+    advanceRelease();
+    return true;
+  }
   let tested = testedBase || 'dry-old';
   for (let rechecks = 0; ; rechecks++) {
     const latest = latestBase() || tested;
@@ -296,7 +320,12 @@ async function shipAfterGreen() {
   }
   if (DRY) { say(`(dry run) would merge${pr ? `: gh ${shipMergeArgs(pr, sha).join(' ')}` : ' (no PR number, so nothing to merge)'}`); return true; }
   try { gh(...shipMergeArgs(pr, sha)); say(`Merged PR #${pr} (${sha.slice(0, 7)}).`); }
-  catch (e) { say(`Not merged: ${String(e.stderr || e.message).trim().split('\n')[0]} (was something pushed after the test started?)`); return false; }
+  catch (e) {
+    // Merged on GitHub while this run tested it: release main if main is exactly what was tested (releaseDecision checks).
+    let merged = false; try { merged = gh('pr', 'view', pr, '--json', 'state', '-q', '.state').trim() === 'MERGED'; } catch {}
+    if (merged) { say(`PR #${pr} was merged on GitHub during the run; releasing main if it is what this run tested.`); advanceRelease(); return true; }
+    say(`Not merged: ${String(e.stderr || e.message).trim().split('\n')[0]} (was something pushed after the test started?)`); return false;
+  }
   advanceRelease();
   return true;
 }
