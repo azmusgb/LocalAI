@@ -40,8 +40,17 @@ function backlogRow(it){
  row.querySelectorAll('[data-vote]').forEach(b=>b.onclick=async()=>{b.disabled=true;rowError(row,'');try{await post('/api/claude/findings/vote',{id:it.id,delta:Number(b.dataset.vote)});await refresh()}catch(e){b.disabled=false;rowError(row,`Couldn't save your vote: ${e.message}`)}});
  return row;
 }
+// Backlog's faceplate (Pi Hub A7 P1, L2b): how many items, the top one, and where they came from. A failed read shows no count.
+function backlogPlate(items){
+ const ui=root.LocalAIUI;if(!ui?.plate)return;
+ if(!items){ui.plate('backlogPlate',{readout:'—'});const t=$('backlogTop');if(t)t.textContent="Couldn't read the Backlog.";const r=$('backlogReadings');if(r)r.hidden=true;ui.sources('backlogSources',"Local AI's improve board",'bad');return}
+ ui.plate('backlogPlate',{readout:items.length?items.length:'Empty',unit:items.length?(items.length===1?'item':'items'):''});
+ const t=$('backlogTop');if(t)t.textContent=items.length?`Top: ${plain(items[0].title)}`:'Add an idea, or promote a Signal.';
+ const r=$('backlogReadings');if(r){r.hidden=!items.length;r.querySelectorAll('[data-count]').forEach(d=>{d.textContent=String(items.filter(i=>i.source===d.dataset.count).length)})}
+ ui.sources('backlogSources',"Local AI's improve board",'ok',`read ${new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`);
+}
 function renderBacklog(box,data){
- const items=(data.items||[]).filter(i=>i.stage==='backlog');
+ const items=(data.items||[]).filter(i=>i.stage==='backlog');backlogPlate(items);
  box.replaceChildren(...items.map(backlogRow));return items.length>0;
 }
 function inProgressRow(it){
@@ -240,7 +249,7 @@ async function refresh(){
  const once=()=>{let first=true;return()=>{if(first){first=false;return p}return load()}};
  const opts=(render,what,empty)=>({render,what,empty});
  return st.last=Promise.all([
-  $('backlogList')&&root.LocalAIUI.loadInto($('backlogList'),once(),opts(renderBacklog,'the backlog','Nothing in the Backlog. Add an idea, or promote a Signal.')),
+  $('backlogList')&&root.LocalAIUI.loadInto($('backlogList'),once(),opts(renderBacklog,'the backlog','Nothing in the Backlog. Add an idea, or promote a Signal.')).catch(e=>{backlogPlate(null);throw e}),
   $('signalsList')&&root.LocalAIUI.loadInto($('signalsList'),once(),opts(renderSignals,'the signals','Problems Local AI notices appear here. Press Run checks to look for some now.')),
   $('inProgressList')&&root.LocalAIUI.loadInto($('inProgressList'),()=>Promise.all([once()(),sessions()]).then(([d])=>d),opts(renderInProgress,'what is in progress','Nothing in progress. Start an item from the Backlog.')),
   $('shippedList')&&root.LocalAIUI.loadInto($('shippedList'),once(),opts(renderShipped,'what has shipped','Changes appear here once they ship. Start one from the Backlog.'))

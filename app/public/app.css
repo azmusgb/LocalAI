@@ -2623,3 +2623,7 @@ html.is-framed .ux-page-strip{margin-top:0}
 .project-detail h3{margin:0 0 calc(var(--ui-space)*2);font-size:var(--ds-fs-2)}
 .project-detail__actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:calc(var(--ui-space)*4)}
 .project-detail .empty-state{padding:calc(var(--ui-space)*2) 0;text-align:left;color:var(--ds-muted);font-size:var(--ds-fs-2)}
+/* Backlog on the page anatomy (A7 L2b). */
+.backlog-page.view.active{display:grid;gap:calc(var(--ui-space)*7);min-width:0}
+.backlog-page .list-group{border:0;border-radius:0;background:transparent;box-shadow:none}
+.backlog-page .list-group>.list-row{padding-left:0;padding-right:0}
