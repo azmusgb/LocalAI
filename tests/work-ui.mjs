@@ -277,6 +277,24 @@ await check('a text run shows its answer once, not as summary and again as previ
   await page.context().close();
 });
 
+// A7 P1/P8 (L2b): Work's faceplate counts what is running from the rows, names the newest, and shows no count when the
+// first page fails.
+await check("Work's faceplate: what is running, the newest, today and this week; a failed load shows no count", async () => {
+  const live = item('chat', 'Writing the summary', 60_000, { status: 'running' }), older = item('chat', 'Last week', 3 * 864e5);
+  let page = await open(desk, '#work', async () => [live, older]);
+  await page.waitForSelector('#workPlate[aria-busy="false"]', T);
+  assert.equal((await page.locator('#workPlate .ui-readout').innerText()).trim(), '1 running');
+  assert.equal((await page.locator('#workPlate [data-plate-lamp]').innerText()).trim(), 'Running');
+  assert.equal(await page.locator('#workLatest').innerText(), 'Latest: Writing the summary');
+  assert.deepEqual([await page.locator('#workToday').innerText(), await page.locator('#workWeek').innerText()], ['1', '2']);
+  await page.context().close();
+  page = await open(desk, '#work', async () => ({ status: 500 }));
+  await page.waitForSelector('#workPlate[aria-busy="false"]', T);
+  assert.equal((await page.locator('#workPlate .ui-readout').innerText()).trim(), '—');
+  assert.match(await page.locator('#workSources').innerText(), /Not answering/);
+  await page.context().close();
+});
+
 await check('the whole row opens the run: no per-row Open button, Review and Retry stay small buttons', async () => {
   const rev = item('engineering', 'Fix the login bug', HOUR, { status: 'awaiting_approval' }); rev.card.action = { label: 'Review' };
   const retry = item('agent', 'Failed mission', 2 * HOUR, { status: 'failed' }); retry.card.action = { label: 'Retry' };
@@ -287,7 +305,9 @@ await check('the whole row opens the run: no per-row Open button, Review and Ret
   assert.deepEqual(await page.locator('#work .work-secondary').allInnerTexts(), ['Review', 'Retry']);
   const name = page.getByRole('button', { name: 'Plain chat', exact: true });   // its ☆ is "Keep Plain chat"
   assert.equal(await name.count(), 1, 'the row has one button named by its title');
-  const row = page.locator(`#work [data-run-id="${plain.id}"]`), box = await row.boundingBox();
+  const row = page.locator(`#work [data-run-id="${plain.id}"]`);
+  await row.scrollIntoViewIfNeeded();   // the faceplate sits above the list (A7 P1)
+  const box = await row.boundingBox();
   await page.mouse.click(box.x + box.width - 140, box.y + box.height / 2); // empty space inside the row, away from the title text
   await page.waitForFunction(h => location.hash === h, '#run/' + plain.id, T);
   await page.evaluate(() => history.back());
@@ -361,11 +381,12 @@ await check('a row the run center has not loaded still opens (by id)', async () 
   await page.context().close();
 });
 
-await check('nothing yet: the empty state starts something on Home', async () => {
+await check("nothing yet: the list says so, and the faceplate's Start something opens Home's composer", async () => {
   const page = await open(desk, '#work', async () => []);
   await page.waitForSelector('#work .empty-state', T);
-  assert.match(await page.locator('#work').innerText(), /Nothing yet\. What should we do\?/);
-  await page.locator('#work button', { hasText: 'Start something' }).click();
+  assert.match(await page.locator('#workList').innerText(), /Nothing yet\s+What you start from Home appears here/);
+  assert.equal(await page.locator('#work button', { hasText: 'Start something' }).count(), 1);
+  await page.locator('#workStart').click();   // the faceplate's: one Start something per page (A7 P1)
   await page.waitForSelector('#home.active', T);
   await page.waitForFunction(() => document.activeElement?.id === 'commandInput', null, T);
   await page.context().close();

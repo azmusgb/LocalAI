@@ -26,6 +26,8 @@ function merge(list,{older=false,window=false}={}){
  for(const it of list){if(!older||!st.threads.has(key(it)))st.threads.set(key(it),it)}
  st.items=[...st.threads.values()].sort(newest);
 }
+// Start something: Home's composer, focused once Home is the open page.
+function startSomething(){window.LocalAIRouter?.go('#home');const t=Date.now(),f=()=>{const c=$('commandInput');if($('home')?.classList.contains('active')&&c)c.focus();else if(Date.now()-t<1500)setTimeout(f,40)};f()}
 // Opening a run goes through the runs module, so Close and Back return to Work.
 const openRun=it=>window.LocalAIRuns?window.LocalAIRuns.show(it.id):window.LocalAIRouter?.go('#run/'+encodeURIComponent(it.id));
 // One card per row: a chat thread's turn count (the card itself shows the summary once), and the row itself opens the run.
@@ -94,13 +96,25 @@ async function deletePicked(){
 function setKept(k,kept){const it=st.threads.get(k);if(!it)return;st.threads.set(k,{...it,kept});st.items=[...st.threads.values()].sort(newest);if(st.loaded)paint()}
 const text=it=>`${it.card?.title||''} ${it.card?.summary||''}`.toLowerCase();
 const visible=()=>{const q=st.query.trim().toLowerCase();return st.items.filter(it=>!q||text(it).includes(q))};
+// Work's faceplate (Pi Hub A7 P1, L2b), from the rows loaded for the chip: how many are running, the newest, and how many
+// started today and this week. `failed` (the first page didn't load) shows no count rather than an old one.
+const KIND_WORD={needs:'Needs you',chats:'Chats',images:'Images',missions:'Missions',sheets:'Spreadsheets',changes:'Changes',other:'Other'};
+function plate(failed){
+ const ui=window.LocalAIUI;if(!ui?.plate)return;const latest=$('workLatest'),readings=$('workReadings');
+ if(failed){ui.plate('workPlate',{lamp:['unknown','Unknown'],readout:'—'});if(latest)latest.textContent="Couldn't read your work.";if(readings)readings.hidden=true;ui.sources('workSources',"Local AI's runs",'bad');return}
+ const running=st.items.filter(it=>LIVE.has(it.status)).length,top=st.items[0],filter=st.kind!=='all'?` · ${KIND_WORD[st.kind]}`:'';
+ ui.plate('workPlate',{lamp:running?['ok','Running']:['unknown','Idle'],readout:running||'Nothing',unit:running?'running':'running now'});
+ if(latest)latest.textContent=top?`Latest${filter}: ${top.card?.title||top.title||'Untitled'}`:st.kind==='all'?'Nothing yet. Start something from Home.':`No ${KIND_WORD[st.kind].toLowerCase()} yet.`;
+ if(readings){readings.hidden=!st.items.length;$('workToday').textContent=String(st.items.filter(it=>groupOf(it)===0).length);$('workWeek').textContent=String(st.items.filter(it=>groupOf(it)<=2).length)}
+ ui.sources('workSources',"Local AI's runs",'ok',`read ${new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`);
+}
 function paint(){
- const box=$('workList'),list=visible();
+ const box=$('workList'),list=visible();plate();
  $('workMore').hidden=!st.more; // the server filtered by kind: an empty first page means there are none, and st.more is false then
  if(!st.items.length&&st.kind!=='all'){box.innerHTML=`<div class="state-empty empty-state"><div class="empty-state__title">${NONE[st.kind]}</div><div>Try another filter.</div></div>`;st.shown='';st.rows.clear();return}
  if(!st.items.length){
-  box.innerHTML='<div class="state-empty empty-state"><div class="empty-state__title">Nothing yet. What should we do?</div><button type="button" class="btn-primary">Start something</button></div>';
-  box.querySelector('button').addEventListener('click',()=>{window.LocalAIRouter?.go('#home');const t=Date.now(),f=()=>{const c=$('commandInput');if($('home')?.classList.contains('active')&&c)c.focus();else if(Date.now()-t<1500)setTimeout(f,40)};f()});
+  // One Start something per page: the faceplate's (A7 P1). The list says what will appear here.
+  box.innerHTML='<div class="state-empty empty-state"><div class="empty-state__title">Nothing yet</div><div>What you start from Home appears here, newest first.</div></div>';
   st.shown='';st.rows.clear();return;
  }
  const by=GROUPS.map(()=>[]);list.forEach(it=>by[groupOf(it)].push(it));by.forEach((g,i)=>{by[i]=fold(g)});
@@ -128,7 +142,7 @@ function render(box,data){
  merge(data.items||[]);st.more=(data.items||[]).length>=PAGE;st.loaded=true;paint();schedule();
 }
 const load=()=>{const gen=st.gen;return window.LocalAIUI.fetchJson(url()).then(d=>({...d,gen}))};
-const first=()=>{const box=$('workList'),gen=st.gen;st.started=true;box.setAttribute('aria-busy','true');return window.LocalAIUI.loadInto(box,load,{render,what:'your work'}).catch(()=>{}).finally(()=>{if(gen===st.gen)box.removeAttribute('aria-busy')})};
+const first=()=>{const box=$('workList'),gen=st.gen;st.started=true;box.setAttribute('aria-busy','true');return window.LocalAIUI.loadInto(box,load,{render,what:'your work'}).catch(()=>{if(gen===st.gen)plate(true)}).finally(()=>{if(gen===st.gen)box.removeAttribute('aria-busy')})};
 // A quiet refresh of the newest page: updates rows in place, adds new threads, keeps what Show more loaded.
 async function refresh(){
  const gen=st.gen;try{const d=await window.LocalAIUI.fetchJson(url());if(gen!==st.gen)return;merge(d.items||[],{window:true});paint()}catch{}
@@ -181,6 +195,7 @@ function init(){
  $('workSearch').addEventListener('input',e=>{st.query=e.target.value;if(st.loaded)paint()});
  $('workMore').addEventListener('click',more);
  $('workSelect').addEventListener('click',()=>setSelecting(!st.selecting));
+ $('workStart')?.addEventListener('click',startSomething);
  $('workSelectDone').addEventListener('click',()=>setSelecting(false));
  $('workDeleteSelected').addEventListener('click',deletePicked);
  $('workOpenAgentWorld')?.addEventListener('click',()=>window.LocalAIRouter?.open('agents'));
