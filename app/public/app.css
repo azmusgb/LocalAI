@@ -2627,3 +2627,7 @@ html.is-framed .ux-page-strip{margin-top:0}
 .backlog-page.view.active{display:grid;gap:calc(var(--ui-space)*7);min-width:0}
 .backlog-page .list-group{border:0;border-radius:0;background:transparent;box-shadow:none}
 .backlog-page .list-group>.list-row{padding-left:0;padding-right:0}
+/* Work on the page anatomy (A7 L2b): the faceplate, then the list as a section headed by its Select. */
+.work-page.view.active{display:grid;gap:calc(var(--ui-space)*7);min-width:0}
+.work-section__head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:calc(var(--ui-space)*3)}
+.work-section__head h2{margin:0}
