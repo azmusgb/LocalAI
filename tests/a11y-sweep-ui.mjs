@@ -51,6 +51,11 @@ async function stubbed(viewport) {
   await page.route(u => u.pathname === '/api/library', route => json(route, { items: LIBRARY }));
   await page.route(u => u.pathname === '/api/issues', route => json(route, { items: ISSUES }));
   await page.route(u => u.pathname === '/api/releases', route => json(route, RELEASES));
+  // Pi Hub's rows on Home come from the live hub when the Mac can reach it: a fixed list keeps the sweep the same on
+  // every machine (a sixth live row once sat under the sticky composer and failed target-size).
+  await page.route(u => u.pathname === '/api/home/hub-needs', route => json(route, { items: [
+    { id: 'pi:Ad blocking', tone: 'warn', title: 'Ad blocking', detail: 'AdGuard is paused.', link: '/network', action: 'open_network' },
+    { id: 'pi:Raspberry Pi', tone: 'attention', title: 'Raspberry Pi', detail: 'Pi 65 °C.', link: '/system' }] }));
   await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.showView === 'function');
   return page;

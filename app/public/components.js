@@ -27,10 +27,11 @@
   }
   // The page anatomy's parts (Pi Hub A7 P1, P8), filled in place: the faceplate's lamp and its one readout, and the
   // sources line. tone: ok|warn|bad|unknown. A readout of '—' with no unit is the "can't say" state, never a stale count.
+  // Only what is passed changes: a readout update leaves the lamp alone, and the other way round.
   function plate(id,{lamp,readout,unit}={}){
     const el=document.getElementById(id);if(!el)return;
     const chip=el.querySelector('[data-plate-lamp]');
-    if(chip){chip.hidden=!lamp;if(lamp){chip.className=`ui-chip ui-chip--${lamp[0]}`;chip.textContent=lamp[1]}}
+    if(chip&&lamp!==undefined){chip.hidden=!lamp;if(lamp){chip.className=`ui-chip ui-chip--${lamp[0]}`;chip.textContent=lamp[1]}}
     const r=el.querySelector('.ui-readout');
     if(r&&readout!==undefined){r.textContent=String(readout);if(unit){const u=document.createElement('span');u.className='ui-readout__unit';u.textContent=` ${unit}`;r.append(u)}}
     el.setAttribute('aria-busy','false');
@@ -38,7 +39,7 @@
   const SOURCE_WORD={ok:'Answering',warn:'Updating',bad:'Not answering'};
   function sources(id,name,tone,when=''){
     const el=document.getElementById(id);if(!el)return;
-    el.innerHTML=`Sources: ${esc(name)}: <span class="ui-chip ui-chip--${SOURCE_WORD[tone]?tone:'unknown'}">${SOURCE_WORD[tone]||'Not read yet'}</span>${when?` ${esc(when)}`:''}`;
+    el.innerHTML=`${el.hasAttribute('data-part')?'':'Sources: '}${esc(name)}: <span class="ui-chip ui-chip--${SOURCE_WORD[tone]?tone:'unknown'}">${SOURCE_WORD[tone]||'Not read yet'}</span>${when?` ${esc(when)}`:''}`;
   }
   // The one approval sheet for risky actions. ask({title,effect,confirmLabel,tone,typed,input}) -> {ok,value?}.
   // tone: default|danger|host. typed: a word to type before Confirm enables. input: {label,type,placeholder} collects a value.

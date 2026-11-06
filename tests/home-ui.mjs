@@ -181,6 +181,9 @@ await check('Needs you also lists Pi Hub\'s items in Pi Hub\'s words, bad first,
   assert.deepEqual(rows, ['Pi disk is full', 'Approve the update', 'Clear the plate', 'Worth a look']);
   assert.equal(await page.locator('#homeNeedsList [data-hub-need="localai:needs-1"]').count(), 0, 'the summary line is not repeated');
   assert.equal(await page.textContent('#homeNeedsCount'), '· 4');
+  // A7 P1 (L2b): the faceplate's readout is the same count, and the sources line names Pi Hub's Needs you.
+  assert.equal((await page.locator('#homePlate .ui-readout').innerText()).trim(), '4 need you');
+  assert.match(await page.locator('#homeSrcHub').innerText(), /Pi Hub's Needs you: Answering/);
   assert.equal(await page.textContent('[data-hub-need="printer:plate"] .ui-need__detail'), 'Finished hex-tile E-022');
   assert.equal(await page.textContent('[data-hub-need="localai:watch-mac-disk"] .ui-need__meta'), 'Assistant status');
   assert.equal(await page.textContent('[data-hub-need="printer:plate"] .ui-need__meta'), 'Pi Hub');

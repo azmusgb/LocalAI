@@ -185,6 +185,7 @@ function paintNeeds(){
  const entries=[...act,...failed.map(failedRow)],shown=act.length+room;
  bindNeeds(box);
  root.dispatchEvent(new CustomEvent('localai:needs-count',{detail:{n}})); // the bell in the header shows this number on every page
+ plateNeeds(n);
  if(!entries.length){box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
  if(!root.ApplianceNeeds){if(!needsKitMissing){needsKitMissing=true;console.warn('Needs you: /ui/needs.js did not load; the section stays hidden')}box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
  // Dense on the Assistant's Home (A7 P2): one line a row, the same rows as Pi Hub's.
@@ -195,6 +196,8 @@ function paintNeeds(){
  $('homeNeedsCount').textContent=n?'· '+n:'';
  sec.hidden=!n;
 }
+// Home's faceplate readout (A7 P1): how many things need you; its lamp and caption are Local AI's status (app.js).
+const plateNeeds=n=>root.LocalAIUI?.plate?.('homePlate',{readout:n||'Nothing',unit:n===1?'needs you':n?'need you':'needs you'});
 function recentRow(it,onOpen=openRun){
  // A conversation shows once, under its first message, with its turn count (as Work does).
  const n=it.turns||1;if(it.card?.kind==='chat'&&n>1)it={...it,card:{...it.card,summary:`Chat · ${n} turns`,preview:it.card.preview||(it.card.summary?{type:'text',text:it.card.summary}:null)}};
@@ -229,6 +232,7 @@ const recentUrl='/api/runs?threads=1&limit=30';  // enough to fill six rows afte
 async function loadNeeds(){
  const [d,p,imp,hub]=await Promise.allSettled([root.LocalAIUI.fetchJson('/api/runs?limit=120',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/approvals',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/improve/items',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/home/hub-needs',{cache:'no-store'})]);
  hubItems=hub.status==='fulfilled'?hub.value.items:null;  // Pi Hub not answering: only Local AI's own rows
+ root.LocalAIUI?.sources?.('homeSrcHub',"Pi Hub's Needs you",hubItems?'ok':'bad');
  if(imp.status==='fulfilled'){const day=Date.now()-864e5;newSignals=(imp.value.items||[]).filter(i=>i.source==='signal'&&i.status==='proposed'&&i.stage==='backlog'&&Date.parse(i.createdAt)>day).length}
  const runs=d.status==='fulfilled'?d.value.items||[]:null;
  if(runs)needs=root.LocalAINeedsYou.pick(runs);

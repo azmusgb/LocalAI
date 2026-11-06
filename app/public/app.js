@@ -625,6 +625,7 @@ async function refreshStatus(force=false){
     const optionalBad=j.services.filter(s=>s.required===false&&s.state!=='HEALTHY');
     const friendly=overall==='HEALTHY'?'Healthy':'Attention needed';
     $('homeState').textContent=friendly;
+    LocalAIUI.plate('homePlate',{lamp:coreBad.some(s=>s.state==='DOWN')?['bad','Needs attention']:coreBad.length?['warn','Degraded']:['ok','Ready']});
     $('statusSummary').textContent=coreBad.length?`${coreBad.length} core service${coreBad.length===1?' needs':'s need'} attention`:optionalBad.length?`Core ready · ${optionalBad.length} optional service${optionalBad.length===1?'':'s'} off`:'Everything is ready';
     const core=j.services.filter(s=>s.required!==false),optional=j.services.filter(s=>s.required===false);
     statusPlate(coreBad.some(s=>s.state==='DOWN')?['bad','Needs attention']:coreBad.length?['warn','Degraded']:['ok','Ready'],`${core.length-coreBad.length} of ${core.length}`,'core services up');
@@ -635,7 +636,8 @@ async function refreshStatus(force=false){
     $('serviceList').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s),slow=slowNote(s);return `<li class="ui-row ui-row--lamp service-card ${st}"><div><span class="ui-row__title">${esc(s.label)}</span><span class="ui-row__detail">${esc(serviceDescription(s))}</span></div><span class="ui-chip ui-chip--${SERVICE_TONE[st]||'unknown'}">${esc(serviceStateLabel(s))}</span>${slow?`<span class="ui-row__value">${esc(slow)}</span>`:''}</li>`}).join('');
     $('technicalStatus').innerHTML=(j.services||[]).map(s=>{const st=serviceDisplayState(s);const err=s.error?` · ${esc(s.error)}`:'';return `<div class="service"><span>${esc(s.name)} · ${s.required===false?'optional companion':'core'}<small class="service-tech-note">${esc(s.impact||'')}${err}</small></span><span class="state ${st}">${esc(serviceStateLabel(s))}</span><span class="meta">HTTP ${s.statusCode??'—'}</span></div>`}).join('');
     const c=j.certification||{};const res=String(c.result||'').toUpperCase(),word={PASS:'Passed',WARN:'Passed with warnings',FAIL:'Failed'}[res]||human(c.result||'Unknown');$('certBox').textContent=c.available?`${word}${c.modifiedAt?` · ${new Date(c.modifiedAt).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}`:''}`:'No check on record';
-    statusSources('ok',`checked ${statusLastOk}`);
+    statusSources('ok',`checked ${statusLastOk}`);LocalAIUI.sources('homeSrcAI','Local AI','ok');
+    const hc=$('homePlateCaption');if(hc)hc.textContent=$('statusSummary').textContent;
   }catch(e){
     // No answer at all (offline, an untrusted certificate, Local AI restarting) is not the same as an answer that
     // couldn't be read; say which.
@@ -646,7 +648,9 @@ async function refreshStatus(force=false){
     $('statusSummary').textContent=updating?'Local AI is updating…':e&&e.unreachable?"The Assistant isn't answering. Couldn't check the services. Try again":"Couldn't check the services. Try again";
     // The readout never shows the last count as current (A7 P8): the list below keeps the last known rows, marked by the error.
     statusPlate(updating?['warn','Updating']:['unknown',e&&e.unreachable?'Not answering':'Unknown'],'—','');
-    statusSources(updating?'warn':'bad',statusLastOk?`last good check ${statusLastOk}`:'never read');
+    statusSources(updating?'warn':'bad',statusLastOk?`last good check ${statusLastOk}`:'never read');LocalAIUI.sources('homeSrcAI','Local AI',updating?'warn':'bad');
+    LocalAIUI.plate('homePlate',{lamp:updating?['warn','Updating']:['unknown',e&&e.unreachable?'Not answering':'Unknown']});
+    const hc=$('homePlateCaption');if(hc)hc.textContent=$('statusSummary').textContent;
     if(updating){clearTimeout(state.updatingTimer);state.updatingTimer=setTimeout(()=>refreshStatus(),Math.min(Math.max(e.retryAfter,2),30)*1000)}
     // Say when this attempt was, and when the list below was last right, so an old time never reads as current.
     const checked=$('statusCheckedAt');if(checked)checked.textContent=`Tried ${clock(new Date())}${statusLastOk?` · last good check ${statusLastOk}`:''}`;
