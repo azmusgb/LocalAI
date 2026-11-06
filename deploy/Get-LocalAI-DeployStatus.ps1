@@ -4,6 +4,7 @@ param(
     [string]$StatePath = 'C:\LocalAI\.deploy\state.json',
     [string]$HealthUrl = 'http://127.0.0.1:3080/healthz',
     [string]$TaskName = 'LocalAI Safe Deploy',
+    [string]$StackEnvFile = 'C:\LocalAI\stack\stack.env',
     [switch]$AsJson
 )
 
@@ -87,6 +88,17 @@ if ($currentCommit -and $originRelease) {
     $behindOrigin = $currentCommit -ne $originRelease
 }
 
+# Each long-running part against the live release (deploy/host-parts.json): a deploy doesn't refresh them yet (#450).
+$parts = @()
+$partsError = $null
+if ($currentCommit) {
+    try {
+        $parts = @(foreach ($part in (Get-LocalAI-HostParts $Repo)) {
+            Test-LocalAI-HostPartStale $part $currentCommit (Get-LocalAI-HostPartObservation $part $Repo $currentCommit $StackEnvFile)
+        })
+    } catch { $partsError = $_.Exception.Message }
+}
+
 $result = [ordered]@{
     health = $healthState
     healthDetail = $healthDetail
@@ -112,13 +124,18 @@ $result = [ordered]@{
     taskLastRunTime = if ($null -ne $taskInfo) { $taskInfo.LastRunTime } else { $null }
     taskLastResult = if ($null -ne $taskInfo) { $taskInfo.LastTaskResult } else { $null }
     taskNextRunTime = if ($null -ne $taskInfo) { $taskInfo.NextRunTime } else { $null }
+    parts = $parts
+    # Stale, unknown and stopped parts: what to refresh or look at. Not on this host and self-reloading are fine.
+    partsNeedingAttention = @($parts | Where-Object { $_.state -in @('stale', 'unknown', 'stopped') } | ForEach-Object { $_.id })
+    partsError = $partsError
     checkedAt = Get-Date -Format o
 }
 
 if ($AsJson) {
-    $result | ConvertTo-Json -Depth 4
+    $result | ConvertTo-Json -Depth 5
     return
 }
 
 [pscustomobject]$result | Format-List
+foreach ($part in $parts) { Write-Output ("{0,-18} {1,-15} {2}" -f $part.id, $part.state, $part.reason) }
 

@@ -1,0 +1,27 @@
+{
+  "about": "The Windows host's long-running parts that run this repo's code or configuration (#450). A deploy replaces the app's files; these keep running what they started with until they are refreshed. Get-LocalAI-DeployStatus.ps1 reports each one that runs older code. tests/host-parts.test.cjs fails if a server in the repo root or host/ is missing here.",
+  "parts": [
+    {
+      "id": "appliance",
+      "kind": "compose-service",
+      "service": "appliance",
+      "container": "local-ai-appliance",
+      "compose": "deploy/stack/compose.yml",
+      "health": "http://127.0.0.1:3080/healthz"
+    },
+    {
+      "id": "atlas",
+      "kind": "scheduled-task",
+      "task": "LocalAI Atlas",
+      "paths": ["atlas_intelligence.py", "atlas_snapshot_runner.py", "quick_arch.py"],
+      "health": "http://127.0.0.1:8765/health"
+    },
+    {
+      "id": "gridcraft-bridge",
+      "kind": "self-reloading",
+      "task": "LocalAI GridCraft Bridge",
+      "paths": ["host/gridcraft-bridge.py"],
+      "health": "http://127.0.0.1:8787/health"
+    }
+  ]
+}
