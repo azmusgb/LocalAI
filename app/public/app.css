@@ -2594,6 +2594,9 @@ body.diagnostics-off [data-diagnostic]{display:none!important}
 html.is-framed body.ux-v3 .app{display:block}
 html.is-framed body.ux-v3 .app>aside,html.is-framed #uxContextBar,html.is-framed #uxMobileNav,html.is-framed .ux-pihub-link{display:none!important}
 html.is-framed body.ux-v3 main{padding:12px 16px 24px;max-width:var(--ux-content-max)}
+/* Agent World's phone stage stops above Local AI's own phone bar; framed, that bar is gone and Pi Hub's sits outside the
+   frame, so the stage runs to the frame's bottom edge instead of leaving a dead band (and cutting off the replay controls). */
+@media(max-width:760px){html.is-framed #agents .aw-stage{bottom:0}}
 html.is-framed .ux-framed-strip{display:flex;gap:22px;overflow-x:auto;scrollbar-width:none;margin:0 0 16px;padding:0;border-bottom:1px solid var(--ds-line)}
 html.is-framed .ux-framed-strip::-webkit-scrollbar{display:none}
 .ux-framed-strip button{flex:none;border:0;background:transparent;color:var(--ds-faint);border-radius:0;min-height:44px;padding:0;font-size:var(--ds-fs-2);font-weight:500;white-space:nowrap;cursor:pointer}
