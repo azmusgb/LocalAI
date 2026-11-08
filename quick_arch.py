@@ -648,6 +648,64 @@ def build_story(
 #    "dangling"; a dynamic path is dangling only when no route could still complete it.
 
 HTTP_BROWSER_RE = re.compile(r"""(['"`])(/api/[^\n]*?)\1""")
+HTTP_CALL_RE = re.compile(r"""(['"`])(/api/[\w./~%:@-]*)\1""")
+
+
+def is_python_comment_line(line: str) -> bool:
+    return line.lstrip().startswith("#")
+
+
+def extract_module_api_calls(file: Path) -> list[dict]:
+    """Extract outgoing /api/... calls made by this module with their line numbers."""
+    calls: dict[tuple[str, int], dict] = {}
+    suffix = file.suffix.lower()
+
+    if suffix in (".js", ".mjs", ".cjs", ".ts", ".jsx", ".tsx"):
+        try:
+            lines = file.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except OSError:
+            return []
+        for number, line in enumerate(lines, 1):
+            if is_comment_line(line):
+                continue
+            for m in HTTP_CALL_RE.finditer(line):
+                path = clean_route(m.group(2))
+                if path.startswith("/api/") and len(path) > len("/api/"):
+                    calls[(path, number)] = {"path": path, "line": number}
+
+    elif suffix == ".py":
+        try:
+            content = file.read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(content, filename=str(file))
+        except (OSError, SyntaxError, ValueError):
+            return []
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                p = clean_route(node.value)
+                if p.startswith("/api/") and len(p) > len("/api/"):
+                    calls[(p, getattr(node, "lineno", 1))] = {"path": p, "line": getattr(node, "lineno", 1)}
+            elif isinstance(node, ast.JoinedStr):
+                for part in node.values:
+                    if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                        p = clean_route(part.value)
+                        if p.startswith("/api/") and len(p) > len("/api/"):
+                            calls[(p, getattr(node, "lineno", 1))] = {"path": p, "line": getattr(node, "lineno", 1)}
+
+    elif suffix in (".ps1", ".sh", ".bash"):
+        try:
+            lines = file.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except OSError:
+            return []
+        for number, line in enumerate(lines, 1):
+            if is_python_comment_line(line):
+                continue
+            for m in HTTP_CALL_RE.finditer(line):
+                path = clean_route(m.group(2))
+                if path.startswith("/api/") and len(path) > len("/api/"):
+                    calls[(path, number)] = {"path": path, "line": number}
+
+    return sorted(calls.values(), key=lambda c: (c["line"], c["path"]))
 HTTP_CONST_RE = re.compile(r"""\b([A-Za-z_$][\w$]*)\s*=(?![=>])\s*(['"`])(/api/[\w./~%:@-]*)\2""")
 HTTP_PATH_CHARS = re.compile(r"^/api/[\w.~%:@/*-]*")
 SERVER_EXACT_RE = [
@@ -1059,6 +1117,8 @@ def build_graph(files: list[Path]) -> dict:
 
         risk = scored["risk"]
 
+        calls = extract_module_api_calls(path)
+
         nodes.append(
             {
                 "id": node_id,
@@ -1075,6 +1135,7 @@ def build_graph(files: list[Path]) -> dict:
                 "risk": risk,
                 "riskParts": scored["parts"],
                 "riskLevel": risk_level(risk),
+                "calls": calls,
             }
         )
 
@@ -1389,7 +1450,7 @@ def build_graph(files: list[Path]) -> dict:
     stats["danglingHttp"] = len(dangling_http)
 
     return {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "root": f"{SNAPSHOT['repo']}@{SNAPSHOT['commit']}" if SNAPSHOT else str(ROOT),
         "generatedAt": datetime.now(
             timezone.utc
