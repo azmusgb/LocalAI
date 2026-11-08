@@ -532,7 +532,7 @@ function renderContracts(){
     return;
   }
 
-  const { contracts = [], brokenCount = 0, commits = {}, systems = {} } = state.contracts;
+  const { contracts = [], brokenCount = 0, commits = {} } = state.contracts;
   const commitParts = Object.entries(commits).map(([repo, c]) => `${repoNames[repo] || repo} ${short(c)}`);
   const headerCommits = commitParts.length ? ` · ${commitParts.join(' · ')}, the live releases` : '';
 
