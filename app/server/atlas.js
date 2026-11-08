@@ -7,6 +7,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { createSystems } = require('./atlas-systems');
+const { createContractsReader } = require('./atlas-contracts');
 
 const DEFAULT_ATLAS_URL = 'http://127.0.0.1:8765';
 const MAX_BODY = 64 * 1024;
@@ -171,6 +172,12 @@ function createAtlas(ctx = {}) {
   const atlasToken = String(ctx.atlasToken ?? process.env.LOCALAI_ATLAS_TOKEN ?? '').trim();
   // What runs where, from Pi Hub (Atlas redesign PR 4), with each repository's newest snapshot.
   const systems = createSystems({ hubUrl: ctx.hubUrl, fetchWithTimeout, snapshots, cachePath: ctx.systemsCache || null });
+  const contractsReader = createContractsReader({
+    contractsPath: ctx.contractsPath,
+    snapshots,
+    systems,
+    repos: repos.length ? repos : DEFAULT_REPOS
+  });
 
   const upstream = new Map([
     ['/api/atlas/health', '/health'],
@@ -320,6 +327,10 @@ function createAtlas(ctx = {}) {
     }
     if (req.method === 'GET' && p === '/api/atlas/systems') {
       const { status, body } = await systems.read();
+      return json(res, status, body);
+    }
+    if (req.method === 'GET' && p === '/api/atlas/contracts') {
+      const { status, body } = await contractsReader.check();
       return json(res, status, body);
     }
     if (req.method === 'GET' && p === '/api/atlas/graph') {
