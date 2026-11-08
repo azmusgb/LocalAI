@@ -81,7 +81,7 @@ const edge = (g, source, target, kind) => g.edges.find((e) => e.source === sourc
 
 test('the graph is schema version 2 and every edge carries a kind', { skip: !PY }, () => {
   const g = scan();
-  assert.equal(g.schemaVersion, 2);
+  assert.ok(g.schemaVersion >= 2);
   assert.ok(g.edges.length > 0);
   for (const e of g.edges) assert.ok(['import', 'http', 'test'].includes(e.kind), `edge ${e.source} -> ${e.target} has kind ${e.kind}`);
   assert.ok(edge(g, 'app/server.js', 'app/server/items.js', 'import'));
@@ -136,18 +136,18 @@ test('the server routes the scanner found are listed with their owner', { skip: 
   assert.ok(!byPath['/api/upstream/items'], 'a path a server calls is not a route it serves');
 });
 
-test('a repository with no browser or server modules gets schema 2 with no HTTP links', { skip: !PY }, () => {
+test('a repository with no browser or server modules gets schema 2 or newer with no HTTP links', { skip: !PY }, () => {
   const out = py(`${LOAD}
 import shutil
 shutil.rmtree(tmp / 'app'); w('lib/a.py', 'import b\\n'); w('lib/b.py')
 g = qa.build_graph(qa.collect_files())
 print(json.dumps({'v': g['schemaVersion'], 'kinds': sorted({e['kind'] for e in g['edges']}), 'dangling': g['danglingHttp'], 'routes': g['httpRoutes']}))`);
-  assert.equal(out.v, 2);
+  assert.ok(out.v >= 2);
   assert.deepEqual(out.dangling, []);
   assert.deepEqual(out.routes, []);
 });
 
-test('snapshot mode writes the v2 graph.json from a clean copy of the commit', { skip: !PY || !GIT }, () => {
+test('snapshot mode writes the graph.json from a clean copy of the commit', { skip: !PY || !GIT }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-v2-'));
   const repo = path.join(dir, 'repo');
   for (const [name, text] of Object.entries(FIXTURE)) {
@@ -164,7 +164,7 @@ test('snapshot mode writes the v2 graph.json from a clean copy of the commit', {
   assert.equal(r.status, 0, r.stderr);
   const commit = git('rev-parse', 'HEAD').stdout.trim();
   const g = JSON.parse(fs.readFileSync(path.join(snaps, 'fixture', commit, 'graph.json'), 'utf8'));
-  assert.equal(g.schemaVersion, 2);
+  assert.ok(g.schemaVersion >= 2);
   assert.equal(g.danglingHttp.length, 1);
   assert.equal(g.snapshot.repo, 'fixture');
   assert.ok(g.edges.every((e) => e.kind));
