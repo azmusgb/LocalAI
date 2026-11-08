@@ -159,7 +159,6 @@ function createContractsReader(options = {}) {
       const providerRepo = provider.repo;
       const providerModule = provider.module;
       const providerPath = provider.path;
-      const providerMethod = (provider.method || 'GET').toUpperCase();
 
       let providerState = 'not_checked';
       let providerDetail = '';
