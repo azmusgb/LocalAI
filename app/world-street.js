@@ -10,7 +10,9 @@
 //   failedUnseen  up to 3 failures pick() still lists (not opened, under a day old, not answered by a retry);
 //   recent        the last 3 finished runs (completed, failed or cancelled), newest first.
 // An item is only {id, title, status, startedAt}: the id as a string (a run with no id is left out), the readable title
-// cut to 80 characters, startedAt the run's createdAt or null.
+// cut to 80 characters, startedAt the run's createdAt or null. A missions item also carries missionId when the run names
+// its mission (meta.missionId, output.missionId, source.id or meta.sourceId, as ui.js's Open in Work matches them): the
+// run id is the ledger's, and Missions HQ's rows open the mission.
 // crewList() does the same for Claude crew sessions (claudeLive()'s lastEvent becomes lastAction): at most 6, text cut to 80 characters.
 const { readableTitle } = require('./run-cards');
 const { pick } = require('./public/needs-you');
@@ -32,7 +34,13 @@ function streetKey(run) {
   return typeof type === 'string' && Object.prototype.hasOwnProperty.call(KEYS, type) ? KEYS[type] : null;
 }
 
-const item = (r) => ({ id: String(r.id), title: readableTitle(r).slice(0, TEXT_MAX), status: r.status, startedAt: typeof r.createdAt === 'string' ? r.createdAt : null });
+const missionOf = (r) => [r.meta && r.meta.missionId, r.output && r.output.missionId, r.source && r.source.id, r.meta && r.meta.sourceId].find((v) => typeof v === 'string' && v);
+const item = (r) => {
+  const i = { id: String(r.id), title: readableTitle(r).slice(0, TEXT_MAX), status: r.status, startedAt: typeof r.createdAt === 'string' ? r.createdAt : null };
+  const m = streetKey(r) === 'missions' && missionOf(r);
+  if (m) i.missionId = m.slice(0, TEXT_MAX);
+  return i;
+};
 const hasId = (r) => r.id !== undefined && r.id !== null && r.id !== '';
 
 function buildStreet(runs, { now = Date.now() } = {}) {

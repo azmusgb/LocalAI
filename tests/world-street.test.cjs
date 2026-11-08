@@ -54,6 +54,21 @@ test('items carry exactly id, title, status, startedAt', () => {
   assert.equal(s.chat.running[0].startedAt, iso(10));
 });
 
+test('a missions item also carries its missionId (meta, then output, then source), and only there', () => {
+  const runs = [
+    run('run-a', 'agent', 'running', { meta: { missionId: 'mission-a' }, output: { missionId: 'other' } }),
+    run('run-b', 'agent', 'completed', { output: { missionId: 'mission-b' }, finishedAt: iso(1) }),
+    run('run-c', 'agent', 'completed', { meta: { sourceId: 'mission-c' }, finishedAt: iso(2) }),
+    run('run-d', 'agent', 'completed', { finishedAt: iso(3) }),
+    run('chat-1', 'chat', 'running', { meta: { missionId: 'nope' } })
+  ];
+  const s = buildStreet(runs, { now });
+  assert.deepEqual(s.missions.running[0], { id: 'run-a', title: s.missions.running[0].title, status: 'running', startedAt: iso(10), missionId: 'mission-a' });
+  assert.deepEqual(s.missions.recent.map((i) => i.missionId), ['mission-b', 'mission-c', undefined]);
+  assert.ok(!('missionId' in s.missions.recent[2]), 'no missionId key when the run names none');
+  assert.ok(!('missionId' in s.chat.running[0]), 'other buildings keep {id, title, status, startedAt}');
+});
+
 test('titles are readableTitle (which already caps at 80)', () => {
   const s = buildStreet([run('a', 'chat', 'running', { meta: { label: 'é'.repeat(300) } })], { now });
   assert.equal(s.chat.running[0].title.length, 80);

@@ -101,8 +101,8 @@ test('a flood: every building at its caps with 80-character titles and 6 crews s
   const runs = [];
   for (const type of types) {
     for (let i = 0; i < 10; i++) {
-      // ids as long as real ones: legacy-engineering:eng-mv8rra3x-77ea11 is 38 characters, a ledger id 25
-      for (const status of ['running', 'queued', 'awaiting_approval', 'failed', 'completed']) runs.push({ id: `legacy-engineering:${type.slice(0, 4)}-${status.slice(0, 4)}-${i}-mv8rra3x`, type, status, title: long(`${type} ${status} ${i}`), meta: { label: long(`${type} ${status} ${i}`) }, createdAt: at, updatedAt: at, finishedAt: at });
+      // ids as long as real ones (a mission id, mission-mv8rra3x-a1b2c3, is 23): legacy-engineering:eng-mv8rra3x-77ea11 is 38 characters, a ledger id 25
+      for (const status of ['running', 'queued', 'awaiting_approval', 'failed', 'completed']) runs.push({ id: `legacy-engineering:${type.slice(0, 4)}-${status.slice(0, 4)}-${i}-mv8rra3x`, type, status, title: long(`${type} ${status} ${i}`), meta: { label: long(`${type} ${status} ${i}`), ...(type === 'agent' ? { missionId: `mission-mv8rra3x-a1b2c${i}` } /* as long as a real one (agent-orchestrator.js id()) */ : {}) }, createdAt: at, updatedAt: at, finishedAt: at });
     }
   }
   const crews = Array.from({ length: 10 }, (_, i) => ({ id: `0f6c2a1e-7b3d-4c59-9e21-5a8d3b7c${String(i).padStart(4, '0')}` /* a Claude session id */, title: 't'.repeat(200), state: 'working', lastEvent: 'e'.repeat(200) }));
