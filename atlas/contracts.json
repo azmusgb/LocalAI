@@ -1,0 +1,198 @@
+[
+  {
+    "id": "records-v1",
+    "contract": "record.v1",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/app.py",
+      "method": "GET",
+      "path": "/api/records"
+    },
+    "consumers": [
+      {
+        "repo": "localai",
+        "module": "app/pi-hub.js"
+      },
+      {
+        "repo": "localai",
+        "module": "app/atlas-releases.js"
+      },
+      {
+        "repo": "home-mcp",
+        "module": "src/home_mcp/server.py"
+      }
+    ],
+    "source": "Platform baseline §4, §13; pi-hub hub/app.py"
+  },
+  {
+    "id": "now-summary",
+    "contract": null,
+    "label": "Now summary",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/app.py",
+      "method": "GET",
+      "path": "/api/now"
+    },
+    "consumers": [
+      {
+        "repo": "localai",
+        "module": "app/pi-hub.js"
+      },
+      {
+        "repo": "home-mcp",
+        "module": "src/home_mcp/server.py"
+      }
+    ],
+    "source": "pi-hub hub/app.py; spec 2026-11-07-atlas-across-repos-design.md"
+  },
+  {
+    "id": "now-poster",
+    "contract": null,
+    "label": "Now poster image",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/app.py",
+      "method": "GET",
+      "path": "/api/now/poster/{n}.jpg"
+    },
+    "consumers": [
+      {
+        "repo": "localai",
+        "module": "app/pi-hub.js"
+      }
+    ],
+    "source": "pi-hub hub/app.py; spec 2026-11-07-atlas-across-repos-design.md"
+  },
+  {
+    "id": "needs-v1",
+    "contract": "needs-item.v1",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/app.py",
+      "method": "GET",
+      "path": "/api/needs"
+    },
+    "consumers": [
+      {
+        "repo": "localai",
+        "module": "app/pi-hub.js"
+      },
+      {
+        "repo": "home-mcp",
+        "module": "src/home_mcp/server.py"
+      }
+    ],
+    "source": "Platform baseline §4; pi-hub hub/app.py"
+  },
+  {
+    "id": "releases-v1-write",
+    "contract": "record.v1",
+    "label": "Release ingest",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/app.py",
+      "method": "POST",
+      "path": "/api/releases/{target}"
+    },
+    "consumers": [
+      {
+        "repo": "localai",
+        "module": "deploy/Send-LocalAI-ReleaseReport.ps1"
+      },
+      {
+        "repo": "localai",
+        "module": "host/mac-watch/watch.py"
+      }
+    ],
+    "source": "Platform baseline §11 step 3; pi-hub hub/app.py"
+  },
+  {
+    "id": "systems-list",
+    "contract": null,
+    "label": "Systems list",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/app.py",
+      "method": "GET",
+      "path": "/api/systems"
+    },
+    "consumers": [
+      {
+        "repo": "localai",
+        "module": "app/server/atlas-systems.js"
+      }
+    ],
+    "source": "pi-hub hub/app.py; spec 2026-11-07-atlas-across-repos-design.md"
+  },
+  {
+    "id": "print-lab-sync",
+    "contract": "print-lab-index.v1",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/lab.py",
+      "method": "POST",
+      "path": "/api/lab/{project}/sync"
+    },
+    "consumers": [
+      {
+        "repo": "print-lab",
+        "module": "lab/sync.py"
+      }
+    ],
+    "source": "Platform baseline §4; print-lab lab/sync.py"
+  },
+  {
+    "id": "print-lab-requests",
+    "contract": "lab-request.v1",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/lab.py",
+      "method": "GET",
+      "path": "/api/lab/{project}/requests"
+    },
+    "consumers": [
+      {
+        "repo": "print-lab",
+        "module": "lab/pull.py"
+      }
+    ],
+    "source": "Platform baseline §4; print-lab lab/pull.py"
+  },
+  {
+    "id": "notify-localai",
+    "contract": null,
+    "label": "LocalAI notification forwarder",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/notify_routes.py",
+      "method": "POST",
+      "path": "/api/notify/localai"
+    },
+    "consumers": [
+      {
+        "repo": "localai",
+        "module": "app/hub-notify.js"
+      }
+    ],
+    "source": "pi-hub hub/notify_routes.py; LocalAI app/hub-notify.js"
+  },
+  {
+    "id": "camera-feed",
+    "contract": null,
+    "label": "Printer camera live feed",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/app.py",
+      "method": "GET",
+      "path": "/api/camera"
+    },
+    "consumers": [
+      {
+        "repo": "localai",
+        "module": "app/print-lab.js"
+      }
+    ],
+    "source": "pi-hub hub/app.py"
+  }
+]
