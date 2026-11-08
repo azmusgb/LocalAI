@@ -150,9 +150,30 @@ function mapLayout(model,cols,{open=new Set(),row:ROWH=ROW}={}){
 
 const short=id=>String(id).split('/').pop();
 // Look here first: at most six findings, each a sentence with its reason in plain words.
-function lookHereFirst(model){
+function lookHereFirst(model, contractsData = null){
   const all=[...model.nodes.values()],items=[],seen=new Set();
   const add=(node,level,title,detail)=>{if(!seen.has(node)&&items.length<6){seen.add(node);items.push({node,level,title,detail});}};
+
+  // Broken cross-system contract edges rank above any single-repo findings
+  if (contractsData && Array.isArray(contractsData.contracts)) {
+    for (const c of contractsData.contracts) {
+      if (c.state === 'broken') {
+        const title = c.provider.state === 'provider_missing'
+          ? `${c.label || c.contract || c.id}: ${c.provider.repo} does not serve ${c.provider.path}`
+          : `${c.label || c.contract || c.id}: consumer call missing`;
+        const detail = c.provider.state === 'provider_missing'
+          ? (c.provider.detail || 'Provider endpoint missing at live commit.')
+          : (c.consumers.find(con => con.state === 'consumer_missing')?.detail || 'Consumer missing call at live commit.');
+        const targetNode = (c.provider.repo === (state?.repo || 'localai'))
+          ? c.provider.module
+          : (c.consumers.find(con => con.repo === (state?.repo || 'localai'))?.module || c.provider.module);
+        if (model.nodes.has(targetNode)) {
+          add(targetNode, 'critical', title, detail);
+        }
+      }
+    }
+  }
+
   const bySource=new Map();
   for(const d of model.dangling||[])if(model.nodes.has(d.source))(bySource.get(d.source)||bySource.set(d.source,[]).get(d.source)).push(d);
   for(const [source,calls] of [...bySource].slice(0,2)){
@@ -277,7 +298,8 @@ const rowHeight=()=>matchMedia('(pointer: coarse), (max-width: 700px)').matches?
 const state={
   active:false,summary:null,graph:null,model:null,layout:null,selected:null,details:null,
   lens:'risk',ollamaModel:localStorage.getItem('localai.atlas.model')||'',request:null,
-  repo:'localai',commit:'',snapshots:null,seq:0,releases:null,open:new Set()
+  repo:'localai',commit:'',snapshots:null,seq:0,releases:null,open:new Set(),
+  contracts:null,contractsOpen:false
 };
 // Intelligence about the chosen snapshot (plan PR 5); with neither, the latest scan.
 const live=()=>state.repo==='localai'&&!state.commit;
@@ -411,7 +433,7 @@ function renderLegend(){
 function renderFindings(){
   const box=$('atlasFindingList');
   if(!state.model){box.innerHTML='<p class="atlas-empty">Findings appear once the map has loaded.</p>';$('atlasFindingNote').textContent='';return;}
-  const {items,note}=lookHereFirst(state.model);
+  const {items,note}=lookHereFirst(state.model, state.contracts);
   box.innerHTML=items.map(f=>`<button type="button" class="atlas-finding" data-level="${f.level}" data-atlas-node="${esc(f.node)}">
     <span class="atlas-finding-level">${LEVEL[f.level]} · ${esc(state.model.nodes.get(f.node)?.domain||'')}</span><strong>${esc(f.title)}</strong><span>${esc(f.detail)}</span></button>`).join('')||
     '<p class="atlas-empty">Nothing stands out: no module is both widely used and untested.</p>';
@@ -448,6 +470,33 @@ function renderInspector(){
   if(n.httpTo.size)groups.push(['Calls over HTTP',n.httpTo,'','http']);
   if(n.httpFrom.size)groups.push(['Called over HTTP by',n.httpFrom,'','http']);
   $('atlasNodeLinks').innerHTML=groups.map(([title,ids,empty,kind])=>`<div class="atlas-links-group atlas-links--${kind}"><h3 class="atlas-section-label">${title} <span>${ids.size}</span></h3>${listOf(ids,empty)}</div>`).join('');
+
+  // Cross-system contract links in inspector (Atlas across repos, PR 4)
+  if (state.contracts && Array.isArray(state.contracts.contracts)) {
+    const curRepo = state.repo || 'localai';
+    const provided = state.contracts.contracts.filter(c => c.provider.repo === curRepo && c.provider.module === n.id);
+    const consumed = state.contracts.contracts.filter(c => (c.consumers || []).some(con => con.repo === curRepo && con.module === n.id));
+
+    if (provided.length) {
+      const consumersList = provided.flatMap(c => (c.consumers || []).map(con => ({
+        contract: c.label || c.contract || c.id,
+        repo: con.repo,
+        module: con.module,
+        state: con.state
+      })));
+      const crossHtml = `<div class="atlas-links-group atlas-links--cross"><h3 class="atlas-section-label">Other systems that call this <span>${consumersList.length}</span></h3><ul>${
+        consumersList.map(c => `<li><button type="button" class="atlas-host-repo" data-atlas-cross-repo="${esc(c.repo)}" data-atlas-cross-module="${esc(c.module)}"><span>${esc(c.repo)} · ${esc(c.module)}</span><small>${esc(c.contract)} · ${esc(c.state.replace(/_/g, ' '))}</small></button></li>`).join('')
+      }</ul></div>`;
+      $('atlasNodeLinks').insertAdjacentHTML('beforeend', crossHtml);
+    }
+
+    if (consumed.length) {
+      const crossHtml = `<div class="atlas-links-group atlas-links--cross"><h3 class="atlas-section-label">Calls to other systems <span>${consumed.length}</span></h3><ul>${
+        consumed.map(c => `<li><button type="button" class="atlas-host-repo" data-atlas-cross-repo="${esc(c.provider.repo)}" data-atlas-cross-module="${esc(c.provider.module)}"><span>${esc(c.provider.repo)} · ${esc(c.provider.module)}</span><small>${esc(c.label || c.contract || c.id)} (${esc(c.provider.method)} ${esc(c.provider.path)})</small></button></li>`).join('')
+      }</ul></div>`;
+      $('atlasNodeLinks').insertAdjacentHTML('beforeend', crossHtml);
+    }
+  }
   const evidence=(Array.isArray(state.details?.node?.testEvidence)?state.details.node.testEvidence:[]).map(e=>e.test||e.path).filter(t=>t&&!n.tests.includes(t));
   $('atlasEvidenceList').innerHTML=[...n.tests.map(t=>`<li><code>${esc(t)}</code><span>imports it</span></li>`),
     ...evidence.slice(0,8).map(t=>`<li><code>${esc(t)}</code><span>runs it</span></li>`)].join('')||'<li class="atlas-muted">None.</li>';
@@ -466,7 +515,81 @@ root.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTim
   if(state.active&&state.layout&&state.layout.rowHeight!==(rowHeight()))drawMap();
 },200);});
 
-function render(){drawMap();renderHeader();renderLegend();renderFindings();renderInspector();renderSearchResults();}
+function renderContracts(){
+  const summaryEl = $('atlasContractsSummary');
+  const bodyEl = $('atlasContractsBody');
+  const toggleEl = $('atlasContractsToggle');
+  const listEl = $('atlasContractsList');
+  if (!summaryEl || !bodyEl || !toggleEl || !listEl) return;
+
+  toggleEl.setAttribute('aria-expanded', String(state.contractsOpen));
+  bodyEl.hidden = !state.contractsOpen;
+
+  if (!state.contracts) {
+    summaryEl.textContent = 'Checking contracts…';
+    summaryEl.dataset.tone = '';
+    listEl.innerHTML = '<p class="atlas-muted">Reading contract declarations…</p>';
+    return;
+  }
+
+  const { contracts = [], brokenCount = 0, commits = {}, systems = {} } = state.contracts;
+  const commitParts = Object.entries(commits).map(([repo, c]) => `${repoNames[repo] || repo} ${short(c)}`);
+  const headerCommits = commitParts.length ? ` · ${commitParts.join(' · ')}, the live releases` : '';
+
+  if (brokenCount > 0) {
+    summaryEl.textContent = `${plural(brokenCount, 'broken contract edge')} at the live commits${headerCommits}`;
+    summaryEl.dataset.tone = 'error';
+  } else {
+    const total = contracts.length;
+    summaryEl.textContent = `All ${total} contracts checked at the live commits${headerCommits}`;
+    summaryEl.dataset.tone = 'ok';
+  }
+
+  listEl.innerHTML = contracts.map(c => {
+    const name = c.label || c.contract || c.id;
+    const p = c.provider;
+    const pRepoName = repoNames[p.repo] || p.repo;
+    const pChip = `<button type="button" class="atlas-contract-chip" data-atlas-cross-repo="${esc(p.repo)}" data-atlas-cross-module="${esc(p.module)}" aria-label="Open ${esc(pRepoName)} map at ${esc(p.module)}"><span>${esc(pRepoName)}</span><code>${esc(p.module)}</code><span>${esc(p.method)} ${esc(p.path)}</span></button>`;
+
+    const consumersHtml = (c.consumers || []).map(con => {
+      const cRepoName = repoNames[con.repo] || con.repo;
+      const isMapped = ['localai', 'pi-hub', 'print-lab'].includes(con.repo);
+      return isMapped
+        ? `<button type="button" class="atlas-contract-chip" data-atlas-cross-repo="${esc(con.repo)}" data-atlas-cross-module="${esc(con.module)}" aria-label="Open ${esc(cRepoName)} map at ${esc(con.module)}"><span>${esc(cRepoName)}</span><code>${esc(con.module)}</code></button>`
+        : `<span class="atlas-contract-chip"><span>${esc(cRepoName)}</span><code>${esc(con.module)}</code></span>`;
+    }).join(' ');
+
+    let statusText = 'Checked at live commits';
+    let statusState = c.state;
+    if (c.state === 'broken') {
+      statusText = p.state === 'provider_missing' ? p.detail : (c.consumers.find(con => con.state === 'consumer_missing')?.detail || 'Broken edge');
+    } else if (c.state === 'partially_checked') {
+      const unmapped = c.consumers.find(con => con.state === 'not_checked');
+      statusText = unmapped ? `Not checked (${unmapped.detail})` : 'Partially checked';
+    }
+
+    return `<div class="atlas-contract-row" data-contract-id="${esc(c.id)}">
+      <div class="atlas-contract-name">${esc(name)}</div>
+      <div class="atlas-contract-provider">${pChip}</div>
+      <div class="atlas-contract-consumers">${consumersHtml}</div>
+      <div><span class="atlas-contract-status" data-state="${esc(statusState)}">${esc(statusText)}</span></div>
+    </div>`;
+  }).join('');
+}
+
+async function loadContracts(){
+  try {
+    const data = await getJson('/api/atlas/contracts', { timeout: 12000 });
+    state.contracts = data;
+  } catch (err) {
+    state.contracts = { error: err.message, contracts: [], brokenCount: 0 };
+  }
+  renderContracts();
+  renderFindings();
+  if (state.selected) renderInspector();
+}
+
+function render(){drawMap();renderHeader();renderLegend();renderFindings();renderInspector();renderSearchResults();renderContracts();}
 
 // The chosen row, scrolled into the middle of the map's frame.
 function revealRow(id){
@@ -703,6 +826,7 @@ function activate(){
   if(state.active)return;
   state.active=true;
   if(!fromHash()&&!state.graph)void refresh();
+  void loadContracts();
   pollSnapshot();
 }
 root.addEventListener('hashchange',()=>{if(state.active)fromHash();});
@@ -713,7 +837,24 @@ const pick=(e,opts)=>{
   const d=e.target.closest('[data-atlas-domain]');if(d){state.open.add(d.dataset.atlasDomain);render();return true;}
   return false;
 };
-$('atlasRefresh').addEventListener('click',()=>void refresh());
+$('atlasRefresh').addEventListener('click',()=>{void refresh();void loadContracts();});
+
+$('atlasContractsToggle')?.addEventListener('click',()=>{
+  state.contractsOpen = !state.contractsOpen;
+  renderContracts();
+});
+
+page.addEventListener('click',e=>{
+  const b = e.target.closest('[data-atlas-cross-repo]');
+  if (!b) return;
+  const targetRepo = b.dataset.atlasCrossRepo;
+  const targetModule = b.dataset.atlasCrossModule;
+  if (!['localai', 'pi-hub', 'print-lab'].includes(targetRepo)) return;
+  chooseSource(targetRepo, targetRepo === 'localai' ? '' : (state.snapshots?.get(targetRepo)?.[0]?.commit || ''));
+  if (targetModule) {
+    setTimeout(() => { void selectNode(targetModule, { scroll: true, reveal: true }); }, 300);
+  }
+});
 // The Systems strip (atlas-systems.js) chooses a repository: its map loads here.
 page.addEventListener('atlas:choose',e=>{const {repo,commit}=e.detail||{};if(typeof repo==='string'&&repo){chooseSource(repo,String(commit||''));$('atlasMapTitle').focus({preventScroll:true});}});
 $('atlasRepo').addEventListener('change',e=>{

@@ -256,6 +256,19 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
     <div id="atlasSystemsList" class="atlas-systems-list" hidden></div>
   </section>
 
+  <section id="atlasContracts" class="atlas-contracts" aria-labelledby="atlasContractsTitle">
+    <div class="atlas-contracts-head">
+      <button id="atlasContractsToggle" class="atlas-contracts-toggle" type="button" aria-expanded="false" aria-controls="atlasContractsBody">
+        <span class="atlas-contracts-chevron" aria-hidden="true">▸</span>
+        <span id="atlasContractsTitle" class="atlas-contracts-title">Between systems</span>
+        <span id="atlasContractsSummary" class="atlas-contracts-summary" role="status" aria-live="polite">Checking contracts…</span>
+      </button>
+    </div>
+    <div id="atlasContractsBody" class="atlas-contracts-body" hidden>
+      <div id="atlasContractsList" class="atlas-contracts-list"></div>
+    </div>
+  </section>
+
   <div class="atlas-source" role="group" aria-label="Which graph to show">
     <div class="atlas-source-field"><label for="atlasRepo">Repository</label><select id="atlasRepo"><option value="localai">Local AI</option></select></div>
     <div class="atlas-source-field"><label for="atlasCommit">Commit</label><select id="atlasCommit"><option value="">Latest scan</option></select></div>
