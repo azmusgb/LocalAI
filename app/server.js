@@ -399,6 +399,7 @@ const { bridgeHealth, gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGrid
 // changes.js takes addNotification from here and this takes these two back from it: called, never at load, so
 // they are looked up when called (the server split, step 6).
 const { addNotification, apiApprovalCreate, apiApprovalDecide, apiApprovals, apiNotificationSeed, apiNotificationSystem, apiNotificationUpdate, apiNotifications, approvalStore, notificationStore, resolveDeployFailures } = require('./server/notifications').createNotifications({ APPROVALS_STORE, NOTIFICATIONS_STORE, changeStore: (...a) => changeStore(...a), decideChange: (...a) => decideChange(...a), hostDetail, isInfoNotice, json, makeId, normalizeTitle, notifier, notifyLib, nowIso, objectStore, prependRecord, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
+const { apiNavPins } = require('./server/nav-pins').createNavPins({ json, readBody, sameOriginJson, storage, storageError });
 const { apiJournal, apiJournalDelete } = require('./server/journal').createJournalRoutes({ journal, json, readBody, storageError });
 const { apiNavOpen, apiNavOpens, apiNavOpensClear } = require('./server/nav').createNav({ json, readBody, sameOriginJson, storage, storageError });
 const { accessAddresses, apiAccess, apiPush, apiReleases, recordReleaseHistory } = require('./server/push').createPush({ APP_VERSION, json, notifier, nowIso, pushLib, readBody, release, resolveDeployFailures, storage, storageError });
@@ -442,6 +443,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 }, addresses: accessAddresses() });
     if (req.method === 'GET' && p === '/api/busy') return apiBusy(req, res);
     if (req.method === 'GET' && p === '/api/world') return await world.api(req, res);
+    if ((req.method === 'GET' || req.method === 'PUT') && p === '/api/nav/pins') return await apiNavPins(req, res);
     if (req.method === 'GET' && p === '/api/journal') return await apiJournal(req, res, urlObj);
     if (req.method === 'POST' && p === '/api/journal/delete') return await apiJournalDelete(req, res);
     if (req.method === 'POST' && p === '/api/nav/open') return await apiNavOpen(req, res);

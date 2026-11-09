@@ -39,29 +39,91 @@ await check('home has one command surface and a short breadcrumb', async () => {
   assert.doesNotMatch(await crumb(), /Local AI \//, 'no breadcrumb');
 });
 
-// System's strip is Health · Models · Services · Tools · Settings · Audit log (navigation update, 2 Nov). Tools is one
+const SYSTEM_STRIP = ['Status', 'Models', 'Tools', 'Settings', 'Audit log'];
+// Status and Connections are one page (navigation depth, D1): the cards sit under Services, the old address still works.
+await check('System: the strip has five items, and Connections is part of Status', async () => {
+  await page.locator('.ux-primary-item[data-domain="system"]').click();
+  await page.waitForSelector('#status.active');
+  assert.deepEqual(await stripLabels(), SYSTEM_STRIP);
+  await page.waitForSelector('#statusConnections [data-integration-source-v2="n8n"]');
+  assert.equal(await page.locator('#integrations').count(), 0, 'no page of its own');
+  assert.equal(await page.locator('#statusRetryBtn').count(), 1, 'one Check again');
+  assert.equal(await page.getByText('Connected services', { exact: true }).count(), 0, 'no second summary plate');
+});
+
+await check('#integrations opens Status, and #integrations?card=workshop brings the Workshop card into view', async () => {
+  await page.evaluate(() => { location.hash = '#home'; });
+  await page.waitForSelector('#home.active');
+  await page.evaluate(() => { location.hash = '#integrations'; });
+  await page.waitForSelector('#status.active');
+  assert.equal(await page.evaluate(() => window.LocalAIViews.resolve('integrations')), 'status');
+  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Status');
+  await page.evaluate(() => { location.hash = '#home'; });
+  await page.waitForSelector('#home.active');
+  await page.evaluate(() => { location.hash = '#integrations?card=workshop'; });
+  await page.waitForSelector('#status.active');
+  await page.waitForFunction(() => document.activeElement?.closest('.ux-int-card')?.querySelector('#ux-int-v2-workshop'), null, { timeout: 5000 });
+  const r = await page.evaluate(() => { const b = document.querySelector('#ux-int-v2-workshop').closest('.ux-int-card').getBoundingClientRect(); return { top: b.top, bottom: b.bottom, vh: innerHeight }; });
+  assert.ok(r.bottom > 0 && r.top < r.vh, `the Workshop card is on screen: ${JSON.stringify(r)}`);
+});
+
+// System's strip is Status · Models · Tools · Settings · Audit log (Connections joined Status, 9 Nov; before it was Health · Models · Services · Tools · Settings · Audit log (navigation update, 2 Nov). Tools is one
 // page of cards; each System tool opens at its own address with Tools lit. Architecture is Improve's Atlas tab.
 await check('System: Tools lists every tool, each opens at its address with Tools lit; Architecture is Improve › Atlas', async () => {
   await page.locator('.ux-primary-item[data-domain="system"]').click();
   await page.waitForSelector('#status.active');
-  assert.deepEqual(await stripLabels(), ['Status', 'Models', 'Connections', 'Tools', 'Settings', 'Audit log']);
+  assert.deepEqual(await stripLabels(), SYSTEM_STRIP);
   assert.equal(await page.locator('#uxAdvancedStrip').count(), 0, 'no second strip');
   await page.locator('#uxPageStrip [data-strip-view="tools"]').click();
   await page.waitForSelector('#tools.active', { timeout: 5000 });
-  assert.deepEqual(await page.locator('#toolsCards .tool-card strong').allInnerTexts(), ['Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows', 'Architecture']);
+  assert.deepEqual(await page.locator('#toolsCards .tool-card strong').allInnerTexts(), ['Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows']);
   for (const hash of ['workbench', 'repoTools', 'powershell', 'actions', 'automations']) {
     await page.evaluate(h => { location.hash = '#' + h; }, hash);
     await page.waitForSelector(`#${hash}.active`, { timeout: 5000 });
     assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Tools', hash);
-    assert.deepEqual(await stripLabels(), ['Status', 'Models', 'Connections', 'Tools', 'Settings', 'Audit log'], `${hash} adds no tab`);
+    assert.deepEqual(await stripLabels(), SYSTEM_STRIP, `${hash} adds no tab`);
   }
   await page.evaluate(() => { location.hash = '#tools'; });
   await page.waitForSelector('#tools.active', { timeout: 5000 });
-  await page.locator('#toolsCards [data-tool="architecture"]').click();
+  assert.equal(await page.locator('#toolsCards [data-tool="architecture"]').count(), 0, 'Architecture is not a tool card');
+  await page.evaluate(() => { location.hash = '#architecture'; });
   await page.waitForSelector('#architecture.active', { timeout: 5000 });
   assert.equal(await crumbOf(page), 'Improve');
   assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Atlas');
-  assert.deepEqual(await stripLabels(), ['Backlog', 'In progress', 'Shipped', 'Signals', 'Claude', 'Atlas']);
+  assert.deepEqual(await stripLabels(), ['Changes', 'Signals', 'Claude', 'Atlas']);
+});
+
+// One Changes page (navigation depth, D4): In progress and Shipped keep their addresses, light Changes and share its stage chips.
+await check('Improve: Backlog, In progress and Shipped are one Changes page with stage chips', async () => {
+  const stages = [['backlog', 'Backlog'], ['inProgress', 'Doing'], ['shipped', 'Shipped']];
+  for (const [id, current] of stages) {
+    await page.evaluate(h => { location.hash = '#' + h; }, id);
+    await page.waitForSelector(`#${id}.active`, { timeout: 5000 });
+    assert.deepEqual(await stripLabels(), ['Changes', 'Signals', 'Claude', 'Atlas'], `${id} strip`);
+    assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Changes', `${id} lights Changes`);
+    const chips = page.locator(`#${id} .changes-stages a`);
+    assert.deepEqual(await chips.allInnerTexts(), ['Backlog', 'Doing', 'Shipped'], `${id} chips`);
+    assert.deepEqual(await page.locator(`#${id} .changes-stages a[aria-current="page"]`).allInnerTexts(), [current], `${id} aria-current`);
+    assert.deepEqual(await chips.evaluateAll(as => as.map(a => a.getAttribute('href'))), ['#backlog', '#inProgress', '#shipped']);
+  }
+  await page.locator('#shipped .changes-stages a', { hasText: 'Backlog' }).click();
+  await page.waitForSelector('#backlog.active', { timeout: 5000 });
+  assert.equal(await page.locator('#backlog h1').innerText(), 'Changes');
+  await page.locator('#backlog .changes-stages a', { hasText: 'Doing' }).click();
+  await page.waitForSelector('#inProgress.active', { timeout: 5000 });
+  assert.equal(await page.evaluate(() => location.hash), '#inProgress');
+});
+
+// A strip has at most five items in every area (navigation depth). System is at six until Connections joins Status (step 2),
+// which sets its limit to five.
+const STRIP_MAX = { work: 5, projects: 5, improve: 5, system: 6 };
+await check('every area strip has at most 5 items', async () => {
+  for (const area of ['work', 'projects', 'improve', 'system']) {
+    await page.evaluate(h => { location.hash = '#' + h; }, area === 'improve' ? 'backlog' : area === 'system' ? 'status' : area);
+    await page.waitForSelector(`body[data-domain="${area}"]`, { timeout: 5000 });
+    const n = await page.locator('#uxPageStrip button').count();
+    assert.ok(n <= STRIP_MAX[area], `${area} strip has ${n} items`);
+  }
 });
 
 // The legacy pages are retired (owner decision D4): their addresses land on the page that replaced them.
@@ -182,11 +244,11 @@ await check('the bell shows Needs you\'s number on every page and opens Home at 
   } finally { await page.unroute('**/api/approvals'); }
 });
 
-await check('GridCraft is reachable from Services, and opens System › Spreadsheets', async () => {
+await check('GridCraft is reachable from Status, and opens System › Spreadsheets', async () => {
   await page.evaluate(() => window.showView('integrations'));
-  await page.waitForSelector('#integrations[data-integration-v2="true"]');
+  await page.waitForSelector('#status.active #statusConnections[data-integration-v2="true"]');
   await page.locator('[data-integration-source-v2="gridcraft"]').filter({ hasNotText: 'Checking' }).waitFor({ timeout: 8000 });
-  const open = page.locator('#integrations [data-integration-view="spreadsheets"]');
+  const open = page.locator('#statusConnections [data-integration-view="spreadsheets"]');
   await open.waitFor({ state: 'visible' });
   assert.equal(await open.innerText(), 'Open Spreadsheets');
   await open.click();
@@ -332,7 +394,7 @@ await check('phone, a new install: System shows Tools with no switch, and every 
   await pg.goto(base + '/#status', { waitUntil: 'domcontentloaded' });
   await pg.waitForFunction(() => typeof window.showView === 'function');
   await pg.waitForSelector('#status.active');
-  assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), ['Status', 'Models', 'Connections', 'Tools', 'Settings', 'Audit log']);
+  assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), SYSTEM_STRIP);
   await pg.locator('#uxPageStrip [data-strip-view="activity"]').click();
   await pg.waitForSelector('#activity.active');
   await pg.locator('#uxPageStrip [data-strip-view="tools"]').click();
@@ -353,7 +415,23 @@ await check('phone 390: the System, Projects and Improve strips have every tab o
     await pg.waitForTimeout(200);
     const off = await pg.evaluate(() => { const s = document.querySelector('#uxPageStrip').getBoundingClientRect(); return [...document.querySelectorAll('#uxPageStrip button')].filter(b => { const r = b.getBoundingClientRect(); return r.left < s.left - 1 || r.right > s.right + 1; }).map(b => b.textContent); });
     assert.deepEqual(off, [], `${view}: tabs off-screen`);
+    // Improve's four items fit without scrolling; System's six still scroll until Connections joins Status (step 2).
+    const fit = await pg.evaluate(() => { const s = document.querySelector('#uxPageStrip'); return [s.scrollWidth, s.clientWidth]; });
+    if (view === 'backlog') assert.ok(fit[0] <= fit[1], `${view}: strip overflows (${fit[0]} > ${fit[1]})`);
   }
+  await ctx.close();
+});
+await check('phone 390: System has exactly five items, the strip does not overflow, and Status (with its cards) fits the width', async () => {
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await ctx.addInitScript(() => { localStorage.setItem('localai.firstRun.done', '1'); });
+  const pg = await ctx.newPage();
+  await pg.goto(base + '/#integrations', { waitUntil: 'domcontentloaded' });
+  await pg.waitForSelector('#status.active');
+  await pg.waitForSelector('#statusConnections [data-integration-source-v2="n8n"]');
+  assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), SYSTEM_STRIP);
+  const r = await pg.evaluate(() => { const s = document.querySelector('#uxPageStrip'); return { sw: s.scrollWidth, cw: s.clientWidth, dw: document.documentElement.scrollWidth, dc: document.documentElement.clientWidth }; });
+  assert.ok(r.sw <= r.cw + 1, `strip scrolls: ${r.sw} > ${r.cw}`);
+  assert.ok(r.dw <= r.dc + 2, `page overflows: ${r.dw} > ${r.dc}`);
   await ctx.close();
 });
 // Owner, 2 Nov: diagnostic details are a preference (Settings › Show diagnostic details), on by default, kept per browser.

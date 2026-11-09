@@ -65,9 +65,10 @@ await check('desktop: one rail and one strip on every page; the top bar names th
 });
 
 // Improve's six tabs fit at 390 px since 2 Nov (compact strip); a 320 px phone still scrolls them.
-await check('small phone: the Improve tab strip scrolls, fades at the overflowing edge, and keeps the open tab in view', async () => {
-  const page = await open({ width: 320, height: 640 }, '#backlog');
-  await page.waitForSelector('#backlog.active', T);
+// System has the longest strip (Improve's four items now fit at 320 px).
+await check('small phone: the System tab strip scrolls, fades at the overflowing edge, and keeps the open tab in view', async () => {
+  const page = await open({ width: 320, height: 640 }, '#status');
+  await page.waitForSelector('#status.active', T);
   const strip = page.locator('#uxPageStrip');
   await strip.waitFor({ state: 'visible', timeout: 6000 });
   const info = () => strip.evaluate(e => ({ sw: e.scrollWidth, cw: e.clientWidth, left: e.scrollLeft, start: e.dataset.fadeStart, end: e.dataset.fadeEnd, mask: getComputedStyle(e).maskImage || getComputedStyle(e).webkitMaskImage }));
@@ -79,8 +80,8 @@ await check('small phone: the Improve tab strip scrolls, fades at the overflowin
   await page.waitForFunction(() => document.getElementById('uxPageStrip').dataset.fadeEnd === 'false', null, T);
   i = await info();
   assert.equal(i.start, 'true');
-  await page.evaluate(() => LocalAIRouter.go('#claude'));
-  await page.waitForSelector('#claude.active', T);
+  await page.evaluate(() => LocalAIRouter.go('#activity'));
+  await page.waitForSelector('#activity.active', T);
   await page.waitForTimeout(300);
   const vis = await page.evaluate(() => { const s = document.getElementById('uxPageStrip'), b = s.querySelector('[aria-current="page"]'), sr = s.getBoundingClientRect(), br = b.getBoundingClientRect(); return br.left >= sr.left - 1 && br.right <= sr.right + 1; });
   assert.ok(vis, 'the open tab is fully inside the strip');

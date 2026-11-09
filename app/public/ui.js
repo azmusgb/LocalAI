@@ -977,9 +977,8 @@ let allButtons=new Map();
 const icon=(name,cls)=>window.LocalAIKit?.icon(name,cls)||'';
 
 function viewButton(view){return allButtons.get(view)||q('.navbtn[data-view="'+view+'"]')}
-// A System tool (registry `tool`) is a card on Tools, not a menu entry of its own; its address still opens it.
-const underTools=view=>{const v=REG.view(view);return !!v?.tool&&v.domain==='system'};
-const listed=view=>!!viewButton(view)&&!underTools(view);
+// A page with `lights` (a System tool, In progress, Shipped) is no menu entry of its own; its address still opens it and lights that item.
+const listed=view=>!!viewButton(view)&&!REG.view(view)?.lights;
 // A domain's groups with the pages a menu may list; a group left empty is dropped.
 const listedGroups=d=>d.groups.map(g=>({label:g.label,views:g.views.filter(listed)})).filter(g=>g.views.length);
 // A hidden page (chat, images, missions, runs) lights up the page that owns it.
@@ -999,28 +998,11 @@ function activateSyntheticView(view){
  return true;
 }
 function navigate(view){
- const synthetic=viewButton(view)?.dataset.uxSynthetic==='true';
- if(synthetic&&activateSyntheticView(view)){window.LocalAIRouter?.go('#'+view);return}
  if(window.LocalAIRouter&&REG.view(view)?.domain!=='hidden'){window.LocalAIRouter.go('#'+view);requestAnimationFrame(()=>sync(view));return}
  if(typeof window.showView==='function'){window.showView(view);requestAnimationFrame(()=>sync(view));return}
  const b=viewButton(view);if(b){b.click();requestAnimationFrame(()=>sync(view));return}
  if(activateSyntheticView(view))return;
  const target=q('#'+view);if(target){qa('.view').forEach(v=>v.classList.toggle('active',v===target));requestAnimationFrame(()=>sync(view))}
-}
-
-function buildIntegrationsView(){
- const main=q('main'),nav=q('.app>aside nav');if(!main||!nav)return;
- if(!q('#integrations')){
-   const section=document.createElement('section');
-   section.id='integrations';section.className='view';section.dataset.uxSynthetic='true';
-   // Content and live status are owned by integration-hub-v2.js, which mounts into this section.
-   main.appendChild(section);
- }
- if(!q('.navbtn[data-view="integrations"]',nav)){
-   const b=document.createElement('button');b.type='button';b.className='navbtn';b.dataset.view='integrations';b.dataset.uxSynthetic='true';b.textContent=REG.label('integrations');
-   b.addEventListener('click',e=>{e.preventDefault();activateSyntheticView('integrations');window.LocalAIRouter?.go('#integrations')});
-   nav.appendChild(b);
- }
 }
 
 // Desktop: the rail of areas; the page strip under the header lists the area's pages (navigation spec N5).
@@ -1076,8 +1058,9 @@ function renderPageStrip(d,page,view){
  const strip=q('#uxPageStrip');if(!strip)return;
  const all=listedGroups(d).flatMap(g=>g.views).flatMap(v=>{const t=REG.tabs(v);return t.length?t.map(x=>x.id):[v]});
  const views=all,current=REG.view(view)?.id;
- // A System tool (Files, PowerShell, …) lights Tools, where its card is.
- if(underTools(current))page='tools';
+ // A page that names `lights` (Files lights Tools, Shipped lights Changes) lights that item.
+ const lit=REG.view(current)?.lights;
+ if(lit)page=lit;
  else if(all.includes(current))page=current;
  const key=d.id+'|'+views.join(',');
  const label=v=>REG.view(v)?.tab||REG.view(v)?.short||labelForView(v);
@@ -1157,7 +1140,7 @@ function watchScroll(){
  new MutationObserver(scrollLock).observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']});
  headerLine();
 }
-function init(){document.body.classList.add('ux-v3');linkErrors();buildIntegrationsView();buildDesktopNav();buildContext();buildPageStrip();buildMobile();observeViews();sync();watchScroll()}
+function init(){document.body.classList.add('ux-v3');linkErrors();buildDesktopNav();buildContext();buildPageStrip();buildMobile();observeViews();sync();watchScroll()}
 if(document.readyState==='complete')init();else window.addEventListener('load',init,{once:true});
 })();
 
@@ -3049,7 +3032,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     if (!holder) return;
     const card = item => {
       const actions = item.actions.map(action => actionHtml(item, action)).join('');
-      const live = item.source ? `<span class="ux-int-live" data-integration-source-v2="${item.source}"><span class="dot"></span> Checking</span>` : '';
+      const live = item.source ? `<div class="ux-int-livewrap"><span class="ux-int-live" data-integration-source-v2="${item.source}"><span class="dot"></span> Checking</span><span class="ux-int-seen" data-integration-seen="${item.source}"></span></div>` : '';
       const ws = item.id === 'workshop';
       return `<article class="ux-int-card${ws ? ' ux-int-wide' : ''}" data-tier="${item.tier}" aria-labelledby="ux-int-v2-${item.id}">
         <div class="ux-int-card-head"><div><div class="ux-int-name" id="ux-int-v2-${item.id}">${item.name}</div><div class="ux-int-decision" data-integration-decision="${item.id}">${item.decision}</div></div>${tierBadge(item.tier)}</div>
@@ -3191,7 +3174,23 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     ).join('');
   }
 
-  function updateService(source, service) {
+  // seen = { at: Date | null, answered: boolean }: when this service was last asked and whether it answered. A service that
+  // did not answer says so with the time it was asked, and when it last did answer (this visit only); with no time the
+  // data really has, nothing is shown.
+  const lastAnswered = {};
+  const clock = d => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  function updateSeen(source, seen) {
+    const note = q(`[data-integration-seen="${source}"]`);
+    if (!note) return;
+    const at = seen?.at instanceof Date && !Number.isNaN(seen.at.getTime()) ? seen.at : null;
+    if (!at) { note.textContent = ''; note.dataset.tone = ''; return; }
+    if (seen.answered) lastAnswered[source] = at;
+    note.dataset.tone = seen.answered ? '' : 'attention';
+    note.textContent = seen.answered ? `Answered at ${clock(at)}`
+      : `No answer at ${clock(at)} · ${lastAnswered[source] ? `last answered ${clock(lastAnswered[source])}` : 'no answer yet this visit'}`;
+  }
+  function updateService(source, service, seen) {
+    updateSeen(source, seen);
     const element = q(`[data-integration-source-v2="${source}"]`);
     if (!element) return;
     const state = service?.state || 'UNKNOWN';
@@ -3236,7 +3235,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     box.hidden = false;
   }
 
-  function updateWorkshop(status) {
+  function updateWorkshop(status, at) {
     const url = typeof status?.portalUrl === 'string' && /^https?:\/\//.test(status.portalUrl) ? status.portalUrl : '';
     const link = q('[data-integration-portal="workshop"]');
     if (link) {
@@ -3262,10 +3261,10 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     updateService('workshop', !status ? { state: 'NEUTRAL', label: 'Status unavailable' }
       : !url ? { state: 'NEUTRAL', label: 'Address not set up' }
         : status.online ? { state: 'HEALTHY', label: board ? `Online · ${board}` : status.signIn ? 'Online · sign-in on' : 'Online' }
-          : { state: 'NEUTRAL', label: 'Not answering' });
+          : { state: 'NEUTRAL', label: 'Not answering' }, status && !url ? null : { at, answered: status?.online === true });
   }
 
-  // #integrations?card=workshop (a link to the Workshop display's card) brings that card into view.
+  // #status?card=workshop, or the old #integrations?card=workshop (a link to the Workshop display's card) brings that card into view.
   function showCard() {
     const id = window.LocalAIRouter?.current().query.get('card');
     const card = id && q(`#ux-int-v2-${CSS.escape(id)}`)?.closest('.ux-int-card');
@@ -3275,69 +3274,54 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     card.focus({ preventScroll: true });
   }
 
-  function setBusy(busy) {
-    const button = q('#uxIntegrationRefreshV2');
-    if (!button) return;
-    button.disabled = busy;
-    button.setAttribute('aria-busy', String(busy));
-    button.textContent = busy ? 'Checking…' : 'Check again';
-  }
-
   async function loadStatus() {
     if (loadStatus.pending) return loadStatus.pending;
     const task = (async () => {
-      const summary = q('#uxIntegrationStatusSummaryV2');
-      const checked = q('#uxIntegrationLastCheckedV2');
-      if (summary) summary.textContent = 'Checking local services…';
-      if (checked) checked.textContent = '';
-      setBusy(true);
+      const note = q('#uxIntegrationStatusSummaryV2');
+      const section = q('#statusConnections');
+      if (note) note.textContent = 'Checking connections…';
+      section?.setAttribute('aria-busy', 'true');
       try {
         // Each check gives up after 8 s, so one slow bridge (GridCraft on the host) can't leave the page on "Checking…".
         const timed = () => (typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined);
+        // When each answer (or failure) came back: the time shown on that service's card.
+        const at = {};
+        const done = key => () => { at[key] = new Date(); };
         const results = await Promise.allSettled([
-          fetch('/api/status', { cache: 'no-store', signal: timed() }),
-          fetch('/api/capabilities', { cache: 'no-store', signal: timed() }),
-          fetch('/api/gridcraft/health', { cache: 'no-store', signal: timed() }),
-          fetch('/api/artcraft/status', { cache: 'no-store', signal: timed() }),
-          fetch('/api/workshop/status', { cache: 'no-store', signal: timed() })
+          fetch('/api/status', { cache: 'no-store', signal: timed() }).finally(done('status')),
+          fetch('/api/gridcraft/health', { cache: 'no-store', signal: timed() }).finally(done('gridcraft')),
+          fetch('/api/artcraft/status', { cache: 'no-store', signal: timed() }).finally(done('artcraft')),
+          fetch('/api/workshop/status', { cache: 'no-store', signal: timed() }).finally(done('workshop'))
         ]);
-        updateWorkshop(results[4].status === 'fulfilled' && results[4].value.ok ? await results[4].value.json().catch(() => null) : null);
-        const artcraft = results[3].status === 'fulfilled' ? await results[3].value.json().catch(() => null) : null;
+        updateWorkshop(results[3].status === 'fulfilled' && results[3].value.ok ? await results[3].value.json().catch(() => null) : null, at.workshop);
+        const artcraft = results[2].status === 'fulfilled' ? await results[2].value.json().catch(() => null) : null;
         updateService('artcraft', !artcraft?.ok ? { state: 'NEUTRAL', label: 'Windows computer not answering' }
           : artcraft.running ? { state: 'HEALTHY', label: `Open now${artcraft.version ? ` · ${artcraft.version}` : ''}` }
             : artcraft.installed ? { state: 'NEUTRAL', label: `Installed, not open${artcraft.version ? ` · ${artcraft.version}` : ''}` }
-              : { state: 'DOWN', label: 'Not installed' });
-        const gridcraft = results[2].status === 'fulfilled' ? await results[2].value.json().catch(() => null) : null;
+              : { state: 'DOWN', label: 'Not installed' }, { at: at.artcraft, answered: artcraft?.ok === true });
+        const gridcraft = results[1].status === 'fulfilled' ? await results[1].value.json().catch(() => null) : null;
         updateService('gridcraft', gridcraft?.ok
           ? { state: gridcraft.gridcraftConnected ? 'HEALTHY' : 'DEGRADED' }
-          : { state: 'DOWN', displayState: 'OPTIONAL_OFFLINE' });
+          : { state: 'DOWN', displayState: 'OPTIONAL_OFFLINE' }, { at: at.gridcraft, answered: gridcraft?.ok === true });
         let status = null;
-        let capabilities = null;
         if (results[0].status === 'fulfilled' && results[0].value.ok) status = await results[0].value.json();
-        if (results[1].status === 'fulfilled' && results[1].value.ok) capabilities = await results[1].value.json();
 
         const services = Array.isArray(status?.services) ? status.services : [];
-        updateService('n8n', services.find(service => service.name === 'n8n'));
-        updateService('comfy', services.find(service => service.name === 'comfy'));
-
-        if (status) {
-          const healthy = services.filter(service => ['n8n', 'comfy'].includes(service.name) && service.state === 'HEALTHY').length;
-          q('#uxIntegrationNativeCountV2').textContent = `${healthy}/2`;
-          summary.textContent = healthy === 2 ? 'Both core services are working.' : healthy === 1 ? 'One core service needs attention.' : 'The core services need attention.';
-        } else {
-          q('#uxIntegrationNativeCountV2').textContent = '—';
-          summary.textContent = 'Live status is unavailable; what each service is for is unchanged.';
+        // n8n and ComfyUI carry the time the appliance itself asked them (checkedAt); a probe that failed to connect
+        // still has one. No such time (an older server, or no status at all) shows nothing rather than a guess.
+        for (const name of ['n8n', 'comfy']) {
+          const service = services.find(x => x.name === name), when = service?.checkedAt ? new Date(service.checkedAt) : status ? null : at.status;
+          updateService(name, service, { at: when, answered: service?.statusCode != null });
         }
 
-        q('#uxIntegrationMediaStateV2').textContent = capabilities
-          ? capabilities?.images?.available === true ? 'Ready' : 'No supported model'
-          : 'Status only';
-        checked.textContent = `Checked ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+        // Each card carries its own live line; this one says when they were read, or that none could be.
+        if (note) note.textContent = results.some(r => r.status === 'fulfilled' && r.value.ok)
+          ? `Checked ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+          : 'Live status is unavailable; what each service is for is unchanged.';
       } catch {
-        if (summary) summary.textContent = 'Could not check the services.';
-        if (checked) checked.textContent = 'Status request failed';
+        if (note) note.textContent = 'Could not check the connections. Try Check again.';
       } finally {
-        setBusy(false);
+        section?.setAttribute('aria-busy', 'false');
       }
     })();
     loadStatus.pending = task;
@@ -3346,13 +3330,23 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
   }
 
   function mount() {
-    const section = q('#integrations');
-    if (!section || section.dataset.integrationV2 === 'true') return Boolean(section);
+    const status = q('#status');
+    if (!status) return false;
+    let section = q('#statusConnections', status);
+    if (section?.dataset.integrationV2 === 'true') return true;
+    // Connections is part of Status (9 Nov): its cards sit under the Services list, before "Open in Pi Hub Health".
+    if (!section) {
+      section = document.createElement('section');
+      section.id = 'statusConnections';
+      section.className = 'ui-section status-connections';
+      section.setAttribute('aria-labelledby', 'statusConnectionsTitle');
+      (q('#serviceList', status)?.closest('.ui-section') || q('.ui-page__head', status))?.after(section);
+    }
     section.dataset.integrationV2 = 'true';
     section.innerHTML = `
-      <div class="topbar"><div><h1>Connections</h1><p class="sub">What Local AI connects to, how each one is doing, and what each one is for.</p></div><button class="btn-outline" type="button" id="uxIntegrationRefreshV2" aria-busy="false">Check again</button></div>
-      <div class="card ux-int-hero ux-int-v2"><div><h2>Connected services</h2><p id="uxIntegrationStatusSummaryV2" role="status" aria-live="polite">Checking local services…</p><span id="uxIntegrationLastCheckedV2" class="ux-int-checked"></span></div><div class="ux-int-metrics"><div><b id="uxIntegrationNativeCountV2">—</b><span>core services healthy</span></div><div><b id="uxIntegrationMediaStateV2">—</b><span>image and media</span></div><div><b>Opt-in</b><span>cloud and outside services</span></div></div></div>
-      <div class="section-head ux-int-section-head"><div><h2>What each one does</h2></div></div><div id="uxIntegrationCardsV2" class="ux-int-grid"></div>
+      <div class="section-head ux-int-section-head"><div><h2 id="statusConnectionsTitle">What each one does</h2><p class="ui-section__note">What Local AI connects to, how each one is doing, and what each one is for.</p></div></div>
+      <p id="uxIntegrationStatusSummaryV2" class="ux-int-checked" role="status" aria-live="polite">Checking connections…</p>
+      <div id="uxIntegrationCardsV2" class="ux-int-grid"></div>
       <details class="ux-int-about"><summary>How services are chosen</summary><div class="card ux-int-policy"><div><h2>What gets built in</h2></div><div class="ux-int-policy-grid"><div><strong>1. On this computer first</strong><span>Ollama, n8n and ComfyUI do the work by default, so nothing leaves your network.</span></div><div><strong>2. One service per job</strong><span>No second chat, automation or image service that would split your history in two.</span></div><div><strong>3. A connection has to be worth it</strong><span>Penpot and Obsidian would share real designs and notes with Local AI, not just open another tab.</span></div><div><strong>4. The cloud only when you choose it</strong><span>Accounts and uploads to outside services happen only when you set them up yourself.</span></div></div></div>
       <div class="card ux-int-research"><div><h2>Safeguards</h2></div><div class="ux-int-research-grid"><div><strong>n8n security check</strong><span>Run it after you connect an account, add a community add-on or a public webhook. It checks accounts, data, files and add-ons.</span><a data-external="true" href="https://docs.n8n.io/hosting/securing/security-audit/" target="_blank" rel="noopener noreferrer" aria-label="n8n security check guidance (opens external site)">Official guidance ↗</a></div><div><strong>ComfyUI add-ons</strong><span>Some add-ons only work in ComfyUI's own window, not when Local AI asks for an image. Check before you rely on one.</span><a data-external="true" href="https://docs.comfy.org/custom-nodes/overview" target="_blank" rel="noopener noreferrer" aria-label="ComfyUI add-on guidance (opens external site)">Add-on guidance ↗</a></div><div><strong>Penpot on your own server</strong><span>Penpot can run at home and let Local AI read and update designs. Its access key is a password and never goes into the page.</span><a data-external="true" href="https://help.penpot.app/mcp/" target="_blank" rel="noopener noreferrer" aria-label="Penpot connection guidance (opens external site)">Penpot guide ↗</a></div></div></div>
       <div class="card ux-int-next"><div><h2>Planned next</h2></div><div class="ux-int-next-grid"><div><b>Shipped</b><strong>Live n8n and ComfyUI health</strong><span>This page checks both every time you open it.</span></div><div><b>Next</b><strong>Video and talking portraits</strong><span>Show Stable Video Diffusion and SadTalker as ready once their models are installed in ComfyUI.</span></div><div><b>Next</b><strong>Obsidian notes as Sources</strong><span>Pick a notes folder and add its files to a project's Sources, each with where it came from.</span></div><div><b>Opt-in</b><strong>Penpot connection</strong><span>Connect your own Penpot without its access key ever reaching the browser.</span></div></div></div>
@@ -3361,14 +3355,15 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
 
     renderCards();
     renderAlternatives();
-    q('#uxIntegrationRefreshV2')?.addEventListener('click', loadStatus);
+    // Status's one "Check again" reads the cards too.
+    q('#statusRetryBtn')?.addEventListener('click', loadStatus);
     loadStatus();
-    if (section.classList.contains('active')) window.setTimeout(showCard, 0);
+    if (status.classList.contains('active')) window.setTimeout(showCard, 0);
 
     const observer = new MutationObserver(() => {
-      if (section.classList.contains('active')) { window.setTimeout(loadStatus, 75); window.setTimeout(showCard, 0); } else hideCode();
+      if (status.classList.contains('active')) { window.setTimeout(loadStatus, 75); window.setTimeout(showCard, 0); } else hideCode();
     });
-    observer.observe(section, { attributes: true, attributeFilter: ['class'] });
+    observer.observe(status, { attributes: true, attributeFilter: ['class'] });
     return true;
   }
 
@@ -4107,7 +4102,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function mount(){
  const host=document.querySelector('#toolsCards'),R=window.LocalAIViews;if(!host||!R||host.childElementCount)return;
- host.innerHTML=R.tools().map(v=>`<a class="tool-card card" href="#${v.id}" data-tool="${v.id}"><span class="tool-card__icon" aria-hidden="true">${window.LocalAIKit?.icon(v.svg)||''}</span><span><strong>${esc(v.label)}</strong><small>${esc(v.description)}${v.domain==='system'?'':` Also in ${esc(R.DOMAINS.find(d=>d.id===v.domain)?.label||'')} as ${esc(v.short||v.label)}.`}</small></span></a>`).join('');
+ host.innerHTML=R.tools().map(v=>`<a class="tool-card card" href="#${v.id}" data-tool="${v.id}"><span class="tool-card__icon" aria-hidden="true">${window.LocalAIKit?.icon(v.svg)||''}</span><span><strong>${esc(v.label)}</strong><small>${esc(v.description)}</small></span></a>`).join('');
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();
 })();

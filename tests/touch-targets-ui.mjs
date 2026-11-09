@@ -13,8 +13,8 @@ await page.goto(base + '/#home', { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => typeof window.showView === 'function');
 const small = sel => page.evaluate(s => [...document.querySelectorAll(s)].filter(e => e.offsetParent).map(e => [e.textContent.trim().slice(0, 30), Math.round(e.getBoundingClientRect().height)]).filter(([, h]) => h < 44), sel);
 
-await check('Services: guidance links are at least 44 px tall', async () => {
-  await page.evaluate(() => window.showView('integrations'));
+await check('Status: guidance links are at least 44 px tall', async () => {
+  await page.evaluate(() => window.showView('status'));
   await page.waitForSelector('.view.active .ux-int-research-grid a', { state: 'attached' });
   assert.deepEqual(await small('.view.active .ux-int-research-grid a'), []);
 });

@@ -13,7 +13,7 @@ const app = fs.readFileSync(path.join(pub, 'app.js'), 'utf8');
 const sw = fs.readFileSync(path.join(pub, 'sw.js'), 'utf8');
 
 // Views whose section and nav button are created at runtime by another script.
-const INJECTED = { models: 'ui.js', runs: 'ui.js', integrations: 'ui.js' };
+const INJECTED = { models: 'ui.js', runs: 'ui.js' };
 // Registered ahead of its section: Task 3 of the navigation plan creates #work.
 const PENDING = new Set(['work']);
 
@@ -119,18 +119,22 @@ test('navigation surfaces read from the registry instead of their own lists', ()
 // System › Tools (navigation update, 2 Nov): one page of cards, always shown, no switch. The registry says which pages
 // have a card, so the strip, the phone sheet and ⌘K agree and a future tool gets it for free.
 test('Tools lists the tools, System ones first, and nothing is hidden behind a switch', () => {
-  assert.deepEqual(registry.tools().map(v => v.id), ['workbench', 'repoTools', 'powershell', 'actions', 'automations', 'architecture']);
+  assert.deepEqual(registry.tools().map(v => v.id), ['workbench', 'repoTools', 'powershell', 'actions', 'automations']);
+  assert.ok(registry.tools().every(v => v.lights === 'tools'), 'a tool lights Tools');
   assert.ok(!registry.VIEWS.some(v => 'dev' in v || 'advanced' in v), 'no developer-only or Advanced pages remain');
-  assert.equal(registry.view('architecture').domain, 'improve', 'Architecture is an Improve tab, Atlas (D3)');
+  assert.equal(registry.view('architecture').domain, 'improve', 'Architecture is only Improve\'s Atlas tab, not a tool card (D3)');
   assert.equal(registry.view('claude').domain, 'improve', 'Claude Code is an ordinary Improve page (N2)');
   assert.deepEqual(registry.sections('system').map(s => s.label), ['Status', 'Tools', 'Settings', 'History']);
 });
 
-// Improve has six tabs once Deployments joined Shipped (step 4); short labels keep them on a phone (D3), but never
-// at the cost of section 9's words: In progress, not Doing (A7 P5).
+// Improve's strip is Changes · Signals · Claude · Atlas (navigation depth, D4): In progress and Shipped light Changes.
+// Short labels keep the strip on a phone (D3).
 test('Improve tabs use short strip labels', () => {
-  const strip = registry.sections('improve').flatMap(s => s.views).map(id => registry.view(id).short || registry.label(id));
-  assert.deepEqual(strip, ['Backlog', 'In progress', 'Shipped', 'Signals', 'Claude', 'Atlas']);
+  const ids = registry.sections('improve').flatMap(s => s.views);
+  assert.deepEqual(ids.filter(id => !registry.view(id).lights).map(id => registry.view(id).short || registry.label(id)), ['Changes', 'Signals', 'Claude', 'Atlas']);
+  assert.deepEqual(['inProgress', 'shipped'].map(id => registry.view(id).lights), ['backlog', 'backlog']);
+  assert.equal(registry.label('backlog'), 'Changes');
+  assert.ok(registry.view('backlog').aka.includes('backlog'), 'Backlog stays searchable');
 });
 
 test('tabs belong to a top-level page in the same domain', () => {

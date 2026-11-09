@@ -23,7 +23,7 @@ const FEATURES = [
       { path: 'app/server/gridcraft.js' }, { path: 'host/gridcraft-bridge.py' }, { path: 'host/gridcraft-agent/gridcraft_ai.py' }, { path: 'app/public/app.css', match: ['.sheets-', '#spreadsheets'] }] },
   { id: 'images', views: ['create'], names: ['image', 'images', 'picture', 'pictures', 'comfyui', 'artcraft', 'image generation'],
     sources: [{ path: 'app/image-engines.js' }, { path: 'app/public/index.html', anchor: 'create' }, { path: 'docs/ARTCRAFT.md' }, { path: 'host/comfyui/README.md' }, { path: 'app/server/images.js' }, { path: 'app/public/app.css', match: ['.img-'] }] },
-  { id: 'health', views: ['status', 'models', 'integrations'], names: ['health', 'health check', 'services', 'models', 'integrations'],
+  { id: 'health', views: ['status', 'models'], names: ['health', 'health check', 'services', 'models', 'integrations'],
     sources: [{ path: 'app/public/index.html', anchor: 'status' }, { path: 'app/glance.js' }, { path: 'app/server/status.js' }, { path: 'docs/OPERATIONS.md' }, { path: 'app/model-runtime.js' }] },
   { id: 'work', views: ['work', 'runs'], names: ['work page', 'work tab', 'run card', 'run cards'],
     sources: [{ path: 'app/public/work.js' }, { path: 'app/run-cards.js' }, { path: 'app/run-ledger.js' }, { path: 'app/public/run-bodies.js' }, { path: SPECS + '2026-10-15-navigation-home-work-design.md' }, { path: 'app/public/index.html', anchor: 'work' }, { path: 'app/public/app.css', match: ['.work-', '.run-'] }] },

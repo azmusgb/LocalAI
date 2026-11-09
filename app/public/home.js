@@ -339,6 +339,12 @@ async function send(text,m=cur(),{anyway=false}={}){
  }finally{busy(false)}
 }
 
+// ---- Pinned: the pages you keep one click away (pins.js holds the list, from the server) ----
+function paintPins(){
+ const box=$('homePinned'),list=$('homePinnedList'),P=root.LocalAIPins,V=root.LocalAIViews;if(!box||!list||!P||!V)return;
+ const ids=P.list().filter(id=>V.view(id));box.hidden=!ids.length;
+ list.innerHTML=ids.map(id=>`<button type="button" class="btn-outline home-pin" data-pin-open="${esc(id)}"><svg class="icon" aria-hidden="true"><use href="#i-${esc(V.view(id).svg||'home')}"/></svg><span>${esc(V.label(id))}</span></button>`).join('');
+}
 // ---- wiring ----
 function fromHash(){const R=root.LocalAIRouter;if(!R)return;const cur=R.current(),m=cur.query.get('mode')||R.intentFor(cur.page).mode;if(m&&LABEL[m])setMode(m)}
 function onHomeHash(){const p=root.LocalAIRouter?.current().page;return !p||p==='home'||root.LocalAIViews?.resolve(p)==='home'}
@@ -372,6 +378,8 @@ function init(){
  if(!$('homeComposer'))return;
  paintChip();greet();
  if(!(active()&&onHomeHash()))loadNeeds().catch(()=>{});watchAway(); // Home loads its own on activate
+ $('homePinnedList')?.addEventListener('click',e=>{const b=e.target.closest('[data-pin-open]');if(b)root.LocalAIRouter?.open(b.dataset.pinOpen)});
+ if(root.LocalAIPins){root.LocalAIPins.subscribe(paintPins);paintPins()}
  $('homeHistory')?.addEventListener('click',()=>root.LocalAIRouter?.go('#inbox'));
  new MutationObserver(()=>{paintChip();if(stale&&!document.body.classList.contains('run-view-open'))paintNeeds()}).observe(document.body,{attributes:true,attributeFilter:['class']}); // a run view closed
  $('homeModeChip').addEventListener('click',()=>autoWait?autoWait.cancel():openSheet());

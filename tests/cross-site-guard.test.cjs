@@ -47,6 +47,12 @@ const ROUTES = [
   ['POST', '/api/claude/chat/send', JSON.stringify({ sessionId: 'csrf-test', text: 'hi' })],
   ['POST', '/api/library/update', JSON.stringify({ id: 'none', title: 'x' })],
   ['POST', '/api/conversations/delete', JSON.stringify({ id: 'none' })],
+  ['POST', '/api/agents/specialist/run', JSON.stringify({ agentId: 'none', goal: 'x' })],
+  ['POST', '/api/agents/plan', JSON.stringify({ goal: 'x' })],
+  ['POST', '/api/powershell/create', JSON.stringify({ command: 'x' })],
+  ['POST', '/api/powershell/approve', JSON.stringify({ id: 'none' })],
+  ['POST', '/api/powershell/request-run', JSON.stringify({ id: 'none' })],
+  ['POST', '/api/display/pair/start', JSON.stringify({})],
 ];
 const blocked = r => r.status === 403 && r.json?.error === 'Cross-site request blocked' && r.connection === 'close';
 

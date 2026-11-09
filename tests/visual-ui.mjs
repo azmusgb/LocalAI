@@ -34,7 +34,7 @@ const { child: server, ready } = spawnAppServer({
 });
 const base = await ready;
 
-const PAGES = ['home', 'work', 'library', 'projects', 'backlog', 'claude', 'status', 'models'];
+const PAGES = ['home', 'work', 'library', 'projects', 'backlog', 'claude', 'models'];
 // Every page is shot at phone width and at 1440 wide (the key pages were 1280 until 2026-10-18; their baselines moved too).
 const VIEWPORTS = [{ name: 'phone', width: 390, height: 844, mobile: true }, { name: 'desktop1440', width: 1440, height: 900, mobile: false }];
 
@@ -198,7 +198,7 @@ const MORE_PAGES = {
   signals: '#signalsList .improve-row',
   shipped: '#shippedList .improve-row',
   inProgress: '#inProgressList .improve-row',
-  integrations: '#uxIntegrationNativeCountV2:text("2/2")',
+  status: '#uxIntegrationStatusSummaryV2:text("Checked")',
   automationStudio: '#automationList .item-card',
   activity: '#activityList .activity-item',
   knowledge: '#knowledgeList .item-card',
@@ -210,7 +210,7 @@ const MORE_VIEWPORTS = VIEWPORTS;
 
 // What differs between runs by design: the version, response times, a fresh pairing code, and when the server last
 // checked its services (the server's clock, not the page's). Shipped's release headings come from fixed data, so they stay.
-const masks = page => [page.getByText(/^\s*(Local AI |Version |v)?\d+\.\d+\.\d+\s*$/).and(page.locator(':not(.improve-release > h2)')), page.getByText(/^\s*\d+\s*ms\s*$/), page.locator('#claudeChatCode, .claude-chat-cmd code, #statusCheckedAt')];
+const masks = page => [page.getByText(/^\s*(Local AI |Version |v)?\d+\.\d+\.\d+\s*$/).and(page.locator(':not(.improve-release > h2)')), page.getByText(/^\s*\d+\s*ms\s*$/), page.locator('#claudeChatCode, .claude-chat-cmd code, #statusCheckedAt, #uxIntegrationStatusSummaryV2')];
 
 // Agent World in its four states (design 2026-10-17-agent-world), phone and 1440 wide. The city is animated, so its canvas
 // is hidden (the map box stays) and the story's clock times are masked: these baselines guard the page around the city.
