@@ -2663,3 +2663,13 @@ html.is-framed .ux-page-strip{margin-top:0}
 @media(min-width:760px){.home-plate.ui-faceplate--aside{grid-template-columns:minmax(200px,260px) minmax(0,1fr);align-items:center}}
 .home-plate .home-street .street{margin-top:0}
 .home-sources{margin:20px 0 0}
+
+/* Pinned pages (navigation depth D2): Home's row, and the Pin button in every page heading. */
+.home-pins{display:flex;flex-wrap:wrap;gap:8px}
+.home-pin{min-width:0;max-width:100%}.home-pin span{overflow-wrap:anywhere;text-align:left}
+.pin-toggle[aria-pressed="true"]{background:var(--ds-accent-soft);border-color:var(--ds-accent);color:var(--ds-accent-text)}
+.pin-toggle[aria-disabled="true"]{opacity:.6;cursor:progress}
+.pin-tool{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end}
+.topbar>.pin-tool{margin-left:auto}
+.ui-page__tool:has(>.pin-toggle){display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;justify-content:flex-end}
+.pin-note{margin:8px 0 0;color:var(--ds-muted);font-size:var(--ds-fs-2)}

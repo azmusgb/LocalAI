@@ -896,12 +896,17 @@ function commandPalette(){
   function select(i){active=Math.max(0,Math.min(shown.length-1,i));list.querySelectorAll('[role=option]').forEach((b,n)=>{b.setAttribute('aria-selected',String(n===active));b.classList.toggle('active',n===active)});const b=list.querySelectorAll('[role=option]')[active];if(b){input.setAttribute('aria-activedescendant',b.id);b.scrollIntoView({block:'nearest'})}}
   function render(){
     const q=input.value.trim().toLowerCase();shown=actions.filter(a=>$(a.id)&&a.terms.includes(q));
-    const groups=!q&&phone()?likely(shown):null;if(groups)shown=groups.flatMap(g=>g.items);
+    // Pinned pages (pins.js, from the server) come first, in their own group; the rest follow as before.
+    const pinned=(window.LocalAIPins?.list()||[]).map(id=>shown.find(a=>a.id===id)).filter(Boolean),rest=shown.filter(a=>!pinned.includes(a)),short=!q&&phone();
+    let groups=short?likely(rest):null;
+    if(pinned.length){groups=[{label:'Pinned',items:pinned},...(groups||(rest.length?[{label:'Pages',items:rest}]:[]))];const t=short?[]:tools.filter(a=>a.terms.includes(q));if(t.length)groups.push({label:'Tools',items:t})}
+    if(groups)shown=groups.flatMap(g=>g.items);
     const opt=(a,n)=>`<button type="button" id="cmdk-opt-${n}" role="option" class="cmdk-item" data-cmd-view="${esc(a.id)}">${esc(a.label)}</button>`;
     const toolOpt=(a,n)=>`<button type="button" id="cmdk-opt-${n}" role="option" class="cmdk-item" data-cmd-tool="${esc(a.id)}">${esc(a.label)} <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></button>`;
-    const pages=shown.length;if(!groups)shown=shown.concat(tools.filter(a=>a.terms.includes(q)));
+    if(!groups)shown=shown.concat(tools.filter(a=>a.terms.includes(q)));
+    const pages=shown.filter(a=>!a.href).length;
     let n=0;
-    list.innerHTML=groups?groups.map((g,i)=>`<div class="cmdk-group" role="group" aria-labelledby="cmdk-group-${i}"><div class="cmdk-group__label" id="cmdk-group-${i}">${esc(g.label)}</div>${g.items.map(a=>opt(a,n++)).join('')}</div>`).join('')
+    list.innerHTML=groups?groups.map((g,i)=>`<div class="cmdk-group" role="group" aria-labelledby="cmdk-group-${i}"><div class="cmdk-group__label" id="cmdk-group-${i}">${esc(g.label)}</div>${g.items.map(a=>a.href?toolOpt(a,n++):opt(a,n++)).join('')}</div>`).join('')
       :shown.length?shown.map((a,i)=>a.href?toolOpt(a,i):opt(a,i)).join('')
       :`<div class="cmdk-empty"><p>No pages match “${esc(input.value.trim())}”.</p><button type="button" class="btn-outline" data-cmd-work>Search your work for “${esc(input.value.trim())}”</button></div>`;
     {const c=$('cmdkCount'),t=shown.length-pages;if(c)c.textContent=shown.length?(pages?`${pages} page${pages===1?'':'s'}`:'')+(pages&&t?', ':'')+(t?`${t} tool${t===1?'':'s'}`:''):'No pages match'} // a screen reader hears the count
