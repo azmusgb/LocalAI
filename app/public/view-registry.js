@@ -53,7 +53,7 @@ const VIEWS=[
  {id:'automations',svg:'flow',domain:'system',section:'Tools',tool:true,label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
  // Settings left Health (navigation update, 2 Nov): Health is only whether things work.
  {id:'tools',svg:'terminal',domain:'system',section:'Tools',label:'Tools',description:'Files, Repository, PowerShell, Browser & computer, n8n and the System Atlas.',aka:['developer tools','advanced','workbench']},
- {id:'settings',svg:'settings',domain:'system',section:'Settings',label:'Settings',description:'Notifications, sign-in and home location.',aka:['preferences','notifications','home location','sign-in']},
+ {id:'settings',svg:'settings',domain:'system',section:'Settings',label:'Settings',description:'Notifications, sign-in, home location and the pages you open.',aka:['preferences','notifications','home location','sign-in']},
  {id:'activity',svg:'history',domain:'system',section:'History',label:'Audit log',description:'What happened on the appliance, and when.',aka:['activity']},
  {id:'runs',svg:'work',domain:'hidden',section:'History',label:'Runs',description:'Every run, live, with cancel and retry.'}
 ];
