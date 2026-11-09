@@ -170,10 +170,10 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
   });
 
   if (viewport.width >= 760) {
-    await check(`${tag}: the page strip (Audit log, Models, Services) pushes history and sets the hash`, async () => {
+    await check(`${tag}: the page strip (Audit log, Models, Status) pushes history and sets the hash`, async () => {
       const page = await open(viewport, '#status');
       await page.waitForSelector('#status.active', T);
-      for (const view of ['activity', 'models', 'integrations', 'status']) {
+      for (const view of ['activity', 'models', 'status']) {
         const before = await page.evaluate(() => history.length);
         await page.locator(`#uxPageStrip [data-strip-view="${view}"]`).click();
         await page.waitForSelector(`#${view}.active`, T);

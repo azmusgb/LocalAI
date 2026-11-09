@@ -32,19 +32,19 @@ await page.route(u => u.pathname === '/api/workshop/status', r => r.fulfill({ js
 await page.goto(base, { waitUntil: 'domcontentloaded' });
 await page.waitForSelector('.ux-primary-rail');
 
-await check('integration hub is reachable from System', async () => {
+await check('the connections are on Status, under its Services list', async () => {
   await page.locator('.ux-primary-item[data-domain="system"]').click();
   await page.waitForSelector('#status.active');
-  const integrationLink = page.locator('#uxPageStrip [data-strip-view="integrations"]');
-  await integrationLink.waitFor({ state: 'visible' });
-  await integrationLink.click();
-  await page.waitForSelector('#integrations.active');
-  await page.waitForSelector('#integrations[data-integration-v2="true"]');
-  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Connections');
+  await page.waitForSelector('#statusConnections[data-integration-v2="true"]');
+  assert.equal(await page.locator('#uxPageStrip [data-strip-view="integrations"]').count(), 0, 'Connections has no page of its own');
+  assert.equal(await page.locator('#integrations').count(), 0);
+  assert.equal(await page.locator('#uxIntegrationRefreshV2').count(), 0, 'one Check again, on the Status plate');
+  const below = await page.evaluate(() => document.querySelector('#serviceList').closest('.ui-section').compareDocumentPosition(document.querySelector('#statusConnections')) & Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.ok(below, 'the cards come after the Services list');
 });
 
 await check('native Local AI integrations remain first-class', async () => {
-  const body = await page.locator('#integrations').innerText();
+  const body = await page.locator('#statusConnections').innerText();
   assert.match(body, /n8n/i);
   assert.match(body, /ComfyUI/i);
   assert.match(body, /Built in/i);
@@ -66,7 +66,7 @@ await check('ArtCraft has a card that says it uses cloud services, shows whether
   assert.deepEqual(artcraftOpens, [{ method: 'POST', type: 'application/json' }]);
   await card.getByRole('button', { name: 'Open on the Windows computer' }).click();
   await page.locator('#toast', { hasText: "It's already open there" }).waitFor();
-  await page.locator('#uxIntegrationRefreshV2').click();
+  await page.locator('#statusRetryBtn').click();
   await page.waitForFunction(() => /Open now/.test(document.querySelector('[data-integration-source-v2="artcraft"]')?.textContent || ''));
   assert.match(await live.getAttribute('class'), /healthy/);
 });
@@ -88,25 +88,25 @@ await check('the Workshop display card shows whether it is answering and opens i
   assert.equal(await link.getAttribute('rel'), 'noopener noreferrer');
 
   workshopStatus = { online: false, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: null, portalUrl: 'http://10.0.0.124', printer: null };
-  await page.locator('#uxIntegrationRefreshV2').click();
+  await page.locator('#statusRetryBtn').click();
   await page.waitForFunction(s => /Not answering/.test(document.querySelector(s)?.textContent || ''), live);
   assert.doesNotMatch(await card.locator(live).getAttribute('class'), /healthy/);
   assert.equal(await link.isVisible(), true, 'the portal can still be opened while the appliance cannot reach it');
   assert.equal(await link.getAttribute('href'), 'http://10.0.0.124');
 
   workshopStatus = { ...workshopStatus, portalUrl: null };
-  await page.locator('#uxIntegrationRefreshV2').click();
+  await page.locator('#statusRetryBtn').click();
   await page.waitForFunction(s => /Address not set up/.test(document.querySelector(s)?.textContent || ''), live);
   assert.equal(await card.locator('[data-integration-portal]').isVisible(), false, 'no link without a valid address');
   workshopStatus = WORKSHOP_ONLINE;
-  await page.locator('#uxIntegrationRefreshV2').click();
+  await page.locator('#statusRetryBtn').click();
   await page.waitForFunction(s => /Online/.test(document.querySelector(s)?.textContent || ''), live);
 });
 
 await check('the Workshop display card: a 401 reads as online with its own sign-in, never offline; printer status words', async () => {
   const card = page.locator('.ux-int-card', { hasText: 'Workshop display' });
   const live = '[data-integration-source-v2="workshop"]';
-  const refresh = async (status, re) => { workshopStatus = status; await page.locator('#uxIntegrationRefreshV2').click(); await page.waitForSelector('#uxIntegrationRefreshV2[aria-busy="false"]'); await page.waitForFunction(([s, r]) => new RegExp(r).test(document.querySelector(s)?.textContent || ''), [live, re.source]); };
+  const refresh = async (status, re) => { workshopStatus = status; await page.locator('#statusRetryBtn').click(); await page.waitForSelector('#statusConnections[aria-busy="false"]'); await page.waitForFunction(([s, r]) => new RegExp(r).test(document.querySelector(s)?.textContent || ''), [live, re.source]); };
   const signedIn = { online: true, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: true, portalUrl: 'http://10.0.0.124', printer: null };
   await refresh(signedIn, /Online · sign-in on/);
   assert.match(await card.locator(live).getAttribute('class'), /healthy/);
@@ -199,7 +199,7 @@ await check('Obsidian is modeled as a local vault bridge', async () => {
 });
 
 await check('external trust crossings are explicit', async () => {
-  const external = page.locator('#integrations [data-external="true"]');
+  const external = page.locator('#statusConnections [data-external="true"]');
   assert.ok(await external.count() >= 6);
   for (const link of await external.all()) {
     assert.match(await link.getAttribute('aria-label'), /opens external site/i);
@@ -219,12 +219,20 @@ await check('reviewed alternatives are progressive disclosure', async () => {
 });
 
 await check('integration status refresh is resilient and remains in-page', async () => {
-  const button = page.locator('#uxIntegrationRefreshV2');
+  const button = page.locator('#statusRetryBtn');
   await button.click();
-  await page.waitForFunction(() => document.querySelector('#uxIntegrationRefreshV2')?.getAttribute('aria-busy') === 'false');
-  assert.ok(await page.locator('#uxIntegrationStatusSummaryV2').isVisible());
-  assert.ok(await page.locator('#uxIntegrationLastCheckedV2').isVisible());
+  await page.waitForFunction(() => document.querySelector('#statusConnections')?.getAttribute('aria-busy') === 'false');
+  assert.match(await page.locator('#uxIntegrationStatusSummaryV2').innerText(), /^Checked /);
   assert.equal(await button.isEnabled(), true);
+  // A failed read says so, keeps the cards, and the next Check again recovers.
+  let failReads = true;
+  await page.route(u => ['/api/status', '/api/gridcraft/health', '/api/artcraft/status', '/api/workshop/status'].includes(u.pathname), r => failReads ? r.abort() : r.fallback());
+  await button.click();
+  await page.waitForFunction(() => /unavailable/.test(document.querySelector('#uxIntegrationStatusSummaryV2')?.textContent || ''));
+  assert.ok(await page.locator('#uxIntegrationCardsV2 .ux-int-card').count() >= 6, 'the cards stay when the read fails');
+  failReads = false;
+  await button.click();
+  await page.waitForFunction(() => /^Checked /.test(document.querySelector('#uxIntegrationStatusSummaryV2')?.textContent || ''));
 });
 
 await check('each service says when it was last asked and whether it answered; no answer never reads as healthy', async () => {
@@ -262,14 +270,10 @@ const mobile = await browser.newPage({ serviceWorkers: 'block', viewport: { widt
 await mobile.goto(base, { waitUntil: 'domcontentloaded' });
 await mobile.waitForSelector('#uxMobileNav');
 
-await check('integration hub is reachable on mobile', async () => {
+await check('the connections are on Status on mobile', async () => {
   await mobile.locator('#uxMobileNav [data-domain="system"]').click();
   await mobile.waitForSelector('#status.active');
-  const link = mobile.locator('#uxPageStrip [data-strip-view="integrations"]');
-  await link.waitFor({ state: 'visible' });
-  await link.click();
-  await mobile.waitForSelector('#integrations.active');
-  await mobile.waitForSelector('#integrations[data-integration-v2="true"]');
+  await mobile.waitForSelector('#statusConnections[data-integration-v2="true"]');
 });
 
 await check('integration hub does not create horizontal page overflow on mobile', async () => {
@@ -305,9 +309,9 @@ await mobile.close();
   // Capture what Copy puts on the clipboard.
   await phone.addInitScript(() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async t => { window.__copied.push(t); } } }); });
   await phone.goto(`${base}#integrations`, { waitUntil: 'domcontentloaded' });
-  await phone.waitForSelector('#integrations.active[data-integration-v2="true"]');
+  await phone.waitForSelector('#status.active #statusConnections[data-integration-v2="true"]');
   const card = phone.locator('.ux-int-card', { hasText: 'Workshop display' });
-  const refresh = async () => { await phone.locator('#uxIntegrationRefreshV2').click(); await phone.waitForSelector('#uxIntegrationRefreshV2[aria-busy="false"]'); };
+  const refresh = async () => { await phone.locator('#statusRetryBtn').click(); await phone.waitForSelector('#statusConnections[aria-busy="false"]'); };
   const show = card.getByRole('button', { name: 'Show sign-in code' });
   const value = card.locator('[data-workshop-code-value]');
 
