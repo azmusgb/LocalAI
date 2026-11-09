@@ -250,6 +250,7 @@ async function main() {
     await step('Validate deployment candidate', 'pwsh', ['-NoProfile', '-File', 'deploy/Test-LocalAI-Candidate.ps1', '-CandidateRoot', '.', '-LocalNode']);
   } else say('\n(pwsh not installed: PowerShell steps skipped)');
   await step('No private-key files', 'sh', ['-c', "! find app -type f \\( -name '*.pem' -o -name '*.key' -o -name '*.pfx' -o -name '*.p12' -o -name '.env' \\) | grep ."]);
+  await step('Kit drift', 'node', ['scripts/kit-drift.mjs']);  // prints the kit copy's line; warn-only unless KIT_DRIFT_ENFORCE=1
   const browser = await browserSuites();
   results.push(['Browser acceptance', browser.ok]);
   if (browser.retried.length) say(`(passed on retry: ${browser.retried.join(', ')})`);
