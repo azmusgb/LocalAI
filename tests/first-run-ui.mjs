@@ -74,7 +74,7 @@ await check('a new install sees Improve and System › Tools, and Settings has n
   assert.equal(await page.locator('.ux-primary-item[data-domain="improve"]').isVisible(), true);
   await page.evaluate(() => window.showView('tools'));
   await page.waitForSelector('#tools.active #toolsCards .tool-card');
-  assert.equal(await page.locator('#toolsCards .tool-card').count(), 6);
+  assert.equal(await page.locator('#toolsCards .tool-card').count(), 5);
   await page.evaluate(() => window.showView('settings'));
   await page.waitForSelector('#settings.active');
   assert.equal(await page.locator('.dev-tools-pref').count(), 0);

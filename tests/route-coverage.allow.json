@@ -1,0 +1,23 @@
+[
+  "/api/activity/clear",
+  "/api/automations/update",
+  "/api/brief",
+  "/api/changes/capabilities",
+  "/api/display/pair/status",
+  "/api/images/checkpoints",
+  "/api/issues/update",
+  "/api/models/pull/cancel",
+  "/api/models/pulls",
+  "/api/monitors/run",
+  "/api/powershell/cancel",
+  "/api/powershell/host/result",
+  "/api/powershell/jobs",
+  "/api/projects/intelligence",
+  "/api/projects/update",
+  "/api/quality/scan",
+  "/api/repo/inspect",
+  "/api/workbench/diff",
+  "/api/workbench/read",
+  "/api/workbench/search",
+  "/api/workshop/camera.jpg"
+]

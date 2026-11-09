@@ -76,7 +76,7 @@ await check('tapping the garage on the map opens Services', async () => {
     const wx = (27 + 2) * 32, wy = (10 + 2) * 32; return { x: r.left + cam.shown.panX + wx * s, y: r.top + cam.shown.panY + wy * s };
   });
   await page.mouse.click(pt.x, pt.y);
-  await page.waitForFunction(() => document.querySelector('#integrations')?.classList.contains('active'), null, { timeout: 4000 });
+  await page.waitForFunction(() => document.querySelector('#status')?.classList.contains('active'), null, { timeout: 4000 });
   await page.evaluate(() => window.showView('agents'));
   await page.waitForFunction(() => document.querySelectorAll('#awcLayerRows button').length === 4);
 });

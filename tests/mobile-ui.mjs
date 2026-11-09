@@ -44,7 +44,7 @@ await check('no page scrolls sideways and no form field makes iOS zoom', async (
 });
 
 await check('the top bar stays at the top while scrolling', async () => {
-  await page.evaluate(() => window.showView('integrations'));
+  await page.evaluate(() => window.showView('status'));
   await page.waitForTimeout(300);
   await page.evaluate(() => window.scrollTo(0, 1200));
   await page.waitForTimeout(150);
@@ -187,7 +187,7 @@ await check('shell: a page action shows in the header only on its page', async (
   await shell.evaluate(() => window.LocalAIShell.clearAction('activity'));
 });
 
-await check('shell: many page tabs scroll on a 320px phone and the active one is in view', async () => {
+await check('shell: the page tabs stay on one line on a 320px phone and the active one is in view', async () => {
   await shell.setViewportSize({ width: 320, height: 640 });
   await shell.evaluate(() => window.showView('powershell'));
   await shell.waitForTimeout(200);
@@ -195,7 +195,7 @@ await check('shell: many page tabs scroll on a 320px phone and the active one is
     const strip = document.querySelector('#uxPageStrip'), s = strip.getBoundingClientRect(), a = strip.querySelector('[aria-current="page"]').getBoundingClientRect();
     return { scrolls: strip.scrollWidth > strip.clientWidth, inView: a.left >= s.left - 1 && a.right <= s.right + 1, sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, wraps: s.height > 45 };
   });
-  assert.ok(r.scrolls, 'Build has more tabs than fit, so the strip scrolls');
+  // System's five tabs may fit at 320 px now; if they do not, the strip scrolls rather than wraps (checked below).
   assert.ok(r.inView, 'the active tab is scrolled into view');
   assert.ok(!r.wraps, 'tabs stay on one line');
   assert.ok(r.sw <= r.cw + 1, `page scrolls sideways: ${r.sw} > ${r.cw}`);
@@ -359,7 +359,7 @@ await check('⌘K on a phone: a bottom sheet with the search at its top and the 
     assert.equal(r.groups[0].label, 'Recent');
     assert.deepEqual(r.groups[0].items.slice(0, 3), ['library', 'models', 'inbox'], 'most recent first');
     assert.ok(r.groups.length >= 2 && r.groups.every(g => g.label && g.items.length), JSON.stringify(r.groups));
-    assert.ok(r.groups.some(g => g.label === 'System' && g.items.includes('integrations')), 'then the pages of the section you are in');
+    assert.ok(r.groups.some(g => g.label === 'System' && g.items.length === 4), 'then the pages of the section you are in: ' + JSON.stringify(r.groups));
     await p.fill('#cmdkInput', 'audit');
     await p.waitForTimeout(100);
     assert.deepEqual(await p.evaluate(() => [...document.querySelectorAll('#cmdkList [role="option"]')].map(o => o.dataset.cmdView)), ['activity'], 'typing reaches every page');
