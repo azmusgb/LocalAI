@@ -16,7 +16,9 @@ function run({ env = {}, driftExit = null, fakeGit = true } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kit-drift-test-'));
   const bin = path.join(dir, 'bin');
   fs.mkdirSync(bin);
-  const full = { ...process.env, KIT_DRIFT_ENFORCE: '' };
+  const scratch = path.join(dir, 'tmp');   // the script's os.tmpdir(), so only its own leftovers show
+  fs.mkdirSync(scratch);
+  const full = { ...process.env, KIT_DRIFT_ENFORCE: '', TMPDIR: scratch };
   if (fakeGit) {
     const fake = path.join(bin, 'git');
     // git --version must still work; a clone makes the destination (the last argument) with or without drift.mjs.
@@ -26,6 +28,7 @@ function run({ env = {}, driftExit = null, fakeGit = true } = {}) {
     Object.assign(full, { PATH: bin + path.delimiter + process.env.PATH, KIT_STUB_LINE: LINE.replace(/\t/g, '\\t'), KIT_STUB_EXIT: String(driftExit ?? 0) });
   }
   const r = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', env: { ...full, ...env } });
+  r.leftovers = fs.readdirSync(scratch).filter(f => f.startsWith('kit-drift-'));
   fs.rmSync(dir, { recursive: true, force: true });
   return r;
 }
@@ -58,4 +61,14 @@ test('KIT_DRIFT_ENFORCE=1 turns a drift failure into a failure', () => {
   const r = run({ driftExit: 1, env: { KIT_DRIFT_ENFORCE: '1' } });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.ok(r.stdout.includes(LINE), r.stdout);
+});
+
+test('no kit-drift temp directory is left behind, whichever way it ends', () => {
+  const runs = [
+    run({ env: { KIT_DRIFT_URL: '/nonexistent/appliance-ui' }, fakeGit: false }),   // clone fails
+    run(),                                                                          // no drift.mjs
+    run({ driftExit: 0 }), run({ driftExit: 1, env: { KIT_DRIFT_ENFORCE: '1' } }),  // stubbed drift
+    run({ driftExit: 7 }),                                                          // bad drift exit
+  ];
+  for (const r of runs) assert.deepEqual(r.leftovers, [], r.stdout);
 });
