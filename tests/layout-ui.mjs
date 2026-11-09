@@ -169,7 +169,7 @@ await check('phone: under each page title, status sits on the left and the page 
     const r = await page.evaluate(i => {
       const bar = document.querySelector(`#${i}.active > .topbar`); if (!bar || getComputedStyle(bar).display === 'none') return null;
       const box = bar.getBoundingClientRect(), vis = k => k.getBoundingClientRect().width > 0;
-      const pill = [...bar.querySelectorAll('.pill, .statuschip, .badge')].find(vis), btns = [...bar.querySelectorAll('button, .btn')].filter(vis), btn = btns.at(-1);
+      const pill = [...bar.querySelectorAll('.pill, .statuschip, .badge')].find(vis), btns = [...bar.querySelectorAll('button, .btn')].filter(k => vis(k) && !k.matches('[data-pin-toggle]')), btn = btns.at(-1);
       return { pillLeft: pill ? pill.getBoundingClientRect().left - box.left : null, btnRight: btn ? box.right - btn.getBoundingClientRect().right : null };
     }, id);
     if (!r) continue;
