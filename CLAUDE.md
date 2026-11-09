@@ -63,9 +63,10 @@ without it the call is listed on Health as one that would be refused). Mutating 
 - **`app/public/ui.js` is a hand-edited bundle**: sections start `// ==== name.js ====`, each its own scope.
   Edit in place; there is no source to rebuild from. `app/public/app.css` is one file in cascade order; the
   design-system section maps old tokens onto `--ds-*`. Use `--ds-*` tokens.
-- **UI follows the Home Platform design contract**: appliance-ui `DESIGN.md`
-  (https://github.com/azmusgb/appliance-ui/blob/main/DESIGN.md), after Pi Hub's baseline and amendments A4/A6/A7. The
-  Assistant uses the same page anatomy, Needs-you list, words and honest states as Pi Hub. Contrast comes from the
+- **Read the Home Platform design contract before any UI work**: appliance-ui `DESIGN.md`
+  (https://github.com/azmusgb/appliance-ui/blob/main/DESIGN.md). Read it at the start of the task, not from memory or
+  from this summary. Pi Hub's baseline and its approved amendments (A4, A6, A7 and later) win where they differ. If you
+  can't open it (no network, no access), say so and stop before changing a screen. The Assistant uses the same page anatomy, Needs-you list, words and honest states as Pi Hub. Contrast comes from the
   kit's measured `docs/contrast.md`; new tokens or components go into appliance-ui and are synced into `app/public/ui`.
 - **Navigation lives in `app/public/view-registry.js`.** New page = registry entry + `<section id>` in
   `index.html`; retired ids go in `ALIASES`. Use the registry's labels in docs and UI text.
