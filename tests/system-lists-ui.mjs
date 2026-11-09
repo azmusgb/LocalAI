@@ -62,12 +62,12 @@ await check('Audit log: Clear user activity is not in the page header, and shows
   await page.unroute('**/api/activity');
 });
 
-await check('Settings: Notifications comes first, then Sign-in and Home location; Health has none of them', async () => {
+await check('Settings: Notifications comes first, then Sign-in, Pages you open and Home location; Health has none of them', async () => {
   await page.evaluate(() => window.showView('settings'));
   await page.waitForSelector('#settings.active #notifications', { state: 'attached' });
   await page.waitForSelector('#settings .voice-home-pref', { state: 'attached' });
   const order = await page.evaluate(() => [...document.querySelectorAll('#settings > .card')].map(e => e.id || (e.querySelector('#signinList') ? 'signin' : e.className.split(' ')[0])));
-  assert.deepEqual(order, ['notifications', 'signin', 'voice-home-pref', 'diag-pref']);
+  assert.deepEqual(order, ['notifications', 'signin', 'pagesOpenCard', 'voice-home-pref', 'diag-pref']);
   assert.equal(await page.locator('#status #notifications, #status .voice-home-pref, #status #signinList').count(), 0);
 });
 

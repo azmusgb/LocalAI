@@ -1090,6 +1090,17 @@ function buildMobile(){
  DOMAINS.forEach(d=>{const b=document.createElement('button');b.type='button';b.dataset.domain=d.id;b.innerHTML='<b>'+icon(d.icon)+'</b><span>'+d.label+'</span>';b.addEventListener('click',()=>navigate(d.defaultView));nav.appendChild(b)});
  document.body.append(nav);
 }
+// Page-open counter (D5): each page change is reported once, after a short pause, never the same page twice in a row.
+// Fire-and-forget: a failure is silent and never touches navigation. A tab reports as itself (its registry id).
+let openTimer=0,openLast='';
+function countOpen(view){
+ if(openTimer||!REG.view(view))return;
+ openTimer=setTimeout(()=>{
+  openTimer=0;const id=REG.view(activeView())?.id;
+  if(!id||id===openLast)return;openLast=id;
+  try{fetch('/api/nav/open',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({view:id}),keepalive:true}).catch(()=>{})}catch{}
+ },1200);
+}
 function sync(forced){
  const view=REG.view(forced||activeView())?.id||forced||activeView(),d=domainForView(view);document.body.dataset.domain=d.id;document.body.dataset.view=view;
  // A hidden page (Missions, Chat, Images) names itself in the top bar and lights the area that owns it.
@@ -1097,6 +1108,7 @@ function sync(forced){
  q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);syncHeaderAction(view);{const g=q('#uxContextGreeting');if(g)g.textContent=greeting()};
  qa('.ux-primary-item').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
  qa('#uxMobileNav [data-domain]').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
+ countOpen(view);
 }
 // Mid-switch no page is active for a moment; syncing then would take it for Home and hide the strip under the focus.
 function observeViews(){const views=qa('.view');if(!views.length)return;const mo=new MutationObserver(()=>{if(q('.view.active'))sync()});views.forEach(v=>mo.observe(v,{attributes:true,attributeFilter:['class']}));
@@ -4198,7 +4210,29 @@ function mountDiagnostics(){
  const box=q('input',row);box.checked=!document.body.classList.contains('diagnostics-off');
  box.addEventListener('change',()=>{pref.set(DIAG_KEY,box.checked?'1':'0');applyDiagnostics(box.checked)});
 }
-function init(){applyDiagnostics(pref.get(DIAG_KEY)!=='0');mountHomeLocation();mountDiagnostics();mountFirstRun()}
+// Pages you open: the top ten pages of the last 30 days, counted on this appliance only (app/server/nav.js).
+function mountPagesOpened(){
+ const card=q('#pagesOpenCard'),list=q('#pagesOpenList'),reset=q('#pagesOpenReset'),sec=q('#settings');if(!card||!list||!reset||!sec)return;
+ async function load(){
+  try{
+   const r=await fetch('/api/nav/opens?days=30',{cache:'no-store'}),d=await r.json().catch(()=>null);
+   if(!r.ok||!Array.isArray(d))throw new Error((d&&d.error)||'HTTP '+r.status);
+   reset.hidden=!d.length;
+   list.innerHTML=d.length?d.slice(0,10).map(x=>`<li class="pages-open-row"><span>${esc(x.label)}</span><span class="meta">${x.count}</span></li>`).join(''):'<li class="meta">Nothing counted yet</li>';
+  }catch(e){reset.hidden=true;list.innerHTML=`<li class="meta">Couldn't read the counts: ${esc(e.message||e)}</li>`}
+ }
+ reset.addEventListener('click',async()=>{
+  const a=await window.LocalAIUI.ask({title:'Reset the pages you open?',effect:'This forgets every page count. It does not change anything else.',confirmLabel:'Reset',tone:'danger'});
+  if(!a.ok)return;
+  reset.disabled=true;
+  try{const r=await fetch('/api/nav/opens',{method:'DELETE'});if(!r.ok)throw new Error('HTTP '+r.status)}
+  catch(e){list.innerHTML=`<li class="meta">Couldn't reset the counts: ${esc(e.message||e)}</li>`;reset.disabled=false;return}
+  reset.disabled=false;load();
+ });
+ let was=false;new MutationObserver(()=>{const now=sec.classList.contains('active');if(now&&!was)load();was=now}).observe(sec,{attributes:true,attributeFilter:['class']});
+ if(sec.classList.contains('active')){was=true;load()}
+}
+function init(){applyDiagnostics(pref.get(DIAG_KEY)!=='0');mountHomeLocation();mountDiagnostics();mountPagesOpened();mountFirstRun()}
 window.LocalAIFirstRun={DONE_KEY,DIAG_KEY,applyDiagnostics};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();

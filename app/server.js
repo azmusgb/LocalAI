@@ -401,6 +401,7 @@ const { bridgeHealth, gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGrid
 const { addNotification, apiApprovalCreate, apiApprovalDecide, apiApprovals, apiNotificationSeed, apiNotificationSystem, apiNotificationUpdate, apiNotifications, approvalStore, notificationStore, resolveDeployFailures } = require('./server/notifications').createNotifications({ APPROVALS_STORE, NOTIFICATIONS_STORE, changeStore: (...a) => changeStore(...a), decideChange: (...a) => decideChange(...a), hostDetail, isInfoNotice, json, makeId, normalizeTitle, notifier, notifyLib, nowIso, objectStore, prependRecord, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
 const { apiNavPins } = require('./server/nav-pins').createNavPins({ json, readBody, sameOriginJson, storage, storageError });
 const { apiJournal, apiJournalDelete } = require('./server/journal').createJournalRoutes({ journal, json, readBody, storageError });
+const { apiNavOpen, apiNavOpens, apiNavOpensClear } = require('./server/nav').createNav({ json, readBody, sameOriginJson, storage, storageError });
 const { accessAddresses, apiAccess, apiPush, apiReleases, recordReleaseHistory } = require('./server/push').createPush({ APP_VERSION, json, notifier, nowIso, pushLib, readBody, release, resolveDeployFailures, storage, storageError });
 const { apiBrowserFetch, apiComputerBatch, apiHttpCheck, apiRepoInspect, apiWorkbenchCommand, apiWorkbenchDiff, apiWorkbenchRead, apiWorkbenchSearch, apiWorkbenchTree, apiWorkbenchWrite, childEnv, safeWorkspacePath, simpleDiff, workspaceRel } = require('./server/workbench').createWorkbench({ URL, WORKSPACE_ROOT, fetchWithTimeout, fs, json, path, readBody, recordActivity, requireFeature, spawn, storageError });
 const { apiConversationDelete, apiConversationSave, apiConversations, apiKnowledge, apiKnowledgeDelete, apiKnowledgeImport, apiKnowledgeSearch, apiMemory, apiMemoryAdd, apiMemoryDelete, apiMemoryUpdate, apiProjectIntelligence, apiProjects, apiProjectsCreate, apiProjectsUpdate, knowledgeScore, knowledgeStore, projectStore } = require('./server/projects').createProjects({ CONVERSATIONS_STORE, KNOWLEDGE_STORE, MEMORY_STORE, PROJECTS_STORE, json, makeId, normalizeTitle, nowIso, objectStore, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
@@ -445,6 +446,9 @@ const server = http.createServer(async (req, res) => {
     if ((req.method === 'GET' || req.method === 'PUT') && p === '/api/nav/pins') return await apiNavPins(req, res);
     if (req.method === 'GET' && p === '/api/journal') return await apiJournal(req, res, urlObj);
     if (req.method === 'POST' && p === '/api/journal/delete') return await apiJournalDelete(req, res);
+    if (req.method === 'POST' && p === '/api/nav/open') return await apiNavOpen(req, res);
+    if (req.method === 'GET' && p === '/api/nav/opens') return await apiNavOpens(req, res, urlObj);
+    if (req.method === 'DELETE' && p === '/api/nav/opens') return await apiNavOpensClear(req, res);
     if (req.method === 'GET' && p === '/api/releases') return await apiReleases(req, res);
     if (req.method === 'GET' && p === '/api/access') return await apiAccess(req, res);
     if (req.method === 'GET' && p === '/api/glance') return await apiGlance(req, res, urlObj);
