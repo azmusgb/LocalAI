@@ -240,7 +240,7 @@ await check('each service says when it was last asked and whether it answered; n
   let n8n = { name: 'n8n', state: 'HEALTHY', statusCode: 200, checkedAt: ago };
   const isStatus = u => u.pathname === '/api/status';
   await page.route(isStatus, r => r.fulfill({ json: { overall: 'DEGRADED', checkedAt: ago, services: [n8n, { name: 'comfy', state: 'DOWN', statusCode: null, error: 'refused' }] } }));
-  const refresh = async () => { await page.waitForFunction(() => document.querySelector('#uxIntegrationRefreshV2')?.getAttribute('aria-busy') === 'false'); await page.locator('#uxIntegrationRefreshV2').click(); };
+  const refresh = async () => { await page.waitForFunction(() => document.querySelector('#statusConnections')?.getAttribute('aria-busy') === 'false'); await page.locator('#statusRetryBtn').click(); };
   const seen = name => page.locator(`[data-integration-seen="${name}"]`);
   const clock = d => new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   await refresh();
