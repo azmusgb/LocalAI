@@ -48,7 +48,7 @@ await check('System: Tools lists every tool, each opens at its address with Tool
   assert.equal(await page.locator('#uxAdvancedStrip').count(), 0, 'no second strip');
   await page.locator('#uxPageStrip [data-strip-view="tools"]').click();
   await page.waitForSelector('#tools.active', { timeout: 5000 });
-  assert.deepEqual(await page.locator('#toolsCards .tool-card strong').allInnerTexts(), ['Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows', 'Architecture']);
+  assert.deepEqual(await page.locator('#toolsCards .tool-card strong').allInnerTexts(), ['Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows']);
   for (const hash of ['workbench', 'repoTools', 'powershell', 'actions', 'automations']) {
     await page.evaluate(h => { location.hash = '#' + h; }, hash);
     await page.waitForSelector(`#${hash}.active`, { timeout: 5000 });
@@ -57,11 +57,45 @@ await check('System: Tools lists every tool, each opens at its address with Tool
   }
   await page.evaluate(() => { location.hash = '#tools'; });
   await page.waitForSelector('#tools.active', { timeout: 5000 });
-  await page.locator('#toolsCards [data-tool="architecture"]').click();
+  assert.equal(await page.locator('#toolsCards [data-tool="architecture"]').count(), 0, 'Architecture is not a tool card');
+  await page.evaluate(() => { location.hash = '#architecture'; });
   await page.waitForSelector('#architecture.active', { timeout: 5000 });
   assert.equal(await crumbOf(page), 'Improve');
   assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Atlas');
-  assert.deepEqual(await stripLabels(), ['Backlog', 'In progress', 'Shipped', 'Signals', 'Claude', 'Atlas']);
+  assert.deepEqual(await stripLabels(), ['Changes', 'Signals', 'Claude', 'Atlas']);
+});
+
+// One Changes page (navigation depth, D4): In progress and Shipped keep their addresses, light Changes and share its stage chips.
+await check('Improve: Backlog, In progress and Shipped are one Changes page with stage chips', async () => {
+  const stages = [['backlog', 'Backlog'], ['inProgress', 'Doing'], ['shipped', 'Shipped']];
+  for (const [id, current] of stages) {
+    await page.evaluate(h => { location.hash = '#' + h; }, id);
+    await page.waitForSelector(`#${id}.active`, { timeout: 5000 });
+    assert.deepEqual(await stripLabels(), ['Changes', 'Signals', 'Claude', 'Atlas'], `${id} strip`);
+    assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Changes', `${id} lights Changes`);
+    const chips = page.locator(`#${id} .changes-stages a`);
+    assert.deepEqual(await chips.allInnerTexts(), ['Backlog', 'Doing', 'Shipped'], `${id} chips`);
+    assert.deepEqual(await page.locator(`#${id} .changes-stages a[aria-current="page"]`).allInnerTexts(), [current], `${id} aria-current`);
+    assert.deepEqual(await chips.evaluateAll(as => as.map(a => a.getAttribute('href'))), ['#backlog', '#inProgress', '#shipped']);
+  }
+  await page.locator('#shipped .changes-stages a', { hasText: 'Backlog' }).click();
+  await page.waitForSelector('#backlog.active', { timeout: 5000 });
+  assert.equal(await page.locator('#backlog h1').innerText(), 'Changes');
+  await page.locator('#backlog .changes-stages a', { hasText: 'Doing' }).click();
+  await page.waitForSelector('#inProgress.active', { timeout: 5000 });
+  assert.equal(await page.evaluate(() => location.hash), '#inProgress');
+});
+
+// A strip has at most five items in every area (navigation depth). System is at six until Connections joins Status (step 2),
+// which sets its limit to five.
+const STRIP_MAX = { work: 5, projects: 5, improve: 5, system: 6 };
+await check('every area strip has at most 5 items', async () => {
+  for (const area of ['work', 'projects', 'improve', 'system']) {
+    await page.evaluate(h => { location.hash = '#' + h; }, area === 'improve' ? 'backlog' : area === 'system' ? 'status' : area);
+    await page.waitForSelector(`body[data-domain="${area}"]`, { timeout: 5000 });
+    const n = await page.locator('#uxPageStrip button').count();
+    assert.ok(n <= STRIP_MAX[area], `${area} strip has ${n} items`);
+  }
 });
 
 // The legacy pages are retired (owner decision D4): their addresses land on the page that replaced them.
@@ -353,6 +387,9 @@ await check('phone 390: the System, Projects and Improve strips have every tab o
     await pg.waitForTimeout(200);
     const off = await pg.evaluate(() => { const s = document.querySelector('#uxPageStrip').getBoundingClientRect(); return [...document.querySelectorAll('#uxPageStrip button')].filter(b => { const r = b.getBoundingClientRect(); return r.left < s.left - 1 || r.right > s.right + 1; }).map(b => b.textContent); });
     assert.deepEqual(off, [], `${view}: tabs off-screen`);
+    // Improve's four items fit without scrolling; System's six still scroll until Connections joins Status (step 2).
+    const fit = await pg.evaluate(() => { const s = document.querySelector('#uxPageStrip'); return [s.scrollWidth, s.clientWidth]; });
+    if (view === 'backlog') assert.ok(fit[0] <= fit[1], `${view}: strip overflows (${fit[0]} > ${fit[1]})`);
   }
   await ctx.close();
 });
