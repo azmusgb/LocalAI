@@ -13,7 +13,7 @@ const app = fs.readFileSync(path.join(pub, 'app.js'), 'utf8');
 const sw = fs.readFileSync(path.join(pub, 'sw.js'), 'utf8');
 
 // Views whose section and nav button are created at runtime by another script.
-const INJECTED = { models: 'ui.js', runs: 'ui.js', integrations: 'ui.js' };
+const INJECTED = { models: 'ui.js', runs: 'ui.js' };
 // Registered ahead of its section: Task 3 of the navigation plan creates #work.
 const PENDING = new Set(['work']);
 

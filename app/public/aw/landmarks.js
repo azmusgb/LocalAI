@@ -49,7 +49,7 @@ function rows(){
  const r=(id,label,[s,d])=>({id,label,detail:d?s+' · '+d:s});
  return[r('models','Model Foundry',modelSay(world.models)),r('printer','Workshop garage',printerSay(world.printer)),r('sheets','Spreadsheets office',sheetSay(world.sheets)),r('kiosk','Display billboard',kioskSay(world.kiosk))];
 }
-const OPEN={models:'models',printer:'integrations',sheets:'spreadsheets',kiosk:'integrations'};
+const OPEN={models:'models',printer:'status',sheets:'spreadsheets',kiosk:'status'};
 function open(it){const v=OPEN[it?.id];if(v&&typeof window.showView==='function')window.showView(v)}
 function hit(x,y){
  const inB=b=>{const q=px(b);return x>=q.x&&x<q.x+q.w&&y>=q.y&&y<q.y+q.h};

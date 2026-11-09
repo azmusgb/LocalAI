@@ -29,7 +29,7 @@ function whereIs(id) {
   const name = v.parent ? (v.tab || v.label) : v.label;
   return domain && domain.label !== name ? `${name} in ${domain.label}` : name;
 }
-const PLACES = ['spreadsheets', 'library', 'automationStudio', 'inbox', 'integrations', 'models', 'status', 'shipped', 'activity'];
+const PLACES = ['spreadsheets', 'library', 'automationStudio', 'inbox', 'models', 'status', 'shipped', 'activity'];
 
 // addresses: [{ label, url }] as accessAddresses() returns them (Home Wi-Fi, Anywhere (Tailscale)).
 function aboutApplianceBlock({ addresses = [] } = {}) {
