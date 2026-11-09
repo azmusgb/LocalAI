@@ -30,9 +30,8 @@ const VIEWS=[
 // Automations is a tab of Work (scheduled work): navigation spec, step 3. Projects holds only what you keep (2 Nov, D4).
  {id:'library',svg:'library',domain:'projects',section:'Keep',parent:'projects',tab:'Library',label:'Library',description:'What you kept: chats, research and images.',aka:['kept']},
  
- {id:'status',svg:'health',short:'Status',domain:'system',section:'Status',label:'Assistant status',description:'Whether Local AI is working, and which optional services are up.',aka:['status','assistant status','health']},
+ {id:'status',svg:'health',short:'Status',domain:'system',section:'Status',label:'Assistant status',description:'Whether Local AI is working, and which optional services are up.',aka:['status','assistant status','health','connections','integrations','services','bridges','tools']},
  {id:'models',svg:'model',domain:'system',section:'Status',label:'Models',description:"Installed models and what's loaded now."},
- {id:'integrations',svg:'plug',domain:'system',section:'Status',label:'Connections',description:'What Local AI connects to, and whether each one is ready.',aka:['integrations','services','bridges','tools']},
  // Agent World is a tab of Work (Pi Hub A7 plan, decision 9): Work · Agent World · Assistant automations. It has its own
  // address again (no alias), and titles itself Agent World: the mission is its faceplate, not its heading.
  {id:'agents',svg:'target',domain:'work',section:'Work',parent:'work',tab:'Agent World',label:'Agent World',description:'Give the team a goal; watch them work it.',aka:['agents','missions','mission','agent operations']},
@@ -63,7 +62,8 @@ const VIEWS=[
 // Improve's four stages replaced Change requests, Issues and Quality signals: old links land on the stage that shows them.
 // Monitors folded into Automations as its Health check and Morning brief kinds (D9).
 // Deployments merged into Shipped (2 Nov): its Running now card is the release evidence.
-const ALIASES={deployments:'shipped',approvals:'inbox',operations:'automationStudio',engineering:'inProgress',changes:'inProgress',issues:'signals',quality:'signals',runs:'work',ask:'home',create:'home'};
+// Connections merged into Status (9 Nov, D1): its cards sit under the Services list.
+const ALIASES={deployments:'shipped',approvals:'inbox',operations:'automationStudio',engineering:'inProgress',changes:'inProgress',issues:'signals',quality:'signals',runs:'work',ask:'home',create:'home',integrations:'status'};
 const byId=new Map(VIEWS.map(v=>[v.id,v]));
 function resolve(id){return ALIASES[id]||id}
 // A view that still has its own page (hidden ones) wins over its alias.
