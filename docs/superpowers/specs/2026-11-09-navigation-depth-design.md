@@ -1,6 +1,7 @@
 # Navigation depth: fewer places, one way to move between them
 
-Date: 2026-11-09. Status: proposed, waiting for the owner's decisions D1-D5. Amends
+Date: 2026-11-09. Status: approved by the owner ("All", 9 Nov 2026), D1-D5 as recommended. Plan:
+`docs/superpowers/plans/2026-11-09-navigation-depth.md`. Amends
 `2026-11-02-navigation-tools-settings-design.md` and `2026-10-17-navigation-structure-design.md`. The five areas,
 the phone bar, Home's composer, ⌘K and the `ALIASES` for old addresses all stay.
 
@@ -49,8 +50,7 @@ Ranked by how much each costs the owner:
 4. **Improve splits one list into three pages.** Backlog, In progress and Shipped are stages of the same item, and each
    page on a quiet day is a heading and an empty state.
 5. **Two kinds of strip.** See the table above. A person can't predict whether a strip item changes the page or only
-   its contents, or whether "← Home" or the rail is the way back. The top bar shows "← Home" on desktop beside the rail,
-   which already has Home.
+   its contents.
 
 There is no record of which pages the owner opens. The audit log records actions, not page views, so this design does
 not claim frequencies. D5 proposes counting them.
@@ -75,7 +75,6 @@ not claim frequencies. D5 proposes counting them.
 | Tools | System › Tools › card (3 clicks) | Unchanged, plus pins (D2). Cards show "last used" so the page leads with what the owner uses |
 | Architecture card on Tools | A second way into Atlas | Removed; Atlas is Improve's tab (D3) |
 | Pins | None | Up to four pages pinned by the owner, shown as a row on Home under the composer and in the ⌘K palette's first group. Pin or unpin from a page's heading menu |
-| "← Home" in the top bar | Every page, desktop and phone | Phone only, where there is no rail |
 | Work filters | 8 chips | Unchanged in this design; listed under Open questions |
 
 After this, every page is at most two clicks from Home, and any pinned page is one.
@@ -106,8 +105,10 @@ After this, every page is at most two clicks from Home, and any pinned page is o
    tests updated.
 2. Changes page (stage chips over the existing Improve data) and Status page (merged services list).
 3. Pins: storage, Home row, palette group and heading menu.
-4. Top bar "← Home" on phone only.
-5. If D5: the page-open counter and its Settings card.
+4. The page-open counter and its Settings card (D5).
+
+"← Home" in the top bar stays on every page: it goes to Pi Hub (the platform's level 0, from the tool registry), not to
+Local AI's Home, so the rail does not repeat it. An earlier draft of this design proposed hiding it on desktop.
 
 ## Verification
 
