@@ -16,13 +16,15 @@ function createStatus(ctx) {
         name, label, required,
         state: goodCodes.includes(r.status) ? 'HEALTHY' : 'DEGRADED',
         statusCode: r.status,
-        latencyMs
+        latencyMs,
+        checkedAt: new Date().toISOString()
       };
     } catch (e) {
       return {
         name, label, required, state: 'DOWN', statusCode: null,
         latencyMs: Date.now() - started,
-        error: String(e.message || e)
+        error: String(e.message || e),
+        checkedAt: new Date().toISOString()
       };
     }
   }

@@ -678,6 +678,7 @@ body.awc-stage-expanded{overflow:hidden}
 /* ==== integration-hub-v2.css ==== */
 /* Research-backed Local AI integration hub enhancements */
 .ux-int-v2 .ux-int-checked{display:block;min-height:1lh;margin-top:5px;color:var(--ds-muted)}
+.ux-int-livewrap{display:grid;gap:3px;min-width:0}.ux-int-seen{color:var(--ds-muted);font-size:var(--ds-fs-1);overflow-wrap:anywhere}.ux-int-seen:empty{display:none}.ux-int-seen[data-tone="attention"]{color:var(--ds-attention-text)}
 #integrations[data-integration-v2="true"] .ux-int-card{min-height:255px}
 #integrations[data-integration-v2="true"] .ux-int-card p{margin-bottom:9px}
 .ux-int-guidance{padding:9px 10px;border-left:2px solid rgba(63,193,201,.25);background:rgba(63,193,201,.035);color:var(--ds-muted);line-height:1.45;border-radius:0 var(--ds-r-sm) var(--ds-r-sm) 0}

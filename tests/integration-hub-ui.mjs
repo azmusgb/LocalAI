@@ -227,6 +227,35 @@ await check('integration status refresh is resilient and remains in-page', async
   assert.equal(await button.isEnabled(), true);
 });
 
+await check('each service says when it was last asked and whether it answered; no answer never reads as healthy', async () => {
+  const ago = new Date(Date.now() - 60000).toISOString();
+  let n8n = { name: 'n8n', state: 'HEALTHY', statusCode: 200, checkedAt: ago };
+  const isStatus = u => u.pathname === '/api/status';
+  await page.route(isStatus, r => r.fulfill({ json: { overall: 'DEGRADED', checkedAt: ago, services: [n8n, { name: 'comfy', state: 'DOWN', statusCode: null, error: 'refused' }] } }));
+  const refresh = async () => { await page.waitForFunction(() => document.querySelector('#uxIntegrationRefreshV2')?.getAttribute('aria-busy') === 'false'); await page.locator('#uxIntegrationRefreshV2').click(); };
+  const seen = name => page.locator(`[data-integration-seen="${name}"]`);
+  const clock = d => new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  await refresh();
+  await page.waitForFunction(t => document.querySelector('[data-integration-seen="n8n"]')?.textContent === t, `Answered at ${clock(ago)}`);
+  // ComfyUI's probe has no checkedAt (an older server): nothing is shown, not a made-up time.
+  assert.equal(await seen('comfy').innerText(), '');
+  assert.equal(await seen('artcraft').count(), 1);
+  assert.match(await seen('artcraft').innerText(), /^Answered at /);
+  // n8n stops answering: the card says so, with the last time it did.
+  n8n = { name: 'n8n', state: 'DOWN', statusCode: null, checkedAt: new Date().toISOString(), error: 'refused' };
+  await refresh();
+  await page.waitForFunction(() => /^No answer at/.test(document.querySelector('[data-integration-seen="n8n"]')?.textContent || ''));
+  assert.equal(await seen('n8n').innerText(), `No answer at ${clock(n8n.checkedAt)} · last answered ${clock(ago)}`);
+  assert.equal(await seen('n8n').getAttribute('data-tone'), 'attention');
+  // The whole status request fails: every core service says no answer rather than keeping a healthy-looking time.
+  await page.unroute(isStatus);
+  await page.route(isStatus, r => r.abort());
+  await refresh();
+  await page.waitForFunction(() => /^No answer at/.test(document.querySelector('[data-integration-seen="comfy"]')?.textContent || ''));
+  assert.match(await seen('comfy').innerText(), /^No answer at .* · no answer yet this visit$/);
+  await page.unroute(isStatus);
+});
+
 await page.close();
 
 const mobile = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });

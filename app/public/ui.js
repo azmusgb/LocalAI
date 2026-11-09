@@ -3037,7 +3037,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     if (!holder) return;
     const card = item => {
       const actions = item.actions.map(action => actionHtml(item, action)).join('');
-      const live = item.source ? `<span class="ux-int-live" data-integration-source-v2="${item.source}"><span class="dot"></span> Checking</span>` : '';
+      const live = item.source ? `<div class="ux-int-livewrap"><span class="ux-int-live" data-integration-source-v2="${item.source}"><span class="dot"></span> Checking</span><span class="ux-int-seen" data-integration-seen="${item.source}"></span></div>` : '';
       const ws = item.id === 'workshop';
       return `<article class="ux-int-card${ws ? ' ux-int-wide' : ''}" data-tier="${item.tier}" aria-labelledby="ux-int-v2-${item.id}">
         <div class="ux-int-card-head"><div><div class="ux-int-name" id="ux-int-v2-${item.id}">${item.name}</div><div class="ux-int-decision" data-integration-decision="${item.id}">${item.decision}</div></div>${tierBadge(item.tier)}</div>
@@ -3179,7 +3179,23 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     ).join('');
   }
 
-  function updateService(source, service) {
+  // seen = { at: Date | null, answered: boolean }: when this service was last asked and whether it answered. A service that
+  // did not answer says so with the time it was asked, and when it last did answer (this visit only); with no time the
+  // data really has, nothing is shown.
+  const lastAnswered = {};
+  const clock = d => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  function updateSeen(source, seen) {
+    const note = q(`[data-integration-seen="${source}"]`);
+    if (!note) return;
+    const at = seen?.at instanceof Date && !Number.isNaN(seen.at.getTime()) ? seen.at : null;
+    if (!at) { note.textContent = ''; note.dataset.tone = ''; return; }
+    if (seen.answered) lastAnswered[source] = at;
+    note.dataset.tone = seen.answered ? '' : 'attention';
+    note.textContent = seen.answered ? `Answered at ${clock(at)}`
+      : `No answer at ${clock(at)} · ${lastAnswered[source] ? `last answered ${clock(lastAnswered[source])}` : 'no answer yet this visit'}`;
+  }
+  function updateService(source, service, seen) {
+    updateSeen(source, seen);
     const element = q(`[data-integration-source-v2="${source}"]`);
     if (!element) return;
     const state = service?.state || 'UNKNOWN';
@@ -3224,7 +3240,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     box.hidden = false;
   }
 
-  function updateWorkshop(status) {
+  function updateWorkshop(status, at) {
     const url = typeof status?.portalUrl === 'string' && /^https?:\/\//.test(status.portalUrl) ? status.portalUrl : '';
     const link = q('[data-integration-portal="workshop"]');
     if (link) {
@@ -3250,7 +3266,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     updateService('workshop', !status ? { state: 'NEUTRAL', label: 'Status unavailable' }
       : !url ? { state: 'NEUTRAL', label: 'Address not set up' }
         : status.online ? { state: 'HEALTHY', label: board ? `Online · ${board}` : status.signIn ? 'Online · sign-in on' : 'Online' }
-          : { state: 'NEUTRAL', label: 'Not answering' });
+          : { state: 'NEUTRAL', label: 'Not answering' }, status && !url ? null : { at, answered: status?.online === true });
   }
 
   // #integrations?card=workshop (a link to the Workshop display's card) brings that card into view.
@@ -3282,31 +3298,38 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
       try {
         // Each check gives up after 8 s, so one slow bridge (GridCraft on the host) can't leave the page on "Checking…".
         const timed = () => (typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined);
+        // When each answer (or failure) came back: the time shown on that service's card.
+        const at = {};
+        const done = key => () => { at[key] = new Date(); };
         const results = await Promise.allSettled([
-          fetch('/api/status', { cache: 'no-store', signal: timed() }),
+          fetch('/api/status', { cache: 'no-store', signal: timed() }).finally(done('status')),
           fetch('/api/capabilities', { cache: 'no-store', signal: timed() }),
-          fetch('/api/gridcraft/health', { cache: 'no-store', signal: timed() }),
-          fetch('/api/artcraft/status', { cache: 'no-store', signal: timed() }),
-          fetch('/api/workshop/status', { cache: 'no-store', signal: timed() })
+          fetch('/api/gridcraft/health', { cache: 'no-store', signal: timed() }).finally(done('gridcraft')),
+          fetch('/api/artcraft/status', { cache: 'no-store', signal: timed() }).finally(done('artcraft')),
+          fetch('/api/workshop/status', { cache: 'no-store', signal: timed() }).finally(done('workshop'))
         ]);
-        updateWorkshop(results[4].status === 'fulfilled' && results[4].value.ok ? await results[4].value.json().catch(() => null) : null);
+        updateWorkshop(results[4].status === 'fulfilled' && results[4].value.ok ? await results[4].value.json().catch(() => null) : null, at.workshop);
         const artcraft = results[3].status === 'fulfilled' ? await results[3].value.json().catch(() => null) : null;
         updateService('artcraft', !artcraft?.ok ? { state: 'NEUTRAL', label: 'Windows computer not answering' }
           : artcraft.running ? { state: 'HEALTHY', label: `Open now${artcraft.version ? ` · ${artcraft.version}` : ''}` }
             : artcraft.installed ? { state: 'NEUTRAL', label: `Installed, not open${artcraft.version ? ` · ${artcraft.version}` : ''}` }
-              : { state: 'DOWN', label: 'Not installed' });
+              : { state: 'DOWN', label: 'Not installed' }, { at: at.artcraft, answered: artcraft?.ok === true });
         const gridcraft = results[2].status === 'fulfilled' ? await results[2].value.json().catch(() => null) : null;
         updateService('gridcraft', gridcraft?.ok
           ? { state: gridcraft.gridcraftConnected ? 'HEALTHY' : 'DEGRADED' }
-          : { state: 'DOWN', displayState: 'OPTIONAL_OFFLINE' });
+          : { state: 'DOWN', displayState: 'OPTIONAL_OFFLINE' }, { at: at.gridcraft, answered: gridcraft?.ok === true });
         let status = null;
         let capabilities = null;
         if (results[0].status === 'fulfilled' && results[0].value.ok) status = await results[0].value.json();
         if (results[1].status === 'fulfilled' && results[1].value.ok) capabilities = await results[1].value.json();
 
         const services = Array.isArray(status?.services) ? status.services : [];
-        updateService('n8n', services.find(service => service.name === 'n8n'));
-        updateService('comfy', services.find(service => service.name === 'comfy'));
+        // n8n and ComfyUI carry the time the appliance itself asked them (checkedAt); a probe that failed to connect
+        // still has one. No such time (an older server, or no status at all) shows nothing rather than a guess.
+        for (const name of ['n8n', 'comfy']) {
+          const service = services.find(x => x.name === name), when = service?.checkedAt ? new Date(service.checkedAt) : status ? null : at.status;
+          updateService(name, service, { at: when, answered: service?.statusCode != null });
+        }
 
         if (status) {
           const healthy = services.filter(service => ['n8n', 'comfy'].includes(service.name) && service.state === 'HEALTHY').length;
