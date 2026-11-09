@@ -977,9 +977,8 @@ let allButtons=new Map();
 const icon=(name,cls)=>window.LocalAIKit?.icon(name,cls)||'';
 
 function viewButton(view){return allButtons.get(view)||q('.navbtn[data-view="'+view+'"]')}
-// A System tool (registry `tool`) is a card on Tools, not a menu entry of its own; its address still opens it.
-const underTools=view=>{const v=REG.view(view);return !!v?.tool&&v.domain==='system'};
-const listed=view=>!!viewButton(view)&&!underTools(view);
+// A page with `lights` (a System tool, In progress, Shipped) is no menu entry of its own; its address still opens it and lights that item.
+const listed=view=>!!viewButton(view)&&!REG.view(view)?.lights;
 // A domain's groups with the pages a menu may list; a group left empty is dropped.
 const listedGroups=d=>d.groups.map(g=>({label:g.label,views:g.views.filter(listed)})).filter(g=>g.views.length);
 // A hidden page (chat, images, missions, runs) lights up the page that owns it.
@@ -1076,8 +1075,9 @@ function renderPageStrip(d,page,view){
  const strip=q('#uxPageStrip');if(!strip)return;
  const all=listedGroups(d).flatMap(g=>g.views).flatMap(v=>{const t=REG.tabs(v);return t.length?t.map(x=>x.id):[v]});
  const views=all,current=REG.view(view)?.id;
- // A System tool (Files, PowerShell, …) lights Tools, where its card is.
- if(underTools(current))page='tools';
+ // A page that names `lights` (Files lights Tools, Shipped lights Changes) lights that item.
+ const lit=REG.view(current)?.lights;
+ if(lit)page=lit;
  else if(all.includes(current))page=current;
  const key=d.id+'|'+views.join(',');
  const label=v=>REG.view(v)?.tab||REG.view(v)?.short||labelForView(v);
@@ -4095,7 +4095,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function mount(){
  const host=document.querySelector('#toolsCards'),R=window.LocalAIViews;if(!host||!R||host.childElementCount)return;
- host.innerHTML=R.tools().map(v=>`<a class="tool-card card" href="#${v.id}" data-tool="${v.id}"><span class="tool-card__icon" aria-hidden="true">${window.LocalAIKit?.icon(v.svg)||''}</span><span><strong>${esc(v.label)}</strong><small>${esc(v.description)}${v.domain==='system'?'':` Also in ${esc(R.DOMAINS.find(d=>d.id===v.domain)?.label||'')} as ${esc(v.short||v.label)}.`}</small></span></a>`).join('');
+ host.innerHTML=R.tools().map(v=>`<a class="tool-card card" href="#${v.id}" data-tool="${v.id}"><span class="tool-card__icon" aria-hidden="true">${window.LocalAIKit?.icon(v.svg)||''}</span><span><strong>${esc(v.label)}</strong><small>${esc(v.description)}</small></span></a>`).join('');
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();
 })();
