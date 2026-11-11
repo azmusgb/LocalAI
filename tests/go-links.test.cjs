@@ -1,5 +1,5 @@
 'use strict';
-// /go/n8n and /go/comfy build their target from the request. Behind the front gate the request's Host is 10.0.0.21 (the
+// /go/n8n and /go/comfy build their target from the request. Behind the front gate the request's Host is 10.0.0.81 (the
 // gate rewrites it) and the name the owner typed is only in X-Forwarded-Host, so the target must come from that.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -18,10 +18,10 @@ function go(headers, pathname = '/go/n8n', env = {}) {
   } finally { for (const k of Object.keys(saved)) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } }
 }
 
-const GATED = { host: '10.0.0.21', 'x-forwarded-host': 'assistant.rahe-home.duckdns.org' };
+const GATED = { host: '10.0.0.81', 'x-forwarded-host': 'assistant.rahe-home.duckdns.org' };
 
-test('reproduction: through the gate the link must not point at the rewritten Host 10.0.0.21', () => {
-  assert.notEqual(go(GATED).location, 'http://10.0.0.21:5678/');
+test('reproduction: through the gate the link must not point at the rewritten Host 10.0.0.81', () => {
+  assert.notEqual(go(GATED).location, 'http://10.0.0.81:5678/');
 });
 
 test('through the gate the target uses the forwarded host', () => {
@@ -31,16 +31,16 @@ test('through the gate the target uses the forwarded host', () => {
 });
 
 test('a direct request keeps using its own Host, port stripped', () => {
-  assert.equal(go({ host: '10.0.0.21:3080' }).location, 'http://10.0.0.21:5678/');
+  assert.equal(go({ host: '10.0.0.81:3080' }).location, 'http://10.0.0.81:5678/');
   assert.equal(go({ host: 'localhost:3080' }, '/go/comfy').location, 'http://localhost:8188/mobile/');
 });
 
 test('a forwarded host must pass the same host check as Host; otherwise Host is used', () => {
-  const own = 'http://10.0.0.21:5678/';
+  const own = 'http://10.0.0.81:5678/';
   for (const bad of ['evil.com', 'a.example', 'evil.com, assistant.rahe-home.duckdns.org', 'evil.example/x', 'a b', '@x', 'x?y', ''])
-    assert.equal(go({ host: '10.0.0.21', 'x-forwarded-host': bad }).location, own, JSON.stringify(bad));
-  assert.equal(go({ host: '10.0.0.21', 'x-forwarded-host': 'assistant.rahe-home.duckdns.org, evil.com' }).location, 'http://assistant.rahe-home.duckdns.org:5678/', 'the first value counts');
-  assert.equal(go({ host: '10.0.0.21', 'x-forwarded-host': 'pc.home.arpa:443' }).location, 'http://pc.home.arpa:5678/', 'a private name is allowed, port dropped');
+    assert.equal(go({ host: '10.0.0.81', 'x-forwarded-host': bad }).location, own, JSON.stringify(bad));
+  assert.equal(go({ host: '10.0.0.81', 'x-forwarded-host': 'assistant.rahe-home.duckdns.org, evil.com' }).location, 'http://assistant.rahe-home.duckdns.org:5678/', 'the first value counts');
+  assert.equal(go({ host: '10.0.0.81', 'x-forwarded-host': 'pc.home.arpa:443' }).location, 'http://pc.home.arpa:5678/', 'a private name is allowed, port dropped');
 });
 
 test('LOCALAI_GO_HOST fixes the host whatever the request says', () => {

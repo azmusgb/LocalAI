@@ -35,7 +35,7 @@ RUN_TIMEOUT = int(os.environ.get('GRIDCRAFT_RUN_TIMEOUT', '300'))
 ALLOWED_ORIGINS = {
     x.strip() for x in os.environ.get(
         'GRIDCRAFT_ALLOWED_ORIGINS',
-        'http://10.0.0.21:3080,http://127.0.0.1:3080,http://localhost:3080'
+        'http://10.0.0.81:3080,http://127.0.0.1:3080,http://localhost:3080'
     ).split(',') if x.strip()
 }
 

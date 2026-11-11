@@ -24,7 +24,7 @@ function createWeb(ctx) {
       }
     });
   }
-  // The host a /go/ link points at. Behind the front gate the request's Host is 10.0.0.21 (the gate rewrites it) and the
+  // The host a /go/ link points at. Behind the front gate the request's Host is 10.0.0.81 (the gate rewrites it) and the
   // name the owner typed is in X-Forwarded-Host. That header is the client's to set, so its first value counts only when
   // it passes the same host check as Host (server/http.js hostAllowed); else Host is used. LOCALAI_GO_HOST overrides both.
   const HOST_NAME = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/;

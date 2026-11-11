@@ -3,14 +3,14 @@
 // The Workshop display's "Clear plate" (after a finished or failed print) goes through Local AI to Bambuddy, the Bambu
 // printer manager on the Raspberry Pi: the display already has a signed-in, certificate-pinned link to Local AI, so it
 // never holds a Bambuddy credential. Local AI clears the plate and the printer's error list.
-// LOCALAI_BAMBUDDY_URL (default http://10.0.0.30:8000); LOCALAI_BAMBUDDY_CONTROL_KEY, a Bambuddy API key with
+// LOCALAI_BAMBUDDY_URL (default http://10.0.0.80:8000); LOCALAI_BAMBUDDY_CONTROL_KEY, a Bambuddy API key with
 // "Control printer" only, sent as X-API-Key (needed once Bambuddy's sign-in is on); LOCALAI_BAMBUDDY_PRINTER (default 1).
 // Never throws.
 
 const TIMEOUT_MS = 5000;
 
 function createBambuddyControl({
-  url = process.env.LOCALAI_BAMBUDDY_URL || 'http://10.0.0.30:8000',
+  url = process.env.LOCALAI_BAMBUDDY_URL || 'http://10.0.0.80:8000',
   key = process.env.LOCALAI_BAMBUDDY_CONTROL_KEY || '',
   printer = Number(process.env.LOCALAI_BAMBUDDY_PRINTER) || 1,
   // Reading the printer's state needs "Read status"; falls back to the materials key, then the control key.

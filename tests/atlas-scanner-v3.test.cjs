@@ -49,7 +49,7 @@ test('the graph is schema version 3 and nodes carry outgoing /api/ calls', () =>
     ].join('\n'),
     'src/client.py': [
       "import urllib.request",
-      "hub_url = 'http://10.0.0.30'",
+      "hub_url = 'http://10.0.0.80'",
       "req = urllib.request.Request(f'{hub_url}/api/records')",
       "def get_needs():",
       "    return urllib.request.Request('/api/needs')",

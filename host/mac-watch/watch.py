@@ -206,7 +206,7 @@ def main():
             return 1
         return 0
     config = load_json(os.path.join(CHAT_DIR, "config.json"), {})
-    url = os.environ.get("LOCALAI_URL") or config.get("url") or "https://10.0.0.21"
+    url = os.environ.get("LOCALAI_URL") or config.get("url") or "https://10.0.0.81"
     ca = config.get("ca") or os.path.join(CHAT_DIR, "localai-ca.crt")
     try:
         with open(os.path.join(CHAT_DIR, "mac.key"), encoding="utf-8") as f:

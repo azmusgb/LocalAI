@@ -12,16 +12,16 @@ const { spawnAppServer } = require('./spawn-server.cjs');
 const { allowedHosts, hostAllowed } = require('../app/server/http');
 
 test('hostAllowed: IPs, dotless names, private suffixes and the configured names; any other name is refused', () => {
-  const allowed = allowedHosts({ LOCALAI_HOST_IP: '10.0.0.21', LOCALAI_REMOTE_NAME: 'localai-pc.tail1234.ts.net', LOCALAI_ALLOWED_HOSTS: 'ai.example.org, Other.Example.NET ' });
+  const allowed = allowedHosts({ LOCALAI_HOST_IP: '10.0.0.81', LOCALAI_REMOTE_NAME: 'localai-pc.tail1234.ts.net', LOCALAI_ALLOWED_HOSTS: 'ai.example.org, Other.Example.NET ' });
   for (const h of [
-    '127.0.0.1:3080', 'localhost:3080', 'localhost', '[::1]:3080', '[::1]', '10.0.0.21', '10.0.0.21:443', '192.168.1.9:3080',
+    '127.0.0.1:3080', 'localhost:3080', 'localhost', '[::1]:3080', '[::1]', '10.0.0.81', '10.0.0.81:443', '192.168.1.9:3080',
     'local-ai-appliance:3080', 'myhost:3080', 'localai.home.arpa', 'LocalAI.Home.Arpa', 'localai.home.arpa.', 'localai.test:3180',
     'pc.local', 'app.localhost:3080', 'localai-pc.tail1234.ts.net', 'LOCALAI-PC.tail1234.ts.net:443', 'ai.example.org', 'other.example.net',
     'router.lan', 'svc.internal', undefined, ''
   ]) assert.equal(hostAllowed(h, allowed), true, String(h));
   for (const h of [
     'evil.example', 'evil.example:3080', 'attacker.com', 'localai.home.arpa.evil.com', 'someone-else.tail9999.ts.net', 'local.evil.com',
-    '10.0.0.21.nip.io', 'example.org', 'ai.example.org.attacker.io', 'bad host', 'a/b', 'x@10.0.0.21'
+    '10.0.0.81.nip.io', 'example.org', 'ai.example.org.attacker.io', 'bad host', 'a/b', 'x@10.0.0.81'
   ]) assert.equal(hostAllowed(h, allowed), false, h);
   assert.ok(allowedHosts({}).has('localai.home.arpa'), 'Caddy\'s default name with nothing set');
   assert.ok(allowedHosts({ LOCALAI_NAME: 'ai.my-house.net' }).has('ai.my-house.net'));
@@ -53,7 +53,7 @@ test('the server answers a rebound name with 421 before any route, and its own n
     const post = await request('POST', '/api/improve/handoff', host, { 'Content-Type': 'application/json', Origin: `http://${host}` }, '{"text":"x"}');
     assert.equal(post.status, 421);
   }
-  for (const host of [`127.0.0.1:${port}`, `localhost:${port}`, 'localai.home.arpa', '10.0.0.21', 'local-ai-appliance:3080', 'ai.example.org']) {
+  for (const host of [`127.0.0.1:${port}`, `localhost:${port}`, 'localai.home.arpa', '10.0.0.81', 'local-ai-appliance:3080', 'ai.example.org']) {
     assert.equal((await request('GET', '/healthz', host)).status, 200, host);
   }
   const prio = JSON.parse((await request('GET', '/api/claude/priorities', `127.0.0.1:${port}`)).text);

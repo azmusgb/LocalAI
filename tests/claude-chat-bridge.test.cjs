@@ -509,7 +509,7 @@ test('an unreadable config.json stops the bridge from sending anything (no fallb
   const relay = await fakeRelay(t);
   const inbox = await fakeInbox(t);
   const home = makeHome(t);
-  fs.writeFileSync(path.join(home, 'config.json'), '{"url": "https://10.0.0.21", ');
+  fs.writeFileSync(path.join(home, 'config.json'), '{"url": "https://10.0.0.81", ');
   startBridge(t, { relay, sock: inbox.sock, home }); // even with LOCALAI_URL set
   await until(() => /relay error config\.json unreadable/.test(log(home)), 'config error logged');
   await sleep(200);

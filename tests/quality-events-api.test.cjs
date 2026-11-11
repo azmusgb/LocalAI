@@ -40,7 +40,7 @@ async function startServer(t) {
 test('opaque script errors are ignored; real errors are stored with the browser that sent them', { timeout: 30000 }, async t => {
   const { base } = await startServer(t);
   const send = (body, ua = 'TestBrowser/1.0') => fetch(`${base}/api/quality/client-event`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'User-Agent': ua }, body: JSON.stringify(body) });
-  const opaque = await send({ type: 'error', message: 'Script error.', source: '/', url: 'https://10.0.0.21/' });
+  const opaque = await send({ type: 'error', message: 'Script error.', source: '/', url: 'https://10.0.0.81/' });
   assert.equal(opaque.status, 202);
   assert.deepEqual(await opaque.json(), { ignored: true, reason: 'opaque script error' });
   const real = await send({ type: 'error', message: 'TypeError: x is undefined', source: '/ui.js', line: 12, stack: 'at f (/ui.js:12:3)', url: 'http://h/' });

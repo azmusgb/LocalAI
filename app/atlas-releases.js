@@ -24,7 +24,7 @@ function liveCommits(body, repos) {
   return out;
 }
 
-function createAtlasReleaseTrigger({ hubUrl = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.30', fetchImpl = fetch,
+function createAtlasReleaseTrigger({ hubUrl = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.80', fetchImpl = fetch,
   snapshots, requestSnapshot, now = Date.now, log = () => {}, timeoutMs = 10000 } = {}) {
   const off = !hubUrl || hubUrl === 'off' || typeof requestSnapshot !== 'function' || !snapshots;
   const asked = new Map(); // `${repo}@${commit}` -> when it was asked for

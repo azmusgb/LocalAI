@@ -3,13 +3,13 @@
 Short answers to "how do I…", for whoever runs the appliance. Each one points to the guide with the details. For
 everyday use, see the [user guide](USER-GUIDE.md).
 
-Local AI runs in Docker on the Windows computer at `10.0.0.21`. The app is on port 3080; HTTPS (`https://10.0.0.21`)
+Local AI runs in Docker on the Windows computer at `10.0.0.81`. The app is on port 3080; HTTPS (`https://10.0.0.81`)
 goes through Caddy on port 443.
 
 ## Is it healthy?
 
 - **In the app:** System › Health shows each core service and the optional companions.
-- **From any computer:** `curl -s https://10.0.0.21/healthz` (a computer that trusts the LocalAI certificate) returns the running `version` and `releaseCommit`.
+- **From any computer:** `curl -s https://10.0.0.81/healthz` (a computer that trusts the LocalAI certificate) returns the running `version` and `releaseCommit`.
 - When core health changes and stays changed for 2 minutes, phones with notifications get **Down** / **Recovered**.
 - **After a Windows restart** some services (n8n, search, HTTPS) can stay stopped. The next update check, within
   5 minutes, starts any stopped services again and the Inbox says "Restarted N Local AI services that were stopped".
@@ -80,13 +80,13 @@ to restore: [Operations › Backups](OPERATIONS.md#backups) and [Restore](OPERAT
 
 ## Set up a phone
 
-1. Trust Local AI's certificate once: on the phone open `http://10.0.0.21/localai-ca.crt`, install it, then turn on
+1. Trust Local AI's certificate once: on the phone open `http://10.0.0.81/localai-ca.crt`, install it, then turn on
    full trust for it (iPhone: Settings › General › About › Certificate Trust Settings). **Health › Secure connection**
    shows whether it worked.
 2. **One icon that works everywhere:** with Tailscale set up (see [Reach it away from home](#reach-it-away-from-home))
    and turned on on the phone, open the Tailscale address (`https://<computer>.<tailnet>.ts.net`; Health › Secure
    connection shows it) in Safari, Share › **Add to Home
-   Screen**, and use that icon from then on. It works at home and away. An icon added from `https://10.0.0.21` works
+   Screen**, and use that icon from then on. It works at home and away. An icon added from `https://10.0.0.81` works
    on the home Wi-Fi only; away from home its saved copy checks the Tailscale address and, if it answers, switches
    there after 2 s (**Cancel** stays put, then it offers **Open over Tailscale**). **Health › Secure connection** lists
    both addresses.

@@ -76,7 +76,7 @@ function read(m) {
 
 test('QR codes read back exactly across every supported size, with valid error correction', () => {
   const sizes = new Set();
-  const samples = ['https://10.0.0.21/', 'http://10.0.0.21/localai-ca.crt', 'Héllo · 世界 ✓', 'x'];
+  const samples = ['https://10.0.0.81/', 'http://10.0.0.81/localai-ca.crt', 'Héllo · 世界 ✓', 'x'];
   for (let len = 1; len <= 213; len += 4) samples.push(Array.from({ length: len }, (_, i) => String.fromCharCode(33 + ((i * 13 + len) % 90))).join(''));
   for (const text of samples) { const m = matrix(text); sizes.add(m.length); assert.equal(read(m), text); }
   assert.deepEqual([...sizes].sort((a, b) => a - b), [21, 25, 29, 33, 37, 41, 45, 49, 53, 57]);
@@ -84,7 +84,7 @@ test('QR codes read back exactly across every supported size, with valid error c
 
 test('QR text that does not fit is refused, and the SVG keeps a white quiet zone', () => {
   assert.throws(() => matrix('x'.repeat(214)), /too long/);
-  const out = svg('https://10.0.0.21/', 'Open <Local AI>');
+  const out = svg('https://10.0.0.81/', 'Open <Local AI>');
   assert.match(out, /^<svg class="qr" [^>]*viewBox="0 0 33 33"/);
   assert.match(out, /aria-label="Open &lt;Local AI&gt;"/);
   assert.match(out, /<rect width="33" height="33" fill="#fff"\/>/);

@@ -73,7 +73,7 @@ It:
 Browsers never call the bridge directly; the appliance does, without an `Origin` header. CORS still applies
 to anything that calls it from a browser. The installer allows port 3080 on `127.0.0.1`, `localhost`, the
 machine name and every local IPv4 address; override with
-`-AllowedOrigins 'http://10.0.0.21:3080','http://myhost:3080'`.
+`-AllowedOrigins 'http://10.0.0.81:3080','http://myhost:3080'`.
 
 Bridge environment (`host/gridcraft-bridge.py`):
 
@@ -90,7 +90,7 @@ Bridge environment (`host/gridcraft-bridge.py`):
 | `GRIDCRAFT_WORKBOOK` | `%USERPROFILE%\Documents\GridCraft\Quarterly-Sales-Dashboard.xlsx` | Workbook opened at launch |
 | `GRIDCRAFT_WORKBOOKS_DIR` | the folder of `GRIDCRAFT_WORKBOOK` | Folder the Spreadsheets workbook menu lists and opens from (no subfolders) |
 | `GRIDCRAFT_RUN_TIMEOUT` | `300` (seconds) | Per-request limit; the agent stops itself 30 s before it (`--time-limit`), the appliance waits 330 s |
-| `GRIDCRAFT_ALLOWED_ORIGINS` | `http://10.0.0.21:3080,http://127.0.0.1:3080,http://localhost:3080` | CORS allow-list |
+| `GRIDCRAFT_ALLOWED_ORIGINS` | `http://10.0.0.81:3080,http://127.0.0.1:3080,http://localhost:3080` | CORS allow-list |
 | `GRIDCRAFT_OPS_SESSION` | `1` | `0` runs every op (below) as its own process instead of on one kept GridCraft connection |
 | `GRIDCRAFT_BRIDGE_RELOAD` | `1` | The bridge checks its code (`gridcraft-bridge.py`, `gridcraft_ops.py`, `gridcraft_journal.py`) every `GRIDCRAFT_BRIDGE_RELOAD_EVERY` seconds (60) and, once a deploy changed it and no request is running, starts its new version itself; `0` turns that off |
 | `GRIDCRAFT_BRIDGE_LOG` | unset (stdout) | Log file, rotated at 2 MB × 3; the installer sets `gridcraft-bridge.log` |

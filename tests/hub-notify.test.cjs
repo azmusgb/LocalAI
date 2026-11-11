@@ -56,7 +56,7 @@ test('the notifier has its own URL variable; compose never sets the LAN one pi-h
   assert.match(src, /process\.env\.LOCALAI_PI_HUB_NOTIFY_URL/);
   assert.doesNotMatch(src, /process\.env\.LOCALAI_PI_HUB_URL\b/);
   const compose = fs.readFileSync(path.resolve(__dirname, '../deploy/stack/compose.yml'), 'utf8');
-  assert.doesNotMatch(compose, /^\s*LOCALAI_PI_HUB_URL:/m, 'pi-hub.js and print-lab.js keep http://10.0.0.30');
+  assert.doesNotMatch(compose, /^\s*LOCALAI_PI_HUB_URL:/m, 'pi-hub.js and print-lab.js keep http://10.0.0.80');
 });
 
 

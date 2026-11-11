@@ -39,7 +39,7 @@ function setup({ hub = HUB, fail = false, hubUrl = 'http://hub.test', cache } = 
     snapshots: { list: () => SNAPSHOTS },
     fetchWithTimeout: async (url, opts, ms) => {
       calls.push({ url, ms });
-      if (fail) throw new Error('connect ECONNREFUSED 10.0.0.30:80');
+      if (fail) throw new Error('connect ECONNREFUSED 10.0.0.80:80');
       return { ok: true, status: 200, json: async () => hub };
     },
   });

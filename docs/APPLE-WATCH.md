@@ -10,7 +10,7 @@ once they are on in Settings › Notifications on the iPhone, iOS mirrors them t
 
 ## Address to use
 
-- Phone or watch on the home network: `https://10.0.0.21` (the appliance's LAN address), or `https://<name>/` if
+- Phone or watch on the home network: `https://10.0.0.81` (the appliance's LAN address), or `https://<name>/` if
   you installed Local AI's certificate on the iPhone (Health › Secure connection).
 - Away from home the watch can't reach the appliance. A private network link such as Tailscale on the iPhone and the
   Windows host fixes that; nothing in LocalAI needs to change.

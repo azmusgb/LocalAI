@@ -55,7 +55,7 @@ function withSnapshots(hosts, list) {
   });
 }
 
-function createSystems({ hubUrl = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.30', fetchWithTimeout, snapshots,
+function createSystems({ hubUrl = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.80', fetchWithTimeout, snapshots,
   cachePath = null, now = Date.now } = {}) {
   const off = !hubUrl || hubUrl === 'off';
   let memory = null;

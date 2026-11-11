@@ -136,7 +136,7 @@ function showOtherAddresses(el){
  }));
 }
 // Another address answers if it sends anything back. no-cors needs nothing from the server, and a page can't read
-// the reply anyway; a certificate this phone doesn't trust fails like no answer, so a stranger's 10.0.0.21 elsewhere
+// the reply anyway; a certificate this phone doesn't trust fails like no answer, so a stranger's 10.0.0.81 elsewhere
 // doesn't count. No cookies: pairing stays per address.
 const PROBE_MS=3000,SWITCH_MS=2000,SWITCH_KEY='localai.addressSwitch',FROM_KEY='localai.switchedFrom';
 function probe(url){

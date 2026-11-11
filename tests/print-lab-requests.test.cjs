@@ -400,13 +400,13 @@ const reply = (status, body, type = 'image/jpeg') => new Response(body, { status
 
 test('the camera snapshot is passed through from the bridge for a paired phone, never cached', async t => {
   const seen = [];
-  const { call } = harness(t, { cameraUrl: 'http://10.0.0.30:8091/x2d/frame.jpg', fetchImpl: async (url, init) => { seen.push([String(url), init.redirect]); return reply(200, JPG); } });
+  const { call } = harness(t, { cameraUrl: 'http://10.0.0.80:8091/x2d/frame.jpg', fetchImpl: async (url, init) => { seen.push([String(url), init.redirect]); return reply(200, JPG); } });
   const r = await call('GET', '/api/lab/camera.jpg');
   assert.equal(r.status, 200);
   assert.equal(r.headers['Content-Type'], 'image/jpeg');
   assert.match(r.headers['Cache-Control'], /no-store/);
   assert.ok(Buffer.from(r.body).equals(JPG));
-  assert.deepEqual(seen, [['http://10.0.0.30:8091/x2d/frame.jpg', 'error']], 'no redirects are followed');
+  assert.deepEqual(seen, [['http://10.0.0.80:8091/x2d/frame.jpg', 'error']], 'no redirects are followed');
   const noPhone = await call('GET', '/api/lab/camera.jpg', { dev: null });
   assert.equal(noPhone.status, 401);
 });
@@ -415,10 +415,10 @@ test('no picture: 503 with the Pi hub\'s reason, or a plain one when the hub is 
   const hub = { reason: 'liveview_off' };
   const fetchImpl = async url => {
     if (String(url).endsWith('/x2d/frame.jpg')) return reply(503, 'no frame', 'text/plain');
-    if (String(url) === 'http://10.0.0.30/api/camera') return hub.reason ? reply(200, JSON.stringify({ ok: false, reason: hub.reason }), 'application/json') : reply(500, 'x', 'text/plain');
+    if (String(url) === 'http://10.0.0.80/api/camera') return hub.reason ? reply(200, JSON.stringify({ ok: false, reason: hub.reason }), 'application/json') : reply(500, 'x', 'text/plain');
     throw new Error(`unexpected ${url}`);
   };
-  const { call } = harness(t, { cameraUrl: 'http://10.0.0.30:8091/x2d/frame.jpg', piHubUrl: 'http://10.0.0.30', fetchImpl });
+  const { call } = harness(t, { cameraUrl: 'http://10.0.0.80:8091/x2d/frame.jpg', piHubUrl: 'http://10.0.0.80', fetchImpl });
   let r = await call('GET', '/api/lab/camera.jpg');
   assert.equal(r.status, 503);
   assert.equal(r.body.reason, 'liveview_off');
@@ -432,14 +432,14 @@ test('no picture: 503 with the Pi hub\'s reason, or a plain one when the hub is 
 
 test('a slow or odd bridge: 503 within the time limit; a non-JPEG is not passed on', async t => {
   const hang = (url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason)));
-  const { call } = harness(t, { cameraUrl: 'http://10.0.0.30:8091/x2d/frame.jpg', piHubUrl: 'http://10.0.0.30', cameraTimeoutMs: 150, fetchImpl: hang });
+  const { call } = harness(t, { cameraUrl: 'http://10.0.0.80:8091/x2d/frame.jpg', piHubUrl: 'http://10.0.0.80', cameraTimeoutMs: 150, fetchImpl: hang });
   const t0 = Date.now();
   const r = await call('GET', '/api/lab/camera.jpg');
   assert.equal(r.status, 503);
   assert.ok(Date.now() - t0 < 1000, `answered in ${Date.now() - t0} ms`);
   assert.equal(r.body.reason, 'no_picture');
 
-  const { call: call2 } = harness(t, { cameraUrl: 'http://10.0.0.30:8091/x2d/frame.jpg', piHubUrl: 'off', fetchImpl: async () => reply(200, '<html>hi</html>', 'text/html') });
+  const { call: call2 } = harness(t, { cameraUrl: 'http://10.0.0.80:8091/x2d/frame.jpg', piHubUrl: 'off', fetchImpl: async () => reply(200, '<html>hi</html>', 'text/html') });
   const r2 = await call2('GET', '/api/lab/camera.jpg');
   assert.equal(r2.status, 503);
 });
@@ -447,7 +447,7 @@ test('a slow or odd bridge: 503 within the time limit; a non-JPEG is not passed 
 test('an oversized or endless camera answer is cut off, never buffered whole', async t => {
   const big = Buffer.alloc(3 * 1024 * 1024, 0xff); big[1] = 0xd8;
   const withLength = async () => new Response(big, { status: 200, headers: { 'content-type': 'image/jpeg', 'content-length': String(big.length) } });
-  const { call } = harness(t, { cameraUrl: 'http://10.0.0.30:8091/x2d/frame.jpg', piHubUrl: 'off', fetchImpl: withLength });
+  const { call } = harness(t, { cameraUrl: 'http://10.0.0.80:8091/x2d/frame.jpg', piHubUrl: 'off', fetchImpl: withLength });
   const r = await call('GET', '/api/lab/camera.jpg');
   assert.equal(r.status, 503);
   assert.equal(r.body.reason, 'no_picture');
@@ -458,7 +458,7 @@ test('an oversized or endless camera answer is cut off, never buffered whole', a
     pull(c) { pulled += 64 * 1024; if (pulled > 64 * 1024 * 1024) { c.close(); return; } c.enqueue(new Uint8Array(64 * 1024)); },
     cancel() { cancelled = true; }
   }), { status: 200, headers: { 'content-type': 'image/jpeg' } });
-  const { call: call2 } = harness(t, { cameraUrl: 'http://10.0.0.30:8091/x2d/frame.jpg', piHubUrl: 'off', fetchImpl: endless });
+  const { call: call2 } = harness(t, { cameraUrl: 'http://10.0.0.80:8091/x2d/frame.jpg', piHubUrl: 'off', fetchImpl: endless });
   const r2 = await call2('GET', '/api/lab/camera.jpg');
   assert.equal(r2.status, 503);
   assert.ok(cancelled, 'the stream is cancelled once it passes the cap');
@@ -505,7 +505,7 @@ test('a result names a request by its id shape only', async t => {
 test("the Pi hub's no-picture answer is read up to a small cap", async t => {
   const fetchImpl = async url => String(url).endsWith('/frame.jpg') ? reply(503, 'x', 'text/plain')
     : new Response(JSON.stringify({ reason: 'liveview_off', pad: 'x'.repeat(64 * 1024) }), { status: 200, headers: { 'content-type': 'application/json' } });
-  const { call } = harness(t, { cameraUrl: 'http://10.0.0.30:8091/x2d/frame.jpg', piHubUrl: 'http://10.0.0.30', fetchImpl });
+  const { call } = harness(t, { cameraUrl: 'http://10.0.0.80:8091/x2d/frame.jpg', piHubUrl: 'http://10.0.0.80', fetchImpl });
   const r = await call('GET', '/api/lab/camera.jpg');
   assert.equal(r.status, 503);
   assert.equal(r.body.reason, 'no_picture', 'an oversized answer is not parsed');

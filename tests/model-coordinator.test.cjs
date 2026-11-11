@@ -63,10 +63,10 @@ test('what goes out is redacted: keys, secret env values, bearer tokens, absolut
   const env = { LOCALAI_GROQ_API_KEY: 'gsk_live_abcdefghijk', SOME_TOKEN: 'tok-0123456789', PATH: '/usr/bin' };
   const { c, calls } = setup({ env });
   const text = 'key gsk_live_abcdefghijk and tok-0123456789, Authorization: Bearer abc.def.ghi, ghp_ABCDEFGHIJKLMNOP1234, '
-    + 'file C:\\LocalAI\\stack\\stack.env and /Users/bill/secret.txt and /data/runs.db, host 10.0.0.21, 192.168.1.5, 100.101.102.103, me@example.com; keep app/public/ui.js';
+    + 'file C:\\LocalAI\\stack\\stack.env and /Users/bill/secret.txt and /data/runs.db, host 10.0.0.81, 192.168.1.5, 100.101.102.103, me@example.com; keep app/public/ui.js';
   await c.run(c.route({ kind: 'plan', text: 'plan it' }), [{ role: 'user', content: text }], { kind: 'plan' });
   const out = calls[0].messages[0].content;
-  for (const bad of ['gsk_live', 'tok-0123', 'abc.def', 'ghp_', 'C:\\LocalAI', '/Users/bill', '/data/runs', '10.0.0.21', '192.168', '100.101', 'me@example']) assert.ok(!out.includes(bad), `${bad} in ${out}`);
+  for (const bad of ['gsk_live', 'tok-0123', 'abc.def', 'ghp_', 'C:\\LocalAI', '/Users/bill', '/data/runs', '10.0.0.81', '192.168', '100.101', 'me@example']) assert.ok(!out.includes(bad), `${bad} in ${out}`);
   assert.ok(out.includes('app/public/ui.js'), 'repo-relative paths stay');
   assert.equal(redact('plain words stay'), 'plain words stay');
 });

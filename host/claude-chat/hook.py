@@ -18,7 +18,7 @@ import urllib.request
 
 WEB_PREFIX = '[LocalAI web · '
 MAX_TEXT = 50000
-DEFAULT_URL = 'https://10.0.0.21'
+DEFAULT_URL = 'https://10.0.0.81'
 INSTALL_HINT = 're-run host/claude-chat/install.sh'
 
 
