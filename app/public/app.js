@@ -716,7 +716,7 @@ async function runAgent(){const goal=$('agentGoal').value.trim();if(!goal)return
 // One Automations page (D9): prompts and research on a schedule (/api/automations) and health checks (/api/monitors, run
 // every 15 minutes, telling the Inbox when a service needs attention) in one list; the Morning brief kind is made on request.
 const AUTO_KIND={prompt:'Prompt',research:'Research',health:'Health check',monitor:'Health check',brief:'Morning brief'};
-const AUTO_NOTE={monitor:'Checks every service every 15 minutes and tells you in the Inbox when one needs attention.',brief:'A summary of health, open alerts and recent activity, made when you ask.'};
+const AUTO_NOTE={monitor:'Checks every service every 15 minutes and tells you in Decisions when one needs attention.',brief:'A summary of health, open alerts and recent activity, made when you ask.'};
 function syncAutoKind(){const k=$('autoKind')?.value||'prompt',job=k==='prompt'||k==='research';
   qsa('#automationStudio [data-auto-field]').forEach(el=>{el.hidden=!job});
   const note=$('autoKindNote');if(note){note.textContent=AUTO_NOTE[k]||'';note.hidden=!AUTO_NOTE[k]}

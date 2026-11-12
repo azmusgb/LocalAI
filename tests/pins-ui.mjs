@@ -45,8 +45,8 @@ await check('the palette lists pinned pages first, under Pinned', async () => {
   await page.keyboard.press('Control+k');
   await page.waitForSelector('#cmdk.show .cmdk-group');
   assert.equal((await labels('#cmdk .cmdk-group__label'))[0], 'Pinned');
-  assert.deepEqual(await labels('#cmdk .cmdk-group:first-child [role=option]'), ['Settings', 'Models']);
-  assert.equal(await page.locator('#cmdk [role=option]').first().innerText(), 'Settings');
+  assert.deepEqual(await labels('#cmdk .cmdk-group:first-child [role=option]'), ['Assistant settings', 'Models']);
+  assert.equal(await page.locator('#cmdk [role=option]').first().innerText(), 'Assistant settings');
   await page.keyboard.press('Escape');
 });
 

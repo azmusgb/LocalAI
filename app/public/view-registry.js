@@ -1,7 +1,7 @@
 // Single source of truth for navigation: every view's label, description, domain and section.
 // The desktop rail, mobile sheet, breadcrumb, command palette and page headings all read from here.
 // `aka` keeps old names searchable in the command palette after a rename.
-// A view with `parent` is a tab of that page: it has no nav entry of its own and shows the parent's heading.
+// A view with `parent` is a tab of that page: it has no nav entry of its own. Its heading is its own name (Pi Hub A22 2.3).
 // `tab` is the label a page uses in its parent's tab strip (the parent's own tab included).
 // A domain's `icon` and a view's `svg` name symbols in the index.html sprite; every menu draws them from here.
 // `short` is a page's label in a page strip when its full one would push the strip past a phone's width.
@@ -19,8 +19,8 @@ const DOMAINS=[
 ];
 const VIEWS=[
  {id:'home',svg:'home',domain:'home',section:'Overview',label:'Home',description:'Start something, or pick up where you left off.',aka:['overview']},
- // One queue (D8): you decide approvals in Home › Needs you; the Inbox is the history (alerts and decisions). Old #approvals links open it.
- {id:'inbox',svg:'inbox',domain:'home',section:'Overview',label:'Inbox',description:'Alerts, approvals and what was decided.',aka:['notifications','alerts','approvals']},
+ // One queue (D8): you decide approvals in Home › Needs you; Decisions is the history (alerts and decisions). Its id and address stay `inbox`; old #approvals links open it.
+ {id:'inbox',svg:'inbox',domain:'home',section:'Overview',label:'Decisions',description:'Alerts, approvals and what was decided.',aka:['inbox','notifications','alerts','approvals']},
  {id:'work',svg:'work',domain:'work',section:'Work',label:'Work',tab:'Work',description:'Everything running and done, in one place.',aka:['runs']},
  {id:'ask',svg:'compose',domain:'hidden',section:'Make',label:'Chat',description:'Private conversation with your local models.',aka:['ask','ask ai']},
  {id:'create',svg:'image',domain:'hidden',section:'Make',label:'Images',description:'Generate images with your local models.',aka:['create','create image']},
@@ -37,24 +37,27 @@ const VIEWS=[
  // address again (no alias), and titles itself Agent World: the mission is its faceplate, not its heading.
  {id:'agents',svg:'target',domain:'work',section:'Work',parent:'work',tab:'Agent World',label:'Agent World',description:'Give the team a goal; watch them work it.',aka:['agents','missions','mission','agent operations']},
  {id:'automationStudio',svg:'clock',domain:'work',section:'Work',parent:'work',tab:'Assistant automations',label:'Assistant automations',description:'Scheduled prompts and research, health checks and the morning brief.',aka:['studio','automation studio','monitors','morning brief','health check','assistant automations']},
- // One Changes page (D4): Backlog, Doing (In progress) and Shipped keep their own addresses and share stage chips under the heading.
- {id:'backlog',svg:'improve',short:'Changes',domain:'improve',section:'Pipeline',label:'Changes',description:'Everything that could change in Local AI, in three stages: Backlog, Doing and Shipped.',aka:['backlog','improve','ideas','priorities']},
+ // One Changes page (D4): Backlog, In progress and Shipped keep their own addresses and share stage chips under the heading.
+ {id:'backlog',svg:'improve',short:'Changes',domain:'improve',section:'Pipeline',label:'Changes',description:'Everything that could change in Local AI, in three stages: Backlog, In progress and Shipped.',aka:['backlog','improve','ideas','priorities']},
  {id:'inProgress',svg:'build',domain:'improve',section:'Pipeline',lights:'backlog',label:'In progress',description:'Changes being planned, tested or waiting for your OK.',aka:['running changes','change requests','changes','engineer']},
  {id:'shipped',svg:'check',domain:'improve',section:'Pipeline',lights:'backlog',label:'Shipped',description:'What changed, release by release.',aka:['done','released']},
  {id:'signals',svg:'alert',domain:'improve',section:'Pipeline',label:'Signals',description:'Problems Local AI noticed; serious ones join the Backlog.',aka:['detections','issues','quality signals']},
  // GridCraft on the Windows computer, through the appliance (spreadsheets.js). The old /gridcraft.html page sends you here.
  // A Work kind since 2 Nov (D4): the Spreadsheets chip in Work and the Spreadsheet mode on Home lead here.
  {id:'spreadsheets',svg:'file',domain:'hidden',owner:'work',section:'Make',label:'Spreadsheets',description:'Ask for a spreadsheet on the Windows computer to be checked or changed.',aka:['gridcraft','excel','workbook']},
- {id:'claude',svg:'sparkle',short:'Claude',domain:'improve',section:'Pipeline',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
- {id:'architecture',svg:'flow',short:'Atlas',domain:'improve',section:'Pipeline',label:'Architecture',description:'System Atlas: topology, changes, risk, evidence and local architecture intelligence.',aka:['atlas','system atlas','dependencies','architecture atlas']},
+ {id:'claude',svg:'sparkle',domain:'improve',section:'Pipeline',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
+ {id:'architecture',svg:'flow',domain:'improve',section:'Pipeline',label:'Atlas',description:'System Atlas: topology, changes, risk, evidence and local architecture intelligence.',aka:['architecture','system atlas','dependencies','architecture atlas']},
  {id:'workbench',svg:'folder',domain:'system',section:'Tools',tool:true,lights:'tools',label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
  {id:'repoTools',svg:'branch',domain:'system',section:'Tools',tool:true,lights:'tools',label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},
  {id:'powershell',svg:'terminal',domain:'system',section:'Tools',tool:true,lights:'tools',label:'PowerShell',description:'Approval-gated scripts on the Windows host.',aka:['powershell workbench']},
  {id:'actions',svg:'globe',domain:'system',section:'Tools',tool:true,lights:'tools',label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
  {id:'automations',svg:'flow',domain:'system',section:'Tools',tool:true,lights:'tools',label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
  // Settings left Health (navigation update, 2 Nov): Health is only whether things work.
- {id:'tools',svg:'terminal',domain:'system',section:'Tools',label:'Tools',description:'Files, Repository, PowerShell, Browser & computer and n8n workflows.',aka:['developer tools','advanced','workbench']},
- {id:'settings',svg:'settings',domain:'system',section:'Settings',label:'Settings',description:'Notifications, sign-in, home location and the pages you open.',aka:['preferences','notifications','home location','sign-in']},
+ // Developer tools and Assistant settings are the pages' names (Pi Hub A22 8.1) in the title, the menu and ⌘K. The System
+ // strip keeps `short` (Tools, Settings), as Status does: five full names are 427 px, past a 390 px phone. Pi Hub draws
+ // this strip from step 14 (A22 brief 4), where it scrolls; the short words go then.
+ {id:'tools',svg:'terminal',short:'Tools',domain:'system',section:'Tools',label:'Developer tools',description:'Files, Repository, PowerShell, Browser & computer and n8n workflows.',aka:['tools','advanced','workbench']},
+ {id:'settings',svg:'settings',short:'Settings',domain:'system',section:'Settings',label:'Assistant settings',description:'Notifications, sign-in, home location and the pages you open.',aka:['settings','preferences','notifications','home location','sign-in']},
  {id:'activity',svg:'history',domain:'system',section:'History',label:'Audit log',description:'What happened on the appliance, and when.',aka:['activity']},
  {id:'runs',svg:'work',domain:'hidden',section:'History',label:'Runs',description:'Every run, live, with cancel and retry.'}
 ];
