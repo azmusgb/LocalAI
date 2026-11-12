@@ -30,6 +30,15 @@ test('the service worker precaches every front-end module', () => {
   assert.deepEqual(modules.filter(f => !cached.has(f)), []);
 });
 
+// The same for stylesheets: /ui/tokens.css joined the page in #531 without joining the precache, so a phone offline
+// would have drawn the kit's parts with no values.
+test('the service worker precaches every stylesheet the page links', () => {
+  const html = fs.readFileSync(path.join(pub, 'index.html'), 'utf8'), sw = fs.readFileSync(path.join(pub, 'sw.js'), 'utf8');
+  const sheets = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map(m => m[1]), shell = sw.match(/const SHELL=\[([^\]]*)\]/)[1];
+  assert.ok(sheets.length >= 4);
+  assert.deepEqual(sheets.filter(s => !shell.includes(`'${s}'`)), []);
+});
+
 // Agent World's on-demand modules (app/public/aw/*.js) are not in index.html: ui.js loads the ones in AW_MODS the first
 // time the city is on screen, and the service worker precaches them so the city works offline too.
 test('every Agent World on-demand module is in the loader and precached, and none is in index.html', () => {
