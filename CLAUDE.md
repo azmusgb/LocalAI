@@ -68,6 +68,11 @@ without it the call is listed on Health as one that would be refused). Mutating 
   from this summary. Pi Hub's baseline and its approved amendments (A4, A6, A7 and later) win where they differ. If you
   can't open it (no network, no access), say so and stop before changing a screen. The Assistant uses the same page anatomy, Needs-you list, words and honest states as Pi Hub. Contrast comes from the
   kit's measured `docs/contrast.md`; new tokens or components go into appliance-ui and are synced into `app/public/ui`.
+- **The kit's literals check** (`node app/public/ui/literals.mjs app/public`, a local CI step and `tests/kit-literals.test.cjs`):
+  a colour, size, spacing, radius, shadow, duration, layer or private custom-property name written by hand under
+  `app/public` may not be added; use the kit's `--ui-*` value (`/ui/tokens.css`, loaded first). A PR that removes one
+  lowers the baseline in the same PR with `--write-baseline` (it refuses to raise a count; `--list` shows each
+  finding). Adding to `.kit-literals-allow.json` (Agent World's and Main Street's canvas art) needs a sentence in the PR.
 - **Navigation lives in `app/public/view-registry.js`.** New page = registry entry + `<section id>` in
   `index.html`; retired ids go in `ALIASES`. Use the registry's labels in docs and UI text.
 - New `tests/*.test.cjs` and `tests/*-ui.mjs` files are picked up automatically; no lists to update.

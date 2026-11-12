@@ -251,6 +251,7 @@ async function main() {
   } else say('\n(pwsh not installed: PowerShell steps skipped)');
   await step('No private-key files', 'sh', ['-c', "! find app -type f \\( -name '*.pem' -o -name '*.key' -o -name '*.pfx' -o -name '*.p12' -o -name '.env' \\) | grep ."]);
   await step('Kit drift', 'node', ['scripts/kit-drift.mjs']);  // prints the kit copy's line; warn-only unless KIT_DRIFT_ENFORCE=1
+  await step('Kit literals', 'node', ['app/public/ui/literals.mjs', 'app/public']);  // Pi Hub A22 1.5: no hand-written colour, size or private name is added (.kit-literals-baseline.json)
   const browser = await browserSuites();
   results.push(['Browser acceptance', browser.ok]);
   if (browser.retried.length) say(`(passed on retry: ${browser.retried.join(', ')})`);

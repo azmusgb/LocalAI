@@ -1,0 +1,39 @@
+{
+  "kit": "2.21.0",
+  "files": {
+    "app/public/agent-world-watch.js": {
+      "colour": 8
+    },
+    "app/public/app.css": {
+      "colour": 212,
+      "type": 32,
+      "space": 1017,
+      "radius": 57,
+      "shadow": 45,
+      "motion": 33,
+      "layer": 32,
+      "name": 129
+    },
+    "app/public/app.js": {
+      "colour": 1,
+      "space": 32
+    },
+    "app/public/fix-part.js": {
+      "colour": 2
+    },
+    "app/public/index.html": {
+      "colour": 3
+    },
+    "app/public/qr.js": {
+      "colour": 2
+    },
+    "app/public/sw.js": {
+      "colour": 4
+    },
+    "app/public/ui.js": {
+      "colour": 473,
+      "space": 5,
+      "name": 2
+    }
+  }
+}
