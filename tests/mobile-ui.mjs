@@ -90,7 +90,7 @@ await check('chips, filters and tabs are at least 44px tall', async () => {
 await check('home shows the brand and a greeting in the top bar, not a section name', async () => {
   await page.evaluate(() => window.showView('home'));
   await page.waitForTimeout(150);
-  assert.match((await page.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').replace(/ ?← Home ?/, ' ').trim(), /^Good (morning|afternoon|evening) Local AI$/);
+  assert.match((await page.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').trim(), /^Good (morning|afternoon|evening) Local AI$/);
   assert.equal(await page.locator('#uxContextMenu').isVisible(), false, 'no section menu on Home');
   const search = await page.locator('#uxCommandBtn').boundingBox();
   assert.ok(search.x > 360 / 2, `Search sits at the right with the bell, not beside the brand (x=${search.x})`);
@@ -160,8 +160,10 @@ await check('shell: one compact header, underline tabs, flush tab bar with icons
   assert.deepEqual(problems, []);
 });
 
-await check('shell: the icon sprite takes no space above the app', async () => {
-  assert.equal(await shell.evaluate(() => Math.round(document.querySelector('.app').getBoundingClientRect().top + window.scrollY)), 0);
+await check('shell: the icon sprite takes no space above the app; only the "← Pi Hub" bar is above it', async () => {
+  const r = await shell.evaluate(() => ({ app: Math.round(document.querySelector('.app').getBoundingClientRect().top + window.scrollY), bar: Math.round(document.querySelector('nav.ui-backbar').getBoundingClientRect().bottom + window.scrollY), barTop: Math.round(document.querySelector('nav.ui-backbar').getBoundingClientRect().top + window.scrollY) }));
+  assert.equal(r.barTop, 0);
+  assert.equal(r.app, r.bar);
 });
 
 // The bell's number is Needs you's (home.js sends it from any page; navigation update, 2 Nov).

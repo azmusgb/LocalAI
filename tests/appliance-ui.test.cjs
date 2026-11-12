@@ -80,11 +80,17 @@ test('Inbox is one layer of cards and the audit log opens runs from a small link
   assert.ok(css.includes('.link-btn{'));
 });
 
-// N5: "← Home" is born with Pi Hub's registry address; nothing waits for a later script to correct a bare IP.
-test('the header\'s "← Home" link is written with the registry address, not 10.0.0.80', () => {
-  const ui = read('ui.js');
-  const m = /id="uxPiHubLink" href="'\+hubHref\+'"/.exec(ui);
-  assert.ok(m, 'the link takes its address from hubHref in the markup');
-  assert.match(ui, /const hubHref=window\.ApplianceTools\?\.toolUrl\('hub'\)\|\|'https:\/\/hub\.rahe-home\.duckdns\.org\/';/);
-  assert.ok(!/id="uxPiHubLink"[^>]*10\.0\.0\.80/.test(ui), 'no bare IP in the markup');
+// Pi Hub A22 6.4 (step 13, L3): on its own address the Assistant starts with the kit's back bar, "← Pi Hub", where the
+// header's "← Home" link was. It is in the page itself, so it is born with Pi Hub's address (N5: nothing waits for a
+// script to correct a bare IP); ui.js then keeps it in step with the tool registry, and backbar.js sends a visitor who
+// came from a Pi Hub page back to that page.
+test('the page starts with the kit\'s back bar to Pi Hub, and the header has no "← Home" link', () => {
+  const html = read('index.html'), ui = read('ui.js');
+  const bar = '<nav class="ui-backbar" aria-label="Pi Hub"><a id="uxPiHubLink" href="https://hub.rahe-home.duckdns.org/" aria-label="Back to Pi Hub"><span aria-hidden="true">←</span>Pi Hub</a></nav>';
+  assert.equal(html.split('class="ui-backbar"').length - 1, 1, 'one bar');
+  assert.ok(html.includes('<body>\n' + bar) || html.includes('<body>' + bar), 'the bar is the first thing in the body');
+  assert.ok(!/10\.0\.0\.\d+/.test(bar));
+  assert.match(html, /<script src="\/ui\/backbar\.js"[^>]*><\/script>/);
+  assert.ok(!ui.includes('← Home') && !ui.includes('ux-pihub-link'), 'the header no longer draws its own link');
+  assert.match(ui, /q\('#uxPiHubLink'\)/, 'ui.js keeps the bar\'s address in step with the registry');
 });
