@@ -14,8 +14,8 @@ test('the kit copy in app/public/ui is untouched', () => {
   assert.equal(r.status, 0, r.stdout + r.stderr);
 });
 
-// Local AI keeps one stylesheet and its own /fonts (design-system-ui checks both), so it doesn't load the kit's CSS: its
-// --ds-* colours carry the kit's dark values, and this test keeps them equal to the synced copy.
+// Local AI's own stylesheet still names its colours --ds-* (they become the kit's names section by section, L4 to L9):
+// they carry the kit's dark values, and this test keeps them equal to the synced copy.
 test('the design tokens carry the kit\'s dark colours', () => {
   const kit = JSON.parse(read('ui/tokens.json')).color;
   const css = read('app.css').replace(/\s+/g, '');
@@ -26,27 +26,16 @@ test('the design tokens carry the kit\'s dark colours', () => {
     assert.ok(css.includes(`--ds-${ds}:${kit[ui].dark}`), `--ds-${ds} should be the kit's ${ui} (${kit[ui].dark})`);
 });
 
-// needs.css (the kit's Needs you rows) is the one kit sheet Local AI loads, and it reads --ui-* names. app.css aliases every one
-// of them onto its own values; each must exist and equal the kit's dark value (a font stack only has to start with the same face).
-test('every --ui-* name needs.css and components.css read is aliased to the kit\'s dark value', () => {
-  const norm = v => v.replace(/\s+/g, '').replace(/,/g, ', ').replace(/, /g, ',');
-  const kitRoot = read('ui/tokens.css').split('\n').find(l => l.startsWith(':root{'));
-  const kit = Object.fromEntries([...kitRoot.matchAll(/--ui-([a-z0-9-]+):([^;]+);/g)].map(m => [m[1], norm(m[2])]));
-  const css = read('app.css');
-  const decl = name => { const m = css.match(new RegExp('(?:^|[;{\\s])' + name + ':([^;}]+)[;}]')); return m && norm(m[1]); };
-  const resolve = v => { for (let i = 0; i < 5; i++) { const m = /^var\((--[a-z0-9-]+)\)$/.exec(v); if (!m) break; v = decl(m[1]); } return v; };
-  // components.css (the page parts, since Agent World's A7 page) reads them too; the names it sets itself (the beam) are its own.
-  const own = new Set([...read('ui/components.css').matchAll(/(?:^|[;{\s])--ui-([a-z0-9-]+):/g)].map(m => m[1]));
-  const used = [...new Set([...(read('ui/needs.css') + read('ui/components.css')).matchAll(/var\(--ui-([a-z0-9-]+)/g)].map(m => m[1]))].filter(n => !own.has(n));
-  assert.ok(used.length >= 11, 'needs.css reads ' + used.join(', '));
-  for (const n of used) {
-    const got = decl('--ui-' + n);
-    assert.ok(got, `--ui-${n} is not defined in app.css`);
-    const v = resolve(got);
-    if (n === 'fs-1') assert.equal(v, '13px', 'the small text keeps the app\'s 13px floor (the kit says ' + kit[n] + ')');
-    else if (n === 'font') assert.equal(v.split(',')[0], kit.font.split(',')[0]);
-    else assert.equal(v, kit[n], `--ui-${n} should be the kit's ${kit[n]}`);
-  }
+// Pi Hub A22 1.3 (step 13, L3): the kit's values come from the kit's own file. index.html loads /ui/tokens.css before
+// every other sheet, and Local AI's stylesheet defines no --ui-* name of its own (it used to alias each one, and held
+// the small text at 13 px; the kit's sizes are rem on the kit's root curve now, the same as Pi Hub's).
+test('the page loads the kit\'s tokens.css first and app.css defines no --ui-* name', () => {
+  const sheets = [...read('index.html').matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map(m => m[1]);
+  assert.deepEqual(sheets, ['/ui/tokens.css', '/ui/components.css', '/app.css', '/ui/needs.css']);
+  const own = [...read('app.css').matchAll(/(?:^|[;{\s])(--ui-[a-z0-9-]+)\s*:/g)].map(m => m[1]);
+  assert.deepEqual([...new Set(own)], []);
+  // Dark only until L10: the kit's file follows the system's theme unless the page says dark.
+  assert.match(read('index.html'), /<html lang="en" data-theme="dark">/);
 });
 
 // The navy shades from before the kit are gone (and since 1.4, Faceplate, the Slate + Sky ones too) from the app's chrome (the canvas's own night palette, --aw-*, stays).
