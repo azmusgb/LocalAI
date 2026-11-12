@@ -160,8 +160,10 @@ await check('shell: one compact header, underline tabs, flush tab bar with icons
   assert.deepEqual(problems, []);
 });
 
-await check('shell: the icon sprite takes no space above the app', async () => {
-  assert.equal(await shell.evaluate(() => Math.round(document.querySelector('.app').getBoundingClientRect().top + window.scrollY)), 0);
+await check('shell: the icon sprite takes no space above the app; only the "← Pi Hub" bar is above it', async () => {
+  const r = await shell.evaluate(() => ({ app: Math.round(document.querySelector('.app').getBoundingClientRect().top + window.scrollY), bar: Math.round(document.querySelector('nav.ui-backbar').getBoundingClientRect().bottom + window.scrollY), barTop: Math.round(document.querySelector('nav.ui-backbar').getBoundingClientRect().top + window.scrollY) }));
+  assert.equal(r.barTop, 0);
+  assert.equal(r.app, r.bar);
 });
 
 // The bell's number is Needs you's (home.js sends it from any page; navigation update, 2 Nov).

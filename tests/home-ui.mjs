@@ -152,8 +152,8 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
     assert.ok(Math.round(box.height) >= 44, `tap target ${box.height}px`);  // layout lands on subpixels: 43.99997 is 44
     assert.ok(box.width < 160, `"← Pi Hub" is a link, not a full-width strip (${box.width}px)`);
     // The bar is the page's first visible thing: at the very top, the full width, above the Assistant's own header.
-    const bar = await page.evaluate(() => { const n = document.querySelector('nav.ui-backbar'), r = n.getBoundingClientRect(), h = document.getElementById('uxContextBar').getBoundingClientRect(); return { top: r.top + scrollY, width: r.width, vw: document.documentElement.clientWidth, aboveHeader: r.bottom <= h.top + 1, before: [...document.body.children].filter(e => e.offsetParent || getComputedStyle(e).position === 'fixed').indexOf(n), sticky: getComputedStyle(n).position, sideways: document.documentElement.scrollWidth > document.documentElement.clientWidth }; });
-    assert.deepEqual(bar, { top: 0, width: bar.vw, vw: bar.vw, aboveHeader: true, before: 0, sticky: 'static', sideways: false });
+    const bar = await page.evaluate(() => { const n = document.querySelector('nav.ui-backbar'), r = n.getBoundingClientRect(), h = document.getElementById('uxContextBar').getBoundingClientRect(); return { top: r.top + scrollY, width: r.width, vw: document.documentElement.clientWidth, aboveHeader: r.bottom <= h.top + 1, before: [...document.body.children].slice(0, [...document.body.children].indexOf(n)).map(e => e.className).join(' '), sticky: getComputedStyle(n).position, sideways: document.documentElement.scrollWidth > document.documentElement.clientWidth }; });
+    assert.deepEqual(bar, { top: 0, width: bar.vw, vw: bar.vw, aboveHeader: true, before: 'skip-link', sticky: 'static', sideways: false });  // only the skip link comes before it
     assert.equal(await page.locator('#homeComposer').isVisible(), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, 'no sideways scroll');
     await page.context().close();
