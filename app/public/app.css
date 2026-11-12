@@ -754,9 +754,8 @@ details.disclosure{margin-top:12px;border-top:1px solid var(--ds-line);padding-t
    Color roles: graphite neutrals (the kit's Faceplate); one teal for anything you can act on; amber means work in progress;
    green done; red needs attention. */
 @font-face{font-family:Archivo;font-style:normal;font-weight:400 750;font-stretch:75% 100%;font-display:swap;src:url(/fonts/archivo-latin-ui.woff2) format('woff2')}
-/* The kit's Needs you rows (/ui/needs.css) and page parts (/ui/components.css), the kit sheets Local AI loads, read --ui-* names: each is an alias of a value
-   above that equals the kit's dark one (tests/appliance-ui.test.cjs checks every name needs.css reads). Sizes are the kit's own, except
-   the small source line, which keeps Local AI's 13 px floor (the kit's is 12 px). */
+/* The kit's values (--ui-*) come from /ui/tokens.css, which index.html loads first; nothing here defines one (Pi Hub A22 1.3,
+   tests/appliance-ui.test.cjs). The kit's parts read them, so their sizes are rem on the kit's root curve, as in Pi Hub. */
 :root{
   --ux-content-max:1500px;
   color-scheme:dark;
@@ -786,12 +785,7 @@ details.disclosure{margin-top:12px;border-top:1px solid var(--ds-line);padding-t
   --ux-bg:var(--ds-bg);--ux-rail:var(--ds-bg-2);--ux-surface:var(--ds-surface);--ux-surface-2:var(--ds-surface-2);--ux-surface-3:var(--ds-surface-3);
   --ux-line:var(--ds-line);--ux-line-strong:var(--ds-line-2);--ux-text:var(--ds-text);--ux-muted:var(--ds-muted);
   --ux-accent:var(--ds-accent);--ux-accent-2:var(--ds-violet);--ux-good:var(--ds-good);--ux-warn:var(--ds-progress);--ux-bad:var(--ds-bad);
-  --ux-radius:var(--ds-r-md);--ux-radius-lg:var(--ds-r-lg);--ui-bad:var(--ds-bad);--ui-warn:var(--ds-attention);--ui-muted:var(--ds-muted);--ui-text:var(--ds-text);--ui-line:var(--ds-line);--ui-surface:var(--ds-surface);
-  --ui-font:var(--ds-font);--ui-r-2:var(--ds-r-sm);--ui-fs-1:var(--ds-fs-1);--ui-fs-2:13px;--ui-space:4px;--ux-nav-width:76px;
-  /* The kit's page parts (/ui/components.css, since Pi Hub A7 on Agent World) read these too: the kit's dark values. */
-  --ui-bg:var(--ds-bg);--ui-surface-2:var(--ds-surface-2);--ui-line-2:var(--ds-line-2);--ui-field-line:var(--ds-line-input);--ui-accent:var(--ds-accent);
-  --ui-on-accent:var(--ds-accent-ink);--ui-ok:var(--ds-good);--ui-unknown:#b0b8b2;--ui-r-1:4px;--ui-r-3:var(--ds-r-md);
-  --ui-fs-3:14px;--ui-fs-4:16px;--ui-fs-5:20px;--ui-fs-6:26px;--ui-fs-7:34px;--ui-stretch-heading:87.5%;--ui-stretch-readout:75%}
+  --ux-radius:var(--ds-r-md);--ux-radius-lg:var(--ds-r-lg);--ux-nav-width:76px}
 /* Agent World uses the same palette */
 .awc-v3,.aw-page{--aw-ground:var(--ds-bg);--aw-panel:var(--ds-surface);--aw-panel2:var(--ds-surface-2);--aw-line:var(--ds-line);--aw-line2:var(--ds-line-2);
   --aw-text:var(--ds-text);--aw-muted:var(--ds-muted);--aw-faint:var(--ds-faint);--aw-amber:var(--ds-progress);--aw-green:var(--ds-good);--aw-red:var(--ds-bad);--aw-blue:var(--ds-accent)}
