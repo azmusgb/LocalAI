@@ -4,7 +4,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { addAxe } from './axe-helper.mjs';
+import { addAxe, clearOfComposer } from './axe-helper.mjs';
 
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const axePath = join(dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min.js');
@@ -69,6 +69,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
       await page.evaluate(v => window.showView(v), id);
       await page.waitForTimeout(700);
       await addAxe(page, axePath);
+      if (id === 'home') assert.equal(await clearOfComposer(page), 0, 'no control straddles the pinned composer');
       const v = await page.evaluate(rules => window.axe.run(document, { runOnly: { type: 'tag', values: rules } })
         .then(r => r.violations.map(x => `${x.id}: ${x.nodes.slice(0, 3).map(n => n.target.join(' ')).join(' | ')}`)), RULES);
       assert.deepEqual(v, []);

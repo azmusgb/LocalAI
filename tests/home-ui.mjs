@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { addAxe } from './axe-helper.mjs';
+import { addAxe, clearOfComposer } from './axe-helper.mjs';
 import { checkReopenQuickly } from './sheet-reopen.mjs';
 
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
@@ -1088,15 +1088,8 @@ for (const [tag, vp] of [['390x844', phone], ['1280x860', desk]]) {
     await page.waitForSelector('#homeRecent2 .run-card', T);
     await addAxe(page, axePath);
     const run = sel => page.evaluate(s => window.axe.run(s, { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] } }).then(r => r.violations.map(x => `${x.id}: ${x.nodes.map(n => n.html.slice(0, 120)).join(' | ')}`)), sel);
-    // The composer is pinned over the page, so wherever the page rests a Recent row can sit half under it, and axe
-    // measures a half-covered button as a small target. That is where the scroll stopped, not the button's size: move
-    // the page until no row's button straddles the composer's top edge, then measure.
-    await page.evaluate(() => {
-      const top = document.getElementById('homeComposer').getBoundingClientRect().top;
-      const cut = [...document.querySelectorAll('#homeRecent2 .work-open')].map(b => b.getBoundingClientRect()).find(r => r.top < top && r.bottom > top);
-      if (cut) scrollBy(0, Math.ceil(cut.bottom - top));
-    });
-    assert.deepEqual(await page.evaluate(() => { const top = document.getElementById('homeComposer').getBoundingClientRect().top; return [...document.querySelectorAll('#homeRecent2 .work-open')].filter(b => { const r = b.getBoundingClientRect(); return r.top < top && r.bottom > top; }).length; }), 0, 'no Recent button straddles the composer');
+    // Wherever the page rests, a control can sit half under the pinned composer; measure with none straddling it (axe-helper).
+    assert.equal(await clearOfComposer(page), 0, 'no control straddles the pinned composer');
     assert.deepEqual(await run('#home'), []);
     await page.locator('#homeModeChip').click();
     await page.waitForSelector('#homeModeSheet[open]', T);
