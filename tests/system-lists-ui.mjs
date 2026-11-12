@@ -74,7 +74,10 @@ await check('Settings: Notifications comes first, then Sign-in, Pages you open a
 // Health must not say "ready" when the check itself failed: a 500 or an answer without services keeps the last known
 // list and says the check couldn't be made.
 const healthy = { overall: 'HEALTHY', checkedAt: new Date().toISOString(), services: [{ name: 'ollama', label: 'Intelligence', state: 'HEALTHY', required: true }, { name: 'comfy', label: 'Images', state: 'HEALTHY', required: false }] };
-const checkAgain = async () => { await page.evaluate(() => document.getElementById('statusRetryBtn').click()); await page.waitForFunction(() => document.getElementById('statusRetryBtn').textContent === 'Check again'); };
+// The button is disabled while a check runs, and a click on it then does nothing: wait out a check that is already
+// under way (the page's own, against the real server) before pressing, so the answer read is the stubbed one.
+const idle = () => page.waitForFunction(() => { const b = document.getElementById('statusRetryBtn'); return !b.disabled && b.textContent === 'Check again'; });
+const checkAgain = async () => { await idle(); await page.evaluate(() => document.getElementById('statusRetryBtn').click()); await idle(); };
 await check('Health: a Down service shows no "Slow" time, a slow one that answers does', async () => {
   const slow = { overall: 'DOWN', checkedAt: new Date().toISOString(), services: [
     { name: 'ollama', label: 'Intelligence', state: 'DOWN', required: true, latencyMs: 3000 },
