@@ -1418,7 +1418,8 @@ function screenPoint(e){const r=canvas.getBoundingClientRect(),px=e.clientX-r.le
 // waits on the animation loop (or on an IntersectionObserver) to appear.
 function resize(){
  const wrap=canvas?.parentElement;if(!wrap)return;const w=wrap.clientWidth,h=wrap.clientHeight;if(!w||!h)return;
- const dpr=Math.min(2,devicePixelRatio||1),bw=Math.round(w*dpr),bh=Math.round(h*dpr);if(w===cam.w&&h===cam.h&&canvas.width===bw&&canvas.height===bh&&WS===(matchMedia(WS_Q).matches?1.25:1))return;
+ // The box can be a fraction of a pixel wide (its column is sized in rem): the backing store follows the canvas's real box, not the rounded one.
+ const box=canvas.getBoundingClientRect(),dpr=Math.min(2,devicePixelRatio||1),bw=Math.round((box.width||w)*dpr),bh=Math.round((box.height||h)*dpr);if(w===cam.w&&h===cam.h&&canvas.width===bw&&canvas.height===bh&&WS===(matchMedia(WS_Q).matches?1.25:1))return;
  const first=!cam.w,s=sc(view.targetZoom),cx=first?W/2:(cam.w/2-view.targetPanX)/s,cy=first?H/2:(cam.h/2-view.targetPanY)/s;
  WS=matchMedia(WS_Q).matches?1.25:1;cam={w,h,dpr,base:Math.max(w/W,h/H)};canvas.width=bw;canvas.height=bh;ctx=canvas.getContext('2d');
  focusPoint(cx,cy,view.targetZoom);view.zoom=view.targetZoom;view.panX=view.targetPanX;view.panY=view.targetPanY;paint()
