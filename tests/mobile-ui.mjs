@@ -90,7 +90,7 @@ await check('chips, filters and tabs are at least 44px tall', async () => {
 await check('home shows the brand and a greeting in the top bar, not a section name', async () => {
   await page.evaluate(() => window.showView('home'));
   await page.waitForTimeout(150);
-  assert.match((await page.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').replace(/ ?← Home ?/, ' ').trim(), /^Good (morning|afternoon|evening) Local AI$/);
+  assert.match((await page.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').trim(), /^Good (morning|afternoon|evening) Local AI$/);
   assert.equal(await page.locator('#uxContextMenu').isVisible(), false, 'no section menu on Home');
   const search = await page.locator('#uxCommandBtn').boundingBox();
   assert.ok(search.x > 360 / 2, `Search sits at the right with the bell, not beside the brand (x=${search.x})`);

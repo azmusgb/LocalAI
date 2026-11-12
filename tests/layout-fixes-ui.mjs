@@ -50,7 +50,7 @@ await check('desktop: one rail and one strip on every page; the top bar names th
   await page.waitForSelector('#work.active', T);
   await page.waitForTimeout(300);
   const left = () => page.evaluate(() => document.querySelector('main').getBoundingClientRect().left);
-  const area = async () => (await page.locator('#uxContextBar .ux-context-left').innerText()).replace(/\s+/g, ' ').replace(/^← Home ?/, '').trim(); // the ← Home link (Pi Hub) is in every bar
+  const area = async () => (await page.locator('#uxContextBar .ux-context-left').innerText()).replace(/\s+/g, ' ').trim();
   const x = await left();
   assert.ok(x < 120, `main starts at ${x}px, beside the 76px rail`);
   assert.equal(await area(), 'Work');

@@ -137,7 +137,7 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
 // One home, step 4: Local AI opens on the Assistant. The printer lives on Pi Hub now, and "← Home" goes back to it
 // in place of the old Hub/Terminal/Materials bar.
 for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
-  await check(`${tag}: Home is the Assistant: no printer line, no suite bar, "← Home" to Pi Hub`, async () => {
+  await check(`${tag}: Home is the Assistant: no printer line, no suite bar, "← Pi Hub" back to Pi Hub`, async () => {
     const page = await open(vp, '#home', { printer: { state: 'printing', progress: 42, minutesLeft: 70, errorCode: null, access: 'ok', seenAt: new Date().toISOString() } });
     await page.waitForSelector('#homeRecent2 .run-card', T);
     assert.equal(await page.locator('appliance-nav').count(), 0, 'no suite bar');
@@ -145,11 +145,15 @@ for (const [tag, vp] of [['phone', phone], ['desktop', desk]]) {
     assert.ok(!page.printerAsks.includes('?part=printer'), 'Home never asks for the printer line (Services still checks the display)');
     const back = page.locator('#uxPiHubLink');
     await back.waitFor({ state: 'visible', ...T });
-    assert.equal((await back.innerText()).trim(), '← Home');  // §5 level 0: "← Home" is Pi Hub (step 7, PR 7.7)
+    assert.equal((await back.innerText()).replace(/\s+/g, ''), '←PiHub');  // A22 6.4: the kit's back bar, "← Pi Hub"
+    assert.equal(await back.getAttribute('aria-label'), 'Back to Pi Hub');
     assert.equal(await back.getAttribute('href'), 'https://hub.rahe-home.duckdns.org/');
     const box = await back.boundingBox();
     assert.ok(Math.round(box.height) >= 44, `tap target ${box.height}px`);  // layout lands on subpixels: 43.99997 is 44
-    assert.ok(box.width < 160, `"← Home" is a link, not a full-width strip (${box.width}px)`);
+    assert.ok(box.width < 160, `"← Pi Hub" is a link, not a full-width strip (${box.width}px)`);
+    // The bar is the page's first visible thing: at the very top, the full width, above the Assistant's own header.
+    const bar = await page.evaluate(() => { const n = document.querySelector('nav.ui-backbar'), r = n.getBoundingClientRect(), h = document.getElementById('uxContextBar').getBoundingClientRect(); return { top: r.top + scrollY, width: r.width, vw: document.documentElement.clientWidth, aboveHeader: r.bottom <= h.top + 1, before: [...document.body.children].filter(e => e.offsetParent || getComputedStyle(e).position === 'fixed').indexOf(n), sticky: getComputedStyle(n).position, sideways: document.documentElement.scrollWidth > document.documentElement.clientWidth }; });
+    assert.deepEqual(bar, { top: 0, width: bar.vw, vw: bar.vw, aboveHeader: true, before: 0, sticky: 'static', sideways: false });
     assert.equal(await page.locator('#homeComposer').isVisible(), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, 'no sideways scroll');
     await page.context().close();
@@ -1070,14 +1074,15 @@ await check('Home: a clamped Needs you detail keeps its full text as the title',
   assert.ok(titles.some(t => t.includes(long)), 'the full text is on the row');
   await page.context().close();
 });
-await check('"← Home" is in the header of every top-level view', async () => {
+await check('"← Pi Hub" is the bar above every top-level view', async () => {
   const page = await open(desk, '#home');
   for (const hash of ['#home', '#work', '#projects', '#backlog', '#status']) {
     await page.evaluate(h => { location.hash = h; }, hash);
     await page.waitForFunction(h => location.hash.startsWith(h), hash, T);
-    const link = page.locator('#uxContextBar #uxPiHubLink');
+    const link = page.locator('nav.ui-backbar #uxPiHubLink');
     await link.waitFor({ state: 'visible', ...T });
-    assert.equal((await link.innerText()).trim(), '← Home', hash);
+    assert.equal((await link.innerText()).replace(/\s+/g, ''), '←PiHub', hash);
+    assert.equal(await page.locator('#uxContextBar a[href^="https://hub."]').count(), 0, `${hash}: no second link to Pi Hub in the header`);
   }
   await page.context().close();
 });

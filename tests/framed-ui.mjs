@@ -28,10 +28,10 @@ try {
   await page.waitForFunction(() => window.got.length > 0, null, { timeout: 15000 }).catch(async e => { console.error('frames:', page.frames().map(f => f.url())); throw e; });
   await frame().waitForSelector('#uxFramedStrip', { timeout: 15000 });
 
-  await check('framed by Pi Hub: no top bar, rail, phone bar or "← Home"; the five areas are a strip', async () => {
+  await check('framed by Pi Hub: no top bar, rail, phone bar or "← Pi Hub" bar; the five areas are a strip', async () => {
     const r = await frame().evaluate(() => ({
       framed: document.documentElement.classList.contains('is-framed'),
-      shown: ['#uxContextBar', '.app>aside', '#uxMobileNav', '#uxPiHubLink'].map(s => { const e = document.querySelector(s); return e ? getComputedStyle(e).display !== 'none' : false; }),
+      shown: ['#uxContextBar', '.app>aside', '#uxMobileNav', '.ui-backbar'].map(s => { const e = document.querySelector(s); return e ? getComputedStyle(e).display !== 'none' : false; }),
       strip: [...document.querySelectorAll('#uxFramedStrip button')].map(b => b.textContent),
       current: document.querySelector('#uxFramedStrip [aria-current="page"]')?.textContent,
     }));

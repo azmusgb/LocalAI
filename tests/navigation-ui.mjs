@@ -27,7 +27,7 @@ await page.waitForFunction(() => typeof window.showView === 'function');
 // Navigation spec step 4: the rail picks the area; the page strip under the top bar lists its pages; the top bar names
 // the area (a page without a strip, such as Missions, names itself).
 const stripLabels = () => page.locator('#uxPageStrip button').allInnerTexts();
-const crumbOf = async pg => (await pg.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').replace(/^← Home ?/, '').trim(); // "← Home" is in the bar of every page; this reads the rest
+const crumbOf = async pg => (await pg.locator('.ux-context-left').innerText()).replace(/\s+/g, ' ').trim(); // this reads the rest
 const crumb = () => crumbOf(page);
 
 await check('home has one command surface and a short breadcrumb', async () => {

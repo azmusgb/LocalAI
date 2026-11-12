@@ -21,7 +21,7 @@ test('[hidden] always hides, whatever display a class sets (Missions › special
 });
 
 test('focus is the app ring, not the 28% glow or a fill a shade off the menu', () => {
-  for (const sel of ['.ux-pihub-link:focus-visible', '.home-context__clear:focus-visible']) {
+  for (const sel of ['.home-context__clear:focus-visible']) {
     assert.match(rule(sel), /outline:var\(--ds-ring\)/, sel);
   }
   assert.match(css, /\.aw-menu button:focus-visible\{[^}]*outline:var\(--ds-ring\)/);
