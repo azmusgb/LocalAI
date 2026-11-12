@@ -82,7 +82,7 @@ test('loadOrCreateVapid creates once', () => {
 
 test('isAllowedEndpoint', () => {
   for (const ok of ['https://web.push.apple.com/abc', 'https://fcm.googleapis.com/fcm/send/x', 'https://updates.push.services.mozilla.com/wpush/v2/x']) assert.equal(push.isAllowedEndpoint(ok), true, ok);
-  for (const bad of ['http://web.push.apple.com/x', 'https://evil.com/x', 'https://push.apple.com.evil.com/x', 'https://10.0.0.21/x', 'not a url', '']) assert.equal(push.isAllowedEndpoint(bad), false, bad);
+  for (const bad of ['http://web.push.apple.com/x', 'https://evil.com/x', 'https://push.apple.com.evil.com/x', 'https://10.0.0.81/x', 'not a url', '']) assert.equal(push.isAllowedEndpoint(bad), false, bad);
 });
 
 test('sendPush posts the right headers and reports gone', async () => {

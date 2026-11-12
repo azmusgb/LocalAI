@@ -65,8 +65,8 @@ All read at startup in `app/server.js` unless noted.
 | `N8N_URL` | `http://local-ai-n8n:5678` | n8n (health probe) |
 | `PROXY_URL` | `http://local-ai-ollama-responses-proxy:8080` | Responses proxy (health probe) |
 | `SEARXNG_URL` | `http://local-ai-searxng:8080` | Web research |
-| `MAC_AI_HOME_URL` | `http://10.0.0.16:3083` | Optional Mac companion (health probe) |
-| `MAC_DSH_URL` | `http://10.0.0.16:3084` | Optional Mac developer assistant (health probe) |
+| `MAC_AI_HOME_URL` | `http://10.0.0.82:3083` | Optional Mac companion (health probe) |
+| `MAC_DSH_URL` | `http://10.0.0.82:3084` | Optional Mac developer assistant (health probe) |
 | `LOCALAI_WORKSHOP_URL` | `http://10.0.0.124` | Workshop display beside the printer (Services card); only an http(s) address on a private IP or a `.local` name is used ([Workshop display](WORKSHOP-DISPLAY.md)) |
 | `LOCALAI_WORKSHOP_STATUS_TOKEN` | empty | The display's read-only printer-status token (secret, `stack.env` only); empty means no printer line on Home ([Workshop display › Printer status](WORKSHOP-DISPLAY.md#printer-status-read-only-token)) |
 | `LOCALAI_WORKSHOP_CODE_TOKEN` | empty | The display's sign-in code token, `wsc_…` (secret, `stack.env` only); empty means no **Show sign-in code** button on the Services card ([Workshop display › Sign-in code](WORKSHOP-DISPLAY.md#sign-in-code-on-the-services-card)) |

@@ -54,7 +54,7 @@ const ACT_KINDS = ['start', 'approve', 'abandon'];
 const BUILD_ID_RE = /^[A-Z]{1,4}-\d{1,6}-\d{1,4}$/;
 const GUARD_CODE_RE = /^[a-z][a-z0-9_]{0,39}$/;
 // The Pi's camera bridge (it stays open for the Workshop display) and the Pi hub, which says why there is no picture.
-const CAMERA_URL = 'http://10.0.0.30:8091/x2d/frame.jpg';
+const CAMERA_URL = 'http://10.0.0.80:8091/x2d/frame.jpg';
 const CAMERA_TIMEOUT_MS = 3000;
 const MAX_FRAME = 2 * 1024 * 1024; // read as a stream and cut off past this: a huge or endless answer is never held
 const MAX_REASON_ANSWER = 4 * 1024; // the hub's /api/camera answer is about 200 bytes
@@ -131,7 +131,7 @@ function photosProblem(payload) {
   return null;
 }
 
-function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () => null, now = () => new Date().toISOString(), clock = () => Date.now(), printer = () => null, cameraUrl = process.env.LOCALAI_LAB_CAMERA_URL || CAMERA_URL, piHubUrl = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.30', cameraTimeoutMs = CAMERA_TIMEOUT_MS, fetchImpl = (...a) => fetch(...a) }) {
+function createPrintLab({ storage, dataDir, json, macAuthorized, deviceFor = () => null, now = () => new Date().toISOString(), clock = () => Date.now(), printer = () => null, cameraUrl = process.env.LOCALAI_LAB_CAMERA_URL || CAMERA_URL, piHubUrl = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.80', cameraTimeoutMs = CAMERA_TIMEOUT_MS, fetchImpl = (...a) => fetch(...a) }) {
   const photoDir = project => path.join(dataDir, 'print-lab', project, 'photos');
   const incomingDir = project => path.join(dataDir, 'print-lab', project, 'incoming');
   const projects = () => storage.readSetting(`${PREFIX}projects`, { names: [] }).names;

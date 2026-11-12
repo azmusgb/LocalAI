@@ -5,7 +5,7 @@
 // The Raspberry Pi's hub (another appliance on the home network: Plex, Homebridge, the camera bridge) answers
 // GET /api/now with a summary for screens, no key needed. Local AI reads it once a minute at most for the Workshop
 // display's cards: what Plex is playing, and the hub's own issues (docs/WORKSHOP-DISPLAY.md › Pi hub cards).
-// LOCALAI_PI_HUB_URL sets the address (default http://10.0.0.30); "off" turns it off. Never throws.
+// LOCALAI_PI_HUB_URL sets the address (default http://10.0.0.80); "off" turns it off. Never throws.
 
 const CACHE_MS = 60 * 1000, NEEDS_CACHE_MS = 30 * 1000, TIMEOUT_MS = 3000;
 const str = (v, n = 80) => (typeof v === 'string' ? v : v == null ? '' : String(v)).replace(/\s+/g, ' ').trim().slice(0, n);
@@ -85,7 +85,7 @@ function printerRecord(body, now = Date.now()) {
   };
 }
 
-function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.30', fetchImpl = fetch, now = Date.now } = {}) {
+function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.80', fetchImpl = fetch, now = Date.now } = {}) {
   const off = !url || url === 'off';
   let cache = { at: -Infinity, value: null };
   async function read() {

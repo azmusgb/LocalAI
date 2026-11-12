@@ -216,7 +216,7 @@ await check('#deployments opens Shipped, with Running now above the releases', a
   assert.doesNotMatch(await card.innerText(), /No deployment feed yet/);
   const versions = card.locator('a[data-dep-versions]');
   assert.equal(await versions.innerText(), 'Pi Hub › Versions');
-  assert.match(await versions.getAttribute('href'), /^(https:\/\/hub\.rahe-home\.duckdns\.org|http:\/\/10\.0\.0\.30)\/versions$/);
+  assert.match(await versions.getAttribute('href'), /^(https:\/\/hub\.rahe-home\.duckdns\.org|http:\/\/10\.0\.0\.80)\/versions$/);
   assert.equal(await versions.getAttribute('rel'), 'noopener');
   assert.ok(await page.evaluate(() => { const c = document.getElementById('shippedNow'), l = document.getElementById('shippedList'); return !!(c.compareDocumentPosition(l) & Node.DOCUMENT_POSITION_FOLLOWING); }), 'Running now comes before the releases');
 });

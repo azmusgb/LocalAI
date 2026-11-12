@@ -384,8 +384,8 @@ test('/api/access reports the Tailscale name only when it is a real host name', 
 });
 
 test('/healthz and index.html list the addresses a phone can switch to, and nothing else', { timeout: 60000 }, async t => {
-  const { request, base } = await startServer(t, { LOCALAI_HOST_IP: '10.0.0.21', LOCALAI_REMOTE_NAME: 'Bill-HPDesktop.tailfa018e.ts.net.' });
-  const want = [{ label: 'Home Wi-Fi', url: 'https://10.0.0.21' }, { label: 'Anywhere (Tailscale)', url: 'https://bill-hpdesktop.tailfa018e.ts.net' }];
+  const { request, base } = await startServer(t, { LOCALAI_HOST_IP: '10.0.0.81', LOCALAI_REMOTE_NAME: 'Bill-HPDesktop.tailfa018e.ts.net.' });
+  const want = [{ label: 'Home Wi-Fi', url: 'https://10.0.0.81' }, { label: 'Anywhere (Tailscale)', url: 'https://bill-hpdesktop.tailfa018e.ts.net' }];
   const health = await request('/healthz');
   assert.equal(health.response.status, 200);
   assert.deepEqual(health.value.addresses, want);
@@ -401,9 +401,9 @@ test('/healthz and index.html list the addresses a phone can switch to, and noth
 test('addresses leave out a host IP or Tailscale name that is missing or not plain', { timeout: 60000 }, async t => {
   for (const [ip, remote, want] of [
     ['', '', []],
-    ['10.0.0.21', 'localai.remote.invalid', [{ label: 'Home Wi-Fi', url: 'https://10.0.0.21' }]],
+    ['10.0.0.81', 'localai.remote.invalid', [{ label: 'Home Wi-Fi', url: 'https://10.0.0.81' }]],
     ['10.0.0.256', '', []],
-    ['10.0.0.21/24', '', []],
+    ['10.0.0.81/24', '', []],
     ['evil.example"><script>', 'not a name', []]
   ]) {
     const { request } = await startServer(t, { LOCALAI_HOST_IP: ip, LOCALAI_REMOTE_NAME: remote });

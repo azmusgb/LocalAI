@@ -71,7 +71,7 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
   `X-Forwarded-Proto: https` from Caddy; `requestIsHttps`); the appliance stores only its hash. Any paired device can
   revoke any device. The header is trusted from any client: spoofing it on the host's port 3080 only makes that client's own
   cookie HTTPS-only.
-- The Mac side (bridge, hooks, CLI) talks to `https://10.0.0.21` and verifies it against the LocalAI CA, which
+- The Mac side (bridge, hooks, CLI) talks to `https://10.0.0.81` and verifies it against the LocalAI CA, which
   `install.sh` fetches over `ssh windows` (authenticated), checks with `openssl x509` and records in
   `~/.claude/localai-chat/config.json`. Verification is never turned off; an untrusted certificate fails with a log
   line. If HTTPS is not available at install time, the installer keeps plain HTTP and says so (see gaps).

@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 
 // Every control on every page is at least 44px to touch, on phones and desktop. A small checkbox counts when its
-// label row is 44px. Visible controls only. Run it against real data too (LOCALAI_URL=http://10.0.0.21:3080): lists
+// label row is 44px. Visible controls only. Run it against real data too (LOCALAI_URL=http://10.0.0.81:3080): lists
 // with items show controls an empty server never renders.
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch({ headless: true });

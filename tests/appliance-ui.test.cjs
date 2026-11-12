@@ -92,10 +92,10 @@ test('Inbox is one layer of cards and the audit log opens runs from a small link
 });
 
 // N5: "← Home" is born with Pi Hub's registry address; nothing waits for a later script to correct a bare IP.
-test('the header\'s "← Home" link is written with the registry address, not 10.0.0.30', () => {
+test('the header\'s "← Home" link is written with the registry address, not 10.0.0.80', () => {
   const ui = read('ui.js');
   const m = /id="uxPiHubLink" href="'\+hubHref\+'"/.exec(ui);
   assert.ok(m, 'the link takes its address from hubHref in the markup');
   assert.match(ui, /const hubHref=window\.ApplianceTools\?\.toolUrl\('hub'\)\|\|'https:\/\/hub\.rahe-home\.duckdns\.org\/';/);
-  assert.ok(!/id="uxPiHubLink"[^>]*10\.0\.0\.30/.test(ui), 'no bare IP in the markup');
+  assert.ok(!/id="uxPiHubLink"[^>]*10\.0\.0\.80/.test(ui), 'no bare IP in the markup');
 });

@@ -17,8 +17,8 @@ test('Atlas graph parser extracts deterministic DATA without executing page Java
 
 test('Atlas upstream is loopback by default', () => {
   assert.equal(normalizeAtlasBaseUrl('http://127.0.0.1:8765'), 'http://127.0.0.1:8765');
-  assert.throws(() => normalizeAtlasBaseUrl('http://10.0.0.21:8765'), /loopback/);
-  assert.equal(normalizeAtlasBaseUrl('http://10.0.0.21:8765', { allowRemote: true }), 'http://10.0.0.21:8765');
+  assert.throws(() => normalizeAtlasBaseUrl('http://10.0.0.81:8765'), /loopback/);
+  assert.equal(normalizeAtlasBaseUrl('http://10.0.0.81:8765', { allowRemote: true }), 'http://10.0.0.81:8765');
 });
 
 test('domain summary excludes tests and aggregates cross-domain edges', () => {

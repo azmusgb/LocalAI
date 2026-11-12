@@ -378,7 +378,7 @@ redirects port 80 to HTTPS. Port 3080 keeps working, and the deploy scripts keep
 ```powershell
 docker pull caddy:2.10-alpine                       # once, from a normal (not SSH) session
 .\deploy\Install-LocalAI-HTTPS.ps1                  # elevated: trusts the CA on this machine, adds a firewall rule
-.\deploy\Install-LocalAI-HTTPS.ps1 -HostIp 10.0.0.21 -Name localai.home.arpa
+.\deploy\Install-LocalAI-HTTPS.ps1 -HostIp 10.0.0.81 -Name localai.home.arpa
 ```
 
 - Certificates come from Caddy's own local CA; its data is in the `localai-caddy-data` volume.

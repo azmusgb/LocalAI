@@ -46,7 +46,7 @@ through it.
 | Claude board reporting | Mac, Claude Code hooks or sessions | not in this repo | Appliance `/api/claude/events`, `/findings`, `/priorities` |
 
 The appliance also health-probes two optional services on the Mac (`MAC_AI_HOME_URL`, default
-`http://10.0.0.16:3083`; `MAC_DSH_URL`, default `http://10.0.0.16:3084`). They never affect overall health.
+`http://10.0.0.82:3083`; `MAC_DSH_URL`, default `http://10.0.0.82:3084`). They never affect overall health.
 
 ## What is in the app
 

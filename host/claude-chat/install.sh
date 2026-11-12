@@ -12,7 +12,7 @@ SETTINGS="$HOME/.claude/settings.json"
 HOOK_CMD='/opt/homebrew/bin/python3 -I ~/.claude/localai-chat/hook.py'
 CA="$DEST/localai-ca.crt"
 CONFIG="$DEST/config.json"
-HTTPS_URL="${LOCALAI_HTTPS_URL:-https://10.0.0.21}"
+HTTPS_URL="${LOCALAI_HTTPS_URL:-https://10.0.0.81}"
 # ssh alias for the Windows host, from ~/.ssh/config (the host reaches the Mac back as `ssh mac`).
 SSH_HOST="${LOCALAI_SSH_HOST:-windows}"
 

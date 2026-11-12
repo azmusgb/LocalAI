@@ -128,7 +128,7 @@ test('an earlier turn about Local AI keeps the follow-up on this PC', async t =>
   const { call, groq } = await start(t);
   await call('/api/models/routing', { cloud: true }, 'PUT');
   const r = await call('/api/chat', { bigger: true, messages: [
-    { role: 'user', content: 'What models does Local AI have installed?' }, { role: 'assistant', content: 'qwen3 and gemma3, on 10.0.0.21.' },
+    { role: 'user', content: 'What models does Local AI have installed?' }, { role: 'assistant', content: 'qwen3 and gemma3, on 10.0.0.81.' },
     { role: 'user', content: 'Compare those to Llama 3.3 70B for writing.' }] });
   assert.equal(r.value.route.provider, 'ollama');
   assert.equal(groq.calls.length, 0);
@@ -140,7 +140,7 @@ const PLAN = (summary, file = 'public/app.js') => JSON.stringify({ summary, note
 function selfRoot(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-self-'));
   fs.mkdirSync(path.join(dir, 'public'));
-  fs.writeFileSync(path.join(dir, 'public', 'models.js'), '// models page\nfunction modelsPage(){ return fetch("http://10.0.0.21/api/models") }\n');
+  fs.writeFileSync(path.join(dir, 'public', 'models.js'), '// models page\nfunction modelsPage(){ return fetch("http://10.0.0.81/api/models") }\n');
   fs.writeFileSync(path.join(dir, 'stack.env'), 'LOCALAI_MODELS_TOKEN=models-page-secret-value\n');
   fs.mkdirSync(path.join(dir, 'repo-context', 'host'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'repo-context', 'host', 'models-host.md'), 'models page host notes: run as bjrmc on WIN-HOST\n');
@@ -171,7 +171,7 @@ test('planner, cloud on: Local AI\'s own code is planned in the cloud, without s
   assert.deepEqual([r.value.item.route.provider, r.value.item.route.model], ['groq', 'openai/gpt-oss-120b']);
   const sent = JSON.stringify(groq.calls[0].body.messages);
   assert.match(sent, /models page/);
-  for (const bad of ['models-page-secret-value', 'stack.env', '10.0.0.21', 'gsk_test_secret', 'models-host.md', 'WIN-HOST']) assert.ok(!sent.includes(bad), bad);
+  for (const bad of ['models-page-secret-value', 'stack.env', '10.0.0.81', 'gsk_test_secret', 'models-host.md', 'WIN-HOST']) assert.ok(!sent.includes(bad), bad);
 });
 
 test('planner, cloud on: an engineering run writes code with the cloud coder', async t => {

@@ -141,7 +141,7 @@ idle screen keeps working when sign-in starts refusing unsigned callers. The key
 - The display gets the key from its portal setting (Workshop OS 12.3.10 and later).
 - Until a key is set, the route still answers, because sign-in only reports for now. Settings › Sign-in lists the display as
   "Workshop display". This is the one request that goes the other way, from the display to Local AI. The display
-reaches it through the HTTPS front, `https://10.0.0.21`, and checks the certificate against Local AI's CA.
+reaches it through the HTTPS front, `https://10.0.0.81`, and checks the certificate against Local AI's CA.
 
 ## Ask buttons
 
@@ -187,7 +187,7 @@ All of these, the feed, the ask buttons, the Judge it routes and `/api/images/vi
 
 ## Pi hub cards
 
-The Raspberry Pi's hub answers `GET http://10.0.0.30/api/now` with a summary, no key needed (`LOCALAI_PI_HUB_URL`
+The Raspberry Pi's hub answers `GET http://10.0.0.80/api/now` with a summary, no key needed (`LOCALAI_PI_HUB_URL`
 changes the address; `off` turns it off). Local AI reads it at most once a minute (3 s limit) for two feed cards:
 `playing` ("Now playing", the title, how far in, paused, and where, from Plex on the Pi) and `home` (the hub's first
 issue, "Pi: <what>", e.g. "Pi: Movies drive · It dropped out…"). When the hub doesn't answer, neither card shows.
@@ -196,7 +196,7 @@ issue, "Pi: <what>", e.g. "Pi: Movies drive · It dropped out…"). When the hub
 
 Since 24 Oct 2026 the household's spools are in Bambuddy, the Bambu printer manager in Docker on the Pi; it reads the
 AMS and takes each print's filament off its spool. (The old Filament Inventory web app is retired.) Local AI reads
-`GET http://10.0.0.30:8000/api/v1/inventory/spools` and `/api/v1/inventory/assignments`, with no key on the LAN, at
+`GET http://10.0.0.80:8000/api/v1/inventory/spools` and `/api/v1/inventory/assignments`, with no key on the LAN, at
 most once a minute (3 s limit). `LOCALAI_MATERIALS_URL` changes the address; `off` turns it off. Once Bambuddy's sign-in
 is on, set `LOCALAI_MATERIALS_KEY` to a Bambuddy API key with "Read status" only (sent as `X-API-Key`). `app/materials.js` builds one
 `materials` card:
@@ -214,7 +214,7 @@ When Bambuddy doesn't answer, no card shows.
 
 The display's Clear plate (dismissing a finished or failed print) calls `POST /api/display/printer/clear` with its display
 key. Local AI then posts `clear-plate` and `hms/clear` for printer 1 (`LOCALAI_BAMBUDDY_PRINTER`) to Bambuddy
-(`LOCALAI_BAMBUDDY_URL`, default `http://10.0.0.30:8000`). It sends `LOCALAI_BAMBUDDY_CONTROL_KEY`, a Bambuddy API key
+(`LOCALAI_BAMBUDDY_URL`, default `http://10.0.0.80:8000`). It sends `LOCALAI_BAMBUDDY_CONTROL_KEY`, a Bambuddy API key
 with "Control printer" only, as `X-API-Key`. The route is refused (401) without the display key or a signed-in device in
 every sign-in mode, because it acts on the printer. The answer says how each step went: `ok`, `refused` (Bambuddy
 turned the key down), `no answer` or `HTTP <code>`. Each call is recorded in Activity. Both Bambuddy keys are passed to

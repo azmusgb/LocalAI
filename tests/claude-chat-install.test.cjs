@@ -122,7 +122,7 @@ test('install.sh re-run replaces a stale CA and moves an old plain-HTTP config t
   const s = sandbox(t);
   const url = await httpsRelay(t, tls);
   fs.mkdirSync(s.dest, { recursive: true });
-  fs.writeFileSync(path.join(s.dest, 'config.json'), JSON.stringify({ url: 'http://10.0.0.21:3080' }));
+  fs.writeFileSync(path.join(s.dest, 'config.json'), JSON.stringify({ url: 'http://10.0.0.81:3080' }));
   fs.writeFileSync(path.join(s.dest, 'localai-ca.crt'), 'stale');
   fs.writeFileSync(s.caOut, tls.caPem);
   const r = await runInstall(s.home, s.stubs, { LOCALAI_HTTPS_URL: url });

@@ -11,7 +11,7 @@ const { once } = require('node:events');
 const { isAboutLocalAi, aboutApplianceBlock } = require('../app/about-appliance');
 const { spawnAppServer } = require('./spawn-server.cjs');
 
-const ADDRESSES = [{ label: 'Home Wi-Fi', url: 'https://10.0.0.21' }, { label: 'Anywhere (Tailscale)', url: 'https://pc.tail1234.ts.net' }];
+const ADDRESSES = [{ label: 'Home Wi-Fi', url: 'https://10.0.0.81' }, { label: 'Anywhere (Tailscale)', url: 'https://pc.tail1234.ts.net' }];
 
 test('the block is short, factual and uses the live addresses and view-registry labels', () => {
   const block = aboutApplianceBlock({ addresses: ADDRESSES });
@@ -20,7 +20,7 @@ test('the block is short, factual and uses the live addresses and view-registry 
   assert.match(block, /diffusion_models/);
   assert.match(block, /text_encoders/);
   assert.match(block, /\bvae\b/);
-  assert.match(block, /https:\/\/10\.0\.0\.21/);
+  assert.match(block, /https:\/\/10\.0\.0\.81/);
   assert.match(block, /https:\/\/pc\.tail1234\.ts\.net/);
   assert.match(block, /one icon that works everywhere/i);
   assert.match(block, /45 minutes/);
@@ -56,7 +56,7 @@ test('the chat sends the block only with a question about Local AI', { timeout: 
   const off = 'http://127.0.0.1:9';
   const { child, ready } = spawnAppServer({
     env: { DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: `http://127.0.0.1:${mock.address().port}`, MODEL: 'test-model',
-      LOCALAI_HOST_IP: '10.0.0.21', LOCALAI_REMOTE_NAME: 'pc.tail1234.ts.net',
+      LOCALAI_HOST_IP: '10.0.0.81', LOCALAI_REMOTE_NAME: 'pc.tail1234.ts.net',
       COMFY_URL: off, N8N_URL: off, PROXY_URL: off, SEARXNG_URL: off, MAC_AI_HOME_URL: off, MAC_DSH_URL: off }
   });
   t.after(async () => {
@@ -78,7 +78,7 @@ test('the chat sends the block only with a question about Local AI', { timeout: 
 
   const away = await system('how do I reach Local AI away from home?');
   assert.match(away, /Tailscale https:\/\/pc\.tail1234\.ts\.net/);
-  assert.match(away, /home Wi-Fi https:\/\/10\.0\.0\.21/);
+  assert.match(away, /home Wi-Fi https:\/\/10\.0\.0\.81/);
 
   const unrelated = await system('what is the capital of France?');
   assert.doesNotMatch(unrelated, /ABOUT THIS APPLIANCE/);

@@ -73,7 +73,7 @@ function New-FixtureContainer([string]$Name, [string]$State = 'exited', [double]
 # (name = 'exited <code>' or 'created'). sandbox-certs is the one-shot job: exited 0, no restart policy.
 $script:stackServices = [ordered]@{ appliance = 'unless-stopped'; https = 'unless-stopped'; n8n = 'unless-stopped'; 'ollama-responses-proxy' = 'unless-stopped'; searxng = 'unless-stopped'; 'sandbox-certs' = ''; 'sandbox-api' = 'unless-stopped'; 'sandbox-runner-1' = 'unless-stopped' }
 function New-FixtureStack([hashtable]$Stopped = @{}) {
-    Set-Content -LiteralPath $fixture.StackEnv -Value 'LOCALAI_HOST_IP=10.0.0.21'
+    Set-Content -LiteralPath $fixture.StackEnv -Value 'LOCALAI_HOST_IP=10.0.0.81'
     Set-Content -LiteralPath $fixture.StackCompose -Value 'name: local-ai'
     foreach ($service in $stackServices.Keys) {
         $name = "local-ai-$service"

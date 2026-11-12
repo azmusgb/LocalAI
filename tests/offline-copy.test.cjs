@@ -72,25 +72,25 @@ test('isUpdatingReply recognises the HTTPS front end saying Local AI is updating
 });
 
 test('otherAddresses offers the addresses that are not this page, Tailscale marked, https only', () => {
-  const list = [{ label: 'Home Wi-Fi', url: 'https://10.0.0.21' }, { label: 'Anywhere (Tailscale)', url: 'https://bill-hpdesktop.tailfa018e.ts.net' }];
-  assert.deepEqual(offline.otherAddresses(list, 'https://10.0.0.21'), [{ label: 'Anywhere (Tailscale)', url: 'https://bill-hpdesktop.tailfa018e.ts.net/', tailscale: true }]);
-  assert.deepEqual(offline.otherAddresses(list, 'https://bill-hpdesktop.tailfa018e.ts.net'), [{ label: 'Home Wi-Fi', url: 'https://10.0.0.21/', tailscale: false }]);
+  const list = [{ label: 'Home Wi-Fi', url: 'https://10.0.0.81' }, { label: 'Anywhere (Tailscale)', url: 'https://bill-hpdesktop.tailfa018e.ts.net' }];
+  assert.deepEqual(offline.otherAddresses(list, 'https://10.0.0.81'), [{ label: 'Anywhere (Tailscale)', url: 'https://bill-hpdesktop.tailfa018e.ts.net/', tailscale: true }]);
+  assert.deepEqual(offline.otherAddresses(list, 'https://bill-hpdesktop.tailfa018e.ts.net'), [{ label: 'Home Wi-Fi', url: 'https://10.0.0.81/', tailscale: false }]);
   assert.equal(offline.otherAddresses(list, 'https://localai.home.arpa').length, 2);
   // nothing saved yet, or junk: nothing to offer, and never a script or plain-HTTP link
-  assert.deepEqual(offline.otherAddresses(null, 'https://10.0.0.21'), []);
-  assert.deepEqual(offline.otherAddresses([{ label: 'x', url: 'javascript:alert(1)' }, { label: 'y', url: 'http://10.0.0.21' }, { label: 'z' }, null], 'https://a'), []);
+  assert.deepEqual(offline.otherAddresses(null, 'https://10.0.0.81'), []);
+  assert.deepEqual(offline.otherAddresses([{ label: 'x', url: 'javascript:alert(1)' }, { label: 'y', url: 'http://10.0.0.81' }, { label: 'z' }, null], 'https://a'), []);
   // the same address twice is offered once
-  assert.equal(offline.otherAddresses([list[1], list[1]], 'https://10.0.0.21').length, 1);
+  assert.equal(offline.otherAddresses([list[1], list[1]], 'https://10.0.0.81').length, 1);
 });
 
 // Moving to the other address on its own (Home Wi-Fi can't be reached, Tailscale can, or the other way round).
-const HOME = 'https://10.0.0.21', TS = 'https://bill-hpdesktop.tailfa018e.ts.net';
+const HOME = 'https://10.0.0.81', TS = 'https://bill-hpdesktop.tailfa018e.ts.net';
 const LIST = [{ label: 'Home Wi-Fi', url: HOME }, { label: 'Anywhere (Tailscale)', url: TS }];
 
 test('otherAddresses allows plain http only on this machine (a developer or test appliance)', () => {
   assert.deepEqual(offline.otherAddresses([{ label: 'Home Wi-Fi', url: 'http://127.0.0.1:3181' }], 'http://127.0.0.1:3180').map(a => a.url), ['http://127.0.0.1:3181/']);
   assert.deepEqual(offline.otherAddresses([{ label: 'Home Wi-Fi', url: 'http://localhost:3181' }], 'x').length, 1);
-  assert.deepEqual(offline.otherAddresses([{ label: 'Home Wi-Fi', url: 'http://10.0.0.21' }, { label: 'x', url: 'http://127.0.0.1.evil.com' }], 'x'), []);
+  assert.deepEqual(offline.otherAddresses([{ label: 'Home Wi-Fi', url: 'http://10.0.0.81' }, { label: 'x', url: 'http://127.0.0.1.evil.com' }], 'x'), []);
 });
 
 test('ownAddress finds this page in the list, and nothing for an address it does not list', () => {

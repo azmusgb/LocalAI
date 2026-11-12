@@ -111,7 +111,7 @@ await check('unreachable: the saved copy says so, Health says the device cannot 
   }
 });
 
-// 17 Oct: the Home Screen app from https://10.0.0.21 only works on home Wi-Fi. Away from it, the saved copy offers the
+// 17 Oct: the Home Screen app from https://10.0.0.81 only works on home Wi-Fi. Away from it, the saved copy offers the
 // Tailscale address it learned while Local AI answered, with no network needed to show it.
 await check('unreachable: the saved copy offers the other address, with what the phone needs for it', async () => {
   const tailscale = 'https://localai-pc.tail1234.ts.net';

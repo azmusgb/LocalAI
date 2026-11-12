@@ -30,15 +30,15 @@ test('homeUrl is the hub\'s registry address on every host, never a bare IP', as
   assert.equal(homeUrl('assistant.rahe-home.duckdns.org'), 'https://hub.rahe-home.duckdns.org/');
   globalThis.ApplianceTools = { REAL, TOOLS, tool, toolUrl, toolsFor };
   t.after(() => { delete globalThis.ApplianceTools; });
-  for (const host of ['assistant.rahe-home.duckdns.org', 'evilrahe-home.duckdns.org', 'assistant.home.arpa', 'localai.home.arpa', '10.0.0.21', 'localhost', '', undefined])
+  for (const host of ['assistant.rahe-home.duckdns.org', 'evilrahe-home.duckdns.org', 'assistant.home.arpa', 'localai.home.arpa', '10.0.0.81', 'localhost', '', undefined])
     assert.equal(homeUrl(host), toolUrl('hub'), `host ${host}`);
-  assert.equal(homeUrl('10.0.0.21'), 'https://hub.rahe-home.duckdns.org/');
+  assert.equal(homeUrl('10.0.0.81'), 'https://hub.rahe-home.duckdns.org/');
 });
 
 test('labUrl sends a lab address to Pi Hub\'s /lab, keeping p, e and do and nothing else', () => {
   const { labUrl } = require('../app/public/ask-context.js');
-  assert.equal(labUrl('10.0.0.21', '#printLab'), 'https://hub.rahe-home.duckdns.org/lab');
-  assert.equal(labUrl('10.0.0.21', '#/printLab?e=E-025'), 'https://hub.rahe-home.duckdns.org/lab?e=E-025');
+  assert.equal(labUrl('10.0.0.81', '#printLab'), 'https://hub.rahe-home.duckdns.org/lab');
+  assert.equal(labUrl('10.0.0.81', '#/printLab?e=E-025'), 'https://hub.rahe-home.duckdns.org/lab?e=E-025');
   assert.equal(labUrl('x', '#printLab?p=hex-tile&e=E-023&do=judge&evil=1'), 'https://hub.rahe-home.duckdns.org/lab?p=hex-tile&e=E-023&do=judge');
   assert.equal(labUrl('x', '#printLab?e='), 'https://hub.rahe-home.duckdns.org/lab');
 });

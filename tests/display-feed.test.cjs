@@ -191,7 +191,7 @@ test('beside a problem the needs card says No approvals, not All clear', () => {
 // Pi Hub's one "Needs you" list (GET /api/needs, built by the hub) rides along as feed.needs: the same list on every
 // screen, cut like the cards (title 24, detail 90: the display's 28-byte buffers hold a cut title and its 3-byte …) and at most 6. It never becomes cards.
 test('needs from Pi Hub are cut and capped at 6', () => {
-  const items = Array.from({ length: 8 }, (_, i) => ({ id: `pi:thing-${i}`, source: 'pi', tone: i ? 'warn' : 'bad', title: `T${i} ${'x'.repeat(40)}`, detail: 'd'.repeat(200), link: 'http://10.0.0.30/' }));
+  const items = Array.from({ length: 8 }, (_, i) => ({ id: `pi:thing-${i}`, source: 'pi', tone: i ? 'warn' : 'bad', title: `T${i} ${'x'.repeat(40)}`, detail: 'd'.repeat(200), link: 'http://10.0.0.80/' }));
   const f = buildFeed({ needs: { count: 0 }, piNeeds: { count: 8, items, unread: 0 } });
   assert.equal(f.v, 2);
   assert.equal(f.needs.length, 6);

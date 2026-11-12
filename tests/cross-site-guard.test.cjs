@@ -87,11 +87,11 @@ test('same-origin browser requests pass: direct on :3080 and through the HTTPS p
   const cases = [
     { Origin: `http://127.0.0.1:${port}`, 'Sec-Fetch-Site': 'same-origin' },
     // Through Caddy: Host is preserved (default port omitted by the browser) and X-Forwarded-* are added.
-    { Host: '10.0.0.21', Origin: 'https://10.0.0.21', 'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': '10.0.0.21', 'Sec-Fetch-Site': 'same-origin' },
+    { Host: '10.0.0.81', Origin: 'https://10.0.0.81', 'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': '10.0.0.81', 'Sec-Fetch-Site': 'same-origin' },
     { Host: 'localai.home.arpa', Origin: 'https://localai.home.arpa', 'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': 'localai.home.arpa' },
-    { Host: '10.0.0.21:3080', Origin: 'http://10.0.0.21:3080', 'Sec-Fetch-Site': 'same-origin' },
+    { Host: '10.0.0.81:3080', Origin: 'http://10.0.0.81:3080', 'Sec-Fetch-Site': 'same-origin' },
     // An explicit default port in Host is the same origin.
-    { Host: '10.0.0.21:443', Origin: 'https://10.0.0.21' },
+    { Host: '10.0.0.81:443', Origin: 'https://10.0.0.81' },
     // A proxy that rewrites Host but reports the original in X-Forwarded-Host.
     { Host: 'local-ai-appliance:3080', Origin: 'https://localai.home.arpa', 'X-Forwarded-Host': 'localai.home.arpa' },
     // Case differences in the host name do not matter.

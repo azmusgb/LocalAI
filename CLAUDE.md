@@ -27,7 +27,7 @@ container `local-ai-appliance` on a Windows host, UI on port 3080. Docs index: `
    Never push to `main` or `release` directly; `.githooks/pre-push` refuses it, and a commit on `main` that ship didn't
    release never deploys.
    A PR already merged on GitHub: `npm run ship -- <that PR>` tests `main` as it is and, if green, moves `release` there.
-3. Confirm: `curl -s https://10.0.0.21/healthz` (10.0.0.21 is the owner's appliance on their LAN; the Mac trusts its
+3. Confirm: `curl -s https://10.0.0.81/healthz` (10.0.0.81 is the owner's appliance on their LAN; the Mac trusts its
    CA, else add `--cacert ~/.claude/localai-chat/localai-ca.crt`) → `releaseCommit` equals the merge SHA. Deploy output
    contains fake `DEPLOYED: aaaa…` lines from contract tests; trust only `/healthz`.
 
@@ -38,7 +38,7 @@ PowerShell 5.1; the old alias `windows-ai` is gone). The PC reaches this Mac as 
 
 ## Report to the Claude board
 
-Base `https://10.0.0.21` (the owner's appliance; port 3080 answers on the Windows host only). JSON bodies. Send the Mac key as `X-LocalAI-Mac-Key: $(cat ~/.claude/localai-chat/mac.key)` (sign-in, report-only for now:
+Base `https://10.0.0.81` (the owner's appliance; port 3080 answers on the Windows host only). JSON bodies. Send the Mac key as `X-LocalAI-Mac-Key: $(cat ~/.claude/localai-chat/mac.key)` (sign-in, report-only for now:
 without it the call is listed on Health as one that would be refused). Mutating requests that carry a foreign `Origin` or
 `Sec-Fetch-Site: cross-site` get 403; curl and scripts send neither, so they are unaffected.
 

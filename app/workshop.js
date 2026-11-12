@@ -312,7 +312,7 @@ function createPortalCodeGate({ read = readPortalCode, now = () => Date.now(), g
 }
 
 // ---- Chamber Camera streaming & bridge ----
-const DEFAULT_CAMERA_URL = 'http://10.0.0.30/api/camera.jpg';
+const DEFAULT_CAMERA_URL = 'http://10.0.0.80/api/camera.jpg';
 const MAX_CAMERA_BYTES = 512 * 1024;
 
 function cameraUrl(raw = process.env.LOCALAI_WORKSHOP_CAMERA_URL) {
@@ -330,9 +330,9 @@ function cameraSources(primary = cameraUrl()) {
   const out = [];
   if (primary) out.push(primary);
   const fallbacks = [
-    'http://10.0.0.30/api/camera.jpg',
-    'http://10.0.0.30:8091/x2d/frame.jpg',
-    'http://10.0.0.16:8091/x2d/frame.jpg',
+    'http://10.0.0.80/api/camera.jpg',
+    'http://10.0.0.80:8091/x2d/frame.jpg',
+    'http://10.0.0.82:8091/x2d/frame.jpg',
     'http://127.0.0.1:8091/x2d/frame.jpg'
   ];
   for (const f of fallbacks) {
@@ -389,8 +389,8 @@ async function cameraStatus({
   timeoutMs = 1500
 } = {}) {
   const healthUrls = sources || (process.env.LOCALAI_WORKSHOP_CAMERA_PROBES === 'off' ? [] : [
-    'http://10.0.0.30/api/camera',
-    'http://10.0.0.16:8091/x2d/health.json',
+    'http://10.0.0.80/api/camera',
+    'http://10.0.0.82:8091/x2d/health.json',
     'http://127.0.0.1:8091/x2d/health.json'
   ]);
   for (const hu of healthUrls) {

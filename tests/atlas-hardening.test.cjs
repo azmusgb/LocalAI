@@ -23,7 +23,7 @@ test('asking a model and writing a Goose brief need a signed-in device; reading 
 
 test('the container may reach the host service by host.docker.internal without allowing any remote host', () => {
   assert.equal(normalizeAtlasBaseUrl('http://host.docker.internal:8765'), 'http://host.docker.internal:8765');
-  assert.throws(() => normalizeAtlasBaseUrl('http://10.0.0.21:8765'), /loopback/);
+  assert.throws(() => normalizeAtlasBaseUrl('http://10.0.0.81:8765'), /loopback/);
   const compose = fs.readFileSync(path.join(ROOT, 'deploy/stack/compose.yml'), 'utf8');
   assert.doesNotMatch(compose, /LOCALAI_ATLAS_ALLOW_REMOTE:\s*\$\{LOCALAI_ATLAS_ALLOW_REMOTE:-1\}/);
   // A folder mount: a rebuilt graph replaces the file, which a single-file bind mount would never see.

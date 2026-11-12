@@ -9,8 +9,8 @@ and looking after it is in the [admin guide](ADMIN-GUIDE.md).
 
 ## Open it
 
-- **On a computer at home:** `https://10.0.0.21`.
-- **On an iPhone:** open `https://10.0.0.21` in Safari, then Share › **Add to Home Screen**. Open Local AI from the
+- **On a computer at home:** `https://10.0.0.81`.
+- **On an iPhone:** open `https://10.0.0.81` in Safari, then Share › **Add to Home Screen**. Open Local AI from the
   Home Screen icon from then on: notifications only work there. The first time, the phone has to trust Local AI's
   certificate; **Health › Secure connection** walks you through it.
 - **Away from home:** only if Tailscale is set up (see the admin guide). Otherwise Local AI is reachable on your home
@@ -149,7 +149,7 @@ Agent World can be a screen you leave on, such as a TV or a spare tablet. In Age
 - The pointer hides when you don't move it.
 
 **Exit watch mode** or Esc goes back. For a screen that should start in watch mode, open
-`https://10.0.0.21/?open=agents&watch=1`. It starts without full screen, because a browser only allows full screen
+`https://10.0.0.81/?open=agents&watch=1`. It starts without full screen, because a browser only allows full screen
 after a tap, but the city still fills the window.
 
 ## Projects: what you keep
