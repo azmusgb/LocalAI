@@ -90,17 +90,13 @@ test('every registered view has a page, and every nav button is registered', () 
   }
 });
 
-// Agent World (agents) is a Work tab that titles itself Agent World, not Work: the mission is its faceplate (Pi Hub A7
-// plan, decision 9), and the strip says it is part of Work.
-const OWN_HEADING = new Set(['agents']);
+// Every page is titled by its own name, tabs included (Pi Hub A22 2.3 and brief 1, fix 7): Sources, Memory and Library
+// are no longer titled Projects, nor Assistant automations Work. Agent World was the first (Pi Hub A7 plan, decision 9).
 test('page headings and nav labels match the registry', () => {
   for (const v of registry.VIEWS) {
     if (v.id === 'home' || INJECTED[v.id] || PENDING.has(v.id)) continue;
-    if (OWN_HEADING.has(v.id)) assert.match(html, new RegExp(`<section id="${v.id}"[^>]*>[\\s\\S]*?<h1[^>]*>${v.label}</h1>`), `#${v.id} is titled ${v.label}`);
-    else {
-      const m = html.match(new RegExp(`<section id="${v.id}"[^>]*>[\\s\\S]*?<h1[^>]*>([^<]*)</h1>`));
-      assert.equal(m?.[1], registry.page(v.id).label, `#${v.id} heading`);
-    }
+    const m = html.match(new RegExp(`<section id="${v.id}"[^>]*>[\\s\\S]*?<h1[^>]*>([^<]*)</h1>`));
+    assert.equal(m?.[1], v.label, `#${v.id} is titled ${v.label}`);
     if (v.parent) continue;
     const b = html.match(new RegExp(`data-view="${v.id}">([^<]*)</button>`));
     assert.equal(b?.[1], v.label, `${v.id} nav button`);
@@ -127,11 +123,12 @@ test('Tools lists the tools, System ones first, and nothing is hidden behind a s
   assert.deepEqual(registry.sections('system').map(s => s.label), ['Status', 'Tools', 'Settings', 'History']);
 });
 
-// Improve's strip is Changes · Signals · Claude · Atlas (navigation depth, D4): In progress and Shipped light Changes.
-// Short labels keep the strip on a phone (D3).
-test('Improve tabs use short strip labels', () => {
+// Improve's strip is Changes · Signals · Claude Code · Atlas (navigation depth, D4): In progress and Shipped light Changes.
+// One name per thing (Pi Hub A22 8.1): the strip says Claude Code and Atlas, the same words as the page's title and ⌘K.
+test("Improve's strip uses each page's one name", () => {
   const ids = registry.sections('improve').flatMap(s => s.views);
-  assert.deepEqual(ids.filter(id => !registry.view(id).lights).map(id => registry.view(id).short || registry.label(id)), ['Changes', 'Signals', 'Claude', 'Atlas']);
+  assert.deepEqual(ids.filter(id => !registry.view(id).lights).map(id => registry.view(id).short || registry.label(id)), ['Changes', 'Signals', 'Claude Code', 'Atlas']);
+  for (const id of ['claude', 'architecture']) assert.equal(registry.view(id).short, undefined, `${id} has no second name`);
   assert.deepEqual(['inProgress', 'shipped'].map(id => registry.view(id).lights), ['backlog', 'backlog']);
   assert.equal(registry.label('backlog'), 'Changes');
   assert.ok(registry.view('backlog').aka.includes('backlog'), 'Backlog stays searchable');
@@ -185,4 +182,24 @@ test('every domain and page names an icon the sprite has', () => {
   const symbols = new Set([...html.matchAll(/<symbol id="i-([\w-]+)"/g)].map(m => m[1]));
   const missing = [...registry.DOMAINS.map(d => [d.id, d.icon]), ...registry.VIEWS.map(v => [v.id, v.svg])].filter(([, s]) => !symbols.has(s));
   assert.deepEqual(missing, [], 'views without a sprite icon');
+});
+
+// Pi Hub A22 brief 1: the seven label fixes, and every view findable. Ids and addresses never change with a label; the
+// old word stays searchable in `aka`.
+test('A22 names: Decisions, Atlas, Developer tools, Assistant settings; old words still find them', () => {
+  for (const [id, label, old] of [['inbox', 'Decisions', 'inbox'], ['architecture', 'Atlas', 'architecture'],
+    ['tools', 'Developer tools', 'tools'], ['settings', 'Assistant settings', 'settings'], ['claude', 'Claude Code', 'claude']]) {
+    assert.equal(registry.label(id), label);
+    assert.ok(registry.view(id).aka.includes(old), `${old} still finds ${label}`);
+  }
+  assert.equal(registry.label('inProgress'), 'In progress');
+  assert.doesNotMatch(html, />Doing</, 'the stage chip says In progress');
+  assert.doesNotMatch(registry.description('backlog'), /Doing/);
+});
+
+test('every view has a label ⌘K can list, hidden ones included, and runs still opens Work', () => {
+  for (const v of registry.VIEWS) assert.ok(v.label && v.description, `${v.id} has a label and a description`);
+  const labels = registry.VIEWS.map(v => v.label);
+  assert.equal(new Set(labels).size, labels.length, 'no two views share a label');
+  assert.equal(registry.resolve('runs'), 'work');
 });

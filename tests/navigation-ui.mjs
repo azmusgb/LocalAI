@@ -90,26 +90,26 @@ await check('System: Tools lists every tool, each opens at its address with Tool
   await page.waitForSelector('#architecture.active', { timeout: 5000 });
   assert.equal(await crumbOf(page), 'Improve');
   assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Atlas');
-  assert.deepEqual(await stripLabels(), ['Changes', 'Signals', 'Claude', 'Atlas']);
+  assert.deepEqual(await stripLabels(), ['Changes', 'Signals', 'Claude Code', 'Atlas']);
 });
 
 // One Changes page (navigation depth, D4): In progress and Shipped keep their addresses, light Changes and share its stage chips.
 await check('Improve: Backlog, In progress and Shipped are one Changes page with stage chips', async () => {
-  const stages = [['backlog', 'Backlog'], ['inProgress', 'Doing'], ['shipped', 'Shipped']];
+  const stages = [['backlog', 'Backlog'], ['inProgress', 'In progress'], ['shipped', 'Shipped']];
   for (const [id, current] of stages) {
     await page.evaluate(h => { location.hash = '#' + h; }, id);
     await page.waitForSelector(`#${id}.active`, { timeout: 5000 });
-    assert.deepEqual(await stripLabels(), ['Changes', 'Signals', 'Claude', 'Atlas'], `${id} strip`);
+    assert.deepEqual(await stripLabels(), ['Changes', 'Signals', 'Claude Code', 'Atlas'], `${id} strip`);
     assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Changes', `${id} lights Changes`);
     const chips = page.locator(`#${id} .changes-stages a`);
-    assert.deepEqual(await chips.allInnerTexts(), ['Backlog', 'Doing', 'Shipped'], `${id} chips`);
+    assert.deepEqual(await chips.allInnerTexts(), ['Backlog', 'In progress', 'Shipped'], `${id} chips`);
     assert.deepEqual(await page.locator(`#${id} .changes-stages a[aria-current="page"]`).allInnerTexts(), [current], `${id} aria-current`);
     assert.deepEqual(await chips.evaluateAll(as => as.map(a => a.getAttribute('href'))), ['#backlog', '#inProgress', '#shipped']);
   }
   await page.locator('#shipped .changes-stages a', { hasText: 'Backlog' }).click();
   await page.waitForSelector('#backlog.active', { timeout: 5000 });
   assert.equal(await page.locator('#backlog h1').innerText(), 'Changes');
-  await page.locator('#backlog .changes-stages a', { hasText: 'Doing' }).click();
+  await page.locator('#backlog .changes-stages a', { hasText: 'In progress' }).click();
   await page.waitForSelector('#inProgress.active', { timeout: 5000 });
   assert.equal(await page.evaluate(() => location.hash), '#inProgress');
 });
@@ -281,7 +281,7 @@ await check('the Projects tab lands on Projects, and Library is its Library tab 
   assert.deepEqual(await stripLabels(), ['Projects', 'Sources', 'Memory', 'Library']);
   await page.locator('#uxPageStrip [data-strip-view="library"]').click();
   await page.waitForSelector('#library.active');
-  assert.equal(await page.locator('#library h1').innerText(), 'Projects');
+  assert.equal(await page.locator('#library h1').innerText(), 'Library');
   // An old #library link still opens it, as the tab of Projects.
   await page.evaluate(() => { location.hash = '#home' });
   await page.waitForSelector('#home.active');

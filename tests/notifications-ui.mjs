@@ -161,7 +161,7 @@ for (const [tag, viewport, mobile] of [['phone', { width: 390, height: 844 }, tr
 
 // One queue (D8): Needs you is where you decide; the Inbox is the history, its own page named "Inbox", and the bell carries
 // one number. Waiting approvals head the Inbox and open the same sheet as Needs you; decided ones are in its history.
-await check('two approvals and no alerts: the Inbox lists them and opens the sheet, the bell says 2, #approvals opens the Inbox', async () => {
+await check('two approvals and no alerts: Decisions lists them and opens the sheet, the bell says 2, #approvals opens Decisions', async () => {
   const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
   await context.addInitScript(() => localStorage.setItem('localai.firstRun.done', '1'));
   const page = await context.newPage({ serviceWorkers: 'block' });
@@ -175,7 +175,7 @@ await check('two approvals and no alerts: the Inbox lists them and opens the she
   await page.waitForSelector('#inbox.active');
   assert.equal(await page.evaluate(() => location.hash), '#inbox');
   assert.equal(await page.locator('#approvals').count(), 0, 'Approvals is no longer a page of its own');
-  assert.equal(await page.locator('#inbox h1').innerText(), 'Inbox');
+  assert.equal(await page.locator('#inbox h1').innerText(), 'Decisions');
   assert.doesNotMatch(await page.locator('#inbox').innerText(), /\bAlerts\b/);
   const waiting = page.locator('#inboxList .inbox-waiting');
   await waiting.waitFor();
