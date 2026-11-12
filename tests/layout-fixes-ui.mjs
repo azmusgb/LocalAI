@@ -64,13 +64,14 @@ await check('desktop: one rail and one strip on every page; the top bar names th
   await page.context().close();
 });
 
-// Improve's six tabs fit at 390 px since 2 Nov (compact strip); a 320 px phone still scrolls them.
-// System has the longest strip (Improve's four items now fit at 320 px).
+// Every strip fits a 320 px phone since Status and Connections became one page (#524), so nothing overflows by itself.
+// The scrolling still matters for a longer label or larger text: the check narrows the strip to make it overflow.
 await check('small phone: the System tab strip scrolls, fades at the overflowing edge, and keeps the open tab in view', async () => {
   const page = await open({ width: 320, height: 640 }, '#status');
   await page.waitForSelector('#status.active', T);
   const strip = page.locator('#uxPageStrip');
   await strip.waitFor({ state: 'visible', timeout: 6000 });
+  await strip.evaluate(e => { e.style.maxWidth = '200px'; e.dispatchEvent(new Event('scroll')); });
   const info = () => strip.evaluate(e => ({ sw: e.scrollWidth, cw: e.clientWidth, left: e.scrollLeft, start: e.dataset.fadeStart, end: e.dataset.fadeEnd, mask: getComputedStyle(e).maskImage || getComputedStyle(e).webkitMaskImage }));
   let i = await info();
   assert.ok(i.sw > i.cw + 20, 'the strip overflows');
