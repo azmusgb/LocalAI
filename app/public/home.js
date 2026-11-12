@@ -394,8 +394,10 @@ function init(){
  addEventListener('resize',dockToNav,{passive:true});
  if(root.visualViewport){root.visualViewport.addEventListener('resize',dockToNav,{passive:true});root.visualViewport.addEventListener('scroll',dockToNav,{passive:true})}
  if(root.ResizeObserver)new ResizeObserver(dockToNav).observe($('homeComposer'));
- // The tab bar is built after this script; look again once it exists.
- let tries=0;(function wait(){if($('uxMobileNav')){dockToNav();if(root.ResizeObserver)new ResizeObserver(dockToNav).observe($('uxMobileNav'))}else if(tries++<40)setTimeout(wait,100)})();
+ // The tab bar is built after this script. Dock the moment it is added, before the page is next drawn: looking again
+ // on a timer left the composer on the stylesheet's guess of the bar's height for up to a tenth of a second.
+ const onNav=()=>{const n=$('uxMobileNav');if(!n)return false;dockToNav();if(root.ResizeObserver)new ResizeObserver(dockToNav).observe(n);return true};
+ if(!onNav()){const seen=new MutationObserver(()=>{if(onNav())seen.disconnect()});seen.observe(document.body,{childList:true,subtree:true});setTimeout(()=>seen.disconnect(),4000)}
  new MutationObserver(()=>{if(active())activate();else if(document.body.classList.contains('home-typing'))typing(false)}).observe($('home'),{attributes:true,attributeFilter:['class']}); // leaving Home brings the tab bar back even if no blur fired
  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&active())refresh().then(schedule)});
  // Home is on screen before the router has read the hash; a link to another page should not make Home load.
