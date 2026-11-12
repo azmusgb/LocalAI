@@ -18,8 +18,8 @@ const COMFY_URL = process.env.COMFY_URL || 'http://host.docker.internal:8188';
 const N8N_URL = process.env.N8N_URL || 'http://local-ai-n8n:5678';
 const PROXY_URL = process.env.PROXY_URL || 'http://local-ai-ollama-responses-proxy:8080';
 const SEARXNG_URL = process.env.SEARXNG_URL || 'http://local-ai-searxng:8080';
-const MAC_AI_HOME_URL = process.env.MAC_AI_HOME_URL || 'http://10.0.0.92:3083';
-const MAC_DSH_URL = process.env.MAC_DSH_URL || 'http://10.0.0.92:3084';
+const MAC_AI_HOME_URL = process.env.MAC_AI_HOME_URL || 'http://10.0.0.82:3083';
+const MAC_DSH_URL = process.env.MAC_DSH_URL || 'http://10.0.0.82:3084';
 // GridCraft host bridge. The browser reaches it only through /api/gridcraft/*, so the bridge can stay off the LAN.
 const GRIDCRAFT_URL = process.env.GRIDCRAFT_URL || 'http://host.docker.internal:8787';
 const GRIDCRAFT_RUN_TIMEOUT_MS = 360000; // the bridge allows 300 s, after waiting up to 30 s for a workbook read to finish

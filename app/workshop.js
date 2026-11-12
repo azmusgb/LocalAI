@@ -332,7 +332,7 @@ function cameraSources(primary = cameraUrl()) {
   const fallbacks = [
     'http://10.0.0.80/api/camera.jpg',
     'http://10.0.0.80:8091/x2d/frame.jpg',
-    'http://10.0.0.92:8091/x2d/frame.jpg',
+    'http://10.0.0.82:8091/x2d/frame.jpg',
     'http://127.0.0.1:8091/x2d/frame.jpg'
   ];
   for (const f of fallbacks) {
@@ -390,7 +390,7 @@ async function cameraStatus({
 } = {}) {
   const healthUrls = sources || (process.env.LOCALAI_WORKSHOP_CAMERA_PROBES === 'off' ? [] : [
     'http://10.0.0.80/api/camera',
-    'http://10.0.0.92:8091/x2d/health.json',
+    'http://10.0.0.82:8091/x2d/health.json',
     'http://127.0.0.1:8091/x2d/health.json'
   ]);
   for (const hu of healthUrls) {
