@@ -87,6 +87,26 @@ await check('a failed save shows an inline error and keeps the old state', async
   assert.deepEqual((await (await fetch(base + '/api/nav/pins')).json()).ids, []);
 });
 
+// The Pin button joins a page-anatomy heading without taking the purpose line with it. It used to treat the purpose as
+// an older heading's tool and move it into the tool slot, which squeezed the title to one letter per line on a phone.
+await check('a page heading keeps its title on one line and its purpose under it, beside the Pin button', async () => {
+  await setPins([]);
+  for (const [w, h] of [[390, 844], [1280, 900]]) {
+    await page.setViewportSize({ width: w, height: h });
+    for (const id of ['status', 'work', 'projects', 'backlog']) {
+      await open('#' + id);
+      await toggle().waitFor();
+      const m = await page.evaluate(id => {
+        const head = document.querySelector(`#${id}>.ui-page__head`), title = head.querySelector('.ui-page__title'), purpose = head.querySelector('.ui-page__purpose');
+        const t = title.getBoundingClientRect(), p = purpose.getBoundingClientRect(), cs = getComputedStyle(title);
+        return { inTool: !!purpose.closest('.ui-page__tool'), lines: Math.round(t.height / parseFloat(cs.lineHeight)), under: p.top >= t.bottom - 1, left: Math.abs(p.left - t.left) < 2, pin: !!head.querySelector('.ui-page__tool [data-pin-toggle]') };
+      }, id);
+      assert.deepEqual(m, { inTool: false, lines: 1, under: true, left: true, pin: true }, `${id} at ${w}px`);
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+});
+
 await check('the button works from the keyboard and shows a focus ring', async () => {
   await setPins([]);
   await open('#models');

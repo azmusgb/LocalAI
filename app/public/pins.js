@@ -55,8 +55,9 @@ function paintHead(){
   let slot=head.querySelector('.ui-page__tool');
   if(!slot){
    // An older heading (.topbar) keeps its tool as the last child; the slot takes that tool in, so the two sit together.
+   // A page-anatomy heading with no tool has only its title and purpose: nothing of its own moves into the slot.
    slot=document.createElement('div');slot.className='ui-page__tool pin-tool';
-   const tool=head.children.length>1?head.lastElementChild:null;
+   const tool=head.matches('.topbar')&&head.children.length>1?head.lastElementChild:null;
    if(tool){tool.replaceWith(slot);slot.append(tool)}else head.append(slot);
   }
   b=document.createElement('button');b.type='button';b.className='btn-outline pin-toggle';b.dataset.pinToggle=id;
