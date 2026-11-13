@@ -770,7 +770,7 @@ details.disclosure{margin-top:12px;border-top:1px solid var(--ds-line);padding-t
      phone use --ds-fs-input (16 px), the size iOS needs so focusing one does not zoom the page. */
   --ds-fs-1:13px;--ds-fs-2:15px;--ds-fs-3:17px;--ds-fs-4:22px;--ds-fs-5:28px;--ds-fs-badge:11px;--ds-fs-input:16px;
   /* Radii: three, plus 999px for pills and 50% for dots. --ds-r-xl is the large radius under its old name. */
-  --ds-title:var(--ds-fs-3);--ds-r-sm:6px;--ds-r-md:9px;--ds-r-lg:12px;--ds-r-xl:var(--ds-r-lg);
+  --ds-title:var(--ds-fs-3);--ds-r-sm:6px;--ds-r-md:9px;--ds-r-lg:12px;
   --ds-font:Archivo,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --ds-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --ds-focus:0 0 0 3px rgba(63,193,201,.28);
@@ -1087,37 +1087,32 @@ kbd{font:600 var(--ui-fs-1)/1 var(--ui-mono);padding:2px 6px;border-radius:var(-
 @media (max-width:340px){
   body.ux-v3 .run-summary-grid,.model-runtime-summary,body.ux-v3 .library-grid{grid-template-columns:1fr!important}
 }
-/* kit-clean:end */
-/* ==== first-run ==== */
-/* A switch: the track is the input, the knob its ::after. */
-
-.first-run{margin:6px 0 16px;padding:20px 22px;border-color:var(--ds-line-2);background:linear-gradient(180deg,var(--ds-surface-2),var(--ds-surface))}
-.first-run-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.first-run-head h2{font-size:var(--ds-fs-4);margin-bottom:4px}.first-run-head p{color:var(--ds-muted);margin:0}
+.first-run{margin:6px 0 16px;padding:20px 22px;border-color:var(--ui-line-2);background:linear-gradient(180deg,var(--ui-surface-2),var(--ui-surface))}
+.first-run-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.first-run-head h2{font-size:var(--ui-fs-5);margin-bottom:4px}.first-run-head p{color:var(--ui-muted);margin:0}
 
 .first-run-steps{list-style:none;margin:16px 0 4px;padding:0;display:grid;gap:4px;counter-reset:step}
-.first-run-steps>li{display:grid;grid-template-columns:32px minmax(0,1fr);gap:12px;padding:12px 0;border-top:1px solid var(--ds-line);counter-increment:step}
+.first-run-steps>li{display:grid;grid-template-columns:32px minmax(0,1fr);gap:12px;padding:12px 0;border-top:1px solid var(--ui-line);counter-increment:step}
 .first-run-steps>li:first-child{border-top:0}
-.first-run-mark{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;border:2px solid var(--ds-line-2);color:var(--ds-muted);font-size:var(--ds-fs-1);font-weight:700}
+.first-run-mark{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;border:2px solid var(--ui-line-2);color:var(--ui-muted);font-size:var(--ui-fs-2);font-weight:700}
 .first-run-mark::before{content:counter(step)}
-[data-state="done"]>.first-run-mark{background:var(--ds-good);border-color:var(--ds-good);color:#05170e}[data-state="done"]>.first-run-mark::before{content:'✓'}
-[data-state="todo"]>.first-run-mark{border-color:var(--ds-progress);color:var(--ds-progress)}
-[data-state="checking"]>.first-run-mark{border-top-color:var(--ds-accent);animation:first-run-spin 1s linear infinite}[data-state="checking"]>.first-run-mark::before{content:''}
+[data-state="done"]>.first-run-mark{background:var(--ui-ok);border-color:var(--ui-ok);color:#05170e}[data-state="done"]>.first-run-mark::before{content:'✓'}
+[data-state="todo"]>.first-run-mark{border-color:var(--ui-warn);color:var(--ui-warn)}
+[data-state="checking"]>.first-run-mark{border-top-color:var(--ui-accent);animation:first-run-spin 1s linear infinite}[data-state="checking"]>.first-run-mark::before{content:''}
 @keyframes first-run-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){[data-state="checking"]>.first-run-mark{animation:none}}
-.first-run-steps strong{font-size:var(--ds-fs-2)}.first-run-detail{color:var(--ds-soft);font-size:var(--ds-fs-1);margin-top:3px;line-height:1.55}
-.first-run-detail code{font-family:var(--ds-mono);background:var(--ds-bg);border:1px solid var(--ds-line);border-radius:var(--ds-r-sm);padding:2px 6px;font-size:var(--ds-fs-1);overflow-wrap:anywhere}
+.first-run-steps strong{font-size:var(--ui-fs-4)}.first-run-detail{color:var(--ui-muted);font-size:var(--ui-fs-2);margin-top:3px;line-height:1.55}
+.first-run-detail code{font-family:var(--ui-mono);background:var(--ui-bg);border:1px solid var(--ui-line);border-radius:var(--ui-r-2);padding:2px 6px;font-size:var(--ui-fs-2);overflow-wrap:anywhere}
 
-.first-run-detail a,.first-run-foot a{color:var(--ds-accent);text-decoration:underline}
+.first-run-detail a,.first-run-foot a{color:var(--ui-accent);text-decoration:underline}
 .first-run-samples{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
 
-.first-run-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:8px;padding-top:12px;border-top:1px solid var(--ds-line)}
+.first-run-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:8px;padding-top:12px;border-top:1px solid var(--ui-line)}
 
 .first-run-detail :is(.btn-outline,.btn-primary){margin:6px 6px 0 0}
 .first-run-samples .btn-outline{display:grid;gap:4px;justify-content:start;align-content:start;justify-items:start;text-align:left;padding:12px}
 .first-run-samples .btn-outline span{font-weight:650}
-.first-run-samples .btn-outline small{color:var(--ds-muted);font-weight:400;font-size:var(--ds-fs-1);line-height:1.4}
+.first-run-samples .btn-outline small{color:var(--ui-muted);font-weight:400;font-size:var(--ui-fs-2);line-height:1.4}
 @media(max-width:760px){.first-run{padding:16px}.first-run-samples{grid-template-columns:1fr}.first-run-foot :is(.btn-outline,.btn-primary){width:100%}}
-/* kit-clean:start page list */
 /* ==== nav v4: compact page list, collapsible, page strip ==== */ /* the rail; pages switch from the strip (navigation step 4) */
 body.ux-v3 .brand-sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 body.ux-v3 .ux-nav-shell{grid-template-columns:4.75rem}
@@ -1166,30 +1161,29 @@ body.ux-v3 .ux-nav-shell{grid-template-columns:4.75rem}
 .inbox-resolved{border-top:1px solid var(--ui-line);margin-top:12px;padding-top:4px}
 .inbox-resolved>summary{min-height:44px;display:flex;align-items:center;color:var(--ui-muted);font-weight:600}
 .inbox-resolved .item-card{opacity:.82}
-/* kit-clean:end */
-/* ==== model downloads ==== */
 .model-pull-form{display:flex;gap:8px;flex-wrap:wrap}
 .model-pull-form input{flex:1 1 240px;min-height:44px}
 
-.model-pull-error{color:var(--ds-bad);font-size:var(--ds-fs-1);margin:8px 0 0}
+.model-pull-error{color:var(--ui-bad);font-size:var(--ui-fs-2);margin:8px 0 0}
 .model-pull-error[hidden]{display:none}
 .model-pull-list{display:grid;gap:10px;margin-top:12px}
 .model-pull-list:empty{display:none}
-.model-pull{border:1px solid var(--ds-line);border-radius:var(--ds-r-md);padding:10px 12px;background:var(--ds-surface)}
+.model-pull{border:1px solid var(--ui-line);border-radius:var(--ui-r-3);padding:10px 12px;background:var(--ui-surface)}
 .model-pull-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.model-pull-head strong{font-family:var(--ds-mono);font-size:var(--ds-fs-1)}
-.model-pull-head span{color:var(--ds-soft);font-size:var(--ds-fs-1);margin-right:auto}
+.model-pull-head strong{font-family:var(--ui-mono);font-size:var(--ui-fs-2)}
+.model-pull-head span{color:var(--ui-muted);font-size:var(--ui-fs-2);margin-right:auto}
 
-.model-pull small{display:block;color:var(--ds-muted);font-size:var(--ds-fs-1);margin-top:6px}
-.model-pull-bar{height:6px;border-radius:999px;background:var(--ds-surface-3);overflow:hidden;margin-top:8px}
-.model-pull-bar i{display:block;height:100%;background:var(--ds-accent);transition:width .4s ease}
-.model-pull.is-done .model-pull-bar i{background:var(--ds-good)}
-.model-pull.is-failed{border-color:color-mix(in srgb,var(--ds-bad) 45%,var(--ds-line))}
-.model-pull.is-failed .model-pull-head span{color:var(--ds-bad)}
+.model-pull small{display:block;color:var(--ui-muted);font-size:var(--ui-fs-2);margin-top:6px}
+.model-pull-bar{height:6px;border-radius:999px;background:var(--ui-surface-2);overflow:hidden;margin-top:8px}
+.model-pull-bar i{display:block;height:100%;background:var(--ui-accent);transition:width .4s ease}
+.model-pull.is-done .model-pull-bar i{background:var(--ui-ok)}
+.model-pull.is-failed{border-color:color-mix(in srgb,var(--ui-bad) 45%,var(--ui-line))}
+.model-pull.is-failed .model-pull-head span{color:var(--ui-bad)}
 @media(prefers-reduced-motion:reduce){.model-pull-bar i{transition:none}}
-.model-runtime-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:var(--ds-fs-1);color:var(--ds-soft)}
+.model-runtime-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:var(--ui-fs-2);color:var(--ui-muted)}
 
-.first-run-progress{margin-top:8px;max-width:420px}.first-run-progress small{display:block;color:var(--ds-muted);font-size:var(--ds-fs-1);margin-top:4px}
+.first-run-progress{margin-top:8px;max-width:420px}.first-run-progress small{display:block;color:var(--ui-muted);font-size:var(--ui-fs-2);margin-top:4px}
+/* kit-clean:end */
 
 /* Home, phone pass 2: one mode select instead of the mode buttons. */
 .mode-select{display:none}
@@ -1347,21 +1341,20 @@ body.ux-v3 .ux-nav-shell{grid-template-columns:4.75rem}
 }
 /* The icon sprite renders inline otherwise and pushes the page down a line. Kept in the tree (not display:none) so <use> resolves everywhere. */
 body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
-/* kit-clean:end */
-/* ==== secure connection ==== */
 .secure-card{margin-bottom:12px}
-.secure-head{display:flex;gap:12px;align-items:flex-start}.secure-head h2{margin-bottom:4px}.secure-head p{margin:0;color:var(--ds-soft)}
-.secure-head a,.secure-steps a:not(.btn-outline,.btn-primary){color:var(--ds-accent);text-decoration:underline}
+.secure-head{display:flex;gap:12px;align-items:flex-start}.secure-head h2{margin-bottom:4px}.secure-head p{margin:0;color:var(--ui-muted)}
+.secure-head a,.secure-steps a:not(.btn-outline,.btn-primary){color:var(--ui-accent);text-decoration:underline}
 .secure-steps :is(.btn-outline,.btn-primary){margin-right:8px}
 .notify-card :is(.btn-outline,.btn-primary){margin-top:6px}
-.secure-dot{width:12px;height:12px;border-radius:50%;margin-top:7px;flex:none;background:var(--ds-progress)}
-.secure-card[data-state="good"] .secure-dot,.secure-card[data-state="ready"] .secure-dot{background:var(--ds-good)}
-.secure-card[data-state="unknown"] .secure-dot{background:var(--ds-faint)}
-.secure-steps{margin:14px 0 0;padding-left:20px;display:grid;gap:12px;color:var(--ds-text)}
+.secure-dot{width:12px;height:12px;border-radius:50%;margin-top:7px;flex:none;background:var(--ui-warn)}
+.secure-card[data-state="good"] .secure-dot,.secure-card[data-state="ready"] .secure-dot{background:var(--ui-ok)}
+.secure-card[data-state="unknown"] .secure-dot{background:var(--ui-muted)}
+.secure-steps{margin:14px 0 0;padding-left:20px;display:grid;gap:12px;color:var(--ui-text)}
 
-.secure-steps dl{margin:8px 0 0;display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;font-size:var(--ds-fs-1)}
-.secure-steps dt{font-weight:650}.secure-steps dd{margin:0;color:var(--ds-soft)}
+.secure-steps dl{margin:8px 0 0;display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;font-size:var(--ui-fs-2)}
+.secure-steps dt{font-weight:650}.secure-steps dd{margin:0;color:var(--ui-muted)}
 @media(max-width:760px){.secure-steps dl{grid-template-columns:1fr}.secure-steps dd{margin-bottom:6px}}
+/* kit-clean:end */
 /* ==== what's new ==== */
 .whatsnew-card{margin-bottom:12px;scroll-margin-top:88px}.whatsnew-card[hidden]{display:none}
 .whatsnew-card code{font-family:var(--ds-mono);font-size:var(--ds-fs-1);color:var(--ds-muted)}
@@ -2578,13 +2571,15 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 @media (prefers-reduced-motion:reduce){
   #architecture *{transition:none!important;animation:none!important;scroll-behavior:auto!important}
 }
+/* kit-clean:start setup tools */
 /* System › Tools: one card per tool (tools-page.js). */
 .tool-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:12px}
-.tool-card{display:grid;grid-template-columns:28px minmax(0,1fr);gap:12px;align-items:start;color:var(--ds-text);text-decoration:none;min-height:44px}
-.tool-card:hover{border-color:var(--ds-line-2)}
-.tool-card:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
-.tool-card__icon{color:var(--ds-muted)}.tool-card__icon .icon{width:22px;height:22px}
-.tool-card span:last-child{display:grid;gap:3px;font-size:var(--ds-fs-2)}.tool-card small{color:var(--ds-muted);font-size:var(--ds-fs-1)}
+.tool-card{display:grid;grid-template-columns:28px minmax(0,1fr);gap:12px;align-items:start;color:var(--ui-text);text-decoration:none;min-height:44px}
+.tool-card:hover{border-color:var(--ui-line-2)}
+.tool-card:focus-visible,.diag-pref input:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
+.tool-card__icon{color:var(--ui-muted)}.tool-card__icon .icon{width:22px;height:22px}
+.tool-card span:last-child{display:grid;gap:3px;font-size:var(--ui-fs-4)}.tool-card small{color:var(--ui-muted);font-size:var(--ui-fs-2)}
+/* kit-clean:end */
 /* Improve › Shipped › Running now (deployments.js): what the appliance reports it runs, and what is not connected. */
 .dep-now{display:grid;gap:8px}
 .dep-now__head{display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -2594,16 +2589,17 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 .dep-now__note{margin:0;color:var(--ds-muted);font-size:var(--ds-fs-1)}
 .dep-now__note a{text-decoration:underline;text-underline-offset:2px} /* a link in running text needs more than colour (axe link-in-text-block) */
 .dep-now[data-evidence="stale"] .dep-now__line,.dep-now[data-evidence="unavailable"] .dep-now__line{color:var(--ds-muted)}
+/* kit-clean:start setup diagnostics */
 /* Settings › Show diagnostic details (first-run.js). Off sets body.diagnostics-off. */
 body.diagnostics-off [data-diagnostic]{display:none!important}
 .diag-pref{display:flex;flex-direction:row-reverse;justify-content:space-between;gap:16px;align-items:center;margin-top:12px;cursor:pointer}
-.diag-pref input{appearance:none;-webkit-appearance:none;position:relative;width:44px;height:26px;margin:0;border-radius:999px;background:var(--ds-surface-3);border:1px solid var(--ds-line-2);flex:none;cursor:pointer;transition:background .15s ease}
-.diag-pref input::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:var(--ds-muted);transition:transform .15s ease,background .15s ease}
-.diag-pref input:checked{background:var(--ds-accent);border-color:transparent}
-.diag-pref input:checked::after{transform:translateX(18px);background:var(--ds-accent-ink)}
-.diag-pref input:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+.diag-pref input{appearance:none;-webkit-appearance:none;position:relative;width:44px;height:26px;margin:0;border-radius:999px;background:var(--ui-surface-2);border:1px solid var(--ui-line-2);flex:none;cursor:pointer;transition:background .15s ease}
+.diag-pref input::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:var(--ui-muted);transition:transform .15s ease,background .15s ease}
+.diag-pref input:checked{background:var(--ui-accent);border-color:transparent}
+.diag-pref input:checked::after{transform:translateX(18px);background:var(--ui-on-accent)}
 @media (prefers-reduced-motion:reduce){.diag-pref input,.diag-pref input::after{transition:none}}
-.diag-pref span{display:grid;gap:3px;color:var(--ds-text);font-size:var(--ds-fs-2)}.diag-pref small{color:var(--ds-muted);font-size:var(--ds-fs-1)}
+.diag-pref span{display:grid;gap:3px;color:var(--ui-text);font-size:var(--ui-fs-4)}.diag-pref small{color:var(--ui-muted);font-size:var(--ui-fs-2)}
+/* kit-clean:end */
 
 /* Assistant status's header: Health ↗ (Pi Hub) beside Check again (platform step 7, PR 7.7). */
 
@@ -2635,16 +2631,18 @@ html.is-framed .ux-framed-strip::-webkit-scrollbar{display:none}
 .ux-framed-strip button[aria-current="page"]{color:var(--ds-text);font-weight:650;box-shadow:inset 0 -2px 0 var(--ds-accent)}
 .ux-framed-strip button:focus-visible{outline:2px solid var(--ds-accent);outline-offset:-2px}
 html.is-framed .ux-page-strip{margin-top:0}
+/* kit-clean:start setup status */
 /* Assistant status on the page anatomy (Pi Hub A7 P1, L2b): the faceplate, lamp-right service rows, the sources line. */
 .status-page>.ui-page__head{margin-bottom:0}
 .plate-skeleton{display:inline-block;width:6ch;height:1em}
 .status-plate__note,.status-plate__when{margin:0}
 .status-page.view.active{display:grid;gap:calc(var(--ui-space)*7);min-width:0}
 #serviceList{margin:0;padding:0;list-style:none}
-#serviceList .status-error{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--ds-line)}
+#serviceList .status-error{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--ui-line)}
 .status-services details{margin-top:calc(var(--ui-space)*3)}
-.status-open-in{margin:0;color:var(--ds-muted)}
+.status-open-in{margin:0;color:var(--ui-muted)}
 .status-page>.ui-sources{margin:0}
+/* kit-clean:end */
 /* Projects on the page anatomy (A7 L2b): rows that open a project as a section under the list. */
 .projects-page.view.active{display:grid;gap:calc(var(--ui-space)*7);min-width:0}
 #projects.projects-empty #projectMetrics{display:none}
