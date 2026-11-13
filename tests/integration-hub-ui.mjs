@@ -266,6 +266,10 @@ await check('each service says when it was last asked and whether it answered; n
 
 await page.close();
 
+// A box's edges are 32-bit floats: a 44 px control whose top sits at a fractional offset past 1024 px measures
+// 43.99988 (44 minus 2^-13). A hundredth of a pixel absorbs that rounding and nothing a finger could notice.
+const atLeast44 = (px) => px >= 44 - 0.01;
+
 const mobile = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 await mobile.goto(base, { waitUntil: 'domcontentloaded' });
 await mobile.waitForSelector('#uxMobileNav');
@@ -288,7 +292,7 @@ await check('integration actions meet mobile touch-target guidance', async () =>
   const action = mobile.locator('#uxIntegrationCardsV2 .ux-int-action').first();
   await action.waitFor({ state: 'visible' });
   const box = await action.boundingBox();
-  assert.ok(box && box.height >= 44, `expected >=44px touch target, got ${box?.height}`);
+  assert.ok(box && atLeast44(box.height), `expected >=44px touch target, got ${box?.height}`);
 });
 
 await mobile.close();
@@ -341,7 +345,7 @@ await mobile.close();
     assert.equal(await portal.getAttribute('rel'), 'noopener noreferrer');
     for (const target of [card.getByRole('button', { name: 'Copy' }), portal, card.getByRole('button', { name: 'Hide' })]) {
       const box = await target.boundingBox();
-      assert.ok(box && box.height >= 44 && box.width >= 44, `tap target ${box?.width}x${box?.height}`);
+      assert.ok(box && atLeast44(box.height) && atLeast44(box.width), `tap target ${box?.width}x${box?.height}`);
     }
     const dims = await phone.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
     assert.ok(dims[0] <= dims[1] + 2, `no sideways scroll (${dims})`);
