@@ -53,3 +53,26 @@ test('local CI runs the check as a step beside Kit drift', () => {
   const ci = fs.readFileSync(path.join(ROOT, 'scripts/local-ci.mjs'), 'utf8');
   assert.match(ci, /await step\('Kit literals', 'node', \['app\/public\/ui\/literals\.mjs', 'app\/public'\]\);/);
 });
+
+// Step 13, L4 to L9 (plan decision 12): the stylesheet moves onto the kit's names section by section. A cleaned section
+// sits between `/* kit-clean:start <name> */` and `/* kit-clean:end */`; inside one, every var() is a kit value. L4 marks
+// the shell and the shared parts, and takes the --ux-* colour aliases out of the whole file.
+const cleanRegions = css => [...css.matchAll(/\/\* kit-clean:start ([\w -]+?) \*\/([\s\S]*?)\/\* kit-clean:end \*\//g)].map(m => ({ name: m[1], body: m[2] }));
+
+test('a cleaned section of the stylesheet reads only the kit\'s names', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'app/public/app.css'), 'utf8');
+  const regions = cleanRegions(css);
+  assert.deepEqual(regions.map(r => r.name), ['navigation', 'design system', 'page list', 'phone shell', 'phone shell follow-ups']);
+  assert.equal((css.match(/kit-clean:start/g) || []).length, (css.match(/kit-clean:end/g) || []).length, 'every start has its end');
+  for (const r of regions) {
+    const priv = [...new Set([...r.body.matchAll(/var\(\s*(--[\w-]+)/g)].map(m => m[1]).filter(n => !n.startsWith('--ui-')))];
+    assert.deepEqual(priv, [], `"${r.name}" still reads ${priv.join(', ')}`);
+    assert.doesNotMatch(r.body, /font-size:\s*\d+px/, `"${r.name}" sets a type size in px`);
+  }
+});
+
+test('the --ux-* colour and radius aliases are gone: nothing defines or reads one', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'app/public/app.css'), 'utf8');
+  const left = [...new Set(css.match(/--ux-(?:bg|rail|surface(?:-[23])?|line(?:-strong)?|text|muted|accent(?:-2)?|good|warn|bad|radius(?:-lg)?)\b/g) || [])];
+  assert.deepEqual(left, []);
+});
