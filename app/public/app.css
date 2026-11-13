@@ -1005,7 +1005,7 @@ kbd{font:600 var(--ui-fs-1)/1 var(--ui-mono);padding:2px 6px;border-radius:var(-
 .preview-pane:has(>.empty-state:only-child){border-color:transparent;background:none;min-height:0;padding:0}
 /* The button kit (E4): one size, three weights and an icon button. Primary is the action the page exists for: at most
    one on a page or sheet; everything else is outline; danger is for removing or clearing. */
-:is(.btn-primary,.btn-outline,.btn-danger){display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 16px;border-radius:var(--ui-r-3);font:600 var(--ui-fs-4)/1.2 var(--ui-font);cursor:pointer;box-sizing:border-box;text-decoration:none;transition:background .15s ease,border-color .15s ease}
+:is(.btn-primary,.btn-outline,.btn-danger){display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 16px;border-radius:var(--ui-r-3);font:600 var(--ui-fs-3)/1.2 var(--ui-font);cursor:pointer;box-sizing:border-box;text-decoration:none;transition:background .15s ease,border-color .15s ease}
 .btn-primary{background:var(--ui-accent);color:var(--ui-on-accent);border:1px solid transparent}
 .btn-primary:hover{background:#63d1d7}
 .btn-outline{background:transparent;color:var(--ui-text);border:1px solid var(--ui-field-line)}
@@ -1630,7 +1630,7 @@ body.run-view-open{overflow:hidden}
 .improve-row{gap:10px}
 .improve-row__open{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:6px 0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;min-height:44px}
 .improve-row .list-row__sub{display:flex;flex-wrap:wrap;align-items:center;gap:6px;white-space:normal}
-.improve-row .list-row__trail .btn-outline{min-height:44px;padding:0 12px;font-size:var(--ds-fs-2)}
+.improve-row .list-row__trail .btn-outline{min-height:44px;padding:0 12px}
 .improve-votes{gap:2px}
 .improve-votes .icon-btn{font-size:var(--ds-fs-1);color:var(--ds-muted)}
 .improve-votes>span{min-width:18px;text-align:center;color:var(--ds-soft);font-variant-numeric:tabular-nums}
@@ -1662,7 +1662,7 @@ body.run-view-open{overflow:hidden}
 /* Work › Missions: a link to Agent World, the live mission map (appended; nothing above edited). */
 .work-agentworld{align-items:center;justify-content:space-between;flex-wrap:wrap;margin:10px 0}
 .work-agentworld[hidden]{display:none}
-.work-agentworld .btn-outline{min-height:44px;padding:0 14px;font-size:var(--ds-fs-2)}
+.work-agentworld .btn-outline{min-height:44px;padding:0 14px}
 /* Run view › mission body: Agent World, the headline and the timeline, borrowed from the Missions page. */
 .run-body-mission{display:grid;gap:12px;min-width:0}
 .run-body-mission__world,.run-body-mission__strip,.run-body-mission__crew,.run-body-mission__timeline{min-width:0}
@@ -1692,7 +1692,7 @@ input::placeholder,textarea::placeholder{color:var(--ds-faint);font-weight:400}
 .cmdk-item.active,.cmdk-item[aria-selected="true"]{background:var(--ds-accent-soft);border-color:var(--ds-line-2)}
 .cmdk-empty{display:grid;gap:10px;padding:14px 10px;color:var(--ds-muted)}
 .cmdk-empty p{margin:0}
-.cmdk-empty .btn-outline{min-height:44px;justify-self:start;font-size:var(--ds-fs-2)}
+.cmdk-empty .btn-outline{min-height:44px;justify-self:start}
 /* Phone touch targets for links and buttons inside text: Integrations guidance links, Home's setup card (appended; nothing above edited). */
 @media(max-width:760px){.ux-int-research-grid a{display:inline-flex;align-items:center;min-height:44px;font-size:var(--ds-fs-1)}.first-run-steps a{display:inline-flex;align-items:center;min-height:44px}}
 /* Approvals: resolved items folded below the waiting ones; Audit log: Clear sits under the list (appended; nothing above edited). */
@@ -1722,7 +1722,7 @@ input::placeholder,textarea::placeholder{color:var(--ds-faint);font-weight:400}
 .offline-banner{align-items:center;margin:0;border-radius:0;border-width:0 0 1px;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;font-family:var(--ds-font);background:color-mix(in srgb,var(--ds-attention) 12%,var(--ds-bg))}
 .offline-banner .icon{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8}
 .offline-banner__text{flex:1;min-width:0;margin:0}
-.offline-banner__retry.btn-outline{min-height:44px;padding:0 14px;font-size:var(--ds-fs-2);flex:none}
+.offline-banner__retry.btn-outline{min-height:44px;padding:0 14px;flex:none}
 .offline-banner:has(.offline-banner__alt){flex-wrap:wrap}
 .offline-banner__alt{order:3;flex:1 0 100%;display:grid;gap:6px;padding-left:32px}
 .offline-banner__alt p{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
@@ -1731,7 +1731,7 @@ input::placeholder,textarea::placeholder{color:var(--ds-faint);font-weight:400}
 .offline-banner--switching>.offline-banner__text,.offline-banner--switching>.offline-banner__alt,.offline-banner--switching>.offline-banner__retry{display:none}
 .offline-banner__switch{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
 .offline-banner__switch p{flex:1;min-width:0;margin:0}
-.offline-banner__cancel.btn-outline{min-height:44px;padding:0 14px;font-size:var(--ds-fs-2);flex:none}
+.offline-banner__cancel.btn-outline{min-height:44px;padding:0 14px;flex:none}
 .offline-banner__countdown{flex:1 0 100%;height:3px;background:var(--ds-attention);transform-origin:left;animation:address-countdown 2s linear forwards}
 @keyframes address-countdown{to{transform:scaleX(0)}}
 .address-back{margin:0;padding:env(safe-area-inset-top) 16px 0;border-bottom:1px solid var(--ds-line-card);font-family:var(--ds-font);font-size:var(--ds-fs-1);color:var(--ds-soft);background:var(--ds-bg)}
@@ -2077,7 +2077,7 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .sheets-ask label{font-weight:650}
 .sheets-ask textarea{min-height:110px;font-size:var(--ds-fs-input);line-height:1.45;resize:vertical}
 .sheets-examples{display:flex;gap:8px;flex-wrap:wrap}
-.sheets-examples .btn-outline{justify-content:flex-start;text-align:left;white-space:normal;line-height:1.35;height:auto;min-height:44px;padding:8px 14px;font-size:var(--ds-fs-2);font-weight:500}
+.sheets-examples .btn-outline{justify-content:flex-start;text-align:left;white-space:normal;line-height:1.35;height:auto;min-height:44px;padding:8px 14px;font-weight:500}
 .sheets-mode{border:0;margin:0;padding:0;display:grid;gap:6px;min-width:0}
 .sheets-mode legend{font-weight:650;padding:0;margin-bottom:6px}
 .sheets-mode__opts{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:3px;border:1px solid var(--ds-line-input);border-radius:var(--ds-r-md);background:var(--ds-bg-2)}
@@ -2208,7 +2208,7 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ds-line)}
 .aw-start__check small{color:var(--ds-muted);font-size:var(--ds-fs-1)}
 .aw-start__project{display:grid;gap:6px;font-size:var(--ds-fs-1);font-weight:600;color:var(--ds-soft)}
 .aw-start__actions{display:flex;justify-content:flex-end}
-.aw-start__actions .btn-primary{min-width:140px;min-height:48px;font-size:var(--ds-fs-2)}
+.aw-start__actions .btn-primary{min-width:140px;min-height:48px}
 .aw-start__dev{display:grid;gap:10px;padding-top:12px;border-top:1px solid var(--ds-line)}
 .aw-start__devbar{display:flex;gap:8px}
 .aw-start__devbar button{min-height:44px}
@@ -2436,7 +2436,7 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
   #architecture .atlas-contract-row{grid-template-columns:1fr;gap:6px}
 }
 
-#architecture .atlas-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,320px);gap:16px;align-items:start;min-width:0}
+#architecture .atlas-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,300px);gap:16px;align-items:start;min-width:0}
 #architecture .atlas-sheet,#architecture .atlas-inspector{min-width:0;border:1px solid var(--ds-line);border-radius:var(--ds-r-lg);background:var(--ds-surface)}
 #architecture .atlas-sheet-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px;padding:14px 14px 0}
 #architecture .atlas-sheet-title{flex:1 1 280px;min-width:0}
