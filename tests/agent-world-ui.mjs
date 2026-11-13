@@ -383,6 +383,34 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await check(`${label}: no script errors (start)`, async () => assert.deepEqual(errors, []));
   await context.close();
 }
+// The page can open before the header and the page strip are built (a deep link, a fast tap): the stage must still
+// end up under them. It used to keep its 56px fallback, so the strip covered the faceplate's "Try a demo mission".
+{
+  const { defaultBrowserType, ...device } = devices['iPhone 14'];
+  const context = await newContext({ serviceWorkers: 'block', ...device });
+  await context.addInitScript(() => {
+    try { localStorage.setItem('localai.firstRun.done', '1'); } catch {}
+    // The shell builds its bars on window load. Hold load back with a slow image and open Agent World before it.
+    document.addEventListener('DOMContentLoaded', () => { const i = new Image(); i.src = '/__hold-load.png'; i.hidden = true; document.body.append(i); });
+    const t = setInterval(() => { if (typeof window.showView !== 'function') return; clearInterval(t); window.__awOpenedEarly = !document.getElementById('uxContextBar'); window.showView('agents'); }, 5);
+  });
+  const page = await context.newPage();
+  await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) }));
+  await page.route(u => u.pathname === '/__hold-load.png', async r => { await new Promise(done => setTimeout(done, 1200)); r.fulfill({ status: 404, body: '' }); });
+  await check('iPhone 14: opened before the bars exist, the stage still sits under the page strip', async () => {
+    await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#agents.active #awcCanvas');
+    assert.equal(await page.evaluate(() => window.__awOpenedEarly), true, 'the page opened before the header was built');
+    await page.locator('#awEmptyDemo').waitFor({ state: 'visible' });
+    await page.waitForFunction(() => {
+      const strip = document.getElementById('uxPageStrip')?.getBoundingClientRect(), stage = document.querySelector('#agents .aw-stage')?.getBoundingClientRect();
+      return strip && stage && strip.height > 0 && Math.abs(stage.top - strip.bottom) <= 1;
+    }, null, { timeout: 5000 });
+    await page.locator('#awEmptyDemo').click({ timeout: 5000 });
+    await page.waitForFunction(() => document.getElementById('awLamp')?.textContent === 'Demo');
+  });
+  await context.close();
+}
 // A demo started another way (watch mode, a test) still owns the faceplate, and a later refresh doesn't take it back.
 {
   const { context, page, errors } = await emptyPage({ viewport: { width: 1440, height: 900 } });

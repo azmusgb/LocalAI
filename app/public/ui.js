@@ -204,7 +204,10 @@ function setupSheet(){
  new MutationObserver(()=>{if(!page.classList.contains('active')&&snap!=='peek'){const r=releaseSheet;releaseSheet=null;setSnap('peek',{fromBack:true});r?.()}else if(page.classList.contains('active')){measure();requestAnimationFrame(measure)}}).observe(page,{attributes:true,attributeFilter:['class']});
  phone.addEventListener?.('change',()=>setSnap('peek'));window.addEventListener('resize',measure);
  // Work's strip is drawn (or shown) after the page opens: follow it and the top bar, so the stage always starts under them.
- if('ResizeObserver' in window){const ro=new ResizeObserver(()=>{if(page.classList.contains('active'))measure()});for(const id of['uxPageStrip','uxContextBar']){const el=document.getElementById(id);if(el)ro.observe(el)}}
+ // The shell builds both on window load, which can be after this runs and after the page is open: watch for them until both exist.
+ if('ResizeObserver' in window){const ro=new ResizeObserver(()=>{if(page.classList.contains('active'))measure()}),seen=new Set();
+  const watch=()=>{for(const id of['uxPageStrip','uxContextBar']){const el=document.getElementById(id);if(el&&!seen.has(el)){seen.add(el);ro.observe(el)}}return seen.size===2};
+  if(!watch()){const mo=new MutationObserver(()=>{if(watch())mo.disconnect()});mo.observe(document.body,{childList:true,subtree:true})}}
  measure();setSnap('peek')
 }
 window.addEventListener('localai:agentworld-select',e=>{if(e.detail?.workerId)selectWorker(e.detail.workerId)});
