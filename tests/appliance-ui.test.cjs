@@ -62,7 +62,7 @@ test('no off-palette colours left in the app chrome', () => {
 test('a printer error on the Services card is marked as one', () => {
   const ui = read('ui.js'), css = read('app.css').replace(/\s+/g, '');
   assert.match(ui, /box\.dataset\.tone = p\?\.state === 'error' \? 'bad'/);
-  assert.ok(css.includes('.ux-int-guidance[data-tone="bad"]{border-left-color:var(--ds-bad);color:var(--ds-text)'));
+  assert.ok(css.includes('.ux-int-guidance[data-tone="bad"]{border-left-color:var(--ui-bad);color:var(--ui-text)'));
 });
 
 // Look review: phone filter chips cut off with no cue; awkward Signals copy. (Its print-lab command check went with the lab page, N5.)
