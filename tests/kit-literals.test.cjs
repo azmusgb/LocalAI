@@ -43,10 +43,12 @@ test('a new stylesheet starts at zero', t => {
   assert.match(r.stderr, /app\/public\/new-page\.css: space 1, the baseline says 0: a new file starts at zero/);
 });
 
-test('the allow list is Agent World\'s and Main Street\'s canvas art, and no private name', () => {
+// The names are per-instance (plan decision 5): the Claude board's heat cell (--heat is set per cell by ui.js, --sev per
+// severity) and Atlas's risk band (--band per row, from the --atlas-* scale, which mixes kit colours the kit has no step for).
+test('the allow list is Agent World\'s and Main Street\'s canvas art, and the four per-instance names', () => {
   const allow = JSON.parse(fs.readFileSync(path.join(ROOT, '.kit-literals-allow.json'), 'utf8'));
   assert.deepEqual(allow.files, ['app/public/street/**', 'app/public/aw/**']);
-  assert.deepEqual(allow.names, []);
+  assert.deepEqual(allow.names, ['--sev', '--heat', '--band', '--atlas-*']);
 });
 
 test('local CI runs the check as a step beside Kit drift', () => {
@@ -56,7 +58,7 @@ test('local CI runs the check as a step beside Kit drift', () => {
 
 // Step 13, L4 to L9 (plan decision 12): the stylesheet moves onto the kit's names section by section. A cleaned section
 // sits between `/* kit-clean:start <name> */` and `/* kit-clean:end */`; inside one, every var() is a kit value. L4 marks
-// the shell and the shared parts, and takes the --ux-* colour aliases out of the whole file. L5 marks Setup's own blocks. A cleaned
+// the shell and the shared parts, and takes the --ux-* colour aliases out of the whole file. L5 marks Setup's own blocks; L6 marks Improve's (Changes, Signals, Claude Code, Atlas). A cleaned
 // block that touches a cleaned section joins it (first-run, the page list and model downloads are in "design system",
 // secure connection in "phone shell"): the shell's download budget has no room for a pair of markers each.
 const cleanRegions = css => [...css.matchAll(/\/\* kit-clean:start ([\w -]+?) \*\/([\s\S]*?)\/\* kit-clean:end \*\//g)].map(m => ({ name: m[1], body: m[2] }));
@@ -64,10 +66,13 @@ const cleanRegions = css => [...css.matchAll(/\/\* kit-clean:start ([\w -]+?) \*
 test('a cleaned section of the stylesheet reads only the kit\'s names', () => {
   const css = fs.readFileSync(path.join(ROOT, 'app/public/app.css'), 'utf8');
   const regions = cleanRegions(css);
-  assert.deepEqual(regions.map(r => r.name), ['navigation', 'design system', 'phone shell', 'phone shell follow-ups', 'setup tools', 'setup diagnostics', 'setup status']);
+  // The per-instance names (plan decision 5): a part's own variable, set per element or per state, is not a kit value.
+  const allow = JSON.parse(fs.readFileSync(path.join(ROOT, '.kit-literals-allow.json'), 'utf8')).names.map(n => new RegExp(`^${n.replace(/\*/g, '.*')}$`));
+  assert.deepEqual(regions.map(r => r.name), ['navigation', 'improve claude', 'design system', 'phone shell', 'phone shell follow-ups', 'improve changes', 'improve rows', 'improve shipped',
+    'improve signals', 'improve highlight', 'improve errors', 'atlas to setup diagnostics', 'setup status']);
   assert.equal((css.match(/kit-clean:start/g) || []).length, (css.match(/kit-clean:end/g) || []).length, 'every start has its end');
   for (const r of regions) {
-    const priv = [...new Set([...r.body.matchAll(/var\(\s*(--[\w-]+)/g)].map(m => m[1]).filter(n => !n.startsWith('--ui-')))];
+    const priv = [...new Set([...r.body.matchAll(/var\(\s*(--[\w-]+)/g)].map(m => m[1]).filter(n => !n.startsWith('--ui-') && !allow.some(re => re.test(n))))];
     assert.deepEqual(priv, [], `"${r.name}" still reads ${priv.join(', ')}`);
     assert.doesNotMatch(r.body, /font-size:\s*\d+px/, `"${r.name}" sets a type size in px`);
   }

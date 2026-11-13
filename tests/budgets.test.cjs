@@ -121,7 +121,10 @@ const KB = 1024;
 // 2026-11-12: 345 → 349 KB for the kit at 2.21.0 with its values file (Pi Hub A22 1.3, step 13 L3): /ui/tokens.css is
 // new in the shell (+1.0 KB) and fourteen kit releases grew components.css (+1.4 KB), needs.js (+0.7 KB) and needs.css
 // (+0.1 KB); app.css gave back 0.3 KB with its --ui-* aliases (347.8 KB measured; main was 345.0 KB).
-const TOTAL = 349 * KB;
+// 2026-11-13: 349 → 350 KB while the stylesheet moves onto the kit's names (step 13, L6 to L9): each cleaned section
+// carries a pair of kit-clean markers and the --ds-* definitions stay until the last section reads none (app.css +19
+// bytes in L6; L5 landed with 0 bytes to spare). It comes back down in L10, when the markers and the --ds-* names go.
+const TOTAL = 350 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
