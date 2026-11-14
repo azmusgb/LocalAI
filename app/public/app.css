@@ -2640,6 +2640,8 @@ html.is-framed .ux-framed-strip::-webkit-scrollbar{display:none}
 .ux-framed-strip button[aria-current="page"]{color:var(--ds-text);font-weight:650;box-shadow:inset 0 -2px 0 var(--ds-accent)}
 .ux-framed-strip button:focus-visible{outline:2px solid var(--ds-accent);outline-offset:-2px}
 html.is-framed .ux-page-strip{margin-top:0}
+/* The top bar the strip normally sticks under is hidden when framed, so the strip sticks to the top of the frame. */
+html.is-framed body.ux-v3 .ux-page-strip{top:0}
 /* kit-clean:start setup status and projects page */
 /* Assistant status on the page anatomy (Pi Hub A7 P1, L2b): the faceplate, lamp-right service rows, the sources line. */
 .status-page>.ui-page__head{margin-bottom:0}
