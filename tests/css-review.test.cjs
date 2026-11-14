@@ -21,9 +21,8 @@ test('[hidden] always hides, whatever display a class sets (Missions › special
 });
 
 test('focus is the app ring, not the 28% glow or a fill a shade off the menu', () => {
-  for (const sel of ['.home-context__clear:focus-visible']) {
-    assert.match(rule(sel), /outline:var\(--ds-ring\)/, sel);
-  }
+  // Home's rule sits in a cleaned section (L9), so it writes the same ring with the kit's name.
+  assert.match(rule('.home-context__clear:focus-visible'), /outline:2px solid var\(--ui-accent-text\)/);
   assert.match(css, /\.aw-menu button:focus-visible\{[^}]*outline:var\(--ds-ring\)/);
   assert.doesNotMatch(css, /\.aw-menu button:is\(:hover,:focus-visible\)\{[^}]*outline:none/);
 });
