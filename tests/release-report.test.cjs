@@ -105,3 +105,12 @@ test('Safe Deploy queues a report after each deploy and flushes the outbox every
   assert.match(src, /Get-FailedReport/);
   assert.ok(src.indexOf("Action = 'Flush'") < src.indexOf('$started = Get-Date'), 'the flush runs before any early exit');
 });
+
+test('Safe Deploy reports a healthy no-change run once after a failure at the running commit, so the hub record clears', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'deploy', 'Run-LocalAI-AutoDeploy.ps1'), 'utf8');
+  const branch = src.slice(src.indexOf("elseif ($code -eq 0 -and $last -like 'NO CHANGE:*')"), src.indexOf('elseif ($code -ne 0)'));
+  assert.match(branch, /Test-ApplianceHealthy/);
+  assert.match(branch, /\$failed -eq \$short/);
+  assert.match(branch, /Result = 'deployed'/);
+  assert.match(branch, /Remove-Item \$failState/);
+});
