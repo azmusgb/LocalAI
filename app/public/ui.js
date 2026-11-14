@@ -178,7 +178,7 @@ async function init(){if(!$('specialistRegistry'))return;setupSheet();const hist
 // up, Back to lower it (one history entry while it is up). At peek the body is inert, so focus never lands in what is
 // off screen. On wider screens the same element is the rail beside the city and none of this applies.
 const phone=matchMedia('(max-width:760px)');let snap='peek',releaseSheet=null,dragEnd=-1e9;
-function sheetY(s,to){const h=s.clientHeight,peek=parseFloat(getComputedStyle(s).getPropertyValue('--aw-peek'))||112;return to==='full'?0:to==='half'?Math.round(h*.45):h-peek}
+function sheetY(s,to){const h=s.clientHeight,peek=s.querySelector('.aw-sheet__top')?.offsetHeight||112;return to==='full'?0:to==='half'?Math.round(h*.45):h-peek}
 function setSnap(to,{fromBack=false}={}){
  const s=$('awSheet'),handle=$('awSheetHandle'),body=$('awSheetBody');if(!s)return;snap=to;s.dataset.snap=to;s.classList.remove('is-dragging');
  if(to==='peek')s.style.removeProperty('--aw-y');else s.style.setProperty('--aw-y',sheetY(s,to)+'px');

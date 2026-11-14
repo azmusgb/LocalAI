@@ -5,14 +5,14 @@
       "colour": 8
     },
     "app/public/app.css": {
-      "colour": 206,
-      "type": 22,
+      "colour": 204,
+      "type": 2,
       "space": 1014,
       "radius": 57,
       "shadow": 44,
       "motion": 33,
       "layer": 32,
-      "name": 77
+      "name": 40
     },
     "app/public/app.js": {
       "colour": 1,
@@ -32,8 +32,7 @@
     },
     "app/public/ui.js": {
       "colour": 473,
-      "space": 5,
-      "name": 1
+      "space": 5
     }
   }
 }
