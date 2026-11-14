@@ -55,7 +55,7 @@ test('a new stylesheet starts at zero', t => {
 test('the allow list is Agent World\'s and Main Street\'s canvas art, and the per-instance names', () => {
   const allow = JSON.parse(fs.readFileSync(path.join(ROOT, '.kit-literals-allow.json'), 'utf8'));
   assert.deepEqual(allow.files, ['app/public/street/**', 'app/public/aw/**']);
-  assert.deepEqual(allow.names, ['--sev', '--heat', '--band', '--atlas-*', '--progress', '--home-*', '--run-vv*', '--ray', '--c', '--p', '--pull*', '--cmdk-*',
+  assert.deepEqual(allow.names, ['--sev', '--heat', '--band', '--atlas-*', '--progress', '--home-*', '--run-vv*', '--ray', '--c', '--p', '--pull', '--pull-top', '--cmdk-kb', '--cmdk-vh',
     '--aw-y', '--aw-top', '--aw-bottom']);
 });
 
