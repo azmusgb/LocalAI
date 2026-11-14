@@ -48,10 +48,15 @@ test('a new stylesheet starts at zero', t => {
 // --progress is a run's progress bar: ui.js and components.js set it per bar (L8).
 // --home-dock and --home-pad are the phone composer's measured dock offset and height (home.js); --run-vvh and
 // --run-vvt are the visual viewport's height and top (run-bodies.js). Each is a measurement set at run time (L9).
+// L9's remainder: --ray is the sky's ray colour for the hour (ui.js syncSky), --c a minimap marker's district colour (ui.js,
+// inline per marker), --p the replay's position (ui.js), --pull and --pull-top the pull-to-refresh distance and the
+// bar's measured bottom (components.js), --cmdk-vh and --cmdk-kb the palette's visual viewport and keyboard height
+// (app.js), --aw-y the sheet's dragged or snapped offset, --aw-top and --aw-bottom the measured header and tab bar (ui.js).
 test('the allow list is Agent World\'s and Main Street\'s canvas art, and the per-instance names', () => {
   const allow = JSON.parse(fs.readFileSync(path.join(ROOT, '.kit-literals-allow.json'), 'utf8'));
   assert.deepEqual(allow.files, ['app/public/street/**', 'app/public/aw/**']);
-  assert.deepEqual(allow.names, ['--sev', '--heat', '--band', '--atlas-*', '--progress', '--home-*', '--run-vv*']);
+  assert.deepEqual(allow.names, ['--sev', '--heat', '--band', '--atlas-*', '--progress', '--home-*', '--run-vv*', '--ray', '--c', '--p', '--pull*', '--cmdk-*',
+    '--aw-y', '--aw-top', '--aw-bottom']);
 });
 
 test('local CI runs the check as a step beside Kit drift', () => {
@@ -61,7 +66,9 @@ test('local CI runs the check as a step beside Kit drift', () => {
 
 // Step 13, L4 to L9 (plan decision 12): the stylesheet moves onto the kit's names section by section. A cleaned section
 // sits between `/* kit-clean:start <name> */` and `/* kit-clean:end */`; inside one, every var() is a kit value. L4 marks
-// the shell and the shared parts, and takes the --ux-* colour aliases out of the whole file. L5 marks Setup's own blocks; L6 marks Improve's (Changes, Signals, Claude Code, Atlas); L7 marks Projects' (the page's rows and detail, Library's rows). L8 marks Work's: the approval sheet, run rows and the run view, Notifications, the timeline and its Select bar join "phone shell follow-ups", and the run view's bodies join "improve changes". L9 marks Ask's: Home's mode select, image studio, composer and chat body and What's new sit between the earlier regions, so those join into "design system to improve changes"; Spreadsheets gets its own. A cleaned
+// the shell and the shared parts, and takes the --ux-* colour aliases out of the whole file. L5 marks Setup's own blocks; L6 marks Improve's (Changes, Signals, Claude Code, Atlas); L7 marks Projects' (the page's rows and detail, Library's rows). L8 marks Work's: the approval sheet, run rows and the run view, Notifications, the timeline and its Select bar join "phone shell follow-ups", and the run view's bodies join "improve changes". L9 marks Ask's: Home's mode select, image studio, composer and chat body and What's new sit between the earlier regions, so those join into "design system to improve changes"; Spreadsheets gets its own. L9's remainder cleans the rest (Agents and Missions, Agent World's panels, the audit
+// log, automations, Inbox, integration cards, the framed strip, the offline banner, pins, the command palette): every
+// rule but the --ds-* definitions reads the kit, so the file is two regions, one each side of those definitions. A cleaned
 // block that touches a cleaned section joins it (first-run, the page list and model downloads are in "design system",
 // secure connection in "phone shell"): the shell's download budget has no room for a pair of markers each.
 const cleanRegions = css => [...css.matchAll(/\/\* kit-clean:start ([\w -]+?) \*\/([\s\S]*?)\/\* kit-clean:end \*\//g)].map(m => ({ name: m[1], body: m[2] }));
@@ -71,8 +78,7 @@ test('a cleaned section of the stylesheet reads only the kit\'s names', () => {
   const regions = cleanRegions(css);
   // The per-instance names (plan decision 5): a part's own variable, set per element or per state, is not a kit value.
   const allow = JSON.parse(fs.readFileSync(path.join(ROOT, '.kit-literals-allow.json'), 'utf8')).names.map(n => new RegExp(`^${n.replace(/\*/g, '.*')}$`));
-  assert.deepEqual(regions.map(r => r.name), ['navigation', 'improve claude', 'design system to improve changes', 'improve rows', 'improve shipped',
-    'improve signals', 'improve highlight', 'improve errors', 'projects library', 'spreadsheets', 'atlas to setup diagnostics', 'setup status and projects page']);
+  assert.deepEqual(regions.map(r => r.name), ['navigation to improve claude', 'design system to setup status and projects page']);
   assert.equal((css.match(/kit-clean:start/g) || []).length, (css.match(/kit-clean:end/g) || []).length, 'every start has its end');
   for (const r of regions) {
     const priv = [...new Set([...r.body.matchAll(/var\(\s*(--[\w-]+)/g)].map(m => m[1]).filter(n => !n.startsWith('--ui-') && !allow.some(re => re.test(n))))];

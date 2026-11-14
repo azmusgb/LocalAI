@@ -1,4 +1,4 @@
 {
   "files": ["app/public/street/**", "app/public/aw/**"],
-  "names": ["--sev", "--heat", "--band", "--atlas-*", "--progress", "--home-*", "--run-vv*"]
+  "names": ["--sev", "--heat", "--band", "--atlas-*", "--progress", "--home-*", "--run-vv*", "--ray", "--c", "--p", "--pull*", "--cmdk-*", "--aw-y", "--aw-top", "--aw-bottom"]
 }
