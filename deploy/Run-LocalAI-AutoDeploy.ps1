@@ -238,7 +238,16 @@ if ($code -eq 0 -and $last -like 'DEPLOYED:*') {
     Remove-Item $failState -ErrorAction SilentlyContinue
     if (Test-ApplianceHealthy) { Invoke-BackupTidy; Invoke-HistoryPrune }
 } elseif ($code -eq 0 -and $last -like 'NO CHANGE:*') {
-    if (Test-ApplianceHealthy) { Invoke-BackupTidy }
+    if (Test-ApplianceHealthy) {
+        # The commit that failed is the one running and healthy now, so Pi Hub's "deploy failed" record is stale: it only
+        # clears on a newer report, and a no-change run sent none. Report once, then forget the failure.
+        $failed = if (Test-Path $failState) { (Get-Content $failState -Raw).Trim() } else { '' }
+        if ($failed -and $failed -eq $short -and "$sha".Trim()) {
+            Send-ReleaseReport @{ Action = 'Queue'; Commit = $sha.Trim(); Result = 'deployed'; Head = $sha.Trim(); Message = 'Running and healthy again; the earlier update failure is over.' }
+            Remove-Item $failState -ErrorAction SilentlyContinue
+        }
+        Invoke-BackupTidy
+    }
 } elseif ($code -ne 0) {
     $previous = if (Test-Path $failState) { (Get-Content $failState -Raw).Trim() } else { '' }
     if ($previous -ne $short) {
