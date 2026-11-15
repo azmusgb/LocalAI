@@ -21,9 +21,10 @@ test('[hidden] always hides, whatever display a class sets (Missions › special
 });
 
 test('focus is the app ring, not the 28% glow or a fill a shade off the menu', () => {
-  // Home's rule sits in a cleaned section (L9), so it writes the same ring with the kit's name.
+  // Both rules sit in cleaned sections (Home in L9, Agent World's menu in L9's remainder), so they write the same ring
+  // with the kit's name: a 2px accent-text outline.
   assert.match(rule('.home-context__clear:focus-visible'), /outline:2px solid var\(--ui-accent-text\)/);
-  assert.match(css, /\.aw-menu button:focus-visible\{[^}]*outline:var\(--ds-ring\)/);
+  assert.match(css, /\.aw-menu button:focus-visible\{[^}]*outline:2px solid var\(--ui-accent-text\)/);
   assert.doesNotMatch(css, /\.aw-menu button:is\(:hover,:focus-visible\)\{[^}]*outline:none/);
 });
 
@@ -45,6 +46,7 @@ test('smooth scrolling asks prefers-reduced-motion first', () => {
 });
 
 test("the phone reserves the tab bar's height once (main), not again on body", () => {
-  assert.doesNotMatch(css, /body\{padding-bottom: calc\(var\(--mobile-nav-height\)/);
+  // The tab bar's height is written as 78px since --mobile-nav-height went (L9's remainder).
+  assert.doesNotMatch(css, /body\{padding-bottom: ?calc\((var\(--mobile-nav-height\)|78px)/);
   assert.match(css, /body\.ux-v3 main\{padding:0 13px calc\(92px \+ env\(safe-area-inset-bottom\)\)\}/);
 });
