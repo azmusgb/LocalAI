@@ -39,8 +39,8 @@ function fakeWorld(over = {}) {
     printer: { enabled: true, current: () => ({ state: 'printing', progress: 42, minutesLeft: 65, errorCode: null, access: 'ok', seenAt: new Date().toISOString() }), firmware: () => '12.1.0' },
     bridgeHealth: async () => { calls.sheets++; return { bridge: true, excel: true }; },
     gridcraftInFlight: () => 1,
-    kioskUrl: () => 'http://10.0.0.124',
-    kioskHealth: async url => { calls.kiosk++; assert.equal(url, 'http://10.0.0.124'); return { online: true, signIn: false, board: 'b', portalUrl: url }; },
+    kioskUrl: () => 'http://10.0.0.28',
+    kioskHealth: async url => { calls.kiosk++; assert.equal(url, 'http://10.0.0.28'); return { online: true, signIn: false, board: 'b', portalUrl: url }; },
     runs: () => [RUN],
     crews: () => SESSIONS,
     now: () => clock.t,
@@ -343,7 +343,7 @@ test('GET /api/world: Main Street shows engineering, automation and spreadsheet 
 test('the poller keeps the firmware version from an ok answer only, and readPrinter adds it only when asked', async () => {
   let answer = LITE;
   const fetchImpl = async () => (typeof answer === 'number' ? new Response('{}', { status: answer }) : ok(answer));
-  const p = workshop.createPrinterPoller({ url: 'http://10.0.0.124', token: TOKEN, fetchImpl });
+  const p = workshop.createPrinterPoller({ url: 'http://10.0.0.28', token: TOKEN, fetchImpl });
   assert.equal(p.firmware(), null);
   await p.poll();
   assert.equal(p.firmware(), '12.1.0');
@@ -352,7 +352,7 @@ test('the poller keeps the firmware version from an ok answer only, and readPrin
   assert.equal(p.firmware(), null);
   answer = LITE; await p.poll(); answer = 500; await p.poll();
   assert.equal(p.firmware(), '12.1.0', 'an error answer leaves the last version');
-  assert.equal('firmware' in await workshop.readPrinter({ url: 'http://10.0.0.124', token: TOKEN, fetchImpl: async () => ok(LITE) }), false);
+  assert.equal('firmware' in await workshop.readPrinter({ url: 'http://10.0.0.28', token: TOKEN, fetchImpl: async () => ok(LITE) }), false);
 });
 
 

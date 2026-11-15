@@ -26,7 +26,7 @@ await page.route(u => u.pathname === '/api/artcraft/open', r => {
   return r.fulfill({ json: { ok: true, alreadyRunning: already } });
 });
 // The Workshop display is a device on the home network; stub the appliance's view of it.
-const WORKSHOP_ONLINE = { online: true, board: 'Waveshare_ESP32-S3-Touch-LCD-3.5', panel: 'ST7796_320x480_FT6336', screen: 6, touchscreenConfigured: true, signIn: false, portalUrl: 'http://10.0.0.124', printer: null };
+const WORKSHOP_ONLINE = { online: true, board: 'Waveshare_ESP32-S3-Touch-LCD-3.5', panel: 'ST7796_320x480_FT6336', screen: 6, touchscreenConfigured: true, signIn: false, portalUrl: 'http://10.0.0.28', printer: null };
 let workshopStatus = WORKSHOP_ONLINE;
 await page.route(u => u.pathname === '/api/workshop/status', r => r.fulfill({ json: workshopStatus }));
 await page.goto(base, { waitUntil: 'domcontentloaded' });
@@ -83,16 +83,16 @@ await check('the Workshop display card shows whether it is answering and opens i
   assert.match(await card.locator(live).getAttribute('class'), /healthy/);
   const link = card.getByRole('link', { name: 'Open Workshop portal' });
   assert.equal(await link.isVisible(), true);
-  assert.equal(await link.getAttribute('href'), 'http://10.0.0.124');
+  assert.equal(await link.getAttribute('href'), 'http://10.0.0.28');
   assert.equal(await link.getAttribute('target'), '_blank');
   assert.equal(await link.getAttribute('rel'), 'noopener noreferrer');
 
-  workshopStatus = { online: false, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: null, portalUrl: 'http://10.0.0.124', printer: null };
+  workshopStatus = { online: false, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: null, portalUrl: 'http://10.0.0.28', printer: null };
   await page.locator('#statusRetryBtn').click();
   await page.waitForFunction(s => /Not answering/.test(document.querySelector(s)?.textContent || ''), live);
   assert.doesNotMatch(await card.locator(live).getAttribute('class'), /healthy/);
   assert.equal(await link.isVisible(), true, 'the portal can still be opened while the appliance cannot reach it');
-  assert.equal(await link.getAttribute('href'), 'http://10.0.0.124');
+  assert.equal(await link.getAttribute('href'), 'http://10.0.0.28');
 
   workshopStatus = { ...workshopStatus, portalUrl: null };
   await page.locator('#statusRetryBtn').click();
@@ -107,7 +107,7 @@ await check('the Workshop display card: a 401 reads as online with its own sign-
   const card = page.locator('.ux-int-card', { hasText: 'Workshop display' });
   const live = '[data-integration-source-v2="workshop"]';
   const refresh = async (status, re) => { workshopStatus = status; await page.locator('#statusRetryBtn').click(); await page.waitForSelector('#statusConnections[aria-busy="false"]'); await page.waitForFunction(([s, r]) => new RegExp(r).test(document.querySelector(s)?.textContent || ''), [live, re.source]); };
-  const signedIn = { online: true, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: true, portalUrl: 'http://10.0.0.124', printer: null };
+  const signedIn = { online: true, board: null, panel: null, screen: null, touchscreenConfigured: null, signIn: true, portalUrl: 'http://10.0.0.28', printer: null };
   await refresh(signedIn, /Online · sign-in on/);
   assert.match(await card.locator(live).getAttribute('class'), /healthy/);
   let body = await card.innerText();
@@ -303,7 +303,7 @@ await mobile.close();
   const phone = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   await phone.clock.install();
   let codeStatus = { ...WORKSHOP_ONLINE, signIn: true, codeAccess: false };
-  let codeAnswer = { status: 200, json: { code: CODE, address: 'http://10.0.0.124' } };
+  let codeAnswer = { status: 200, json: { code: CODE, address: 'http://10.0.0.28' } };
   const asks = [];
   await phone.route(u => u.pathname === '/api/workshop/status', r => r.fulfill({ json: codeStatus }));
   await phone.route(u => u.pathname === '/api/workshop/portal-code', r => {
@@ -340,7 +340,7 @@ await mobile.close();
     const size = await value.evaluate(el => parseFloat(getComputedStyle(el).fontSize));
     assert.ok(size >= 26, `the code is large (${size}px)`);
     const portal = card.getByRole('link', { name: 'Open portal (opens in a new tab)' });
-    assert.equal(await portal.getAttribute('href'), 'http://10.0.0.124');
+    assert.equal(await portal.getAttribute('href'), 'http://10.0.0.28');
     assert.equal(await portal.getAttribute('target'), '_blank');
     assert.equal(await portal.getAttribute('rel'), 'noopener noreferrer');
     for (const target of [card.getByRole('button', { name: 'Copy' }), portal, card.getByRole('button', { name: 'Hide' })]) {
@@ -385,7 +385,7 @@ await mobile.close();
 
   // The plain-http address has no clipboard API; Copy still works.
   await check('Workshop sign-in code: Copy works without the clipboard API (plain http)', async () => {
-    codeAnswer = { status: 200, json: { code: CODE, address: 'http://10.0.0.124' } };
+    codeAnswer = { status: 200, json: { code: CODE, address: 'http://10.0.0.28' } };
     await phone.evaluate(() => { Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined }); window.__copied = []; document.addEventListener('copy', () => { const t = document.activeElement; window.__copied.push(t.value.slice(t.selectionStart, t.selectionEnd)); }); });
     await show.click();
     await value.waitFor({ state: 'visible' });

@@ -67,7 +67,7 @@ All read at startup in `app/server.js` unless noted.
 | `SEARXNG_URL` | `http://local-ai-searxng:8080` | Web research |
 | `MAC_AI_HOME_URL` | `http://10.0.0.82:3083` | Optional Mac companion (health probe) |
 | `MAC_DSH_URL` | `http://10.0.0.82:3084` | Optional Mac developer assistant (health probe) |
-| `LOCALAI_WORKSHOP_URL` | `http://10.0.0.124` | Workshop display beside the printer (Services card); only an http(s) address on a private IP or a `.local` name is used ([Workshop display](WORKSHOP-DISPLAY.md)) |
+| `LOCALAI_WORKSHOP_URL` | `http://10.0.0.28` | Workshop display beside the printer (Services card); only an http(s) address on a private IP or a `.local` name is used ([Workshop display](WORKSHOP-DISPLAY.md)) |
 | `LOCALAI_WORKSHOP_STATUS_TOKEN` | empty | The display's read-only printer-status token (secret, `stack.env` only); empty means no printer line on Home ([Workshop display › Printer status](WORKSHOP-DISPLAY.md#printer-status-read-only-token)) |
 | `LOCALAI_WORKSHOP_CODE_TOKEN` | empty | The display's sign-in code token, `wsc_…` (secret, `stack.env` only); empty means no **Show sign-in code** button on the Services card ([Workshop display › Sign-in code](WORKSHOP-DISPLAY.md#sign-in-code-on-the-services-card)) |
 | `REPORT_PATH` | `/reports/LocalAI-Certification-latest.txt` | Certification report shown in the app |
@@ -106,7 +106,7 @@ kill $pid
 ```
 
 `LOCALAI_WORKSHOP_URL=http://127.0.0.1:9` keeps the test server away from the owner's real Workshop display (the
-default, `http://10.0.0.124`): suites that open Services or Agent World without mocking it would otherwise send it
+default, `http://10.0.0.28`): suites that open Services or Agent World without mocking it would otherwise send it
 real requests. Port 9 on loopback refuses at once, so the Workshop card just reads as offline. Servers the tests start
 themselves (`spawnAppServer()`, `tests/run-browser.mjs`, `npm run ci`) already default to it unless you set one.
 
