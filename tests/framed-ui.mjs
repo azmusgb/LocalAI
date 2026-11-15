@@ -119,6 +119,14 @@ try {
     assert.match(o.text, /↗$/);
     await own.close();
   });
+  await check('framed on a phone: the page tabs stick to the top of the frame, with no gap where the hidden top bar was', async () => {
+    await page.setViewportSize({ width: 390, height: 700 });
+    await page.goto(`${HUB}/assistant`);
+    await page.waitForFunction(() => window.got.length > 0, null, { timeout: 15000 });
+    await frame().evaluate(() => window.LocalAIRouter.go('#status', { replace: true }));
+    await frame().waitForSelector('.ux-page-strip', { state: 'attached', timeout: 10000 });
+    assert.equal(await frame().evaluate(() => getComputedStyle(document.querySelector('.ux-page-strip')).top), '0px');
+  });
 } finally {
   await browser.close();
 }
