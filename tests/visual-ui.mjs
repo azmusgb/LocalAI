@@ -168,7 +168,7 @@ async function stubPages(page) {
   await page.route(u => u.pathname === '/api/status', route => healthy(route));
   await page.route(u => u.pathname === '/api/capabilities', route => healthy(route, { images: { available: true } }));
   await page.route(u => u.pathname === '/api/artcraft/status', route => json(route, { ok: true, installed: true, running: false, version: '0.41.0' }));
-  await page.route(u => u.pathname === '/api/workshop/status', route => json(route, { online: true, board: 'Waveshare_ESP32-S3-Touch-LCD-3.5', panel: 'ST7796_320x480_FT6336', screen: 6, touchscreenConfigured: true, signIn: false, portalUrl: 'http://10.0.0.124', printer: null }));
+  await page.route(u => u.pathname === '/api/workshop/status', route => json(route, { online: true, board: 'Waveshare_ESP32-S3-Touch-LCD-3.5', panel: 'ST7796_320x480_FT6336', screen: 6, touchscreenConfigured: true, signIn: false, portalUrl: 'http://10.0.0.28', printer: null }));
   await page.route(u => u.pathname === '/api/notifications', route => json(route, { items: NOTIFICATIONS, unread: NOTIFICATIONS.filter(n => !n.read).length }));
   await page.route(u => u.pathname === '/api/approvals', route => json(route, { items: APPROVALS }));
   await page.route(u => u.pathname === '/api/projects', route => json(route, { items: PROJECTS }));

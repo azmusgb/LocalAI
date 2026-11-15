@@ -10,7 +10,7 @@
 // get them (childEnv drops every *TOKEN* variable). The sign-in code is never logged or stored either.
 const { modelFetchWithTimeout } = require('./model-http');
 
-const DEFAULT_URL = 'http://10.0.0.124';
+const DEFAULT_URL = 'http://10.0.0.28';
 const TIMEOUT_MS = 4000;
 const MAX_BODY = 16 * 1024; // the real answers are about 500 bytes
 const HEALTH_PATH = '/hardware/health';

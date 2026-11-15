@@ -25,17 +25,17 @@ A `401` means the display is up and protected: the card shows it as online, neve
 
 | | |
 |---|---|
-| Address | `http://10.0.0.124` (also `http://bambuhelper.local` on devices that resolve `.local` names) |
-| Setting | `LOCALAI_WORKSHOP_URL` on the appliance, default `http://10.0.0.124`. Set it in `C:\LocalAI\stack\stack.env`; `deploy/stack/compose.yml` passes it through, and empty means the default |
+| Address | `http://10.0.0.28` (also `http://bambuhelper.local` on devices that resolve `.local` names) |
+| Setting | `LOCALAI_WORKSHOP_URL` on the appliance, default `http://10.0.0.28`. Set it in `C:\LocalAI\stack\stack.env`; `deploy/stack/compose.yml` passes it through, and empty means the default |
 | Accepted values | An `http://` or `https://` address with no path, on a private IPv4 address (`10.x`, `172.16-31.x`, `192.168.x`) or a `.local` name. Anything else makes the card say `Address not set up`, hides the button, and the appliance logs a warning at start |
 
-**Give the display a DHCP reservation** in the router (its MAC address → `10.0.0.124`). Without one, the router can hand
+**Give the display a DHCP reservation** in the router (its MAC address → `10.0.0.28`). Without one, the router can hand
 it another address after a restart, and both the card and the Tailscale route below would point at nothing.
 
 ## Away from home
 
 The display is only on the home network. Away from home, the phone reaches it through the Windows computer's
-Tailscale connection, which advertises a route to just the display: `10.0.0.124/32`. Approve that route once in the
+Tailscale connection, which advertises a route to just the display: `10.0.0.28/32`. Approve that route once in the
 Tailscale admin console (Machines → the Windows computer → Edit route settings). With Tailscale on, **Open Workshop
 portal** works from anywhere; with it off, the portal page won't load. The card's note says so: "Away from home,
 Tailscale must be on."
@@ -51,7 +51,7 @@ appliance poller (only with a token) --GET /api/status/lite, Authorization: Bear
 Show sign-in code --POST /api/workshop/portal-code--> appliance (only with the code key) --GET /api/portal-code, Authorization: Bearer … (4 s limit)--> display
 Home --GET /api/workshop/status?part=printer--> appliance (the poller's last read; nothing is sent to the display)
 Agent World --GET /api/world--> appliance --GET /hardware/health (at most once a minute, 4 s limit)--> display
-Open Workshop portal: a plain link, opened by the browser in a new tab --> http://10.0.0.124/ (the display itself)
+Open Workshop portal: a plain link, opened by the browser in a new tab --> http://10.0.0.28/ (the display itself)
 ```
 
 `GET /api/workshop/status` (`app/workshop.js`) reads the display's `GET /hardware/health` and answers
@@ -373,7 +373,7 @@ the printer controls, Stop included (not tested, to avoid stopping a print). Thi
 `SECURITY.md` and `docs/portal-auth-v11-20.md`. A firmware update that restores the sign-in is being prepared in
 `azmusgb/bambuhelper-smart-display`; it needs the repo's physical acceptance on the display before it is installed.
 Until then: Local AI still only reads `/hardware/health` and never sends anything else to the display; the Tailscale
-route `10.0.0.124/32` reaches the display only from your own Tailscale devices.
+route `10.0.0.28/32` reaches the display only from your own Tailscale devices.
 
 ## Why the portal isn't proxied
 

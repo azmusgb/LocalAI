@@ -60,17 +60,17 @@ async function fakeDevice() {
 }
 
 test('LOCALAI_WORKSHOP_URL: an http(s) address on the home network, else not set up', () => {
-  assert.equal(workshop.portalUrl(undefined), 'http://10.0.0.124', 'unset uses the default');
-  assert.equal(workshop.portalUrl(''), 'http://10.0.0.124', 'empty (compose passes ${LOCALAI_WORKSHOP_URL:-}) uses the default');
+  assert.equal(workshop.portalUrl(undefined), 'http://10.0.0.28', 'unset uses the default');
+  assert.equal(workshop.portalUrl(''), 'http://10.0.0.28', 'empty (compose passes ${LOCALAI_WORKSHOP_URL:-}) uses the default');
   for (const [raw, want] of [
-    ['http://10.0.0.124', 'http://10.0.0.124'], ['http://10.0.0.124/', 'http://10.0.0.124'], ['  https://192.168.1.50:8443 ', 'https://192.168.1.50:8443'],
+    ['http://10.0.0.28', 'http://10.0.0.28'], ['http://10.0.0.28/', 'http://10.0.0.28'], ['  https://192.168.1.50:8443 ', 'https://192.168.1.50:8443'],
     ['http://172.20.0.9', 'http://172.20.0.9'], ['http://bambuhelper.local', 'http://bambuhelper.local'], ['http://BambuHelper.LOCAL', 'http://bambuhelper.local'],
     ['http://127.0.0.1:9', 'http://127.0.0.1:9']
   ]) assert.equal(workshop.portalUrl(raw), want, raw);
   for (const raw of [
     'http://8.8.8.8', 'http://example.com', 'https://bambuhelper.local.example.com', 'http://172.32.0.1', 'http://100.100.1.1',
-    'ftp://10.0.0.124', 'javascript:alert(1)', 'file:///etc/passwd', 'http://user:pw@10.0.0.124', 'http://10.0.0.124/hardware/health',
-    'http://10.0.0.124/?x=1', 'http://10.0.0.124/#x', 'http://[::1]', 'http://localhost', 'not a url', 'http://.local'
+    'ftp://10.0.0.28', 'javascript:alert(1)', 'file:///etc/passwd', 'http://user:pw@10.0.0.28', 'http://10.0.0.28/hardware/health',
+    'http://10.0.0.28/?x=1', 'http://10.0.0.28/#x', 'http://[::1]', 'http://localhost', 'not a url', 'http://.local'
   ]) assert.equal(workshop.portalUrl(raw), null, raw);
 });
 
@@ -87,13 +87,13 @@ test('status: online keeps only the card fields; extra fields from the display a
 
 test('status: odd values from the display are cleaned, not passed through', async () => {
   const answer = body => async () => new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } });
-  const odd = await workshop.workshopStatus({ url: 'http://10.0.0.124', fetchImpl: answer(JSON.stringify({ board: { html: '<b>' }, panel: 'x'.repeat(500) + '\u0000<', screen: '6', touchscreenConfigured: 'yes' })) });
-  assert.deepEqual(odd, { online: true, board: null, panel: 'x'.repeat(80), screen: null, touchscreenConfigured: null, signIn: false, portalUrl: 'http://10.0.0.124' });
+  const odd = await workshop.workshopStatus({ url: 'http://10.0.0.28', fetchImpl: answer(JSON.stringify({ board: { html: '<b>' }, panel: 'x'.repeat(500) + '\u0000<', screen: '6', touchscreenConfigured: 'yes' })) });
+  assert.deepEqual(odd, { online: true, board: null, panel: 'x'.repeat(80), screen: null, touchscreenConfigured: null, signIn: false, portalUrl: 'http://10.0.0.28' });
   for (const body of ['not json', '[1,2]', 'null', JSON.stringify({ board: 'b'.repeat(20000) })]) {
-    const s = await workshop.workshopStatus({ url: 'http://10.0.0.124', fetchImpl: answer(body) });
+    const s = await workshop.workshopStatus({ url: 'http://10.0.0.28', fetchImpl: answer(body) });
     assert.equal(s.online, false, body.slice(0, 20));
   }
-  const notOk = await workshop.workshopStatus({ url: 'http://10.0.0.124', fetchImpl: async () => new Response(JSON.stringify(HEALTH), { status: 500 }) });
+  const notOk = await workshop.workshopStatus({ url: 'http://10.0.0.28', fetchImpl: async () => new Response(JSON.stringify(HEALTH), { status: 500 }) });
   assert.equal(notOk.online, false);
   let called = false;
   const unset = await workshop.workshopStatus({ url: null, fetchImpl: async () => { called = true; } });
@@ -165,7 +165,7 @@ test('GET /api/workshop/status through the appliance: online, extra fields dropp
 test('the card links to the display itself and asks only the appliance for status', () => {
   const ui = fs.readFileSync(path.resolve(__dirname, '../app/public/ui.js'), 'utf8');
   assert.ok(ui.includes("fetch('/api/workshop/status'"), 'status comes from the appliance');
-  assert.ok(!ui.includes('10.0.0.124'), 'the address comes from the appliance (LOCALAI_WORKSHOP_URL), not the page');
+  assert.ok(!ui.includes('10.0.0.28'), 'the address comes from the appliance (LOCALAI_WORKSHOP_URL), not the page');
   assert.ok(/target="_blank" rel="noopener noreferrer" data-integration-portal=/.test(ui), 'the portal opens in a new tab with no opener or referrer');
   const compose = fs.readFileSync(path.resolve(__dirname, '../deploy/stack/compose.yml'), 'utf8');
   assert.match(compose, /LOCALAI_WORKSHOP_URL: \$\{LOCALAI_WORKSHOP_URL:-\}/);
@@ -243,11 +243,11 @@ test('printer poller: 30 s while answering, backs off to 5 min while not, keeps 
   const calls = [];
   const fetchImpl = async (url, opts, timeoutMs) => {
     calls.push({ url, method: opts.method, timeoutMs });
-    if (answer === 'down') throw Object.assign(new Error('connect ECONNREFUSED 10.0.0.124:80'), { code: 'ECONNREFUSED' });
+    if (answer === 'down') throw Object.assign(new Error('connect ECONNREFUSED 10.0.0.28:80'), { code: 'ECONNREFUSED' });
     if (answer === 429) return new Response('{}', { status: 429 });
     return new Response(JSON.stringify(LITE), { status: 200 });
   };
-  const poller = workshop.createPrinterPoller({ url: 'http://10.0.0.124', token: TOKEN, fetchImpl, now: () => Date.parse('2026-10-18T12:00:00Z') });
+  const poller = workshop.createPrinterPoller({ url: 'http://10.0.0.28', token: TOKEN, fetchImpl, now: () => Date.parse('2026-10-18T12:00:00Z') });
   assert.equal(poller.enabled, true);
   assert.deepEqual(poller.current(), { state: 'unknown', progress: null, minutesLeft: null, errorCode: null, access: 'offline', seenAt: null }, 'nothing known before the first read');
   assert.equal(await poller.poll(), 30000);
@@ -269,12 +269,12 @@ test('printer poller: 30 s while answering, backs off to 5 min while not, keeps 
   assert.deepEqual(poller.current(), { state: 'unknown', progress: null, minutesLeft: null, errorCode: null, access: 'offline', seenAt: '2026-10-18T12:00:00.000Z' }, 'the last progress is not shown as current');
   answer = 'ok';
   assert.equal(await poller.poll(), 30000, 'back to 30 s once it answers');
-  assert.ok(calls.every(c => c.method === 'GET' && c.url === 'http://10.0.0.124/api/status/lite' && c.timeoutMs === 4000));
+  assert.ok(calls.every(c => c.method === 'GET' && c.url === 'http://10.0.0.28/api/status/lite' && c.timeoutMs === 4000));
   assert.equal(workshop.POLL_MS, 30000);
 
   for (const token of [undefined, '', '   ']) {
     let called = false;
-    const off = workshop.createPrinterPoller({ url: 'http://10.0.0.124', token, fetchImpl: async () => { called = true; } });
+    const off = workshop.createPrinterPoller({ url: 'http://10.0.0.28', token, fetchImpl: async () => { called = true; } });
     assert.equal(off.enabled, false);
     assert.equal(off.current(), null);
     off.start();
@@ -289,7 +289,7 @@ test('printer poller: 30 s while answering, backs off to 5 min while not, keeps 
 test('printer poller: an answer older than 2 minutes is unknown (stale), whatever the polls did', async () => {
   let clock = Date.parse('2026-10-18T12:00:00Z'), answer = 'ok';
   const fetchImpl = async () => (answer === 429 ? new Response('{}', { status: 429 }) : new Response(JSON.stringify(LITE), { status: 200 }));
-  const poller = workshop.createPrinterPoller({ url: 'http://10.0.0.124', token: TOKEN, fetchImpl, now: () => clock });
+  const poller = workshop.createPrinterPoller({ url: 'http://10.0.0.28', token: TOKEN, fetchImpl, now: () => clock });
   await poller.poll();
   assert.equal(poller.current().state, 'printing');
   clock += workshop.STALE_MS;
@@ -422,7 +422,7 @@ test('portal code gate: one request in flight, at most one every 5 s, a hold of 
   let clock = 0, answers = [], reads = 0, release = null;
   const read = () => { reads++; const a = answers.shift() || { access: 'ok', code: 'ABCDEFGHJK' }; return release ? new Promise(r => { const go = release; release = null; go(() => r(a)); }) : Promise.resolve(a); };
   const gate = workshop.createPortalCodeGate({ read, now: () => clock });
-  const url = 'http://10.0.0.124';
+  const url = 'http://10.0.0.28';
   // Three callers while the first request is out: one read, one answer for all.
   let open; release = go => { open = go; };
   const three = [gate({ url }), gate({ url }), gate({ url })];
