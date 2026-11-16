@@ -12,8 +12,8 @@ import { addAxe } from './axe-helper.mjs';
 
 const require = createRequire(import.meta.url);
 const { atlasFixture, systemsFixture, contractsFixture } = require('./atlas-map-fixture.cjs');
-// The fixture serves every edge atlas/contracts.json declares, so the table's row count follows the file.
-const DECLARED = require('../atlas/contracts.json').length;
+// The fixture serves every edge app/atlas/contracts.json declares, so the table's row count follows the file.
+const DECLARED = require('../app/atlas/contracts.json').length;
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const axePath = join(dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min.js');
 const browser = await chromium.launch({ headless: true });

@@ -87,11 +87,11 @@ function systemsFixture({ source = 'live' } = {}) {
 }
 
 // GET /api/atlas/contracts as the server answers it (app/server/atlas-contracts.js), from the declared edges in
-// atlas/contracts.json: Local AI's consumers confirmed, print-lab and home-mcp not checked (no snapshot, not mapped), the
+// app/atlas/contracts.json: Local AI's consumers confirmed, print-lab and home-mcp not checked (no snapshot, not mapped), the
 // smart display's firmware not parsed, the PowerShell consumer not scanned, and camera-feed's consumer missing so all
 // three marks show. `undeclared` is shaped like the real scan's 96 calls (localai 22, pi-hub 34, smart display 40).
 function contractsFixture({ extra = 0 } = {}) {
-  const declared = JSON.parse(require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'atlas', 'contracts.json'), 'utf8'));
+  const declared = JSON.parse(require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'app', 'atlas', 'contracts.json'), 'utf8'));
   const CHECK = { checked: 'confirmed', consumer_missing: 'consumer missing', not_checked: 'no snapshot' };
   const consumerState = (entry, c) => {
     if (entry.id === 'camera-feed') return ['consumer_missing', `Declared but not found in ${c.module} at eeeeeee`];
