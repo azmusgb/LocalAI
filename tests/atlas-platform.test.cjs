@@ -178,3 +178,25 @@ test('the table says why an edge is not confirmed, in the contract check\'s own 
   assert.deepEqual(platform.platformModel(null, FIXTURE).commits, []);
 });
 
+test('table rows say which provider and consumer modules can be shown on the map, and why not when they cannot', () => {
+  const rows = Object.fromEntries(platform.tableRows(platform.platformModel(null, FIXTURE)).map((r) => [r.id, r]));
+  const ok = rows['print-lab-sync'];
+  assert.deepEqual(ok.providerRef, { repo: 'pi-hub', module: 'hub/app.py', show: { enabled: true, label: 'Show hub/app.py on the map', title: '' } });
+  assert.deepEqual(ok.consumers[0].show, { enabled: true, label: 'Show lab/sync.py on the map', title: '' });
+  assert.equal(ok.consumers[0].repo, 'print-lab');
+  const [local, hubMcp] = rows['records-v1'].consumers;
+  assert.equal(local.show.enabled, true);
+  assert.equal(hubMcp.show.enabled, false);
+  assert.equal(hubMcp.show.title, "Not on the map: home-mcp isn't mapped");
+  assert.equal(hubMcp.show.label, 'Show src/home_mcp/server.py on the map');
+  const fw = rows['display-feed'].consumers[0].show;
+  assert.deepEqual([fw.enabled, fw.title], [false, 'Not on the map: firmware source, not parsed']);
+  assert.equal(rows['now-summary'].consumers[0].show.enabled, false, 'a call the scanner did not find has no module to show');
+  const gone = edge('gone', '/api/gone', [['localai', 'app/x.js', 'checked']], 'provider_missing');
+  gone.provider.detail = 'pi-hub does not serve /api/gone';
+  const g = platform.tableRows(platform.platformModel(null, contracts([gone])))[0];
+  assert.deepEqual([g.providerRef.show.enabled, g.providerRef.show.title], [false, 'Not on the map: pi-hub does not serve /api/gone']);
+  const bare = platform.tableRows(platform.platformModel(null, contracts([edge('b', '/api/b', [['print-lab', 'lab/x.py', 'not_checked']])])))[0];
+  assert.equal(bare.consumers[0].show.title, 'Not on the map: no snapshot of Print lab');
+});
+

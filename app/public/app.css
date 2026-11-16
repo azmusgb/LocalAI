@@ -2422,6 +2422,8 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 #architecture .atlas-platform-table small{display:block;color:var(--ui-muted);font-size:var(--ui-fs-2)}
 #architecture .atlas-platform-table ul{margin:0;padding:0;list-style:none}
 #architecture .atlas-platform-consumer-mark{color:var(--ui-muted)}
+#architecture .atlas-platform :is(.atlas-platform-table,.atlas-platform-routes) .atlas-platform-show{display:flex;margin-top:var(--ui-s-1);max-width:100%;white-space:normal;text-align:center}
+#architecture .atlas-platform-show:focus-visible{outline:2px solid var(--ui-accent-text);outline-offset:2px}
 #architecture .atlas-platform-undeclared{margin:var(--ui-s-4) 0 0}
 #architecture .atlas-platform-undeclared summary{padding:var(--ui-s-2) 0;cursor:pointer}
 #architecture .atlas-platform-undeclared>summary{font-weight:600}
