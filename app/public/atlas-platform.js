@@ -171,7 +171,11 @@ function groupUndeclared(list,labels){
 // Providers on the top row, everyone else below, spread evenly. A link leaves its provider, curves down to its
 // consumer's column and drops straight into it; its mark sits on that drop, so marks are as far apart as the
 // consumers. Units: a 1000-wide frame, HEIGHT tall (the page draws it 24rem high, so the rows never squeeze).
-const WIDTH=1000,HEIGHT=380,TOP_Y=60,BOTTOM_Y=320,BEND_Y=200,MARK_STEP=44,NODE_EDGE=28;
+const WIDTH=1000,HEIGHT=380,TOP_Y=60,BOTTOM_Y=320,BEND_Y=200,NODE_EDGE=28;
+// A mark is a chip over a count (about 140 by 56 px); marks keep MARK_GAP apart, and a node's marks stack by MARK_STEP.
+// The graph is drawn from FRAME_MIN_PX (the container query's 48rem) wide, CANVAS_PX tall (24rem).
+const MARK={MARK_W:140,MARK_H:56,MARK_GAP:8,FRAME_MIN_PX:768,CANVAS_PX:384};
+const MARK_STEP=MARK.MARK_H+MARK.MARK_GAP;
 function platformLayout(nodes,links){
   const list=Array.isArray(nodes)?nodes:[],all=Array.isArray(links)?links:[];
   const providers=new Set(all.map(l=>l.to));
@@ -187,13 +191,14 @@ function platformLayout(nodes,links){
     if(!a||!b)continue;
     const k=seen.get(a.id)||0;seen.set(a.id,k+1);
     const down=a.y>b.y,bend=down?BEND_Y:a.y+BEND_Y-TOP_Y,mid=(b.y+bend)/2;
-    const my=(bend+a.y)/2-k*MARK_STEP;
+    // A mark sits clear of its node's box (MARK_GAP above it) when the link comes up from below, then stacks upward.
+    const my=(down?a.y-NODE_EDGE-MARK.MARK_GAP-MARK.MARK_H/2:(bend+a.y)/2)-k*MARK_STEP;
     paths.push({id:l.id,d:`M${b.x} ${b.y} C${b.x} ${mid} ${a.x} ${mid} ${a.x} ${bend} L${a.x} ${a.y}`,mx:a.x,my});
   }
   return {width:WIDTH,height:HEIGHT,nodes:pos,paths};
 }
 
-const exported={PLATFORM,markFor,platformModel,platformLayout,tableRows,groupUndeclared};
+const exported={PLATFORM,MARK,markFor,platformModel,platformLayout,tableRows,groupUndeclared};
 if(typeof module==='object'&&module.exports){module.exports=exported;return;}
 
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
