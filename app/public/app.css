@@ -2424,8 +2424,6 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 #architecture .atlas-platform-consumer-mark{color:var(--ui-muted)}
 #architecture .atlas-platform-showbox{display:block;margin-top:var(--ui-s-1)}
 #architecture .atlas-platform-show{max-width:100%;white-space:normal}
-#architecture .atlas-platform-show[aria-disabled="true"]{cursor:default}
-#architecture .atlas-platform-show:focus-visible{outline:2px solid var(--ui-accent-text);outline-offset:2px}
 @media (pointer:fine){#architecture .atlas-platform-show{min-height:var(--ui-s-6);padding:0 var(--ui-s-3);font-size:var(--ui-fs-2)}}
 #architecture .atlas-platform-undeclared{margin:var(--ui-s-4) 0 0}
 #architecture .atlas-platform-undeclared summary{padding:var(--ui-s-2) 0;cursor:pointer}

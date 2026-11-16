@@ -80,7 +80,6 @@ function showReason(detail,missing){
   const d=String(detail||'');
   if(/firmware/i.test(d))return 'firmware source, not parsed';
   if(/powershell|not scanned/i.test(d))return 'source not scanned';
-  if(/isn't mapped|no snapshot|not mapped/i.test(d))return 'no snapshot';
   return missing?'module not in this map':'no snapshot';
 }
 function showOn(module,state,detail,label){
@@ -202,17 +201,14 @@ const pct=(v,of)=>`${(v/of*100).toFixed(2)}%`;
 const chip=mark=>`<span class="ui-chip ui-chip--${mark.tone}">${esc(mark.text)}</span>`;
 const views=new WeakMap();
 
-// A module path with a break allowed after each slash, so a long one wraps between folders, not mid-word.
+// A break is allowed after each slash.
 const path=v=>esc(v).replace(/\//g,'/<wbr>');
-// A native button on the generic data-atlas-cross-repo handler (architecture.js): it opens that repository's map at the
-// module. One that cannot stays focusable (aria-disabled), carries no data the handler reads, and its reason is a
-// muted line the button is described by. Ids are numbered per drawing.
+// Opens a module on its repository's map through architecture.js's data-atlas-cross-* handler. One that cannot stays
+// focusable (aria-disabled), carries no data that handler reads, and is described by a muted reason line.
 let showId=0;
 function showButton(repo,module,show){
-  const name=`aria-label="${esc(show.label)}"`;
-  if(show.enabled)return `<span class="atlas-platform-showbox"><button type="button" class="ui-btn ui-btn--ghost atlas-platform-show" data-atlas-cross-repo="${esc(repo)}" data-atlas-cross-module="${esc(module)}" ${name}>Show on map</button></span>`;
-  const id=`atlasPlatformWhy-${++showId}`;
-  return `<span class="atlas-platform-showbox"><button type="button" class="ui-btn ui-btn--ghost atlas-platform-show" aria-disabled="true" aria-describedby="${id}" ${name}>Show on map</button><small id="${id}" class="atlas-platform-why">Not on the map: ${esc(show.reason)}</small></span>`;
+  const id=`atlasPlatformWhy-${++showId}`,on=show.enabled;
+  return `<span class="atlas-platform-showbox"><button type="button" class="ui-btn ui-btn--ghost atlas-platform-show" ${on?`data-atlas-cross-repo="${esc(repo)}" data-atlas-cross-module="${esc(module)}"`:`aria-disabled="true" aria-describedby="${id}"`} aria-label="${esc(show.label)}">Show on map</button>${on?'':`<small id="${id}">Not on the map: ${esc(show.reason)}</small>`}</span>`;
 }
 
 function summary(model){

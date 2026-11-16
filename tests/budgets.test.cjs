@@ -133,7 +133,9 @@ const KB = 1024;
 // 2026-11-15: 359 → 358 KB and architecture.js 18 → 17 KB when the old Between systems list went (its markup, renderer
 // and styles; the platform table now says why an edge is not confirmed and names the live releases, atlas-platform.js
 // +0.3 KB); 357.5 KB measured.
-const TOTAL = 358 * KB;
+// 2026-11-15: 358 → 359 KB again (back to where main was) for the Show on map buttons on the Platform map table (atlas-platform.js
+// +0.9 KB gzipped: the button, its reason line and the compact styles); 358.2 KB measured, 184 bytes over 358.
+const TOTAL = 359 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
