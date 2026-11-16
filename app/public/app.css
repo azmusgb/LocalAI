@@ -2422,6 +2422,9 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 #architecture .atlas-platform-table small{display:block;color:var(--ui-muted);font-size:var(--ui-fs-2)}
 #architecture .atlas-platform-table ul{margin:0;padding:0;list-style:none}
 #architecture .atlas-platform-consumer-mark{color:var(--ui-muted)}
+#architecture .atlas-platform-showbox{display:block;margin-top:var(--ui-s-1)}
+#architecture .atlas-platform-show{max-width:100%;white-space:normal}
+@media (pointer:fine){#architecture .atlas-platform-show{min-height:var(--ui-s-6);padding:0 var(--ui-s-3);font-size:var(--ui-fs-2)}}
 #architecture .atlas-platform-undeclared{margin:var(--ui-s-4) 0 0}
 #architecture .atlas-platform-undeclared summary{padding:var(--ui-s-2) 0;cursor:pointer}
 #architecture .atlas-platform-undeclared>summary{font-weight:600}

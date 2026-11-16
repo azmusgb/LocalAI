@@ -10,7 +10,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { addAxe } from './axe-helper.mjs';
 
-const { atlasFixture, systemsFixture, contractsFixture } = createRequire(import.meta.url)('./atlas-map-fixture.cjs');
+const require = createRequire(import.meta.url);
+const { atlasFixture, systemsFixture, contractsFixture } = require('./atlas-map-fixture.cjs');
+// The fixture serves every edge atlas/contracts.json declares, so the table's row count follows the file.
+const DECLARED = require('../atlas/contracts.json').length;
 const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const axePath = join(dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min.js');
 const browser = await chromium.launch({ headless: true });
@@ -100,7 +103,7 @@ await check('the table lists every declared edge in full, and arrow keys move be
   await desk.keyboard.press('ArrowRight');
   assert.equal(await desk.evaluate(() => document.activeElement.dataset.view), 'table');
   assert.equal(await desk.locator(`${S} [role="tab"][data-view="table"]`).getAttribute('aria-selected'), 'true');
-  assert.equal(await desk.locator(`${S} .atlas-platform-table tbody tr`).count(), 28);
+  assert.equal(await desk.locator(`${S} .atlas-platform-table tbody tr`).count(), DECLARED);
   assert.equal(await desk.locator(`${S} .atlas-platform-canvas`).isVisible(), false);
   const row = await desk.locator(`${S} .atlas-platform-table tr[data-edge="records-v1"]`).innerText();
   assert.match(row, /GET \/api\/records/);
@@ -110,6 +113,51 @@ await check('the table lists every declared edge in full, and arrow keys move be
   assert.match(await desk.locator(`${S} .atlas-platform-summary`).innerText(), /Live releases: Pi Hub 4444444, Local AI fffffff/);
   await desk.keyboard.press('ArrowLeft');
   assert.equal(await desk.locator(`${S} [role="tab"][data-view="graph"]`).getAttribute('aria-selected'), 'true');
+});
+
+await check('Show on map opens the repository map at that module; a firmware consumer cannot be shown', async () => {
+  const commit = 'a'.repeat(40);
+  const requested = [];
+  const json = (route, body) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  await desk.route((u) => u.pathname === '/api/atlas/snapshots', (r) => json(r, { repos: ['localai', 'pi-hub', 'print-lab'],
+    snapshots: [{ repo: 'pi-hub', commit, createdAt: '2026-11-14T10:00:00Z', source: 'git' }] }));
+  await desk.route((u) => u.pathname === '/api/atlas/graph' && u.searchParams.get('repo') === 'pi-hub', (r) => {
+    requested.push(new URL(r.request().url()).searchParams.get('commit'));
+    return json(r, JSON.parse(JSON.stringify(atlasFixture()).replaceAll('app/server.js', 'hub/app.py')));
+  });
+  await desk.locator(`${S} [role="tab"][data-view="table"]`).click();
+  const row = desk.locator(`${S} .atlas-platform-table tr[data-edge="records-v1"]`);
+  const show = row.locator('td[data-label="Provider"] button.atlas-platform-show');
+  assert.equal(await show.innerText(), 'Show on map', 'the visible label');
+  assert.equal(await show.getAttribute('aria-label'), 'Show on map: hub/app.py in Pi Hub', 'the name starts with the visible label');
+  assert.equal(await show.getAttribute('data-atlas-cross-repo'), 'pi-hub');
+  assert.equal(await show.getAttribute('data-atlas-cross-module'), 'hub/app.py');
+  assert.equal(await show.getAttribute('aria-disabled'), null);
+  await show.focus();
+  assert.equal(await desk.evaluate(() => document.activeElement.classList.contains('atlas-platform-show')), true, 'reachable by keyboard');
+  await show.click();
+  await desk.waitForFunction(() => document.getElementById('atlasRepo').value === 'pi-hub');
+  assert.deepEqual(requested, [commit], "the repository's newest snapshot is drawn");
+  await desk.waitForFunction(() => document.getElementById('atlasSelectedPath').textContent.trim() === 'app.py', null, { timeout: 8000 });
+  assert.equal(await desk.locator('#atlasSelectedMeta code').innerText(), 'hub/app.py');
+  // A button that cannot be used stays focusable, says why in words, and does nothing when pressed.
+  const fw = desk.locator(`${S} .atlas-platform-table tr[data-edge="display-feed"] td[data-label="Consumers"] button.atlas-platform-show`);
+  assert.equal(await fw.getAttribute('aria-disabled'), 'true');
+  assert.equal(await fw.evaluate((b) => b.disabled), false, 'aria-disabled, not the disabled attribute');
+  assert.equal(await fw.getAttribute('data-atlas-cross-repo'), null, 'the map handler never sees it');
+  assert.equal(await fw.getAttribute('aria-label'), 'Show on map: firmware/platform/localai/workshop_localai_feed.cpp in Smart display');
+  const why = await fw.getAttribute('aria-describedby');
+  assert.equal(await desk.locator(`#${why}`).innerText(), 'Not on the map: firmware source, not parsed');
+  await fw.focus();
+  assert.equal(await desk.evaluate(() => document.activeElement.getAttribute('aria-disabled')), 'true', 'keyboard reachable');
+  const before = requested.length;
+  await fw.click({ force: true });
+  await desk.waitForTimeout(500);
+  assert.equal(await desk.locator('#atlasRepo').inputValue(), 'pi-hub', 'pressing it changes nothing');
+  assert.equal(requested.length, before);
+  const ps = desk.locator(`${S} .atlas-platform-table tr[data-edge="releases-v1-write"] button.atlas-platform-show[aria-label*=".ps1"]`);
+  assert.equal(await ps.getAttribute('aria-disabled'), 'true', 'the PowerShell consumer is not scanned');
+  assert.match(await desk.locator(`#${await ps.getAttribute('aria-describedby')}`).innerText(), /source not scanned/);
 });
 
 await check('calls with no declared edge are one closed list, grouped by repository and module, never on the graph', async () => {
@@ -148,11 +196,11 @@ await check('no script errors at 1440', async () => assert.deepEqual(desk.errors
 await desk.context().close();
 
 const many = await open({ viewport: { width: 1440, height: 900 } }, { contracts: contractsFixture({ extra: 100 }) });
-await check('128 declared edges are all in the table', async () => {
+await check('declared edges are all in the table', async () => {
   await ready(many);
   await many.locator(`${S} [role="tab"][data-view="table"]`).click();
-  assert.equal(await many.locator(`${S} .atlas-platform-table tbody tr`).count(), 128);
-  assert.match(await many.locator(`${S} .atlas-platform-table caption`).innerText(), /128 declared edges/);
+  assert.equal(await many.locator(`${S} .atlas-platform-table tbody tr`).count(), DECLARED + 100);
+  assert.match(await many.locator(`${S} .atlas-platform-table caption`).innerText(), new RegExp(`${DECLARED + 100} declared edges`));
 });
 await many.context().close();
 

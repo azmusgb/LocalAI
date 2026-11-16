@@ -178,3 +178,43 @@ test('the table says why an edge is not confirmed, in the contract check\'s own 
   assert.deepEqual(platform.platformModel(null, FIXTURE).commits, []);
 });
 
+test('table rows say which provider and consumer modules can be shown on the map, and why not when they cannot', () => {
+  const rows = Object.fromEntries(platform.tableRows(platform.platformModel(null, FIXTURE)).map((r) => [r.id, r]));
+  const ok = rows['print-lab-sync'];
+  assert.deepEqual(ok.providerRef, { repo: 'pi-hub', module: 'hub/app.py', show: { enabled: true, label: 'Show on map: hub/app.py in Pi Hub', reason: '' } });
+  assert.deepEqual(ok.consumers[0].show, { enabled: true, label: 'Show on map: lab/sync.py in Print lab', reason: '' });
+  assert.equal(ok.consumers[0].repo, 'print-lab');
+  const [local, hubMcp] = rows['records-v1'].consumers;
+  assert.equal(local.show.enabled, true);
+  assert.deepEqual(hubMcp.show, { enabled: false, label: 'Show on map: src/home_mcp/server.py in home-mcp', reason: 'no snapshot' });
+  assert.deepEqual(rows['display-feed'].consumers[0].show.reason, 'firmware source, not parsed');
+  assert.equal(rows['now-summary'].consumers[0].show.reason, 'module not in this map', 'a call the scanner did not find has no module to show');
+  const ps = platform.platformModel(null, contracts([edge('ps', '/api/ps', [['localai', 'deploy/x.ps1', 'not_checked', 'deploy/x.ps1: PowerShell source, not scanned in localai at eeeeeee']])]));
+  assert.equal(platform.tableRows(ps)[0].consumers[0].show.reason, 'source not scanned');
+  const gone = edge('gone', '/api/gone', [['localai', 'app/x.js', 'checked']], 'provider_missing');
+  gone.provider.detail = 'pi-hub does not serve /api/gone';
+  const g = platform.tableRows(platform.platformModel(null, contracts([gone])))[0];
+  assert.deepEqual([g.providerRef.show.enabled, g.providerRef.show.reason], [false, 'module not in this map']);
+  const bare = platform.tableRows(platform.platformModel(null, contracts([edge('b', '/api/b', [['print-lab', 'lab/x.py', 'not_checked']])])))[0];
+  assert.equal(bare.consumers[0].show.reason, 'no snapshot');
+});
+
+test('no two link marks overlap or touch, for every declared edge, at every width the graph is drawn', () => {
+  const declared = require('../atlas/contracts.json').map((c) => ({ ...c, check: 'no snapshot',
+    provider: { ...c.provider, state: 'checked' }, consumers: c.consumers.map((x) => ({ ...x, state: 'not_checked' })) }));
+  const m = platform.platformModel(null, { contracts: declared, undeclared: [], brokenCount: 0, commits: {} });
+  assert.equal(m.nodes.length, 6);
+  const lay = platform.platformLayout(m.nodes, m.links);
+  assert.equal(lay.paths.length, m.links.length, 'every link has a mark');
+  const { MARK_W, MARK_H, MARK_GAP, FRAME_MIN_PX, CANVAS_PX } = platform.MARK;
+  // The frame is 24rem tall for HEIGHT units and as wide as its container, which is at least FRAME_MIN_PX when drawn.
+  for (const width of [FRAME_MIN_PX, 900, 1200]) {
+    const boxes = lay.paths.map((p) => ({ id: p.id, x: p.mx * width / lay.width, y: p.my * CANVAS_PX / lay.height }));
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i], b = boxes[j];
+      const apartX = Math.abs(a.x - b.x) - MARK_W, apartY = Math.abs(a.y - b.y) - MARK_H;
+      assert.ok(Math.max(apartX, apartY) >= MARK_GAP, `${a.id} and ${b.id} marks come within ${MARK_GAP}px at ${width}px wide (x gap ${apartX.toFixed(1)}, y gap ${apartY.toFixed(1)})`);
+    }
+  }
+});
+
