@@ -29,13 +29,28 @@ function hostHealth(host){
   return {text:`${bad.length} of ${all.length} need a look: ${bad.join(', ')}`,tone:worst};
 }
 
+// One line per repository, in words: how the newest map compares with the running release, then the commits and the
+// map's age. A commit count is said only when it is known and positive; ahead never carries one.
+function freshSentence(f){
+  const n=Number(f.behind);
+  if(f.state==='current')return 'Map matches the running release';
+  if(f.state==='behind')return Number.isInteger(n)&&n>0?`Map is ${plural(n,'commit')} behind the running release`:'Map is of a different commit than the running release';
+  if(f.state==='ahead')return 'Map is newer than the running release';
+  if(f.state==='no release')return 'No release recorded';
+  return 'Freshness unknown';
+}
+
 function repoLine(repo,now=Date.now()){
   const snap=repo?.snapshot;
-  if(!snap)return 'no snapshot yet';
-  const parts=['mapped',short(snap.commit)];
+  if(!snap)return 'Not mapped yet';
+  const f=repo.freshness||{state:!repo.liveCommit?'no release':snap.commit===repo.liveCommit?'current':'behind'};
+  const parts=[freshSentence(f)];
+  const differs=f.state==='behind'||f.state==='ahead';
+  if(differs&&repo.liveCommit)parts.push(`map ${short(snap.commit)}, live ${short(repo.liveCommit)}`);
+  else parts.push(f.state==='no release'?`map ${short(snap.commit)}`:short(snap.commit));
   const t=Date.parse(snap.generatedAt);
   if(Number.isFinite(t)){const d=Math.floor((now-t)/86400000);parts.push(d<1?'today':`${plural(d,'day')} old`);}
-  if(repo.liveCommit&&!repo.atLive)parts.push(`live is ${short(repo.liveCommit)}`);
+  if(f.state==='behind'&&repo.atLive)parts.push('a map of the running release exists');
   return parts.join(' · ');
 }
 
@@ -48,8 +63,10 @@ function sourceNote(body,now=Date.now()){
   return {text:`From Pi Hub, ${ago(body?.fetchedAt,now)||'just now'}.`,tone:''};
 }
 
-const exported={hostHealth,repoLine,commitFor,sourceNote};
+const exported={hostHealth,repoLine,commitFor,sourceNote,freshSentence};
 if(typeof module==='object'&&module.exports){module.exports=exported;return;}
+// The platform map (atlas-platform.js) words a system's freshness the same way, also when this page part is absent.
+root.LocalAIAtlasSystems={freshSentence};
 
 const page=document.getElementById('architecture');
 const list=document.getElementById('atlasSystemsList');
@@ -87,6 +104,8 @@ async function load(){
       state.body={error:{message:error.name==='AbortError'?'Reading the list of systems timed out.':'The list of systems could not be read.'}};
     }finally{clearTimeout(timer);state.at=Date.now();state.loading=null;}
     render();
+    // The platform map above (architecture.js) draws its nodes from the same list.
+    page.dispatchEvent(new CustomEvent('atlas:systems',{detail:state.body}));
   })();
   return state.loading;
 }
@@ -104,5 +123,5 @@ page.addEventListener('atlas:source',e=>{
   render();
 });
 
-root.LocalAIAtlasSystems={load};
+Object.assign(root.LocalAIAtlasSystems,{load});
 })(typeof window==='undefined'?globalThis:window);

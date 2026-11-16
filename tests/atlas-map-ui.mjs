@@ -34,7 +34,7 @@ async function open(device, { graph = atlasFixture(), status = 200, scheme = 'da
   await page.goto(`${base}/#home`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.showView === 'function');
   await page.evaluate(() => window.showView('architecture'));
-  if (status === 200) await page.locator('#atlasMap .atlas-row').first().waitFor({ timeout: 8000 });
+  if (status === 200) await page.locator(graph.nodes.some((n) => n.domain !== 'Tests') ? '#atlasMap .atlas-row' : '.atlas-map-wrap[data-state="empty"]').first().waitFor({ timeout: 8000 });
   return page;
 }
 const row = (page, id) => page.locator(`#atlasMap [data-atlas-node="${id}"]`);
@@ -160,8 +160,8 @@ await check('the Systems strip shows each host, its services in one line, and op
   assert.match(await desk.locator('#atlasSystemsNote').innerText(), /^From Pi Hub, just now\.$/);
   assert.equal(await desk.locator('[data-host="pi"] .atlas-host-health').innerText(), '1 of 3 need a look: Ad blocking (paused)');
   assert.equal(await desk.locator('[data-host="pi"] .atlas-host-health').getAttribute('data-tone'), 'warn');
-  assert.match(await desk.locator('[data-atlas-repo="localai"]').innerText(), /mapped · eeeeeee · \d+ days old · live is fffffff/);
-  assert.match(await desk.locator('[data-atlas-repo="print-lab"]').innerText(), /no snapshot yet/);
+  assert.match(await desk.locator('[data-atlas-repo="localai"]').innerText(), /Map is of a different commit than the running release · map eeeeeee, live fffffff · \d+ days old/);
+  assert.match(await desk.locator('[data-atlas-repo="print-lab"]').innerText(), /Not mapped yet/);
   assert.equal(await desk.locator('[data-host="pi"] .atlas-host-target').innerText().then((t) => t.replace(/\s+/g, ' ')), 'netmon 2222222 · not mapped');
   assert.equal(await desk.locator('[data-host="offsite"] .atlas-host-none').innerText(), 'Nothing deployed here.');
   assert.equal(await desk.locator('[data-atlas-repo="localai"]').getAttribute('aria-pressed'), 'true');
@@ -232,6 +232,31 @@ await check('with no Pi and no copy the strip says what failed and the map still
   assert.deepEqual(noHub.errors, []);
 });
 await noHub.context().close();
+
+const skipped = [{ path: 'src/main.cpp', reason: 'firmware source, not parsed' }, { path: 'src/<b>x</b>.h', reason: 'firmware source, not parsed' }];
+const partial = await open({ viewport: { width: 1440, height: 900 } }, { graph: atlasFixture({ skipped }) });
+await check('skipped files: a sentence in the source note and the paths behind a disclosure, escaped', async () => {
+  assert.match(await partial.locator('#atlasSourceNote').innerText(), /2 firmware files are listed, not parsed\./);
+  assert.equal(await partial.locator('#atlasSkipped').isVisible(), true);
+  assert.equal(await partial.locator('#atlasSkipped li').count(), 2);
+  assert.equal(await partial.locator('#atlasSkipped b').count(), 0);
+  assert.match(await partial.locator('#atlasSkipped').textContent(), /src\/<b>x<\/b>\.h/);
+  assert.deepEqual(partial.errors, []);
+});
+await partial.context().close();
+const complete = await open({ viewport: { width: 1440, height: 900 } });
+await check('a complete map says nothing about skipped files', async () => {
+  assert.doesNotMatch(await complete.locator('#atlasSourceNote').innerText(), /not parsed/);
+  assert.equal(await complete.locator('#atlasSkipped').isHidden(), true);
+});
+await complete.context().close();
+const fwOnly = await open({ viewport: { width: 1440, height: 900 } }, { graph: atlasFixture({ nodes: [], edges: [], skipped }) });
+await check('a firmware-only snapshot explains why the map is empty', async () => {
+  assert.equal(await fwOnly.locator('#atlasMapState').innerText(), 'No production modules in this snapshot. 2 firmware files are listed, not parsed.');
+  assert.equal(await fwOnly.locator('#atlasSkipped li').count(), 2);
+  assert.deepEqual(fwOnly.errors, []);
+});
+await fwOnly.context().close();
 
 await browser.close();
 if (failures.length) { console.error(`\n${failures.length} check(s) failed`); process.exit(1); }

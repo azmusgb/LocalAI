@@ -11,7 +11,7 @@ const path = require('node:path');
 const ROOT = path.resolve(__dirname, '..');
 const page = require('../app/public/architecture.js');
 const { plural, orderDomains, domainSummary, buildModel, columnsFor, mapLayout, lookHereFirst, whyRanks,
-  freshnessLine, lensBand, riskLevel } = page;
+  freshnessLine, lensBand, riskLevel, skippedSummary, emptyMapText } = page;
 
 const NOW = Date.parse('2026-11-04T12:00:00Z');
 
@@ -208,4 +208,25 @@ test('the graph the app serves carries the scanner\'s schema version and danglin
   const src = fs.readFileSync(path.join(ROOT, 'app/server/atlas.js'), 'utf8');
   assert.match(src, /schemaVersion: graph\.schemaVersion \|\| 1/);
   assert.match(src, /danglingHttp: Array\.isArray\(graph\.danglingHttp\) \? graph\.danglingHttp : null/);
+});
+
+test('skipped files: one plain sentence from the data, a capped list, nothing when none', () => {
+  const rows = (n) => Array.from({ length: n }, (_, i) => ({ path: `src/f${i}.cpp`, reason: 'firmware source, not parsed' }));
+  assert.equal(skippedSummary(graph()), null);
+  assert.equal(skippedSummary(graph({ skipped: [] })), null);
+  assert.equal(skippedSummary(graph({ skipped: 'x' })), null);
+  const one = skippedSummary(graph({ skipped: rows(1) }));
+  assert.equal(one.sentence, '1 firmware file is listed, not parsed.');
+  const many = skippedSummary(graph({ skipped: [...rows(114), { path: null }, null] }));
+  assert.equal(many.sentence, '114 firmware files are listed, not parsed.');
+  const big = skippedSummary(graph({ skipped: rows(250) }));
+  assert.equal(big.paths.length, 200);
+  assert.equal(big.more, 50);
+  assert.equal(skippedSummary(graph({ skipped: [{ path: 'a.bin', reason: 'binary' }] })).sentence, '1 file is listed, not parsed.');
+});
+
+test('the empty map explains skipped files', () => {
+  assert.equal(emptyMapText(graph()), 'No production modules in this snapshot.');
+  assert.equal(emptyMapText(graph({ skipped: [{ path: 'a.cpp', reason: 'firmware source, not parsed' }] })),
+    'No production modules in this snapshot. 1 firmware file is listed, not parsed.');
 });

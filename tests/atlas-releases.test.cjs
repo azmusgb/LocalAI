@@ -30,6 +30,12 @@ test('maps release targets to repositories, once per commit, skipping repos Atla
   assert.deepEqual(liveCommits(null, new Set(REPOS)), []);
 });
 
+test('the firmware release record maps to the smart display repository', () => {
+  assert.deepEqual(liveCommits(records(['firmware', D]), new Set([...REPOS, 'bambuhelper-smart-display'])),
+    [{ target: 'firmware', repo: 'bambuhelper-smart-display', commit: D }]);
+  assert.deepEqual(liveCommits(records(['firmware', D]), new Set(REPOS)), []); // still skipped while Atlas keeps no such repo
+});
+
 test('asks for a snapshot of each live commit it has not got, from GET /api/records', async () => {
   const h = harness({ body: records(['pi-hub', A], ['localai', B], ['print-lab', C]), have: [['localai', B]] });
   assert.deepEqual(await h.trigger.tick(), [`pi-hub@${A}`, `print-lab@${C}`]);

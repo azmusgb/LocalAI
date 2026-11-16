@@ -268,5 +268,170 @@ test('apiAtlas route /api/atlas/contracts serves contract evaluations', async ()
   const out = await atlas.apiAtlas(req, res, '/api/atlas/contracts');
   assert.equal(out.status, 200);
   assert.ok(Array.isArray(out.body.contracts));
-  assert.equal(out.body.contracts.length, 10);
+  const declared = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'atlas', 'contracts.json'), 'utf8'));
+  assert.equal(out.body.contracts.length, declared.length);
+  assert.ok(Array.isArray(out.body.undeclared));
+  for (const c of out.body.contracts) {
+    assert.ok(['confirmed', 'provider missing', 'consumer missing', 'no snapshot'].includes(c.check), `${c.id}: ${c.check}`);
+  }
+});
+
+// Platform capture (spec 2026-11-15, design item 2): each declared edge gets a `check`, and calls no edge declares are
+// listed as `undeclared`. These fixtures use the scanner's real route shape ({path, match, module}).
+function readerFor(contracts, graphs, options = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'contracts-check-'));
+  const contractsFile = path.join(dir, 'contracts.json');
+  fs.writeFileSync(contractsFile, JSON.stringify(contracts));
+  const snapshots = {
+    find(repo, commit) { return graphs[repo] ? { repo, commit } : null; },
+    list() { return { snapshots: Object.keys(graphs).map((repo) => ({ repo, commit: 'c'.repeat(40), generatedAt: '2026-11-15T00:00:00Z' })) }; },
+    graph(row) { return graphs[row.repo]; },
+  };
+  const systems = {
+    async read() {
+      return { status: 200, body: { source: 'live', hosts: [{ targets: Object.keys(graphs).map((atlas) => ({ atlas, commit: 'c'.repeat(40) })) }] } };
+    },
+  };
+  return createContractsReader({ contractsPath: contractsFile, snapshots, systems, ...options });
+}
+
+const hubGraph = (routes) => ({
+  schemaVersion: 3,
+  httpRoutes: routes,
+  nodes: [{ id: 'hub/app.py', domain: 'API', calls: [] }],
+  edges: [],
+});
+const records = { path: '/api/records', match: 'exact', module: 'hub/app.py' };
+const recordsEdge = {
+  id: 'records',
+  contract: 'record.v1',
+  provider: { repo: 'pi-hub', module: 'hub/app.py', method: 'GET', path: '/api/records' },
+  consumers: [{ repo: 'localai', module: 'app/pi-hub.js' }],
+  source: 'test',
+};
+const localGraph = (calls, extra = {}) => ({
+  schemaVersion: 3,
+  httpRoutes: [{ path: '/api/health', match: 'exact', module: 'app/server.js' }, { path: '/api/items/', match: 'prefix', module: 'app/server.js' }],
+  nodes: [
+    { id: 'app/pi-hub.js', domain: 'Workshop', calls },
+    { id: 'app/server.js', domain: 'Platform', calls: [{ path: '/api/health', line: 4 }] },
+    { id: 'app/public/home.js', domain: 'UI', calls: [{ path: '/api/items/', line: 2 }, { path: '/api/gone', line: 3 }] },
+    { id: 'tests/hub.test.cjs', domain: 'Tests', calls: [{ path: '/api/fixture-only', line: 9 }] },
+  ],
+  edges: [],
+  danglingHttp: [{ source: 'app/public/home.js', path: '/api/gone', line: 3 }],
+  ...extra,
+});
+
+test('contracts check: confirmed when the provider serves the route (scanner shape) and the consumer calls it', async () => {
+  const reader = readerFor([recordsEdge], { 'pi-hub': hubGraph([records]), localai: localGraph([{ path: '/api/records', line: 130 }]) });
+  const { body } = await reader.check();
+  assert.equal(body.contracts[0].provider.state, 'checked');
+  assert.equal(body.contracts[0].check, 'confirmed');
+  assert.equal(body.contracts[0].consumers[0].check, 'confirmed');
+  assert.equal(body.brokenCount, 0);
+});
+
+test('contracts check: a scanner pattern route (*) serves a declared literal or {param} path', async () => {
+  const notify = { ...recordsEdge, id: 'notify', provider: { repo: 'pi-hub', module: 'hub/notify_routes.py', method: 'POST', path: '/api/notify/localai' } };
+  const reader = readerFor([notify], {
+    'pi-hub': hubGraph([{ path: '/api/notify/*', match: 'pattern', module: 'hub/notify_routes.py' }]),
+    localai: localGraph([{ path: '/api/notify/localai', line: 26 }]),
+  });
+  const { body } = await reader.check();
+  assert.equal(body.contracts[0].check, 'confirmed');
+});
+
+test('contracts check: provider missing when the route is gone', async () => {
+  const reader = readerFor([recordsEdge], { 'pi-hub': hubGraph([]), localai: localGraph([{ path: '/api/records', line: 130 }]) });
+  const { body } = await reader.check();
+  assert.equal(body.contracts[0].check, 'provider missing');
+});
+
+test('contracts check: consumer missing when the consumer no longer calls it', async () => {
+  const reader = readerFor([recordsEdge], { 'pi-hub': hubGraph([records]), localai: localGraph([]) });
+  const { body } = await reader.check();
+  assert.equal(body.contracts[0].check, 'consumer missing');
+  assert.equal(body.contracts[0].consumers[0].check, 'consumer missing');
+});
+
+test('contracts check: no snapshot when the provider repo has none', async () => {
+  const reader = readerFor([recordsEdge], { localai: localGraph([{ path: '/api/records', line: 130 }]) });
+  const { body } = await reader.check();
+  assert.equal(body.contracts[0].check, 'no snapshot');
+  assert.equal(body.brokenCount, 0);
+});
+
+test('contracts check: an unparsed firmware consumer is not checked, not missing', async () => {
+  const feed = {
+    id: 'display-feed', contract: null, label: 'Display feed',
+    provider: { repo: 'pi-hub', module: 'hub/display_routes.py', method: 'GET', path: '/api/display/feed' },
+    consumers: [{ repo: 'bambuhelper-smart-display', module: 'firmware/feed.cpp' }],
+    source: 'test',
+  };
+  const reader = readerFor([feed], {
+    'pi-hub': hubGraph([{ path: '/api/display/feed', match: 'exact', module: 'hub/display_routes.py' }]),
+    'bambuhelper-smart-display': { schemaVersion: 3, httpRoutes: [], nodes: [], edges: [], skipped: [{ path: 'firmware/feed.cpp', reason: 'firmware source, not parsed' }] },
+  });
+  const { body } = await reader.check();
+  const c = body.contracts[0];
+  assert.equal(c.consumers[0].state, 'not_checked');
+  assert.match(c.consumers[0].detail, /firmware source, not parsed/);
+  assert.equal(c.check, 'no snapshot');
+  assert.equal(body.brokenCount, 0);
+});
+
+test('contracts check: the default mapped repos include the smart display', async () => {
+  const edge = { ...recordsEdge, consumers: [{ repo: 'bambuhelper-smart-display', module: 'tools/hub.py' }] };
+  const display = { schemaVersion: 3, httpRoutes: [], nodes: [{ id: 'tools/hub.py', domain: 'Root', calls: [{ path: '/api/records', line: 3 }] }], edges: [] };
+  const reader = readerFor([edge], { 'pi-hub': hubGraph([records]), 'bambuhelper-smart-display': display });
+  const { body } = await reader.check();
+  assert.equal(body.contracts[0].consumers[0].state, 'checked');
+  assert.equal(body.contracts[0].check, 'confirmed');
+});
+
+test('contracts check: calls no declared edge covers are listed as undeclared, never an error', async () => {
+  const calls = [{ path: '/api/records', line: 130 }, { path: '/api/workshop', line: 140, method: 'GET' }];
+  const graphs = { 'pi-hub': hubGraph([records]), localai: localGraph(calls) };
+  const { body } = await readerFor([recordsEdge], graphs).check();
+  // Not listed: the declared call, the repo's own routes (exact and prefix), a browser call already reported as
+  // dangling, and a test module's call.
+  assert.deepEqual(body.undeclared, [{ repo: 'localai', module: 'app/pi-hub.js', method: 'GET', path: '/api/workshop', line: 140 }]);
+  assert.equal(body.contracts[0].check, 'confirmed');
+  assert.equal(body.brokenCount, 0);
+  const { body: without } = await readerFor([recordsEdge], { 'pi-hub': hubGraph([records]), localai: localGraph([{ path: '/api/records', line: 130 }]) }).check();
+  assert.deepEqual(without.undeclared, []);
+  const undeclaredMethod = await readerFor([recordsEdge], { 'pi-hub': hubGraph([records]), localai: localGraph([{ path: '/api/workshop', line: 5 }, { path: '/api/records', line: 130 }]) }).check();
+  assert.equal(undeclaredMethod.body.undeclared[0].method, null);
+});
+
+test('contracts check: a schema 2 snapshot is no snapshot and adds nothing to undeclared', async () => {
+  const reader = readerFor([recordsEdge], { 'pi-hub': hubGraph([records]), localai: { schemaVersion: 2, httpRoutes: [], nodes: [{ id: 'app/pi-hub.js' }], edges: [] } });
+  const { body } = await reader.check();
+  assert.equal(body.contracts[0].check, 'no snapshot');
+  assert.deepEqual(body.undeclared, []);
+});
+
+test('contracts check: a truncated call under an undeclared-parameter path does not confirm the edge', async () => {
+  const now = { ...recordsEdge, id: 'now', provider: { repo: 'pi-hub', module: 'hub/app.py', method: 'GET', path: '/api/now' } };
+  // The only call is new URL(`/api/now/poster/${n}.jpg`, hub), recorded as /api/now/poster/: not a call to /api/now.
+  const reader = readerFor([now], {
+    'pi-hub': hubGraph([{ path: '/api/now', match: 'exact', module: 'hub/app.py' }]),
+    localai: localGraph([{ path: '/api/now/poster/', line: 144 }]),
+  });
+  const { body } = await reader.check();
+  assert.equal(body.contracts[0].check, 'consumer missing');
+});
+
+test('contracts check: a consumer in a file type the scanner does not read is not checked, not missing', async () => {
+  const edge = { ...recordsEdge, consumers: [{ repo: 'localai', module: 'deploy/Send-Report.ps1' }, { repo: 'localai', module: 'deploy/report.sh' }] };
+  const reader = readerFor([edge], { 'pi-hub': hubGraph([records]), localai: localGraph([]) });
+  const { body } = await reader.check();
+  const [ps1, sh] = body.contracts[0].consumers;
+  assert.equal(ps1.state, 'not_checked');
+  assert.match(ps1.detail, /PowerShell source, not scanned/);
+  assert.equal(sh.state, 'not_checked');
+  assert.match(sh.detail, /\.sh source, not scanned/);
+  assert.equal(body.contracts[0].check, 'no snapshot');
+  assert.equal(body.brokenCount, 0);
 });

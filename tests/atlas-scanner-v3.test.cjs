@@ -13,7 +13,7 @@ const { spawnSync } = require('node:child_process');
 const ROOT = path.resolve(__dirname, '..');
 const PY = ['python3', 'python'].find((p) => spawnSync(p, ['--version']).status === 0);
 
-function runScan(files) {
+function runScan(files, repo = null) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-v3-')));
   try {
     for (const [relPath, content] of Object.entries(files)) {
@@ -26,7 +26,7 @@ import json, sys
 sys.path.insert(0, ${JSON.stringify(ROOT)})
 import quick_arch as qa
 qa.ROOT = qa.Path(${JSON.stringify(dir)}).resolve()
-qa.SNAPSHOT = None
+qa.SNAPSHOT = ${repo ? `{'repo': ${JSON.stringify(repo)}, 'commit': 'a' * 40, 'committedAt': None, 'changedSince': None, 'gitDir': None}` : 'None'}
 files = qa.collect_files()
 graph = qa.build_graph(files)
 print(json.dumps(graph))
@@ -89,4 +89,28 @@ test('nodes without calls have an empty calls list', () => {
   for (const n of g.nodes) {
     assert.deepEqual(n.calls, []);
   }
+});
+
+test('smart display profile: .py and .js are mapped, firmware sources go to skipped', () => {
+  const g = runScan({
+    'app.js': "module.exports = {};\n",
+    'apply_x.py': "def f():\n    return 1\n",
+    'src/main.cpp': 'int main() { return 0; }\n',
+    'include/a.h': '#pragma once\n',
+    'sketch/s.ino': 'void setup() {}\n',
+  }, 'bambuhelper-smart-display');
+  assert.deepEqual(g.nodes.map((n) => n.path).sort(), ['app.js', 'apply_x.py']);
+  assert.deepEqual(g.skipped, [
+    { path: 'include/a.h', reason: 'firmware source, not parsed' },
+    { path: 'sketch/s.ino', reason: 'firmware source, not parsed' },
+    { path: 'src/main.cpp', reason: 'firmware source, not parsed' },
+  ]);
+});
+
+test('other repos keep every file mapped and carry an empty skipped list', () => {
+  const g = runScan({ 'a.js': 'module.exports = {};\n', 'src/main.cpp': 'int main() {}\n' });
+  assert.deepEqual(g.skipped, []);
+  assert.deepEqual(g.nodes.map((n) => n.path), ['a.js']);
+  const pi = runScan({ 'a.js': 'module.exports = {};\n', 'src/main.cpp': 'int main() {}\n' }, 'pi-hub');
+  assert.deepEqual(pi.skipped, []);
 });

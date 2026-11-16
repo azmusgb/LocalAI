@@ -53,6 +53,23 @@ const FIXTURE = {
     "fetch(`${API}/list`); fetch(API + '/' + id);",
   ].join('\n'),
   'tests/items.test.cjs': "const items = require('../app/server/items');\n",
+  // Server-to-server calls (platform capture spec, design item 2): a server module and a Python caller of the hub.
+  'app/server/hub.js': [
+    "const records = new URL('/api/records', hubUrl);",
+    "fetch(new URL('/api/releases/localai', hubUrl), { method: 'POST' });",
+    "const endpoint = `${url.replace(/\\/+$/, '')}/api/notify/localai`;",
+    "fetch(new URL(`/api/now/poster/${n}.jpg`, hubUrl));",
+    "// fetch(new URL('/api/commented', hubUrl));",
+  ].join('\n'),
+  'tools/report.py': [
+    "import httpx, requests, urllib.request",
+    "HUB = 'http://10.0.0.80'",
+    "httpx.post(f'{HUB}/api/releases/localai', json={})",
+    "requests.get(HUB + '/api/records', timeout=5)",
+    "urllib.request.Request(HUB + '/api/needs', method='POST')",
+    "client.get('/api/now')",
+    "router = APIRouter(prefix='/api/lab')  # a router's prefix is not a call",
+  ].join('\n'),
 };
 
 function py(code) {
@@ -168,4 +185,27 @@ test('snapshot mode writes the graph.json from a clean copy of the commit', { sk
   assert.equal(g.danglingHttp.length, 1);
   assert.equal(g.snapshot.repo, 'fixture');
   assert.ok(g.edges.every((e) => e.kind));
+});
+
+test('server modules and Python callers record their outgoing /api/ calls with line and, when evident, method', { skip: !PY }, () => {
+  const g = scan();
+  const hub = g.nodes.find((n) => n.id === 'app/server/hub.js');
+  assert.deepEqual(hub.calls, [
+    { path: '/api/records', line: 1 },
+    { path: '/api/releases/localai', line: 2, method: 'POST' },
+    { path: '/api/notify/localai', line: 3 },  // a template literal that appends the path to a base URL
+    { path: '/api/now/poster/', line: 4 },  // a dynamic tail keeps its prefix
+  ]);
+  const items = g.nodes.find((n) => n.id === 'app/server/items.js');
+  assert.ok(items.calls.some((c) => c.path === '/api/upstream/items' && c.line === 6));
+  const py = g.nodes.find((n) => n.id === 'tools/report.py');
+  assert.deepEqual(py.calls, [
+    { path: '/api/releases/localai', line: 3, method: 'POST' },
+    { path: '/api/records', line: 4, method: 'GET' },
+    { path: '/api/needs', line: 5, method: 'POST' },
+    { path: '/api/now', line: 6, method: 'GET' },
+  ]);
+  // Outgoing calls are not routes and not browser links.
+  assert.ok(!g.httpRoutes.some((r) => r.path === '/api/records'));
+  assert.ok(!g.edges.some((e) => e.kind === 'http' && e.source === 'app/server/hub.js'));
 });

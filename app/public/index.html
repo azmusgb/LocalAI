@@ -252,6 +252,11 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
     </div>
   </div>
 
+  <section id="atlas-platform" class="atlas-platform" aria-labelledby="atlasPlatformTitle" data-state="loading" aria-busy="true">
+    <div class="atlas-platform-head"><h2 id="atlasPlatformTitle">Platform map</h2></div>
+    <p class="atlas-platform-state">Checking the links between systems…</p>
+  </section>
+
   <section id="atlasSystems" class="atlas-systems" aria-labelledby="atlasSystemsTitle">
     <div class="atlas-systems-head"><h2 id="atlasSystemsTitle">What runs where</h2><p id="atlasSystemsNote" class="atlas-systems-note" role="status" aria-live="polite">Reading Pi Hub…</p></div>
     <div id="atlasSystemsList" class="atlas-systems-list" hidden></div>
@@ -275,6 +280,7 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
     <div class="atlas-source-field"><label for="atlasCommit">Commit</label><select id="atlasCommit"><option value="">Latest scan</option></select></div>
     <button id="atlasSnapshotNow" class="btn-outline" type="button">Snapshot now</button>
     <p id="atlasSourceNote" class="atlas-source-note"></p>
+    <details id="atlasSkipped" class="atlas-skipped" hidden></details>
     <p id="atlasSnapshotState" class="atlas-snapshot-state" role="status" aria-live="polite" hidden></p>
   </div>
 
@@ -356,5 +362,5 @@ Get-Location</textarea></label></div><div class="actions"><button id="powershell
 </main></div><div id="toast" class="toast" role="status" aria-live="polite"></div><script src="/offline-copy.js"></script><script src="/framed.js"></script><script src="/view-registry.js"></script><script src="/components.js"></script><script src="/router.js"></script><script src="/pins.js"></script>
 <script src="/deployments.js"></script><script src="/work.js"></script><script src="/spreadsheets.js"></script><script src="/signin-report.js"></script><script src="/self-change.js"></script><script src="/improve.js"></script><script src="/ui/needs.js"></script><script src="/ui/backbar.js"></script><script src="/needs-you.js"></script><script src="/ask-context.js"></script><script src="/home.js"></script><script src="/run-bodies.js"></script><script src="/agent-world-words.js"></script>
 <script src="/crew-summary.js" defer></script><script src="/fix-part.js"></script><script type="module" src="/app.js"></script>  <script src="/qr.js"></script>
-<script src="/ui.js" defer></script><script src="/atlas-systems.js"></script><script src="/architecture.js"></script></body></html>
+<script src="/ui.js" defer></script><script src="/atlas-systems.js"></script><script src="/atlas-platform.js"></script><script src="/architecture.js"></script></body></html>
 

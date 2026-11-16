@@ -32,6 +32,7 @@ DEFAULT_REMOTES = {
     "localai": "git@github-localai:azmusgb/LocalAI.git",
     "pi-hub": "git@github-atlas-pihub:azmusgb/pi-hub.git",
     "print-lab": "git@github-atlas-printlab:azmusgb/print-lab.git",
+    "bambuhelper-smart-display": "git@github-atlas-smartdisplay:azmusgb/bambuhelper-smart-display.git",
 }
 
 REPO_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")

@@ -22,7 +22,7 @@
         "module": "src/home_mcp/server.py"
       }
     ],
-    "source": "Platform baseline §4, §13; pi-hub hub/app.py"
+    "source": "Platform baseline §4, §13; pi-hub hub/app.py; home-mcp src/home_mcp/server.py:91 and :207 (hub.gather against HOME_MCP_HUB_URL, GET)"
   },
   {
     "id": "now-summary",
@@ -44,7 +44,7 @@
         "module": "src/home_mcp/server.py"
       }
     ],
-    "source": "pi-hub hub/app.py; spec 2026-11-07-atlas-across-repos-design.md"
+    "source": "pi-hub hub/app.py; spec 2026-11-07-atlas-across-repos-design.md; home-mcp src/home_mcp/server.py:91"
   },
   {
     "id": "now-poster",
@@ -83,7 +83,7 @@
         "module": "src/home_mcp/server.py"
       }
     ],
-    "source": "Platform baseline §4; pi-hub hub/app.py"
+    "source": "Platform baseline §4; pi-hub hub/app.py; home-mcp src/home_mcp/server.py:91"
   },
   {
     "id": "releases-v1-write",
@@ -194,5 +194,275 @@
       }
     ],
     "source": "pi-hub hub/app.py"
+  },
+  {
+    "id": "workshop-status",
+    "contract": null,
+    "label": "Workshop status",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/app.py",
+      "method": "GET",
+      "path": "/api/workshop"
+    },
+    "consumers": [
+      {
+        "repo": "home-mcp",
+        "module": "src/home_mcp/server.py"
+      }
+    ],
+    "source": "pi-hub hub/app.py:398; home-mcp src/home_mcp/server.py:117 (hub.gather, GET against HOME_MCP_HUB_URL; hub.py:46)"
+  },
+  {
+    "id": "pi-health",
+    "contract": null,
+    "label": "Pi health",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/app.py",
+      "method": "GET",
+      "path": "/api/pi"
+    },
+    "consumers": [
+      {
+        "repo": "home-mcp",
+        "module": "src/home_mcp/server.py"
+      }
+    ],
+    "source": "pi-hub hub/app.py:946; home-mcp src/home_mcp/server.py:139 (hub.gather, GET against HOME_MCP_HUB_URL; hub.py:46)"
+  },
+  {
+    "id": "system-backups",
+    "contract": null,
+    "label": "Backup status",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/app.py",
+      "method": "GET",
+      "path": "/api/system/backups"
+    },
+    "consumers": [
+      {
+        "repo": "home-mcp",
+        "module": "src/home_mcp/server.py"
+      }
+    ],
+    "source": "pi-hub hub/app.py:228; home-mcp src/home_mcp/server.py:139 (hub.gather, GET against HOME_MCP_HUB_URL; hub.py:46)"
+  },
+  {
+    "id": "freshness",
+    "contract": null,
+    "label": "Source freshness",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/app.py",
+      "method": "GET",
+      "path": "/api/freshness"
+    },
+    "consumers": [
+      {
+        "repo": "home-mcp",
+        "module": "src/home_mcp/server.py"
+      }
+    ],
+    "source": "pi-hub hub/app.py:120; home-mcp src/home_mcp/server.py:163 (hub.gather, GET against HOME_MCP_HUB_URL; hub.py:46)"
+  },
+  {
+    "id": "alerts",
+    "contract": null,
+    "label": "Recent alerts",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/app.py",
+      "method": "GET",
+      "path": "/api/alerts"
+    },
+    "consumers": [
+      {
+        "repo": "home-mcp",
+        "module": "src/home_mcp/server.py"
+      }
+    ],
+    "source": "pi-hub hub/app.py:964; home-mcp src/home_mcp/server.py:188 (hub.gather, GET against HOME_MCP_HUB_URL; hub.py:46)"
+  },
+  {
+    "id": "display-pair",
+    "contract": null,
+    "label": "Display pairing",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/display_routes.py",
+      "method": "POST",
+      "path": "/api/display/pair"
+    },
+    "consumers": [
+      {
+        "repo": "bambuhelper-smart-display",
+        "module": "firmware/platform/localai/workshop_localai_feed.cpp"
+      }
+    ],
+    "source": "pi-hub hub/display_routes.py:60; bambuhelper-smart-display firmware/platform/localai/workshop_localai_feed.cpp:800 (backend PiHub, workshop_localai_feed_core.hpp:102)"
+  },
+  {
+    "id": "display-feed",
+    "contract": null,
+    "label": "Display feed",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/display_routes.py",
+      "method": "GET",
+      "path": "/api/display/feed"
+    },
+    "consumers": [
+      {
+        "repo": "bambuhelper-smart-display",
+        "module": "firmware/platform/localai/workshop_localai_feed.cpp"
+      }
+    ],
+    "source": "pi-hub hub/display_routes.py:163; bambuhelper-smart-display firmware/platform/localai/workshop_localai_feed.cpp:304 (backend PiHub, workshop_localai_feed_core.hpp:102)"
+  },
+  {
+    "id": "display-events",
+    "contract": null,
+    "label": "Display events",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/display_routes.py",
+      "method": "GET",
+      "path": "/api/display/events"
+    },
+    "consumers": [
+      {
+        "repo": "bambuhelper-smart-display",
+        "module": "firmware/platform/localai/workshop_localai_feed.cpp"
+      }
+    ],
+    "source": "pi-hub hub/display_routes.py:169; bambuhelper-smart-display firmware/platform/localai/workshop_localai_feed.cpp:734 (backend PiHub, workshop_localai_feed_core.hpp:102)"
+  },
+  {
+    "id": "display-heartbeat",
+    "contract": null,
+    "label": "Display heartbeat",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/display_routes.py",
+      "method": "POST",
+      "path": "/api/display/heartbeat"
+    },
+    "consumers": [
+      {
+        "repo": "bambuhelper-smart-display",
+        "module": "firmware/platform/localai/workshop_localai_feed.cpp"
+      }
+    ],
+    "source": "pi-hub hub/display_routes.py:143; bambuhelper-smart-display firmware/platform/localai/workshop_localai_feed.cpp:724 (backend PiHub, workshop_localai_feed_core.hpp:102)"
+  },
+  {
+    "id": "display-ask",
+    "contract": null,
+    "label": "Display ask",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/display_routes.py",
+      "method": "GET",
+      "path": "/api/display/ask"
+    },
+    "consumers": [
+      {
+        "repo": "bambuhelper-smart-display",
+        "module": "firmware/platform/localai/workshop_localai_feed.cpp"
+      }
+    ],
+    "source": "pi-hub hub/display_routes.py:512; bambuhelper-smart-display firmware/platform/localai/workshop_localai_feed.cpp:393 (backend PiHub, workshop_localai_feed_core.hpp:102)"
+  },
+  {
+    "id": "display-approvals",
+    "contract": null,
+    "label": "Display approvals",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/display_routes.py",
+      "method": "GET",
+      "path": "/api/display/approvals"
+    },
+    "consumers": [
+      {
+        "repo": "bambuhelper-smart-display",
+        "module": "firmware/platform/localai/workshop_localai_feed.cpp"
+      }
+    ],
+    "source": "pi-hub hub/display_routes.py:497; bambuhelper-smart-display firmware/platform/localai/workshop_localai_feed.cpp:553 (backend PiHub, workshop_localai_feed_core.hpp:102)"
+  },
+  {
+    "id": "display-approvals-decide",
+    "contract": null,
+    "label": "Display approval decision",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/display_routes.py",
+      "method": "POST",
+      "path": "/api/display/approvals/decide"
+    },
+    "consumers": [
+      {
+        "repo": "bambuhelper-smart-display",
+        "module": "firmware/platform/localai/workshop_localai_feed.cpp"
+      }
+    ],
+    "source": "pi-hub hub/display_routes.py:503; bambuhelper-smart-display firmware/platform/localai/workshop_localai_feed.cpp:595 (backend PiHub, workshop_localai_feed_core.hpp:102)"
+  },
+  {
+    "id": "display-lab-judge",
+    "contract": null,
+    "label": "Display judge sheet",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/display_routes.py",
+      "method": "GET",
+      "path": "/api/display/lab/judge"
+    },
+    "consumers": [
+      {
+        "repo": "bambuhelper-smart-display",
+        "module": "firmware/platform/localai/workshop_localai_feed.cpp"
+      }
+    ],
+    "source": "pi-hub hub/display_routes.py:390; bambuhelper-smart-display firmware/platform/localai/workshop_localai_feed.cpp:641 (backend PiHub, workshop_localai_feed_core.hpp:102)"
+  },
+  {
+    "id": "display-lab-verdict",
+    "contract": null,
+    "label": "Display judge verdict",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/display_routes.py",
+      "method": "POST",
+      "path": "/api/display/lab/verdict"
+    },
+    "consumers": [
+      {
+        "repo": "bambuhelper-smart-display",
+        "module": "firmware/platform/localai/workshop_localai_feed.cpp"
+      }
+    ],
+    "source": "pi-hub hub/display_routes.py:427; bambuhelper-smart-display firmware/platform/localai/workshop_localai_feed.cpp:673 (backend PiHub, workshop_localai_feed_core.hpp:102)"
+  },
+  {
+    "id": "display-printer-clear",
+    "contract": null,
+    "label": "Display clear plate",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/display_routes.py",
+      "method": "POST",
+      "path": "/api/display/printer/clear"
+    },
+    "consumers": [
+      {
+        "repo": "bambuhelper-smart-display",
+        "module": "firmware/platform/localai/workshop_localai_feed.cpp"
+      }
+    ],
+    "source": "pi-hub hub/display_routes.py:214; bambuhelper-smart-display firmware/platform/localai/workshop_localai_feed.cpp:702 (backend PiHub, workshop_localai_feed_core.hpp:102)"
   }
 ]

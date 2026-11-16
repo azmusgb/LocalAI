@@ -53,13 +53,23 @@ test('the list holds only allowed repositories and well-formed commits, newest f
     { repo: 'pi-hub', commit: A, generatedAt: '2026-11-01T01:00:00Z' },
     { repo: 'pi-hub', commit: B, generatedAt: '2026-11-01T02:00:00Z' },
     { repo: 'secret-repo', commit: C, generatedAt: '2026-11-01T03:00:00Z' },
+    { repo: 'bambuhelper-smart-display', commit: C, generatedAt: '2026-11-01T05:00:00Z' },
     { repo: 'print-lab', commit: '../../etc', generatedAt: '2026-11-01T04:00:00Z' },
   ]);
   const { get } = atlasWith(dir);
   const r = await get('/api/atlas/snapshots');
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body.repos, ['localai', 'pi-hub', 'print-lab']);
-  assert.deepEqual(r.body.snapshots.map((s) => s.commit), [B, A]);
+  assert.deepEqual(r.body.repos, ['localai', 'pi-hub', 'print-lab', 'bambuhelper-smart-display']);
+  assert.deepEqual(r.body.snapshots.map((s) => s.commit), [C, B, A]);
+});
+
+test('a snapshot graph carries the scanner skipped list through to the page, additive', async () => {
+  const skipped = [{ path: 'src/main.cpp', reason: 'firmware source, not parsed' }];
+  const dir = store([{ repo: 'pi-hub', commit: A }, { repo: 'pi-hub', commit: B }],
+    { [`pi-hub@${A}`]: { ...g('hub/app.py'), skipped }, [`pi-hub@${B}`]: g('hub/app.py') });
+  const { get } = atlasWith(dir);
+  assert.deepEqual((await get(`/api/atlas/graph?repo=pi-hub&commit=${A}`)).body.skipped, skipped);
+  assert.equal((await get(`/api/atlas/graph?repo=pi-hub&commit=${B}`)).body.skipped, undefined);
 });
 
 test('no index yet is an empty list, not an error', async () => {

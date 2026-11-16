@@ -62,7 +62,12 @@ IGNORE_DIRS = {
 MAX_FILES = 900
 
 # What the last scan could not see, reported in the graph's stats so a partial diagram says so.
-SCAN: dict = {"truncated": False, "gitError": None}
+SCAN: dict = {"truncated": False, "gitError": None, "skipped": []}
+
+# Firmware repositories: their C/C++ and Arduino sources are not parsed, only listed in the graph's `skipped`.
+FIRMWARE_REPOS = {"bambuhelper-smart-display"}
+FIRMWARE_EXTENSIONS = {".c", ".cc", ".cpp", ".h", ".hpp", ".ino"}
+FIRMWARE_SKIP_REASON = "firmware source, not parsed"
 
 JS_IMPORT_RE = re.compile(
     r"""
@@ -132,13 +137,20 @@ def collect_files() -> list[Path]:
     followed (they can point outside the repo), and SCAN["truncated"] says when MAX_FILES cut the list short."""
     root = ROOT.resolve()
     found: list[Path] = []
+    skipped: list[dict] = []
+    firmware = bool(SNAPSHOT) and SNAPSHOT.get("repo") in FIRMWARE_REPOS
     for current, dirs, names in os.walk(root, followlinks=False):
         dirs[:] = sorted(d for d in dirs if d not in IGNORE_DIRS and not (Path(current) / d).is_symlink())
         for name in sorted(names):
             path = Path(current) / name
             if path.suffix.lower() in SOURCE_EXTENSIONS and not path.is_symlink() and path.is_file():
                 found.append(path)
+            elif (firmware and path.suffix.lower() in FIRMWARE_EXTENSIONS
+                  and not path.is_symlink() and path.is_file()):
+                skipped.append({"path": path.relative_to(root).as_posix(), "reason": FIRMWARE_SKIP_REASON})
     found.sort(key=lambda p: p.relative_to(root).as_posix())
+    skipped.sort(key=lambda row: row["path"])
+    SCAN["skipped"] = skipped
     SCAN["truncated"] = len(found) > MAX_FILES
     return found[:MAX_FILES]
 
@@ -649,6 +661,13 @@ def build_story(
 
 HTTP_BROWSER_RE = re.compile(r"""(['"`])(/api/[^\n]*?)\1""")
 HTTP_CALL_RE = re.compile(r"""(['"`])(/api/[\w./~%:@-]*)\1""")
+# Outgoing calls in JavaScript also take a literal that a query or a `${...}` tail continues
+# (new URL(`/api/now/poster/${n}.jpg`, hub) keeps /api/now/poster/), and a template literal that appends the path to a
+# base URL (`${hubUrl}/api/notify/localai`).
+JS_CALL_RE = re.compile(r"""(['"`])(/api/[\w./~%:@-]*)(?=\1|[?#]|\$\{)""")
+JS_TEMPLATE_CALL_RE = re.compile(r"""\}(/api/[\w./~%:@-]*)(?=[`?#]|\$\{)""")
+JS_METHOD_RE = re.compile(r"""\bmethod\s*:\s*['"`](GET|POST|PUT|DELETE|PATCH|HEAD)['"`]""", re.IGNORECASE)
+HTTP_METHODS = {"get", "post", "put", "delete", "patch", "head"}
 
 
 def is_python_comment_line(line: str) -> bool:
@@ -668,10 +687,13 @@ def extract_module_api_calls(file: Path) -> list[dict]:
         for number, line in enumerate(lines, 1):
             if is_comment_line(line):
                 continue
-            for m in HTTP_CALL_RE.finditer(line):
-                path = clean_route(m.group(2))
+            # A method named on the same line (fetch(url, { method: 'POST' })) is the call's; otherwise it is unknown.
+            named = JS_METHOD_RE.search(line)
+            found = [m.group(2) for m in JS_CALL_RE.finditer(line)] + [m.group(1) for m in JS_TEMPLATE_CALL_RE.finditer(line)]
+            for raw in found:
+                path = clean_route(raw)
                 if path.startswith("/api/") and len(path) > len("/api/"):
-                    calls[(path, number)] = {"path": path, "line": number}
+                    calls[(path, number)] = {"path": path, "line": number, **({"method": named.group(1).upper()} if named else {})}
 
     elif suffix == ".py":
         try:
@@ -680,17 +702,40 @@ def extract_module_api_calls(file: Path) -> list[dict]:
         except (OSError, SyntaxError, ValueError):
             return []
 
+        # The method of a request whose URL argument holds the path: httpx.post(...), requests.get(...),
+        # client.get(...), or urllib.request.Request(..., method="POST").
+        methods: dict[int, str] = {}
+        prefixes: set[int] = set()  # APIRouter(prefix="/api/x") names the routes a module serves, not a call
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            prefixes.update(id(k.value) for k in node.keywords if k.arg == "prefix")
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+            method = name.upper() if name in HTTP_METHODS else None
+            if name == "Request":
+                method = next((k.value.value.upper() for k in node.keywords if k.arg == "method"
+                               and isinstance(k.value, ast.Constant) and isinstance(k.value.value, str)), None)
+            if method and node.args:
+                for inner in ast.walk(node.args[0]):
+                    methods.setdefault(id(inner), method)
+
+        def add(p: str, at: ast.AST) -> None:
+            if id(at) in prefixes:
+                return
+            p = clean_route(p)
+            if p.startswith("/api/") and len(p) > len("/api/"):
+                number = getattr(at, "lineno", 1)
+                method = methods.get(id(at))
+                calls[(p, number)] = {"path": p, "line": number, **({"method": method} if method else {})}
+
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                p = clean_route(node.value)
-                if p.startswith("/api/") and len(p) > len("/api/"):
-                    calls[(p, getattr(node, "lineno", 1))] = {"path": p, "line": getattr(node, "lineno", 1)}
+                add(node.value, node)
             elif isinstance(node, ast.JoinedStr):
                 for part in node.values:
                     if isinstance(part, ast.Constant) and isinstance(part.value, str):
-                        p = clean_route(part.value)
-                        if p.startswith("/api/") and len(p) > len("/api/"):
-                            calls[(p, getattr(node, "lineno", 1))] = {"path": p, "line": getattr(node, "lineno", 1)}
+                        add(part.value, node)
 
     elif suffix in (".ps1", ".sh", ".bash"):
         try:
@@ -1466,6 +1511,7 @@ def build_graph(files: list[Path]) -> dict:
         "changedNodes": changed_nodes,
         "stories": stories,
         "stats": stats,
+        "skipped": list(SCAN["skipped"]),
     }
 
 

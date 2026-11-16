@@ -125,7 +125,12 @@ const KB = 1024;
 // carries a pair of kit-clean markers and the --ds-* definitions stay until the last section reads none (app.css +19
 // bytes in L6; L5 landed with 0 bytes to spare), and for Agent World's phone fix that came with L6 (ui.js +0.1 KB: the
 // stage follows the header when the page opens before it exists). It comes back down in L10, when the markers and the --ds-* names go.
-const TOTAL = 350 * KB;
+// 2026-11-15: 350 → 358 KB for the platform map on Atlas (platform capture spec, design item 4): atlas-platform.js
+// (+7.2 KB: the graph, the phone list, the table of every edge, the detail and the grouped undeclared calls), its styles
+// in app.css (+1.1 KB) and the section in index.html (+0.1 KB); 357.2 KB measured.
+// 2026-11-15: 358 → 359 KB and architecture.js 17 → 18 KB for skipped files on the map (the source-note sentence, the
+// disclosure of paths, the empty-state sentence; architecture.js +0.55 KB, app.css +0.2 KB).
+const TOTAL = 359 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
@@ -162,7 +167,7 @@ const TOTAL = 350 * KB;
 // app.css +0.1 KB, its Atlas section rewritten in one pass without the layered overrides; 321.8 KB measured).
 // 2026-11-02: index.html 16 → 17 KB for the navigation update: the Settings and Tools pages, the Spreadsheets chip and
 // mode, and Home's On Pi Hub line (16.1 KB measured).
-const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 37.5 * KB, 'index.html': 17 * KB, 'home.js': 14 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB };
+const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 37.5 * KB, 'index.html': 17 * KB, 'home.js': 14 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 18 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
