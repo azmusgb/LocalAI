@@ -203,7 +203,9 @@ function createAtlas(ctx = {}) {
       highestRisk: graph.highestRisk || [],
       stale: graph.stale === true,
       staleReason: graph.staleReason || null,
-      snapshot: graph.snapshot || null
+      snapshot: graph.snapshot || null,
+      // Files the scanner listed but did not parse (the smart display's firmware): [{ path, reason }], only when present.
+      ...(Array.isArray(graph.skipped) ? { skipped: graph.skipped } : {})
     };
   }
 

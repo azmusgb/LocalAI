@@ -29,7 +29,7 @@ const HTTP = [
   ['app/public/architecture.js', 'app/server/atlas.js', ['/api/atlas/graph', '/api/atlas/summary']],
 ];
 
-function atlasFixture({ version = 2 } = {}) {
+function atlasFixture({ version = 2, skipped = null, nodes: only = null, edges: onlyEdges = null } = {}) {
   const nodes = [];
   const usedBy = new Map();
   for (const [s, t] of IMPORTS) (usedBy.get(t) || usedBy.set(t, new Set()).get(t)).add(s);
@@ -57,7 +57,8 @@ function atlasFixture({ version = 2 } = {}) {
   return {
     ...(version >= 2 ? { schemaVersion: 2, danglingHttp: [{ source: 'app/public/improve.js', path: '/api/improve/retired', line: 42 }] } : { schemaVersion: 1, danglingHttp: null }),
     generatedAt: '2026-10-14T13:00:00Z', stats: { files: nodes.length, productionFiles: Object.values(DOMAINS).flat().length }, domains: [],
-    nodes, edges, changedNodes: [], highestRisk: [], stale: false, staleReason: null, snapshot: null,
+    nodes: only || nodes, edges: onlyEdges || edges, changedNodes: [], highestRisk: [], stale: false, staleReason: null, snapshot: null,
+    ...(skipped ? { skipped } : {}),
   };
 }
 

@@ -286,7 +286,20 @@ function snapshotStateText(job){
   return `The snapshot of ${name} failed: ${job.error||'no reason given'}`;
 }
 
-Object.assign(exported,{plural,riskLevel,domainSummary,orderDomains,buildModel,columnsFor,mapLayout,lookHereFirst,whyRanks,
+// Files the scanner listed but did not parse (the smart display's firmware C/C++): one sentence from the data, and the
+// first SKIPPED_LIST paths. Null when there are none, so a complete map says nothing.
+const SKIPPED_LIST=200;
+function skippedSummary(graph){
+  const rows=(Array.isArray(graph?.skipped)?graph.skipped:[]).filter(r=>r&&typeof r.path==='string'&&r.path);
+  if(!rows.length)return null;
+  const firmware=rows.every(r=>/firmware/i.test(String(r.reason||'')));
+  return {sentence:`${plural(rows.length,firmware?'firmware file':'file')} ${rows.length===1?'is':'are'} listed, not parsed.`,
+    paths:rows.slice(0,SKIPPED_LIST),more:Math.max(0,rows.length-SKIPPED_LIST)};
+}
+const NO_MODULES='No production modules in this snapshot.';
+const emptyMapText=graph=>{const s=skippedSummary(graph);return s?`${NO_MODULES} ${s.sentence}`:NO_MODULES;};
+
+Object.assign(exported,{skippedSummary,emptyMapText,plural,riskLevel,domainSummary,orderDomains,buildModel,columnsFor,mapLayout,lookHereFirst,whyRanks,
   lensBand,freshnessLine,snapshotStateText,snapshotChoices,commitLabel,snapshotNote});
 if(typeof module==='object'&&module.exports){module.exports=exported;return;}
 
@@ -361,7 +374,7 @@ const LEVEL={critical:'Critical',high:'High',medium:'Medium',low:'Low'};
 // The map: columns of named rows, links drawn as curves under them (HTTP calls dashed).
 function drawMap(){
   const svg=$('atlasMap'),m=state.model;
-  if(!m||!m.nodes.size){svg.innerHTML='';state.layout=null;setMapState(m?'empty':'loading',m?'No production modules in this snapshot.':'Reading the graph…');return;}
+  if(!m||!m.nodes.size){svg.innerHTML='';state.layout=null;setMapState(m?'empty':'loading',m?emptyMapText(m.graph):'Reading the graph…');return;}
   const lay=state.layout=mapLayout(m,columnsFor(m,state.repo),{open:state.open,row:rowHeight()});
   const H=lay.rowHeight,mid=H/2;
   const rowOf=new Map();
@@ -598,7 +611,7 @@ async function loadContracts(){
   if (state.selected) renderInspector();
 }
 
-function render(){drawMap();renderHeader();renderLegend();renderFindings();renderInspector();renderSearchResults();renderContracts();}
+function render(){renderSourceNote();drawMap();renderHeader();renderLegend();renderFindings();renderInspector();renderSearchResults();renderContracts();}
 
 // The chosen row, scrolled into the middle of the map's frame.
 function revealRow(id){
@@ -660,13 +673,26 @@ function renderPicker(){
   commit.value=state.commit;
   const note=state.commit?snapshotNote(rows.find(r=>r.commit===state.commit),rows):
     {text:state.repo==='localai'?'The deploy checkout, as last scanned.':'',stale:false};
-  $('atlasSourceNote').textContent=note.text;
-  $('atlasSourceNote').dataset.tone=note.stale?'warn':'';
+  state.sourceNote=note;
+  renderSourceNote();
   renderAskControls();
+}
+
+// The source note: what the snapshot is, then (when the scanner left files out) one sentence saying so, with the paths
+// behind a native disclosure under it.
+function renderSourceNote(){
+  const note=state.sourceNote||{text:'',stale:false},sk=skippedSummary(state.graph);
+  $('atlasSourceNote').textContent=[note.text,sk?.sentence].filter(Boolean).join(' · ');
+  $('atlasSourceNote').dataset.tone=note.stale?'warn':'';
+  const box=$('atlasSkipped');
+  box.hidden=!sk;
+  if(!sk){box.innerHTML='';return;}
+  box.innerHTML=`<summary>Files listed, not parsed</summary><ul>${sk.paths.map(r=>`<li><code>${esc(r.path)}</code>${r.reason?` <span>${esc(r.reason)}</span>`:''}</li>`).join('')}</ul>${sk.more?`<p>and ${sk.more} more</p>`:''}`;
 }
 
 function clearGraph(title,hint,kind='loading'){
   state.graph=null;state.model=null;state.layout=null;state.summary=null;state.selected=null;state.details=null;state.open=new Set();
+  renderSourceNote();
   $('atlasMap').innerHTML='';
   setMapState(kind,kind==='loading'?'Reading the graph…':hint);
   $('atlasNodeSearch').value='';

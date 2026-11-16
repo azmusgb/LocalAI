@@ -2346,6 +2346,11 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 #architecture #atlasSnapshotNow,#architecture #atlasMapBack{min-height:44px}
 #architecture .atlas-source-note{flex:1 1 220px;margin:0;padding-bottom:12px;color:var(--ui-muted);font-size:var(--ui-fs-2);overflow-wrap:anywhere}
 #architecture .atlas-source-note[data-tone="warn"],#architecture .atlas-snapshot-state[data-tone="warn"]{color:var(--ui-warn)}
+#architecture .atlas-skipped{flex:1 0 100%;margin:0;padding-top:0;border-top:0;color:var(--ui-muted);font-size:var(--ui-fs-2)}
+#architecture .atlas-skipped summary{min-height:44px;display:flex;align-items:center}
+#architecture .atlas-skipped ul{margin:0 0 calc(var(--ui-space)*2);padding:0;list-style:none;max-height:240px;overflow:auto}
+#architecture .atlas-skipped li{overflow-wrap:anywhere}
+#architecture .atlas-skipped p{margin:0 0 calc(var(--ui-space)*2)}
 #architecture .atlas-snapshot-state{flex:1 0 100%;margin:0;color:var(--ui-muted);font-size:var(--ui-fs-2)}
 #architecture .atlas-snapshot-state[data-tone="ok"]{color:var(--ui-ok)}
 #architecture .atlas-snapshot-state[data-tone="error"]{color:var(--ui-bad)}

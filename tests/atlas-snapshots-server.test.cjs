@@ -63,6 +63,15 @@ test('the list holds only allowed repositories and well-formed commits, newest f
   assert.deepEqual(r.body.snapshots.map((s) => s.commit), [C, B, A]);
 });
 
+test('a snapshot graph carries the scanner skipped list through to the page, additive', async () => {
+  const skipped = [{ path: 'src/main.cpp', reason: 'firmware source, not parsed' }];
+  const dir = store([{ repo: 'pi-hub', commit: A }, { repo: 'pi-hub', commit: B }],
+    { [`pi-hub@${A}`]: { ...g('hub/app.py'), skipped }, [`pi-hub@${B}`]: g('hub/app.py') });
+  const { get } = atlasWith(dir);
+  assert.deepEqual((await get(`/api/atlas/graph?repo=pi-hub&commit=${A}`)).body.skipped, skipped);
+  assert.equal((await get(`/api/atlas/graph?repo=pi-hub&commit=${B}`)).body.skipped, undefined);
+});
+
 test('no index yet is an empty list, not an error', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-empty-'));
   const r = await atlasWith(dir).get('/api/atlas/snapshots');
