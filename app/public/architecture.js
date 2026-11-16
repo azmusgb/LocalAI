@@ -314,7 +314,7 @@ const state={
   active:false,summary:null,graph:null,model:null,layout:null,selected:null,details:null,
   lens:'risk',ollamaModel:localStorage.getItem('localai.atlas.model')||'',request:null,
   repo:'localai',commit:'',snapshots:null,seq:0,releases:null,open:new Set(),
-  contracts:null,contractsOpen:false,systems:null
+  contracts:null,systems:null
 };
 // Intelligence about the chosen snapshot (plan PR 5); with neither, the latest scan.
 const live=()=>state.repo==='localai'&&!state.commit;
@@ -530,68 +530,6 @@ root.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTim
   if(state.active&&state.layout&&state.layout.rowHeight!==(rowHeight()))drawMap();
 },200);});
 
-function renderContracts(){
-  const summaryEl = $('atlasContractsSummary');
-  const bodyEl = $('atlasContractsBody');
-  const toggleEl = $('atlasContractsToggle');
-  const listEl = $('atlasContractsList');
-  if (!summaryEl || !bodyEl || !toggleEl || !listEl) return;
-
-  toggleEl.setAttribute('aria-expanded', String(state.contractsOpen));
-  bodyEl.hidden = !state.contractsOpen;
-
-  if (!state.contracts) {
-    summaryEl.textContent = 'Checking contracts…';
-    summaryEl.dataset.tone = '';
-    listEl.innerHTML = '<p class="atlas-muted">Reading contract declarations…</p>';
-    return;
-  }
-
-  const { contracts = [], brokenCount = 0, commits = {} } = state.contracts;
-  const commitParts = Object.entries(commits).map(([repo, c]) => `${repoNames[repo] || repo} ${short(c)}`);
-  const headerCommits = commitParts.length ? ` · ${commitParts.join(' · ')}, the live releases` : '';
-
-  if (brokenCount > 0) {
-    summaryEl.textContent = `${plural(brokenCount, 'broken contract edge')} at the live commits${headerCommits}`;
-    summaryEl.dataset.tone = 'error';
-  } else {
-    const total = contracts.length;
-    summaryEl.textContent = `All ${total} contracts checked at the live commits${headerCommits}`;
-    summaryEl.dataset.tone = 'ok';
-  }
-
-  listEl.innerHTML = contracts.map(c => {
-    const name = c.label || c.contract || c.id;
-    const p = c.provider;
-    const pRepoName = repoNames[p.repo] || p.repo;
-    const pChip = `<button type="button" class="atlas-contract-chip" data-atlas-cross-repo="${esc(p.repo)}" data-atlas-cross-module="${esc(p.module)}" aria-label="Open ${esc(pRepoName)} map at ${esc(p.module)}"><span>${esc(pRepoName)}</span><code>${esc(p.module)}</code><span>${esc(p.method)} ${esc(p.path)}</span></button>`;
-
-    const consumersHtml = (c.consumers || []).map(con => {
-      const cRepoName = repoNames[con.repo] || con.repo;
-      const isMapped = mappedRepos.has(con.repo);
-      return isMapped
-        ? `<button type="button" class="atlas-contract-chip" data-atlas-cross-repo="${esc(con.repo)}" data-atlas-cross-module="${esc(con.module)}" aria-label="Open ${esc(cRepoName)} map at ${esc(con.module)}"><span>${esc(cRepoName)}</span><code>${esc(con.module)}</code></button>`
-        : `<span class="atlas-contract-chip"><span>${esc(cRepoName)}</span><code>${esc(con.module)}</code></span>`;
-    }).join(' ');
-
-    let statusText = 'Checked at live commits';
-    let statusState = c.state;
-    if (c.state === 'broken') {
-      statusText = p.state === 'provider_missing' ? p.detail : (c.consumers.find(con => con.state === 'consumer_missing')?.detail || 'Broken edge');
-    } else if (c.state === 'partially_checked') {
-      const unmapped = c.consumers.find(con => con.state === 'not_checked');
-      statusText = unmapped ? `Not checked (${unmapped.detail})` : 'Partially checked';
-    }
-
-    return `<div class="atlas-contract-row" data-contract-id="${esc(c.id)}">
-      <div class="atlas-contract-name">${esc(name)}</div>
-      <div class="atlas-contract-provider">${pChip}</div>
-      <div class="atlas-contract-consumers">${consumersHtml}</div>
-      <div><span class="atlas-contract-status" data-state="${esc(statusState)}">${esc(statusText)}</span></div>
-    </div>`;
-  }).join('');
-}
-
 // The platform map above the Systems strip (atlas-platform.js): drawn from the systems list and the contract check,
 // again whenever either arrives.
 function renderPlatform(){
@@ -605,13 +543,12 @@ async function loadContracts(){
   } catch (err) {
     state.contracts = { error: err.message, contracts: [], brokenCount: 0 };
   }
-  renderContracts();
   renderPlatform();
   renderFindings();
   if (state.selected) renderInspector();
 }
 
-function render(){renderSourceNote();drawMap();renderHeader();renderLegend();renderFindings();renderInspector();renderSearchResults();renderContracts();}
+function render(){renderSourceNote();drawMap();renderHeader();renderLegend();renderFindings();renderInspector();renderSearchResults();}
 
 // The chosen row, scrolled into the middle of the map's frame.
 function revealRow(id){
@@ -873,11 +810,6 @@ const pick=(e,opts)=>{
   return false;
 };
 $('atlasRefresh').addEventListener('click',()=>{void refresh();void loadContracts();});
-
-$('atlasContractsToggle')?.addEventListener('click',()=>{
-  state.contractsOpen = !state.contractsOpen;
-  renderContracts();
-});
 
 page.addEventListener('click',e=>{
   const b = e.target.closest('[data-atlas-cross-repo]');

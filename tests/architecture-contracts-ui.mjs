@@ -1,4 +1,4 @@
-// Tests for the Between Systems UI drawer, inspector cross-repo links, and broken edge findings
+// Tests for the platform map's contract summary and table, inspector cross-repo links, and broken edge findings
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -86,23 +86,19 @@ async function openPage({ contracts = contractsFixture() } = {}) {
 try {
   const page = await openPage();
 
-  await check('Between systems section displays summary and expands on click', async () => {
-    const summary = page.locator('#atlasContractsSummary');
+  await check('Platform map summary and table carry the broken edge, its reason and the live commits', async () => {
+    const summary = page.locator('#atlas-platform .atlas-platform-summary');
     await summary.waitFor();
     const text = await summary.innerText();
-    assert.match(text, /1 broken contract edge at the live commits/);
+    assert.match(text, /2 declared edges at the live commits: 0 confirmed, 1 missing, 1 not checked\./);
+    assert.match(text, /Live releases: Pi Hub e693e6e, Local AI 9cce9df\./);
+    assert.equal(await summary.getAttribute('data-tone'), 'error');
+    assert.equal(await page.locator('#atlasContracts').count(), 0, 'the old Between systems section is gone');
 
-    const toggle = page.locator('#atlasContractsToggle');
-    assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
-    const body = page.locator('#atlasContractsBody');
-    assert.equal(await body.isHidden(), true);
-
-    await toggle.click();
-    assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
-    assert.equal(await body.isVisible(), true);
-
-    const rows = page.locator('#atlasContractsList .atlas-contract-row');
+    await page.locator('#atlas-platform [role="tab"][data-view="table"]').click();
+    const rows = page.locator('#atlas-platform .atlas-platform-table tbody tr');
     assert.equal(await rows.count(), 2);
+    assert.match(await page.locator('#atlas-platform tr[data-edge="broken-route"]').innerText(), /pi-hub does not serve \/api\/missing at e693e6e/);
   });
 
   await check('Broken contract edge surfaces as top Look here first finding', async () => {

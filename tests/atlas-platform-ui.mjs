@@ -106,6 +106,8 @@ await check('the table lists every declared edge in full, and arrow keys move be
   assert.match(row, /GET \/api\/records/);
   assert.match(row, /home-mcp · src\/home_mcp\/server\.py/);
   assert.match(row, /Not checked/);
+  assert.match(row, /home-mcp isn't mapped/, 'the table carries the reason the check gave');
+  assert.match(await desk.locator(`${S} .atlas-platform-summary`).innerText(), /Live releases: Pi Hub 4444444, Local AI fffffff/);
   await desk.keyboard.press('ArrowLeft');
   assert.equal(await desk.locator(`${S} [role="tab"][data-view="graph"]`).getAttribute('aria-selected'), 'true');
 });

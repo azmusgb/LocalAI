@@ -64,6 +64,16 @@ function nodeLine(row){
   return systems?.freshSentence?systems.freshSentence(f):'';
 }
 
+// Why an edge is not confirmed, in the check's own words (the provider's reason, else the first consumer's); empty when
+// it is confirmed.
+function edgeNote(c,check){
+  if(check==='confirmed')return '';
+  const list=Array.isArray(c.consumers)?c.consumers:[];
+  if(check==='provider missing')return String(c.provider?.detail||'');
+  const state=check==='consumer missing'?'consumer_missing':'not_checked';
+  return String(list.find(x=>x?.state===state&&x.detail)?.detail||'');
+}
+
 function errorText(error){
   if(!error)return '';
   if(typeof error==='string')return error;
@@ -97,7 +107,7 @@ function platformModel(systems,contracts){
     return {id:String(c.id||`${p.method||''} ${p.path||''}`),name:String(c.label||c.contract||c.id||''),
       route:[p.method,p.path].filter(Boolean).join(' '),
       provider:{repo:p.repo,module:String(p.module||''),text:`${labelFor(p.repo,labels)} · ${p.module||'?'}`,detail:String(p.detail||'')},
-      consumers,check,mark:markFor(check)};
+      consumers,check,mark:markFor(check),note:edgeNote(c,check)};
   });
   const links=new Map();
   for(const e of edges)for(const c of e.consumers){
@@ -113,13 +123,16 @@ function platformModel(systems,contracts){
   if(!contracts)state='loading';
   else if(contracts.error){state='error';message=errorText(contracts.error);}
   else if(!edges.length)state='empty';
-  return {state,message,nodes,links:[...links.values()],edges,undeclared:groupUndeclared(contracts?.undeclared,labels),
+  // The live release each repository was checked at, in the nodes' order.
+  const live=contracts?.commits&&typeof contracts.commits==='object'?contracts.commits:{};
+  const commits=nodes.filter(n=>typeof live[n.id]==='string'&&live[n.id]).map(n=>({repo:n.id,label:n.label,commit:live[n.id].slice(0,7)}));
+  return {state,message,commits,nodes,links:[...links.values()],edges,undeclared:groupUndeclared(contracts?.undeclared,labels),
     hasUndeclared:Array.isArray(contracts?.undeclared)};
 }
 
 // The table: one row per declared edge, in the order the contracts file declares them.
 function tableRows(model){
-  return (model?.edges||[]).map(e=>({id:e.id,name:e.name,route:e.route,provider:e.provider.text,consumers:e.consumers,mark:e.mark}));
+  return (model?.edges||[]).map(e=>({id:e.id,name:e.name,route:e.route,provider:e.provider.text,consumers:e.consumers,mark:e.mark,note:e.note}));
 }
 
 // Calls with no declared edge, by calling repository and then by calling module (a client module talks to one host,
@@ -179,7 +192,8 @@ function summary(model){
   const parts=[`${counts.confirmed} confirmed`];
   if(counts.missing)parts.push(`${counts.missing} missing`);
   if(counts['not-checked'])parts.push(`${counts['not-checked']} not checked`);
-  return {text:`${plural(model.edges.length,'declared edge')} at the live commits: ${parts.join(', ')}.`,tone:counts.missing?'error':''};
+  const live=model.commits.length?` Live releases: ${model.commits.map(c=>`${c.label} ${c.commit}`).join(', ')}.`:'';
+  return {text:`${plural(model.edges.length,'declared edge')} at the live commits: ${parts.join(', ')}.${live}`,tone:counts.missing?'error':''};
 }
 
 function legend(){
@@ -249,7 +263,7 @@ function table(model){
       <td role="cell" data-label="Route"><span><code>${esc(r.route)}</code>${r.name&&r.name!==r.id?`<small>${esc(r.name)}</small>`:''}</span></td>
       <td role="cell" data-label="Provider">${esc(r.provider)}</td>
       <td role="cell" data-label="Consumers"><ul>${r.consumers.map(c=>`<li>${esc(c.text)} <span class="atlas-platform-consumer-mark">(${esc(c.mark.text.toLowerCase())})</span></li>`).join('')}</ul></td>
-      <td role="cell" data-label="Check">${chip(r.mark)}</td></tr>`).join('')}</tbody></table>`;
+      <td role="cell" data-label="Check">${chip(r.mark)}${r.note?`<small>${esc(r.note)}</small>`:''}</td></tr>`).join('')}</tbody></table>`;
 }
 
 function undeclared(model){
