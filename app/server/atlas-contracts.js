@@ -38,16 +38,13 @@ function matchRoute(routePath, declaredPath) {
 function matchCallPath(callPath, declaredPath) {
   if (!callPath || !declaredPath) return false;
   if (callPath === declaredPath) return true;
-  if (declaredPath.includes('{')) {
-    const rx = normalizeRoutePattern(declaredPath);
-    if (rx.test(callPath)) return true;
-  }
-  // If call path is a prefix or base of declared path without params (e.g. /api/releases vs /api/releases/{target})
+  if (!declaredPath.includes('{')) return false;
+  const rx = normalizeRoutePattern(declaredPath);
+  if (rx.test(callPath)) return true;
+  // A call that stops at the declared path's parameters (/api/releases or /api/releases/ for /api/releases/{target}).
+  // Only for a path with parameters: a call below /api/now (/api/now/poster/) is not a call to /api/now.
   const baseDeclared = declaredPath.replace(/\/\{[a-zA-Z0-9_]+\}.*$/, '');
-  if (baseDeclared && (callPath === baseDeclared || callPath.startsWith(baseDeclared + '/'))) {
-    return true;
-  }
-  return false;
+  return Boolean(baseDeclared) && (callPath === baseDeclared || callPath.startsWith(baseDeclared + '/'));
 }
 
 // Does a route from a snapshot's httpRoutes ({path, match, module}) serve this path? A prefix route serves everything
@@ -60,6 +57,16 @@ function routeServes(route, callPath) {
 }
 
 const routeModule = (route) => route.module || route.owner;
+
+// The file types quick_arch.py reads as modules (its SOURCE_EXTENSIONS). A declared consumer of another type
+// (a PowerShell or shell script) never becomes a node, so it is not checked rather than missing.
+const SCANNED_EXTENSIONS = new Set(['.py', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx']);
+const SOURCE_NAMES = { '.ps1': 'PowerShell' };
+function unscannedReason(modulePath) {
+  const ext = path.extname(String(modulePath || '')).toLowerCase();
+  if (!ext || SCANNED_EXTENSIONS.has(ext)) return null;
+  return `${SOURCE_NAMES[ext] || ext} source, not scanned`;
+}
 
 const CHECK = { checked: 'confirmed', provider_missing: 'provider missing', consumer_missing: 'consumer missing', not_checked: 'no snapshot' };
 
@@ -250,10 +257,14 @@ function createContractsReader(options = {}) {
               const node = nodes.find((n) => n.id === cModule);
 
               const skipped = Array.isArray(cGraph.skipped) ? cGraph.skipped.find((s) => s && s.path === cModule) : null;
+              const unscanned = node ? null : unscannedReason(cModule);
 
               if (!node && skipped) {
                 cState = 'not_checked';
                 cDetail = `${cModule} is ${skipped.reason || 'not parsed'} in ${cRepo} at ${cSnap.commit.slice(0, 7)}`;
+              } else if (!node && unscanned) {
+                cState = 'not_checked';
+                cDetail = `${cModule}: ${unscanned} in ${cRepo} at ${cSnap.commit.slice(0, 7)}`;
               } else if (!node) {
                 cState = 'consumer_missing';
                 cDetail = `Module ${cModule} not found in ${cRepo} at ${cSnap.commit.slice(0, 7)}`;

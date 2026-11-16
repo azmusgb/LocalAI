@@ -411,3 +411,27 @@ test('contracts check: a schema 2 snapshot is no snapshot and adds nothing to un
   assert.equal(body.contracts[0].check, 'no snapshot');
   assert.deepEqual(body.undeclared, []);
 });
+
+test('contracts check: a truncated call under an undeclared-parameter path does not confirm the edge', async () => {
+  const now = { ...recordsEdge, id: 'now', provider: { repo: 'pi-hub', module: 'hub/app.py', method: 'GET', path: '/api/now' } };
+  // The only call is new URL(`/api/now/poster/${n}.jpg`, hub), recorded as /api/now/poster/: not a call to /api/now.
+  const reader = readerFor([now], {
+    'pi-hub': hubGraph([{ path: '/api/now', match: 'exact', module: 'hub/app.py' }]),
+    localai: localGraph([{ path: '/api/now/poster/', line: 144 }]),
+  });
+  const { body } = await reader.check();
+  assert.equal(body.contracts[0].check, 'consumer missing');
+});
+
+test('contracts check: a consumer in a file type the scanner does not read is not checked, not missing', async () => {
+  const edge = { ...recordsEdge, consumers: [{ repo: 'localai', module: 'deploy/Send-Report.ps1' }, { repo: 'localai', module: 'deploy/report.sh' }] };
+  const reader = readerFor([edge], { 'pi-hub': hubGraph([records]), localai: localGraph([]) });
+  const { body } = await reader.check();
+  const [ps1, sh] = body.contracts[0].consumers;
+  assert.equal(ps1.state, 'not_checked');
+  assert.match(ps1.detail, /PowerShell source, not scanned/);
+  assert.equal(sh.state, 'not_checked');
+  assert.match(sh.detail, /\.sh source, not scanned/);
+  assert.equal(body.contracts[0].check, 'no snapshot');
+  assert.equal(body.brokenCount, 0);
+});
