@@ -104,7 +104,9 @@ function createContractsReader(options = {}) {
         for (const host of hosts) {
           const targets = Array.isArray(host.targets) ? host.targets : [];
           for (const target of targets) {
-            if (target && target.atlas && target.commit) {
+            // Two targets can share a repo (mac-watch is a second deploy of localai); the target named
+            // after the repo is the live one, any other only fills a gap.
+            if (target && target.atlas && target.commit && (target.id === target.atlas || !commits[target.atlas])) {
               commits[target.atlas] = target.commit;
             }
           }
