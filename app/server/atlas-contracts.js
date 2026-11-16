@@ -127,10 +127,11 @@ function createContractsReader(options = {}) {
     if (!snapshots) return null;
     try {
       if (commit && typeof snapshots.find === 'function' && typeof snapshots.graph === 'function') {
-        const row = snapshots.find(repo, commit);
-        if (row) {
-          const g = snapshots.graph(row);
-          return { graph: g, commit: row.commit, live: true };
+        // The reader answers { row } or { error }, not the row itself.
+        const found = snapshots.find(repo, commit);
+        if (found && found.row) {
+          const g = snapshots.graph(found.row);
+          return { graph: g, commit: found.row.commit, live: true };
         }
       }
       // Fallback to newest snapshot for repo

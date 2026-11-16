@@ -23,7 +23,7 @@ test('contracts reader: checked when provider route and consumer call match', as
 
   const mockSnapshots = {
     find(repo, commit) {
-      return { repo, commit };
+      return { row: { repo, commit } };
     },
     list() {
       return { snapshots: [] };
@@ -98,7 +98,7 @@ test('contracts reader: provider missing when route not served or wrong owner', 
   ]));
 
   const mockSnapshots = {
-    find(repo, commit) { return { repo, commit }; },
+    find(repo, commit) { return { row: { repo, commit } }; },
     graph(row) {
       return {
         schemaVersion: 3,
@@ -149,7 +149,7 @@ test('contracts reader: consumer missing when module has no call to route', asyn
   ]));
 
   const mockSnapshots = {
-    find(repo, commit) { return { repo, commit }; },
+    find(repo, commit) { return { row: { repo, commit } }; },
     graph() {
       return {
         schemaVersion: 3,
@@ -199,7 +199,7 @@ test('contracts reader: unmapped repo or schema 2 snapshot is not_checked', asyn
   ]));
 
   const mockSnapshots = {
-    find(repo, commit) { return { repo, commit }; },
+    find(repo, commit) { return { row: { repo, commit } }; },
     graph(row) {
       if (row.repo === 'pi-hub') {
         return {
@@ -283,7 +283,7 @@ function readerFor(contracts, graphs, options = {}) {
   const contractsFile = path.join(dir, 'contracts.json');
   fs.writeFileSync(contractsFile, JSON.stringify(contracts));
   const snapshots = {
-    find(repo, commit) { return graphs[repo] ? { repo, commit } : null; },
+    find(repo, commit) { return graphs[repo] ? { row: { repo, commit } } : { error: 'atlas_snapshot_missing' }; },
     list() { return { snapshots: Object.keys(graphs).map((repo) => ({ repo, commit: 'c'.repeat(40), generatedAt: '2026-11-15T00:00:00Z' })) }; },
     graph(row) { return graphs[row.repo]; },
   };
@@ -434,4 +434,31 @@ test('contracts check: a consumer in a file type the scanner does not read is no
   assert.match(sh.detail, /\.sh source, not scanned/);
   assert.equal(body.contracts[0].check, 'no snapshot');
   assert.equal(body.brokenCount, 0);
+});
+
+test('contracts read the live-commit snapshot through the real snapshot reader', async () => {
+  const { createSnapshotReader } = require('../app/server/atlas');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'contracts-real-reader-'));
+  const commit = 'a'.repeat(40);
+  fs.mkdirSync(path.join(dir, 'pi-hub', commit), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'pi-hub', commit, 'graph.json'), JSON.stringify({
+    schemaVersion: 3, nodes: [], edges: [], httpRoutes: [{ path: '/api/records', method: 'GET', match: '^/api/records$', module: 'hub/app.py' }],
+  }));
+  fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify({ snapshots: [
+    { repo: 'pi-hub', commit, generatedAt: '2026-11-15T00:00:00Z' },
+  ] }));
+  const contractsFile = path.join(dir, 'contracts.json');
+  fs.writeFileSync(contractsFile, JSON.stringify([{
+    id: 'records-v1', contract: 'record.v1',
+    provider: { repo: 'pi-hub', module: 'hub/app.py', method: 'GET', path: '/api/records' },
+    consumers: [],
+  }]));
+  const systems = { async read() { return { status: 200, body: { source: 'live', hosts: [{ targets: [{ atlas: 'pi-hub', commit }] }] } }; } };
+  const reader = createContractsReader({
+    contractsPath: contractsFile, snapshots: createSnapshotReader(dir, ['pi-hub']), systems, repos: ['pi-hub'],
+  });
+  const out = await reader.check();
+  assert.equal(out.body.contracts[0].provider.detail === undefined || !/No snapshot/.test(out.body.contracts[0].provider.detail), true);
+  assert.notEqual(out.body.contracts[0].check, 'no snapshot');
+  assert.equal(out.body.contracts[0].provider.commit, commit);
 });
