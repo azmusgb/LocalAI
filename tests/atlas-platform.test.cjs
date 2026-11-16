@@ -200,7 +200,7 @@ test('table rows say which provider and consumer modules can be shown on the map
 });
 
 test('no two link marks overlap or touch, for every declared edge, at every width the graph is drawn', () => {
-  const declared = require('../atlas/contracts.json').map((c) => ({ ...c, check: 'no snapshot',
+  const declared = require('../app/atlas/contracts.json').map((c) => ({ ...c, check: 'no snapshot',
     provider: { ...c.provider, state: 'checked' }, consumers: c.consumers.map((x) => ({ ...x, state: 'not_checked' })) }));
   const m = platform.platformModel(null, { contracts: declared, undeclared: [], brokenCount: 0, commits: {} });
   assert.equal(m.nodes.length, 6);

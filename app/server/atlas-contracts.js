@@ -1,6 +1,6 @@
 'use strict';
 
-// Joins atlas/contracts.json with snapshot graphs and live release commits from Pi Hub (GET /api/systems).
+// Joins app/atlas/contracts.json with snapshot graphs and live release commits from Pi Hub (GET /api/systems).
 // Computes cross-repo contract edge states:
 // - checked: provider serves route in module; consumer calls route in module
 // - provider_missing: provider has no such route or owned by different module
@@ -12,7 +12,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const CONTRACTS_PATH = path.resolve(__dirname, '..', '..', 'atlas', 'contracts.json');
+const CONTRACTS_PATH = path.resolve(__dirname, '..', 'atlas', 'contracts.json');
 
 function normalizeRoutePattern(routePath) {
   if (!routePath) return '';

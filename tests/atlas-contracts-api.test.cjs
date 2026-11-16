@@ -260,7 +260,7 @@ test('apiAtlas route /api/atlas/contracts serves contract evaluations', async ()
     json,
     readBody,
     fetchWithTimeout,
-    contractsPath: path.resolve(__dirname, '..', 'atlas', 'contracts.json')
+    contractsPath: path.resolve(__dirname, '..', 'app', 'atlas', 'contracts.json')
   });
 
   const req = { method: 'GET', url: '/api/atlas/contracts' };
@@ -268,7 +268,7 @@ test('apiAtlas route /api/atlas/contracts serves contract evaluations', async ()
   const out = await atlas.apiAtlas(req, res, '/api/atlas/contracts');
   assert.equal(out.status, 200);
   assert.ok(Array.isArray(out.body.contracts));
-  const declared = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'atlas', 'contracts.json'), 'utf8'));
+  const declared = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'app', 'atlas', 'contracts.json'), 'utf8'));
   assert.equal(out.body.contracts.length, declared.length);
   assert.ok(Array.isArray(out.body.undeclared));
   for (const c of out.body.contracts) {

@@ -3,9 +3,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-test('atlas/contracts.json adheres to schema and semantic invariants', () => {
-  const filePath = path.join(__dirname, '..', 'atlas', 'contracts.json');
-  assert.ok(fs.existsSync(filePath), 'atlas/contracts.json must exist');
+test('app/atlas/contracts.json adheres to schema and semantic invariants', () => {
+  const filePath = path.join(__dirname, '..', 'app', 'atlas', 'contracts.json');
+  assert.ok(fs.existsSync(filePath), 'app/atlas/contracts.json must exist');
 
   const raw = fs.readFileSync(filePath, 'utf8');
   const contracts = JSON.parse(raw);
@@ -47,8 +47,8 @@ test('atlas/contracts.json adheres to schema and semantic invariants', () => {
   }
 });
 
-test('atlas/contracts.json declares the Pi Hub calls of home-mcp and the smart display (platform capture spec)', () => {
-  const contracts = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'atlas', 'contracts.json'), 'utf8'));
+test('app/atlas/contracts.json declares the Pi Hub calls of home-mcp and the smart display (platform capture spec)', () => {
+  const contracts = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'app', 'atlas', 'contracts.json'), 'utf8'));
   const consumersOf = (repo) => contracts.filter((c) => c.consumers.some((cons) => cons.repo === repo)).map((c) => c.provider.path);
   for (const p of ['/api/workshop', '/api/pi', '/api/system/backups', '/api/freshness', '/api/alerts']) {
     assert.ok(consumersOf('home-mcp').includes(p), `home-mcp calls ${p}`);
@@ -60,8 +60,8 @@ test('atlas/contracts.json declares the Pi Hub calls of home-mcp and the smart d
   }
 });
 
-test('atlas/contracts.json declares the smart display calls to Local AI, its default backend', () => {
-  const contracts = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'atlas', 'contracts.json'), 'utf8'));
+test('app/atlas/contracts.json declares the smart display calls to Local AI, its default backend', () => {
+  const contracts = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'app', 'atlas', 'contracts.json'), 'utf8'));
   for (const [method, p] of [['GET', '/api/display/feed'], ['GET', '/api/display/ask'], ['POST', '/api/display/pair']]) {
     const edge = contracts.find((c) => c.provider.repo === 'localai' && c.provider.method === method && c.provider.path === p);
     assert.ok(edge, `localai serves ${method} ${p} to the smart display`);
@@ -72,3 +72,10 @@ test('atlas/contracts.json declares the smart display calls to Local AI, its def
   }
 });
 
+
+test('the default contracts path sits inside app/, the only tree the deploy copies to the container', () => {
+  const { CONTRACTS_PATH } = require('../app/server/atlas-contracts');
+  const appRoot = path.join(__dirname, '..', 'app') + path.sep;
+  assert.ok(CONTRACTS_PATH.startsWith(appRoot), `${CONTRACTS_PATH} is outside app/`);
+  assert.ok(fs.existsSync(CONTRACTS_PATH), `${CONTRACTS_PATH} must exist`);
+});
