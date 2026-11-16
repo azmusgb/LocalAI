@@ -34,22 +34,23 @@ function hostHealth(host){
 function freshSentence(f){
   const n=Number(f.behind);
   if(f.state==='current')return 'Map matches the running release';
-  if(f.state==='behind')return Number.isInteger(n)&&n>0?`Map is ${plural(n,'commit')} behind the running release`:'Map is behind the running release';
+  if(f.state==='behind')return Number.isInteger(n)&&n>0?`Map is ${plural(n,'commit')} behind the running release`:'Map is of a different commit than the running release';
   if(f.state==='ahead')return 'Map is newer than the running release';
   if(f.state==='no release')return 'No release recorded';
-  return 'Mapped';
+  return 'Freshness unknown';
 }
 
 function repoLine(repo,now=Date.now()){
   const snap=repo?.snapshot;
   if(!snap)return 'Not mapped yet';
-  const f=repo.freshness||{state:repo.liveCommit?(repo.atLive?'current':'behind'):'no release'};
+  const f=repo.freshness||{state:!repo.liveCommit?'no release':snap.commit===repo.liveCommit?'current':'behind'};
   const parts=[freshSentence(f)];
   const differs=f.state==='behind'||f.state==='ahead';
   if(differs&&repo.liveCommit)parts.push(`map ${short(snap.commit)}, live ${short(repo.liveCommit)}`);
   else parts.push(f.state==='no release'?`map ${short(snap.commit)}`:short(snap.commit));
   const t=Date.parse(snap.generatedAt);
   if(Number.isFinite(t)){const d=Math.floor((now-t)/86400000);parts.push(d<1?'today':`${plural(d,'day')} old`);}
+  if(f.state==='behind'&&repo.atLive)parts.push('a map of the running release exists');
   return parts.join(' · ');
 }
 

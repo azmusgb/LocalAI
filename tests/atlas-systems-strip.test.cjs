@@ -39,7 +39,7 @@ test('a repository says in words whether its map matches the running release', (
   assert.equal(strip.repoLine({ snapshot: { commit: A, generatedAt: '2026-11-04T23:00:00Z' }, liveCommit: A, freshness: F('current', { scanned: A, scanAgeSeconds: 3600 }) }, NOW),
     'Map matches the running release · aaaaaaa · today');
   assert.equal(strip.repoLine({ snapshot: snapB, liveCommit: A, freshness: F('behind') }, NOW),
-    'Map is behind the running release · map bbbbbbb, live aaaaaaa · 4 days old');
+    'Map is of a different commit than the running release · map bbbbbbb, live aaaaaaa · 4 days old');
   assert.equal(strip.repoLine({ snapshot: snapB, liveCommit: null, freshness: F('no release', { live: null }) }, NOW),
     'No release recorded · map bbbbbbb · 4 days old');
 });
@@ -57,8 +57,18 @@ test('a known commit count is said, an unknown one is left out, and ahead never 
   assert.doesNotMatch(strip.repoLine({ snapshot: snapB, liveCommit: A, freshness: F('behind', { behind: -4 }) }, NOW), /-\d|commits/);
 });
 
+test('a different commit never reads newer, and says when a map of the running release exists', () => {
+  const line = strip.repoLine({ snapshot: snapB, liveCommit: A, atLive: true, freshness: F('behind') }, NOW);
+  assert.equal(line, 'Map is of a different commit than the running release · map bbbbbbb, live aaaaaaa · 4 days old · a map of the running release exists');
+  assert.doesNotMatch(line, /newer|matches/);
+});
+
 test('a repository from an older copy without freshness still reads', () => {
   assert.equal(strip.repoLine({ snapshot: null, liveCommit: A }, NOW), 'Not mapped yet');
+  assert.equal(strip.repoLine({ snapshot: snapB, liveCommit: A, atLive: true }, NOW),
+    'Map is of a different commit than the running release · map bbbbbbb, live aaaaaaa · 4 days old · a map of the running release exists');
+  assert.equal(strip.repoLine({ snapshot: { commit: A, generatedAt: null }, liveCommit: A }, NOW), 'Map matches the running release · aaaaaaa');
+  assert.match(strip.repoLine({ snapshot: snapB, liveCommit: A, freshness: F('odd') }, NOW), /^Freshness unknown/);
   assert.equal(strip.repoLine({ snapshot: { commit: B, generatedAt: null }, liveCommit: null }, NOW), 'No release recorded · map bbbbbbb');
 });
 

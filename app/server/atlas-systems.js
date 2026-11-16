@@ -37,27 +37,22 @@ function clean(body, repos) {
   return { hosts, hubAsOf: Number.isFinite(asOf) && asOf > 0 ? new Date(asOf * 1000).toISOString() : null };
 }
 
-// How the newest map compares with the running release. The commit distance needs git, and the runner's mirror lives on
-// the host (the container reads only index.json), so `behind` stays null unless a snapshot row carries `behind`; the
-// state is then worked out from what is known: the same commit is current, a newer scan with a map at the live commit
-// (or taken after the release) is ahead, anything else differs and is behind. Never a negative or invented count.
-function freshness(target, mine, newest, nowMs) {
+// How the newest map compares with the running release. Commit ancestry needs git, and the runner's mirror lives on the
+// host (the container reads only index.json), so this never says `ahead` (a newer map) and `behind` stays null unless a
+// snapshot row carries a positive integer `behind`. Without ancestry: the same commit is current; any other commit is
+// `behind` (the page words it neutrally as a different commit). No time comparison: the runner scans any ref, and the
+// hub's and the PC's clocks differ.
+function freshness(target, newest, nowMs) {
   const live = target.commit || null;
   const scanned = newest?.commit || null;
   const at = Date.parse(newest?.generatedAt);
   const scanAgeSeconds = Number.isFinite(at) ? Math.max(0, Math.round((nowMs - at) / 1000)) : null;
   const known = Number(newest?.behind);
-  const behind = Number.isInteger(known) && known > 0 ? known : null;
-  let state;
+  let state = 'behind';
   if (!newest) state = 'no snapshot';
   else if (!live) state = 'no release';
   else if (scanned === live) state = 'current';
-  else {
-    const deployed = Date.parse(target.deployedAt);
-    const newer = mine.some((r) => r.commit === live) || (Number.isFinite(deployed) && Number.isFinite(at) && at > deployed);
-    state = newer ? 'ahead' : 'behind';
-  }
-  return { live, scanned, behind: state === 'behind' ? behind : null, scanAgeSeconds, state };
+  return { live, scanned, behind: state === 'behind' && Number.isInteger(known) && known > 0 ? known : null, scanAgeSeconds, state };
 }
 
 // Each host's repositories that Atlas keeps: the newest snapshot, whether one exists at the commit that is live, and how
@@ -73,7 +68,7 @@ function withSnapshots(hosts, list, nowMs = Date.now()) {
       const newest = mine[0];
       repos.push({ repo: t.atlas, label: REPO_LABELS[t.atlas] || t.atlas, liveCommit: t.commit,
         snapshot: newest ? { commit: newest.commit, generatedAt: newest.generatedAt || null } : null,
-        atLive: !!t.commit && mine.some((r) => r.commit === t.commit), freshness: freshness(t, mine, newest, nowMs) });
+        atLive: !!t.commit && mine.some((r) => r.commit === t.commit), freshness: freshness(t, newest, nowMs) });
     }
     return { ...h, repos };
   });

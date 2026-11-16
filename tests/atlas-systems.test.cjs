@@ -96,12 +96,35 @@ test('freshness: a map older than the live commit is behind, and the count stays
   assert.equal(f.scanned, A);
 });
 
-test('freshness: a newer map than the live release is ahead, never a negative count', async () => {
-  const f = await fresh({ commit: A }, [{ repo: 'pi-hub', commit: B, generatedAt: '2026-11-04T00:00:00Z' },
-    { repo: 'pi-hub', commit: A, generatedAt: '2026-11-01T00:00:00Z' }]);
-  assert.equal(f.state, 'ahead');
+test('freshness: an older ref scanned after the deploy is behind, never newer', async () => {
+  const f = await fresh({ commit: C, deployed_at: '2026-11-01T00:00:00Z' }, [{ repo: 'pi-hub', commit: B, generatedAt: '2026-11-04T00:00:00Z' }]);
+  assert.equal(f.state, 'behind');
   assert.equal(f.behind, null);
   assert.equal(f.scanned, B);
+});
+
+test('freshness: a map of the live commit exists but the newest differs, still behind and never ahead', async () => {
+  const f = await fresh({ commit: A }, [{ repo: 'pi-hub', commit: B, generatedAt: '2026-11-04T00:00:00Z' },
+    { repo: 'pi-hub', commit: A, generatedAt: '2026-11-01T00:00:00Z' }]);
+  assert.equal(f.state, 'behind');
+  assert.equal(f.behind, null);
+  assert.equal(f.scanned, B);
+  const { body } = await setup({ hub: (() => { const h = structuredClone(HUB); h.hosts[2].targets = [{ id: 'pi-hub', label: 'Pi Hub', atlas: 'pi-hub', state: 'live', commit: A }]; return h; })(),
+    snaps: { repos: ['pi-hub'], snapshots: [{ repo: 'pi-hub', commit: B, generatedAt: '2026-11-04T00:00:00Z' }, { repo: 'pi-hub', commit: A, generatedAt: '2026-11-01T00:00:00Z' }] } }).systems.read();
+  assert.equal(body.hosts[2].repos[0].atLive, true, 'the page says a map of the running release exists');
+});
+
+test('freshness: a missing or odd deployed_at changes nothing', async () => {
+  const rows = [{ repo: 'pi-hub', commit: B, generatedAt: '2026-11-04T00:00:00Z' }];
+  const a = await fresh({ commit: C, deployed_at: null }, rows);
+  const b = await fresh({ commit: C, deployed_at: '2030-01-01T00:00:00Z' }, rows);
+  assert.deepEqual(a, b);
+  assert.equal(a.state, 'behind');
+});
+
+test('freshness: a positive count on the row is passed through, a bad one is not', async () => {
+  assert.equal((await fresh({ commit: C }, [{ repo: 'pi-hub', commit: B, behind: 3, generatedAt: '2026-11-04T00:00:00Z' }])).behind, 3);
+  assert.equal((await fresh({ commit: C }, [{ repo: 'pi-hub', commit: B, behind: -3, generatedAt: '2026-11-04T00:00:00Z' }])).behind, null);
 });
 
 test('freshness: a repository with no release record says no release', async () => {
