@@ -59,3 +59,16 @@ test('atlas/contracts.json declares the Pi Hub calls of home-mcp and the smart d
     assert.match(c.source, /:\d+/, `${c.id} source names a file and line`);
   }
 });
+
+test('atlas/contracts.json declares the smart display calls to Local AI, its default backend', () => {
+  const contracts = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'atlas', 'contracts.json'), 'utf8'));
+  for (const [method, p] of [['GET', '/api/display/feed'], ['GET', '/api/display/ask'], ['POST', '/api/display/pair']]) {
+    const edge = contracts.find((c) => c.provider.repo === 'localai' && c.provider.method === method && c.provider.path === p);
+    assert.ok(edge, `localai serves ${method} ${p} to the smart display`);
+    assert.equal(edge.provider.module, 'app/server.js');
+    assert.deepEqual(edge.consumers, [{ repo: 'bambuhelper-smart-display', module: 'firmware/platform/localai/workshop_localai_feed.cpp' }]);
+    assert.match(edge.source, /app\/server\.js:\d+/, `${edge.id} source names the provider line`);
+    assert.match(edge.source, /workshop_localai_feed\.cpp:\d+/, `${edge.id} source names the consumer line`);
+  }
+});
+

@@ -2461,34 +2461,6 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 #architecture .atlas-host small{color:var(--ui-muted);font-size:var(--ui-fs-2);overflow-wrap:anywhere}
 #architecture .atlas-host-none{margin:0;color:var(--ui-muted);font-size:var(--ui-fs-2)}
 
-/* Between systems collapsible drawer (Atlas across repos, PR 4) */
-#architecture .atlas-contracts{margin:0 0 16px;border:1px solid var(--ui-line);border-radius:var(--ui-r-3);background:var(--ui-surface)}
-#architecture .atlas-contracts-toggle{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;width:100%;padding:10px 14px;border:0;border-radius:var(--ui-r-3);background:transparent;color:var(--ui-text);font:inherit;text-align:left;cursor:pointer}
-#architecture .atlas-contracts-toggle:hover{background:var(--ui-surface-2)}
-#architecture .atlas-contracts-toggle:focus-visible{outline:2px solid var(--ui-accent-text);outline-offset:-2px}
-#architecture .atlas-contracts-chevron{font-size:var(--ui-fs-4);transition:transform .15s ease}
-#architecture .atlas-contracts-toggle[aria-expanded="true"] .atlas-contracts-chevron{transform:rotate(90deg)}
-#architecture .atlas-contracts-title{font-weight:600;font-size:var(--ui-fs-4)}
-#architecture .atlas-contracts-summary{color:var(--ui-muted);font-size:var(--ui-fs-2);overflow-wrap:anywhere}
-#architecture .atlas-contracts-summary[data-tone="warn"]{color:var(--ui-warn)}
-#architecture .atlas-contracts-summary[data-tone="error"]{color:var(--ui-bad)}
-#architecture .atlas-contracts-body{padding:0 14px 14px;border-top:1px solid var(--ui-line)}
-#architecture .atlas-contracts-list{display:grid;gap:8px;padding-top:12px}
-#architecture .atlas-contract-row{display:grid;grid-template-columns:minmax(140px,200px) minmax(200px,1fr) minmax(200px,1fr) auto;gap:12px;align-items:center;padding:8px 12px;border:1px solid var(--ui-line);border-radius:var(--ui-r-3);background:var(--ui-bar);font-size:var(--ui-fs-2)}
-#architecture .atlas-contract-name{font-weight:600;overflow-wrap:anywhere}
-#architecture .atlas-contract-provider,#architecture .atlas-contract-consumers{display:flex;flex-wrap:wrap;gap:4px;align-items:center;overflow-wrap:anywhere}
-#architecture .atlas-contract-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border:1px solid var(--ui-line);border-radius:var(--ui-r-2);background:var(--ui-surface);color:var(--ui-text);font:inherit;font-size:var(--ui-fs-2);text-decoration:none;cursor:pointer}
-#architecture .atlas-contract-chip:hover{border-color:var(--ui-line-2);background:var(--ui-surface-2)}
-#architecture .atlas-contract-chip code{font-family:monospace;font-size:0.9em}
-#architecture .atlas-contract-status{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:var(--ui-r-2);font-weight:500;font-size:var(--ui-fs-2);white-space:nowrap}
-#architecture .atlas-contract-status[data-state="checked"]{background:color-mix(in srgb,var(--ui-ok) 12%,transparent);color:var(--ui-ok)}
-#architecture .atlas-contract-status[data-state="broken"]{background:color-mix(in srgb,var(--ui-bad) 12%,transparent);color:var(--ui-bad)}
-#architecture .atlas-contract-status[data-state="partially_checked"],#architecture .atlas-contract-status[data-state="not_checked"]{background:var(--ui-surface-2);color:var(--ui-muted)}
-
-@media (max-width: 900px){
-  #architecture .atlas-contract-row{grid-template-columns:1fr;gap:6px}
-}
-
 #architecture .atlas-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,300px);gap:16px;align-items:start;min-width:0}
 #architecture .atlas-sheet,#architecture .atlas-inspector{min-width:0;border:1px solid var(--ui-line);border-radius:var(--ui-r-3);background:var(--ui-surface)}
 #architecture .atlas-sheet-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px;padding:14px 14px 0}

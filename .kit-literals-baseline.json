@@ -6,11 +6,11 @@
     },
     "app/public/app.css": {
       "colour": 204,
-      "type": 2,
-      "space": 1014,
+      "type": 1,
+      "space": 1000,
       "radius": 57,
       "shadow": 44,
-      "motion": 33,
+      "motion": 32,
       "layer": 32,
       "name": 40
     },

@@ -163,3 +163,18 @@ test('a repository in the systems list that no contract names still gets a node'
   assert.equal(m.nodes.length, 7);
   assert.equal(m.nodes.filter((x) => x.id === 'localai').length, 1, 'no repeats');
 });
+
+test('the table says why an edge is not confirmed, in the contract check\'s own words, and names the live commits', () => {
+  const broken = edge('gone', '/api/gone', [['localai', 'app/x.js', 'checked']], 'provider_missing');
+  broken.provider.detail = 'pi-hub does not serve /api/gone at e693e6e';
+  const withCommits = { ...FIXTURE, contracts: [broken, ...FIXTURE.contracts], commits: { localai: '9cce9df000000000', 'pi-hub': 'e693e6e000000000' } };
+  const m = platform.platformModel(null, withCommits);
+  assert.deepEqual(m.commits, [{ repo: 'pi-hub', label: 'Pi Hub', commit: 'e693e6e' }, { repo: 'localai', label: 'Local AI', commit: '9cce9df' }]);
+  const notes = Object.fromEntries(platform.tableRows(m).map((r) => [r.id, r.note]));
+  assert.equal(notes.gone, 'pi-hub does not serve /api/gone at e693e6e');
+  assert.equal(notes['now-summary'], 'Declared but not found');
+  assert.equal(notes['records-v1'], "home-mcp isn't mapped");
+  assert.equal(notes['print-lab-sync'], '', 'a confirmed edge has nothing to explain');
+  assert.deepEqual(platform.platformModel(null, FIXTURE).commits, []);
+});
+

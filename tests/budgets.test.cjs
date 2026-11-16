@@ -130,7 +130,10 @@ const KB = 1024;
 // in app.css (+1.1 KB) and the section in index.html (+0.1 KB); 357.2 KB measured.
 // 2026-11-15: 358 → 359 KB and architecture.js 17 → 18 KB for skipped files on the map (the source-note sentence, the
 // disclosure of paths, the empty-state sentence; architecture.js +0.55 KB, app.css +0.2 KB).
-const TOTAL = 359 * KB;
+// 2026-11-15: 359 → 358 KB and architecture.js 18 → 17 KB when the old Between systems list went (its markup, renderer
+// and styles; the platform table now says why an edge is not confirmed and names the live releases, atlas-platform.js
+// +0.3 KB); 357.5 KB measured.
+const TOTAL = 358 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
@@ -167,7 +170,7 @@ const TOTAL = 359 * KB;
 // app.css +0.1 KB, its Atlas section rewritten in one pass without the layered overrides; 321.8 KB measured).
 // 2026-11-02: index.html 16 → 17 KB for the navigation update: the Settings and Tools pages, the Spreadsheets chip and
 // mode, and Home's On Pi Hub line (16.1 KB measured).
-const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 37.5 * KB, 'index.html': 17 * KB, 'home.js': 14 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 18 * KB };
+const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 37.5 * KB, 'index.html': 17 * KB, 'home.js': 14 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;

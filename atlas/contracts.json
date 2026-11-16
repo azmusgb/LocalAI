@@ -464,5 +464,59 @@
       }
     ],
     "source": "pi-hub hub/display_routes.py:214; bambuhelper-smart-display firmware/platform/localai/workshop_localai_feed.cpp:702 (backend PiHub, workshop_localai_feed_core.hpp:102)"
+  },
+  {
+    "id": "display-localai-feed",
+    "contract": null,
+    "label": "Display feed (Local AI)",
+    "provider": {
+      "repo": "localai",
+      "module": "app/server.js",
+      "method": "GET",
+      "path": "/api/display/feed"
+    },
+    "consumers": [
+      {
+        "repo": "bambuhelper-smart-display",
+        "module": "firmware/platform/localai/workshop_localai_feed.cpp"
+      }
+    ],
+    "source": "localai app/server.js:621 (auth :169); bambuhelper-smart-display firmware/platform/localai/workshop_localai_feed.cpp:304 (default backend Local AI, workshop_localai_feed_core.hpp:101)"
+  },
+  {
+    "id": "display-localai-ask",
+    "contract": null,
+    "label": "Display ask (Local AI)",
+    "provider": {
+      "repo": "localai",
+      "module": "app/server.js",
+      "method": "GET",
+      "path": "/api/display/ask"
+    },
+    "consumers": [
+      {
+        "repo": "bambuhelper-smart-display",
+        "module": "firmware/platform/localai/workshop_localai_feed.cpp"
+      }
+    ],
+    "source": "localai app/server.js:625 (auth :171); bambuhelper-smart-display firmware/platform/localai/workshop_localai_feed.cpp:393 (default backend Local AI, workshop_localai_feed_core.hpp:101)"
+  },
+  {
+    "id": "display-localai-pair",
+    "contract": null,
+    "label": "Display pairing (Local AI)",
+    "provider": {
+      "repo": "localai",
+      "module": "app/server.js",
+      "method": "POST",
+      "path": "/api/display/pair"
+    },
+    "consumers": [
+      {
+        "repo": "bambuhelper-smart-display",
+        "module": "firmware/platform/localai/workshop_localai_feed.cpp"
+      }
+    ],
+    "source": "localai app/server.js:634 (open path app/signin.js:11); bambuhelper-smart-display firmware/platform/localai/workshop_localai_feed.cpp:800 (default backend Local AI, workshop_localai_feed_core.hpp:101)"
   }
 ]
