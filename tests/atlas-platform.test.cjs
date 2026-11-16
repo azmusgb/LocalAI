@@ -133,3 +133,33 @@ test('a node takes its label and map freshness from the systems list when it has
   assert.equal(m.nodes.find((n) => n.id === 'print-lab').line, 'Not mapped yet');
   assert.equal(m.nodes.find((n) => n.id === 'pi-hub').line, '', 'no systems row, no line');
 });
+
+test('two consumers from one repository on one edge: the link, its route and the table all take the worst', () => {
+  const m = platform.platformModel(null, contracts([edge('records-v1', '/api/records',
+    [['localai', 'app/pi-hub.js', 'checked'], ['localai', 'app/atlas-releases.js', 'consumer_missing', 'Declared but not found']])]));
+  const link = m.links.find((l) => l.id === 'localai>pi-hub');
+  assert.equal(link.routes.length, 1, 'one route for the edge, not two');
+  assert.equal(link.routes[0].mark.text, 'Missing');
+  assert.equal(link.mark.text, 'Missing');
+  assert.equal(platform.tableRows(m)[0].mark.text, 'Missing');
+  const reversed = platform.platformModel(null, contracts([edge('records-v1', '/api/records',
+    [['localai', 'app/atlas-releases.js', 'consumer_missing'], ['localai', 'app/pi-hub.js', 'checked']])]));
+  assert.equal(reversed.links[0].routes[0].mark.text, 'Missing', 'order does not matter');
+});
+
+test('a route keeps the consumer system\'s mark and the whole edge\'s mark apart', () => {
+  const m = platform.platformModel(null, FIXTURE);
+  const route = m.links.find((l) => l.id === 'localai>pi-hub').routes.find((r) => r.edge.id === 'records-v1');
+  assert.equal(route.mark.text, 'Confirmed', 'for Local AI');
+  assert.equal(route.edge.mark.text, 'Not checked', 'the whole contract: home-mcp is not mapped');
+});
+
+test('a repository in the systems list that no contract names still gets a node', () => {
+  const systems = { hosts: [{ id: 'mac', repos: [{ repo: 'garage-door', label: 'Garage door', snapshot: null }] }] };
+  const m = platform.platformModel(systems, contracts([]));
+  const n = m.nodes.find((x) => x.id === 'garage-door');
+  assert.ok(n, 'appended');
+  assert.equal(n.label, 'Garage door');
+  assert.equal(m.nodes.length, 7);
+  assert.equal(m.nodes.filter((x) => x.id === 'localai').length, 1, 'no repeats');
+});

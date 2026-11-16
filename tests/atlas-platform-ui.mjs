@@ -74,7 +74,7 @@ await check('tab to a link, Enter shows its provider and consumers; Space shows 
   const first = await desk.evaluate(() => document.activeElement.dataset.platformLink);
   assert.ok(first, 'Tab reaches a link');
   await desk.keyboard.press('Enter');
-  const detail = desk.locator(`${S} .atlas-platform-detail`);
+  const detail = desk.locator(`${S} .atlas-platform-detail--graph`);
   assert.equal(await detail.isVisible(), true);
   const text = await detail.innerText();
   assert.match(text, /Provider/);
@@ -89,6 +89,9 @@ await check('tab to a link, Enter shows its provider and consumers; Space shows 
   assert.match(local, /GET \/api\/camera/);
   assert.match(local, /Declared but not found in app\/print-lab\.js/);
   assert.match(local, /Local AI · app\/pi-hub\.js/);
+  const records = (await detail.locator('[data-edge="records-v1"] .atlas-platform-route').innerText()).replace(/\s+/g, ' ');
+  assert.match(records, /Confirmed for Local AI/, 'the route mark says whose it is');
+  assert.match(records, /Whole contract: Not checked/, 'and the edge-level mark sits beside it, as in the table');
 });
 
 await check('the table lists every declared edge in full, and arrow keys move between Graph and Table', async () => {
@@ -161,7 +164,13 @@ for (const scheme of ['dark', 'light']) {
       ['Pi Hub', 'Local AI', 'Print lab', 'Smart display', 'home-mcp', 'netmon']);
     assert.equal(await list.locator('button[data-platform-link]').count(), 4);
     await list.locator('[data-platform-link="print-lab>pi-hub"]').click();
-    assert.match(await phone.locator(`${S} .atlas-platform-detail`).innerText(), /Print lab → Pi Hub/);
+    const shown = list.locator('[data-node="print-lab"] .atlas-platform-detail');
+    assert.match(await shown.innerText(), /Print lab → Pi Hub/, 'the detail opens under the chosen system');
+    const head = await shown.locator('h3').boundingBox();
+    const vh = await phone.evaluate(() => innerHeight);
+    assert.ok(head && head.y >= 0 && head.y + head.height <= vh, `the detail heading is in view (${JSON.stringify(head)}, ${vh})`);
+    assert.equal(await phone.evaluate(() => document.activeElement.dataset.platformLink), 'print-lab>pi-hub', 'focus stays on the link');
+    assert.match(await phone.locator(`${S} [role="status"]`).innerText(), /Print lab → Pi Hub/, 'announced');
     const h = await list.locator('[data-platform-link="print-lab>pi-hub"]').evaluate((e) => e.getBoundingClientRect().height);
     assert.ok(h >= 44, `link height ${h}`);
     assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no sideways page scroll');
@@ -215,7 +224,7 @@ await check('with no snapshots every link reads Not checked, never Confirmed', a
   const marks = await noSnap.locator(`${S} .atlas-platform-canvas button[data-platform-link]`).evaluateAll((els) => els.map((e) => e.dataset.mark));
   assert.deepEqual([...new Set(marks)], ['not-checked']);
   await noSnap.locator(`${S} [data-platform-link="localai>pi-hub"]`).first().click();
-  assert.match(await noSnap.locator(`${S} .atlas-platform-detail`).innerText(), /No snapshot available for pi-hub/);
+  assert.match(await noSnap.locator(`${S} .atlas-platform-detail--graph`).innerText(), /No snapshot available for pi-hub/);
 });
 await noSnap.context().close();
 

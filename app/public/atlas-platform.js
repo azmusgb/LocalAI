@@ -79,6 +79,8 @@ function platformModel(systems,contracts){
   const ids=PLATFORM.map(p=>p.id);
   for(const c of list)for(const repo of [c.provider.repo,...(Array.isArray(c.consumers)?c.consumers:[]).map(x=>x?.repo)])
     if(typeof repo==='string'&&repo&&!ids.includes(repo))ids.push(repo);
+  // A repository Pi Hub's list keeps that neither the list above nor a contract names is still a system.
+  for(const repo of rows.keys())if(!ids.includes(repo))ids.push(repo);
   const nodes=ids.map(id=>{
     const p=PLATFORM.find(x=>x.id===id)||{id,label:id};
     const row=rows.get(id);
@@ -102,8 +104,9 @@ function platformModel(systems,contracts){
     if(c.repo===e.provider.repo)continue;
     const id=`${c.repo}>${e.provider.repo}`;
     if(!links.has(id))links.set(id,{id,from:c.repo,to:e.provider.repo,routes:[]});
-    const route=links.get(id).routes;
-    if(!route.some(r=>r.edge===e))route.push({edge:e,mark:c.mark});
+    // Two consumers of one edge in the same repository: the route reads the worse of the two.
+    const routes=links.get(id).routes,have=routes.find(r=>r.edge===e);
+    if(have)have.mark=worst([have.mark,c.mark]);else routes.push({edge:e,mark:c.mark});
   }
   for(const l of links.values())l.mark=worst(l.routes.map(r=>r.mark));
   let state='ready',message='';
@@ -190,9 +193,9 @@ const nodeText=(n,model)=>{
   return `<span class="atlas-platform-name" title="${esc(n.label)}">${esc(n.label)}</span>${lines.map(t=>`<small>${esc(t)}</small>`).join('')}`;
 };
 
-function linkButton(l,model,sel,inner){
+function linkButton(l,model,sel,inner,where){
   const from=model.nodes.find(n=>n.id===l.from)?.label||l.from,to=model.nodes.find(n=>n.id===l.to)?.label||l.to;
-  return `<button type="button" class="atlas-platform-link" data-platform-link="${esc(l.id)}" data-mark="${l.mark.key}" aria-pressed="${sel===l.id}" aria-controls="atlasPlatformDetail">${inner}${chip(l.mark)}<small>${esc(plural(l.routes.length,'route'))}</small><span class="visually-hidden"> from ${esc(from)} to ${esc(to)}</span></button>`;
+  return `<button type="button" class="atlas-platform-link" data-platform-link="${esc(l.id)}" data-mark="${l.mark.key}" aria-pressed="${sel===l.id}"${sel===l.id?` aria-controls="atlasPlatformDetail-${where}"`:''}>${inner}${chip(l.mark)}<small>${esc(plural(l.routes.length,'route'))}</small><span class="visually-hidden"> from ${esc(from)} to ${esc(to)}</span></button>`;
 }
 
 function canvas(model,sel){
@@ -204,7 +207,7 @@ function canvas(model,sel){
     const edge=p.row==='top'?p.y+NODE_EDGE:p.y-NODE_EDGE;
     return `<div class="atlas-platform-node" data-node="${esc(n.id)}" data-row="${p.row}" style="left:${pct(p.x,lay.width)};top:${pct(edge,lay.height)};width:${pct(p.slot*0.92,lay.width)}">${nodeText(n,model)}</div>`;}).join('');
   const marks=lay.paths.map(p=>{const l=model.links.find(x=>x.id===p.id);
-    return `<div class="atlas-platform-mark" style="left:${pct(p.mx,lay.width)};top:${pct(p.my,lay.height)}">${linkButton(l,model,sel,'')}</div>`;}).join('');
+    return `<div class="atlas-platform-mark" style="left:${pct(p.mx,lay.width)};top:${pct(p.my,lay.height)}">${linkButton(l,model,sel,'','graph')}</div>`;}).join('');
   return `<div class="atlas-platform-canvas"><svg viewBox="0 0 ${lay.width} ${lay.height}" preserveAspectRatio="none" aria-hidden="true" focusable="false">${paths}</svg>${nodes}${marks}</div>`;
 }
 
@@ -213,21 +216,22 @@ function phoneList(model,sel){
     const out=model.links.filter(l=>l.from===n.id);
     const to=l=>model.nodes.find(x=>x.id===l.to)?.label||l.to;
     return `<li data-node="${esc(n.id)}"><div class="atlas-platform-list-head">${nodeText(n,model)}</div>${out.length?
-      `<ul>${out.map(l=>`<li>${linkButton(l,model,sel,`<span class="atlas-platform-to">To ${esc(to(l))}</span>`)}</li>`).join('')}</ul>`:''}</li>`;
+      `<ul>${out.map(l=>`<li>${linkButton(l,model,sel,`<span class="atlas-platform-to">To ${esc(to(l))}</span>`,'list')}</li>`).join('')}</ul>`:''}${out.some(l=>l.id===sel)?detail(model,sel,'list'):''}</li>`;
   }).join('')}</ul>`;
 }
 
-function detail(model,sel){
+// The chosen link's routes. In the graph it sits under the drawing; in the list, under the chosen system (where='list').
+function detail(model,sel,where){
   const l=model.links.find(x=>x.id===sel);
-  if(!l)return `<div id="atlasPlatformDetail" class="atlas-platform-detail" hidden></div>`;
+  if(!l)return '';
   const from=model.nodes.find(n=>n.id===l.from)?.label||l.from,to=model.nodes.find(n=>n.id===l.to)?.label||l.to;
   const bad=l.routes.filter(r=>r.mark.key==='missing').length,open=l.routes.filter(r=>r.mark.key==='not-checked').length;
   const said=[bad?`${bad} missing`:'',open?`${open} not checked`:''].filter(Boolean).join(', ');
-  return `<div id="atlasPlatformDetail" class="atlas-platform-detail" aria-labelledby="atlasPlatformDetailTitle">
-    <h3 id="atlasPlatformDetailTitle">${esc(from)} → ${esc(to)}</h3>
+  return `<div id="atlasPlatformDetail-${where}" class="atlas-platform-detail atlas-platform-detail--${where}" aria-labelledby="atlasPlatformDetailTitle-${where}">
+    <h3 id="atlasPlatformDetailTitle-${where}">${esc(from)} → ${esc(to)}</h3>
     <p class="atlas-platform-detail-sum">${esc(plural(l.routes.length,'route'))}${said?`: ${esc(said)}`:', all confirmed'}.</p>
     <ul class="atlas-platform-routes">${l.routes.map(({edge:e,mark})=>`<li data-edge="${esc(e.id)}">
-      <p class="atlas-platform-route"><code title="${esc(e.route)}">${esc(e.route)}</code>${chip(mark)}${e.name&&e.name!==e.id?`<small>${esc(e.name)}</small>`:''}</p>
+      <p class="atlas-platform-route"><code title="${esc(e.route)}">${esc(e.route)}</code><span class="atlas-platform-verdict">${chip(mark)} for ${esc(from)}</span><span class="atlas-platform-verdict">Whole contract: ${chip(e.mark)}</span>${e.name&&e.name!==e.id?`<small>${esc(e.name)}</small>`:''}</p>
       <dl>
         <div><dt>Provider</dt><dd>${esc(e.provider.text)}${e.provider.detail?`<small>${esc(e.provider.detail)}</small>`:''}</dd></div>
         <div><dt>Consumers</dt><dd><ul>${e.consumers.map(c=>`<li>${esc(c.text)} ${chip(c.mark)}${c.detail&&c.mark.key!=='confirmed'?`<small>${esc(c.detail)}</small>`:''}</li>`).join('')}</ul></dd></div>
@@ -268,7 +272,7 @@ function body(model,v){
   const tab=(id,label)=>`<button type="button" role="tab" id="atlasPlatformTab-${id}" data-view="${id}" aria-controls="atlasPlatform-${id}" aria-selected="${v.view===id}" tabindex="${v.view===id?0:-1}">${label}</button>`;
   return `<div class="ui-tabs atlas-platform-views" role="tablist" aria-label="Show the platform map as">${tab('graph','Graph')}${tab('table','Table')}</div>
     ${legend()}
-    <div id="atlasPlatform-graph" class="atlas-platform-panel ui-cq" role="tabpanel" aria-labelledby="atlasPlatformTab-graph"${v.view==='graph'?'':' hidden'}>${canvas(model,v.selected)}${phoneList(model,v.selected)}${detail(model,v.selected)}</div>
+    <div id="atlasPlatform-graph" class="atlas-platform-panel ui-cq" role="tabpanel" aria-labelledby="atlasPlatformTab-graph"${v.view==='graph'?'':' hidden'}>${canvas(model,v.selected)}${detail(model,v.selected,'graph')}${phoneList(model,v.selected)}</div>
     <div id="atlasPlatform-table" class="atlas-platform-panel ui-cq" role="tabpanel" aria-labelledby="atlasPlatformTab-table"${v.view==='table'?'':' hidden'}>${table(model)}</div>
     ${undeclared(model)}`;
 }
@@ -297,14 +301,29 @@ function draw(el){
   el.dataset.state=model.state;
   el.setAttribute('aria-busy',String(model.state==='loading'));
   el.innerHTML=`<div class="atlas-platform-head"><h2 id="atlasPlatformTitle">Platform map</h2>${s.text?`<p class="atlas-platform-summary" data-tone="${s.tone}">${esc(s.text)}</p>`:''}</div>${body(model,v)}`;
+  el.append(v.live);
   restoreFocus(el,key);
+}
+
+// A link chosen in the list (phone, narrow section): its detail opens under that system; bring its heading into view
+// and say it politely, focus staying on the link.
+function revealListDetail(el){
+  const v=views.get(el),box=el.querySelector('.atlas-platform-list .atlas-platform-detail');
+  if(!box)return;
+  v.live.textContent=`Showing ${box.querySelector('h3').textContent}. ${box.querySelector('.atlas-platform-detail-sum').textContent}`;
+  box.querySelector('h3').scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
 }
 
 function bind(el){
   el.addEventListener('click',e=>{
     const v=views.get(el);
     const link=e.target.closest('[data-platform-link]');
-    if(link){v.selected=link.dataset.platformLink;draw(el);return;}
+    if(link){
+      const inList=!!link.closest('.atlas-platform-list');
+      v.selected=link.dataset.platformLink;v.live.textContent='';draw(el);
+      if(inList)revealListDetail(el);
+      return;
+    }
     const tab=e.target.closest('[role="tab"][data-view]');
     if(tab&&tab.dataset.view!==v.view){v.view=tab.dataset.view;draw(el);}
   });
@@ -326,7 +345,11 @@ function bind(el){
 // { error } when it failed. Keeps the chosen view and link across calls.
 function renderPlatformGraph(el,systems,contracts){
   if(!el)return;
-  if(!views.has(el)){views.set(el,{view:'graph',selected:null});bind(el);}
+  if(!views.has(el)){
+    const live=document.createElement('p');
+    live.className='visually-hidden';live.setAttribute('role','status');live.setAttribute('aria-live','polite');
+    views.set(el,{view:'graph',selected:null,live});bind(el);
+  }
   Object.assign(views.get(el),{systems:systems||null,contracts:contracts||null});
   draw(el);
 }

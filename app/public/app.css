@@ -2397,6 +2397,7 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 @container (max-width:47.99rem){
   #architecture .atlas-platform-canvas{display:none}
   #architecture .atlas-platform-list{display:grid;gap:var(--ui-s-3)}
+  #architecture .atlas-platform-detail--graph{display:none}
 }
 #architecture .atlas-platform-detail{max-width:64rem;margin:var(--ui-s-4) 0 0;padding:var(--ui-s-4) 0 0;border-top:1px solid var(--ui-line)}
 #architecture .atlas-platform-detail h3{margin:0;font-size:var(--ui-fs-4)}
@@ -2405,6 +2406,8 @@ details.ux-int-group>summary{display:flex;flex-wrap:wrap;align-items:baseline;ga
 #architecture .atlas-platform-routes{display:grid;gap:var(--ui-s-4);margin:var(--ui-s-3) 0 0;padding:0;list-style:none}
 #architecture .atlas-platform-route{display:flex;flex-wrap:wrap;gap:var(--ui-s-1) var(--ui-s-2);align-items:center;margin:0;font-size:var(--ui-fs-3)}
 #architecture .atlas-platform-route small{color:var(--ui-muted);font-size:var(--ui-fs-2)}
+#architecture .atlas-platform-verdict{display:inline-flex;flex-wrap:wrap;gap:var(--ui-s-1);align-items:center;color:var(--ui-muted);font-size:var(--ui-fs-2)}
+#architecture .atlas-platform-list .atlas-platform-detail{margin-top:var(--ui-s-3);padding-top:var(--ui-s-3)}
 #architecture .atlas-platform :is(.atlas-platform-route,.atlas-platform-table,.atlas-platform-undeclared) code{font-family:var(--ui-mono);font-size:inherit;overflow-wrap:anywhere}
 #architecture .atlas-platform-routes dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr));gap:var(--ui-s-1) var(--ui-s-4);margin:var(--ui-s-2) 0 0;font-size:var(--ui-fs-2)}
 #architecture .atlas-platform-routes dt{color:var(--ui-muted)}
