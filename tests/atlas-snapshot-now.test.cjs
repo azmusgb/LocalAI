@@ -125,7 +125,7 @@ print(json.dumps(r.status()['recent']))`);
 
 test('extra repositories come from ATLAS_REPO_REMOTES, and only well-formed ones', { skip: !PY }, () => {
   const out = py(`print(json.dumps(sorted(m.remotes_from_env('netmon=git@github-atlas-netmon:azmusgb/netmon.git,bad name=x,evil=https://x.example/r.git'))))`);
-  assert.deepEqual(out, ['localai', 'netmon', 'pi-hub', 'print-lab']);
+  assert.deepEqual(out, ['bambuhelper-smart-display', 'localai', 'netmon', 'pi-hub', 'print-lab']);
 });
 
 test('the proxy forwards snapshot requests, and starting one needs sign-in', () => {

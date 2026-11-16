@@ -62,7 +62,12 @@ IGNORE_DIRS = {
 MAX_FILES = 900
 
 # What the last scan could not see, reported in the graph's stats so a partial diagram says so.
-SCAN: dict = {"truncated": False, "gitError": None}
+SCAN: dict = {"truncated": False, "gitError": None, "skipped": []}
+
+# Firmware repositories: their C/C++ and Arduino sources are not parsed, only listed in the graph's `skipped`.
+FIRMWARE_REPOS = {"bambuhelper-smart-display"}
+FIRMWARE_EXTENSIONS = {".c", ".cc", ".cpp", ".h", ".hpp", ".ino"}
+FIRMWARE_SKIP_REASON = "firmware source, not parsed"
 
 JS_IMPORT_RE = re.compile(
     r"""
@@ -132,13 +137,20 @@ def collect_files() -> list[Path]:
     followed (they can point outside the repo), and SCAN["truncated"] says when MAX_FILES cut the list short."""
     root = ROOT.resolve()
     found: list[Path] = []
+    skipped: list[dict] = []
+    firmware = bool(SNAPSHOT) and SNAPSHOT.get("repo") in FIRMWARE_REPOS
     for current, dirs, names in os.walk(root, followlinks=False):
         dirs[:] = sorted(d for d in dirs if d not in IGNORE_DIRS and not (Path(current) / d).is_symlink())
         for name in sorted(names):
             path = Path(current) / name
             if path.suffix.lower() in SOURCE_EXTENSIONS and not path.is_symlink() and path.is_file():
                 found.append(path)
+            elif (firmware and path.suffix.lower() in FIRMWARE_EXTENSIONS
+                  and not path.is_symlink() and path.is_file()):
+                skipped.append({"path": path.relative_to(root).as_posix(), "reason": FIRMWARE_SKIP_REASON})
     found.sort(key=lambda p: p.relative_to(root).as_posix())
+    skipped.sort(key=lambda row: row["path"])
+    SCAN["skipped"] = skipped
     SCAN["truncated"] = len(found) > MAX_FILES
     return found[:MAX_FILES]
 
@@ -1466,6 +1478,7 @@ def build_graph(files: list[Path]) -> dict:
         "changedNodes": changed_nodes,
         "stories": stories,
         "stats": stats,
+        "skipped": list(SCAN["skipped"]),
     }
 
 

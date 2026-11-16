@@ -217,6 +217,12 @@ answer either, the cause says so and Atlas is left not answering. Then:
 A manual rollback (`Rollback-LocalAI.ps1`) also puts Atlas on the restored release, from `releases\<sha>`; if that
 fails, the rollback still completes and `state.json` records `hostPartError`.
 
+**Atlas repository keys.** Atlas clones each repository over SSH with its own host alias on the PC (`~\.ssh\config`), one
+read-only deploy key per repository: `github-atlas-pihub` (pi-hub), `github-atlas-printlab` (print-lab) and
+`github-atlas-smartdisplay` (`azmusgb/bambuhelper-smart-display`, the smart display). The smart display's alias and key are
+an owner action on the PC and are not set up by a deploy; until they exist its snapshot fails with `git clone failed`. Its
+C/C++/Arduino sources are not parsed: the graph lists them under `skipped`.
+
 **Adding a part.** Add it to `host-parts.json` with its `kind`, `health` URL and the files it runs (`paths`, relative
 to the repo root). A scheduled task that a deploy should refresh needs a `home` (its folder under `C:\LocalAI`) and a
 command that runs its script by a bare name, not a path in the checkout. Then move it once with

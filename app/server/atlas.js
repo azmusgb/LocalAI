@@ -27,8 +27,8 @@ const SNAPSHOTS_PATH = [
   '/atlas-snapshots',
   path.resolve(__dirname, '..', '..', '.atlas', 'snapshots'),
 ].find((p) => p && fs.existsSync(p)) || '/atlas-snapshots';
-// Only these repositories are served, whatever the folder holds (plan decision 2: the core three first).
-const DEFAULT_REPOS = ['localai', 'pi-hub', 'print-lab'];
+// Only these repositories are served, whatever the folder holds (plan decision 2: the core three first, then the smart display).
+const DEFAULT_REPOS = ['localai', 'pi-hub', 'print-lab', 'bambuhelper-smart-display'];
 const COMMIT = /^[0-9a-f]{7,40}$/;
 // These answer about the latest scan, or with repo and commit about one snapshot.
 const SCOPED = new Set(['/api/atlas/summary', '/api/atlas/findings', '/api/atlas/node', '/api/atlas/ask', '/api/atlas/goose']);
