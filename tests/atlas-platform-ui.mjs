@@ -128,10 +128,11 @@ await check('Show on map opens the repository map at that module; a firmware con
   await desk.locator(`${S} [role="tab"][data-view="table"]`).click();
   const row = desk.locator(`${S} .atlas-platform-table tr[data-edge="records-v1"]`);
   const show = row.locator('td[data-label="Provider"] button.atlas-platform-show');
-  assert.equal(await show.getAttribute('aria-label'), 'Show hub/app.py on the map');
+  assert.equal(await show.innerText(), 'Show on map', 'the visible label');
+  assert.equal(await show.getAttribute('aria-label'), 'Show on map: hub/app.py in Pi Hub', 'the name starts with the visible label');
   assert.equal(await show.getAttribute('data-atlas-cross-repo'), 'pi-hub');
   assert.equal(await show.getAttribute('data-atlas-cross-module'), 'hub/app.py');
-  assert.equal(await show.isEnabled(), true);
+  assert.equal(await show.getAttribute('aria-disabled'), null);
   await show.focus();
   assert.equal(await desk.evaluate(() => document.activeElement.classList.contains('atlas-platform-show')), true, 'reachable by keyboard');
   await show.click();
@@ -139,12 +140,24 @@ await check('Show on map opens the repository map at that module; a firmware con
   assert.deepEqual(requested, [commit], "the repository's newest snapshot is drawn");
   await desk.waitForFunction(() => document.getElementById('atlasSelectedPath').textContent.trim() === 'app.py', null, { timeout: 8000 });
   assert.equal(await desk.locator('#atlasSelectedMeta code').innerText(), 'hub/app.py');
+  // A button that cannot be used stays focusable, says why in words, and does nothing when pressed.
   const fw = desk.locator(`${S} .atlas-platform-table tr[data-edge="display-feed"] td[data-label="Consumers"] button.atlas-platform-show`);
-  assert.equal(await fw.isDisabled(), true);
-  assert.equal(await fw.getAttribute('aria-label'), 'Show firmware/platform/localai/workshop_localai_feed.cpp on the map');
-  assert.match(await fw.getAttribute('title'), /^Not on the map: .*not parsed/);
-  const ps = desk.locator(`${S} .atlas-platform-table tr[data-edge="releases-v1-write"] button.atlas-platform-show[data-atlas-cross-module$=".ps1"]`);
-  assert.equal(await ps.isDisabled(), true, 'the PowerShell consumer is not scanned');
+  assert.equal(await fw.getAttribute('aria-disabled'), 'true');
+  assert.equal(await fw.evaluate((b) => b.disabled), false, 'aria-disabled, not the disabled attribute');
+  assert.equal(await fw.getAttribute('data-atlas-cross-repo'), null, 'the map handler never sees it');
+  assert.equal(await fw.getAttribute('aria-label'), 'Show on map: firmware/platform/localai/workshop_localai_feed.cpp in Smart display');
+  const why = await fw.getAttribute('aria-describedby');
+  assert.equal(await desk.locator(`#${why}`).innerText(), 'Not on the map: firmware source, not parsed');
+  await fw.focus();
+  assert.equal(await desk.evaluate(() => document.activeElement.getAttribute('aria-disabled')), 'true', 'keyboard reachable');
+  const before = requested.length;
+  await fw.click({ force: true });
+  await desk.waitForTimeout(500);
+  assert.equal(await desk.locator('#atlasRepo').inputValue(), 'pi-hub', 'pressing it changes nothing');
+  assert.equal(requested.length, before);
+  const ps = desk.locator(`${S} .atlas-platform-table tr[data-edge="releases-v1-write"] button.atlas-platform-show[aria-label*=".ps1"]`);
+  assert.equal(await ps.getAttribute('aria-disabled'), 'true', 'the PowerShell consumer is not scanned');
+  assert.match(await desk.locator(`#${await ps.getAttribute('aria-describedby')}`).innerText(), /source not scanned/);
 });
 
 await check('calls with no declared edge are one closed list, grouped by repository and module, never on the graph', async () => {

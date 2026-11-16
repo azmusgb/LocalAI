@@ -75,10 +75,17 @@ function edgeNote(c,check){
 }
 
 // Whether a module can be opened on its repository's map (architecture.js handles the click). A side the check found in
-// a snapshot can; anything else (firmware source, no snapshot, a call or route not found) cannot, and says why.
-function showOn(module,found,reason,label){
-  const m=String(module||'');
-  return {enabled:!!(found&&m),label:`Show ${m||'module'} on the map`,title:found&&m?'':`Not on the map: ${reason||`no snapshot of ${label}`}`};
+// a snapshot can; anything else cannot, and says why in a few words taken from the check's own reason.
+function showReason(detail,missing){
+  const d=String(detail||'');
+  if(/firmware/i.test(d))return 'firmware source, not parsed';
+  if(/powershell|not scanned/i.test(d))return 'source not scanned';
+  if(/isn't mapped|no snapshot|not mapped/i.test(d))return 'no snapshot';
+  return missing?'module not in this map':'no snapshot';
+}
+function showOn(module,state,detail,label){
+  const m=String(module||''),found=state==='checked'&&!!m;
+  return {enabled:found,label:`Show on map: ${m||'module'} in ${label}`,reason:found?'':showReason(detail,state==='provider_missing'||state==='consumer_missing')};
 }
 
 function errorText(error){
@@ -109,13 +116,13 @@ function platformModel(systems,contracts){
     const consumers=(Array.isArray(c.consumers)?c.consumers:[]).filter(x=>x&&x.repo).map(x=>{
       const check=consumerCheck(x,p);
       return {repo:x.repo,module:String(x.module||''),text:`${labelFor(x.repo,labels)} · ${x.module||'?'}`,check,mark:markFor(check),detail:String(x.detail||''),
-        show:showOn(x.module,x.state==='checked',x.detail,labelFor(x.repo,labels))};
+        show:showOn(x.module,x.state,x.detail,labelFor(x.repo,labels))};
     });
     const check=edgeCheck(c);
     return {id:String(c.id||`${p.method||''} ${p.path||''}`),name:String(c.label||c.contract||c.id||''),
       route:[p.method,p.path].filter(Boolean).join(' '),
       provider:{repo:p.repo,module:String(p.module||''),text:`${labelFor(p.repo,labels)} · ${p.module||'?'}`,detail:String(p.detail||''),
-        show:showOn(p.module,p.state==='checked',p.detail,labelFor(p.repo,labels))},
+        show:showOn(p.module,p.state,p.detail,labelFor(p.repo,labels))},
       consumers,check,mark:markFor(check),note:edgeNote(c,check)};
   });
   const links=new Map();
@@ -195,9 +202,18 @@ const pct=(v,of)=>`${(v/of*100).toFixed(2)}%`;
 const chip=mark=>`<span class="ui-chip ui-chip--${mark.tone}">${esc(mark.text)}</span>`;
 const views=new WeakMap();
 
+// A module path with a break allowed after each slash, so a long one wraps between folders, not mid-word.
+const path=v=>esc(v).replace(/\//g,'/<wbr>');
 // A native button on the generic data-atlas-cross-repo handler (architecture.js): it opens that repository's map at the
-// module. Disabled, it says why in its title.
-const showButton=(repo,module,show)=>`<button type="button" class="ui-btn ui-btn--ghost atlas-platform-show" data-atlas-cross-repo="${esc(repo)}" data-atlas-cross-module="${esc(module)}" aria-label="${esc(show.label)}"${show.enabled?'':` disabled title="${esc(show.title)}"`}>Show on map</button>`;
+// module. One that cannot stays focusable (aria-disabled), carries no data the handler reads, and its reason is a
+// muted line the button is described by. Ids are numbered per drawing.
+let showId=0;
+function showButton(repo,module,show){
+  const name=`aria-label="${esc(show.label)}"`;
+  if(show.enabled)return `<span class="atlas-platform-showbox"><button type="button" class="ui-btn ui-btn--ghost atlas-platform-show" data-atlas-cross-repo="${esc(repo)}" data-atlas-cross-module="${esc(module)}" ${name}>Show on map</button></span>`;
+  const id=`atlasPlatformWhy-${++showId}`;
+  return `<span class="atlas-platform-showbox"><button type="button" class="ui-btn ui-btn--ghost atlas-platform-show" aria-disabled="true" aria-describedby="${id}" ${name}>Show on map</button><small id="${id}" class="atlas-platform-why">Not on the map: ${esc(show.reason)}</small></span>`;
+}
 
 function summary(model){
   const counts={confirmed:0,missing:0,'not-checked':0};
@@ -260,8 +276,8 @@ function detail(model,sel,where){
     <ul class="atlas-platform-routes">${l.routes.map(({edge:e,mark})=>`<li data-edge="${esc(e.id)}">
       <p class="atlas-platform-route"><code title="${esc(e.route)}">${esc(e.route)}</code><span class="atlas-platform-verdict">${chip(mark)} for ${esc(from)}</span><span class="atlas-platform-verdict">Whole contract: ${chip(e.mark)}</span>${e.name&&e.name!==e.id?`<small>${esc(e.name)}</small>`:''}</p>
       <dl>
-        <div><dt>Provider</dt><dd>${esc(e.provider.text)}${e.provider.detail?`<small>${esc(e.provider.detail)}</small>`:''}${showButton(e.provider.repo,e.provider.module,e.provider.show)}</dd></div>
-        <div><dt>Consumers</dt><dd><ul>${e.consumers.map(c=>`<li>${esc(c.text)} ${chip(c.mark)}${c.detail&&c.mark.key!=='confirmed'?`<small>${esc(c.detail)}</small>`:''}${showButton(c.repo,c.module,c.show)}</li>`).join('')}</ul></dd></div>
+        <div><dt>Provider</dt><dd>${path(e.provider.text)}${e.provider.detail?`<small>${esc(e.provider.detail)}</small>`:''}${showButton(e.provider.repo,e.provider.module,e.provider.show)}</dd></div>
+        <div><dt>Consumers</dt><dd><ul>${e.consumers.map(c=>`<li>${path(c.text)} ${chip(c.mark)}${c.detail&&c.mark.key!=='confirmed'?`<small>${esc(c.detail)}</small>`:''}${showButton(c.repo,c.module,c.show)}</li>`).join('')}</ul></dd></div>
       </dl></li>`).join('')}</ul>
     <p class="atlas-platform-detail-note">Tests that call these routes are not part of the contract check yet.</p>
   </div>`;
@@ -274,8 +290,8 @@ function table(model){
     <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Route</th><th scope="col" role="columnheader">Provider</th><th scope="col" role="columnheader">Consumers</th><th scope="col" role="columnheader">Check</th></tr></thead>
     <tbody role="rowgroup">${rows.map(r=>`<tr role="row" data-edge="${esc(r.id)}">
       <td role="cell" data-label="Route"><span><code>${esc(r.route)}</code>${r.name&&r.name!==r.id?`<small>${esc(r.name)}</small>`:''}</span></td>
-      <td role="cell" data-label="Provider">${esc(r.provider)}${showButton(r.providerRef.repo,r.providerRef.module,r.providerRef.show)}</td>
-      <td role="cell" data-label="Consumers"><ul>${r.consumers.map(c=>`<li>${esc(c.text)} <span class="atlas-platform-consumer-mark">(${esc(c.mark.text.toLowerCase())})</span>${showButton(c.repo,c.module,c.show)}</li>`).join('')}</ul></td>
+      <td role="cell" data-label="Provider"><span>${path(r.provider)}${showButton(r.providerRef.repo,r.providerRef.module,r.providerRef.show)}</span></td>
+      <td role="cell" data-label="Consumers"><ul>${r.consumers.map(c=>`<li>${path(c.text)} <span class="atlas-platform-consumer-mark">(${esc(c.mark.text.toLowerCase())})</span>${showButton(c.repo,c.module,c.show)}</li>`).join('')}</ul></td>
       <td role="cell" data-label="Check">${chip(r.mark)}${r.note?`<small>${esc(r.note)}</small>`:''}</td></tr>`).join('')}</tbody></table>`;
 }
 
@@ -321,6 +337,7 @@ function restoreFocus(el,key){
 
 function draw(el){
   const v=views.get(el);
+  showId=0;
   const model=platformModel(v.systems,v.contracts);
   if(v.selected&&!model.links.some(l=>l.id===v.selected))v.selected=null;
   const key=focusKey(el);
