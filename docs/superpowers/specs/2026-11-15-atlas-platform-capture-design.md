@@ -1,6 +1,6 @@
 # Atlas platform capture: all four systems, checked contracts, honest freshness
 
-Date: 2026-11-15. Status: **proposed**, for the owner's review. Builds on the Atlas redesign
+Date: 2026-11-15. Status: **proposed**; owner confirmed both assumptions on 15 Nov, spec approval pending. Builds on the Atlas redesign
 (`2026-11-04-atlas-redesign-design.md`, approved 4 Nov) and Atlas across repositories
 (`2026-11-07-atlas-across-repos-design.md`, proposed 7 Nov; its declared-edge scope is kept here, nothing is re-opened).
 
@@ -90,7 +90,7 @@ smart display on the PC.
 - Edge-check wording and graph layout inside the kit's tokens.
 - Whether the platform view needs a visual mockup first (owner's call; offer one before PR 4).
 
-## Open questions for the owner
+## Owner answers (15 Nov)
 
-1. Is "what breaks if I change X, across systems" the question that matters most? If not, the order may change.
-2. Should home-mcp and netmon appear as nodes (assumed yes, as declared consumers only)?
+1. "What breaks if I change X, across systems" is the question that matters most: confirmed, order stands.
+2. home-mcp and netmon appear as nodes, as declared consumers only: confirmed.
