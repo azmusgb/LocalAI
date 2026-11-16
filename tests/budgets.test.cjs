@@ -125,7 +125,10 @@ const KB = 1024;
 // carries a pair of kit-clean markers and the --ds-* definitions stay until the last section reads none (app.css +19
 // bytes in L6; L5 landed with 0 bytes to spare), and for Agent World's phone fix that came with L6 (ui.js +0.1 KB: the
 // stage follows the header when the page opens before it exists). It comes back down in L10, when the markers and the --ds-* names go.
-const TOTAL = 350 * KB;
+// 2026-11-15: 350 → 358 KB for the platform map on Atlas (platform capture spec, design item 4): atlas-platform.js
+// (+7.2 KB: the graph, the phone list, the table of every edge, the detail and the grouped undeclared calls), its styles
+// in app.css (+1.1 KB) and the section in index.html (+0.1 KB); 357.2 KB measured.
+const TOTAL = 358 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)

@@ -63,8 +63,10 @@ function sourceNote(body,now=Date.now()){
   return {text:`From Pi Hub, ${ago(body?.fetchedAt,now)||'just now'}.`,tone:''};
 }
 
-const exported={hostHealth,repoLine,commitFor,sourceNote};
+const exported={hostHealth,repoLine,commitFor,sourceNote,freshSentence};
 if(typeof module==='object'&&module.exports){module.exports=exported;return;}
+// The platform map (atlas-platform.js) words a system's freshness the same way, also when this page part is absent.
+root.LocalAIAtlasSystems={freshSentence};
 
 const page=document.getElementById('architecture');
 const list=document.getElementById('atlasSystemsList');
@@ -102,6 +104,8 @@ async function load(){
       state.body={error:{message:error.name==='AbortError'?'Reading the list of systems timed out.':'The list of systems could not be read.'}};
     }finally{clearTimeout(timer);state.at=Date.now();state.loading=null;}
     render();
+    // The platform map above (architecture.js) draws its nodes from the same list.
+    page.dispatchEvent(new CustomEvent('atlas:systems',{detail:state.body}));
   })();
   return state.loading;
 }
@@ -119,5 +123,5 @@ page.addEventListener('atlas:source',e=>{
   render();
 });
 
-root.LocalAIAtlasSystems={load};
+Object.assign(root.LocalAIAtlasSystems,{load});
 })(typeof window==='undefined'?globalThis:window);

@@ -301,7 +301,7 @@ const state={
   active:false,summary:null,graph:null,model:null,layout:null,selected:null,details:null,
   lens:'risk',ollamaModel:localStorage.getItem('localai.atlas.model')||'',request:null,
   repo:'localai',commit:'',snapshots:null,seq:0,releases:null,open:new Set(),
-  contracts:null,contractsOpen:false
+  contracts:null,contractsOpen:false,systems:null
 };
 // Intelligence about the chosen snapshot (plan PR 5); with neither, the latest scan.
 const live=()=>state.repo==='localai'&&!state.commit;
@@ -579,6 +579,12 @@ function renderContracts(){
   }).join('');
 }
 
+// The platform map above the Systems strip (atlas-platform.js): drawn from the systems list and the contract check,
+// again whenever either arrives.
+function renderPlatform(){
+  root.LocalAIAtlasPlatform?.renderPlatformGraph($('atlas-platform'),state.systems,state.contracts);
+}
+
 async function loadContracts(){
   try {
     const data = await getJson('/api/atlas/contracts', { timeout: 12000 });
@@ -587,6 +593,7 @@ async function loadContracts(){
     state.contracts = { error: err.message, contracts: [], brokenCount: 0 };
   }
   renderContracts();
+  renderPlatform();
   renderFindings();
   if (state.selected) renderInspector();
 }
@@ -857,6 +864,8 @@ page.addEventListener('click',e=>{
     setTimeout(() => { void selectNode(targetModule, { scroll: true, reveal: true }); }, 300);
   }
 });
+// The Systems strip (atlas-systems.js) read Pi Hub's list: the platform map's nodes take their names and freshness from it.
+page.addEventListener('atlas:systems',e=>{state.systems=e.detail||null;renderPlatform();});
 // The Systems strip (atlas-systems.js) chooses a repository: its map loads here.
 page.addEventListener('atlas:choose',e=>{const {repo,commit}=e.detail||{};if(typeof repo==='string'&&repo){chooseSource(repo,String(commit||''));$('atlasMapTitle').focus({preventScroll:true});}});
 $('atlasRepo').addEventListener('change',e=>{
