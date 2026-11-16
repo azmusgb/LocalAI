@@ -462,3 +462,24 @@ test('contracts read the live-commit snapshot through the real snapshot reader',
   assert.notEqual(out.body.contracts[0].check, 'no snapshot');
   assert.equal(out.body.contracts[0].provider.commit, commit);
 });
+
+test('a second deploy target of the same repo does not replace the live commit', async () => {
+  const live = 'a'.repeat(40);
+  const other = 'b'.repeat(40);
+  const seen = [];
+  const reader = readerFor([], { localai: { schemaVersion: 3, httpRoutes: [], modules: [] } }, {
+    snapshots: {
+      find(repo, commit) { seen.push(commit); return { row: { repo, commit } }; },
+      list() { return { snapshots: [] }; },
+      graph() { return { schemaVersion: 3, httpRoutes: [], modules: [] }; },
+    },
+    systems: { async read() {
+      return { status: 200, body: { source: 'live', hosts: [{ targets: [
+        { id: 'localai', atlas: 'localai', commit: live },
+        { id: 'mac-watch', atlas: 'localai', commit: other },
+      ] }] } };
+    } },
+  });
+  const out = await reader.check();
+  assert.equal(out.body.commits.localai, live);
+});
