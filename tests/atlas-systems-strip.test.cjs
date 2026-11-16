@@ -31,13 +31,35 @@ test('a stale or unknown reading is not called fine', () => {
   assert.deepEqual(strip.hostHealth(h), { text: '2 of 2 need a look: Raspberry Pi (unknown), Hub (old reading)', tone: 'warn' });
 });
 
-test('a repository reads mapped with its commit and age, or no snapshot yet', () => {
-  assert.equal(strip.repoLine({ snapshot: null, liveCommit: A, atLive: false }, NOW), 'no snapshot yet');
-  assert.equal(strip.repoLine({ snapshot: { commit: A, generatedAt: '2026-11-04T23:00:00Z' }, liveCommit: A, atLive: true }, NOW),
-    'mapped · aaaaaaa · today');
-  assert.equal(strip.repoLine({ snapshot: { commit: B, generatedAt: '2026-10-31T12:00:00Z' }, liveCommit: A, atLive: false }, NOW),
-    'mapped · bbbbbbb · 4 days old · live is aaaaaaa');
-  assert.equal(strip.repoLine({ snapshot: { commit: B, generatedAt: null }, liveCommit: null, atLive: false }, NOW), 'mapped · bbbbbbb');
+const F = (state, extra = {}) => ({ live: A, scanned: B, behind: null, scanAgeSeconds: 345600, state, ...extra });
+const snapB = { commit: B, generatedAt: '2026-10-31T12:00:00Z' };
+
+test('a repository says in words whether its map matches the running release', () => {
+  assert.equal(strip.repoLine({ snapshot: null, liveCommit: A, freshness: F('no snapshot', { scanned: null, scanAgeSeconds: null }) }, NOW), 'Not mapped yet');
+  assert.equal(strip.repoLine({ snapshot: { commit: A, generatedAt: '2026-11-04T23:00:00Z' }, liveCommit: A, freshness: F('current', { scanned: A, scanAgeSeconds: 3600 }) }, NOW),
+    'Map matches the running release · aaaaaaa · today');
+  assert.equal(strip.repoLine({ snapshot: snapB, liveCommit: A, freshness: F('behind') }, NOW),
+    'Map is behind the running release · map bbbbbbb, live aaaaaaa · 4 days old');
+  assert.equal(strip.repoLine({ snapshot: snapB, liveCommit: null, freshness: F('no release', { live: null }) }, NOW),
+    'No release recorded · map bbbbbbb · 4 days old');
+});
+
+test('a known commit count is said, an unknown one is left out, and ahead never shows a number', () => {
+  assert.equal(strip.repoLine({ snapshot: snapB, liveCommit: A, freshness: F('behind', { behind: 1 }) }, NOW),
+    'Map is 1 commit behind the running release · map bbbbbbb, live aaaaaaa · 4 days old');
+  assert.equal(strip.repoLine({ snapshot: snapB, liveCommit: A, freshness: F('behind', { behind: 3 }) }, NOW),
+    'Map is 3 commits behind the running release · map bbbbbbb, live aaaaaaa · 4 days old');
+  for (const behind of [null, -2, 0, NaN]) {
+    const line = strip.repoLine({ snapshot: snapB, liveCommit: A, freshness: F('ahead', { behind }) }, NOW);
+    assert.equal(line, 'Map is newer than the running release · map bbbbbbb, live aaaaaaa · 4 days old');
+    assert.doesNotMatch(line, /-\d/);
+  }
+  assert.doesNotMatch(strip.repoLine({ snapshot: snapB, liveCommit: A, freshness: F('behind', { behind: -4 }) }, NOW), /-\d|commits/);
+});
+
+test('a repository from an older copy without freshness still reads', () => {
+  assert.equal(strip.repoLine({ snapshot: null, liveCommit: A }, NOW), 'Not mapped yet');
+  assert.equal(strip.repoLine({ snapshot: { commit: B, generatedAt: null }, liveCommit: null }, NOW), 'No release recorded · map bbbbbbb');
 });
 
 test('choosing a repository opens its newest snapshot; Local AI opens the latest scan', () => {

@@ -37,8 +37,32 @@ function clean(body, repos) {
   return { hosts, hubAsOf: Number.isFinite(asOf) && asOf > 0 ? new Date(asOf * 1000).toISOString() : null };
 }
 
-// Each host's repositories that Atlas keeps: the newest snapshot, and whether one exists at the commit that is live.
-function withSnapshots(hosts, list) {
+// How the newest map compares with the running release. The commit distance needs git, and the runner's mirror lives on
+// the host (the container reads only index.json), so `behind` stays null unless a snapshot row carries `behind`; the
+// state is then worked out from what is known: the same commit is current, a newer scan with a map at the live commit
+// (or taken after the release) is ahead, anything else differs and is behind. Never a negative or invented count.
+function freshness(target, mine, newest, nowMs) {
+  const live = target.commit || null;
+  const scanned = newest?.commit || null;
+  const at = Date.parse(newest?.generatedAt);
+  const scanAgeSeconds = Number.isFinite(at) ? Math.max(0, Math.round((nowMs - at) / 1000)) : null;
+  const known = Number(newest?.behind);
+  const behind = Number.isInteger(known) && known > 0 ? known : null;
+  let state;
+  if (!newest) state = 'no snapshot';
+  else if (!live) state = 'no release';
+  else if (scanned === live) state = 'current';
+  else {
+    const deployed = Date.parse(target.deployedAt);
+    const newer = mine.some((r) => r.commit === live) || (Number.isFinite(deployed) && Number.isFinite(at) && at > deployed);
+    state = newer ? 'ahead' : 'behind';
+  }
+  return { live, scanned, behind: state === 'behind' ? behind : null, scanAgeSeconds, state };
+}
+
+// Each host's repositories that Atlas keeps: the newest snapshot, whether one exists at the commit that is live, and how
+// fresh the map is against the release.
+function withSnapshots(hosts, list, nowMs = Date.now()) {
   const rows = (Array.isArray(list?.snapshots) ? list.snapshots : []).slice()
     .sort((a, b) => String(b.generatedAt || '').localeCompare(String(a.generatedAt || '')));
   return hosts.map((h) => {
@@ -49,7 +73,7 @@ function withSnapshots(hosts, list) {
       const newest = mine[0];
       repos.push({ repo: t.atlas, label: REPO_LABELS[t.atlas] || t.atlas, liveCommit: t.commit,
         snapshot: newest ? { commit: newest.commit, generatedAt: newest.generatedAt || null } : null,
-        atLive: !!t.commit && mine.some((r) => r.commit === t.commit) });
+        atLive: !!t.commit && mine.some((r) => r.commit === t.commit), freshness: freshness(t, mine, newest, nowMs) });
     }
     return { ...h, repos };
   });
@@ -112,7 +136,7 @@ function createSystems({ hubUrl = process.env.LOCALAI_PI_HUB_URL || 'http://10.0
     }
     if (!copy) return { status: 503, body: { error: { code: 'atlas_systems_unavailable', message: got.error } } };
     return { status: 200, body: { source, error, fetchedAt: copy.fetchedAt, hubAsOf: copy.hubAsOf || null,
-      hosts: withSnapshots(copy.hosts, snapshotList()) } };
+      hosts: withSnapshots(copy.hosts, snapshotList(), now()) } };
   }
 
   return { read };

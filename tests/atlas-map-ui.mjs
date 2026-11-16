@@ -160,8 +160,8 @@ await check('the Systems strip shows each host, its services in one line, and op
   assert.match(await desk.locator('#atlasSystemsNote').innerText(), /^From Pi Hub, just now\.$/);
   assert.equal(await desk.locator('[data-host="pi"] .atlas-host-health').innerText(), '1 of 3 need a look: Ad blocking (paused)');
   assert.equal(await desk.locator('[data-host="pi"] .atlas-host-health').getAttribute('data-tone'), 'warn');
-  assert.match(await desk.locator('[data-atlas-repo="localai"]').innerText(), /mapped · eeeeeee · \d+ days old · live is fffffff/);
-  assert.match(await desk.locator('[data-atlas-repo="print-lab"]').innerText(), /no snapshot yet/);
+  assert.match(await desk.locator('[data-atlas-repo="localai"]').innerText(), /Map is behind the running release · map eeeeeee, live fffffff · \d+ days old/);
+  assert.match(await desk.locator('[data-atlas-repo="print-lab"]').innerText(), /Not mapped yet/);
   assert.equal(await desk.locator('[data-host="pi"] .atlas-host-target').innerText().then((t) => t.replace(/\s+/g, ' ')), 'netmon 2222222 · not mapped');
   assert.equal(await desk.locator('[data-host="offsite"] .atlas-host-none').innerText(), 'Nothing deployed here.');
   assert.equal(await desk.locator('[data-atlas-repo="localai"]').getAttribute('aria-pressed'), 'true');

@@ -29,14 +29,14 @@ const SNAPSHOTS = { repos: ['localai', 'pi-hub', 'print-lab'], snapshots: [
   { repo: 'localai', commit: B, generatedAt: '2026-10-31T12:00:00Z' },
 ] };
 
-function setup({ hub = HUB, fail = false, hubUrl = 'http://hub.test', cache } = {}) {
+function setup({ hub = HUB, fail = false, hubUrl = 'http://hub.test', cache, snaps = SNAPSHOTS } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-systems-'));
   const cachePath = cache === null ? null : path.join(dir, 'atlas-systems.json');
   if (cache) fs.writeFileSync(cachePath, JSON.stringify(cache));
   const calls = [];
   const systems = createSystems({
     hubUrl, cachePath, now: () => Date.parse('2026-11-05T00:00:00Z'),
-    snapshots: { list: () => SNAPSHOTS },
+    snapshots: { list: () => snaps },
     fetchWithTimeout: async (url, opts, ms) => {
       calls.push({ url, ms });
       if (fail) throw new Error('connect ECONNREFUSED 10.0.0.80:80');
@@ -60,8 +60,10 @@ test('it reads Pi Hub over the machine path and keeps the hosts in its order', a
 test('a mapped repository says its newest snapshot and whether that is the live commit', async () => {
   const { body } = await setup().systems.read();
   const [pi, pc, off] = body.hosts;
-  assert.deepEqual(pi.repos, [{ repo: 'pi-hub', label: 'Pi Hub', liveCommit: A, snapshot: { commit: A, generatedAt: '2026-11-04T23:10:00Z' }, atLive: true }]);
-  assert.deepEqual(pc.repos, [{ repo: 'localai', label: 'Local AI', liveCommit: C, snapshot: { commit: B, generatedAt: '2026-10-31T12:00:00Z' }, atLive: false }]);
+  assert.deepEqual(pi.repos, [{ repo: 'pi-hub', label: 'Pi Hub', liveCommit: A, snapshot: { commit: A, generatedAt: '2026-11-04T23:10:00Z' }, atLive: true,
+    freshness: { live: A, scanned: A, behind: null, scanAgeSeconds: 3000, state: 'current' } }]);
+  assert.deepEqual(pc.repos, [{ repo: 'localai', label: 'Local AI', liveCommit: C, snapshot: { commit: B, generatedAt: '2026-10-31T12:00:00Z' }, atLive: false,
+    freshness: { live: C, scanned: B, behind: null, scanAgeSeconds: 388800, state: 'behind' } }]);
   assert.deepEqual(off.repos, []);
   assert.equal(pi.targets.find((t) => t.id === 'netmon').atlas, null, 'netmon is not mapped');
 });
@@ -70,7 +72,45 @@ test('a repository Atlas keeps but has no snapshot of says so', async () => {
   const hub = structuredClone(HUB);
   hub.hosts[2].targets = [{ id: 'print-lab', label: 'Print lab', repo: 'azmusgb/print-lab', atlas: 'print-lab', state: 'unknown', commit: null }];
   const { body } = await setup({ hub }).systems.read();
-  assert.deepEqual(body.hosts[2].repos, [{ repo: 'print-lab', label: 'Print lab', liveCommit: null, snapshot: null, atLive: false }]);
+  assert.deepEqual(body.hosts[2].repos, [{ repo: 'print-lab', label: 'Print lab', liveCommit: null, snapshot: null, atLive: false,
+    freshness: { live: null, scanned: null, behind: null, scanAgeSeconds: null, state: 'no snapshot' } }]);
+});
+
+const fresh = async (target, rows) => {
+  const hub = structuredClone(HUB);
+  hub.hosts[2].targets = [{ id: 'pi-hub', label: 'Pi Hub', repo: 'azmusgb/pi-hub', atlas: 'pi-hub', state: 'live', deployed_at: null, ...target }];
+  const { body } = await setup({ hub, snaps: { repos: ['pi-hub'], snapshots: rows } }).systems.read();
+  return body.hosts[2].repos[0].freshness;
+};
+
+test('freshness: a map at the live commit is current', async () => {
+  assert.deepEqual(await fresh({ commit: A }, [{ repo: 'pi-hub', commit: A, generatedAt: '2026-11-04T00:00:00Z' }]),
+    { live: A, scanned: A, behind: null, scanAgeSeconds: 86400, state: 'current' });
+});
+
+test('freshness: a map older than the live commit is behind, and the count stays null without a distance', async () => {
+  const f = await fresh({ commit: C }, [{ repo: 'pi-hub', commit: A, generatedAt: '2026-11-01T00:00:00Z' }]);
+  assert.equal(f.state, 'behind');
+  assert.equal(f.behind, null);
+  assert.equal(f.live, C);
+  assert.equal(f.scanned, A);
+});
+
+test('freshness: a newer map than the live release is ahead, never a negative count', async () => {
+  const f = await fresh({ commit: A }, [{ repo: 'pi-hub', commit: B, generatedAt: '2026-11-04T00:00:00Z' },
+    { repo: 'pi-hub', commit: A, generatedAt: '2026-11-01T00:00:00Z' }]);
+  assert.equal(f.state, 'ahead');
+  assert.equal(f.behind, null);
+  assert.equal(f.scanned, B);
+});
+
+test('freshness: a repository with no release record says no release', async () => {
+  const f = await fresh({ commit: null }, [{ repo: 'pi-hub', commit: A, generatedAt: '2026-11-04T00:00:00Z' }]);
+  assert.deepEqual(f, { live: null, scanned: A, behind: null, scanAgeSeconds: 86400, state: 'no release' });
+});
+
+test('freshness: no snapshot says so and has no scan age', async () => {
+  assert.deepEqual(await fresh({ commit: A }, []), { live: A, scanned: null, behind: null, scanAgeSeconds: null, state: 'no snapshot' });
 });
 
 test('when the Pi cannot be reached the last good copy is served, with its age and why', async () => {
