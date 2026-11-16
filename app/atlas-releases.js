@@ -5,7 +5,7 @@
 // against the snapshot index rather than remembering what it saw. Read only towards Pi Hub; never throws.
 
 // release target -> the repository its commit belongs to. Targets whose repository Atlas doesn't keep are skipped.
-const TARGET_REPO = { 'pi-hub': 'pi-hub', localai: 'localai', 'mac-watch': 'localai', 'print-lab': 'print-lab' };
+const TARGET_REPO = { 'pi-hub': 'pi-hub', localai: 'localai', 'mac-watch': 'localai', 'print-lab': 'print-lab', firmware: 'bambuhelper-smart-display' };
 const EVERY_MS = 5 * 60 * 1000;
 const RETRY_MS = 30 * 60 * 1000; // a commit asked for and still missing is asked for again after this long
 const HEX40 = /^[0-9a-f]{40}$/;
