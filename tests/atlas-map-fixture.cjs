@@ -85,4 +85,43 @@ function systemsFixture({ source = 'live' } = {}) {
   };
 }
 
-module.exports = { atlasFixture, systemsFixture };
+// GET /api/atlas/contracts as the server answers it (app/server/atlas-contracts.js), from the declared edges in
+// atlas/contracts.json: Local AI's consumers confirmed, print-lab and home-mcp not checked (no snapshot, not mapped), the
+// smart display's firmware not parsed, the PowerShell consumer not scanned, and camera-feed's consumer missing so all
+// three marks show. `undeclared` is shaped like the real scan's 96 calls (localai 22, pi-hub 34, smart display 40).
+function contractsFixture({ extra = 0 } = {}) {
+  const declared = JSON.parse(require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'atlas', 'contracts.json'), 'utf8'));
+  const CHECK = { checked: 'confirmed', consumer_missing: 'consumer missing', not_checked: 'no snapshot' };
+  const consumerState = (entry, c) => {
+    if (entry.id === 'camera-feed') return ['consumer_missing', `Declared but not found in ${c.module} at eeeeeee`];
+    if (c.repo === 'home-mcp') return ['not_checked', "home-mcp isn't mapped"];
+    if (c.repo === 'print-lab') return ['not_checked', 'No snapshot available for print-lab'];
+    if (c.repo === 'bambuhelper-smart-display') return ['not_checked', `${c.module} is firmware source, not parsed in bambuhelper-smart-display at 4ebcb58`];
+    if (c.module.endsWith('.ps1')) return ['not_checked', `${c.module}: PowerShell source, not scanned in localai at eeeeeee`];
+    return ['checked', 'Call found'];
+  };
+  const list = [...declared, ...Array.from({ length: extra }, (_, i) => ({ id: `extra-${i}`, provider: { repo: 'pi-hub', module: 'hub/app.py', method: 'GET', path: `/api/extra/${i}` },
+    consumers: [{ repo: 'localai', module: `app/extra-${i}.js` }] }))];
+  const contracts = list.map((entry) => {
+    const consumers = entry.consumers.map((c) => { const [state, detail] = consumerState(entry, c); return { ...c, state, detail, commit: null, live: true, check: CHECK[state] }; });
+    const check = consumers.some((c) => c.state === 'consumer_missing') ? 'consumer missing' : consumers.some((c) => c.state === 'not_checked') ? 'no snapshot' : 'confirmed';
+    return { id: entry.id, contract: entry.contract || null, label: entry.label || null, state: check === 'confirmed' ? 'checked' : check === 'consumer missing' ? 'broken' : 'partially_checked',
+      check, provider: { ...entry.provider, state: 'checked', detail: '', commit: '4'.repeat(40), live: true }, consumers, source: entry.source || null };
+  });
+  const calls = (repo, module, n, path, method = null) => Array.from({ length: n }, (_, i) => ({ repo, module, method, path: path(i), line: 10 + i * 7 }));
+  const undeclared = [
+    ...calls('localai', 'app/ollama.js', 14, (i) => `/api/${['tags', 'ps', 'pull', 'generate', 'chat', 'show', 'embed'][i % 7]}`),
+    ...calls('localai', 'app/workshop.js', 2, (i) => ['/api/status/lite', '/api/portal-code'][i], 'GET'),
+    ...calls('localai', 'host/mac-watch/watch.py', 1, () => '/api/notify/mac-watch', 'POST'),
+    ...calls('localai', 'app/bambuddy.js', 5, (i) => `/api/v1/printers/${i}`),
+    ...calls('pi-hub', 'hub/bambuddy.py', 28, (i) => `/api/v1/${['spools', 'projects', 'archives', 'printers'][i % 4]}/${i}`),
+    ...calls('pi-hub', 'hub/display_ai.py', 3, (i) => ['/api/display/ai-cards', '/api/images/view', '/api/images/view'][i], 'GET'),
+    ...calls('pi-hub', 'hub/display_routes.py', 3, () => '/api/images/view', 'GET'),
+    ...calls('bambuhelper-smart-display', 'tools/acceptance_workshop_os12.py', 24, (i) => `/api/status/${['lite', 'full', 'screens', 'touch'][i % 4]}`),
+    ...calls('bambuhelper-smart-display', 'tools/validate_display_contract.py', 16, (i) => `/api/${['portal-code', 'settings', 'ota'][i % 3]}`),
+  ];
+  return { contracts, undeclared, brokenCount: contracts.filter((c) => c.state === 'broken').length,
+    commits: { 'pi-hub': '4'.repeat(40), localai: 'f'.repeat(40) }, systems: { source: 'live', hubAsOf: null, fetchedAt: new Date().toISOString(), error: null } };
+}
+
+module.exports = { atlasFixture, systemsFixture, contractsFixture };
