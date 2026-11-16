@@ -1025,9 +1025,9 @@ kbd{font:600 var(--ui-fs-1)/1 var(--ui-mono);padding:2px 6px;border-radius:var(-
   body.ux-v3 main::before{display:none}
   .ux-context-inbox{min-height:44px;padding:0 14px}
 
-  /* Chat: keep the composer above the floating tab bar. */
-  .chat-shell{min-height:calc(100svh - 230px);grid-template-rows:minmax(240px,1fr) auto}
-  .composer-wrap{bottom:calc(84px + env(safe-area-inset-bottom));padding-top:16px}
+  /* Chat: the composer sits on the docked tab bar (70px plus the home-indicator inset), like Home's. */
+  .chat-shell{min-height:calc(100svh - 215px);grid-template-rows:minmax(240px,1fr) auto}
+  .composer-wrap{bottom:calc(70px + env(safe-area-inset-bottom));padding:16px 0 6px}
   .toggle{min-height:44px;font-size:var(--ui-fs-4)}
   .toggle input{width:22px;height:22px}
 

@@ -63,6 +63,22 @@ await check('chat composer and Send sit above the tab bar', async () => {
   assert.ok(r.send <= r.nav, `Send bottom ${r.send} is under the tab bar at ${r.nav}`);
 });
 
+await check('the chat composer is docked on the tab bar, not floating above it, at any phone height', async () => {
+  const problems = [];
+  for (const height of [640, 740, 844, 932]) {
+    await page.setViewportSize({ width: 360, height });
+    await page.evaluate(() => window.showView('ask'));
+    await page.waitForTimeout(250);
+    const r = await page.evaluate(() => ({
+      wrap: document.querySelector('.view.active .composer-wrap').getBoundingClientRect().bottom,
+      nav: document.querySelector('#uxMobileNav').getBoundingClientRect().top,
+    }));
+    if (Math.abs(r.nav - r.wrap) > 1) problems.push(`${height}px tall: composer bar bottom ${Math.round(r.wrap)} vs tab bar top ${Math.round(r.nav)}`);
+  }
+  await page.setViewportSize({ width: 360, height: 740 });
+  assert.deepEqual(problems, []);
+});
+
 await check('the run view\'s chat reply box and Send sit inside the screen (the tab bar is covered by the run view)', async () => {
   const run = { id: 'run-mobile-1', type: 'chat', status: 'completed', progress: 100, threadId: 't-' + 'b2'.repeat(16), title: 'Hello', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), input: { prompt: 'Hello' }, output: { text: 'Hi there' }, card: { kind: 'chat', title: 'Hello', summary: 'Hi there', badge: { label: 'Done', tone: 'good' }, action: { label: 'Open' }, approval: null } };
   await page.route(u => u.pathname === '/api/runs', r => { const q = new URL(r.request().url()).searchParams; r.fulfill({ contentType: 'application/json', body: JSON.stringify(q.get('id') ? { item: run } : { items: [run], summary: {} }) }); });
