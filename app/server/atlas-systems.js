@@ -7,7 +7,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const REPO_LABELS = { localai: 'Local AI', 'pi-hub': 'Pi Hub', 'print-lab': 'Print lab' };
+const REPO_LABELS = { localai: 'Local AI', 'pi-hub': 'Pi Hub', 'print-lab': 'Print lab', 'bambuhelper-smart-display': 'Smart display' };
 const HEX40 = /^[0-9a-f]{40}$/;
 const ID = /^[a-z0-9_-]{1,40}$/;
 const TIMEOUT_MS = 6000;

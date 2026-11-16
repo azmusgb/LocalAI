@@ -236,7 +236,9 @@ function freshnessLine(graph,release,now=Date.now()){
 
 // The repository and commit picker (plan PR 3). Commit "" is Local AI's latest scan: the one graph the intelligence
 // service reads. Every other choice is a kept snapshot, at most five per repository, newest first as the server sends.
-const repoNames={localai:'Local AI','pi-hub':'Pi Hub','print-lab':'Print lab'};
+const repoNames={localai:'Local AI','pi-hub':'Pi Hub','print-lab':'Print lab','bambuhelper-smart-display':'Smart display'};
+// The repositories Atlas maps (atlas.js DEFAULT_REPOS): a contract chip opens one of these; any other repo is a name only.
+const mappedRepos=new Set(Object.keys(repoNames));
 const repoLabel=repo=>repoNames[repo]||String(repo);
 
 function snapshotChoices(list){
@@ -553,7 +555,7 @@ function renderContracts(){
 
     const consumersHtml = (c.consumers || []).map(con => {
       const cRepoName = repoNames[con.repo] || con.repo;
-      const isMapped = ['localai', 'pi-hub', 'print-lab'].includes(con.repo);
+      const isMapped = mappedRepos.has(con.repo);
       return isMapped
         ? `<button type="button" class="atlas-contract-chip" data-atlas-cross-repo="${esc(con.repo)}" data-atlas-cross-module="${esc(con.module)}" aria-label="Open ${esc(cRepoName)} map at ${esc(con.module)}"><span>${esc(cRepoName)}</span><code>${esc(con.module)}</code></button>`
         : `<span class="atlas-contract-chip"><span>${esc(cRepoName)}</span><code>${esc(con.module)}</code></span>`;
@@ -849,7 +851,7 @@ page.addEventListener('click',e=>{
   if (!b) return;
   const targetRepo = b.dataset.atlasCrossRepo;
   const targetModule = b.dataset.atlasCrossModule;
-  if (!['localai', 'pi-hub', 'print-lab'].includes(targetRepo)) return;
+  if (!mappedRepos.has(targetRepo)) return;
   chooseSource(targetRepo, targetRepo === 'localai' ? '' : (state.snapshots?.get(targetRepo)?.[0]?.commit || ''));
   if (targetModule) {
     setTimeout(() => { void selectNode(targetModule, { scroll: true, reveal: true }); }, 300);
