@@ -62,6 +62,8 @@ function createWeb(ctx) {
 
     fs.readFile(file, (err, data) => {
       if (err) {
+        // An API address nothing serves is a 404, never the page shell (a missing endpoint must not read as a 200).
+        if (pathname === '/api' || pathname.startsWith('/api/')) return json(res, 404, { error: 'Not found' });
         if (pathname !== '/' && !pathname.includes('.')) {
           fs.readFile(path.join(PUBLIC_DIR, 'index.html'), (e2, d2) => {
             if (e2) return text(res, 404, 'Not found');
