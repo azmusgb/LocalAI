@@ -661,6 +661,19 @@ await check('Get started takes Recent\'s place on a fresh install, and Recent is
   await page.context().close();
 });
 
+// Get started's step 1 lists stopped services, so they are not repeated as rows; they still count. The faceplate said
+// "Nothing needs you" under its own red "Needs attention" lamp.
+await check('with Get started showing, stopped services still count: the faceplate never says Nothing under a red lamp', async () => {
+  const caps = () => ({ services: [{ name: 'ollama', label: 'Intelligence', state: 'DOWN', required: true }, { name: 'search', label: 'search', state: 'HEALTHY', required: true }], models: { defaultInstalled: true }, images: { available: true }, version: '1' });
+  const page = await open(desk, '#home', { storage: { 'localai.firstRun.done': '0' }, caps, all: () => [] });
+  await page.waitForSelector('#firstRun', T);
+  await page.waitForFunction(() => /Needs attention/.test(document.querySelector('#homePlate')?.innerText || ''), null, T);
+  // The lamp and the count come from different reads: wait for the count, which stays "Nothing" when the bug is back.
+  await page.waitForFunction(() => /^1 needs you$/.test(document.querySelector('#homePlate .ui-readout')?.innerText.trim() || ''), null, T)
+    .catch(async () => assert.fail(`readout: ${(await page.locator('#homePlate .ui-readout').innerText()).trim()}`));
+  assert.equal(await page.locator('#homeNeedsList .ui-need').count(), 0, 'Get started covers them; no repeated rows');
+  await page.context().close();
+});
 await check('Recent titles wrap like Work\'s', async () => {
   const long = item('chat', 'A very long title '.repeat(6).trim(), 5 * 60e3);
   const page = await open(phone, '#home', { threads: () => [long] });
