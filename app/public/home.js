@@ -175,7 +175,10 @@ function paintNeeds(){
  const box=$('homeNeedsList'),sec=$('homeNeedsYou');if(!box||!sec)return;
  stale=false;
  // While Get started is on the page its step 1 already covers stopped services; the same news is not repeated as "Fix" rows.
- const serviceRows=document.getElementById('firstRun')?[]:attention.map(attentionRow);
+ // They still count: the faceplate and the bell must not say "Nothing" while a core service is down. Other critical
+ // items (a watchdog finding, Status unavailable) are not Get started's and keep their rows.
+ const firstRun=!!document.getElementById('firstRun'),covered=firstRun?attention.filter(a=>a.service).length:0;
+ const serviceRows=attention.filter(a=>!(firstRun&&a.service)).map(attentionRow);
  const failed=root.LocalAINeedsYou.group(needs.filter(r=>r.status==='failed'));
  const N=root.LocalAINeedsYou;
  const act=N.byTone([...needs.filter(r=>r.status!=='failed').map(r=>runEntry(r,'attention',()=>openRun(r))),...approvals.map(x=>approvalRow(x.a,x.run)),...serviceRows,
@@ -184,8 +187,8 @@ function paintNeeds(){
  // Everything that asks for a decision shows and failures fill up to CAP; max shows that many, and the kit adds "See all N" for the rest.
  const entries=[...act,...failed.map(failedRow)],shown=act.length+room;
  bindNeeds(box);
- root.dispatchEvent(new CustomEvent('localai:needs-count',{detail:{n}})); // the bell in the header shows this number on every page
- plateNeeds(n);
+ root.dispatchEvent(new CustomEvent('localai:needs-count',{detail:{n:n+covered}})); // the bell in the header shows this number on every page
+ plateNeeds(n+covered);
  if(!entries.length){box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
  if(!root.ApplianceNeeds){if(!needsKitMissing){needsKitMissing=true;console.warn('Needs you: /ui/needs.js did not load; the section stays hidden')}box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
  // Dense on the Assistant's Home (A7 P2): one line a row, the same rows as Pi Hub's.

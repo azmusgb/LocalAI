@@ -506,7 +506,8 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
           title: `${item.label || item.name || 'Core service'} is ${String(item.state || 'unavailable').toLowerCase()}`,
           detail: item.impact || 'Part of Local AI is affected.',
           action: 'Open Assistant status',
-          view: 'status'
+          view: 'status',
+          service: true   // Home's Get started step 1 covers these (home.js paintNeeds)
         });
       });
 
