@@ -394,7 +394,7 @@ async function decide(action){
  finally{btn.disabled=false}
 }
 
-function refresh(){health().then(ok=>{if(ok){loadBook();loadRuns();loadBooks()}else if(!st.book)emptyGrid('The Windows computer is not answering, so the workbook can\'t be shown. Check System › Health.')})}
+function refresh(){health().then(ok=>{if(ok){loadBook();loadRuns();loadBooks()}else if(!st.book)emptyGrid('The Windows computer is not answering, so the workbook can\'t be shown. Check that it is on and GridCraft is open, then choose Refresh.')})}
 function init(){
  const sec=$('spreadsheets');if(!sec)return;
  $('sheetsExamples').innerHTML=EXAMPLES.map((x,i)=>`<button type="button" class="btn-outline" data-sheets-example="${i}">${x}</button>`).join('');
