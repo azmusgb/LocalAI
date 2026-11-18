@@ -1,4 +1,5 @@
-// Every view follows the design system: no text under 11px, blue primary actions, clean phone breadcrumb.
+// Every view follows the design system: no text under 11px, blue primary actions, clean phone breadcrumb. Every check runs
+// with the system set to dark and again set to light (step 13, L10): the page follows the system's theme.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 
@@ -6,9 +7,12 @@ const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const views = ['home','ask','create','library','projects','knowledge','memory','agents','claude','automations','automationStudio','actions','engineering','approvals','status','operations','activity','workbench','repoTools','powershell','inbox','runs','models'];
 const browser = await chromium.launch();
 let failed = 0;
-async function check(name, fn) { try { await fn(); console.log('PASS', name) } catch (e) { failed++; console.log('FAIL', name, e.message) } }
+let scheme = 'dark';
+async function check(name, fn) { name = `${scheme}: ${name}`; try { await fn(); console.log('PASS', name) } catch (e) { failed++; console.log('FAIL', name, e.message) } }
 
-const page = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1440, height: 900 } });
+for (scheme of ['dark', 'light']) {
+
+const page = await browser.newPage({ serviceWorkers: 'block', colorScheme: scheme, viewport: { width: 1440, height: 900 } });
 await page.goto(base, { waitUntil: 'networkidle' });
 await check('no visible text under 11px in any view', async () => {
   const tiny = [];
@@ -42,7 +46,7 @@ await check('one stylesheet of its own beside the kit\'s, nothing injected at ru
 });
 await page.close();
 
-const foundation = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1440, height: 900 } });
+const foundation = await browser.newPage({ serviceWorkers: 'block', colorScheme: scheme, viewport: { width: 1440, height: 900 } });
 const origin = new URL(base).origin;
 const requested = [];
 foundation.on('request', r => requested.push(r.url()));
@@ -69,11 +73,32 @@ await check('statusBadge maps statuses', async () => {
 });
 await foundation.close();
 
-const phone = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+const phone = await browser.newPage({ serviceWorkers: 'block', colorScheme: scheme, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 await phone.goto(base, { waitUntil: 'networkidle' });
 await check('phone breadcrumb shows no orphan separators', async () => {
   const seps = await phone.evaluate(() => [...document.querySelectorAll('.ux-context-sep')].filter(s => s.offsetParent).length);
   assert.equal(seps, 0);
 });
+await phone.close();
+
+const shell = await browser.newPage({ serviceWorkers: 'block', colorScheme: scheme, viewport: { width: 1440, height: 900 } });
+await shell.goto(base, { waitUntil: 'networkidle' });
+// The page takes the system's theme from the kit's tokens.css, and the current page's rail item is readable in it (in
+// light it was near-white on a pale teal until L10).
+await check('the page follows the system theme and the current rail item reads at 4.5:1', async () => {
+  const got = await shell.evaluate(() => {
+    const rgb = c => (c.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+    const lum = ([r, g, b]) => [r, g, b].map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
+    const bg = rgb(getComputedStyle(document.body).backgroundColor);
+    const item = document.querySelector('.ux-primary-item[data-active="true"] span:last-child');
+    const fg = item ? rgb(getComputedStyle(item).color) : null;
+    const [a, b] = fg ? [lum(fg), lum(bg)].sort((x, y) => y - x) : [0, 0];
+    return { light: lum(bg) > 0.5, ratio: fg ? (a + 0.05) / (b + 0.05) : 0 };
+  });
+  assert.equal(got.light, scheme === 'light', 'page background');
+  assert.ok(got.ratio >= 4.5, `current rail item at ${got.ratio.toFixed(2)}:1`);
+});
+await shell.close();
+}
 await browser.close();
 if (failed) process.exit(1);

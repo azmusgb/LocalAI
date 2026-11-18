@@ -34,8 +34,9 @@ test('the page loads the kit\'s tokens.css first and app.css defines no --ui-* n
   assert.deepEqual(sheets, ['/ui/tokens.css', '/ui/components.css', '/app.css', '/ui/needs.css']);
   const own = [...read('app.css').matchAll(/(?:^|[;{\s])(--ui-[a-z0-9-]+)\s*:/g)].map(m => m[1]);
   assert.deepEqual([...new Set(own)], []);
-  // Dark only until L10: the kit's file follows the system's theme unless the page says dark.
-  assert.match(read('index.html'), /<html lang="en" data-theme="dark">/);
+  // L10: the page follows the system's theme (the kit's tokens.css); nothing pins it dark.
+  assert.match(read('index.html'), /<html lang="en">/);
+  assert.doesNotMatch(read('app.css'), /color-scheme\s*:\s*dark/);
 });
 
 // The navy shades from before the kit are gone (and since 1.4, Faceplate, the Slate + Sky ones too) from the app's chrome (the canvas's own night palette, --aw-*, stays).
