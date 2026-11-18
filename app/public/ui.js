@@ -695,11 +695,13 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
     const loaded = Array.isArray(models?.loaded) ? models.loaded : [];
     const configured = models?.default || '—';
     const runtimeLabel = models?.runtimeAvailable === false ? 'Unavailable' : 'Live';
+    // A list that couldn't be read has no count: "0" would say nothing is installed.
+    const count = (n) => (models?.available === false ? 'Unknown' : Number(n));
 
     summary.innerHTML = `
       <div class="model-runtime-metric"><strong title="${esc(configured)}">${esc(configured)}</strong><span>Configured default</span></div>
-      <div class="model-runtime-metric"><strong>${Number(models?.installedCount ?? installed.length)}</strong><span>Installed</span></div>
-      <div class="model-runtime-metric"><strong>${Number(models?.loadedCount ?? loaded.length)}</strong><span>Loaded now</span></div>
+      <div class="model-runtime-metric"><strong>${count(models?.installedCount ?? installed.length)}</strong><span>Installed</span></div>
+      <div class="model-runtime-metric"><strong>${count(models?.loadedCount ?? loaded.length)}</strong><span>Loaded now</span></div>
       <div class="model-runtime-metric" data-diagnostic><strong>${runtimeLabel}</strong><span>Loaded list</span></div>`;
 
     if (models?.available === false) {
@@ -4139,6 +4141,8 @@ async function checkSteps(card){
  else setStep(card,'service','done','Running on this computer. Nothing you type leaves it unless you turn on web research.');
  const model=models?.default||config?.model||'the default model';
  if(models?.defaultInstalled)setStep(card,'model','done',`<code>${esc(model)}</code> is installed and ready.`);
+ // No list (the model server is not answering) is not "not installed": a download now could only fail.
+ else if(!models||models.available===false)setStep(card,'model','todo',`Can't check <code>${esc(model)}</code> yet: the model server (Ollama) is not answering. Start it on the Windows host, then choose Check again. <button type="button" class="btn-outline" data-first-run-recheck>Check again</button>`);
  else setStep(card,'model','todo',`<code>${esc(model)}</code> isn't installed yet. It's about 2.5 GB. <button type="button" class="btn-primary" data-first-run-download="${esc(model)}">Download it now</button> <button type="button" class="btn-outline" data-first-run-recheck>Check again</button><div class="first-run-progress" aria-live="polite"></div>`);
  return !!models?.defaultInstalled;
 }
