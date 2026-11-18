@@ -73,6 +73,46 @@ await check('a model card shows family, size, quantization, format and memory de
     assert.deepEqual(await seen(), ['qwen3', '4.0B', 'Q4_K_M', 'gguf', 'Model size', 'VRAM resident', 'Context', 'Unload target']);
   } finally { await p.close(); }
 });
+// Ollama not answering: /api/models says so (502, available false). Nothing may read that as "0 installed" or "not installed":
+// the tiles say Unknown and Get started offers Check again, never a download that can only fail.
+const DOWN = { error: 'fetch failed', available: false, default: 'qwen3:4b-instruct-32k', models: ['qwen3:4b-instruct-32k'], installed: [], loaded: [],
+  installedCount: 0, loadedCount: 0, runtimeAvailable: false, runtimeError: 'fetch failed', defaultInstalled: false, defaultLoaded: false };
+async function downPage(storage = {}) {
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
+  await ctx.addInitScript(s => { for (const [k, v] of Object.entries(s)) try { localStorage.setItem(k, v) } catch {} }, storage);
+  const p = await ctx.newPage();
+  await p.route(u => u.pathname === '/api/models', r => r.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify(DOWN) }));
+  await p.route(u => u.pathname === '/api/capabilities', async r => {
+    const res = await r.fetch().catch(() => null); if (!res) return r.abort().catch(() => {});
+    await r.fulfill({ contentType: 'application/json', body: JSON.stringify({ ...(await res.json()), models: DOWN }) });
+  });
+  return p;
+}
+await check('with the model list unreadable, Installed and Loaded now say Unknown, not 0', async () => {
+  const p = await downPage();
+  try {
+    await p.goto(base, { waitUntil: 'networkidle' });
+    await p.evaluate(() => window.showView('models'));
+    await p.click('#modelRuntimeRefresh');
+    await p.waitForSelector('#modelRuntimeList .model-runtime-error');
+    const tiles = await p.locator('#modelRuntimeSummary .model-runtime-metric').evaluateAll(es => Object.fromEntries(es.map(e => [e.querySelector('span').textContent.trim(), e.querySelector('strong').textContent.trim()])));
+    assert.equal(tiles['Installed'], 'Unknown');
+    assert.equal(tiles['Loaded now'], 'Unknown');
+  } finally { await p.context().close(); }
+});
+await check('Get started does not offer a download while the model server is not answering', async () => {
+  const p = await downPage({ 'localai.firstRun.done': '0' });
+  try {
+    await p.goto(base + '/#home', { waitUntil: 'networkidle' });
+    await p.waitForSelector('#firstRun [data-step="model"]:not([data-state="checking"])');
+    const step = p.locator('#firstRun [data-step="model"]');
+    assert.equal(await step.locator('[data-first-run-download]').count(), 0);
+    const t = await step.innerText();
+    assert.doesNotMatch(t, /isn't installed/);
+    assert.match(t, /not answering/i);
+    assert.equal(await step.locator('[data-first-run-recheck]').count(), 1);
+  } finally { await p.context().close(); }
+});
 await check('no script errors', async () => assert.deepEqual(errors, []));
 await browser.close();
 if (failed) { console.log(`${failed} models check(s) failed`); process.exit(1) }

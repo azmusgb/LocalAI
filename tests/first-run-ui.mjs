@@ -28,6 +28,12 @@ await check('Get started appears for a new install and finishes its checks', asy
 });
 await check('a missing model offers a one-click download', async () => {
   if (!expectCard || models.defaultInstalled) return;
+  // With the model server not answering, nobody knows the model is missing: Get started offers Check again, not Download.
+  if (models.available === false) {
+    assert.equal(await page.locator('#firstRun [data-first-run-download]').count(), 0);
+    assert.equal(await page.locator('#firstRun [data-first-run-recheck]').isVisible(), true);
+    return;
+  }
   assert.equal(await page.locator('#firstRun [data-first-run-download]').isVisible(), true);
 });
 // One story: while Get started is on Home, Needs you does not repeat its step 1 as red "Fix" rows.
