@@ -196,7 +196,7 @@ function paintNeeds(){
  inShell(ul);
  [...ul.querySelectorAll('.ui-need')].forEach((li,i)=>{const e=entries[i];Object.assign(li.dataset,e.data);if(e.go)rowGo.set(li,e.go);const d=li.querySelector('.ui-need__detail');if(d&&e.item.detail)d.title=e.item.detail}); // the clamped detail keeps its full text on hover and long-press
  box.replaceChildren(ul);
- $('homeNeedsCount').textContent=n?'· '+n:'';
+ $('homeNeedsCount').textContent=n+covered?'· '+(n+covered):''; // the same number as the bell and the readout
  sec.hidden=!n;
 }
 // Home's faceplate readout (A7 P1): how many things need you; its lamp and caption are Local AI's status (app.js).
