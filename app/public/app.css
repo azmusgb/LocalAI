@@ -1514,6 +1514,9 @@ body.run-view-open{overflow:hidden}
 #home .ui-need__detail{display:-webkit-box;-webkit-line-clamp:3;line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 #home .ui-need__link:focus-visible,#home .ui-needs__more a:focus-visible{outline:2px solid var(--ui-accent-text);outline-offset:-2px}
 #home #homeRecent2 .empty-state,#home #homeNeedsList .empty-state{padding:20px 16px;color:var(--ui-muted);text-align:center}
+/* The kit's .ui-needs grid has one unsized column, so a dense row's one-line text widened it past the card and pushed the
+   verb ("Open printer") and the ellipsis out of sight. Fixed in the kit; this goes at the next sync. */
+#homeNeedsList .ui-needs{grid-template-columns:minmax(0,1fr)}
 #home #truthAttention,#home .home-run-center{display:none!important}
 #home:has(#firstRun) #homeRecentSection{display:none}
 #home .offline-hint{margin-top:14px}
