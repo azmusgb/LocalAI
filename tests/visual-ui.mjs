@@ -224,8 +224,8 @@ const AGENT_STATES = {
   done: [{ ...A_BASE, id: 'm-done', status: 'complete', finishedAt: ago(60), answer: 'Three fixes for the phone screens, in order of impact.', workers: A_W('complete', 'complete'), results: [{ agentId: 'ux_analyst', agentName: 'UX Analyst', status: 'complete', answer: 'Three things to fix.' }], timeline: [...A_TL, { at: ago(60), type: 'mission-complete', status: 'complete', workers: A_W('complete', 'complete') }] }]
 };
 const AGENT_VIEWPORTS = VIEWPORTS;
-async function shoot(viewport, view, missions, ready) {
-  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.mobile, hasTouch: viewport.mobile, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: 'dark', locale: 'en-US', timezoneId: 'America/New_York' });
+async function shoot(viewport, view, missions, ready, scheme = 'dark') {
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.mobile, hasTouch: viewport.mobile, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: scheme, locale: 'en-US', timezoneId: 'America/New_York' });
   await ctx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); sessionStorage.setItem('localai.httpsTrusted', '0'); } catch {} });
   const page = await ctx.newPage();
   await page.clock.setFixedTime(NOW);
@@ -272,12 +272,14 @@ try {
   fs.rmSync(results, { recursive: true, force: true });
   const shots = [...VIEWPORTS.flatMap(viewport => PAGES.map(view => ({ name: `${view}-${viewport.name}`, viewport, view }))),
     ...AGENT_VIEWPORTS.flatMap(viewport => Object.entries(AGENT_STATES).map(([state, missions]) => ({ name: `agents-${state}-${viewport.name}`, viewport, view: 'agents', missions }))),
-    ...MORE_VIEWPORTS.flatMap(viewport => Object.entries(MORE_PAGES).map(([view, ready]) => ({ name: `${view}-${viewport.name}`, viewport, view, ready })))];
+    ...MORE_VIEWPORTS.flatMap(viewport => Object.entries(MORE_PAGES).map(([view, ready]) => ({ name: `${view}-${viewport.name}`, viewport, view, ready }))),
+    // The light half (step 13, L10): the key pages again with the system set to light.
+    ...VIEWPORTS.flatMap(viewport => PAGES.map(view => ({ name: `${view}-${viewport.name}-light`, viewport, view, scheme: 'light' })))];
   {
-    for (const { name, viewport, view, missions, ready } of shots) {
+    for (const { name, viewport, view, missions, ready, scheme } of shots) {
       const file = path.join(dir, `${name}.png`);
       try {
-        const shot = await shoot(viewport, view, missions, ready);
+        const shot = await shoot(viewport, view, missions, ready, scheme);
         if (UPDATE || !fs.existsSync(file)) {
           fs.writeFileSync(file, shot);
           notes.push(`${UPDATE ? 'updated' : 'new baseline'}: ${path.relative(process.cwd(), file)}`);
