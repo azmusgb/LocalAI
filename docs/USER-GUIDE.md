@@ -3,8 +3,8 @@
 Local AI is your own AI assistant, running on your computer at home. Everything runs on that computer unless
 you switch on cloud models (Models page): then only work that isn't private (research on public topics, code
 changes to Local AI, a chat you send with "Use a bigger model") may go to Groq or Cerebras, and every answer says
-which model gave it. House questions, voice, files, photos and anything about health, money or identity always stay
-on the computer. This guide covers everyday use on a phone or a computer. Setting it up
+which model gave it. House questions, voice, files, photos and anything about health, money, legal matters, family
+or identity always stay on the computer. This guide covers everyday use on a phone or a computer. Setting it up
 and looking after it is in the [admin guide](ADMIN-GUIDE.md).
 
 ## Open it
@@ -68,8 +68,8 @@ With cloud models on, two toggles appear under the box on Home (for Chat, Resear
   without it.
 - **Keep on this PC**: this request stays on this computer, whatever it is.
 
-They apply to the next thing you send, then switch off again. Anything about health, money or identity, House
-questions, voice, files and photos, your workspace and documents, questions about Local AI's own keys or setup, and
+They apply to the next thing you send, then switch off again. Anything about health, money, legal matters, family or
+identity, House questions, voice, files and photos, your workspace and documents, questions about Local AI's own keys or setup, and
 a chat that uses a project's Memory notes always stay on this computer. Research, change plans for Local AI's own code and mission summaries may use a cloud
 model when nothing in them is private. If a cloud model is busy or fails, this computer answers instead.
 

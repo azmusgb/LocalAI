@@ -82,7 +82,7 @@ test('a picked model keeps a reason from the request, so it stays sticky for the
     [{ stay: 'Project notes stay on this PC' }, 'Project notes stay on this PC'],
     [{ voice: true }, 'Voice and Siri stay on this PC'],
     [{ attachments: true }, 'Files and photos stay on this PC'],
-    [{ text: 'what dose of insulin' }, 'It looks personal (health, money or identity)'],
+    [{ text: 'what dose of insulin' }, 'It looks personal (health, money, legal, family or identity)'],
   ]) {
     const r = R.route({ ...base, model: 'gemma3:4b', ...extra });
     assert.deepEqual(r.order, [{ provider: 'ollama', model: 'gemma3:4b' }]);
@@ -136,4 +136,80 @@ test('stickyPrivate: request reasons stick to a conversation, kind defaults and 
   assert.equal(R.stickyPrivate({ class: 'private', why: 'Voice and Siri stay on this PC' }), true);
   assert.equal(R.stickyPrivate({ class: 'private', why: 'Ask stays on this PC unless you choose a bigger model' }), false);
   assert.equal(R.stickyPrivate(null), false);
+});
+
+// Owner carry-forward: the personal words missed common health, money, legal, family and identity words, so a request
+// like "refinance my mortgage" could go out. Each prompt below must stay on this PC with the personal reason, in every
+// kind that could otherwise reach a cloud model.
+const PERSONAL_WHY = 'It looks personal (health, money, legal, family or identity)';
+const NEW_PERSONAL = [
+  // Money
+  'Should I refinance the loan on my car?', 'Compare my mortgage offers', 'How fast can I pay off this debt?',
+  'Pay down my debts first or save?', 'Is my car insurance too high?', 'When can I draw my pension?', 'I have credit card debt to clear',
+  'Move my 401k to a new job', 'How much is in my 401(k) after the match?', 'Roth IRA or traditional for me?',
+  'My paycheck was short this week', 'Read my pay stub and check the deductions', 'Why did my credit score drop?',
+  'Dispute an error on my credit report', 'Here is my IBAN for the transfer', 'I forgot my PIN code',
+  'Change my PIN for the debit card',
+  'Help me fill in my W-2', 'When will my tax refund arrive?', 'Should I file for bankruptcy?',
+  // Health
+  'Recovery time after knee surgery', 'My dad has cancer, what questions should we ask?', 'Is this a peanut allergy?',
+  'My allergies are bad this spring', 'Which medications can I take together?', 'A rash on my arm that itches',
+  'Sharp pain in my lower back', 'Best painkillers for a migraine', 'Ankle injury from running, what now?',
+  'Is a fever of 101 dangerous?', 'Managing type 2 diabetes with diet', 'My asthma inhaler is running out',
+  'Is my cholesterol too high?', 'When is my next vaccine due?', 'Signs of an infection after a cut',
+  'Book a dentist for next week', 'I had a panic attack at work', 'Living with ADHD as an adult',
+  // Legal
+  'Do I need a lawyer for this?', 'Find an attorney near me', 'Should I file a lawsuit against them?',
+  'We are getting a divorce', 'Shared custody schedule for two kids', 'Update my will after the move',
+  'Write a living will', 'Last will and testament template for me', 'Start my estate plan',
+  'How long does probate take?', 'My court date is next Tuesday', 'Get a restraining order',
+  // Identity and family
+  "Renew my driver's license", 'Renew my drivers license online', 'Copy of my birth certificate',
+  'What is my date of birth on file?', 'Send it to my home address', 'Gift ideas for my wife',
+  'My husband snores', 'Screen time rules for my kids', 'My daughter is starting school',
+];
+
+test('personal words: health, money, legal, family and identity requests stay on this PC', () => {
+  for (const text of NEW_PERSONAL) {
+    assert.equal(R.personal(text), true, text);
+    for (const kind of ['chat', 'research', 'plan', 'code']) {
+      const r = R.route({ ...base, kind, bigger: true, text });
+      assert.equal(r.class, 'private', `${kind}: ${text}`);
+      assert.equal(r.why, PERSONAL_WHY, `${kind}: ${text}`);
+      assert.deepEqual(providers(r), ['ollama'], `${kind}: ${text}`);
+    }
+  }
+});
+
+// The words are whole words, and the words too common to mean anything on their own ("will", "pin", "pain point")
+// only count in a personal phrase. These ordinary prompts still reach a cloud model when the owner allows it.
+const ORDINARY = [
+  'Fix the pain point in the onboarding flow', 'List the top pain-points from the survey',
+  'Pin the dependency version in package.json', 'Which GPIO pin drives the fan?', 'Pin this tab',
+  'What will the weather be like in Phoenix?', 'Will this compile on Node 22?', 'Free will in philosophy',
+  'Explain mutex locks in Rust', 'Write a function to sort an array', 'Pillow sizes for a queen bed',
+  'How does a suspension bridge carry load?', 'Calm down irate customers in support replies',
+  'A rasher of bacon in grams', 'Spiralize the zucchini', 'Compare PETG and ASA for outdoor parts',
+  'Tune the retraction on the X2D', 'Painting tips for PLA prints', 'Explain the Ideal gas law',
+  // QA: ordinary coding prompts that matched a too-broad word.
+  'Make the status pill button keyboard focusable', 'Style the filter pills in app.css', 'Pay down the tech debt in server.js',
+  'Track technical debt in the backlog', 'Parse an income statement CSV', 'Generate invoices from the Stripe API',
+];
+
+test('personal words: ordinary prompts are not personal and may still use a cloud model', () => {
+  for (const text of ORDINARY) {
+    assert.equal(R.personal(text), false, text);
+    const r = R.route({ ...base, text });
+    assert.equal(r.class, 'shareable', text);
+    assert.deepEqual(providers(r), ['groq', 'cerebras', 'ollama'], text);
+  }
+});
+
+// Accepted false positives: the guard can't tell these from the personal sense, and a false match only costs a slower
+// answer on this PC. Kept here so a later change to them is a decision, not an accident.
+test('personal words: accepted false positives stay on this PC', () => {
+  for (const text of ['Picnic on the bank of the river', 'Who is the attorney general?', 'Chain of custody for evidence',
+    'Build a loan calculator in JS', 'Mortgage calculator formula', 'Write an insurance quote form in React',
+    'Use the IRA dataset', 'The W2 weight matrix in the layer'])
+    assert.equal(R.personal(text), true, text);
 });

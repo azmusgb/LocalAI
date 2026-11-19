@@ -117,7 +117,7 @@ test('turnSkip: cloud-answered, research, voice and private-for-a-reason turns g
   assert.equal(turnSkip({ caller: 'signed-in', used: LOCAL, body: { voice: true } }), 'voice');
   assert.equal(turnSkip({ caller: 'signed-in', used: LOCAL, body: { keepLocal: true } }), 'private');
   assert.equal(turnSkip({ caller: 'signed-in', used: LOCAL, body: { images: ['x'] } }), 'private');
-  for (const why of ['You asked to keep it on this PC', 'Files and photos stay on this PC', 'It looks personal (health, money or identity)', 'Voice and Siri stay on this PC', 'House questions stay on this PC', 'Your past work stays on this PC', 'This conversation was kept on this PC', 'Keys, passwords and setup stay on this PC', 'Requests with their own instructions stay on this PC', 'This kind of work stays on this PC', 'Something new'])
+  for (const why of ['You asked to keep it on this PC', 'Files and photos stay on this PC', 'It looks personal (health, money, legal, family or identity)', 'Voice and Siri stay on this PC', 'House questions stay on this PC', 'Your past work stays on this PC', 'This conversation was kept on this PC', 'Keys, passwords and setup stay on this PC', 'Requests with their own instructions stay on this PC', 'This kind of work stays on this PC', 'Something new'])
     assert.equal(turnSkip({ caller: 'signed-in', used: { ...LOCAL, why }, body: {} }), 'private', why);
 });
 
@@ -167,7 +167,7 @@ test('skipped turns never reach the model: cloud, research, private reasons', as
   assert.deepEqual(await s.consider(turn({ used: { provider: 'groq', model: 'x', class: 'shareable', why: 'Not private' } })), { skipped: 'cloud' });
   assert.deepEqual(await s.consider(turn({ body: { webSearch: true } })), { skipped: 'research' });
   assert.deepEqual(await s.consider(turn({ body: { keepLocal: true } })), { skipped: 'private' });
-  assert.deepEqual(await s.consider(turn({ used: { ...LOCAL, why: 'It looks personal (health, money or identity)' } })), { skipped: 'private' });
+  assert.deepEqual(await s.consider(turn({ used: { ...LOCAL, why: 'It looks personal (health, money, legal, family or identity)' } })), { skipped: 'private' });
   assert.deepEqual(await s.consider(turn({ used: { ...LOCAL, why: 'Files and photos stay on this PC' } })), { skipped: 'private' });
   assert.equal(calls.length, 0);
 });

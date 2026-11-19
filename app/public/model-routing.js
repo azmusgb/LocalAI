@@ -18,7 +18,7 @@
 
   function paint(box, j) {
     const providers = Object.values(j.providers || {});
-    box.innerHTML = `<div class="section-head"><div><h2 id="modelRoutingTitle">Cloud models</h2><p>Private things always stay on this PC: health, money, voice and Siri, House questions, your files and photos, and anything you mark "Keep on this PC".</p></div></div>
+    box.innerHTML = `<div class="section-head"><div><h2 id="modelRoutingTitle">Cloud models</h2><p>Private things always stay on this PC: health, money, legal and family matters, identity, voice and Siri, House questions, your files and photos, and anything you mark "Keep on this PC".</p></div></div>
       <label class="home-check" for="modelCloudSwitch"><input type="checkbox" role="switch" id="modelCloudSwitch"${j.cloud ? ' checked' : ''}><span>Use cloud models for work that isn't private</span></label>
       <p id="modelCloudState" class="meta" role="status">${esc(stateText(j.cloud === true))}</p>
       <h3>Cloud services</h3>
