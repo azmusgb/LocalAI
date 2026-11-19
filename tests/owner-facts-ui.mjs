@@ -256,6 +256,36 @@ await check('editing a fact past the first 5 keeps focus on it after Save', asyn
   await close(page);
 });
 
+await check('adding a fact to a collapsed list opens it, so the new row shows beside Add; focus stays on Add', async () => {
+  const page = await open(desk, { items: FULL.slice(0, 6) });
+  assert.equal(await page.locator('#ownerFactsMore').getAttribute('aria-expanded'), 'false');
+  await page.locator('#ownerFactText').fill('A seventh fact.');
+  await page.locator('#ownerFactText').press('Enter');
+  await page.locator('#ownerFactsCount', { hasText: '7 of 30' }).waitFor(T);
+  assert.equal(await rows(page).nth(6).isVisible(), true);
+  assert.equal((await rows(page).nth(6).locator('.owner-fact__text').textContent()).trim(), 'A seventh fact.');
+  assert.equal(await page.locator('#ownerFactsMore').getAttribute('aria-expanded'), 'true');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'ownerFactText');
+  await close(page);
+});
+
+await check('collapsing while editing a row past the first 5 keeps that row and its typing visible', async () => {
+  const page = await open(desk, { items: FULL.slice(0, 8) });
+  await page.locator('#ownerFactsMore').click();
+  await rows(page).nth(6).getByRole('button', { name: 'Edit' }).click();
+  await page.locator('#ownerFactEdit').fill('Typed but not saved');
+  await page.locator('#ownerFactsMore').click();
+  assert.equal(await page.locator('#ownerFactsMore').getAttribute('aria-expanded'), 'false');
+  assert.equal(await page.locator('#ownerFactEdit').isVisible(), true);
+  assert.equal(await page.locator('#ownerFactEdit').inputValue(), 'Typed but not saved');
+  assert.equal(await rows(page).nth(5).isVisible(), false, 'the other rows past 5 are hidden');
+  assert.equal(await rows(page).nth(7).isVisible(), false);
+  await page.locator('#ownerFactEdit').press('Enter');
+  await page.waitForFunction(() => document.activeElement?.matches('[data-fact-id="f6"] [data-fact-edit]'), null, T);
+  assert.equal((await rows(page).nth(6).locator('.owner-fact__text').textContent()).trim(), 'Typed but not saved');
+  await close(page);
+});
+
 await check('error: a failed read says so, never "No facts yet", and Try again reads it again', async () => {
   const page = await open(desk, { items: [fact('a', 'Answers in metric.')], fail: { read: 500 } });
   await page.locator('#ownerFactsError[role="alert"]', { hasText: "Couldn't read your saved facts: database is locked." }).waitFor(T);

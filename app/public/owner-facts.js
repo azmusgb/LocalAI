@@ -44,7 +44,7 @@
   function row(f, i) {
     const tid = `ownerFact${i}`;
     if (s.editing === f.id) {
-      return `<li class="ui-row owner-fact owner-fact--edit" data-fact-id="${esc(f.id)}"${i >= SHOWN && !s.open ? ' hidden' : ''}><form class="owner-facts__form" data-fact-form novalidate>
+      return `<li class="ui-row owner-fact owner-fact--edit" data-fact-id="${esc(f.id)}"><form class="owner-facts__form" data-fact-form novalidate>
         <label class="visually-hidden" for="ownerFactEdit">Edit this fact</label>
         <input id="ownerFactEdit" class="ui-field" maxlength="${MAX_LENGTH}" autocomplete="off" value="${esc(f.text)}" aria-describedby="ownerFactsRule">
         <button type="submit" class="ui-btn ui-btn--primary">Save fact</button><button type="button" class="ui-btn ui-btn--ghost" data-fact-cancel>Cancel</button>
@@ -71,6 +71,8 @@
     if (!more) s.open = false;
     const count = n ? `${n} of ${MAX_FACTS}` : '';
     const keep = document.activeElement && document.activeElement.id === 'ownerFactText' ? $('ownerFactText').value : null;
+    // A redraw while a fact is being edited (Show all / Show the first 5) keeps what was typed there.
+    const ed = $('ownerFactEdit'), draft = ed && ed.closest('[data-fact-id]')?.dataset.factId === s.editing ? { v: ed.value, f: document.activeElement === ed } : null;
     body.innerHTML = `${count ? `<p class="owner-facts__count" id="ownerFactsCount">${count}</p>` : ''}
       ${n ? `<ul class="ui-rows" id="ownerFactsList">${s.facts.map(row).join('')}</ul>` : '<p class="ui-empty owner-facts__empty" id="ownerFactsEmpty">No facts yet. Add one, like the printer you use or units you prefer.</p>'}
       ${more ? `<button type="button" class="ui-btn ui-btn--ghost" id="ownerFactsMore" aria-controls="ownerFactsList" aria-expanded="${s.open}">${s.open ? `Show the first ${SHOWN}` : `Show all ${n} facts`}</button>` : ''}
@@ -82,6 +84,7 @@
         <p class="ui-notice ui-notice--bad owner-facts__error" id="ownerFactsAddError" role="alert" hidden></p>
       </form>`;
     if (keep !== null && !full) { const t = $('ownerFactText'); t.value = keep; t.focus(); }
+    if (draft && $('ownerFactEdit')) { const t = $('ownerFactEdit'); t.value = draft.v; if (draft.f) t.focus(); }
   }
 
   const failIn = (form, text) => { const p = form.querySelector('.owner-facts__error'); p.textContent = text; p.hidden = false; };
@@ -103,7 +106,8 @@
     input.removeAttribute('aria-invalid'); input.readOnly = true; busy(btn, true, 'Adding…');
     try {
       const j = await post('/api/memory/add', { projectId: '', category: CATEGORY, text });
-      input.value = ''; s.facts.push(j.item); paint(); decorate(); said('Added the fact'); $('ownerFactText')?.focus();
+      // The new fact lands at the end, beside Add: a collapsed list opens so it shows.
+      input.value = ''; s.facts.push(j.item); if (s.facts.length > SHOWN) s.open = true; paint(); decorate(); said('Added the fact'); $('ownerFactText')?.focus();
       if (s.facts.length >= MAX_FACTS) focusRow(j.item.id);
     } catch (e) {
       input.readOnly = false; busy(btn, false); failIn(form, `Couldn't add this fact: ${reason(e)}.`); input.focus();
