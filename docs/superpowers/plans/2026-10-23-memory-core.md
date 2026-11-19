@@ -136,6 +136,9 @@ Routes live in `app/server/journal.js` (the server-split pattern: `createJournal
 ## PR 2 — Recorders (print, watch, materials, voice, approval, release)
 
 ### Task 5: Print recorder
+
+> **Out (A28 D2):** the journal records no house things; prints are read from Pi Hub when asked.
+
 - Modify `app/watchdog.js` tick: on `printerState` change, keep `{startedAt}` in its state on `→ printing`; on
   `printing|paused → ended|cancelled|error|idle` call `onPrint({state, startedAt, endedAt, errorCode})`.
   `printEntry(...)` in `app/journal-recorders.js`: kind `printed` (idle after ≥ 95% progress) / `cancelled` / `failed`;
@@ -144,6 +147,9 @@ Routes live in `app/server/journal.js` (the server-split pattern: `createJournal
   mid-print (no entry until it ends).
 
 ### Task 6: Watch, materials and the journal tick
+
+> **Out (A28 D2):** no watch or materials recorder, and no journal tick.
+
 - Create `app/journal-tick.js`: `createJournalTick({ piHub, materials, journal, now })` with `tick()` every 60 s.
   Watch sessions keyed `title|device`; entry when a session disappears: "Watched *X* on *device*", body finished
   (≥ 90%) or "stopped at N%", `who`; ref `watch:<key>:<startedAt>`. Materials: entry when `low` rises or `loaded`
@@ -151,6 +157,9 @@ Routes live in `app/server/journal.js` (the server-split pattern: `createJournal
 - Tests with fake hub/materials sequences: finish, stop at 40%, two devices, hub offline (no entries).
 
 ### Task 7: Voice, approval, release
+
+> **Kept (A28).** Release means Local AI's own release.
+
 - Voice: in `app/server/voice.js` after an answer is spoken, `record({source:'voice', kind:intent, title:question, body:answer, ref:'voice:<runId|ms>'})`.
 - Approval: in `apiApprovalDecide` and the display decide path: ref `approval:<id>:<status>`, body says where.
 - Release: at start-up, when `release.commit` ≠ setting `journal-release`, record "Local AI updated to <version>" with
@@ -160,6 +169,14 @@ Routes live in `app/server/journal.js` (the server-split pattern: `createJournal
 ## PR 3 — Ask history
 
 ### Task 8: Ask API
+
+> **Changed by A28 D3 to D5:** prints are answered from Pi Hub's `GET /api/workshop` at ask time (never stored; Pi Hub not
+> answering or `prints_available: false` is said by name), films say no record is kept; entries go to the model inside
+> a marked `<<<UNTRUSTED_ENTRIES` block; the run is a tool-free `prompt` run, `private` in the router even with "Use a
+> bigger model"; no journal text reaches a run with tools; Past work runs are not recorded back into the journal.
+> Open: Local AI reaches Pi Hub over plain http, where `/api/workshop` is behind the gate; until the owner decides how
+> it is read (A28 approves no new route, key or gate change), a print question says the list can't be read from here.
+
 - Create `app/journal-ask.js`: `askHistory({ question, journal, chatOnce, now })` → `{answer, citations:[{n, id, link, title, at}], entries}`.
   Retrieval per spec §4 (`window` → 12 by search, else newest 30 in window). Empty → `{answer:"I don't have anything about that.", citations:[]}` and `chatOnce` not called.
   Prompt: system "Answer only from the numbered entries. Cite them as [n]. If they don't answer the question, say so."
@@ -168,6 +185,10 @@ Routes live in `app/server/journal.js` (the server-split pattern: `createJournal
 - Tests: fake `chatOnce`; citations parsed from `[n]`; empty retrieval doesn't call the model; model failure → run failed with entries in output.
 
 ### Task 9: Home chip and voice intent
+
+> **Changed by A28 D4 and D6:** the mode is **Past work** ("Answers from what you did here"), never "Ask history"; each
+> journal entry under an answer has Delete through the approval sheet. The browser test is `tests/past-work-ui.mjs`.
+
 - `app/public/home.js` `MODES`: add `['history', 'Ask history', …]`; sending in that mode posts to `/api/journal/ask`
   and opens `#run/<id>`. Run view shows citations as links under the answer (`app/public/run-bodies.js`).
 - `app/voice.js`: `HISTORY` pattern before `CURRENT`; voice handler routes `history` to `askHistory`.
@@ -178,6 +199,9 @@ Routes live in `app/server/journal.js` (the server-split pattern: `createJournal
 ## PR 4 — Finding things
 
 ### Task 10: ⌘K hits and History tab
+
+> **Cut to the ⌘K palette (A28 D6):** journal hits in ⌘K only; no History tab, registry entry or `history.js`.
+
 - `app/public/app.js` `commandPalette`: after 2 chars, debounce 150 ms, `GET /api/journal?q=…&limit=5`; rows below pages,
   plus "Search history for '…'" → `#history?q=…`.
 - `view-registry.js`: `{id:'history', parent:'projects', tab:'History', label:'History', …}`; `index.html` section;
@@ -188,6 +212,9 @@ Routes live in `app/server/journal.js` (the server-split pattern: `createJournal
 ## PR 5 — Evening recap
 
 ### Task 11: Recap job, Home card, push, morning brief
+
+> **Out (A28 D7):** no evening recap, Home card, push or "Yesterday" line for now.
+
 - `app/journal-recap.js`: `createRecap({ journal, chatOnce, notifier, busy, now, timeZone })` → `tick()` every minute;
   at ≥ 21:00 local and no recap for today: busy → retry in 15 min until 23:59; model fails → counts sentence; save
   `source:'recap'`, ref `recap:<day>`; push only if ≥ 3 entries that day (notifier respects quiet hours).

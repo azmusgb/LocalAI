@@ -3,6 +3,11 @@
 Date: 2026-10-23 · Status: approved in conversation, spec for review
 Roadmap: `2026-10-23-localai-next-roadmap-design.md`, project A.
 
+> **Governing verdict:** Pi Hub amendment A28 (`pi-hub/docs/superpowers/specs/2026-11-19-amendment-a28-memory-core.md`,
+> merged) decides what of this spec is built, and wins where they differ: no print, watch or materials recorders (D2),
+> house questions read from Pi Hub at ask time (D3), the composer mode is **Past work** (D4), stored text held to D5,
+> no History tab (D6) and no evening recap (D7).
+
 ## Intent
 
 **Outcome:** Local AI remembers what happens (work, chats, prints, films, spools, voice asks, approvals, releases)
