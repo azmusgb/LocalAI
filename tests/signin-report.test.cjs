@@ -73,7 +73,7 @@ test('routes that run code, write files or approve changes refuse a caller witho
     ['POST', '/api/approvals/decide'], ['POST', '/api/notifications/system'], ['POST', '/api/signin/report/clear']]) {
     const r = method === 'GET' ? await fetch(`${base}${route}`, { headers: lan }) : await post(route, lan);
     assert.equal(r.status, 401, `${method} ${route} without a device`);
-    assert.deepEqual(await r.json(), { error: 'Sign in on this device first: pair it under Build › Claude Code.', signIn: true });
+    assert.deepEqual(await r.json(), { error: 'Sign in on this device first: pair it under Improve › Claude Code.', signIn: true });
   }
   // The same request is let through for a paired device, the Mac key and the host itself; other routes stay report-only.
   assert.notEqual((await fetch(`${base}/api/workbench/tree`, { headers: viaCaddy('10.0.0.40', IPHONE, { Cookie: cookie }) })).status, 401);
@@ -171,5 +171,17 @@ test('sibling routes are guarded too: the display sign-in code, run control, del
     '/api/lab/hex-tile/sync']) {
     assert.equal(guarded(p, 'POST'), true, p);
     assert.equal(guarded(p, 'GET'), false, `${p} reads stay report-only`);
+  }
+});
+
+// The pairing hint names where pairing is: Claude Code is in the Improve area (view-registry.js), not "Build".
+test('every pairing hint names Improve › Claude Code, the area the page list puts it in', () => {
+  const reg = fs.readFileSync(path.join(__dirname, '..', 'app', 'public', 'view-registry.js'), 'utf8');
+  assert.match(reg, /\{id:'claude',[^}]*domain:'improve'[^}]*label:'Claude Code'/);
+  assert.match(reg, /\{id:'improve',label:'Improve'/);
+  for (const f of ['server.js', 'public/answer-feedback.js', 'public/owner-facts.js']) {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'app', f), 'utf8');
+    assert.doesNotMatch(src, /Build › Claude Code/, f);
+    assert.match(src, /Improve › Claude Code/, f);
   }
 });

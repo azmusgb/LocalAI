@@ -449,7 +449,7 @@ const server = http.createServer(async (req, res) => {
     if (crossSiteRequest(req)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 403, { error: 'Cross-site request blocked' }); }
     // What sign-in made of this request; the chat routes pass it on, so owner-only follow-up work can tell.
     const access = signIn.check(req, p);
-    if (signIn.blocks(access, p, req.method)) { req.resume(); return json(res, 401, { error: 'Sign in on this device first: pair it under Build › Claude Code.', signIn: true }); }
+    if (signIn.blocks(access, p, req.method)) { req.resume(); return json(res, 401, { error: 'Sign in on this device first: pair it under Improve › Claude Code.', signIn: true }); }
     if (req.method === 'GET' && p === '/api/signin/report') return signIn.apiReport(req, res, json);
     if (req.method === 'POST' && p === '/api/signin/report/clear') { signIn.clear(); return json(res, 200, { ok: true }); }
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 }, addresses: accessAddresses() });

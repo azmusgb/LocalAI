@@ -59,7 +59,7 @@ async function open(viewport, { items = [], suggestions = [], fail = {}, scheme 
   await page.route(u => u.pathname === '/api/facts/suggestions', async r => {
     db.reads++;
     if (db.readHeld) await db.readHeld;
-    if (db.fail.read === 401) return json(r, { error: 'Sign in on this device first: pair it under Build › Claude Code.', signIn: true }, 401);
+    if (db.fail.read === 401) return json(r, { error: 'Sign in on this device first: pair it under Improve › Claude Code.', signIn: true }, 401);
     if (db.fail.read) return json(r, { error: "Couldn't read your suggested facts." }, db.fail.read);
     json(r, { items: db.sugs });
   });
@@ -262,7 +262,7 @@ await check('a device that isn\'t paired is told where suggestions show, as plai
   let page = await open(desk, { suggestions: [sug('fs-1', PLA)], fail: { read: 401 } });
   const n = page.locator('#ownerSuggestState');
   await n.waitFor(T);
-  assert.equal((await n.textContent()).trim(), 'Suggested facts show on a paired device: pair this one under Build › Claude Code.');
+  assert.equal((await n.textContent()).trim(), 'Suggested facts show on a paired device: pair this one under Improve › Claude Code.');
   assert.doesNotMatch(await n.getAttribute('class'), /ui-notice/);
   await page.context().close();
   page = await open(desk, { suggestions: [] });

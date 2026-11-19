@@ -166,7 +166,7 @@ the container, stage or approve changes, decide approvals, or post and clear ale
 `/api/signin/report/clear`, `/api/workshop/portal-code` (it hands out the display's sign-in code), and `/api/facts/suggestions` and `/api/facts/suggestions/decide` (suggested facts quote what was said in a chat, and Save writes a fact; reads are refused too) (`GUARDED` in `app/signin.js`); and, for any method but GET, starting agent runs
 (`/api/agents/dispatch|run|missions/start|specialist/run`), retrying, cancelling, updating or rating runs (`/api/runs/feedback`), GridCraft workbook writes, `/api/knowledge/import|delete`, `/api/conversations/delete`, memory changes, model pulls and deletes,
 `/api/library/delete`, `/api/items/delete` and `/api/display/alerts` (`GUARDED_WRITES`). Pair a browser under
-Build › Claude Code to use them.
+Improve › Claude Code to use them.
 `LOCALAI_SIGN_IN=required` in `stack.env` refuses every API route that isn't open.
 
 Requests that did not come through Caddy (the host's own port 3080, the Docker network) and the routes a device needs
