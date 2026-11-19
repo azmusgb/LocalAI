@@ -169,3 +169,13 @@ test('a run card says where the answer came from', () => {
   assert.equal(runCard({ type: 'chat', status: 'completed', meta: {} }).route, null, 'older runs say nothing');
   assert.equal(runCard({ type: 'chat', status: 'completed', meta: { route: 'groq' } }).route, null);
 });
+
+test('a Past work run is a prompt card: its question as the title, its answer as the preview, under Chats', () => {
+  const { runCard: card, workKind } = require('../app/run-cards');
+  const run = { id: 'run-1', type: 'prompt', title: 'what did I ask about PETG', status: 'completed', summary: 'You asked [1].', meta: { mode: 'history' }, output: { text: 'You asked about a bracket [1].', citations: [], entries: [] } };
+  const c = card(run);
+  assert.equal(c.kind, 'prompt'); assert.equal(c.icon, 'history'); assert.equal(c.view, 'ask');
+  assert.equal(c.title, 'what did I ask about PETG');
+  assert.deepEqual(c.preview, { type: 'text', text: 'You asked about a bracket [1].' });
+  assert.equal(workKind(run), 'chats');
+});
