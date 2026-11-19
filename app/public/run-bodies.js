@@ -83,7 +83,7 @@
       else if (r.status === 'cancelled' && !answer) { answer = 'Stopped.'; kind = 'error'; }
       else if (!answer) { answer = 'Thinking…'; kind = 'wait'; }
       else if (lv?.streaming) kind = 'live';
-      out.push({ key: r.id, prompt, answer, kind, lost, sources: Array.isArray(o?.sources) ? o.sources : [], route: RB.routeText(r) });
+      out.push({ key: r.id, prompt, answer, kind, lost, sources: Array.isArray(o?.sources) ? o.sources : [], route: RB.routeText(r), run: r });
     }
     if (live && !(live.runId && runs.some(r => r.id === live.runId))) out.push({ key: 'live', prompt: live.prompt, answer: live.text || (live.err ? '' : 'Thinking…'), kind: live.err ? 'error' : live.text ? 'live' : 'wait', sources: [] });
     return out;
@@ -113,6 +113,7 @@
         // Where the answer came from, under it: "Answered by Llama 3.3 70B · Groq. Not private: …" (the model coordinator).
         if (who === 'assistant') { const want = t.route || '', rt = n.querySelector('.run-route'); if ((rt?.textContent || '') !== want) { rt?.remove(); if (want) n.appendChild(h('p', 'run-route', want)); } }
         if (who === 'assistant') { n.dataset.srcs = ''; const ul = t.sources.length ? sourceLinks(t.sources) : null; const sig = ul ? ul.textContent : ''; if (n.dataset.srcSig !== sig) { n.dataset.srcSig = sig; n.querySelector('.chat-turn__sources')?.remove(); if (ul) n.appendChild(ul); } }
+        if (who === 'assistant') window.LocalAIUI.rateAnswer(n, t.run);
         rows.push(n);
       }
     }
@@ -334,7 +335,7 @@
       const answer = typeof o.text === 'string' ? o.text.trim() : '';
       slot.appendChild(h('h3', '', 'Answer'));
       if (live) { const w = h('p', 'muted', 'Reading your past work…'); w.setAttribute('role', 'status'); slot.appendChild(w); }
-      else if (answer) slot.appendChild(h('p', 'past-work__answer', answer));
+      else if (answer) { slot.appendChild(h('p', 'past-work__answer', answer)); window.LocalAIUI.rateAnswer(slot.appendChild(h('div')), run); }
       else if (run.status === 'failed') slot.appendChild(h('p', 'muted', 'No answer: it stopped before one was written (the reason is above).'));
       else if (run.output?.truncated) slot.appendChild(h('p', 'muted', 'This answer was too long to keep here.'));
       else slot.appendChild(h('p', 'muted', 'No answer was written.'));
