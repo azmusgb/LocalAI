@@ -14,9 +14,11 @@
 const { createHash } = require('node:crypto');
 const { redact } = require('./journal');
 const { personal } = require('./model-router');
+// The facts list's own rules (cap, length, category, duplicate key): one source, shared with the memory routes.
+const ownerFacts = require('./owner-facts');
 
 const SETTING = 'fact-suggestions';
-const FACT_MAX = 200;             // one sentence, as the facts list allows
+const FACT_MAX = ownerFacts.MAX_LENGTH;
 const FACT_MIN = 8;
 const DAILY_MAX = 3;              // suggestions made per local day, whatever the owner did with them
 const PENDING_MAX = 10;           // unanswered suggestions: no new one while this many wait
@@ -26,8 +28,6 @@ const QUESTION_MAX = 2000, ANSWER_MAX = 3000;
 const QUICK_TIMEOUT_MS = 60000;
 const DECIDE_BODY_MAX = 4 * 1024;
 const OPEN = '<<<UNTRUSTED_TURN', CLOSE = 'UNTRUSTED_TURN>>>';
-// The facts list's own rules. Replace with the shared owner-facts helper (feat/owner-facts) on rebase.
-const FACTS_CAP = 30;
 
 // The router reasons a turn may carry and still be suggested from: the chat kind's default, a local model picked by
 // hand, and a shareable turn that stayed here only because cloud was off or unavailable. Anything else is private for
@@ -42,12 +42,9 @@ const SUGGESTIBLE_WHY = new Set([
 
 // ---- text rules ----
 
-// Normalised text for duplicate and "No" matching. Replace with the shared owner-facts helper on rebase.
-function normalise(text) {
-  return String(text ?? '').normalize('NFKC').toLowerCase()
-    .replace(/[\u2018\u2019\u201c\u201d]/g, '').replace(/[^\p{L}\p{N}\s]+/gu, ' ').replace(/\s+/g, ' ').trim();
-}
-const factHash = text => createHash('sha256').update(normalise(text)).digest('hex').slice(0, 32);
+// Duplicate and "No" matching use the facts list's own key (case, punctuation and spacing don't count).
+const sameKey = text => ownerFacts.sameKey(String(text ?? '').normalize('NFKC'));
+const factHash = text => createHash('sha256').update(sameKey(text)).digest('hex').slice(0, 32);
 
 // Current state, not a lasting fact: Pi Hub owns what is printing or low (A28 D2), and a date or a "today" goes stale.
 const MONTH = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
@@ -63,7 +60,7 @@ const isState = text => STATE.some(re => re.test(String(text ?? '')));
 // Words that try to steer a model, in what would later be quoted to one. Shown text is never run, but it isn't kept.
 const STEERING = /\b(?:ignore|disregard|override)\b[^.]*\b(?:instructions?|prompts?|rules?|previous|above)\b|\bsystem prompt\b|\bUNTRUSTED_/i;
 const STOP = new Set('about after again also always and any are because been before being but can could did does doing down each from have having here into its just like make more most much must never only other over same should some such than that their them then there these they this those through under very what when where which while with would your yours you'.split(' '));
-const contentWords = text => new Set((normalise(text).match(/[\p{L}\p{N}]{3,}/gu) || []).filter(w => !STOP.has(w)));
+const contentWords = text => new Set((sameKey(text).match(/[\p{L}\p{N}]{3,}/gu) || []).filter(w => !STOP.has(w)));
 
 // The model's reply, read as untrusted text: one sentence of at most FACT_MAX characters, or null. Nothing in it is
 // followed; a reply that is not one plain sentence is dropped, never cut down to one.
@@ -79,7 +76,7 @@ function parseCandidate(raw) {
     .replace(/^["'\u201c\u2018*_]+|["'\u201d\u2019*_]+$/g, '')
     .replace(/\s+/g, ' ').trim();
   if (/^(?:none|nothing|no fact|n\/a)\b/i.test(text)) return null;
-  if (!/[.!]$/.test(text)) text += '.';
+  if (!/[.!]$/.test(text) && text.length < FACT_MAX) text += '.';
   if (text.length < FACT_MIN || text.length > FACT_MAX) return null;
   if (/[?<>{}`|\\]|https?:|www\./i.test(text)) return null;
   if (/[.!;]\s+\S/.test(text)) return null; // more than one sentence
@@ -93,8 +90,8 @@ function parseCandidate(raw) {
 function dropReason(candidate, { facts = [], pending = [], declined = [], question = null } = {}) {
   const text = String(candidate ?? '');
   if (!text) return 'empty';
-  const key = normalise(text);
-  if ([...facts, ...pending].some(f => normalise(f) === key)) return 'duplicate';
+  const key = sameKey(text);
+  if ([...facts, ...pending].some(f => sameKey(f) === key)) return 'duplicate';
   if (declined.includes(factHash(text))) return 'declined';
   if (redact(text) !== text) return 'secret';
   if (personal(text)) return 'personal';
@@ -171,12 +168,12 @@ function trimStore({ items, declined }) {
   const keep = new Set([...pending, ...decided]);
   return { items: items.filter(i => keep.has(i)), declined: [...new Set(declined)].slice(-KEEP_DECLINED) };
 }
-// The saved facts. Replace with the shared owner-facts helper on rebase.
-function readFacts(storage) {
+// Every memory note, as the facts rules (app/owner-facts.js) read them; a failed read is never an empty list.
+function readNotes(storage) {
   let items;
   try { items = storage.list('memory'); } catch (e) { throw new FactsUnreadable(e); }
   if (!Array.isArray(items)) throw new FactsUnreadable();
-  return items.filter(m => m && m.projectId === '' && m.category === 'owner' && typeof m.text === 'string');
+  return items;
 }
 const publicItem = i => ({ id: i.id, text: i.text, createdAt: i.createdAt, runId: i.runId || null, caller: i.caller || null });
 
@@ -217,7 +214,7 @@ function createFactSuggestions({ storage, coordinator, runLocalModel, busyNow, m
       const candidate = parseCandidate(raw);
       if (!candidate) return { skipped: 'nothing' };
       let facts;
-      try { facts = readFacts(storage); } catch (e) { failed(e.message); return { skipped: 'facts' }; }
+      try { facts = ownerFacts.facts(readNotes(storage)); } catch (e) { failed(e.message); return { skipped: 'facts' }; }
       // Read again after the model call: another decision may have landed meanwhile. Synchronous from here on.
       try { store = readStore(storage); } catch (e) { failed(e.message); return { skipped: 'store' }; }
       if (store.items.filter(i => i.day === today).length >= DAILY_MAX) return { skipped: 'daily-limit' };
@@ -264,24 +261,26 @@ function createFactSuggestions({ storage, coordinator, runLocalModel, busyNow, m
     }
     let fact = item.text;
     if (text !== undefined && text !== null) {
-      if (typeof text !== 'string') throw httpError(400, 'The fact must be text.');
-      fact = text.replace(/\s+/g, ' ').trim();
-      if (fact && !/[.!]$/.test(fact)) fact += '.';
-      if (!fact) throw httpError(400, 'Write the fact, or choose No.');
-      if (fact.length > FACT_MAX) throw httpError(400, `Keep a fact to ${FACT_MAX} characters.`);
+      // The owner's edit: the facts list's own length rule, then one plain sentence as a suggestion is.
+      const c = ownerFacts.check(text);
+      if (!c.ok) throw httpError(400, c.error);
+      fact = c.text;
+      if (!/[.!]$/.test(fact) && fact.length < FACT_MAX) fact += '.';
       if (parseCandidate(fact) !== fact) throw httpError(400, 'Keep a fact to one plain sentence, without links or symbols.');
     }
-    const facts = readFacts(storage);
-    if (facts.length >= FACTS_CAP) throw httpError(409, `Your list of facts is full (${FACTS_CAP}). Delete one on Memory first.`);
-    const reason = dropReason(fact, { facts: facts.map(f => f.text) });
+    // The list's cap and duplicate check, exactly as Add on Memory applies them (app/owner-facts.js canSave).
+    const notes = readNotes(storage);
+    const ok = ownerFacts.canSave(notes, fact);
+    if (!ok.ok) throw Object.assign(httpError(ok.full || ok.duplicate ? 409 : 400, ok.error), ok.full ? { full: true } : {});
+    const reason = dropReason(fact, { facts: ownerFacts.facts(notes).map(f => f.text) });
     if (reason) throw httpError(reason === 'duplicate' ? 409 : 400, {
-      duplicate: 'You already have this fact.',
+      duplicate: 'That fact is already on your list.',
       secret: 'That looks like a key or password, so it is not kept as a fact.',
       personal: 'Health, money and identity are not kept as facts.',
       state: 'That describes how things are right now, so it would go out of date. Keep facts to what stays true.',
       steering: 'Keep a fact to something about you or the house.',
     }[reason] || 'That cannot be kept as a fact.');
-    const record = { id: makeId('mem'), projectId: '', category: 'owner', text: fact, pinned: false, source: 'suggestion', createdAt: at, updatedAt: at };
+    const record = { id: makeId('mem'), projectId: '', category: ownerFacts.CATEGORY, text: fact, pinned: false, source: 'suggestion', createdAt: at, updatedAt: at };
     const next = { ...item, state: 'saved', decidedAt: at, factId: record.id, ...(fact !== item.text ? { edited: true } : {}) };
     // The fact and the suggestion's state change together, or neither does.
     storage.transaction(() => {
@@ -302,13 +301,13 @@ function createFactSuggestions({ storage, coordinator, runLocalModel, busyNow, m
     let b;
     try { b = await readBody(req, DECIDE_BODY_MAX); } catch (e) { return json(res, e.statusCode || 400, { error: e.statusCode === 413 ? 'Request body too large' : 'Send JSON.' }); }
     try { return json(res, 200, { ok: true, ...decide(b || {}) }); }
-    catch (e) { return json(res, e.statusCode || 500, { error: e.statusCode ? e.message : "Couldn't save that. Try again." }); }
+    catch (e) { return json(res, e.statusCode || 500, { error: e.statusCode ? e.message : "Couldn't save that. Try again.", ...(e.full ? { full: true, max: ownerFacts.MAX_FACTS } : {}) }); }
   }
 
   return { consider, afterChat, pending, decide, apiPending, apiDecide };
 }
 
 module.exports = {
-  createFactSuggestions, parseCandidate, dropReason, turnSkip, buildPrompt, normalise, factHash, isState, dayOf,
-  SETTING, FACT_MAX, DAILY_MAX, PENDING_MAX, FACTS_CAP, OPEN, CLOSE, SUGGESTIBLE_WHY, OWNER_CALLERS, QUICK_TIMEOUT_MS,
+  createFactSuggestions, parseCandidate, dropReason, turnSkip, buildPrompt, factHash, isState, dayOf,
+  SETTING, DAILY_MAX, PENDING_MAX, OPEN, CLOSE, SUGGESTIBLE_WHY, OWNER_CALLERS, QUICK_TIMEOUT_MS,
 };

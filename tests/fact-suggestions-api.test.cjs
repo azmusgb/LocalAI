@@ -161,3 +161,35 @@ test('who asked: a paired device and the host get a suggestion, recorded on it; 
   assert.equal(mine.status, 200);
   assert.equal(mine.value.items.length, 1);
 });
+
+test('decide over the real routes: Edit saves the owner\'s words, a second answer is refused, and a full list refuses Save but keeps the suggestion', async t => {
+  const { call, pendingSoon } = await start(t);
+  await call('/api/chat', { messages: [{ role: 'user', content: QUESTION }] });
+  const [item] = (await pendingSoon()).value.items;
+  // Bad input and an unknown id say why, and change nothing.
+  assert.equal((await call('/api/facts/suggestions/decide', { id: item.id, action: 'maybe' })).status, 400);
+  assert.equal((await call('/api/facts/suggestions/decide', { id: 'fs-missing', action: 'no' })).status, 404);
+  const tooLong = await call('/api/facts/suggestions/decide', { id: item.id, action: 'save', text: 'x'.repeat(201) });
+  assert.equal(tooLong.status, 400);
+  assert.match(tooLong.value.error, /up to 200 characters/, "the facts list's own words");
+  // Fill the list to its cap through Memory's own route, then Save is refused with full: true and the max.
+  for (let i = 0; i < 30; i++) assert.equal((await call('/api/memory/add', { projectId: '', category: 'owner', text: `Fact number ${i} about the house.` })).status, 201);
+  const full = await call('/api/facts/suggestions/decide', { id: item.id, action: 'save' });
+  assert.equal(full.status, 409);
+  assert.equal(full.value.full, true);
+  assert.equal(full.value.max, 30);
+  assert.deepEqual((await call('/api/facts/suggestions')).value.items.map(i => i.id), [item.id], 'still waiting');
+  // Room again: Edit saves the owner's words as the fact.
+  const mem = (await call('/api/memory')).value.items;
+  assert.equal((await call('/api/memory/delete', { id: mem[0].id })).status, 200);
+  const edited = await call('/api/facts/suggestions/decide', { id: item.id, action: 'save', text: '  You print mostly PETG   on the X2D ' });
+  assert.equal(edited.status, 200, JSON.stringify(edited.value));
+  assert.equal(edited.value.fact.text, 'You print mostly PETG on the X2D.');
+  const after = (await call('/api/memory')).value.items.filter(m => m.category === 'owner');
+  assert.equal(after.length, 30);
+  assert.ok(after.some(m => m.id === edited.value.fact.id && m.text === 'You print mostly PETG on the X2D.' && m.projectId === ''));
+  const again = await call('/api/facts/suggestions/decide', { id: item.id, action: 'no' });
+  assert.equal(again.status, 409);
+  assert.match(again.value.error, /already saved/);
+  assert.deepEqual((await call('/api/facts/suggestions')).value.items, []);
+});

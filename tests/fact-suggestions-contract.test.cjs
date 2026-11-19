@@ -87,3 +87,13 @@ test("sign-in's own decision says who asked: a route key is not a signed-in devi
   assert.match(server, /apiChatStream\(req, res, access\)/);
   assert.match(read(path.join('server', 'chat.js')), /afterChat\(\{ caller: access,/);
 });
+
+test('a suggestion reaches no prompt until it is saved: only its own module reads where they are kept', () => {
+  const { SETTING } = require('../app/fact-suggestions');
+  const readers = jsFiles(APP).map(f => path.relative(APP, f)).filter(rel => read(rel).includes(`'${SETTING}'`));
+  assert.deepEqual(readers, ['fact-suggestions.js']);
+  // The prompt stage reads facts from the memory store (app/owner-facts.js forTurn over the shared notes), never this.
+  const chat = read(path.join('server', 'chat.js'));
+  assert.match(chat, /ownerFacts\.forTurn\(\(\) => projectNotes\(''\)\)/);
+  assert.ok(!/factSuggestions\.(pending|decide|consider)\b/.test(chat), 'chat.js only schedules the job');
+});

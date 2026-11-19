@@ -12,7 +12,9 @@ const { Storage } = require('../app/storage');
 const modelRouter = require('../app/model-router');
 const { createCoordinator } = require('../app/model-coordinator');
 const fsg = require('../app/fact-suggestions');
-const { createFactSuggestions, parseCandidate, dropReason, turnSkip, buildPrompt, factHash, SETTING, DAILY_MAX, FACT_MAX, FACTS_CAP, OPEN, CLOSE } = fsg;
+const { createFactSuggestions, parseCandidate, dropReason, turnSkip, buildPrompt, factHash, SETTING, DAILY_MAX, OPEN, CLOSE } = fsg;
+// The facts list's own limits (app/owner-facts.js): suggestions use them, never a copy.
+const { MAX_LENGTH: FACT_MAX, MAX_FACTS: FACTS_CAP } = require('../app/owner-facts');
 
 const LOCAL = { provider: 'ollama', model: 'qwen3:4b', class: 'private', why: 'Ask stays on this PC unless you choose a bigger model' };
 const QUESTION = 'I print mostly PLA on my Bambu X2D. What nozzle temperature should I use?';
@@ -268,8 +270,9 @@ test('decide refuses bad input, unknown ids and a full list', async t => {
   assert.throws(() => s.decide({ id: 'fs-missing', action: 'no' }), e => e.statusCode === 404);
   const { suggested } = await s.consider(turn());
   for (let i = 0; i < FACTS_CAP; i++) addFact(storage, `Fact number ${i} about the house.`, `mem-${i}`);
-  assert.throws(() => s.decide({ id: suggested.id, action: 'save' }), e => e.statusCode === 409 && /full/.test(e.message));
+  assert.throws(() => s.decide({ id: suggested.id, action: 'save' }), e => e.statusCode === 409 && e.full === true && e.message === require('../app/owner-facts').fullMessage());
   assert.equal(facts(storage).length, FACTS_CAP);
+  assert.equal(s.pending().length, 1, 'a refused Save leaves the suggestion waiting');
 });
 
 // ---- a store that can't be read is an error, never an empty list ----
@@ -303,4 +306,20 @@ test('failed source: unreadable saved facts stop the suggestion and the Save, wi
   t.after(() => { storage.list = list; });
   assert.throws(() => s.decide({ id: suggested.id, action: 'save' }), e => e.statusCode === 503 && e.code === 'facts_unreadable');
   assert.equal(s.pending().length, 1);
+});
+
+// ---- one set of rules with the facts list (app/owner-facts.js) ----
+
+test("duplicates are found with the facts list's own key, and a full-length edit is not pushed past it by a full stop", async t => {
+  const ownerFacts = require('../app/owner-facts');
+  const typed = 'you print mostly PLA,  on a Bambu X2D';
+  assert.equal(ownerFacts.sameKey(typed), ownerFacts.sameKey(FACT));
+  assert.equal(dropReason(FACT, { facts: [typed] }), 'duplicate');
+  const { s, storage } = setup(t);
+  const { suggested } = await s.consider(turn());
+  const long = ('You keep the filament dry in a sealed box beside the printer ' + 'and label each spool by brand '.repeat(6)).slice(0, FACT_MAX).trim().replace(/\s\S*$/, '').padEnd(FACT_MAX, 'x');
+  assert.equal(long.length, FACT_MAX);
+  const saved = s.decide({ id: suggested.id, action: 'save', text: long });
+  assert.equal(saved.fact.text, long, 'kept as typed: no full stop past the limit');
+  assert.equal(facts(storage)[0].text.length, FACT_MAX);
 });
