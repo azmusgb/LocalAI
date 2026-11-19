@@ -48,3 +48,21 @@ test('a run that completes twice is recorded once', () => {
   assert.equal(journal.search({}).items[0].body, 'PETG is a good choice.');
   storage.close();
 });
+
+// A Past work answer is made from journal entries: recording it would feed the journal its own summaries, and the
+// next ask would cite the answer instead of the work (owner's call; memory-core spec §4 as changed by A28).
+test('Past work runs are not recorded back into the journal, whatever their status', () => {
+  for (const status of ['completed', 'failed', 'cancelled']) {
+    assert.equal(runEntry(run({ type: 'prompt', status, meta: { mode: 'history' }, output: { text: 'You asked about PETG [1].', citations: [], entries: [] } })), null, status);
+  }
+  assert.notEqual(runEntry(run({ type: 'prompt', meta: {} })), null, 'only the history mode is left out');
+});
+
+// Amendment A28 D2: the journal does not record house things. Prints, films and spools are Bambuddy's and Plex's,
+// read through Pi Hub when asked, never kept on the PC.
+test('the recorders have no builder for prints, films or materials (A28 D2)', () => {
+  const recorders = require('../app/journal-recorders');
+  for (const name of Object.keys(recorders)) assert.doesNotMatch(name, /print|watch|film|movie|material|spool/i, name);
+  const source = fs.readFileSync(path.join(__dirname, '../app/journal-recorders.js'), 'utf8');
+  assert.doesNotMatch(source, /source:\s*['"](?:print|watch|materials)['"]/, 'no entry is built with a house source');
+});

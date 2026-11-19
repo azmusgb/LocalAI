@@ -20,6 +20,8 @@ function runText(run) {
 
 function runEntry(run) {
   if (!run || typeof run.id !== 'string' || !TERMINAL.has(run.status)) return null;
+  // A Past work answer (app/journal-ask.js) is made from journal entries; kept, it would be cited instead of the work.
+  if (run.meta?.mode === 'history') return null;
   const hidden = run.type === 'powershell' || run.meta?.powershell === true; // host commands: title only
   const body = hidden ? '' : run.status === 'failed' && !runText({ ...run, summary: '' }) ? str(run.error) : runText(run);
   return {
