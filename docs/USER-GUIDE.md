@@ -69,8 +69,8 @@ With cloud models on, two toggles appear under the box on Home (for Chat, Resear
 - **Keep on this PC**: this request stays on this computer, whatever it is.
 
 They apply to the next thing you send, then switch off again. Anything about health, money or identity, House
-questions, voice, files and photos, your workspace and documents, and questions about Local AI's own keys or setup
-always stay on this computer. Research, change plans for Local AI's own code and mission summaries may use a cloud
+questions, voice, files and photos, your workspace and documents, questions about Local AI's own keys or setup, and
+a chat that uses a project's Memory notes always stay on this computer. Research, change plans for Local AI's own code and mission summaries may use a cloud
 model when nothing in them is private. If a cloud model is busy or fails, this computer answers instead.
 
 Every answer says where it came from: **Answered by GPT-OSS 120B · Groq** or **Answered on this PC**, with the
@@ -158,7 +158,11 @@ The Projects tab opens on your projects. Its tabs:
 
 - **Projects:** group related work, each with its own sources and memory.
 - **Sources:** files and notes the assistant can search when it answers.
-- **Memory:** facts the assistant keeps about each project.
+- **Memory:** facts the assistant keeps about each project. A chat filed under a project is answered with that
+  project's notes (pinned ones first, then the newest, as many whole notes as fit in about 1,500 characters, at most
+  12), on this computer only, and the answer says **Used 3 notes from RIFT tiles**, which opens them here. Filing a chat
+  takes effect from its next message. **Use these notes in chat**, on the project's Memory tab, turns this off for one
+  project. If the notes can't be read, the answer says so and is written without them.
 - **Library**: what you kept. Chats and research arrive only when you tap **☆ Keep** on them (in the open chat or
   on their row in Work); images you make arrive by themselves (a Best quick preview only when you keep it). Conversations and research are a list, newest first,
   and images are pictures after them. Filter by kind, or show only what you **pinned**. ☆ pins an item. × takes a
