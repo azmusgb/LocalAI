@@ -915,10 +915,9 @@ function commandPalette(){
     },150);
   }
   function journalHtml(from){
-    if(journal.state==='error')return `<div class="cmdk-group" role="group" aria-labelledby="cmdk-group-journal" data-cmd-group="journal"><div class="cmdk-group__label" id="cmdk-group-journal">Past work</div><p class="cmdk-note" data-cmd-journal-error>Couldn't search past work</p></div>`;
-    if(journal.state!=='ok'||!journal.items.length)return '';
-    return `<div class="cmdk-group" role="group" aria-labelledby="cmdk-group-journal" data-cmd-group="journal"><div class="cmdk-group__label" id="cmdk-group-journal">Past work</div>${journal.items.map((e,i)=>{const d=dateOf(e.at),src=sourceOf(e);
-      return `<button type="button" id="cmdk-opt-${from+i}" role="option" class="cmdk-item" data-cmd-journal="${esc(e.link)}"><span class="cmdk-item__title">${esc(String(e.title||'').trim()||'Untitled')}</span><span class="meta">${esc(src)}${src&&d?' · ':''}${d?`<time datetime="${esc(e.at)}">${esc(d)}</time>`:''}</span></button>`}).join('')}</div>`;
+    const body=journal.state==='error'?`<p class="cmdk-note" data-cmd-journal-error>Couldn't search past work</p>`:journal.state==='ok'?journal.items.map((e,i)=>{const d=dateOf(e.at),src=sourceOf(e);
+      return `<button type="button" id="cmdk-opt-${from+i}" role="option" class="cmdk-item" data-cmd-journal="${esc(e.link)}"><span class="cmdk-item__title">${esc(String(e.title||'').trim()||'Untitled')}</span><span class="meta">${esc(src)}${src&&d?' · ':''}${d?`<time datetime="${esc(e.at)}">${esc(d)}</time>`:''}</span></button>`}).join(''):'';
+    return body&&`<div class="cmdk-group" role="group" aria-labelledby="cmdk-group-journal" data-cmd-group="journal"><div class="cmdk-group__label" id="cmdk-group-journal">Past work</div>${body}</div>`;
   }
   function render(keep=false){
     if(!keep)askJournal();

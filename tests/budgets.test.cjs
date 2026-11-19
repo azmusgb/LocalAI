@@ -135,7 +135,10 @@ const KB = 1024;
 // +0.3 KB); 357.5 KB measured.
 // 2026-11-15: 358 → 359 KB again (back to where main was) for the Show on map buttons on the Platform map table (atlas-platform.js
 // +0.9 KB gzipped: the button, its reason line and the compact styles); 358.2 KB measured, 184 bytes over 358.
-const TOTAL = 359 * KB;
+// 2026-11-19: 359 → 361 KB and app.js 37.5 → 39 KB for Past work in ⌘K (Pi Hub A28, item 3): the debounced journal
+// search, its stale-answer and failed-search states and the hit rows (app.js +1.2 KB, app.css +0.1 KB; main had app.js
+// 37.45 KB, 50 bytes under its limit); 360.0 KB measured.
+const TOTAL = 361 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
@@ -172,7 +175,7 @@ const TOTAL = 359 * KB;
 // app.css +0.1 KB, its Atlas section rewritten in one pass without the layered overrides; 321.8 KB measured).
 // 2026-11-02: index.html 16 → 17 KB for the navigation update: the Settings and Tools pages, the Spreadsheets chip and
 // mode, and Home's On Pi Hub line (16.1 KB measured).
-const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 37.5 * KB, 'index.html': 17 * KB, 'home.js': 14 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB };
+const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 39 * KB, 'index.html': 17 * KB, 'home.js': 14 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
