@@ -174,12 +174,12 @@ picked by the system, and its own data folder) and runs `tests/run-browser.mjs -
 then `perf-ui.mjs` and `visual-ui.mjs` alone on the first worker's server, since frame times and screenshots are the
 checks other work on the machine can upset. It adds the results into the usual "X of Y browser suites passed; failed:
 …" line. The default is one worker per three CPU cores, at most four; `LOCALAI_CI_SHARDS=1` runs every suite in one
-worker as before, and any other number sets the count. Suites are shared out longest first, by each suite's last
+worker as before, and any other whole number from 2 to 16 sets the count. Suites are shared out longest first, by each suite's last
 passing time (kept in `localai-ci/durations.json` next to the green results), or alphabetically before any are known.
 A suite that fails is still run once more on its own, against the server of the worker that ran it.
 
 **Ship re-checks against the newest `main`.** A run tests the PR with `main` as it was when the run started; a PR
-merged during those ~15 minutes isn't in it, and two PRs green on their own can be red together (on 17–18 Oct this
+merged during the run isn't in it, and two PRs green on their own can be red together (on 17–18 Oct this
 happened three times, each time the shell's gzipped size budget in `tests/budgets.test.cjs`). So after a green run,
 `npm run ship` fetches `main` again and, if it moved, merges it into the tested worktree and re-runs the fast checks
 only: `npm test` (unit, contracts, budgets, deploy contracts, lint tests) and `Test-LocalAI-Candidate.ps1 -LocalNode`
