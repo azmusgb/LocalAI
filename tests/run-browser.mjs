@@ -1,6 +1,6 @@
-// Runs every tests/*-ui.mjs browser suite against the server at LOCALAI_URL (default 127.0.0.1:3080), one after
-// another, and reports all failures at the end instead of stopping at the first. New suites are picked up
-// automatically.
+// Runs every tests/*-ui.mjs browser suite against the server at LOCALAI_URL (default 127.0.0.1:3080; refused when it
+// is a deployed release, see tests/browser-target.mjs), one after another, and reports all failures at the end
+// instead of stopping at the first. New suites are picked up automatically.
 //
 //   node tests/run-browser.mjs                 every suite
 //   node tests/run-browser.mjs images claude   suites whose names contain "images" or "claude"; a full name
@@ -18,6 +18,7 @@ import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseShard, partitionSuites, SOLO_SUITES } from '../scripts/local-ci-lib.mjs';
+import { checkBrowserTarget, suitesNeedingTarget } from './browser-target.mjs';
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -35,6 +36,12 @@ else if (shard) {
   suites = partitionSuites(suites.filter(s => !SOLO_SUITES.includes(s)), shard.count, durations)[shard.index];
 }
 if (list) { if (suites.length) console.log(suites.join('\n')); process.exit(0); }
+// Never against the deployed appliance (tests/browser-target.mjs): checked once, before any suite runs.
+if (suitesNeedingTarget(suites, dir).length) {
+  const target = await checkBrowserTarget(process.env.LOCALAI_URL || 'http://127.0.0.1:3080');
+  if (!target.ok) { console.error(target.reason); process.exit(2); }
+  if (target.warning) console.error(target.warning);
+}
 const failed = [];
 // Suites that start their own server pass this environment on. Default the Workshop display address to a dead
 // loopback port so no test server ever contacts the owner's real display; a value you set yourself is kept.
