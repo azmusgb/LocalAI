@@ -59,7 +59,8 @@ function createJournalRoutes(ctx) {
       try {
         runLedger.start(run.id, 'Reading past work');
         const out = await askHistory({ question: q, journal, chatOnce: localTurn(local.model), onEntries: (entries, where) => { read = entries; from = where; runLedger.update(run.id, { progress: 40 }, `Asking the local model about ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`); } });
-        return runLedger.complete(run.id, { summary: out.answer.slice(0, 420), output: runOutput(out), meta: { route: used } });
+        // No summary: the run view would show the answer twice; cards preview output.text (app/run-cards.js).
+        return runLedger.complete(run.id, { output: runOutput(out), meta: { route: used } });
       } catch (e) {
         const entries = Array.isArray(e?.entries) ? e.entries : read;
         // A journal that can't be read is said plainly; the reason stays in the server's log, not in the run.

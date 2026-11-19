@@ -244,6 +244,78 @@
     }
   };
 
+  // ---- Past work (a `prompt` run, meta.mode 'history': app/server/journal.js) ----
+  // The answer, then what it cites, then every entry it read (also on a failed run and on "nothing found"). Text is set as
+  // text; only an in-app hash route becomes a link. Each journal entry can be deleted (A28 D6), on POST /api/journal/delete;
+  // Pi Hub's print rows can't (they are not kept here).
+  const SOURCE_NAMES = { run: 'Local AI', voice: 'Voice', approval: 'Approval', release: 'Local AI update', print: 'Pi Hub · Workshop' };
+  const sourceName = s => SOURCE_NAMES[s] || (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : 'Unknown source');
+  const whenText = iso => { const t = Date.parse(iso); return Number.isFinite(t) ? new Date(t).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Time not reported'; };
+  const inApp = link => typeof link === 'string' && /^#[A-Za-z][^\s"'<>\\]*$/.test(link) ? link : '';
+  const deletedEntries = new Set();   // deleted this session: the run's output still lists them
+  const titled = (e, cls) => { const href = inApp(e.link), n = href ? h('a', cls, e.title || 'Untitled') : h('span', cls, e.title || 'Untitled'); if (href) n.href = href; return n; };
+  function entryRow(e) {
+    const li = h('li', 'ui-row ui-row--lamp past-work__entry'); li.dataset.entryId = String(e.id || '');
+    const text = h('div');
+    text.append(titled(e, 'ui-row__title'), h('span', 'ui-row__detail', `${whenText(e.at)} · ${sourceName(e.source)}`));
+    li.appendChild(text);
+    const journalEntry = /^j-/.test(String(e.id || '')) && e.source !== 'print';
+    if (!journalEntry) return li;
+    const status = h('p', 'ui-row__detail past-work__status'); status.setAttribute('role', 'status');
+    if (deletedEntries.has(e.id)) { status.textContent = 'Deleted from your past work'; li.appendChild(status); return li; }
+    const del = h('button', 'btn-outline past-work__delete', 'Delete'); del.type = 'button'; del.setAttribute('aria-label', `Delete "${e.title || 'Untitled'}" from your past work`);
+    del.addEventListener('click', async () => {
+      const ok = await window.LocalAIUI?.ask?.({ title: `Delete "${String(e.title || 'this entry').slice(0, 80)}" from your past work?`, effect: 'It is removed from the journal for good, so Past work can no longer find it. The run or chat it came from is not changed.', confirmLabel: 'Delete', tone: 'danger' });
+      if (!ok?.ok) return;
+      del.disabled = true; del.textContent = 'Deleting…'; status.textContent = ''; status.classList.remove('status-error');
+      try {
+        const r = await fetch('/api/journal/delete', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ id: e.id }) });
+        if (!r.ok && r.status !== 404) { const j = await r.json().catch(() => ({})); throw new Error(j.error || `HTTP ${r.status}`); }
+        deletedEntries.add(e.id);
+        status.textContent = r.status === 404 ? 'Already deleted' : 'Deleted from your past work';
+        const focusTo = li.querySelector('a') || li.closest('.run-body')?.querySelector('h3');
+        del.remove(); li.appendChild(status);
+        if (focusTo) { if (!focusTo.matches('a')) focusTo.tabIndex = -1; focusTo.focus({ preventScroll: true }); }
+        window.LocalAIUI?.toast?.('Deleted from your past work');
+      } catch (err) {
+        del.disabled = false; del.textContent = 'Delete';
+        status.textContent = `Couldn't delete it: ${err.message || err}. Try again.`; status.classList.add('status-error'); status.setAttribute('role', 'alert');
+        if (!status.isConnected) li.appendChild(status);
+      }
+    });
+    li.append(status, del);
+    return li;
+  }
+  function mountPastWork(run, slot) {
+    RB.mount(slot, () => {
+      slot.classList.add('past-work');
+      const o = run.output && typeof run.output === 'object' && !run.output.truncated ? run.output : {};
+      const entries = Array.isArray(o.entries) ? o.entries.filter(e => e && typeof e === 'object') : [];
+      const cites = Array.isArray(o.citations) ? o.citations.filter(c => c && typeof c === 'object') : [];
+      const live = ['queued', 'running', 'streaming'].includes(run.status);
+      const answer = typeof o.text === 'string' ? o.text.trim() : '';
+      slot.appendChild(h('h3', '', 'Answer'));
+      if (live) { const w = h('p', 'muted past-work__wait', 'Reading your past work…'); w.setAttribute('role', 'status'); slot.appendChild(w); }
+      else if (answer) slot.appendChild(h('p', 'past-work__answer', answer));
+      else if (run.status === 'failed') slot.appendChild(h('p', 'muted', 'No answer: it stopped before one was written (the reason is above).'));
+      else if (run.output?.truncated) slot.appendChild(h('p', 'muted', 'This answer was too long to keep here.'));
+      else slot.appendChild(h('p', 'muted', 'No answer was written.'));
+      if (cites.length) {
+        slot.appendChild(h('h3', '', 'Cited'));
+        const ol = h('ol', 'past-work__cites');
+        for (const c of cites) { const li = h('li'); li.append(h('span', 'past-work__n', `[${c.n}] `), titled(c, ''), h('span', 'muted', ` · ${whenText(c.at)}`)); ol.appendChild(li); }
+        slot.appendChild(ol);
+      }
+      if (live) return;
+      slot.appendChild(h('h3', '', entries.length === 1 ? 'The entry it read' : 'What it read'));
+      if (!entries.length) { slot.appendChild(h('div', 'ui-empty past-work__empty', run.status === 'failed' ? 'Nothing was read before it stopped.' : 'Nothing in your past work matched this question.')); return; }
+      const ul = h('ul', 'ui-rows past-work__entries');
+      entries.forEach(e => ul.appendChild(entryRow(e)));
+      slot.appendChild(ul);
+    });
+  }
+  if (window.LocalAIUI?.registerRunBody) window.LocalAIUI.registerRunBody('prompt', mountPastWork);
+
   // ---- images ----
   // The old Images page owns the stage, the editor and the requests; this body borrows its parts for the run view and gives them
   // back. window.LocalAIImages (app.js) paints a run's output into the stage and keeps Another version / Edit on the run's thread.

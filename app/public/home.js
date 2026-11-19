@@ -3,7 +3,7 @@
 (function(root){'use strict';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const MODES=[['auto','Auto','Picks for you'],['ask','Chat','Ask a question'],['research','Research','Search the web first'],['create','Image','Make pictures'],['spreadsheet','Spreadsheet','Ask about the open workbook'],['mission','Mission','Give the team a goal'],['automate','Automate','Set up a task'],['engineering','Change the assistant','Always asks you first']];
+const MODES=[['auto','Auto','Picks for you'],['ask','Chat','Ask a question'],['research','Research','Search the web first'],['history','Past work','Answers from what you did here'],['create','Image','Make pictures'],['spreadsheet','Spreadsheet','Ask about the open workbook'],['mission','Mission','Give the team a goal'],['automate','Automate','Set up a task'],['engineering','Change the assistant','Always asks you first']];
 const LABEL=Object.fromEntries(MODES.map(m=>[m[0],m[1]]));
 const MODE_KEY='localai.home.mode',OPT_KEY='localai.home.options';
 const store={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}}};
@@ -290,6 +290,18 @@ async function viaStarter(name,intent,text,extra,question=text){
  clearInput();
  try{await S.start(text,{...extra,pending,...(question!==text?{title:titleOf(question)}:{})})}catch(e){pending.fail(e.message);throw e}
 }
+// Past work (memory-core, A28 D4): the question goes to /api/journal/ask, which answers from the journal on this PC; the
+// run view opens at once and follows the run. Pi Hub's page context is never added (stored and quoted text stay apart).
+async function pastWork(question){
+ const pending=root.LocalAIRuns.openPending({kind:'history',title:titleOf(question),retry:()=>send(question,'history')});
+ clearInput();
+ try{
+  const j=await root.LocalAIUI.fetchJson('/api/journal/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question})});
+  if(!j.runId)throw new Error('Past work did not start. Try again.');
+  pending.resolve(j.runId);
+  root.LocalAIRuns.refresh?.(); // the run list now holds a running run, so the run view follows it every few seconds
+ }catch(e){pending.fail(e.message);throw e}
+}
 async function dispatch(intent,text,route,question=text){
  gateCheck(intent);
  const L=root.LocalAILegacy;
@@ -304,6 +316,7 @@ async function dispatch(intent,text,route,question=text){
   if(!data.run?.id)throw new Error('The change did not start. Try again.');
   openRun({id:'legacy-engineering:'+data.run.id});clearInput();
  }else if(intent==='ask'||intent==='research')await viaStarter('LocalAIChat',intent,text,{research:intent==='research',model:options.model,bigger:flag('homeBigger'),keepLocal:flag('homeKeepLocal')},question);
+ else if(intent==='history')await pastWork(question);
  else if(intent==='create')await viaStarter('LocalAIImages','create',text,{engine:options.engine,aspect:options.aspect,style:options.style},question);
  // Spreadsheet (a Work kind, 2 Nov): the request runs on the Spreadsheets page, where the workbook and Keep / Discard are.
  else if(intent==='spreadsheet'){if(!root.LocalAISheets)throw new Error('Spreadsheets is not available right now.');root.LocalAIRouter.open('spreadsheets');root.LocalAISheets.ask(text);clearInput()}
