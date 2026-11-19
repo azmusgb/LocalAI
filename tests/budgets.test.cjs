@@ -151,8 +151,8 @@ const KB = 1024;
 // 2026-11-19: 364 → 366 KB, app.js 39 → 40 KB and run-bodies.js 11 → 11.2 KB for project Memory in chat (owner approved
 // raises up to about 367 KB for the batch): the line under a chat answer ("Used 3 notes from …" / couldn't read them, a
 // 44 px link), the Memory tab's "Use these notes in chat" switch with its saving and failed states, Shared staying chosen,
-// and the notice for a link to a deleted project (run-bodies.js +297 bytes, app.js +871, index.html and app.css about
-// +0.2 KB). main had 372,521 bytes with app.js 39,836 (100 bytes under its limit); 373,940 bytes measured, app.js 40,707,
+// and the notice for a link to a deleted project with Save memory disabled and its reason (run-bodies.js +297 bytes, app.js +924, index.html and app.css about
+// +0.2 KB). main had 372,521 bytes with app.js 39,836 (100 bytes under its limit); 374,037 bytes measured, app.js 40,760,
 // run-bodies.js 11,409.
 const TOTAL = 366 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;

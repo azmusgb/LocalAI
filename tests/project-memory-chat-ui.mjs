@@ -231,6 +231,16 @@ await check('a project whose switch is off shows it off; Shared (no project) has
   for (let i = 0; i < 60 && !page.db.adds; i++) await page.waitForTimeout(50);
   assert.equal(page.db.adds?.[0]?.projectId, '', 'Save memory files it as Shared');
   assert.equal(await page.locator('#memoryProject').inputValue(), '', 'still Shared after saving');
+  // Leaving Memory and coming back by its tab keeps Shared: the project the link opened is forgotten once you choose.
+  await page.evaluate(() => window.LocalAIRouter.go('#knowledge'));
+  await page.locator('#knowledge.active').waitFor(T);
+  const back = page.db.memoryQueries.length;
+  await page.evaluate(() => window.LocalAIRouter.go('#memory'));
+  await page.locator('#memory.active').waitFor(T);
+  for (let i = 0; i < 60 && page.db.memoryQueries.length === back; i++) await page.waitForTimeout(50);
+  assert.equal(page.db.memoryQueries.at(-1), '', 'the Shared list is read again');
+  assert.equal(await page.locator('#memoryProject').inputValue(), '', 'Shared after returning by the tab');
+  assert.equal(await page.locator('#memoryChat').isVisible(), false);
   assert.deepEqual(page.db.posts, [], 'the switch was never sent for a project');
   await page.locator('#memoryProject').selectOption('prj_rift');
   await page.waitForFunction(() => !document.getElementById('memoryChat').hidden, null, T);
@@ -241,6 +251,9 @@ await check('a project whose switch is off shows it off; Shared (no project) has
 await check('a link to a deleted project says it no longer exists, and does not pretend to be Shared', async () => {
   const runs = [run(1, 'What layer height?', 'It is 0.2 mm.', { ...USED, projectId: 'prj_gone' })];
   const page = await open(phone, '#home', { runs, scheme: 'light' });
+  // First a real project, so "What it knows" has counts that must not carry over.
+  await openMemory(page, 'prj_rift');
+  await page.locator('#projectIntel .home-insight').waitFor(T);
   await openRun(page, runs[0].id);
   await page.locator('#runDrawer .run-memory a').click();
   await page.locator('#memory.active').waitFor(T);
@@ -252,12 +265,21 @@ await check('a link to a deleted project says it no longer exists, and does not 
   assert.ok(!page.db.memoryQueries.includes(''), 'Shared notes are not shown in its place');
   assert.equal(await page.locator('#memoryList .memory-card').count(), 0);
   assert.equal(await page.locator('#memoryChat').isVisible(), false);
+  assert.equal(await page.locator('#projectIntel .home-insight').count(), 0, "the previous project's counts are gone");
+  assert.match(await page.locator('#projectIntel').innerText(), /Choose a project to see what the assistant remembers/);
+  assert.equal(await page.locator('#memoryAddBtn').isDisabled(), true, 'Save memory is unavailable');
+  const reason = page.locator('#memoryAddReason');
+  assert.equal(await reason.isVisible(), true, 'with the reason beside it');
+  assert.match(await reason.innerText(), /Choose a project or Shared above/);
+  assert.equal(await page.locator('#memoryAddBtn').getAttribute('aria-describedby'), 'memoryAddReason');
   assert.deepEqual(await axe(page, '#memory'), []);
   await shot(page, 'memory-gone-390-light');
   // Choosing a project goes on as normal.
   await page.locator('#memoryProject').selectOption('prj_rift');
   await page.locator('#memoryList .memory-card', { hasText: 'Layer height is 0.2 mm' }).waitFor(T);
   assert.equal(await gone.count(), 0);
+  assert.equal(await page.locator('#memoryAddBtn').isDisabled(), false);
+  assert.equal(await reason.isHidden(), true);
   await page.context().close();
 });
 
