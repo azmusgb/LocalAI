@@ -3,8 +3,10 @@
 // Notifications (the Inbox and the phone, through notifier) and approvals.
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
+const journalRecorders = require('../journal-recorders');
+
 function createNotifications(ctx) {
-  const { APPROVALS_STORE, NOTIFICATIONS_STORE, changeStore, decideChange, hostDetail, isInfoNotice, json, makeId, normalizeTitle, notifier, notifyLib, nowIso, objectStore, prependRecord, readBody, recordActivity, requireFeature, saveStore, storage, storageError } = ctx;
+  const { APPROVALS_STORE, NOTIFICATIONS_STORE, changeStore, decideChange, hostDetail, isInfoNotice, journalWriter, json, makeId, normalizeTitle, notifier, notifyLib, nowIso, objectStore, prependRecord, readBody, recordActivity, requireFeature, saveStore, storage, storageError } = ctx;
   function notificationStore(){ return objectStore(NOTIFICATIONS_STORE); }
   function approvalStore(){ return objectStore(APPROVALS_STORE); }
   function addNotification(kind,title,detail='',meta={},level='attention'){
@@ -64,8 +66,8 @@ function createNotifications(ctx) {
       // An approval for a change decides the change as well; otherwise approving it here left the change waiting forever.
       const changeId=items[i].meta?.changeId;
       if(changeId&&items[i].status==='pending'){const changes=changeStore(),c=changes.find(x=>x.id===changeId);
-        if(c&&c.status==='awaiting_approval'){decideChange(changes,c,b.decision);recordActivity('approval',`Approval ${b.decision}`,items[i].title,{approvalId:items[i].id,changeId});return json(res,200,{item:approvalStore().find(x=>x.id===b.id)||items[i]})}}
-      items[i].status=b.decision;items[i].updatedAt=nowIso();saveStore(APPROVALS_STORE,items,500);recordActivity('approval',`Approval ${b.decision}`,items[i].title,{approvalId:items[i].id});json(res,200,{item:items[i]});
+        if(c&&c.status==='awaiting_approval'){decideChange(changes,c,b.decision);recordActivity('approval',`Approval ${b.decision}`,items[i].title,{approvalId:items[i].id,changeId});const item=approvalStore().find(x=>x.id===b.id)||items[i];journalRecorders.record(journalWriter,()=>journalRecorders.approvalEntry({...item,status:b.decision},{where:'app'}));return json(res,200,{item})}}
+      items[i].status=b.decision;items[i].updatedAt=nowIso();saveStore(APPROVALS_STORE,items,500);recordActivity('approval',`Approval ${b.decision}`,items[i].title,{approvalId:items[i].id});journalRecorders.record(journalWriter,()=>journalRecorders.approvalEntry(items[i],{where:'app'}));json(res,200,{item:items[i]});
     }catch(e){storageError(res,e,400)}
   }
   return { addNotification, apiApprovalCreate, apiApprovalDecide, apiApprovals, apiNotificationSeed, apiNotificationSystem, apiNotificationUpdate, apiNotifications, approvalStore, notificationStore, resolveDeployFailures };

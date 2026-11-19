@@ -120,6 +120,9 @@ test('the journal is handed only to the journal routes, and Past work only to vo
   const given = name => wiring.filter(w => new RegExp(`(?:^|[,{\\s])${name}(?=[,}\\s:])`).test(w.names)).map(w => w.file).sort();
   assert.deepEqual(given('journal'), ['journal']);
   assert.deepEqual(given('startPastWork'), ['voice']);
+  // The voice and approval recorders get a writer that can only add an entry (app/journal-recorders.js).
+  assert.deepEqual(given('journalWriter'), ['notifications', 'powershell', 'voice']);
+  assert.match(server, /const journalWriter = Object\.freeze\(\{ record: entry => journal\.record\(entry\) \}\);/);
   for (const file of ['server/agents.js', 'server/changes.js', 'server/automations.js', 'server/chat.js', 'agent-runtime.js', 'agent-orchestrator.js', 'agent-tools.js', 'mission-answer.js', 'mission-evidence.js']) {
     const source = fs.readFileSync(path.join(__dirname, '../app', file), 'utf8');
     assert.doesNotMatch(source, /require\([^)]*journal|startPastWork|askHistory/, `${file} reads no journal`);
