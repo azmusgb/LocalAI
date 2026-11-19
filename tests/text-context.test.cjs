@@ -58,6 +58,30 @@ test('sources are dropped entirely when they cannot help', () => {
   assert.ok(out.some(m => m.content.startsWith('u')));
 });
 
+// Project notes (kind: 'memory', app/project-memory.js) are a fixed slice: sources go first, then history, then notes.
+const notes = { role: 'system', kind: 'memory', content: 'n'.repeat(1500) };
+
+test('project notes: sources are trimmed before history, and history before notes', () => {
+  const ms = [sys, notes, { role: 'system', kind: 'sources', content: 's'.repeat(3000) }];
+  for (let i = 0; i < 6; i++) ms.push({ role: i % 2 ? 'assistant' : 'user', content: `t${i} ` + 'x'.repeat(400) });
+  ms.push({ role: 'user', content: 'last' });
+  const out = fitMessages(ms, opts);
+  assert.deepEqual(out[0], sys);
+  assert.equal(out[1].content, notes.content, 'the notes are kept whole, right after the system prompt');
+  assert.ok(!out.some(m => m.content.startsWith('s')), 'the sources went first');
+  assert.ok(out.length < ms.length - 1, 'then the oldest turns');
+  assert.equal(out.at(-1).content, 'last');
+  assert.ok(out.every(m => !('kind' in m)), 'marker not sent to the model');
+  assert.ok(chars(out) <= 3500);
+});
+
+test('project notes are left out whole, only when the newest message alone needs the room', () => {
+  const out = fitMessages([sys, notes, { role: 'user', content: 'old ' + 'o'.repeat(500) }, { role: 'user', content: 'q'.repeat(3000) }], opts);
+  assert.ok(!out.some(m => m.content.startsWith('n')), 'no part of the notes is kept');
+  assert.equal(out.length, 2);
+  assert.equal(out[1].content, 'q'.repeat(3000), 'the newest message is not cut while the notes can go');
+});
+
 test('warm and unload send the right bodies and never throw', async () => {
   const calls = [];
   const fetch = async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return { ok: true }; };

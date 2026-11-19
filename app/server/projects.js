@@ -48,7 +48,10 @@ function createProjects(ctx) {
       const b=await readBody(req); const items=projectStore(); const i=items.findIndex(x=>x.id===b.id); if(i<0)return json(res,404,{error:'Project not found'});
       if(typeof b.name==='string'&&b.name.trim())items[i].name=normalizeTitle(b.name,'Project');
       if(typeof b.description==='string')items[i].description=b.description.slice(0,1200);
-      if(typeof b.pinned==='boolean')items[i].pinned=b.pinned; items[i].updatedAt=nowIso(); saveStore(PROJECTS_STORE,items,250); json(res,200,{item:publicProject(items[i])});
+      if(typeof b.pinned==='boolean')items[i].pinned=b.pinned;
+      // "Use these notes in chat" on the project's Memory tab (project Memory in chat, D2): on unless set to false.
+      if(b.notesInChat!==undefined){if(typeof b.notesInChat!=='boolean')return json(res,400,{error:'notesInChat must be true or false'});items[i].notesInChat=b.notesInChat}
+      items[i].updatedAt=nowIso(); saveStore(PROJECTS_STORE,items,250); json(res,200,{item:publicProject(items[i])});
     }catch(e){storageError(res,e,400)}
   }
   async function apiConversations(req,res,urlObj){

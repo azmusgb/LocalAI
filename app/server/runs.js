@@ -13,8 +13,11 @@ function createRuns(ctx) {
     const label=typeof body?.title==='string'?body.title.replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,80):''; // the caller's name for it in Recent ("House question")
     const retryBody={messages,model,webSearch:body?.webSearch===true,threadId:cleanRunId(body?.threadId)||undefined,brief:body?.brief===true||undefined,title:label||undefined,
       // What kept the first send here goes with the retry too (images are not resent: they keep it here instead).
-      voice:body?.voice===true||undefined,voiceRun:body?.voiceRun===true||undefined,keepLocal:body?.keepLocal===true||(Array.isArray(body?.images)&&body.images.length>0)||undefined,bigger:body?.bigger===true||undefined};
-    return runLedger.create({type:body?.webSearch===true?'research':'chat',title:label||titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true,...(label?{label}:{}),...(body?.voice===true||body?.voiceRun===true?{voice:true}:{})}});
+      voice:body?.voice===true||undefined,voiceRun:body?.voiceRun===true||undefined,keepLocal:body?.keepLocal===true||(Array.isArray(body?.images)&&body.images.length>0)||undefined,bigger:body?.bigger===true||undefined,projectId:typeof body?.projectId==='string'&&cleanRunId(body.projectId)||undefined};
+    // A request that names a project (project Memory in chat, D1) is filed under it, if that project exists.
+    // A failed project read files nothing; the chat itself still runs (and says the notes couldn't be read).
+    let projectId;try{projectId=typeof body?.projectId==='string'&&cleanRunId(body.projectId)&&projectStore().some(p=>p.id===body.projectId)?body.projectId:undefined}catch{projectId=undefined}
+    return runLedger.create({type:body?.webSearch===true?'research':'chat',title:label||titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,projectId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true,...(label?{label}:{}),...(body?.voice===true||body?.voiceRun===true?{voice:true}:{})}});
   }
   function normalizedExecutionStatus(value){
     const s=String(value||'').toLowerCase();

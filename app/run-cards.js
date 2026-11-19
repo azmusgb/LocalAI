@@ -2,6 +2,7 @@
 // Every run describes itself as a card (icon, preview, badge, action) so the UI only renders. Pure: no I/O; lookups are injected.
 // STATUS mirrors LocalAIKit.statusBadge in public/ui.js: keep the two tables identical.
 const { label: routeLabel } = require('./model-router');
+const { cardLine: memoryLine } = require('./project-memory');
 const STATUS = Object.freeze({awaiting_approval:['Ready to review','accent'],ready:['Ready to review','accent'],needs_attention:['Needs a look','attention'],applied:['Done','good'],completed:['Done','good'],answered:['Done','good'],running:['Running','accent'],failed:['Failed','bad'],error:['Failed','bad'],validation_failed:['Needs a look','bad'],patch_failed:['Needs a look','bad'],rejected:['Rejected','neutral'],cancelled:['Cancelled','neutral'],queued:['Queued','neutral'],down:['Down','bad'],healthy:['Healthy','good'],optional_offline:['Offline','neutral']});
 const KINDS = Object.freeze({chat:['compose','ask'],prompt:['history','ask'],research:['globe','ask'],image:['image','create'],agent:['automate','agents'],automation:['refresh','automationStudio'],engineering:['build','changes'],spreadsheet:['file','spreadsheets']});
 const LEGACY_TYPES = Object.freeze({mission:'agent',specialist:'agent'});
@@ -86,6 +87,8 @@ function runCard(run, { approvalFor, changeFor } = {}) {
   if (!used && kind === 'engineering' && meta.changeId && changeFor) used = changeFor(meta.changeId)?.route;
   const text = used && typeof used === 'object' ? routeLabel(used) : '';
   const route = text ? { text, why: typeof used.why === 'string' ? used.why.slice(0, 160) : '' } : null;
-  return { kind, icon, title: readableTitle(run), summary, badge: outcomeBadge(run, kind, summary) || badge(run.status), preview, action, approval, view, route };
+  // A chat in a project: which of its Memory notes the answer used, or that they couldn't be read (app/project-memory.js).
+  const memory = kind === 'chat' || kind === 'research' ? memoryLine(meta) : null;
+  return { kind, icon, title: readableTitle(run), summary, badge: outcomeBadge(run, kind, summary) || badge(run.status), preview, action, approval, view, route, memory };
 }
 module.exports = { runCard, readableTitle, STATUS, workKind, WORK_CHIPS };

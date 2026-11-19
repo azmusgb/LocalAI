@@ -40,7 +40,8 @@ const sizeOf = ms => ms.reduce((n, m) => n + String(m.content || '').length, 0);
 
 // Trims messages so the estimated prompt fits numCtx minus the room reserved for the answer. The first system
 // message and the newest message are kept; sources (messages marked kind: 'sources') go first, then the oldest
-// turns; a last message that is still too big is cut from the front rather than dropped. Pure; returns new objects.
+// turns, then project notes (kind: 'memory', whole: app/project-memory.js); a last message that is still too big
+// is cut from the front rather than dropped. Pure; returns new objects.
 function fitMessages(messages, { numCtx = TEXT_NUM_CTX, reserve = ANSWER_RESERVE } = {}) {
   const budget = Math.max(MIN_KEPT_CHARS, Math.floor((numCtx - reserve) * CHARS_PER_TOKEN));
   let out = (messages || []).map(m => ({ ...m, content: String(m.content ?? '') }));
@@ -54,9 +55,13 @@ function fitMessages(messages, { numCtx = TEXT_NUM_CTX, reserve = ANSWER_RESERVE
   }
   out = out.filter(m => m.kind !== 'sources' || m.content);
 
-  // 2. Oldest turns, never the leading system message or the newest message.
-  const first = out.findIndex(m => m.role === 'system' && m.kind !== 'sources') === 0 ? 1 : 0;
-  while (over() > 0 && out.length - first > 1) out.splice(first, 1);
+  // 2. Oldest turns, never the leading system message, the project notes or the newest message.
+  const first = out.findIndex(m => m.role === 'system' && m.kind !== 'sources' && m.kind !== 'memory') === 0 ? 1 : 0;
+  const oldest = () => out.findIndex((m, i) => i >= first && i < out.length - 1 && m.kind !== 'memory');
+  for (let i = oldest(); over() > 0 && i >= 0; i = oldest()) out.splice(i, 1);
+
+  // 2b. Project notes, whole, only once the conversation is down to its newest message.
+  for (let i = out.findIndex(m => m.kind === 'memory'); over() > 0 && i >= 0; i = out.findIndex(m => m.kind === 'memory')) out.splice(i, 1);
 
   // 3. One huge newest message: keep its head (60%) and its tail, cut the middle.
   if (over() > 0 && out.length) {
