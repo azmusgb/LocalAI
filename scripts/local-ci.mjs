@@ -14,7 +14,7 @@
 //
 // What a red looks like on the PR: the failure status names the failed steps, and one comment names the failing
 // unit tests (first ten) and any browser suite that failed twice. A browser suite that fails is run once more on
-// its own against the same server; if it passes, the run is green but the status reads "All passed, 1 suite on
+// its own against the server it ran on; if it passes, the run is green but the status reads "All passed, 1 suite on
 // retry: <suite>" and a comment says so, so flakes stay visible. Unit tests are never retried. With a PR number, a
 // title longer than 70 characters or with more than one clause (";" or " — ") gets one advisory comment, since PR
 // titles become the release notes; that never fails the run. The decisions are in scripts/local-ci-lib.mjs, tested
@@ -34,19 +34,35 @@
 // (worktree, merge, title check). With --merge, a dry run pretends main moved once and runs the re-check with stand-ins
 // (LOCALAI_CI_MAIN_MOVED=0: main didn't move; LOCALAI_CI_RECHECK_CONFLICT=1: the newer main conflicts;
 // LOCALAI_CI_FAIL_RECHECK=<test name>: the re-check is red with that test), then prints the merge it would have run.
+// `--dry` is the same as LOCALAI_CI_DRY=1.
+//
+// Reusing a green result: after a run with every step green, the tested tree is recorded in
+// <git common dir>/localai-ci/green.json (local, shared by every worktree, newest 50 kept). A later ci or ship that
+// would test the identical tree (same tree hash, Node version, PowerShell steps and installed dependencies; a local run
+// only from a clean checkout) skips the steps, prints "Reusing the green result from …", and posts the same success
+// status marked "(reused)"; ship then goes on exactly as after a full run, re-checking if main has moved since.
+// A failed, stopped or dry run is never recorded. `--fresh` always runs everything. In a dry run,
+// LOCALAI_CI_DRY_REUSE=1 pretends a green result is on record, to walk the reuse path.
+//
+// Browser suites run in LOCALAI_CI_SHARDS workers side by side (default: one per three cores, at most four; 1 = one
+// worker, as before), each with its own fresh server, port and data folder (tests/run-browser.mjs --shard i/n). The
+// timing-sensitive suites (SOLO_SUITES: perf-ui, visual-ui) run after them, alone, on the first worker's server. The
+// split is longest-first by each suite's last time, recorded in <git common dir>/localai-ci/durations.json.
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import net from 'node:net';
 import crypto from 'node:crypto';
-import { failingUnitTests, failedBrowserSuites, browserSuiteCounts, suitesToRetry, ciSummary, failureComment, retryComment,
+import { failingUnitTests, ciSummary, failureComment, retryComment,
   releaseNoteAdvice, RELEASE_NOTE_MARKER, shipMergeArgs, shipNextStep, recheckOutcome, releaseDecision, RELEASE_BRANCH,
-  mergedPrs, unshippedNote, prMode } from './local-ci-lib.mjs';
+  mergedPrs, unshippedNote, prMode, reuseKey, shouldRecordGreen, addGreen, findGreen, reuseLine, reusedDescription,
+  shardCount, suiteDurations, mergeShardResults, retryPlan, SOLO_SUITES } from './local-ci-lib.mjs';
+import { readJson, writeJsonAtomic, fileHash } from './local-ci-cache.mjs';
 
 const args = process.argv.slice(2);
 const pr = args.find(a => /^\d+$/.test(a));
-const DRY = process.env.LOCALAI_CI_DRY === '1';
+const DRY = process.env.LOCALAI_CI_DRY === '1' || args.includes('--dry');
+const fresh = args.includes('--fresh');
 const post = Boolean(pr) && !args.includes('--no-post') && !DRY;
 const ship = args.includes('--merge');
 const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
@@ -56,6 +72,11 @@ const log = fs.createWriteStream(logFile);
 const say = line => { console.log(line); log.write(line + '\n'); };
 const git = (...a) => execFileSync('git', a, { cwd: repoRoot, encoding: 'utf8' }).trim();
 const gh = (...a) => execFileSync('gh', a, { cwd: repoRoot, encoding: 'utf8' }).trim();
+// Local CI's own cache (scripts/local-ci-cache.mjs): green results and suite times, in the git common dir.
+// LOCALAI_CI_CACHE_DIR points it elsewhere (tests/local-ci-reuse.test.cjs uses a throwaway folder).
+const cacheDir = process.env.LOCALAI_CI_CACHE_DIR || path.join(git('rev-parse', '--path-format=absolute', '--git-common-dir'), 'localai-ci');
+const GREEN_FILE = path.join(cacheDir, 'green.json'), DURATIONS_FILE = path.join(cacheDir, 'durations.json');
+const cacheWarning = m => say(`(local CI cache: ${m})`);
 
 let dir = repoRoot, sha = null, worktree = null, baseRef = 'main', testedBase = null, releaseOnly = false;
 const hasPwsh = (() => { try { execFileSync('pwsh', ['-v'], { stdio: 'ignore' }); return true; } catch { return false; } })();
@@ -72,15 +93,22 @@ function comment(body) {
   try { gh('pr', 'comment', pr, '--body', body); } catch (e) { say(`(couldn't post the comment: ${e.message.split('\n')[0]})`); }
 }
 
-function run(name, cmd, cmdArgs, { env = {}, cwd = dir } = {}) {
+// `buffered`: for steps that run side by side (the browser workers). Their output goes to the log in one block when the
+// step ends, instead of interleaved with the others'.
+function run(name, cmd, cmdArgs, { env = {}, cwd = dir, buffered = false } = {}) {
   if (DRY) [cmd, cmdArgs] = dryCommand(name);
   return new Promise(resolve => {
-    say(`\n=== ${name}`);
+    say(buffered ? `=== ${name} (started)` : `\n=== ${name}`);
     const child = track(spawn(cmd, cmdArgs, { cwd, env: { ...process.env, ...env }, shell: false, detached: true }));
     let tail = '', out = '';
-    const take = d => { const s = d.toString(); log.write(s); tail = (tail + s).slice(-4000); out = (out + s).slice(-2e6); };
+    const block = [];
+    const take = d => { const s = d.toString(); if (buffered) block.push(s); else log.write(s); tail = (tail + s).slice(-4000); out = (out + s).slice(-2e6); };
     child.stdout.on('data', take); child.stderr.on('data', take);
-    child.on('close', code => { say(code === 0 ? `--- ${name}: ok` : `--- ${name}: FAILED (exit ${code})`); resolve({ ok: code === 0, tail, out }); });
+    child.on('close', code => {
+      if (buffered) log.write(`\n=== ${name}\n${block.join('')}`);
+      say(code === 0 ? `--- ${name}: ok` : `--- ${name}: FAILED (exit ${code})`);
+      resolve({ ok: code === 0, tail, out });
+    });
   });
 }
 
@@ -89,8 +117,10 @@ function dryCommand(name) {
   const failUnit = process.env.LOCALAI_CI_FAIL_UNIT, failSuite = process.env.LOCALAI_CI_FAIL_SUITE;
   let script = `console.log('(dry) ${name.replace(/'/g, '')}')`;
   if (name === 'Unit and contract tests' && failUnit) script = `console.log('✖ ' + ${JSON.stringify(failUnit)} + ' (1ms)\\nℹ pass 5\\nℹ fail 1\\n\\n✖ failing tests:\\n\\n✖ ' + ${JSON.stringify(failUnit)} + ' (1ms)'); process.exit(1)`;
-  else if (name === 'Browser suites' && failSuite) script = `console.log('--- ' + ${JSON.stringify(failSuite)} + ': FAILED in 0.1s\\n\\n13 of 14 browser suites passed; failed: ' + ${JSON.stringify(failSuite)}); process.exit(1)`;
-  else if (name === 'Browser suites') script = `console.log('14 of 14 browser suites passed')`;
+  // The browser workers: "Browser suites" (one worker), "Browser suites, worker k/n", "Browser suites, solo". The
+  // injected failure lands in the first worker.
+  else if (/^Browser suites(?:, worker 1\/| ?$)/.test(name) && failSuite) script = `console.log('--- ' + ${JSON.stringify(failSuite)} + ': FAILED in 0.1s\\n\\n13 of 14 browser suites passed; failed: ' + ${JSON.stringify(failSuite)}); process.exit(1)`;
+  else if (name.startsWith('Browser suites')) script = `console.log('--- dry-ui.mjs: passed in 0.1s\\n\\n14 of 14 browser suites passed')`;
   else if (name.startsWith('Retry ')) script = `console.log('1 of 1 browser suites passed')`;
   else if (name === 'Re-check: unit and contract tests' && process.env.LOCALAI_CI_FAIL_RECHECK) script = `console.log('✖ ' + ${JSON.stringify(process.env.LOCALAI_CI_FAIL_RECHECK)} + ' (1ms)\\nℹ pass 5\\nℹ fail 1'); process.exit(1)`;
   return [process.execPath, ['-e', script]];
@@ -131,39 +161,83 @@ async function queue() {
 }
 function releaseLock() { if (haveLock && lockOwner()?.pid === process.pid) fs.rmSync(LOCK, { recursive: true, force: true }); haveLock = false; }
 
-const freePort = () => new Promise(r => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
+// A fresh server for one browser worker: its own data folder, and PORT=0 so the system picks a port no one holds (a
+// port probed free and then passed in can be taken by another worker or suite in between; tests/spawn-server.cjs).
+// Resolves with { server, url }; url is null when the server didn't come up (its log is server-<label>.log).
+async function startServer(label) {
+  if (DRY) return { server: null, url: 'http://127.0.0.1:9' };
+  const data = fs.mkdtempSync(path.join(work, `data-${label}-`));
+  const server = track(spawn(process.execPath, ['app/server.js'], { cwd: dir, env: { ...process.env, LOCALAI_WORKSHOP_URL: process.env.LOCALAI_WORKSHOP_URL || 'http://127.0.0.1:9', LOCALAI_PI_HUB_URL: process.env.LOCALAI_PI_HUB_URL || 'off', DATA_DIR: data, WORKSPACE_ROOT: data, PORT: '0' }, detached: true }));
+  const serverLog = fs.createWriteStream(path.join(work, `server-${label}.log`));
+  server.stdout.pipe(serverLog); server.stderr.pipe(serverLog);
+  const port = await new Promise(resolve => {
+    let seen = '';
+    const done = p => { clearTimeout(timer); server.stdout.off('data', onData); server.off('exit', onExit); resolve(p); };
+    const onData = b => { seen = (seen + b).slice(-4000); const m = seen.match(/listening on 0\.0\.0\.0:(\d+)/); if (m) done(Number(m[1])); };
+    const onExit = () => done(null);
+    const timer = setTimeout(() => done(null), 30000);
+    server.stdout.on('data', onData); server.once('exit', onExit);
+  });
+  if (!port) return { server, url: null };
+  const url = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 30; i++) {
+    try { if ((await fetch(`${url}/healthz`)).ok) return { server, url }; } catch {}
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  return { server, url: null };
+}
 
-// All browser suites against one fresh server. A suite that fails is run once more on its own against the same
-// server (tests/run-browser.mjs <suite>); one that passes then counts as passed but is reported in `retried`.
-// Returns { ok, passed, total, retried, failing }.
-async function browserSuites() {
-  const data = fs.mkdtempSync(path.join(work, 'data-'));
-  const port = await freePort();
-  say(`\n=== Browser acceptance (${DRY ? 'dry run, no server' : `fresh server on port ${port}`})`);
-  const server = DRY ? null : track(spawn(process.execPath, ['app/server.js'], { cwd: dir, env: { ...process.env, LOCALAI_WORKSHOP_URL: process.env.LOCALAI_WORKSHOP_URL || 'http://127.0.0.1:9', LOCALAI_PI_HUB_URL: process.env.LOCALAI_PI_HUB_URL || 'off', DATA_DIR: data, WORKSPACE_ROOT: data, PORT: String(port) }, detached: true }));
-  if (server) { const serverLog = fs.createWriteStream(path.join(work, 'server.log')); server.stdout.pipe(serverLog); server.stderr.pipe(serverLog); }
+// The browser suites, in `workers` side by side, each against its own fresh server (tests/run-browser.mjs --shard
+// k/n), then the timing-sensitive SOLO_SUITES alone on the first worker's server. With one worker, every suite runs in
+// order against one server, as before. A suite that fails is run once more on its own against the server of the worker
+// that ran it; one that passes then counts as passed but is reported in `retried`. Each passing suite's time is
+// recorded for the next split. Returns { ok, passed, total, retried, failing }.
+async function browserSuites(workers) {
   const none = { ok: false, passed: 0, total: 0, retried: [], failing: [] };
+  say(`\n=== Browser acceptance (${workers === 1 ? 'one worker' : `${workers} workers side by side, then ${SOLO_SUITES.join(' and ')} alone`}${DRY ? '; dry run, no server' : ''})`);
+  const servers = await Promise.all(Array.from({ length: workers }, (_, k) => startServer(workers === 1 ? 'main' : String(k + 1))));
   try {
-    let ready = DRY;
-    for (let i = 0; i < 30 && !ready; i++) {
-      try { ready = (await fetch(`http://127.0.0.1:${port}/healthz`)).ok; } catch {}
-      if (!ready) await new Promise(r => setTimeout(r, 1000));
+    const down = servers.map((s, k) => (s.url ? null : k + 1)).filter(Boolean);
+    if (down.length) { say(`--- Browser acceptance: FAILED (server did not become ready${workers > 1 ? ` for worker ${down.join(', ')}` : ''}; see ${workers === 1 ? 'server-main.log' : 'server-<worker>.log'})`); return { ...none, failing: ['server did not start'] }; }
+    for (const [k, s] of servers.entries()) if (!DRY) say(`(worker ${k + 1}: fresh server at ${s.url})`);
+    const envFor = k => ({ LOCALAI_URL: servers[k].url, LOCALAI_CI_DURATIONS: DURATIONS_FILE });
+    let parts;
+    if (workers === 1) parts = [{ name: 'Browser suites', worker: 0, ...(await run('Browser suites', process.execPath, ['tests/run-browser.mjs'], { env: envFor(0) })) }];
+    else {
+      parts = await Promise.all(servers.map(async (_, k) => {
+        const name = `Browser suites, worker ${k + 1}/${workers}`;
+        return { name, worker: k, ...(await run(name, process.execPath, ['tests/run-browser.mjs', '--shard', `${k + 1}/${workers}`], { env: envFor(k), buffered: true })) };
+      }));
+      parts.push({ name: 'Browser suites, solo', worker: 0, ...(await run('Browser suites, solo', process.execPath, ['tests/run-browser.mjs', '--solo'], { env: envFor(0) })) });
     }
-    if (!ready) { say('--- Browser acceptance: FAILED (server did not become ready; see server.log)'); return { ...none, failing: ['server did not start'] }; }
-    const env = { LOCALAI_URL: `http://127.0.0.1:${port}` };
-    const first = await run('Browser suites', process.execPath, ['tests/run-browser.mjs'], { env });
-    const counts = browserSuiteCounts(first.out) || { passed: 0, total: 0 };
-    if (first.ok) return { ...none, ok: true, ...counts };
-    const failed = failedBrowserSuites(first.out);
-    const toRetry = suitesToRetry(failed);
-    if (!toRetry.length) { say(failed.length ? `(${failed.length} suites failed: not a flake, nothing retried)` : '(no suite named as failed; nothing retried)'); return { ...none, ...counts, failing: failed }; }
+    recordDurations(parts);
+    const merged = mergeShardResults(parts);
+    if (workers > 1) say(`\n${merged.line}${merged.missing.length ? ` (no result from: ${merged.missing.join(', ')})` : ''}`);
+    const counts = { passed: merged.passed, total: merged.total };
+    if (merged.ok) return { ...none, ok: true, ...counts };
+    const plan = retryPlan(parts);
+    if (!plan.length || merged.missing.length) {
+      say(merged.failed.length > plan.length ? `(${merged.failed.length} suites failed: not a flake, nothing retried)` : merged.missing.length ? '(a worker gave no result; nothing retried)' : '(no suite named as failed; nothing retried)');
+      return { ...none, ...counts, failing: merged.failed.length ? merged.failed : merged.missing };
+    }
     const retried = [], failing = [];
-    for (const suite of toRetry) {
-      const again = await run(`Retry ${suite}`, process.execPath, ['tests/run-browser.mjs', suite], { env });
+    for (const { suite, worker } of plan) {
+      const again = await run(`Retry ${suite}${workers > 1 ? ` (worker ${worker + 1})` : ''}`, process.execPath, ['tests/run-browser.mjs', suite], { env: envFor(worker) });
       (again.ok ? retried : failing).push(suite);
     }
     return { ok: !failing.length, passed: counts.passed + retried.length, total: counts.total, retried, failing };
-  } finally { server?.kill(); }
+  } finally { for (const s of servers) s.server?.kill(); }
+}
+
+// Keeps each passing suite's time for the next run's split. Never fails the run: the times only balance the workers.
+function recordDurations(parts) {
+  if (DRY) return;
+  const found = Object.assign({}, ...parts.map(p => suiteDurations(p.out)));
+  if (!Object.keys(found).length) return;
+  try {
+    const known = readJson(DURATIONS_FILE, {}, cacheWarning);
+    writeJsonAtomic(DURATIONS_FILE, { ...(known && typeof known === 'object' && !Array.isArray(known) ? known : {}), ...found });
+  } catch (e) { cacheWarning(`couldn't save suite times: ${e.message}`); }
 }
 
 // PR titles are the release notes. One advisory comment per PR, never a red.
@@ -198,6 +272,7 @@ function ciDeps(treeDir) {
 }
 
 async function main() {
+  const workers = shardCount({ cpus: os.cpus().length, env: process.env.LOCALAI_CI_SHARDS });  // a bad value stops here
   if (pr) {
     const head = JSON.parse(gh('pr', 'view', pr, '--json', 'headRefOid,headRefName,baseRefName,state,title'));
     const plan = prMode({ state: head.state, ship, pr });
@@ -239,6 +314,23 @@ async function main() {
     await queue();
   }
 
+  // The tree about to be tested, and whether a green result for it is on record (reuseKey says what makes it the same).
+  const tested = testedKey();
+  if (fresh) say('(--fresh: running everything, not reusing a green result)');
+  else {
+    const hit = DRY && process.env.LOCALAI_CI_DRY_REUSE === '1'
+      ? { tree: tested.tree || 'dry0000', at: '(dry run)', pr: pr || null, summary: 'All passed: (dry) 14/14 browser suites' }
+      : findGreen(readJson(GREEN_FILE, {}, cacheWarning)?.green, tested.key);
+    if (hit) {
+      const description = reusedDescription(hit);
+      say(`\n${reuseLine(hit)}`);
+      say(`✅ ${description}`);
+      await status('success', description);
+      return true;
+    }
+    if (!tested.key) say(`(no reuse: ${tested.why})`);
+  }
+
   const results = [];
   const step = async (name, ...a) => { const r = await run(name, ...a); results.push([name, r.ok]); return r; };
   const jsFiles = ['app', 'app/public', 'tests'].flatMap(d => fs.readdirSync(path.join(dir, d)).filter(f => /\.(js|mjs|cjs)$/.test(f) && (d !== 'tests' || /\.(mjs|cjs)$/.test(f))).map(f => `${d}/${f}`));
@@ -252,7 +344,7 @@ async function main() {
   await step('No private-key files', 'sh', ['-c', "! find app -type f \\( -name '*.pem' -o -name '*.key' -o -name '*.pfx' -o -name '*.p12' -o -name '.env' \\) | grep ."]);
   await step('Kit drift', 'node', ['scripts/kit-drift.mjs']);  // prints the kit copy's line; warn-only unless KIT_DRIFT_ENFORCE=1
   await step('Kit literals', 'node', ['app/public/ui/literals.mjs', 'app/public']);  // Pi Hub A22 1.5: no hand-written colour, size or private name is added (.kit-literals-baseline.json)
-  const browser = await browserSuites();
+  const browser = await browserSuites(workers);
   results.push(['Browser acceptance', browser.ok]);
   if (browser.retried.length) say(`(passed on retry: ${browser.retried.join(', ')})`);
 
@@ -263,7 +355,29 @@ async function main() {
   await status(state, description);
   if (failedSteps.length) comment(failureComment({ failedSteps, failingTests: unit.ok ? [] : failingUnitTests(unit.out), failingSuites: browser.failing, host: os.hostname() }));
   else if (browser.retried.length) comment(retryComment(browser.retried));
+  // Recorded only if the tree is still the one read at the start (a local run tests the checkout live, so an edit or a
+  // commit during the run would otherwise be recorded as tested).
+  if (shouldRecordGreen({ key: tested.key, dry: DRY, stopped: stopping, state, failedSteps })) {
+    const now = testedKey();
+    if (now.key !== tested.key) { say(`(not recorded as green: the tree changed during the run; ${now.key ? 'it is now another commit' : now.why})`); return true; }
+    try {
+      const entry = { key: tested.key, tree: tested.tree, node: process.version, at: new Date().toISOString(), pr: pr ? Number(pr) : null, summary: description };
+      writeJsonAtomic(GREEN_FILE, { green: addGreen(readJson(GREEN_FILE, {}, cacheWarning)?.green, entry) });
+      say(`(recorded as green for tree ${tested.tree.slice(0, 7)}: a ci or ship of the same tree reuses it)`);
+    } catch (e) { cacheWarning(`couldn't record the green result: ${e.message}`); }
+  }
   return state === 'success';
+}
+
+// The reuse key for the tree in `dir` (reuseKey). Never throws: a part that can't be read means no key, and says why.
+function testedKey() {
+  try {
+    const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: dir, encoding: 'utf8' }).trim();
+    const dirty = execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: dir, encoding: 'utf8' }).trim() !== '';
+    const deps = fileHash(path.join(dir, 'node_modules', '.package-lock.json'));
+    const key = reuseKey({ tree, node: process.version, deps, pwsh: hasPwsh, dirty });
+    return { tree, key, why: dirty ? 'the checkout has uncommitted or untracked changes' : !deps ? 'no node_modules/.package-lock.json to identify the dependencies' : 'the tree could not be identified' };
+  } catch (e) { return { tree: null, key: null, why: `couldn't read the tree (${String(e.message).split('\n')[0]})` }; }
 }
 
 // Ship, after a green run: re-check against the newest main, then merge. Runs before cleanup, so the tested worktree

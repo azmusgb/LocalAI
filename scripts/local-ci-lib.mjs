@@ -161,3 +161,116 @@ export function unshippedNote(merges, pr, releasing) {
     + `This run tests ${one ? 'it' : 'them'} with PR #${pr}${releasing ? ` and releases ${one ? 'it' : 'them'} too` : ''}; `
     + `if it fails, check whether the failure comes from ${one ? 'it' : 'them'}.`;
 }
+
+// Reusing a green run. A ship right after a green `npm run ci -- <PR>` used to test the identical tree a second time
+// (~15 min). The key is what the run actually tested: the tree hash (the PR merged with main, or main itself), the Node
+// version, whether the PowerShell steps ran, and the installed dependencies (a hash of node_modules/.package-lock.json;
+// the lockfile is in the tree, but this is what was really loaded). A dirty checkout, or any part that couldn't be read,
+// gives no key, so nothing is reused or recorded.
+export function reuseKey({ tree, node, deps, pwsh, dirty }) {
+  if (dirty !== false) return null;
+  if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(String(tree || '')) || !/^v\d+\.\d+\.\d+/.test(String(node || '')) || !/^[0-9a-f]{16,}$/.test(String(deps || ''))) return null;
+  return `${tree} ${node} ${pwsh ? 'pwsh' : 'no-pwsh'} ${deps}`;
+}
+
+// A result is recorded only after a real run that finished with every step green (a suite green on retry counts, as it
+// does for the status). Never a dry, stopped or failed run, nor one without a key.
+export function shouldRecordGreen({ key, dry, stopped, state, failedSteps = [] }) {
+  return Boolean(key) && !dry && !stopped && state === 'success' && !failedSteps.length;
+}
+
+// The cache keeps the newest GREEN_CAP results, newest first, one per key.
+export const GREEN_CAP = 50;
+export function addGreen(entries, entry, cap = GREEN_CAP) {
+  if (!entry?.key) throw new Error('a green result needs its key');
+  const rest = (Array.isArray(entries) ? entries : []).filter(e => e && e.key !== entry.key);
+  return [entry, ...rest].slice(0, cap);
+}
+export function findGreen(entries, key) {
+  if (!key || !Array.isArray(entries)) return null;
+  return entries.find(e => e && e.key === key && typeof e.summary === 'string' && e.at) || null;
+}
+// What a reusing run prints, and the status it posts (the original summary, marked as reused).
+export function reuseLine(entry) {
+  return `Reusing the green result from ${entry.at} for tree ${String(entry.tree).slice(0, 7)}${entry.pr ? ` (PR #${entry.pr})` : ' (a local run)'}`;
+}
+export function reusedDescription(entry) {
+  const tag = ' (reused)';
+  return String(entry.summary).slice(0, 140 - tag.length) + tag;
+}
+
+// Splitting the browser suites across workers. Suites known to be timing-sensitive run alone after the shards finish
+// (perf-ui fails on frame times, visual-ui on pixels), so other shards' load can't make them flaky.
+export const SOLO_SUITES = ['perf-ui.mjs', 'visual-ui.mjs'];
+
+// Default worker count: one per three cores, at most four. LOCALAI_CI_SHARDS overrides it; 1 runs every suite in one
+// worker, as before.
+export function shardCount({ cpus, env }) {
+  const set = String(env ?? '').trim();
+  if (set) {
+    if (!/^\d+$/.test(set) || Number(set) < 1 || Number(set) > 16) throw new Error(`LOCALAI_CI_SHARDS must be a whole number from 1 to 16 (got "${set}")`);
+    return Number(set);
+  }
+  return Math.min(4, Math.max(1, Math.floor((Number(cpus) || 1) / 3)));
+}
+
+// "--shard 2/4" → { index: 1, count: 4 } (index from 0); null for anything else.
+export function parseShard(spec) {
+  const m = /^(\d+)\/(\d+)$/.exec(String(spec || ''));
+  if (!m) return null;
+  const i = Number(m[1]), n = Number(m[2]);
+  return n >= 1 && i >= 1 && i <= n ? { index: i - 1, count: n } : null;
+}
+
+// Assigns suites to n shards. With recorded durations: longest first, each to the least-loaded shard (lowest index on a
+// tie); a suite with no recorded time counts as the average of the known ones. With none: alphabetical round-robin.
+// Every suite lands in exactly one shard, and the same input always gives the same split.
+export function partitionSuites(suites, n, durations = {}) {
+  const count = Math.max(1, Math.floor(Number(n) || 1));
+  const names = [...new Set(suites)].sort();
+  const shards = Array.from({ length: count }, () => []);
+  const known = names.map(s => durations?.[s]).filter(d => Number.isFinite(d) && d >= 0);
+  if (!known.length) { names.forEach((s, i) => shards[i % count].push(s)); return shards; }
+  const average = known.reduce((a, b) => a + b, 0) / known.length;
+  const cost = s => (Number.isFinite(durations[s]) && durations[s] >= 0 ? durations[s] : average);
+  const load = new Array(count).fill(0);
+  for (const s of [...names].sort((a, b) => cost(b) - cost(a) || (a < b ? -1 : 1))) {
+    let k = 0;
+    for (let j = 1; j < count; j++) if (load[j] < load[k]) k = j;
+    shards[k].push(s); load[k] += cost(s);
+  }
+  return shards;
+}
+
+// Seconds per suite from run-browser output ("--- x-ui.mjs: passed in 4.1s"). Failed suites are left out: a failure's
+// time says little about the next run's.
+export function suiteDurations(output) {
+  const found = {};
+  for (const m of String(output || '').matchAll(/^--- (\S+-ui\.mjs): passed in (\d+(?:\.\d+)?)s\b/gm)) found[m[1]] = Number(m[2]);
+  return found;
+}
+
+// One result from several run-browser outputs (the shards, and the solo suites run after them), in the summary-line
+// format browserSuiteCounts and failedBrowserSuites read. A worker that printed no summary line (it crashed, or its
+// server died) makes the whole result not ok, and is named in `missing`.
+export function mergeShardResults(parts) {
+  let passed = 0, total = 0, ok = true;
+  const failed = [], missing = [];
+  parts.forEach((p, i) => {
+    const counts = browserSuiteCounts(p.out);
+    if (!counts) { missing.push(p.name || `worker ${i + 1}`); ok = false; }
+    else { passed += counts.passed; total += counts.total; }
+    for (const s of failedBrowserSuites(p.out)) if (!failed.includes(s)) failed.push(s);
+    if (!p.ok) ok = false;
+  });
+  const line = `${passed} of ${total} browser suites passed${failed.length ? `; failed: ${failed.join(', ')}` : ''}`;
+  return { ok: ok && !failed.length, passed, total, failed, missing, line };
+}
+
+// Which worker's server a failed suite is retried on: the one that ran it. Returns [{ suite, worker }] in the order the
+// suites failed, or [] when there are too many to call it a flake (suitesToRetry).
+export function retryPlan(parts) {
+  const owner = new Map();
+  parts.forEach((p, i) => { for (const s of failedBrowserSuites(p.out)) if (!owner.has(s)) owner.set(s, i); });
+  return suitesToRetry([...owner.keys()]).map(suite => ({ suite, worker: owner.get(suite) }));
+}

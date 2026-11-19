@@ -19,8 +19,9 @@ container `local-ai-appliance` on a Windows host, UI on port 3080. Docs index: `
 
 1. Branch, commit, open a PR. There are no GitHub Actions workflows; **local CI is the gate:**
    `npm run ci -- <PR number>`. It tests
-   the PR merged with `main` in a throwaway worktree (unit, contract and browser suites, ~15 min) and
-   posts a `local-ci` check to the PR. Merge only on a green `local-ci`. Runs on one machine queue (the PR shows
+   the PR merged with `main` in a throwaway worktree (unit, contract and browser suites, the browser suites split
+   across several workers) and posts a `local-ci` check to the PR. A ci or ship of a tree that already went green
+   reuses that result ("(reused)" on the check) instead of testing it again; `--fresh` forces a full run. Merge only on a green `local-ci`. Runs on one machine queue (the PR shows
    "Queued behind PR #N"), so start yours and let it wait; never kill another session's run.
 2. Merge with `npm run ship -- <PR number>` (local CI, then merge, then it moves `release` to the merge commit). The
    host's `LocalAI Safe Deploy` task deploys **`release`**, not `main`, within about 5 minutes and rolls back by itself.
