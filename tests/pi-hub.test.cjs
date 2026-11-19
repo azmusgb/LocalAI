@@ -169,3 +169,73 @@ test('needs: a long detail is cut at a word with an ellipsis, never mid-word', (
   assert.ok(long.startsWith(kept) && long[kept.length] === ' ', 'cut at a word boundary');
   assert.equal(needsList({ items: [{ id: 'a', title: 'T', detail: 'Short.' }] }).items[0].detail, 'Short.');
 });
+
+// ---- Pi Hub's print list for Past work (platform amendment A29: GET /api/now/prints) ----
+const { printLog } = require('../app/pi-hub');
+const T0 = Date.parse('2026-11-19T12:00:00Z') / 1000;
+const printsBody = (over = {}) => ({ as_of: T0, prints_available: true, prints: [
+  { id: 812, name: 'RIFT tile 10in', status: 'completed', word: 'Finished', started: T0 - 9000, ended: T0 - 1000, seconds: 8000, grams: 41.2, error: null },
+  { id: 811, name: 'cable_clip', status: 'failed', word: 'Failed', started: T0 - 20000, ended: T0 - 19000, seconds: 1000, grams: 2, error: 'Filament ran out' },
+  { id: 810, name: 'hinge_test', status: 'cancelled', word: 'Cancelled', started: T0 - 30000, ended: T0 - 29500, seconds: 500, grams: 0.4, error: null, cost: 0.12, photo: '/x.jpg' }
+], ...over });
+const jsonReply = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+
+test('prints: reads /api/now/prints with a timeout, no redirects, and passes a finished, a failed and a cancelled print through printLog', async () => {
+  const seen = [];
+  const hub = createPiHub({ url: 'http://pi', fetchImpl: async (u, opts) => { seen.push({ url: String(u), opts }); return jsonReply(printsBody()); } });
+  const out = await hub.prints();
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].url, 'http://pi/api/now/prints');
+  assert.equal(seen[0].opts.redirect, 'error', 'a redirect to the signed-in hub is a failed read, never followed');
+  assert.ok(seen[0].opts.signal instanceof AbortSignal, 'bounded by a timeout');
+  assert.deepEqual(out, printLog(printsBody()));
+  assert.equal(out.ok, true);
+  assert.deepEqual(out.prints.map(p => [p.id, p.name, p.status, p.word, p.error]), [
+    ['812', 'RIFT tile 10in', 'completed', 'Finished', null],
+    ['811', 'cable_clip', 'failed', 'Failed', 'Filament ran out'],
+    ['810', 'hinge_test', 'cancelled', 'Cancelled', null]
+  ]);
+  assert.equal(out.prints[0].ended, new Date((T0 - 1000) * 1000).toISOString());
+  assert.deepEqual(Object.keys(out.prints[2]).sort(), ['ended', 'error', 'grams', 'id', 'name', 'seconds', 'started', 'status', 'word'], 'no cost or photo leaves');
+});
+
+test('prints: Bambuddy not answering Pi Hub is source bambuddy, never an empty list', async () => {
+  const hub = createPiHub({ url: 'http://pi', fetchImpl: async () => jsonReply({ as_of: T0, prints_available: false, prints: [] }) });
+  assert.deepEqual(await hub.prints(), { ok: false, source: 'bambuddy' });
+});
+
+test('prints: Pi Hub down (no answer, non-200, redirect, timeout, bad JSON, wrong shape) is source pi-hub; it never throws', async () => {
+  const cases = {
+    refused: async () => { throw new TypeError('fetch failed'); },
+    '500': async () => jsonReply({ error: 'boom' }, 500),
+    '404': async () => jsonReply({}, 404),
+    redirect: async () => { throw new TypeError('fetch failed: unexpected redirect'); },
+    'bad JSON': async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token < in JSON'); } }),
+    'wrong shape': async () => jsonReply({ prints: 'soon' }),
+    'not an object': async () => jsonReply(['a']),
+    // Honours the abort signal, as fetch does: the reader gives up after timeoutMs.
+    timeout: (u, { signal }) => new Promise((resolve, reject) => { signal.addEventListener('abort', () => reject(signal.reason)); })
+  };
+  for (const [name, fetchImpl] of Object.entries(cases)) {
+    const hub = createPiHub({ url: 'http://pi', fetchImpl, timeoutMs: 30 });
+    assert.deepEqual(await hub.prints(), { ok: false, source: 'pi-hub' }, name);
+  }
+});
+
+test('prints: switched off is source off, with no fetch', async () => {
+  assert.deepEqual(await createPiHub({ url: 'off', fetchImpl: () => assert.fail('disabled') }).prints(), { ok: false, source: 'off' });
+});
+
+test('prints: a list read is kept 15 s and shared by concurrent asks; a failure is not kept', async () => {
+  let t = 0, calls = 0, fail = true;
+  const hub = createPiHub({ url: 'http://pi', now: () => t, fetchImpl: async () => { calls++; return fail ? jsonReply({}, 503) : jsonReply(printsBody()); } });
+  assert.equal((await hub.prints()).source, 'pi-hub');
+  fail = false;
+  assert.equal((await hub.prints()).ok, true, 'asking again after a failure reads again');
+  assert.equal(calls, 2);
+  const many = await Promise.all(Array.from({ length: 5 }, () => hub.prints()));
+  assert.ok(many.every(m => m.ok)); assert.equal(calls, 2, 'kept');
+  t += 15001;
+  await Promise.all([hub.prints(), hub.prints(), hub.prints()]);
+  assert.equal(calls, 3, 'one fetch for concurrent asks once it is old');
+});
