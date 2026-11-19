@@ -140,7 +140,9 @@ const KB = 1024;
 // 2026-11-19: 361 → 362 KB (and run-bodies.js its own 11 KB) for Past work's review fixes: Try again on a failed answer,
 // the line naming a source it couldn't read, Workshop links for prints, deleted entries shown as deleted after a reload
 // (run-bodies.js +0.8 KB to 10.7 KB; 361.8 KB measured).
-const TOTAL = 362 * KB;
+// 2026-11-19: 362 → 363 KB for Past work's UI review: citation rows and the Workshop link at touch size, and failed
+// Delete / Try again said in a kit bad notice beside them, not muted text (run-bodies.js 10.9 KB; 370,701 bytes measured).
+const TOTAL = 363 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)

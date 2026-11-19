@@ -31,7 +31,7 @@ const pastRun = (id, o = {}) => ({
   card: { kind: 'prompt', icon: 'history', title: o.title || 'what did I ask about the bracket', summary: '', badge: o.status === 'failed' ? { label: 'Failed', tone: 'bad' } : o.status === 'running' ? { label: 'Running', tone: 'accent' } : { label: 'Done', tone: 'good' }, preview: null, action: { label: 'Open' }, approval: null, route: { text: 'Answered on this PC', why: 'Your past work stays on this PC' } }
 });
 
-async function open(viewport, hash, { runs = [], askStatus = 202, deleteStatus = 200, storage = {}, gone = [], intelligence = true, idsFail = false } = {}) {
+async function open(viewport, hash, { runs = [], askStatus = 202, deleteStatus = 200, retryStatus = 200, storage = {}, gone = [], intelligence = true, idsFail = false } = {}) {
   const db = { runs, asks: [], deletes: [], retries: [], gone: new Set(gone) };
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.firstRun.done': '1', ...storage });
@@ -45,6 +45,7 @@ async function open(viewport, hash, { runs = [], askStatus = 202, deleteStatus =
   await page.route(u => u.pathname === '/api/journal' && u.searchParams.has('ids'), r => idsFail ? json(r, { error: "Couldn't read your past work." }, 503) : json(r, { items: new URL(r.request().url()).searchParams.get('ids').split(',').filter(id => !db.gone.has(id)).map(id => ({ id })) }));
   await page.route(u => u.pathname === '/api/runs/retry', r => {
     const { id } = JSON.parse(r.request().postData()); db.retries.push(id);
+    if (retryStatus !== 200) return json(r, { error: 'The run ledger is busy' }, retryStatus);
     const was = db.runs.find(x => x.id === id), run = pastRun('run-past-retry', { title: was?.title });
     db.runs.push(run); json(r, { ok: true, replayedFrom: id, runId: run.id });
   });
@@ -146,7 +147,7 @@ await check('a delete the server refuses says why beside the entry and keeps Del
   await row.waitFor(T);
   await row.locator('.past-work__delete').click();
   await page.locator('dialog.ask-sheet[open] .ask-sheet__ok').click();
-  await row.locator('.past-work__status[role="alert"]', { hasText: "Couldn't delete it: The journal is switched off" }).waitFor(T);
+  await row.locator('p.ui-notice.ui-notice--bad[role="alert"]', { hasText: "Couldn't delete it: The journal is switched off" }).waitFor(T);
   assert.equal(await row.locator('.past-work__delete').isEnabled(), true);
   await page.context().close();
 });
@@ -223,7 +224,7 @@ await check('a failed run offers Try again, which asks the same question as a ne
   const again = body(page).locator('.past-work__again button', { hasText: 'Try again' });
   await again.waitFor(T);
   assert.doesNotMatch(await page.locator('#runDrawer').innerText(), /ECONNREFUSED|Ollama/);
-  assert.equal(await body(page).locator('.status-error:visible').count(), 0, 'no empty error box under Try again');
+  assert.equal(await body(page).locator('.past-work__again .ui-notice:visible').count(), 0, 'no empty error box under Try again');
   await again.click();
   await page.waitForFunction(() => location.hash === '#run/run-past-retry', null, T);
   assert.deepEqual(page.db.retries, ['run-past-f']);
@@ -291,6 +292,18 @@ await check('touch targets at 390: a one-line citation and the Workshop link are
   const hub = body(page).locator('.past-work__again a.ui-btn');
   await hub.waitFor(T);
   assert.ok((await hub.boundingBox()).height >= 44, `Workshop link ${(await hub.boundingBox()).height}px`);
+  await page.context().close();
+});
+
+await check('a Try again the server refuses says why in a bad notice beside it, and keeps Try again', async () => {
+  const failed = pastRun('run-past-f2', { status: 'failed', error: "The local model isn't answering, so there is no answer yet.", output: { text: '', citations: [], entries: [], from: 'journal', unread: null } });
+  const page = await open(desk, '#run/run-past-f2', { runs: [failed], retryStatus: 503 });
+  const again = body(page).locator('.past-work__again button', { hasText: 'Try again' });
+  await again.waitFor(T);
+  await again.click();
+  await body(page).locator('.past-work__again p.ui-notice.ui-notice--bad[role="alert"]', { hasText: "Couldn't ask again: The run ledger is busy." }).waitFor(T);
+  assert.equal(await again.isEnabled(), true);
+  assert.equal(await body(page).locator('.status-error').count(), 0, 'Past work draws no muted error text');
   await page.context().close();
 });
 

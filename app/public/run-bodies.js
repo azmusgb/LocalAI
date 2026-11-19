@@ -261,7 +261,8 @@
     return n;
   }
   const isJournal = e => /^j-/.test(String(e.id || '')) && e.source !== 'print';
-  const goneText = (li, text) => { const st = li.querySelector('.past-work__status'); li.querySelector('.past-work__delete')?.remove(); st.textContent = text; st.classList.remove('status-error'); st.setAttribute('role', 'status'); };
+  const goneText = (li, text) => { li.querySelector('.past-work__delete')?.remove(); li.querySelector('.ui-notice--bad')?.remove(); li.querySelector('.past-work__status').textContent = text; };
+  const failNote = () => { const n = h('p', 'ui-notice ui-notice--bad'); n.setAttribute('role', 'alert'); n.hidden = true; return n; };   // hidden until there is a message
   function entryRow(e) {
     const li = h('li', 'ui-row ui-row--lamp past-work__entry'); li.dataset.entryId = String(e.id || '');
     const text = h('div');
@@ -271,11 +272,12 @@
     const status = h('p', 'ui-row__detail past-work__status'); status.setAttribute('role', 'status');
     li.appendChild(status);
     if (deletedEntries.has(e.id)) { status.textContent = 'Deleted from your past work'; return li; }
+    const fail = failNote(); text.appendChild(fail);
     const del = h('button', 'btn-outline past-work__delete', 'Delete'); del.type = 'button'; del.setAttribute('aria-label', `Delete "${e.title || 'Untitled'}" from your past work`);
     del.addEventListener('click', async () => {
       const ok = await window.LocalAIUI?.ask?.({ title: `Delete "${String(e.title || 'this entry').slice(0, 80)}" from your past work?`, effect: 'It is removed from the journal for good, so Past work can no longer find it. The run or chat it came from is not changed.', confirmLabel: 'Delete', tone: 'danger' });
       if (!ok?.ok) return;
-      del.disabled = true; del.textContent = 'Deleting…'; status.textContent = ''; status.classList.remove('status-error');
+      del.disabled = true; del.textContent = 'Deleting…'; fail.textContent = ''; fail.hidden = true;
       try {
         const r = await fetch('/api/journal/delete', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ id: e.id }) });
         if (!r.ok && r.status !== 404) { const j = await r.json().catch(() => ({})); throw new Error(j.error || `HTTP ${r.status}`); }
@@ -286,7 +288,7 @@
         window.LocalAIUI?.toast?.('Deleted from your past work');
       } catch (err) {
         del.disabled = false; del.textContent = 'Delete';
-        status.textContent = `Couldn't delete it: ${err.message || err}. Try again.`; status.classList.add('status-error'); status.setAttribute('role', 'alert');
+        fail.textContent = `Couldn't delete it: ${err.message || err}. Try again.`; fail.hidden = false;
       }
     });
     li.appendChild(del);
@@ -307,7 +309,7 @@
     return '';
   }
   function tryAgain(run, slot) {
-    const row = h('p', 'past-work__again'), b = h('button', 'btn-outline', 'Try again'), err = h('span', 'status-error'); b.type = 'button'; err.setAttribute('role', 'alert'); err.hidden = true;
+    const row = h('div', 'past-work__again'), b = h('button', 'btn-outline', 'Try again'), err = failNote(); b.type = 'button';
     b.addEventListener('click', async () => {
       b.disabled = true; b.textContent = 'Asking again…'; err.textContent = ''; err.hidden = true;
       try {
