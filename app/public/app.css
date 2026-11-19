@@ -1785,6 +1785,10 @@ h2.run-drawer-title{margin:0;letter-spacing:normal}
 .cmdk-group{display:grid;gap:4px}
 .cmdk-group+.cmdk-group{margin-top:6px}
 .cmdk-group__label{padding:6px 10px 2px;color:var(--ui-muted);font-size:var(--ui-fs-2);font-weight:600}
+/* Past work hits: the entry's title, then its source and date; a failed search is one quiet line. */
+.cmdk-item__title{display:block;overflow-wrap:anywhere}
+.cmdk-item .meta{display:block}
+.cmdk-note{margin:0;padding:var(--ui-s-2) var(--ui-s-3);color:var(--ui-muted);font-size:var(--ui-fs-2)}
 
 /* Phone polish: layout and install (appended; nothing above edited). No keyboard-shortcut hint where there is no hover
    (an iPad, a phone); the sticky header's hairline once the page scrolls (ui.js headerLine sets body.ux-scrolled). */

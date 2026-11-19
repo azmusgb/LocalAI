@@ -4036,7 +4036,8 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
   }
   // The one way for a page to open a run view: pushes a history entry marked as in-app, so Close and Back return to the page you were on.
   function show(id) { openRun(String(id)); }
-  window.LocalAIRuns = { open: openRunBySource, openPending, show, refresh: () => loadRuns(true) };
+  // kindLabel names a run's kind (Chat, Image, Mission…) for other lists that show runs, such as ⌘K's Past work.
+  window.LocalAIRuns = { open: openRunBySource, openPending, show, refresh: () => loadRuns(true), kindLabel };
 
   function init() {
     ensureSurface();
