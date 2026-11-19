@@ -178,7 +178,8 @@ function readNotes(storage) {
 const publicItem = i => ({ id: i.id, text: i.text, createdAt: i.createdAt, runId: i.runId || null, caller: i.caller || null });
 
 // deps: storage; coordinator (route); runLocalModel(prompt, system, timeoutMs, model); busyNow() → {busy};
-// makeId(prefix); recordActivity; json; readBody; now(); timeZone; delayMs; enabled; log(line).
+// makeId(prefix); recordActivity; json; readBody; now(); timeZone: the appliance's zone, or a function returning it (read
+// each time, so the daily limit follows the appliance's local day); delayMs; enabled; log(line).
 function createFactSuggestions({ storage, coordinator, runLocalModel, busyNow, makeId, recordActivity = () => {}, json, readBody, now = Date.now, timeZone = 'UTC', delayMs = 1000, enabled = true, log = line => console.warn(line) } = {}) {
   let running = false, lastFailure = '';
   // A failure is logged once: the same reason again is not repeated until a job gets an answer.
@@ -198,7 +199,7 @@ function createFactSuggestions({ storage, coordinator, runLocalModel, busyNow, m
       const route = coordinator.route({ kind: 'quick', text: `${q}\n${a}` });
       const local = route?.class === 'private' && route.order?.length === 1 && route.order[0].provider === 'ollama' ? route.order[0] : null;
       if (!local) { failed('the quick job was not routed to this PC'); return { skipped: 'not-local' }; }
-      const today = dayOf(now(), timeZone);
+      const today = dayOf(now(), typeof timeZone === 'function' ? timeZone() : timeZone);
       let store;
       try { store = readStore(storage); } catch (e) { failed(e.message); return { skipped: 'store' }; }
       if (store.items.filter(i => i.day === today).length >= DAILY_MAX) return { skipped: 'daily-limit' };

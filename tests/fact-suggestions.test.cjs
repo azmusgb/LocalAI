@@ -22,7 +22,7 @@ const ANSWER = 'For PLA on the X2D, 210-220 °C is a good start.';
 const FACT = 'You print mostly PLA on a Bambu X2D.';
 const turn = (over = {}) => ({ caller: 'signed-in', used: LOCAL, body: { messages: [{ role: 'user', content: QUESTION }] }, question: QUESTION, answer: ANSWER, runId: 'run-1', ...over });
 
-function setup(t, { reply = FACT, fail = null, busy = { busy: false }, cloud = true, now = Date.parse('2026-11-19T15:00:00Z') } = {}) {
+function setup(t, { reply = FACT, fail = null, busy = { busy: false }, cloud = true, now = Date.parse('2026-11-19T15:00:00Z'), timeZone = 'America/Phoenix' } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fact-suggestions-'));
   const storage = new Storage({ dataDir: dir });
   t.after(() => { storage.close(); fs.rmSync(dir, { recursive: true, force: true }); });
@@ -37,7 +37,7 @@ function setup(t, { reply = FACT, fail = null, busy = { busy: false }, cloud = t
     runLocalModel: async (prompt, system, timeoutMs, model) => { calls.push({ prompt, system, timeoutMs, model }); if (fail) throw fail; return typeof reply === 'function' ? reply(calls.length) : reply; },
     busyNow: () => { if (busy instanceof Error) throw busy; return typeof busy === 'function' ? busy() : busy; },
     makeId: p => `${p}-${++seq}`, recordActivity: (...a) => activity.push(a),
-    now: () => clock.now, timeZone: 'America/Phoenix', delayMs: 0, log: l => logs.push(l)
+    now: () => clock.now, timeZone, delayMs: 0, log: l => logs.push(l)
   });
   return { s, storage, calls, logs, activity, clock, cloudCalls };
 }
@@ -191,6 +191,28 @@ test('at most 3 suggestions a local day; the next day starts again', async t => 
   assert.equal(calls.length, DAILY_MAX, 'the fourth turn asks no model');
   clock.now += 24 * 3600e3;
   assert.ok((await s.consider(turn())).suggested);
+});
+
+test("the daily limit counts the appliance's local day, read from its zone each time, not UTC", async t => {
+  const replies = ['You print mostly PLA on a Bambu X2D.', 'You prefer PLA with a matte finish on the X2D.', 'You keep your PLA spools in a dry box by the X2D.', 'You print PLA on a textured plate on the X2D.', 'You like PLA prints with three walls on the X2D.'];
+  let zone = 'America/Phoenix';   // UTC-7, no daylight saving
+  // 23:30 on 18 November in Phoenix, 06:30 on the 19th in UTC.
+  const { s, clock } = setup(t, { reply: n => replies[n - 1], now: Date.parse('2026-11-19T06:30:00Z'), timeZone: () => zone });
+  for (let i = 0; i < DAILY_MAX; i++) assert.ok((await s.consider(turn())).suggested);
+  assert.deepEqual(await s.consider(turn()), { skipped: 'daily-limit' });
+  // One hour later it is a new day in Phoenix (still the same UTC day): the limit starts again.
+  clock.now += 3600e3;
+  assert.ok((await s.consider(turn())).suggested, 'a new local day');
+  assert.equal(fsg.dayOf(clock.now, 'America/Phoenix'), '2026-11-19');
+  assert.equal(fsg.dayOf(Date.parse('2026-11-19T06:30:00Z'), 'America/Phoenix'), '2026-11-18');
+  // The zone is read each time: in UTC the 19th already has that suggestion.
+  zone = 'UTC';
+  assert.equal((await s.consider(turn())).suggested?.text, replies[4]);
+});
+
+test('the server counts the day in the zone voice tells the time in (voiceTimeZone)', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'server.js'), 'utf8');
+  assert.match(src, /createFactSuggestions\(\{[^\n]*timeZone: \(\) => voiceTimeZone\(\)/);
 });
 
 test('a filtered candidate is not stored: duplicate, state, personal, nothing', async t => {
