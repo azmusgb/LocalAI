@@ -94,7 +94,8 @@ test('past work and the Claude queue refuse a caller without a device; a paired 
   const lan = viaCaddy('10.0.0.37', IPHONE);
   const routes = [['GET', '/api/journal?limit=3'], ['POST', '/api/journal/delete', { id: 'j-none' }], ['POST', '/api/journal/ask', { question: 'what did I print' }],
     ['POST', '/api/improve/item', { id: 'none', action: 'handToClaude' }], ['POST', '/api/improve/idea', { text: 'an idea' }],
-    ['POST', '/api/claude/findings/decision', { id: 'none', status: 'approved' }], ['POST', '/api/improve/handoff', { text: 'x' }]];
+    ['POST', '/api/claude/findings/decision', { id: 'none', status: 'approved' }], ['POST', '/api/improve/handoff', { text: 'x' }],
+    ['POST', '/api/claude/findings/vote', { id: 'none', delta: 1 }], ['POST', '/api/improve/signal', { id: 'none', action: 'promote' }]];
   const send = (method, route, body, headers) => fetch(`${base}${route}`, method === 'GET' ? { headers } : { method, headers: { ...JSONH, ...headers }, body: JSON.stringify(body) });
   const refused = { error: 'Sign in on this device first: pair it under Improve › Claude Code.', signIn: true };
   const got = [];
@@ -112,6 +113,28 @@ test('past work and the Claude queue refuse a caller without a device; a paired 
   for (const [method, route, body] of routes.slice(1, 2).concat(routes.slice(3, 4), routes.slice(5, 6))) {
     assert.notEqual((await send(method, route, body, viaCaddy('10.0.0.40', IPHONE, { Cookie: cookie }))).status, 401, `${method} ${route} paired`);
   }
+});
+
+// Reporting to the Claude board: the Mac's hooks and Claude sessions send the Mac key; nobody else may file into the queue
+// (an unsigned finding reached /api/claude/priorities and the phone, and could pre-plant an id a session later updates).
+test('reporting to the Claude board needs the Mac key or a device', { timeout: 30000 }, async t => {
+  const base = await start(t);
+  const send = (route, body, headers) => fetch(`${base}${route}`, { method: 'POST', headers: { ...JSONH, ...headers }, body: JSON.stringify(body) });
+  const lan = viaCaddy('10.0.0.37', IPHONE), mac = viaCaddy('10.0.0.5', 'python-urllib/3.14', { 'X-LocalAI-Mac-Key': KEY });
+  const finding = { sessionId: 's', findings: [{ id: 'planted', title: 'Planted', severity: 'high', status: 'approved' }] };
+  const event = { sessionId: 's', events: [{ kind: 'note', title: 'Hello' }] };
+  const got = [];
+  for (const [route, body] of [['/api/claude/findings', finding], ['/api/claude/events', event]]) {
+    const r = await send(route, body, lan);
+    got.push([route, r.status, await r.json().catch(() => null)]);
+  }
+  const refused = { error: 'Sign in on this device first: pair it under Improve › Claude Code.', signIn: true };
+  assert.deepEqual(got, [['/api/claude/findings', 401, refused], ['/api/claude/events', 401, refused]]);
+  assert.deepEqual((await (await fetch(`${base}/api/claude/priorities`)).json()).items ?? [], [], 'nothing reached the queue');
+  assert.equal((await send('/api/claude/findings', { sessionId: 's', findings: [{ id: 'mine', title: 'Mine', status: 'in_progress' }] }, mac)).status, 201);
+  assert.equal((await send('/api/claude/events', event, mac)).status, 201);
+  const board = (await (await fetch(`${base}/api/claude/board`)).json()).findings.map(f => [f.id, f.status]);
+  assert.deepEqual(board, [['mine', 'in_progress']], 'the Mac key files and marks its own work');
 });
 
 test('whoami renews a paired device cookie for all of Local AI; an unpaired one gets nothing', { timeout: 30000 }, async t => {

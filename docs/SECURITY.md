@@ -162,7 +162,7 @@ the container, stage or approve changes, decide approvals, or post and clear ale
 `401 {"error":"Sign in on this device first…","signIn":true}`: `/api/workbench/*`, `/api/computer/*`,
 `/api/browser/fetch`, `/api/actions/http-check`, `/api/repo/inspect`, `/api/changes*`, `/api/approvals/create|decide`,
 `/api/display/approvals/decide` and `/api/display/lab/verdict` (the display's key still signs them in), `/api/display/notify`, `/api/engineering/*`,
-`/api/issues/prepare-change`, `/api/improve/handoff|item|idea` and `/api/claude/findings/decision` (each changes Claude's queue), `/api/powershell/*`, `/api/notifications/system|seed|update` and
+`/api/issues/prepare-change`, `/api/improve/handoff|item|idea|signal` and `/api/claude/findings/decision|vote` and `/api/claude/findings|events` (each changes Claude's queue; the Mac's hooks and Claude sessions send the Mac key), `/api/powershell/*`, `/api/notifications/system|seed|update` and
 `/api/signin/report/clear`, `/api/workshop/portal-code` (it hands out the display's sign-in code), and `/api/facts/suggestions` and `/api/facts/suggestions/decide` (suggested facts quote what was said in a chat, and Save writes a fact; reads are refused too), and `/api/journal` and `/api/journal/delete|ask` (the owner's past work: reads are refused too) (`GUARDED` in `app/signin.js`); and, for any method but GET, starting agent runs
 (`/api/agents/dispatch|run|missions/start|specialist/run`), retrying, cancelling, updating or rating runs (`/api/runs/feedback`), GridCraft workbook writes, `/api/knowledge/import|delete`, `/api/conversations/delete`, memory changes, model pulls and deletes,
 `/api/library/delete`, `/api/items/delete` and `/api/display/alerts` (`GUARDED_WRITES`). Pair a browser under

@@ -23,9 +23,12 @@ const GUARDED = [
   /^\/api\/facts\/suggestions(\/decide)?$/,
   // The owner's past work (A28 D5/D6): reading, deleting or asking about journal entries.
   /^\/api\/journal(\/(delete|ask))?$/,
-  // Claude's queue: handing a request or an item to Claude, adding an idea, or changing an item's decision. Each lands on
-  // the board a Claude session works from, so one left open would bypass the others.
-  /^\/api\/improve\/(handoff|item|idea)$/, /^\/api\/claude\/findings\/decision$/,
+  // Claude's queue: handing a request or an item to Claude, adding an idea, promoting a signal, or changing an item's
+  // decision or votes. Each lands on the board a Claude session works from, so one left open would bypass the others.
+  /^\/api\/improve\/(handoff|item|idea|signal)$/, /^\/api\/claude\/findings\/(decision|vote)$/,
+  // Reporting to that board: the Mac's hooks and Claude sessions send the Mac key. An unsigned finding would reach
+  // /api/claude/priorities and the phone, or pre-plant an id a session later updates.
+  /^\/api\/claude\/(findings|events)$/,
 ];
 // Refused without a device when they change something (any method but GET/HEAD): starting agent runs, writing
 // workbooks through the GridCraft bridge, importing or deleting library data, and the display's alert settings.
