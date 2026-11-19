@@ -42,7 +42,8 @@ async function open(viewport, hash, { runs = [], askStatus = 202, deleteStatus =
   await ctx.route(u => u.pathname === '/api/approvals', r => json(r, { items: [] }));
   await page.route(u => u.pathname === '/api/capabilities', r => json(r, { services: [['ollama', intelligence], ['search', true], ['comfy', true], ['n8n', true]].map(([name, up]) => ({ name, label: name, state: up ? 'HEALTHY' : 'DOWN', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' }));
   // ?ids=: the entries that still exist (db.gone were deleted elsewhere, or before a reload).
-  await page.route(u => u.pathname === '/api/journal' && u.searchParams.has('ids'), r => idsFail ? json(r, { error: "Couldn't read your past work." }, 503) : json(r, { items: new URL(r.request().url()).searchParams.get('ids').split(',').filter(id => !db.gone.has(id)).map(id => ({ id })) }));
+  db.idsChecks = 0;
+  await page.route(u => u.pathname === '/api/journal' && u.searchParams.has('ids'), r => { db.idsChecks++; return idsFail ? json(r, { error: "Couldn't read your past work." }, 503) : json(r, { items: new URL(r.request().url()).searchParams.get('ids').split(',').filter(id => !db.gone.has(id)).map(id => ({ id })) }); });
   await page.route(u => u.pathname === '/api/runs/retry', r => {
     const { id } = JSON.parse(r.request().postData()); db.retries.push(id);
     if (retryStatus !== 200) return json(r, { error: 'The run ledger is busy' }, retryStatus);
@@ -193,7 +194,7 @@ await check('long content on a phone: no horizontal overflow; axe finds nothing 
 await check('a source that could not be read: the answer names it once, with Try again and (prints) a Workshop link; films say no record is kept', async () => {
   const out = (text, from, unread) => ({ text, citations: [], entries: [], from, unread });
   const page = await open(desk, '#run/run-p1', { runs: [
-    pastRun('run-p1', { title: 'did my last print finish', output: out("I can't read Pi Hub's print list from here yet, so I can't say what was printed. Workshop on Pi Hub shows it.", 'prints', "Pi Hub's print list can't be read from here") }),
+    pastRun('run-p1', { title: 'did my last print finish', output: out("I can't read Pi Hub's print list from here, so I can't say what was printed. Workshop on Pi Hub shows it.", 'prints', "Pi Hub's print list can't be read from here") }),
     pastRun('run-p2', { title: 'did my last print finish', output: out("Bambuddy isn't answering, so I can't say what was printed.", 'prints', "Bambuddy isn't answering") }),
     pastRun('run-f1', { title: 'what did I watch on Saturday', output: out("I keep no record of what was watched, so I can't say.", 'none', null) })
   ] });
@@ -215,6 +216,44 @@ await check('a source that could not be read: the answer names it once, with Try
   assert.equal(await body(page).locator('.past-work__again').count(), 0, 'films: nothing to ask again');
   assert.equal(await body(page).locator('.ui-empty').count(), 0);
   assert.equal((await body(page).locator('h3').allTextContents()).includes('What it read'), false);
+  await page.context().close();
+});
+
+// A29: a print question answered from Pi Hub's print list. Every print cites Workshop on Pi Hub; the rows are Pi Hub's,
+// so no Delete and no journal check; the run finished, so no Try again. Then the Bambuddy-down answer, said once.
+await check('a print answer from Pi Hub: each print cites Workshop, rows are Pi Hub\'s without Delete; Bambuddy down is one line with Workshop', async () => {
+  const prints = [
+    { n: 1, id: 'print-812', at: iso(3), source: 'print', kind: 'Finished', title: 'RIFT tile 10in · Finished', link: 'hub:workshop' },
+    { n: 2, id: 'print-811', at: iso(28), source: 'print', kind: 'Failed', title: 'cable_clip · Failed', link: 'hub:workshop' },
+    { n: 3, id: 'print-810', at: iso(50), source: 'print', kind: 'Cancelled', title: 'hinge_test · Cancelled', link: 'hub:workshop' }
+  ];
+  const text = 'Yes: RIFT tile 10in finished [1]. Before it, cable_clip failed when the filament ran out [2], and hinge_test was cancelled [3].';
+  const page = await open(desk, '#run/run-pp', { runs: [
+    pastRun('run-pp', { title: 'did my last print finish', output: { text, citations: prints.map(({ n, id, link, title, at }) => ({ n, id, link, title, at })), entries: prints, from: 'prints', unread: null } }),
+    pastRun('run-pb', { title: 'did my last print finish', output: { text: "Bambuddy isn't answering, so I can't say what was printed.", citations: [], entries: [], from: 'prints', unread: "Bambuddy isn't answering" } })
+  ] });
+  await body(page).locator('.past-work__answer').waitFor(T);
+  assert.equal(await body(page).locator('.past-work__answer').textContent(), text);
+  assert.deepEqual(await body(page).locator('h3').allTextContents(), ['Answer', 'Cited', 'What it read']);
+  const cites = body(page).locator('.past-work__cites li a');
+  assert.equal(await cites.count(), 3);
+  for (let i = 0; i < 3; i++) {
+    assert.match(await cites.nth(i).getAttribute('href'), /^https:\/\/[^/]+\/workshop$/, `print ${i + 1} cites Workshop on Pi Hub`);
+    assert.equal(await cites.nth(i).getAttribute('rel'), 'noopener');
+  }
+  const rows = body(page).locator('.past-work__entry');
+  assert.equal(await rows.count(), 3);
+  assert.deepEqual(await rows.locator('.ui-row__title').allTextContents(), ['RIFT tile 10in · Finished ↗', 'cable_clip · Failed ↗', 'hinge_test · Cancelled ↗']);
+  for (let i = 0; i < 3; i++) assert.match(await rows.nth(i).locator('span.ui-row__detail').textContent(), / · Pi Hub · Workshop$/);
+  assert.equal(await body(page).locator('.past-work__delete').count(), 0, 'prints are not in the journal: nothing to delete');
+  assert.equal(await body(page).locator('.past-work__again').count(), 0, 'a finished answer has no Try again');
+  assert.equal(page.db.idsChecks, 0, 'no journal check for Pi Hub rows');
+  await page.evaluate(() => window.LocalAIRouter.go('#run/run-pb'));
+  await body(page).locator('.past-work__answer', { hasText: "Bambuddy isn't answering, so I can't say what was printed." }).waitFor(T);
+  assert.doesNotMatch(await body(page).innerText(), /no prints|print list is empty|Nothing in your past work matched/i, 'Bambuddy down is never "no prints"');
+  assert.match(await body(page).locator('.past-work__again a.ui-btn').getAttribute('href'), /^https:\/\/[^/]+\/workshop$/);
+  assert.equal(await body(page).locator('.past-work__again button', { hasText: 'Try again' }).count(), 1);
+  assert.equal(page.errors.length, 0, page.errors.join('|'));
   await page.context().close();
 });
 
