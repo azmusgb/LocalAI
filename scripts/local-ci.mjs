@@ -118,8 +118,8 @@ function dryCommand(name) {
   let script = `console.log('(dry) ${name.replace(/'/g, '')}')`;
   if (name === 'Unit and contract tests' && failUnit) script = `console.log('✖ ' + ${JSON.stringify(failUnit)} + ' (1ms)\\nℹ pass 5\\nℹ fail 1\\n\\n✖ failing tests:\\n\\n✖ ' + ${JSON.stringify(failUnit)} + ' (1ms)'); process.exit(1)`;
   // The browser workers: "Browser suites" (one worker), "Browser suites, worker k/n", "Browser suites, solo". The
-  // injected failure lands in the first worker.
-  else if (/^Browser suites(?:, worker 1\/| ?$)/.test(name) && failSuite) script = `console.log('--- ' + ${JSON.stringify(failSuite)} + ': FAILED in 0.1s\\n\\n13 of 14 browser suites passed; failed: ' + ${JSON.stringify(failSuite)}); process.exit(1)`;
+  // injected failure lands in the first worker, or in the solo phase for a suite that runs there.
+  else if (failSuite && (SOLO_SUITES.includes(failSuite) ? /^Browser suites(?:, solo| ?$)/ : /^Browser suites(?:, worker 1\/| ?$)/).test(name)) script = `console.log('--- ' + ${JSON.stringify(failSuite)} + ': FAILED in 0.1s\\n\\n13 of 14 browser suites passed; failed: ' + ${JSON.stringify(failSuite)}); process.exit(1)`;
   else if (name.startsWith('Browser suites')) script = `console.log('--- dry-ui.mjs: passed in 0.1s\\n\\n14 of 14 browser suites passed')`;
   else if (name.startsWith('Retry ')) script = `console.log('1 of 1 browser suites passed')`;
   else if (name === 'Re-check: unit and contract tests' && process.env.LOCALAI_CI_FAIL_RECHECK) script = `console.log('✖ ' + ${JSON.stringify(process.env.LOCALAI_CI_FAIL_RECHECK)} + ' (1ms)\\nℹ pass 5\\nℹ fail 1'); process.exit(1)`;
@@ -222,6 +222,7 @@ async function browserSuites(workers) {
     }
     const retried = [], failing = [];
     for (const { suite, worker } of plan) {
+      if (!servers[worker]?.url) { say(`--- Retry ${suite}: FAILED (no server for worker ${worker + 1})`); failing.push(suite); continue; }
       const again = await run(`Retry ${suite}${workers > 1 ? ` (worker ${worker + 1})` : ''}`, process.execPath, ['tests/run-browser.mjs', suite], { env: envFor(worker) });
       (again.ok ? retried : failing).push(suite);
     }

@@ -187,6 +187,16 @@ test('a failed suite is retried on the server of the worker that ran it; a whole
   assert.deepEqual(retryPlan([{ out: shardOut(1, 1) }]), []);
 });
 
+test('a suite that failed in the solo phase is retried on the solo phase\'s server, not a worker index past the end', async () => {
+  const { retryPlan } = await lib();
+  // As local-ci builds them: three workers, then the solo phase, which runs on worker 0's server (PR #574's crash).
+  const parts = [
+    { worker: 0, out: shardOut(21, 22, ['home-ui.mjs']) }, { worker: 1, out: shardOut(22, 22) }, { worker: 2, out: shardOut(22, 22) },
+    { worker: 0, out: shardOut(1, 2, ['visual-ui.mjs']) },
+  ];
+  assert.deepEqual(retryPlan(parts), [{ suite: 'home-ui.mjs', worker: 0 }, { suite: 'visual-ui.mjs', worker: 0 }]);
+});
+
 const runBrowser = (...a) => {
   const r = spawnSync(process.execPath, [path.join(ROOT, 'tests/run-browser.mjs'), '--list', ...a], { encoding: 'utf8', env: { ...process.env, LOCALAI_CI_DURATIONS: '' } });
   assert.equal(r.status, 0, r.stderr);
