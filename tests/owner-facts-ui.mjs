@@ -286,6 +286,22 @@ await check('collapsing while editing a row past the first 5 keeps that row and 
   await close(page);
 });
 
+await check('390px: Shift+Tab back to row 1 brings the whole row into view: its text and Edit are not under the sticky head', async () => {
+  const page = await open(phone, { items: FULL.slice(0, 4) });
+  await page.locator('#ownerFactText').focus();
+  await page.evaluate(() => window.scrollTo(0, document.getElementById('ownerFactText').getBoundingClientRect().top + scrollY - 120));
+  // From Add, Shift+Tab walks back up the rows: row 4's Delete, Edit, … row 1's Delete, Edit (8 presses).
+  for (let i = 0; i < 8; i++) await page.keyboard.press('Shift+Tab');
+  assert.ok(await page.evaluate(() => document.activeElement?.matches('[data-fact-id="f0"] [data-fact-edit]')), 'on row 1 Edit');
+  const clear = await page.evaluate(() => {
+    const at = el => { const r = el.getBoundingClientRect(), hit = document.elementFromPoint(r.left + Math.min(r.width / 2, 40), r.top + r.height / 2); return !!hit && (hit === el || el.contains(hit)); };
+    const li = document.activeElement.closest('li');
+    return { text: at(li.querySelector('.owner-fact__text')), edit: at(document.activeElement) };
+  });
+  assert.deepEqual(clear, { text: true, edit: true });
+  await close(page);
+});
+
 await check('error: a failed read says so, never "No facts yet", and Try again reads it again', async () => {
   const page = await open(desk, { items: [fact('a', 'Answers in metric.')], fail: { read: 500 } });
   await page.locator('#ownerFactsError[role="alert"]', { hasText: "Couldn't read your saved facts: database is locked." }).waitFor(T);

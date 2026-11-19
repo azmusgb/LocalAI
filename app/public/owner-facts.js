@@ -198,6 +198,13 @@
       else if (b.matches('[data-fact-cancel]')) { const id = s.editing; s.editing = ''; paint(); focusRow(id, { control: '[data-fact-edit]' }); }
       else if (b.matches('[data-fact-delete]')) remove(li, b);
     });
+    // A focused control brings its whole row into view (on a phone the fact's text sits above its buttons, and the
+    // browser and refocus scroll only the control); the row's scroll margin keeps it clear of the sticky head.
+    sec.addEventListener('focusin', e => {
+      const li = e.target.closest('.owner-fact'); if (!li) return;
+      const r = li.getBoundingClientRect(), head = parseFloat(getComputedStyle(li).scrollMarginTop) || 0;
+      if (r.top < head || r.bottom > innerHeight) li.scrollIntoView({ block: r.height + head > innerHeight ? 'start' : 'nearest' });
+    });
     sec.addEventListener('keydown', e => {
       if (e.key === 'Escape' && e.target.id === 'ownerFactEdit') { e.preventDefault(); sec.querySelector('[data-fact-cancel]').click(); }
     });
