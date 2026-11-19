@@ -64,7 +64,8 @@ test('legacy execution histories are normalized instead of discarded', () => {
 });
 
 test('retry is explicitly allowlisted and engineering remains approval-driven', () => {
-  assert.match(server, /new Set\(\['\/api\/chat','\/api\/images\/generate','\/api\/agents\/run','\/api\/automations\/run'\]\)/);
+  // Past work (/api/journal/ask) retries as a new private, tool-free prompt run (amendment A28 D5).
+  assert.match(server, /new Set\(\['\/api\/chat','\/api\/images\/generate','\/api\/agents\/run','\/api\/automations\/run','\/api\/journal\/ask'\]\)/);
   assert.doesNotMatch(server, /new Set\([^\n]*\/api\/engineering/);
   assert.match(server, /This run does not support retry/);
 });
