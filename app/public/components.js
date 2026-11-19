@@ -42,12 +42,13 @@
     el.innerHTML=`${el.hasAttribute('data-part')?'':'Sources: '}${esc(name)}: <span class="ui-chip ui-chip--${SOURCE_WORD[tone]?tone:'unknown'}">${SOURCE_WORD[tone]||'Not read yet'}</span>${when?` ${esc(when)}`:''}`;
   }
   // A quiet refresh that failed (DESIGN, Honest states: stale): the list stays, and a notice beside it says which source
-  // isn't answering and when what is shown was read. since: the Date of the last good read, or null to clear it.
+  // isn't answering and when what is shown was read. since: the Date of the last good read, true when there has been none
+  // (what is shown may be missing things), or null to clear it.
   function staleNotice(id,name,what,since){
     const el=document.getElementById(id);if(!el)return;
     if(!since){el.hidden=true;el.textContent='';return}
     const down=(window.ApplianceNeeds?.PHRASES?.source_down||"{name} isn't answering").replace('{name}',name);
-    el.textContent=`${down}. Showing ${what} as it was at ${since.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}.`;el.hidden=false;
+    el.textContent=since instanceof Date?`${down}. Showing ${what} as it was at ${since.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}.`:`${down}, so ${what} may be incomplete.`;el.hidden=false;
   }
   // The one approval sheet for risky actions. ask({title,effect,confirmLabel,tone,typed,input}) -> {ok,value?}.
   // tone: default|danger|host. typed: a word to type before Confirm enables. input: {label,type,placeholder} collects a value.
