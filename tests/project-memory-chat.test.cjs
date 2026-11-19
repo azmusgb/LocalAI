@@ -114,6 +114,19 @@ test('sticky: after the chat is unfiled, its next turn still stays on this PC (b
   assert.equal(env.runLedger.get(third.runId).meta.memoryNotes, undefined);
 });
 
+test('sticky with a model picked by hand: after the chat is unfiled, its next turn still stays on this PC', async t => {
+  const env = setup(t);
+  const first = await filedThread(env);
+  const second = await env.chat.chatOnce({ ...ask('What layer height?'), threadId: first.runId, model: 'llama3:8b' });
+  assert.equal(second.route.why, PM.STAY);
+  assert.ok(hasBlock(env.sent.at(-1).body.messages));
+  env.runLedger.file(first.runId, { projectId: null });
+  const third = await env.chat.chatOnce({ ...ask('And the infill?'), threadId: first.runId });
+  assert.equal(third.route.class, 'private');
+  assert.equal(third.route.provider, 'ollama');
+  assert.equal(env.cloudCalls.length, 1, 'still only the first turn');
+});
+
 test('a request that carries projectId gets the notes on its first turn and is filed under the project', async t => {
   const env = setup(t);
   const out = await env.chat.chatOnce(ask('What layer height did we settle on?', { projectId: 'prj_rift' }));

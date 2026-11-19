@@ -73,6 +73,22 @@ test('a provider without a key, or parked after a rate limit, is skipped', () =>
 test('a model the owner picked by hand is used as it is, on this PC', () => {
   const r = R.route({ ...base, model: 'gemma3:4b' });
   assert.deepEqual(r.order, [{ provider: 'ollama', model: 'gemma3:4b' }]);
+  assert.equal(r.why, 'You picked this model');
+  assert.equal(R.stickyPrivate(r), false);
+});
+
+test('a picked model keeps a reason from the request, so it stays sticky for the conversation', () => {
+  for (const [extra, why] of [
+    [{ stay: 'Project notes stay on this PC' }, 'Project notes stay on this PC'],
+    [{ voice: true }, 'Voice and Siri stay on this PC'],
+    [{ attachments: true }, 'Files and photos stay on this PC'],
+    [{ text: 'what dose of insulin' }, 'It looks personal (health, money or identity)'],
+  ]) {
+    const r = R.route({ ...base, model: 'gemma3:4b', ...extra });
+    assert.deepEqual(r.order, [{ provider: 'ollama', model: 'gemma3:4b' }]);
+    assert.equal(r.why, why);
+    assert.equal(R.stickyPrivate(r), true, why);
+  }
 });
 
 test('model names can be changed without code', () => {
