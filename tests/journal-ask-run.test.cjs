@@ -125,3 +125,22 @@ test('the journal is handed only to the journal routes, and Past work only to vo
     assert.doesNotMatch(source, /require\([^)]*journal|startPastWork|askHistory/, `${file} reads no journal`);
   }
 });
+
+// GET /api/journal?ids=: which listed entries still exist. A journal that can't be read is an error, never an empty list
+// (an empty list would draw every entry as deleted).
+test('?ids=: present ids come back; a disabled journal is 503 and a database error is an error, never empty', t => {
+  const { journal } = setup(t);
+  journal.record({ at: new Date().toISOString(), source: 'run', kind: 'chat', title: 'Kept', ref: 'run:kept:completed' });
+  const kept = journal.search({}).items[0].id;
+  const call = j => {
+    const out = {};
+    const routes = createJournalRoutes({ journal: j, json: (res, status, body) => Object.assign(out, { status, body }), storageError: (res, e, status) => Object.assign(out, { status, body: { error: e.message } }) });
+    routes.apiJournal({}, {}, new URL(`http://x/api/journal?ids=${kept},j-gone`));
+    return out;
+  };
+  assert.deepEqual(call(journal), { status: 200, body: { items: [journal.get(kept)] } });
+  const disabled = call({ ...journal, disabled: true, get: () => null });
+  assert.equal(disabled.status, 503); assert.equal(disabled.body.error, "Couldn't read your past work.");
+  const broken = call({ ...journal, get: () => { throw new Error('SQLITE_CORRUPT: database disk image is malformed'); } });
+  assert.ok(broken.status >= 400, `status ${broken.status}`); assert.equal(broken.body.items, undefined, 'no list at all');
+});
